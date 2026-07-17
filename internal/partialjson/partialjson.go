@@ -161,10 +161,18 @@ func ParseStreamingJSON(input string) any {
 }
 
 type parser struct {
-	input string
-	index int
-	allow Allow
+	input               string
+	index               int
+	allow               Allow
+	preserveObjectOrder bool
 }
+
+type orderedMember struct {
+	name  string
+	value any
+}
+
+type orderedObject []orderedMember
 
 func (p *parser) parseAny() (any, error) {
 	p.skipBlank()
@@ -265,16 +273,33 @@ func (p *parser) parseObject() (any, error) {
 	p.index++
 	p.skipBlank()
 	object := make(map[string]any)
+	ordered := make(orderedObject, 0)
+	orderedIndexes := make(map[string]int)
+	result := func() any {
+		if p.preserveObjectOrder {
+			return ordered
+		}
+		return object
+	}
+	add := func(key string, value any) {
+		object[key] = value
+		if index, exists := orderedIndexes[key]; exists {
+			ordered[index].value = value
+			return
+		}
+		orderedIndexes[key] = len(ordered)
+		ordered = append(ordered, orderedMember{name: key, value: value})
+	}
 
 	for {
 		if p.index < len(p.input) && p.input[p.index] == '}' {
 			p.index++
-			return object, nil
+			return result(), nil
 		}
 		p.skipBlank()
 		if p.index >= len(p.input) {
 			if p.allow&AllowObject != 0 {
-				return object, nil
+				return result(), nil
 			}
 			return nil, p.partial("Expected '}' at end of object")
 		}
@@ -282,7 +307,7 @@ func (p *parser) parseObject() (any, error) {
 		key, err := p.parseString()
 		if err != nil {
 			if p.allow&AllowObject != 0 {
-				return object, nil
+				return result(), nil
 			}
 			return nil, p.partial("Expected '}' at end of object")
 		}
@@ -292,11 +317,11 @@ func (p *parser) parseObject() (any, error) {
 		value, err := p.parseAny()
 		if err != nil {
 			if p.allow&AllowObject != 0 {
-				return object, nil
+				return result(), nil
 			}
 			return nil, p.partial("Expected '}' at end of object")
 		}
-		object[key] = value
+		add(key, value)
 		p.skipBlank()
 		if p.index < len(p.input) && p.input[p.index] == ',' {
 			p.index++

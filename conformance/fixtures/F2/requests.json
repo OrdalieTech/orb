@@ -1,0 +1,985 @@
+{
+  "cases": [
+    {
+      "name": "responses-text-default-cache",
+      "api": "openai-responses",
+      "model": {
+        "id": "gpt-fixture-responses",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-responses",
+        "provider": "openai",
+        "baseUrl": "https://api.openai.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "high"
+        },
+        "headers": {
+          "x-model-header": "responses-text"
+        }
+      },
+      "context": {
+        "systemPrompt": "You are concise.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hello <fixture>",
+            "timestamp": 1700000000120
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "temperature": 0,
+        "maxTokens": 7,
+        "cacheRetention": "long",
+        "sessionId": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss-tail",
+        "headers": {
+          "x-fixture": "responses-text"
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/responses",
+        "headers": {
+          "authorization": "Bearer fixture-key",
+          "content-type": "application/json",
+          "session_id": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss-tail",
+          "x-client-request-id": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss-tail",
+          "x-fixture": "responses-text",
+          "x-model-header": "responses-text"
+        },
+        "body": "{\"model\":\"gpt-fixture-responses\",\"input\":[{\"role\":\"developer\",\"content\":\"You are concise.\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hello <fixture>\"}]}],\"stream\":true,\"prompt_cache_key\":\"ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss\",\"prompt_cache_retention\":\"24h\",\"store\":false,\"max_output_tokens\":16,\"temperature\":0,\"reasoning\":{\"effort\":\"none\"}}"
+      }
+    },
+    {
+      "name": "responses-tools-replay-deferred",
+      "api": "openai-responses",
+      "model": {
+        "id": "gpt-fixture-responses",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-responses",
+        "provider": "openai",
+        "baseUrl": "https://api.openai.com/v1",
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "compat": {
+          "supportsToolSearch": true
+        }
+      },
+      "context": {
+        "systemPrompt": "Use tools.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "echo once",
+            "timestamp": 1700000000118
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call_echo|fc_echo",
+                "name": "echo",
+                "arguments": {
+                  "text": "first",
+                  "mode": "plain",
+                  "metadata": {
+                    "count": 1
+                  }
+                }
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-fixture-responses",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call_echo|fc_echo",
+            "toolName": "echo",
+            "content": [],
+            "addedToolNames": [
+              "late_tool"
+            ],
+            "isError": false,
+            "timestamp": 1700000000122
+          },
+          {
+            "role": "user",
+            "content": "continue",
+            "timestamp": 1700000000123
+          }
+        ],
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo structured text",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "plain",
+                    "loud"
+                  ]
+                },
+                "metadata": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "late_tool",
+            "description": "A tool loaded after a tool result",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "cacheRetention": "none",
+        "toolChoice": "required"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/responses",
+        "headers": {
+          "authorization": "Bearer fixture-key",
+          "content-type": "application/json"
+        },
+        "body": "{\"model\":\"gpt-fixture-responses\",\"input\":[{\"role\":\"system\",\"content\":\"Use tools.\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"echo once\"}]},{\"type\":\"function_call\",\"id\":\"fc_echo\",\"call_id\":\"call_echo\",\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"first\\\",\\\"mode\\\":\\\"plain\\\",\\\"metadata\\\":{\\\"count\\\":1}}\"},{\"type\":\"function_call_output\",\"call_id\":\"call_echo\",\"output\":\"(no tool output)\"},{\"type\":\"tool_search_call\",\"call_id\":\"pi_tool_load_19i75651tdlf2c\",\"execution\":\"client\",\"status\":\"completed\",\"arguments\":{\"query\":\"late_tool\",\"limit\":1}},{\"type\":\"tool_search_output\",\"call_id\":\"pi_tool_load_19i75651tdlf2c\",\"execution\":\"client\",\"status\":\"completed\",\"tools\":[{\"type\":\"function\",\"name\":\"late_tool\",\"description\":\"A tool loaded after a tool result\",\"parameters\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"boolean\"}},\"required\":[\"value\"],\"additionalProperties\":false},\"strict\":false,\"defer_loading\":true}]},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"continue\"}]}],\"stream\":true,\"store\":false,\"tools\":[{\"type\":\"function\",\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false},\"strict\":false}],\"tool_choice\":\"required\"}"
+      }
+    },
+    {
+      "name": "responses-images-header-auth-base-url",
+      "api": "openai-responses",
+      "model": {
+        "id": "gpt-fixture-responses",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-responses",
+        "provider": "proxy-responses",
+        "baseUrl": "https://responses.fixture.invalid/custom/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "compat": {
+          "supportsDeveloperRole": false
+        }
+      },
+      "context": {
+        "systemPrompt": "Inspect images.",
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call_image",
+                "name": "echo",
+                "arguments": {
+                  "text": "image"
+                }
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "proxy-responses",
+            "model": "gpt-fixture-responses",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call_image",
+            "toolName": "echo",
+            "content": [
+              {
+                "type": "text",
+                "text": "tool caption"
+              },
+              {
+                "type": "image",
+                "data": "AAEC",
+                "mimeType": "image/png"
+              }
+            ],
+            "isError": false,
+            "timestamp": 1700000000122
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "user image"
+              },
+              {
+                "type": "image",
+                "data": "AQID",
+                "mimeType": "image/jpeg"
+              }
+            ],
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "cacheRetention": "none",
+        "sessionId": "must-not-be-sent",
+        "headers": {
+          "authorization": "Bearer fixture-proxy-token",
+          "x-fixture": "responses-images"
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://responses.fixture.invalid/custom/v1/responses",
+        "headers": {
+          "authorization": "Bearer fixture-proxy-token",
+          "content-type": "application/json",
+          "x-fixture": "responses-images"
+        },
+        "body": "{\"model\":\"gpt-fixture-responses\",\"input\":[{\"role\":\"system\",\"content\":\"Inspect images.\"},{\"type\":\"function_call\",\"call_id\":\"call_image\",\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"image\\\"}\"},{\"type\":\"function_call_output\",\"call_id\":\"call_image\",\"output\":[{\"type\":\"input_text\",\"text\":\"tool caption\"},{\"type\":\"input_image\",\"detail\":\"auto\",\"image_url\":\"data:image/png;base64,AAEC\"}]},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"user image\"},{\"type\":\"input_image\",\"detail\":\"auto\",\"image_url\":\"data:image/jpeg;base64,AQID\"}]}],\"stream\":true,\"store\":false,\"reasoning\":{\"effort\":\"none\"}}"
+      }
+    },
+    {
+      "name": "responses-thinking-replay-openrouter-affinity",
+      "api": "openai-responses",
+      "model": {
+        "id": "gpt-fixture-responses",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-responses",
+        "provider": "openrouter",
+        "baseUrl": "https://openrouter.fixture.invalid/api/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "xhigh"
+        },
+        "compat": {
+          "sessionAffinityFormat": "openrouter",
+          "supportsLongCacheRetention": false
+        }
+      },
+      "context": {
+        "systemPrompt": "Think, then answer.",
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "prior plan",
+                "thinkingSignature": "{\"type\":\"reasoning\",\"id\":\"rs_prior\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"prior plan\"}],\"encrypted_content\":\"encrypted-prior\"}"
+              },
+              {
+                "type": "text",
+                "text": "prior answer",
+                "textSignature": "{\"v\":1,\"id\":\"msg_prior\",\"phase\":\"commentary\"}"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openrouter",
+            "model": "gpt-fixture-responses",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "user",
+            "content": "continue reasoning",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "cacheRetention": "long",
+        "sessionId": "responses-openrouter-session",
+        "reasoningEffort": "high",
+        "reasoningSummary": "detailed",
+        "serviceTier": "flex"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://openrouter.fixture.invalid/api/v1/responses",
+        "headers": {
+          "authorization": "Bearer fixture-key",
+          "content-type": "application/json",
+          "x-session-id": "responses-openrouter-session"
+        },
+        "body": "{\"model\":\"gpt-fixture-responses\",\"input\":[{\"role\":\"developer\",\"content\":\"Think, then answer.\"},{\"type\":\"reasoning\",\"id\":\"rs_prior\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"prior plan\"}],\"encrypted_content\":\"encrypted-prior\"},{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"prior answer\",\"annotations\":[]}],\"status\":\"completed\",\"id\":\"msg_prior\",\"phase\":\"commentary\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"continue reasoning\"}]}],\"stream\":true,\"prompt_cache_key\":\"responses-openrouter-session\",\"store\":false,\"service_tier\":\"flex\",\"reasoning\":{\"effort\":\"xhigh\",\"summary\":\"detailed\"},\"include\":[\"reasoning.encrypted_content\"]}"
+      }
+    },
+    {
+      "name": "completions-text-default-cache",
+      "api": "openai-completions",
+      "model": {
+        "id": "gpt-fixture-completions",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-completions",
+        "provider": "openai",
+        "baseUrl": "https://api.openai.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "high"
+        },
+        "headers": {
+          "x-model-header": "completions-text"
+        }
+      },
+      "context": {
+        "systemPrompt": "You are concise.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hello <fixture>",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "temperature": 0,
+        "maxTokens": 7,
+        "cacheRetention": "long",
+        "sessionId": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss-tail",
+        "headers": {
+          "x-fixture": "completions-text"
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "headers": {
+          "authorization": "Bearer fixture-key",
+          "content-type": "application/json",
+          "x-fixture": "completions-text",
+          "x-model-header": "completions-text"
+        },
+        "body": "{\"model\":\"gpt-fixture-completions\",\"messages\":[{\"role\":\"developer\",\"content\":\"You are concise.\"},{\"role\":\"user\",\"content\":\"hello <fixture>\"}],\"stream\":true,\"prompt_cache_key\":\"ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss\",\"prompt_cache_retention\":\"24h\",\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":7,\"temperature\":0,\"reasoning_effort\":\"none\"}"
+      }
+    },
+    {
+      "name": "completions-tools-conservative-compat",
+      "api": "openai-completions",
+      "model": {
+        "id": "gpt-fixture-completions",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-completions",
+        "provider": "compat-proxy",
+        "baseUrl": "https://completions.fixture.invalid/custom/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "compat": {
+          "supportsStore": false,
+          "supportsDeveloperRole": false,
+          "supportsReasoningEffort": false,
+          "supportsUsageInStreaming": false,
+          "maxTokensField": "max_tokens",
+          "requiresToolResultName": true,
+          "requiresAssistantAfterToolResult": true,
+          "requiresReasoningContentOnAssistantMessages": true,
+          "supportsStrictMode": false,
+          "sendSessionAffinityHeaders": true,
+          "sessionAffinityFormat": "openai-nosession",
+          "supportsLongCacheRetention": false
+        }
+      },
+      "context": {
+        "systemPrompt": "Use the echo tool.",
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call_compat",
+                "name": "echo",
+                "arguments": {
+                  "text": "compat"
+                },
+                "thoughtSignature": "{\"type\":\"reasoning.encrypted\",\"id\":\"call_compat\",\"data\":\"encrypted-compat\"}"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "compat-proxy",
+            "model": "gpt-fixture-completions",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call_compat",
+            "toolName": "echo",
+            "content": [
+              {
+                "type": "text",
+                "text": "compat result"
+              }
+            ],
+            "isError": false,
+            "timestamp": 1700000000122
+          },
+          {
+            "role": "user",
+            "content": "continue",
+            "timestamp": 1700000000123
+          }
+        ],
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo structured text",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "plain",
+                    "loud"
+                  ]
+                },
+                "metadata": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "maxTokens": 9,
+        "cacheRetention": "short",
+        "sessionId": "completions-compat-session",
+        "reasoningEffort": "high",
+        "toolChoice": "required"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://completions.fixture.invalid/custom/v1/chat/completions",
+        "headers": {
+          "authorization": "Bearer fixture-key",
+          "content-type": "application/json",
+          "x-client-request-id": "completions-compat-session",
+          "x-session-affinity": "completions-compat-session"
+        },
+        "body": "{\"model\":\"gpt-fixture-completions\",\"messages\":[{\"role\":\"system\",\"content\":\"Use the echo tool.\"},{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[{\"id\":\"call_compat\",\"type\":\"function\",\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"compat\\\"}\"}}],\"reasoning_details\":[{\"type\":\"reasoning.encrypted\",\"id\":\"call_compat\",\"data\":\"encrypted-compat\"}],\"reasoning_content\":\"\"},{\"role\":\"tool\",\"content\":\"compat result\",\"tool_call_id\":\"call_compat\",\"name\":\"echo\"},{\"role\":\"assistant\",\"content\":\"I have processed the tool results.\"},{\"role\":\"user\",\"content\":\"continue\"}],\"stream\":true,\"max_tokens\":9,\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false}}}],\"tool_choice\":\"required\"}"
+      }
+    },
+    {
+      "name": "completions-images-tool-results",
+      "api": "openai-completions",
+      "model": {
+        "id": "gpt-fixture-completions",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-completions",
+        "provider": "openai",
+        "baseUrl": "https://api.openai.com/v1",
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call_image_1",
+                "name": "echo",
+                "arguments": {
+                  "text": "one"
+                }
+              },
+              {
+                "type": "toolCall",
+                "id": "call_image_2",
+                "name": "echo",
+                "arguments": {
+                  "text": "two"
+                }
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "openai",
+            "model": "gpt-fixture-completions",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call_image_1",
+            "toolName": "echo",
+            "content": [
+              {
+                "type": "text",
+                "text": "first caption"
+              },
+              {
+                "type": "image",
+                "data": "AAEC",
+                "mimeType": "image/png"
+              }
+            ],
+            "isError": false,
+            "timestamp": 1700000000122
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call_image_2",
+            "toolName": "echo",
+            "content": [
+              {
+                "type": "image",
+                "data": "AQID",
+                "mimeType": "image/jpeg"
+              }
+            ],
+            "isError": false,
+            "timestamp": 1700000000122
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "also inspect"
+              },
+              {
+                "type": "image",
+                "data": "BAUG",
+                "mimeType": "image/webp"
+              }
+            ],
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "cacheRetention": "none"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "headers": {
+          "authorization": "Bearer fixture-key",
+          "content-type": "application/json"
+        },
+        "body": "{\"model\":\"gpt-fixture-completions\",\"messages\":[{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_image_1\",\"type\":\"function\",\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"one\\\"}\"}},{\"id\":\"call_image_2\",\"type\":\"function\",\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"two\\\"}\"}}]},{\"role\":\"tool\",\"content\":\"first caption\",\"tool_call_id\":\"call_image_1\"},{\"role\":\"tool\",\"content\":\"(see attached image)\",\"tool_call_id\":\"call_image_2\"},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Attached image(s) from tool result:\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/png;base64,AAEC\"}},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/jpeg;base64,AQID\"}}]},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"also inspect\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/webp;base64,BAUG\"}}]}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"tools\":[]}"
+      }
+    },
+    {
+      "name": "completions-thinking-replay-routing-cache",
+      "api": "openai-completions",
+      "model": {
+        "id": "gpt-fixture-completions",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-completions",
+        "provider": "openrouter",
+        "baseUrl": "https://openrouter.fixture.invalid/api/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "xhigh"
+        },
+        "compat": {
+          "supportsDeveloperRole": true,
+          "thinkingFormat": "openrouter",
+          "cacheControlFormat": "anthropic",
+          "sendSessionAffinityHeaders": true,
+          "sessionAffinityFormat": "openrouter",
+          "supportsLongCacheRetention": true,
+          "openRouterRouting": {
+            "allow_fallbacks": false,
+            "order": [
+              "fixture-primary"
+            ]
+          },
+          "vercelGatewayRouting": {
+            "only": [
+              "fixture-provider"
+            ]
+          }
+        }
+      },
+      "context": {
+        "systemPrompt": "Think carefully.",
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "prior thought",
+                "thinkingSignature": "reasoning_content"
+              },
+              {
+                "type": "text",
+                "text": "prior text"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "openrouter",
+            "model": "gpt-fixture-completions",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "user",
+            "content": "new question",
+            "timestamp": 1700000000123
+          }
+        ],
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo structured text",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "plain",
+                    "loud"
+                  ]
+                },
+                "metadata": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "cacheRetention": "long",
+        "sessionId": "completions-openrouter-session",
+        "reasoningEffort": "high"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://openrouter.fixture.invalid/api/v1/chat/completions",
+        "headers": {
+          "authorization": "Bearer fixture-key",
+          "content-type": "application/json",
+          "x-session-id": "completions-openrouter-session"
+        },
+        "body": "{\"model\":\"gpt-fixture-completions\",\"messages\":[{\"role\":\"developer\",\"content\":[{\"type\":\"text\",\"text\":\"Think carefully.\",\"cache_control\":{\"type\":\"ephemeral\",\"ttl\":\"1h\"}}]},{\"role\":\"assistant\",\"content\":\"prior text\",\"reasoning_content\":\"prior thought\"},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"new question\",\"cache_control\":{\"type\":\"ephemeral\",\"ttl\":\"1h\"}}]}],\"stream\":true,\"prompt_cache_key\":\"completions-openrouter-session\",\"prompt_cache_retention\":\"24h\",\"stream_options\":{\"include_usage\":true},\"store\":false,\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false},\"strict\":false},\"cache_control\":{\"type\":\"ephemeral\",\"ttl\":\"1h\"}}],\"reasoning\":{\"effort\":\"xhigh\"},\"provider\":{\"allow_fallbacks\":false,\"order\":[\"fixture-primary\"]},\"providerOptions\":{\"gateway\":{\"only\":[\"fixture-provider\"]}}}"
+      }
+    },
+    {
+      "name": "completions-chat-template-kwargs-order",
+      "api": "openai-completions",
+      "model": {
+        "id": "chat-template-fixture-model",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-completions",
+        "provider": "chat-template-proxy",
+        "baseUrl": "https://chat-template.fixture.invalid/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "thinkingLevelMap": {
+          "off": "none",
+          "xhigh": "max"
+        },
+        "compat": {
+          "supportsStore": false,
+          "supportsDeveloperRole": false,
+          "supportsReasoningEffort": false,
+          "thinkingFormat": "chat-template",
+          "chatTemplateKwargs": {
+            "zeta_mode": "fixture",
+            "preserve_thinking": true,
+            "reasoning_effort": {
+              "$var": "thinking.effort",
+              "omitWhenOff": true
+            },
+            "alpha_enabled": {
+              "$var": "thinking.enabled"
+            }
+          }
+        }
+      },
+      "context": {
+        "systemPrompt": "Use the configured chat template.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "map the effort",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "cacheRetention": "none",
+        "reasoningEffort": "xhigh"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://chat-template.fixture.invalid/v1/chat/completions",
+        "headers": {
+          "authorization": "Bearer fixture-key",
+          "content-type": "application/json"
+        },
+        "body": "{\"model\":\"chat-template-fixture-model\",\"messages\":[{\"role\":\"system\",\"content\":\"Use the configured chat template.\"},{\"role\":\"user\",\"content\":\"map the effort\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"chat_template_kwargs\":{\"zeta_mode\":\"fixture\",\"preserve_thinking\":true,\"reasoning_effort\":\"max\",\"alpha_enabled\":true}}"
+      }
+    }
+  ]
+}

@@ -7,8 +7,8 @@ This tracker follows the scheduled work-package index in `OVERVIEW.md`. The inde
 | 0 | 001 | complete |
 | 0 | 002 | complete |
 | 1 | 110 | complete |
-| 1 | 120 | pending |
-| 1 | 130 | pending |
+| 1 | 120 | complete |
+| 1 | 130 | in progress |
 | 1 | 140 | pending |
 | 1 | 150 | pending |
 | 1 | 160 | pending |
