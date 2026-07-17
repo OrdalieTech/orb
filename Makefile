@@ -31,8 +31,10 @@ ensure-upstream-fixture-tools: upstream
 	@if [ ! -x .upstream/node_modules/.bin/tsx ] || \
 		[ "$$(node -p 'require("./.upstream/node_modules/partial-json/package.json").version' 2>/dev/null)" != "0.1.7" ] || \
 		[ "$$(node -p 'require("./.upstream/node_modules/typebox/package.json").version' 2>/dev/null)" != "1.1.38" ] || \
-		[ "$$(node -p 'require("./.upstream/node_modules/openai/package.json").version' 2>/dev/null)" != "6.26.0" ]; then \
-		cd .upstream && npm install --ignore-scripts --no-save --workspaces=false tsx@4.22.1 partial-json@0.1.7 typebox@1.1.38 openai@6.26.0; \
+		[ "$$(node -p 'require("./.upstream/node_modules/openai/package.json").version' 2>/dev/null)" != "6.26.0" ] || \
+		[ "$$(node -p 'require("./.upstream/node_modules/diff/package.json").version' 2>/dev/null)" != "8.0.4" ] || \
+		[ "$$(node -p 'require("./.upstream/node_modules/cross-spawn/package.json").version' 2>/dev/null)" != "7.0.6" ]; then \
+		cd .upstream && npm install --ignore-scripts --no-save --workspaces=false tsx@4.22.1 partial-json@0.1.7 typebox@1.1.38 openai@6.26.0 diff@8.0.4 cross-spawn@7.0.6; \
 	fi
 
 fixtures: ensure-upstream-fixture-tools

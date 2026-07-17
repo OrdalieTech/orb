@@ -5,6 +5,7 @@ import { generateF1PartialJSON } from "./f1-partialjson.ts";
 import { generateF1Schema } from "./f1-schema.ts";
 import { generateF2 } from "./f2-openai.ts";
 import { generateF3 } from "./f3-agent.ts";
+import { generateF4 } from "./f4-edit.ts";
 import { generateF5 } from "./f5-truncation.ts";
 
 const upstreamRoot = process.cwd();
@@ -19,4 +20,5 @@ await generateF1PartialJSON(upstreamRoot, outputRoot, upstreamCommit);
 await generateF1Schema(upstreamRoot, outputRoot, upstreamCommit);
 await generateF2(upstreamRoot, outputRoot, upstreamCommit);
 await generateF3(upstreamRoot, outputRoot, upstreamCommit);
+await generateF4(upstreamRoot, outputRoot, upstreamCommit);
 await generateF5(upstreamRoot, outputRoot, upstreamCommit);

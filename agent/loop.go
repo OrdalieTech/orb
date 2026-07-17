@@ -391,9 +391,12 @@ type executedToolBatch struct {
 }
 
 type preparedToolCall struct {
-	toolCall *ai.ToolCall
-	tool     AgentTool
-	args     any
+	toolCall         *ai.ToolCall
+	tool             AgentTool
+	args             any
+	executionContext context.Context
+	releaseExecution func()
+	executionError   error
 }
 
 type finalizedToolCall struct {
@@ -539,6 +542,24 @@ func executeToolCallsParallel(
 		}
 	}
 
+	for index := range entries {
+		prepared := entries[index].prepared
+		if prepared == nil {
+			continue
+		}
+		preparer, ok := prepared.tool.(ParallelExecutionPreparer)
+		if !ok {
+			continue
+		}
+		executionContext, release, err := preparer.PrepareParallelExecution(ctx, prepared.args)
+		if err != nil {
+			prepared.executionError = err
+			continue
+		}
+		prepared.executionContext = executionContext
+		prepared.releaseExecution = release
+	}
+
 	var wait sync.WaitGroup
 	for index := range entries {
 		if entries[index].prepared == nil {
@@ -600,8 +621,9 @@ func prepareToolCall(
 	argumentJSON, err := ai.MarshalToolCallArguments(toolCall)
 	if err == nil && spec.PrepareArguments != nil {
 		originalArgs := args
+		originalSnapshot := cloneJSONValue(originalArgs)
 		args, err = spec.PrepareArguments(originalArgs)
-		if err == nil && !sameReference(originalArgs, args) {
+		if err == nil && (!sameReference(originalArgs, args) || !reflect.DeepEqual(originalSnapshot, args)) {
 			argumentJSON, err = ai.Marshal(args)
 		}
 	}
@@ -658,6 +680,13 @@ func executePreparedToolCall(
 	prepared *preparedToolCall,
 	emitter *eventEmitter,
 ) (executedToolCall, error) {
+	executionContext := ctx
+	if prepared.executionContext != nil {
+		executionContext = prepared.executionContext
+	}
+	if prepared.releaseExecution != nil {
+		defer prepared.releaseExecution()
+	}
 	var updateWait sync.WaitGroup
 	var updateMu sync.Mutex
 	acceptingUpdates := true
@@ -673,7 +702,7 @@ func executePreparedToolCall(
 		updateMu.Unlock()
 		go func() {
 			defer updateWait.Done()
-			if err := emitter.emit(ctx, event); err != nil {
+			if err := emitter.emit(executionContext, event); err != nil {
 				updateMu.Lock()
 				if updateErr == nil {
 					updateErr = err
@@ -683,7 +712,11 @@ func executePreparedToolCall(
 		}()
 	}
 
-	result, executeErr := prepared.tool.Execute(ctx, prepared.toolCall.ID, prepared.args, onUpdate)
+	var result AgentToolResult
+	executeErr := prepared.executionError
+	if executeErr == nil {
+		result, executeErr = prepared.tool.Execute(executionContext, prepared.toolCall.ID, prepared.args, onUpdate)
+	}
 	updateMu.Lock()
 	acceptingUpdates = false
 	updateMu.Unlock()

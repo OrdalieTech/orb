@@ -110,6 +110,105 @@ func TestRunLoopParallelCompletionAndSourceOrder(t *testing.T) {
 	}
 }
 
+type preparingLoopTool struct {
+	mu       sync.Mutex
+	prepared []string
+}
+
+func (*preparingLoopTool) Spec() AgentToolSpec {
+	return AgentToolSpec{
+		Name:       "prepare",
+		Parameters: jsonschema.Schema(`{"type":"object","required":["value"],"properties":{"value":{"type":"string"}}}`),
+	}
+}
+
+func (tool *preparingLoopTool) PrepareParallelExecution(ctx context.Context, params any) (context.Context, func(), error) {
+	tool.mu.Lock()
+	tool.prepared = append(tool.prepared, params.(map[string]any)["value"].(string))
+	tool.mu.Unlock()
+	return ctx, func() {}, nil
+}
+
+func (*preparingLoopTool) Execute(context.Context, string, any, AgentToolUpdateCallback) (AgentToolResult, error) {
+	return textToolResult("done"), nil
+}
+
+func TestRunLoopPreparesParallelToolsInSourceOrder(t *testing.T) {
+	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{
+		loopAssistant(ai.StopReasonToolUse,
+			&ai.ToolCall{ID: "call-1", Name: "prepare", Arguments: map[string]any{"value": "first"}},
+			&ai.ToolCall{ID: "call-2", Name: "prepare", Arguments: map[string]any{"value": "second"}},
+		),
+		loopAssistant(ai.StopReasonStop),
+	}}
+	tool := &preparingLoopTool{}
+	_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
+		Model: loopModel(), StreamFn: responses.stream, ToolExecution: ToolExecutionParallel,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool.mu.Lock()
+	defer tool.mu.Unlock()
+	if got, want := strings.Join(tool.prepared, ","), "first,second"; got != want {
+		t.Fatalf("preparation order = %q, want %q", got, want)
+	}
+}
+
+func TestRunLoopPreparesInvocationOrderedResourcesInSourceOrder(t *testing.T) {
+	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{
+		loopAssistant(ai.StopReasonToolUse,
+			&ai.ToolCall{ID: "call-1", Name: "ordered", Arguments: map[string]any{"value": "first"}},
+			&ai.ToolCall{ID: "call-2", Name: "ordered", Arguments: map[string]any{"value": "second"}},
+		),
+		loopAssistant(ai.StopReasonStop),
+	}}
+	tool := &parallelPreparationTestTool{}
+	_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
+		Model: loopModel(), StreamFn: responses.stream, ToolExecution: ToolExecutionParallel,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool.mutex.Lock()
+	defer tool.mutex.Unlock()
+	if got, want := joinStrings(tool.prepared), "first,second"; got != want {
+		t.Fatalf("parallel preparation order = %s, want %s", got, want)
+	}
+	if tool.released != 2 {
+		t.Fatalf("parallel releases = %d, want 2", tool.released)
+	}
+}
+
+type parallelPreparationTestTool struct {
+	mutex    sync.Mutex
+	prepared []string
+	released int
+}
+
+func (*parallelPreparationTestTool) Spec() AgentToolSpec {
+	return AgentToolSpec{
+		Name:       "ordered",
+		Parameters: jsonschema.Schema(`{"type":"object","required":["value"],"properties":{"value":{"type":"string"}}}`),
+	}
+}
+
+func (tool *parallelPreparationTestTool) PrepareParallelExecution(ctx context.Context, args any) (context.Context, func(), error) {
+	value := args.(map[string]any)["value"].(string)
+	tool.mutex.Lock()
+	tool.prepared = append(tool.prepared, value)
+	tool.mutex.Unlock()
+	return ctx, func() {
+		tool.mutex.Lock()
+		tool.released++
+		tool.mutex.Unlock()
+	}, nil
+}
+
+func (*parallelPreparationTestTool) Execute(context.Context, string, any, AgentToolUpdateCallback) (AgentToolResult, error) {
+	return textToolResult("done"), nil
+}
+
 func TestRunLoopHooksMutateWithoutRevalidationAndIgnoreLateUpdates(t *testing.T) {
 	call := &ai.ToolCall{ID: "call-1", Name: "mutate", Arguments: map[string]any{"value": "valid"}}
 	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{
@@ -397,6 +496,37 @@ func TestRunLoopIdentityPreparePreservesRawArgumentOrderInValidationError(t *tes
 	aIndex := strings.Index(errorText, `"a": 2`)
 	if zIndex < 0 || aIndex < 0 || zIndex >= aIndex {
 		t.Fatalf("validation diagnostic lost raw order:\n%s", errorText)
+	}
+}
+
+func TestRunLoopIdentityPrepareValidatesMutatedArguments(t *testing.T) {
+	call := &ai.ToolCall{ID: "call-1", Name: "prepared", Arguments: map[string]any{"value": "before"}}
+	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{
+		loopAssistant(ai.StopReasonToolUse, call),
+		loopAssistant(ai.StopReasonStop),
+	}}
+	var executed any
+	tool := AgentToolFunc{
+		AgentToolSpec: AgentToolSpec{
+			Name:       "prepared",
+			Parameters: jsonschema.Schema(`{"type":"object","required":["value"],"properties":{"value":{"type":"number"}}}`),
+			PrepareArguments: func(args any) (any, error) {
+				args.(map[string]any)["value"] = 42
+				return args, nil
+			},
+		},
+		Run: func(_ context.Context, _ string, args any, _ AgentToolUpdateCallback) (AgentToolResult, error) {
+			executed = args.(map[string]any)["value"]
+			return textToolResult("done"), nil
+		},
+	}
+	if _, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
+		Model: loopModel(), StreamFn: responses.stream,
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if executed != float64(42) {
+		t.Fatalf("executed prepared value = %#v", executed)
 	}
 }
 

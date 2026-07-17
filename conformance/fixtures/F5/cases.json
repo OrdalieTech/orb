@@ -243,6 +243,39 @@
       }
     },
     {
+      "name": "tail-partial-line-replaces-lone-surrogate",
+      "operation": "tail",
+      "input": {
+        "kind": "utf16",
+        "units": [
+          112,
+          114,
+          101,
+          102,
+          105,
+          120,
+          55296
+        ]
+      },
+      "options": {
+        "maxLines": 10,
+        "maxBytes": 3
+      },
+      "expected": {
+        "content": "�",
+        "truncated": true,
+        "truncatedBy": "bytes",
+        "totalLines": 1,
+        "totalBytes": 9,
+        "outputLines": 1,
+        "outputBytes": 3,
+        "lastLinePartial": true,
+        "firstLineExceedsLimit": false,
+        "maxLines": 10,
+        "maxBytes": 3
+      }
+    },
+    {
       "name": "head-zero-lines",
       "operation": "head",
       "input": {
@@ -505,6 +538,12 @@
       "operation": "size",
       "bytes": 1536,
       "expected": "1.5KB"
+    },
+    {
+      "name": "size-kibibytes-half-tie",
+      "operation": "size",
+      "bytes": 51456,
+      "expected": "50.3KB"
     },
     {
       "name": "size-mebibytes",
