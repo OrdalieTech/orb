@@ -66,3 +66,8 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/coding-agent/src/core/tools/file-mutation-queue.ts` | `codingagent/tools/mutation_queue.go`, `codingagent/tools/mutation_queue_test.go` | WP-140 |
 | `packages/agent/src/agent-loop.ts` (parallel invocation-order reservation) | `agent/types.go`, `agent/loop.go`, `agent/loop_test.go` | WP-140 |
 | `packages/coding-agent/src/core/tools/truncate.ts` | `internal/truncate/truncate.go`, `internal/truncate/truncate_test.go`, `conformance/runner/f5_truncation_test.go` | WP-140 |
+| `packages/coding-agent/src/core/tools/bash.ts` | `codingagent/tools/bash.go`, `codingagent/tools/bash_unix.go`, `codingagent/tools/bash_test.go`, `codingagent/tools/bash_unix_test.go` | WP-150 |
+| `packages/coding-agent/src/core/tools/output-accumulator.ts` | `codingagent/tools/output_accumulator.go`, `codingagent/tools/output_accumulator_test.go`, `conformance/extract/f5-truncation.ts`, `conformance/fixtures/F5/accumulator.json`, `conformance/runner/f5_truncation_test.go` | WP-150 |
+| `packages/coding-agent/src/utils/shell.ts`, `packages/coding-agent/src/utils/child-process.ts` | `codingagent/tools/bash_unix.go`, `codingagent/tools/bash_unix_test.go` | WP-150 |
+| `packages/coding-agent/src/core/tools/grep.ts`, `packages/coding-agent/src/core/tools/find.ts` | `codingagent/tools/grep.go`, `codingagent/tools/find.go`, `codingagent/tools/grep_test.go`, `codingagent/tools/find_test.go`, `codingagent/tools/search_test.go`, `codingagent/tools/search_minitree_test.go`, `codingagent/tools/testdata/search/tree/` | WP-150 |
+| `packages/coding-agent/src/utils/tools-manager.ts` | `codingagent/tools/toolmanager.go`, `codingagent/tools/toolmanager_test.go` | WP-150 |

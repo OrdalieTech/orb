@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -29,6 +29,17 @@ type SizeCase = {
 };
 
 type FixtureCase = TruncationCase | LineCase | SizeCase;
+
+type AccumulatorChunk =
+  | { kind: "utf8"; value: string }
+  | { kind: "bytes"; values: number[] }
+  | { kind: "repeatLines"; value: string; count: number; trailingNewline?: boolean };
+
+type AccumulatorCase = {
+  name: string;
+  options?: { maxLines?: number; maxBytes?: number; tempFilePrefix?: string };
+  chunks: AccumulatorChunk[];
+};
 
 const cases: FixtureCase[] = [
   { name: "head-empty-defaults", operation: "head", input: { kind: "literal", value: "" } },
@@ -161,6 +172,75 @@ const cases: FixtureCase[] = [
   { name: "size-mebibytes", operation: "size", bytes: 1572864 },
 ];
 
+const accumulatorCases: AccumulatorCase[] = [
+  {
+    name: "empty-finish-is-idempotent",
+    options: { maxLines: 3, maxBytes: 16, tempFilePrefix: "pi-f5-empty" },
+    chunks: [],
+  },
+  {
+    name: "streaming-line-counts-and-trailing-newline",
+    options: { maxLines: 3, maxBytes: 100, tempFilePrefix: "pi-f5-lines" },
+    chunks: [
+      { kind: "utf8", value: "alpha\n" },
+      { kind: "utf8", value: "beta" },
+      { kind: "utf8", value: "\ngamma\n" },
+    ],
+  },
+  {
+    name: "split-utf8-sequence",
+    options: { maxLines: 3, maxBytes: 100, tempFilePrefix: "pi-f5-split" },
+    chunks: [
+      { kind: "bytes", values: [0xe2] },
+      { kind: "bytes", values: [0x82] },
+      { kind: "bytes", values: [0xac, 0x0a] },
+    ],
+  },
+  {
+    name: "finish-flushes-incomplete-utf8",
+    options: { maxLines: 3, maxBytes: 2, tempFilePrefix: "pi-f5-incomplete" },
+    chunks: [{ kind: "bytes", values: [0xe2] }],
+  },
+  {
+    name: "invalid-utf8-spills-original-raw-bytes",
+    options: { maxLines: 10, maxBytes: 3, tempFilePrefix: "pi-f5-invalid" },
+    chunks: [
+      { kind: "bytes", values: [0xff, 0x0a] },
+      { kind: "bytes", values: [0x61] },
+    ],
+  },
+  {
+    name: "invalid-utf8-replaces-maximal-subpart",
+    options: { maxLines: 10, maxBytes: 100, tempFilePrefix: "pi-f5-invalid-subpart" },
+    chunks: [{ kind: "bytes", values: [0xe1, 0x80, 0x41] }],
+  },
+  {
+    name: "line-limit-does-not-count-trailing-newline",
+    options: { maxLines: 2, maxBytes: 100, tempFilePrefix: "pi-f5-line-limit" },
+    chunks: [{ kind: "repeatLines", value: "line", count: 4, trailingNewline: true }],
+  },
+  {
+    name: "byte-limit-keeps-partial-last-line",
+    options: { maxLines: 10, maxBytes: 7, tempFilePrefix: "pi-f5-byte-limit" },
+    chunks: [{ kind: "utf8", value: "prefix😀suffix" }],
+  },
+  {
+    name: "rolling-tail-drops-incomplete-leading-line",
+    options: { maxLines: 4, maxBytes: 20, tempFilePrefix: "pi-f5-rolling" },
+    chunks: [{ kind: "repeatLines", value: "0123456789", count: 20, trailingNewline: true }],
+  },
+  {
+    name: "zero-line-limit",
+    options: { maxLines: 0, maxBytes: 100, tempFilePrefix: "pi-f5-zero-lines" },
+    chunks: [{ kind: "utf8", value: "alpha\nbeta\n" }],
+  },
+  {
+    name: "zero-byte-limit",
+    options: { maxLines: 10, maxBytes: 0, tempFilePrefix: "pi-f5-zero-bytes" },
+    chunks: [{ kind: "utf8", value: "alpha" }],
+  },
+];
+
 function materialize(spec: InputSpec): string {
   switch (spec.kind) {
     case "literal":
@@ -174,6 +254,101 @@ function materialize(spec: InputSpec): string {
     case "utf16":
       return String.fromCharCode(...spec.units);
   }
+}
+
+function materializeChunk(spec: AccumulatorChunk): Buffer {
+  switch (spec.kind) {
+    case "utf8":
+      return Buffer.from(spec.value, "utf-8");
+    case "bytes":
+      return Buffer.from(spec.values);
+    case "repeatLines": {
+      const value = Array.from({ length: spec.count }, () => spec.value).join("\n");
+      return Buffer.from(spec.trailingNewline ? `${value}\n` : value, "utf-8");
+    }
+  }
+}
+
+function canonicalizeAccumulatorSnapshot(snapshot: {
+  content: string;
+  truncation: unknown;
+  fullOutputPath?: string;
+}) {
+  return {
+    content: snapshot.content,
+    truncation: snapshot.truncation,
+    hasFullOutputPath: snapshot.fullOutputPath !== undefined,
+  };
+}
+
+async function generateAccumulatorCases(moduleURL: string) {
+  const outputAccumulator = (await import(moduleURL)) as {
+    OutputAccumulator: new (options?: {
+      maxLines?: number;
+      maxBytes?: number;
+      tempFilePrefix?: string;
+    }) => {
+      append(data: Buffer): void;
+      finish(): void;
+      snapshot(options?: { persistIfTruncated?: boolean }): {
+        content: string;
+        truncation: unknown;
+        fullOutputPath?: string;
+      };
+      closeTempFile(): Promise<void>;
+      getLastLineBytes(): number;
+    };
+  };
+
+  return Promise.all(
+    accumulatorCases.map(async (fixtureCase) => {
+      const accumulator = new outputAccumulator.OutputAccumulator(fixtureCase.options);
+      const chunkSnapshots = [];
+      let fullOutputPath: string | undefined;
+      try {
+        for (const chunk of fixtureCase.chunks) {
+          accumulator.append(materializeChunk(chunk));
+          const snapshot = accumulator.snapshot();
+          fullOutputPath = snapshot.fullOutputPath ?? fullOutputPath;
+          chunkSnapshots.push(canonicalizeAccumulatorSnapshot(snapshot));
+        }
+
+        accumulator.finish();
+        const finalSnapshot = accumulator.snapshot({ persistIfTruncated: true });
+        fullOutputPath = finalSnapshot.fullOutputPath ?? fullOutputPath;
+        accumulator.finish();
+        const idempotentFinishSnapshot = accumulator.snapshot({ persistIfTruncated: true });
+        fullOutputPath = idempotentFinishSnapshot.fullOutputPath ?? fullOutputPath;
+
+        let appendAfterFinishError: string | null = null;
+        try {
+          accumulator.append(Buffer.alloc(0));
+        } catch (error) {
+          appendAfterFinishError = error instanceof Error ? error.message : String(error);
+        }
+
+        await accumulator.closeTempFile();
+        const persistedOutputBase64 = fullOutputPath
+          ? (await readFile(fullOutputPath)).toString("base64")
+          : null;
+
+        return {
+          ...fixtureCase,
+          expected: {
+            chunkSnapshots,
+            finalSnapshot: canonicalizeAccumulatorSnapshot(finalSnapshot),
+            idempotentFinishSnapshot: canonicalizeAccumulatorSnapshot(idempotentFinishSnapshot),
+            lastLineBytes: accumulator.getLastLineBytes(),
+            appendAfterFinishError,
+            persistedOutputBase64,
+          },
+        };
+      } finally {
+        await accumulator.closeTempFile();
+        if (fullOutputPath) await rm(fullOutputPath, { force: true });
+      }
+    }),
+  );
 }
 
 export async function generateF5(upstreamRoot: string, outputRoot: string, upstreamCommit: string): Promise<void> {
@@ -203,6 +378,10 @@ export async function generateF5(upstreamRoot: string, outputRoot: string, upstr
     return { ...fixtureCase, expected };
   });
 
+  const accumulatorSource = "packages/coding-agent/src/core/tools/output-accumulator.ts";
+  const accumulatorModuleURL = pathToFileURL(path.join(upstreamRoot, accumulatorSource)).href;
+  const generatedAccumulatorCases = await generateAccumulatorCases(accumulatorModuleURL);
+
   const familyDir = path.join(outputRoot, "F5");
   await mkdir(familyDir, { recursive: true });
   const manifest = {
@@ -210,9 +389,14 @@ export async function generateF5(upstreamRoot: string, outputRoot: string, upstr
     upstreamCommit,
     generator: "conformance/extract/f5-truncation.ts",
     source,
-    files: ["cases.json"],
+    additionalSources: [accumulatorSource],
+    files: ["cases.json", "accumulator.json"],
   };
 
   await writeFile(path.join(familyDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   await writeFile(path.join(familyDir, "cases.json"), `${JSON.stringify({ cases: generated }, null, 2)}\n`);
+  await writeFile(
+    path.join(familyDir, "accumulator.json"),
+    `${JSON.stringify({ cases: generatedAccumulatorCases }, null, 2)}\n`,
+  );
 }

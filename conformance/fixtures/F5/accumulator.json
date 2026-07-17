@@ -1,0 +1,900 @@
+{
+  "cases": [
+    {
+      "name": "empty-finish-is-idempotent",
+      "options": {
+        "maxLines": 3,
+        "maxBytes": 16,
+        "tempFilePrefix": "pi-f5-empty"
+      },
+      "chunks": [],
+      "expected": {
+        "chunkSnapshots": [],
+        "finalSnapshot": {
+          "content": "",
+          "truncation": {
+            "content": "",
+            "truncated": false,
+            "truncatedBy": null,
+            "totalLines": 0,
+            "totalBytes": 0,
+            "outputLines": 0,
+            "outputBytes": 0,
+            "lastLinePartial": false,
+            "firstLineExceedsLimit": false,
+            "maxLines": 3,
+            "maxBytes": 16
+          },
+          "hasFullOutputPath": false
+        },
+        "idempotentFinishSnapshot": {
+          "content": "",
+          "truncation": {
+            "content": "",
+            "truncated": false,
+            "truncatedBy": null,
+            "totalLines": 0,
+            "totalBytes": 0,
+            "outputLines": 0,
+            "outputBytes": 0,
+            "lastLinePartial": false,
+            "firstLineExceedsLimit": false,
+            "maxLines": 3,
+            "maxBytes": 16
+          },
+          "hasFullOutputPath": false
+        },
+        "lastLineBytes": 0,
+        "appendAfterFinishError": "Cannot append to a finished output accumulator",
+        "persistedOutputBase64": null
+      }
+    },
+    {
+      "name": "streaming-line-counts-and-trailing-newline",
+      "options": {
+        "maxLines": 3,
+        "maxBytes": 100,
+        "tempFilePrefix": "pi-f5-lines"
+      },
+      "chunks": [
+        {
+          "kind": "utf8",
+          "value": "alpha\n"
+        },
+        {
+          "kind": "utf8",
+          "value": "beta"
+        },
+        {
+          "kind": "utf8",
+          "value": "\ngamma\n"
+        }
+      ],
+      "expected": {
+        "chunkSnapshots": [
+          {
+            "content": "alpha\n",
+            "truncation": {
+              "content": "alpha\n",
+              "truncated": false,
+              "truncatedBy": null,
+              "totalLines": 1,
+              "totalBytes": 6,
+              "outputLines": 1,
+              "outputBytes": 6,
+              "lastLinePartial": false,
+              "firstLineExceedsLimit": false,
+              "maxLines": 3,
+              "maxBytes": 100
+            },
+            "hasFullOutputPath": false
+          },
+          {
+            "content": "alpha\nbeta",
+            "truncation": {
+              "content": "alpha\nbeta",
+              "truncated": false,
+              "truncatedBy": null,
+              "totalLines": 2,
+              "totalBytes": 10,
+              "outputLines": 2,
+              "outputBytes": 10,
+              "lastLinePartial": false,
+              "firstLineExceedsLimit": false,
+              "maxLines": 3,
+              "maxBytes": 100
+            },
+            "hasFullOutputPath": false
+          },
+          {
+            "content": "alpha\nbeta\ngamma\n",
+            "truncation": {
+              "content": "alpha\nbeta\ngamma\n",
+              "truncated": false,
+              "truncatedBy": null,
+              "totalLines": 3,
+              "totalBytes": 17,
+              "outputLines": 3,
+              "outputBytes": 17,
+              "lastLinePartial": false,
+              "firstLineExceedsLimit": false,
+              "maxLines": 3,
+              "maxBytes": 100
+            },
+            "hasFullOutputPath": false
+          }
+        ],
+        "finalSnapshot": {
+          "content": "alpha\nbeta\ngamma\n",
+          "truncation": {
+            "content": "alpha\nbeta\ngamma\n",
+            "truncated": false,
+            "truncatedBy": null,
+            "totalLines": 3,
+            "totalBytes": 17,
+            "outputLines": 3,
+            "outputBytes": 17,
+            "lastLinePartial": false,
+            "firstLineExceedsLimit": false,
+            "maxLines": 3,
+            "maxBytes": 100
+          },
+          "hasFullOutputPath": false
+        },
+        "idempotentFinishSnapshot": {
+          "content": "alpha\nbeta\ngamma\n",
+          "truncation": {
+            "content": "alpha\nbeta\ngamma\n",
+            "truncated": false,
+            "truncatedBy": null,
+            "totalLines": 3,
+            "totalBytes": 17,
+            "outputLines": 3,
+            "outputBytes": 17,
+            "lastLinePartial": false,
+            "firstLineExceedsLimit": false,
+            "maxLines": 3,
+            "maxBytes": 100
+          },
+          "hasFullOutputPath": false
+        },
+        "lastLineBytes": 0,
+        "appendAfterFinishError": "Cannot append to a finished output accumulator",
+        "persistedOutputBase64": null
+      }
+    },
+    {
+      "name": "split-utf8-sequence",
+      "options": {
+        "maxLines": 3,
+        "maxBytes": 100,
+        "tempFilePrefix": "pi-f5-split"
+      },
+      "chunks": [
+        {
+          "kind": "bytes",
+          "values": [
+            226
+          ]
+        },
+        {
+          "kind": "bytes",
+          "values": [
+            130
+          ]
+        },
+        {
+          "kind": "bytes",
+          "values": [
+            172,
+            10
+          ]
+        }
+      ],
+      "expected": {
+        "chunkSnapshots": [
+          {
+            "content": "",
+            "truncation": {
+              "content": "",
+              "truncated": false,
+              "truncatedBy": null,
+              "totalLines": 0,
+              "totalBytes": 0,
+              "outputLines": 0,
+              "outputBytes": 0,
+              "lastLinePartial": false,
+              "firstLineExceedsLimit": false,
+              "maxLines": 3,
+              "maxBytes": 100
+            },
+            "hasFullOutputPath": false
+          },
+          {
+            "content": "",
+            "truncation": {
+              "content": "",
+              "truncated": false,
+              "truncatedBy": null,
+              "totalLines": 0,
+              "totalBytes": 0,
+              "outputLines": 0,
+              "outputBytes": 0,
+              "lastLinePartial": false,
+              "firstLineExceedsLimit": false,
+              "maxLines": 3,
+              "maxBytes": 100
+            },
+            "hasFullOutputPath": false
+          },
+          {
+            "content": "€\n",
+            "truncation": {
+              "content": "€\n",
+              "truncated": false,
+              "truncatedBy": null,
+              "totalLines": 1,
+              "totalBytes": 4,
+              "outputLines": 1,
+              "outputBytes": 4,
+              "lastLinePartial": false,
+              "firstLineExceedsLimit": false,
+              "maxLines": 3,
+              "maxBytes": 100
+            },
+            "hasFullOutputPath": false
+          }
+        ],
+        "finalSnapshot": {
+          "content": "€\n",
+          "truncation": {
+            "content": "€\n",
+            "truncated": false,
+            "truncatedBy": null,
+            "totalLines": 1,
+            "totalBytes": 4,
+            "outputLines": 1,
+            "outputBytes": 4,
+            "lastLinePartial": false,
+            "firstLineExceedsLimit": false,
+            "maxLines": 3,
+            "maxBytes": 100
+          },
+          "hasFullOutputPath": false
+        },
+        "idempotentFinishSnapshot": {
+          "content": "€\n",
+          "truncation": {
+            "content": "€\n",
+            "truncated": false,
+            "truncatedBy": null,
+            "totalLines": 1,
+            "totalBytes": 4,
+            "outputLines": 1,
+            "outputBytes": 4,
+            "lastLinePartial": false,
+            "firstLineExceedsLimit": false,
+            "maxLines": 3,
+            "maxBytes": 100
+          },
+          "hasFullOutputPath": false
+        },
+        "lastLineBytes": 0,
+        "appendAfterFinishError": "Cannot append to a finished output accumulator",
+        "persistedOutputBase64": null
+      }
+    },
+    {
+      "name": "finish-flushes-incomplete-utf8",
+      "options": {
+        "maxLines": 3,
+        "maxBytes": 2,
+        "tempFilePrefix": "pi-f5-incomplete"
+      },
+      "chunks": [
+        {
+          "kind": "bytes",
+          "values": [
+            226
+          ]
+        }
+      ],
+      "expected": {
+        "chunkSnapshots": [
+          {
+            "content": "",
+            "truncation": {
+              "content": "",
+              "truncated": false,
+              "truncatedBy": null,
+              "totalLines": 0,
+              "totalBytes": 0,
+              "outputLines": 0,
+              "outputBytes": 0,
+              "lastLinePartial": false,
+              "firstLineExceedsLimit": false,
+              "maxLines": 3,
+              "maxBytes": 2
+            },
+            "hasFullOutputPath": false
+          }
+        ],
+        "finalSnapshot": {
+          "content": "",
+          "truncation": {
+            "content": "",
+            "truncated": true,
+            "truncatedBy": "bytes",
+            "totalLines": 1,
+            "totalBytes": 3,
+            "outputLines": 1,
+            "outputBytes": 0,
+            "lastLinePartial": true,
+            "firstLineExceedsLimit": false,
+            "maxLines": 3,
+            "maxBytes": 2
+          },
+          "hasFullOutputPath": true
+        },
+        "idempotentFinishSnapshot": {
+          "content": "",
+          "truncation": {
+            "content": "",
+            "truncated": true,
+            "truncatedBy": "bytes",
+            "totalLines": 1,
+            "totalBytes": 3,
+            "outputLines": 1,
+            "outputBytes": 0,
+            "lastLinePartial": true,
+            "firstLineExceedsLimit": false,
+            "maxLines": 3,
+            "maxBytes": 2
+          },
+          "hasFullOutputPath": true
+        },
+        "lastLineBytes": 3,
+        "appendAfterFinishError": "Cannot append to a finished output accumulator",
+        "persistedOutputBase64": "4g=="
+      }
+    },
+    {
+      "name": "invalid-utf8-spills-original-raw-bytes",
+      "options": {
+        "maxLines": 10,
+        "maxBytes": 3,
+        "tempFilePrefix": "pi-f5-invalid"
+      },
+      "chunks": [
+        {
+          "kind": "bytes",
+          "values": [
+            255,
+            10
+          ]
+        },
+        {
+          "kind": "bytes",
+          "values": [
+            97
+          ]
+        }
+      ],
+      "expected": {
+        "chunkSnapshots": [
+          {
+            "content": "�",
+            "truncation": {
+              "content": "�",
+              "truncated": true,
+              "truncatedBy": "lines",
+              "totalLines": 1,
+              "totalBytes": 4,
+              "outputLines": 1,
+              "outputBytes": 3,
+              "lastLinePartial": false,
+              "firstLineExceedsLimit": false,
+              "maxLines": 10,
+              "maxBytes": 3
+            },
+            "hasFullOutputPath": true
+          },
+          {
+            "content": "a",
+            "truncation": {
+              "content": "a",
+              "truncated": true,
+              "truncatedBy": "bytes",
+              "totalLines": 2,
+              "totalBytes": 5,
+              "outputLines": 1,
+              "outputBytes": 1,
+              "lastLinePartial": false,
+              "firstLineExceedsLimit": false,
+              "maxLines": 10,
+              "maxBytes": 3
+            },
+            "hasFullOutputPath": true
+          }
+        ],
+        "finalSnapshot": {
+          "content": "a",
+          "truncation": {
+            "content": "a",
+            "truncated": true,
+            "truncatedBy": "bytes",
+            "totalLines": 2,
+            "totalBytes": 5,
+            "outputLines": 1,
+            "outputBytes": 1,
+            "lastLinePartial": false,
+            "firstLineExceedsLimit": false,
+            "maxLines": 10,
+            "maxBytes": 3
+          },
+          "hasFullOutputPath": true
+        },
+        "idempotentFinishSnapshot": {
+          "content": "a",
+          "truncation": {
+            "content": "a",
+            "truncated": true,
+            "truncatedBy": "bytes",
+            "totalLines": 2,
+            "totalBytes": 5,
+            "outputLines": 1,
+            "outputBytes": 1,
+            "lastLinePartial": false,
+            "firstLineExceedsLimit": false,
+            "maxLines": 10,
+            "maxBytes": 3
+          },
+          "hasFullOutputPath": true
+        },
+        "lastLineBytes": 1,
+        "appendAfterFinishError": "Cannot append to a finished output accumulator",
+        "persistedOutputBase64": "/wph"
+      }
+    },
+    {
+      "name": "invalid-utf8-replaces-maximal-subpart",
+      "options": {
+        "maxLines": 10,
+        "maxBytes": 100,
+        "tempFilePrefix": "pi-f5-invalid-subpart"
+      },
+      "chunks": [
+        {
+          "kind": "bytes",
+          "values": [
+            225,
+            128,
+            65
+          ]
+        }
+      ],
+      "expected": {
+        "chunkSnapshots": [
+          {
+            "content": "�A",
+            "truncation": {
+              "content": "�A",
+              "truncated": false,
+              "truncatedBy": null,
+              "totalLines": 1,
+              "totalBytes": 4,
+              "outputLines": 1,
+              "outputBytes": 4,
+              "lastLinePartial": false,
+              "firstLineExceedsLimit": false,
+              "maxLines": 10,
+              "maxBytes": 100
+            },
+            "hasFullOutputPath": false
+          }
+        ],
+        "finalSnapshot": {
+          "content": "�A",
+          "truncation": {
+            "content": "�A",
+            "truncated": false,
+            "truncatedBy": null,
+            "totalLines": 1,
+            "totalBytes": 4,
+            "outputLines": 1,
+            "outputBytes": 4,
+            "lastLinePartial": false,
+            "firstLineExceedsLimit": false,
+            "maxLines": 10,
+            "maxBytes": 100
+          },
+          "hasFullOutputPath": false
+        },
+        "idempotentFinishSnapshot": {
+          "content": "�A",
+          "truncation": {
+            "content": "�A",
+            "truncated": false,
+            "truncatedBy": null,
+            "totalLines": 1,
+            "totalBytes": 4,
+            "outputLines": 1,
+            "outputBytes": 4,
+            "lastLinePartial": false,
+            "firstLineExceedsLimit": false,
+            "maxLines": 10,
+            "maxBytes": 100
+          },
+          "hasFullOutputPath": false
+        },
+        "lastLineBytes": 4,
+        "appendAfterFinishError": "Cannot append to a finished output accumulator",
+        "persistedOutputBase64": null
+      }
+    },
+    {
+      "name": "line-limit-does-not-count-trailing-newline",
+      "options": {
+        "maxLines": 2,
+        "maxBytes": 100,
+        "tempFilePrefix": "pi-f5-line-limit"
+      },
+      "chunks": [
+        {
+          "kind": "repeatLines",
+          "value": "line",
+          "count": 4,
+          "trailingNewline": true
+        }
+      ],
+      "expected": {
+        "chunkSnapshots": [
+          {
+            "content": "line\nline",
+            "truncation": {
+              "content": "line\nline",
+              "truncated": true,
+              "truncatedBy": "lines",
+              "totalLines": 4,
+              "totalBytes": 20,
+              "outputLines": 2,
+              "outputBytes": 9,
+              "lastLinePartial": false,
+              "firstLineExceedsLimit": false,
+              "maxLines": 2,
+              "maxBytes": 100
+            },
+            "hasFullOutputPath": true
+          }
+        ],
+        "finalSnapshot": {
+          "content": "line\nline",
+          "truncation": {
+            "content": "line\nline",
+            "truncated": true,
+            "truncatedBy": "lines",
+            "totalLines": 4,
+            "totalBytes": 20,
+            "outputLines": 2,
+            "outputBytes": 9,
+            "lastLinePartial": false,
+            "firstLineExceedsLimit": false,
+            "maxLines": 2,
+            "maxBytes": 100
+          },
+          "hasFullOutputPath": true
+        },
+        "idempotentFinishSnapshot": {
+          "content": "line\nline",
+          "truncation": {
+            "content": "line\nline",
+            "truncated": true,
+            "truncatedBy": "lines",
+            "totalLines": 4,
+            "totalBytes": 20,
+            "outputLines": 2,
+            "outputBytes": 9,
+            "lastLinePartial": false,
+            "firstLineExceedsLimit": false,
+            "maxLines": 2,
+            "maxBytes": 100
+          },
+          "hasFullOutputPath": true
+        },
+        "lastLineBytes": 0,
+        "appendAfterFinishError": "Cannot append to a finished output accumulator",
+        "persistedOutputBase64": "bGluZQpsaW5lCmxpbmUKbGluZQo="
+      }
+    },
+    {
+      "name": "byte-limit-keeps-partial-last-line",
+      "options": {
+        "maxLines": 10,
+        "maxBytes": 7,
+        "tempFilePrefix": "pi-f5-byte-limit"
+      },
+      "chunks": [
+        {
+          "kind": "utf8",
+          "value": "prefix😀suffix"
+        }
+      ],
+      "expected": {
+        "chunkSnapshots": [
+          {
+            "content": "suffix",
+            "truncation": {
+              "content": "suffix",
+              "truncated": true,
+              "truncatedBy": "bytes",
+              "totalLines": 1,
+              "totalBytes": 16,
+              "outputLines": 1,
+              "outputBytes": 6,
+              "lastLinePartial": true,
+              "firstLineExceedsLimit": false,
+              "maxLines": 10,
+              "maxBytes": 7
+            },
+            "hasFullOutputPath": true
+          }
+        ],
+        "finalSnapshot": {
+          "content": "suffix",
+          "truncation": {
+            "content": "suffix",
+            "truncated": true,
+            "truncatedBy": "bytes",
+            "totalLines": 1,
+            "totalBytes": 16,
+            "outputLines": 1,
+            "outputBytes": 6,
+            "lastLinePartial": true,
+            "firstLineExceedsLimit": false,
+            "maxLines": 10,
+            "maxBytes": 7
+          },
+          "hasFullOutputPath": true
+        },
+        "idempotentFinishSnapshot": {
+          "content": "suffix",
+          "truncation": {
+            "content": "suffix",
+            "truncated": true,
+            "truncatedBy": "bytes",
+            "totalLines": 1,
+            "totalBytes": 16,
+            "outputLines": 1,
+            "outputBytes": 6,
+            "lastLinePartial": true,
+            "firstLineExceedsLimit": false,
+            "maxLines": 10,
+            "maxBytes": 7
+          },
+          "hasFullOutputPath": true
+        },
+        "lastLineBytes": 16,
+        "appendAfterFinishError": "Cannot append to a finished output accumulator",
+        "persistedOutputBase64": "cHJlZml48J+YgHN1ZmZpeA=="
+      }
+    },
+    {
+      "name": "rolling-tail-drops-incomplete-leading-line",
+      "options": {
+        "maxLines": 4,
+        "maxBytes": 20,
+        "tempFilePrefix": "pi-f5-rolling"
+      },
+      "chunks": [
+        {
+          "kind": "repeatLines",
+          "value": "0123456789",
+          "count": 20,
+          "trailingNewline": true
+        }
+      ],
+      "expected": {
+        "chunkSnapshots": [
+          {
+            "content": "0123456789",
+            "truncation": {
+              "content": "0123456789",
+              "truncated": true,
+              "truncatedBy": "bytes",
+              "totalLines": 20,
+              "totalBytes": 220,
+              "outputLines": 1,
+              "outputBytes": 10,
+              "lastLinePartial": false,
+              "firstLineExceedsLimit": false,
+              "maxLines": 4,
+              "maxBytes": 20
+            },
+            "hasFullOutputPath": true
+          }
+        ],
+        "finalSnapshot": {
+          "content": "0123456789",
+          "truncation": {
+            "content": "0123456789",
+            "truncated": true,
+            "truncatedBy": "bytes",
+            "totalLines": 20,
+            "totalBytes": 220,
+            "outputLines": 1,
+            "outputBytes": 10,
+            "lastLinePartial": false,
+            "firstLineExceedsLimit": false,
+            "maxLines": 4,
+            "maxBytes": 20
+          },
+          "hasFullOutputPath": true
+        },
+        "idempotentFinishSnapshot": {
+          "content": "0123456789",
+          "truncation": {
+            "content": "0123456789",
+            "truncated": true,
+            "truncatedBy": "bytes",
+            "totalLines": 20,
+            "totalBytes": 220,
+            "outputLines": 1,
+            "outputBytes": 10,
+            "lastLinePartial": false,
+            "firstLineExceedsLimit": false,
+            "maxLines": 4,
+            "maxBytes": 20
+          },
+          "hasFullOutputPath": true
+        },
+        "lastLineBytes": 0,
+        "appendAfterFinishError": "Cannot append to a finished output accumulator",
+        "persistedOutputBase64": "MDEyMzQ1Njc4OQowMTIzNDU2Nzg5CjAxMjM0NTY3ODkKMDEyMzQ1Njc4OQowMTIzNDU2Nzg5CjAxMjM0NTY3ODkKMDEyMzQ1Njc4OQowMTIzNDU2Nzg5CjAxMjM0NTY3ODkKMDEyMzQ1Njc4OQowMTIzNDU2Nzg5CjAxMjM0NTY3ODkKMDEyMzQ1Njc4OQowMTIzNDU2Nzg5CjAxMjM0NTY3ODkKMDEyMzQ1Njc4OQowMTIzNDU2Nzg5CjAxMjM0NTY3ODkKMDEyMzQ1Njc4OQowMTIzNDU2Nzg5Cg=="
+      }
+    },
+    {
+      "name": "zero-line-limit",
+      "options": {
+        "maxLines": 0,
+        "maxBytes": 100,
+        "tempFilePrefix": "pi-f5-zero-lines"
+      },
+      "chunks": [
+        {
+          "kind": "utf8",
+          "value": "alpha\nbeta\n"
+        }
+      ],
+      "expected": {
+        "chunkSnapshots": [
+          {
+            "content": "",
+            "truncation": {
+              "content": "",
+              "truncated": true,
+              "truncatedBy": "lines",
+              "totalLines": 2,
+              "totalBytes": 11,
+              "outputLines": 0,
+              "outputBytes": 0,
+              "lastLinePartial": false,
+              "firstLineExceedsLimit": false,
+              "maxLines": 0,
+              "maxBytes": 100
+            },
+            "hasFullOutputPath": true
+          }
+        ],
+        "finalSnapshot": {
+          "content": "",
+          "truncation": {
+            "content": "",
+            "truncated": true,
+            "truncatedBy": "lines",
+            "totalLines": 2,
+            "totalBytes": 11,
+            "outputLines": 0,
+            "outputBytes": 0,
+            "lastLinePartial": false,
+            "firstLineExceedsLimit": false,
+            "maxLines": 0,
+            "maxBytes": 100
+          },
+          "hasFullOutputPath": true
+        },
+        "idempotentFinishSnapshot": {
+          "content": "",
+          "truncation": {
+            "content": "",
+            "truncated": true,
+            "truncatedBy": "lines",
+            "totalLines": 2,
+            "totalBytes": 11,
+            "outputLines": 0,
+            "outputBytes": 0,
+            "lastLinePartial": false,
+            "firstLineExceedsLimit": false,
+            "maxLines": 0,
+            "maxBytes": 100
+          },
+          "hasFullOutputPath": true
+        },
+        "lastLineBytes": 0,
+        "appendAfterFinishError": "Cannot append to a finished output accumulator",
+        "persistedOutputBase64": "YWxwaGEKYmV0YQo="
+      }
+    },
+    {
+      "name": "zero-byte-limit",
+      "options": {
+        "maxLines": 10,
+        "maxBytes": 0,
+        "tempFilePrefix": "pi-f5-zero-bytes"
+      },
+      "chunks": [
+        {
+          "kind": "utf8",
+          "value": "alpha"
+        }
+      ],
+      "expected": {
+        "chunkSnapshots": [
+          {
+            "content": "",
+            "truncation": {
+              "content": "",
+              "truncated": true,
+              "truncatedBy": "bytes",
+              "totalLines": 1,
+              "totalBytes": 5,
+              "outputLines": 1,
+              "outputBytes": 0,
+              "lastLinePartial": true,
+              "firstLineExceedsLimit": false,
+              "maxLines": 10,
+              "maxBytes": 0
+            },
+            "hasFullOutputPath": true
+          }
+        ],
+        "finalSnapshot": {
+          "content": "",
+          "truncation": {
+            "content": "",
+            "truncated": true,
+            "truncatedBy": "bytes",
+            "totalLines": 1,
+            "totalBytes": 5,
+            "outputLines": 1,
+            "outputBytes": 0,
+            "lastLinePartial": true,
+            "firstLineExceedsLimit": false,
+            "maxLines": 10,
+            "maxBytes": 0
+          },
+          "hasFullOutputPath": true
+        },
+        "idempotentFinishSnapshot": {
+          "content": "",
+          "truncation": {
+            "content": "",
+            "truncated": true,
+            "truncatedBy": "bytes",
+            "totalLines": 1,
+            "totalBytes": 5,
+            "outputLines": 1,
+            "outputBytes": 0,
+            "lastLinePartial": true,
+            "firstLineExceedsLimit": false,
+            "maxLines": 10,
+            "maxBytes": 0
+          },
+          "hasFullOutputPath": true
+        },
+        "lastLineBytes": 5,
+        "appendAfterFinishError": "Cannot append to a finished output accumulator",
+        "persistedOutputBase64": "YWxwaGE="
+      }
+    }
+  ]
+}
