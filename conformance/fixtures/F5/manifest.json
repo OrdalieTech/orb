@@ -1,0 +1,9 @@
+{
+  "family": "F5",
+  "upstreamCommit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
+  "generator": "conformance/extract/f5-truncation.ts",
+  "source": "packages/coding-agent/src/core/tools/truncate.ts",
+  "files": [
+    "cases.json"
+  ]
+}

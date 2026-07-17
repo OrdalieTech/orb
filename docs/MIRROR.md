@@ -28,3 +28,5 @@ File-level rows are appended beneath this line as WPs land.
 |---|---|---|
 | (project bootstrap) | `go.mod`, `Makefile`, `.github/workflows/ci.yml` | WP-001 |
 | `packages/coding-agent/src/cli.ts` (placeholder only) | `cmd/pi/main.go` | WP-001 |
+| `packages/coding-agent/src/core/tools/truncate.ts` | `conformance/extract/f5-truncation.ts`, `conformance/fixtures/F5/` | WP-002 |
+| `packages/*/test/` (fixture conventions) | `conformance/runner/`, `conformance/README.md` | WP-002 |

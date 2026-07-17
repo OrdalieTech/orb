@@ -5,7 +5,7 @@ This tracker follows the scheduled work-package index in `OVERVIEW.md`. The inde
 | Phase | WP | State |
 |---|---:|---|
 | 0 | 001 | complete |
-| 0 | 002 | pending |
+| 0 | 002 | complete |
 | 1 | 110 | pending |
 | 1 | 120 | pending |
 | 1 | 130 | pending |
