@@ -170,17 +170,18 @@ type UserMessage struct {
 }
 
 type AssistantMessage struct {
-	Content       AssistantContent              `json:"content"`
-	API           API                           `json:"api"`
-	Provider      ProviderID                    `json:"provider"`
-	Model         string                        `json:"model"`
-	Usage         Usage                         `json:"usage"`
-	StopReason    StopReason                    `json:"stopReason"`
-	Timestamp     int64                         `json:"timestamp"`
-	ResponseID    *string                       `json:"responseId,omitempty"`
-	ResponseModel *string                       `json:"responseModel,omitempty"`
-	Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
-	ErrorMessage  *string                       `json:"errorMessage,omitempty"`
+	Content              AssistantContent              `json:"content"`
+	API                  API                           `json:"api"`
+	Provider             ProviderID                    `json:"provider"`
+	Model                string                        `json:"model"`
+	Usage                Usage                         `json:"usage"`
+	StopReason           StopReason                    `json:"stopReason"`
+	Timestamp            int64                         `json:"timestamp"`
+	ResponseID           *string                       `json:"responseId,omitempty"`
+	ResponseModel        *string                       `json:"responseModel,omitempty"`
+	Diagnostics          *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
+	ErrorMessage         *string                       `json:"errorMessage,omitempty"`
+	errorBeforeTimestamp bool
 }
 
 type ToolResultMessage struct {

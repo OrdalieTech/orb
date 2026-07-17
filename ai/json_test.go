@@ -127,6 +127,24 @@ func TestSetToolCallArgumentsJSONMatchesJavaScriptPropertyOrder(t *testing.T) {
 	}
 }
 
+func TestAssistantMessageCanPreserveErrorBeforeTimestampOrder(t *testing.T) {
+	errorMessage := "Request was aborted"
+	message := &ai.AssistantMessage{
+		Content: ai.AssistantContent{}, API: "faux", Provider: "faux", Model: "faux-1",
+		Usage: ai.Usage{Cost: ai.Cost{}}, StopReason: ai.StopReasonAborted,
+		ErrorMessage: &errorMessage, Timestamp: 123,
+	}
+	ai.SetAssistantMessageErrorBeforeTimestamp(message, true)
+	encoded, err := ai.Marshal(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"role":"assistant","content":[],"api":"faux","provider":"faux","model":"faux-1","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"aborted","errorMessage":"Request was aborted","timestamp":123}`
+	if string(encoded) != want {
+		t.Fatalf("encoded = %s\nwant    = %s", encoded, want)
+	}
+}
+
 func TestToolCallUnmarshalPreservesStreamingScratch(t *testing.T) {
 	var call ai.ToolCall
 	if err := json.Unmarshal([]byte(`{"id":"1","name":"n","arguments":{},"partialJson":"{","partialArgs":"{\"x\"","streamIndex":3}`), &call); err != nil {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -43,6 +44,14 @@ func MarshalString(value string) ([]byte, error) {
 			output.Write(encoded[1 : len(encoded)-1])
 		}
 		if unit, ok := decodeWTF8Surrogate(value[index:]); ok {
+			if unit >= 0xd800 && unit <= 0xdbff {
+				if next, nextOK := decodeWTF8Surrogate(value[index+3:]); nextOK && next >= 0xdc00 && next <= 0xdfff {
+					output.WriteRune(utf16.DecodeRune(rune(unit), rune(next)))
+					index += 6
+					validStart = index
+					continue
+				}
+			}
 			fmt.Fprintf(&output, `\u%04x`, unit)
 			index += 3
 			validStart = index

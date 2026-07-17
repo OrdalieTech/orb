@@ -75,6 +75,35 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 			return nil, err
 		}
 	}
+	if message.errorBeforeTimestamp && message.ErrorMessage != nil {
+		return marshalJSON(struct {
+			Role          string                        `json:"role"`
+			Content       AssistantContent              `json:"content"`
+			API           API                           `json:"api"`
+			Provider      ProviderID                    `json:"provider"`
+			Model         string                        `json:"model"`
+			Usage         Usage                         `json:"usage"`
+			StopReason    StopReason                    `json:"stopReason"`
+			ErrorMessage  json.RawMessage               `json:"errorMessage"`
+			ResponseID    *string                       `json:"responseId,omitempty"`
+			ResponseModel *string                       `json:"responseModel,omitempty"`
+			Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
+			Timestamp     int64                         `json:"timestamp"`
+		}{
+			Role:          "assistant",
+			Content:       message.Content,
+			API:           message.API,
+			Provider:      message.Provider,
+			Model:         message.Model,
+			Usage:         message.Usage,
+			StopReason:    message.StopReason,
+			ErrorMessage:  errorMessage,
+			ResponseID:    message.ResponseID,
+			ResponseModel: message.ResponseModel,
+			Diagnostics:   message.Diagnostics,
+			Timestamp:     message.Timestamp,
+		})
+	}
 	return marshalJSON(struct {
 		Role          string                        `json:"role"`
 		Content       AssistantContent              `json:"content"`
@@ -104,6 +133,14 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 	})
 }
 
+// SetAssistantMessageErrorBeforeTimestamp preserves the member order of
+// upstream message constructors that insert errorMessage before timestamp.
+func SetAssistantMessageErrorBeforeTimestamp(message *AssistantMessage, enabled bool) {
+	if message != nil {
+		message.errorBeforeTimestamp = enabled
+	}
+}
+
 func (message ToolResultMessage) MarshalJSON() ([]byte, error) {
 	type payload ToolResultMessage
 	return marshalJSON(struct {
@@ -113,19 +150,33 @@ func (message ToolResultMessage) MarshalJSON() ([]byte, error) {
 }
 
 func (content TextContent) MarshalJSON() ([]byte, error) {
-	type payload TextContent
+	text, err := jsonwire.MarshalString(content.Text)
+	if err != nil {
+		return nil, err
+	}
 	return marshalJSON(struct {
-		Type string `json:"type"`
-		payload
-	}{Type: "text", payload: payload(content)})
+		Type          string          `json:"type"`
+		Text          json.RawMessage `json:"text"`
+		TextSignature *string         `json:"textSignature,omitempty"`
+	}{Type: "text", Text: text, TextSignature: content.TextSignature})
 }
 
 func (content ThinkingContent) MarshalJSON() ([]byte, error) {
-	type payload ThinkingContent
+	thinking, err := jsonwire.MarshalString(content.Thinking)
+	if err != nil {
+		return nil, err
+	}
 	return marshalJSON(struct {
-		Type string `json:"type"`
-		payload
-	}{Type: "thinking", payload: payload(content)})
+		Type              string          `json:"type"`
+		Thinking          json.RawMessage `json:"thinking"`
+		ThinkingSignature *string         `json:"thinkingSignature,omitempty"`
+		Redacted          *bool           `json:"redacted,omitempty"`
+	}{
+		Type:              "thinking",
+		Thinking:          thinking,
+		ThinkingSignature: content.ThinkingSignature,
+		Redacted:          content.Redacted,
+	})
 }
 
 func (content ImageContent) MarshalJSON() ([]byte, error) {

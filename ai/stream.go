@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+
+	"github.com/OrdalieTech/pi-go/internal/jsonwire"
 )
 
 var ErrStreamIncomplete = errors.New("ai: stream ended without a terminal event")
@@ -208,20 +210,28 @@ func (event TextStartEvent) MarshalJSON() ([]byte, error) {
 	}{Type: "text_start", ContentIndex: event.ContentIndex, Partial: event.Partial})
 }
 func (event TextDeltaEvent) MarshalJSON() ([]byte, error) {
+	delta, err := jsonwire.MarshalString(event.Delta)
+	if err != nil {
+		return nil, err
+	}
 	return marshalJSON(struct {
 		Type         string            `json:"type"`
 		ContentIndex int               `json:"contentIndex"`
-		Delta        string            `json:"delta"`
+		Delta        json.RawMessage   `json:"delta"`
 		Partial      *AssistantMessage `json:"partial"`
-	}{Type: "text_delta", ContentIndex: event.ContentIndex, Delta: event.Delta, Partial: event.Partial})
+	}{Type: "text_delta", ContentIndex: event.ContentIndex, Delta: delta, Partial: event.Partial})
 }
 func (event TextEndEvent) MarshalJSON() ([]byte, error) {
+	content, err := jsonwire.MarshalString(event.Content)
+	if err != nil {
+		return nil, err
+	}
 	return marshalJSON(struct {
 		Type         string            `json:"type"`
 		ContentIndex int               `json:"contentIndex"`
-		Content      string            `json:"content"`
+		Content      json.RawMessage   `json:"content"`
 		Partial      *AssistantMessage `json:"partial"`
-	}{Type: "text_end", ContentIndex: event.ContentIndex, Content: event.Content, Partial: event.Partial})
+	}{Type: "text_end", ContentIndex: event.ContentIndex, Content: content, Partial: event.Partial})
 }
 func (event ThinkingStartEvent) MarshalJSON() ([]byte, error) {
 	return marshalJSON(struct {
@@ -231,20 +241,28 @@ func (event ThinkingStartEvent) MarshalJSON() ([]byte, error) {
 	}{Type: "thinking_start", ContentIndex: event.ContentIndex, Partial: event.Partial})
 }
 func (event ThinkingDeltaEvent) MarshalJSON() ([]byte, error) {
+	delta, err := jsonwire.MarshalString(event.Delta)
+	if err != nil {
+		return nil, err
+	}
 	return marshalJSON(struct {
 		Type         string            `json:"type"`
 		ContentIndex int               `json:"contentIndex"`
-		Delta        string            `json:"delta"`
+		Delta        json.RawMessage   `json:"delta"`
 		Partial      *AssistantMessage `json:"partial"`
-	}{Type: "thinking_delta", ContentIndex: event.ContentIndex, Delta: event.Delta, Partial: event.Partial})
+	}{Type: "thinking_delta", ContentIndex: event.ContentIndex, Delta: delta, Partial: event.Partial})
 }
 func (event ThinkingEndEvent) MarshalJSON() ([]byte, error) {
+	content, err := jsonwire.MarshalString(event.Content)
+	if err != nil {
+		return nil, err
+	}
 	return marshalJSON(struct {
 		Type         string            `json:"type"`
 		ContentIndex int               `json:"contentIndex"`
-		Content      string            `json:"content"`
+		Content      json.RawMessage   `json:"content"`
 		Partial      *AssistantMessage `json:"partial"`
-	}{Type: "thinking_end", ContentIndex: event.ContentIndex, Content: event.Content, Partial: event.Partial})
+	}{Type: "thinking_end", ContentIndex: event.ContentIndex, Content: content, Partial: event.Partial})
 }
 func (event ToolCallStartEvent) MarshalJSON() ([]byte, error) {
 	return marshalJSON(struct {
@@ -254,12 +272,16 @@ func (event ToolCallStartEvent) MarshalJSON() ([]byte, error) {
 	}{Type: "toolcall_start", ContentIndex: event.ContentIndex, Partial: event.Partial})
 }
 func (event ToolCallDeltaEvent) MarshalJSON() ([]byte, error) {
+	delta, err := jsonwire.MarshalString(event.Delta)
+	if err != nil {
+		return nil, err
+	}
 	return marshalJSON(struct {
 		Type         string            `json:"type"`
 		ContentIndex int               `json:"contentIndex"`
-		Delta        string            `json:"delta"`
+		Delta        json.RawMessage   `json:"delta"`
 		Partial      *AssistantMessage `json:"partial"`
-	}{Type: "toolcall_delta", ContentIndex: event.ContentIndex, Delta: event.Delta, Partial: event.Partial})
+	}{Type: "toolcall_delta", ContentIndex: event.ContentIndex, Delta: delta, Partial: event.Partial})
 }
 func (event ToolCallEndEvent) MarshalJSON() ([]byte, error) {
 	return marshalJSON(struct {

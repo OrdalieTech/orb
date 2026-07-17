@@ -26,3 +26,14 @@ func TestMarshalStringPreservesWTF8Surrogate(t *testing.T) {
 		t.Fatalf("encoded = %q, want %q", got, want)
 	}
 }
+
+func TestMarshalStringRecombinesWTF8SurrogatePair(t *testing.T) {
+	value := string([]byte{0xed, 0xa0, 0xbd, 0xed, 0xb8, 0x80})
+	encoded, err := MarshalString(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(encoded), `"😀"`; got != want {
+		t.Fatalf("encoded = %q, want %q", got, want)
+	}
+}
