@@ -1,0 +1,180 @@
+{
+  "header": {
+    "type": "session",
+    "version": 3,
+    "id": "session-fixed",
+    "timestamp": "2025-01-01T00:00:00.000Z",
+    "cwd": "/fixture/project"
+  },
+  "leafId": "0000000d",
+  "entryTypes": [
+    "message",
+    "thinking_level_change",
+    "model_change",
+    "custom",
+    "custom",
+    "custom_message",
+    "session_info",
+    "session_info",
+    "message",
+    "compaction",
+    "branch_summary",
+    "label",
+    "label"
+  ],
+  "branchIds": [
+    "00000001",
+    "0000000b",
+    "0000000c",
+    "0000000d"
+  ],
+  "sessionName": "edge",
+  "entries": [
+    {
+      "type": "message",
+      "id": "00000001",
+      "parentId": null,
+      "timestamp": "2025-01-01T00:00:01.000Z",
+      "message": {
+        "role": "user",
+        "content": "hello <>&  ",
+        "timestamp": 1
+      }
+    },
+    {
+      "type": "thinking_level_change",
+      "id": "00000002",
+      "parentId": "00000001",
+      "timestamp": "2025-01-01T00:00:02.000Z",
+      "thinkingLevel": "high"
+    },
+    {
+      "type": "model_change",
+      "id": "00000003",
+      "parentId": "00000002",
+      "timestamp": "2025-01-01T00:00:03.000Z",
+      "provider": "openai",
+      "modelId": "gpt-test"
+    },
+    {
+      "type": "custom",
+      "customType": "state-empty",
+      "id": "00000004",
+      "parentId": "00000003",
+      "timestamp": "2025-01-01T00:00:04.000Z"
+    },
+    {
+      "type": "custom",
+      "customType": "state-null",
+      "data": null,
+      "id": "00000005",
+      "parentId": "00000004",
+      "timestamp": "2025-01-01T00:00:05.000Z"
+    },
+    {
+      "type": "custom_message",
+      "customType": "injected",
+      "content": [
+        {
+          "type": "text",
+          "text": "custom"
+        },
+        {
+          "type": "image",
+          "data": "AA==",
+          "mimeType": "image/png"
+        }
+      ],
+      "display": false,
+      "id": "00000006",
+      "parentId": "00000005",
+      "timestamp": "2025-01-01T00:00:06.000Z"
+    },
+    {
+      "type": "session_info",
+      "id": "00000007",
+      "parentId": "00000006",
+      "timestamp": "2025-01-01T00:00:07.000Z",
+      "name": "line one line two"
+    },
+    {
+      "type": "session_info",
+      "id": "00000008",
+      "parentId": "00000007",
+      "timestamp": "2025-01-01T00:00:08.000Z",
+      "name": "edge"
+    },
+    {
+      "type": "message",
+      "id": "00000009",
+      "parentId": "00000008",
+      "timestamp": "2025-01-01T00:00:09.000Z",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "answer"
+          }
+        ],
+        "api": "openai-responses",
+        "provider": "openai",
+        "model": "gpt-test",
+        "usage": {
+          "input": 1,
+          "output": 2,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 3,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 2
+      }
+    },
+    {
+      "type": "compaction",
+      "id": "0000000a",
+      "parentId": "00000009",
+      "timestamp": "2025-01-01T00:00:10.000Z",
+      "summary": "compact",
+      "firstKeptEntryId": "00000001",
+      "tokensBefore": 99,
+      "details": {
+        "files": [
+          "a.go"
+        ]
+      },
+      "fromHook": false
+    },
+    {
+      "type": "branch_summary",
+      "id": "0000000b",
+      "parentId": "00000001",
+      "timestamp": "2025-01-01T00:00:11.000Z",
+      "fromId": "00000001",
+      "summary": "alternate branch"
+    },
+    {
+      "type": "label",
+      "id": "0000000c",
+      "parentId": "0000000b",
+      "timestamp": "2025-01-01T00:00:12.000Z",
+      "targetId": "00000001",
+      "label": "checkpoint"
+    },
+    {
+      "type": "label",
+      "id": "0000000d",
+      "parentId": "0000000c",
+      "timestamp": "2025-01-01T00:00:13.000Z",
+      "targetId": "00000001"
+    }
+  ]
+}

@@ -11,7 +11,7 @@ This tracker follows the scheduled work-package index in `OVERVIEW.md`. The inde
 | 1 | 130 | complete |
 | 1 | 140 | complete |
 | 1 | 150 | complete |
-| 1 | 160 | pending |
+| 1 | 160 | complete |
 | 1 | 170 | pending |
 | 1 | 180 | pending |
 | 2 | 210 | pending |

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
@@ -9,6 +10,22 @@ import (
 
 	"github.com/OrdalieTech/pi-go/ai"
 )
+
+func TestAgentStatePreservesRawCustomMessageType(t *testing.T) {
+	original := json.RawMessage(`{"role":"custom","content":"original"}`)
+	created := NewAgent(WithInitialState(AgentState{Model: loopModel(), Messages: AgentMessages{original}}))
+	original[0] = 'x'
+	state := created.State()
+	preserved, ok := state.Messages[0].(json.RawMessage)
+	if !ok || string(preserved) != `{"role":"custom","content":"original"}` {
+		t.Fatalf("preserved = %T %q", state.Messages[0], preserved)
+	}
+	preserved[0] = 'y'
+	again := created.State().Messages[0].(json.RawMessage)
+	if string(again) != `{"role":"custom","content":"original"}` {
+		t.Fatalf("state raw message was aliased: %q", again)
+	}
+}
 
 func TestAgentAwaitsOrderedSubscribersBeforeIdle(t *testing.T) {
 	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{loopAssistant(ai.StopReasonStop, &ai.TextContent{Text: "done"})}}
@@ -154,6 +171,7 @@ func TestAgentStateReturnsIndependentCollections(t *testing.T) {
 			"labels": []string{"original"},
 			"lookup": map[string]string{"value": "original"},
 		}},
+		&ai.UnknownContentBlock{Raw: json.RawMessage(`{"type":"future","value":"original"}`)},
 	)
 	customOriginal := &customMessage{Role: "custom", Meta: customMeta{"labels": customLabels{"original"}}}
 	agent := NewAgent(WithInitialState(AgentState{
@@ -176,6 +194,7 @@ func TestAgentStateReturnsIndependentCollections(t *testing.T) {
 	assistant.Content[1].(*ai.ToolCall).Arguments["nested"].(map[string]any)["value"] = "external"
 	assistant.Content[1].(*ai.ToolCall).Arguments["labels"].([]string)[0] = "external"
 	assistant.Content[1].(*ai.ToolCall).Arguments["lookup"].(map[string]string)["value"] = "external"
+	assistant.Content[2].(*ai.UnknownContentBlock).Raw[1] = 'X'
 	custom := state.Messages[1].(*customMessage)
 	custom.Meta["labels"][0] = "external"
 	current := agent.State()
@@ -200,6 +219,9 @@ func TestAgentStateReturnsIndependentCollections(t *testing.T) {
 	}
 	if got := currentAssistant.Content[1].(*ai.ToolCall).Arguments["lookup"].(map[string]string)["value"]; got != "original" {
 		t.Fatalf("typed tool argument map was aliased: %#v", got)
+	}
+	if got := string(currentAssistant.Content[2].(*ai.UnknownContentBlock).Raw); got != `{"type":"future","value":"original"}` {
+		t.Fatalf("unknown content block was aliased: %s", got)
 	}
 	if got := current.Messages[1].(*customMessage).Meta["labels"][0]; got != "original" {
 		t.Fatalf("custom message was aliased: %#v", got)

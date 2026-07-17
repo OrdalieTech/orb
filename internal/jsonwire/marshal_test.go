@@ -37,3 +37,21 @@ func TestMarshalStringRecombinesWTF8SurrogatePair(t *testing.T) {
 		t.Fatalf("encoded = %q, want %q", got, want)
 	}
 }
+
+func TestUnmarshalStringPreservesSurrogates(t *testing.T) {
+	value, err := UnmarshalString([]byte(`"before\ud800|\udc00|\ud83d\ude00after"`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "before" + string([]byte{0xed, 0xa0, 0x80}) + "|" + string([]byte{0xed, 0xb0, 0x80}) + "|😀after"
+	if value != want {
+		t.Fatalf("decoded = %q, want %q", value, want)
+	}
+	encoded, err := MarshalString(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(encoded), `"before\ud800|\udc00|😀after"`; got != want {
+		t.Fatalf("re-encoded = %s, want %s", got, want)
+	}
+}

@@ -1,0 +1,317 @@
+{
+  "schemaVersion": 1,
+  "packageDir": "/pi-package",
+  "promptCases": [
+    {
+      "name": "default-tools-context-and-guidelines",
+      "input": {
+        "selectedTools": [
+          "read",
+          "bash",
+          "edit",
+          "write",
+          "hidden"
+        ],
+        "toolSnippets": {
+          "read": "Read file contents",
+          "bash": "Execute bash commands",
+          "edit": "Make surgical edits",
+          "write": "Create or overwrite files",
+          "hidden": ""
+        },
+        "promptGuidelines": [
+          "  Prefer small patches.  ",
+          "Prefer small patches.",
+          "   "
+        ],
+        "appendSystemPrompt": "Appended guidance.",
+        "cwd": "/fixture/project",
+        "contextFiles": [
+          {
+            "path": "/fixture/AGENTS.md",
+            "content": "Global <rules> & raw."
+          },
+          {
+            "path": "/fixture/project/CLAUDE.md",
+            "content": "Project rules."
+          }
+        ]
+      },
+      "expected": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\nAvailable tools:\n- read: Read file contents\n- bash: Execute bash commands\n- edit: Make surgical edits\n- write: Create or overwrite files\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n\nGuidelines:\n- Use bash for file operations like ls, rg, find\n- Prefer small patches.\n- Be concise in your responses\n- Show file paths clearly when working with files\n\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /pi-package/README.md\n- Additional docs: /pi-package/docs\n- Examples: /pi-package/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md)\n- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing\n- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\n\nAppended guidance.\n\n<project_context>\n\nProject-specific instructions and guidelines:\n\n<project_instructions path=\"/fixture/AGENTS.md\">\nGlobal <rules> & raw.\n</project_instructions>\n\n<project_instructions path=\"/fixture/project/CLAUDE.md\">\nProject rules.\n</project_instructions>\n\n</project_context>\n\nCurrent working directory: /fixture/project"
+    },
+    {
+      "name": "explicit-empty-tools",
+      "input": {
+        "selectedTools": [],
+        "toolSnippets": {
+          "read": "Read file contents"
+        },
+        "cwd": "/fixture/empty-tools",
+        "contextFiles": []
+      },
+      "expected": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\nAvailable tools:\n(none)\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n\nGuidelines:\n- Be concise in your responses\n- Show file paths clearly when working with files\n\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /pi-package/README.md\n- Additional docs: /pi-package/docs\n- Examples: /pi-package/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md)\n- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing\n- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\nCurrent working directory: /fixture/empty-tools"
+    },
+    {
+      "name": "default-tool-selection-without-snippets",
+      "input": {
+        "cwd": "/fixture/no-snippets",
+        "contextFiles": []
+      },
+      "expected": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\nAvailable tools:\n(none)\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n\nGuidelines:\n- Use bash for file operations like ls, rg, find\n- Be concise in your responses\n- Show file paths clearly when working with files\n\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /pi-package/README.md\n- Additional docs: /pi-package/docs\n- Examples: /pi-package/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md)\n- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing\n- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\nCurrent working directory: /fixture/no-snippets"
+    },
+    {
+      "name": "custom-prompt-order-and-windows-cwd",
+      "input": {
+        "customPrompt": "Custom base.",
+        "selectedTools": [
+          "read"
+        ],
+        "appendSystemPrompt": "First append.\n\nSecond append.",
+        "cwd": "C:\\work\\repo",
+        "contextFiles": [
+          {
+            "path": "C:\\work\\repo\\AGENTS.md",
+            "content": "Do <x> & y."
+          }
+        ]
+      },
+      "expected": "Custom base.\n\nFirst append.\n\nSecond append.\n\n<project_context>\n\nProject-specific instructions and guidelines:\n\n<project_instructions path=\"C:\\work\\repo\\AGENTS.md\">\nDo <x> & y.\n</project_instructions>\n\n</project_context>\n\nCurrent working directory: C:/work/repo"
+    },
+    {
+      "name": "empty-custom-falls-back-to-default",
+      "input": {
+        "customPrompt": "",
+        "selectedTools": [
+          "bash"
+        ],
+        "toolSnippets": {
+          "bash": "Execute bash commands"
+        },
+        "cwd": "/fixture/empty-custom",
+        "contextFiles": []
+      },
+      "expected": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\nAvailable tools:\n- bash: Execute bash commands\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n\nGuidelines:\n- Use bash for file operations like ls, rg, find\n- Be concise in your responses\n- Show file paths clearly when working with files\n\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /pi-package/README.md\n- Additional docs: /pi-package/docs\n- Examples: /pi-package/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md)\n- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing\n- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\nCurrent working directory: /fixture/empty-custom"
+    }
+  ],
+  "discoveryCases": [
+    {
+      "name": "global-root-ancestor-cwd-order-and-case-priority",
+      "cwd": "project/parent/cwd",
+      "agentDir": "agent",
+      "projectTrusted": true,
+      "files": [
+        {
+          "path": "agent/AGENTS.md",
+          "content": "global"
+        },
+        {
+          "path": "project/AGENTS.MD",
+          "content": "root upper agents"
+        },
+        {
+          "path": "project/CLAUDE.md",
+          "content": "must lose"
+        },
+        {
+          "path": "project/parent/CLAUDE.md",
+          "content": "ancestor claude"
+        },
+        {
+          "path": "project/parent/cwd/AGENTS.md",
+          "content": "cwd agents"
+        }
+      ],
+      "expected": {
+        "contextFiles": [
+          {
+            "path": "<fixture>/agent/AGENTS.md",
+            "content": "global"
+          },
+          {
+            "path": "<fixture>/project/AGENTS.MD",
+            "content": "root upper agents"
+          },
+          {
+            "path": "<fixture>/project/parent/CLAUDE.md",
+            "content": "ancestor claude"
+          },
+          {
+            "path": "<fixture>/project/parent/cwd/AGENTS.md",
+            "content": "cwd agents"
+          }
+        ],
+        "systemPrompt": null,
+        "appendSystemPrompt": [],
+        "assembledPrompt": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\nAvailable tools:\n- read: Read file contents\n- bash: Execute bash commands\n- edit: Make surgical edits\n- write: Create or overwrite files\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n\nGuidelines:\n- Use bash for file operations like ls, rg, find\n- Be concise in your responses\n- Show file paths clearly when working with files\n\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /pi-package/README.md\n- Additional docs: /pi-package/docs\n- Examples: /pi-package/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md)\n- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing\n- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\n\n<project_context>\n\nProject-specific instructions and guidelines:\n\n<project_instructions path=\"<fixture>/agent/AGENTS.md\">\nglobal\n</project_instructions>\n\n<project_instructions path=\"<fixture>/project/AGENTS.MD\">\nroot upper agents\n</project_instructions>\n\n<project_instructions path=\"<fixture>/project/parent/CLAUDE.md\">\nancestor claude\n</project_instructions>\n\n<project_instructions path=\"<fixture>/project/parent/cwd/AGENTS.md\">\ncwd agents\n</project_instructions>\n\n</project_context>\n\nCurrent working directory: <fixture>/project/parent/cwd"
+      }
+    },
+    {
+      "name": "project-system-and-append-win",
+      "cwd": "project",
+      "agentDir": "agent",
+      "projectTrusted": true,
+      "files": [
+        {
+          "path": "agent/SYSTEM.md",
+          "content": "global system"
+        },
+        {
+          "path": "agent/APPEND_SYSTEM.md",
+          "content": "global append"
+        },
+        {
+          "path": "project/.pi/SYSTEM.md",
+          "content": "project system"
+        },
+        {
+          "path": "project/.pi/APPEND_SYSTEM.md",
+          "content": "project append"
+        },
+        {
+          "path": "project/AGENTS.md",
+          "content": "project context"
+        }
+      ],
+      "expected": {
+        "contextFiles": [
+          {
+            "path": "<fixture>/project/AGENTS.md",
+            "content": "project context"
+          }
+        ],
+        "systemPrompt": "project system",
+        "appendSystemPrompt": [
+          "project append"
+        ],
+        "assembledPrompt": "project system\n\nproject append\n\n<project_context>\n\nProject-specific instructions and guidelines:\n\n<project_instructions path=\"<fixture>/project/AGENTS.md\">\nproject context\n</project_instructions>\n\n</project_context>\n\nCurrent working directory: <fixture>/project"
+      }
+    },
+    {
+      "name": "no-context-does-not-disable-system-files",
+      "cwd": "project",
+      "agentDir": "agent",
+      "projectTrusted": true,
+      "noContextFiles": true,
+      "files": [
+        {
+          "path": "project/.pi/SYSTEM.md",
+          "content": "project system"
+        },
+        {
+          "path": "project/.pi/APPEND_SYSTEM.md",
+          "content": "project append"
+        },
+        {
+          "path": "project/AGENTS.md",
+          "content": "hidden context"
+        }
+      ],
+      "expected": {
+        "contextFiles": [],
+        "systemPrompt": "project system",
+        "appendSystemPrompt": [
+          "project append"
+        ],
+        "assembledPrompt": "project system\n\nproject append\nCurrent working directory: <fixture>/project"
+      }
+    },
+    {
+      "name": "untrusted-project-falls-back-to-global-prompts",
+      "cwd": "project",
+      "agentDir": "agent",
+      "projectTrusted": false,
+      "files": [
+        {
+          "path": "agent/SYSTEM.md",
+          "content": "global system"
+        },
+        {
+          "path": "agent/APPEND_SYSTEM.md",
+          "content": "global append"
+        },
+        {
+          "path": "project/.pi/SYSTEM.md",
+          "content": "project system"
+        },
+        {
+          "path": "project/.pi/APPEND_SYSTEM.md",
+          "content": "project append"
+        }
+      ],
+      "expected": {
+        "contextFiles": [],
+        "systemPrompt": "global system",
+        "appendSystemPrompt": [
+          "global append"
+        ],
+        "assembledPrompt": "global system\n\nglobal append\nCurrent working directory: <fixture>/project"
+      }
+    },
+    {
+      "name": "cli-file-and-literal-overrides-replace-discovery",
+      "cwd": "project",
+      "agentDir": "agent",
+      "projectTrusted": true,
+      "systemPromptSet": true,
+      "systemPrompt": "<fixture>/prompts/system.txt",
+      "appendSystemPromptSet": true,
+      "appendSystemPrompt": [
+        "<fixture>/prompts/append.txt",
+        "literal append"
+      ],
+      "files": [
+        {
+          "path": "agent/SYSTEM.md",
+          "content": "global system"
+        },
+        {
+          "path": "project/.pi/SYSTEM.md",
+          "content": "project system"
+        },
+        {
+          "path": "prompts/system.txt",
+          "content": "cli system file"
+        },
+        {
+          "path": "prompts/append.txt",
+          "content": "cli append file"
+        }
+      ],
+      "expected": {
+        "contextFiles": [],
+        "systemPrompt": "cli system file",
+        "appendSystemPrompt": [
+          "cli append file",
+          "literal append"
+        ],
+        "assembledPrompt": "cli system file\n\ncli append file\n\nliteral append\nCurrent working directory: <fixture>/project"
+      }
+    },
+    {
+      "name": "explicit-empty-overrides-suppress-discovery",
+      "cwd": "project",
+      "agentDir": "agent",
+      "projectTrusted": true,
+      "systemPromptSet": true,
+      "systemPrompt": "",
+      "appendSystemPromptSet": true,
+      "appendSystemPrompt": [],
+      "files": [
+        {
+          "path": "agent/SYSTEM.md",
+          "content": "global system"
+        },
+        {
+          "path": "agent/APPEND_SYSTEM.md",
+          "content": "global append"
+        }
+      ],
+      "expected": {
+        "contextFiles": [],
+        "systemPrompt": null,
+        "appendSystemPrompt": [],
+        "assembledPrompt": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\nAvailable tools:\n- read: Read file contents\n- bash: Execute bash commands\n- edit: Make surgical edits\n- write: Create or overwrite files\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n\nGuidelines:\n- Use bash for file operations like ls, rg, find\n- Be concise in your responses\n- Show file paths clearly when working with files\n\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /pi-package/README.md\n- Additional docs: /pi-package/docs\n- Examples: /pi-package/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md)\n- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing\n- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\nCurrent working directory: <fixture>/project"
+      }
+    }
+  ]
+}

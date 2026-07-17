@@ -7,6 +7,8 @@ import { generateF2 } from "./f2-openai.ts";
 import { generateF3 } from "./f3-agent.ts";
 import { generateF4 } from "./f4-edit.ts";
 import { generateF5 } from "./f5-truncation.ts";
+import { generateF6 } from "./f6-session.ts";
+import { generateF9 } from "./f9-system-prompt.ts";
 
 const upstreamRoot = process.cwd();
 const outputRoot = path.resolve(upstreamRoot, process.argv[2] ?? "../conformance/fixtures");
@@ -15,10 +17,17 @@ if (!upstreamCommit) {
   throw new Error("upstream commit argument is required");
 }
 
-await generateF1(upstreamRoot, outputRoot, upstreamCommit);
-await generateF1PartialJSON(upstreamRoot, outputRoot, upstreamCommit);
-await generateF1Schema(upstreamRoot, outputRoot, upstreamCommit);
-await generateF2(upstreamRoot, outputRoot, upstreamCommit);
-await generateF3(upstreamRoot, outputRoot, upstreamCommit);
-await generateF4(upstreamRoot, outputRoot, upstreamCommit);
-await generateF5(upstreamRoot, outputRoot, upstreamCommit);
+const generators = [
+  generateF1,
+  generateF1PartialJSON,
+  generateF1Schema,
+  generateF2,
+  generateF3,
+  generateF4,
+  generateF5,
+  generateF6,
+  generateF9,
+];
+for (const generate of generators) {
+  await generate(upstreamRoot, outputRoot, upstreamCommit);
+}

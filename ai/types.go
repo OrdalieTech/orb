@@ -75,6 +75,12 @@ type ImageContent struct {
 	MimeType string `json:"mimeType"`
 }
 
+// UnknownContentBlock retains a future upstream content shape while this port
+// has not learned its concrete Go type yet.
+type UnknownContentBlock struct {
+	Raw json.RawMessage
+}
+
 type ToolCall struct {
 	ID               string         `json:"id"`
 	Name             string         `json:"name"`
@@ -99,13 +105,17 @@ type ToolResultContentBlock interface {
 	isToolResultContentBlock()
 }
 
-func (*TextContent) isUserContentBlock()          {}
-func (*TextContent) isAssistantContentBlock()     {}
-func (*TextContent) isToolResultContentBlock()    {}
-func (*ThinkingContent) isAssistantContentBlock() {}
-func (*ImageContent) isUserContentBlock()         {}
-func (*ImageContent) isToolResultContentBlock()   {}
-func (*ToolCall) isAssistantContentBlock()        {}
+func (*TextContent) isUserContentBlock()               {}
+func (*TextContent) isAssistantContentBlock()          {}
+func (*TextContent) isToolResultContentBlock()         {}
+func (*ThinkingContent) isAssistantContentBlock()      {}
+func (*ImageContent) isUserContentBlock()              {}
+func (*ImageContent) isToolResultContentBlock()        {}
+func (*ToolCall) isAssistantContentBlock()             {}
+func (*UnknownContentBlock) isUserContentBlock()       {}
+func (*UnknownContentBlock) isAssistantContentBlock()  {}
+func (*UnknownContentBlock) isToolResultContentBlock() {}
+func (*UnknownContentBlock) isImagesContentBlock()     {}
 
 type UserContentBlocks []UserContentBlock
 type AssistantContent []AssistantContentBlock

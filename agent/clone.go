@@ -64,6 +64,10 @@ func cloneAssistantMessage(message *ai.AssistantMessage) *ai.AssistantMessage {
 				blockCopy.StreamIndex = cloneIntPointer(block.StreamIndex)
 				copy.Content[index] = &blockCopy
 			}
+		case *ai.UnknownContentBlock:
+			if block != nil {
+				copy.Content[index] = &ai.UnknownContentBlock{Raw: bytes.Clone(block.Raw)}
+			}
 		default:
 			copy.Content[index] = rawBlock
 		}
@@ -107,6 +111,10 @@ func cloneUserContent(content ai.UserContent) ai.UserContent {
 					blockCopy := *block
 					copy.Blocks[index] = &blockCopy
 				}
+			case *ai.UnknownContentBlock:
+				if block != nil {
+					copy.Blocks[index] = &ai.UnknownContentBlock{Raw: bytes.Clone(block.Raw)}
+				}
 			default:
 				copy.Blocks[index] = rawBlock
 			}
@@ -132,6 +140,10 @@ func cloneToolResultContent(content ai.ToolResultContent) ai.ToolResultContent {
 			if block != nil {
 				blockCopy := *block
 				copy[index] = &blockCopy
+			}
+		case *ai.UnknownContentBlock:
+			if block != nil {
+				copy[index] = &ai.UnknownContentBlock{Raw: bytes.Clone(block.Raw)}
 			}
 		default:
 			copy[index] = rawBlock
@@ -174,7 +186,7 @@ func cloneJSONValue(value any) any {
 		}
 		return copy
 	case json.RawMessage:
-		return bytes.Clone(typed)
+		return json.RawMessage(bytes.Clone(typed))
 	}
 	return cloneJSONReflect(reflect.ValueOf(value)).Interface()
 }
