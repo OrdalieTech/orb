@@ -31,6 +31,24 @@ func TestCanonicalJSON(t *testing.T) {
 	}
 }
 
+func TestCanonicalJSONLexemesSortsKeysWithoutRewritingScalars(t *testing.T) {
+	literal, err := runner.CanonicalJSONLexemes([]byte(`{"b":1.0,"a":"<"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []byte(`{"a":"<","b":1.0}`)
+	if diff := runner.ByteDiff(want, literal); diff != "" {
+		t.Fatal(diff)
+	}
+	escaped, err := runner.CanonicalJSONLexemes([]byte(`{"a":"\u003c","b":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(literal, escaped) {
+		t.Fatal("lexeme canonicalization hid scalar wire differences")
+	}
+}
+
 func TestByteDiff(t *testing.T) {
 	if diff := runner.ByteDiff([]byte("same"), []byte("same")); diff != "" {
 		t.Fatalf("equal input diff = %q", diff)

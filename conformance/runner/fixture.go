@@ -8,8 +8,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
+
+	"github.com/OrdalieTech/pi-go/internal/jsonwire"
 )
 
 // Manifest identifies the upstream source and generator for a fixture family.
@@ -81,6 +84,73 @@ func CanonicalJSON(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("encode canonical JSON: %w", err)
 	}
 	return canonical, nil
+}
+
+// CanonicalJSONLexemes sorts object keys while retaining scalar JSON spellings.
+// It is used for wire fixtures where "<" and "\u003c", or 1 and 1.0, are
+// semantically equal JSON but observably different protocol bytes.
+func CanonicalJSONLexemes(data []byte) ([]byte, error) {
+	trimmed := bytes.TrimSpace(data)
+	if !json.Valid(trimmed) {
+		return nil, fmt.Errorf("decode JSON: invalid value")
+	}
+	return canonicalizeLexemes(trimmed)
+}
+
+func canonicalizeLexemes(data []byte) ([]byte, error) {
+	switch data[0] {
+	case '{':
+		var members map[string]json.RawMessage
+		if err := json.Unmarshal(data, &members); err != nil {
+			return nil, err
+		}
+		keys := make([]string, 0, len(members))
+		for key := range members {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		var output bytes.Buffer
+		output.WriteByte('{')
+		for index, key := range keys {
+			if index > 0 {
+				output.WriteByte(',')
+			}
+			encodedKey, err := jsonwire.Marshal(key)
+			if err != nil {
+				return nil, err
+			}
+			output.Write(encodedKey)
+			output.WriteByte(':')
+			value, err := canonicalizeLexemes(bytes.TrimSpace(members[key]))
+			if err != nil {
+				return nil, fmt.Errorf("key %q: %w", key, err)
+			}
+			output.Write(value)
+		}
+		output.WriteByte('}')
+		return output.Bytes(), nil
+	case '[':
+		var items []json.RawMessage
+		if err := json.Unmarshal(data, &items); err != nil {
+			return nil, err
+		}
+		var output bytes.Buffer
+		output.WriteByte('[')
+		for index, item := range items {
+			if index > 0 {
+				output.WriteByte(',')
+			}
+			value, err := canonicalizeLexemes(bytes.TrimSpace(item))
+			if err != nil {
+				return nil, fmt.Errorf("index %d: %w", index, err)
+			}
+			output.Write(value)
+		}
+		output.WriteByte(']')
+		return output.Bytes(), nil
+	default:
+		return bytes.Clone(data), nil
+	}
 }
 
 // ByteDiff reports the first differing byte with compact quoted context.

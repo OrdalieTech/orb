@@ -33,6 +33,7 @@ pi-go/
 │   └── mcp/                  bundled MCP extension (official go-sdk), built on extensions API
 ├── internal/
 │   ├── jsonschema/           Schema type + reflection helper (gate G1)
+│   ├── jsonwire/             JSON.stringify-compatible wire encoder
 │   ├── partialjson/          streaming tool-arg parser (port of `partial-json`)
 │   ├── truncate/             shared output truncation (50KB / 2000-line rules)
 │   └── sync/                 upstream sync tool (delta report, fixture regen driver)
@@ -70,6 +71,8 @@ Upstream spec: `packages/ai/src/types.ts` (message/streaming model), `packages/a
 errorMessage` fields, opaque replay signatures (`thinkingSignature`, `textSignature`,
 `thoughtSignature`), `ToolResultMessage.details/isError/addedToolNames`, `Usage` incl.
 cacheRead/cacheWrite/cacheWrite1h/reasoning/cost, thinking levels `off|minimal|low|medium|high|xhigh|max`.
+Wire emission goes through `ai.Marshal`, which matches `JSON.stringify` escaping and non-finite
+tool-argument behavior; protocol code must not call `encoding/json.Marshal` directly.
 
 **Streaming.** The `AssistantMessageEvent` protocol (`start`, `text_/thinking_/toolcall_` ×
 `start/delta/end`, `done`, `error`) is the universal stream contract. Go surface:
@@ -310,7 +313,11 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | aymanbagabas/go-udiff | tools | unified diff for edit rendering (upstream: `diff`) |
 | gofrs/flock | session, config | file locking (upstream: proper-lockfile) |
 | sabhiram/go-gitignore (or internal) | tools, harness | .gitignore semantics (upstream: `ignore`) |
-| invopop/jsonschema (or internal) | internal/jsonschema | struct→schema reflection — **gate G1** |
+
+**G1 resolution (WP-110):** `internal/jsonschema` uses a stdlib-only reflector. The evaluated
+`invopop/jsonschema` output required stripping `$schema`/`$defs`/`$ref` and undoing closed-object
+defaults to match TypeBox's inline provider-facing schemas, while adding five transitive packages
+and 640 KiB to a stripped probe binary. No direct dependency was added.
 
 Explicitly rejected: TUI frameworks (D15), langchaingo/fantasy-style unified LLM libs (D10),
 v8go/quickjs CGo bindings (D7), sqlite (no need — sessions are JSONL).

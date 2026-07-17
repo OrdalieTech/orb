@@ -5,7 +5,7 @@ GOLANGCI_LINT := $(CURDIR)/.tools/bin/golangci-lint
 GO_ENV := GOCACHE=$(CURDIR)/.tools/cache/go-build GOMODCACHE=$(CURDIR)/.tools/cache/go-mod
 LINT_ENV := $(GO_ENV) GOLANGCI_LINT_CACHE=$(CURDIR)/.tools/cache/golangci-lint
 
-.PHONY: build test lint upstream fixtures fixtures-check ensure-upstream-tsx sync
+.PHONY: build test lint upstream fixtures fixtures-check ensure-upstream-fixture-tools sync
 
 build:
 	$(GO_ENV) CGO_ENABLED=0 go build ./...
@@ -27,13 +27,17 @@ upstream:
 	@git -C .upstream checkout --detach $(UPSTREAM_COMMIT)
 	@test "$$(git -C .upstream rev-parse HEAD)" = "$(UPSTREAM_COMMIT)"
 
-ensure-upstream-tsx: upstream
-	@if [ ! -x .upstream/node_modules/.bin/tsx ]; then cd .upstream && npm install --ignore-scripts --no-save --workspaces=false tsx@4.22.1; fi
+ensure-upstream-fixture-tools: upstream
+	@if [ ! -x .upstream/node_modules/.bin/tsx ] || \
+		[ "$$(node -p 'require("./.upstream/node_modules/partial-json/package.json").version' 2>/dev/null)" != "0.1.7" ] || \
+		[ "$$(node -p 'require("./.upstream/node_modules/typebox/package.json").version' 2>/dev/null)" != "1.1.38" ]; then \
+		cd .upstream && npm install --ignore-scripts --no-save --workspaces=false tsx@4.22.1 partial-json@0.1.7 typebox@1.1.38; \
+	fi
 
-fixtures: ensure-upstream-tsx
+fixtures: ensure-upstream-fixture-tools
 	@cd .upstream && node --import tsx ../conformance/extract/generate.ts ../conformance/fixtures $(UPSTREAM_COMMIT)
 
-fixtures-check: ensure-upstream-tsx
+fixtures-check: ensure-upstream-fixture-tools
 	@fixture_tmp=$$(mktemp -d); \
 		trap 'rm -rf "$$fixture_tmp"' EXIT; \
 		cd .upstream && node --import tsx ../conformance/extract/generate.ts "$$fixture_tmp" $(UPSTREAM_COMMIT); \

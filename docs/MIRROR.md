@@ -30,3 +30,10 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/coding-agent/src/cli.ts` (placeholder only) | `cmd/pi/main.go` | WP-001 |
 | `packages/coding-agent/src/core/tools/truncate.ts` | `conformance/extract/f5-truncation.ts`, `conformance/fixtures/F5/` | WP-002 |
 | `packages/*/test/` (fixture conventions) | `conformance/runner/`, `conformance/README.md` | WP-002 |
+| `packages/ai/src/types.ts` | `ai/types.go`, `ai/model.go`, `ai/json.go`, `ai/conformance_test.go`, `ai/model_test.go`, `ai/json_test.go` | WP-110 |
+| `packages/ai/src/utils/event-stream.ts` | `ai/stream.go`, `ai/stream_test.go` | WP-110 |
+| `packages/ai/src/utils/diagnostics.ts` | `ai/types.go` | WP-110 |
+| `packages/ai/src/` (`JSON.stringify` wire semantics) | `internal/jsonwire/` | WP-110 |
+| `packages/ai/src/types.ts` (serialization corpus) | `conformance/extract/f1-messages.ts`, `conformance/fixtures/F1/cases.json` | WP-110 |
+| `packages/ai/src/utils/json-parse.ts`, npm `partial-json@0.1.7` | `internal/partialjson/`, `conformance/extract/f1-partialjson.ts`, `conformance/fixtures/F1/partialjson.json` | WP-110 |
+| `packages/ai/src/utils/typebox-helpers.ts`, npm `typebox@1.1.38` | `internal/jsonschema/`, `conformance/extract/f1-schema.ts`, `conformance/fixtures/F1/schema.json` | WP-110 |

@@ -1,0 +1,257 @@
+{
+  "cases": [
+    {
+      "name": "readme-complete-object",
+      "operation": "partialParse",
+      "input": "{\"key\":\"value\"}",
+      "expected": {
+        "key": "value"
+      }
+    },
+    {
+      "name": "readme-partial-string-and-object",
+      "operation": "partialParse",
+      "input": "{\"key\": \"v",
+      "allow": 9,
+      "expected": {
+        "key": "v"
+      }
+    },
+    {
+      "name": "readme-partial-object-only",
+      "operation": "partialParse",
+      "input": "{\"key\": \"v",
+      "allow": 8,
+      "expected": {}
+    },
+    {
+      "name": "readme-complete-value-partial-object",
+      "operation": "partialParse",
+      "input": "{\"key\": \"value\"",
+      "allow": 8,
+      "expected": {
+        "key": "value"
+      }
+    },
+    {
+      "name": "readme-nested-partial",
+      "operation": "partialParse",
+      "input": "[ {\"key1\": \"value1\", \"key2\": [ \"value2",
+      "expected": [
+        {
+          "key1": "value1",
+          "key2": [
+            "value2"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "readme-negative-infinity",
+      "operation": "partialParse",
+      "input": "-Inf",
+      "expected": {
+        "$number": "-Infinity"
+      }
+    },
+    {
+      "name": "readme-malformed",
+      "operation": "partialParse",
+      "input": "wrong",
+      "expectedError": "MalformedJSON"
+    },
+    {
+      "name": "readme-disallow-partial-object",
+      "operation": "partialParse",
+      "input": "[{\"a\": 1, \"b\": 2}, {\"a\": 3,",
+      "allow": 4,
+      "expected": [
+        {
+          "a": 1,
+          "b": 2
+        }
+      ]
+    },
+    {
+      "name": "readme-disallow-partial-string",
+      "operation": "partialParse",
+      "input": "[\"complete string\", \"incompl",
+      "allow": -2,
+      "expected": [
+        "complete string"
+      ]
+    },
+    {
+      "name": "partial-disallowed-array",
+      "operation": "partialParse",
+      "input": "[",
+      "allow": 1,
+      "expectedError": "PartialJSON"
+    },
+    {
+      "name": "partial-number-exponent",
+      "operation": "partialParse",
+      "input": "-1.25e+",
+      "allow": 2,
+      "expected": -1.25
+    },
+    {
+      "name": "repair-valid-escapes",
+      "operation": "repairJson",
+      "input": "{\"x\":\"\\\"\\\\\\/\\b\\f\\n\\r\\t\\u12aF\"}",
+      "expected": "{\"x\":\"\\\"\\\\\\/\\b\\f\\n\\r\\t\\u12aF\"}"
+    },
+    {
+      "name": "repair-invalid-escapes",
+      "operation": "repairJson",
+      "input": "{\"path\":\"C:\\q\\z\"}",
+      "expected": "{\"path\":\"C:\\\\q\\\\z\"}"
+    },
+    {
+      "name": "repair-raw-controls",
+      "operation": "repairJson",
+      "input": "\"a\u0000\b\f\n\r\t\u001fb\"",
+      "expected": "\"a\\u0000\\b\\f\\n\\r\\t\\u001fb\""
+    },
+    {
+      "name": "repair-trailing-backslash",
+      "operation": "repairJson",
+      "input": "\"abc\\",
+      "expected": "\"abc\\\\"
+    },
+    {
+      "name": "repair-incomplete-unicode",
+      "operation": "repairJson",
+      "input": "\"\\u12",
+      "expected": "\"\\u12"
+    },
+    {
+      "name": "parse-repair-valid",
+      "operation": "parseJsonWithRepair",
+      "input": "{\"name\":\"pi\",\"n\":1}",
+      "expected": {
+        "name": "pi",
+        "n": 1
+      }
+    },
+    {
+      "name": "parse-repair-invalid-escape-and-control",
+      "operation": "parseJsonWithRepair",
+      "input": "{\"path\":\"C:\\q\",\"line\":\"a\nb\"}",
+      "expected": {
+        "path": "C:\\q",
+        "line": "a\nb"
+      }
+    },
+    {
+      "name": "parse-repair-structurally-incomplete",
+      "operation": "parseJsonWithRepair",
+      "input": "{\"a\":",
+      "expectedError": "SyntaxError"
+    },
+    {
+      "name": "streaming-undefined",
+      "operation": "parseStreamingJson",
+      "expected": {}
+    },
+    {
+      "name": "streaming-whitespace",
+      "operation": "parseStreamingJson",
+      "input": "﻿ \n",
+      "expected": {}
+    },
+    {
+      "name": "streaming-u0085-is-not-ecmascript-whitespace",
+      "operation": "parseStreamingJson",
+      "input": "{\"a\":1}",
+      "expected": {}
+    },
+    {
+      "name": "streaming-complete",
+      "operation": "parseStreamingJson",
+      "input": "{\"name\":\"pi\",\"n\":1}",
+      "expected": {
+        "name": "pi",
+        "n": 1
+      }
+    },
+    {
+      "name": "streaming-nested-partial",
+      "operation": "parseStreamingJson",
+      "input": "{\"a\":1,\"b\":[true,{\"c\":\"hel",
+      "expected": {
+        "a": 1,
+        "b": [
+          true,
+          {
+            "c": "hel"
+          }
+        ]
+      }
+    },
+    {
+      "name": "streaming-unfinished-member",
+      "operation": "parseStreamingJson",
+      "input": "{\"a\":1,\"b\":",
+      "expected": {
+        "a": 1
+      }
+    },
+    {
+      "name": "streaming-invalid-escape",
+      "operation": "parseStreamingJson",
+      "input": "{\"path\":\"C:\\q\"}",
+      "expected": {
+        "path": "C:\\q"
+      }
+    },
+    {
+      "name": "streaming-partial-invalid-escape",
+      "operation": "parseStreamingJson",
+      "input": "{\"path\":\"C:\\q",
+      "expected": {
+        "path": "C:"
+      }
+    },
+    {
+      "name": "streaming-partial-raw-control",
+      "operation": "parseStreamingJson",
+      "input": "\"line\nnext",
+      "expected": "line\nnext"
+    },
+    {
+      "name": "streaming-malformed-fallback",
+      "operation": "parseStreamingJson",
+      "input": "wrong",
+      "expected": {}
+    },
+    {
+      "name": "streaming-incomplete-null-fallback",
+      "operation": "parseStreamingJson",
+      "input": "n",
+      "expected": {}
+    },
+    {
+      "name": "streaming-complete-null",
+      "operation": "parseStreamingJson",
+      "input": "null",
+      "expected": null
+    },
+    {
+      "name": "streaming-trailing-comma",
+      "operation": "parseStreamingJson",
+      "input": "{\"a\":1,}",
+      "expected": {
+        "a": 1
+      }
+    },
+    {
+      "name": "streaming-ignored-suffix",
+      "operation": "parseStreamingJson",
+      "input": "{\"a\":1}garbage",
+      "expected": {
+        "a": 1
+      }
+    }
+  ]
+}

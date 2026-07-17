@@ -138,7 +138,9 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
 
 ## Deferred decision gates (resolved inside the named work package)
 
-- **G1 (WP-110):** JSON-Schema reflection helper — `invopop/jsonschema` vs ~200-LOC internal reflector.
+- **G1 (WP-110, resolved):** use the stdlib-only internal JSON-Schema reflector. The invopop probe
+  required provider-shape post-processing and added five transitive packages plus 640 KiB to a
+  stripped binary; the internal helper emits the required TypeBox-style inline schemas directly.
 - **G2 (WP-221):** Gemini — `google.golang.org/genai` acceptable dep tree vs hand-rolled
   google-generative-ai shape.
 - **G3 (WP-542):** pi-tui Component bridge overlay/experimental surfaces — bridge now vs documented gap.

@@ -1,5 +1,8 @@
 import path from "node:path";
 
+import { generateF1 } from "./f1-messages.ts";
+import { generateF1PartialJSON } from "./f1-partialjson.ts";
+import { generateF1Schema } from "./f1-schema.ts";
 import { generateF5 } from "./f5-truncation.ts";
 
 const upstreamRoot = process.cwd();
@@ -9,4 +12,7 @@ if (!upstreamCommit) {
   throw new Error("upstream commit argument is required");
 }
 
+await generateF1(upstreamRoot, outputRoot, upstreamCommit);
+await generateF1PartialJSON(upstreamRoot, outputRoot, upstreamCommit);
+await generateF1Schema(upstreamRoot, outputRoot, upstreamCommit);
 await generateF5(upstreamRoot, outputRoot, upstreamCommit);
