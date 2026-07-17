@@ -1,0 +1,98 @@
+{
+  "source": "typebox@1.1.38 + packages/ai/src/utils/typebox-helpers.ts",
+  "cases": [
+    {
+      "name": "nested-object",
+      "schema": {
+        "type": "object",
+        "required": [
+          "path",
+          "children",
+          "mode"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to inspect <>&"
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Child name"
+                },
+                "note": {
+                  "type": "string",
+                  "description": "Optional note"
+                }
+              }
+            },
+            "description": "Nested children"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional labels"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "read",
+              "write"
+            ],
+            "description": "Operation mode"
+          },
+          "filter": {
+            "type": "object",
+            "required": [
+              "pattern"
+            ],
+            "properties": {
+              "pattern": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "required-optional",
+      "schema": {
+        "type": "object",
+        "required": [
+          "required"
+        ],
+        "properties": {
+          "required": {
+            "type": "string"
+          },
+          "optional": {
+            "type": "string",
+            "description": "one, two"
+          }
+        }
+      }
+    },
+    {
+      "name": "string-enum",
+      "schema": {
+        "type": "string",
+        "enum": [
+          "add",
+          "subtract",
+          "multiply",
+          "divide"
+        ]
+      }
+    }
+  ]
+}
