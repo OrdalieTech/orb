@@ -85,6 +85,12 @@ type AgentTool interface {
 	Execute(context.Context, string, any, AgentToolUpdateCallback) (AgentToolResult, error)
 }
 
+// ParallelExecutionPreparer reserves invocation-ordered resources before a
+// parallel batch is launched. The loop calls it in tool-call source order.
+type ParallelExecutionPreparer interface {
+	PrepareParallelExecution(context.Context, any) (context.Context, func(), error)
+}
+
 // AgentToolFunc adapts a function to AgentTool without introducing a second
 // implementation-specific interface.
 type AgentToolFunc struct {

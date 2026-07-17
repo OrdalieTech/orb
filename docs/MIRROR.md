@@ -18,7 +18,7 @@ files appends rows. Package-level baseline:
 | `packages/coding-agent/src/core/{settings-manager,auth-storage}.ts`, trust | `codingagent/config/` |
 | `packages/coding-agent/src/modes/` | `codingagent/modes/` |
 | `packages/coding-agent/src/cli/` | `cmd/pi/` |
-| `packages/coding-agent/src/utils/truncate.ts` | `internal/truncate/` |
+| `packages/coding-agent/src/core/tools/truncate.ts` | `internal/truncate/` |
 | (npm `partial-json`) | `internal/partialjson/` |
 | `packages/orchestrator/` | — excluded (DECISIONS ledger) |
 
@@ -56,3 +56,13 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/ai/src/compat.ts` (`streamSimple` dispatch for landed API shapes) | `ai/api/stream_simple.go` | WP-130 |
 | `packages/ai/src/providers/faux.ts` (UTF-16 streaming and surrogate wire behavior) | `ai/stream.go`, `ai/json.go`, `internal/jsonwire/marshal.go` | WP-130 |
 | Agent-loop scripted behavior | `conformance/extract/f3-agent.ts`, `conformance/fixtures/F3/`, `conformance/runner/f3_agent_test.go` | WP-130 |
+| `packages/coding-agent/src/core/tools/path-utils.ts`, `packages/coding-agent/src/utils/paths.ts` | `codingagent/tools/path.go`, `codingagent/tools/path_test.go` | WP-140 |
+| `packages/coding-agent/src/core/tools/read.ts` | `codingagent/tools/read.go`, `codingagent/tools/read_test.go`, `codingagent/tools/common.go` | WP-140 |
+| `packages/coding-agent/src/core/tools/write.ts` | `codingagent/tools/write.go`, `codingagent/tools/write_test.go` | WP-140 |
+| `packages/coding-agent/src/core/tools/edit.ts` | `codingagent/tools/edit.go`, `codingagent/tools/edit_test.go` | WP-140 |
+| `packages/coding-agent/src/core/tools/edit-diff.ts`, npm `diff@8.0.4` | `codingagent/tools/editdiff.go`, `codingagent/tools/editdiff_test.go`, `conformance/extract/f4-edit.ts`, `conformance/fixtures/F4/`, `conformance/runner/f4_edit_test.go` | WP-140 |
+| `packages/coding-agent/src/core/tools/ls.ts` | `codingagent/tools/ls.go`, `codingagent/tools/ls_test.go` | WP-140 |
+| `packages/coding-agent/src/core/tools/{read,write,edit,ls}.ts` (`renderCall`/`renderResult` stubs) | `codingagent/tools/render.go`, `codingagent/tools/render_test.go` | WP-140 |
+| `packages/coding-agent/src/core/tools/file-mutation-queue.ts` | `codingagent/tools/mutation_queue.go`, `codingagent/tools/mutation_queue_test.go` | WP-140 |
+| `packages/agent/src/agent-loop.ts` (parallel invocation-order reservation) | `agent/types.go`, `agent/loop.go`, `agent/loop_test.go` | WP-140 |
+| `packages/coding-agent/src/core/tools/truncate.ts` | `internal/truncate/truncate.go`, `internal/truncate/truncate_test.go`, `conformance/runner/f5_truncation_test.go` | WP-140 |

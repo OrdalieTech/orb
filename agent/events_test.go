@@ -106,14 +106,23 @@ func TestToolEventsPreserveProviderArgumentOrderAndOptionalResultFields(t *testi
 }
 
 func TestAgentToolResultOmitsAbsentOptionalFields(t *testing.T) {
-	result := AgentToolResult{Content: ai.ToolResultContent{}, Details: map[string]any{}}
-	got, err := ai.Marshal(result)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	want := []byte(`{"content":[],"details":{}}`)
-	if diff := runner.ByteDiff(want, got); diff != "" {
-		t.Fatal(diff)
+	for _, testCase := range []struct {
+		name   string
+		result AgentToolResult
+		want   string
+	}{
+		{"nil details", AgentToolResult{Content: ai.ToolResultContent{}}, `{"content":[]}`},
+		{"empty details", AgentToolResult{Content: ai.ToolResultContent{}, Details: map[string]any{}}, `{"content":[],"details":{}}`},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			got, err := ai.Marshal(testCase.result)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if diff := runner.ByteDiff([]byte(testCase.want), got); diff != "" {
+				t.Fatal(diff)
+			}
+		})
 	}
 }
 

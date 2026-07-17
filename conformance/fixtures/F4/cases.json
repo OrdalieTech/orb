@@ -1,0 +1,1005 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "detect-line-ending-empty",
+      "operation": "detect-line-ending",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:detectLineEnding default",
+      "content": "",
+      "expected": "\n"
+    },
+    {
+      "name": "detect-line-ending-lf",
+      "operation": "detect-line-ending",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/preserve LF",
+      "content": "first\nsecond\n",
+      "expected": "\n"
+    },
+    {
+      "name": "detect-line-ending-crlf",
+      "operation": "detect-line-ending",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/preserve CRLF",
+      "content": "first\r\nsecond\r\n",
+      "expected": "\r\n"
+    },
+    {
+      "name": "detect-line-ending-first-sequence-wins-lf",
+      "operation": "detect-line-ending",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:detectLineEnding mixed input",
+      "content": "first\nsecond\r\nthird\n",
+      "expected": "\n"
+    },
+    {
+      "name": "detect-line-ending-first-sequence-wins-crlf",
+      "operation": "detect-line-ending",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:detectLineEnding mixed input",
+      "content": "first\r\nsecond\nthird\r\n",
+      "expected": "\r\n"
+    },
+    {
+      "name": "normalize-lf-crlf-and-cr",
+      "operation": "normalize-lf",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:normalizeToLF",
+      "content": "one\r\ntwo\rthree\nfour",
+      "expected": "one\ntwo\nthree\nfour"
+    },
+    {
+      "name": "restore-line-endings-crlf",
+      "operation": "restore-line-endings",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/preserve CRLF",
+      "content": "one\ntwo\nthree\n",
+      "ending": "\r\n",
+      "expected": "one\r\ntwo\r\nthree\r\n"
+    },
+    {
+      "name": "restore-line-endings-lf",
+      "operation": "restore-line-endings",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/preserve LF",
+      "content": "one\ntwo\nthree\n",
+      "ending": "\n",
+      "expected": "one\ntwo\nthree\n"
+    },
+    {
+      "name": "strip-bom-present",
+      "operation": "strip-bom",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/preserve UTF-8 BOM",
+      "content": "﻿hello\n",
+      "expected": {
+        "bom": "﻿",
+        "text": "hello\n"
+      }
+    },
+    {
+      "name": "strip-bom-absent",
+      "operation": "strip-bom",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:stripBom",
+      "content": "hello\n",
+      "expected": {
+        "bom": "",
+        "text": "hello\n"
+      }
+    },
+    {
+      "name": "normalize-fuzzy-all-transform-families",
+      "operation": "normalize-fuzzy",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool fuzzy matching",
+      "content": "ＡＢＣ１２３   \ncafé\n‘a’ ‚b‛\n“c” „d‟\n‐‑‒–—―−\na b c d e f g h i j k l m　n\n",
+      "expected": "ABC123\ncafé\n'a' 'b'\n\"c\" \"d\"\n-------\na b c d e f g h i j k l m n\n"
+    },
+    {
+      "name": "normalize-fuzzy-preserves-next-line-character",
+      "operation": "normalize-fuzzy",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:normalizeForFuzzyMatch JavaScript trimEnd whitespace set",
+      "content": "x\ny",
+      "expected": "x\ny"
+    },
+    {
+      "name": "normalize-fuzzy-trims-carriage-return-per-line",
+      "operation": "normalize-fuzzy",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:normalizeForFuzzyMatch JavaScript trimEnd carriage return",
+      "content": "x\r\ny",
+      "expected": "x\ny"
+    },
+    {
+      "name": "fuzzy-find-exact-preferred",
+      "operation": "fuzzy-find",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool fuzzy matching/prefer exact match",
+      "content": "const x = 'exact';\nconst y = ‘exact’;\n",
+      "oldText": "const x = 'exact';",
+      "expected": {
+        "found": true,
+        "index": 0,
+        "matchLength": 18,
+        "usedFuzzyMatch": false,
+        "contentForReplacement": "const x = 'exact';\nconst y = ‘exact’;\n"
+      }
+    },
+    {
+      "name": "fuzzy-find-trailing-whitespace",
+      "operation": "fuzzy-find",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool fuzzy matching/trailing whitespace",
+      "content": "line one   \nline two  \nline three\n",
+      "oldText": "line one\nline two\n",
+      "expected": {
+        "found": true,
+        "index": 0,
+        "matchLength": 18,
+        "usedFuzzyMatch": true,
+        "contentForReplacement": "line one\nline two\nline three\n"
+      }
+    },
+    {
+      "name": "fuzzy-find-missing",
+      "operation": "fuzzy-find",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool fuzzy matching/not found",
+      "content": "completely different content\n",
+      "oldText": "this does not exist",
+      "expected": {
+        "found": false,
+        "index": -1,
+        "matchLength": 0,
+        "usedFuzzyMatch": false,
+        "contentForReplacement": "completely different content\n"
+      }
+    },
+    {
+      "name": "fuzzy-find-utf16-exact-index-and-length",
+      "operation": "fuzzy-find",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:fuzzyFindText JavaScript string offsets",
+      "content": "a😀b😀c",
+      "oldText": "😀c",
+      "expected": {
+        "found": true,
+        "index": 4,
+        "matchLength": 3,
+        "usedFuzzyMatch": false,
+        "contentForReplacement": "a😀b😀c"
+      }
+    },
+    {
+      "name": "fuzzy-find-utf16-normalized-index",
+      "operation": "fuzzy-find",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:fuzzyFindText normalized JavaScript string offsets",
+      "content": "😀 prefix\nＡＢＣ\n",
+      "oldText": "ABC",
+      "expected": {
+        "found": true,
+        "index": 10,
+        "matchLength": 3,
+        "usedFuzzyMatch": true,
+        "contentForReplacement": "😀 prefix\nABC\n"
+      }
+    },
+    {
+      "name": "edit-simple-replacement",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool/replace text in file",
+      "path": "edit-test.txt",
+      "content": "Hello, world!",
+      "edits": [
+        {
+          "oldText": "world",
+          "newText": "testing"
+        }
+      ],
+      "expected": {
+        "finalContent": "Hello, testing!",
+        "baseContent": "Hello, world!",
+        "newContent": "Hello, testing!",
+        "diff": "-1 Hello, world!\n+1 Hello, testing!",
+        "firstChangedLine": 1,
+        "patch": "--- edit-test.txt\n+++ edit-test.txt\n@@ -1,1 +1,1 @@\n-Hello, world!\n\\ No newline at end of file\n+Hello, testing!\n\\ No newline at end of file\n"
+      }
+    },
+    {
+      "name": "edit-not-found",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool/fail if text not found",
+      "path": "edit-test.txt",
+      "content": "Hello, world!",
+      "edits": [
+        {
+          "oldText": "nonexistent",
+          "newText": "testing"
+        }
+      ],
+      "expectedError": "Could not find the exact text in edit-test.txt. The old text must match exactly including all whitespace and newlines."
+    },
+    {
+      "name": "edit-duplicate",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool/fail if text appears multiple times",
+      "path": "edit-test.txt",
+      "content": "foo foo foo",
+      "edits": [
+        {
+          "oldText": "foo",
+          "newText": "bar"
+        }
+      ],
+      "expectedError": "Found 3 occurrences of the text in edit-test.txt. The text must be unique. Please provide more context to make it unique."
+    },
+    {
+      "name": "edit-multiple-disjoint",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool/replace multiple disjoint regions",
+      "path": "edit-multi.txt",
+      "content": "alpha\nbeta\ngamma\ndelta\n",
+      "edits": [
+        {
+          "oldText": "alpha\n",
+          "newText": "ALPHA\n"
+        },
+        {
+          "oldText": "gamma\n",
+          "newText": "GAMMA\n"
+        }
+      ],
+      "expected": {
+        "finalContent": "ALPHA\nbeta\nGAMMA\ndelta\n",
+        "baseContent": "alpha\nbeta\ngamma\ndelta\n",
+        "newContent": "ALPHA\nbeta\nGAMMA\ndelta\n",
+        "diff": "-1 alpha\n+1 ALPHA\n 2 beta\n-3 gamma\n+3 GAMMA\n 4 delta",
+        "firstChangedLine": 1,
+        "patch": "--- edit-multi.txt\n+++ edit-multi.txt\n@@ -1,4 +1,4 @@\n-alpha\n+ALPHA\n beta\n-gamma\n+GAMMA\n delta\n"
+      }
+    },
+    {
+      "name": "edit-original-content-not-incremental",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool/match edits against original file",
+      "path": "edit-multi-original.txt",
+      "content": "foo\nbar\nbaz\n",
+      "edits": [
+        {
+          "oldText": "foo\n",
+          "newText": "foo bar\n"
+        },
+        {
+          "oldText": "bar\n",
+          "newText": "BAR\n"
+        }
+      ],
+      "expected": {
+        "finalContent": "foo bar\nBAR\nbaz\n",
+        "baseContent": "foo\nbar\nbaz\n",
+        "newContent": "foo bar\nBAR\nbaz\n",
+        "diff": "-1 foo\n-2 bar\n+1 foo bar\n+2 BAR\n 3 baz",
+        "firstChangedLine": 1,
+        "patch": "--- edit-multi-original.txt\n+++ edit-multi-original.txt\n@@ -1,3 +1,3 @@\n-foo\n-bar\n+foo bar\n+BAR\n baz\n"
+      }
+    },
+    {
+      "name": "edit-overlapping-regions",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool/fail when multi-edit regions overlap",
+      "path": "edit-overlap.txt",
+      "content": "one\ntwo\nthree\n",
+      "edits": [
+        {
+          "oldText": "one\ntwo\n",
+          "newText": "ONE\nTWO\n"
+        },
+        {
+          "oldText": "two\nthree\n",
+          "newText": "TWO\nTHREE\n"
+        }
+      ],
+      "expectedError": "edits[0] and edits[1] overlap in edit-overlap.txt. Merge them into one edit or target disjoint regions."
+    },
+    {
+      "name": "edit-no-partial-application",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool/not partially apply edits",
+      "path": "edit-no-partial.txt",
+      "content": "alpha\nbeta\ngamma\n",
+      "edits": [
+        {
+          "oldText": "alpha\n",
+          "newText": "ALPHA\n"
+        },
+        {
+          "oldText": "missing\n",
+          "newText": "MISSING\n"
+        }
+      ],
+      "expectedError": "Could not find edits[1] in edit-no-partial.txt. The oldText must match exactly including all whitespace and newlines."
+    },
+    {
+      "name": "edit-empty-old-text-single",
+      "operation": "apply",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:getEmptyOldTextError single edit",
+      "path": "empty.txt",
+      "content": "hello\n",
+      "edits": [
+        {
+          "oldText": "",
+          "newText": "prefix"
+        }
+      ],
+      "expectedError": "oldText must not be empty in empty.txt."
+    },
+    {
+      "name": "edit-empty-old-text-multiple",
+      "operation": "apply",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:getEmptyOldTextError multiple edits",
+      "path": "empty-multi.txt",
+      "content": "hello\nworld\n",
+      "edits": [
+        {
+          "oldText": "hello",
+          "newText": "HELLO"
+        },
+        {
+          "oldText": "",
+          "newText": "prefix"
+        }
+      ],
+      "expectedError": "edits[1].oldText must not be empty in empty-multi.txt."
+    },
+    {
+      "name": "edit-multi-not-found-index",
+      "operation": "apply",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:getNotFoundError multiple edits",
+      "path": "not-found-multi.txt",
+      "content": "alpha\nbeta\n",
+      "edits": [
+        {
+          "oldText": "alpha",
+          "newText": "ALPHA"
+        },
+        {
+          "oldText": "missing",
+          "newText": "MISSING"
+        }
+      ],
+      "expectedError": "Could not find edits[1] in not-found-multi.txt. The oldText must match exactly including all whitespace and newlines."
+    },
+    {
+      "name": "edit-multi-duplicate-index",
+      "operation": "apply",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:getDuplicateError multiple edits",
+      "path": "duplicate-multi.txt",
+      "content": "alpha\nbeta\nbeta\n",
+      "edits": [
+        {
+          "oldText": "alpha",
+          "newText": "ALPHA"
+        },
+        {
+          "oldText": "beta",
+          "newText": "BETA"
+        }
+      ],
+      "expectedError": "Found 2 occurrences of edits[1] in duplicate-multi.txt. Each oldText must be unique. Please provide more context to make it unique."
+    },
+    {
+      "name": "edit-no-change-single",
+      "operation": "apply",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:getNoChangeError single edit",
+      "path": "no-change.txt",
+      "content": "hello\n",
+      "edits": [
+        {
+          "oldText": "hello",
+          "newText": "hello"
+        }
+      ],
+      "expectedError": "No changes made to no-change.txt. The replacement produced identical content. This might indicate an issue with special characters or the text not existing as expected."
+    },
+    {
+      "name": "edit-no-change-multiple",
+      "operation": "apply",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:getNoChangeError multiple edits",
+      "path": "no-change-multi.txt",
+      "content": "hello\nworld\n",
+      "edits": [
+        {
+          "oldText": "hello",
+          "newText": "hello"
+        },
+        {
+          "oldText": "world",
+          "newText": "world"
+        }
+      ],
+      "expectedError": "No changes made to no-change-multi.txt. The replacements produced identical content."
+    },
+    {
+      "name": "edit-adjacent-regions-do-not-overlap",
+      "operation": "apply",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:applyEditsToNormalizedContent adjacent ranges",
+      "path": "adjacent.txt",
+      "content": "abcdef",
+      "edits": [
+        {
+          "oldText": "abc",
+          "newText": "ABC"
+        },
+        {
+          "oldText": "def",
+          "newText": "DEF"
+        }
+      ],
+      "expected": {
+        "baseContent": "abcdef",
+        "newContent": "ABCDEF"
+      }
+    },
+    {
+      "name": "edit-normalized-empty-separator-count-quirk",
+      "operation": "apply",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:countOccurrences split empty-string semantics",
+      "path": "normalized-empty.txt",
+      "content": "a b",
+      "edits": [
+        {
+          "oldText": " ",
+          "newText": "_"
+        }
+      ],
+      "expectedError": "Found 2 occurrences of the text in normalized-empty.txt. The text must be unique. Please provide more context to make it unique."
+    },
+    {
+      "name": "fuzzy-trailing-whitespace",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool fuzzy matching/trailing whitespace stripped",
+      "path": "trailing-ws.txt",
+      "content": "line one   \nline two  \nline three\n",
+      "edits": [
+        {
+          "oldText": "line one\nline two\n",
+          "newText": "replaced\n"
+        }
+      ],
+      "expected": {
+        "finalContent": "replaced\nline three\n",
+        "baseContent": "line one   \nline two  \nline three\n",
+        "newContent": "replaced\nline three\n",
+        "diff": "-1 line one   \n-2 line two  \n+1 replaced\n 3 line three",
+        "firstChangedLine": 1,
+        "patch": "--- trailing-ws.txt\n+++ trailing-ws.txt\n@@ -1,3 +1,2 @@\n-line one   \n-line two  \n+replaced\n line three\n"
+      }
+    },
+    {
+      "name": "fuzzy-fullwidth-chinese-punctuation",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool fuzzy matching/fullwidth punctuation",
+      "path": "chinese-punctuation.txt",
+      "content": "你好，世界\n你好（世界）\n",
+      "edits": [
+        {
+          "oldText": "你好,世界\n你好(世界)\n",
+          "newText": "你好，pi\n你好(pi)\n"
+        }
+      ],
+      "expected": {
+        "finalContent": "你好，pi\n你好(pi)\n",
+        "baseContent": "你好，世界\n你好（世界）\n",
+        "newContent": "你好，pi\n你好(pi)\n",
+        "diff": "-1 你好，世界\n-2 你好（世界）\n+1 你好，pi\n+2 你好(pi)",
+        "firstChangedLine": 1,
+        "patch": "--- chinese-punctuation.txt\n+++ chinese-punctuation.txt\n@@ -1,2 +1,2 @@\n-你好，世界\n-你好（世界）\n+你好，pi\n+你好(pi)\n"
+      }
+    },
+    {
+      "name": "fuzzy-unicode-compatibility",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool fuzzy matching/compatibility-equivalent Unicode",
+      "path": "unicode-compatibility.txt",
+      "content": "ＡＢＣ１２３\ncafé\n",
+      "edits": [
+        {
+          "oldText": "ABC123\ncafé\n",
+          "newText": "XYZ789\ncoffee\n"
+        }
+      ],
+      "expected": {
+        "finalContent": "XYZ789\ncoffee\n",
+        "baseContent": "ＡＢＣ１２３\ncafé\n",
+        "newContent": "XYZ789\ncoffee\n",
+        "diff": "-1 ＡＢＣ１２３\n-2 café\n+1 XYZ789\n+2 coffee",
+        "firstChangedLine": 1,
+        "patch": "--- unicode-compatibility.txt\n+++ unicode-compatibility.txt\n@@ -1,2 +1,2 @@\n-ＡＢＣ１２３\n-café\n+XYZ789\n+coffee\n"
+      }
+    },
+    {
+      "name": "fuzzy-smart-single-quotes",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool fuzzy matching/smart single quotes",
+      "path": "smart-quotes.txt",
+      "content": "console.log(‘hello’);\n",
+      "edits": [
+        {
+          "oldText": "console.log('hello');",
+          "newText": "console.log('world');"
+        }
+      ],
+      "expected": {
+        "finalContent": "console.log('world');\n",
+        "baseContent": "console.log(‘hello’);\n",
+        "newContent": "console.log('world');\n",
+        "diff": "-1 console.log(‘hello’);\n+1 console.log('world');",
+        "firstChangedLine": 1,
+        "patch": "--- smart-quotes.txt\n+++ smart-quotes.txt\n@@ -1,1 +1,1 @@\n-console.log(‘hello’);\n+console.log('world');\n"
+      }
+    },
+    {
+      "name": "fuzzy-smart-double-quotes",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool fuzzy matching/smart double quotes",
+      "path": "smart-double-quotes.txt",
+      "content": "const msg = “Hello World”;\n",
+      "edits": [
+        {
+          "oldText": "const msg = \"Hello World\";",
+          "newText": "const msg = \"Goodbye\";"
+        }
+      ],
+      "expected": {
+        "finalContent": "const msg = \"Goodbye\";\n",
+        "baseContent": "const msg = “Hello World”;\n",
+        "newContent": "const msg = \"Goodbye\";\n",
+        "diff": "-1 const msg = “Hello World”;\n+1 const msg = \"Goodbye\";",
+        "firstChangedLine": 1,
+        "patch": "--- smart-double-quotes.txt\n+++ smart-double-quotes.txt\n@@ -1,1 +1,1 @@\n-const msg = “Hello World”;\n+const msg = \"Goodbye\";\n"
+      }
+    },
+    {
+      "name": "fuzzy-unicode-dashes",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool fuzzy matching/Unicode dashes",
+      "path": "unicode-dashes.txt",
+      "content": "range: 1–5\nbreak—here\n",
+      "edits": [
+        {
+          "oldText": "range: 1-5\nbreak-here",
+          "newText": "range: 10-50\nbreak--here"
+        }
+      ],
+      "expected": {
+        "finalContent": "range: 10-50\nbreak--here\n",
+        "baseContent": "range: 1–5\nbreak—here\n",
+        "newContent": "range: 10-50\nbreak--here\n",
+        "diff": "-1 range: 1–5\n-2 break—here\n+1 range: 10-50\n+2 break--here",
+        "firstChangedLine": 1,
+        "patch": "--- unicode-dashes.txt\n+++ unicode-dashes.txt\n@@ -1,2 +1,2 @@\n-range: 1–5\n-break—here\n+range: 10-50\n+break--here\n"
+      }
+    },
+    {
+      "name": "fuzzy-non-breaking-space",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool fuzzy matching/non-breaking space",
+      "path": "nbsp.txt",
+      "content": "hello world\n",
+      "edits": [
+        {
+          "oldText": "hello world",
+          "newText": "hello universe"
+        }
+      ],
+      "expected": {
+        "finalContent": "hello universe\n",
+        "baseContent": "hello world\n",
+        "newContent": "hello universe\n",
+        "diff": "-1 hello world\n+1 hello universe",
+        "firstChangedLine": 1,
+        "patch": "--- nbsp.txt\n+++ nbsp.txt\n@@ -1,1 +1,1 @@\n-hello world\n+hello universe\n"
+      }
+    },
+    {
+      "name": "fuzzy-exact-preferred",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool fuzzy matching/prefer exact match",
+      "path": "exact-preferred.txt",
+      "content": "const x = 'exact';\nconst y = 'other';\n",
+      "edits": [
+        {
+          "oldText": "const x = 'exact';",
+          "newText": "const x = 'changed';"
+        }
+      ],
+      "expected": {
+        "finalContent": "const x = 'changed';\nconst y = 'other';\n",
+        "baseContent": "const x = 'exact';\nconst y = 'other';\n",
+        "newContent": "const x = 'changed';\nconst y = 'other';\n",
+        "diff": "-1 const x = 'exact';\n+1 const x = 'changed';\n 2 const y = 'other';",
+        "firstChangedLine": 1,
+        "patch": "--- exact-preferred.txt\n+++ exact-preferred.txt\n@@ -1,2 +1,2 @@\n-const x = 'exact';\n+const x = 'changed';\n const y = 'other';\n"
+      }
+    },
+    {
+      "name": "fuzzy-not-found",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool fuzzy matching/not found",
+      "path": "no-match.txt",
+      "content": "completely different content\n",
+      "edits": [
+        {
+          "oldText": "this does not exist",
+          "newText": "replacement"
+        }
+      ],
+      "expectedError": "Could not find the exact text in no-match.txt. The old text must match exactly including all whitespace and newlines."
+    },
+    {
+      "name": "fuzzy-duplicates-after-normalization",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool fuzzy matching/duplicates after normalization",
+      "path": "fuzzy-dups.txt",
+      "content": "hello world   \nhello world\n",
+      "edits": [
+        {
+          "oldText": "hello world",
+          "newText": "replaced"
+        }
+      ],
+      "expectedError": "Found 2 occurrences of the text in fuzzy-dups.txt. The text must be unique. Please provide more context to make it unique."
+    },
+    {
+      "name": "fuzzy-multiple-edits",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool fuzzy matching/multi-edit mode",
+      "path": "fuzzy-multi.txt",
+      "content": "console.log(‘hello’);\nhello world\n",
+      "edits": [
+        {
+          "oldText": "console.log('hello');\n",
+          "newText": "console.log('world');\n"
+        },
+        {
+          "oldText": "hello world\n",
+          "newText": "hello universe\n"
+        }
+      ],
+      "expected": {
+        "finalContent": "console.log('world');\nhello universe\n",
+        "baseContent": "console.log(‘hello’);\nhello world\n",
+        "newContent": "console.log('world');\nhello universe\n",
+        "diff": "-1 console.log(‘hello’);\n-2 hello world\n+1 console.log('world');\n+2 hello universe",
+        "firstChangedLine": 1,
+        "patch": "--- fuzzy-multi.txt\n+++ fuzzy-multi.txt\n@@ -1,2 +1,2 @@\n-console.log(‘hello’);\n-hello world\n+console.log('world');\n+hello universe\n"
+      }
+    },
+    {
+      "name": "fuzzy-preserve-correct-duplicate-line",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool fuzzy matching/preserve correct occurrence",
+      "path": "fuzzy-preserve-duplicate-line.txt",
+      "content": "replace me   \nafter   \n",
+      "edits": [
+        {
+          "oldText": "replace me\n",
+          "newText": "after\n"
+        }
+      ],
+      "expected": {
+        "finalContent": "after\nafter   \n",
+        "baseContent": "replace me   \nafter   \n",
+        "newContent": "after\nafter   \n",
+        "diff": "-1 replace me   \n+1 after\n 2 after   ",
+        "firstChangedLine": 1,
+        "patch": "--- fuzzy-preserve-duplicate-line.txt\n+++ fuzzy-preserve-duplicate-line.txt\n@@ -1,2 +1,2 @@\n-replace me   \n+after\n after   \n"
+      }
+    },
+    {
+      "name": "fuzzy-preserve-untouched-lines-multiple-edits",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool fuzzy matching/preserve untouched lines",
+      "path": "fuzzy-preserve-multi.txt",
+      "content": "keep before  \nfirst target  \nfirst after\nkeep middle   \nsecond target  \nsecond after\nkeep after  \n",
+      "edits": [
+        {
+          "oldText": "first target\nfirst after",
+          "newText": "FIRST\nFIRST2"
+        },
+        {
+          "oldText": "second target\nsecond after",
+          "newText": "SECOND\nSECOND2"
+        }
+      ],
+      "expected": {
+        "finalContent": "keep before  \nFIRST\nFIRST2\nkeep middle   \nSECOND\nSECOND2\nkeep after  \n",
+        "baseContent": "keep before  \nfirst target  \nfirst after\nkeep middle   \nsecond target  \nsecond after\nkeep after  \n",
+        "newContent": "keep before  \nFIRST\nFIRST2\nkeep middle   \nSECOND\nSECOND2\nkeep after  \n",
+        "diff": " 1 keep before  \n-2 first target  \n-3 first after\n+2 FIRST\n+3 FIRST2\n 4 keep middle   \n-5 second target  \n-6 second after\n+5 SECOND\n+6 SECOND2\n 7 keep after  ",
+        "firstChangedLine": 2,
+        "patch": "--- fuzzy-preserve-multi.txt\n+++ fuzzy-preserve-multi.txt\n@@ -1,7 +1,7 @@\n keep before  \n-first target  \n-first after\n+FIRST\n+FIRST2\n keep middle   \n-second target  \n-second after\n+SECOND\n+SECOND2\n keep after  \n"
+      }
+    },
+    {
+      "name": "fuzzy-preserve-astral-prefix",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:fuzzy replacement with UTF-16 offsets",
+      "path": "astral-prefix.txt",
+      "content": "😀 keep  \nＡＢＣ target  \nafter\n",
+      "edits": [
+        {
+          "oldText": "ABC target\n",
+          "newText": "changed\n"
+        }
+      ],
+      "expected": {
+        "finalContent": "😀 keep  \nchanged\nafter\n",
+        "baseContent": "😀 keep  \nＡＢＣ target  \nafter\n",
+        "newContent": "😀 keep  \nchanged\nafter\n",
+        "diff": " 1 😀 keep  \n-2 ＡＢＣ target  \n+2 changed\n 3 after",
+        "firstChangedLine": 2,
+        "patch": "--- astral-prefix.txt\n+++ astral-prefix.txt\n@@ -1,3 +1,3 @@\n 😀 keep  \n-ＡＢＣ target  \n+changed\n after\n"
+      }
+    },
+    {
+      "name": "crlf-match-lf-old-text",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/match LF oldText",
+      "path": "crlf-test.txt",
+      "content": "line one\r\nline two\r\nline three\r\n",
+      "edits": [
+        {
+          "oldText": "line two\n",
+          "newText": "replaced line\n"
+        }
+      ],
+      "expected": {
+        "finalContent": "line one\r\nreplaced line\r\nline three\r\n",
+        "baseContent": "line one\nline two\nline three\n",
+        "newContent": "line one\nreplaced line\nline three\n",
+        "diff": " 1 line one\n-2 line two\n+2 replaced line\n 3 line three",
+        "firstChangedLine": 2,
+        "patch": "--- crlf-test.txt\n+++ crlf-test.txt\n@@ -1,3 +1,3 @@\n line one\n-line two\n+replaced line\n line three\n"
+      }
+    },
+    {
+      "name": "crlf-preserve-after-edit",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/preserve CRLF",
+      "path": "crlf-preserve.txt",
+      "content": "first\r\nsecond\r\nthird\r\n",
+      "edits": [
+        {
+          "oldText": "second\n",
+          "newText": "REPLACED\n"
+        }
+      ],
+      "expected": {
+        "finalContent": "first\r\nREPLACED\r\nthird\r\n",
+        "baseContent": "first\nsecond\nthird\n",
+        "newContent": "first\nREPLACED\nthird\n",
+        "diff": " 1 first\n-2 second\n+2 REPLACED\n 3 third",
+        "firstChangedLine": 2,
+        "patch": "--- crlf-preserve.txt\n+++ crlf-preserve.txt\n@@ -1,3 +1,3 @@\n first\n-second\n+REPLACED\n third\n"
+      }
+    },
+    {
+      "name": "lf-preserve-after-edit",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/preserve LF",
+      "path": "lf-preserve.txt",
+      "content": "first\nsecond\nthird\n",
+      "edits": [
+        {
+          "oldText": "second\n",
+          "newText": "REPLACED\n"
+        }
+      ],
+      "expected": {
+        "finalContent": "first\nREPLACED\nthird\n",
+        "baseContent": "first\nsecond\nthird\n",
+        "newContent": "first\nREPLACED\nthird\n",
+        "diff": " 1 first\n-2 second\n+2 REPLACED\n 3 third",
+        "firstChangedLine": 2,
+        "patch": "--- lf-preserve.txt\n+++ lf-preserve.txt\n@@ -1,3 +1,3 @@\n first\n-second\n+REPLACED\n third\n"
+      }
+    },
+    {
+      "name": "mixed-endings-duplicate-detection",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/duplicates across CRLF/LF",
+      "path": "mixed-endings.txt",
+      "content": "hello\r\nworld\r\n---\r\nhello\nworld\n",
+      "edits": [
+        {
+          "oldText": "hello\nworld\n",
+          "newText": "replaced\n"
+        }
+      ],
+      "expectedError": "Found 2 occurrences of the text in mixed-endings.txt. The text must be unique. Please provide more context to make it unique."
+    },
+    {
+      "name": "bom-preserved-after-edit",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/preserve UTF-8 BOM",
+      "path": "bom-test.txt",
+      "content": "﻿first\r\nsecond\r\nthird\r\n",
+      "edits": [
+        {
+          "oldText": "second\n",
+          "newText": "REPLACED\n"
+        }
+      ],
+      "expected": {
+        "finalContent": "﻿first\r\nREPLACED\r\nthird\r\n",
+        "baseContent": "first\nsecond\nthird\n",
+        "newContent": "first\nREPLACED\nthird\n",
+        "diff": " 1 first\n-2 second\n+2 REPLACED\n 3 third",
+        "firstChangedLine": 2,
+        "patch": "--- bom-test.txt\n+++ bom-test.txt\n@@ -1,3 +1,3 @@\n first\n-second\n+REPLACED\n third\n"
+      }
+    },
+    {
+      "name": "bom-and-crlf-preserved-multiple-edits",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/preserve CRLF and BOM in multi-edit",
+      "path": "bom-crlf-multi.txt",
+      "content": "﻿first\r\nsecond\r\nthird\r\nfourth\r\n",
+      "edits": [
+        {
+          "oldText": "second\n",
+          "newText": "SECOND\n"
+        },
+        {
+          "oldText": "fourth\n",
+          "newText": "FOURTH\n"
+        }
+      ],
+      "expected": {
+        "finalContent": "﻿first\r\nSECOND\r\nthird\r\nFOURTH\r\n",
+        "baseContent": "first\nsecond\nthird\nfourth\n",
+        "newContent": "first\nSECOND\nthird\nFOURTH\n",
+        "diff": " 1 first\n-2 second\n+2 SECOND\n 3 third\n-4 fourth\n+4 FOURTH",
+        "firstChangedLine": 2,
+        "patch": "--- bom-crlf-multi.txt\n+++ bom-crlf-multi.txt\n@@ -1,4 +1,4 @@\n first\n-second\n+SECOND\n third\n-fourth\n+FOURTH\n"
+      }
+    },
+    {
+      "name": "diff-simple-single-line",
+      "operation": "diff",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool/replace text in file diff",
+      "oldText": "Hello, world!",
+      "newText": "Hello, testing!",
+      "contextLines": 4,
+      "expected": {
+        "diff": "-1 Hello, world!\n+1 Hello, testing!",
+        "firstChangedLine": 1
+      }
+    },
+    {
+      "name": "diff-no-changes",
+      "operation": "diff",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:generateDiffString no changes",
+      "oldText": "same\ncontent\n",
+      "newText": "same\ncontent\n",
+      "contextLines": 4,
+      "expected": {
+        "diff": ""
+      }
+    },
+    {
+      "name": "diff-change-at-start-and-end",
+      "operation": "diff",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:generateDiffString leading and trailing context",
+      "oldText": "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n",
+      "newText": "ONE\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nTEN\n",
+      "contextLines": 2,
+      "expected": {
+        "diff": "- 1 one\n+ 1 ONE\n  2 two\n  3 three\n    ...\n  8 eight\n  9 nine\n-10 ten\n+10 TEN",
+        "firstChangedLine": 1
+      }
+    },
+    {
+      "name": "diff-adjacent-change-parts",
+      "operation": "diff",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:generateDiffString context between changes",
+      "oldText": "zero\none\ntwo\nthree\nfour\nfive\nsix\n",
+      "newText": "zero\nONE\ntwo\nthree\nfour\nFIVE\nsix\n",
+      "contextLines": 2,
+      "expected": {
+        "diff": " 1 zero\n-2 one\n+2 ONE\n 3 two\n 4 three\n 5 four\n-6 five\n+6 FIVE\n 7 six",
+        "firstChangedLine": 2
+      }
+    },
+    {
+      "name": "diff-zero-context",
+      "operation": "diff",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:generateDiffString zero context",
+      "oldText": "one\ntwo\nthree\n",
+      "newText": "one\nTWO\nthree\n",
+      "contextLines": 0,
+      "expected": {
+        "diff": "   ...\n-2 two\n+2 TWO\n   ...",
+        "firstChangedLine": 2
+      }
+    },
+    {
+      "name": "diff-no-final-newline",
+      "operation": "diff",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:generateDiffString no final newline",
+      "oldText": "one\ntwo",
+      "newText": "one\nTWO",
+      "contextLines": 4,
+      "expected": {
+        "diff": " 1 one\n-2 two\n+2 TWO",
+        "firstChangedLine": 2
+      }
+    },
+    {
+      "name": "diff-large-multi-edit-gap",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool/collapse large unchanged gaps",
+      "path": "edit-multi-large-gap.txt",
+      "content": "line 001\nline 002\nline 003\nline 004\nline 005\nline 006\nline 007\nline 008\nline 009\nline 010\nline 011\nline 012\nline 013\nline 014\nline 015\nline 016\nline 017\nline 018\nline 019\nline 020\nline 021\nline 022\nline 023\nline 024\nline 025\nline 026\nline 027\nline 028\nline 029\nline 030\nline 031\nline 032\nline 033\nline 034\nline 035\nline 036\nline 037\nline 038\nline 039\nline 040\nline 041\nline 042\nline 043\nline 044\nline 045\nline 046\nline 047\nline 048\nline 049\nline 050\nline 051\nline 052\nline 053\nline 054\nline 055\nline 056\nline 057\nline 058\nline 059\nline 060\nline 061\nline 062\nline 063\nline 064\nline 065\nline 066\nline 067\nline 068\nline 069\nline 070\nline 071\nline 072\nline 073\nline 074\nline 075\nline 076\nline 077\nline 078\nline 079\nline 080\nline 081\nline 082\nline 083\nline 084\nline 085\nline 086\nline 087\nline 088\nline 089\nline 090\nline 091\nline 092\nline 093\nline 094\nline 095\nline 096\nline 097\nline 098\nline 099\nline 100\nline 101\nline 102\nline 103\nline 104\nline 105\nline 106\nline 107\nline 108\nline 109\nline 110\nline 111\nline 112\nline 113\nline 114\nline 115\nline 116\nline 117\nline 118\nline 119\nline 120\nline 121\nline 122\nline 123\nline 124\nline 125\nline 126\nline 127\nline 128\nline 129\nline 130\nline 131\nline 132\nline 133\nline 134\nline 135\nline 136\nline 137\nline 138\nline 139\nline 140\nline 141\nline 142\nline 143\nline 144\nline 145\nline 146\nline 147\nline 148\nline 149\nline 150\nline 151\nline 152\nline 153\nline 154\nline 155\nline 156\nline 157\nline 158\nline 159\nline 160\nline 161\nline 162\nline 163\nline 164\nline 165\nline 166\nline 167\nline 168\nline 169\nline 170\nline 171\nline 172\nline 173\nline 174\nline 175\nline 176\nline 177\nline 178\nline 179\nline 180\nline 181\nline 182\nline 183\nline 184\nline 185\nline 186\nline 187\nline 188\nline 189\nline 190\nline 191\nline 192\nline 193\nline 194\nline 195\nline 196\nline 197\nline 198\nline 199\nline 200\nline 201\nline 202\nline 203\nline 204\nline 205\nline 206\nline 207\nline 208\nline 209\nline 210\nline 211\nline 212\nline 213\nline 214\nline 215\nline 216\nline 217\nline 218\nline 219\nline 220\nline 221\nline 222\nline 223\nline 224\nline 225\nline 226\nline 227\nline 228\nline 229\nline 230\nline 231\nline 232\nline 233\nline 234\nline 235\nline 236\nline 237\nline 238\nline 239\nline 240\nline 241\nline 242\nline 243\nline 244\nline 245\nline 246\nline 247\nline 248\nline 249\nline 250\nline 251\nline 252\nline 253\nline 254\nline 255\nline 256\nline 257\nline 258\nline 259\nline 260\nline 261\nline 262\nline 263\nline 264\nline 265\nline 266\nline 267\nline 268\nline 269\nline 270\nline 271\nline 272\nline 273\nline 274\nline 275\nline 276\nline 277\nline 278\nline 279\nline 280\nline 281\nline 282\nline 283\nline 284\nline 285\nline 286\nline 287\nline 288\nline 289\nline 290\nline 291\nline 292\nline 293\nline 294\nline 295\nline 296\nline 297\nline 298\nline 299\nline 300\nline 301\nline 302\nline 303\nline 304\nline 305\nline 306\nline 307\nline 308\nline 309\nline 310\nline 311\nline 312\nline 313\nline 314\nline 315\nline 316\nline 317\nline 318\nline 319\nline 320\nline 321\nline 322\nline 323\nline 324\nline 325\nline 326\nline 327\nline 328\nline 329\nline 330\nline 331\nline 332\nline 333\nline 334\nline 335\nline 336\nline 337\nline 338\nline 339\nline 340\nline 341\nline 342\nline 343\nline 344\nline 345\nline 346\nline 347\nline 348\nline 349\nline 350\nline 351\nline 352\nline 353\nline 354\nline 355\nline 356\nline 357\nline 358\nline 359\nline 360\nline 361\nline 362\nline 363\nline 364\nline 365\nline 366\nline 367\nline 368\nline 369\nline 370\nline 371\nline 372\nline 373\nline 374\nline 375\nline 376\nline 377\nline 378\nline 379\nline 380\nline 381\nline 382\nline 383\nline 384\nline 385\nline 386\nline 387\nline 388\nline 389\nline 390\nline 391\nline 392\nline 393\nline 394\nline 395\nline 396\nline 397\nline 398\nline 399\nline 400\nline 401\nline 402\nline 403\nline 404\nline 405\nline 406\nline 407\nline 408\nline 409\nline 410\nline 411\nline 412\nline 413\nline 414\nline 415\nline 416\nline 417\nline 418\nline 419\nline 420\nline 421\nline 422\nline 423\nline 424\nline 425\nline 426\nline 427\nline 428\nline 429\nline 430\nline 431\nline 432\nline 433\nline 434\nline 435\nline 436\nline 437\nline 438\nline 439\nline 440\nline 441\nline 442\nline 443\nline 444\nline 445\nline 446\nline 447\nline 448\nline 449\nline 450\nline 451\nline 452\nline 453\nline 454\nline 455\nline 456\nline 457\nline 458\nline 459\nline 460\nline 461\nline 462\nline 463\nline 464\nline 465\nline 466\nline 467\nline 468\nline 469\nline 470\nline 471\nline 472\nline 473\nline 474\nline 475\nline 476\nline 477\nline 478\nline 479\nline 480\nline 481\nline 482\nline 483\nline 484\nline 485\nline 486\nline 487\nline 488\nline 489\nline 490\nline 491\nline 492\nline 493\nline 494\nline 495\nline 496\nline 497\nline 498\nline 499\nline 500\nline 501\nline 502\nline 503\nline 504\nline 505\nline 506\nline 507\nline 508\nline 509\nline 510\nline 511\nline 512\nline 513\nline 514\nline 515\nline 516\nline 517\nline 518\nline 519\nline 520\nline 521\nline 522\nline 523\nline 524\nline 525\nline 526\nline 527\nline 528\nline 529\nline 530\nline 531\nline 532\nline 533\nline 534\nline 535\nline 536\nline 537\nline 538\nline 539\nline 540\nline 541\nline 542\nline 543\nline 544\nline 545\nline 546\nline 547\nline 548\nline 549\nline 550\nline 551\nline 552\nline 553\nline 554\nline 555\nline 556\nline 557\nline 558\nline 559\nline 560\nline 561\nline 562\nline 563\nline 564\nline 565\nline 566\nline 567\nline 568\nline 569\nline 570\nline 571\nline 572\nline 573\nline 574\nline 575\nline 576\nline 577\nline 578\nline 579\nline 580\nline 581\nline 582\nline 583\nline 584\nline 585\nline 586\nline 587\nline 588\nline 589\nline 590\nline 591\nline 592\nline 593\nline 594\nline 595\nline 596\nline 597\nline 598\nline 599\nline 600\n",
+      "edits": [
+        {
+          "oldText": "line 100\n",
+          "newText": "LINE 100\n"
+        },
+        {
+          "oldText": "line 300\n",
+          "newText": "LINE 300\n"
+        },
+        {
+          "oldText": "line 500\n",
+          "newText": "LINE 500\n"
+        }
+      ],
+      "expected": {
+        "finalContent": "line 001\nline 002\nline 003\nline 004\nline 005\nline 006\nline 007\nline 008\nline 009\nline 010\nline 011\nline 012\nline 013\nline 014\nline 015\nline 016\nline 017\nline 018\nline 019\nline 020\nline 021\nline 022\nline 023\nline 024\nline 025\nline 026\nline 027\nline 028\nline 029\nline 030\nline 031\nline 032\nline 033\nline 034\nline 035\nline 036\nline 037\nline 038\nline 039\nline 040\nline 041\nline 042\nline 043\nline 044\nline 045\nline 046\nline 047\nline 048\nline 049\nline 050\nline 051\nline 052\nline 053\nline 054\nline 055\nline 056\nline 057\nline 058\nline 059\nline 060\nline 061\nline 062\nline 063\nline 064\nline 065\nline 066\nline 067\nline 068\nline 069\nline 070\nline 071\nline 072\nline 073\nline 074\nline 075\nline 076\nline 077\nline 078\nline 079\nline 080\nline 081\nline 082\nline 083\nline 084\nline 085\nline 086\nline 087\nline 088\nline 089\nline 090\nline 091\nline 092\nline 093\nline 094\nline 095\nline 096\nline 097\nline 098\nline 099\nLINE 100\nline 101\nline 102\nline 103\nline 104\nline 105\nline 106\nline 107\nline 108\nline 109\nline 110\nline 111\nline 112\nline 113\nline 114\nline 115\nline 116\nline 117\nline 118\nline 119\nline 120\nline 121\nline 122\nline 123\nline 124\nline 125\nline 126\nline 127\nline 128\nline 129\nline 130\nline 131\nline 132\nline 133\nline 134\nline 135\nline 136\nline 137\nline 138\nline 139\nline 140\nline 141\nline 142\nline 143\nline 144\nline 145\nline 146\nline 147\nline 148\nline 149\nline 150\nline 151\nline 152\nline 153\nline 154\nline 155\nline 156\nline 157\nline 158\nline 159\nline 160\nline 161\nline 162\nline 163\nline 164\nline 165\nline 166\nline 167\nline 168\nline 169\nline 170\nline 171\nline 172\nline 173\nline 174\nline 175\nline 176\nline 177\nline 178\nline 179\nline 180\nline 181\nline 182\nline 183\nline 184\nline 185\nline 186\nline 187\nline 188\nline 189\nline 190\nline 191\nline 192\nline 193\nline 194\nline 195\nline 196\nline 197\nline 198\nline 199\nline 200\nline 201\nline 202\nline 203\nline 204\nline 205\nline 206\nline 207\nline 208\nline 209\nline 210\nline 211\nline 212\nline 213\nline 214\nline 215\nline 216\nline 217\nline 218\nline 219\nline 220\nline 221\nline 222\nline 223\nline 224\nline 225\nline 226\nline 227\nline 228\nline 229\nline 230\nline 231\nline 232\nline 233\nline 234\nline 235\nline 236\nline 237\nline 238\nline 239\nline 240\nline 241\nline 242\nline 243\nline 244\nline 245\nline 246\nline 247\nline 248\nline 249\nline 250\nline 251\nline 252\nline 253\nline 254\nline 255\nline 256\nline 257\nline 258\nline 259\nline 260\nline 261\nline 262\nline 263\nline 264\nline 265\nline 266\nline 267\nline 268\nline 269\nline 270\nline 271\nline 272\nline 273\nline 274\nline 275\nline 276\nline 277\nline 278\nline 279\nline 280\nline 281\nline 282\nline 283\nline 284\nline 285\nline 286\nline 287\nline 288\nline 289\nline 290\nline 291\nline 292\nline 293\nline 294\nline 295\nline 296\nline 297\nline 298\nline 299\nLINE 300\nline 301\nline 302\nline 303\nline 304\nline 305\nline 306\nline 307\nline 308\nline 309\nline 310\nline 311\nline 312\nline 313\nline 314\nline 315\nline 316\nline 317\nline 318\nline 319\nline 320\nline 321\nline 322\nline 323\nline 324\nline 325\nline 326\nline 327\nline 328\nline 329\nline 330\nline 331\nline 332\nline 333\nline 334\nline 335\nline 336\nline 337\nline 338\nline 339\nline 340\nline 341\nline 342\nline 343\nline 344\nline 345\nline 346\nline 347\nline 348\nline 349\nline 350\nline 351\nline 352\nline 353\nline 354\nline 355\nline 356\nline 357\nline 358\nline 359\nline 360\nline 361\nline 362\nline 363\nline 364\nline 365\nline 366\nline 367\nline 368\nline 369\nline 370\nline 371\nline 372\nline 373\nline 374\nline 375\nline 376\nline 377\nline 378\nline 379\nline 380\nline 381\nline 382\nline 383\nline 384\nline 385\nline 386\nline 387\nline 388\nline 389\nline 390\nline 391\nline 392\nline 393\nline 394\nline 395\nline 396\nline 397\nline 398\nline 399\nline 400\nline 401\nline 402\nline 403\nline 404\nline 405\nline 406\nline 407\nline 408\nline 409\nline 410\nline 411\nline 412\nline 413\nline 414\nline 415\nline 416\nline 417\nline 418\nline 419\nline 420\nline 421\nline 422\nline 423\nline 424\nline 425\nline 426\nline 427\nline 428\nline 429\nline 430\nline 431\nline 432\nline 433\nline 434\nline 435\nline 436\nline 437\nline 438\nline 439\nline 440\nline 441\nline 442\nline 443\nline 444\nline 445\nline 446\nline 447\nline 448\nline 449\nline 450\nline 451\nline 452\nline 453\nline 454\nline 455\nline 456\nline 457\nline 458\nline 459\nline 460\nline 461\nline 462\nline 463\nline 464\nline 465\nline 466\nline 467\nline 468\nline 469\nline 470\nline 471\nline 472\nline 473\nline 474\nline 475\nline 476\nline 477\nline 478\nline 479\nline 480\nline 481\nline 482\nline 483\nline 484\nline 485\nline 486\nline 487\nline 488\nline 489\nline 490\nline 491\nline 492\nline 493\nline 494\nline 495\nline 496\nline 497\nline 498\nline 499\nLINE 500\nline 501\nline 502\nline 503\nline 504\nline 505\nline 506\nline 507\nline 508\nline 509\nline 510\nline 511\nline 512\nline 513\nline 514\nline 515\nline 516\nline 517\nline 518\nline 519\nline 520\nline 521\nline 522\nline 523\nline 524\nline 525\nline 526\nline 527\nline 528\nline 529\nline 530\nline 531\nline 532\nline 533\nline 534\nline 535\nline 536\nline 537\nline 538\nline 539\nline 540\nline 541\nline 542\nline 543\nline 544\nline 545\nline 546\nline 547\nline 548\nline 549\nline 550\nline 551\nline 552\nline 553\nline 554\nline 555\nline 556\nline 557\nline 558\nline 559\nline 560\nline 561\nline 562\nline 563\nline 564\nline 565\nline 566\nline 567\nline 568\nline 569\nline 570\nline 571\nline 572\nline 573\nline 574\nline 575\nline 576\nline 577\nline 578\nline 579\nline 580\nline 581\nline 582\nline 583\nline 584\nline 585\nline 586\nline 587\nline 588\nline 589\nline 590\nline 591\nline 592\nline 593\nline 594\nline 595\nline 596\nline 597\nline 598\nline 599\nline 600\n",
+        "baseContent": "line 001\nline 002\nline 003\nline 004\nline 005\nline 006\nline 007\nline 008\nline 009\nline 010\nline 011\nline 012\nline 013\nline 014\nline 015\nline 016\nline 017\nline 018\nline 019\nline 020\nline 021\nline 022\nline 023\nline 024\nline 025\nline 026\nline 027\nline 028\nline 029\nline 030\nline 031\nline 032\nline 033\nline 034\nline 035\nline 036\nline 037\nline 038\nline 039\nline 040\nline 041\nline 042\nline 043\nline 044\nline 045\nline 046\nline 047\nline 048\nline 049\nline 050\nline 051\nline 052\nline 053\nline 054\nline 055\nline 056\nline 057\nline 058\nline 059\nline 060\nline 061\nline 062\nline 063\nline 064\nline 065\nline 066\nline 067\nline 068\nline 069\nline 070\nline 071\nline 072\nline 073\nline 074\nline 075\nline 076\nline 077\nline 078\nline 079\nline 080\nline 081\nline 082\nline 083\nline 084\nline 085\nline 086\nline 087\nline 088\nline 089\nline 090\nline 091\nline 092\nline 093\nline 094\nline 095\nline 096\nline 097\nline 098\nline 099\nline 100\nline 101\nline 102\nline 103\nline 104\nline 105\nline 106\nline 107\nline 108\nline 109\nline 110\nline 111\nline 112\nline 113\nline 114\nline 115\nline 116\nline 117\nline 118\nline 119\nline 120\nline 121\nline 122\nline 123\nline 124\nline 125\nline 126\nline 127\nline 128\nline 129\nline 130\nline 131\nline 132\nline 133\nline 134\nline 135\nline 136\nline 137\nline 138\nline 139\nline 140\nline 141\nline 142\nline 143\nline 144\nline 145\nline 146\nline 147\nline 148\nline 149\nline 150\nline 151\nline 152\nline 153\nline 154\nline 155\nline 156\nline 157\nline 158\nline 159\nline 160\nline 161\nline 162\nline 163\nline 164\nline 165\nline 166\nline 167\nline 168\nline 169\nline 170\nline 171\nline 172\nline 173\nline 174\nline 175\nline 176\nline 177\nline 178\nline 179\nline 180\nline 181\nline 182\nline 183\nline 184\nline 185\nline 186\nline 187\nline 188\nline 189\nline 190\nline 191\nline 192\nline 193\nline 194\nline 195\nline 196\nline 197\nline 198\nline 199\nline 200\nline 201\nline 202\nline 203\nline 204\nline 205\nline 206\nline 207\nline 208\nline 209\nline 210\nline 211\nline 212\nline 213\nline 214\nline 215\nline 216\nline 217\nline 218\nline 219\nline 220\nline 221\nline 222\nline 223\nline 224\nline 225\nline 226\nline 227\nline 228\nline 229\nline 230\nline 231\nline 232\nline 233\nline 234\nline 235\nline 236\nline 237\nline 238\nline 239\nline 240\nline 241\nline 242\nline 243\nline 244\nline 245\nline 246\nline 247\nline 248\nline 249\nline 250\nline 251\nline 252\nline 253\nline 254\nline 255\nline 256\nline 257\nline 258\nline 259\nline 260\nline 261\nline 262\nline 263\nline 264\nline 265\nline 266\nline 267\nline 268\nline 269\nline 270\nline 271\nline 272\nline 273\nline 274\nline 275\nline 276\nline 277\nline 278\nline 279\nline 280\nline 281\nline 282\nline 283\nline 284\nline 285\nline 286\nline 287\nline 288\nline 289\nline 290\nline 291\nline 292\nline 293\nline 294\nline 295\nline 296\nline 297\nline 298\nline 299\nline 300\nline 301\nline 302\nline 303\nline 304\nline 305\nline 306\nline 307\nline 308\nline 309\nline 310\nline 311\nline 312\nline 313\nline 314\nline 315\nline 316\nline 317\nline 318\nline 319\nline 320\nline 321\nline 322\nline 323\nline 324\nline 325\nline 326\nline 327\nline 328\nline 329\nline 330\nline 331\nline 332\nline 333\nline 334\nline 335\nline 336\nline 337\nline 338\nline 339\nline 340\nline 341\nline 342\nline 343\nline 344\nline 345\nline 346\nline 347\nline 348\nline 349\nline 350\nline 351\nline 352\nline 353\nline 354\nline 355\nline 356\nline 357\nline 358\nline 359\nline 360\nline 361\nline 362\nline 363\nline 364\nline 365\nline 366\nline 367\nline 368\nline 369\nline 370\nline 371\nline 372\nline 373\nline 374\nline 375\nline 376\nline 377\nline 378\nline 379\nline 380\nline 381\nline 382\nline 383\nline 384\nline 385\nline 386\nline 387\nline 388\nline 389\nline 390\nline 391\nline 392\nline 393\nline 394\nline 395\nline 396\nline 397\nline 398\nline 399\nline 400\nline 401\nline 402\nline 403\nline 404\nline 405\nline 406\nline 407\nline 408\nline 409\nline 410\nline 411\nline 412\nline 413\nline 414\nline 415\nline 416\nline 417\nline 418\nline 419\nline 420\nline 421\nline 422\nline 423\nline 424\nline 425\nline 426\nline 427\nline 428\nline 429\nline 430\nline 431\nline 432\nline 433\nline 434\nline 435\nline 436\nline 437\nline 438\nline 439\nline 440\nline 441\nline 442\nline 443\nline 444\nline 445\nline 446\nline 447\nline 448\nline 449\nline 450\nline 451\nline 452\nline 453\nline 454\nline 455\nline 456\nline 457\nline 458\nline 459\nline 460\nline 461\nline 462\nline 463\nline 464\nline 465\nline 466\nline 467\nline 468\nline 469\nline 470\nline 471\nline 472\nline 473\nline 474\nline 475\nline 476\nline 477\nline 478\nline 479\nline 480\nline 481\nline 482\nline 483\nline 484\nline 485\nline 486\nline 487\nline 488\nline 489\nline 490\nline 491\nline 492\nline 493\nline 494\nline 495\nline 496\nline 497\nline 498\nline 499\nline 500\nline 501\nline 502\nline 503\nline 504\nline 505\nline 506\nline 507\nline 508\nline 509\nline 510\nline 511\nline 512\nline 513\nline 514\nline 515\nline 516\nline 517\nline 518\nline 519\nline 520\nline 521\nline 522\nline 523\nline 524\nline 525\nline 526\nline 527\nline 528\nline 529\nline 530\nline 531\nline 532\nline 533\nline 534\nline 535\nline 536\nline 537\nline 538\nline 539\nline 540\nline 541\nline 542\nline 543\nline 544\nline 545\nline 546\nline 547\nline 548\nline 549\nline 550\nline 551\nline 552\nline 553\nline 554\nline 555\nline 556\nline 557\nline 558\nline 559\nline 560\nline 561\nline 562\nline 563\nline 564\nline 565\nline 566\nline 567\nline 568\nline 569\nline 570\nline 571\nline 572\nline 573\nline 574\nline 575\nline 576\nline 577\nline 578\nline 579\nline 580\nline 581\nline 582\nline 583\nline 584\nline 585\nline 586\nline 587\nline 588\nline 589\nline 590\nline 591\nline 592\nline 593\nline 594\nline 595\nline 596\nline 597\nline 598\nline 599\nline 600\n",
+        "newContent": "line 001\nline 002\nline 003\nline 004\nline 005\nline 006\nline 007\nline 008\nline 009\nline 010\nline 011\nline 012\nline 013\nline 014\nline 015\nline 016\nline 017\nline 018\nline 019\nline 020\nline 021\nline 022\nline 023\nline 024\nline 025\nline 026\nline 027\nline 028\nline 029\nline 030\nline 031\nline 032\nline 033\nline 034\nline 035\nline 036\nline 037\nline 038\nline 039\nline 040\nline 041\nline 042\nline 043\nline 044\nline 045\nline 046\nline 047\nline 048\nline 049\nline 050\nline 051\nline 052\nline 053\nline 054\nline 055\nline 056\nline 057\nline 058\nline 059\nline 060\nline 061\nline 062\nline 063\nline 064\nline 065\nline 066\nline 067\nline 068\nline 069\nline 070\nline 071\nline 072\nline 073\nline 074\nline 075\nline 076\nline 077\nline 078\nline 079\nline 080\nline 081\nline 082\nline 083\nline 084\nline 085\nline 086\nline 087\nline 088\nline 089\nline 090\nline 091\nline 092\nline 093\nline 094\nline 095\nline 096\nline 097\nline 098\nline 099\nLINE 100\nline 101\nline 102\nline 103\nline 104\nline 105\nline 106\nline 107\nline 108\nline 109\nline 110\nline 111\nline 112\nline 113\nline 114\nline 115\nline 116\nline 117\nline 118\nline 119\nline 120\nline 121\nline 122\nline 123\nline 124\nline 125\nline 126\nline 127\nline 128\nline 129\nline 130\nline 131\nline 132\nline 133\nline 134\nline 135\nline 136\nline 137\nline 138\nline 139\nline 140\nline 141\nline 142\nline 143\nline 144\nline 145\nline 146\nline 147\nline 148\nline 149\nline 150\nline 151\nline 152\nline 153\nline 154\nline 155\nline 156\nline 157\nline 158\nline 159\nline 160\nline 161\nline 162\nline 163\nline 164\nline 165\nline 166\nline 167\nline 168\nline 169\nline 170\nline 171\nline 172\nline 173\nline 174\nline 175\nline 176\nline 177\nline 178\nline 179\nline 180\nline 181\nline 182\nline 183\nline 184\nline 185\nline 186\nline 187\nline 188\nline 189\nline 190\nline 191\nline 192\nline 193\nline 194\nline 195\nline 196\nline 197\nline 198\nline 199\nline 200\nline 201\nline 202\nline 203\nline 204\nline 205\nline 206\nline 207\nline 208\nline 209\nline 210\nline 211\nline 212\nline 213\nline 214\nline 215\nline 216\nline 217\nline 218\nline 219\nline 220\nline 221\nline 222\nline 223\nline 224\nline 225\nline 226\nline 227\nline 228\nline 229\nline 230\nline 231\nline 232\nline 233\nline 234\nline 235\nline 236\nline 237\nline 238\nline 239\nline 240\nline 241\nline 242\nline 243\nline 244\nline 245\nline 246\nline 247\nline 248\nline 249\nline 250\nline 251\nline 252\nline 253\nline 254\nline 255\nline 256\nline 257\nline 258\nline 259\nline 260\nline 261\nline 262\nline 263\nline 264\nline 265\nline 266\nline 267\nline 268\nline 269\nline 270\nline 271\nline 272\nline 273\nline 274\nline 275\nline 276\nline 277\nline 278\nline 279\nline 280\nline 281\nline 282\nline 283\nline 284\nline 285\nline 286\nline 287\nline 288\nline 289\nline 290\nline 291\nline 292\nline 293\nline 294\nline 295\nline 296\nline 297\nline 298\nline 299\nLINE 300\nline 301\nline 302\nline 303\nline 304\nline 305\nline 306\nline 307\nline 308\nline 309\nline 310\nline 311\nline 312\nline 313\nline 314\nline 315\nline 316\nline 317\nline 318\nline 319\nline 320\nline 321\nline 322\nline 323\nline 324\nline 325\nline 326\nline 327\nline 328\nline 329\nline 330\nline 331\nline 332\nline 333\nline 334\nline 335\nline 336\nline 337\nline 338\nline 339\nline 340\nline 341\nline 342\nline 343\nline 344\nline 345\nline 346\nline 347\nline 348\nline 349\nline 350\nline 351\nline 352\nline 353\nline 354\nline 355\nline 356\nline 357\nline 358\nline 359\nline 360\nline 361\nline 362\nline 363\nline 364\nline 365\nline 366\nline 367\nline 368\nline 369\nline 370\nline 371\nline 372\nline 373\nline 374\nline 375\nline 376\nline 377\nline 378\nline 379\nline 380\nline 381\nline 382\nline 383\nline 384\nline 385\nline 386\nline 387\nline 388\nline 389\nline 390\nline 391\nline 392\nline 393\nline 394\nline 395\nline 396\nline 397\nline 398\nline 399\nline 400\nline 401\nline 402\nline 403\nline 404\nline 405\nline 406\nline 407\nline 408\nline 409\nline 410\nline 411\nline 412\nline 413\nline 414\nline 415\nline 416\nline 417\nline 418\nline 419\nline 420\nline 421\nline 422\nline 423\nline 424\nline 425\nline 426\nline 427\nline 428\nline 429\nline 430\nline 431\nline 432\nline 433\nline 434\nline 435\nline 436\nline 437\nline 438\nline 439\nline 440\nline 441\nline 442\nline 443\nline 444\nline 445\nline 446\nline 447\nline 448\nline 449\nline 450\nline 451\nline 452\nline 453\nline 454\nline 455\nline 456\nline 457\nline 458\nline 459\nline 460\nline 461\nline 462\nline 463\nline 464\nline 465\nline 466\nline 467\nline 468\nline 469\nline 470\nline 471\nline 472\nline 473\nline 474\nline 475\nline 476\nline 477\nline 478\nline 479\nline 480\nline 481\nline 482\nline 483\nline 484\nline 485\nline 486\nline 487\nline 488\nline 489\nline 490\nline 491\nline 492\nline 493\nline 494\nline 495\nline 496\nline 497\nline 498\nline 499\nLINE 500\nline 501\nline 502\nline 503\nline 504\nline 505\nline 506\nline 507\nline 508\nline 509\nline 510\nline 511\nline 512\nline 513\nline 514\nline 515\nline 516\nline 517\nline 518\nline 519\nline 520\nline 521\nline 522\nline 523\nline 524\nline 525\nline 526\nline 527\nline 528\nline 529\nline 530\nline 531\nline 532\nline 533\nline 534\nline 535\nline 536\nline 537\nline 538\nline 539\nline 540\nline 541\nline 542\nline 543\nline 544\nline 545\nline 546\nline 547\nline 548\nline 549\nline 550\nline 551\nline 552\nline 553\nline 554\nline 555\nline 556\nline 557\nline 558\nline 559\nline 560\nline 561\nline 562\nline 563\nline 564\nline 565\nline 566\nline 567\nline 568\nline 569\nline 570\nline 571\nline 572\nline 573\nline 574\nline 575\nline 576\nline 577\nline 578\nline 579\nline 580\nline 581\nline 582\nline 583\nline 584\nline 585\nline 586\nline 587\nline 588\nline 589\nline 590\nline 591\nline 592\nline 593\nline 594\nline 595\nline 596\nline 597\nline 598\nline 599\nline 600\n",
+        "diff": "     ...\n  96 line 096\n  97 line 097\n  98 line 098\n  99 line 099\n-100 line 100\n+100 LINE 100\n 101 line 101\n 102 line 102\n 103 line 103\n 104 line 104\n     ...\n 296 line 296\n 297 line 297\n 298 line 298\n 299 line 299\n-300 line 300\n+300 LINE 300\n 301 line 301\n 302 line 302\n 303 line 303\n 304 line 304\n     ...\n 496 line 496\n 497 line 497\n 498 line 498\n 499 line 499\n-500 line 500\n+500 LINE 500\n 501 line 501\n 502 line 502\n 503 line 503\n 504 line 504\n     ...",
+        "firstChangedLine": 100,
+        "patch": "--- edit-multi-large-gap.txt\n+++ edit-multi-large-gap.txt\n@@ -96,9 +96,9 @@\n line 096\n line 097\n line 098\n line 099\n-line 100\n+LINE 100\n line 101\n line 102\n line 103\n line 104\n@@ -296,9 +296,9 @@\n line 296\n line 297\n line 298\n line 299\n-line 300\n+LINE 300\n line 301\n line 302\n line 303\n line 304\n@@ -496,9 +496,9 @@\n line 496\n line 497\n line 498\n line 499\n-line 500\n+LINE 500\n line 501\n line 502\n line 503\n line 504\n"
+      }
+    },
+    {
+      "name": "patch-simple-single-line",
+      "operation": "patch",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool/replace text in file patch",
+      "path": "edit-test.txt",
+      "oldText": "Hello, world!",
+      "newText": "Hello, testing!",
+      "contextLines": 4,
+      "expected": "--- edit-test.txt\n+++ edit-test.txt\n@@ -1,1 +1,1 @@\n-Hello, world!\n\\ No newline at end of file\n+Hello, testing!\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "patch-multiple-hunks",
+      "operation": "patch",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool/fuzzy untouched lines applicable patch",
+      "path": "multi.txt",
+      "oldText": "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n",
+      "newText": "ONE\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nTEN\n",
+      "contextLines": 1,
+      "expected": "--- multi.txt\n+++ multi.txt\n@@ -1,2 +1,2 @@\n-one\n+ONE\n two\n@@ -9,2 +9,2 @@\n nine\n-ten\n+TEN\n"
+    },
+    {
+      "name": "patch-no-final-newline",
+      "operation": "patch",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:generateUnifiedPatch no final newline",
+      "path": "no-final-newline.txt",
+      "oldText": "one\ntwo",
+      "newText": "one\nTWO",
+      "contextLines": 4,
+      "expected": "--- no-final-newline.txt\n+++ no-final-newline.txt\n@@ -1,2 +1,2 @@\n one\n-two\n\\ No newline at end of file\n+TWO\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "patch-zero-context",
+      "operation": "patch",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:generateUnifiedPatch zero context",
+      "path": "zero-context.txt",
+      "oldText": "one\ntwo\nthree\n",
+      "newText": "one\nTWO\nthree\n",
+      "contextLines": 0,
+      "expected": "--- zero-context.txt\n+++ zero-context.txt\n@@ -2,1 +2,1 @@\n-two\n+TWO\n"
+    },
+    {
+      "name": "patch-no-changes-keeps-file-headers",
+      "operation": "patch",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:generateUnifiedPatch no changes",
+      "path": "unchanged.txt",
+      "oldText": "same\ncontent\n",
+      "newText": "same\ncontent\n",
+      "contextLines": 4,
+      "expected": "--- unchanged.txt\n+++ unchanged.txt\n"
+    }
+  ]
+}

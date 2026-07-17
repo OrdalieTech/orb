@@ -246,7 +246,7 @@ func (event ToolExecutionEndEvent) MarshalJSON() ([]byte, error) {
 func (result AgentToolResult) MarshalJSON() ([]byte, error) {
 	return ai.Marshal(struct {
 		Content        ai.ToolResultContent `json:"content"`
-		Details        any                  `json:"details"`
+		Details        any                  `json:"details,omitempty"`
 		AddedToolNames *[]string            `json:"addedToolNames,omitempty"`
 		Terminate      *bool                `json:"terminate,omitempty"`
 	}{

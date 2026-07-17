@@ -5,7 +5,8 @@ import { pathToFileURL } from "node:url";
 type InputSpec =
   | { kind: "literal"; value: string }
   | { kind: "repeat"; value: string; count: number }
-  | { kind: "repeatLines"; value: string; count: number; trailingNewline?: boolean };
+  | { kind: "repeatLines"; value: string; count: number; trailingNewline?: boolean }
+  | { kind: "utf16"; units: number[] };
 
 type TruncationCase = {
   name: string;
@@ -81,6 +82,12 @@ const cases: FixtureCase[] = [
     options: { maxLines: 10, maxBytes: 7 },
   },
   {
+    name: "tail-partial-line-replaces-lone-surrogate",
+    operation: "tail",
+    input: { kind: "utf16", units: [112, 114, 101, 102, 105, 120, 0xd800] },
+    options: { maxLines: 10, maxBytes: 3 },
+  },
+  {
     name: "head-zero-lines",
     operation: "head",
     input: { kind: "literal", value: "alpha\nbeta" },
@@ -150,6 +157,7 @@ const cases: FixtureCase[] = [
   },
   { name: "size-bytes", operation: "size", bytes: 1023 },
   { name: "size-kibibytes", operation: "size", bytes: 1536 },
+  { name: "size-kibibytes-half-tie", operation: "size", bytes: 51456 },
   { name: "size-mebibytes", operation: "size", bytes: 1572864 },
 ];
 
@@ -163,6 +171,8 @@ function materialize(spec: InputSpec): string {
       const value = Array.from({ length: spec.count }, () => spec.value).join("\n");
       return spec.trailingNewline ? `${value}\n` : value;
     }
+    case "utf16":
+      return String.fromCharCode(...spec.units);
   }
 }
 
