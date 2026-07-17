@@ -1,0 +1,19 @@
+{
+  "id": "openai",
+  "name": "OpenAI",
+  "baseUrl": "https://api.openai.com/v1",
+  "apis": [
+    "openai-responses"
+  ],
+  "auth": {
+    "kind": "api_key",
+    "name": "OpenAI API key",
+    "env": [
+      "OPENAI_API_KEY"
+    ],
+    "resolved": {
+      "apiKey": "fixture-openai-api-key"
+    },
+    "source": "OPENAI_API_KEY"
+  }
+}

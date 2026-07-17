@@ -15,3 +15,14 @@ func TestMarshalMatchesJSONStringifyStringEscaping(t *testing.T) {
 		t.Fatalf("encoded = %q, want %q", encoded, want)
 	}
 }
+
+func TestMarshalStringPreservesWTF8Surrogate(t *testing.T) {
+	value := "before" + string([]byte{0xed, 0xa0, 0xbd}) + "after"
+	encoded, err := MarshalString(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(encoded), `"before\ud83dafter"`; got != want {
+		t.Fatalf("encoded = %q, want %q", got, want)
+	}
+}

@@ -30,8 +30,9 @@ upstream:
 ensure-upstream-fixture-tools: upstream
 	@if [ ! -x .upstream/node_modules/.bin/tsx ] || \
 		[ "$$(node -p 'require("./.upstream/node_modules/partial-json/package.json").version' 2>/dev/null)" != "0.1.7" ] || \
-		[ "$$(node -p 'require("./.upstream/node_modules/typebox/package.json").version' 2>/dev/null)" != "1.1.38" ]; then \
-		cd .upstream && npm install --ignore-scripts --no-save --workspaces=false tsx@4.22.1 partial-json@0.1.7 typebox@1.1.38; \
+		[ "$$(node -p 'require("./.upstream/node_modules/typebox/package.json").version' 2>/dev/null)" != "1.1.38" ] || \
+		[ "$$(node -p 'require("./.upstream/node_modules/openai/package.json").version' 2>/dev/null)" != "6.26.0" ]; then \
+		cd .upstream && npm install --ignore-scripts --no-save --workspaces=false tsx@4.22.1 partial-json@0.1.7 typebox@1.1.38 openai@6.26.0; \
 	fi
 
 fixtures: ensure-upstream-fixture-tools

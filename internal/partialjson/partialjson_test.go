@@ -193,6 +193,27 @@ func TestParseStreamingJSONReturnsFreshFallbackObjects(t *testing.T) {
 	}
 }
 
+func TestStringifyStreamingJSONPreservesJavaScriptObjectOrder(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: `{"text":"hello","mode":"plain",`, want: `{"text":"hello","mode":"plain"}`},
+		{input: `{"outer":{"z":1,"a":2},"tail":"par`, want: `{"outer":{"z":1,"a":2},"tail":"par"}`},
+		{input: `{"2":"two","keep":1,"1":"one","keep":2}`, want: `{"1":"one","2":"two","keep":2}`},
+		{input: `{"n":1e2,"negativeZero":-0,"overflow":Infinity}`, want: `{"n":100,"negativeZero":0,"overflow":null}`},
+	}
+	for _, test := range tests {
+		encoded, err := StringifyStreamingJSON(test.input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(encoded) != test.want {
+			t.Fatalf("StringifyStreamingJSON(%q) = %s, want %s", test.input, encoded, test.want)
+		}
+	}
+}
+
 func FuzzParseStreamingJSONNeverPanics(f *testing.F) {
 	for _, seed := range []string{
 		"",

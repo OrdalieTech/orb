@@ -7,8 +7,12 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"reflect"
+	"sort"
+	"strconv"
 
 	"github.com/OrdalieTech/pi-go/internal/jsonwire"
+	"github.com/OrdalieTech/pi-go/internal/partialjson"
 )
 
 var (
@@ -63,11 +67,41 @@ func (message UserMessage) MarshalJSON() ([]byte, error) {
 }
 
 func (message AssistantMessage) MarshalJSON() ([]byte, error) {
-	type payload AssistantMessage
+	var errorMessage json.RawMessage
+	if message.ErrorMessage != nil {
+		var err error
+		errorMessage, err = jsonwire.MarshalString(*message.ErrorMessage)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return marshalJSON(struct {
-		Role string `json:"role"`
-		payload
-	}{Role: "assistant", payload: payload(message)})
+		Role          string                        `json:"role"`
+		Content       AssistantContent              `json:"content"`
+		API           API                           `json:"api"`
+		Provider      ProviderID                    `json:"provider"`
+		Model         string                        `json:"model"`
+		Usage         Usage                         `json:"usage"`
+		StopReason    StopReason                    `json:"stopReason"`
+		Timestamp     int64                         `json:"timestamp"`
+		ResponseID    *string                       `json:"responseId,omitempty"`
+		ResponseModel *string                       `json:"responseModel,omitempty"`
+		Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
+		ErrorMessage  json.RawMessage               `json:"errorMessage,omitempty"`
+	}{
+		Role:          "assistant",
+		Content:       message.Content,
+		API:           message.API,
+		Provider:      message.Provider,
+		Model:         message.Model,
+		Usage:         message.Usage,
+		StopReason:    message.StopReason,
+		Timestamp:     message.Timestamp,
+		ResponseID:    message.ResponseID,
+		ResponseModel: message.ResponseModel,
+		Diagnostics:   message.Diagnostics,
+		ErrorMessage:  errorMessage,
+	})
 }
 
 func (message ToolResultMessage) MarshalJSON() ([]byte, error) {
@@ -103,21 +137,42 @@ func (content ImageContent) MarshalJSON() ([]byte, error) {
 }
 
 func (content ToolCall) MarshalJSON() ([]byte, error) {
-	arguments := content.Arguments
-	if arguments == nil {
-		arguments = map[string]any{}
+	arguments, err := MarshalToolCallArguments(&content)
+	if err != nil {
+		return nil, err
+	}
+	if content.PartialJSON != nil || content.PartialArgs != nil || content.StreamIndex != nil {
+		return marshalJSON(struct {
+			Type             string          `json:"type"`
+			ID               string          `json:"id"`
+			Name             string          `json:"name"`
+			Arguments        json.RawMessage `json:"arguments"`
+			PartialJSON      *string         `json:"partialJson,omitempty"`
+			PartialArgs      *string         `json:"partialArgs,omitempty"`
+			StreamIndex      *int            `json:"streamIndex,omitempty"`
+			ThoughtSignature *string         `json:"thoughtSignature,omitempty"`
+		}{
+			Type:             "toolCall",
+			ID:               content.ID,
+			Name:             content.Name,
+			Arguments:        arguments,
+			PartialJSON:      content.PartialJSON,
+			PartialArgs:      content.PartialArgs,
+			StreamIndex:      content.StreamIndex,
+			ThoughtSignature: content.ThoughtSignature,
+		})
 	}
 	return marshalJSON(struct {
-		Type             string         `json:"type"`
-		ID               string         `json:"id"`
-		Name             string         `json:"name"`
-		Arguments        map[string]any `json:"arguments"`
-		ThoughtSignature *string        `json:"thoughtSignature,omitempty"`
+		Type             string          `json:"type"`
+		ID               string          `json:"id"`
+		Name             string          `json:"name"`
+		Arguments        json.RawMessage `json:"arguments"`
+		ThoughtSignature *string         `json:"thoughtSignature,omitempty"`
 	}{
 		Type:             "toolCall",
 		ID:               content.ID,
 		Name:             content.Name,
-		Arguments:        stringifyJSONObject(arguments),
+		Arguments:        arguments,
 		ThoughtSignature: content.ThoughtSignature,
 	})
 }
@@ -128,21 +183,74 @@ func (content *ToolCall) UnmarshalJSON(data []byte) error {
 		Name             string          `json:"name"`
 		Arguments        json.RawMessage `json:"arguments"`
 		ThoughtSignature *string         `json:"thoughtSignature,omitempty"`
+		PartialJSON      *string         `json:"partialJson,omitempty"`
+		PartialArgs      *string         `json:"partialArgs,omitempty"`
+		StreamIndex      *int            `json:"streamIndex,omitempty"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
-	arguments, err := decodeJSONObject(raw.Arguments)
-	if err != nil {
-		return fmt.Errorf("tool call arguments: %w", err)
-	}
 	*content = ToolCall{
 		ID:               raw.ID,
 		Name:             raw.Name,
-		Arguments:        arguments,
 		ThoughtSignature: raw.ThoughtSignature,
+		PartialJSON:      raw.PartialJSON,
+		PartialArgs:      raw.PartialArgs,
+		StreamIndex:      raw.StreamIndex,
+	}
+	if err := SetToolCallArgumentsJSON(content, raw.Arguments); err != nil {
+		return fmt.Errorf("tool call arguments: %w", err)
 	}
 	return nil
+}
+
+// SetToolCallArgumentsJSON records a complete provider-emitted argument object
+// so a later replay preserves JSON.stringify's original member order.
+func SetToolCallArgumentsJSON(content *ToolCall, data []byte) error {
+	if content == nil {
+		return errors.New("ai: nil tool call")
+	}
+	normalizedArguments, err := NormalizeJSONStringifyJSON(data)
+	if err != nil {
+		return err
+	}
+	arguments, err := decodeJSONObject(normalizedArguments)
+	if err != nil {
+		return err
+	}
+	content.Arguments = arguments
+	content.rawArguments = normalizedArguments
+	return nil
+}
+
+// MarshalToolCallArguments preserves decoded object member order while the
+// public argument map remains semantically unchanged.
+func MarshalToolCallArguments(content *ToolCall) ([]byte, error) {
+	if content == nil {
+		return nil, errors.New("ai: nil tool call")
+	}
+	arguments := content.Arguments
+	if arguments == nil {
+		arguments = map[string]any{}
+	}
+	if len(content.rawArguments) > 0 {
+		original, err := decodeJSONObject(content.rawArguments)
+		if err == nil && reflect.DeepEqual(original, arguments) {
+			return bytes.Clone(content.rawArguments), nil
+		}
+	}
+	for _, partial := range []*string{content.PartialJSON, content.PartialArgs} {
+		if partial == nil {
+			continue
+		}
+		encoded, err := partialjson.StringifyStreamingJSON(*partial)
+		if err == nil {
+			if _, objectErr := decodeJSONObject(encoded); objectErr == nil {
+				return encoded, nil
+			}
+		}
+	}
+	return marshalJSON(stringifyJSONObject(arguments))
 }
 
 func (content UserContent) MarshalJSON() ([]byte, error) {
@@ -337,7 +445,6 @@ func decodeJSONObject(data []byte) (map[string]any, error) {
 		return nil, errors.New("missing object")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
 	var value map[string]any
 	if err := decoder.Decode(&value); err != nil {
 		return nil, err
@@ -352,6 +459,154 @@ func decodeJSONObject(data []byte) (map[string]any, error) {
 		return nil, errors.New("arguments must be an object")
 	}
 	return value, nil
+}
+
+// NormalizeJSONStringifyJSON parses JSON with JavaScript Number semantics and
+// re-emits the same value using JSON.stringify's ordering and scalar spelling.
+func NormalizeJSONStringifyJSON(data []byte) ([]byte, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var output bytes.Buffer
+	if err := writeJSONStringifyJSONValue(&output, decoder); err != nil {
+		return nil, err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return nil, errors.New("multiple JSON values")
+		}
+		return nil, err
+	}
+	return output.Bytes(), nil
+}
+
+func writeJSONStringifyJSONValue(output *bytes.Buffer, decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	if delimiter, ok := token.(json.Delim); ok {
+		switch delimiter {
+		case '{':
+			type member struct {
+				name  string
+				value []byte
+			}
+			members := make([]member, 0)
+			indexes := make(map[string]int)
+			for decoder.More() {
+				key, err := decoder.Token()
+				if err != nil {
+					return err
+				}
+				name, ok := key.(string)
+				if !ok {
+					return errors.New("object key is not a string")
+				}
+				var value bytes.Buffer
+				if err := writeJSONStringifyJSONValue(&value, decoder); err != nil {
+					return err
+				}
+				if index, exists := indexes[name]; exists {
+					members[index].value = value.Bytes()
+				} else {
+					indexes[name] = len(members)
+					members = append(members, member{name: name, value: value.Bytes()})
+				}
+			}
+			closing, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			if closing != json.Delim('}') {
+				return errors.New("object is not closed")
+			}
+			sort.SliceStable(members, func(left, right int) bool {
+				leftIndex, leftIsIndex := jsArrayIndex(members[left].name)
+				rightIndex, rightIsIndex := jsArrayIndex(members[right].name)
+				if leftIsIndex && rightIsIndex {
+					return leftIndex < rightIndex
+				}
+				return leftIsIndex && !rightIsIndex
+			})
+			output.WriteByte('{')
+			for index, member := range members {
+				if index > 0 {
+					output.WriteByte(',')
+				}
+				encodedName, err := marshalJSON(member.name)
+				if err != nil {
+					return err
+				}
+				output.Write(encodedName)
+				output.WriteByte(':')
+				output.Write(member.value)
+			}
+			output.WriteByte('}')
+			return nil
+		case '[':
+			output.WriteByte('[')
+			for index := 0; decoder.More(); index++ {
+				if index > 0 {
+					output.WriteByte(',')
+				}
+				if err := writeJSONStringifyJSONValue(output, decoder); err != nil {
+					return err
+				}
+			}
+			closing, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			if closing != json.Delim(']') {
+				return errors.New("array is not closed")
+			}
+			output.WriteByte(']')
+			return nil
+		default:
+			return fmt.Errorf("unexpected JSON delimiter %q", delimiter)
+		}
+	}
+
+	if number, ok := token.(json.Number); ok {
+		value, err := strconv.ParseFloat(number.String(), 64)
+		if err != nil && !math.IsInf(value, 0) {
+			return err
+		}
+		if math.IsInf(value, 0) || math.IsNaN(value) {
+			output.WriteString("null")
+			return nil
+		}
+		if value == 0 {
+			output.WriteByte('0')
+			return nil
+		}
+		encoded, err := marshalJSON(value)
+		if err != nil {
+			return err
+		}
+		output.Write(encoded)
+		return nil
+	}
+	encoded, err := marshalJSON(token)
+	if err != nil {
+		return err
+	}
+	output.Write(encoded)
+	return nil
+}
+
+func jsArrayIndex(name string) (uint64, bool) {
+	if name == "0" {
+		return 0, true
+	}
+	if name == "" || name[0] == '0' {
+		return 0, false
+	}
+	value, err := strconv.ParseUint(name, 10, 32)
+	if err != nil || value == math.MaxUint32 || strconv.FormatUint(value, 10) != name {
+		return 0, false
+	}
+	return value, true
 }
 
 func marshalRequiredSlice[T any](values []T) ([]byte, error) {

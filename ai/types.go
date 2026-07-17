@@ -80,6 +80,11 @@ type ToolCall struct {
 	Name             string         `json:"name"`
 	Arguments        map[string]any `json:"arguments"`
 	ThoughtSignature *string        `json:"thoughtSignature,omitempty"`
+	rawArguments     []byte
+	// Provider adapters clear streaming scratch fields before a terminal message is persisted.
+	PartialJSON *string `json:"partialJson,omitempty"`
+	PartialArgs *string `json:"partialArgs,omitempty"`
+	StreamIndex *int    `json:"streamIndex,omitempty"`
 }
 
 type UserContentBlock interface {
@@ -169,13 +174,13 @@ type AssistantMessage struct {
 	API           API                           `json:"api"`
 	Provider      ProviderID                    `json:"provider"`
 	Model         string                        `json:"model"`
-	ResponseModel *string                       `json:"responseModel,omitempty"`
-	ResponseID    *string                       `json:"responseId,omitempty"`
-	Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
 	Usage         Usage                         `json:"usage"`
 	StopReason    StopReason                    `json:"stopReason"`
-	ErrorMessage  *string                       `json:"errorMessage,omitempty"`
 	Timestamp     int64                         `json:"timestamp"`
+	ResponseID    *string                       `json:"responseId,omitempty"`
+	ResponseModel *string                       `json:"responseModel,omitempty"`
+	Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
+	ErrorMessage  *string                       `json:"errorMessage,omitempty"`
 }
 
 type ToolResultMessage struct {

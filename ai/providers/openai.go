@@ -1,0 +1,45 @@
+package providers
+
+import "github.com/OrdalieTech/pi-go/ai"
+
+type AuthKind string
+
+const AuthAPIKey AuthKind = "api_key"
+
+type Provider struct {
+	ID      ai.ProviderID
+	Name    string
+	API     ai.API
+	BaseURL string
+	Auth    AuthKind
+	Env     []string
+}
+
+var openAI = Provider{
+	ID:      "openai",
+	Name:    "OpenAI",
+	API:     ai.APIOpenAIResponses,
+	BaseURL: "https://api.openai.com/v1",
+	Auth:    AuthAPIKey,
+	Env:     []string{"OPENAI_API_KEY"},
+}
+
+func OpenAI() Provider {
+	return cloneProvider(openAI)
+}
+
+func Get(id ai.ProviderID) (Provider, bool) {
+	if id != openAI.ID {
+		return Provider{}, false
+	}
+	return OpenAI(), true
+}
+
+func List() []Provider {
+	return []Provider{OpenAI()}
+}
+
+func cloneProvider(provider Provider) Provider {
+	provider.Env = append([]string(nil), provider.Env...)
+	return provider
+}
