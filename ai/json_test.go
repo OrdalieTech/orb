@@ -127,6 +127,18 @@ func TestSetToolCallArgumentsJSONMatchesJavaScriptPropertyOrder(t *testing.T) {
 	}
 }
 
+func TestNormalizeJSONStringifyJSONPreservesSurrogates(t *testing.T) {
+	input := []byte(`{ "\ud800":"high-key", "\udc00":"low-key", "\ud83d\ude00":"pair-key", "values":["\ud800","\udc00","\ud83d\ude00"] }`)
+	encoded, err := ai.NormalizeJSONStringifyJSON(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []byte(`{"\ud800":"high-key","\udc00":"low-key","😀":"pair-key","values":["\ud800","\udc00","😀"]}`)
+	if !bytes.Equal(encoded, want) {
+		t.Fatalf("normalized = %s\nwant       = %s", encoded, want)
+	}
+}
+
 func TestAssistantMessageCanPreserveErrorBeforeTimestampOrder(t *testing.T) {
 	errorMessage := "Request was aborted"
 	message := &ai.AssistantMessage{
@@ -159,6 +171,129 @@ func TestUnmarshalMessageRejectsUnknownRole(t *testing.T) {
 	if _, err := ai.UnmarshalMessage([]byte(`{"role":"system"}`)); err == nil {
 		t.Fatal("unknown role accepted")
 	}
+}
+
+func TestUnmarshalMessagePreservesLoneSurrogateAndUnknownBlocks(t *testing.T) {
+	message, err := ai.UnmarshalMessage([]byte(`{"role":"user","content":[{"type":"text","text":"\ud800"},{ "type" : "future", "value" : 1e2 }],"timestamp":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := message.(*ai.UserMessage)
+	text := user.Content.Blocks[0].(*ai.TextContent)
+	if text.Text != "\xed\xa0\x80" {
+		t.Fatalf("text bytes = %x", []byte(text.Text))
+	}
+	unknown, ok := user.Content.Blocks[1].(*ai.UnknownContentBlock)
+	if !ok || string(unknown.Raw) != `{"type":"future","value":100}` {
+		t.Fatalf("unknown block = %T %s", user.Content.Blocks[1], unknown.Raw)
+	}
+	encoded, err := ai.MarshalMessage(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"role":"user","content":[{"type":"text","text":"\ud800"},{"type":"future","value":100}],"timestamp":1}`
+	if string(encoded) != want {
+		t.Fatalf("encoded = %s, want %s", encoded, want)
+	}
+}
+
+func TestAssistantMessageOrderDetectionIgnoresNestedMemberNames(t *testing.T) {
+	input := []byte(`{"role":"assistant","content":[{"type":"toolCall","id":"1","name":"echo","arguments":{"errorMessage":"nested","timestamp":0}}],"api":"x","provider":"x","model":"x","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"error","timestamp":1,"errorMessage":"top-level"}`)
+	message, err := ai.UnmarshalMessage(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := ai.MarshalMessage(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(encoded, input) {
+		t.Fatalf("encoded = %s\nwant    = %s", encoded, input)
+	}
+}
+
+func TestAssistantMessageSecondaryStringsPreserveLoneSurrogates(t *testing.T) {
+	input := []byte(`{"role":"assistant","content":[{"type":"text","text":"\ud800","textSignature":"\ud800"},{"type":"thinking","thinking":"\ud800","thinkingSignature":"\ud800","redacted":false},{"type":"toolCall","id":"\ud800","name":"\ud800","arguments":{"value":"\ud800"},"partialJson":"\ud800","partialArgs":"\ud800","streamIndex":0,"thoughtSignature":"\ud800"}],"api":"\ud800","provider":"\ud800","model":"\ud800","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"\ud800","timestamp":1,"responseId":"\ud800","responseModel":"\ud800","diagnostics":[{"type":"\ud800","timestamp":2,"error":{"name":"\ud800","message":"\ud800","stack":"\ud800","code":"\ud800"},"details":{"value":"\ud800"}}],"errorMessage":"\ud800"}`)
+	message, err := ai.UnmarshalMessage(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assistant := message.(*ai.AssistantMessage)
+	wtf8 := "\xed\xa0\x80"
+	assertWTF8String(t, "api", string(assistant.API), wtf8)
+	assertWTF8String(t, "provider", string(assistant.Provider), wtf8)
+	assertWTF8String(t, "model", assistant.Model, wtf8)
+	assertWTF8String(t, "stop reason", string(assistant.StopReason), wtf8)
+	assertWTF8StringPointer(t, "response ID", assistant.ResponseID, wtf8)
+	assertWTF8StringPointer(t, "response model", assistant.ResponseModel, wtf8)
+	assertWTF8StringPointer(t, "error message", assistant.ErrorMessage, wtf8)
+
+	text := assistant.Content[0].(*ai.TextContent)
+	assertWTF8StringPointer(t, "text signature", text.TextSignature, wtf8)
+	thinking := assistant.Content[1].(*ai.ThinkingContent)
+	assertWTF8StringPointer(t, "thinking signature", thinking.ThinkingSignature, wtf8)
+	call := assistant.Content[2].(*ai.ToolCall)
+	assertWTF8String(t, "tool-call ID", call.ID, wtf8)
+	assertWTF8String(t, "tool-call name", call.Name, wtf8)
+	assertWTF8StringPointer(t, "tool-call thought signature", call.ThoughtSignature, wtf8)
+	assertWTF8StringPointer(t, "tool-call partial JSON", call.PartialJSON, wtf8)
+	assertWTF8StringPointer(t, "tool-call partial arguments", call.PartialArgs, wtf8)
+
+	diagnostic := (*assistant.Diagnostics)[0]
+	assertWTF8String(t, "diagnostic type", diagnostic.Type, wtf8)
+	assertWTF8StringPointer(t, "diagnostic error name", diagnostic.Error.Name, wtf8)
+	assertWTF8String(t, "diagnostic error message", diagnostic.Error.Message, wtf8)
+	assertWTF8StringPointer(t, "diagnostic error stack", diagnostic.Error.Stack, wtf8)
+
+	encoded, err := ai.MarshalMessage(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(encoded, input) {
+		t.Fatalf("encoded = %s\nwant    = %s", encoded, input)
+	}
+}
+
+func TestToolResultSecondaryStringsPreserveLoneSurrogates(t *testing.T) {
+	input := []byte(`{"role":"toolResult","toolCallId":"\ud800","toolName":"\ud800","content":[{"type":"text","text":"\ud800","textSignature":"\ud800"},{"type":"image","data":"\ud800","mimeType":"\ud800"}],"details":{"value":"\ud800"},"addedToolNames":["\ud800",""],"isError":false,"timestamp":1}`)
+	message, err := ai.UnmarshalMessage(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := message.(*ai.ToolResultMessage)
+	wtf8 := "\xed\xa0\x80"
+	assertWTF8String(t, "tool-result call ID", result.ToolCallID, wtf8)
+	assertWTF8String(t, "tool-result name", result.ToolName, wtf8)
+	assertWTF8StringPointer(t, "tool-result text signature", result.Content[0].(*ai.TextContent).TextSignature, wtf8)
+	assertWTF8String(t, "image data", result.Content[1].(*ai.ImageContent).Data, wtf8)
+	assertWTF8String(t, "image MIME type", result.Content[1].(*ai.ImageContent).MimeType, wtf8)
+	if result.AddedToolNames == nil || len(*result.AddedToolNames) != 2 {
+		t.Fatalf("added tool names = %#v", result.AddedToolNames)
+	}
+	assertWTF8String(t, "added tool name", (*result.AddedToolNames)[0], wtf8)
+
+	encoded, err := ai.MarshalMessage(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(encoded, input) {
+		t.Fatalf("encoded = %s\nwant    = %s", encoded, input)
+	}
+}
+
+func assertWTF8String(t *testing.T, name, got, want string) {
+	t.Helper()
+	if got != want {
+		t.Fatalf("%s bytes = %x, want %x", name, []byte(got), []byte(want))
+	}
+}
+
+func assertWTF8StringPointer(t *testing.T, name string, got *string, want string) {
+	t.Helper()
+	if got == nil {
+		t.Fatalf("%s is nil", name)
+	}
+	assertWTF8String(t, name, *got, want)
 }
 
 func TestMarshalMatchesJSONStringifyEscaping(t *testing.T) {

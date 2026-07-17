@@ -1,0 +1,11 @@
+{
+  "family": "F6",
+  "upstreamCommit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
+  "generator": "conformance/extract/f6-session.ts",
+  "source": "packages/coding-agent/src/core/session-manager.ts",
+  "files": [
+    "cases.json",
+    "write.jsonl",
+    "projection.json"
+  ]
+}

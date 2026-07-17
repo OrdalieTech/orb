@@ -71,3 +71,12 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/coding-agent/src/utils/shell.ts`, `packages/coding-agent/src/utils/child-process.ts` | `codingagent/tools/bash_unix.go`, `codingagent/tools/bash_unix_test.go` | WP-150 |
 | `packages/coding-agent/src/core/tools/grep.ts`, `packages/coding-agent/src/core/tools/find.ts` | `codingagent/tools/grep.go`, `codingagent/tools/find.go`, `codingagent/tools/grep_test.go`, `codingagent/tools/find_test.go`, `codingagent/tools/search_test.go`, `codingagent/tools/search_minitree_test.go`, `codingagent/tools/testdata/search/tree/` | WP-150 |
 | `packages/coding-agent/src/utils/tools-manager.ts` | `codingagent/tools/toolmanager.go`, `codingagent/tools/toolmanager_test.go` | WP-150 |
+| `packages/coding-agent/src/core/settings-manager.ts`, `packages/coding-agent/docs/settings.md` | `codingagent/config/settings.go`, `codingagent/config/settings_test.go` | WP-160 |
+| `packages/coding-agent/src/core/session-manager.ts`, `packages/coding-agent/src/core/session-cwd.ts`, `packages/coding-agent/docs/session-format.md` | `codingagent/session/`, `conformance/extract/f6-session.ts`, `conformance/extract/f6-verify.ts`, `conformance/fixtures/F6/`, `conformance/runner/f6_session_test.go` | WP-160 |
+| `packages/coding-agent/src/core/system-prompt.ts` | `codingagent/system_prompt.go`, `codingagent/system_prompt_test.go` | WP-160 |
+| `packages/coding-agent/src/core/resource-loader.ts` | `codingagent/resources.go`, `codingagent/resources_test.go` | WP-160 |
+| `packages/coding-agent/src/core/messages.ts`, `packages/agent/src/agent.ts` (custom-message state preservation) | `codingagent/messages.go`, `codingagent/messages_test.go`, `agent/clone.go`, `agent/agent_test.go` | WP-160 |
+| `packages/coding-agent/src/cli/{args,file-processor,initial-message}.ts`, `packages/coding-agent/src/main.ts` (phase-1 subset) | `cmd/pi/` | WP-160 |
+| `packages/coding-agent/src/modes/print-mode.ts` (text subset) | `codingagent/modes/print.go`, `codingagent/modes/signals_unix.go`, `codingagent/modes/print_test.go`, `codingagent/modes/print_signal_unix_test.go` | WP-160 |
+| `packages/coding-agent/src/core/{system-prompt,resource-loader,settings-manager}.ts` | `conformance/extract/f9-system-prompt.ts`, `conformance/extract/upstream-model-data.ts`, `conformance/fixtures/F9/`, `conformance/runner/f9_system_prompt_test.go` | WP-160 |
+| `packages/coding-agent/src/core/session-manager.ts` (`JSON.stringify` migration rewrite) | `ai/json.go`, `internal/jsonwire/marshal.go` | WP-160 |

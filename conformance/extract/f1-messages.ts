@@ -189,6 +189,54 @@ const messages: Message[] = [
   { role: "user", content: "astral 🧪, nul \u0000, newline\n, html <>&", timestamp: 1700000000009 },
   lengthAssistant,
   abortedAssistant,
+  {
+    role: "assistant",
+    content: [
+      { type: "text", text: "\ud800", textSignature: "\udc00" },
+      { type: "thinking", thinking: "\ud800", thinkingSignature: "\udc00", redacted: false },
+      {
+        type: "toolCall",
+        id: "\ud800",
+        name: "\udc00",
+        arguments: { errorMessage: "nested", timestamp: 0, value: "\ud800" },
+        thoughtSignature: "\udc00",
+      },
+    ],
+    api: "custom-api",
+    provider: "custom-provider",
+    model: "\ud800",
+    responseModel: "\udc00",
+    responseId: "\ud800",
+    diagnostics: [
+      {
+        type: "\ud800",
+        timestamp: 1,
+        error: { name: "\ud800", message: "\ud800", stack: "\ud800", code: "\ud800" },
+        details: { value: "\ud800" },
+      },
+    ],
+    usage: zeroUsage,
+    stopReason: "error",
+    timestamp: 1700000000010,
+    errorMessage: "\ud800",
+  },
+  {
+    role: "toolResult",
+    toolCallId: "\ud800",
+    toolName: "\udc00",
+    content: [
+      { type: "text", text: "\ud800", textSignature: "\udc00" },
+      { type: "image", data: "\ud800", mimeType: "\udc00" },
+    ],
+    addedToolNames: ["\ud800"],
+    isError: false,
+    timestamp: 1700000000011,
+  },
+  {
+    role: "user",
+    content: [{ type: "future", value: 1e2, nested: { key: "kept" } }],
+    timestamp: 1700000000012,
+  } as unknown as Message,
 ];
 
 const contexts: Context[] = [

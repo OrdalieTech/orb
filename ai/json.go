@@ -17,7 +17,6 @@ import (
 
 var (
 	errUnknownMessageRole = errors.New("ai: unknown message role")
-	errUnknownContentType = errors.New("ai: unknown content type")
 )
 
 func MarshalMessage(message Message) ([]byte, error) {
@@ -67,39 +66,59 @@ func (message UserMessage) MarshalJSON() ([]byte, error) {
 }
 
 func (message AssistantMessage) MarshalJSON() ([]byte, error) {
-	var errorMessage json.RawMessage
-	if message.ErrorMessage != nil {
-		var err error
-		errorMessage, err = jsonwire.MarshalString(*message.ErrorMessage)
-		if err != nil {
-			return nil, err
-		}
+	api, err := jsonwire.MarshalString(string(message.API))
+	if err != nil {
+		return nil, err
+	}
+	provider, err := jsonwire.MarshalString(string(message.Provider))
+	if err != nil {
+		return nil, err
+	}
+	model, err := jsonwire.MarshalString(message.Model)
+	if err != nil {
+		return nil, err
+	}
+	stopReason, err := jsonwire.MarshalString(string(message.StopReason))
+	if err != nil {
+		return nil, err
+	}
+	errorMessage, err := marshalOptionalWireString(message.ErrorMessage)
+	if err != nil {
+		return nil, err
+	}
+	responseID, err := marshalOptionalWireString(message.ResponseID)
+	if err != nil {
+		return nil, err
+	}
+	responseModel, err := marshalOptionalWireString(message.ResponseModel)
+	if err != nil {
+		return nil, err
 	}
 	if message.errorBeforeTimestamp && message.ErrorMessage != nil {
 		return marshalJSON(struct {
 			Role          string                        `json:"role"`
 			Content       AssistantContent              `json:"content"`
-			API           API                           `json:"api"`
-			Provider      ProviderID                    `json:"provider"`
-			Model         string                        `json:"model"`
+			API           json.RawMessage               `json:"api"`
+			Provider      json.RawMessage               `json:"provider"`
+			Model         json.RawMessage               `json:"model"`
 			Usage         Usage                         `json:"usage"`
-			StopReason    StopReason                    `json:"stopReason"`
+			StopReason    json.RawMessage               `json:"stopReason"`
 			ErrorMessage  json.RawMessage               `json:"errorMessage"`
-			ResponseID    *string                       `json:"responseId,omitempty"`
-			ResponseModel *string                       `json:"responseModel,omitempty"`
+			ResponseID    json.RawMessage               `json:"responseId,omitempty"`
+			ResponseModel json.RawMessage               `json:"responseModel,omitempty"`
 			Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
 			Timestamp     int64                         `json:"timestamp"`
 		}{
 			Role:          "assistant",
 			Content:       message.Content,
-			API:           message.API,
-			Provider:      message.Provider,
-			Model:         message.Model,
+			API:           api,
+			Provider:      provider,
+			Model:         model,
 			Usage:         message.Usage,
-			StopReason:    message.StopReason,
+			StopReason:    stopReason,
 			ErrorMessage:  errorMessage,
-			ResponseID:    message.ResponseID,
-			ResponseModel: message.ResponseModel,
+			ResponseID:    responseID,
+			ResponseModel: responseModel,
 			Diagnostics:   message.Diagnostics,
 			Timestamp:     message.Timestamp,
 		})
@@ -107,30 +126,122 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 	return marshalJSON(struct {
 		Role          string                        `json:"role"`
 		Content       AssistantContent              `json:"content"`
-		API           API                           `json:"api"`
-		Provider      ProviderID                    `json:"provider"`
-		Model         string                        `json:"model"`
+		API           json.RawMessage               `json:"api"`
+		Provider      json.RawMessage               `json:"provider"`
+		Model         json.RawMessage               `json:"model"`
 		Usage         Usage                         `json:"usage"`
-		StopReason    StopReason                    `json:"stopReason"`
+		StopReason    json.RawMessage               `json:"stopReason"`
 		Timestamp     int64                         `json:"timestamp"`
-		ResponseID    *string                       `json:"responseId,omitempty"`
-		ResponseModel *string                       `json:"responseModel,omitempty"`
+		ResponseID    json.RawMessage               `json:"responseId,omitempty"`
+		ResponseModel json.RawMessage               `json:"responseModel,omitempty"`
 		Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
 		ErrorMessage  json.RawMessage               `json:"errorMessage,omitempty"`
 	}{
 		Role:          "assistant",
 		Content:       message.Content,
-		API:           message.API,
-		Provider:      message.Provider,
-		Model:         message.Model,
+		API:           api,
+		Provider:      provider,
+		Model:         model,
 		Usage:         message.Usage,
-		StopReason:    message.StopReason,
+		StopReason:    stopReason,
 		Timestamp:     message.Timestamp,
-		ResponseID:    message.ResponseID,
-		ResponseModel: message.ResponseModel,
+		ResponseID:    responseID,
+		ResponseModel: responseModel,
 		Diagnostics:   message.Diagnostics,
 		ErrorMessage:  errorMessage,
 	})
+}
+
+func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Content       AssistantContent              `json:"content"`
+		API           json.RawMessage               `json:"api"`
+		Provider      json.RawMessage               `json:"provider"`
+		Model         json.RawMessage               `json:"model"`
+		Usage         Usage                         `json:"usage"`
+		StopReason    json.RawMessage               `json:"stopReason"`
+		Timestamp     int64                         `json:"timestamp"`
+		ResponseID    json.RawMessage               `json:"responseId"`
+		ResponseModel json.RawMessage               `json:"responseModel"`
+		Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics"`
+		ErrorMessage  json.RawMessage               `json:"errorMessage"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	api, err := unmarshalWireString(raw.API)
+	if err != nil {
+		return err
+	}
+	provider, err := unmarshalWireString(raw.Provider)
+	if err != nil {
+		return err
+	}
+	model, err := unmarshalWireString(raw.Model)
+	if err != nil {
+		return err
+	}
+	stopReason, err := unmarshalWireString(raw.StopReason)
+	if err != nil {
+		return err
+	}
+	responseID, err := unmarshalOptionalWireString(raw.ResponseID)
+	if err != nil {
+		return err
+	}
+	responseModel, err := unmarshalOptionalWireString(raw.ResponseModel)
+	if err != nil {
+		return err
+	}
+	errorMessage, err := unmarshalOptionalWireString(raw.ErrorMessage)
+	if err != nil {
+		return err
+	}
+	*message = AssistantMessage{
+		Content:       raw.Content,
+		API:           API(api),
+		Provider:      ProviderID(provider),
+		Model:         model,
+		Usage:         raw.Usage,
+		StopReason:    StopReason(stopReason),
+		Timestamp:     raw.Timestamp,
+		ResponseID:    responseID,
+		ResponseModel: responseModel,
+		Diagnostics:   raw.Diagnostics,
+		ErrorMessage:  errorMessage,
+	}
+	message.errorBeforeTimestamp = topLevelMemberBefore(data, "errorMessage", "timestamp")
+	return nil
+}
+
+func topLevelMemberBefore(data []byte, first, second string) bool {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	opening, err := decoder.Token()
+	if err != nil || opening != json.Delim('{') {
+		return false
+	}
+	seenFirst := false
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return false
+		}
+		name, ok := token.(string)
+		if !ok {
+			return false
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return false
+		}
+		switch name {
+		case first:
+			seenFirst = true
+		case second:
+			return seenFirst
+		}
+	}
+	return false
 }
 
 // SetAssistantMessageErrorBeforeTimestamp preserves the member order of
@@ -142,11 +253,157 @@ func SetAssistantMessageErrorBeforeTimestamp(message *AssistantMessage, enabled 
 }
 
 func (message ToolResultMessage) MarshalJSON() ([]byte, error) {
-	type payload ToolResultMessage
+	toolCallID, err := jsonwire.MarshalString(message.ToolCallID)
+	if err != nil {
+		return nil, err
+	}
+	toolName, err := jsonwire.MarshalString(message.ToolName)
+	if err != nil {
+		return nil, err
+	}
+	addedToolNames, err := marshalOptionalWireStringSlice(message.AddedToolNames)
+	if err != nil {
+		return nil, err
+	}
 	return marshalJSON(struct {
-		Role string `json:"role"`
-		payload
-	}{Role: "toolResult", payload: payload(message)})
+		Role           string            `json:"role"`
+		ToolCallID     json.RawMessage   `json:"toolCallId"`
+		ToolName       json.RawMessage   `json:"toolName"`
+		Content        ToolResultContent `json:"content"`
+		Details        json.RawMessage   `json:"details,omitempty"`
+		AddedToolNames json.RawMessage   `json:"addedToolNames,omitempty"`
+		IsError        bool              `json:"isError"`
+		Timestamp      int64             `json:"timestamp"`
+	}{
+		Role:           "toolResult",
+		ToolCallID:     toolCallID,
+		ToolName:       toolName,
+		Content:        message.Content,
+		Details:        message.Details,
+		AddedToolNames: addedToolNames,
+		IsError:        message.IsError,
+		Timestamp:      message.Timestamp,
+	})
+}
+
+func (message *ToolResultMessage) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		ToolCallID     json.RawMessage   `json:"toolCallId"`
+		ToolName       json.RawMessage   `json:"toolName"`
+		Content        ToolResultContent `json:"content"`
+		Details        json.RawMessage   `json:"details"`
+		AddedToolNames json.RawMessage   `json:"addedToolNames"`
+		IsError        bool              `json:"isError"`
+		Timestamp      int64             `json:"timestamp"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	toolCallID, err := unmarshalWireString(raw.ToolCallID)
+	if err != nil {
+		return err
+	}
+	toolName, err := unmarshalWireString(raw.ToolName)
+	if err != nil {
+		return err
+	}
+	addedToolNames, err := unmarshalOptionalWireStringSlice(raw.AddedToolNames)
+	if err != nil {
+		return err
+	}
+	*message = ToolResultMessage{
+		ToolCallID:     toolCallID,
+		ToolName:       toolName,
+		Content:        raw.Content,
+		Details:        bytes.Clone(raw.Details),
+		AddedToolNames: addedToolNames,
+		IsError:        raw.IsError,
+		Timestamp:      raw.Timestamp,
+	}
+	return nil
+}
+
+func (info DiagnosticErrorInfo) MarshalJSON() ([]byte, error) {
+	name, err := marshalOptionalWireString(info.Name)
+	if err != nil {
+		return nil, err
+	}
+	message, err := jsonwire.MarshalString(info.Message)
+	if err != nil {
+		return nil, err
+	}
+	stack, err := marshalOptionalWireString(info.Stack)
+	if err != nil {
+		return nil, err
+	}
+	return marshalJSON(struct {
+		Name    json.RawMessage `json:"name,omitempty"`
+		Message json.RawMessage `json:"message"`
+		Stack   json.RawMessage `json:"stack,omitempty"`
+		Code    json.RawMessage `json:"code,omitempty"`
+	}{Name: name, Message: message, Stack: stack, Code: info.Code})
+}
+
+func (info *DiagnosticErrorInfo) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Name    json.RawMessage `json:"name"`
+		Message json.RawMessage `json:"message"`
+		Stack   json.RawMessage `json:"stack"`
+		Code    json.RawMessage `json:"code"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	name, err := unmarshalOptionalWireString(raw.Name)
+	if err != nil {
+		return err
+	}
+	message, err := unmarshalWireString(raw.Message)
+	if err != nil {
+		return err
+	}
+	stack, err := unmarshalOptionalWireString(raw.Stack)
+	if err != nil {
+		return err
+	}
+	*info = DiagnosticErrorInfo{Name: name, Message: message, Stack: stack, Code: bytes.Clone(raw.Code)}
+	return nil
+}
+
+func (diagnostic AssistantMessageDiagnostic) MarshalJSON() ([]byte, error) {
+	typeValue, err := jsonwire.MarshalString(diagnostic.Type)
+	if err != nil {
+		return nil, err
+	}
+	return marshalJSON(struct {
+		Type      json.RawMessage      `json:"type"`
+		Timestamp int64                `json:"timestamp"`
+		Error     *DiagnosticErrorInfo `json:"error,omitempty"`
+		Details   json.RawMessage      `json:"details,omitempty"`
+	}{Type: typeValue, Timestamp: diagnostic.Timestamp, Error: diagnostic.Error, Details: diagnostic.Details})
+}
+
+func (diagnostic *AssistantMessageDiagnostic) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Type      json.RawMessage      `json:"type"`
+		Timestamp int64                `json:"timestamp"`
+		Error     *DiagnosticErrorInfo `json:"error"`
+		Details   json.RawMessage      `json:"details"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	typeValue, err := unmarshalWireString(raw.Type)
+	if err != nil {
+		return err
+	}
+	*diagnostic = AssistantMessageDiagnostic{
+		Type:      typeValue,
+		Timestamp: raw.Timestamp,
+		Error:     raw.Error,
+		Details:   bytes.Clone(raw.Details),
+	}
+	return nil
 }
 
 func (content TextContent) MarshalJSON() ([]byte, error) {
@@ -154,11 +411,35 @@ func (content TextContent) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	signature, err := marshalOptionalWireString(content.TextSignature)
+	if err != nil {
+		return nil, err
+	}
 	return marshalJSON(struct {
 		Type          string          `json:"type"`
 		Text          json.RawMessage `json:"text"`
-		TextSignature *string         `json:"textSignature,omitempty"`
-	}{Type: "text", Text: text, TextSignature: content.TextSignature})
+		TextSignature json.RawMessage `json:"textSignature,omitempty"`
+	}{Type: "text", Text: text, TextSignature: signature})
+}
+
+func (content *TextContent) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Text          json.RawMessage `json:"text"`
+		TextSignature json.RawMessage `json:"textSignature"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	text, err := unmarshalWireString(raw.Text)
+	if err != nil {
+		return err
+	}
+	signature, err := unmarshalOptionalWireString(raw.TextSignature)
+	if err != nil {
+		return err
+	}
+	*content = TextContent{Text: text, TextSignature: signature}
+	return nil
 }
 
 func (content ThinkingContent) MarshalJSON() ([]byte, error) {
@@ -166,25 +447,85 @@ func (content ThinkingContent) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	signature, err := marshalOptionalWireString(content.ThinkingSignature)
+	if err != nil {
+		return nil, err
+	}
 	return marshalJSON(struct {
 		Type              string          `json:"type"`
 		Thinking          json.RawMessage `json:"thinking"`
-		ThinkingSignature *string         `json:"thinkingSignature,omitempty"`
+		ThinkingSignature json.RawMessage `json:"thinkingSignature,omitempty"`
 		Redacted          *bool           `json:"redacted,omitempty"`
 	}{
 		Type:              "thinking",
 		Thinking:          thinking,
-		ThinkingSignature: content.ThinkingSignature,
+		ThinkingSignature: signature,
 		Redacted:          content.Redacted,
 	})
 }
 
+func (content *ThinkingContent) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Thinking          json.RawMessage `json:"thinking"`
+		ThinkingSignature json.RawMessage `json:"thinkingSignature"`
+		Redacted          *bool           `json:"redacted"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	thinking, err := unmarshalWireString(raw.Thinking)
+	if err != nil {
+		return err
+	}
+	signature, err := unmarshalOptionalWireString(raw.ThinkingSignature)
+	if err != nil {
+		return err
+	}
+	*content = ThinkingContent{Thinking: thinking, ThinkingSignature: signature, Redacted: raw.Redacted}
+	return nil
+}
+
 func (content ImageContent) MarshalJSON() ([]byte, error) {
-	type payload ImageContent
+	data, err := jsonwire.MarshalString(content.Data)
+	if err != nil {
+		return nil, err
+	}
+	mimeType, err := jsonwire.MarshalString(content.MimeType)
+	if err != nil {
+		return nil, err
+	}
 	return marshalJSON(struct {
-		Type string `json:"type"`
-		payload
-	}{Type: "image", payload: payload(content)})
+		Type     string          `json:"type"`
+		Data     json.RawMessage `json:"data"`
+		MimeType json.RawMessage `json:"mimeType"`
+	}{Type: "image", Data: data, MimeType: mimeType})
+}
+
+func (content *ImageContent) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Data     json.RawMessage `json:"data"`
+		MimeType json.RawMessage `json:"mimeType"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	imageData, err := unmarshalWireString(raw.Data)
+	if err != nil {
+		return err
+	}
+	mimeType, err := unmarshalWireString(raw.MimeType)
+	if err != nil {
+		return err
+	}
+	*content = ImageContent{Data: imageData, MimeType: mimeType}
+	return nil
+}
+
+func (content UnknownContentBlock) MarshalJSON() ([]byte, error) {
+	if len(bytes.TrimSpace(content.Raw)) == 0 {
+		return []byte("null"), nil
+	}
+	return NormalizeJSONStringifyJSON(content.Raw)
 }
 
 func (content ToolCall) MarshalJSON() ([]byte, error) {
@@ -192,61 +533,101 @@ func (content ToolCall) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	id, err := jsonwire.MarshalString(content.ID)
+	if err != nil {
+		return nil, err
+	}
+	name, err := jsonwire.MarshalString(content.Name)
+	if err != nil {
+		return nil, err
+	}
+	thoughtSignature, err := marshalOptionalWireString(content.ThoughtSignature)
+	if err != nil {
+		return nil, err
+	}
+	partialJSON, err := marshalOptionalWireString(content.PartialJSON)
+	if err != nil {
+		return nil, err
+	}
+	partialArgs, err := marshalOptionalWireString(content.PartialArgs)
+	if err != nil {
+		return nil, err
+	}
 	if content.PartialJSON != nil || content.PartialArgs != nil || content.StreamIndex != nil {
 		return marshalJSON(struct {
 			Type             string          `json:"type"`
-			ID               string          `json:"id"`
-			Name             string          `json:"name"`
+			ID               json.RawMessage `json:"id"`
+			Name             json.RawMessage `json:"name"`
 			Arguments        json.RawMessage `json:"arguments"`
-			PartialJSON      *string         `json:"partialJson,omitempty"`
-			PartialArgs      *string         `json:"partialArgs,omitempty"`
+			PartialJSON      json.RawMessage `json:"partialJson,omitempty"`
+			PartialArgs      json.RawMessage `json:"partialArgs,omitempty"`
 			StreamIndex      *int            `json:"streamIndex,omitempty"`
-			ThoughtSignature *string         `json:"thoughtSignature,omitempty"`
+			ThoughtSignature json.RawMessage `json:"thoughtSignature,omitempty"`
 		}{
 			Type:             "toolCall",
-			ID:               content.ID,
-			Name:             content.Name,
+			ID:               id,
+			Name:             name,
 			Arguments:        arguments,
-			PartialJSON:      content.PartialJSON,
-			PartialArgs:      content.PartialArgs,
+			PartialJSON:      partialJSON,
+			PartialArgs:      partialArgs,
 			StreamIndex:      content.StreamIndex,
-			ThoughtSignature: content.ThoughtSignature,
+			ThoughtSignature: thoughtSignature,
 		})
 	}
 	return marshalJSON(struct {
 		Type             string          `json:"type"`
-		ID               string          `json:"id"`
-		Name             string          `json:"name"`
+		ID               json.RawMessage `json:"id"`
+		Name             json.RawMessage `json:"name"`
 		Arguments        json.RawMessage `json:"arguments"`
-		ThoughtSignature *string         `json:"thoughtSignature,omitempty"`
+		ThoughtSignature json.RawMessage `json:"thoughtSignature,omitempty"`
 	}{
 		Type:             "toolCall",
-		ID:               content.ID,
-		Name:             content.Name,
+		ID:               id,
+		Name:             name,
 		Arguments:        arguments,
-		ThoughtSignature: content.ThoughtSignature,
+		ThoughtSignature: thoughtSignature,
 	})
 }
 
 func (content *ToolCall) UnmarshalJSON(data []byte) error {
 	var raw struct {
-		ID               string          `json:"id"`
-		Name             string          `json:"name"`
+		ID               json.RawMessage `json:"id"`
+		Name             json.RawMessage `json:"name"`
 		Arguments        json.RawMessage `json:"arguments"`
-		ThoughtSignature *string         `json:"thoughtSignature,omitempty"`
-		PartialJSON      *string         `json:"partialJson,omitempty"`
-		PartialArgs      *string         `json:"partialArgs,omitempty"`
+		ThoughtSignature json.RawMessage `json:"thoughtSignature"`
+		PartialJSON      json.RawMessage `json:"partialJson"`
+		PartialArgs      json.RawMessage `json:"partialArgs"`
 		StreamIndex      *int            `json:"streamIndex,omitempty"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
+	id, err := unmarshalWireString(raw.ID)
+	if err != nil {
+		return err
+	}
+	name, err := unmarshalWireString(raw.Name)
+	if err != nil {
+		return err
+	}
+	thoughtSignature, err := unmarshalOptionalWireString(raw.ThoughtSignature)
+	if err != nil {
+		return err
+	}
+	partialJSON, err := unmarshalOptionalWireString(raw.PartialJSON)
+	if err != nil {
+		return err
+	}
+	partialArgs, err := unmarshalOptionalWireString(raw.PartialArgs)
+	if err != nil {
+		return err
+	}
 	*content = ToolCall{
-		ID:               raw.ID,
-		Name:             raw.Name,
-		ThoughtSignature: raw.ThoughtSignature,
-		PartialJSON:      raw.PartialJSON,
-		PartialArgs:      raw.PartialArgs,
+		ID:               id,
+		Name:             name,
+		ThoughtSignature: thoughtSignature,
+		PartialJSON:      partialJSON,
+		PartialArgs:      partialArgs,
 		StreamIndex:      raw.StreamIndex,
 	}
 	if err := SetToolCallArgumentsJSON(content, raw.Arguments); err != nil {
@@ -309,7 +690,7 @@ func (content UserContent) MarshalJSON() ([]byte, error) {
 		if content.Blocks != nil {
 			return nil, errors.New("ai: user content has both text and blocks")
 		}
-		return marshalJSON(*content.Text)
+		return jsonwire.MarshalString(*content.Text)
 	}
 	if content.Blocks == nil {
 		return []byte("[]"), nil
@@ -320,8 +701,8 @@ func (content UserContent) MarshalJSON() ([]byte, error) {
 func (content *UserContent) UnmarshalJSON(data []byte) error {
 	data = bytes.TrimSpace(data)
 	if len(data) > 0 && data[0] == '"' {
-		var text string
-		if err := json.Unmarshal(data, &text); err != nil {
+		text, err := jsonwire.UnmarshalString(data)
+		if err != nil {
 			return err
 		}
 		content.Text = &text
@@ -335,6 +716,77 @@ func (content *UserContent) UnmarshalJSON(data []byte) error {
 	content.Text = nil
 	content.Blocks = blocks
 	return nil
+}
+
+func unmarshalWireString(data json.RawMessage) (string, error) {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
+		return "", nil
+	}
+	return jsonwire.UnmarshalString(data)
+}
+
+func marshalOptionalWireString(value *string) (json.RawMessage, error) {
+	if value == nil {
+		return nil, nil
+	}
+	encoded, err := jsonwire.MarshalString(*value)
+	return json.RawMessage(encoded), err
+}
+
+func marshalOptionalWireStringSlice(values *[]string) (json.RawMessage, error) {
+	if values == nil {
+		return nil, nil
+	}
+	if *values == nil {
+		return json.RawMessage("null"), nil
+	}
+	var output bytes.Buffer
+	output.WriteByte('[')
+	for index, value := range *values {
+		if index > 0 {
+			output.WriteByte(',')
+		}
+		encoded, err := jsonwire.MarshalString(value)
+		if err != nil {
+			return nil, err
+		}
+		output.Write(encoded)
+	}
+	output.WriteByte(']')
+	return output.Bytes(), nil
+}
+
+func unmarshalOptionalWireStringSlice(data json.RawMessage) (*[]string, error) {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
+		return nil, nil
+	}
+	var raw []json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	values := make([]string, len(raw))
+	for index, item := range raw {
+		value, err := unmarshalWireString(item)
+		if err != nil {
+			return nil, err
+		}
+		values[index] = value
+	}
+	return &values, nil
+}
+
+func unmarshalOptionalWireString(data json.RawMessage) (*string, error) {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
+		return nil, nil
+	}
+	value, err := jsonwire.UnmarshalString(data)
+	if err != nil {
+		return nil, err
+	}
+	return &value, nil
 }
 
 func (blocks UserContentBlocks) MarshalJSON() ([]byte, error) {
@@ -368,6 +820,8 @@ func (blocks *UserContentBlocks) UnmarshalJSON(data []byte) error {
 			result = append(result, value)
 		case *ImageContent:
 			result = append(result, value)
+		case *UnknownContentBlock:
+			result = append(result, value)
 		}
 	}
 	*blocks = result
@@ -392,6 +846,8 @@ func (blocks *AssistantContent) UnmarshalJSON(data []byte) error {
 			result = append(result, value)
 		case *ToolCall:
 			result = append(result, value)
+		case *UnknownContentBlock:
+			result = append(result, value)
 		}
 	}
 	*blocks = result
@@ -413,6 +869,8 @@ func (blocks *ToolResultContent) UnmarshalJSON(data []byte) error {
 			result = append(result, value)
 		case *ImageContent:
 			result = append(result, value)
+		case *UnknownContentBlock:
+			result = append(result, value)
 		}
 	}
 	*blocks = result
@@ -433,6 +891,8 @@ func (blocks *ImagesContent) UnmarshalJSON(data []byte) error {
 		case *TextContent:
 			result = append(result, value)
 		case *ImageContent:
+			result = append(result, value)
+		case *UnknownContentBlock:
 			result = append(result, value)
 		}
 	}
@@ -480,7 +940,12 @@ func unmarshalBlocks(data []byte, factories map[string]func() any) ([]any, error
 		}
 		factory := factories[header.Type]
 		if factory == nil {
-			return nil, fmt.Errorf("content %d: %w %q", index, errUnknownContentType, header.Type)
+			normalized, err := NormalizeJSONStringifyJSON(item)
+			if err != nil {
+				return nil, fmt.Errorf("content %d unknown: %w", index, err)
+			}
+			decoded = append(decoded, &UnknownContentBlock{Raw: normalized})
+			continue
 		}
 		value := factory()
 		if err := json.Unmarshal(item, value); err != nil {
@@ -517,8 +982,9 @@ func decodeJSONObject(data []byte) (map[string]any, error) {
 func NormalizeJSONStringifyJSON(data []byte) ([]byte, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
+	source := jsonStringifyDecoder{decoder: decoder, data: data}
 	var output bytes.Buffer
-	if err := writeJSONStringifyJSONValue(&output, decoder); err != nil {
+	if err := writeJSONStringifyJSONValue(&output, &source); err != nil {
 		return nil, err
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
@@ -530,8 +996,30 @@ func NormalizeJSONStringifyJSON(data []byte) ([]byte, error) {
 	return output.Bytes(), nil
 }
 
-func writeJSONStringifyJSONValue(output *bytes.Buffer, decoder *json.Decoder) error {
-	token, err := decoder.Token()
+type jsonStringifyDecoder struct {
+	decoder *json.Decoder
+	data    []byte
+}
+
+func (source *jsonStringifyDecoder) token() (json.Token, error) {
+	start := source.decoder.InputOffset()
+	token, err := source.decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := token.(string); !ok {
+		return token, nil
+	}
+	end := source.decoder.InputOffset()
+	value, err := jsonwire.UnmarshalStringToken(source.data[start:end])
+	if err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
+func writeJSONStringifyJSONValue(output *bytes.Buffer, source *jsonStringifyDecoder) error {
+	token, err := source.token()
 	if err != nil {
 		return err
 	}
@@ -544,17 +1032,18 @@ func writeJSONStringifyJSONValue(output *bytes.Buffer, decoder *json.Decoder) er
 			}
 			members := make([]member, 0)
 			indexes := make(map[string]int)
-			for decoder.More() {
-				key, err := decoder.Token()
+			for source.decoder.More() {
+				key, err := source.token()
 				if err != nil {
 					return err
 				}
-				name, ok := key.(string)
+				_, ok := key.(string)
 				if !ok {
 					return errors.New("object key is not a string")
 				}
+				name := key.(string)
 				var value bytes.Buffer
-				if err := writeJSONStringifyJSONValue(&value, decoder); err != nil {
+				if err := writeJSONStringifyJSONValue(&value, source); err != nil {
 					return err
 				}
 				if index, exists := indexes[name]; exists {
@@ -564,7 +1053,7 @@ func writeJSONStringifyJSONValue(output *bytes.Buffer, decoder *json.Decoder) er
 					members = append(members, member{name: name, value: value.Bytes()})
 				}
 			}
-			closing, err := decoder.Token()
+			closing, err := source.token()
 			if err != nil {
 				return err
 			}
@@ -584,7 +1073,7 @@ func writeJSONStringifyJSONValue(output *bytes.Buffer, decoder *json.Decoder) er
 				if index > 0 {
 					output.WriteByte(',')
 				}
-				encodedName, err := marshalJSON(member.name)
+				encodedName, err := jsonwire.MarshalString(member.name)
 				if err != nil {
 					return err
 				}
@@ -596,15 +1085,15 @@ func writeJSONStringifyJSONValue(output *bytes.Buffer, decoder *json.Decoder) er
 			return nil
 		case '[':
 			output.WriteByte('[')
-			for index := 0; decoder.More(); index++ {
+			for index := 0; source.decoder.More(); index++ {
 				if index > 0 {
 					output.WriteByte(',')
 				}
-				if err := writeJSONStringifyJSONValue(output, decoder); err != nil {
+				if err := writeJSONStringifyJSONValue(output, source); err != nil {
 					return err
 				}
 			}
-			closing, err := decoder.Token()
+			closing, err := source.token()
 			if err != nil {
 				return err
 			}
@@ -632,6 +1121,14 @@ func writeJSONStringifyJSONValue(output *bytes.Buffer, decoder *json.Decoder) er
 			return nil
 		}
 		encoded, err := marshalJSON(value)
+		if err != nil {
+			return err
+		}
+		output.Write(encoded)
+		return nil
+	}
+	if value, ok := token.(string); ok {
+		encoded, err := jsonwire.MarshalString(value)
 		if err != nil {
 			return err
 		}

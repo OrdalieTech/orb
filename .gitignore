@@ -1,5 +1,5 @@
 .upstream/
 .tools/
 dist/
-pi
+/pi
 coverage.out
