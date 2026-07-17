@@ -1,0 +1,603 @@
+{
+  "schemaVersion": 1,
+  "fixedNow": 1700000000321,
+  "cases": [
+    {
+      "name": "basic-multi-turn-tool",
+      "trace": "basic-multi-turn-tool.jsonl",
+      "systemPrompt": "Use the echo tool, then answer.",
+      "prompt": {
+        "role": "user",
+        "content": "Echo hello.",
+        "timestamp": 1700000000301
+      },
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Calling echo."
+            },
+            {
+              "type": "toolCall",
+              "id": "basic-1",
+              "name": "echo",
+              "arguments": {
+                "value": "hello"
+              }
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1700000000311
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Echo complete."
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1700000000311
+        }
+      ],
+      "tools": [
+        {
+          "name": "echo",
+          "label": "Echo",
+          "description": "Echo a value",
+          "parameters": {
+            "type": "object",
+            "required": [
+              "value"
+            ],
+            "properties": {
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ],
+      "toolExecution": "parallel",
+      "toolBehavior": "echo",
+      "tokenSize": {
+        "min": 64,
+        "max": 64
+      },
+      "expected": {
+        "providerCalls": 2,
+        "pendingResponses": 0,
+        "toolEndOrder": [
+          "basic-1"
+        ],
+        "toolResultOrder": [
+          "basic-1"
+        ]
+      },
+      "eventCount": 25
+    },
+    {
+      "name": "parallel-completion-vs-source-order",
+      "trace": "parallel-completion-vs-source-order.jsonl",
+      "systemPrompt": "Echo both values.",
+      "prompt": {
+        "role": "user",
+        "content": "Echo first and second.",
+        "timestamp": 1700000000301
+      },
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "toolCall",
+              "id": "parallel-1",
+              "name": "echo",
+              "arguments": {
+                "value": "first"
+              }
+            },
+            {
+              "type": "toolCall",
+              "id": "parallel-2",
+              "name": "echo",
+              "arguments": {
+                "value": "second"
+              }
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1700000000311
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Both echoes complete."
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1700000000311
+        }
+      ],
+      "tools": [
+        {
+          "name": "echo",
+          "label": "Echo",
+          "description": "Echo a value",
+          "parameters": {
+            "type": "object",
+            "required": [
+              "value"
+            ],
+            "properties": {
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ],
+      "toolExecution": "parallel",
+      "toolBehavior": "parallel-second-finishes-first",
+      "tokenSize": {
+        "min": 64,
+        "max": 64
+      },
+      "expected": {
+        "providerCalls": 2,
+        "pendingResponses": 0,
+        "toolEndOrder": [
+          "parallel-2",
+          "parallel-1"
+        ],
+        "toolResultOrder": [
+          "parallel-1",
+          "parallel-2"
+        ]
+      },
+      "eventCount": 29
+    },
+    {
+      "name": "steering-queued-during-tools",
+      "trace": "steering-queued-during-tools.jsonl",
+      "systemPrompt": "Work, then honor steering.",
+      "prompt": {
+        "role": "user",
+        "content": "Start work.",
+        "timestamp": 1700000000301
+      },
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "toolCall",
+              "id": "steering-1",
+              "name": "echo",
+              "arguments": {
+                "value": "work"
+              }
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1700000000311
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Steering applied."
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1700000000311
+        }
+      ],
+      "tools": [
+        {
+          "name": "echo",
+          "label": "Echo",
+          "description": "Echo a value",
+          "parameters": {
+            "type": "object",
+            "required": [
+              "value"
+            ],
+            "properties": {
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ],
+      "toolExecution": "parallel",
+      "toolBehavior": "queue-steering",
+      "tokenSize": {
+        "min": 64,
+        "max": 64
+      },
+      "steering": {
+        "trigger": "tool_execute",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Change direction now.",
+            "timestamp": 1700000000316
+          }
+        ]
+      },
+      "expected": {
+        "providerCalls": 2,
+        "pendingResponses": 0,
+        "toolEndOrder": [
+          "steering-1"
+        ],
+        "toolResultOrder": [
+          "steering-1"
+        ]
+      },
+      "eventCount": 24
+    },
+    {
+      "name": "abort-mid-text",
+      "trace": "abort-mid-text.jsonl",
+      "systemPrompt": "Stream a long answer.",
+      "prompt": {
+        "role": "user",
+        "content": "Begin streaming.",
+        "timestamp": 1700000000301
+      },
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "alpha beta gamma delta epsilon"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1700000000311
+        }
+      ],
+      "tools": [],
+      "toolExecution": "parallel",
+      "toolBehavior": "none",
+      "tokensPerSecond": 100,
+      "tokenSize": {
+        "min": 1,
+        "max": 1
+      },
+      "abort": {
+        "trigger": "first_text_delta"
+      },
+      "expected": {
+        "providerCalls": 1,
+        "pendingResponses": 0
+      },
+      "eventCount": 10
+    },
+    {
+      "name": "tool-error-recovery",
+      "trace": "tool-error-recovery.jsonl",
+      "systemPrompt": "Recover after a tool failure.",
+      "prompt": {
+        "role": "user",
+        "content": "Run the failing tool.",
+        "timestamp": 1700000000301
+      },
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "toolCall",
+              "id": "error-1",
+              "name": "explode",
+              "arguments": {
+                "value": "boom"
+              }
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1700000000311
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Recovered from tool error."
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1700000000311
+        }
+      ],
+      "tools": [
+        {
+          "name": "explode",
+          "label": "Explode",
+          "description": "Fail with a deterministic error",
+          "parameters": {
+            "type": "object",
+            "required": [
+              "value"
+            ],
+            "properties": {
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ],
+      "toolExecution": "parallel",
+      "toolBehavior": "throw",
+      "tokenSize": {
+        "min": 64,
+        "max": 64
+      },
+      "expected": {
+        "providerCalls": 2,
+        "pendingResponses": 0,
+        "toolEndOrder": [
+          "error-1"
+        ],
+        "toolResultOrder": [
+          "error-1"
+        ]
+      },
+      "eventCount": 22
+    },
+    {
+      "name": "all-results-terminate",
+      "trace": "all-results-terminate.jsonl",
+      "systemPrompt": "Stop when every tool finishes the run.",
+      "prompt": {
+        "role": "user",
+        "content": "Finish both tasks.",
+        "timestamp": 1700000000301
+      },
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "toolCall",
+              "id": "terminate-1",
+              "name": "finish",
+              "arguments": {
+                "value": "first"
+              }
+            },
+            {
+              "type": "toolCall",
+              "id": "terminate-2",
+              "name": "finish",
+              "arguments": {
+                "value": "second"
+              }
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1700000000311
+        }
+      ],
+      "tools": [
+        {
+          "name": "finish",
+          "label": "Finish",
+          "description": "Return a terminating result",
+          "parameters": {
+            "type": "object",
+            "required": [
+              "value"
+            ],
+            "properties": {
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ],
+      "toolExecution": "parallel",
+      "toolBehavior": "terminate-all",
+      "tokenSize": {
+        "min": 64,
+        "max": 64
+      },
+      "expected": {
+        "providerCalls": 1,
+        "pendingResponses": 0,
+        "toolEndOrder": [
+          "terminate-1",
+          "terminate-2"
+        ],
+        "toolResultOrder": [
+          "terminate-1",
+          "terminate-2"
+        ]
+      },
+      "eventCount": 22
+    }
+  ]
+}

@@ -48,3 +48,11 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/ai/src/utils/json-parse.ts`, npm `partial-json@0.1.7` (streaming argument stringify order) | `internal/partialjson/partialjson.go`, `internal/partialjson/stringify.go`, `internal/partialjson/partialjson_test.go` | WP-120 |
 | `packages/ai/src/providers/openai.ts`, `packages/ai/src/auth/helpers.ts` | `ai/providers/openai.go`, `ai/providers/openai_test.go` | WP-120 |
 | OpenAI adapter and provider request/stream behavior | `conformance/extract/f2-openai.ts`, `conformance/fixtures/F2/`, `ai/api/conformance_test.go` | WP-120 |
+| `packages/agent/src/types.ts` | `agent/types.go`, `agent/events.go`, `agent/types_test.go`, `agent/events_test.go` | WP-130 |
+| `packages/agent/src/agent-loop.ts` | `agent/loop.go`, `agent/loop_test.go` | WP-130 |
+| `packages/agent/src/agent.ts` | `agent/agent.go`, `agent/clone.go`, `agent/agent_test.go` | WP-130 |
+| `packages/ai/src/utils/validation.ts` | `internal/jsonschema/validate.go`, `internal/jsonschema/validate_test.go` | WP-130 |
+| `packages/ai/src/providers/faux.ts` | `ai/providers/faux/` | WP-130 |
+| `packages/ai/src/compat.ts` (`streamSimple` dispatch for landed API shapes) | `ai/api/stream_simple.go` | WP-130 |
+| `packages/ai/src/providers/faux.ts` (UTF-16 streaming and surrogate wire behavior) | `ai/stream.go`, `ai/json.go`, `internal/jsonwire/marshal.go` | WP-130 |
+| Agent-loop scripted behavior | `conformance/extract/f3-agent.ts`, `conformance/fixtures/F3/`, `conformance/runner/f3_agent_test.go` | WP-130 |

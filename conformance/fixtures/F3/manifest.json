@@ -1,0 +1,16 @@
+{
+  "family": "F3",
+  "upstreamCommit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
+  "generator": "conformance/extract/f3-agent.ts",
+  "source": "packages/agent/src/agent-loop.ts + packages/agent/src/agent.ts + packages/agent/src/types.ts + packages/ai/src/providers/faux.ts",
+  "format": "agent-event-jsonl-v1",
+  "files": [
+    "cases.json",
+    "basic-multi-turn-tool.jsonl",
+    "parallel-completion-vs-source-order.jsonl",
+    "steering-queued-during-tools.jsonl",
+    "abort-mid-text.jsonl",
+    "tool-error-recovery.jsonl",
+    "all-results-terminate.jsonl"
+  ]
+}
