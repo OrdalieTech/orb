@@ -1,0 +1,14 @@
+{
+  "name": "pi-go-conformance-extract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "node --import tsx generate.ts"
+  },
+  "devDependencies": {
+    "tsx": "4.22.1"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

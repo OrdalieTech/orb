@@ -23,6 +23,9 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: make build test lint
+      - name: Verify conformance fixtures
+        if: runner.os == 'Linux'
+        run: make fixtures-check
 
   cross-build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
