@@ -84,23 +84,35 @@ func NewOutputAccumulator(options ...OutputAccumulatorOptions) *OutputAccumulato
 func (output *OutputAccumulator) Append(data []byte) error {
 	output.mu.Lock()
 	defer output.mu.Unlock()
+	return output.append(len(data), data, output.decoder.Decode(data, false))
+}
+
+// appendTransformed records rawSize for spill selection while retaining text
+// in the rolling buffer and full-output file.
+func (output *OutputAccumulator) appendTransformed(rawSize int, text string) error {
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	return output.append(rawSize, []byte(text), text)
+}
+
+func (output *OutputAccumulator) append(rawSize int, persisted []byte, decoded string) error {
 	if output.finished {
 		return upstreamToolError("Cannot append to a finished output accumulator")
 	}
 
-	output.totalRawBytes += len(data)
-	output.appendDecodedText(output.decoder.Decode(data, false))
+	output.totalRawBytes += rawSize
+	output.appendDecodedText(decoded)
 	if output.tempFile != nil || output.shouldUseTempFile() {
 		if err := output.ensureTempFile(); err != nil {
 			return err
 		}
 		if output.tempFile != nil {
-			return writeAll(output.tempFile, data)
+			return writeAll(output.tempFile, persisted)
 		}
 		return nil
 	}
-	if len(data) > 0 {
-		output.rawChunks = append(output.rawChunks, append([]byte(nil), data...))
+	if len(persisted) > 0 {
+		output.rawChunks = append(output.rawChunks, append([]byte(nil), persisted...))
 	}
 	return nil
 }

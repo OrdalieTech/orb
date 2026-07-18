@@ -1,6 +1,10 @@
 package main
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+)
 
 var validThinkingLevels = map[string]struct{}{
 	"off": {}, "minimal": {}, "low": {}, "medium": {}, "high": {}, "xhigh": {}, "max": {},
@@ -41,15 +45,24 @@ type CLIArgs struct {
 	ExcludeTools       []string
 	NoTools            bool
 	NoBuiltinTools     bool
+	NoExtensions       bool
 	Print              bool
 	Mode               string
 	Export             *string
 	NoContextFiles     bool
+	Skills             []string
+	NoSkills           bool
+	PromptTemplates    []string
+	NoPromptTemplates  bool
+	ProjectTrusted     *bool
 	Messages           []string
 	FileArgs           []string
 	UnknownFlags       []CLIUnknownFlag
 	Diagnostics        []CLIDiagnostic
 	RestoredModel      bool
+	extensionsLoaded   bool
+	extensionRegistry  *extensions.Registry
+	extensionWarnings  []string
 }
 
 // ParseArgs parses the WP-160 CLI subset with upstream's sequential rules.
@@ -135,6 +148,8 @@ func ParseArgs(argv []string) CLIArgs {
 			result.NoTools = true
 		case argument == "--no-builtin-tools" || argument == "-nbt":
 			result.NoBuiltinTools = true
+		case argument == "--no-extensions" || argument == "-ne":
+			result.NoExtensions = true
 		case (argument == "--tools" || argument == "-t") && index+1 < len(argv):
 			index++
 			result.Tools = parseToolList(argv[index])
@@ -166,6 +181,22 @@ func ParseArgs(argv []string) CLIArgs {
 			result.Export = stringValue(argv[index])
 		case argument == "--no-context-files" || argument == "-nc":
 			result.NoContextFiles = true
+		case argument == "--skill" && index+1 < len(argv):
+			index++
+			result.Skills = append(result.Skills, argv[index])
+		case argument == "--no-skills" || argument == "-ns":
+			result.NoSkills = true
+		case argument == "--prompt-template" && index+1 < len(argv):
+			index++
+			result.PromptTemplates = append(result.PromptTemplates, argv[index])
+		case argument == "--no-prompt-templates" || argument == "-np":
+			result.NoPromptTemplates = true
+		case argument == "--approve" || argument == "-a":
+			trusted := true
+			result.ProjectTrusted = &trusted
+		case argument == "--no-approve" || argument == "-na":
+			trusted := false
+			result.ProjectTrusted = &trusted
 		case strings.HasPrefix(argument, "@"):
 			result.FileArgs = append(result.FileArgs, argument[1:])
 		case strings.HasPrefix(argument, "--"):

@@ -1,0 +1,153 @@
+{
+  "orderedErrorIsolation": {
+    "calls": [
+      "first",
+      "broken",
+      "third"
+    ],
+    "errors": [
+      {
+        "extensionPath": "broken",
+        "event": "agent_start",
+        "error": "boom"
+      }
+    ]
+  },
+  "contextMiddleware": {
+    "original": [
+      {
+        "role": "custom",
+        "nested": {
+          "value": "original"
+        }
+      }
+    ],
+    "result": [
+      {
+        "role": "custom",
+        "nested": {
+          "value": "first"
+        },
+        "seen": 2
+      },
+      {
+        "role": "custom",
+        "added": true
+      }
+    ]
+  },
+  "toolResultMiddleware": {
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "first"
+        },
+        {
+          "type": "text",
+          "text": "first"
+        }
+      ],
+      "details": {
+        "source": "first"
+      },
+      "isError": true
+    },
+    "errors": [
+      "ignored"
+    ]
+  },
+  "toolCall": {
+    "input": {
+      "command": "prefixed"
+    },
+    "order": [
+      "first",
+      "second:prefixed"
+    ],
+    "result": {
+      "block": true,
+      "reason": "denied"
+    }
+  },
+  "toolCallFailure": {
+    "block": true,
+    "reason": "tool-call-boom"
+  },
+  "beforeAgentStart": {
+    "messages": [
+      {
+        "customType": "first",
+        "content": "base",
+        "display": true
+      },
+      {
+        "customType": "second",
+        "content": "base\nfirst",
+        "display": true
+      }
+    ],
+    "systemPrompt": "base\nfirst\nsecond"
+  },
+  "input": {
+    "action": "transform",
+    "text": "x[first][second]"
+  },
+  "providerHooks": {
+    "payload": {
+      "base": true,
+      "first": true,
+      "second": true
+    },
+    "headers": {
+      "Existing": "yes",
+      "Remove": null,
+      "X-First": "one",
+      "X-Second": "two"
+    },
+    "errors": [
+      "before_provider_request:payload ignored",
+      "before_provider_headers:headers ignored"
+    ]
+  },
+  "resources": {
+    "skillPaths": [
+      {
+        "path": "/skill-a",
+        "extensionPath": "first"
+      },
+      {
+        "path": "/skill-b",
+        "extensionPath": "second"
+      }
+    ],
+    "promptPaths": [
+      {
+        "path": "/prompt-a",
+        "extensionPath": "first"
+      }
+    ],
+    "themePaths": [
+      {
+        "path": "/theme-b",
+        "extensionPath": "second"
+      }
+    ]
+  },
+  "projectTrust": {
+    "result": {
+      "trusted": "no",
+      "remember": true
+    },
+    "errors": []
+  },
+  "sessionBefore": {
+    "order": [
+      "first",
+      "second"
+    ],
+    "result": {
+      "cancel": true
+    }
+  }
+}

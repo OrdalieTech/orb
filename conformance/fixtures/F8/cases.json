@@ -1,0 +1,543 @@
+{
+  "schemaVersion": 1,
+  "argumentCases": [
+    {
+      "name": "plain",
+      "input": "a b c",
+      "expected": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    {
+      "name": "quoted",
+      "input": "Button \"onClick handler\" 'disabled support'",
+      "expected": [
+        "Button",
+        "onClick handler",
+        "disabled support"
+      ]
+    },
+    {
+      "name": "empty-quotes",
+      "input": "\"\" \" \"",
+      "expected": [
+        " "
+      ]
+    },
+    {
+      "name": "newlines",
+      "input": "label-2\n\nHere is some description #2.",
+      "expected": [
+        "label-2",
+        "Here",
+        "is",
+        "some",
+        "description",
+        "#2."
+      ]
+    },
+    {
+      "name": "unescaped-quotes",
+      "input": "\"quoted \\\"text\\\"\"",
+      "expected": [
+        "quoted \\text\\"
+      ]
+    },
+    {
+      "name": "unicode",
+      "input": "日本語 🎉 café",
+      "expected": [
+        "日本語",
+        "🎉",
+        "café"
+      ]
+    }
+  ],
+  "substitutionCases": [
+    {
+      "name": "all-forms",
+      "content": "$1: $@ ($ARGUMENTS)",
+      "args": [
+        "first",
+        "second",
+        "third"
+      ],
+      "expected": "first: first second third (first second third)"
+    },
+    {
+      "name": "missing-positionals",
+      "content": "$1 $2 $3 $4",
+      "args": [
+        "a",
+        "b"
+      ],
+      "expected": "a b  "
+    },
+    {
+      "name": "multi-digit",
+      "content": "$10 $12 $15",
+      "args": [
+        "val0",
+        "val1",
+        "val2",
+        "val3",
+        "val4",
+        "val5",
+        "val6",
+        "val7",
+        "val8",
+        "val9",
+        "val10",
+        "val11",
+        "val12",
+        "val13",
+        "val14"
+      ],
+      "expected": "val9 val11 val14"
+    },
+    {
+      "name": "positional-defaults",
+      "content": "${1:-7} ${2:-brief}",
+      "args": [],
+      "expected": "7 brief"
+    },
+    {
+      "name": "all-default",
+      "content": "${@:-default}\n${ARGUMENTS:-default}",
+      "args": [],
+      "expected": "default\ndefault"
+    },
+    {
+      "name": "non-recursive-argument",
+      "content": "$ARGUMENTS",
+      "args": [
+        "$1",
+        "$ARGUMENTS"
+      ],
+      "expected": "$1 $ARGUMENTS"
+    },
+    {
+      "name": "non-recursive-default",
+      "content": "${3:-$ARGUMENTS}",
+      "args": [
+        "a",
+        "b"
+      ],
+      "expected": "$ARGUMENTS"
+    },
+    {
+      "name": "slice-tail",
+      "content": "${@:2}",
+      "args": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ],
+      "expected": "b c d"
+    },
+    {
+      "name": "slice-length",
+      "content": "${@:2:2}",
+      "args": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ],
+      "expected": "b c"
+    },
+    {
+      "name": "slice-zero-start",
+      "content": "${@:0}",
+      "args": [
+        "a",
+        "b",
+        "c"
+      ],
+      "expected": "a b c"
+    },
+    {
+      "name": "slice-zero-length",
+      "content": "${@:2:0}",
+      "args": [
+        "a",
+        "b",
+        "c"
+      ],
+      "expected": ""
+    },
+    {
+      "name": "escaped-dollar-is-not-special",
+      "content": "Price: \\$100",
+      "args": [],
+      "expected": "Price: \\"
+    },
+    {
+      "name": "unicode",
+      "content": "$ARGUMENTS",
+      "args": [
+        "日本語",
+        "🎉",
+        "café"
+      ],
+      "expected": "日本語 🎉 café"
+    }
+  ],
+  "templateCases": [
+    {
+      "name": "quoted-args",
+      "text": "/component Button \"onClick handler\" \"disabled support\"",
+      "templates": [
+        {
+          "name": "component",
+          "description": "Create component",
+          "content": "Create $1 with ${@:2}"
+        }
+      ],
+      "expected": "Create Button with onClick handler disabled support"
+    },
+    {
+      "name": "newline-separator",
+      "text": "/review\nfile.go",
+      "templates": [
+        {
+          "name": "review",
+          "description": "Review",
+          "content": "Review $1"
+        }
+      ],
+      "expected": "Review file.go"
+    },
+    {
+      "name": "unknown",
+      "text": "/missing value",
+      "templates": [
+        {
+          "name": "review",
+          "description": "Review",
+          "content": "Review $1"
+        }
+      ],
+      "expected": "/missing value"
+    },
+    {
+      "name": "not-command",
+      "text": "review file.go",
+      "templates": [
+        {
+          "name": "review",
+          "description": "Review",
+          "content": "Review $1"
+        }
+      ],
+      "expected": "review file.go"
+    }
+  ],
+  "invocationCases": [
+    {
+      "name": "without-extra",
+      "additionalInstructions": "",
+      "expected": "<skill name=\"inspect\" location=\"<fixture>/skills/inspect/SKILL.md\">\nReferences are relative to <fixture>/skills/inspect.\n\nUse inspection tools.\n</skill>"
+    },
+    {
+      "name": "with-extra",
+      "additionalInstructions": "Check errors.",
+      "expected": "<skill name=\"inspect\" location=\"<fixture>/skills/inspect/SKILL.md\">\nReferences are relative to <fixture>/skills/inspect.\n\nUse inspection tools.\n</skill>\n\nCheck errors."
+    }
+  ],
+  "harnessPrompts": {
+    "promptTemplates": [
+      {
+        "name": "review",
+        "description": "Review a path",
+        "content": "Review $1 with ${@:2}"
+      },
+      {
+        "name": "skill:missing",
+        "description": "Fallback template: $1",
+        "content": "Fallback template: $1"
+      },
+      {
+        "name": "unicode",
+        "description": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ud83c...",
+        "content": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa🎉z"
+      }
+    ],
+    "diagnostics": [],
+    "invocation": "Review file.go with focus errors"
+  },
+  "discovery": {
+    "files": [
+      {
+        "path": "skills/inspect/SKILL.md",
+        "content": "---\nname: inspect\ndescription: Inspect files & report findings.\nallowed-tools: read bash\n---\nUse inspection tools."
+      },
+      {
+        "path": "skills/hidden/SKILL.md",
+        "content": "---\nname: hidden\ndescription: Explicit invocation only.\ndisable-model-invocation: true\n---\nHidden body."
+      },
+      {
+        "path": "skills/root.md",
+        "content": "---\nname: root\ndescription: Root markdown skill.\n---\nRoot body."
+      },
+      {
+        "path": "prompts/review.md",
+        "content": "---\ndescription: Review a path\nargument-hint: \"<path>\"\n---\nReview $1 with ${@:2}"
+      },
+      {
+        "path": "prompts/skill:missing.md",
+        "content": "Fallback template: $1"
+      },
+      {
+        "path": "prompts/unicode.md",
+        "content": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa🎉z"
+      },
+      {
+        "path": "prompts/nested/ignored.md",
+        "content": "Must not load"
+      }
+    ],
+    "skills": [
+      {
+        "name": "hidden",
+        "description": "Explicit invocation only.",
+        "filePath": "<fixture>/skills/hidden/SKILL.md",
+        "baseDir": "<fixture>/skills/hidden",
+        "disableModelInvocation": true,
+        "sourceInfo": {
+          "path": "<fixture>/skills/hidden/SKILL.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/skills/hidden"
+        }
+      },
+      {
+        "name": "inspect",
+        "description": "Inspect files & report findings.",
+        "filePath": "<fixture>/skills/inspect/SKILL.md",
+        "baseDir": "<fixture>/skills/inspect",
+        "disableModelInvocation": false,
+        "sourceInfo": {
+          "path": "<fixture>/skills/inspect/SKILL.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/skills/inspect"
+        }
+      },
+      {
+        "name": "root",
+        "description": "Root markdown skill.",
+        "filePath": "<fixture>/skills/root.md",
+        "baseDir": "<fixture>/skills",
+        "disableModelInvocation": false,
+        "sourceInfo": {
+          "path": "<fixture>/skills/root.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/skills"
+        }
+      }
+    ],
+    "diagnostics": [],
+    "templates": [
+      {
+        "name": "review",
+        "description": "Review a path",
+        "argumentHint": "<path>",
+        "content": "Review $1 with ${@:2}",
+        "filePath": "<fixture>/prompts/review.md",
+        "sourceInfo": {
+          "path": "<fixture>/prompts/review.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/prompts"
+        }
+      },
+      {
+        "name": "skill:missing",
+        "description": "Fallback template: $1",
+        "argumentHint": null,
+        "content": "Fallback template: $1",
+        "filePath": "<fixture>/prompts/skill:missing.md",
+        "sourceInfo": {
+          "path": "<fixture>/prompts/skill:missing.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/prompts"
+        }
+      },
+      {
+        "name": "unicode",
+        "description": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ud83c...",
+        "argumentHint": null,
+        "content": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa🎉z",
+        "filePath": "<fixture>/prompts/unicode.md",
+        "sourceInfo": {
+          "path": "<fixture>/prompts/unicode.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/prompts"
+        }
+      }
+    ],
+    "commands": [
+      {
+        "name": "review",
+        "description": "Review a path",
+        "source": "prompt",
+        "sourceInfo": {
+          "path": "<fixture>/prompts/review.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/prompts"
+        }
+      },
+      {
+        "name": "skill:missing",
+        "description": "Fallback template: $1",
+        "source": "prompt",
+        "sourceInfo": {
+          "path": "<fixture>/prompts/skill:missing.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/prompts"
+        }
+      },
+      {
+        "name": "unicode",
+        "description": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ud83c...",
+        "source": "prompt",
+        "sourceInfo": {
+          "path": "<fixture>/prompts/unicode.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/prompts"
+        }
+      },
+      {
+        "name": "skill:hidden",
+        "description": "Explicit invocation only.",
+        "source": "skill",
+        "sourceInfo": {
+          "path": "<fixture>/skills/hidden/SKILL.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/skills/hidden"
+        }
+      },
+      {
+        "name": "skill:inspect",
+        "description": "Inspect files & report findings.",
+        "source": "skill",
+        "sourceInfo": {
+          "path": "<fixture>/skills/inspect/SKILL.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/skills/inspect"
+        }
+      },
+      {
+        "name": "skill:root",
+        "description": "Root markdown skill.",
+        "source": "skill",
+        "sourceInfo": {
+          "path": "<fixture>/skills/root.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/skills"
+        }
+      }
+    ]
+  },
+  "resolutionTemplates": [
+    {
+      "name": "review",
+      "description": "Review",
+      "content": "Template review: $1",
+      "filePath": "<fixture>/prompts/review.md"
+    },
+    {
+      "name": "skill:inspect",
+      "description": "Collision template",
+      "content": "WRONG TEMPLATE: $1",
+      "filePath": "<fixture>/prompts/skill:inspect.md"
+    },
+    {
+      "name": "skill:missing",
+      "description": "Unknown-skill fallback",
+      "content": "Fallback template: $1",
+      "filePath": "<fixture>/prompts/skill:missing.md"
+    }
+  ],
+  "resolutionCases": [
+    {
+      "name": "extension-first",
+      "text": "/ext hello",
+      "handled": true,
+      "expanded": null,
+      "trace": [
+        "extension:hello"
+      ]
+    },
+    {
+      "name": "input-transform-before-template",
+      "text": "/alias file.go",
+      "handled": false,
+      "expanded": "Template review: file.go",
+      "trace": [
+        "input:/alias file.go"
+      ]
+    },
+    {
+      "name": "input-transform-before-skill",
+      "text": "/choose details",
+      "handled": false,
+      "expanded": "<skill name=\"inspect\" location=\"<fixture>/skills/inspect/SKILL.md\">\nReferences are relative to <fixture>/skills/inspect.\n\nUse inspection tools.\n</skill>\n\ndetails",
+      "trace": [
+        "input:/choose details"
+      ]
+    },
+    {
+      "name": "skill-before-colliding-template",
+      "text": "/skill:inspect details",
+      "handled": false,
+      "expanded": "<skill name=\"inspect\" location=\"<fixture>/skills/inspect/SKILL.md\">\nReferences are relative to <fixture>/skills/inspect.\n\nUse inspection tools.\n</skill>\n\ndetails",
+      "trace": [
+        "input:/skill:inspect details"
+      ]
+    },
+    {
+      "name": "unknown-skill-falls-through-template",
+      "text": "/skill:missing details",
+      "handled": false,
+      "expanded": "Fallback template: details",
+      "trace": [
+        "input:/skill:missing details"
+      ]
+    },
+    {
+      "name": "input-handled-before-expansion",
+      "text": "/consume",
+      "handled": true,
+      "expanded": null,
+      "trace": [
+        "input:/consume"
+      ]
+    }
+  ]
+}

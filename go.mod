@@ -10,10 +10,12 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.55.1
 	github.com/aws/smithy-go v1.27.3
 	github.com/aymanbagabas/go-udiff v0.2.0
+	github.com/bmatcuk/doublestar/v4 v4.9.1
 	github.com/gofrs/flock v0.13.0
 	github.com/openai/openai-go/v3 v3.43.0
 	golang.org/x/term v0.36.0
 	golang.org/x/text v0.31.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -28,6 +30,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.32.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.37.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.44.1 // indirect
+	github.com/kr/text v0.2.0 // indirect
+	github.com/rogpeppe/go-internal v1.15.0 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect

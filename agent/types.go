@@ -138,10 +138,11 @@ type BeforeToolCallResult struct {
 }
 
 type AfterToolCallResult struct {
-	Content   ai.ToolResultContent
-	Details   any
-	IsError   *bool
-	Terminate *bool
+	Content    ai.ToolResultContent
+	Details    any
+	DetailsSet bool
+	IsError    *bool
+	Terminate  *bool
 }
 
 type BeforeToolCallContext struct {

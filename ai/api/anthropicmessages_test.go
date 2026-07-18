@@ -148,9 +148,12 @@ func TestAnthropicCopilotDynamicHeaders(t *testing.T) {
 
 func TestAnthropicCustomClientSkipsAdapterAuthentication(t *testing.T) {
 	requested := false
+	headerHookCalled := false
 	var requestBody []byte
+	var requestHeaders http.Header
 	httpClient := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		requested = true
+		requestHeaders = request.Header.Clone()
 		var err error
 		requestBody, err = io.ReadAll(request.Body)
 		if err != nil {
@@ -174,7 +177,15 @@ func TestAnthropicCustomClientSkipsAdapterAuthentication(t *testing.T) {
 		context.Background(),
 		anthropicTestModel(),
 		ai.Context{Messages: ai.MessageList{}},
-		&AnthropicMessagesOptions{StreamOptions: ai.StreamOptions{APIKey: &oauthLookingKey}, Client: &client},
+		&AnthropicMessagesOptions{StreamOptions: ai.StreamOptions{
+			APIKey:  &oauthLookingKey,
+			Headers: ai.ProviderHeaders{"X-Adapter-Header": stringPointer("adapter-owned")},
+			TransformHeaders: func(_ context.Context, headers ai.ProviderHeaders, _ *ai.Model) (ai.ProviderHeaders, error) {
+				headerHookCalled = true
+				headers["X-Hook-Header"] = stringPointer("hook-owned")
+				return headers, nil
+			},
+		}, Client: &client},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -188,6 +199,9 @@ func TestAnthropicCustomClientSkipsAdapterAuthentication(t *testing.T) {
 	}
 	if bytes.Contains(requestBody, []byte("Claude Code")) {
 		t.Fatalf("custom client inherited adapter OAuth identity: %s", requestBody)
+	}
+	if headerHookCalled || requestHeaders.Get("X-Adapter-Header") != "" || requestHeaders.Get("X-Hook-Header") != "" {
+		t.Fatalf("custom client inherited adapter headers: hook=%v headers=%v", headerHookCalled, requestHeaders)
 	}
 }
 

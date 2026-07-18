@@ -91,6 +91,36 @@
         "contextFiles": []
       },
       "expected": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\nAvailable tools:\n- bash: Execute bash commands\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n\nGuidelines:\n- Use bash for file operations like ls, rg, find\n- Be concise in your responses\n- Show file paths clearly when working with files\n\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /pi-package/README.md\n- Additional docs: /pi-package/docs\n- Examples: /pi-package/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md)\n- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing\n- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\nCurrent working directory: /fixture/empty-custom"
+    },
+    {
+      "name": "skills-progressive-disclosure",
+      "input": {
+        "selectedTools": [
+          "read"
+        ],
+        "toolSnippets": {
+          "read": "Read file contents"
+        },
+        "cwd": "/fixture/skills",
+        "contextFiles": [],
+        "skills": [
+          {
+            "name": "review<&\"'",
+            "description": "Review <files> & report \"findings\".",
+            "filePath": "/fixture/skills/review<&\"'/SKILL.md",
+            "baseDir": "/fixture/skills/review<&\"'",
+            "disableModelInvocation": false
+          },
+          {
+            "name": "hidden",
+            "description": "Explicit invocation only.",
+            "filePath": "/fixture/skills/hidden/SKILL.md",
+            "baseDir": "/fixture/skills/hidden",
+            "disableModelInvocation": true
+          }
+        ]
+      },
+      "expected": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\nAvailable tools:\n- read: Read file contents\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n\nGuidelines:\n- Be concise in your responses\n- Show file paths clearly when working with files\n\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /pi-package/README.md\n- Additional docs: /pi-package/docs\n- Examples: /pi-package/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md)\n- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing\n- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\n\nThe following skills provide specialized instructions for specific tasks.\nUse the read tool to load a skill's file when the task matches its description.\nWhen a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.\n\n<available_skills>\n  <skill>\n    <name>review&lt;&amp;&quot;&apos;</name>\n    <description>Review &lt;files&gt; &amp; report &quot;findings&quot;.</description>\n    <location>/fixture/skills/review&lt;&amp;&quot;&apos;/SKILL.md</location>\n  </skill>\n</available_skills>\nCurrent working directory: /fixture/skills"
     }
   ],
   "discoveryCases": [

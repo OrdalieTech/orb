@@ -206,6 +206,11 @@ func StreamPiMessagesWithOptions(
 			return
 		}
 		request.Header = piMessagesHeaders(*options.APIKey, options.Headers)
+		request.Header, err = applyHeadersHook(ctx, model, &options.StreamOptions, request.Header)
+		if err != nil {
+			fail(err)
+			return
+		}
 		response, err := piMessagesHTTPClient.Do(request)
 		if err != nil {
 			fail(err)

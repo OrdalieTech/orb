@@ -360,19 +360,24 @@ func postAzureOpenAIStream(
 	if options != nil && options.MaxRetries != nil {
 		maxRetries = max(0, *options.MaxRetries)
 	}
+	headers := copyModelHeaders(model)
+	headers.Set("Content-Type", "application/json")
+	headers.Set("Accept", "application/json")
+	headers.Set("api-key", apiKey)
+	if options != nil {
+		mergeProviderHeaders(headers, options.Headers)
+	}
+	headers, err = applyHeadersHook(ctx, model, options, headers)
+	if err != nil {
+		return nil, err
+	}
 	for attempt := 0; ; attempt++ {
 		request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(body))
 		if err != nil {
 			return nil, err
 		}
-		request.Header.Set("Content-Type", "application/json")
-		request.Header.Set("Accept", "application/json")
-		request.Header.Set("api-key", apiKey)
-		for name, values := range copyModelHeaders(model) {
+		for name, values := range headers {
 			request.Header[name] = append([]string(nil), values...)
-		}
-		if options != nil {
-			mergeProviderHeaders(request.Header, options.Headers)
 		}
 		response, requestErr := azureOpenAIHTTPClient.Do(request)
 		if attempt < maxRetries && shouldRetryAzureOpenAI(response, requestErr) {

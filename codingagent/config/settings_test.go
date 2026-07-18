@@ -1,11 +1,13 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/OrdalieTech/pi-go/ai"
 )
@@ -212,6 +214,7 @@ func TestConsumedSettingsGetters(t *testing.T) {
 		"shellPath":            shellPath,
 		"shellCommandPrefix":   "env TEST=1",
 		"enabledModels":        []string{"sonnet:high", "openai/*"},
+		"goExtensions":         map[string]any{"pirate": true, "status-line": false, "invalid": "yes"},
 	})
 	manager, err := NewSettingsManager(root, WithAgentDir(agentDir))
 	if err != nil {
@@ -234,6 +237,9 @@ func TestConsumedSettingsGetters(t *testing.T) {
 	}
 	if got := manager.GetEnabledModels(); !reflect.DeepEqual(got, []string{"sonnet:high", "openai/*"}) {
 		t.Fatalf("enabled models = %#v", got)
+	}
+	if got := manager.GetGoExtensions(); !reflect.DeepEqual(got, map[string]bool{"pirate": true, "status-line": false}) {
+		t.Fatalf("Go extensions = %#v", got)
 	}
 
 	empty, err := NewSettingsManager(root, WithAgentDir(filepath.Join(root, "empty-agent")))
@@ -295,6 +301,170 @@ func TestHarnessPolicySettings(t *testing.T) {
 	}
 }
 
+func TestSettingsMutationsPersistLikeUpstream(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	settingsPath := filepath.Join(agentDir, "settings.json")
+	writeRaw(t, settingsPath, `{"z":1,"compaction":{"keepRecentTokens":10},"a":"<tag>"}`)
+	manager, err := NewSettingsManager(root, WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	manager.SetDefaultModelAndProvider("faux", "faux-1")
+	manager.SetDefaultThinkingLevel(ai.ModelThinkingHigh)
+	manager.SetSteeringMode("all")
+	manager.SetFollowUpMode("all")
+	manager.SetCompactionEnabled(false)
+	manager.SetRetryEnabled(false)
+	if got := manager.DrainErrors(); len(got) != 0 {
+		t.Fatalf("mutation errors = %v", got)
+	}
+
+	contents, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{
+  "z": 1,
+  "compaction": {
+    "keepRecentTokens": 10,
+    "enabled": false
+  },
+  "a": "<tag>",
+  "defaultProvider": "faux",
+  "defaultModel": "faux-1",
+  "defaultThinkingLevel": "high",
+  "steeringMode": "all",
+  "followUpMode": "all",
+  "retry": {
+    "enabled": false
+  }
+}`
+	if string(contents) != want {
+		t.Fatalf("settings bytes =\n%s\nwant:\n%s", contents, want)
+	}
+	if _, err := os.Stat(settingsPath + ".lock"); !os.IsNotExist(err) {
+		t.Fatalf("settings lock remains after write: %v", err)
+	}
+	if manager.GetDefaultProvider() != "faux" || manager.GetDefaultModel() != "faux-1" || manager.GetDefaultThinkingLevel() != ai.ModelThinkingHigh {
+		t.Fatal("effective model settings were not updated")
+	}
+	if manager.GetCompactionSettings().Enabled || manager.GetRetrySettings().Enabled {
+		t.Fatal("effective policy settings were not updated")
+	}
+}
+
+func TestSettingsMutationInteroperatesWithProperLockfileDirectory(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	manager, err := NewSettingsManager(root, WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(agentDir, "settings.json.lock")
+	if err := os.MkdirAll(lockPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	released := make(chan struct{})
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		_ = os.Remove(lockPath)
+		close(released)
+	}()
+	manager.SetSteeringMode("all")
+	<-released
+	if errors := manager.DrainErrors(); len(errors) != 0 {
+		t.Fatalf("mutation errors = %v", errors)
+	}
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Fatalf("lock path after mutation: %v", err)
+	}
+	contents, err := os.ReadFile(filepath.Join(agentDir, "settings.json"))
+	if err != nil || !bytes.Contains(contents, []byte(`"steeringMode": "all"`)) {
+		t.Fatalf("settings = %s, %v", contents, err)
+	}
+}
+
+func TestSettingsMutationMergesCurrentFileAndRefusesParseError(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	settingsPath := filepath.Join(agentDir, "settings.json")
+	writeRaw(t, settingsPath, `{"initial":1}`)
+	manager, err := NewSettingsManager(root, WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeRaw(t, settingsPath, `{"external":true,"initial":2}`)
+	manager.SetSteeringMode("all")
+	contents, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contents) != "{\n  \"external\": true,\n  \"initial\": 2,\n  \"steeringMode\": \"all\"\n}" {
+		t.Fatalf("merged settings = %s", contents)
+	}
+
+	brokenDir := filepath.Join(root, "broken-agent")
+	brokenPath := filepath.Join(brokenDir, "settings.json")
+	writeRaw(t, brokenPath, `{ broken`)
+	broken, err := NewSettingsManager(root, WithAgentDir(brokenDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := broken.DrainErrors(); len(got) != 1 {
+		t.Fatalf("initial errors = %v", got)
+	}
+	broken.SetSteeringMode("all")
+	contents, err = os.ReadFile(brokenPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contents) != `{ broken` {
+		t.Fatalf("parse-error settings were overwritten: %q", contents)
+	}
+	if got := broken.DrainErrors(); len(got) != 0 {
+		t.Fatalf("mutation duplicated load error: %v", got)
+	}
+}
+
+func TestSettingsMutationPersistsPendingMigrations(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	settingsPath := filepath.Join(agentDir, "settings.json")
+	writeRaw(t, settingsPath, `{"queueMode":"all","websockets":true,"skills":{"enableSkillCommands":false,"customDirectories":["x"]},"retry":{"maxDelayMs":500,"maxRetries":4}}`)
+	manager, err := NewSettingsManager(root, WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.SetFollowUpMode("all")
+	if got := manager.DrainErrors(); len(got) != 0 {
+		t.Fatalf("mutation errors = %v", got)
+	}
+	contents, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{
+  "skills": [
+    "x"
+  ],
+  "retry": {
+    "maxRetries": 4,
+    "provider": {
+      "maxRetryDelayMs": 500
+    }
+  },
+  "steeringMode": "all",
+  "transport": "websocket",
+  "enableSkillCommands": false,
+  "followUpMode": "all"
+}`
+	if string(contents) != want {
+		t.Fatalf("migrated settings =\n%s\nwant:\n%s", contents, want)
+	}
+}
+
 func TestSessionDirectoryPrecedence(t *testing.T) {
 	root := t.TempDir()
 	agentDir := filepath.Join(root, "agent")
@@ -328,6 +498,32 @@ func TestAgentDirectory(t *testing.T) {
 	dir, err := GetAgentDir()
 	if err != nil || dir != filepath.Join(root, "agent dir") {
 		t.Fatalf("agent dir = %q, %v", dir, err)
+	}
+}
+
+func TestSettingsResourcePathAndSkillCommandGetters(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	cwd := filepath.Join(root, "project")
+	writeSettings(t, filepath.Join(agentDir, "settings.json"), map[string]any{
+		"skills": []string{"global-skills"}, "prompts": []string{"global-prompts"},
+		"enableSkillCommands": false,
+	})
+	writeSettings(t, filepath.Join(cwd, ".pi", "settings.json"), map[string]any{
+		"skills": []string{"project-skills"}, "prompts": []string{"project-prompts"},
+	})
+	manager, err := NewSettingsManager(cwd, WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(manager.GetGlobalSkillPaths(), []string{"global-skills"}) ||
+		!reflect.DeepEqual(manager.GetProjectSkillPaths(), []string{"project-skills"}) ||
+		!reflect.DeepEqual(manager.GetGlobalPromptTemplatePaths(), []string{"global-prompts"}) ||
+		!reflect.DeepEqual(manager.GetProjectPromptTemplatePaths(), []string{"project-prompts"}) {
+		t.Fatalf("resource paths = %#v %#v %#v %#v", manager.GetGlobalSkillPaths(), manager.GetProjectSkillPaths(), manager.GetGlobalPromptTemplatePaths(), manager.GetProjectPromptTemplatePaths())
+	}
+	if manager.GetEnableSkillCommands() {
+		t.Fatal("enableSkillCommands override was ignored")
 	}
 }
 

@@ -1,0 +1,14 @@
+{
+  "family": "F8",
+  "upstreamCommit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
+  "generator": "conformance/extract/f8-slash-templates.ts",
+  "source": "packages/coding-agent/src/core/prompt-templates.ts + packages/coding-agent/src/core/skills.ts + packages/coding-agent/src/core/agent-session.ts",
+  "additionalSources": [
+    "packages/agent/src/harness/skills.ts",
+    "packages/agent/src/harness/prompt-templates.ts",
+    "packages/coding-agent/src/core/slash-commands.ts"
+  ],
+  "files": [
+    "cases.json"
+  ]
+}

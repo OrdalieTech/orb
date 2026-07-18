@@ -976,7 +976,7 @@ func customSummaryMessage(content any, timestamp int64) *ai.UserMessage {
 }
 
 func bashSummaryMessage(message *BashExecutionMessage) ai.Message {
-	if message == nil || message.ExcludeFromContext {
+	if message == nil || message.ExcludeFromContext != nil && *message.ExcludeFromContext {
 		return nil
 	}
 	text := "Ran `" + message.Command + "`\n"

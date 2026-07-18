@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/OrdalieTech/pi-go/agent"
@@ -12,15 +13,26 @@ import (
 	"github.com/OrdalieTech/pi-go/ai/providers"
 	"github.com/OrdalieTech/pi-go/codingagent"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
+	"github.com/OrdalieTech/pi-go/codingagent/extensions"
 	"github.com/OrdalieTech/pi-go/codingagent/tools"
 )
 
 type runtimeInputs struct {
 	Agent           *agent.Agent
 	Settings        *config.SettingsManager
+	AvailableModels func() []ai.Model
+	ScopedModels    []codingagent.ScopedModel
 	GetAPIKey       agent.GetAPIKeyFunc
 	GetRequestAuth  agent.GetRequestAuthFunc
 	GetModelHeaders agent.GetModelHeadersFunc
+	SlashResolver   *codingagent.SlashResolver
+	ModelRegistry   *config.ModelRegistry
+	Extensions      *extensions.Registry
+	BaseTools       []agent.AgentTool
+	ActiveToolNames []string
+	AllowedTools    *[]string
+	ExcludedTools   []string
+	PromptOptions   codingagent.SystemPromptOptions
 	Diagnostics     []string
 }
 
@@ -37,16 +49,29 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	if err != nil {
 		return runtimeInputs{}, err
 	}
-	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	projectTrusted := true
+	if args.ProjectTrusted != nil {
+		projectTrusted = *args.ProjectTrusted
+	}
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir), config.WithProjectTrusted(projectTrusted))
 	if err != nil {
 		return runtimeInputs{}, err
 	}
 	resources := codingagent.LoadResources(codingagent.ResourceOptions{
-		CWD:                cwd,
-		AgentDir:           agentDir,
-		NoContextFiles:     args.NoContextFiles,
-		SystemPrompt:       args.SystemPrompt,
-		AppendSystemPrompt: args.AppendSystemPrompt,
+		CWD:                        cwd,
+		AgentDir:                   agentDir,
+		ProjectTrusted:             &projectTrusted,
+		NoContextFiles:             args.NoContextFiles,
+		NoSkills:                   args.NoSkills,
+		NoPromptTemplates:          args.NoPromptTemplates,
+		SystemPrompt:               args.SystemPrompt,
+		AppendSystemPrompt:         args.AppendSystemPrompt,
+		SkillPaths:                 args.Skills,
+		PromptTemplatePaths:        args.PromptTemplates,
+		GlobalSkillPaths:           settings.GetGlobalSkillPaths(),
+		ProjectSkillPaths:          settings.GetProjectSkillPaths(),
+		GlobalPromptTemplatePaths:  settings.GetGlobalPromptTemplatePaths(),
+		ProjectPromptTemplatePaths: settings.GetProjectPromptTemplatePaths(),
 	})
 	diagnostics := make([]string, 0)
 	for _, diagnostic := range settings.DrainErrors() {
@@ -55,6 +80,12 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	for _, diagnostic := range resources.Diagnostics {
 		diagnostics = append(diagnostics, diagnostic.Message)
 	}
+	extensionRegistry := args.extensionRegistry
+	extensionDiagnostics := args.extensionWarnings
+	if !args.extensionsLoaded {
+		extensionRegistry, extensionDiagnostics = loadCompiledExtensions(cwd, args, settings)
+	}
+	diagnostics = append(diagnostics, extensionDiagnostics...)
 
 	selection := ResolveBuiltInToolSelection(args)
 	activeTools, err := createBuiltInTools(cwd, selection, settings)
@@ -65,8 +96,27 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	for _, tool := range activeTools {
 		activeNames = append(activeNames, tool.Spec().Name)
 	}
+	baseTools := activeTools
+	initialNames := append([]string(nil), activeNames...)
+	var allowedTools *[]string
+	var excludedTools []string
+	if extensionRegistry != nil {
+		baseTools, err = createBuiltInTools(cwd, defaultBuiltInTools, settings)
+		if err != nil {
+			return runtimeInputs{}, err
+		}
+		if args.Tools != nil {
+			initialNames = filterExcludedTools(args.Tools, args.ExcludeTools)
+			allowed := append([]string(nil), args.Tools...)
+			allowedTools = &allowed
+		} else if args.NoTools {
+			empty := []string{}
+			allowedTools = &empty
+		}
+		excludedTools = append([]string(nil), args.ExcludeTools...)
+	}
 	snippets, guidelines := codingagent.BuiltInToolPromptData(activeNames)
-	systemPrompt := codingagent.BuildSystemPrompt(codingagent.SystemPromptOptions{
+	promptOptions := codingagent.SystemPromptOptions{
 		CustomPrompt:       resources.SystemPrompt,
 		SelectedTools:      activeNames,
 		ToolSnippets:       snippets,
@@ -74,13 +124,15 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		AppendSystemPrompt: resources.JoinedAppendSystemPrompt(),
 		CWD:                cwd,
 		ContextFiles:       resources.ContextFiles,
-	})
+		Skills:             resources.Skills,
+	}
+	systemPrompt := codingagent.BuildSystemPrompt(promptOptions)
 
 	registry, err := config.NewModelRegistry(agentDir)
 	if err != nil {
 		return runtimeInputs{}, err
 	}
-	model, scopedThinking, modelDiagnostics, err := resolveRuntimeModel(args, settings, registry)
+	model, scopedThinking, scopedModels, modelDiagnostics, err := resolveRuntimeModel(args, settings, registry)
 	if err != nil {
 		return runtimeInputs{}, err
 	}
@@ -104,7 +156,21 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		Tools:         activeTools,
 		Messages:      priorMessages,
 	}
-	resolveRequestAuth := requestAuthResolver(args, registry, authStorage)
+	var cliAPIKeyProvider *ai.ProviderID
+	if args.APIKey != nil && *args.APIKey != "" && model != nil {
+		provider := model.Provider
+		cliAPIKeyProvider = &provider
+	}
+	resolveRequestAuthUnscoped := requestAuthResolver(args, registry, authStorage)
+	argsWithoutAPIKey := args
+	argsWithoutAPIKey.APIKey = nil
+	resolveRequestAuthWithoutCLIKey := requestAuthResolver(argsWithoutAPIKey, registry, authStorage)
+	resolveRequestAuth := func(ctx context.Context, providerID ai.ProviderID) (*agent.RequestAuth, error) {
+		if cliAPIKeyProvider != nil && providerID != *cliAPIKeyProvider {
+			return resolveRequestAuthWithoutCLIKey(ctx, providerID)
+		}
+		return resolveRequestAuthUnscoped(ctx, providerID)
+	}
 	resolveAPIKey := func(ctx context.Context, providerID ai.ProviderID) (*string, error) {
 		resolved, err := resolveRequestAuth(ctx, providerID)
 		if err != nil || resolved == nil {
@@ -114,6 +180,16 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	}
 	resolveModelHeaders := func(ctx context.Context, model *ai.Model, apiKey *string, env ai.ProviderEnv) (*map[string]string, error) {
 		return registry.ResolveModelHeaders(ctx, *model, map[string]string(env), apiKey)
+	}
+	availableModels := func() []ai.Model {
+		all := registry.Models()
+		result := make([]ai.Model, 0, len(all))
+		for _, candidate := range all {
+			if registry.HasConfiguredAuth(string(candidate.Provider), nil) || cliAPIKeyProvider != nil && candidate.Provider == *cliAPIKeyProvider {
+				result = append(result, candidate)
+			}
+		}
+		return result
 	}
 	created := agent.NewAgent(
 		agent.WithInitialState(state),
@@ -129,12 +205,36 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		agent.WithModelHeadersResolver(resolveModelHeaders),
 	)
 	return runtimeInputs{
-		Agent: created, Settings: settings, GetAPIKey: resolveAPIKey, GetRequestAuth: resolveRequestAuth,
-		GetModelHeaders: resolveModelHeaders, Diagnostics: diagnostics,
+		Agent: created, Settings: settings, AvailableModels: availableModels, ScopedModels: scopedModels, GetAPIKey: resolveAPIKey,
+		GetRequestAuth:  resolveRequestAuth,
+		GetModelHeaders: resolveModelHeaders,
+		SlashResolver:   &codingagent.SlashResolver{Skills: resources.Skills, PromptTemplates: resources.PromptTemplates},
+		ModelRegistry:   registry,
+		Extensions:      extensionRegistry, BaseTools: baseTools, ActiveToolNames: initialNames,
+		AllowedTools: allowedTools, ExcludedTools: excludedTools, PromptOptions: promptOptions,
+		Diagnostics: diagnostics,
 	}, nil
 }
 
-func resolveRuntimeModel(args CLIArgs, settings *config.SettingsManager, registry *config.ModelRegistry) (*ai.Model, *ai.ModelThinkingLevel, []string, error) {
+func filterExcludedTools(names, excluded []string) []string {
+	denied := make(map[string]struct{}, len(excluded))
+	for _, name := range excluded {
+		denied[name] = struct{}{}
+	}
+	result := make([]string, 0, len(names))
+	for _, name := range names {
+		if _, exists := denied[name]; !exists {
+			result = append(result, name)
+		}
+	}
+	return result
+}
+
+func resolveRuntimeModel(
+	args CLIArgs,
+	settings *config.SettingsManager,
+	registry *config.ModelRegistry,
+) (*ai.Model, *ai.ModelThinkingLevel, []codingagent.ScopedModel, []string, error) {
 	args = normalizeRuntimeCLIArgs(args)
 	all := registry.Models()
 	diagnostics := make([]string, 0)
@@ -142,23 +242,26 @@ func resolveRuntimeModel(args CLIArgs, settings *config.SettingsManager, registr
 	if patterns == nil {
 		patterns = settings.GetEnabledModels()
 	}
-	if args.Model == nil && len(patterns) > 0 && !args.Continue {
-		scoped, warnings := codingagent.ResolveModelScope(patterns, registry.Available(nil))
+	var scoped []codingagent.ScopedModel
+	if len(patterns) > 0 {
+		var warnings []codingagent.ModelDiagnostic
+		scoped, warnings = codingagent.ResolveModelScope(patterns, registry.Available(nil))
 		for _, warning := range warnings {
 			diagnostics = append(diagnostics, warning.Message)
 		}
-		if len(scoped) > 0 {
-			selected := scoped[0]
-			defaultProvider, defaultID := settings.GetDefaultProvider(), settings.GetDefaultModel()
-			for _, candidate := range scoped {
-				if string(candidate.Model.Provider) == defaultProvider && candidate.Model.ID == defaultID {
-					selected = candidate
-					break
-				}
+	}
+	if args.Model == nil && len(scoped) > 0 && !args.RestoredModel {
+		selected := 0
+		defaultProvider, defaultID := settings.GetDefaultProvider(), settings.GetDefaultModel()
+		if defaultProvider != "" && defaultID != "" {
+			if index := slices.IndexFunc(scoped, func(candidate codingagent.ScopedModel) bool {
+				return string(candidate.Model.Provider) == defaultProvider && candidate.Model.ID == defaultID
+			}); index >= 0 {
+				selected = index
 			}
-			model := selected.Model
-			return &model, selected.ThinkingLevel, diagnostics, nil
 		}
+		model := scoped[selected].Model
+		return &model, scoped[selected].ThinkingLevel, scoped, diagnostics, nil
 	}
 	provider, pattern := "", ""
 	restoreWarning := ""
@@ -170,7 +273,7 @@ func resolveRuntimeModel(args CLIArgs, settings *config.SettingsManager, registr
 		if args.RestoredModel {
 			restored, found := registry.Find(provider, pattern)
 			if found && registry.HasConfiguredAuth(string(restored.Provider), nil) {
-				return &restored, nil, diagnostics, nil
+				return &restored, nil, scoped, diagnostics, nil
 			}
 			restoreWarning = fmt.Sprintf("Could not restore model %s/%s", provider, pattern)
 		} else {
@@ -183,12 +286,12 @@ func resolveRuntimeModel(args CLIArgs, settings *config.SettingsManager, registr
 				return registry.HasConfiguredAuth(provider, nil)
 			})
 			if resolved.Error != "" {
-				return nil, nil, diagnostics, fmt.Errorf("%s", resolved.Error)
+				return nil, nil, scoped, diagnostics, fmt.Errorf("%s", resolved.Error)
 			}
 			if resolved.Warning != "" {
 				diagnostics = append(diagnostics, resolved.Warning)
 			}
-			return resolved.Model, resolved.ThinkingLevel, diagnostics, nil
+			return resolved.Model, resolved.ThinkingLevel, scoped, diagnostics, nil
 		}
 	}
 	defaultProvider, defaultID := settings.GetDefaultProvider(), settings.GetDefaultModel()
@@ -197,17 +300,17 @@ func resolveRuntimeModel(args CLIArgs, settings *config.SettingsManager, registr
 			if restoreWarning != "" {
 				diagnostics = append(diagnostics, fmt.Sprintf("%s. Using %s/%s", restoreWarning, model.Provider, model.ID))
 			}
-			return &model, nil, diagnostics, nil
+			return &model, nil, scoped, diagnostics, nil
 		}
 	}
 	model := codingagent.PreferredAvailableModel(registry.Available(nil))
 	if model == nil {
-		return nil, nil, diagnostics, fmt.Errorf("no model available; configure provider auth or use --model")
+		return nil, nil, scoped, diagnostics, fmt.Errorf("no model available; configure provider auth or use --model")
 	}
 	if restoreWarning != "" {
 		diagnostics = append(diagnostics, fmt.Sprintf("%s. Using %s/%s", restoreWarning, model.Provider, model.ID))
 	}
-	return model, nil, diagnostics, nil
+	return model, nil, scoped, diagnostics, nil
 }
 
 func resolveSkeletonModel(args CLIArgs, settings *config.SettingsManager) (*ai.Model, error) {

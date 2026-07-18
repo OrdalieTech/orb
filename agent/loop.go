@@ -840,7 +840,7 @@ func finalizeExecutedToolCall(
 			if after.Content != nil {
 				result.Content = after.Content
 			}
-			if after.Details != nil {
+			if after.DetailsSet || after.Details != nil {
 				result.Details = after.Details
 			}
 			if after.Terminate != nil {

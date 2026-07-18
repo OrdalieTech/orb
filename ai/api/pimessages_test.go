@@ -139,6 +139,60 @@ func TestPiMessagesRoundTripAgainstServer(t *testing.T) {
 	}
 }
 
+func TestPiMessagesHooksAndEnvironmentCacheRetention(t *testing.T) {
+	t.Setenv("PI_CACHE_RETENTION", "long")
+	var responseHeaders map[string]string
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		if string(body) != `{"replacement":true}` {
+			t.Errorf("hooked body = %s", body)
+		}
+		if request.Header.Get("X-Extension") != "yes" {
+			t.Errorf("hooked header = %q", request.Header.Get("X-Extension"))
+		}
+		response.Header().Set("X-Pi-Gateway-Upstream-Provider", "anthropic")
+		response.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(response, `data: {"type":"done","reason":"stop","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}`+"\n\n")
+	}))
+	t.Cleanup(server.Close)
+	apiKey := "key"
+	options := &PiMessagesOptions{StreamOptions: ai.StreamOptions{
+		APIKey: &apiKey,
+		OnPayload: func(_ context.Context, payload any, _ *ai.Model) (any, bool, error) {
+			original, ok := payload.(PiMessagesPayload)
+			if !ok || original.Options.CacheRetention == nil || *original.Options.CacheRetention != ai.CacheRetentionLong {
+				t.Fatalf("payload before hook = %#v", payload)
+			}
+			return struct {
+				Replacement bool `json:"replacement"`
+			}{true}, true, nil
+		},
+		OnResponse: func(_ context.Context, response ai.ProviderResponse, _ *ai.Model) error {
+			responseHeaders = response.Headers
+			return nil
+		},
+		TransformHeaders: func(_ context.Context, headers ai.ProviderHeaders, _ *ai.Model) (ai.ProviderHeaders, error) {
+			value := "yes"
+			headers["X-Extension"] = &value
+			return headers, nil
+		},
+	}}
+	stream, err := StreamPiMessagesWithOptions(context.Background(), piMessagesTestModel(server.URL, nil), ai.Context{Messages: ai.MessageList{}}, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := ai.Collect(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.StopReason != ai.StopReasonStop {
+		t.Fatalf("stop reason = %q", message.StopReason)
+	}
+	if responseHeaders["x-pi-gateway-upstream-provider"] != "anthropic" {
+		t.Fatalf("response headers = %#v", responseHeaders)
+	}
+}
+
 func TestPiMessagesFailurePaths(t *testing.T) {
 	t.Run("structured response error", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {

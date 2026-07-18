@@ -69,6 +69,59 @@ func TestOutputAccumulatorSpillsOriginalBytesAndKeepsPathAfterClose(t *testing.T
 	}
 }
 
+func TestOutputAccumulatorTransformedTextUsesRawSizeForSpill(t *testing.T) {
+	tempFilePrefix := "pi-output-transformed-test"
+	output := NewOutputAccumulator(OutputAccumulatorOptions{
+		MaxBytes:       truncate.Int(3),
+		TempFilePrefix: &tempFilePrefix,
+	})
+	if err := output.appendTransformed(4, "x"); err != nil {
+		t.Fatal(err)
+	}
+	if err := output.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := output.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Truncation.Truncated || snapshot.Content != "x" || snapshot.FullOutputPath == "" {
+		t.Fatalf("snapshot = %+v", snapshot)
+	}
+	t.Cleanup(func() { _ = os.Remove(snapshot.FullOutputPath) })
+	if err := output.CloseTempFile(); err != nil {
+		t.Fatal(err)
+	}
+	written, err := os.ReadFile(snapshot.FullOutputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(written) != "x" {
+		t.Fatalf("transformed spill = %q", written)
+	}
+}
+
+func TestRPCBashPipelinePreservesSplitUTF8(t *testing.T) {
+	output := NewOutputAccumulator()
+	var decoder streamingUTF8Decoder
+	for _, chunk := range [][]byte{{0xe2}, {0x82}, {0xac, '\r', '\n'}} {
+		text := sanitizeBashOutput(decoder.Decode(chunk, false))
+		if err := output.appendTransformed(len(chunk), text); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := output.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := output.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Content != "€\n" {
+		t.Fatalf("bash output = %q", snapshot.Content)
+	}
+}
+
 func TestOutputAccumulatorFinishIsIdempotentAndRejectsAppend(t *testing.T) {
 	output := NewOutputAccumulator()
 	if err := output.Append([]byte{0xe2, 0x82}); err != nil {

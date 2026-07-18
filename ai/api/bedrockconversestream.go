@@ -265,7 +265,13 @@ func StreamBedrockConverseWithOptions(
 			return
 		}
 
-		transport, err := newBedrockTransport(streamCtx, model, options)
+		requestOptions, err := applyBedrockHeadersHook(streamCtx, model, options)
+		if err != nil {
+			fail(err)
+			return
+		}
+		streamOptions = bedrockStreamOptions(requestOptions)
+		transport, err := newBedrockTransport(streamCtx, model, requestOptions)
 		if err != nil {
 			fail(err)
 			return
@@ -328,6 +334,35 @@ func bedrockStreamOptions(options *BedrockConverseStreamOptions) *ai.StreamOptio
 		return &ai.StreamOptions{}
 	}
 	return &options.StreamOptions
+}
+
+func applyBedrockHeadersHook(
+	ctx context.Context,
+	model *ai.Model,
+	options *BedrockConverseStreamOptions,
+) (*BedrockConverseStreamOptions, error) {
+	resolved := BedrockConverseStreamOptions{}
+	if options != nil {
+		resolved = *options
+	}
+	headers := copyModelHeaders(model)
+	mergeProviderHeaders(headers, bedrockStreamOptions(options).Headers)
+	transformed, err := applyHeadersHook(ctx, model, bedrockStreamOptions(options), headers)
+	if err != nil {
+		return nil, err
+	}
+	values := make(ai.ProviderHeaders, len(transformed))
+	for name, entries := range transformed {
+		if len(entries) == 0 {
+			values[name] = nil
+			continue
+		}
+		value := strings.Join(entries, ", ")
+		values[name] = &value
+	}
+	resolved.StreamOptions = *bedrockStreamOptions(options)
+	resolved.Headers = values
+	return &resolved, nil
 }
 
 func coerceBedrockPayload(value any) (*BedrockConverseStreamPayload, error) {

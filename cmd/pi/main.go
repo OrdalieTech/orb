@@ -18,6 +18,7 @@ import (
 	aimodels "github.com/OrdalieTech/pi-go/ai/models"
 	"github.com/OrdalieTech/pi-go/codingagent"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
+	"github.com/OrdalieTech/pi-go/codingagent/extensions"
 	"github.com/OrdalieTech/pi-go/codingagent/modes"
 	"github.com/OrdalieTech/pi-go/codingagent/session"
 	"github.com/OrdalieTech/pi-go/codingagent/session/exporthtml"
@@ -41,6 +42,7 @@ type cliDependencies struct {
 	loadModels    func(string) (*config.ModelRegistry, error)
 	refreshModels func(context.Context, string) error
 	selectSession SessionSelector
+	runRPCFixture func(context.Context, CLIArgs, cliStreams, string) (handled bool, code int)
 }
 
 func main() {
@@ -54,7 +56,7 @@ func main() {
 }
 
 func runCLI(ctx context.Context, argv []string, streams cliStreams) int {
-	return runCLIWithDependencies(ctx, argv, streams, cliDependencies{createRuntime: createRuntimeInputs})
+	return runCLIWithDependencies(ctx, argv, streams, platformCLIDependencies())
 }
 
 func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStreams, dependencies cliDependencies) int {
@@ -87,6 +89,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	}
 
 	args := normalizeRuntimeCLIArgs(ParseArgs(argv))
+	originalArgs := args
 	hasErrors := false
 	for _, diagnostic := range args.Diagnostics {
 		prefix := "Warning: "
@@ -126,30 +129,66 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		return reportCLIError(streams.Stderr, err)
 	}
 	if args.Help {
-		_, _ = io.WriteString(metadataOutput(args, streams), helpText)
+		text := helpText
+		if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+			if agentDir, dirErr := config.GetAgentDir(); dirErr == nil {
+				if settings, settingsErr := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir)); settingsErr == nil {
+					registry, _ := loadCompiledExtensions(cwd, args, settings)
+					text = extensionHelpText(registry)
+				}
+			}
+		}
+		_, _ = io.WriteString(metadataOutput(args, streams), text)
 		return 0
 	}
 
 	validationErrors := make([]string, 0, 2)
-	if len(args.UnknownFlags) > 0 {
-		option := "option"
-		if len(args.UnknownFlags) > 1 {
-			option = "options"
-		}
-		names := make([]string, 0, len(args.UnknownFlags))
-		for _, flag := range args.UnknownFlags {
-			names = append(names, flag.Name)
-		}
-		validationErrors = append(validationErrors, "Unknown "+option+": --"+strings.Join(names, ", --"))
-	}
 	if args.APIKey != nil && *args.APIKey != "" && args.Model == nil && len(args.Models) == 0 {
 		validationErrors = append(validationErrors, "--api-key requires a model to be specified via --model, --provider/--model, or --models")
+	}
+	if len(args.UnknownFlags) > 0 && len(validationErrors) > 0 {
+		var registry *extensions.Registry
+		if validationCWD, cwdErr := os.Getwd(); cwdErr == nil {
+			if agentDir, dirErr := config.GetAgentDir(); dirErr == nil {
+				if validationSettings, settingsErr := config.NewSettingsManager(validationCWD, config.WithAgentDir(agentDir)); settingsErr == nil {
+					registry, _ = loadCompiledExtensions(validationCWD, args, validationSettings)
+				}
+			}
+		}
+		flagErrors := applyExtensionFlags(registry, args.UnknownFlags)
+		validationErrors = append(flagErrors, validationErrors...)
 	}
 	for _, message := range validationErrors {
 		_, _ = fmt.Fprintln(streams.Stderr, "Error: "+message)
 	}
 	if len(validationErrors) > 0 {
 		return 1
+	}
+	if len(args.UnknownFlags) > 0 {
+		validationCWD, cwdErr := os.Getwd()
+		if cwdErr != nil {
+			return reportCLIError(streams.Stderr, cwdErr)
+		}
+		agentDir, dirErr := config.GetAgentDir()
+		if dirErr != nil {
+			return reportCLIError(streams.Stderr, dirErr)
+		}
+		validationSettings, settingsErr := config.NewSettingsManager(validationCWD, config.WithAgentDir(agentDir))
+		if settingsErr != nil {
+			return reportCLIError(streams.Stderr, settingsErr)
+		}
+		args.extensionRegistry, args.extensionWarnings = loadCompiledExtensions(validationCWD, args, validationSettings)
+		args.extensionsLoaded = true
+		flagErrors := applyExtensionFlags(args.extensionRegistry, args.UnknownFlags)
+		if len(flagErrors) > 0 {
+			for _, warning := range args.extensionWarnings {
+				_, _ = fmt.Fprintln(streams.Stderr, "Warning: "+warning)
+			}
+			for _, message := range flagErrors {
+				_, _ = fmt.Fprintln(streams.Stderr, "Error: "+message)
+			}
+			return 1
+		}
 	}
 	if args.ListModels != nil {
 		agentDir, err := config.GetAgentDir()
@@ -166,13 +205,14 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		_, _ = io.WriteString(metadataOutput(args, streams), formatModelList(registry.Available(nil), *args.ListModels))
 		return 0
 	}
-	if args.Mode == "rpc" {
-		_, _ = fmt.Fprintln(streams.Stderr, "Error: RPC mode is not available until WP-331")
-		return 1
-	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
+	}
+	if args.Mode == "rpc" && dependencies.runRPCFixture != nil {
+		if handled, code := dependencies.runRPCFixture(ctx, args, streams, cwd); handled {
+			return code
+		}
 	}
 	manager, sessionContext, err := createCLISession(cwd, args, streams, dependencies.selectSession)
 	if err != nil {
@@ -191,7 +231,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		}
 		sessionContext = manager.BuildSessionContext()
 	}
-	if !args.Print && args.Mode != "json" && streams.StdinTTY && streams.StdoutTTY {
+	if !args.Print && args.Mode != "json" && args.Mode != "rpc" && streams.StdinTTY && streams.StdoutTTY {
 		_, _ = fmt.Fprintln(streams.Stderr, "Error: interactive mode is not available until the TUI work packages; use -p")
 		return 1
 	}
@@ -206,7 +246,6 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	for _, diagnostic := range runtime.Diagnostics {
 		_, _ = fmt.Fprintln(streams.Stderr, "Warning: "+diagnostic)
 	}
-
 	if err := appendInitialRuntimeState(manager, runtime.Agent.State(), sessionContext); err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
@@ -221,13 +260,36 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			return reportCLIError(streams.Stderr, settingsErr)
 		}
 	}
+	extensionMode := extensions.ModePrint
+	switch args.Mode {
+	case "json":
+		extensionMode = extensions.ModeJSON
+	case "rpc":
+		extensionMode = extensions.ModeRPC
+	}
 	sessionRuntime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
 		Agent: runtime.Agent, SessionManager: manager, Settings: settings,
-		GetAPIKey: runtime.GetAPIKey, GetModelHeaders: runtime.GetModelHeaders,
-		GetRequestAuth: runtime.GetRequestAuth,
+		GetAPIKey: runtime.GetAPIKey, GetRequestAuth: runtime.GetRequestAuth, GetModelHeaders: runtime.GetModelHeaders,
+		AvailableModels:   runtime.AvailableModels,
+		ScopedModels:      runtime.ScopedModels,
+		SlashResolver:     runtime.SlashResolver,
+		ExtensionRegistry: runtime.Extensions, ExtensionMode: extensionMode, ModelRegistry: runtime.ModelRegistry,
+		ExtensionErrorHandler: func(extensionError extensions.ExtensionError) {
+			_, _ = fmt.Fprintf(streams.Stderr, "Extension error (%s, %s): %s\n", extensionError.ExtensionPath, extensionError.Event, extensionError.Error)
+		},
+		BaseTools: runtime.BaseTools, InitialActiveToolNames: runtime.ActiveToolNames,
+		AllowedToolNames: runtime.AllowedTools, ExcludedToolNames: runtime.ExcludedTools,
+		SystemPromptOptions: &runtime.PromptOptions,
 	})
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
+	}
+	if args.Mode == "rpc" {
+		host := newRPCSessionHost(originalArgs, dependencies, sessionRuntime)
+		return modes.RunRPCMode(ctx, host, modes.RPCModeOptions{
+			Stdin: streams.Stdin, Stdout: streams.Stdout, Stderr: streams.Stderr,
+			Commands: func() []modes.RPCSlashCommand { return rpcSlashCommands(host.Session()) },
+		})
 	}
 	defer sessionRuntime.Dispose()
 
@@ -458,7 +520,14 @@ OAuth providers: anthropic, openai-codex, github-copilot, xai
   --export <file> [output]       Export session file to HTML and exit
   --tools, -t <names>            Comma-separated tool allowlist
   --exclude-tools, -xt <names>   Comma-separated tool denylist
+  --skill <path>                 Load a skill file or directory; repeatable
+  --no-skills, -ns               Disable discovered skills; --skill remains additive
+  --prompt-template <path>       Load a prompt template file or directory; repeatable
+  --no-prompt-templates, -np     Disable prompt template discovery
+  --no-extensions, -ne           Disable compiled-in extension discovery
   --no-context-files, -nc        Disable AGENTS.md/CLAUDE.md discovery
+  --approve, -a                  Trust project-local resources for this run
+  --no-approve, -na              Ignore project-local resources for this run
   --help, -h                     Show help
   --version, -v                  Show version
 `

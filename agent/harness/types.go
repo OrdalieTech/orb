@@ -2,10 +2,86 @@ package harness
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
 )
+
+// Skill is the harness-level, execution-environment-neutral Agent Skills shape.
+type Skill struct {
+	Name                   string
+	Description            string
+	Content                string
+	FilePath               string
+	DisableModelInvocation bool
+}
+
+// PromptTemplate is the harness-level explicit prompt expansion resource.
+type PromptTemplate struct {
+	Name        string
+	Description string
+	Content     string
+}
+
+type FileKind string
+
+const (
+	FileKindFile      FileKind = "file"
+	FileKindDirectory FileKind = "directory"
+	FileKindSymlink   FileKind = "symlink"
+)
+
+type FileErrorCode string
+
+const (
+	FileErrorNotFound         FileErrorCode = "not_found"
+	FileErrorPermissionDenied FileErrorCode = "permission_denied"
+	FileErrorNotDirectory     FileErrorCode = "not_directory"
+	FileErrorInvalid          FileErrorCode = "invalid"
+	FileErrorUnknown          FileErrorCode = "unknown"
+)
+
+// FileError keeps expected filesystem failures typed across local and remote environments.
+type FileError struct {
+	Code FileErrorCode
+	Path string
+	Err  error
+}
+
+func (err *FileError) Error() string {
+	if err == nil {
+		return ""
+	}
+	if err.Err != nil {
+		return err.Err.Error()
+	}
+	return fmt.Sprintf("%s: %s", err.Code, err.Path)
+}
+
+func (err *FileError) Unwrap() error {
+	if err == nil {
+		return nil
+	}
+	return err.Err
+}
+
+type FileInfo struct {
+	Name    string
+	Path    string
+	Kind    FileKind
+	Size    int64
+	MTimeMS int64
+}
+
+// ExecutionEnv is the filesystem slice of the harness environment needed by skill discovery.
+// Later harness operations can extend the environment without coupling skill loading to os.File.
+type ExecutionEnv interface {
+	FileInfo(path string) (FileInfo, error)
+	ListDir(path string) ([]FileInfo, error)
+	ReadTextFile(path string) (string, error)
+	CanonicalPath(path string) (string, error)
+}
 
 // SessionEntry is the compaction-facing projection of a v3 session entry.
 // Persistence stays owned by codingagent/session.
@@ -43,8 +119,8 @@ type BashExecutionMessage struct {
 	Cancelled          bool    `json:"cancelled"`
 	Truncated          bool    `json:"truncated"`
 	FullOutputPath     *string `json:"fullOutputPath,omitempty"`
-	ExcludeFromContext bool    `json:"excludeFromContext,omitempty"`
 	Timestamp          int64   `json:"timestamp"`
+	ExcludeFromContext *bool   `json:"excludeFromContext,omitempty"`
 }
 
 type SummaryMessage struct {

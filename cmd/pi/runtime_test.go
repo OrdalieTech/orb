@@ -18,12 +18,27 @@ import (
 
 func TestCreateRuntimeInputsUsesResolvedResourcesAndToolSelection(t *testing.T) {
 	root := t.TempDir()
+	t.Setenv("HOME", filepath.Join(root, "home"))
 	agentDir := filepath.Join(root, "agent")
 	cwd := filepath.Join(root, "project")
 	if err := os.MkdirAll(cwd, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(cwd, "AGENTS.md"), []byte("project rules"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	skillPath := filepath.Join(cwd, ".pi", "skills", "inspect", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillPath, []byte("---\nname: inspect\ndescription: Inspect files.\n---\nInspect body."), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	promptPath := filepath.Join(cwd, ".pi", "prompts", "review.md")
+	if err := os.MkdirAll(filepath.Dir(promptPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(promptPath, []byte("Review $1"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(config.EnvAgentDir, agentDir)
@@ -50,8 +65,130 @@ func TestCreateRuntimeInputsUsesResolvedResourcesAndToolSelection(t *testing.T) 
 	if len(state.Tools) != 1 || state.Tools[0].Spec().Name != "read" {
 		t.Fatalf("tools = %#v", state.Tools)
 	}
-	if !strings.Contains(state.SystemPrompt, "project rules") || !strings.Contains(state.SystemPrompt, "- read: Read file contents") {
+	if len(runtime.BaseTools) != 1 || runtime.BaseTools[0].Spec().Name != "read" {
+		t.Fatalf("unused extension base tools = %#v", runtime.BaseTools)
+	}
+	if !strings.Contains(state.SystemPrompt, "project rules") || !strings.Contains(state.SystemPrompt, "- read: Read file contents") || !strings.Contains(state.SystemPrompt, "<name>inspect</name>") {
 		t.Fatalf("system prompt omitted resources/tools: %q", state.SystemPrompt)
+	}
+	if runtime.SlashResolver == nil {
+		t.Fatal("slash resolver is nil")
+	}
+	if expanded, handled := runtime.SlashResolver.ResolvePrompt("/review file.go"); handled || expanded != "Review file.go" {
+		t.Fatalf("prompt template = %q, handled %v", expanded, handled)
+	}
+}
+
+func TestResolveRuntimeModelKeepsScopeAndUsesSavedDefaultWithinIt(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	models := `{"providers":{"local":{"baseUrl":"http://localhost/v1","api":"openai-completions","apiKey":"dummy","models":[{"id":"one","reasoning":true},{"id":"two","reasoning":true}]}}}`
+	if err := os.WriteFile(filepath.Join(agentDir, "models.json"), []byte(models), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settingsJSON := `{"defaultProvider":"local","defaultModel":"two","enabledModels":["local/one:low","local/two:high"]}`
+	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(settingsJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.NewSettingsManager(root, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := config.NewModelRegistry(agentDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	model, thinking, scoped, diagnostics, err := resolveRuntimeModel(CLIArgs{}, settings, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if model == nil || model.Provider != "local" || model.ID != "two" || thinking == nil || *thinking != ai.ModelThinkingHigh {
+		t.Fatalf("scoped default = model %#v, thinking %v", model, thinking)
+	}
+	if len(scoped) != 2 || scoped[0].Model.ID != "one" || scoped[1].Model.ID != "two" || len(diagnostics) != 0 {
+		t.Fatalf("scope = %#v, diagnostics = %#v", scoped, diagnostics)
+	}
+
+	explicit := "local/one"
+	model, thinking, scoped, diagnostics, err = resolveRuntimeModel(CLIArgs{Model: &explicit}, settings, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if model == nil || model.ID != "one" || thinking != nil || len(scoped) != 2 || len(diagnostics) != 0 {
+		t.Fatalf("explicit scoped selection = model %#v, thinking %v, scope %#v, diagnostics %#v", model, thinking, scoped, diagnostics)
+	}
+}
+
+func TestCreateRuntimeInputsScopesCLIAPIKeyToSelectedProvider(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	models := `{"providers":{"local":{"baseUrl":"http://localhost/v1","api":"openai-completions","models":[{"id":"one"},{"id":"two"}]},"other":{"baseUrl":"http://localhost/v1","api":"openai-completions","models":[{"id":"foreign"}]}}}`
+	if err := os.WriteFile(filepath.Join(agentDir, "models.json"), []byte(models), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(config.EnvAgentDir, agentDir)
+	provider, modelID, key := "local", "one", "runtime-key"
+	inputs, err := createRuntimeInputs(root, CLIArgs{Provider: &provider, Model: &modelID, APIKey: &key}, agent.AgentMessages{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	available := inputs.AvailableModels()
+	if !modelListContains(available, "local", "one") || !modelListContains(available, "local", "two") || modelListContains(available, "other", "foreign") {
+		t.Fatalf("runtime-key models = %#v", available)
+	}
+	resolved, err := inputs.GetAPIKey(context.Background(), "local")
+	if err != nil || resolved == nil || *resolved != key {
+		t.Fatalf("selected-provider key = %v, %v", resolved, err)
+	}
+	resolved, err = inputs.GetAPIKey(context.Background(), "other")
+	if err != nil || resolved != nil {
+		t.Fatalf("foreign-provider key = %v, %v", resolved, err)
+	}
+}
+
+func modelListContains(models []ai.Model, provider, id string) bool {
+	for _, model := range models {
+		if string(model.Provider) == provider && model.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func TestNoBuiltinToolsKeepsBuiltinsDiscoverableForExtensions(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(`{"goExtensions":{"pirate":true}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(config.EnvAgentDir, agentDir)
+	provider := "openai"
+	model := "gpt-test"
+	inputs, err := createRuntimeInputs(root, CLIArgs{Provider: &provider, Model: &model, NoBuiltinTools: true}, agent.AgentMessages{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inputs.Extensions == nil {
+		t.Fatal("compiled extension registry was not loaded")
+	}
+	if len(inputs.ActiveToolNames) != 0 {
+		t.Fatalf("initial active tools = %v, want none", inputs.ActiveToolNames)
+	}
+	if len(inputs.ExcludedTools) != 0 {
+		t.Fatalf("excluded tools = %v, want none", inputs.ExcludedTools)
+	}
+	if len(inputs.BaseTools) != len(defaultBuiltInTools) {
+		t.Fatalf("discoverable builtins = %d, want %d", len(inputs.BaseTools), len(defaultBuiltInTools))
 	}
 }
 
@@ -281,7 +418,7 @@ func TestResolveRuntimeModelPrefersSavedDefaultWithinScope(t *testing.T) {
 		`{"defaultProvider":"fixture","defaultModel":"saved","defaultThinkingLevel":"medium"}`,
 		`{"providers":{"fixture":{"baseUrl":"https://example.invalid/v1","api":"openai-completions","apiKey":"dummy","models":[{"id":"first"},{"id":"saved"}]}}}`,
 	)
-	model, thinking, diagnostics, err := resolveRuntimeModel(CLIArgs{
+	model, thinking, _, diagnostics, err := resolveRuntimeModel(CLIArgs{
 		Models: []string{"fixture/first:low", "fixture/saved:high"},
 	}, settings, registry)
 	if err != nil {
@@ -304,7 +441,7 @@ func TestResolveRuntimeModelRestoresOnlyExactCatalogEntries(t *testing.T) {
 		`{"providers":{"openai":{"apiKey":"dummy"}}}`,
 	)
 	provider, removedID := "openai", "removed-built-in"
-	model, thinking, diagnostics, err := resolveRuntimeModel(CLIArgs{
+	model, thinking, _, diagnostics, err := resolveRuntimeModel(CLIArgs{
 		Provider:      &provider,
 		Model:         &removedID,
 		RestoredModel: true,
@@ -330,7 +467,7 @@ func TestResolveRuntimeModelRestoredModelWithoutAuthUsesJoinedFallbackMessage(t 
 		`{"providers":{"saved":{"baseUrl":"https://saved.invalid/v1","api":"openai-completions","models":[{"id":"kept"}]},"fallback":{"baseUrl":"https://fallback.invalid/v1","api":"openai-completions","apiKey":"dummy","models":[{"id":"fallback-model"}]}}}`,
 	)
 	provider, savedID := "saved", "kept"
-	model, thinking, diagnostics, err := resolveRuntimeModel(CLIArgs{
+	model, thinking, _, diagnostics, err := resolveRuntimeModel(CLIArgs{
 		Provider:      &provider,
 		Model:         &savedID,
 		RestoredModel: true,

@@ -212,6 +212,7 @@ type ProviderResponse struct {
 }
 
 type PayloadHook func(ctx context.Context, payload any, model *Model) (replacement any, replace bool, err error)
+type HeadersHook func(ctx context.Context, headers ProviderHeaders, model *Model) (ProviderHeaders, error)
 type ResponseHook func(ctx context.Context, response ProviderResponse, model *Model) error
 
 type StreamOptions struct {
@@ -222,6 +223,7 @@ type StreamOptions struct {
 	CacheRetention            *CacheRetention `json:"cacheRetention,omitempty"`
 	SessionID                 *string         `json:"sessionId,omitempty"`
 	OnPayload                 PayloadHook     `json:"-"`
+	TransformHeaders          HeadersHook     `json:"-"`
 	OnResponse                ResponseHook    `json:"-"`
 	Headers                   ProviderHeaders `json:"headers,omitempty"`
 	TimeoutMS                 *int64          `json:"timeoutMs,omitempty"`

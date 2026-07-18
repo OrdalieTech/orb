@@ -295,6 +295,7 @@ func TestSimpleOpenAICompletionsForwardsBaseOptions(t *testing.T) {
 	sessionID := "simple-session"
 	headerValue := "forwarded"
 	payloadHookCalled := false
+	headersHookCalled := false
 	responseHookCalled := false
 	payload, headers := captureSimpleOpenAICompletionsRequest(t, model, ai.Context{}, &ai.SimpleStreamOptions{
 		StreamOptions: ai.StreamOptions{
@@ -308,14 +309,27 @@ func TestSimpleOpenAICompletionsForwardsBaseOptions(t *testing.T) {
 				payload.(map[string]any)["simple_hook"] = true
 				return nil, false, nil
 			},
+			TransformHeaders: func(_ context.Context, headers ai.ProviderHeaders, _ *ai.Model) (ai.ProviderHeaders, error) {
+				hasSimpleOption := false
+				for name, header := range headers {
+					if strings.EqualFold(name, "X-Simple-Option") && header != nil {
+						hasSimpleOption = true
+						delete(headers, name)
+					}
+				}
+				headersHookCalled = hasSimpleOption
+				value := "extension"
+				headers["x-extension"] = &value
+				return headers, nil
+			},
 			OnResponse: func(_ context.Context, response ai.ProviderResponse, _ *ai.Model) error {
 				responseHookCalled = response.Status == http.StatusOK
 				return nil
 			},
 		},
 	})
-	if !payloadHookCalled || !responseHookCalled {
-		t.Fatalf("hooks called = payload %v, response %v", payloadHookCalled, responseHookCalled)
+	if !payloadHookCalled || !headersHookCalled || !responseHookCalled {
+		t.Fatalf("hooks called = payload %v, headers %v, response %v", payloadHookCalled, headersHookCalled, responseHookCalled)
 	}
 	if payload["temperature"] != float64(0) || payload["prompt_cache_key"] != sessionID || payload["prompt_cache_retention"] != "24h" || payload["simple_hook"] != true {
 		t.Fatalf("forwarded payload = %#v", payload)
@@ -323,7 +337,7 @@ func TestSimpleOpenAICompletionsForwardsBaseOptions(t *testing.T) {
 	if _, exists := payload["tool_choice"]; exists {
 		t.Fatalf("typed simple options unexpectedly emitted tool_choice: %v", payload["tool_choice"])
 	}
-	if headers.Get("Authorization") != "Bearer "+apiKey || headers.Get("X-Simple-Option") != headerValue {
+	if headers.Get("Authorization") != "Bearer "+apiKey || headers.Get("X-Simple-Option") != "" || headers.Get("X-Extension") != "extension" {
 		t.Fatalf("forwarded headers = %#v", headers)
 	}
 }

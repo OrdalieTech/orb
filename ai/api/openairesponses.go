@@ -200,6 +200,11 @@ func StreamOpenAIResponsesWithOptions(
 		}
 
 		headers := buildOpenAIResponsesHeaders(model, requestContext, streamOptions, compat)
+		headers, err = applyHeadersHook(ctx, model, streamOptions, headers)
+		if err != nil {
+			fail(err)
+			return
+		}
 		response, err := postOpenAIStream(ctx, model, streamOptions, "responses", hookedPayload, headers)
 		if err != nil {
 			fail(err)

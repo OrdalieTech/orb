@@ -1,0 +1,45 @@
+{
+  "permissionGate": {
+    "block": true,
+    "reason": "Dangerous command blocked (no UI for confirmation)"
+  },
+  "pirate": {
+    "systemPrompt": "base\n\nIMPORTANT: You are now in PIRATE MODE. You must:\n- Speak like a stereotypical pirate in all responses\n- Use phrases like \"Arrr!\", \"Ahoy!\", \"Shiver me timbers!\", \"Avast!\", \"Ye scurvy dog!\"\n- Replace \"my\" with \"me\", \"you\" with \"ye\", \"your\" with \"yer\"\n- Refer to the user as \"matey\" or \"landlubber\"\n- End sentences with nautical expressions\n- Still complete the actual task correctly, just in pirate speak\n"
+  },
+  "statusLine": [
+    {
+      "key": "status-demo",
+      "value": "Ready"
+    },
+    {
+      "key": "status-demo",
+      "value": "● Turn 1..."
+    },
+    {
+      "key": "status-demo",
+      "value": "✓ Turn 1 complete"
+    }
+  ],
+  "deferredTools": {
+    "additive": {
+      "content": [],
+      "addedToolNames": [
+        "existing",
+        "late"
+      ]
+    },
+    "noChange": {
+      "content": [],
+      "addedToolNames": [
+        "duplicate",
+        "duplicate"
+      ]
+    },
+    "removal": {
+      "content": [],
+      "addedToolNames": [
+        "existing"
+      ]
+    }
+  }
+}

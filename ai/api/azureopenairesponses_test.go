@@ -186,6 +186,9 @@ func TestResolveAzureOpenAIConfig(t *testing.T) {
 func TestAzureOpenAISimpleReasoningOff(t *testing.T) {
 	previousClient := azureOpenAIHTTPClient
 	azureOpenAIHTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.Header.Get("X-Extension") != "yes" {
+			t.Errorf("hooked header = %q", request.Header.Get("X-Extension"))
+		}
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Status:     "200 OK",
@@ -211,6 +214,11 @@ func TestAzureOpenAISimpleReasoningOff(t *testing.T) {
 			OnPayload: func(_ context.Context, payload any, _ *ai.Model) (any, bool, error) {
 				captured = payload.(*OpenAIResponsesPayload)
 				return nil, false, nil
+			},
+			TransformHeaders: func(_ context.Context, headers ai.ProviderHeaders, _ *ai.Model) (ai.ProviderHeaders, error) {
+				value := "yes"
+				headers["X-Extension"] = &value
+				return headers, nil
 			},
 		},
 		Reasoning: &reasoning,

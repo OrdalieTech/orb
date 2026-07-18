@@ -188,9 +188,6 @@ func NewAgent(option ...AgentOption) *Agent {
 	state := defaultAgentState()
 	if options.initialState != nil {
 		state = copyAgentState(*options.initialState)
-		if state.Model == nil {
-			state.Model = defaultAgentModel()
-		}
 	}
 	if state.ThinkingLevel == "" {
 		state.ThinkingLevel = ThinkingOff
@@ -365,6 +362,23 @@ func (agent *Agent) WaitForIdle(ctx context.Context) error {
 	}
 }
 
+func (agent *Agent) IsIdle() bool {
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	return agent.active == nil
+}
+
+// Signal returns the active run context, matching upstream's abort signal
+// exposure to extensions. It is nil while the agent is idle.
+func (agent *Agent) Signal() context.Context {
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	if agent.active == nil {
+		return nil
+	}
+	return agent.active.ctx
+}
+
 // Subscribe adds a listener and returns its unsubscribe func. Listeners are
 // awaited in subscription order for each event; overlapping upstream events may
 // invoke the same listener concurrently.
@@ -416,9 +430,6 @@ func (agent *Agent) SetSystemPrompt(prompt string) {
 func (agent *Agent) SetModel(model *ai.Model) {
 	agent.mu.Lock()
 	agent.state.Model = cloneModel(model)
-	if agent.state.Model == nil {
-		agent.state.Model = defaultAgentModel()
-	}
 	agent.mu.Unlock()
 }
 
@@ -438,6 +449,46 @@ func (agent *Agent) SetMessages(messages AgentMessages) {
 	agent.mu.Lock()
 	agent.state.Messages = cloneAgentMessages(messages)
 	agent.mu.Unlock()
+}
+
+func (agent *Agent) AppendMessage(message AgentMessage) {
+	agent.mu.Lock()
+	agent.state.Messages = append(agent.state.Messages, cloneAgentMessage(message))
+	agent.mu.Unlock()
+}
+
+func (agent *Agent) SetTransformContext(transform TransformContextFunc) {
+	agent.mu.Lock()
+	agent.transformContext = transform
+	agent.mu.Unlock()
+}
+
+func (agent *Agent) SetToolCallHooks(before BeforeToolCallFunc, after AfterToolCallFunc) {
+	agent.mu.Lock()
+	agent.beforeToolCall = before
+	agent.afterToolCall = after
+	agent.mu.Unlock()
+}
+
+func (agent *Agent) SetProviderHooks(payload ai.PayloadHook, headers ai.HeadersHook, response ai.ResponseHook) {
+	agent.mu.Lock()
+	agent.streamOptions.OnPayload = payload
+	agent.streamOptions.TransformHeaders = headers
+	agent.streamOptions.OnResponse = response
+	agent.mu.Unlock()
+}
+
+func (agent *Agent) ReplaceLastMessage(replacement AgentMessage) bool {
+	if replacement == nil {
+		return false
+	}
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	if len(agent.state.Messages) == 0 {
+		return false
+	}
+	agent.state.Messages[len(agent.state.Messages)-1] = cloneAgentMessage(replacement)
+	return true
 }
 
 func (agent *Agent) normalizePromptInput(input any, images []*ai.ImageContent) (AgentMessages, error) {

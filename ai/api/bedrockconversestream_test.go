@@ -211,13 +211,17 @@ func TestBedrockPayloadAndResponseHooks(t *testing.T) {
 		},
 	}
 	var sent *BedrockConverseStreamPayload
-	newBedrockTransport = func(context.Context, *ai.Model, *BedrockConverseStreamOptions) (bedrockTransport, error) {
+	var sentOptions *BedrockConverseStreamOptions
+	newBedrockTransport = func(_ context.Context, _ *ai.Model, options *BedrockConverseStreamOptions) (bedrockTransport, error) {
+		sentOptions = options
 		return bedrockTransportFunc(func(_ context.Context, payload *BedrockConverseStreamPayload) (bedrockResponse, error) {
 			sent = payload
 			return response, nil
 		}), nil
 	}
 	model := bedrockTestModel("anthropic.claude-sonnet-4-5", "Claude")
+	modelHeader := "model"
+	model.Headers = &map[string]string{"X-Model": modelHeader}
 	calledResponse := false
 	options := &BedrockConverseStreamOptions{StreamOptions: ai.StreamOptions{
 		OnPayload: func(_ context.Context, payload any, _ *ai.Model) (any, bool, error) {
@@ -228,6 +232,14 @@ func TestBedrockPayloadAndResponseHooks(t *testing.T) {
 		OnResponse: func(_ context.Context, response ai.ProviderResponse, _ *ai.Model) error {
 			calledResponse = response.Status == 202 && response.Headers["x-amzn-requestid"] == "request-hook"
 			return nil
+		},
+		TransformHeaders: func(_ context.Context, headers ai.ProviderHeaders, _ *ai.Model) (ai.ProviderHeaders, error) {
+			if headers["X-Model"] == nil || *headers["X-Model"] != "model" {
+				t.Fatalf("headers before hook = %#v", headers)
+			}
+			value := "yes"
+			headers["X-Extension"] = &value
+			return headers, nil
 		},
 	}}
 	stream, err := StreamBedrockConverseWithOptions(context.Background(), model, ai.Context{
@@ -240,8 +252,8 @@ func TestBedrockPayloadAndResponseHooks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if message.StopReason != ai.StopReasonStop || sent == nil || sent.ModelID != "replacement-model" || !calledResponse {
-		t.Fatalf("hook result: message=%#v sent=%#v response=%t", message, sent, calledResponse)
+	if message.StopReason != ai.StopReasonStop || sent == nil || sent.ModelID != "replacement-model" || !calledResponse || sentOptions == nil || sentOptions.Headers["X-Extension"] == nil || *sentOptions.Headers["X-Extension"] != "yes" {
+		t.Fatalf("hook result: message=%#v sent=%#v options=%#v response=%t", message, sent, sentOptions, calledResponse)
 	}
 }
 
