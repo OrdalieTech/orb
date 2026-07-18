@@ -9,9 +9,10 @@ criteria closing.
 Status: **in progress**.
 
 - [x] Record the owner-directed trunk, fixtures-first, core-first plan as D25/D26.
-- [ ] Integrate every GitButler lane and side ref into `main`, reconciling overlapping implementations.
+- [x] Leave the GitButler workspace and move the shared checkout to plain `main`.
+- [ ] Integrate every former GitButler lane and side ref, reconciling overlapping implementations.
 - [ ] Verify `CGO_ENABLED=0 go build ./...` and `make test` at every integrated commit.
-- [ ] Delete merged side refs and leave the GitButler workspace entirely.
+- [ ] Delete merged side refs and temporary consolidation stashes.
 - [ ] Finish on plain `main` with no worktree, lane, or feature branch.
 
 Historical note: `2a8ac08` and `68c3afa` were intermediate snapshots that did not build by

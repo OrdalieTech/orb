@@ -5,7 +5,7 @@ GOLANGCI_LINT := $(CURDIR)/.tools/bin/golangci-lint
 GO_ENV := GOCACHE=$(CURDIR)/.tools/cache/go-build GOMODCACHE=$(CURDIR)/.tools/cache/go-mod
 LINT_ENV := $(GO_ENV) GOLANGCI_LINT_CACHE=$(CURDIR)/.tools/cache/golangci-lint
 
-.PHONY: build test lint upstream fixtures fixtures-check ensure-upstream-fixture-tools sync
+.PHONY: build test lint upstream fixtures fixtures-check ensure-upstream-fixture-tools sync sync-bump
 
 build:
 	$(GO_ENV) CGO_ENABLED=0 go build ./...
@@ -63,6 +63,8 @@ fixtures-check: ensure-upstream-fixture-tools
 	@PI_GO_F6_TS_VERIFY=1 $(GO_ENV) go test -race ./conformance/runner -run TestF6SessionWriteAndProjectionMatchUpstream
 	@PI_GO_AUTH_TS_VERIFY=1 $(GO_ENV) go test -race ./codingagent/config -run TestAuthStorageConformance
 
-sync:
-	@echo "make sync is implemented by WP-610" >&2
-	@exit 1
+sync: ensure-upstream-fixture-tools
+	$(GO_ENV) CGO_ENABLED=0 go run ./internal/sync/cmd/pisync --dry-run $(SYNC_ARGS)
+
+sync-bump: ensure-upstream-fixture-tools
+	$(GO_ENV) CGO_ENABLED=0 go run ./internal/sync/cmd/pisync --bump $(SYNC_ARGS)
