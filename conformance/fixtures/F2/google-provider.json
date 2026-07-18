@@ -1,0 +1,19 @@
+{
+  "id": "google",
+  "name": "Google",
+  "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+  "apis": [
+    "google-generative-ai"
+  ],
+  "auth": {
+    "kind": "api_key",
+    "name": "Gemini API key",
+    "env": [
+      "GEMINI_API_KEY"
+    ],
+    "resolved": {
+      "apiKey": "fixture-google-api-key"
+    },
+    "source": "GEMINI_API_KEY"
+  }
+}

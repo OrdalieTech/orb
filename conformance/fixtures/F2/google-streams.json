@@ -1,0 +1,1592 @@
+{
+  "cases": [
+    {
+      "name": "google-thinking-text-tool-use",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "gemini-2.5-flash",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "stream",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key"
+      },
+      "sse": "data: {\"responseId\":\"google-response-id\",\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"plan \",\"thought\":true,\"thoughtSignature\":\"c2lnLTE=\"}]}}]}\n\ndata: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"carefully\",\"thought\":true}]}}]}\n\ndata: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"answer\",\"thoughtSignature\":\"dGV4dC1zaWc=\"},{\"functionCall\":{\"id\":\"call_google\",\"name\":\"calculate\",\"args\":{\"operation\":\"add\",\"operands\":[2,3]}},\"thoughtSignature\":\"dG9vbC1zaWc=\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":20,\"cachedContentTokenCount\":5,\"candidatesTokenCount\":7,\"thoughtsTokenCount\":3,\"totalTokenCount\":30}}\n\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "thinking_start",
+          "contentIndex": 0,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan ",
+                "thinkingSignature": "c2lnLTE="
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "google-response-id"
+          }
+        },
+        {
+          "type": "thinking_delta",
+          "contentIndex": 0,
+          "delta": "plan ",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan ",
+                "thinkingSignature": "c2lnLTE="
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "google-response-id"
+          }
+        },
+        {
+          "type": "thinking_delta",
+          "contentIndex": 0,
+          "delta": "carefully",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan carefully",
+                "thinkingSignature": "c2lnLTE="
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "google-response-id"
+          }
+        },
+        {
+          "type": "thinking_end",
+          "contentIndex": 0,
+          "content": "plan carefully",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan carefully",
+                "thinkingSignature": "c2lnLTE="
+              },
+              {
+                "type": "text",
+                "text": "answer",
+                "textSignature": "dGV4dC1zaWc="
+              },
+              {
+                "type": "toolCall",
+                "id": "call_google",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    2,
+                    3
+                  ]
+                },
+                "thoughtSignature": "dG9vbC1zaWc="
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 15,
+              "output": 10,
+              "cacheRead": 5,
+              "cacheWrite": 0,
+              "reasoning": 3,
+              "totalTokens": 30,
+              "cost": {
+                "input": 0.000014999999999999999,
+                "output": 0.000039999999999999996,
+                "cacheRead": 0.0000012499999999999999,
+                "cacheWrite": 0,
+                "total": 0.00005625
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "google-response-id"
+          }
+        },
+        {
+          "type": "text_start",
+          "contentIndex": 1,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan carefully",
+                "thinkingSignature": "c2lnLTE="
+              },
+              {
+                "type": "text",
+                "text": "answer",
+                "textSignature": "dGV4dC1zaWc="
+              },
+              {
+                "type": "toolCall",
+                "id": "call_google",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    2,
+                    3
+                  ]
+                },
+                "thoughtSignature": "dG9vbC1zaWc="
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 15,
+              "output": 10,
+              "cacheRead": 5,
+              "cacheWrite": 0,
+              "reasoning": 3,
+              "totalTokens": 30,
+              "cost": {
+                "input": 0.000014999999999999999,
+                "output": 0.000039999999999999996,
+                "cacheRead": 0.0000012499999999999999,
+                "cacheWrite": 0,
+                "total": 0.00005625
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "google-response-id"
+          }
+        },
+        {
+          "type": "text_delta",
+          "contentIndex": 1,
+          "delta": "answer",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan carefully",
+                "thinkingSignature": "c2lnLTE="
+              },
+              {
+                "type": "text",
+                "text": "answer",
+                "textSignature": "dGV4dC1zaWc="
+              },
+              {
+                "type": "toolCall",
+                "id": "call_google",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    2,
+                    3
+                  ]
+                },
+                "thoughtSignature": "dG9vbC1zaWc="
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 15,
+              "output": 10,
+              "cacheRead": 5,
+              "cacheWrite": 0,
+              "reasoning": 3,
+              "totalTokens": 30,
+              "cost": {
+                "input": 0.000014999999999999999,
+                "output": 0.000039999999999999996,
+                "cacheRead": 0.0000012499999999999999,
+                "cacheWrite": 0,
+                "total": 0.00005625
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "google-response-id"
+          }
+        },
+        {
+          "type": "text_end",
+          "contentIndex": 1,
+          "content": "answer",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan carefully",
+                "thinkingSignature": "c2lnLTE="
+              },
+              {
+                "type": "text",
+                "text": "answer",
+                "textSignature": "dGV4dC1zaWc="
+              },
+              {
+                "type": "toolCall",
+                "id": "call_google",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    2,
+                    3
+                  ]
+                },
+                "thoughtSignature": "dG9vbC1zaWc="
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 15,
+              "output": 10,
+              "cacheRead": 5,
+              "cacheWrite": 0,
+              "reasoning": 3,
+              "totalTokens": 30,
+              "cost": {
+                "input": 0.000014999999999999999,
+                "output": 0.000039999999999999996,
+                "cacheRead": 0.0000012499999999999999,
+                "cacheWrite": 0,
+                "total": 0.00005625
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "google-response-id"
+          }
+        },
+        {
+          "type": "toolcall_start",
+          "contentIndex": 2,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan carefully",
+                "thinkingSignature": "c2lnLTE="
+              },
+              {
+                "type": "text",
+                "text": "answer",
+                "textSignature": "dGV4dC1zaWc="
+              },
+              {
+                "type": "toolCall",
+                "id": "call_google",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    2,
+                    3
+                  ]
+                },
+                "thoughtSignature": "dG9vbC1zaWc="
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 15,
+              "output": 10,
+              "cacheRead": 5,
+              "cacheWrite": 0,
+              "reasoning": 3,
+              "totalTokens": 30,
+              "cost": {
+                "input": 0.000014999999999999999,
+                "output": 0.000039999999999999996,
+                "cacheRead": 0.0000012499999999999999,
+                "cacheWrite": 0,
+                "total": 0.00005625
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "google-response-id"
+          }
+        },
+        {
+          "type": "toolcall_delta",
+          "contentIndex": 2,
+          "delta": "{\"operation\":\"add\",\"operands\":[2,3]}",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan carefully",
+                "thinkingSignature": "c2lnLTE="
+              },
+              {
+                "type": "text",
+                "text": "answer",
+                "textSignature": "dGV4dC1zaWc="
+              },
+              {
+                "type": "toolCall",
+                "id": "call_google",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    2,
+                    3
+                  ]
+                },
+                "thoughtSignature": "dG9vbC1zaWc="
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 15,
+              "output": 10,
+              "cacheRead": 5,
+              "cacheWrite": 0,
+              "reasoning": 3,
+              "totalTokens": 30,
+              "cost": {
+                "input": 0.000014999999999999999,
+                "output": 0.000039999999999999996,
+                "cacheRead": 0.0000012499999999999999,
+                "cacheWrite": 0,
+                "total": 0.00005625
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "google-response-id"
+          }
+        },
+        {
+          "type": "toolcall_end",
+          "contentIndex": 2,
+          "toolCall": {
+            "type": "toolCall",
+            "id": "call_google",
+            "name": "calculate",
+            "arguments": {
+              "operation": "add",
+              "operands": [
+                2,
+                3
+              ]
+            },
+            "thoughtSignature": "dG9vbC1zaWc="
+          },
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan carefully",
+                "thinkingSignature": "c2lnLTE="
+              },
+              {
+                "type": "text",
+                "text": "answer",
+                "textSignature": "dGV4dC1zaWc="
+              },
+              {
+                "type": "toolCall",
+                "id": "call_google",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    2,
+                    3
+                  ]
+                },
+                "thoughtSignature": "dG9vbC1zaWc="
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 15,
+              "output": 10,
+              "cacheRead": 5,
+              "cacheWrite": 0,
+              "reasoning": 3,
+              "totalTokens": 30,
+              "cost": {
+                "input": 0.000014999999999999999,
+                "output": 0.000039999999999999996,
+                "cacheRead": 0.0000012499999999999999,
+                "cacheWrite": 0,
+                "total": 0.00005625
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "google-response-id"
+          }
+        },
+        {
+          "type": "done",
+          "reason": "toolUse",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan carefully",
+                "thinkingSignature": "c2lnLTE="
+              },
+              {
+                "type": "text",
+                "text": "answer",
+                "textSignature": "dGV4dC1zaWc="
+              },
+              {
+                "type": "toolCall",
+                "id": "call_google",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    2,
+                    3
+                  ]
+                },
+                "thoughtSignature": "dG9vbC1zaWc="
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 15,
+              "output": 10,
+              "cacheRead": 5,
+              "cacheWrite": 0,
+              "reasoning": 3,
+              "totalTokens": 30,
+              "cost": {
+                "input": 0.000014999999999999999,
+                "output": 0.000039999999999999996,
+                "cacheRead": 0.0000012499999999999999,
+                "cacheWrite": 0,
+                "total": 0.00005625
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "google-response-id"
+          }
+        }
+      ]
+    },
+    {
+      "name": "google-text-length",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "gemini-2.5-flash",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "long answer",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key"
+      },
+      "sse": "data: {\"responseId\":\"google-length-id\",\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"partial\"}]},\"finishReason\":\"MAX_TOKENS\"}],\"usageMetadata\":{\"promptTokenCount\":4,\"candidatesTokenCount\":2,\"totalTokenCount\":6}}\n\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "text_start",
+          "contentIndex": 0,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "partial"
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 4,
+              "output": 2,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 6,
+              "cost": {
+                "input": 0.000004,
+                "output": 0.000008,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.000012
+              }
+            },
+            "stopReason": "length",
+            "timestamp": 1700000000123,
+            "responseId": "google-length-id"
+          }
+        },
+        {
+          "type": "text_delta",
+          "contentIndex": 0,
+          "delta": "partial",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "partial"
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 4,
+              "output": 2,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 6,
+              "cost": {
+                "input": 0.000004,
+                "output": 0.000008,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.000012
+              }
+            },
+            "stopReason": "length",
+            "timestamp": 1700000000123,
+            "responseId": "google-length-id"
+          }
+        },
+        {
+          "type": "text_end",
+          "contentIndex": 0,
+          "content": "partial",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "partial"
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 4,
+              "output": 2,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 6,
+              "cost": {
+                "input": 0.000004,
+                "output": 0.000008,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.000012
+              }
+            },
+            "stopReason": "length",
+            "timestamp": 1700000000123,
+            "responseId": "google-length-id"
+          }
+        },
+        {
+          "type": "done",
+          "reason": "length",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "partial"
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 4,
+              "output": 2,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 6,
+              "cost": {
+                "input": 0.000004,
+                "output": 0.000008,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.000012
+              }
+            },
+            "stopReason": "length",
+            "timestamp": 1700000000123,
+            "responseId": "google-length-id"
+          }
+        }
+      ]
+    },
+    {
+      "name": "google-safety-finish-error",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "gemini-2.5-flash",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "blocked",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key"
+      },
+      "sse": "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[]},\"finishReason\":\"SAFETY\"}],\"usageMetadata\":{\"promptTokenCount\":1,\"totalTokenCount\":1}}\n\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 1,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 1,
+              "cost": {
+                "input": 0.000001,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.000001
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "errorMessage": "An unknown error occurred"
+          }
+        }
+      ]
+    },
+    {
+      "name": "google-http-403-json",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "gemini-2.5-flash",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "reject",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key"
+      },
+      "httpStatus": 403,
+      "httpBody": "{\"error\":{\"code\":403,\"message\":\"denied\",\"status\":\"PERMISSION_DENIED\"}}",
+      "httpContentType": "application/json",
+      "expectedEvents": [
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "errorMessage": "{\"error\":{\"code\":403,\"message\":\"denied\",\"status\":\"PERMISSION_DENIED\"}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "google-http-pretty-json",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "gemini-2.5-flash",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "pretty reject",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key"
+      },
+      "httpStatus": 400,
+      "httpStatusText": "Bad Request",
+      "httpBody": "{\n  \"error\": { \"message\": \"bad shape\", \"code\": 400, \"status\": \"INVALID_ARGUMENT\" }\n}",
+      "httpContentType": "application/json; charset=utf-8",
+      "expectedEvents": [
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "errorMessage": "{\"error\":{\"message\":\"bad shape\",\"code\":400,\"status\":\"INVALID_ARGUMENT\"}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "google-http-429-text",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "gemini-2.5-flash",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "plain reject",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key"
+      },
+      "httpStatus": 429,
+      "httpStatusText": "Too Many Requests",
+      "httpBody": "slow down",
+      "httpContentType": "text/plain",
+      "expectedEvents": [
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "errorMessage": "{\"error\":{\"message\":\"slow down\",\"code\":429,\"status\":\"Too Many Requests\"}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "google-http-503-empty",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "gemini-2.5-flash",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "empty reject",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key"
+      },
+      "httpStatus": 503,
+      "httpStatusText": "Service Unavailable",
+      "httpBody": "",
+      "httpContentType": "text/plain",
+      "expectedEvents": [
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "errorMessage": "{\"error\":{\"message\":\"\",\"code\":503,\"status\":\"Service Unavailable\"}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "google-multiline-tool-call-empty-signature",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "gemini-2.5-flash",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "call the tool",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key"
+      },
+      "sse": "data: {\n  \"responseId\": \"google-multiline-id\",\n  \"candidates\": [\n    {\n      \"content\": {\n        \"role\": \"model\",\n        \"parts\": [\n          {\n            \"functionCall\": { \"id\": \"call_empty\", \"name\": \"calculate\", \"args\": {} },\n            \"thoughtSignature\": \"\"\n          }\n        ]\n      },\n      \"finishReason\": \"STOP\"\n    }\n  ],\n  \"usageMetadata\": { \"promptTokenCount\": 1, \"candidatesTokenCount\": 1, \"totalTokenCount\": 2 }\n}\n\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "toolcall_start",
+          "contentIndex": 0,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call_empty",
+                "name": "calculate",
+                "arguments": {}
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000001,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0000049999999999999996
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "google-multiline-id"
+          }
+        },
+        {
+          "type": "toolcall_delta",
+          "contentIndex": 0,
+          "delta": "{}",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call_empty",
+                "name": "calculate",
+                "arguments": {}
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000001,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0000049999999999999996
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "google-multiline-id"
+          }
+        },
+        {
+          "type": "toolcall_end",
+          "contentIndex": 0,
+          "toolCall": {
+            "type": "toolCall",
+            "id": "call_empty",
+            "name": "calculate",
+            "arguments": {}
+          },
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call_empty",
+                "name": "calculate",
+                "arguments": {}
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000001,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0000049999999999999996
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "google-multiline-id"
+          }
+        },
+        {
+          "type": "done",
+          "reason": "toolUse",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call_empty",
+                "name": "calculate",
+                "arguments": {}
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000001,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0000049999999999999996
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "google-multiline-id"
+          }
+        }
+      ]
+    },
+    {
+      "name": "google-raw-json-error-chunk",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "gemini-2.5-flash",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "fail in stream",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key"
+      },
+      "sse": "{\"error\":{\"code\":403,\"status\":\"PERMISSION_DENIED\",\"message\":\"denied\"}}",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "errorMessage": "got status: PERMISSION_DENIED. {\"error\":{\"code\":403,\"status\":\"PERMISSION_DENIED\",\"message\":\"denied\"}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "google-raw-json-error-coercion",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "gemini-2.5-flash",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "coerced stream failure",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key"
+      },
+      "sse": "{\"10\":\"ten\",\"2\":\"two\",\"error\":{\"code\":\"4.03e2\",\"message\":\"\\u0061\"}}",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "errorMessage": "got status: undefined. {\"2\":\"two\",\"10\":\"ten\",\"error\":{\"code\":\"4.03e2\",\"message\":\"a\"}}"
+          }
+        }
+      ]
+    }
+  ]
+}

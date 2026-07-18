@@ -53,9 +53,10 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
   where idiomatic (`agent-loop.ts` → `loop.go`). Mirroring is what makes agent-driven upstream
   syncing and diff-mapping mechanical. A `MIRROR.md` map records the correspondence.
 - **D10 — Provider layer: SDK-preferring hybrid.** Use official Go SDKs where they exist and are
-  sound (`openai-go/v3`, `anthropic-sdk-go`, `google.golang.org/genai` [weight-gated, see G2],
-  `aws-sdk-go-v2` bedrockruntime). Hand-roll only where no SDK exists (mistral-conversations,
-  pi-messages wire shape, OAuth device/PKCE flows). Do not reinvent wheels; do not import kitchen sinks.
+  sound (`openai-go/v3`, `anthropic-sdk-go`, `aws-sdk-go-v2` bedrockruntime). G2 rejected
+  `google.golang.org/genai` on measured weight, so Gemini and Vertex use hand-rolled JSON/SSE shapes.
+  Hand-roll where no sound SDK exists (mistral-conversations, pi-messages wire shape, OAuth
+  device/PKCE flows). Do not import kitchen sinks.
 - **D11 — Provider order: OpenAI first.** openai-responses + openai-completions shapes first (this
   also unlocks Azure and the compat family — Groq, Cerebras, xAI, OpenRouter, DeepSeek, Fireworks,
   Together, etc. via baseURL + compat flags). Then Anthropic (+ prompt caching + Claude Pro/Max OAuth),
@@ -141,7 +142,8 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
 - **G1 (WP-110, resolved):** use the stdlib-only internal JSON-Schema reflector. The invopop probe
   required provider-shape post-processing and added five transitive packages plus 640 KiB to a
   stripped binary; the internal helper emits the required TypeBox-style inline schemas directly.
-- **G2 (WP-221):** Gemini — `google.golang.org/genai` acceptable dep tree vs hand-rolled
-  google-generative-ai shape.
+- **G2 (WP-221, resolved):** use the stdlib REST/SSE Gemini adapter. The correctly stripped official
+  SDK probe added 8,466,432 bytes (47.278%), 35 module entries, and 183 compiled packages; Vertex
+  follows in WP-222 without importing the rejected SDK/auth stack. See `docs/plan/wp-221-g2-report.md`.
 - **G3 (WP-542):** pi-tui Component bridge overlay/experimental surfaces — bridge now vs documented gap.
 - **G4 (WP-661):** self-update mechanism — notify-only vs in-place binary self-update.

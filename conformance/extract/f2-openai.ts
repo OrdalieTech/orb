@@ -22,6 +22,7 @@ import type {
 } from "../../.upstream/packages/ai/src/types.ts";
 import { extractAuthStorageFixture } from "./f2-auth.ts";
 import { extractAnthropicF2 } from "./f2-anthropic.ts";
+import { extractGoogleF2 } from "./f2-google.ts";
 
 type OpenAIAPI = "openai-responses" | "openai-completions";
 type OpenAIModel = Model<"openai-responses"> | Model<"openai-completions">;
@@ -1182,6 +1183,7 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
   try {
     const provider = await extractOpenAIProvider(upstreamRoot);
     const anthropic = await extractAnthropicF2(upstreamRoot);
+    const google = await extractGoogleF2(upstreamRoot);
     const authStorage = await extractAuthStorageFixture();
     const requests = [];
     for (const definition of requestDefinitions) {
@@ -1209,14 +1211,17 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
       upstreamCommit,
       generator: "conformance/extract/f2-openai.ts",
       source:
-        "packages/ai/src/api/openai-responses.ts + packages/ai/src/api/openai-responses-shared.ts + packages/ai/src/api/openai-completions.ts + packages/ai/src/api/openai-prompt-cache.ts + packages/ai/src/api/anthropic-messages.ts + packages/ai/src/utils/deferred-tools.ts + packages/ai/src/api/transform-messages.ts + packages/ai/src/providers/openai.ts + packages/ai/src/providers/anthropic.ts + packages/ai/src/auth/helpers.ts + packages/ai/src/auth/oauth/oauth-page.ts + packages/ai/src/models.ts + packages/ai/scripts/generate-models.ts + packages/coding-agent/src/core/auth-storage.ts + packages/coding-agent/src/core/resolve-config-value.ts + packages/coding-agent/src/migrations.ts",
+        "packages/ai/src/api/openai-responses.ts + packages/ai/src/api/openai-responses-shared.ts + packages/ai/src/api/openai-completions.ts + packages/ai/src/api/openai-prompt-cache.ts + packages/ai/src/api/anthropic-messages.ts + packages/ai/src/api/google-generative-ai.ts + packages/ai/src/api/google-shared.ts + packages/ai/src/utils/deferred-tools.ts + packages/ai/src/api/transform-messages.ts + packages/ai/src/providers/openai.ts + packages/ai/src/providers/anthropic.ts + packages/ai/src/providers/google.ts + packages/ai/src/auth/helpers.ts + packages/ai/src/auth/oauth/oauth-page.ts + packages/ai/src/models.ts + packages/ai/scripts/generate-models.ts + packages/coding-agent/src/core/auth-storage.ts + packages/coding-agent/src/core/resolve-config-value.ts + packages/coding-agent/src/migrations.ts",
       files: [
         "provider.json",
         "anthropic-provider.json",
+        "google-provider.json",
         "requests.json",
         "anthropic-requests.json",
         "streams.json",
         "anthropic-streams.json",
+        "google-requests.json",
+        "google-streams.json",
         "auth-storage.json",
       ],
     };
@@ -1226,6 +1231,7 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
       path.join(familyDir, "anthropic-provider.json"),
       `${JSON.stringify(anthropic.provider, null, 2)}\n`,
     );
+    await writeFile(path.join(familyDir, "google-provider.json"), `${JSON.stringify(google.provider, null, 2)}\n`);
     await writeFile(path.join(familyDir, "requests.json"), `${JSON.stringify({ cases: requests }, null, 2)}\n`);
     await writeFile(path.join(familyDir, "streams.json"), `${JSON.stringify({ cases: streams }, null, 2)}\n`);
     await writeFile(
@@ -1235,6 +1241,14 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
     await writeFile(
       path.join(familyDir, "anthropic-streams.json"),
       `${JSON.stringify({ cases: anthropic.streams }, null, 2)}\n`,
+    );
+    await writeFile(
+      path.join(familyDir, "google-requests.json"),
+      `${JSON.stringify({ cases: google.requests }, null, 2)}\n`,
+    );
+    await writeFile(
+      path.join(familyDir, "google-streams.json"),
+      `${JSON.stringify({ cases: google.streams }, null, 2)}\n`,
     );
     await writeFile(path.join(familyDir, "auth-storage.json"), `${JSON.stringify(authStorage, null, 2)}\n`);
   } finally {

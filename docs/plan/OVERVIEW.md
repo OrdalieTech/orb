@@ -57,6 +57,7 @@ Dependency structure — after the WP-170 gate, three lanes run in parallel:
 | 210 | Anthropic messages + prompt caching | 170 |
 | 211 | Auth storage + Anthropic OAuth (Pro/Max) + headless login | 210 |
 | 221 | Gemini (+Vertex) — gate G2 | 170 |
+| 222 | Vertex REST/SSE + pure-Go ADC follow-up from G2 | 221 |
 | 231 | Mistral conversations + Azure responses | 170 |
 | 232 | Bedrock converse-stream | 170 |
 | 241 | Codex responses + ChatGPT OAuth; Copilot device-code; xAI | 211 |

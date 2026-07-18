@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -177,5 +178,27 @@ func TestModelRegistryAvailabilityResolvesStoredAPIKey(t *testing.T) {
 	}
 	if !registry.HasConfiguredAuth("openai", nil) {
 		t.Fatal("resolved stored API key did not make OpenAI available")
+	}
+}
+
+func TestModelRegistryGoogleUsesGeminiAPIKeyOnly(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("GOOGLE_API_KEY", "")
+	registry, err := NewModelRegistry(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if registry.HasConfiguredAuth("google", map[string]string{"GOOGLE_API_KEY": "legacy"}) {
+		t.Fatal("GOOGLE_API_KEY unexpectedly made Google available")
+	}
+	if !registry.HasConfiguredAuth("google", map[string]string{"GEMINI_API_KEY": "gemini"}) {
+		t.Fatal("GEMINI_API_KEY did not make Google available")
+	}
+	key, err := registry.ResolveAPIKey(context.Background(), "google", map[string]string{"GOOGLE_API_KEY": "legacy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key != nil {
+		t.Fatalf("GOOGLE_API_KEY resolved unexpectedly: %q", *key)
 	}
 }

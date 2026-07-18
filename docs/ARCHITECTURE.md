@@ -301,7 +301,6 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | dop251/goja_nodejs (selected) | jsbridge | console/buffer/url shims where sobek-compatible |
 | openai/openai-go/v3 | ai/api | OpenAI responses+completions (D10) |
 | anthropics/anthropic-sdk-go | ai/api | Anthropic messages + caching (D10) |
-| google.golang.org/genai | ai/api | Gemini — **gate G2**, drop if tree too heavy |
 | aws-sdk-go-v2 (bedrockruntime) | ai/api | Bedrock SigV4 + converse-stream (D10) |
 | modelcontextprotocol/go-sdk | mcp | official MCP SDK v1.6+ |
 | yuin/goldmark | tui | CommonMark parsing (render stays ours) |
@@ -318,6 +317,13 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 `invopop/jsonschema` output required stripping `$schema`/`$defs`/`$ref` and undoing closed-object
 defaults to match TypeBox's inline provider-facing schemas, while adding five transitive packages
 and 640 KiB to a stripped probe binary. No direct dependency was added.
+
+**G2 resolution (WP-221):** Gemini uses a stdlib REST/SSE adapter. Against consolidated commit
+`813da39`, a `google.golang.org/genai@v1.64.0` probe grew the correctly stripped binary from
+17,907,874 to 26,374,306 bytes (+8,466,432, 47.278%), expanded the module graph from 67 to 102
+entries, and grew the compiled package graph from 294 to 477 packages. The final hand-rolled adapter
+adds 155,648 bytes (0.869%) and no modules. Vertex is scheduled separately as WP-222 so its ADC
+surface can be ported without undoing this dependency decision.
 
 Explicitly rejected: TUI frameworks (D15), langchaingo/fantasy-style unified LLM libs (D10),
 v8go/quickjs CGo bindings (D7), sqlite (no need — sessions are JSONL).

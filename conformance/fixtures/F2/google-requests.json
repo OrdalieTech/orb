@@ -1,0 +1,1023 @@
+{
+  "cases": [
+    {
+      "name": "google-text-system-string-enum-tool",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "gemini-2.5-flash",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536,
+        "headers": {
+          "Content-Type": "application/model-json",
+          "x-goog-api-key": "model-header-key",
+          "x-model-header": "google-text"
+        }
+      },
+      "context": {
+        "systemPrompt": "You are concise.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hello <google>",
+            "timestamp": 1700000000123
+          }
+        ],
+        "tools": [
+          {
+            "name": "calculate",
+            "description": "Calculate with a provider-compatible string enum",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "operation": {
+                  "type": "string",
+                  "enum": [
+                    "add",
+                    "subtract",
+                    "multiply",
+                    "divide"
+                  ],
+                  "description": "The operation to perform"
+                },
+                "operands": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                }
+              },
+              "required": [
+                "operation",
+                "operands"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key",
+        "temperature": 0,
+        "maxTokens": 777,
+        "toolChoice": "auto",
+        "headers": {
+          "Content-Type": "application/x-google-fixture",
+          "x-fixture": "google-text",
+          "x-goog-api-key": "option-header-key"
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/x-google-fixture",
+          "x-fixture": "google-text",
+          "x-goog-api-key": "option-header-key",
+          "x-model-header": "google-text"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"hello <google>\"}],\"role\":\"user\"}],\"systemInstruction\":{\"parts\":[{\"text\":\"You are concise.\"}],\"role\":\"user\"},\"tools\":[{\"functionDeclarations\":[{\"name\":\"calculate\",\"description\":\"Calculate with a provider-compatible string enum\",\"parametersJsonSchema\":{\"type\":\"object\",\"properties\":{\"operation\":{\"type\":\"string\",\"enum\":[\"add\",\"subtract\",\"multiply\",\"divide\"],\"description\":\"The operation to perform\"},\"operands\":{\"type\":\"array\",\"items\":{\"type\":\"number\"}}},\"required\":[\"operation\",\"operands\"],\"additionalProperties\":false}}]}],\"toolConfig\":{\"functionCallingConfig\":{\"mode\":\"AUTO\"}},\"generationConfig\":{\"temperature\":0,\"maxOutputTokens\":777}}"
+      }
+    },
+    {
+      "name": "google-rich-replay-thinking-images-tools",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "gemini-2.5-flash",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "systemPrompt": "Preserve signed thoughts and use tools.",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "inspect image"
+              },
+              {
+                "type": "image",
+                "data": "aW1hZ2U=",
+                "mimeType": "image/png"
+              }
+            ],
+            "timestamp": 1700000000119
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "signed plan",
+                "thinkingSignature": "cGxhbg=="
+              },
+              {
+                "type": "text",
+                "text": "using tool",
+                "textSignature": "dGV4dA=="
+              },
+              {
+                "type": "toolCall",
+                "id": "call_fixture",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    2,
+                    3
+                  ]
+                },
+                "thoughtSignature": "dG9vbA=="
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call_fixture",
+            "toolName": "calculate",
+            "content": [
+              {
+                "type": "text",
+                "text": "5"
+              },
+              {
+                "type": "image",
+                "data": "cGl4ZWw=",
+                "mimeType": "image/webp"
+              }
+            ],
+            "isError": false,
+            "timestamp": 1700000000122
+          },
+          {
+            "role": "user",
+            "content": "continue",
+            "timestamp": 1700000000123
+          }
+        ],
+        "tools": [
+          {
+            "name": "calculate",
+            "description": "Calculate with a provider-compatible string enum",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "operation": {
+                  "type": "string",
+                  "enum": [
+                    "add",
+                    "subtract",
+                    "multiply",
+                    "divide"
+                  ],
+                  "description": "The operation to perform"
+                },
+                "operands": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                }
+              },
+              "required": [
+                "operation",
+                "operands"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key",
+        "maxTokens": 4096,
+        "toolChoice": "any",
+        "thinking": {
+          "enabled": true,
+          "budgetTokens": 2048
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-google-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"inspect image\"},{\"inlineData\":{\"data\":\"aW1hZ2U=\",\"mimeType\":\"image/png\"}}],\"role\":\"user\"},{\"parts\":[{\"text\":\"signed plan\",\"thought\":true,\"thoughtSignature\":\"cGxhbg==\"},{\"text\":\"using tool\",\"thoughtSignature\":\"dGV4dA==\"},{\"functionCall\":{\"args\":{\"operation\":\"add\",\"operands\":[2,3]},\"name\":\"calculate\"},\"thoughtSignature\":\"dG9vbA==\"}],\"role\":\"model\"},{\"parts\":[{\"functionResponse\":{\"name\":\"calculate\",\"response\":{\"output\":\"5\"}}}],\"role\":\"user\"},{\"parts\":[{\"text\":\"Tool result image:\"},{\"inlineData\":{\"data\":\"cGl4ZWw=\",\"mimeType\":\"image/webp\"}}],\"role\":\"user\"},{\"parts\":[{\"text\":\"continue\"}],\"role\":\"user\"}],\"systemInstruction\":{\"parts\":[{\"text\":\"Preserve signed thoughts and use tools.\"}],\"role\":\"user\"},\"tools\":[{\"functionDeclarations\":[{\"name\":\"calculate\",\"description\":\"Calculate with a provider-compatible string enum\",\"parametersJsonSchema\":{\"type\":\"object\",\"properties\":{\"operation\":{\"type\":\"string\",\"enum\":[\"add\",\"subtract\",\"multiply\",\"divide\"],\"description\":\"The operation to perform\"},\"operands\":{\"type\":\"array\",\"items\":{\"type\":\"number\"}}},\"required\":[\"operation\",\"operands\"],\"additionalProperties\":false}}]}],\"toolConfig\":{\"functionCallingConfig\":{\"mode\":\"ANY\"}},\"generationConfig\":{\"maxOutputTokens\":4096,\"thinkingConfig\":{\"includeThoughts\":true,\"thinkingBudget\":2048}}}"
+      }
+    },
+    {
+      "name": "google-cross-model-signatures-and-nonvision-image",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "gemini-2.5-flash-lite",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "image",
+                "data": "aW1hZ2U=",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "text",
+                "text": "describe"
+              }
+            ],
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "old thought",
+                "thinkingSignature": "not-base64"
+              },
+              {
+                "type": "text",
+                "text": "old answer",
+                "textSignature": "not-base64"
+              },
+              {
+                "type": "toolCall",
+                "id": "call_old",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    1,
+                    1
+                  ]
+                },
+                "thoughtSignature": "not-base64"
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "other-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call_old",
+            "toolName": "calculate",
+            "content": [
+              {
+                "type": "text",
+                "text": "2"
+              }
+            ],
+            "isError": false,
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key",
+        "thinking": {
+          "enabled": false
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-google-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"(image omitted: model does not support images)\"},{\"text\":\"describe\"}],\"role\":\"user\"},{\"parts\":[{\"text\":\"old thought\"},{\"text\":\"old answer\"},{\"functionCall\":{\"args\":{\"operation\":\"add\",\"operands\":[1,1]},\"name\":\"calculate\"}}],\"role\":\"model\"},{\"parts\":[{\"functionResponse\":{\"name\":\"calculate\",\"response\":{\"output\":\"2\"}}}],\"role\":\"user\"}],\"generationConfig\":{\"thinkingConfig\":{\"thinkingBudget\":0}}}"
+      }
+    },
+    {
+      "name": "google-gemini31-pro-thinking-disabled",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "gemini-3.1-pro-preview",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "no visible thoughts",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key",
+        "thinking": {
+          "enabled": false
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-google-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"no visible thoughts\"}],\"role\":\"user\"}],\"generationConfig\":{\"thinkingConfig\":{\"thinkingLevel\":\"LOW\"}}}"
+      }
+    },
+    {
+      "name": "google-gemini3-flash-thinking-level",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "gemini-3-flash-preview",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "think minimally",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key",
+        "thinking": {
+          "enabled": true,
+          "level": "MINIMAL"
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-google-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"think minimally\"}],\"role\":\"user\"}],\"generationConfig\":{\"thinkingConfig\":{\"includeThoughts\":true,\"thinkingLevel\":\"MINIMAL\"}}}"
+      }
+    },
+    {
+      "name": "google-payload-hook-supported-config",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "gemini-2.5-flash",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "structured response",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key"
+      },
+      "payloadConfigPatch": {
+        "topP": 0.25,
+        "topK": 32,
+        "candidateCount": 2,
+        "stopSequences": [
+          "END"
+        ],
+        "responseMimeType": "application/json",
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "answer": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "responseJsonSchema": {
+          "type": "object",
+          "properties": {
+            "answer": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "answer"
+          ],
+          "additionalProperties": false
+        },
+        "safetySettings": [
+          {
+            "category": "HARM_CATEGORY_HATE_SPEECH",
+            "threshold": "BLOCK_NONE"
+          }
+        ],
+        "systemInstruction": {
+          "parts": [
+            {
+              "text": "hook system"
+            }
+          ],
+          "role": "model"
+        },
+        "tools": [
+          {
+            "googleSearch": {}
+          }
+        ],
+        "toolConfig": {
+          "retrievalConfig": {
+            "latLng": {
+              "latitude": 48.8566,
+              "longitude": 2.3522
+            }
+          },
+          "functionCallingConfig": {
+            "allowedFunctionNames": [
+              "calculate"
+            ],
+            "mode": "ANY"
+          },
+          "includeServerSideToolInvocations": true
+        },
+        "responseModalities": [
+          "TEXT"
+        ],
+        "imageConfig": {
+          "aspectRatio": "1:1",
+          "imageSize": "1K",
+          "ignoredUnknown": "dropped"
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-google-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"structured response\"}],\"role\":\"user\"}],\"systemInstruction\":{\"parts\":[{\"text\":\"hook system\"}],\"role\":\"model\"},\"safetySettings\":[{\"category\":\"HARM_CATEGORY_HATE_SPEECH\",\"threshold\":\"BLOCK_NONE\"}],\"tools\":[{\"googleSearch\":{}}],\"toolConfig\":{\"retrievalConfig\":{\"latLng\":{\"latitude\":48.8566,\"longitude\":2.3522}},\"functionCallingConfig\":{\"allowedFunctionNames\":[\"calculate\"],\"mode\":\"ANY\"},\"includeServerSideToolInvocations\":true},\"generationConfig\":{\"topP\":0.25,\"topK\":32,\"candidateCount\":2,\"stopSequences\":[\"END\"],\"responseMimeType\":\"application/json\",\"responseSchema\":{\"type\":\"OBJECT\",\"properties\":{\"answer\":{\"type\":\"STRING\"}}},\"responseJsonSchema\":{\"type\":\"object\",\"properties\":{\"answer\":{\"type\":\"string\"}},\"required\":[\"answer\"],\"additionalProperties\":false},\"responseModalities\":[\"TEXT\"],\"imageConfig\":{\"aspectRatio\":\"1:1\",\"imageSize\":\"1K\"}}}"
+      }
+    },
+    {
+      "name": "google-uppercase-slash-model-thinking-disabled",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "publishers/acme/models/GEMINI-3-FLASH-PREVIEW",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "no visible thoughts",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key",
+        "thinking": {
+          "enabled": false
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/publishers/acme/models/GEMINI-3-FLASH-PREVIEW:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-google-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"no visible thoughts\"}],\"role\":\"user\"}],\"generationConfig\":{\"thinkingConfig\":{\"thinkingLevel\":\"MINIMAL\"}}}"
+      }
+    },
+    {
+      "name": "google-payload-hook-dollar-schema-empty-tools",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "gemini-2.5-flash",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "schema compatibility",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key"
+      },
+      "payloadConfigPatch": {
+        "responseSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "answer": {
+              "type": "string"
+            }
+          }
+        },
+        "responseJsonSchema": null,
+        "tools": [],
+        "toolConfig": {
+          "functionCallingConfig": {
+            "allowedFunctionNames": []
+          }
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-google-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"schema compatibility\"}],\"role\":\"user\"}],\"tools\":[],\"toolConfig\":{\"functionCallingConfig\":{\"allowedFunctionNames\":[]}},\"generationConfig\":{\"responseJsonSchema\":{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\",\"properties\":{\"answer\":{\"type\":\"string\"}}}}}"
+      }
+    },
+    {
+      "name": "google-payload-hook-content-union",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "gemini-2.5-flash",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "replaced by hook",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key"
+      },
+      "payloadContents": [
+        "hook text",
+        {
+          "mediaResolution": "MEDIA_RESOLUTION_HIGH",
+          "executableCode": {
+            "language": "PYTHON",
+            "code": "print('hook')"
+          },
+          "fileData": {
+            "fileUri": "gs://fixture/image.png",
+            "mimeType": "image/png"
+          },
+          "text": "hook advanced",
+          "ignoredUnknown": "dropped"
+        }
+      ],
+      "expected": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-google-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"hook text\"},{\"mediaResolution\":\"MEDIA_RESOLUTION_HIGH\",\"executableCode\":{\"language\":\"PYTHON\",\"code\":\"print('hook')\"},\"fileData\":{\"fileUri\":\"gs://fixture/image.png\",\"mimeType\":\"image/png\"},\"text\":\"hook advanced\"}],\"role\":\"user\"}],\"generationConfig\":{}}"
+      }
+    },
+    {
+      "name": "google-claude-astral-tool-id",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "claude-sonnet-fixture",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "use the tool",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call🙈id",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    1,
+                    2
+                  ]
+                }
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000122
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call🙈id",
+            "toolName": "calculate",
+            "content": [
+              {
+                "type": "text",
+                "text": "3"
+              }
+            ],
+            "isError": false,
+            "timestamp": 1700000000123
+          }
+        ],
+        "tools": [
+          {
+            "name": "calculate",
+            "description": "Calculate with a provider-compatible string enum",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "operation": {
+                  "type": "string",
+                  "enum": [
+                    "add",
+                    "subtract",
+                    "multiply",
+                    "divide"
+                  ],
+                  "description": "The operation to perform"
+                },
+                "operands": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                }
+              },
+              "required": [
+                "operation",
+                "operands"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/claude-sonnet-fixture:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-google-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"use the tool\"}],\"role\":\"user\"},{\"parts\":[{\"functionCall\":{\"id\":\"call__id\",\"args\":{\"operation\":\"add\",\"operands\":[1,2]},\"name\":\"calculate\"}}],\"role\":\"model\"},{\"parts\":[{\"functionResponse\":{\"name\":\"calculate\",\"response\":{\"output\":\"3\"},\"id\":\"call__id\"}}],\"role\":\"user\"}],\"tools\":[{\"functionDeclarations\":[{\"name\":\"calculate\",\"description\":\"Calculate with a provider-compatible string enum\",\"parametersJsonSchema\":{\"type\":\"object\",\"properties\":{\"operation\":{\"type\":\"string\",\"enum\":[\"add\",\"subtract\",\"multiply\",\"divide\"],\"description\":\"The operation to perform\"},\"operands\":{\"type\":\"array\",\"items\":{\"type\":\"number\"}}},\"required\":[\"operation\",\"operands\"],\"additionalProperties\":false}}]}],\"generationConfig\":{}}"
+      }
+    },
+    {
+      "name": "google-gemini3-nested-image-tool-results",
+      "api": "google-generative-ai",
+      "model": {
+        "id": "gemini-3-pro-preview",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "read the files",
+            "timestamp": 1700000000119
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call_a",
+                "name": "read",
+                "arguments": {
+                  "path": "a.txt"
+                }
+              },
+              {
+                "type": "toolCall",
+                "id": "call_img",
+                "name": "read",
+                "arguments": {
+                  "path": "image.png"
+                }
+              },
+              {
+                "type": "toolCall",
+                "id": "call_b",
+                "name": "read",
+                "arguments": {
+                  "path": "b.txt"
+                }
+              }
+            ],
+            "api": "google-generative-ai",
+            "provider": "google",
+            "model": "gemini-3-pro-preview",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000120
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call_a",
+            "toolName": "read",
+            "content": [
+              {
+                "type": "text",
+                "text": "alpha text"
+              }
+            ],
+            "isError": false,
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call_img",
+            "toolName": "read",
+            "content": [
+              {
+                "type": "image",
+                "data": "abc",
+                "mimeType": "image/png"
+              }
+            ],
+            "isError": false,
+            "timestamp": 1700000000122
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call_b",
+            "toolName": "read",
+            "content": [
+              {
+                "type": "text",
+                "text": "beta text"
+              }
+            ],
+            "isError": false,
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-google-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"read the files\"}],\"role\":\"user\"},{\"parts\":[{\"functionCall\":{\"args\":{\"path\":\"a.txt\"},\"name\":\"read\"}},{\"functionCall\":{\"args\":{\"path\":\"image.png\"},\"name\":\"read\"}},{\"functionCall\":{\"args\":{\"path\":\"b.txt\"},\"name\":\"read\"}}],\"role\":\"model\"},{\"parts\":[{\"functionResponse\":{\"name\":\"read\",\"response\":{\"output\":\"alpha text\"}}},{\"functionResponse\":{\"name\":\"read\",\"response\":{\"output\":\"(see attached image)\"},\"parts\":[{\"inlineData\":{\"mimeType\":\"image/png\",\"data\":\"abc\"}}]}},{\"functionResponse\":{\"name\":\"read\",\"response\":{\"output\":\"beta text\"}}}],\"role\":\"user\"}],\"generationConfig\":{}}"
+      }
+    }
+  ]
+}
