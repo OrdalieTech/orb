@@ -168,3 +168,12 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/coding-agent/docs/sdk.md` | `docs/sdk.md` | WP-370 |
 | `packages/coding-agent/examples/sdk/01-minimal.ts` … `13-session-runtime.ts` | `codingagent/examples/01_minimal/` … `13_session_runtime/` | WP-370 |
 | Historical WP-370 SDK integration evidence (no upstream source) | `docs/plan/wp-370-report.md` | WP-370 |
+| `packages/coding-agent/src/core/package-manager.ts` | `codingagent/package_manager.go`, `codingagent/package_resolve.go`, `codingagent/npm_registry.go`, `codingagent/package_manager_test.go`, `codingagent/npm_registry_test.go` | WP-360 |
+| `packages/coding-agent/src/utils/git.ts` (hosted-git-info replaced by known-host parser) | `codingagent/git_url.go`, `codingagent/git_url_test.go` | WP-360 |
+| npm/semver subset (`valid`, `validRange`, `satisfies`, `maxSatisfying`) | `internal/semver/semver.go`, `internal/semver/semver_test.go` | WP-360 |
+| `packages/coding-agent/src/core/trust-manager.ts` | `codingagent/config/trust.go`, `codingagent/config/trust_test.go` | WP-360 |
+| `packages/coding-agent/src/core/project-trust.ts` | `codingagent/project_trust.go` | WP-360 |
+| `packages/coding-agent/src/core/settings-manager.ts` (projectTrusted gating, packages/extensions/themes, defaultProjectTrust, project writes) | `codingagent/config/settings.go`, `codingagent/config/packages.go` | WP-360 |
+| `packages/coding-agent/src/package-manager-cli.ts`, `packages/coding-agent/src/cli/project-trust.ts`, `packages/coding-agent/test/package-command-paths.test.ts` | `cmd/pi/package_cli.go`, `cmd/pi/package_cli_test.go`, `cmd/pi/runtime.go` | WP-360 |
+| Package sources, resource resolution, trust store, and trust.json format | `conformance/extract/wp360-packages.ts`, `conformance/fixtures/WP360/`, `conformance/runner/wp360_packages_test.go` | WP-360 |
+| WP-360 acceptance evidence | `docs/plan/wp-360-report.md` | WP-360 |

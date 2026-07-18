@@ -45,11 +45,14 @@ func TestCreateRuntimeInputsUsesResolvedResourcesAndToolSelection(t *testing.T) 
 
 	model := "gpt-test"
 	provider := "openai"
+	// The .pi resources make this a trust-requiring project; headless runs
+	// need the --approve override (WP-360 trust flow).
 	args := CLIArgs{
-		Provider:     &provider,
-		Model:        &model,
-		Tools:        []string{"read", "grep", "missing"},
-		ExcludeTools: []string{"grep"},
+		Provider:       &provider,
+		Model:          &model,
+		Tools:          []string{"read", "grep", "missing"},
+		ExcludeTools:   []string{"grep"},
+		ProjectTrusted: boolPointer(true),
 	}
 	runtime, err := createRuntimeInputs(cwd, args, agent.AgentMessages{})
 	if err != nil {

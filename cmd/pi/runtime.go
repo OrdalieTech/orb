@@ -48,11 +48,24 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	if err != nil {
 		return runtimeInputs{}, err
 	}
-	projectTrusted := true
-	if args.ProjectTrusted != nil {
-		projectTrusted = *args.ProjectTrusted
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir), config.WithProjectTrusted(false))
+	if err != nil {
+		return runtimeInputs{}, err
 	}
-	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir), config.WithProjectTrusted(projectTrusted))
+	projectTrusted, err := codingagent.ResolveProjectTrusted(context.Background(), codingagent.ResolveProjectTrustedOptions{
+		CWD:                 cwd,
+		TrustStore:          config.NewProjectTrustStore(agentDir),
+		TrustOverride:       args.ProjectTrusted,
+		DefaultProjectTrust: settings.GetDefaultProjectTrust(),
+	})
+	if err != nil {
+		return runtimeInputs{}, err
+	}
+	settings.SetProjectTrusted(projectTrusted)
+	packageManager := codingagent.NewPackageManager(codingagent.PackageManagerOptions{
+		CWD: cwd, AgentDir: agentDir, Settings: settings,
+	})
+	resolvedPaths, err := packageManager.Resolve(nil)
 	if err != nil {
 		return runtimeInputs{}, err
 	}
@@ -71,6 +84,8 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		ProjectSkillPaths:          settings.GetProjectSkillPaths(),
 		GlobalPromptTemplatePaths:  settings.GetGlobalPromptTemplatePaths(),
 		ProjectPromptTemplatePaths: settings.GetProjectPromptTemplatePaths(),
+		PackageSkillPaths:          enabledPackageResourcePaths(resolvedPaths.Skills),
+		PackagePromptTemplatePaths: enabledPackageResourcePaths(resolvedPaths.Prompts),
 	})
 	diagnostics := make([]string, 0)
 	for _, diagnostic := range settings.DrainErrors() {
@@ -218,6 +233,18 @@ func filterExcludedTools(names, excluded []string) []string {
 		}
 	}
 	return result
+}
+
+// enabledPackageResourcePaths keeps enabled package-contributed resources;
+// local and auto-discovered entries stay with the existing resource loaders.
+func enabledPackageResourcePaths(resources []codingagent.ResolvedResource) []string {
+	paths := make([]string, 0, len(resources))
+	for _, resource := range resources {
+		if resource.Enabled && resource.Metadata.Origin == "package" {
+			paths = append(paths, resource.Path)
+		}
+	}
+	return paths
 }
 
 func resolveRuntimeModel(

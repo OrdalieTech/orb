@@ -17,6 +17,7 @@ import { generateWP250 } from "./wp250-models.ts";
 import { generateF10 } from "./f10-compaction.ts";
 import { generateF11ExtensionRunner } from "./f11-extension-runner.ts";
 import { generateF11ExtensionWiring } from "./f11-extension-wiring.ts";
+import { generateWP360 } from "./wp360-packages.ts";
 
 const upstreamRoot = process.cwd();
 const outputRoot = path.resolve(upstreamRoot, process.argv[2] ?? "../conformance/fixtures");
@@ -43,6 +44,7 @@ const generators = [
   generateF10,
   generateF11ExtensionRunner,
   generateF11ExtensionWiring,
+  generateWP360,
 ];
 for (const generate of generators) {
   await generate(upstreamRoot, outputRoot, upstreamCommit);

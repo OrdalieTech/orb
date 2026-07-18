@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -84,7 +83,10 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if dependencies.selectSession == nil {
 		dependencies.selectSession = terminalSessionSelector(streams)
 	}
-	if handled, code := handleModelUpdate(ctx, argv, streams, dependencies); handled {
+	if handled, code := handlePackageCommand(ctx, argv, streams, dependencies); handled {
+		return code
+	}
+	if handled, code := handleConfigCommand(ctx, argv, streams); handled {
 		return code
 	}
 
@@ -339,25 +341,6 @@ func migrateStartupAuth() (string, error) {
 	}
 	_, err = config.MigrateAuthToAuthJSON(agentDir)
 	return agentDir, err
-}
-
-func handleModelUpdate(ctx context.Context, argv []string, streams cliStreams, dependencies cliDependencies) (bool, int) {
-	if len(argv) == 0 || argv[0] != "update" || !slices.Contains(argv[1:], "--models") {
-		return false, 0
-	}
-	if len(argv) != 2 || argv[1] != "--models" {
-		_, _ = fmt.Fprintln(streams.Stderr, "Error: --models cannot be combined with another update target")
-		return true, 1
-	}
-	agentDir, err := migrateStartupAuth()
-	if err == nil {
-		err = dependencies.refreshModels(ctx, agentDir)
-	}
-	if err != nil {
-		return true, reportCLIError(streams.Stderr, err)
-	}
-	_, _ = fmt.Fprintln(streams.Stdout, "Model catalogs refreshed")
-	return true, 0
 }
 
 func refreshModelCatalogs(ctx context.Context, agentDir string) error {

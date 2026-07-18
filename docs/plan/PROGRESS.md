@@ -12,6 +12,7 @@ Status: **in progress**.
 - [x] Leave the GitButler workspace and move the shared checkout to plain `main`.
 - [x] Integrate historical WP-351 extension wire-through and its F11-wire conformance fixture.
 - [x] Integrate the historical SDK facade and 13 example packages into green `main`.
+- [x] Integrate historical WP-360 package management and project trust with upstream fixtures.
 - [ ] Integrate every former GitButler lane and side ref, reconciling overlapping implementations.
 - [ ] Verify `CGO_ENABLED=0 go build ./...` and `make test` at every integrated commit.
 - [ ] Delete merged side refs and temporary consolidation stashes.

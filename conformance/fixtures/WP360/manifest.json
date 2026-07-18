@@ -1,0 +1,14 @@
+{
+  "family": "WP360",
+  "upstreamCommit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
+  "generator": "conformance/extract/wp360-packages.ts",
+  "source": "packages/coding-agent/src/core/package-manager.ts",
+  "additionalSources": [
+    "packages/coding-agent/src/utils/git.ts",
+    "packages/coding-agent/src/core/settings-manager.ts",
+    "packages/coding-agent/src/core/trust-manager.ts"
+  ],
+  "files": [
+    "cases.json"
+  ]
+}
