@@ -22,22 +22,23 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 - [x] Dogfood: ≥ 1 real pi-go WP executed using pi-go itself; transcript committed.
 - [x] Trim pass #1 done (checklist below), report committed.
 
-## M2 — Headless parity (closes Phases 2+3; verified by WP-390)
+## M2 — Headless parity (closes Sprint 1)
 
-- [ ] Every upstream provider except Radius resolves in `--list-models`; F2 green for all 9 API
-      shapes (openai-responses/completions, anthropic, google, vertex-or-deferred-per-G2, mistral,
-      azure, bedrock, codex, pi-messages).
-- [ ] OAuth: Anthropic Pro/Max, ChatGPT/Codex, Copilot flows each verified end-to-end once,
-      documented; `auth.json` cross-compat fixture green.
+- [ ] F2 green for the landed API shapes (openai-responses/completions, anthropic, google, vertex,
+      mistral, azure, bedrock, pi-messages). Codex shape, compat family, and further providers are
+      Sprint-3 expansion (D26).
+- [ ] OAuth: Anthropic Pro/Max verified end-to-end once, documented; `auth.json` cross-compat
+      fixture green. (ChatGPT/Codex, Copilot, xAI OAuth: Sprint-3 expansion.)
+- [ ] Harness `SessionRepo`/`FileSystem` parity landed (upstream harness types, jsonl-repo,
+      memory-repo, rehydrate-from-bytes) and wired into SessionRuntime.
 - [ ] Upstream's RPC test suite passes against `pi-go --mode rpc`; every exclusion listed with a
       reason; F7 transcript fixtures green.
 - [ ] F8, F9, F10 green — compaction picks the same boundaries as upstream on the fixture corpus.
-- [ ] MCP: go-sdk example server round-trips (list/execute/stream); zero MCP work when unconfigured.
 - [ ] SDK: all 13 ported examples run on faux; an external `go get` smoke module builds.
 - [ ] Nightly live suite (Tier 3 below) wired into CI and running.
 - [ ] Trim pass #2 done.
 
-## M3 — TUI parity (closes Phase 4; verified by WP-470)
+## M3 — TUI parity (closes Sprint 2)
 
 - [ ] F12 green: components, editor wide-char cases, markdown corpus, full-screen composites.
 - [ ] Side-by-side replay vs TS pi: frame diffs reviewed; every deviation fixed or added to the
@@ -47,8 +48,14 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 - [ ] Images verified on kitty + iTerm2; `/copy` works on darwin and linux.
 - [ ] Trim pass #3 done.
 
-## M4 — Extension bridge (closes Phase 5; verified by WP-560)
+## M4 — Expansion: providers, MCP, packages, extension bridge (closes Sprint 3)
 
+- [ ] Expansion study (`docs/plan/expansion-study.md`) committed and surfaced to the owner; scope
+      below stands as full-parity default unless the owner amends DECISIONS.
+- [ ] Every upstream provider except Radius resolves in `--list-models`; F2 green for the codex
+      shape; ChatGPT/Codex, Copilot, xAI OAuth flows verified end-to-end once, documented.
+- [ ] MCP: go-sdk example server round-trips (list/execute/stream); zero MCP work when unconfigured.
+- [ ] pi packages (npm:/git:) install/update/list + project trust work as upstream.
 - [ ] F11 matrix published; ≥ 80% of upstream single-file examples run **unmodified** with their
       documented behavior; every "unsupported" maps to a ledger line or a written WP proposal.
 - [ ] hello, todo, pirate, permission-gate, status-line, modal-editor run unmodified end-to-end.
@@ -56,14 +63,14 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
       TS errors map to source lines.
 - [ ] Trim pass #4 done.
 
-## M5 — v1.0 release (closes Phase 6; verified by WP-650 + WP-661)
+## M5 — v1.0 release (closes Sprint 4)
 
 - [ ] All M1–M4 criteria re-verified at the release commit, fixtures regenerated at current UPSTREAM.lock.
 - [ ] One full sync cycle executed against a fresher upstream commit (≤ 30 days old) with a green
       lock bump — proves the sync machinery, not just the snapshot.
 - [ ] goreleaser artifacts for all 4 targets; install script verified on clean linux + macOS VMs.
 - [ ] Cold start < 50 ms; binary ≤ 35 MB (with bridge); numbers recorded in release notes.
-- [ ] Nightly live suite ≥ 90% pass over the trailing 7 days.
+- [ ] Nightly live suite ≥ 90% pass over the trailing 72 hours.
 - [ ] Docs newcomer path (install → first session → embed SDK → run an upstream extension) verified
       by following the docs literally; README credit/provenance; divergence ledger current.
 - [ ] Final trim pass #5; LOC report: mirrored packages ≤ 1.3× upstream TS src LOC or justified
@@ -77,13 +84,12 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 - **Tier 3 — nightly (from M2):** CI workflow, secrets from repo settings, cheap models, spend cap.
   Corpus: 3 scripted tasks (multi-turn read+edit+bash; parallel tool calls; compaction-length
   session) × {OpenAI, Anthropic}. Failures file work items and never block merges; only the M5
-  7-day window blocks a release. Never record live outputs into fixtures.
+  72-hour window blocks a release. Never record live outputs into fixtures.
 
-## Trim pass (the recurring slimming WP: WP-180/390/470/560/650)
+## Trim pass (closes every sprint)
 
-Slimness is a standing product goal: the fat accumulates WP by WP, so it is burned off at every
-milestone. A trim pass is a dedicated WP whose deliverable is a **shrink diff** plus
-`docs/trim/M<n>.md` reporting:
+Slimness is a standing product goal: the fat accumulates as work lands, so it is burned off at
+every sprint close. The deliverable is a **shrink diff** plus `docs/trim/M<n>.md` reporting:
 
 1. **Dead code** — staticcheck/unused + deadcode findings deleted (not suppressed).
 2. **Dependency audit** — `go mod graph` vs ARCHITECTURE §8; deps no longer pulling their weight
