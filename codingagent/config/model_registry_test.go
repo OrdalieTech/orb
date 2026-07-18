@@ -114,3 +114,68 @@ func TestModelRegistryMatchesUpstreamCompositionCases(t *testing.T) {
 		})
 	}
 }
+
+func TestModelRegistryAvailabilityIncludesStoredCredentials(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("ANTHROPIC_OAUTH_TOKEN", "")
+	directory := t.TempDir()
+	authPath := filepath.Join(directory, "auth.json")
+	if err := os.WriteFile(authPath, []byte(`{"anthropic":{"type":"oauth","refresh":"r","access":"a","expires":1}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := NewModelRegistry(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !registry.HasConfiguredAuth("anthropic", nil) {
+		t.Fatal("stored OAuth credential did not make Anthropic available")
+	}
+	if err := os.WriteFile(authPath, []byte(`{"openai":{"type":"oauth","refresh":"r","access":"a","expires":1},"custom":{"type":"oauth","refresh":"r","access":"a","expires":1}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	if registry.HasConfiguredAuth("openai", nil) || registry.HasConfiguredAuth("custom", nil) {
+		t.Fatal("stored OAuth credential without a matching OAuth handler reported available")
+	}
+	if err := os.WriteFile(authPath, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	if registry.HasConfiguredAuth("anthropic", nil) {
+		t.Fatal("removed stored credential remained available after reload")
+	}
+	if !registry.HasConfiguredAuth("anthropic", map[string]string{"ANTHROPIC_OAUTH_TOKEN": "oauth-token"}) {
+		t.Fatal("ambient Anthropic OAuth token did not make Anthropic available")
+	}
+}
+
+func TestModelRegistryAvailabilityResolvesStoredAPIKey(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("WP211_MISSING_KEY", "")
+	directory := t.TempDir()
+	authPath := filepath.Join(directory, "auth.json")
+	if err := os.WriteFile(authPath, []byte(`{"openai":{"type":"api_key","key":"$WP211_MISSING_KEY"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := NewModelRegistry(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if registry.HasConfiguredAuth("openai", nil) {
+		t.Fatal("unresolved stored API key reported OpenAI available")
+	}
+	if !registry.HasConfiguredAuth("openai", map[string]string{"OPENAI_API_KEY": "ambient"}) {
+		t.Fatal("stored API-key handler did not use its ambient fallback")
+	}
+	t.Setenv("WP211_MISSING_KEY", "resolved")
+	if err := registry.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	if !registry.HasConfiguredAuth("openai", nil) {
+		t.Fatal("resolved stored API key did not make OpenAI available")
+	}
+}

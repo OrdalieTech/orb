@@ -54,6 +54,7 @@ fixtures-check: ensure-upstream-fixture-tools
 		cd ..; \
 		diff -ru conformance/fixtures "$$fixture_tmp"
 	@PI_GO_F6_TS_VERIFY=1 $(GO_ENV) go test -race ./conformance/runner -run TestF6SessionWriteAndProjectionMatchUpstream
+	@PI_GO_AUTH_TS_VERIFY=1 $(GO_ENV) go test -race ./codingagent/config -run TestAuthStorageConformance
 
 sync:
 	@echo "make sync is implemented by WP-610" >&2

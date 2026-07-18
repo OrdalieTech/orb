@@ -7,9 +7,11 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
+	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 )
 
@@ -142,23 +144,43 @@ func TestResolveSkeletonModelUsesPairedSelectionPrecedence(t *testing.T) {
 
 func TestAPIKeyResolverPrecedence(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "environment")
-	key, err := apiKeyResolver(CLIArgs{})(context.Background(), ai.ProviderID("openai"))
+	key, err := apiKeyResolver(CLIArgs{}, nil, nil)(context.Background(), ai.ProviderID("openai"))
 	if err != nil || key == nil || *key != "environment" {
 		t.Fatalf("environment key = %v, %v", key, err)
 	}
 	cli := "cli"
-	key, err = apiKeyResolver(CLIArgs{APIKey: &cli})(context.Background(), ai.ProviderID("openai"))
+	key, err = apiKeyResolver(CLIArgs{APIKey: &cli}, nil, nil)(context.Background(), ai.ProviderID("openai"))
 	if err != nil || key == nil || *key != "cli" {
 		t.Fatalf("CLI key = %v, %v", key, err)
 	}
 	empty := ""
-	key, err = apiKeyResolver(CLIArgs{APIKey: &empty})(context.Background(), ai.ProviderID("openai"))
+	key, err = apiKeyResolver(CLIArgs{APIKey: &empty}, nil, nil)(context.Background(), ai.ProviderID("openai"))
 	if err != nil || key == nil || *key != "environment" {
 		t.Fatalf("empty CLI key fallback = %v, %v", key, err)
 	}
-	key, err = apiKeyResolver(CLIArgs{})(context.Background(), ai.ProviderID("other"))
+	key, err = apiKeyResolver(CLIArgs{}, nil, nil)(context.Background(), ai.ProviderID("other"))
 	if err != nil || !reflect.DeepEqual(key, (*string)(nil)) {
 		t.Fatalf("other provider key = %v, %v", key, err)
+	}
+	stored := aiauth.NewMemoryStore(map[string]*aiauth.Credential{"openai": aiauth.APIKeyCredential("stored")})
+	key, err = apiKeyResolver(CLIArgs{}, nil, stored)(context.Background(), ai.ProviderID("openai"))
+	if err != nil || key == nil || *key != "stored" {
+		t.Fatalf("stored key = %v, %v", key, err)
+	}
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "models.json"), []byte(`{"providers":{"anthropic":{"apiKey":"configured"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := config.NewModelRegistry(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oauthStore := aiauth.NewMemoryStore(map[string]*aiauth.Credential{
+		"anthropic": aiauth.OAuthCredential("refresh", "stored-oauth", time.Now().Add(time.Hour).UnixMilli()),
+	})
+	key, err = apiKeyResolver(CLIArgs{}, registry, oauthStore)(context.Background(), ai.ProviderID("anthropic"))
+	if err != nil || key == nil || *key != "stored-oauth" {
+		t.Fatalf("stored OAuth ownership = %v, %v", key, err)
 	}
 }
 

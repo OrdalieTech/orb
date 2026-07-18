@@ -17,6 +17,8 @@ type CLIUnknownFlag struct {
 }
 
 type CLIArgs struct {
+	Command            string
+	CommandArgs        []string
 	Provider           *string
 	Model              *string
 	Models             []string
@@ -52,10 +54,16 @@ type CLIArgs struct {
 // ParseArgs parses the WP-160 CLI subset with upstream's sequential rules.
 func ParseArgs(argv []string) CLIArgs {
 	result := CLIArgs{
+		CommandArgs:  []string{},
 		Messages:     []string{},
 		FileArgs:     []string{},
 		UnknownFlags: []CLIUnknownFlag{},
 		Diagnostics:  []CLIDiagnostic{},
+	}
+	if len(argv) > 0 && (argv[0] == "login" || argv[0] == "logout") {
+		result.Command = argv[0]
+		result.CommandArgs = append(result.CommandArgs, argv[1:]...)
+		return result
 	}
 	for index := 0; index < len(argv); index++ {
 		argument := argv[index]

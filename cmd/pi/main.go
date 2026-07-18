@@ -37,6 +37,7 @@ type cliStreams struct {
 
 type cliDependencies struct {
 	createRuntime func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error)
+	runAuth       func(context.Context, CLIArgs, cliStreams) int
 	loadModels    func(string) (*config.ModelRegistry, error)
 	refreshModels func(context.Context, string) error
 	selectSession SessionSelector
@@ -69,6 +70,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if dependencies.createRuntime == nil {
 		dependencies.createRuntime = createRuntimeInputs
 	}
+	if dependencies.runAuth == nil {
+		dependencies.runAuth = runAuthCommand
+	}
 	if dependencies.loadModels == nil {
 		dependencies.loadModels = config.NewModelRegistry
 	}
@@ -99,6 +103,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		_, _ = fmt.Fprintln(streams.Stdout, version)
 		return 0
 	}
+	if args.Command != "" {
+		return dependencies.runAuth(ctx, args, streams)
+	}
 	if args.Export != nil && *args.Export != "" {
 		outputPath := ""
 		if len(args.Messages) > 0 {
@@ -114,6 +121,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if sessionErrors := validateSessionFlags(args); len(sessionErrors) > 0 {
 		_, _ = fmt.Fprintln(streams.Stderr, "Error: "+sessionErrors[0])
 		return 1
+	}
+	if _, err := migrateStartupAuth(); err != nil {
+		return reportCLIError(streams.Stderr, err)
 	}
 	if args.Help {
 		_, _ = io.WriteString(streams.Stdout, helpText)
@@ -239,6 +249,15 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	})
 }
 
+func migrateStartupAuth() (string, error) {
+	agentDir, err := config.GetAgentDir()
+	if err != nil {
+		return "", err
+	}
+	_, err = config.MigrateAuthToAuthJSON(agentDir)
+	return agentDir, err
+}
+
 func handleModelUpdate(ctx context.Context, argv []string, streams cliStreams, dependencies cliDependencies) (bool, int) {
 	if len(argv) == 0 || argv[0] != "update" || !slices.Contains(argv[1:], "--models") {
 		return false, 0
@@ -247,7 +266,7 @@ func handleModelUpdate(ctx context.Context, argv []string, streams cliStreams, d
 		_, _ = fmt.Fprintln(streams.Stderr, "Error: --models cannot be combined with another update target")
 		return true, 1
 	}
-	agentDir, err := config.GetAgentDir()
+	agentDir, err := migrateStartupAuth()
 	if err == nil {
 		err = dependencies.refreshModels(ctx, agentDir)
 	}
@@ -391,6 +410,9 @@ func reportCLIError(writer io.Writer, err error) int {
 const helpText = `pi - AI coding assistant
 
 Usage: pi [options] [@files...] [messages...]
+
+       pi login anthropic
+       pi logout [anthropic]
 
   --provider <name>              Provider name
   --model <id>                   Model ID

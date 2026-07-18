@@ -8,6 +8,7 @@
   "auth": {
     "kind": "api_key",
     "name": "Anthropic API key",
+    "oauthName": "Anthropic (Claude Pro/Max)",
     "env": [
       "ANTHROPIC_OAUTH_TOKEN",
       "ANTHROPIC_API_KEY"

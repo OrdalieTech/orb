@@ -14,6 +14,7 @@ import (
 
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
+	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
 	"github.com/OrdalieTech/pi-go/ai/providers/faux"
 	"github.com/OrdalieTech/pi-go/codingagent"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
@@ -189,6 +190,51 @@ func TestRunCLIRejectsAPIKeyWithoutExplicitModel(t *testing.T) {
 	}})
 	if code != 1 || called || stderr.String() != "Error: --api-key requires a model to be specified via --model, --provider/--model, or --models\n" {
 		t.Fatalf("code=%d called=%t stderr=%q", code, called, stderr.String())
+	}
+}
+
+func TestRunCLIDispatchesAuthSubcommandsBeforeSessionSetup(t *testing.T) {
+	called := false
+	code := runCLIWithDependencies(context.Background(), []string{"logout", "anthropic"}, cliStreams{
+		Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard,
+	}, cliDependencies{
+		createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+			t.Fatal("auth command created an agent runtime")
+			return runtimeInputs{}, nil
+		},
+		runAuth: func(_ context.Context, args CLIArgs, _ cliStreams) int {
+			called = args.Command == "logout" && len(args.CommandArgs) == 1 && args.CommandArgs[0] == "anthropic"
+			return 7
+		},
+	})
+	if code != 7 || !called {
+		t.Fatalf("auth dispatch = code %d, called %t", code, called)
+	}
+}
+
+func TestRunCLIHelpAndListModelsRunAuthMigration(t *testing.T) {
+	for _, argv := range [][]string{{"--help"}, {"--list-models"}} {
+		t.Run(argv[0], func(t *testing.T) {
+			agentDir := t.TempDir()
+			t.Setenv(config.EnvAgentDir, agentDir)
+			legacy := `{"anthropic":{"access":"access","refresh":"refresh","expires":4102444800000}}`
+			if err := os.WriteFile(filepath.Join(agentDir, "oauth.json"), []byte(legacy), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			code := runCLIWithDependencies(context.Background(), argv, cliStreams{
+				Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard,
+			}, cliDependencies{})
+			if code != 0 {
+				t.Fatalf("%v exit code = %d", argv, code)
+			}
+			credential := config.ReadStoredCredential("anthropic", filepath.Join(agentDir, "auth.json"))
+			if credential == nil || credential.Type != aiauth.CredentialOAuth || credential.Access != "access" {
+				t.Fatalf("%v migration credential = %#v", argv, credential)
+			}
+			if _, err := os.Stat(filepath.Join(agentDir, "oauth.json.migrated")); err != nil {
+				t.Fatalf("%v legacy rename: %v", argv, err)
+			}
+		})
 	}
 }
 

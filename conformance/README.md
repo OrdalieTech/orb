@@ -8,4 +8,6 @@ The extractor runs from the `.upstream/` working directory with Node 22 or newer
 
 WP-250 adds an auxiliary upstream-derived fixture family for model pattern resolution, fuzzy `--list-models` tables, provider-isolated `models.json` composition including fractional numeric limits, ordered model-store persistence, and the exact minimal/full documentation examples. The large models.dev input is committed separately under `ai/models/testdata/` so catalog generation remains deterministic without duplicating it in the conformance tree.
 
+WP-211 extends F2 with byte-exact TS/Go auth storage and legacy-migration cases, the upstream OAuth callback pages, reciprocal TS reads, and a live cross-runtime `proper-lockfile` contention check.
+
 WP-320 extends F6 with upstream-generated tree, branch-persistence, fork-wire, session-listing, and HTML-export evidence. HTML extraction fixes the dark theme explicitly, compares the complete output hash and embedded payload, and records a DOM projection with its tolerated differences; the local Markdown divergence uses a separate Go golden because upstream has no Markdown exporter.
