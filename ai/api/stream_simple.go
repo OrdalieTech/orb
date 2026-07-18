@@ -35,6 +35,8 @@ func StreamSimple(
 		return StreamSimpleOpenAIResponses(ctx, model, requestContext, options)
 	case ai.APIOpenAICompletions:
 		return StreamSimpleOpenAICompletions(ctx, model, requestContext, options)
+	case ai.APIPiMessages:
+		return StreamSimplePiMessages(ctx, model, requestContext, options)
 	default:
 		return nil, fmt.Errorf("ai: unsupported API %q", model.API)
 	}

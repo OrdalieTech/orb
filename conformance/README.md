@@ -13,7 +13,7 @@ chunks with JavaScript number coercion, SDK-normalized HTTP errors, post-hook Ml
 transforms including `$schema` compatibility and empty arrays, and the pinned SDK's multiline-event
 quirk.
 
-WP-231 extends F2 with byte-exact Mistral Conversations and Azure OpenAI Responses requests plus recorded stream/error traces, including Mistral SDK serialization and the pinned OpenAI SDK's proxy-query replacement quirk. WP-232 adds Bedrock request and event-stream fixtures through the pinned AWS serializer, plus generated provider login and credential-chain evidence.
+WP-231 extends F2 with byte-exact Mistral Conversations and Azure OpenAI Responses requests plus recorded stream/error traces, including Mistral SDK serialization and the pinned OpenAI SDK's proxy-query replacement quirk. WP-232 adds Bedrock request and event-stream fixtures through the pinned AWS serializer, plus generated provider login and credential-chain evidence. WP-260 adds the generic pi-messages request and serialized-event stream, including transport-only signature, redaction, tool metadata, and server-error member ordering.
 
 WP-250 adds an auxiliary upstream-derived fixture family for model pattern resolution, fuzzy `--list-models` tables, provider-isolated `models.json` composition including fractional numeric limits, ordered model-store persistence, and the exact minimal/full documentation examples. The large models.dev input is committed separately under `ai/models/testdata/` so catalog generation remains deterministic without duplicating it in the conformance tree.
 

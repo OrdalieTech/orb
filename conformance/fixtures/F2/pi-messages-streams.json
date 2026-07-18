@@ -1,0 +1,923 @@
+{
+  "cases": [
+    {
+      "name": "pi-messages-text-thinking-tool-rewrite",
+      "api": "pi-messages",
+      "model": {
+        "id": "gateway-auto",
+        "name": "Gateway Auto",
+        "api": "pi-messages",
+        "provider": "fixture-gateway",
+        "baseUrl": "https://gateway.fixture.invalid/v1///",
+        "reasoning": true,
+        "input": [
+          "text"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 16384
+      },
+      "context": {
+        "systemPrompt": "Use the gateway.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Hello <gateway>",
+            "timestamp": 1700000000122
+          }
+        ],
+        "tools": [
+          {
+            "name": "read",
+            "description": "Read a file",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key"
+      },
+      "sse": "data: {\"type\":\"start\"}\r\n\r\ndata: {\"type\":\"text_start\",\"contentIndex\":0}\r\n\r\ndata: {\"type\":\"text_delta\",\"contentIndex\":0,\"delta\":\"Hel\"}\r\n\r\ndata: {\"type\":\"text_delta\",\"contentIndex\":0,\"delta\":\"lo\"}\r\n\r\ndata: {\"type\":\"text_end\",\"contentIndex\":0,\"content\":\"Hello\",\"contentSignature\":\"text-sig\"}\r\n\r\ndata: {\"type\":\"thinking_start\",\"contentIndex\":1}\r\n\r\ndata: {\"type\":\"thinking_delta\",\"contentIndex\":1,\"delta\":\"plan\"}\r\n\r\ndata: {\"type\":\"thinking_end\",\"contentIndex\":1,\"content\":\"plan\",\"contentSignature\":\"thinking-sig\",\"redacted\":true}\r\n\r\ndata: {\"type\":\"toolcall_start\",\"contentIndex\":2,\"id\":\"call_1\",\"toolName\":\"read\"}\r\n\r\ndata: {\"type\":\"toolcall_delta\",\"contentIndex\":2,\"delta\":\"{\\\"path\\\":\"}\r\n\r\ndata: {\"type\":\"toolcall_delta\",\"contentIndex\":2,\"delta\":\"\\\"a.txt\\\"}\"}\r\n\r\ndata: {\"type\":\"toolcall_end\",\"contentIndex\":2,\"toolCall\":{\"type\":\"toolCall\",\"id\":\"call_1\",\"name\":\"read\",\"arguments\":{\"path\":\"a.txt\"}}}\r\n\r\ndata: {\"type\":\"done\",\"reason\":\"toolUse\",\"usage\":{\"input\":10,\"output\":5,\"cacheRead\":1,\"cacheWrite\":2,\"totalTokens\":18,\"cost\":{\"input\":0.1,\"output\":0.2,\"cacheRead\":0.01,\"cacheWrite\":0.02,\"total\":0.33}},\"responseId\":\"response-1\",\"rewrite\":{\"policyId\":\"policy-1\",\"policyVersion\":3,\"changed\":true,\"tokenCountChange\":-2,\"messageCountChange\":0,\"systemPromptChanged\":true}}\r\n\r\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "api": "pi-messages",
+            "provider": "fixture-gateway",
+            "model": "gateway-auto",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "text_start",
+          "contentIndex": 0,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Hel"
+              }
+            ],
+            "api": "pi-messages",
+            "provider": "fixture-gateway",
+            "model": "gateway-auto",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "text_delta",
+          "contentIndex": 0,
+          "delta": "Hel",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Hello"
+              }
+            ],
+            "api": "pi-messages",
+            "provider": "fixture-gateway",
+            "model": "gateway-auto",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "text_delta",
+          "contentIndex": 0,
+          "delta": "lo",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Hello",
+                "textSignature": "text-sig"
+              }
+            ],
+            "api": "pi-messages",
+            "provider": "fixture-gateway",
+            "model": "gateway-auto",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "text_end",
+          "contentIndex": 0,
+          "content": "Hello",
+          "contentSignature": "text-sig",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Hello",
+                "textSignature": "text-sig"
+              },
+              {
+                "type": "thinking",
+                "thinking": ""
+              }
+            ],
+            "api": "pi-messages",
+            "provider": "fixture-gateway",
+            "model": "gateway-auto",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "thinking_start",
+          "contentIndex": 1,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Hello",
+                "textSignature": "text-sig"
+              },
+              {
+                "type": "thinking",
+                "thinking": "plan"
+              }
+            ],
+            "api": "pi-messages",
+            "provider": "fixture-gateway",
+            "model": "gateway-auto",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "thinking_delta",
+          "contentIndex": 1,
+          "delta": "plan",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Hello",
+                "textSignature": "text-sig"
+              },
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "thinking-sig",
+                "redacted": true
+              }
+            ],
+            "api": "pi-messages",
+            "provider": "fixture-gateway",
+            "model": "gateway-auto",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "thinking_end",
+          "contentIndex": 1,
+          "content": "plan",
+          "contentSignature": "thinking-sig",
+          "redacted": true,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Hello",
+                "textSignature": "text-sig"
+              },
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "thinking-sig",
+                "redacted": true
+              },
+              {
+                "type": "toolCall",
+                "id": "call_1",
+                "name": "read",
+                "arguments": {}
+              }
+            ],
+            "api": "pi-messages",
+            "provider": "fixture-gateway",
+            "model": "gateway-auto",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "toolcall_start",
+          "contentIndex": 2,
+          "id": "call_1",
+          "toolName": "read",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Hello",
+                "textSignature": "text-sig"
+              },
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "thinking-sig",
+                "redacted": true
+              },
+              {
+                "type": "toolCall",
+                "id": "call_1",
+                "name": "read",
+                "arguments": {}
+              }
+            ],
+            "api": "pi-messages",
+            "provider": "fixture-gateway",
+            "model": "gateway-auto",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "toolcall_delta",
+          "contentIndex": 2,
+          "delta": "{\"path\":",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Hello",
+                "textSignature": "text-sig"
+              },
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "thinking-sig",
+                "redacted": true
+              },
+              {
+                "type": "toolCall",
+                "id": "call_1",
+                "name": "read",
+                "arguments": {
+                  "path": "a.txt"
+                }
+              }
+            ],
+            "api": "pi-messages",
+            "provider": "fixture-gateway",
+            "model": "gateway-auto",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "toolcall_delta",
+          "contentIndex": 2,
+          "delta": "\"a.txt\"}",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Hello",
+                "textSignature": "text-sig"
+              },
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "thinking-sig",
+                "redacted": true
+              },
+              {
+                "type": "toolCall",
+                "id": "call_1",
+                "name": "read",
+                "arguments": {
+                  "path": "a.txt"
+                }
+              }
+            ],
+            "api": "pi-messages",
+            "provider": "fixture-gateway",
+            "model": "gateway-auto",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "toolcall_end",
+          "contentIndex": 2,
+          "toolCall": {
+            "type": "toolCall",
+            "id": "call_1",
+            "name": "read",
+            "arguments": {
+              "path": "a.txt"
+            }
+          },
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Hello",
+                "textSignature": "text-sig"
+              },
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "thinking-sig",
+                "redacted": true
+              },
+              {
+                "type": "toolCall",
+                "id": "call_1",
+                "name": "read",
+                "arguments": {
+                  "path": "a.txt"
+                }
+              }
+            ],
+            "api": "pi-messages",
+            "provider": "fixture-gateway",
+            "model": "gateway-auto",
+            "usage": {
+              "input": 10,
+              "output": 5,
+              "cacheRead": 1,
+              "cacheWrite": 2,
+              "totalTokens": 18,
+              "cost": {
+                "input": 0.1,
+                "output": 0.2,
+                "cacheRead": 0.01,
+                "cacheWrite": 0.02,
+                "total": 0.33
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "response-1",
+            "diagnostics": [
+              {
+                "type": "pi_messages_rewrite",
+                "timestamp": 1700000000123,
+                "details": {
+                  "policyId": "policy-1",
+                  "policyVersion": 3,
+                  "changed": true,
+                  "tokenCountChange": -2,
+                  "messageCountChange": 0,
+                  "systemPromptChanged": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "done",
+          "reason": "toolUse",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Hello",
+                "textSignature": "text-sig"
+              },
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "thinking-sig",
+                "redacted": true
+              },
+              {
+                "type": "toolCall",
+                "id": "call_1",
+                "name": "read",
+                "arguments": {
+                  "path": "a.txt"
+                }
+              }
+            ],
+            "api": "pi-messages",
+            "provider": "fixture-gateway",
+            "model": "gateway-auto",
+            "usage": {
+              "input": 10,
+              "output": 5,
+              "cacheRead": 1,
+              "cacheWrite": 2,
+              "totalTokens": 18,
+              "cost": {
+                "input": 0.1,
+                "output": 0.2,
+                "cacheRead": 0.01,
+                "cacheWrite": 0.02,
+                "total": 0.33
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "response-1",
+            "diagnostics": [
+              {
+                "type": "pi_messages_rewrite",
+                "timestamp": 1700000000123,
+                "details": {
+                  "policyId": "policy-1",
+                  "policyVersion": 3,
+                  "changed": true,
+                  "tokenCountChange": -2,
+                  "messageCountChange": 0,
+                  "systemPromptChanged": true
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "pi-messages-server-error",
+      "api": "pi-messages",
+      "model": {
+        "id": "gateway-auto",
+        "name": "Gateway Auto",
+        "api": "pi-messages",
+        "provider": "fixture-gateway",
+        "baseUrl": "https://gateway.fixture.invalid/v1///",
+        "reasoning": true,
+        "input": [
+          "text"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 16384
+      },
+      "context": {
+        "systemPrompt": "Use the gateway.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Hello <gateway>",
+            "timestamp": 1700000000122
+          }
+        ],
+        "tools": [
+          {
+            "name": "read",
+            "description": "Read a file",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key"
+      },
+      "sse": "data: {\"type\":\"start\"}\r\n\r\ndata: {\"type\":\"error\",\"reason\":\"error\",\"usage\":{\"input\":10,\"output\":5,\"cacheRead\":1,\"cacheWrite\":2,\"totalTokens\":18,\"cost\":{\"input\":0.1,\"output\":0.2,\"cacheRead\":0.01,\"cacheWrite\":0.02,\"total\":0.33}},\"errorMessage\":\"upstream failed\",\"responseId\":\"response-error\"}",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "pi-messages",
+            "provider": "fixture-gateway",
+            "model": "gateway-auto",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "pi-messages",
+            "provider": "fixture-gateway",
+            "model": "gateway-auto",
+            "usage": {
+              "input": 10,
+              "output": 5,
+              "cacheRead": 1,
+              "cacheWrite": 2,
+              "totalTokens": 18,
+              "cost": {
+                "input": 0.1,
+                "output": 0.2,
+                "cacheRead": 0.01,
+                "cacheWrite": 0.02,
+                "total": 0.33
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "errorMessage": "upstream failed",
+            "responseId": "response-error"
+          }
+        }
+      ]
+    },
+    {
+      "name": "pi-messages-missing-terminal",
+      "api": "pi-messages",
+      "model": {
+        "id": "gateway-auto",
+        "name": "Gateway Auto",
+        "api": "pi-messages",
+        "provider": "fixture-gateway",
+        "baseUrl": "https://gateway.fixture.invalid/v1///",
+        "reasoning": true,
+        "input": [
+          "text"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 16384
+      },
+      "context": {
+        "systemPrompt": "Use the gateway.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Hello <gateway>",
+            "timestamp": 1700000000122
+          }
+        ],
+        "tools": [
+          {
+            "name": "read",
+            "description": "Read a file",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key"
+      },
+      "sse": "data: {\"type\":\"start\"}\r\n\r\ndata: {\"type\":\"text_start\",\"contentIndex\":0}\r\n\r\ndata: {\"type\":\"text_delta\",\"contentIndex\":0,\"delta\":\"partial\"}\r\n\r\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "api": "pi-messages",
+            "provider": "fixture-gateway",
+            "model": "gateway-auto",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "text_start",
+          "contentIndex": 0,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "partial"
+              }
+            ],
+            "api": "pi-messages",
+            "provider": "fixture-gateway",
+            "model": "gateway-auto",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "text_delta",
+          "contentIndex": 0,
+          "delta": "partial",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "partial"
+              }
+            ],
+            "api": "pi-messages",
+            "provider": "fixture-gateway",
+            "model": "gateway-auto",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "pi-messages",
+            "provider": "fixture-gateway",
+            "model": "gateway-auto",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "errorMessage": "fixture-gateway stream ended without a terminal event",
+            "timestamp": 1700000000123
+          }
+        }
+      ]
+    }
+  ]
+}

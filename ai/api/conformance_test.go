@@ -300,6 +300,14 @@ func TestF2AzureOpenAIStreamTraces(t *testing.T) {
 	testF2StreamTraces(t, "azure-streams.json")
 }
 
+func TestF2PiMessagesRequestShaping(t *testing.T) {
+	testF2RequestShaping(t, "pi-messages-requests.json")
+}
+
+func TestF2PiMessagesStreamTraces(t *testing.T) {
+	testF2StreamTraces(t, "pi-messages-streams.json")
+}
+
 func testF2RequestShaping(t *testing.T, fixtureName string) {
 	t.Helper()
 	var fixture struct {
@@ -520,6 +528,7 @@ func runF2Case(t *testing.T, fixtureCase f2Case, fixtureResponse f2HTTPResponse)
 	previousGoogleClient := googleHTTPClient
 	previousMistralClient := mistralHTTPClient
 	previousAzureClient := azureOpenAIHTTPClient
+	previousPiMessagesClient := piMessagesHTTPClient
 	previousNow := openAINowUnixMilli
 	openAINowUnixMilli = func() int64 { return f2FixedTimestamp }
 	testClient := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
@@ -550,12 +559,14 @@ func runF2Case(t *testing.T, fixtureCase f2Case, fixtureResponse f2HTTPResponse)
 	googleHTTPClient = testClient
 	mistralHTTPClient = testClient
 	azureOpenAIHTTPClient = testClient
+	piMessagesHTTPClient = testClient
 	t.Cleanup(func() {
 		openAIHTTPClient = previousClient
 		anthropicHTTPClient = previousAnthropicClient
 		googleHTTPClient = previousGoogleClient
 		mistralHTTPClient = previousMistralClient
 		azureOpenAIHTTPClient = previousAzureClient
+		piMessagesHTTPClient = previousPiMessagesClient
 		openAINowUnixMilli = previousNow
 	})
 
@@ -640,6 +651,12 @@ func streamF2Case(fixtureCase f2Case) (ai.AssistantMessageEventStream, error) {
 			return nil, err
 		}
 		return StreamAzureOpenAIResponsesWithOptions(context.Background(), &fixtureCase.Model, fixtureCase.Context, &options)
+	case ai.APIPiMessages:
+		var options PiMessagesOptions
+		if err := json.Unmarshal(fixtureCase.Options, &options); err != nil {
+			return nil, err
+		}
+		return StreamPiMessagesWithOptions(context.Background(), &fixtureCase.Model, fixtureCase.Context, &options)
 	default:
 		return nil, fmt.Errorf("unsupported F2 API %q", fixtureCase.API)
 	}
@@ -686,6 +703,9 @@ func setF2GooglePayloadHook(patch map[string]json.RawMessage, contents json.RawM
 }
 
 func minimalF2SSE(apiShape ai.API, modelID string) string {
+	if apiShape == ai.APIPiMessages {
+		return "data: {\"type\":\"done\",\"reason\":\"stop\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}}}\n\n"
+	}
 	if apiShape == ai.APIAnthropicMessages {
 		return "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_request_fixture\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":0}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
 	}
@@ -733,6 +753,9 @@ func selectedF2Headers(apiShape ai.API, headers http.Header) map[string]string {
 	}
 	if apiShape == ai.APIGoogleGenerativeAI || apiShape == ai.APIGoogleVertex {
 		names = append(names, "x-goog-api-key")
+	}
+	if apiShape == ai.APIPiMessages {
+		names = append(names, "accept")
 	}
 	if apiShape == ai.APIMistralConversations {
 		names = append(names, "accept", "x-affinity")
