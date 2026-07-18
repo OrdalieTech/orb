@@ -128,6 +128,26 @@ func StreamGoogleGenerativeAIWithOptions(
 	if model == nil {
 		return nil, errors.New("ai/api: Google Generative AI model is nil")
 	}
+	return streamGoogleWithOptions(ctx, model, requestContext, options, func() error {
+		return assertGoogleAuth(model, googleStreamOptions(options))
+	}, postGoogleStream)
+}
+
+type googleStreamPoster func(
+	context.Context,
+	*ai.Model,
+	*ai.StreamOptions,
+	googleDecodedParameters,
+) (*http.Response, error)
+
+func streamGoogleWithOptions(
+	ctx context.Context,
+	model *ai.Model,
+	requestContext ai.Context,
+	options *GoogleOptions,
+	checkAuth func() error,
+	post googleStreamPoster,
+) (ai.AssistantMessageEventStream, error) {
 	output := newAssistantMessage(model)
 	return func(yield func(ai.AssistantMessageEvent, error) bool) {
 		fail := func(err error) {
@@ -141,9 +161,11 @@ func StreamGoogleGenerativeAIWithOptions(
 			yield(ai.ErrorEvent{Reason: reason, Error: output}, nil)
 		}
 		streamOptions := googleStreamOptions(options)
-		if err := assertGoogleAuth(model, streamOptions); err != nil {
-			fail(err)
-			return
+		if checkAuth != nil {
+			if err := checkAuth(); err != nil {
+				fail(err)
+				return
+			}
 		}
 		if ctx.Err() != nil {
 			fail(errors.New("Request aborted")) //nolint:staticcheck // Exact upstream text.
@@ -168,7 +190,7 @@ func StreamGoogleGenerativeAIWithOptions(
 			fail(err)
 			return
 		}
-		response, err := postGoogleStream(ctx, model, streamOptions, parameters)
+		response, err := post(ctx, model, streamOptions, parameters)
 		if err != nil {
 			fail(err)
 			return
@@ -264,17 +286,15 @@ func postGoogleStream(
 	if err != nil {
 		return nil, err
 	}
-	headers := copyModelHeaders(model)
-	if options != nil {
-		mergeProviderHeaders(headers, options.Headers)
-	}
-	if !googleHeaderPresent(headers, "Content-Type") {
-		headers.Set("Content-Type", "application/json")
-	}
+	headers := googleProviderHeaders(model, options)
 	if !googleHeaderPresent(headers, "X-Goog-Api-Key") {
 		headers.Set("X-Goog-Api-Key", *options.APIKey)
 	}
 	request.Header = headers
+	return doGoogleRequest(request)
+}
+
+func doGoogleRequest(request *http.Request) (*http.Response, error) {
 	response, err := googleHTTPClient.Do(request)
 	if err != nil {
 		return nil, err
@@ -339,6 +359,28 @@ func googleHeaderPresent(headers http.Header, name string) bool {
 		}
 	}
 	return false
+}
+
+func googleProviderHeaders(model *ai.Model, options *ai.StreamOptions) http.Header {
+	custom := make(ai.ProviderHeaders)
+	if model.Headers != nil {
+		for name, value := range *model.Headers {
+			copy := value
+			custom[name] = &copy
+		}
+	}
+	if options != nil {
+		for name, value := range options.Headers {
+			custom[name] = value
+		}
+	}
+	headers := http.Header{"Content-Type": []string{"application/json"}}
+	for name, value := range custom {
+		if value != nil {
+			headers[name] = []string{*value}
+		}
+	}
+	return headers
 }
 
 var googleSSEDelimiters = [][]byte{[]byte("\n\n"), []byte("\r\r"), []byte("\r\n\r\n")}

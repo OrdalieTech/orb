@@ -1,0 +1,1867 @@
+{
+  "cases": [
+    {
+      "name": "google-vertex-thinking-text-tool-use",
+      "api": "google-vertex",
+      "model": {
+        "id": "gemini-3-flash-preview",
+        "name": "Vertex Fixture Model",
+        "api": "google-vertex",
+        "provider": "google-vertex",
+        "baseUrl": "https://{location}-aiplatform.googleapis.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "stream",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-vertex-key"
+      },
+      "sse": "data: {\"responseId\":\"vertex-rich-id\",\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"plan\",\"thought\":true,\"thoughtSignature\":\"cGxhbg==\"}]}}],\"usageMetadata\":{\"promptTokenCount\":10,\"cachedContentTokenCount\":2,\"candidatesTokenCount\":1,\"thoughtsTokenCount\":3,\"totalTokenCount\":14}}\n\ndata: {\"responseId\":\"vertex-later-id\",\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"answer\",\"thoughtSignature\":\"dGV4dA==\"},{\"functionCall\":{\"id\":\"provided_call\",\"name\":\"calculate\",\"args\":{\"operation\":\"add\",\"operands\":[2,3]}},\"thoughtSignature\":\"dG9vbA==\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":12,\"cachedContentTokenCount\":4,\"candidatesTokenCount\":2,\"thoughtsTokenCount\":3,\"totalTokenCount\":17}}\n\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "thinking_start",
+          "contentIndex": 0,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "cGxhbg=="
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 8,
+              "output": 4,
+              "cacheRead": 2,
+              "cacheWrite": 0,
+              "reasoning": 3,
+              "totalTokens": 14,
+              "cost": {
+                "input": 0.000008,
+                "output": 0.000016,
+                "cacheRead": 5e-7,
+                "cacheWrite": 0,
+                "total": 0.0000245
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-rich-id"
+          }
+        },
+        {
+          "type": "thinking_delta",
+          "contentIndex": 0,
+          "delta": "plan",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "cGxhbg=="
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 8,
+              "output": 4,
+              "cacheRead": 2,
+              "cacheWrite": 0,
+              "reasoning": 3,
+              "totalTokens": 14,
+              "cost": {
+                "input": 0.000008,
+                "output": 0.000016,
+                "cacheRead": 5e-7,
+                "cacheWrite": 0,
+                "total": 0.0000245
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-rich-id"
+          }
+        },
+        {
+          "type": "thinking_end",
+          "contentIndex": 0,
+          "content": "plan",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "cGxhbg=="
+              },
+              {
+                "type": "text",
+                "text": "answer",
+                "textSignature": "dGV4dA=="
+              },
+              {
+                "type": "toolCall",
+                "id": "provided_call",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    2,
+                    3
+                  ]
+                },
+                "thoughtSignature": "dG9vbA=="
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 8,
+              "output": 5,
+              "cacheRead": 4,
+              "cacheWrite": 0,
+              "reasoning": 3,
+              "totalTokens": 17,
+              "cost": {
+                "input": 0.000008,
+                "output": 0.000019999999999999998,
+                "cacheRead": 0.000001,
+                "cacheWrite": 0,
+                "total": 0.000028999999999999997
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-rich-id"
+          }
+        },
+        {
+          "type": "text_start",
+          "contentIndex": 1,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "cGxhbg=="
+              },
+              {
+                "type": "text",
+                "text": "answer",
+                "textSignature": "dGV4dA=="
+              },
+              {
+                "type": "toolCall",
+                "id": "provided_call",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    2,
+                    3
+                  ]
+                },
+                "thoughtSignature": "dG9vbA=="
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 8,
+              "output": 5,
+              "cacheRead": 4,
+              "cacheWrite": 0,
+              "reasoning": 3,
+              "totalTokens": 17,
+              "cost": {
+                "input": 0.000008,
+                "output": 0.000019999999999999998,
+                "cacheRead": 0.000001,
+                "cacheWrite": 0,
+                "total": 0.000028999999999999997
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-rich-id"
+          }
+        },
+        {
+          "type": "text_delta",
+          "contentIndex": 1,
+          "delta": "answer",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "cGxhbg=="
+              },
+              {
+                "type": "text",
+                "text": "answer",
+                "textSignature": "dGV4dA=="
+              },
+              {
+                "type": "toolCall",
+                "id": "provided_call",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    2,
+                    3
+                  ]
+                },
+                "thoughtSignature": "dG9vbA=="
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 8,
+              "output": 5,
+              "cacheRead": 4,
+              "cacheWrite": 0,
+              "reasoning": 3,
+              "totalTokens": 17,
+              "cost": {
+                "input": 0.000008,
+                "output": 0.000019999999999999998,
+                "cacheRead": 0.000001,
+                "cacheWrite": 0,
+                "total": 0.000028999999999999997
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-rich-id"
+          }
+        },
+        {
+          "type": "text_end",
+          "contentIndex": 1,
+          "content": "answer",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "cGxhbg=="
+              },
+              {
+                "type": "text",
+                "text": "answer",
+                "textSignature": "dGV4dA=="
+              },
+              {
+                "type": "toolCall",
+                "id": "provided_call",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    2,
+                    3
+                  ]
+                },
+                "thoughtSignature": "dG9vbA=="
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 8,
+              "output": 5,
+              "cacheRead": 4,
+              "cacheWrite": 0,
+              "reasoning": 3,
+              "totalTokens": 17,
+              "cost": {
+                "input": 0.000008,
+                "output": 0.000019999999999999998,
+                "cacheRead": 0.000001,
+                "cacheWrite": 0,
+                "total": 0.000028999999999999997
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-rich-id"
+          }
+        },
+        {
+          "type": "toolcall_start",
+          "contentIndex": 2,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "cGxhbg=="
+              },
+              {
+                "type": "text",
+                "text": "answer",
+                "textSignature": "dGV4dA=="
+              },
+              {
+                "type": "toolCall",
+                "id": "provided_call",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    2,
+                    3
+                  ]
+                },
+                "thoughtSignature": "dG9vbA=="
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 8,
+              "output": 5,
+              "cacheRead": 4,
+              "cacheWrite": 0,
+              "reasoning": 3,
+              "totalTokens": 17,
+              "cost": {
+                "input": 0.000008,
+                "output": 0.000019999999999999998,
+                "cacheRead": 0.000001,
+                "cacheWrite": 0,
+                "total": 0.000028999999999999997
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-rich-id"
+          }
+        },
+        {
+          "type": "toolcall_delta",
+          "contentIndex": 2,
+          "delta": "{\"operation\":\"add\",\"operands\":[2,3]}",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "cGxhbg=="
+              },
+              {
+                "type": "text",
+                "text": "answer",
+                "textSignature": "dGV4dA=="
+              },
+              {
+                "type": "toolCall",
+                "id": "provided_call",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    2,
+                    3
+                  ]
+                },
+                "thoughtSignature": "dG9vbA=="
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 8,
+              "output": 5,
+              "cacheRead": 4,
+              "cacheWrite": 0,
+              "reasoning": 3,
+              "totalTokens": 17,
+              "cost": {
+                "input": 0.000008,
+                "output": 0.000019999999999999998,
+                "cacheRead": 0.000001,
+                "cacheWrite": 0,
+                "total": 0.000028999999999999997
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-rich-id"
+          }
+        },
+        {
+          "type": "toolcall_end",
+          "contentIndex": 2,
+          "toolCall": {
+            "type": "toolCall",
+            "id": "provided_call",
+            "name": "calculate",
+            "arguments": {
+              "operation": "add",
+              "operands": [
+                2,
+                3
+              ]
+            },
+            "thoughtSignature": "dG9vbA=="
+          },
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "cGxhbg=="
+              },
+              {
+                "type": "text",
+                "text": "answer",
+                "textSignature": "dGV4dA=="
+              },
+              {
+                "type": "toolCall",
+                "id": "provided_call",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    2,
+                    3
+                  ]
+                },
+                "thoughtSignature": "dG9vbA=="
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 8,
+              "output": 5,
+              "cacheRead": 4,
+              "cacheWrite": 0,
+              "reasoning": 3,
+              "totalTokens": 17,
+              "cost": {
+                "input": 0.000008,
+                "output": 0.000019999999999999998,
+                "cacheRead": 0.000001,
+                "cacheWrite": 0,
+                "total": 0.000028999999999999997
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-rich-id"
+          }
+        },
+        {
+          "type": "done",
+          "reason": "toolUse",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "cGxhbg=="
+              },
+              {
+                "type": "text",
+                "text": "answer",
+                "textSignature": "dGV4dA=="
+              },
+              {
+                "type": "toolCall",
+                "id": "provided_call",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    2,
+                    3
+                  ]
+                },
+                "thoughtSignature": "dG9vbA=="
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 8,
+              "output": 5,
+              "cacheRead": 4,
+              "cacheWrite": 0,
+              "reasoning": 3,
+              "totalTokens": 17,
+              "cost": {
+                "input": 0.000008,
+                "output": 0.000019999999999999998,
+                "cacheRead": 0.000001,
+                "cacheWrite": 0,
+                "total": 0.000028999999999999997
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-rich-id"
+          }
+        }
+      ]
+    },
+    {
+      "name": "google-vertex-generated-duplicate-tool-ids",
+      "api": "google-vertex",
+      "model": {
+        "id": "gemini-3-flash-preview",
+        "name": "Vertex Fixture Model",
+        "api": "google-vertex",
+        "provider": "google-vertex",
+        "baseUrl": "https://{location}-aiplatform.googleapis.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ids",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-vertex-key"
+      },
+      "sse": "data: {\"responseId\":\"vertex-tool-ids\",\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"functionCall\":{\"name\":\"calculate\",\"args\":{}}},{\"functionCall\":{\"id\":\"same\",\"name\":\"calculate\",\"args\":{\"n\":1}}},{\"functionCall\":{\"id\":\"same\",\"name\":\"calculate\",\"args\":{\"n\":2}}}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":1,\"candidatesTokenCount\":1,\"totalTokenCount\":2}}\n\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "toolcall_start",
+          "contentIndex": 0,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_1",
+                "name": "calculate",
+                "arguments": {}
+              },
+              {
+                "type": "toolCall",
+                "id": "same",
+                "name": "calculate",
+                "arguments": {
+                  "n": 1
+                }
+              },
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_2",
+                "name": "calculate",
+                "arguments": {
+                  "n": 2
+                }
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000001,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0000049999999999999996
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-tool-ids"
+          }
+        },
+        {
+          "type": "toolcall_delta",
+          "contentIndex": 0,
+          "delta": "{}",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_1",
+                "name": "calculate",
+                "arguments": {}
+              },
+              {
+                "type": "toolCall",
+                "id": "same",
+                "name": "calculate",
+                "arguments": {
+                  "n": 1
+                }
+              },
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_2",
+                "name": "calculate",
+                "arguments": {
+                  "n": 2
+                }
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000001,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0000049999999999999996
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-tool-ids"
+          }
+        },
+        {
+          "type": "toolcall_end",
+          "contentIndex": 0,
+          "toolCall": {
+            "type": "toolCall",
+            "id": "calculate_1700000000123_1",
+            "name": "calculate",
+            "arguments": {}
+          },
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_1",
+                "name": "calculate",
+                "arguments": {}
+              },
+              {
+                "type": "toolCall",
+                "id": "same",
+                "name": "calculate",
+                "arguments": {
+                  "n": 1
+                }
+              },
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_2",
+                "name": "calculate",
+                "arguments": {
+                  "n": 2
+                }
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000001,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0000049999999999999996
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-tool-ids"
+          }
+        },
+        {
+          "type": "toolcall_start",
+          "contentIndex": 1,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_1",
+                "name": "calculate",
+                "arguments": {}
+              },
+              {
+                "type": "toolCall",
+                "id": "same",
+                "name": "calculate",
+                "arguments": {
+                  "n": 1
+                }
+              },
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_2",
+                "name": "calculate",
+                "arguments": {
+                  "n": 2
+                }
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000001,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0000049999999999999996
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-tool-ids"
+          }
+        },
+        {
+          "type": "toolcall_delta",
+          "contentIndex": 1,
+          "delta": "{\"n\":1}",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_1",
+                "name": "calculate",
+                "arguments": {}
+              },
+              {
+                "type": "toolCall",
+                "id": "same",
+                "name": "calculate",
+                "arguments": {
+                  "n": 1
+                }
+              },
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_2",
+                "name": "calculate",
+                "arguments": {
+                  "n": 2
+                }
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000001,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0000049999999999999996
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-tool-ids"
+          }
+        },
+        {
+          "type": "toolcall_end",
+          "contentIndex": 1,
+          "toolCall": {
+            "type": "toolCall",
+            "id": "same",
+            "name": "calculate",
+            "arguments": {
+              "n": 1
+            }
+          },
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_1",
+                "name": "calculate",
+                "arguments": {}
+              },
+              {
+                "type": "toolCall",
+                "id": "same",
+                "name": "calculate",
+                "arguments": {
+                  "n": 1
+                }
+              },
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_2",
+                "name": "calculate",
+                "arguments": {
+                  "n": 2
+                }
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000001,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0000049999999999999996
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-tool-ids"
+          }
+        },
+        {
+          "type": "toolcall_start",
+          "contentIndex": 2,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_1",
+                "name": "calculate",
+                "arguments": {}
+              },
+              {
+                "type": "toolCall",
+                "id": "same",
+                "name": "calculate",
+                "arguments": {
+                  "n": 1
+                }
+              },
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_2",
+                "name": "calculate",
+                "arguments": {
+                  "n": 2
+                }
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000001,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0000049999999999999996
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-tool-ids"
+          }
+        },
+        {
+          "type": "toolcall_delta",
+          "contentIndex": 2,
+          "delta": "{\"n\":2}",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_1",
+                "name": "calculate",
+                "arguments": {}
+              },
+              {
+                "type": "toolCall",
+                "id": "same",
+                "name": "calculate",
+                "arguments": {
+                  "n": 1
+                }
+              },
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_2",
+                "name": "calculate",
+                "arguments": {
+                  "n": 2
+                }
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000001,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0000049999999999999996
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-tool-ids"
+          }
+        },
+        {
+          "type": "toolcall_end",
+          "contentIndex": 2,
+          "toolCall": {
+            "type": "toolCall",
+            "id": "calculate_1700000000123_2",
+            "name": "calculate",
+            "arguments": {
+              "n": 2
+            }
+          },
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_1",
+                "name": "calculate",
+                "arguments": {}
+              },
+              {
+                "type": "toolCall",
+                "id": "same",
+                "name": "calculate",
+                "arguments": {
+                  "n": 1
+                }
+              },
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_2",
+                "name": "calculate",
+                "arguments": {
+                  "n": 2
+                }
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000001,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0000049999999999999996
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-tool-ids"
+          }
+        },
+        {
+          "type": "done",
+          "reason": "toolUse",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_1",
+                "name": "calculate",
+                "arguments": {}
+              },
+              {
+                "type": "toolCall",
+                "id": "same",
+                "name": "calculate",
+                "arguments": {
+                  "n": 1
+                }
+              },
+              {
+                "type": "toolCall",
+                "id": "calculate_1700000000123_2",
+                "name": "calculate",
+                "arguments": {
+                  "n": 2
+                }
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000001,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0000049999999999999996
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-tool-ids"
+          }
+        }
+      ]
+    },
+    {
+      "name": "google-vertex-text-length",
+      "api": "google-vertex",
+      "model": {
+        "id": "gemini-3-flash-preview",
+        "name": "Vertex Fixture Model",
+        "api": "google-vertex",
+        "provider": "google-vertex",
+        "baseUrl": "https://{location}-aiplatform.googleapis.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "length",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-vertex-key"
+      },
+      "sse": "data: {\"responseId\":\"vertex-length\",\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"partial\"}]},\"finishReason\":\"MAX_TOKENS\"}],\"usageMetadata\":{\"promptTokenCount\":2,\"candidatesTokenCount\":1,\"totalTokenCount\":3}}\n\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "text_start",
+          "contentIndex": 0,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "partial"
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 2,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 3,
+              "cost": {
+                "input": 0.000002,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.000006
+              }
+            },
+            "stopReason": "length",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-length"
+          }
+        },
+        {
+          "type": "text_delta",
+          "contentIndex": 0,
+          "delta": "partial",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "partial"
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 2,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 3,
+              "cost": {
+                "input": 0.000002,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.000006
+              }
+            },
+            "stopReason": "length",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-length"
+          }
+        },
+        {
+          "type": "text_end",
+          "contentIndex": 0,
+          "content": "partial",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "partial"
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 2,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 3,
+              "cost": {
+                "input": 0.000002,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.000006
+              }
+            },
+            "stopReason": "length",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-length"
+          }
+        },
+        {
+          "type": "done",
+          "reason": "length",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "partial"
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 2,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 3,
+              "cost": {
+                "input": 0.000002,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.000006
+              }
+            },
+            "stopReason": "length",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-length"
+          }
+        }
+      ]
+    },
+    {
+      "name": "google-vertex-safety-finish-error",
+      "api": "google-vertex",
+      "model": {
+        "id": "gemini-3-flash-preview",
+        "name": "Vertex Fixture Model",
+        "api": "google-vertex",
+        "provider": "google-vertex",
+        "baseUrl": "https://{location}-aiplatform.googleapis.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "safety",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-vertex-key"
+      },
+      "sse": "data: {\"responseId\":\"vertex-safety\",\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[]},\"finishReason\":\"SAFETY\"}],\"usageMetadata\":{\"promptTokenCount\":2,\"candidatesTokenCount\":0,\"totalTokenCount\":2}}\n\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 2,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000002,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.000002
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-safety",
+            "errorMessage": "An unknown error occurred"
+          }
+        }
+      ]
+    },
+    {
+      "name": "google-vertex-http-403-json",
+      "api": "google-vertex",
+      "model": {
+        "id": "gemini-3-flash-preview",
+        "name": "Vertex Fixture Model",
+        "api": "google-vertex",
+        "provider": "google-vertex",
+        "baseUrl": "https://{location}-aiplatform.googleapis.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "reject",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-vertex-key"
+      },
+      "httpStatus": 403,
+      "httpBody": "{\"error\":{\"code\":403,\"message\":\"denied\",\"status\":\"PERMISSION_DENIED\"}}",
+      "httpContentType": "application/json",
+      "expectedEvents": [
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "errorMessage": "{\"error\":{\"code\":403,\"message\":\"denied\",\"status\":\"PERMISSION_DENIED\"}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "google-vertex-multiline-tool-call-empty-signature",
+      "api": "google-vertex",
+      "model": {
+        "id": "gemini-3-flash-preview",
+        "name": "Vertex Fixture Model",
+        "api": "google-vertex",
+        "provider": "google-vertex",
+        "baseUrl": "https://{location}-aiplatform.googleapis.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "tool",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-vertex-key"
+      },
+      "sse": "data: {\n  \"responseId\": \"vertex-multiline-id\",\n  \"candidates\": [{\n    \"content\": {\"role\":\"model\",\"parts\":[{\n      \"functionCall\":{\"id\":\"call_empty\",\"name\":\"calculate\",\"args\":{}},\n      \"thoughtSignature\":\"\"\n    }]},\n    \"finishReason\":\"STOP\"\n  }],\n  \"usageMetadata\":{\"promptTokenCount\":1,\"candidatesTokenCount\":1,\"totalTokenCount\":2}\n}\n\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "toolcall_start",
+          "contentIndex": 0,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call_empty",
+                "name": "calculate",
+                "arguments": {}
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000001,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0000049999999999999996
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-multiline-id"
+          }
+        },
+        {
+          "type": "toolcall_delta",
+          "contentIndex": 0,
+          "delta": "{}",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call_empty",
+                "name": "calculate",
+                "arguments": {}
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000001,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0000049999999999999996
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-multiline-id"
+          }
+        },
+        {
+          "type": "toolcall_end",
+          "contentIndex": 0,
+          "toolCall": {
+            "type": "toolCall",
+            "id": "call_empty",
+            "name": "calculate",
+            "arguments": {}
+          },
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call_empty",
+                "name": "calculate",
+                "arguments": {}
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000001,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0000049999999999999996
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-multiline-id"
+          }
+        },
+        {
+          "type": "done",
+          "reason": "toolUse",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call_empty",
+                "name": "calculate",
+                "arguments": {}
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000001,
+                "output": 0.000004,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0000049999999999999996
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "vertex-multiline-id"
+          }
+        }
+      ]
+    },
+    {
+      "name": "google-vertex-raw-json-error-coercion",
+      "api": "google-vertex",
+      "model": {
+        "id": "gemini-3-flash-preview",
+        "name": "Vertex Fixture Model",
+        "api": "google-vertex",
+        "provider": "google-vertex",
+        "baseUrl": "https://{location}-aiplatform.googleapis.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "raw error",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-vertex-key"
+      },
+      "sse": "{\"10\":\"ten\",\"2\":\"two\",\"error\":{\"code\":\"4.03e2\",\"message\":\"\\u0061\"}}",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-flash-preview",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "errorMessage": "got status: undefined. {\"2\":\"two\",\"10\":\"ten\",\"error\":{\"code\":\"4.03e2\",\"message\":\"a\"}}"
+          }
+        }
+      ]
+    }
+  ]
+}

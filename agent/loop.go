@@ -251,7 +251,22 @@ func streamAssistantResponse(
 
 	requestModel := cloneModel(config.Model)
 	options := config.SimpleStreamOptions
-	if config.GetAPIKey != nil {
+	if config.GetRequestAuth != nil {
+		resolved, authErr := config.GetRequestAuth(ctx, requestModel.Provider)
+		if authErr != nil {
+			return nil, authErr
+		}
+		if resolved != nil {
+			if options.APIKey == nil {
+				options.APIKey = resolved.APIKey
+			}
+			options.Env = mergeRequestEnv(resolved.Env, options.Env)
+			options.Headers = mergeRequestAuthHeaders(resolved.Headers, options.Headers)
+			if resolved.BaseURL != nil {
+				requestModel.BaseURL = *resolved.BaseURL
+			}
+		}
+	} else if config.GetAPIKey != nil {
 		key, keyErr := config.GetAPIKey(ctx, requestModel.Provider)
 		if keyErr != nil {
 			return nil, keyErr
@@ -261,7 +276,7 @@ func streamAssistantResponse(
 		}
 	}
 	if config.GetModelHeaders != nil {
-		headers, headerErr := config.GetModelHeaders(ctx, requestModel, options.APIKey)
+		headers, headerErr := config.GetModelHeaders(ctx, requestModel, options.APIKey, options.Env)
 		if headerErr != nil {
 			return nil, headerErr
 		}
@@ -325,6 +340,40 @@ func streamAssistantResponse(
 		}
 	}
 	return nil, ai.ErrStreamIncomplete
+}
+
+func mergeRequestEnv(resolved, overrides ai.ProviderEnv) ai.ProviderEnv {
+	if len(resolved) == 0 && len(overrides) == 0 {
+		return nil
+	}
+	merged := make(ai.ProviderEnv, len(resolved)+len(overrides))
+	for name, value := range resolved {
+		merged[name] = value
+	}
+	for name, value := range overrides {
+		merged[name] = value
+	}
+	return merged
+}
+
+func mergeRequestAuthHeaders(resolved map[string]string, overrides ai.ProviderHeaders) ai.ProviderHeaders {
+	if len(resolved) == 0 && len(overrides) == 0 {
+		return nil
+	}
+	merged := make(ai.ProviderHeaders, len(resolved)+len(overrides))
+	for name, value := range resolved {
+		copy := value
+		merged[name] = &copy
+	}
+	for name, value := range overrides {
+		for existing := range merged {
+			if strings.EqualFold(existing, name) {
+				delete(merged, existing)
+			}
+		}
+		merged[name] = value
+	}
+	return merged
 }
 
 func mergeRequestHeaders(base, override *map[string]string) *map[string]string {

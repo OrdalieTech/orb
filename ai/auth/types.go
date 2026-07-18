@@ -31,6 +31,13 @@ func APIKeyCredential(key string) *Credential {
 	return &Credential{Type: CredentialAPIKey, Key: &key, order: []string{"type", "key"}}
 }
 
+func APIKeyEnvCredential(env map[string]string, envOrder ...string) *Credential {
+	return &Credential{
+		Type: CredentialAPIKey, Env: cloneStrings(env),
+		order: []string{"type", "env"}, envOrder: append([]string(nil), envOrder...),
+	}
+}
+
 func OAuthCredential(refresh, access string, expires int64) *Credential {
 	return &Credential{
 		Type: CredentialOAuth, Refresh: refresh, Access: access, Expires: expires,

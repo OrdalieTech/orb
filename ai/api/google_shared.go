@@ -33,14 +33,14 @@ type GooglePart struct {
 }
 
 type GoogleInlineData struct {
-	Data     string `json:"data"`
 	MimeType string `json:"mimeType"`
+	Data     string `json:"data"`
 }
 
 type GoogleFunctionCall struct {
-	ID   string          `json:"id,omitempty"`
-	Args json.RawMessage `json:"args"`
 	Name string          `json:"name"`
+	Args json.RawMessage `json:"args"`
+	ID   string          `json:"id,omitempty"`
 }
 
 type GoogleFunctionResponse struct {
@@ -248,7 +248,11 @@ func buildGoogleParameters(model *ai.Model, requestContext ai.Context, options *
 				config.ThinkingConfig.ThinkingBudget = options.Thinking.BudgetTokens
 			}
 		} else {
-			config.ThinkingConfig = disabledGoogleThinkingConfig(model)
+			if model.API == ai.APIGoogleVertex {
+				config.ThinkingConfig = disabledGoogleVertexThinkingConfig(model)
+			} else {
+				config.ThinkingConfig = disabledGoogleThinkingConfig(model)
+			}
 		}
 	}
 	return GoogleGenerateContentParameters{Model: model.ID, Contents: contents, Config: config}, nil

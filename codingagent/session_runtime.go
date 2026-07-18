@@ -25,6 +25,7 @@ type SessionRuntimeConfig struct {
 	Settings        *config.SettingsManager
 	StreamFn        agent.StreamFn
 	GetAPIKey       agent.GetAPIKeyFunc
+	GetRequestAuth  agent.GetRequestAuthFunc
 	GetModelHeaders agent.GetModelHeadersFunc
 	Complete        harness.CompleteFunc
 	Sleep           func(context.Context, time.Duration) error
@@ -93,21 +94,38 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 			merged.MaxRetries = providerSettings.MaxRetries
 			maxDelay := providerSettings.MaxRetryDelayMS
 			merged.MaxRetryDelayMS = &maxDelay
-			if merged.APIKey == nil && runtimeConfig.GetAPIKey != nil && model != nil {
+			requestModel := model
+			if runtimeConfig.GetRequestAuth != nil && model != nil {
+				resolved, err := runtimeConfig.GetRequestAuth(ctx, model.Provider)
+				if err != nil {
+					return nil, err
+				}
+				if resolved != nil {
+					if merged.APIKey == nil {
+						merged.APIKey = resolved.APIKey
+					}
+					merged.Env = mergeSummaryEnv(resolved.Env, merged.Env)
+					merged.Headers = mergeSummaryAuthHeaders(resolved.Headers, merged.Headers)
+					if resolved.BaseURL != nil {
+						copy := *model
+						copy.BaseURL = *resolved.BaseURL
+						requestModel = &copy
+					}
+				}
+			} else if merged.APIKey == nil && runtimeConfig.GetAPIKey != nil && model != nil {
 				key, err := runtimeConfig.GetAPIKey(ctx, model.Provider)
 				if err != nil {
 					return nil, err
 				}
 				merged.APIKey = key
 			}
-			requestModel := model
 			if runtimeConfig.GetModelHeaders != nil && model != nil {
-				headers, err := runtimeConfig.GetModelHeaders(ctx, model, merged.APIKey)
+				headers, err := runtimeConfig.GetModelHeaders(ctx, requestModel, merged.APIKey, merged.Env)
 				if err != nil {
 					return nil, err
 				}
-				copy := *model
-				copy.Headers = mergeSummaryHeaders(model.Headers, headers)
+				copy := *requestModel
+				copy.Headers = mergeSummaryHeaders(requestModel.Headers, headers)
 				requestModel = &copy
 			}
 			events, err := streamFn(ctx, requestModel, request, &merged)
@@ -153,6 +171,40 @@ func mergeSummaryHeaders(base, override *map[string]string) *map[string]string {
 		}
 	}
 	return &merged
+}
+
+func mergeSummaryEnv(resolved, overrides ai.ProviderEnv) ai.ProviderEnv {
+	if len(resolved) == 0 && len(overrides) == 0 {
+		return nil
+	}
+	merged := make(ai.ProviderEnv, len(resolved)+len(overrides))
+	for name, value := range resolved {
+		merged[name] = value
+	}
+	for name, value := range overrides {
+		merged[name] = value
+	}
+	return merged
+}
+
+func mergeSummaryAuthHeaders(resolved map[string]string, overrides ai.ProviderHeaders) ai.ProviderHeaders {
+	if len(resolved) == 0 && len(overrides) == 0 {
+		return nil
+	}
+	merged := make(ai.ProviderHeaders, len(resolved)+len(overrides))
+	for name, value := range resolved {
+		copy := value
+		merged[name] = &copy
+	}
+	for name, value := range overrides {
+		for existing := range merged {
+			if strings.EqualFold(existing, name) {
+				delete(merged, existing)
+			}
+		}
+		merged[name] = value
+	}
+	return merged
 }
 
 func (runtime *SessionRuntime) Dispose() {

@@ -322,8 +322,9 @@ and 640 KiB to a stripped probe binary. No direct dependency was added.
 `813da39`, a `google.golang.org/genai@v1.64.0` probe grew the correctly stripped binary from
 17,907,874 to 26,374,306 bytes (+8,466,432, 47.278%), expanded the module graph from 67 to 102
 entries, and grew the compiled package graph from 294 to 477 packages. The final hand-rolled adapter
-adds 155,648 bytes (0.869%) and no modules. Vertex is scheduled separately as WP-222 so its ADC
-surface can be ported without undoing this dependency decision.
+adds 155,648 bytes (0.869%) and no modules. WP-222 completes Vertex with stdlib REST/SSE and
+request-scoped pure-Go ADC; against its consolidated parent it adds 393,216 bytes (2.177%), no
+module, and no compiled package. See `docs/plan/wp-222-vertex-report.md`.
 
 Explicitly rejected: TUI frameworks (D15), langchaingo/fantasy-style unified LLM libs (D10),
 v8go/quickjs CGo bindings (D7), sqlite (no need — sessions are JSONL).

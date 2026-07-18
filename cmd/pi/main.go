@@ -220,6 +220,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	sessionRuntime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
 		Agent: runtime.Agent, SessionManager: manager, Settings: settings,
 		GetAPIKey: runtime.GetAPIKey, GetModelHeaders: runtime.GetModelHeaders,
+		GetRequestAuth: runtime.GetRequestAuth,
 	})
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)

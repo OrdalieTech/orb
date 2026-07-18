@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -181,6 +182,97 @@ func TestAPIKeyResolverPrecedence(t *testing.T) {
 	key, err = apiKeyResolver(CLIArgs{}, registry, oauthStore)(context.Background(), ai.ProviderID("anthropic"))
 	if err != nil || key == nil || *key != "stored-oauth" {
 		t.Fatalf("stored OAuth ownership = %v, %v", key, err)
+	}
+}
+
+func TestRequestAuthResolverPreservesStoredVertexADCEnvironment(t *testing.T) {
+	credentialsPath := filepath.Join(t.TempDir(), "service-account.json")
+	if err := os.WriteFile(credentialsPath, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	storedEnv := map[string]string{
+		"GOOGLE_CLOUD_PROJECT":           "fixture-project",
+		"GOOGLE_CLOUD_LOCATION":          "us-central1",
+		"GOOGLE_APPLICATION_CREDENTIALS": credentialsPath,
+	}
+	store := aiauth.NewMemoryStore(map[string]*aiauth.Credential{
+		"google-vertex": aiauth.APIKeyEnvCredential(
+			storedEnv,
+			"GOOGLE_CLOUD_PROJECT",
+			"GOOGLE_CLOUD_LOCATION",
+			"GOOGLE_APPLICATION_CREDENTIALS",
+		),
+	})
+
+	resolved, err := requestAuthResolver(CLIArgs{}, nil, store)(context.Background(), ai.ProviderID("google-vertex"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved == nil || resolved.APIKey != nil || !reflect.DeepEqual(map[string]string(resolved.Env), storedEnv) {
+		t.Fatalf("resolved request auth = %#v, want stored ADC environment", resolved)
+	}
+	resolved.Env["GOOGLE_CLOUD_PROJECT"] = "changed"
+	credential, err := store.Read(context.Background(), "google-vertex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credential.Env["GOOGLE_CLOUD_PROJECT"] != "fixture-project" {
+		t.Fatal("resolved request auth aliases credential storage")
+	}
+}
+
+func TestCreateRuntimeInputsResolvesConfiguredHeadersAgainstStoredAuthEnvironment(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(config.EnvAgentDir, agentDir)
+	t.Setenv("GOOGLE_CLOUD_API_KEY", "")
+	credentialsPath := filepath.Join(root, "service-account.json")
+	if err := os.WriteFile(credentialsPath, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	authJSON, err := json.Marshal(map[string]any{
+		"google-vertex": map[string]any{
+			"type": "api_key",
+			"env": map[string]string{
+				"GOOGLE_CLOUD_PROJECT":           "stored-project",
+				"GOOGLE_CLOUD_LOCATION":          "us-central1",
+				"GOOGLE_APPLICATION_CREDENTIALS": credentialsPath,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentDir, "auth.json"), authJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	modelsJSON := `{"providers":{"google-vertex":{"api":"google-vertex","baseUrl":"https://{location}-aiplatform.googleapis.com","apiKey":"gcp-vertex-credentials","headers":{"X-Project":"$GOOGLE_CLOUD_PROJECT"},"models":[{"id":"fixture-vertex"}]}}}`
+	if err := os.WriteFile(filepath.Join(agentDir, "models.json"), []byte(modelsJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	providerID, modelID := "google-vertex", "fixture-vertex"
+	runtime, err := createRuntimeInputs(root, CLIArgs{
+		Provider: &providerID, Model: &modelID, Tools: []string{"read"},
+	}, agent.AgentMessages{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestAuth, err := runtime.GetRequestAuth(context.Background(), ai.ProviderID(providerID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requestAuth == nil || requestAuth.Env["GOOGLE_CLOUD_PROJECT"] != "stored-project" {
+		t.Fatalf("request auth = %#v", requestAuth)
+	}
+	headers, err := runtime.GetModelHeaders(context.Background(), runtime.Agent.State().Model, requestAuth.APIKey, requestAuth.Env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if headers == nil || (*headers)["X-Project"] != "stored-project" {
+		t.Fatalf("configured headers = %#v", headers)
 	}
 }
 

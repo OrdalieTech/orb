@@ -1,0 +1,148 @@
+{
+  "id": "google-vertex",
+  "name": "Google Vertex AI",
+  "apis": [
+    "google-vertex"
+  ],
+  "auth": {
+    "kind": "api_key",
+    "name": "Google Cloud credentials",
+    "login": {
+      "apiKey": {
+        "type": "api_key",
+        "key": "fixture-vertex-key"
+      },
+      "adc": {
+        "type": "api_key",
+        "env": {
+          "GOOGLE_CLOUD_PROJECT": "fixture-project",
+          "GOOGLE_CLOUD_LOCATION": "us-central1"
+        }
+      },
+      "serviceAccount": {
+        "type": "api_key",
+        "env": {
+          "GOOGLE_CLOUD_PROJECT": "fixture-project",
+          "GOOGLE_CLOUD_LOCATION": "us-central1",
+          "GOOGLE_APPLICATION_CREDENTIALS": "/fixture/service-account.json"
+        }
+      },
+      "notifications": [
+        {
+          "type": "info",
+          "message": "Run `gcloud auth application-default login`, then provide the project and location.",
+          "links": [
+            {
+              "label": "Application Default Credentials",
+              "url": "https://cloud.google.com/docs/authentication/provide-credentials-adc"
+            }
+          ]
+        },
+        {
+          "type": "info",
+          "message": "Provide a service account credentials file, project, and location.",
+          "links": [
+            {
+              "label": "Application Default Credentials",
+              "url": "https://cloud.google.com/docs/authentication/provide-credentials-adc"
+            }
+          ]
+        }
+      ]
+    },
+    "envAPIKeys": {
+      "apiKey": "fixture-env-key",
+      "adc": "<authenticated>",
+      "missingLocation": null,
+      "found": [
+        "GOOGLE_CLOUD_API_KEY"
+      ]
+    },
+    "resolutions": [
+      {
+        "name": "stored-api-key-wins",
+        "result": {
+          "auth": {
+            "apiKey": "stored-key"
+          },
+          "source": "stored credential"
+        },
+        "envLookups": [],
+        "fileLookups": []
+      },
+      {
+        "name": "environment-api-key",
+        "result": {
+          "auth": {
+            "apiKey": "environment-key"
+          },
+          "source": "GOOGLE_CLOUD_API_KEY"
+        },
+        "envLookups": [
+          "GOOGLE_CLOUD_API_KEY"
+        ],
+        "fileLookups": []
+      },
+      {
+        "name": "stored-service-account-adc",
+        "result": {
+          "auth": {},
+          "env": {
+            "GOOGLE_CLOUD_PROJECT": "fixture-project",
+            "GOOGLE_CLOUD_LOCATION": "us-central1",
+            "GOOGLE_APPLICATION_CREDENTIALS": "/fixture/service-account.json"
+          },
+          "source": "stored credential"
+        },
+        "envLookups": [
+          "GOOGLE_CLOUD_API_KEY"
+        ],
+        "fileLookups": [
+          "/fixture/service-account.json"
+        ]
+      },
+      {
+        "name": "ambient-default-adc",
+        "result": {
+          "auth": {},
+          "source": "gcloud application default credentials"
+        },
+        "envLookups": [
+          "GOOGLE_CLOUD_API_KEY",
+          "GOOGLE_APPLICATION_CREDENTIALS",
+          "GOOGLE_CLOUD_PROJECT",
+          "GOOGLE_CLOUD_LOCATION"
+        ],
+        "fileLookups": [
+          "~/.config/gcloud/application_default_credentials.json"
+        ]
+      },
+      {
+        "name": "adc-missing-location",
+        "result": null,
+        "envLookups": [
+          "GOOGLE_CLOUD_API_KEY",
+          "GOOGLE_APPLICATION_CREDENTIALS",
+          "GOOGLE_CLOUD_PROJECT",
+          "GOOGLE_CLOUD_LOCATION"
+        ],
+        "fileLookups": [
+          "~/.config/gcloud/application_default_credentials.json"
+        ]
+      },
+      {
+        "name": "api-key-wins-over-adc",
+        "result": {
+          "auth": {
+            "apiKey": "winning-key"
+          },
+          "source": "GOOGLE_CLOUD_API_KEY"
+        },
+        "envLookups": [
+          "GOOGLE_CLOUD_API_KEY"
+        ],
+        "fileLookups": []
+      }
+    ]
+  }
+}

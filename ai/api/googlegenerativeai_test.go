@@ -201,6 +201,43 @@ func TestGoogleRawChunkErrorUsesJSPresenceAndCoercion(t *testing.T) {
 	}
 }
 
+func TestGoogleProviderHeadersMatchSDKCaseSensitivePatchThenFetchNormalization(t *testing.T) {
+	model := googleTestModel("gemini-2.5-flash")
+	modelContentType := "application/model"
+	modelRemoved := "model"
+	model.Headers = &map[string]string{
+		"Content-Type": modelContentType,
+		"X-Removed":    modelRemoved,
+	}
+	lowerContentType := "application/option"
+	options := &ai.StreamOptions{Headers: ai.ProviderHeaders{
+		"content-type": &lowerContentType,
+		"X-Removed":    nil,
+	}}
+	headers := googleProviderHeaders(model, options)
+	if got := headers["Content-Type"]; len(got) != 1 || got[0] != modelContentType {
+		t.Fatalf("exact-case Content-Type = %#v", got)
+	}
+	//nolint:staticcheck // The pre-request map deliberately preserves differently cased upstream keys.
+	if got := headers["content-type"]; len(got) != 1 || got[0] != lowerContentType {
+		t.Fatalf("differently-cased content-type = %#v", got)
+	}
+	if _, present := headers["X-Removed"]; present {
+		t.Fatalf("same-case null option did not filter the model header: %#v", headers)
+	}
+
+	exactOverride := "application/exact-option"
+	headers = googleProviderHeaders(model, &ai.StreamOptions{Headers: ai.ProviderHeaders{"Content-Type": &exactOverride}})
+	if len(headers) != 2 || headers["Content-Type"][0] != exactOverride {
+		t.Fatalf("same-case Content-Type override = %#v", headers)
+	}
+
+	headers = googleProviderHeaders(model, &ai.StreamOptions{Headers: ai.ProviderHeaders{"Content-Type": nil}})
+	if got := headers["Content-Type"]; len(got) != 1 || got[0] != "application/json" {
+		t.Fatalf("null custom Content-Type should expose SDK default: %#v", headers)
+	}
+}
+
 func googleTestModel(id string) *ai.Model {
 	return &ai.Model{
 		ID: id, Name: id, API: ai.APIGoogleGenerativeAI, Provider: "google",

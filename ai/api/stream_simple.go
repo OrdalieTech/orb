@@ -23,6 +23,8 @@ func StreamSimple(
 		return StreamSimpleAnthropicMessages(ctx, model, requestContext, options)
 	case ai.APIGoogleGenerativeAI:
 		return StreamSimpleGoogleGenerativeAI(ctx, model, requestContext, options)
+	case ai.APIGoogleVertex:
+		return StreamSimpleGoogleVertex(ctx, model, requestContext, options)
 	case ai.APIOpenAIResponses, ai.APIAzureOpenAIResponses, ai.APIOpenAICodexResponses:
 		return StreamSimpleOpenAIResponses(ctx, model, requestContext, options)
 	case ai.APIOpenAICompletions:
