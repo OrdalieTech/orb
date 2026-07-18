@@ -301,7 +301,7 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | dop251/goja_nodejs (selected) | jsbridge | console/buffer/url shims where sobek-compatible |
 | openai/openai-go/v3 | ai/api | OpenAI responses+completions (D10) |
 | anthropics/anthropic-sdk-go | ai/api | Anthropic messages + caching (D10) |
-| aws-sdk-go-v2 (bedrockruntime) | ai/api | Bedrock SigV4 + converse-stream (D10) |
+| aws-sdk-go-v2, aws-sdk-go-v2/{config,credentials,service/bedrockruntime}, smithy-go | ai/api | Official Bedrock client, credential chain, SigV4/bearer auth, and converse-stream (D10) |
 | modelcontextprotocol/go-sdk | mcp | official MCP SDK v1.6+ |
 | yuin/goldmark | tui | CommonMark parsing (render stays ours) |
 | alecthomas/chroma/v2 | tui | syntax highlighting (upstream: highlight.js) |

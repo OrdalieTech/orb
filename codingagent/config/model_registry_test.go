@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pi-go/conformance/runner"
 )
 
 func TestModelRegistryHotReloadMatchesErrorSnapshotSemantics(t *testing.T) {
@@ -43,6 +44,68 @@ func TestModelRegistryHotReloadMatchesErrorSnapshotSemantics(t *testing.T) {
 	}
 	if _, ok := registry.Find("local", "second"); !ok || registry.Error() != "" {
 		t.Fatalf("fixed config did not hot reload: %q", registry.Error())
+	}
+}
+
+func TestModelRegistryBedrockCredentialChain(t *testing.T) {
+	var fixture struct {
+		Auth struct {
+			Env   []string `json:"env"`
+			Cases []struct {
+				Name          string            `json:"name"`
+				Env           map[string]string `json:"env"`
+				Authenticated bool              `json:"authenticated"`
+			} `json:"cases"`
+		} `json:"auth"`
+	}
+	runner.LoadJSON(t, "F2", "bedrock-provider.json", &fixture)
+	for _, name := range fixture.Auth.Env {
+		t.Setenv(name, "")
+	}
+	registry, err := NewModelRegistry(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fixtureCase := range fixture.Auth.Cases {
+		t.Run(fixtureCase.Name, func(t *testing.T) {
+			if got := registry.HasConfiguredAuth("amazon-bedrock", fixtureCase.Env); got != fixtureCase.Authenticated {
+				t.Fatalf("HasConfiguredAuth = %t, want %t", got, fixtureCase.Authenticated)
+			}
+			key, err := registry.ResolveAPIKey(context.Background(), "amazon-bedrock", fixtureCase.Env)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if key != nil {
+				t.Fatalf("ambient AWS credential source leaked into explicit API key: %q", *key)
+			}
+		})
+	}
+}
+
+func TestModelRegistryBedrockStoredProfile(t *testing.T) {
+	for _, name := range []string{
+		"AWS_BEARER_TOKEN_BEDROCK", "AWS_PROFILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
+		"AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_WEB_IDENTITY_TOKEN_FILE",
+	} {
+		t.Setenv(name, "")
+	}
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "auth.json"), []byte(`{"amazon-bedrock":{"type":"api_key","env":{"AWS_PROFILE":"stored-profile"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := NewModelRegistry(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !registry.HasConfiguredAuth("amazon-bedrock", nil) {
+		t.Fatal("stored AWS profile did not make Amazon Bedrock available")
+	}
+	key, err := registry.ResolveAPIKey(context.Background(), "amazon-bedrock", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key != nil {
+		t.Fatalf("stored AWS profile leaked into explicit API key: %q", *key)
 	}
 }
 

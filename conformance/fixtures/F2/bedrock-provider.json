@@ -1,0 +1,209 @@
+{
+  "id": "amazon-bedrock",
+  "name": "Amazon Bedrock",
+  "apis": [
+    "bedrock-converse-stream"
+  ],
+  "auth": {
+    "kind": "api_key",
+    "name": "AWS credentials or bearer token",
+    "env": [
+      "AWS_BEARER_TOKEN_BEDROCK",
+      "AWS_PROFILE",
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+      "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+      "AWS_WEB_IDENTITY_TOKEN_FILE"
+    ],
+    "login": [
+      {
+        "name": "bearer-token",
+        "responses": [
+          "bearer-token",
+          "fixture-bearer"
+        ],
+        "credential": {
+          "type": "api_key",
+          "key": "fixture-bearer"
+        },
+        "prompts": [
+          {
+            "type": "select",
+            "message": "Select Amazon Bedrock authentication method:",
+            "options": [
+              {
+                "id": "bearer-token",
+                "label": "Bearer token"
+              },
+              {
+                "id": "aws-profile",
+                "label": "AWS profile"
+              },
+              {
+                "id": "credential-chain",
+                "label": "Existing AWS credential chain"
+              }
+            ]
+          },
+          {
+            "type": "secret",
+            "message": "Enter Amazon Bedrock bearer token"
+          }
+        ],
+        "notifications": []
+      },
+      {
+        "name": "aws-profile",
+        "responses": [
+          "aws-profile",
+          "fixture-profile"
+        ],
+        "credential": {
+          "type": "api_key",
+          "env": {
+            "AWS_PROFILE": "fixture-profile"
+          }
+        },
+        "prompts": [
+          {
+            "type": "select",
+            "message": "Select Amazon Bedrock authentication method:",
+            "options": [
+              {
+                "id": "bearer-token",
+                "label": "Bearer token"
+              },
+              {
+                "id": "aws-profile",
+                "label": "AWS profile"
+              },
+              {
+                "id": "credential-chain",
+                "label": "Existing AWS credential chain"
+              }
+            ]
+          },
+          {
+            "type": "text",
+            "message": "Enter AWS profile name"
+          }
+        ],
+        "notifications": [
+          {
+            "type": "info",
+            "message": "Amazon Bedrock supports AWS profiles, IAM credentials, and role-based credentials.",
+            "links": [
+              {
+                "label": "AWS credential provider chain",
+                "url": "https://docs.aws.amazon.com/sdkref/latest/guide/standardized-credentials.html"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "credential-chain",
+        "responses": [
+          "credential-chain",
+          ""
+        ],
+        "credential": {
+          "type": "api_key"
+        },
+        "prompts": [
+          {
+            "type": "select",
+            "message": "Select Amazon Bedrock authentication method:",
+            "options": [
+              {
+                "id": "bearer-token",
+                "label": "Bearer token"
+              },
+              {
+                "id": "aws-profile",
+                "label": "AWS profile"
+              },
+              {
+                "id": "credential-chain",
+                "label": "Existing AWS credential chain"
+              }
+            ]
+          },
+          {
+            "type": "text",
+            "message": "Configure AWS credentials, then press Enter to continue"
+          }
+        ],
+        "notifications": [
+          {
+            "type": "info",
+            "message": "Amazon Bedrock supports AWS profiles, IAM credentials, and role-based credentials.",
+            "links": [
+              {
+                "label": "AWS credential provider chain",
+                "url": "https://docs.aws.amazon.com/sdkref/latest/guide/standardized-credentials.html"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "cases": [
+      {
+        "name": "none",
+        "env": {},
+        "authenticated": false
+      },
+      {
+        "name": "bearer",
+        "env": {
+          "AWS_BEARER_TOKEN_BEDROCK": "fixture-bearer"
+        },
+        "authenticated": true,
+        "source": "AWS_BEARER_TOKEN_BEDROCK"
+      },
+      {
+        "name": "profile",
+        "env": {
+          "AWS_PROFILE": "fixture-profile"
+        },
+        "authenticated": true,
+        "source": "AWS_PROFILE"
+      },
+      {
+        "name": "access-keys",
+        "env": {
+          "AWS_ACCESS_KEY_ID": "fixture-access",
+          "AWS_SECRET_ACCESS_KEY": "fixture-secret"
+        },
+        "authenticated": true,
+        "source": "AWS access keys"
+      },
+      {
+        "name": "ecs-relative",
+        "env": {
+          "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI": "/fixture"
+        },
+        "authenticated": true,
+        "source": "ECS task role"
+      },
+      {
+        "name": "ecs-full",
+        "env": {
+          "AWS_CONTAINER_CREDENTIALS_FULL_URI": "http://127.0.0.1/fixture"
+        },
+        "authenticated": true,
+        "source": "ECS task role"
+      },
+      {
+        "name": "web-identity",
+        "env": {
+          "AWS_WEB_IDENTITY_TOKEN_FILE": "/fixture/token"
+        },
+        "authenticated": true,
+        "source": "web identity token"
+      }
+    ]
+  }
+}
