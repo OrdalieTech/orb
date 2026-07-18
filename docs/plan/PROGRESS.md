@@ -6,7 +6,7 @@ criteria closing.
 
 ## Sprint 0 — Consolidate
 
-Status: **in progress**.
+Status: **closed** at `68d7229`.
 
 - [x] Record the owner-directed trunk, fixtures-first, core-first plan as D25/D26.
 - [x] Leave the GitButler workspace and move the shared checkout to plain `main`.
@@ -21,8 +21,8 @@ Status: **in progress**.
       settings, and the generated WP370Runtime lifecycle fixture.
 - [x] Integrate every former GitButler lane and side ref, reconciling overlapping implementations.
 - [x] Verify `CGO_ENABLED=0 go build ./...` and `make test` at every integrated commit.
-- [ ] Delete merged side refs and temporary consolidation stashes.
-- [x] Finish on plain `main` with no worktree, lane, or feature branch.
+- [x] Delete merged side refs and temporary consolidation stashes.
+- [x] Finish on plain `main` in the primary checkout with no linked worktree, lane, or feature branch.
 
 Current red-to-green evidence: RPC/resources/native extensions moved from merge conflicts and six
 lint failures to green fixtures and the pinned 27-test upstream RPC run. The SDK candidate moved
