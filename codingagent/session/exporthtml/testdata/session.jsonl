@@ -1,0 +1,9 @@
+{"type":"session","version":3,"id":"export-session","timestamp":"2025-01-01T00:00:00.000Z","cwd":"/tmp/export-fixture"}
+{"type":"message","id":"00000001","parentId":null,"timestamp":"2025-01-01T00:00:01.000Z","message":{"role":"user","content":"<skill name=\"demo\" location=\"/tmp/SKILL.md\">\nUse ``` carefully.\n</skill>\n\nPlease run it.","timestamp":1}}
+{"type":"message","id":"00000002","parentId":"00000001","timestamp":"2025-01-01T00:00:02.000Z","message":{"role":"user","content":"abandoned branch","timestamp":2}}
+{"type":"message","id":"00000003","parentId":"00000001","timestamp":"2025-01-01T00:00:03.000Z","message":{"role":"assistant","content":[{"type":"text","text":"answer <& \ud800"},{"type":"toolCall","id":"call-1","name":"custom","arguments":{"big":9007199254740993,"code":"```"}}],"api":"openai-responses","provider":"openai","model":"gpt-test","usage":{"input":1,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":3,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":3}}
+{"type":"custom_message","customType":"hidden","content":"must not render","display":false,"id":"00000004","parentId":"00000003","timestamp":"2025-01-01T00:00:04.000Z"}
+{"type":"custom_message","customType":"notice","content":"visible note","display":true,"id":"00000005","parentId":"00000004","timestamp":"2025-01-01T00:00:05.000Z"}
+{"type":"model_change","id":"00000006","parentId":"00000005","timestamp":"2025-01-01T00:00:06.000Z","provider":"openai","modelId":"gpt-next"}
+{"type":"message","id":"00000007","parentId":"00000006","timestamp":"2025-01-01T00:00:07.000Z","message":{"role":"bashExecution","command":"printf '```'","output":"before\n````\nafter","exitCode":0,"cancelled":false,"truncated":false,"timestamp":7}}
+{"type":"session_info","id":"00000008","parentId":"00000007","timestamp":"2025-01-01T00:00:08.000Z","name":"Export fixture!"}

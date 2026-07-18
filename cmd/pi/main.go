@@ -20,6 +20,7 @@ import (
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 	"github.com/OrdalieTech/pi-go/codingagent/modes"
 	"github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pi-go/codingagent/session/exporthtml"
 	"github.com/OrdalieTech/pi-go/internal/jsonwire"
 	"golang.org/x/term"
 )
@@ -38,6 +39,7 @@ type cliDependencies struct {
 	createRuntime func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error)
 	loadModels    func(string) (*config.ModelRegistry, error)
 	refreshModels func(context.Context, string) error
+	selectSession SessionSelector
 }
 
 func main() {
@@ -73,6 +75,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if dependencies.refreshModels == nil {
 		dependencies.refreshModels = refreshModelCatalogs
 	}
+	if dependencies.selectSession == nil {
+		dependencies.selectSession = terminalSessionSelector(streams)
+	}
 	if handled, code := handleModelUpdate(ctx, argv, streams, dependencies); handled {
 		return code
 	}
@@ -93,6 +98,22 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if args.Version {
 		_, _ = fmt.Fprintln(streams.Stdout, version)
 		return 0
+	}
+	if args.Export != nil && *args.Export != "" {
+		outputPath := ""
+		if len(args.Messages) > 0 {
+			outputPath = args.Messages[0]
+		}
+		path, err := exporthtml.ExportFromFile(*args.Export, exporthtml.Options{OutputPath: outputPath})
+		if err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+		_, _ = fmt.Fprintln(streams.Stdout, "Exported to: "+path)
+		return 0
+	}
+	if sessionErrors := validateSessionFlags(args); len(sessionErrors) > 0 {
+		_, _ = fmt.Fprintln(streams.Stderr, "Error: "+sessionErrors[0])
+		return 1
 	}
 	if args.Help {
 		_, _ = io.WriteString(streams.Stdout, helpText)
@@ -135,18 +156,30 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		_, _ = io.WriteString(streams.Stdout, formatModelList(registry.Available(nil), *args.ListModels))
 		return 0
 	}
-	if !args.Print && streams.StdinTTY && streams.StdoutTTY {
-		_, _ = fmt.Fprintln(streams.Stderr, "Error: interactive mode is not available until the TUI work packages; use -p")
-		return 1
-	}
-
 	cwd, err := os.Getwd()
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
-	manager, sessionContext, err := createCLISession(cwd, args)
+	manager, sessionContext, err := createCLISession(cwd, args, streams, dependencies.selectSession)
 	if err != nil {
+		if errors.Is(err, errNoSessionSelected) {
+			return 0
+		}
 		return reportCLIError(streams.Stderr, err)
+	}
+	if args.Name != nil {
+		name := strings.TrimFunc(*args.Name, isJSTrimSpace)
+		if name == "" {
+			return reportCLIError(streams.Stderr, errors.New("--name requires a non-empty value"))
+		}
+		if _, err := manager.AppendSessionInfo(name); err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+		sessionContext = manager.BuildSessionContext()
+	}
+	if !args.Print && streams.StdinTTY && streams.StdoutTTY {
+		_, _ = fmt.Fprintln(streams.Stderr, "Error: interactive mode is not available until the TUI work packages; use -p")
+		return 1
 	}
 	if len(manager.GetEntries()) > 0 {
 		applySessionDefaults(&args, sessionContext, manager.GetBranch())
@@ -233,38 +266,6 @@ func refreshModelCatalogs(ctx context.Context, agentDir string) error {
 		return errors.New("model catalog refresh timed out")
 	}
 	return err
-}
-
-func createCLISession(cwd string, args CLIArgs) (*session.SessionManager, session.SessionContext, error) {
-	agentDir, err := config.GetAgentDir()
-	if err != nil {
-		return nil, session.SessionContext{}, err
-	}
-	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
-	if err != nil {
-		return nil, session.SessionContext{}, err
-	}
-	cliSessionDir := ""
-	if args.SessionDir != nil {
-		cliSessionDir = *args.SessionDir
-	}
-	sessionDir, err := config.ResolveSessionDir(cliSessionDir, settings)
-	if err != nil {
-		return nil, session.SessionContext{}, err
-	}
-	var manager *session.SessionManager
-	switch {
-	case args.NoSession:
-		manager, err = session.InMemory(cwd)
-	case args.Continue:
-		manager, err = session.ContinueRecent(cwd, sessionDir, session.WithAgentDir(agentDir))
-	default:
-		manager, err = session.Create(cwd, sessionDir, session.WithAgentDir(agentDir))
-	}
-	if err != nil {
-		return nil, session.SessionContext{}, err
-	}
-	return manager, manager.BuildSessionContext(), nil
 }
 
 func applySessionDefaults(args *CLIArgs, context session.SessionContext, branch []session.SessionEntry) {
@@ -400,9 +401,15 @@ Usage: pi [options] [@files...] [messages...]
   --append-system-prompt <text>  Append text or file contents
   --thinking <level>             off|minimal|low|medium|high|xhigh|max
   --print, -p                    Process prompts and exit
-  --continue, -c                 Continue the latest cwd session
-  --session-dir <dir>            Override session storage
-  --no-session                   Do not persist the session
+  --continue, -c                 Continue previous session
+  --resume, -r                   Select a session to resume
+  --session <path|id>            Use specific session file or partial UUID
+  --session-id <id>              Use exact project session ID, creating it if missing
+  --fork <path|id>               Fork specific session file or partial UUID into a new session
+  --name, -n <name>              Set the session display name
+  --session-dir <dir>            Directory for session storage and lookup
+  --no-session                   Don't save session (ephemeral)
+  --export <file> [output]       Export session file to HTML and exit
   --tools, -t <names>            Comma-separated tool allowlist
   --exclude-tools, -xt <names>   Comma-separated tool denylist
   --no-context-files, -nc        Disable AGENTS.md/CLAUDE.md discovery

@@ -26,15 +26,21 @@ type CLIArgs struct {
 	AppendSystemPrompt []string
 	Thinking           *string
 	Continue           bool
+	Resume             bool
 	Help               bool
 	Version            bool
+	Name               *string
 	NoSession          bool
+	Session            *string
+	SessionID          *string
+	Fork               *string
 	SessionDir         *string
 	Tools              []string
 	ExcludeTools       []string
 	NoTools            bool
 	NoBuiltinTools     bool
 	Print              bool
+	Export             *string
 	NoContextFiles     bool
 	Messages           []string
 	FileArgs           []string
@@ -60,6 +66,8 @@ func ParseArgs(argv []string) CLIArgs {
 			result.Version = true
 		case argument == "--continue" || argument == "-c":
 			result.Continue = true
+		case argument == "--resume" || argument == "-r":
+			result.Resume = true
 		case argument == "--provider" && index+1 < len(argv):
 			index++
 			result.Provider = stringValue(argv[index])
@@ -88,8 +96,24 @@ func ParseArgs(argv []string) CLIArgs {
 				result.AppendSystemPrompt = make([]string, 0, 1)
 			}
 			result.AppendSystemPrompt = append(result.AppendSystemPrompt, argv[index])
+		case argument == "--name" || argument == "-n":
+			if index+1 < len(argv) {
+				index++
+				result.Name = stringValue(argv[index])
+			} else {
+				result.Diagnostics = append(result.Diagnostics, CLIDiagnostic{Type: "error", Message: "--name requires a value"})
+			}
 		case argument == "--no-session":
 			result.NoSession = true
+		case argument == "--session" && index+1 < len(argv):
+			index++
+			result.Session = stringValue(argv[index])
+		case argument == "--session-id" && index+1 < len(argv):
+			index++
+			result.SessionID = stringValue(argv[index])
+		case argument == "--fork" && index+1 < len(argv):
+			index++
+			result.Fork = stringValue(argv[index])
 		case argument == "--session-dir" && index+1 < len(argv):
 			index++
 			result.SessionDir = stringValue(argv[index])
@@ -123,6 +147,9 @@ func ParseArgs(argv []string) CLIArgs {
 					index++
 				}
 			}
+		case argument == "--export" && index+1 < len(argv):
+			index++
+			result.Export = stringValue(argv[index])
 		case argument == "--no-context-files" || argument == "-nc":
 			result.NoContextFiles = true
 		case strings.HasPrefix(argument, "@"):
