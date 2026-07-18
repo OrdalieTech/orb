@@ -1,0 +1,9 @@
+{
+  "family": "F12",
+  "upstreamCommit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
+  "generator": "conformance/extract/f12-tui.ts",
+  "source": "packages/tui/src/index.ts",
+  "files": [
+    "primitives.json"
+  ]
+}
