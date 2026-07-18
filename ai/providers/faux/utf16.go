@@ -3,6 +3,8 @@ package faux
 import (
 	"math/rand/v2"
 	"unicode/utf8"
+
+	"github.com/OrdalieTech/pi-go/internal/jsonwire"
 )
 
 type utf16Chunk struct {
@@ -33,7 +35,7 @@ func splitUTF16ByTokenSize(text string, minTokenSize, maxTokenSize int) []utf16C
 func utf16Units(value string) []uint16 {
 	units := make([]uint16, 0, len(value))
 	for index := 0; index < len(value); {
-		if surrogate, ok := decodeWTF8Surrogate(value[index:]); ok {
+		if surrogate, ok := jsonwire.DecodeWTF8Surrogate(value[index:]); ok {
 			units = append(units, surrogate)
 			index += 3
 			continue
@@ -79,12 +81,4 @@ func stringFromUTF16(units []uint16) string {
 		result = utf8.AppendRune(result, rune(unit))
 	}
 	return string(result)
-}
-
-func decodeWTF8Surrogate(value string) (uint16, bool) {
-	if len(value) < 3 || value[0] != 0xed || value[1] < 0xa0 || value[1] > 0xbf || value[2] < 0x80 || value[2] > 0xbf {
-		return 0, false
-	}
-	unit := uint16(value[0]&0x0f)<<12 | uint16(value[1]&0x3f)<<6 | uint16(value[2]&0x3f)
-	return unit, unit >= 0xd800 && unit <= 0xdfff
 }

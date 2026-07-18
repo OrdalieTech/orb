@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -96,14 +97,7 @@ func GetShellEnv() (map[string]string, error) {
 		return nil, err
 	}
 	currentPath := environment[pathKey]
-	hasBinDir := false
-	for _, entry := range filepath.SplitList(currentPath) {
-		if entry == binDir {
-			hasBinDir = true
-			break
-		}
-	}
-	if !hasBinDir {
+	if !slices.Contains(filepath.SplitList(currentPath), binDir) {
 		if currentPath == "" {
 			environment[pathKey] = binDir
 		} else {

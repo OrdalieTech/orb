@@ -44,7 +44,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	}
 
 	selection := ResolveBuiltInToolSelection(args)
-	activeTools, err := createBuiltInTools(cwd, selection.Active, settings)
+	activeTools, err := createBuiltInTools(cwd, selection, settings)
 	if err != nil {
 		return runtimeInputs{}, err
 	}

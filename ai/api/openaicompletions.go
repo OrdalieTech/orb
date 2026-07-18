@@ -147,7 +147,6 @@ func StreamOpenAICompletionsWithOptions(
 		response, err := postOpenAIStream(
 			ctx,
 			model,
-			requestContext,
 			&options.StreamOptions,
 			"chat/completions",
 			payloadValue,

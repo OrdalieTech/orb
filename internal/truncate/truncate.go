@@ -5,6 +5,8 @@ import (
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/OrdalieTech/pi-go/internal/jsonwire"
 )
 
 const (
@@ -265,7 +267,7 @@ func utf16Units(value string) []uint16 {
 	for index := 0; index < len(value); {
 		character, size := utf8.DecodeRuneInString(value[index:])
 		if character == utf8.RuneError && size == 1 {
-			if surrogate, ok := decodeWTF8Surrogate(value[index:]); ok {
+			if surrogate, ok := jsonwire.DecodeWTF8Surrogate(value[index:]); ok {
 				units = append(units, surrogate)
 				index += 3
 				continue
@@ -307,12 +309,4 @@ func stringFromUTF16Units(units []uint16) string {
 		output.WriteRune(rune(unit))
 	}
 	return output.String()
-}
-
-func decodeWTF8Surrogate(value string) (uint16, bool) {
-	if len(value) < 3 || value[0] != 0xed || value[1] < 0xa0 || value[1] > 0xbf || value[2] < 0x80 || value[2] > 0xbf {
-		return 0, false
-	}
-	unit := uint16(value[0]&0x0f)<<12 | uint16(value[1]&0x3f)<<6 | uint16(value[2]&0x3f)
-	return unit, unit >= 0xd800 && unit <= 0xdfff
 }

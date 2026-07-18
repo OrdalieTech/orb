@@ -8,6 +8,7 @@ import (
 	"math"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -227,7 +228,7 @@ func coerceValue(value, schema any) any {
 		}
 	}
 
-	if containsString(types, "object") {
+	if slices.Contains(types, "object") {
 		if values, ok := next.(map[string]any); ok {
 			propertyValue, _ := object.get("properties")
 			properties, _ := propertyValue.(*schemaObject)
@@ -250,7 +251,7 @@ func coerceValue(value, schema any) any {
 			}
 		}
 	}
-	if containsString(types, "array") {
+	if slices.Contains(types, "array") {
 		if values, ok := next.([]any); ok {
 			itemValue, _ := object.get("items")
 			switch items := itemValue.(type) {
@@ -685,15 +686,6 @@ func matchesType(value any, schemaType string) bool {
 	default:
 		return false
 	}
-}
-
-func containsString(values []string, wanted string) bool {
-	for _, value := range values {
-		if value == wanted {
-			return true
-		}
-	}
-	return false
 }
 
 func containsJSONValue(values []any, wanted any) bool {

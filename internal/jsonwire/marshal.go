@@ -44,9 +44,9 @@ func MarshalString(value string) ([]byte, error) {
 			}
 			output.Write(encoded[1 : len(encoded)-1])
 		}
-		if unit, ok := decodeWTF8Surrogate(value[index:]); ok {
+		if unit, ok := DecodeWTF8Surrogate(value[index:]); ok {
 			if unit >= 0xd800 && unit <= 0xdbff {
-				if next, nextOK := decodeWTF8Surrogate(value[index+3:]); nextOK && next >= 0xdc00 && next <= 0xdfff {
+				if next, nextOK := DecodeWTF8Surrogate(value[index+3:]); nextOK && next >= 0xdc00 && next <= 0xdfff {
 					output.WriteRune(utf16.DecodeRune(rune(unit), rune(next)))
 					index += 6
 					validStart = index
@@ -187,7 +187,8 @@ func writeWTF8CodeUnit(output *bytes.Buffer, unit uint16) {
 	output.WriteByte(0x80 | byte(unit)&0x3f)
 }
 
-func decodeWTF8Surrogate(value string) (uint16, bool) {
+// DecodeWTF8Surrogate returns the leading UTF-16 surrogate encoded as WTF-8.
+func DecodeWTF8Surrogate(value string) (uint16, bool) {
 	if len(value) < 3 || value[0] != 0xed || value[1] < 0xa0 || value[1] > 0xbf || value[2] < 0x80 || value[2] > 0xbf {
 		return 0, false
 	}

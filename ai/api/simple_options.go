@@ -2,6 +2,7 @@ package api
 
 import (
 	"math"
+	"slices"
 	"unicode/utf16"
 
 	"github.com/OrdalieTech/pi-go/ai"
@@ -239,12 +240,12 @@ func clampSimpleReasoning(model *ai.Model, requested *ai.ThinkingLevel) *ai.Thin
 		return simpleReasoningLevel(available[0])
 	}
 	for index := requestedIndex; index < len(extendedThinkingLevels); index++ {
-		if containsThinkingLevel(available, extendedThinkingLevels[index]) {
+		if slices.Contains(available, extendedThinkingLevels[index]) {
 			return simpleReasoningLevel(extendedThinkingLevels[index])
 		}
 	}
 	for index := requestedIndex - 1; index >= 0; index-- {
-		if containsThinkingLevel(available, extendedThinkingLevels[index]) {
+		if slices.Contains(available, extendedThinkingLevels[index]) {
 			return simpleReasoningLevel(extendedThinkingLevels[index])
 		}
 	}
@@ -271,15 +272,6 @@ func supportedThinkingLevels(model *ai.Model) []ai.ModelThinkingLevel {
 		available = append(available, level)
 	}
 	return available
-}
-
-func containsThinkingLevel(levels []ai.ModelThinkingLevel, wanted ai.ModelThinkingLevel) bool {
-	for _, level := range levels {
-		if level == wanted {
-			return true
-		}
-	}
-	return false
 }
 
 func simpleReasoningLevel(level ai.ModelThinkingLevel) *ai.ThinkingLevel {
