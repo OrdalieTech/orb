@@ -2,10 +2,11 @@
   "family": "F12",
   "upstreamCommit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
   "generator": "conformance/extract/f12-tui.ts",
-  "source": "packages/tui/src/index.ts; packages/tui/src/components/markdown.ts; packages/tui/test/markdown.test.ts; packages/coding-agent/src/modes/interactive/theme/theme.ts; packages/coding-agent/src/modes/interactive/theme/dark.json; packages/coding-agent/src/modes/interactive/theme/light.json; packages/coding-agent/src/utils/syntax-highlight.ts; packages/coding-agent/src/core/resource-loader.ts; packages/coding-agent/src/core/package-manager.ts; packages/coding-agent/src/core/settings-manager.ts",
+  "source": "packages/tui/src/index.ts; packages/tui/src/components/markdown.ts; packages/tui/test/markdown.test.ts; packages/coding-agent/src/modes/interactive/theme/theme.ts; packages/coding-agent/src/modes/interactive/theme/dark.json; packages/coding-agent/src/modes/interactive/theme/light.json; packages/coding-agent/src/utils/syntax-highlight.ts; packages/coding-agent/src/core/resource-loader.ts; packages/coding-agent/src/core/package-manager.ts; packages/coding-agent/src/core/settings-manager.ts; packages/tui/src/terminal-image.ts; packages/tui/src/components/image.ts",
   "files": [
     "primitives.json",
     "markdown.json",
-    "themes.json"
+    "themes.json",
+    "terminal-images.json"
   ]
 }

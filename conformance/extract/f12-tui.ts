@@ -479,6 +479,54 @@ export async function generateF12(upstreamRoot: string, outputRoot: string, upst
   }
   const discovery = await generateThemeDiscovery(upstreamRoot);
   tui.resetCapabilitiesCache();
+  const terminalImageSource = "packages/tui/src/terminal-image.ts";
+  const terminalImage = await import(pathToFileURL(path.join(upstreamRoot, terminalImageSource)).href);
+  const imageSource = "packages/tui/src/components/image.ts";
+  const imageModule = await import(pathToFileURL(path.join(upstreamRoot, imageSource)).href);
+  const encodingCases = [
+    {
+      name: "kitty-small",
+      kind: "kitty",
+      data: "QUJD",
+      options: { columns: 10, rows: 4, imageId: 42, moveCursor: false },
+      expected: terminalImage.encodeKitty("QUJD", { columns: 10, rows: 4, imageId: 42, moveCursor: false }),
+    },
+    {
+      name: "kitty-chunk-boundary",
+      kind: "kitty",
+      data: "a".repeat(4100),
+      options: {},
+      expected: terminalImage.encodeKitty("a".repeat(4100)),
+    },
+    {
+      name: "iterm-all-parameters",
+      kind: "iterm2",
+      data: "QUJD",
+      options: { width: 12, height: "auto", name: "cat.png", preserveAspectRatio: false, inline: true },
+      expected: terminalImage.encodeITerm2("QUJD", { width: 12, height: "auto", name: "cat.png", preserveAspectRatio: false, inline: true }),
+    },
+  ];
+  const cellCases = [
+    { name: "landscape-width", dimensions: { widthPx: 1000, heightPx: 500 }, maxWidth: 40, maxHeight: 20, cell: { widthPx: 10, heightPx: 20 } },
+    { name: "portrait-square-pixels", dimensions: { widthPx: 200, heightPx: 800 }, maxWidth: 30, maxHeight: 15, cell: { widthPx: 9, heightPx: 18 } },
+    { name: "floors-and-clamps", dimensions: { widthPx: 0, heightPx: -1 }, maxWidth: 0.8, maxHeight: 0.2, cell: { widthPx: 9, heightPx: 18 } },
+  ].map((fixtureCase) => ({ ...fixtureCase, expected: terminalImage.calculateImageCellSize(fixtureCase.dimensions, fixtureCase.maxWidth, fixtureCase.maxHeight, fixtureCase.cell) }));
+  const renderInputs = [
+    { name: "kitty-component", protocol: "kitty", width: 80, options: { maxWidthCells: 20, maxHeightCells: 10, filename: "sample.png", imageId: 99 } },
+    { name: "kitty-zero-options", protocol: "kitty", width: 80, options: { maxWidthCells: 0, maxHeightCells: 0, filename: "sample.png", imageId: 0 } },
+    { name: "iterm-component", protocol: "iterm2", width: 80, options: { maxWidthCells: 20, maxHeightCells: 10, filename: "sample.png", imageId: 99 } },
+    { name: "fallback-component", protocol: null, width: 80, options: { maxWidthCells: 20, maxHeightCells: 10, filename: "sample.png", imageId: 99 } },
+  ];
+  const dimensions = { widthPx: 400, heightPx: 200 };
+  terminalImage.setCellDimensions({ widthPx: 10, heightPx: 20 });
+  const renderCases = renderInputs.map((fixtureCase) => {
+    terminalImage.setCapabilities({ images: fixtureCase.protocol, trueColor: true, hyperlinks: true });
+    const component = new imageModule.Image("QUJD", "image/png", { fallbackColor: (value: string) => `<${value}>` }, fixtureCase.options, dimensions);
+    return { ...fixtureCase, data: "QUJD", mimeType: "image/png", dimensions, expected: component.render(fixtureCase.width) };
+  });
+  terminalImage.resetCapabilitiesCache();
+  terminalImage.setCellDimensions({ widthPx: 9, heightPx: 18 });
+  const terminalImages = { schemaVersion: 2, encodingCases, cellCases, renderCases };
   const familyDir = path.join(outputRoot, "F12");
   await mkdir(familyDir, { recursive: true });
   const fixtureSources = [
@@ -492,9 +540,12 @@ export async function generateF12(upstreamRoot: string, outputRoot: string, upst
     "packages/coding-agent/src/core/resource-loader.ts",
     "packages/coding-agent/src/core/package-manager.ts",
     "packages/coding-agent/src/core/settings-manager.ts",
+    terminalImageSource,
+    imageSource,
   ];
-  await writeFile(path.join(familyDir, "manifest.json"), `${JSON.stringify({ family: "F12", upstreamCommit, generator: "conformance/extract/f12-tui.ts", source: fixtureSources.join("; "), files: ["primitives.json", "markdown.json", "themes.json"] }, null, 2)}\n`);
+  await writeFile(path.join(familyDir, "manifest.json"), `${JSON.stringify({ family: "F12", upstreamCommit, generator: "conformance/extract/f12-tui.ts", source: fixtureSources.join("; "), files: ["primitives.json", "markdown.json", "themes.json", "terminal-images.json"] }, null, 2)}\n`);
   await writeFile(path.join(familyDir, "primitives.json"), `${JSON.stringify({ schemaVersion: 1, cases: generated }, null, 2)}\n`);
   await writeFile(path.join(familyDir, "markdown.json"), `${JSON.stringify({ schemaVersion: 1, cases: markdown }, null, 2)}\n`);
   await writeFile(path.join(familyDir, "themes.json"), `${JSON.stringify({ schemaVersion: 1, themes, discovery, validation: { trailingDocumentAccepted, unknownForegroundThrows } }, null, 2)}\n`);
+  await writeFile(path.join(familyDir, "terminal-images.json"), `${JSON.stringify(terminalImages, null, 2)}\n`);
 }

@@ -145,6 +145,74 @@ func TestReadToolSchemaBytesMatchUpstreamTypeBox(t *testing.T) {
 	}
 }
 
+func TestReadToolReturnsImageAttachmentForVisionAndTextOnlyModels(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "tiny.png"), mustBase64(t, tinyPNG), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tool := NewReadTool(dir, nil)
+	result, err := tool.Execute(context.Background(), "call", map[string]any{"path": "tiny.png"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Content) != 2 {
+		t.Fatalf("vision content = %#v", result.Content)
+	}
+	imageBlock, ok := result.Content[1].(*ai.ImageContent)
+	if !ok || imageBlock.Data != tinyPNG || imageBlock.MimeType != "image/png" {
+		t.Fatalf("image block = %#v", result.Content[1])
+	}
+	ctx := agent.WithToolExecutionModel(context.Background(), &ai.Model{Input: ai.InputModalities{ai.InputText}})
+	result, err = tool.Execute(ctx, "call", map[string]any{"path": "tiny.png"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	textBlock, textOK := result.Content[0].(*ai.TextContent)
+	if len(result.Content) != 2 || !textOK || !strings.Contains(textBlock.Text, "Current model does not support images") {
+		t.Fatalf("text-only content = %#v", result.Content)
+	}
+	imageBlock, ok = result.Content[1].(*ai.ImageContent)
+	if !ok || imageBlock.Data != tinyPNG || imageBlock.MimeType != "image/png" {
+		t.Fatalf("text-only image block = %#v", result.Content[1])
+	}
+}
+
+func TestReadToolConvertsBMPWithAutoResizeDisabled(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "tiny.bmp"), tinyBMP(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	autoResize := false
+	result, err := NewReadTool(dir, &ReadToolOptions{AutoResizeImages: &autoResize}).Execute(context.Background(), "call", map[string]any{"path": "tiny.bmp"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Content) != 2 {
+		t.Fatalf("bmp content = %#v", result.Content)
+	}
+	textBlock, textOK := result.Content[0].(*ai.TextContent)
+	if !textOK || !strings.Contains(textBlock.Text, "converted from image/bmp to image/png") {
+		t.Fatalf("bmp content = %#v", result.Content)
+	}
+	if imageBlock, ok := result.Content[1].(*ai.ImageContent); !ok || imageBlock.MimeType != "image/png" {
+		t.Fatalf("bmp attachment = %#v", result.Content[1])
+	}
+}
+
+func TestReadToolDelegatedOperationsRequireExplicitImageDetection(t *testing.T) {
+	operations := staticReadOperations{data: mustBase64(t, tinyPNG)}
+	result, err := NewReadTool(t.TempDir(), &ReadToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"path": "remote.png"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Content) != 1 {
+		t.Fatalf("content = %#v", result.Content)
+	}
+	if text := result.Content[0].(*ai.TextContent).Text; strings.HasPrefix(text, "Read image file") {
+		t.Fatalf("custom operation without detector classified image: %q", text)
+	}
+}
+
 func TestReadToolMissingErrorUsesNodeFilesystemShape(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "missing.txt")
@@ -196,6 +264,13 @@ func TestReadToolAbortWinsWhenOperationCancelsBeforeReturning(t *testing.T) {
 }
 
 type cancelingReadOperations struct{ cancel context.CancelFunc }
+
+type staticReadOperations struct{ data []byte }
+
+func (staticReadOperations) Access(context.Context, string) error { return nil }
+func (operations staticReadOperations) ReadFile(context.Context, string) ([]byte, error) {
+	return append([]byte(nil), operations.data...), nil
+}
 
 func (cancelingReadOperations) Access(context.Context, string) error { return nil }
 func (operations cancelingReadOperations) ReadFile(context.Context, string) ([]byte, error) {

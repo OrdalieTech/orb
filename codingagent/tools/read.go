@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"strings"
@@ -32,13 +33,21 @@ type ReadOperations interface {
 	Access(context.Context, string) error
 }
 
+// ReadImageOperations is the optional image-detection extension used by
+// delegated filesystems that cannot be sniffed locally before reading.
+type ReadImageOperations interface {
+	DetectImageMimeType(context.Context, string) (string, error)
+}
+
 type ReadToolOptions struct {
-	Operations ReadOperations
+	Operations       ReadOperations
+	AutoResizeImages *bool
 }
 
 type readTool struct {
-	cwd        string
-	operations ReadOperations
+	cwd              string
+	operations       ReadOperations
+	autoResizeImages bool
 }
 
 type localReadOperations struct{}
@@ -58,19 +67,37 @@ func (localReadOperations) Access(_ context.Context, path string) error {
 	return asNodeFilesystemError("access", path, syscall.Access(path, accessRead))
 }
 
+func (localReadOperations) DetectImageMimeType(_ context.Context, path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", asNodeFilesystemError("open", path, err)
+	}
+	defer func() { _ = file.Close() }()
+	buffer := make([]byte, 4100)
+	count, err := file.Read(buffer)
+	if err != nil && err != io.EOF {
+		return "", asNodeFilesystemError("read", path, err)
+	}
+	return DetectSupportedImageMimeType(buffer[:count]), nil
+}
+
 func NewReadTool(cwd string, options *ReadToolOptions) agent.AgentTool {
 	operations := ReadOperations(localReadOperations{})
+	autoResizeImages := true
 	if options != nil && options.Operations != nil {
 		operations = options.Operations
 	}
-	return &readTool{cwd: cwd, operations: operations}
+	if options != nil && options.AutoResizeImages != nil {
+		autoResizeImages = *options.AutoResizeImages
+	}
+	return &readTool{cwd: cwd, operations: operations, autoResizeImages: autoResizeImages}
 }
 
 func (tool *readTool) Spec() agent.AgentToolSpec {
 	return agent.AgentToolSpec{
 		Name:        "read",
 		Label:       "read",
-		Description: fmt.Sprintf("Read the contents of a text file. Output is truncated to %d lines or %dKB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.", truncate.DefaultMaxLines, truncate.DefaultMaxBytes/1024),
+		Description: fmt.Sprintf("Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to %d lines or %dKB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.", truncate.DefaultMaxLines, truncate.DefaultMaxBytes/1024),
 		Parameters:  readSchema,
 	}
 }
@@ -94,9 +121,19 @@ func (tool *readTool) Execute(
 	if err := runCancelableError(ctx, func() error { return tool.operations.Access(ctx, absolutePath) }); err != nil {
 		return agent.AgentToolResult{}, err
 	}
+	mimeType := ""
+	if detector, ok := tool.operations.(ReadImageOperations); ok {
+		mimeType, err = runCancelable(ctx, func() (string, error) { return detector.DetectImageMimeType(ctx, absolutePath) })
+		if err != nil {
+			return agent.AgentToolResult{}, err
+		}
+	}
 	data, err := runCancelable(ctx, func() ([]byte, error) { return tool.operations.ReadFile(ctx, absolutePath) })
 	if err != nil {
 		return agent.AgentToolResult{}, err
+	}
+	if mimeType != "" {
+		return tool.imageResult(ctx, data, mimeType), nil
 	}
 	text := decodeNodeUTF8(data)
 	allLines := strings.Split(text, "\n")
@@ -153,6 +190,43 @@ func (tool *readTool) Execute(
 		Content: ai.ToolResultContent{&ai.TextContent{Text: outputText}},
 		Details: details,
 	}, nil
+}
+
+func (tool *readTool) imageResult(ctx context.Context, data []byte, mimeType string) agent.AgentToolResult {
+	autoResize := tool.autoResizeImages
+	processed := ProcessImage(data, mimeType, &ProcessImageOptions{AutoResizeImages: &autoResize})
+	model := agent.ToolExecutionModel(ctx)
+	vision := model == nil
+	if model != nil {
+		for _, modality := range model.Input {
+			if modality == ai.InputImage {
+				vision = true
+				break
+			}
+		}
+	}
+	nonVisionNote := ""
+	if !vision {
+		nonVisionNote = "[Current model does not support images. The image will be omitted from this request.]"
+	}
+	if !processed.OK {
+		text := "Read image file [" + mimeType + "]\n" + processed.Message
+		if nonVisionNote != "" {
+			text += "\n" + nonVisionNote
+		}
+		return agent.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: text}}}
+	}
+	text := "Read image file [" + processed.MimeType + "]"
+	if len(processed.Hints) > 0 {
+		text += "\n" + strings.Join(processed.Hints, "\n")
+	}
+	if nonVisionNote != "" {
+		text += "\n" + nonVisionNote
+	}
+	return agent.AgentToolResult{Content: ai.ToolResultContent{
+		&ai.TextContent{Text: text},
+		&ai.ImageContent{Data: processed.Data, MimeType: processed.MimeType},
+	}}
 }
 
 func readInput(params any) (ReadToolInput, error) {

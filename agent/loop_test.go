@@ -111,6 +111,48 @@ func TestRunLoopParallelCompletionAndSourceOrder(t *testing.T) {
 	}
 }
 
+func TestRunLoopSuppliesModelSnapshotToParallelToolExecutions(t *testing.T) {
+	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{
+		loopAssistant(ai.StopReasonToolUse,
+			&ai.ToolCall{ID: "call-1", Name: "inspect", Arguments: map[string]any{}},
+			&ai.ToolCall{ID: "call-2", Name: "inspect", Arguments: map[string]any{}},
+		),
+		loopAssistant(ai.StopReasonStop),
+	}}
+	model := loopModel()
+	model.Input = ai.InputModalities{ai.InputText}
+	var seenMu sync.Mutex
+	seen := make([]*ai.Model, 0, 2)
+	tool := AgentToolFunc{
+		AgentToolSpec: AgentToolSpec{Name: "inspect", Parameters: jsonschema.Schema(`{"type":"object"}`)},
+		Run: func(ctx context.Context, _ string, _ any, _ AgentToolUpdateCallback) (AgentToolResult, error) {
+			seenMu.Lock()
+			seen = append(seen, ToolExecutionModel(ctx))
+			seenMu.Unlock()
+			return textToolResult("done"), nil
+		},
+	}
+	_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
+		Model: model, StreamFn: responses.stream, ToolExecution: ToolExecutionParallel,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seenMu.Lock()
+	defer seenMu.Unlock()
+	if len(seen) != 2 {
+		t.Fatalf("tool model contexts = %d, want 2", len(seen))
+	}
+	for index, snapshot := range seen {
+		if snapshot == nil || snapshot == model || len(snapshot.Input) != 1 || snapshot.Input[0] != ai.InputText {
+			t.Fatalf("tool model snapshot %d = %#v", index, snapshot)
+		}
+	}
+	if seen[0] == seen[1] {
+		t.Fatal("parallel tool calls shared a mutable model snapshot")
+	}
+}
+
 type preparingLoopTool struct {
 	mu       sync.Mutex
 	prepared []string

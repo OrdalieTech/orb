@@ -68,6 +68,25 @@ type ToolExecuteFunc func(
 	onUpdate AgentToolUpdateCallback,
 ) (AgentToolResult, error)
 
+type toolExecutionModelKey struct{}
+
+// ToolExecutionModel returns the request model attached by the loop. Tools use
+// it for behavior that depends on model capabilities, matching upstream's
+// per-invocation tool context rather than startup-time configuration.
+func ToolExecutionModel(ctx context.Context) *ai.Model {
+	model, _ := ctx.Value(toolExecutionModelKey{}).(*ai.Model)
+	return model
+}
+
+// WithToolExecutionModel supplies the model context for a direct tool
+// invocation. The agent loop applies it automatically during normal runs.
+func WithToolExecutionModel(ctx context.Context, model *ai.Model) context.Context {
+	if model == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, toolExecutionModelKey{}, model)
+}
+
 type AgentToolSpec struct {
 	Name             string
 	Label            string

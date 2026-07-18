@@ -475,6 +475,7 @@ type preparedToolCall struct {
 	toolCall         *ai.ToolCall
 	tool             AgentTool
 	args             any
+	model            *ai.Model
 	executionContext context.Context
 	releaseExecution func()
 	executionError   error
@@ -734,7 +735,7 @@ func prepareToolCall(
 		outcome := finalizedToolCall{toolCall: toolCall, result: createErrorToolResult(err.Error()), isError: true}
 		return nil, &outcome
 	}
-	return &preparedToolCall{toolCall: toolCall, tool: tool, args: args}, nil
+	return &preparedToolCall{toolCall: toolCall, tool: tool, args: args, model: cloneModel(config.Model)}, nil
 }
 
 func sameReference(left, right any) bool {
@@ -765,6 +766,7 @@ func executePreparedToolCall(
 	if prepared.executionContext != nil {
 		executionContext = prepared.executionContext
 	}
+	executionContext = WithToolExecutionModel(executionContext, prepared.model)
 	if prepared.releaseExecution != nil {
 		defer prepared.releaseExecution()
 	}

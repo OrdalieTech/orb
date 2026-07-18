@@ -213,3 +213,56 @@ func TestTUIStopsTerminalBeforeLineOverflowPanic(t *testing.T) {
 	}()
 	ui.RenderNow()
 }
+
+func TestTUIImageCellQueryAndReservedRows(t *testing.T) {
+	SetCapabilities(TerminalCapabilities{Images: ImageProtocolKitty})
+	SetCellDimensions(CellDimensions{WidthPx: 9, HeightPx: 18})
+	t.Cleanup(func() {
+		ResetCapabilitiesCache()
+		SetCellDimensions(CellDimensions{WidthPx: 9, HeightPx: 18})
+	})
+	terminal := newFakeTerminal(40, 10)
+	ui := NewTUI(terminal)
+	component := &mutableLines{lines: []string{EncodeKitty("QUJD", 8, 3, 27, false), "", ""}}
+	ui.AddChild(component)
+	if err := ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ui.Stop() }()
+	output := terminal.output()
+	if !strings.Contains(output, "\x1b[16t") || !strings.Contains(output, "\r\n\r\n\x1b[2A\x1b_G") || strings.Contains(output, segmentReset) {
+		t.Fatalf("initial image output = %q", output)
+	}
+	terminal.send("\x1b[6;22;11t")
+	if got := GetCellDimensions(); got != (CellDimensions{WidthPx: 11, HeightPx: 22}) {
+		t.Fatalf("cell dimensions = %#v", got)
+	}
+	terminal.resetOutput()
+	component.lines = []string{"replacement"}
+	ui.RenderNow()
+	if output := terminal.output(); !strings.Contains(output, DeleteKittyImage(27)) {
+		t.Fatalf("changed image was not deleted: %q", output)
+	}
+}
+
+func TestTUIExpandsAppendedKittyContinuationBeforeChoosingAppendMode(t *testing.T) {
+	terminal := newFakeTerminal(40, 10)
+	ui := NewTUI(terminal)
+	imageLine := EncodeKitty("QUJD", 8, 3, 27, false)
+	component := &mutableLines{lines: []string{imageLine, ""}}
+	ui.AddChild(component)
+	if err := ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ui.Stop() }()
+	terminal.resetOutput()
+	component.lines = append(component.lines, "")
+	ui.RenderNow()
+	output := terminal.output()
+	if !strings.Contains(output, DeleteKittyImage(27)) || !strings.Contains(output, "\r\x1b[2K") {
+		t.Fatalf("expanded image repaint = %q", output)
+	}
+	if strings.Contains(output, "\x1b[1A\r\n") {
+		t.Fatalf("expanded image repaint incorrectly used append mode: %q", output)
+	}
+}

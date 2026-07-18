@@ -464,7 +464,8 @@ func createBuiltInTools(cwd string, names []string, settings *config.SettingsMan
 	for _, name := range names {
 		switch name {
 		case "read":
-			result = append(result, tools.NewReadTool(cwd, nil))
+			autoResize := settings.GetImageAutoResize()
+			result = append(result, tools.NewReadTool(cwd, &tools.ReadToolOptions{AutoResizeImages: &autoResize}))
 		case "bash":
 			shellPath, err := settings.GetShellPath()
 			if err != nil {
