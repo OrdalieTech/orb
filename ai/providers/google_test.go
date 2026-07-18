@@ -48,7 +48,12 @@ func TestGoogleProvider(t *testing.T) {
 		t.Fatal("Google returned mutable auth-method storage")
 	}
 	registered := providers.List()
-	if len(registered) != 4 || registered[2].ID != fixture.ID || registered[3].ID != "google-vertex" {
-		t.Fatalf("registered providers = %#v, want OpenAI, Anthropic, Google, Vertex", registered)
+	wantIDs := []ai.ProviderID{"openai", "anthropic", fixture.ID, "google-vertex", "mistral", "azure-openai-responses"}
+	gotIDs := make([]ai.ProviderID, len(registered))
+	for index := range registered {
+		gotIDs[index] = registered[index].ID
+	}
+	if !slices.Equal(gotIDs, wantIDs) {
+		t.Fatalf("registered provider IDs = %v, want %v", gotIDs, wantIDs)
 	}
 }

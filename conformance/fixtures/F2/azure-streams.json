@@ -1,0 +1,415 @@
+{
+  "cases": [
+    {
+      "name": "azure-reasoning-backfill-text",
+      "api": "azure-openai-responses",
+      "model": {
+        "id": "gpt-fixture-azure",
+        "name": "Azure Fixture",
+        "api": "azure-openai-responses",
+        "provider": "azure-openai-responses",
+        "baseUrl": "https://model-resource.openai.azure.com",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "xhigh"
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1000000,
+          "output": 2000000,
+          "cacheRead": 3000000,
+          "cacheWrite": 4000000
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "headers": {
+          "x-model-header": "azure"
+        }
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "stream",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "azureBaseUrl": "https://fixture-resource.openai.azure.com",
+        "cacheRetention": "none"
+      },
+      "sse": "data: {\"type\":\"response.created\",\"sequence_number\":0,\"response\":{\"id\":\"azure-stream-fixture\"}}\n\ndata: {\"type\":\"response.output_item.added\",\"sequence_number\":1,\"output_index\":0,\"item\":{\"type\":\"reasoning\",\"id\":\"rs_azure\",\"summary\":[]}}\n\ndata: {\"type\":\"response.reasoning_summary_text.delta\",\"sequence_number\":2,\"output_index\":0,\"item_id\":\"rs_azure\",\"summary_index\":0,\"delta\":\"plan\"}\n\ndata: {\"type\":\"response.output_item.done\",\"sequence_number\":3,\"output_index\":0,\"item\":{\"type\":\"reasoning\",\"id\":\"rs_azure\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}]}}\n\ndata: {\"type\":\"response.output_item.added\",\"sequence_number\":4,\"output_index\":1,\"item\":{\"type\":\"message\",\"id\":\"msg_azure\",\"role\":\"assistant\",\"content\":[],\"status\":\"in_progress\"}}\n\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":5,\"output_index\":1,\"item_id\":\"msg_azure\",\"content_index\":0,\"delta\":\"done\"}\n\ndata: {\"type\":\"response.output_item.done\",\"sequence_number\":6,\"output_index\":1,\"item\":{\"type\":\"message\",\"id\":\"msg_azure\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"done\",\"annotations\":[]}],\"status\":\"completed\"}}\n\ndata: {\"type\":\"response.completed\",\"sequence_number\":7,\"response\":{\"id\":\"azure-stream-fixture\",\"status\":\"completed\",\"output\":[{\"type\":\"reasoning\",\"id\":\"rs_azure\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}],\"encrypted_content\":\"azure-encrypted\"}],\"usage\":{\"input_tokens\":12,\"output_tokens\":4,\"total_tokens\":16,\"input_tokens_details\":{\"cached_tokens\":2},\"output_tokens_details\":{\"reasoning_tokens\":1}}}}\n\ndata: [DONE]\n\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "azure-openai-responses",
+            "provider": "azure-openai-responses",
+            "model": "gpt-fixture-azure",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "thinking_start",
+          "contentIndex": 0,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": ""
+              }
+            ],
+            "api": "azure-openai-responses",
+            "provider": "azure-openai-responses",
+            "model": "gpt-fixture-azure",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "azure-stream-fixture"
+          }
+        },
+        {
+          "type": "thinking_delta",
+          "contentIndex": 0,
+          "delta": "plan",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan"
+              }
+            ],
+            "api": "azure-openai-responses",
+            "provider": "azure-openai-responses",
+            "model": "gpt-fixture-azure",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "azure-stream-fixture"
+          }
+        },
+        {
+          "type": "thinking_end",
+          "contentIndex": 0,
+          "content": "plan",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "{\"type\":\"reasoning\",\"id\":\"rs_azure\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}]}"
+              }
+            ],
+            "api": "azure-openai-responses",
+            "provider": "azure-openai-responses",
+            "model": "gpt-fixture-azure",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "azure-stream-fixture"
+          }
+        },
+        {
+          "type": "text_start",
+          "contentIndex": 1,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "{\"type\":\"reasoning\",\"id\":\"rs_azure\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}]}"
+              },
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "api": "azure-openai-responses",
+            "provider": "azure-openai-responses",
+            "model": "gpt-fixture-azure",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "azure-stream-fixture"
+          }
+        },
+        {
+          "type": "text_delta",
+          "contentIndex": 1,
+          "delta": "done",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "{\"type\":\"reasoning\",\"id\":\"rs_azure\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}]}"
+              },
+              {
+                "type": "text",
+                "text": "done"
+              }
+            ],
+            "api": "azure-openai-responses",
+            "provider": "azure-openai-responses",
+            "model": "gpt-fixture-azure",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "azure-stream-fixture"
+          }
+        },
+        {
+          "type": "text_end",
+          "contentIndex": 1,
+          "content": "done",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "{\"type\":\"reasoning\",\"id\":\"rs_azure\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}]}"
+              },
+              {
+                "type": "text",
+                "text": "done",
+                "textSignature": "{\"v\":1,\"id\":\"msg_azure\"}"
+              }
+            ],
+            "api": "azure-openai-responses",
+            "provider": "azure-openai-responses",
+            "model": "gpt-fixture-azure",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "azure-stream-fixture"
+          }
+        },
+        {
+          "type": "done",
+          "reason": "stop",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "{\"type\":\"reasoning\",\"id\":\"rs_azure\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}],\"encrypted_content\":\"azure-encrypted\"}"
+              },
+              {
+                "type": "text",
+                "text": "done",
+                "textSignature": "{\"v\":1,\"id\":\"msg_azure\"}"
+              }
+            ],
+            "api": "azure-openai-responses",
+            "provider": "azure-openai-responses",
+            "model": "gpt-fixture-azure",
+            "usage": {
+              "input": 10,
+              "output": 4,
+              "cacheRead": 2,
+              "cacheWrite": 0,
+              "reasoning": 1,
+              "totalTokens": 16,
+              "cost": {
+                "input": 10,
+                "output": 8,
+                "cacheRead": 6,
+                "cacheWrite": 0,
+                "total": 24
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "azure-stream-fixture"
+          }
+        }
+      ]
+    },
+    {
+      "name": "azure-http-403-body",
+      "api": "azure-openai-responses",
+      "model": {
+        "id": "gpt-fixture-azure",
+        "name": "Azure Fixture",
+        "api": "azure-openai-responses",
+        "provider": "azure-openai-responses",
+        "baseUrl": "https://model-resource.openai.azure.com",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "xhigh"
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1000000,
+          "output": 2000000,
+          "cacheRead": 3000000,
+          "cacheWrite": 4000000
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "headers": {
+          "x-model-header": "azure"
+        }
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "reject",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "azureBaseUrl": "https://fixture-resource.openai.azure.com",
+        "cacheRetention": "none"
+      },
+      "httpStatus": 403,
+      "httpBody": "denied",
+      "httpContentType": "text/plain",
+      "expectedEvents": [
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "azure-openai-responses",
+            "provider": "azure-openai-responses",
+            "model": "gpt-fixture-azure",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "errorMessage": "Azure OpenAI API error (403): 403 denied"
+          }
+        }
+      ]
+    }
+  ]
+}

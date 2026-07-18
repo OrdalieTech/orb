@@ -166,6 +166,72 @@ func TestF2AnthropicStreamTraces(t *testing.T) {
 	}
 }
 
+func TestF2MistralRequestShaping(t *testing.T) {
+	testF2RequestShaping(t, "mistral-requests.json")
+}
+
+func TestF2MistralStreamTraces(t *testing.T) {
+	testF2StreamTraces(t, "mistral-streams.json")
+}
+
+func TestF2AzureOpenAIRequestShaping(t *testing.T) {
+	testF2RequestShaping(t, "azure-requests.json")
+}
+
+func TestF2AzureOpenAIStreamTraces(t *testing.T) {
+	testF2StreamTraces(t, "azure-streams.json")
+}
+
+func testF2RequestShaping(t *testing.T, fixtureName string) {
+	t.Helper()
+	var fixture struct {
+		Cases []f2Case `json:"cases"`
+	}
+	runner.LoadJSON(t, "F2", fixtureName, &fixture)
+	for _, fixtureCase := range fixture.Cases {
+		t.Run(fixtureCase.Name, func(t *testing.T) {
+			captured, events := runF2Case(t, fixtureCase, f2HTTPResponse{
+				Status: http.StatusOK, Body: minimalF2SSE(fixtureCase.API, fixtureCase.Model.ID), ContentType: "text/event-stream",
+			})
+			assertF2TerminalSuccess(t, events)
+			if fixtureCase.Expected == nil {
+				t.Fatal("request fixture has no expected request")
+			}
+			if captured.Method != fixtureCase.Expected.Method || captured.URL != fixtureCase.Expected.URL {
+				t.Fatalf("request = %s %s, want %s %s", captured.Method, captured.URL, fixtureCase.Expected.Method, fixtureCase.Expected.URL)
+			}
+			if diff := diffStringMap(fixtureCase.Expected.Headers, selectedF2Headers(fixtureCase.API, captured.Headers)); diff != "" {
+				t.Fatal(diff)
+			}
+			if diff := runner.ByteDiff([]byte(fixtureCase.Expected.Body), captured.Body); diff != "" {
+				t.Fatalf("request body mismatch:\n%s\nwant: %s\n got: %s", diff, fixtureCase.Expected.Body, captured.Body)
+			}
+		})
+	}
+}
+
+func testF2StreamTraces(t *testing.T, fixtureName string) {
+	t.Helper()
+	var fixture struct {
+		Cases []f2Case `json:"cases"`
+	}
+	runner.LoadJSON(t, "F2", fixtureName, &fixture)
+	for _, fixtureCase := range fixture.Cases {
+		t.Run(fixtureCase.Name, func(t *testing.T) {
+			_, events := runF2Case(t, fixtureCase, f2StreamHTTPResponse(fixtureCase))
+			if len(events) != len(fixtureCase.ExpectedEvents) {
+				t.Fatalf("got %d events, want %d", len(events), len(fixtureCase.ExpectedEvents))
+			}
+			for index := range events {
+				want := compactF2Event(t, fixtureCase.ExpectedEvents[index])
+				if diff := runner.ByteDiff(want, events[index]); diff != "" {
+					t.Fatalf("event %d mismatch:\n%s\nwant: %s\n got: %s", index, diff, want, events[index])
+				}
+			}
+		})
+	}
+}
+
 func TestF2GoogleRequestShaping(t *testing.T) {
 	var fixture struct {
 		Cases []f2Case `json:"cases"`
@@ -282,6 +348,8 @@ func runF2Case(t *testing.T, fixtureCase f2Case, fixtureResponse f2HTTPResponse)
 	previousClient := openAIHTTPClient
 	previousAnthropicClient := anthropicHTTPClient
 	previousGoogleClient := googleHTTPClient
+	previousMistralClient := mistralHTTPClient
+	previousAzureClient := azureOpenAIHTTPClient
 	previousNow := openAINowUnixMilli
 	openAINowUnixMilli = func() int64 { return f2FixedTimestamp }
 	testClient := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
@@ -310,10 +378,14 @@ func runF2Case(t *testing.T, fixtureCase f2Case, fixtureResponse f2HTTPResponse)
 	openAIHTTPClient = testClient
 	anthropicHTTPClient = testClient
 	googleHTTPClient = testClient
+	mistralHTTPClient = testClient
+	azureOpenAIHTTPClient = testClient
 	t.Cleanup(func() {
 		openAIHTTPClient = previousClient
 		anthropicHTTPClient = previousAnthropicClient
 		googleHTTPClient = previousGoogleClient
+		mistralHTTPClient = previousMistralClient
+		azureOpenAIHTTPClient = previousAzureClient
 		openAINowUnixMilli = previousNow
 	})
 
@@ -386,6 +458,18 @@ func streamF2Case(fixtureCase f2Case) (ai.AssistantMessageEventStream, error) {
 		}
 		setF2GooglePayloadHook(fixtureCase.PayloadConfigPatch, fixtureCase.PayloadContents, &options.StreamOptions)
 		return StreamGoogleVertexWithOptions(context.Background(), &fixtureCase.Model, fixtureCase.Context, &options)
+	case ai.APIMistralConversations:
+		var options MistralConversationsOptions
+		if err := json.Unmarshal(fixtureCase.Options, &options); err != nil {
+			return nil, err
+		}
+		return StreamMistralConversationsWithOptions(context.Background(), &fixtureCase.Model, fixtureCase.Context, &options)
+	case ai.APIAzureOpenAIResponses:
+		var options AzureOpenAIResponsesOptions
+		if err := json.Unmarshal(fixtureCase.Options, &options); err != nil {
+			return nil, err
+		}
+		return StreamAzureOpenAIResponsesWithOptions(context.Background(), &fixtureCase.Model, fixtureCase.Context, &options)
 	default:
 		return nil, fmt.Errorf("unsupported F2 API %q", fixtureCase.API)
 	}
@@ -438,7 +522,7 @@ func minimalF2SSE(apiShape ai.API, modelID string) string {
 	if apiShape == ai.APIGoogleGenerativeAI || apiShape == ai.APIGoogleVertex {
 		return "data: {\"responseId\":\"google_request_fixture\",\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":0,\"candidatesTokenCount\":0,\"totalTokenCount\":0}}\n\n"
 	}
-	if apiShape == ai.APIOpenAIResponses {
+	if apiShape == ai.APIOpenAIResponses || apiShape == ai.APIAzureOpenAIResponses {
 		return "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_request_fixture\",\"status\":\"completed\",\"output\":[]}}\n\ndata: [DONE]\n\n"
 	}
 	return fmt.Sprintf("data: {\"id\":\"chat_request_fixture\",\"model\":%q,\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n", modelID)
@@ -479,6 +563,12 @@ func selectedF2Headers(apiShape ai.API, headers http.Header) map[string]string {
 	}
 	if apiShape == ai.APIGoogleGenerativeAI || apiShape == ai.APIGoogleVertex {
 		names = append(names, "x-goog-api-key")
+	}
+	if apiShape == ai.APIMistralConversations {
+		names = append(names, "accept", "x-affinity")
+	}
+	if apiShape == ai.APIAzureOpenAIResponses {
+		names = append(names, "accept", "api-key")
 	}
 	selected := make(map[string]string)
 	for _, name := range names {

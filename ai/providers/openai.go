@@ -46,12 +46,18 @@ func Get(id ai.ProviderID) (Provider, bool) {
 		return Google(), true
 	case googleVertexProvider.ID:
 		return GoogleVertex(), true
+	case mistralProvider.ID:
+		return Mistral(), true
+	case azureOpenAIResponsesProvider.ID:
+		return AzureOpenAIResponses(), true
 	default:
 		return Provider{}, false
 	}
 }
 
-func List() []Provider { return []Provider{OpenAI(), Anthropic(), Google(), GoogleVertex()} }
+func List() []Provider {
+	return []Provider{OpenAI(), Anthropic(), Google(), GoogleVertex(), Mistral(), AzureOpenAIResponses()}
+}
 
 func cloneProvider(provider Provider) Provider {
 	provider.Env = append([]string(nil), provider.Env...)

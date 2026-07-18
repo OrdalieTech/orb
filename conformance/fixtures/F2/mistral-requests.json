@@ -1,0 +1,274 @@
+{
+  "cases": [
+    {
+      "name": "mistral-rich-messages-tools-cache",
+      "api": "mistral-conversations",
+      "model": {
+        "id": "mistral-fixture",
+        "name": "Mistral Fixture",
+        "api": "mistral-conversations",
+        "provider": "mistral",
+        "baseUrl": "https://mistral.fixture.invalid",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "medium": "high"
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1000000,
+          "output": 2000000,
+          "cacheRead": 3000000,
+          "cacheWrite": 4000000
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "headers": {
+          "x-model-header": "mistral"
+        }
+      },
+      "context": {
+        "systemPrompt": "Use tools carefully.",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "inspect"
+              },
+              {
+                "type": "image",
+                "data": "AAEC",
+                "mimeType": "image/png"
+              }
+            ],
+            "timestamp": 1700000000119
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "prior plan"
+              },
+              {
+                "type": "text",
+                "text": "prior answer"
+              },
+              {
+                "type": "toolCall",
+                "id": "Abc123XYZ",
+                "name": "echo",
+                "arguments": {
+                  "text": "first"
+                }
+              }
+            ],
+            "api": "mistral-conversations",
+            "provider": "mistral",
+            "model": "mistral-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "Abc123XYZ",
+            "toolName": "echo",
+            "content": [
+              {
+                "type": "text",
+                "text": "tool text"
+              },
+              {
+                "type": "image",
+                "data": "AQID",
+                "mimeType": "image/jpeg"
+              }
+            ],
+            "isError": true,
+            "timestamp": 1700000000122
+          },
+          {
+            "role": "user",
+            "content": "continue",
+            "timestamp": 1700000000123
+          }
+        ],
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo structured text",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "metadata": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "temperature": 0,
+        "maxTokens": 7,
+        "cacheRetention": "long",
+        "sessionId": "mistral-session",
+        "toolChoice": {
+          "type": "function",
+          "function": {
+            "name": "echo"
+          }
+        },
+        "promptMode": "reasoning",
+        "reasoningEffort": "high",
+        "headers": {
+          "x-fixture": "mistral-rich"
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://mistral.fixture.invalid/v1/chat/completions",
+        "headers": {
+          "accept": "text/event-stream",
+          "authorization": "Bearer fixture-key",
+          "content-type": "application/json",
+          "x-affinity": "mistral-session",
+          "x-fixture": "mistral-rich",
+          "x-model-header": "mistral"
+        },
+        "body": "{\"model\":\"mistral-fixture\",\"temperature\":0,\"max_tokens\":7,\"stream\":true,\"messages\":[{\"role\":\"system\",\"content\":\"Use tools carefully.\"},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"inspect\"},{\"type\":\"image_url\",\"image_url\":\"data:image/png;base64,AAEC\"}]},{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":[{\"type\":\"text\",\"text\":\"prior plan\"}]},{\"type\":\"text\",\"text\":\"prior answer\"}],\"tool_calls\":[{\"id\":\"Abc123XYZ\",\"type\":\"function\",\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"first\\\"}\"},\"index\":0}],\"prefix\":false},{\"role\":\"tool\",\"content\":[{\"type\":\"text\",\"text\":\"[tool error] tool text\"},{\"type\":\"image_url\",\"image_url\":\"data:image/jpeg;base64,AQID\"}],\"tool_call_id\":\"Abc123XYZ\",\"name\":\"echo\"},{\"role\":\"user\",\"content\":\"continue\"}],\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"echo\",\"description\":\"Echo structured text\",\"strict\":false,\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false}}}],\"tool_choice\":{\"type\":\"function\",\"function\":{\"name\":\"echo\"}},\"reasoning_effort\":\"high\",\"prompt_mode\":\"reasoning\",\"prompt_cache_key\":\"mistral-session\"}"
+      }
+    },
+    {
+      "name": "mistral-nonvision-foreign-tool-id",
+      "api": "mistral-conversations",
+      "model": {
+        "id": "mistral-text-fixture",
+        "name": "Mistral Fixture",
+        "api": "mistral-conversations",
+        "provider": "mistral",
+        "baseUrl": "https://mistral.fixture.invalid",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "medium": "high"
+        },
+        "input": [
+          "text"
+        ],
+        "cost": {
+          "input": 1000000,
+          "output": 2000000,
+          "cacheRead": 3000000,
+          "cacheWrite": 4000000
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "headers": {
+          "x-model-header": "mistral"
+        }
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call.foreign/tool",
+                "name": "echo",
+                "arguments": {
+                  "text": "foreign"
+                }
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-foreign",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call.foreign/tool",
+            "toolName": "echo",
+            "content": [
+              {
+                "type": "image",
+                "data": "AAEC",
+                "mimeType": "image/png"
+              }
+            ],
+            "isError": false,
+            "timestamp": 1700000000122
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "cacheRetention": "none"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://mistral.fixture.invalid/v1/chat/completions",
+        "headers": {
+          "accept": "text/event-stream",
+          "authorization": "Bearer fixture-key",
+          "content-type": "application/json",
+          "x-model-header": "mistral"
+        },
+        "body": "{\"model\":\"mistral-text-fixture\",\"stream\":true,\"messages\":[{\"role\":\"assistant\",\"tool_calls\":[{\"id\":\"wbf5ziha0\",\"type\":\"function\",\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"foreign\\\"}\"},\"index\":0}],\"prefix\":false},{\"role\":\"tool\",\"content\":[{\"type\":\"text\",\"text\":\"(tool image omitted: model does not support images)\"}],\"tool_call_id\":\"wbf5ziha0\",\"name\":\"echo\"}]}"
+      }
+    }
+  ]
+}
