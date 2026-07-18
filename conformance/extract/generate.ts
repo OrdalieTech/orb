@@ -21,6 +21,7 @@ import { generateWP360 } from "./wp360-packages.ts";
 import { generateF12 } from "./f12-tui.ts";
 import { generateWP440 } from "./wp440-images.ts";
 import { generateWP440Read } from "./wp440-read.ts";
+import { generateWP370Runtime } from "./wp370-runtime.ts";
 
 const upstreamRoot = process.cwd();
 const outputRoot = path.resolve(upstreamRoot, process.argv[2] ?? "../conformance/fixtures");
@@ -51,6 +52,7 @@ const generators = [
   generateF12,
   generateWP440,
   generateWP440Read,
+  generateWP370Runtime,
 ];
 for (const generate of generators) {
   await generate(upstreamRoot, outputRoot, upstreamCommit);

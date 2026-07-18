@@ -114,9 +114,38 @@ type AgentSessionOptions struct {
 	// SessionStartEvent metadata emitted when extensions bind.
 	SessionStartEvent *extensions.SessionStartEvent
 
-	// SlashResolver handles /command and /skill expansion. When nil prompts
-	// are sent verbatim.
+	// DeferExtensionStart leaves session_start activation to
+	// [SessionRuntime.BindExtensions]. Runtime hosts use it so setup and host
+	// rebinding finish before extensions observe the new session.
+	DeferExtensionStart bool
+
+	// ProjectTrustContext is supplied by replacement hosts for the effective
+	// CWD so a custom runtime factory can resolve project trust before loading
+	// project-scoped services.
+	ProjectTrustContext extensions.ProjectTrustContext
+
+	// SlashResolver handles /command and /skill expansion. When nil it is
+	// derived from discovered skills and prompt templates.
 	SlashResolver *SlashResolver
+}
+
+// AgentSessionRuntimeDiagnostic is a non-fatal issue collected while creating
+// cwd-bound SDK services.
+type AgentSessionRuntimeDiagnostic struct {
+	Type    string
+	Message string
+}
+
+// AgentSessionServices are the cwd-bound services used by one session
+// instance. A replacement runtime exposes the newly resolved set after every
+// switch, fork, or new-session operation.
+type AgentSessionServices struct {
+	CWD               string
+	AgentDir          string
+	SettingsManager   *config.SettingsManager
+	ModelRegistry     *config.ModelRegistry
+	Resources         *Resources
+	ExtensionRegistry *extensions.Registry
 }
 
 // AgentSessionResult is returned by [NewAgentSession].
@@ -128,9 +157,15 @@ type AgentSessionResult struct {
 	// extensions were configured).
 	ExtensionRegistry *extensions.Registry
 
-	// ModelFallbackMessage is set when a continued session's saved model
-	// could not be restored.
+	// ModelFallbackMessage is set when no model can be selected or when a
+	// continued session's saved model cannot be restored.
 	ModelFallbackMessage string
+
+	// Services contains the cwd-bound services used to build Session.
+	Services *AgentSessionServices
+
+	// Diagnostics contains non-fatal creation issues for the host to present.
+	Diagnostics []AgentSessionRuntimeDiagnostic
 }
 
 // DefaultActiveToolNames is the upstream default tool set.
@@ -212,6 +247,43 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	streamFn := opts.StreamFn
 	if streamFn == nil {
 		streamFn = aiapi.StreamSimple
+	}
+	providerStreamFn := streamFn
+	streamFn = func(
+		ctx context.Context,
+		model *ai.Model,
+		request ai.Context,
+		options *ai.SimpleStreamOptions,
+	) (ai.AssistantMessageEventStream, error) {
+		merged := ai.SimpleStreamOptions{}
+		if options != nil {
+			merged = *options
+		}
+		providerRetry := settings.GetProviderRetrySettings()
+		if merged.TimeoutMS == nil {
+			merged.TimeoutMS = providerRetry.TimeoutMS
+		}
+		if merged.TimeoutMS == nil {
+			httpIdleTimeout, timeoutErr := settings.GetHTTPIdleTimeoutMS()
+			if timeoutErr != nil {
+				return nil, timeoutErr
+			}
+			if httpIdleTimeout == 0 {
+				httpIdleTimeout = 2147483647
+			}
+			merged.TimeoutMS = &httpIdleTimeout
+		}
+		if merged.WebSocketConnectTimeoutMS == nil {
+			webSocketConnectTimeout, timeoutErr := settings.GetWebSocketConnectTimeoutMS()
+			if timeoutErr != nil {
+				return nil, timeoutErr
+			}
+			merged.WebSocketConnectTimeoutMS = webSocketConnectTimeout
+		}
+		if merged.MaxRetries == nil {
+			merged.MaxRetries = providerRetry.MaxRetries
+		}
+		return providerStreamFn(ctx, model, request, &merged)
 	}
 
 	existing := sm.BuildSessionContext()
@@ -302,19 +374,26 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		return nil, err
 	}
 
-	// Register custom tools as extension tools if an extension registry is
-	// provided, or wrap them into base tools.
+	// Register custom tools as synthetic SDK extensions so their source metadata
+	// matches upstream's per-tool <sdk:name> paths.
 	registry := opts.ExtensionRegistry
+	if registry == nil {
+		registry = extensions.NewRegistry(cwd)
+	}
 	if len(opts.CustomTools) > 0 {
-		if registry == nil {
-			registry = extensions.NewRegistry(cwd)
-		}
-		_ = registry.Register("<sdk:custom-tools>", func(api extensions.API) error {
-			for _, tool := range opts.CustomTools {
-				api.RegisterTool(tool)
+		for _, definition := range opts.CustomTools {
+			definition := definition
+			path := "<sdk:" + definition.Name + ">"
+			if registry.HasPath(path) {
+				continue
 			}
-			return nil
-		})
+			if err := registry.Register(path, func(api extensions.API) error {
+				api.RegisterTool(definition)
+				return nil
+			}); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	// Build prompt options for system prompt assembly.
@@ -376,13 +455,14 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	maxRetryDelay := providerRetry.MaxRetryDelayMS
 	transport := settings.GetTransport()
 	sessionID := sm.GetSessionID()
-	agentOpts = append(agentOpts, agent.WithSimpleStreamOptions(ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{
-		Transport:       &transport,
-		SessionID:       &sessionID,
-		TimeoutMS:       providerRetry.TimeoutMS,
-		MaxRetries:      providerRetry.MaxRetries,
-		MaxRetryDelayMS: &maxRetryDelay,
-	}}))
+	agentOpts = append(agentOpts, agent.WithSimpleStreamOptions(ai.SimpleStreamOptions{
+		StreamOptions: ai.StreamOptions{
+			Transport:       &transport,
+			SessionID:       &sessionID,
+			MaxRetryDelayMS: &maxRetryDelay,
+		},
+		ThinkingBudgets: settings.GetThinkingBudgets(),
+	}))
 	if getAPIKey != nil {
 		agentOpts = append(agentOpts, agent.WithAPIKeyResolver(getAPIKey))
 	}
@@ -446,8 +526,12 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		InitialActiveToolNames: initialActiveToolNames,
 		AllowedToolNames:       allowedToolNames,
 		ExcludedToolNames:      opts.ExcludeTools,
-		SystemPromptOptions:    promptOptions,
-		SessionStartEvent:      opts.SessionStartEvent,
+		RebuildBaseTools: func() ([]agent.AgentTool, error) {
+			return buildBuiltInTools(cwd, settings)
+		},
+		SystemPromptOptions: promptOptions,
+		SessionStartEvent:   opts.SessionStartEvent,
+		DeferExtensionStart: opts.DeferExtensionStart,
 	}
 
 	runtime, err := NewSessionRuntime(runtimeCfg)
@@ -459,7 +543,27 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		Session:              runtime,
 		ExtensionRegistry:    registry,
 		ModelFallbackMessage: fallback,
+		Services: &AgentSessionServices{
+			CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
+			ModelRegistry: modelRegistry, Resources: resources, ExtensionRegistry: registry,
+		},
+		Diagnostics: resourceRuntimeDiagnostics(resources),
 	}, nil
+}
+
+func resourceRuntimeDiagnostics(resources *Resources) []AgentSessionRuntimeDiagnostic {
+	if resources == nil || len(resources.Diagnostics) == 0 {
+		return nil
+	}
+	diagnostics := make([]AgentSessionRuntimeDiagnostic, 0, len(resources.Diagnostics))
+	for _, diagnostic := range resources.Diagnostics {
+		typeName := diagnostic.Type
+		if typeName != "info" && typeName != "warning" && typeName != "error" {
+			typeName = "warning"
+		}
+		diagnostics = append(diagnostics, AgentSessionRuntimeDiagnostic{Type: typeName, Message: diagnostic.Message})
+	}
+	return diagnostics
 }
 
 func formatNoModelsAvailableMessage() string {
@@ -583,39 +687,72 @@ func filterExcluded(names []string, excluded []string) []string {
 // callbacks: [agent.AgentEvent] variants and session-level event structs
 // ([AgentSettledEvent], [QueueUpdateEvent], etc.).
 //
-// The channel is closed when cancel is called. Slow consumers that fill the
-// buffer cause events to be dropped silently; size the buffer for your
-// consumption rate.
+// Delivery is ordered and lossless while the subscription is active. The
+// channel is closed promptly when cancel is called; events still queued at
+// cancellation are discarded so cancellation never waits for a consumer.
 func (runtime *SessionRuntime) SubscribeChan(bufferSize int) (<-chan any, func()) {
 	if bufferSize <= 0 {
 		bufferSize = 64
 	}
-	ch := make(chan any, bufferSize)
-	// ponytail: mutex makes send and close mutually exclusive; atomic would race between check and send.
+	out := make(chan any, bufferSize)
+	wake := make(chan struct{}, 1)
+	done := make(chan struct{})
 	var mu sync.Mutex
-	closed := false
+	queue := make([]any, 0, bufferSize)
+	stopped := false
 	unsub := runtime.Subscribe(func(event any) {
 		mu.Lock()
-		defer mu.Unlock()
-		if closed {
+		if stopped {
+			mu.Unlock()
 			return
 		}
+		queue = append(queue, event)
+		mu.Unlock()
 		select {
-		case ch <- event:
+		case wake <- struct{}{}:
 		default:
 		}
 	})
+	go func() {
+		defer close(out)
+		for {
+			mu.Lock()
+			if len(queue) > 0 {
+				event := queue[0]
+				queue[0] = nil
+				queue = queue[1:]
+				mu.Unlock()
+				select {
+				case out <- event:
+				case <-done:
+					return
+				}
+				continue
+			}
+			isStopped := stopped
+			mu.Unlock()
+			if isStopped {
+				return
+			}
+			select {
+			case <-wake:
+			case <-done:
+				return
+			}
+		}
+	}()
 	var once sync.Once
 	cancel := func() {
 		once.Do(func() {
-			mu.Lock()
-			closed = true
-			close(ch)
-			mu.Unlock()
 			unsub()
+			mu.Lock()
+			stopped = true
+			queue = nil
+			mu.Unlock()
+			close(done)
 		})
 	}
-	return ch, cancel
+	return out, cancel
 }
 
 // PromptSync sends a prompt and blocks until the agent settles. It is a

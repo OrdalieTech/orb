@@ -9,6 +9,7 @@ import (
 
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
+	aiapi "github.com/OrdalieTech/pi-go/ai/api"
 	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
 	"github.com/OrdalieTech/pi-go/codingagent"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
@@ -17,22 +18,23 @@ import (
 )
 
 type runtimeInputs struct {
-	Agent           *agent.Agent
-	Settings        *config.SettingsManager
-	AvailableModels func() []ai.Model
-	ScopedModels    []codingagent.ScopedModel
-	GetAPIKey       agent.GetAPIKeyFunc
-	GetRequestAuth  agent.GetRequestAuthFunc
-	GetModelHeaders agent.GetModelHeadersFunc
-	SlashResolver   *codingagent.SlashResolver
-	ModelRegistry   *config.ModelRegistry
-	Extensions      *extensions.Registry
-	BaseTools       []agent.AgentTool
-	ActiveToolNames []string
-	AllowedTools    *[]string
-	ExcludedTools   []string
-	PromptOptions   codingagent.SystemPromptOptions
-	Diagnostics     []string
+	Agent            *agent.Agent
+	Settings         *config.SettingsManager
+	AvailableModels  func() []ai.Model
+	ScopedModels     []codingagent.ScopedModel
+	GetAPIKey        agent.GetAPIKeyFunc
+	GetRequestAuth   agent.GetRequestAuthFunc
+	GetModelHeaders  agent.GetModelHeadersFunc
+	SlashResolver    *codingagent.SlashResolver
+	ModelRegistry    *config.ModelRegistry
+	Extensions       *extensions.Registry
+	BaseTools        []agent.AgentTool
+	ActiveToolNames  []string
+	AllowedTools     *[]string
+	ExcludedTools    []string
+	RebuildBaseTools func() ([]agent.AgentTool, error)
+	PromptOptions    codingagent.SystemPromptOptions
+	Diagnostics      []string
 }
 
 func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMessages) (runtimeInputs, error) {
@@ -129,6 +131,13 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		}
 		excludedTools = append([]string(nil), args.ExcludeTools...)
 	}
+	baseToolNames := make([]string, 0, len(baseTools))
+	for _, tool := range baseTools {
+		baseToolNames = append(baseToolNames, tool.Spec().Name)
+	}
+	if extensionRegistry == nil {
+		extensionRegistry = extensions.NewRegistry(cwd)
+	}
 	snippets, guidelines := codingagent.BuiltInToolPromptData(activeNames)
 	promptOptions := codingagent.SystemPromptOptions{
 		CustomPrompt:       resources.SystemPrompt,
@@ -163,6 +172,42 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	transport := settings.GetTransport()
 	providerRetry := settings.GetProviderRetrySettings()
 	maxRetryDelay := providerRetry.MaxRetryDelayMS
+	streamFn := func(
+		ctx context.Context,
+		model *ai.Model,
+		request ai.Context,
+		options *ai.SimpleStreamOptions,
+	) (ai.AssistantMessageEventStream, error) {
+		merged := ai.SimpleStreamOptions{}
+		if options != nil {
+			merged = *options
+		}
+		currentRetry := settings.GetProviderRetrySettings()
+		if merged.TimeoutMS == nil {
+			merged.TimeoutMS = currentRetry.TimeoutMS
+		}
+		if merged.TimeoutMS == nil {
+			httpIdleTimeout, timeoutErr := settings.GetHTTPIdleTimeoutMS()
+			if timeoutErr != nil {
+				return nil, timeoutErr
+			}
+			if httpIdleTimeout == 0 {
+				httpIdleTimeout = 2147483647
+			}
+			merged.TimeoutMS = &httpIdleTimeout
+		}
+		if merged.WebSocketConnectTimeoutMS == nil {
+			webSocketConnectTimeout, timeoutErr := settings.GetWebSocketConnectTimeoutMS()
+			if timeoutErr != nil {
+				return nil, timeoutErr
+			}
+			merged.WebSocketConnectTimeoutMS = webSocketConnectTimeout
+		}
+		if merged.MaxRetries == nil {
+			merged.MaxRetries = currentRetry.MaxRetries
+		}
+		return aiapi.StreamSimple(ctx, model, request, &merged)
+	}
 	state := agent.AgentState{
 		SystemPrompt:  systemPrompt,
 		Model:         model,
@@ -198,13 +243,16 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	}
 	created := agent.NewAgent(
 		agent.WithInitialState(state),
+		agent.WithStreamFn(streamFn),
 		agent.WithConvertToLLM(codingagent.ConvertToLLMWithBlockImages(settings.GetBlockImages)),
 		agent.WithSteeringMode(agent.QueueMode(settings.GetSteeringMode())),
 		agent.WithFollowUpMode(agent.QueueMode(settings.GetFollowUpMode())),
-		agent.WithSimpleStreamOptions(ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{
-			Transport: &transport, TimeoutMS: providerRetry.TimeoutMS, MaxRetries: providerRetry.MaxRetries,
-			MaxRetryDelayMS: &maxRetryDelay,
-		}}),
+		agent.WithSimpleStreamOptions(ai.SimpleStreamOptions{
+			StreamOptions: ai.StreamOptions{
+				Transport: &transport, MaxRetryDelayMS: &maxRetryDelay,
+			},
+			ThinkingBudgets: settings.GetThinkingBudgets(),
+		}),
 		agent.WithAPIKeyResolver(resolveAPIKey),
 		agent.WithRequestAuthResolver(resolveRequestAuth),
 		agent.WithModelHeadersResolver(resolveModelHeaders),
@@ -217,6 +265,9 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		ModelRegistry:   registry,
 		Extensions:      extensionRegistry, BaseTools: baseTools, ActiveToolNames: initialNames,
 		AllowedTools: allowedTools, ExcludedTools: excludedTools, PromptOptions: promptOptions,
+		RebuildBaseTools: func() ([]agent.AgentTool, error) {
+			return createBuiltInTools(cwd, baseToolNames, settings)
+		},
 		Diagnostics: diagnostics,
 	}, nil
 }

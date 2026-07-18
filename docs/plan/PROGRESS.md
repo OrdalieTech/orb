@@ -17,12 +17,14 @@ Status: **in progress**.
 - [x] Integrate historical WP-430 Markdown, syntax highlighting, themes, and F12 goldens.
 - [x] Integrate historical WP-440 terminal-image, read-image, and clipboard foundations with
       pinned-upstream F12, WP440, and WP440Read fixtures.
+- [x] Integrate the replaceable AgentSessionRuntime, reloadable extension state, SDK provider
+      settings, and the generated WP370Runtime lifecycle fixture.
 - [ ] Integrate every former GitButler lane and side ref, reconciling overlapping implementations.
 - [ ] Verify `CGO_ENABLED=0 go build ./...` and `make test` at every integrated commit.
 - [ ] Delete merged side refs and temporary consolidation stashes.
 - [ ] Finish on plain `main` with no worktree, lane, or feature branch.
 
-Current red-to-green evidence: RPC/resources/native extensions moved from merge conflicts and six lint failures to green fixtures and the pinned 27-test upstream RPC run. The SDK candidate moved from home-directory writes and missing persisted-message/settings/session propagation to green focused tests, all 13 faux examples, an isolated external-module build, `make build test lint`, `make fixtures-check`, module verification/tidy diff, and all four CGO-free Linux/Darwin amd64/arm64 builds. The TUI core moved from four integration conflicts to green F12 primitive goldens. Markdown/themes then moved from reversed collision precedence, dropped table style context, incorrect narrow-table allocation, permissive JSON parsing, and unreachable operator/punctuation colors to 71 byte-exact Markdown cases plus upstream-generated theme/discovery fixtures. WP-440 then moved from a stale text-only non-vision result to an upstream-generated proof that the contradictory omission note still carries the image, with F12 terminal sequences and the image format/resize/orientation matrices green under the race suite. WP-450 still has to consume `terminal.showImages` and the width setting and bind `/copy`; real Kitty/iTerm2 and desktop clipboard smoke remain owner-blocked evidence rather than local substitutes.
+Current red-to-green evidence: RPC/resources/native extensions moved from merge conflicts and six lint failures to green fixtures and the pinned 27-test upstream RPC run. The SDK candidate moved from home-directory writes and missing persisted-message/settings/session propagation to green focused tests, all 13 faux examples, an isolated external-module build, `make build test lint`, `make fixtures-check`, module verification/tidy diff, and all four CGO-free Linux/Darwin amd64/arm64 builds. The replaceable runtime then moved from a compile-time RED fixture—no runtime host or public rebinding surface—to an upstream-generated green lifecycle matrix for new-session cancellation, shutdown/invalidation, recreation, setup, rebind, `withSession`, and quit ordering; the full race/lint/fixture gates and upstream RPC 27/27 remain green. The TUI core moved from four integration conflicts to green F12 primitive goldens. Markdown/themes then moved from reversed collision precedence, dropped table style context, incorrect narrow-table allocation, permissive JSON parsing, and unreachable operator/punctuation colors to 71 byte-exact Markdown cases plus upstream-generated theme/discovery fixtures. WP-440 then moved from a stale text-only non-vision result to an upstream-generated proof that the contradictory omission note still carries the image, with F12 terminal sequences and the image format/resize/orientation matrices green under the race suite. WP-450 still has to consume `terminal.showImages` and the width setting and bind `/copy`; real Kitty/iTerm2 and desktop clipboard smoke remain owner-blocked evidence rather than local substitutes.
 
 Historical note: `2a8ac08` and `68c3afa` were intermediate snapshots that did not build by
 themselves; their corrected descendants are already represented in the consolidated history and
@@ -70,7 +72,10 @@ Status: **pending**.
 
 ## Owner-blocked evidence
 
-- WP-420 word navigation requires ICU-compatible CJK dictionary segmentation. The approved §8 dependencies provide only UAX #29 boundaries; owner approval is required for a pure-Go dictionary breaker dependency or an internal port with pinned ICU data.
+- WP-420 word navigation requires ICU-compatible dictionary segmentation for Chinese, Japanese,
+  Thai, Lao, Khmer, and Burmese. The approved §8 dependencies provide only UAX #29 boundaries;
+  owner approval is required for a pure-Go dictionary breaker dependency or an internal port with
+  pinned ICU data.
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.
 - Tier-2/Tier-3 provider live tests require repository/API credentials and CI secrets.
 - Off-machine clean macOS/Linux release validation and the 72-hour burn-in require owner-provided

@@ -49,6 +49,238 @@ func TestNewAgentSessionMinimal(t *testing.T) {
 	}
 }
 
+func TestNewAgentSessionForwardsStreamSettings(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name        string
+		settings    map[string]any
+		wantTimeout int64
+	}{
+		{
+			name: "http idle fallback",
+			settings: map[string]any{
+				"httpIdleTimeoutMs":         1234,
+				"websocketConnectTimeoutMs": 5678,
+				"thinkingBudgets":           map[string]any{"minimal": 1, "low": 2, "medium": 3, "high": 4},
+			},
+			wantTimeout: 1234,
+		},
+		{
+			name:        "disabled idle uses sdk sentinel",
+			settings:    map[string]any{"httpIdleTimeoutMs": 0},
+			wantTimeout: 2147483647,
+		},
+		{
+			name: "provider timeout wins",
+			settings: map[string]any{
+				"httpIdleTimeoutMs": 1234,
+				"retry":             map[string]any{"provider": map[string]any{"timeoutMs": 42}},
+			},
+			wantTimeout: 42,
+		},
+	} {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			cwd := t.TempDir()
+			agentDir := t.TempDir()
+			encoded, err := json.Marshal(test.settings)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), encoded, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+			if err != nil {
+				t.Fatal(err)
+			}
+			manager, err := sessionstore.InMemory(cwd)
+			if err != nil {
+				t.Fatal(err)
+			}
+			provider := testFaux(100000)
+			provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "ok", 10)})
+			var captured ai.SimpleStreamOptions
+			stream := func(ctx context.Context, model *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+				if options != nil {
+					captured = *options
+				}
+				return provider.StreamSimple(ctx, model, request, options)
+			}
+			result, err := NewAgentSession(AgentSessionOptions{
+				CWD: cwd, AgentDir: agentDir, Model: provider.GetModel(), StreamFn: stream,
+				Settings: settings, SessionManager: manager, NoTools: "all",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer result.Session.Dispose()
+			if err := result.Session.PromptSync(context.Background(), "hello"); err != nil {
+				t.Fatal(err)
+			}
+			if captured.TimeoutMS == nil || *captured.TimeoutMS != test.wantTimeout {
+				t.Fatalf("timeout = %#v, want %d", captured.TimeoutMS, test.wantTimeout)
+			}
+			if test.name == "http idle fallback" {
+				if captured.WebSocketConnectTimeoutMS == nil || *captured.WebSocketConnectTimeoutMS != 5678 {
+					t.Fatalf("websocket timeout = %#v", captured.WebSocketConnectTimeoutMS)
+				}
+				budgets := captured.ThinkingBudgets
+				if budgets == nil || budgets.Minimal == nil || *budgets.Minimal != 1 || budgets.High == nil || *budgets.High != 4 {
+					t.Fatalf("thinking budgets = %#v", budgets)
+				}
+			}
+		})
+	}
+}
+
+func TestNewAgentSessionReloadReadsDynamicProviderSettingsPerRequest(t *testing.T) {
+	t.Parallel()
+	cwd := t.TempDir()
+	agentDir := t.TempDir()
+	settingsPath := filepath.Join(agentDir, "settings.json")
+	if err := os.WriteFile(settingsPath, []byte(`{
+  "transport": "sse",
+  "websocketConnectTimeoutMs": 20,
+  "thinkingBudgets": {"minimal": 1},
+  "retry": {"provider": {"timeoutMs": 10, "maxRetries": 1, "maxRetryDelayMs": 30}}
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := testFaux(100000)
+	var capturedMu sync.Mutex
+	captured := make([]ai.SimpleStreamOptions, 0, 2)
+	stream := func(ctx context.Context, model *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+		copy := *options
+		capturedMu.Lock()
+		captured = append(captured, copy)
+		capturedMu.Unlock()
+		response := runtimeAssistant(provider, "ok", 10)
+		return func(yield func(ai.AssistantMessageEvent, error) bool) {
+			yield(ai.DoneEvent{Reason: ai.StopReasonStop, Message: response}, nil)
+		}, nil
+	}
+	result, err := NewAgentSession(AgentSessionOptions{
+		CWD: cwd, AgentDir: agentDir, Settings: settings, SessionManager: manager,
+		Model: provider.GetModel(), StreamFn: stream, NoTools: "all",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Session.Dispose()
+	if err := result.Session.PromptSync(context.Background(), "first"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(settingsPath, []byte(`{
+  "transport": "websocket",
+  "websocketConnectTimeoutMs": 22,
+  "thinkingBudgets": {"minimal": 2},
+  "retry": {"provider": {"timeoutMs": 11, "maxRetries": 2, "maxRetryDelayMs": 31}}
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := result.Session.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := result.Session.PromptSync(context.Background(), "second"); err != nil {
+		t.Fatal(err)
+	}
+
+	capturedMu.Lock()
+	got := append([]ai.SimpleStreamOptions(nil), captured...)
+	capturedMu.Unlock()
+	if len(got) != 2 {
+		t.Fatalf("provider calls = %d, want 2", len(got))
+	}
+	if got[1].TimeoutMS == nil || *got[1].TimeoutMS != 11 ||
+		got[1].WebSocketConnectTimeoutMS == nil || *got[1].WebSocketConnectTimeoutMS != 22 ||
+		got[1].MaxRetries == nil || *got[1].MaxRetries != 2 {
+		t.Fatalf("dynamic provider settings after reload = %#v", got[1])
+	}
+	if got[1].Transport == nil || *got[1].Transport != ai.TransportSSE ||
+		got[1].MaxRetryDelayMS == nil || *got[1].MaxRetryDelayMS != 30 ||
+		got[1].ThinkingBudgets == nil || got[1].ThinkingBudgets.Minimal == nil || *got[1].ThinkingBudgets.Minimal != 1 {
+		t.Fatalf("construction-time provider settings changed on reload = %#v", got[1])
+	}
+}
+
+func TestNewAgentSessionReloadRebuildsSettingsBoundTools(t *testing.T) {
+	t.Parallel()
+	cwd := t.TempDir()
+	agentDir := t.TempDir()
+	settingsPath := filepath.Join(agentDir, "settings.json")
+	if err := os.WriteFile(settingsPath, []byte(`{"shellCommandPrefix":"export PI_GO_RELOAD_PREFIX=old"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := testFaux(100000)
+	result, err := NewAgentSession(AgentSessionOptions{
+		CWD: cwd, AgentDir: agentDir, Settings: settings, SessionManager: manager,
+		Model: provider.GetModel(), StreamFn: provider.StreamSimple,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Session.Dispose()
+
+	runBash := func() string {
+		t.Helper()
+		var bash agent.AgentTool
+		for _, candidate := range result.Session.State().Tools {
+			if candidate.Spec().Name == "bash" {
+				bash = candidate
+				break
+			}
+		}
+		if bash == nil {
+			t.Fatal("active bash tool is missing")
+		}
+		output, executeErr := bash.Execute(context.Background(), "reload", map[string]any{
+			"command": `printf '%s' "$PI_GO_RELOAD_PREFIX"`,
+		}, nil)
+		if executeErr != nil {
+			t.Fatal(executeErr)
+		}
+		if len(output.Content) != 1 {
+			t.Fatalf("bash output = %#v", output.Content)
+		}
+		text, ok := output.Content[0].(*ai.TextContent)
+		if !ok {
+			t.Fatalf("bash output block = %T", output.Content[0])
+		}
+		return text.Text
+	}
+
+	if got := runBash(); got != "old" {
+		t.Fatalf("initial bash prefix = %q", got)
+	}
+	if err := os.WriteFile(settingsPath, []byte(`{"shellCommandPrefix":"export PI_GO_RELOAD_PREFIX=new"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := result.Session.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := runBash(); got != "new" {
+		t.Fatalf("reloaded bash prefix = %q", got)
+	}
+}
+
 func TestBuildBuiltInToolsHonorsImageAutoResizeSetting(t *testing.T) {
 	cwd := t.TempDir()
 	agentDir := t.TempDir()
@@ -280,6 +512,45 @@ func TestSubscribeChan(t *testing.T) {
 	}
 	if !settled {
 		t.Fatal("did not receive settled event")
+	}
+}
+
+func TestSubscribeChanPreservesSaturatedEventOrder(t *testing.T) {
+	isolateSDKAgentDir(t)
+	provider := testFaux(100000)
+	result, err := NewAgentSession(AgentSessionOptions{
+		StreamFn: provider.StreamSimple,
+		Model:    provider.GetModel(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Session.Dispose()
+
+	ch, cancel := result.Session.SubscribeChan(1)
+	defer cancel()
+	for value := 0; value < 256; value++ {
+		result.Session.emit(value)
+	}
+	result.Session.emit(AgentSettledEvent{})
+
+	for want := 0; want < 256; want++ {
+		select {
+		case got := <-ch:
+			if got != want {
+				t.Fatalf("event %d = %#v", want, got)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for event %d", want)
+		}
+	}
+	select {
+	case got := <-ch:
+		if _, ok := got.(AgentSettledEvent); !ok {
+			t.Fatalf("terminal event = %T, want AgentSettledEvent", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for terminal event")
 	}
 }
 
@@ -795,6 +1066,32 @@ func TestNewAgentSessionNoToolsBuiltinRetainsCustom(t *testing.T) {
 	}
 	if !foundCustom {
 		t.Fatal("custom_test tool should be active when noTools=builtin")
+	}
+}
+
+func TestNewAgentSessionCustomToolUsesPerToolSDKSource(t *testing.T) {
+	isolateSDKAgentDir(t)
+	provider := testFaux(100000)
+	result, err := NewAgentSession(AgentSessionOptions{
+		StreamFn: provider.StreamSimple,
+		Model:    provider.GetModel(),
+		CustomTools: []extensions.ToolDefinition{
+			{Name: "alpha", Description: "alpha tool"},
+			{Name: "beta", Description: "beta tool"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Session.Dispose()
+	registered := result.Session.ExtensionRunner().AllRegisteredTools()
+	if len(registered) != 2 {
+		t.Fatalf("registered tools = %d", len(registered))
+	}
+	for index, path := range []string{"<sdk:alpha>", "<sdk:beta>"} {
+		if registered[index].SourceInfo.Path != path || registered[index].SourceInfo.Source != "sdk" {
+			t.Fatalf("tool %d source = %#v", index, registered[index].SourceInfo)
+		}
 	}
 }
 

@@ -46,11 +46,18 @@ type Extension struct {
 }
 
 type Registry struct {
-	mu         sync.RWMutex
-	extensions []*Extension
-	runtime    *runtimeState
-	eventBus   EventBus
-	cwd        string
+	mu            sync.RWMutex
+	extensions    []*Extension
+	registrations []registration
+	runtime       *runtimeState
+	eventBus      EventBus
+	cwd           string
+}
+
+type registration struct {
+	path          string
+	factory       Factory
+	configuration registerOptions
 }
 
 type RegisterOption func(*registerOptions)
@@ -85,18 +92,22 @@ func (registry *Registry) Register(path string, factory Factory, options ...Regi
 	if path == "" {
 		path = "<inline>"
 	}
+	configuration := registerOptions{}
+	for _, option := range options {
+		if option != nil {
+			option(&configuration)
+		}
+	}
+	return registry.register(path, factory, configuration)
+}
+
+func (registry *Registry) register(path string, factory Factory, configuration registerOptions) error {
 	resolved := path
 	if !strings.HasPrefix(path, "<") {
 		if filepath.IsAbs(path) {
 			resolved = filepath.Clean(path)
 		} else {
 			resolved = filepath.Clean(filepath.Join(registry.cwd, path))
-		}
-	}
-	configuration := registerOptions{}
-	for _, option := range options {
-		if option != nil {
-			option(&configuration)
 		}
 	}
 	sourceInfo := syntheticSourceInfo(path, resolved)
@@ -122,8 +133,57 @@ func (registry *Registry) Register(path string, factory Factory, options ...Regi
 	}
 	registry.mu.Lock()
 	registry.extensions = append(registry.extensions, extension)
+	registry.registrations = append(registry.registrations, registration{
+		path: path, factory: factory, configuration: cloneRegisterOptions(configuration),
+	})
 	registry.mu.Unlock()
 	return nil
+}
+
+func cloneRegisterOptions(options registerOptions) registerOptions {
+	cloned := registerOptions{hidden: options.hidden}
+	if options.sourceInfo != nil {
+		sourceInfo := *options.sourceInfo
+		cloned.sourceInfo = &sourceInfo
+	}
+	return cloned
+}
+
+// Fresh recreates every registered extension against a new active runtime.
+// Factories run again so captured API and command contexts belong exclusively
+// to the replacement session.
+func (registry *Registry) Fresh(cwd string) (*Registry, error) {
+	fresh := NewRegistry(cwd)
+	if registry == nil {
+		return fresh, nil
+	}
+	registry.mu.RLock()
+	registrations := append([]registration(nil), registry.registrations...)
+	registry.mu.RUnlock()
+	for _, entry := range registrations {
+		if err := fresh.register(entry.path, entry.factory, cloneRegisterOptions(entry.configuration)); err != nil {
+			return nil, err
+		}
+	}
+	for name, value := range registry.runtime.flagValues() {
+		fresh.runtime.setFlag(name, value)
+	}
+	return fresh, nil
+}
+
+// HasPath reports whether an extension path is already registered.
+func (registry *Registry) HasPath(path string) bool {
+	if registry == nil {
+		return false
+	}
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+	for _, entry := range registry.registrations {
+		if entry.path == path {
+			return true
+		}
+	}
+	return false
 }
 
 func callFactory(factory Factory, api API) (err error) {
