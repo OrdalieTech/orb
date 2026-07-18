@@ -494,6 +494,32 @@ func (manager *SettingsManager) GetFollowUpMode() string {
 	return "one-at-a-time"
 }
 
+func (manager *SettingsManager) GetThemeSetting() string { return manager.stringValue("theme") }
+
+func (manager *SettingsManager) GetTheme() string {
+	value := manager.GetThemeSetting()
+	if strings.Contains(value, "/") {
+		return ""
+	}
+	return value
+}
+
+func (manager *SettingsManager) SetTheme(value string) {
+	manager.setGlobalValues(settingMember("theme", value))
+}
+
+func (manager *SettingsManager) GetThemePaths() []string {
+	return settingsStringSlice(manager.GetSettings(), "themes")
+}
+
+func (manager *SettingsManager) GetMarkdownCodeBlockIndent() string {
+	value, _ := manager.objectValue("markdown")["codeBlockIndent"].(string)
+	if value == "" {
+		return "  "
+	}
+	return value
+}
+
 func (manager *SettingsManager) GetCompactionSettings() CompactionSettings {
 	object := manager.objectValue("compaction")
 	return CompactionSettings{

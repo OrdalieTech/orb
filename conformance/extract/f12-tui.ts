@@ -1,6 +1,9 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+
+import { withOfflineGeneratedCatalog } from "./f3-agent.ts";
 
 type StyleName = "none" | "red" | "blue-bg" | "bracket";
 
@@ -19,6 +22,78 @@ type FixtureNode = {
 };
 
 type FixtureCase = { name: string; width: number; node: FixtureNode };
+
+type MarkdownFixtureCase = {
+  name: string;
+  text: string;
+  width: number;
+  paddingX?: number;
+  paddingY?: number;
+  defaultStyle?: "gray-italic" | "magenta" | "cyan" | "yellow-italic";
+  preserveOrderedListMarkers?: boolean;
+  preserveBackslashEscapes?: boolean;
+  hyperlinks?: boolean;
+};
+
+type ThemeModule = {
+  initTheme(name: string): void;
+  theme: {
+    getColorMode(): string;
+    getFgAnsi(name: string): string;
+    getBgAnsi(name: string): string;
+    fg(name: string, value: string): string;
+  };
+  getMarkdownTheme(): Record<string, unknown>;
+  highlightCode(code: string, language?: string): string[];
+  getResolvedThemeColors(name: string): Record<string, string>;
+  getThemeExportColors(name: string): Record<string, string | undefined>;
+  loadThemeFromPath(path: string): unknown;
+};
+
+type ResourceDiagnostic = {
+  type: string;
+  message: string;
+  path?: string;
+  collision?: {
+    resourceType: string;
+    name: string;
+    winnerPath: string;
+    loserPath: string;
+  };
+};
+
+type ResourceLoaderModule = {
+  DefaultResourceLoader: new (options: {
+    cwd: string;
+    agentDir: string;
+    additionalThemePaths?: string[];
+    noExtensions?: boolean;
+    noSkills?: boolean;
+    noPromptTemplates?: boolean;
+    noContextFiles?: boolean;
+  }) => {
+    reload(): Promise<void>;
+    extendResources(paths: {
+      themePaths: Array<{
+        path: string;
+        metadata: { source: string; scope: "temporary"; origin: "top-level" };
+      }>;
+    }): void;
+    getThemes(): {
+      themes: Array<{ name?: string; sourcePath?: string }>;
+      diagnostics: ResourceDiagnostic[];
+    };
+  };
+};
+
+const foregroundThemeTokens = [
+  "accent", "border", "borderAccent", "borderMuted", "success", "error", "warning", "muted", "dim", "text", "thinkingText",
+  "userMessageText", "customMessageText", "customMessageLabel", "toolTitle", "toolOutput", "mdHeading", "mdLink", "mdLinkUrl", "mdCode",
+  "mdCodeBlock", "mdCodeBlockBorder", "mdQuote", "mdQuoteBorder", "mdHr", "mdListBullet", "toolDiffAdded", "toolDiffRemoved", "toolDiffContext",
+  "syntaxComment", "syntaxKeyword", "syntaxFunction", "syntaxVariable", "syntaxString", "syntaxNumber", "syntaxType", "syntaxOperator",
+  "syntaxPunctuation", "thinkingOff", "thinkingMinimal", "thinkingLow", "thinkingMedium", "thinkingHigh", "thinkingXhigh", "thinkingMax", "bashMode",
+];
+const backgroundThemeTokens = ["selectedBg", "userMessageBg", "customMessageBg", "toolPendingBg", "toolSuccessBg", "toolErrorBg"];
 
 const cases: FixtureCase[] = [
   { name: "text-wrap-padding", width: 8, node: { type: "text", text: "hello world", paddingX: 1, paddingY: 1 } },
@@ -49,6 +124,85 @@ const cases: FixtureCase[] = [
   { name: "loader-hidden-indicator", width: 18, node: { type: "loader", message: "Waiting", frames: [], messageStyle: "bracket" } },
 ];
 
+const markdownCases: MarkdownFixtureCase[] = [
+  { name: "list-nested", text: "- Item 1\n  - Nested 1.1\n  - Nested 1.2\n- Item 2", width: 80 },
+  { name: "list-deep", text: "- Level 1\n  - Level 2\n    - Level 3\n      - Level 4", width: 80 },
+  { name: "list-ordered-nested", text: "1. First\n   1. Nested first\n   2. Nested second\n2. Second", width: 80 },
+  { name: "list-normalize-markers", text: "1. alpha\n1. beta\n1. gamma", width: 80 },
+  { name: "list-preserve-markers", text: "  4. forth\n  3. third\n\n10) ten\n7) seven\n\n+ plus\n* star\n- minus\n+", width: 80, preserveOrderedListMarkers: true },
+  { name: "list-mixed", text: "1. Ordered item\n   - Unordered nested\n   - Another nested\n2. Second ordered\n   - More nested", width: 80 },
+  { name: "list-loose", text: "1. Lorem ipsum dolor sit amet.\n\n   Ut enim ad minim veniam.\n\n2. Duis aute irure dolor.\n\n   Excepteur sint occaecat cupidatat.\n\n3. Beep boop", width: 80 },
+  { name: "list-task", text: "- [ ] beep\n- [x] boop", width: 80 },
+  { name: "list-code-between", text: "1. First item\n\n```typescript\n// code block\n```\n\n2. Second item\n\n```typescript\n// another code block\n```\n\n3. Third item", width: 80 },
+  { name: "list-wrap-unordered", text: "- alpha beta gamma delta epsilon", width: 20 },
+  { name: "list-wrap-ordered", text: "1. alpha beta gamma delta epsilon", width: 20 },
+  { name: "list-wrap-multidigit", text: "10. alpha beta gamma delta epsilon", width: 21 },
+  { name: "list-wrap-nested", text: "- parent\n  - alpha beta gamma delta epsilon", width: 24 },
+  { name: "list-wrap-nested-ordered", text: "1. parent\n   - alpha beta gamma delta epsilon", width: 24 },
+  { name: "list-blockquote", text: "- > alpha beta gamma delta epsilon zeta", width: 24 },
+  { name: "list-code", text: "- ```ts\n  alpha beta gamma delta epsilon zeta\n  ```", width: 24 },
+  { name: "table-simple", text: "| Name | Age |\n| --- | --- |\n| Alice | 30 |\n| Bob | 25 |", width: 80 },
+  { name: "table-longest-word", text: "| Column One | Column Two |\n| --- | --- |\n| superlongword short | otherword |\n| small | tiny |", width: 32 },
+  { name: "table-alignment", text: "| Left | Center | Right |\n| :--- | :---: | ---: |\n| A | B | C |\n| Long text | Middle | End |", width: 80 },
+  { name: "table-varying", text: "| Short | Very long column header |\n| --- | --- |\n| A | This is a much longer cell content |\n| B | Short |", width: 80 },
+  { name: "table-wrap", text: "| Command | Description | Example |\n| --- | --- | --- |\n| npm install | Install all dependencies | npm install |\n| npm run build | Build the project | npm run build |", width: 50 },
+  { name: "table-long-cell", text: "| Header |\n| --- |\n| This is a very long cell content that should wrap |", width: 25 },
+  { name: "table-long-url", text: "| Value |\n| --- |\n| prefix https://example.com/this/is/a/very/long/url/that/should/wrap |", width: 30 },
+  { name: "table-inline-code", text: "| Code |\n| --- |\n| `averyveryveryverylongidentifier` |", width: 20 },
+  { name: "table-narrow", text: "| A | B | C |\n| --- | --- | --- |\n| 1 | 2 | 3 |", width: 15 },
+  { name: "table-natural", text: "| A | B |\n| --- | --- |\n| 1 | 2 |", width: 80 },
+  { name: "table-padding", text: "| Column One | Column Two |\n| --- | --- |\n| Data 1 | Data 2 |", width: 40, paddingX: 2 },
+  { name: "table-blockquote-style-context", text: "> | A |\n> | --- |\n> | before `code` after |", width: 40, defaultStyle: "magenta" },
+  { name: "table-min-word-weight", text: "| A | B |\n| --- | --- |\n| aa aa aa aa aa | longword |", width: 15 },
+  { name: "combined", text: "# Test Document\n\n- Item 1\n  - Nested item\n- Item 2\n\n| Col1 | Col2 |\n| --- | --- |\n| A | B |", width: 80 },
+  { name: "escape-normalized", text: String.raw`"\"`, width: 80 },
+  { name: "escape-preserved", text: String.raw`"\"`, width: 80, preserveBackslashEscapes: true },
+  { name: "default-gray-code", text: "This is thinking with `inline code` and more text after", width: 80, paddingX: 1, defaultStyle: "gray-italic" },
+  { name: "default-gray-bold", text: "This is thinking with **bold text** and more after", width: 80, paddingX: 1, defaultStyle: "gray-italic" },
+  { name: "spacing-code", text: "hello world\n\n```js\nconst hello = \"world\";\n```\n\nagain, hello world", width: 80 },
+  { name: "spacing-code-adjacent", text: "hello this is text\n```\ncode block\n```\nmore text", width: 80 },
+  { name: "spacing-code-blank", text: "hello this is text\n\n```\ncode block\n```\n\nmore text", width: 80 },
+  { name: "spacing-code-final", text: "hello world\n\n```js\nconst hello = 'world';\n```", width: 80 },
+  { name: "spacing-divider", text: "hello world\n\n---\n\nagain, hello world", width: 80 },
+  { name: "spacing-divider-final", text: "---", width: 80 },
+  { name: "spacing-heading", text: "# Hello\n\nThis is a paragraph", width: 80 },
+  { name: "spacing-heading-final", text: "# Hello", width: 80 },
+  { name: "spacing-quote", text: "hello world\n\n> This is a quote\n\nagain, hello world", width: 80 },
+  { name: "spacing-quote-final", text: "> This is a quote", width: 80 },
+  { name: "quote-lazy", text: ">Foo\nbar", width: 80, defaultStyle: "magenta" },
+  { name: "quote-explicit", text: ">Foo\n>bar", width: 80, defaultStyle: "cyan" },
+  { name: "quote-list", text: "> 1. bla bla\n> - nested bullet", width: 80 },
+  { name: "quote-wrap", text: "> This is a very long blockquote line that should wrap to multiple lines when rendered", width: 30 },
+  { name: "quote-wrap-styled", text: "> This is styled text that is long enough to wrap", width: 25, defaultStyle: "yellow-italic" },
+  { name: "quote-inline", text: "> Quote with **bold** and `code`", width: 80 },
+  { name: "heading-inline-code", text: "### Why `sourceInfo` should not be optional", width: 80 },
+  { name: "heading-h1-code", text: "# Title with `code` inside", width: 80 },
+  { name: "heading-h1-code-final", text: "# Important distinction from `open()`", width: 80 },
+  { name: "heading-bold", text: "## Heading with **bold** and more", width: 80 },
+  { name: "strike-double", text: "Use ~~strikethrough~~ here", width: 80 },
+  { name: "strike-single", text: "Use ~strikethrough~ literally", width: 80 },
+  { name: "link-email", text: "Contact user@example.com for help", width: 80 },
+  { name: "link-bare", text: "Visit https://example.com for more", width: 80 },
+  { name: "link-explicit", text: "[click here](https://example.com)", width: 80 },
+  { name: "link-mailto", text: "[Email me](mailto:test@example.com)", width: 80 },
+  { name: "link-osc8", text: "[click here](https://example.com)", width: 80, hyperlinks: true },
+  { name: "link-mailto-osc8", text: "[Email me](mailto:test@example.com)", width: 80, hyperlinks: true },
+  { name: "link-bare-osc8", text: "Visit https://example.com for more", width: 80, hyperlinks: true },
+  { name: "html-inline", text: "This is text with <thinking>hidden content</thinking> that should be visible", width: 80 },
+  { name: "html-code", text: "```html\n<div>Some HTML</div>\n```", width: 80 },
+  { name: "fence-partial", text: "```ts\nconst x = 1;\n``", width: 80 },
+  { name: "fence-inner", text: "```md\nnot a closing fence:\n``\n```", width: 80 },
+  { name: "fence-empty", text: "```ts\n``", width: 80 },
+  { name: "fence-four", text: "````\n```", width: 80 },
+  { name: "fence-tilde", text: "~~~~~\n~~~~", width: 80 },
+  { name: "fence-followed", text: "```md\nnot a closing fence:\n``\n```\n\nafter", width: 80 },
+];
+
+const highlightCases = [
+  { name: "typescript", language: "typescript", code: "const answer: number = 42; // value" },
+  { name: "powershell-operator", language: "powershell", code: "$value -eq 42" },
+];
+
 type TuiModule = {
   Text: new (text?: string, paddingX?: number, paddingY?: number, style?: (value: string) => string) => { render(width: number): string[] };
   TruncatedText: new (text: string, paddingX?: number, paddingY?: number) => { render(width: number): string[] };
@@ -62,6 +216,16 @@ type TuiModule = {
     message?: string,
     indicator?: { frames?: string[]; intervalMs?: number },
   ) => { render(width: number): string[]; stop(): void };
+  Markdown: new (
+    text: string,
+    paddingX: number,
+    paddingY: number,
+    theme: Record<string, unknown>,
+    defaultStyle?: Record<string, unknown>,
+    options?: Record<string, unknown>,
+  ) => { render(width: number): string[] };
+  setCapabilities(capabilities: { images: null; trueColor: boolean; hyperlinks: boolean }): void;
+  resetCapabilitiesCache(): void;
 };
 
 function style(name: StyleName | undefined): (value: string) => string {
@@ -71,6 +235,138 @@ function style(name: StyleName | undefined): (value: string) => string {
     case "bracket": return (value) => `[${value}]`;
     case "none": return (value) => value;
   }
+}
+
+const ansi = {
+  bold: (value: string) => `\u001b[1m${value}\u001b[22m`,
+  italic: (value: string) => `\u001b[3m${value}\u001b[23m`,
+  underline: (value: string) => `\u001b[4m${value}\u001b[24m`,
+  strike: (value: string) => `\u001b[9m${value}\u001b[29m`,
+  fg: (code: number) => (value: string) => `\u001b[${code}m${value}\u001b[39m`,
+};
+
+const markdownTheme = {
+  heading: (value: string) => ansi.bold(ansi.fg(36)(value)),
+  link: ansi.fg(34),
+  linkUrl: (value: string) => `\u001b[2m${value}\u001b[22m`,
+  code: ansi.fg(33),
+  codeBlock: ansi.fg(32),
+  codeBlockBorder: (value: string) => `\u001b[2m${value}\u001b[22m`,
+  quote: ansi.italic,
+  quoteBorder: (value: string) => `\u001b[2m${value}\u001b[22m`,
+  hr: (value: string) => `\u001b[2m${value}\u001b[22m`,
+  listBullet: ansi.fg(36),
+  bold: ansi.bold,
+  italic: ansi.italic,
+  strikethrough: ansi.strike,
+  underline: ansi.underline,
+};
+
+function defaultMarkdownStyle(name: MarkdownFixtureCase["defaultStyle"]): Record<string, unknown> | undefined {
+  switch (name) {
+    case "gray-italic": return { color: ansi.fg(90), italic: true };
+    case "magenta": return { color: ansi.fg(35) };
+    case "cyan": return { color: ansi.fg(36) };
+    case "yellow-italic": return { color: ansi.fg(33), italic: true };
+    default: return undefined;
+  }
+}
+
+function summarizeThemeDiscovery(
+  result: ReturnType<InstanceType<ResourceLoaderModule["DefaultResourceLoader"]>["getThemes"]>,
+  name: string,
+  labels: Map<string, string>,
+) {
+  const label = (value: string | undefined) => value === undefined ? undefined : (labels.get(value) ?? value);
+  return {
+    selected: label(result.themes.find((theme) => theme.name === name)?.sourcePath),
+    diagnostics: result.diagnostics.map((diagnostic) => ({
+      type: diagnostic.type,
+      message: diagnostic.message,
+      path: label(diagnostic.path),
+      ...(diagnostic.collision ? {
+        collision: {
+          resourceType: diagnostic.collision.resourceType,
+          name: diagnostic.collision.name,
+          winnerPath: label(diagnostic.collision.winnerPath),
+          loserPath: label(diagnostic.collision.loserPath),
+        },
+      } : {}),
+    })),
+  };
+}
+
+async function generateThemeDiscovery(upstreamRoot: string) {
+  return withOfflineGeneratedCatalog(upstreamRoot, async () => {
+    const source = "packages/coding-agent/src/core/resource-loader.ts";
+    const resourceModule = (await import(pathToFileURL(path.join(upstreamRoot, source)).href)) as ResourceLoaderModule;
+    const root = await mkdtemp(path.join(tmpdir(), "pi-go-f12-theme-"));
+    try {
+      const agentDir = path.join(root, "agent");
+      const cwd = path.join(root, "project");
+      const userTheme = path.join(agentDir, "themes", "user.json");
+      const projectTheme = path.join(cwd, ".pi", "themes", "project.json");
+      const firstTheme = path.join(root, "first.json");
+      const secondTheme = path.join(root, "second.json");
+      const dark = JSON.parse(await readFile(path.join(upstreamRoot, "packages/coding-agent/src/modes/interactive/theme/dark.json"), "utf8")) as {
+        name: string;
+        vars: Record<string, string>;
+      };
+      const writeTheme = async (file: string, name: string, accent: string) => {
+        const document = structuredClone(dark);
+        document.name = name;
+        document.vars.accent = accent;
+        await mkdir(path.dirname(file), { recursive: true });
+        await writeFile(file, JSON.stringify(document));
+      };
+
+      await writeTheme(userTheme, "project-over-user", "#111111");
+      await writeTheme(projectTheme, "project-over-user", "#222222");
+      const projectLoader = new resourceModule.DefaultResourceLoader({
+        cwd,
+        agentDir,
+        noExtensions: true,
+        noSkills: true,
+        noPromptTemplates: true,
+        noContextFiles: true,
+      });
+      await projectLoader.reload();
+
+      await writeTheme(firstTheme, "extend-first-wins", "#333333");
+      await writeTheme(secondTheme, "extend-first-wins", "#444444");
+      const extendLoader = new resourceModule.DefaultResourceLoader({
+        cwd: path.join(root, "extend-project"),
+        agentDir: path.join(root, "extend-agent"),
+        additionalThemePaths: [firstTheme],
+        noExtensions: true,
+        noSkills: true,
+        noPromptTemplates: true,
+        noContextFiles: true,
+      });
+      await mkdir(path.join(root, "extend-project"), { recursive: true });
+      await mkdir(path.join(root, "extend-agent"), { recursive: true });
+      await extendLoader.reload();
+      extendLoader.extendResources({
+        themePaths: [{
+          path: secondTheme,
+          metadata: { source: "extension", scope: "temporary", origin: "top-level" },
+        }],
+      });
+
+      return {
+        projectOverUser: summarizeThemeDiscovery(projectLoader.getThemes(), "project-over-user", new Map([
+          [projectTheme, "<project-theme>"],
+          [userTheme, "<user-theme>"],
+        ])),
+        extendFirstWins: summarizeThemeDiscovery(extendLoader.getThemes(), "extend-first-wins", new Map([
+          [firstTheme, "<first-theme>"],
+          [secondTheme, "<second-theme>"],
+        ])),
+      };
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 }
 
 function build(tui: TuiModule, node: FixtureNode): { component: { render(width: number): string[] }; cleanup?: () => void } {
@@ -109,8 +405,96 @@ export async function generateF12(upstreamRoot: string, outputRoot: string, upst
     try { return { ...fixtureCase, expected: built.component.render(fixtureCase.width) }; }
     finally { built.cleanup?.(); }
   });
+  const markdown = markdownCases.map((fixtureCase) => {
+    tui.setCapabilities({ images: null, trueColor: false, hyperlinks: fixtureCase.hyperlinks ?? false });
+    try {
+      const component = new tui.Markdown(
+        fixtureCase.text,
+        fixtureCase.paddingX ?? 0,
+        fixtureCase.paddingY ?? 0,
+        markdownTheme,
+        defaultMarkdownStyle(fixtureCase.defaultStyle),
+        {
+          preserveOrderedListMarkers: fixtureCase.preserveOrderedListMarkers ?? false,
+          preserveBackslashEscapes: fixtureCase.preserveBackslashEscapes ?? false,
+        },
+      );
+      return { ...fixtureCase, expected: component.render(fixtureCase.width) };
+    } finally {
+      tui.resetCapabilitiesCache();
+    }
+  });
+  const themeSource = "packages/coding-agent/src/modes/interactive/theme/theme.ts";
+  process.env.PI_PACKAGE_DIR = path.join(upstreamRoot, "packages/coding-agent");
+  process.env.FORCE_COLOR = "3";
+  ((await import(pathToFileURL(path.join(upstreamRoot, "node_modules/chalk/source/index.js")).href)).default as unknown as { level: number }).level = 3;
+  tui.setCapabilities({ images: null, trueColor: true, hyperlinks: false });
+  const themeModule = (await import(pathToFileURL(path.join(upstreamRoot, themeSource)).href)) as ThemeModule;
+  const themes = ["dark", "light"].map((name) => {
+    themeModule.initTheme(name);
+    const foreground = Object.fromEntries(foregroundThemeTokens.map((token) => [token, themeModule.theme.getFgAnsi(token)]));
+    const background = Object.fromEntries(backgroundThemeTokens.map((token) => [token, themeModule.theme.getBgAnsi(token)]));
+    const sample = new tui.Markdown(
+      "# Theme sample\n\n> quote with **bold** and `code`\n\n```typescript\nconst answer: number = 42; // value\n```",
+      0,
+      0,
+      { ...themeModule.getMarkdownTheme(), codeBlockIndent: ">>" },
+    ).render(72);
+    return {
+      name,
+      mode: themeModule.theme.getColorMode(),
+      foreground,
+      background,
+      sample,
+      highlighted: themeModule.highlightCode("const answer: number = 42; // value", "typescript"),
+      highlights: highlightCases.map((fixtureCase) => ({
+        ...fixtureCase,
+        expected: themeModule.highlightCode(fixtureCase.code, fixtureCase.language),
+      })),
+      fallback: themeModule.highlightCode("plain text", "definitely-not-a-language"),
+      resolved: themeModule.getResolvedThemeColors(name),
+      export: themeModule.getThemeExportColors(name),
+    };
+  });
+  const validationRoot = await mkdtemp(path.join(tmpdir(), "pi-go-f12-theme-validation-"));
+  let trailingDocumentAccepted = false;
+  let unknownForegroundThrows = false;
+  try {
+    const trailingPath = path.join(validationRoot, "trailing.json");
+    const darkJSON = await readFile(path.join(upstreamRoot, "packages/coding-agent/src/modes/interactive/theme/dark.json"), "utf8");
+    await writeFile(trailingPath, `${darkJSON}\n{}`);
+    try {
+      themeModule.loadThemeFromPath(trailingPath);
+      trailingDocumentAccepted = true;
+    } catch {
+      trailingDocumentAccepted = false;
+    }
+    try {
+      themeModule.theme.fg("__pi_go_unknown__", "value");
+    } catch {
+      unknownForegroundThrows = true;
+    }
+  } finally {
+    await rm(validationRoot, { recursive: true, force: true });
+  }
+  const discovery = await generateThemeDiscovery(upstreamRoot);
+  tui.resetCapabilitiesCache();
   const familyDir = path.join(outputRoot, "F12");
   await mkdir(familyDir, { recursive: true });
-  await writeFile(path.join(familyDir, "manifest.json"), `${JSON.stringify({ family: "F12", upstreamCommit, generator: "conformance/extract/f12-tui.ts", source, files: ["primitives.json"] }, null, 2)}\n`);
+  const fixtureSources = [
+    source,
+    "packages/tui/src/components/markdown.ts",
+    "packages/tui/test/markdown.test.ts",
+    themeSource,
+    "packages/coding-agent/src/modes/interactive/theme/dark.json",
+    "packages/coding-agent/src/modes/interactive/theme/light.json",
+    "packages/coding-agent/src/utils/syntax-highlight.ts",
+    "packages/coding-agent/src/core/resource-loader.ts",
+    "packages/coding-agent/src/core/package-manager.ts",
+    "packages/coding-agent/src/core/settings-manager.ts",
+  ];
+  await writeFile(path.join(familyDir, "manifest.json"), `${JSON.stringify({ family: "F12", upstreamCommit, generator: "conformance/extract/f12-tui.ts", source: fixtureSources.join("; "), files: ["primitives.json", "markdown.json", "themes.json"] }, null, 2)}\n`);
   await writeFile(path.join(familyDir, "primitives.json"), `${JSON.stringify({ schemaVersion: 1, cases: generated }, null, 2)}\n`);
+  await writeFile(path.join(familyDir, "markdown.json"), `${JSON.stringify({ schemaVersion: 1, cases: markdown }, null, 2)}\n`);
+  await writeFile(path.join(familyDir, "themes.json"), `${JSON.stringify({ schemaVersion: 1, themes, discovery, validation: { trailingDocumentAccepted, unknownForegroundThrows } }, null, 2)}\n`);
 }

@@ -14,12 +14,13 @@ Status: **in progress**.
 - [x] Integrate the historical SDK facade and 13 example packages into green `main`.
 - [x] Integrate historical WP-360 package management and project trust with upstream fixtures.
 - [x] Integrate historical WP-410 TUI core and its upstream F12 primitive goldens.
+- [x] Integrate historical WP-430 Markdown, syntax highlighting, themes, and F12 goldens.
 - [ ] Integrate every former GitButler lane and side ref, reconciling overlapping implementations.
 - [ ] Verify `CGO_ENABLED=0 go build ./...` and `make test` at every integrated commit.
 - [ ] Delete merged side refs and temporary consolidation stashes.
 - [ ] Finish on plain `main` with no worktree, lane, or feature branch.
 
-Current red-to-green evidence: RPC/resources/native extensions moved from merge conflicts and six lint failures to green fixtures and the pinned 27-test upstream RPC run. The SDK candidate moved from home-directory writes and missing persisted-message/settings/session propagation to green focused tests, all 13 faux examples, an isolated external-module build, `make build test lint`, `make fixtures-check`, module verification/tidy diff, and all four CGO-free Linux/Darwin amd64/arm64 builds. The TUI core moved from four integration conflicts to green F12 primitive goldens, race tests, lint, fixture regeneration, the upstream RPC suite, and the same four pure-Go cross-builds; real-terminal smoke remains owner-blocked evidence rather than a local substitute.
+Current red-to-green evidence: RPC/resources/native extensions moved from merge conflicts and six lint failures to green fixtures and the pinned 27-test upstream RPC run. The SDK candidate moved from home-directory writes and missing persisted-message/settings/session propagation to green focused tests, all 13 faux examples, an isolated external-module build, `make build test lint`, `make fixtures-check`, module verification/tidy diff, and all four CGO-free Linux/Darwin amd64/arm64 builds. The TUI core moved from four integration conflicts to green F12 primitive goldens. Markdown/themes then moved from reversed collision precedence, dropped table style context, incorrect narrow-table allocation, permissive JSON parsing, and unreachable operator/punctuation colors to 71 byte-exact Markdown cases plus upstream-generated theme/discovery fixtures, the full race/lint/fixture/RPC gates, and the same four pure-Go cross-builds; real-terminal smoke remains owner-blocked evidence rather than a local substitute.
 
 Historical note: `2a8ac08` and `68c3afa` were intermediate snapshots that did not build by
 themselves; their corrected descendants are already represented in the consolidated history and
@@ -67,6 +68,7 @@ Status: **pending**.
 
 ## Owner-blocked evidence
 
+- WP-420 word navigation requires ICU-compatible CJK dictionary segmentation. The approved §8 dependencies provide only UAX #29 boundaries; owner approval is required for a pure-Go dictionary breaker dependency or an internal port with pinned ICU data.
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.
 - Tier-2/Tier-3 provider live tests require repository/API credentials and CI secrets.
 - Off-machine clean macOS/Linux release validation and the 72-hour burn-in require owner-provided
