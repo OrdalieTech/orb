@@ -48,7 +48,8 @@ settings `terminal.*`, `images.*`; optional clipboard dep.
 
 **Scope:** kitty/iTerm2 image emission + capability detection + `terminal.showImages`/width cells;
 read tool image support (jpg/png/gif/webp/bmp decode via stdlib+x/image, resize ≤2000×2000, EXIF
-orientation, omit-if-no-vision); clipboard via OSC52 + pbcopy/xclip/wl-copy fallback (`/copy`).
+orientation, and upstream's quirk of retaining a successful image block beside the non-vision
+"omitted" note); clipboard via OSC52 + pbcopy/xclip/wl-copy fallback (`/copy`).
 
 **Acceptance:** image fixtures decode/resize byte-stable (golden dimensions/orientation matrix);
 manual kitty + iTerm2 verification documented; `/copy` works on darwin + linux (X11/Wayland).

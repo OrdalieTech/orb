@@ -170,7 +170,8 @@ Upstream spec: `packages/coding-agent/src/`, `docs/` (usage, settings, extension
 session-format, skills, prompt-templates, models, packages, themes).
 
 **Tools** (`codingagent/tools/`, upstream `src/core/tools/`): read (text + images: decode via
-stdlib/x/image, resize ≤2000×2000, EXIF orientation; omit image if model lacks vision), bash (fresh
+stdlib/x/image, resize ≤2000×2000, EXIF orientation; retain the image block on successful reads,
+including upstream's contradictory non-vision note claiming omission), bash (fresh
 `bash` spawn per call, command via stdin, streaming through the output accumulator, 50KB/2000-line
 truncation with full spill to temp file, process-tree kill, detached-child PID tracking,
 `shellCommandPrefix`, spawn-hook seam), edit (exact → fuzzy match: NFKC normalize + trailing-ws

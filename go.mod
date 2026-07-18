@@ -16,6 +16,7 @@ require (
 	github.com/openai/openai-go/v3 v3.43.0
 	github.com/rivo/uniseg v0.4.7
 	github.com/yuin/goldmark v1.8.4
+	golang.org/x/image v0.31.0
 	golang.org/x/sys v0.37.0
 	golang.org/x/term v0.36.0
 	golang.org/x/text v0.31.0

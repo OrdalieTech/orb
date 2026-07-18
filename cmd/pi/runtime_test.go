@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -15,6 +19,41 @@ import (
 	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 )
+
+func TestCreateBuiltInToolsHonorsImageAutoResizeSetting(t *testing.T) {
+	cwd := t.TempDir()
+	agentDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(`{"images":{"autoResize":false}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image.NewNRGBA(image.Rect(0, 0, 2001, 1))); err != nil {
+		t.Fatal(err)
+	}
+	imageBytes := encoded.Bytes()
+	if err := os.WriteFile(filepath.Join(cwd, "fixture.png"), imageBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	builtIns, err := createBuiltInTools(cwd, []string{"read"}, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := builtIns[0].Execute(context.Background(), "call", map[string]any{"path": "fixture.png"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Content) != 2 {
+		t.Fatalf("read content = %#v", result.Content)
+	}
+	image, ok := result.Content[1].(*ai.ImageContent)
+	if !ok || image.Data != base64.StdEncoding.EncodeToString(imageBytes) || image.MimeType != "image/png" {
+		t.Fatalf("image content = %#v", result.Content[1])
+	}
+}
 
 func TestCreateRuntimeInputsUsesResolvedResourcesAndToolSelection(t *testing.T) {
 	root := t.TempDir()

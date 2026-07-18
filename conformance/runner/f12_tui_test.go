@@ -14,6 +14,127 @@ type f12Fixture struct {
 	Cases         []f12Case `json:"cases"`
 }
 
+type f12TerminalImages struct {
+	SchemaVersion int                  `json:"schemaVersion"`
+	EncodingCases []f12EncodingCase    `json:"encodingCases"`
+	CellCases     []f12CellCase        `json:"cellCases"`
+	RenderCases   []f12ImageRenderCase `json:"renderCases"`
+}
+
+type f12EncodingCase struct {
+	Name     string         `json:"name"`
+	Kind     string         `json:"kind"`
+	Data     string         `json:"data"`
+	Options  map[string]any `json:"options"`
+	Expected string         `json:"expected"`
+}
+
+type f12CellCase struct {
+	Name       string              `json:"name"`
+	Dimensions tui.ImageDimensions `json:"dimensions"`
+	MaxWidth   float64             `json:"maxWidth"`
+	MaxHeight  float64             `json:"maxHeight"`
+	Cell       struct {
+		WidthPx  int `json:"widthPx"`
+		HeightPx int `json:"heightPx"`
+	} `json:"cell"`
+	Expected struct {
+		Columns int `json:"columns"`
+		Rows    int `json:"rows"`
+	} `json:"expected"`
+}
+
+type f12ImageRenderCase struct {
+	Name       string              `json:"name"`
+	Protocol   *string             `json:"protocol"`
+	Width      int                 `json:"width"`
+	Data       string              `json:"data"`
+	MimeType   string              `json:"mimeType"`
+	Dimensions tui.ImageDimensions `json:"dimensions"`
+	Options    struct {
+		MaxWidthCells  *int    `json:"maxWidthCells"`
+		MaxHeightCells *int    `json:"maxHeightCells"`
+		Filename       string  `json:"filename"`
+		ImageID        *uint32 `json:"imageId"`
+	} `json:"options"`
+	Expected []string `json:"expected"`
+}
+
+func TestF12TerminalImagesMatchUpstream(t *testing.T) {
+	var fixture f12TerminalImages
+	runner.LoadJSON(t, "F12", "terminal-images.json", &fixture)
+	if fixture.SchemaVersion != 2 || len(fixture.EncodingCases) != 3 || len(fixture.CellCases) != 3 || len(fixture.RenderCases) != 4 {
+		t.Fatalf("terminal-image fixture header = %#v", fixture)
+	}
+	for _, fixtureCase := range fixture.EncodingCases {
+		t.Run(fixtureCase.Name, func(t *testing.T) {
+			var got string
+			switch fixtureCase.Kind {
+			case "kitty":
+				got = tui.EncodeKitty(fixtureCase.Data, jsonInt(fixtureCase.Options["columns"]), jsonInt(fixtureCase.Options["rows"]), uint32(jsonInt(fixtureCase.Options["imageId"])), jsonBoolDefault(fixtureCase.Options, "moveCursor", true))
+			case "iterm2":
+				got = tui.EncodeITerm2(fixtureCase.Data, fixtureCase.Options["width"], fixtureCase.Options["height"], jsonString(fixtureCase.Options["name"]), jsonBoolDefault(fixtureCase.Options, "preserveAspectRatio", true), jsonBoolDefault(fixtureCase.Options, "inline", true))
+			default:
+				t.Fatalf("unknown encoding kind %q", fixtureCase.Kind)
+			}
+			if got != fixtureCase.Expected {
+				t.Fatalf("encoding differs\nwant: %q\ngot:  %q", fixtureCase.Expected, got)
+			}
+		})
+	}
+	for _, fixtureCase := range fixture.CellCases {
+		t.Run(fixtureCase.Name, func(t *testing.T) {
+			maxHeight := int(fixtureCase.MaxHeight)
+			got := tui.CalculateImageCellSize(fixtureCase.Dimensions, int(fixtureCase.MaxWidth), &maxHeight, tui.CellDimensions{WidthPx: fixtureCase.Cell.WidthPx, HeightPx: fixtureCase.Cell.HeightPx})
+			if got.Columns != fixtureCase.Expected.Columns || got.Rows != fixtureCase.Expected.Rows {
+				t.Fatalf("cell size = %#v, want %#v", got, fixtureCase.Expected)
+			}
+		})
+	}
+	t.Cleanup(func() {
+		tui.ResetCapabilitiesCache()
+		tui.SetCellDimensions(tui.CellDimensions{WidthPx: 9, HeightPx: 18})
+	})
+	tui.SetCellDimensions(tui.CellDimensions{WidthPx: 10, HeightPx: 20})
+	for _, fixtureCase := range fixture.RenderCases {
+		t.Run(fixtureCase.Name, func(t *testing.T) {
+			protocol := tui.ImageProtocol("")
+			if fixtureCase.Protocol != nil {
+				protocol = tui.ImageProtocol(*fixtureCase.Protocol)
+			}
+			tui.SetCapabilities(tui.TerminalCapabilities{Images: protocol, TrueColor: true, Hyperlinks: true})
+			component := tui.NewImage(fixtureCase.Data, fixtureCase.MimeType, tui.ImageTheme{FallbackColor: func(value string) string { return "<" + value + ">" }}, &tui.ImageOptions{
+				MaxWidthCells: fixtureCase.Options.MaxWidthCells, MaxHeightCells: fixtureCase.Options.MaxHeightCells, Filename: fixtureCase.Options.Filename, ImageID: fixtureCase.Options.ImageID,
+			}, &fixtureCase.Dimensions)
+			if diff := linesDiff(fixtureCase.Expected, component.Render(fixtureCase.Width)); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+func jsonInt(value any) int {
+	number, _ := value.(float64)
+	return int(number)
+}
+
+func jsonString(value any) string {
+	text, _ := value.(string)
+	return text
+}
+
+func jsonBoolDefault(object map[string]any, key string, fallback bool) bool {
+	value, exists := object[key]
+	if !exists {
+		return fallback
+	}
+	result, ok := value.(bool)
+	if !ok {
+		return fallback
+	}
+	return result
+}
+
 type f12Case struct {
 	Name     string   `json:"name"`
 	Width    int      `json:"width"`

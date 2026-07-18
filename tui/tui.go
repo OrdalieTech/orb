@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +40,7 @@ type TUI struct {
 	maxLinesRendered    int
 	previousViewportTop int
 	fullRedraws         int
+	previousImageIDs    []uint32
 	clearOnShrink       bool
 	showHardwareCursor  bool
 	stopped             bool
@@ -131,6 +133,9 @@ func (ui *TUI) Start() error {
 		return err
 	}
 	ui.terminal.HideCursor()
+	if GetCapabilities().Images != "" {
+		ui.terminal.Write("\x1b[16t")
+	}
 	ui.RenderNow()
 	return nil
 }
@@ -160,7 +165,12 @@ func (ui *TUI) Stop() error {
 	return ui.terminal.Stop()
 }
 
-func (ui *TUI) Invalidate() { ui.Container.Invalidate(); ui.RequestRender() }
+func (ui *TUI) Invalidate() {
+	ui.renderMu.Lock()
+	ui.Container.Invalidate()
+	ui.renderMu.Unlock()
+	ui.RequestRender()
+}
 
 func (ui *TUI) RequestRender() {
 	ui.renderMu.Lock()
@@ -217,6 +227,13 @@ func (ui *TUI) handleInput(data string) {
 			return
 		}
 	}
+	if height, width, ok := parseCellSizeResponse(data); ok {
+		if height > 0 && width > 0 {
+			SetCellDimensions(CellDimensions{WidthPx: width, HeightPx: height})
+			ui.Invalidate()
+		}
+		return
+	}
 	if MatchesKey(data, "shift+ctrl+d") && ui.OnDebug != nil {
 		ui.OnDebug()
 		return
@@ -251,9 +268,98 @@ func (ui *TUI) extractCursor(lines []string, height int) (row, column int, found
 
 func applyLineResets(lines []string) []string {
 	for index, line := range lines {
-		lines[index] = NormalizeTerminalOutput(line) + segmentReset
+		if !IsImageLine(line) {
+			lines[index] = NormalizeTerminalOutput(line) + segmentReset
+		}
 	}
 	return lines
+}
+
+func parseCellSizeResponse(data string) (height, width int, ok bool) {
+	if !strings.HasPrefix(data, "\x1b[6;") || !strings.HasSuffix(data, "t") {
+		return 0, 0, false
+	}
+	parts := strings.Split(data[len("\x1b[6;"):len(data)-1], ";")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	height, heightErr := strconv.Atoi(parts[0])
+	width, widthErr := strconv.Atoi(parts[1])
+	return height, width, heightErr == nil && widthErr == nil
+}
+
+func collectKittyImageIDs(lines []string) []uint32 {
+	ids := make([]uint32, 0)
+	seen := make(map[uint32]struct{})
+	for _, line := range lines {
+		lineIDs, _ := parseKittyImageHeader(line)
+		for _, id := range lineIDs {
+			if _, exists := seen[id]; !exists {
+				seen[id] = struct{}{}
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids
+}
+
+func kittyImageReservedRows(lines []string, index, maxIndex int) int {
+	_, rows := parseKittyImageHeader(lines[index])
+	if rows <= 1 {
+		return 1
+	}
+	maxRows := min(rows, maxIndex-index+1, len(lines)-index)
+	reserved := 1
+	for reserved < maxRows {
+		line := lines[index+reserved]
+		if IsImageLine(line) || VisibleWidth(line) > 0 {
+			break
+		}
+		reserved++
+	}
+	return reserved
+}
+
+func deleteKittyImages(ids []uint32) string {
+	var output strings.Builder
+	for _, id := range ids {
+		output.WriteString(DeleteKittyImage(id))
+	}
+	return output.String()
+}
+
+func changedKittyImageIDs(lines []string, first, last int) []uint32 {
+	ids := make([]uint32, 0)
+	seen := make(map[uint32]struct{})
+	last = min(last, len(lines)-1)
+	for index := max(0, first); index <= last; index++ {
+		lineIDs, _ := parseKittyImageHeader(lines[index])
+		for _, id := range lineIDs {
+			if _, exists := seen[id]; !exists {
+				seen[id] = struct{}{}
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids
+}
+
+func expandChangedRangeForKittyImages(first, last int, previous, next []string) (int, int) {
+	expandedFirst, expandedLast := first, last
+	for _, lines := range [][]string{previous, next} {
+		for index, line := range lines {
+			ids, _ := parseKittyImageHeader(line)
+			if len(ids) == 0 {
+				continue
+			}
+			blockEnd := index + kittyImageReservedRows(lines, index, len(lines)-1) - 1
+			if index >= first || index <= last && blockEnd >= first {
+				expandedFirst = min(expandedFirst, index)
+				expandedLast = max(expandedLast, blockEnd)
+			}
+		}
+	}
+	return expandedFirst, expandedLast
 }
 
 func (ui *TUI) RenderNow() {
@@ -289,11 +395,25 @@ func (ui *TUI) RenderNow() {
 		var output strings.Builder
 		output.WriteString("\x1b[?2026h")
 		if clear {
+			output.WriteString(deleteKittyImages(ui.previousImageIDs))
 			output.WriteString("\x1b[2J\x1b[H\x1b[3J")
 		}
-		for index, line := range newLines {
+		for index := 0; index < len(newLines); index++ {
 			if index > 0 {
 				output.WriteString("\r\n")
+			}
+			line := newLines[index]
+			reserved := 1
+			if IsImageLine(line) {
+				reserved = kittyImageReservedRows(newLines, index, len(newLines)-1)
+			}
+			if reserved > 1 && reserved <= height {
+				output.WriteString(strings.Repeat("\r\n", reserved-1))
+				fmt.Fprintf(&output, "\x1b[%dA", reserved-1)
+				output.WriteString(line)
+				fmt.Fprintf(&output, "\x1b[%dB", reserved-1)
+				index += reserved - 1
+				continue
 			}
 			output.WriteString(line)
 		}
@@ -308,6 +428,7 @@ func (ui *TUI) RenderNow() {
 		ui.previousViewportTop = max(0, max(height, len(newLines))-height)
 		ui.positionCursor(cursorRow, cursorColumn, hasCursor, len(newLines))
 		ui.previousLines, ui.previousWidth, ui.previousHeight = newLines, width, height
+		ui.previousImageIDs = collectKittyImageIDs(newLines)
 	}
 	if len(ui.previousLines) == 0 && !widthChanged && !heightChanged {
 		fullRender(false)
@@ -346,12 +467,13 @@ func (ui *TUI) RenderNow() {
 		}
 		lastChanged = len(newLines) - 1
 	}
-	appendStart := appended && firstChanged == len(ui.previousLines) && firstChanged > 0
 	if firstChanged < 0 {
 		ui.positionCursor(cursorRow, cursorColumn, hasCursor, len(newLines))
 		ui.previousViewportTop, ui.previousHeight = previousViewportTop, height
 		return
 	}
+	firstChanged, lastChanged = expandChangedRangeForKittyImages(firstChanged, lastChanged, ui.previousLines, newLines)
+	appendStart := appended && firstChanged == len(ui.previousLines) && firstChanged > 0
 	if firstChanged >= len(newLines) {
 		if len(ui.previousLines) > len(newLines) {
 			target := max(0, len(newLines)-1)
@@ -361,6 +483,7 @@ func (ui *TUI) RenderNow() {
 			}
 			var output strings.Builder
 			output.WriteString("\x1b[?2026h")
+			output.WriteString(deleteKittyImages(changedKittyImageIDs(ui.previousLines, firstChanged, lastChanged)))
 			difference := lineDifference(target)
 			if difference > 0 {
 				fmt.Fprintf(&output, "\x1b[%dB", difference)
@@ -394,6 +517,7 @@ func (ui *TUI) RenderNow() {
 		}
 		ui.positionCursor(cursorRow, cursorColumn, hasCursor, len(newLines))
 		ui.previousLines, ui.previousWidth, ui.previousHeight, ui.previousViewportTop = newLines, width, height, previousViewportTop
+		ui.previousImageIDs = collectKittyImageIDs(newLines)
 		return
 	}
 	if firstChanged < previousViewportTop {
@@ -402,6 +526,7 @@ func (ui *TUI) RenderNow() {
 	}
 	var output strings.Builder
 	output.WriteString("\x1b[?2026h")
+	output.WriteString(deleteKittyImages(changedKittyImageIDs(ui.previousLines, firstChanged, lastChanged)))
 	previousViewportBottom := previousViewportTop + height - 1
 	moveTarget := firstChanged
 	if appendStart {
@@ -434,14 +559,35 @@ func (ui *TUI) RenderNow() {
 		if index > firstChanged {
 			output.WriteString("\r\n")
 		}
+		line := newLines[index]
+		reserved := 1
+		if IsImageLine(line) {
+			reserved = kittyImageReservedRows(newLines, index, renderEnd)
+		}
+		if reserved > 1 {
+			imageStartScreenRow := index - viewportTop
+			if imageStartScreenRow < 0 || imageStartScreenRow+reserved > height {
+				fullRender(true)
+				return
+			}
+			output.WriteString("\x1b[2K")
+			for range reserved - 1 {
+				output.WriteString("\r\n\x1b[2K")
+			}
+			fmt.Fprintf(&output, "\x1b[%dA", reserved-1)
+			output.WriteString(line)
+			fmt.Fprintf(&output, "\x1b[%dB", reserved-1)
+			index += reserved - 1
+			continue
+		}
 		output.WriteString("\x1b[2K")
-		if VisibleWidth(newLines[index]) > width {
+		if !IsImageLine(line) && VisibleWidth(line) > width {
 			ui.terminal.ShowCursor()
 			_ = ui.terminal.Stop()
 			ui.stopped = true
 			panic(fmt.Sprintf("rendered line %d exceeds terminal width (%d > %d)", index, VisibleWidth(newLines[index]), width))
 		}
-		output.WriteString(newLines[index])
+		output.WriteString(line)
 	}
 	finalCursorRow := renderEnd
 	if len(ui.previousLines) > len(newLines) {
@@ -463,6 +609,7 @@ func (ui *TUI) RenderNow() {
 	ui.previousViewportTop = max(previousViewportTop, finalCursorRow-height+1)
 	ui.positionCursor(cursorRow, cursorColumn, hasCursor, len(newLines))
 	ui.previousLines, ui.previousWidth, ui.previousHeight = newLines, width, height
+	ui.previousImageIDs = collectKittyImageIDs(newLines)
 }
 
 func (ui *TUI) positionCursor(row, column int, found bool, totalLines int) {

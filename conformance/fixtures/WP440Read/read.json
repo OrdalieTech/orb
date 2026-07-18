@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "inputBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nWQAAAAASUVORK5CYII=",
+  "inputSHA256": "e25ee002218606bc42b55e38c01ece666dec1518c891550398483cb8aecc199e",
+  "cases": [
+    {
+      "name": "vision-model",
+      "modelInput": [
+        "text",
+        "image"
+      ],
+      "expected": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Read image file [image/png]"
+          },
+          {
+            "type": "image",
+            "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nWQAAAAASUVORK5CYII=",
+            "mimeType": "image/png"
+          }
+        ]
+      }
+    },
+    {
+      "name": "non-vision-model",
+      "modelInput": [
+        "text"
+      ],
+      "expected": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Read image file [image/png]\n[Current model does not support images. The image will be omitted from this request.]"
+          },
+          {
+            "type": "image",
+            "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nWQAAAAASUVORK5CYII=",
+            "mimeType": "image/png"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -503,8 +503,9 @@ func buildBuiltInTools(cwd string, settings *config.SettingsManager) ([]agent.Ag
 	if err != nil {
 		return nil, err
 	}
+	autoResizeImages := settings.GetImageAutoResize()
 	return []agent.AgentTool{
-		tools.NewReadTool(cwd, nil),
+		tools.NewReadTool(cwd, &tools.ReadToolOptions{AutoResizeImages: &autoResizeImages}),
 		tools.NewBashTool(cwd, &tools.BashToolOptions{
 			ShellPath:     shellPath,
 			CommandPrefix: settings.GetShellCommandPrefix(),
