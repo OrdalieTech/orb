@@ -211,6 +211,7 @@ func TestConsumedSettingsGetters(t *testing.T) {
 		"followUpMode":         "all",
 		"shellPath":            shellPath,
 		"shellCommandPrefix":   "env TEST=1",
+		"enabledModels":        []string{"sonnet:high", "openai/*"},
 	})
 	manager, err := NewSettingsManager(root, WithAgentDir(agentDir))
 	if err != nil {
@@ -231,6 +232,9 @@ func TestConsumedSettingsGetters(t *testing.T) {
 	if got := manager.GetShellCommandPrefix(); got != "env TEST=1" {
 		t.Fatalf("shell command prefix = %q", got)
 	}
+	if got := manager.GetEnabledModels(); !reflect.DeepEqual(got, []string{"sonnet:high", "openai/*"}) {
+		t.Fatalf("enabled models = %#v", got)
+	}
 
 	empty, err := NewSettingsManager(root, WithAgentDir(filepath.Join(root, "empty-agent")))
 	if err != nil {
@@ -238,6 +242,9 @@ func TestConsumedSettingsGetters(t *testing.T) {
 	}
 	if empty.GetTransport() != ai.TransportAuto || empty.GetSteeringMode() != "one-at-a-time" || empty.GetFollowUpMode() != "one-at-a-time" {
 		t.Fatal("message delivery defaults differ")
+	}
+	if empty.GetEnabledModels() != nil {
+		t.Fatalf("absent enabled models = %#v", empty.GetEnabledModels())
 	}
 }
 

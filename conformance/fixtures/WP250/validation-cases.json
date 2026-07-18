@@ -1,0 +1,117 @@
+[
+  {
+    "name": "incomplete cost",
+    "config": {
+      "providers": {
+        "p": {
+          "models": [
+            {
+              "id": "m",
+              "cost": {
+                "input": 1
+              }
+            }
+          ]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "invalid input",
+    "config": {
+      "providers": {
+        "p": {
+          "models": [
+            {
+              "id": "m",
+              "input": [
+                "audio"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "invalid thinking value",
+    "config": {
+      "providers": {
+        "p": {
+          "models": [
+            {
+              "id": "m",
+              "thinkingLevelMap": {
+                "off": 3
+              }
+            }
+          ]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "invalid common compat",
+    "config": {
+      "providers": {
+        "p": {
+          "compat": {
+            "supportsLongCacheRetention": "yes"
+          }
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "unknown thinking key",
+    "config": {
+      "providers": {
+        "p": {
+          "baseUrl": "https://example.invalid/v1",
+          "api": "openai-completions",
+          "apiKey": "test",
+          "models": [
+            {
+              "id": "m",
+              "thinkingLevelMap": {
+                "ultra": "high"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "fractional compat numbers",
+    "config": {
+      "providers": {
+        "p": {
+          "baseUrl": "https://example.invalid/v1",
+          "api": "openai-completions",
+          "apiKey": "test",
+          "compat": {
+            "chatTemplateKwargs": {
+              "fractional": 1.125
+            },
+            "openRouterRouting": {
+              "max_price": {
+                "prompt": 0.5
+              },
+              "preferred_min_throughput": {
+                "p50": 1.25,
+                "p75": 2.5
+              }
+            }
+          }
+        }
+      }
+    },
+    "accepted": true
+  }
+]

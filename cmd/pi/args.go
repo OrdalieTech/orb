@@ -19,6 +19,8 @@ type CLIUnknownFlag struct {
 type CLIArgs struct {
 	Provider           *string
 	Model              *string
+	Models             []string
+	ListModels         *string
 	APIKey             *string
 	SystemPrompt       *string
 	AppendSystemPrompt []string
@@ -38,6 +40,7 @@ type CLIArgs struct {
 	FileArgs           []string
 	UnknownFlags       []CLIUnknownFlag
 	Diagnostics        []CLIDiagnostic
+	RestoredModel      bool
 }
 
 // ParseArgs parses the WP-160 CLI subset with upstream's sequential rules.
@@ -63,6 +66,16 @@ func ParseArgs(argv []string) CLIArgs {
 		case argument == "--model" && index+1 < len(argv):
 			index++
 			result.Model = stringValue(argv[index])
+		case argument == "--models" && index+1 < len(argv):
+			index++
+			result.Models = parseModelList(argv[index])
+		case argument == "--list-models":
+			search := ""
+			if index+1 < len(argv) && !strings.HasPrefix(argv[index+1], "-") && !strings.HasPrefix(argv[index+1], "@") {
+				index++
+				search = argv[index]
+			}
+			result.ListModels = stringValue(search)
 		case argument == "--api-key" && index+1 < len(argv):
 			index++
 			result.APIKey = stringValue(argv[index])
@@ -124,6 +137,14 @@ func ParseArgs(argv []string) CLIArgs {
 		}
 	}
 	return result
+}
+
+func parseModelList(value string) []string {
+	models := strings.Split(value, ",")
+	for index := range models {
+		models[index] = strings.TrimFunc(models[index], isJSTrimSpace)
+	}
+	return models
 }
 
 func parseUnknownLongFlag(argv []string, index *int) (string, *string) {

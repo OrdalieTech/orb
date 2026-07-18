@@ -1,0 +1,257 @@
+[
+  {
+    "name": "search-qwen",
+    "search": "qwen",
+    "expected": "provider    model                    context  max-out  thinking  images\nopenrouter  qwen/qwen3-coder:exacto  128K     8.2K     yes       no    \n"
+  },
+  {
+    "name": "search-g4",
+    "search": "g4",
+    "expected": "provider    model                   context  max-out  thinking  images\nopenai      gpt-4o                  128K     4.1K     no        yes   \nopenrouter  openai/gpt-4o:extended  1.5M     900      no        yes   \n"
+  },
+  {
+    "name": "search-4g",
+    "search": "4g",
+    "expected": "provider    model                   context  max-out  thinking  images\nopenai      gpt-4o                  128K     4.1K     no        yes   \nopenrouter  openai/gpt-4o:extended  1.5M     900      no        yes   \n"
+  },
+  {
+    "name": "search-openrouter exacto",
+    "search": "openrouter exacto",
+    "expected": "provider    model                    context  max-out  thinking  images\nopenrouter  qwen/qwen3-coder:exacto  128K     8.2K     yes       no    \n"
+  },
+  {
+    "name": "search-missing",
+    "search": "missing",
+    "expected": "No models matching \"missing\"\n"
+  },
+  {
+    "name": "empty",
+    "search": "",
+    "empty": true,
+    "expected": "No models available. Use /login to log into a provider via OAuth or API key. See:\n  docs/providers.md\n  docs/models.md\n"
+  },
+  {
+    "name": "locale-compare-order",
+    "search": "",
+    "models": [
+      {
+        "id": "model",
+        "name": "Beta Model",
+        "api": "anthropic-messages",
+        "provider": "Beta",
+        "baseUrl": "https://api.openai.com",
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 5,
+          "output": 15,
+          "cacheRead": 0.5,
+          "cacheWrite": 5
+        },
+        "contextWindow": 128000,
+        "maxTokens": 4096
+      },
+      {
+        "id": "~a",
+        "name": "Tilde",
+        "api": "anthropic-messages",
+        "provider": "alpha",
+        "baseUrl": "https://api.openai.com",
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 5,
+          "output": 15,
+          "cacheRead": 0.5,
+          "cacheWrite": 5
+        },
+        "contextWindow": 128000,
+        "maxTokens": 4096
+      },
+      {
+        "id": "a_a",
+        "name": "Underscore",
+        "api": "anthropic-messages",
+        "provider": "alpha",
+        "baseUrl": "https://api.openai.com",
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 5,
+          "output": 15,
+          "cacheRead": 0.5,
+          "cacheWrite": 5
+        },
+        "contextWindow": 128000,
+        "maxTokens": 4096
+      },
+      {
+        "id": "a-a",
+        "name": "Lowercase",
+        "api": "anthropic-messages",
+        "provider": "alpha",
+        "baseUrl": "https://api.openai.com",
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 5,
+          "output": 15,
+          "cacheRead": 0.5,
+          "cacheWrite": 5
+        },
+        "contextWindow": 128000,
+        "maxTokens": 4096
+      },
+      {
+        "id": "A-a",
+        "name": "Uppercase",
+        "api": "anthropic-messages",
+        "provider": "alpha",
+        "baseUrl": "https://api.openai.com",
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 5,
+          "output": 15,
+          "cacheRead": 0.5,
+          "cacheWrite": 5
+        },
+        "contextWindow": 128000,
+        "maxTokens": 4096
+      }
+    ],
+    "expected": "provider  model  context  max-out  thinking  images\nalpha     ~a     128K     4.1K     no        yes   \nalpha     a_a    128K     4.1K     no        yes   \nalpha     a-a    128K     4.1K     no        yes   \nalpha     A-a    128K     4.1K     no        yes   \nBeta      model  128K     4.1K     no        yes   \n"
+  },
+  {
+    "name": "alpha-numeric-fuzzy-swap",
+    "search": "codex52",
+    "models": [
+      {
+        "id": "gpt-5.2-codex",
+        "name": "GPT-5.2 Codex",
+        "api": "anthropic-messages",
+        "provider": "openai",
+        "baseUrl": "https://api.openai.com",
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 5,
+          "output": 15,
+          "cacheRead": 0.5,
+          "cacheWrite": 5
+        },
+        "contextWindow": 128000,
+        "maxTokens": 4096
+      }
+    ],
+    "expected": "provider  model          context  max-out  thinking  images\nopenai    gpt-5.2-codex  128K     4.1K     no        yes   \n"
+  },
+  {
+    "name": "javascript-fixed-rounding",
+    "search": "",
+    "models": [
+      {
+        "id": "fixed-rounding",
+        "name": "Fixed Rounding",
+        "api": "anthropic-messages",
+        "provider": "openai",
+        "baseUrl": "https://api.openai.com",
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 5,
+          "output": 15,
+          "cacheRead": 0.5,
+          "cacheWrite": 5
+        },
+        "contextWindow": 1250,
+        "maxTokens": 2550
+      }
+    ],
+    "expected": "provider  model           context  max-out  thinking  images\nopenai    fixed-rounding  1.3K     2.5K     no        yes   \n"
+  },
+  {
+    "name": "fractional-token-counts",
+    "search": "",
+    "models": [
+      {
+        "id": "tiny",
+        "name": "tiny",
+        "api": "openai-completions",
+        "provider": "fractional",
+        "baseUrl": "https://example.invalid/v1",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "tiers": [
+            {
+              "inputTokensAbove": 10.5,
+              "input": 1,
+              "output": 2,
+              "cacheRead": 0.1,
+              "cacheWrite": 0.2
+            }
+          ]
+        },
+        "contextWindow": 1.5,
+        "maxTokens": 2.25
+      },
+      {
+        "id": "runtime",
+        "name": "runtime",
+        "api": "openai-completions",
+        "provider": "fractional",
+        "baseUrl": "https://example.invalid/v1",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "tiers": [
+            {
+              "inputTokensAbove": 20.25,
+              "input": 3,
+              "output": 4,
+              "cacheRead": 0.3,
+              "cacheWrite": 0.4
+            }
+          ]
+        },
+        "contextWindow": 5000.5,
+        "maxTokens": 2.25
+      }
+    ],
+    "expected": "provider    model    context  max-out  thinking  images\nfractional  runtime  5.0K     2.25     no        no    \nfractional  tiny     1.5      2.25     no        no    \n"
+  }
+]

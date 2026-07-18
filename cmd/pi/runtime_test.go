@@ -26,7 +26,9 @@ func TestCreateRuntimeInputsUsesResolvedResourcesAndToolSelection(t *testing.T) 
 	t.Setenv(config.EnvAgentDir, agentDir)
 
 	model := "gpt-test"
+	provider := "openai"
 	args := CLIArgs{
+		Provider:     &provider,
 		Model:        &model,
 		Tools:        []string{"read", "grep", "missing"},
 		ExcludeTools: []string{"grep"},
@@ -158,4 +160,102 @@ func TestAPIKeyResolverPrecedence(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(key, (*string)(nil)) {
 		t.Fatalf("other provider key = %v, %v", key, err)
 	}
+}
+
+func TestResolveRuntimeModelPrefersSavedDefaultWithinScope(t *testing.T) {
+	settings, registry := runtimeModelFixture(t,
+		`{"defaultProvider":"fixture","defaultModel":"saved","defaultThinkingLevel":"medium"}`,
+		`{"providers":{"fixture":{"baseUrl":"https://example.invalid/v1","api":"openai-completions","apiKey":"dummy","models":[{"id":"first"},{"id":"saved"}]}}}`,
+	)
+	model, thinking, diagnostics, err := resolveRuntimeModel(CLIArgs{
+		Models: []string{"fixture/first:low", "fixture/saved:high"},
+	}, settings, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if model == nil || model.Provider != "fixture" || model.ID != "saved" {
+		t.Fatalf("selected model = %#v", model)
+	}
+	if thinking == nil || *thinking != ai.ModelThinkingHigh {
+		t.Fatalf("scoped thinking = %v, want high", thinking)
+	}
+	if len(diagnostics) != 0 {
+		t.Fatalf("diagnostics = %v", diagnostics)
+	}
+}
+
+func TestResolveRuntimeModelRestoresOnlyExactCatalogEntries(t *testing.T) {
+	settings, registry := runtimeModelFixture(t,
+		`{}`,
+		`{"providers":{"openai":{"apiKey":"dummy"}}}`,
+	)
+	provider, removedID := "openai", "removed-built-in"
+	model, thinking, diagnostics, err := resolveRuntimeModel(CLIArgs{
+		Provider:      &provider,
+		Model:         &removedID,
+		RestoredModel: true,
+	}, settings, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if model == nil || model.Provider != "openai" || model.ID == removedID {
+		t.Fatalf("restore fallback = %#v", model)
+	}
+	if thinking != nil {
+		t.Fatalf("restore fallback thinking = %v, want nil", thinking)
+	}
+	wantDiagnostic := "Could not restore model openai/removed-built-in. Using " + string(model.Provider) + "/" + model.ID
+	if len(diagnostics) != 1 || diagnostics[0] != wantDiagnostic {
+		t.Fatalf("restore diagnostics = %v", diagnostics)
+	}
+}
+
+func TestResolveRuntimeModelRestoredModelWithoutAuthUsesJoinedFallbackMessage(t *testing.T) {
+	settings, registry := runtimeModelFixture(t,
+		`{}`,
+		`{"providers":{"saved":{"baseUrl":"https://saved.invalid/v1","api":"openai-completions","models":[{"id":"kept"}]},"fallback":{"baseUrl":"https://fallback.invalid/v1","api":"openai-completions","apiKey":"dummy","models":[{"id":"fallback-model"}]}}}`,
+	)
+	provider, savedID := "saved", "kept"
+	model, thinking, diagnostics, err := resolveRuntimeModel(CLIArgs{
+		Provider:      &provider,
+		Model:         &savedID,
+		RestoredModel: true,
+	}, settings, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if model == nil || model.Provider != "fallback" || model.ID != "fallback-model" {
+		t.Fatalf("restore fallback = %#v", model)
+	}
+	if thinking != nil {
+		t.Fatalf("restore fallback thinking = %v, want nil", thinking)
+	}
+	want := "Could not restore model saved/kept. Using fallback/fallback-model"
+	if len(diagnostics) != 1 || diagnostics[0] != want {
+		t.Fatalf("restore diagnostics = %v, want %q", diagnostics, want)
+	}
+}
+
+func runtimeModelFixture(t *testing.T, settingsJSON, modelsJSON string) (*config.SettingsManager, *config.ModelRegistry) {
+	t.Helper()
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(settingsJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentDir, "models.json"), []byte(modelsJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.NewSettingsManager(root, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := config.NewModelRegistry(agentDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return settings, registry
 }

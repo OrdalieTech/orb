@@ -1,0 +1,581 @@
+{
+  "models": [
+    {
+      "id": "claude-sonnet-4-5",
+      "name": "Claude Sonnet 4.5",
+      "api": "anthropic-messages",
+      "provider": "anthropic",
+      "baseUrl": "https://api.anthropic.com",
+      "reasoning": true,
+      "input": [
+        "text",
+        "image"
+      ],
+      "cost": {
+        "input": 3,
+        "output": 15,
+        "cacheRead": 0.3,
+        "cacheWrite": 3.75
+      },
+      "contextWindow": 200000,
+      "maxTokens": 8192
+    },
+    {
+      "id": "gpt-4o",
+      "name": "GPT-4o",
+      "api": "anthropic-messages",
+      "provider": "openai",
+      "baseUrl": "https://api.openai.com",
+      "reasoning": false,
+      "input": [
+        "text",
+        "image"
+      ],
+      "cost": {
+        "input": 5,
+        "output": 15,
+        "cacheRead": 0.5,
+        "cacheWrite": 5
+      },
+      "contextWindow": 128000,
+      "maxTokens": 4096
+    },
+    {
+      "id": "qwen/qwen3-coder:exacto",
+      "name": "Qwen3 Coder Exacto",
+      "api": "anthropic-messages",
+      "provider": "openrouter",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "reasoning": true,
+      "input": [
+        "text"
+      ],
+      "cost": {
+        "input": 1,
+        "output": 2,
+        "cacheRead": 0.1,
+        "cacheWrite": 1
+      },
+      "contextWindow": 128000,
+      "maxTokens": 8192
+    },
+    {
+      "id": "openai/gpt-4o:extended",
+      "name": "GPT-4o Extended",
+      "api": "anthropic-messages",
+      "provider": "openrouter",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "reasoning": false,
+      "input": [
+        "text",
+        "image"
+      ],
+      "cost": {
+        "input": 5,
+        "output": 15,
+        "cacheRead": 0.5,
+        "cacheWrite": 5
+      },
+      "contextWindow": 1500000,
+      "maxTokens": 900
+    }
+  ],
+  "cases": [
+    {
+      "pattern": "claude-sonnet-4-5",
+      "expected": {
+        "model": {
+          "provider": "anthropic",
+          "id": "claude-sonnet-4-5"
+        },
+        "thinkingLevel": null,
+        "warning": null
+      }
+    },
+    {
+      "pattern": "sonnet",
+      "expected": {
+        "model": {
+          "provider": "anthropic",
+          "id": "claude-sonnet-4-5"
+        },
+        "thinkingLevel": null,
+        "warning": null
+      }
+    },
+    {
+      "pattern": "nonexistent",
+      "expected": {
+        "model": null,
+        "thinkingLevel": null,
+        "warning": null
+      }
+    },
+    {
+      "pattern": "sonnet:high",
+      "expected": {
+        "model": {
+          "provider": "anthropic",
+          "id": "claude-sonnet-4-5"
+        },
+        "thinkingLevel": "high",
+        "warning": null
+      }
+    },
+    {
+      "pattern": "gpt-4o:medium",
+      "expected": {
+        "model": {
+          "provider": "openai",
+          "id": "gpt-4o"
+        },
+        "thinkingLevel": "medium",
+        "warning": null
+      }
+    },
+    {
+      "pattern": "sonnet:off",
+      "expected": {
+        "model": {
+          "provider": "anthropic",
+          "id": "claude-sonnet-4-5"
+        },
+        "thinkingLevel": "off",
+        "warning": null
+      }
+    },
+    {
+      "pattern": "sonnet:minimal",
+      "expected": {
+        "model": {
+          "provider": "anthropic",
+          "id": "claude-sonnet-4-5"
+        },
+        "thinkingLevel": "minimal",
+        "warning": null
+      }
+    },
+    {
+      "pattern": "sonnet:low",
+      "expected": {
+        "model": {
+          "provider": "anthropic",
+          "id": "claude-sonnet-4-5"
+        },
+        "thinkingLevel": "low",
+        "warning": null
+      }
+    },
+    {
+      "pattern": "sonnet:xhigh",
+      "expected": {
+        "model": {
+          "provider": "anthropic",
+          "id": "claude-sonnet-4-5"
+        },
+        "thinkingLevel": "xhigh",
+        "warning": null
+      }
+    },
+    {
+      "pattern": "sonnet:max",
+      "expected": {
+        "model": {
+          "provider": "anthropic",
+          "id": "claude-sonnet-4-5"
+        },
+        "thinkingLevel": "max",
+        "warning": null
+      }
+    },
+    {
+      "pattern": "sonnet:random",
+      "expected": {
+        "model": {
+          "provider": "anthropic",
+          "id": "claude-sonnet-4-5"
+        },
+        "thinkingLevel": null,
+        "warning": "Invalid thinking level \"random\" in pattern \"sonnet:random\". Using default instead."
+      }
+    },
+    {
+      "pattern": "qwen/qwen3-coder:exacto",
+      "expected": {
+        "model": {
+          "provider": "openrouter",
+          "id": "qwen/qwen3-coder:exacto"
+        },
+        "thinkingLevel": null,
+        "warning": null
+      }
+    },
+    {
+      "pattern": "openrouter/qwen/qwen3-coder:exacto",
+      "expected": {
+        "model": {
+          "provider": "openrouter",
+          "id": "qwen/qwen3-coder:exacto"
+        },
+        "thinkingLevel": null,
+        "warning": null
+      }
+    },
+    {
+      "pattern": "qwen/qwen3-coder:exacto:high",
+      "expected": {
+        "model": {
+          "provider": "openrouter",
+          "id": "qwen/qwen3-coder:exacto"
+        },
+        "thinkingLevel": "high",
+        "warning": null
+      }
+    },
+    {
+      "pattern": "openrouter/qwen/qwen3-coder:exacto:high",
+      "expected": {
+        "model": {
+          "provider": "openrouter",
+          "id": "qwen/qwen3-coder:exacto"
+        },
+        "thinkingLevel": "high",
+        "warning": null
+      }
+    },
+    {
+      "pattern": "openai/gpt-4o:extended",
+      "expected": {
+        "model": {
+          "provider": "openrouter",
+          "id": "openai/gpt-4o:extended"
+        },
+        "thinkingLevel": null,
+        "warning": null
+      }
+    },
+    {
+      "pattern": "qwen/qwen3-coder:exacto:random",
+      "expected": {
+        "model": {
+          "provider": "openrouter",
+          "id": "qwen/qwen3-coder:exacto"
+        },
+        "thinkingLevel": null,
+        "warning": "Invalid thinking level \"random\" in pattern \"qwen/qwen3-coder:exacto:random\". Using default instead."
+      }
+    },
+    {
+      "pattern": "qwen/qwen3-coder:exacto:high:random",
+      "expected": {
+        "model": {
+          "provider": "openrouter",
+          "id": "qwen/qwen3-coder:exacto"
+        },
+        "thinkingLevel": null,
+        "warning": "Invalid thinking level \"random\" in pattern \"qwen/qwen3-coder:exacto:high:random\". Using default instead."
+      }
+    },
+    {
+      "pattern": "",
+      "expected": {
+        "model": {
+          "provider": "openrouter",
+          "id": "qwen/qwen3-coder:exacto"
+        },
+        "thinkingLevel": null,
+        "warning": null
+      }
+    },
+    {
+      "pattern": "sonnet:",
+      "expected": {
+        "model": {
+          "provider": "anthropic",
+          "id": "claude-sonnet-4-5"
+        },
+        "thinkingLevel": null,
+        "warning": "Invalid thinking level \"\" in pattern \"sonnet:\". Using default instead."
+      }
+    },
+    {
+      "pattern": " openai / gpt-4o ",
+      "expected": {
+        "model": {
+          "provider": "openai",
+          "id": "gpt-4o"
+        },
+        "thinkingLevel": null,
+        "warning": null
+      }
+    },
+    {
+      "pattern": "a",
+      "models": [
+        {
+          "id": "~a",
+          "name": "Tilde",
+          "api": "anthropic-messages",
+          "provider": "alpha",
+          "baseUrl": "https://api.openai.com",
+          "reasoning": false,
+          "input": [
+            "text",
+            "image"
+          ],
+          "cost": {
+            "input": 5,
+            "output": 15,
+            "cacheRead": 0.5,
+            "cacheWrite": 5
+          },
+          "contextWindow": 128000,
+          "maxTokens": 4096
+        },
+        {
+          "id": "a_a",
+          "name": "Underscore",
+          "api": "anthropic-messages",
+          "provider": "alpha",
+          "baseUrl": "https://api.openai.com",
+          "reasoning": false,
+          "input": [
+            "text",
+            "image"
+          ],
+          "cost": {
+            "input": 5,
+            "output": 15,
+            "cacheRead": 0.5,
+            "cacheWrite": 5
+          },
+          "contextWindow": 128000,
+          "maxTokens": 4096
+        },
+        {
+          "id": "a-a",
+          "name": "Lowercase",
+          "api": "anthropic-messages",
+          "provider": "alpha",
+          "baseUrl": "https://api.openai.com",
+          "reasoning": false,
+          "input": [
+            "text",
+            "image"
+          ],
+          "cost": {
+            "input": 5,
+            "output": 15,
+            "cacheRead": 0.5,
+            "cacheWrite": 5
+          },
+          "contextWindow": 128000,
+          "maxTokens": 4096
+        },
+        {
+          "id": "A-a",
+          "name": "Uppercase",
+          "api": "anthropic-messages",
+          "provider": "alpha",
+          "baseUrl": "https://api.openai.com",
+          "reasoning": false,
+          "input": [
+            "text",
+            "image"
+          ],
+          "cost": {
+            "input": 5,
+            "output": 15,
+            "cacheRead": 0.5,
+            "cacheWrite": 5
+          },
+          "contextWindow": 128000,
+          "maxTokens": 4096
+        }
+      ],
+      "expected": {
+        "model": {
+          "provider": "alpha",
+          "id": "A-a"
+        },
+        "thinkingLevel": null,
+        "warning": null
+      }
+    }
+  ],
+  "scopes": [
+    {
+      "patterns": [
+        "openrouter/**"
+      ],
+      "expected": {
+        "models": [
+          {
+            "provider": "openrouter",
+            "id": "qwen/qwen3-coder:exacto",
+            "thinkingLevel": null
+          },
+          {
+            "provider": "openrouter",
+            "id": "openai/gpt-4o:extended",
+            "thinkingLevel": null
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "patterns": [
+        "openrouter/*"
+      ],
+      "expected": {
+        "models": [],
+        "diagnostics": [
+          {
+            "type": "warning",
+            "message": "No models match pattern \"openrouter/*\"",
+            "pattern": "openrouter/*"
+          }
+        ]
+      }
+    },
+    {
+      "patterns": [
+        "**/qwen/**:high"
+      ],
+      "expected": {
+        "models": [
+          {
+            "provider": "openrouter",
+            "id": "qwen/qwen3-coder:exacto",
+            "thinkingLevel": "high"
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "patterns": [
+        "openrouter/**",
+        "openrouter/qwen/**"
+      ],
+      "expected": {
+        "models": [
+          {
+            "provider": "openrouter",
+            "id": "qwen/qwen3-coder:exacto",
+            "thinkingLevel": null
+          },
+          {
+            "provider": "openrouter",
+            "id": "openai/gpt-4o:extended",
+            "thinkingLevel": null
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "patterns": [
+        "{ANTHROPIC,OPENROUTER}/**"
+      ],
+      "expected": {
+        "models": [
+          {
+            "provider": "anthropic",
+            "id": "claude-sonnet-4-5",
+            "thinkingLevel": null
+          },
+          {
+            "provider": "openrouter",
+            "id": "qwen/qwen3-coder:exacto",
+            "thinkingLevel": null
+          },
+          {
+            "provider": "openrouter",
+            "id": "openai/gpt-4o:extended",
+            "thinkingLevel": null
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "patterns": [
+        "@(ANTHROPIC|OPENROUTER)/**"
+      ],
+      "expected": {
+        "models": [
+          {
+            "provider": "anthropic",
+            "id": "claude-sonnet-4-5",
+            "thinkingLevel": null
+          },
+          {
+            "provider": "openrouter",
+            "id": "qwen/qwen3-coder:exacto",
+            "thinkingLevel": null
+          },
+          {
+            "provider": "openrouter",
+            "id": "openai/gpt-4o:extended",
+            "thinkingLevel": null
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "patterns": [
+        "OPENROUTER/!(QWEN)/**:high"
+      ],
+      "expected": {
+        "models": [
+          {
+            "provider": "openrouter",
+            "id": "openai/gpt-4o:extended",
+            "thinkingLevel": "high"
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "patterns": [
+        "openrouter/**"
+      ],
+      "models": [
+        {
+          "id": ".hidden",
+          "name": "Hidden Fixture Model",
+          "api": "anthropic-messages",
+          "provider": "openrouter",
+          "baseUrl": "https://api.openai.com",
+          "reasoning": false,
+          "input": [
+            "text",
+            "image"
+          ],
+          "cost": {
+            "input": 5,
+            "output": 15,
+            "cacheRead": 0.5,
+            "cacheWrite": 5
+          },
+          "contextWindow": 128000,
+          "maxTokens": 4096
+        }
+      ],
+      "expected": {
+        "models": [],
+        "diagnostics": [
+          {
+            "type": "warning",
+            "message": "No models match pattern \"openrouter/**\"",
+            "pattern": "openrouter/**"
+          }
+        ]
+      }
+    }
+  ]
+}

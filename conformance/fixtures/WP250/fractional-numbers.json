@@ -1,0 +1,122 @@
+{
+  "config": {
+    "providers": {
+      "fractional": {
+        "baseUrl": "https://example.invalid/v1",
+        "api": "openai-completions",
+        "apiKey": "test",
+        "models": [
+          {
+            "id": "tiny",
+            "contextWindow": 1.5,
+            "maxTokens": 2.25,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "tiers": [
+                {
+                  "inputTokensAbove": 10.5,
+                  "input": 1,
+                  "output": 2,
+                  "cacheRead": 0.1,
+                  "cacheWrite": 0.2
+                }
+              ]
+            }
+          },
+          {
+            "id": "runtime",
+            "contextWindow": 5000.5,
+            "maxTokens": 2.25
+          }
+        ],
+        "modelOverrides": {
+          "runtime": {
+            "cost": {
+              "tiers": [
+                {
+                  "inputTokensAbove": 20.25,
+                  "input": 3,
+                  "output": 4,
+                  "cacheRead": 0.3,
+                  "cacheWrite": 0.4
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "models": [
+    {
+      "id": "tiny",
+      "name": "tiny",
+      "api": "openai-completions",
+      "provider": "fractional",
+      "baseUrl": "https://example.invalid/v1",
+      "reasoning": false,
+      "input": [
+        "text"
+      ],
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "tiers": [
+          {
+            "inputTokensAbove": 10.5,
+            "input": 1,
+            "output": 2,
+            "cacheRead": 0.1,
+            "cacheWrite": 0.2
+          }
+        ]
+      },
+      "contextWindow": 1.5,
+      "maxTokens": 2.25
+    },
+    {
+      "id": "runtime",
+      "name": "runtime",
+      "api": "openai-completions",
+      "provider": "fractional",
+      "baseUrl": "https://example.invalid/v1",
+      "reasoning": false,
+      "input": [
+        "text"
+      ],
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "tiers": [
+          {
+            "inputTokensAbove": 20.25,
+            "input": 3,
+            "output": 4,
+            "cacheRead": 0.3,
+            "cacheWrite": 0.4
+          }
+        ]
+      },
+      "contextWindow": 5000.5,
+      "maxTokens": 2.25
+    }
+  ],
+  "list": "provider    model    context  max-out  thinking  images\nfractional  runtime  5.0K     2.25     no        no    \nfractional  tiny     1.5      2.25     no        no    \n",
+  "simpleOptions": {
+    "defaultMaxTokens": 2.25,
+    "requestedMaxTokens": 1.75
+  },
+  "modelJSON": [
+    "{\"id\":\"tiny\",\"name\":\"tiny\",\"api\":\"openai-completions\",\"provider\":\"fractional\",\"baseUrl\":\"https://example.invalid/v1\",\"reasoning\":false,\"input\":[\"text\"],\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"tiers\":[{\"inputTokensAbove\":10.5,\"input\":1,\"output\":2,\"cacheRead\":0.1,\"cacheWrite\":0.2}]},\"contextWindow\":1.5,\"maxTokens\":2.25}",
+    "{\"id\":\"runtime\",\"name\":\"runtime\",\"api\":\"openai-completions\",\"provider\":\"fractional\",\"baseUrl\":\"https://example.invalid/v1\",\"reasoning\":false,\"input\":[\"text\"],\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"tiers\":[{\"inputTokensAbove\":20.25,\"input\":3,\"output\":4,\"cacheRead\":0.3,\"cacheWrite\":0.4}]},\"contextWindow\":5000.5,\"maxTokens\":2.25}"
+  ],
+  "integerModelJSON": "{\"id\":\"claude-sonnet-4-5\",\"name\":\"Claude Sonnet 4.5\",\"api\":\"anthropic-messages\",\"provider\":\"anthropic\",\"baseUrl\":\"https://api.anthropic.com\",\"reasoning\":true,\"input\":[\"text\",\"image\"],\"cost\":{\"input\":3,\"output\":15,\"cacheRead\":0.3,\"cacheWrite\":3.75},\"contextWindow\":200000,\"maxTokens\":8192}",
+  "error": null
+}

@@ -1,0 +1,115 @@
+[
+  {
+    "heading": "Minimal Example",
+    "config": {
+      "providers": {
+        "ollama": {
+          "baseUrl": "http://localhost:11434/v1",
+          "api": "openai-completions",
+          "apiKey": "ollama",
+          "models": [
+            {
+              "id": "llama3.1:8b"
+            },
+            {
+              "id": "qwen2.5-coder:7b"
+            }
+          ]
+        }
+      }
+    },
+    "models": [
+      {
+        "id": "llama3.1:8b",
+        "name": "llama3.1:8b",
+        "api": "openai-completions",
+        "provider": "ollama",
+        "baseUrl": "http://localhost:11434/v1",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 16384
+      },
+      {
+        "id": "qwen2.5-coder:7b",
+        "name": "qwen2.5-coder:7b",
+        "api": "openai-completions",
+        "provider": "ollama",
+        "baseUrl": "http://localhost:11434/v1",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 16384
+      }
+    ],
+    "error": null
+  },
+  {
+    "heading": "Full Example",
+    "config": {
+      "providers": {
+        "ollama": {
+          "baseUrl": "http://localhost:11434/v1",
+          "api": "openai-completions",
+          "apiKey": "ollama",
+          "models": [
+            {
+              "id": "llama3.1:8b",
+              "name": "Llama 3.1 8B (Local)",
+              "reasoning": false,
+              "input": [
+                "text"
+              ],
+              "contextWindow": 128000,
+              "maxTokens": 32000,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              }
+            }
+          ]
+        }
+      }
+    },
+    "models": [
+      {
+        "id": "llama3.1:8b",
+        "name": "Llama 3.1 8B (Local)",
+        "api": "openai-completions",
+        "provider": "ollama",
+        "baseUrl": "http://localhost:11434/v1",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 32000
+      }
+    ],
+    "error": null
+  }
+]

@@ -63,7 +63,7 @@ func TestApplySessionDefaultsRestoresOnlyRecordedThinkingLevel(t *testing.T) {
 			Model:    &session.SessionModel{Provider: "openai", ModelID: "session-model"},
 		}
 		applySessionDefaults(&args, context, []session.SessionEntry{{Type: "message", Message: message}, {Type: "model_change"}})
-		if args.Provider == nil || *args.Provider != "openai" || args.Model == nil || *args.Model != "session-model" {
+		if args.Provider == nil || *args.Provider != "openai" || args.Model == nil || *args.Model != "session-model" || !args.RestoredModel {
 			t.Fatalf("selection = %v/%v", args.Provider, args.Model)
 		}
 	})
@@ -76,7 +76,7 @@ func TestApplySessionDefaultsRestoresOnlyRecordedThinkingLevel(t *testing.T) {
 			Model:    &session.SessionModel{Provider: "openai", ModelID: "session-model"},
 		}
 		applySessionDefaults(&args, context, []session.SessionEntry{{Type: "message", Message: message}, {Type: "model_change"}})
-		if args.Provider == nil || *args.Provider != "openai" || args.Model == nil || *args.Model != "session-model" {
+		if args.Provider == nil || *args.Provider != "openai" || args.Model == nil || *args.Model != "session-model" || !args.RestoredModel {
 			t.Fatalf("selection = %v/%v", args.Provider, args.Model)
 		}
 	})
@@ -190,6 +190,74 @@ func TestRunCLIRejectsAPIKeyWithoutExplicitModel(t *testing.T) {
 	if code != 1 || called || stderr.String() != "Error: --api-key requires a model to be specified via --model, --provider/--model, or --models\n" {
 		t.Fatalf("code=%d called=%t stderr=%q", code, called, stderr.String())
 	}
+}
+
+func TestRunCLIListModelsIsReadOnly(t *testing.T) {
+	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
+	var stdout bytes.Buffer
+	createdRuntime := false
+	registry, err := config.NewModelRegistry(os.Getenv("PI_CODING_AGENT_DIR"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := runCLIWithDependencies(context.Background(), []string{"--list-models"}, cliStreams{
+		Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: io.Discard, StdinTTY: true, StdoutTTY: true,
+	}, cliDependencies{
+		createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+			createdRuntime = true
+			return runtimeInputs{}, nil
+		},
+		loadModels: func(string) (*config.ModelRegistry, error) { return registry, nil },
+	})
+	if code != 0 || createdRuntime || stdout.Len() == 0 {
+		t.Fatalf("code=%d createdRuntime=%t stdout=%q", code, createdRuntime, stdout.String())
+	}
+	entries, err := os.ReadDir(os.Getenv("PI_CODING_AGENT_DIR"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("--list-models created files: %#v", entries)
+	}
+}
+
+func TestRunCLIListModelsWarnsAndContinuesOnMalformedModelsJSON(t *testing.T) {
+	agentDir := t.TempDir()
+	t.Setenv("PI_CODING_AGENT_DIR", agentDir)
+	if err := os.WriteFile(filepath.Join(agentDir, "models.json"), []byte(`{"providers":`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := runCLIWithDependencies(context.Background(), []string{"--list-models"}, cliStreams{
+		Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr, StdinTTY: true, StdoutTTY: true,
+	}, cliDependencies{})
+	if code != 0 || stdout.Len() == 0 || !strings.Contains(stderr.String(), "Warning: errors loading models.json:\nFailed to parse models.json") {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunCLIModelUpdateDispatchAndConflicts(t *testing.T) {
+	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
+	t.Run("refresh", func(t *testing.T) {
+		var stdout bytes.Buffer
+		calls := 0
+		code := runCLIWithDependencies(context.Background(), []string{"update", "--models"}, cliStreams{Stdout: &stdout, Stderr: io.Discard}, cliDependencies{
+			refreshModels: func(context.Context, string) error { calls++; return nil },
+		})
+		if code != 0 || calls != 1 || stdout.String() != "Model catalogs refreshed\n" {
+			t.Fatalf("code=%d calls=%d stdout=%q", code, calls, stdout.String())
+		}
+	})
+	t.Run("conflict", func(t *testing.T) {
+		var stderr bytes.Buffer
+		calls := 0
+		code := runCLIWithDependencies(context.Background(), []string{"update", "--models", "--self"}, cliStreams{Stdout: io.Discard, Stderr: &stderr}, cliDependencies{
+			refreshModels: func(context.Context, string) error { calls++; return nil },
+		})
+		if code != 1 || calls != 0 || !strings.Contains(stderr.String(), "--models cannot be combined") {
+			t.Fatalf("code=%d calls=%d stderr=%q", code, calls, stderr.String())
+		}
+	})
 }
 
 func TestRunCLIParserErrorVersionAndHelpPrecedence(t *testing.T) {
