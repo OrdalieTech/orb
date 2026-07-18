@@ -1,5 +1,7 @@
 .upstream/
 .tools/
+.env
+.pi-agent/
 dist/
 /pi
 coverage.out
