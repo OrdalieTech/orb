@@ -169,9 +169,17 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 		}
 	}
 	runtime.refreshExtensionTools(initial, true)
-	runner.Emit(context.Background(), extensions.SessionStartEvent{Reason: extensions.SessionStartStartup})
+	startEvent := extensions.SessionStartEvent{Reason: extensions.SessionStartStartup}
+	if runtimeConfig.SessionStartEvent != nil {
+		startEvent = *runtimeConfig.SessionStartEvent
+	}
+	runner.Emit(context.Background(), startEvent)
 	if runner.HasHandlers(extensions.EventResourcesDiscover) {
-		resources := runner.EmitResourcesDiscover(context.Background(), runtime.manager.GetCWD(), extensions.ResourcesDiscoverStartup)
+		discoverReason := extensions.ResourcesDiscoverStartup
+		if startEvent.Reason == extensions.SessionStartReload {
+			discoverReason = extensions.ResourcesDiscoverReload
+		}
+		resources := runner.EmitResourcesDiscover(context.Background(), runtime.manager.GetCWD(), discoverReason)
 		state.mu.Lock()
 		state.resources = resources
 		state.mu.Unlock()

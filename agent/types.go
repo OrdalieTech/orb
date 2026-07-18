@@ -5,7 +5,6 @@ import (
 	"errors"
 
 	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/internal/jsonschema"
 )
 
 // AgentMessage is an LLM message or an application-defined message. Standard
@@ -73,7 +72,7 @@ type AgentToolSpec struct {
 	Name             string
 	Label            string
 	Description      string
-	Parameters       jsonschema.Schema
+	Parameters       ai.JSONSchema
 	PrepareArguments PrepareArgumentsFunc
 	ExecutionMode    ToolExecutionMode
 }

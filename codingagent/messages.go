@@ -16,6 +16,7 @@ const (
 	CompactionSummarySuffix = "\n</summary>"
 	BranchSummaryPrefix     = "The following is a summary of a branch that this conversation came back from:\n\n<summary>\n"
 	BranchSummarySuffix     = "</summary>"
+	imageBlockedText        = "Image reading is disabled."
 )
 
 type codingAgentMessage struct {
@@ -127,6 +128,89 @@ func ConvertToLLM(_ context.Context, messages agent.AgentMessages) (ai.MessageLi
 		}
 	}
 	return converted, nil
+}
+
+// ConvertToLLMWithBlockImages projects coding-agent messages and dynamically
+// applies the upstream images.blockImages setting at the provider boundary.
+func ConvertToLLMWithBlockImages(blockImages func() bool) agent.ConvertToLLMFunc {
+	return func(ctx context.Context, messages agent.AgentMessages) (ai.MessageList, error) {
+		converted, err := ConvertToLLM(ctx, messages)
+		if err != nil || blockImages == nil || !blockImages() {
+			return converted, err
+		}
+		for index, message := range converted {
+			switch typed := message.(type) {
+			case *ai.UserMessage:
+				blocks, changed := blockUserImages(typed.Content.Blocks)
+				if changed {
+					copy := *typed
+					copy.Content.Blocks = blocks
+					converted[index] = &copy
+				}
+			case *ai.ToolResultMessage:
+				blocks, changed := blockToolResultImages(typed.Content)
+				if changed {
+					copy := *typed
+					copy.Content = blocks
+					converted[index] = &copy
+				}
+			}
+		}
+		return converted, nil
+	}
+}
+
+func blockUserImages(source ai.UserContentBlocks) (ai.UserContentBlocks, bool) {
+	hasImages := false
+	for _, block := range source {
+		if _, ok := block.(*ai.ImageContent); ok {
+			hasImages = true
+			break
+		}
+	}
+	if !hasImages {
+		return source, false
+	}
+	result := make(ai.UserContentBlocks, 0, len(source))
+	for _, block := range source {
+		if _, ok := block.(*ai.ImageContent); ok {
+			block = &ai.TextContent{Text: imageBlockedText}
+		}
+		if isBlockedImageText(block) && len(result) > 0 && isBlockedImageText(result[len(result)-1]) {
+			continue
+		}
+		result = append(result, block)
+	}
+	return result, true
+}
+
+func blockToolResultImages(source ai.ToolResultContent) (ai.ToolResultContent, bool) {
+	hasImages := false
+	for _, block := range source {
+		if _, ok := block.(*ai.ImageContent); ok {
+			hasImages = true
+			break
+		}
+	}
+	if !hasImages {
+		return source, false
+	}
+	result := make(ai.ToolResultContent, 0, len(source))
+	for _, block := range source {
+		if _, ok := block.(*ai.ImageContent); ok {
+			block = &ai.TextContent{Text: imageBlockedText}
+		}
+		if isBlockedImageText(block) && len(result) > 0 && isBlockedImageText(result[len(result)-1]) {
+			continue
+		}
+		result = append(result, block)
+	}
+	return result, true
+}
+
+func isBlockedImageText(block any) bool {
+	text, ok := block.(*ai.TextContent)
+	return ok && text.Text == imageBlockedText
 }
 
 func customUserMessage(content json.RawMessage, timestamp int64) (*ai.UserMessage, error) {

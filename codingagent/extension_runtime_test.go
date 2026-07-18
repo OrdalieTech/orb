@@ -929,6 +929,100 @@ func extensionRuntimeDependencies(t *testing.T, cwd string) (*session.SessionMan
 	return manager, settings
 }
 
+func TestSessionStartEventNonDefault(t *testing.T) {
+	cwd := t.TempDir()
+	manager, settings := extensionRuntimeDependencies(t, cwd)
+	registry := extensions.NewRegistry(cwd)
+	var receivedReason extensions.SessionStartReason
+	if err := registry.Register("<inline:start>", func(api extensions.API) error {
+		api.On(extensions.EventSessionStart, func(_ context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
+			receivedReason = raw.(extensions.SessionStartEvent).Reason
+			return nil, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	resumeEvent := &extensions.SessionStartEvent{Reason: extensions.SessionStartResume}
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
+		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings,
+		ExtensionRegistry: registry, SessionStartEvent: resumeEvent,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+	if receivedReason != extensions.SessionStartResume {
+		t.Fatalf("expected SessionStartResume, got %q", receivedReason)
+	}
+}
+
+func TestSessionStartEventDefaultIsStartup(t *testing.T) {
+	cwd := t.TempDir()
+	manager, settings := extensionRuntimeDependencies(t, cwd)
+	registry := extensions.NewRegistry(cwd)
+	var receivedReason extensions.SessionStartReason
+	if err := registry.Register("<inline:start>", func(api extensions.API) error {
+		api.On(extensions.EventSessionStart, func(_ context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
+			receivedReason = raw.(extensions.SessionStartEvent).Reason
+			return nil, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
+		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings,
+		ExtensionRegistry: registry,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+	if receivedReason != extensions.SessionStartStartup {
+		t.Fatalf("expected SessionStartStartup default, got %q", receivedReason)
+	}
+}
+
+func TestResourcesDiscoverReasonFollowsSessionStart(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		start extensions.SessionStartReason
+		want  extensions.ResourcesDiscoverReason
+	}{
+		{name: "reload", start: extensions.SessionStartReload, want: extensions.ResourcesDiscoverReload},
+		{name: "resume maps to startup", start: extensions.SessionStartResume, want: extensions.ResourcesDiscoverStartup},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cwd := t.TempDir()
+			manager, settings := extensionRuntimeDependencies(t, cwd)
+			registry := extensions.NewRegistry(cwd)
+			var received extensions.ResourcesDiscoverReason
+			if err := registry.Register("<inline:discover>", func(api extensions.API) error {
+				api.On(extensions.EventResourcesDiscover, func(_ context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
+					received = raw.(extensions.ResourcesDiscoverEvent).Reason
+					return nil, nil
+				})
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			start := &extensions.SessionStartEvent{Reason: test.start}
+			runtime, err := NewSessionRuntime(SessionRuntimeConfig{
+				Agent: agent.NewAgent(), SessionManager: manager, Settings: settings,
+				ExtensionRegistry: registry, SessionStartEvent: start,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer runtime.Dispose()
+			if received != test.want {
+				t.Fatalf("resources_discover reason = %q, want %q", received, test.want)
+			}
+		})
+	}
+}
+
 func assistantText(message *ai.AssistantMessage) string {
 	if message == nil {
 		return ""

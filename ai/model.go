@@ -190,11 +190,26 @@ type VercelGatewayRouting struct {
 	Order *[]string `json:"order,omitempty"`
 }
 
+// JSONSchema is a raw JSON Schema value. It preserves its input bytes when
+// marshaled so extension and MCP schemas can cross the provider boundary
+// without a Go-side rewrite.
+type JSONSchema = jsonschema.Schema
+
+// JSONSchemaFrom derives an inline JSON Schema from T.
+func JSONSchemaFrom[T any]() (JSONSchema, error) {
+	return jsonschema.FromStruct[T]()
+}
+
+// JSONStringEnumSchema builds a string enum schema in provider wire order.
+func JSONStringEnumSchema(values ...string) JSONSchema {
+	return jsonschema.StringEnum(values...)
+}
+
 type Tool struct {
-	Name        string            `json:"name"`
-	Label       string            `json:"label,omitempty"`
-	Description string            `json:"description"`
-	Parameters  jsonschema.Schema `json:"parameters"`
+	Name        string     `json:"name"`
+	Label       string     `json:"label,omitempty"`
+	Description string     `json:"description"`
+	Parameters  JSONSchema `json:"parameters"`
 }
 
 type Context struct {

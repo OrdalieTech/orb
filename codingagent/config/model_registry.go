@@ -226,3 +226,136 @@ var getenv = func(name string) string {
 }
 
 func lookupNonEmptyEnv(name string) bool { return getenv(name) != "" }
+
+// RequestAuth mirrors agent.RequestAuth without importing the agent package.
+type RequestAuth struct {
+	APIKey  *string
+	Headers map[string]string
+	Env     ai.ProviderEnv
+	BaseURL *string
+}
+
+// DefaultRequestAuthResolver returns a resolver that checks stored
+// credentials, models.json overrides, and built-in provider auth methods
+// (env vars, ADC, etc.) for a given provider. This is the canonical
+// implementation used by both the CLI and the SDK. When credentials is
+// nil, the registry's own auth.json data is used.
+func (registry *ModelRegistry) DefaultRequestAuthResolver(credentials aiauth.CredentialStore) func(context.Context, ai.ProviderID) (*RequestAuth, error) {
+	var credentialsErr error
+	if credentials == nil {
+		credentials, credentialsErr = NewAuthStorage(filepath.Join(registry.agentDir, "auth.json"))
+	}
+	return func(ctx context.Context, providerID ai.ProviderID) (*RequestAuth, error) {
+		if credentialsErr != nil {
+			return nil, credentialsErr
+		}
+		stored, err := credentials.Read(ctx, string(providerID))
+		if err != nil {
+			return nil, err
+		}
+		provider, knownProvider := providers.Get(providerID)
+		if stored != nil && knownProvider {
+			resolved, err := aiauth.ResolveProviderAuth(
+				ctx, string(providerID), provider.Methods, credentials,
+				aiauth.EnvironmentContext{}, nil,
+			)
+			if err != nil || resolved == nil {
+				return nil, err
+			}
+			return registryRequestAuth(resolved), nil
+		}
+		if stored != nil {
+			if stored.Type == aiauth.CredentialAPIKey {
+				return &RequestAuth{APIKey: stored.Key, Env: cloneRuntimeEnv(stored.Env)}, nil
+			}
+			return nil, nil
+		}
+		configured, err := registry.ResolveConfiguredAPIKey(ctx, string(providerID), nil)
+		if err != nil || configured != nil {
+			return &RequestAuth{APIKey: configured}, err
+		}
+		if knownProvider {
+			resolved, err := aiauth.ResolveProviderAuth(
+				ctx, string(providerID), provider.Methods, credentials,
+				aiauth.EnvironmentContext{}, nil,
+			)
+			if err != nil || resolved == nil {
+				return nil, err
+			}
+			return registryRequestAuth(resolved), nil
+		}
+		key, err := registry.ResolveAPIKey(ctx, string(providerID), nil)
+		if err != nil || key == nil {
+			return nil, err
+		}
+		return &RequestAuth{APIKey: key}, nil
+	}
+}
+
+// DefaultModelHeadersResolver returns a resolver for per-request headers
+// from models.json configuration.
+func (registry *ModelRegistry) DefaultModelHeadersResolver() func(context.Context, *ai.Model, *string, ai.ProviderEnv) (*map[string]string, error) {
+	return func(ctx context.Context, model *ai.Model, apiKey *string, env ai.ProviderEnv) (*map[string]string, error) {
+		return registry.ResolveModelHeaders(ctx, *model, map[string]string(env), apiKey)
+	}
+}
+
+// FallbackRequestAuthResolver resolves auth using only stored credentials
+// and built-in provider auth methods, without a ModelRegistry.
+func FallbackRequestAuthResolver(credentials aiauth.CredentialStore) func(context.Context, ai.ProviderID) (*RequestAuth, error) {
+	if credentials == nil {
+		credentials = aiauth.NewMemoryStore(nil)
+	}
+	return func(ctx context.Context, providerID ai.ProviderID) (*RequestAuth, error) {
+		stored, err := credentials.Read(ctx, string(providerID))
+		if err != nil {
+			return nil, err
+		}
+		provider, knownProvider := providers.Get(providerID)
+		if stored != nil && knownProvider {
+			resolved, err := aiauth.ResolveProviderAuth(
+				ctx, string(providerID), provider.Methods, credentials,
+				aiauth.EnvironmentContext{}, nil,
+			)
+			if err != nil || resolved == nil {
+				return nil, err
+			}
+			return registryRequestAuth(resolved), nil
+		}
+		if stored != nil && stored.Type == aiauth.CredentialAPIKey {
+			return &RequestAuth{APIKey: stored.Key, Env: cloneRuntimeEnv(stored.Env)}, nil
+		}
+		if knownProvider {
+			resolved, err := aiauth.ResolveProviderAuth(
+				ctx, string(providerID), provider.Methods, credentials,
+				aiauth.EnvironmentContext{}, nil,
+			)
+			if err != nil || resolved == nil {
+				return nil, err
+			}
+			return registryRequestAuth(resolved), nil
+		}
+		return nil, nil
+	}
+}
+
+func registryRequestAuth(resolved *aiauth.AuthResult) *RequestAuth {
+	if resolved == nil {
+		return nil
+	}
+	return &RequestAuth{
+		APIKey: resolved.Auth.APIKey, Headers: cloneRuntimeEnv(resolved.Auth.Headers),
+		Env: cloneRuntimeEnv(resolved.Env), BaseURL: resolved.Auth.BaseURL,
+	}
+}
+
+func cloneRuntimeEnv(source map[string]string) map[string]string {
+	if source == nil {
+		return nil
+	}
+	result := make(map[string]string, len(source))
+	for name, value := range source {
+		result[name] = value
+	}
+	return result
+}

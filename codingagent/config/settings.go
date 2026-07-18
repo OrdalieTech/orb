@@ -472,6 +472,10 @@ func (manager *SettingsManager) GetTransport() ai.Transport {
 	return ai.Transport(value)
 }
 
+func (manager *SettingsManager) GetBlockImages() bool {
+	return boolDefault(manager.objectValue("images"), "blockImages", false)
+}
+
 func (manager *SettingsManager) GetSteeringMode() string {
 	if value := manager.stringValue("steeringMode"); value != "" {
 		return value

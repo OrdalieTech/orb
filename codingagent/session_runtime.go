@@ -46,6 +46,7 @@ type SessionRuntimeConfig struct {
 	AllowedToolNames       *[]string
 	ExcludedToolNames      []string
 	SystemPromptOptions    *SystemPromptOptions
+	SessionStartEvent      *extensions.SessionStartEvent
 }
 
 type SessionRuntime struct {

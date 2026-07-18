@@ -254,6 +254,32 @@ func TestConsumedSettingsGetters(t *testing.T) {
 	}
 }
 
+func TestBlockImagesSettingReadsAndWrites(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	writeSettings(t, filepath.Join(agentDir, "settings.json"), map[string]any{
+		"images": map[string]any{"blockImages": true},
+	})
+	manager, err := NewSettingsManager(root, WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !manager.GetBlockImages() {
+		t.Fatal("blockImages setting was not loaded")
+	}
+	manager.SetBlockImages(false)
+	if manager.GetBlockImages() {
+		t.Fatal("blockImages setting was not updated")
+	}
+	reloaded, err := NewSettingsManager(root, WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.GetBlockImages() {
+		t.Fatal("blockImages setting was not persisted")
+	}
+}
+
 func TestHarnessPolicySettings(t *testing.T) {
 	root := t.TempDir()
 	agentDir := filepath.Join(root, "agent")

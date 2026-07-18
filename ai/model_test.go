@@ -62,3 +62,24 @@ func TestStreamOptionsPreserveExplicitZeroAndEmpty(t *testing.T) {
 		t.Fatalf("options = %s, want %s", encoded, want)
 	}
 }
+
+func TestPublicJSONSchemaFacade(t *testing.T) {
+	type input struct {
+		Path string `json:"path" jsonschema:"description=Path to inspect"`
+	}
+	schema, err := ai.JSONSchemaFrom[input]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"type":"object","required":["path"],"properties":{"path":{"type":"string","description":"Path to inspect"}}}`
+	if string(encoded) != want {
+		t.Fatalf("schema = %s, want %s", encoded, want)
+	}
+	if enum, err := json.Marshal(ai.JSONStringEnumSchema("read", "write")); err != nil || string(enum) != `{"type":"string","enum":["read","write"]}` {
+		t.Fatalf("enum schema = %s, %v", enum, err)
+	}
+}
