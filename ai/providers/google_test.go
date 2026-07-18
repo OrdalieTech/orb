@@ -1,0 +1,54 @@
+package providers_test
+
+import (
+	"slices"
+	"testing"
+
+	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pi-go/ai/auth"
+	"github.com/OrdalieTech/pi-go/ai/providers"
+	"github.com/OrdalieTech/pi-go/conformance/runner"
+)
+
+func TestGoogleProvider(t *testing.T) {
+	var fixture struct {
+		ID      ai.ProviderID `json:"id"`
+		Name    string        `json:"name"`
+		BaseURL string        `json:"baseUrl"`
+		APIs    []ai.API      `json:"apis"`
+		Auth    struct {
+			Kind providers.AuthKind `json:"kind"`
+			Name string             `json:"name"`
+			Env  []string           `json:"env"`
+		} `json:"auth"`
+	}
+	runner.LoadJSON(t, "F2", "google-provider.json", &fixture)
+	if len(fixture.APIs) != 1 {
+		t.Fatalf("upstream Google provider API shapes = %v, want exactly one", fixture.APIs)
+	}
+	provider, ok := providers.Get(fixture.ID)
+	if !ok {
+		t.Fatalf("%s provider is not registered", fixture.ID)
+	}
+	if provider.ID != fixture.ID || provider.Name != fixture.Name || provider.API != fixture.APIs[0] || provider.BaseURL != fixture.BaseURL {
+		t.Fatalf("unexpected provider: %#v", provider)
+	}
+	if provider.Auth != fixture.Auth.Kind || !slices.Equal(provider.Env, fixture.Auth.Env) {
+		t.Fatalf("unexpected auth metadata: %#v", provider)
+	}
+	if provider.Methods.APIKey == nil || provider.Methods.APIKey.Name() != fixture.Auth.Name {
+		t.Fatalf("unexpected auth methods: %#v", provider.Methods)
+	}
+	provider.Env[0] = "changed"
+	method := provider.Methods.APIKey.(auth.EnvAPIKeyAuth)
+	method.EnvVars[0] = "changed"
+	if fresh := providers.Google(); !slices.Equal(fresh.Env, fixture.Auth.Env) {
+		t.Fatal("Google returned mutable registry storage")
+	} else if freshMethod := fresh.Methods.APIKey.(auth.EnvAPIKeyAuth); !slices.Equal(freshMethod.EnvVars, fixture.Auth.Env) {
+		t.Fatal("Google returned mutable auth-method storage")
+	}
+	registered := providers.List()
+	if len(registered) != 3 || registered[2].ID != fixture.ID {
+		t.Fatalf("registered providers = %#v, want OpenAI, Anthropic, Google", registered)
+	}
+}

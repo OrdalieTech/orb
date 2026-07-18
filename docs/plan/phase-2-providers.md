@@ -45,6 +45,19 @@ otherwise defer Vertex to a follow-up WP and say so).
 **Acceptance:** F2 google matrix green; schema conversion handles the StringEnum pattern; G2
 decision recorded with measured dep/binary impact.
 
+## WP-222 — Vertex REST/SSE + pure-Go ADC follow-up
+
+**Upstream refs:** `packages/ai/src/api/google-vertex.ts`, `packages/ai/src/providers/google-vertex.ts`,
+`packages/ai/src/env-api-keys.ts`; `packages/ai/test/google-vertex-api-key-resolution.test.ts`.
+
+**Scope:** Complete the G2 deferral without importing `google.golang.org/genai` or Google Cloud auth
+libraries: reuse WP-221 message/tool/event conversion, port the Vertex URL and request variants,
+and implement the upstream API-key plus ADC credential sources with stdlib HTTP/crypto and fake
+metadata/token servers. Preserve custom-base-URL, project, location, and placeholder-key quirks.
+
+**Acceptance:** F2 Vertex matrix green; API-key and ADC resolution covered against fake servers;
+live smoke behind the Tier-2 flag; no new dependency and the G2 binary result remains valid.
+
 ## WP-231 — Mistral conversations + Azure OpenAI responses
 
 **Upstream refs:** `packages/ai/src/api/mistral-conversations.ts`, `azure-openai-responses.ts`.

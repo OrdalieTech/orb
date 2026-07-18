@@ -173,7 +173,7 @@ var providerAPIKeyEnv = map[string][]string{
 	"cloudflare-workers-ai":  {"CLOUDFLARE_API_TOKEN"},
 	"deepseek":               {"DEEPSEEK_API_KEY"},
 	"fireworks":              {"FIREWORKS_API_KEY"},
-	"google":                 {"GEMINI_API_KEY", "GOOGLE_API_KEY"},
+	"google":                 {"GEMINI_API_KEY"},
 	"google-vertex":          {"GOOGLE_APPLICATION_CREDENTIALS"},
 	"groq":                   {"GROQ_API_KEY"},
 	"huggingface":            {"HUGGINGFACE_API_KEY", "HF_TOKEN"},

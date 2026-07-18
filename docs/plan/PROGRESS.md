@@ -1,6 +1,6 @@
 # Implementation progress
 
-This tracker follows the scheduled work-package index in `OVERVIEW.md`. The index currently has 48 scheduled packages through WP-661; WP-670 remains explicitly future and unscheduled.
+This tracker follows the scheduled work-package index in `OVERVIEW.md`. The index currently has 49 scheduled packages through WP-661; WP-670 remains explicitly future and unscheduled.
 
 | Phase | WP | State |
 |---|---:|---|
@@ -16,7 +16,8 @@ This tracker follows the scheduled work-package index in `OVERVIEW.md`. The inde
 | 1 | 180 | complete |
 | 2 | 210 | complete |
 | 2 | 211 | in progress |
-| 2 | 221 | pending |
+| 2 | 221 | in progress |
+| 2 | 222 | pending |
 | 2 | 231 | pending |
 | 2 | 232 | pending |
 | 2 | 241 | pending |

@@ -21,6 +21,8 @@ func StreamSimple(
 	switch model.API {
 	case ai.APIAnthropicMessages:
 		return StreamSimpleAnthropicMessages(ctx, model, requestContext, options)
+	case ai.APIGoogleGenerativeAI:
+		return StreamSimpleGoogleGenerativeAI(ctx, model, requestContext, options)
 	case ai.APIOpenAIResponses, ai.APIAzureOpenAIResponses, ai.APIOpenAICodexResponses:
 		return StreamSimpleOpenAIResponses(ctx, model, requestContext, options)
 	case ai.APIOpenAICompletions:
