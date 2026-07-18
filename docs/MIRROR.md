@@ -80,3 +80,4 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/coding-agent/src/modes/print-mode.ts` (text subset) | `codingagent/modes/print.go`, `codingagent/modes/signals_unix.go`, `codingagent/modes/print_test.go`, `codingagent/modes/print_signal_unix_test.go` | WP-160 |
 | `packages/coding-agent/src/core/{system-prompt,resource-loader,settings-manager}.ts` | `conformance/extract/f9-system-prompt.ts`, `conformance/extract/upstream-model-data.ts`, `conformance/fixtures/F9/`, `conformance/runner/f9_system_prompt_test.go` | WP-160 |
 | `packages/coding-agent/src/core/session-manager.ts` (`JSON.stringify` migration rewrite) | `ai/json.go`, `internal/jsonwire/marshal.go` | WP-160 |
+| `packages/coding-agent/src/main.ts`, `packages/coding-agent/src/modes/print-mode.ts` (live integration evidence) | `docs/plan/skeleton-gate-report.md`, `docs/plan/artifacts/wp-170-dogfood.jsonl`, `docs/plan/artifacts/wp-170-self-dogfood.jsonl` | WP-170 |
