@@ -125,6 +125,25 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
   provider WPs run opt-in live smoke; a nightly capped live suite (OpenAI + Anthropic, 3-task
   corpus) runs from M2 — failures file work items, and only the M5 7-day window blocks a release.
 
+- **D25 — Sprint restructure (owner, 2026-07-18).** The WP system is retired as sequencing;
+  `docs/plan/SPRINTS.md` is the active plan: four large sprints (Sprint 1 = M2 … Sprint 4 = M5),
+  each opened fixtures-FIRST (red before port) and closed with a TS-pi comparison report
+  (`docs/compare/sprint-N.md`), the trim checklist, and milestone verification. Trunk-based:
+  single branch `main`, no GitButler lanes/worktrees/feature branches; commits are large coherent
+  green chunks; every mainline commit builds and passes. Phase files demoted to spec sheets.
+  M5 live burn-in shortened 7 days → 72 hours (owner-directed). Ambition: a working session aims
+  to close a sprint.
+- **D26 — Core first, expansion studied (owner, 2026-07-18).** Compatibility breadth is not pursued
+  until the core is byte-right with all tests green vs TS pi. Core = engine + tools + sessions +
+  modes + skills/templates + extension seams + SDK + TUI on the ALREADY-LANDED providers (openai,
+  anthropic, google/vertex, mistral, azure, bedrock, pi-messages) with Anthropic OAuth. Expansion
+  ring = codex shape + ChatGPT/Codex/Copilot/xAI OAuth, the compat provider family, MCP,
+  pi-packages, and the JS extension bridge — all Sprint 3, which OPENS with an owner-reviewed
+  expansion study (`docs/plan/expansion-study.md`); full parity remains the default v1.0 target
+  unless the study amends this record. Work already landed for expansion surfaces is kept, not
+  extended. No schedule estimates in plans, reports, or trackers — progress is stated as
+  red-to-green movement only.
+
 ## Standing assumptions (owner-confirmed)
 
 - Independent semver from `v0.1.0`; upstream snapshot recorded in `UPSTREAM.lock`.
