@@ -8,11 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"slices"
 	"strings"
-	"time"
-	"unicode"
 
 	"github.com/OrdalieTech/pi-go/ai"
 )
@@ -559,111 +556,8 @@ func setHeader(headers map[string]string, name, value string) {
 	headers[name] = value
 }
 
-// ResolveConfigValue implements models.json command, environment, and escape rules.
-func ResolveConfigValue(ctx context.Context, value string, env map[string]string) (string, error) {
-	if strings.HasPrefix(value, "!") {
-		commandContext, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-		output, err := exec.CommandContext(commandContext, "/bin/sh", "-c", value[1:]).Output()
-		resolved := strings.TrimSpace(string(output))
-		if err != nil || resolved == "" {
-			return "", fmt.Errorf("failed to resolve from shell command: %s", value[1:])
-		}
-		return resolved, nil
-	}
-	var result strings.Builder
-	for index := 0; index < len(value); {
-		if value[index] != '$' {
-			result.WriteByte(value[index])
-			index++
-			continue
-		}
-		if index+1 < len(value) && (value[index+1] == '$' || value[index+1] == '!') {
-			result.WriteByte(value[index+1])
-			index += 2
-			continue
-		}
-		name, consumed := configEnvReference(value[index:])
-		if consumed == 0 {
-			result.WriteByte('$')
-			index++
-			continue
-		}
-		resolved := env[name]
-		if resolved == "" {
-			resolved = os.Getenv(name)
-		}
-		if resolved == "" {
-			return "", fmt.Errorf("failed to resolve from environment variable: %s", name)
-		}
-		result.WriteString(resolved)
-		index += consumed
-	}
-	return result.String(), nil
-}
-
 func missingConfigEnv(value string, env map[string]string) []string {
-	if strings.HasPrefix(value, "!") {
-		return nil
-	}
-	missing := make([]string, 0)
-	for index := 0; index < len(value); {
-		if value[index] != '$' {
-			index++
-			continue
-		}
-		if index+1 < len(value) && (value[index+1] == '$' || value[index+1] == '!') {
-			index += 2
-			continue
-		}
-		name, consumed := configEnvReference(value[index:])
-		if consumed == 0 {
-			index++
-			continue
-		}
-		if env[name] == "" && os.Getenv(name) == "" && !slices.Contains(missing, name) {
-			missing = append(missing, name)
-		}
-		index += consumed
-	}
-	return missing
-}
-
-func configEnvReference(value string) (string, int) {
-	if len(value) < 2 || value[0] != '$' {
-		return "", 0
-	}
-	if value[1] == '{' {
-		end := strings.IndexByte(value[2:], '}')
-		if end < 0 {
-			return "", 0
-		}
-		name := value[2 : end+2]
-		if !validEnvName(name) {
-			return "", 0
-		}
-		return name, end + 3
-	}
-	end := 1
-	for end < len(value) && (value[end] == '_' || unicode.IsLetter(rune(value[end])) || (end > 1 && unicode.IsDigit(rune(value[end])))) {
-		end++
-	}
-	if end == 1 || !validEnvName(value[1:end]) {
-		return "", 0
-	}
-	return value[1:end], end
-}
-
-func validEnvName(value string) bool {
-	for index, character := range value {
-		if index == 0 && character != '_' && !unicode.IsLetter(character) {
-			return false
-		}
-		if index > 0 && character != '_' && !unicode.IsLetter(character) && !unicode.IsDigit(character) {
-			return false
-		}
-	}
-	return value != ""
+	return GetMissingConfigValueEnvVarNames(value, env)
 }
 
 func stripJSONComments(data []byte) []byte {

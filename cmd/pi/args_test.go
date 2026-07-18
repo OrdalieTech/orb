@@ -49,6 +49,15 @@ func TestParseArgsCoreSubset(t *testing.T) {
 	}
 }
 
+func TestParseArgsAuthSubcommands(t *testing.T) {
+	for _, command := range []string{"login", "logout"} {
+		args := ParseArgs([]string{command, "anthropic"})
+		if args.Command != command || !reflect.DeepEqual(args.CommandArgs, []string{"anthropic"}) || len(args.Messages) != 0 {
+			t.Fatalf("%s args = %#v", command, args)
+		}
+	}
+}
+
 func TestParseArgsModelCatalogFlags(t *testing.T) {
 	args := ParseArgs([]string{"--models", " sonnet:high, ,openai/gpt-4o ", "--list-models", "gpt 4"})
 	if !reflect.DeepEqual(args.Models, []string{"sonnet:high", "", "openai/gpt-4o"}) {

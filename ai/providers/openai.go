@@ -1,6 +1,9 @@
 package providers
 
-import "github.com/OrdalieTech/pi-go/ai"
+import (
+	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pi-go/ai/auth"
+)
 
 type AuthKind string
 
@@ -13,6 +16,7 @@ type Provider struct {
 	BaseURL string
 	Auth    AuthKind
 	Env     []string
+	Methods auth.ProviderAuth
 }
 
 var openAI = Provider{
@@ -22,6 +26,10 @@ var openAI = Provider{
 	BaseURL: "https://api.openai.com/v1",
 	Auth:    AuthAPIKey,
 	Env:     []string{"OPENAI_API_KEY"},
+	Methods: auth.ProviderAuth{APIKey: auth.EnvAPIKeyAuth{
+		DisplayName: "OpenAI API key",
+		EnvVars:     []string{"OPENAI_API_KEY"},
+	}},
 }
 
 func OpenAI() Provider {
@@ -45,5 +53,9 @@ func List() []Provider {
 
 func cloneProvider(provider Provider) Provider {
 	provider.Env = append([]string(nil), provider.Env...)
+	if method, ok := provider.Methods.APIKey.(auth.EnvAPIKeyAuth); ok {
+		method.EnvVars = append([]string(nil), method.EnvVars...)
+		provider.Methods.APIKey = method
+	}
 	return provider
 }

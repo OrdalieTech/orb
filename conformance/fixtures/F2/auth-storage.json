@@ -1,0 +1,113 @@
+{
+  "initialRaw": "{\n  \"anthropic\": {\n    \"type\": \"api_key\",\n    \"key\": \"$AUTH_FIXTURE_SCOPED\",\n    \"env\": {\n      \"AUTH_FIXTURE_SCOPED\": \"scoped-key\",\n      \"REGION\": \"fixture-region\"\n    }\n  },\n  \"openai\": {\n    \"type\": \"api_key\",\n    \"key\": \"!printf 'command-key'\"\n  },\n  \"github-copilot\": {\n    \"type\": \"oauth\",\n    \"access\": \"copilot-access\",\n    \"refresh\": \"copilot-refresh\",\n    \"expires\": 1700000100000,\n    \"enterpriseUrl\": \"https://github.example.test\",\n    \"availableModelIds\": [\n      \"model-a\",\n      \"model-b\"\n    ],\n    \"env\": {\n      \"Z_LAST\": \"z\",\n      \"A_FIRST\": \"a\"\n    }\n  }\n}",
+  "initialReads": {
+    "anthropic": {
+      "type": "api_key",
+      "key": "scoped-key",
+      "env": {
+        "AUTH_FIXTURE_SCOPED": "scoped-key",
+        "REGION": "fixture-region"
+      }
+    },
+    "openai": {
+      "type": "api_key",
+      "key": "command-key"
+    },
+    "github-copilot": {
+      "type": "oauth",
+      "access": "copilot-access",
+      "refresh": "copilot-refresh",
+      "expires": 1700000100000,
+      "enterpriseUrl": "https://github.example.test",
+      "availableModelIds": [
+        "model-a",
+        "model-b"
+      ],
+      "env": {
+        "Z_LAST": "z",
+        "A_FIRST": "a"
+      }
+    }
+  },
+  "initialList": [
+    {
+      "providerId": "anthropic",
+      "type": "api_key"
+    },
+    {
+      "providerId": "openai",
+      "type": "api_key"
+    },
+    {
+      "providerId": "github-copilot",
+      "type": "oauth"
+    }
+  ],
+  "operations": [
+    {
+      "type": "modify",
+      "provider": "anthropic",
+      "credential": {
+        "type": "oauth",
+        "refresh": "anthropic-refresh",
+        "access": "sk-ant-oat-fixture",
+        "expires": 1700003300000,
+        "account": {
+          "id": "account-fixture",
+          "plan": "max"
+        }
+      }
+    },
+    {
+      "type": "modify",
+      "provider": "custom",
+      "credential": {
+        "type": "api_key",
+        "key": "${AUTH_FIXTURE_AMBIENT}",
+        "env": {
+          "EXTRA": "preserved"
+        }
+      }
+    },
+    {
+      "type": "delete",
+      "provider": "openai"
+    }
+  ],
+  "expectedRaw": "{\n  \"anthropic\": {\n    \"type\": \"oauth\",\n    \"refresh\": \"anthropic-refresh\",\n    \"access\": \"sk-ant-oat-fixture\",\n    \"expires\": 1700003300000,\n    \"account\": {\n      \"id\": \"account-fixture\",\n      \"plan\": \"max\"\n    }\n  },\n  \"github-copilot\": {\n    \"type\": \"oauth\",\n    \"access\": \"copilot-access\",\n    \"refresh\": \"copilot-refresh\",\n    \"expires\": 1700000100000,\n    \"enterpriseUrl\": \"https://github.example.test\",\n    \"availableModelIds\": [\n      \"model-a\",\n      \"model-b\"\n    ],\n    \"env\": {\n      \"Z_LAST\": \"z\",\n      \"A_FIRST\": \"a\"\n    }\n  },\n  \"custom\": {\n    \"type\": \"api_key\",\n    \"key\": \"${AUTH_FIXTURE_AMBIENT}\",\n    \"env\": {\n      \"EXTRA\": \"preserved\"\n    }\n  }\n}",
+  "expectedList": [
+    {
+      "providerId": "anthropic",
+      "type": "oauth"
+    },
+    {
+      "providerId": "github-copilot",
+      "type": "oauth"
+    },
+    {
+      "providerId": "custom",
+      "type": "api_key"
+    }
+  ],
+  "oauthPages": {
+    "success": "<!doctype html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n  <title>Authentication successful</title>\n  <style>\n    :root {\n      --text: #fafafa;\n      --text-dim: #a1a1aa;\n      --page-bg: #09090b;\n      --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, \"Noto Sans\", sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\";\n      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace;\n    }\n    * { box-sizing: border-box; }\n    html { color-scheme: dark; }\n    body {\n      margin: 0;\n      min-height: 100vh;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 24px;\n      background: var(--page-bg);\n      color: var(--text);\n      font-family: var(--font-sans);\n      text-align: center;\n    }\n    main {\n      width: 100%;\n      max-width: 560px;\n      display: flex;\n      flex-direction: column;\n      align-items: center;\n      justify-content: center;\n    }\n    .logo {\n      width: 72px;\n      height: 72px;\n      display: block;\n      margin-bottom: 24px;\n    }\n    h1 {\n      margin: 0 0 10px;\n      font-size: 28px;\n      line-height: 1.15;\n      font-weight: 650;\n      color: var(--text);\n    }\n    p {\n      margin: 0;\n      line-height: 1.7;\n      color: var(--text-dim);\n      font-size: 15px;\n    }\n    .details {\n      margin-top: 16px;\n      font-family: var(--font-mono);\n      font-size: 13px;\n      color: var(--text-dim);\n      white-space: pre-wrap;\n      word-break: break-word;\n    }\n  </style>\n</head>\n<body>\n  <main>\n    <div class=\"logo\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 800 800\" aria-hidden=\"true\"><path fill=\"#fff\" fill-rule=\"evenodd\" d=\"M165.29 165.29 H517.36 V400 H400 V517.36 H282.65 V634.72 H165.29 Z M282.65 282.65 V400 H400 V282.65 Z\"/><path fill=\"#fff\" d=\"M517.36 400 H634.72 V634.72 H517.36 Z\"/></svg></div>\n    <h1>Authentication successful</h1>\n    <p>A&amp;B &lt;done&gt; &quot;quoted&quot; &#39;single&#39;</p>\n    \n  </main>\n</body>\n</html>",
+    "error": "<!doctype html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n  <title>Authentication failed</title>\n  <style>\n    :root {\n      --text: #fafafa;\n      --text-dim: #a1a1aa;\n      --page-bg: #09090b;\n      --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, \"Noto Sans\", sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\";\n      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace;\n    }\n    * { box-sizing: border-box; }\n    html { color-scheme: dark; }\n    body {\n      margin: 0;\n      min-height: 100vh;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 24px;\n      background: var(--page-bg);\n      color: var(--text);\n      font-family: var(--font-sans);\n      text-align: center;\n    }\n    main {\n      width: 100%;\n      max-width: 560px;\n      display: flex;\n      flex-direction: column;\n      align-items: center;\n      justify-content: center;\n    }\n    .logo {\n      width: 72px;\n      height: 72px;\n      display: block;\n      margin-bottom: 24px;\n    }\n    h1 {\n      margin: 0 0 10px;\n      font-size: 28px;\n      line-height: 1.15;\n      font-weight: 650;\n      color: var(--text);\n    }\n    p {\n      margin: 0;\n      line-height: 1.7;\n      color: var(--text-dim);\n      font-size: 15px;\n    }\n    .details {\n      margin-top: 16px;\n      font-family: var(--font-mono);\n      font-size: 13px;\n      color: var(--text-dim);\n      white-space: pre-wrap;\n      word-break: break-word;\n    }\n  </style>\n</head>\n<body>\n  <main>\n    <div class=\"logo\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 800 800\" aria-hidden=\"true\"><path fill=\"#fff\" fill-rule=\"evenodd\" d=\"M165.29 165.29 H517.36 V400 H400 V517.36 H282.65 V634.72 H165.29 Z M282.65 282.65 V400 H400 V282.65 Z\"/><path fill=\"#fff\" d=\"M517.36 400 H634.72 V634.72 H517.36 Z\"/></svg></div>\n    <h1>Authentication failed</h1>\n    <p>A&amp;B &lt;failed&gt; &quot;quoted&quot; &#39;single&#39;</p>\n    <div class=\"details\">detail &amp; &lt;trace&gt; &quot;quoted&quot; &#39;single&#39;</div>\n  </main>\n</body>\n</html>"
+  },
+  "migration": {
+    "initialOAuthRaw": "{\n  \"zeta\": { \"access\": \"zeta-access\", \"refresh\": \"zeta-refresh\", \"expires\": 1700000100000 },\n  \"10\": { \"access\": \"ten-access\", \"refresh\": \"ten-refresh\", \"expires\": 1700000200000 },\n  \"2\": { \"access\": \"two-access\", \"refresh\": \"two-refresh\", \"expires\": 1700000300000 },\n  \"anthropic\": { \"access\": \"anthropic-access\", \"refresh\": \"anthropic-refresh\", \"expires\": 1700000400000, \"account\": { \"plan\": \"max\" } }\n}",
+    "initialSettingsRaw": "{\n  \"theme\": \"dark\",\n  \"10\": \"ten-setting\",\n  \"2\": \"two-setting\",\n  \"apiKeys\": {\n    \"z-provider\": \"z-key\",\n    \"3\": \"three-key\",\n    \"1\": \"one-key\",\n    \"anthropic\": \"duplicate-key\",\n    \"invalid\": { \"ignored\": true },\n    \"openai\": \"openai-key\"\n  },\n  \"negativeZero\": -0\n}",
+    "expectedProviders": [
+      "2",
+      "10",
+      "zeta",
+      "anthropic",
+      "1",
+      "3",
+      "z-provider",
+      "openai"
+    ],
+    "expectedAuthRaw": "{\n  \"1\": {\n    \"type\": \"api_key\",\n    \"key\": \"one-key\"\n  },\n  \"2\": {\n    \"type\": \"oauth\",\n    \"access\": \"two-access\",\n    \"refresh\": \"two-refresh\",\n    \"expires\": 1700000300000\n  },\n  \"3\": {\n    \"type\": \"api_key\",\n    \"key\": \"three-key\"\n  },\n  \"10\": {\n    \"type\": \"oauth\",\n    \"access\": \"ten-access\",\n    \"refresh\": \"ten-refresh\",\n    \"expires\": 1700000200000\n  },\n  \"zeta\": {\n    \"type\": \"oauth\",\n    \"access\": \"zeta-access\",\n    \"refresh\": \"zeta-refresh\",\n    \"expires\": 1700000100000\n  },\n  \"anthropic\": {\n    \"type\": \"oauth\",\n    \"access\": \"anthropic-access\",\n    \"refresh\": \"anthropic-refresh\",\n    \"expires\": 1700000400000,\n    \"account\": {\n      \"plan\": \"max\"\n    }\n  },\n  \"z-provider\": {\n    \"type\": \"api_key\",\n    \"key\": \"z-key\"\n  },\n  \"openai\": {\n    \"type\": \"api_key\",\n    \"key\": \"openai-key\"\n  }\n}",
+    "expectedSettingsRaw": "{\n  \"2\": \"two-setting\",\n  \"10\": \"ten-setting\",\n  \"theme\": \"dark\",\n  \"negativeZero\": 0\n}",
+    "oauthRenamed": "{\n  \"zeta\": { \"access\": \"zeta-access\", \"refresh\": \"zeta-refresh\", \"expires\": 1700000100000 },\n  \"10\": { \"access\": \"ten-access\", \"refresh\": \"ten-refresh\", \"expires\": 1700000200000 },\n  \"2\": { \"access\": \"two-access\", \"refresh\": \"two-refresh\", \"expires\": 1700000300000 },\n  \"anthropic\": { \"access\": \"anthropic-access\", \"refresh\": \"anthropic-refresh\", \"expires\": 1700000400000, \"account\": { \"plan\": \"max\" } }\n}"
+  }
+}

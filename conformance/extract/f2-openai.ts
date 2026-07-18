@@ -20,6 +20,7 @@ import type {
   Model,
   Tool,
 } from "../../.upstream/packages/ai/src/types.ts";
+import { extractAuthStorageFixture } from "./f2-auth.ts";
 import { extractAnthropicF2 } from "./f2-anthropic.ts";
 
 type OpenAIAPI = "openai-responses" | "openai-completions";
@@ -1181,6 +1182,7 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
   try {
     const provider = await extractOpenAIProvider(upstreamRoot);
     const anthropic = await extractAnthropicF2(upstreamRoot);
+    const authStorage = await extractAuthStorageFixture();
     const requests = [];
     for (const definition of requestDefinitions) {
       const { request } = await runUpstream(
@@ -1207,7 +1209,7 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
       upstreamCommit,
       generator: "conformance/extract/f2-openai.ts",
       source:
-        "packages/ai/src/api/openai-responses.ts + packages/ai/src/api/openai-responses-shared.ts + packages/ai/src/api/openai-completions.ts + packages/ai/src/api/openai-prompt-cache.ts + packages/ai/src/api/anthropic-messages.ts + packages/ai/src/utils/deferred-tools.ts + packages/ai/src/api/transform-messages.ts + packages/ai/src/providers/openai.ts + packages/ai/src/providers/anthropic.ts + packages/ai/src/auth/helpers.ts + packages/ai/src/models.ts + packages/ai/scripts/generate-models.ts",
+        "packages/ai/src/api/openai-responses.ts + packages/ai/src/api/openai-responses-shared.ts + packages/ai/src/api/openai-completions.ts + packages/ai/src/api/openai-prompt-cache.ts + packages/ai/src/api/anthropic-messages.ts + packages/ai/src/utils/deferred-tools.ts + packages/ai/src/api/transform-messages.ts + packages/ai/src/providers/openai.ts + packages/ai/src/providers/anthropic.ts + packages/ai/src/auth/helpers.ts + packages/ai/src/auth/oauth/oauth-page.ts + packages/ai/src/models.ts + packages/ai/scripts/generate-models.ts + packages/coding-agent/src/core/auth-storage.ts + packages/coding-agent/src/core/resolve-config-value.ts + packages/coding-agent/src/migrations.ts",
       files: [
         "provider.json",
         "anthropic-provider.json",
@@ -1215,6 +1217,7 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
         "anthropic-requests.json",
         "streams.json",
         "anthropic-streams.json",
+        "auth-storage.json",
       ],
     };
     await writeFile(path.join(familyDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -1233,6 +1236,7 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
       path.join(familyDir, "anthropic-streams.json"),
       `${JSON.stringify({ cases: anthropic.streams }, null, 2)}\n`,
     );
+    await writeFile(path.join(familyDir, "auth-storage.json"), `${JSON.stringify(authStorage, null, 2)}\n`);
   } finally {
     Date.now = originalNow;
     globalThis.fetch = originalFetch;

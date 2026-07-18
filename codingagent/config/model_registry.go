@@ -7,14 +7,17 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/pi-go/ai"
+	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
 	aimodels "github.com/OrdalieTech/pi-go/ai/models"
+	"github.com/OrdalieTech/pi-go/ai/providers"
 )
 
 type ModelRegistry struct {
-	agentDir string
-	config   *ModelConfig
-	all      []ai.Model
-	errors   []string
+	agentDir      string
+	config        *ModelConfig
+	all           []ai.Model
+	errors        []string
+	authProviders map[string]*aiauth.Credential
 }
 
 func NewModelRegistry(agentDir string) (*ModelRegistry, error) {
@@ -57,7 +60,8 @@ func (registry *ModelRegistry) Reload() error {
 		}
 		all = updated
 	}
-	registry.config, registry.all, registry.errors = config, all, errors
+	authProviders := readStoredCredentials(filepath.Join(registry.agentDir, "auth.json"))
+	registry.config, registry.all, registry.errors, registry.authProviders = config, all, errors, authProviders
 	return nil
 }
 
@@ -78,8 +82,30 @@ func (registry *ModelRegistry) Find(provider, id string) (ai.Model, bool) {
 }
 
 func (registry *ModelRegistry) HasConfiguredAuth(provider string, env map[string]string) bool {
+	authContext := registryAuthContext{env: env}
+	if storedCredential, stored := registry.authProviders[provider]; stored {
+		credential := resolveStoredCredential(storedCredential)
+		if definition, known := providers.Get(ai.ProviderID(provider)); known {
+			switch credential.Type {
+			case aiauth.CredentialAPIKey:
+				if definition.Methods.APIKey == nil {
+					return false
+				}
+				result, err := definition.Methods.APIKey.Resolve(context.Background(), authContext, credential)
+				return err == nil && result != nil
+			case aiauth.CredentialOAuth:
+				return definition.Methods.OAuth != nil
+			}
+			return false
+		}
+		return credential.Type == aiauth.CredentialAPIKey && credential.Key != nil && *credential.Key != ""
+	}
 	if registry.config.HasConfiguredAPIKey(provider, env) {
 		return true
+	}
+	if definition, known := providers.Get(ai.ProviderID(provider)); known && definition.Methods.APIKey != nil {
+		result, err := definition.Methods.APIKey.Resolve(context.Background(), authContext, nil)
+		return err == nil && result != nil
 	}
 	for _, name := range providerAPIKeyEnv[provider] {
 		if env[name] != "" || lookupNonEmptyEnv(name) {
@@ -87,6 +113,25 @@ func (registry *ModelRegistry) HasConfiguredAuth(provider string, env map[string
 		}
 	}
 	return false
+}
+
+type registryAuthContext struct{ env map[string]string }
+
+func (authContext registryAuthContext) Env(ctx context.Context, name string) (string, bool) {
+	if value := authContext.env[name]; value != "" {
+		return value, true
+	}
+	return (aiauth.EnvironmentContext{}).Env(ctx, name)
+}
+
+func (authContext registryAuthContext) FileExists(ctx context.Context, path string) bool {
+	return (aiauth.EnvironmentContext{}).FileExists(ctx, path)
+}
+
+// ResolveConfiguredAPIKey resolves only a models.json provider override. Stored
+// credentials and ambient provider sources are handled by the auth layer.
+func (registry *ModelRegistry) ResolveConfiguredAPIKey(ctx context.Context, provider string, env map[string]string) (*string, error) {
+	return registry.config.ResolveAPIKey(ctx, provider, env)
 }
 
 func (registry *ModelRegistry) Available(env map[string]string) []ai.Model {
@@ -121,7 +166,7 @@ func (registry *ModelRegistry) ResolveModelHeaders(ctx context.Context, model ai
 
 var providerAPIKeyEnv = map[string][]string{
 	"amazon-bedrock":         {"AWS_BEARER_TOKEN_BEDROCK", "AWS_ACCESS_KEY_ID"},
-	"anthropic":              {"ANTHROPIC_API_KEY"},
+	"anthropic":              {"ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"},
 	"azure-openai-responses": {"AZURE_OPENAI_API_KEY"},
 	"cerebras":               {"CEREBRAS_API_KEY"},
 	"cloudflare-ai-gateway":  {"CLOUDFLARE_API_TOKEN"},

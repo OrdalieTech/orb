@@ -106,3 +106,10 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/coding-agent/src/modes/interactive/theme/{theme.ts,dark.json,light.json}` (built-in export colors and terminal fallback) | `codingagent/session/exporthtml/theme.go` | WP-320 |
 | WP-320 Markdown export divergence (no upstream equivalent) | `codingagent/session/exporthtml/markdown.go`, `codingagent/session/exporthtml/markdown_test.go`, `codingagent/session/exporthtml/testdata/session.md` | WP-320 |
 | Session tree, fork, listing, and HTML-export behavior | `conformance/extract/f6-session.ts`, `conformance/fixtures/F6/tree-export.json`, `conformance/runner/f6_tree_export_test.go` | WP-320 |
+| `packages/ai/src/auth/{types,context,credential-store,helpers,resolve}.ts` | `ai/auth/{types,context,credential_json,store,resolve}.go` and tests | WP-211 |
+| `packages/ai/src/auth/oauth/{anthropic,pkce,oauth-page}.ts` | `ai/auth/oauth/{anthropic,pkce,oauth_page}.go` and tests | WP-211 |
+| `packages/coding-agent/src/core/auth-storage.ts`, `packages/coding-agent/src/migrations.ts` | `codingagent/config/{auth,auth_lock,auth_migrate}.go` and tests | WP-211 |
+| `packages/coding-agent/src/core/resolve-config-value.ts` | `codingagent/config/resolve_config_value.go` and tests | WP-211 |
+| Headless provider authentication over the upstream auth interaction core | `cmd/pi/auth.go`, `cmd/pi/args.go`, `cmd/pi/main.go`, `cmd/pi/runtime.go` and tests | WP-211 |
+| Auth storage, migration, OAuth-page, and provider-auth cross-read behavior | `conformance/extract/f2-auth.ts`, `conformance/extract/f2-auth-verify.ts`, `conformance/fixtures/F2/auth-storage.json`, `codingagent/config/auth_conformance_test.go` | WP-211 |
+| WP-211 automated and credential-gated manual verification evidence | `docs/plan/wp-211-auth-report.md` | WP-211 |

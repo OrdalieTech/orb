@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
+	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
+	"github.com/OrdalieTech/pi-go/ai/providers"
 	"github.com/OrdalieTech/pi-go/codingagent"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 	"github.com/OrdalieTech/pi-go/codingagent/tools"
@@ -24,6 +26,13 @@ type runtimeInputs struct {
 func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMessages) (runtimeInputs, error) {
 	args = normalizeRuntimeCLIArgs(args)
 	agentDir, err := config.GetAgentDir()
+	if err != nil {
+		return runtimeInputs{}, err
+	}
+	if _, err := config.MigrateAuthToAuthJSON(agentDir); err != nil {
+		return runtimeInputs{}, err
+	}
+	authStorage, err := config.NewAuthStorage(filepath.Join(agentDir, "auth.json"))
 	if err != nil {
 		return runtimeInputs{}, err
 	}
@@ -94,7 +103,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		Tools:         activeTools,
 		Messages:      priorMessages,
 	}
-	resolveAPIKey := apiKeyResolver(args, registry)
+	resolveAPIKey := apiKeyResolver(args, registry, authStorage)
 	resolveModelHeaders := func(ctx context.Context, model *ai.Model, apiKey *string) (*map[string]string, error) {
 		return registry.ResolveModelHeaders(ctx, *model, nil, apiKey)
 	}
@@ -279,18 +288,61 @@ func normalizeRuntimeCLIArgs(args CLIArgs) CLIArgs {
 	return args
 }
 
-func apiKeyResolver(args CLIArgs, registries ...*config.ModelRegistry) agent.GetAPIKeyFunc {
-	return func(ctx context.Context, provider ai.ProviderID) (*string, error) {
+func apiKeyResolver(args CLIArgs, registry *config.ModelRegistry, credentials aiauth.CredentialStore) agent.GetAPIKeyFunc {
+	if credentials == nil {
+		credentials = aiauth.NewMemoryStore(nil)
+	}
+	return func(ctx context.Context, providerID ai.ProviderID) (*string, error) {
 		if args.APIKey != nil && *args.APIKey != "" {
 			return args.APIKey, nil
 		}
-		if len(registries) > 0 && registries[0] != nil {
-			return registries[0].ResolveAPIKey(ctx, string(provider), nil)
+		stored, err := credentials.Read(ctx, string(providerID))
+		if err != nil {
+			return nil, err
 		}
-		if provider == "openai" {
-			if value := os.Getenv("OPENAI_API_KEY"); value != "" {
-				return stringValue(value), nil
+		provider, knownProvider := providers.Get(providerID)
+		if stored != nil && knownProvider {
+			resolved, err := aiauth.ResolveProviderAuth(
+				ctx,
+				string(providerID),
+				provider.Methods,
+				credentials,
+				aiauth.EnvironmentContext{},
+				nil,
+			)
+			if err != nil || resolved == nil {
+				return nil, err
 			}
+			return resolved.Auth.APIKey, nil
+		}
+		if stored != nil {
+			if stored.Type == aiauth.CredentialAPIKey {
+				return stored.Key, nil
+			}
+			return nil, nil
+		}
+		if registry != nil {
+			configured, err := registry.ResolveConfiguredAPIKey(ctx, string(providerID), nil)
+			if err != nil || configured != nil {
+				return configured, err
+			}
+		}
+		if knownProvider {
+			resolved, err := aiauth.ResolveProviderAuth(
+				ctx,
+				string(providerID),
+				provider.Methods,
+				credentials,
+				aiauth.EnvironmentContext{},
+				nil,
+			)
+			if err != nil || resolved == nil {
+				return nil, err
+			}
+			return resolved.Auth.APIKey, nil
+		}
+		if registry != nil {
+			return registry.ResolveAPIKey(ctx, string(providerID), nil)
 		}
 		return nil, nil
 	}

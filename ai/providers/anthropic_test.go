@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pi-go/ai/auth"
 	"github.com/OrdalieTech/pi-go/ai/providers"
 	"github.com/OrdalieTech/pi-go/conformance/runner"
 )
@@ -15,9 +16,10 @@ type anthropicProviderFixture struct {
 	BaseURL string        `json:"baseUrl"`
 	APIs    []ai.API      `json:"apis"`
 	Auth    struct {
-		Kind providers.AuthKind `json:"kind"`
-		Name string             `json:"name"`
-		Env  []string           `json:"env"`
+		Kind      providers.AuthKind `json:"kind"`
+		Name      string             `json:"name"`
+		OAuthName string             `json:"oauthName"`
+		Env       []string           `json:"env"`
 	} `json:"auth"`
 }
 
@@ -37,10 +39,17 @@ func TestAnthropicProvider(t *testing.T) {
 	if provider.Auth != fixture.Auth.Kind || !slices.Equal(provider.Env, fixture.Auth.Env) {
 		t.Fatalf("unexpected auth metadata: %#v", provider)
 	}
+	if provider.Methods.APIKey == nil || provider.Methods.APIKey.Name() != fixture.Auth.Name || provider.Methods.OAuth == nil || provider.Methods.OAuth.Name() != fixture.Auth.OAuthName {
+		t.Fatalf("unexpected auth methods: %#v", provider.Methods)
+	}
 
 	provider.Env[0] = "changed"
+	method := provider.Methods.APIKey.(auth.EnvAPIKeyAuth)
+	method.EnvVars[0] = "changed"
 	if fresh := providers.Anthropic(); !slices.Equal(fresh.Env, fixture.Auth.Env) {
 		t.Fatal("Anthropic returned mutable registry storage")
+	} else if freshMethod := fresh.Methods.APIKey.(auth.EnvAPIKeyAuth); !slices.Equal(freshMethod.EnvVars, fixture.Auth.Env) {
+		t.Fatal("Anthropic returned mutable auth-method storage")
 	}
 	registered := providers.List()
 	if len(registered) != 2 || registered[1].ID != fixture.ID {

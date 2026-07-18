@@ -51,6 +51,7 @@ interface AnthropicProviderFixture {
   auth: {
     kind: "api_key";
     name: string;
+    oauthName?: string;
     env: string[];
     resolved: { apiKey?: string };
     source?: string;
@@ -760,6 +761,7 @@ async function extractAnthropicProvider(upstreamRoot: string): Promise<Anthropic
               };
             }): Promise<{ auth: { apiKey?: string }; source?: string } | undefined>;
           };
+          oauth?: { name: string };
         };
         getModels(): readonly { api: string }[];
       };
@@ -790,6 +792,7 @@ async function extractAnthropicProvider(upstreamRoot: string): Promise<Anthropic
       auth: {
         kind: "api_key",
         name: apiKeyAuth.name,
+        oauthName: provider.auth.oauth?.name,
         env,
         resolved: resolved.auth,
         source: resolved.source,
