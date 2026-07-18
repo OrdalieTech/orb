@@ -1,0 +1,1088 @@
+{
+  "schemaVersion": 2,
+  "tree": {
+    "before": {
+      "header": {
+        "type": "session",
+        "version": 3,
+        "id": "tree-source",
+        "timestamp": "session-time",
+        "cwd": "/fixture/project"
+      },
+      "leafId": "00000009",
+      "branchIds": [
+        "00000001",
+        "00000002",
+        "00000004",
+        "00000005",
+        "00000006",
+        "00000007",
+        "00000008",
+        "00000009"
+      ],
+      "entries": [
+        {
+          "type": "message",
+          "id": "00000001",
+          "parentId": null,
+          "timestamp": "entry-time-1",
+          "message": {
+            "role": "user",
+            "content": "root",
+            "timestamp": 1
+          }
+        },
+        {
+          "type": "message",
+          "id": "00000002",
+          "parentId": "00000001",
+          "timestamp": "entry-time-2",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-test",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 2
+          }
+        },
+        {
+          "type": "message",
+          "id": "00000003",
+          "parentId": "00000002",
+          "timestamp": "entry-time-3",
+          "message": {
+            "role": "user",
+            "content": "abandoned",
+            "timestamp": 3
+          }
+        },
+        {
+          "type": "message",
+          "id": "00000004",
+          "parentId": "00000002",
+          "timestamp": "entry-time-4",
+          "message": {
+            "role": "user",
+            "content": "alternate",
+            "timestamp": 4
+          }
+        },
+        {
+          "type": "label",
+          "id": "00000005",
+          "parentId": "00000004",
+          "timestamp": "label-time-1",
+          "targetId": "00000001",
+          "label": "root-first"
+        },
+        {
+          "type": "label",
+          "id": "00000006",
+          "parentId": "00000005",
+          "timestamp": "label-time-2",
+          "targetId": "00000004",
+          "label": "alternate-first"
+        },
+        {
+          "type": "label",
+          "id": "00000007",
+          "parentId": "00000006",
+          "timestamp": "label-time-3",
+          "targetId": "00000001"
+        },
+        {
+          "type": "label",
+          "id": "00000008",
+          "parentId": "00000007",
+          "timestamp": "label-time-4",
+          "targetId": "00000001",
+          "label": "root-readded"
+        },
+        {
+          "type": "label",
+          "id": "00000009",
+          "parentId": "00000008",
+          "timestamp": "label-time-5",
+          "targetId": "00000004",
+          "label": "alternate-updated"
+        }
+      ],
+      "tree": [
+        {
+          "entry": {
+            "type": "message",
+            "id": "00000001",
+            "parentId": null,
+            "timestamp": "entry-time-1",
+            "message": {
+              "role": "user",
+              "content": "root",
+              "timestamp": 1
+            }
+          },
+          "children": [
+            {
+              "entry": {
+                "type": "message",
+                "id": "00000002",
+                "parentId": "00000001",
+                "timestamp": "entry-time-2",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "answer"
+                    }
+                  ],
+                  "api": "openai-responses",
+                  "provider": "openai",
+                  "model": "gpt-test",
+                  "usage": {
+                    "input": 1,
+                    "output": 1,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "totalTokens": 2,
+                    "cost": {
+                      "input": 0,
+                      "output": 0,
+                      "cacheRead": 0,
+                      "cacheWrite": 0,
+                      "total": 0
+                    }
+                  },
+                  "stopReason": "stop",
+                  "timestamp": 2
+                }
+              },
+              "children": [
+                {
+                  "entry": {
+                    "type": "message",
+                    "id": "00000003",
+                    "parentId": "00000002",
+                    "timestamp": "entry-time-3",
+                    "message": {
+                      "role": "user",
+                      "content": "abandoned",
+                      "timestamp": 3
+                    }
+                  },
+                  "children": []
+                },
+                {
+                  "entry": {
+                    "type": "message",
+                    "id": "00000004",
+                    "parentId": "00000002",
+                    "timestamp": "entry-time-4",
+                    "message": {
+                      "role": "user",
+                      "content": "alternate",
+                      "timestamp": 4
+                    }
+                  },
+                  "children": [
+                    {
+                      "entry": {
+                        "type": "label",
+                        "id": "00000005",
+                        "parentId": "00000004",
+                        "timestamp": "label-time-1",
+                        "targetId": "00000001",
+                        "label": "root-first"
+                      },
+                      "children": [
+                        {
+                          "entry": {
+                            "type": "label",
+                            "id": "00000006",
+                            "parentId": "00000005",
+                            "timestamp": "label-time-2",
+                            "targetId": "00000004",
+                            "label": "alternate-first"
+                          },
+                          "children": [
+                            {
+                              "entry": {
+                                "type": "label",
+                                "id": "00000007",
+                                "parentId": "00000006",
+                                "timestamp": "label-time-3",
+                                "targetId": "00000001"
+                              },
+                              "children": [
+                                {
+                                  "entry": {
+                                    "type": "label",
+                                    "id": "00000008",
+                                    "parentId": "00000007",
+                                    "timestamp": "label-time-4",
+                                    "targetId": "00000001",
+                                    "label": "root-readded"
+                                  },
+                                  "children": [
+                                    {
+                                      "entry": {
+                                        "type": "label",
+                                        "id": "00000009",
+                                        "parentId": "00000008",
+                                        "timestamp": "label-time-5",
+                                        "targetId": "00000004",
+                                        "label": "alternate-updated"
+                                      },
+                                      "children": []
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ],
+                  "label": "alternate-updated",
+                  "labelTimestamp": "label-time-5"
+                }
+              ]
+            }
+          ],
+          "label": "root-readded",
+          "labelTimestamp": "label-time-4"
+        }
+      ]
+    },
+    "branched": {
+      "header": {
+        "type": "session",
+        "version": 3,
+        "id": "tree-branched",
+        "timestamp": "session-time",
+        "cwd": "/fixture/project"
+      },
+      "leafId": "00000005",
+      "branchIds": [
+        "00000001",
+        "00000002",
+        "00000003",
+        "00000004",
+        "00000005"
+      ],
+      "entries": [
+        {
+          "type": "message",
+          "id": "00000001",
+          "parentId": null,
+          "timestamp": "entry-time-1",
+          "message": {
+            "role": "user",
+            "content": "root",
+            "timestamp": 1
+          }
+        },
+        {
+          "type": "message",
+          "id": "00000002",
+          "parentId": "00000001",
+          "timestamp": "entry-time-2",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-test",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 2
+          }
+        },
+        {
+          "type": "message",
+          "id": "00000003",
+          "parentId": "00000002",
+          "timestamp": "entry-time-3",
+          "message": {
+            "role": "user",
+            "content": "alternate",
+            "timestamp": 4
+          }
+        },
+        {
+          "type": "label",
+          "id": "00000004",
+          "parentId": "00000003",
+          "timestamp": "label-time-5",
+          "targetId": "00000003",
+          "label": "alternate-updated"
+        },
+        {
+          "type": "label",
+          "id": "00000005",
+          "parentId": "00000004",
+          "timestamp": "label-time-4",
+          "targetId": "00000001",
+          "label": "root-readded"
+        }
+      ],
+      "tree": [
+        {
+          "entry": {
+            "type": "message",
+            "id": "00000001",
+            "parentId": null,
+            "timestamp": "entry-time-1",
+            "message": {
+              "role": "user",
+              "content": "root",
+              "timestamp": 1
+            }
+          },
+          "children": [
+            {
+              "entry": {
+                "type": "message",
+                "id": "00000002",
+                "parentId": "00000001",
+                "timestamp": "entry-time-2",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "answer"
+                    }
+                  ],
+                  "api": "openai-responses",
+                  "provider": "openai",
+                  "model": "gpt-test",
+                  "usage": {
+                    "input": 1,
+                    "output": 1,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "totalTokens": 2,
+                    "cost": {
+                      "input": 0,
+                      "output": 0,
+                      "cacheRead": 0,
+                      "cacheWrite": 0,
+                      "total": 0
+                    }
+                  },
+                  "stopReason": "stop",
+                  "timestamp": 2
+                }
+              },
+              "children": [
+                {
+                  "entry": {
+                    "type": "message",
+                    "id": "00000003",
+                    "parentId": "00000002",
+                    "timestamp": "entry-time-3",
+                    "message": {
+                      "role": "user",
+                      "content": "alternate",
+                      "timestamp": 4
+                    }
+                  },
+                  "children": [
+                    {
+                      "entry": {
+                        "type": "label",
+                        "id": "00000004",
+                        "parentId": "00000003",
+                        "timestamp": "label-time-5",
+                        "targetId": "00000003",
+                        "label": "alternate-updated"
+                      },
+                      "children": [
+                        {
+                          "entry": {
+                            "type": "label",
+                            "id": "00000005",
+                            "parentId": "00000004",
+                            "timestamp": "label-time-4",
+                            "targetId": "00000001",
+                            "label": "root-readded"
+                          },
+                          "children": []
+                        }
+                      ]
+                    }
+                  ],
+                  "label": "alternate-updated",
+                  "labelTimestamp": "label-time-5"
+                }
+              ]
+            }
+          ],
+          "label": "root-readded",
+          "labelTimestamp": "label-time-4"
+        }
+      ]
+    },
+    "persistence": {
+      "userOnly": {
+        "originalExists": false,
+        "branchExists": false,
+        "afterAssistantExists": true,
+        "headerCount": 1,
+        "entryTypes": [
+          "session",
+          "message",
+          "label",
+          "message"
+        ],
+        "parentChainValid": true
+      },
+      "assistantPresent": {
+        "originalExists": true,
+        "branchExists": true,
+        "afterAssistantExists": true,
+        "headerCount": 1,
+        "entryTypes": [
+          "session",
+          "message",
+          "message",
+          "label"
+        ],
+        "parentChainValid": true
+      }
+    }
+  },
+  "fork": {
+    "source": "{\"type\":\"session\",\"version\":3,\"id\":\"fork-source\",\"timestamp\":\"2025-01-01T00:00:00.000Z\",\"cwd\":\"/fixture/source\",\"futureHeader\":true}\n{\"10\":\"ten\",\"2\":\"two\",\"type\":\"message\",\"id\":\"source-user\",\"parentId\":null,\"timestamp\":\"2025-01-01T00:00:01.000Z\",\"message\":{\"role\":\"user\",\"content\":\"fork me\",\"timestamp\":1},\"futureEntry\":{\"3\":\"three\",\"1\":\"one\",\"z\":\"last\"}}\n{\"type\":\"message\",\"id\":\"source-assistant\",\"parentId\":\"source-user\",\"timestamp\":\"2025-01-01T00:00:02.000Z\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"forked\"}],\"api\":\"openai-responses\",\"provider\":\"openai\",\"model\":\"gpt-test\",\"usage\":{\"input\":1,\"output\":1,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":2,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":2},\"unknown\":\"kept\"}\n",
+    "expected": "{\"type\":\"session\",\"version\":3,\"id\":\"fork-session\",\"timestamp\":\"2025-01-01T00:00:00.000Z\",\"cwd\":\"/fixture/target\",\"parentSession\":\"/fixture/source.jsonl\"}\n{\"2\":\"two\",\"10\":\"ten\",\"type\":\"message\",\"id\":\"source-user\",\"parentId\":null,\"timestamp\":\"2025-01-01T00:00:01.000Z\",\"message\":{\"role\":\"user\",\"content\":\"fork me\",\"timestamp\":1},\"futureEntry\":{\"1\":\"one\",\"3\":\"three\",\"z\":\"last\"}}\n{\"type\":\"message\",\"id\":\"source-assistant\",\"parentId\":\"source-user\",\"timestamp\":\"2025-01-01T00:00:02.000Z\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"forked\"}],\"api\":\"openai-responses\",\"provider\":\"openai\",\"model\":\"gpt-test\",\"usage\":{\"input\":1,\"output\":1,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":2,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":2},\"unknown\":\"kept\"}\n",
+    "errors": {
+      "invalidID": {
+        "message": "Session id must be non-empty, contain only alphanumeric characters, '-', '_', and '.', and start and end with an alphanumeric character",
+        "code": null
+      },
+      "emptySource": {
+        "message": "Cannot fork: source session file is empty or invalid: <tmp>/empty.jsonl",
+        "code": null
+      },
+      "collision": {
+        "message": "EEXIST: file already exists, open '<tmp>/sessions/2025-01-02T03-04-05-006Z_fork-session.jsonl'",
+        "code": "EEXIST"
+      },
+      "collisionTolerance": "Node and Go format EEXIST syscall messages differently; compare error classification and target basename."
+    }
+  },
+  "list": {
+    "files": {
+      "a-rich.jsonl": "{\"type\":\"session\",\"version\":3,\"id\":\"rich\",\"timestamp\":\"2025-01-01T00:00:00.000Z\",\"cwd\":\"<tmp>/project-a\",\"parentSession\":\"<tmp>/parent.jsonl\"}\n{\"type\":\"session_info\",\"id\":\"info-1\",\"parentId\":null,\"timestamp\":\"2025-01-01T00:00:01.000Z\",\"name\":\"old\"}\n{\"type\":\"message\",\"id\":\"user\",\"parentId\":\"info-1\",\"timestamp\":\"2025-01-01T00:00:02.000Z\",\"message\":{\"role\":\"user\",\"content\":\"hello\",\"timestamp\":1735689602000}}\n{\"type\":\"message\",\"id\":\"tool\",\"parentId\":\"user\",\"timestamp\":\"2025-01-01T00:00:03.000Z\",\"message\":{\"role\":\"toolResult\",\"content\":[{\"type\":\"text\",\"text\":\"ignored search text\"}],\"timestamp\":1735689603000}}\n{\"type\":\"session_info\",\"id\":\"info-clear\",\"parentId\":\"tool\",\"timestamp\":\"2025-01-01T00:00:04.000Z\",\"name\":\"   \"}\n{\"type\":\"message\",\"id\":\"assistant\",\"parentId\":\"info-clear\",\"timestamp\":\"2025-01-01T00:00:05.000Z\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"answer\"},{\"type\":\"image\",\"data\":\"AA==\",\"mimeType\":\"image/png\"}],\"timestamp\":1735689612345}}\n{\"type\":\"session_info\",\"id\":\"info-final\",\"parentId\":\"assistant\",\"timestamp\":\"2025-01-01T00:00:06.000Z\",\"name\":\"  final  \"}\n",
+      "a-header.jsonl": "{\"type\":\"session\",\"version\":3,\"id\":\"header\",\"timestamp\":\"2025-02-01T00:00:00.000Z\",\"cwd\":\"<tmp>/project-a\"}\n",
+      "b-other.jsonl": "{\"type\":\"session\",\"version\":3,\"id\":\"other\",\"timestamp\":\"2025-03-01T00:00:00.000Z\",\"cwd\":\"<tmp>/project-b\"}\n{\"type\":\"message\",\"id\":\"other-user\",\"parentId\":null,\"timestamp\":\"2025-03-01T00:00:01.000Z\",\"message\":{\"role\":\"user\",\"content\":\"other project\",\"timestamp\":1740787201000}}\n",
+      "invalid-content.jsonl": "{\"type\":\"session\",\"version\":3,\"id\":\"invalid-content\",\"timestamp\":\"2025-04-01T00:00:00.000Z\",\"cwd\":\"<tmp>/project-a\"}\n{\"type\":\"message\",\"id\":\"bad\",\"parentId\":null,\"timestamp\":\"2025-04-01T00:00:01.000Z\",\"message\":{\"role\":\"user\",\"content\":null,\"timestamp\":1743465601000}}\n",
+      "malformed.jsonl": "{\"type\":\"message\",\"id\":\"no-header\"}\n"
+    },
+    "projectA": "<tmp>/project-a",
+    "current": [
+      {
+        "path": "a-header.jsonl",
+        "id": "header",
+        "cwd": "<tmp>/project-a",
+        "name": null,
+        "parentSessionPath": null,
+        "created": "2025-02-01T00:00:00.000Z",
+        "modified": "2025-02-01T00:00:00.000Z",
+        "messageCount": 0,
+        "firstMessage": "(no messages)",
+        "allMessagesText": ""
+      },
+      {
+        "path": "a-rich.jsonl",
+        "id": "rich",
+        "cwd": "<tmp>/project-a",
+        "name": "final",
+        "parentSessionPath": "<tmp>/parent.jsonl",
+        "created": "2025-01-01T00:00:00.000Z",
+        "modified": "2025-01-01T00:00:12.345Z",
+        "messageCount": 3,
+        "firstMessage": "hello",
+        "allMessagesText": "hello answer"
+      }
+    ],
+    "all": [
+      {
+        "path": "b-other.jsonl",
+        "id": "other",
+        "cwd": "<tmp>/project-b",
+        "name": null,
+        "parentSessionPath": null,
+        "created": "2025-03-01T00:00:00.000Z",
+        "modified": "2025-03-01T00:00:01.000Z",
+        "messageCount": 1,
+        "firstMessage": "other project",
+        "allMessagesText": "other project"
+      },
+      {
+        "path": "a-header.jsonl",
+        "id": "header",
+        "cwd": "<tmp>/project-a",
+        "name": null,
+        "parentSessionPath": null,
+        "created": "2025-02-01T00:00:00.000Z",
+        "modified": "2025-02-01T00:00:00.000Z",
+        "messageCount": 0,
+        "firstMessage": "(no messages)",
+        "allMessagesText": ""
+      },
+      {
+        "path": "a-rich.jsonl",
+        "id": "rich",
+        "cwd": "<tmp>/project-a",
+        "name": "final",
+        "parentSessionPath": "<tmp>/parent.jsonl",
+        "created": "2025-01-01T00:00:00.000Z",
+        "modified": "2025-01-01T00:00:12.345Z",
+        "messageCount": 3,
+        "firstMessage": "hello",
+        "allMessagesText": "hello answer"
+      }
+    ],
+    "currentProgress": [
+      {
+        "loaded": 1,
+        "total": 5
+      },
+      {
+        "loaded": 2,
+        "total": 5
+      },
+      {
+        "loaded": 3,
+        "total": 5
+      },
+      {
+        "loaded": 4,
+        "total": 5
+      },
+      {
+        "loaded": 5,
+        "total": 5
+      }
+    ],
+    "allProgress": [
+      {
+        "loaded": 1,
+        "total": 5
+      },
+      {
+        "loaded": 2,
+        "total": 5
+      },
+      {
+        "loaded": 3,
+        "total": 5
+      },
+      {
+        "loaded": 4,
+        "total": 5
+      },
+      {
+        "loaded": 5,
+        "total": 5
+      }
+    ],
+    "invalidContentRejected": true
+  },
+  "export": {
+    "input": "{\"type\":\"session\",\"version\":3,\"id\":\"export-source\",\"timestamp\":\"2025-01-01T00:00:00.000Z\",\"cwd\":\"/fixture/project\"}\n{\"type\":\"message\",\"id\":\"export-user\",\"parentId\":null,\"timestamp\":\"2025-01-01T00:00:01.000Z\",\"message\":{\"role\":\"user\",\"content\":\"<skill name=\\\"audit\\\" location=\\\"/tmp/SKILL.md\\\">\\n# Skill\\n\\nbody\\n</skill>\\n\\n<script>alert(\\\"xss-fixture\\\")</script>  spaced\",\"timestamp\":1}}\n{\"type\":\"message\",\"id\":\"export-assistant\",\"parentId\":\"export-user\",\"timestamp\":\"2025-01-01T00:00:02.000Z\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"[unsafe](java\\u0000script:alert(1))\"}],\"api\":\"openai-responses\",\"provider\":\"openai\",\"model\":\"gpt-test\",\"usage\":{\"input\":1,\"output\":1,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":2,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":2}}\n",
+    "sessionDataBase64": "eyJoZWFkZXIiOnsidHlwZSI6InNlc3Npb24iLCJ2ZXJzaW9uIjozLCJpZCI6ImV4cG9ydC1zb3VyY2UiLCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDAwOjAwOjAwLjAwMFoiLCJjd2QiOiIvZml4dHVyZS9wcm9qZWN0In0sImVudHJpZXMiOlt7InR5cGUiOiJtZXNzYWdlIiwiaWQiOiJleHBvcnQtdXNlciIsInBhcmVudElkIjpudWxsLCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDAwOjAwOjAxLjAwMFoiLCJtZXNzYWdlIjp7InJvbGUiOiJ1c2VyIiwiY29udGVudCI6Ijxza2lsbCBuYW1lPVwiYXVkaXRcIiBsb2NhdGlvbj1cIi90bXAvU0tJTEwubWRcIj5cbiMgU2tpbGxcblxuYm9keVxuPC9za2lsbD5cblxuPHNjcmlwdD5hbGVydChcInhzcy1maXh0dXJlXCIpPC9zY3JpcHQ+ICBzcGFjZWQiLCJ0aW1lc3RhbXAiOjF9fSx7InR5cGUiOiJtZXNzYWdlIiwiaWQiOiJleHBvcnQtYXNzaXN0YW50IiwicGFyZW50SWQiOiJleHBvcnQtdXNlciIsInRpbWVzdGFtcCI6IjIwMjUtMDEtMDFUMDA6MDA6MDIuMDAwWiIsIm1lc3NhZ2UiOnsicm9sZSI6ImFzc2lzdGFudCIsImNvbnRlbnQiOlt7InR5cGUiOiJ0ZXh0IiwidGV4dCI6Ilt1bnNhZmVdKGphdmFcdTAwMDBzY3JpcHQ6YWxlcnQoMSkpIn1dLCJhcGkiOiJvcGVuYWktcmVzcG9uc2VzIiwicHJvdmlkZXIiOiJvcGVuYWkiLCJtb2RlbCI6ImdwdC10ZXN0IiwidXNhZ2UiOnsiaW5wdXQiOjEsIm91dHB1dCI6MSwiY2FjaGVSZWFkIjowLCJjYWNoZVdyaXRlIjowLCJ0b3RhbFRva2VucyI6MiwiY29zdCI6eyJpbnB1dCI6MCwib3V0cHV0IjowLCJjYWNoZVJlYWQiOjAsImNhY2hlV3JpdGUiOjAsInRvdGFsIjowfX0sInN0b3BSZWFzb24iOiJzdG9wIiwidGltZXN0YW1wIjoyfX1dLCJsZWFmSWQiOiJleHBvcnQtYXNzaXN0YW50In0=",
+    "sessionDataJSON": "{\"header\":{\"type\":\"session\",\"version\":3,\"id\":\"export-source\",\"timestamp\":\"2025-01-01T00:00:00.000Z\",\"cwd\":\"/fixture/project\"},\"entries\":[{\"type\":\"message\",\"id\":\"export-user\",\"parentId\":null,\"timestamp\":\"2025-01-01T00:00:01.000Z\",\"message\":{\"role\":\"user\",\"content\":\"<skill name=\\\"audit\\\" location=\\\"/tmp/SKILL.md\\\">\\n# Skill\\n\\nbody\\n</skill>\\n\\n<script>alert(\\\"xss-fixture\\\")</script>  spaced\",\"timestamp\":1}},{\"type\":\"message\",\"id\":\"export-assistant\",\"parentId\":\"export-user\",\"timestamp\":\"2025-01-01T00:00:02.000Z\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"[unsafe](java\\u0000script:alert(1))\"}],\"api\":\"openai-responses\",\"provider\":\"openai\",\"model\":\"gpt-test\",\"usage\":{\"input\":1,\"output\":1,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":2,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":2}}],\"leafId\":\"export-assistant\"}",
+    "assetHashes": {
+      "templateHTML": "916782b1184a9597527605ad751e2b3af30fcea23ba2194002969cd217a06881",
+      "templateCSS": "28c16e3827c23a62eef8283cac316b478f946e023093adad25ff9c9b891d41af",
+      "templateJS": "1893cdb77587f592eef5717905391269886d6d7a4dc6a488417a73da374d9226",
+      "markedJS": "d5487edc7258b404bfa74c393d74a6393155f02517bd5e7e77cd64f8187f39a0",
+      "highlightJS": "837a6fa5b0c736b52bbde2b2b6190f305da3fc9ed41681db5321507057b5c846"
+    },
+    "htmlSha256": "e10764b40b625f70ab8560840632d52455d49b7b8194858a0bba7912dd423626",
+    "htmlBytes": 269062,
+    "placeholderCounts": {
+      "CSS": 0,
+      "JS": 0,
+      "SESSION_DATA": 0,
+      "MARKED_JS": 0,
+      "HIGHLIGHT_JS": 1,
+      "THEME_VARS": 0,
+      "BODY_BG": 0,
+      "CONTAINER_BG": 0,
+      "INFO_BG": 0
+    },
+    "selfContained": true,
+    "rawPayloadExposed": false,
+    "securityMarkers": {
+      "sanitizeMarkdownUrl(token.href)": true,
+      "escapeHtml(href)": true,
+      "replace(/[\\x00-\\x1f\\x7f]/g, '')": true,
+      "parseSkillBlock": true,
+      "safeMarkedParse(skillBlock.content)": true,
+      "escapeHtml(img.mimeType": true,
+      "escapeHtml(img.data || '')": true,
+      "escapeHtml(entry.id)": true
+    },
+    "whitespaceMarkers": {
+      "outputLinePreWrap": true,
+      "ansiLinePre": true,
+      "containerDoesNotPreWrap": true
+    },
+    "themeMarkers": {
+      "variablesResolved": true,
+      "bodyBackgroundResolved": true,
+      "exportPageBackgroundPresent": true
+    },
+    "domProjection": [
+      {
+        "closing": false,
+        "name": "html",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "head",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "meta",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "meta",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "title",
+        "attrs": {}
+      },
+      {
+        "closing": true,
+        "name": "title",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "style",
+        "attrs": {}
+      },
+      {
+        "closing": true,
+        "name": "style",
+        "attrs": {}
+      },
+      {
+        "closing": true,
+        "name": "head",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "body",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "button",
+        "attrs": {
+          "id": "hamburger"
+        }
+      },
+      {
+        "closing": false,
+        "name": "svg",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "circle",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "circle",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "circle",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "rect",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "path",
+        "attrs": {}
+      },
+      {
+        "closing": true,
+        "name": "svg",
+        "attrs": {}
+      },
+      {
+        "closing": true,
+        "name": "button",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "div",
+        "attrs": {
+          "id": "sidebar-overlay"
+        }
+      },
+      {
+        "closing": true,
+        "name": "div",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "div",
+        "attrs": {
+          "id": "app"
+        }
+      },
+      {
+        "closing": false,
+        "name": "aside",
+        "attrs": {
+          "id": "sidebar"
+        }
+      },
+      {
+        "closing": false,
+        "name": "div",
+        "attrs": {
+          "class": "sidebar-header"
+        }
+      },
+      {
+        "closing": false,
+        "name": "div",
+        "attrs": {
+          "class": "sidebar-controls"
+        }
+      },
+      {
+        "closing": false,
+        "name": "input",
+        "attrs": {
+          "type": "text",
+          "class": "sidebar-search",
+          "id": "tree-search"
+        }
+      },
+      {
+        "closing": true,
+        "name": "div",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "div",
+        "attrs": {
+          "class": "sidebar-filters"
+        }
+      },
+      {
+        "closing": false,
+        "name": "button",
+        "attrs": {
+          "class": "filter-btn active"
+        }
+      },
+      {
+        "closing": true,
+        "name": "button",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "button",
+        "attrs": {
+          "class": "filter-btn"
+        }
+      },
+      {
+        "closing": true,
+        "name": "button",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "button",
+        "attrs": {
+          "class": "filter-btn"
+        }
+      },
+      {
+        "closing": true,
+        "name": "button",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "button",
+        "attrs": {
+          "class": "filter-btn"
+        }
+      },
+      {
+        "closing": true,
+        "name": "button",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "button",
+        "attrs": {
+          "class": "filter-btn"
+        }
+      },
+      {
+        "closing": true,
+        "name": "button",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "button",
+        "attrs": {
+          "class": "sidebar-close",
+          "id": "sidebar-close"
+        }
+      },
+      {
+        "closing": true,
+        "name": "button",
+        "attrs": {}
+      },
+      {
+        "closing": true,
+        "name": "div",
+        "attrs": {}
+      },
+      {
+        "closing": true,
+        "name": "div",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "div",
+        "attrs": {
+          "class": "tree-container",
+          "id": "tree-container"
+        }
+      },
+      {
+        "closing": true,
+        "name": "div",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "div",
+        "attrs": {
+          "class": "tree-status",
+          "id": "tree-status"
+        }
+      },
+      {
+        "closing": true,
+        "name": "div",
+        "attrs": {}
+      },
+      {
+        "closing": true,
+        "name": "aside",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "div",
+        "attrs": {
+          "id": "sidebar-resizer",
+          "role": "separator",
+          "aria-orientation": "vertical",
+          "aria-label": "Resize session tree sidebar"
+        }
+      },
+      {
+        "closing": true,
+        "name": "div",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "main",
+        "attrs": {
+          "id": "content"
+        }
+      },
+      {
+        "closing": false,
+        "name": "div",
+        "attrs": {
+          "id": "header-container"
+        }
+      },
+      {
+        "closing": true,
+        "name": "div",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "div",
+        "attrs": {
+          "id": "messages"
+        }
+      },
+      {
+        "closing": true,
+        "name": "div",
+        "attrs": {}
+      },
+      {
+        "closing": true,
+        "name": "main",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "div",
+        "attrs": {
+          "id": "image-modal",
+          "class": "image-modal"
+        }
+      },
+      {
+        "closing": false,
+        "name": "img",
+        "attrs": {
+          "id": "modal-image"
+        }
+      },
+      {
+        "closing": true,
+        "name": "div",
+        "attrs": {}
+      },
+      {
+        "closing": true,
+        "name": "div",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "script",
+        "attrs": {
+          "id": "session-data",
+          "type": "application/json"
+        }
+      },
+      {
+        "closing": true,
+        "name": "script",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "script",
+        "attrs": {}
+      },
+      {
+        "closing": true,
+        "name": "script",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "script",
+        "attrs": {}
+      },
+      {
+        "closing": true,
+        "name": "script",
+        "attrs": {}
+      },
+      {
+        "closing": false,
+        "name": "script",
+        "attrs": {}
+      },
+      {
+        "closing": true,
+        "name": "script",
+        "attrs": {}
+      },
+      {
+        "closing": true,
+        "name": "body",
+        "attrs": {}
+      },
+      {
+        "closing": true,
+        "name": "html",
+        "attrs": {}
+      }
+    ],
+    "domTolerances": [
+      "Script and style bodies are compared separately by exact asset and full-document SHA-256 hashes.",
+      "The DOM projection ignores attribute order, non-selected attributes, and whitespace between tags.",
+      "Browser execution and computed style layout are outside fixture scope."
+    ]
+  }
+}

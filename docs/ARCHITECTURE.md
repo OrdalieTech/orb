@@ -261,7 +261,7 @@ Fixture families (each = extraction script in `conformance/extract/`, goldens in
 | F3 | agent-loop event traces | scripted faux-provider runs → identical AgentEvent JSONL |
 | F4 | edit fuzzy matching | upstream edit/edit-diff cases pass verbatim |
 | F5 | truncation | 50KB/2000-line head/tail rules |
-| F6 | session format | v1/v2/v3 parse, migrate, write; cross-read both directions |
+| F6 | session format | v1/v2/v3 parse, migrate, write; cross-read both directions; tree/fork/list/export goldens |
 | F7 | RPC transcripts | request/response conversations against the real binary |
 | F8 | slash/template expansion | arg expansion + resolution order |
 | F9 | system-prompt assembly | context files, SYSTEM/APPEND_SYSTEM, skills disclosure |

@@ -63,6 +63,27 @@ func TestParseArgsModelCatalogFlags(t *testing.T) {
 	}
 }
 
+func TestParseArgsSessionTreeAndExportFlags(t *testing.T) {
+	args := ParseArgs([]string{
+		"--resume", "--session", "abc123", "--session-id", "exact-id", "--fork", "source",
+		"--name", "named", "--export", "input.jsonl", "output.html",
+	})
+	if !args.Resume || args.Session == nil || *args.Session != "abc123" || args.SessionID == nil || *args.SessionID != "exact-id" {
+		t.Fatalf("session selection flags = %#v", args)
+	}
+	if args.Fork == nil || *args.Fork != "source" || args.Name == nil || *args.Name != "named" {
+		t.Fatalf("fork/name flags = %#v", args)
+	}
+	if args.Export == nil || *args.Export != "input.jsonl" || !reflect.DeepEqual(args.Messages, []string{"output.html"}) {
+		t.Fatalf("export flags = %#v", args)
+	}
+
+	missingName := ParseArgs([]string{"--name"})
+	if len(missingName.Diagnostics) != 1 || missingName.Diagnostics[0] != (CLIDiagnostic{Type: "error", Message: "--name requires a value"}) {
+		t.Fatalf("missing name diagnostics = %#v", missingName.Diagnostics)
+	}
+}
+
 func TestParseArgsPrintConsumesOnlyEligibleNextArgument(t *testing.T) {
 	tests := []struct {
 		name     string
