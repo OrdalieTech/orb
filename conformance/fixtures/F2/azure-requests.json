@@ -1,0 +1,268 @@
+{
+  "cases": [
+    {
+      "name": "azure-env-config-deployment-reasoning",
+      "api": "azure-openai-responses",
+      "model": {
+        "id": "gpt-fixture-azure",
+        "name": "Azure Fixture",
+        "api": "azure-openai-responses",
+        "provider": "azure-openai-responses",
+        "baseUrl": "https://model-resource.openai.azure.com",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "xhigh"
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1000000,
+          "output": 2000000,
+          "cacheRead": 3000000,
+          "cacheWrite": 4000000
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "headers": {
+          "x-model-header": "azure"
+        }
+      },
+      "context": {
+        "systemPrompt": "Use the Azure deployment.",
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "prior plan",
+                "thinkingSignature": "{\"type\":\"reasoning\",\"id\":\"rs_prior\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"prior plan\"}],\"encrypted_content\":\"encrypted-prior\"}"
+              },
+              {
+                "type": "toolCall",
+                "id": "call_azure|fc_azure",
+                "name": "echo",
+                "arguments": {
+                  "text": "azure"
+                }
+              }
+            ],
+            "api": "azure-openai-responses",
+            "provider": "azure-openai-responses",
+            "model": "gpt-fixture-azure",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call_azure|fc_azure",
+            "toolName": "echo",
+            "content": [
+              {
+                "type": "text",
+                "text": "done"
+              }
+            ],
+            "isError": false,
+            "timestamp": 1700000000122
+          },
+          {
+            "role": "user",
+            "content": "continue",
+            "timestamp": 1700000000123
+          }
+        ],
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo structured text",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "metadata": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "temperature": 0,
+        "maxTokens": 7,
+        "sessionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-tail",
+        "reasoningEffort": "high",
+        "reasoningSummary": "detailed",
+        "env": {
+          "AZURE_OPENAI_BASE_URL": "https://fixture-resource.cognitiveservices.azure.com/openai",
+          "AZURE_OPENAI_API_VERSION": "2025-04-01-preview",
+          "AZURE_OPENAI_DEPLOYMENT_NAME_MAP": "other=unused, gpt-fixture-azure=fixture-deployment"
+        },
+        "headers": {
+          "x-fixture": "azure-env"
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://fixture-resource.cognitiveservices.azure.com/openai/v1/responses?api-version=2025-04-01-preview",
+        "headers": {
+          "accept": "application/json",
+          "api-key": "fixture-key",
+          "content-type": "application/json",
+          "x-fixture": "azure-env",
+          "x-model-header": "azure"
+        },
+        "body": "{\"model\":\"fixture-deployment\",\"input\":[{\"role\":\"developer\",\"content\":\"Use the Azure deployment.\"},{\"type\":\"reasoning\",\"id\":\"rs_prior\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"prior plan\"}],\"encrypted_content\":\"encrypted-prior\"},{\"type\":\"function_call\",\"id\":\"fc_azure\",\"call_id\":\"call_azure\",\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"azure\\\"}\"},{\"type\":\"function_call_output\",\"call_id\":\"call_azure\",\"output\":\"done\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"continue\"}]}],\"stream\":true,\"prompt_cache_key\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"store\":false,\"max_output_tokens\":16,\"temperature\":0,\"tools\":[{\"type\":\"function\",\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false},\"strict\":false}],\"reasoning\":{\"effort\":\"xhigh\",\"summary\":\"detailed\"},\"include\":[\"reasoning.encrypted_content\"]}"
+      }
+    },
+    {
+      "name": "azure-explicit-proxy-off-reasoning",
+      "api": "azure-openai-responses",
+      "model": {
+        "id": "gpt-fixture-azure",
+        "name": "Azure Fixture",
+        "api": "azure-openai-responses",
+        "provider": "azure-openai-responses",
+        "baseUrl": "https://model-resource.openai.azure.com",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "xhigh"
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1000000,
+          "output": 2000000,
+          "cacheRead": 3000000,
+          "cacheWrite": 4000000
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "headers": {
+          "x-model-header": "azure"
+        }
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "hello",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "azureBaseUrl": "https://azure-proxy.fixture.invalid/custom/v1",
+        "azureApiVersion": "v1",
+        "azureDeploymentName": "explicit-deployment",
+        "cacheRetention": "none"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://azure-proxy.fixture.invalid/custom/v1/responses?api-version=v1",
+        "headers": {
+          "accept": "application/json",
+          "api-key": "fixture-key",
+          "content-type": "application/json",
+          "x-model-header": "azure"
+        },
+        "body": "{\"model\":\"explicit-deployment\",\"input\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hello\"}]}],\"stream\":true,\"store\":false,\"reasoning\":{\"effort\":\"none\"}}"
+      }
+    },
+    {
+      "name": "azure-explicit-proxy-query-replacement",
+      "api": "azure-openai-responses",
+      "model": {
+        "id": "gpt-fixture-azure",
+        "name": "Azure Fixture",
+        "api": "azure-openai-responses",
+        "provider": "azure-openai-responses",
+        "baseUrl": "https://model-resource.openai.azure.com",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "xhigh"
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1000000,
+          "output": 2000000,
+          "cacheRead": 3000000,
+          "cacheWrite": 4000000
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "headers": {
+          "x-model-header": "azure"
+        }
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "query",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "azureBaseUrl": "https://azure-proxy.fixture.invalid/custom/v1?custom=true",
+        "azureApiVersion": "v1",
+        "cacheRetention": "none"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://azure-proxy.fixture.invalid/custom/v1?api-version=v1",
+        "headers": {
+          "accept": "application/json",
+          "api-key": "fixture-key",
+          "content-type": "application/json",
+          "x-model-header": "azure"
+        },
+        "body": "{\"model\":\"gpt-fixture-azure\",\"input\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"query\"}]}],\"stream\":true,\"store\":false,\"reasoning\":{\"effort\":\"none\"}}"
+      }
+    }
+  ]
+}

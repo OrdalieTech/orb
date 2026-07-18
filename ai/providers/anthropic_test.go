@@ -52,7 +52,12 @@ func TestAnthropicProvider(t *testing.T) {
 		t.Fatal("Anthropic returned mutable auth-method storage")
 	}
 	registered := providers.List()
-	if len(registered) != 4 || registered[1].ID != fixture.ID || registered[2].ID != "google" || registered[3].ID != "google-vertex" {
-		t.Fatalf("registered providers = %#v, want OpenAI, Anthropic, Google, then Vertex", registered)
+	wantIDs := []ai.ProviderID{"openai", fixture.ID, "google", "google-vertex", "mistral", "azure-openai-responses"}
+	gotIDs := make([]ai.ProviderID, len(registered))
+	for index := range registered {
+		gotIDs[index] = registered[index].ID
+	}
+	if !slices.Equal(gotIDs, wantIDs) {
+		t.Fatalf("registered provider IDs = %v, want %v", gotIDs, wantIDs)
 	}
 }

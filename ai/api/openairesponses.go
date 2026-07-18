@@ -18,9 +18,10 @@ import (
 const openAIResponsesMinOutputTokens float64 = 16
 
 var openAIResponsesToolCallProviders = map[ai.ProviderID]struct{}{
-	"openai":       {},
-	"openai-codex": {},
-	"opencode":     {},
+	"openai":                 {},
+	"openai-codex":           {},
+	"opencode":               {},
+	"azure-openai-responses": {},
 }
 
 type OpenAIResponsesOptions struct {

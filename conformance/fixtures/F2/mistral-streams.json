@@ -1,0 +1,881 @@
+{
+  "cases": [
+    {
+      "name": "mistral-thinking-text-tool-cache-usage",
+      "api": "mistral-conversations",
+      "model": {
+        "id": "mistral-fixture",
+        "name": "Mistral Fixture",
+        "api": "mistral-conversations",
+        "provider": "mistral",
+        "baseUrl": "https://mistral.fixture.invalid",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "medium": "high"
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1000000,
+          "output": 2000000,
+          "cacheRead": 3000000,
+          "cacheWrite": 4000000
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "headers": {
+          "x-model-header": "mistral"
+        }
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "stream",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "cacheRetention": "none"
+      },
+      "sse": "data: {\"id\":\"mistral-stream-fixture\",\"model\":\"mistral-fixture\",\"choices\":[{\"index\":0,\"delta\":{\"content\":[{\"type\":\"thinking\",\"thinking\":[{\"type\":\"text\",\"text\":\"plan\"}]}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"mistral-stream-fixture\",\"model\":\"mistral-fixture\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello \"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"mistral-stream-fixture\",\"model\":\"mistral-fixture\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"id\":\"tool12345\",\"type\":\"function\",\"index\":0,\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"hello\\\",\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"mistral-stream-fixture\",\"model\":\"mistral-fixture\",\"choices\":[{\"index\":0,\"delta\":{\"content\":[{\"type\":\"text\",\"text\":\"world\"}],\"tool_calls\":[{\"id\":\"tool12345\",\"type\":\"function\",\"index\":0,\"function\":{\"name\":\"echo\",\"arguments\":\"\\\"metadata\\\":{\\\"count\\\":2}}\"}}]},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":7,\"total_tokens\":27,\"prompt_tokens_details\":{\"cached_tokens\":2}}}\n\ndata: [DONE]\n\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "mistral-conversations",
+            "provider": "mistral",
+            "model": "mistral-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "thinking_start",
+          "contentIndex": 0,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan"
+              }
+            ],
+            "api": "mistral-conversations",
+            "provider": "mistral",
+            "model": "mistral-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "mistral-stream-fixture"
+          }
+        },
+        {
+          "type": "thinking_delta",
+          "contentIndex": 0,
+          "delta": "plan",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan"
+              }
+            ],
+            "api": "mistral-conversations",
+            "provider": "mistral",
+            "model": "mistral-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "mistral-stream-fixture"
+          }
+        },
+        {
+          "type": "thinking_end",
+          "contentIndex": 0,
+          "content": "plan",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan"
+              },
+              {
+                "type": "text",
+                "text": "hello "
+              }
+            ],
+            "api": "mistral-conversations",
+            "provider": "mistral",
+            "model": "mistral-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "mistral-stream-fixture"
+          }
+        },
+        {
+          "type": "text_start",
+          "contentIndex": 1,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan"
+              },
+              {
+                "type": "text",
+                "text": "hello "
+              }
+            ],
+            "api": "mistral-conversations",
+            "provider": "mistral",
+            "model": "mistral-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "mistral-stream-fixture"
+          }
+        },
+        {
+          "type": "text_delta",
+          "contentIndex": 1,
+          "delta": "hello ",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan"
+              },
+              {
+                "type": "text",
+                "text": "hello "
+              }
+            ],
+            "api": "mistral-conversations",
+            "provider": "mistral",
+            "model": "mistral-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "mistral-stream-fixture"
+          }
+        },
+        {
+          "type": "text_end",
+          "contentIndex": 1,
+          "content": "hello ",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan"
+              },
+              {
+                "type": "text",
+                "text": "hello "
+              },
+              {
+                "type": "toolCall",
+                "id": "tool12345",
+                "name": "echo",
+                "arguments": {
+                  "text": "hello"
+                },
+                "partialArgs": "{\"text\":\"hello\","
+              }
+            ],
+            "api": "mistral-conversations",
+            "provider": "mistral",
+            "model": "mistral-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "mistral-stream-fixture"
+          }
+        },
+        {
+          "type": "toolcall_start",
+          "contentIndex": 2,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan"
+              },
+              {
+                "type": "text",
+                "text": "hello "
+              },
+              {
+                "type": "toolCall",
+                "id": "tool12345",
+                "name": "echo",
+                "arguments": {
+                  "text": "hello"
+                },
+                "partialArgs": "{\"text\":\"hello\","
+              }
+            ],
+            "api": "mistral-conversations",
+            "provider": "mistral",
+            "model": "mistral-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "mistral-stream-fixture"
+          }
+        },
+        {
+          "type": "toolcall_delta",
+          "contentIndex": 2,
+          "delta": "{\"text\":\"hello\",",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan"
+              },
+              {
+                "type": "text",
+                "text": "hello "
+              },
+              {
+                "type": "toolCall",
+                "id": "tool12345",
+                "name": "echo",
+                "arguments": {
+                  "text": "hello"
+                },
+                "partialArgs": "{\"text\":\"hello\","
+              }
+            ],
+            "api": "mistral-conversations",
+            "provider": "mistral",
+            "model": "mistral-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "mistral-stream-fixture"
+          }
+        },
+        {
+          "type": "text_start",
+          "contentIndex": 3,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan"
+              },
+              {
+                "type": "text",
+                "text": "hello "
+              },
+              {
+                "type": "toolCall",
+                "id": "tool12345",
+                "name": "echo",
+                "arguments": {
+                  "text": "hello",
+                  "metadata": {
+                    "count": 2
+                  }
+                },
+                "partialArgs": "{\"text\":\"hello\",\"metadata\":{\"count\":2}}"
+              },
+              {
+                "type": "text",
+                "text": "world"
+              }
+            ],
+            "api": "mistral-conversations",
+            "provider": "mistral",
+            "model": "mistral-fixture",
+            "usage": {
+              "input": 18,
+              "output": 7,
+              "cacheRead": 2,
+              "cacheWrite": 0,
+              "totalTokens": 27,
+              "cost": {
+                "input": 18,
+                "output": 14,
+                "cacheRead": 6,
+                "cacheWrite": 0,
+                "total": 38
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "mistral-stream-fixture"
+          }
+        },
+        {
+          "type": "text_delta",
+          "contentIndex": 3,
+          "delta": "world",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan"
+              },
+              {
+                "type": "text",
+                "text": "hello "
+              },
+              {
+                "type": "toolCall",
+                "id": "tool12345",
+                "name": "echo",
+                "arguments": {
+                  "text": "hello",
+                  "metadata": {
+                    "count": 2
+                  }
+                },
+                "partialArgs": "{\"text\":\"hello\",\"metadata\":{\"count\":2}}"
+              },
+              {
+                "type": "text",
+                "text": "world"
+              }
+            ],
+            "api": "mistral-conversations",
+            "provider": "mistral",
+            "model": "mistral-fixture",
+            "usage": {
+              "input": 18,
+              "output": 7,
+              "cacheRead": 2,
+              "cacheWrite": 0,
+              "totalTokens": 27,
+              "cost": {
+                "input": 18,
+                "output": 14,
+                "cacheRead": 6,
+                "cacheWrite": 0,
+                "total": 38
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "mistral-stream-fixture"
+          }
+        },
+        {
+          "type": "text_end",
+          "contentIndex": 3,
+          "content": "world",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan"
+              },
+              {
+                "type": "text",
+                "text": "hello "
+              },
+              {
+                "type": "toolCall",
+                "id": "tool12345",
+                "name": "echo",
+                "arguments": {
+                  "text": "hello",
+                  "metadata": {
+                    "count": 2
+                  }
+                },
+                "partialArgs": "{\"text\":\"hello\",\"metadata\":{\"count\":2}}"
+              },
+              {
+                "type": "text",
+                "text": "world"
+              }
+            ],
+            "api": "mistral-conversations",
+            "provider": "mistral",
+            "model": "mistral-fixture",
+            "usage": {
+              "input": 18,
+              "output": 7,
+              "cacheRead": 2,
+              "cacheWrite": 0,
+              "totalTokens": 27,
+              "cost": {
+                "input": 18,
+                "output": 14,
+                "cacheRead": 6,
+                "cacheWrite": 0,
+                "total": 38
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "mistral-stream-fixture"
+          }
+        },
+        {
+          "type": "toolcall_delta",
+          "contentIndex": 2,
+          "delta": "\"metadata\":{\"count\":2}}",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan"
+              },
+              {
+                "type": "text",
+                "text": "hello "
+              },
+              {
+                "type": "toolCall",
+                "id": "tool12345",
+                "name": "echo",
+                "arguments": {
+                  "text": "hello",
+                  "metadata": {
+                    "count": 2
+                  }
+                },
+                "partialArgs": "{\"text\":\"hello\",\"metadata\":{\"count\":2}}"
+              },
+              {
+                "type": "text",
+                "text": "world"
+              }
+            ],
+            "api": "mistral-conversations",
+            "provider": "mistral",
+            "model": "mistral-fixture",
+            "usage": {
+              "input": 18,
+              "output": 7,
+              "cacheRead": 2,
+              "cacheWrite": 0,
+              "totalTokens": 27,
+              "cost": {
+                "input": 18,
+                "output": 14,
+                "cacheRead": 6,
+                "cacheWrite": 0,
+                "total": 38
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "mistral-stream-fixture"
+          }
+        },
+        {
+          "type": "toolcall_end",
+          "contentIndex": 2,
+          "toolCall": {
+            "type": "toolCall",
+            "id": "tool12345",
+            "name": "echo",
+            "arguments": {
+              "text": "hello",
+              "metadata": {
+                "count": 2
+              }
+            }
+          },
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan"
+              },
+              {
+                "type": "text",
+                "text": "hello "
+              },
+              {
+                "type": "toolCall",
+                "id": "tool12345",
+                "name": "echo",
+                "arguments": {
+                  "text": "hello",
+                  "metadata": {
+                    "count": 2
+                  }
+                }
+              },
+              {
+                "type": "text",
+                "text": "world"
+              }
+            ],
+            "api": "mistral-conversations",
+            "provider": "mistral",
+            "model": "mistral-fixture",
+            "usage": {
+              "input": 18,
+              "output": 7,
+              "cacheRead": 2,
+              "cacheWrite": 0,
+              "totalTokens": 27,
+              "cost": {
+                "input": 18,
+                "output": 14,
+                "cacheRead": 6,
+                "cacheWrite": 0,
+                "total": 38
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "mistral-stream-fixture"
+          }
+        },
+        {
+          "type": "done",
+          "reason": "toolUse",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan"
+              },
+              {
+                "type": "text",
+                "text": "hello "
+              },
+              {
+                "type": "toolCall",
+                "id": "tool12345",
+                "name": "echo",
+                "arguments": {
+                  "text": "hello",
+                  "metadata": {
+                    "count": 2
+                  }
+                }
+              },
+              {
+                "type": "text",
+                "text": "world"
+              }
+            ],
+            "api": "mistral-conversations",
+            "provider": "mistral",
+            "model": "mistral-fixture",
+            "usage": {
+              "input": 18,
+              "output": 7,
+              "cacheRead": 2,
+              "cacheWrite": 0,
+              "totalTokens": 27,
+              "cost": {
+                "input": 18,
+                "output": 14,
+                "cacheRead": 6,
+                "cacheWrite": 0,
+                "total": 38
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000123,
+            "responseId": "mistral-stream-fixture"
+          }
+        }
+      ]
+    },
+    {
+      "name": "mistral-http-403-body",
+      "api": "mistral-conversations",
+      "model": {
+        "id": "mistral-fixture",
+        "name": "Mistral Fixture",
+        "api": "mistral-conversations",
+        "provider": "mistral",
+        "baseUrl": "https://mistral.fixture.invalid",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "medium": "high"
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1000000,
+          "output": 2000000,
+          "cacheRead": 3000000,
+          "cacheWrite": 4000000
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "headers": {
+          "x-model-header": "mistral"
+        }
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "reject",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "cacheRetention": "none"
+      },
+      "httpStatus": 403,
+      "httpBody": "denied",
+      "httpContentType": "text/plain",
+      "expectedEvents": [
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "mistral-conversations",
+            "provider": "mistral",
+            "model": "mistral-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "errorMessage": "Mistral API error (403): denied"
+          }
+        }
+      ]
+    },
+    {
+      "name": "mistral-http-403-empty-body",
+      "api": "mistral-conversations",
+      "model": {
+        "id": "mistral-fixture",
+        "name": "Mistral Fixture",
+        "api": "mistral-conversations",
+        "provider": "mistral",
+        "baseUrl": "https://mistral.fixture.invalid",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "medium": "high"
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1000000,
+          "output": 2000000,
+          "cacheRead": 3000000,
+          "cacheWrite": 4000000
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "headers": {
+          "x-model-header": "mistral"
+        }
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "reject empty",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "cacheRetention": "none"
+      },
+      "httpStatus": 403,
+      "httpBody": "",
+      "httpContentType": "text/plain",
+      "expectedEvents": [
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "mistral-conversations",
+            "provider": "mistral",
+            "model": "mistral-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "errorMessage": "Mistral API error (403): API error occurred: Status 403 Content-Type text/plain. Body: \"\""
+          }
+        }
+      ]
+    }
+  ]
+}
