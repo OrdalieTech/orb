@@ -48,3 +48,19 @@ prompt trees through both upstream resource layers, records argument substitutio
 formatting, and drives the real pinned `AgentSession` to prove extension-command, input-hook,
 skill-command, and template resolution order. F9 also carries an upstream-generated progressive
 disclosure block, including XML escaping and hidden-skill exclusion.
+
+WP-360 adds the `WP360` family for pi packages and project trust. Its extractor drives the pinned
+`parseGitUrl` over the full URL-form battery (including the hosted-git-info quirks: the eaten
+`git:` prefix on `git://` URLs, WHATWG slash collapsing, `user/repo` github shorthand, and
+`/tree/<ref>` committish extraction), the real `DefaultPackageManager.resolve()` over declarative
+fixture trees (manifest globs and overrides, convention directories, package filters with
+`!`/`+`/`-` patterns, `autoload:false` deltas, global/project dedupe, top-level settings entries,
+trusted and untrusted auto-discovery with `.agents/skills` ancestors, installed npm/git package
+layouts, offline skip, and symlink dedupe), `addSourceToSettings`/`removeSourceFromSettings`
+persistence (identity matching across SSH/HTTPS forms, scope-relative local paths, ref replacement
+preserving filters), and the trust manager (`getProjectTrustOptions` labels and updates, store
+inheritance with null deletion, the exact sorted `trust.json` bytes, and
+`hasTrustRequiringProjectResources` layouts). HOME is pinned inside each case root and paths are
+canonicalized to `<fixture>` so the goldens stay machine-independent; the Go runner materializes
+the same trees and compares normalized JSON. It uses upstream's `glob@13.0.6`, `ignore@7.0.5`,
+`minimatch@10.2.5`, `semver@7.8.0`, `hosted-git-info@9.0.3`, and `proper-lockfile@4.1.2`.

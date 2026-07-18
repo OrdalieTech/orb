@@ -1,0 +1,1635 @@
+{
+  "schemaVersion": 1,
+  "gitUrlCases": [
+    {
+      "input": "https://github.com/user/repo",
+      "expected": {
+        "repo": "https://github.com/user/repo",
+        "host": "github.com",
+        "path": "user/repo",
+        "pinned": false
+      }
+    },
+    {
+      "input": "https://github.com/user/repo.git",
+      "expected": {
+        "repo": "https://github.com/user/repo.git",
+        "host": "github.com",
+        "path": "user/repo",
+        "pinned": false
+      }
+    },
+    {
+      "input": "https://github.com/user/repo@v2.0",
+      "expected": {
+        "repo": "https://github.com/user/repo",
+        "host": "github.com",
+        "path": "user/repo",
+        "ref": "v2.0",
+        "pinned": true
+      }
+    },
+    {
+      "input": "http://github.com/user/repo",
+      "expected": {
+        "repo": "http://github.com/user/repo",
+        "host": "github.com",
+        "path": "user/repo",
+        "pinned": false
+      }
+    },
+    {
+      "input": "git://github.com/user/repo",
+      "expected": {
+        "repo": "https:////github.com/user/repo",
+        "host": "github.com",
+        "path": "user/repo",
+        "pinned": false
+      }
+    },
+    {
+      "input": "https://www.github.com/user/repo",
+      "expected": {
+        "repo": "https://www.github.com/user/repo",
+        "host": "github.com",
+        "path": "user/repo",
+        "pinned": false
+      }
+    },
+    {
+      "input": "https://github.com/user",
+      "expected": null
+    },
+    {
+      "input": "https://github.com/user/repo/tree/v1",
+      "expected": {
+        "repo": "https://github.com/user/repo/tree/v1",
+        "host": "github.com",
+        "path": "user/repo",
+        "ref": "v1",
+        "pinned": true
+      }
+    },
+    {
+      "input": "https://github.com/user/repo#v1",
+      "expected": {
+        "repo": "https://github.com/user/repo#v1",
+        "host": "github.com",
+        "path": "user/repo",
+        "ref": "v1",
+        "pinned": true
+      }
+    },
+    {
+      "input": "git:github.com/user/repo",
+      "expected": {
+        "repo": "https://github.com/user/repo",
+        "host": "github.com",
+        "path": "user/repo",
+        "pinned": false
+      }
+    },
+    {
+      "input": "git:github.com/user/repo@v1",
+      "expected": {
+        "repo": "https://github.com/user/repo",
+        "host": "github.com",
+        "path": "user/repo",
+        "ref": "v1",
+        "pinned": true
+      }
+    },
+    {
+      "input": "git:git@github.com:user/repo",
+      "expected": {
+        "repo": "git@github.com:user/repo",
+        "host": "github.com",
+        "path": "user/repo",
+        "pinned": false
+      }
+    },
+    {
+      "input": "git:git@github.com:user/repo@v1.0.0",
+      "expected": {
+        "repo": "git@github.com:user/repo",
+        "host": "github.com",
+        "path": "user/repo",
+        "ref": "v1.0.0",
+        "pinned": true
+      }
+    },
+    {
+      "input": "git:user/repo",
+      "expected": {
+        "repo": "https://user/repo",
+        "host": "github.com",
+        "path": "user/repo",
+        "pinned": false
+      }
+    },
+    {
+      "input": "git:user/repo@v1",
+      "expected": {
+        "repo": "https://user/repo",
+        "host": "github.com",
+        "path": "user/repo",
+        "ref": "v1",
+        "pinned": true
+      }
+    },
+    {
+      "input": "git@github.com:user/repo",
+      "expected": null
+    },
+    {
+      "input": "github.com/user/repo",
+      "expected": null
+    },
+    {
+      "input": "ssh://git@github.com/user/repo",
+      "expected": {
+        "repo": "ssh://git@github.com/user/repo",
+        "host": "github.com",
+        "path": "user/repo",
+        "pinned": false
+      }
+    },
+    {
+      "input": "ssh://git@github.com/user/repo@v1",
+      "expected": {
+        "repo": "ssh://git@github.com/user/repo",
+        "host": "github.com",
+        "path": "user/repo",
+        "ref": "v1",
+        "pinned": true
+      }
+    },
+    {
+      "input": "https://gitlab.com/group/sub/repo",
+      "expected": {
+        "repo": "https://gitlab.com/group/sub/repo",
+        "host": "gitlab.com",
+        "path": "group/sub/repo",
+        "pinned": false
+      }
+    },
+    {
+      "input": "https://gitlab.com/user/repo@v1",
+      "expected": {
+        "repo": "https://gitlab.com/user/repo",
+        "host": "gitlab.com",
+        "path": "user/repo",
+        "ref": "v1",
+        "pinned": true
+      }
+    },
+    {
+      "input": "https://bitbucket.org/user/repo",
+      "expected": {
+        "repo": "https://bitbucket.org/user/repo",
+        "host": "bitbucket.org",
+        "path": "user/repo",
+        "pinned": false
+      }
+    },
+    {
+      "input": "https://codeberg.org/user/repo",
+      "expected": {
+        "repo": "https://codeberg.org/user/repo",
+        "host": "codeberg.org",
+        "path": "user/repo",
+        "pinned": false
+      }
+    },
+    {
+      "input": "git:codeberg.org/user/repo@main",
+      "expected": {
+        "repo": "https://codeberg.org/user/repo",
+        "host": "codeberg.org",
+        "path": "user/repo",
+        "ref": "main",
+        "pinned": true
+      }
+    },
+    {
+      "input": "git:localhost/user/repo",
+      "expected": {
+        "repo": "https://localhost/user/repo",
+        "host": "localhost",
+        "path": "user/repo",
+        "pinned": false
+      }
+    },
+    {
+      "input": "git:noext/user/repo",
+      "expected": null
+    },
+    {
+      "input": "git:github.com/../repo",
+      "expected": null
+    },
+    {
+      "input": "git:github.com/user/repo/../../etc",
+      "expected": null
+    },
+    {
+      "input": "git+https://github.com/user/repo",
+      "expected": null
+    },
+    {
+      "input": "./relative/path",
+      "expected": null
+    },
+    {
+      "input": "/absolute/path",
+      "expected": null
+    }
+  ],
+  "resolveCases": [
+    {
+      "name": "manifest-package-with-globs",
+      "projectTrusted": true,
+      "files": [
+        {
+          "path": "agent/settings.json",
+          "content": "{}"
+        },
+        {
+          "path": "pkg/package.json",
+          "content": "{\"name\":\"manifest-pkg\",\"pi\":{\"extensions\":[\"./ext/clip.ts\",\"./ext/glob-*.ts\",\"!ext/glob-legacy.ts\"],\"skills\":[\"./skillset\"],\"prompts\":[\"./docs/prompt-one.md\",\"./docs/more\"],\"themes\":[\"./looks\"]}}"
+        },
+        {
+          "path": "pkg/ext/clip.ts",
+          "content": "1"
+        },
+        {
+          "path": "pkg/ext/glob-a.ts",
+          "content": "1"
+        },
+        {
+          "path": "pkg/ext/glob-legacy.ts",
+          "content": "1"
+        },
+        {
+          "path": "pkg/ext/unlisted.ts",
+          "content": "1"
+        },
+        {
+          "path": "pkg/skillset/one/SKILL.md",
+          "content": "---\nname: one\ndescription: A skill.\n---\nBody."
+        },
+        {
+          "path": "pkg/skillset/nested/two/SKILL.md",
+          "content": "---\nname: two\ndescription: A skill.\n---\nBody."
+        },
+        {
+          "path": "pkg/docs/prompt-one.md",
+          "content": "P1"
+        },
+        {
+          "path": "pkg/docs/more/prompt-two.md",
+          "content": "P2"
+        },
+        {
+          "path": "pkg/looks/dark.json",
+          "content": "{}"
+        }
+      ],
+      "globalSettings": {
+        "packages": [
+          "../pkg"
+        ]
+      },
+      "expected": {
+        "extensions": [
+          {
+            "path": "<fixture>/pkg/ext/clip.ts",
+            "enabled": true,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          },
+          {
+            "path": "<fixture>/pkg/ext/glob-a.ts",
+            "enabled": true,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          }
+        ],
+        "skills": [
+          {
+            "path": "<fixture>/pkg/skillset/nested/two/SKILL.md",
+            "enabled": true,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          },
+          {
+            "path": "<fixture>/pkg/skillset/one/SKILL.md",
+            "enabled": true,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          }
+        ],
+        "prompts": [
+          {
+            "path": "<fixture>/pkg/docs/more/prompt-two.md",
+            "enabled": true,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          },
+          {
+            "path": "<fixture>/pkg/docs/prompt-one.md",
+            "enabled": true,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          }
+        ],
+        "themes": [
+          {
+            "path": "<fixture>/pkg/looks/dark.json",
+            "enabled": true,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "convention-package-discovery",
+      "projectTrusted": true,
+      "files": [
+        {
+          "path": "pkg/extensions/top.ts",
+          "content": "1"
+        },
+        {
+          "path": "pkg/extensions/tool/index.ts",
+          "content": "1"
+        },
+        {
+          "path": "pkg/extensions/tool/helper.ts",
+          "content": "1"
+        },
+        {
+          "path": "pkg/extensions/manifested/package.json",
+          "content": "{\"pi\":{\"extensions\":[\"./main.ts\"]}}"
+        },
+        {
+          "path": "pkg/extensions/manifested/main.ts",
+          "content": "1"
+        },
+        {
+          "path": "pkg/extensions/manifested/other.ts",
+          "content": "1"
+        },
+        {
+          "path": "pkg/extensions/plain-dir/readme.txt",
+          "content": "no entry"
+        },
+        {
+          "path": "pkg/extensions/node_modules/dep/index.ts",
+          "content": "1"
+        },
+        {
+          "path": "pkg/skills/root-file.md",
+          "content": "---\nname: root-file\ndescription: A skill.\n---\nBody."
+        },
+        {
+          "path": "pkg/skills/folder/SKILL.md",
+          "content": "---\nname: folder\ndescription: A skill.\n---\nBody."
+        },
+        {
+          "path": "pkg/skills/folder/extra.md",
+          "content": "ignored sibling of SKILL.md"
+        },
+        {
+          "path": "pkg/skills/.gitignore",
+          "content": "skipped/\n"
+        },
+        {
+          "path": "pkg/skills/skipped/SKILL.md",
+          "content": "---\nname: skipped\ndescription: A skill.\n---\nBody."
+        },
+        {
+          "path": "pkg/prompts/prompt.md",
+          "content": "P"
+        },
+        {
+          "path": "pkg/prompts/nested/deep.md",
+          "content": "P"
+        },
+        {
+          "path": "pkg/themes/light.json",
+          "content": "{}"
+        }
+      ],
+      "globalSettings": {
+        "packages": [
+          "../pkg"
+        ]
+      },
+      "expected": {
+        "extensions": [
+          {
+            "path": "<fixture>/pkg/extensions/manifested/main.ts",
+            "enabled": true,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          },
+          {
+            "path": "<fixture>/pkg/extensions/tool/index.ts",
+            "enabled": true,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          },
+          {
+            "path": "<fixture>/pkg/extensions/top.ts",
+            "enabled": true,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          }
+        ],
+        "skills": [
+          {
+            "path": "<fixture>/pkg/skills/folder/SKILL.md",
+            "enabled": true,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          },
+          {
+            "path": "<fixture>/pkg/skills/root-file.md",
+            "enabled": true,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          }
+        ],
+        "prompts": [
+          {
+            "path": "<fixture>/pkg/prompts/nested/deep.md",
+            "enabled": true,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          },
+          {
+            "path": "<fixture>/pkg/prompts/prompt.md",
+            "enabled": true,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          }
+        ],
+        "themes": [
+          {
+            "path": "<fixture>/pkg/themes/light.json",
+            "enabled": true,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "package-filters-and-empty-array",
+      "projectTrusted": true,
+      "files": [
+        {
+          "path": "pkg/extensions/keep.ts",
+          "content": "1"
+        },
+        {
+          "path": "pkg/extensions/legacy.ts",
+          "content": "1"
+        },
+        {
+          "path": "pkg/extensions/other.ts",
+          "content": "1"
+        },
+        {
+          "path": "pkg/themes/dark.json",
+          "content": "{}"
+        },
+        {
+          "path": "pkg/prompts/a.md",
+          "content": "P"
+        }
+      ],
+      "globalSettings": {
+        "packages": [
+          {
+            "source": "../pkg",
+            "extensions": [
+              "extensions/*.ts",
+              "!extensions/legacy.ts",
+              "-extensions/other.ts",
+              "+extensions/legacy.ts"
+            ],
+            "themes": []
+          }
+        ]
+      },
+      "expected": {
+        "extensions": [
+          {
+            "path": "<fixture>/pkg/extensions/keep.ts",
+            "enabled": true,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          },
+          {
+            "path": "<fixture>/pkg/extensions/legacy.ts",
+            "enabled": true,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          },
+          {
+            "path": "<fixture>/pkg/extensions/other.ts",
+            "enabled": false,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          }
+        ],
+        "skills": [],
+        "prompts": [
+          {
+            "path": "<fixture>/pkg/prompts/a.md",
+            "enabled": true,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          }
+        ],
+        "themes": [
+          {
+            "path": "<fixture>/pkg/themes/dark.json",
+            "enabled": false,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "autoload-delta-over-global",
+      "projectTrusted": true,
+      "files": [
+        {
+          "path": "pkg/extensions/bar.ts",
+          "content": "1"
+        },
+        {
+          "path": "pkg/extensions/baz.ts",
+          "content": "1"
+        }
+      ],
+      "globalSettings": {
+        "packages": [
+          "../pkg"
+        ]
+      },
+      "projectSettings": {
+        "packages": [
+          {
+            "source": "../../pkg",
+            "autoload": false,
+            "extensions": [
+              "-extensions/bar.ts"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "extensions": [
+          {
+            "path": "<fixture>/pkg/extensions/bar.ts",
+            "enabled": false,
+            "metadata": {
+              "source": "../../pkg",
+              "scope": "project",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          },
+          {
+            "path": "<fixture>/pkg/extensions/baz.ts",
+            "enabled": true,
+            "metadata": {
+              "source": "../pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          }
+        ],
+        "skills": [],
+        "prompts": [],
+        "themes": []
+      }
+    },
+    {
+      "name": "dedupe-project-wins",
+      "projectTrusted": true,
+      "files": [
+        {
+          "path": "pkg/extensions/ext.ts",
+          "content": "1"
+        }
+      ],
+      "globalSettings": {
+        "packages": [
+          "../pkg"
+        ]
+      },
+      "projectSettings": {
+        "packages": [
+          {
+            "source": "../../pkg",
+            "extensions": [
+              "!extensions/ext.ts"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "extensions": [
+          {
+            "path": "<fixture>/pkg/extensions/ext.ts",
+            "enabled": false,
+            "metadata": {
+              "source": "../../pkg",
+              "scope": "project",
+              "origin": "package",
+              "baseDir": "<fixture>/pkg"
+            }
+          }
+        ],
+        "skills": [],
+        "prompts": [],
+        "themes": []
+      }
+    },
+    {
+      "name": "top-level-entries-with-patterns",
+      "projectTrusted": true,
+      "files": [
+        {
+          "path": "agent/my-prompts/auto.md",
+          "content": "A"
+        },
+        {
+          "path": "agent/my-prompts/keep.md",
+          "content": "K"
+        },
+        {
+          "path": "project/.pi/exts/one.ts",
+          "content": "1"
+        },
+        {
+          "path": "project/.pi/exts/two.ts",
+          "content": "1"
+        }
+      ],
+      "globalSettings": {
+        "prompts": [
+          "my-prompts",
+          "!my-prompts/auto.md"
+        ]
+      },
+      "projectSettings": {
+        "extensions": [
+          "exts",
+          "!exts/two.ts"
+        ]
+      },
+      "expected": {
+        "extensions": [
+          {
+            "path": "<fixture>/project/.pi/exts/one.ts",
+            "enabled": true,
+            "metadata": {
+              "source": "local",
+              "scope": "project",
+              "origin": "top-level"
+            }
+          },
+          {
+            "path": "<fixture>/project/.pi/exts/two.ts",
+            "enabled": false,
+            "metadata": {
+              "source": "local",
+              "scope": "project",
+              "origin": "top-level"
+            }
+          }
+        ],
+        "skills": [],
+        "prompts": [
+          {
+            "path": "<fixture>/agent/my-prompts/auto.md",
+            "enabled": false,
+            "metadata": {
+              "source": "local",
+              "scope": "user",
+              "origin": "top-level"
+            }
+          },
+          {
+            "path": "<fixture>/agent/my-prompts/keep.md",
+            "enabled": true,
+            "metadata": {
+              "source": "local",
+              "scope": "user",
+              "origin": "top-level"
+            }
+          }
+        ],
+        "themes": []
+      }
+    },
+    {
+      "name": "auto-discovery-trusted",
+      "projectTrusted": true,
+      "files": [
+        {
+          "path": "agent/extensions/user-ext.ts",
+          "content": "1"
+        },
+        {
+          "path": "agent/skills/user-skill/SKILL.md",
+          "content": "---\nname: user-skill\ndescription: A skill.\n---\nBody."
+        },
+        {
+          "path": "agent/prompts/user.md",
+          "content": "U"
+        },
+        {
+          "path": "agent/themes/user.json",
+          "content": "{}"
+        },
+        {
+          "path": "home/.agents/skills/home-skill/SKILL.md",
+          "content": "---\nname: home-skill\ndescription: A skill.\n---\nBody."
+        },
+        {
+          "path": "parent/.agents/skills/parent-skill/SKILL.md",
+          "content": "---\nname: parent-skill\ndescription: A skill.\n---\nBody."
+        },
+        {
+          "path": "parent/project/.agents/skills/proj-agents/SKILL.md",
+          "content": "---\nname: proj-agents\ndescription: A skill.\n---\nBody."
+        },
+        {
+          "path": "parent/project/.pi/extensions/proj-ext.ts",
+          "content": "1"
+        },
+        {
+          "path": "parent/project/.pi/skills/proj-skill/SKILL.md",
+          "content": "---\nname: proj-skill\ndescription: A skill.\n---\nBody."
+        },
+        {
+          "path": "parent/project/.pi/prompts/proj.md",
+          "content": "P"
+        },
+        {
+          "path": "parent/project/.pi/themes/proj.json",
+          "content": "{}"
+        }
+      ],
+      "dirs": [
+        "parent/project/.git"
+      ],
+      "globalSettings": {
+        "prompts": [
+          "!prompts/user.md"
+        ]
+      },
+      "projectSettings": {},
+      "expected": {
+        "extensions": [
+          {
+            "path": "<fixture>/agent/extensions/user-ext.ts",
+            "enabled": true,
+            "metadata": {
+              "source": "auto",
+              "scope": "user",
+              "origin": "top-level",
+              "baseDir": "<fixture>/agent"
+            }
+          },
+          {
+            "path": "<fixture>/parent/project/.pi/extensions/proj-ext.ts",
+            "enabled": true,
+            "metadata": {
+              "source": "auto",
+              "scope": "project",
+              "origin": "top-level",
+              "baseDir": "<fixture>/parent/project/.pi"
+            }
+          }
+        ],
+        "skills": [
+          {
+            "path": "<fixture>/agent/skills/user-skill/SKILL.md",
+            "enabled": true,
+            "metadata": {
+              "source": "auto",
+              "scope": "user",
+              "origin": "top-level",
+              "baseDir": "<fixture>/agent"
+            }
+          },
+          {
+            "path": "<fixture>/home/.agents/skills/home-skill/SKILL.md",
+            "enabled": true,
+            "metadata": {
+              "source": "auto",
+              "scope": "user",
+              "origin": "top-level",
+              "baseDir": "<fixture>/home/.agents"
+            }
+          },
+          {
+            "path": "<fixture>/parent/project/.agents/skills/proj-agents/SKILL.md",
+            "enabled": true,
+            "metadata": {
+              "source": "auto",
+              "scope": "project",
+              "origin": "top-level",
+              "baseDir": "<fixture>/parent/project/.agents"
+            }
+          },
+          {
+            "path": "<fixture>/parent/project/.pi/skills/proj-skill/SKILL.md",
+            "enabled": true,
+            "metadata": {
+              "source": "auto",
+              "scope": "project",
+              "origin": "top-level",
+              "baseDir": "<fixture>/parent/project/.pi"
+            }
+          }
+        ],
+        "prompts": [
+          {
+            "path": "<fixture>/agent/prompts/user.md",
+            "enabled": false,
+            "metadata": {
+              "source": "auto",
+              "scope": "user",
+              "origin": "top-level",
+              "baseDir": "<fixture>/agent"
+            }
+          },
+          {
+            "path": "<fixture>/parent/project/.pi/prompts/proj.md",
+            "enabled": true,
+            "metadata": {
+              "source": "auto",
+              "scope": "project",
+              "origin": "top-level",
+              "baseDir": "<fixture>/parent/project/.pi"
+            }
+          }
+        ],
+        "themes": [
+          {
+            "path": "<fixture>/agent/themes/user.json",
+            "enabled": true,
+            "metadata": {
+              "source": "auto",
+              "scope": "user",
+              "origin": "top-level",
+              "baseDir": "<fixture>/agent"
+            }
+          },
+          {
+            "path": "<fixture>/parent/project/.pi/themes/proj.json",
+            "enabled": true,
+            "metadata": {
+              "source": "auto",
+              "scope": "project",
+              "origin": "top-level",
+              "baseDir": "<fixture>/parent/project/.pi"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "auto-discovery-untrusted",
+      "projectTrusted": false,
+      "files": [
+        {
+          "path": "agent/prompts/user.md",
+          "content": "U"
+        },
+        {
+          "path": "parent/project/.agents/skills/proj-agents/SKILL.md",
+          "content": "---\nname: proj-agents\ndescription: A skill.\n---\nBody."
+        },
+        {
+          "path": "parent/project/.pi/prompts/proj.md",
+          "content": "P"
+        },
+        {
+          "path": "parent/project/.pi/themes/proj.json",
+          "content": "{}"
+        }
+      ],
+      "dirs": [
+        "parent/project/.git"
+      ],
+      "globalSettings": {},
+      "projectSettings": {},
+      "expected": {
+        "extensions": [],
+        "skills": [],
+        "prompts": [
+          {
+            "path": "<fixture>/agent/prompts/user.md",
+            "enabled": true,
+            "metadata": {
+              "source": "auto",
+              "scope": "user",
+              "origin": "top-level",
+              "baseDir": "<fixture>/agent"
+            }
+          }
+        ],
+        "themes": []
+      }
+    },
+    {
+      "name": "local-file-and-bare-dir-sources",
+      "projectTrusted": true,
+      "files": [
+        {
+          "path": "single/tool.ts",
+          "content": "1"
+        },
+        {
+          "path": "bare-dir/readme.txt",
+          "content": "no resources"
+        }
+      ],
+      "globalSettings": {
+        "packages": [
+          "../single/tool.ts",
+          "../bare-dir"
+        ]
+      },
+      "expected": {
+        "extensions": [
+          {
+            "path": "<fixture>/bare-dir",
+            "enabled": true,
+            "metadata": {
+              "source": "../bare-dir",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/bare-dir"
+            }
+          },
+          {
+            "path": "<fixture>/single/tool.ts",
+            "enabled": true,
+            "metadata": {
+              "source": "../single/tool.ts",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/single"
+            }
+          }
+        ],
+        "skills": [],
+        "prompts": [],
+        "themes": []
+      }
+    },
+    {
+      "name": "installed-npm-package",
+      "projectTrusted": true,
+      "files": [
+        {
+          "path": "agent/npm/node_modules/@scope/pkg/package.json",
+          "content": "{\"name\":\"@scope/pkg\",\"version\":\"1.0.0\"}"
+        },
+        {
+          "path": "agent/npm/node_modules/@scope/pkg/prompts/greet.md",
+          "content": "G"
+        },
+        {
+          "path": "agent/npm/node_modules/@scope/pkg/extensions/e.ts",
+          "content": "1"
+        }
+      ],
+      "globalSettings": {
+        "packages": [
+          "npm:@scope/pkg"
+        ]
+      },
+      "expected": {
+        "extensions": [
+          {
+            "path": "<fixture>/agent/npm/node_modules/@scope/pkg/extensions/e.ts",
+            "enabled": true,
+            "metadata": {
+              "source": "npm:@scope/pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/agent/npm/node_modules/@scope/pkg"
+            }
+          }
+        ],
+        "skills": [],
+        "prompts": [
+          {
+            "path": "<fixture>/agent/npm/node_modules/@scope/pkg/prompts/greet.md",
+            "enabled": true,
+            "metadata": {
+              "source": "npm:@scope/pkg",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/agent/npm/node_modules/@scope/pkg"
+            }
+          }
+        ],
+        "themes": []
+      }
+    },
+    {
+      "name": "missing-npm-package-offline",
+      "projectTrusted": true,
+      "globalSettings": {
+        "packages": [
+          "npm:never-installed-pkg"
+        ]
+      },
+      "expected": {
+        "extensions": [],
+        "skills": [],
+        "prompts": [],
+        "themes": []
+      }
+    },
+    {
+      "name": "installed-git-package",
+      "projectTrusted": true,
+      "files": [
+        {
+          "path": "agent/git/github.com/user/repo/prompts/from-git.md",
+          "content": "G"
+        },
+        {
+          "path": "agent/git/github.com/user/repo/themes/git.json",
+          "content": "{}"
+        }
+      ],
+      "globalSettings": {
+        "packages": [
+          "git:github.com/user/repo@v1"
+        ]
+      },
+      "expected": {
+        "extensions": [],
+        "skills": [],
+        "prompts": [
+          {
+            "path": "<fixture>/agent/git/github.com/user/repo/prompts/from-git.md",
+            "enabled": true,
+            "metadata": {
+              "source": "git:github.com/user/repo@v1",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/agent/git/github.com/user/repo"
+            }
+          }
+        ],
+        "themes": [
+          {
+            "path": "<fixture>/agent/git/github.com/user/repo/themes/git.json",
+            "enabled": true,
+            "metadata": {
+              "source": "git:github.com/user/repo@v1",
+              "scope": "user",
+              "origin": "package",
+              "baseDir": "<fixture>/agent/git/github.com/user/repo"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "symlinked-project-and-user-prompts",
+      "projectTrusted": true,
+      "files": [
+        {
+          "path": "shared/prompts/shared.md",
+          "content": "S"
+        }
+      ],
+      "dirs": [
+        "project/.pi"
+      ],
+      "symlinks": [
+        {
+          "link": "agent/prompts",
+          "target": "shared/prompts"
+        },
+        {
+          "link": "project/.pi/prompts",
+          "target": "shared/prompts"
+        }
+      ],
+      "globalSettings": {},
+      "projectSettings": {},
+      "expected": {
+        "extensions": [],
+        "skills": [],
+        "prompts": [
+          {
+            "path": "<fixture>/project/.pi/prompts/shared.md",
+            "enabled": true,
+            "metadata": {
+              "source": "auto",
+              "scope": "project",
+              "origin": "top-level",
+              "baseDir": "<fixture>/project/.pi"
+            }
+          }
+        ],
+        "themes": []
+      }
+    }
+  ],
+  "settingsCases": [
+    {
+      "name": "replace-ref-preserves-filters",
+      "initialGlobal": {
+        "packages": [
+          {
+            "source": "git:github.com/user/repo@v1",
+            "skills": [
+              "skills/one.md"
+            ]
+          }
+        ]
+      },
+      "ops": [
+        {
+          "op": "add",
+          "source": "git:github.com/user/repo@v2"
+        },
+        {
+          "op": "add",
+          "source": "git:github.com/user/repo@v2"
+        }
+      ],
+      "expected": {
+        "changed": [
+          true,
+          false
+        ],
+        "globalPackages": [
+          {
+            "source": "git:github.com/user/repo@v2",
+            "skills": [
+              "skills/one.md"
+            ]
+          }
+        ],
+        "projectPackages": []
+      }
+    },
+    {
+      "name": "ssh-and-https-share-identity",
+      "initialGlobal": {
+        "packages": [
+          "git:git@github.com:user/repo@v1"
+        ]
+      },
+      "ops": [
+        {
+          "op": "add",
+          "source": "https://github.com/user/repo@v2"
+        }
+      ],
+      "expected": {
+        "changed": [
+          true
+        ],
+        "globalPackages": [
+          "https://github.com/user/repo@v2"
+        ],
+        "projectPackages": []
+      }
+    },
+    {
+      "name": "local-paths-relative-to-scope-base",
+      "dirs": [
+        "project/packages/local-package",
+        "shared-package"
+      ],
+      "ops": [
+        {
+          "op": "add",
+          "source": "./packages/local-package"
+        },
+        {
+          "op": "add",
+          "source": "../shared-package",
+          "local": true
+        },
+        {
+          "op": "remove",
+          "source": "./packages/local-package/"
+        }
+      ],
+      "expected": {
+        "changed": [
+          true,
+          true,
+          true
+        ],
+        "globalPackages": [],
+        "projectPackages": [
+          "../../shared-package"
+        ]
+      }
+    },
+    {
+      "name": "remove-npm-by-name",
+      "initialGlobal": {
+        "packages": [
+          "npm:pkg@1.0.0",
+          "npm:other"
+        ]
+      },
+      "ops": [
+        {
+          "op": "remove",
+          "source": "npm:pkg"
+        }
+      ],
+      "expected": {
+        "changed": [
+          true
+        ],
+        "globalPackages": [
+          "npm:other"
+        ],
+        "projectPackages": []
+      }
+    }
+  ],
+  "trustOptionCases": [
+    {
+      "name": "nested-project-with-session-options",
+      "cwd": "parent/project",
+      "dirs": [
+        "parent/project"
+      ],
+      "includeSessionOnly": true,
+      "expected": [
+        {
+          "label": "Trust",
+          "trusted": true,
+          "updates": [
+            {
+              "path": "<fixture>/parent/project",
+              "decision": true
+            }
+          ],
+          "savedPath": "<fixture>/parent/project"
+        },
+        {
+          "label": "Trust parent folder (<fixture>/parent)",
+          "trusted": true,
+          "updates": [
+            {
+              "path": "<fixture>/parent",
+              "decision": true
+            },
+            {
+              "path": "<fixture>/parent/project",
+              "decision": null
+            }
+          ],
+          "savedPath": "<fixture>/parent"
+        },
+        {
+          "label": "Trust (this session only)",
+          "trusted": true,
+          "updates": []
+        },
+        {
+          "label": "Do not trust",
+          "trusted": false,
+          "updates": [
+            {
+              "path": "<fixture>/parent/project",
+              "decision": false
+            }
+          ],
+          "savedPath": "<fixture>/parent/project"
+        },
+        {
+          "label": "Do not trust (this session only)",
+          "trusted": false,
+          "updates": []
+        }
+      ]
+    },
+    {
+      "name": "nested-project-persistent-only",
+      "cwd": "parent/project",
+      "dirs": [
+        "parent/project"
+      ],
+      "includeSessionOnly": false,
+      "expected": [
+        {
+          "label": "Trust",
+          "trusted": true,
+          "updates": [
+            {
+              "path": "<fixture>/parent/project",
+              "decision": true
+            }
+          ],
+          "savedPath": "<fixture>/parent/project"
+        },
+        {
+          "label": "Trust parent folder (<fixture>/parent)",
+          "trusted": true,
+          "updates": [
+            {
+              "path": "<fixture>/parent",
+              "decision": true
+            },
+            {
+              "path": "<fixture>/parent/project",
+              "decision": null
+            }
+          ],
+          "savedPath": "<fixture>/parent"
+        },
+        {
+          "label": "Do not trust",
+          "trusted": false,
+          "updates": [
+            {
+              "path": "<fixture>/parent/project",
+              "decision": false
+            }
+          ],
+          "savedPath": "<fixture>/parent/project"
+        }
+      ]
+    }
+  ],
+  "trustStoreCases": [
+    {
+      "name": "inheritance-and-null-deletion",
+      "dirs": [
+        "parent/project"
+      ],
+      "ops": [
+        [
+          {
+            "path": "parent",
+            "decision": true
+          }
+        ],
+        [
+          {
+            "path": "parent/project",
+            "decision": false
+          }
+        ],
+        [
+          {
+            "path": "parent/project",
+            "decision": null
+          }
+        ]
+      ],
+      "queries": [
+        "parent/project",
+        "parent",
+        "elsewhere"
+      ],
+      "expected": {
+        "decisions": [
+          true,
+          true,
+          null
+        ],
+        "file": "{\n  \"<fixture>/parent\": true\n}\n"
+      }
+    },
+    {
+      "name": "trust-parent-updates",
+      "dirs": [
+        "parent/project",
+        "other"
+      ],
+      "ops": [
+        [
+          {
+            "path": "parent/project",
+            "decision": false
+          }
+        ],
+        [
+          {
+            "path": "parent",
+            "decision": true
+          },
+          {
+            "path": "parent/project",
+            "decision": null
+          }
+        ],
+        [
+          {
+            "path": "other",
+            "decision": false
+          }
+        ]
+      ],
+      "queries": [
+        "parent/project",
+        "other"
+      ],
+      "expected": {
+        "decisions": [
+          true,
+          false
+        ],
+        "file": "{\n  \"<fixture>/other\": false,\n  \"<fixture>/parent\": true\n}\n"
+      }
+    }
+  ],
+  "hasTrustRequiringCases": [
+    {
+      "name": "plain-project",
+      "dirs": [
+        "home",
+        "project"
+      ],
+      "cwd": "project",
+      "expected": false
+    },
+    {
+      "name": "home-resources-are-user-scoped",
+      "dirs": [
+        "home/.pi/agent",
+        "home/.agents/skills"
+      ],
+      "cwd": "home",
+      "expected": false
+    },
+    {
+      "name": "project-settings",
+      "files": [
+        {
+          "path": "project/.pi/settings.json",
+          "content": "{}"
+        }
+      ],
+      "dirs": [
+        "home"
+      ],
+      "cwd": "project",
+      "expected": true
+    },
+    {
+      "name": "project-extensions-dir",
+      "dirs": [
+        "home",
+        "project/.pi/extensions"
+      ],
+      "cwd": "project",
+      "expected": true
+    },
+    {
+      "name": "empty-pi-dir",
+      "dirs": [
+        "home",
+        "project/.pi"
+      ],
+      "cwd": "project",
+      "expected": false
+    },
+    {
+      "name": "project-system-md",
+      "files": [
+        {
+          "path": "project/.pi/SYSTEM.md",
+          "content": "s"
+        }
+      ],
+      "dirs": [
+        "home"
+      ],
+      "cwd": "project",
+      "expected": true
+    },
+    {
+      "name": "project-agents-skills",
+      "dirs": [
+        "home",
+        "project/.agents/skills"
+      ],
+      "cwd": "project",
+      "expected": true
+    },
+    {
+      "name": "ancestor-agents-skills",
+      "dirs": [
+        "home",
+        "parent/.agents/skills",
+        "parent/project"
+      ],
+      "cwd": "parent/project",
+      "expected": true
+    }
+  ]
+}

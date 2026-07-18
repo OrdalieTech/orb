@@ -73,6 +73,8 @@ func WithAgentDir(path string) Option {
 	return func(options *managerOptions) { options.agentDir = path }
 }
 
+// WithProjectTrusted gates project settings: untrusted managers load and merge
+// only global settings (upstream SettingsManager projectTrusted option).
 func WithProjectTrusted(trusted bool) Option {
 	return func(options *managerOptions) { options.projectTrusted = &trusted }
 }
@@ -325,6 +327,8 @@ func (manager *SettingsManager) IsProjectTrusted() bool {
 	return manager.projectTrusted
 }
 
+// SetProjectTrusted matches upstream: revoking trust drops project settings,
+// granting it reloads them from disk.
 func (manager *SettingsManager) SetProjectTrusted(trusted bool) {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
