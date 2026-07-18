@@ -181,3 +181,8 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/tui/src/tui.ts` (`Container`) and `packages/tui/src/components/{box,text,truncated-text,spacer,loader,cancellable-loader}.ts` | `tui/container.go`, `tui/box.go`, `tui/text.go`, `tui/truncated_text.go`, `tui/spacer.go`, `tui/loader.go`, `tui/cancellable_loader.go`, `tui/components_test.go` | WP-410 |
 | TUI primitive rendering from the pinned upstream public API | `conformance/extract/f12-tui.ts`, `conformance/fixtures/F12/`, `conformance/runner/f12_tui_test.go` | WP-410 |
 | WP-410 acceptance evidence | `docs/plan/wp-410-report.md` | WP-410 |
+| `packages/tui/src/components/markdown.ts`, `packages/tui/test/markdown.test.ts` | `tui/markdown.go`, `tui/markdown_blocks.go`, `tui/markdown_inline.go`, `tui/markdown_table.go`, `tui/markdown_test.go` | WP-430 |
+| `packages/coding-agent/src/modes/interactive/theme/{theme.ts,dark.json,light.json}`, `packages/coding-agent/src/utils/syntax-highlight.ts` | `codingagent/modes/theme/{colors.go,theme.go,highlight.go,dark.json,light.json,theme_test.go}` | WP-430 |
+| `packages/coding-agent/src/modes/interactive/theme/theme-controller.ts`, `packages/coding-agent/src/core/{settings-manager,resource-loader,package-manager}.ts` (theme settings, precedence, and discovery) | `codingagent/modes/theme/{controller.go,registry.go}`, `codingagent/config/{settings.go,settings_write.go,settings_test.go}` | WP-430 |
+| Upstream Markdown corpus and built-in-theme render behavior | `conformance/extract/f12-tui.ts`, `conformance/fixtures/F12/{manifest.json,markdown.json,themes.json}`, `conformance/runner/{f12_markdown_test.go,f12_theme_test.go}` | WP-430 |
+| WP-430 acceptance evidence | `docs/plan/wp-430-report.md` | WP-430 |

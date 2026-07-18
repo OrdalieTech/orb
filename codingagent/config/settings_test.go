@@ -518,6 +518,51 @@ func TestSessionDirectoryPrecedence(t *testing.T) {
 	}
 }
 
+func TestThemeSettingsAndPersistence(t *testing.T) {
+	agentDir, projectDir := t.TempDir(), t.TempDir()
+	writeSettings(t, filepath.Join(agentDir, "settings.json"), map[string]any{
+		"theme":  "light/dark",
+		"themes": []string{"themes/global.json"},
+		"markdown": map[string]any{
+			"codeBlockIndent": ">>",
+		},
+	})
+	manager, err := NewSettingsManager(projectDir, WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manager.GetThemeSetting() != "light/dark" || manager.GetTheme() != "" {
+		t.Fatalf("theme setting = %q, simple = %q", manager.GetThemeSetting(), manager.GetTheme())
+	}
+	if got := manager.GetThemePaths(); !reflect.DeepEqual(got, []string{"themes/global.json"}) {
+		t.Fatalf("theme paths = %#v", got)
+	}
+	if manager.GetMarkdownCodeBlockIndent() != ">>" {
+		t.Fatalf("markdown indent = %q", manager.GetMarkdownCodeBlockIndent())
+	}
+	manager.SetTheme("custom")
+	reloaded, err := NewSettingsManager(projectDir, WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.GetTheme() != "custom" || reloaded.GetThemeSetting() != "custom" {
+		t.Fatalf("persisted theme = %q", reloaded.GetThemeSetting())
+	}
+	if got := reloaded.GetSettings()["markdown"]; got == nil {
+		t.Fatal("SetTheme discarded unrelated settings")
+	}
+}
+
+func TestMarkdownIndentDefaults(t *testing.T) {
+	manager, err := NewSettingsManager(t.TempDir(), WithAgentDir(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manager.GetMarkdownCodeBlockIndent() != "  " {
+		t.Fatalf("default indent = %q", manager.GetMarkdownCodeBlockIndent())
+	}
+}
+
 func TestAgentDirectory(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv(EnvAgentDir, "file://"+filepath.ToSlash(root)+"/agent%20dir")

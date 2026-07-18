@@ -29,7 +29,7 @@ editor keybinding behavior matrix verified against upstream docs.
 
 ## WP-430 — Markdown, highlighting, themes
 
-**Upstream refs:** `packages/tui/src/markdown.ts` (marked-based), theme system across tui +
+**Upstream refs:** `packages/tui/src/components/markdown.ts` (marked-based), theme system across tui +
 coding-agent (`docs/themes.md`, settings `theme`, resources_discover theme paths).
 
 **Scope:** goldmark-AST → ANSI renderer matching upstream's markdown presentation (headings,

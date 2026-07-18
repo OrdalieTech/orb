@@ -1,0 +1,787 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "list-nested",
+      "text": "- Item 1\n  - Nested 1.1\n  - Nested 1.2\n- Item 2",
+      "width": 80,
+      "expected": [
+        "\u001b[36m- \u001b[39mItem 1                                                                        ",
+        "    \u001b[36m- \u001b[39mNested 1.1                                                                ",
+        "    \u001b[36m- \u001b[39mNested 1.2                                                                ",
+        "\u001b[36m- \u001b[39mItem 2                                                                        "
+      ]
+    },
+    {
+      "name": "list-deep",
+      "text": "- Level 1\n  - Level 2\n    - Level 3\n      - Level 4",
+      "width": 80,
+      "expected": [
+        "\u001b[36m- \u001b[39mLevel 1                                                                       ",
+        "    \u001b[36m- \u001b[39mLevel 2                                                                   ",
+        "        \u001b[36m- \u001b[39mLevel 3                                                               ",
+        "            \u001b[36m- \u001b[39mLevel 4                                                           "
+      ]
+    },
+    {
+      "name": "list-ordered-nested",
+      "text": "1. First\n   1. Nested first\n   2. Nested second\n2. Second",
+      "width": 80,
+      "expected": [
+        "\u001b[36m1. \u001b[39mFirst                                                                        ",
+        "    \u001b[36m1. \u001b[39mNested first                                                             ",
+        "    \u001b[36m2. \u001b[39mNested second                                                            ",
+        "\u001b[36m2. \u001b[39mSecond                                                                       "
+      ]
+    },
+    {
+      "name": "list-normalize-markers",
+      "text": "1. alpha\n1. beta\n1. gamma",
+      "width": 80,
+      "expected": [
+        "\u001b[36m1. \u001b[39malpha                                                                        ",
+        "\u001b[36m2. \u001b[39mbeta                                                                         ",
+        "\u001b[36m3. \u001b[39mgamma                                                                        "
+      ]
+    },
+    {
+      "name": "list-preserve-markers",
+      "text": "  4. forth\n  3. third\n\n10) ten\n7) seven\n\n+ plus\n* star\n- minus\n+",
+      "width": 80,
+      "preserveOrderedListMarkers": true,
+      "expected": [
+        "\u001b[36m4. \u001b[39mforth                                                                        ",
+        "\u001b[36m3. \u001b[39mthird                                                                        ",
+        "                                                                                ",
+        "\u001b[36m10) \u001b[39mten                                                                         ",
+        "\u001b[36m7) \u001b[39mseven                                                                        ",
+        "                                                                                ",
+        "\u001b[36m+ \u001b[39mplus                                                                          ",
+        "\u001b[36m* \u001b[39mstar                                                                          ",
+        "\u001b[36m- \u001b[39mminus                                                                         ",
+        "\u001b[36m+ \u001b[39m                                                                              "
+      ]
+    },
+    {
+      "name": "list-mixed",
+      "text": "1. Ordered item\n   - Unordered nested\n   - Another nested\n2. Second ordered\n   - More nested",
+      "width": 80,
+      "expected": [
+        "\u001b[36m1. \u001b[39mOrdered item                                                                 ",
+        "    \u001b[36m- \u001b[39mUnordered nested                                                          ",
+        "    \u001b[36m- \u001b[39mAnother nested                                                            ",
+        "\u001b[36m2. \u001b[39mSecond ordered                                                               ",
+        "    \u001b[36m- \u001b[39mMore nested                                                               "
+      ]
+    },
+    {
+      "name": "list-loose",
+      "text": "1. Lorem ipsum dolor sit amet.\n\n   Ut enim ad minim veniam.\n\n2. Duis aute irure dolor.\n\n   Excepteur sint occaecat cupidatat.\n\n3. Beep boop",
+      "width": 80,
+      "expected": [
+        "\u001b[36m1. \u001b[39mLorem ipsum dolor sit amet.                                                  ",
+        "                                                                                ",
+        "   Ut enim ad minim veniam.                                                     ",
+        "                                                                                ",
+        "\u001b[36m2. \u001b[39mDuis aute irure dolor.                                                       ",
+        "                                                                                ",
+        "   Excepteur sint occaecat cupidatat.                                           ",
+        "                                                                                ",
+        "\u001b[36m3. \u001b[39mBeep boop                                                                    "
+      ]
+    },
+    {
+      "name": "list-task",
+      "text": "- [ ] beep\n- [x] boop",
+      "width": 80,
+      "expected": [
+        "\u001b[36m- [ ] \u001b[39mbeep                                                                      ",
+        "\u001b[36m- [x] \u001b[39mboop                                                                      "
+      ]
+    },
+    {
+      "name": "list-code-between",
+      "text": "1. First item\n\n```typescript\n// code block\n```\n\n2. Second item\n\n```typescript\n// another code block\n```\n\n3. Third item",
+      "width": 80,
+      "expected": [
+        "\u001b[36m1. \u001b[39mFirst item                                                                   ",
+        "                                                                                ",
+        "\u001b[2m```typescript\u001b[22m                                                                   ",
+        "  \u001b[32m// code block\u001b[39m                                                                 ",
+        "\u001b[2m```\u001b[22m                                                                             ",
+        "                                                                                ",
+        "\u001b[36m2. \u001b[39mSecond item                                                                  ",
+        "                                                                                ",
+        "\u001b[2m```typescript\u001b[22m                                                                   ",
+        "  \u001b[32m// another code block\u001b[39m                                                         ",
+        "\u001b[2m```\u001b[22m                                                                             ",
+        "                                                                                ",
+        "\u001b[36m3. \u001b[39mThird item                                                                   "
+      ]
+    },
+    {
+      "name": "list-wrap-unordered",
+      "text": "- alpha beta gamma delta epsilon",
+      "width": 20,
+      "expected": [
+        "\u001b[36m- \u001b[39malpha beta gamma  ",
+        "  delta epsilon     "
+      ]
+    },
+    {
+      "name": "list-wrap-ordered",
+      "text": "1. alpha beta gamma delta epsilon",
+      "width": 20,
+      "expected": [
+        "\u001b[36m1. \u001b[39malpha beta gamma ",
+        "   delta epsilon    "
+      ]
+    },
+    {
+      "name": "list-wrap-multidigit",
+      "text": "10. alpha beta gamma delta epsilon",
+      "width": 21,
+      "expected": [
+        "\u001b[36m10. \u001b[39malpha beta gamma ",
+        "    delta epsilon    "
+      ]
+    },
+    {
+      "name": "list-wrap-nested",
+      "text": "- parent\n  - alpha beta gamma delta epsilon",
+      "width": 24,
+      "expected": [
+        "\u001b[36m- \u001b[39mparent                ",
+        "    \u001b[36m- \u001b[39malpha beta gamma  ",
+        "      delta epsilon     "
+      ]
+    },
+    {
+      "name": "list-wrap-nested-ordered",
+      "text": "1. parent\n   - alpha beta gamma delta epsilon",
+      "width": 24,
+      "expected": [
+        "\u001b[36m1. \u001b[39mparent               ",
+        "    \u001b[36m- \u001b[39malpha beta gamma  ",
+        "      delta epsilon     "
+      ]
+    },
+    {
+      "name": "list-blockquote",
+      "text": "- > alpha beta gamma delta epsilon zeta",
+      "width": 24,
+      "expected": [
+        "\u001b[36m- \u001b[39m\u001b[2m│ \u001b[22m\u001b[3m\u001b[3malpha beta gamma    ",
+        "  \u001b[2m│ \u001b[22m\u001b[3mdelta epsilon zeta\u001b[23m\u001b[23m  "
+      ]
+    },
+    {
+      "name": "list-code",
+      "text": "- ```ts\n  alpha beta gamma delta epsilon zeta\n  ```",
+      "width": 24,
+      "expected": [
+        "\u001b[36m- \u001b[39m\u001b[2m```ts\u001b[22m                 ",
+        "    \u001b[32malpha beta gamma    ",
+        "  \u001b[32mdelta epsilon zeta\u001b[39m    ",
+        "  \u001b[2m```\u001b[22m                   "
+      ]
+    },
+    {
+      "name": "table-simple",
+      "text": "| Name | Age |\n| --- | --- |\n| Alice | 30 |\n| Bob | 25 |",
+      "width": 80,
+      "expected": [
+        "┌───────┬─────┐                                                                 ",
+        "│ \u001b[1mName \u001b[22m │ \u001b[1mAge\u001b[22m │                                                                 ",
+        "├───────┼─────┤                                                                 ",
+        "│ Alice │ 30  │                                                                 ",
+        "├───────┼─────┤                                                                 ",
+        "│ Bob   │ 25  │                                                                 ",
+        "└───────┴─────┘                                                                 "
+      ]
+    },
+    {
+      "name": "table-longest-word",
+      "text": "| Column One | Column Two |\n| --- | --- |\n| superlongword short | otherword |\n| small | tiny |",
+      "width": 32,
+      "expected": [
+        "┌──────────────────┬───────────┐",
+        "│ \u001b[1mColumn One      \u001b[22m │ \u001b[1mColumn   \u001b[22m │",
+        "│ \u001b[1m                \u001b[22m │ \u001b[1mTwo      \u001b[22m │",
+        "├──────────────────┼───────────┤",
+        "│ superlongword    │ otherword │",
+        "│ short            │           │",
+        "├──────────────────┼───────────┤",
+        "│ small            │ tiny      │",
+        "└──────────────────┴───────────┘"
+      ]
+    },
+    {
+      "name": "table-alignment",
+      "text": "| Left | Center | Right |\n| :--- | :---: | ---: |\n| A | B | C |\n| Long text | Middle | End |",
+      "width": 80,
+      "expected": [
+        "┌───────────┬────────┬───────┐                                                  ",
+        "│ \u001b[1mLeft     \u001b[22m │ \u001b[1mCenter\u001b[22m │ \u001b[1mRight\u001b[22m │                                                  ",
+        "├───────────┼────────┼───────┤                                                  ",
+        "│ A         │ B      │ C     │                                                  ",
+        "├───────────┼────────┼───────┤                                                  ",
+        "│ Long text │ Middle │ End   │                                                  ",
+        "└───────────┴────────┴───────┘                                                  "
+      ]
+    },
+    {
+      "name": "table-varying",
+      "text": "| Short | Very long column header |\n| --- | --- |\n| A | This is a much longer cell content |\n| B | Short |",
+      "width": 80,
+      "expected": [
+        "┌───────┬────────────────────────────────────┐                                  ",
+        "│ \u001b[1mShort\u001b[22m │ \u001b[1mVery long column header           \u001b[22m │                                  ",
+        "├───────┼────────────────────────────────────┤                                  ",
+        "│ A     │ This is a much longer cell content │                                  ",
+        "├───────┼────────────────────────────────────┤                                  ",
+        "│ B     │ Short                              │                                  ",
+        "└───────┴────────────────────────────────────┘                                  "
+      ]
+    },
+    {
+      "name": "table-wrap",
+      "text": "| Command | Description | Example |\n| --- | --- | --- |\n| npm install | Install all dependencies | npm install |\n| npm run build | Build the project | npm run build |",
+      "width": 50,
+      "expected": [
+        "┌─────────────┬─────────────────────┬────────────┐",
+        "│ \u001b[1mCommand    \u001b[22m │ \u001b[1mDescription        \u001b[22m │ \u001b[1mExample   \u001b[22m │",
+        "├─────────────┼─────────────────────┼────────────┤",
+        "│ npm install │ Install all         │ npm        │",
+        "│             │ dependencies        │ install    │",
+        "├─────────────┼─────────────────────┼────────────┤",
+        "│ npm run     │ Build the project   │ npm run    │",
+        "│ build       │                     │ build      │",
+        "└─────────────┴─────────────────────┴────────────┘"
+      ]
+    },
+    {
+      "name": "table-long-cell",
+      "text": "| Header |\n| --- |\n| This is a very long cell content that should wrap |",
+      "width": 25,
+      "expected": [
+        "┌───────────────────────┐",
+        "│ \u001b[1mHeader               \u001b[22m │",
+        "├───────────────────────┤",
+        "│ This is a very long   │",
+        "│ cell content that     │",
+        "│ should wrap           │",
+        "└───────────────────────┘"
+      ]
+    },
+    {
+      "name": "table-long-url",
+      "text": "| Value |\n| --- |\n| prefix https://example.com/this/is/a/very/long/url/that/should/wrap |",
+      "width": 30,
+      "expected": [
+        "┌────────────────────────────┐",
+        "│ \u001b[1mValue                     \u001b[22m │",
+        "├────────────────────────────┤",
+        "│ prefix                     │",
+        "│ \u001b[34m\u001b[4mhttps://example.com/this/i\u001b[24m │",
+        "│ \u001b[4;34ms/a/very/long/url/that/sho\u001b[24m │",
+        "│ \u001b[4;34muld/wrap\u001b[24m\u001b[39m                   │",
+        "└────────────────────────────┘"
+      ]
+    },
+    {
+      "name": "table-inline-code",
+      "text": "| Code |\n| --- |\n| `averyveryveryverylongidentifier` |",
+      "width": 20,
+      "expected": [
+        "┌──────────────────┐",
+        "│ \u001b[1mCode            \u001b[22m │",
+        "├──────────────────┤",
+        "│ \u001b[33maveryveryveryver │",
+        "│ \u001b[33mylongidentifier\u001b[39m  │",
+        "└──────────────────┘"
+      ]
+    },
+    {
+      "name": "table-narrow",
+      "text": "| A | B | C |\n| --- | --- | --- |\n| 1 | 2 | 3 |",
+      "width": 15,
+      "expected": [
+        "┌───┬───┬───┐  ",
+        "│ \u001b[1mA\u001b[22m │ \u001b[1mB\u001b[22m │ \u001b[1mC\u001b[22m │  ",
+        "├───┼───┼───┤  ",
+        "│ 1 │ 2 │ 3 │  ",
+        "└───┴───┴───┘  "
+      ]
+    },
+    {
+      "name": "table-natural",
+      "text": "| A | B |\n| --- | --- |\n| 1 | 2 |",
+      "width": 80,
+      "expected": [
+        "┌───┬───┐                                                                       ",
+        "│ \u001b[1mA\u001b[22m │ \u001b[1mB\u001b[22m │                                                                       ",
+        "├───┼───┤                                                                       ",
+        "│ 1 │ 2 │                                                                       ",
+        "└───┴───┘                                                                       "
+      ]
+    },
+    {
+      "name": "table-padding",
+      "text": "| Column One | Column Two |\n| --- | --- |\n| Data 1 | Data 2 |",
+      "width": 40,
+      "paddingX": 2,
+      "expected": [
+        "  ┌────────────┬────────────┐           ",
+        "  │ \u001b[1mColumn One\u001b[22m │ \u001b[1mColumn Two\u001b[22m │           ",
+        "  ├────────────┼────────────┤           ",
+        "  │ Data 1     │ Data 2     │           ",
+        "  └────────────┴────────────┘           "
+      ]
+    },
+    {
+      "name": "table-blockquote-style-context",
+      "text": "> | A |\n> | --- |\n> | before `code` after |",
+      "width": 40,
+      "defaultStyle": "magenta",
+      "expected": [
+        "\u001b[2m│ \u001b[22m\u001b[3m\u001b[3m┌───────────────────┐\u001b[23m\u001b[23m                 ",
+        "\u001b[2m│ \u001b[22m\u001b[3m\u001b[3m│ \u001b[1mA                \u001b[22m │\u001b[23m\u001b[23m                 ",
+        "\u001b[2m│ \u001b[22m\u001b[3m\u001b[3m├───────────────────┤\u001b[23m\u001b[23m                 ",
+        "\u001b[2m│ \u001b[22m\u001b[3m\u001b[3m│ before \u001b[33mcode\u001b[39m\u001b[3m\u001b[3m after │\u001b[23m\u001b[23m                 ",
+        "\u001b[2m│ \u001b[22m\u001b[3m\u001b[3m└───────────────────┘\u001b[23m\u001b[23m                 "
+      ]
+    },
+    {
+      "name": "table-min-word-weight",
+      "text": "| A | B |\n| --- | --- |\n| aa aa aa aa aa | longword |",
+      "width": 15,
+      "expected": [
+        "┌────┬────────┐",
+        "│ \u001b[1mA \u001b[22m │ \u001b[1mB     \u001b[22m │",
+        "├────┼────────┤",
+        "│ aa │ longwo │",
+        "│ aa │ rd     │",
+        "│ aa │        │",
+        "│ aa │        │",
+        "│ aa │        │",
+        "└────┴────────┘"
+      ]
+    },
+    {
+      "name": "combined",
+      "text": "# Test Document\n\n- Item 1\n  - Nested item\n- Item 2\n\n| Col1 | Col2 |\n| --- | --- |\n| A | B |",
+      "width": 80,
+      "expected": [
+        "\u001b[1m\u001b[36m\u001b[1m\u001b[4mTest Document\u001b[24m\u001b[22m\u001b[39m\u001b[22m                                                                   ",
+        "                                                                                ",
+        "\u001b[36m- \u001b[39mItem 1                                                                        ",
+        "    \u001b[36m- \u001b[39mNested item                                                               ",
+        "\u001b[36m- \u001b[39mItem 2                                                                        ",
+        "                                                                                ",
+        "┌──────┬──────┐                                                                 ",
+        "│ \u001b[1mCol1\u001b[22m │ \u001b[1mCol2\u001b[22m │                                                                 ",
+        "├──────┼──────┤                                                                 ",
+        "│ A    │ B    │                                                                 ",
+        "└──────┴──────┘                                                                 "
+      ]
+    },
+    {
+      "name": "escape-normalized",
+      "text": "\"\\\"",
+      "width": 80,
+      "expected": [
+        "\"\"                                                                              "
+      ]
+    },
+    {
+      "name": "escape-preserved",
+      "text": "\"\\\"",
+      "width": 80,
+      "preserveBackslashEscapes": true,
+      "expected": [
+        "\"\\\"                                                                             "
+      ]
+    },
+    {
+      "name": "default-gray-code",
+      "text": "This is thinking with `inline code` and more text after",
+      "width": 80,
+      "paddingX": 1,
+      "defaultStyle": "gray-italic",
+      "expected": [
+        " \u001b[3m\u001b[90mThis is thinking with \u001b[39m\u001b[23m\u001b[33minline code\u001b[39m\u001b[3m\u001b[90m\u001b[3m\u001b[90m and more text after\u001b[39m\u001b[23m                          "
+      ]
+    },
+    {
+      "name": "default-gray-bold",
+      "text": "This is thinking with **bold text** and more after",
+      "width": 80,
+      "paddingX": 1,
+      "defaultStyle": "gray-italic",
+      "expected": [
+        " \u001b[3m\u001b[90mThis is thinking with \u001b[39m\u001b[23m\u001b[1m\u001b[3m\u001b[90mbold text\u001b[39m\u001b[23m\u001b[22m\u001b[3m\u001b[90m\u001b[3m\u001b[90m and more after\u001b[39m\u001b[23m                                 "
+      ]
+    },
+    {
+      "name": "spacing-code",
+      "text": "hello world\n\n```js\nconst hello = \"world\";\n```\n\nagain, hello world",
+      "width": 80,
+      "expected": [
+        "hello world                                                                     ",
+        "                                                                                ",
+        "\u001b[2m```js\u001b[22m                                                                           ",
+        "  \u001b[32mconst hello = \"world\";\u001b[39m                                                        ",
+        "\u001b[2m```\u001b[22m                                                                             ",
+        "                                                                                ",
+        "again, hello world                                                              "
+      ]
+    },
+    {
+      "name": "spacing-code-adjacent",
+      "text": "hello this is text\n```\ncode block\n```\nmore text",
+      "width": 80,
+      "expected": [
+        "hello this is text                                                              ",
+        "                                                                                ",
+        "\u001b[2m```\u001b[22m                                                                             ",
+        "  \u001b[32mcode block\u001b[39m                                                                    ",
+        "\u001b[2m```\u001b[22m                                                                             ",
+        "                                                                                ",
+        "more text                                                                       "
+      ]
+    },
+    {
+      "name": "spacing-code-blank",
+      "text": "hello this is text\n\n```\ncode block\n```\n\nmore text",
+      "width": 80,
+      "expected": [
+        "hello this is text                                                              ",
+        "                                                                                ",
+        "\u001b[2m```\u001b[22m                                                                             ",
+        "  \u001b[32mcode block\u001b[39m                                                                    ",
+        "\u001b[2m```\u001b[22m                                                                             ",
+        "                                                                                ",
+        "more text                                                                       "
+      ]
+    },
+    {
+      "name": "spacing-code-final",
+      "text": "hello world\n\n```js\nconst hello = 'world';\n```",
+      "width": 80,
+      "expected": [
+        "hello world                                                                     ",
+        "                                                                                ",
+        "\u001b[2m```js\u001b[22m                                                                           ",
+        "  \u001b[32mconst hello = 'world';\u001b[39m                                                        ",
+        "\u001b[2m```\u001b[22m                                                                             "
+      ]
+    },
+    {
+      "name": "spacing-divider",
+      "text": "hello world\n\n---\n\nagain, hello world",
+      "width": 80,
+      "expected": [
+        "hello world                                                                     ",
+        "                                                                                ",
+        "\u001b[2m────────────────────────────────────────────────────────────────────────────────\u001b[22m",
+        "                                                                                ",
+        "again, hello world                                                              "
+      ]
+    },
+    {
+      "name": "spacing-divider-final",
+      "text": "---",
+      "width": 80,
+      "expected": [
+        "\u001b[2m────────────────────────────────────────────────────────────────────────────────\u001b[22m"
+      ]
+    },
+    {
+      "name": "spacing-heading",
+      "text": "# Hello\n\nThis is a paragraph",
+      "width": 80,
+      "expected": [
+        "\u001b[1m\u001b[36m\u001b[1m\u001b[4mHello\u001b[24m\u001b[22m\u001b[39m\u001b[22m                                                                           ",
+        "                                                                                ",
+        "This is a paragraph                                                             "
+      ]
+    },
+    {
+      "name": "spacing-heading-final",
+      "text": "# Hello",
+      "width": 80,
+      "expected": [
+        "\u001b[1m\u001b[36m\u001b[1m\u001b[4mHello\u001b[24m\u001b[22m\u001b[39m\u001b[22m                                                                           "
+      ]
+    },
+    {
+      "name": "spacing-quote",
+      "text": "hello world\n\n> This is a quote\n\nagain, hello world",
+      "width": 80,
+      "expected": [
+        "hello world                                                                     ",
+        "                                                                                ",
+        "\u001b[2m│ \u001b[22m\u001b[3m\u001b[3mThis is a quote\u001b[23m\u001b[23m                                                               ",
+        "                                                                                ",
+        "again, hello world                                                              "
+      ]
+    },
+    {
+      "name": "spacing-quote-final",
+      "text": "> This is a quote",
+      "width": 80,
+      "expected": [
+        "\u001b[2m│ \u001b[22m\u001b[3m\u001b[3mThis is a quote\u001b[23m\u001b[23m                                                               "
+      ]
+    },
+    {
+      "name": "quote-lazy",
+      "text": ">Foo\nbar",
+      "width": 80,
+      "defaultStyle": "magenta",
+      "expected": [
+        "\u001b[2m│ \u001b[22m\u001b[3m\u001b[3mFoo                                                                           ",
+        "\u001b[2m│ \u001b[22m\u001b[3mbar\u001b[23m\u001b[23m                                                                           "
+      ]
+    },
+    {
+      "name": "quote-explicit",
+      "text": ">Foo\n>bar",
+      "width": 80,
+      "defaultStyle": "cyan",
+      "expected": [
+        "\u001b[2m│ \u001b[22m\u001b[3m\u001b[3mFoo                                                                           ",
+        "\u001b[2m│ \u001b[22m\u001b[3mbar\u001b[23m\u001b[23m                                                                           "
+      ]
+    },
+    {
+      "name": "quote-list",
+      "text": "> 1. bla bla\n> - nested bullet",
+      "width": 80,
+      "expected": [
+        "\u001b[2m│ \u001b[22m\u001b[3m\u001b[3m\u001b[36m1. \u001b[39mbla bla\u001b[23m\u001b[23m                                                                    ",
+        "\u001b[2m│ \u001b[22m\u001b[3m\u001b[3m\u001b[36m- \u001b[39mnested bullet\u001b[23m\u001b[23m                                                               "
+      ]
+    },
+    {
+      "name": "quote-wrap",
+      "text": "> This is a very long blockquote line that should wrap to multiple lines when rendered",
+      "width": 30,
+      "expected": [
+        "\u001b[2m│ \u001b[22m\u001b[3m\u001b[3mThis is a very long         ",
+        "\u001b[2m│ \u001b[22m\u001b[3mblockquote line that should ",
+        "\u001b[2m│ \u001b[22m\u001b[3mwrap to multiple lines when ",
+        "\u001b[2m│ \u001b[22m\u001b[3mrendered\u001b[23m\u001b[23m                    "
+      ]
+    },
+    {
+      "name": "quote-wrap-styled",
+      "text": "> This is styled text that is long enough to wrap",
+      "width": 25,
+      "defaultStyle": "yellow-italic",
+      "expected": [
+        "\u001b[2m│ \u001b[22m\u001b[3m\u001b[3mThis is styled text    ",
+        "\u001b[2m│ \u001b[22m\u001b[3mthat is long enough to ",
+        "\u001b[2m│ \u001b[22m\u001b[3mwrap\u001b[23m\u001b[23m                   "
+      ]
+    },
+    {
+      "name": "quote-inline",
+      "text": "> Quote with **bold** and `code`",
+      "width": 80,
+      "expected": [
+        "\u001b[2m│ \u001b[22m\u001b[3m\u001b[3mQuote with \u001b[1mbold\u001b[22m\u001b[3m\u001b[3m and \u001b[33mcode\u001b[39m\u001b[23m\u001b[23m                                                      "
+      ]
+    },
+    {
+      "name": "heading-inline-code",
+      "text": "### Why `sourceInfo` should not be optional",
+      "width": 80,
+      "expected": [
+        "\u001b[1m\u001b[36m\u001b[1m### \u001b[22m\u001b[39m\u001b[22m\u001b[1m\u001b[36m\u001b[1mWhy \u001b[22m\u001b[39m\u001b[22m\u001b[33msourceInfo\u001b[39m\u001b[1m\u001b[36m\u001b[1m\u001b[1m\u001b[36m\u001b[1m should not be optional\u001b[22m\u001b[39m\u001b[22m                                       "
+      ]
+    },
+    {
+      "name": "heading-h1-code",
+      "text": "# Title with `code` inside",
+      "width": 80,
+      "expected": [
+        "\u001b[1m\u001b[36m\u001b[1m\u001b[4mTitle with \u001b[24m\u001b[22m\u001b[39m\u001b[22m\u001b[33mcode\u001b[39m\u001b[1m\u001b[36m\u001b[1m\u001b[4m\u001b[1m\u001b[36m\u001b[1m\u001b[4m inside\u001b[24m\u001b[22m\u001b[39m\u001b[22m                                                          "
+      ]
+    },
+    {
+      "name": "heading-h1-code-final",
+      "text": "# Important distinction from `open()`",
+      "width": 80,
+      "expected": [
+        "\u001b[1m\u001b[36m\u001b[1m\u001b[4mImportant distinction from \u001b[24m\u001b[22m\u001b[39m\u001b[22m\u001b[33mopen()\u001b[39m                                               "
+      ]
+    },
+    {
+      "name": "heading-bold",
+      "text": "## Heading with **bold** and more",
+      "width": 80,
+      "expected": [
+        "\u001b[1m\u001b[36m\u001b[1mHeading with \u001b[22m\u001b[39m\u001b[22m\u001b[1m\u001b[1m\u001b[36m\u001b[1mbold\u001b[22m\u001b[39m\u001b[22m\u001b[22m\u001b[1m\u001b[36m\u001b[1m\u001b[1m\u001b[36m\u001b[1m and more\u001b[22m\u001b[39m\u001b[22m                                                      "
+      ]
+    },
+    {
+      "name": "strike-double",
+      "text": "Use ~~strikethrough~~ here",
+      "width": 80,
+      "expected": [
+        "Use \u001b[9mstrikethrough\u001b[29m here                                                          "
+      ]
+    },
+    {
+      "name": "strike-single",
+      "text": "Use ~strikethrough~ literally",
+      "width": 80,
+      "expected": [
+        "Use ~strikethrough~ literally                                                   "
+      ]
+    },
+    {
+      "name": "link-email",
+      "text": "Contact user@example.com for help",
+      "width": 80,
+      "expected": [
+        "Contact \u001b[34m\u001b[4muser@example.com\u001b[24m\u001b[39m for help                                               "
+      ]
+    },
+    {
+      "name": "link-bare",
+      "text": "Visit https://example.com for more",
+      "width": 80,
+      "expected": [
+        "Visit \u001b[34m\u001b[4mhttps://example.com\u001b[24m\u001b[39m for more                                              "
+      ]
+    },
+    {
+      "name": "link-explicit",
+      "text": "[click here](https://example.com)",
+      "width": 80,
+      "expected": [
+        "\u001b[34m\u001b[4mclick here\u001b[24m\u001b[39m\u001b[2m (https://example.com)\u001b[22m                                                "
+      ]
+    },
+    {
+      "name": "link-mailto",
+      "text": "[Email me](mailto:test@example.com)",
+      "width": 80,
+      "expected": [
+        "\u001b[34m\u001b[4mEmail me\u001b[24m\u001b[39m\u001b[2m (mailto:test@example.com)\u001b[22m                                              "
+      ]
+    },
+    {
+      "name": "link-osc8",
+      "text": "[click here](https://example.com)",
+      "width": 80,
+      "hyperlinks": true,
+      "expected": [
+        "\u001b]8;;https://example.com\u001b\\\u001b[34m\u001b[4mclick here\u001b[24m\u001b[39m\u001b]8;;\u001b\\                                                                      "
+      ]
+    },
+    {
+      "name": "link-mailto-osc8",
+      "text": "[Email me](mailto:test@example.com)",
+      "width": 80,
+      "hyperlinks": true,
+      "expected": [
+        "\u001b]8;;mailto:test@example.com\u001b\\\u001b[34m\u001b[4mEmail me\u001b[24m\u001b[39m\u001b]8;;\u001b\\                                                                        "
+      ]
+    },
+    {
+      "name": "link-bare-osc8",
+      "text": "Visit https://example.com for more",
+      "width": 80,
+      "hyperlinks": true,
+      "expected": [
+        "Visit \u001b]8;;https://example.com\u001b\\\u001b[34m\u001b[4mhttps://example.com\u001b[24m\u001b[39m\u001b]8;;\u001b\\ for more                                              "
+      ]
+    },
+    {
+      "name": "html-inline",
+      "text": "This is text with <thinking>hidden content</thinking> that should be visible",
+      "width": 80,
+      "expected": [
+        "This is text with <thinking>hidden content</thinking> that should be visible    "
+      ]
+    },
+    {
+      "name": "html-code",
+      "text": "```html\n<div>Some HTML</div>\n```",
+      "width": 80,
+      "expected": [
+        "\u001b[2m```html\u001b[22m                                                                         ",
+        "  \u001b[32m<div>Some HTML</div>\u001b[39m                                                          ",
+        "\u001b[2m```\u001b[22m                                                                             "
+      ]
+    },
+    {
+      "name": "fence-partial",
+      "text": "```ts\nconst x = 1;\n``",
+      "width": 80,
+      "expected": [
+        "\u001b[2m```ts\u001b[22m                                                                           ",
+        "  \u001b[32mconst x = 1;\u001b[39m                                                                  ",
+        "\u001b[2m```\u001b[22m                                                                             "
+      ]
+    },
+    {
+      "name": "fence-inner",
+      "text": "```md\nnot a closing fence:\n``\n```",
+      "width": 80,
+      "expected": [
+        "\u001b[2m```md\u001b[22m                                                                           ",
+        "  \u001b[32mnot a closing fence:\u001b[39m                                                          ",
+        "  \u001b[32m``\u001b[39m                                                                            ",
+        "\u001b[2m```\u001b[22m                                                                             "
+      ]
+    },
+    {
+      "name": "fence-empty",
+      "text": "```ts\n``",
+      "width": 80,
+      "expected": [
+        "\u001b[2m```ts\u001b[22m                                                                           ",
+        "  \u001b[32m\u001b[39m                                                                              ",
+        "\u001b[2m```\u001b[22m                                                                             "
+      ]
+    },
+    {
+      "name": "fence-four",
+      "text": "````\n```",
+      "width": 80,
+      "expected": [
+        "\u001b[2m```\u001b[22m                                                                             ",
+        "  \u001b[32m\u001b[39m                                                                              ",
+        "\u001b[2m```\u001b[22m                                                                             "
+      ]
+    },
+    {
+      "name": "fence-tilde",
+      "text": "~~~~~\n~~~~",
+      "width": 80,
+      "expected": [
+        "\u001b[2m```\u001b[22m                                                                             ",
+        "  \u001b[32m\u001b[39m                                                                              ",
+        "\u001b[2m```\u001b[22m                                                                             "
+      ]
+    },
+    {
+      "name": "fence-followed",
+      "text": "```md\nnot a closing fence:\n``\n```\n\nafter",
+      "width": 80,
+      "expected": [
+        "\u001b[2m```md\u001b[22m                                                                           ",
+        "  \u001b[32mnot a closing fence:\u001b[39m                                                          ",
+        "  \u001b[32m``\u001b[39m                                                                            ",
+        "\u001b[2m```\u001b[22m                                                                             ",
+        "                                                                                ",
+        "after                                                                           "
+      ]
+    }
+  ]
+}
