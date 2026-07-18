@@ -115,6 +115,22 @@ func TestSessionRuntimeDisposeDropsListeners(t *testing.T) {
 	}
 }
 
+func TestSessionRuntimeDisposeCleansSessionResources(t *testing.T) {
+	provider := testFaux(1000)
+	runtime, manager := newTestRuntime(t, provider, map[string]any{"compaction": map[string]any{"enabled": false}})
+	var cleaned []string
+	unregister := ai.RegisterSessionResourceCleanup(func(sessionID string) error {
+		cleaned = append(cleaned, sessionID)
+		return nil
+	})
+	t.Cleanup(unregister)
+
+	runtime.Dispose()
+	if !reflect.DeepEqual(cleaned, []string{manager.GetSessionID()}) {
+		t.Fatalf("cleaned sessions = %v, want [%s]", cleaned, manager.GetSessionID())
+	}
+}
+
 func TestSessionRuntimeDefaultCompletionAppliesRequestAuth(t *testing.T) {
 	provider := testFaux(1000)
 	root := t.TempDir()

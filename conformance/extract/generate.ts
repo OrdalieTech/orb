@@ -4,6 +4,7 @@ import { generateF1 } from "./f1-messages.ts";
 import { generateF1PartialJSON } from "./f1-partialjson.ts";
 import { generateF1Schema } from "./f1-schema.ts";
 import { generateF2 } from "./f2-openai.ts";
+import { generateF2Codex } from "./f2-codex.ts";
 import { generateF3 } from "./f3-agent.ts";
 import { generateF3Session } from "./f3-session.ts";
 import { generateF4 } from "./f4-edit.ts";
@@ -25,6 +26,7 @@ const generators = [
   generateF1PartialJSON,
   generateF1Schema,
   generateF2,
+  generateF2Codex,
   generateF3,
   generateF3Session,
   generateF4,

@@ -9,6 +9,8 @@ type AuthKind string
 
 const AuthAPIKey AuthKind = "api_key"
 
+const AuthOAuth AuthKind = "oauth"
+
 type Provider struct {
 	ID      ai.ProviderID
 	Name    string
@@ -52,13 +54,22 @@ func Get(id ai.ProviderID) (Provider, bool) {
 		return Mistral(), true
 	case azureOpenAIResponsesProvider.ID:
 		return AzureOpenAIResponses(), true
+	case openAICodexProvider.ID:
+		return OpenAICodex(), true
+	case githubCopilotProvider.ID:
+		return GitHubCopilot(), true
+	case xAIProvider.ID:
+		return XAI(), true
 	default:
 		return Provider{}, false
 	}
 }
 
 func List() []Provider {
-	return []Provider{OpenAI(), Anthropic(), Google(), GoogleVertex(), AmazonBedrock(), Mistral(), AzureOpenAIResponses()}
+	return []Provider{
+		OpenAI(), Anthropic(), Google(), GoogleVertex(), AmazonBedrock(), Mistral(), AzureOpenAIResponses(),
+		OpenAICodex(), GitHubCopilot(), XAI(),
+	}
 }
 
 func cloneProvider(provider Provider) Provider {

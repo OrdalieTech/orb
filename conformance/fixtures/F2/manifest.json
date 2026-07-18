@@ -1,8 +1,8 @@
 {
   "family": "F2",
   "upstreamCommit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
-  "generator": "conformance/extract/f2-openai.ts",
-  "source": "packages/ai/src/api/openai-responses.ts + packages/ai/src/api/openai-responses-shared.ts + packages/ai/src/api/openai-completions.ts + packages/ai/src/api/openai-prompt-cache.ts + packages/ai/src/api/anthropic-messages.ts + packages/ai/src/api/bedrock-converse-stream.ts + packages/ai/src/api/google-generative-ai.ts + packages/ai/src/api/google-vertex.ts + packages/ai/src/api/google-shared.ts + packages/ai/src/api/mistral-conversations.ts + packages/ai/src/api/azure-openai-responses.ts + packages/ai/src/api/pi-messages.ts + packages/ai/src/utils/deferred-tools.ts + packages/ai/src/api/transform-messages.ts + packages/ai/src/providers/openai.ts + packages/ai/src/providers/anthropic.ts + packages/ai/src/providers/amazon-bedrock.ts + packages/ai/src/providers/google.ts + packages/ai/src/providers/google-vertex.ts + packages/ai/src/env-api-keys.ts + packages/ai/src/auth/helpers.ts + packages/ai/src/auth/oauth/oauth-page.ts + packages/ai/src/models.ts + packages/ai/scripts/generate-models.ts + packages/coding-agent/src/core/auth-storage.ts + packages/coding-agent/src/core/resolve-config-value.ts + packages/coding-agent/src/migrations.ts",
+  "generator": "conformance/extract/f2-openai.ts + conformance/extract/f2-codex.ts",
+  "source": "packages/ai/src/api/openai-responses.ts + packages/ai/src/api/openai-responses-shared.ts + packages/ai/src/api/openai-completions.ts + packages/ai/src/api/openai-prompt-cache.ts + packages/ai/src/api/anthropic-messages.ts + packages/ai/src/api/bedrock-converse-stream.ts + packages/ai/src/api/google-generative-ai.ts + packages/ai/src/api/google-vertex.ts + packages/ai/src/api/google-shared.ts + packages/ai/src/api/mistral-conversations.ts + packages/ai/src/api/azure-openai-responses.ts + packages/ai/src/api/pi-messages.ts + packages/ai/src/utils/deferred-tools.ts + packages/ai/src/api/transform-messages.ts + packages/ai/src/providers/openai.ts + packages/ai/src/providers/anthropic.ts + packages/ai/src/providers/amazon-bedrock.ts + packages/ai/src/providers/google.ts + packages/ai/src/providers/google-vertex.ts + packages/ai/src/env-api-keys.ts + packages/ai/src/auth/helpers.ts + packages/ai/src/auth/oauth/oauth-page.ts + packages/ai/src/models.ts + packages/ai/scripts/generate-models.ts + packages/coding-agent/src/core/auth-storage.ts + packages/coding-agent/src/core/resolve-config-value.ts + packages/coding-agent/src/migrations.ts + packages/ai/src/api/openai-codex-responses.ts + packages/ai/src/auth/oauth/{openai-codex,github-copilot,xai,device-code}.ts + packages/ai/src/providers/{openai-codex,github-copilot,xai}.ts",
   "files": [
     "provider.json",
     "anthropic-provider.json",
@@ -25,6 +25,10 @@
     "azure-streams.json",
     "pi-messages-requests.json",
     "pi-messages-streams.json",
-    "auth-storage.json"
+    "auth-storage.json",
+    "codex-requests.json",
+    "codex-streams.json",
+    "codex-websocket.json",
+    "subscription-providers.json"
   ]
 }

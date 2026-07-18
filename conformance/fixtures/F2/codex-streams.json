@@ -1,0 +1,817 @@
+{
+  "cases": [
+    {
+      "name": "codex-rich-done-priority",
+      "api": "openai-codex-responses",
+      "model": {
+        "id": "gpt-codex-fixture",
+        "name": "Codex Fixture Model",
+        "api": "openai-codex-responses",
+        "provider": "openai-codex",
+        "baseUrl": "https://codex.fixture.invalid/backend-api",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "xhigh"
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1000000,
+          "output": 2000000,
+          "cacheRead": 3000000,
+          "cacheWrite": 4000000
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "stream",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "header.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC1mMi1jb2RleCJ9fQ.signature",
+        "transport": "sse",
+        "serviceTier": "priority"
+      },
+      "sse": "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_codex_rich\"}}\n\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"reasoning\",\"id\":\"rs_codex\",\"summary\":[]}}\n\ndata: {\"type\":\"response.reasoning_summary_text.delta\",\"output_index\":0,\"delta\":\"plan\"}\n\ndata: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"reasoning\",\"id\":\"rs_codex\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}],\"encrypted_content\":\"encrypted-codex\"}}\n\ndata: {\"type\":\"response.output_item.added\",\"output_index\":1,\"item\":{\"type\":\"message\",\"id\":\"msg_codex\",\"role\":\"assistant\",\"content\":[],\"status\":\"in_progress\"}}\n\ndata: {\"type\":\"response.output_text.delta\",\"output_index\":1,\"delta\":\"hello\"}\n\ndata: {\"type\":\"response.output_item.done\",\"output_index\":1,\"item\":{\"type\":\"message\",\"id\":\"msg_codex\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"hello\",\"annotations\":[]}],\"status\":\"completed\",\"phase\":\"final_answer\"}}\n\ndata: {\"type\":\"response.done\",\"response\":{\"id\":\"resp_codex_rich\",\"status\":\"completed\",\"service_tier\":\"default\",\"output\":[{\"type\":\"reasoning\",\"id\":\"rs_codex\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}],\"encrypted_content\":\"encrypted-codex\"}],\"usage\":{\"input_tokens\":20,\"output_tokens\":7,\"total_tokens\":27,\"input_tokens_details\":{\"cached_tokens\":2,\"cache_write_tokens\":3},\"output_tokens_details\":{\"reasoning_tokens\":4}}}}\n\ndata: {\"type\":\"response.output_text.delta\",\"output_index\":1,\"delta\":\"must-not-be-read\"}\n\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "openai-codex-responses",
+            "provider": "openai-codex",
+            "model": "gpt-codex-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "thinking_start",
+          "contentIndex": 0,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": ""
+              }
+            ],
+            "api": "openai-codex-responses",
+            "provider": "openai-codex",
+            "model": "gpt-codex-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "resp_codex_rich"
+          }
+        },
+        {
+          "type": "thinking_delta",
+          "contentIndex": 0,
+          "delta": "plan",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan"
+              }
+            ],
+            "api": "openai-codex-responses",
+            "provider": "openai-codex",
+            "model": "gpt-codex-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "resp_codex_rich"
+          }
+        },
+        {
+          "type": "thinking_end",
+          "contentIndex": 0,
+          "content": "plan",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "{\"type\":\"reasoning\",\"id\":\"rs_codex\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}],\"encrypted_content\":\"encrypted-codex\"}"
+              }
+            ],
+            "api": "openai-codex-responses",
+            "provider": "openai-codex",
+            "model": "gpt-codex-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "resp_codex_rich"
+          }
+        },
+        {
+          "type": "text_start",
+          "contentIndex": 1,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "{\"type\":\"reasoning\",\"id\":\"rs_codex\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}],\"encrypted_content\":\"encrypted-codex\"}"
+              },
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "api": "openai-codex-responses",
+            "provider": "openai-codex",
+            "model": "gpt-codex-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "resp_codex_rich"
+          }
+        },
+        {
+          "type": "text_delta",
+          "contentIndex": 1,
+          "delta": "hello",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "{\"type\":\"reasoning\",\"id\":\"rs_codex\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}],\"encrypted_content\":\"encrypted-codex\"}"
+              },
+              {
+                "type": "text",
+                "text": "hello"
+              }
+            ],
+            "api": "openai-codex-responses",
+            "provider": "openai-codex",
+            "model": "gpt-codex-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "resp_codex_rich"
+          }
+        },
+        {
+          "type": "text_end",
+          "contentIndex": 1,
+          "content": "hello",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "{\"type\":\"reasoning\",\"id\":\"rs_codex\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}],\"encrypted_content\":\"encrypted-codex\"}"
+              },
+              {
+                "type": "text",
+                "text": "hello",
+                "textSignature": "{\"v\":1,\"id\":\"msg_codex\",\"phase\":\"final_answer\"}"
+              }
+            ],
+            "api": "openai-codex-responses",
+            "provider": "openai-codex",
+            "model": "gpt-codex-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "resp_codex_rich"
+          }
+        },
+        {
+          "type": "done",
+          "reason": "stop",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "{\"type\":\"reasoning\",\"id\":\"rs_codex\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}],\"encrypted_content\":\"encrypted-codex\"}"
+              },
+              {
+                "type": "text",
+                "text": "hello",
+                "textSignature": "{\"v\":1,\"id\":\"msg_codex\",\"phase\":\"final_answer\"}"
+              }
+            ],
+            "api": "openai-codex-responses",
+            "provider": "openai-codex",
+            "model": "gpt-codex-fixture",
+            "usage": {
+              "input": 15,
+              "output": 7,
+              "cacheRead": 2,
+              "cacheWrite": 3,
+              "reasoning": 4,
+              "totalTokens": 27,
+              "cost": {
+                "input": 30,
+                "output": 28,
+                "cacheRead": 12,
+                "cacheWrite": 24,
+                "total": 94
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "resp_codex_rich"
+          }
+        }
+      ]
+    },
+    {
+      "name": "codex-incomplete-length",
+      "api": "openai-codex-responses",
+      "model": {
+        "id": "gpt-codex-fixture",
+        "name": "Codex Fixture Model",
+        "api": "openai-codex-responses",
+        "provider": "openai-codex",
+        "baseUrl": "https://codex.fixture.invalid/backend-api",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "xhigh"
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1000000,
+          "output": 2000000,
+          "cacheRead": 3000000,
+          "cacheWrite": 4000000
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "length",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "header.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC1mMi1jb2RleCJ9fQ.signature",
+        "transport": "sse"
+      },
+      "sse": "data: {\"type\":\"response.incomplete\",\"response\":{\"id\":\"resp_codex_length\",\"status\":\"incomplete\",\"output\":[],\"usage\":{\"input_tokens\":8,\"output_tokens\":3,\"total_tokens\":11}}}\n\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "openai-codex-responses",
+            "provider": "openai-codex",
+            "model": "gpt-codex-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "done",
+          "reason": "length",
+          "message": {
+            "role": "assistant",
+            "content": [],
+            "api": "openai-codex-responses",
+            "provider": "openai-codex",
+            "model": "gpt-codex-fixture",
+            "usage": {
+              "input": 8,
+              "output": 3,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 11,
+              "cost": {
+                "input": 8,
+                "output": 6,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 14
+              }
+            },
+            "stopReason": "length",
+            "timestamp": 1700000000123,
+            "responseId": "resp_codex_length"
+          }
+        }
+      ]
+    },
+    {
+      "name": "codex-error-event",
+      "api": "openai-codex-responses",
+      "model": {
+        "id": "gpt-codex-fixture",
+        "name": "Codex Fixture Model",
+        "api": "openai-codex-responses",
+        "provider": "openai-codex",
+        "baseUrl": "https://codex.fixture.invalid/backend-api",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "xhigh"
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192
+      },
+      "context": {
+        "messages": []
+      },
+      "options": {
+        "apiKey": "header.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC1mMi1jb2RleCJ9fQ.signature",
+        "transport": "sse"
+      },
+      "sse": "data: {\"type\":\"error\",\"error\":{\"code\":\"denied\",\"message\":\"fixture denied\"}}\n\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "openai-codex-responses",
+            "provider": "openai-codex",
+            "model": "gpt-codex-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "openai-codex-responses",
+            "provider": "openai-codex",
+            "model": "gpt-codex-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "errorMessage": "Codex error: fixture denied"
+          }
+        }
+      ]
+    },
+    {
+      "name": "codex-response-failed",
+      "api": "openai-codex-responses",
+      "model": {
+        "id": "gpt-codex-fixture",
+        "name": "Codex Fixture Model",
+        "api": "openai-codex-responses",
+        "provider": "openai-codex",
+        "baseUrl": "https://codex.fixture.invalid/backend-api",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "xhigh"
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192
+      },
+      "context": {
+        "messages": []
+      },
+      "options": {
+        "apiKey": "header.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC1mMi1jb2RleCJ9fQ.signature",
+        "transport": "sse"
+      },
+      "sse": "data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"code\":\"failed\",\"message\":\"fixture response failed\"}}}\n\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "openai-codex-responses",
+            "provider": "openai-codex",
+            "model": "gpt-codex-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "openai-codex-responses",
+            "provider": "openai-codex",
+            "model": "gpt-codex-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "errorMessage": "fixture response failed"
+          }
+        }
+      ]
+    },
+    {
+      "name": "codex-http-429-friendly",
+      "api": "openai-codex-responses",
+      "model": {
+        "id": "gpt-codex-fixture",
+        "name": "Codex Fixture Model",
+        "api": "openai-codex-responses",
+        "provider": "openai-codex",
+        "baseUrl": "https://codex.fixture.invalid/backend-api",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "xhigh"
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192
+      },
+      "context": {
+        "messages": []
+      },
+      "options": {
+        "apiKey": "header.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC1mMi1jb2RleCJ9fQ.signature",
+        "transport": "sse"
+      },
+      "httpStatus": 429,
+      "httpBody": "{\"error\":{\"code\":\"usage_limit_reached\",\"message\":\"raw limit\",\"plan_type\":\"Plus\",\"resets_at\":1700000300}}",
+      "httpContentType": "application/json",
+      "expectedEvents": [
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "openai-codex-responses",
+            "provider": "openai-codex",
+            "model": "gpt-codex-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "errorMessage": "You have hit your ChatGPT usage limit (plus plan). Try again in ~5 min."
+          }
+        }
+      ]
+    },
+    {
+      "name": "codex-negative-http-timeout",
+      "api": "openai-codex-responses",
+      "model": {
+        "id": "gpt-codex-fixture",
+        "name": "Codex Fixture Model",
+        "api": "openai-codex-responses",
+        "provider": "openai-codex",
+        "baseUrl": "https://codex.fixture.invalid/backend-api",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "xhigh"
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192
+      },
+      "context": {
+        "messages": []
+      },
+      "options": {
+        "apiKey": "header.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC1mMi1jb2RleCJ9fQ.signature",
+        "transport": "sse",
+        "timeoutMs": -1
+      },
+      "expectedEvents": [
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "openai-codex-responses",
+            "provider": "openai-codex",
+            "model": "gpt-codex-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "errorMessage": "Invalid timeoutMs: -1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "codex-negative-websocket-timeout",
+      "api": "openai-codex-responses",
+      "model": {
+        "id": "gpt-codex-fixture",
+        "name": "Codex Fixture Model",
+        "api": "openai-codex-responses",
+        "provider": "openai-codex",
+        "baseUrl": "https://codex.fixture.invalid/backend-api",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "xhigh"
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192
+      },
+      "context": {
+        "messages": []
+      },
+      "options": {
+        "apiKey": "header.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC1mMi1jb2RleCJ9fQ.signature",
+        "transport": "sse",
+        "websocketConnectTimeoutMs": -1
+      },
+      "expectedEvents": [
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [],
+            "api": "openai-codex-responses",
+            "provider": "openai-codex",
+            "model": "gpt-codex-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "errorMessage": "Invalid timeoutMs: -1"
+          }
+        }
+      ]
+    }
+  ]
+}

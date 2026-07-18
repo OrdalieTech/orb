@@ -1,0 +1,42 @@
+{
+  "providers": [
+    {
+      "id": "openai-codex",
+      "name": "OpenAI Codex",
+      "baseUrl": "https://chatgpt.com/backend-api",
+      "apis": [
+        "openai-codex-responses"
+      ],
+      "auth": {
+        "oauthName": "OpenAI (ChatGPT Plus/Pro)"
+      }
+    },
+    {
+      "id": "github-copilot",
+      "name": "GitHub Copilot",
+      "baseUrl": "https://api.individual.githubcopilot.com",
+      "apis": [
+        "anthropic-messages",
+        "openai-completions",
+        "openai-responses"
+      ],
+      "auth": {
+        "apiKeyName": "GitHub Copilot token",
+        "oauthName": "GitHub Copilot"
+      }
+    },
+    {
+      "id": "xai",
+      "name": "xAI",
+      "baseUrl": "https://api.x.ai/v1",
+      "apis": [
+        "openai-completions",
+        "openai-responses"
+      ],
+      "auth": {
+        "apiKeyName": "xAI API key",
+        "oauthName": "xAI (Grok/X subscription)"
+      }
+    }
+  ]
+}

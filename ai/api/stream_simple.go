@@ -31,7 +31,9 @@ func StreamSimple(
 		return StreamSimpleMistralConversations(ctx, model, requestContext, options)
 	case ai.APIAzureOpenAIResponses:
 		return StreamSimpleAzureOpenAIResponses(ctx, model, requestContext, options)
-	case ai.APIOpenAIResponses, ai.APIOpenAICodexResponses:
+	case ai.APIOpenAICodexResponses:
+		return StreamSimpleOpenAICodexResponses(ctx, model, requestContext, options)
+	case ai.APIOpenAIResponses:
 		return StreamSimpleOpenAIResponses(ctx, model, requestContext, options)
 	case ai.APIOpenAICompletions:
 		return StreamSimpleOpenAICompletions(ctx, model, requestContext, options)

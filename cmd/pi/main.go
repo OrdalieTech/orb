@@ -432,8 +432,10 @@ const helpText = `pi - AI coding assistant
 
 Usage: pi [options] [@files...] [messages...]
 
-       pi login anthropic
-       pi logout [anthropic]
+       pi login <provider>
+       pi logout [provider]
+
+OAuth providers: anthropic, openai-codex, github-copilot, xai
 
   --provider <name>              Provider name
   --model <id>                   Model ID

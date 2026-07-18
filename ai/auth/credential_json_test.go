@@ -41,6 +41,29 @@ func TestCredentialConstructorsUseUpstreamFieldOrder(t *testing.T) {
 	}
 }
 
+func TestOAuthCredentialAccessFirstAndExtraPreserveProviderOrder(t *testing.T) {
+	credential := OAuthCredentialAccessFirst("access", "refresh", 123)
+	credential.SetExtra("accountId", json.RawMessage(`"account"`))
+	encoded, err := credential.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"type":"oauth","access":"access","refresh":"refresh","expires":123,"accountId":"account"}`
+	if string(encoded) != want {
+		t.Fatalf("credential = %s, want %s", encoded, want)
+	}
+
+	credential.SetExtra("accountId", json.RawMessage(`"replaced"`))
+	encoded, err = credential.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = `{"type":"oauth","access":"access","refresh":"refresh","expires":123,"accountId":"replaced"}`
+	if string(encoded) != want {
+		t.Fatalf("credential after replacement = %s, want %s", encoded, want)
+	}
+}
+
 func TestCredentialRejectsInvalidTrailer(t *testing.T) {
 	var credential Credential
 	if err := json.Unmarshal([]byte(`{"type":"api_key"}x`), &credential); err == nil {

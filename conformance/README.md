@@ -15,6 +15,8 @@ quirk.
 
 WP-231 extends F2 with byte-exact Mistral Conversations and Azure OpenAI Responses requests plus recorded stream/error traces, including Mistral SDK serialization and the pinned OpenAI SDK's proxy-query replacement quirk. WP-232 adds Bedrock request and event-stream fixtures through the pinned AWS serializer, plus generated provider login and credential-chain evidence. WP-260 adds the generic pi-messages request and serialized-event stream, including transport-only signature, redaction, tool metadata, and server-error member ordering.
 
+WP-241 extends F2 with pinned Codex Responses request bytes, recorded SSE events, WebSocket cache framing, and OpenAI Codex, GitHub Copilot, and xAI subscription-provider metadata. Its Go consumers replay every generated case, including empty-session cache keys, nullable thinking mappings, cached-context deltas, transport fallback, Copilot token metadata, and provider-specific OAuth credential serialization.
+
 WP-250 adds an auxiliary upstream-derived fixture family for model pattern resolution, fuzzy `--list-models` tables, provider-isolated `models.json` composition including fractional numeric limits, ordered model-store persistence, and the exact minimal/full documentation examples. The large models.dev input is committed separately under `ai/models/testdata/` so catalog generation remains deterministic without duplicating it in the conformance tree.
 
 WP-211 extends F2 with byte-exact TS/Go auth storage and legacy-migration cases, the upstream OAuth callback pages, reciprocal TS reads, and a live cross-runtime `proper-lockfile` contention check.
