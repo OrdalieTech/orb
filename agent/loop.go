@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -248,9 +249,10 @@ func streamAssistantResponse(
 		llmContext.Tools = &tools
 	}
 
+	requestModel := cloneModel(config.Model)
 	options := config.SimpleStreamOptions
 	if config.GetAPIKey != nil {
-		key, keyErr := config.GetAPIKey(ctx, config.Model.Provider)
+		key, keyErr := config.GetAPIKey(ctx, requestModel.Provider)
 		if keyErr != nil {
 			return nil, keyErr
 		}
@@ -258,7 +260,14 @@ func streamAssistantResponse(
 			options.APIKey = key
 		}
 	}
-	stream, err := config.StreamFn(ctx, config.Model, llmContext, &options)
+	if config.GetModelHeaders != nil {
+		headers, headerErr := config.GetModelHeaders(ctx, requestModel, options.APIKey)
+		if headerErr != nil {
+			return nil, headerErr
+		}
+		requestModel.Headers = mergeRequestHeaders(requestModel.Headers, headers)
+	}
+	stream, err := config.StreamFn(ctx, requestModel, llmContext, &options)
 	if err != nil {
 		return nil, err
 	}
@@ -316,6 +325,29 @@ func streamAssistantResponse(
 		}
 	}
 	return nil, ai.ErrStreamIncomplete
+}
+
+func mergeRequestHeaders(base, override *map[string]string) *map[string]string {
+	if base == nil && override == nil {
+		return nil
+	}
+	merged := make(map[string]string)
+	if base != nil {
+		for name, value := range *base {
+			merged[name] = value
+		}
+	}
+	if override != nil {
+		for name, value := range *override {
+			for existing := range merged {
+				if strings.EqualFold(existing, name) {
+					delete(merged, existing)
+				}
+			}
+			merged[name] = value
+		}
+	}
+	return &merged
 }
 
 func finishAssistantResponse(

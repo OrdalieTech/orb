@@ -49,6 +49,20 @@ func TestParseArgsCoreSubset(t *testing.T) {
 	}
 }
 
+func TestParseArgsModelCatalogFlags(t *testing.T) {
+	args := ParseArgs([]string{"--models", " sonnet:high, ,openai/gpt-4o ", "--list-models", "gpt 4"})
+	if !reflect.DeepEqual(args.Models, []string{"sonnet:high", "", "openai/gpt-4o"}) {
+		t.Fatalf("models = %#v", args.Models)
+	}
+	if args.ListModels == nil || *args.ListModels != "gpt 4" {
+		t.Fatalf("list-models = %#v", args.ListModels)
+	}
+	withoutSearch := ParseArgs([]string{"--list-models", "--print"})
+	if withoutSearch.ListModels == nil || *withoutSearch.ListModels != "" || !withoutSearch.Print {
+		t.Fatalf("list without search = %#v", withoutSearch)
+	}
+}
+
 func TestParseArgsPrintConsumesOnlyEligibleNextArgument(t *testing.T) {
 	tests := []struct {
 		name     string

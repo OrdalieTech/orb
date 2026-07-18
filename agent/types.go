@@ -178,6 +178,7 @@ type AgentLoopTurnUpdate struct {
 type ConvertToLLMFunc func(context.Context, AgentMessages) (ai.MessageList, error)
 type TransformContextFunc func(context.Context, AgentMessages) (AgentMessages, error)
 type GetAPIKeyFunc func(context.Context, ai.ProviderID) (*string, error)
+type GetModelHeadersFunc func(context.Context, *ai.Model, *string) (*map[string]string, error)
 type ShouldStopAfterTurnFunc func(context.Context, ShouldStopAfterTurnContext) (bool, error)
 type PrepareNextTurnFunc func(context.Context, PrepareNextTurnContext) (*AgentLoopTurnUpdate, error)
 type GetQueuedMessagesFunc func(context.Context) (AgentMessages, error)
@@ -193,6 +194,7 @@ type AgentLoopConfig struct {
 	ConvertToLLM        ConvertToLLMFunc
 	TransformContext    TransformContextFunc
 	GetAPIKey           GetAPIKeyFunc
+	GetModelHeaders     GetModelHeadersFunc
 	ShouldStopAfterTurn ShouldStopAfterTurnFunc
 	PrepareNextTurn     PrepareNextTurnFunc
 	GetSteeringMessages GetQueuedMessagesFunc

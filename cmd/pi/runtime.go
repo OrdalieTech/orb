@@ -19,7 +19,7 @@ type runtimeInputs struct {
 }
 
 func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMessages) (runtimeInputs, error) {
-	args = normalizeSkeletonCLIArgs(args)
+	args = normalizeRuntimeCLIArgs(args)
 	agentDir, err := config.GetAgentDir()
 	if err != nil {
 		return runtimeInputs{}, err
@@ -63,16 +63,23 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		ContextFiles:       resources.ContextFiles,
 	})
 
-	model, err := resolveSkeletonModel(args, settings)
+	registry, err := config.NewModelRegistry(agentDir)
 	if err != nil {
 		return runtimeInputs{}, err
 	}
+	model, scopedThinking, modelDiagnostics, err := resolveRuntimeModel(args, settings, registry)
+	if err != nil {
+		return runtimeInputs{}, err
+	}
+	diagnostics = append(diagnostics, modelDiagnostics...)
 	thinking := settings.GetDefaultThinkingLevel()
 	if thinking == "" {
 		thinking = ai.ModelThinkingMedium
 	}
 	if args.Thinking != nil {
 		thinking = ai.ModelThinkingLevel(*args.Thinking)
+	} else if scopedThinking != nil {
+		thinking = *scopedThinking
 	}
 	transport := settings.GetTransport()
 	state := agent.AgentState{
@@ -88,9 +95,88 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		agent.WithSteeringMode(agent.QueueMode(settings.GetSteeringMode())),
 		agent.WithFollowUpMode(agent.QueueMode(settings.GetFollowUpMode())),
 		agent.WithSimpleStreamOptions(ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{Transport: &transport}}),
-		agent.WithAPIKeyResolver(apiKeyResolver(args)),
+		agent.WithAPIKeyResolver(apiKeyResolver(args, registry)),
+		agent.WithModelHeadersResolver(func(ctx context.Context, model *ai.Model, apiKey *string) (*map[string]string, error) {
+			return registry.ResolveModelHeaders(ctx, *model, nil, apiKey)
+		}),
 	)
 	return runtimeInputs{Agent: created, Diagnostics: diagnostics}, nil
+}
+
+func resolveRuntimeModel(args CLIArgs, settings *config.SettingsManager, registry *config.ModelRegistry) (*ai.Model, *ai.ModelThinkingLevel, []string, error) {
+	args = normalizeRuntimeCLIArgs(args)
+	all := registry.Models()
+	diagnostics := make([]string, 0)
+	patterns := args.Models
+	if patterns == nil {
+		patterns = settings.GetEnabledModels()
+	}
+	if args.Model == nil && len(patterns) > 0 && !args.Continue {
+		scoped, warnings := codingagent.ResolveModelScope(patterns, registry.Available(nil))
+		for _, warning := range warnings {
+			diagnostics = append(diagnostics, warning.Message)
+		}
+		if len(scoped) > 0 {
+			selected := scoped[0]
+			defaultProvider, defaultID := settings.GetDefaultProvider(), settings.GetDefaultModel()
+			for _, candidate := range scoped {
+				if string(candidate.Model.Provider) == defaultProvider && candidate.Model.ID == defaultID {
+					selected = candidate
+					break
+				}
+			}
+			model := selected.Model
+			return &model, selected.ThinkingLevel, diagnostics, nil
+		}
+	}
+	provider, pattern := "", ""
+	restoreWarning := ""
+	if args.Model != nil {
+		pattern = *args.Model
+		if args.Provider != nil {
+			provider = *args.Provider
+		}
+		if args.RestoredModel {
+			restored, found := registry.Find(provider, pattern)
+			if found && registry.HasConfiguredAuth(string(restored.Provider), nil) {
+				return &restored, nil, diagnostics, nil
+			}
+			restoreWarning = fmt.Sprintf("Could not restore model %s/%s", provider, pattern)
+		} else {
+			var cliThinking *ai.ModelThinkingLevel
+			if args.Thinking != nil {
+				level := ai.ModelThinkingLevel(*args.Thinking)
+				cliThinking = &level
+			}
+			resolved := codingagent.ResolveCLIModel(provider, pattern, cliThinking, all, func(provider string) bool {
+				return registry.HasConfiguredAuth(provider, nil)
+			})
+			if resolved.Error != "" {
+				return nil, nil, diagnostics, fmt.Errorf("%s", resolved.Error)
+			}
+			if resolved.Warning != "" {
+				diagnostics = append(diagnostics, resolved.Warning)
+			}
+			return resolved.Model, resolved.ThinkingLevel, diagnostics, nil
+		}
+	}
+	defaultProvider, defaultID := settings.GetDefaultProvider(), settings.GetDefaultModel()
+	if defaultProvider != "" && defaultID != "" && registry.HasConfiguredAuth(defaultProvider, nil) {
+		if model, found := registry.Find(defaultProvider, defaultID); found {
+			if restoreWarning != "" {
+				diagnostics = append(diagnostics, fmt.Sprintf("%s. Using %s/%s", restoreWarning, model.Provider, model.ID))
+			}
+			return &model, nil, diagnostics, nil
+		}
+	}
+	model := codingagent.PreferredAvailableModel(registry.Available(nil))
+	if model == nil {
+		return nil, nil, diagnostics, fmt.Errorf("no model available; configure provider auth or use --model")
+	}
+	if restoreWarning != "" {
+		diagnostics = append(diagnostics, fmt.Sprintf("%s. Using %s/%s", restoreWarning, model.Provider, model.ID))
+	}
+	return model, nil, diagnostics, nil
 }
 
 func resolveSkeletonModel(args CLIArgs, settings *config.SettingsManager) (*ai.Model, error) {
@@ -170,10 +256,23 @@ func normalizeSkeletonCLIArgs(args CLIArgs) CLIArgs {
 	return args
 }
 
-func apiKeyResolver(args CLIArgs) agent.GetAPIKeyFunc {
-	return func(_ context.Context, provider ai.ProviderID) (*string, error) {
+func normalizeRuntimeCLIArgs(args CLIArgs) CLIArgs {
+	if args.Provider != nil && *args.Provider == "" {
+		args.Provider = nil
+	}
+	if args.Model != nil && *args.Model == "" {
+		args.Model = nil
+	}
+	return args
+}
+
+func apiKeyResolver(args CLIArgs, registries ...*config.ModelRegistry) agent.GetAPIKeyFunc {
+	return func(ctx context.Context, provider ai.ProviderID) (*string, error) {
 		if args.APIKey != nil && *args.APIKey != "" {
 			return args.APIKey, nil
+		}
+		if len(registries) > 0 && registries[0] != nil {
+			return registries[0].ResolveAPIKey(ctx, string(provider), nil)
 		}
 		if provider == "openai" {
 			if value := os.Getenv("OPENAI_API_KEY"); value != "" {

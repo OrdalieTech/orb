@@ -302,6 +302,24 @@ func (manager *SettingsManager) GetDefaultProvider() string {
 }
 func (manager *SettingsManager) GetDefaultModel() string { return manager.stringValue("defaultModel") }
 
+func (manager *SettingsManager) GetEnabledModels() []string {
+	value, exists := manager.value("enabledModels")
+	if !exists {
+		return nil
+	}
+	raw, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	models := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if model, ok := item.(string); ok {
+			models = append(models, model)
+		}
+	}
+	return models
+}
+
 func (manager *SettingsManager) GetDefaultThinkingLevel() ai.ModelThinkingLevel {
 	return ai.ModelThinkingLevel(manager.stringValue("defaultThinkingLevel"))
 }

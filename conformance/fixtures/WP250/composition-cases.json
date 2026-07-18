@@ -1,0 +1,64 @@
+[
+  {
+    "name": "invalid-provider-keeps-valid-sibling",
+    "config": {
+      "providers": {
+        "anthropic": {},
+        "empty": {},
+        "bad": {
+          "models": [
+            {
+              "id": "broken"
+            }
+          ]
+        },
+        "nonpositive": {
+          "baseUrl": "https://example.invalid/v1",
+          "api": "openai-completions",
+          "models": [
+            {
+              "id": "zero",
+              "contextWindow": 0
+            }
+          ]
+        },
+        "good": {
+          "baseUrl": "https://example.invalid/v1",
+          "api": "openai-completions",
+          "apiKey": "test",
+          "models": [
+            {
+              "id": "working"
+            }
+          ]
+        }
+      }
+    },
+    "goodModels": [
+      {
+        "id": "working",
+        "name": "working",
+        "api": "openai-completions",
+        "provider": "good",
+        "baseUrl": "https://example.invalid/v1",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 16384
+      }
+    ],
+    "badModels": [],
+    "nonpositiveModels": [],
+    "emptyModels": [],
+    "anthropicProviderPreserved": true,
+    "error": "Provider \"anthropic\": Provider anthropic: must specify \"baseUrl\", \"headers\", \"compat\", \"modelOverrides\", or \"models\".\n\nProvider \"empty\": Provider empty: must specify \"baseUrl\", \"headers\", \"compat\", \"modelOverrides\", or \"models\".\n\nProvider \"bad\": Provider bad, model broken: no \"api\" specified. Set at provider or model level.\n\nProvider \"nonpositive\": Provider nonpositive, model zero: invalid contextWindow"
+  }
+]

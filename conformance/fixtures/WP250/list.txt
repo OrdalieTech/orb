@@ -1,0 +1,5 @@
+provider    model                    context  max-out  thinking  images
+anthropic   claude-sonnet-4-5        200K     8.2K     yes       yes   
+openai      gpt-4o                   128K     4.1K     no        yes   
+openrouter  openai/gpt-4o:extended   1.5M     900      no        yes   
+openrouter  qwen/qwen3-coder:exacto  128K     8.2K     yes       no    

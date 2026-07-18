@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -366,6 +367,54 @@ func TestRunLoopEmptyResolvedAPIKeyFallsBackToConfiguredKey(t *testing.T) {
 	}
 	if received == nil || *received != fallback {
 		t.Fatalf("received API key = %v", received)
+	}
+}
+
+func TestRunLoopResolvesModelHeadersForEveryProviderRequest(t *testing.T) {
+	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{
+		loopAssistant(ai.StopReasonToolUse, &ai.ToolCall{ID: "call-1", Name: "noop", Arguments: map[string]any{}}),
+		loopAssistant(ai.StopReasonStop),
+	}}
+	seen := make([]map[string]string, 0, 2)
+	stream := func(ctx context.Context, model *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+		copy := make(map[string]string)
+		for name, value := range *model.Headers {
+			copy[name] = value
+		}
+		seen = append(seen, copy)
+		return responses.stream(ctx, model, request, options)
+	}
+	base := map[string]string{"X-Static": "static", "X-Same": "base"}
+	model := loopModel()
+	model.Headers = &base
+	resolutions := 0
+	tool := AgentToolFunc{AgentToolSpec: AgentToolSpec{Name: "noop", Parameters: jsonschema.Schema(`{"type":"object"}`)}, Run: func(context.Context, string, any, AgentToolUpdateCallback) (AgentToolResult, error) {
+		return textToolResult("done"), nil
+	}}
+	_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
+		Model: model, StreamFn: stream,
+		GetModelHeaders: func(_ context.Context, _ *ai.Model, apiKey *string) (*map[string]string, error) {
+			if apiKey != nil {
+				t.Fatalf("unexpected API key: %q", *apiKey)
+			}
+			resolutions++
+			headers := map[string]string{"X-Dynamic": strconv.Itoa(resolutions), "x-same": "resolved"}
+			return &headers, nil
+		},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolutions != 2 || len(seen) != 2 || seen[0]["X-Dynamic"] != "1" || seen[1]["X-Dynamic"] != "2" {
+		t.Fatalf("request-time resolutions = %d, headers = %#v", resolutions, seen)
+	}
+	for _, headers := range seen {
+		if headers["X-Static"] != "static" || headers["x-same"] != "resolved" {
+			t.Fatalf("headers were not merged case-insensitively: %#v", headers)
+		}
+		if _, duplicate := headers["X-Same"]; duplicate {
+			t.Fatalf("case-insensitive override left duplicate header: %#v", headers)
+		}
 	}
 }
 

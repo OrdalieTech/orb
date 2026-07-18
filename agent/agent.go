@@ -22,6 +22,7 @@ type agentOptions struct {
 	transformContext           TransformContextFunc
 	streamFn                   StreamFn
 	getAPIKey                  GetAPIKeyFunc
+	getModelHeaders            GetModelHeadersFunc
 	beforeToolCall             BeforeToolCallFunc
 	afterToolCall              AfterToolCallFunc
 	prepareNextTurn            PrepareNextTurnWithoutContextFunc
@@ -57,6 +58,10 @@ func WithStreamFn(stream StreamFn) AgentOption {
 
 func WithAPIKeyResolver(resolve GetAPIKeyFunc) AgentOption {
 	return func(options *agentOptions) { options.getAPIKey = resolve }
+}
+
+func WithModelHeadersResolver(resolve GetModelHeadersFunc) AgentOption {
+	return func(options *agentOptions) { options.getModelHeaders = resolve }
 }
 
 func WithBeforeToolCall(hook BeforeToolCallFunc) AgentOption {
@@ -130,6 +135,7 @@ type Agent struct {
 	transformContext           TransformContextFunc
 	streamFn                   StreamFn
 	getAPIKey                  GetAPIKeyFunc
+	getModelHeaders            GetModelHeadersFunc
 	beforeToolCall             BeforeToolCallFunc
 	afterToolCall              AfterToolCallFunc
 	prepareNextTurn            PrepareNextTurnWithoutContextFunc
@@ -200,6 +206,7 @@ func NewAgent(option ...AgentOption) *Agent {
 		transformContext:           options.transformContext,
 		streamFn:                   options.streamFn,
 		getAPIKey:                  options.getAPIKey,
+		getModelHeaders:            options.getModelHeaders,
 		beforeToolCall:             options.beforeToolCall,
 		afterToolCall:              options.afterToolCall,
 		prepareNextTurn:            options.prepareNextTurn,
@@ -626,6 +633,7 @@ func (agent *Agent) loopConfig(skipInitialSteeringPoll bool) AgentLoopConfig {
 		ConvertToLLM:        agent.convertToLLM,
 		TransformContext:    agent.transformContext,
 		GetAPIKey:           agent.getAPIKey,
+		GetModelHeaders:     agent.getModelHeaders,
 		ToolExecution:       agent.toolExecution,
 		BeforeToolCall:      agent.beforeToolCall,
 		AfterToolCall:       agent.afterToolCall,

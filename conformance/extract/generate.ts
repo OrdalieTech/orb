@@ -9,6 +9,7 @@ import { generateF4 } from "./f4-edit.ts";
 import { generateF5 } from "./f5-truncation.ts";
 import { generateF6 } from "./f6-session.ts";
 import { generateF9 } from "./f9-system-prompt.ts";
+import { generateWP250 } from "./wp250-models.ts";
 
 const upstreamRoot = process.cwd();
 const outputRoot = path.resolve(upstreamRoot, process.argv[2] ?? "../conformance/fixtures");
@@ -27,6 +28,7 @@ const generators = [
   generateF5,
   generateF6,
   generateF9,
+  generateWP250,
 ];
 for (const generate of generators) {
   await generate(upstreamRoot, outputRoot, upstreamCommit);

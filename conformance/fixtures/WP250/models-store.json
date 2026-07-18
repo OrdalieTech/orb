@@ -1,0 +1,52 @@
+{
+  "z-preserved": {
+    "models": [
+      {
+        "id": "gpt-4o",
+        "name": "GPT-4o",
+        "api": "anthropic-messages",
+        "provider": "z-preserved",
+        "baseUrl": "https://api.openai.com",
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 5,
+          "output": 15,
+          "cacheRead": 0.5,
+          "cacheWrite": 5
+        },
+        "contextWindow": 128000,
+        "maxTokens": 4096
+      }
+    ],
+    "checkedAt": 111
+  },
+  "a-refreshed": {
+    "models": [
+      {
+        "id": "claude-sonnet-4-5",
+        "name": "Claude Sonnet 4.5",
+        "api": "anthropic-messages",
+        "provider": "a-refreshed",
+        "baseUrl": "https://api.anthropic.com",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 3,
+          "output": 15,
+          "cacheRead": 0.3,
+          "cacheWrite": 3.75
+        },
+        "contextWindow": 200000,
+        "maxTokens": 8192
+      }
+    ],
+    "checkedAt": 123456789
+  }
+}

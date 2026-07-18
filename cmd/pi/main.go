@@ -4,13 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
+	aimodels "github.com/OrdalieTech/pi-go/ai/models"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 	"github.com/OrdalieTech/pi-go/codingagent/modes"
 	"github.com/OrdalieTech/pi-go/codingagent/session"
@@ -30,6 +35,8 @@ type cliStreams struct {
 
 type cliDependencies struct {
 	createRuntime func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error)
+	loadModels    func(string) (*config.ModelRegistry, error)
+	refreshModels func(context.Context, string) error
 }
 
 func main() {
@@ -59,8 +66,17 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if dependencies.createRuntime == nil {
 		dependencies.createRuntime = createRuntimeInputs
 	}
+	if dependencies.loadModels == nil {
+		dependencies.loadModels = config.NewModelRegistry
+	}
+	if dependencies.refreshModels == nil {
+		dependencies.refreshModels = refreshModelCatalogs
+	}
+	if handled, code := handleModelUpdate(ctx, argv, streams, dependencies); handled {
+		return code
+	}
 
-	args := normalizeSkeletonCLIArgs(ParseArgs(argv))
+	args := normalizeRuntimeCLIArgs(ParseArgs(argv))
 	hasErrors := false
 	for _, diagnostic := range args.Diagnostics {
 		prefix := "Warning: "
@@ -94,7 +110,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		}
 		validationErrors = append(validationErrors, "Unknown "+option+": --"+strings.Join(names, ", --"))
 	}
-	if args.APIKey != nil && *args.APIKey != "" && args.Model == nil {
+	if args.APIKey != nil && *args.APIKey != "" && args.Model == nil && len(args.Models) == 0 {
 		validationErrors = append(validationErrors, "--api-key requires a model to be specified via --model, --provider/--model, or --models")
 	}
 	for _, message := range validationErrors {
@@ -102,6 +118,21 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	}
 	if len(validationErrors) > 0 {
 		return 1
+	}
+	if args.ListModels != nil {
+		agentDir, err := config.GetAgentDir()
+		if err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+		registry, err := dependencies.loadModels(agentDir)
+		if err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+		if loadError := registry.Error(); loadError != "" {
+			_, _ = fmt.Fprintln(streams.Stderr, "Warning: errors loading models.json:\n"+loadError)
+		}
+		_, _ = io.WriteString(streams.Stdout, formatModelList(registry.Available(nil), *args.ListModels))
+		return 0
 	}
 	if !args.Print && streams.StdinTTY && streams.StdoutTTY {
 		_, _ = fmt.Fprintln(streams.Stderr, "Error: interactive mode is not available until the TUI work packages; use -p")
@@ -157,6 +188,35 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	})
 }
 
+func handleModelUpdate(ctx context.Context, argv []string, streams cliStreams, dependencies cliDependencies) (bool, int) {
+	if len(argv) == 0 || argv[0] != "update" || !slices.Contains(argv[1:], "--models") {
+		return false, 0
+	}
+	if len(argv) != 2 || argv[1] != "--models" {
+		_, _ = fmt.Fprintln(streams.Stderr, "Error: --models cannot be combined with another update target")
+		return true, 1
+	}
+	agentDir, err := config.GetAgentDir()
+	if err == nil {
+		err = dependencies.refreshModels(ctx, agentDir)
+	}
+	if err != nil {
+		return true, reportCLIError(streams.Stderr, err)
+	}
+	_, _ = fmt.Fprintln(streams.Stdout, "Model catalogs refreshed")
+	return true, 0
+}
+
+func refreshModelCatalogs(ctx context.Context, agentDir string) error {
+	timeoutContext, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	_, err := aimodels.Refresh(timeoutContext, aimodels.RefreshOptions{StorePath: filepath.Join(agentDir, "models-store.json")})
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(timeoutContext.Err(), context.DeadlineExceeded) {
+		return errors.New("model catalog refresh timed out")
+	}
+	return err
+}
+
 func createCLISession(cwd string, args CLIArgs) (*session.SessionManager, session.SessionContext, error) {
 	agentDir, err := config.GetAgentDir()
 	if err != nil {
@@ -195,6 +255,7 @@ func applySessionDefaults(args *CLIArgs, context session.SessionContext, branch 
 		// argument does not override the model restored from a session.
 		args.Provider = stringValue(context.Model.Provider)
 		args.Model = stringValue(context.Model.ModelID)
+		args.RestoredModel = true
 	}
 	hasThinkingEntry := false
 	for _, entry := range branch {
@@ -314,6 +375,8 @@ Usage: pi [options] [@files...] [messages...]
 
   --provider <name>              Provider name
   --model <id>                   Model ID
+  --models <patterns>            Comma-separated model cycling patterns
+  --list-models [search]         List available models
   --api-key <key>                Provider API key
   --system-prompt <text|file>    Replace the system prompt
   --append-system-prompt <text>  Append text or file contents
