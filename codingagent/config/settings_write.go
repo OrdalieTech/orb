@@ -376,3 +376,7 @@ func (manager *SettingsManager) SetCompactionEnabled(enabled bool) {
 func (manager *SettingsManager) SetRetryEnabled(enabled bool) {
 	manager.setGlobalNested("retry", "enabled", enabled)
 }
+
+func (manager *SettingsManager) SetBlockImages(blocked bool) {
+	manager.setGlobalNested("images", "blockImages", blocked)
+}

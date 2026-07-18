@@ -10,7 +10,6 @@ import (
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 	"github.com/OrdalieTech/pi-go/codingagent/session"
 	"github.com/OrdalieTech/pi-go/codingagent/tools"
-	"github.com/OrdalieTech/pi-go/internal/jsonschema"
 )
 
 type Mode string
@@ -579,7 +578,7 @@ type ToolDefinition struct {
 	Description      string
 	PromptSnippet    string
 	PromptGuidelines []string
-	Parameters       jsonschema.Schema
+	Parameters       ai.JSONSchema
 	RenderShell      RenderShell
 	PrepareArguments agent.PrepareArgumentsFunc
 	ExecutionMode    agent.ToolExecutionMode
@@ -601,11 +600,11 @@ type RegisteredTool struct {
 }
 
 type ToolInfo struct {
-	Name             string            `json:"name"`
-	Description      string            `json:"description"`
-	Parameters       jsonschema.Schema `json:"parameters"`
-	PromptGuidelines []string          `json:"promptGuidelines,omitempty"`
-	SourceInfo       SourceInfo        `json:"sourceInfo"`
+	Name             string        `json:"name"`
+	Description      string        `json:"description"`
+	Parameters       ai.JSONSchema `json:"parameters"`
+	PromptGuidelines []string      `json:"promptGuidelines,omitempty"`
+	SourceInfo       SourceInfo    `json:"sourceInfo"`
 }
 
 type AutocompleteItem struct {

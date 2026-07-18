@@ -65,6 +65,43 @@ func TestConvertToLLMNormalizesNullCustomContent(t *testing.T) {
 	}
 }
 
+func TestConvertToLLMWithBlockImagesAppliesSettingDynamically(t *testing.T) {
+	blocked := false
+	convert := ConvertToLLMWithBlockImages(func() bool { return blocked })
+	image := &ai.ImageContent{Data: "AA==", MimeType: "image/png"}
+	user := &ai.UserMessage{Content: ai.NewUserContent(
+		&ai.TextContent{Text: "before"}, image, image, &ai.TextContent{Text: imageBlockedText}, &ai.TextContent{Text: "after"},
+	), Timestamp: 1}
+	toolResult := &ai.ToolResultMessage{Content: ai.ToolResultContent{image, image}, Timestamp: 2}
+
+	unblocked, err := convert(context.Background(), agent.AgentMessages{user, toolResult})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unblockUser := unblocked[0].(*ai.UserMessage); len(unblockUser.Content.Blocks) != 5 {
+		t.Fatalf("unblocked user content = %#v", unblockUser.Content)
+	}
+	blocked = true
+	converted, err := convert(context.Background(), agent.AgentMessages{user, toolResult})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blockedUser := converted[0].(*ai.UserMessage)
+	if len(blockedUser.Content.Blocks) != 3 {
+		t.Fatalf("blocked user content = %#v", blockedUser.Content)
+	}
+	if text := blockedUser.Content.Blocks[1].(*ai.TextContent).Text; text != imageBlockedText {
+		t.Fatalf("blocked user placeholder = %q", text)
+	}
+	blockedTool := converted[1].(*ai.ToolResultMessage)
+	if len(blockedTool.Content) != 1 || blockedTool.Content[0].(*ai.TextContent).Text != imageBlockedText {
+		t.Fatalf("blocked tool content = %#v", blockedTool.Content)
+	}
+	if len(user.Content.Blocks) != 5 || len(toolResult.Content) != 2 {
+		t.Fatal("conversion mutated source messages")
+	}
+}
+
 func TestConvertToLLMPreservesStandardFallbackAndLoneSurrogate(t *testing.T) {
 	got, err := ConvertToLLM(context.Background(), agent.AgentMessages{
 		json.RawMessage(`{"role":"user","content":[{"type":"text","text":"\ud800"},{"type":"future","value":1}],"timestamp":1}`),
