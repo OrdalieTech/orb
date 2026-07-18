@@ -19,6 +19,7 @@ type runtimeInputs struct {
 	Agent           *agent.Agent
 	Settings        *config.SettingsManager
 	GetAPIKey       agent.GetAPIKeyFunc
+	GetRequestAuth  agent.GetRequestAuthFunc
 	GetModelHeaders agent.GetModelHeadersFunc
 	Diagnostics     []string
 }
@@ -103,9 +104,16 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		Tools:         activeTools,
 		Messages:      priorMessages,
 	}
-	resolveAPIKey := apiKeyResolver(args, registry, authStorage)
-	resolveModelHeaders := func(ctx context.Context, model *ai.Model, apiKey *string) (*map[string]string, error) {
-		return registry.ResolveModelHeaders(ctx, *model, nil, apiKey)
+	resolveRequestAuth := requestAuthResolver(args, registry, authStorage)
+	resolveAPIKey := func(ctx context.Context, providerID ai.ProviderID) (*string, error) {
+		resolved, err := resolveRequestAuth(ctx, providerID)
+		if err != nil || resolved == nil {
+			return nil, err
+		}
+		return resolved.APIKey, nil
+	}
+	resolveModelHeaders := func(ctx context.Context, model *ai.Model, apiKey *string, env ai.ProviderEnv) (*map[string]string, error) {
+		return registry.ResolveModelHeaders(ctx, *model, map[string]string(env), apiKey)
 	}
 	created := agent.NewAgent(
 		agent.WithInitialState(state),
@@ -117,10 +125,11 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 			MaxRetryDelayMS: &maxRetryDelay,
 		}}),
 		agent.WithAPIKeyResolver(resolveAPIKey),
+		agent.WithRequestAuthResolver(resolveRequestAuth),
 		agent.WithModelHeadersResolver(resolveModelHeaders),
 	)
 	return runtimeInputs{
-		Agent: created, Settings: settings, GetAPIKey: resolveAPIKey,
+		Agent: created, Settings: settings, GetAPIKey: resolveAPIKey, GetRequestAuth: resolveRequestAuth,
 		GetModelHeaders: resolveModelHeaders, Diagnostics: diagnostics,
 	}, nil
 }
@@ -289,12 +298,23 @@ func normalizeRuntimeCLIArgs(args CLIArgs) CLIArgs {
 }
 
 func apiKeyResolver(args CLIArgs, registry *config.ModelRegistry, credentials aiauth.CredentialStore) agent.GetAPIKeyFunc {
+	resolve := requestAuthResolver(args, registry, credentials)
+	return func(ctx context.Context, providerID ai.ProviderID) (*string, error) {
+		resolved, err := resolve(ctx, providerID)
+		if err != nil || resolved == nil {
+			return nil, err
+		}
+		return resolved.APIKey, nil
+	}
+}
+
+func requestAuthResolver(args CLIArgs, registry *config.ModelRegistry, credentials aiauth.CredentialStore) agent.GetRequestAuthFunc {
 	if credentials == nil {
 		credentials = aiauth.NewMemoryStore(nil)
 	}
-	return func(ctx context.Context, providerID ai.ProviderID) (*string, error) {
+	return func(ctx context.Context, providerID ai.ProviderID) (*agent.RequestAuth, error) {
 		if args.APIKey != nil && *args.APIKey != "" {
-			return args.APIKey, nil
+			return &agent.RequestAuth{APIKey: args.APIKey}, nil
 		}
 		stored, err := credentials.Read(ctx, string(providerID))
 		if err != nil {
@@ -313,18 +333,18 @@ func apiKeyResolver(args CLIArgs, registry *config.ModelRegistry, credentials ai
 			if err != nil || resolved == nil {
 				return nil, err
 			}
-			return resolved.Auth.APIKey, nil
+			return agentRequestAuth(resolved), nil
 		}
 		if stored != nil {
 			if stored.Type == aiauth.CredentialAPIKey {
-				return stored.Key, nil
+				return &agent.RequestAuth{APIKey: stored.Key, Env: cloneRuntimeEnv(stored.Env)}, nil
 			}
 			return nil, nil
 		}
 		if registry != nil {
 			configured, err := registry.ResolveConfiguredAPIKey(ctx, string(providerID), nil)
 			if err != nil || configured != nil {
-				return configured, err
+				return &agent.RequestAuth{APIKey: configured}, err
 			}
 		}
 		if knownProvider {
@@ -339,13 +359,38 @@ func apiKeyResolver(args CLIArgs, registry *config.ModelRegistry, credentials ai
 			if err != nil || resolved == nil {
 				return nil, err
 			}
-			return resolved.Auth.APIKey, nil
+			return agentRequestAuth(resolved), nil
 		}
 		if registry != nil {
-			return registry.ResolveAPIKey(ctx, string(providerID), nil)
+			key, err := registry.ResolveAPIKey(ctx, string(providerID), nil)
+			if err != nil || key == nil {
+				return nil, err
+			}
+			return &agent.RequestAuth{APIKey: key}, nil
 		}
 		return nil, nil
 	}
+}
+
+func agentRequestAuth(resolved *aiauth.AuthResult) *agent.RequestAuth {
+	if resolved == nil {
+		return nil
+	}
+	return &agent.RequestAuth{
+		APIKey: resolved.Auth.APIKey, Headers: cloneRuntimeEnv(resolved.Auth.Headers),
+		Env: cloneRuntimeEnv(resolved.Env), BaseURL: resolved.Auth.BaseURL,
+	}
+}
+
+func cloneRuntimeEnv(source map[string]string) map[string]string {
+	if source == nil {
+		return nil
+	}
+	cloned := make(map[string]string, len(source))
+	for name, value := range source {
+		cloned[name] = value
+	}
+	return cloned
 }
 
 func createBuiltInTools(cwd string, names []string, settings *config.SettingsManager) ([]agent.AgentTool, error) {

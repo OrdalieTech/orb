@@ -1,0 +1,717 @@
+{
+  "cases": [
+    {
+      "name": "google-vertex-express-text-system-string-enum-tool",
+      "api": "google-vertex",
+      "model": {
+        "id": "gemini-3-flash-preview",
+        "name": "Vertex Fixture Model",
+        "api": "google-vertex",
+        "provider": "google-vertex",
+        "baseUrl": "https://{location}-aiplatform.googleapis.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "systemPrompt": "You are concise.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hello vertex",
+            "timestamp": 1700000000123
+          }
+        ],
+        "tools": [
+          {
+            "name": "calculate",
+            "description": "Calculate with a provider-compatible string enum",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "operation": {
+                  "type": "string",
+                  "enum": [
+                    "add",
+                    "subtract",
+                    "multiply",
+                    "divide"
+                  ]
+                },
+                "operands": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                }
+              },
+              "required": [
+                "operation",
+                "operands"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "  fixture-vertex-key  ",
+        "project": "ignored-with-api-key",
+        "location": "ignored-with-api-key",
+        "temperature": 0,
+        "maxTokens": 777,
+        "toolChoice": "auto",
+        "thinking": {
+          "enabled": true,
+          "level": "MINIMAL"
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3-flash-preview:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-vertex-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"hello vertex\"}],\"role\":\"user\"}],\"systemInstruction\":{\"parts\":[{\"text\":\"You are concise.\"}],\"role\":\"user\"},\"tools\":[{\"functionDeclarations\":[{\"description\":\"Calculate with a provider-compatible string enum\",\"name\":\"calculate\",\"parametersJsonSchema\":{\"type\":\"object\",\"properties\":{\"operation\":{\"type\":\"string\",\"enum\":[\"add\",\"subtract\",\"multiply\",\"divide\"]},\"operands\":{\"type\":\"array\",\"items\":{\"type\":\"number\"}}},\"required\":[\"operation\",\"operands\"],\"additionalProperties\":false}}]}],\"toolConfig\":{\"functionCallingConfig\":{\"mode\":\"AUTO\"}},\"generationConfig\":{\"temperature\":0,\"maxOutputTokens\":777,\"thinkingConfig\":{\"includeThoughts\":true,\"thinkingLevel\":\"MINIMAL\"}}}"
+      }
+    },
+    {
+      "name": "google-vertex-rich-replay-thinking-images-tools",
+      "api": "google-vertex",
+      "model": {
+        "id": "gemini-2.5-flash",
+        "name": "Vertex Fixture Model",
+        "api": "google-vertex",
+        "provider": "google-vertex",
+        "baseUrl": "https://{location}-aiplatform.googleapis.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "systemPrompt": "Preserve signed thoughts and use tools.",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "inspect image"
+              },
+              {
+                "type": "image",
+                "data": "aW1hZ2U=",
+                "mimeType": "image/png"
+              }
+            ],
+            "timestamp": 1700000000119
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "signed plan",
+                "thinkingSignature": "cGxhbg=="
+              },
+              {
+                "type": "text",
+                "text": "using tool",
+                "textSignature": "dGV4dA=="
+              },
+              {
+                "type": "toolCall",
+                "id": "call_fixture",
+                "name": "calculate",
+                "arguments": {
+                  "operation": "add",
+                  "operands": [
+                    2,
+                    3
+                  ]
+                },
+                "thoughtSignature": "dG9vbA=="
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-2.5-flash",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call_fixture",
+            "toolName": "calculate",
+            "content": [
+              {
+                "type": "text",
+                "text": "5"
+              },
+              {
+                "type": "image",
+                "data": "cGl4ZWw=",
+                "mimeType": "image/webp"
+              }
+            ],
+            "isError": false,
+            "timestamp": 1700000000122
+          },
+          {
+            "role": "user",
+            "content": "continue",
+            "timestamp": 1700000000123
+          }
+        ],
+        "tools": [
+          {
+            "name": "calculate",
+            "description": "Calculate with a provider-compatible string enum",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "operation": {
+                  "type": "string",
+                  "enum": [
+                    "add",
+                    "subtract",
+                    "multiply",
+                    "divide"
+                  ]
+                },
+                "operands": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                }
+              },
+              "required": [
+                "operation",
+                "operands"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-vertex-key",
+        "maxTokens": 4096,
+        "toolChoice": "any",
+        "thinking": {
+          "enabled": true,
+          "budgetTokens": 2048
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-flash:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-vertex-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"inspect image\"},{\"inlineData\":{\"mimeType\":\"image/png\",\"data\":\"aW1hZ2U=\"}}],\"role\":\"user\"},{\"parts\":[{\"text\":\"signed plan\",\"thought\":true,\"thoughtSignature\":\"cGxhbg==\"},{\"text\":\"using tool\",\"thoughtSignature\":\"dGV4dA==\"},{\"functionCall\":{\"name\":\"calculate\",\"args\":{\"operation\":\"add\",\"operands\":[2,3]}},\"thoughtSignature\":\"dG9vbA==\"}],\"role\":\"model\"},{\"parts\":[{\"functionResponse\":{\"name\":\"calculate\",\"response\":{\"output\":\"5\"}}}],\"role\":\"user\"},{\"parts\":[{\"text\":\"Tool result image:\"},{\"inlineData\":{\"mimeType\":\"image/webp\",\"data\":\"cGl4ZWw=\"}}],\"role\":\"user\"},{\"parts\":[{\"text\":\"continue\"}],\"role\":\"user\"}],\"systemInstruction\":{\"parts\":[{\"text\":\"Preserve signed thoughts and use tools.\"}],\"role\":\"user\"},\"tools\":[{\"functionDeclarations\":[{\"description\":\"Calculate with a provider-compatible string enum\",\"name\":\"calculate\",\"parametersJsonSchema\":{\"type\":\"object\",\"properties\":{\"operation\":{\"type\":\"string\",\"enum\":[\"add\",\"subtract\",\"multiply\",\"divide\"]},\"operands\":{\"type\":\"array\",\"items\":{\"type\":\"number\"}}},\"required\":[\"operation\",\"operands\"],\"additionalProperties\":false}}]}],\"toolConfig\":{\"functionCallingConfig\":{\"mode\":\"ANY\"}},\"generationConfig\":{\"maxOutputTokens\":4096,\"thinkingConfig\":{\"includeThoughts\":true,\"thinkingBudget\":2048}}}"
+      }
+    },
+    {
+      "name": "google-vertex-gemini31-pro-thinking-disabled",
+      "api": "google-vertex",
+      "model": {
+        "id": "gemini-3.1-pro-preview",
+        "name": "Vertex Fixture Model",
+        "api": "google-vertex",
+        "provider": "google-vertex",
+        "baseUrl": "https://{location}-aiplatform.googleapis.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "hide thoughts",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-vertex-key",
+        "thinking": {
+          "enabled": false
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.1-pro-preview:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-vertex-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"hide thoughts\"}],\"role\":\"user\"}],\"generationConfig\":{\"thinkingConfig\":{\"thinkingLevel\":\"LOW\"}}}"
+      }
+    },
+    {
+      "name": "google-vertex-gemini3-flash-thinking-level",
+      "api": "google-vertex",
+      "model": {
+        "id": "gemini-3-flash-preview",
+        "name": "Vertex Fixture Model",
+        "api": "google-vertex",
+        "provider": "google-vertex",
+        "baseUrl": "https://{location}-aiplatform.googleapis.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "think minimally",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-vertex-key",
+        "thinking": {
+          "enabled": true,
+          "level": "MINIMAL"
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3-flash-preview:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-vertex-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"think minimally\"}],\"role\":\"user\"}],\"generationConfig\":{\"thinkingConfig\":{\"includeThoughts\":true,\"thinkingLevel\":\"MINIMAL\"}}}"
+      }
+    },
+    {
+      "name": "google-vertex-gemini25-flash-lite-simple-minimal",
+      "api": "google-vertex",
+      "simple": true,
+      "model": {
+        "id": "gemini-2.5-flash-lite",
+        "name": "Vertex Fixture Model",
+        "api": "google-vertex",
+        "provider": "google-vertex",
+        "baseUrl": "https://{location}-aiplatform.googleapis.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "use minimal budget",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-vertex-key",
+        "reasoning": "minimal"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-flash-lite:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-vertex-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"use minimal budget\"}],\"role\":\"user\"}],\"generationConfig\":{\"maxOutputTokens\":65536,\"thinkingConfig\":{\"includeThoughts\":true,\"thinkingBudget\":128}}}"
+      }
+    },
+    {
+      "name": "google-vertex-custom-base-appends-v1-publisher-shorthand",
+      "api": "google-vertex",
+      "model": {
+        "id": "acme/model-x",
+        "name": "Vertex Fixture Model",
+        "api": "google-vertex",
+        "provider": "google-vertex",
+        "baseUrl": " https://proxy.example.com/root/ ",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "custom route",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-vertex-key"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://proxy.example.com/root/v1/publishers/acme/models/model-x:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-vertex-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"custom route\"}],\"role\":\"user\"}],\"generationConfig\":{}}"
+      }
+    },
+    {
+      "name": "google-vertex-custom-base-keeps-version-and-appends-qualified-model",
+      "api": "google-vertex",
+      "model": {
+        "id": "projects/p/locations/global/publishers/acme/models/model-x",
+        "name": "Vertex Fixture Model",
+        "api": "google-vertex",
+        "provider": "google-vertex",
+        "baseUrl": "https://proxy.example.com/v1/projects/p/locations/global",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "versioned route",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-vertex-key"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://proxy.example.com/v1/projects/p/locations/global/projects/p/locations/global/publishers/acme/models/model-x:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-vertex-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"versioned route\"}],\"role\":\"user\"}],\"generationConfig\":{}}"
+      }
+    },
+    {
+      "name": "google-vertex-header-precedence",
+      "api": "google-vertex",
+      "model": {
+        "id": "gemini-3-flash-preview",
+        "name": "Vertex Fixture Model",
+        "api": "google-vertex",
+        "provider": "google-vertex",
+        "baseUrl": "https://{location}-aiplatform.googleapis.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536,
+        "headers": {
+          "Content-Type": "model/type",
+          "x-goog-api-key": "model-header-key",
+          "x-model-header": "vertex-model"
+        }
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "headers",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-vertex-key",
+        "headers": {
+          "Content-Type": "option/type",
+          "x-goog-api-key": "option-header-key",
+          "x-fixture": "vertex-options"
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3-flash-preview:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "option/type",
+          "x-fixture": "vertex-options",
+          "x-goog-api-key": "option-header-key",
+          "x-model-header": "vertex-model"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"headers\"}],\"role\":\"user\"}],\"generationConfig\":{}}"
+      }
+    },
+    {
+      "name": "google-vertex-payload-hook-vertex-config",
+      "api": "google-vertex",
+      "model": {
+        "id": "gemini-3-flash-preview",
+        "name": "Vertex Fixture Model",
+        "api": "google-vertex",
+        "provider": "google-vertex",
+        "baseUrl": "https://{location}-aiplatform.googleapis.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "vertex config",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-vertex-key"
+      },
+      "payloadConfigPatch": {
+        "topP": 0.25,
+        "routingConfig": {
+          "autoMode": {}
+        },
+        "modelSelectionConfig": {
+          "featureSelectionPreference": "BALANCED"
+        },
+        "labels": {
+          "team": "pi"
+        },
+        "audioTimestamp": true,
+        "imageConfig": {
+          "aspectRatio": "1:1",
+          "imageSize": "1K",
+          "personGeneration": "ALLOW_ADULT",
+          "outputMimeType": "image/png",
+          "outputCompressionQuality": 80
+        },
+        "modelArmorConfig": {
+          "promptTemplateName": "projects/p/locations/l/templates/t"
+        },
+        "serviceTier": "PRIORITY",
+        "tools": [
+          {
+            "enterpriseWebSearch": {}
+          }
+        ],
+        "toolConfig": {
+          "retrievalConfig": {
+            "x": 1
+          },
+          "functionCallingConfig": {
+            "allowedFunctionNames": [
+              "f"
+            ],
+            "mode": "ANY"
+          }
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3-flash-preview:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-vertex-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"vertex config\"}],\"role\":\"user\"}],\"tools\":[{\"enterpriseWebSearch\":{}}],\"toolConfig\":{\"retrievalConfig\":{\"x\":1},\"functionCallingConfig\":{\"allowedFunctionNames\":[\"f\"],\"mode\":\"ANY\"}},\"labels\":{\"team\":\"pi\"},\"modelArmorConfig\":{\"promptTemplateName\":\"projects/p/locations/l/templates/t\"},\"serviceTier\":\"PRIORITY\",\"generationConfig\":{\"topP\":0.25,\"routingConfig\":{\"autoMode\":{}},\"modelConfig\":{\"featureSelectionPreference\":\"BALANCED\"},\"audioTimestamp\":true,\"imageConfig\":{\"aspectRatio\":\"1:1\",\"imageSize\":\"1K\",\"personGeneration\":\"ALLOW_ADULT\",\"imageOutputOptions\":{\"mimeType\":\"image/png\",\"compressionQuality\":80}}}}"
+      }
+    },
+    {
+      "name": "google-vertex-unsigned-gemini3-tool-calls",
+      "api": "google-vertex",
+      "model": {
+        "id": "gemini-3-pro-preview",
+        "name": "Vertex Fixture Model",
+        "api": "google-vertex",
+        "provider": "google-vertex",
+        "baseUrl": "https://{location}-aiplatform.googleapis.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "run tools",
+            "timestamp": 1700000000122
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call_1",
+                "name": "bash",
+                "arguments": {
+                  "command": "echo hi"
+                }
+              },
+              {
+                "type": "toolCall",
+                "id": "call_2",
+                "name": "bash",
+                "arguments": {
+                  "command": "ls -la"
+                }
+              }
+            ],
+            "api": "google-vertex",
+            "provider": "google-vertex",
+            "model": "gemini-3-pro-preview",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000121
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-vertex-key",
+        "thinking": {
+          "enabled": false
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3-pro-preview:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-vertex-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"run tools\"}],\"role\":\"user\"},{\"parts\":[{\"functionCall\":{\"name\":\"bash\",\"args\":{\"command\":\"echo hi\"}}},{\"functionCall\":{\"name\":\"bash\",\"args\":{\"command\":\"ls -la\"}}}],\"role\":\"model\"},{\"parts\":[{\"functionResponse\":{\"name\":\"bash\",\"response\":{\"error\":\"No result provided\"}}},{\"functionResponse\":{\"name\":\"bash\",\"response\":{\"error\":\"No result provided\"}}}],\"role\":\"user\"}],\"generationConfig\":{\"thinkingConfig\":{\"thinkingLevel\":\"LOW\"}}}"
+      }
+    }
+  ]
+}

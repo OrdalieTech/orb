@@ -144,6 +144,8 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
   stripped binary; the internal helper emits the required TypeBox-style inline schemas directly.
 - **G2 (WP-221, resolved):** use the stdlib REST/SSE Gemini adapter. The correctly stripped official
   SDK probe added 8,466,432 bytes (47.278%), 35 module entries, and 183 compiled packages; Vertex
-  follows in WP-222 without importing the rejected SDK/auth stack. See `docs/plan/wp-221-g2-report.md`.
+  is completed by WP-222 with stdlib REST/SSE and pure-Go ADC, adding 393,216 bytes (2.177%) and no
+  module or compiled-package entry against its consolidated parent. See `docs/plan/wp-221-g2-report.md`
+  and `docs/plan/wp-222-vertex-report.md`.
 - **G3 (WP-542):** pi-tui Component bridge overlay/experimental surfaces — bridge now vs documented gap.
 - **G4 (WP-661):** self-update mechanism — notify-only vs in-place binary self-update.

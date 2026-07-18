@@ -174,7 +174,7 @@ var providerAPIKeyEnv = map[string][]string{
 	"deepseek":               {"DEEPSEEK_API_KEY"},
 	"fireworks":              {"FIREWORKS_API_KEY"},
 	"google":                 {"GEMINI_API_KEY"},
-	"google-vertex":          {"GOOGLE_APPLICATION_CREDENTIALS"},
+	"google-vertex":          {"GOOGLE_CLOUD_API_KEY"},
 	"groq":                   {"GROQ_API_KEY"},
 	"huggingface":            {"HUGGINGFACE_API_KEY", "HF_TOKEN"},
 	"kimi-coding":            {"KIMI_API_KEY"},

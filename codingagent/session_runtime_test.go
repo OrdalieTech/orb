@@ -111,6 +111,92 @@ func TestSessionRuntimeDisposeDropsListeners(t *testing.T) {
 	}
 }
 
+func TestSessionRuntimeDefaultCompletionAppliesRequestAuth(t *testing.T) {
+	provider := testFaux(1000)
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.NewSettingsManager(root, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{
+		Model: provider.GetModel(), SystemPrompt: "test", Messages: agent.AgentMessages{}, Tools: []agent.AgentTool{},
+	}))
+	baseURL := "https://vertex.example.test/v1"
+	configuredHeader := "configured"
+	stream := func(
+		_ context.Context,
+		model *ai.Model,
+		_ ai.Context,
+		options *ai.SimpleStreamOptions,
+	) (ai.AssistantMessageEventStream, error) {
+		if model.BaseURL != baseURL {
+			t.Fatalf("completion base URL = %q, want %q", model.BaseURL, baseURL)
+		}
+		if options.Env["GOOGLE_CLOUD_PROJECT"] != "configured-project" || options.Env["GOOGLE_CLOUD_LOCATION"] != "us-central1" {
+			t.Fatalf("completion environment = %#v", options.Env)
+		}
+		if options.Headers["authorization"] == nil || *options.Headers["authorization"] != configuredHeader {
+			t.Fatalf("completion headers = %#v", options.Headers)
+		}
+		if _, duplicate := options.Headers["Authorization"]; duplicate {
+			t.Fatalf("case-insensitive completion auth override left duplicate headers: %#v", options.Headers)
+		}
+		message := runtimeAssistant(provider, "summary", 2)
+		return func(yield func(ai.AssistantMessageEvent, error) bool) {
+			yield(ai.DoneEvent{Reason: ai.StopReasonStop, Message: message}, nil)
+		}, nil
+	}
+	modelHeadersResolved := false
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
+		Agent: created, SessionManager: manager, Settings: settings, StreamFn: stream,
+		GetRequestAuth: func(context.Context, ai.ProviderID) (*agent.RequestAuth, error) {
+			return &agent.RequestAuth{
+				Env: ai.ProviderEnv{
+					"GOOGLE_CLOUD_PROJECT":  "resolved-project",
+					"GOOGLE_CLOUD_LOCATION": "us-central1",
+				},
+				Headers: map[string]string{"Authorization": "resolved"},
+				BaseURL: &baseURL,
+			}, nil
+		},
+		GetModelHeaders: func(_ context.Context, _ *ai.Model, _ *string, env ai.ProviderEnv) (*map[string]string, error) {
+			modelHeadersResolved = true
+			if env["GOOGLE_CLOUD_PROJECT"] != "configured-project" || env["GOOGLE_CLOUD_LOCATION"] != "us-central1" {
+				t.Fatalf("completion model-header environment = %#v", env)
+			}
+			return nil, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(runtime.Dispose)
+	options := &ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{
+		Env:     ai.ProviderEnv{"GOOGLE_CLOUD_PROJECT": "configured-project"},
+		Headers: ai.ProviderHeaders{"authorization": &configuredHeader},
+	}}
+	if _, err := runtime.complete(context.Background(), provider.GetModel(), ai.Context{}, options); err != nil {
+		t.Fatal(err)
+	}
+	if len(options.Env) != 1 || options.Env["GOOGLE_CLOUD_LOCATION"] != "" {
+		t.Fatalf("caller completion options were mutated: %#v", options.Env)
+	}
+	if !modelHeadersResolved {
+		t.Fatal("completion model headers were not resolved")
+	}
+}
+
 func TestSessionRuntimeAbortCompactionCancelsManualAndAutomaticOperations(t *testing.T) {
 	provider := testFaux(1000)
 	runtime, _ := newTestRuntime(t, provider, map[string]any{"compaction": map[string]any{"enabled": false}})
@@ -817,9 +903,12 @@ func TestSessionRuntimeResolvesModelHeadersForSummaryRequests(t *testing.T) {
 			runtime, manager := newTestRuntimeWithHeaders(t, provider, map[string]any{
 				"compaction":    map[string]any{"enabled": true, "reserveTokens": 50, "keepRecentTokens": 1},
 				"branchSummary": map[string]any{"reserveTokens": 100},
-			}, func(_ context.Context, _ *ai.Model, apiKey *string) (*map[string]string, error) {
+			}, func(_ context.Context, _ *ai.Model, apiKey *string, env ai.ProviderEnv) (*map[string]string, error) {
 				if apiKey == nil || *apiKey != "test" {
 					t.Fatalf("header resolver api key = %#v", apiKey)
+				}
+				if env != nil {
+					t.Fatalf("header resolver environment = %#v", env)
 				}
 				resolveCalls++
 				headers := map[string]string{"X-Dynamic": "request-time"}

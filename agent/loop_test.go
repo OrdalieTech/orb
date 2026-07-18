@@ -370,6 +370,78 @@ func TestRunLoopEmptyResolvedAPIKeyFallsBackToConfiguredKey(t *testing.T) {
 	}
 }
 
+func TestRunLoopAppliesRequestAuthWithoutMutatingConfiguredOptions(t *testing.T) {
+	configuredKey := "configured-key"
+	configuredHeader := "configured"
+	response := loopAssistant(ai.StopReasonStop)
+	model := loopModel()
+	baseURL := "https://vertex.example.test/v1"
+	stream := func(
+		_ context.Context,
+		gotModel *ai.Model,
+		_ ai.Context,
+		options *ai.SimpleStreamOptions,
+	) (ai.AssistantMessageEventStream, error) {
+		if gotModel.BaseURL != baseURL {
+			t.Fatalf("base URL = %q, want %q", gotModel.BaseURL, baseURL)
+		}
+		if options.APIKey == nil || *options.APIKey != configuredKey {
+			t.Fatalf("API key = %v, want configured override", options.APIKey)
+		}
+		if options.Env["GOOGLE_CLOUD_PROJECT"] != "configured-project" || options.Env["GOOGLE_CLOUD_LOCATION"] != "us-central1" {
+			t.Fatalf("request environment = %#v", options.Env)
+		}
+		if options.Headers["authorization"] == nil || *options.Headers["authorization"] != configuredHeader {
+			t.Fatalf("request headers = %#v", options.Headers)
+		}
+		if _, duplicate := options.Headers["Authorization"]; duplicate {
+			t.Fatalf("case-insensitive auth override left duplicate headers: %#v", options.Headers)
+		}
+		return func(yield func(ai.AssistantMessageEvent, error) bool) {
+			yield(ai.DoneEvent{Reason: ai.StopReasonStop, Message: response}, nil)
+		}, nil
+	}
+	configuredOptions := ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{
+		APIKey:  &configuredKey,
+		Env:     ai.ProviderEnv{"GOOGLE_CLOUD_PROJECT": "configured-project"},
+		Headers: ai.ProviderHeaders{"authorization": &configuredHeader},
+	}}
+	modelHeadersResolved := false
+	_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{}, AgentLoopConfig{
+		SimpleStreamOptions: configuredOptions,
+		Model:               model,
+		StreamFn:            stream,
+		GetRequestAuth: func(context.Context, ai.ProviderID) (*RequestAuth, error) {
+			resolvedKey := "resolved-key"
+			return &RequestAuth{
+				APIKey: &resolvedKey,
+				Env: ai.ProviderEnv{
+					"GOOGLE_CLOUD_PROJECT":  "resolved-project",
+					"GOOGLE_CLOUD_LOCATION": "us-central1",
+				},
+				Headers: map[string]string{"Authorization": "resolved"},
+				BaseURL: &baseURL,
+			}, nil
+		},
+		GetModelHeaders: func(_ context.Context, _ *ai.Model, _ *string, env ai.ProviderEnv) (*map[string]string, error) {
+			modelHeadersResolved = true
+			if env["GOOGLE_CLOUD_PROJECT"] != "configured-project" || env["GOOGLE_CLOUD_LOCATION"] != "us-central1" {
+				t.Fatalf("model-header environment = %#v", env)
+			}
+			return nil, nil
+		},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configuredOptions.Env["GOOGLE_CLOUD_LOCATION"] != "" || len(configuredOptions.Env) != 1 {
+		t.Fatalf("configured environment was mutated: %#v", configuredOptions.Env)
+	}
+	if !modelHeadersResolved {
+		t.Fatal("model headers were not resolved")
+	}
+}
+
 func TestRunLoopResolvesModelHeadersForEveryProviderRequest(t *testing.T) {
 	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{
 		loopAssistant(ai.StopReasonToolUse, &ai.ToolCall{ID: "call-1", Name: "noop", Arguments: map[string]any{}}),
@@ -393,9 +465,12 @@ func TestRunLoopResolvesModelHeadersForEveryProviderRequest(t *testing.T) {
 	}}
 	_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
 		Model: model, StreamFn: stream,
-		GetModelHeaders: func(_ context.Context, _ *ai.Model, apiKey *string) (*map[string]string, error) {
+		GetModelHeaders: func(_ context.Context, _ *ai.Model, apiKey *string, env ai.ProviderEnv) (*map[string]string, error) {
 			if apiKey != nil {
 				t.Fatalf("unexpected API key: %q", *apiKey)
+			}
+			if env != nil {
+				t.Fatalf("unexpected provider environment: %#v", env)
 			}
 			resolutions++
 			headers := map[string]string{"X-Dynamic": strconv.Itoa(resolutions), "x-same": "resolved"}
