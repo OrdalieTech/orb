@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -63,6 +64,67 @@ func LoadManifest(t testing.TB, family string) Manifest {
 	var manifest Manifest
 	LoadJSON(t, family, "manifest.json", &manifest)
 	return manifest
+}
+
+// DecodeJSONLines validates strict LF-delimited JSONL and returns the original
+// line bytes. Each line must contain exactly one JSON value and the stream must
+// end immediately after a final LF.
+func DecodeJSONLines(data []byte) ([]json.RawMessage, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("decode JSONL: empty stream")
+	}
+	reader := bufio.NewReader(bytes.NewReader(data))
+	lines := make([]json.RawMessage, 0)
+	for lineNumber := 1; ; lineNumber++ {
+		line, err := reader.ReadBytes('\n')
+		if err == io.EOF {
+			if len(line) != 0 {
+				return nil, fmt.Errorf("decode JSONL line %d: missing final LF", lineNumber)
+			}
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("decode JSONL line %d: %w", lineNumber, err)
+		}
+		line = line[:len(line)-1]
+		if len(line) == 0 {
+			return nil, fmt.Errorf("decode JSONL line %d: empty line", lineNumber)
+		}
+		if line[len(line)-1] == '\r' {
+			return nil, fmt.Errorf("decode JSONL line %d: CRLF framing is not allowed", lineNumber)
+		}
+		decoder := json.NewDecoder(bytes.NewReader(line))
+		decoder.UseNumber()
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return nil, fmt.Errorf("decode JSONL line %d: %w", lineNumber, err)
+		}
+		if err := decoder.Decode(&struct{}{}); err != io.EOF {
+			if err == nil {
+				return nil, fmt.Errorf("decode JSONL line %d: multiple values", lineNumber)
+			}
+			return nil, fmt.Errorf("decode JSONL line %d trailer: %w", lineNumber, err)
+		}
+		lines = append(lines, bytes.Clone(line))
+	}
+	if len(lines) == 0 {
+		return nil, fmt.Errorf("decode JSONL: empty stream")
+	}
+	return lines, nil
+}
+
+// LoadJSONLines loads and validates one JSONL fixture or fails the calling test.
+func LoadJSONLines(t testing.TB, family, name string) []json.RawMessage {
+	t.Helper()
+	data, err := ReadFixture(family, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines, err := DecodeJSONLines(data)
+	if err != nil {
+		t.Fatalf("conformance: decode %s/%s: %v", family, name, err)
+	}
+	return lines
 }
 
 // CanonicalJSON normalizes insignificant JSON whitespace and object-key order.

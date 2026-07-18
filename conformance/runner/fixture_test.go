@@ -64,3 +64,21 @@ func TestReadFixtureRejectsTraversal(t *testing.T) {
 		t.Fatal("ReadFixture accepted traversal")
 	}
 }
+
+func TestDecodeJSONLinesRequiresOneValuePerLFFramedLineAndEOF(t *testing.T) {
+	lines, err := runner.DecodeJSONLines([]byte("{\"a\":1}\n[2]\n"))
+	if err != nil || len(lines) != 2 || string(lines[0]) != `{"a":1}` || string(lines[1]) != `[2]` {
+		t.Fatalf("lines=%q err=%v", lines, err)
+	}
+	for _, invalid := range []string{
+		`{"a":1}`,
+		"{\"a\":1}\r\n",
+		"{\"a\":1} {\"b\":2}\n",
+		"{\"a\":1}\n\n",
+		"",
+	} {
+		if _, err := runner.DecodeJSONLines([]byte(invalid)); err == nil {
+			t.Fatalf("DecodeJSONLines accepted %q", invalid)
+		}
+	}
+}

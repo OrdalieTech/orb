@@ -321,6 +321,9 @@ func PrepareCompaction(pathEntries []SessionEntry, settings CompactionSettings) 
 			}
 		}
 	}
+	if len(messages) == 0 && len(prefix) == 0 {
+		return nil, nil
+	}
 	fileOps := newFileOperations()
 	if previousIndex >= 0 && !pathEntries[previousIndex].FromHook {
 		mergeDetails(&fileOps, pathEntries[previousIndex].Details)

@@ -136,3 +136,7 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/ai/src/types.ts` (pi-messages transport event fields and server-error member insertion order) | `ai/stream.go`, `ai/types.go`, `ai/json.go` | WP-260 |
 | pi-messages request and serialized-event stream behavior | `conformance/extract/f2-pi-messages.ts`, `conformance/extract/f2-openai.ts`, `conformance/fixtures/F2/pi-messages-{requests,streams}.json`, `ai/api/conformance_test.go` | WP-260 |
 | WP-260 acceptance and credential-gated live evidence | `docs/plan/wp-260-report.md` | WP-260 |
+| `packages/coding-agent/src/modes/print-mode.ts`, `packages/coding-agent/docs/json.md` | `codingagent/modes/print.go`, `codingagent/modes/print_test.go`, `cmd/pi/args.go`, `cmd/pi/main.go`, `cmd/pi/json_mode_test.go` | WP-330 |
+| `packages/coding-agent/src/core/agent-session.ts` (JSON-mode session event extras) | `codingagent/session_events.go`, `codingagent/session_runtime.go`, `codingagent/session_runtime_test.go` | WP-330 |
+| `packages/coding-agent/src/modes/print-mode.ts`, `packages/coding-agent/src/core/agent-session.ts`, `packages/ai/src/providers/faux.ts` | `conformance/extract/f3-session.ts`, `conformance/fixtures/F3-session/`, `cmd/pi/json_mode_test.go` | WP-330 |
+| JSON-mode LF framing consumed through EOF | `conformance/runner/fixture.go`, `conformance/runner/fixture_test.go` | WP-330 |

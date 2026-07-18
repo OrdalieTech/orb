@@ -6,6 +6,7 @@ import (
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/agent/harness"
 	"github.com/OrdalieTech/pi-go/ai"
+	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
 )
 
 type SessionEventType string
@@ -17,6 +18,9 @@ const (
 	EventCompactionEnd   SessionEventType = "compaction_end"
 	EventAutoRetryStart  SessionEventType = "auto_retry_start"
 	EventAutoRetryEnd    SessionEventType = "auto_retry_end"
+	EventEntryAppended   SessionEventType = "entry_appended"
+	EventSessionInfo     SessionEventType = "session_info_changed"
+	EventThinkingLevel   SessionEventType = "thinking_level_changed"
 )
 
 type SessionAgentEndEvent struct {
@@ -54,6 +58,18 @@ type AutoRetryEndEvent struct {
 	Success    bool    `json:"success"`
 	Attempt    int     `json:"attempt"`
 	FinalError *string `json:"finalError,omitempty"`
+}
+
+type EntryAppendedEvent struct {
+	Entry sessionstore.SessionEntry `json:"entry"`
+}
+
+type SessionInfoChangedEvent struct {
+	Name *string `json:"name,omitempty"`
+}
+
+type ThinkingLevelChangedEvent struct {
+	Level ai.ModelThinkingLevel `json:"level"`
 }
 
 func MarshalSessionEvent(event any) ([]byte, error) {
@@ -106,6 +122,21 @@ func MarshalSessionEvent(event any) ([]byte, error) {
 			Attempt    int              `json:"attempt"`
 			FinalError *string          `json:"finalError,omitempty"`
 		}{EventAutoRetryEnd, typed.Success, typed.Attempt, typed.FinalError})
+	case EntryAppendedEvent:
+		return ai.Marshal(struct {
+			Type  SessionEventType          `json:"type"`
+			Entry sessionstore.SessionEntry `json:"entry"`
+		}{EventEntryAppended, typed.Entry})
+	case SessionInfoChangedEvent:
+		return ai.Marshal(struct {
+			Type SessionEventType `json:"type"`
+			Name *string          `json:"name,omitempty"`
+		}{EventSessionInfo, typed.Name})
+	case ThinkingLevelChangedEvent:
+		return ai.Marshal(struct {
+			Type  SessionEventType      `json:"type"`
+			Level ai.ModelThinkingLevel `json:"level"`
+		}{EventThinkingLevel, typed.Level})
 	default:
 		return nil, errors.New("codingagent: unknown session event")
 	}

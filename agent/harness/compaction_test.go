@@ -74,6 +74,17 @@ func TestFindCutPointAndPrepareCompaction(t *testing.T) {
 	}
 }
 
+func TestPrepareCompactionRejectsSessionWithNoDiscardableMessages(t *testing.T) {
+	entries := linearEntries(user("short request"), assistant("short answer", 10))
+	prepared, err := PrepareCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 16384, KeepRecentTokens: 20000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared != nil {
+		t.Fatalf("preparation = %#v, want nil", prepared)
+	}
+}
+
 func TestPrepareCompactionCarriesPreviousSummaryAndFileDetails(t *testing.T) {
 	call := &ai.ToolCall{ID: "call", Name: "write", Arguments: map[string]any{"path": "new.go"}}
 	entries := linearEntries(user("old"), &ai.AssistantMessage{Content: ai.AssistantContent{call}, StopReason: ai.StopReasonStop, Usage: usage(20)})
