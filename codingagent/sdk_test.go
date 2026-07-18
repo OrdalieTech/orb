@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/pi-go/agent"
+	"github.com/OrdalieTech/pi-go/agent/harness"
 	"github.com/OrdalieTech/pi-go/ai"
 	"github.com/OrdalieTech/pi-go/ai/providers/faux"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
@@ -415,6 +416,71 @@ func TestNewAgentSessionWithExplicitSessionManager(t *testing.T) {
 	}
 	if len(result.Session.State().Messages) == 0 {
 		t.Fatal("expected messages after prompt")
+	}
+}
+
+func TestNewAgentSessionActivatesRehydratedHarnessStorage(t *testing.T) {
+	input, err := os.ReadFile(filepath.Join("..", "conformance", "fixtures", "F6Harness", "session.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	storage, err := harness.RehydrateJSONLSession(input, filepath.Join(t.TempDir(), "session.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	manager, err := sessionstore.FromHarnessStorage(storage, sessionstore.WithCwdOverride(cwd))
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := testFaux(100000)
+	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "runtime reply", 10)})
+	result, err := NewAgentSession(AgentSessionOptions{
+		CWD: cwd, AgentDir: agentDir, SessionManager: manager, Settings: settings,
+		Model: provider.GetModel(), StreamFn: provider.StreamSimple, Resources: &Resources{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Session.Dispose()
+
+	state := result.Session.State()
+	if len(state.Messages) != 3 {
+		t.Fatalf("rehydrated message count = %d, want 3", len(state.Messages))
+	}
+	toolNames := make([]string, len(state.Tools))
+	for index := range state.Tools {
+		toolNames[index] = state.Tools[index].Spec().Name
+	}
+	if got := strings.Join(toolNames, ","); got != "" {
+		t.Fatalf("rehydrated active tools = %q, want explicit empty state", got)
+	}
+
+	before := len(storage.EntriesByType("message"))
+	if err := result.Session.PromptSync(context.Background(), "runtime write"); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(storage.EntriesByType("message")); got != before+2 {
+		t.Fatalf("storage message count after runtime prompt = %d, want %d", got, before+2)
+	}
+
+	leaf, err := storage.LeafID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.AppendEntry(harness.SessionTreeEntry{
+		Type: "message", ID: "storage-runtime-user", ParentID: leaf, Timestamp: "2026-02-03T04:05:30.000Z",
+		Message: json.RawMessage(`{"role":"user","content":[{"type":"text","text":"storage write"}],"timestamp":6}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	forking := result.Session.GetUserMessagesForForking()
+	if got := forking[len(forking)-1].EntryID; got != "storage-runtime-user" {
+		t.Fatalf("runtime did not observe storage write: last user id = %q", got)
 	}
 }
 

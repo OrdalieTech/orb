@@ -5,7 +5,7 @@ GOLANGCI_LINT := $(CURDIR)/.tools/bin/golangci-lint
 GO_ENV := GOCACHE=$(CURDIR)/.tools/cache/go-build GOMODCACHE=$(CURDIR)/.tools/cache/go-mod
 LINT_ENV := $(GO_ENV) GOLANGCI_LINT_CACHE=$(CURDIR)/.tools/cache/golangci-lint
 
-.PHONY: build test lint upstream fixtures fixtures-check ensure-upstream-fixture-tools upstream-rpc-tests sync sync-bump
+.PHONY: build test lint nightly-live upstream fixtures fixtures-check ensure-upstream-fixture-tools upstream-rpc-tests sync sync-bump
 
 build:
 	$(GO_ENV) CGO_ENABLED=0 go build ./...
@@ -16,6 +16,9 @@ test:
 lint: $(GOLANGCI_LINT)
 	$(GO_ENV) go vet ./...
 	$(LINT_ENV) $(GOLANGCI_LINT) run
+
+nightly-live:
+	$(GO_ENV) CGO_ENABLED=0 PI_GO_NIGHTLY_LIVE=1 go test -v -count=1 -timeout=20m ./codingagent -run '^TestNightlyLiveSuite$$'
 
 $(GOLANGCI_LINT):
 	mkdir -p $(dir $@)

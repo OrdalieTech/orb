@@ -15,7 +15,6 @@ import (
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
 	aimodels "github.com/OrdalieTech/pi-go/ai/models"
-	"github.com/OrdalieTech/pi-go/codingagent"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions"
 	"github.com/OrdalieTech/pi-go/codingagent/modes"
@@ -91,7 +90,6 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	}
 
 	args := normalizeRuntimeCLIArgs(ParseArgs(argv))
-	originalArgs := args
 	hasErrors := false
 	for _, diagnostic := range args.Diagnostics {
 		prefix := "Warning: "
@@ -216,6 +214,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			return code
 		}
 	}
+	baseArgs := args
 	manager, sessionContext, err := createCLISession(cwd, args, streams, dependencies.selectSession)
 	if err != nil {
 		if errors.Is(err, errNoSessionSelected) {
@@ -240,28 +239,6 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if len(manager.GetEntries()) > 0 {
 		applySessionDefaults(&args, sessionContext, manager.GetBranch())
 	}
-	priorMessages := decodeSessionMessages(sessionContext.Messages)
-	runtime, err := dependencies.createRuntime(manager.GetCWD(), args, priorMessages)
-	if err != nil {
-		return reportCLIError(streams.Stderr, err)
-	}
-	for _, diagnostic := range runtime.Diagnostics {
-		_, _ = fmt.Fprintln(streams.Stderr, "Warning: "+diagnostic)
-	}
-	if err := appendInitialRuntimeState(manager, runtime.Agent.State(), sessionContext); err != nil {
-		return reportCLIError(streams.Stderr, err)
-	}
-	settings := runtime.Settings
-	if settings == nil {
-		agentDir, settingsErr := config.GetAgentDir()
-		if settingsErr != nil {
-			return reportCLIError(streams.Stderr, settingsErr)
-		}
-		settings, settingsErr = config.NewSettingsManager(manager.GetCWD(), config.WithAgentDir(agentDir))
-		if settingsErr != nil {
-			return reportCLIError(streams.Stderr, settingsErr)
-		}
-	}
 	extensionMode := extensions.ModePrint
 	switch args.Mode {
 	case "json":
@@ -269,32 +246,32 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	case "rpc":
 		extensionMode = extensions.ModeRPC
 	}
-	sessionRuntime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
-		Agent: runtime.Agent, SessionManager: manager, Settings: settings,
-		GetAPIKey: runtime.GetAPIKey, GetRequestAuth: runtime.GetRequestAuth, GetModelHeaders: runtime.GetModelHeaders,
-		AvailableModels:   runtime.AvailableModels,
-		ScopedModels:      runtime.ScopedModels,
-		SlashResolver:     runtime.SlashResolver,
-		ExtensionRegistry: runtime.Extensions, ExtensionMode: extensionMode, ModelRegistry: runtime.ModelRegistry,
-		ExtensionErrorHandler: func(extensionError extensions.ExtensionError) {
-			_, _ = fmt.Fprintf(streams.Stderr, "Extension error (%s, %s): %s\n", extensionError.ExtensionPath, extensionError.Event, extensionError.Error)
-		},
-		BaseTools: runtime.BaseTools, InitialActiveToolNames: runtime.ActiveToolNames,
-		AllowedToolNames: runtime.AllowedTools, ExcludedToolNames: runtime.ExcludedTools,
-		RebuildBaseTools:    runtime.RebuildBaseTools,
-		SystemPromptOptions: &runtime.PromptOptions,
+	sessionHost, err := newCLISessionRuntimeHost(ctx, cliSessionRuntimeHostOptions{
+		BaseArgs: baseArgs, Manager: manager,
+		Dependencies: dependencies, Streams: streams, ExtensionMode: extensionMode,
 	})
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
+	sessionRuntime := sessionHost.Session()
 	if args.Mode == "rpc" {
-		host := newRPCSessionHost(originalArgs, dependencies, sessionRuntime)
+		host, hostErr := newRPCSessionHost(ctx, sessionHost)
+		if hostErr != nil {
+			sessionHost.Dispose(ctx)
+			return reportCLIError(streams.Stderr, hostErr)
+		}
 		return modes.RunRPCMode(ctx, host, modes.RPCModeOptions{
 			Stdin: streams.Stdin, Stdout: streams.Stdout, Stderr: streams.Stderr,
 			Commands: func() []modes.RPCSlashCommand { return rpcSlashCommands(host.Session()) },
 		})
 	}
-	defer sessionRuntime.Dispose()
+	printSession := newCLIPrintSession(ctx, sessionHost)
+	sessionHost.SetRebindSession(printSession.Bind)
+	if err := printSession.Bind(sessionRuntime); err != nil {
+		sessionHost.Dispose(ctx)
+		return reportCLIError(streams.Stderr, err)
+	}
+	defer sessionHost.Dispose(ctx)
 
 	var stdinContent *string
 	if !streams.StdinTTY {
@@ -315,11 +292,11 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if args.Mode == "json" {
 		outputMode = modes.PrintOutputJSON
 	}
-	return modes.RunPrintMode(ctx, sessionRuntime, modes.PrintModeOptions{
+	return modes.RunPrintMode(ctx, printSession, modes.PrintModeOptions{
 		Mode:           outputMode,
 		Messages:       args.Messages,
 		InitialMessage: initial,
-		SessionHeader:  manager.GetHeader(),
+		SessionHeader:  sessionRuntime.Manager().GetHeader(),
 		Stdout:         streams.Stdout,
 		Stderr:         streams.Stderr,
 	})

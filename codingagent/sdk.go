@@ -350,6 +350,9 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	// Resolve tool allowlist.
 	var allowedToolNames *[]string
 	initialActiveToolNames := resolveInitialTools(opts.Tools, opts.NoTools, opts.ExcludeTools)
+	if sm.IsHarnessBacked() && opts.Tools == nil && opts.NoTools == "" && existing.ActiveToolNames != nil {
+		initialActiveToolNames = filterExcluded(existing.ActiveToolNames, opts.ExcludeTools)
+	}
 
 	if opts.Tools != nil {
 		names := filterExcluded(opts.Tools, opts.ExcludeTools)

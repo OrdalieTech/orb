@@ -17,6 +17,7 @@ import (
 
 func TestRPCSessionHostRebindsNewSessionAndForksUserEntry(t *testing.T) {
 	root := t.TempDir()
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
 	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
 	if err != nil {
 		t.Fatal(err)
@@ -31,22 +32,28 @@ func TestRPCSessionHostRebindsNewSessionAndForksUserEntry(t *testing.T) {
 			Model: provider.GetModel(), Messages: messages,
 		}))
 	}
-	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
-		Agent: newAgent(agent.AgentMessages{}), SessionManager: manager, Settings: settings,
+	createCalls := 0
+	registry := extensions.NewRegistry(root)
+	runtimeHost, err := newCLISessionRuntimeHost(context.Background(), cliSessionRuntimeHostOptions{
+		Manager: manager, ExtensionMode: extensions.ModeRPC,
+		Dependencies: cliDependencies{
+			createRuntime: func(cwd string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
+				createCalls++
+				if cwd != root {
+					t.Fatalf("runtime cwd = %q, want %q", cwd, root)
+				}
+				return runtimeInputs{Agent: newAgent(prior), Settings: settings, Extensions: registry}, nil
+			},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	createCalls := 0
-	host := newRPCSessionHost(CLIArgs{}, cliDependencies{
-		createRuntime: func(cwd string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
-			createCalls++
-			if cwd != root {
-				t.Fatalf("runtime cwd = %q, want %q", cwd, root)
-			}
-			return runtimeInputs{Agent: newAgent(prior), Settings: settings}, nil
-		},
-	}, runtime)
+	initial := runtimeHost.Session()
+	host, err := newRPCSessionHost(context.Background(), runtimeHost)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer host.Dispose()
 
 	cancelled, err := host.NewSession("parent.jsonl")
@@ -54,11 +61,11 @@ func TestRPCSessionHostRebindsNewSessionAndForksUserEntry(t *testing.T) {
 		t.Fatalf("new session = cancelled %v, error %v", cancelled, err)
 	}
 	current := host.Session()
-	if current == nil || current == runtime || current.Manager().GetSessionID() == "original" {
+	if current == nil || current == initial || current.Manager().GetSessionID() == "original" {
 		t.Fatalf("replacement runtime = %#v", current)
 	}
 	header := current.Manager().GetHeader()
-	if header == nil || header.ParentSession == nil || *header.ParentSession != "parent.jsonl" || createCalls != 1 {
+	if header == nil || header.ParentSession == nil || *header.ParentSession != "parent.jsonl" || createCalls != 2 {
 		t.Fatalf("new session header = %#v, create calls = %d", header, createCalls)
 	}
 
@@ -78,17 +85,83 @@ func TestRPCSessionHostRebindsNewSessionAndForksUserEntry(t *testing.T) {
 			t.Fatalf("fork-before replacement retained message entry: %#v", entries)
 		}
 	}
-	if createCalls != 2 {
-		t.Fatalf("fork create calls = %d, want 2", createCalls)
+	if createCalls != 3 {
+		t.Fatalf("fork create calls = %d, want 3", createCalls)
 	}
 	if err := host.Session().PromptPreflight(context.Background()); err != nil {
 		t.Fatalf("replacement runtime model preflight: %v", err)
 	}
 }
 
+func TestRPCSessionHostPreservesExtensionLifecycleAcrossNewSession(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := session.InMemory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := faux.New(faux.Options{API: "faux", Provider: "faux"})
+	registry := extensions.NewRegistry(root)
+	var events []string
+	if err := registry.Register("<rpc-session-lifecycle>", func(api extensions.API) error {
+		api.On(extensions.EventSessionBeforeSwitch, func(_ context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
+			event := raw.(extensions.SessionBeforeSwitchEvent)
+			events = append(events, "before:"+string(event.Reason))
+			return nil, nil
+		})
+		api.On(extensions.EventSessionShutdown, func(_ context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
+			event := raw.(extensions.SessionShutdownEvent)
+			events = append(events, "shutdown:"+string(event.Reason))
+			return nil, nil
+		})
+		api.On(extensions.EventSessionStart, func(_ context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
+			event := raw.(extensions.SessionStartEvent)
+			events = append(events, "start:"+string(event.Reason))
+			return nil, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	newAgent := func(messages agent.AgentMessages) *agent.Agent {
+		return agent.NewAgent(agent.WithInitialState(agent.AgentState{
+			Model: provider.GetModel(), Messages: messages,
+		}))
+	}
+	runtimeHost, err := newCLISessionRuntimeHost(context.Background(), cliSessionRuntimeHostOptions{
+		Manager: manager, ExtensionMode: extensions.ModeRPC,
+		Dependencies: cliDependencies{
+			createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+				return runtimeInputs{Agent: newAgent(nil), Settings: settings, Extensions: registry}, nil
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, err := newRPCSessionHost(context.Background(), runtimeHost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer host.Dispose()
+	if cancelled, err := host.NewSession(""); err != nil || cancelled {
+		t.Fatalf("new session = cancelled %t, %v", cancelled, err)
+	}
+
+	want := []string{"start:startup", "before:new", "shutdown:new", "start:new"}
+	if !reflect.DeepEqual(events, want) {
+		t.Fatalf("session lifecycle = %#v, want %#v", events, want)
+	}
+}
+
 func TestRPCSessionHostRestoresEachTargetModelFromImmutableCLIArgs(t *testing.T) {
 	root := t.TempDir()
 	agentDir := filepath.Join(root, "agent")
+	t.Setenv(config.EnvAgentDir, agentDir)
 	settings, err := config.NewSettingsManager(root, config.WithAgentDir(agentDir))
 	if err != nil {
 		t.Fatal(err)
@@ -121,27 +194,32 @@ func TestRPCSessionHostRestoresEachTargetModelFromImmutableCLIArgs(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	initialAgent := agent.NewAgent(agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}}))
-	initialRuntime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
-		Agent: initialAgent, SessionManager: initialManager, Settings: settings,
+	var selections []string
+	registry := extensions.NewRegistry(root)
+	runtimeHost, err := newCLISessionRuntimeHost(context.Background(), cliSessionRuntimeHostOptions{
+		Manager: initialManager, ExtensionMode: extensions.ModeRPC,
+		Dependencies: cliDependencies{
+			createRuntime: func(_ string, args CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
+				if args.Provider == nil || args.Model == nil || args.Thinking == nil {
+					created := agent.NewAgent(agent.WithInitialState(agent.AgentState{Messages: prior}))
+					return runtimeInputs{Agent: created, Settings: settings, Extensions: registry}, nil
+				}
+				selections = append(selections, *args.Provider+"/"+*args.Model+":"+*args.Thinking)
+				model := ai.Model{ID: *args.Model, Provider: ai.ProviderID(*args.Provider), API: "faux", Reasoning: true, ContextWindow: 100, MaxTokens: 10}
+				created := agent.NewAgent(agent.WithInitialState(agent.AgentState{
+					Model: &model, ThinkingLevel: ai.ModelThinkingLevel(*args.Thinking), Messages: prior,
+				}))
+				return runtimeInputs{Agent: created, Settings: settings, Extensions: registry}, nil
+			},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var selections []string
-	host := newRPCSessionHost(CLIArgs{}, cliDependencies{
-		createRuntime: func(_ string, args CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
-			if args.Provider == nil || args.Model == nil || args.Thinking == nil {
-				t.Fatalf("restored args = %#v", args)
-			}
-			selections = append(selections, *args.Provider+"/"+*args.Model+":"+*args.Thinking)
-			model := ai.Model{ID: *args.Model, Provider: ai.ProviderID(*args.Provider), API: "faux", Reasoning: true, ContextWindow: 100, MaxTokens: 10}
-			created := agent.NewAgent(agent.WithInitialState(agent.AgentState{
-				Model: &model, ThinkingLevel: ai.ModelThinkingLevel(*args.Thinking), Messages: prior,
-			}))
-			return runtimeInputs{Agent: created, Settings: settings}, nil
-		},
-	}, initialRuntime)
+	host, err := newRPCSessionHost(context.Background(), runtimeHost)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer host.Dispose()
 
 	if cancelled, err := host.SwitchSession(pathA); err != nil || cancelled {

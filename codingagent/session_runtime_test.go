@@ -830,8 +830,8 @@ func TestLongFauxSessionCompactsAtHarnessBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	compaction := branch[len(branch)-1]
-	if want == nil || compaction.FirstKeptEntryID != want.FirstKeptEntryID || compaction.TokensBefore != want.TokensBefore {
-		t.Fatalf("compaction boundary=(%s,%d), want=(%#v)", compaction.FirstKeptEntryID, compaction.TokensBefore, want)
+	if want == nil || compaction.FirstKeptEntryID != want.FirstKeptEntryID || compaction.TokensBefore != float64(want.TokensBefore) {
+		t.Fatalf("compaction boundary=(%s,%g), want=(%#v)", compaction.FirstKeptEntryID, compaction.TokensBefore, want)
 	}
 	usage := runtime.GetContextUsage()
 	if usage == nil || usage.Tokens != nil || usage.Percent != nil {

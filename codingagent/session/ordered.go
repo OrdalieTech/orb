@@ -162,8 +162,29 @@ func rawInt(value int64) json.RawMessage {
 	return json.RawMessage(strconv.FormatInt(value, 10))
 }
 
+func rawNumber(value float64) json.RawMessage {
+	encoded, err := ai.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return encoded
+}
+
 func rawBool(value bool) json.RawMessage {
 	return json.RawMessage(strconv.FormatBool(value))
+}
+
+func rawStringArray(values []string) json.RawMessage {
+	var output bytes.Buffer
+	output.WriteByte('[')
+	for index, value := range values {
+		if index > 0 {
+			output.WriteByte(',')
+		}
+		output.Write(mustRawString(value))
+	}
+	output.WriteByte(']')
+	return output.Bytes()
 }
 
 func rawNull() json.RawMessage {
@@ -190,6 +211,14 @@ func decodeInt(raw json.RawMessage) (int64, bool) {
 		return 0, false
 	}
 	return int64(value), true
+}
+
+func decodeNumber(raw json.RawMessage) (float64, bool) {
+	var value float64
+	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
+		return 0, false
+	}
+	return value, true
 }
 
 func decodeBool(raw json.RawMessage) (*bool, bool) {

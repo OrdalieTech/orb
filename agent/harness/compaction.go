@@ -597,6 +597,11 @@ func assistantUsage(message agent.AgentMessage) *ai.Usage {
 func entryMessage(entry SessionEntry, includeCompaction bool) agent.AgentMessage {
 	switch entry.Type {
 	case "message":
+		if raw, ok := entry.Message.(json.RawMessage); ok {
+			if message, err := ai.UnmarshalMessage(raw); err == nil {
+				return message
+			}
+		}
 		return entry.Message
 	case "custom_message":
 		return &CustomMessage{Role: "custom", CustomType: entry.CustomType, Content: entry.Content, Display: entry.Display, Details: entry.Details, Timestamp: parseTimestamp(entry.Timestamp)}

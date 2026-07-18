@@ -1,0 +1,63 @@
+name: Nightly live suite
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: nightly-live
+  cancel-in-progress: false
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run capped provider corpus
+        id: live
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+          PI_GO_NIGHTLY_LIVE: "1"
+          PI_GO_NIGHTLY_MAX_USD: "0.25"
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PI_GO_OPENAI_MODEL: ${{ vars.PI_GO_OPENAI_MODEL || 'gpt-5.4-nano' }}
+          PI_GO_ANTHROPIC_MODEL: ${{ vars.PI_GO_ANTHROPIC_MODEL || 'claude-haiku-4-5' }}
+        run: |
+          set -o pipefail
+          go test -v -count=1 -timeout=20m ./codingagent -run '^TestNightlyLiveSuite$' 2>&1 | tee nightly-live.log
+      - name: Upload diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-live-${{ github.run_id }}
+          path: nightly-live.log
+          retention-days: 14
+      - name: File or update failure work item
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const title = "Nightly live suite failure";
+            const runURL = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const body = `The capped OpenAI/Anthropic nightly corpus failed on ${context.sha}.\n\nRun: ${runURL}`;
+            const {data: issues} = await github.rest.issues.listForRepo({owner, repo, state: "open", per_page: 100});
+            const existing = issues.find(issue => !issue.pull_request && issue.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({owner, repo, issue_number: existing.number, body});
+            } else {
+              await github.rest.issues.create({owner, repo, title, body});
+            }

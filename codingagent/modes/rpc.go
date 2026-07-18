@@ -30,6 +30,10 @@ type RPCSessionHost interface {
 	Dispose()
 }
 
+type rpcSessionRebindHost interface {
+	SetRebindSession(func(*codingagent.SessionRuntime) error)
+}
+
 type RPCModeOptions struct {
 	Stdin           io.Reader
 	Stdout          io.Writer
@@ -78,6 +82,9 @@ func RunRPCMode(ctx context.Context, host RPCSessionHost, options RPCModeOptions
 	mode.ui = newRPCExtensionUI(mode.writeObject)
 	if options.BindExtensionUI != nil {
 		options.BindExtensionUI(mode.ui)
+	}
+	if rebindHost, ok := host.(rpcSessionRebindHost); ok {
+		rebindHost.SetRebindSession(mode.bindReplacement)
 	}
 	if err := mode.bindSession(); err != nil {
 		mode.dispose()
@@ -132,6 +139,20 @@ func RunRPCMode(ctx context.Context, host RPCSessionHost, options RPCModeOptions
 }
 
 func (mode *rpcMode) bindSession() error {
+	session := mode.host.Session()
+	if session == nil {
+		return errors.New("rpc mode: session replacement returned nil")
+	}
+	return mode.bindReplacement(session)
+}
+
+func (mode *rpcMode) bindReplacement(session *codingagent.SessionRuntime) error {
+	if session == nil {
+		return errors.New("rpc mode: session replacement returned nil")
+	}
+	if err := session.BindExtensions(mode.ctx); err != nil {
+		return err
+	}
 	mode.mu.Lock()
 	defer mode.mu.Unlock()
 	if mode.disposed {
@@ -139,10 +160,6 @@ func (mode *rpcMode) bindSession() error {
 	}
 	if mode.unsub != nil {
 		mode.unsub()
-	}
-	session := mode.host.Session()
-	if session == nil {
-		return errors.New("rpc mode: session replacement returned nil")
 	}
 	mode.unsub = session.Subscribe(mode.output.writeSessionEvent)
 	return nil

@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/OrdalieTech/pi-go/agent"
+	"github.com/OrdalieTech/pi-go/agent/harness"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions"
 	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
@@ -222,7 +223,22 @@ func (runtime *AgentSessionRuntime) NewSession(
 	}
 	manager := current.Manager()
 	var replacement *sessionstore.SessionManager
-	if manager.IsPersisted() {
+	if repo := manager.HarnessRepo(); repo != nil {
+		create := harness.SessionCreateOptions{CWD: manager.GetCWD()}
+		if options != nil && options.ParentSession != "" {
+			parent := options.ParentSession
+			create.ParentSessionPath = &parent
+		}
+		createdSession, createErr := repo.Create(ctx, create)
+		if createErr != nil {
+			return extensions.SessionReplacementResult{}, createErr
+		}
+		replacement, err = sessionstore.FromHarnessStorage(
+			createdSession.Storage(), sessionstore.WithHarnessRepo(repo), sessionstore.WithCwdOverride(manager.GetCWD()),
+		)
+	} else if manager.IsHarnessBacked() {
+		return extensions.SessionReplacementResult{}, fmt.Errorf("%w: new session", sessionstore.ErrHarnessStorageReplacement)
+	} else if manager.IsPersisted() {
 		replacement, err = sessionstore.Create(manager.GetCWD(), manager.GetSessionDir())
 	} else {
 		replacement, err = sessionstore.InMemory(manager.GetCWD())
@@ -230,7 +246,7 @@ func (runtime *AgentSessionRuntime) NewSession(
 	if err != nil {
 		return extensions.SessionReplacementResult{}, err
 	}
-	if options != nil && options.ParentSession != "" {
+	if manager.HarnessRepo() == nil && options != nil && options.ParentSession != "" {
 		parent := options.ParentSession
 		if _, err := replacement.NewSession(sessionstore.NewSessionOptions{ParentSession: &parent}); err != nil {
 			return extensions.SessionReplacementResult{}, err
@@ -297,7 +313,68 @@ func (runtime *AgentSessionRuntime) SwitchSession(
 	if options != nil && options.CWDOverride != "" {
 		openOptions = append(openOptions, sessionstore.WithCwdOverride(options.CWDOverride))
 	}
-	replacement, err := sessionstore.Open(path, "", openOptions...)
+	manager := current.Manager()
+	var replacement *sessionstore.SessionManager
+	if repo := manager.HarnessRepo(); repo != nil {
+		var opened *harness.Session
+		if opener, ok := repo.(harnessRuntimePathOpener); ok {
+			resolvedPath, resolveErr := config.NormalizePath(path)
+			if resolveErr == nil {
+				resolvedPath, resolveErr = filepath.Abs(resolvedPath)
+			}
+			fallbackCWD := ""
+			if options != nil {
+				fallbackCWD = options.CWDOverride
+			}
+			if fallbackCWD == "" && resolveErr == nil {
+				fallbackCWD, resolveErr = os.Getwd()
+			}
+			if resolveErr == nil {
+				if _, statErr := os.Stat(resolvedPath); statErr == nil {
+					var prepared *sessionstore.SessionManager
+					prepared, resolveErr = sessionstore.Open(resolvedPath, "", openOptions...)
+					if resolveErr == nil {
+						fallbackCWD = prepared.GetCWD()
+					}
+				} else if !os.IsNotExist(statErr) {
+					resolveErr = statErr
+				}
+			}
+			if resolveErr != nil {
+				err = resolveErr
+			} else {
+				opened, err = opener.OpenRuntimePath(ctx, resolvedPath, fallbackCWD)
+			}
+		} else if opener, ok := repo.(interface {
+			OpenPath(context.Context, string) (*harness.Session, error)
+		}); ok {
+			opened, err = opener.OpenPath(ctx, path)
+		} else {
+			var metadata harness.SessionMetadata
+			metadata, err = findHarnessSessionMetadata(ctx, repo, path)
+			if err == nil {
+				opened, err = repo.Open(ctx, metadata)
+			}
+		}
+		openErr := err
+		if openErr != nil {
+			return extensions.SessionReplacementResult{}, openErr
+		}
+		metadata := opened.Metadata()
+		openOptions = append(openOptions, sessionstore.WithHarnessRepo(repo))
+		if options == nil || options.CWDOverride == "" {
+			cwd := metadata.CWD
+			if cwd == "" {
+				cwd = manager.GetCWD()
+			}
+			openOptions = append(openOptions, sessionstore.WithCwdOverride(cwd))
+		}
+		replacement, err = sessionstore.FromHarnessStorage(opened.Storage(), openOptions...)
+	} else if manager.IsHarnessBacked() {
+		return extensions.SessionReplacementResult{}, fmt.Errorf("%w: switch session", sessionstore.ErrHarnessStorageReplacement)
+	} else {
+		replacement, err = sessionstore.Open(path, "", openOptions...)
+	}
 	if err != nil {
 		return extensions.SessionReplacementResult{}, err
 	}
@@ -377,7 +454,33 @@ func (runtime *AgentSessionRuntime) Fork(
 	}
 
 	var replacement *sessionstore.SessionManager
-	if manager.IsPersisted() {
+	if repo := manager.HarnessRepo(); repo != nil {
+		if opener, ok := repo.(harnessRuntimePathOpener); ok {
+			replacement, err = forkHarnessRuntimeSession(ctx, manager, repo, opener, targetID)
+		} else {
+			metadata, ok := manager.HarnessMetadata()
+			if !ok {
+				return AgentSessionRuntimeForkResult{}, fmt.Errorf("%w: fork session metadata", sessionstore.ErrHarnessStorageReplacement)
+			}
+			harnessPosition := harness.ForkBefore
+			if position == extensions.ForkAt {
+				harnessPosition = harness.ForkAt
+			}
+			forkedSession, forkErr := repo.Fork(ctx, metadata, harness.SessionForkOptions{
+				SessionCreateOptions: harness.SessionCreateOptions{CWD: manager.GetCWD()},
+				EntryID:              entryID,
+				Position:             harnessPosition,
+			})
+			if forkErr != nil {
+				return AgentSessionRuntimeForkResult{}, forkErr
+			}
+			replacement, err = sessionstore.FromHarnessStorage(
+				forkedSession.Storage(), sessionstore.WithHarnessRepo(repo), sessionstore.WithCwdOverride(manager.GetCWD()),
+			)
+		}
+	} else if manager.IsHarnessBacked() {
+		return AgentSessionRuntimeForkResult{}, fmt.Errorf("%w: fork session", sessionstore.ErrHarnessStorageReplacement)
+	} else if manager.IsPersisted() {
 		currentFile := manager.GetSessionFile()
 		if currentFile == "" {
 			return AgentSessionRuntimeForkResult{}, errors.New("Persisted session is missing a session file") //nolint:staticcheck // Upstream text.
@@ -467,16 +570,80 @@ func (runtime *AgentSessionRuntime) ImportFromJSONL(
 		}
 		return extensions.SessionReplacementResult{}, err
 	}
-	sessionDir := current.Manager().GetSessionDir()
-	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
-		return extensions.SessionReplacementResult{}, err
+	manager := current.Manager()
+	sessionDir := manager.GetSessionDir()
+	destination := resolvedPath
+	if sessionDir != "" {
+		if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+			return extensions.SessionReplacementResult{}, err
+		}
+		destination = filepath.Join(sessionDir, filepath.Base(resolvedPath))
 	}
-	destination := filepath.Join(sessionDir, filepath.Base(resolvedPath))
 	target := destination
 	if runtimeSwitchCancelled(ctx, current, extensions.SessionBeforeSwitchEvent{
 		Reason: extensions.SessionSwitchResume, TargetSessionFile: &target,
 	}) {
 		return extensions.SessionReplacementResult{Cancelled: true}, nil
+	}
+	if manager.IsHarnessBacked() {
+		repo := manager.HarnessRepo()
+		if repo == nil {
+			return extensions.SessionReplacementResult{}, fmt.Errorf("%w: import session", sessionstore.ErrHarnessStorageReplacement)
+		}
+		var imported *harness.Session
+		if opener, ok := repo.(harnessRuntimePathOpener); ok {
+			if filepath.Clean(destination) != filepath.Clean(resolvedPath) {
+				if copyErr := copyRuntimeSessionFile(resolvedPath, destination); copyErr != nil {
+					return extensions.SessionReplacementResult{}, copyErr
+				}
+			}
+			var nativeOptions []sessionstore.Option
+			if cwdOverride != "" {
+				nativeOptions = append(nativeOptions, sessionstore.WithCwdOverride(cwdOverride))
+			}
+			prepared, openErr := sessionstore.Open(destination, sessionDir, nativeOptions...)
+			if openErr != nil {
+				return extensions.SessionReplacementResult{}, openErr
+			}
+			imported, err = opener.OpenRuntimePath(ctx, destination, prepared.GetCWD())
+		} else {
+			content, readErr := os.ReadFile(resolvedPath)
+			if readErr != nil {
+				if os.IsNotExist(readErr) {
+					return extensions.SessionReplacementResult{}, &SessionImportFileNotFoundError{FilePath: resolvedPath}
+				}
+				return extensions.SessionReplacementResult{}, readErr
+			}
+			imported, err = importHarnessRuntimeSession(ctx, repo, content, resolvedPath, destination)
+		}
+		if err != nil {
+			return extensions.SessionReplacementResult{}, err
+		}
+		adapterOptions := []sessionstore.Option{sessionstore.WithHarnessRepo(repo)}
+		if cwdOverride != "" {
+			adapterOptions = append(adapterOptions, sessionstore.WithCwdOverride(cwdOverride))
+		} else {
+			importedCWD := imported.Metadata().CWD
+			if importedCWD == "" {
+				importedCWD = manager.GetCWD()
+			}
+			adapterOptions = append(adapterOptions, sessionstore.WithCwdOverride(importedCWD))
+		}
+		replacement, adapterErr := sessionstore.FromHarnessStorage(imported.Storage(), adapterOptions...)
+		if adapterErr != nil {
+			return extensions.SessionReplacementResult{}, adapterErr
+		}
+		if err := assertRuntimeSessionCWD(replacement, manager.GetCWD()); err != nil {
+			return extensions.SessionReplacementResult{}, err
+		}
+		created, replaceErr := runtime.replace(ctx, current, replacement, extensions.SessionShutdownResume, extensions.SessionStartResume, nil)
+		if replaceErr != nil {
+			return extensions.SessionReplacementResult{}, replaceErr
+		}
+		if err := runtime.rebindReplacement(created); err != nil {
+			return extensions.SessionReplacementResult{}, err
+		}
+		return extensions.SessionReplacementResult{}, nil
 	}
 	if filepath.Clean(destination) != filepath.Clean(resolvedPath) {
 		if err := copyRuntimeSessionFile(resolvedPath, destination); err != nil {
@@ -750,6 +917,133 @@ func optionalRuntimeString(value string) *string {
 	}
 	copy := value
 	return &copy
+}
+
+type harnessRuntimePathOpener interface {
+	OpenRuntimePath(context.Context, string, string) (*harness.Session, error)
+}
+
+type harnessRuntimeBytesOpener interface {
+	OpenRuntimeBytes(context.Context, string, []byte) (*harness.Session, error)
+}
+
+func forkHarnessRuntimeSession(
+	ctx context.Context,
+	current *sessionstore.SessionManager,
+	repo harness.SessionRepo,
+	opener harnessRuntimePathOpener,
+	targetID string,
+) (*sessionstore.SessionManager, error) {
+	currentFile := current.GetSessionFile()
+	if currentFile == "" {
+		return nil, errors.New("Persisted session is missing a session file") //nolint:staticcheck // Upstream text.
+	}
+
+	var native *sessionstore.SessionManager
+	var err error
+	if targetID == "" {
+		native, err = sessionstore.Create(current.GetCWD(), current.GetSessionDir())
+		if err == nil {
+			parent := currentFile
+			_, err = native.NewSession(sessionstore.NewSessionOptions{ParentSession: &parent})
+		}
+	} else {
+		if _, statErr := os.Stat(currentFile); statErr != nil {
+			return nil, errors.New("This session has not been saved yet. Wait for the first assistant response before cloning or forking it.") //nolint:staticcheck // Upstream text.
+		}
+		native, err = sessionstore.Open(currentFile, current.GetSessionDir())
+		if err == nil {
+			var forked string
+			forked, err = native.CreateBranchedSession(targetID)
+			if err == nil && forked == "" {
+				err = errors.New("Failed to create forked session") //nolint:staticcheck // Upstream text.
+			}
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	forkedPath := native.GetSessionFile()
+	var forked *harness.Session
+	if _, statErr := os.Stat(forkedPath); statErr == nil {
+		forked, err = opener.OpenRuntimePath(ctx, forkedPath, native.GetCWD())
+	} else if !os.IsNotExist(statErr) {
+		err = statErr
+	} else {
+		bytesOpener, ok := repo.(harnessRuntimeBytesOpener)
+		if !ok {
+			return nil, fmt.Errorf("%w: open unmaterialized fork", sessionstore.ErrHarnessStorageReplacement)
+		}
+		var content []byte
+		content, err = native.JSONL()
+		if err == nil {
+			forked, err = bytesOpener.OpenRuntimeBytes(ctx, forkedPath, content)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return sessionstore.FromHarnessStorage(
+		forked.Storage(), sessionstore.WithHarnessRepo(repo), sessionstore.WithCwdOverride(native.GetCWD()),
+	)
+}
+
+func findHarnessSessionMetadata(
+	ctx context.Context,
+	repo harness.SessionRepo,
+	target string,
+) (harness.SessionMetadata, error) {
+	metadata, err := repo.List(ctx, harness.SessionListOptions{})
+	if err != nil {
+		return harness.SessionMetadata{}, err
+	}
+	for _, candidate := range metadata {
+		if candidate.ID == target || candidate.Path == target {
+			return candidate, nil
+		}
+		if candidate.Path != "" && filepath.Clean(candidate.Path) == filepath.Clean(target) {
+			return candidate, nil
+		}
+	}
+	return harness.SessionMetadata{}, fmt.Errorf("Session not found: %s", target) //nolint:staticcheck // Upstream text.
+}
+
+func importHarnessRuntimeSession(
+	ctx context.Context,
+	repo harness.SessionRepo,
+	content []byte,
+	sourcePath string,
+	destinationPath string,
+) (*harness.Session, error) {
+	if importer, ok := repo.(interface {
+		ImportJSONLAt(context.Context, []byte, string) (*harness.Session, error)
+	}); ok {
+		return importer.ImportJSONLAt(ctx, content, destinationPath)
+	}
+	if importer, ok := repo.(interface {
+		ImportJSONL(context.Context, []byte) (*harness.Session, error)
+	}); ok {
+		return importer.ImportJSONL(ctx, content)
+	}
+	parsed, err := harness.RehydrateJSONLSession(content, sourcePath)
+	if err != nil {
+		return nil, err
+	}
+	metadata := parsed.Metadata()
+	created, err := repo.Create(ctx, harness.SessionCreateOptions{
+		ID: metadata.ID, CWD: metadata.CWD,
+		ParentSessionPath: metadata.ParentSessionPath, Metadata: metadata.Metadata,
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range parsed.Entries() {
+		if err := created.Storage().AppendEntry(entry); err != nil {
+			return nil, err
+		}
+	}
+	return created, nil
 }
 
 func copyRuntimeSessionFile(source, destination string) error {

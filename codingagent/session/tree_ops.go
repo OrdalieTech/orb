@@ -21,6 +21,9 @@ type resolvedLabel struct {
 func (manager *SessionManager) CreateBranchedSession(leafID string) (string, error) {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
+	if manager.harnessStorage != nil {
+		return "", ErrHarnessStorageReplacement
+	}
 
 	previousSessionFile := manager.sessionFile
 	path := manager.getBranchLocked(leafID)

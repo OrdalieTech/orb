@@ -14,6 +14,7 @@ type SessionHeader struct {
 	Timestamp     string
 	CWD           string
 	ParentSession *string
+	Metadata      json.RawMessage
 
 	object *orderedObject
 }
@@ -28,9 +29,10 @@ type SessionEntry struct {
 	ThinkingLevel    string
 	Provider         string
 	ModelID          string
+	ActiveToolNames  []string
 	Summary          string
 	FirstKeptEntryID string
-	TokensBefore     int64
+	TokensBefore     float64
 	Details          json.RawMessage
 	FromHook         *bool
 	FromID           string
@@ -39,6 +41,7 @@ type SessionEntry struct {
 	Content          json.RawMessage
 	Display          bool
 	TargetID         string
+	LeafTargetID     *string
 	Label            *string
 	Name             string
 
@@ -118,6 +121,7 @@ func decodeFileEntry(object *orderedObject, raw json.RawMessage) *FileEntry {
 				header.ParentSession = &parent
 			}
 		}
+		header.Metadata, _ = object.get("metadata")
 		fileEntry.Header = header
 		return fileEntry
 	}
@@ -134,10 +138,13 @@ func decodeFileEntry(object *orderedObject, raw json.RawMessage) *FileEntry {
 	entry.ThinkingLevel, _ = stringMember(object, "thinkingLevel")
 	entry.Provider, _ = stringMember(object, "provider")
 	entry.ModelID, _ = stringMember(object, "modelId")
+	if value, ok := object.get("activeToolNames"); ok {
+		_ = json.Unmarshal(value, &entry.ActiveToolNames)
+	}
 	entry.Summary, _ = stringMember(object, "summary")
 	entry.FirstKeptEntryID, _ = stringMember(object, "firstKeptEntryId")
 	if value, ok := object.get("tokensBefore"); ok {
-		entry.TokensBefore, _ = decodeInt(value)
+		entry.TokensBefore, _ = decodeNumber(value)
 	}
 	entry.Details, _ = object.get("details")
 	if value, ok := object.get("fromHook"); ok {
@@ -153,6 +160,13 @@ func decodeFileEntry(object *orderedObject, raw json.RawMessage) *FileEntry {
 		}
 	}
 	entry.TargetID, _ = stringMember(object, "targetId")
+	if entry.Type == "leaf" {
+		if value, ok := object.get("targetId"); ok {
+			if targetID, valid := decodeString(value); valid {
+				entry.LeafTargetID = &targetID
+			}
+		}
+	}
 	if value, ok := object.get("label"); ok {
 		if label, valid := decodeString(value); valid {
 			entry.Label = &label
@@ -186,6 +200,9 @@ func newHeaderRecord(header SessionHeader) *FileEntry {
 	if header.ParentSession != nil {
 		members = append(members, member("parentSession", mustRawString(*header.ParentSession)))
 	}
+	if header.Metadata != nil {
+		members = append(members, member("metadata", header.Metadata))
+	}
 	object := newOrderedObject(members...)
 	return decodeFileEntry(object, nil)
 }
@@ -212,11 +229,13 @@ func newEntryRecord(entry SessionEntry) *FileEntry {
 			member("provider", mustRawString(entry.Provider)),
 			member("modelId", mustRawString(entry.ModelID)),
 		)
+	case "active_tools_change":
+		members = append(base, member("activeToolNames", rawStringArray(entry.ActiveToolNames)))
 	case "compaction":
 		members = append(base,
 			member("summary", mustRawString(entry.Summary)),
 			member("firstKeptEntryId", mustRawString(entry.FirstKeptEntryID)),
-			member("tokensBefore", rawInt(entry.TokensBefore)),
+			member("tokensBefore", rawNumber(entry.TokensBefore)),
 		)
 		if entry.Details != nil {
 			members = append(members, member("details", entry.Details))
@@ -260,6 +279,14 @@ func newEntryRecord(entry SessionEntry) *FileEntry {
 		if entry.Label != nil {
 			members = append(members, member("label", mustRawString(*entry.Label)))
 		}
+	case "leaf":
+		targetID := rawNull()
+		if entry.LeafTargetID != nil {
+			targetID = mustRawString(*entry.LeafTargetID)
+		} else if entry.TargetID != "" {
+			targetID = mustRawString(entry.TargetID)
+		}
+		members = append(base, member("targetId", targetID))
 	case "session_info":
 		members = append(base, member("name", mustRawString(entry.Name)))
 	default:

@@ -1,0 +1,1848 @@
+{
+  "schemaVersion": 1,
+  "session": {
+    "jsonl": {
+      "metadata": {
+        "id": "session-fixed",
+        "createdAt": "2026-02-03T04:05:06.789Z",
+        "cwd": "/fixture/project",
+        "path": "<fixture>/session.jsonl",
+        "parentSessionPath": "/fixture/parent.jsonl",
+        "metadata": {
+          "profile": "reviewer",
+          "nested": {
+            "enabled": true
+          }
+        }
+      },
+      "leafId": "tools-empty",
+      "entries": [
+        {
+          "type": "message",
+          "id": "root-user",
+          "parentId": null,
+          "timestamp": "2026-02-03T04:05:07.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "root <>&  "
+              }
+            ],
+            "timestamp": 1
+          }
+        },
+        {
+          "type": "message",
+          "id": "main-assistant",
+          "parentId": "root-user",
+          "timestamp": "2026-02-03T04:05:08.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-test",
+            "usage": {
+              "input": 1,
+              "output": 2,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 3,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 2
+          }
+        },
+        {
+          "type": "message",
+          "id": "second-user",
+          "parentId": "main-assistant",
+          "timestamp": "2026-02-03T04:05:09.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "continue"
+              }
+            ],
+            "timestamp": 3
+          }
+        },
+        {
+          "type": "thinking_level_change",
+          "id": "thinking",
+          "parentId": "second-user",
+          "timestamp": "2026-02-03T04:05:10.000Z",
+          "thinkingLevel": "high"
+        },
+        {
+          "type": "model_change",
+          "id": "model",
+          "parentId": "thinking",
+          "timestamp": "2026-02-03T04:05:11.000Z",
+          "provider": "anthropic",
+          "modelId": "claude-test"
+        },
+        {
+          "type": "active_tools_change",
+          "id": "tools",
+          "parentId": "model",
+          "timestamp": "2026-02-03T04:05:12.000Z",
+          "activeToolNames": [
+            "read",
+            "bash"
+          ]
+        },
+        {
+          "type": "active_tools_change",
+          "id": "tools-empty",
+          "parentId": "tools",
+          "timestamp": "2026-02-03T04:05:12.500Z",
+          "activeToolNames": []
+        },
+        {
+          "type": "custom",
+          "id": "custom",
+          "parentId": "tools-empty",
+          "timestamp": "2026-02-03T04:05:13.000Z",
+          "customType": "state",
+          "data": {
+            "nested": [
+              1,
+              "two"
+            ]
+          }
+        },
+        {
+          "type": "custom_message",
+          "id": "custom-message",
+          "parentId": "custom",
+          "timestamp": "2026-02-03T04:05:14.000Z",
+          "customType": "notice",
+          "content": "visible note",
+          "display": true,
+          "details": {
+            "source": "fixture"
+          }
+        },
+        {
+          "type": "session_info",
+          "id": "session-name",
+          "parentId": "custom-message",
+          "timestamp": "2026-02-03T04:05:15.000Z",
+          "name": "  fixture name  "
+        },
+        {
+          "type": "compaction",
+          "id": "compaction",
+          "parentId": "session-name",
+          "timestamp": "2026-02-03T04:05:16.000Z",
+          "summary": "prior work",
+          "firstKeptEntryId": "second-user",
+          "tokensBefore": 42.5,
+          "details": {
+            "readFiles": [
+              "a.go"
+            ]
+          },
+          "fromHook": false
+        },
+        {
+          "type": "message",
+          "id": "branch-user",
+          "parentId": "root-user",
+          "timestamp": "2026-02-03T04:05:17.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "branch"
+              }
+            ],
+            "timestamp": 4
+          }
+        },
+        {
+          "type": "branch_summary",
+          "id": "branch-summary",
+          "parentId": "branch-user",
+          "timestamp": "2026-02-03T04:05:17.500Z",
+          "fromId": "compaction",
+          "summary": "discarded branch work",
+          "details": {
+            "modifiedFiles": [
+              "b.go"
+            ]
+          },
+          "fromHook": true
+        },
+        {
+          "type": "message",
+          "id": "empty-parent",
+          "parentId": "",
+          "timestamp": "2026-02-03T04:05:17.750Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "empty parent is root"
+              }
+            ],
+            "timestamp": 5
+          }
+        },
+        {
+          "type": "label",
+          "id": "label-root-set",
+          "parentId": "branch-user",
+          "timestamp": "2026-02-03T04:05:18.000Z",
+          "targetId": "root-user",
+          "label": "  checkpoint  "
+        },
+        {
+          "type": "label",
+          "id": "label-root-clear",
+          "parentId": "label-root-set",
+          "timestamp": "2026-02-03T04:05:19.000Z",
+          "targetId": "root-user",
+          "label": "   "
+        },
+        {
+          "type": "label",
+          "id": "label-branch",
+          "parentId": "label-root-clear",
+          "timestamp": "2026-02-03T04:05:20.000Z",
+          "targetId": "branch-user",
+          "label": "  branch point  "
+        },
+        {
+          "type": "leaf",
+          "id": "leaf-record",
+          "parentId": "label-branch",
+          "timestamp": "2026-02-03T04:05:21.000Z",
+          "targetId": "tools-empty"
+        }
+      ],
+      "entryIds": [
+        "root-user",
+        "main-assistant",
+        "second-user",
+        "thinking",
+        "model",
+        "tools",
+        "tools-empty",
+        "custom",
+        "custom-message",
+        "session-name",
+        "compaction",
+        "branch-user",
+        "branch-summary",
+        "empty-parent",
+        "label-root-set",
+        "label-root-clear",
+        "label-branch",
+        "leaf-record"
+      ],
+      "branchIds": [
+        "root-user",
+        "main-assistant",
+        "second-user",
+        "thinking",
+        "model",
+        "tools",
+        "tools-empty"
+      ],
+      "messageIds": [
+        "root-user",
+        "main-assistant",
+        "second-user",
+        "branch-user",
+        "empty-parent"
+      ],
+      "labels": {
+        "root": null,
+        "branch": "branch point"
+      },
+      "sessionName": "fixture name",
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "root <>&  "
+              }
+            ],
+            "timestamp": 1
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-test",
+            "usage": {
+              "input": 1,
+              "output": 2,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 3,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 2
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "continue"
+              }
+            ],
+            "timestamp": 3
+          }
+        ],
+        "roles": [
+          "user",
+          "assistant",
+          "user"
+        ],
+        "thinkingLevel": "high",
+        "model": {
+          "provider": "anthropic",
+          "modelId": "claude-test"
+        },
+        "activeToolNames": []
+      }
+    },
+    "memory": {
+      "metadata": {
+        "id": "session-fixed",
+        "createdAt": "2026-02-03T04:05:06.789Z"
+      },
+      "leafId": "tools-empty",
+      "entries": [
+        {
+          "type": "message",
+          "id": "root-user",
+          "parentId": null,
+          "timestamp": "2026-02-03T04:05:07.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "root <>&  "
+              }
+            ],
+            "timestamp": 1
+          }
+        },
+        {
+          "type": "message",
+          "id": "main-assistant",
+          "parentId": "root-user",
+          "timestamp": "2026-02-03T04:05:08.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-test",
+            "usage": {
+              "input": 1,
+              "output": 2,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 3,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 2
+          }
+        },
+        {
+          "type": "message",
+          "id": "second-user",
+          "parentId": "main-assistant",
+          "timestamp": "2026-02-03T04:05:09.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "continue"
+              }
+            ],
+            "timestamp": 3
+          }
+        },
+        {
+          "type": "thinking_level_change",
+          "id": "thinking",
+          "parentId": "second-user",
+          "timestamp": "2026-02-03T04:05:10.000Z",
+          "thinkingLevel": "high"
+        },
+        {
+          "type": "model_change",
+          "id": "model",
+          "parentId": "thinking",
+          "timestamp": "2026-02-03T04:05:11.000Z",
+          "provider": "anthropic",
+          "modelId": "claude-test"
+        },
+        {
+          "type": "active_tools_change",
+          "id": "tools",
+          "parentId": "model",
+          "timestamp": "2026-02-03T04:05:12.000Z",
+          "activeToolNames": [
+            "read",
+            "bash"
+          ]
+        },
+        {
+          "type": "active_tools_change",
+          "id": "tools-empty",
+          "parentId": "tools",
+          "timestamp": "2026-02-03T04:05:12.500Z",
+          "activeToolNames": []
+        },
+        {
+          "type": "custom",
+          "id": "custom",
+          "parentId": "tools-empty",
+          "timestamp": "2026-02-03T04:05:13.000Z",
+          "customType": "state",
+          "data": {
+            "nested": [
+              1,
+              "two"
+            ]
+          }
+        },
+        {
+          "type": "custom_message",
+          "id": "custom-message",
+          "parentId": "custom",
+          "timestamp": "2026-02-03T04:05:14.000Z",
+          "customType": "notice",
+          "content": "visible note",
+          "display": true,
+          "details": {
+            "source": "fixture"
+          }
+        },
+        {
+          "type": "session_info",
+          "id": "session-name",
+          "parentId": "custom-message",
+          "timestamp": "2026-02-03T04:05:15.000Z",
+          "name": "  fixture name  "
+        },
+        {
+          "type": "compaction",
+          "id": "compaction",
+          "parentId": "session-name",
+          "timestamp": "2026-02-03T04:05:16.000Z",
+          "summary": "prior work",
+          "firstKeptEntryId": "second-user",
+          "tokensBefore": 42.5,
+          "details": {
+            "readFiles": [
+              "a.go"
+            ]
+          },
+          "fromHook": false
+        },
+        {
+          "type": "message",
+          "id": "branch-user",
+          "parentId": "root-user",
+          "timestamp": "2026-02-03T04:05:17.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "branch"
+              }
+            ],
+            "timestamp": 4
+          }
+        },
+        {
+          "type": "branch_summary",
+          "id": "branch-summary",
+          "parentId": "branch-user",
+          "timestamp": "2026-02-03T04:05:17.500Z",
+          "fromId": "compaction",
+          "summary": "discarded branch work",
+          "details": {
+            "modifiedFiles": [
+              "b.go"
+            ]
+          },
+          "fromHook": true
+        },
+        {
+          "type": "message",
+          "id": "empty-parent",
+          "parentId": "",
+          "timestamp": "2026-02-03T04:05:17.750Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "empty parent is root"
+              }
+            ],
+            "timestamp": 5
+          }
+        },
+        {
+          "type": "label",
+          "id": "label-root-set",
+          "parentId": "branch-user",
+          "timestamp": "2026-02-03T04:05:18.000Z",
+          "targetId": "root-user",
+          "label": "  checkpoint  "
+        },
+        {
+          "type": "label",
+          "id": "label-root-clear",
+          "parentId": "label-root-set",
+          "timestamp": "2026-02-03T04:05:19.000Z",
+          "targetId": "root-user",
+          "label": "   "
+        },
+        {
+          "type": "label",
+          "id": "label-branch",
+          "parentId": "label-root-clear",
+          "timestamp": "2026-02-03T04:05:20.000Z",
+          "targetId": "branch-user",
+          "label": "  branch point  "
+        },
+        {
+          "type": "leaf",
+          "id": "leaf-record",
+          "parentId": "label-branch",
+          "timestamp": "2026-02-03T04:05:21.000Z",
+          "targetId": "tools-empty"
+        }
+      ],
+      "entryIds": [
+        "root-user",
+        "main-assistant",
+        "second-user",
+        "thinking",
+        "model",
+        "tools",
+        "tools-empty",
+        "custom",
+        "custom-message",
+        "session-name",
+        "compaction",
+        "branch-user",
+        "branch-summary",
+        "empty-parent",
+        "label-root-set",
+        "label-root-clear",
+        "label-branch",
+        "leaf-record"
+      ],
+      "branchIds": [
+        "root-user",
+        "main-assistant",
+        "second-user",
+        "thinking",
+        "model",
+        "tools",
+        "tools-empty"
+      ],
+      "messageIds": [
+        "root-user",
+        "main-assistant",
+        "second-user",
+        "branch-user",
+        "empty-parent"
+      ],
+      "labels": {
+        "root": null,
+        "branch": "branch point"
+      },
+      "sessionName": "fixture name",
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "root <>&  "
+              }
+            ],
+            "timestamp": 1
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-test",
+            "usage": {
+              "input": 1,
+              "output": 2,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 3,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 2
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "continue"
+              }
+            ],
+            "timestamp": 3
+          }
+        ],
+        "roles": [
+          "user",
+          "assistant",
+          "user"
+        ],
+        "thinkingLevel": "high",
+        "model": {
+          "provider": "anthropic",
+          "modelId": "claude-test"
+        },
+        "activeToolNames": []
+      }
+    },
+    "forks": {
+      "beforeSecondUser": [
+        "root-user",
+        "main-assistant"
+      ],
+      "atModel": [
+        "root-user",
+        "main-assistant",
+        "second-user",
+        "thinking",
+        "model"
+      ],
+      "beforeAssistantError": {
+        "code": "invalid_fork_target",
+        "message": "Entry main-assistant is not a user message"
+      }
+    },
+    "compactedContext": {
+      "messages": [
+        {
+          "role": "compactionSummary",
+          "summary": "prior work",
+          "tokensBefore": 42.5,
+          "timestamp": 1770091516000
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "continue"
+            }
+          ],
+          "timestamp": 3
+        },
+        {
+          "role": "custom",
+          "customType": "notice",
+          "content": "visible note",
+          "display": true,
+          "details": {
+            "source": "fixture"
+          },
+          "timestamp": 1770091514000
+        }
+      ],
+      "roles": [
+        "compactionSummary",
+        "user",
+        "custom"
+      ],
+      "thinkingLevel": "high",
+      "model": {
+        "provider": "anthropic",
+        "modelId": "claude-test"
+      },
+      "activeToolNames": []
+    },
+    "branchSummaryContext": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "root <>&  "
+            }
+          ],
+          "timestamp": 1
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "branch"
+            }
+          ],
+          "timestamp": 4
+        },
+        {
+          "role": "branchSummary",
+          "summary": "discarded branch work",
+          "fromId": "compaction",
+          "timestamp": 1770091517500
+        }
+      ],
+      "roles": [
+        "user",
+        "user",
+        "branchSummary"
+      ],
+      "thinkingLevel": "off",
+      "model": null,
+      "activeToolNames": null
+    },
+    "emptyParentPath": [
+      "empty-parent"
+    ],
+    "transformsAndProjectors": {
+      "constructorOnly": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "transform root"
+              }
+            ],
+            "timestamp": 10
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "constructor projector"
+              }
+            ],
+            "timestamp": 20
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "constructor override"
+              }
+            ],
+            "timestamp": 21
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "call drop"
+              }
+            ],
+            "timestamp": 12
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "transform answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-transform",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 13
+          }
+        ],
+        "roles": [
+          "user",
+          "user",
+          "user",
+          "user",
+          "assistant"
+        ],
+        "thinkingLevel": "off",
+        "model": {
+          "provider": "openai",
+          "modelId": "gpt-transform"
+        },
+        "activeToolNames": null
+      },
+      "constructorAndPerCall": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "transform root"
+              }
+            ],
+            "timestamp": 10
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "constructor projector"
+              }
+            ],
+            "timestamp": 20
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "per-call override"
+              }
+            ],
+            "timestamp": 22
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "per-call projector"
+              }
+            ],
+            "timestamp": 23
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "transform answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-transform",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 13
+          }
+        ],
+        "roles": [
+          "user",
+          "user",
+          "user",
+          "user",
+          "assistant"
+        ],
+        "thinkingLevel": "off",
+        "model": {
+          "provider": "openai",
+          "modelId": "gpt-transform"
+        },
+        "activeToolNames": null
+      }
+    },
+    "typedEmptyActiveTools": {
+      "entry": {
+        "type": "active_tools_change",
+        "activeToolNames": []
+      },
+      "context": {
+        "activeToolNames": []
+      }
+    },
+    "appendLine": "{\"type\":\"custom\",\"id\":\"appended-fixed\",\"parentId\":\"tools\",\"timestamp\":\"2026-02-03T04:05:22.000Z\",\"customType\":\"after-rehydrate\",\"data\":{\"text\":\"<>&  \"}}\n",
+    "invalid": [
+      {
+        "name": "missing-header",
+        "error": {
+          "code": "invalid_session",
+          "message": "Invalid JSONL session file <fixture>/missing-header.jsonl: missing session header"
+        }
+      },
+      {
+        "name": "unsupported-version",
+        "error": {
+          "code": "invalid_session",
+          "message": "Invalid JSONL session file <fixture>/unsupported-version.jsonl: unsupported session version"
+        }
+      },
+      {
+        "name": "metadata-array",
+        "error": {
+          "code": "invalid_session",
+          "message": "Invalid JSONL session file <fixture>/metadata-array.jsonl: session header metadata must be an object"
+        }
+      },
+      {
+        "name": "invalid-entry",
+        "error": {
+          "code": "invalid_entry",
+          "message": "Invalid JSONL session file <fixture>/invalid-entry.jsonl: line 2 has invalid parentId"
+        }
+      },
+      {
+        "name": "dangling-leaf",
+        "error": {
+          "code": "invalid_session",
+          "message": "Entry missing not found"
+        }
+      }
+    ],
+    "repos": {
+      "memory": {
+        "sourceMetadata": {
+          "id": "memory-source",
+          "createdAt": "<createdAt>"
+        },
+        "openedSameObject": true,
+        "listed": [
+          {
+            "id": "memory-at",
+            "createdAt": "<createdAt>"
+          },
+          {
+            "id": "memory-before",
+            "createdAt": "<createdAt>"
+          },
+          {
+            "id": "memory-full",
+            "createdAt": "<createdAt>"
+          },
+          {
+            "id": "memory-source",
+            "createdAt": "<createdAt>"
+          }
+        ],
+        "beforeEntries": [
+          {
+            "type": "message",
+            "id": "root-user",
+            "parentId": null,
+            "timestamp": "2026-02-03T04:05:07.000Z",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "root <>&  "
+                }
+              ],
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "message",
+            "id": "main-assistant",
+            "parentId": "root-user",
+            "timestamp": "2026-02-03T04:05:08.000Z",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "openai",
+              "model": "gpt-test",
+              "usage": {
+                "input": 1,
+                "output": 2,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 3,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 2
+            }
+          }
+        ],
+        "atEntries": [
+          {
+            "type": "message",
+            "id": "root-user",
+            "parentId": null,
+            "timestamp": "2026-02-03T04:05:07.000Z",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "root <>&  "
+                }
+              ],
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "message",
+            "id": "main-assistant",
+            "parentId": "root-user",
+            "timestamp": "2026-02-03T04:05:08.000Z",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "openai",
+              "model": "gpt-test",
+              "usage": {
+                "input": 1,
+                "output": 2,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 3,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 2
+            }
+          }
+        ],
+        "fullEntries": [
+          {
+            "type": "message",
+            "id": "root-user",
+            "parentId": null,
+            "timestamp": "2026-02-03T04:05:07.000Z",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "root <>&  "
+                }
+              ],
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "message",
+            "id": "main-assistant",
+            "parentId": "root-user",
+            "timestamp": "2026-02-03T04:05:08.000Z",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "openai",
+              "model": "gpt-test",
+              "usage": {
+                "input": 1,
+                "output": 2,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 3,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 2
+            }
+          },
+          {
+            "type": "message",
+            "id": "second-user",
+            "parentId": "main-assistant",
+            "timestamp": "2026-02-03T04:05:09.000Z",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "continue"
+                }
+              ],
+              "timestamp": 3
+            }
+          }
+        ],
+        "openAfterDelete": {
+          "code": "not_found",
+          "message": "Session not found: memory-source"
+        }
+      },
+      "jsonl": {
+        "sourceMetadata": {
+          "id": "jsonl-source",
+          "createdAt": "<createdAt>",
+          "cwd": "/tmp/my-project",
+          "path": "<fixture>/repo-sessions/--tmp-my-project--/<createdAt>_jsonl-source.jsonl",
+          "metadata": {
+            "2": "two",
+            "10": "ten",
+            "profile": "reviewer",
+            "nested": {
+              "z": 1,
+              "a": 2
+            }
+          }
+        },
+        "otherMetadata": {
+          "id": "jsonl-other",
+          "createdAt": "<createdAt>",
+          "cwd": "/tmp/other-project",
+          "path": "<fixture>/repo-sessions/--tmp-other-project--/<createdAt>_jsonl-other.jsonl"
+        },
+        "openedMetadata": {
+          "id": "jsonl-source",
+          "createdAt": "<createdAt>",
+          "cwd": "/tmp/my-project",
+          "path": "<fixture>/repo-sessions/--tmp-my-project--/<createdAt>_jsonl-source.jsonl",
+          "metadata": {
+            "2": "two",
+            "10": "ten",
+            "profile": "reviewer",
+            "nested": {
+              "z": 1,
+              "a": 2
+            }
+          }
+        },
+        "openedEntries": [
+          {
+            "type": "message",
+            "id": "root-user",
+            "parentId": null,
+            "timestamp": "2026-02-03T04:05:07.000Z",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "root <>&  "
+                }
+              ],
+              "timestamp": 1
+            }
+          },
+          {
+            "type": "message",
+            "id": "main-assistant",
+            "parentId": "root-user",
+            "timestamp": "2026-02-03T04:05:08.000Z",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "openai",
+              "model": "gpt-test",
+              "usage": {
+                "input": 1,
+                "output": 2,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 3,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 2
+            }
+          },
+          {
+            "type": "message",
+            "id": "second-user",
+            "parentId": "main-assistant",
+            "timestamp": "2026-02-03T04:05:09.000Z",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "continue"
+                }
+              ],
+              "timestamp": 3
+            }
+          }
+        ],
+        "listByCwd": [
+          {
+            "id": "jsonl-source",
+            "createdAt": "<createdAt>",
+            "cwd": "/tmp/my-project",
+            "path": "<fixture>/repo-sessions/--tmp-my-project--/<createdAt>_jsonl-source.jsonl",
+            "metadata": {
+              "2": "two",
+              "10": "ten",
+              "profile": "reviewer",
+              "nested": {
+                "z": 1,
+                "a": 2
+              }
+            }
+          }
+        ],
+        "listAll": [
+          {
+            "id": "jsonl-other",
+            "createdAt": "<createdAt>",
+            "cwd": "/tmp/other-project",
+            "path": "<fixture>/repo-sessions/--tmp-other-project--/<createdAt>_jsonl-other.jsonl"
+          },
+          {
+            "id": "jsonl-source",
+            "createdAt": "<createdAt>",
+            "cwd": "/tmp/my-project",
+            "path": "<fixture>/repo-sessions/--tmp-my-project--/<createdAt>_jsonl-source.jsonl",
+            "metadata": {
+              "2": "two",
+              "10": "ten",
+              "profile": "reviewer",
+              "nested": {
+                "z": 1,
+                "a": 2
+              }
+            }
+          }
+        ],
+        "encodedCwdDirectory": "--tmp-my-project--",
+        "before": {
+          "metadata": {
+            "id": "jsonl-before",
+            "createdAt": "<createdAt>",
+            "cwd": "/tmp/target",
+            "path": "<fixture>/repo-sessions/--tmp-target--/<createdAt>_jsonl-before.jsonl",
+            "parentSessionPath": "<fixture>/repo-sessions/--tmp-my-project--/<createdAt>_jsonl-source.jsonl",
+            "metadata": {
+              "2": "two",
+              "10": "ten",
+              "profile": "reviewer",
+              "nested": {
+                "z": 1,
+                "a": 2
+              }
+            }
+          },
+          "entries": [
+            {
+              "type": "message",
+              "id": "root-user",
+              "parentId": null,
+              "timestamp": "2026-02-03T04:05:07.000Z",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "root <>&  "
+                  }
+                ],
+                "timestamp": 1
+              }
+            },
+            {
+              "type": "message",
+              "id": "main-assistant",
+              "parentId": "root-user",
+              "timestamp": "2026-02-03T04:05:08.000Z",
+              "message": {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "openai",
+                "model": "gpt-test",
+                "usage": {
+                  "input": 1,
+                  "output": 2,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 3,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 2
+              }
+            }
+          ]
+        },
+        "inherited": {
+          "metadata": {
+            "id": "jsonl-inherited",
+            "createdAt": "<createdAt>",
+            "cwd": "/tmp/target",
+            "path": "<fixture>/repo-sessions/--tmp-target--/<createdAt>_jsonl-inherited.jsonl",
+            "parentSessionPath": "<fixture>/repo-sessions/--tmp-my-project--/<createdAt>_jsonl-source.jsonl",
+            "metadata": {
+              "2": "two",
+              "10": "ten",
+              "profile": "reviewer",
+              "nested": {
+                "z": 1,
+                "a": 2
+              }
+            }
+          },
+          "entries": [
+            {
+              "type": "message",
+              "id": "root-user",
+              "parentId": null,
+              "timestamp": "2026-02-03T04:05:07.000Z",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "root <>&  "
+                  }
+                ],
+                "timestamp": 1
+              }
+            },
+            {
+              "type": "message",
+              "id": "main-assistant",
+              "parentId": "root-user",
+              "timestamp": "2026-02-03T04:05:08.000Z",
+              "message": {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "openai",
+                "model": "gpt-test",
+                "usage": {
+                  "input": 1,
+                  "output": 2,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 3,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 2
+              }
+            },
+            {
+              "type": "message",
+              "id": "second-user",
+              "parentId": "main-assistant",
+              "timestamp": "2026-02-03T04:05:09.000Z",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "continue"
+                  }
+                ],
+                "timestamp": 3
+              }
+            }
+          ]
+        },
+        "overridden": {
+          "metadata": {
+            "id": "jsonl-overridden",
+            "createdAt": "<createdAt>",
+            "cwd": "/tmp/target",
+            "path": "<fixture>/repo-sessions/--tmp-target--/<createdAt>_jsonl-overridden.jsonl",
+            "parentSessionPath": "/fixture/override-parent.jsonl",
+            "metadata": {
+              "profile": "writer"
+            }
+          },
+          "entries": [
+            {
+              "type": "message",
+              "id": "root-user",
+              "parentId": null,
+              "timestamp": "2026-02-03T04:05:07.000Z",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "root <>&  "
+                  }
+                ],
+                "timestamp": 1
+              }
+            },
+            {
+              "type": "message",
+              "id": "main-assistant",
+              "parentId": "root-user",
+              "timestamp": "2026-02-03T04:05:08.000Z",
+              "message": {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "openai",
+                "model": "gpt-test",
+                "usage": {
+                  "input": 1,
+                  "output": 2,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 3,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 2
+              }
+            },
+            {
+              "type": "message",
+              "id": "second-user",
+              "parentId": "main-assistant",
+              "timestamp": "2026-02-03T04:05:09.000Z",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "continue"
+                  }
+                ],
+                "timestamp": 3
+              }
+            }
+          ]
+        },
+        "sourceExistsBeforeDelete": true,
+        "sourceExistsAfterDelete": false,
+        "openAfterDelete": {
+          "code": "not_found",
+          "message": "Session not found: <fixture>/repo-sessions/--tmp-my-project--/<createdAt>_jsonl-source.jsonl"
+        },
+        "noncanonicalSourceBytes": "{ \"type\" : \"session\", \"version\" : 3, \"id\" : \"noncanonical\", \"timestamp\" : \"2026-02-03T04:05:06.789Z\", \"cwd\" : \"/tmp/noncanonical\", \"metadata\" : { \"10\" : \"ten\", \"2\" : \"two\", \"profile\" : \"reviewer\", \"nested\" : { \"z\" : 1, \"a\" : 2 } } }\n{ \"type\" : \"message\", \"id\" : \"noncanonical-user\", \"parentId\" : null, \"timestamp\" : \"2026-02-03T04:07:00.000Z\", \"message\" : { \"role\" : \"user\", \"content\" : [ { \"type\" : \"text\", \"text\" : \"noncanonical\" } ], \"timestamp\" : 30 } }\n",
+        "noncanonicalMetadata": {
+          "id": "noncanonical",
+          "createdAt": "<createdAt>",
+          "cwd": "/tmp/noncanonical",
+          "path": "<fixture>/noncanonical-source.jsonl",
+          "metadata": {
+            "2": "two",
+            "10": "ten",
+            "profile": "reviewer",
+            "nested": {
+              "z": 1,
+              "a": 2
+            }
+          }
+        },
+        "reserializedMetadata": {
+          "id": "jsonl-reserialized",
+          "createdAt": "<createdAt>",
+          "cwd": "/tmp/reserialized",
+          "path": "<fixture>/repo-sessions/--tmp-reserialized--/<createdAt>_jsonl-reserialized.jsonl",
+          "parentSessionPath": "<fixture>/noncanonical-source.jsonl",
+          "metadata": {
+            "2": "two",
+            "10": "ten",
+            "profile": "reviewer",
+            "nested": {
+              "z": 1,
+              "a": 2
+            }
+          }
+        },
+        "reserializedBytes": "{\"type\":\"session\",\"version\":3,\"id\":\"jsonl-reserialized\",\"timestamp\":\"<createdAt>\",\"cwd\":\"/tmp/reserialized\",\"parentSession\":\"<fixture>/noncanonical-source.jsonl\",\"metadata\":{\"2\":\"two\",\"10\":\"ten\",\"profile\":\"reviewer\",\"nested\":{\"z\":1,\"a\":2}}}\n{\"type\":\"message\",\"id\":\"noncanonical-user\",\"parentId\":null,\"timestamp\":\"2026-02-03T04:07:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"noncanonical\"}],\"timestamp\":30}}\n"
+      }
+    }
+  },
+  "env": {
+    "absolutePath": {
+      "ok": true,
+      "value": "<fixture>/target.txt"
+    },
+    "absolutePathAlreadyAbsolute": {
+      "ok": true,
+      "value": "/a/../b"
+    },
+    "joinPath": {
+      "ok": true,
+      "value": "<fixture>/target.txt"
+    },
+    "readTextLines": {
+      "ok": true,
+      "value": [
+        "one",
+        "two"
+      ]
+    },
+    "negativeMaxLines": {
+      "ok": true,
+      "value": []
+    },
+    "readBinary": {
+      "ok": true,
+      "value": [
+        0,
+        1,
+        2,
+        255
+      ]
+    },
+    "symlinkInfo": {
+      "ok": true,
+      "value": {
+        "name": "target-link",
+        "path": "<fixture>/target-link",
+        "kind": "symlink",
+        "size": 10
+      }
+    },
+    "symlinkCanonical": {
+      "ok": true,
+      "value": "<fixture>/target.txt"
+    },
+    "missingExists": {
+      "ok": true,
+      "value": false
+    },
+    "missingRead": {
+      "ok": false,
+      "error": {
+        "code": "not_found",
+        "message": "ENOENT: no such file or directory, open '<fixture>/missing'",
+        "path": "<fixture>/missing"
+      }
+    },
+    "directoryRead": {
+      "ok": false,
+      "error": {
+        "code": "is_directory",
+        "message": "EISDIR: illegal operation on a directory, read",
+        "path": "<fixture>/nested"
+      }
+    },
+    "listFile": {
+      "ok": false,
+      "error": {
+        "code": "not_directory",
+        "message": "ENOTDIR: not a directory, scandir '<fixture>/target.txt'",
+        "path": "<fixture>/target.txt"
+      }
+    },
+    "emptyDirectoryRemove": {
+      "ok": false,
+      "error": {
+        "code": "unknown",
+        "message": "Path is a directory: rm returned EISDIR (is a directory) <fixture>/empty-remove",
+        "path": "<fixture>/empty-remove"
+      }
+    },
+    "exec": {
+      "ok": true,
+      "value": {
+        "stdout": "out:base:extra",
+        "stderr": "err",
+        "exitCode": 7
+      }
+    },
+    "signaledExec": {
+      "ok": true,
+      "value": {
+        "stdout": "",
+        "stderr": "",
+        "exitCode": 0
+      }
+    },
+    "callbackChunks": [
+      "stderr:err",
+      "stdout:out:base:extra"
+    ],
+    "preAbortedExec": {
+      "ok": false,
+      "error": {
+        "code": "aborted",
+        "message": "aborted"
+      }
+    },
+    "preAborted": {
+      "absolutePath": {
+        "ok": true,
+        "value": "/a/../b"
+      },
+      "joinPath": {
+        "ok": true,
+        "value": "<fixture>/target.txt"
+      },
+      "readTextFile": {
+        "ok": false,
+        "error": {
+          "code": "aborted",
+          "message": "aborted",
+          "path": "<fixture>/target.txt"
+        }
+      },
+      "readTextLines": {
+        "ok": false,
+        "error": {
+          "code": "aborted",
+          "message": "aborted",
+          "path": "<fixture>/nested/lines.txt"
+        }
+      },
+      "readBinaryFile": {
+        "ok": false,
+        "error": {
+          "code": "aborted",
+          "message": "aborted",
+          "path": "<fixture>/target.txt"
+        }
+      },
+      "writeFile": {
+        "ok": false,
+        "error": {
+          "code": "aborted",
+          "message": "aborted",
+          "path": "<fixture>/abort/blocked.txt"
+        }
+      },
+      "appendFile": {
+        "ok": true
+      },
+      "fileInfo": {
+        "ok": true,
+        "value": {
+          "name": "target.txt",
+          "path": "<fixture>/target.txt",
+          "kind": "file",
+          "size": 4
+        }
+      },
+      "listDir": {
+        "ok": false,
+        "error": {
+          "code": "aborted",
+          "message": "aborted",
+          "path": "<fixture>"
+        }
+      },
+      "canonicalPath": {
+        "ok": true,
+        "value": "<fixture>/target.txt"
+      },
+      "exists": {
+        "ok": true,
+        "value": true
+      },
+      "createDir": {
+        "ok": true
+      },
+      "remove": {
+        "ok": true
+      },
+      "createTempDir": {
+        "ok": true,
+        "value": true
+      },
+      "createTempFile": {
+        "ok": true,
+        "value": true
+      }
+    },
+    "invalidTimeout": {
+      "ok": false,
+      "error": {
+        "code": "timeout",
+        "message": "Invalid timeout: must be a finite number of seconds"
+      }
+    },
+    "timedOutExec": {
+      "ok": false,
+      "error": {
+        "code": "timeout",
+        "message": "timeout:0.01"
+      }
+    },
+    "callbackError": {
+      "ok": false,
+      "error": {
+        "code": "callback_error",
+        "message": "callback boom"
+      }
+    },
+    "temp": {
+      "dirPrefix": true,
+      "filePrefix": true,
+      "fileSuffix": true,
+      "fileExists": true
+    }
+  }
+}
