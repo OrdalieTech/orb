@@ -1,0 +1,10 @@
+{
+  "family": "F6Harness",
+  "upstreamCommit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
+  "generator": "conformance/extract/f6-harness.ts",
+  "source": "packages/agent/src/harness/{types.ts,messages.ts,env/nodejs.ts,session/*.ts}",
+  "files": [
+    "session.jsonl",
+    "observations.json"
+  ]
+}

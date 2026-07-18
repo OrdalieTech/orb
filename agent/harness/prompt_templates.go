@@ -33,18 +33,18 @@ func promptTemplateWarning(code PromptTemplateDiagnosticCode, path string, err e
 	return PromptTemplateDiagnostic{Type: "warning", Code: code, Message: err.Error(), Path: path}
 }
 
-func resolvePromptTemplateKind(env ExecutionEnv, info FileInfo, diagnostics *[]PromptTemplateDiagnostic) FileKind {
+func resolvePromptTemplateKind(env ResourceFileSystem, info FileInfo, diagnostics *[]PromptTemplateDiagnostic) FileKind {
 	if info.Kind == FileKindFile || info.Kind == FileKindDirectory {
 		return info.Kind
 	}
-	canonical, err := env.CanonicalPath(info.Path)
+	canonical, err := env.ResourceCanonicalPath(info.Path)
 	if err != nil {
 		if harnessFileErrorCode(err) != FileErrorNotFound {
 			*diagnostics = append(*diagnostics, promptTemplateWarning(PromptTemplateDiagnosticFileInfoFailed, info.Path, err))
 		}
 		return ""
 	}
-	target, err := env.FileInfo(canonical)
+	target, err := env.ResourceFileInfo(canonical)
 	if err != nil {
 		if harnessFileErrorCode(err) != FileErrorNotFound {
 			*diagnostics = append(*diagnostics, promptTemplateWarning(PromptTemplateDiagnosticFileInfoFailed, info.Path, err))
@@ -57,8 +57,8 @@ func resolvePromptTemplateKind(env ExecutionEnv, info FileInfo, diagnostics *[]P
 	return ""
 }
 
-func loadHarnessPromptTemplate(env ExecutionEnv, path string) (*PromptTemplate, []PromptTemplateDiagnostic) {
-	contents, err := env.ReadTextFile(path)
+func loadHarnessPromptTemplate(env ResourceFileSystem, path string) (*PromptTemplate, []PromptTemplateDiagnostic) {
+	contents, err := env.ResourceReadTextFile(path)
 	if err != nil {
 		return nil, []PromptTemplateDiagnostic{promptTemplateWarning(PromptTemplateDiagnosticReadFailed, path, err)}
 	}
@@ -88,9 +88,9 @@ func loadHarnessPromptTemplate(env ExecutionEnv, path string) (*PromptTemplate, 
 	return &PromptTemplate{Name: name, Description: description, Content: body}, nil
 }
 
-func loadHarnessPromptTemplatesDir(env ExecutionEnv, dir string) HarnessPromptTemplatesResult {
+func loadHarnessPromptTemplatesDir(env ResourceFileSystem, dir string) HarnessPromptTemplatesResult {
 	result := HarnessPromptTemplatesResult{PromptTemplates: []PromptTemplate{}, Diagnostics: []PromptTemplateDiagnostic{}}
-	entries, err := env.ListDir(dir)
+	entries, err := env.ResourceListDir(dir)
 	if err != nil {
 		result.Diagnostics = append(result.Diagnostics, promptTemplateWarning(PromptTemplateDiagnosticListFailed, dir, err))
 		return result
@@ -111,10 +111,10 @@ func loadHarnessPromptTemplatesDir(env ExecutionEnv, dir string) HarnessPromptTe
 }
 
 // LoadPromptTemplates loads explicit files or direct markdown children through the execution environment.
-func LoadPromptTemplates(env ExecutionEnv, paths ...string) HarnessPromptTemplatesResult {
+func LoadPromptTemplates(env ResourceFileSystem, paths ...string) HarnessPromptTemplatesResult {
 	result := HarnessPromptTemplatesResult{PromptTemplates: []PromptTemplate{}, Diagnostics: []PromptTemplateDiagnostic{}}
 	for _, path := range paths {
-		info, err := env.FileInfo(path)
+		info, err := env.ResourceFileInfo(path)
 		if err != nil {
 			if harnessFileErrorCode(err) != FileErrorNotFound {
 				result.Diagnostics = append(result.Diagnostics, promptTemplateWarning(PromptTemplateDiagnosticFileInfoFailed, path, err))
@@ -152,7 +152,7 @@ type SourcedPromptTemplateDiagnostic[T any] struct {
 	Source T
 }
 
-func LoadSourcedPromptTemplates[T any](env ExecutionEnv, inputs []SourcedPromptTemplateInput[T], mapTemplate ...func(PromptTemplate, T) PromptTemplate) ([]SourcedPromptTemplate[T], []SourcedPromptTemplateDiagnostic[T]) {
+func LoadSourcedPromptTemplates[T any](env ResourceFileSystem, inputs []SourcedPromptTemplateInput[T], mapTemplate ...func(PromptTemplate, T) PromptTemplate) ([]SourcedPromptTemplate[T], []SourcedPromptTemplateDiagnostic[T]) {
 	var templates []SourcedPromptTemplate[T]
 	var diagnostics []SourcedPromptTemplateDiagnostic[T]
 	for _, input := range inputs {

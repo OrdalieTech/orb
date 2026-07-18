@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/OrdalieTech/pi-go/agent/harness"
 )
 
 type Clock func() time.Time
@@ -35,9 +37,10 @@ type SessionModel struct {
 }
 
 type SessionContext struct {
-	Messages      []json.RawMessage
-	ThinkingLevel string
-	Model         *SessionModel
+	Messages        []json.RawMessage
+	ThinkingLevel   string
+	Model           *SessionModel
+	ActiveToolNames []string
 }
 
 type managerOptions struct {
@@ -48,6 +51,7 @@ type managerOptions struct {
 	cwdOverride        string
 	initialID          *string
 	parentSession      *string
+	harnessRepo        harness.SessionRepo
 }
 
 type Option func(*managerOptions)
@@ -112,6 +116,8 @@ type SessionManager struct {
 	sessionIDGenerator SessionIDGenerator
 	entryIDGenerator   IDGenerator
 	agentDir           string
+	harnessStorage     harness.SessionStorage
+	harnessRepo        harness.SessionRepo
 }
 
 var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$`)
@@ -275,6 +281,9 @@ func newManager(cwd, sessionDir string, persist bool, options managerOptions) *S
 func (manager *SessionManager) SetSessionFile(path string) error {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
+	if manager.harnessStorage != nil {
+		return ErrHarnessStorageReplacement
+	}
 	return manager.setSessionFileLocked(path)
 }
 
@@ -347,6 +356,9 @@ func (manager *SessionManager) setSessionFileLocked(path string) error {
 func (manager *SessionManager) NewSession(options ...NewSessionOptions) (string, error) {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
+	if manager.harnessStorage != nil {
+		return "", ErrHarnessStorageReplacement
+	}
 	var resolved *NewSessionOptions
 	if len(options) > 0 {
 		resolved = &options[0]
@@ -466,8 +478,11 @@ func MarshalJSONL(entries []*FileEntry) ([]byte, error) {
 }
 
 func (manager *SessionManager) JSONL() ([]byte, error) {
-	manager.mu.RLock()
-	defer manager.mu.RUnlock()
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if manager.harnessStorage != nil {
+		return manager.harnessJSONLLocked()
+	}
 	return MarshalJSONL(manager.fileEntries)
 }
 
@@ -527,6 +542,28 @@ func messageRole(message json.RawMessage) string {
 }
 
 func (manager *SessionManager) appendEntryLocked(entry SessionEntry) (string, error) {
+	if manager.harnessStorage != nil {
+		id, err := manager.harnessStorage.CreateEntryID()
+		if err != nil {
+			return "", err
+		}
+		harnessEntry := harnessEntryFromSession(entry)
+		harnessEntry.ID = id
+		if entry.Type != "branch_summary" {
+			harnessEntry.ParentID, err = manager.harnessStorage.LeafID()
+			if err != nil {
+				return "", err
+			}
+		}
+		harnessEntry.Timestamp = formatTimestamp(manager.clock())
+		if err := manager.harnessStorage.AppendEntry(harnessEntry); err != nil {
+			return "", err
+		}
+		if err := manager.refreshHarnessLocked(); err != nil {
+			return "", err
+		}
+		return id, nil
+	}
 	record := newEntryRecord(entry)
 	manager.fileEntries = append(manager.fileEntries, record)
 	manager.byID[entry.ID] = record.Entry
@@ -539,6 +576,9 @@ func (manager *SessionManager) appendEntryLocked(entry SessionEntry) (string, er
 }
 
 func (manager *SessionManager) newEntryBaseLocked(entryType string) (SessionEntry, error) {
+	if manager.harnessStorage != nil {
+		return SessionEntry{Type: entryType}, nil
+	}
 	id, err := generateUniqueIDFromIndex(manager.byID, manager.entryIDGenerator)
 	if err != nil {
 		return SessionEntry{}, err
@@ -565,6 +605,13 @@ func cloneString(value *string) *string {
 	}
 	copy := *value
 	return &copy
+}
+
+func cloneStringSlice(values []string) []string {
+	if values == nil {
+		return nil
+	}
+	return append([]string{}, values...)
 }
 
 func (manager *SessionManager) AppendMessage(message any) (string, error) {
@@ -605,6 +652,17 @@ func (manager *SessionManager) AppendModelChange(provider, modelID string) (stri
 	return manager.appendEntryLocked(entry)
 }
 
+func (manager *SessionManager) AppendActiveToolsChange(activeToolNames []string) (string, error) {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	entry, err := manager.newEntryBaseLocked("active_tools_change")
+	if err != nil {
+		return "", err
+	}
+	entry.ActiveToolNames = cloneStringSlice(activeToolNames)
+	return manager.appendEntryLocked(entry)
+}
+
 func (manager *SessionManager) AppendCompaction(
 	summary string,
 	firstKeptEntryID string,
@@ -619,7 +677,7 @@ func (manager *SessionManager) AppendCompaction(
 	}
 	entry.Summary = summary
 	entry.FirstKeptEntryID = firstKeptEntryID
-	entry.TokensBefore = tokensBefore
+	entry.TokensBefore = float64(tokensBefore)
 	if len(options) > 0 {
 		if options[0].HasDetails {
 			entry.Details, err = rawValue(options[0].Details)
@@ -686,6 +744,9 @@ func (manager *SessionManager) AppendCustomMessageEntry(customType string, conte
 func (manager *SessionManager) AppendLabelChange(targetID string, label *string) (string, error) {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
+	if err := manager.refreshHarnessLocked(); err != nil {
+		return "", err
+	}
 	if _, ok := manager.byID[targetID]; !ok {
 		return "", fmt.Errorf("Entry %s not found", targetID) //nolint:staticcheck // Upstream error capitalization is observable.
 	}
@@ -698,6 +759,9 @@ func (manager *SessionManager) AppendLabelChange(targetID string, label *string)
 	id, err := manager.appendEntryLocked(entry)
 	if err != nil {
 		return "", err
+	}
+	if manager.harnessStorage != nil {
+		return id, nil
 	}
 	if label != nil && *label != "" {
 		manager.labelsByID[targetID] = *label
@@ -751,12 +815,31 @@ func (manager *SessionManager) GetSessionFile() string {
 }
 
 func (manager *SessionManager) GetLeafID() *string {
+	if manager.harnessStorage != nil {
+		leaf, err := manager.harnessStorage.LeafID()
+		if err != nil {
+			return nil
+		}
+		return cloneString(leaf)
+	}
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
 	return cloneString(manager.leafID)
 }
 
 func (manager *SessionManager) GetLeafEntry() *SessionEntry {
+	if manager.harnessStorage != nil {
+		leaf, err := manager.harnessStorage.LeafID()
+		if err != nil || leaf == nil {
+			return nil
+		}
+		entry, ok := manager.harnessStorage.Entry(*leaf)
+		if !ok || entry == nil {
+			return nil
+		}
+		converted := sessionEntryFromHarness(*entry)
+		return &converted
+	}
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
 	if manager.leafID == nil {
@@ -766,6 +849,14 @@ func (manager *SessionManager) GetLeafEntry() *SessionEntry {
 }
 
 func (manager *SessionManager) GetEntry(id string) *SessionEntry {
+	if manager.harnessStorage != nil {
+		entry, ok := manager.harnessStorage.Entry(id)
+		if !ok || entry == nil {
+			return nil
+		}
+		converted := sessionEntryFromHarness(*entry)
+		return &converted
+	}
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
 	return cloneEntry(manager.byID[id])
@@ -777,7 +868,9 @@ func cloneEntry(entry *SessionEntry) *SessionEntry {
 	}
 	copy := *entry
 	copy.ParentID = cloneString(entry.ParentID)
+	copy.LeafTargetID = cloneString(entry.LeafTargetID)
 	copy.Label = cloneString(entry.Label)
+	copy.ActiveToolNames = cloneStringSlice(entry.ActiveToolNames)
 	copy.Message = cloneRaw(entry.Message)
 	copy.Details = cloneRaw(entry.Details)
 	copy.Data = cloneRaw(entry.Data)
@@ -786,6 +879,14 @@ func cloneEntry(entry *SessionEntry) *SessionEntry {
 }
 
 func (manager *SessionManager) GetEntries() []SessionEntry {
+	if manager.harnessStorage != nil {
+		entries := manager.harnessStorage.Entries()
+		converted := make([]SessionEntry, len(entries))
+		for index := range entries {
+			converted[index] = sessionEntryFromHarness(entries[index])
+		}
+		return converted
+	}
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
 	entries := make([]SessionEntry, 0, len(manager.fileEntries)-1)
@@ -798,12 +899,29 @@ func (manager *SessionManager) GetEntries() []SessionEntry {
 }
 
 func (manager *SessionManager) GetHeader() *SessionHeader {
+	if manager.harnessStorage != nil {
+		manager.mu.Lock()
+		defer manager.mu.Unlock()
+		if manager.refreshHarnessLocked() != nil {
+			return nil
+		}
+		for _, entry := range manager.fileEntries {
+			if entry != nil && entry.Header != nil && entry.Type == "session" {
+				copy := *entry.Header
+				copy.ParentSession = cloneString(entry.Header.ParentSession)
+				copy.Metadata = cloneRaw(entry.Header.Metadata)
+				return &copy
+			}
+		}
+		return nil
+	}
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
 	for _, entry := range manager.fileEntries {
 		if entry != nil && entry.Header != nil && entry.Type == "session" {
 			copy := *entry.Header
 			copy.ParentSession = cloneString(entry.Header.ParentSession)
+			copy.Metadata = cloneRaw(entry.Header.Metadata)
 			return &copy
 		}
 	}
@@ -811,6 +929,17 @@ func (manager *SessionManager) GetHeader() *SessionHeader {
 }
 
 func (manager *SessionManager) GetSessionName() *string {
+	if manager.harnessStorage != nil {
+		entries := manager.harnessStorage.EntriesByType("session_info")
+		if len(entries) == 0 {
+			return nil
+		}
+		name := trimJSSpace(entries[len(entries)-1].Name)
+		if name == "" {
+			return nil
+		}
+		return &name
+	}
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
 	for index := len(manager.fileEntries) - 1; index >= 0; index-- {
@@ -827,6 +956,13 @@ func (manager *SessionManager) GetSessionName() *string {
 }
 
 func (manager *SessionManager) GetLabel(id string) *string {
+	if manager.harnessStorage != nil {
+		label, ok := manager.harnessStorage.Label(id)
+		if !ok {
+			return nil
+		}
+		return &label
+	}
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
 	label, ok := manager.labelsByID[id]
@@ -837,6 +973,16 @@ func (manager *SessionManager) GetLabel(id string) *string {
 }
 
 func (manager *SessionManager) GetChildren(parentID string) []SessionEntry {
+	if manager.harnessStorage != nil {
+		entries := manager.GetEntries()
+		children := make([]SessionEntry, 0)
+		for _, entry := range entries {
+			if entry.ParentID != nil && *entry.ParentID == parentID {
+				children = append(children, entry)
+			}
+		}
+		return children
+	}
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
 	var children []SessionEntry
@@ -853,6 +999,27 @@ func (manager *SessionManager) GetChildren(parentID string) []SessionEntry {
 }
 
 func (manager *SessionManager) GetBranch(fromID ...string) []SessionEntry {
+	if manager.harnessStorage != nil {
+		var leaf *string
+		if len(fromID) > 0 {
+			leaf = cloneString(&fromID[0])
+		} else {
+			var err error
+			leaf, err = manager.harnessStorage.LeafID()
+			if err != nil {
+				return nil
+			}
+		}
+		entries, err := manager.harnessStorage.PathToRoot(leaf)
+		if err != nil {
+			return nil
+		}
+		converted := make([]SessionEntry, len(entries))
+		for index := range entries {
+			converted[index] = sessionEntryFromHarness(entries[index])
+		}
+		return converted
+	}
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
 	return manager.getBranchLocked(fromID...)
@@ -881,6 +1048,14 @@ func (manager *SessionManager) getBranchLocked(fromID ...string) []SessionEntry 
 }
 
 func (manager *SessionManager) Branch(id string) error {
+	if manager.harnessStorage != nil {
+		if err := manager.harnessStorage.SetLeafID(&id); err != nil {
+			return err
+		}
+		manager.mu.Lock()
+		defer manager.mu.Unlock()
+		return manager.refreshHarnessLocked()
+	}
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	if _, ok := manager.byID[id]; !ok {
@@ -891,6 +1066,14 @@ func (manager *SessionManager) Branch(id string) error {
 }
 
 func (manager *SessionManager) ResetLeaf() {
+	if manager.harnessStorage != nil {
+		if manager.harnessStorage.SetLeafID(nil) == nil {
+			manager.mu.Lock()
+			_ = manager.refreshHarnessLocked()
+			manager.mu.Unlock()
+		}
+		return
+	}
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	manager.leafID = nil
@@ -903,6 +1086,36 @@ func (manager *SessionManager) BranchWithSummary(
 ) (string, error) {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
+	if manager.harnessStorage != nil {
+		if branchFromID != nil {
+			if _, ok := manager.harnessStorage.Entry(*branchFromID); !ok {
+				return "", fmt.Errorf("Entry %s not found", *branchFromID) //nolint:staticcheck // Upstream error capitalization is observable.
+			}
+		}
+		if err := manager.harnessStorage.SetLeafID(branchFromID); err != nil {
+			return "", err
+		}
+		entry, err := manager.newEntryBaseLocked("branch_summary")
+		if err != nil {
+			return "", err
+		}
+		entry.ParentID = cloneString(branchFromID)
+		entry.FromID = "root"
+		if branchFromID != nil {
+			entry.FromID = *branchFromID
+		}
+		entry.Summary = summary
+		if len(options) > 0 {
+			if options[0].HasDetails {
+				entry.Details, err = rawValue(options[0].Details)
+				if err != nil {
+					return "", err
+				}
+			}
+			entry.FromHook = options[0].FromHook
+		}
+		return manager.appendEntryLocked(entry)
+	}
 	if branchFromID != nil {
 		if _, ok := manager.byID[*branchFromID]; !ok {
 			return "", fmt.Errorf("Entry %s not found", *branchFromID) //nolint:staticcheck // Upstream error capitalization is observable.
@@ -932,8 +1145,20 @@ func (manager *SessionManager) BranchWithSummary(
 }
 
 func (manager *SessionManager) GetTree() []*SessionTreeNode {
+	if manager.harnessStorage != nil {
+		manager.mu.Lock()
+		defer manager.mu.Unlock()
+		if manager.refreshHarnessLocked() != nil {
+			return nil
+		}
+		return manager.getTreeLocked()
+	}
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
+	return manager.getTreeLocked()
+}
+
+func (manager *SessionManager) getTreeLocked() []*SessionTreeNode {
 	nodes := make(map[string]*SessionTreeNode, len(manager.byID))
 	var ordered []*SessionEntry
 	for _, fileEntry := range manager.fileEntries {

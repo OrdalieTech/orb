@@ -1,0 +1,19 @@
+{"type":"session","version":3,"id":"session-fixed","timestamp":"2026-02-03T04:05:06.789Z","cwd":"/fixture/project","parentSession":"/fixture/parent.jsonl","metadata":{"profile":"reviewer","nested":{"enabled":true}}}
+{"type":"message","id":"root-user","parentId":null,"timestamp":"2026-02-03T04:05:07.000Z","message":{"role":"user","content":[{"type":"text","text":"root <>&  "}],"timestamp":1}}
+{"type":"message","id":"main-assistant","parentId":"root-user","timestamp":"2026-02-03T04:05:08.000Z","message":{"role":"assistant","content":[{"type":"text","text":"answer"}],"api":"openai-responses","provider":"openai","model":"gpt-test","usage":{"input":1,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":3,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":2}}
+{"type":"message","id":"second-user","parentId":"main-assistant","timestamp":"2026-02-03T04:05:09.000Z","message":{"role":"user","content":[{"type":"text","text":"continue"}],"timestamp":3}}
+{"type":"thinking_level_change","id":"thinking","parentId":"second-user","timestamp":"2026-02-03T04:05:10.000Z","thinkingLevel":"high"}
+{"type":"model_change","id":"model","parentId":"thinking","timestamp":"2026-02-03T04:05:11.000Z","provider":"anthropic","modelId":"claude-test"}
+{"type":"active_tools_change","id":"tools","parentId":"model","timestamp":"2026-02-03T04:05:12.000Z","activeToolNames":["read","bash"]}
+{"type":"active_tools_change","id":"tools-empty","parentId":"tools","timestamp":"2026-02-03T04:05:12.500Z","activeToolNames":[]}
+{"type":"custom","id":"custom","parentId":"tools-empty","timestamp":"2026-02-03T04:05:13.000Z","customType":"state","data":{"nested":[1,"two"]}}
+{"type":"custom_message","id":"custom-message","parentId":"custom","timestamp":"2026-02-03T04:05:14.000Z","customType":"notice","content":"visible note","display":true,"details":{"source":"fixture"}}
+{"type":"session_info","id":"session-name","parentId":"custom-message","timestamp":"2026-02-03T04:05:15.000Z","name":"  fixture name  "}
+{"type":"compaction","id":"compaction","parentId":"session-name","timestamp":"2026-02-03T04:05:16.000Z","summary":"prior work","firstKeptEntryId":"second-user","tokensBefore":42.5,"details":{"readFiles":["a.go"]},"fromHook":false}
+{"type":"message","id":"branch-user","parentId":"root-user","timestamp":"2026-02-03T04:05:17.000Z","message":{"role":"user","content":[{"type":"text","text":"branch"}],"timestamp":4}}
+{"type":"branch_summary","id":"branch-summary","parentId":"branch-user","timestamp":"2026-02-03T04:05:17.500Z","fromId":"compaction","summary":"discarded branch work","details":{"modifiedFiles":["b.go"]},"fromHook":true}
+{"type":"message","id":"empty-parent","parentId":"","timestamp":"2026-02-03T04:05:17.750Z","message":{"role":"user","content":[{"type":"text","text":"empty parent is root"}],"timestamp":5}}
+{"type":"label","id":"label-root-set","parentId":"branch-user","timestamp":"2026-02-03T04:05:18.000Z","targetId":"root-user","label":"  checkpoint  "}
+{"type":"label","id":"label-root-clear","parentId":"label-root-set","timestamp":"2026-02-03T04:05:19.000Z","targetId":"root-user","label":"   "}
+{"type":"label","id":"label-branch","parentId":"label-root-clear","timestamp":"2026-02-03T04:05:20.000Z","targetId":"branch-user","label":"  branch point  "}
+{"type":"leaf","id":"leaf-record","parentId":"label-branch","timestamp":"2026-02-03T04:05:21.000Z","targetId":"tools-empty"}

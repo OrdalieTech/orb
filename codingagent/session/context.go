@@ -88,13 +88,15 @@ func BuildContextEntries(entries []SessionEntry, leafID *string) []SessionEntry 
 
 func BuildSessionContext(entries []SessionEntry, leafID *string) SessionContext {
 	path := buildSessionPath(entries, leafID)
-	context := SessionContext{ThinkingLevel: "off"}
+	context := SessionContext{ThinkingLevel: "off", Messages: []json.RawMessage{}}
 	for _, entry := range path {
 		switch entry.Type {
 		case "thinking_level_change":
 			context.ThinkingLevel = entry.ThinkingLevel
 		case "model_change":
 			context.Model = &SessionModel{Provider: entry.Provider, ModelID: entry.ModelID}
+		case "active_tools_change":
+			context.ActiveToolNames = cloneStringSlice(entry.ActiveToolNames)
 		case "message":
 			var header struct {
 				Role     string `json:"role"`
@@ -147,7 +149,7 @@ func entryContextMessages(entry SessionEntry) []json.RawMessage {
 		message := struct {
 			Role         json.RawMessage `json:"role"`
 			Summary      json.RawMessage `json:"summary"`
-			TokensBefore int64           `json:"tokensBefore"`
+			TokensBefore float64         `json:"tokensBefore"`
 			Timestamp    int64           `json:"timestamp"`
 		}{mustRawString("compactionSummary"), mustRawString(entry.Summary), entry.TokensBefore, timestampMillis(entry.Timestamp)}
 		encoded, _ := ai.Marshal(message)
@@ -189,12 +191,22 @@ func timestampMillis(timestamp string) int64 {
 }
 
 func (manager *SessionManager) BuildContextEntries() []SessionEntry {
+	if manager.harnessStorage != nil {
+		branch := manager.GetBranch()
+		leaf := manager.GetLeafID()
+		return BuildContextEntries(branch, leaf)
+	}
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
 	return BuildContextEntries(manager.entriesLocked(), manager.leafID)
 }
 
 func (manager *SessionManager) BuildSessionContext() SessionContext {
+	if manager.harnessStorage != nil {
+		branch := manager.GetBranch()
+		leaf := manager.GetLeafID()
+		return BuildSessionContext(branch, leaf)
+	}
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
 	return BuildSessionContext(manager.entriesLocked(), manager.leafID)

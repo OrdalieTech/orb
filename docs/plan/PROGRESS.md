@@ -22,7 +22,7 @@ Status: **in progress**.
 - [ ] Integrate every former GitButler lane and side ref, reconciling overlapping implementations.
 - [ ] Verify `CGO_ENABLED=0 go build ./...` and `make test` at every integrated commit.
 - [ ] Delete merged side refs and temporary consolidation stashes.
-- [ ] Finish on plain `main` with no worktree, lane, or feature branch.
+- [x] Finish on plain `main` with no worktree, lane, or feature branch.
 
 Current red-to-green evidence: RPC/resources/native extensions moved from merge conflicts and six lint failures to green fixtures and the pinned 27-test upstream RPC run. The SDK candidate moved from home-directory writes and missing persisted-message/settings/session propagation to green focused tests, all 13 faux examples, an isolated external-module build, `make build test lint`, `make fixtures-check`, module verification/tidy diff, and all four CGO-free Linux/Darwin amd64/arm64 builds. The replaceable runtime then moved from a compile-time RED fixture—no runtime host or public rebinding surface—to an upstream-generated green lifecycle matrix for new-session cancellation, shutdown/invalidation, recreation, setup, rebind, `withSession`, and quit ordering; the full race/lint/fixture gates and upstream RPC 27/27 remain green. The TUI core moved from four integration conflicts to green F12 primitive goldens. Markdown/themes then moved from reversed collision precedence, dropped table style context, incorrect narrow-table allocation, permissive JSON parsing, and unreachable operator/punctuation colors to 71 byte-exact Markdown cases plus upstream-generated theme/discovery fixtures. WP-440 then moved from a stale text-only non-vision result to an upstream-generated proof that the contradictory omission note still carries the image, with F12 terminal sequences and the image format/resize/orientation matrices green under the race suite. WP-450 still has to consume `terminal.showImages` and the width setting and bind `/copy`; real Kitty/iTerm2 and desktop clipboard smoke remain owner-blocked evidence rather than local substitutes.
 
@@ -35,15 +35,26 @@ but will not be extended until Sprint 3.
 
 ## Sprint 1 — Core headless correct (M2)
 
-Status: **pending Sprint 0**.
+Status: **in progress**.
 
-- [ ] Land the RED F7 RPC transcript/upstream-suite adapter and F8 resource goldens first.
-- [ ] Turn the upstream RPC suite and F7/F8/F9/F10 green without exclusions lacking a written reason.
-- [ ] Keep F2 green for all landed core API shapes and `auth.json` cross-compatible.
-- [ ] Port harness `SessionRepo`/`FileSystem`, JSONL/memory repositories, and rehydrate-from-bytes.
-- [ ] Make skills, prompt templates, extension seams, and all 13 SDK examples conformant.
-- [ ] Build an external `go get` SDK smoke module and wire the nightly live suite.
+- [x] Land the RED F7 RPC transcript/upstream-suite adapter and F8 resource goldens first.
+- [x] Turn the upstream RPC suite and F7/F8/F9/F10 green without exclusions lacking a written reason.
+- [x] Keep F2 green for all landed core API shapes and `auth.json` cross-compatible.
+- [x] Port harness `SessionRepo`/`FileSystem`, JSONL/memory repositories, and rehydrate-from-bytes.
+- [x] Make skills, prompt templates, extension seams, and all 13 SDK examples conformant.
+- [x] Build an external `go get` SDK smoke module and wire the nightly live suite.
 - [ ] Publish `docs/compare/sprint-1.md`, complete trim pass #2, and check every M2 criterion.
+
+Current red-to-green evidence: F7 now runs six pinned upstream RPC files (27 tests) against
+`pi-go --mode rpc`, and the full regenerated fixture tree is byte-clean. Harness parity moved from
+missing public storage/environment contracts to green JSONL and memory repositories, delayed
+exclusive flush, byte rehydration, legacy migration, future-member preservation, runtime
+new/switch/fork/import lifecycle, and generated F6Harness fixtures. Headless replacement moved
+from stale extension contexts to green lifecycle and event rebinding across print, JSON, and RPC,
+including extension-initiated replacement followed by a prompt on the new session. `make build`,
+the full race suite, lint/vet, deterministic fixture regeneration, and all four CGO-disabled
+Linux/Darwin amd64/arm64 builds are green. Non-test harness Go is 5,074 lines against 6,032 lines
+of mirrored upstream TypeScript (0.84x).
 
 ## Sprint 2 — TUI complete (M3)
 

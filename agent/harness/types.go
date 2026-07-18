@@ -35,10 +35,13 @@ const (
 type FileErrorCode string
 
 const (
+	FileErrorAborted          FileErrorCode = "aborted"
 	FileErrorNotFound         FileErrorCode = "not_found"
 	FileErrorPermissionDenied FileErrorCode = "permission_denied"
 	FileErrorNotDirectory     FileErrorCode = "not_directory"
+	FileErrorIsDirectory      FileErrorCode = "is_directory"
 	FileErrorInvalid          FileErrorCode = "invalid"
+	FileErrorNotSupported     FileErrorCode = "not_supported"
 	FileErrorUnknown          FileErrorCode = "unknown"
 )
 
@@ -71,20 +74,98 @@ type FileInfo struct {
 	Path    string
 	Kind    FileKind
 	Size    int64
-	MTimeMS int64
+	MTimeMS float64
 }
 
-// ExecutionEnv is the filesystem slice of the harness environment needed by skill discovery.
-// Later harness operations can extend the environment without coupling skill loading to os.File.
+// ResourceFileSystem is the read-only filesystem slice used by resource discovery.
+type ResourceFileSystem interface {
+	ResourceFileInfo(path string) (FileInfo, error)
+	ResourceListDir(path string) ([]FileInfo, error)
+	ResourceReadTextFile(path string) (string, error)
+	ResourceCanonicalPath(path string) (string, error)
+}
+
+type ExecutionErrorCode string
+
+const (
+	ExecutionErrorAborted          ExecutionErrorCode = "aborted"
+	ExecutionErrorTimeout          ExecutionErrorCode = "timeout"
+	ExecutionErrorShellUnavailable ExecutionErrorCode = "shell_unavailable"
+	ExecutionErrorSpawn            ExecutionErrorCode = "spawn_error"
+	ExecutionErrorCallback         ExecutionErrorCode = "callback_error"
+	ExecutionErrorUnknown          ExecutionErrorCode = "unknown"
+)
+
+// ExecutionError keeps expected shell failures stable across execution backends.
+type ExecutionError struct {
+	Code ExecutionErrorCode
+	Err  error
+}
+
+func (err *ExecutionError) Error() string {
+	if err == nil {
+		return ""
+	}
+	if err.Err != nil {
+		return err.Err.Error()
+	}
+	return string(err.Code)
+}
+
+func (err *ExecutionError) Unwrap() error {
+	if err == nil {
+		return nil
+	}
+	return err.Err
+}
+
+// FileSystem is the harness filesystem seam. Context cancellation maps to FileErrorAborted.
+type FileSystem interface {
+	WorkingDirectory() string
+	AbsolutePath(context.Context, string) (string, error)
+	JoinPath(context.Context, ...string) (string, error)
+	ReadTextFile(context.Context, string) (string, error)
+	ReadTextLines(context.Context, string, int) ([]string, error)
+	ReadBinaryFile(context.Context, string) ([]byte, error)
+	WriteFile(context.Context, string, []byte) error
+	AppendFile(context.Context, string, []byte) error
+	FileInfo(context.Context, string) (FileInfo, error)
+	ListDir(context.Context, string) ([]FileInfo, error)
+	CanonicalPath(context.Context, string) (string, error)
+	Exists(context.Context, string) (bool, error)
+	CreateDir(context.Context, string, bool) error
+	Remove(context.Context, string, bool, bool) error
+	CreateTempDir(context.Context, string) (string, error)
+	CreateTempFile(context.Context, string, string) (string, error)
+	Cleanup() error
+}
+
+type ExecOptions struct {
+	CWD            string
+	Env            map[string]string
+	TimeoutSeconds *float64
+	OnStdout       func(string) error
+	OnStderr       func(string) error
+}
+
+type ExecResult struct {
+	Stdout   string `json:"stdout"`
+	Stderr   string `json:"stderr"`
+	ExitCode int    `json:"exitCode"`
+}
+
+type Shell interface {
+	Exec(context.Context, string, ExecOptions) (ExecResult, error)
+	Cleanup() error
+}
+
 type ExecutionEnv interface {
-	FileInfo(path string) (FileInfo, error)
-	ListDir(path string) ([]FileInfo, error)
-	ReadTextFile(path string) (string, error)
-	CanonicalPath(path string) (string, error)
+	FileSystem
+	Shell
 }
 
 // SessionEntry is the compaction-facing projection of a v3 session entry.
-// Persistence stays owned by codingagent/session.
+// Harness storage owns generic session persistence; codingagent/session remains an upper-layer wire manager.
 type SessionEntry struct {
 	Type             string
 	ID               string
@@ -93,7 +174,7 @@ type SessionEntry struct {
 	Message          agent.AgentMessage
 	Summary          string
 	FirstKeptEntryID string
-	TokensBefore     int64
+	TokensBefore     float64
 	Details          any
 	FromHook         bool
 	FromID           string
@@ -124,11 +205,11 @@ type BashExecutionMessage struct {
 }
 
 type SummaryMessage struct {
-	Role         string `json:"role"`
-	Summary      string `json:"summary"`
-	FromID       string `json:"fromId,omitempty"`
-	TokensBefore int64  `json:"tokensBefore,omitempty"`
-	Timestamp    int64  `json:"timestamp"`
+	Role         string  `json:"role"`
+	Summary      string  `json:"summary"`
+	FromID       string  `json:"fromId,omitempty"`
+	TokensBefore float64 `json:"tokensBefore,omitempty"`
+	Timestamp    int64   `json:"timestamp"`
 }
 
 type CompactionSettings struct {

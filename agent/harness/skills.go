@@ -4,15 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"unicode/utf16"
 
 	"github.com/bmatcuk/doublestar/v4"
-	textunicode "golang.org/x/text/encoding/unicode"
 	"gopkg.in/yaml.v3"
 )
 
@@ -43,104 +39,6 @@ type SkillDiagnostic struct {
 type HarnessSkillsResult struct {
 	Skills      []Skill
 	Diagnostics []SkillDiagnostic
-}
-
-// LocalExecutionEnv addresses paths against CWD and preserves symlinks in FileInfo.
-type LocalExecutionEnv struct {
-	CWD string
-}
-
-func (env LocalExecutionEnv) resolve(path string) string {
-	if !filepath.IsAbs(path) {
-		cwd := env.CWD
-		if cwd == "" {
-			cwd, _ = os.Getwd()
-		}
-		path = filepath.Join(cwd, path)
-	}
-	absolute, err := filepath.Abs(path)
-	if err == nil {
-		path = absolute
-	}
-	return filepath.Clean(path)
-}
-
-func localFileError(path string, err error) error {
-	code := FileErrorUnknown
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		code = FileErrorNotFound
-	case errors.Is(err, fs.ErrPermission):
-		code = FileErrorPermissionDenied
-	case errors.Is(err, syscall.ENOTDIR):
-		code = FileErrorNotDirectory
-	}
-	return &FileError{Code: code, Path: path, Err: err}
-}
-
-func fileInfoFromOS(path string, info fs.FileInfo) (FileInfo, error) {
-	var kind FileKind
-	switch {
-	case info.Mode().IsRegular():
-		kind = FileKindFile
-	case info.IsDir():
-		kind = FileKindDirectory
-	case info.Mode()&os.ModeSymlink != 0:
-		kind = FileKindSymlink
-	default:
-		return FileInfo{}, &FileError{Code: FileErrorInvalid, Path: path, Err: errors.New("unsupported file type")}
-	}
-	return FileInfo{Name: filepath.Base(path), Path: path, Kind: kind, Size: info.Size(), MTimeMS: info.ModTime().UnixMilli()}, nil
-}
-
-func (env LocalExecutionEnv) FileInfo(path string) (FileInfo, error) {
-	path = env.resolve(path)
-	info, err := os.Lstat(path)
-	if err != nil {
-		return FileInfo{}, localFileError(path, err)
-	}
-	return fileInfoFromOS(path, info)
-}
-
-func (env LocalExecutionEnv) ListDir(path string) ([]FileInfo, error) {
-	path = env.resolve(path)
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return nil, localFileError(path, err)
-	}
-	infos := make([]FileInfo, 0, len(entries))
-	for _, entry := range entries {
-		entryPath := filepath.Join(path, entry.Name())
-		info, infoErr := os.Lstat(entryPath)
-		if infoErr != nil {
-			return nil, localFileError(entryPath, infoErr)
-		}
-		converted, convertErr := fileInfoFromOS(entryPath, info)
-		if convertErr != nil {
-			continue
-		}
-		infos = append(infos, converted)
-	}
-	return infos, nil
-}
-
-func (env LocalExecutionEnv) ReadTextFile(path string) (string, error) {
-	path = env.resolve(path)
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		return "", localFileError(path, err)
-	}
-	decoded, _ := textunicode.UTF8.NewDecoder().Bytes(contents)
-	return string(decoded), nil
-}
-
-func (env LocalExecutionEnv) CanonicalPath(path string) (string, error) {
-	path = env.resolve(path)
-	canonical, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return "", localFileError(path, err)
-	}
-	return canonical, nil
 }
 
 type harnessIgnoreRule struct {
@@ -234,18 +132,18 @@ func harnessWarning(code SkillDiagnosticCode, path string, err error) SkillDiagn
 	return SkillDiagnostic{Type: "warning", Code: code, Message: err.Error(), Path: path}
 }
 
-func resolveHarnessKind(env ExecutionEnv, info FileInfo, diagnostics *[]SkillDiagnostic) FileKind {
+func resolveHarnessKind(env ResourceFileSystem, info FileInfo, diagnostics *[]SkillDiagnostic) FileKind {
 	if info.Kind == FileKindFile || info.Kind == FileKindDirectory {
 		return info.Kind
 	}
-	canonical, err := env.CanonicalPath(info.Path)
+	canonical, err := env.ResourceCanonicalPath(info.Path)
 	if err != nil {
 		if harnessFileErrorCode(err) != FileErrorNotFound {
 			*diagnostics = append(*diagnostics, harnessWarning(SkillDiagnosticFileInfoFailed, info.Path, err))
 		}
 		return ""
 	}
-	target, err := env.FileInfo(canonical)
+	target, err := env.ResourceFileInfo(canonical)
 	if err != nil {
 		if harnessFileErrorCode(err) != FileErrorNotFound {
 			*diagnostics = append(*diagnostics, harnessWarning(SkillDiagnosticFileInfoFailed, info.Path, err))
@@ -258,11 +156,11 @@ func resolveHarnessKind(env ExecutionEnv, info FileInfo, diagnostics *[]SkillDia
 	return ""
 }
 
-func addHarnessIgnoreRules(env ExecutionEnv, matcher *harnessIgnoreMatcher, dir, root string, diagnostics *[]SkillDiagnostic) {
+func addHarnessIgnoreRules(env ResourceFileSystem, matcher *harnessIgnoreMatcher, dir, root string, diagnostics *[]SkillDiagnostic) {
 	relativeDir := relativeHarnessPath(root, dir)
 	for _, name := range harnessSkillIgnoreFiles {
 		ignorePath := joinHarnessPath(dir, name)
-		info, err := env.FileInfo(ignorePath)
+		info, err := env.ResourceFileInfo(ignorePath)
 		if err != nil {
 			if harnessFileErrorCode(err) != FileErrorNotFound {
 				*diagnostics = append(*diagnostics, harnessWarning(SkillDiagnosticFileInfoFailed, ignorePath, err))
@@ -272,7 +170,7 @@ func addHarnessIgnoreRules(env ExecutionEnv, matcher *harnessIgnoreMatcher, dir,
 		if info.Kind != FileKindFile {
 			continue
 		}
-		contents, err := env.ReadTextFile(ignorePath)
+		contents, err := env.ResourceReadTextFile(ignorePath)
 		if err != nil {
 			*diagnostics = append(*diagnostics, harnessWarning(SkillDiagnosticReadFailed, ignorePath, err))
 			continue
@@ -284,8 +182,8 @@ func addHarnessIgnoreRules(env ExecutionEnv, matcher *harnessIgnoreMatcher, dir,
 	}
 }
 
-func loadHarnessSkill(env ExecutionEnv, filePath string) (*Skill, []SkillDiagnostic) {
-	contents, err := env.ReadTextFile(filePath)
+func loadHarnessSkill(env ResourceFileSystem, filePath string) (*Skill, []SkillDiagnostic) {
+	contents, err := env.ResourceReadTextFile(filePath)
 	if err != nil {
 		return nil, []SkillDiagnostic{harnessWarning(SkillDiagnosticReadFailed, filePath, err)}
 	}
@@ -361,9 +259,9 @@ func validateHarnessSkillName(name, parentName string) []string {
 	return messages
 }
 
-func loadHarnessSkillsDir(env ExecutionEnv, dir string, includeRootFiles bool, matcher *harnessIgnoreMatcher, root string) HarnessSkillsResult {
+func loadHarnessSkillsDir(env ResourceFileSystem, dir string, includeRootFiles bool, matcher *harnessIgnoreMatcher, root string) HarnessSkillsResult {
 	result := HarnessSkillsResult{Skills: []Skill{}, Diagnostics: []SkillDiagnostic{}}
-	dirInfo, err := env.FileInfo(dir)
+	dirInfo, err := env.ResourceFileInfo(dir)
 	if err != nil {
 		if harnessFileErrorCode(err) != FileErrorNotFound {
 			result.Diagnostics = append(result.Diagnostics, harnessWarning(SkillDiagnosticFileInfoFailed, dir, err))
@@ -374,7 +272,7 @@ func loadHarnessSkillsDir(env ExecutionEnv, dir string, includeRootFiles bool, m
 		return result
 	}
 	addHarnessIgnoreRules(env, matcher, dir, root, &result.Diagnostics)
-	entries, err := env.ListDir(dir)
+	entries, err := env.ResourceListDir(dir)
 	if err != nil {
 		result.Diagnostics = append(result.Diagnostics, harnessWarning(SkillDiagnosticListFailed, dir, err))
 		return result
@@ -418,10 +316,10 @@ func loadHarnessSkillsDir(env ExecutionEnv, dir string, includeRootFiles bool, m
 }
 
 // LoadSkills traverses one or more roots with upstream's SKILL.md stopping rule.
-func LoadSkills(env ExecutionEnv, dirs ...string) HarnessSkillsResult {
+func LoadSkills(env ResourceFileSystem, dirs ...string) HarnessSkillsResult {
 	result := HarnessSkillsResult{Skills: []Skill{}, Diagnostics: []SkillDiagnostic{}}
 	for _, dir := range dirs {
-		info, err := env.FileInfo(dir)
+		info, err := env.ResourceFileInfo(dir)
 		if err != nil {
 			if harnessFileErrorCode(err) != FileErrorNotFound {
 				result.Diagnostics = append(result.Diagnostics, harnessWarning(SkillDiagnosticFileInfoFailed, dir, err))
@@ -453,7 +351,7 @@ type SourcedSkillDiagnostic[T any] struct {
 	Source T
 }
 
-func LoadSourcedSkills[T any](env ExecutionEnv, inputs []SourcedSkillInput[T], mapSkill ...func(Skill, T) Skill) ([]SourcedSkill[T], []SourcedSkillDiagnostic[T]) {
+func LoadSourcedSkills[T any](env ResourceFileSystem, inputs []SourcedSkillInput[T], mapSkill ...func(Skill, T) Skill) ([]SourcedSkill[T], []SourcedSkillDiagnostic[T]) {
 	var skills []SourcedSkill[T]
 	var diagnostics []SourcedSkillDiagnostic[T]
 	for _, input := range inputs {

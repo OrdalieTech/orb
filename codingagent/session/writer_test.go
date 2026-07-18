@@ -146,3 +146,125 @@ func TestInvalidRawJSONIsRejectedWithoutAppending(t *testing.T) {
 		t.Fatalf("invalid message appended %d entries", len(entries))
 	}
 }
+
+func TestHeaderMetadataRoundTripsWithRawMemberOrder(t *testing.T) {
+	version := CurrentVersion
+	metadata := json.RawMessage(`{"z": 1,"nested":{"b":2, "a":1}}`)
+	record := newHeaderRecord(SessionHeader{
+		Type:      "session",
+		Version:   &version,
+		ID:        "session-id",
+		Timestamp: "2026-07-18T00:00:00.000Z",
+		CWD:       "/workspace",
+		Metadata:  metadata,
+	})
+	encoded, err := record.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"type":"session","version":3,"id":"session-id","timestamp":"2026-07-18T00:00:00.000Z","cwd":"/workspace","metadata":{"z": 1,"nested":{"b":2, "a":1}}}`
+	if string(encoded) != want {
+		t.Fatalf("header = %s, want %s", encoded, want)
+	}
+
+	parsed, err := parseFileEntryLine(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Header == nil || string(parsed.Header.Metadata) != string(metadata) {
+		t.Fatalf("parsed metadata = %s, want %s", parsed.Header.Metadata, metadata)
+	}
+	raw, ok := parsed.object.get("metadata")
+	if !ok || string(raw) != string(metadata) {
+		t.Fatalf("metadata member = %s, %v", raw, ok)
+	}
+	reencoded, err := parsed.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(reencoded) != want {
+		t.Fatalf("reencoded header = %s, want %s", reencoded, want)
+	}
+}
+
+func TestActiveToolsChangeUsesUpstreamWireShape(t *testing.T) {
+	parentID := "parent"
+	record := newEntryRecord(SessionEntry{
+		Type:            "active_tools_change",
+		ID:              "tools",
+		ParentID:        &parentID,
+		Timestamp:       "2026-07-18T00:00:01.000Z",
+		ActiveToolNames: []string{"read", "bash <>&"},
+	})
+	encoded, err := record.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"type":"active_tools_change","id":"tools","parentId":"parent","timestamp":"2026-07-18T00:00:01.000Z","activeToolNames":["read","bash <>&"]}`
+	if string(encoded) != want {
+		t.Fatalf("entry = %s, want %s", encoded, want)
+	}
+
+	parsed, err := parseFileEntryLine(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Entry == nil || len(parsed.Entry.ActiveToolNames) != 2 || parsed.Entry.ActiveToolNames[1] != "bash <>&" {
+		t.Fatalf("active tools = %#v", parsed.Entry)
+	}
+}
+
+func TestLeafTargetPreservesNullAndEmptyString(t *testing.T) {
+	nullRecord := newEntryRecord(SessionEntry{
+		Type:      "leaf",
+		ID:        "leaf-null",
+		Timestamp: "2026-07-18T00:00:02.000Z",
+	})
+	nullEncoded, err := nullRecord.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	nullWant := `{"type":"leaf","id":"leaf-null","parentId":null,"timestamp":"2026-07-18T00:00:02.000Z","targetId":null}`
+	if string(nullEncoded) != nullWant {
+		t.Fatalf("null leaf = %s, want %s", nullEncoded, nullWant)
+	}
+	nullParsed, err := parseFileEntryLine(nullEncoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nullParsed.Entry == nil || nullParsed.Entry.LeafTargetID != nil {
+		t.Fatalf("parsed null leaf = %#v", nullParsed.Entry)
+	}
+
+	empty := ""
+	emptyRecord := newEntryRecord(SessionEntry{
+		Type:         "leaf",
+		ID:           "leaf-empty",
+		Timestamp:    "2026-07-18T00:00:03.000Z",
+		LeafTargetID: &empty,
+	})
+	emptyEncoded, err := emptyRecord.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyWant := `{"type":"leaf","id":"leaf-empty","parentId":null,"timestamp":"2026-07-18T00:00:03.000Z","targetId":""}`
+	if string(emptyEncoded) != emptyWant {
+		t.Fatalf("empty leaf = %s, want %s", emptyEncoded, emptyWant)
+	}
+	emptyParsed, err := parseFileEntryLine(emptyEncoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if emptyParsed.Entry == nil || emptyParsed.Entry.LeafTargetID == nil || *emptyParsed.Entry.LeafTargetID != "" {
+		t.Fatalf("parsed empty leaf = %#v", emptyParsed.Entry)
+	}
+}
+
+func TestSessionStringHelpersPreserveUpstreamWhitespaceRules(t *testing.T) {
+	if got := trimJSSpace("\ufeff\u00a0 value \u1680"); got != "value" {
+		t.Fatalf("trimJSSpace() = %q", got)
+	}
+	if got := sanitizeSessionName("  line one\r\nline two\n\nline three  "); got != "line one line two line three" {
+		t.Fatalf("sanitizeSessionName() = %q", got)
+	}
+}

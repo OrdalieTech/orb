@@ -465,7 +465,7 @@ func f10Entries(t testing.TB, entries []f10Entry) []harness.SessionEntry {
 		}
 		converted[index] = harness.SessionEntry{
 			Type: entry.Type, ID: entry.ID, ParentID: entry.ParentID, Timestamp: entry.Timestamp, Message: message,
-			Summary: entry.Summary, FirstKeptEntryID: entry.FirstKeptEntryID, TokensBefore: entry.TokensBefore,
+			Summary: entry.Summary, FirstKeptEntryID: entry.FirstKeptEntryID, TokensBefore: float64(entry.TokensBefore),
 			Details: details, FromHook: entry.FromHook, FromID: entry.FromID, CustomType: entry.CustomType,
 			Content: content, Display: entry.Display,
 		}

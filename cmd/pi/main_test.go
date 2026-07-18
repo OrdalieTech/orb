@@ -23,6 +23,7 @@ import (
 	"github.com/OrdalieTech/pi-go/ai/providers/faux"
 	"github.com/OrdalieTech/pi-go/codingagent"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
+	"github.com/OrdalieTech/pi-go/codingagent/extensions"
 	"github.com/OrdalieTech/pi-go/codingagent/session"
 )
 
@@ -776,6 +777,326 @@ func TestRunCLIJSONHelpKeepsEventStdoutClean(t *testing.T) {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 }
+
+func TestRunCLIHeadlessModesBindSessionReplacementLifecycle(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		argv []string
+	}{
+		{name: "print", argv: []string{"-p", "--no-session", "--model", "faux-1", "/replace-session"}},
+		{name: "json", argv: []string{"--mode", "json", "--no-session", "--model", "faux-1", "/replace-session"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+			provider := faux.New()
+			registry := extensions.NewRegistry(root)
+			var events []string
+			if err := registry.Register("<headless-session-lifecycle>", func(api extensions.API) error {
+				api.On(extensions.EventSessionBeforeSwitch, func(_ context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
+					event := raw.(extensions.SessionBeforeSwitchEvent)
+					events = append(events, "before:"+string(event.Reason))
+					return nil, nil
+				})
+				api.On(extensions.EventSessionShutdown, func(_ context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
+					event := raw.(extensions.SessionShutdownEvent)
+					events = append(events, "shutdown:"+string(event.Reason))
+					return nil, nil
+				})
+				api.On(extensions.EventSessionStart, func(_ context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
+					event := raw.(extensions.SessionStartEvent)
+					events = append(events, "start:"+string(event.Reason))
+					return nil, nil
+				})
+				api.RegisterCommand("replace-session", extensions.Command{
+					Handler: func(ctx context.Context, _ string, commandContext extensions.CommandContext) error {
+						result, err := commandContext.NewSession(ctx, &extensions.NewSessionOptions{
+							WithSession: func(context.Context, extensions.ReplacedSessionContext) error {
+								events = append(events, "with-session")
+								return nil
+							},
+						})
+						if err != nil {
+							return err
+						}
+						if result.Cancelled {
+							return errors.New("replacement was cancelled")
+						}
+						return nil
+					},
+				})
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			createRuntime := func(_ string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
+				created := agent.NewAgent(
+					agent.WithInitialState(agent.AgentState{
+						SystemPrompt: "test", Model: provider.GetModel(), Messages: prior,
+					}),
+					agent.WithStreamFn(provider.StreamSimple),
+					agent.WithConvertToLLM(codingagent.ConvertToLLM),
+				)
+				return runtimeInputs{Agent: created, Extensions: registry}, nil
+			}
+			var stdout, stderr bytes.Buffer
+			code := runCLIWithDependencies(context.Background(), test.argv, cliStreams{
+				Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr,
+				StdinTTY: true, StdoutTTY: false,
+			}, cliDependencies{createRuntime: createRuntime})
+			if code != 0 || stderr.Len() != 0 {
+				t.Fatalf("code=%d stderr=%q", code, stderr.String())
+			}
+			want := "start:startup,before:new,shutdown:new,start:new,with-session,shutdown:quit"
+			if got := strings.Join(events, ","); got != want {
+				t.Fatalf("session lifecycle = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestRunCLIHeadlessModesContinuePromptingReplacementSession(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		argv []string
+	}{
+		{name: "print", argv: []string{"-p", "--no-session", "--model", "faux-1", "/replace-session", "second prompt"}},
+		{name: "json", argv: []string{"--mode", "json", "--no-session", "--model", "faux-1", "/replace-session", "second prompt"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+			provider := faux.New()
+			provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("replacement answer")})
+			registry := extensions.NewRegistry(root)
+			var replacementID, promptedSessionID string
+			if err := registry.Register("<headless-rebind>", func(api extensions.API) error {
+				api.On(extensions.EventBeforeAgentStart, func(_ context.Context, _ extensions.Event, extensionContext extensions.Context) (any, error) {
+					promptedSessionID = extensionContext.SessionManager().GetSessionID()
+					return nil, nil
+				})
+				api.RegisterCommand("replace-session", extensions.Command{
+					Handler: func(ctx context.Context, _ string, commandContext extensions.CommandContext) error {
+						result, err := commandContext.NewSession(ctx, &extensions.NewSessionOptions{
+							WithSession: func(_ context.Context, replaced extensions.ReplacedSessionContext) error {
+								replacementID = replaced.SessionManager().GetSessionID()
+								return nil
+							},
+						})
+						if err != nil {
+							return err
+						}
+						if result.Cancelled {
+							return errors.New("replacement was cancelled")
+						}
+						return nil
+					},
+				})
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			createRuntime := func(_ string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
+				created := agent.NewAgent(
+					agent.WithInitialState(agent.AgentState{
+						SystemPrompt: "test", Model: provider.GetModel(), Messages: prior,
+					}),
+					agent.WithStreamFn(provider.StreamSimple),
+					agent.WithConvertToLLM(codingagent.ConvertToLLM),
+				)
+				return runtimeInputs{Agent: created, Extensions: registry}, nil
+			}
+			var stdout, stderr bytes.Buffer
+			code := runCLIWithDependencies(context.Background(), test.argv, cliStreams{
+				Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr,
+				StdinTTY: true, StdoutTTY: false,
+			}, cliDependencies{createRuntime: createRuntime})
+			if code != 0 || stderr.Len() != 0 {
+				t.Fatalf("code=%d stderr=%q", code, stderr.String())
+			}
+			if replacementID == "" {
+				t.Fatal("replacement withSession callback was not called")
+			}
+			if promptedSessionID != replacementID {
+				t.Fatalf("second prompt session = %q, want replacement %q", promptedSessionID, replacementID)
+			}
+			if !strings.Contains(stdout.String(), "replacement answer") {
+				t.Fatalf("headless output missed replacement response: %q", stdout.String())
+			}
+		})
+	}
+}
+
+func TestRunCLIJSONMovesEventSubscriptionBeforeReplacementWithSession(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	provider := faux.New()
+	provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("replacement stream")})
+	registry := extensions.NewRegistry(root)
+	withSessionCalled := false
+	if err := registry.Register("<json-rebind>", func(api extensions.API) error {
+		api.RegisterCommand("replace-and-prompt", extensions.Command{
+			Handler: func(ctx context.Context, _ string, commandContext extensions.CommandContext) error {
+				_, err := commandContext.NewSession(ctx, &extensions.NewSessionOptions{
+					WithSession: func(ctx context.Context, replaced extensions.ReplacedSessionContext) error {
+						withSessionCalled = true
+						return replaced.SendUserMessage(ctx, ai.NewUserText("prompt from replacement"), nil)
+					},
+				})
+				return err
+			},
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	createRuntime := func(_ string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
+		created := agent.NewAgent(
+			agent.WithInitialState(agent.AgentState{
+				SystemPrompt: "test", Model: provider.GetModel(), Messages: prior,
+			}),
+			agent.WithStreamFn(provider.StreamSimple),
+			agent.WithConvertToLLM(codingagent.ConvertToLLM),
+		)
+		return runtimeInputs{Agent: created, Extensions: registry}, nil
+	}
+	var stdout, stderr bytes.Buffer
+	code := runCLIWithDependencies(context.Background(), []string{
+		"--mode", "json", "--no-session", "--model", "faux-1", "/replace-and-prompt",
+	}, cliStreams{
+		Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr,
+		StdinTTY: true, StdoutTTY: false,
+	}, cliDependencies{createRuntime: createRuntime})
+	if code != 0 || stderr.Len() != 0 {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+	if !withSessionCalled {
+		t.Fatal("replacement withSession callback was not called")
+	}
+	if !strings.Contains(stdout.String(), `"text":"replacement stream"`) {
+		t.Fatalf("JSON stream missed replacement session events: %q", stdout.String())
+	}
+}
+
+func TestRunCLIRPCMovesEventSubscriptionForExtensionInitiatedReplacement(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	provider := faux.New()
+	provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("RPC replacement stream")})
+	registry := extensions.NewRegistry(root)
+	withSessionDone := make(chan struct{})
+	if err := registry.Register("<rpc-extension-rebind>", func(api extensions.API) error {
+		api.RegisterCommand("replace-and-prompt", extensions.Command{
+			Handler: func(ctx context.Context, _ string, commandContext extensions.CommandContext) error {
+				_, err := commandContext.NewSession(ctx, &extensions.NewSessionOptions{
+					WithSession: func(ctx context.Context, replaced extensions.ReplacedSessionContext) error {
+						err := replaced.SendUserMessage(ctx, ai.NewUserText("RPC prompt from replacement"), nil)
+						close(withSessionDone)
+						return err
+					},
+				})
+				return err
+			},
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	createRuntime := func(_ string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
+		created := agent.NewAgent(
+			agent.WithInitialState(agent.AgentState{
+				SystemPrompt: "test", Model: provider.GetModel(), Messages: prior,
+			}),
+			agent.WithStreamFn(provider.StreamSimple),
+			agent.WithConvertToLLM(codingagent.ConvertToLLM),
+		)
+		return runtimeInputs{Agent: created, Extensions: registry}, nil
+	}
+	input, inputWriter := io.Pipe()
+	output, outputWriter := io.Pipe()
+	var stderr bytes.Buffer
+	rpcContext, cancelRPC := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelRPC()
+	done := make(chan int, 1)
+	go func() {
+		code := runCLIWithDependencies(rpcContext, []string{
+			"--mode", "rpc", "--no-session", "--model", "faux-1",
+		}, cliStreams{
+			Stdin: input, Stdout: outputWriter, Stderr: &stderr,
+			StdinTTY: true, StdoutTTY: false,
+		}, cliDependencies{createRuntime: createRuntime})
+		_ = outputWriter.Close()
+		done <- code
+	}()
+	if _, err := io.WriteString(inputWriter, `{"id":"replace","type":"prompt","message":"/replace-and-prompt"}`+"\n"); err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(output)
+	lines := make(chan []byte, 64)
+	readErrors := make(chan error, 1)
+	go func() {
+		for {
+			line, err := reader.ReadBytes('\n')
+			if len(line) > 0 {
+				lines <- line
+			}
+			if err != nil {
+				readErrors <- err
+				return
+			}
+		}
+	}()
+	select {
+	case <-withSessionDone:
+	case <-rpcContext.Done():
+		t.Fatal("extension-initiated replacement prompt did not finish")
+	}
+	if _, err := io.WriteString(inputWriter, `{"id":"barrier","type":"get_state"}`+"\n"); err != nil {
+		t.Fatal(err)
+	}
+	seenPromptResponse, seenReplacementAssistant, seenSettled := false, false, false
+	for {
+		select {
+		case line := <-lines:
+			seenPromptResponse = seenPromptResponse || bytes.Contains(line, []byte(`"id":"replace","type":"response","command":"prompt","success":true`))
+			seenReplacementAssistant = seenReplacementAssistant ||
+				bytes.Contains(line, []byte(`"type":"message_end"`)) &&
+					bytes.Contains(line, []byte(`RPC replacement stream`))
+			seenSettled = seenSettled || bytes.Contains(line, []byte(`"type":"agent_settled"`))
+			if bytes.Contains(line, []byte(`"id":"barrier","type":"response","command":"get_state","success":true`)) {
+				goto streamComplete
+			}
+		case err := <-readErrors:
+			t.Fatalf("read RPC replacement events: %v", err)
+		case <-rpcContext.Done():
+			t.Fatal("RPC replacement event stream timed out")
+		}
+	}
+
+streamComplete:
+	if err := inputWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case code := <-done:
+		if code != 0 || stderr.Len() != 0 {
+			t.Fatalf("code=%d stderr=%q", code, stderr.String())
+		}
+	case <-rpcContext.Done():
+		t.Fatal("RPC mode did not stop")
+	}
+	if !seenPromptResponse || !seenReplacementAssistant || !seenSettled {
+		t.Fatalf(
+			"RPC replacement stream = response %t, assistant %t, settled %t",
+			seenPromptResponse, seenReplacementAssistant, seenSettled,
+		)
+	}
+}
+
 func fauxRuntimeFactory(provider *faux.Provider) func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
 	return func(_ string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
 		created := agent.NewAgent(

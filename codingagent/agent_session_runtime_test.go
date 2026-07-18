@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrdalieTech/pi-go/agent/harness"
 	"github.com/OrdalieTech/pi-go/ai"
 	"github.com/OrdalieTech/pi-go/ai/providers/faux"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions"
@@ -62,6 +63,37 @@ func TestNewAgentSessionRuntimeAllowsMissingInMemorySessionCWD(t *testing.T) {
 		t.Fatal(err)
 	}
 	host.Dispose(context.Background())
+}
+
+func TestAgentSessionRuntimeRejectsHarnessBackedReplacement(t *testing.T) {
+	cwd := t.TempDir()
+	storage, err := harness.NewInMemorySessionStorage(nil, harness.SessionMetadata{
+		ID: "harness-runtime", CreatedAt: "2026-02-03T04:05:06.789Z", CWD: cwd,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.FromHarnessStorage(storage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := testFaux(100000)
+	host, err := NewAgentSessionRuntime(context.Background(), AgentSessionOptions{
+		CWD: cwd, AgentDir: t.TempDir(), SessionManager: manager,
+		StreamFn: provider.StreamSimple, Model: provider.GetModel(), Resources: &Resources{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { host.Dispose(context.Background()) })
+
+	_, err = host.NewSession(context.Background(), nil)
+	if !errors.Is(err, sessionstore.ErrHarnessStorageReplacement) {
+		t.Fatalf("new-session error = %v", err)
+	}
+	if host.Session().Manager() != manager {
+		t.Fatal("failed replacement detached the active harness-backed manager")
+	}
 }
 
 func (log *agentSessionRuntimeEventLog) add(event string) {

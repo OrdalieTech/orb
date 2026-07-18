@@ -10,6 +10,7 @@ import { generateF3Session } from "./f3-session.ts";
 import { generateF4 } from "./f4-edit.ts";
 import { generateF5 } from "./f5-truncation.ts";
 import { generateF6 } from "./f6-session.ts";
+import { generateF6Harness } from "./f6-harness.ts";
 import { generateF7 } from "./f7-rpc.ts";
 import { generateF8 } from "./f8-slash-templates.ts";
 import { generateF9 } from "./f9-system-prompt.ts";
@@ -41,6 +42,7 @@ const generators = [
   generateF4,
   generateF5,
   generateF6,
+  generateF6Harness,
   generateF7,
   generateF8,
   generateF9,
