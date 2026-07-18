@@ -132,3 +132,7 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/ai/src/providers/amazon-bedrock.ts`, `packages/ai/src/env-api-keys.ts` | `ai/providers/bedrock.go`, `ai/providers/bedrock_test.go`, `ai/providers/openai.go`, `codingagent/config/model_registry.go`, `codingagent/config/model_registry_test.go` | WP-232 |
 | Bedrock adapter request/stream behavior and provider credential resolution | `conformance/extract/f2-bedrock.ts`, `conformance/extract/f2-openai.ts`, `conformance/fixtures/F2/bedrock-provider.json`, `conformance/fixtures/F2/bedrock-requests.json`, `conformance/fixtures/F2/bedrock-streams.json`, `ai/api/conformance_test.go` | WP-232 |
 | WP-232 acceptance evidence | `docs/plan/wp-232-report.md` | WP-232 |
+| `packages/ai/src/api/pi-messages.ts` | `ai/api/pimessages.go`, `ai/api/pimessages_test.go`, `ai/api/pimessages_live_test.go`, `ai/api/stream_simple.go` | WP-260 |
+| `packages/ai/src/types.ts` (pi-messages transport event fields and server-error member insertion order) | `ai/stream.go`, `ai/types.go`, `ai/json.go` | WP-260 |
+| pi-messages request and serialized-event stream behavior | `conformance/extract/f2-pi-messages.ts`, `conformance/extract/f2-openai.ts`, `conformance/fixtures/F2/pi-messages-{requests,streams}.json`, `ai/api/conformance_test.go` | WP-260 |
+| WP-260 acceptance and credential-gated live evidence | `docs/plan/wp-260-report.md` | WP-260 |

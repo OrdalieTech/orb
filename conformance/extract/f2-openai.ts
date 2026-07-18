@@ -26,6 +26,7 @@ import { extractBedrockF2 } from "./f2-bedrock.ts";
 import { extractGoogleF2 } from "./f2-google.ts";
 import { extractGoogleVertexF2 } from "./f2-google-vertex.ts";
 import { extractMistralAzureF2 } from "./f2-mistral-azure.ts";
+import { extractPiMessagesF2 } from "./f2-pi-messages.ts";
 
 type OpenAIAPI = "openai-responses" | "openai-completions";
 type OpenAIModel = Model<"openai-responses"> | Model<"openai-completions">;
@@ -1190,6 +1191,7 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
     const google = await extractGoogleF2(upstreamRoot);
     const googleVertex = await extractGoogleVertexF2(upstreamRoot);
     const mistralAzure = await extractMistralAzureF2();
+    const piMessages = await extractPiMessagesF2();
     const authStorage = await extractAuthStorageFixture();
     const requests = [];
     for (const definition of requestDefinitions) {
@@ -1217,7 +1219,7 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
       upstreamCommit,
       generator: "conformance/extract/f2-openai.ts",
       source:
-        "packages/ai/src/api/openai-responses.ts + packages/ai/src/api/openai-responses-shared.ts + packages/ai/src/api/openai-completions.ts + packages/ai/src/api/openai-prompt-cache.ts + packages/ai/src/api/anthropic-messages.ts + packages/ai/src/api/bedrock-converse-stream.ts + packages/ai/src/api/google-generative-ai.ts + packages/ai/src/api/google-vertex.ts + packages/ai/src/api/google-shared.ts + packages/ai/src/api/mistral-conversations.ts + packages/ai/src/api/azure-openai-responses.ts + packages/ai/src/utils/deferred-tools.ts + packages/ai/src/api/transform-messages.ts + packages/ai/src/providers/openai.ts + packages/ai/src/providers/anthropic.ts + packages/ai/src/providers/amazon-bedrock.ts + packages/ai/src/providers/google.ts + packages/ai/src/providers/google-vertex.ts + packages/ai/src/env-api-keys.ts + packages/ai/src/auth/helpers.ts + packages/ai/src/auth/oauth/oauth-page.ts + packages/ai/src/models.ts + packages/ai/scripts/generate-models.ts + packages/coding-agent/src/core/auth-storage.ts + packages/coding-agent/src/core/resolve-config-value.ts + packages/coding-agent/src/migrations.ts",
+        "packages/ai/src/api/openai-responses.ts + packages/ai/src/api/openai-responses-shared.ts + packages/ai/src/api/openai-completions.ts + packages/ai/src/api/openai-prompt-cache.ts + packages/ai/src/api/anthropic-messages.ts + packages/ai/src/api/bedrock-converse-stream.ts + packages/ai/src/api/google-generative-ai.ts + packages/ai/src/api/google-vertex.ts + packages/ai/src/api/google-shared.ts + packages/ai/src/api/mistral-conversations.ts + packages/ai/src/api/azure-openai-responses.ts + packages/ai/src/api/pi-messages.ts + packages/ai/src/utils/deferred-tools.ts + packages/ai/src/api/transform-messages.ts + packages/ai/src/providers/openai.ts + packages/ai/src/providers/anthropic.ts + packages/ai/src/providers/amazon-bedrock.ts + packages/ai/src/providers/google.ts + packages/ai/src/providers/google-vertex.ts + packages/ai/src/env-api-keys.ts + packages/ai/src/auth/helpers.ts + packages/ai/src/auth/oauth/oauth-page.ts + packages/ai/src/models.ts + packages/ai/scripts/generate-models.ts + packages/coding-agent/src/core/auth-storage.ts + packages/coding-agent/src/core/resolve-config-value.ts + packages/coding-agent/src/migrations.ts",
       files: [
         "provider.json",
         "anthropic-provider.json",
@@ -1238,6 +1240,8 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
         "mistral-streams.json",
         "azure-requests.json",
         "azure-streams.json",
+        "pi-messages-requests.json",
+        "pi-messages-streams.json",
         "auth-storage.json",
       ],
     };
@@ -1305,6 +1309,14 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
     await writeFile(
       path.join(familyDir, "azure-streams.json"),
       `${JSON.stringify({ cases: mistralAzure.azureStreams }, null, 2)}\n`,
+    );
+    await writeFile(
+      path.join(familyDir, "pi-messages-requests.json"),
+      `${JSON.stringify({ cases: piMessages.requests }, null, 2)}\n`,
+    );
+    await writeFile(
+      path.join(familyDir, "pi-messages-streams.json"),
+      `${JSON.stringify({ cases: piMessages.streams }, null, 2)}\n`,
     );
     await writeFile(path.join(familyDir, "auth-storage.json"), `${JSON.stringify(authStorage, null, 2)}\n`);
   } finally {

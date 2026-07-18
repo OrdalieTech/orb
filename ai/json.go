@@ -153,6 +153,26 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 			Timestamp:     message.Timestamp,
 		})
 	}
+	if message.errorBeforeResponseID && message.ErrorMessage != nil {
+		return marshalJSON(struct {
+			Role          string                        `json:"role"`
+			Content       AssistantContent              `json:"content"`
+			API           json.RawMessage               `json:"api"`
+			Provider      json.RawMessage               `json:"provider"`
+			Model         json.RawMessage               `json:"model"`
+			Usage         Usage                         `json:"usage"`
+			StopReason    json.RawMessage               `json:"stopReason"`
+			Timestamp     int64                         `json:"timestamp"`
+			ErrorMessage  json.RawMessage               `json:"errorMessage"`
+			ResponseID    json.RawMessage               `json:"responseId,omitempty"`
+			ResponseModel json.RawMessage               `json:"responseModel,omitempty"`
+			Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
+		}{
+			Role: "assistant", Content: message.Content, API: api, Provider: provider, Model: model,
+			Usage: message.Usage, StopReason: stopReason, Timestamp: message.Timestamp,
+			ErrorMessage: errorMessage, ResponseID: responseID, ResponseModel: responseModel, Diagnostics: message.Diagnostics,
+		})
+	}
 	return marshalJSON(struct {
 		Role          string                        `json:"role"`
 		Content       AssistantContent              `json:"content"`
@@ -241,6 +261,7 @@ func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 		ErrorMessage:  errorMessage,
 	}
 	message.errorBeforeTimestamp = topLevelMemberBefore(data, "errorMessage", "timestamp")
+	message.errorBeforeResponseID = !message.errorBeforeTimestamp && topLevelMemberBefore(data, "errorMessage", "responseId")
 	return nil
 }
 
@@ -279,6 +300,14 @@ func topLevelMemberBefore(data []byte, first, second string) bool {
 func SetAssistantMessageErrorBeforeTimestamp(message *AssistantMessage, enabled bool) {
 	if message != nil {
 		message.errorBeforeTimestamp = enabled
+	}
+}
+
+// SetAssistantMessageErrorBeforeResponseID preserves the order produced when a
+// streaming backend appends errorMessage before responseId to an existing message.
+func SetAssistantMessageErrorBeforeResponseID(message *AssistantMessage, enabled bool) {
+	if message != nil {
+		message.errorBeforeResponseID = enabled
 	}
 }
 
