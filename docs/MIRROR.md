@@ -177,3 +177,7 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/coding-agent/src/package-manager-cli.ts`, `packages/coding-agent/src/cli/project-trust.ts`, `packages/coding-agent/test/package-command-paths.test.ts` | `cmd/pi/package_cli.go`, `cmd/pi/package_cli_test.go`, `cmd/pi/runtime.go` | WP-360 |
 | Package sources, resource resolution, trust store, and trust.json format | `conformance/extract/wp360-packages.ts`, `conformance/fixtures/WP360/`, `conformance/runner/wp360_packages_test.go` | WP-360 |
 | WP-360 acceptance evidence | `docs/plan/wp-360-report.md` | WP-360 |
+| `packages/tui/src/{tui,terminal,keybindings,keys,stdin-buffer,utils}.ts` | `tui/component.go`, `tui/tui.go`, `tui/tui_test.go`, `tui/terminal.go`, `tui/terminal_unix.go`, `tui/terminal_test.go`, `tui/terminal_pty_linux_test.go`, `tui/keybindings.go`, `tui/keybindings_test.go`, `tui/keys.go`, `tui/keys_test.go`, `tui/stdin_buffer.go`, `tui/stdin_buffer_test.go`, `tui/width.go`, `tui/width_test.go` | WP-410 |
+| `packages/tui/src/tui.ts` (`Container`) and `packages/tui/src/components/{box,text,truncated-text,spacer,loader,cancellable-loader}.ts` | `tui/container.go`, `tui/box.go`, `tui/text.go`, `tui/truncated_text.go`, `tui/spacer.go`, `tui/loader.go`, `tui/cancellable_loader.go`, `tui/components_test.go` | WP-410 |
+| TUI primitive rendering from the pinned upstream public API | `conformance/extract/f12-tui.ts`, `conformance/fixtures/F12/`, `conformance/runner/f12_tui_test.go` | WP-410 |
+| WP-410 acceptance evidence | `docs/plan/wp-410-report.md` | WP-410 |

@@ -1,0 +1,231 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "text-wrap-padding",
+      "width": 8,
+      "node": {
+        "type": "text",
+        "text": "hello world",
+        "paddingX": 1,
+        "paddingY": 1
+      },
+      "expected": [
+        "        ",
+        " hello  ",
+        " world  ",
+        "        "
+      ]
+    },
+    {
+      "name": "text-ansi-wrap",
+      "width": 5,
+      "node": {
+        "type": "text",
+        "text": "\u001b[31mred blue\u001b[0m",
+        "paddingX": 0,
+        "paddingY": 0
+      },
+      "expected": [
+        "\u001b[31mred  ",
+        "\u001b[31mblue\u001b[0m "
+      ]
+    },
+    {
+      "name": "text-tab-cjk-emoji",
+      "width": 7,
+      "node": {
+        "type": "text",
+        "text": "A\t界🙂",
+        "paddingX": 0,
+        "paddingY": 0
+      },
+      "expected": [
+        "A   界 ",
+        "🙂     "
+      ]
+    },
+    {
+      "name": "text-whitespace-empty",
+      "width": 9,
+      "node": {
+        "type": "text",
+        "text": " \t ",
+        "paddingX": 1,
+        "paddingY": 1
+      },
+      "expected": []
+    },
+    {
+      "name": "truncated-long",
+      "width": 12,
+      "node": {
+        "type": "truncated-text",
+        "text": "first line that is long",
+        "paddingX": 1,
+        "paddingY": 1
+      },
+      "expected": [
+        "            ",
+        " first l\u001b[0m...\u001b[0m ",
+        "            "
+      ]
+    },
+    {
+      "name": "truncated-styled",
+      "width": 13,
+      "node": {
+        "type": "truncated-text",
+        "text": "\u001b[31mstyled content beyond width\u001b[0m",
+        "paddingX": 1,
+        "paddingY": 0
+      },
+      "expected": [
+        " \u001b[31mstyled c\u001b[0m...\u001b[0m "
+      ]
+    },
+    {
+      "name": "truncated-first-line",
+      "width": 16,
+      "node": {
+        "type": "truncated-text",
+        "text": "first\nsecond",
+        "paddingX": 2,
+        "paddingY": 0
+      },
+      "expected": [
+        "  first         "
+      ]
+    },
+    {
+      "name": "truncated-wide",
+      "width": 10,
+      "node": {
+        "type": "truncated-text",
+        "text": "🙂界🙂界🙂界",
+        "paddingX": 1,
+        "paddingY": 0
+      },
+      "expected": [
+        " 🙂界\u001b[0m...\u001b[0m  "
+      ]
+    },
+    {
+      "name": "spacer",
+      "width": 20,
+      "node": {
+        "type": "spacer",
+        "lines": 3
+      },
+      "expected": [
+        "",
+        "",
+        ""
+      ]
+    },
+    {
+      "name": "container-order",
+      "width": 6,
+      "node": {
+        "type": "container",
+        "children": [
+          {
+            "type": "truncated-text",
+            "text": "one"
+          },
+          {
+            "type": "spacer",
+            "lines": 1
+          },
+          {
+            "type": "truncated-text",
+            "text": "two"
+          }
+        ]
+      },
+      "expected": [
+        "one   ",
+        "",
+        "two   "
+      ]
+    },
+    {
+      "name": "box-padding-background",
+      "width": 8,
+      "node": {
+        "type": "box",
+        "paddingX": 1,
+        "paddingY": 1,
+        "style": "blue-bg",
+        "children": [
+          {
+            "type": "truncated-text",
+            "text": "ok"
+          }
+        ]
+      },
+      "expected": [
+        "\u001b[44m        \u001b[49m",
+        "\u001b[44m ok     \u001b[49m",
+        "\u001b[44m        \u001b[49m"
+      ]
+    },
+    {
+      "name": "box-multiple-children",
+      "width": 10,
+      "node": {
+        "type": "box",
+        "paddingX": 1,
+        "paddingY": 0,
+        "children": [
+          {
+            "type": "text",
+            "text": "alpha beta",
+            "paddingX": 0,
+            "paddingY": 0
+          },
+          {
+            "type": "truncated-text",
+            "text": "tail"
+          }
+        ]
+      },
+      "expected": [
+        " alpha    ",
+        " beta     ",
+        " tail     "
+      ]
+    },
+    {
+      "name": "loader-static",
+      "width": 20,
+      "node": {
+        "type": "loader",
+        "message": "Work",
+        "frames": [
+          "*"
+        ],
+        "spinnerStyle": "red",
+        "messageStyle": "bracket"
+      },
+      "expected": [
+        "",
+        " * [Work]           "
+      ]
+    },
+    {
+      "name": "loader-hidden-indicator",
+      "width": 18,
+      "node": {
+        "type": "loader",
+        "message": "Waiting",
+        "frames": [],
+        "messageStyle": "bracket"
+      },
+      "expected": [
+        "",
+        " [Waiting]        "
+      ]
+    }
+  ]
+}

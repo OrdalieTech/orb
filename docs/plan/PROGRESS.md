@@ -13,12 +13,13 @@ Status: **in progress**.
 - [x] Integrate historical WP-351 extension wire-through and its F11-wire conformance fixture.
 - [x] Integrate the historical SDK facade and 13 example packages into green `main`.
 - [x] Integrate historical WP-360 package management and project trust with upstream fixtures.
+- [x] Integrate historical WP-410 TUI core and its upstream F12 primitive goldens.
 - [ ] Integrate every former GitButler lane and side ref, reconciling overlapping implementations.
 - [ ] Verify `CGO_ENABLED=0 go build ./...` and `make test` at every integrated commit.
 - [ ] Delete merged side refs and temporary consolidation stashes.
 - [ ] Finish on plain `main` with no worktree, lane, or feature branch.
 
-Current red-to-green evidence: RPC/resources/native extensions moved from merge conflicts and six lint failures to green fixtures and the pinned 27-test upstream RPC run. The SDK candidate moved from home-directory writes and missing persisted-message/settings/session propagation to green focused tests, all 13 faux examples, an isolated external-module build, `make build test lint`, `make fixtures-check`, module verification/tidy diff, and all four CGO-free Linux/Darwin amd64/arm64 builds.
+Current red-to-green evidence: RPC/resources/native extensions moved from merge conflicts and six lint failures to green fixtures and the pinned 27-test upstream RPC run. The SDK candidate moved from home-directory writes and missing persisted-message/settings/session propagation to green focused tests, all 13 faux examples, an isolated external-module build, `make build test lint`, `make fixtures-check`, module verification/tidy diff, and all four CGO-free Linux/Darwin amd64/arm64 builds. The TUI core moved from four integration conflicts to green F12 primitive goldens, race tests, lint, fixture regeneration, the upstream RPC suite, and the same four pure-Go cross-builds; real-terminal smoke remains owner-blocked evidence rather than a local substitute.
 
 Historical note: `2a8ac08` and `68c3afa` were intermediate snapshots that did not build by
 themselves; their corrected descendants are already represented in the consolidated history and
