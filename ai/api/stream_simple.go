@@ -19,6 +19,8 @@ func StreamSimple(
 		return nil, fmt.Errorf("ai: model is nil")
 	}
 	switch model.API {
+	case ai.APIAnthropicMessages:
+		return StreamSimpleAnthropicMessages(ctx, model, requestContext, options)
 	case ai.APIOpenAIResponses, ai.APIAzureOpenAIResponses, ai.APIOpenAICodexResponses:
 		return StreamSimpleOpenAIResponses(ctx, model, requestContext, options)
 	case ai.APIOpenAICompletions:

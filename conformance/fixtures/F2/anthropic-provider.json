@@ -1,0 +1,20 @@
+{
+  "id": "anthropic",
+  "name": "Anthropic",
+  "baseUrl": "https://api.anthropic.com",
+  "apis": [
+    "anthropic-messages"
+  ],
+  "auth": {
+    "kind": "api_key",
+    "name": "Anthropic API key",
+    "env": [
+      "ANTHROPIC_OAUTH_TOKEN",
+      "ANTHROPIC_API_KEY"
+    ],
+    "resolved": {
+      "apiKey": "fixture-anthropic-api-key"
+    },
+    "source": "ANTHROPIC_OAUTH_TOKEN"
+  }
+}

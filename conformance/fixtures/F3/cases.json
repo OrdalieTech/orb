@@ -598,6 +598,124 @@
         ]
       },
       "eventCount": 22
+    },
+    {
+      "name": "anthropic-thinking-signature-round-trip",
+      "trace": "anthropic-thinking-signature-round-trip.jsonl",
+      "api": "anthropic-messages",
+      "provider": "faux-anthropic",
+      "systemPrompt": "Preserve signed thinking across the tool turn.",
+      "prompt": {
+        "role": "user",
+        "content": "Think, then echo signed.",
+        "timestamp": 1700000000301
+      },
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "signed private plan",
+              "thinkingSignature": "anthropic-signature-fixture"
+            },
+            {
+              "type": "toolCall",
+              "id": "anthropic-signature-1",
+              "name": "echo",
+              "arguments": {
+                "value": "signed"
+              }
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1700000000311
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Signature preserved."
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1700000000311
+        }
+      ],
+      "tools": [
+        {
+          "name": "echo",
+          "label": "Echo",
+          "description": "Echo a value",
+          "parameters": {
+            "type": "object",
+            "required": [
+              "value"
+            ],
+            "properties": {
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ],
+      "toolExecution": "parallel",
+      "toolBehavior": "echo",
+      "tokenSize": {
+        "min": 64,
+        "max": 64
+      },
+      "thinkingRoundTrip": {
+        "thinking": "signed private plan",
+        "signature": "anthropic-signature-fixture"
+      },
+      "expected": {
+        "providerCalls": 2,
+        "pendingResponses": 0,
+        "toolEndOrder": [
+          "anthropic-signature-1"
+        ],
+        "toolResultOrder": [
+          "anthropic-signature-1"
+        ]
+      },
+      "eventCount": 25
     }
   ]
 }

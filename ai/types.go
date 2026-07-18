@@ -62,12 +62,16 @@ type TextSignatureV1 struct {
 type TextContent struct {
 	Text          string  `json:"text"`
 	TextSignature *string `json:"textSignature,omitempty"`
+	// Index exists only while Anthropic content blocks are streaming and is cleared at block end.
+	Index *int `json:"index,omitempty"`
 }
 
 type ThinkingContent struct {
 	Thinking          string  `json:"thinking"`
 	ThinkingSignature *string `json:"thinkingSignature,omitempty"`
 	Redacted          *bool   `json:"redacted,omitempty"`
+	// Index exists only while Anthropic content blocks are streaming and is cleared at block end.
+	Index *int `json:"index,omitempty"`
 }
 
 type ImageContent struct {
@@ -91,6 +95,8 @@ type ToolCall struct {
 	PartialJSON *string `json:"partialJson,omitempty"`
 	PartialArgs *string `json:"partialArgs,omitempty"`
 	StreamIndex *int    `json:"streamIndex,omitempty"`
+	// Index exists only while Anthropic content blocks are streaming and is cleared at block end.
+	Index *int `json:"index,omitempty"`
 }
 
 type UserContentBlock interface {
@@ -150,10 +156,10 @@ type Usage struct {
 	Output       int64  `json:"output"`
 	CacheRead    int64  `json:"cacheRead"`
 	CacheWrite   int64  `json:"cacheWrite"`
-	CacheWrite1h *int64 `json:"cacheWrite1h,omitempty"`
 	Reasoning    *int64 `json:"reasoning,omitempty"`
 	TotalTokens  int64  `json:"totalTokens"`
 	Cost         Cost   `json:"cost"`
+	CacheWrite1h *int64 `json:"cacheWrite1h,omitempty"`
 }
 
 type DiagnosticErrorInfo struct {

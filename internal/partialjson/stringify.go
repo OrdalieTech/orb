@@ -2,6 +2,7 @@ package partialjson
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -26,7 +27,26 @@ func parseStreamingJSONOrdered(input string) any {
 	if trimmed == "" {
 		return orderedObject{}
 	}
-	for _, candidate := range []string{trimmed, RepairJSON(trimmed)} {
+	repaired := RepairJSON(trimmed)
+	candidates := []string{trimmed}
+	if repaired != trimmed {
+		candidates = append(candidates, repaired)
+	}
+	// Match upstream precedence: strict original, strict repaired, then the
+	// same candidates through the permissive streaming parser.
+	for _, candidate := range candidates {
+		if !json.Valid([]byte(candidate)) {
+			continue
+		}
+		value, err := (&parser{input: candidate, allow: AllowAll, preserveObjectOrder: true}).parseAny()
+		if err == nil {
+			if value == nil {
+				return orderedObject{}
+			}
+			return value
+		}
+	}
+	for _, candidate := range candidates {
 		value, err := (&parser{input: candidate, allow: AllowAll, preserveObjectOrder: true}).parseAny()
 		if err == nil {
 			if value == nil {

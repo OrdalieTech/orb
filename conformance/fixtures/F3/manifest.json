@@ -11,6 +11,7 @@
     "steering-queued-during-tools.jsonl",
     "abort-mid-text.jsonl",
     "tool-error-recovery.jsonl",
-    "all-results-terminate.jsonl"
+    "all-results-terminate.jsonl",
+    "anthropic-thinking-signature-round-trip.jsonl"
   ]
 }

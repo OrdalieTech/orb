@@ -1,0 +1,710 @@
+{
+  "cases": [
+    {
+      "name": "anthropic-text-default-cache",
+      "api": "anthropic-messages",
+      "model": {
+        "id": "claude-opus-4-6",
+        "name": "Anthropic Fixture Model",
+        "api": "anthropic-messages",
+        "provider": "anthropic",
+        "baseUrl": "https://api.anthropic.com",
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 3,
+          "output": 15,
+          "cacheRead": 0.3,
+          "cacheWrite": 3.75
+        },
+        "contextWindow": 200000,
+        "maxTokens": 32000,
+        "headers": {
+          "x-model-header": "anthropic-text"
+        },
+        "compat": {
+          "sendSessionAffinityHeaders": true
+        }
+      },
+      "context": {
+        "systemPrompt": "You are concise.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hello <fixture>",
+            "timestamp": 1700000000122
+          }
+        ],
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo structured text",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "plain",
+                    "loud"
+                  ]
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-anthropic-key",
+        "temperature": 0,
+        "maxTokens": 777,
+        "cacheRetention": "short",
+        "sessionId": "anthropic-session",
+        "headers": {
+          "x-fixture": "anthropic-text"
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "accept": "application/json",
+          "anthropic-beta": "interleaved-thinking-2025-05-14",
+          "anthropic-dangerous-direct-browser-access": "true",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+          "x-api-key": "fixture-anthropic-key",
+          "x-fixture": "anthropic-text",
+          "x-model-header": "anthropic-text",
+          "x-session-affinity": "anthropic-session"
+        },
+        "body": "{\"model\":\"claude-opus-4-6\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"hello <fixture>\",\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"max_tokens\":777,\"stream\":true,\"system\":[{\"type\":\"text\",\"text\":\"You are concise.\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"temperature\":0,\"tools\":[{\"name\":\"echo\",\"description\":\"Echo structured text\",\"eager_input_streaming\":true,\"input_schema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]}},\"required\":[\"text\"]},\"cache_control\":{\"type\":\"ephemeral\"}}]}"
+      }
+    },
+    {
+      "name": "anthropic-rich-replay-long-cache",
+      "api": "anthropic-messages",
+      "model": {
+        "id": "claude-opus-4-6",
+        "name": "Anthropic Fixture Model",
+        "api": "anthropic-messages",
+        "provider": "anthropic",
+        "baseUrl": "https://api.anthropic.com",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 3,
+          "output": 15,
+          "cacheRead": 0.3,
+          "cacheWrite": 3.75
+        },
+        "contextWindow": 200000,
+        "maxTokens": 32000,
+        "compat": {
+          "supportsToolReferences": true,
+          "supportsLongCacheRetention": true
+        }
+      },
+      "context": {
+        "systemPrompt": "Use tools and preserve thinking.",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "inspect image"
+              },
+              {
+                "type": "image",
+                "data": "aW1hZ2U=",
+                "mimeType": "image/png"
+              }
+            ],
+            "timestamp": 1700000000119
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "signed reasoning",
+                "thinkingSignature": "sig_fixture"
+              },
+              {
+                "type": "toolCall",
+                "id": "toolu_fixture",
+                "name": "echo",
+                "arguments": {
+                  "text": "first",
+                  "mode": "plain"
+                }
+              }
+            ],
+            "api": "anthropic-messages",
+            "provider": "anthropic",
+            "model": "claude-opus-4-6",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "toolu_fixture",
+            "toolName": "echo",
+            "content": [
+              {
+                "type": "text",
+                "text": "work completed"
+              }
+            ],
+            "addedToolNames": [
+              "late_tool"
+            ],
+            "isError": false,
+            "timestamp": 1700000000122
+          },
+          {
+            "role": "user",
+            "content": "continue",
+            "timestamp": 1700000000123
+          }
+        ],
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo structured text",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "plain",
+                    "loud"
+                  ]
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "late_tool",
+            "description": "A deferred tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-anthropic-key",
+        "maxTokens": 4096,
+        "cacheRetention": "long",
+        "thinkingEnabled": true,
+        "thinkingBudgetTokens": 2048,
+        "thinkingDisplay": "omitted",
+        "metadata": {
+          "user_id": "fixture-user",
+          "ignored": 42
+        },
+        "toolChoice": {
+          "type": "tool",
+          "name": "echo"
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "accept": "application/json",
+          "anthropic-beta": "interleaved-thinking-2025-05-14",
+          "anthropic-dangerous-direct-browser-access": "true",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+          "x-api-key": "fixture-anthropic-key"
+        },
+        "body": "{\"model\":\"claude-opus-4-6\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"inspect image\"},{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/png\",\"data\":\"aW1hZ2U=\"}}]},{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"signed reasoning\",\"signature\":\"sig_fixture\"},{\"type\":\"tool_use\",\"id\":\"toolu_fixture\",\"name\":\"echo\",\"input\":{\"text\":\"first\",\"mode\":\"plain\"}}]},{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_fixture\",\"content\":[{\"type\":\"tool_reference\",\"tool_name\":\"late_tool\"}],\"is_error\":false},{\"type\":\"text\",\"text\":\"work completed\"}]},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"continue\",\"cache_control\":{\"type\":\"ephemeral\",\"ttl\":\"1h\"}}]}],\"max_tokens\":4096,\"stream\":true,\"system\":[{\"type\":\"text\",\"text\":\"Use tools and preserve thinking.\",\"cache_control\":{\"type\":\"ephemeral\",\"ttl\":\"1h\"}}],\"tools\":[{\"name\":\"echo\",\"description\":\"Echo structured text\",\"eager_input_streaming\":true,\"input_schema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]}},\"required\":[\"text\"]},\"cache_control\":{\"type\":\"ephemeral\",\"ttl\":\"1h\"}},{\"name\":\"late_tool\",\"description\":\"A deferred tool\",\"eager_input_streaming\":true,\"input_schema\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"boolean\"}},\"required\":[\"value\"]},\"defer_loading\":true}],\"thinking\":{\"type\":\"enabled\",\"budget_tokens\":2048,\"display\":\"omitted\"},\"metadata\":{\"user_id\":\"fixture-user\"},\"tool_choice\":{\"type\":\"tool\",\"name\":\"echo\"}}"
+      }
+    },
+    {
+      "name": "anthropic-oauth-adaptive-no-cache",
+      "api": "anthropic-messages",
+      "model": {
+        "id": "claude-opus-4-8",
+        "name": "Anthropic Fixture Model",
+        "api": "anthropic-messages",
+        "provider": "anthropic",
+        "baseUrl": "https://api.anthropic.com",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 3,
+          "output": 15,
+          "cacheRead": 0.3,
+          "cacheWrite": 3.75
+        },
+        "contextWindow": 200000,
+        "maxTokens": 32000,
+        "compat": {
+          "forceAdaptiveThinking": true,
+          "supportsTemperature": false
+        },
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "high",
+          "xhigh": "xhigh"
+        }
+      },
+      "context": {
+        "systemPrompt": "Read carefully.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "read it",
+            "timestamp": 1700000000123
+          }
+        ],
+        "tools": [
+          {
+            "name": "read",
+            "description": "Echo structured text",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "plain",
+                    "loud"
+                  ]
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "sk-ant-oat-fixture",
+        "cacheRetention": "none",
+        "temperature": 0,
+        "thinkingEnabled": true,
+        "effort": "xhigh",
+        "toolChoice": "auto"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "accept": "application/json",
+          "anthropic-beta": "claude-code-20250219,oauth-2025-04-20",
+          "anthropic-dangerous-direct-browser-access": "true",
+          "anthropic-version": "2023-06-01",
+          "authorization": "Bearer sk-ant-oat-fixture",
+          "content-type": "application/json",
+          "x-app": "cli",
+          "user-agent": "claude-cli/2.1.75"
+        },
+        "body": "{\"model\":\"claude-opus-4-8\",\"messages\":[{\"role\":\"user\",\"content\":\"read it\"}],\"max_tokens\":32000,\"stream\":true,\"system\":[{\"type\":\"text\",\"text\":\"You are Claude Code, Anthropic's official CLI for Claude.\"},{\"type\":\"text\",\"text\":\"Read carefully.\"}],\"tools\":[{\"name\":\"Read\",\"description\":\"Echo structured text\",\"eager_input_streaming\":true,\"input_schema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]}},\"required\":[\"text\"]}}],\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"xhigh\"},\"tool_choice\":{\"type\":\"auto\"}}"
+      }
+    },
+    {
+      "name": "anthropic-long-cache-compat-disabled",
+      "api": "anthropic-messages",
+      "model": {
+        "id": "claude-opus-4-6",
+        "name": "Anthropic Fixture Model",
+        "api": "anthropic-messages",
+        "provider": "anthropic",
+        "baseUrl": "https://api.anthropic.com",
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 3,
+          "output": 15,
+          "cacheRead": 0.3,
+          "cacheWrite": 3.75
+        },
+        "contextWindow": 200000,
+        "maxTokens": 32000,
+        "compat": {
+          "supportsLongCacheRetention": false,
+          "supportsCacheControlOnTools": false,
+          "supportsEagerToolInputStreaming": false
+        }
+      },
+      "context": {
+        "systemPrompt": "Proxy system.",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "image",
+                "data": "cGl4ZWw=",
+                "mimeType": "image/webp"
+              }
+            ],
+            "timestamp": 1700000000123
+          }
+        ],
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo structured text",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "plain",
+                    "loud"
+                  ]
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-anthropic-key",
+        "cacheRetention": "long"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "accept": "application/json",
+          "anthropic-beta": "fine-grained-tool-streaming-2025-05-14,interleaved-thinking-2025-05-14",
+          "anthropic-dangerous-direct-browser-access": "true",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+          "x-api-key": "fixture-anthropic-key"
+        },
+        "body": "{\"model\":\"claude-opus-4-6\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/webp\",\"data\":\"cGl4ZWw=\"},\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"max_tokens\":32000,\"stream\":true,\"system\":[{\"type\":\"text\",\"text\":\"Proxy system.\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"tools\":[{\"name\":\"echo\",\"description\":\"Echo structured text\",\"input_schema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]}},\"required\":[\"text\"]}}]}"
+      }
+    },
+    {
+      "name": "anthropic-empty-signature-compat",
+      "api": "anthropic-messages",
+      "model": {
+        "id": "claude-opus-4-6",
+        "name": "Anthropic Fixture Model",
+        "api": "anthropic-messages",
+        "provider": "compatible-anthropic",
+        "baseUrl": "https://api.anthropic.com",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 3,
+          "output": 15,
+          "cacheRead": 0.3,
+          "cacheWrite": 3.75
+        },
+        "contextWindow": 200000,
+        "maxTokens": 32000,
+        "compat": {
+          "allowEmptySignature": true,
+          "supportsToolReferences": false
+        }
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "first",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "unsigned reasoning",
+                "thinkingSignature": " "
+              }
+            ],
+            "api": "anthropic-messages",
+            "provider": "compatible-anthropic",
+            "model": "claude-opus-4-6",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "user",
+            "content": "second",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-anthropic-key",
+        "cacheRetention": "none"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "accept": "application/json",
+          "anthropic-beta": "interleaved-thinking-2025-05-14",
+          "anthropic-dangerous-direct-browser-access": "true",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+          "x-api-key": "fixture-anthropic-key"
+        },
+        "body": "{\"model\":\"claude-opus-4-6\",\"messages\":[{\"role\":\"user\",\"content\":\"first\"},{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"unsigned reasoning\",\"signature\":\"\"}]},{\"role\":\"user\",\"content\":\"second\"}],\"max_tokens\":32000,\"stream\":true}"
+      }
+    },
+    {
+      "name": "anthropic-simple-budget-thinking",
+      "api": "anthropic-messages",
+      "simple": true,
+      "model": {
+        "id": "claude-opus-4-6",
+        "name": "Anthropic Fixture Model",
+        "api": "anthropic-messages",
+        "provider": "anthropic",
+        "baseUrl": "https://api.anthropic.com",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 3,
+          "output": 15,
+          "cacheRead": 0.3,
+          "cacheWrite": 3.75
+        },
+        "contextWindow": 200000,
+        "maxTokens": 12000
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "reason",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-anthropic-key",
+        "maxTokens": 2000,
+        "cacheRetention": "none",
+        "reasoning": "medium",
+        "thinkingBudgets": {
+          "medium": 3000
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "accept": "application/json",
+          "anthropic-beta": "interleaved-thinking-2025-05-14",
+          "anthropic-dangerous-direct-browser-access": "true",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+          "x-api-key": "fixture-anthropic-key"
+        },
+        "body": "{\"model\":\"claude-opus-4-6\",\"messages\":[{\"role\":\"user\",\"content\":\"reason\"}],\"max_tokens\":5000,\"stream\":true,\"thinking\":{\"type\":\"enabled\",\"budget_tokens\":3000,\"display\":\"summarized\"}}"
+      }
+    },
+    {
+      "name": "anthropic-simple-adaptive-thinking",
+      "api": "anthropic-messages",
+      "simple": true,
+      "model": {
+        "id": "claude-opus-4-8",
+        "name": "Anthropic Fixture Model",
+        "api": "anthropic-messages",
+        "provider": "anthropic",
+        "baseUrl": "https://api.anthropic.com",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 3,
+          "output": 15,
+          "cacheRead": 0.3,
+          "cacheWrite": 3.75
+        },
+        "contextWindow": 200000,
+        "maxTokens": 32000,
+        "compat": {
+          "forceAdaptiveThinking": true,
+          "supportsTemperature": false
+        },
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "high",
+          "xhigh": "xhigh"
+        }
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "reason adaptively",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-anthropic-key",
+        "cacheRetention": "none",
+        "reasoning": "xhigh",
+        "temperature": 0
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "accept": "application/json",
+          "anthropic-dangerous-direct-browser-access": "true",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+          "x-api-key": "fixture-anthropic-key"
+        },
+        "body": "{\"model\":\"claude-opus-4-8\",\"messages\":[{\"role\":\"user\",\"content\":\"reason adaptively\"}],\"max_tokens\":32000,\"stream\":true,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"xhigh\"}}"
+      }
+    },
+    {
+      "name": "anthropic-simple-reasoning-off-forces-stream",
+      "api": "anthropic-messages",
+      "simple": true,
+      "payloadHook": "disable-stream",
+      "model": {
+        "id": "claude-opus-4-6",
+        "name": "Anthropic Fixture Model",
+        "api": "anthropic-messages",
+        "provider": "anthropic",
+        "baseUrl": "https://api.anthropic.com",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 3,
+          "output": 15,
+          "cacheRead": 0.3,
+          "cacheWrite": 3.75
+        },
+        "contextWindow": 200000,
+        "maxTokens": 32000,
+        "thinkingLevelMap": {
+          "off": "none"
+        }
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "answer directly",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-anthropic-key",
+        "cacheRetention": "none"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "accept": "application/json",
+          "anthropic-beta": "interleaved-thinking-2025-05-14",
+          "anthropic-dangerous-direct-browser-access": "true",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+          "x-api-key": "fixture-anthropic-key"
+        },
+        "body": "{\"model\":\"claude-opus-4-6\",\"messages\":[{\"role\":\"user\",\"content\":\"answer directly\"}],\"max_tokens\":32000,\"stream\":true,\"thinking\":{\"type\":\"disabled\"}}"
+      }
+    }
+  ]
+}
