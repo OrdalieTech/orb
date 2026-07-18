@@ -1,9 +1,54 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestProcessTerminalWriteLogFileAndDirectory(t *testing.T) {
+	t.Run("file", func(t *testing.T) {
+		logPath := filepath.Join(t.TempDir(), "raw.ansi")
+		t.Setenv("PI_TUI_WRITE_LOG", logPath)
+		output, err := os.CreateTemp(t.TempDir(), "terminal-output-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = output.Close() }()
+		terminal := NewProcessTerminalFiles(nil, output)
+		terminal.Write("first")
+		terminal.Write("\x1b[31msecond\x1b[0m")
+		got, err := os.ReadFile(logPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := "first\x1b[31msecond\x1b[0m"; string(got) != want {
+			t.Fatalf("write log = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("directory", func(t *testing.T) {
+		logDir := t.TempDir()
+		t.Setenv("PI_TUI_WRITE_LOG", logDir)
+		terminal := NewProcessTerminalFiles(nil, nil)
+		terminal.Write("captured")
+		matches, err := filepath.Glob(filepath.Join(logDir, "tui-*.log"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(matches) != 1 {
+			t.Fatalf("directory write logs = %v", matches)
+		}
+		got, err := os.ReadFile(matches[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "captured" {
+			t.Fatalf("directory write log = %q", got)
+		}
+	})
+}
 
 func TestKeyboardProtocolNegotiationParser(t *testing.T) {
 	tests := []struct {

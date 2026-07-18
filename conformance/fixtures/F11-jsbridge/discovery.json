@@ -1,0 +1,14 @@
+{
+  "paths": [
+    "<root>/project/.pi/extensions/a.ts",
+    "<root>/project/.pi/extensions/bundle/index.ts",
+    "<root>/agent/extensions/global.js",
+    "<root>/configured/src/configured.ts"
+  ],
+  "errors": [
+    {
+      "path": "<root>/missing.ts",
+      "prefix": "Failed to load extension"
+    }
+  ]
+}

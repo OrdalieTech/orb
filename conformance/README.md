@@ -69,3 +69,23 @@ inheritance with null deletion, the exact sorted `trust.json` bytes, and
 canonicalized to `<fixture>` so the goldens stay machine-independent; the Go runner materializes
 the same trees and compares normalized JSON. It uses upstream's `glob@13.0.6`, `ignore@7.0.5`,
 `minimatch@10.2.5`, `semver@7.8.0`, `hosted-git-info@9.0.3`, and `proper-lockfile@4.1.2`.
+
+WP-610's sync driver regenerates every registered family into a temporary tree at the candidate
+upstream revision, overlays that tree onto a temporary source copy, and runs `go test -race ./...`.
+A red sync therefore reports exact fixture deltas and failing tests without changing committed
+goldens; `make sync-bump` installs the generated tree and updates `UPSTREAM.lock` only after the
+same candidate passes.
+
+WP-450 adds the `WP450` side-by-side replay family without expanding F12 ahead of WP-460. The
+extractor drives upstream's real interactive components through its `@xterm/headless@5.5.0`
+`VirtualTerminal` at two widths, records every settled visible frame, and executes the documented
+status-line, widget-placement, custom-header, and custom-footer examples. Terminal control streams,
+temporary paths, trailing cell padding, and loader clocks are normalized exactly as recorded in the
+manifest; the divergence ledger is empty, so the Go consumer must match every normalized frame.
+The upstream `tool-update-diff` and `tool-result-diff` frames are intentionally identical: the edit
+renderer retains the settled preview and suppresses a duplicate result diff when the bytes match.
+
+`WP450-session-selector` drives the pinned startup session picker and its search
+module directly. Its normalized frames cover loading progress, current/all scope,
+threaded/recent/fuzzy ordering, fuzzy/quoted/regex queries, named and path toggles,
+delete confirmation and cancellation, removal, and select/cancel callbacks.

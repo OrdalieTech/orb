@@ -85,7 +85,8 @@ func TestAmazonBedrockProvider(t *testing.T) {
 	if provider.ID != fixture.ID || provider.Name != fixture.Name || provider.API != fixture.APIs[0] || provider.BaseURL != fixture.BaseURL {
 		t.Fatalf("unexpected provider: %#v", provider)
 	}
-	if provider.Auth != fixture.Auth.Kind || !slices.Equal(provider.Env, fixture.Auth.Env) {
+	registryFixture := findProviderFixture(t, fixture.ID)
+	if provider.Auth != fixture.Auth.Kind || !slices.Equal(provider.Env, registryFixture.Auth.Env) {
 		t.Fatalf("unexpected auth metadata: %#v", provider)
 	}
 	if provider.Methods.APIKey == nil || provider.Methods.APIKey.Name() != fixture.Auth.Name {
@@ -93,7 +94,7 @@ func TestAmazonBedrockProvider(t *testing.T) {
 	}
 
 	provider.Env[0] = "changed"
-	if fresh := providers.AmazonBedrock(); !slices.Equal(fresh.Env, fixture.Auth.Env) {
+	if fresh := providers.AmazonBedrock(); !slices.Equal(fresh.Env, registryFixture.Auth.Env) {
 		t.Fatal("AmazonBedrock returned mutable registry storage")
 	}
 }

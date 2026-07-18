@@ -1,0 +1,1601 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "text": "hello world",
+      "cursor": 11,
+      "backward": 6,
+      "forward": 11
+    },
+    {
+      "text": "hello world",
+      "cursor": 6,
+      "backward": 0,
+      "forward": 11
+    },
+    {
+      "text": "hello world",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 5
+    },
+    {
+      "text": "hello world",
+      "cursor": 5,
+      "backward": 0,
+      "forward": 11
+    },
+    {
+      "text": "foo.bar",
+      "cursor": 7,
+      "backward": 4,
+      "forward": 7
+    },
+    {
+      "text": "foo.bar",
+      "cursor": 4,
+      "backward": 3,
+      "forward": 7
+    },
+    {
+      "text": "foo.bar",
+      "cursor": 3,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "foo.bar",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "foo:bar",
+      "cursor": 7,
+      "backward": 4,
+      "forward": 7
+    },
+    {
+      "text": "foo:bar",
+      "cursor": 4,
+      "backward": 3,
+      "forward": 7
+    },
+    {
+      "text": "path/to/file",
+      "cursor": 12,
+      "backward": 8,
+      "forward": 12
+    },
+    {
+      "text": "path/to/file",
+      "cursor": 8,
+      "backward": 7,
+      "forward": 12
+    },
+    {
+      "text": "path/to/file",
+      "cursor": 7,
+      "backward": 5,
+      "forward": 8
+    },
+    {
+      "text": "path/to/file",
+      "cursor": 5,
+      "backward": 4,
+      "forward": 7
+    },
+    {
+      "text": "path/to/file",
+      "cursor": 4,
+      "backward": 0,
+      "forward": 5
+    },
+    {
+      "text": "path/to/file",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "  hello  ",
+      "cursor": 9,
+      "backward": 2,
+      "forward": 9
+    },
+    {
+      "text": "  hello  ",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 7
+    },
+    {
+      "text": "  hello  ",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 7
+    },
+    {
+      "text": "  hello  ",
+      "cursor": 7,
+      "backward": 2,
+      "forward": 9
+    },
+    {
+      "text": "foo...bar",
+      "cursor": 9,
+      "backward": 6,
+      "forward": 9
+    },
+    {
+      "text": "foo...bar",
+      "cursor": 6,
+      "backward": 3,
+      "forward": 9
+    },
+    {
+      "text": "foo...bar",
+      "cursor": 3,
+      "backward": 0,
+      "forward": 6
+    },
+    {
+      "text": "foo...bar",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "你好，世界",
+      "cursor": 5,
+      "backward": 3,
+      "forward": 5
+    },
+    {
+      "text": "你好，世界",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 5
+    },
+    {
+      "text": "你好，世界",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "你好，世界",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "你好世界 test",
+      "cursor": 5,
+      "backward": 2,
+      "forward": 9
+    },
+    {
+      "text": "你好世界 test",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "々!a",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "⺀々!a",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 1
+    },
+    {
+      "text": "⺀々〻ﾟ!a",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 5
+    },
+    {
+      "text": "ﾟﾟ!a",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "ﾟ漢!a",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 1
+    },
+    {
+      "text": "々ﾟ々!a",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "゛ﾟカ!a",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "々́!a",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "⺀ﾞﾟ!日本",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "日本ﾞﾟ!a",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "ｶﾞｸｾｲ!a",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "漢゛字漢゜字!a",
+      "cursor": 3,
+      "backward": 0,
+      "forward": 6
+    },
+    {
+      "text": "中华人民共和国",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "中华人民共和国",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "中华人民共和国",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "中华人民共和国",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 4
+    },
+    {
+      "text": "中华人民共和国",
+      "cursor": 4,
+      "backward": 2,
+      "forward": 7
+    },
+    {
+      "text": "中华人民共和国",
+      "cursor": 5,
+      "backward": 4,
+      "forward": 6
+    },
+    {
+      "text": "中华人民共和国",
+      "cursor": 6,
+      "backward": 4,
+      "forward": 7
+    },
+    {
+      "text": "中华人民共和国",
+      "cursor": 7,
+      "backward": 4,
+      "forward": 7
+    },
+    {
+      "text": "北京大学生前来应聘",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "北京大学生前来应聘",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "北京大学生前来应聘",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 5
+    },
+    {
+      "text": "北京大学生前来应聘",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 5
+    },
+    {
+      "text": "北京大学生前来应聘",
+      "cursor": 4,
+      "backward": 2,
+      "forward": 6
+    },
+    {
+      "text": "北京大学生前来应聘",
+      "cursor": 5,
+      "backward": 2,
+      "forward": 6
+    },
+    {
+      "text": "北京大学生前来应聘",
+      "cursor": 6,
+      "backward": 5,
+      "forward": 7
+    },
+    {
+      "text": "北京大学生前来应聘",
+      "cursor": 7,
+      "backward": 6,
+      "forward": 9
+    },
+    {
+      "text": "北京大学生前来应聘",
+      "cursor": 8,
+      "backward": 7,
+      "forward": 9
+    },
+    {
+      "text": "北京大学生前来应聘",
+      "cursor": 9,
+      "backward": 7,
+      "forward": 9
+    },
+    {
+      "text": "研究生命起源",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "研究生命起源",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "研究生命起源",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "研究生命起源",
+      "cursor": 3,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "研究生命起源",
+      "cursor": 4,
+      "backward": 2,
+      "forward": 6
+    },
+    {
+      "text": "研究生命起源",
+      "cursor": 5,
+      "backward": 4,
+      "forward": 6
+    },
+    {
+      "text": "研究生命起源",
+      "cursor": 6,
+      "backward": 4,
+      "forward": 6
+    },
+    {
+      "text": "商品和服务",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "商品和服务",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "商品和服务",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "商品和服务",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 5
+    },
+    {
+      "text": "商品和服务",
+      "cursor": 4,
+      "backward": 2,
+      "forward": 5
+    },
+    {
+      "text": "商品和服务",
+      "cursor": 5,
+      "backward": 3,
+      "forward": 5
+    },
+    {
+      "text": "国际化与本地化",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "国际化与本地化",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "国际化与本地化",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "国际化与本地化",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 4
+    },
+    {
+      "text": "国际化与本地化",
+      "cursor": 4,
+      "backward": 3,
+      "forward": 6
+    },
+    {
+      "text": "国际化与本地化",
+      "cursor": 5,
+      "backward": 3,
+      "forward": 6
+    },
+    {
+      "text": "国际化与本地化",
+      "cursor": 6,
+      "backward": 4,
+      "forward": 7
+    },
+    {
+      "text": "国际化与本地化",
+      "cursor": 7,
+      "backward": 6,
+      "forward": 7
+    },
+    {
+      "text": "私は学生です",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 1
+    },
+    {
+      "text": "私は学生です",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "私は学生です",
+      "cursor": 2,
+      "backward": 1,
+      "forward": 4
+    },
+    {
+      "text": "私は学生です",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 4
+    },
+    {
+      "text": "私は学生です",
+      "cursor": 4,
+      "backward": 2,
+      "forward": 6
+    },
+    {
+      "text": "私は学生です",
+      "cursor": 5,
+      "backward": 4,
+      "forward": 6
+    },
+    {
+      "text": "私は学生です",
+      "cursor": 6,
+      "backward": 4,
+      "forward": 6
+    },
+    {
+      "text": "東京都に行きます",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "東京都に行きます",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "東京都に行きます",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "東京都に行きます",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 4
+    },
+    {
+      "text": "東京都に行きます",
+      "cursor": 4,
+      "backward": 3,
+      "forward": 6
+    },
+    {
+      "text": "東京都に行きます",
+      "cursor": 5,
+      "backward": 4,
+      "forward": 6
+    },
+    {
+      "text": "東京都に行きます",
+      "cursor": 6,
+      "backward": 4,
+      "forward": 8
+    },
+    {
+      "text": "東京都に行きます",
+      "cursor": 7,
+      "backward": 6,
+      "forward": 8
+    },
+    {
+      "text": "東京都に行きます",
+      "cursor": 8,
+      "backward": 6,
+      "forward": 8
+    },
+    {
+      "text": "すももももももものうち",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "すももももももものうち",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "すももももももものうち",
+      "cursor": 2,
+      "backward": 1,
+      "forward": 3
+    },
+    {
+      "text": "すももももももものうち",
+      "cursor": 3,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "すももももももものうち",
+      "cursor": 4,
+      "backward": 3,
+      "forward": 5
+    },
+    {
+      "text": "すももももももものうち",
+      "cursor": 5,
+      "backward": 4,
+      "forward": 6
+    },
+    {
+      "text": "すももももももものうち",
+      "cursor": 6,
+      "backward": 5,
+      "forward": 7
+    },
+    {
+      "text": "すももももももものうち",
+      "cursor": 7,
+      "backward": 6,
+      "forward": 9
+    },
+    {
+      "text": "すももももももものうち",
+      "cursor": 8,
+      "backward": 7,
+      "forward": 9
+    },
+    {
+      "text": "すももももももものうち",
+      "cursor": 9,
+      "backward": 7,
+      "forward": 11
+    },
+    {
+      "text": "すももももももものうち",
+      "cursor": 10,
+      "backward": 9,
+      "forward": 11
+    },
+    {
+      "text": "すももももももものうち",
+      "cursor": 11,
+      "backward": 9,
+      "forward": 11
+    },
+    {
+      "text": "カタカナテスト",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "カタカナテスト",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "カタカナテスト",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "カタカナテスト",
+      "cursor": 3,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "カタカナテスト",
+      "cursor": 4,
+      "backward": 0,
+      "forward": 7
+    },
+    {
+      "text": "カタカナテスト",
+      "cursor": 5,
+      "backward": 0,
+      "forward": 7
+    },
+    {
+      "text": "カタカナテスト",
+      "cursor": 6,
+      "backward": 0,
+      "forward": 7
+    },
+    {
+      "text": "カタカナテスト",
+      "cursor": 7,
+      "backward": 4,
+      "forward": 7
+    },
+    {
+      "text": "コンピューターサイエンス",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 7
+    },
+    {
+      "text": "コンピューターサイエンス",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "コンピューターサイエンス",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "コンピューターサイエンス",
+      "cursor": 3,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "コンピューターサイエンス",
+      "cursor": 4,
+      "backward": 0,
+      "forward": 5
+    },
+    {
+      "text": "コンピューターサイエンス",
+      "cursor": 5,
+      "backward": 0,
+      "forward": 7
+    },
+    {
+      "text": "コンピューターサイエンス",
+      "cursor": 6,
+      "backward": 0,
+      "forward": 12
+    },
+    {
+      "text": "コンピューターサイエンス",
+      "cursor": 7,
+      "backward": 0,
+      "forward": 12
+    },
+    {
+      "text": "コンピューターサイエンス",
+      "cursor": 8,
+      "backward": 7,
+      "forward": 12
+    },
+    {
+      "text": "コンピューターサイエンス",
+      "cursor": 9,
+      "backward": 7,
+      "forward": 12
+    },
+    {
+      "text": "コンピューターサイエンス",
+      "cursor": 10,
+      "backward": 9,
+      "forward": 11
+    },
+    {
+      "text": "コンピューターサイエンス",
+      "cursor": 11,
+      "backward": 9,
+      "forward": 12
+    },
+    {
+      "text": "コンピューターサイエンス",
+      "cursor": 12,
+      "backward": 7,
+      "forward": 12
+    },
+    {
+      "text": "ひらがなカタカナ漢字",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 1
+    },
+    {
+      "text": "ひらがなカタカナ漢字",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "ひらがなカタカナ漢字",
+      "cursor": 2,
+      "backward": 1,
+      "forward": 3
+    },
+    {
+      "text": "ひらがなカタカナ漢字",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 4
+    },
+    {
+      "text": "ひらがなカタカナ漢字",
+      "cursor": 4,
+      "backward": 3,
+      "forward": 8
+    },
+    {
+      "text": "ひらがなカタカナ漢字",
+      "cursor": 5,
+      "backward": 4,
+      "forward": 8
+    },
+    {
+      "text": "ひらがなカタカナ漢字",
+      "cursor": 6,
+      "backward": 4,
+      "forward": 8
+    },
+    {
+      "text": "ひらがなカタカナ漢字",
+      "cursor": 7,
+      "backward": 4,
+      "forward": 8
+    },
+    {
+      "text": "ひらがなカタカナ漢字",
+      "cursor": 8,
+      "backward": 4,
+      "forward": 10
+    },
+    {
+      "text": "ひらがなカタカナ漢字",
+      "cursor": 9,
+      "backward": 8,
+      "forward": 10
+    },
+    {
+      "text": "ひらがなカタカナ漢字",
+      "cursor": 10,
+      "backward": 8,
+      "forward": 10
+    },
+    {
+      "text": "龟山岛测试",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "龟山岛测试",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "龟山岛测试",
+      "cursor": 2,
+      "backward": 1,
+      "forward": 3
+    },
+    {
+      "text": "龟山岛测试",
+      "cursor": 3,
+      "backward": 0,
+      "forward": 5
+    },
+    {
+      "text": "龟山岛测试",
+      "cursor": 4,
+      "backward": 3,
+      "forward": 5
+    },
+    {
+      "text": "龟山岛测试",
+      "cursor": 5,
+      "backward": 3,
+      "forward": 5
+    },
+    {
+      "text": "𠀀𠀁测试",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "𠀀𠀁测试",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "𠀀𠀁测试",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "𠀀𠀁测试",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 4
+    },
+    {
+      "text": "𠀀𠀁测试",
+      "cursor": 4,
+      "backward": 2,
+      "forward": 6
+    },
+    {
+      "text": "𠀀𠀁测试",
+      "cursor": 5,
+      "backward": 4,
+      "forward": 6
+    },
+    {
+      "text": "𠀀𠀁测试",
+      "cursor": 6,
+      "backward": 4,
+      "forward": 6
+    },
+    {
+      "text": "𮯰𮯱世界",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "𮯰𮯱世界",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "𮯰𮯱世界",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "𮯰𮯱世界",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 4
+    },
+    {
+      "text": "𮯰𮯱世界",
+      "cursor": 4,
+      "backward": 2,
+      "forward": 6
+    },
+    {
+      "text": "𮯰𮯱世界",
+      "cursor": 5,
+      "backward": 4,
+      "forward": 6
+    },
+    {
+      "text": "𮯰𮯱世界",
+      "cursor": 6,
+      "backward": 4,
+      "forward": 6
+    },
+    {
+      "text": "𲎰𲎱世界",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "𲎰𲎱世界",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "𲎰𲎱世界",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "𲎰𲎱世界",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 4
+    },
+    {
+      "text": "𲎰𲎱世界",
+      "cursor": 4,
+      "backward": 2,
+      "forward": 6
+    },
+    {
+      "text": "𲎰𲎱世界",
+      "cursor": 5,
+      "backward": 4,
+      "forward": 6
+    },
+    {
+      "text": "𲎰𲎱世界",
+      "cursor": 6,
+      "backward": 4,
+      "forward": 6
+    },
+    {
+      "text": "你好abc世界",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "你好abc世界",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "你好abc世界",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 5
+    },
+    {
+      "text": "你好abc世界",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 5
+    },
+    {
+      "text": "你好abc世界",
+      "cursor": 4,
+      "backward": 2,
+      "forward": 5
+    },
+    {
+      "text": "你好abc世界",
+      "cursor": 5,
+      "backward": 2,
+      "forward": 7
+    },
+    {
+      "text": "你好abc世界",
+      "cursor": 6,
+      "backward": 5,
+      "forward": 7
+    },
+    {
+      "text": "你好abc世界",
+      "cursor": 7,
+      "backward": 5,
+      "forward": 7
+    },
+    {
+      "text": "你好・世界",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "你好・世界",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "你好・世界",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "你好・世界",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 5
+    },
+    {
+      "text": "你好・世界",
+      "cursor": 4,
+      "backward": 3,
+      "forward": 5
+    },
+    {
+      "text": "你好・世界",
+      "cursor": 5,
+      "backward": 3,
+      "forward": 5
+    },
+    {
+      "text": "你好ー世界",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "你好ー世界",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "你好ー世界",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "你好ー世界",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 5
+    },
+    {
+      "text": "你好ー世界",
+      "cursor": 4,
+      "backward": 3,
+      "forward": 5
+    },
+    {
+      "text": "你好ー世界",
+      "cursor": 5,
+      "backward": 3,
+      "forward": 5
+    },
+    {
+      "text": "ﾃｽﾄ世界",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "ﾃｽﾄ世界",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "ﾃｽﾄ世界",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "ﾃｽﾄ世界",
+      "cursor": 3,
+      "backward": 0,
+      "forward": 5
+    },
+    {
+      "text": "ﾃｽﾄ世界",
+      "cursor": 4,
+      "backward": 3,
+      "forward": 5
+    },
+    {
+      "text": "ﾃｽﾄ世界",
+      "cursor": 5,
+      "backward": 3,
+      "forward": 5
+    },
+    {
+      "text": "がくせい",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "がくせい",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "がくせい",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "がくせい",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 5
+    },
+    {
+      "text": "がくせい",
+      "cursor": 4,
+      "backward": 2,
+      "forward": 5
+    },
+    {
+      "text": "がくせい",
+      "cursor": 5,
+      "backward": 3,
+      "forward": 5
+    },
+    {
+      "text": "ｶﾞｸｾｲ",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "ｶﾞｸｾｲ",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "ｶﾞｸｾｲ",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "ｶﾞｸｾｲ",
+      "cursor": 3,
+      "backward": 0,
+      "forward": 5
+    },
+    {
+      "text": "ｶﾞｸｾｲ",
+      "cursor": 4,
+      "backward": 2,
+      "forward": 5
+    },
+    {
+      "text": "ｶﾞｸｾｲ",
+      "cursor": 5,
+      "backward": 3,
+      "forward": 5
+    },
+    {
+      "text": "你好‍世界",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "你好‍世界",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "你好‍世界",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "你好‍世界",
+      "cursor": 3,
+      "backward": 0,
+      "forward": 5
+    },
+    {
+      "text": "你好‍世界",
+      "cursor": 4,
+      "backward": 3,
+      "forward": 5
+    },
+    {
+      "text": "你好‍世界",
+      "cursor": 5,
+      "backward": 3,
+      "forward": 5
+    },
+    {
+      "text": "你︀好世界",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "你︀好世界",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "你︀好世界",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 3
+    },
+    {
+      "text": "你︀好世界",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 5
+    },
+    {
+      "text": "你︀好世界",
+      "cursor": 4,
+      "backward": 3,
+      "forward": 5
+    },
+    {
+      "text": "你︀好世界",
+      "cursor": 5,
+      "backward": 3,
+      "forward": 5
+    },
+    {
+      "text": "日々是好日",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "日々是好日",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "日々是好日",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "日々是好日",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 4
+    },
+    {
+      "text": "日々是好日",
+      "cursor": 4,
+      "backward": 2,
+      "forward": 5
+    },
+    {
+      "text": "日々是好日",
+      "cursor": 5,
+      "backward": 4,
+      "forward": 5
+    },
+    {
+      "text": "申し込みます",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "申し込みます",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "申し込みます",
+      "cursor": 2,
+      "backward": 1,
+      "forward": 4
+    },
+    {
+      "text": "申し込みます",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 4
+    },
+    {
+      "text": "申し込みます",
+      "cursor": 4,
+      "backward": 0,
+      "forward": 6
+    },
+    {
+      "text": "申し込みます",
+      "cursor": 5,
+      "backward": 4,
+      "forward": 6
+    },
+    {
+      "text": "申し込みます",
+      "cursor": 6,
+      "backward": 4,
+      "forward": 6
+    },
+    {
+      "text": "おはようございます",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 4
+    },
+    {
+      "text": "おはようございます",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "おはようございます",
+      "cursor": 2,
+      "backward": 1,
+      "forward": 4
+    },
+    {
+      "text": "おはようございます",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 4
+    },
+    {
+      "text": "おはようございます",
+      "cursor": 4,
+      "backward": 0,
+      "forward": 5
+    },
+    {
+      "text": "おはようございます",
+      "cursor": 5,
+      "backward": 4,
+      "forward": 6
+    },
+    {
+      "text": "おはようございます",
+      "cursor": 6,
+      "backward": 5,
+      "forward": 7
+    },
+    {
+      "text": "おはようございます",
+      "cursor": 7,
+      "backward": 6,
+      "forward": 9
+    },
+    {
+      "text": "おはようございます",
+      "cursor": 8,
+      "backward": 6,
+      "forward": 9
+    },
+    {
+      "text": "おはようございます",
+      "cursor": 9,
+      "backward": 7,
+      "forward": 9
+    },
+    {
+      "text": "ソフトウェアエンジニア",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 6
+    },
+    {
+      "text": "ソフトウェアエンジニア",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "ソフトウェアエンジニア",
+      "cursor": 2,
+      "backward": 1,
+      "forward": 3
+    },
+    {
+      "text": "ソフトウェアエンジニア",
+      "cursor": 3,
+      "backward": 0,
+      "forward": 6
+    },
+    {
+      "text": "ソフトウェアエンジニア",
+      "cursor": 4,
+      "backward": 0,
+      "forward": 11
+    },
+    {
+      "text": "ソフトウェアエンジニア",
+      "cursor": 5,
+      "backward": 0,
+      "forward": 11
+    },
+    {
+      "text": "ソフトウェアエンジニア",
+      "cursor": 6,
+      "backward": 0,
+      "forward": 11
+    },
+    {
+      "text": "ソフトウェアエンジニア",
+      "cursor": 7,
+      "backward": 6,
+      "forward": 8
+    },
+    {
+      "text": "ソフトウェアエンジニア",
+      "cursor": 8,
+      "backward": 6,
+      "forward": 11
+    },
+    {
+      "text": "ソフトウェアエンジニア",
+      "cursor": 9,
+      "backward": 8,
+      "forward": 11
+    },
+    {
+      "text": "ソフトウェアエンジニア",
+      "cursor": 10,
+      "backward": 9,
+      "forward": 11
+    },
+    {
+      "text": "ソフトウェアエンジニア",
+      "cursor": 11,
+      "backward": 6,
+      "forward": 11
+    },
+    {
+      "text": "東京2026オリンピック",
+      "cursor": 0,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "東京2026オリンピック",
+      "cursor": 1,
+      "backward": 0,
+      "forward": 2
+    },
+    {
+      "text": "東京2026オリンピック",
+      "cursor": 2,
+      "backward": 0,
+      "forward": 6
+    },
+    {
+      "text": "東京2026オリンピック",
+      "cursor": 3,
+      "backward": 2,
+      "forward": 6
+    },
+    {
+      "text": "東京2026オリンピック",
+      "cursor": 4,
+      "backward": 2,
+      "forward": 6
+    },
+    {
+      "text": "東京2026オリンピック",
+      "cursor": 5,
+      "backward": 2,
+      "forward": 6
+    },
+    {
+      "text": "東京2026オリンピック",
+      "cursor": 6,
+      "backward": 2,
+      "forward": 12
+    },
+    {
+      "text": "東京2026オリンピック",
+      "cursor": 7,
+      "backward": 6,
+      "forward": 9
+    },
+    {
+      "text": "東京2026オリンピック",
+      "cursor": 8,
+      "backward": 6,
+      "forward": 9
+    },
+    {
+      "text": "東京2026オリンピック",
+      "cursor": 9,
+      "backward": 8,
+      "forward": 12
+    },
+    {
+      "text": "東京2026オリンピック",
+      "cursor": 10,
+      "backward": 6,
+      "forward": 11
+    },
+    {
+      "text": "東京2026オリンピック",
+      "cursor": 11,
+      "backward": 9,
+      "forward": 12
+    },
+    {
+      "text": "東京2026オリンピック",
+      "cursor": 12,
+      "backward": 6,
+      "forward": 12
+    }
+  ]
+}

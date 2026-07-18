@@ -199,7 +199,7 @@ type TransformContextFunc func(context.Context, AgentMessages) (AgentMessages, e
 type GetAPIKeyFunc func(context.Context, ai.ProviderID) (*string, error)
 type RequestAuth struct {
 	APIKey  *string
-	Headers map[string]string
+	Headers ai.ProviderHeaders
 	Env     ai.ProviderEnv
 	BaseURL *string
 }

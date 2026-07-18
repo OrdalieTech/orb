@@ -1,6 +1,89 @@
 {
   "cases": [
     {
+      "name": "anthropic-fireworks-session-cache-compat",
+      "api": "anthropic-messages",
+      "model": {
+        "id": "accounts/fireworks/models/minimax-m3",
+        "name": "MiniMax-M3",
+        "api": "anthropic-messages",
+        "provider": "fireworks",
+        "baseUrl": "https://api.fireworks.ai/inference",
+        "reasoning": true,
+        "input": [
+          "text"
+        ],
+        "cost": {
+          "input": 0.3,
+          "output": 1.2,
+          "cacheRead": 0.06,
+          "cacheWrite": 0
+        },
+        "contextWindow": 512000,
+        "maxTokens": 512000,
+        "compat": {
+          "sendSessionAffinityHeaders": true,
+          "supportsEagerToolInputStreaming": false,
+          "supportsCacheControlOnTools": false,
+          "supportsLongCacheRetention": false
+        }
+      },
+      "context": {
+        "systemPrompt": "Use Fireworks compatibility.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "echo once",
+            "timestamp": 1700000000123
+          }
+        ],
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo structured text",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "plain",
+                    "loud"
+                  ]
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-fireworks-key",
+        "cacheRetention": "long",
+        "sessionId": "fireworks-session"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.fireworks.ai/inference/v1/messages",
+        "headers": {
+          "accept": "application/json",
+          "anthropic-beta": "fine-grained-tool-streaming-2025-05-14,interleaved-thinking-2025-05-14",
+          "anthropic-dangerous-direct-browser-access": "true",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+          "x-api-key": "fixture-fireworks-key",
+          "x-session-affinity": "fireworks-session"
+        },
+        "body": "{\"model\":\"accounts/fireworks/models/minimax-m3\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"echo once\",\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"max_tokens\":512000,\"stream\":true,\"system\":[{\"type\":\"text\",\"text\":\"Use Fireworks compatibility.\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"tools\":[{\"name\":\"echo\",\"description\":\"Echo structured text\",\"input_schema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]}},\"required\":[\"text\"]}}]}"
+      }
+    },
+    {
       "name": "anthropic-text-default-cache",
       "api": "anthropic-messages",
       "model": {

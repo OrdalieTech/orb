@@ -1,0 +1,1787 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "history-navigation",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "addHistory",
+          "text": "first"
+        },
+        {
+          "do": "addHistory",
+          "text": "second"
+        },
+        {
+          "do": "addHistory",
+          "text": "third"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[A"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[A"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[A"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[A"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[B"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "cursor"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "text",
+          "value": "third"
+        },
+        {
+          "kind": "text",
+          "value": "second"
+        },
+        {
+          "kind": "text",
+          "value": "first"
+        },
+        {
+          "kind": "text",
+          "value": "first"
+        },
+        {
+          "kind": "text",
+          "value": "second"
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 6
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-draft-restore",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "addHistory",
+          "text": "prompt"
+        },
+        {
+          "do": "setText",
+          "text": "draft"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[D"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[D"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[A"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[A"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[B"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "cursor"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "text",
+          "value": "draft"
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 0
+          }
+        },
+        {
+          "kind": "text",
+          "value": "prompt"
+        },
+        {
+          "kind": "text",
+          "value": "draft"
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "backslash-enter",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "input",
+          "data": "a"
+        },
+        {
+          "do": "input",
+          "data": "\\"
+        },
+        {
+          "do": "input",
+          "data": "\r"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "b"
+        },
+        {
+          "do": "input",
+          "data": "\r"
+        },
+        {
+          "do": "text"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "text",
+          "value": "a\n"
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 1,
+            "col": 0
+          }
+        },
+        {
+          "kind": "submit",
+          "value": "a\nb"
+        },
+        {
+          "kind": "text",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "name": "unicode-editing",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "input",
+          "data": "ä"
+        },
+        {
+          "do": "input",
+          "data": "ö"
+        },
+        {
+          "do": "input",
+          "data": "ü"
+        },
+        {
+          "do": "input",
+          "data": ""
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[D"
+        },
+        {
+          "do": "input",
+          "data": "x"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "setText",
+          "text": ""
+        },
+        {
+          "do": "input",
+          "data": "😀"
+        },
+        {
+          "do": "input",
+          "data": "👍"
+        },
+        {
+          "do": "input",
+          "data": "🎉"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[D"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[D"
+        },
+        {
+          "do": "input",
+          "data": "y"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": ""
+        },
+        {
+          "do": "text"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "text",
+          "value": "äö"
+        },
+        {
+          "kind": "text",
+          "value": "äxö"
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 2
+          }
+        },
+        {
+          "kind": "text",
+          "value": "😀y👍🎉"
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 3
+          }
+        },
+        {
+          "kind": "text",
+          "value": "😀👍🎉"
+        }
+      ]
+    },
+    {
+      "name": "cjk-word-movement",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "setText",
+          "text": "你好，世界"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[1;5D"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[1;5D"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[1;5D"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[1;5C"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[1;5C"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[1;5C"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "setText",
+          "text": "hello你好，world世界"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[1;5D"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[1;5D"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[1;5D"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[1;5D"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[1;5D"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[1;5C"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[1;5C"
+        },
+        {
+          "do": "cursor"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 3
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 2
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 0
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 2
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 3
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 5
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 13
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 8
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 7
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 5
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 0
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 5
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 7
+          }
+        }
+      ]
+    },
+    {
+      "name": "kill-ring",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "setText",
+          "text": "foo bar baz"
+        },
+        {
+          "do": "input",
+          "data": "\u0017"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "input",
+          "data": "\u0001"
+        },
+        {
+          "do": "input",
+          "data": "\u0019"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "setText",
+          "text": "one two three"
+        },
+        {
+          "do": "input",
+          "data": "\u0017"
+        },
+        {
+          "do": "input",
+          "data": "\u0017"
+        },
+        {
+          "do": "input",
+          "data": "\u0017"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "input",
+          "data": "\u0019"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "setText",
+          "text": "first"
+        },
+        {
+          "do": "input",
+          "data": "\u0017"
+        },
+        {
+          "do": "setText",
+          "text": "second"
+        },
+        {
+          "do": "input",
+          "data": "\u0017"
+        },
+        {
+          "do": "setText",
+          "text": ""
+        },
+        {
+          "do": "input",
+          "data": "\u0019"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "input",
+          "data": "\u001by"
+        },
+        {
+          "do": "text"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "text",
+          "value": "foo bar "
+        },
+        {
+          "kind": "text",
+          "value": "bazfoo bar "
+        },
+        {
+          "kind": "text",
+          "value": ""
+        },
+        {
+          "kind": "text",
+          "value": "one two three"
+        },
+        {
+          "kind": "text",
+          "value": "second"
+        },
+        {
+          "kind": "text",
+          "value": "first"
+        }
+      ]
+    },
+    {
+      "name": "undo-coalescing",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "input",
+          "data": "h"
+        },
+        {
+          "do": "input",
+          "data": "e"
+        },
+        {
+          "do": "input",
+          "data": "l"
+        },
+        {
+          "do": "input",
+          "data": "l"
+        },
+        {
+          "do": "input",
+          "data": "o"
+        },
+        {
+          "do": "input",
+          "data": " "
+        },
+        {
+          "do": "input",
+          "data": "w"
+        },
+        {
+          "do": "input",
+          "data": "o"
+        },
+        {
+          "do": "input",
+          "data": "r"
+        },
+        {
+          "do": "input",
+          "data": "l"
+        },
+        {
+          "do": "input",
+          "data": "d"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "input",
+          "data": "\u001f"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "input",
+          "data": "\u001f"
+        },
+        {
+          "do": "text"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "text",
+          "value": "hello world"
+        },
+        {
+          "kind": "text",
+          "value": "hello"
+        },
+        {
+          "kind": "text",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "name": "paste-collapse-lines",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "input",
+          "data": "\u001b[200~line\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\u001b[201~"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "expanded"
+        },
+        {
+          "do": "input",
+          "data": ""
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "input",
+          "data": "\u001f"
+        },
+        {
+          "do": "text"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "text",
+          "value": "[paste #1 +20 lines]"
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 20
+          }
+        },
+        {
+          "kind": "expanded",
+          "value": "line\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline"
+        },
+        {
+          "kind": "text",
+          "value": ""
+        },
+        {
+          "kind": "text",
+          "value": "[paste #1 +20 lines]"
+        }
+      ]
+    },
+    {
+      "name": "paste-collapse-chars",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "input",
+          "data": "\u001b[200~xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\u001b[201~"
+        },
+        {
+          "do": "text"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "text",
+          "value": "[paste #1 1001 chars]"
+        }
+      ]
+    },
+    {
+      "name": "paste-marker-navigation",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "input",
+          "data": "A"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[200~line\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\u001b[201~"
+        },
+        {
+          "do": "input",
+          "data": "B"
+        },
+        {
+          "do": "input",
+          "data": "\u0001"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[D"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[D"
+        },
+        {
+          "do": "cursor"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 0
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 1
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 21
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 22
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 21
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "sticky-column",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "setText",
+          "text": "2222222222x222\n\n1111111111_111111111111"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u0001"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[A"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[A"
+        },
+        {
+          "do": "cursor"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 2,
+            "col": 23
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 2,
+            "col": 10
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 1,
+            "col": 0
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 10
+          }
+        }
+      ]
+    },
+    {
+      "name": "vertical-astral-snap",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "setText",
+          "text": "😀x\nab"
+        },
+        {
+          "do": "input",
+          "data": "\u0001"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[A"
+        },
+        {
+          "do": "cursor"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "jump-to-char",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "setText",
+          "text": "hello world"
+        },
+        {
+          "do": "input",
+          "data": "\u0001"
+        },
+        {
+          "do": "input",
+          "data": "\u001d"
+        },
+        {
+          "do": "input",
+          "data": "o"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u001d"
+        },
+        {
+          "do": "input",
+          "data": "o"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "input",
+          "data": "\u0005"
+        },
+        {
+          "do": "input",
+          "data": "\u001b\u001d"
+        },
+        {
+          "do": "input",
+          "data": "l"
+        },
+        {
+          "do": "cursor"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 4
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 7
+          }
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 9
+          }
+        }
+      ]
+    },
+    {
+      "name": "render-empty-focused",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "focus"
+        },
+        {
+          "do": "render",
+          "width": 12
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m",
+            "\u001b_pi:c\u0007\u001b[7m \u001b[0m           ",
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "render-basic-text",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "setText",
+          "text": "hello"
+        },
+        {
+          "do": "focus"
+        },
+        {
+          "do": "render",
+          "width": 12
+        },
+        {
+          "do": "input",
+          "data": "\u001b[D"
+        },
+        {
+          "do": "render",
+          "width": 12
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m",
+            "hello\u001b_pi:c\u0007\u001b[7m \u001b[0m      ",
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m"
+          ]
+        },
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m",
+            "hell\u001b_pi:c\u0007\u001b[7mo\u001b[0m       ",
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "render-wrap-cjk",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "setText",
+          "text": "こんにちは世界こんにちは世界"
+        },
+        {
+          "do": "render",
+          "width": 12
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m",
+            "こんにちは  ",
+            "世界こんに  ",
+            "ちは世界\u001b[7m \u001b[0m   ",
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "render-wrap-emoji",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "setText",
+          "text": "emoji 😀😀😀 wrap boundary test"
+        },
+        {
+          "do": "render",
+          "width": 12
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m",
+            "emoji       ",
+            "😀😀😀      ",
+            "wrap        ",
+            "boundary    ",
+            "test\u001b[7m \u001b[0m       ",
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "render-padding",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "setText",
+          "text": "padded"
+        },
+        {
+          "do": "setPaddingX",
+          "value": 2
+        },
+        {
+          "do": "focus"
+        },
+        {
+          "do": "render",
+          "width": 16
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m",
+            "  padded\u001b_pi:c\u0007\u001b[7m \u001b[0m       ",
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "render-scroll-indicators",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "setText",
+          "text": "line\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline\nline"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[A"
+        },
+        {
+          "do": "render",
+          "width": 20
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[2m─── ↑ 22 more ──────\u001b[22m",
+            "line                ",
+            "line                ",
+            "line                ",
+            "line                ",
+            "line                ",
+            "line                ",
+            "line\u001b[7m \u001b[0m               ",
+            "\u001b[2m─── ↓ 1 more ───────\u001b[22m"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "render-word-wrap",
+      "rows": 24,
+      "provider": null,
+      "ops": [
+        {
+          "do": "setText",
+          "text": "Hello world this is a test of word wrapping functionality"
+        },
+        {
+          "do": "render",
+          "width": 24
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m",
+            "Hello world this is a   ",
+            "test of word wrapping   ",
+            "functionality\u001b[7m \u001b[0m          ",
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "slash-autocomplete",
+      "rows": 24,
+      "provider": {
+        "commands": [
+          {
+            "name": "help",
+            "description": "Show help"
+          },
+          {
+            "name": "hotkeys",
+            "description": "Show hotkeys",
+            "argumentHint": "<name>"
+          },
+          {
+            "name": "clear",
+            "description": "Clear the session"
+          }
+        ]
+      },
+      "ops": [
+        {
+          "do": "input",
+          "data": "/"
+        },
+        {
+          "do": "showing"
+        },
+        {
+          "do": "render",
+          "width": 60
+        },
+        {
+          "do": "input",
+          "data": "h"
+        },
+        {
+          "do": "showing"
+        },
+        {
+          "do": "render",
+          "width": 60
+        },
+        {
+          "do": "input",
+          "data": "\u001b[B"
+        },
+        {
+          "do": "render",
+          "width": 60
+        },
+        {
+          "do": "input",
+          "data": "\t"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "cursor"
+        },
+        {
+          "do": "showing"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "showing",
+          "value": true
+        },
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m",
+            "/\u001b[7m \u001b[0m                                                          ",
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m",
+            "\u001b[1m→ help        Show help\u001b[22m                                     ",
+            "  hotkeys\u001b[2m     <name> — Show hotkeys\u001b[22m                         ",
+            "  clear\u001b[2m       Clear the session\u001b[22m                             "
+          ]
+        },
+        {
+          "kind": "showing",
+          "value": true
+        },
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m",
+            "/h\u001b[7m \u001b[0m                                                         ",
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m",
+            "\u001b[1m→ help        Show help\u001b[22m                                     ",
+            "  hotkeys\u001b[2m     <name> — Show hotkeys\u001b[22m                         "
+          ]
+        },
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m",
+            "/h\u001b[7m \u001b[0m                                                         ",
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m",
+            "  help\u001b[2m        Show help\u001b[22m                                     ",
+            "\u001b[1m→ hotkeys     <name> — Show hotkeys\u001b[22m                         "
+          ]
+        },
+        {
+          "kind": "text",
+          "value": "/hotkeys "
+        },
+        {
+          "kind": "cursor",
+          "value": {
+            "line": 0,
+            "col": 9
+          }
+        },
+        {
+          "kind": "showing",
+          "value": false
+        }
+      ]
+    },
+    {
+      "name": "slash-confirm-submits",
+      "rows": 24,
+      "provider": {
+        "commands": [
+          {
+            "name": "help",
+            "description": "Show help"
+          }
+        ]
+      },
+      "ops": [
+        {
+          "do": "input",
+          "data": "/"
+        },
+        {
+          "do": "input",
+          "data": "h"
+        },
+        {
+          "do": "showing"
+        },
+        {
+          "do": "input",
+          "data": "\r"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "showing"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "showing",
+          "value": true
+        },
+        {
+          "kind": "submit",
+          "value": "/help"
+        },
+        {
+          "kind": "text",
+          "value": ""
+        },
+        {
+          "kind": "showing",
+          "value": false
+        }
+      ]
+    },
+    {
+      "name": "slash-argument-completion",
+      "rows": 24,
+      "provider": {
+        "commands": [
+          {
+            "name": "model",
+            "description": "Pick model",
+            "argumentCompletions": [
+              {
+                "value": "gpt-4o",
+                "label": "gpt-4o"
+              },
+              {
+                "value": "gpt-4o-mini",
+                "label": "gpt-4o-mini"
+              },
+              {
+                "value": "o1",
+                "label": "o1"
+              }
+            ]
+          }
+        ]
+      },
+      "ops": [
+        {
+          "do": "input",
+          "data": "/"
+        },
+        {
+          "do": "input",
+          "data": "m"
+        },
+        {
+          "do": "input",
+          "data": "\t"
+        },
+        {
+          "do": "showing"
+        },
+        {
+          "do": "input",
+          "data": "\t"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "showing"
+        },
+        {
+          "do": "input",
+          "data": "g"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "showing"
+        },
+        {
+          "do": "render",
+          "width": 60
+        },
+        {
+          "do": "input",
+          "data": "\t"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "showing"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "showing",
+          "value": false
+        },
+        {
+          "kind": "text",
+          "value": "/model "
+        },
+        {
+          "kind": "showing",
+          "value": false
+        },
+        {
+          "kind": "text",
+          "value": "/model g"
+        },
+        {
+          "kind": "showing",
+          "value": true
+        },
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m",
+            "/model g\u001b[7m \u001b[0m                                                   ",
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m",
+            "\u001b[1m→ gpt-4o\u001b[22m                                                    ",
+            "  gpt-4o-mini                                               ",
+            "  o1                                                        "
+          ]
+        },
+        {
+          "kind": "text",
+          "value": "/model gpt-4o"
+        },
+        {
+          "kind": "showing",
+          "value": false
+        }
+      ]
+    },
+    {
+      "name": "force-file-completion",
+      "rows": 24,
+      "provider": {
+        "files": {
+          "dirs": [
+            "src"
+          ],
+          "files": [
+            "update.sh",
+            "utils.ts",
+            "src/index.ts"
+          ]
+        }
+      },
+      "ops": [
+        {
+          "do": "input",
+          "data": "."
+        },
+        {
+          "do": "input",
+          "data": "/"
+        },
+        {
+          "do": "input",
+          "data": "u"
+        },
+        {
+          "do": "input",
+          "data": "p"
+        },
+        {
+          "do": "input",
+          "data": "\t"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "showing"
+        },
+        {
+          "do": "setText",
+          "text": ""
+        },
+        {
+          "do": "input",
+          "data": "u"
+        },
+        {
+          "do": "input",
+          "data": "t"
+        },
+        {
+          "do": "input",
+          "data": "\t"
+        },
+        {
+          "do": "text"
+        },
+        {
+          "do": "showing"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "text",
+          "value": "./update.sh"
+        },
+        {
+          "kind": "showing",
+          "value": false
+        },
+        {
+          "kind": "text",
+          "value": "utils.ts"
+        },
+        {
+          "kind": "showing",
+          "value": false
+        }
+      ]
+    },
+    {
+      "name": "force-file-menu",
+      "rows": 24,
+      "provider": {
+        "files": {
+          "dirs": [
+            "src",
+            "dist"
+          ],
+          "files": [
+            "readme.md",
+            "src/a.ts",
+            "dist/b.js"
+          ]
+        }
+      },
+      "ops": [
+        {
+          "do": "input",
+          "data": "\t"
+        },
+        {
+          "do": "showing"
+        },
+        {
+          "do": "render",
+          "width": 60
+        },
+        {
+          "do": "input",
+          "data": "\u001b"
+        },
+        {
+          "do": "showing"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "showing",
+          "value": true
+        },
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m",
+            "\u001b[7m \u001b[0m                                                           ",
+            "\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m\u001b[2m─\u001b[22m",
+            "\u001b[1m→ dist/\u001b[22m                                                     ",
+            "  src/                                                      ",
+            "  readme.md                                                 "
+          ]
+        },
+        {
+          "kind": "showing",
+          "value": false
+        }
+      ]
+    }
+  ]
+}

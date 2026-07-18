@@ -7,12 +7,15 @@ import (
 )
 
 var anthropicProvider = Provider{
-	ID:      "anthropic",
-	Name:    "Anthropic",
-	API:     ai.APIAnthropicMessages,
-	BaseURL: "https://api.anthropic.com",
-	Auth:    AuthAPIKey,
-	Env:     []string{"ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"},
+	ID:        "anthropic",
+	Name:      "Anthropic",
+	API:       ai.APIAnthropicMessages,
+	APIs:      []ai.API{ai.APIAnthropicMessages},
+	BaseURL:   "https://api.anthropic.com",
+	Auth:      AuthAPIKey,
+	OAuth:     true,
+	Env:       []string{"ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"},
+	APIKeyEnv: []string{"ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"},
 	Methods: auth.ProviderAuth{
 		APIKey: auth.EnvAPIKeyAuth{
 			DisplayName: "Anthropic API key",

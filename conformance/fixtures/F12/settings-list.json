@@ -1,0 +1,284 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "cycle-values",
+      "items": [
+        {
+          "id": "theme",
+          "label": "Theme",
+          "currentValue": "dark",
+          "values": [
+            "dark",
+            "light"
+          ],
+          "description": "Color theme"
+        },
+        {
+          "id": "sound",
+          "label": "Sound",
+          "currentValue": "on",
+          "values": [
+            "on",
+            "off"
+          ]
+        }
+      ],
+      "maxVisible": 5,
+      "enableSearch": false,
+      "ops": [
+        {
+          "do": "render",
+          "width": 60
+        },
+        {
+          "do": "input",
+          "data": "\r"
+        },
+        {
+          "do": "render",
+          "width": 60
+        },
+        {
+          "do": "input",
+          "data": " "
+        },
+        {
+          "do": "render",
+          "width": 60
+        },
+        {
+          "do": "input",
+          "data": "\u001b[B"
+        },
+        {
+          "do": "render",
+          "width": 60
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "→ \u001b[1mTheme\u001b[22m  \u001b[1mdark\u001b[22m",
+            "  Sound  \u001b[2mon\u001b[22m",
+            "",
+            "\u001b[2m  Color theme\u001b[22m",
+            "",
+            "\u001b[2m  Enter/Space to change · Esc to cancel\u001b[22m"
+          ]
+        },
+        {
+          "kind": "change",
+          "value": "theme=light"
+        },
+        {
+          "kind": "render",
+          "value": [
+            "→ \u001b[1mTheme\u001b[22m  \u001b[1mlight\u001b[22m",
+            "  Sound  \u001b[2mon\u001b[22m",
+            "",
+            "\u001b[2m  Color theme\u001b[22m",
+            "",
+            "\u001b[2m  Enter/Space to change · Esc to cancel\u001b[22m"
+          ]
+        },
+        {
+          "kind": "change",
+          "value": "theme=dark"
+        },
+        {
+          "kind": "render",
+          "value": [
+            "→ \u001b[1mTheme\u001b[22m  \u001b[1mdark\u001b[22m",
+            "  Sound  \u001b[2mon\u001b[22m",
+            "",
+            "\u001b[2m  Color theme\u001b[22m",
+            "",
+            "\u001b[2m  Enter/Space to change · Esc to cancel\u001b[22m"
+          ]
+        },
+        {
+          "kind": "render",
+          "value": [
+            "  Theme  \u001b[2mdark\u001b[22m",
+            "→ \u001b[1mSound\u001b[22m  \u001b[1mon\u001b[22m",
+            "",
+            "\u001b[2m  Enter/Space to change · Esc to cancel\u001b[22m"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "scroll-and-description",
+      "items": [
+        {
+          "id": "a",
+          "label": "Alpha",
+          "currentValue": "1",
+          "description": "A longer description that wraps when the settings list is rendered narrow"
+        },
+        {
+          "id": "b",
+          "label": "Beta",
+          "currentValue": "2"
+        },
+        {
+          "id": "c",
+          "label": "Gamma",
+          "currentValue": "3"
+        }
+      ],
+      "maxVisible": 2,
+      "enableSearch": false,
+      "ops": [
+        {
+          "do": "render",
+          "width": 48
+        },
+        {
+          "do": "input",
+          "data": "\u001b[B"
+        },
+        {
+          "do": "render",
+          "width": 48
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "→ \u001b[1mAlpha\u001b[22m  \u001b[1m1\u001b[22m",
+            "  Beta   \u001b[2m2\u001b[22m",
+            "\u001b[2m  (1/3)\u001b[22m",
+            "",
+            "\u001b[2m  A longer description that wraps when the\u001b[22m",
+            "\u001b[2m  settings list is rendered narrow\u001b[22m",
+            "",
+            "\u001b[2m  Enter/Space to change · Esc to cancel\u001b[22m"
+          ]
+        },
+        {
+          "kind": "render",
+          "value": [
+            "  Alpha  \u001b[2m1\u001b[22m",
+            "→ \u001b[1mBeta \u001b[22m  \u001b[1m2\u001b[22m",
+            "\u001b[2m  (2/3)\u001b[22m",
+            "",
+            "\u001b[2m  Enter/Space to change · Esc to cancel\u001b[22m"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "search",
+      "items": [
+        {
+          "id": "theme",
+          "label": "Theme",
+          "currentValue": "dark"
+        },
+        {
+          "id": "model",
+          "label": "Model",
+          "currentValue": "gpt"
+        }
+      ],
+      "maxVisible": 5,
+      "enableSearch": true,
+      "ops": [
+        {
+          "do": "render",
+          "width": 60
+        },
+        {
+          "do": "input",
+          "data": "m"
+        },
+        {
+          "do": "input",
+          "data": "o"
+        },
+        {
+          "do": "render",
+          "width": 60
+        },
+        {
+          "do": "input",
+          "data": "z"
+        },
+        {
+          "do": "render",
+          "width": 60
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "> \u001b[7m \u001b[27m                                                         ",
+            "",
+            "→ \u001b[1mTheme\u001b[22m  \u001b[1mdark\u001b[22m",
+            "  Model  \u001b[2mgpt\u001b[22m",
+            "",
+            "\u001b[2m  Type to search · Enter/Space to change · Esc to cancel\u001b[22m"
+          ]
+        },
+        {
+          "kind": "render",
+          "value": [
+            "> mo\u001b[7m \u001b[27m                                                       ",
+            "",
+            "→ \u001b[1mModel\u001b[22m  \u001b[1mgpt\u001b[22m",
+            "",
+            "\u001b[2m  Type to search · Enter/Space to change · Esc to cancel\u001b[22m"
+          ]
+        },
+        {
+          "kind": "render",
+          "value": [
+            "> moz\u001b[7m \u001b[27m                                                      ",
+            "",
+            "\u001b[2m  No matching settings\u001b[22m",
+            "",
+            "\u001b[2m  Type to search · Enter/Space to change · Esc to cancel\u001b[22m"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "update-value",
+      "items": [
+        {
+          "id": "x",
+          "label": "X",
+          "currentValue": "old"
+        }
+      ],
+      "maxVisible": 5,
+      "enableSearch": false,
+      "ops": [
+        {
+          "do": "updateValue",
+          "id": "x",
+          "value": "new"
+        },
+        {
+          "do": "render",
+          "width": 40
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "→ \u001b[1mX\u001b[22m  \u001b[1mnew\u001b[22m",
+            "",
+            "\u001b[2m  Enter/Space to change · Esc to cancel\u001b[22m"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -25,6 +25,9 @@ func Exec(ctx context.Context, command string, args []string, options *ExecOptio
 	}
 	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Dir = options.CWD
+	if len(options.Env) > 0 {
+		cmd.Env = options.Env
+	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout

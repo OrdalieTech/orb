@@ -9,11 +9,12 @@ import (
 
 	"github.com/OrdalieTech/pi-go/codingagent"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
+	"github.com/OrdalieTech/pi-go/codingagent/modes"
 )
 
 // Port of packages/coding-agent/src/package-manager-cli.ts (pi
 // install/remove/update/list/config). Self-update is deferred to WP-661 (gate
-// G4) and the config selector to the TUI wave (WP-450).
+// G4).
 
 type updateTarget struct {
 	kind   string // "all" | "self" | "extensions" | "models"
@@ -335,7 +336,7 @@ func createCommandSettingsManager(ctx context.Context, cwd, agentDir string, pro
 	return settings, nil
 }
 
-func handleConfigCommand(ctx context.Context, argv []string, streams cliStreams) (bool, int) {
+func handleConfigCommand(ctx context.Context, argv []string, streams cliStreams, dependencies cliDependencies) (bool, int) {
 	if len(argv) == 0 || argv[0] != "config" {
 		return false, 0
 	}
@@ -380,9 +381,43 @@ func handleConfigCommand(ctx context.Context, argv []string, streams cliStreams)
 		return true, 1
 	}
 	reportPackageSettingsErrors(streams.Stderr, settings, "config command")
-	// TODO(WP-450): the interactive config selector requires the TUI wave.
-	_, _ = fmt.Fprintln(streams.Stderr, "Error: pi config requires the interactive TUI, which is not available yet (WP-450)")
-	return true, 1
+	if !streams.StdinTTY || !streams.StdoutTTY {
+		_, _ = fmt.Fprintln(streams.Stderr, "Error: pi config requires an interactive terminal (stdin and stdout must be TTYs).")
+		return true, 1
+	}
+
+	globalSettings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir), config.WithProjectTrusted(false))
+	if err != nil {
+		return true, reportCLIError(streams.Stderr, err)
+	}
+	globalResolved, err := codingagent.NewPackageManager(codingagent.PackageManagerOptions{
+		CWD: cwd, AgentDir: agentDir, Settings: globalSettings,
+	}).Resolve(nil)
+	if err != nil {
+		return true, reportCLIError(streams.Stderr, err)
+	}
+	projectResolved := globalResolved
+	if settings.IsProjectTrusted() {
+		projectResolved, err = codingagent.NewPackageManager(codingagent.PackageManagerOptions{
+			CWD: cwd, AgentDir: agentDir, Settings: settings,
+		}).Resolve(nil)
+		if err != nil {
+			return true, reportCLIError(streams.Stderr, err)
+		}
+	}
+	writeScope := modes.ConfigWriteGlobal
+	if local {
+		writeScope = modes.ConfigWriteProject
+	}
+	if err := dependencies.runConfig(ctx, modes.ConfigSelectorOptions{
+		ResolvedPaths:   modes.ScopedResolvedPaths{Global: globalResolved, Project: projectResolved},
+		SettingsManager: settings,
+		CWD:             cwd, AgentDir: agentDir,
+		WriteScope: writeScope, ProjectModeAvailable: settings.IsProjectTrusted(),
+	}); err != nil {
+		return true, reportCLIError(streams.Stderr, err)
+	}
+	return true, 0
 }
 
 func packageCommandDirs() (cwd, agentDir string, err error) {

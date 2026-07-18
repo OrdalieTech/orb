@@ -1,0 +1,508 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "typing-and-kill-ring",
+      "ops": [
+        {
+          "do": "setValue",
+          "text": "foo bar baz"
+        },
+        {
+          "do": "input",
+          "data": "\u0005"
+        },
+        {
+          "do": "input",
+          "data": "\u0017"
+        },
+        {
+          "do": "value"
+        },
+        {
+          "do": "input",
+          "data": "\u0001"
+        },
+        {
+          "do": "input",
+          "data": "\u0019"
+        },
+        {
+          "do": "value"
+        },
+        {
+          "do": "cursor"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "value",
+          "value": "foo bar "
+        },
+        {
+          "kind": "value",
+          "value": "bazfoo bar "
+        },
+        {
+          "kind": "cursor",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "name": "punctuation-boundary",
+      "ops": [
+        {
+          "do": "setValue",
+          "text": "foo.bar"
+        },
+        {
+          "do": "input",
+          "data": "\u0005"
+        },
+        {
+          "do": "input",
+          "data": "\u0017"
+        },
+        {
+          "do": "value"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "value",
+          "value": "foo."
+        }
+      ]
+    },
+    {
+      "name": "undo-coalescing",
+      "ops": [
+        {
+          "do": "input",
+          "data": "h"
+        },
+        {
+          "do": "input",
+          "data": "i"
+        },
+        {
+          "do": "input",
+          "data": " "
+        },
+        {
+          "do": "input",
+          "data": "y"
+        },
+        {
+          "do": "input",
+          "data": "o"
+        },
+        {
+          "do": "value"
+        },
+        {
+          "do": "input",
+          "data": "\u001f"
+        },
+        {
+          "do": "value"
+        },
+        {
+          "do": "input",
+          "data": "\u001f"
+        },
+        {
+          "do": "value"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "value",
+          "value": "hi yo"
+        },
+        {
+          "kind": "value",
+          "value": "hi"
+        },
+        {
+          "kind": "value",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "name": "paste-strips-newlines",
+      "ops": [
+        {
+          "do": "input",
+          "data": "\u001b[200~line1\nline2\r\nline3\ttab\u001b[201~"
+        },
+        {
+          "do": "value"
+        },
+        {
+          "do": "cursor"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "value",
+          "value": "line1line2line3    tab"
+        },
+        {
+          "kind": "cursor",
+          "value": 22
+        }
+      ]
+    },
+    {
+      "name": "render-plain",
+      "ops": [
+        {
+          "do": "setValue",
+          "text": "hello"
+        },
+        {
+          "do": "focus"
+        },
+        {
+          "do": "input",
+          "data": "\u0005"
+        },
+        {
+          "do": "render",
+          "width": 20
+        },
+        {
+          "do": "input",
+          "data": "\u001b[D"
+        },
+        {
+          "do": "render",
+          "width": 20
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "> hello\u001b_pi:c\u0007\u001b[7m \u001b[27m            "
+          ]
+        },
+        {
+          "kind": "render",
+          "value": [
+            "> hell\u001b_pi:c\u0007\u001b[7mo\u001b[27m             "
+          ]
+        }
+      ]
+    },
+    {
+      "name": "render-scrolled-cjk",
+      "ops": [
+        {
+          "do": "setValue",
+          "text": "가나다라마바사아자차카타파하"
+        },
+        {
+          "do": "focus"
+        },
+        {
+          "do": "input",
+          "data": "\u0001"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "render",
+          "width": 20
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "> 나다라마\u001b_pi:c\u0007\u001b[7m바\u001b[27m사아자  "
+          ]
+        }
+      ]
+    },
+    {
+      "name": "render-scrolled-japanese",
+      "ops": [
+        {
+          "do": "setValue",
+          "text": "こんにちは世界こんにちは世界"
+        },
+        {
+          "do": "focus"
+        },
+        {
+          "do": "input",
+          "data": "\u0001"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "render",
+          "width": 20
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "> んにちは\u001b_pi:c\u0007\u001b[7m世\u001b[27m界こん  "
+          ]
+        }
+      ]
+    },
+    {
+      "name": "render-scrolled-chinese",
+      "ops": [
+        {
+          "do": "setValue",
+          "text": "你好世界你好世界你好世界"
+        },
+        {
+          "do": "focus"
+        },
+        {
+          "do": "input",
+          "data": "\u0001"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[C"
+        },
+        {
+          "do": "render",
+          "width": 20
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "> 好世界你\u001b_pi:c\u0007\u001b[7m好\u001b[27m世界你  "
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unicode-word-delete-backward",
+      "ops": [
+        {
+          "do": "setValue",
+          "text": "你好世界。你好，世界"
+        },
+        {
+          "do": "input",
+          "data": "\u0005"
+        },
+        {
+          "do": "input",
+          "data": "\u0017"
+        },
+        {
+          "do": "value"
+        },
+        {
+          "do": "input",
+          "data": "\u0017"
+        },
+        {
+          "do": "value"
+        },
+        {
+          "do": "input",
+          "data": "\u0017"
+        },
+        {
+          "do": "value"
+        },
+        {
+          "do": "input",
+          "data": "\u0017"
+        },
+        {
+          "do": "value"
+        },
+        {
+          "do": "input",
+          "data": "\u0017"
+        },
+        {
+          "do": "value"
+        },
+        {
+          "do": "input",
+          "data": "\u0017"
+        },
+        {
+          "do": "value"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "value",
+          "value": "你好世界。你好，"
+        },
+        {
+          "kind": "value",
+          "value": "你好世界。你好"
+        },
+        {
+          "kind": "value",
+          "value": "你好世界。"
+        },
+        {
+          "kind": "value",
+          "value": "你好世界"
+        },
+        {
+          "kind": "value",
+          "value": "你好"
+        },
+        {
+          "kind": "value",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "name": "unicode-word-delete-forward",
+      "ops": [
+        {
+          "do": "setValue",
+          "text": "你好世界。你好，世界"
+        },
+        {
+          "do": "input",
+          "data": "\u0001"
+        },
+        {
+          "do": "input",
+          "data": "\u001bd"
+        },
+        {
+          "do": "value"
+        },
+        {
+          "do": "input",
+          "data": "\u001bd"
+        },
+        {
+          "do": "value"
+        },
+        {
+          "do": "input",
+          "data": "\u001bd"
+        },
+        {
+          "do": "value"
+        },
+        {
+          "do": "input",
+          "data": "\u001bd"
+        },
+        {
+          "do": "value"
+        },
+        {
+          "do": "input",
+          "data": "\u001bd"
+        },
+        {
+          "do": "value"
+        },
+        {
+          "do": "input",
+          "data": "\u001bd"
+        },
+        {
+          "do": "value"
+        }
+      ],
+      "observations": [
+        {
+          "kind": "value",
+          "value": "世界。你好，世界"
+        },
+        {
+          "kind": "value",
+          "value": "。你好，世界"
+        },
+        {
+          "kind": "value",
+          "value": "你好，世界"
+        },
+        {
+          "kind": "value",
+          "value": "，世界"
+        },
+        {
+          "kind": "value",
+          "value": "世界"
+        },
+        {
+          "kind": "value",
+          "value": ""
+        }
+      ]
+    }
+  ]
+}

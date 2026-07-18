@@ -163,7 +163,39 @@ const oauthModel = anthropicModel({
   thinkingLevelMap: { off: "none", high: "high", xhigh: "xhigh" },
 });
 
+export const fireworksCompatModel = anthropicModel({
+  id: "accounts/fireworks/models/minimax-m3",
+  name: "MiniMax-M3",
+  provider: "fireworks",
+  baseUrl: "https://api.fireworks.ai/inference",
+  input: ["text"],
+  cost: { input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0 },
+  contextWindow: 512_000,
+  maxTokens: 512_000,
+  compat: {
+    sendSessionAffinityHeaders: true,
+    supportsEagerToolInputStreaming: false,
+    supportsCacheControlOnTools: false,
+    supportsLongCacheRetention: false,
+  },
+});
+
 const requestDefinitions: AnthropicDefinition[] = [
+  {
+    name: "anthropic-fireworks-session-cache-compat",
+    api: "anthropic-messages",
+    model: fireworksCompatModel,
+    context: {
+      systemPrompt: "Use Fireworks compatibility.",
+      messages: [{ role: "user", content: "echo once", timestamp: FIXED_NOW }],
+      tools: [echoTool],
+    },
+    options: {
+      apiKey: "fixture-fireworks-key",
+      cacheRetention: "long",
+      sessionId: "fireworks-session",
+    },
+  },
   {
     name: "anthropic-text-default-cache",
     api: "anthropic-messages",

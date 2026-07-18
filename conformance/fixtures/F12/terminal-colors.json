@@ -1,0 +1,253 @@
+{
+  "schemaVersion": 1,
+  "parserCases": [
+    {
+      "name": "rgb-16-bit",
+      "input": "\u001b]11;rgb:0000/8000/ffff\u0007",
+      "isResponse": true,
+      "expected": {
+        "r": 0,
+        "g": 128,
+        "b": 255
+      }
+    },
+    {
+      "name": "rgba-single-digit",
+      "input": "\u001b]11;rgba:f/8/0/f\u0007",
+      "isResponse": true,
+      "expected": {
+        "r": 255,
+        "g": 136,
+        "b": 0
+      }
+    },
+    {
+      "name": "hex-6-bel",
+      "input": "\u001b]11;#ffffff\u0007",
+      "isResponse": true,
+      "expected": {
+        "r": 255,
+        "g": 255,
+        "b": 255
+      }
+    },
+    {
+      "name": "hex-6-black",
+      "input": "\u001b]11;#000000\u0007",
+      "isResponse": true,
+      "expected": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+      }
+    },
+    {
+      "name": "hex-6-st",
+      "input": "\u001b]11;#0080ff\u001b\\",
+      "isResponse": true,
+      "expected": {
+        "r": 0,
+        "g": 128,
+        "b": 255
+      }
+    },
+    {
+      "name": "hex-12",
+      "input": "\u001b]11;#00008000ffff\u0007",
+      "isResponse": true,
+      "expected": {
+        "r": 0,
+        "g": 128,
+        "b": 255
+      }
+    },
+    {
+      "name": "strict-unparseable",
+      "input": "\u001b]11;not-a-color\u0007",
+      "isResponse": true,
+      "expected": null
+    },
+    {
+      "name": "leading-data",
+      "input": "x\u001b]11;#ffffff\u0007",
+      "isResponse": false,
+      "expected": null
+    },
+    {
+      "name": "wrong-osc",
+      "input": "\u001b]10;#ffffff\u0007",
+      "isResponse": false,
+      "expected": null
+    },
+    {
+      "name": "trailing-data",
+      "input": "\u001b]11;#ffffff\u0007x",
+      "isResponse": false,
+      "expected": null
+    }
+  ],
+  "schemeParserCases": [
+    {
+      "input": "\u001b[?997;1n",
+      "expected": "dark"
+    },
+    {
+      "input": "\u001b[?997;2n",
+      "expected": "light"
+    },
+    {
+      "input": "\u001b[?997;3n",
+      "expected": null
+    },
+    {
+      "input": "\u001b[?996n",
+      "expected": null
+    },
+    {
+      "input": "x\u001b[?997;1n",
+      "expected": null
+    }
+  ],
+  "backgroundCases": [
+    {
+      "name": "writes OSC 11 query and resolves with the parsed RGB reply",
+      "scenario": "valid",
+      "writes": [
+        "\u001b]11;?\u0007"
+      ],
+      "result": {
+        "r": 255,
+        "g": 255,
+        "b": 255
+      },
+      "listenerInputs": [],
+      "focusedInputs": []
+    },
+    {
+      "name": "consumes OSC 11 replies before input listeners and focused component dispatch",
+      "scenario": "consumed",
+      "writes": [
+        "\u001b]11;?\u0007"
+      ],
+      "result": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+      },
+      "listenerInputs": [],
+      "focusedInputs": []
+    },
+    {
+      "name": "consumes unparseable strict OSC 11 replies and resolves undefined",
+      "scenario": "invalid",
+      "writes": [
+        "\u001b]11;?\u0007"
+      ],
+      "result": null,
+      "listenerInputs": [],
+      "focusedInputs": []
+    },
+    {
+      "name": "dispatches non-matching input normally while waiting for an OSC 11 reply",
+      "scenario": "nonMatching",
+      "writes": [
+        "\u001b]11;?\u0007"
+      ],
+      "result": {
+        "r": 255,
+        "g": 255,
+        "b": 255
+      },
+      "settledAfterNonMatchingInput": false,
+      "listenerInputs": [
+        "x"
+      ],
+      "focusedInputs": [
+        "x"
+      ]
+    },
+    {
+      "name": "keeps consuming a late OSC 11 reply after timeout",
+      "scenario": "late",
+      "writes": [
+        "\u001b]11;?\u0007"
+      ],
+      "result": null,
+      "listenerInputs": [],
+      "focusedInputs": []
+    }
+  ],
+  "backgroundLateQueue": {
+    "writes": [
+      "\u001b]11;?\u0007",
+      "\u001b]11;?\u0007"
+    ],
+    "firstResult": null,
+    "settledAfterFirstLateReply": false,
+    "secondResult": {
+      "r": 255,
+      "g": 0,
+      "b": 128
+    },
+    "listenerInputs": [
+      "x"
+    ],
+    "focusedInputs": [
+      "x"
+    ]
+  },
+  "schemeProtocols": {
+    "query": {
+      "writes": [
+        "\u001b[?996n"
+      ],
+      "result": "light",
+      "events": [
+        "light"
+      ]
+    },
+    "timeoutLate": {
+      "writes": [
+        "\u001b[?996n"
+      ],
+      "result": null,
+      "events": [
+        "dark"
+      ],
+      "listenerInputs": [],
+      "focusedInputs": []
+    },
+    "concurrent": {
+      "writes": [
+        "\u001b[?996n",
+        "\u001b[?996n"
+      ],
+      "results": [
+        "light",
+        "light"
+      ],
+      "events": [
+        "light"
+      ]
+    },
+    "listenerOrder": [
+      "first:dark",
+      "second:dark",
+      "second:light"
+    ],
+    "listenerMutationOrder": [
+      "first:dark",
+      "added:dark"
+    ]
+  },
+  "notificationWrites": [
+    "\u001b[?2031h",
+    "\u001b[?2031h",
+    "\u001b[?2031l"
+  ],
+  "notificationStopWrites": [
+    "\u001b[?2031h",
+    "\u001b[?2031h",
+    "\u001b[?2031l"
+  ]
+}

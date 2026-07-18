@@ -9,6 +9,7 @@ import (
 	"github.com/OrdalieTech/pi-go/codingagent/extensions/examples/permissiongate"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions/examples/pirate"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions/examples/statusline"
+	"github.com/OrdalieTech/pi-go/codingagent/mcp"
 )
 
 var compiledExtensions = []extensions.CompiledExtension{
@@ -18,8 +19,20 @@ var compiledExtensions = []extensions.CompiledExtension{
 }
 
 func loadCompiledExtensions(cwd string, args CLIArgs, settings *config.SettingsManager) (*extensions.Registry, []string) {
-	registry, loadErrors := extensions.LoadCompiled(cwd, compiledExtensions, settings.GetGoExtensions(), args.NoExtensions)
-	diagnostics := make([]string, 0, len(loadErrors))
+	catalog := append([]extensions.CompiledExtension(nil), compiledExtensions...)
+	var diagnostics []string
+	if !args.NoExtensions {
+		servers, err := mcp.ParseSettings(map[string]any(settings.GetSettings()))
+		if err != nil {
+			diagnostics = append(diagnostics, err.Error())
+		} else if len(servers) > 0 {
+			manager := mcp.NewManager(cwd, servers)
+			catalog = append(catalog, extensions.CompiledExtension{
+				Name: "mcp", Factory: manager.Extension(), Hidden: true, DefaultEnabled: true,
+			})
+		}
+	}
+	registry, loadErrors := extensions.LoadCompiled(cwd, catalog, settings.GetGoExtensions(), args.NoExtensions)
 	for _, loadError := range loadErrors {
 		diagnostics = append(diagnostics, loadError.Error())
 	}
@@ -82,7 +95,7 @@ func extensionHelpText(registry *extensions.Registry) string {
 		if description == "" {
 			description = "Registered by " + flag.ExtensionPath
 		}
-		section.WriteString(fmt.Sprintf("%-30s%s\n", name, description))
+		fmt.Fprintf(&section, "%-30s%s\n", name, description)
 	}
 	return strings.TrimSuffix(helpText, "\n") + section.String()
 }

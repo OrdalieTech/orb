@@ -18,6 +18,7 @@ func StreamSimple(
 	if model == nil {
 		return nil, fmt.Errorf("ai: model is nil")
 	}
+	model, options = prepareCloudflareRequest(model, options)
 	switch model.API {
 	case ai.APIBedrockConverse:
 		return StreamSimpleBedrockConverse(ctx, model, requestContext, options)

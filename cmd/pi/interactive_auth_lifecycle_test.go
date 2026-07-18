@@ -1,0 +1,61 @@
+package main
+
+import (
+	"context"
+	"path/filepath"
+	"testing"
+
+	"github.com/OrdalieTech/pi-go/ai"
+	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
+	"github.com/OrdalieTech/pi-go/codingagent/config"
+	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+)
+
+func TestInteractiveHostRefreshesAuthInPlaceAndPreservesExtensionProviders(t *testing.T) {
+	fixture := newHostFixture(t)
+	registry, err := config.NewModelRegistry(fixture.agentDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+		return nil, nil
+	}
+	if err := registry.RegisterProvider(extensions.Provider{
+		ID: "extension-auth", Name: "Extension Auth",
+		Auth: aiauth.ProviderAuth{APIKey: fixedInteractiveAPIKeyAuth{key: "extension-secret"}},
+		GetModels: func() ([]ai.Model, error) {
+			return []ai.Model{{ID: "extension-model", Provider: "extension-auth", API: ai.APIOpenAIResponses}}, nil
+		},
+		Stream: stream, StreamSimple: stream,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	storage, err := config.NewAuthStorage(filepath.Join(fixture.agentDir, "auth.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.host.mu.Lock()
+	fixture.host.inputs.ModelRegistry = registry
+	fixture.host.inputs.Auth = storage
+	fixture.host.mu.Unlock()
+
+	original := fixture.host.Session()
+	createCalls := fixture.createCalls
+	fixture.recorder.events = nil
+	if err := fixture.host.Login(context.Background(), "extension-auth", aiauth.AuthTypeAPIKey, fixedPromptInteraction{}); err != nil {
+		t.Fatal(err)
+	}
+
+	if !registry.GetProviderAuthStatus("extension-auth", nil).Configured {
+		t.Fatal("model registry did not observe the stored credential")
+	}
+	if _, ok := registry.Provider("extension-auth"); !ok {
+		t.Fatal("auth refresh discarded the registered extension provider")
+	}
+	if fixture.host.Session() != original || fixture.createCalls != createCalls {
+		t.Fatal("auth replaced the interactive SessionRuntime")
+	}
+	if shutdown := fixture.recorder.byKind("session_shutdown"); len(shutdown) != 0 {
+		t.Fatalf("auth emitted session shutdown events: %#v", shutdown)
+	}
+}

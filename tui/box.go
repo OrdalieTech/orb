@@ -1,6 +1,9 @@
 package tui
 
-import "strings"
+import (
+	"strings"
+	"sync"
+)
 
 type boxCache struct {
 	childLines []string
@@ -12,6 +15,7 @@ type boxCache struct {
 // Box applies horizontal and vertical padding and an optional background to
 // child components.
 type Box struct {
+	mu       sync.Mutex
 	Children []Component
 	paddingX int
 	paddingY int
@@ -24,11 +28,15 @@ func NewBox(paddingX, paddingY int, background StyleFunc) *Box {
 }
 
 func (box *Box) AddChild(component Component) {
+	box.mu.Lock()
+	defer box.mu.Unlock()
 	box.Children = append(box.Children, component)
 	box.cache = nil
 }
 
 func (box *Box) RemoveChild(component Component) {
+	box.mu.Lock()
+	defer box.mu.Unlock()
 	for index, child := range box.Children {
 		if child == component {
 			box.Children = append(box.Children[:index], box.Children[index+1:]...)
@@ -38,11 +46,21 @@ func (box *Box) RemoveChild(component Component) {
 	}
 }
 
-func (box *Box) Clear() { box.Children, box.cache = nil, nil }
+func (box *Box) Clear() {
+	box.mu.Lock()
+	box.Children, box.cache = nil, nil
+	box.mu.Unlock()
+}
 
-func (box *Box) SetBackground(background StyleFunc) { box.bg = background }
+func (box *Box) SetBackground(background StyleFunc) {
+	box.mu.Lock()
+	box.bg, box.cache = background, nil
+	box.mu.Unlock()
+}
 
 func (box *Box) Invalidate() {
+	box.mu.Lock()
+	defer box.mu.Unlock()
 	box.cache = nil
 	for _, child := range box.Children {
 		invalidate(child)
@@ -50,6 +68,8 @@ func (box *Box) Invalidate() {
 }
 
 func (box *Box) Render(width int) []string {
+	box.mu.Lock()
+	defer box.mu.Unlock()
 	if len(box.Children) == 0 {
 		return nil
 	}

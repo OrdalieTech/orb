@@ -40,6 +40,7 @@ type SessionRuntimeConfig struct {
 	ExtensionErrorHandler  func(extensions.ExtensionError)
 	ModelRegistry          extensions.ModelRegistry
 	RegisterProvider       func(extensions.Provider) error
+	RegisterProviderConfig func(string, extensions.ProviderConfig) error
 	UnregisterProvider     func(string) error
 	BaseTools              []agent.AgentTool
 	InitialActiveToolNames []string
@@ -49,6 +50,8 @@ type SessionRuntimeConfig struct {
 	SystemPromptOptions    *SystemPromptOptions
 	SessionStartEvent      *extensions.SessionStartEvent
 	DeferExtensionStart    bool
+	SessionStart           *extensions.SessionStartEvent
+	DeferSessionStart      bool
 }
 
 type SessionRuntime struct {
@@ -119,10 +122,29 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 	if runtimeConfig.Agent == nil || runtimeConfig.SessionManager == nil || runtimeConfig.Settings == nil {
 		return nil, errors.New("codingagent: session runtime requires agent, session manager, and settings")
 	}
+	modelRegistryAvailable := runtimeConfig.ModelRegistry != nil
+	if modelRegistryAvailable {
+		if runtimeConfig.RegisterProvider == nil {
+			runtimeConfig.RegisterProvider = runtimeConfig.ModelRegistry.RegisterProvider
+		}
+		if runtimeConfig.RegisterProviderConfig == nil {
+			runtimeConfig.RegisterProviderConfig = runtimeConfig.ModelRegistry.RegisterProviderConfig
+		}
+		if runtimeConfig.UnregisterProvider == nil {
+			runtimeConfig.UnregisterProvider = runtimeConfig.ModelRegistry.UnregisterProvider
+		}
+	}
 	streamFn := runtimeConfig.StreamFn
+	if streamFn == nil && modelRegistryAvailable {
+		streamFn = runtimeConfig.ModelRegistry.StreamSimple
+	}
 	if streamFn == nil {
 		streamFn = aiapi.StreamSimple
 	}
+	if runtimeConfig.StreamFn != nil || modelRegistryAvailable {
+		runtimeConfig.Agent.SetStreamFn(streamFn)
+	}
+	runtimeConfig.Agent.SetRequestResolvers(runtimeConfig.GetAPIKey, runtimeConfig.GetRequestAuth, runtimeConfig.GetModelHeaders)
 	complete := runtimeConfig.Complete
 	if complete == nil {
 		complete = func(ctx context.Context, model *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
@@ -280,14 +302,13 @@ func mergeSummaryEnv(resolved, overrides ai.ProviderEnv) ai.ProviderEnv {
 	return merged
 }
 
-func mergeSummaryAuthHeaders(resolved map[string]string, overrides ai.ProviderHeaders) ai.ProviderHeaders {
+func mergeSummaryAuthHeaders(resolved, overrides ai.ProviderHeaders) ai.ProviderHeaders {
 	if len(resolved) == 0 && len(overrides) == 0 {
 		return nil
 	}
 	merged := make(ai.ProviderHeaders, len(resolved)+len(overrides))
 	for name, value := range resolved {
-		copy := value
-		merged[name] = &copy
+		merged[name] = value
 	}
 	for name, value := range overrides {
 		for existing := range merged {
@@ -357,6 +378,78 @@ func (runtime *SessionRuntime) Prompt(ctx context.Context, input any, images ...
 		return err
 	}
 	return runtime.PromptAfterPreflight(ctx, input, images...)
+}
+
+// SubmitInteractive matches the interactive-mode delivery contract: an idle
+// submission starts a turn, while a submission during streaming is queued as
+// steer or follow-up without waiting for the active turn.
+func (runtime *SessionRuntime) SubmitInteractive(ctx context.Context, text string, images []*ai.ImageContent, delivery extensions.DeliveryMode) error {
+	if runtime == nil {
+		return errors.New("codingagent: nil session runtime")
+	}
+	if runtime.extensionState != nil {
+		return runtime.promptExtensionInput(ctx, text, images, extensions.InputInteractive, true, &delivery, true)
+	}
+	if !runtime.agent.IsIdle() {
+		if delivery == extensions.DeliverFollowUp {
+			return runtime.FollowUpImages(text, images)
+		}
+		return runtime.SteerImages(text, images)
+	}
+	return runtime.Prompt(ctx, text, images...)
+}
+
+// QueueInteractive performs extension command/input handling and then queues
+// the resolved message without consulting idle state. Interactive mode uses it
+// after reserving an active prompt slot, closing the rapid-submit race before
+// Agent.Prompt has installed its active run.
+func (runtime *SessionRuntime) QueueInteractive(ctx context.Context, text string, images []*ai.ImageContent, delivery extensions.DeliveryMode) error {
+	state := runtime.extensionState
+	if state != nil && state.runner != nil {
+		if strings.HasPrefix(text, "/") {
+			commandText := strings.TrimPrefix(text, "/")
+			name, args, _ := strings.Cut(commandText, " ")
+			if state.runner.ExecuteCommand(ctx, name, args) {
+				return nil
+			}
+		}
+		if state.runner.HasHandlers(extensions.EventInput) {
+			result := state.runner.EmitInput(ctx, text, images, extensions.InputInteractive, &delivery)
+			if result.Action == extensions.InputHandled {
+				return nil
+			}
+			if result.Action == extensions.InputTransform {
+				text = result.Text
+				if result.Images != nil {
+					images = result.Images
+				}
+			}
+		}
+	}
+	if runtime.slashResolver != nil {
+		var err error
+		text, err = runtime.slashResolver.ExpandQueued(text)
+		if err != nil {
+			return err
+		}
+	}
+	message := userMessageWithImagesAt(text, images, runtime.clock())
+	runtime.mu.Lock()
+	if delivery == extensions.DeliverFollowUp {
+		runtime.followUps = append(runtime.followUps, text)
+		runtime.mu.Unlock()
+		runtime.agent.FollowUp(message)
+	} else {
+		runtime.steering = append(runtime.steering, text)
+		runtime.mu.Unlock()
+		runtime.agent.Steer(message)
+	}
+	runtime.emitQueueUpdate()
+	return nil
+}
+
+func (runtime *SessionRuntime) IsIdle() bool {
+	return runtime == nil || runtime.agent.IsIdle()
 }
 
 func (runtime *SessionRuntime) PromptAfterPreflight(ctx context.Context, input any, images ...*ai.ImageContent) error {
@@ -755,7 +848,7 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 		return false, nil
 	}
 	state := runtime.agent.State()
-	if state.Model == nil {
+	if state.Model == nil || IsUnknownModel(state.Model) {
 		return false, nil
 	}
 	latest := sessionstore.GetLatestCompactionEntry(runtime.manager.GetBranch())
@@ -898,7 +991,7 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 		runtime.mu.Unlock()
 	}()
 	runtime.emit(CompactionStartEvent{Reason: "manual"})
-	if runtime.agent.State().Model == nil {
+	if model := runtime.agent.State().Model; model == nil || IsUnknownModel(model) {
 		err := noModelSelectedError()
 		message := "Compaction failed: " + err.Error()
 		runtime.emit(CompactionEndEvent{Reason: "manual", ErrorMessage: &message})
@@ -1285,6 +1378,12 @@ func (runtime *SessionRuntime) dropLastAssistant() {
 	if len(state.Messages) > 0 && asAssistant(state.Messages[len(state.Messages)-1]) != nil {
 		runtime.agent.SetMessages(state.Messages[:len(state.Messages)-1])
 	}
+}
+
+// SyncMessagesFromSession reloads agent messages after a host-side setup
+// callback mutates a replacement session.
+func (runtime *SessionRuntime) SyncMessagesFromSession() {
+	runtime.syncAgentMessages()
 }
 
 func (runtime *SessionRuntime) syncAgentMessages() {

@@ -2,15 +2,16 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/OrdalieTech/pi-go/codingagent/config"
+	"github.com/OrdalieTech/pi-go/codingagent/modes"
 	"github.com/OrdalieTech/pi-go/codingagent/session"
 )
 
@@ -19,6 +20,20 @@ var errNoSessionSelected = errors.New("no session selected")
 type SessionListLoader func(session.SessionListProgress) []session.SessionInfo
 
 type SessionSelector func(current, all SessionListLoader) (path string, selected bool, err error)
+
+type tuiSessionSelectorRunner func(context.Context, SessionListLoader, SessionListLoader) (string, bool, error)
+
+func newTUISessionSelector(ctx context.Context, runner tuiSessionSelectorRunner) SessionSelector {
+	return func(current, all SessionListLoader) (string, bool, error) {
+		return runner(ctx, current, all)
+	}
+}
+
+func startupTUISessionSelector(ctx context.Context) SessionSelector {
+	return newTUISessionSelector(ctx, func(ctx context.Context, current, all SessionListLoader) (string, bool, error) {
+		return modes.RunSessionSelector(ctx, modes.SessionSelectorLoader(current), modes.SessionSelectorLoader(all))
+	})
+}
 
 type resolvedSession struct {
 	kind string
@@ -149,7 +164,7 @@ func createCLISession(
 		}
 	case args.Resume:
 		if selector == nil {
-			selector = terminalSessionSelector(streams)
+			selector = startupTUISessionSelector(context.Background())
 		}
 		selectedPath, selected, selectErr := selector(
 			func(progress session.SessionListProgress) []session.SessionInfo {
@@ -182,14 +197,23 @@ func createCLISession(
 	if err != nil {
 		return nil, session.SessionContext{}, err
 	}
-	if manager.GetSessionFile() != "" {
-		if _, statErr := os.Stat(manager.GetCWD()); errors.Is(statErr, os.ErrNotExist) {
-			return nil, session.SessionContext{}, &MissingSessionCWDError{
-				StoredCWD: manager.GetCWD(), SessionFile: manager.GetSessionFile(), CurrentCWD: cwd,
-			}
-		}
-	}
 	return manager, manager.BuildSessionContext(), nil
+}
+
+func getMissingSessionCWDIssue(manager *session.SessionManager, fallbackCWD string) *MissingSessionCWDError {
+	if manager == nil || manager.GetSessionFile() == "" || manager.GetCWD() == "" {
+		return nil
+	}
+	if _, err := os.Stat(manager.GetCWD()); !errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return &MissingSessionCWDError{
+		StoredCWD: manager.GetCWD(), SessionFile: manager.GetSessionFile(), CurrentCWD: fallbackCWD,
+	}
+}
+
+func formatMissingSessionCWDPrompt(issue *MissingSessionCWDError) string {
+	return "cwd from session file does not exist\n" + issue.StoredCWD + "\n\ncontinue in current cwd\n" + issue.CurrentCWD
 }
 
 func resolveSessionArgument(argument, cwd, sessionDir, agentDir string) (resolvedSession, error) {
@@ -250,58 +274,4 @@ func confirmGlobalSessionFork(streams cliStreams, sessionCWD string) (bool, erro
 	answer := strings.TrimSuffix(line, "\n")
 	answer = strings.ToLower(strings.TrimSuffix(answer, "\r"))
 	return answer == "y" || answer == "yes", nil
-}
-
-func terminalSessionSelector(streams cliStreams) SessionSelector {
-	// TODO(WP-450): replace this startup fallback with the TUI session picker and missing-cwd recovery flow.
-	return func(current, all SessionListLoader) (string, bool, error) {
-		if !streams.StdinTTY {
-			return "", false, errors.New("--resume requires an interactive terminal; use --session <path|id>")
-		}
-		reader := bufio.NewReader(streams.Stdin)
-		showAll := false
-		for {
-			sessions := current(nil)
-			scope := "current project"
-			if showAll {
-				sessions = all(nil)
-				scope = "all projects"
-			}
-			if len(sessions) == 0 && !showAll {
-				showAll = true
-				continue
-			}
-			if len(sessions) == 0 {
-				return "", false, nil
-			}
-			_, _ = fmt.Fprintf(streams.Stdout, "Select a session (%s; type a to toggle):\n", scope)
-			for index, info := range sessions {
-				label := info.FirstMessage
-				if info.Name != nil {
-					label = *info.Name
-				}
-				_, _ = fmt.Fprintf(streams.Stdout, "  %d) %s  %s\n", index+1, info.ID, label)
-			}
-			_, _ = io.WriteString(streams.Stdout, "> ")
-			line, err := reader.ReadString('\n')
-			if err != nil && !errors.Is(err, io.EOF) {
-				return "", false, err
-			}
-			selection := strings.TrimSpace(line)
-			if selection == "" {
-				return "", false, nil
-			}
-			if strings.EqualFold(selection, "a") {
-				showAll = !showAll
-				continue
-			}
-			if index, parseErr := strconv.Atoi(selection); parseErr == nil && index >= 1 && index <= len(sessions) {
-				return sessions[index-1].Path, true, nil
-			}
-			if match := matchSessionID(sessions, selection); match != nil {
-				return match.Path, true, nil
-			}
-			return "", false, fmt.Errorf("No session found matching '%s'", selection) //nolint:staticcheck // Upstream error capitalization is observable.
-		}
-	}
 }

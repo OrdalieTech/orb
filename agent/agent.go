@@ -192,6 +192,9 @@ func NewAgent(option ...AgentOption) *Agent {
 	if state.ThinkingLevel == "" {
 		state.ThinkingLevel = ThinkingOff
 	}
+	if state.Model == nil {
+		state.Model = defaultAgentModel()
+	}
 	if state.Tools == nil {
 		state.Tools = []AgentTool{}
 	}
@@ -368,6 +371,12 @@ func (agent *Agent) IsIdle() bool {
 	return agent.active == nil
 }
 
+func (agent *Agent) SetTransport(transport ai.Transport) {
+	agent.mu.Lock()
+	agent.streamOptions.Transport = pointerTo(transport)
+	agent.mu.Unlock()
+}
+
 // Signal returns the active run context, matching upstream's abort signal
 // exposure to extensions. It is nil while the agent is idle.
 func (agent *Agent) Signal() context.Context {
@@ -430,6 +439,9 @@ func (agent *Agent) SetSystemPrompt(prompt string) {
 func (agent *Agent) SetModel(model *ai.Model) {
 	agent.mu.Lock()
 	agent.state.Model = cloneModel(model)
+	if agent.state.Model == nil {
+		agent.state.Model = defaultAgentModel()
+	}
 	agent.mu.Unlock()
 }
 
@@ -460,6 +472,29 @@ func (agent *Agent) AppendMessage(message AgentMessage) {
 func (agent *Agent) SetTransformContext(transform TransformContextFunc) {
 	agent.mu.Lock()
 	agent.transformContext = transform
+	agent.mu.Unlock()
+}
+
+func (agent *Agent) SetStreamFn(stream StreamFn) {
+	if stream == nil {
+		stream = aiapi.StreamSimple
+	}
+	agent.mu.Lock()
+	agent.streamFn = stream
+	agent.mu.Unlock()
+}
+
+func (agent *Agent) SetRequestResolvers(apiKey GetAPIKeyFunc, auth GetRequestAuthFunc, headers GetModelHeadersFunc) {
+	agent.mu.Lock()
+	if apiKey != nil {
+		agent.getAPIKey = apiKey
+	}
+	if auth != nil {
+		agent.getRequestAuth = auth
+	}
+	if headers != nil {
+		agent.getModelHeaders = headers
+	}
 	agent.mu.Unlock()
 }
 

@@ -1,0 +1,304 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "descriptions-and-alignment",
+      "items": [
+        {
+          "value": "short",
+          "label": "short",
+          "description": "short description"
+        },
+        {
+          "value": "very-long-command-name-that-needs-truncation",
+          "label": "very-long-command-name-that-needs-truncation",
+          "description": "long description"
+        }
+      ],
+      "maxVisible": 5,
+      "layout": null,
+      "ops": [
+        {
+          "do": "render",
+          "width": 80
+        },
+        {
+          "do": "render",
+          "width": 30
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[1m→ short                           short description\u001b[22m",
+            "  very-long-command-name-that-ne\u001b[0m\u001b[2m  long description\u001b[22m"
+          ]
+        },
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[1m→ short\u001b[22m",
+            "  very-long-command-name-tha\u001b[0m"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "multiline-description-normalized",
+      "items": [
+        {
+          "value": "test",
+          "label": "test",
+          "description": "Line one\nLine two\nLine three"
+        }
+      ],
+      "maxVisible": 5,
+      "layout": null,
+      "ops": [
+        {
+          "do": "render",
+          "width": 100
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[1m→ test                            Line one Line two Line three\u001b[22m"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "layout-bounds",
+      "items": [
+        {
+          "value": "a",
+          "label": "a",
+          "description": "first"
+        },
+        {
+          "value": "bb",
+          "label": "bb",
+          "description": "second"
+        }
+      ],
+      "maxVisible": 5,
+      "layout": {
+        "minPrimaryColumnWidth": 12,
+        "maxPrimaryColumnWidth": 20
+      },
+      "ops": [
+        {
+          "do": "render",
+          "width": 80
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[1m→ a           first\u001b[22m",
+            "  bb\u001b[2m          second\u001b[22m"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "navigation-wrap-and-scroll",
+      "items": [
+        {
+          "value": "one"
+        },
+        {
+          "value": "two"
+        },
+        {
+          "value": "three"
+        },
+        {
+          "value": "four"
+        }
+      ],
+      "maxVisible": 2,
+      "layout": null,
+      "ops": [
+        {
+          "do": "render",
+          "width": 40
+        },
+        {
+          "do": "input",
+          "data": "\u001b[A"
+        },
+        {
+          "do": "selected"
+        },
+        {
+          "do": "render",
+          "width": 40
+        },
+        {
+          "do": "input",
+          "data": "\u001b[B"
+        },
+        {
+          "do": "selected"
+        },
+        {
+          "do": "input",
+          "data": "\u001b[B"
+        },
+        {
+          "do": "selected"
+        },
+        {
+          "do": "render",
+          "width": 40
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[1m→ one\u001b[22m",
+            "  two",
+            "\u001b[2m  (1/4)\u001b[22m"
+          ]
+        },
+        {
+          "kind": "selected",
+          "value": "four"
+        },
+        {
+          "kind": "render",
+          "value": [
+            "  three",
+            "\u001b[1m→ four\u001b[22m",
+            "\u001b[2m  (4/4)\u001b[22m"
+          ]
+        },
+        {
+          "kind": "selected",
+          "value": "one"
+        },
+        {
+          "kind": "selected",
+          "value": "two"
+        },
+        {
+          "kind": "render",
+          "value": [
+            "  one",
+            "\u001b[1m→ two\u001b[22m",
+            "\u001b[2m  (2/4)\u001b[22m"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "filtering",
+      "items": [
+        {
+          "value": "alpha"
+        },
+        {
+          "value": "beta"
+        },
+        {
+          "value": "alp"
+        }
+      ],
+      "maxVisible": 5,
+      "layout": null,
+      "ops": [
+        {
+          "do": "setFilter",
+          "text": "al"
+        },
+        {
+          "do": "selected"
+        },
+        {
+          "do": "render",
+          "width": 40
+        },
+        {
+          "do": "setFilter",
+          "text": "zzz"
+        },
+        {
+          "do": "render",
+          "width": 40
+        }
+      ],
+      "observations": [
+        {
+          "kind": "selected",
+          "value": "alpha"
+        },
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[1m→ alpha\u001b[22m",
+            "  alp"
+          ]
+        },
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[2m  No matching commands\u001b[22m"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wide-labels",
+      "items": [
+        {
+          "value": "命令一",
+          "label": "命令一",
+          "description": "第一个命令的描述"
+        },
+        {
+          "value": "命令二",
+          "label": "命令二",
+          "description": "第二个命令的描述"
+        }
+      ],
+      "maxVisible": 5,
+      "layout": null,
+      "ops": [
+        {
+          "do": "render",
+          "width": 60
+        },
+        {
+          "do": "input",
+          "data": "\u001b[B"
+        },
+        {
+          "do": "render",
+          "width": 60
+        }
+      ],
+      "observations": [
+        {
+          "kind": "render",
+          "value": [
+            "\u001b[1m→ 命令一                          第一个命令的描述\u001b[22m",
+            "  命令二\u001b[2m                          第二个命令的描述\u001b[22m"
+          ]
+        },
+        {
+          "kind": "render",
+          "value": [
+            "  命令一\u001b[2m                          第一个命令的描述\u001b[22m",
+            "\u001b[1m→ 命令二                          第二个命令的描述\u001b[22m"
+          ]
+        }
+      ]
+    }
+  ]
+}

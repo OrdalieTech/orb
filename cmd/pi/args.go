@@ -60,12 +60,13 @@ type CLIArgs struct {
 	UnknownFlags       []CLIUnknownFlag
 	Diagnostics        []CLIDiagnostic
 	RestoredModel      bool
+	allowNoModel       bool
 	extensionsLoaded   bool
 	extensionRegistry  *extensions.Registry
 	extensionWarnings  []string
 }
 
-// ParseArgs parses the WP-160 CLI subset with upstream's sequential rules.
+// ParseArgs follows upstream's sequential CLI parsing rules.
 func ParseArgs(argv []string) CLIArgs {
 	result := CLIArgs{
 		CommandArgs:  []string{},

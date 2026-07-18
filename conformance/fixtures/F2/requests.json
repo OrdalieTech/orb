@@ -1,6 +1,205 @@
 {
   "cases": [
     {
+      "name": "completions-together-reasoning-compat",
+      "api": "openai-completions",
+      "model": {
+        "id": "deepseek-ai/DeepSeek-V4-Pro",
+        "name": "DeepSeek V4 Pro",
+        "api": "openai-completions",
+        "provider": "together",
+        "baseUrl": "https://api.together.ai/v1",
+        "reasoning": true,
+        "input": [
+          "text"
+        ],
+        "cost": {
+          "input": 1.74,
+          "output": 3.48,
+          "cacheRead": 0.2,
+          "cacheWrite": 0
+        },
+        "contextWindow": 512000,
+        "maxTokens": 384000,
+        "thinkingLevelMap": {
+          "minimal": null,
+          "low": null,
+          "medium": null,
+          "high": "high",
+          "xhigh": null
+        },
+        "compat": {
+          "supportsStore": false,
+          "supportsDeveloperRole": false,
+          "supportsReasoningEffort": true,
+          "maxTokensField": "max_tokens",
+          "thinkingFormat": "together",
+          "supportsStrictMode": false,
+          "supportsLongCacheRetention": false
+        }
+      },
+      "context": {
+        "systemPrompt": "Use the provider reasoning controls.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "solve it",
+            "timestamp": 1700000000123
+          }
+        ],
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo structured text",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "plain",
+                    "loud"
+                  ]
+                },
+                "metadata": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-together-key",
+        "maxTokens": 321,
+        "reasoningEffort": "high",
+        "cacheRetention": "long"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.together.ai/v1/chat/completions",
+        "headers": {
+          "authorization": "Bearer fixture-together-key",
+          "content-type": "application/json"
+        },
+        "body": "{\"model\":\"deepseek-ai/DeepSeek-V4-Pro\",\"messages\":[{\"role\":\"system\",\"content\":\"Use the provider reasoning controls.\"},{\"role\":\"user\",\"content\":\"solve it\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"max_tokens\":321,\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false}}}],\"reasoning\":{\"enabled\":true},\"reasoning_effort\":\"high\"}"
+      }
+    },
+    {
+      "name": "completions-zai-tool-stream-compat",
+      "api": "openai-completions",
+      "model": {
+        "id": "glm-5.2",
+        "name": "GLM-5.2",
+        "api": "openai-completions",
+        "provider": "zai",
+        "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+        "reasoning": true,
+        "input": [
+          "text"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 131072,
+        "thinkingLevelMap": {
+          "minimal": null,
+          "low": "high",
+          "medium": "high",
+          "high": "high",
+          "max": "max"
+        },
+        "compat": {
+          "supportsStore": false,
+          "supportsDeveloperRole": false,
+          "supportsReasoningEffort": true,
+          "thinkingFormat": "zai",
+          "zaiToolStream": true
+        }
+      },
+      "context": {
+        "systemPrompt": "Use tools.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "call echo",
+            "timestamp": 1700000000123
+          }
+        ],
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo structured text",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "plain",
+                    "loud"
+                  ]
+                },
+                "metadata": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-zai-key",
+        "reasoningEffort": "high",
+        "cacheRetention": "short"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.z.ai/api/coding/paas/v4/chat/completions",
+        "headers": {
+          "authorization": "Bearer fixture-zai-key",
+          "content-type": "application/json"
+        },
+        "body": "{\"model\":\"glm-5.2\",\"messages\":[{\"role\":\"system\",\"content\":\"Use tools.\"},{\"role\":\"user\",\"content\":\"call echo\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false},\"strict\":false}}],\"tool_stream\":true,\"thinking\":{\"type\":\"enabled\",\"clear_thinking\":false},\"reasoning_effort\":\"high\"}"
+      }
+    },
+    {
       "name": "responses-text-default-cache",
       "api": "openai-responses",
       "model": {

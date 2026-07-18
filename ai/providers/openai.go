@@ -15,19 +15,26 @@ type Provider struct {
 	ID      ai.ProviderID
 	Name    string
 	API     ai.API
+	APIs    []ai.API
 	BaseURL string
 	Auth    AuthKind
+	OAuth   bool
 	Env     []string
-	Methods auth.ProviderAuth
+	// APIKeyEnv is the subset of Env whose value is request authentication.
+	// The remaining names configure ambient credentials or provider endpoints.
+	APIKeyEnv []string
+	Methods   auth.ProviderAuth
 }
 
 var openAI = Provider{
-	ID:      "openai",
-	Name:    "OpenAI",
-	API:     ai.APIOpenAIResponses,
-	BaseURL: "https://api.openai.com/v1",
-	Auth:    AuthAPIKey,
-	Env:     []string{"OPENAI_API_KEY"},
+	ID:        "openai",
+	Name:      "OpenAI",
+	API:       ai.APIOpenAIResponses,
+	APIs:      []ai.API{ai.APIOpenAIResponses},
+	BaseURL:   "https://api.openai.com/v1",
+	Auth:      AuthAPIKey,
+	Env:       []string{"OPENAI_API_KEY"},
+	APIKeyEnv: []string{"OPENAI_API_KEY"},
 	Methods: auth.ProviderAuth{APIKey: auth.EnvAPIKeyAuth{
 		DisplayName: "OpenAI API key",
 		EnvVars:     []string{"OPENAI_API_KEY"},
@@ -38,45 +45,13 @@ func OpenAI() Provider {
 	return cloneProvider(openAI)
 }
 
-func Get(id ai.ProviderID) (Provider, bool) {
-	switch id {
-	case openAI.ID:
-		return OpenAI(), true
-	case anthropicProvider.ID:
-		return Anthropic(), true
-	case googleProvider.ID:
-		return Google(), true
-	case googleVertexProvider.ID:
-		return GoogleVertex(), true
-	case amazonBedrockProvider.ID:
-		return AmazonBedrock(), true
-	case mistralProvider.ID:
-		return Mistral(), true
-	case azureOpenAIResponsesProvider.ID:
-		return AzureOpenAIResponses(), true
-	case openAICodexProvider.ID:
-		return OpenAICodex(), true
-	case githubCopilotProvider.ID:
-		return GitHubCopilot(), true
-	case xAIProvider.ID:
-		return XAI(), true
-	default:
-		return Provider{}, false
-	}
-}
-
-func List() []Provider {
-	return []Provider{
-		OpenAI(), Anthropic(), Google(), GoogleVertex(), AmazonBedrock(), Mistral(), AzureOpenAIResponses(),
-		OpenAICodex(), GitHubCopilot(), XAI(),
-	}
-}
-
 func cloneProvider(provider Provider) Provider {
 	provider.Env = append([]string(nil), provider.Env...)
 	if method, ok := provider.Methods.APIKey.(auth.EnvAPIKeyAuth); ok {
 		method.EnvVars = append([]string(nil), method.EnvVars...)
 		provider.Methods.APIKey = method
 	}
+	provider.APIKeyEnv = append([]string(nil), provider.APIKeyEnv...)
+	provider.APIs = append([]ai.API(nil), provider.APIs...)
 	return provider
 }

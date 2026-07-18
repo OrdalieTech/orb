@@ -204,6 +204,10 @@ func (registry *Registry) Extensions() []*Extension {
 
 func (registry *Registry) Events() EventBus { return registry.eventBus }
 
+func (registry *Registry) BindModelRegistry(models ModelRegistry, report func(ExtensionError)) {
+	registry.runtime.bindProviders(models, report)
+}
+
 func syntheticSourceInfo(path, resolved string) SourceInfo {
 	source := "local"
 	var baseDir *string
@@ -388,7 +392,7 @@ func (api *extensionAPI) RegisterProvider(provider Provider) {
 
 func (api *extensionAPI) RegisterProviderConfig(name string, config ProviderConfig) {
 	api.runtime.mustBeActive()
-	api.runtime.registerProvider(Provider{ID: name, Name: config.Name, Config: config}, api.extension.Path)
+	api.runtime.registerProviderConfig(name, config, api.extension.Path)
 }
 
 func (api *extensionAPI) UnregisterProvider(name string) {

@@ -92,6 +92,86 @@ type mutableLines struct{ lines []string }
 
 func (component *mutableLines) Render(int) []string { return component.lines }
 
+type invalidationRequester struct{ ui RenderRequester }
+
+func (*invalidationRequester) Render(int) []string { return nil }
+func (component *invalidationRequester) Invalidate() {
+	component.ui.RequestRender()
+}
+
+func TestTUIInvalidationMayRequestRender(t *testing.T) {
+	ui := NewTUI(newFakeTerminal(20, 6))
+	ui.AddChild(&invalidationRequester{ui: ui})
+	if err := ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		ui.Invalidate()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Invalidate deadlocked when the component requested a render")
+	}
+	if err := ui.Stop(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type recordingLines struct {
+	lines []string
+	width int
+}
+
+func (component *recordingLines) Render(width int) []string {
+	component.width = width
+	return component.lines
+}
+
+func TestTUIOverlayCompositionMatchesUpstreamLayoutAndStacking(t *testing.T) {
+	ui := NewTUI(newFakeTerminal(20, 6))
+	ui.AddChild(&mutableLines{lines: []string{"base"}})
+	first := &recordingLines{lines: []string{"FIRST-OVERLAY"}}
+	ui.AddOverlay(first, func(int, int) OverlayLayout {
+		return OverlayLayout{Width: 12, Anchor: "top-left"}
+	})
+	second := ui.AddOverlay(&mutableLines{lines: []string{"SECOND"}}, func(int, int) OverlayLayout {
+		return OverlayLayout{Width: 6, Anchor: "top-left"}
+	})
+	ui.AddOverlay(&mutableLines{lines: []string{"BOTTOM", "hidden"}}, func(int, int) OverlayLayout {
+		return OverlayLayout{Width: 8, MaxHeight: 1, Anchor: "bottom-right"}
+	})
+
+	lines := ui.renderWithOverlays(20, 6)
+	if len(lines) != 6 {
+		t.Fatalf("overlay buffer height = %d, want 6: %#v", len(lines), lines)
+	}
+	if first.width != 12 {
+		t.Fatalf("overlay render width = %d, want 12", first.width)
+	}
+	if want := segmentReset + "SECOND" + segmentReset + "OVERLA" + segmentReset + "        "; lines[0] != want {
+		t.Fatalf("stacked top-left overlay = %q, want %q", lines[0], want)
+	}
+	if want := "            " + segmentReset + "BOTTOM  " + segmentReset; lines[5] != want {
+		t.Fatalf("bottom-right overlay = %q, want %q", lines[5], want)
+	}
+	if strings.Contains(strings.Join(lines, "\n"), "hidden") {
+		t.Fatalf("max-height overlay leaked truncated row: %#v", lines)
+	}
+
+	second.SetHidden(true)
+	lines = ui.renderWithOverlays(20, 6)
+	if want := segmentReset + "FIRST-OVERLA" + segmentReset + "        "; lines[0] != want {
+		t.Fatalf("hidden top overlay = %q, want %q", lines[0], want)
+	}
+	second.Remove()
+	if second.IsHidden() != true {
+		t.Fatal("removed overlay changed its explicit hidden state")
+	}
+}
+
 func TestTUIDifferentialRenderingAndResize(t *testing.T) {
 	terminal := newFakeTerminal(40, 10)
 	ui := NewTUI(terminal)
@@ -198,8 +278,8 @@ func TestTUIStopsTerminalBeforeLineOverflowPanic(t *testing.T) {
 	terminal := newFakeTerminal(3, 3)
 	ui := NewTUI(terminal)
 	ui.AddChild(&mutableLines{lines: []string{"toolong"}})
+	ui.setStopped(false)
 	ui.renderMu.Lock()
-	ui.stopped = false
 	ui.previousLines = []string{"old"}
 	ui.previousWidth, ui.previousHeight = 3, 3
 	ui.renderMu.Unlock()

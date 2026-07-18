@@ -1,0 +1,42 @@
+{
+  "family": "WP450",
+  "upstreamCommit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
+  "generator": "conformance/extract/wp450-replay.ts",
+  "sources": [
+    "packages/coding-agent/src/modes/interactive/interactive-mode.ts",
+    "packages/coding-agent/src/modes/interactive/components/user-message.ts",
+    "packages/coding-agent/src/modes/interactive/components/assistant-message.ts",
+    "packages/coding-agent/src/modes/interactive/components/tool-execution.ts",
+    "packages/coding-agent/src/modes/interactive/components/diff.ts",
+    "packages/coding-agent/src/modes/interactive/components/bash-execution.ts",
+    "packages/coding-agent/src/modes/interactive/components/compaction-summary-message.ts",
+    "packages/coding-agent/src/modes/interactive/components/branch-summary-message.ts",
+    "packages/coding-agent/src/modes/interactive/components/custom-message.ts",
+    "packages/coding-agent/src/modes/interactive/components/footer.ts",
+    "packages/coding-agent/examples/extensions/status-line.ts",
+    "packages/coding-agent/examples/extensions/widget-placement.ts",
+    "packages/coding-agent/examples/extensions/custom-header.ts",
+    "packages/coding-agent/examples/extensions/custom-footer.ts",
+    "packages/tui/test/virtual-terminal.ts"
+  ],
+  "files": [
+    "replay.json",
+    "ui-demos.json"
+  ],
+  "metadata": {
+    "widths": [
+      52,
+      88
+    ],
+    "rows": 120,
+    "terminal": "@xterm/headless VirtualTerminal 5.5.0",
+    "fixedTimestamp": 1700000000000,
+    "normalization": [
+      "capture visible cells after the real differential TUI render settles",
+      "strip trailing cell whitespace and trailing blank viewport rows",
+      "replace native spellings of the temporary scenario root with <fixture>",
+      "use completed loaders only so spinner clocks never enter the artifact"
+    ],
+    "divergences": []
+  }
+}

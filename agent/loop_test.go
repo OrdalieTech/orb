@@ -439,6 +439,9 @@ func TestRunLoopAppliesRequestAuthWithoutMutatingConfiguredOptions(t *testing.T)
 		if _, duplicate := options.Headers["Authorization"]; duplicate {
 			t.Fatalf("case-insensitive auth override left duplicate headers: %#v", options.Headers)
 		}
+		if value, exists := options.Headers["x-api-key"]; !exists || value != nil {
+			t.Fatalf("nullable auth header was not preserved: %#v", options.Headers)
+		}
 		return func(yield func(ai.AssistantMessageEvent, error) bool) {
 			yield(ai.DoneEvent{Reason: ai.StopReasonStop, Message: response}, nil)
 		}, nil
@@ -455,13 +458,14 @@ func TestRunLoopAppliesRequestAuthWithoutMutatingConfiguredOptions(t *testing.T)
 		StreamFn:            stream,
 		GetRequestAuth: func(context.Context, ai.ProviderID) (*RequestAuth, error) {
 			resolvedKey := "resolved-key"
+			resolvedHeader := "resolved"
 			return &RequestAuth{
 				APIKey: &resolvedKey,
 				Env: ai.ProviderEnv{
 					"GOOGLE_CLOUD_PROJECT":  "resolved-project",
 					"GOOGLE_CLOUD_LOCATION": "us-central1",
 				},
-				Headers: map[string]string{"Authorization": "resolved"},
+				Headers: ai.ProviderHeaders{"Authorization": &resolvedHeader, "x-api-key": nil},
 				BaseURL: &baseURL,
 			}, nil
 		},

@@ -12,36 +12,42 @@ import (
 const defaultStaleContextMessage = "This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload()."
 
 type Actions struct {
-	SendMessage        func(context.Context, CustomMessage, *SendMessageOptions) error
-	SendUserMessage    func(context.Context, ai.UserContent, *SendUserMessageOptions) error
-	AppendEntry        func(context.Context, string, any) error
-	SetSessionName     func(context.Context, string) error
-	GetSessionName     func(context.Context) (*string, error)
-	SetLabel           func(context.Context, string, *string) error
-	GetActiveTools     func() ([]string, error)
-	GetAllTools        func() ([]ToolInfo, error)
-	SetActiveTools     func([]string) error
-	RefreshTools       func()
-	GetCommands        func() ([]SlashCommandInfo, error)
-	SetModel           func(context.Context, *ai.Model) (bool, error)
-	GetThinkingLevel   func() (agent.ThinkingLevel, error)
-	SetThinkingLevel   func(agent.ThinkingLevel) error
-	RegisterProvider   func(Provider) error
-	UnregisterProvider func(string) error
+	SendMessage            func(context.Context, CustomMessage, *SendMessageOptions) error
+	SendUserMessage        func(context.Context, ai.UserContent, *SendUserMessageOptions) error
+	AppendEntry            func(context.Context, string, any) error
+	SetSessionName         func(context.Context, string) error
+	GetSessionName         func(context.Context) (*string, error)
+	SetLabel               func(context.Context, string, *string) error
+	GetActiveTools         func() ([]string, error)
+	GetAllTools            func() ([]ToolInfo, error)
+	SetActiveTools         func([]string) error
+	RefreshTools           func()
+	GetCommands            func() ([]SlashCommandInfo, error)
+	SetModel               func(context.Context, *ai.Model) (bool, error)
+	GetThinkingLevel       func() (agent.ThinkingLevel, error)
+	SetThinkingLevel       func(agent.ThinkingLevel) error
+	RegisterProvider       func(Provider) error
+	RegisterProviderConfig func(string, ProviderConfig) error
+	UnregisterProvider     func(string) error
 }
 
-type pendingProvider struct {
-	provider      Provider
+type pendingProviderRegistration struct {
+	name          string
+	native        *Provider
+	config        *ProviderConfig
 	extensionPath string
 }
 
 type runtimeState struct {
 	mu               sync.RWMutex
 	actions          Actions
-	bound            bool
+	providerBound    bool
+	registerNative   func(Provider) error
+	registerConfig   func(string, ProviderConfig) error
+	unregister       func(string) error
 	staleMessage     string
 	flags            map[string]any
-	pendingProviders []pendingProvider
+	pendingProviders []pendingProviderRegistration
 }
 
 func newRuntimeState() *runtimeState {
@@ -53,27 +59,34 @@ func uninitializedActions() Actions {
 		return errors.New(ErrRuntimeNotInitialized.Error() + ". Action methods cannot be called during extension loading.")
 	}
 	return Actions{
-		SendMessage:        func(context.Context, CustomMessage, *SendMessageOptions) error { return notInitialized() },
-		SendUserMessage:    func(context.Context, ai.UserContent, *SendUserMessageOptions) error { return notInitialized() },
-		AppendEntry:        func(context.Context, string, any) error { return notInitialized() },
-		SetSessionName:     func(context.Context, string) error { return notInitialized() },
-		GetSessionName:     func(context.Context) (*string, error) { return nil, notInitialized() },
-		SetLabel:           func(context.Context, string, *string) error { return notInitialized() },
-		GetActiveTools:     func() ([]string, error) { return nil, notInitialized() },
-		GetAllTools:        func() ([]ToolInfo, error) { return nil, notInitialized() },
-		SetActiveTools:     func([]string) error { return notInitialized() },
-		RefreshTools:       func() {},
-		GetCommands:        func() ([]SlashCommandInfo, error) { return nil, notInitialized() },
-		SetModel:           func(context.Context, *ai.Model) (bool, error) { return false, notInitialized() },
-		GetThinkingLevel:   func() (agent.ThinkingLevel, error) { return "", notInitialized() },
-		SetThinkingLevel:   func(agent.ThinkingLevel) error { return notInitialized() },
-		RegisterProvider:   func(Provider) error { return notInitialized() },
-		UnregisterProvider: func(string) error { return notInitialized() },
+		SendMessage:            func(context.Context, CustomMessage, *SendMessageOptions) error { return notInitialized() },
+		SendUserMessage:        func(context.Context, ai.UserContent, *SendUserMessageOptions) error { return notInitialized() },
+		AppendEntry:            func(context.Context, string, any) error { return notInitialized() },
+		SetSessionName:         func(context.Context, string) error { return notInitialized() },
+		GetSessionName:         func(context.Context) (*string, error) { return nil, notInitialized() },
+		SetLabel:               func(context.Context, string, *string) error { return notInitialized() },
+		GetActiveTools:         func() ([]string, error) { return nil, notInitialized() },
+		GetAllTools:            func() ([]ToolInfo, error) { return nil, notInitialized() },
+		SetActiveTools:         func([]string) error { return notInitialized() },
+		RefreshTools:           func() {},
+		GetCommands:            func() ([]SlashCommandInfo, error) { return nil, notInitialized() },
+		SetModel:               func(context.Context, *ai.Model) (bool, error) { return false, notInitialized() },
+		GetThinkingLevel:       func() (agent.ThinkingLevel, error) { return "", notInitialized() },
+		SetThinkingLevel:       func(agent.ThinkingLevel) error { return notInitialized() },
+		RegisterProvider:       func(Provider) error { return notInitialized() },
+		RegisterProviderConfig: func(string, ProviderConfig) error { return notInitialized() },
+		UnregisterProvider:     func(string) error { return notInitialized() },
 	}
 }
 
 func normalizeActions(actions Actions) Actions {
 	defaults := uninitializedActions()
+	if actions.RegisterProviderConfig == nil && actions.RegisterProvider != nil {
+		register := actions.RegisterProvider
+		actions.RegisterProviderConfig = func(name string, config ProviderConfig) error {
+			return register(Provider{ID: name, Name: config.Name, Config: config})
+		}
+	}
 	if actions.SendMessage == nil {
 		actions.SendMessage = defaults.SendMessage
 	}
@@ -119,6 +132,9 @@ func normalizeActions(actions Actions) Actions {
 	if actions.RegisterProvider == nil {
 		actions.RegisterProvider = defaults.RegisterProvider
 	}
+	if actions.RegisterProviderConfig == nil {
+		actions.RegisterProviderConfig = defaults.RegisterProviderConfig
+	}
 	if actions.UnregisterProvider == nil {
 		actions.UnregisterProvider = defaults.UnregisterProvider
 	}
@@ -129,12 +145,52 @@ func (runtime *runtimeState) bind(actions Actions, report func(ExtensionError)) 
 	actions = normalizeActions(actions)
 	runtime.mu.Lock()
 	runtime.actions = actions
-	runtime.bound = true
-	pending := append([]pendingProvider(nil), runtime.pendingProviders...)
+	runtime.registerNative = actions.RegisterProvider
+	runtime.registerConfig = actions.RegisterProviderConfig
+	runtime.unregister = actions.UnregisterProvider
+	runtime.providerBound = true
+	pending := append([]pendingProviderRegistration(nil), runtime.pendingProviders...)
 	runtime.pendingProviders = nil
 	runtime.mu.Unlock()
+	flushProviderRegistrations(pending, actions.RegisterProvider, actions.RegisterProviderConfig, report)
+}
+
+func (runtime *runtimeState) bindProviders(registry ModelRegistry, report func(ExtensionError)) {
+	if registry == nil {
+		return
+	}
+	runtime.mu.Lock()
+	runtime.registerNative = registry.RegisterProvider
+	runtime.registerConfig = registry.RegisterProviderConfig
+	runtime.unregister = registry.UnregisterProvider
+	runtime.providerBound = true
+	pending := append([]pendingProviderRegistration(nil), runtime.pendingProviders...)
+	runtime.pendingProviders = nil
+	runtime.mu.Unlock()
+	flushProviderRegistrations(pending, registry.RegisterProvider, registry.RegisterProviderConfig, report)
+}
+
+func flushProviderRegistrations(
+	pending []pendingProviderRegistration,
+	registerNative func(Provider) error,
+	registerConfig func(string, ProviderConfig) error,
+	report func(ExtensionError),
+) {
 	for _, registration := range pending {
-		if err := actions.RegisterProvider(registration.provider); err != nil && report != nil {
+		if registration.config == nil {
+			continue
+		}
+		err := registerConfig(registration.name, *registration.config)
+		if err != nil && report != nil {
+			report(ExtensionError{ExtensionPath: registration.extensionPath, Event: "register_provider", Error: err.Error()})
+		}
+	}
+	for _, registration := range pending {
+		if registration.native == nil {
+			continue
+		}
+		err := registerNative(*registration.native)
+		if err != nil && report != nil {
 			report(ExtensionError{ExtensionPath: registration.extensionPath, Event: "register_provider", Error: err.Error()})
 		}
 	}
@@ -190,24 +246,38 @@ func (runtime *runtimeState) flagValues() map[string]any {
 
 func (runtime *runtimeState) registerProvider(provider Provider, extensionPath string) {
 	runtime.mu.Lock()
-	if !runtime.bound {
-		runtime.pendingProviders = append(runtime.pendingProviders, pendingProvider{provider: provider, extensionPath: extensionPath})
+	if !runtime.providerBound {
+		runtime.pendingProviders = append(runtime.pendingProviders, pendingProviderRegistration{name: provider.ID, native: &provider, extensionPath: extensionPath})
 		runtime.mu.Unlock()
 		return
 	}
-	register := runtime.actions.RegisterProvider
+	register := runtime.registerNative
 	runtime.mu.Unlock()
 	if err := register(provider); err != nil {
 		panic(err)
 	}
 }
 
+func (runtime *runtimeState) registerProviderConfig(name string, config ProviderConfig, extensionPath string) {
+	runtime.mu.Lock()
+	if !runtime.providerBound {
+		runtime.pendingProviders = append(runtime.pendingProviders, pendingProviderRegistration{name: name, config: &config, extensionPath: extensionPath})
+		runtime.mu.Unlock()
+		return
+	}
+	register := runtime.registerConfig
+	runtime.mu.Unlock()
+	if err := register(name, config); err != nil {
+		panic(err)
+	}
+}
+
 func (runtime *runtimeState) unregisterProvider(name, _ string) {
 	runtime.mu.Lock()
-	if !runtime.bound {
+	if !runtime.providerBound {
 		filtered := runtime.pendingProviders[:0]
 		for _, registration := range runtime.pendingProviders {
-			if registration.provider.ID != name {
+			if registration.name != name {
 				filtered = append(filtered, registration)
 			}
 		}
@@ -215,7 +285,7 @@ func (runtime *runtimeState) unregisterProvider(name, _ string) {
 		runtime.mu.Unlock()
 		return
 	}
-	unregister := runtime.actions.UnregisterProvider
+	unregister := runtime.unregister
 	runtime.mu.Unlock()
 	if err := unregister(name); err != nil {
 		panic(err)

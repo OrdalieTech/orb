@@ -1,0 +1,321 @@
+{
+  "schemaVersion": 1,
+  "width": 100,
+  "searches": [
+    {
+      "id": "recent-alpha",
+      "query": "alpha",
+      "sortMode": "recent",
+      "nameFilter": "all",
+      "result": [
+        "incident",
+        "root"
+      ]
+    },
+    {
+      "id": "fuzzy",
+      "query": "ndcv",
+      "sortMode": "relevance",
+      "nameFilter": "all",
+      "result": [
+        "child"
+      ]
+    },
+    {
+      "id": "exact-phrase",
+      "query": "\"node cve\"",
+      "sortMode": "relevance",
+      "nameFilter": "all",
+      "result": [
+        "child"
+      ]
+    },
+    {
+      "id": "regex",
+      "query": "re:alpha.*error",
+      "sortMode": "relevance",
+      "nameFilter": "all",
+      "result": [
+        "incident"
+      ]
+    },
+    {
+      "id": "invalid-regex",
+      "query": "re:[",
+      "sortMode": "relevance",
+      "nameFilter": "all",
+      "result": []
+    },
+    {
+      "id": "named",
+      "query": "",
+      "sortMode": "recent",
+      "nameFilter": "named",
+      "result": [
+        "incident",
+        "root"
+      ]
+    }
+  ],
+  "frames": [
+    {
+      "id": "loading-progress",
+      "lines": [
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "",
+        "Resume Session (Current Folder)            ○ Current Folder | Loading 1/3  Name: All  Sort: Threaded",
+        "tab scope · re:<pattern> regex · \"phrase\" exact",
+        "ctrl+s sort · ctrl+n named · ctrl+d delete · ctrl+p path (off)",
+        "",
+        ">",
+        "",
+        "  No sessions in current folder. Press Tab to view all.",
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────"
+      ]
+    },
+    {
+      "id": "current-threaded",
+      "lines": [
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "",
+        "Resume Session (Current Folder)                  ◉ Current Folder | ○ All  Name: All  Sort: Threaded",
+        "tab scope · re:<pattern> regex · \"phrase\" exact",
+        "ctrl+s sort · ctrl+n named · ctrl+d delete · ctrl+p path (off)",
+        "",
+        ">",
+        "",
+        "› Root plan                                                                                    2 20m",
+        "     └─ Investigate Node CVE                                                                    2 5m",
+        "  Misc notes                                                                                   2 30m",
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────"
+      ]
+    },
+    {
+      "id": "all-threaded",
+      "lines": [
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "",
+        "Resume Session (All)                             ○ Current Folder | ◉ All  Name: All  Sort: Threaded",
+        "tab scope · re:<pattern> regex · \"phrase\" exact",
+        "ctrl+s sort · ctrl+n named · ctrl+d delete · ctrl+p path (off)",
+        "",
+        ">",
+        "",
+        "› Incident                                                <fixture>/other 2 1m",
+        "  Root plan                                            <fixture>/project 2 20m",
+        "     └─ Investigate Node CVE                            <fixture>/project 2 5m",
+        "  Misc notes                                           <fixture>/project 2 30m",
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────"
+      ]
+    },
+    {
+      "id": "all-recent",
+      "lines": [
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "",
+        "Resume Session (All)                               ○ Current Folder | ◉ All  Name: All  Sort: Recent",
+        "tab scope · re:<pattern> regex · \"phrase\" exact",
+        "ctrl+s sort · ctrl+n named · ctrl+d delete · ctrl+p path (off)",
+        "",
+        ">",
+        "",
+        "› Incident                                                <fixture>/other 2 1m",
+        "  Investigate Node CVE                                  <fixture>/project 2 5m",
+        "  Root plan                                            <fixture>/project 2 20m",
+        "  Misc notes                                           <fixture>/project 2 30m",
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────"
+      ]
+    },
+    {
+      "id": "all-relevance",
+      "lines": [
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "",
+        "Resume Session (All)                                ○ Current Folder | ◉ All  Name: All  Sort: Fuzzy",
+        "tab scope · re:<pattern> regex · \"phrase\" exact",
+        "ctrl+s sort · ctrl+n named · ctrl+d delete · ctrl+p path (off)",
+        "",
+        ">",
+        "",
+        "› Incident                                                <fixture>/other 2 1m",
+        "  Investigate Node CVE                                  <fixture>/project 2 5m",
+        "  Root plan                                            <fixture>/project 2 20m",
+        "  Misc notes                                           <fixture>/project 2 30m",
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────"
+      ]
+    },
+    {
+      "id": "fuzzy-search",
+      "lines": [
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "",
+        "Resume Session (All)                                ○ Current Folder | ◉ All  Name: All  Sort: Fuzzy",
+        "tab scope · re:<pattern> regex · \"phrase\" exact",
+        "ctrl+s sort · ctrl+n named · ctrl+d delete · ctrl+p path (off)",
+        "",
+        "> ndcv",
+        "",
+        "› Investigate Node CVE                                  <fixture>/project 2 5m",
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────"
+      ]
+    },
+    {
+      "id": "exact-search",
+      "lines": [
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "",
+        "Resume Session (All)                                ○ Current Folder | ◉ All  Name: All  Sort: Fuzzy",
+        "tab scope · re:<pattern> regex · \"phrase\" exact",
+        "ctrl+s sort · ctrl+n named · ctrl+d delete · ctrl+p path (off)",
+        "",
+        "> \"node cve\"",
+        "",
+        "› Investigate Node CVE                                  <fixture>/project 2 5m",
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────"
+      ]
+    },
+    {
+      "id": "regex-search",
+      "lines": [
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "",
+        "Resume Session (All)                                ○ Current Folder | ◉ All  Name: All  Sort: Fuzzy",
+        "tab scope · re:<pattern> regex · \"phrase\" exact",
+        "ctrl+s sort · ctrl+n named · ctrl+d delete · ctrl+p path (off)",
+        "",
+        "> re:alpha.*error",
+        "",
+        "› Incident                                                <fixture>/other 2 1m",
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────"
+      ]
+    },
+    {
+      "id": "invalid-regex",
+      "lines": [
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "",
+        "Resume Session (All)                                ○ Current Folder | ◉ All  Name: All  Sort: Fuzzy",
+        "tab scope · re:<pattern> regex · \"phrase\" exact",
+        "ctrl+s sort · ctrl+n named · ctrl+d delete · ctrl+p path (off)",
+        "",
+        "> re:[",
+        "",
+        "  No sessions found",
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────"
+      ]
+    },
+    {
+      "id": "named-filter",
+      "lines": [
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "",
+        "Resume Session (All)                              ○ Current Folder | ◉ All  Name: Named  Sort: Fuzzy",
+        "tab scope · re:<pattern> regex · \"phrase\" exact",
+        "ctrl+s sort · ctrl+n named · ctrl+d delete · ctrl+p path (off)",
+        "",
+        ">",
+        "",
+        "› Incident                                                <fixture>/other 2 1m",
+        "  Root plan                                            <fixture>/project 2 20m",
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────"
+      ]
+    },
+    {
+      "id": "path-toggle",
+      "lines": [
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "",
+        "Resume Session (All)                              ○ Current Folder | ◉ All  Name: Named  Sort: Fuzzy",
+        "tab scope · re:<pattern> regex · \"phrase\" exact",
+        "ctrl+s sort · ctrl+n named · ctrl+d delete · ctrl+p path (on)",
+        "",
+        ">",
+        "",
+        "› Incident <fixture>/incident.jsonl <fixture>/other 2 1m",
+        "  Root plan <fixture>/root.jsonl <fixture>/project 2 20m",
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────"
+      ]
+    },
+    {
+      "id": "delete-confirmation",
+      "lines": [
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "",
+        "Resume Session (All)                              ○ Current Folder | ◉ All  Name: Named  Sort: Fuzzy",
+        "Delete session? enter confirm · escape/ctrl+c cancel",
+        "",
+        "",
+        ">",
+        "",
+        "› Incident <fixture>/incident.jsonl <fixture>/other 2 1m",
+        "  Root plan <fixture>/root.jsonl <fixture>/project 2 20m",
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────"
+      ]
+    },
+    {
+      "id": "delete-cancelled",
+      "lines": [
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "",
+        "Resume Session (All)                              ○ Current Folder | ◉ All  Name: Named  Sort: Fuzzy",
+        "tab scope · re:<pattern> regex · \"phrase\" exact",
+        "ctrl+s sort · ctrl+n named · ctrl+d delete · ctrl+p path (on)",
+        "",
+        ">",
+        "",
+        "› Incident <fixture>/incident.jsonl <fixture>/other 2 1m",
+        "  Root plan <fixture>/root.jsonl <fixture>/project 2 20m",
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────"
+      ]
+    },
+    {
+      "id": "after-delete",
+      "lines": [
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "",
+        "Resume Session (All)                              ○ Current Folder | ◉ All  Name: Named  Sort: Fuzzy",
+        "Session deleted",
+        "",
+        "",
+        ">",
+        "",
+        "› Root plan <fixture>/root.jsonl <fixture>/project 2 20m",
+        "",
+        "────────────────────────────────────────────────────────────────────────────────────────────────────"
+      ]
+    }
+  ],
+  "callbacks": {
+    "selected": [
+      "<fixture>/child.jsonl"
+    ],
+    "cancellations": 1
+  }
+}

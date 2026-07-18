@@ -27,6 +27,7 @@ type PrintModeOptions struct {
 	Mode           PrintOutputMode
 	Messages       []string
 	InitialMessage string
+	InitialImages  []*ai.ImageContent
 	SessionHeader  *session.SessionHeader
 	Stdout         io.Writer
 	Stderr         io.Writer
@@ -179,7 +180,7 @@ func executePrintMode(ctx context.Context, session printSession, options PrintMo
 		return printModeResult{err: errors.New("print mode: nil session")}
 	}
 	if options.InitialMessage != "" {
-		if err := session.Prompt(ctx, options.InitialMessage); err != nil {
+		if err := session.Prompt(ctx, options.InitialMessage, options.InitialImages...); err != nil {
 			return printModeResult{err: err}
 		}
 	}

@@ -398,6 +398,9 @@ func (manager *SettingsManager) GetEnabledModels() []string {
 	return models
 }
 
+func (manager *SettingsManager) AgentDir() string { return filepath.Dir(manager.globalPath) }
+func (manager *SettingsManager) CWD() string      { return filepath.Dir(filepath.Dir(manager.projectPath)) }
+
 func settingsStringSlice(settings Settings, key string) []string {
 	value, exists := settings[key]
 	if !exists {
@@ -512,6 +515,43 @@ func (manager *SettingsManager) SetTheme(value string) {
 
 func (manager *SettingsManager) GetThemePaths() []string {
 	return settingsStringSlice(manager.GetSettings(), "themes")
+}
+
+func (manager *SettingsManager) GetExternalEditor() string {
+	if configured := strings.TrimSpace(manager.stringValue("externalEditor")); configured != "" {
+		return configured
+	}
+	if editor := os.Getenv("VISUAL"); editor != "" {
+		return editor
+	}
+	if editor := os.Getenv("EDITOR"); editor != "" {
+		return editor
+	}
+	if runtime.GOOS == "windows" {
+		return "notepad"
+	}
+	return "nano"
+}
+
+func (manager *SettingsManager) GetTreeFilterMode() string {
+	value := manager.stringValue("treeFilterMode")
+	switch value {
+	case "default", "no-tools", "user-only", "labeled-only", "all":
+		return value
+	default:
+		return "default"
+	}
+}
+
+func (manager *SettingsManager) GetOutputPad() int {
+	if int64Default(manager.GetSettings(), "outputPad", 1) == 0 {
+		return 0
+	}
+	return 1
+}
+
+func (manager *SettingsManager) GetShowTerminalProgress() bool {
+	return boolDefault(manager.objectValue("terminal"), "showTerminalProgress", false)
 }
 
 func (manager *SettingsManager) GetMarkdownCodeBlockIndent() string {

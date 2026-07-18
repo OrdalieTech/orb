@@ -18,11 +18,14 @@ import { generateWP250 } from "./wp250-models.ts";
 import { generateF10 } from "./f10-compaction.ts";
 import { generateF11ExtensionRunner } from "./f11-extension-runner.ts";
 import { generateF11ExtensionWiring } from "./f11-extension-wiring.ts";
+import { generateF11JSBridge } from "./f11-jsbridge.ts";
 import { generateWP360 } from "./wp360-packages.ts";
 import { generateF12 } from "./f12-tui.ts";
 import { generateWP440 } from "./wp440-images.ts";
 import { generateWP440Read } from "./wp440-read.ts";
 import { generateWP370Runtime } from "./wp370-runtime.ts";
+import { generateWP450Replay } from "./wp450-replay.ts";
+import { generateWP450SessionSelector } from "./wp450-session-selector.ts";
 
 const upstreamRoot = process.cwd();
 const outputRoot = path.resolve(upstreamRoot, process.argv[2] ?? "../conformance/fixtures");
@@ -55,6 +58,9 @@ const generators = [
   generateWP440,
   generateWP440Read,
   generateWP370Runtime,
+  generateWP450Replay,
+  generateWP450SessionSelector,
+  generateF11JSBridge,
 ];
 for (const generate of generators) {
   await generate(upstreamRoot, outputRoot, upstreamCommit);

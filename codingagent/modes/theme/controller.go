@@ -75,6 +75,7 @@ func (controller *Controller) Set(name string) error {
 		return fmt.Errorf("theme not found: %s", name)
 	}
 	controller.current, controller.name = theme, name
+	SetCurrent(theme)
 	if controller.onChange != nil {
 		controller.onChange()
 	}
@@ -98,6 +99,7 @@ func (controller *Controller) Reload() error {
 		return err
 	}
 	controller.current = reloaded
+	SetCurrent(reloaded)
 	if controller.onChange != nil {
 		controller.onChange()
 	}

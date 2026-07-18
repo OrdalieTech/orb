@@ -54,7 +54,7 @@ func (runtime *SessionRuntime) PromptPreflight(ctx context.Context) error {
 		return errors.New("codingagent: nil session runtime")
 	}
 	state := runtime.agent.State()
-	if state.Model == nil {
+	if state.Model == nil || IsUnknownModel(state.Model) {
 		return noModelSelectedError()
 	}
 	if ctx == nil {
@@ -117,6 +117,240 @@ func (runtime *SessionRuntime) PendingMessageCount() int {
 	return len(runtime.steering) + len(runtime.followUps)
 }
 
+func (runtime *SessionRuntime) DequeueMessages() []string {
+	if runtime == nil {
+		return nil
+	}
+	runtime.mu.Lock()
+	messages := append([]string(nil), runtime.steering...)
+	messages = append(messages, runtime.followUps...)
+	runtime.steering, runtime.followUps = nil, nil
+	runtime.mu.Unlock()
+	runtime.agent.ClearSteeringQueue()
+	runtime.agent.ClearFollowUpQueue()
+	runtime.emitQueueUpdate()
+	return messages
+}
+
+// PendingMessages returns the queued steering and follow-up texts in queue
+// order as copied slices — the pull-based counterpart of QueueUpdateEvent, so
+// the TUI can render queue contents without racing delivery removal.
+func (runtime *SessionRuntime) PendingMessages() QueueUpdateEvent {
+	if runtime == nil {
+		return QueueUpdateEvent{Steering: []string{}, FollowUp: []string{}}
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	return QueueUpdateEvent{
+		Steering: append([]string{}, runtime.steering...),
+		FollowUp: append([]string{}, runtime.followUps...),
+	}
+}
+
+// InteractiveSettings is an immutable snapshot of the documented UI settings
+// interactive mode reads (upstream docs/settings.md UI keys); the mutable
+// SettingsManager itself is never exposed.
+type InteractiveSettings struct {
+	QuietStartup           bool
+	DoubleEscapeAction     string
+	ClearOnShrink          bool
+	HideThinkingBlock      bool
+	ShowCacheMissNotices   bool
+	ShowImages             bool
+	ImageWidthCells        int
+	ShowHardwareCursor     bool
+	EditorPaddingX         int
+	AutocompleteMaxVisible int
+	SteeringMode           agent.QueueMode
+	FollowUpMode           agent.QueueMode
+}
+
+func (runtime *SessionRuntime) InteractiveSettings() InteractiveSettings {
+	if runtime == nil {
+		return InteractiveSettings{}
+	}
+	return InteractiveSettings{
+		QuietStartup:           runtime.settings.GetQuietStartup(),
+		DoubleEscapeAction:     runtime.settings.GetDoubleEscapeAction(),
+		ClearOnShrink:          runtime.settings.GetClearOnShrink(),
+		HideThinkingBlock:      runtime.settings.GetHideThinkingBlock(),
+		ShowCacheMissNotices:   runtime.settings.GetShowCacheMissNotices(),
+		ShowImages:             runtime.settings.GetShowImages(),
+		ImageWidthCells:        runtime.settings.GetImageWidthCells(),
+		ShowHardwareCursor:     runtime.settings.GetShowHardwareCursor(),
+		EditorPaddingX:         runtime.settings.GetEditorPaddingX(),
+		AutocompleteMaxVisible: runtime.settings.GetAutocompleteMaxVisible(),
+		SteeringMode:           agent.QueueMode(runtime.settings.GetSteeringMode()),
+		FollowUpMode:           agent.QueueMode(runtime.settings.GetFollowUpMode()),
+	}
+}
+
+// InteractiveModeSettings is the immutable startup/runtime configuration the
+// TUI consumes in addition to the frequently read InteractiveSettings values.
+type InteractiveModeSettings struct {
+	InteractiveSettings
+	AgentDir             string
+	ProjectTrusted       bool
+	GlobalThemePaths     []string
+	ProjectThemePaths    []string
+	ThemeSetting         string
+	ImageAutoResize      bool
+	BlockImages          bool
+	EnableSkillCommands  bool
+	Transport            ai.Transport
+	OutputPad            int
+	ExternalEditor       string
+	TreeFilterMode       string
+	DefaultProjectTrust  string
+	ShowTerminalProgress bool
+}
+
+func (runtime *SessionRuntime) InteractiveModeSettings() InteractiveModeSettings {
+	if runtime == nil {
+		return InteractiveModeSettings{}
+	}
+	return InteractiveModeSettings{
+		InteractiveSettings:  runtime.InteractiveSettings(),
+		AgentDir:             runtime.settings.AgentDir(),
+		ProjectTrusted:       runtime.settings.IsProjectTrusted(),
+		GlobalThemePaths:     append([]string(nil), runtime.settings.GetGlobalThemePaths()...),
+		ProjectThemePaths:    append([]string(nil), runtime.settings.GetProjectThemePaths()...),
+		ThemeSetting:         runtime.settings.GetThemeSetting(),
+		ImageAutoResize:      runtime.settings.GetImageAutoResize(),
+		BlockImages:          runtime.settings.GetBlockImages(),
+		EnableSkillCommands:  runtime.settings.GetEnableSkillCommands(),
+		Transport:            runtime.settings.GetTransport(),
+		OutputPad:            runtime.settings.GetOutputPad(),
+		ExternalEditor:       runtime.settings.GetExternalEditor(),
+		TreeFilterMode:       runtime.settings.GetTreeFilterMode(),
+		DefaultProjectTrust:  runtime.settings.GetDefaultProjectTrust(),
+		ShowTerminalProgress: runtime.settings.GetShowTerminalProgress(),
+	}
+}
+
+func (runtime *SessionRuntime) SetTheme(name string) error {
+	if runtime == nil {
+		return errors.New("codingagent: nil session runtime")
+	}
+	runtime.settings.SetTheme(name)
+	return nil
+}
+
+func (runtime *SessionRuntime) SetHideThinkingBlock(hidden bool) {
+	if runtime != nil {
+		runtime.settings.SetHideThinkingBlock(hidden)
+	}
+}
+
+func (runtime *SessionRuntime) SetShowCacheMissNotices(show bool) {
+	if runtime != nil {
+		runtime.settings.SetShowCacheMissNotices(show)
+	}
+}
+
+func (runtime *SessionRuntime) SetShowImages(show bool) {
+	if runtime != nil {
+		runtime.settings.SetShowImages(show)
+	}
+}
+
+func (runtime *SessionRuntime) SetImageWidthCells(width int) {
+	if runtime != nil {
+		runtime.settings.SetImageWidthCells(width)
+	}
+}
+
+func (runtime *SessionRuntime) SetImageAutoResize(enabled bool) {
+	if runtime != nil {
+		runtime.settings.SetImageAutoResize(enabled)
+	}
+}
+
+func (runtime *SessionRuntime) SetBlockImages(blocked bool) {
+	if runtime != nil {
+		runtime.settings.SetBlockImages(blocked)
+	}
+}
+
+func (runtime *SessionRuntime) SetEnableSkillCommands(enabled bool) {
+	if runtime != nil {
+		runtime.settings.SetEnableSkillCommands(enabled)
+	}
+}
+
+func (runtime *SessionRuntime) SetTransport(transport ai.Transport) {
+	if runtime != nil {
+		runtime.settings.SetTransport(transport)
+		runtime.agent.SetTransport(transport)
+	}
+}
+
+func (runtime *SessionRuntime) SetQuietStartup(enabled bool) {
+	if runtime != nil {
+		runtime.settings.SetQuietStartup(enabled)
+	}
+}
+
+func (runtime *SessionRuntime) SetDefaultProjectTrust(value string) {
+	if runtime != nil {
+		runtime.settings.SetDefaultProjectTrust(value)
+	}
+}
+
+func (runtime *SessionRuntime) SetDoubleEscapeAction(action string) {
+	if runtime != nil {
+		runtime.settings.SetDoubleEscapeAction(action)
+	}
+}
+
+func (runtime *SessionRuntime) SetTreeFilterMode(value string) {
+	if runtime != nil {
+		runtime.settings.SetTreeFilterMode(value)
+	}
+}
+
+func (runtime *SessionRuntime) SetShowHardwareCursor(enabled bool) {
+	if runtime != nil {
+		runtime.settings.SetShowHardwareCursor(enabled)
+	}
+}
+
+func (runtime *SessionRuntime) SetEditorPaddingX(padding int) {
+	if runtime != nil {
+		runtime.settings.SetEditorPaddingX(padding)
+	}
+}
+
+func (runtime *SessionRuntime) SetOutputPad(padding int) {
+	if runtime != nil {
+		runtime.settings.SetOutputPad(padding)
+	}
+}
+
+func (runtime *SessionRuntime) SetAutocompleteMaxVisible(visible int) {
+	if runtime != nil {
+		runtime.settings.SetAutocompleteMaxVisible(visible)
+	}
+}
+
+func (runtime *SessionRuntime) SetClearOnShrink(enabled bool) {
+	if runtime != nil {
+		runtime.settings.SetClearOnShrink(enabled)
+	}
+}
+
+func (runtime *SessionRuntime) SetShowTerminalProgress(enabled bool) {
+	if runtime != nil {
+		runtime.settings.SetShowTerminalProgress(enabled)
+	}
+}
+
+func (runtime *SessionRuntime) SetEnabledModels(models []string) {
+	if runtime != nil {
+		runtime.settings.SetEnabledModels(append([]string(nil), models...))
+	}
+}
+
 func (runtime *SessionRuntime) SteeringMode() agent.QueueMode {
 	if runtime == nil {
 		return agent.QueueOneAtATime
@@ -177,6 +411,18 @@ func (runtime *SessionRuntime) setModel(
 }
 
 func (runtime *SessionRuntime) CycleModel(ctx context.Context) (*ModelCycleResult, error) {
+	return runtime.cycleModel(ctx, 1)
+}
+
+// CycleModelBackward is upstream cycleModel("backward"): same scope selection,
+// auth filtering, and thinking-level handling as CycleModel, stepping in reverse.
+func (runtime *SessionRuntime) CycleModelBackward(ctx context.Context) (*ModelCycleResult, error) {
+	return runtime.cycleModel(ctx, -1)
+}
+
+// step is +1 (forward) or -1 (backward); wraparound matches upstream
+// (currentIndex + step + len) % len with an absent current model treated as index 0.
+func (runtime *SessionRuntime) cycleModel(ctx context.Context, step int) (*ModelCycleResult, error) {
 	if runtime == nil {
 		return nil, errors.New("codingagent: nil session runtime")
 	}
@@ -202,7 +448,7 @@ func (runtime *SessionRuntime) CycleModel(ctx context.Context) (*ModelCycleResul
 		if index < 0 {
 			index = 0
 		}
-		next := models[(index+1)%len(models)]
+		next := models[(index+step+len(models))%len(models)]
 		if err := runtime.setModel(ctx, next.Model, next.ThinkingLevel, false); err != nil {
 			return nil, err
 		}
@@ -221,11 +467,29 @@ func (runtime *SessionRuntime) CycleModel(ctx context.Context) (*ModelCycleResul
 	if index < 0 {
 		index = 0
 	}
-	next := models[(index+1)%len(models)]
+	next := models[(index+step+len(models))%len(models)]
 	if err := runtime.SetModel(ctx, next); err != nil {
 		return nil, err
 	}
 	return &ModelCycleResult{Model: next, ThinkingLevel: runtime.agent.State().ThinkingLevel}, nil
+}
+
+func (runtime *SessionRuntime) ScopedModels() []ScopedModel {
+	if runtime == nil {
+		return nil
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	return append([]ScopedModel(nil), runtime.scopedModels...)
+}
+
+func (runtime *SessionRuntime) SetScopedModels(models []ScopedModel) {
+	if runtime == nil {
+		return
+	}
+	runtime.mu.Lock()
+	runtime.scopedModels = append([]ScopedModel(nil), models...)
+	runtime.mu.Unlock()
 }
 
 func (runtime *SessionRuntime) thinkingLevelForModelSwitch(
@@ -277,6 +541,13 @@ func (runtime *SessionRuntime) CycleThinkingLevel() (*ai.ModelThinkingLevel, err
 		return nil, err
 	}
 	return &next, nil
+}
+
+func (runtime *SessionRuntime) AvailableThinkingLevels() []ai.ModelThinkingLevel {
+	if runtime == nil {
+		return nil
+	}
+	return append([]ai.ModelThinkingLevel(nil), supportedThinkingLevels(runtime.agent.State().Model)...)
 }
 
 func supportedThinkingLevels(model *ai.Model) []ai.ModelThinkingLevel {
