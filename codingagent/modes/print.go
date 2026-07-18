@@ -20,9 +20,15 @@ type PrintModeOptions struct {
 	Stderr         io.Writer
 }
 
+type printSession interface {
+	Prompt(context.Context, any, ...*ai.ImageContent) error
+	Abort()
+	State() agent.AgentState
+}
+
 // RunPrintMode sends each configured prompt serially and returns a process exit
 // code. Model failures remain represented by the final assistant message.
-func RunPrintMode(ctx context.Context, session *agent.Agent, options PrintModeOptions) int {
+func RunPrintMode(ctx context.Context, session printSession, options PrintModeOptions) int {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, printModeSignals()...)
 	return runPrintMode(ctx, session, options, printModeControl{
@@ -43,7 +49,7 @@ type printModeResult struct {
 	err   error
 }
 
-func runPrintMode(ctx context.Context, session *agent.Agent, options PrintModeOptions, control printModeControl) int {
+func runPrintMode(ctx context.Context, session printSession, options PrintModeOptions, control printModeControl) int {
 	stdout := options.Stdout
 	if stdout == nil {
 		stdout = os.Stdout
@@ -113,7 +119,7 @@ func runPrintMode(ctx context.Context, session *agent.Agent, options PrintModeOp
 	return exitCode
 }
 
-func executePrintMode(ctx context.Context, session *agent.Agent, options PrintModeOptions) printModeResult {
+func executePrintMode(ctx context.Context, session printSession, options PrintModeOptions) printModeResult {
 	if session == nil {
 		return printModeResult{err: errors.New("print mode: nil session")}
 	}

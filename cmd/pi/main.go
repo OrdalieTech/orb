@@ -16,6 +16,7 @@ import (
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
 	aimodels "github.com/OrdalieTech/pi-go/ai/models"
+	"github.com/OrdalieTech/pi-go/codingagent"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 	"github.com/OrdalieTech/pi-go/codingagent/modes"
 	"github.com/OrdalieTech/pi-go/codingagent/session"
@@ -162,8 +163,25 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if err := appendInitialRuntimeState(manager, runtime.Agent.State(), sessionContext); err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
-	unpersist := runtime.Agent.Subscribe(persistAgentMessages(manager))
-	defer unpersist()
+	settings := runtime.Settings
+	if settings == nil {
+		agentDir, settingsErr := config.GetAgentDir()
+		if settingsErr != nil {
+			return reportCLIError(streams.Stderr, settingsErr)
+		}
+		settings, settingsErr = config.NewSettingsManager(manager.GetCWD(), config.WithAgentDir(agentDir))
+		if settingsErr != nil {
+			return reportCLIError(streams.Stderr, settingsErr)
+		}
+	}
+	sessionRuntime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
+		Agent: runtime.Agent, SessionManager: manager, Settings: settings,
+		GetAPIKey: runtime.GetAPIKey, GetModelHeaders: runtime.GetModelHeaders,
+	})
+	if err != nil {
+		return reportCLIError(streams.Stderr, err)
+	}
+	defer sessionRuntime.Dispose()
 
 	var stdinContent *string
 	if !streams.StdinTTY {
@@ -180,7 +198,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if initialMessage != nil {
 		initial = *initialMessage
 	}
-	return modes.RunPrintMode(ctx, runtime.Agent, modes.PrintModeOptions{
+	return modes.RunPrintMode(ctx, sessionRuntime, modes.PrintModeOptions{
 		Messages:       args.Messages,
 		InitialMessage: initial,
 		Stdout:         streams.Stdout,

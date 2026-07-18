@@ -248,6 +248,53 @@ func TestConsumedSettingsGetters(t *testing.T) {
 	}
 }
 
+func TestHarnessPolicySettings(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	writeSettings(t, filepath.Join(agentDir, "settings.json"), map[string]any{
+		"compaction":    map[string]any{"enabled": false, "reserveTokens": 1200, "keepRecentTokens": 300},
+		"branchSummary": map[string]any{"reserveTokens": 900, "skipPrompt": true},
+		"retry": map[string]any{
+			"enabled": false, "maxRetries": 4, "baseDelayMs": 25,
+			"provider": map[string]any{"timeoutMs": 50, "maxRetries": 2, "maxRetryDelayMs": 75},
+		},
+	})
+	manager, err := NewSettingsManager(root, WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := manager.GetCompactionSettings(); got != (CompactionSettings{false, 1200, 300}) {
+		t.Fatalf("compaction = %#v", got)
+	}
+	if got := manager.GetBranchSummarySettings(); got != (BranchSummarySettings{900, true}) {
+		t.Fatalf("branch summary = %#v", got)
+	}
+	if got := manager.GetRetrySettings(); got != (RetrySettings{false, 4, 25}) {
+		t.Fatalf("retry = %#v", got)
+	}
+	provider := manager.GetProviderRetrySettings()
+	if provider.TimeoutMS == nil || *provider.TimeoutMS != 50 || provider.MaxRetries == nil || *provider.MaxRetries != 2 || provider.MaxRetryDelayMS != 75 {
+		t.Fatalf("provider retry = %#v", provider)
+	}
+
+	empty, err := NewSettingsManager(root, WithAgentDir(filepath.Join(root, "empty")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := empty.GetCompactionSettings(); got != (CompactionSettings{true, 16384, 20000}) {
+		t.Fatalf("default compaction = %#v", got)
+	}
+	if got := empty.GetBranchSummarySettings(); got != (BranchSummarySettings{16384, false}) {
+		t.Fatalf("default branch summary = %#v", got)
+	}
+	if got := empty.GetRetrySettings(); got != (RetrySettings{true, 3, 2000}) {
+		t.Fatalf("default retry = %#v", got)
+	}
+	if got := empty.GetProviderRetrySettings(); got.TimeoutMS != nil || got.MaxRetries != nil || got.MaxRetryDelayMS != 60000 {
+		t.Fatalf("default provider retry = %#v", got)
+	}
+}
+
 func TestSessionDirectoryPrecedence(t *testing.T) {
 	root := t.TempDir()
 	agentDir := filepath.Join(root, "agent")
