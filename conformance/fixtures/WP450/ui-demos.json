@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "statusLine": {
+    "events": [
+      {
+        "event": "session_start",
+        "value": "Ready"
+      },
+      {
+        "event": "turn_start",
+        "value": "● Turn 1..."
+      },
+      {
+        "event": "turn_end",
+        "value": "✓ Turn 1 complete"
+      }
+    ]
+  },
+  "widgetPlacement": {
+    "above": [
+      {
+        "key": "widget-above",
+        "placement": "aboveEditor",
+        "lines": [
+          "Above editor widget"
+        ]
+      }
+    ],
+    "below": [
+      {
+        "key": "widget-below",
+        "placement": "belowEditor",
+        "lines": [
+          "Below editor widget"
+        ]
+      }
+    ]
+  },
+  "headerFooterInitialization": {
+    "width": 72,
+    "header": [
+      "",
+      "     █▌  █▌",
+      "  ██████████████",
+      "     ██    ██",
+      "     ██    ██",
+      "     ██    ██",
+      "     ██    ██",
+      "",
+      "   shitty coding agent v0.80.10"
+    ],
+    "footer": [
+      "↑1.2k ↓34 $0.003                                    fixture-model (main)"
+    ],
+    "retained": {
+      "statusKeys": [
+        "status-demo"
+      ],
+      "widgetKeys": [
+        "widget-above",
+        "widget-below"
+      ],
+      "header": true,
+      "footer": true
+    }
+  }
+}

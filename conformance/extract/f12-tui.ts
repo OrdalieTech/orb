@@ -4,6 +4,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { withOfflineGeneratedCatalog } from "./f3-agent.ts";
+import { generateF12Components } from "./f12-components.ts";
+import { generateF12Core } from "./f12-core.ts";
 
 type StyleName = "none" | "red" | "blue-bg" | "bracket";
 
@@ -22,6 +24,16 @@ type FixtureNode = {
 };
 
 type FixtureCase = { name: string; width: number; node: FixtureNode };
+
+type FullScreenFixtureCase = {
+  name: string;
+  width: number;
+  rows: number;
+  user: string;
+  assistant: string;
+  editor: string;
+  status: string;
+};
 
 type MarkdownFixtureCase = {
   name: string;
@@ -124,6 +136,26 @@ const cases: FixtureCase[] = [
   { name: "loader-hidden-indicator", width: 18, node: { type: "loader", message: "Waiting", frames: [], messageStyle: "bracket" } },
 ];
 
+const fullScreenCases: FullScreenFixtureCase[] = [100, 72, 48, 32].map((width) => ({
+  name: `chat-editor-status-${width}`,
+  width,
+  rows: width >= 72 ? 30 : 20,
+  user: "Verify the full TUI frame at this width, including CJK and emoji rendering.",
+  assistant: [
+    "The replay uses the same deterministic component tree at every width.",
+    "",
+    "- Chinese: 你好世界",
+    "- Japanese: 日本語テスト",
+    "- Emoji: 👩🏽‍💻 ✅",
+    "",
+    "```go",
+    "frame := root.Render(width)",
+    "```",
+  ].join("\n"),
+  editor: "Reply with parity evidence: 你好世界 / 日本語 / 👩🏽‍💻",
+  status: "gpt-5.1 • medium • 42% context • main",
+}));
+
 const markdownCases: MarkdownFixtureCase[] = [
   { name: "list-nested", text: "- Item 1\n  - Nested 1.1\n  - Nested 1.2\n- Item 2", width: 80 },
   { name: "list-deep", text: "- Level 1\n  - Level 2\n    - Level 3\n      - Level 4", width: 80 },
@@ -224,6 +256,20 @@ type TuiModule = {
     defaultStyle?: Record<string, unknown>,
     options?: Record<string, unknown>,
   ) => { render(width: number): string[] };
+  TUI: new (terminal: unknown) => { requestRender(): void };
+  Editor: new (
+    ui: { requestRender(): void },
+    theme: {
+      borderColor: (value: string) => string;
+      selectList: {
+        selectedPrefix: (value: string) => string;
+        selectedText: (value: string) => string;
+        description: (value: string) => string;
+        scrollInfo: (value: string) => string;
+        noMatch: (value: string) => string;
+      };
+    },
+  ) => { setText(value: string): void; render(width: number): string[] };
   setCapabilities(capabilities: { images: null; trueColor: boolean; hyperlinks: boolean }): void;
   resetCapabilitiesCache(): void;
 };
@@ -261,6 +307,37 @@ const markdownTheme = {
   strikethrough: ansi.strike,
   underline: ansi.underline,
 };
+
+const fullScreenEditorTheme = {
+  borderColor: (value: string) => `\u001b[2m${value}\u001b[22m`,
+  selectList: {
+    selectedPrefix: (value: string) => value,
+    selectedText: ansi.bold,
+    description: (value: string) => `\u001b[2m${value}\u001b[22m`,
+    scrollInfo: (value: string) => `\u001b[2m${value}\u001b[22m`,
+    noMatch: (value: string) => `\u001b[2m${value}\u001b[22m`,
+  },
+};
+
+function buildFullScreen(tui: TuiModule, fixtureCase: FullScreenFixtureCase): { render(width: number): string[] } {
+  const root = new tui.Container();
+  root.addChild(new tui.Text(fixtureCase.user, 1, 0, (value) => `\u001b[44m${value}\u001b[49m`));
+  root.addChild(new tui.Spacer(1));
+  root.addChild(new tui.Markdown(fixtureCase.assistant, 1, 0, markdownTheme));
+  root.addChild(new tui.Spacer(1));
+  const terminal = {
+    start() {}, stop() {}, async drainInput() {}, write() {}, moveBy() {}, hideCursor() {}, showCursor() {},
+    clearLine() {}, clearFromCursor() {}, clearScreen() {}, setTitle() {}, setProgress() {},
+    get columns() { return fixtureCase.width; },
+    get rows() { return fixtureCase.rows; },
+    get kittyProtocolActive() { return false; },
+  };
+  const editor = new tui.Editor(new tui.TUI(terminal), fullScreenEditorTheme);
+  editor.setText(fixtureCase.editor);
+  root.addChild(editor);
+  root.addChild(new tui.TruncatedText(fixtureCase.status, 1, 0));
+  return root;
+}
 
 function defaultMarkdownStyle(name: MarkdownFixtureCase["defaultStyle"]): Record<string, unknown> | undefined {
   switch (name) {
@@ -399,6 +476,16 @@ function build(tui: TuiModule, node: FixtureNode): { component: { render(width: 
 
 export async function generateF12(upstreamRoot: string, outputRoot: string, upstreamCommit: string): Promise<void> {
   const source = "packages/tui/src/index.ts";
+  const sources = [
+    source,
+    "packages/tui/src/components/editor.ts",
+    "packages/tui/src/components/input.ts",
+    "packages/tui/src/components/select-list.ts",
+    "packages/tui/src/components/settings-list.ts",
+    "packages/tui/src/autocomplete.ts",
+    "packages/tui/src/fuzzy.ts",
+    "packages/tui/src/word-navigation.ts",
+  ];
   const tui = (await import(pathToFileURL(path.join(upstreamRoot, source)).href)) as TuiModule;
   const generated = cases.map((fixtureCase) => {
     const built = build(tui, fixtureCase.node);
@@ -424,6 +511,10 @@ export async function generateF12(upstreamRoot: string, outputRoot: string, upst
       tui.resetCapabilitiesCache();
     }
   });
+  const fullScreen = fullScreenCases.map((fixtureCase) => ({
+    ...fixtureCase,
+    expected: buildFullScreen(tui, fixtureCase).render(fixtureCase.width),
+  }));
   const themeSource = "packages/coding-agent/src/modes/interactive/theme/theme.ts";
   process.env.PI_PACKAGE_DIR = path.join(upstreamRoot, "packages/coding-agent");
   process.env.FORCE_COLOR = "3";
@@ -529,8 +620,10 @@ export async function generateF12(upstreamRoot: string, outputRoot: string, upst
   const terminalImages = { schemaVersion: 2, encodingCases, cellCases, renderCases };
   const familyDir = path.join(outputRoot, "F12");
   await mkdir(familyDir, { recursive: true });
+  const componentFiles = await generateF12Components(upstreamRoot, outputRoot);
+  const coreFiles = await generateF12Core(upstreamRoot, familyDir);
   const fixtureSources = [
-    source,
+    ...sources,
     "packages/tui/src/components/markdown.ts",
     "packages/tui/test/markdown.test.ts",
     themeSource,
@@ -542,10 +635,12 @@ export async function generateF12(upstreamRoot: string, outputRoot: string, upst
     "packages/coding-agent/src/core/settings-manager.ts",
     terminalImageSource,
     imageSource,
+    ...coreFiles.sources,
   ];
-  await writeFile(path.join(familyDir, "manifest.json"), `${JSON.stringify({ family: "F12", upstreamCommit, generator: "conformance/extract/f12-tui.ts", source: fixtureSources.join("; "), files: ["primitives.json", "markdown.json", "themes.json", "terminal-images.json"] }, null, 2)}\n`);
+  await writeFile(path.join(familyDir, "manifest.json"), `${JSON.stringify({ family: "F12", upstreamCommit, generator: "conformance/extract/f12-tui.ts", source: fixtureSources.join("; "), sources: fixtureSources, files: ["primitives.json", "markdown.json", "themes.json", "terminal-images.json", "full-screen.json", ...coreFiles.files, ...componentFiles] }, null, 2)}\n`);
   await writeFile(path.join(familyDir, "primitives.json"), `${JSON.stringify({ schemaVersion: 1, cases: generated }, null, 2)}\n`);
   await writeFile(path.join(familyDir, "markdown.json"), `${JSON.stringify({ schemaVersion: 1, cases: markdown }, null, 2)}\n`);
+  await writeFile(path.join(familyDir, "full-screen.json"), `${JSON.stringify({ schemaVersion: 1, cases: fullScreen }, null, 2)}\n`);
   await writeFile(path.join(familyDir, "themes.json"), `${JSON.stringify({ schemaVersion: 1, themes, discovery, validation: { trailingDocumentAccepted, unknownForegroundThrows } }, null, 2)}\n`);
   await writeFile(path.join(familyDir, "terminal-images.json"), `${JSON.stringify(terminalImages, null, 2)}\n`);
 }

@@ -111,17 +111,18 @@ func TestGoogleVertexProviderMetadata(t *testing.T) {
 	if len(fixture.APIs) != 1 {
 		t.Fatalf("upstream Google Vertex API shapes = %v, want exactly one", fixture.APIs)
 	}
-	if provider.ID != fixture.ID || provider.Name != fixture.Name || provider.API != fixture.APIs[0] || provider.BaseURL != "https://{location}-aiplatform.googleapis.com" {
+	registryFixture := findProviderFixture(t, fixture.ID)
+	if provider.ID != fixture.ID || provider.Name != fixture.Name || provider.API != fixture.APIs[0] || provider.BaseURL != registryFixture.BaseURL {
 		t.Fatalf("unexpected provider: %#v", provider)
 	}
-	if provider.Auth != fixture.Auth.Kind || !slices.Equal(provider.Env, fixture.Auth.EnvAPIKeys.Found) {
+	if provider.Auth != fixture.Auth.Kind || !slices.Equal(provider.Env, registryFixture.Auth.Env) {
 		t.Fatalf("unexpected auth metadata: %#v", provider)
 	}
 	if provider.Methods.APIKey == nil || provider.Methods.APIKey.Name() != fixture.Auth.Name {
 		t.Fatalf("unexpected auth methods: %#v", provider.Methods)
 	}
 	provider.Env[0] = "changed"
-	if fresh := providers.GoogleVertex(); !slices.Equal(fresh.Env, fixture.Auth.EnvAPIKeys.Found) {
+	if fresh := providers.GoogleVertex(); !slices.Equal(fresh.Env, registryFixture.Auth.Env) {
 		t.Fatal("GoogleVertex returned mutable registry storage")
 	}
 }

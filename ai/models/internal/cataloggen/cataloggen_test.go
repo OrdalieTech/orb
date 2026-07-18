@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"os"
 	"testing"
+
+	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pi-go/conformance/runner"
 )
 
 func TestRenderMatchesCheckedInCatalog(t *testing.T) {
@@ -61,6 +64,37 @@ func TestGenerateCommittedSnapshotIsDeterministic(t *testing.T) {
 	}
 	if model.ContextWindow == 0 || model.MaxTokens == 0 || model.Cost.Input == 0 {
 		t.Fatalf("incomplete generated model: %#v", model)
+	}
+}
+
+func TestCompatModelsMatchPinnedF2Models(t *testing.T) {
+	data, err := os.ReadFile("../../testdata/api.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := Generate(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var fixture struct {
+		Cases []struct {
+			Name  string   `json:"name"`
+			Model ai.Model `json:"model"`
+		} `json:"cases"`
+	}
+	runner.LoadJSON(t, "F2", "compat-models.json", &fixture)
+	for _, item := range fixture.Cases {
+		key := string(item.Model.Provider) + "/" + item.Model.ID
+		got, ok := catalog[string(item.Model.Provider)][item.Model.ID]
+		if !ok {
+			t.Fatalf("generated catalog is missing %s", key)
+		}
+		gotJSON, _ := json.Marshal(got)
+		wantJSON, _ := json.Marshal(item.Model)
+		if string(gotJSON) != string(wantJSON) {
+			t.Fatalf("%s (%s) metadata mismatch\n got: %s\nwant: %s", key, item.Name, gotJSON, wantJSON)
+		}
 	}
 }
 

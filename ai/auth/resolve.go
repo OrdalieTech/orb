@@ -32,6 +32,15 @@ type APIKeyLogin interface {
 	Login(context.Context, AuthInteraction) (*Credential, error)
 }
 
+type AuthCheck struct {
+	Source string         `json:"source,omitempty"`
+	Type   CredentialType `json:"type"`
+}
+
+type APIKeyCheck interface {
+	Check(context.Context, AuthContext, *Credential) (*AuthCheck, error)
+}
+
 type EnvAPIKeyAuth struct {
 	DisplayName string
 	EnvVars     []string

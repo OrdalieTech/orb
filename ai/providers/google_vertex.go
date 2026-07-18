@@ -145,13 +145,16 @@ func cloneProviderEnv(env map[string]string) map[string]string {
 }
 
 var googleVertexProvider = Provider{
-	ID:      "google-vertex",
-	Name:    "Google Vertex AI",
-	API:     ai.APIGoogleVertex,
-	BaseURL: "https://{location}-aiplatform.googleapis.com",
-	Auth:    AuthAPIKey,
-	Env:     []string{"GOOGLE_CLOUD_API_KEY"},
-	Methods: auth.ProviderAuth{APIKey: googleVertexAuth{}},
+	ID:   "google-vertex",
+	Name: "Google Vertex AI",
+	API:  ai.APIGoogleVertex,
+	APIs: []ai.API{ai.APIGoogleVertex},
+	Auth: AuthAPIKey,
+	Env: []string{
+		"GOOGLE_CLOUD_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_CLOUD_PROJECT", "GCLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION",
+	},
+	APIKeyEnv: []string{"GOOGLE_CLOUD_API_KEY"},
+	Methods:   auth.ProviderAuth{APIKey: googleVertexAuth{}},
 }
 
 func GoogleVertex() Provider { return cloneProvider(googleVertexProvider) }

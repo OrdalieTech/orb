@@ -524,8 +524,8 @@ func TestNewAgentSessionNoModel(t *testing.T) {
 	defer result.Session.Dispose()
 
 	state := result.Session.State()
-	if state.Model != nil {
-		t.Fatalf("expected nil model, got %v", state.Model)
+	if state.Model == nil || state.Model.Provider != "unknown" || state.Model.ID != "unknown" || state.Model.API != "unknown" {
+		t.Fatalf("expected upstream unknown model sentinel, got %v", state.Model)
 	}
 	if state.ThinkingLevel != ai.ModelThinkingOff {
 		t.Fatalf("expected off thinking, got %s", state.ThinkingLevel)

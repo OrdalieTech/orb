@@ -107,6 +107,33 @@ func TestCreateCLISessionForkResumeAndExactID(t *testing.T) {
 	}
 }
 
+func TestTUISessionSelectorAdapterPreservesLoadersAndResult(t *testing.T) {
+	currentProgress, allProgress := false, false
+	current := func(progress session.SessionListProgress) []session.SessionInfo {
+		progress(1, 2)
+		return []session.SessionInfo{{Path: "/current.jsonl"}}
+	}
+	all := func(progress session.SessionListProgress) []session.SessionInfo {
+		progress(3, 4)
+		return []session.SessionInfo{{Path: "/all.jsonl"}}
+	}
+	runnerCalled := false
+	selector := newTUISessionSelector(context.Background(), func(_ context.Context, gotCurrent, gotAll SessionListLoader) (string, bool, error) {
+		runnerCalled = true
+		if listed := gotCurrent(func(loaded, total int) { currentProgress = loaded == 1 && total == 2 }); len(listed) != 1 || listed[0].Path != "/current.jsonl" {
+			t.Fatalf("current sessions = %#v", listed)
+		}
+		if listed := gotAll(func(loaded, total int) { allProgress = loaded == 3 && total == 4 }); len(listed) != 1 || listed[0].Path != "/all.jsonl" {
+			t.Fatalf("all sessions = %#v", listed)
+		}
+		return "/selected.jsonl", true, nil
+	})
+	path, selected, err := selector(current, all)
+	if err != nil || !selected || path != "/selected.jsonl" || !runnerCalled || !currentProgress || !allProgress {
+		t.Fatalf("path=%q selected=%t err=%v called=%t progress=%t/%t", path, selected, err, runnerCalled, currentProgress, allProgress)
+	}
+}
+
 func TestValidateSessionFlagsMatchesUpstreamConflicts(t *testing.T) {
 	fork, selected, sessionID := "source", "target", "id"
 	validationErrors := validateSessionFlags(CLIArgs{
@@ -282,20 +309,21 @@ func TestRunCLIResumeRoutesBeforeInteractiveDispatch(t *testing.T) {
 		}
 	})
 
-	t.Run("bare resume selects before TUI-unavailable error", func(t *testing.T) {
+	t.Run("bare resume selects before TUI initialization", func(t *testing.T) {
 		var stderr bytes.Buffer
 		createdRuntime := false
+		selected = false
 		code := runCLIWithDependencies(context.Background(), []string{"-r"}, cliStreams{
 			Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: &stderr, StdinTTY: true, StdoutTTY: true,
 		}, cliDependencies{
 			selectSession: selector,
 			createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
 				createdRuntime = true
-				return runtimeInputs{}, nil
+				return runtimeInputs{}, errors.New("interactive fixture stop")
 			},
 		})
-		if code != 1 || createdRuntime || !strings.Contains(stderr.String(), "interactive mode is not available") {
-			t.Fatalf("code=%d createdRuntime=%t stderr=%q", code, createdRuntime, stderr.String())
+		if code != 1 || !selected || !createdRuntime || !strings.Contains(stderr.String(), "interactive fixture stop") {
+			t.Fatalf("code=%d selected=%t createdRuntime=%t stderr=%q", code, selected, createdRuntime, stderr.String())
 		}
 	})
 
@@ -450,11 +478,94 @@ func TestMissingSessionCWDReturnsStructuredIssue(t *testing.T) {
 	}
 	t.Setenv(config.EnvAgentDir, agentDir)
 	path := stored.GetSessionFile()
-	_, _, err = createCLISession(current, CLIArgs{Session: &path}, cliStreams{}, nil)
-	var issue *MissingSessionCWDError
-	if !errors.As(err, &issue) || issue.StoredCWD != project || issue.SessionFile != path || issue.CurrentCWD != current {
-		t.Fatalf("missing cwd error = %#v (%v)", issue, err)
+	manager, _, err := createCLISession(current, CLIArgs{Session: &path}, cliStreams{}, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
+	issue := getMissingSessionCWDIssue(manager, current)
+	if issue == nil || issue.StoredCWD != project || issue.SessionFile != path || issue.CurrentCWD != current {
+		t.Fatalf("missing cwd issue = %#v", issue)
+	}
+}
+
+func TestRunCLIMissingSessionCWDModeSplit(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "missing-project")
+	current := filepath.Join(root, "current")
+	agentDir := filepath.Join(root, "agent")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(current, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := session.DefaultSessionDir(project, agentDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := createCLIStoredSession(t, project, dir, "missing-cwd-mode-split")
+	path := stored.GetSessionFile()
+	if err := os.Remove(project); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(current)
+	t.Setenv(config.EnvAgentDir, agentDir)
+
+	t.Run("headless reports the structured error before runtime creation", func(t *testing.T) {
+		created := false
+		var stderr bytes.Buffer
+		code := runCLIWithDependencies(context.Background(), []string{"-p", "--session", path, "prompt"}, cliStreams{
+			Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: &stderr, StdinTTY: true,
+		}, cliDependencies{createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+			created = true
+			return runtimeInputs{}, nil
+		}})
+		if code != 1 || created || !strings.Contains(stderr.String(), "Stored session working directory does not exist: "+project) {
+			t.Fatalf("code=%d created=%t stderr=%q", code, created, stderr.String())
+		}
+	})
+
+	t.Run("interactive continues in current cwd after selector confirmation", func(t *testing.T) {
+		selected := false
+		createdCWD := ""
+		var stderr bytes.Buffer
+		code := runCLIWithDependencies(context.Background(), []string{"--session", path}, cliStreams{
+			Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: &stderr, StdinTTY: true, StdoutTTY: true,
+		}, cliDependencies{
+			selectMissingSessionCWD: func(_ context.Context, issue *MissingSessionCWDError) (string, bool, error) {
+				selected = true
+				if issue.StoredCWD != project || issue.CurrentCWD != current || issue.SessionFile != path {
+					t.Fatalf("selector issue = %#v", issue)
+				}
+				return current, true, nil
+			},
+			createRuntime: func(cwd string, _ CLIArgs, _ agent.AgentMessages) (runtimeInputs, error) {
+				createdCWD = cwd
+				return runtimeInputs{}, errors.New("interactive fixture stop")
+			},
+		})
+		if code != 1 || !selected || createdCWD != current || !strings.Contains(stderr.String(), "interactive fixture stop") {
+			t.Fatalf("code=%d selected=%t cwd=%q stderr=%q", code, selected, createdCWD, stderr.String())
+		}
+	})
+
+	t.Run("interactive cancellation exits without creating a runtime", func(t *testing.T) {
+		created := false
+		code := runCLIWithDependencies(context.Background(), []string{"--session", path}, cliStreams{
+			Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard, StdinTTY: true, StdoutTTY: true,
+		}, cliDependencies{
+			selectMissingSessionCWD: func(context.Context, *MissingSessionCWDError) (string, bool, error) {
+				return "", false, nil
+			},
+			createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+				created = true
+				return runtimeInputs{}, nil
+			},
+		})
+		if code != 0 || created {
+			t.Fatalf("code=%d created=%t", code, created)
+		}
+	})
 }
 
 func createCLIStoredSession(t *testing.T, cwd, sessionDir, id string) *session.SessionManager {

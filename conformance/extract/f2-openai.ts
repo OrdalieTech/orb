@@ -3,7 +3,7 @@ import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { promisify } from "node:util";
+import { isDeepStrictEqual, promisify } from "node:util";
 
 import {
   stream as streamOpenAICompletions,
@@ -21,12 +21,14 @@ import type {
   Tool,
 } from "../../.upstream/packages/ai/src/types.ts";
 import { extractAuthStorageFixture } from "./f2-auth.ts";
-import { extractAnthropicF2 } from "./f2-anthropic.ts";
+import { extractAnthropicF2, fireworksCompatModel } from "./f2-anthropic.ts";
 import { extractBedrockF2 } from "./f2-bedrock.ts";
+import { extractCompatModelsF2 } from "./f2-compat-models.ts";
 import { extractGoogleF2 } from "./f2-google.ts";
 import { extractGoogleVertexF2 } from "./f2-google-vertex.ts";
 import { extractMistralAzureF2 } from "./f2-mistral-azure.ts";
 import { extractPiMessagesF2 } from "./f2-pi-messages.ts";
+import { extractProvidersF2 } from "./f2-providers.ts";
 
 type OpenAIAPI = "openai-responses" | "openai-completions";
 type OpenAIModel = Model<"openai-responses"> | Model<"openai-completions">;
@@ -279,7 +281,79 @@ const completionsChatTemplateModel = model("openai-completions", {
   },
 });
 
+const togetherCompatModel = model("openai-completions", {
+  id: "deepseek-ai/DeepSeek-V4-Pro",
+  name: "DeepSeek V4 Pro",
+  provider: "together",
+  baseUrl: "https://api.together.ai/v1",
+  reasoning: true,
+  input: ["text"],
+  cost: { input: 1.74, output: 3.48, cacheRead: 0.2, cacheWrite: 0 },
+  contextWindow: 512_000,
+  maxTokens: 384_000,
+  thinkingLevelMap: { minimal: null, low: null, medium: null, high: "high", xhigh: null },
+  compat: {
+    supportsStore: false,
+    supportsDeveloperRole: false,
+    supportsReasoningEffort: true,
+    maxTokensField: "max_tokens",
+    thinkingFormat: "together",
+    supportsStrictMode: false,
+    supportsLongCacheRetention: false,
+  },
+});
+
+const zaiCompatModel = model("openai-completions", {
+  id: "glm-5.2",
+  name: "GLM-5.2",
+  provider: "zai",
+  baseUrl: "https://api.z.ai/api/coding/paas/v4",
+  reasoning: true,
+  input: ["text"],
+  contextWindow: 1_000_000,
+  maxTokens: 131_072,
+  thinkingLevelMap: { minimal: null, low: "high", medium: "high", high: "high", max: "max" },
+  compat: {
+    supportsStore: false,
+    supportsDeveloperRole: false,
+    supportsReasoningEffort: true,
+    thinkingFormat: "zai",
+    zaiToolStream: true,
+  },
+});
+
 const requestDefinitions: RequestDefinition[] = [
+  {
+    name: "completions-together-reasoning-compat",
+    api: "openai-completions",
+    model: togetherCompatModel,
+    context: {
+      systemPrompt: "Use the provider reasoning controls.",
+      messages: [{ role: "user", content: "solve it", timestamp: FIXED_NOW }],
+      tools: [echoTool],
+    },
+    options: {
+      apiKey: "fixture-together-key",
+      maxTokens: 321,
+      reasoningEffort: "high",
+      cacheRetention: "long",
+    },
+  },
+  {
+    name: "completions-zai-tool-stream-compat",
+    api: "openai-completions",
+    model: zaiCompatModel,
+    context: {
+      systemPrompt: "Use tools.",
+      messages: [{ role: "user", content: "call echo", timestamp: FIXED_NOW }],
+      tools: [echoTool],
+    },
+    options: {
+      apiKey: "fixture-zai-key",
+      reasoningEffort: "high",
+      cacheRetention: "short",
+    },
+  },
   {
     name: "responses-text-default-cache",
     api: "openai-responses",
@@ -1193,6 +1267,14 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
     const mistralAzure = await extractMistralAzureF2();
     const piMessages = await extractPiMessagesF2();
     const authStorage = await extractAuthStorageFixture();
+    const providerParity = await extractProvidersF2(upstreamRoot);
+    const compatModels = await extractCompatModelsF2(upstreamRoot);
+    if (!isDeepStrictEqual([togetherCompatModel, zaiCompatModel], compatModels.cases.slice(0, 2).map((entry) => entry.model))) {
+      throw new Error("OpenAI-compatible F2 models drifted from the pinned upstream generator");
+    }
+    if (!isDeepStrictEqual(fireworksCompatModel, compatModels.cases[2].model)) {
+      throw new Error("Fireworks F2 model drifted from the pinned upstream generator");
+    }
     const requests = [];
     for (const definition of requestDefinitions) {
       const { request } = await runUpstream(
@@ -1219,13 +1301,15 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
       upstreamCommit,
       generator: "conformance/extract/f2-openai.ts",
       source:
-        "packages/ai/src/api/openai-responses.ts + packages/ai/src/api/openai-responses-shared.ts + packages/ai/src/api/openai-completions.ts + packages/ai/src/api/openai-prompt-cache.ts + packages/ai/src/api/anthropic-messages.ts + packages/ai/src/api/bedrock-converse-stream.ts + packages/ai/src/api/google-generative-ai.ts + packages/ai/src/api/google-vertex.ts + packages/ai/src/api/google-shared.ts + packages/ai/src/api/mistral-conversations.ts + packages/ai/src/api/azure-openai-responses.ts + packages/ai/src/api/pi-messages.ts + packages/ai/src/utils/deferred-tools.ts + packages/ai/src/api/transform-messages.ts + packages/ai/src/providers/openai.ts + packages/ai/src/providers/anthropic.ts + packages/ai/src/providers/amazon-bedrock.ts + packages/ai/src/providers/google.ts + packages/ai/src/providers/google-vertex.ts + packages/ai/src/env-api-keys.ts + packages/ai/src/auth/helpers.ts + packages/ai/src/auth/oauth/oauth-page.ts + packages/ai/src/models.ts + packages/ai/scripts/generate-models.ts + packages/coding-agent/src/core/auth-storage.ts + packages/coding-agent/src/core/resolve-config-value.ts + packages/coding-agent/src/migrations.ts",
+        "packages/ai/src/api/openai-responses.ts + packages/ai/src/api/openai-responses-shared.ts + packages/ai/src/api/openai-completions.ts + packages/ai/src/api/openai-prompt-cache.ts + packages/ai/src/api/anthropic-messages.ts + packages/ai/src/api/bedrock-converse-stream.ts + packages/ai/src/api/google-generative-ai.ts + packages/ai/src/api/google-vertex.ts + packages/ai/src/api/google-shared.ts + packages/ai/src/api/mistral-conversations.ts + packages/ai/src/api/azure-openai-responses.ts + packages/ai/src/api/pi-messages.ts + packages/ai/src/utils/deferred-tools.ts + packages/ai/src/api/transform-messages.ts + packages/ai/src/providers/*.ts + packages/ai/src/env-api-keys.ts + packages/ai/src/auth/helpers.ts + packages/ai/src/auth/oauth/oauth-page.ts + packages/ai/src/models.ts + packages/ai/scripts/generate-models.ts + packages/coding-agent/src/core/auth-storage.ts + packages/coding-agent/src/core/resolve-config-value.ts + packages/coding-agent/src/migrations.ts",
       files: [
         "provider.json",
         "anthropic-provider.json",
         "bedrock-provider.json",
         "google-provider.json",
         "google-vertex-provider.json",
+        "providers.json",
+        "compat-models.json",
         "requests.json",
         "anthropic-requests.json",
         "bedrock-requests.json",
@@ -1260,6 +1344,8 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
       path.join(familyDir, "google-vertex-provider.json"),
       `${JSON.stringify(googleVertex.provider, null, 2)}\n`,
     );
+    await writeFile(path.join(familyDir, "providers.json"), `${JSON.stringify(providerParity, null, 2)}\n`);
+    await writeFile(path.join(familyDir, "compat-models.json"), `${JSON.stringify(compatModels, null, 2)}\n`);
     await writeFile(path.join(familyDir, "requests.json"), `${JSON.stringify({ cases: requests }, null, 2)}\n`);
     await writeFile(path.join(familyDir, "streams.json"), `${JSON.stringify({ cases: streams }, null, 2)}\n`);
     await writeFile(

@@ -48,9 +48,10 @@ func TestGoogleProvider(t *testing.T) {
 		t.Fatal("Google returned mutable auth-method storage")
 	}
 	registered := providers.List()
-	wantIDs := []ai.ProviderID{
-		"openai", "anthropic", fixture.ID, "google-vertex", "amazon-bedrock", "mistral", "azure-openai-responses",
-		"openai-codex", "github-copilot", "xai",
+	registryFixture := loadProvidersFixture(t)
+	wantIDs := make([]ai.ProviderID, len(registryFixture.Providers))
+	for index := range registryFixture.Providers {
+		wantIDs[index] = registryFixture.Providers[index].ID
 	}
 	gotIDs := make([]ai.ProviderID, len(registered))
 	for index := range registered {

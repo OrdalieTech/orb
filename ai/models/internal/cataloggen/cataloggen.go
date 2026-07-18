@@ -24,7 +24,8 @@ type sourceModel struct {
 	Reasoning  bool   `json:"reasoning"`
 	Status     string `json:"status"`
 	Modalities struct {
-		Input []string `json:"input"`
+		Input  []string `json:"input"`
+		Output []string `json:"output"`
 	} `json:"modalities"`
 	Limit struct {
 		Context float64 `json:"context"`
@@ -146,8 +147,15 @@ func Generate(data []byte) (map[string]map[string]ai.Model, error) {
 	addXAI(result, source["xai"])
 	addCodex(result)
 	addAntLing(result)
+	addMissingOpenAI(result)
 	addAzure(result)
-	// TODO(WP-270): apply the remaining provider compat flags and pinned quirk metadata.
+	addProviderAliases(result)
+	for _, models := range result {
+		for id, model := range models {
+			applyGeneratedMetadata(&model)
+			models[id] = model
+		}
+	}
 	return result, nil
 }
 
@@ -193,7 +201,17 @@ func addRule(result map[string]map[string]ai.Model, source sourceProvider, item 
 			id, name = "kimi-for-coding", "Kimi For Coding"
 		}
 		model := normalizedModel(id, name, raw, item.api, item.provider, item.baseURL)
-		applyGeneratedMetadata(&model)
+		if item.provider == "fireworks" && strings.Contains(id, "glm-5p2") {
+			model.API = ai.APIOpenAICompletions
+			model.BaseURL = "https://api.fireworks.ai/inference/v1"
+		}
+		if item.provider == "mistral" && model.Cost.CacheRead == 0 && model.Cost.Input != 0 {
+			model.Cost.CacheRead = roundCost(model.Cost.Input * 0.1)
+		}
+		if item.provider == "google-vertex" && id == "gemini-2.5-flash" {
+			model.Cost.CacheRead = 0.03
+			model.Cost.CacheWrite = 0
+		}
 		upsert(result, model)
 	}
 }
@@ -210,6 +228,25 @@ func include(item rule, id string, model sourceModel) bool {
 	}
 	if item.provider == "google-vertex" && (!strings.HasPrefix(id, "gemini-") || id == "gemini-3.1-flash-lite-preview") {
 		return false
+	}
+	if item.provider == "deepseek" && !strings.Contains(id, "deepseek-v4") {
+		return false
+	}
+	if item.provider == "nvidia" {
+		if !slices.Contains(model.Modalities.Input, "text") || !slices.Contains(model.Modalities.Output, "text") {
+			return false
+		}
+		if slices.Contains([]string{
+			"abacusai/dracarys-llama-3.1-70b-instruct", "bytedance/seed-oss-36b-instruct",
+			"deepseek-ai/deepseek-v4-flash", "deepseek-ai/deepseek-v4-pro", "google/gemma-2-2b-it",
+			"google/gemma-3n-e2b-it", "google/gemma-3n-e4b-it", "google/gemma-4-31b-it",
+			"meta/llama-3.2-1b-instruct", "meta/llama-4-maverick-17b-128e-instruct",
+			"microsoft/phi-4-mini-instruct", "minimaxai/minimax-m2.7", "mistralai/mistral-nemotron",
+			"nvidia/nemotron-mini-4b-instruct", "qwen/qwen3-next-80b-a3b-instruct",
+			"qwen/qwen3.5-397b-a17b", "sarvamai/sarvam-m", "upstage/solar-10.7b-instruct",
+		}, id) {
+			return false
+		}
 	}
 	if (item.provider == "minimax" || item.provider == "minimax-cn") && !slices.Contains([]string{"MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M3"}, id) {
 		return false
@@ -229,16 +266,7 @@ func normalizedModel(id, name string, raw sourceModel, api ai.API, provider, bas
 	if slices.Contains(raw.Modalities.Input, "image") {
 		input = append(input, ai.InputImage)
 	}
-	tiers := make([]ai.ModelCostTier, 0, len(raw.Cost.Tiers))
-	for _, tier := range raw.Cost.Tiers {
-		if tier.Tier.Type == "context" && tier.Tier.Size != 0 {
-			tiers = append(tiers, ai.ModelCostTier{InputTokensAbove: tier.Tier.Size, ModelCostRates: ai.ModelCostRates{Input: tier.Input, Output: tier.Output, CacheRead: tier.CacheRead, CacheWrite: tier.CacheWrite}})
-		}
-	}
 	cost := ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: raw.Cost.Input, Output: raw.Cost.Output, CacheRead: raw.Cost.CacheRead, CacheWrite: raw.Cost.CacheWrite}}
-	if len(tiers) > 0 {
-		cost.Tiers = &tiers
-	}
 	return ai.Model{ID: id, Name: name, API: api, Provider: ai.ProviderID(provider), BaseURL: baseURL, Reasoning: raw.Reasoning, Input: input, Cost: cost, ContextWindow: contextWindow, MaxTokens: maxTokens}
 }
 
@@ -265,7 +293,6 @@ func addCloudflareGateway(result map[string]map[string]ai.Model, source sourcePr
 			continue
 		}
 		model := normalizedModel(id, raw.Name, raw, api, "cloudflare-ai-gateway", baseURL)
-		applyGeneratedMetadata(&model)
 		upsert(result, model)
 	}
 }
@@ -284,12 +311,16 @@ func addOpenCode(result map[string]map[string]ai.Model, source sourceProvider, p
 			api, baseURL = ai.APIAnthropicMessages, basePath
 		case "@ai-sdk/google":
 			api = ai.APIGoogleGenerativeAI
+		case "@ai-sdk/alibaba":
+			api = ai.APIOpenAICompletions
 		}
 		if provider == "opencode-go" && (key == "minimax-m2.7" || key == "qwen3.5-plus" || key == "qwen3.6-plus") {
 			api, baseURL = ai.APIOpenAICompletions, basePath+"/v1"
 		}
 		model := normalizedModel(key, raw.Name, raw, api, provider, baseURL)
-		applyGeneratedMetadata(&model)
+		if raw.Provider.NPM == "@ai-sdk/alibaba" {
+			model.Compat = mustCompatJSON(ai.OpenAICompletionsCompat{CacheControlFormat: ptr(ai.CacheControlAnthropic)})
+		}
 		upsert(result, model)
 	}
 }
@@ -301,17 +332,40 @@ func addCopilot(result map[string]map[string]ai.Model, source sourceProvider) {
 			continue
 		}
 		api := ai.APIOpenAICompletions
-		if strings.HasPrefix(key, "claude-") && (strings.Contains(key, "-4") || strings.Contains(key, "-5")) {
+		if isCopilotClaude(key) {
 			api = ai.APIAnthropicMessages
 		} else if strings.HasPrefix(key, "gpt-5") || strings.HasPrefix(key, "oswe") || strings.HasPrefix(key, "mai-") {
 			api = ai.APIOpenAIResponses
 		}
 		model := normalizedModel(key, raw.Name, raw, api, "github-copilot", "https://api.individual.githubcopilot.com")
+		model.Cost = modelCostWithTiers(raw)
 		headers := map[string]string{"User-Agent": "GitHubCopilotChat/0.35.0", "Editor-Version": "vscode/1.107.0", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Copilot-Integration-Id": "vscode-chat"}
 		model.Headers = &headers
-		applyGeneratedMetadata(&model)
 		upsert(result, model)
 	}
+}
+
+func isCopilotClaude(id string) bool {
+	for _, family := range []string{"claude-haiku-", "claude-sonnet-", "claude-opus-"} {
+		if tail, ok := strings.CutPrefix(id, family); ok {
+			return strings.HasPrefix(tail, "4") || strings.HasPrefix(tail, "5")
+		}
+	}
+	return false
+}
+
+func modelCostWithTiers(raw sourceModel) ai.ModelCost {
+	cost := ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: raw.Cost.Input, Output: raw.Cost.Output, CacheRead: raw.Cost.CacheRead, CacheWrite: raw.Cost.CacheWrite}}
+	tiers := make([]ai.ModelCostTier, 0, len(raw.Cost.Tiers))
+	for _, tier := range raw.Cost.Tiers {
+		if tier.Tier.Type == "context" && tier.Tier.Size != 0 {
+			tiers = append(tiers, ai.ModelCostTier{InputTokensAbove: tier.Tier.Size, ModelCostRates: ai.ModelCostRates{Input: tier.Input, Output: tier.Output, CacheRead: tier.CacheRead, CacheWrite: tier.CacheWrite}})
+		}
+	}
+	if len(tiers) != 0 {
+		cost.Tiers = &tiers
+	}
+	return cost
 }
 
 func addXAI(result map[string]map[string]ai.Model, source sourceProvider) {
@@ -326,7 +380,6 @@ func addXAI(result map[string]map[string]ai.Model, source sourceProvider) {
 			api = ai.APIOpenAIResponses
 		}
 		model := normalizedModel(key, raw.Name, raw, api, "xai", "https://api.x.ai/v1")
-		applyGeneratedMetadata(&model)
 		upsert(result, model)
 	}
 }
@@ -348,7 +401,6 @@ func addCodex(result map[string]map[string]ai.Model) {
 	}
 	for _, item := range items {
 		model := ai.Model{ID: item.id, Name: item.name, API: ai.APIOpenAICodexResponses, Provider: "openai-codex", BaseURL: "https://chatgpt.com/backend-api", Reasoning: true, Input: item.input, Cost: ai.ModelCost{ModelCostRates: item.cost}, ContextWindow: item.context, MaxTokens: 128000}
-		applyGeneratedMetadata(&model)
 		upsert(result, model)
 	}
 }
@@ -369,6 +421,8 @@ func addAzure(result map[string]map[string]ai.Model) {
 	for _, model := range result["openai"] {
 		clone := model
 		clone.API, clone.Provider, clone.BaseURL = ai.APIAzureOpenAIResponses, "azure-openai-responses", ""
+		clone.Compat = nil
+		clone.Cost.Tiers = nil
 		if slices.Contains([]string{"gpt-5.4", "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"}, clone.ID) {
 			clone.ContextWindow = 1050000
 		}
@@ -376,25 +430,33 @@ func addAzure(result map[string]map[string]ai.Model) {
 	}
 }
 
+func addMissingOpenAI(result map[string]map[string]ai.Model) {
+	upsert(result, ai.Model{
+		ID: "gpt-5-chat-latest", Name: "GPT-5 Chat Latest", API: ai.APIOpenAIResponses,
+		Provider: "openai", BaseURL: "https://api.openai.com/v1", Input: ai.InputModalities{ai.InputText, ai.InputImage},
+		Cost:          ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: 1.25, Output: 10, CacheRead: .125}},
+		ContextWindow: 128000, MaxTokens: 16384,
+	})
+}
+
 func applyGeneratedMetadata(model *ai.Model) {
-	if model.Name == "" {
-		model.Name = model.ID
+	applyCatalogMetadata(model)
+}
+
+func addProviderAliases(result map[string]map[string]ai.Model) {
+	if _, ok := result["openrouter"]["auto"]; !ok {
+		upsert(result, ai.Model{ID: "auto", Name: "Auto", API: ai.APIOpenAICompletions, Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", Reasoning: true, Input: ai.InputModalities{ai.InputText, ai.InputImage}, Cost: ai.ModelCost{}, ContextWindow: 2000000, MaxTokens: 30000})
 	}
-	if model.API == ai.APIOpenAIResponses && strings.HasPrefix(model.ID, "gpt-5") {
-		mapping := map[ai.ModelThinkingLevel]*string{ai.ModelThinkingOff: nil}
-		if strings.Contains(model.ID, "5.2") || strings.Contains(model.ID, "5.3") || strings.Contains(model.ID, "5.4") || strings.Contains(model.ID, "5.5") || strings.Contains(model.ID, "5.6") {
-			value := "xhigh"
-			mapping[ai.ModelThinkingXHigh] = &value
-		}
-		if strings.Contains(model.ID, "5.6") {
-			value := "max"
-			mapping[ai.ModelThinkingMax] = &value
-		}
-		model.ThinkingLevelMap = &mapping
+	if _, ok := result["openrouter"]["openrouter/fusion"]; !ok {
+		upsert(result, ai.Model{ID: "openrouter/fusion", Name: "OpenRouter: Fusion", API: ai.APIOpenAICompletions, Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", Reasoning: true, Input: ai.InputModalities{ai.InputText}, Cost: ai.ModelCost{}, ContextWindow: 1000000, MaxTokens: 30000})
 	}
-	if model.Provider == "amazon-bedrock" && strings.HasPrefix(model.ID, "eu.") {
-		model.BaseURL = "https://bedrock-runtime.eu-central-1.amazonaws.com"
+	if _, ok := result["mistral"]["mistral-medium-3.5"]; !ok {
+		upsert(result, ai.Model{ID: "mistral-medium-3.5", Name: "Mistral Medium 3.5", API: ai.APIMistralConversations, Provider: "mistral", BaseURL: "https://api.mistral.ai", Reasoning: true, Input: ai.InputModalities{ai.InputText, ai.InputImage}, Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: 1.5, Output: 7.5}}, ContextWindow: 262144, MaxTokens: 262144})
 	}
+}
+
+func roundCost(value float64) float64 {
+	return float64(int64(value*1000000+0.5)) / 1000000
 }
 
 func upsert(result map[string]map[string]ai.Model, model ai.Model) {

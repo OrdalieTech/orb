@@ -356,14 +356,13 @@ func mergeRequestEnv(resolved, overrides ai.ProviderEnv) ai.ProviderEnv {
 	return merged
 }
 
-func mergeRequestAuthHeaders(resolved map[string]string, overrides ai.ProviderHeaders) ai.ProviderHeaders {
+func mergeRequestAuthHeaders(resolved, overrides ai.ProviderHeaders) ai.ProviderHeaders {
 	if len(resolved) == 0 && len(overrides) == 0 {
 		return nil
 	}
 	merged := make(ai.ProviderHeaders, len(resolved)+len(overrides))
 	for name, value := range resolved {
-		copy := value
-		merged[name] = &copy
+		merged[name] = value
 	}
 	for name, value := range overrides {
 		for existing := range merged {

@@ -102,6 +102,56 @@ func TestRunnerFlushesQueuedProvidersAndAppliesRuntimeChanges(t *testing.T) {
 	}
 }
 
+func TestRunnerFlushesQueuedProviderConfigsBeforeNativeProviders(t *testing.T) {
+	registry := NewRegistry(t.TempDir())
+	if err := registry.Register("providers", func(api API) error {
+		api.RegisterProviderConfig("config-first", ProviderConfig{})
+		api.RegisterProvider(Provider{ID: "native-second"})
+		api.RegisterProviderConfig("config-third", ProviderConfig{})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	registered := []string{}
+	NewRunner(registry, RunnerOptions{Actions: Actions{
+		RegisterProvider: func(provider Provider) error {
+			registered = append(registered, "native:"+provider.ID)
+			return nil
+		},
+		RegisterProviderConfig: func(name string, _ ProviderConfig) error {
+			registered = append(registered, "config:"+name)
+			return nil
+		},
+	}})
+	want := []string{"config:config-first", "config:config-third", "native:native-second"}
+	if !reflect.DeepEqual(registered, want) {
+		t.Fatalf("registered = %#v, want %#v", registered, want)
+	}
+}
+
+func TestUnregisterProviderRemovesQueuedRegistrations(t *testing.T) {
+	registry := NewRegistry(t.TempDir())
+	if err := registry.Register("providers", func(api API) error {
+		api.RegisterProvider(Provider{ID: "removed"})
+		api.RegisterProviderConfig("removed", ProviderConfig{})
+		api.UnregisterProvider("removed")
+		api.RegisterProvider(Provider{ID: "kept"})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	registered := []string{}
+	NewRunner(registry, RunnerOptions{Actions: Actions{
+		RegisterProvider: func(provider Provider) error {
+			registered = append(registered, provider.ID)
+			return nil
+		},
+	}})
+	if !reflect.DeepEqual(registered, []string{"kept"}) {
+		t.Fatalf("registered = %#v", registered)
+	}
+}
+
 func TestRunnerReportsQueuedProviderFailureDuringBind(t *testing.T) {
 	registry := NewRegistry(t.TempDir())
 	if err := registry.Register("broken-provider", func(api API) error {

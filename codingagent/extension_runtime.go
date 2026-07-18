@@ -36,6 +36,7 @@ type extensionRuntimeState struct {
 	startEvent           extensions.SessionStartEvent
 	started              bool
 	config               SessionRuntimeConfig
+	shutdownEmitted      bool
 }
 
 func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig) {
@@ -67,6 +68,41 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 		state.baseSystemPrompt = runtime.agent.State().SystemPrompt
 	}
 	runtime.extensionState = state
+	registerProvider := runtimeConfig.RegisterProvider
+	registerProviderConfig := runtimeConfig.RegisterProviderConfig
+	unregisterProvider := runtimeConfig.UnregisterProvider
+	if runtimeConfig.ModelRegistry != nil {
+		if registerProvider != nil {
+			register := registerProvider
+			registerProvider = func(provider extensions.Provider) error {
+				if err := register(provider); err != nil {
+					return err
+				}
+				runtime.refreshCurrentModelFromRegistry(runtimeConfig.ModelRegistry)
+				return nil
+			}
+		}
+		if registerProviderConfig != nil {
+			register := registerProviderConfig
+			registerProviderConfig = func(name string, config extensions.ProviderConfig) error {
+				if err := register(name, config); err != nil {
+					return err
+				}
+				runtime.refreshCurrentModelFromRegistry(runtimeConfig.ModelRegistry)
+				return nil
+			}
+		}
+		if unregisterProvider != nil {
+			unregister := unregisterProvider
+			unregisterProvider = func(name string) error {
+				if err := unregister(name); err != nil {
+					return err
+				}
+				runtime.refreshCurrentModelFromRegistry(runtimeConfig.ModelRegistry)
+				return nil
+			}
+		}
+	}
 
 	actions := extensions.Actions{
 		SendMessage:     runtime.sendExtensionMessage,
@@ -78,16 +114,17 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 			_, err := runtime.manager.AppendLabelChange(id, label)
 			return err
 		},
-		GetActiveTools:     runtime.extensionActiveTools,
-		GetAllTools:        runtime.extensionAllTools,
-		SetActiveTools:     runtime.setActiveToolsByName,
-		RefreshTools:       func() { runtime.refreshExtensionTools(nil, false) },
-		GetCommands:        runtime.extensionCommands,
-		SetModel:           runtime.setExtensionModel,
-		GetThinkingLevel:   func() (agent.ThinkingLevel, error) { return runtime.agent.State().ThinkingLevel, nil },
-		SetThinkingLevel:   runtime.setExtensionThinkingLevel,
-		RegisterProvider:   runtimeConfig.RegisterProvider,
-		UnregisterProvider: runtimeConfig.UnregisterProvider,
+		GetActiveTools:         runtime.extensionActiveTools,
+		GetAllTools:            runtime.extensionAllTools,
+		SetActiveTools:         runtime.setActiveToolsByName,
+		RefreshTools:           func() { runtime.refreshExtensionTools(nil, false) },
+		GetCommands:            runtime.extensionCommands,
+		SetModel:               runtime.setExtensionModel,
+		GetThinkingLevel:       func() (agent.ThinkingLevel, error) { return runtime.agent.State().ThinkingLevel, nil },
+		SetThinkingLevel:       runtime.setExtensionThinkingLevel,
+		RegisterProvider:       registerProvider,
+		RegisterProviderConfig: registerProviderConfig,
+		UnregisterProvider:     unregisterProvider,
 	}
 	contextActions := extensions.ContextActions{
 		GetModel:         func() *ai.Model { return runtime.agent.State().Model },
@@ -129,17 +166,7 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 		GetSystemPrompt:        func() string { return runtime.agent.State().SystemPrompt },
 		GetSystemPromptOptions: runtime.extensionSystemPromptOptions,
 	}
-	commandActions := extensions.CommandActions{
-		WaitForIdle: runtime.agent.WaitForIdle,
-		NavigateTree: func(ctx context.Context, targetID string, options *extensions.NavigateTreeOptions) (extensions.SessionReplacementResult, error) {
-			resolved := NavigateTreeOptions{}
-			if options != nil {
-				resolved = NavigateTreeOptions{Summarize: options.Summarize, CustomInstructions: options.CustomInstructions, ReplaceInstructions: options.ReplaceInstructions, Label: options.Label}
-			}
-			result, err := runtime.NavigateTree(ctx, targetID, resolved)
-			return extensions.SessionReplacementResult{Cancelled: result.Cancelled || result.Aborted}, err
-		},
-	}
+	commandActions := runtime.runtimeCommandActions()
 	runner := extensions.NewRunner(runtimeConfig.ExtensionRegistry, extensions.RunnerOptions{
 		CWD: runtime.manager.GetCWD(), SessionManager: runtime.manager, ModelRegistry: runtimeConfig.ModelRegistry,
 		Mode: runtimeConfig.ExtensionMode, UI: runtimeConfig.ExtensionUI, Actions: actions,
@@ -185,9 +212,11 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 	startEvent := extensions.SessionStartEvent{Reason: extensions.SessionStartStartup}
 	if runtimeConfig.SessionStartEvent != nil {
 		startEvent = *runtimeConfig.SessionStartEvent
+	} else if runtimeConfig.SessionStart != nil {
+		startEvent = *runtimeConfig.SessionStart
 	}
 	state.startEvent = startEvent
-	if !runtimeConfig.DeferExtensionStart {
+	if !runtimeConfig.DeferExtensionStart && !runtimeConfig.DeferSessionStart {
 		_ = runtime.BindExtensions(context.Background())
 	}
 }
@@ -200,7 +229,7 @@ func (runtime *SessionRuntime) BindExtensions(ctx context.Context) error {
 	}
 	state := runtime.extensionState
 	state.mu.Lock()
-	if state.started {
+	if state.started || state.shutdownEmitted {
 		state.mu.Unlock()
 		return nil
 	}
@@ -225,6 +254,47 @@ func (runtime *SessionRuntime) BindExtensions(ctx context.Context) error {
 	}
 	runtime.syncExtensionCommands()
 	return nil
+}
+
+func (runtime *SessionRuntime) runtimeCommandActions() extensions.CommandActions {
+	return extensions.CommandActions{
+		WaitForIdle: runtime.agent.WaitForIdle,
+		NavigateTree: func(ctx context.Context, targetID string, options *extensions.NavigateTreeOptions) (extensions.SessionReplacementResult, error) {
+			resolved := NavigateTreeOptions{}
+			if options != nil {
+				resolved = NavigateTreeOptions{
+					Summarize: options.Summarize, CustomInstructions: options.CustomInstructions,
+					ReplaceInstructions: options.ReplaceInstructions, Label: options.Label,
+				}
+			}
+			result, err := runtime.NavigateTree(ctx, targetID, resolved)
+			return extensions.SessionReplacementResult{Cancelled: result.Cancelled || result.Aborted}, err
+		},
+	}
+}
+
+func (runtime *SessionRuntime) BindHostCommandActions(actions extensions.CommandActions) {
+	if runtime == nil || runtime.extensionState == nil || runtime.extensionState.runner == nil {
+		return
+	}
+	merged := runtime.runtimeCommandActions()
+	merged.NewSession = actions.NewSession
+	merged.Fork = actions.Fork
+	merged.SwitchSession = actions.SwitchSession
+	merged.Reload = actions.Reload
+	if actions.WaitForIdle != nil {
+		merged.WaitForIdle = actions.WaitForIdle
+	}
+	if actions.NavigateTree != nil {
+		merged.NavigateTree = actions.NavigateTree
+	}
+	runtime.extensionState.runner.BindCommandContext(&merged)
+}
+
+// StartExtensions activates a deferred session after the TUI has attached its
+// UI implementation and event subscription.
+func (runtime *SessionRuntime) StartExtensions() {
+	_ = runtime.BindExtensions(context.Background())
 }
 
 // Reload rebuilds the session's native extension instance from its registered
@@ -297,13 +367,57 @@ func (runtime *SessionRuntime) reloadExtensions(ctx context.Context) error {
 	return nil
 }
 
+func (runtime *SessionRuntime) ShutdownExtensions(reason extensions.SessionShutdownReason, target *string) {
+	if runtime == nil || runtime.extensionState == nil {
+		return
+	}
+	state := runtime.extensionState
+	state.mu.Lock()
+	if state.shutdownEmitted {
+		state.mu.Unlock()
+		return
+	}
+	state.shutdownEmitted = true
+	started := state.started
+	runner := state.runner
+	state.mu.Unlock()
+	if !started || runner == nil {
+		return
+	}
+	extensions.EmitSessionShutdown(context.Background(), runner, extensions.SessionShutdownEvent{Reason: reason, TargetSessionFile: target})
+}
+
+func (runtime *SessionRuntime) refreshCurrentModelFromRegistry(registry extensions.ModelRegistry) {
+	current := runtime.agent.State().Model
+	if current == nil {
+		return
+	}
+	refreshed, ok := registry.Find(string(current.Provider), current.ID)
+	if ok {
+		runtime.agent.SetModel(&refreshed)
+	}
+}
+
+// RefreshCurrentModelFromRegistry applies provider-dependent model projection
+// changes after an in-place auth refresh without recording a model switch.
+func (runtime *SessionRuntime) RefreshCurrentModelFromRegistry(registry extensions.ModelRegistry) {
+	if runtime == nil || registry == nil {
+		return
+	}
+	runtime.refreshCurrentModelFromRegistry(registry)
+}
+
 func (runtime *SessionRuntime) disposeExtensions(emitShutdown bool) {
 	state := runtime.extensionState
 	if state == nil || state.runner == nil {
 		return
 	}
-	if emitShutdown && state.runner.HasHandlers(extensions.EventSessionShutdown) {
-		state.runner.Emit(context.Background(), extensions.SessionShutdownEvent{Reason: extensions.SessionShutdownQuit})
+	if emitShutdown {
+		runtime.ShutdownExtensions(extensions.SessionShutdownQuit, nil)
+	} else {
+		state.mu.Lock()
+		state.shutdownEmitted = true
+		state.mu.Unlock()
 	}
 	state.runner.Invalidate("")
 }
@@ -313,6 +427,41 @@ func (runtime *SessionRuntime) ExtensionRunner() *extensions.Runner {
 		return nil
 	}
 	return runtime.extensionState.runner
+}
+
+// GetToolDefinition mirrors upstream AgentSession.getToolDefinition for
+// extension tools: the registered ToolDefinition (including renderCall and
+// renderResult) for name, or nil for built-in, unknown, or disallowed tools.
+func (runtime *SessionRuntime) GetToolDefinition(name string) *extensions.ToolDefinition {
+	if runtime == nil || runtime.extensionState == nil {
+		return nil
+	}
+	// allowed/excluded are written only at bind time, so no lock is needed.
+	state := runtime.extensionState
+	if state.runner == nil || !state.toolAllowed(name) {
+		return nil
+	}
+	return state.runner.ToolDefinition(name)
+}
+
+// RegisteredTool returns the configured agent.AgentTool for name — built-in or
+// extension-wrapped, active or not. Renderers type-assert built-ins for their
+// render seams (tools.PlainTextRenderer) instead of duplicating definitions.
+func (runtime *SessionRuntime) RegisteredTool(name string) agent.AgentTool {
+	if runtime == nil {
+		return nil
+	}
+	if state := runtime.extensionState; state != nil {
+		state.mu.Lock()
+		defer state.mu.Unlock()
+		return state.toolRegistry[name]
+	}
+	for _, tool := range runtime.agent.State().Tools {
+		if tool.Spec().Name == name {
+			return tool
+		}
+	}
+	return nil
 }
 
 func (runtime *SessionRuntime) ExtensionResources() extensions.DiscoveredResources {

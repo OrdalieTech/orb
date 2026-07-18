@@ -610,6 +610,40 @@ func TestRunCLIAutomaticallyUsesPrintModeForRedirectedOutput(t *testing.T) {
 	}
 }
 
+func TestRunCLIAllowsMissingModelOnlyForInteractiveRuntime(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		argv        []string
+		stdoutTTY   bool
+		wantAllowed bool
+	}{
+		{name: "interactive", stdoutTTY: true, wantAllowed: true},
+		{name: "redirected print", argv: []string{"prompt", "--no-session"}, stdoutTTY: false},
+		{name: "explicit print", argv: []string{"-p", "prompt", "--no-session"}, stdoutTTY: true},
+		{name: "json", argv: []string{"--mode", "json", "prompt", "--no-session"}, stdoutTTY: true},
+		{name: "rpc", argv: []string{"--mode", "rpc", "--no-session"}, stdoutTTY: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+			called := false
+			allowed := false
+			code := runCLIWithDependencies(context.Background(), test.argv, cliStreams{
+				Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard,
+				StdinTTY: true, StdoutTTY: test.stdoutTTY,
+			}, cliDependencies{createRuntime: func(_ string, args CLIArgs, _ agent.AgentMessages) (runtimeInputs, error) {
+				called = true
+				allowed = args.allowNoModel
+				return runtimeInputs{}, errors.New("stop after runtime arguments")
+			}})
+			if code != 1 || !called || allowed != test.wantAllowed {
+				t.Fatalf("code=%d called=%t allowNoModel=%t, want %t", code, called, allowed, test.wantAllowed)
+			}
+		})
+	}
+}
+
 func TestIsTerminalFileRejectsCharacterDevicesAndPipes(t *testing.T) {
 	device, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	if err != nil {

@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "matches": [
+    {
+      "query": "",
+      "text": "anything",
+      "matches": true,
+      "score": 0
+    },
+    {
+      "query": "toolong",
+      "text": "abc",
+      "matches": false,
+      "score": 0
+    },
+    {
+      "query": "abc",
+      "text": "abc",
+      "matches": true,
+      "score": -139.7
+    },
+    {
+      "query": "cba",
+      "text": "abc",
+      "matches": false,
+      "score": 0
+    },
+    {
+      "query": "ABC",
+      "text": "abc",
+      "matches": true,
+      "score": -139.7
+    },
+    {
+      "query": "abc",
+      "text": "ABC",
+      "matches": true,
+      "score": -139.7
+    },
+    {
+      "query": "abc",
+      "text": "abcdef",
+      "matches": true,
+      "score": -39.699999999999996
+    },
+    {
+      "query": "abc",
+      "text": "axbxcx",
+      "matches": true,
+      "score": -10.4
+    },
+    {
+      "query": "fb",
+      "text": "foo-bar",
+      "matches": true,
+      "score": -18.6
+    },
+    {
+      "query": "fb",
+      "text": "xxfxxbxx",
+      "matches": true,
+      "score": 4.7
+    },
+    {
+      "query": "o1",
+      "text": "1o",
+      "matches": true,
+      "score": -119.9
+    },
+    {
+      "query": "4o",
+      "text": "o4-mini",
+      "matches": true,
+      "score": -19.9
+    },
+    {
+      "query": "gpt4",
+      "text": "gpt-4o-mini",
+      "matches": true,
+      "score": -47.3
+    },
+    {
+      "query": "cld",
+      "text": "claude-sonnet",
+      "matches": true,
+      "score": -20.5
+    },
+    {
+      "query": "a",
+      "text": "😀a",
+      "matches": true,
+      "score": 0.2
+    },
+    {
+      "query": "😀",
+      "text": "x😀",
+      "matches": true,
+      "score": -4.7
+    },
+    {
+      "query": "i̇",
+      "text": "İ",
+      "matches": true,
+      "score": -124.9
+    }
+  ],
+  "filters": [
+    {
+      "items": [
+        "apple",
+        "banana",
+        "cherry"
+      ],
+      "query": "an",
+      "result": [
+        "banana"
+      ]
+    },
+    {
+      "items": [
+        "xtestx",
+        "test",
+        "tempest"
+      ],
+      "query": "test",
+      "result": [
+        "test",
+        "xtestx",
+        "tempest"
+      ]
+    },
+    {
+      "items": [
+        "openai/gpt-4",
+        "anthropic/claude"
+      ],
+      "query": "open/gpt",
+      "result": [
+        "openai/gpt-4"
+      ]
+    },
+    {
+      "items": [
+        "alpha",
+        "beta",
+        "gamma"
+      ],
+      "query": "",
+      "result": [
+        "alpha",
+        "beta",
+        "gamma"
+      ]
+    },
+    {
+      "items": [
+        "settings-list",
+        "select-list",
+        "editor"
+      ],
+      "query": "list",
+      "result": [
+        "settings-list",
+        "select-list"
+      ]
+    }
+  ]
+}

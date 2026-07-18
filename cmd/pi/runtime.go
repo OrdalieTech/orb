@@ -9,7 +9,6 @@ import (
 
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
-	aiapi "github.com/OrdalieTech/pi-go/ai/api"
 	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
 	"github.com/OrdalieTech/pi-go/codingagent"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
@@ -20,6 +19,7 @@ import (
 type runtimeInputs struct {
 	Agent            *agent.Agent
 	Settings         *config.SettingsManager
+	StreamFn         agent.StreamFn
 	AvailableModels  func() []ai.Model
 	ScopedModels     []codingagent.ScopedModel
 	GetAPIKey        agent.GetAPIKeyFunc
@@ -34,6 +34,7 @@ type runtimeInputs struct {
 	ExcludedTools    []string
 	RebuildBaseTools func() ([]agent.AgentTool, error)
 	PromptOptions    codingagent.SystemPromptOptions
+	Auth             *config.AuthStorage
 	Diagnostics      []string
 }
 
@@ -155,6 +156,11 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	if err != nil {
 		return runtimeInputs{}, err
 	}
+	if extensionRegistry != nil {
+		extensionRegistry.BindModelRegistry(registry, func(extensionError extensions.ExtensionError) {
+			diagnostics = append(diagnostics, fmt.Sprintf("Extension error (%s, %s): %s", extensionError.ExtensionPath, extensionError.Event, extensionError.Error))
+		})
+	}
 	model, scopedThinking, scopedModels, modelDiagnostics, err := resolveRuntimeModel(args, settings, registry)
 	if err != nil {
 		return runtimeInputs{}, err
@@ -168,6 +174,9 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		thinking = ai.ModelThinkingLevel(*args.Thinking)
 	} else if scopedThinking != nil {
 		thinking = *scopedThinking
+	}
+	if model == nil {
+		thinking = ai.ModelThinkingOff
 	}
 	transport := settings.GetTransport()
 	providerRetry := settings.GetProviderRetrySettings()
@@ -206,7 +215,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		if merged.MaxRetries == nil {
 			merged.MaxRetries = currentRetry.MaxRetries
 		}
-		return aiapi.StreamSimple(ctx, model, request, &merged)
+		return registry.StreamSimple(ctx, model, request, &merged)
 	}
 	state := agent.AgentState{
 		SystemPrompt:  systemPrompt,
@@ -232,10 +241,14 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		return registry.ResolveModelHeaders(ctx, *model, map[string]string(env), apiKey)
 	}
 	availableModels := func() []ai.Model {
-		all := registry.Models()
-		result := make([]ai.Model, 0, len(all))
-		for _, candidate := range all {
-			if registry.HasConfiguredAuth(string(candidate.Provider), nil) || cliAPIKeyProvider != nil && candidate.Provider == *cliAPIKeyProvider {
+		result, _ := registry.AvailableWithError(nil)
+		if cliAPIKeyProvider != nil {
+			for _, candidate := range registry.Models() {
+				if candidate.Provider != *cliAPIKeyProvider || slices.ContainsFunc(result, func(model ai.Model) bool {
+					return model.Provider == candidate.Provider && model.ID == candidate.ID
+				}) {
+					continue
+				}
 				result = append(result, candidate)
 			}
 		}
@@ -249,7 +262,8 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		agent.WithFollowUpMode(agent.QueueMode(settings.GetFollowUpMode())),
 		agent.WithSimpleStreamOptions(ai.SimpleStreamOptions{
 			StreamOptions: ai.StreamOptions{
-				Transport: &transport, MaxRetryDelayMS: &maxRetryDelay,
+				Transport: &transport, TimeoutMS: providerRetry.TimeoutMS, MaxRetries: providerRetry.MaxRetries,
+				MaxRetryDelayMS: &maxRetryDelay,
 			},
 			ThinkingBudgets: settings.GetThinkingBudgets(),
 		}),
@@ -258,7 +272,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		agent.WithModelHeadersResolver(resolveModelHeaders),
 	)
 	return runtimeInputs{
-		Agent: created, Settings: settings, AvailableModels: availableModels, ScopedModels: scopedModels, GetAPIKey: resolveAPIKey,
+		Agent: created, Settings: settings, StreamFn: streamFn, AvailableModels: availableModels, ScopedModels: scopedModels, GetAPIKey: resolveAPIKey,
 		GetRequestAuth:  resolveRequestAuth,
 		GetModelHeaders: resolveModelHeaders,
 		SlashResolver:   &codingagent.SlashResolver{Skills: resources.Skills, PromptTemplates: resources.PromptTemplates},
@@ -268,6 +282,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		RebuildBaseTools: func() ([]agent.AgentTool, error) {
 			return createBuiltInTools(cwd, baseToolNames, settings)
 		},
+		Auth:        authStorage,
 		Diagnostics: diagnostics,
 	}, nil
 }
@@ -305,6 +320,10 @@ func resolveRuntimeModel(
 ) (*ai.Model, *ai.ModelThinkingLevel, []codingagent.ScopedModel, []string, error) {
 	args = normalizeRuntimeCLIArgs(args)
 	all := registry.Models()
+	available, err := registry.AvailableWithError(nil)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 	diagnostics := make([]string, 0)
 	patterns := args.Models
 	if patterns == nil {
@@ -313,7 +332,7 @@ func resolveRuntimeModel(
 	var scoped []codingagent.ScopedModel
 	if len(patterns) > 0 {
 		var warnings []codingagent.ModelDiagnostic
-		scoped, warnings = codingagent.ResolveModelScope(patterns, registry.Available(nil))
+		scoped, warnings = codingagent.ResolveModelScope(patterns, available)
 		for _, warning := range warnings {
 			diagnostics = append(diagnostics, warning.Message)
 		}
@@ -371,8 +390,12 @@ func resolveRuntimeModel(
 			return &model, nil, scoped, diagnostics, nil
 		}
 	}
-	model := codingagent.PreferredAvailableModel(registry.Available(nil))
+	model := codingagent.PreferredAvailableModel(available)
 	if model == nil {
+		if args.allowNoModel {
+			diagnostics = append(diagnostics, strings.TrimSuffix(formatModelList(nil, ""), "\n"))
+			return nil, nil, scoped, diagnostics, nil
+		}
 		return nil, nil, scoped, diagnostics, fmt.Errorf("no model available; configure provider auth or use --model")
 	}
 	if restoreWarning != "" {

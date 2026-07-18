@@ -1,0 +1,285 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "line": "hello world test",
+      "width": 11,
+      "chunks": [
+        {
+          "text": "hello ",
+          "startIndex": 0,
+          "endIndex": 6
+        },
+        {
+          "text": "world test",
+          "startIndex": 6,
+          "endIndex": 16
+        }
+      ]
+    },
+    {
+      "line": "hello world test",
+      "width": 12,
+      "chunks": [
+        {
+          "text": "hello world ",
+          "startIndex": 0,
+          "endIndex": 12
+        },
+        {
+          "text": "test",
+          "startIndex": 12,
+          "endIndex": 16
+        }
+      ]
+    },
+    {
+      "line": "aaaaaaaaaaaa aaaa",
+      "width": 12,
+      "chunks": [
+        {
+          "text": "aaaaaaaaaaaa",
+          "startIndex": 0,
+          "endIndex": 12
+        },
+        {
+          "text": " aaaa",
+          "startIndex": 12,
+          "endIndex": 17
+        }
+      ]
+    },
+    {
+      "line": "      aaaaaaaaaaaa",
+      "width": 12,
+      "chunks": [
+        {
+          "text": "      ",
+          "startIndex": 0,
+          "endIndex": 6
+        },
+        {
+          "text": "aaaaaaaaaaaa",
+          "startIndex": 6,
+          "endIndex": 18
+        }
+      ]
+    },
+    {
+      "line": "Lorem ipsum dolor sit amet,    consectetur",
+      "width": 30,
+      "chunks": [
+        {
+          "text": "Lorem ipsum dolor sit ",
+          "startIndex": 0,
+          "endIndex": 22
+        },
+        {
+          "text": "amet,    consectetur",
+          "startIndex": 22,
+          "endIndex": 42
+        }
+      ]
+    },
+    {
+      "line": "Lorem ipsum dolor sit amet,              consectetur",
+      "width": 30,
+      "chunks": [
+        {
+          "text": "Lorem ipsum dolor sit ",
+          "startIndex": 0,
+          "endIndex": 22
+        },
+        {
+          "text": "amet,              consectetur",
+          "startIndex": 22,
+          "endIndex": 52
+        }
+      ]
+    },
+    {
+      "line": "Lorem ipsum dolor sit amet,               consectetur",
+      "width": 30,
+      "chunks": [
+        {
+          "text": "Lorem ipsum dolor sit ",
+          "startIndex": 0,
+          "endIndex": 22
+        },
+        {
+          "text": "amet,               ",
+          "startIndex": 22,
+          "endIndex": 42
+        },
+        {
+          "text": "consectetur",
+          "startIndex": 42,
+          "endIndex": 53
+        }
+      ]
+    },
+    {
+      "line": "Lorem ipsum dolor sit amet,                         consectetur",
+      "width": 30,
+      "chunks": [
+        {
+          "text": "Lorem ipsum dolor sit ",
+          "startIndex": 0,
+          "endIndex": 22
+        },
+        {
+          "text": "amet,                         ",
+          "startIndex": 22,
+          "endIndex": 52
+        },
+        {
+          "text": "consectetur",
+          "startIndex": 52,
+          "endIndex": 63
+        }
+      ]
+    },
+    {
+      "line": "Lorem ipsum dolor sit amet,                          consectetur",
+      "width": 30,
+      "chunks": [
+        {
+          "text": "Lorem ipsum dolor sit ",
+          "startIndex": 0,
+          "endIndex": 22
+        },
+        {
+          "text": "amet,                         ",
+          "startIndex": 22,
+          "endIndex": 52
+        },
+        {
+          "text": " consectetur",
+          "startIndex": 52,
+          "endIndex": 64
+        }
+      ]
+    },
+    {
+      "line": "Lorem ipsum dolor sit amet,                                     consectetur",
+      "width": 30,
+      "chunks": [
+        {
+          "text": "Lorem ipsum dolor sit ",
+          "startIndex": 0,
+          "endIndex": 22
+        },
+        {
+          "text": "amet,                         ",
+          "startIndex": 22,
+          "endIndex": 52
+        },
+        {
+          "text": "            consectetur",
+          "startIndex": 52,
+          "endIndex": 75
+        }
+      ]
+    },
+    {
+      "line": " aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa你",
+      "width": 187,
+      "chunks": [
+        {
+          "text": " aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "startIndex": 0,
+          "endIndex": 187
+        },
+        {
+          "text": "你",
+          "startIndex": 187,
+          "endIndex": 188
+        }
+      ]
+    },
+    {
+      "line": "Check https://example.com/very/long/path here",
+      "width": 30,
+      "chunks": [
+        {
+          "text": "Check ",
+          "startIndex": 0,
+          "endIndex": 6
+        },
+        {
+          "text": "https://example.com/very/long/",
+          "startIndex": 6,
+          "endIndex": 36
+        },
+        {
+          "text": "path here",
+          "startIndex": 36,
+          "endIndex": 45
+        }
+      ]
+    },
+    {
+      "line": "你好世界你好世界你好世界",
+      "width": 8,
+      "chunks": [
+        {
+          "text": "你好世界",
+          "startIndex": 0,
+          "endIndex": 4
+        },
+        {
+          "text": "你好世界",
+          "startIndex": 4,
+          "endIndex": 8
+        },
+        {
+          "text": "你好世界",
+          "startIndex": 8,
+          "endIndex": 12
+        }
+      ]
+    },
+    {
+      "line": "mixed 你好 and ascii text",
+      "width": 10,
+      "chunks": [
+        {
+          "text": "mixed 你",
+          "startIndex": 0,
+          "endIndex": 7
+        },
+        {
+          "text": "好 and ",
+          "startIndex": 7,
+          "endIndex": 13
+        },
+        {
+          "text": "ascii text",
+          "startIndex": 13,
+          "endIndex": 23
+        }
+      ]
+    },
+    {
+      "line": "emoji 😀😀😀 wrap",
+      "width": 8,
+      "chunks": [
+        {
+          "text": "emoji ",
+          "startIndex": 0,
+          "endIndex": 6
+        },
+        {
+          "text": "😀😀😀 ",
+          "startIndex": 6,
+          "endIndex": 13
+        },
+        {
+          "text": "wrap",
+          "startIndex": 13,
+          "endIndex": 17
+        }
+      ]
+    }
+  ]
+}

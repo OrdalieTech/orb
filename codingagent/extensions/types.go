@@ -7,7 +7,7 @@ import (
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/agent/harness"
 	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/codingagent/config"
+	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
 	"github.com/OrdalieTech/pi-go/codingagent/session"
 	"github.com/OrdalieTech/pi-go/codingagent/tools"
 )
@@ -674,6 +674,7 @@ type ExecOptions struct {
 	Context context.Context
 	Timeout int64
 	CWD     string
+	Env     []string
 }
 
 type ExecResult struct {
@@ -716,18 +717,37 @@ type ReadonlySessionManager interface {
 }
 
 type ModelRegistry interface {
+	Reload() error
+	Error() string
 	Models() []ai.Model
 	Find(provider, id string) (ai.Model, bool)
 	HasConfiguredAuth(provider string, env map[string]string) bool
+	GetProviderAuthStatus(provider string, env map[string]string) AuthStatus
+	IsUsingOAuth(provider string) bool
 	Available(env map[string]string) []ai.Model
+	AvailableWithError(env map[string]string) ([]ai.Model, error)
 	ResolveAPIKey(context.Context, string, map[string]string) (*string, error)
+	ResolveProviderAuth(context.Context, string, map[string]string) (*aiauth.AuthResult, error)
 	ResolveModelHeaders(context.Context, ai.Model, map[string]string, ...*string) (*map[string]string, error)
+	StreamSimple(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error)
+	Provider(string) (Provider, bool)
+	ProviderDisplayName(string) string
+	ProviderAuth(string) aiauth.ProviderAuth
+	RegisteredProviderConfig(string) (ProviderConfig, bool)
+	RegisteredNativeProvider(string) (Provider, bool)
+	RegisteredProviderIDs() []string
+	RegisterProvider(Provider) error
+	RegisterProviderConfig(string, ProviderConfig) error
+	UnregisterProvider(string) error
 }
 
-var (
-	_ ReadonlySessionManager = (*session.SessionManager)(nil)
-	_ ModelRegistry          = (*config.ModelRegistry)(nil)
-)
+type AuthStatus struct {
+	Configured bool   `json:"configured"`
+	Source     string `json:"source,omitempty"`
+	Label      string `json:"label,omitempty"`
+}
+
+var _ ReadonlySessionManager = (*session.SessionManager)(nil)
 
 type Context interface {
 	UI() UI
@@ -793,7 +813,54 @@ type OAuthCredentials struct {
 	Refresh string         `json:"refresh"`
 	Access  string         `json:"access"`
 	Expires int64          `json:"expires"`
-	Extra   map[string]any `json:"extra,omitempty"`
+	Extra   map[string]any `json:"-"`
+}
+
+func (credentials OAuthCredentials) MarshalJSON() ([]byte, error) {
+	value := make(map[string]any, len(credentials.Extra)+3)
+	for name, field := range credentials.Extra {
+		value[name] = field
+	}
+	value["refresh"] = credentials.Refresh
+	value["access"] = credentials.Access
+	value["expires"] = credentials.Expires
+	return json.Marshal(value)
+}
+
+func (credentials *OAuthCredentials) UnmarshalJSON(data []byte) error {
+	var value map[string]json.RawMessage
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	if raw := value["refresh"]; raw != nil {
+		if err := json.Unmarshal(raw, &credentials.Refresh); err != nil {
+			return err
+		}
+	}
+	if raw := value["access"]; raw != nil {
+		if err := json.Unmarshal(raw, &credentials.Access); err != nil {
+			return err
+		}
+	}
+	if raw := value["expires"]; raw != nil {
+		if err := json.Unmarshal(raw, &credentials.Expires); err != nil {
+			return err
+		}
+	}
+	delete(value, "refresh")
+	delete(value, "access")
+	delete(value, "expires")
+	if len(value) > 0 {
+		credentials.Extra = make(map[string]any, len(value))
+		for name, raw := range value {
+			var field any
+			if err := json.Unmarshal(raw, &field); err != nil {
+				return err
+			}
+			credentials.Extra[name] = field
+		}
+	}
+	return nil
 }
 
 type OAuthAuthInfo struct {
@@ -838,12 +905,12 @@ type OAuthProvider struct {
 	Name         string
 	Login        func(context.Context, OAuthLoginCallbacks) (OAuthCredentials, error)
 	RefreshToken func(context.Context, OAuthCredentials) (OAuthCredentials, error)
-	GetAPIKey    func(OAuthCredentials) string
-	ModifyModels func([]ai.Model, OAuthCredentials) []ai.Model
+	GetAPIKey    func(OAuthCredentials) (string, error)
+	ModifyModels func([]ai.Model, OAuthCredentials) ([]ai.Model, error)
 }
 
 type RefreshModelsContext struct {
-	Credential   any
+	Credential   *aiauth.Credential
 	Store        ProviderModelStore
 	AllowNetwork bool
 	Force        bool
@@ -851,8 +918,8 @@ type RefreshModelsContext struct {
 }
 
 type ProviderModelsStoreEntry struct {
-	Models    []ai.Model
-	CheckedAt *int64
+	Models    []ai.Model `json:"models"`
+	CheckedAt *int64     `json:"checkedAt,omitempty"`
 }
 
 type ProviderModelStore interface {
@@ -870,8 +937,8 @@ type ProviderModelConfig struct {
 	ThinkingLevelMap *map[ai.ModelThinkingLevel]*string
 	Input            ai.InputModalities
 	Cost             ai.ModelCost
-	ContextWindow    int64
-	MaxTokens        int64
+	ContextWindow    float64
+	MaxTokens        float64
 	Headers          map[string]string
 	Compat           json.RawMessage
 }
@@ -887,15 +954,27 @@ type ProviderConfig struct {
 	Models        []ProviderModelConfig
 	RefreshModels func(RefreshModelsContext) ([]ProviderModelConfig, error)
 	OAuth         *OAuthProvider
+	Defined       map[string]bool
+	// RegistrationValues retains owner-scoped values solely so the bridge can
+	// expose the effective registration through the owning VM.
+	RegistrationValues map[string]any
 }
 
 type Provider struct {
-	ID           string
-	Name         string
-	Config       ProviderConfig
-	FilterModels func([]ai.Model) []ai.Model
-	GetModels    func(context.Context) ([]ai.Model, error)
-	Stream       agent.StreamFn
+	ID            string
+	Name          string
+	BaseURL       string
+	Headers       map[string]string
+	Auth          aiauth.ProviderAuth
+	Config        ProviderConfig
+	FilterModels  func([]ai.Model, *aiauth.Credential) ([]ai.Model, error)
+	GetModels     func() ([]ai.Model, error)
+	RefreshModels func(RefreshModelsContext) error
+	Stream        agent.StreamFn
+	StreamSimple  agent.StreamFn
+	// RegistrationValue is returned only to the VM that owns it; callbacks
+	// above remain the cross-VM representation held by the shared registry.
+	RegistrationValue any
 }
 
 type API interface {

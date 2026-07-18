@@ -1,0 +1,4606 @@
+{
+  "schemaVersion": 1,
+  "renderCases": [
+    {
+      "name": "short-content-centered",
+      "width": 80,
+      "rows": 24,
+      "base": [
+        "Line 1",
+        "Line 2",
+        "Line 3"
+      ],
+      "overlays": [
+        {
+          "lines": [
+            "OVERLAY_TOP",
+            "OVERLAY_MID",
+            "OVERLAY_BOT"
+          ]
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3JLine 1\u001b[0m\u001b]8;;\u0007\r\nLine 2\u001b[0m\u001b]8;;\u0007\r\nLine 3\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007OVERLAY_TOP                                                                     \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007OVERLAY_MID                                                                     \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007OVERLAY_BOT                                                                     \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        80
+      ]
+    },
+    {
+      "name": "anchor-margin-offset",
+      "width": 20,
+      "rows": 8,
+      "base": [
+        "base 0",
+        "base 1",
+        "base 2"
+      ],
+      "overlays": [
+        {
+          "lines": [
+            "BOTTOM",
+            "EDGE"
+          ],
+          "options": {
+            "width": 8,
+            "anchor": "bottom-right",
+            "margin": {
+              "right": 2,
+              "bottom": 1
+            },
+            "offsetX": -1,
+            "offsetY": -1
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3Jbase 0\u001b[0m\u001b]8;;\u0007\r\nbase 1\u001b[0m\u001b]8;;\u0007\r\nbase 2\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n         \u001b[0m\u001b]8;;\u0007BOTTOM  \u001b[0m\u001b]8;;\u0007   \u001b[0m\u001b]8;;\u0007\r\n         \u001b[0m\u001b]8;;\u0007EDGE    \u001b[0m\u001b]8;;\u0007   \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        8
+      ]
+    },
+    {
+      "name": "percentage-size-position-and-max-height",
+      "width": 40,
+      "rows": 10,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "L1",
+            "L2",
+            "L3",
+            "L4",
+            "L5",
+            "L6",
+            "L7"
+          ],
+          "options": {
+            "width": "50%",
+            "minWidth": 12,
+            "maxHeight": "50%",
+            "row": "100%",
+            "col": "50%"
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n          \u001b[0m\u001b]8;;\u0007L1                  \u001b[0m\u001b]8;;\u0007          \u001b[0m\u001b]8;;\u0007\r\n          \u001b[0m\u001b]8;;\u0007L2                  \u001b[0m\u001b]8;;\u0007          \u001b[0m\u001b]8;;\u0007\r\n          \u001b[0m\u001b]8;;\u0007L3                  \u001b[0m\u001b]8;;\u0007          \u001b[0m\u001b]8;;\u0007\r\n          \u001b[0m\u001b]8;;\u0007L4                  \u001b[0m\u001b]8;;\u0007          \u001b[0m\u001b]8;;\u0007\r\n          \u001b[0m\u001b]8;;\u0007L5                  \u001b[0m\u001b]8;;\u0007          \u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        20
+      ]
+    },
+    {
+      "name": "focus-order-overrides-creation-order",
+      "width": 20,
+      "rows": 6,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "AAAAAAAA"
+          ],
+          "options": {
+            "width": 8,
+            "row": 0,
+            "col": 0,
+            "nonCapturing": true
+          }
+        },
+        {
+          "lines": [
+            "BBBB"
+          ],
+          "options": {
+            "width": 4,
+            "row": 0,
+            "col": 0,
+            "nonCapturing": true
+          }
+        }
+      ],
+      "actions": [
+        {
+          "action": "focus",
+          "overlay": 0
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007AAAAAAAA\u001b[0m\u001b]8;;\u0007            \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        8,
+        4
+      ]
+    },
+    {
+      "name": "all-hidden-overlays-still-reserve-terminal-height",
+      "width": 20,
+      "rows": 6,
+      "base": [
+        "only"
+      ],
+      "overlays": [
+        {
+          "lines": [
+            "HIDDEN"
+          ],
+          "options": {
+            "width": 6,
+            "row": 0,
+            "col": 0
+          }
+        }
+      ],
+      "actions": [
+        {
+          "action": "setHidden",
+          "overlay": 0,
+          "hidden": true
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3Jonly\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        null
+      ]
+    },
+    {
+      "name": "responsive-overlay-hidden-at-current-width",
+      "width": 20,
+      "rows": 6,
+      "base": [
+        "base"
+      ],
+      "overlays": [
+        {
+          "lines": [
+            "RESPONSIVE"
+          ],
+          "options": {
+            "width": 10,
+            "row": 0,
+            "col": 0,
+            "visibleMinWidth": 30
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3Jbase\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        null
+      ]
+    },
+    {
+      "name": "cjk-tab-ansi-boundary",
+      "width": 20,
+      "rows": 4,
+      "base": [
+        "\u001b[3mabcd让EFGHXXXXXXXXX\u001b[23m",
+        "INPUT"
+      ],
+      "overlays": [
+        {
+          "lines": [
+            "\tX"
+          ],
+          "options": {
+            "width": 4,
+            "row": 0,
+            "col": 5
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[3mabcd \u001b[0m\u001b]8;;\u0007   X\u001b[0m\u001b]8;;\u0007\u001b[3mHXXXXXXXXX\u001b[23m \u001b[0m\u001b]8;;\u0007\r\nINPUT\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        4
+      ]
+    },
+    {
+      "name": "declared-width-truncates-overlay",
+      "width": 20,
+      "rows": 4,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+          ],
+          "options": {
+            "width": 6,
+            "anchor": "top-left"
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007XXXXXX\u001b[0m\u001b]8;;\u0007              \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        6
+      ]
+    },
+    {
+      "name": "overlay-is-relative-to-bottom-viewport",
+      "width": 20,
+      "rows": 4,
+      "base": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7"
+      ],
+      "overlays": [
+        {
+          "lines": [
+            "TOP"
+          ],
+          "options": {
+            "width": 4,
+            "anchor": "top-left"
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J0\u001b[0m\u001b]8;;\u0007\r\n1\u001b[0m\u001b]8;;\u0007\r\n2\u001b[0m\u001b]8;;\u0007\r\n3\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007TOP \u001b[0m\u001b]8;;\u0007                \u001b[0m\u001b]8;;\u0007\r\n5\u001b[0m\u001b]8;;\u0007\r\n6\u001b[0m\u001b]8;;\u0007\r\n7\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        4
+      ]
+    },
+    {
+      "name": "complex-ansi-overlay",
+      "width": 80,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "\u001b[48;2;40;50;40m \u001b[38;2;128;128;128mSome styled content\u001b[39m\u001b[49m\u001b]8;;http://example.com\u0007link\u001b]8;;\u0007 more content  more content  more content  more content  more content  more content  more content  more content  more content  more content "
+          ],
+          "options": {
+            "width": 60
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n          \u001b[0m\u001b]8;;\u0007\u001b[48;2;40;50;40m \u001b[38;2;128;128;128mSome styled content\u001b[39m\u001b[49m\u001b]8;;http://example.com\u0007link\u001b]8;;\u0007 more content  more content  more co\u001b[0m\u001b]8;;\u0007          \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        60
+      ]
+    },
+    {
+      "name": "styled-base-overlay",
+      "width": 80,
+      "rows": 24,
+      "base": [
+        "\u001b[1m\u001b[38;2;255;0;0mXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\u001b[0m",
+        "\u001b[1m\u001b[38;2;255;0;0mXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\u001b[0m",
+        "\u001b[1m\u001b[38;2;255;0;0mXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\u001b[0m"
+      ],
+      "overlays": [
+        {
+          "lines": [
+            "OVERLAY"
+          ],
+          "options": {
+            "width": 20,
+            "anchor": "center"
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[1m\u001b[38;2;255;0;0mXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\u001b[0m\u001b[0m\u001b]8;;\u0007\r\n\u001b[1m\u001b[38;2;255;0;0mXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\u001b[0m\u001b[0m\u001b]8;;\u0007\r\n\u001b[1m\u001b[38;2;255;0;0mXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\u001b[0m\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n                              \u001b[0m\u001b]8;;\u0007OVERLAY             \u001b[0m\u001b]8;;\u0007                              \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        20
+      ]
+    },
+    {
+      "name": "wide-character-overlay-boundary",
+      "width": 80,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "中文日本語한글テスト漢字"
+          ],
+          "options": {
+            "width": 15
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n                                \u001b[0m\u001b]8;;\u0007中文日本語한글 \u001b[0m\u001b]8;;\u0007                                 \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        15
+      ]
+    },
+    {
+      "name": "terminal-right-edge",
+      "width": 80,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+          ],
+          "options": {
+            "col": 60,
+            "width": 20
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n                                                            \u001b[0m\u001b]8;;\u0007XXXXXXXXXXXXXXXXXXXX\u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        20
+      ]
+    },
+    {
+      "name": "osc-styled-base-overlay",
+      "width": 80,
+      "rows": 24,
+      "base": [
+        "See \u001b]8;;file:///path/to/file.ts\u0007file.ts\u001b]8;;\u0007 for details XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "See \u001b]8;;file:///path/to/file.ts\u0007file.ts\u001b]8;;\u0007 for details XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "See \u001b]8;;file:///path/to/file.ts\u0007file.ts\u001b]8;;\u0007 for details XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      ],
+      "overlays": [
+        {
+          "lines": [
+            "OVERLAY-TEXT"
+          ],
+          "options": {
+            "anchor": "center",
+            "width": 20
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3JSee \u001b]8;;file:///path/to/file.ts\u0007file.ts\u001b]8;;\u0007 for details XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\u001b[0m\u001b]8;;\u0007\r\nSee \u001b]8;;file:///path/to/file.ts\u0007file.ts\u001b]8;;\u0007 for details XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\u001b[0m\u001b]8;;\u0007\r\nSee \u001b]8;;file:///path/to/file.ts\u0007file.ts\u001b]8;;\u0007 for details XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n                              \u001b[0m\u001b]8;;\u0007OVERLAY-TEXT        \u001b[0m\u001b]8;;\u0007                              \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        20
+      ]
+    },
+    {
+      "name": "width-percent",
+      "width": 100,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "test"
+          ],
+          "options": {
+            "width": "50%"
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n                         \u001b[0m\u001b]8;;\u0007test                                              \u001b[0m\u001b]8;;\u0007                         \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        50
+      ]
+    },
+    {
+      "name": "width-percent-minimum",
+      "width": 100,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "test"
+          ],
+          "options": {
+            "width": "10%",
+            "minWidth": 30
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n                                   \u001b[0m\u001b]8;;\u0007test                          \u001b[0m\u001b]8;;\u0007                                   \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        30
+      ]
+    },
+    {
+      "name": "anchor-top-left",
+      "width": 80,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "TOP-LEFT"
+          ],
+          "options": {
+            "anchor": "top-left",
+            "width": 10
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007TOP-LEFT  \u001b[0m\u001b]8;;\u0007                                                                      \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        10
+      ]
+    },
+    {
+      "name": "anchor-bottom-right",
+      "width": 80,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "BTM-RIGHT"
+          ],
+          "options": {
+            "anchor": "bottom-right",
+            "width": 10
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n                                                                      \u001b[0m\u001b]8;;\u0007BTM-RIGHT \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        10
+      ]
+    },
+    {
+      "name": "anchor-top-center",
+      "width": 80,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "CENTERED"
+          ],
+          "options": {
+            "anchor": "top-center",
+            "width": 10
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J                                   \u001b[0m\u001b]8;;\u0007CENTERED  \u001b[0m\u001b]8;;\u0007                                   \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        10
+      ]
+    },
+    {
+      "name": "negative-margins-clamp-to-zero",
+      "width": 80,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "NEG-MARGIN"
+          ],
+          "options": {
+            "anchor": "top-left",
+            "width": 12,
+            "margin": {
+              "top": -5,
+              "left": -10,
+              "right": 0,
+              "bottom": 0
+            }
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007NEG-MARGIN  \u001b[0m\u001b]8;;\u0007                                                                    \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        12
+      ]
+    },
+    {
+      "name": "uniform-margin",
+      "width": 80,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "MARGIN"
+          ],
+          "options": {
+            "anchor": "top-left",
+            "width": 10,
+            "margin": 5
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n     \u001b[0m\u001b]8;;\u0007MARGIN    \u001b[0m\u001b]8;;\u0007                                                                 \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        10
+      ]
+    },
+    {
+      "name": "object-margin",
+      "width": 80,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "MARGIN"
+          ],
+          "options": {
+            "anchor": "top-left",
+            "width": 10,
+            "margin": {
+              "top": 2,
+              "left": 3,
+              "right": 0,
+              "bottom": 0
+            }
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n   \u001b[0m\u001b]8;;\u0007MARGIN    \u001b[0m\u001b]8;;\u0007                                                                   \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        10
+      ]
+    },
+    {
+      "name": "anchor-offset",
+      "width": 80,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "OFFSET"
+          ],
+          "options": {
+            "anchor": "top-left",
+            "width": 10,
+            "offsetX": 10,
+            "offsetY": 5
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n          \u001b[0m\u001b]8;;\u0007OFFSET    \u001b[0m\u001b]8;;\u0007                                                            \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        10
+      ]
+    },
+    {
+      "name": "percent-row-col",
+      "width": 80,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "PCT"
+          ],
+          "options": {
+            "width": 10,
+            "row": "50%",
+            "col": "50%"
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n                                   \u001b[0m\u001b]8;;\u0007PCT       \u001b[0m\u001b]8;;\u0007                                   \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        10
+      ]
+    },
+    {
+      "name": "row-percent-zero",
+      "width": 80,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "TOP"
+          ],
+          "options": {
+            "width": 10,
+            "row": "0%"
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J                                   \u001b[0m\u001b]8;;\u0007TOP       \u001b[0m\u001b]8;;\u0007                                   \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        10
+      ]
+    },
+    {
+      "name": "row-percent-hundred",
+      "width": 80,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "BOTTOM"
+          ],
+          "options": {
+            "width": 10,
+            "row": "100%"
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n                                   \u001b[0m\u001b]8;;\u0007BOTTOM    \u001b[0m\u001b]8;;\u0007                                   \u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        10
+      ]
+    },
+    {
+      "name": "max-height-absolute",
+      "width": 80,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "Line 1",
+            "Line 2",
+            "Line 3",
+            "Line 4",
+            "Line 5"
+          ],
+          "options": {
+            "maxHeight": 3
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007Line 1                                                                          \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007Line 2                                                                          \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007Line 3                                                                          \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        80
+      ]
+    },
+    {
+      "name": "max-height-percent",
+      "width": 80,
+      "rows": 10,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "L1",
+            "L2",
+            "L3",
+            "L4",
+            "L5",
+            "L6",
+            "L7",
+            "L8",
+            "L9",
+            "L10"
+          ],
+          "options": {
+            "maxHeight": "50%"
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007L1                                                                              \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007L2                                                                              \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007L3                                                                              \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007L4                                                                              \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007L5                                                                              \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        80
+      ]
+    },
+    {
+      "name": "row-col-override-anchor",
+      "width": 80,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "ABSOLUTE"
+          ],
+          "options": {
+            "anchor": "bottom-right",
+            "row": 3,
+            "col": 5,
+            "width": 10
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n     \u001b[0m\u001b]8;;\u0007ABSOLUTE  \u001b[0m\u001b]8;;\u0007                                                                 \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        10
+      ]
+    },
+    {
+      "name": "later-overlay-on-top",
+      "width": 80,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "FIRST-OVERLAY"
+          ],
+          "options": {
+            "anchor": "top-left",
+            "width": 20
+          }
+        },
+        {
+          "lines": [
+            "SECOND"
+          ],
+          "options": {
+            "anchor": "top-left",
+            "width": 10
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007SECOND    \u001b[0m\u001b]8;;\u0007LAY       \u001b[0m\u001b]8;;\u0007                                                            \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        20,
+        10
+      ]
+    },
+    {
+      "name": "different-overlay-positions",
+      "width": 80,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "TOP-LEFT"
+          ],
+          "options": {
+            "anchor": "top-left",
+            "width": 15
+          }
+        },
+        {
+          "lines": [
+            "BTM-RIGHT"
+          ],
+          "options": {
+            "anchor": "bottom-right",
+            "width": 15
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007TOP-LEFT       \u001b[0m\u001b]8;;\u0007                                                                 \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n                                                                 \u001b[0m\u001b]8;;\u0007BTM-RIGHT      \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        15,
+        15
+      ]
+    },
+    {
+      "name": "hide-overlay-stack-order",
+      "width": 80,
+      "rows": 24,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "FIRST"
+          ],
+          "options": {
+            "anchor": "top-left",
+            "width": 10
+          }
+        },
+        {
+          "lines": [
+            "SECOND"
+          ],
+          "options": {
+            "anchor": "top-left",
+            "width": 10
+          }
+        }
+      ],
+      "actions": [
+        {
+          "action": "hideOverlay"
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007FIRST     \u001b[0m\u001b]8;;\u0007                                                                      \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        10,
+        null
+      ]
+    },
+    {
+      "name": "style-leak-no-overlay",
+      "width": 20,
+      "rows": 6,
+      "base": [
+        "\u001b[3mXXXXXXXXXXXXXXXXXXXX\u001b[23m",
+        "INPUT"
+      ],
+      "overlays": [],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[3mXXXXXXXXXXXXXXXXXXXX\u001b[23m\u001b[0m\u001b]8;;\u0007\r\nINPUT\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": []
+    },
+    {
+      "name": "style-leak-with-overlay",
+      "width": 20,
+      "rows": 6,
+      "base": [
+        "\u001b[3mXXXXXXXXXXXXXXXXXXXX\u001b[23m",
+        "INPUT"
+      ],
+      "overlays": [
+        {
+          "lines": [
+            "OVR"
+          ],
+          "options": {
+            "row": 0,
+            "col": 5,
+            "width": 3
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[3mXXXXX\u001b[0m\u001b]8;;\u0007OVR\u001b[0m\u001b]8;;\u0007\u001b[3mXXXXXXXXXXXX\u001b[0m\u001b]8;;\u0007\r\nINPUT\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        3
+      ]
+    },
+    {
+      "name": "cjk-overlay-starts-inside-wide-grapheme",
+      "width": 20,
+      "rows": 4,
+      "base": [
+        "abcd让EFGH"
+      ],
+      "overlays": [
+        {
+          "lines": [
+            "│XX│"
+          ],
+          "options": {
+            "row": 0,
+            "col": 5,
+            "width": 4
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3Jabcd \u001b[0m\u001b]8;;\u0007│XX│\u001b[0m\u001b]8;;\u0007H          \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        4
+      ]
+    },
+    {
+      "name": "cjk-overlay-starts-at-wide-grapheme-boundary",
+      "width": 20,
+      "rows": 4,
+      "base": [
+        "abcd让EFGH"
+      ],
+      "overlays": [
+        {
+          "lines": [
+            "│XX│"
+          ],
+          "options": {
+            "row": 0,
+            "col": 4,
+            "width": 4
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3Jabcd\u001b[0m\u001b]8;;\u0007│XX│\u001b[0m\u001b]8;;\u0007GH          \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        4
+      ]
+    },
+    {
+      "name": "tab-overlay-one-physical-row",
+      "width": 16,
+      "rows": 3,
+      "base": [
+        "base 0          ",
+        "base 1          ",
+        "base 2          "
+      ],
+      "overlays": [
+        {
+          "lines": [
+            "\tX"
+          ],
+          "options": {
+            "width": 4,
+            "row": 1,
+            "col": 4
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3Jbase 0          \u001b[0m\u001b]8;;\u0007\r\nbase\u001b[0m\u001b]8;;\u0007   X\u001b[0m\u001b]8;;\u0007        \u001b[0m\u001b]8;;\u0007\r\nbase 2          \u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        4
+      ]
+    },
+    {
+      "name": "anchor-top-right",
+      "width": 24,
+      "rows": 8,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "TR"
+          ],
+          "options": {
+            "anchor": "top-right",
+            "width": 4
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J                    \u001b[0m\u001b]8;;\u0007TR  \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        4
+      ]
+    },
+    {
+      "name": "anchor-bottom-left",
+      "width": 24,
+      "rows": 8,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "BL"
+          ],
+          "options": {
+            "anchor": "bottom-left",
+            "width": 4
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007BL  \u001b[0m\u001b]8;;\u0007                    \u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        4
+      ]
+    },
+    {
+      "name": "anchor-bottom-center",
+      "width": 24,
+      "rows": 8,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "BC"
+          ],
+          "options": {
+            "anchor": "bottom-center",
+            "width": 4
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n          \u001b[0m\u001b]8;;\u0007BC  \u001b[0m\u001b]8;;\u0007          \u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        4
+      ]
+    },
+    {
+      "name": "anchor-left-center",
+      "width": 24,
+      "rows": 8,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "LC"
+          ],
+          "options": {
+            "anchor": "left-center",
+            "width": 4
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007LC  \u001b[0m\u001b]8;;\u0007                    \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        4
+      ]
+    },
+    {
+      "name": "anchor-right-center",
+      "width": 24,
+      "rows": 8,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "RC"
+          ],
+          "options": {
+            "anchor": "right-center",
+            "width": 4
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n                    \u001b[0m\u001b]8;;\u0007RC  \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        4
+      ]
+    },
+    {
+      "name": "offset-clamps-to-object-margins",
+      "width": 24,
+      "rows": 8,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "CLAMP"
+          ],
+          "options": {
+            "anchor": "bottom-right",
+            "width": 6,
+            "offsetX": 100,
+            "offsetY": 100,
+            "margin": {
+              "top": 1,
+              "right": 2,
+              "bottom": 2,
+              "left": 1
+            }
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n                \u001b[0m\u001b]8;;\u0007CLAMP \u001b[0m\u001b]8;;\u0007  \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        6
+      ]
+    },
+    {
+      "name": "col-percent-zero",
+      "width": 24,
+      "rows": 8,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "LEFT"
+          ],
+          "options": {
+            "width": 6,
+            "col": "0%"
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007LEFT  \u001b[0m\u001b]8;;\u0007                  \u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        6
+      ]
+    },
+    {
+      "name": "col-percent-hundred",
+      "width": 24,
+      "rows": 8,
+      "base": [],
+      "overlays": [
+        {
+          "lines": [
+            "RIGHT"
+          ],
+          "options": {
+            "width": 6,
+            "col": "100%"
+          }
+        }
+      ],
+      "expected": "\u001b[?2026h\u001b[2J\u001b[H\u001b[3J\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n                  \u001b[0m\u001b]8;;\u0007RIGHT \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\r\n\u001b[0m\u001b]8;;\u0007\u001b[?2026l",
+      "expectedRequestedWidths": [
+        6
+      ]
+    }
+  ],
+  "focusCases": [
+    {
+      "name": "non-capturing overlay preserves focus on creation",
+      "components": [
+        "editor",
+        "overlay"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "observe",
+          "label": "shown"
+        }
+      ],
+      "expected": [
+        {
+          "label": "shown",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {},
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "focus() transfers focus to the overlay",
+      "components": [
+        "editor",
+        "overlay"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "focus",
+          "handle": "overlay"
+        },
+        {
+          "op": "observe",
+          "label": "focused"
+        }
+      ],
+      "expected": [
+        {
+          "label": "focused",
+          "focused": [
+            "overlay"
+          ],
+          "inputs": {},
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": true
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "unfocus() restores previous focus",
+      "components": [
+        "editor",
+        "overlay"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "focus",
+          "handle": "overlay"
+        },
+        {
+          "op": "unfocus",
+          "handle": "overlay"
+        },
+        {
+          "op": "observe",
+          "label": "unfocused"
+        }
+      ],
+      "expected": [
+        {
+          "label": "unfocused",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {},
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "setHidden(false) on non-capturing overlay does not auto-focus",
+      "components": [
+        "editor",
+        "overlay"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "setHidden",
+          "handle": "overlay",
+          "hidden": true
+        },
+        {
+          "op": "setHidden",
+          "handle": "overlay",
+          "hidden": false
+        },
+        {
+          "op": "observe",
+          "label": "shown"
+        }
+      ],
+      "expected": [
+        {
+          "label": "shown",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {},
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "hide() when overlay is not focused does not change focus",
+      "components": [
+        "editor",
+        "overlay"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "hide",
+          "handle": "overlay"
+        },
+        {
+          "op": "observe",
+          "label": "hidden"
+        }
+      ],
+      "expected": [
+        {
+          "label": "hidden",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {},
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": false
+        }
+      ]
+    },
+    {
+      "name": "hide() when focused restores focus correctly",
+      "components": [
+        "editor",
+        "overlay"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "focus",
+          "handle": "overlay"
+        },
+        {
+          "op": "hide",
+          "handle": "overlay"
+        },
+        {
+          "op": "observe",
+          "label": "hidden"
+        }
+      ],
+      "expected": [
+        {
+          "label": "hidden",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {},
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": false
+        }
+      ]
+    },
+    {
+      "name": "capturing overlay removed with non-capturing below restores focus to editor",
+      "components": [
+        "editor",
+        "nonCapturing",
+        "capturing"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "nonCapturing",
+          "handle": "nonCapturing",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "show",
+          "component": "capturing",
+          "handle": "capturing"
+        },
+        {
+          "op": "observe",
+          "label": "capturing"
+        },
+        {
+          "op": "hide",
+          "handle": "capturing"
+        },
+        {
+          "op": "observe",
+          "label": "restored"
+        }
+      ],
+      "expected": [
+        {
+          "label": "capturing",
+          "focused": [
+            "capturing"
+          ],
+          "inputs": {},
+          "handles": {
+            "nonCapturing": {
+              "hidden": false,
+              "focused": false
+            },
+            "capturing": {
+              "hidden": false,
+              "focused": true
+            }
+          },
+          "hasOverlay": true
+        },
+        {
+          "label": "restored",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {},
+          "handles": {
+            "nonCapturing": {
+              "hidden": false,
+              "focused": false
+            },
+            "capturing": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "sub-overlay cleanup then hideOverlay restores focus and input to editor",
+      "components": [
+        "editor",
+        "timer",
+        "controller"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "timer",
+          "handle": "timer",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "show",
+          "component": "controller",
+          "handle": "controller"
+        },
+        {
+          "op": "observe",
+          "label": "active"
+        },
+        {
+          "op": "hide",
+          "handle": "timer"
+        },
+        {
+          "op": "hideOverlay"
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "closed"
+        }
+      ],
+      "expected": [
+        {
+          "label": "active",
+          "focused": [
+            "controller"
+          ],
+          "inputs": {},
+          "handles": {
+            "timer": {
+              "hidden": false,
+              "focused": false
+            },
+            "controller": {
+              "hidden": false,
+              "focused": true
+            }
+          },
+          "hasOverlay": true
+        },
+        {
+          "label": "closed",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {
+            "editor": [
+              "x"
+            ]
+          },
+          "handles": {
+            "timer": {
+              "hidden": false,
+              "focused": false
+            },
+            "controller": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": false
+        }
+      ]
+    },
+    {
+      "name": "removed focused child overlay does not become parent overlay fallback",
+      "components": [
+        "editor",
+        "child",
+        "parent"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "child",
+          "handle": "child",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "focus",
+          "handle": "child"
+        },
+        {
+          "op": "show",
+          "component": "parent",
+          "handle": "parent"
+        },
+        {
+          "op": "hide",
+          "handle": "child"
+        },
+        {
+          "op": "hide",
+          "handle": "parent"
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "closed"
+        }
+      ],
+      "expected": [
+        {
+          "label": "closed",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {
+            "editor": [
+              "x"
+            ]
+          },
+          "handles": {
+            "child": {
+              "hidden": false,
+              "focused": false
+            },
+            "parent": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": false
+        }
+      ]
+    },
+    {
+      "name": "microtask-deferred sub-overlay pattern (showExtensionCustom simulation) restores focus",
+      "components": [
+        "editor",
+        "timer",
+        "controller"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "timer",
+          "handle": "timer",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "schedule",
+          "operations": [
+            {
+              "op": "show",
+              "component": "controller",
+              "handle": "controller"
+            }
+          ]
+        },
+        {
+          "op": "flush"
+        },
+        {
+          "op": "observe",
+          "label": "active"
+        },
+        {
+          "op": "hide",
+          "handle": "timer"
+        },
+        {
+          "op": "hideOverlay"
+        },
+        {
+          "op": "observe",
+          "label": "closed"
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "input"
+        }
+      ],
+      "expected": [
+        {
+          "label": "active",
+          "focused": [
+            "controller"
+          ],
+          "inputs": {},
+          "handles": {
+            "timer": {
+              "hidden": false,
+              "focused": false
+            },
+            "controller": {
+              "hidden": false,
+              "focused": true
+            }
+          },
+          "hasOverlay": true
+        },
+        {
+          "label": "closed",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {},
+          "handles": {
+            "timer": {
+              "hidden": false,
+              "focused": false
+            },
+            "controller": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": false
+        },
+        {
+          "label": "input",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {
+            "editor": [
+              "x"
+            ]
+          },
+          "handles": {
+            "timer": {
+              "hidden": false,
+              "focused": false
+            },
+            "controller": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": false
+        }
+      ]
+    },
+    {
+      "name": "handleInput redirection skips non-capturing overlays when focused overlay becomes invisible",
+      "components": [
+        "editor",
+        "fallbackCapturing",
+        "nonCapturing",
+        "primary"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "fallbackCapturing",
+          "handle": "fallbackCapturing"
+        },
+        {
+          "op": "show",
+          "component": "nonCapturing",
+          "handle": "nonCapturing",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "show",
+          "component": "primary",
+          "handle": "primary",
+          "options": {
+            "visibleFlag": "visible"
+          }
+        },
+        {
+          "op": "setFlag",
+          "flag": "visible",
+          "value": false
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "fallback"
+        }
+      ],
+      "flags": {
+        "visible": true
+      },
+      "expected": [
+        {
+          "label": "fallback",
+          "focused": [
+            "fallbackCapturing"
+          ],
+          "inputs": {
+            "fallbackCapturing": [
+              "x"
+            ]
+          },
+          "handles": {
+            "fallbackCapturing": {
+              "hidden": false,
+              "focused": true
+            },
+            "nonCapturing": {
+              "hidden": false,
+              "focused": false
+            },
+            "primary": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "active base focus replacement receives close input before overlay restore",
+      "components": [
+        "editor",
+        "replacement",
+        "overlay"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay"
+        },
+        {
+          "op": "input",
+          "data": "b"
+        },
+        {
+          "op": "observe",
+          "label": "replacement"
+        },
+        {
+          "op": "input",
+          "data": "\r"
+        },
+        {
+          "op": "observe",
+          "label": "restored"
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "overlay-input"
+        }
+      ],
+      "handlers": [
+        {
+          "component": "overlay",
+          "data": "b",
+          "operations": [
+            {
+              "op": "setFocus",
+              "target": "replacement"
+            }
+          ]
+        },
+        {
+          "component": "replacement",
+          "data": "\r",
+          "operations": [
+            {
+              "op": "setFocus",
+              "target": "editor"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "label": "replacement",
+          "focused": [
+            "replacement"
+          ],
+          "inputs": {
+            "overlay": [
+              "b"
+            ]
+          },
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        },
+        {
+          "label": "restored",
+          "focused": [
+            "overlay"
+          ],
+          "inputs": {
+            "replacement": [
+              "\r"
+            ],
+            "overlay": [
+              "b"
+            ]
+          },
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": true
+            }
+          },
+          "hasOverlay": true
+        },
+        {
+          "label": "overlay-input",
+          "focused": [
+            "overlay"
+          ],
+          "inputs": {
+            "replacement": [
+              "\r"
+            ],
+            "overlay": [
+              "b",
+              "x"
+            ]
+          },
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": true
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "active replacement still receives input when it is another overlay preFocus",
+      "components": [
+        "editor",
+        "replacement",
+        "passive",
+        "overlay"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "setFocus",
+          "target": "replacement"
+        },
+        {
+          "op": "show",
+          "component": "passive",
+          "handle": "passive",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "setFocus",
+          "target": "editor"
+        },
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay"
+        },
+        {
+          "op": "input",
+          "data": "b"
+        },
+        {
+          "op": "observe",
+          "label": "replacement"
+        },
+        {
+          "op": "input",
+          "data": "1"
+        },
+        {
+          "op": "input",
+          "data": "\r"
+        },
+        {
+          "op": "observe",
+          "label": "restored"
+        }
+      ],
+      "handlers": [
+        {
+          "component": "overlay",
+          "data": "b",
+          "operations": [
+            {
+              "op": "setFocus",
+              "target": "replacement"
+            }
+          ]
+        },
+        {
+          "component": "replacement",
+          "data": "\r",
+          "operations": [
+            {
+              "op": "setFocus",
+              "target": "editor"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "label": "replacement",
+          "focused": [
+            "replacement"
+          ],
+          "inputs": {
+            "overlay": [
+              "b"
+            ]
+          },
+          "handles": {
+            "passive": {
+              "hidden": false,
+              "focused": false
+            },
+            "overlay": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        },
+        {
+          "label": "restored",
+          "focused": [
+            "overlay"
+          ],
+          "inputs": {
+            "replacement": [
+              "1",
+              "\r"
+            ],
+            "overlay": [
+              "b"
+            ]
+          },
+          "handles": {
+            "passive": {
+              "hidden": false,
+              "focused": false
+            },
+            "overlay": {
+              "hidden": false,
+              "focused": true
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "blocked replacement can move focus internally before overlay restore",
+      "components": [
+        "editor",
+        "firstReplacement",
+        "secondReplacement",
+        "overlay"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay"
+        },
+        {
+          "op": "input",
+          "data": "b"
+        },
+        {
+          "op": "input",
+          "data": "n"
+        },
+        {
+          "op": "input",
+          "data": "2"
+        },
+        {
+          "op": "input",
+          "data": "\r"
+        },
+        {
+          "op": "observe",
+          "label": "restored"
+        }
+      ],
+      "mounted": [
+        "editor",
+        "firstReplacement",
+        "secondReplacement"
+      ],
+      "handlers": [
+        {
+          "component": "overlay",
+          "data": "b",
+          "operations": [
+            {
+              "op": "setFocus",
+              "target": "firstReplacement"
+            }
+          ]
+        },
+        {
+          "component": "firstReplacement",
+          "data": "n",
+          "operations": [
+            {
+              "op": "setFocus",
+              "target": "secondReplacement"
+            }
+          ]
+        },
+        {
+          "component": "secondReplacement",
+          "data": "\r",
+          "operations": [
+            {
+              "op": "mount",
+              "components": [
+                "editor"
+              ]
+            },
+            {
+              "op": "setFocus",
+              "target": "editor"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "label": "restored",
+          "focused": [
+            "overlay"
+          ],
+          "inputs": {
+            "firstReplacement": [
+              "n"
+            ],
+            "secondReplacement": [
+              "2",
+              "\r"
+            ],
+            "overlay": [
+              "b"
+            ]
+          },
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": true
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "removed replacement restores overlay even when overlay preFocus differs from next focus",
+      "components": [
+        "editor",
+        "palette",
+        "replacement",
+        "overlay"
+      ],
+      "mounted": [
+        "editor",
+        "palette",
+        "replacement"
+      ],
+      "initialFocus": "palette",
+      "handlers": [
+        {
+          "component": "overlay",
+          "data": "b",
+          "operations": [
+            {
+              "op": "setFocus",
+              "target": "replacement"
+            }
+          ]
+        },
+        {
+          "component": "replacement",
+          "data": "\r",
+          "operations": [
+            {
+              "op": "mount",
+              "components": [
+                "editor"
+              ]
+            },
+            {
+              "op": "setFocus",
+              "target": "editor"
+            }
+          ]
+        }
+      ],
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay"
+        },
+        {
+          "op": "input",
+          "data": "b"
+        },
+        {
+          "op": "input",
+          "data": "\r"
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "restored"
+        }
+      ],
+      "expected": [
+        {
+          "label": "restored",
+          "focused": [
+            "overlay"
+          ],
+          "inputs": {
+            "replacement": [
+              "\r"
+            ],
+            "overlay": [
+              "b",
+              "x"
+            ]
+          },
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": true
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "unfocus target releases a blocked overlay while replacement remains focused",
+      "components": [
+        "fallback",
+        "target",
+        "replacement",
+        "overlay"
+      ],
+      "initialFocus": null,
+      "handlers": [
+        {
+          "component": "replacement",
+          "data": "\r",
+          "operations": [
+            {
+              "op": "setFocus",
+              "target": "fallback"
+            }
+          ]
+        },
+        {
+          "component": "overlay",
+          "data": "b",
+          "operations": [
+            {
+              "op": "setFocus",
+              "target": "replacement"
+            },
+            {
+              "op": "unfocus",
+              "handle": "overlay",
+              "target": "target"
+            }
+          ]
+        }
+      ],
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay"
+        },
+        {
+          "op": "input",
+          "data": "b"
+        },
+        {
+          "op": "observe",
+          "label": "replacement"
+        },
+        {
+          "op": "input",
+          "data": "\r"
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "target"
+        }
+      ],
+      "expected": [
+        {
+          "label": "replacement",
+          "focused": [
+            "replacement"
+          ],
+          "inputs": {
+            "overlay": [
+              "b"
+            ]
+          },
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        },
+        {
+          "label": "target",
+          "focused": [
+            "target"
+          ],
+          "inputs": {
+            "target": [
+              "x"
+            ],
+            "replacement": [
+              "\r"
+            ],
+            "overlay": [
+              "b"
+            ]
+          },
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "handleInput restores focus to a visible focused overlay after base focus steal",
+      "components": [
+        "editor",
+        "replacement",
+        "overlay"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay"
+        },
+        {
+          "op": "setFocus",
+          "target": "replacement"
+        },
+        {
+          "op": "setFocus",
+          "target": "editor"
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "restored"
+        }
+      ],
+      "expected": [
+        {
+          "label": "restored",
+          "focused": [
+            "overlay"
+          ],
+          "inputs": {
+            "overlay": [
+              "x"
+            ]
+          },
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": true
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "handleInput restores focus to explicitly focused raw sub-overlay after base focus steal",
+      "components": [
+        "editor",
+        "controller",
+        "subOverlay"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "controller",
+          "handle": "controller"
+        },
+        {
+          "op": "show",
+          "component": "subOverlay",
+          "handle": "subOverlay",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "focus",
+          "handle": "subOverlay"
+        },
+        {
+          "op": "setFocus",
+          "target": "editor"
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "restored"
+        }
+      ],
+      "expected": [
+        {
+          "label": "restored",
+          "focused": [
+            "subOverlay"
+          ],
+          "inputs": {
+            "subOverlay": [
+              "x"
+            ]
+          },
+          "handles": {
+            "controller": {
+              "hidden": false,
+              "focused": false
+            },
+            "subOverlay": {
+              "hidden": false,
+              "focused": true
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "passive non-capturing overlay does not regain input after base focus",
+      "components": [
+        "editor",
+        "passive"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "passive",
+          "handle": "passive",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "passive"
+        }
+      ],
+      "expected": [
+        {
+          "label": "passive",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {
+            "editor": [
+              "x"
+            ]
+          },
+          "handles": {
+            "passive": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "explicitly focused non-capturing overlay regains input after base focus steal",
+      "components": [
+        "editor",
+        "overlay"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "focus",
+          "handle": "overlay"
+        },
+        {
+          "op": "setFocus",
+          "target": "editor"
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "restored"
+        }
+      ],
+      "expected": [
+        {
+          "label": "restored",
+          "focused": [
+            "overlay"
+          ],
+          "inputs": {
+            "overlay": [
+              "x"
+            ]
+          },
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": true
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "unfocus() prevents visible overlay from regaining input",
+      "components": [
+        "editor",
+        "overlay"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay"
+        },
+        {
+          "op": "unfocus",
+          "handle": "overlay"
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "unfocused"
+        }
+      ],
+      "expected": [
+        {
+          "label": "unfocused",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {
+            "editor": [
+              "x"
+            ]
+          },
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "setFocus(null) explicitly clears visible overlay restore",
+      "components": [
+        "overlay"
+      ],
+      "initialFocus": null,
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay"
+        },
+        {
+          "op": "setFocus",
+          "target": null
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "cleared"
+        }
+      ],
+      "expected": [
+        {
+          "label": "cleared",
+          "focused": [],
+          "inputs": {},
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "blocked replacement setFocus(null) resumes the visible overlay",
+      "components": [
+        "replacement",
+        "overlay"
+      ],
+      "initialFocus": null,
+      "handlers": [
+        {
+          "component": "replacement",
+          "data": "\r",
+          "operations": [
+            {
+              "op": "setFocus",
+              "target": null
+            }
+          ]
+        },
+        {
+          "component": "overlay",
+          "data": "b",
+          "operations": [
+            {
+              "op": "setFocus",
+              "target": "replacement"
+            }
+          ]
+        }
+      ],
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay"
+        },
+        {
+          "op": "input",
+          "data": "b"
+        },
+        {
+          "op": "input",
+          "data": "\r"
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "restored"
+        }
+      ],
+      "expected": [
+        {
+          "label": "restored",
+          "focused": [
+            "overlay"
+          ],
+          "inputs": {
+            "replacement": [
+              "\r"
+            ],
+            "overlay": [
+              "b",
+              "x"
+            ]
+          },
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": true
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "temporarily invisible focused overlay falls back without losing restore eligibility",
+      "components": [
+        "editor",
+        "overlay"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay",
+          "options": {
+            "visibleFlag": "visible"
+          }
+        },
+        {
+          "op": "setFocus",
+          "target": "editor"
+        },
+        {
+          "op": "setFlag",
+          "flag": "visible",
+          "value": false
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "invisible"
+        },
+        {
+          "op": "setFlag",
+          "flag": "visible",
+          "value": true
+        },
+        {
+          "op": "input",
+          "data": "y"
+        },
+        {
+          "op": "observe",
+          "label": "visible"
+        }
+      ],
+      "flags": {
+        "visible": true
+      },
+      "expected": [
+        {
+          "label": "invisible",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {
+            "editor": [
+              "x"
+            ]
+          },
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": false
+        },
+        {
+          "label": "visible",
+          "focused": [
+            "overlay"
+          ],
+          "inputs": {
+            "editor": [
+              "x"
+            ],
+            "overlay": [
+              "y"
+            ]
+          },
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": true
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "temporarily invisible focused overlay with null preFocus restores when visible again",
+      "components": [
+        "overlay"
+      ],
+      "initialFocus": null,
+      "flags": {
+        "visible": true
+      },
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay",
+          "options": {
+            "visibleFlag": "visible"
+          }
+        },
+        {
+          "op": "setFlag",
+          "flag": "visible",
+          "value": false
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "invisible"
+        },
+        {
+          "op": "setFlag",
+          "flag": "visible",
+          "value": true
+        },
+        {
+          "op": "input",
+          "data": "y"
+        },
+        {
+          "op": "observe",
+          "label": "visible"
+        }
+      ],
+      "expected": [
+        {
+          "label": "invisible",
+          "focused": [],
+          "inputs": {},
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": false
+        },
+        {
+          "label": "visible",
+          "focused": [
+            "overlay"
+          ],
+          "inputs": {
+            "overlay": [
+              "y"
+            ]
+          },
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": true
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "cyclic overlay preFocus ancestry does not hang focus changes",
+      "components": [
+        "editor",
+        "overlay"
+      ],
+      "initialFocus": "overlay",
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "focus",
+          "handle": "overlay"
+        },
+        {
+          "op": "setFocus",
+          "target": "editor"
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "cycle"
+        }
+      ],
+      "expected": [
+        {
+          "label": "cycle",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {
+            "editor": [
+              "x"
+            ]
+          },
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "handleInput restores the focus-order top overlay after base focus steal",
+      "components": [
+        "editor",
+        "lower",
+        "upper"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "lower",
+          "handle": "lower"
+        },
+        {
+          "op": "show",
+          "component": "upper",
+          "handle": "upper"
+        },
+        {
+          "op": "focus",
+          "handle": "lower"
+        },
+        {
+          "op": "setFocus",
+          "target": "editor"
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "lower"
+        }
+      ],
+      "expected": [
+        {
+          "label": "lower",
+          "focused": [
+            "lower"
+          ],
+          "inputs": {
+            "lower": [
+              "x"
+            ]
+          },
+          "handles": {
+            "lower": {
+              "hidden": false,
+              "focused": true
+            },
+            "upper": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "hideOverlay() does not reassign focus when topmost overlay is non-capturing",
+      "components": [
+        "editor",
+        "capturing",
+        "nonCapturing"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "capturing",
+          "handle": "capturing"
+        },
+        {
+          "op": "show",
+          "component": "nonCapturing",
+          "handle": "nonCapturing",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "observe",
+          "label": "before"
+        },
+        {
+          "op": "hideOverlay"
+        },
+        {
+          "op": "observe",
+          "label": "after"
+        }
+      ],
+      "expected": [
+        {
+          "label": "before",
+          "focused": [
+            "capturing"
+          ],
+          "inputs": {},
+          "handles": {
+            "capturing": {
+              "hidden": false,
+              "focused": true
+            },
+            "nonCapturing": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        },
+        {
+          "label": "after",
+          "focused": [
+            "capturing"
+          ],
+          "inputs": {},
+          "handles": {
+            "capturing": {
+              "hidden": false,
+              "focused": true
+            },
+            "nonCapturing": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "multiple capturing and non-capturing overlays restore focus through removals",
+      "components": [
+        "editor",
+        "c1",
+        "n1",
+        "c2",
+        "n2"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "c1",
+          "handle": "c1"
+        },
+        {
+          "op": "show",
+          "component": "n1",
+          "handle": "n1",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "show",
+          "component": "c2",
+          "handle": "c2"
+        },
+        {
+          "op": "show",
+          "component": "n2",
+          "handle": "n2",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "observe",
+          "label": "c2"
+        },
+        {
+          "op": "hide",
+          "handle": "c2"
+        },
+        {
+          "op": "observe",
+          "label": "c1"
+        },
+        {
+          "op": "hide",
+          "handle": "c1"
+        },
+        {
+          "op": "observe",
+          "label": "editor"
+        }
+      ],
+      "expected": [
+        {
+          "label": "c2",
+          "focused": [
+            "c2"
+          ],
+          "inputs": {},
+          "handles": {
+            "c1": {
+              "hidden": false,
+              "focused": false
+            },
+            "n1": {
+              "hidden": false,
+              "focused": false
+            },
+            "c2": {
+              "hidden": false,
+              "focused": true
+            },
+            "n2": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        },
+        {
+          "label": "c1",
+          "focused": [
+            "c1"
+          ],
+          "inputs": {},
+          "handles": {
+            "c1": {
+              "hidden": false,
+              "focused": true
+            },
+            "n1": {
+              "hidden": false,
+              "focused": false
+            },
+            "c2": {
+              "hidden": false,
+              "focused": false
+            },
+            "n2": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        },
+        {
+          "label": "editor",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {},
+          "handles": {
+            "c1": {
+              "hidden": false,
+              "focused": false
+            },
+            "n1": {
+              "hidden": false,
+              "focused": false
+            },
+            "c2": {
+              "hidden": false,
+              "focused": false
+            },
+            "n2": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "capturing overlay unfocus() on topmost capturing overlay falls back to preFocus",
+      "components": [
+        "editor",
+        "capturing"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "capturing",
+          "handle": "capturing"
+        },
+        {
+          "op": "observe",
+          "label": "capturing"
+        },
+        {
+          "op": "unfocus",
+          "handle": "capturing"
+        },
+        {
+          "op": "observe",
+          "label": "editor"
+        }
+      ],
+      "expected": [
+        {
+          "label": "capturing",
+          "focused": [
+            "capturing"
+          ],
+          "inputs": {},
+          "handles": {
+            "capturing": {
+              "hidden": false,
+              "focused": true
+            }
+          },
+          "hasOverlay": true
+        },
+        {
+          "label": "editor",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {},
+          "handles": {
+            "capturing": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "focus() on hidden overlay is a no-op",
+      "components": [
+        "editor",
+        "overlay"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "setHidden",
+          "handle": "overlay",
+          "hidden": true
+        },
+        {
+          "op": "focus",
+          "handle": "overlay"
+        },
+        {
+          "op": "observe",
+          "label": "hidden"
+        }
+      ],
+      "expected": [
+        {
+          "label": "hidden",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {},
+          "handles": {
+            "overlay": {
+              "hidden": true,
+              "focused": false
+            }
+          },
+          "hasOverlay": false
+        }
+      ]
+    },
+    {
+      "name": "focus() after hide() is a no-op",
+      "components": [
+        "editor",
+        "overlay"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "hide",
+          "handle": "overlay"
+        },
+        {
+          "op": "focus",
+          "handle": "overlay"
+        },
+        {
+          "op": "observe",
+          "label": "removed"
+        }
+      ],
+      "expected": [
+        {
+          "label": "removed",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {},
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": false
+        }
+      ]
+    },
+    {
+      "name": "unfocus() when overlay does not have focus is a no-op",
+      "components": [
+        "editor",
+        "overlay"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "unfocus",
+          "handle": "overlay"
+        },
+        {
+          "op": "observe",
+          "label": "passive"
+        }
+      ],
+      "expected": [
+        {
+          "label": "passive",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {},
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "unfocus() with null preFocus clears focus and does not route input back to overlay",
+      "components": [
+        "overlay"
+      ],
+      "initialFocus": null,
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay"
+        },
+        {
+          "op": "unfocus",
+          "handle": "overlay"
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "cleared"
+        }
+      ],
+      "expected": [
+        {
+          "label": "cleared",
+          "focused": [],
+          "inputs": {},
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "toggle focus between non-capturing overlays then unfocus returns to editor",
+      "components": [
+        "editor",
+        "a",
+        "b"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "a",
+          "handle": "a",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "show",
+          "component": "b",
+          "handle": "b",
+          "options": {
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "focus",
+          "handle": "a"
+        },
+        {
+          "op": "focus",
+          "handle": "b"
+        },
+        {
+          "op": "focus",
+          "handle": "a"
+        },
+        {
+          "op": "unfocus",
+          "handle": "a"
+        },
+        {
+          "op": "observe",
+          "label": "editor"
+        }
+      ],
+      "expected": [
+        {
+          "label": "editor",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {},
+          "handles": {
+            "a": {
+              "hidden": false,
+              "focused": false
+            },
+            "b": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "explicit unfocus target supports cycling between three overlays and editor",
+      "components": [
+        "editor",
+        "a",
+        "b",
+        "c"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "a",
+          "handle": "a"
+        },
+        {
+          "op": "show",
+          "component": "b",
+          "handle": "b"
+        },
+        {
+          "op": "show",
+          "component": "c",
+          "handle": "c"
+        },
+        {
+          "op": "focus",
+          "handle": "a"
+        },
+        {
+          "op": "input",
+          "data": "a"
+        },
+        {
+          "op": "focus",
+          "handle": "b"
+        },
+        {
+          "op": "input",
+          "data": "b"
+        },
+        {
+          "op": "focus",
+          "handle": "c"
+        },
+        {
+          "op": "input",
+          "data": "c"
+        },
+        {
+          "op": "unfocus",
+          "handle": "c",
+          "target": "editor"
+        },
+        {
+          "op": "input",
+          "data": "e"
+        },
+        {
+          "op": "focus",
+          "handle": "a"
+        },
+        {
+          "op": "input",
+          "data": "A"
+        },
+        {
+          "op": "unfocus",
+          "handle": "a",
+          "target": "editor"
+        },
+        {
+          "op": "input",
+          "data": "E"
+        },
+        {
+          "op": "observe",
+          "label": "cycled"
+        }
+      ],
+      "expected": [
+        {
+          "label": "cycled",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {
+            "editor": [
+              "e",
+              "E"
+            ],
+            "a": [
+              "a",
+              "A"
+            ],
+            "b": [
+              "b"
+            ],
+            "c": [
+              "c"
+            ]
+          },
+          "handles": {
+            "a": {
+              "hidden": false,
+              "focused": false
+            },
+            "b": {
+              "hidden": false,
+              "focused": false
+            },
+            "c": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "explicit null unfocus target clears focus without restoring overlays",
+      "components": [
+        "overlay"
+      ],
+      "initialFocus": null,
+      "operations": [
+        {
+          "op": "show",
+          "component": "overlay",
+          "handle": "overlay"
+        },
+        {
+          "op": "unfocus",
+          "handle": "overlay",
+          "target": null
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "cleared"
+        }
+      ],
+      "expected": [
+        {
+          "label": "cleared",
+          "focused": [],
+          "inputs": {},
+          "handles": {
+            "overlay": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "hiding focused overlay falls back to next visual-frontmost overlay",
+      "components": [
+        "editor",
+        "a",
+        "b",
+        "c"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "a",
+          "handle": "a"
+        },
+        {
+          "op": "show",
+          "component": "b",
+          "handle": "b"
+        },
+        {
+          "op": "show",
+          "component": "c",
+          "handle": "c"
+        },
+        {
+          "op": "focus",
+          "handle": "a"
+        },
+        {
+          "op": "focus",
+          "handle": "b"
+        },
+        {
+          "op": "setHidden",
+          "handle": "b",
+          "hidden": true
+        },
+        {
+          "op": "input",
+          "data": "x"
+        },
+        {
+          "op": "observe",
+          "label": "a"
+        }
+      ],
+      "expected": [
+        {
+          "label": "a",
+          "focused": [
+            "a"
+          ],
+          "inputs": {
+            "a": [
+              "x"
+            ]
+          },
+          "handles": {
+            "a": {
+              "hidden": false,
+              "focused": true
+            },
+            "b": {
+              "hidden": true,
+              "focused": false
+            },
+            "c": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true
+        }
+      ]
+    },
+    {
+      "name": "focus() on already-focused overlay bumps visual order",
+      "components": [
+        "editor",
+        "a",
+        "b",
+        "c"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "a",
+          "handle": "a",
+          "options": {
+            "row": 0,
+            "col": 0,
+            "width": 1,
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "show",
+          "component": "b",
+          "handle": "b",
+          "options": {
+            "row": 0,
+            "col": 0,
+            "width": 1,
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "focus",
+          "handle": "a"
+        },
+        {
+          "op": "show",
+          "component": "c",
+          "handle": "c",
+          "options": {
+            "row": 0,
+            "col": 0,
+            "width": 1,
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "observe",
+          "label": "c",
+          "probe": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        {
+          "op": "focus",
+          "handle": "a"
+        },
+        {
+          "op": "observe",
+          "label": "a",
+          "probe": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      ],
+      "width": 20,
+      "rows": 6,
+      "nonFocusable": [
+        "a",
+        "b",
+        "c"
+      ],
+      "expected": [
+        {
+          "label": "c",
+          "focused": [],
+          "inputs": {},
+          "handles": {
+            "a": {
+              "hidden": false,
+              "focused": true
+            },
+            "b": {
+              "hidden": false,
+              "focused": false
+            },
+            "c": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true,
+          "front": "c"
+        },
+        {
+          "label": "a",
+          "focused": [],
+          "inputs": {},
+          "handles": {
+            "a": {
+              "hidden": false,
+              "focused": true
+            },
+            "b": {
+              "hidden": false,
+              "focused": false
+            },
+            "c": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true,
+          "front": "a"
+        }
+      ]
+    },
+    {
+      "name": "default rendering order for overlapping overlays follows creation order",
+      "components": [
+        "a",
+        "b"
+      ],
+      "nonFocusable": [
+        "a",
+        "b"
+      ],
+      "initialFocus": null,
+      "width": 20,
+      "rows": 6,
+      "operations": [
+        {
+          "op": "show",
+          "component": "a",
+          "handle": "a",
+          "options": {
+            "row": 0,
+            "col": 0,
+            "width": 1,
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "show",
+          "component": "b",
+          "handle": "b",
+          "options": {
+            "row": 0,
+            "col": 0,
+            "width": 1,
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "observe",
+          "label": "b",
+          "probe": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "label": "b",
+          "focused": [],
+          "inputs": {},
+          "handles": {
+            "a": {
+              "hidden": false,
+              "focused": false
+            },
+            "b": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true,
+          "front": "b"
+        }
+      ]
+    },
+    {
+      "name": "focus() on lower overlay renders it on top",
+      "components": [
+        "a",
+        "b"
+      ],
+      "nonFocusable": [
+        "a",
+        "b"
+      ],
+      "initialFocus": null,
+      "width": 20,
+      "rows": 6,
+      "operations": [
+        {
+          "op": "show",
+          "component": "a",
+          "handle": "a",
+          "options": {
+            "row": 0,
+            "col": 0,
+            "width": 1,
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "show",
+          "component": "b",
+          "handle": "b",
+          "options": {
+            "row": 0,
+            "col": 0,
+            "width": 1,
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "observe",
+          "label": "b",
+          "probe": [
+            "a",
+            "b"
+          ]
+        },
+        {
+          "op": "focus",
+          "handle": "a"
+        },
+        {
+          "op": "observe",
+          "label": "a",
+          "probe": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "label": "b",
+          "focused": [],
+          "inputs": {},
+          "handles": {
+            "a": {
+              "hidden": false,
+              "focused": false
+            },
+            "b": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true,
+          "front": "b"
+        },
+        {
+          "label": "a",
+          "focused": [],
+          "inputs": {},
+          "handles": {
+            "a": {
+              "hidden": false,
+              "focused": true
+            },
+            "b": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true,
+          "front": "a"
+        }
+      ]
+    },
+    {
+      "name": "focusing middle overlay places it on top while preserving others relative order",
+      "components": [
+        "a",
+        "b",
+        "c"
+      ],
+      "nonFocusable": [
+        "a",
+        "b",
+        "c"
+      ],
+      "initialFocus": null,
+      "width": 20,
+      "rows": 6,
+      "operations": [
+        {
+          "op": "show",
+          "component": "a",
+          "handle": "a",
+          "options": {
+            "row": 0,
+            "col": 0,
+            "width": 1,
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "show",
+          "component": "b",
+          "handle": "b",
+          "options": {
+            "row": 0,
+            "col": 0,
+            "width": 1,
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "show",
+          "component": "c",
+          "handle": "c",
+          "options": {
+            "row": 0,
+            "col": 0,
+            "width": 1,
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "observe",
+          "label": "c",
+          "probe": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        {
+          "op": "focus",
+          "handle": "b"
+        },
+        {
+          "op": "observe",
+          "label": "b",
+          "probe": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        {
+          "op": "hide",
+          "handle": "b"
+        },
+        {
+          "op": "observe",
+          "label": "c-again",
+          "probe": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        {
+          "op": "hide",
+          "handle": "c"
+        },
+        {
+          "op": "observe",
+          "label": "a",
+          "probe": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "label": "c",
+          "focused": [],
+          "inputs": {},
+          "handles": {
+            "a": {
+              "hidden": false,
+              "focused": false
+            },
+            "b": {
+              "hidden": false,
+              "focused": false
+            },
+            "c": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true,
+          "front": "c"
+        },
+        {
+          "label": "b",
+          "focused": [],
+          "inputs": {},
+          "handles": {
+            "a": {
+              "hidden": false,
+              "focused": false
+            },
+            "b": {
+              "hidden": false,
+              "focused": true
+            },
+            "c": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true,
+          "front": "b"
+        },
+        {
+          "label": "c-again",
+          "focused": [],
+          "inputs": {},
+          "handles": {
+            "a": {
+              "hidden": false,
+              "focused": false
+            },
+            "b": {
+              "hidden": false,
+              "focused": false
+            },
+            "c": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true,
+          "front": "c"
+        },
+        {
+          "label": "a",
+          "focused": [],
+          "inputs": {},
+          "handles": {
+            "a": {
+              "hidden": false,
+              "focused": false
+            },
+            "b": {
+              "hidden": false,
+              "focused": false
+            },
+            "c": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true,
+          "front": "a"
+        }
+      ]
+    },
+    {
+      "name": "capturing overlay hidden and shown again renders on top after unhide",
+      "components": [
+        "a",
+        "b",
+        "c"
+      ],
+      "nonFocusable": [
+        "a",
+        "b",
+        "c"
+      ],
+      "initialFocus": null,
+      "width": 20,
+      "rows": 6,
+      "operations": [
+        {
+          "op": "show",
+          "component": "a",
+          "handle": "a",
+          "options": {
+            "row": 0,
+            "col": 0,
+            "width": 1,
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "show",
+          "component": "b",
+          "handle": "b",
+          "options": {
+            "row": 0,
+            "col": 0,
+            "width": 1
+          }
+        },
+        {
+          "op": "observe",
+          "label": "b",
+          "probe": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        {
+          "op": "setHidden",
+          "handle": "b",
+          "hidden": true
+        },
+        {
+          "op": "show",
+          "component": "c",
+          "handle": "c",
+          "options": {
+            "row": 0,
+            "col": 0,
+            "width": 1,
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "observe",
+          "label": "c",
+          "probe": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        {
+          "op": "setHidden",
+          "handle": "b",
+          "hidden": false
+        },
+        {
+          "op": "observe",
+          "label": "b-again",
+          "probe": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "label": "b",
+          "focused": [],
+          "inputs": {},
+          "handles": {
+            "a": {
+              "hidden": false,
+              "focused": false
+            },
+            "b": {
+              "hidden": false,
+              "focused": true
+            }
+          },
+          "hasOverlay": true,
+          "front": "b"
+        },
+        {
+          "label": "c",
+          "focused": [],
+          "inputs": {},
+          "handles": {
+            "a": {
+              "hidden": false,
+              "focused": false
+            },
+            "b": {
+              "hidden": true,
+              "focused": false
+            },
+            "c": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true,
+          "front": "c"
+        },
+        {
+          "label": "b-again",
+          "focused": [],
+          "inputs": {},
+          "handles": {
+            "a": {
+              "hidden": false,
+              "focused": false
+            },
+            "b": {
+              "hidden": false,
+              "focused": true
+            },
+            "c": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true,
+          "front": "b"
+        }
+      ]
+    },
+    {
+      "name": "unfocus() does not change visual order until another overlay is focused",
+      "components": [
+        "editor",
+        "a",
+        "b"
+      ],
+      "initialFocus": "editor",
+      "operations": [
+        {
+          "op": "show",
+          "component": "a",
+          "handle": "a",
+          "options": {
+            "row": 0,
+            "col": 0,
+            "width": 1,
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "show",
+          "component": "b",
+          "handle": "b",
+          "options": {
+            "row": 0,
+            "col": 0,
+            "width": 1,
+            "nonCapturing": true
+          }
+        },
+        {
+          "op": "observe",
+          "label": "b",
+          "probe": [
+            "a",
+            "b"
+          ]
+        },
+        {
+          "op": "focus",
+          "handle": "a"
+        },
+        {
+          "op": "observe",
+          "label": "a",
+          "probe": [
+            "a",
+            "b"
+          ]
+        },
+        {
+          "op": "unfocus",
+          "handle": "a"
+        },
+        {
+          "op": "observe",
+          "label": "a-unfocused",
+          "probe": [
+            "a",
+            "b"
+          ]
+        },
+        {
+          "op": "focus",
+          "handle": "b"
+        },
+        {
+          "op": "observe",
+          "label": "b-focused",
+          "probe": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "width": 20,
+      "rows": 6,
+      "nonFocusable": [
+        "a",
+        "b"
+      ],
+      "expected": [
+        {
+          "label": "b",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {},
+          "handles": {
+            "a": {
+              "hidden": false,
+              "focused": false
+            },
+            "b": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true,
+          "front": "b"
+        },
+        {
+          "label": "a",
+          "focused": [],
+          "inputs": {},
+          "handles": {
+            "a": {
+              "hidden": false,
+              "focused": true
+            },
+            "b": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true,
+          "front": "a"
+        },
+        {
+          "label": "a-unfocused",
+          "focused": [
+            "editor"
+          ],
+          "inputs": {},
+          "handles": {
+            "a": {
+              "hidden": false,
+              "focused": false
+            },
+            "b": {
+              "hidden": false,
+              "focused": false
+            }
+          },
+          "hasOverlay": true,
+          "front": "a"
+        },
+        {
+          "label": "b-focused",
+          "focused": [],
+          "inputs": {},
+          "handles": {
+            "a": {
+              "hidden": false,
+              "focused": false
+            },
+            "b": {
+              "hidden": false,
+              "focused": true
+            }
+          },
+          "hasOverlay": true,
+          "front": "b"
+        }
+      ]
+    }
+  ],
+  "cursorTrace": [
+    "hide",
+    "hide",
+    "hide",
+    "hide",
+    "hide",
+    "show"
+  ],
+  "upstreamCoverage": {
+    "focusCaseNames": [
+      "non-capturing overlay preserves focus on creation",
+      "focus() transfers focus to the overlay",
+      "unfocus() restores previous focus",
+      "setHidden(false) on non-capturing overlay does not auto-focus",
+      "hide() when overlay is not focused does not change focus",
+      "hide() when focused restores focus correctly",
+      "capturing overlay removed with non-capturing below restores focus to editor",
+      "sub-overlay cleanup then hideOverlay restores focus and input to editor",
+      "removed focused child overlay does not become parent overlay fallback",
+      "microtask-deferred sub-overlay pattern (showExtensionCustom simulation) restores focus",
+      "handleInput redirection skips non-capturing overlays when focused overlay becomes invisible",
+      "active base focus replacement receives close input before overlay restore",
+      "active replacement still receives input when it is another overlay preFocus",
+      "blocked replacement can move focus internally before overlay restore",
+      "removed replacement restores overlay even when overlay preFocus differs from next focus",
+      "unfocus target releases a blocked overlay while replacement remains focused",
+      "handleInput restores focus to a visible focused overlay after base focus steal",
+      "handleInput restores focus to explicitly focused raw sub-overlay after base focus steal",
+      "passive non-capturing overlay does not regain input after base focus",
+      "explicitly focused non-capturing overlay regains input after base focus steal",
+      "unfocus() prevents visible overlay from regaining input",
+      "setFocus(null) explicitly clears visible overlay restore",
+      "blocked replacement setFocus(null) resumes the visible overlay",
+      "temporarily invisible focused overlay falls back without losing restore eligibility",
+      "temporarily invisible focused overlay with null preFocus restores when visible again",
+      "cyclic overlay preFocus ancestry does not hang focus changes",
+      "handleInput restores the focus-order top overlay after base focus steal",
+      "hideOverlay() does not reassign focus when topmost overlay is non-capturing",
+      "multiple capturing and non-capturing overlays restore focus through removals",
+      "capturing overlay unfocus() on topmost capturing overlay falls back to preFocus",
+      "focus() on hidden overlay is a no-op",
+      "focus() after hide() is a no-op",
+      "unfocus() when overlay does not have focus is a no-op",
+      "unfocus() with null preFocus clears focus and does not route input back to overlay",
+      "toggle focus between non-capturing overlays then unfocus returns to editor",
+      "explicit unfocus target supports cycling between three overlays and editor",
+      "explicit null unfocus target clears focus without restoring overlays",
+      "hiding focused overlay falls back to next visual-frontmost overlay",
+      "focus() on already-focused overlay bumps visual order",
+      "default rendering order for overlapping overlays follows creation order",
+      "focus() on lower overlay renders it on top",
+      "focusing middle overlay places it on top while preserving others relative order",
+      "capturing overlay hidden and shown again renders on top after unhide",
+      "unfocus() does not change visual order until another overlay is focused"
+    ],
+    "overlayOptionCases": {
+      "should truncate overlay lines that exceed declared width": "declared-width-truncates-overlay",
+      "should handle overlay with complex ANSI sequences without crashing": "complex-ansi-overlay",
+      "should handle overlay composited on styled base content": "styled-base-overlay",
+      "should handle wide characters at overlay boundary": "wide-character-overlay-boundary",
+      "should handle overlay positioned at terminal edge": "terminal-right-edge",
+      "should handle overlay on base content with OSC sequences": "osc-styled-base-overlay",
+      "should render overlay at percentage of terminal width": "width-percent",
+      "should respect minWidth when widthPercent results in smaller width": "width-percent-minimum",
+      "should position overlay at top-left": "anchor-top-left",
+      "should position overlay at bottom-right": "anchor-bottom-right",
+      "should position overlay at top-center": "anchor-top-center",
+      "should clamp negative margins to zero": "negative-margins-clamp-to-zero",
+      "should respect margin as number": "uniform-margin",
+      "should respect margin object": "object-margin",
+      "should apply offsetX and offsetY from anchor position": "anchor-offset",
+      "should position with rowPercent and colPercent": "percent-row-col",
+      "rowPercent 0 should position at top": "row-percent-zero",
+      "rowPercent 100 should position at bottom": "row-percent-hundred",
+      "should truncate overlay to maxHeight": "max-height-absolute",
+      "should truncate overlay to maxHeightPercent": "max-height-percent",
+      "row and col should override anchor": "row-col-override-anchor",
+      "should render multiple overlays with later ones on top": "later-overlay-on-top",
+      "should handle overlays at different positions without interference": "different-overlay-positions",
+      "should properly hide overlays in stack order": "hide-overlay-stack-order"
+    }
+  }
+}

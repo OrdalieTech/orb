@@ -2,8 +2,11 @@ package codingagent
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/pi-go/agent"
@@ -11,6 +14,28 @@ import (
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
 )
+
+func TestPromptPreflightRejectsUnknownModelSentinel(t *testing.T) {
+	root := t.TempDir()
+	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
+		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+	if err := runtime.PromptPreflight(context.Background()); err == nil || !strings.HasPrefix(err.Error(), "No model selected.") {
+		t.Fatalf("unknown-model preflight error = %v", err)
+	}
+}
 
 func TestCycleModelUsesAuthenticatedScopeAndScopedThinking(t *testing.T) {
 	root := t.TempDir()
@@ -88,6 +113,163 @@ func TestCycleModelUsesAuthenticatedScopeAndScopedThinking(t *testing.T) {
 	}
 }
 
+func TestCycleModelBackwardWrapsScopeAndFiltersAuth(t *testing.T) {
+	root := t.TempDir()
+	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(root, sessionstore.WithSessionID("scoped-models-backward"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	modelA := rpcTestModel("provider-a", "a")
+	modelB := rpcTestModel("provider-b", "b")
+	modelC := rpcTestModel("provider-c", "c")
+	high := ai.ModelThinkingHigh
+	keys := map[ai.ProviderID]bool{
+		modelA.Provider: true,
+		modelB.Provider: true,
+		modelC.Provider: true,
+	}
+	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{
+		Model: &modelA, ThinkingLevel: ai.ModelThinkingLow, Messages: agent.AgentMessages{},
+	}))
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
+		Agent: created, SessionManager: manager, Settings: settings,
+		GetAPIKey: func(_ context.Context, provider ai.ProviderID) (*string, error) {
+			if !keys[provider] {
+				return nil, nil
+			}
+			key := "key"
+			return &key, nil
+		},
+		ScopedModels: []ScopedModel{
+			{Model: modelA},
+			{Model: modelB, ThinkingLevel: &high},
+			{Model: modelC},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+
+	result, err := runtime.CycleModelBackward(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result == nil || !result.IsScoped || result.Model.ID != "c" {
+		t.Fatalf("backward wraparound cycle = %#v, want last scoped model", result)
+	}
+	result, err = runtime.CycleModelBackward(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result == nil || result.Model.ID != "b" || result.ThinkingLevel != ai.ModelThinkingHigh {
+		t.Fatalf("backward scoped-thinking cycle = %#v", result)
+	}
+
+	keys[modelA.Provider] = false
+	result, err = runtime.CycleModelBackward(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result == nil || result.Model.ID != "c" {
+		t.Fatalf("auth-filtered backward cycle = %#v, want previous authenticated model", result)
+	}
+}
+
+func TestCycleModelBackwardFromAbsentCurrentModelUsesIndexZero(t *testing.T) {
+	root := t.TempDir()
+	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(root, sessionstore.WithSessionID("absent-current-backward"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	modelA := rpcTestModel("provider-a", "a")
+	modelB := rpcTestModel("provider-b", "b")
+	modelC := rpcTestModel("provider-c", "c")
+	outside := rpcTestModel("provider-d", "outside")
+	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{
+		Model: &outside, ThinkingLevel: ai.ModelThinkingLow, Messages: agent.AgentMessages{},
+	}))
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
+		Agent: created, SessionManager: manager, Settings: settings,
+		GetAPIKey: func(context.Context, ai.ProviderID) (*string, error) {
+			key := "key"
+			return &key, nil
+		},
+		ScopedModels: []ScopedModel{{Model: modelA}, {Model: modelB}, {Model: modelC}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+
+	result, err := runtime.CycleModelBackward(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result == nil || result.Model.ID != "c" {
+		t.Fatalf("backward from absent current = %#v, want (0-1+len)%%len wraparound", result)
+	}
+}
+
+func TestCycleModelPreservesFullModelFields(t *testing.T) {
+	root := t.TempDir()
+	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(root, sessionstore.WithSessionID("model-field-preservation"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	modelA := rpcTestModel("provider-a", "a")
+	headers := map[string]string{"X-Custom": "yes"}
+	low := "low-mapped"
+	levelMap := map[ai.ModelThinkingLevel]*string{ai.ModelThinkingLow: &low, ai.ModelThinkingXHigh: nil}
+	rich := rpcTestModel("provider-b", "rich")
+	rich.Name = "Rich Model"
+	rich.BaseURL = "https://example.test/v1"
+	rich.Headers = &headers
+	rich.ThinkingLevelMap = &levelMap
+	rich.Input = ai.InputModalities{ai.InputText, ai.InputImage}
+	rich.Cost = ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: 1.25, Output: 6.5, CacheRead: 0.5, CacheWrite: 2}}
+	rich.Compat = json.RawMessage(`{"supportsStore":false}`)
+	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{
+		Model: &modelA, ThinkingLevel: ai.ModelThinkingLow, Messages: agent.AgentMessages{},
+	}))
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
+		Agent: created, SessionManager: manager, Settings: settings,
+		GetAPIKey: func(context.Context, ai.ProviderID) (*string, error) {
+			key := "key"
+			return &key, nil
+		},
+		ScopedModels: []ScopedModel{{Model: modelA}, {Model: rich}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+
+	result, err := runtime.CycleModelBackward(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result == nil || !reflect.DeepEqual(result.Model, rich) {
+		t.Fatalf("cycled model = %#v, want full field preservation of %#v", result, rich)
+	}
+	state := runtime.agent.State()
+	if state.Model == nil || !reflect.DeepEqual(*state.Model, rich) {
+		t.Fatalf("agent model = %#v, want full field preservation", state.Model)
+	}
+}
+
 func TestCycleModelReportsUnscopedCatalogCycle(t *testing.T) {
 	root := t.TempDir()
 	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
@@ -148,7 +330,7 @@ func TestAvailableModelsUsesEmptyArrayShape(t *testing.T) {
 	}
 }
 
-func TestSetThinkingLevelWithoutModelMatchesUpstream(t *testing.T) {
+func TestSetThinkingLevelWithUnknownModelMatchesUpstream(t *testing.T) {
 	root := t.TempDir()
 	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
 	if err != nil {
@@ -168,8 +350,14 @@ func TestSetThinkingLevelWithoutModelMatchesUpstream(t *testing.T) {
 	if err := runtime.SetThinkingLevel(ai.ModelThinkingHigh); err != nil {
 		t.Fatal(err)
 	}
-	if runtime.agent.State().ThinkingLevel != ai.ModelThinkingHigh || settings.GetDefaultThinkingLevel() != ai.ModelThinkingHigh {
+	if runtime.agent.State().ThinkingLevel != ai.ModelThinkingOff || settings.GetDefaultThinkingLevel() != "" {
 		t.Fatalf("thinking = %q, default = %q", runtime.agent.State().ThinkingLevel, settings.GetDefaultThinkingLevel())
+	}
+	if levels := runtime.AvailableThinkingLevels(); !reflect.DeepEqual(levels, []ai.ModelThinkingLevel{ai.ModelThinkingOff}) {
+		t.Fatalf("available thinking levels = %#v", levels)
+	}
+	if entries := manager.GetEntries(); len(entries) != 0 {
+		t.Fatalf("unchanged thinking level persisted %#v", entries)
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
 	aimodels "github.com/OrdalieTech/pi-go/ai/models"
+	"github.com/OrdalieTech/pi-go/codingagent"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions"
 	"github.com/OrdalieTech/pi-go/codingagent/modes"
@@ -35,12 +36,14 @@ type cliStreams struct {
 }
 
 type cliDependencies struct {
-	createRuntime func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error)
-	runAuth       func(context.Context, CLIArgs, cliStreams) int
-	loadModels    func(string) (*config.ModelRegistry, error)
-	refreshModels func(context.Context, string) error
-	selectSession SessionSelector
-	runRPCFixture func(context.Context, CLIArgs, cliStreams, string) (handled bool, code int)
+	createRuntime           func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error)
+	runAuth                 func(context.Context, CLIArgs, cliStreams) int
+	runConfig               func(context.Context, modes.ConfigSelectorOptions) error
+	loadModels              func(string) (*config.ModelRegistry, error)
+	refreshModels           func(context.Context, string) error
+	selectSession           SessionSelector
+	selectMissingSessionCWD func(context.Context, *MissingSessionCWDError) (string, bool, error)
+	runRPCFixture           func(context.Context, CLIArgs, cliStreams, string) (handled bool, code int)
 }
 
 func main() {
@@ -73,6 +76,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if dependencies.runAuth == nil {
 		dependencies.runAuth = runAuthCommand
 	}
+	if dependencies.runConfig == nil {
+		dependencies.runConfig = modes.RunConfigSelector
+	}
 	if dependencies.loadModels == nil {
 		dependencies.loadModels = config.NewModelRegistry
 	}
@@ -80,12 +86,23 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		dependencies.refreshModels = refreshModelCatalogs
 	}
 	if dependencies.selectSession == nil {
-		dependencies.selectSession = terminalSessionSelector(streams)
+		dependencies.selectSession = startupTUISessionSelector(ctx)
+	}
+	if dependencies.selectMissingSessionCWD == nil {
+		dependencies.selectMissingSessionCWD = func(ctx context.Context, issue *MissingSessionCWDError) (string, bool, error) {
+			return modes.RunStartupSelector(ctx, modes.StartupSelectorOptions{
+				Title: formatMissingSessionCWDPrompt(issue),
+				Choices: []modes.StartupChoice{
+					{Label: "Continue", Value: issue.CurrentCWD},
+					{Label: "Cancel", Cancel: true},
+				},
+			})
+		}
 	}
 	if handled, code := handlePackageCommand(ctx, argv, streams, dependencies); handled {
 		return code
 	}
-	if handled, code := handleConfigCommand(ctx, argv, streams); handled {
+	if handled, code := handleConfigCommand(ctx, argv, streams, dependencies); handled {
 		return code
 	}
 
@@ -205,6 +222,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		_, _ = io.WriteString(metadataOutput(args, streams), formatModelList(registry.Available(nil), *args.ListModels))
 		return 0
 	}
+	isInteractive := !args.Print && args.Mode != "json" && args.Mode != "rpc" && streams.StdinTTY && streams.StdoutTTY
 	cwd, err := os.Getwd()
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
@@ -214,6 +232,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			return code
 		}
 	}
+	if isInteractive {
+		args.allowNoModel = true
+	}
 	baseArgs := args
 	manager, sessionContext, err := createCLISession(cwd, args, streams, dependencies.selectSession)
 	if err != nil {
@@ -221,6 +242,27 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			return 0
 		}
 		return reportCLIError(streams.Stderr, err)
+	}
+	if issue := getMissingSessionCWDIssue(manager, cwd); issue != nil {
+		if !isInteractive {
+			return reportCLIError(streams.Stderr, issue)
+		}
+		selectedCWD, selected, selectErr := dependencies.selectMissingSessionCWD(ctx, issue)
+		if selectErr != nil {
+			return reportCLIError(streams.Stderr, selectErr)
+		}
+		if !selected {
+			return 0
+		}
+		agentDir, dirErr := config.GetAgentDir()
+		if dirErr != nil {
+			return reportCLIError(streams.Stderr, dirErr)
+		}
+		manager, err = session.Open(issue.SessionFile, manager.GetSessionDir(), session.WithAgentDir(agentDir), session.WithCwdOverride(selectedCWD))
+		if err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+		sessionContext = manager.BuildSessionContext()
 	}
 	if args.Name != nil {
 		name := strings.TrimFunc(*args.Name, isJSTrimSpace)
@@ -232,12 +274,47 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		}
 		sessionContext = manager.BuildSessionContext()
 	}
-	if !args.Print && args.Mode != "json" && args.Mode != "rpc" && streams.StdinTTY && streams.StdoutTTY {
-		_, _ = fmt.Fprintln(streams.Stderr, "Error: interactive mode is not available until the TUI work packages; use -p")
-		return 1
-	}
 	if len(manager.GetEntries()) > 0 {
 		applySessionDefaults(&args, sessionContext, manager.GetBranch())
+	}
+	if isInteractive {
+		inputs, runtimeErr := dependencies.createRuntime(manager.GetCWD(), args, decodeSessionMessages(sessionContext.Messages))
+		if runtimeErr != nil {
+			return reportCLIError(streams.Stderr, runtimeErr)
+		}
+		if runtimeErr = appendInitialRuntimeState(manager, inputs.Agent.State(), sessionContext); runtimeErr != nil {
+			return reportCLIError(streams.Stderr, runtimeErr)
+		}
+		sessionRuntime, runtimeErr := buildSessionRuntime(inputs, manager, sessionRuntimeOptions{
+			mode: extensions.ModeTUI, errorWriter: streams.Stderr, deferSessionStart: true,
+		})
+		if runtimeErr != nil {
+			return reportCLIError(streams.Stderr, runtimeErr)
+		}
+		initialMessage, initialImages, inputErr := PrepareInitialInput(&args, manager.GetCWD(), nil)
+		if inputErr != nil {
+			sessionRuntime.Dispose()
+			return reportCLIError(streams.Stderr, inputErr)
+		}
+		initial := ""
+		if initialMessage != nil {
+			initial = *initialMessage
+		}
+		agentDir, dirErr := config.GetAgentDir()
+		if dirErr != nil {
+			sessionRuntime.Dispose()
+			return reportCLIError(streams.Stderr, dirErr)
+		}
+		host := newInteractiveSessionHost(baseArgs, dependencies, sessionRuntime, inputs, agentDir, streams.Stderr)
+		return modes.RunInteractiveMode(ctx, host.Session(), modes.InteractiveModeOptions{
+			InitialMessage: initial,
+			InitialImages:  initialImages,
+			Messages:       append([]string(nil), args.Messages...),
+			SessionHeader:  manager.GetHeader(),
+			Diagnostics:    inputs.Diagnostics,
+			Host:           host,
+			Changelog:      "pi-go " + version,
+		})
 	}
 	extensionMode := extensions.ModePrint
 	switch args.Mode {
@@ -280,7 +357,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			return reportCLIError(streams.Stderr, err)
 		}
 	}
-	initialMessage, err := PrepareInitialMessage(&args, manager.GetCWD(), stdinContent)
+	initialMessage, initialImages, err := PrepareInitialInput(&args, manager.GetCWD(), stdinContent)
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
@@ -296,6 +373,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		Mode:           outputMode,
 		Messages:       args.Messages,
 		InitialMessage: initial,
+		InitialImages:  initialImages,
 		SessionHeader:  sessionRuntime.Manager().GetHeader(),
 		Stdout:         streams.Stdout,
 		Stderr:         streams.Stderr,
@@ -380,7 +458,7 @@ func appendInitialRuntimeState(manager *session.SessionManager, state agent.Agen
 		_, err := manager.AppendThinkingLevelChange(string(state.ThinkingLevel))
 		return err
 	}
-	if state.Model != nil {
+	if state.Model != nil && !codingagent.IsUnknownModel(state.Model) {
 		if _, err := manager.AppendModelChange(string(state.Model.Provider), state.Model.ID); err != nil {
 			return err
 		}

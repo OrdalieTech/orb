@@ -19,12 +19,38 @@ Status: **in progress**.
       pinned-upstream F12, WP440, and WP440Read fixtures.
 - [x] Integrate the replaceable AgentSessionRuntime, reloadable extension state, SDK provider
       settings, and the generated WP370Runtime lifecycle fixture.
-- [ ] Integrate every former GitButler lane and side ref, reconciling overlapping implementations.
-- [ ] Verify `CGO_ENABLED=0 go build ./...` and `make test` at every integrated commit.
+- [x] Integrate every former GitButler lane and side ref, reconciling overlapping implementations.
+- [x] Verify `CGO_ENABLED=0 go build ./...` and `make test` at every integrated commit.
 - [ ] Delete merged side refs and temporary consolidation stashes.
 - [x] Finish on plain `main` with no worktree, lane, or feature branch.
 
-Current red-to-green evidence: RPC/resources/native extensions moved from merge conflicts and six lint failures to green fixtures and the pinned 27-test upstream RPC run. The SDK candidate moved from home-directory writes and missing persisted-message/settings/session propagation to green focused tests, all 13 faux examples, an isolated external-module build, `make build test lint`, `make fixtures-check`, module verification/tidy diff, and all four CGO-free Linux/Darwin amd64/arm64 builds. The replaceable runtime then moved from a compile-time RED fixture—no runtime host or public rebinding surface—to an upstream-generated green lifecycle matrix for new-session cancellation, shutdown/invalidation, recreation, setup, rebind, `withSession`, and quit ordering; the full race/lint/fixture gates and upstream RPC 27/27 remain green. The TUI core moved from four integration conflicts to green F12 primitive goldens. Markdown/themes then moved from reversed collision precedence, dropped table style context, incorrect narrow-table allocation, permissive JSON parsing, and unreachable operator/punctuation colors to 71 byte-exact Markdown cases plus upstream-generated theme/discovery fixtures. WP-440 then moved from a stale text-only non-vision result to an upstream-generated proof that the contradictory omission note still carries the image, with F12 terminal sequences and the image format/resize/orientation matrices green under the race suite. WP-450 still has to consume `terminal.showImages` and the width setting and bind `/copy`; real Kitty/iTerm2 and desktop clipboard smoke remain owner-blocked evidence rather than local substitutes.
+Current red-to-green evidence: RPC/resources/native extensions moved from merge conflicts and six
+lint failures to green fixtures and the pinned 27-test upstream RPC run. The SDK candidate moved
+from home-directory writes and missing persisted-message/settings/session propagation to green
+focused tests, all 13 faux examples, an isolated external-module build, deterministic fixtures,
+and four CGO-free Linux/Darwin amd64/arm64 builds. Replaceable runtime behavior moved from a
+compile-time RED fixture to an upstream-generated green lifecycle matrix for cancellation,
+teardown-first replacement, setup, rebind, `withSession`, and quit ordering. TUI primitives,
+Markdown/themes, terminal images, image reads, settings-backed image width/visibility, and `/copy`
+are integrated and green on their deterministic surfaces; real terminal and desktop smoke remains
+owner-blocked evidence rather than a local substitute.
+
+The last side overlays are one resolved plain-main candidate: F2 provider/catalog regeneration,
+Cloudflare nullable auth headers, JS bridge/F11, MCP, WP-450, and interactive-mode surfaces compile
+and their focused suites are green. Restoring the one omitted later WP-530 object moved eleven
+streaming fetch, Headers, Response body, path, and Buffer regressions to green. MCP moved from a
+real-agent settlement failure and reused-call-ID cross-wires to deterministic draining of progress
+notifications observed before tool settlement across stdio/in-memory and Streamable HTTP; later
+standalone SSE notifications are deliberately ignored once the call is sealed. Interactive auth
+moved from full-session reloads, collapsed status, duplicate-name routing, and an unusable fresh
+install to in-place registry refresh, exact status sources, stable provider identity, an upstream
+unknown-model sentinel, and first-login default-model selection. The recovered F12 scratch corpus
+moved missing overlay/color APIs and three supplementary-Han cursor failures to 45 byte-exact
+overlay frames, 44 focus traces, terminal-color traces, four primitive full-screen composites, and
+266 green CJK navigation cases without replacing the validated pure-Go ICU 78.2 implementation.
+The consolidated candidate passes the full repository race suite, byte-clean pinned fixture
+regeneration, all 27 upstream RPC tests, vet plus golangci-lint, module verification and tidy diff,
+and CGO-disabled builds for Linux and Darwin on amd64 and arm64.
 
 Historical note: `2a8ac08` and `68c3afa` were intermediate snapshots that did not build by
 themselves; their corrected descendants are already represented in the consolidated history and
@@ -37,13 +63,20 @@ but will not be extended until Sprint 3.
 
 Status: **in progress**.
 
-- [x] Land the RED F7 RPC transcript/upstream-suite adapter and F8 resource goldens first.
-- [x] Turn the upstream RPC suite and F7/F8/F9/F10 green without exclusions lacking a written reason.
+- [x] Land the RED F7 RPC transcript/upstream-suite adapter and the retained F8 resource goldens first.
+- [x] Turn the upstream RPC suite, F7, retained F8 cases, F9, and F10 green.
+- [ ] Expand F8 to the remaining upstream resource precedence, dedupe, diagnostics, and command cases,
+      then turn that surface green.
 - [x] Keep F2 green for all landed core API shapes and `auth.json` cross-compatible.
 - [x] Port harness `SessionRepo`/`FileSystem`, JSONL/memory repositories, and rehydrate-from-bytes.
-- [x] Make skills, prompt templates, extension seams, and all 13 SDK examples conformant.
+- [x] Keep all 13 SDK examples and the retained skills/templates/native-extension fixtures green.
+- [ ] Land exact pinned-upstream missing-model diagnostics for print/json/RPC and turn every byte green.
+- [ ] Land auth lifecycle/isolation tests, then bind login to mode cancellation and refresh only
+      credential-dependent projections without reloading unrelated model configuration.
+- [ ] Close the uncovered resource, native-extension seam, and public SDK-facade cases from the RED audit.
 - [x] Build an external `go get` SDK smoke module and wire the nightly live suite.
-- [ ] Publish `docs/compare/sprint-1.md`, complete trim pass #2, and check every M2 criterion.
+- [x] Publish `docs/compare/sprint-1.md` as the explicit RED parity audit.
+- [ ] Turn identical scripted print/json/rpc comparison green, complete trim pass #2, and check every M2 criterion.
 
 Current red-to-green evidence: F7 now runs six pinned upstream RPC files (27 tests) against
 `pi-go --mode rpc`, and the full regenerated fixture tree is byte-clean. Harness parity moved from
@@ -58,10 +91,12 @@ of mirrored upstream TypeScript (0.84x).
 
 ## Sprint 2 — TUI complete (M3)
 
-Status: **pending**.
+Status: **fixture surface partially green; Sprint 1 closes first**.
 
-- [ ] Land the RED F12 component/editor/markdown/composite frame corpus first.
-- [ ] Reach byte-reviewed frame parity, complete commands, image/clipboard checks, fuzz, and frame budget.
+- [x] Land the RED F12 component, editor, Markdown, overlay, terminal-color, and primitive-composite corpus.
+- [x] Turn core components, overlays, terminal colors, ICU navigation, stress/fuzz, and primitive frame budget green.
+- [ ] Land the session-selector lifetime fixture and stop status timers on confirm, cancel, and runner exit.
+- [ ] Reach application-level byte-reviewed frame parity and complete commands plus image/clipboard checks.
 - [ ] Publish `docs/compare/sprint-2.md`, complete trim pass #3, and check every M3 criterion.
 
 ## Sprint 3 — Expansion (M4)
@@ -83,11 +118,9 @@ Status: **pending**.
 
 ## Owner-blocked evidence
 
-- WP-420 word navigation requires ICU-compatible dictionary segmentation for Chinese, Japanese,
-  Thai, Lao, Khmer, and Burmese. The approved §8 dependencies provide only UAX #29 boundaries;
-  owner approval is required for a pure-Go dictionary breaker dependency or an internal port with
-  pinned ICU data.
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.
 - Tier-2/Tier-3 provider live tests require repository/API credentials and CI secrets.
+- Real Kitty and iTerm2 image emission plus native Darwin/X11/Wayland clipboard smoke require those
+  terminal and desktop environments.
 - Off-machine clean macOS/Linux release validation and the 72-hour burn-in require owner-provided
   hosts/remotes; all local and fixture work continues independently.

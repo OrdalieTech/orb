@@ -1,0 +1,106 @@
+{
+  "cases": [
+    {
+      "name": "together-reasoning",
+      "model": {
+        "id": "deepseek-ai/DeepSeek-V4-Pro",
+        "name": "DeepSeek V4 Pro",
+        "api": "openai-completions",
+        "provider": "together",
+        "baseUrl": "https://api.together.ai/v1",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "minimal": null,
+          "low": null,
+          "medium": null,
+          "high": "high",
+          "xhigh": null
+        },
+        "input": [
+          "text"
+        ],
+        "cost": {
+          "input": 1.74,
+          "output": 3.48,
+          "cacheRead": 0.2,
+          "cacheWrite": 0
+        },
+        "compat": {
+          "supportsStore": false,
+          "supportsDeveloperRole": false,
+          "supportsReasoningEffort": true,
+          "maxTokensField": "max_tokens",
+          "thinkingFormat": "together",
+          "supportsStrictMode": false,
+          "supportsLongCacheRetention": false
+        },
+        "contextWindow": 512000,
+        "maxTokens": 384000
+      }
+    },
+    {
+      "name": "zai-tool-stream",
+      "model": {
+        "id": "glm-5.2",
+        "name": "GLM-5.2",
+        "api": "openai-completions",
+        "provider": "zai",
+        "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "minimal": null,
+          "low": "high",
+          "medium": "high",
+          "high": "high",
+          "max": "max"
+        },
+        "input": [
+          "text"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "compat": {
+          "supportsStore": false,
+          "supportsDeveloperRole": false,
+          "supportsReasoningEffort": true,
+          "thinkingFormat": "zai",
+          "zaiToolStream": true
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 131072
+      }
+    },
+    {
+      "name": "fireworks-session-cache",
+      "model": {
+        "id": "accounts/fireworks/models/minimax-m3",
+        "name": "MiniMax-M3",
+        "api": "anthropic-messages",
+        "provider": "fireworks",
+        "baseUrl": "https://api.fireworks.ai/inference",
+        "reasoning": true,
+        "input": [
+          "text"
+        ],
+        "cost": {
+          "input": 0.3,
+          "output": 1.2,
+          "cacheRead": 0.06,
+          "cacheWrite": 0
+        },
+        "contextWindow": 512000,
+        "maxTokens": 512000,
+        "compat": {
+          "sendSessionAffinityHeaders": true,
+          "supportsEagerToolInputStreaming": false,
+          "supportsCacheControlOnTools": false,
+          "supportsLongCacheRetention": false
+        }
+      }
+    }
+  ]
+}

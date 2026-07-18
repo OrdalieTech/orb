@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
+	"github.com/OrdalieTech/pi-go/agent"
+	"github.com/OrdalieTech/pi-go/codingagent/extensions"
 	"github.com/OrdalieTech/pi-go/tui"
 )
 
@@ -176,6 +179,153 @@ func (theme *Theme) ResolvedColors(light bool) map[string]string {
 		}
 	}
 	return result
+}
+
+// ─────────────────────────────────────────────────────────────
+// Package-level current-theme accessors
+// ─────────────────────────────────────────────────────────────
+
+var (
+	currentMu         sync.RWMutex
+	currentTheme      *Theme
+	currentRegistry   *Registry
+	currentController *Controller
+)
+
+func SetCurrent(t *Theme) { currentMu.Lock(); currentTheme = t; currentMu.Unlock() }
+func Current() *Theme     { currentMu.RLock(); defer currentMu.RUnlock(); return currentTheme }
+
+// Initialize installs the production registry/controller used by package-level
+// render helpers and extension theme APIs.
+func Initialize(registry *Registry, setting string, terminal TerminalTheme, onChange func()) *Controller {
+	controller := NewController(registry, setting, terminal, onChange)
+	currentMu.Lock()
+	currentRegistry, currentController = registry, controller
+	currentTheme = controller.Current()
+	currentMu.Unlock()
+	return controller
+}
+
+func FG(color, text string) string {
+	t := Current()
+	if t == nil {
+		return text
+	}
+	return t.Foreground(color, text)
+}
+
+func BG(color, text string) string {
+	t := Current()
+	if t == nil {
+		return text
+	}
+	return t.Background(color, text)
+}
+
+func FGANSI(color string) string {
+	t := Current()
+	if t == nil {
+		return ""
+	}
+	v, _ := t.ForegroundANSI(color)
+	return v
+}
+
+func BGANSI(color string) string {
+	t := Current()
+	if t == nil {
+		return ""
+	}
+	v, _ := t.BackgroundANSI(color)
+	return v
+}
+
+func ColorModeGlobal() string {
+	t := Current()
+	if t == nil {
+		return ""
+	}
+	return string(t.ColorMode())
+}
+
+func MarkdownTheme() tui.MarkdownTheme {
+	t := Current()
+	if t == nil {
+		return tui.MarkdownTheme{}
+	}
+	return t.Markdown("")
+}
+
+func EditorTheme() tui.EditorTheme {
+	return tui.EditorTheme{
+		BorderColor: func(s string) string { return FG("border", s) },
+	}
+}
+
+func ThinkingBorderColor(level agent.ThinkingLevel) func(string) string {
+	key := "thinkingMedium"
+	switch level {
+	case "off":
+		key = "thinkingOff"
+	case "minimal":
+		key = "thinkingMinimal"
+	case "low":
+		key = "thinkingLow"
+	case "medium":
+		key = "thinkingMedium"
+	case "high":
+		key = "thinkingHigh"
+	case "xhigh":
+		key = "thinkingXhigh"
+	case "max":
+		key = "thinkingXhigh"
+	}
+	return func(s string) string { return FG(key, s) }
+}
+
+func BashModeBorderColor() func(string) string {
+	return func(s string) string { return FG("bashMode", s) }
+}
+
+func GetAllThemes() []extensions.ThemeInfo {
+	currentMu.RLock()
+	registry := currentRegistry
+	currentMu.RUnlock()
+	if registry == nil {
+		return []extensions.ThemeInfo{}
+	}
+	result := make([]extensions.ThemeInfo, 0)
+	for _, name := range registry.Available() {
+		value, _ := registry.Get(name)
+		var path *string
+		if value != nil && value.SourcePath != "" {
+			copy := value.SourcePath
+			path = &copy
+		}
+		result = append(result, extensions.ThemeInfo{Name: name, Path: path})
+	}
+	return result
+}
+
+func SetTheme(name string) error {
+	currentMu.RLock()
+	controller := currentController
+	currentMu.RUnlock()
+	if controller == nil {
+		return fmt.Errorf("theme controller is not initialized")
+	}
+	return controller.Set(name)
+}
+
+func GetTheme(name string) *Theme {
+	currentMu.RLock()
+	registry := currentRegistry
+	currentMu.RUnlock()
+	if registry == nil {
+		return nil
+	}
+	value, _ := registry.Get(name)
+	return value
 }
 
 func (theme *Theme) ExportColors() map[string]string {

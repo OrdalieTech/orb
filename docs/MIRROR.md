@@ -76,8 +76,8 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/coding-agent/src/core/system-prompt.ts` | `codingagent/system_prompt.go`, `codingagent/system_prompt_test.go` | WP-160 |
 | `packages/coding-agent/src/core/resource-loader.ts` | `codingagent/resources.go`, `codingagent/resources_test.go` | WP-160 |
 | `packages/coding-agent/src/core/messages.ts`, `packages/agent/src/agent.ts` (custom-message state preservation) | `codingagent/messages.go`, `codingagent/messages_test.go`, `agent/clone.go`, `agent/agent_test.go` | WP-160 |
-| `packages/coding-agent/src/cli/{args,file-processor,initial-message}.ts`, `packages/coding-agent/src/main.ts` (phase-1 subset) | `cmd/pi/` | WP-160 |
-| `packages/coding-agent/src/modes/print-mode.ts` (text subset) | `codingagent/modes/print.go`, `codingagent/modes/signals_unix.go`, `codingagent/modes/print_test.go`, `codingagent/modes/print_signal_unix_test.go` | WP-160 |
+| `packages/coding-agent/src/cli/{args,file-processor,initial-message}.ts`, `packages/coding-agent/src/main.ts` (initial CLI wiring) | `cmd/pi/{args,input,main}.go` | WP-160 |
+| `packages/coding-agent/src/modes/print-mode.ts` | `codingagent/modes/print.go`, `codingagent/modes/signals_unix.go`, `codingagent/modes/print_test.go`, `codingagent/modes/print_signal_unix_test.go` | WP-160 |
 | `packages/coding-agent/src/core/{system-prompt,resource-loader,settings-manager}.ts` | `conformance/extract/f9-system-prompt.ts`, `conformance/extract/upstream-model-data.ts`, `conformance/fixtures/F9/`, `conformance/runner/f9_system_prompt_test.go` | WP-160 |
 | `packages/coding-agent/src/core/session-manager.ts` (`JSON.stringify` migration rewrite) | `ai/json.go`, `internal/jsonwire/marshal.go` | WP-160 |
 | `packages/coding-agent/src/main.ts`, `packages/coding-agent/src/modes/print-mode.ts` (live integration evidence) | `docs/plan/skeleton-gate-report.md`, `docs/plan/artifacts/wp-170-dogfood.jsonl`, `docs/plan/artifacts/wp-170-self-dogfood.jsonl` | WP-170 |
@@ -199,3 +199,64 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/coding-agent/src/utils/clipboard.ts`; `clipboard-native.ts` intentionally unported per D7 and the owner-confirmed clipboard assumption | `codingagent/clipboard/clipboard.go`, `codingagent/clipboard/clipboard_test.go` | WP-440 |
 | Terminal-image rendering, read-result quirks, and image decode/resize/orientation behavior from pinned upstream APIs | `conformance/extract/{f12-tui,wp440-images,wp440-read}.ts`, `conformance/fixtures/F12/terminal-images.json`, `conformance/fixtures/{WP440,WP440Read}/`, `conformance/runner/{f12_tui,wp440_images,wp440_read}_test.go` | WP-440 |
 | WP-440 foundation evidence and outstanding acceptance | `docs/plan/wp-440-report.md` | WP-440 |
+| `packages/tui/src/components/editor.ts` | `tui/editor.go`, `tui/editor_test.go` | WP-420 |
+| `packages/tui/src/components/input.ts` | `tui/input.go`, `tui/input_test.go` | WP-420 |
+| `packages/tui/src/components/select-list.ts` | `tui/select_list.go`, `tui/select_list_test.go` | WP-420 |
+| `packages/tui/src/components/settings-list.ts` | `tui/settings_list.go`, `tui/settings_list_test.go` | WP-420 |
+| `packages/tui/src/autocomplete.ts` | `tui/autocomplete.go`, `tui/autocomplete_test.go` | WP-420 |
+| `packages/tui/src/fuzzy.ts` | `tui/fuzzy.go`, `tui/fuzzy_test.go` | WP-420 |
+| `packages/tui/src/kill-ring.ts` | `tui/kill_ring.go` | WP-420 |
+| `packages/tui/src/undo-stack.ts` | `tui/undo_stack.go` | WP-420 |
+| `packages/tui/src/word-navigation.ts` | `tui/word_navigation.go`, `tui/word_navigation_test.go` | WP-420 |
+| `packages/tui/src/utils.ts` (segmenters, `sliceByColumn`) | `tui/segment.go`, `tui/width.go` | WP-420 |
+| Node v24.15.0 `Intl.Segmenter`; ICU 78.2 `icu4c/source/common/{dictbe.cpp,dictionarydata.cpp}` and `icu4j/main/core/src/main/{java/com/ibm/icu/util/CharsTrie.java,resources/com/ibm/icu/impl/data/icudata/brkitr/cjdict.dict}` | `internal/cjksegment/{data.go,segment.go,trie.go,segment_test.go,data/cjdict.dict,data/LICENSE,data/PROVENANCE.md}` | WP-420 |
+| Editor/Input/SelectList/SettingsList scripted sessions, word-wrap, fuzzy, word-navigation goldens | `conformance/extract/f12-components.ts`, `conformance/fixtures/F12/{editor,input,select-list,settings-list,word-wrap,fuzzy,word-navigation}.json`, `conformance/runner/f12_components_test.go` | WP-420 |
+| WP-420 acceptance evidence | `docs/plan/wp-420-report.md` | WP-420 |
+| `packages/coding-agent/src/modes/interactive/interactive-mode.ts`, interactive components except `config-selector.ts` | `codingagent/modes/{interactive,interactive_components,interactive_editor,interactive_helpers,interactive_keybindings,interactive_ui}.go` | WP-450 |
+| Interactive mode commands, dialogs, editor autocomplete, footer, status indicators, and lifecycle races | `codingagent/modes/{interactive_test,interactive_lifecycle_test}.go` | WP-450 |
+| `packages/coding-agent/src/cli/config-selector.ts`, `packages/coding-agent/src/modes/interactive/components/config-selector.ts` | `codingagent/modes/config_selector.go`, `codingagent/modes/config_selector_test.go` | WP-450 |
+| `packages/coding-agent/src/cli/session-picker.ts`, `packages/coding-agent/src/modes/interactive/components/{session-selector,session-selector-search}.ts` | `codingagent/modes/{session_selector,session_selector_test}.go`, `cmd/pi/{main,session_cli,session_cli_test}.go`, `conformance/extract/wp450-session-selector.ts`, `conformance/fixtures/WP450-session-selector/` | Sprint 0 / WP-450 |
+| `packages/coding-agent/src/cli/startup-ui.ts`, `packages/coding-agent/src/core/session-cwd.ts`, `packages/coding-agent/src/main.ts` (startup missing-cwd selector) | `codingagent/modes/{startup_selector,startup_selector_test}.go`, `cmd/pi/{main,session_cli,session_cli_test}.go` | Sprint 0 |
+| `packages/coding-agent/src/core/settings-manager.ts` (resource path setters used by the config selector) | `codingagent/config/packages.go`, `codingagent/config/resource_settings_test.go` | WP-450 |
+| `packages/coding-agent/src/package-manager-cli.ts` (`handleConfigCommand`) | `cmd/pi/package_cli.go`, `cmd/pi/package_cli_test.go`, `cmd/pi/main.go` | WP-450 |
+| `packages/coding-agent/src/modes/interactive/theme/theme.ts` (package-level current-theme accessors) | `codingagent/modes/theme/theme.go` | WP-450 |
+| `packages/tui/src/components/editor.ts` (InputInterceptor hook) | `tui/editor.go` | WP-450 |
+| `packages/tui/src/tui.ts` (`showOverlay` layout and composite rendering) | `tui/{overlay,tui}.go` | WP-450 |
+| Interactive CLI entry-point wiring | `cmd/pi/main.go` | WP-450 |
+| `packages/coding-agent/src/core/agent-session.ts` (`cycleModel` direction, `getToolDefinition`, queue snapshot, UI-settings surface, live transport) | `codingagent/session_rpc.go`, `codingagent/extension_runtime.go`, `agent/agent.go`, `codingagent/{session_rpc_test,session_runtime_seams_test}.go` | WP-450 |
+| `packages/coding-agent/src/core/settings-manager.ts` (interactive UI settings and persistent setters) | `codingagent/config/{settings_write,ui_settings,ui_settings_test}.go` | WP-450 |
+| `packages/coding-agent/src/utils/clipboard-image.ts` (pure-Go command-path subset per D7; native-clipboard addon steps are a documented gap) | `codingagent/clipboard/clipboard_image.go`, `codingagent/clipboard/clipboard_image_test.go` | WP-450 |
+| `packages/coding-agent/src/core/agent-session-runtime.ts`, `packages/coding-agent/src/core/session-cwd.ts` (interactive host contract) | `codingagent/modes/interactive_host.go` | WP-450 |
+| `packages/coding-agent/src/core/agent-session-runtime.ts` (interactive host, shared replacement factory, session import, trust/auth surfaces) | `cmd/pi/{interactive_host,interactive_host_test}.go`, `codingagent/modes/interactive_host.go` | WP-450 |
+| `packages/coding-agent/src/modes/interactive/{interactive-mode.ts,components/oauth-selector.ts}`, `packages/coding-agent/src/core/{model-runtime,auth-storage}.ts`, `packages/agent/src/agent.ts` (fresh-install unknown model, auth status/identity, in-place refresh, first-login default) | `cmd/pi/{interactive_auth_test,interactive_auth_lifecycle_test,runtime_test}.go`, `codingagent/modes/{interactive_auth_lifecycle_test,interactive_test}.go`, `agent/agent_test.go` | Sprint 0 / WP-450 |
+| `packages/coding-agent/src/modes/interactive/components/{user-message,assistant-message,tool-execution,diff,bash-execution,compaction-summary-message,branch-summary-message,custom-message,footer}.ts`, `packages/tui/test/virtual-terminal.ts` | `codingagent/modes/conformance_replay.go`, `conformance/extract/wp450-replay.ts`, `conformance/fixtures/WP450/`, `conformance/runner/wp450_replay_test.go` | WP-450 |
+| `packages/coding-agent/examples/extensions/{status-line,widget-placement,custom-header,custom-footer}.ts` | `codingagent/modes/conformance_replay.go`, `conformance/fixtures/WP450/ui-demos.json`, `conformance/runner/wp450_replay_test.go` | WP-450 |
+| WP-450 automated and credential/terminal-gated verification evidence | `docs/plan/wp-450-report.md` | WP-450 |
+| (D18 bundled addition; no upstream implementation) | `codingagent/mcp/README.md`, `codingagent/mcp/{config,content,doc,manager}.go`, `cmd/pi/extensions.go` | WP-352 |
+| Official `modelcontextprotocol/go-sdk` example-server behavior | `codingagent/mcp/{config,manager}_test.go` | WP-352 |
+| `packages/coding-agent/src/core/extensions/loader.ts`, `packages/coding-agent/src/utils/paths.ts` | `codingagent/extensions/jsbridge/{compiler,discovery,loader,vm}.go` | WP-510 |
+| `packages/coding-agent/src/core/extensions/{loader,types}.ts`, `packages/coding-agent/examples/extensions/{hello,pirate}.ts` | `codingagent/extensions/jsbridge/{bridge_test,compiler_test,discovery_test}.go` | WP-510 |
+| Extension discovery, load errors, and unmodified bridge examples | `conformance/extract/f11-jsbridge.ts`, `conformance/fixtures/F11-jsbridge/` | WP-510 |
+| Node.js built-in modules (fs, path, os, process, url, util, child_process) used by upstream extensions | `codingagent/extensions/jsbridge/shims.go`, `codingagent/extensions/jsbridge/shims_test.go` | WP-530 |
+| `packages/coding-agent/examples/extensions/{file-trigger,protected-paths,git-checkpoint,dirty-repo-guard,claude-rules}.ts` | `conformance/fixtures/F11-jsbridge/{file-trigger,protected-paths,git-checkpoint,dirty-repo-guard,claude-rules}.ts` | WP-530 |
+| Node shim coverage documentation | `docs/sync/node-shims.md` | WP-530 |
+| `packages/coding-agent/src/core/extensions/{types,runner,loader}.ts`, `packages/coding-agent/src/core/{event-bus,exec,model-registry,model-runtime,provider-composer}.ts`, `packages/ai/src/models.ts` | `codingagent/extensions/jsbridge/{api,context,provider,registrations,values,vm}.go`, `codingagent/extensions/jsbridge/bindings_test.go`, `codingagent/config/{model_registry,extension_providers}.go` | WP-520 |
+| npm `typebox@1.1.38` | `codingagent/extensions/jsbridge/typebox.go`, `codingagent/extensions/jsbridge/third_party/typebox/{typebox-1.1.38.js,LICENSE}` | WP-520 |
+| `packages/coding-agent/examples/extensions/{todo,summarize,commands,send-user-message,dynamic-tools,structured-output,tool-override,event-bus}.ts` | `conformance/extract/f11-jsbridge.ts`, `conformance/fixtures/F11-jsbridge/` | WP-520 |
+| `packages/ai/src/providers/all.ts`, `packages/ai/src/providers/*.ts` (built-in registry, auth metadata, and provider order) | `ai/providers/{registry,registry_test}.go`, `codingagent/config/model_registry.go`, `conformance/extract/f2-providers.ts`, `conformance/fixtures/F2/providers.json` | WP-270 |
+| `packages/ai/scripts/generate-models.ts`, `packages/ai/src/providers/*.models.ts` (compat flags, thinking levels, headers, and catalog corrections) | `ai/models/catalog_test.go`, `ai/models/internal/cataloggen/{cataloggen,cataloggen_test,metadata,metadata_test}.go`, `ai/models/generated.go`, `conformance/extract/f2-compat-models.ts`, `conformance/fixtures/F2/compat-models.json` | WP-270 |
+| `packages/ai/src/providers/{cloudflare-auth,cloudflare-stream,cloudflare-workers-ai,cloudflare-ai-gateway}.ts`, nullable `ProviderHeaders` request-auth propagation | `ai/api/{cloudflare,cloudflare_test,stream_simple}.go`, `ai/providers/{cloudflare,cloudflare_test}.go`, `ai/auth/types.go`, `agent/{loop,loop_test,types}.go`, `codingagent/session_runtime.go`, `cmd/pi/{runtime,request_auth_headers_test}.go` | WP-270 |
+| Representative Together, Z.AI, and Fireworks compat request behavior | `conformance/extract/f2-openai.ts`, `conformance/extract/f2-anthropic.ts`, `conformance/fixtures/F2/requests.json`, `conformance/fixtures/F2/anthropic-requests.json` | WP-270 |
+| Historical compatibility-provider consolidation evidence | `docs/plan/wp-270-report.md` | WP-270 |
+| Historical MCP consolidation evidence | `docs/plan/wp-352-report.md` | WP-352 |
+| Historical JS bridge loader consolidation evidence | `docs/plan/wp-510-report.md` | WP-510 |
+| Historical JS bridge API consolidation evidence | `docs/plan/wp-520-report.md` | WP-520 |
+| Sprint 1 identical-session comparison evidence | `docs/compare/sprint-1.md` | Sprint 1 |
+| `packages/tui/src/{tui,stdin-buffer}.ts`, `packages/tui/src/components/editor.ts`, and their resize/paste/render tests | `tui/stress_test.go` | Sprint 2 / WP-460 |
+| `packages/tui/src/terminal.ts` and the documented `PI_TUI_WRITE_LOG` behavior | `tui/terminal_unix.go`, `tui/terminal_test.go` | Sprint 2 / WP-460 |
+| Pinned upstream chat/editor/status composition through real TUI primitives at widths 100/72/48/32 | `conformance/extract/f12-tui.ts`, `conformance/fixtures/F12/full-screen.json`, `conformance/runner/f12_full_screen_test.go` | Sprint 2 / WP-460 |
+| `packages/tui/src/{tui,utils}.ts`; `packages/tui/test/{overlay-options,overlay-non-capturing,overlay-short-content,regression-overlay-cjk-boundary,tui-overlay-style-leak,tab-width}.test.ts` | `tui/{container,overlay,tui}.go`, `tui/overlay_test.go` | Sprint 2 / WP-460 |
+| `packages/tui/src/terminal-colors.ts`; `packages/tui/test/terminal-colors.test.ts` | `tui/{terminal_colors.go,terminal_colors_test.go}` | Sprint 2 / WP-460 |
+| Pinned upstream 45-frame overlay corpus, all 44 non-capturing focus traces, 24-case options mapping, cursor lifecycle, and terminal-color parser/query/listener observations | `conformance/extract/f12-core.ts`, `conformance/fixtures/F12/{overlays,terminal-colors}.json`, `conformance/runner/f12_core_test.go` | Sprint 2 / WP-460 |
+| Sprint-2 core conformance, stress, performance, and remaining-gate evidence | `docs/plan/tui-gate-report.md` | Sprint 2 / WP-460 |
+| Broad ICU 78.2 every-UTF-16-offset word-navigation evidence | `docs/plan/wp-460-cjk-note.md` | Sprint 2 / WP-460 |

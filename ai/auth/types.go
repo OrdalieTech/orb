@@ -96,15 +96,15 @@ type CredentialStore interface {
 }
 
 type ModelAuth struct {
-	APIKey  *string
-	Headers map[string]string
-	BaseURL *string
+	APIKey  *string            `json:"apiKey,omitempty"`
+	Headers map[string]*string `json:"headers,omitempty"`
+	BaseURL *string            `json:"baseUrl,omitempty"`
 }
 
 type AuthResult struct {
-	Auth   ModelAuth
-	Env    map[string]string
-	Source string
+	Auth   ModelAuth         `json:"auth"`
+	Env    map[string]string `json:"env,omitempty"`
+	Source string            `json:"source,omitempty"`
 }
 
 type AuthContext interface {
@@ -177,6 +177,10 @@ type OAuth interface {
 	Login(context.Context, AuthInteraction) (*Credential, error)
 	Refresh(context.Context, *Credential) (*Credential, error)
 	ToAuth(*Credential) (ModelAuth, error)
+}
+
+type OAuthLoginLabel interface {
+	LoginLabel() string
 }
 
 func cloneStrings(source map[string]string) map[string]string {

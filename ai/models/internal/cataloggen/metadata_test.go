@@ -1,0 +1,137 @@
+package cataloggen
+
+import (
+	"bytes"
+	"encoding/json"
+	"testing"
+
+	"github.com/OrdalieTech/pi-go/ai"
+)
+
+func TestGenerateAppliesPinnedCatalogQuirksWithoutLosingFloatMetadata(t *testing.T) {
+	data := []byte(`{
+		"anthropic":{"models":{
+			"fractional":{"tool_call":true,"modalities":{"input":["text"],"output":["text"]},"limit":{"context":100.5,"output":20.25},"cost":{"input":1,"tiers":[{"input":2,"tier":{"type":"context","size":50.5}}]}}
+		}},
+		"deepseek":{"models":{
+			"deepseek-v3":{"tool_call":true,"modalities":{"input":["text"],"output":["text"]}},
+			"deepseek-v4-flash":{"tool_call":true,"reasoning":true,"modalities":{"input":["text"],"output":["text"]}}
+		}},
+		"fireworks-ai":{"models":{
+			"accounts/fireworks/models/glm-5p2":{"tool_call":true,"reasoning":true,"modalities":{"input":["text"],"output":["text"]}}
+		}},
+		"google-vertex":{"models":{
+			"gemini-2.5-flash":{"tool_call":true,"modalities":{"input":["text"],"output":["text"]},"cost":{"cache_read":9,"cache_write":7}}
+		}},
+		"mistral":{"models":{
+			"mistral-test":{"tool_call":true,"modalities":{"input":["text"],"output":["text"]},"cost":{"input":0.1234567}}
+		}},
+		"nvidia":{"models":{
+			"kept":{"tool_call":true,"modalities":{"input":["text"],"output":["text"]}},
+			"no-text-output":{"tool_call":true,"modalities":{"input":["text"],"output":["image"]}},
+			"upstage/solar-10.7b-instruct":{"tool_call":true,"modalities":{"input":["text"],"output":["text"]}}
+		}},
+		"github-copilot":{"models":{
+			"claude-sonnet-4.6":{"tool_call":true,"modalities":{"input":["text"],"output":["text"]},"cost":{"input":3,"tiers":[{"input":6,"output":9,"tier":{"type":"context","size":200000.5}}]}}
+		}},
+		"opencode":{"models":{
+			"qwen-alibaba":{"tool_call":true,"modalities":{"input":["text"],"output":["text"]},"provider":{"npm":"@ai-sdk/alibaba"}}
+		}}
+	}`)
+	catalog, err := Generate(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(catalog["deepseek"]) != 1 || catalog["deepseek"]["deepseek-v4-flash"].ID == "" {
+		t.Fatalf("DeepSeek filtering = %#v", catalog["deepseek"])
+	}
+	fireworks := catalog["fireworks"]["accounts/fireworks/models/glm-5p2"]
+	if fireworks.API != ai.APIOpenAICompletions || fireworks.BaseURL != "https://api.fireworks.ai/inference/v1" {
+		t.Fatalf("Fireworks GLM route = %#v", fireworks)
+	}
+	if got := catalog["mistral"]["mistral-test"].Cost.CacheRead; got != 0.012346 {
+		t.Fatalf("Mistral inferred cache-read cost = %v", got)
+	}
+	vertex := catalog["google-vertex"]["gemini-2.5-flash"]
+	if vertex.Cost.CacheRead != 0.03 || vertex.Cost.CacheWrite != 0 {
+		t.Fatalf("Vertex Gemini 2.5 Flash cache costs = %#v", vertex.Cost)
+	}
+	if len(catalog["nvidia"]) != 1 || catalog["nvidia"]["kept"].ID == "" {
+		t.Fatalf("NVIDIA filtering = %#v", catalog["nvidia"])
+	}
+
+	fractional := catalog["anthropic"]["fractional"]
+	if fractional.ContextWindow != 100.5 || fractional.MaxTokens != 20.25 || fractional.Cost.Tiers != nil {
+		t.Fatalf("generic fractional model = %#v", fractional)
+	}
+	copilot := catalog["github-copilot"]["claude-sonnet-4.6"]
+	if copilot.API != ai.APIAnthropicMessages || copilot.ContextWindow != 1000000 || copilot.Cost.Tiers == nil || len(*copilot.Cost.Tiers) != 1 || (*copilot.Cost.Tiers)[0].InputTokensAbove != 200000.5 {
+		t.Fatalf("Copilot tier metadata = %#v", copilot)
+	}
+	if _, exists := catalog["openrouter"]["auto"]; !exists {
+		t.Fatal("missing OpenRouter auto alias")
+	}
+	if _, exists := catalog["openrouter"]["openrouter/fusion"]; !exists {
+		t.Fatal("missing OpenRouter fusion alias")
+	}
+	if _, exists := catalog["mistral"]["mistral-medium-3.5"]; !exists {
+		t.Fatal("missing Mistral Medium 3.5 alias")
+	}
+	if _, exists := catalog["openai"]["gpt-5-chat-latest"]; !exists {
+		t.Fatal("missing GPT-5 Chat Latest alias")
+	}
+
+	var opencodeCompat ai.OpenAICompletionsCompat
+	if err := json.Unmarshal(catalog["opencode"]["qwen-alibaba"].Compat, &opencodeCompat); err != nil {
+		t.Fatal(err)
+	}
+	if opencodeCompat.CacheControlFormat == nil || *opencodeCompat.CacheControlFormat != ai.CacheControlAnthropic {
+		t.Fatalf("Alibaba cache-control compat = %s", catalog["opencode"]["qwen-alibaba"].Compat)
+	}
+
+	rendered, err := Render(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(rendered, []byte("100.5")) || !bytes.Contains(rendered, []byte("200000.5")) {
+		t.Fatalf("Render lost fractional metadata: %s", rendered)
+	}
+}
+
+func TestApplyCatalogMetadataMatchesRepresentativePinnedCompat(t *testing.T) {
+	model := ai.Model{
+		ID: "deepseek-ai/DeepSeek-V4-Pro", Name: "DeepSeek V4 Pro", API: ai.APIOpenAICompletions,
+		Provider: "together", BaseURL: "https://api.together.ai/v1", Reasoning: true,
+	}
+	applyCatalogMetadata(&model)
+	var compat ai.OpenAICompletionsCompat
+	if err := json.Unmarshal(model.Compat, &compat); err != nil {
+		t.Fatal(err)
+	}
+	if compat.SupportsStore == nil || *compat.SupportsStore || compat.SupportsReasoningEffort == nil || !*compat.SupportsReasoningEffort || compat.ThinkingFormat == nil || *compat.ThinkingFormat != ai.ThinkingFormatTogether {
+		t.Fatalf("Together compat = %s", model.Compat)
+	}
+	levels := *model.ThinkingLevelMap
+	if levels[ai.ModelThinkingHigh] == nil || *levels[ai.ModelThinkingHigh] != "high" {
+		t.Fatalf("Together thinking map = %#v", levels)
+	}
+	for _, level := range []ai.ModelThinkingLevel{ai.ModelThinkingMinimal, ai.ModelThinkingLow, ai.ModelThinkingMedium, ai.ModelThinkingXHigh} {
+		value, exists := levels[level]
+		if !exists || value != nil {
+			t.Fatalf("thinking level %q = %#v, want explicit null", level, value)
+		}
+	}
+
+	workers := ai.Model{
+		ID: "workers-model", API: ai.APIOpenAICompletions, Provider: "cloudflare-workers-ai",
+		BaseURL: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
+	}
+	applyCatalogMetadata(&workers)
+	if err := json.Unmarshal(workers.Compat, &compat); err != nil {
+		t.Fatal(err)
+	}
+	if compat.SendSessionAffinityHeaders == nil || !*compat.SendSessionAffinityHeaders || compat.SupportsLongCacheRetention == nil || *compat.SupportsLongCacheRetention {
+		t.Fatalf("Cloudflare Workers compat = %s", workers.Compat)
+	}
+}

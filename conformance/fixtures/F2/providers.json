@@ -1,0 +1,605 @@
+{
+  "providers": [
+    {
+      "id": "amazon-bedrock",
+      "name": "Amazon Bedrock",
+      "apis": [
+        "bedrock-converse-stream"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "AWS credentials or bearer token",
+        "env": [
+          "AWS_BEARER_TOKEN_BEDROCK",
+          "AWS_PROFILE",
+          "AWS_ACCESS_KEY_ID",
+          "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+          "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+          "AWS_WEB_IDENTITY_TOKEN_FILE"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "ant-ling",
+      "name": "Ant Ling",
+      "baseUrl": "https://api.ant-ling.com/v1",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Ant Ling API key",
+        "env": [
+          "ANT_LING_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "baseUrl": "https://api.anthropic.com",
+      "apis": [
+        "anthropic-messages"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Anthropic API key",
+        "env": [
+          "ANTHROPIC_OAUTH_TOKEN",
+          "ANTHROPIC_API_KEY"
+        ],
+        "oauth": true
+      }
+    },
+    {
+      "id": "azure-openai-responses",
+      "name": "Azure OpenAI",
+      "apis": [
+        "azure-openai-responses"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Azure OpenAI API key",
+        "env": [
+          "AZURE_OPENAI_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "cerebras",
+      "name": "Cerebras",
+      "baseUrl": "https://api.cerebras.ai/v1",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Cerebras API key",
+        "env": [
+          "CEREBRAS_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "cloudflare-ai-gateway",
+      "name": "Cloudflare AI Gateway",
+      "apis": [
+        "anthropic-messages",
+        "openai-completions",
+        "openai-responses"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Cloudflare API key",
+        "env": [
+          "CLOUDFLARE_API_KEY",
+          "CLOUDFLARE_ACCOUNT_ID",
+          "CLOUDFLARE_GATEWAY_ID"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "cloudflare-workers-ai",
+      "name": "Cloudflare Workers AI",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Cloudflare API key",
+        "env": [
+          "CLOUDFLARE_API_KEY",
+          "CLOUDFLARE_ACCOUNT_ID"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "baseUrl": "https://api.deepseek.com",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "DeepSeek API key",
+        "env": [
+          "DEEPSEEK_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "fireworks",
+      "name": "Fireworks",
+      "baseUrl": "https://api.fireworks.ai/inference",
+      "apis": [
+        "anthropic-messages",
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Fireworks API key",
+        "env": [
+          "FIREWORKS_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "github-copilot",
+      "name": "GitHub Copilot",
+      "baseUrl": "https://api.individual.githubcopilot.com",
+      "apis": [
+        "anthropic-messages",
+        "openai-completions",
+        "openai-responses"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "GitHub Copilot token",
+        "env": [
+          "COPILOT_GITHUB_TOKEN"
+        ],
+        "oauth": true
+      }
+    },
+    {
+      "id": "google",
+      "name": "Google",
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+      "apis": [
+        "google-generative-ai"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Gemini API key",
+        "env": [
+          "GEMINI_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "google-vertex",
+      "name": "Google Vertex AI",
+      "apis": [
+        "google-vertex"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Google Cloud credentials",
+        "env": [
+          "GOOGLE_CLOUD_API_KEY",
+          "GOOGLE_APPLICATION_CREDENTIALS",
+          "GOOGLE_CLOUD_PROJECT",
+          "GCLOUD_PROJECT",
+          "GOOGLE_CLOUD_LOCATION"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "groq",
+      "name": "Groq",
+      "baseUrl": "https://api.groq.com/openai/v1",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Groq API key",
+        "env": [
+          "GROQ_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "huggingface",
+      "name": "Hugging Face",
+      "baseUrl": "https://router.huggingface.co/v1",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Hugging Face token",
+        "env": [
+          "HF_TOKEN"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "kimi-coding",
+      "name": "Kimi For Coding",
+      "baseUrl": "https://api.kimi.com/coding",
+      "apis": [
+        "anthropic-messages"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Kimi API key",
+        "env": [
+          "KIMI_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "minimax",
+      "name": "MiniMax",
+      "baseUrl": "https://api.minimax.io/anthropic",
+      "apis": [
+        "anthropic-messages"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "MiniMax API key",
+        "env": [
+          "MINIMAX_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "minimax-cn",
+      "name": "MiniMax CN",
+      "baseUrl": "https://api.minimaxi.com/anthropic",
+      "apis": [
+        "anthropic-messages"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "MiniMax CN API key",
+        "env": [
+          "MINIMAX_CN_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "mistral",
+      "name": "Mistral",
+      "baseUrl": "https://api.mistral.ai",
+      "apis": [
+        "mistral-conversations"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Mistral API key",
+        "env": [
+          "MISTRAL_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "moonshotai",
+      "name": "Moonshot AI",
+      "baseUrl": "https://api.moonshot.ai/v1",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Moonshot AI API key",
+        "env": [
+          "MOONSHOT_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "moonshotai-cn",
+      "name": "Moonshot AI CN",
+      "baseUrl": "https://api.moonshot.cn/v1",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Moonshot AI API key",
+        "env": [
+          "MOONSHOT_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "nvidia",
+      "name": "NVIDIA",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "NVIDIA API key",
+        "env": [
+          "NVIDIA_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "baseUrl": "https://api.openai.com/v1",
+      "apis": [
+        "openai-responses"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "OpenAI API key",
+        "env": [
+          "OPENAI_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "openai-codex",
+      "name": "OpenAI Codex",
+      "baseUrl": "https://chatgpt.com/backend-api",
+      "apis": [
+        "openai-codex-responses"
+      ],
+      "auth": {
+        "kind": "oauth",
+        "oauth": true
+      }
+    },
+    {
+      "id": "opencode",
+      "name": "OpenCode Zen",
+      "apis": [
+        "anthropic-messages",
+        "google-generative-ai",
+        "openai-completions",
+        "openai-responses"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "OpenCode API key",
+        "env": [
+          "OPENCODE_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "opencode-go",
+      "name": "OpenCode Zen Go",
+      "apis": [
+        "anthropic-messages",
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "OpenCode API key",
+        "env": [
+          "OPENCODE_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "OpenRouter API key",
+        "env": [
+          "OPENROUTER_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "together",
+      "name": "Together",
+      "baseUrl": "https://api.together.ai/v1",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Together API key",
+        "env": [
+          "TOGETHER_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "vercel-ai-gateway",
+      "name": "Vercel AI Gateway",
+      "baseUrl": "https://ai-gateway.vercel.sh",
+      "apis": [
+        "anthropic-messages"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Vercel AI Gateway API key",
+        "env": [
+          "AI_GATEWAY_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "xai",
+      "name": "xAI",
+      "baseUrl": "https://api.x.ai/v1",
+      "apis": [
+        "openai-completions",
+        "openai-responses"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "xAI API key",
+        "env": [
+          "XAI_API_KEY"
+        ],
+        "oauth": true
+      }
+    },
+    {
+      "id": "xiaomi",
+      "name": "Xiaomi",
+      "baseUrl": "https://api.xiaomimimo.com/v1",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Xiaomi API key",
+        "env": [
+          "XIAOMI_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "xiaomi-token-plan-ams",
+      "name": "Xiaomi Token Plan AMS",
+      "baseUrl": "https://token-plan-ams.xiaomimimo.com/v1",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Xiaomi Token Plan AMS API key",
+        "env": [
+          "XIAOMI_TOKEN_PLAN_AMS_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "xiaomi-token-plan-cn",
+      "name": "Xiaomi Token Plan CN",
+      "baseUrl": "https://token-plan-cn.xiaomimimo.com/v1",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Xiaomi Token Plan CN API key",
+        "env": [
+          "XIAOMI_TOKEN_PLAN_CN_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "xiaomi-token-plan-sgp",
+      "name": "Xiaomi Token Plan SGP",
+      "baseUrl": "https://token-plan-sgp.xiaomimimo.com/v1",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Xiaomi Token Plan SGP API key",
+        "env": [
+          "XIAOMI_TOKEN_PLAN_SGP_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "zai",
+      "name": "Z.AI",
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Z.AI API key",
+        "env": [
+          "ZAI_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "zai-coding-cn",
+      "name": "Z.AI Coding CN",
+      "baseUrl": "https://open.bigmodel.cn/api/coding/paas/v4",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Z.AI Coding CN API key",
+        "env": [
+          "ZAI_CODING_CN_API_KEY"
+        ],
+        "oauth": false
+      }
+    }
+  ],
+  "cloudflare": [
+    {
+      "provider": "cloudflare-workers-ai",
+      "baseUrl": "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
+      "env": {
+        "CLOUDFLARE_ACCOUNT_ID": "fixture-account"
+      },
+      "auth": {
+        "apiKey": "fixture-cloudflare-key"
+      },
+      "resolvedBaseUrl": "https://api.cloudflare.com/client/v4/accounts/fixture-account/ai/v1"
+    },
+    {
+      "provider": "cloudflare-ai-gateway",
+      "baseUrl": "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/openai",
+      "env": {
+        "CLOUDFLARE_ACCOUNT_ID": "fixture-account",
+        "CLOUDFLARE_GATEWAY_ID": "fixture-gateway"
+      },
+      "auth": {
+        "headers": {
+          "cf-aig-authorization": "Bearer fixture-cloudflare-key",
+          "Authorization": null,
+          "x-api-key": null
+        }
+      },
+      "resolvedBaseUrl": "https://gateway.ai.cloudflare.com/v1/fixture-account/fixture-gateway/openai"
+    }
+  ]
+}

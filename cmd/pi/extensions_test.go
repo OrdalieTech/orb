@@ -36,6 +36,49 @@ func TestLoadCompiledExtensionsUsesSettingsAndCatalogOrder(t *testing.T) {
 	}
 }
 
+func TestLoadCompiledExtensionsAddsMCPOnlyForEnabledConfiguration(t *testing.T) {
+	tests := []struct {
+		name        string
+		settings    string
+		args        CLIArgs
+		wantPath    string
+		wantWarning string
+	}{
+		{name: "absent", settings: `{}`},
+		{name: "server disabled", settings: `{"mcpServers":{"local":{"command":"ignored","enabled":false}}}`},
+		{name: "extension disabled", settings: `{"goExtensions":{"mcp":false},"mcpServers":{"local":{"command":"ignored"}}}`},
+		{name: "all extensions disabled", settings: `{"mcpServers":[]}`, args: CLIArgs{NoExtensions: true}},
+		{name: "invalid", settings: `{"mcpServers":[]}`, wantWarning: "mcpServers"},
+		{name: "enabled", settings: `{"mcpServers":{"local":{"command":"pi-go-mcp-command-that-does-not-exist","timeoutMs":20}}}`, wantPath: "<inline:mcp>"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cwd := t.TempDir()
+			agentDir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(test.settings), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+			if err != nil {
+				t.Fatal(err)
+			}
+			registry, diagnostics := loadCompiledExtensions(cwd, test.args, settings)
+			runner := extensions.NewRunner(registry, extensions.RunnerOptions{})
+			paths := strings.Join(runner.ExtensionPaths(), ",")
+			if paths != test.wantPath {
+				t.Fatalf("extension paths = %q, want %q", paths, test.wantPath)
+			}
+			warnings := strings.Join(diagnostics, "\n")
+			if test.wantWarning == "" && warnings != "" || test.wantWarning != "" && !strings.Contains(warnings, test.wantWarning) {
+				t.Fatalf("diagnostics = %q, want substring %q", warnings, test.wantWarning)
+			}
+			if test.wantPath != "" && runner.Command("mcp") == nil {
+				t.Fatal("/mcp command was not registered")
+			}
+		})
+	}
+}
+
 func TestApplyExtensionFlagsUsesUpstreamBooleanAndStringRules(t *testing.T) {
 	registry := extensions.NewRegistry(t.TempDir())
 	if err := registry.Register("<inline:flags>", func(api extensions.API) error {

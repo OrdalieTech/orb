@@ -46,6 +46,22 @@ func TestTruncateToWidth(t *testing.T) {
 	}
 }
 
+func TestSliceByColumnMatchesUpstreamWideAndANSIColumns(t *testing.T) {
+	if got := SliceByColumn("abcd让EFGH", 0, 5, true); got != "abcd" {
+		t.Fatalf("strict slice through wide boundary = %q, want %q", got, "abcd")
+	}
+	styled := "\x1b[31mabcd让EFGH\x1b[0m"
+	if got := SliceByColumn(styled, 4, 4, true); !strings.Contains(got, "让EF") || VisibleWidth(got) != 4 {
+		t.Fatalf("styled wide slice = %q, width %d", got, VisibleWidth(got))
+	}
+	if got := SliceByColumn("🙂x", 0, 1, false); got != "🙂" {
+		t.Fatalf("non-strict wide slice = %q", got)
+	}
+	if got := SliceByColumn("🙂x", 0, 1, true); got != "" {
+		t.Fatalf("strict wide slice = %q", got)
+	}
+}
+
 func TestWrapTextWithANSIPreservesStyle(t *testing.T) {
 	got := WrapTextWithANSI("\x1b[31mone two three\x1b[0m", 7)
 	want := []string{"\x1b[31mone two", "\x1b[31mthree\x1b[0m"}

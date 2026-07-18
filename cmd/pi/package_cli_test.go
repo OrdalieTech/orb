@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/OrdalieTech/pi-go/codingagent"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
+	"github.com/OrdalieTech/pi-go/codingagent/modes"
 )
 
 type packageCLIEnv struct {
@@ -320,5 +324,99 @@ func TestConfigCLICommand(t *testing.T) {
 	code, _, stderr = runPackageCLI(t, []string{"config", "--bogus"})
 	if code != 1 || !strings.Contains(stderr, `Unknown option --bogus for "config".`) {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestConfigCLIResolvesScopedResourcesAndRunsSelector(t *testing.T) {
+	env := setupPackageCLI(t)
+	globalExtension := filepath.Join(env.agentDir, "extensions", "global.ts")
+	projectExtension := filepath.Join(env.projectDir, config.ConfigDirName, "extensions", "project.ts")
+	for _, path := range []string{globalExtension, projectExtension} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("export default function () {}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var captured modes.ConfigSelectorOptions
+	runs := 0
+	run := func(argv []string) (int, string) {
+		var stderr bytes.Buffer
+		code := runCLIWithDependencies(context.Background(), argv, cliStreams{
+			Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: &stderr, StdinTTY: true, StdoutTTY: true,
+		}, cliDependencies{
+			refreshModels: func(context.Context, string) error { return nil },
+			runConfig: func(_ context.Context, options modes.ConfigSelectorOptions) error {
+				runs++
+				captured = options
+				return nil
+			},
+		})
+		return code, stderr.String()
+	}
+
+	code, stderr := run([]string{"config", "--approve"})
+	if code != 0 || stderr != "" || runs != 1 {
+		t.Fatalf("approved config code=%d runs=%d stderr=%q", code, runs, stderr)
+	}
+	if captured.WriteScope != modes.ConfigWriteGlobal || !captured.ProjectModeAvailable || !captured.SettingsManager.IsProjectTrusted() {
+		t.Fatalf("approved selector options = %#v", captured)
+	}
+	if hasResolvedPath(captured.ResolvedPaths.Global.Extensions, projectExtension) ||
+		!hasResolvedPath(captured.ResolvedPaths.Global.Extensions, globalExtension) {
+		t.Fatalf("global resolved paths = %#v", captured.ResolvedPaths.Global.Extensions)
+	}
+	if !hasResolvedPath(captured.ResolvedPaths.Project.Extensions, projectExtension) ||
+		!hasResolvedPath(captured.ResolvedPaths.Project.Extensions, globalExtension) {
+		t.Fatalf("project resolved paths = %#v", captured.ResolvedPaths.Project.Extensions)
+	}
+
+	code, stderr = run([]string{"config", "--local", "--approve"})
+	if code != 0 || stderr != "" || captured.WriteScope != modes.ConfigWriteProject || runs != 2 {
+		t.Fatalf("local config code=%d scope=%q runs=%d stderr=%q", code, captured.WriteScope, runs, stderr)
+	}
+
+	code, stderr = run([]string{"config", "--no-approve"})
+	if code != 0 || stderr != "" || captured.ProjectModeAvailable || captured.SettingsManager.IsProjectTrusted() || runs != 3 {
+		t.Fatalf("untrusted global config code=%d available=%v runs=%d stderr=%q", code, captured.ProjectModeAvailable, runs, stderr)
+	}
+	if captured.ResolvedPaths.Project != captured.ResolvedPaths.Global || hasResolvedPath(captured.ResolvedPaths.Project.Extensions, projectExtension) {
+		t.Fatalf("untrusted project resolution was not the global resolution")
+	}
+}
+
+func hasResolvedPath(resources []codingagent.ResolvedResource, path string) bool {
+	for _, resource := range resources {
+		if resource.Path == path {
+			return true
+		}
+	}
+	return false
+}
+
+func TestConfigCLITTYAndRunnerErrors(t *testing.T) {
+	setupPackageCLI(t)
+	runs := 0
+	runner := func(context.Context, modes.ConfigSelectorOptions) error {
+		runs++
+		return nil
+	}
+	var stderr bytes.Buffer
+	code := runCLIWithDependencies(context.Background(), []string{"config"}, cliStreams{
+		Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: &stderr,
+	}, cliDependencies{runConfig: runner})
+	if code != 1 || runs != 0 || !strings.Contains(stderr.String(), "pi config requires an interactive terminal") {
+		t.Fatalf("non-TTY code=%d runs=%d stderr=%q", code, runs, stderr.String())
+	}
+
+	stderr.Reset()
+	wantErr := errors.New("selector failed")
+	code = runCLIWithDependencies(context.Background(), []string{"config"}, cliStreams{
+		Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: &stderr, StdinTTY: true, StdoutTTY: true,
+	}, cliDependencies{runConfig: func(context.Context, modes.ConfigSelectorOptions) error { return wantErr }})
+	if code != 1 || !strings.Contains(stderr.String(), "Error: selector failed") {
+		t.Fatalf("runner error code=%d stderr=%q", code, stderr.String())
 	}
 }

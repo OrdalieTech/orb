@@ -11,6 +11,14 @@ import (
 	"github.com/OrdalieTech/pi-go/ai"
 )
 
+func TestAgentCoalescesMissingInitialModelToUnknownSentinel(t *testing.T) {
+	created := NewAgent(WithInitialState(AgentState{}))
+	model := created.State().Model
+	if model == nil || model.Provider != "unknown" || model.ID != "unknown" || model.API != "unknown" {
+		t.Fatalf("default model = %#v", model)
+	}
+}
+
 func TestAgentStatePreservesRawCustomMessageType(t *testing.T) {
 	original := json.RawMessage(`{"role":"custom","content":"original"}`)
 	created := NewAgent(WithInitialState(AgentState{Model: loopModel(), Messages: AgentMessages{original}}))

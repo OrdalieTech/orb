@@ -186,7 +186,7 @@ func escapeEmbeddedURLControls(value string) string {
 	var escaped strings.Builder
 	for index := 0; index < len(value); index++ {
 		if value[index] < 0x20 || value[index] == 0x7f {
-			escaped.WriteString(fmt.Sprintf("%%%02X", value[index]))
+			fmt.Fprintf(&escaped, "%%%02X", value[index])
 			continue
 		}
 		escaped.WriteByte(value[index])

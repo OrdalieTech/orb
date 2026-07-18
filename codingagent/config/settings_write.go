@@ -369,6 +369,81 @@ func (manager *SettingsManager) SetFollowUpMode(mode string) {
 	manager.setGlobalValues(settingMember("followUpMode", mode))
 }
 
+func (manager *SettingsManager) SetShowImages(show bool) {
+	manager.setGlobalNested("terminal", "showImages", show)
+}
+
+func (manager *SettingsManager) SetImageWidthCells(width int) {
+	manager.setGlobalNested("terminal", "imageWidthCells", max(1, width))
+}
+
+func (manager *SettingsManager) SetHideThinkingBlock(hidden bool) {
+	manager.setGlobalValues(settingMember("hideThinkingBlock", hidden))
+}
+
+func (manager *SettingsManager) SetShowCacheMissNotices(show bool) {
+	manager.setGlobalValues(settingMember("showCacheMissNotices", show))
+}
+
+func (manager *SettingsManager) SetQuietStartup(quiet bool) {
+	manager.setGlobalValues(settingMember("quietStartup", quiet))
+}
+
+func (manager *SettingsManager) SetDefaultProjectTrust(value string) {
+	manager.setGlobalValues(settingMember("defaultProjectTrust", value))
+}
+
+func (manager *SettingsManager) SetDoubleEscapeAction(action string) {
+	manager.setGlobalValues(settingMember("doubleEscapeAction", action))
+}
+
+func (manager *SettingsManager) SetTreeFilterMode(mode string) {
+	manager.setGlobalValues(settingMember("treeFilterMode", mode))
+}
+
+func (manager *SettingsManager) SetShowHardwareCursor(enabled bool) {
+	manager.setGlobalValues(settingMember("showHardwareCursor", enabled))
+}
+
+func (manager *SettingsManager) SetEditorPaddingX(padding int) {
+	manager.setGlobalValues(settingMember("editorPaddingX", max(0, min(3, padding))))
+}
+
+func (manager *SettingsManager) SetOutputPad(padding int) {
+	if padding != 0 {
+		padding = 1
+	}
+	manager.setGlobalValues(settingMember("outputPad", padding))
+}
+
+func (manager *SettingsManager) SetAutocompleteMaxVisible(maxVisible int) {
+	manager.setGlobalValues(settingMember("autocompleteMaxVisible", max(3, min(20, maxVisible))))
+}
+
+func (manager *SettingsManager) SetClearOnShrink(enabled bool) {
+	manager.setGlobalNested("terminal", "clearOnShrink", enabled)
+}
+
+func (manager *SettingsManager) SetShowTerminalProgress(enabled bool) {
+	manager.setGlobalNested("terminal", "showTerminalProgress", enabled)
+}
+
+func (manager *SettingsManager) SetImageAutoResize(enabled bool) {
+	manager.setGlobalNested("images", "autoResize", enabled)
+}
+
+func (manager *SettingsManager) SetEnableSkillCommands(enabled bool) {
+	manager.setGlobalValues(settingMember("enableSkillCommands", enabled))
+}
+
+func (manager *SettingsManager) SetTransport(transport ai.Transport) {
+	manager.setGlobalValues(settingMember("transport", transport))
+}
+
+func (manager *SettingsManager) SetEnabledModels(models []string) {
+	manager.setGlobalValues(settingMember("enabledModels", append([]string(nil), models...)))
+}
+
 func (manager *SettingsManager) SetCompactionEnabled(enabled bool) {
 	manager.setGlobalNested("compaction", "enabled", enabled)
 }

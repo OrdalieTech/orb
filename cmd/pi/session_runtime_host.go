@@ -150,15 +150,14 @@ func newCLISessionRuntimeHost(
 				return nil, settingsErr
 			}
 		}
-		created, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
-			Agent: inputs.Agent, SessionManager: manager, Settings: settings,
+		sessionConfig := codingagent.SessionRuntimeConfig{
+			Agent: inputs.Agent, SessionManager: manager, Settings: settings, StreamFn: inputs.StreamFn,
 			GetAPIKey: inputs.GetAPIKey, GetRequestAuth: inputs.GetRequestAuth, GetModelHeaders: inputs.GetModelHeaders,
 			AvailableModels:   inputs.AvailableModels,
 			ScopedModels:      inputs.ScopedModels,
 			SlashResolver:     inputs.SlashResolver,
 			ExtensionRegistry: inputs.Extensions,
 			ExtensionMode:     options.ExtensionMode,
-			ModelRegistry:     inputs.ModelRegistry,
 			ExtensionErrorHandler: func(extensionError extensions.ExtensionError) {
 				_, _ = fmt.Fprintf(stderr, "Extension error (%s, %s): %s\n", extensionError.ExtensionPath, extensionError.Event, extensionError.Error)
 			},
@@ -168,7 +167,11 @@ func newCLISessionRuntimeHost(
 			SystemPromptOptions: &inputs.PromptOptions,
 			SessionStartEvent:   runtimeOptions.SessionStartEvent,
 			DeferExtensionStart: runtimeOptions.DeferExtensionStart,
-		})
+		}
+		if inputs.ModelRegistry != nil {
+			sessionConfig.ModelRegistry = inputs.ModelRegistry
+		}
+		created, err := codingagent.NewSessionRuntime(sessionConfig)
 		if err != nil {
 			return nil, err
 		}

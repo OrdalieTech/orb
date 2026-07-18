@@ -563,6 +563,59 @@ func WrapTextWithANSI(text string, width int) []string {
 	return result
 }
 
+// SliceByColumn extracts a range of visible columns from a line. ANSI codes
+// pending at the slice start are re-emitted before the first kept grapheme;
+// strict excludes boundary wide chars that would extend past the range.
+func SliceByColumn(line string, startCol, length int, strict bool) string {
+	text, _ := sliceWithWidth(line, startCol, length, strict)
+	return text
+}
+
+func sliceWithWidth(line string, startCol, length int, strict bool) (string, int) {
+	if length <= 0 {
+		return "", 0
+	}
+	endCol := startCol + length
+	var result, pendingANSI strings.Builder
+	resultWidth, currentCol := 0, 0
+	for pos := 0; pos < len(line) && currentCol < endCol; {
+		if code, next, ok := extractANSI(line, pos); ok {
+			if currentCol >= startCol && currentCol < endCol {
+				result.WriteString(code)
+			} else if currentCol < startCol {
+				pendingANSI.WriteString(code)
+			}
+			pos = next
+			continue
+		}
+		end := pos
+		for end < len(line) {
+			if _, _, ok := extractANSI(line, end); ok {
+				break
+			}
+			_, size := utf8.DecodeRuneInString(line[end:])
+			end += size
+		}
+		forEachGrapheme(line[pos:end], func(grapheme string) bool {
+			width := graphemeWidth(grapheme)
+			inRange := currentCol >= startCol && currentCol < endCol
+			fits := !strict || currentCol+width <= endCol
+			if inRange && fits {
+				if pendingANSI.Len() > 0 {
+					result.WriteString(pendingANSI.String())
+					pendingANSI.Reset()
+				}
+				result.WriteString(grapheme)
+				resultWidth += width
+			}
+			currentCol += width
+			return currentCol < endCol
+		})
+		pos = end
+	}
+	return result.String(), resultWidth
+}
+
 func splitLines(text string) []string {
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")

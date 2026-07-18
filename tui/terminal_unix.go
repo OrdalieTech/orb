@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"syscall"
@@ -40,6 +41,7 @@ type ProcessTerminal struct {
 	resizeSignals     chan os.Signal
 	progressStop      chan struct{}
 	readerDone        chan struct{}
+	writeLogPath      string
 	negotiationBuffer string
 	negotiationTimer  *time.Timer
 	lastInput         time.Time
@@ -47,7 +49,18 @@ type ProcessTerminal struct {
 
 func NewProcessTerminal() *ProcessTerminal { return NewProcessTerminalFiles(os.Stdin, os.Stdout) }
 func NewProcessTerminalFiles(input, output *os.File) *ProcessTerminal {
-	return &ProcessTerminal{input: input, output: output}
+	return &ProcessTerminal{input: input, output: output, writeLogPath: resolveTerminalWriteLogPath(os.Getenv("PI_TUI_WRITE_LOG"))}
+}
+
+func resolveTerminalWriteLogPath(value string) string {
+	if value == "" {
+		return ""
+	}
+	if info, err := os.Stat(value); err == nil && info.IsDir() {
+		name := "tui-" + time.Now().Format("2006-01-02_15-04-05") + "-" + strconv.Itoa(os.Getpid()) + ".log"
+		return filepath.Join(value, name)
+	}
+	return value
 }
 
 func (terminal *ProcessTerminal) Start(onInput func(string), onResize func()) error {
@@ -325,16 +338,23 @@ func (terminal *ProcessTerminal) DrainInput(maxDuration, idleDuration time.Durat
 func (terminal *ProcessTerminal) Write(data string) {
 	terminal.writeMu.Lock()
 	defer terminal.writeMu.Unlock()
+	terminal.writeOutput(data)
+}
+func (terminal *ProcessTerminal) writeOutput(data string) {
 	if terminal.output != nil {
 		_, _ = terminal.output.WriteString(data)
+	}
+	if terminal.writeLogPath != "" {
+		if file, err := os.OpenFile(terminal.writeLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666); err == nil {
+			_, _ = file.WriteString(data)
+			_ = file.Close()
+		}
 	}
 }
 func (terminal *ProcessTerminal) writeLocked(data string) {
 	terminal.writeMu.Lock()
 	defer terminal.writeMu.Unlock()
-	if terminal.output != nil {
-		_, _ = terminal.output.WriteString(data)
-	}
+	terminal.writeOutput(data)
 }
 
 func envDimension(name string, fallback int) int {

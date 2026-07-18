@@ -103,17 +103,18 @@ var amazonBedrockProvider = Provider{
 	ID:   "amazon-bedrock",
 	Name: "Amazon Bedrock",
 	API:  ai.APIBedrockConverse,
+	APIs: []ai.API{ai.APIBedrockConverse},
 	Auth: AuthAPIKey,
 	Env: []string{
 		"AWS_BEARER_TOKEN_BEDROCK",
 		"AWS_PROFILE",
 		"AWS_ACCESS_KEY_ID",
-		"AWS_SECRET_ACCESS_KEY",
 		"AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
 		"AWS_CONTAINER_CREDENTIALS_FULL_URI",
 		"AWS_WEB_IDENTITY_TOKEN_FILE",
 	},
-	Methods: auth.ProviderAuth{APIKey: bedrockAuth{}},
+	APIKeyEnv: []string{"AWS_BEARER_TOKEN_BEDROCK"},
+	Methods:   auth.ProviderAuth{APIKey: bedrockAuth{}},
 }
 
 func AmazonBedrock() Provider {

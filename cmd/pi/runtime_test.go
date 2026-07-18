@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +18,10 @@ import (
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
 	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
+	"github.com/OrdalieTech/pi-go/ai/providers"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
+	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+	"github.com/OrdalieTech/pi-go/codingagent/session"
 )
 
 func TestCreateBuiltInToolsHonorsImageAutoResizeSetting(t *testing.T) {
@@ -474,6 +478,57 @@ func TestResolveRuntimeModelPrefersSavedDefaultWithinScope(t *testing.T) {
 	}
 	if len(diagnostics) != 0 {
 		t.Fatalf("diagnostics = %v", diagnostics)
+	}
+}
+
+func TestCreateRuntimeInputsAllowsMissingModelOnlyForInteractiveBootstrap(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", filepath.Join(root, "home"))
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	for _, provider := range providers.List() {
+		for _, name := range provider.Env {
+			t.Setenv(name, "")
+		}
+	}
+
+	if _, err := createRuntimeInputs(root, CLIArgs{}, nil); err == nil || !strings.Contains(err.Error(), "no model available") {
+		t.Fatalf("headless missing-model error = %v", err)
+	}
+
+	runtime, err := createRuntimeInputs(root, CLIArgs{allowNoModel: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if model := runtime.Agent.State().Model; model == nil || model.Provider != "unknown" || model.ID != "unknown" || model.API != "unknown" {
+		t.Fatalf("interactive bootstrap model = %#v, want upstream unknown sentinel", model)
+	}
+	if thinking := runtime.Agent.State().ThinkingLevel; thinking != ai.ModelThinkingOff {
+		t.Fatalf("interactive bootstrap thinking = %q, want off without a model", thinking)
+	}
+	want := strings.TrimSuffix(formatModelList(nil, ""), "\n")
+	if !slices.Contains(runtime.Diagnostics, want) {
+		t.Fatalf("interactive diagnostics = %#v, want %q", runtime.Diagnostics, want)
+	}
+
+	manager, err := session.InMemory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionRuntime, err := buildSessionRuntime(runtime, manager, sessionRuntimeOptions{mode: extensions.ModeTUI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := newInteractiveSessionHost(
+		CLIArgs{allowNoModel: true}, cliDependencies{createRuntime: createRuntimeInputs},
+		sessionRuntime, runtime, filepath.Join(root, "agent"), nil,
+	)
+	defer host.Dispose()
+	if err := host.Login(context.Background(), "anthropic", aiauth.AuthTypeAPIKey, fixedPromptInteraction{value: "bootstrap-key"}); err != nil {
+		t.Fatal(err)
+	}
+	model := host.Session().State().Model
+	if model == nil || model.Provider != "anthropic" || model.ID != "claude-opus-4-8" {
+		t.Fatalf("post-login default model = %#v", model)
 	}
 }
 

@@ -1,0 +1,25 @@
+{
+  "family": "F11-jsbridge",
+  "upstreamCommit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
+  "generator": "conformance/extract/f11-jsbridge.ts",
+  "source": "packages/coding-agent/src/core/extensions/loader.ts; packages/coding-agent/examples/extensions/{hello,pirate,todo,summarize,commands,send-user-message,dynamic-tools,structured-output,tool-override,event-bus,file-trigger,protected-paths,git-checkpoint,dirty-repo-guard,claude-rules}.ts",
+  "files": [
+    "hello.ts",
+    "pirate.ts",
+    "todo.ts",
+    "summarize.ts",
+    "commands.ts",
+    "send-user-message.ts",
+    "dynamic-tools.ts",
+    "structured-output.ts",
+    "tool-override.ts",
+    "event-bus.ts",
+    "file-trigger.ts",
+    "protected-paths.ts",
+    "git-checkpoint.ts",
+    "dirty-repo-guard.ts",
+    "claude-rules.ts",
+    "discovery.json",
+    "load-errors.json"
+  ]
+}

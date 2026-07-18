@@ -17,8 +17,8 @@ func TestBuiltinCatalogAndCorrections(t *testing.T) {
 	for _, model := range models {
 		providers[model.Provider] = struct{}{}
 	}
-	if len(models) != 1083 || len(providers) != 35 {
-		t.Fatalf("snapshot catalog has %d providers/%d models, want 35/1083", len(providers), len(models))
+	if len(models) != 1070 || len(providers) != 35 {
+		t.Fatalf("snapshot catalog has %d providers/%d models, want 35/1070", len(providers), len(models))
 	}
 	for _, model := range models {
 		if model.Provider == "radius" {
@@ -31,6 +31,17 @@ func TestBuiltinCatalogAndCorrections(t *testing.T) {
 	}
 	if openai.ContextWindow != 272000 || openai.MaxTokens != 128000 {
 		t.Fatalf("hand correction was not applied: %#v", openai)
+	}
+	for provider, id := range map[string]string{
+		"mistral":    "mistral-medium-3.5",
+		"openrouter": "auto",
+	} {
+		if _, ok := catalog.Find(provider, id); !ok {
+			t.Fatalf("missing pinned upstream alias %s/%s", provider, id)
+		}
+	}
+	if _, ok := catalog.Find("openrouter", "openrouter/fusion"); !ok {
+		t.Fatal("missing pinned upstream alias openrouter/openrouter/fusion")
 	}
 }
 

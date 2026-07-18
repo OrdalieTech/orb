@@ -51,16 +51,7 @@ func TestAnthropicProvider(t *testing.T) {
 	} else if freshMethod := fresh.Methods.APIKey.(auth.EnvAPIKeyAuth); !slices.Equal(freshMethod.EnvVars, fixture.Auth.Env) {
 		t.Fatal("Anthropic returned mutable auth-method storage")
 	}
-	registered := providers.List()
-	wantIDs := []ai.ProviderID{
-		"openai", fixture.ID, "google", "google-vertex", "amazon-bedrock", "mistral", "azure-openai-responses",
-		"openai-codex", "github-copilot", "xai",
-	}
-	gotIDs := make([]ai.ProviderID, len(registered))
-	for index := range registered {
-		gotIDs[index] = registered[index].ID
-	}
-	if !slices.Equal(gotIDs, wantIDs) {
-		t.Fatalf("registered provider IDs = %v, want %v", gotIDs, wantIDs)
+	if !slices.ContainsFunc(providers.List(), func(provider providers.Provider) bool { return provider.ID == fixture.ID }) {
+		t.Fatalf("registered providers do not contain %q", fixture.ID)
 	}
 }

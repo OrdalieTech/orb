@@ -778,6 +778,28 @@ var defaultModelProviderOrder = []string{
 	"xiaomi-token-plan-cn", "xiaomi-token-plan-ams", "xiaomi-token-plan-sgp",
 }
 
+// DefaultAvailableModel returns the provider's pinned upstream default only
+// when that exact model is available after authentication.
+func DefaultAvailableModel(provider string, available []ai.Model) *ai.Model {
+	id := defaultModelPerProvider[provider]
+	if id == "" {
+		return nil
+	}
+	index := slices.IndexFunc(available, func(model ai.Model) bool {
+		return string(model.Provider) == provider && model.ID == id
+	})
+	if index < 0 {
+		return nil
+	}
+	copy := available[index]
+	return &copy
+}
+
+// IsUnknownModel reports the Agent sentinel used when no model is selected.
+func IsUnknownModel(model *ai.Model) bool {
+	return model != nil && model.Provider == "unknown" && model.ID == "unknown" && model.API == "unknown"
+}
+
 func PreferredAvailableModel(available []ai.Model) *ai.Model {
 	for _, provider := range defaultModelProviderOrder {
 		id := defaultModelPerProvider[provider]

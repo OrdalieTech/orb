@@ -249,6 +249,71 @@ func (manager *SettingsManager) GetProjectThemePaths() []string {
 	return settingsStringSlice(manager.GetProjectSettings(), "themes")
 }
 
+func (manager *SettingsManager) setGlobalResourcePaths(key string, paths []string) error {
+	paths = append([]string{}, paths...)
+	manager.setGlobalValues(settingMember(key, paths))
+	return nil
+}
+
+func (manager *SettingsManager) setProjectResourcePaths(key string, paths []string) error {
+	paths = append([]string{}, paths...)
+	raw, err := encodeSetting(paths)
+	if err != nil {
+		return err
+	}
+	values := make([]any, len(paths))
+	for index, path := range paths {
+		values[index] = path
+	}
+
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if !manager.projectTrusted {
+		return fmt.Errorf("Project is not trusted; refusing to write project settings") //nolint:staticcheck // Upstream error text is observable.
+	}
+	manager.project[key] = values
+	manager.effective = mergeSettings(manager.global, manager.project)
+	if manager.projectLoadError {
+		return nil
+	}
+	if err := writeGlobalSettings(manager.projectPath, settingsObject{{name: key, value: raw}}, "", "", nil); err != nil {
+		manager.errors = append(manager.errors, SettingsError{Scope: ProjectSettings, Err: err})
+	}
+	return nil
+}
+
+func (manager *SettingsManager) SetExtensionPaths(paths []string) error {
+	return manager.setGlobalResourcePaths("extensions", paths)
+}
+
+func (manager *SettingsManager) SetProjectExtensionPaths(paths []string) error {
+	return manager.setProjectResourcePaths("extensions", paths)
+}
+
+func (manager *SettingsManager) SetSkillPaths(paths []string) error {
+	return manager.setGlobalResourcePaths("skills", paths)
+}
+
+func (manager *SettingsManager) SetProjectSkillPaths(paths []string) error {
+	return manager.setProjectResourcePaths("skills", paths)
+}
+
+func (manager *SettingsManager) SetPromptTemplatePaths(paths []string) error {
+	return manager.setGlobalResourcePaths("prompts", paths)
+}
+
+func (manager *SettingsManager) SetProjectPromptTemplatePaths(paths []string) error {
+	return manager.setProjectResourcePaths("prompts", paths)
+}
+
+func (manager *SettingsManager) SetThemePaths(paths []string) error {
+	return manager.setGlobalResourcePaths("themes", paths)
+}
+
+func (manager *SettingsManager) SetProjectThemePaths(paths []string) error {
+	return manager.setProjectResourcePaths("themes", paths)
+}
+
 // GetDefaultProjectTrust returns "always", "never", or "ask" (global-only).
 func (manager *SettingsManager) GetDefaultProjectTrust() string {
 	manager.mu.RLock()

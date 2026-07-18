@@ -259,6 +259,15 @@ func TestPreferredAvailableModelUsesPinnedProviderDefaults(t *testing.T) {
 	if PreferredAvailableModel(nil) != nil {
 		t.Fatal("empty available list returned a model")
 	}
+	if selected := DefaultAvailableModel("openai", models); selected == nil || selected.ID != "gpt-5.5" {
+		t.Fatalf("openai default = %#v", selected)
+	}
+	if selected := DefaultAvailableModel("openai", models[:2]); selected != nil {
+		t.Fatalf("missing exact default selected %#v", selected)
+	}
+	if selected := DefaultAvailableModel("custom", models); selected != nil {
+		t.Fatalf("unknown provider default selected %#v", selected)
+	}
 }
 
 func mustJSON(t *testing.T, value any) []byte {

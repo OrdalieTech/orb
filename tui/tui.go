@@ -43,7 +43,10 @@ type TUI struct {
 	previousImageIDs    []uint32
 	clearOnShrink       bool
 	showHardwareCursor  bool
-	stopped             bool
+
+	lifecycleMu sync.RWMutex
+	stopped     bool
+	hasStarted  bool
 
 	focusMu      sync.RWMutex
 	focused      Component
@@ -51,14 +54,40 @@ type TUI struct {
 	nextListener uint64
 	OnDebug      func()
 
-	scheduleMu      sync.Mutex
-	renderRequested bool
-	renderTimer     *time.Timer
-	lastRender      time.Time
+	focusOrderCounter   uint64
+	overlayStack        []*overlayStackEntry
+	overlayFocusRestore overlayFocusRestoreState
+
+	colorMu                                 sync.Mutex
+	pendingOsc11BackgroundReplies           int
+	pendingOsc11BackgroundQueries           []*pendingOsc11BackgroundQuery
+	terminalColorSchemeListeners            []terminalColorSchemeListenerEntry
+	nextTerminalColorSchemeListener         uint64
+	terminalColorSchemeNotificationsEnabled bool
+	notificationMu                          sync.Mutex
+
+	scheduleMu       sync.Mutex
+	renderDispatchMu sync.Mutex
+	renderRequested  bool
+	renderTimer      *time.Timer
+	renderGeneration uint64
+	lastRender       time.Time
 }
 
 func NewTUI(terminal Terminal) *TUI {
 	return &TUI{terminal: terminal, clearOnShrink: os.Getenv("PI_CLEAR_ON_SHRINK") == "1", showHardwareCursor: os.Getenv("PI_HARDWARE_CURSOR") == "1", stopped: true}
+}
+
+func (ui *TUI) setStopped(stopped bool) {
+	ui.lifecycleMu.Lock()
+	ui.stopped = stopped
+	ui.lifecycleMu.Unlock()
+}
+
+func (ui *TUI) isStopped() bool {
+	ui.lifecycleMu.RLock()
+	defer ui.lifecycleMu.RUnlock()
+	return ui.stopped
 }
 
 func (ui *TUI) Terminal() Terminal { return ui.terminal }
@@ -92,18 +121,6 @@ func (ui *TUI) SetShowHardwareCursor(enabled bool) {
 	ui.RequestRender()
 }
 
-func (ui *TUI) SetFocus(component Component) {
-	ui.focusMu.Lock()
-	if previous, ok := ui.focused.(Focusable); ok {
-		previous.SetFocused(false)
-	}
-	ui.focused = component
-	if next, ok := component.(Focusable); ok {
-		next.SetFocused(true)
-	}
-	ui.focusMu.Unlock()
-}
-
 func (ui *TUI) AddInputListener(listener InputListener) func() {
 	ui.focusMu.Lock()
 	ui.nextListener++
@@ -123,16 +140,23 @@ func (ui *TUI) AddInputListener(listener InputListener) func() {
 }
 
 func (ui *TUI) Start() error {
-	ui.renderMu.Lock()
-	ui.stopped = false
-	ui.renderMu.Unlock()
+	ui.setStopped(false)
 	if err := ui.terminal.Start(ui.handleInput, ui.RequestRender); err != nil {
-		ui.renderMu.Lock()
-		ui.stopped = true
-		ui.renderMu.Unlock()
+		ui.setStopped(true)
 		return err
 	}
+	ui.lifecycleMu.Lock()
+	ui.hasStarted = true
+	ui.lifecycleMu.Unlock()
 	ui.terminal.HideCursor()
+	ui.notificationMu.Lock()
+	ui.colorMu.Lock()
+	notificationsEnabled := ui.terminalColorSchemeNotificationsEnabled
+	ui.colorMu.Unlock()
+	if notificationsEnabled {
+		ui.terminal.Write(terminalColorSchemeNotificationsOn)
+	}
+	ui.notificationMu.Unlock()
 	if GetCapabilities().Images != "" {
 		ui.terminal.Write("\x1b[16t")
 	}
@@ -141,17 +165,28 @@ func (ui *TUI) Start() error {
 }
 
 func (ui *TUI) Stop() error {
+	ui.setStopped(true)
+	ui.renderDispatchMu.Lock()
 	ui.scheduleMu.Lock()
+	ui.renderGeneration++
 	if ui.renderTimer != nil {
 		ui.renderTimer.Stop()
 		ui.renderTimer = nil
 	}
 	ui.renderRequested = false
 	ui.scheduleMu.Unlock()
+	ui.renderDispatchMu.Unlock()
 	ui.renderMu.Lock()
-	ui.stopped = true
 	lines, row := len(ui.previousLines), ui.hardwareCursorRow
 	ui.renderMu.Unlock()
+	ui.notificationMu.Lock()
+	ui.colorMu.Lock()
+	notificationsEnabled := ui.terminalColorSchemeNotificationsEnabled
+	ui.colorMu.Unlock()
+	if notificationsEnabled {
+		ui.terminal.Write(terminalColorSchemeNotificationsOff)
+	}
+	ui.notificationMu.Unlock()
 	if lines > 0 {
 		target := lines
 		if difference := target - row; difference > 0 {
@@ -168,15 +203,18 @@ func (ui *TUI) Stop() error {
 func (ui *TUI) Invalidate() {
 	ui.renderMu.Lock()
 	ui.Container.Invalidate()
+	ui.focusMu.RLock()
+	overlays := append([]*overlayStackEntry(nil), ui.overlayStack...)
+	ui.focusMu.RUnlock()
+	for _, overlay := range overlays {
+		invalidate(overlay.component)
+	}
 	ui.renderMu.Unlock()
 	ui.RequestRender()
 }
 
 func (ui *TUI) RequestRender() {
-	ui.renderMu.Lock()
-	stopped := ui.stopped
-	ui.renderMu.Unlock()
-	if stopped {
+	if ui.isStopped() {
 		return
 	}
 	ui.scheduleMu.Lock()
@@ -185,9 +223,17 @@ func (ui *TUI) RequestRender() {
 		return
 	}
 	ui.renderRequested = true
+	ui.renderGeneration++
+	generation := ui.renderGeneration
 	delay := max(time.Duration(0), minRenderInterval-time.Since(ui.lastRender))
 	ui.renderTimer = time.AfterFunc(delay, func() {
+		ui.renderDispatchMu.Lock()
+		defer ui.renderDispatchMu.Unlock()
 		ui.scheduleMu.Lock()
+		if generation != ui.renderGeneration || !ui.renderRequested {
+			ui.scheduleMu.Unlock()
+			return
+		}
 		ui.renderRequested, ui.renderTimer, ui.lastRender = false, nil, time.Now()
 		ui.scheduleMu.Unlock()
 		ui.RenderNow()
@@ -196,7 +242,10 @@ func (ui *TUI) RequestRender() {
 }
 
 func (ui *TUI) ForceRender() {
+	ui.renderDispatchMu.Lock()
+	defer ui.renderDispatchMu.Unlock()
 	ui.scheduleMu.Lock()
+	ui.renderGeneration++
 	if ui.renderTimer != nil {
 		ui.renderTimer.Stop()
 		ui.renderTimer = nil
@@ -212,6 +261,12 @@ func (ui *TUI) ForceRender() {
 }
 
 func (ui *TUI) handleInput(data string) {
+	if ui.consumeOsc11BackgroundResponse(data) {
+		return
+	}
+	if ui.consumeTerminalColorSchemeReport(data) {
+		return
+	}
 	ui.focusMu.RLock()
 	entries := append([]inputListenerEntry(nil), ui.listeners...)
 	ui.focusMu.RUnlock()
@@ -238,9 +293,29 @@ func (ui *TUI) handleInput(data string) {
 		ui.OnDebug()
 		return
 	}
-	ui.focusMu.RLock()
+	ui.focusMu.Lock()
+	if focusedOverlay := ui.overlayForComponentLocked(ui.focused); focusedOverlay != nil && !ui.isOverlayVisibleLocked(focusedOverlay) {
+		if top := ui.topmostVisibleOverlayLocked(); top != nil {
+			ui.setFocusLocked(top.component, overlayFocusRestoreClear)
+		} else {
+			ui.setFocusLocked(focusedOverlay.preFocus, overlayFocusRestorePreserve)
+		}
+	}
+	if ui.overlayForComponentLocked(ui.focused) == nil {
+		restoreState := ui.visibleOverlayFocusRestoreLocked()
+		if restoreState.status == overlayFocusRestoreEligible {
+			ui.setFocusLocked(restoreState.overlay.component, overlayFocusRestoreClear)
+		} else if restoreState.status == overlayFocusRestoreBlocked && restoreState.blockedBy != ui.focused {
+			if restoreState.resume.kind == overlayFocusResumeOverlay {
+				ui.setFocusLocked(restoreState.overlay.component, overlayFocusRestoreClear)
+			} else {
+				ui.clearOverlayFocusRestoreLocked()
+				ui.setFocusLocked(restoreState.resume.target, overlayFocusRestoreClear)
+			}
+		}
+	}
 	focused := ui.focused
-	ui.focusMu.RUnlock()
+	ui.focusMu.Unlock()
 	handler, ok := focused.(InputHandler)
 	if !ok {
 		return
@@ -365,7 +440,7 @@ func expandChangedRangeForKittyImages(first, last int, previous, next []string) 
 func (ui *TUI) RenderNow() {
 	ui.renderMu.Lock()
 	defer ui.renderMu.Unlock()
-	if ui.stopped {
+	if ui.isStopped() {
 		return
 	}
 	width, height := ui.terminal.Columns(), ui.terminal.Rows()
@@ -388,6 +463,9 @@ func (ui *TUI) RenderNow() {
 	viewportTop, hardwareCursorRow := previousViewportTop, ui.hardwareCursorRow
 	lineDifference := func(target int) int { return (target - viewportTop) - (hardwareCursorRow - previousViewportTop) }
 	newLines := append([]string(nil), ui.Render(width)...)
+	if ui.overlayCount() > 0 {
+		newLines = ui.compositeOverlays(newLines, width, height)
+	}
 	cursorRow, cursorColumn, hasCursor := ui.extractCursor(newLines, height)
 	newLines = applyLineResets(newLines)
 	fullRender := func(clear bool) {
@@ -438,7 +516,7 @@ func (ui *TUI) RenderNow() {
 		fullRender(true)
 		return
 	}
-	if ui.clearOnShrink && len(newLines) < ui.maxLinesRendered {
+	if ui.clearOnShrink && len(newLines) < ui.maxLinesRendered && ui.overlayCount() == 0 {
 		fullRender(true)
 		return
 	}
@@ -582,9 +660,9 @@ func (ui *TUI) RenderNow() {
 		}
 		output.WriteString("\x1b[2K")
 		if !IsImageLine(line) && VisibleWidth(line) > width {
+			ui.setStopped(true)
 			ui.terminal.ShowCursor()
 			_ = ui.terminal.Stop()
-			ui.stopped = true
 			panic(fmt.Sprintf("rendered line %d exceeds terminal width (%d > %d)", index, VisibleWidth(newLines[index]), width))
 		}
 		output.WriteString(line)
