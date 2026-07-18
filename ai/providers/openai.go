@@ -29,14 +29,18 @@ func OpenAI() Provider {
 }
 
 func Get(id ai.ProviderID) (Provider, bool) {
-	if id != openAI.ID {
+	switch id {
+	case openAI.ID:
+		return OpenAI(), true
+	case anthropicProvider.ID:
+		return Anthropic(), true
+	default:
 		return Provider{}, false
 	}
-	return OpenAI(), true
 }
 
 func List() []Provider {
-	return []Provider{OpenAI()}
+	return []Provider{OpenAI(), Anthropic()}
 }
 
 func cloneProvider(provider Provider) Provider {

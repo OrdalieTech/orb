@@ -256,7 +256,7 @@ func postOpenAIStream(
 func providerResponse(response *http.Response) ai.ProviderResponse {
 	headers := make(map[string]string, len(response.Header))
 	for name, values := range response.Header {
-		headers[name] = strings.Join(values, ", ")
+		headers[strings.ToLower(name)] = strings.Join(values, ", ")
 	}
 	return ai.ProviderResponse{Status: response.StatusCode, Headers: headers}
 }

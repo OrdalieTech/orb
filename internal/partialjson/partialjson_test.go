@@ -202,6 +202,7 @@ func TestStringifyStreamingJSONPreservesJavaScriptObjectOrder(t *testing.T) {
 		{input: `{"outer":{"z":1,"a":2},"tail":"par`, want: `{"outer":{"z":1,"a":2},"tail":"par"}`},
 		{input: `{"2":"two","keep":1,"1":"one","keep":2}`, want: `{"1":"one","2":"two","keep":2}`},
 		{input: `{"n":1e2,"negativeZero":-0,"overflow":Infinity}`, want: `{"n":100,"negativeZero":0,"overflow":null}`},
+		{input: "{\"path\":\"A\\H\",\"text\":\"col1\tcol2\"}", want: `{"path":"A\\H","text":"col1\tcol2"}`},
 	}
 	for _, test := range tests {
 		encoded, err := StringifyStreamingJSON(test.input)

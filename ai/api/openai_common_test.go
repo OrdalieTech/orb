@@ -162,7 +162,7 @@ func TestPostOpenAIStreamPreservesWireJSONAndHooksResponse(t *testing.T) {
 	options := &ai.StreamOptions{
 		APIKey: &key,
 		OnResponse: func(_ context.Context, response ai.ProviderResponse, _ *ai.Model) error {
-			hookCalled = response.Status == http.StatusAccepted && response.Headers["X-Response"] == "seen"
+			hookCalled = response.Status == http.StatusAccepted && response.Headers["x-response"] == "seen"
 			return nil
 		},
 	}

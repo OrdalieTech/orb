@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { access, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
@@ -19,6 +20,8 @@ type ToolBehavior =
 interface ScenarioDefinition {
   name: string;
   trace: string;
+  api?: string;
+  provider?: string;
   systemPrompt: string;
   prompt: unknown;
   responses: unknown[];
@@ -34,6 +37,7 @@ interface ScenarioDefinition {
   tokenSize: { min: number; max: number };
   steering?: { trigger: "tool_execute"; messages: unknown[] };
   abort?: { trigger: "first_text_delta" };
+  thinkingRoundTrip?: { thinking: string; signature: string };
   expected: {
     providerCalls: number;
     pendingResponses: number;
@@ -331,6 +335,43 @@ function buildScenarios(upstream: UpstreamModules): Array<ScenarioDefinition & {
         toolResultOrder: ["terminate-1", "terminate-2"],
       },
     },
+    {
+      name: "anthropic-thinking-signature-round-trip",
+      trace: "anthropic-thinking-signature-round-trip.jsonl",
+      api: "anthropic-messages",
+      provider: "faux-anthropic",
+      systemPrompt: "Preserve signed thinking across the tool turn.",
+      prompt: user("Think, then echo signed."),
+      responses: [
+        assistant(
+          [
+            {
+              type: "thinking",
+              thinking: "signed private plan",
+              thinkingSignature: "anthropic-signature-fixture",
+            },
+            fauxToolCall("echo", { value: "signed" }, { id: "anthropic-signature-1" }),
+          ],
+          "toolUse",
+        ),
+        assistant("Signature preserved."),
+      ],
+      tools: [serializableTool(echoTool)],
+      runtimeTools: [echoTool],
+      toolExecution: "parallel",
+      toolBehavior: "echo",
+      tokenSize: { min: 64, max: 64 },
+      thinkingRoundTrip: {
+        thinking: "signed private plan",
+        signature: "anthropic-signature-fixture",
+      },
+      expected: {
+        providerCalls: 2,
+        pendingResponses: 0,
+        toolEndOrder: ["anthropic-signature-1"],
+        toolResultOrder: ["anthropic-signature-1"],
+      },
+    },
   ];
 }
 
@@ -347,12 +388,33 @@ async function runScenario(
   definition: ScenarioDefinition & { runtimeTools: any[] },
 ): Promise<{ lines: string[]; generated: GeneratedScenario }> {
   const core = upstream.createFauxCore({
-    api: "faux",
-    provider: "faux",
+    api: definition.api ?? "faux",
+    provider: definition.provider ?? "faux",
     tokensPerSecond: definition.tokensPerSecond,
     tokenSize: definition.tokenSize,
   });
-  core.setResponses(definition.responses);
+  if (definition.thinkingRoundTrip) {
+    const expected = definition.thinkingRoundTrip;
+    const finalResponse = definition.responses[1];
+    core.setResponses([
+      definition.responses[0],
+      (context: any) => {
+        const preserved = context.messages
+          .filter((message: any) => message.role === "assistant")
+          .flatMap((message: any) => message.content)
+          .find(
+            (block: any) =>
+              block.type === "thinking" &&
+              block.thinking === expected.thinking &&
+              block.thinkingSignature === expected.signature,
+          );
+        if (!preserved) throw new Error("Anthropic thinking signature was not preserved across turns");
+        return finalResponse;
+      },
+    ]);
+  } else {
+    core.setResponses(definition.responses);
+  }
 
   let releaseFirst: (() => void) | undefined;
   const firstMayFinish = new Promise<void>((resolve) => {

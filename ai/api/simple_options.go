@@ -9,10 +9,10 @@ import (
 )
 
 const (
-	contextSafetyTokens int64 = 4096
-	charsPerToken       int64 = 4
-	estimatedImageChars int64 = 4800
-	minimumMaxTokens    int64 = 1
+	contextSafetyTokens float64 = 4096
+	charsPerToken       int64   = 4
+	estimatedImageChars int64   = 4800
+	minimumMaxTokens    float64 = 1
 )
 
 type contextUsageEstimate struct {
@@ -36,11 +36,11 @@ func buildBaseStreamOptions(model *ai.Model, requestContext ai.Context, options 
 	return base
 }
 
-func clampMaxTokensToContext(model *ai.Model, requestContext ai.Context, maxTokens int64) int64 {
+func clampMaxTokensToContext(model *ai.Model, requestContext ai.Context, maxTokens float64) float64 {
 	if model.ContextWindow <= 0 {
 		return max(minimumMaxTokens, maxTokens)
 	}
-	available := model.ContextWindow - estimateContextTokens(requestContext).tokens - contextSafetyTokens
+	available := model.ContextWindow - float64(estimateContextTokens(requestContext).tokens) - contextSafetyTokens
 	return min(maxTokens, max(minimumMaxTokens, available))
 }
 
@@ -280,4 +280,42 @@ func simpleReasoningLevel(level ai.ModelThinkingLevel) *ai.ThinkingLevel {
 	}
 	value := ai.ThinkingLevel(level)
 	return &value
+}
+
+func adjustMaxTokensForThinking(
+	baseMaxTokens float64,
+	modelMaxTokens float64,
+	reasoning ai.ThinkingLevel,
+	custom *ai.ThinkingBudgets,
+) (maxTokens float64, thinkingBudget float64) {
+	budgets := map[ai.ThinkingLevel]float64{
+		ai.ThinkingMinimal: 1024,
+		ai.ThinkingLow:     2048,
+		ai.ThinkingMedium:  8192,
+		ai.ThinkingHigh:    16384,
+	}
+	if custom != nil {
+		if custom.Minimal != nil {
+			budgets[ai.ThinkingMinimal] = float64(*custom.Minimal)
+		}
+		if custom.Low != nil {
+			budgets[ai.ThinkingLow] = float64(*custom.Low)
+		}
+		if custom.Medium != nil {
+			budgets[ai.ThinkingMedium] = float64(*custom.Medium)
+		}
+		if custom.High != nil {
+			budgets[ai.ThinkingHigh] = float64(*custom.High)
+		}
+	}
+	level := reasoning
+	if level == ai.ThinkingXHigh || level == ai.ThinkingMax {
+		level = ai.ThinkingHigh
+	}
+	thinkingBudget = budgets[level]
+	maxTokens = min(baseMaxTokens+thinkingBudget, modelMaxTokens)
+	if maxTokens <= thinkingBudget {
+		thinkingBudget = max(float64(0), maxTokens-1024)
+	}
+	return maxTokens, thinkingBudget
 }

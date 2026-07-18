@@ -33,6 +33,36 @@ func Marshal(value any) ([]byte, error) {
 	return marshalJSON(value)
 }
 
+func (usage Usage) MarshalJSON() ([]byte, error) {
+	if usage.CacheWrite1h != nil {
+		return marshalJSON(struct {
+			Input        int64  `json:"input"`
+			Output       int64  `json:"output"`
+			CacheRead    int64  `json:"cacheRead"`
+			CacheWrite   int64  `json:"cacheWrite"`
+			TotalTokens  int64  `json:"totalTokens"`
+			Cost         Cost   `json:"cost"`
+			CacheWrite1h *int64 `json:"cacheWrite1h"`
+			Reasoning    *int64 `json:"reasoning,omitempty"`
+		}{
+			Input: usage.Input, Output: usage.Output, CacheRead: usage.CacheRead, CacheWrite: usage.CacheWrite,
+			TotalTokens: usage.TotalTokens, Cost: usage.Cost, CacheWrite1h: usage.CacheWrite1h, Reasoning: usage.Reasoning,
+		})
+	}
+	return marshalJSON(struct {
+		Input       int64  `json:"input"`
+		Output      int64  `json:"output"`
+		CacheRead   int64  `json:"cacheRead"`
+		CacheWrite  int64  `json:"cacheWrite"`
+		Reasoning   *int64 `json:"reasoning,omitempty"`
+		TotalTokens int64  `json:"totalTokens"`
+		Cost        Cost   `json:"cost"`
+	}{
+		Input: usage.Input, Output: usage.Output, CacheRead: usage.CacheRead, CacheWrite: usage.CacheWrite,
+		Reasoning: usage.Reasoning, TotalTokens: usage.TotalTokens, Cost: usage.Cost,
+	})
+}
+
 func UnmarshalMessage(data []byte) (Message, error) {
 	var header struct {
 		Role string `json:"role"`
@@ -419,13 +449,15 @@ func (content TextContent) MarshalJSON() ([]byte, error) {
 		Type          string          `json:"type"`
 		Text          json.RawMessage `json:"text"`
 		TextSignature json.RawMessage `json:"textSignature,omitempty"`
-	}{Type: "text", Text: text, TextSignature: signature})
+		Index         *int            `json:"index,omitempty"`
+	}{Type: "text", Text: text, TextSignature: signature, Index: content.Index})
 }
 
 func (content *TextContent) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		Text          json.RawMessage `json:"text"`
 		TextSignature json.RawMessage `json:"textSignature"`
+		Index         *int            `json:"index"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -438,7 +470,7 @@ func (content *TextContent) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	*content = TextContent{Text: text, TextSignature: signature}
+	*content = TextContent{Text: text, TextSignature: signature, Index: raw.Index}
 	return nil
 }
 
@@ -456,11 +488,13 @@ func (content ThinkingContent) MarshalJSON() ([]byte, error) {
 		Thinking          json.RawMessage `json:"thinking"`
 		ThinkingSignature json.RawMessage `json:"thinkingSignature,omitempty"`
 		Redacted          *bool           `json:"redacted,omitempty"`
+		Index             *int            `json:"index,omitempty"`
 	}{
 		Type:              "thinking",
 		Thinking:          thinking,
 		ThinkingSignature: signature,
 		Redacted:          content.Redacted,
+		Index:             content.Index,
 	})
 }
 
@@ -469,6 +503,7 @@ func (content *ThinkingContent) UnmarshalJSON(data []byte) error {
 		Thinking          json.RawMessage `json:"thinking"`
 		ThinkingSignature json.RawMessage `json:"thinkingSignature"`
 		Redacted          *bool           `json:"redacted"`
+		Index             *int            `json:"index"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -481,7 +516,7 @@ func (content *ThinkingContent) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	*content = ThinkingContent{Thinking: thinking, ThinkingSignature: signature, Redacted: raw.Redacted}
+	*content = ThinkingContent{Thinking: thinking, ThinkingSignature: signature, Redacted: raw.Redacted, Index: raw.Index}
 	return nil
 }
 
@@ -553,7 +588,7 @@ func (content ToolCall) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if content.PartialJSON != nil || content.PartialArgs != nil || content.StreamIndex != nil {
+	if content.PartialJSON != nil || content.PartialArgs != nil || content.StreamIndex != nil || content.Index != nil {
 		return marshalJSON(struct {
 			Type             string          `json:"type"`
 			ID               json.RawMessage `json:"id"`
@@ -562,6 +597,7 @@ func (content ToolCall) MarshalJSON() ([]byte, error) {
 			PartialJSON      json.RawMessage `json:"partialJson,omitempty"`
 			PartialArgs      json.RawMessage `json:"partialArgs,omitempty"`
 			StreamIndex      *int            `json:"streamIndex,omitempty"`
+			Index            *int            `json:"index,omitempty"`
 			ThoughtSignature json.RawMessage `json:"thoughtSignature,omitempty"`
 		}{
 			Type:             "toolCall",
@@ -571,6 +607,7 @@ func (content ToolCall) MarshalJSON() ([]byte, error) {
 			PartialJSON:      partialJSON,
 			PartialArgs:      partialArgs,
 			StreamIndex:      content.StreamIndex,
+			Index:            content.Index,
 			ThoughtSignature: thoughtSignature,
 		})
 	}
@@ -598,6 +635,7 @@ func (content *ToolCall) UnmarshalJSON(data []byte) error {
 		PartialJSON      json.RawMessage `json:"partialJson"`
 		PartialArgs      json.RawMessage `json:"partialArgs"`
 		StreamIndex      *int            `json:"streamIndex,omitempty"`
+		Index            *int            `json:"index,omitempty"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -629,6 +667,7 @@ func (content *ToolCall) UnmarshalJSON(data []byte) error {
 		PartialJSON:      partialJSON,
 		PartialArgs:      partialArgs,
 		StreamIndex:      raw.StreamIndex,
+		Index:            raw.Index,
 	}
 	if err := SetToolCallArgumentsJSON(content, raw.Arguments); err != nil {
 		return fmt.Errorf("tool call arguments: %w", err)

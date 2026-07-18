@@ -25,20 +25,23 @@ type f3Fixture struct {
 }
 
 type f3Case struct {
-	Name            string            `json:"name"`
-	Trace           string            `json:"trace"`
-	SystemPrompt    string            `json:"systemPrompt"`
-	Prompt          json.RawMessage   `json:"prompt"`
-	Responses       []json.RawMessage `json:"responses"`
-	Tools           []f3Tool          `json:"tools"`
-	ToolExecution   string            `json:"toolExecution"`
-	ToolBehavior    string            `json:"toolBehavior"`
-	TokensPerSecond float64           `json:"tokensPerSecond"`
-	TokenSize       f3TokenSize       `json:"tokenSize"`
-	Steering        *f3Steering       `json:"steering"`
-	Abort           *f3Abort          `json:"abort"`
-	Expected        f3Expected        `json:"expected"`
-	EventCount      int               `json:"eventCount"`
+	Name              string               `json:"name"`
+	Trace             string               `json:"trace"`
+	API               ai.API               `json:"api"`
+	Provider          ai.ProviderID        `json:"provider"`
+	SystemPrompt      string               `json:"systemPrompt"`
+	Prompt            json.RawMessage      `json:"prompt"`
+	Responses         []json.RawMessage    `json:"responses"`
+	Tools             []f3Tool             `json:"tools"`
+	ToolExecution     string               `json:"toolExecution"`
+	ToolBehavior      string               `json:"toolBehavior"`
+	TokensPerSecond   float64              `json:"tokensPerSecond"`
+	TokenSize         f3TokenSize          `json:"tokenSize"`
+	Steering          *f3Steering          `json:"steering"`
+	Abort             *f3Abort             `json:"abort"`
+	ThinkingRoundTrip *f3ThinkingRoundTrip `json:"thinkingRoundTrip"`
+	Expected          f3Expected           `json:"expected"`
+	EventCount        int                  `json:"eventCount"`
 }
 
 type f3Tool struct {
@@ -62,6 +65,11 @@ type f3Abort struct {
 	Trigger string `json:"trigger"`
 }
 
+type f3ThinkingRoundTrip struct {
+	Thinking  string `json:"thinking"`
+	Signature string `json:"signature"`
+}
+
 type f3Expected struct {
 	ProviderCalls    int64    `json:"providerCalls"`
 	PendingResponses int      `json:"pendingResponses"`
@@ -77,7 +85,7 @@ func TestF3AgentLoopMatchesUpstream(t *testing.T) {
 
 	var fixture f3Fixture
 	runner.LoadJSON(t, "F3", "cases.json", &fixture)
-	if fixture.SchemaVersion != 1 || len(fixture.Cases) != 6 {
+	if fixture.SchemaVersion != 1 || len(fixture.Cases) != 7 {
 		t.Fatalf("F3 fixture header = version %d, cases %d", fixture.SchemaVersion, len(fixture.Cases))
 	}
 
@@ -103,11 +111,43 @@ func runF3Case(t *testing.T, fixedNow int64, fixtureCase f3Case) {
 		normalizeF3ToolArguments(t, assistantMessage)
 		responses[index] = assistantMessage
 	}
-
+	if fixtureCase.ThinkingRoundTrip != nil {
+		if len(responses) < 2 {
+			t.Fatal("thinking round-trip fixture needs two responses")
+		}
+		finalResponse, ok := responses[1].(*ai.AssistantMessage)
+		if !ok {
+			t.Fatalf("thinking round-trip response has type %T", responses[1])
+		}
+		expected := *fixtureCase.ThinkingRoundTrip
+		responses[1] = faux.Factory(func(_ context.Context, requestContext ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+			for _, message := range requestContext.Messages {
+				assistantMessage, ok := message.(*ai.AssistantMessage)
+				if !ok {
+					continue
+				}
+				for _, content := range assistantMessage.Content {
+					thinking, ok := content.(*ai.ThinkingContent)
+					if ok && thinking.Thinking == expected.Thinking && thinking.ThinkingSignature != nil && *thinking.ThinkingSignature == expected.Signature {
+						return finalResponse, nil
+					}
+				}
+			}
+			return nil, errors.New("Anthropic thinking signature was not preserved across turns")
+		})
+	}
 	minTokenSize, maxTokenSize := fixtureCase.TokenSize.Min, fixtureCase.TokenSize.Max
+	apiName := fixtureCase.API
+	if apiName == "" {
+		apiName = "faux"
+	}
+	providerName := fixtureCase.Provider
+	if providerName == "" {
+		providerName = "faux"
+	}
 	provider := faux.New(faux.Options{
-		API:             "faux",
-		Provider:        "faux",
+		API:             apiName,
+		Provider:        providerName,
 		TokensPerSecond: fixtureCase.TokensPerSecond,
 		TokenSize: faux.TokenSize{
 			Min: &minTokenSize,

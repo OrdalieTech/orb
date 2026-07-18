@@ -90,3 +90,9 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/coding-agent/src/cli/list-models.ts`, `args.ts`, `packages/coding-agent/src/package-manager-cli.ts` | `cmd/pi/models.go`, `cmd/pi/models_test.go`, `cmd/pi/args.go`, `cmd/pi/main.go`, `cmd/pi/runtime.go` | WP-250 |
 | `packages/coding-agent/src/core/model-runtime.ts` (request-time configured model headers) | `agent/types.go`, `agent/agent.go`, `agent/loop.go`, `agent/loop_test.go`, `codingagent/config/model_config.go`, `cmd/pi/runtime.go` | WP-250 |
 | Model pattern, list-table, numeric model limits, and docs-example behavior | `conformance/extract/wp250-models.ts`, `conformance/fixtures/WP250/`, `conformance/runner/wp250_fractional_numbers_test.go` | WP-250 |
+| `packages/ai/src/api/anthropic-messages.ts` | `ai/api/anthropicmessages.go`, `ai/api/anthropicmessages_test.go`, `ai/api/anthropic_live_test.go`, `ai/api/simple_options.go`, `ai/api/stream_simple.go` | WP-210 |
+| `packages/ai/src/types.ts` (Anthropic streaming indexes and usage insertion order) | `ai/types.go`, `ai/json.go` | WP-210 |
+| `packages/ai/src/providers/anthropic.ts`, `packages/ai/src/auth/helpers.ts` | `ai/providers/anthropic.go`, `ai/providers/anthropic_test.go`, `ai/providers/openai.go` | WP-210 |
+| `packages/ai/test/anthropic-sse-parsing.test.ts`, `packages/ai/src/utils/json-parse.ts` | `internal/partialjson/stringify.go`, `internal/partialjson/partialjson_test.go` | WP-210 |
+| `packages/ai/src/utils/headers.ts` (provider response header records) | `ai/api/openai_common.go`, `ai/api/openai_common_test.go` | WP-210 |
+| Anthropic adapter request/stream behavior and agent-loop signed-thinking replay | `conformance/extract/f2-anthropic.ts`, `conformance/extract/f2-openai.ts`, `conformance/extract/f3-agent.ts`, `conformance/fixtures/F2/`, `conformance/fixtures/F3/anthropic-thinking-signature-round-trip.jsonl`, `ai/api/conformance_test.go`, `conformance/runner/f3_agent_test.go` | WP-210 |
