@@ -15,21 +15,37 @@ import (
 	"github.com/OrdalieTech/pi-go/ai"
 	aiapi "github.com/OrdalieTech/pi-go/ai/api"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
+	"github.com/OrdalieTech/pi-go/codingagent/extensions"
 	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
 	"github.com/OrdalieTech/pi-go/internal/jsonwire"
 )
 
 type SessionRuntimeConfig struct {
-	Agent           *agent.Agent
-	SessionManager  *sessionstore.SessionManager
-	Settings        *config.SettingsManager
-	StreamFn        agent.StreamFn
-	GetAPIKey       agent.GetAPIKeyFunc
-	GetRequestAuth  agent.GetRequestAuthFunc
-	GetModelHeaders agent.GetModelHeadersFunc
-	Complete        harness.CompleteFunc
-	Sleep           func(context.Context, time.Duration) error
-	Clock           func() int64
+	Agent                  *agent.Agent
+	SessionManager         *sessionstore.SessionManager
+	Settings               *config.SettingsManager
+	StreamFn               agent.StreamFn
+	GetAPIKey              agent.GetAPIKeyFunc
+	GetRequestAuth         agent.GetRequestAuthFunc
+	GetModelHeaders        agent.GetModelHeadersFunc
+	AvailableModels        func() []ai.Model
+	ScopedModels           []ScopedModel
+	Complete               harness.CompleteFunc
+	Sleep                  func(context.Context, time.Duration) error
+	Clock                  func() int64
+	SlashResolver          *SlashResolver
+	ExtensionRegistry      *extensions.Registry
+	ExtensionMode          extensions.Mode
+	ExtensionUI            extensions.UI
+	ExtensionErrorHandler  func(extensions.ExtensionError)
+	ModelRegistry          extensions.ModelRegistry
+	RegisterProvider       func(extensions.Provider) error
+	UnregisterProvider     func(string) error
+	BaseTools              []agent.AgentTool
+	InitialActiveToolNames []string
+	AllowedToolNames       *[]string
+	ExcludedToolNames      []string
+	SystemPromptOptions    *SystemPromptOptions
 }
 
 type SessionRuntime struct {
@@ -52,9 +68,19 @@ type SessionRuntime struct {
 	compactionCancel     context.CancelFunc
 	autoCompactionCancel context.CancelFunc
 	branchCancel         context.CancelFunc
+	bashCancel           context.CancelFunc
+	pendingBash          []harness.BashExecutionMessage
+	autoCompaction       bool
+	autoRetry            bool
+	availableModels      func() []ai.Model
+	scopedModels         []ScopedModel
+	getAPIKey            agent.GetAPIKeyFunc
+	getRequestAuth       agent.GetRequestAuthFunc
 	unsubscribeAgent     func()
+	slashResolver        *SlashResolver
 	activeRuns           int
 	idleWait             chan struct{}
+	extensionState       *extensionRuntimeState
 }
 
 type sessionListener struct {
@@ -149,9 +175,18 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 		agent: runtimeConfig.Agent, manager: runtimeConfig.SessionManager,
 		settings: runtimeConfig.Settings, complete: complete, sleep: sleep, clock: clock,
 		listeners: []sessionListener{}, steering: []string{}, followUps: []string{},
+		autoCompaction:  runtimeConfig.Settings.GetCompactionSettings().Enabled,
+		autoRetry:       runtimeConfig.Settings.GetRetrySettings().Enabled,
+		availableModels: runtimeConfig.AvailableModels, getAPIKey: runtimeConfig.GetAPIKey,
+		getRequestAuth: runtimeConfig.GetRequestAuth,
+		scopedModels:   append([]ScopedModel(nil), runtimeConfig.ScopedModels...),
+		slashResolver:  runtimeConfig.SlashResolver,
 	}
 	runtime.agent.SetSteeringMode(agent.QueueMode(runtime.settings.GetSteeringMode()))
 	runtime.agent.SetFollowUpMode(agent.QueueMode(runtime.settings.GetFollowUpMode()))
+	if runtimeConfig.ExtensionRegistry != nil && runtimeConfig.ExtensionRegistry.Len() > 0 {
+		runtime.bindExtensions(runtimeConfig)
+	}
 	runtime.unsubscribeAgent = runtime.agent.Subscribe(runtime.handleAgentEvent)
 	return runtime, nil
 }
@@ -217,9 +252,11 @@ func (runtime *SessionRuntime) Dispose() {
 	if runtime == nil {
 		return
 	}
+	runtime.disposeExtensions()
 	runtime.Abort()
 	runtime.AbortCompaction()
 	runtime.AbortBranchSummary()
+	runtime.AbortBash()
 	runtime.disconnectFromAgent()
 	runtime.mu.Lock()
 	runtime.listeners = nil
@@ -253,15 +290,30 @@ func (runtime *SessionRuntime) Prompt(ctx context.Context, input any, images ...
 	if runtime == nil {
 		return errors.New("codingagent: nil session runtime")
 	}
-	if ctx == nil {
-		ctx = context.Background()
+	if text, ok := input.(string); ok && runtime.extensionState != nil {
+		return runtime.promptExtensionInput(ctx, text, images, extensions.InputInteractive, true, nil, true)
 	}
-	return runtime.runPolicies(ctx, func() error {
-		if lastAssistant := runtime.findLastAssistant(); lastAssistant != nil {
-			_, _ = runtime.checkCompaction(ctx, lastAssistant, false)
+	if err := runtime.PromptPreflight(ctx); err != nil {
+		return err
+	}
+	return runtime.PromptAfterPreflight(ctx, input, images...)
+}
+
+func (runtime *SessionRuntime) PromptAfterPreflight(ctx context.Context, input any, images ...*ai.ImageContent) error {
+	if runtime == nil {
+		return errors.New("codingagent: nil session runtime")
+	}
+	if text, ok := input.(string); ok && runtime.extensionState != nil {
+		return runtime.promptExtensionInput(ctx, text, images, extensions.InputInteractive, true, nil, false)
+	}
+	if text, ok := input.(string); ok && runtime.slashResolver != nil {
+		expanded, handled := runtime.slashResolver.ResolvePrompt(text)
+		if handled {
+			return nil
 		}
-		return runtime.agent.Prompt(ctx, input, images...)
-	})
+		input = expanded
+	}
+	return runtime.runPolicies(ctx, func() error { return runtime.agent.Prompt(ctx, input, images...) })
 }
 
 func (runtime *SessionRuntime) Continue(ctx context.Context) error {
@@ -271,22 +323,63 @@ func (runtime *SessionRuntime) Continue(ctx context.Context) error {
 	return runtime.runPolicies(ctx, func() error { return runtime.agent.Continue(ctx) })
 }
 
-func (runtime *SessionRuntime) Steer(text string) {
-	message := runtime.queuedUserMessage(text)
+func (runtime *SessionRuntime) Steer(text string) error {
+	return runtime.SteerImages(text, nil)
+}
+
+func (runtime *SessionRuntime) SteerImages(text string, images []*ai.ImageContent) error {
+	if runtime == nil {
+		return errors.New("codingagent: nil session runtime")
+	}
+	if runtime.slashResolver != nil {
+		var err error
+		text, err = runtime.slashResolver.ExpandQueued(text)
+		if err != nil {
+			return err
+		}
+	}
+	message := userMessageWithImagesAt(text, images, runtime.clock())
 	runtime.mu.Lock()
 	runtime.steering = append(runtime.steering, text)
 	runtime.mu.Unlock()
 	runtime.agent.Steer(message)
 	runtime.emitQueueUpdate()
+	return nil
 }
 
-func (runtime *SessionRuntime) FollowUp(text string) {
-	message := runtime.queuedUserMessage(text)
+func (runtime *SessionRuntime) FollowUp(text string) error {
+	return runtime.FollowUpImages(text, nil)
+}
+
+func (runtime *SessionRuntime) FollowUpImages(text string, images []*ai.ImageContent) error {
+	if runtime == nil {
+		return errors.New("codingagent: nil session runtime")
+	}
+	if runtime.slashResolver != nil {
+		var err error
+		text, err = runtime.slashResolver.ExpandQueued(text)
+		if err != nil {
+			return err
+		}
+	}
+	message := userMessageWithImagesAt(text, images, runtime.clock())
 	runtime.mu.Lock()
 	runtime.followUps = append(runtime.followUps, text)
 	runtime.mu.Unlock()
 	runtime.agent.FollowUp(message)
 	runtime.emitQueueUpdate()
+	return nil
+}
+
+func (runtime *SessionRuntime) Commands() []SlashCommandInfo {
+	if runtime == nil {
+		return []SlashCommandInfo{}
+	}
+	runtime.syncExtensionCommands()
+	if runtime.slashResolver == nil {
+		return []SlashCommandInfo{}
+	}
+	return runtime.slashResolver.Commands(runtime.settings.GetEnableSkillCommands())
 }
 
 func (runtime *SessionRuntime) State() agent.AgentState {
@@ -375,7 +468,7 @@ func (runtime *SessionRuntime) WaitForIdle(ctx context.Context) error {
 	return runtime.agent.WaitForIdle(ctx)
 }
 
-func (runtime *SessionRuntime) runPolicies(ctx context.Context, start func() error) error {
+func (runtime *SessionRuntime) runPolicies(ctx context.Context, start func() error) (err error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -383,8 +476,14 @@ func (runtime *SessionRuntime) runPolicies(ctx context.Context, start func() err
 		return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.") //nolint:staticcheck // Upstream session error is observable.
 	}
 	defer func() {
+		runtime.clearExtensionTurnState()
+		flushErr := runtime.flushPendingBash()
+		runtime.emitExtensionSettled(ctx)
 		runtime.emit(AgentSettledEvent{})
 		runtime.endRun()
+		if err == nil && flushErr != nil {
+			err = flushErr
+		}
 	}()
 	if err := start(); err != nil {
 		return err
@@ -451,6 +550,7 @@ func (runtime *SessionRuntime) handleAgentEvent(ctx context.Context, event agent
 			}
 		}
 	}
+	event = runtime.extensionLifecycleEvent(ctx, event)
 	if ended, ok := event.(agent.AgentEndEvent); ok {
 		runtime.emit(SessionAgentEndEvent{Messages: ended.Messages, WillRetry: runtime.willRetry(ended.Messages)})
 	} else {
@@ -527,7 +627,7 @@ func (runtime *SessionRuntime) persistMessage(message agent.AgentMessage) error 
 
 func (runtime *SessionRuntime) prepareRetry(ctx context.Context, message *ai.AssistantMessage) (bool, error) {
 	settings := runtime.settings.GetRetrySettings()
-	if !settings.Enabled {
+	if !runtime.autoRetryEnabled() {
 		return false, nil
 	}
 	runtime.mu.Lock()
@@ -569,7 +669,7 @@ func (runtime *SessionRuntime) willRetry(messages agent.AgentMessages) bool {
 	runtime.mu.Lock()
 	attempt := runtime.retryAttempt
 	runtime.mu.Unlock()
-	if !settings.Enabled || attempt >= settings.MaxRetries {
+	if !runtime.autoRetryEnabled() || attempt >= settings.MaxRetries {
 		return false
 	}
 	for index := len(messages) - 1; index >= 0; index-- {
@@ -591,7 +691,7 @@ func (runtime *SessionRuntime) isRetryable(message *ai.AssistantMessage) bool {
 
 func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.AssistantMessage, skipAbortedCheck bool) (bool, error) {
 	settings := runtime.settings.GetCompactionSettings()
-	if !settings.Enabled || (skipAbortedCheck && message.StopReason == ai.StopReasonAborted) {
+	if !runtime.autoCompactionEnabled() || (skipAbortedCheck && message.StopReason == ai.StopReasonAborted) {
 		return false, nil
 	}
 	state := runtime.agent.State()
@@ -637,7 +737,7 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 		contextTokens = estimate.Tokens
 	}
 	if harness.ShouldCompact(contextTokens, state.Model.ContextWindow, harness.CompactionSettings{
-		Enabled: settings.Enabled, ReserveTokens: settings.ReserveTokens, KeepRecentTokens: settings.KeepRecentTokens,
+		Enabled: runtime.autoCompactionEnabled(), ReserveTokens: settings.ReserveTokens, KeepRecentTokens: settings.KeepRecentTokens,
 	}) {
 		return runtime.runAutoCompaction(ctx, "threshold", false)
 	}
@@ -646,8 +746,9 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 
 func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason string, willRetry bool) (bool, error) {
 	settings := runtime.settings.GetCompactionSettings()
-	preparation, err := harness.PrepareCompaction(projectSessionEntries(runtime.manager.GetBranch()), harness.CompactionSettings{
-		Enabled: settings.Enabled, ReserveTokens: settings.ReserveTokens, KeepRecentTokens: settings.KeepRecentTokens,
+	branch := runtime.manager.GetBranch()
+	preparation, err := harness.PrepareCompaction(projectSessionEntries(branch), harness.CompactionSettings{
+		Enabled: runtime.autoCompactionEnabled(), ReserveTokens: settings.ReserveTokens, KeepRecentTokens: settings.KeepRecentTokens,
 	})
 	if err != nil || preparation == nil {
 		return false, err
@@ -663,10 +764,21 @@ func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason str
 		runtime.autoCompactionCancel = nil
 		runtime.mu.Unlock()
 	}()
-	result, compactErr := harness.Compact(compactionContext, preparation, runtime.agent.State().Model, runtime.complete, "", runtime.agent.State().ThinkingLevel)
+	result, fromExtension, extensionCancelled := runtime.beforeExtensionCompaction(
+		compactionContext, preparation, branch, nil, extensions.CompactionReason(reason), willRetry,
+	)
+	var compactErr error
+	if extensionCancelled {
+		compactErr = context.Canceled
+	} else if result == nil {
+		result, compactErr = harness.Compact(compactionContext, preparation, runtime.agent.State().Model, runtime.complete, "", runtime.agent.State().ThinkingLevel)
+	}
 	wasCancelled := compactionContext.Err() != nil
+	if compactErr == nil && wasCancelled {
+		compactErr = context.Canceled
+	}
 	if compactErr != nil {
-		if errors.Is(compactErr, context.Canceled) || wasCancelled {
+		if extensionCancelled || errors.Is(compactErr, context.Canceled) || wasCancelled {
 			runtime.emit(CompactionEndEvent{Reason: reason, Aborted: true})
 			return false, nil
 		}
@@ -677,16 +789,18 @@ func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason str
 		runtime.emit(CompactionEndEvent{Reason: reason, ErrorMessage: &message})
 		return false, nil
 	}
-	if wasCancelled {
-		runtime.emit(CompactionEndEvent{Reason: reason, Aborted: true})
-		return false, nil
+	fields := sessionstore.OptionalEntryFields{Details: result.Details, HasDetails: true}
+	if runtime.extensionState != nil {
+		fields.FromHook = &fromExtension
 	}
-	if _, err := runtime.manager.AppendCompaction(result.Summary, result.FirstKeptEntryID, result.TokensBefore, sessionstore.OptionalEntryFields{Details: result.Details, HasDetails: true}); err != nil {
+	entryID, err := runtime.manager.AppendCompaction(result.Summary, result.FirstKeptEntryID, result.TokensBefore, fields)
+	if err != nil {
 		message := "Auto-compaction failed: " + err.Error()
 		runtime.emit(CompactionEndEvent{Reason: reason, ErrorMessage: &message})
 		return false, err
 	}
 	runtime.syncAgentMessages()
+	runtime.emitExtensionCompaction(compactionContext, entryID, fromExtension, extensions.CompactionReason(reason), willRetry)
 	result.EstimatedTokensAfter = estimateAllTokens(runtime.agent.State().Messages)
 	runtime.emit(CompactionEndEvent{Reason: reason, Result: result, WillRetry: willRetry})
 	if willRetry {
@@ -724,6 +838,12 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 		runtime.mu.Unlock()
 	}()
 	runtime.emit(CompactionStartEvent{Reason: "manual"})
+	if runtime.agent.State().Model == nil {
+		err := noModelSelectedError()
+		message := "Compaction failed: " + err.Error()
+		runtime.emit(CompactionEndEvent{Reason: "manual", ErrorMessage: &message})
+		return nil, err
+	}
 	settings := runtime.settings.GetCompactionSettings()
 	branch := runtime.manager.GetBranch()
 	preparation, err := harness.PrepareCompaction(projectSessionEntries(branch), harness.CompactionSettings{
@@ -741,7 +861,22 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 		runtime.emit(CompactionEndEvent{Reason: "manual", ErrorMessage: &message})
 		return nil, err
 	}
-	result, err := harness.Compact(compactionContext, preparation, runtime.agent.State().Model, runtime.complete, customInstructions, runtime.agent.State().ThinkingLevel)
+	var customInstructionsValue *string
+	if customInstructions != "" {
+		customInstructionsValue = &customInstructions
+	}
+	result, fromExtension, extensionCancelled := runtime.beforeExtensionCompaction(
+		compactionContext, preparation, branch, customInstructionsValue, extensions.CompactionManual, false,
+	)
+	if extensionCancelled {
+		err = errors.New("Compaction cancelled")
+	} else if result == nil {
+		result, err = harness.Compact(compactionContext, preparation, runtime.agent.State().Model, runtime.complete, customInstructions, runtime.agent.State().ThinkingLevel)
+	}
+	if err == nil && compactionContext.Err() != nil {
+		runtime.emit(CompactionEndEvent{Reason: "manual", Aborted: true})
+		return nil, errors.New("Compaction cancelled")
+	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) || compactionContext.Err() != nil || err.Error() == "Compaction cancelled" {
 			runtime.emit(CompactionEndEvent{Reason: "manual", Aborted: true})
@@ -751,19 +886,77 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 		runtime.emit(CompactionEndEvent{Reason: "manual", ErrorMessage: &message})
 		return nil, err
 	}
-	if compactionContext.Err() != nil {
-		runtime.emit(CompactionEndEvent{Reason: "manual", Aborted: true})
-		return nil, errors.New("Compaction cancelled")
+	fields := sessionstore.OptionalEntryFields{Details: result.Details, HasDetails: true}
+	if runtime.extensionState != nil {
+		fields.FromHook = &fromExtension
 	}
-	if _, err := runtime.manager.AppendCompaction(result.Summary, result.FirstKeptEntryID, result.TokensBefore, sessionstore.OptionalEntryFields{Details: result.Details, HasDetails: true}); err != nil {
+	entryID, err := runtime.manager.AppendCompaction(result.Summary, result.FirstKeptEntryID, result.TokensBefore, fields)
+	if err != nil {
 		message := "Compaction failed: " + err.Error()
 		runtime.emit(CompactionEndEvent{Reason: "manual", ErrorMessage: &message})
 		return nil, err
 	}
 	runtime.syncAgentMessages()
+	runtime.emitExtensionCompaction(compactionContext, entryID, fromExtension, extensions.CompactionManual, false)
 	result.EstimatedTokensAfter = estimateAllTokens(runtime.agent.State().Messages)
 	runtime.emit(CompactionEndEvent{Reason: "manual", Result: result})
 	return result, nil
+}
+
+func (runtime *SessionRuntime) beforeExtensionCompaction(
+	ctx context.Context,
+	preparation *harness.CompactionPreparation,
+	branch []sessionstore.SessionEntry,
+	customInstructions *string,
+	reason extensions.CompactionReason,
+	willRetry bool,
+) (*harness.CompactionResult, bool, bool) {
+	state := runtime.extensionState
+	if state == nil || state.runner == nil || !state.runner.HasHandlers(extensions.EventSessionBeforeCompact) {
+		return nil, false, false
+	}
+	raw := state.runner.Emit(ctx, extensions.SessionBeforeCompactEvent{
+		Preparation: *preparation, BranchEntries: branch, CustomInstructions: customInstructions,
+		Reason: reason, WillRetry: willRetry, Signal: ctx,
+	})
+	var result *extensions.SessionBeforeCompactResult
+	switch value := raw.(type) {
+	case extensions.SessionBeforeCompactResult:
+		result = &value
+	case *extensions.SessionBeforeCompactResult:
+		result = value
+	}
+	if result == nil {
+		return nil, false, false
+	}
+	if result.Cancel {
+		return nil, false, true
+	}
+	if result.Compaction == nil {
+		return nil, false, false
+	}
+	copy := *result.Compaction
+	return &copy, true, false
+}
+
+func (runtime *SessionRuntime) emitExtensionCompaction(
+	ctx context.Context,
+	entryID string,
+	fromExtension bool,
+	reason extensions.CompactionReason,
+	willRetry bool,
+) {
+	state := runtime.extensionState
+	if state == nil || state.runner == nil || !state.runner.HasHandlers(extensions.EventSessionCompact) {
+		return
+	}
+	entry := runtime.manager.GetEntry(entryID)
+	if entry == nil {
+		return
+	}
+	state.runner.Emit(ctx, extensions.SessionCompactEvent{
+		CompactionEntry: *entry, FromExtension: fromExtension, Reason: reason, WillRetry: willRetry,
+	})
 }
 
 func (runtime *SessionRuntime) GetContextUsage() *harness.ContextUsage {
@@ -813,7 +1006,8 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 	if target == nil {
 		return NavigateTreeResult{}, fmt.Errorf("Entry %s not found", targetID)
 	}
-	collected, err := harness.CollectEntriesForBranchSummary(projectSessionEntries(runtime.manager.GetEntries()), oldLeaf, targetID)
+	entries := runtime.manager.GetEntries()
+	collected, err := harness.CollectEntriesForBranchSummary(projectSessionEntries(entries), oldLeaf, targetID)
 	if err != nil {
 		return NavigateTreeResult{}, err
 	}
@@ -829,12 +1023,68 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 	}()
 
 	var summary string
-	var details harness.BranchSummaryDetails
-	if options.Summarize && len(collected.Entries) > 0 {
+	var details any = harness.BranchSummaryDetails{}
+	fromExtension := false
+	customInstructions := options.CustomInstructions
+	replaceInstructions := options.ReplaceInstructions
+	label := options.Label
+	if state := runtime.extensionState; state != nil && state.runner != nil && state.runner.HasHandlers(extensions.EventSessionBeforeTree) {
+		entriesByID := make(map[string]sessionstore.SessionEntry, len(entries))
+		for _, entry := range entries {
+			entriesByID[entry.ID] = entry
+		}
+		entriesToSummarize := make([]sessionstore.SessionEntry, 0, len(collected.Entries))
+		for _, entry := range collected.Entries {
+			entriesToSummarize = append(entriesToSummarize, entriesByID[entry.ID])
+		}
+		var customInstructionsValue *string
+		if customInstructions != "" {
+			customInstructionsValue = &customInstructions
+		}
+		var labelValue *string
+		if label != "" {
+			labelValue = &label
+		}
+		raw := state.runner.Emit(branchContext, extensions.SessionBeforeTreeEvent{
+			Preparation: extensions.TreePreparation{
+				TargetID: targetID, OldLeafID: oldLeaf, CommonAncestorID: collected.CommonAncestorID,
+				EntriesToSummarize: entriesToSummarize, UserWantsSummary: options.Summarize,
+				CustomInstructions: customInstructionsValue, ReplaceInstructions: replaceInstructions, Label: labelValue,
+			},
+			Signal: branchContext,
+		})
+		var hookResult *extensions.SessionBeforeTreeResult
+		switch value := raw.(type) {
+		case extensions.SessionBeforeTreeResult:
+			hookResult = &value
+		case *extensions.SessionBeforeTreeResult:
+			hookResult = value
+		}
+		if hookResult != nil {
+			if hookResult.Cancel {
+				return NavigateTreeResult{Cancelled: true}, nil
+			}
+			if hookResult.Summary != nil && options.Summarize {
+				summary = hookResult.Summary.Summary
+				details = hookResult.Summary.Details
+				fromExtension = true
+			}
+			if hookResult.CustomInstructions != nil {
+				customInstructions = *hookResult.CustomInstructions
+			}
+			if hookResult.ReplaceInstructions != nil {
+				replaceInstructions = *hookResult.ReplaceInstructions
+			}
+			if hookResult.Label != nil {
+				label = *hookResult.Label
+			}
+		}
+	}
+	if options.Summarize && len(collected.Entries) > 0 && !fromExtension {
 		settings := runtime.settings.GetBranchSummarySettings()
 		result, summaryErr := harness.GenerateBranchSummary(branchContext, collected.Entries, harness.GenerateBranchSummaryOptions{
 			Model: runtime.agent.State().Model, Complete: runtime.complete,
-			CustomInstructions: options.CustomInstructions, ReplaceInstructions: options.ReplaceInstructions,
+			CustomInstructions: customInstructions, ReplaceInstructions: replaceInstructions,
 			ReserveTokens: &settings.ReserveTokens,
 		})
 		if summaryErr != nil {
@@ -865,13 +1115,17 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 	}
 	var summaryEntry *sessionstore.SessionEntry
 	if summary != "" {
-		summaryID, branchErr := runtime.manager.BranchWithSummary(newLeaf, summary, sessionstore.OptionalEntryFields{Details: details, HasDetails: true})
+		fields := sessionstore.OptionalEntryFields{Details: details, HasDetails: true}
+		if runtime.extensionState != nil {
+			fields.FromHook = &fromExtension
+		}
+		summaryID, branchErr := runtime.manager.BranchWithSummary(newLeaf, summary, fields)
 		if branchErr != nil {
 			return NavigateTreeResult{}, branchErr
 		}
 		summaryEntry = runtime.manager.GetEntry(summaryID)
-		if options.Label != "" {
-			if _, labelErr := runtime.manager.AppendLabelChange(summaryID, &options.Label); labelErr != nil {
+		if label != "" {
+			if _, labelErr := runtime.manager.AppendLabelChange(summaryID, &label); labelErr != nil {
 				return NavigateTreeResult{}, labelErr
 			}
 		}
@@ -880,12 +1134,21 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 	} else if err := runtime.manager.Branch(*newLeaf); err != nil {
 		return NavigateTreeResult{}, err
 	}
-	if options.Label != "" && summary == "" {
-		if _, err := runtime.manager.AppendLabelChange(targetID, &options.Label); err != nil {
+	if label != "" && summary == "" {
+		if _, err := runtime.manager.AppendLabelChange(targetID, &label); err != nil {
 			return NavigateTreeResult{}, err
 		}
 	}
 	runtime.syncAgentMessages()
+	if state := runtime.extensionState; state != nil && state.runner != nil && state.runner.HasHandlers(extensions.EventSessionTree) {
+		var fromExtensionValue *bool
+		if summary != "" {
+			fromExtensionValue = &fromExtension
+		}
+		state.runner.Emit(branchContext, extensions.SessionTreeEvent{
+			NewLeafID: runtime.manager.GetLeafID(), OldLeafID: oldLeaf, SummaryEntry: summaryEntry, FromExtension: fromExtensionValue,
+		})
+	}
 	return NavigateTreeResult{EditorText: editorText, SummaryEntry: summaryEntry}, nil
 }
 
@@ -955,16 +1218,6 @@ func (runtime *SessionRuntime) takeLastAssistant() *ai.AssistantMessage {
 	message := runtime.lastAssistant
 	runtime.lastAssistant = nil
 	return message
-}
-
-func (runtime *SessionRuntime) findLastAssistant() *ai.AssistantMessage {
-	messages := runtime.agent.State().Messages
-	for index := len(messages) - 1; index >= 0; index-- {
-		if assistant := asAssistant(messages[index]); assistant != nil {
-			return assistant
-		}
-	}
-	return nil
 }
 
 func (runtime *SessionRuntime) dropLastAssistant() {
@@ -1039,11 +1292,22 @@ func asAssistant(message agent.AgentMessage) *ai.AssistantMessage {
 }
 
 func userMessage(text string) *ai.UserMessage {
-	return &ai.UserMessage{Content: ai.NewUserContent(&ai.TextContent{Text: text}), Timestamp: time.Now().UnixMilli()}
+	return userMessageWithImages(text, nil)
 }
 
-func (runtime *SessionRuntime) queuedUserMessage(text string) *ai.UserMessage {
-	return &ai.UserMessage{Content: ai.NewUserContent(&ai.TextContent{Text: text}), Timestamp: runtime.clock()}
+func userMessageWithImages(text string, images []*ai.ImageContent) *ai.UserMessage {
+	return userMessageWithImagesAt(text, images, time.Now().UnixMilli())
+}
+
+func userMessageWithImagesAt(text string, images []*ai.ImageContent, timestamp int64) *ai.UserMessage {
+	blocks := ai.UserContentBlocks{&ai.TextContent{Text: text}}
+	for _, image := range images {
+		if image != nil {
+			copy := *image
+			blocks = append(blocks, &copy)
+		}
+	}
+	return &ai.UserMessage{Content: ai.NewUserContent(blocks...), Timestamp: timestamp}
 }
 
 func userMessageText(message agent.AgentMessage) string {

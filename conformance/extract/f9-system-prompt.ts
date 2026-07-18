@@ -6,6 +6,13 @@ import { pathToFileURL } from "node:url";
 import { withUpstreamModelData } from "./upstream-model-data.ts";
 
 type ContextFile = { path: string; content: string };
+type PromptSkill = {
+  name: string;
+  description: string;
+  filePath: string;
+  baseDir: string;
+  disableModelInvocation: boolean;
+};
 
 const contextFileCandidates = ["AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"];
 
@@ -19,6 +26,7 @@ type PromptCase = {
     appendSystemPrompt?: string;
     cwd: string;
     contextFiles?: ContextFile[];
+    skills?: PromptSkill[];
   };
   expected?: string;
 };
@@ -97,6 +105,31 @@ const promptCases: PromptCase[] = [
       toolSnippets: { bash: "Execute bash commands" },
       cwd: "/fixture/empty-custom",
       contextFiles: [],
+    },
+  },
+  {
+    name: "skills-progressive-disclosure",
+    input: {
+      selectedTools: ["read"],
+      toolSnippets: { read: "Read file contents" },
+      cwd: "/fixture/skills",
+      contextFiles: [],
+      skills: [
+        {
+          name: "review<&\"'",
+          description: "Review <files> & report \"findings\".",
+          filePath: "/fixture/skills/review<&\"'/SKILL.md",
+          baseDir: "/fixture/skills/review<&\"'",
+          disableModelInvocation: false,
+        },
+        {
+          name: "hidden",
+          description: "Explicit invocation only.",
+          filePath: "/fixture/skills/hidden/SKILL.md",
+          baseDir: "/fixture/skills/hidden",
+          disableModelInvocation: true,
+        },
+      ],
     },
   },
 ];

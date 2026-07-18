@@ -61,10 +61,14 @@ func (fixture *fixturePrintSession) Prompt(ctx context.Context, input any, image
 	fixture.prompts++
 	if index == 0 && fixture.scenario.Queue != nil {
 		for _, message := range fixture.scenario.Queue.Steering {
-			fixture.runtime.Steer(message)
+			if err := fixture.runtime.Steer(message); err != nil {
+				return err
+			}
 		}
 		for _, message := range fixture.scenario.Queue.FollowUp {
-			fixture.runtime.FollowUp(message)
+			if err := fixture.runtime.FollowUp(message); err != nil {
+				return err
+			}
 		}
 	}
 	if err := fixture.runtime.Prompt(ctx, input, images...); err != nil {

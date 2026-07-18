@@ -60,6 +60,7 @@ type SystemPromptOptions struct {
 	AppendSystemPrompt *string
 	CWD                string
 	ContextFiles       []ContextFile
+	Skills             []Skill
 	PackageDir         string
 }
 
@@ -92,6 +93,9 @@ func BuildSystemPrompt(options SystemPromptOptions) string {
 	if options.CustomPrompt != nil && *options.CustomPrompt != "" {
 		prompt := *options.CustomPrompt + appendSection
 		prompt += formatProjectContext(options.ContextFiles)
+		if options.SelectedTools == nil || slices.Contains(options.SelectedTools, "read") {
+			prompt += FormatSkillsForPrompt(options.Skills)
+		}
 		return prompt + "\nCurrent working directory: " + promptCWD
 	}
 
@@ -161,6 +165,9 @@ Pi documentation (read only when the user asks about pi itself, its SDK, extensi
 
 	prompt += appendSection
 	prompt += formatProjectContext(options.ContextFiles)
+	if slices.Contains(tools, "read") {
+		prompt += FormatSkillsForPrompt(options.Skills)
+	}
 	return prompt + "\nCurrent working directory: " + promptCWD
 }
 

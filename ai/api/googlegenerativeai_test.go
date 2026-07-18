@@ -21,8 +21,11 @@ func TestGoogleSimpleRequiresAPIKey(t *testing.T) {
 
 func TestGooglePayloadHookCanReplaceParameters(t *testing.T) {
 	model := googleTestModel("gemini-2.5-flash")
+	modelHeader := "model"
+	model.Headers = &map[string]string{"X-Model": modelHeader}
 	apiKey := "key"
 	var captured []byte
+	var capturedHeader string
 	previous := googleHTTPClient
 	googleHTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		var err error
@@ -30,6 +33,7 @@ func TestGooglePayloadHookCanReplaceParameters(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
+		capturedHeader = request.Header.Get("X-Extension")
 		return googleTestResponse("data: {\"candidates\":[{\"content\":{\"parts\":[]},\"finishReason\":\"STOP\"}]}\n\n"), nil
 	})}
 	t.Cleanup(func() { googleHTTPClient = previous })
@@ -39,6 +43,14 @@ func TestGooglePayloadHookCanReplaceParameters(t *testing.T) {
 		parameters := payload.(GoogleGenerateContentParameters)
 		parameters.Contents = []GoogleContent{{Parts: []GooglePart{{Text: stringPointer("hooked")}}, Role: "user"}}
 		return parameters, true, nil
+	}
+	options.TransformHeaders = func(_ context.Context, headers ai.ProviderHeaders, _ *ai.Model) (ai.ProviderHeaders, error) {
+		if headers["X-Model"] == nil || *headers["X-Model"] != "model" {
+			t.Fatalf("headers before hook = %#v", headers)
+		}
+		value := "yes"
+		headers["X-Extension"] = &value
+		return headers, nil
 	}
 	stream, err := StreamGoogleGenerativeAIWithOptions(context.Background(), model, ai.Context{}, options)
 	if err != nil {
@@ -55,6 +67,9 @@ func TestGooglePayloadHookCanReplaceParameters(t *testing.T) {
 	}
 	if len(body.Contents) != 1 || body.Contents[0].Parts[0].Text == nil || *body.Contents[0].Parts[0].Text != "hooked" {
 		t.Fatalf("hooked body = %s", captured)
+	}
+	if capturedHeader != "yes" {
+		t.Fatalf("hooked header = %q", capturedHeader)
 	}
 }
 

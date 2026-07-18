@@ -32,6 +32,15 @@ type f9PromptInput struct {
 	AppendSystemPrompt *string           `json:"appendSystemPrompt"`
 	CWD                string            `json:"cwd"`
 	ContextFiles       []f9ContextFile   `json:"contextFiles"`
+	Skills             []f9Skill         `json:"skills"`
+}
+
+type f9Skill struct {
+	Name                   string `json:"name"`
+	Description            string `json:"description"`
+	FilePath               string `json:"filePath"`
+	BaseDir                string `json:"baseDir"`
+	DisableModelInvocation bool   `json:"disableModelInvocation"`
 }
 
 type f9ContextFile struct {
@@ -78,6 +87,7 @@ func TestF9SystemPromptMatchesUpstream(t *testing.T) {
 				AppendSystemPrompt: fixtureCase.Input.AppendSystemPrompt,
 				CWD:                fixtureCase.Input.CWD,
 				ContextFiles:       f9CodingContextFiles(fixtureCase.Input.ContextFiles),
+				Skills:             f9CodingSkills(fixtureCase.Input.Skills),
 				PackageDir:         fixture.PackageDir,
 			})
 			if got != fixtureCase.Expected {
@@ -105,10 +115,12 @@ func TestF9ResourceDiscoveryMatchesUpstream(t *testing.T) {
 			}
 
 			options := codingagent.ResourceOptions{
-				CWD:            cwd,
-				AgentDir:       agentDir,
-				ProjectTrusted: &fixtureCase.ProjectTrusted,
-				NoContextFiles: fixtureCase.NoContextFiles,
+				CWD:               cwd,
+				AgentDir:          agentDir,
+				ProjectTrusted:    &fixtureCase.ProjectTrusted,
+				NoContextFiles:    fixtureCase.NoContextFiles,
+				NoSkills:          true,
+				NoPromptTemplates: true,
 			}
 			if fixtureCase.SystemPromptSet {
 				systemPrompt := f9MaterializePath(fixtureCase.SystemPrompt, fixtureRoot)
@@ -165,7 +177,7 @@ func loadF9Fixture(t testing.TB) f9Fixture {
 	t.Helper()
 	var fixture f9Fixture
 	runner.LoadJSON(t, "F9", "cases.json", &fixture)
-	if fixture.SchemaVersion != 1 || len(fixture.PromptCases) != 5 || len(fixture.DiscoveryCases) != 6 {
+	if fixture.SchemaVersion != 1 || len(fixture.PromptCases) != 6 || len(fixture.DiscoveryCases) != 6 {
 		t.Fatalf(
 			"F9 fixture header = version %d, prompt cases %d, discovery cases %d",
 			fixture.SchemaVersion,
@@ -174,6 +186,23 @@ func loadF9Fixture(t testing.TB) f9Fixture {
 		)
 	}
 	return fixture
+}
+
+func f9CodingSkills(skills []f9Skill) []codingagent.Skill {
+	if skills == nil {
+		return nil
+	}
+	converted := make([]codingagent.Skill, len(skills))
+	for index, skill := range skills {
+		converted[index] = codingagent.Skill{
+			Name:                   skill.Name,
+			Description:            skill.Description,
+			FilePath:               skill.FilePath,
+			BaseDir:                skill.BaseDir,
+			DisableModelInvocation: skill.DisableModelInvocation,
+		}
+	}
+	return converted
 }
 
 func writeF9Tree(t testing.TB, root string, files []f9ContextFile) {

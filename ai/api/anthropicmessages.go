@@ -1013,13 +1013,17 @@ func postAnthropicStream(
 			option.WithHeaderDel("X-Api-Key"),
 			option.WithHeaderDel("Authorization"),
 		}
+		headers, err := applyHeadersHook(ctx, model, options, anthropicHeaders(model, requestContext, options, anthropicOptions))
+		if err != nil {
+			return nil, err
+		}
 		apiKey := anthropicAPIKey(options)
 		if oauth || model.Provider == "github-copilot" {
 			clientOptions = append(clientOptions, option.WithAuthToken(apiKey))
 		} else if apiKey != "" {
 			clientOptions = append(clientOptions, option.WithAPIKey(apiKey))
 		}
-		for name, values := range anthropicHeaders(model, requestContext, options, anthropicOptions) {
+		for name, values := range headers {
 			if len(values) == 0 {
 				clientOptions = append(clientOptions, option.WithHeaderDel(name))
 			} else {

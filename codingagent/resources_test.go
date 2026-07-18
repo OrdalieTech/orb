@@ -59,6 +59,7 @@ func TestLoadProjectContextFilesFallsThroughUnreadableCandidate(t *testing.T) {
 
 func TestLoadResourcesDiagnosticsDoNotIncludePresentationPrefix(t *testing.T) {
 	root := t.TempDir()
+	t.Setenv("HOME", filepath.Join(root, "home"))
 	unreadable := filepath.Join(root, "prompt")
 	if err := os.MkdirAll(unreadable, 0o755); err != nil {
 		t.Fatal(err)
@@ -71,6 +72,7 @@ func TestLoadResourcesDiagnosticsDoNotIncludePresentationPrefix(t *testing.T) {
 
 func TestLoadResourcesPromptPrecedenceTrustAndNoContext(t *testing.T) {
 	root := t.TempDir()
+	t.Setenv("HOME", filepath.Join(root, "home"))
 	cwd := filepath.Join(root, "project")
 	agentDir := filepath.Join(root, "agent")
 	mustWriteResource(t, filepath.Join(cwd, "AGENTS.md"), "context")
@@ -125,6 +127,7 @@ func TestDefaultAgentDirNormalizesEnvironmentOverride(t *testing.T) {
 
 func TestLoadResourcesCLIOverridesFileLiteralAndExplicitEmpty(t *testing.T) {
 	root := t.TempDir()
+	t.Setenv("HOME", filepath.Join(root, "home"))
 	cwd := filepath.Join(root, "project")
 	agentDir := filepath.Join(root, "agent")
 	systemPath := filepath.Join(root, "cli-system.md")

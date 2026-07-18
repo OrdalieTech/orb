@@ -19,6 +19,12 @@ func TestParseArgsCoreSubset(t *testing.T) {
 		"--tools", " read, grep ,,find ",
 		"-xt", "bash, write",
 		"--no-context-files",
+		"--skill", "one/SKILL.md",
+		"--skill", "skills",
+		"--prompt-template", "review.md",
+		"--no-skills",
+		"--no-prompt-templates",
+		"--no-approve",
 		"@prompt.md",
 		"message",
 	})
@@ -46,6 +52,12 @@ func TestParseArgsCoreSubset(t *testing.T) {
 	}
 	if !reflect.DeepEqual(args.FileArgs, []string{"prompt.md"}) || !reflect.DeepEqual(args.Messages, []string{"message"}) {
 		t.Fatalf("files/messages = %#v/%#v", args.FileArgs, args.Messages)
+	}
+	if !reflect.DeepEqual(args.Skills, []string{"one/SKILL.md", "skills"}) || !reflect.DeepEqual(args.PromptTemplates, []string{"review.md"}) {
+		t.Fatalf("skill/prompt paths = %#v/%#v", args.Skills, args.PromptTemplates)
+	}
+	if !args.NoSkills || !args.NoPromptTemplates || args.ProjectTrusted == nil || *args.ProjectTrusted {
+		t.Fatalf("resource/trust flags = %#v", args)
 	}
 }
 

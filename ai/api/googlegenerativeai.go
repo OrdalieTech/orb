@@ -290,6 +290,10 @@ func postGoogleStream(
 	if !googleHeaderPresent(headers, "X-Goog-Api-Key") {
 		headers.Set("X-Goog-Api-Key", *options.APIKey)
 	}
+	headers, err = applyHeadersHook(ctx, model, options, headers)
+	if err != nil {
+		return nil, err
+	}
 	request.Header = headers
 	return doGoogleRequest(request)
 }

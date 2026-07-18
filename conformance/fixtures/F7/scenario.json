@@ -1,0 +1,280 @@
+{
+  "schemaVersion": 1,
+  "fixedNow": 1700000200321,
+  "cwd": "/tmp/pi-go-f7-project",
+  "sessionId": "fixture-rpc-session",
+  "systemPrompt": "Return one short answer.\nCurrent working directory: /tmp/pi-go-f7-project",
+  "tokenSize": 4,
+  "responses": [
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "RPC fixture complete."
+        }
+      ],
+      "api": "faux",
+      "provider": "faux",
+      "model": "faux-1",
+      "usage": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 0,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "stopReason": "stop",
+      "timestamp": 1700000200321
+    }
+  ],
+  "steps": [
+    {
+      "name": "empty-line-parse-error",
+      "input": "",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "invalid-token-parse-error",
+      "input": "not-json",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "truncated-object-parse-error",
+      "input": "{",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "initial-state-crlf",
+      "input": "{\"id\":\"state-1\",\"type\":\"get_state\"}",
+      "framing": "crlf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "initial-messages",
+      "input": "{\"id\":\"messages-1\",\"type\":\"get_messages\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "empty-entries",
+      "input": "{\"id\":\"entries-1\",\"type\":\"get_entries\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "empty-tree",
+      "input": "{\"id\":\"tree-1\",\"type\":\"get_tree\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "empty-fork-messages",
+      "input": "{\"id\":\"fork-messages-1\",\"type\":\"get_fork_messages\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "clone-without-leaf",
+      "input": "{\"id\":\"clone-1\",\"type\":\"clone\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "available-models",
+      "input": "{\"id\":\"models-1\",\"type\":\"get_available_models\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "set-model",
+      "input": "{\"id\":\"model-1\",\"type\":\"set_model\",\"provider\":\"faux\",\"modelId\":\"faux-1\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "cycle-model",
+      "input": "{\"id\":\"model-2\",\"type\":\"cycle_model\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "set-thinking",
+      "input": "{\"id\":\"thinking-1\",\"type\":\"set_thinking_level\",\"level\":\"high\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "cycle-thinking",
+      "input": "{\"id\":\"thinking-2\",\"type\":\"cycle_thinking_level\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "steering-mode",
+      "input": "{\"id\":\"queue-1\",\"type\":\"set_steering_mode\",\"mode\":\"all\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "follow-up-mode",
+      "input": "{\"id\":\"queue-2\",\"type\":\"set_follow_up_mode\",\"mode\":\"all\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "auto-compaction",
+      "input": "{\"id\":\"auto-1\",\"type\":\"set_auto_compaction\",\"enabled\":true}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "auto-retry",
+      "input": "{\"id\":\"auto-2\",\"type\":\"set_auto_retry\",\"enabled\":true}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "abort-retry",
+      "input": "{\"id\":\"auto-3\",\"type\":\"abort_retry\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "cancelled-fork",
+      "input": "{\"id\":\"fork-1\",\"type\":\"fork\",\"entryId\":\"missing\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "cancelled-new-session",
+      "input": "{\"id\":\"new-1\",\"type\":\"new_session\",\"parentSession\":\"parent.jsonl\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "cancelled-switch",
+      "input": "{\"id\":\"switch-1\",\"type\":\"switch_session\",\"sessionPath\":\"session.jsonl\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "last-text-before-prompt",
+      "input": "{\"id\":\"last-1\",\"type\":\"get_last_assistant_text\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "session-stats-before-prompt",
+      "input": "{\"id\":\"stats-1\",\"type\":\"get_session_stats\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "commands",
+      "input": "{\"id\":\"commands-1\",\"type\":\"get_commands\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "unicode-separator-name",
+      "input": "{\"id\":\"name-1\",\"type\":\"set_session_name\",\"name\":\"rpc name\"}",
+      "framing": "lf",
+      "expectedLineCount": 2
+    },
+    {
+      "name": "unicode-separator-state",
+      "input": "{\"id\":\"state-2\",\"type\":\"get_state\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "unknown-command",
+      "input": "{\"id\":\"unknown-1\",\"type\":\"does_not_exist\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "prompt-events",
+      "input": "{\"id\":\"prompt-1\",\"type\":\"prompt\",\"message\":\"Say complete.\"}",
+      "framing": "lf",
+      "expectedLineCount": 14
+    },
+    {
+      "name": "last-text-after-prompt",
+      "input": "{\"id\":\"last-2\",\"type\":\"get_last_assistant_text\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "messages-after-prompt",
+      "input": "{\"id\":\"messages-2\",\"type\":\"get_messages\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "session-stats-after-prompt",
+      "input": "{\"id\":\"stats-2\",\"type\":\"get_session_stats\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "entries-after-prompt",
+      "input": "{\"id\":\"entries-2\",\"type\":\"get_entries\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "entries-since-session-name",
+      "input": "{\"id\":\"entries-3\",\"type\":\"get_entries\",\"since\":\"00000001\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "tree-after-prompt",
+      "input": "{\"id\":\"tree-2\",\"type\":\"get_tree\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "fork-messages-after-prompt",
+      "input": "{\"id\":\"fork-messages-2\",\"type\":\"get_fork_messages\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "bash",
+      "input": "{\"id\":\"bash-1\",\"type\":\"bash\",\"command\":\"printf rpc-bash\",\"excludeFromContext\":true}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "bash-entry",
+      "input": "{\"id\":\"entries-4\",\"type\":\"get_entries\",\"since\":\"00000004\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "abort-bash",
+      "input": "{\"id\":\"bash-2\",\"type\":\"abort_bash\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    },
+    {
+      "name": "abort-idle",
+      "input": "{\"id\":\"abort-1\",\"type\":\"abort\"}",
+      "framing": "lf",
+      "expectedLineCount": 1
+    }
+  ]
+}

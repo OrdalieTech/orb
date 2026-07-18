@@ -20,24 +20,38 @@ type ContextFile struct {
 }
 
 type ResourceDiagnostic struct {
-	Message string
-	Path    string
+	Type      string
+	Message   string
+	Path      string
+	Collision *ResourceCollision
 }
 
 type ResourceOptions struct {
-	CWD            string
-	AgentDir       string
-	ProjectTrusted *bool
-	NoContextFiles bool
-	SystemPrompt   *string
+	CWD               string
+	AgentDir          string
+	ProjectTrusted    *bool
+	NoContextFiles    bool
+	NoSkills          bool
+	NoPromptTemplates bool
+	SystemPrompt      *string
 	// Nil means discover APPEND_SYSTEM.md; a non-nil empty slice disables discovery.
-	AppendSystemPrompt []string
+	AppendSystemPrompt         []string
+	SkillPaths                 []string
+	PromptTemplatePaths        []string
+	GlobalSkillPaths           []string
+	ProjectSkillPaths          []string
+	GlobalPromptTemplatePaths  []string
+	ProjectPromptTemplatePaths []string
+	PackageSkillPaths          []string
+	PackagePromptTemplatePaths []string
 }
 
 type Resources struct {
 	ContextFiles       []ContextFile
 	SystemPrompt       *string
 	AppendSystemPrompt []string
+	Skills             []Skill
+	PromptTemplates    []PromptTemplate
 	Diagnostics        []ResourceDiagnostic
 }
 
@@ -114,7 +128,212 @@ func LoadResources(options ResourceOptions) Resources {
 			resources.AppendSystemPrompt = append(resources.AppendSystemPrompt, *resolved)
 		}
 	}
+	var fileDiagnostics []ResourceDiagnostic
+	resources.Skills, resources.PromptTemplates, fileDiagnostics = loadCommandResources(commandResourceOptions{
+		cwd: cwd, agentDir: agentDir, trusted: trusted,
+		noSkills: options.NoSkills, noPrompts: options.NoPromptTemplates,
+		skillPaths: options.SkillPaths, promptPaths: options.PromptTemplatePaths,
+		globalSkillPaths: options.GlobalSkillPaths, projectSkillPaths: options.ProjectSkillPaths,
+		globalPromptPaths: options.GlobalPromptTemplatePaths, projectPromptPaths: options.ProjectPromptTemplatePaths,
+		packageSkillPaths:  options.PackageSkillPaths,
+		packagePromptPaths: options.PackagePromptTemplatePaths,
+	})
+	resources.Diagnostics = append(resources.Diagnostics, fileDiagnostics...)
 	return resources
+}
+
+type commandResourceOptions struct {
+	cwd, agentDir                         string
+	trusted                               bool
+	noSkills, noPrompts                   bool
+	skillPaths, promptPaths               []string
+	globalSkillPaths, projectSkillPaths   []string
+	globalPromptPaths, projectPromptPaths []string
+	packageSkillPaths, packagePromptPaths []string
+}
+
+func retagSkills(result LoadSkillsResult, scope, baseDir, source string) LoadSkillsResult {
+	for index := range result.Skills {
+		result.Skills[index].SourceInfo = SourceInfo{
+			Path: result.Skills[index].FilePath, Source: source, Scope: scope,
+			Origin: "top-level", BaseDir: baseDir,
+		}
+	}
+	return result
+}
+
+func combineSkills(inputs []LoadSkillsResult) LoadSkillsResult {
+	combined := LoadSkillsResult{Skills: []Skill{}, Diagnostics: []ResourceDiagnostic{}}
+	seenNames := make(map[string]Skill)
+	seenPaths := make(map[string]struct{})
+	for _, input := range inputs {
+		combined.Diagnostics = append(combined.Diagnostics, input.Diagnostics...)
+		for _, skill := range input.Skills {
+			canonical := canonicalResourcePath(skill.FilePath)
+			if _, duplicate := seenPaths[canonical]; duplicate {
+				continue
+			}
+			if winner, collision := seenNames[skill.Name]; collision {
+				combined.Diagnostics = append(combined.Diagnostics, ResourceDiagnostic{
+					Type: "collision", Message: fmt.Sprintf("name %q collision", skill.Name), Path: skill.FilePath,
+					Collision: &ResourceCollision{ResourceType: "skill", Name: skill.Name, WinnerPath: winner.FilePath, LoserPath: skill.FilePath},
+				})
+				continue
+			}
+			seenNames[skill.Name] = skill
+			seenPaths[canonical] = struct{}{}
+			combined.Skills = append(combined.Skills, skill)
+		}
+	}
+	return combined
+}
+
+func findGitResourceRoot(start string) string {
+	for current := resolveResourcePath(start); ; current = filepath.Dir(current) {
+		if pathExists(filepath.Join(current, ".git")) {
+			return current
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return ""
+		}
+	}
+}
+
+func ancestorAgentsSkillDirs(cwd string) []string {
+	root := findGitResourceRoot(cwd)
+	directories := make([]string, 0)
+	for current := resolveResourcePath(cwd); ; current = filepath.Dir(current) {
+		directories = append(directories, filepath.Join(current, ".agents", "skills"))
+		if root != "" && current == root {
+			break
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+	}
+	return directories
+}
+
+func loadAutomaticSkills(dir, source string, includeRootFiles bool) LoadSkillsResult {
+	if _, err := os.Stat(dir); err != nil {
+		return LoadSkillsResult{Skills: []Skill{}, Diagnostics: []ResourceDiagnostic{}}
+	}
+	return loadSkillsFromDirInternal(dir, source, includeRootFiles, &skillIgnoreMatcher{}, dir, map[string]bool{})
+}
+
+func resolveConfiguredPaths(paths []string, baseDir string) []string {
+	resolved := make([]string, 0, len(paths))
+	for _, path := range paths {
+		resolved = append(resolved, resolveResourcePathFrom(path, baseDir))
+	}
+	return resolved
+}
+
+func loadCommandSkills(options commandResourceOptions) LoadSkillsResult {
+	inputs := make([]LoadSkillsResult, 0)
+	if len(options.skillPaths) > 0 {
+		inputs = append(inputs, LoadSkills(LoadSkillsOptions{
+			CWD: options.cwd, AgentDir: options.agentDir, SkillPaths: options.skillPaths,
+		}))
+	}
+	projectBase := filepath.Join(options.cwd, ".pi")
+	if !options.noSkills && options.trusted {
+		configured := resolveConfiguredPaths(options.projectSkillPaths, projectBase)
+		if len(configured) > 0 {
+			inputs = append(inputs, retagSkills(LoadSkills(LoadSkillsOptions{
+				CWD: options.cwd, AgentDir: options.agentDir, SkillPaths: configured,
+			}), "project", projectBase, "local"))
+		}
+		inputs = append(inputs, loadAutomaticSkills(filepath.Join(projectBase, "skills"), "project", true))
+		for _, dir := range ancestorAgentsSkillDirs(options.cwd) {
+			inputs = append(inputs, loadAutomaticSkills(dir, "project", false))
+		}
+	}
+	if !options.noSkills {
+		configured := resolveConfiguredPaths(options.globalSkillPaths, options.agentDir)
+		if len(configured) > 0 {
+			inputs = append(inputs, retagSkills(LoadSkills(LoadSkillsOptions{
+				CWD: options.cwd, AgentDir: options.agentDir, SkillPaths: configured,
+			}), "user", options.agentDir, "local"))
+		}
+		inputs = append(inputs, loadAutomaticSkills(filepath.Join(options.agentDir, "skills"), "user", true))
+		if home, err := os.UserHomeDir(); err == nil {
+			userAgentsDir := filepath.Join(home, ".agents", "skills")
+			inputs = append(inputs, loadAutomaticSkills(userAgentsDir, "user", false))
+		}
+		if len(options.packageSkillPaths) > 0 {
+			inputs = append(inputs, retagSkills(LoadSkills(LoadSkillsOptions{
+				CWD: options.cwd, AgentDir: options.agentDir, SkillPaths: options.packageSkillPaths,
+			}), "temporary", options.cwd, "package"))
+		}
+	}
+	return combineSkills(inputs)
+}
+
+func retagPrompts(prompts []PromptTemplate, scope, baseDir, source string) []PromptTemplate {
+	for index := range prompts {
+		prompts[index].SourceInfo = SourceInfo{
+			Path: prompts[index].FilePath, Source: source, Scope: scope,
+			Origin: "top-level", BaseDir: baseDir,
+		}
+	}
+	return prompts
+}
+
+func combinePrompts(inputs [][]PromptTemplate) ([]PromptTemplate, []ResourceDiagnostic) {
+	combined := make([]PromptTemplate, 0)
+	diagnostics := make([]ResourceDiagnostic, 0)
+	seen := make(map[string]PromptTemplate)
+	for _, input := range inputs {
+		for _, prompt := range input {
+			if winner, collision := seen[prompt.Name]; collision {
+				diagnostics = append(diagnostics, ResourceDiagnostic{
+					Type: "collision", Message: fmt.Sprintf("name %q collision", prompt.Name), Path: prompt.FilePath,
+					Collision: &ResourceCollision{ResourceType: "prompt", Name: prompt.Name, WinnerPath: winner.FilePath, LoserPath: prompt.FilePath},
+				})
+				continue
+			}
+			seen[prompt.Name] = prompt
+			combined = append(combined, prompt)
+		}
+	}
+	return combined, diagnostics
+}
+
+func loadPromptsAtPaths(paths []string, cwd, agentDir string) []PromptTemplate {
+	if len(paths) == 0 {
+		return []PromptTemplate{}
+	}
+	return LoadPromptTemplates(LoadPromptTemplatesOptions{CWD: cwd, AgentDir: agentDir, PromptPaths: paths})
+}
+
+func loadCommandPrompts(options commandResourceOptions) ([]PromptTemplate, []ResourceDiagnostic) {
+	inputs := make([][]PromptTemplate, 0)
+	inputs = append(inputs, loadPromptsAtPaths(options.promptPaths, options.cwd, options.agentDir))
+	projectBase := filepath.Join(options.cwd, ".pi")
+	if !options.noPrompts && options.trusted {
+		paths := resolveConfiguredPaths(options.projectPromptPaths, projectBase)
+		inputs = append(inputs, retagPrompts(loadPromptsAtPaths(paths, options.cwd, options.agentDir), "project", projectBase, "local"))
+		inputs = append(inputs, loadPromptsAtPaths([]string{filepath.Join(projectBase, "prompts")}, options.cwd, options.agentDir))
+	}
+	if !options.noPrompts {
+		paths := resolveConfiguredPaths(options.globalPromptPaths, options.agentDir)
+		inputs = append(inputs, retagPrompts(loadPromptsAtPaths(paths, options.cwd, options.agentDir), "user", options.agentDir, "local"))
+		inputs = append(inputs, loadPromptsAtPaths([]string{filepath.Join(options.agentDir, "prompts")}, options.cwd, options.agentDir))
+		if len(options.packagePromptPaths) > 0 {
+			inputs = append(inputs, retagPrompts(loadPromptsAtPaths(options.packagePromptPaths, options.cwd, options.agentDir), "temporary", options.cwd, "package"))
+		}
+	}
+	return combinePrompts(inputs)
+}
+
+func loadCommandResources(options commandResourceOptions) ([]Skill, []PromptTemplate, []ResourceDiagnostic) {
+	skills := loadCommandSkills(options)
+	prompts, promptDiagnostics := loadCommandPrompts(options)
+	diagnostics := append(skills.Diagnostics, promptDiagnostics...)
+	return skills.Skills, prompts, diagnostics
 }
 
 // LoadProjectContextFiles loads the global context file followed by one file

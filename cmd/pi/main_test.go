@@ -1,16 +1,21 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
@@ -378,6 +383,23 @@ func TestRunCLIReportsUnknownLongFlagsInMapOrder(t *testing.T) {
 	}
 }
 
+func TestRunCLIRejectsUnknownExtensionFlagBeforeRuntime(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	var stderr bytes.Buffer
+	called := false
+	code := runCLIWithDependencies(context.Background(), []string{"-p", "--unknown"}, cliStreams{
+		Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: &stderr, StdinTTY: true,
+	}, cliDependencies{createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+		called = true
+		return runtimeInputs{}, nil
+	}})
+	if code != 1 || called || stderr.String() != "Error: Unknown option: --unknown\n" {
+		t.Fatalf("code=%d called=%t stderr=%q", code, called, stderr.String())
+	}
+}
+
 func TestRunCLIEmptyAPIKeyDoesNotRequireExplicitModel(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
@@ -624,6 +646,136 @@ func TestBuiltBinaryDispatchesHelp(t *testing.T) {
 	}
 }
 
+func TestBuiltBinaryServesRPCConversation(t *testing.T) {
+	temp := t.TempDir()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1/chat/completions" {
+			t.Errorf("completion path = %q", request.URL.Path)
+		}
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(writer, "data: {\"id\":\"chatcmpl_rpc\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"faux-1\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"RPC binary \"},\"finish_reason\":null}]}\n\n")
+		_, _ = io.WriteString(writer, "data: {\"id\":\"chatcmpl_rpc\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"faux-1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"complete.\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":2}}\n\ndata: [DONE]\n\n")
+	}))
+	defer server.Close()
+	binary := filepath.Join(temp, "pi")
+	build := exec.Command("go", "build", "-o", binary, ".")
+	build.Dir = "."
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build binary: %v\n%s", err, output)
+	}
+	project := filepath.Join(temp, "project")
+	agentDir := filepath.Join(temp, "agent")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	models := `{"providers":{"faux":{"baseUrl":` + fmt.Sprintf("%q", server.URL+"/v1") + `,"api":"openai-completions","apiKey":"dummy","models":[{"id":"faux-1","name":"Faux Model","reasoning":false,"input":["text","image"],"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"contextWindow":128000,"maxTokens":16384}]}}}`
+	if err := os.WriteFile(filepath.Join(agentDir, "models.json"), []byte(models), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	rpcContext, cancelRPC := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelRPC()
+	command := exec.CommandContext(rpcContext, binary, "--mode", "rpc", "--no-session", "--provider", "faux", "--model", "faux-1")
+	command.Dir = project
+	command.Env = append(os.Environ(), config.EnvAgentDir+"="+agentDir)
+	stdin, err := command.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(stdout)
+	exchange := func(input string) []byte {
+		t.Helper()
+		if _, writeErr := io.WriteString(stdin, input); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+		line, readErr := reader.ReadBytes('\n')
+		if readErr != nil {
+			t.Fatalf("read RPC response: %v; stderr=%q", readErr, stderr.String())
+		}
+		return bytes.TrimSuffix(line, []byte{'\n'})
+	}
+	if line := exchange("\n"); string(line) != `{"type":"response","command":"parse","success":false,"error":"Failed to parse command: Unexpected end of JSON input"}` {
+		t.Fatalf("parse response = %s", line)
+	}
+	stateLine := exchange("{\"id\":\"state\",\"type\":\"get_state\"}\r\n")
+	var state struct {
+		ID      string `json:"id"`
+		Success bool   `json:"success"`
+		Data    struct {
+			SessionID string    `json:"sessionId"`
+			Model     *ai.Model `json:"model"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(stateLine, &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.ID != "state" || !state.Success || state.Data.SessionID == "" || state.Data.Model == nil || state.Data.Model.ID != "faux-1" {
+		t.Fatalf("state response = %s", stateLine)
+	}
+	if line := exchange("{\"id\":\"\",\"type\":\"get_messages\"}\n"); !bytes.HasPrefix(line, []byte(`{"id":"","type":"response"`)) || !bytes.Contains(line, []byte(`"messages":[]`)) {
+		t.Fatalf("empty-ID messages response = %s", line)
+	}
+	if line := exchange("{\"id\":\"models\",\"type\":\"get_available_models\"}\n"); !bytes.Contains(line, []byte(`"models":[{`)) {
+		t.Fatalf("available-models response = %s", line)
+	}
+	if line := exchange("{\"id\":\"unknown\",\"type\":\"missing\"}\n"); string(line) != `{"id":"unknown","type":"response","command":"missing","success":false,"error":"Unknown command: missing"}` {
+		t.Fatalf("unknown response = %s", line)
+	}
+	if line := exchange("{\"id\":\"bash\",\"type\":\"bash\",\"command\":\"printf false-value\",\"excludeFromContext\":false}\n"); !bytes.Contains(line, []byte(`"output":"false-value"`)) {
+		t.Fatalf("bash response = %s", line)
+	}
+	if line := exchange("{\"id\":\"entries\",\"type\":\"get_entries\"}\n"); !bytes.Contains(line, []byte(`"excludeFromContext":false`)) {
+		t.Fatalf("explicit-false bash entry = %s", line)
+	}
+	if _, err := io.WriteString(stdin, "{\"id\":\"prompt\",\"type\":\"prompt\",\"message\":\"Say complete.\"}\n"); err != nil {
+		t.Fatal(err)
+	}
+	seenPromptResponse, seenAssistant, seenSettled := false, false, false
+	for range 32 {
+		line, readErr := reader.ReadBytes('\n')
+		if readErr != nil {
+			t.Fatalf("read prompt event: %v; stderr=%q", readErr, stderr.String())
+		}
+		seenPromptResponse = seenPromptResponse || bytes.Contains(line, []byte(`"id":"prompt","type":"response","command":"prompt","success":true`))
+		seenAssistant = seenAssistant || bytes.Contains(line, []byte(`"type":"message_end"`)) && bytes.Contains(line, []byte(`RPC binary complete.`))
+		if bytes.Contains(line, []byte(`"type":"agent_settled"`)) {
+			seenSettled = true
+			break
+		}
+	}
+	if !seenPromptResponse || !seenAssistant || !seenSettled {
+		t.Fatalf("prompt lifecycle = response %v, assistant %v, settled %v", seenPromptResponse, seenAssistant, seenSettled)
+	}
+	if err := stdin.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := command.Wait(); err != nil || stderr.Len() != 0 {
+		t.Fatalf("RPC binary exit: %v; stderr=%q", err, stderr.String())
+	}
+}
+
+func TestRunCLIJSONHelpKeepsEventStdoutClean(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := runCLIWithDependencies(context.Background(), []string{"--mode", "json", "--help"}, cliStreams{
+		Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr,
+		StdinTTY: true, StdoutTTY: true,
+	}, cliDependencies{})
+	if code != 0 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "Usage: pi") {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
 func fauxRuntimeFactory(provider *faux.Provider) func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
 	return func(_ string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
 		created := agent.NewAgent(

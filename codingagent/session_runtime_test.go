@@ -453,7 +453,9 @@ func TestSessionRuntimeQueueUpdatesDrainBeforeQueuedMessageStart(t *testing.T) {
 		if start, ok := event.(agent.MessageStartEvent); ok {
 			if _, assistantStart := start.Message.(*ai.AssistantMessage); assistantStart && !queued {
 				queued = true
-				runtime.Steer("queued")
+				if err := runtime.Steer("queued"); err != nil {
+					t.Errorf("steer: %v", err)
+				}
 			}
 		}
 	})
@@ -671,8 +673,12 @@ func TestSessionRuntimeManualCompactionWaitsForRetryPolicyIdle(t *testing.T) {
 func TestSessionRuntimeAbortPreservesQueuesUntilClearQueue(t *testing.T) {
 	provider := testFaux(1000)
 	runtime, _ := newTestRuntime(t, provider, map[string]any{"compaction": map[string]any{"enabled": false}})
-	runtime.Steer("steer")
-	runtime.FollowUp("follow")
+	if err := runtime.Steer("steer"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.FollowUp("follow"); err != nil {
+		t.Fatal(err)
+	}
 
 	runtime.Abort()
 	if !reflect.DeepEqual(runtime.steering, []string{"steer"}) || !reflect.DeepEqual(runtime.followUps, []string{"follow"}) {
@@ -950,6 +956,32 @@ func TestSessionRuntimeResolvesModelHeadersForSummaryRequests(t *testing.T) {
 
 func newTestRuntime(t *testing.T, provider *faux.Provider, settings map[string]any) (*SessionRuntime, *sessionstore.SessionManager) {
 	return newTestRuntimeWithHeaders(t, provider, settings, nil)
+}
+
+func TestSessionRuntimeExpandsSlashResourcesBeforeAgentPrompt(t *testing.T) {
+	provider := testFaux(100000)
+	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "done", 10)})
+	runtime, _ := newTestRuntime(t, provider, map[string]any{"compaction": map[string]any{"enabled": false}})
+	runtime.slashResolver = &SlashResolver{PromptTemplates: []PromptTemplate{{Name: "review", Content: "Review $1"}}}
+	if err := runtime.Prompt(context.Background(), "/review file.go"); err != nil {
+		t.Fatal(err)
+	}
+	state := runtime.State()
+	if len(state.Messages) < 1 || userMessageText(state.Messages[0]) != "Review file.go" {
+		t.Fatalf("messages = %#v", state.Messages)
+	}
+
+	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "unused", 10)})
+	runtime.slashResolver.ExecuteExtension = func(name, args string) (bool, error) {
+		return name == "handled" && args == "now", nil
+	}
+	before := len(runtime.State().Messages)
+	if err := runtime.Prompt(context.Background(), "/handled now"); err != nil {
+		t.Fatal(err)
+	}
+	if len(runtime.State().Messages) != before || provider.PendingResponseCount() != 1 {
+		t.Fatalf("handled command reached provider: messages=%d pending=%d", len(runtime.State().Messages), provider.PendingResponseCount())
+	}
 }
 
 func newTestRuntimeWithHeaders(t *testing.T, provider *faux.Provider, settings map[string]any, getModelHeaders agent.GetModelHeadersFunc) (*SessionRuntime, *sessionstore.SessionManager) {

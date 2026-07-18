@@ -58,10 +58,10 @@ type FileEntry struct {
 }
 
 type SessionTreeNode struct {
-	Entry          SessionEntry
-	Children       []*SessionTreeNode
-	Label          *string
-	LabelTimestamp *string
+	Entry          SessionEntry       `json:"entry"`
+	Children       []*SessionTreeNode `json:"children"`
+	Label          *string            `json:"label,omitempty"`
+	LabelTimestamp *string            `json:"labelTimestamp,omitempty"`
 }
 
 func (entry *FileEntry) MarshalJSON() ([]byte, error) {

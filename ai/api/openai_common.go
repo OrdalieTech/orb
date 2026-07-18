@@ -123,6 +123,40 @@ func mergeProviderHeaders(headers http.Header, values ai.ProviderHeaders) {
 	}
 }
 
+func applyHeadersHook(
+	ctx context.Context,
+	model *ai.Model,
+	options *ai.StreamOptions,
+	headers http.Header,
+) (http.Header, error) {
+	if options == nil || options.TransformHeaders == nil {
+		return headers, nil
+	}
+	values := make(ai.ProviderHeaders, len(headers))
+	for name, entries := range headers {
+		if len(entries) == 0 {
+			values[name] = nil
+			continue
+		}
+		value := strings.Join(entries, ", ")
+		values[name] = &value
+	}
+	transformed, err := options.TransformHeaders(ctx, values, model)
+	if err != nil {
+		return nil, err
+	}
+	if transformed == nil {
+		transformed = ai.ProviderHeaders{}
+	}
+	result := make(http.Header, len(transformed))
+	for name, value := range transformed {
+		if value != nil {
+			result.Set(name, *value)
+		}
+	}
+	return result, nil
+}
+
 func addCopilotHeaders(headers http.Header, model *ai.Model, requestContext ai.Context) {
 	if model.Provider != "github-copilot" {
 		return

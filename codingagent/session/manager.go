@@ -942,7 +942,7 @@ func (manager *SessionManager) GetTree() []*SessionTreeNode {
 		}
 		entry := fileEntry.Entry
 		ordered = append(ordered, entry)
-		node := &SessionTreeNode{Entry: *cloneEntry(entry)}
+		node := &SessionTreeNode{Entry: *cloneEntry(entry), Children: []*SessionTreeNode{}}
 		if label, ok := manager.labelsByID[entry.ID]; ok {
 			node.Label = &label
 		}

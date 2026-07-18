@@ -504,6 +504,10 @@ func postMistralStream(
 	if shouldUseMistralPromptCaching(options) && request.Header.Get("x-affinity") == "" {
 		request.Header.Set("x-affinity", *options.SessionID)
 	}
+	request.Header, err = applyHeadersHook(ctx, model, options, request.Header)
+	if err != nil {
+		return nil, err
+	}
 	response, err := mistralHTTPClient.Do(request)
 	if err != nil {
 		return response, err

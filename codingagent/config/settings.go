@@ -63,13 +63,18 @@ func (e SettingsError) Error() string { return fmt.Sprintf("%s settings: %v", e.
 func (e SettingsError) Unwrap() error { return e.Err }
 
 type managerOptions struct {
-	agentDir string
+	agentDir       string
+	projectTrusted *bool
 }
 
 type Option func(*managerOptions)
 
 func WithAgentDir(path string) Option {
 	return func(options *managerOptions) { options.agentDir = path }
+}
+
+func WithProjectTrusted(trusted bool) Option {
+	return func(options *managerOptions) { options.projectTrusted = &trusted }
 }
 
 // SettingsManager keeps the source documents untyped so unknown keys and
@@ -84,6 +89,10 @@ type SettingsManager struct {
 	project   Settings
 	effective Settings
 	errors    []SettingsError
+
+	globalLoadError  bool
+	projectLoadError bool
+	projectTrusted   bool
 }
 
 func NewSettingsManager(cwd string, options ...Option) (*SettingsManager, error) {
@@ -116,11 +125,16 @@ func NewSettingsManager(cwd string, options ...Option) (*SettingsManager, error)
 		return nil, err
 	}
 
+	projectTrusted := true
+	if settingsOptions.projectTrusted != nil {
+		projectTrusted = *settingsOptions.projectTrusted
+	}
 	manager := &SettingsManager{
-		globalPath:  filepath.Join(resolvedAgentDir, "settings.json"),
-		projectPath: filepath.Join(resolvedCWD, ConfigDirName, "settings.json"),
-		global:      Settings{},
-		project:     Settings{},
+		globalPath:     filepath.Join(resolvedAgentDir, "settings.json"),
+		projectPath:    filepath.Join(resolvedCWD, ConfigDirName, "settings.json"),
+		global:         Settings{},
+		project:        Settings{},
+		projectTrusted: projectTrusted,
 	}
 	manager.loadInitial()
 	return manager, nil
@@ -130,15 +144,20 @@ func (manager *SettingsManager) loadInitial() {
 	global, err := loadSettingsFile(manager.globalPath)
 	if err != nil {
 		manager.errors = append(manager.errors, SettingsError{Scope: GlobalSettings, Err: err})
+		manager.globalLoadError = true
 	} else {
 		manager.global = global
 	}
 
-	project, err := loadSettingsFile(manager.projectPath)
-	if err != nil {
-		manager.errors = append(manager.errors, SettingsError{Scope: ProjectSettings, Err: err})
-	} else {
-		manager.project = project
+	manager.project = Settings{}
+	if manager.projectTrusted {
+		project, err := loadSettingsFile(manager.projectPath)
+		if err != nil {
+			manager.errors = append(manager.errors, SettingsError{Scope: ProjectSettings, Err: err})
+			manager.projectLoadError = true
+		} else {
+			manager.project = project
+		}
 	}
 	manager.effective = mergeSettings(manager.global, manager.project)
 }
@@ -276,14 +295,44 @@ func (manager *SettingsManager) Reload() {
 
 	if global, err := loadSettingsFile(manager.globalPath); err != nil {
 		manager.errors = append(manager.errors, SettingsError{Scope: GlobalSettings, Err: err})
+		manager.globalLoadError = true
 	} else {
 		manager.global = global
+		manager.globalLoadError = false
+	}
+	manager.reloadProjectLocked()
+	manager.effective = mergeSettings(manager.global, manager.project)
+}
+
+func (manager *SettingsManager) reloadProjectLocked() {
+	if !manager.projectTrusted {
+		manager.project = Settings{}
+		manager.projectLoadError = false
+		return
 	}
 	if project, err := loadSettingsFile(manager.projectPath); err != nil {
 		manager.errors = append(manager.errors, SettingsError{Scope: ProjectSettings, Err: err})
+		manager.projectLoadError = true
 	} else {
 		manager.project = project
+		manager.projectLoadError = false
 	}
+}
+
+func (manager *SettingsManager) IsProjectTrusted() bool {
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
+	return manager.projectTrusted
+}
+
+func (manager *SettingsManager) SetProjectTrusted(trusted bool) {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if manager.projectTrusted == trusted {
+		return
+	}
+	manager.projectTrusted = trusted
+	manager.reloadProjectLocked()
 	manager.effective = mergeSettings(manager.global, manager.project)
 }
 
@@ -341,6 +390,74 @@ func (manager *SettingsManager) GetEnabledModels() []string {
 		}
 	}
 	return models
+}
+
+func settingsStringSlice(settings Settings, key string) []string {
+	value, exists := settings[key]
+	if !exists {
+		return nil
+	}
+	switch values := value.(type) {
+	case []any:
+		result := make([]string, 0, len(values))
+		for _, item := range values {
+			if text, ok := item.(string); ok {
+				result = append(result, text)
+			}
+		}
+		return result
+	case []string:
+		return append([]string(nil), values...)
+	default:
+		return nil
+	}
+}
+
+func (manager *SettingsManager) GetGlobalSkillPaths() []string {
+	return settingsStringSlice(manager.GetGlobalSettings(), "skills")
+}
+
+func (manager *SettingsManager) GetProjectSkillPaths() []string {
+	return settingsStringSlice(manager.GetProjectSettings(), "skills")
+}
+
+func (manager *SettingsManager) GetGlobalPromptTemplatePaths() []string {
+	return settingsStringSlice(manager.GetGlobalSettings(), "prompts")
+}
+
+func (manager *SettingsManager) GetProjectPromptTemplatePaths() []string {
+	return settingsStringSlice(manager.GetProjectSettings(), "prompts")
+}
+
+func (manager *SettingsManager) GetEnableSkillCommands() bool {
+	value, exists := manager.value("enableSkillCommands")
+	if enabled, ok := value.(bool); exists && ok {
+		return enabled
+	}
+	return true
+}
+
+func (manager *SettingsManager) GetGoExtensions() map[string]bool {
+	manager.mu.RLock()
+	var configured map[string]any
+	switch value := manager.effective["goExtensions"].(type) {
+	case map[string]any:
+		configured = value
+	case Settings:
+		configured = value
+	}
+	if len(configured) == 0 {
+		manager.mu.RUnlock()
+		return nil
+	}
+	result := make(map[string]bool, len(configured))
+	for name, value := range configured {
+		if enabled, ok := value.(bool); ok {
+			result[name] = enabled
+		}
+	}
+	manager.mu.RUnlock()
+	return result
 }
 
 func (manager *SettingsManager) GetDefaultThinkingLevel() ai.ModelThinkingLevel {

@@ -144,6 +144,11 @@ func StreamOpenAICompletionsWithOptions(
 		payloadValue = openAICompletionsWireValue(payloadValue, compat.chatTemplateKwargOrder)
 
 		headers := buildOpenAICompletionsHeaders(model, requestContext, &options.StreamOptions, compat, retention)
+		headers, err = applyHeadersHook(ctx, model, &options.StreamOptions, headers)
+		if err != nil {
+			yield(streamFailure(ctx, output, err, ""), nil)
+			return
+		}
 		response, err := postOpenAIStream(
 			ctx,
 			model,
