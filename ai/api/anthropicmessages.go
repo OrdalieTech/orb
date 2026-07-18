@@ -1014,7 +1014,7 @@ func postAnthropicStream(
 			option.WithHeaderDel("Authorization"),
 		}
 		apiKey := anthropicAPIKey(options)
-		if oauth {
+		if oauth || model.Provider == "github-copilot" {
 			clientOptions = append(clientOptions, option.WithAuthToken(apiKey))
 		} else if apiKey != "" {
 			clientOptions = append(clientOptions, option.WithAPIKey(apiKey))
@@ -1101,6 +1101,7 @@ func anthropicHeaders(
 	for name, values := range modelHeaders {
 		headers[name] = append([]string(nil), values...)
 	}
+	addCopilotHeaders(headers, model, requestContext)
 	if options != nil {
 		for name, value := range options.Headers {
 			if value == nil {
@@ -1110,7 +1111,6 @@ func anthropicHeaders(
 			}
 		}
 	}
-	// TODO(WP-241): add GitHub Copilot bearer authentication and its dynamic headers.
 	return headers
 }
 

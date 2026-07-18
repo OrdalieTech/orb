@@ -45,6 +45,25 @@ func OAuthCredential(refresh, access string, expires int64) *Credential {
 	}
 }
 
+// OAuthCredentialAccessFirst preserves the property insertion order used by
+// providers whose upstream credential literals place access before refresh.
+func OAuthCredentialAccessFirst(access, refresh string, expires int64) *Credential {
+	return &Credential{
+		Type: CredentialOAuth, Refresh: refresh, Access: access, Expires: expires,
+		order: []string{"type", "access", "refresh", "expires"},
+	}
+}
+
+func (credential *Credential) SetExtra(name string, value json.RawMessage) {
+	if credential.Extra == nil {
+		credential.Extra = make(map[string]json.RawMessage)
+	}
+	credential.Extra[name] = append(json.RawMessage(nil), value...)
+	if !contains(credential.order, name) {
+		credential.order = append(credential.order, name)
+	}
+}
+
 func (credential *Credential) Clone() *Credential {
 	if credential == nil {
 		return nil

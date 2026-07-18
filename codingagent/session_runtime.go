@@ -224,6 +224,8 @@ func (runtime *SessionRuntime) Dispose() {
 	runtime.mu.Lock()
 	runtime.listeners = nil
 	runtime.mu.Unlock()
+	// Provider session caches are process-scoped; upstream treats teardown as best-effort.
+	_ = ai.CleanupSessionResources(runtime.manager.GetSessionID())
 }
 
 func (runtime *SessionRuntime) Subscribe(listener func(any)) func() {

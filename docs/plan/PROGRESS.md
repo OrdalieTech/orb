@@ -20,7 +20,7 @@ This tracker follows the scheduled work-package index in `OVERVIEW.md`. The inde
 | 2 | 222 | in progress |
 | 2 | 231 | in progress |
 | 2 | 232 | in progress |
-| 2 | 241 | pending |
+| 2 | 241 | in progress (credential-gated manual/live checks) |
 | 2 | 250 | complete |
 | 2 | 260 | in progress |
 | 2 | 270 | pending |

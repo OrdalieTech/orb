@@ -127,6 +127,25 @@ func TestAnthropicMissingAuthenticationIsAStreamError(t *testing.T) {
 	}
 }
 
+func TestAnthropicCopilotDynamicHeaders(t *testing.T) {
+	model := anthropicTestModel()
+	model.Provider = "github-copilot"
+	requestContext := ai.Context{Messages: ai.MessageList{
+		&ai.UserMessage{Content: ai.NewUserContent(&ai.ImageContent{Data: "AA==", MimeType: "image/png"})},
+		&ai.AssistantMessage{},
+	}}
+	headers := anthropicHeaders(model, requestContext, nil, nil)
+	if headers.Get("X-Initiator") != "agent" || headers.Get("Openai-Intent") != "conversation-edits" || headers.Get("Copilot-Vision-Request") != "true" {
+		t.Fatalf("Copilot headers = %v", headers)
+	}
+
+	user := "user-override"
+	headers = anthropicHeaders(model, requestContext, &ai.StreamOptions{Headers: ai.ProviderHeaders{"X-Initiator": &user}}, nil)
+	if headers.Get("X-Initiator") != user {
+		t.Fatalf("options header did not override dynamic header: %v", headers)
+	}
+}
+
 func TestAnthropicCustomClientSkipsAdapterAuthentication(t *testing.T) {
 	requested := false
 	var requestBody []byte

@@ -116,6 +116,9 @@ func TestJSONPrintModeMatchesUpstreamRunPrintModeFixtures(t *testing.T) {
 			}
 		})
 	}
+	if !strings.Contains(helpText, "pi login <provider>") || !strings.Contains(helpText, "anthropic, openai-codex, github-copilot, xai") {
+		t.Fatalf("headless OAuth help is incomplete: %q", helpText)
+	}
 }
 
 func loadF3SessionFixtures(t testing.TB) f3SessionFixtures {

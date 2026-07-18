@@ -8,6 +8,7 @@ import (
 
 	"github.com/OrdalieTech/pi-go/ai"
 	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
+	"github.com/OrdalieTech/pi-go/ai/auth/oauth"
 	aimodels "github.com/OrdalieTech/pi-go/ai/models"
 	"github.com/OrdalieTech/pi-go/ai/providers"
 )
@@ -61,8 +62,30 @@ func (registry *ModelRegistry) Reload() error {
 		all = updated
 	}
 	authProviders := readStoredCredentials(filepath.Join(registry.agentDir, "auth.json"))
+	all = filterCredentialModels(all, authProviders)
 	registry.config, registry.all, registry.errors, registry.authProviders = config, all, errors, authProviders
 	return nil
+}
+
+func filterCredentialModels(models []ai.Model, credentials map[string]*aiauth.Credential) []ai.Model {
+	availableIDs, filter := oauth.CopilotAvailableModelIDs(credentials["github-copilot"])
+	if !filter {
+		return models
+	}
+	available := make(map[string]struct{}, len(availableIDs))
+	for _, id := range availableIDs {
+		available[id] = struct{}{}
+	}
+	result := make([]ai.Model, 0, len(models))
+	for _, model := range models {
+		if model.Provider == "github-copilot" {
+			if _, ok := available[model.ID]; !ok {
+				continue
+			}
+		}
+		result = append(result, model)
+	}
+	return result
 }
 
 func (registry *ModelRegistry) Error() string { return strings.Join(registry.errors, "\n\n") }

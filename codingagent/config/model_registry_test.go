@@ -9,8 +9,34 @@ import (
 	"testing"
 
 	"github.com/OrdalieTech/pi-go/ai"
+	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
 	"github.com/OrdalieTech/pi-go/conformance/runner"
 )
+
+func TestModelRegistryFiltersCopilotModelsFromOAuthCredential(t *testing.T) {
+	models := []ai.Model{
+		{Provider: "github-copilot", ID: "first"},
+		{Provider: "openai", ID: "unrelated"},
+		{Provider: "github-copilot", ID: "second"},
+	}
+	credential := aiauth.OAuthCredential("refresh", "access", 1)
+	credential.SetExtra("availableModelIds", json.RawMessage(`["second"]`))
+	filtered := filterCredentialModels(models, map[string]*aiauth.Credential{"github-copilot": credential})
+	if len(filtered) != 2 || filtered[0].ID != "unrelated" || filtered[1].ID != "second" {
+		t.Fatalf("filtered models = %#v", filtered)
+	}
+
+	credential.SetExtra("availableModelIds", json.RawMessage(`[]`))
+	filtered = filterCredentialModels(models, map[string]*aiauth.Credential{"github-copilot": credential})
+	if len(filtered) != 1 || filtered[0].ID != "unrelated" {
+		t.Fatalf("empty availability list = %#v", filtered)
+	}
+
+	credential.SetExtra("availableModelIds", json.RawMessage(`null`))
+	if filtered = filterCredentialModels(models, map[string]*aiauth.Credential{"github-copilot": credential}); len(filtered) != len(models) {
+		t.Fatalf("null availability list filtered models = %#v", filtered)
+	}
+}
 
 func TestModelRegistryHotReloadMatchesErrorSnapshotSemantics(t *testing.T) {
 	directory := t.TempDir()

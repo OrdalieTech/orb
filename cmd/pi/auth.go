@@ -9,8 +9,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/OrdalieTech/pi-go/ai"
 	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
-	"github.com/OrdalieTech/pi-go/ai/auth/oauth"
+	"github.com/OrdalieTech/pi-go/ai/providers"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 )
 
@@ -19,11 +20,16 @@ func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
 		args.CommandArgs = []string{"anthropic"}
 	}
 	if len(args.CommandArgs) != 1 {
-		return reportCLIError(streams.Stderr, fmt.Errorf("usage: pi %s anthropic", args.Command))
+		return reportCLIError(streams.Stderr, fmt.Errorf("usage: pi %s <provider>", args.Command))
 	}
 	provider := strings.ToLower(args.CommandArgs[0])
-	if args.Command != "logout" && provider != "anthropic" {
-		return reportCLIError(streams.Stderr, fmt.Errorf("provider %q does not support headless login yet", provider))
+	var method aiauth.OAuth
+	if args.Command != "logout" {
+		definition, known := providers.Get(ai.ProviderID(provider))
+		if !known || definition.Methods.OAuth == nil {
+			return reportCLIError(streams.Stderr, fmt.Errorf("provider %q does not support headless login yet", provider))
+		}
+		method = definition.Methods.OAuth
 	}
 	agentDir, err := config.GetAgentDir()
 	if err != nil {
@@ -45,7 +51,7 @@ func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
 	}
 
 	interaction := newHeadlessAuthInteraction(streams.Stdin, streams.Stdout, streams.Stderr)
-	credential, err := oauth.NewAnthropic(nil).Login(ctx, interaction)
+	credential, err := method.Login(ctx, interaction)
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}

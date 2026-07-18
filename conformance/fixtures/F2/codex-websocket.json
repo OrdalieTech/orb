@@ -1,0 +1,142 @@
+{
+  "cases": [
+    {
+      "name": "codex-auto-websocket-success",
+      "api": "openai-codex-responses",
+      "model": {
+        "id": "gpt-codex-fixture",
+        "name": "Codex Fixture Model",
+        "api": "openai-codex-responses",
+        "provider": "openai-codex",
+        "baseUrl": "https://codex.fixture.invalid/backend-api",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "xhigh"
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "headers": {
+          "x-model-header": "websocket"
+        }
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "over websocket",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "header.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC1mMi1jb2RleCJ9fQ.signature",
+        "transport": "auto",
+        "sessionId": "codex-websocket-fixture",
+        "headers": {
+          "x-fixture": "websocket"
+        }
+      },
+      "serverEvents": [
+        {
+          "type": "response.created",
+          "response": {
+            "id": "ws-fixture"
+          }
+        },
+        {
+          "type": "response.done",
+          "response": {
+            "id": "ws-fixture",
+            "status": "completed",
+            "output": []
+          }
+        }
+      ],
+      "expectedConnections": 1,
+      "expectedRequests": [
+        {
+          "url": "wss://codex.fixture.invalid/backend-api/codex/responses",
+          "headers": {
+            "authorization": "Bearer header.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC1mMi1jb2RleCJ9fQ.signature",
+            "chatgpt-account-id": "account-f2-codex",
+            "openai-beta": "responses_websockets=2026-02-06",
+            "originator": "pi",
+            "session-id": "codex-websocket-fixture",
+            "x-client-request-id": "codex-websocket-fixture",
+            "x-fixture": "websocket",
+            "x-model-header": "websocket"
+          },
+          "body": "{\"type\":\"response.create\",\"model\":\"gpt-codex-fixture\",\"store\":false,\"stream\":true,\"instructions\":\"You are a helpful assistant.\",\"input\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"over websocket\"}]}],\"text\":{\"verbosity\":\"low\"},\"include\":[\"reasoning.encrypted_content\"],\"prompt_cache_key\":\"codex-websocket-fixture\",\"tool_choice\":\"auto\",\"parallel_tool_calls\":true}"
+        }
+      ],
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "openai-codex-responses",
+            "provider": "openai-codex",
+            "model": "gpt-codex-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "ws-fixture"
+          }
+        },
+        {
+          "type": "done",
+          "reason": "stop",
+          "message": {
+            "role": "assistant",
+            "content": [],
+            "api": "openai-codex-responses",
+            "provider": "openai-codex",
+            "model": "gpt-codex-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "ws-fixture"
+          }
+        }
+      ]
+    }
+  ]
+}
