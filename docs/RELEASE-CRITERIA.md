@@ -7,20 +7,20 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 
 ## Standing criteria (every merge, no exceptions)
 
-- [ ] AGENTS.md definition of done: `CGO_ENABLED=0` cross-build (linux+darwin × amd64+arm64),
+- [x] AGENTS.md definition of done: `CGO_ENABLED=0` cross-build (linux+darwin × amd64+arm64),
       `go vet` + golangci-lint clean, `go test -race ./...` green including fixtures, MIRROR.md updated.
-- [ ] No dependency outside ARCHITECTURE §8's table.
-- [ ] No fixture golden weakened, regenerated-away, or hand-edited to pass.
-- [ ] No single-implementation interface unless it's an upstream seam (Operations, env, credential store).
+- [x] No dependency outside ARCHITECTURE §8's table.
+- [x] No fixture golden weakened, regenerated-away, or hand-edited to pass.
+- [x] No single-implementation interface unless it's an upstream seam (Operations, env, credential store).
 
 ## M1 — Skeleton (closes Phase 1; verified by WP-180)
 
-- [ ] `pi -p "<task>"` completes a real OpenAI round-trip with tool calls on a sample repo.
-- [ ] Session written in `-p` mode opens in TS pi; a TS-pi session resumes with `pi -c`. (F6 cross-read)
-- [ ] Fixture families F1, F2(openai), F3, F4, F5, F6, F9 green; `make fixtures` regeneration is clean.
-- [ ] Cold start < 50 ms (hyperfine, warm cache); binary < 25 MB.
-- [ ] Dogfood: ≥ 1 real pi-go WP executed using pi-go itself; transcript committed.
-- [ ] Trim pass #1 done (checklist below), report committed.
+- [x] `pi -p "<task>"` completes a real OpenAI round-trip with tool calls on a sample repo.
+- [x] Session written in `-p` mode opens in TS pi; a TS-pi session resumes with `pi -c`. (F6 cross-read)
+- [x] Fixture families F1, F2(openai), F3, F4, F5, F6, F9 green; `make fixtures` regeneration is clean.
+- [x] Cold start < 50 ms (hyperfine, warm cache); binary < 25 MB.
+- [x] Dogfood: ≥ 1 real pi-go WP executed using pi-go itself; transcript committed.
+- [x] Trim pass #1 done (checklist below), report committed.
 
 ## M2 — Headless parity (closes Phases 2+3; verified by WP-390)
 

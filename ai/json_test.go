@@ -219,31 +219,30 @@ func TestAssistantMessageSecondaryStringsPreserveLoneSurrogates(t *testing.T) {
 		t.Fatal(err)
 	}
 	assistant := message.(*ai.AssistantMessage)
-	wtf8 := "\xed\xa0\x80"
-	assertWTF8String(t, "api", string(assistant.API), wtf8)
-	assertWTF8String(t, "provider", string(assistant.Provider), wtf8)
-	assertWTF8String(t, "model", assistant.Model, wtf8)
-	assertWTF8String(t, "stop reason", string(assistant.StopReason), wtf8)
-	assertWTF8StringPointer(t, "response ID", assistant.ResponseID, wtf8)
-	assertWTF8StringPointer(t, "response model", assistant.ResponseModel, wtf8)
-	assertWTF8StringPointer(t, "error message", assistant.ErrorMessage, wtf8)
+	assertWTF8String(t, "api", string(assistant.API))
+	assertWTF8String(t, "provider", string(assistant.Provider))
+	assertWTF8String(t, "model", assistant.Model)
+	assertWTF8String(t, "stop reason", string(assistant.StopReason))
+	assertWTF8StringPointer(t, "response ID", assistant.ResponseID)
+	assertWTF8StringPointer(t, "response model", assistant.ResponseModel)
+	assertWTF8StringPointer(t, "error message", assistant.ErrorMessage)
 
 	text := assistant.Content[0].(*ai.TextContent)
-	assertWTF8StringPointer(t, "text signature", text.TextSignature, wtf8)
+	assertWTF8StringPointer(t, "text signature", text.TextSignature)
 	thinking := assistant.Content[1].(*ai.ThinkingContent)
-	assertWTF8StringPointer(t, "thinking signature", thinking.ThinkingSignature, wtf8)
+	assertWTF8StringPointer(t, "thinking signature", thinking.ThinkingSignature)
 	call := assistant.Content[2].(*ai.ToolCall)
-	assertWTF8String(t, "tool-call ID", call.ID, wtf8)
-	assertWTF8String(t, "tool-call name", call.Name, wtf8)
-	assertWTF8StringPointer(t, "tool-call thought signature", call.ThoughtSignature, wtf8)
-	assertWTF8StringPointer(t, "tool-call partial JSON", call.PartialJSON, wtf8)
-	assertWTF8StringPointer(t, "tool-call partial arguments", call.PartialArgs, wtf8)
+	assertWTF8String(t, "tool-call ID", call.ID)
+	assertWTF8String(t, "tool-call name", call.Name)
+	assertWTF8StringPointer(t, "tool-call thought signature", call.ThoughtSignature)
+	assertWTF8StringPointer(t, "tool-call partial JSON", call.PartialJSON)
+	assertWTF8StringPointer(t, "tool-call partial arguments", call.PartialArgs)
 
 	diagnostic := (*assistant.Diagnostics)[0]
-	assertWTF8String(t, "diagnostic type", diagnostic.Type, wtf8)
-	assertWTF8StringPointer(t, "diagnostic error name", diagnostic.Error.Name, wtf8)
-	assertWTF8String(t, "diagnostic error message", diagnostic.Error.Message, wtf8)
-	assertWTF8StringPointer(t, "diagnostic error stack", diagnostic.Error.Stack, wtf8)
+	assertWTF8String(t, "diagnostic type", diagnostic.Type)
+	assertWTF8StringPointer(t, "diagnostic error name", diagnostic.Error.Name)
+	assertWTF8String(t, "diagnostic error message", diagnostic.Error.Message)
+	assertWTF8StringPointer(t, "diagnostic error stack", diagnostic.Error.Stack)
 
 	encoded, err := ai.MarshalMessage(message)
 	if err != nil {
@@ -261,16 +260,15 @@ func TestToolResultSecondaryStringsPreserveLoneSurrogates(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := message.(*ai.ToolResultMessage)
-	wtf8 := "\xed\xa0\x80"
-	assertWTF8String(t, "tool-result call ID", result.ToolCallID, wtf8)
-	assertWTF8String(t, "tool-result name", result.ToolName, wtf8)
-	assertWTF8StringPointer(t, "tool-result text signature", result.Content[0].(*ai.TextContent).TextSignature, wtf8)
-	assertWTF8String(t, "image data", result.Content[1].(*ai.ImageContent).Data, wtf8)
-	assertWTF8String(t, "image MIME type", result.Content[1].(*ai.ImageContent).MimeType, wtf8)
+	assertWTF8String(t, "tool-result call ID", result.ToolCallID)
+	assertWTF8String(t, "tool-result name", result.ToolName)
+	assertWTF8StringPointer(t, "tool-result text signature", result.Content[0].(*ai.TextContent).TextSignature)
+	assertWTF8String(t, "image data", result.Content[1].(*ai.ImageContent).Data)
+	assertWTF8String(t, "image MIME type", result.Content[1].(*ai.ImageContent).MimeType)
 	if result.AddedToolNames == nil || len(*result.AddedToolNames) != 2 {
 		t.Fatalf("added tool names = %#v", result.AddedToolNames)
 	}
-	assertWTF8String(t, "added tool name", (*result.AddedToolNames)[0], wtf8)
+	assertWTF8String(t, "added tool name", (*result.AddedToolNames)[0])
 
 	encoded, err := ai.MarshalMessage(message)
 	if err != nil {
@@ -281,19 +279,20 @@ func TestToolResultSecondaryStringsPreserveLoneSurrogates(t *testing.T) {
 	}
 }
 
-func assertWTF8String(t *testing.T, name, got, want string) {
+func assertWTF8String(t *testing.T, name, got string) {
 	t.Helper()
+	const want = "\xed\xa0\x80"
 	if got != want {
 		t.Fatalf("%s bytes = %x, want %x", name, []byte(got), []byte(want))
 	}
 }
 
-func assertWTF8StringPointer(t *testing.T, name string, got *string, want string) {
+func assertWTF8StringPointer(t *testing.T, name string, got *string) {
 	t.Helper()
 	if got == nil {
 		t.Fatalf("%s is nil", name)
 	}
-	assertWTF8String(t, name, *got, want)
+	assertWTF8String(t, name, *got)
 }
 
 func TestMarshalMatchesJSONStringifyEscaping(t *testing.T) {

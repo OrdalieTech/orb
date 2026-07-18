@@ -107,16 +107,16 @@ func TestCalculateCostUsesHighestMatchingTier(t *testing.T) {
 
 func TestTruncateOpenAIErrorTextUsesUTF16CodeUnits(t *testing.T) {
 	text := strings.Repeat("🙂", 2_001)
-	got := truncateOpenAIErrorText(text, maxProviderErrorBodyChars)
+	got := truncateOpenAIErrorText(text)
 	want := strings.Repeat("🙂", 2_000) + "... [truncated 2 chars]"
 	if got != want {
 		t.Fatalf("truncated length = %d bytes, want %d", len(got), len(want))
 	}
-	if got := truncateOpenAIErrorText(strings.Repeat("é", maxProviderErrorBodyChars+1), maxProviderErrorBodyChars); got != strings.Repeat("é", maxProviderErrorBodyChars)+"... [truncated 1 chars]" {
+	if got := truncateOpenAIErrorText(strings.Repeat("é", maxProviderErrorBodyChars+1)); got != strings.Repeat("é", maxProviderErrorBodyChars)+"... [truncated 1 chars]" {
 		t.Fatal("BMP multibyte characters were counted as UTF-8 bytes")
 	}
 	boundary := strings.Repeat("a", maxProviderErrorBodyChars-1) + "🙂"
-	truncated := truncateOpenAIErrorText(boundary, maxProviderErrorBodyChars)
+	truncated := truncateOpenAIErrorText(boundary)
 	if utf8.ValidString(truncated) {
 		t.Fatal("UTF-16 slice did not retain its boundary surrogate")
 	}
@@ -170,7 +170,6 @@ func TestPostOpenAIStreamPreservesWireJSONAndHooksResponse(t *testing.T) {
 	response, err := postOpenAIStream(
 		context.Background(),
 		model,
-		ai.Context{},
 		options,
 		"responses",
 		map[string]any{"text": "<&"},
@@ -230,7 +229,6 @@ func TestPostOpenAIStreamRecoversSDKHTTPErrorBodies(t *testing.T) {
 			response, err := postOpenAIStream(
 				context.Background(),
 				&ai.Model{Provider: "openai", BaseURL: "https://fixture.invalid/v1"},
-				ai.Context{},
 				&ai.StreamOptions{APIKey: &key},
 				"responses",
 				map[string]any{},

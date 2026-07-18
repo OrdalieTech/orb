@@ -199,7 +199,7 @@ func StreamOpenAIResponsesWithOptions(
 		}
 
 		headers := buildOpenAIResponsesHeaders(model, requestContext, streamOptions, compat)
-		response, err := postOpenAIStream(ctx, model, requestContext, streamOptions, "responses", hookedPayload, headers)
+		response, err := postOpenAIStream(ctx, model, streamOptions, "responses", hookedPayload, headers)
 		if err != nil {
 			fail(err)
 			return
@@ -485,10 +485,7 @@ func convertResponsesMessages(
 	deferredTools map[string]ai.Tool,
 	supportsDeveloperRole bool,
 ) ([]any, error) {
-	normalizer := func(id string, target *ai.Model, source *ai.AssistantMessage) string {
-		return normalizeResponsesToolCallID(id, target, source)
-	}
-	messages := transformMessages(requestContext.Messages, model, normalizer)
+	messages := transformMessages(requestContext.Messages, model, normalizeResponsesToolCallID)
 	result := make([]any, 0, len(messages)+1)
 	loadedToolNames := make(map[string]struct{})
 	if requestContext.SystemPrompt != nil && *requestContext.SystemPrompt != "" {

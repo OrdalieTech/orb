@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -80,12 +81,7 @@ func clampOpenAIPromptCacheKey(value *string) any {
 }
 
 func modelSupportsImage(model *ai.Model) bool {
-	for _, modality := range model.Input {
-		if modality == ai.InputImage {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(model.Input, ai.InputImage)
 }
 
 func sanitizeText(value string) string {
@@ -205,7 +201,6 @@ func applyPayloadHook(ctx context.Context, model *ai.Model, options *ai.StreamOp
 func postOpenAIStream(
 	ctx context.Context,
 	model *ai.Model,
-	requestContext ai.Context,
 	options *ai.StreamOptions,
 	path string,
 	payload any,
@@ -333,7 +328,7 @@ func formatOpenAIError(err error, prefix string) string {
 		}
 		return err.Error()
 	}
-	body = truncateOpenAIErrorText(body, maxProviderErrorBodyChars)
+	body = truncateOpenAIErrorText(body)
 	if prefix != "" {
 		return fmt.Sprintf("%s (%d): %s", prefix, apiError.StatusCode, body)
 	}
@@ -432,12 +427,12 @@ func openAIJSONTruthy(value any) bool {
 	}
 }
 
-func truncateOpenAIErrorText(text string, maxChars int) string {
+func truncateOpenAIErrorText(text string) string {
 	units := utf16.Encode([]rune(text))
-	if len(units) <= maxChars {
+	if len(units) <= maxProviderErrorBodyChars {
 		return text
 	}
-	prefixUnits := units[:maxChars]
+	prefixUnits := units[:maxProviderErrorBodyChars]
 	prefix := string(utf16.Decode(prefixUnits))
 	if len(prefixUnits) > 0 && prefixUnits[len(prefixUnits)-1] >= 0xd800 && prefixUnits[len(prefixUnits)-1] <= 0xdbff {
 		unit := prefixUnits[len(prefixUnits)-1]
@@ -447,7 +442,7 @@ func truncateOpenAIErrorText(text string, maxChars int) string {
 			byte(0x80 | unit&0x3f),
 		})
 	}
-	return fmt.Sprintf("%s... [truncated %d chars]", prefix, len(units)-maxChars)
+	return fmt.Sprintf("%s... [truncated %d chars]", prefix, len(units)-maxProviderErrorBodyChars)
 }
 
 func extractOpenAIErrorBody(raw string) string {

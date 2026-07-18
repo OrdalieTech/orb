@@ -32,12 +32,8 @@ func normalizePath(path string) string {
 	return path
 }
 
-func resolvePath(path string, bases ...string) (string, error) {
-	path = normalizePath(path)
-	if !filepath.IsAbs(path) && len(bases) > 0 {
-		path = filepath.Join(normalizePath(bases[0]), path)
-	}
-	return filepath.Abs(path)
+func resolvePath(path string) (string, error) {
+	return filepath.Abs(normalizePath(path))
 }
 
 func defaultAgentDir() (string, error) {

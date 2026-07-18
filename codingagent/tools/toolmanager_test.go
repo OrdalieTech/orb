@@ -71,7 +71,7 @@ func TestToolManagerResolutionAndOfflineMode(t *testing.T) {
 	var requests atomic.Int32
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("PI_OFFLINE", "YeS")
-	manager = testManagedToolManager(t, "linux", "amd64", func(*http.Request) (*http.Response, error) {
+	manager = testManagedToolManager(t, "linux", func(*http.Request) (*http.Response, error) {
 		requests.Add(1)
 		return testHTTPResponse(http.StatusInternalServerError, nil), nil
 	})
@@ -88,7 +88,7 @@ func TestToolManagerDownloadsReleaseAssetAndExtractsTarGz(t *testing.T) {
 	assetName := toolAssetName(managedRG, "14.1.1", "linux", "amd64")
 	asset := toolReleaseAsset(assetName, "https://example.test/archive", archive)
 	var requested []string
-	manager := testManagedToolManager(t, "linux", "amd64", func(request *http.Request) (*http.Response, error) {
+	manager := testManagedToolManager(t, "linux", func(request *http.Request) (*http.Response, error) {
 		requested = append(requested, request.URL.Path)
 		switch request.URL.Path {
 		case "/repos/BurntSushi/ripgrep/releases/latest":
@@ -119,7 +119,7 @@ func TestToolManagerDownloadsReleaseAssetAndExtractsTarGz(t *testing.T) {
 func TestToolManagerExtractsZipAndPinsIntelMacVersion(t *testing.T) {
 	zipData := toolZip(t, "package/rg.exe", "windows-rg")
 	windowsAsset := toolAssetName(managedRG, "14.1.1", "windows", "amd64")
-	windows := testManagedToolManager(t, "windows", "amd64", archiveTransport(t, "14.1.1", windowsAsset, zipData))
+	windows := testManagedToolManager(t, "windows", archiveTransport(t, "14.1.1", windowsAsset, zipData))
 	path, err := windows.downloadTool(context.Background(), managedRG)
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +130,7 @@ func TestToolManagerExtractsZipAndPinsIntelMacVersion(t *testing.T) {
 
 	tarData := toolTarGz(t, "package/fd", "fd-binary")
 	var requests []string
-	mac := testManagedToolManager(t, "darwin", "amd64", func(request *http.Request) (*http.Response, error) {
+	mac := testManagedToolManager(t, "darwin", func(request *http.Request) (*http.Response, error) {
 		requests = append(requests, request.URL.Path)
 		switch request.URL.Path {
 		case "/repos/sharkdp/fd/releases/latest":
@@ -156,7 +156,7 @@ func TestToolManagerExtractsZipAndPinsIntelMacVersion(t *testing.T) {
 func TestToolManagerArchiveWithoutBinaryFailsBeforeInstall(t *testing.T) {
 	archive := toolTarGz(t, "package/README.md", "none")
 	assetName := toolAssetName(managedRG, "14.1.1", "linux", "amd64")
-	manager := testManagedToolManager(t, "linux", "amd64", archiveTransport(t, "14.1.1", assetName, archive))
+	manager := testManagedToolManager(t, "linux", archiveTransport(t, "14.1.1", assetName, archive))
 	_, err := manager.downloadTool(context.Background(), managedRG)
 	if err == nil || !strings.Contains(err.Error(), "binary not found in archive") {
 		t.Fatalf("error = %v", err)
@@ -173,7 +173,7 @@ func TestToolManagerRejectsChecksumMismatchBeforeExtract(t *testing.T) {
 		Name: assetName, BrowserDownloadURL: "https://example.test/archive",
 		Digest: "sha256:" + strings.Repeat("0", sha256.Size*2),
 	}
-	manager := testManagedToolManager(t, "linux", "amd64", func(request *http.Request) (*http.Response, error) {
+	manager := testManagedToolManager(t, "linux", func(request *http.Request) (*http.Response, error) {
 		switch request.URL.Path {
 		case "/repos/BurntSushi/ripgrep/releases/latest":
 			return testHTTPResponse(http.StatusOK, toolReleaseJSON(t, "14.1.1", asset)), nil
@@ -199,7 +199,7 @@ func TestToolManagerUsesPublishedChecksumAssetWhenDigestMissing(t *testing.T) {
 	checksumAsset := releaseAsset{Name: assetName + ".sha256", BrowserDownloadURL: "https://example.test/checksum"}
 	checksum := sha256.Sum256(archive)
 	checksumFile := []byte(hex.EncodeToString(checksum[:]) + "  " + assetName + "\n")
-	manager := testManagedToolManager(t, "linux", "amd64", func(request *http.Request) (*http.Response, error) {
+	manager := testManagedToolManager(t, "linux", func(request *http.Request) (*http.Response, error) {
 		switch request.URL.Path {
 		case "/repos/BurntSushi/ripgrep/releases/latest":
 			return testHTTPResponse(http.StatusOK, toolReleaseJSON(t, "14.1.1", asset, checksumAsset)), nil
@@ -224,7 +224,7 @@ func TestToolManagerFailsClosedWithoutChecksum(t *testing.T) {
 	assetName := toolAssetName(managedRG, "14.1.1", "linux", "amd64")
 	asset := releaseAsset{Name: assetName, BrowserDownloadURL: "https://example.test/archive"}
 	var requests atomic.Int32
-	manager := testManagedToolManager(t, "linux", "amd64", func(*http.Request) (*http.Response, error) {
+	manager := testManagedToolManager(t, "linux", func(*http.Request) (*http.Response, error) {
 		requests.Add(1)
 		return testHTTPResponse(http.StatusOK, toolReleaseJSON(t, "14.1.1", asset)), nil
 	})
@@ -261,10 +261,10 @@ func TestToolManagerLiveDownload(t *testing.T) {
 	}
 }
 
-func testManagedToolManager(t *testing.T, goos, goarch string, transport roundTripFunc) *toolManager {
+func testManagedToolManager(t *testing.T, goos string, transport roundTripFunc) *toolManager {
 	t.Helper()
 	return &toolManager{
-		binDir: t.TempDir(), goos: goos, goarch: goarch,
+		binDir: t.TempDir(), goos: goos, goarch: "amd64",
 		apiBaseURL: "https://example.test",
 		client:     &http.Client{Transport: transport},
 	}

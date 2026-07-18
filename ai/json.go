@@ -805,99 +805,47 @@ func (blocks ImagesContent) MarshalJSON() ([]byte, error) {
 	return marshalRequiredSlice(blocks)
 }
 
+var textImageBlockFactories = map[string]func() any{
+	"text":  func() any { return &TextContent{} },
+	"image": func() any { return &ImageContent{} },
+}
+
+var assistantBlockFactories = map[string]func() any{
+	"text":     func() any { return &TextContent{} },
+	"thinking": func() any { return &ThinkingContent{} },
+	"toolCall": func() any { return &ToolCall{} },
+}
+
 func (blocks *UserContentBlocks) UnmarshalJSON(data []byte) error {
-	decoded, err := unmarshalBlocks(data, map[string]func() any{
-		"text":  func() any { return &TextContent{} },
-		"image": func() any { return &ImageContent{} },
-	})
-	if err != nil {
-		return err
+	decoded, err := unmarshalTypedBlocks[UserContentBlock](data, textImageBlockFactories)
+	if err == nil {
+		*blocks = decoded
 	}
-	result := make(UserContentBlocks, 0, len(decoded))
-	for _, block := range decoded {
-		switch value := block.(type) {
-		case *TextContent:
-			result = append(result, value)
-		case *ImageContent:
-			result = append(result, value)
-		case *UnknownContentBlock:
-			result = append(result, value)
-		}
-	}
-	*blocks = result
-	return nil
+	return err
 }
 
 func (blocks *AssistantContent) UnmarshalJSON(data []byte) error {
-	decoded, err := unmarshalBlocks(data, map[string]func() any{
-		"text":     func() any { return &TextContent{} },
-		"thinking": func() any { return &ThinkingContent{} },
-		"toolCall": func() any { return &ToolCall{} },
-	})
-	if err != nil {
-		return err
+	decoded, err := unmarshalTypedBlocks[AssistantContentBlock](data, assistantBlockFactories)
+	if err == nil {
+		*blocks = decoded
 	}
-	result := make(AssistantContent, 0, len(decoded))
-	for _, block := range decoded {
-		switch value := block.(type) {
-		case *TextContent:
-			result = append(result, value)
-		case *ThinkingContent:
-			result = append(result, value)
-		case *ToolCall:
-			result = append(result, value)
-		case *UnknownContentBlock:
-			result = append(result, value)
-		}
-	}
-	*blocks = result
-	return nil
+	return err
 }
 
 func (blocks *ToolResultContent) UnmarshalJSON(data []byte) error {
-	decoded, err := unmarshalBlocks(data, map[string]func() any{
-		"text":  func() any { return &TextContent{} },
-		"image": func() any { return &ImageContent{} },
-	})
-	if err != nil {
-		return err
+	decoded, err := unmarshalTypedBlocks[ToolResultContentBlock](data, textImageBlockFactories)
+	if err == nil {
+		*blocks = decoded
 	}
-	result := make(ToolResultContent, 0, len(decoded))
-	for _, block := range decoded {
-		switch value := block.(type) {
-		case *TextContent:
-			result = append(result, value)
-		case *ImageContent:
-			result = append(result, value)
-		case *UnknownContentBlock:
-			result = append(result, value)
-		}
-	}
-	*blocks = result
-	return nil
+	return err
 }
 
 func (blocks *ImagesContent) UnmarshalJSON(data []byte) error {
-	decoded, err := unmarshalBlocks(data, map[string]func() any{
-		"text":  func() any { return &TextContent{} },
-		"image": func() any { return &ImageContent{} },
-	})
-	if err != nil {
-		return err
+	decoded, err := unmarshalTypedBlocks[ImagesContentBlock](data, textImageBlockFactories)
+	if err == nil {
+		*blocks = decoded
 	}
-	result := make(ImagesContent, 0, len(decoded))
-	for _, block := range decoded {
-		switch value := block.(type) {
-		case *TextContent:
-			result = append(result, value)
-		case *ImageContent:
-			result = append(result, value)
-		case *UnknownContentBlock:
-			result = append(result, value)
-		}
-	}
-	*blocks = result
-	return nil
+	return err
 }
 
 func (messages MessageList) MarshalJSON() ([]byte, error) {
@@ -954,6 +902,20 @@ func unmarshalBlocks(data []byte, factories map[string]func() any) ([]any, error
 		decoded = append(decoded, value)
 	}
 	return decoded, nil
+}
+
+func unmarshalTypedBlocks[T any](data []byte, factories map[string]func() any) ([]T, error) {
+	decoded, err := unmarshalBlocks(data, factories)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]T, 0, len(decoded))
+	for _, block := range decoded {
+		if value, ok := block.(T); ok {
+			result = append(result, value)
+		}
+	}
+	return result, nil
 }
 
 func decodeJSONObject(data []byte) (map[string]any, error) {

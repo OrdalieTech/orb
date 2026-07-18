@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/OrdalieTech/pi-go/codingagent/config"
@@ -118,7 +119,7 @@ func BuildSystemPrompt(options SystemPromptOptions) string {
 		seenGuidelines[guideline] = struct{}{}
 		guidelines = append(guidelines, guideline)
 	}
-	if containsString(tools, "bash") && !containsString(tools, "grep") && !containsString(tools, "find") && !containsString(tools, "ls") {
+	if slices.Contains(tools, "bash") && !slices.Contains(tools, "grep") && !slices.Contains(tools, "find") && !slices.Contains(tools, "ls") {
 		addGuideline("Use bash for file operations like ls, rg, find")
 	}
 	for _, guideline := range options.PromptGuidelines {
@@ -199,15 +200,6 @@ func resolvePromptPackageDir(packageDir string) string {
 		return filepath.Clean(absolute)
 	}
 	return filepath.Clean(packageDir)
-}
-
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }
 
 func isJSTrimSpace(character rune) bool {

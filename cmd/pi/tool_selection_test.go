@@ -46,7 +46,7 @@ func TestResolveToolSelection(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			got := ResolveToolSelection(test.args, test.registered)
-			if !reflect.DeepEqual(got.Active, nonNil(test.active)) {
+			if !reflect.DeepEqual(got, nonNil(test.active)) {
 				t.Fatalf("selection = %#v", got)
 			}
 		})
