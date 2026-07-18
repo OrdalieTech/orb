@@ -9,20 +9,26 @@ and 13 offline examples. The integration keeps the already-landed request-auth s
 default resolver with the CLI, without advancing or claiming verification of the Sprint 3
 Codex/Copilot/xAI expansion.
 
-The facade currently covers session construction, persisted-message restoration, model and
-thinking selection, built-in/custom tool selection, resource injection, native extension binding,
-provider settings, event subscription, and synchronous prompting. Follow-up integration fixes made
-CWD and provider session IDs explicit, preserved persisted compaction summaries in provider
-context, propagated queue/transport/retry settings, and mapped extension reload starts to
-`resources_discover: reload` like upstream.
+The facade covers session construction, persisted-message restoration, model and thinking
+selection, built-in/custom tool selection, resource injection, native extension binding,
+provider settings, event subscription, synchronous prompting, and replaceable-session hosting.
+Follow-up integration fixes made CWD and provider session IDs explicit, preserved persisted
+compaction summaries in provider context, propagated queue/transport/retry/timeout/thinking-budget
+settings, and mapped extension reload starts to `resources_discover: reload` like upstream.
 
 ## Current evidence
 
 - All 13 example packages compile and run to completion against the faux provider when the agent
-  directory is isolated.
+  directory is isolated; example 13 now exercises `AgentSessionRuntime` new/switch rebinding.
 - The SDK and CLI focused tests are green, including persisted-message projection, provider option
-  threading, request-auth resolution, CWD normalization, event-channel race regressions, and
-  extension start/discovery reasons.
+  threading and precedence, request-auth resolution, CWD normalization, lossless event-channel
+  saturation/race regressions, and extension start/discovery reasons.
+- `AgentSessionRuntime` has characterization coverage for new/resume/fork/import/reload lifecycle,
+  setup-before-start, fresh extension instances, stale captured contexts, post-replacement message
+  delivery, nested replacement, persisted fork-before-root, and cross-CWD service recreation.
+- The pinned TypeScript runtime now generates `WP370Runtime/lifecycle.json`; its new-session
+  cancellation, shutdown/invalidation, factory, setup, rebind, `withSession`, and quit ordering is
+  green against the Go host without hand-authored expected values.
 - `make build test lint`, `make fixtures-check`, the pinned upstream RPC suite (27/27), module
   verification/tidy diff, and all four CGO-free Linux/Darwin amd64/arm64 builds are green on the
   consolidated candidate.
@@ -31,18 +37,18 @@ context, propagated queue/transport/retry settings, and mapped extension reload 
 
 ## Sprint 1 red surface
 
-- Upstream `AgentSessionRuntime` replacement orchestration (`new`, switch/resume, fork/import,
-  diagnostics, and recreated cwd-bound services) has no public Go counterpart yet. Example 13 only
-  demonstrates manual `SessionRuntime` assembly.
+- Public prompt options, direct agent access, custom/user-message injection, and active-tool
+  get/set methods still lack the upstream SDK surface.
+- `createAgentSessionServices` and `createAgentSessionFromServices` have no Go counterparts, so
+  embedders cannot yet prebuild and reuse the complete cwd-bound service set.
 - The examples are runnable SDK sketches, not yet behavior-by-behavior ports of all upstream
   examples. In particular, the auth, session-management, resource-discovery, settings, and runtime
   examples cover narrower paths.
 - Default Go resource discovery does not yet include the complete upstream settings/trust/package
-  and extension-loading behavior.
-- Provider option threading still lacks the upstream HTTP-idle timeout, WebSocket connect timeout,
-  and thinking-budget settings.
-- `SubscribeChan` is a Go convenience that currently drops events when its buffer is full; upstream
-  event subscribers are lossless and ordered.
+  and reloadable extension-loader behavior; the runtime exposes current services and diagnostics,
+  but there is not yet a public `ResourceLoader` interface matching upstream.
+- Native extension provider registration is not wired through `NewAgentSession`; that model-registry
+  contract depends on the WP-520 provider runtime landing.
 - The required committed external-module `go get`/build/run smoke and automated execution of all 13
   examples remain open.
 - TS-versus-Go SDK/example conformance evidence belongs in `docs/compare/sprint-1.md` and has not

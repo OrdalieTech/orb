@@ -1023,6 +1023,92 @@ func TestResourcesDiscoverReasonFollowsSessionStart(t *testing.T) {
 	}
 }
 
+func TestSessionRuntimeReloadClearsHooksRemovedByFreshRegistry(t *testing.T) {
+	t.Parallel()
+	cwd := t.TempDir()
+	manager, settings := extensionRuntimeDependencies(t, cwd)
+	enabled := true
+	registry := extensions.NewRegistry(cwd)
+	if err := registry.Register("<reload-hooks>", func(api extensions.API) error {
+		if !enabled {
+			return nil
+		}
+		api.On(extensions.EventContext, func(_ context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
+			return extensions.ContextResult{Messages: raw.(extensions.ContextEvent).Messages}, nil
+		})
+		api.On(extensions.EventToolCall, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+			return nil, nil
+		})
+		api.On(extensions.EventToolResult, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+			return nil, nil
+		})
+		api.On(extensions.EventBeforeProviderRequest, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+			return nil, nil
+		})
+		api.On(extensions.EventBeforeProviderHeaders, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+			return nil, nil
+		})
+		api.On(extensions.EventAfterProviderResponse, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+			return nil, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tool := agent.AgentToolFunc{
+		AgentToolSpec: agent.AgentToolSpec{Name: "noop", Parameters: jsonschema.Schema(`{"type":"object"}`)},
+		Run: func(context.Context, string, any, agent.AgentToolUpdateCallback) (agent.AgentToolResult, error) {
+			return agent.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: "done"}}}, nil
+		},
+	}
+	provider := faux.New()
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage(faux.ToolCall("noop", map[string]any{}, faux.ToolCallOptions{ID: "call-1"}), faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse}),
+		faux.AssistantMessage("done"),
+	})
+	stream := func(ctx context.Context, model *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+		copy := *options
+		if copy.OnPayload != nil {
+			if _, _, err := copy.OnPayload(ctx, map[string]any{}, model); err != nil {
+				return nil, err
+			}
+		}
+		if copy.TransformHeaders != nil {
+			if _, err := copy.TransformHeaders(ctx, ai.ProviderHeaders{}, model); err != nil {
+				return nil, err
+			}
+		}
+		if copy.OnResponse != nil {
+			if err := copy.OnResponse(ctx, ai.ProviderResponse{Status: 200}, model); err != nil {
+				return nil, err
+			}
+		}
+		copy.OnPayload = nil
+		copy.TransformHeaders = nil
+		copy.OnResponse = nil
+		return provider.StreamSimple(ctx, model, request, &copy)
+	}
+	created := agent.NewAgent(
+		agent.WithInitialState(agent.AgentState{Model: provider.GetModel(), Tools: []agent.AgentTool{tool}}),
+		agent.WithStreamFn(stream), agent.WithConvertToLLM(ConvertToLLM),
+	)
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
+		Agent: created, SessionManager: manager, Settings: settings, StreamFn: stream,
+		ExtensionRegistry: registry, BaseTools: []agent.AgentTool{tool}, InitialActiveToolNames: []string{"noop"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+	enabled = false
+	if err := runtime.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.PromptSync(context.Background(), "go"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func assistantText(message *ai.AssistantMessage) string {
 	if message == nil {
 		return ""

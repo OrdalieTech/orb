@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -556,6 +558,38 @@ func (manager *SettingsManager) GetProviderRetrySettings() ProviderRetrySettings
 	}
 }
 
+// GetHTTPIdleTimeoutMS returns the provider idle timeout. Zero is preserved so
+// SDK callers can translate upstream's disabled-timeout sentinel.
+func (manager *SettingsManager) GetHTTPIdleTimeoutMS() (int64, error) {
+	value, err := manager.timeoutSetting("httpIdleTimeoutMs")
+	if err != nil {
+		return 0, err
+	}
+	if value == nil {
+		return 300000, nil
+	}
+	return *value, nil
+}
+
+// GetWebSocketConnectTimeoutMS returns the optional WebSocket handshake timeout.
+func (manager *SettingsManager) GetWebSocketConnectTimeoutMS() (*int64, error) {
+	return manager.timeoutSetting("websocketConnectTimeoutMs")
+}
+
+// GetThinkingBudgets returns custom token budgets for each thinking level.
+func (manager *SettingsManager) GetThinkingBudgets() *ai.ThinkingBudgets {
+	object := manager.objectValue("thinkingBudgets")
+	if object == nil {
+		return nil
+	}
+	return &ai.ThinkingBudgets{
+		Minimal: optionalInt(object, "minimal"),
+		Low:     optionalInt(object, "low"),
+		Medium:  optionalInt(object, "medium"),
+		High:    optionalInt(object, "high"),
+	}
+}
+
 func (manager *SettingsManager) GetSessionDir() (string, error) {
 	value := manager.stringValue("sessionDir")
 	if value == "" {
@@ -659,6 +693,56 @@ func optionalInt64(object map[string]any, key string) *int64 {
 		return &converted
 	}
 	return nil
+}
+
+func (manager *SettingsManager) timeoutSetting(key string) (*int64, error) {
+	manager.mu.RLock()
+	value, exists := manager.effective[key]
+	manager.mu.RUnlock()
+	if !exists {
+		return nil, nil
+	}
+	var number float64
+	switch typed := value.(type) {
+	case json.Number:
+		parsed, err := typed.Float64()
+		if err != nil {
+			return nil, invalidTimeoutSetting(key, value)
+		}
+		number = parsed
+	case float64:
+		number = typed
+	case int:
+		number = float64(typed)
+	case int64:
+		number = float64(typed)
+	case string:
+		trimmed := strings.TrimSpace(typed)
+		if strings.EqualFold(trimmed, "disabled") {
+			zero := int64(0)
+			return &zero, nil
+		}
+		parsed, err := strconv.ParseFloat(trimmed, 64)
+		if err != nil || trimmed == "" {
+			return nil, invalidTimeoutSetting(key, value)
+		}
+		number = parsed
+	default:
+		return nil, invalidTimeoutSetting(key, value)
+	}
+	if math.IsNaN(number) || math.IsInf(number, 0) || number < 0 {
+		return nil, invalidTimeoutSetting(key, value)
+	}
+	converted := int64(math.Floor(number))
+	return &converted, nil
+}
+
+func invalidTimeoutSetting(key string, value any) error {
+	formatted := fmt.Sprint(value)
+	if value == nil {
+		formatted = "null"
+	}
+	return fmt.Errorf("Invalid %s setting: %s", key, formatted) //nolint:staticcheck // Upstream text.
 }
 
 func GetAgentDir() (string, error) {

@@ -33,15 +33,20 @@ type extensionRuntimeState struct {
 	resources            extensions.DiscoveredResources
 	pendingNextTurn      agent.AgentMessages
 	turnIndex            int
+	startEvent           extensions.SessionStartEvent
+	started              bool
+	config               SessionRuntimeConfig
 }
 
 func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig) {
+	replacingRunner := runtime.extensionState != nil
 	state := &extensionRuntimeState{
 		baseTools:        append([]agent.AgentTool(nil), runtimeConfig.BaseTools...),
 		toolRegistry:     make(map[string]agent.AgentTool),
 		toolInfo:         make(map[string]extensions.ToolInfo),
 		previousRegistry: make(map[string]struct{}),
 		excluded:         make(map[string]struct{}),
+		config:           runtimeConfig,
 	}
 	if len(state.baseTools) == 0 {
 		state.baseTools = append([]agent.AgentTool(nil), runtime.agent.State().Tools...)
@@ -56,8 +61,11 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 	if runtimeConfig.SystemPromptOptions != nil {
 		copy := cloneSystemPromptOptions(*runtimeConfig.SystemPromptOptions)
 		state.promptOptions = &copy
+		state.baseSystemPrompt = BuildSystemPrompt(copy)
+		runtime.agent.SetSystemPrompt(state.baseSystemPrompt)
+	} else {
+		state.baseSystemPrompt = runtime.agent.State().SystemPrompt
 	}
-	state.baseSystemPrompt = runtime.agent.State().SystemPrompt
 	runtime.extensionState = state
 
 	actions := extensions.Actions{
@@ -139,6 +147,11 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 	})
 	state.runner = runner
 
+	if replacingRunner {
+		runtime.agent.SetTransformContext(nil)
+		runtime.agent.SetToolCallHooks(nil, nil)
+		runtime.agent.SetProviderHooks(nil, nil, nil)
+	}
 	if runner.HasHandlers(extensions.EventContext) {
 		runtime.agent.SetTransformContext(func(ctx context.Context, messages agent.AgentMessages) (agent.AgentMessages, error) {
 			return runner.EmitContext(ctx, messages), nil
@@ -173,7 +186,32 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 	if runtimeConfig.SessionStartEvent != nil {
 		startEvent = *runtimeConfig.SessionStartEvent
 	}
-	runner.Emit(context.Background(), startEvent)
+	state.startEvent = startEvent
+	if !runtimeConfig.DeferExtensionStart {
+		_ = runtime.BindExtensions(context.Background())
+	}
+}
+
+// BindExtensions activates the session's extension instance and emits its
+// configured session_start event once.
+func (runtime *SessionRuntime) BindExtensions(ctx context.Context) error {
+	if runtime == nil || runtime.extensionState == nil {
+		return nil
+	}
+	state := runtime.extensionState
+	state.mu.Lock()
+	if state.started {
+		state.mu.Unlock()
+		return nil
+	}
+	state.started = true
+	startEvent := state.startEvent
+	runner := state.runner
+	state.mu.Unlock()
+	if runner == nil {
+		return nil
+	}
+	runner.Emit(ctx, startEvent)
 	if runner.HasHandlers(extensions.EventResourcesDiscover) {
 		discoverReason := extensions.ResourcesDiscoverStartup
 		if startEvent.Reason == extensions.SessionStartReload {
@@ -186,14 +224,85 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 		runtime.extendResourcesFromExtensions(resources)
 	}
 	runtime.syncExtensionCommands()
+	return nil
 }
 
-func (runtime *SessionRuntime) disposeExtensions() {
+// Reload rebuilds the session's native extension instance from its registered
+// factories, then emits the reload lifecycle on the fresh context.
+func (runtime *SessionRuntime) Reload(ctx context.Context) error {
+	if runtime.beginReload != nil {
+		if err := runtime.beginReload(); err != nil {
+			return err
+		}
+		if runtime.endReload != nil {
+			defer runtime.endReload()
+		}
+	}
+	if err := runtime.reloadExtensions(ctx); err != nil {
+		return err
+	}
+	if runtime.reloadPrepared != nil {
+		if err := runtime.reloadPrepared(); err != nil {
+			return err
+		}
+	}
+	return runtime.BindExtensions(ctx)
+}
+
+func (runtime *SessionRuntime) reloadExtensions(ctx context.Context) error {
+	if runtime == nil || runtime.extensionState == nil {
+		return nil
+	}
+	if err := runtime.WaitForIdle(ctx); err != nil {
+		return err
+	}
+	state := runtime.extensionState
+	state.mu.Lock()
+	runner := state.runner
+	configuration := state.config
+	state.mu.Unlock()
+	activeTools := runtime.agent.State().Tools
+	configuration.InitialActiveToolNames = make([]string, 0, len(activeTools))
+	for _, tool := range activeTools {
+		configuration.InitialActiveToolNames = append(configuration.InitialActiveToolNames, tool.Spec().Name)
+	}
+	extensions.EmitSessionShutdown(ctx, runner, extensions.SessionShutdownEvent{Reason: extensions.SessionShutdownReload})
+	if runner != nil {
+		runner.Invalidate("")
+	}
+	registry, err := configuration.ExtensionRegistry.Fresh(runtime.manager.GetCWD())
+	if err != nil {
+		return err
+	}
+	runtime.settings.Reload()
+	if configuration.RebuildBaseTools != nil {
+		baseTools, rebuildErr := configuration.RebuildBaseTools()
+		if rebuildErr != nil {
+			return rebuildErr
+		}
+		configuration.BaseTools = baseTools
+	}
+	runtime.agent.SetSteeringMode(agent.QueueMode(runtime.settings.GetSteeringMode()))
+	runtime.agent.SetFollowUpMode(agent.QueueMode(runtime.settings.GetFollowUpMode()))
+	runtime.mu.Lock()
+	runtime.autoCompaction = runtime.settings.GetCompactionSettings().Enabled
+	runtime.autoRetry = runtime.settings.GetRetrySettings().Enabled
+	runtime.mu.Unlock()
+	configuration.ExtensionRegistry = registry
+	runtime.slashResolver = cloneSlashResolver(runtime.baseSlashResolver)
+	configuration.SlashResolver = runtime.slashResolver
+	configuration.SessionStartEvent = &extensions.SessionStartEvent{Reason: extensions.SessionStartReload}
+	configuration.DeferExtensionStart = true
+	runtime.bindExtensions(configuration)
+	return nil
+}
+
+func (runtime *SessionRuntime) disposeExtensions(emitShutdown bool) {
 	state := runtime.extensionState
 	if state == nil || state.runner == nil {
 		return
 	}
-	if state.runner.HasHandlers(extensions.EventSessionShutdown) {
+	if emitShutdown && state.runner.HasHandlers(extensions.EventSessionShutdown) {
 		state.runner.Emit(context.Background(), extensions.SessionShutdownEvent{Reason: extensions.SessionShutdownQuit})
 	}
 	state.runner.Invalidate("")

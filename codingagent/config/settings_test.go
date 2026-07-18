@@ -284,8 +284,11 @@ func TestHarnessPolicySettings(t *testing.T) {
 	root := t.TempDir()
 	agentDir := filepath.Join(root, "agent")
 	writeSettings(t, filepath.Join(agentDir, "settings.json"), map[string]any{
-		"compaction":    map[string]any{"enabled": false, "reserveTokens": 1200, "keepRecentTokens": 300},
-		"branchSummary": map[string]any{"reserveTokens": 900, "skipPrompt": true},
+		"compaction":                map[string]any{"enabled": false, "reserveTokens": 1200, "keepRecentTokens": 300},
+		"branchSummary":             map[string]any{"reserveTokens": 900, "skipPrompt": true},
+		"httpIdleTimeoutMs":         1234.9,
+		"websocketConnectTimeoutMs": 5678,
+		"thinkingBudgets":           map[string]any{"minimal": 1, "low": 2, "medium": 3, "high": 4},
 		"retry": map[string]any{
 			"enabled": false, "maxRetries": 4, "baseDelayMs": 25,
 			"provider": map[string]any{"timeoutMs": 50, "maxRetries": 2, "maxRetryDelayMs": 75},
@@ -308,6 +311,16 @@ func TestHarnessPolicySettings(t *testing.T) {
 	if provider.TimeoutMS == nil || *provider.TimeoutMS != 50 || provider.MaxRetries == nil || *provider.MaxRetries != 2 || provider.MaxRetryDelayMS != 75 {
 		t.Fatalf("provider retry = %#v", provider)
 	}
+	if got, err := manager.GetHTTPIdleTimeoutMS(); err != nil || got != 1234 {
+		t.Fatalf("http idle timeout = %d, %v", got, err)
+	}
+	if got, err := manager.GetWebSocketConnectTimeoutMS(); err != nil || got == nil || *got != 5678 {
+		t.Fatalf("websocket timeout = %#v, %v", got, err)
+	}
+	budgets := manager.GetThinkingBudgets()
+	if budgets == nil || budgets.Minimal == nil || *budgets.Minimal != 1 || budgets.Low == nil || *budgets.Low != 2 || budgets.Medium == nil || *budgets.Medium != 3 || budgets.High == nil || *budgets.High != 4 {
+		t.Fatalf("thinking budgets = %#v", budgets)
+	}
 
 	empty, err := NewSettingsManager(root, WithAgentDir(filepath.Join(root, "empty")))
 	if err != nil {
@@ -324,6 +337,68 @@ func TestHarnessPolicySettings(t *testing.T) {
 	}
 	if got := empty.GetProviderRetrySettings(); got.TimeoutMS != nil || got.MaxRetries != nil || got.MaxRetryDelayMS != 60000 {
 		t.Fatalf("default provider retry = %#v", got)
+	}
+	if got, err := empty.GetHTTPIdleTimeoutMS(); err != nil || got != 300000 {
+		t.Fatalf("default http idle timeout = %d, %v", got, err)
+	}
+	if got, err := empty.GetWebSocketConnectTimeoutMS(); err != nil || got != nil {
+		t.Fatalf("default websocket timeout = %#v, %v", got, err)
+	}
+	if got := empty.GetThinkingBudgets(); got != nil {
+		t.Fatalf("default thinking budgets = %#v", got)
+	}
+}
+
+func TestInvalidTransportTimeoutSettings(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	writeSettings(t, filepath.Join(agentDir, "settings.json"), map[string]any{
+		"httpIdleTimeoutMs":         -1,
+		"websocketConnectTimeoutMs": "soon",
+	})
+	manager, err := NewSettingsManager(root, WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.GetHTTPIdleTimeoutMS(); err == nil || err.Error() != "Invalid httpIdleTimeoutMs setting: -1" {
+		t.Fatalf("http timeout error = %v", err)
+	}
+	if _, err := manager.GetWebSocketConnectTimeoutMS(); err == nil || err.Error() != "Invalid websocketConnectTimeoutMs setting: soon" {
+		t.Fatalf("websocket timeout error = %v", err)
+	}
+}
+
+func TestTransportTimeoutStringSettingsMatchUpstream(t *testing.T) {
+	root := t.TempDir()
+	for _, test := range []struct {
+		name    string
+		value   any
+		want    int64
+		wantErr string
+	}{
+		{name: "disabled", value: " DISABLED ", want: 0},
+		{name: "numeric", value: " 1234.9 ", want: 1234},
+		{name: "empty", value: "", wantErr: "Invalid httpIdleTimeoutMs setting: "},
+		{name: "null", value: nil, wantErr: "Invalid httpIdleTimeoutMs setting: null"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			agentDir := filepath.Join(root, test.name)
+			writeSettings(t, filepath.Join(agentDir, "settings.json"), map[string]any{"httpIdleTimeoutMs": test.value})
+			manager, err := NewSettingsManager(root, WithAgentDir(agentDir))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := manager.GetHTTPIdleTimeoutMS()
+			if test.wantErr != "" {
+				if err == nil || err.Error() != test.wantErr {
+					t.Fatalf("timeout error = %v, want %q", err, test.wantErr)
+				}
+				return
+			}
+			if err != nil || got != test.want {
+				t.Fatalf("timeout = %d, %v; want %d", got, err, test.want)
+			}
+		})
 	}
 }
 

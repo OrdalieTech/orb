@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "cases": {
+    "success": {
+      "result": {
+        "cancelled": false
+      },
+      "records": [
+        {
+          "phase": "event",
+          "event": {
+            "type": "session_before_switch",
+            "reason": "new"
+          }
+        },
+        {
+          "phase": "event",
+          "event": {
+            "type": "session_shutdown",
+            "reason": "new"
+          }
+        },
+        {
+          "phase": "beforeSessionInvalidate"
+        },
+        {
+          "phase": "create",
+          "event": {
+            "type": "session_start",
+            "reason": "new"
+          },
+          "cwd": "/fixture"
+        },
+        {
+          "phase": "setup"
+        },
+        {
+          "phase": "rebindSession"
+        },
+        {
+          "phase": "withSession",
+          "cwd": "/fixture"
+        }
+      ]
+    },
+    "cancelled": {
+      "result": {
+        "cancelled": true
+      },
+      "records": [
+        {
+          "phase": "event",
+          "event": {
+            "type": "session_before_switch",
+            "reason": "new"
+          }
+        }
+      ]
+    },
+    "dispose": [
+      {
+        "phase": "event",
+        "event": {
+          "type": "session_shutdown",
+          "reason": "quit"
+        }
+      },
+      {
+        "phase": "beforeSessionInvalidate"
+      }
+    ]
+  }
+}

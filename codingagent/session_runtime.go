@@ -45,8 +45,10 @@ type SessionRuntimeConfig struct {
 	InitialActiveToolNames []string
 	AllowedToolNames       *[]string
 	ExcludedToolNames      []string
+	RebuildBaseTools       func() ([]agent.AgentTool, error)
 	SystemPromptOptions    *SystemPromptOptions
 	SessionStartEvent      *extensions.SessionStartEvent
+	DeferExtensionStart    bool
 }
 
 type SessionRuntime struct {
@@ -79,9 +81,19 @@ type SessionRuntime struct {
 	getRequestAuth       agent.GetRequestAuthFunc
 	unsubscribeAgent     func()
 	slashResolver        *SlashResolver
+	baseSlashResolver    *SlashResolver
 	activeRuns           int
 	idleWait             chan struct{}
 	extensionState       *extensionRuntimeState
+	beginReload          func() error
+	endReload            func()
+	reloadPrepared       func() error
+}
+
+func (runtime *SessionRuntime) setReloadLifecycle(begin func() error, prepared func() error, end func()) {
+	runtime.beginReload = begin
+	runtime.reloadPrepared = prepared
+	runtime.endReload = end
 }
 
 type sessionListener struct {
@@ -119,10 +131,36 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 			if options != nil {
 				merged = *options
 			}
-			merged.TimeoutMS = providerSettings.TimeoutMS
-			merged.MaxRetries = providerSettings.MaxRetries
-			maxDelay := providerSettings.MaxRetryDelayMS
-			merged.MaxRetryDelayMS = &maxDelay
+			if merged.TimeoutMS == nil {
+				merged.TimeoutMS = providerSettings.TimeoutMS
+			}
+			if merged.TimeoutMS == nil {
+				httpIdleTimeout, err := runtimeConfig.Settings.GetHTTPIdleTimeoutMS()
+				if err != nil {
+					return nil, err
+				}
+				if httpIdleTimeout == 0 {
+					httpIdleTimeout = 2147483647
+				}
+				merged.TimeoutMS = &httpIdleTimeout
+			}
+			if merged.WebSocketConnectTimeoutMS == nil {
+				webSocketConnectTimeout, err := runtimeConfig.Settings.GetWebSocketConnectTimeoutMS()
+				if err != nil {
+					return nil, err
+				}
+				merged.WebSocketConnectTimeoutMS = webSocketConnectTimeout
+			}
+			if merged.MaxRetries == nil {
+				merged.MaxRetries = providerSettings.MaxRetries
+			}
+			if merged.MaxRetryDelayMS == nil {
+				maxDelay := providerSettings.MaxRetryDelayMS
+				merged.MaxRetryDelayMS = &maxDelay
+			}
+			if merged.ThinkingBudgets == nil {
+				merged.ThinkingBudgets = runtimeConfig.Settings.GetThinkingBudgets()
+			}
 			requestModel := model
 			if runtimeConfig.GetRequestAuth != nil && model != nil {
 				resolved, err := runtimeConfig.GetRequestAuth(ctx, model.Provider)
@@ -179,17 +217,30 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 		autoCompaction:  runtimeConfig.Settings.GetCompactionSettings().Enabled,
 		autoRetry:       runtimeConfig.Settings.GetRetrySettings().Enabled,
 		availableModels: runtimeConfig.AvailableModels, getAPIKey: runtimeConfig.GetAPIKey,
-		getRequestAuth: runtimeConfig.GetRequestAuth,
-		scopedModels:   append([]ScopedModel(nil), runtimeConfig.ScopedModels...),
-		slashResolver:  runtimeConfig.SlashResolver,
+		getRequestAuth:    runtimeConfig.GetRequestAuth,
+		scopedModels:      append([]ScopedModel(nil), runtimeConfig.ScopedModels...),
+		slashResolver:     cloneSlashResolver(runtimeConfig.SlashResolver),
+		baseSlashResolver: cloneSlashResolver(runtimeConfig.SlashResolver),
 	}
+	runtimeConfig.SlashResolver = runtime.slashResolver
 	runtime.agent.SetSteeringMode(agent.QueueMode(runtime.settings.GetSteeringMode()))
 	runtime.agent.SetFollowUpMode(agent.QueueMode(runtime.settings.GetFollowUpMode()))
-	if runtimeConfig.ExtensionRegistry != nil && runtimeConfig.ExtensionRegistry.Len() > 0 {
+	if runtimeConfig.ExtensionRegistry != nil {
 		runtime.bindExtensions(runtimeConfig)
 	}
 	runtime.unsubscribeAgent = runtime.agent.Subscribe(runtime.handleAgentEvent)
 	return runtime, nil
+}
+
+func cloneSlashResolver(resolver *SlashResolver) *SlashResolver {
+	if resolver == nil {
+		return nil
+	}
+	cloned := *resolver
+	cloned.Skills = append([]Skill(nil), resolver.Skills...)
+	cloned.PromptTemplates = append([]PromptTemplate(nil), resolver.PromptTemplates...)
+	cloned.ExtensionCommands = append([]SlashCommandInfo(nil), resolver.ExtensionCommands...)
+	return &cloned
 }
 
 func mergeSummaryHeaders(base, override *map[string]string) *map[string]string {
@@ -250,10 +301,18 @@ func mergeSummaryAuthHeaders(resolved map[string]string, overrides ai.ProviderHe
 }
 
 func (runtime *SessionRuntime) Dispose() {
+	runtime.dispose(true)
+}
+
+func (runtime *SessionRuntime) disposeAfterExtensionShutdown() {
+	runtime.dispose(false)
+}
+
+func (runtime *SessionRuntime) dispose(emitExtensionShutdown bool) {
 	if runtime == nil {
 		return
 	}
-	runtime.disposeExtensions()
+	runtime.disposeExtensions(emitExtensionShutdown)
 	runtime.Abort()
 	runtime.AbortCompaction()
 	runtime.AbortBranchSummary()

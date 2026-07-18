@@ -281,6 +281,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		},
 		BaseTools: runtime.BaseTools, InitialActiveToolNames: runtime.ActiveToolNames,
 		AllowedToolNames: runtime.AllowedTools, ExcludedToolNames: runtime.ExcludedTools,
+		RebuildBaseTools:    runtime.RebuildBaseTools,
 		SystemPromptOptions: &runtime.PromptOptions,
 	})
 	if err != nil {

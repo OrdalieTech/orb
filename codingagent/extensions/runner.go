@@ -664,6 +664,8 @@ func (contextValue *extensionContext) GetSystemPrompt() string {
 
 type extensionCommandContext struct{ *extensionContext }
 
+type extensionReplacedSessionContext struct{ *extensionCommandContext }
+
 func (contextValue *extensionCommandContext) commandActions() CommandActions {
 	contextValue.runner.assertActive()
 	contextValue.runner.mu.RLock()
@@ -700,12 +702,37 @@ func (contextValue *extensionCommandContext) Reload(ctx context.Context) error {
 	return contextValue.commandActions().Reload(ctx)
 }
 
+func (contextValue *extensionReplacedSessionContext) SendMessage(
+	ctx context.Context,
+	message CustomMessage,
+	options *SendMessageOptions,
+) error {
+	contextValue.runner.assertActive()
+	return contextValue.runner.runtime.actionsSnapshot().SendMessage(ctx, message, options)
+}
+
+func (contextValue *extensionReplacedSessionContext) SendUserMessage(
+	ctx context.Context,
+	content ai.UserContent,
+	options *SendUserMessageOptions,
+) error {
+	contextValue.runner.assertActive()
+	return contextValue.runner.runtime.actionsSnapshot().SendUserMessage(ctx, content, options)
+}
+
 func (runner *Runner) CreateContext() Context {
 	return &extensionContext{runner: runner}
 }
 
 func (runner *Runner) CreateCommandContext() CommandContext {
 	return &extensionCommandContext{extensionContext: &extensionContext{runner: runner}}
+}
+
+// CreateReplacedSessionContext creates the post-replacement context passed to
+// new, fork, and switch callbacks.
+func (runner *Runner) CreateReplacedSessionContext() ReplacedSessionContext {
+	command := &extensionCommandContext{extensionContext: &extensionContext{runner: runner}}
+	return &extensionReplacedSessionContext{extensionCommandContext: command}
 }
 
 func (runner *Runner) EmitProjectTrust(ctx context.Context, event ProjectTrustEvent, trustContext Context) (*ProjectTrustResult, []ExtensionError) {

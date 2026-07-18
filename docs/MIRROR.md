@@ -165,6 +165,7 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/coding-agent/examples/extensions/{pirate,status-line,permission-gate}.ts` | `codingagent/extensions/examples/{pirate,statusline,permissiongate}/`, `codingagent/modes/extensions_test.go` | WP-351 |
 | `packages/coding-agent/src/core/extensions/wrapper.ts`, native example wire-through behavior | `conformance/extract/f11-extension-wiring.ts`, `conformance/fixtures/F11-wire/`, `conformance/runner/f11_extension_wiring_test.go` | WP-351 |
 | `packages/coding-agent/src/core/{sdk,agent-session-runtime}.ts` | `codingagent/sdk.go`, `codingagent/sdk_test.go`, `codingagent/agent_session_runtime.go`, `codingagent/agent_session_runtime_test.go` | WP-370 |
+| `packages/coding-agent/src/core/{agent-session-runtime,session-manager}.ts` (replacement lifecycle ordering and cancellation) | `conformance/extract/wp370-runtime.ts`, `conformance/fixtures/WP370Runtime/`, `conformance/runner/wp370_runtime_test.go` | Sprint 0 / WP-370 |
 | `packages/coding-agent/docs/sdk.md` | `docs/sdk.md` | WP-370 |
 | `packages/coding-agent/examples/sdk/01-minimal.ts` … `13-session-runtime.ts` | `codingagent/examples/01_minimal/` … `13_session_runtime/` | WP-370 |
 | Historical WP-370 SDK integration evidence (no upstream source) | `docs/plan/wp-370-report.md` | WP-370 |

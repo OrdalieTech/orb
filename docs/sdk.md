@@ -35,8 +35,8 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error)
 Creates a configured `AgentSession` with upstream-compatible core construction:
 it creates the internal Agent, wires streaming, resolves model and thinking-level
 defaults, constructs built-in tools, restores messages from an existing session,
-and returns a ready-to-prompt session. Full resource-loader and replacement-runtime
-parity remains part of Sprint 1.
+and returns a ready-to-prompt session. `AgentSessionRuntime` adds replacement
+orchestration for hosts that support new, resume, fork, import, and reload flows.
 
 ### AgentSessionOptions
 
@@ -62,6 +62,8 @@ parity remains part of Sprint 1.
 | `Resources` | `*Resources` | discovered | System prompt, skills, context files, prompt templates |
 | `ExtensionRegistry` | `*extensions.Registry` | `nil` | Extension registry for event hooks and custom tools |
 | `SessionStartEvent` | `*extensions.SessionStartEvent` | `nil` | Metadata for extension session_start event |
+| `DeferExtensionStart` | `bool` | `false` | Leave session_start activation to `BindExtensions`; set automatically by AgentSessionRuntime |
+| `ProjectTrustContext` | `extensions.ProjectTrustContext` | `nil` | Effective-CWD trust context passed to custom runtime factories |
 | `SlashResolver` | `*SlashResolver` | auto | Slash command expansion |
 
 ### AgentSessionResult
@@ -71,6 +73,8 @@ type AgentSessionResult struct {
     Session              *AgentSession
     ExtensionRegistry    *extensions.Registry
     ModelFallbackMessage string
+    Services             *AgentSessionServices
+    Diagnostics          []AgentSessionRuntimeDiagnostic
 }
 ```
 
@@ -96,6 +100,8 @@ lifecycle:
 - `NavigateTree(ctx, targetID, options) (NavigateTreeResult, error)` — session tree navigation
 - `State() agent.AgentState` — current agent state
 - `WaitForIdle(ctx) error` — block until settled
+- `BindExtensions(ctx) error` — emit the configured session_start once after host bindings are ready
+- `Reload(ctx) error` — recreate native extension instances and emit reload lifecycle events
 
 ## Tools
 
@@ -153,8 +159,9 @@ for event := range ch {
 }
 ```
 
-Events are dropped silently when the buffer is full. Size the buffer for your
-consumption rate. Cancel is safe to call concurrently and multiple times.
+Delivery is ordered and lossless while the subscription is active, even when
+the public buffer fills. Cancel is safe to call concurrently and multiple times;
+it closes promptly and discards events still queued at cancellation.
 
 ## Resources
 
@@ -206,11 +213,38 @@ result, _ := codingagent.NewAgentSession(codingagent.AgentSessionOptions{
 })
 ```
 
+## Replaceable session runtime
+
+`NewAgentSessionRuntime` owns the active `AgentSession` and recreates cwd-bound
+services and extension instances on replacement. A host binds session-local
+state once, then installs the same callback for every replacement:
+
+```go
+host, err := codingagent.NewAgentSessionRuntime(ctx, options)
+if err != nil { panic(err) }
+defer host.Dispose(ctx)
+
+bind := func(session *codingagent.AgentSession) error {
+    return session.BindExtensions(ctx)
+}
+host.SetRebindSession(bind)
+if err := bind(host.Session()); err != nil { panic(err) }
+
+_, err = host.NewSession(ctx, &extensions.NewSessionOptions{
+    WithSession: func(ctx context.Context, replaced extensions.ReplacedSessionContext) error {
+        return replaced.SendUserMessage(ctx, ai.NewUserText("continue here"), nil)
+    },
+})
+```
+
+`NewSession`, `SwitchSession`, `Fork`, and `ImportFromJSONL` emit the upstream
+before/shutdown/start lifecycle, invalidate captured old contexts, rebind before
+`WithSession`, and retain model-fallback, services, CWD, and diagnostic state.
+
 ## Direct SessionRuntime access
 
 For hosts that already assembled an agent, session manager, settings, and resources, use
-`NewSessionRuntime` with a `SessionRuntimeConfig`. Session replacement and switch/fork/import
-orchestration are still pending Sprint 1 parity with upstream `AgentSessionRuntime`.
+`NewSessionRuntime` with a `SessionRuntimeConfig`.
 
 ## Examples
 
@@ -230,7 +264,7 @@ All examples live in `codingagent/examples/` and run against the faux provider:
 | 10 | settings | SettingsManager configuration |
 | 11 | sessions | In-memory and persistent sessions |
 | 12 | full_control | Explicit model, session, resources, and tool selection |
-| 13 | session_runtime | Manual SessionRuntime assembly |
+| 13 | session_runtime | AgentSessionRuntime replacement and host rebinding |
 
 Run any example:
 
