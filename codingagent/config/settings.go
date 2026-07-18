@@ -24,6 +24,29 @@ const (
 
 type Settings map[string]any
 
+type CompactionSettings struct {
+	Enabled          bool
+	ReserveTokens    int64
+	KeepRecentTokens int64
+}
+
+type BranchSummarySettings struct {
+	ReserveTokens int64
+	SkipPrompt    bool
+}
+
+type RetrySettings struct {
+	Enabled     bool
+	MaxRetries  int
+	BaseDelayMS int64
+}
+
+type ProviderRetrySettings struct {
+	TimeoutMS       *int64
+	MaxRetries      *int
+	MaxRetryDelayMS int64
+}
+
 type SettingsScope string
 
 const (
@@ -346,6 +369,42 @@ func (manager *SettingsManager) GetFollowUpMode() string {
 	return "one-at-a-time"
 }
 
+func (manager *SettingsManager) GetCompactionSettings() CompactionSettings {
+	object := manager.objectValue("compaction")
+	return CompactionSettings{
+		Enabled:          boolDefault(object, "enabled", true),
+		ReserveTokens:    int64Default(object, "reserveTokens", 16384),
+		KeepRecentTokens: int64Default(object, "keepRecentTokens", 20000),
+	}
+}
+
+func (manager *SettingsManager) GetBranchSummarySettings() BranchSummarySettings {
+	object := manager.objectValue("branchSummary")
+	return BranchSummarySettings{
+		ReserveTokens: int64Default(object, "reserveTokens", 16384),
+		SkipPrompt:    boolDefault(object, "skipPrompt", false),
+	}
+}
+
+func (manager *SettingsManager) GetRetrySettings() RetrySettings {
+	object := manager.objectValue("retry")
+	return RetrySettings{
+		Enabled:     boolDefault(object, "enabled", true),
+		MaxRetries:  int(int64Default(object, "maxRetries", 3)),
+		BaseDelayMS: int64Default(object, "baseDelayMs", 2000),
+	}
+}
+
+func (manager *SettingsManager) GetProviderRetrySettings() ProviderRetrySettings {
+	retry := manager.objectValue("retry")
+	provider := nestedObject(retry, "provider")
+	return ProviderRetrySettings{
+		TimeoutMS:       optionalInt64(provider, "timeoutMs"),
+		MaxRetries:      optionalInt(provider, "maxRetries"),
+		MaxRetryDelayMS: int64Default(provider, "maxRetryDelayMs", 60000),
+	}
+}
+
 func (manager *SettingsManager) GetSessionDir() (string, error) {
 	value := manager.stringValue("sessionDir")
 	if value == "" {
@@ -370,6 +429,85 @@ func (manager *SettingsManager) stringValue(key string) string {
 	value, _ := manager.value(key)
 	result, _ := value.(string)
 	return result
+}
+
+func (manager *SettingsManager) objectValue(key string) map[string]any {
+	value, _ := manager.value(key)
+	switch typed := value.(type) {
+	case map[string]any:
+		return typed
+	case Settings:
+		return typed
+	default:
+		return nil
+	}
+}
+
+func nestedObject(object map[string]any, key string) map[string]any {
+	if object == nil {
+		return nil
+	}
+	switch typed := object[key].(type) {
+	case map[string]any:
+		return typed
+	case Settings:
+		return typed
+	default:
+		return nil
+	}
+}
+
+func boolDefault(object map[string]any, key string, fallback bool) bool {
+	if object != nil {
+		if value, ok := object[key].(bool); ok {
+			return value
+		}
+	}
+	return fallback
+}
+
+func int64Default(object map[string]any, key string, fallback int64) int64 {
+	if value := optionalInt64(object, key); value != nil {
+		return *value
+	}
+	return fallback
+}
+
+func optionalInt(object map[string]any, key string) *int {
+	value := optionalInt64(object, key)
+	if value == nil {
+		return nil
+	}
+	converted := int(*value)
+	return &converted
+}
+
+func optionalInt64(object map[string]any, key string) *int64 {
+	if object == nil {
+		return nil
+	}
+	switch value := object[key].(type) {
+	case json.Number:
+		converted, err := value.Int64()
+		if err == nil {
+			return &converted
+		}
+		floatValue, err := value.Float64()
+		if err == nil {
+			converted = int64(floatValue)
+			return &converted
+		}
+	case float64:
+		converted := int64(value)
+		return &converted
+	case int:
+		converted := int64(value)
+		return &converted
+	case int64:
+		converted := value
+		return &converted
+	}
+	return nil
 }
 
 func GetAgentDir() (string, error) {

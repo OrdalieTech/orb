@@ -1,0 +1,3205 @@
+{
+  "schemaVersion": 1,
+  "tokenCases": [
+    {
+      "name": "role-0-user",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "ASCII and emoji 🙂"
+          }
+        ],
+        "timestamp": 1767225601000
+      },
+      "expected": 5
+    },
+    {
+      "name": "role-1-user",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "image",
+            "data": "aGVsbG8=",
+            "mimeType": "image/png"
+          }
+        ],
+        "timestamp": 1767225602000
+      },
+      "expected": 1200
+    },
+    {
+      "name": "role-2-assistant",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "consider 🙂"
+          },
+          {
+            "type": "text",
+            "text": "answer"
+          },
+          {
+            "type": "toolCall",
+            "id": "ordered",
+            "name": "read",
+            "arguments": {
+              "z": 1,
+              "a": "two"
+            }
+          }
+        ],
+        "api": "openai-responses",
+        "provider": "fixture",
+        "model": "fixture-model",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1767225603000
+      },
+      "expected": 10
+    },
+    {
+      "name": "role-3-toolResult",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "call-4",
+        "toolName": "read",
+        "content": [
+          {
+            "type": "text",
+            "text": "tool text 🙂"
+          }
+        ],
+        "isError": false,
+        "timestamp": 1767225604000
+      },
+      "expected": 3
+    },
+    {
+      "name": "role-4-custom",
+      "message": {
+        "role": "custom",
+        "customType": "fixture",
+        "content": "custom text",
+        "display": true,
+        "timestamp": 1767225605000
+      },
+      "expected": 3
+    },
+    {
+      "name": "role-5-bashExecution",
+      "message": {
+        "role": "bashExecution",
+        "command": "printf x",
+        "output": "x🙂",
+        "exitCode": 0,
+        "cancelled": false,
+        "truncated": false,
+        "timestamp": 1767225606000
+      },
+      "expected": 3
+    },
+    {
+      "name": "role-6-branchSummary",
+      "message": {
+        "role": "branchSummary",
+        "summary": "branch 🙂",
+        "fromId": "from",
+        "timestamp": 1767225607000
+      },
+      "expected": 3
+    },
+    {
+      "name": "role-7-compactionSummary",
+      "message": {
+        "role": "compactionSummary",
+        "summary": "compact 🙂",
+        "tokensBefore": 50,
+        "timestamp": 1767225608000
+      },
+      "expected": 3
+    }
+  ],
+  "conversationCases": [
+    {
+      "name": "all-agent-message-projections",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "start"
+            }
+          ],
+          "timestamp": 1767225601000
+        },
+        {
+          "role": "custom",
+          "customType": "fixture",
+          "content": [
+            {
+              "type": "text",
+              "text": "custom "
+            },
+            {
+              "type": "image",
+              "data": "aA==",
+              "mimeType": "image/png"
+            },
+            {
+              "type": "text",
+              "text": "blocks"
+            }
+          ],
+          "display": true,
+          "timestamp": 1767225602000
+        },
+        {
+          "role": "bashExecution",
+          "command": "go test ./...",
+          "output": "failed",
+          "exitCode": 2,
+          "cancelled": false,
+          "truncated": true,
+          "fullOutputPath": "/tmp/full.log",
+          "timestamp": 1767225603000
+        },
+        {
+          "role": "bashExecution",
+          "command": "secret",
+          "output": "hidden",
+          "exitCode": 0,
+          "cancelled": false,
+          "truncated": false,
+          "excludeFromContext": true,
+          "timestamp": 1767225604000
+        },
+        {
+          "role": "branchSummary",
+          "summary": "branch work",
+          "fromId": "old",
+          "timestamp": 1767225605000
+        },
+        {
+          "role": "compactionSummary",
+          "summary": "older work",
+          "tokensBefore": 900,
+          "timestamp": 1767225606000
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "first\nsecond"
+            },
+            {
+              "type": "text",
+              "text": "done"
+            },
+            {
+              "type": "toolCall",
+              "id": "order",
+              "name": "write",
+              "arguments": {
+                "z": 1,
+                "a": {
+                  "nested": true
+                }
+              }
+            }
+          ],
+          "api": "openai-responses",
+          "provider": "fixture",
+          "model": "fixture-model",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1767225607000
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "call-8",
+          "toolName": "read",
+          "content": [
+            {
+              "type": "text",
+              "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🙂tail"
+            }
+          ],
+          "isError": false,
+          "timestamp": 1767225608000
+        }
+      ],
+      "expected": "[User]: start\n\n[User]: custom blocks\n\n[User]: Ran `go test ./...`\n```\nfailed\n```\n\nCommand exited with code 2\n\n[Output truncated. Full output: /tmp/full.log]\n\n[User]: The following is a summary of a branch that this conversation came back from:\n\n<summary>\nbranch work</summary>\n\n[User]: The conversation history before this point was compacted into the following summary:\n\n<summary>\nolder work\n</summary>\n\n[Assistant thinking]: first\nsecond\n\n[Assistant]: done\n\n[Assistant tool calls]: write(z=1, a={\"nested\":true})\n\n[Tool result]: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🙂\n\n[... 4 more characters truncated]"
+    }
+  ],
+  "contextCases": [
+    {
+      "name": "last-valid-usage-plus-trailing-estimate",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "before usage"
+            }
+          ],
+          "timestamp": 1767225601000
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "reported"
+            }
+          ],
+          "api": "openai-responses",
+          "provider": "fixture",
+          "model": "fixture-model",
+          "usage": {
+            "input": 100,
+            "output": 20,
+            "cacheRead": 5,
+            "cacheWrite": 3,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1767225602000
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "trailing 🙂 text"
+            }
+          ],
+          "timestamp": 1767225603000
+        },
+        {
+          "role": "branchSummary",
+          "summary": "tail summary",
+          "fromId": "x",
+          "timestamp": 1767225604000
+        }
+      ],
+      "expected": {
+        "tokens": 135,
+        "usageTokens": 128,
+        "trailingTokens": 7,
+        "lastUsageIndex": 1
+      }
+    },
+    {
+      "name": "all-estimated-without-usage",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "no usage"
+            }
+          ],
+          "timestamp": 1767225605000
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "call-6",
+          "toolName": "read",
+          "content": [
+            {
+              "type": "text",
+              "text": "tail"
+            }
+          ],
+          "isError": false,
+          "timestamp": 1767225606000
+        }
+      ],
+      "expected": {
+        "tokens": 3,
+        "usageTokens": 0,
+        "trailingTokens": 3,
+        "lastUsageIndex": null
+      }
+    }
+  ],
+  "cutCases": [
+    {
+      "name": "whole-turn-boundary-with-metadata",
+      "entries": [
+        {
+          "type": "message",
+          "id": "u1",
+          "parentId": null,
+          "timestamp": "2026-01-01T00:00:01.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "timestamp": 1767225601000
+          }
+        },
+        {
+          "type": "message",
+          "id": "a1",
+          "parentId": "u1",
+          "timestamp": "2026-01-01T00:00:02.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225602000
+          }
+        },
+        {
+          "type": "model_change",
+          "id": "m1",
+          "parentId": "a1",
+          "timestamp": "2026-01-01T00:00:03.000Z",
+          "provider": "fixture",
+          "modelId": "fixture-model"
+        },
+        {
+          "type": "message",
+          "id": "u2",
+          "parentId": "m1",
+          "timestamp": "2026-01-01T00:00:04.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+              }
+            ],
+            "timestamp": 1767225604000
+          }
+        },
+        {
+          "type": "message",
+          "id": "a2",
+          "parentId": "u2",
+          "timestamp": "2026-01-01T00:00:05.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225605000
+          }
+        },
+        {
+          "type": "message",
+          "id": "tr2",
+          "parentId": "a2",
+          "timestamp": "2026-01-01T00:00:06.000Z",
+          "message": {
+            "role": "toolResult",
+            "toolCallId": "call-6",
+            "toolName": "read",
+            "content": [
+              {
+                "type": "text",
+                "text": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              }
+            ],
+            "isError": false,
+            "timestamp": 1767225606000
+          }
+        },
+        {
+          "type": "message",
+          "id": "a3",
+          "parentId": "tr2",
+          "timestamp": "2026-01-01T00:00:07.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225607000
+          }
+        }
+      ],
+      "startIndex": 0,
+      "endIndex": 7,
+      "keepRecentTokens": 75,
+      "expected": {
+        "firstKeptEntryIndex": 2,
+        "turnStartIndex": 0,
+        "isSplitTurn": true
+      }
+    },
+    {
+      "name": "split-large-turn",
+      "entries": [
+        {
+          "type": "message",
+          "id": "split-user",
+          "parentId": null,
+          "timestamp": "2026-01-01T00:00:10.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request "
+              }
+            ],
+            "timestamp": 1767225610000
+          }
+        },
+        {
+          "type": "message",
+          "id": "split-a1",
+          "parentId": "split-user",
+          "timestamp": "2026-01-01T00:00:11.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early "
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225611000
+          }
+        },
+        {
+          "type": "message",
+          "id": "split-tool",
+          "parentId": "split-a1",
+          "timestamp": "2026-01-01T00:00:12.000Z",
+          "message": {
+            "role": "toolResult",
+            "toolCallId": "call-12",
+            "toolName": "read",
+            "content": [
+              {
+                "type": "text",
+                "text": "tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool "
+              }
+            ],
+            "isError": false,
+            "timestamp": 1767225612000
+          }
+        },
+        {
+          "type": "message",
+          "id": "split-a2",
+          "parentId": "split-tool",
+          "timestamp": "2026-01-01T00:00:13.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent "
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225613000
+          }
+        }
+      ],
+      "startIndex": 0,
+      "endIndex": 4,
+      "keepRecentTokens": 130,
+      "expected": {
+        "firstKeptEntryIndex": 3,
+        "turnStartIndex": 0,
+        "isSplitTurn": true
+      }
+    },
+    {
+      "name": "no-valid-message-cut-point",
+      "entries": [
+        {
+          "type": "label",
+          "id": "label",
+          "parentId": null,
+          "timestamp": "2026-01-01T00:00:01.000Z",
+          "targetId": "missing",
+          "label": "x"
+        }
+      ],
+      "startIndex": 0,
+      "endIndex": 1,
+      "keepRecentTokens": 20,
+      "expected": {
+        "firstKeptEntryIndex": 0,
+        "turnStartIndex": -1,
+        "isSplitTurn": false
+      }
+    },
+    {
+      "name": "long-faux-session",
+      "entries": [
+        {
+          "type": "message",
+          "id": "long-u-0",
+          "parentId": null,
+          "timestamp": "2026-01-01T00:00:00.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-0-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225600000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-0",
+          "parentId": "long-u-0",
+          "timestamp": "2026-01-01T00:00:01.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-0-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225601000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-1",
+          "parentId": "long-a-0",
+          "timestamp": "2026-01-01T00:00:02.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-1-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225602000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-1",
+          "parentId": "long-u-1",
+          "timestamp": "2026-01-01T00:00:03.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225603000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-2",
+          "parentId": "long-a-1",
+          "timestamp": "2026-01-01T00:00:04.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-2-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225604000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-2",
+          "parentId": "long-u-2",
+          "timestamp": "2026-01-01T00:00:05.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-2-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225605000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-3",
+          "parentId": "long-a-2",
+          "timestamp": "2026-01-01T00:00:06.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-3-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225606000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-3",
+          "parentId": "long-u-3",
+          "timestamp": "2026-01-01T00:00:07.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-3-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225607000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-4",
+          "parentId": "long-a-3",
+          "timestamp": "2026-01-01T00:00:08.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-4-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225608000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-4",
+          "parentId": "long-u-4",
+          "timestamp": "2026-01-01T00:00:09.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-4-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225609000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-5",
+          "parentId": "long-a-4",
+          "timestamp": "2026-01-01T00:00:10.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-5-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225610000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-5",
+          "parentId": "long-u-5",
+          "timestamp": "2026-01-01T00:00:11.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-5-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225611000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-6",
+          "parentId": "long-a-5",
+          "timestamp": "2026-01-01T00:00:12.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-6-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225612000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-6",
+          "parentId": "long-u-6",
+          "timestamp": "2026-01-01T00:00:13.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-6-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225613000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-7",
+          "parentId": "long-a-6",
+          "timestamp": "2026-01-01T00:00:14.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-7-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225614000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-7",
+          "parentId": "long-u-7",
+          "timestamp": "2026-01-01T00:00:15.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-7-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225615000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-8",
+          "parentId": "long-a-7",
+          "timestamp": "2026-01-01T00:00:16.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-8-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225616000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-8",
+          "parentId": "long-u-8",
+          "timestamp": "2026-01-01T00:00:17.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-8-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225617000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-9",
+          "parentId": "long-a-8",
+          "timestamp": "2026-01-01T00:00:18.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-9-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225618000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-9",
+          "parentId": "long-u-9",
+          "timestamp": "2026-01-01T00:00:19.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-9-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225619000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-10",
+          "parentId": "long-a-9",
+          "timestamp": "2026-01-01T00:00:20.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-10-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225620000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-10",
+          "parentId": "long-u-10",
+          "timestamp": "2026-01-01T00:00:21.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-10-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225621000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-11",
+          "parentId": "long-a-10",
+          "timestamp": "2026-01-01T00:00:22.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-11-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225622000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-11",
+          "parentId": "long-u-11",
+          "timestamp": "2026-01-01T00:00:23.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-11-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225623000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-12",
+          "parentId": "long-a-11",
+          "timestamp": "2026-01-01T00:00:24.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-12-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225624000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-12",
+          "parentId": "long-u-12",
+          "timestamp": "2026-01-01T00:00:25.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-12-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225625000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-13",
+          "parentId": "long-a-12",
+          "timestamp": "2026-01-01T00:00:26.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-13-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225626000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-13",
+          "parentId": "long-u-13",
+          "timestamp": "2026-01-01T00:00:27.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-13-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225627000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-14",
+          "parentId": "long-a-13",
+          "timestamp": "2026-01-01T00:00:28.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-14-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225628000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-14",
+          "parentId": "long-u-14",
+          "timestamp": "2026-01-01T00:00:29.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-14-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225629000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-15",
+          "parentId": "long-a-14",
+          "timestamp": "2026-01-01T00:00:30.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-15-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225630000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-15",
+          "parentId": "long-u-15",
+          "timestamp": "2026-01-01T00:00:31.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-15-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225631000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-16",
+          "parentId": "long-a-15",
+          "timestamp": "2026-01-01T00:00:32.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-16-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225632000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-16",
+          "parentId": "long-u-16",
+          "timestamp": "2026-01-01T00:00:33.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-16-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225633000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-17",
+          "parentId": "long-a-16",
+          "timestamp": "2026-01-01T00:00:34.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-17-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225634000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-17",
+          "parentId": "long-u-17",
+          "timestamp": "2026-01-01T00:00:35.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-17-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225635000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-18",
+          "parentId": "long-a-17",
+          "timestamp": "2026-01-01T00:00:36.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-18-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225636000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-18",
+          "parentId": "long-u-18",
+          "timestamp": "2026-01-01T00:00:37.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-18-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225637000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-19",
+          "parentId": "long-a-18",
+          "timestamp": "2026-01-01T00:00:38.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-19-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225638000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-19",
+          "parentId": "long-u-19",
+          "timestamp": "2026-01-01T00:00:39.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-19-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225639000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-20",
+          "parentId": "long-a-19",
+          "timestamp": "2026-01-01T00:00:40.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-20-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225640000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-20",
+          "parentId": "long-u-20",
+          "timestamp": "2026-01-01T00:00:41.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-20-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225641000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-21",
+          "parentId": "long-a-20",
+          "timestamp": "2026-01-01T00:00:42.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-21-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225642000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-21",
+          "parentId": "long-u-21",
+          "timestamp": "2026-01-01T00:00:43.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-21-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225643000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-22",
+          "parentId": "long-a-21",
+          "timestamp": "2026-01-01T00:00:44.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-22-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225644000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-22",
+          "parentId": "long-u-22",
+          "timestamp": "2026-01-01T00:00:45.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-22-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225645000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-23",
+          "parentId": "long-a-22",
+          "timestamp": "2026-01-01T00:00:46.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-23-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225646000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-23",
+          "parentId": "long-u-23",
+          "timestamp": "2026-01-01T00:00:47.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-23-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225647000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-24",
+          "parentId": "long-a-23",
+          "timestamp": "2026-01-01T00:00:48.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-24-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225648000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-24",
+          "parentId": "long-u-24",
+          "timestamp": "2026-01-01T00:00:49.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-24-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225649000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-25",
+          "parentId": "long-a-24",
+          "timestamp": "2026-01-01T00:00:50.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-25-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225650000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-25",
+          "parentId": "long-u-25",
+          "timestamp": "2026-01-01T00:00:51.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-25-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225651000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-26",
+          "parentId": "long-a-25",
+          "timestamp": "2026-01-01T00:00:52.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-26-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225652000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-26",
+          "parentId": "long-u-26",
+          "timestamp": "2026-01-01T00:00:53.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-26-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225653000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-27",
+          "parentId": "long-a-26",
+          "timestamp": "2026-01-01T00:00:54.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-27-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225654000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-27",
+          "parentId": "long-u-27",
+          "timestamp": "2026-01-01T00:00:55.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-27-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225655000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-28",
+          "parentId": "long-a-27",
+          "timestamp": "2026-01-01T00:00:56.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-28-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225656000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-28",
+          "parentId": "long-u-28",
+          "timestamp": "2026-01-01T00:00:57.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-28-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225657000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-u-29",
+          "parentId": "long-a-28",
+          "timestamp": "2026-01-01T00:00:58.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request-29-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+              }
+            ],
+            "timestamp": 1767225658000
+          }
+        },
+        {
+          "type": "message",
+          "id": "long-a-29",
+          "parentId": "long-u-29",
+          "timestamp": "2026-01-01T00:00:59.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer-29-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225659000
+          }
+        }
+      ],
+      "startIndex": 0,
+      "endIndex": 60,
+      "keepRecentTokens": 620,
+      "expected": {
+        "firstKeptEntryIndex": 39,
+        "turnStartIndex": 38,
+        "isSplitTurn": true
+      }
+    }
+  ],
+  "prepareCases": [
+    {
+      "name": "initial-compaction-split-turn",
+      "entries": [
+        {
+          "type": "message",
+          "id": "split-user",
+          "parentId": null,
+          "timestamp": "2026-01-01T00:00:10.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request "
+              }
+            ],
+            "timestamp": 1767225610000
+          }
+        },
+        {
+          "type": "message",
+          "id": "split-a1",
+          "parentId": "split-user",
+          "timestamp": "2026-01-01T00:00:11.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early "
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225611000
+          }
+        },
+        {
+          "type": "message",
+          "id": "split-tool",
+          "parentId": "split-a1",
+          "timestamp": "2026-01-01T00:00:12.000Z",
+          "message": {
+            "role": "toolResult",
+            "toolCallId": "call-12",
+            "toolName": "read",
+            "content": [
+              {
+                "type": "text",
+                "text": "tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool "
+              }
+            ],
+            "isError": false,
+            "timestamp": 1767225612000
+          }
+        },
+        {
+          "type": "message",
+          "id": "split-a2",
+          "parentId": "split-tool",
+          "timestamp": "2026-01-01T00:00:13.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent recent "
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225613000
+          }
+        }
+      ],
+      "settings": {
+        "enabled": true,
+        "reserveTokens": 256,
+        "keepRecentTokens": 130
+      },
+      "expected": {
+        "firstKeptEntryId": "split-a2",
+        "summaryRoles": [],
+        "prefixRoles": [
+          "user",
+          "assistant",
+          "toolResult"
+        ],
+        "summaryConversation": "",
+        "prefixConversation": "[User]: request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request request \n\n[Assistant]: early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early early \n\n[Tool result]: tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool tool ",
+        "isSplitTurn": true,
+        "tokensBefore": 520,
+        "previousSummary": null,
+        "readFiles": [],
+        "modifiedFiles": []
+      }
+    },
+    {
+      "name": "iterative-compaction-boundary",
+      "entries": [
+        {
+          "type": "message",
+          "id": "old-u",
+          "parentId": null,
+          "timestamp": "2026-01-01T00:00:20.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "old request"
+              }
+            ],
+            "timestamp": 1767225620000
+          }
+        },
+        {
+          "type": "message",
+          "id": "old-a",
+          "parentId": "old-u",
+          "timestamp": "2026-01-01T00:00:21.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "r",
+                "name": "read",
+                "arguments": {
+                  "path": "/read.txt"
+                }
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225621000
+          }
+        },
+        {
+          "type": "compaction",
+          "id": "compact-1",
+          "parentId": "old-a",
+          "timestamp": "2026-01-01T00:00:22.000Z",
+          "summary": "previous summary",
+          "firstKeptEntryId": "new-u",
+          "tokensBefore": 800,
+          "details": {
+            "readFiles": [
+              "/prior.txt"
+            ],
+            "modifiedFiles": [
+              "/changed.txt"
+            ]
+          }
+        },
+        {
+          "type": "message",
+          "id": "new-u",
+          "parentId": "compact-1",
+          "timestamp": "2026-01-01T00:00:23.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request "
+              }
+            ],
+            "timestamp": 1767225623000
+          }
+        },
+        {
+          "type": "message",
+          "id": "new-a",
+          "parentId": "new-u",
+          "timestamp": "2026-01-01T00:00:24.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "w",
+                "name": "write",
+                "arguments": {
+                  "path": "/written.txt",
+                  "content": "x"
+                }
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 250,
+              "output": 30,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 280,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225624000
+          }
+        },
+        {
+          "type": "message",
+          "id": "new-u2",
+          "parentId": "new-a",
+          "timestamp": "2026-01-01T00:00:25.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "latest request latest request latest request latest request latest request latest request latest request latest request latest request latest request latest request latest request latest request latest request latest request latest request latest request latest request latest request latest request "
+              }
+            ],
+            "timestamp": 1767225625000
+          }
+        },
+        {
+          "type": "message",
+          "id": "new-a2",
+          "parentId": "new-u2",
+          "timestamp": "2026-01-01T00:00:26.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "latest answer latest answer latest answer latest answer latest answer latest answer latest answer latest answer latest answer latest answer latest answer latest answer latest answer latest answer latest answer latest answer latest answer latest answer latest answer latest answer "
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225626000
+          }
+        }
+      ],
+      "settings": {
+        "enabled": true,
+        "reserveTokens": 128,
+        "keepRecentTokens": 90
+      },
+      "expected": {
+        "firstKeptEntryId": "new-u2",
+        "summaryRoles": [
+          "user",
+          "assistant"
+        ],
+        "prefixRoles": [],
+        "summaryConversation": "[User]: new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request new request \n\n[Assistant tool calls]: write(path=\"/written.txt\", content=\"x\")",
+        "prefixConversation": "",
+        "isSplitTurn": false,
+        "tokensBefore": 425,
+        "previousSummary": "previous summary",
+        "readFiles": [
+          "/prior.txt"
+        ],
+        "modifiedFiles": [
+          "/changed.txt",
+          "/written.txt"
+        ]
+      }
+    }
+  ],
+  "branchCases": [
+    {
+      "name": "abandoned-branch-common-ancestor-and-budget",
+      "entries": [
+        {
+          "type": "message",
+          "id": "root",
+          "parentId": null,
+          "timestamp": "2026-01-01T00:00:30.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "root"
+              }
+            ],
+            "timestamp": 1767225630000
+          }
+        },
+        {
+          "type": "message",
+          "id": "branch-u",
+          "parentId": "root",
+          "timestamp": "2026-01-01T00:00:31.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "branch request"
+              }
+            ],
+            "timestamp": 1767225631000
+          }
+        },
+        {
+          "type": "message",
+          "id": "branch-a",
+          "parentId": "branch-u",
+          "timestamp": "2026-01-01T00:00:32.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "edit",
+                "name": "edit",
+                "arguments": {
+                  "path": "/edited.txt",
+                  "oldText": "a",
+                  "newText": "b"
+                }
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225632000
+          }
+        },
+        {
+          "type": "branch_summary",
+          "id": "nested-summary",
+          "parentId": "branch-a",
+          "timestamp": "2026-01-01T00:00:33.000Z",
+          "fromId": "nested",
+          "summary": "nested branch summary",
+          "details": {
+            "readFiles": [
+              "/nested-read.txt"
+            ],
+            "modifiedFiles": [
+              "/nested-modified.txt"
+            ]
+          }
+        },
+        {
+          "type": "message",
+          "id": "branch-leaf",
+          "parentId": "nested-summary",
+          "timestamp": "2026-01-01T00:00:34.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "leaf answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225634000
+          }
+        },
+        {
+          "type": "message",
+          "id": "other-u",
+          "parentId": "root",
+          "timestamp": "2026-01-01T00:00:35.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "other path"
+              }
+            ],
+            "timestamp": 1767225635000
+          }
+        }
+      ],
+      "oldLeafId": "branch-leaf",
+      "targetId": "other-u",
+      "tokenBudget": 70,
+      "expected": {
+        "entryIds": [
+          "branch-u",
+          "branch-a",
+          "nested-summary",
+          "branch-leaf"
+        ],
+        "commonAncestorId": "root",
+        "roles": [
+          "user",
+          "assistant",
+          "branchSummary",
+          "assistant"
+        ],
+        "conversation": "[User]: branch request\n\n[Assistant tool calls]: edit(path=\"/edited.txt\", oldText=\"a\", newText=\"b\")\n\n[User]: The following is a summary of a branch that this conversation came back from:\n\n<summary>\nnested branch summary</summary>\n\n[Assistant]: leaf answer",
+        "totalTokens": 27,
+        "readFiles": [
+          "/nested-read.txt"
+        ],
+        "modifiedFiles": [
+          "/edited.txt",
+          "/nested-modified.txt"
+        ]
+      }
+    }
+  ],
+  "summaryPromptCases": [
+    {
+      "input": {
+        "name": "new-summary-with-custom-focus",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "start"
+              }
+            ],
+            "timestamp": 1767225601000
+          },
+          {
+            "role": "custom",
+            "customType": "fixture",
+            "content": [
+              {
+                "type": "text",
+                "text": "custom "
+              },
+              {
+                "type": "image",
+                "data": "aA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "text",
+                "text": "blocks"
+              }
+            ],
+            "display": true,
+            "timestamp": 1767225602000
+          },
+          {
+            "role": "bashExecution",
+            "command": "go test ./...",
+            "output": "failed",
+            "exitCode": 2,
+            "cancelled": false,
+            "truncated": true,
+            "fullOutputPath": "/tmp/full.log",
+            "timestamp": 1767225603000
+          },
+          {
+            "role": "bashExecution",
+            "command": "secret",
+            "output": "hidden",
+            "exitCode": 0,
+            "cancelled": false,
+            "truncated": false,
+            "excludeFromContext": true,
+            "timestamp": 1767225604000
+          },
+          {
+            "role": "branchSummary",
+            "summary": "branch work",
+            "fromId": "old",
+            "timestamp": 1767225605000
+          },
+          {
+            "role": "compactionSummary",
+            "summary": "older work",
+            "tokensBefore": 900,
+            "timestamp": 1767225606000
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "first\nsecond"
+              },
+              {
+                "type": "text",
+                "text": "done"
+              },
+              {
+                "type": "toolCall",
+                "id": "order",
+                "name": "write",
+                "arguments": {
+                  "z": 1,
+                  "a": {
+                    "nested": true
+                  }
+                }
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225607000
+          }
+        ],
+        "reserveTokens": 500,
+        "customInstructions": "Keep exact paths.",
+        "previousSummarySet": false,
+        "previousSummary": "",
+        "thinkingLevel": "high"
+      },
+      "expected": {
+        "captured": {
+          "context": {
+            "systemPrompt": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.",
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "<conversation>\n[User]: start\n\n[User]: custom blocks\n\n[User]: Ran `go test ./...`\n```\nfailed\n```\n\nCommand exited with code 2\n\n[Output truncated. Full output: /tmp/full.log]\n\n[User]: The following is a summary of a branch that this conversation came back from:\n\n<summary>\nbranch work</summary>\n\n[User]: The conversation history before this point was compacted into the following summary:\n\n<summary>\nolder work\n</summary>\n\n[Assistant thinking]: first\nsecond\n\n[Assistant]: done\n\n[Assistant tool calls]: write(z=1, a={\"nested\":true})\n</conversation>\n\nThe messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.\n\nUse this EXACT format:\n\n## Goal\n[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]\n\n## Constraints & Preferences\n- [Any constraints, preferences, or requirements mentioned by user]\n- [Or \"(none)\" if none were mentioned]\n\n## Progress\n### Done\n- [x] [Completed tasks/changes]\n\n### In Progress\n- [ ] [Current work]\n\n### Blocked\n- [Issues preventing progress, if any]\n\n## Key Decisions\n- **[Decision]**: [Brief rationale]\n\n## Next Steps\n1. [Ordered list of what should happen next]\n\n## Critical Context\n- [Any data, examples, or references needed to continue]\n- [Or \"(none)\" if not applicable]\n\nKeep each section concise. Preserve exact file paths, function names, and error messages.\n\nAdditional focus: Keep exact paths."
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "maxTokens": 300,
+            "reasoning": "high"
+          }
+        },
+        "output": "summary output"
+      }
+    },
+    {
+      "input": {
+        "name": "empty-previous-summary-is-absent",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "small"
+              }
+            ],
+            "timestamp": 1767225640000
+          }
+        ],
+        "reserveTokens": 200,
+        "customInstructions": "",
+        "previousSummarySet": true,
+        "previousSummary": "",
+        "thinkingLevel": "off"
+      },
+      "expected": {
+        "captured": {
+          "context": {
+            "systemPrompt": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.",
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "<conversation>\n[User]: small\n</conversation>\n\nThe messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.\n\nUse this EXACT format:\n\n## Goal\n[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]\n\n## Constraints & Preferences\n- [Any constraints, preferences, or requirements mentioned by user]\n- [Or \"(none)\" if none were mentioned]\n\n## Progress\n### Done\n- [x] [Completed tasks/changes]\n\n### In Progress\n- [ ] [Current work]\n\n### Blocked\n- [Issues preventing progress, if any]\n\n## Key Decisions\n- **[Decision]**: [Brief rationale]\n\n## Next Steps\n1. [Ordered list of what should happen next]\n\n## Critical Context\n- [Any data, examples, or references needed to continue]\n- [Or \"(none)\" if not applicable]\n\nKeep each section concise. Preserve exact file paths, function names, and error messages."
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "maxTokens": 160
+          }
+        },
+        "output": "summary output"
+      }
+    },
+    {
+      "input": {
+        "name": "update-existing-summary",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "new work"
+              }
+            ],
+            "timestamp": 1767225641000
+          }
+        ],
+        "reserveTokens": 200,
+        "customInstructions": "",
+        "previousSummarySet": true,
+        "previousSummary": "## Goal\nExisting",
+        "thinkingLevel": "off"
+      },
+      "expected": {
+        "captured": {
+          "context": {
+            "systemPrompt": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.",
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "<conversation>\n[User]: new work\n</conversation>\n\n<previous-summary>\n## Goal\nExisting\n</previous-summary>\n\nThe messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.\n\nUpdate the existing structured summary with new information. RULES:\n- PRESERVE all existing information from the previous summary\n- ADD new progress, decisions, and context from the new messages\n- UPDATE the Progress section: move items from \"In Progress\" to \"Done\" when completed\n- UPDATE \"Next Steps\" based on what was accomplished\n- PRESERVE exact file paths, function names, and error messages\n- If something is no longer relevant, you may remove it\n\nUse this EXACT format:\n\n## Goal\n[Preserve existing goals, add new ones if the task expanded]\n\n## Constraints & Preferences\n- [Preserve existing, add new ones discovered]\n\n## Progress\n### Done\n- [x] [Include previously done items AND newly completed items]\n\n### In Progress\n- [ ] [Current work - update based on progress]\n\n### Blocked\n- [Current blockers - remove if resolved]\n\n## Key Decisions\n- **[Decision]**: [Brief rationale] (preserve all previous, add new)\n\n## Next Steps\n1. [Update based on current state]\n\n## Critical Context\n- [Preserve important context, add new if needed]\n\nKeep each section concise. Preserve exact file paths, function names, and error messages."
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "maxTokens": 160
+          }
+        },
+        "output": "summary output"
+      }
+    }
+  ],
+  "branchPromptCases": [
+    {
+      "name": "append-custom-instructions",
+      "input": {
+        "entries": [
+          {
+            "type": "message",
+            "id": "branch-u",
+            "parentId": "root",
+            "timestamp": "2026-01-01T00:00:31.000Z",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "branch request"
+                }
+              ],
+              "timestamp": 1767225631000
+            }
+          },
+          {
+            "type": "message",
+            "id": "branch-a",
+            "parentId": "branch-u",
+            "timestamp": "2026-01-01T00:00:32.000Z",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "toolCall",
+                  "id": "edit",
+                  "name": "edit",
+                  "arguments": {
+                    "path": "/edited.txt",
+                    "oldText": "a",
+                    "newText": "b"
+                  }
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture-model",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1767225632000
+            }
+          },
+          {
+            "type": "branch_summary",
+            "id": "nested-summary",
+            "parentId": "branch-a",
+            "timestamp": "2026-01-01T00:00:33.000Z",
+            "fromId": "nested",
+            "summary": "nested branch summary",
+            "details": {
+              "readFiles": [
+                "/nested-read.txt"
+              ],
+              "modifiedFiles": [
+                "/nested-modified.txt"
+              ]
+            }
+          },
+          {
+            "type": "message",
+            "id": "branch-leaf",
+            "parentId": "nested-summary",
+            "timestamp": "2026-01-01T00:00:34.000Z",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "leaf answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture-model",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1767225634000
+            }
+          }
+        ],
+        "reserveTokens": 300,
+        "customInstructions": "Only decisions.",
+        "replaceInstructions": false
+      },
+      "expected": {
+        "captured": {
+          "context": {
+            "systemPrompt": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.",
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "<conversation>\n[User]: branch request\n\n[Assistant tool calls]: edit(path=\"/edited.txt\", oldText=\"a\", newText=\"b\")\n\n[User]: The following is a summary of a branch that this conversation came back from:\n\n<summary>\nnested branch summary</summary>\n\n[Assistant]: leaf answer\n</conversation>\n\nCreate a structured summary of this conversation branch for context when returning later.\n\nUse this EXACT format:\n\n## Goal\n[What was the user trying to accomplish in this branch?]\n\n## Constraints & Preferences\n- [Any constraints, preferences, or requirements mentioned]\n- [Or \"(none)\" if none were mentioned]\n\n## Progress\n### Done\n- [x] [Completed tasks/changes]\n\n### In Progress\n- [ ] [Work that was started but not finished]\n\n### Blocked\n- [Issues preventing progress, if any]\n\n## Key Decisions\n- **[Decision]**: [Brief rationale]\n\n## Next Steps\n1. [What should happen next to continue this work]\n\nKeep each section concise. Preserve exact file paths, function names, and error messages.\n\nAdditional focus: Only decisions."
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "signal": "<signal>",
+            "maxTokens": 2048
+          }
+        },
+        "output": {
+          "summary": "The user explored a different conversation branch before returning here.\nSummary of that exploration:\n\nbranch output\n\n<read-files>\n/nested-read.txt\n</read-files>\n\n<modified-files>\n/edited.txt\n/nested-modified.txt\n</modified-files>",
+          "readFiles": [
+            "/nested-read.txt"
+          ],
+          "modifiedFiles": [
+            "/edited.txt",
+            "/nested-modified.txt"
+          ]
+        }
+      }
+    }
+  ],
+  "compactPromptCases": [
+    {
+      "name": "split-turn-two-stage-prompts",
+      "input": {
+        "firstKeptEntryId": "keep",
+        "messagesToSummarize": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "history"
+              }
+            ],
+            "timestamp": 1767225645000
+          }
+        ],
+        "turnPrefixMessages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "large request"
+              }
+            ],
+            "timestamp": 1767225646000
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "early work"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225647000
+          }
+        ],
+        "isSplitTurn": true,
+        "tokensBefore": 1234,
+        "previousSummary": null,
+        "settings": {
+          "enabled": true,
+          "reserveTokens": 400,
+          "keepRecentTokens": 100
+        }
+      },
+      "expected": {
+        "captured": [
+          {
+            "context": {
+              "systemPrompt": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "<conversation>\n[User]: history\n</conversation>\n\nThe messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.\n\nUse this EXACT format:\n\n## Goal\n[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]\n\n## Constraints & Preferences\n- [Any constraints, preferences, or requirements mentioned by user]\n- [Or \"(none)\" if none were mentioned]\n\n## Progress\n### Done\n- [x] [Completed tasks/changes]\n\n### In Progress\n- [ ] [Current work]\n\n### Blocked\n- [Issues preventing progress, if any]\n\n## Key Decisions\n- **[Decision]**: [Brief rationale]\n\n## Next Steps\n1. [Ordered list of what should happen next]\n\n## Critical Context\n- [Any data, examples, or references needed to continue]\n- [Or \"(none)\" if not applicable]\n\nKeep each section concise. Preserve exact file paths, function names, and error messages."
+                    }
+                  ]
+                }
+              ]
+            },
+            "options": {
+              "maxTokens": 300,
+              "reasoning": "high"
+            }
+          },
+          {
+            "context": {
+              "systemPrompt": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "<conversation>\n[User]: large request\n\n[Assistant]: early work\n</conversation>\n\nThis is the PREFIX of a turn that was too large to keep. The SUFFIX (recent work) is retained.\n\nSummarize the prefix to provide context for the retained suffix:\n\n## Original Request\n[What did the user ask for in this turn?]\n\n## Early Progress\n- [Key decisions and work done in the prefix]\n\n## Context for Suffix\n- [Information needed to understand the retained recent work]\n\nBe concise. Focus on what's needed to understand the kept suffix."
+                    }
+                  ]
+                }
+              ]
+            },
+            "options": {
+              "maxTokens": 200,
+              "reasoning": "high"
+            }
+          }
+        ],
+        "output": {
+          "summary": "history summary\n\n---\n\n**Turn Context (split turn):**\n\nprefix summary",
+          "firstKeptEntryId": "keep",
+          "tokensBefore": 1234,
+          "details": {
+            "readFiles": [],
+            "modifiedFiles": []
+          }
+        }
+      }
+    }
+  ]
+}

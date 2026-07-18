@@ -14,8 +14,11 @@ import (
 )
 
 type runtimeInputs struct {
-	Agent       *agent.Agent
-	Diagnostics []string
+	Agent           *agent.Agent
+	Settings        *config.SettingsManager
+	GetAPIKey       agent.GetAPIKeyFunc
+	GetModelHeaders agent.GetModelHeadersFunc
+	Diagnostics     []string
 }
 
 func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMessages) (runtimeInputs, error) {
@@ -82,6 +85,8 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		thinking = *scopedThinking
 	}
 	transport := settings.GetTransport()
+	providerRetry := settings.GetProviderRetrySettings()
+	maxRetryDelay := providerRetry.MaxRetryDelayMS
 	state := agent.AgentState{
 		SystemPrompt:  systemPrompt,
 		Model:         model,
@@ -89,18 +94,26 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		Tools:         activeTools,
 		Messages:      priorMessages,
 	}
+	resolveAPIKey := apiKeyResolver(args, registry)
+	resolveModelHeaders := func(ctx context.Context, model *ai.Model, apiKey *string) (*map[string]string, error) {
+		return registry.ResolveModelHeaders(ctx, *model, nil, apiKey)
+	}
 	created := agent.NewAgent(
 		agent.WithInitialState(state),
 		agent.WithConvertToLLM(codingagent.ConvertToLLM),
 		agent.WithSteeringMode(agent.QueueMode(settings.GetSteeringMode())),
 		agent.WithFollowUpMode(agent.QueueMode(settings.GetFollowUpMode())),
-		agent.WithSimpleStreamOptions(ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{Transport: &transport}}),
-		agent.WithAPIKeyResolver(apiKeyResolver(args, registry)),
-		agent.WithModelHeadersResolver(func(ctx context.Context, model *ai.Model, apiKey *string) (*map[string]string, error) {
-			return registry.ResolveModelHeaders(ctx, *model, nil, apiKey)
-		}),
+		agent.WithSimpleStreamOptions(ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{
+			Transport: &transport, TimeoutMS: providerRetry.TimeoutMS, MaxRetries: providerRetry.MaxRetries,
+			MaxRetryDelayMS: &maxRetryDelay,
+		}}),
+		agent.WithAPIKeyResolver(resolveAPIKey),
+		agent.WithModelHeadersResolver(resolveModelHeaders),
 	)
-	return runtimeInputs{Agent: created, Diagnostics: diagnostics}, nil
+	return runtimeInputs{
+		Agent: created, Settings: settings, GetAPIKey: resolveAPIKey,
+		GetModelHeaders: resolveModelHeaders, Diagnostics: diagnostics,
+	}, nil
 }
 
 func resolveRuntimeModel(args CLIArgs, settings *config.SettingsManager, registry *config.ModelRegistry) (*ai.Model, *ai.ModelThinkingLevel, []string, error) {

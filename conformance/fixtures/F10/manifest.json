@@ -1,0 +1,14 @@
+{
+  "family": "F10",
+  "upstreamCommit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
+  "generator": "conformance/extract/f10-compaction.ts",
+  "source": "packages/agent/src/harness/compaction/compaction.ts",
+  "additionalSources": [
+    "packages/agent/src/harness/compaction/branch-summarization.ts",
+    "packages/agent/src/harness/messages.ts",
+    "packages/agent/src/harness/compaction/utils.ts"
+  ],
+  "files": [
+    "cases.json"
+  ]
+}
