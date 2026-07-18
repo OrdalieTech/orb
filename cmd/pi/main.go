@@ -126,7 +126,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		return reportCLIError(streams.Stderr, err)
 	}
 	if args.Help {
-		_, _ = io.WriteString(streams.Stdout, helpText)
+		_, _ = io.WriteString(metadataOutput(args, streams), helpText)
 		return 0
 	}
 
@@ -163,8 +163,12 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		if loadError := registry.Error(); loadError != "" {
 			_, _ = fmt.Fprintln(streams.Stderr, "Warning: errors loading models.json:\n"+loadError)
 		}
-		_, _ = io.WriteString(streams.Stdout, formatModelList(registry.Available(nil), *args.ListModels))
+		_, _ = io.WriteString(metadataOutput(args, streams), formatModelList(registry.Available(nil), *args.ListModels))
 		return 0
+	}
+	if args.Mode == "rpc" {
+		_, _ = fmt.Fprintln(streams.Stderr, "Error: RPC mode is not available until WP-331")
+		return 1
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -187,7 +191,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		}
 		sessionContext = manager.BuildSessionContext()
 	}
-	if !args.Print && streams.StdinTTY && streams.StdoutTTY {
+	if !args.Print && args.Mode != "json" && streams.StdinTTY && streams.StdoutTTY {
 		_, _ = fmt.Fprintln(streams.Stderr, "Error: interactive mode is not available until the TUI work packages; use -p")
 		return 1
 	}
@@ -242,12 +246,28 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if initialMessage != nil {
 		initial = *initialMessage
 	}
+	outputMode := modes.PrintOutputText
+	if args.Mode == "json" {
+		outputMode = modes.PrintOutputJSON
+	}
 	return modes.RunPrintMode(ctx, sessionRuntime, modes.PrintModeOptions{
+		Mode:           outputMode,
 		Messages:       args.Messages,
 		InitialMessage: initial,
+		SessionHeader:  manager.GetHeader(),
 		Stdout:         streams.Stdout,
 		Stderr:         streams.Stderr,
 	})
+}
+
+func metadataOutput(args CLIArgs, streams cliStreams) io.Writer {
+	if !args.Print && args.Mode == "" {
+		return streams.Stdout
+	}
+	if args.Mode == "json" || args.Mode == "rpc" || args.Print || !streams.StdinTTY || !streams.StdoutTTY {
+		return streams.Stderr
+	}
+	return streams.Stdout
 }
 
 func migrateStartupAuth() (string, error) {
@@ -423,6 +443,7 @@ Usage: pi [options] [@files...] [messages...]
   --system-prompt <text|file>    Replace the system prompt
   --append-system-prompt <text>  Append text or file contents
   --thinking <level>             off|minimal|low|medium|high|xhigh|max
+  --mode <mode>                  Output mode: text (default), json, or rpc
   --print, -p                    Process prompts and exit
   --continue, -c                 Continue previous session
   --resume, -r                   Select a session to resume

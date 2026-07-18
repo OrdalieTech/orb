@@ -5,6 +5,7 @@ import { generateF1PartialJSON } from "./f1-partialjson.ts";
 import { generateF1Schema } from "./f1-schema.ts";
 import { generateF2 } from "./f2-openai.ts";
 import { generateF3 } from "./f3-agent.ts";
+import { generateF3Session } from "./f3-session.ts";
 import { generateF4 } from "./f4-edit.ts";
 import { generateF5 } from "./f5-truncation.ts";
 import { generateF6 } from "./f6-session.ts";
@@ -25,6 +26,7 @@ const generators = [
   generateF1Schema,
   generateF2,
   generateF3,
+  generateF3Session,
   generateF4,
   generateF5,
   generateF6,

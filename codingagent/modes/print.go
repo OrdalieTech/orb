@@ -7,15 +7,27 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"sync"
 
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pi-go/codingagent"
+	"github.com/OrdalieTech/pi-go/codingagent/session"
 	"github.com/OrdalieTech/pi-go/codingagent/tools"
 )
 
+type PrintOutputMode string
+
+const (
+	PrintOutputText PrintOutputMode = "text"
+	PrintOutputJSON PrintOutputMode = "json"
+)
+
 type PrintModeOptions struct {
+	Mode           PrintOutputMode
 	Messages       []string
 	InitialMessage string
+	SessionHeader  *session.SessionHeader
 	Stdout         io.Writer
 	Stderr         io.Writer
 }
@@ -24,6 +36,10 @@ type printSession interface {
 	Prompt(context.Context, any, ...*ai.ImageContent) error
 	Abort()
 	State() agent.AgentState
+}
+
+type printSessionSubscriber interface {
+	Subscribe(func(any)) func()
 }
 
 // RunPrintMode sends each configured prompt serially and returns a process exit
@@ -64,6 +80,40 @@ func runPrintMode(ctx context.Context, session printSession, options PrintModeOp
 	if control.stopSignals != nil {
 		defer control.stopSignals()
 	}
+	mode := options.Mode
+	if mode == "" {
+		mode = PrintOutputText
+	}
+	var jsonOutput *serializedOutput
+	var unsubscribe func()
+	closeJSONOutput := func() error {
+		if unsubscribe != nil {
+			unsubscribe()
+			unsubscribe = nil
+		}
+		if jsonOutput == nil {
+			return nil
+		}
+		return jsonOutput.closeAndWait()
+	}
+	defer func() { _ = closeJSONOutput() }()
+	if mode == PrintOutputJSON {
+		jsonOutput = newSerializedOutput(stdout)
+		if options.SessionHeader != nil {
+			encoded, err := ai.Marshal(options.SessionHeader)
+			if err != nil {
+				writeError(stderr, err)
+				return 1
+			}
+			jsonOutput.writeLine(encoded)
+		}
+		subscriber, ok := session.(printSessionSubscriber)
+		if !ok {
+			writeError(stderr, errors.New("print mode: JSON session does not support events"))
+			return 1
+		}
+		unsubscribe = subscriber.Subscribe(jsonOutput.writeSessionEvent)
+	}
 
 	shutdown := func(received os.Signal) int {
 		if control.killDetachedChildren != nil {
@@ -76,7 +126,7 @@ func runPrintMode(ctx context.Context, session printSession, options PrintModeOp
 	}
 
 	executed := make(chan printModeResult, 1)
-	go func() { executed <- executePrintMode(ctx, session, options) }()
+	go func() { executed <- executePrintMode(ctx, session, options, mode) }()
 
 	var result printModeResult
 	select {
@@ -90,11 +140,16 @@ func runPrintMode(ctx context.Context, session printSession, options PrintModeOp
 	default:
 	}
 
+	if mode == PrintOutputJSON {
+		if err := closeJSONOutput(); result.err == nil {
+			result.err = err
+		}
+	}
 	exitCode := 0
 	if result.err != nil {
 		writeError(stderr, result.err)
 		exitCode = 1
-	} else {
+	} else if mode == PrintOutputText {
 		rendered := make(chan error, 1)
 		go func() {
 			for _, text := range result.texts {
@@ -119,7 +174,7 @@ func runPrintMode(ctx context.Context, session printSession, options PrintModeOp
 	return exitCode
 }
 
-func executePrintMode(ctx context.Context, session printSession, options PrintModeOptions) printModeResult {
+func executePrintMode(ctx context.Context, session printSession, options PrintModeOptions, mode PrintOutputMode) printModeResult {
 	if session == nil {
 		return printModeResult{err: errors.New("print mode: nil session")}
 	}
@@ -132,6 +187,9 @@ func executePrintMode(ctx context.Context, session printSession, options PrintMo
 		if err := session.Prompt(ctx, message); err != nil {
 			return printModeResult{err: err}
 		}
+	}
+	if mode == PrintOutputJSON {
+		return printModeResult{}
 	}
 
 	assistant := lastAssistant(session.State())
@@ -148,6 +206,99 @@ func executePrintMode(ctx context.Context, session printSession, options PrintMo
 		}
 	}
 	return result
+}
+
+type serializedOutput struct {
+	mu        sync.Mutex
+	writer    io.Writer
+	lines     chan []byte
+	done      chan struct{}
+	callbacks sync.WaitGroup
+	accepting bool
+	closed    bool
+	err       error
+}
+
+func newSerializedOutput(writer io.Writer) *serializedOutput {
+	output := &serializedOutput{
+		writer: writer, lines: make(chan []byte, 64), done: make(chan struct{}), accepting: true,
+	}
+	go output.run()
+	return output
+}
+
+func (output *serializedOutput) run() {
+	defer close(output.done)
+	for line := range output.lines {
+		output.mu.Lock()
+		failed := output.err != nil
+		output.mu.Unlock()
+		if failed {
+			continue
+		}
+		if err := writeLine(output.writer, line); err != nil {
+			output.fail(err)
+		}
+	}
+}
+
+func (output *serializedOutput) writeLine(value []byte) {
+	output.lines <- bytesClone(value)
+}
+
+func (output *serializedOutput) writeSessionEvent(event any) {
+	output.mu.Lock()
+	if !output.accepting {
+		output.mu.Unlock()
+		return
+	}
+	output.callbacks.Add(1)
+	output.mu.Unlock()
+	defer output.callbacks.Done()
+
+	encoded, err := codingagent.MarshalSessionEvent(event)
+	if err != nil {
+		output.fail(err)
+		return
+	}
+	output.writeLine(encoded)
+}
+
+func (output *serializedOutput) fail(err error) {
+	if err == nil {
+		return
+	}
+	output.mu.Lock()
+	if output.err == nil {
+		output.err = err
+	}
+	output.mu.Unlock()
+}
+
+func (output *serializedOutput) closeAndWait() error {
+	output.mu.Lock()
+	output.accepting = false
+	output.mu.Unlock()
+	output.callbacks.Wait()
+
+	output.mu.Lock()
+	if !output.closed {
+		output.closed = true
+		close(output.lines)
+	}
+	done := output.done
+	output.mu.Unlock()
+	<-done
+
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	return output.err
+}
+
+func bytesClone(value []byte) []byte {
+	cloned := make([]byte, len(value))
+	copy(cloned, value)
+	return cloned
 }
 
 func lastAssistant(state agent.AgentState) *ai.AssistantMessage {

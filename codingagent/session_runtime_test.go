@@ -31,6 +31,10 @@ func TestSessionEventWireShapes(t *testing.T) {
 		{"compaction-end-result", CompactionEndEvent{Reason: "threshold", Result: &harness.CompactionResult{Summary: "s", FirstKeptEntryID: "id", TokensBefore: 12, Details: harness.CompactionDetails{ReadFiles: []string{}, ModifiedFiles: []string{}}}}, `{"type":"compaction_end","reason":"threshold","result":{"summary":"s","firstKeptEntryId":"id","tokensBefore":12,"estimatedTokensAfter":0,"details":{"readFiles":[],"modifiedFiles":[]}},"aborted":false,"willRetry":false}`},
 		{"retry-start", AutoRetryStartEvent{Attempt: 1, MaxAttempts: 3, DelayMS: 2000, ErrorMessage: "overloaded"}, `{"type":"auto_retry_start","attempt":1,"maxAttempts":3,"delayMs":2000,"errorMessage":"overloaded"}`},
 		{"retry-end", AutoRetryEndEvent{Success: true, Attempt: 2}, `{"type":"auto_retry_end","success":true,"attempt":2}`},
+		{"entry-appended", EntryAppendedEvent{Entry: sessionstore.SessionEntry{Type: "custom", ID: "entry", Timestamp: "2026-01-02T03:04:05.000Z"}}, `{"type":"entry_appended","entry":{"type":"custom","customType":"","id":"entry","parentId":null,"timestamp":"2026-01-02T03:04:05.000Z"}}`},
+		{"session-info-missing", SessionInfoChangedEvent{}, `{"type":"session_info_changed"}`},
+		{"session-info", SessionInfoChangedEvent{Name: stringPointer("named")}, `{"type":"session_info_changed","name":"named"}`},
+		{"thinking-level", ThinkingLevelChangedEvent{Level: ai.ModelThinkingHigh}, `{"type":"thinking_level_changed","level":"high"}`},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {

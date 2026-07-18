@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"slices"
 	"sync"
@@ -14,7 +15,139 @@ import (
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
 	"github.com/OrdalieTech/pi-go/ai/providers/faux"
+	"github.com/OrdalieTech/pi-go/codingagent"
+	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
 )
+
+func TestRunPrintModeJSONWritesHeaderAndKeepsAssistantFailuresInStream(t *testing.T) {
+	for _, stopReason := range []ai.StopReason{ai.StopReasonError, ai.StopReasonAborted} {
+		t.Run(string(stopReason), func(t *testing.T) {
+			version := sessionstore.CurrentVersion
+			header := &sessionstore.SessionHeader{
+				Type: "session", Version: &version, ID: "fixture-session",
+				Timestamp: "2026-01-02T03:04:05.000Z", CWD: "/fixture/project",
+			}
+			message := faux.AssistantMessage(ai.AssistantContent{}, faux.AssistantMessageOptions{
+				StopReason: stopReason, ErrorMessage: stringPointer("provider failed"),
+			})
+			session := &jsonPrintSession{
+				state: agent.AgentState{Messages: agent.AgentMessages{message}},
+				events: []any{
+					agent.AgentStartEvent{},
+					codingagent.SessionAgentEndEvent{Messages: agent.AgentMessages{message}, WillRetry: false},
+					codingagent.AgentSettledEvent{},
+				},
+			}
+			var stdout, stderr bytes.Buffer
+			exitCode := RunPrintMode(context.Background(), session, PrintModeOptions{
+				Mode: PrintOutputJSON, InitialMessage: "hello", SessionHeader: header,
+				Stdout: &stdout, Stderr: &stderr,
+			})
+			if exitCode != 0 || stderr.Len() != 0 {
+				t.Fatalf("exit=%d stderr=%q", exitCode, stderr.String())
+			}
+			lines := bytes.Split(bytes.TrimSuffix(stdout.Bytes(), []byte{'\n'}), []byte{'\n'})
+			if len(lines) != 4 || string(lines[0]) != `{"type":"session","version":3,"id":"fixture-session","timestamp":"2026-01-02T03:04:05.000Z","cwd":"/fixture/project"}` {
+				t.Fatalf("JSON lines = %q", lines)
+			}
+			if !bytes.Contains(lines[2], []byte(`"stopReason":"`+string(stopReason)+`"`)) || string(lines[3]) != `{"type":"agent_settled"}` {
+				t.Fatalf("terminal JSON lines = %q", lines[2:])
+			}
+		})
+	}
+}
+
+type jsonPrintSession struct {
+	state        agent.AgentState
+	events       []any
+	listener     func(any)
+	prompt       func()
+	abort        func()
+	unsubscribed bool
+}
+
+func (session *jsonPrintSession) Prompt(context.Context, any, ...*ai.ImageContent) error {
+	if session.prompt != nil {
+		session.prompt()
+	}
+	for _, event := range session.events {
+		if session.listener != nil {
+			session.listener(event)
+		}
+	}
+	return nil
+}
+
+func (session *jsonPrintSession) Abort() {
+	if session.abort != nil {
+		session.abort()
+	}
+}
+
+func (session *jsonPrintSession) State() agent.AgentState { return session.state }
+
+func (session *jsonPrintSession) Subscribe(listener func(any)) func() {
+	session.listener = listener
+	return func() {
+		session.listener = nil
+		session.unsubscribed = true
+	}
+}
+
+func TestRunPrintModeJSONWaitsForQueuedOutputBeforeReturning(t *testing.T) {
+	startedWrite := make(chan struct{})
+	releaseWrite := make(chan struct{})
+	writer := &blockingWriter{started: startedWrite, release: releaseWrite}
+	session := &jsonPrintSession{events: []any{agent.AgentStartEvent{}, codingagent.AgentSettledEvent{}}}
+	done := make(chan int, 1)
+	go func() {
+		done <- RunPrintMode(context.Background(), session, PrintModeOptions{
+			Mode: PrintOutputJSON, InitialMessage: "hello", Stdout: writer, Stderr: io.Discard,
+		})
+	}()
+	select {
+	case <-startedWrite:
+	case <-time.After(time.Second):
+		t.Fatal("JSON writer did not start")
+	}
+	select {
+	case code := <-done:
+		t.Fatalf("RunPrintMode returned before its queued writer drained: %d", code)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(releaseWrite)
+	if code := <-done; code != 0 || !session.unsubscribed {
+		t.Fatalf("code=%d unsubscribed=%t", code, session.unsubscribed)
+	}
+	if got := writer.String(); got != "{\"type\":\"agent_start\"}\n{\"type\":\"agent_settled\"}\n" {
+		t.Fatalf("writer = %q", got)
+	}
+}
+
+type blockingWriter struct {
+	once    sync.Once
+	started chan struct{}
+	release chan struct{}
+	mu      sync.Mutex
+	data    []byte
+}
+
+func (writer *blockingWriter) Write(value []byte) (int, error) {
+	writer.once.Do(func() {
+		close(writer.started)
+		<-writer.release
+	})
+	writer.mu.Lock()
+	writer.data = append(writer.data, value...)
+	writer.mu.Unlock()
+	return len(value), nil
+}
+
+func (writer *blockingWriter) String() string {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	return string(writer.data)
+}
 
 func TestRunPrintModeTextPromptsSeriallyAndPrintsTextBlocks(t *testing.T) {
 	provider := faux.New()
@@ -177,6 +310,56 @@ func TestRunPrintModeSignalShutdown(t *testing.T) {
 				t.Fatal("signal shutdown did not finish")
 			}
 		})
+	}
+}
+
+func TestRunPrintModeJSONSignalTeardownStopsSessionAndClosesSerializer(t *testing.T) {
+	version := sessionstore.CurrentVersion
+	started := make(chan struct{})
+	aborted := make(chan struct{})
+	var order []string
+	session := &jsonPrintSession{}
+	session.prompt = func() {
+		close(started)
+		<-aborted
+	}
+	session.abort = func() {
+		order = append(order, "abort")
+		close(aborted)
+	}
+	signals := make(chan os.Signal, 1)
+	var stdout, stderr bytes.Buffer
+	done := make(chan int, 1)
+	go func() {
+		done <- runPrintMode(context.Background(), session, PrintModeOptions{
+			Mode: PrintOutputJSON, InitialMessage: "hello",
+			SessionHeader: &sessionstore.SessionHeader{
+				Type: "session", Version: &version, ID: "signal", Timestamp: "2026-01-02T03:04:05.000Z", CWD: "/fixture",
+			},
+			Stdout: &stdout, Stderr: &stderr,
+		}, printModeControl{
+			signals: signals,
+			killDetachedChildren: func() {
+				order = append(order, "kill")
+			},
+		})
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("JSON prompt did not start")
+	}
+	signals <- syscall.SIGTERM
+	select {
+	case code := <-done:
+		if code != 143 || stderr.Len() != 0 || !slices.Equal(order, []string{"kill", "abort"}) {
+			t.Fatalf("code=%d stderr=%q order=%#v", code, stderr.String(), order)
+		}
+		if !session.unsubscribed || stdout.String() != "{\"type\":\"session\",\"version\":3,\"id\":\"signal\",\"timestamp\":\"2026-01-02T03:04:05.000Z\",\"cwd\":\"/fixture\"}\n" {
+			t.Fatalf("unsubscribed=%t stdout=%q", session.unsubscribed, stdout.String())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("JSON signal teardown did not finish")
 	}
 }
 

@@ -1,0 +1,441 @@
+{
+  "schemaVersion": 2,
+  "fixedNow": 1700000100321,
+  "scenarios": [
+    {
+      "name": "multiple-prompts",
+      "trace": "multiple-prompts.jsonl",
+      "fixedNow": 1700000100321,
+      "initialMessage": "first prompt",
+      "messages": [
+        "second prompt",
+        "third prompt"
+      ],
+      "tokenSize": 64,
+      "settings": {
+        "compaction": {
+          "enabled": false
+        },
+        "retry": {
+          "enabled": false
+        }
+      },
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "first answer"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1700000100321
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "second answer"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1700000100321
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "third answer"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1700000100321
+        }
+      ],
+      "expectedExitCode": 0,
+      "requiredEventTypes": [
+        "agent_start",
+        "message_update",
+        "agent_end",
+        "agent_settled"
+      ],
+      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project"
+    },
+    {
+      "name": "queue",
+      "trace": "queue.jsonl",
+      "fixedNow": 1700000100321,
+      "initialMessage": "primary prompt",
+      "messages": [],
+      "tokenSize": 64,
+      "settings": {
+        "compaction": {
+          "enabled": false
+        },
+        "retry": {
+          "enabled": false
+        }
+      },
+      "queue": {
+        "steering": [
+          "steer now"
+        ],
+        "followUp": [
+          "follow up"
+        ]
+      },
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "primary answer"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1700000100321
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "queued answer"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1700000100321
+        }
+      ],
+      "expectedExitCode": 0,
+      "requiredEventTypes": [
+        "queue_update",
+        "agent_start",
+        "agent_end",
+        "agent_settled"
+      ],
+      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project"
+    },
+    {
+      "name": "retry",
+      "trace": "retry.jsonl",
+      "fixedNow": 1700000100321,
+      "initialMessage": "retry prompt",
+      "messages": [],
+      "tokenSize": 64,
+      "settings": {
+        "compaction": {
+          "enabled": false
+        },
+        "retry": {
+          "enabled": true,
+          "maxRetries": 1,
+          "baseDelayMs": 0
+        }
+      },
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "errorMessage": "429 Too Many Requests",
+          "timestamp": 1700000100321
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "retry recovered"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1700000100321
+        }
+      ],
+      "expectedExitCode": 0,
+      "requiredEventTypes": [
+        "auto_retry_start",
+        "auto_retry_end",
+        "agent_end",
+        "agent_settled"
+      ],
+      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project"
+    },
+    {
+      "name": "compaction",
+      "trace": "compaction.jsonl",
+      "fixedNow": 1700000100321,
+      "initialMessage": "short session",
+      "messages": [],
+      "tokenSize": 64,
+      "settings": {
+        "compaction": {
+          "enabled": true,
+          "reserveTokens": 16384,
+          "keepRecentTokens": 20000
+        },
+        "retry": {
+          "enabled": false
+        }
+      },
+      "compactAfterFirstPrompt": true,
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "too short to compact"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1700000100321
+        }
+      ],
+      "expectedExitCode": 0,
+      "requiredEventTypes": [
+        "compaction_start",
+        "compaction_end",
+        "agent_settled"
+      ],
+      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project"
+    },
+    {
+      "name": "assistant-error",
+      "trace": "assistant-error.jsonl",
+      "fixedNow": 1700000100321,
+      "initialMessage": "fail",
+      "messages": [],
+      "tokenSize": 64,
+      "settings": {
+        "compaction": {
+          "enabled": false
+        },
+        "retry": {
+          "enabled": false
+        }
+      },
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "errorMessage": "provider failed",
+          "timestamp": 1700000100321
+        }
+      ],
+      "expectedExitCode": 0,
+      "requiredEventTypes": [
+        "agent_end",
+        "agent_settled"
+      ],
+      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project"
+    },
+    {
+      "name": "assistant-aborted",
+      "trace": "assistant-aborted.jsonl",
+      "fixedNow": 1700000100321,
+      "initialMessage": "abort",
+      "messages": [],
+      "tokenSize": 64,
+      "settings": {
+        "compaction": {
+          "enabled": false
+        },
+        "retry": {
+          "enabled": false
+        }
+      },
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "aborted",
+          "errorMessage": "Request was aborted",
+          "timestamp": 1700000100321
+        }
+      ],
+      "expectedExitCode": 0,
+      "requiredEventTypes": [
+        "agent_end",
+        "agent_settled"
+      ],
+      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project"
+    }
+  ]
+}

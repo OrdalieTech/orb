@@ -42,6 +42,7 @@ type CLIArgs struct {
 	NoTools            bool
 	NoBuiltinTools     bool
 	Print              bool
+	Mode               string
 	Export             *string
 	NoContextFiles     bool
 	Messages           []string
@@ -76,6 +77,11 @@ func ParseArgs(argv []string) CLIArgs {
 			result.Continue = true
 		case argument == "--resume" || argument == "-r":
 			result.Resume = true
+		case argument == "--mode" && index+1 < len(argv):
+			index++
+			if argv[index] == "text" || argv[index] == "json" || argv[index] == "rpc" {
+				result.Mode = argv[index]
+			}
 		case argument == "--provider" && index+1 < len(argv):
 			index++
 			result.Provider = stringValue(argv[index])

@@ -78,7 +78,7 @@ async function pathExists(candidate: string): Promise<boolean> {
   }
 }
 
-async function withOfflineGeneratedCatalog<T>(upstreamRoot: string, run: () => Promise<T>): Promise<T> {
+export async function withOfflineGeneratedCatalog<T>(upstreamRoot: string, run: () => Promise<T>): Promise<T> {
   // agent-loop.ts imports the legacy compat entrypoint, which eagerly imports
   // generated, gitignored provider JSON. Generate that pinned baseline in a
   // temporary package copy, then restore the checkout byte-for-byte afterward.

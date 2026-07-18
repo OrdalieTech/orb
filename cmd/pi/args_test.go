@@ -72,6 +72,17 @@ func TestParseArgsModelCatalogFlags(t *testing.T) {
 	}
 }
 
+func TestParseArgsMode(t *testing.T) {
+	for _, mode := range []string{"text", "json", "rpc"} {
+		if got := ParseArgs([]string{"--mode", mode}).Mode; got != mode {
+			t.Fatalf("mode %q parsed as %q", mode, got)
+		}
+	}
+	if got := ParseArgs([]string{"--mode", "invalid"}).Mode; got != "" {
+		t.Fatalf("invalid mode parsed as %q", got)
+	}
+}
+
 func TestParseArgsSessionTreeAndExportFlags(t *testing.T) {
 	args := ParseArgs([]string{
 		"--resume", "--session", "abc123", "--session-id", "exact-id", "--fork", "source",

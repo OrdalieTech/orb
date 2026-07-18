@@ -1,0 +1,19 @@
+{
+  "family": "F3-session",
+  "upstreamCommit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
+  "generator": "conformance/extract/f3-session.ts",
+  "source": "packages/coding-agent/src/modes/print-mode.ts + packages/coding-agent/src/core/agent-session.ts + packages/ai/src/providers/faux.ts",
+  "format": "agent-session-event-jsonl-v1",
+  "canonicalized": [
+    "session.timestamp"
+  ],
+  "files": [
+    "scenarios.json",
+    "multiple-prompts.jsonl",
+    "queue.jsonl",
+    "retry.jsonl",
+    "compaction.jsonl",
+    "assistant-error.jsonl",
+    "assistant-aborted.jsonl"
+  ]
+}

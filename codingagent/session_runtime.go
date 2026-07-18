@@ -29,6 +29,7 @@ type SessionRuntimeConfig struct {
 	GetModelHeaders agent.GetModelHeadersFunc
 	Complete        harness.CompleteFunc
 	Sleep           func(context.Context, time.Duration) error
+	Clock           func() int64
 }
 
 type SessionRuntime struct {
@@ -37,6 +38,7 @@ type SessionRuntime struct {
 	settings *config.SettingsManager
 	complete harness.CompleteFunc
 	sleep    func(context.Context, time.Duration) error
+	clock    func() int64
 
 	mu                   sync.Mutex
 	listeners            []sessionListener
@@ -139,9 +141,13 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 	if sleep == nil {
 		sleep = sleepContext
 	}
+	clock := runtimeConfig.Clock
+	if clock == nil {
+		clock = func() int64 { return time.Now().UnixMilli() }
+	}
 	runtime := &SessionRuntime{
 		agent: runtimeConfig.Agent, manager: runtimeConfig.SessionManager,
-		settings: runtimeConfig.Settings, complete: complete, sleep: sleep,
+		settings: runtimeConfig.Settings, complete: complete, sleep: sleep, clock: clock,
 		listeners: []sessionListener{}, steering: []string{}, followUps: []string{},
 	}
 	runtime.agent.SetSteeringMode(agent.QueueMode(runtime.settings.GetSteeringMode()))
@@ -264,7 +270,7 @@ func (runtime *SessionRuntime) Continue(ctx context.Context) error {
 }
 
 func (runtime *SessionRuntime) Steer(text string) {
-	message := userMessage(text)
+	message := runtime.queuedUserMessage(text)
 	runtime.mu.Lock()
 	runtime.steering = append(runtime.steering, text)
 	runtime.mu.Unlock()
@@ -273,7 +279,7 @@ func (runtime *SessionRuntime) Steer(text string) {
 }
 
 func (runtime *SessionRuntime) FollowUp(text string) {
-	message := userMessage(text)
+	message := runtime.queuedUserMessage(text)
 	runtime.mu.Lock()
 	runtime.followUps = append(runtime.followUps, text)
 	runtime.mu.Unlock()
@@ -1032,6 +1038,10 @@ func asAssistant(message agent.AgentMessage) *ai.AssistantMessage {
 
 func userMessage(text string) *ai.UserMessage {
 	return &ai.UserMessage{Content: ai.NewUserContent(&ai.TextContent{Text: text}), Timestamp: time.Now().UnixMilli()}
+}
+
+func (runtime *SessionRuntime) queuedUserMessage(text string) *ai.UserMessage {
+	return &ai.UserMessage{Content: ai.NewUserContent(&ai.TextContent{Text: text}), Timestamp: runtime.clock()}
 }
 
 func userMessageText(message agent.AgentMessage) string {

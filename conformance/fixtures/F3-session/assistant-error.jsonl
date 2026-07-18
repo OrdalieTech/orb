@@ -1,0 +1,10 @@
+{"type":"session","version":3,"id":"fixture-json-assistant-error","timestamp":"2023-11-14T22:15:00.321Z","cwd":"/fixture/project"}
+{"type":"agent_start"}
+{"type":"turn_start"}
+{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"fail"}],"timestamp":1700000100321}}
+{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"fail"}],"timestamp":1700000100321}}
+{"type":"message_start","message":{"role":"assistant","content":[],"api":"faux","provider":"faux","model":"faux-1","usage":{"input":23,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":23,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"error","errorMessage":"provider failed","timestamp":1700000100321}}
+{"type":"message_end","message":{"role":"assistant","content":[],"api":"faux","provider":"faux","model":"faux-1","usage":{"input":23,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":23,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"error","errorMessage":"provider failed","timestamp":1700000100321}}
+{"type":"turn_end","message":{"role":"assistant","content":[],"api":"faux","provider":"faux","model":"faux-1","usage":{"input":23,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":23,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"error","errorMessage":"provider failed","timestamp":1700000100321},"toolResults":[]}
+{"type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"fail"}],"timestamp":1700000100321},{"role":"assistant","content":[],"api":"faux","provider":"faux","model":"faux-1","usage":{"input":23,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":23,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"error","errorMessage":"provider failed","timestamp":1700000100321}],"willRetry":false}
+{"type":"agent_settled"}
