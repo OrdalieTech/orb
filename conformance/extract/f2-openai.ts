@@ -22,6 +22,7 @@ import type {
 } from "../../.upstream/packages/ai/src/types.ts";
 import { extractAuthStorageFixture } from "./f2-auth.ts";
 import { extractAnthropicF2 } from "./f2-anthropic.ts";
+import { extractBedrockF2 } from "./f2-bedrock.ts";
 import { extractGoogleF2 } from "./f2-google.ts";
 import { extractGoogleVertexF2 } from "./f2-google-vertex.ts";
 import { extractMistralAzureF2 } from "./f2-mistral-azure.ts";
@@ -1185,6 +1186,7 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
   try {
     const provider = await extractOpenAIProvider(upstreamRoot);
     const anthropic = await extractAnthropicF2(upstreamRoot);
+    const bedrock = await extractBedrockF2(upstreamRoot);
     const google = await extractGoogleF2(upstreamRoot);
     const googleVertex = await extractGoogleVertexF2(upstreamRoot);
     const mistralAzure = await extractMistralAzureF2();
@@ -1215,16 +1217,19 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
       upstreamCommit,
       generator: "conformance/extract/f2-openai.ts",
       source:
-        "packages/ai/src/api/openai-responses.ts + packages/ai/src/api/openai-responses-shared.ts + packages/ai/src/api/openai-completions.ts + packages/ai/src/api/openai-prompt-cache.ts + packages/ai/src/api/anthropic-messages.ts + packages/ai/src/api/google-generative-ai.ts + packages/ai/src/api/google-vertex.ts + packages/ai/src/api/google-shared.ts + packages/ai/src/api/mistral-conversations.ts + packages/ai/src/api/azure-openai-responses.ts + packages/ai/src/utils/deferred-tools.ts + packages/ai/src/api/transform-messages.ts + packages/ai/src/providers/openai.ts + packages/ai/src/providers/anthropic.ts + packages/ai/src/providers/google.ts + packages/ai/src/providers/google-vertex.ts + packages/ai/src/env-api-keys.ts + packages/ai/src/auth/helpers.ts + packages/ai/src/auth/oauth/oauth-page.ts + packages/ai/src/models.ts + packages/ai/scripts/generate-models.ts + packages/coding-agent/src/core/auth-storage.ts + packages/coding-agent/src/core/resolve-config-value.ts + packages/coding-agent/src/migrations.ts",
+        "packages/ai/src/api/openai-responses.ts + packages/ai/src/api/openai-responses-shared.ts + packages/ai/src/api/openai-completions.ts + packages/ai/src/api/openai-prompt-cache.ts + packages/ai/src/api/anthropic-messages.ts + packages/ai/src/api/bedrock-converse-stream.ts + packages/ai/src/api/google-generative-ai.ts + packages/ai/src/api/google-vertex.ts + packages/ai/src/api/google-shared.ts + packages/ai/src/api/mistral-conversations.ts + packages/ai/src/api/azure-openai-responses.ts + packages/ai/src/utils/deferred-tools.ts + packages/ai/src/api/transform-messages.ts + packages/ai/src/providers/openai.ts + packages/ai/src/providers/anthropic.ts + packages/ai/src/providers/amazon-bedrock.ts + packages/ai/src/providers/google.ts + packages/ai/src/providers/google-vertex.ts + packages/ai/src/env-api-keys.ts + packages/ai/src/auth/helpers.ts + packages/ai/src/auth/oauth/oauth-page.ts + packages/ai/src/models.ts + packages/ai/scripts/generate-models.ts + packages/coding-agent/src/core/auth-storage.ts + packages/coding-agent/src/core/resolve-config-value.ts + packages/coding-agent/src/migrations.ts",
       files: [
         "provider.json",
         "anthropic-provider.json",
+        "bedrock-provider.json",
         "google-provider.json",
         "google-vertex-provider.json",
         "requests.json",
         "anthropic-requests.json",
+        "bedrock-requests.json",
         "streams.json",
         "anthropic-streams.json",
+        "bedrock-streams.json",
         "google-requests.json",
         "google-streams.json",
         "google-vertex-requests.json",
@@ -1242,6 +1247,10 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
       path.join(familyDir, "anthropic-provider.json"),
       `${JSON.stringify(anthropic.provider, null, 2)}\n`,
     );
+    await writeFile(
+      path.join(familyDir, "bedrock-provider.json"),
+      `${JSON.stringify(bedrock.provider, null, 2)}\n`,
+    );
     await writeFile(path.join(familyDir, "google-provider.json"), `${JSON.stringify(google.provider, null, 2)}\n`);
     await writeFile(
       path.join(familyDir, "google-vertex-provider.json"),
@@ -1254,8 +1263,16 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
       `${JSON.stringify({ cases: anthropic.requests }, null, 2)}\n`,
     );
     await writeFile(
+      path.join(familyDir, "bedrock-requests.json"),
+      `${JSON.stringify({ cases: bedrock.requests }, null, 2)}\n`,
+    );
+    await writeFile(
       path.join(familyDir, "anthropic-streams.json"),
       `${JSON.stringify({ cases: anthropic.streams }, null, 2)}\n`,
+    );
+    await writeFile(
+      path.join(familyDir, "bedrock-streams.json"),
+      `${JSON.stringify({ cases: bedrock.streams }, null, 2)}\n`,
     );
     await writeFile(
       path.join(familyDir, "google-requests.json"),

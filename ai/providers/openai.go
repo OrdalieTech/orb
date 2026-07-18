@@ -46,6 +46,8 @@ func Get(id ai.ProviderID) (Provider, bool) {
 		return Google(), true
 	case googleVertexProvider.ID:
 		return GoogleVertex(), true
+	case amazonBedrockProvider.ID:
+		return AmazonBedrock(), true
 	case mistralProvider.ID:
 		return Mistral(), true
 	case azureOpenAIResponsesProvider.ID:
@@ -56,7 +58,7 @@ func Get(id ai.ProviderID) (Provider, bool) {
 }
 
 func List() []Provider {
-	return []Provider{OpenAI(), Anthropic(), Google(), GoogleVertex(), Mistral(), AzureOpenAIResponses()}
+	return []Provider{OpenAI(), Anthropic(), Google(), GoogleVertex(), AmazonBedrock(), Mistral(), AzureOpenAIResponses()}
 }
 
 func cloneProvider(provider Provider) Provider {

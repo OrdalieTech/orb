@@ -48,7 +48,7 @@ func TestGoogleProvider(t *testing.T) {
 		t.Fatal("Google returned mutable auth-method storage")
 	}
 	registered := providers.List()
-	wantIDs := []ai.ProviderID{"openai", "anthropic", fixture.ID, "google-vertex", "mistral", "azure-openai-responses"}
+	wantIDs := []ai.ProviderID{"openai", "anthropic", fixture.ID, "google-vertex", "amazon-bedrock", "mistral", "azure-openai-responses"}
 	gotIDs := make([]ai.ProviderID, len(registered))
 	for index := range registered {
 		gotIDs[index] = registered[index].ID

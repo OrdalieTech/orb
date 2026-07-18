@@ -165,7 +165,6 @@ func (registry *ModelRegistry) ResolveModelHeaders(ctx context.Context, model ai
 }
 
 var providerAPIKeyEnv = map[string][]string{
-	"amazon-bedrock":         {"AWS_BEARER_TOKEN_BEDROCK", "AWS_ACCESS_KEY_ID"},
 	"anthropic":              {"ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"},
 	"azure-openai-responses": {"AZURE_OPENAI_API_KEY"},
 	"cerebras":               {"CEREBRAS_API_KEY"},

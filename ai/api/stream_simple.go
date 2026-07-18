@@ -19,6 +19,8 @@ func StreamSimple(
 		return nil, fmt.Errorf("ai: model is nil")
 	}
 	switch model.API {
+	case ai.APIBedrockConverse:
+		return StreamSimpleBedrockConverse(ctx, model, requestContext, options)
 	case ai.APIAnthropicMessages:
 		return StreamSimpleAnthropicMessages(ctx, model, requestContext, options)
 	case ai.APIGoogleGenerativeAI:
