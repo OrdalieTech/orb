@@ -401,6 +401,8 @@ func (c *ToolExecutionComponent) getTextOutput() string {
 
 func (c *ToolExecutionComponent) Invalidate() { c.container.Invalidate() }
 func (c *ToolExecutionComponent) Render(width int) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.container.Render(width)
 }
 
@@ -597,7 +599,11 @@ func (c *BashExecutionComponent) rebuild() {
 }
 
 func (c *BashExecutionComponent) Invalidate()               { c.container.Invalidate() }
-func (c *BashExecutionComponent) Render(width int) []string { return c.container.Render(width) }
+func (c *BashExecutionComponent) Render(width int) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.container.Render(width)
+}
 
 // ─────────────────────────────────────────────────────────────
 // StatusIndicators
