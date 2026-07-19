@@ -51,18 +51,21 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 
 ## M4 — Expansion: providers, MCP, packages, extension bridge (closes Sprint 3)
 
-- [ ] Expansion study (`docs/plan/expansion-study.md`) committed and surfaced to the owner; scope
+- [x] Expansion study (`docs/plan/expansion-study.md`) committed and surfaced to the owner; scope
       below stands as full-parity default unless the owner amends DECISIONS.
 - [ ] Every upstream provider except Radius resolves in `--list-models`; F2 green for the codex
       shape; ChatGPT/Codex, Copilot, xAI OAuth flows verified end-to-end once, documented.
-- [ ] MCP: go-sdk example server round-trips (list/execute/stream); zero MCP work when unconfigured.
-- [ ] pi packages (npm:/git:) install/update/list + project trust work as upstream.
-- [ ] F11 matrix published; ≥ 80% of upstream single-file examples run **unmodified** with their
+      (Providers and codex shape green; OAuth flows code-complete with tests — live end-to-end
+      runs owner-blocked on subscribed accounts.)
+- [x] MCP: go-sdk example server round-trips (list/execute/stream); zero MCP work when unconfigured.
+- [x] pi packages (npm:/git:) install/update/list + project trust work as upstream.
+- [x] F11 matrix published; ≥ 80% of upstream single-file examples run **unmodified** with their
       documented behavior; every "unsupported" maps to a ledger line or a written WP proposal.
-- [ ] hello, todo, pirate, permission-gate, status-line, modal-editor run unmodified end-to-end.
-- [ ] Node-shim coverage table committed; VM bridge calls < 8 ms on the corpus; `/reload` works;
-      TS errors map to source lines.
-- [ ] Trim pass #4 done.
+      (61/69 = 88%; per-row missing-surface notes in docs/sync/extension-matrix.md.)
+- [x] hello, todo, pirate, permission-gate, status-line, modal-editor run unmodified end-to-end.
+- [x] Node-shim coverage table committed; VM bridge calls < 8 ms on the corpus (p90 137 µs,
+      test-guarded); `/reload` works; TS errors map to source lines.
+- [x] Trim pass #4 done.
 
 ## M5 — v1.0 release (closes Sprint 4)
 
