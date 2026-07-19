@@ -174,3 +174,7 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
   modal-editor example runs unmodified. Remaining pi-tui component classes (Text/Container/Markdown
   construction from JS) are bridged on demand as the F11 matrix requires them.
 - **G4 (WP-661):** self-update mechanism — notify-only vs in-place binary self-update.
+  **Resolved (Sprint 4): notify-only.** The update check (already pointed at OrdalieTech/pi-go
+  releases per the divergence ledger) surfaces new versions; installation goes through the install
+  script or package manager. In-place binary self-replacement is a security and failure-mode
+  liability a slim port does not need.

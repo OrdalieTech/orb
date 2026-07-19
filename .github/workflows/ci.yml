@@ -22,7 +22,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - run: make build test lint
+      - run: make check
       - name: Verify conformance fixtures
         if: runner.os == 'Linux'
         run: make fixtures-check

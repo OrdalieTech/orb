@@ -23,7 +23,8 @@ import (
 	"golang.org/x/term"
 )
 
-const version = "0.1.0-dev"
+// version is injected by goreleaser ldflags at release time.
+var version = "0.1.0-dev"
 
 type cliStreams struct {
 	Stdin     io.Reader

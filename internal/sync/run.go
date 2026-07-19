@@ -319,7 +319,8 @@ func runConformance(ctx context.Context, root, fixtureDir string) (string, error
 	}
 	defer cleanup()
 	goFlags := strings.TrimSpace(os.Getenv("GOFLAGS") + " -buildvcs=false")
-	return command(ctx, copyRoot, []string{"GOWORK=off", "GOFLAGS=" + goFlags}, "go", "test", "-race", "./...")
+	// The tool itself builds with CGO_ENABLED=0; -race needs cgo re-enabled.
+	return command(ctx, copyRoot, []string{"GOWORK=off", "GOFLAGS=" + goFlags, "CGO_ENABLED=1"}, "go", "test", "-race", "./...")
 }
 
 func checkFrom(output string, err error) Check {
