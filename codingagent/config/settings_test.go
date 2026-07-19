@@ -456,6 +456,45 @@ func TestSettingsMutationsPersistLikeUpstream(t *testing.T) {
 	}
 }
 
+func TestHTTPIdleTimeoutSettingRoundTripAndLabels(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	manager, err := NewSettingsManager(root, WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.SetHTTPIdleTimeoutMS(60_000)
+	if got, err := manager.GetHTTPIdleTimeoutMS(); err != nil || got != 60_000 {
+		t.Fatalf("GetHTTPIdleTimeoutMS = %d, %v", got, err)
+	}
+	manager.SetHTTPIdleTimeoutMS(0)
+	if got, err := manager.GetHTTPIdleTimeoutMS(); err != nil || got != 0 {
+		t.Fatalf("disabled GetHTTPIdleTimeoutMS = %d, %v", got, err)
+	}
+	manager.SetHTTPIdleTimeoutMS(-5)
+	if got, err := manager.GetHTTPIdleTimeoutMS(); err != nil || got != 0 {
+		t.Fatalf("negative write must be rejected; got %d, %v", got, err)
+	}
+	// Labels and order pin upstream http-dispatcher HTTP_IDLE_TIMEOUT_CHOICES.
+	labels := make([]string, 0, len(HTTPIdleTimeoutChoices))
+	for _, choice := range HTTPIdleTimeoutChoices {
+		labels = append(labels, choice.Label)
+	}
+	want := []string{"30 sec", "1 min", "2 min", "5 min", "disabled"}
+	if len(labels) != len(want) {
+		t.Fatalf("choices = %v", labels)
+	}
+	for index := range want {
+		if labels[index] != want[index] {
+			t.Fatalf("choices = %v, want %v", labels, want)
+		}
+	}
+	if FormatHTTPIdleTimeoutMS(300_000) != "5 min" || FormatHTTPIdleTimeoutMS(0) != "disabled" || FormatHTTPIdleTimeoutMS(1_500) != "1.5 sec" {
+		t.Fatalf("FormatHTTPIdleTimeoutMS labels diverge: %q %q %q",
+			FormatHTTPIdleTimeoutMS(300_000), FormatHTTPIdleTimeoutMS(0), FormatHTTPIdleTimeoutMS(1_500))
+	}
+}
+
 func TestSettingsMutationInteroperatesWithProperLockfileDirectory(t *testing.T) {
 	root := t.TempDir()
 	agentDir := filepath.Join(root, "agent")

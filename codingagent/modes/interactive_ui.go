@@ -1196,12 +1196,13 @@ func (c *styledTextComponent) Render(width int) []string {
 	return []string{theme.FG(c.color, c.text)}
 }
 
+// selectListTheme mirrors upstream getSelectListTheme's color mapping.
 func selectListTheme() tui.SelectListTheme {
 	return tui.SelectListTheme{
 		SelectedPrefix: func(s string) string { return theme.FG("accent", s) },
-		SelectedText:   func(s string) string { return theme.FG("selectedText", s) },
-		Description:    func(s string) string { return theme.FG("dim", s) },
-		ScrollInfo:     func(s string) string { return theme.FG("dim", s) },
-		NoMatch:        func(s string) string { return theme.FG("dim", s) },
+		SelectedText:   func(s string) string { return theme.FG("accent", s) },
+		Description:    func(s string) string { return theme.FG("muted", s) },
+		ScrollInfo:     func(s string) string { return theme.FG("muted", s) },
+		NoMatch:        func(s string) string { return theme.FG("muted", s) },
 	}
 }

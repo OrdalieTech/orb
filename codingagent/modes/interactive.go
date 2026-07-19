@@ -1504,6 +1504,7 @@ func (mode *InteractiveMode) showSettingsSelector() {
 		tui.SettingItem{ID: "steering-mode", Label: "Steering mode", Description: "Enter while streaming queues steering messages. 'one-at-a-time': deliver one, wait for response. 'all': deliver all at once.", CurrentValue: string(settings.SteeringMode), Values: []string{"one-at-a-time", "all"}},
 		tui.SettingItem{ID: "follow-up-mode", Label: "Follow-up mode", Description: "Queue follow-up messages until the agent stops", CurrentValue: string(settings.FollowUpMode), Values: []string{"one-at-a-time", "all"}},
 		tui.SettingItem{ID: "transport", Label: "Transport", Description: "Preferred transport for providers that support multiple transports", CurrentValue: string(settings.Transport), Values: []string{"sse", "websocket", "websocket-cached", "auto"}},
+		tui.SettingItem{ID: "http-idle-timeout", Label: "HTTP idle timeout", Description: "Maximum idle gap while waiting for HTTP headers or body chunks. Disable for local models that pause longer than five minutes.", CurrentValue: config.FormatHTTPIdleTimeoutMS(settings.HTTPIdleTimeoutMS), Values: httpIdleTimeoutLabels()},
 		tui.SettingItem{ID: "hide-thinking", Label: "Hide thinking", Description: "Hide thinking blocks in assistant responses", CurrentValue: boolText(settings.HideThinkingBlock), Values: []string{"true", "false"}},
 		tui.SettingItem{ID: "cache-miss-notices", Label: "Cache miss notices", Description: "Show transcript notices for significant prompt-cache misses", CurrentValue: boolText(settings.ShowCacheMissNotices), Values: []string{"true", "false"}},
 		tui.SettingItem{ID: "quiet-startup", Label: "Quiet startup", Description: "Disable verbose printing at startup", CurrentValue: boolText(settings.QuietStartup), Values: []string{"true", "false"}},
@@ -1537,6 +1538,14 @@ func (mode *InteractiveMode) showSettingsSelector() {
 	mode.editorContainer.AddChild(selector)
 	mode.ui.SetFocus(list)
 	mode.ui.RequestRender()
+}
+
+func httpIdleTimeoutLabels() []string {
+	labels := make([]string, len(config.HTTPIdleTimeoutChoices))
+	for index, choice := range config.HTTPIdleTimeoutChoices {
+		labels[index] = choice.Label
+	}
+	return labels
 }
 
 func (mode *InteractiveMode) applySetting(id, value string) {
@@ -1584,6 +1593,14 @@ func (mode *InteractiveMode) applySetting(id, value string) {
 		mode.session.SetFollowUpMode(agent.QueueMode(value))
 	case "transport":
 		mode.session.SetTransport(ai.Transport(value))
+	case "http-idle-timeout":
+		for _, choice := range config.HTTPIdleTimeoutChoices {
+			if choice.Label == value {
+				mode.session.SetHTTPIdleTimeoutMS(choice.TimeoutMS)
+				mode.showStatusMessage("HTTP idle timeout: " + config.FormatHTTPIdleTimeoutMS(choice.TimeoutMS))
+				break
+			}
+		}
 	case "hide-thinking":
 		mode.mu.Lock()
 		mode.thinkingHidden = enabled
@@ -2589,13 +2606,19 @@ func (mode *InteractiveMode) applyScopedModelSelection(models []ai.Model, select
 }
 
 func (mode *InteractiveMode) GitBranch() string {
-	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd := exec.Command("git", "--no-optional-locks", "rev-parse", "--abbrev-ref", "HEAD")
 	cmd.Dir = mode.cwd
 	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(out))
+	branch := strings.TrimSpace(string(out))
+	// rev-parse prints the literal "HEAD" on detached HEAD; upstream's
+	// footer-data-provider shows "detached" for that state.
+	if branch == "HEAD" {
+		return "detached"
+	}
+	return branch
 }
 
 func (mode *InteractiveMode) AvailableProviderCount() int {
@@ -2649,6 +2672,10 @@ func (mode *InteractiveMode) updateTerminalTitle() {
 
 func (mode *InteractiveMode) handleSessionCommand() {
 	stats := mode.session.GetSessionStats()
+	entries := mode.session.Manager().GetEntries()
+	cacheWaste := computeCacheWaste(entries, mode.session.AvailableModels())
+	perModel := sessionCostPerModel(entries)
+
 	var info strings.Builder
 	info.WriteString(theme.Bold("Session Info"))
 	info.WriteString("\n\n")
@@ -2669,18 +2696,103 @@ func (mode *InteractiveMode) handleSessionCommand() {
 	fmt.Fprintf(&info, "%s %d calls, %d results\n\n", theme.FG("dim", "Tools:"), stats.ToolCalls, stats.ToolResults)
 	info.WriteString(theme.Bold("Tokens"))
 	info.WriteByte('\n')
-	promptTokens := stats.Tokens.Input + stats.Tokens.CacheRead + stats.Tokens.CacheWrite
+	// "Input" is the full prompt volume. With cache activity, split it into
+	// cached (served from cache) vs uncached (everything else) - the only
+	// provider-independent split. Cache writes, where reported, are a detail
+	// of the uncached portion.
+	input, cacheRead, cacheWrite := stats.Tokens.Input, stats.Tokens.CacheRead, stats.Tokens.CacheWrite
+	promptTokens := input + cacheRead + cacheWrite
 	fmt.Fprintf(&info, "%s %s\n", theme.FG("dim", "Input:"), formatInteger(promptTokens))
+	if promptTokens > 0 && (cacheRead > 0 || cacheWrite > 0) {
+		hitRate := theme.FG("dim", fmt.Sprintf("(%.1f%%)", float64(cacheRead)/float64(promptTokens)*100))
+		fmt.Fprintf(&info, "  %s %s %s\n", theme.FG("dim", "Cached:"), formatInteger(cacheRead), hitRate)
+		written := ""
+		if cacheWrite > 0 {
+			written = " " + theme.FG("dim", fmt.Sprintf("(%s written to cache)", formatInteger(cacheWrite)))
+		}
+		fmt.Fprintf(&info, "  %s %s%s\n", theme.FG("dim", "Uncached:"), formatInteger(input+cacheWrite), written)
+	}
 	fmt.Fprintf(&info, "%s %s\n", theme.FG("dim", "Output:"), formatInteger(stats.Tokens.Output))
 	fmt.Fprintf(&info, "%s %s\n", theme.FG("dim", "Total:"), formatInteger(stats.Tokens.Total))
-	if stats.Cost > 0 {
+	if stats.Cost > 0 || cacheWaste.missedTokens > 0 {
 		info.WriteByte('\n')
 		info.WriteString(theme.Bold("Cost"))
-		fmt.Fprintf(&info, "\n%s $%.3f", theme.FG("dim", "Total:"), stats.Cost)
+		info.WriteByte('\n')
+		fmt.Fprintf(&info, "%s $%.3f", theme.FG("dim", "Total:"), stats.Cost)
+		if len(perModel) > 1 {
+			for _, entry := range perModel {
+				fmt.Fprintf(&info, "\n  %s $%.3f %s",
+					theme.FG("dim", entry.key+":"), entry.cost,
+					theme.FG("dim", fmt.Sprintf("(%s tokens)", formatTokens(entry.tokens))))
+			}
+		}
+		if cacheWaste.missedTokens > 0 {
+			missLabel := fmt.Sprintf("%d misses", cacheWaste.missCount)
+			if cacheWaste.missCount == 1 {
+				missLabel = "1 miss"
+			}
+			detail := fmt.Sprintf("%s tokens, %s", formatInteger(cacheWaste.missedTokens), missLabel)
+			if cacheWaste.missedCost >= 0.0001 {
+				fmt.Fprintf(&info, "\n%s $%.3f %s", theme.FG("dim", "Cache Re-billed:"), cacheWaste.missedCost, theme.FG("dim", "("+detail+")"))
+			} else {
+				fmt.Fprintf(&info, "\n%s %s", theme.FG("dim", "Cache Re-billed:"), detail)
+			}
+		}
 	}
 	mode.chat.AddChild(tui.NewSpacer(1))
 	mode.chat.AddChild(tui.NewText(info.String(), 1, 0, nil))
 	mode.ui.RequestRender()
+}
+
+type sessionModelCost struct {
+	key    string
+	cost   float64
+	tokens int64
+}
+
+// sessionCostPerModel totals cost/tokens per provider/model actually used
+// (e.g. OpenRouter `auto` resolves to a concrete responseModel), sorted by
+// cost descending with insertion order preserved on ties.
+func sessionCostPerModel(entries []sessionstore.SessionEntry) []sessionModelCost {
+	indexes := make(map[string]int)
+	var totals []sessionModelCost
+	for _, entry := range entries {
+		if entry.Type != "message" {
+			continue
+		}
+		decoded, err := ai.UnmarshalMessage(entry.Message)
+		if err != nil {
+			continue
+		}
+		message := asAssistantMessage(decoded)
+		if message == nil {
+			continue
+		}
+		model := message.Model
+		if message.ResponseModel != nil {
+			model = *message.ResponseModel
+		}
+		key := string(message.Provider) + "/" + model
+		index, exists := indexes[key]
+		if !exists {
+			index = len(totals)
+			indexes[key] = index
+			totals = append(totals, sessionModelCost{key: key})
+		}
+		totals[index].cost += message.Usage.Cost.Total
+		totals[index].tokens += message.Usage.Input + message.Usage.Output + message.Usage.CacheRead + message.Usage.CacheWrite
+	}
+	slices.SortStableFunc(totals, func(a, b sessionModelCost) int {
+		switch {
+		case b.cost > a.cost:
+			return 1
+		case b.cost < a.cost:
+			return -1
+		default:
+			return 0
+		}
+	})
+	return totals
 }
 
 func (mode *InteractiveMode) handleEvent(event any) {
@@ -3035,20 +3147,15 @@ func (mode *InteractiveMode) renderAgentMessage(message any) {
 		if value != nil {
 			mode.renderBashMessage(*value)
 		}
+	case harness.CustomMessage:
+		if value.Display {
+			mode.renderCustomMessage(value.CustomType, value.Content, value.Details)
+		}
+	case *harness.CustomMessage:
+		if value != nil && value.Display {
+			mode.renderCustomMessage(value.CustomType, value.Content, value.Details)
+		}
 	}
-}
-
-type cacheRequest struct {
-	prompt    int64
-	model     string
-	timestamp int64
-	reported  bool
-}
-type cacheMiss struct {
-	tokens       int64
-	cost         float64
-	idle         int64
-	modelChanged bool
 }
 
 func (mode *InteractiveMode) maybeShowCacheMiss(message *ai.AssistantMessage) {
@@ -3070,66 +3177,6 @@ func (mode *InteractiveMode) maybeShowCacheMiss(message *ai.AssistantMessage) {
 		cost = fmt.Sprintf(" (~$%.2f)", miss.cost)
 	}
 	mode.chat.AddChild(tui.NewText(theme.FG("warning", fmt.Sprintf("%s: %s tokens re-billed%s", label, formatTokens(miss.tokens), cost)), 1, 0, nil))
-}
-
-func (mode *InteractiveMode) detectCacheMiss(target *ai.AssistantMessage) *cacheMiss {
-	var previous *cacheRequest
-	reported := false
-	for _, entry := range mode.session.Manager().GetEntries() {
-		if entry.Type == "compaction" || entry.Type == "branch_summary" {
-			previous = nil
-			reported = false
-			continue
-		}
-		if entry.Type != "message" {
-			continue
-		}
-		decoded, err := ai.UnmarshalMessage(entry.Message)
-		if err != nil {
-			continue
-		}
-		assistant := asAssistantMessage(decoded)
-		if assistant == nil {
-			continue
-		}
-		if assistant.Timestamp == target.Timestamp && assistant.Provider == target.Provider && assistant.Model == target.Model {
-			return computeCacheMiss(previous, target, mode.session.AvailableModels())
-		}
-		prompt := assistant.Usage.Input + assistant.Usage.CacheRead + assistant.Usage.CacheWrite
-		if prompt > 0 {
-			reported = reported || assistant.Usage.CacheRead+assistant.Usage.CacheWrite > 0
-			previous = &cacheRequest{prompt: prompt, model: string(assistant.Provider) + "/" + assistant.Model, timestamp: assistant.Timestamp, reported: reported}
-		}
-	}
-	return computeCacheMiss(previous, target, mode.session.AvailableModels())
-}
-
-func computeCacheMiss(previous *cacheRequest, message *ai.AssistantMessage, models []ai.Model) *cacheMiss {
-	prompt := message.Usage.Input + message.Usage.CacheRead + message.Usage.CacheWrite
-	if previous == nil || prompt <= 0 || message.Usage.CacheRead+message.Usage.CacheWrite == 0 && !previous.reported {
-		return nil
-	}
-	missed := min(previous.prompt, prompt) - message.Usage.CacheRead
-	if missed <= 1024 {
-		return nil
-	}
-	paidTokens := message.Usage.Input + message.Usage.CacheWrite
-	paidRate := 0.0
-	if paidTokens > 0 {
-		paidRate = (message.Usage.Cost.Input + message.Usage.Cost.CacheWrite) / float64(paidTokens)
-	}
-	readRate := 0.0
-	if message.Usage.CacheRead > 0 {
-		readRate = message.Usage.Cost.CacheRead / float64(message.Usage.CacheRead)
-	} else {
-		for _, model := range models {
-			if model.Provider == message.Provider && model.ID == message.Model {
-				readRate = model.Cost.CacheRead / 1_000_000
-				break
-			}
-		}
-	}
-	return &cacheMiss{tokens: missed, cost: float64(missed) * max(0, paidRate-readRate), idle: max(0, message.Timestamp-previous.timestamp), modelChanged: previous.model != string(message.Provider)+"/"+message.Model}
 }
 
 func (mode *InteractiveMode) renderRawAgentMessage(raw json.RawMessage) {

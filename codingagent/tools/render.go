@@ -1,10 +1,12 @@
 package tools
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pi-go/tui"
 )
 
 // PlainTextRenderer is the tool-rendering seam used until the Phase 4 TUI
@@ -14,9 +16,69 @@ type PlainTextRenderer interface {
 	RenderResult(result agent.AgentToolResult) string
 }
 
+// ShortenPath abbreviates a home-relative path with "~" for tool headers,
+// matching upstream render-utils shortenPath.
+func ShortenPath(path string) string {
+	home, err := toolUserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	if strings.HasPrefix(path, home) {
+		return "~" + path[len(home):]
+	}
+	return path
+}
+
+// linkPath wraps the display text in an OSC 8 file:// hyperlink when the
+// terminal supports hyperlinks, matching upstream render-utils linkPath.
+func linkPath(displayText, rawPath, cwd string) string {
+	if !tui.GetCapabilities().Hyperlinks {
+		return displayText
+	}
+	absolutePath := rawPath
+	if expanded, err := expandPath(rawPath, false, false); err == nil {
+		absolutePath = expanded
+	}
+	if !filepath.IsAbs(absolutePath) {
+		absolutePath = filepath.Join(cwd, absolutePath)
+	}
+	return tui.Hyperlink(displayText, pathToFileURL(filepath.Clean(absolutePath)))
+}
+
+// pathToFileURL percent-encodes an absolute path as a file:// URL the way
+// Node's url.pathToFileURL does (WHATWG path percent-encode set plus "%").
+func pathToFileURL(path string) string {
+	var encoded strings.Builder
+	encoded.WriteString("file://")
+	for _, unit := range []byte(filepath.ToSlash(path)) {
+		switch {
+		case unit < 0x20 || unit == 0x7f || unit >= 0x80,
+			unit == ' ', unit == '"', unit == '#', unit == '<', unit == '>',
+			unit == '?', unit == '`', unit == '{', unit == '}', unit == '^',
+			unit == '|', unit == '\\', unit == '%':
+			const hex = "0123456789ABCDEF"
+			encoded.WriteByte('%')
+			encoded.WriteByte(hex[unit>>4])
+			encoded.WriteByte(hex[unit&0x0f])
+		default:
+			encoded.WriteByte(unit)
+		}
+	}
+	return encoded.String()
+}
+
+// renderLinkedPath renders a tool-header path (~-shortened, hyperlinked),
+// matching the display/link behavior of upstream renderToolPath.
+func renderLinkedPath(rawPath, cwd string) string {
+	if rawPath == "" {
+		return ""
+	}
+	return linkPath(ShortenPath(rawPath), rawPath, cwd)
+}
+
 func (tool *readTool) RenderCall(args any) string {
 	object := renderArgs(args)
-	text := "read " + renderPath(object)
+	text := "read " + renderLinkedPath(renderPath(object), tool.cwd)
 	offset, offsetErr := optionalNumber(object, "offset")
 	limit, limitErr := optionalNumber(object, "limit")
 	if offsetErr != nil || limitErr != nil || offset == nil && limit == nil {
@@ -40,29 +102,29 @@ func (*readTool) RenderResult(result agent.AgentToolResult) string {
 	return renderTextResult(result)
 }
 
-func (*writeTool) RenderCall(args any) string {
-	return "write " + renderPath(renderArgs(args))
+func (tool *writeTool) RenderCall(args any) string {
+	return "write " + renderLinkedPath(renderPath(renderArgs(args)), tool.cwd)
 }
 
 func (*writeTool) RenderResult(result agent.AgentToolResult) string {
 	return renderTextResult(result)
 }
 
-func (*editTool) RenderCall(args any) string {
-	return "edit " + renderPath(renderArgs(args))
+func (tool *editTool) RenderCall(args any) string {
+	return "edit " + renderLinkedPath(renderPath(renderArgs(args)), tool.cwd)
 }
 
 func (*editTool) RenderResult(result agent.AgentToolResult) string {
 	return renderTextResult(result)
 }
 
-func (*lsTool) RenderCall(args any) string {
+func (tool *lsTool) RenderCall(args any) string {
 	object := renderArgs(args)
 	path := renderPath(object)
 	if path == "" {
 		path = "."
 	}
-	text := "ls " + path
+	text := "ls " + renderLinkedPath(path, tool.cwd)
 	if limit, err := optionalNumber(object, "limit"); err == nil && limit != nil {
 		text += " (limit " + formatJSNumber(*limit) + ")"
 	}
