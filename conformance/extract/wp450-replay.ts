@@ -17,6 +17,12 @@ type DemoState = {
 	notifications: string[];
 };
 
+type ToolOutputPreviewCase = {
+	id: string;
+	width: number;
+	lines: string[];
+};
+
 type ExtensionHost = {
 	api: any;
 	emit(event: string, context: any): Promise<void>;
@@ -26,6 +32,13 @@ type ExtensionHost = {
 const WIDTHS = [52, 88];
 const ROWS = 120;
 const FIXED_TIMESTAMP = 1_700_000_000_000;
+
+function longToolOutput(): string {
+	return Array.from(
+		{ length: 24 },
+		(_, index) => `stream line ${String(index + 1).padStart(2, "0")}: abcdefghijklmnopqrstuvwxyz 0123456789`,
+	).join("\n");
+}
 
 function extensionHost(): ExtensionHost {
 	const handlers = new Map<string, ExtensionHandler[]>();
@@ -241,6 +254,50 @@ async function generateUIDemoArtifact(modules: Awaited<ReturnType<typeof loadMod
 	};
 }
 
+function renderToolOutputPreviewCases(modules: Awaited<ReturnType<typeof loadModules>>, width: number) {
+	const terminal = new modules.VirtualTerminal(width, ROWS);
+	const ui = new modules.tui.TUI(terminal);
+	const output = longToolOutput();
+	const cases: ToolOutputPreviewCase[] = [];
+	const capture = (id: string, component: Component) => {
+		cases.push({
+			id,
+			width,
+			lines: normalizeLines(component.render(width)).filter((line) => !line.includes("Running... (")),
+		});
+	};
+
+	const tool = new modules.ToolExecutionComponent(
+		"bash",
+		"call-streaming-bash",
+		{ command: "printf streaming-output" },
+		{ showImages: false, imageWidthCells: 24 },
+		undefined,
+		ui,
+		"/workspace",
+	);
+	tool.updateResult({ content: [{ type: "text", text: output }], isError: false }, true);
+	capture("tool-partial-collapsed", tool);
+	tool.setExpanded(true);
+	capture("tool-partial-expanded", tool);
+	tool.updateResult({ content: [{ type: "text", text: output }], isError: false }, false);
+	capture("tool-final-expanded", tool);
+	tool.setExpanded(false);
+	capture("tool-final-collapsed", tool);
+
+	const bash = new modules.BashExecutionComponent("printf streaming-output", ui, false);
+	bash.appendOutput(output);
+	capture("bang-bash-partial-collapsed", bash);
+	bash.setExpanded(true);
+	capture("bang-bash-partial-expanded", bash);
+	bash.setComplete(0, false);
+	capture("bang-bash-final-expanded", bash);
+	bash.setExpanded(false);
+	capture("bang-bash-final-collapsed", bash);
+
+	return cases;
+}
+
 async function replayWidth(modules: Awaited<ReturnType<typeof loadModules>>, width: number) {
 	const fixtureRoot = await mkdtemp(path.join(tmpdir(), "pi-wp450-replay-"));
 	await writeFile(path.join(fixtureRoot, "fixture.txt"), "alpha\nold value\nomega\n");
@@ -404,10 +461,16 @@ export async function generateWP450Replay(upstreamRoot: string, outputRoot: stri
 		try {
 			const frames = [] as { id: string; width: number; lines: string[] }[];
 			for (const width of WIDTHS) frames.push(...await replayWidth(modules, width));
+			const toolOutputPreviews = [] as ToolOutputPreviewCase[];
+			for (const width of WIDTHS) toolOutputPreviews.push(...renderToolOutputPreviewCases(modules, width));
 			const demos = await generateUIDemoArtifact(modules);
 			const familyDir = path.join(outputRoot, "WP450");
 			await mkdir(familyDir, { recursive: true });
 			await writeFile(path.join(familyDir, "replay.json"), `${JSON.stringify({ schemaVersion: 1, frames }, null, 2)}\n`);
+			await writeFile(
+				path.join(familyDir, "tool-output-previews.json"),
+				`${JSON.stringify({ schemaVersion: 1, cases: toolOutputPreviews }, null, 2)}\n`,
+			);
 			await writeFile(path.join(familyDir, "ui-demos.json"), `${JSON.stringify(demos, null, 2)}\n`);
 			await writeFile(path.join(familyDir, "manifest.json"), `${JSON.stringify({
 				family: "WP450",
@@ -418,8 +481,10 @@ export async function generateWP450Replay(upstreamRoot: string, outputRoot: stri
 					"packages/coding-agent/src/modes/interactive/components/user-message.ts",
 					"packages/coding-agent/src/modes/interactive/components/assistant-message.ts",
 					"packages/coding-agent/src/modes/interactive/components/tool-execution.ts",
+					"packages/coding-agent/src/modes/interactive/components/visual-truncate.ts",
 					"packages/coding-agent/src/modes/interactive/components/diff.ts",
 					"packages/coding-agent/src/modes/interactive/components/bash-execution.ts",
+					"packages/coding-agent/src/core/tools/bash.ts",
 					"packages/coding-agent/src/modes/interactive/components/compaction-summary-message.ts",
 					"packages/coding-agent/src/modes/interactive/components/branch-summary-message.ts",
 					"packages/coding-agent/src/modes/interactive/components/custom-message.ts",
@@ -430,7 +495,7 @@ export async function generateWP450Replay(upstreamRoot: string, outputRoot: stri
 					"packages/coding-agent/examples/extensions/custom-footer.ts",
 					"packages/tui/test/virtual-terminal.ts",
 				],
-				files: ["replay.json", "ui-demos.json"],
+				files: ["replay.json", "tool-output-previews.json", "ui-demos.json"],
 				metadata: {
 					widths: WIDTHS,
 					rows: ROWS,
