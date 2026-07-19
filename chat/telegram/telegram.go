@@ -111,6 +111,10 @@ func New(opts Options) (*Adapter, error) {
 // Platform implements [chat.Adapter].
 func (a *Adapter) Platform() string { return "telegram" }
 
+// Account returns the bot's numeric id — the public prefix of the token —
+// matching the Account set on every normalized message.
+func (a *Adapter) Account() string { return a.account }
+
 // Download implements [chat.Adapter]: getFile resolves the file path, then
 // the file URL is streamed. The MIME type is the one carried on the ref
 // (getFile does not report one).

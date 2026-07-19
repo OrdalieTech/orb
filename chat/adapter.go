@@ -36,6 +36,12 @@ type Delivery interface {
 type Adapter interface {
 	// Platform returns the platform name matched against [Message.Platform].
 	Platform() string
+	// Account returns the bot/business account identity matched against
+	// [Message.Account]. An empty string makes the adapter the wildcard for
+	// its platform: it receives every message no more specific adapter
+	// claims. Registering several adapters for one platform requires
+	// distinct accounts.
+	Account() string
 	// NewDelivery creates the output surface for one turn. A non-empty
 	// resumePreviewID signals crash recovery: Finalize must edit that
 	// message instead of sending a new one.

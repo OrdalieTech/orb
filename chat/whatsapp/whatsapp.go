@@ -104,6 +104,10 @@ func New(opts Options) (*Adapter, error) {
 // Platform implements chat.Adapter.
 func (a *Adapter) Platform() string { return platformName }
 
+// Account returns the business phone number id this adapter serves,
+// matching the Account set on every normalized message.
+func (a *Adapter) Account() string { return a.opts.PhoneNumberID }
+
 // messagesPath is the /<phone_number_id>/messages endpoint path.
 func (a *Adapter) messagesPath() string {
 	return "/" + GraphVersion + "/" + url.PathEscape(a.opts.PhoneNumberID) + "/messages"
@@ -132,7 +136,7 @@ func (a *Adapter) do(ctx context.Context, method, path string, payload, out any)
 	if err != nil {
 		return fmt.Errorf("whatsapp: %s %s: %w", method, path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
 		return fmt.Errorf("whatsapp: read response: %w", err)

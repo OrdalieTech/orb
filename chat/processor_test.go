@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	goruntime "runtime"
 	"strings"
@@ -758,5 +759,55 @@ func TestKeyedMutexRefcountsAndHonorsContext(t *testing.T) {
 	locks.Unlock("k")
 	if size := locks.size(); size != 0 {
 		t.Fatalf("residue after unlock: %d entries", size)
+	}
+}
+
+func TestAdapterRoutingByAccount(t *testing.T) {
+	specific := &fauxAdapter{account: "bot"}
+	wildcard := &fauxAdapter{}
+	env := newTestEnv(t, func(o *Options) {
+		o.Adapters = []Adapter{specific, wildcard}
+	})
+	env.provider.SetResponses(responsesOf("for bot", "for wildcard"))
+
+	if err := env.proc.Handle(context.Background(), testMessage("ev-acct-1", "chat-a", "hi")); err != nil {
+		t.Fatal(err) // testMessage carries Account "bot" → the specific adapter
+	}
+	stranger := testMessage("ev-acct-2", "chat-b", "hi")
+	stranger.Account = "other"
+	if err := env.proc.Handle(context.Background(), stranger); err != nil {
+		t.Fatal(err) // unclaimed account → the platform wildcard
+	}
+	if got := specific.deliveryCount(); got != 1 {
+		t.Fatalf("specific adapter deliveries = %d, want 1", got)
+	}
+	if got := wildcard.deliveryCount(); got != 1 {
+		t.Fatalf("wildcard adapter deliveries = %d, want 1", got)
+	}
+	if got := specific.delivery(t, 0).snapshotFinalized(); len(got) != 1 || got[0] != "for bot" {
+		t.Fatalf("specific finalized = %#v", got)
+	}
+}
+
+func TestHandleRejectsUnclaimedAccountWithoutWildcard(t *testing.T) {
+	env := newTestEnv(t, func(o *Options) {
+		o.Adapters = []Adapter{&fauxAdapter{account: "bot"}}
+	})
+	m := testMessage("ev-acct-3", "chat-c", "hi")
+	m.Account = "stranger"
+	if err := env.proc.Handle(context.Background(), m); !errors.Is(err, ErrRejected) {
+		t.Fatalf("err = %v, want ErrRejected", err)
+	}
+}
+
+func TestNewRejectsDuplicatePlatformAccountPairs(t *testing.T) {
+	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+	_, err := New(Options{
+		Sessions:  newFauxSessions(t, provider),
+		Adapters:  []Adapter{&fauxAdapter{account: "x"}, &fauxAdapter{account: "x"}},
+		Authorize: AllowAll,
+	})
+	if err == nil || !strings.Contains(err.Error(), "duplicate adapter") {
+		t.Fatalf("err = %v, want duplicate adapter error", err)
 	}
 }
