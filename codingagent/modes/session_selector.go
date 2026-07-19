@@ -95,7 +95,6 @@ type SessionSelectorComponent struct {
 
 	currentSessions []session.SessionInfo
 	allSessions     []session.SessionInfo
-	currentLoaded   bool
 	allLoaded       bool
 	currentLoading  bool
 	allLoading      bool
@@ -200,7 +199,6 @@ func (selector *SessionSelectorComponent) loadScope(scope sessionSelectorScope) 
 	selector.mu.Lock()
 	if scope == sessionScopeCurrent {
 		selector.currentSessions = append([]session.SessionInfo(nil), sessions...)
-		selector.currentLoaded = true
 		selector.currentLoading = false
 	} else {
 		selector.allSessions = append([]session.SessionInfo(nil), sessions...)

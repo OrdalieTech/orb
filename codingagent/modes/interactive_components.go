@@ -710,8 +710,6 @@ func NewFooterComponent(session footerSession, provider footerDataProvider) *Foo
 
 func (f *FooterComponent) Invalidate() {}
 
-func (f *FooterComponent) SetAutoCompactEnabled(enabled bool) { f.autoCompactEnabled = enabled }
-
 func (f *FooterComponent) Render(width int) []string {
 	state := f.session.State()
 	pwd := ""

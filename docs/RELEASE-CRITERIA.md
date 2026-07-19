@@ -40,13 +40,14 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 
 ## M3 — TUI parity (closes Sprint 2)
 
-- [ ] F12 green: components, editor wide-char cases, markdown corpus, full-screen composites.
-- [ ] Side-by-side replay vs TS pi: frame diffs reviewed; every deviation fixed or added to the
-      divergence ledger (ledger delta listed in the milestone report).
-- [ ] All built-in interactive commands functional; ctx.ui extension demos behave per upstream docs.
-- [ ] Render < 16 ms/frame on the replay corpus; resize/paste fuzz clean under `-race`.
-- [ ] Images verified on kitty + iTerm2; `/copy` works on darwin and linux.
-- [ ] Trim pass #3 done.
+- [x] F12 green: components, editor wide-char cases, markdown corpus, full-screen composites.
+- [x] Side-by-side replay vs TS pi: frame diffs reviewed; every deviation fixed or added to the
+      divergence ledger (ledger delta listed in the milestone report — zero for Sprint 2).
+- [x] All built-in interactive commands functional; ctx.ui extension demos behave per upstream docs.
+- [x] Render < 16 ms/frame on the replay corpus; resize/paste fuzz clean under `-race`.
+- [ ] Images verified on kitty + iTerm2; `/copy` works on darwin and linux. (Encodings, capability
+      profiles, and clipboard command paths byte-tested; real terminal/desktop smoke owner-blocked.)
+- [x] Trim pass #3 done.
 
 ## M4 — Expansion: providers, MCP, packages, extension bridge (closes Sprint 3)
 

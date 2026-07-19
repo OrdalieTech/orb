@@ -93,14 +93,17 @@ the full race suite, lint/vet, module verification/tidy diff, and four CGO-disab
 
 ## Sprint 2 — TUI complete (M3)
 
-Status: **application and `ctx.ui` parity green; platform image/clipboard evidence plus the frame report and trim pass remain**.
+Status: **closed for deterministic parity; real kitty/iTerm2 and native-desktop clipboard smoke
+remain owner-blocked evidence (not waived)**.
 
 - [x] Land the RED F12 component, editor, Markdown, overlay, terminal-color, and primitive-composite corpus.
 - [x] Turn core components, overlays, terminal colors, ICU navigation, stress/fuzz, and primitive frame budget green.
 - [x] Land the session-selector lifetime fixture and stop status timers on confirm, cancel, and runner exit.
 - [x] Complete ResourceLoader theme-object/source-info installation into the interactive registry.
-- [ ] Reach application-level byte-reviewed frame parity and complete commands plus image/clipboard checks.
-- [ ] Publish `docs/compare/sprint-2.md`, complete trim pass #3, and check every M3 criterion.
+- [x] Reach application-level byte-reviewed frame parity and complete commands plus image/clipboard checks
+      (deterministic surfaces; real-terminal smoke owner-blocked).
+- [x] Publish `docs/compare/sprint-2.md`, complete trim pass #3 (`docs/trim/M3.md`), and check every
+      locally provable M3 criterion.
 
 The selector lifetime trace is green for selection, cancellation, runner exit, and every emitted
 timer/render field. ResourceLoader package filters and theme accents now match pinned TS output,

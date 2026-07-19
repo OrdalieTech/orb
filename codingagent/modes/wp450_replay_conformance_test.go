@@ -1,9 +1,15 @@
 package modes
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
+	"reflect"
+	"runtime"
 	"sort"
 	"strings"
+	"testing"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -491,4 +497,108 @@ func containsWP450Line(lines []string, fragment string) bool {
 		}
 	}
 	return false
+}
+
+// Tests migrated from conformance/runner when the replay machinery moved out
+// of production; fixture bytes and assertions are unchanged.
+
+type wp450ReplayFixture struct {
+	SchemaVersion int                      `json:"schemaVersion"`
+	Frames        []ConformanceReplayFrame `json:"frames"`
+}
+
+func wp450LoadJSON(t *testing.T, name string, target any) {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(file), "..", "..", "conformance", "fixtures", "WP450", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, target); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWP450SideBySideReplayMatchesUpstream(t *testing.T) {
+	var manifest struct {
+		Family    string `json:"family"`
+		Generator string `json:"generator"`
+	}
+	wp450LoadJSON(t, "manifest.json", &manifest)
+	if manifest.Family != "WP450" || manifest.Generator != "conformance/extract/wp450-replay.ts" {
+		t.Fatalf("unexpected WP450 manifest: %+v", manifest)
+	}
+	var fixture wp450ReplayFixture
+	wp450LoadJSON(t, "replay.json", &fixture)
+	if fixture.SchemaVersion != 1 || len(fixture.Frames) != 20 {
+		t.Fatalf("WP450 replay header = version %d, frames %d", fixture.SchemaVersion, len(fixture.Frames))
+	}
+	want := make(map[string]ConformanceReplayFrame, len(fixture.Frames))
+	for _, frame := range fixture.Frames {
+		key := wp450FrameKey(frame)
+		if _, exists := want[key]; exists {
+			t.Fatalf("duplicate upstream frame %s", key)
+		}
+		want[key] = frame
+	}
+	gotFrames := RenderWP450ConformanceReplay()
+	got := make(map[string]ConformanceReplayFrame, len(gotFrames))
+	for _, frame := range gotFrames {
+		key := wp450FrameKey(frame)
+		if _, exists := got[key]; exists {
+			t.Fatalf("duplicate Go frame %s", key)
+		}
+		got[key] = frame
+	}
+	for _, expected := range fixture.Frames {
+		key := wp450FrameKey(expected)
+		t.Run(key, func(t *testing.T) {
+			actual, ok := got[key]
+			if !ok {
+				t.Fatalf("Go replay omitted frame %s", key)
+			}
+			if diff := wp450LinesDiff(expected.Lines, actual.Lines); diff != "" {
+				t.Fatalf("normalized visible frame differs:\n%s", diff)
+			}
+		})
+	}
+	for key := range got {
+		if _, ok := want[key]; !ok {
+			t.Errorf("Go replay emitted unexpected frame %s", key)
+		}
+	}
+}
+
+func TestWP450CtxUIDemosRetainInitializationState(t *testing.T) {
+	var expected ConformanceUIDemoArtifact
+	wp450LoadJSON(t, "ui-demos.json", &expected)
+	if expected.SchemaVersion != 1 || len(expected.StatusLine.Events) != 3 {
+		t.Fatalf("unexpected WP450 ctx.ui fixture header: %+v", expected)
+	}
+	actual := RenderWP450UIDemoArtifact()
+	if reflect.DeepEqual(actual, expected) {
+		return
+	}
+	wantJSON, _ := json.MarshalIndent(expected, "", "  ")
+	gotJSON, _ := json.MarshalIndent(actual, "", "  ")
+	t.Fatalf("ctx.ui demo state differs\nwant: %s\n got: %s", wantJSON, gotJSON)
+}
+
+func wp450FrameKey(frame ConformanceReplayFrame) string {
+	return fmt.Sprintf("%d/%s", frame.Width, frame.ID)
+}
+
+func wp450LinesDiff(want, got []string) string {
+	if len(want) != len(got) {
+		return fmt.Sprintf("line count differs: want %d, got %d\nwant: %q\ngot:  %q", len(want), len(got), want, got)
+	}
+	for index := range want {
+		if want[index] != got[index] {
+			return fmt.Sprintf("line differs at index %d: want %q, got %q", index, want[index], got[index])
+		}
+	}
+	return ""
 }

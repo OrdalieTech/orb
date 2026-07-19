@@ -9,38 +9,13 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pi-go/internal/jsonwire"
 )
 
-type googleJSONMember struct {
-	name  string
-	value any
-}
+type googleJSONMember = jsonwire.OrderedMember
 
-type googleJSONObject []googleJSONMember
+type googleJSONObject = jsonwire.OrderedObject
 type googleJSONArray []any
-
-func (object googleJSONObject) MarshalJSON() ([]byte, error) {
-	var output bytes.Buffer
-	output.WriteByte('{')
-	for index, member := range object {
-		if index > 0 {
-			output.WriteByte(',')
-		}
-		name, err := ai.Marshal(member.name)
-		if err != nil {
-			return nil, err
-		}
-		value, err := ai.Marshal(member.value)
-		if err != nil {
-			return nil, err
-		}
-		output.Write(name)
-		output.WriteByte(':')
-		output.Write(value)
-	}
-	output.WriteByte('}')
-	return output.Bytes(), nil
-}
 
 func normalizeGoogleResponseSchema(raw json.RawMessage) (json.RawMessage, error) {
 	trimmed := bytes.TrimSpace(raw)
@@ -95,7 +70,7 @@ func decodeGoogleJSONValue(decoder *json.Decoder) (any, error) {
 			if err != nil {
 				return nil, err
 			}
-			object = append(object, googleJSONMember{name: name.(string), value: value})
+			object = append(object, googleJSONMember{Name: name.(string), Value: value})
 		}
 		_, err := decoder.Token()
 		return object, err
@@ -120,19 +95,19 @@ func normalizeGoogleSchema(value any) (googleJSONObject, error) {
 	if !ok {
 		return nil, errors.New("google response schema must be an object")
 	}
-	typeValue, _ := object.value("type")
-	anyOfValue, _ := object.value("anyOf")
+	typeValue, _ := object.Value("type")
+	anyOfValue, _ := object.Value("anyOf")
 	if googleJSONValueTruthy(typeValue) && googleJSONValueTruthy(anyOfValue) {
 		return nil, errors.New("type and anyOf cannot be both populated.") //nolint:staticcheck // Exact SDK text.
 	}
 	output := googleJSONObject{}
 	if nullable, replacement := googleNullableAnyOf(object); replacement != nil {
 		if nullable {
-			output.set("nullable", true)
+			output.Set("nullable", true)
 		}
 		object = replacement
 	}
-	if types, ok := object.value("type"); ok {
+	if types, ok := object.Value("type"); ok {
 		if list, isList := types.(googleJSONArray); isList {
 			if err := flattenGoogleSchemaTypes(&output, list); err != nil {
 				return nil, err
@@ -140,37 +115,37 @@ func normalizeGoogleSchema(value any) (googleJSONObject, error) {
 		}
 	}
 	for _, field := range object {
-		if field.value == nil {
+		if field.Value == nil {
 			continue
 		}
-		switch field.name {
+		switch field.Name {
 		case "type":
-			if _, isList := field.value.(googleJSONArray); isList {
+			if _, isList := field.Value.(googleJSONArray); isList {
 				continue
 			}
-			typeName, ok := field.value.(string)
+			typeName, ok := field.Value.(string)
 			if !ok {
 				return nil, errors.New("google response schema type must be a string")
 			}
 			if typeName == "null" {
 				return nil, errors.New("type: null can not be the only possible type for the field.") //nolint:staticcheck // Exact SDK text.
 			}
-			output.set("type", googleSchemaType(typeName))
+			output.Set("type", googleSchemaType(typeName))
 		case "items":
-			item, err := normalizeGoogleSchema(field.value)
+			item, err := normalizeGoogleSchema(field.Value)
 			if err != nil {
 				return nil, err
 			}
-			output.set(field.name, item)
+			output.Set(field.Name, item)
 		case "anyOf":
-			list, ok := field.value.(googleJSONArray)
+			list, ok := field.Value.(googleJSONArray)
 			if !ok {
 				return nil, errors.New("google response schema anyOf must be an array")
 			}
 			normalized := googleJSONArray{}
 			for _, item := range list {
 				if googleSchemaIsNull(item) {
-					output.set("nullable", true)
+					output.Set("nullable", true)
 					continue
 				}
 				schema, err := normalizeGoogleSchema(item)
@@ -179,32 +154,32 @@ func normalizeGoogleSchema(value any) (googleJSONObject, error) {
 				}
 				normalized = append(normalized, schema)
 			}
-			output.set(field.name, normalized)
+			output.Set(field.Name, normalized)
 		case "properties":
-			properties, ok := field.value.(googleJSONObject)
+			properties, ok := field.Value.(googleJSONObject)
 			if !ok {
 				return nil, errors.New("google response schema properties must be an object")
 			}
 			normalized := googleJSONObject{}
 			for _, property := range properties {
-				schema, err := normalizeGoogleSchema(property.value)
+				schema, err := normalizeGoogleSchema(property.Value)
 				if err != nil {
 					return nil, err
 				}
-				normalized = append(normalized, googleJSONMember{name: property.name, value: schema})
+				normalized = append(normalized, googleJSONMember{Name: property.Name, Value: schema})
 			}
-			output.set(field.name, normalized)
+			output.Set(field.Name, normalized)
 		case "additionalProperties":
 			continue
 		default:
-			output.set(field.name, field.value)
+			output.Set(field.Name, field.Value)
 		}
 	}
 	return output, nil
 }
 
 func googleNullableAnyOf(object googleJSONObject) (bool, googleJSONObject) {
-	value, ok := object.value("anyOf")
+	value, ok := object.Value("anyOf")
 	if !ok {
 		return false, nil
 	}
@@ -228,7 +203,7 @@ func googleSchemaIsNull(value any) bool {
 	if !ok {
 		return false
 	}
-	typeName, ok := object.value("type")
+	typeName, ok := object.Value("type")
 	return ok && typeName == "null"
 }
 
@@ -240,20 +215,20 @@ func flattenGoogleSchemaTypes(output *googleJSONObject, values googleJSONArray) 
 			return errors.New("google response schema type array must contain strings")
 		}
 		if typeName == "null" {
-			output.set("nullable", true)
+			output.Set("nullable", true)
 			continue
 		}
 		types = append(types, googleSchemaType(typeName))
 	}
 	if len(types) == 1 {
-		output.set("type", types[0])
+		output.Set("type", types[0])
 		return nil
 	}
 	anyOf := make(googleJSONArray, 0, len(types))
 	for _, typeName := range types {
-		anyOf = append(anyOf, googleJSONObject{{name: "type", value: typeName}})
+		anyOf = append(anyOf, googleJSONObject{{Name: "type", Value: typeName}})
 	}
-	output.set("anyOf", anyOf)
+	output.Set("anyOf", anyOf)
 	return nil
 }
 
@@ -264,33 +239,5 @@ func googleSchemaType(value string) string {
 		return value
 	default:
 		return "TYPE_UNSPECIFIED"
-	}
-}
-
-func (object googleJSONObject) value(name string) (any, bool) {
-	for _, field := range object {
-		if field.name == name {
-			return field.value, true
-		}
-	}
-	return nil, false
-}
-
-func (object *googleJSONObject) set(name string, value any) {
-	for index := range *object {
-		if (*object)[index].name == name {
-			(*object)[index].value = value
-			return
-		}
-	}
-	*object = append(*object, googleJSONMember{name: name, value: value})
-}
-
-func (object *googleJSONObject) delete(name string) {
-	for index := range *object {
-		if (*object)[index].name == name {
-			*object = append((*object)[:index], (*object)[index+1:]...)
-			return
-		}
 	}
 }

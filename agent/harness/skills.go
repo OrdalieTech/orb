@@ -8,8 +8,9 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"github.com/bmatcuk/doublestar/v4"
 	"gopkg.in/yaml.v3"
+
+	"github.com/OrdalieTech/pi-go/internal/ignorerules"
 )
 
 const (
@@ -41,16 +42,8 @@ type HarnessSkillsResult struct {
 	Diagnostics []SkillDiagnostic
 }
 
-type harnessIgnoreRule struct {
-	base         string
-	pattern      string
-	negated      bool
-	directory    bool
-	basenameOnly bool
-}
-
 type harnessIgnoreMatcher struct {
-	rules []harnessIgnoreRule
+	rules []ignorerules.Rule
 }
 
 func (matcher *harnessIgnoreMatcher) add(line, prefix string) {
@@ -72,49 +65,14 @@ func (matcher *harnessIgnoreMatcher) add(line, prefix string) {
 	if line == "" {
 		return
 	}
-	matcher.rules = append(matcher.rules, harnessIgnoreRule{
-		base: prefix, pattern: line, negated: negated, directory: directory,
-		basenameOnly: !anchored && !strings.Contains(line, "/"),
+	matcher.rules = append(matcher.rules, ignorerules.Rule{
+		Base: prefix, Pattern: line, Negated: negated, Directory: directory,
+		BasenameOnly: !anchored && !strings.Contains(line, "/"),
 	})
 }
 
 func (matcher *harnessIgnoreMatcher) ignores(relativePath string, directory bool) bool {
-	relativePath = strings.TrimSuffix(relativePath, "/")
-	ignored := false
-	for _, rule := range matcher.rules {
-		local := relativePath
-		if rule.base != "" {
-			if local == rule.base {
-				local = ""
-			} else if strings.HasPrefix(local, rule.base+"/") {
-				local = strings.TrimPrefix(local, rule.base+"/")
-			} else {
-				continue
-			}
-		}
-		if local == "" {
-			continue
-		}
-		matched := false
-		if rule.basenameOnly {
-			parts := strings.Split(local, "/")
-			for index, part := range parts {
-				if ok, _ := doublestar.Match(rule.pattern, part); ok && (!rule.directory || directory || index < len(parts)-1) {
-					matched = true
-					break
-				}
-			}
-		} else {
-			matched, _ = doublestar.Match(rule.pattern, local)
-			if !matched {
-				matched, _ = doublestar.Match(strings.TrimSuffix(rule.pattern, "/")+"/**", local)
-			}
-		}
-		if matched {
-			ignored = !rule.negated
-		}
-	}
-	return ignored
+	return ignorerules.Ignores(matcher.rules, relativePath, directory)
 }
 
 func harnessFileErrorCode(err error) FileErrorCode {

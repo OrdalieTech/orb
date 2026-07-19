@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -988,4 +989,58 @@ func f12UILifecycleInitTheme(t testing.TB) {
 	}
 	theme.SetCurrent(parsed)
 	t.Cleanup(func() { theme.SetCurrent(nil) })
+}
+
+// resolveOverlayLayout and its coercion helpers moved here from production:
+// only this conformance surface exercises them.
+func resolveOverlayLayout(opts *extensions.CustomOptions, width, height int) tui.OverlayLayout {
+	resolved := extensions.OverlayOptions{Anchor: extensions.OverlayCenter}
+	if opts != nil {
+		if opts.StaticOverlayOptions != nil {
+			resolved = *opts.StaticOverlayOptions
+		}
+		if opts.DynamicOverlayOptions != nil {
+			resolved = opts.DynamicOverlayOptions()
+		}
+	}
+	result := tui.OverlayLayout{Width: overlayDimension(resolved.Width, width), MinWidth: resolved.MinWidth, MaxHeight: overlayDimension(resolved.MaxHeight, height), Anchor: string(resolved.Anchor), OffsetX: resolved.OffsetX, OffsetY: resolved.OffsetY, Visible: resolved.Visible, NonCapturing: resolved.NonCapturing}
+	if value, ok := overlayCoordinate(resolved.Row); ok {
+		result.Row = &value
+	}
+	if value, ok := overlayCoordinate(resolved.Column); ok {
+		result.Column = &value
+	}
+	result.Margin = overlayMargin(resolved.Margin)
+	return result
+}
+
+func overlayDimension(value any, total int) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	case string:
+		if strings.HasSuffix(typed, "%") {
+			var percent float64
+			if _, err := fmt.Sscanf(strings.TrimSuffix(typed, "%"), "%f", &percent); err == nil {
+				return int(float64(total) * percent / 100)
+			}
+		}
+	}
+	return 0
+}
+
+func overlayCoordinate(value any) (int, bool) {
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case float64:
+		return int(typed), true
+	}
+	return 0, false
 }

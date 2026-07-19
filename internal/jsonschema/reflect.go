@@ -60,8 +60,8 @@ func reflectSchema(t reflect.Type, stack map[reflect.Type]bool) (orderedObject, 
 			return nil, err
 		}
 		return orderedObject{
-			{name: "type", value: "array"},
-			{name: "items", value: items},
+			{Name: "type", Value: "array"},
+			{Name: "items", Value: items},
 		}, nil
 	case reflect.Map:
 		if t.Key().Kind() != reflect.String {
@@ -77,8 +77,8 @@ func reflectSchema(t reflect.Type, stack map[reflect.Type]bool) (orderedObject, 
 			return nil, err
 		}
 		return orderedObject{
-			{name: "type", value: "object"},
-			{name: "additionalProperties", value: values},
+			{Name: "type", Value: "object"},
+			{Name: "additionalProperties", Value: values},
 		}, nil
 	case reflect.Struct:
 		return reflectStruct(t, stack)
@@ -129,27 +129,27 @@ func reflectStruct(t reflect.Type, stack map[reflect.Type]bool) (orderedObject, 
 			if dereference(field.Type).Kind() != reflect.String {
 				return nil, fmt.Errorf("jsonschema: field %s: enum requires a string type", field.Name)
 			}
-			value = append(value, orderedMember{name: "enum", value: options.enum})
+			value = append(value, orderedMember{Name: "enum", Value: options.enum})
 		}
 		if options.description != "" {
-			value = append(value, orderedMember{name: "description", value: options.description})
+			value = append(value, orderedMember{Name: "description", Value: options.description})
 		}
-		properties = append(properties, orderedMember{name: name, value: value})
+		properties = append(properties, orderedMember{Name: name, Value: value})
 		if !optional {
 			required = append(required, name)
 		}
 	}
 
-	value := orderedObject{{name: "type", value: "object"}}
+	value := orderedObject{{Name: "type", Value: "object"}}
 	if len(required) > 0 {
-		value = append(value, orderedMember{name: "required", value: required})
+		value = append(value, orderedMember{Name: "required", Value: required})
 	}
-	value = append(value, orderedMember{name: "properties", value: properties})
+	value = append(value, orderedMember{Name: "properties", Value: properties})
 	return value, nil
 }
 
 func typedSchema(name string) orderedObject {
-	return orderedObject{{name: "type", value: name}}
+	return orderedObject{{Name: "type", Value: name}}
 }
 
 func dereference(t reflect.Type) reflect.Type {

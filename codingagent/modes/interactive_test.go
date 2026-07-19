@@ -890,3 +890,13 @@ func (f *fakeTerminalImpl) ClearFromCursor()                 {}
 func (f *fakeTerminalImpl) ClearScreen()                     {}
 func (f *fakeTerminalImpl) SetTitle(string)                  {}
 func (f *fakeTerminalImpl) SetProgress(bool)                 {}
+
+// handleSlashCommand is the test entry for command dispatch; production input
+// resolves commands through resolveSlashCommand directly.
+func (mode *InteractiveMode) handleSlashCommand(name, args string) bool {
+	action, ok := mode.resolveSlashCommand(name, args)
+	if ok {
+		action.run()
+	}
+	return ok
+}
