@@ -38,11 +38,17 @@ function stripTerminalControls(value: string): string {
 		.replace(/\r/g, "");
 }
 
+// Upstream fuzzy search matches on session.cwd; a random mkdtemp suffix can
+// accidentally satisfy a query (e.g. a "v" completes "ndcv"), so session cwd
+// uses this fixed root, same length as the mkdtemp path to keep frames stable.
+const displayRoot = "/tmp/pi-session-selector-fixdir";
+
 function normalizeLines(lines: string[], fixtureRoot: string): string[] {
 	const normalized = lines.map((line) =>
 		stripTerminalControls(line)
 			.replaceAll(fixtureRoot, "<fixture>")
 			.replaceAll(fixtureRoot.replaceAll("\\", "/"), "<fixture>")
+			.replaceAll(displayRoot, "<fixture>")
 			.replace(/\s+$/g, ""),
 	);
 	while (normalized.length > 0 && normalized[normalized.length - 1] === "")
@@ -113,7 +119,7 @@ export async function generateWP450SessionSelector(
 				>,
 		): SessionInfo => ({
 			cwd: path.join(
-				fixtureRoot,
+				displayRoot,
 				value.id === "incident" ? "other" : "project",
 			),
 			created: new Date(now - 3_600_000),

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 6,
+  "schemaVersion": 7,
   "frames": [
     {
       "id": "status-first",
@@ -672,6 +672,244 @@
       "replacementAssigned": true,
       "sameProvider": true,
       "storedProvider": true
+    }
+  },
+  "lifecycle": {
+    "editor": {
+      "factoryStored": true,
+      "customInstalled": true,
+      "textCopied": "draft",
+      "callbacksCopied": true,
+      "borderColor": "DEFAULT_BORDER",
+      "paddingX": 3,
+      "autocompleteTransferred": true,
+      "expandedText": "expanded:draft",
+      "pasteInput": "\u001b[200~paste\nblock\u001b[201~",
+      "pasteTargetWasCustom": true,
+      "actionEvents": [
+        "submit:value",
+        "change:changed",
+        "escape",
+        "ctrl-d",
+        "paste-image",
+        "shortcut:ctrl+x",
+        "action:clear"
+      ],
+      "preservedActionEvents": [
+        "submit:preserved",
+        "change:preserved-change",
+        "custom-escape",
+        "custom-ctrl-d",
+        "custom-paste-image",
+        "custom-shortcut:ctrl+y",
+        "action:clear",
+        "custom-action:kept"
+      ],
+      "restoredText": "custom-change",
+      "restoredDefault": true,
+      "focus": [
+        "custom",
+        "default",
+        "default",
+        "default"
+      ],
+      "renders": 4,
+      "finalChild": "default"
+    },
+    "terminalInput": {
+      "presentEmpty": {
+        "consume": false,
+        "hasData": true,
+        "data": ""
+      },
+      "absent": {
+        "consume": false,
+        "hasData": false
+      },
+      "activeAfterExplicit": 1,
+      "activeAfterReset": 0,
+      "trackedAfterReset": 0,
+      "unsubscribeEvents": [
+        0,
+        1
+      ]
+    },
+    "working": {
+      "storedBeforeStreaming": {
+        "message": "Reviewing",
+        "options": {
+          "frames": [
+            "A",
+            "B"
+          ]
+        }
+      },
+      "visibleAfterHide": false,
+      "shownKind": "working",
+      "clearKinds": [
+        "working",
+        "working",
+        "working"
+      ],
+      "defaultIntervalMs": 80,
+      "initialLines": [
+        "",
+        " A \u001b[38;5;244mReviewing\u001b[39m                                    "
+      ],
+      "nextLines": [
+        "",
+        " B \u001b[38;5;244mReviewing\u001b[39m                                    "
+      ],
+      "defaultMessageLines": [
+        "",
+        " B \u001b[38;5;244mWorking...\u001b[39m                                   "
+      ],
+      "hiddenIndicatorLines": [
+        "",
+        " \u001b[38;5;244mWorking...\u001b[39m                                     "
+      ],
+      "emptyMessageLines": [
+        "",
+        " \u001b[38;5;244m\u001b[39m                                               "
+      ],
+      "requestRenderCount": 12,
+      "activeIntervalsAfterHide": 0
+    },
+    "customUI": {
+      "installed": {
+        "result": "first",
+        "editorText": "draft",
+        "finalChild": "editor",
+        "events": [
+          "install-custom",
+          "focus-custom",
+          "render",
+          "install-editor",
+          "editor-text:draft",
+          "focus-editor",
+          "render",
+          "dispose"
+        ],
+        "disposeCount": 1
+      },
+      "earlyDone": {
+        "result": "first",
+        "finalChild": "editor",
+        "events": [
+          "install-editor",
+          "editor-text:early-draft",
+          "focus-editor",
+          "render"
+        ],
+        "disposeCount": 0
+      }
+    },
+    "dialogsAndPrimitives": {
+      "emptySelector": {
+        "installed": true,
+        "lines": [
+          "\u001b[38;5;69m────────────────────────────────\u001b[39m",
+          "",
+          " \u001b[38;5;109m\u001b[1mEmpty selector\u001b[22m\u001b[39m                 ",
+          "",
+          "",
+          " \u001b[38;5;241m↑↓\u001b[39m\u001b[38;5;244m navigate\u001b[39m  \u001b[38;5;241menter\u001b[39m\u001b[38;5;244m select\u001b[39m      ",
+          " \u001b[38;5;241mescape/ctrl+c\u001b[39m\u001b[38;5;244m cancel\u001b[39m           ",
+          "",
+          "\u001b[38;5;69m────────────────────────────────\u001b[39m"
+        ],
+        "result": null,
+        "finalChild": "editor",
+        "focus": [
+          "dialog",
+          "editor"
+        ],
+        "renders": 2
+      },
+      "timedInput": {
+        "initialLines": [
+          "\u001b[38;5;69m────────────────────────────────\u001b[39m",
+          "",
+          " \u001b[38;5;109mTimed input (2s)\u001b[39m               ",
+          "",
+          "> \u001b[7m \u001b[27m                             ",
+          "",
+          " \u001b[38;5;241menter\u001b[39m\u001b[38;5;244m submit\u001b[39m  \u001b[38;5;241mescape/ctrl+c\u001b[39m\u001b[38;5;244m    ",
+          " \u001b[38;5;244mcancel\u001b[39m                         ",
+          "",
+          "\u001b[38;5;69m────────────────────────────────\u001b[39m"
+        ],
+        "result": null,
+        "finalChild": "editor",
+        "focus": [
+          "dialog",
+          "editor"
+        ],
+        "renders": 4,
+        "intervalActive": false
+      },
+      "countdown": {
+        "ticks": [
+          2,
+          1,
+          0
+        ],
+        "expires": 1,
+        "renders": 2,
+        "intervalMs": 1000,
+        "active": false
+      },
+      "dynamicBorderWidthZero": [
+        "<─>"
+      ]
+    },
+    "headerFooter": {
+      "events": [
+        "remove:built-in-footer",
+        "add:footer-a",
+        "render",
+        "dispose:footer-a",
+        "remove:footer-a",
+        "add:footer-b",
+        "render",
+        "dispose:footer-b",
+        "remove:footer-b",
+        "add:built-in-footer",
+        "render",
+        "render",
+        "dispose:header-a",
+        "render",
+        "dispose:header-b",
+        "render"
+      ],
+      "footerDisposals": [
+        "dispose:footer-a",
+        "dispose:footer-b"
+      ],
+      "headerDisposals": [
+        "dispose:header-a",
+        "dispose:header-b"
+      ],
+      "finalFooter": "built-in",
+      "finalHeader": "built-in"
+    },
+    "themeObject": {
+      "result": {
+        "success": true
+      },
+      "instanceCalls": [
+        "light"
+      ],
+      "nameCalls": [],
+      "settingsWrites": []
+    },
+    "ordinaryError": {
+      "width": 32,
+      "lines": [
+        " BEFORE                         ",
+        "",
+        " \u001b[38;5;167mError: ORDINARY\u001b[39m                "
+      ]
     }
   }
 }

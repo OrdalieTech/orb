@@ -396,6 +396,12 @@ func (editor *Editor) SetBorderColor(color StyleFunc) {
 	editor.mu.Unlock()
 }
 
+func (editor *Editor) GetBorderColor() StyleFunc {
+	editor.mu.Lock()
+	defer editor.mu.Unlock()
+	return editor.borderColor
+}
+
 // validPasteIDs is the set of currently valid paste IDs for marker-aware
 // segmentation.
 func (editor *Editor) validPasteIDs() map[int]bool {

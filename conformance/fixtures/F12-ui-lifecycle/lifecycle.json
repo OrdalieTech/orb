@@ -1,0 +1,270 @@
+{
+  "schemaVersion": 2,
+  "reset": {
+    "events": [
+      "selector:hide",
+      "input:hide",
+      "editor-dialog:hide",
+      "overlay:hide-top",
+      "terminal-listeners:clear",
+      "footer:default",
+      "header:default",
+      "widgets:clear",
+      "statuses:clear",
+      "footer:invalidate",
+      "editor:default",
+      "autocomplete:rebuild",
+      "title:default",
+      "working-indicator:default",
+      "working-status:Working... (escape to interrupt)",
+      "thinking-label:default"
+    ],
+    "disposalOrder": [
+      "footer",
+      "header",
+      "widget-above",
+      "widget-below"
+    ],
+    "final": {
+      "selectorPresent": false,
+      "inputPresent": false,
+      "editorDialogPresent": false,
+      "autocompleteWrappers": 0,
+      "extensionShortcutPresent": false,
+      "workingMessage": null,
+      "workingVisible": true,
+      "hiddenThinkingLabel": "Thinking..."
+    }
+  },
+  "widgets": {
+    "snapshots": [
+      {
+        "step": "empty",
+        "above": [
+          ""
+        ],
+        "below": []
+      },
+      {
+        "step": "eleven-lines-capped",
+        "above": [
+          "",
+          " line-1                                 ",
+          " line-2                                 ",
+          " line-3                                 ",
+          " line-4                                 ",
+          " line-5                                 ",
+          " line-6                                 ",
+          " line-7                                 ",
+          " line-8                                 ",
+          " line-9                                 ",
+          " line-10                                ",
+          " \u001b[38;5;244m... (widget truncated)\u001b[39m                 "
+        ],
+        "below": []
+      },
+      {
+        "step": "replacement-moved-below",
+        "above": [
+          ""
+        ],
+        "below": [
+          "replacement"
+        ]
+      },
+      {
+        "step": "reentrant-factory",
+        "above": [
+          "",
+          "outer"
+        ],
+        "below": [
+          "replacement",
+          "nested"
+        ]
+      },
+      {
+        "step": "removed-by-key",
+        "above": [
+          "",
+          "outer"
+        ],
+        "below": [
+          "nested"
+        ]
+      },
+      {
+        "step": "cleared",
+        "above": [
+          ""
+        ],
+        "below": []
+      }
+    ],
+    "events": [
+      "render",
+      "render",
+      "factory:replacement",
+      "render",
+      "factory:outer:start",
+      "factory:nested",
+      "render",
+      "factory:outer:end",
+      "render",
+      "dispose:replacement",
+      "render",
+      "dispose:outer",
+      "dispose:nested",
+      "render"
+    ]
+  },
+  "hiddenThinking": {
+    "custom": {
+      "historical": [
+        "\u001b]133;A\u0007",
+        " \u001b[3m\u001b[38;5;244mExtension thought\u001b[39m\u001b[23m                              ",
+        "",
+        "\u001b]133;B\u0007\u001b]133;C\u0007 visible answer                                 "
+      ],
+      "streaming": [
+        "\u001b]133;A\u0007",
+        " \u001b[3m\u001b[38;5;244mExtension thought\u001b[39m\u001b[23m                              ",
+        "",
+        "\u001b]133;B\u0007\u001b]133;C\u0007 visible answer                                 "
+      ],
+      "storedLabel": "Extension thought"
+    },
+    "reset": {
+      "historical": [
+        "\u001b]133;A\u0007",
+        " \u001b[3m\u001b[38;5;244mThinking...\u001b[39m\u001b[23m                                    ",
+        "",
+        "\u001b]133;B\u0007\u001b]133;C\u0007 visible answer                                 "
+      ],
+      "streaming": [
+        "\u001b]133;A\u0007",
+        " \u001b[3m\u001b[38;5;244mThinking...\u001b[39m\u001b[23m                                    ",
+        "",
+        "\u001b]133;B\u0007\u001b]133;C\u0007 visible answer                                 "
+      ],
+      "storedLabel": "Thinking..."
+    },
+    "requestRenderCount": 2
+  },
+  "toolsExpanded": {
+    "events": [
+      "expand:built-in-header:true",
+      "expand:resource:true",
+      "expand:chat:true",
+      "render",
+      "factory:custom-header",
+      "expand:custom-header:true",
+      "render",
+      "expand:custom-header:false",
+      "expand:resource:false",
+      "expand:chat:false",
+      "render",
+      "dispose:custom-header",
+      "expand:built-in-header:false",
+      "render"
+    ],
+    "final": {
+      "toolsExpanded": false,
+      "activeHeader": "built-in-header",
+      "builtInExpanded": false,
+      "resourceExpanded": false,
+      "chatExpanded": false
+    }
+  },
+  "customOverlay": {
+    "options": {
+      "dynamicCalls": 1,
+      "dynamicOptions": {
+        "anchor": "top-right",
+        "width": "50%",
+        "margin": {
+          "top": 2,
+          "right": 3,
+          "bottom": 4,
+          "left": 5
+        },
+        "offsetX": -1,
+        "offsetY": 1
+      },
+      "fallbackOptions": {
+        "width": 23
+      }
+    },
+    "earlyDone": {
+      "result": "early-done",
+      "overlayShows": 0,
+      "disposeCount": 0
+    },
+    "disposeFailure": {
+      "result": "dispose-done",
+      "disposeCount": 1,
+      "rejected": false
+    },
+    "factoryFailure": "factory failed",
+    "handle": {
+      "initial": {
+        "hasOverlay": true,
+        "hidden": false,
+        "handleFocused": true,
+        "editorFocused": false,
+        "overlayFocused": true
+      },
+      "unfocusedToPrevious": {
+        "hasOverlay": true,
+        "hidden": false,
+        "handleFocused": false,
+        "editorFocused": true,
+        "overlayFocused": false
+      },
+      "unfocusedToTarget": {
+        "hasOverlay": true,
+        "hidden": false,
+        "handleFocused": false,
+        "editorFocused": true,
+        "overlayFocused": false
+      },
+      "unfocusedToNull": {
+        "hasOverlay": true,
+        "hidden": false,
+        "handleFocused": false,
+        "editorFocused": false,
+        "overlayFocused": false
+      },
+      "temporaryHidden": {
+        "hasOverlay": false,
+        "hidden": true,
+        "handleFocused": false,
+        "editorFocused": true,
+        "overlayFocused": false
+      },
+      "temporaryRestored": {
+        "hasOverlay": true,
+        "hidden": false,
+        "handleFocused": true,
+        "editorFocused": false,
+        "overlayFocused": true
+      },
+      "permanentlyHidden": {
+        "hasOverlay": false,
+        "hidden": false,
+        "handleFocused": false,
+        "editorFocused": true,
+        "overlayFocused": false
+      },
+      "afterPermanentShowAttempt": {
+        "hasOverlay": false,
+        "hidden": false,
+        "handleFocused": false,
+        "editorFocused": true,
+        "overlayFocused": false
+      },
+      "result": "overlay-done",
+      "disposeCount": 1
+    }
+  }
+}

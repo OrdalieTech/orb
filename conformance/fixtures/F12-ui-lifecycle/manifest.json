@@ -1,0 +1,22 @@
+{
+  "family": "F12-ui-lifecycle",
+  "upstreamCommit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
+  "generator": "conformance/extract/f12-ui-lifecycle.ts",
+  "sources": [
+    "packages/coding-agent/src/modes/interactive/interactive-mode.ts",
+    "packages/coding-agent/src/modes/interactive/components/assistant-message.ts",
+    "packages/coding-agent/src/modes/interactive/theme/theme.ts",
+    "packages/coding-agent/src/core/extensions/types.ts",
+    "packages/tui/src/{tui,container}.ts",
+    "packages/coding-agent/test/interactive-mode-status.test.ts",
+    "packages/tui/test/overlay-non-capturing.test.ts",
+    "packages/tui/test/overlay-options.test.ts"
+  ],
+  "files": [
+    "lifecycle.json"
+  ],
+  "metadata": {
+    "normalization": [],
+    "divergences": []
+  }
+}

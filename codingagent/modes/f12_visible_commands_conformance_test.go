@@ -519,7 +519,8 @@ func newF12VisibleMode(t *testing.T, command string) (*InteractiveMode, *f12Visi
 		inputCh: make(chan inputEntry, 8), toolComponents: map[string]*ToolExecutionComponent{}, cwd: cwd,
 	}
 	mode.status.AddChild(tui.NewText("fixture status", 0, 0, nil))
-	registry := theme.Load(theme.LoadOptions{CWD: cwd, AgentDir: agentDir, NoThemes: true})
+	// Fixtures were extracted in 256-color mode; pin it so the live COLORTERM cannot leak in.
+	registry := theme.Load(theme.LoadOptions{CWD: cwd, AgentDir: agentDir, NoThemes: true, Mode: theme.Color256})
 	mode.themeRegistry = registry
 	mode.themeController = theme.Initialize(registry, "dark", theme.Dark, nil)
 	host := &f12VisibleHost{runtime: sessionRuntime, cwd: cwd, status: mode.status}

@@ -84,6 +84,7 @@ type OverlayLayout struct {
 	Anchor                     string
 	OffsetX, OffsetY           int
 	Row, Column                *int
+	Margin                     *OverlayMargin
 	Visible                    func(width, height int) bool
 	NonCapturing               bool
 }
@@ -346,6 +347,7 @@ func (ui *TUI) AddOverlay(component Component, layout func(width, height int) Ov
 			Anchor:       OverlayAnchor(resolved.Anchor),
 			OffsetX:      resolved.OffsetX,
 			OffsetY:      resolved.OffsetY,
+			Margin:       resolved.Margin,
 			Visible:      resolved.Visible,
 			NonCapturing: resolved.NonCapturing,
 		}

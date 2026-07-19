@@ -6,12 +6,15 @@
     "packages/coding-agent/src/modes/interactive/interactive-mode.ts",
     "packages/coding-agent/src/core/slash-commands.ts",
     "packages/coding-agent/src/core/keybindings.ts",
+    "packages/coding-agent/src/core/extensions/types.ts",
     "packages/coding-agent/src/modes/interactive/model-search.ts",
+    "packages/coding-agent/src/modes/interactive/theme/{theme,theme-controller}.ts",
     "packages/coding-agent/src/modes/interactive/components/oauth-selector.ts",
-    "packages/tui/src/components/{spacer,text}.ts",
+    "packages/tui/src/components/{loader,spacer,text}.ts",
     "packages/tui/src/tui.ts",
     "packages/coding-agent/test/interactive-mode-status.test.ts",
-    "packages/coding-agent/src/modes/interactive/components/{extension-selector,extension-input,extension-editor,keybinding-hints,dynamic-border,countdown-timer}.ts"
+    "packages/coding-agent/test/status-indicator.test.ts",
+    "packages/coding-agent/src/modes/interactive/components/{extension-selector,extension-input,extension-editor,keybinding-hints,dynamic-border,countdown-timer,status-indicator,custom-editor}.ts"
   ],
   "files": [
     "status-frames.json"

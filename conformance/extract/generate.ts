@@ -26,12 +26,18 @@ import { generateF12App } from "./f12-app.ts";
 import { generateF12Commands } from "./f12-commands.ts";
 import { generateF12ExportJSONL } from "./f12-export-jsonl.ts";
 import { generateF12Shutdown } from "./f12-shutdown.ts";
+import { generateF12UILifecycle } from "./f12-ui-lifecycle.ts";
 import { generateF12VisibleCommands } from "./f12-visible-commands.ts";
 import { generateWP440 } from "./wp440-images.ts";
 import { generateWP440Read } from "./wp440-read.ts";
 import { generateWP370Runtime } from "./wp370-runtime.ts";
 import { generateWP450Replay } from "./wp450-replay.ts";
 import { generateWP450SessionSelector } from "./wp450-session-selector.ts";
+
+// Goldens are pinned in 256-color mode; upstream capability detection reads
+// COLORTERM (packages/tui/src/terminal-image.ts), so the invoking terminal
+// must never leak truecolor into extraction.
+delete process.env.COLORTERM;
 
 const upstreamRoot = process.cwd();
 const outputRoot = path.resolve(
@@ -69,6 +75,7 @@ const generators = [
 	generateF12Commands,
 	generateF12ExportJSONL,
 	generateF12Shutdown,
+	generateF12UILifecycle,
 	generateF12VisibleCommands,
 	generateWP440,
 	generateWP440Read,

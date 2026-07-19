@@ -37,6 +37,10 @@ func (container *Container) childrenSnapshot() []Component {
 	return append([]Component(nil), container.children...)
 }
 
+func (container *Container) Children() []Component {
+	return container.childrenSnapshot()
+}
+
 // EndsWith safely exposes the suffix check needed by upstream components,
 // whose TypeScript container children are directly observable.
 func (container *Container) EndsWith(components ...Component) bool {
