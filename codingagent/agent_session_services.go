@@ -11,6 +11,7 @@ import (
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions"
 	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pi-go/codingagent/tools"
 )
 
 type CreateAgentSessionServicesOptions struct {
@@ -36,6 +37,7 @@ type CreateAgentSessionFromServicesOptions struct {
 	ExcludeTools      []string
 	NoTools           string
 	CustomTools       []extensions.ToolDefinition
+	ToolOptions       *tools.ToolsOptions
 }
 
 func CreateAgentSessionServices(options CreateAgentSessionServicesOptions) (*AgentSessionServices, error) {
@@ -176,8 +178,9 @@ func CreateAgentSessionFromServices(options CreateAgentSessionFromServicesOption
 		CWD: services.CWD, AgentDir: services.AgentDir, Model: options.Model,
 		ThinkingLevel: options.ThinkingLevel, ScopedModels: options.ScopedModels,
 		ModelRegistry: services.ModelRegistry, Tools: options.Tools, ExcludeTools: options.ExcludeTools,
-		NoTools: options.NoTools, CustomTools: options.CustomTools, SessionManager: options.SessionManager,
-		Settings: services.SettingsManager, Resources: services.Resources,
+		NoTools: options.NoTools, CustomTools: options.CustomTools, ToolOptions: options.ToolOptions,
+		SessionManager: options.SessionManager,
+		Settings:       services.SettingsManager, Resources: services.Resources,
 		ResourceLoader:    services.ResourceLoader,
 		ExtensionRegistry: services.ExtensionRegistry, SessionStartEvent: options.SessionStartEvent,
 	})

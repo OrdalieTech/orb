@@ -88,8 +88,9 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
   the exec bridge; `fetch` via Go http) + pure-JS npm deps via esbuild bundling. Native addons and
   exotic Node APIs are out of scope; the example-extension compatibility matrix documents reality.
 - **D18 — MCP: bundled first-party Go extension.** Built on `modelcontextprotocol/go-sdk`, compiled
-  into the binary, enabled via settings. The core stays faithful to pi's no-MCP philosophy; this is
-  our one philosophical addition, and it doubles as the proof the Go extension API is real.
+  into the binary, enabled via settings. The core stays faithful to pi's no-MCP philosophy; this was
+  our first philosophical addition (the second is the chat gateway, D27), and it doubles as the
+  proof the Go extension API is real.
 
 ## Divergence ledger
 
@@ -106,6 +107,8 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
 | darwin modifier-key native addon | gap | kitty keyboard protocol where possible; documented small parity gap |
 | win32 console native addon | deferred | Windows wave |
 | Bundled llama.cpp extension | excluded | shipped at the pinned commit but deleted upstream immediately after; porting would be dead-on-arrival work (2026-07-19 alignment audit; owner may amend) |
+| `chat/` gateway package (+ `chat/telegram`, `chat/whatsapp`) | addition | owner requirement (D27); kept out of core, strictly one-way dependency on the SDK |
+| `AgentSessionOptions` tool-operations injection hook | addition | D27; ergonomic seam over the existing `NewSessionRuntime`/`BaseTools` path for VFS/sandboxed tool operations |
 
 ## Execution decisions
 
@@ -144,6 +147,27 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
   unless the study amends this record. Work already landed for expansion surfaces is kept, not
   extended. No schedule estimates in plans, reports, or trackers — progress is stated as
   red-to-green movement only.
+
+- **D27 — Chat gateway package (owner, 2026-07-19).** A top-level `chat/` package (with
+  `chat/telegram/` and `chat/whatsapp/`) turns the SDK into a multi-user messaging agent: an
+  at-least-once processor around `AgentSession` with normalized messages, a `SessionProvider`
+  lease/hydration seam, and platform adapters. Dependency direction is strictly
+  `chat → codingagent`; `codingagent` never imports `chat`. Both adapters are committed in the
+  same arc, built in sequence: processor first (faux provider, in-memory sessions), then Telegram
+  (webhook + long-poll, streamed preview edits), then WhatsApp Business Cloud API (typing + one
+  final answer). Delivery state is recorded as `type:"custom"` session entries via
+  `AppendCustomEntry` (a `pigo.chat.turn` started/settled/delivered ledger), keeping the session
+  JSONL the single durable history; turn finalization keys off `AgentSettledEvent`, not
+  `agent_end`; crash recovery reads raw session entries, never the built context. Tools are
+  disabled by default — a deployment enabling them must inject an isolated workspace through its
+  `SessionProvider`. The local JSONL provider is single-process; cluster deployments must supply
+  partitioned or fenced conversation ownership (per-write flock cannot coordinate writers).
+  Stdlib-only: both platform clients are hand-rolled HTTP/JSON per D10. Chat tests are plain
+  `go test` goldens under `chat/` — never `conformance/`, whose F-families are
+  upstream-extraction-only by contract. Includes one small SDK divergence, landed with this work:
+  a tool-operations injection hook on `AgentSessionOptions` (previously reachable only via
+  `NewSessionRuntime`/`BaseTools`). Second product-layer addition after the bundled MCP extension
+  (D18's "one philosophical addition" phrasing is retired).
 
 ## Standing assumptions (owner-confirmed)
 

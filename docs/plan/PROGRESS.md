@@ -182,6 +182,39 @@ owner-gated** (see docs/trim/M5.md §Owner-gated remainder).
       (nightly 72h window), clean-VM install/docs verification, a green lock bump once upstream
       publishes past the pin, AgentHarness facade decision.
 
+## Sprint 5 — Chat gateway (D27)
+
+Status: **implementation, tests, docs, and compare landed; commit/close pending**.
+
+- [x] Land the chat core RED-first: processor + turn ledger recovery tests against the faux
+      provider and in-memory sessions, then turn them green (`chat/`: message, adapter, provider,
+      ledger, processor, coalescer, local spool runner).
+- [x] Turn every crash boundary green: replay after `started`, after the user message (orphaned
+      branch via `Manager.Branch`), after `settled` (resend with the `♻ recovered reply` prefix,
+      no re-prompt), after send-before-`delivered`; duplicate `EventID` no-op; resume edits the
+      recorded preview id.
+- [x] Land the Telegram adapter against a deterministic fake Bot API server: webhook
+      secret-token auth + long-poll ingress with durable-enqueue offset semantics, coalesced
+      preview edits with flood-control backoff, HTML formatting with plain-text fallback,
+      fence-aware 4096-UTF-16-unit chunk goldens, media groups and download, group mention
+      gating by entities, `/stop` `/new` `/status` `/compact`.
+- [x] Land the WhatsApp Cloud adapter against a fake Graph server: hub challenge, HMAC
+      signature validation before parsing (constructor refuses to build unsigned), mark-read +
+      typing, final-message-only delivery with wamid threading, media download with URL-expiry
+      refetch, out-of-order status reconciliation (`StatusRank`).
+- [x] Land the `AgentSessionOptions.ToolOptions` hook with tests proving injected operations are
+      used and survive `RebuildBaseTools`; default behavior unchanged when nil.
+- [x] Keep tools off by default (`NoTools: "all"` in `NewLocalProvider`); enable only via the
+      explicit `WithSessionOptions` hook.
+- [x] 1,000 concurrent faux turns over 100 keys race-clean; idle conversations retain zero
+      keyed-mutex entries and goroutines return to baseline. `CGO_ENABLED=0 go build ./...` and
+      `go test -race ./...` green, zero new dependencies, `conformance/` untouched.
+- [x] Land `chat/examples/localbot` (runnable Telegram long-poll gateway over the local spool).
+- [x] Publish `docs/chat.md` (embedding guide), the MIRROR.md D27 addition row, and
+      `docs/compare/sprint-5.md` (pi-chat/Hermes cross-check with the deliberate-difference
+      table).
+- [ ] Commit the sprint arc as green mainline chunks and close the sprint per D25.
+
 ## Owner-blocked evidence
 
 - **Decision pending: M5 binary-size AND cold-start caps** (`docs/plan/expansion-study.md`,

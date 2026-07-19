@@ -97,6 +97,16 @@ type AgentSessionOptions struct {
 	// CustomTools registers additional tool definitions alongside built-ins.
 	CustomTools []extensions.ToolDefinition
 
+	// ToolOptions overrides per-tool construction options for built-in tools.
+	// Nil fields keep local defaults; settings-derived fields (AutoResizeImages,
+	// ShellPath, CommandPrefix) are still applied when unset on the override.
+	//
+	// The options — including the nested per-tool structs — are captured by
+	// the session and re-read whenever tools are rebuilt (also by
+	// extension-driven tool rebuilds); they must not be mutated after
+	// NewAgentSession returns.
+	ToolOptions *tools.ToolsOptions
+
 	// SessionManager controls session persistence. When nil a persistent
 	// session is created for CWD (matching upstream default).
 	SessionManager *sessionstore.SessionManager
@@ -412,7 +422,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	systemPrompt := buildSystemPromptFromResources(resources)
 
 	// Construct built-in tools for the resolved CWD.
-	baseTools, err := buildBuiltInTools(cwd, settings)
+	baseTools, err := buildBuiltInTools(cwd, settings, opts.ToolOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -566,7 +576,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		AllowedToolNames:       allowedToolNames,
 		ExcludedToolNames:      opts.ExcludeTools,
 		RebuildBaseTools: func() ([]agent.AgentTool, error) {
-			return buildBuiltInTools(cwd, settings)
+			return buildBuiltInTools(cwd, settings, opts.ToolOptions)
 		},
 		ResourceLoader:      resourceLoader,
 		SystemPromptOptions: promptOptions,
@@ -645,23 +655,41 @@ func buildPromptOptions(cwd string, res *Resources, activeTools []string) *Syste
 	}
 }
 
-func buildBuiltInTools(cwd string, settings *config.SettingsManager) ([]agent.AgentTool, error) {
+func buildBuiltInTools(cwd string, settings *config.SettingsManager, overrides *tools.ToolsOptions) ([]agent.AgentTool, error) {
 	shellPath, err := settings.GetShellPath()
 	if err != nil {
 		return nil, err
 	}
 	autoResizeImages := settings.GetImageAutoResize()
+	var resolved tools.ToolsOptions
+	if overrides != nil {
+		resolved = *overrides
+	}
+	var readOptions tools.ReadToolOptions
+	if resolved.Read != nil {
+		readOptions = *resolved.Read
+	}
+	if readOptions.AutoResizeImages == nil {
+		readOptions.AutoResizeImages = &autoResizeImages
+	}
+	var bashOptions tools.BashToolOptions
+	if resolved.Bash != nil {
+		bashOptions = *resolved.Bash
+	}
+	if bashOptions.ShellPath == "" {
+		bashOptions.ShellPath = shellPath
+	}
+	if bashOptions.CommandPrefix == "" {
+		bashOptions.CommandPrefix = settings.GetShellCommandPrefix()
+	}
 	return []agent.AgentTool{
-		tools.NewReadTool(cwd, &tools.ReadToolOptions{AutoResizeImages: &autoResizeImages}),
-		tools.NewBashTool(cwd, &tools.BashToolOptions{
-			ShellPath:     shellPath,
-			CommandPrefix: settings.GetShellCommandPrefix(),
-		}),
-		tools.NewEditTool(cwd, nil),
-		tools.NewWriteTool(cwd, nil),
-		tools.NewGrepTool(cwd, nil),
-		tools.NewFindTool(cwd, nil),
-		tools.NewLsTool(cwd, nil),
+		tools.NewReadTool(cwd, &readOptions),
+		tools.NewBashTool(cwd, &bashOptions),
+		tools.NewEditTool(cwd, resolved.Edit),
+		tools.NewWriteTool(cwd, resolved.Write),
+		tools.NewGrepTool(cwd, resolved.Grep),
+		tools.NewFindTool(cwd, resolved.Find),
+		tools.NewLsTool(cwd, resolved.Ls),
 	}, nil
 }
 

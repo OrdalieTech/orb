@@ -81,6 +81,26 @@ verified; live suite ≥90% over trailing **72 hours**; docs newcomer path verif
 LOC/dep audit; `v0.1.0` tagged.
 **Scope (spec sheets):** old WPs 610, 620, 650, 661 (G4).
 
+## Sprint 5 — Chat gateway (D27)
+
+**Definition of done:** `chat/`, `chat/telegram/`, `chat/whatsapp/` land per D27 with plain
+`go test` coverage (never `conformance/` — F-families are upstream-extraction-only): the
+processor's turn ledger green across every crash boundary (replay tests for
+started/settled/delivered markers, duplicate inbound events, orphaned-branch recovery, resend
+without re-prompting after settled-not-delivered); Telegram adapter verified against a
+deterministic fake Bot API server (webhook secret-token auth + long-poll ingress, coalesced
+preview edits with flood-control backoff, 4096-unit chunking, media, group mention gating,
+`/new` `/stop` `/status` `/compact`); WhatsApp adapter verified against a fake Cloud API server
+(hub challenge, HMAC signature validation, mark-read + typing, media, delivery-status
+reconciliation); the `AgentSessionOptions` tool-operations hook landed with tests; tools off by
+default; `CGO_ENABLED=0 go build ./...` and `go test -race ./...` green with zero new
+dependencies; 1,000 concurrent faux turns pass race-clean and idle conversations retain no
+resident actors or goroutines. Behavior is cross-checked against the reference implementations
+(earendil-works/pi-chat, Hermes gateway docs); deliberate differences noted in
+`docs/compare/sprint-5.md`.
+**Scope:** D27 only. No new deps; both platform clients stdlib HTTP/JSON per D10.
+Open with: processor + ledger recovery tests against the faux provider and in-memory sessions, RED.
+
 ## Ambition setting
 
 Each working session aims to CLOSE a sprint, and must at minimum leave main green, fixtures green,
