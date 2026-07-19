@@ -279,9 +279,7 @@ func newExtensionEditorComponent(
 
 func (component *extensionEditorComponent) HandleInput(event tui.KeyEvent) {
 	if tui.GetKeybindings().Matches(event.Raw, "tui.select.cancel") {
-		if component.onCancel != nil {
-			component.onCancel()
-		}
+		component.cancel()
 		return
 	}
 	if component.bindings.Matches(event.Raw, "app.editor.external") {
@@ -289,6 +287,12 @@ func (component *extensionEditorComponent) HandleInput(event tui.KeyEvent) {
 		return
 	}
 	component.editor.HandleInput(event)
+}
+
+func (component *extensionEditorComponent) cancel() {
+	if component.onCancel != nil {
+		component.onCancel()
+	}
 }
 
 func (component *extensionEditorComponent) getExternalEditorCommand() string {

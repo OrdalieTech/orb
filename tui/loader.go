@@ -34,9 +34,6 @@ func NewLoader(ui RenderRequester, spinnerColor, messageColor StyleFunc, message
 	if messageColor == nil {
 		messageColor = func(value string) string { return value }
 	}
-	if message == "" {
-		message = "Loading..."
-	}
 	loader := &Loader{Text: NewText("", 1, 0, nil), ui: ui, spinnerColor: spinnerColor, messageColor: messageColor, message: message}
 	loader.SetIndicator(indicator)
 	return loader

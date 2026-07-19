@@ -235,7 +235,7 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 			mode.mu.Lock()
 			mode.streaming = true
 			mode.mu.Unlock()
-			mode.setStatus(NewWorkingStatusIndicator(mode.ui, "Working..."))
+			mode.interactiveUI.showWorkingIndicator()
 			go func(entry inputEntry) {
 				promptDone <- mode.session.SubmitInteractive(ctx, entry.text, entry.images, extensions.DeliverSteer)
 			}(input)
@@ -245,7 +245,7 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 			mode.streaming = false
 			mode.currentStreaming = nil
 			mode.mu.Unlock()
-			mode.setStatus(&IdleStatus{})
+			mode.clearStatusIndicatorKind(StatusWorking)
 			if err != nil && ctx.Err() == nil {
 				mode.showError(err)
 			}
@@ -314,10 +314,14 @@ func (mode *InteractiveMode) init() error {
 	mode.setupEditorSubmitHandler()
 
 	mode.ui.SetFocus(mode.editor)
+	mode.updateTerminalTitle()
 	return nil
 }
 
 func (mode *InteractiveMode) detachSession() {
+	if mode.interactiveUI != nil {
+		mode.interactiveUI.resetExtensionUI()
+	}
 	mode.mu.Lock()
 	unsubscribe := mode.unsubscribe
 	mode.unsubscribe = nil
@@ -343,11 +347,11 @@ func (mode *InteractiveMode) rebindHostSession(replacement *codingagent.SessionR
 	mode.widgetBelow.Clear()
 	mode.footer.Clear()
 	mode.overlay.Clear()
-	mode.extensionEditor = nil
-	mode.interactiveUI = NewInteractiveUI(mode)
+	mode.setExtensionEditor(nil)
 	mode.addDefaultHeader()
 	mode.restoreEditorComponent()
 	mode.footer.AddChild(NewFooterComponent(mode.session, mode))
+	mode.interactiveUI = NewInteractiveUI(mode)
 	if runner := replacement.ExtensionRunner(); runner != nil {
 		runner.SetUI(mode.interactiveUI, extensions.ModeTUI)
 	}
@@ -364,7 +368,7 @@ func (mode *InteractiveMode) rebindHostSession(replacement *codingagent.SessionR
 	mode.mu.Unlock()
 	mode.renderInitialMessages()
 	mode.ui.SetFocus(mode.activeEditorFocus())
-	mode.ui.Terminal().SetTitle("pi - " + filepath.Base(mode.cwd))
+	mode.updateTerminalTitle()
 	mode.ui.RequestRender()
 	return nil
 }
@@ -449,11 +453,32 @@ func (mode *InteractiveMode) refreshResourcesAfterSessionStart(replacement *codi
 
 func (mode *InteractiveMode) applyTheme() {
 	mode.mdTheme = theme.MarkdownTheme()
-	mode.ui.Invalidate()
-	mode.renderInitialMessages()
+	mode.updateEditorBorderColor()
+	if mode.ui != nil {
+		mode.ui.Invalidate()
+	}
+}
+
+func (mode *InteractiveMode) updateEditorBorderColor() {
+	if mode.editor == nil {
+		return
+	}
+	color := theme.ThinkingBorderColor(agent.ThinkingOff)
+	if mode.bashMode {
+		color = theme.BashModeBorderColor()
+	} else if mode.session != nil {
+		color = theme.ThinkingBorderColor(mode.session.State().ThinkingLevel)
+	}
+	mode.editor.SetBorderColor(color)
+	if appearance, ok := mode.currentExtensionEditor().(interface{ SetBorderColor(tui.StyleFunc) }); ok {
+		appearance.SetBorderColor(color)
+	}
 }
 
 func (mode *InteractiveMode) addDefaultHeader() {
+	if mode.session == nil {
+		return
+	}
 	if mode.session.InteractiveSettings().QuietStartup {
 		return
 	}
@@ -481,28 +506,131 @@ func (mode *InteractiveMode) Invalidate() {
 }
 
 func (mode *InteractiveMode) installEditorFactory(factory extensions.EditorFactory) {
-	mode.extensionEditor = nil
+	currentText := mode.activeEditorText(false)
 	if factory != nil {
-		mode.extensionEditor = factory(mode, themeAdapter{value: theme.Current()}, extensionKeybindings{mode.keybindings})
+		replacement := factory(mode, themeAdapter{value: theme.Current()}, extensionKeybindings{mode.keybindings})
+		replacement.SetText(currentText)
+		if callbacks, ok := replacement.(interface{ SetOnSubmit(func(string)) }); ok {
+			callbacks.SetOnSubmit(mode.editor.OnSubmit)
+		}
+		if callbacks, ok := replacement.(interface{ SetOnChange(func(string)) }); ok {
+			callbacks.SetOnChange(mode.editor.OnChange)
+		}
+		if callbacks, ok := replacement.(interface {
+			GetOnEscape() func()
+			SetOnEscape(func())
+		}); ok && callbacks.GetOnEscape() == nil {
+			callbacks.SetOnEscape(mode.editor.OnEscape)
+		}
+		if callbacks, ok := replacement.(interface {
+			GetOnCtrlD() func()
+			SetOnCtrlD(func())
+		}); ok && callbacks.GetOnCtrlD() == nil {
+			callbacks.SetOnCtrlD(mode.editor.OnCtrlD)
+		}
+		if callbacks, ok := replacement.(interface {
+			GetOnPasteImage() func()
+			SetOnPasteImage(func())
+		}); ok && callbacks.GetOnPasteImage() == nil {
+			callbacks.SetOnPasteImage(mode.editor.OnPasteImage)
+		}
+		if callbacks, ok := replacement.(interface {
+			GetOnExtensionShortcut() func(string) bool
+			SetOnExtensionShortcut(func(string) bool)
+		}); ok && callbacks.GetOnExtensionShortcut() == nil {
+			callbacks.SetOnExtensionShortcut(mode.editor.OnExtensionShortcut)
+		}
+		if actions, ok := replacement.(interface{ OnAction(string, func()) }); ok {
+			for action, handler := range mode.editor.actionHandlers {
+				actions.OnAction(action, handler)
+			}
+		} else if actions, ok := replacement.(interface {
+			GetActionHandlers() map[string]func()
+			SetActionHandlers(map[string]func())
+		}); ok {
+			merged := make(map[string]func(), len(actions.GetActionHandlers())+len(mode.editor.actionHandlers))
+			for action, handler := range actions.GetActionHandlers() {
+				merged[action] = handler
+			}
+			for action, handler := range mode.editor.actionHandlers {
+				merged[action] = handler
+			}
+			actions.SetActionHandlers(merged)
+		}
+		if appearance, ok := replacement.(interface{ SetBorderColor(tui.StyleFunc) }); ok {
+			appearance.SetBorderColor(mode.editor.GetBorderColor())
+		}
+		if appearance, ok := replacement.(interface{ SetPaddingX(int) }); ok {
+			appearance.SetPaddingX(mode.editor.GetPaddingX())
+		}
+		mode.setExtensionEditor(replacement)
 		mode.setExtensionEditorAutocompleteProvider(mode.autocompleteProvider)
+	} else {
+		mode.editor.SetText(currentText)
+		mode.setExtensionEditor(nil)
 	}
 	mode.restoreEditorComponent()
 	mode.ui.SetFocus(mode.activeEditorFocus())
 	mode.ui.RequestRender()
 }
 
+// extensionEditor is swapped by editor factories while extension dialog
+// goroutines read it concurrently; every access goes through these two.
+func (mode *InteractiveMode) currentExtensionEditor() extensions.EditorComponent {
+	mode.mu.Lock()
+	defer mode.mu.Unlock()
+	return mode.extensionEditor
+}
+
+func (mode *InteractiveMode) setExtensionEditor(editor extensions.EditorComponent) {
+	mode.mu.Lock()
+	mode.extensionEditor = editor
+	mode.mu.Unlock()
+}
+
+func (mode *InteractiveMode) activeEditorText(expanded bool) string {
+	if extensionEditor := mode.currentExtensionEditor(); extensionEditor != nil {
+		if expanded {
+			if editor, ok := extensionEditor.(interface{ GetExpandedText() string }); ok {
+				return editor.GetExpandedText()
+			}
+		}
+		return extensionEditor.GetText()
+	}
+	if expanded {
+		return mode.editor.GetExpandedText()
+	}
+	return mode.editor.GetText()
+}
+
+func (mode *InteractiveMode) setActiveEditorText(text string) {
+	if extensionEditor := mode.currentExtensionEditor(); extensionEditor != nil {
+		extensionEditor.SetText(text)
+		return
+	}
+	mode.editor.SetText(text)
+}
+
+func (mode *InteractiveMode) sendActiveEditorInput(data string) {
+	if extensionEditor := mode.currentExtensionEditor(); extensionEditor != nil {
+		extensionEditor.HandleInput(data)
+		return
+	}
+	mode.editor.HandleInput(tui.KeyEvent{Raw: data})
+}
+
 func (mode *InteractiveMode) restoreEditorComponent() {
 	mode.editorContainer.Clear()
-	if mode.extensionEditor != nil {
-		mode.editorContainer.AddChild(mode.extensionEditor)
+	if extensionEditor := mode.currentExtensionEditor(); extensionEditor != nil {
+		mode.editorContainer.AddChild(extensionEditor)
 	} else {
 		mode.editorContainer.AddChild(mode.editor)
 	}
 }
 
 func (mode *InteractiveMode) activeEditorFocus() tui.Component {
-	if mode.extensionEditor != nil {
-		return extensionEditorAdapter{EditorComponent: mode.extensionEditor}
+	if extensionEditor := mode.currentExtensionEditor(); extensionEditor != nil {
+		return extensionEditorAdapter{EditorComponent: extensionEditor}
 	}
 	return mode.editor
 }
@@ -730,7 +858,7 @@ func (mode *InteractiveMode) setExtensionEditorAutocompleteProvider(provider tui
 	if provider == nil {
 		return
 	}
-	editor, ok := mode.extensionEditor.(extensions.AutocompleteEditorComponent)
+	editor, ok := mode.currentExtensionEditor().(extensions.AutocompleteEditorComponent)
 	if !ok {
 		return
 	}
@@ -1266,7 +1394,6 @@ func (mode *InteractiveMode) executeUserBash(command string, excludeFromContext 
 func (mode *InteractiveMode) handleCopyCommand() {
 	text := mode.session.GetLastAssistantText()
 	if text == nil || *text == "" {
-		mode.chat.AddChild(tui.NewSpacer(1))
 		mode.showError(errors.New("No agent messages to copy yet.")) //nolint:staticcheck // Upstream command text is observable.
 		return
 	}
@@ -1804,14 +1931,26 @@ func (mode *InteractiveMode) handleCompactCommand(instructions string) {
 }
 
 func (mode *InteractiveMode) clearStatusIndicator() {
+	mode.clearStatusIndicatorKind("")
+}
+
+func (mode *InteractiveMode) clearStatusIndicatorKind(kind StatusIndicatorKind) {
 	mode.mu.Lock()
-	if indicator, ok := mode.statusIndicator.(*StatusIndicator); ok {
+	indicator, ok := mode.statusIndicator.(*StatusIndicator)
+	if kind != "" && (!ok || indicator.Kind != kind) {
+		mode.mu.Unlock()
+		return
+	}
+	if ok {
 		indicator.Dispose()
 	}
 	mode.statusIndicator = nil
 	mode.mu.Unlock()
 	if mode.status != nil {
 		mode.status.Clear()
+		if mode.ui != nil && mode.ui.ClearOnShrink() {
+			mode.status.AddChild(&IdleStatus{})
+		}
 	}
 	if mode.ui != nil {
 		mode.ui.RequestRender()
@@ -2497,6 +2636,25 @@ func (mode *InteractiveMode) SessionName() string {
 	return *name
 }
 
+func (mode *InteractiveMode) updateTerminalTitle() {
+	if mode.ui == nil {
+		return
+	}
+	cwd := mode.cwd
+	name := ""
+	if mode.session != nil && mode.session.Manager() != nil {
+		cwd = mode.session.Manager().GetCWD()
+		if sessionName := mode.session.Manager().GetSessionName(); sessionName != nil {
+			name = *sessionName
+		}
+	}
+	title := "pi - " + filepath.Base(cwd)
+	if name != "" {
+		title = "pi - " + name + " - " + filepath.Base(cwd)
+	}
+	mode.ui.Terminal().SetTitle(title)
+}
+
 func (mode *InteractiveMode) handleSessionCommand() {
 	stats := mode.session.GetSessionStats()
 	var info strings.Builder
@@ -2536,7 +2694,14 @@ func (mode *InteractiveMode) handleSessionCommand() {
 func (mode *InteractiveMode) handleEvent(event any) {
 	switch ev := event.(type) {
 	case agent.AgentStartEvent:
-		mode.setStatus(NewWorkingStatusIndicator(mode.ui, "Working..."))
+		mode.mu.Lock()
+		mode.streaming = true
+		mode.mu.Unlock()
+		if mode.interactiveUI != nil {
+			mode.interactiveUI.showWorkingIndicator()
+		} else {
+			mode.setStatus(NewWorkingStatusIndicator(mode.ui, "Working..."))
+		}
 		if mode.session.InteractiveModeSettings().ShowTerminalProgress {
 			mode.ui.Terminal().SetProgress(true)
 		}
@@ -2621,7 +2786,10 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		}
 
 	case codingagent.AgentSettledEvent:
-		mode.setStatus(&IdleStatus{})
+		mode.mu.Lock()
+		mode.streaming = false
+		mode.mu.Unlock()
+		mode.clearStatusIndicatorKind(StatusWorking)
 		mode.ui.Terminal().SetProgress(false)
 
 	case codingagent.QueueUpdateEvent:
@@ -2648,9 +2816,11 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		mode.setStatus(&IdleStatus{})
 
 	case codingagent.ThinkingLevelChangedEvent:
+		mode.updateEditorBorderColor()
 		mode.ui.RequestRender()
 
 	case codingagent.SessionInfoChangedEvent:
+		mode.updateTerminalTitle()
 		mode.ui.RequestRender()
 	}
 }
@@ -2672,6 +2842,7 @@ func (mode *InteractiveMode) showError(err error) {
 	if err == nil {
 		return
 	}
+	mode.chat.AddChild(tui.NewSpacer(1))
 	mode.chat.AddChild(tui.NewText(theme.FG("error", "Error: "+err.Error()), 1, 0, nil))
 	mode.ui.RequestRender()
 }

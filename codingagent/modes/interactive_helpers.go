@@ -26,7 +26,7 @@ func NewDynamicBorderWithColor(colorFn func(string) string) *DynamicBorder {
 func (border *DynamicBorder) Invalidate() {}
 
 func (border *DynamicBorder) Render(width int) []string {
-	line := strings.Repeat("─", width)
+	line := strings.Repeat("─", max(1, width))
 	if border.colorFn != nil {
 		line = border.colorFn(line)
 	} else {
@@ -67,6 +67,9 @@ type CountdownTimer struct {
 func NewCountdownTimer(durationMS int64, ui tui.RenderRequester, onTick func(int), onExpire func()) *CountdownTimer {
 	ct := &CountdownTimer{done: make(chan struct{}), onTick: onTick, onExpire: onExpire}
 	remaining := int((durationMS + 999) / 1000)
+	if ct.onTick != nil {
+		ct.onTick(remaining)
+	}
 	go func() {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
@@ -81,20 +84,24 @@ func NewCountdownTimer(durationMS int64, ui tui.RenderRequester, onTick func(int
 					return
 				}
 				remaining--
-				if remaining <= 0 {
-					ct.stopped = true
-					ct.mu.Unlock()
-					if ct.onExpire != nil {
-						ct.onExpire()
-					}
-					ui.RequestRender()
-					return
-				}
 				ct.mu.Unlock()
 				if ct.onTick != nil {
 					ct.onTick(remaining)
 				}
 				ui.RequestRender()
+				if remaining <= 0 {
+					ct.mu.Lock()
+					if ct.stopped {
+						ct.mu.Unlock()
+						return
+					}
+					ct.stopped = true
+					ct.mu.Unlock()
+					if ct.onExpire != nil {
+						ct.onExpire()
+					}
+					return
+				}
 			}
 		}
 	}()

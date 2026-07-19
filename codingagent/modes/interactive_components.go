@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
@@ -13,6 +14,12 @@ import (
 	"github.com/OrdalieTech/pi-go/tui"
 
 	theme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
+)
+
+const (
+	osc133ZoneStart = "\x1b]133;A\x07"
+	osc133ZoneEnd   = "\x1b]133;B\x07"
+	osc133ZoneFinal = "\x1b]133;C\x07"
 )
 
 // ─────────────────────────────────────────────────────────────
@@ -35,8 +42,15 @@ func NewUserMessageComponent(text string, mdTheme tui.MarkdownTheme, outputPad i
 	return &UserMessageComponent{box: box}
 }
 
-func (c *UserMessageComponent) Invalidate()               { c.box.Invalidate() }
-func (c *UserMessageComponent) Render(width int) []string { return c.box.Render(width) }
+func (c *UserMessageComponent) Invalidate() { c.box.Invalidate() }
+func (c *UserMessageComponent) Render(width int) []string {
+	lines := c.box.Render(width)
+	if len(lines) > 0 {
+		lines[0] = osc133ZoneStart + lines[0]
+		lines[len(lines)-1] = osc133ZoneEnd + osc133ZoneFinal + lines[len(lines)-1]
+	}
+	return lines
+}
 
 // ─────────────────────────────────────────────────────────────
 // AssistantMessageComponent
@@ -51,6 +65,7 @@ type AssistantMessageComponent struct {
 	thinkingLabel    string
 	outputPad        int
 	message          *ai.AssistantMessage
+	hasToolCalls     bool
 }
 
 func NewAssistantMessageComponent(
@@ -92,6 +107,15 @@ func (c *AssistantMessageComponent) SetHideThinkingBlock(hidden bool, label stri
 	}
 }
 
+func (c *AssistantMessageComponent) SetHiddenThinkingLabel(label string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.thinkingLabel = label
+	if c.message != nil {
+		c.updateContentLocked(c.message)
+	}
+}
+
 func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMessage) {
 	c.contentContainer.Clear()
 
@@ -107,6 +131,7 @@ func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMes
 			hasToolCalls = true
 		}
 	}
+	c.hasToolCalls = hasToolCalls
 	if hasVisible {
 		c.contentContainer.AddChild(tui.NewSpacer(1))
 	}
@@ -183,7 +208,15 @@ func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMes
 
 func (c *AssistantMessageComponent) Invalidate() { c.container.Invalidate() }
 func (c *AssistantMessageComponent) Render(width int) []string {
-	return c.container.Render(width)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	hasToolCalls := c.hasToolCalls
+	lines := c.container.Render(width)
+	if !hasToolCalls && len(lines) > 0 {
+		lines[0] = osc133ZoneStart + lines[0]
+		lines[len(lines)-1] = osc133ZoneEnd + osc133ZoneFinal + lines[len(lines)-1]
+	}
+	return lines
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -586,12 +619,24 @@ type StatusIndicator struct {
 
 func (si *StatusIndicator) Dispose() { si.Stop() }
 
-func NewWorkingStatusIndicator(ui tui.RenderRequester, message string) *StatusIndicator {
+func NewWorkingStatusIndicator(ui tui.RenderRequester, message string, options ...*extensions.WorkingIndicatorOptions) *StatusIndicator {
+	var indicator *tui.LoaderIndicatorOptions
+	if len(options) > 0 && options[0] != nil {
+		frames := []string(nil)
+		if options[0].Frames != nil {
+			frames = append([]string{}, options[0].Frames...)
+		}
+		interval := time.Duration(0)
+		if options[0].IntervalMS > 0 {
+			interval = time.Duration(options[0].IntervalMS) * time.Millisecond
+		}
+		indicator = &tui.LoaderIndicatorOptions{Frames: frames, Interval: interval}
+	}
 	return &StatusIndicator{
 		Loader: tui.NewLoader(ui,
 			func(s string) string { return theme.FG("accent", s) },
 			func(s string) string { return theme.FG("muted", s) },
-			message, nil,
+			message, indicator,
 		),
 		Kind: StatusWorking,
 	}

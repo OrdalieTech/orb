@@ -82,6 +82,18 @@ func (controller *Controller) Set(name string) error {
 	return nil
 }
 
+func (controller *Controller) SetInstance(value *Theme) error {
+	if value == nil {
+		return fmt.Errorf("theme instance is nil")
+	}
+	controller.current, controller.name = value, "<in-memory>"
+	SetCurrent(value)
+	if controller.onChange != nil {
+		controller.onChange()
+	}
+	return nil
+}
+
 func (controller *Controller) Reload() error {
 	if controller.current == nil || controller.current.SourcePath == "" {
 		return nil

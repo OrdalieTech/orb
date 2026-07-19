@@ -93,7 +93,7 @@ the full race suite, lint/vet, module verification/tidy diff, and four CGO-disab
 
 ## Sprint 2 — TUI complete (M3)
 
-Status: **next active deterministic surface; Sprint 1 owner-run evidence remains open in parallel**.
+Status: **application and `ctx.ui` parity green; platform image/clipboard evidence plus the frame report and trim pass remain**.
 
 - [x] Land the RED F12 component, editor, Markdown, overlay, terminal-color, and primitive-composite corpus.
 - [x] Turn core components, overlays, terminal colors, ICU navigation, stress/fuzz, and primitive frame budget green.
@@ -108,7 +108,23 @@ including negated package resources, exact object identity, source metadata, and
 Application autocomplete, all visible and hidden command dispatch/behavior, branched JSONL export,
 and ordinary plus signal shutdown are green against executable upstream fixtures. Exact raw ANSI,
 padding, and line-count assertions are also green for every hidden frame and all 22 visible commands,
-including the full changelog. The remaining `ctx.ui` lifecycle cases are the active RED surface.
+including the full changelog. Pinned F12-app lifecycle transcripts made the remaining `ctx.ui` RED
+surface explicit: editor replacement and bracketed
+paste, terminal-input presence and reset cleanup, persisted working state, custom-UI transactions,
+dialog timers and zero-width borders, header/footer disposal, Theme-object switching, and ordinary
+error spacing all compare directly to executable TS pi behavior and are now green.
+The separate generated `F12-ui-lifecycle` family now pins reset ordering/state, widget ownership and
+layout, historical plus streaming hidden-thinking labels, tools-expanded propagation, and custom
+overlay transactions. Reset cleanup/disposal, widget caps/placement/reentrant factories, thinking
+label reset, and header/resource/chat expansion are green. The custom-overlay trace is green too:
+options resolve once, margins and component-width fallback survive, and temporary visibility stays
+distinct from permanent `OverlayHandle.Hide` removal with accurate focus restoration.
+Landing the lifecycle family exposed and closed two real races: extension-editor swaps and
+working-indicator mutations are now atomic against reset/dispose teardown. Golden extraction is
+also environment-independent now — the invoking terminal's `COLORTERM` is stripped before driving
+upstream, the visible-commands test pins 256-color mode, and the session-selector fixture uses a
+deterministic cwd (a random mkdtemp suffix could previously satisfy fuzzy queries), proven by a
+byte-clean full `make fixtures-check`.
 
 ## Sprint 3 — Expansion (M4)
 

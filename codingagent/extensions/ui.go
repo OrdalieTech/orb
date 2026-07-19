@@ -35,7 +35,7 @@ type WorkingIndicatorOptions struct {
 
 type TerminalInputResult struct {
 	Consume bool
-	Data    string
+	Data    *string
 }
 
 type TerminalInputHandler func(string) *TerminalInputResult
@@ -111,6 +111,8 @@ type AutocompleteProviderFactory func(AutocompleteProvider) AutocompleteProvider
 
 type EditorComponent interface {
 	Component
+	GetText() string
+	SetText(string)
 	HandleInput(string)
 }
 
@@ -167,12 +169,16 @@ type OverlayOptions struct {
 	NonCapturing bool
 }
 
+type OverlayUnfocusOptions struct {
+	Target Component
+}
+
 type OverlayHandle interface {
 	Hide()
 	SetHidden(bool)
 	IsHidden() bool
 	Focus()
-	Unfocus(Component)
+	Unfocus(...OverlayUnfocusOptions)
 	IsFocused() bool
 }
 

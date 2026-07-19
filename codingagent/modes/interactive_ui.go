@@ -17,11 +17,24 @@ import (
 type InteractiveUI struct {
 	mode *InteractiveMode
 
-	mu            sync.Mutex
-	widgets       map[string]widgetEntry
-	widgetComps   map[string]tui.Component
-	editorFactory extensions.EditorFactory
-	acProviders   []extensions.AutocompleteProviderFactory
+	mu                        sync.Mutex
+	widgets                   map[string]widgetEntry
+	widgetComps               map[string]tui.Component
+	editorFactory             extensions.EditorFactory
+	acProviders               []extensions.AutocompleteProviderFactory
+	terminalInputListeners    map[uint64]func()
+	nextTerminalInputListener uint64
+	workingMessage            *string
+	workingVisible            bool
+	workingIndicator          *extensions.WorkingIndicatorOptions
+	customFooter              extensions.Component
+	customHeader              extensions.Component
+	widgetOrder               []string
+	builtInFooter             []tui.Component
+	builtInHeader             []tui.Component
+	activeSelector            *extensionSelectorComponent
+	activeInput               *extensionInputComponent
+	activeEditorDialog        *extensionEditorComponent
 }
 
 type widgetEntry struct {
@@ -29,11 +42,23 @@ type widgetEntry struct {
 }
 
 func NewInteractiveUI(mode *InteractiveMode) *InteractiveUI {
-	return &InteractiveUI{
-		mode:        mode,
-		widgets:     make(map[string]widgetEntry),
-		widgetComps: make(map[string]tui.Component),
+	ui := &InteractiveUI{
+		mode:                   mode,
+		widgets:                make(map[string]widgetEntry),
+		widgetComps:            make(map[string]tui.Component),
+		terminalInputListeners: make(map[uint64]func()),
+		workingVisible:         true,
 	}
+	if mode.footer != nil {
+		ui.builtInFooter = mode.footer.Children()
+	}
+	if mode.header != nil {
+		ui.builtInHeader = mode.header.Children()
+	}
+	if mode.widgetAbove != nil && len(mode.widgetAbove.Children()) == 0 {
+		mode.widgetAbove.AddChild(tui.NewSpacer(1))
+	}
+	return ui
 }
 
 // ─── Dialogs ─────────────────────────────────────────────
@@ -47,9 +72,6 @@ func (ui *InteractiveUI) Select(ctx context.Context, title string, options []str
 }
 
 func (ui *InteractiveUI) selectItems(ctx context.Context, title string, items []tui.SelectItem, opts *extensions.DialogOptions) (string, bool, error) {
-	if len(items) == 0 {
-		return "", false, nil
-	}
 	if opts != nil && opts.Signal != nil {
 		select {
 		case <-opts.Signal.Done():
@@ -71,6 +93,13 @@ func (ui *InteractiveUI) selectItems(ctx context.Context, title string, items []
 			ui.SetToolsExpanded(!ui.GetToolsExpanded())
 		}},
 	)
+	ui.mu.Lock()
+	previous := ui.activeSelector
+	ui.activeSelector = dialog
+	ui.mu.Unlock()
+	if previous != nil {
+		previous.cancel()
+	}
 
 	ui.mode.editorContainer.Clear()
 	ui.mode.editorContainer.AddChild(dialog)
@@ -78,6 +107,11 @@ func (ui *InteractiveUI) selectItems(ctx context.Context, title string, items []
 	ui.mode.ui.RequestRender()
 
 	defer func() {
+		ui.mu.Lock()
+		if ui.activeSelector == dialog {
+			ui.activeSelector = nil
+		}
+		ui.mu.Unlock()
 		dialog.Dispose()
 		ui.mode.editorContainer.Clear()
 		ui.mode.restoreEditorComponent()
@@ -138,6 +172,13 @@ func (ui *InteractiveUI) Input(ctx context.Context, title string, placeholder *s
 		func() { resolve(inputDialogResult{cancelled: true}) },
 		&extensionDialogOptions{ui: ui.mode.ui, timeout: dialogTimeout(opts)},
 	)
+	ui.mu.Lock()
+	previous := ui.activeInput
+	ui.activeInput = dialog
+	ui.mu.Unlock()
+	if previous != nil {
+		previous.cancel()
+	}
 
 	ui.mode.editorContainer.Clear()
 	ui.mode.editorContainer.AddChild(dialog)
@@ -145,6 +186,11 @@ func (ui *InteractiveUI) Input(ctx context.Context, title string, placeholder *s
 	ui.mode.ui.RequestRender()
 
 	defer func() {
+		ui.mu.Lock()
+		if ui.activeInput == dialog {
+			ui.activeInput = nil
+		}
+		ui.mu.Unlock()
 		dialog.Dispose()
 		ui.mode.editorContainer.Clear()
 		ui.mode.restoreEditorComponent()
@@ -193,18 +239,40 @@ func (ui *InteractiveUI) OnTerminalInput(handler extensions.TerminalInputHandler
 	if handler == nil {
 		return func() {}
 	}
-	return ui.mode.ui.AddInputListener(func(data string) tui.InputListenerResult {
+	unsubscribe := ui.mode.ui.AddInputListener(func(data string) tui.InputListenerResult {
 		result := handler(data)
 		if result == nil {
 			return tui.InputListenerResult{}
 		}
-		var transformed *string
-		if result.Data != "" {
-			copy := result.Data
-			transformed = &copy
-		}
-		return tui.InputListenerResult{Consume: result.Consume, Data: transformed}
+		return tui.InputListenerResult{Consume: result.Consume, Data: result.Data}
 	})
+	ui.mu.Lock()
+	ui.nextTerminalInputListener++
+	id := ui.nextTerminalInputListener
+	ui.terminalInputListeners[id] = unsubscribe
+	ui.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			unsubscribe()
+			ui.mu.Lock()
+			delete(ui.terminalInputListeners, id)
+			ui.mu.Unlock()
+		})
+	}
+}
+
+func (ui *InteractiveUI) clearTerminalInputListeners() {
+	ui.mu.Lock()
+	listeners := make([]func(), 0, len(ui.terminalInputListeners))
+	for id, unsubscribe := range ui.terminalInputListeners {
+		listeners = append(listeners, unsubscribe)
+		delete(ui.terminalInputListeners, id)
+	}
+	ui.mu.Unlock()
+	for _, unsubscribe := range listeners {
+		unsubscribe()
+	}
 }
 
 func (ui *InteractiveUI) SetStatus(key string, text *string) {
@@ -219,72 +287,129 @@ func (ui *InteractiveUI) SetStatus(key string, text *string) {
 }
 
 func (ui *InteractiveUI) SetWorkingMessage(msg *string) {
-	ui.mode.mu.Lock()
-	streaming := ui.mode.streaming
-	ui.mode.mu.Unlock()
-	if !streaming {
-		return
-	}
-	message := "Working..."
-	if msg != nil && *msg != "" {
-		message = *msg
-	}
-	ui.mode.setStatus(NewWorkingStatusIndicator(ui.mode.ui, message))
-}
-
-func (ui *InteractiveUI) SetWorkingVisible(visible bool) {
-	if !visible {
-		ui.mode.setStatus(&IdleStatus{})
-		return
-	}
-	ui.mode.mu.Lock()
-	streaming := ui.mode.streaming
-	ui.mode.mu.Unlock()
-	if streaming {
-		ui.mode.setStatus(NewWorkingStatusIndicator(ui.mode.ui, "Working..."))
-	}
-}
-
-func (ui *InteractiveUI) SetWorkingIndicator(opts *extensions.WorkingIndicatorOptions) {
-	if opts == nil || len(opts.Frames) == 0 {
-		ui.mode.mu.Lock()
-		streaming := ui.mode.streaming
-		ui.mode.mu.Unlock()
-		if streaming {
-			ui.mode.setStatus(NewWorkingStatusIndicator(ui.mode.ui, "Working..."))
-		}
-		return
-	}
-	intervalMS := opts.IntervalMS
-	if intervalMS <= 0 {
-		intervalMS = 100
-	}
-	ui.mode.setStatus(&StatusIndicator{
-		Loader: tui.NewLoader(ui.mode.ui,
-			func(s string) string { return theme.FG("accent", s) },
-			func(s string) string { return theme.FG("muted", s) },
-			opts.Frames[0], &tui.LoaderIndicatorOptions{
-				Frames:   opts.Frames,
-				Interval: time.Duration(intervalMS) * time.Millisecond,
-			},
-		),
-		Kind: StatusWorking,
+	ui.mu.Lock()
+	ui.workingMessage = cloneStringPointer(msg)
+	ui.mu.Unlock()
+	ui.mutateWorkingIndicator(func(indicator *StatusIndicator) {
+		indicator.SetMessage(workingMessage(msg))
 	})
 }
 
-func (ui *InteractiveUI) SetHiddenThinkingLabel(label *string) {
-	ui.mode.mu.Lock()
-	if label != nil {
-		ui.mode.thinkingLabel = *label
-	} else {
-		ui.mode.thinkingLabel = ""
+func (ui *InteractiveUI) SetWorkingVisible(visible bool) {
+	ui.mu.Lock()
+	ui.workingVisible = visible
+	ui.mu.Unlock()
+	if !visible {
+		ui.mode.clearStatusIndicatorKind(StatusWorking)
+		return
 	}
-	component := ui.mode.currentStreaming
-	hidden := ui.mode.thinkingHidden
-	currentLabel := ui.mode.thinkingLabel
+	ui.showWorkingIndicator()
+}
+
+func (ui *InteractiveUI) SetWorkingIndicator(opts *extensions.WorkingIndicatorOptions) {
+	copy := cloneWorkingIndicatorOptions(opts)
+	ui.mu.Lock()
+	ui.workingIndicator = copy
+	ui.mu.Unlock()
+	ui.mutateWorkingIndicator(func(indicator *StatusIndicator) {
+		indicator.SetIndicator(loaderIndicatorOptions(copy))
+	})
+	ui.mode.ui.RequestRender()
+}
+
+func cloneStringPointer(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+func cloneWorkingIndicatorOptions(value *extensions.WorkingIndicatorOptions) *extensions.WorkingIndicatorOptions {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	if value.Frames != nil {
+		copy.Frames = append([]string{}, value.Frames...)
+	}
+	return &copy
+}
+
+func workingMessage(value *string) string {
+	if value == nil {
+		return "Working..."
+	}
+	return *value
+}
+
+func loaderIndicatorOptions(value *extensions.WorkingIndicatorOptions) *tui.LoaderIndicatorOptions {
+	if value == nil {
+		return nil
+	}
+	frames := []string(nil)
+	if value.Frames != nil {
+		frames = append([]string{}, value.Frames...)
+	}
+	interval := time.Duration(0)
+	if value.IntervalMS > 0 {
+		interval = time.Duration(value.IntervalMS) * time.Millisecond
+	}
+	return &tui.LoaderIndicatorOptions{Frames: frames, Interval: interval}
+}
+
+// Upstream mutates the working indicator single-threaded; lookup and mutation
+// must stay atomic here or a concurrent Dispose can be resurrected by
+// Loader.SetIndicator's unconditional ticker restart.
+func (ui *InteractiveUI) mutateWorkingIndicator(mutate func(indicator *StatusIndicator)) {
+	ui.mode.mu.Lock()
+	defer ui.mode.mu.Unlock()
+	indicator, ok := ui.mode.statusIndicator.(*StatusIndicator)
+	if !ok || indicator.Kind != StatusWorking {
+		return
+	}
+	mutate(indicator)
+}
+
+func (ui *InteractiveUI) showWorkingIndicator() {
+	ui.mu.Lock()
+	visible := ui.workingVisible
+	message := cloneStringPointer(ui.workingMessage)
+	options := cloneWorkingIndicatorOptions(ui.workingIndicator)
+	ui.mu.Unlock()
+	if !visible {
+		ui.mode.clearStatusIndicatorKind("")
+		return
+	}
+	ui.mode.mu.Lock()
+	streaming := ui.mode.streaming
+	current, isWorking := ui.mode.statusIndicator.(*StatusIndicator)
+	isWorking = isWorking && current.Kind == StatusWorking
 	ui.mode.mu.Unlock()
+	if streaming && !isWorking {
+		ui.mode.setStatus(NewWorkingStatusIndicator(ui.mode.ui, workingMessage(message), options))
+	}
+	ui.mode.ui.RequestRender()
+}
+
+func (ui *InteractiveUI) SetHiddenThinkingLabel(label *string) {
+	resolved := "Thinking..."
+	if label != nil {
+		resolved = *label
+	}
+	ui.mode.mu.Lock()
+	ui.mode.thinkingLabel = resolved
+	component := ui.mode.currentStreaming
+	ui.mode.mu.Unlock()
+	if ui.mode.chat != nil {
+		for _, child := range ui.mode.chat.Children() {
+			if assistant, ok := child.(*AssistantMessageComponent); ok {
+				assistant.SetHiddenThinkingLabel(resolved)
+			}
+		}
+	}
 	if component != nil {
-		component.SetHideThinkingBlock(hidden, currentLabel)
+		component.SetHiddenThinkingLabel(resolved)
 	}
 	ui.mode.ui.RequestRender()
 }
@@ -292,73 +417,235 @@ func (ui *InteractiveUI) SetHiddenThinkingLabel(label *string) {
 // ─── Widgets ─────────────────────────────────────────────
 
 func (ui *InteractiveUI) SetWidget(key string, widget *extensions.Widget, opts *extensions.WidgetOptions) {
-	ui.mu.Lock()
-	defer ui.mu.Unlock()
-
 	placement := extensions.WidgetAboveEditor
 	if opts != nil && opts.Placement != "" {
 		placement = opts.Placement
 	}
-
+	ui.mu.Lock()
+	existing := ui.widgetComps[key]
+	delete(ui.widgets, key)
+	delete(ui.widgetComps, key)
+	ui.widgetOrder = removeWidgetOrderKey(ui.widgetOrder, key)
+	ui.mu.Unlock()
+	disposeExtensionComponent(existing)
 	if widget == nil {
-		if existing, ok := ui.widgets[key]; ok {
-			if comp, hasComp := ui.widgetComps[key]; hasComp {
-				ui.containerForPlacement(existing.placement).RemoveChild(comp)
-				delete(ui.widgetComps, key)
-			}
-			delete(ui.widgets, key)
-		}
-		ui.mode.ui.RequestRender()
+		ui.renderWidgets()
 		return
 	}
 
-	// Remove old if key exists
-	if existing, ok := ui.widgets[key]; ok {
-		if comp, hasComp := ui.widgetComps[key]; hasComp {
-			ui.containerForPlacement(existing.placement).RemoveChild(comp)
-			delete(ui.widgetComps, key)
-		}
-	}
-
-	ui.widgets[key] = widgetEntry{placement: placement}
-
+	var component extensions.Component
 	if widget.Factory != nil {
-		comp := widget.Factory(ui.mode, ui.Theme())
-		if comp != nil {
-			ui.widgetComps[key] = comp
-			ui.containerForPlacement(placement).AddChild(comp)
+		component = widget.Factory(ui.mode, ui.Theme())
+	} else {
+		container := &tui.Container{}
+		limit := min(len(widget.Lines), 10)
+		for _, line := range widget.Lines[:limit] {
+			container.AddChild(tui.NewText(line, 1, 0, nil))
 		}
-	} else if len(widget.Lines) > 0 {
-		comp := tui.NewText(strings.Join(widget.Lines, "\n"), 1, 0, nil)
-		ui.widgetComps[key] = comp
-		ui.containerForPlacement(placement).AddChild(comp)
+		if len(widget.Lines) > 10 {
+			container.AddChild(tui.NewText(theme.FG("muted", "... (widget truncated)"), 1, 0, nil))
+		}
+		component = container
 	}
-	ui.mode.ui.RequestRender()
+	if component != nil {
+		ui.mu.Lock()
+		ui.widgets[key] = widgetEntry{placement: placement}
+		ui.widgetComps[key] = component
+		ui.widgetOrder = append(ui.widgetOrder, key)
+		ui.mu.Unlock()
+	}
+	ui.renderWidgets()
 }
 
-func (ui *InteractiveUI) containerForPlacement(placement extensions.WidgetPlacement) *tui.Container {
-	if placement == extensions.WidgetBelowEditor {
-		return ui.mode.widgetBelow
+func removeWidgetOrderKey(order []string, key string) []string {
+	for index, candidate := range order {
+		if candidate == key {
+			return append(order[:index], order[index+1:]...)
+		}
 	}
-	return ui.mode.widgetAbove
+	return order
+}
+
+func (ui *InteractiveUI) renderWidgets() {
+	ui.mu.Lock()
+	type placedComponent struct {
+		placement extensions.WidgetPlacement
+		component extensions.Component
+	}
+	components := make([]placedComponent, 0, len(ui.widgetOrder))
+	for _, key := range ui.widgetOrder {
+		entry, exists := ui.widgets[key]
+		component := ui.widgetComps[key]
+		if exists && component != nil {
+			components = append(components, placedComponent{placement: entry.placement, component: component})
+		}
+	}
+	if ui.mode.widgetAbove != nil {
+		ui.mode.widgetAbove.Clear()
+		hasAbove := false
+		for _, entry := range components {
+			if entry.placement != extensions.WidgetBelowEditor {
+				hasAbove = true
+				break
+			}
+		}
+		ui.mode.widgetAbove.AddChild(tui.NewSpacer(1))
+		if hasAbove {
+			for _, entry := range components {
+				if entry.placement != extensions.WidgetBelowEditor {
+					ui.mode.widgetAbove.AddChild(entry.component)
+				}
+			}
+		}
+	}
+	if ui.mode.widgetBelow != nil {
+		ui.mode.widgetBelow.Clear()
+		for _, entry := range components {
+			if entry.placement == extensions.WidgetBelowEditor {
+				ui.mode.widgetBelow.AddChild(entry.component)
+			}
+		}
+	}
+	ui.mu.Unlock()
+	if ui.mode.ui != nil {
+		ui.mode.ui.RequestRender()
+	}
+}
+
+func (ui *InteractiveUI) clearWidgets() {
+	ui.mu.Lock()
+	components := make([]extensions.Component, 0, len(ui.widgetComps))
+	for _, placement := range []extensions.WidgetPlacement{extensions.WidgetAboveEditor, extensions.WidgetBelowEditor} {
+		for _, key := range ui.widgetOrder {
+			if ui.widgets[key].placement == placement {
+				components = append(components, ui.widgetComps[key])
+			}
+		}
+	}
+	ui.widgets = make(map[string]widgetEntry)
+	ui.widgetComps = make(map[string]tui.Component)
+	ui.widgetOrder = nil
+	ui.mu.Unlock()
+	for _, component := range components {
+		disposeExtensionComponent(component)
+	}
+	ui.renderWidgets()
+}
+
+func (ui *InteractiveUI) resetExtensionUI() {
+	ui.mu.Lock()
+	selector := ui.activeSelector
+	input := ui.activeInput
+	editorDialog := ui.activeEditorDialog
+	ui.activeSelector = nil
+	ui.activeInput = nil
+	ui.activeEditorDialog = nil
+	ui.mu.Unlock()
+	if selector != nil {
+		selector.cancel()
+	}
+	if input != nil {
+		input.cancel()
+	}
+	if editorDialog != nil {
+		editorDialog.cancel()
+	}
+	if ui.mode.ui != nil {
+		ui.mode.ui.HideOverlay()
+	}
+	ui.clearTerminalInputListeners()
+	ui.SetFooter(nil)
+	ui.SetHeader(nil)
+	ui.clearWidgets()
+	ui.mode.mu.Lock()
+	clear(ui.mode.footerStatuses)
+	ui.mode.thinkingLabel = "Thinking..."
+	ui.mode.mu.Unlock()
+	if ui.mode.footer != nil {
+		ui.mode.footer.Invalidate()
+	}
+	ui.mu.Lock()
+	ui.acProviders = nil
+	ui.editorFactory = nil
+	ui.workingMessage = nil
+	ui.workingVisible = true
+	ui.workingIndicator = nil
+	ui.mu.Unlock()
+	if ui.mode.editor != nil {
+		ui.mode.editor.OnExtensionShortcut = nil
+		if ui.mode.editorContainer != nil && ui.mode.ui != nil {
+			ui.mode.installEditorFactory(nil)
+		}
+	}
+	if ui.mode.session != nil {
+		ui.mode.setupAutocomplete()
+	}
+	if ui.mode.ui != nil {
+		ui.mode.updateTerminalTitle()
+	}
+	ui.mutateWorkingIndicator(func(indicator *StatusIndicator) {
+		indicator.SetIndicator(nil)
+		indicator.SetMessage(fmt.Sprintf("Working... (%s to interrupt)", keyText("app.interrupt")))
+	})
+	ui.SetHiddenThinkingLabel(nil)
 }
 
 // ─── Layout ──────────────────────────────────────────────
 
 func (ui *InteractiveUI) SetFooter(factory extensions.FooterFactory) {
+	ui.mu.Lock()
+	previous := ui.customFooter
+	ui.customFooter = nil
+	ui.mu.Unlock()
+	disposeExtensionComponent(previous)
+	if ui.mode.footer == nil {
+		return
+	}
 	ui.mode.footer.Clear()
 	if factory == nil {
-		ui.mode.footer.AddChild(NewFooterComponent(ui.mode.session, ui.mode))
+		if len(ui.builtInFooter) > 0 {
+			for _, component := range ui.builtInFooter {
+				ui.mode.footer.AddChild(component)
+			}
+		} else if ui.mode.session != nil {
+			ui.mode.footer.AddChild(NewFooterComponent(ui.mode.session, ui.mode))
+		}
 	} else if component := factory(ui.mode, ui.Theme(), ui.mode); component != nil {
+		ui.mu.Lock()
+		ui.customFooter = component
+		ui.mu.Unlock()
 		ui.mode.footer.AddChild(component)
 	}
 	ui.mode.ui.RequestRender()
 }
 
 func (ui *InteractiveUI) SetHeader(factory extensions.HeaderFactory) {
+	ui.mu.Lock()
+	previous := ui.customHeader
+	ui.customHeader = nil
+	ui.mu.Unlock()
+	disposeExtensionComponent(previous)
+	if ui.mode.header == nil {
+		return
+	}
 	ui.mode.header.Clear()
 	if factory != nil {
 		if component := factory(ui.mode, ui.Theme()); component != nil {
+			ui.mode.mu.Lock()
+			expanded := ui.mode.toolsExpanded
+			ui.mode.mu.Unlock()
+			setExpandedComponent(component, expanded)
+			ui.mu.Lock()
+			ui.customHeader = component
+			ui.mu.Unlock()
+			ui.mode.header.AddChild(component)
+		}
+	} else if len(ui.builtInHeader) > 0 {
+		ui.mode.mu.Lock()
+		expanded := ui.mode.toolsExpanded
+		ui.mode.mu.Unlock()
+		for _, component := range ui.builtInHeader {
+			setExpandedComponent(component, expanded)
 			ui.mode.header.AddChild(component)
 		}
 	} else {
@@ -375,59 +662,113 @@ func (ui *InteractiveUI) Custom(ctx context.Context, factory extensions.CustomFa
 	if factory == nil {
 		return nil, false, nil
 	}
-	result := make(chan any, 1)
-	done := func(value any) {
-		select {
-		case result <- value:
-		default:
-		}
-	}
-	component, err := factory(ui.mode, ui.Theme(), extensionKeybindings{ui.mode.keybindings}, done)
-	if err != nil {
-		return nil, false, err
-	}
-	if component == nil {
-		return nil, false, nil
-	}
+	savedText := ui.mode.activeEditorText(false)
 	overlay := opts != nil && opts.Overlay
-	container := ui.mode.editorContainer
-	var tuiOverlay *tui.Overlay
-	var overlayHandle *interactiveOverlayHandle
-	if overlay {
-		tuiOverlay = ui.mode.ui.AddOverlay(component, func(width, height int) tui.OverlayLayout { return resolveOverlayLayout(opts, width, height) })
-		overlayHandle = &interactiveOverlayHandle{overlay: tuiOverlay, mode: ui.mode, component: component}
-		if opts.OnHandle != nil {
-			opts.OnHandle(overlayHandle)
-		}
-		layout := resolveOverlayLayout(opts, ui.mode.Width(), ui.mode.Height())
-		if !layoutNonCapturing(opts, layout) {
-			overlayHandle.Focus()
-		}
-	} else {
-		container.Clear()
-		container.AddChild(component)
-		focusExtensionComponent(ui.mode, component)
-	}
-	ui.mode.ui.RequestRender()
-	defer func() {
-		if disposable, ok := component.(extensions.DisposableComponent); ok {
-			disposable.Dispose()
-		}
-		if overlay {
-			tuiOverlay.Remove()
-		} else {
-			container.Clear()
-			ui.mode.restoreEditorComponent()
-		}
+	result := make(chan any, 1)
+	var transactionMu sync.Mutex
+	closed := false
+	var component extensions.Component
+	var tuiOverlay tui.OverlayHandle
+	restoreEditor := func() {
+		ui.mode.editorContainer.Clear()
+		ui.mode.restoreEditorComponent()
+		ui.mode.setActiveEditorText(savedText)
 		ui.mode.ui.SetFocus(ui.mode.activeEditorFocus())
 		ui.mode.ui.RequestRender()
-	}()
+	}
+	done := func(value any) {
+		transactionMu.Lock()
+		if closed {
+			transactionMu.Unlock()
+			return
+		}
+		closed = true
+		installedComponent := component
+		installedOverlay := tuiOverlay
+		transactionMu.Unlock()
+		if overlay {
+			if installedOverlay != nil {
+				installedOverlay.Hide()
+			} else {
+				ui.mode.ui.HideOverlay()
+			}
+		} else {
+			restoreEditor()
+		}
+		disposeExtensionComponent(installedComponent)
+		result <- value
+	}
+	created, err := factory(ui.mode, ui.Theme(), extensionKeybindings{ui.mode.keybindings}, done)
+	transactionMu.Lock()
+	if closed {
+		transactionMu.Unlock()
+		return <-result, true, nil
+	}
+	if err != nil {
+		closed = true
+		transactionMu.Unlock()
+		if !overlay {
+			restoreEditor()
+		}
+		return nil, false, err
+	}
+	if created == nil {
+		closed = true
+		transactionMu.Unlock()
+		return nil, false, nil
+	}
+	component = created
+	var overlayHandle *interactiveOverlayHandle
+	if overlay {
+		resolved := resolveCustomOverlayOptions(opts, component)
+		if resolved == nil {
+			tuiOverlay = ui.mode.ui.ShowOverlay(component)
+		} else {
+			tuiOverlay = ui.mode.ui.ShowOverlay(component, toTUIOverlayOptions(*resolved))
+		}
+		overlayHandle = &interactiveOverlayHandle{overlay: tuiOverlay}
+	} else {
+		ui.mode.editorContainer.Clear()
+		ui.mode.editorContainer.AddChild(component)
+		focusExtensionComponent(ui.mode, component)
+	}
+	transactionMu.Unlock()
+	if overlay && opts.OnHandle != nil {
+		opts.OnHandle(overlayHandle)
+	}
+	ui.mode.ui.RequestRender()
 	select {
 	case value := <-result:
 		return value, true, nil
 	case <-ctx.Done():
+		transactionMu.Lock()
+		if !closed {
+			closed = true
+			installedComponent := component
+			installedOverlay := tuiOverlay
+			transactionMu.Unlock()
+			if overlay {
+				if installedOverlay != nil {
+					installedOverlay.Hide()
+				}
+			} else {
+				restoreEditor()
+			}
+			disposeExtensionComponent(installedComponent)
+		} else {
+			transactionMu.Unlock()
+		}
 		return nil, false, ctx.Err()
 	}
+}
+
+func disposeExtensionComponent(component extensions.Component) {
+	disposable, ok := component.(extensions.DisposableComponent)
+	if !ok {
+		return
+	}
+	defer func() { _ = recover() }()
+	disposable.Dispose()
 }
 
 func focusExtensionComponent(mode *InteractiveMode, component extensions.Component) {
@@ -455,7 +796,98 @@ func resolveOverlayLayout(opts *extensions.CustomOptions, width, height int) tui
 	if value, ok := overlayCoordinate(resolved.Column); ok {
 		result.Column = &value
 	}
+	result.Margin = overlayMargin(resolved.Margin)
 	return result
+}
+
+func resolveCustomOverlayOptions(opts *extensions.CustomOptions, component extensions.Component) *extensions.OverlayOptions {
+	if opts != nil {
+		if opts.DynamicOverlayOptions != nil {
+			resolved := opts.DynamicOverlayOptions()
+			return &resolved
+		}
+		if opts.StaticOverlayOptions != nil {
+			resolved := *opts.StaticOverlayOptions
+			return &resolved
+		}
+	}
+	if sized, ok := component.(interface{ Width() int }); ok && sized.Width() > 0 {
+		return &extensions.OverlayOptions{Width: sized.Width()}
+	}
+	return nil
+}
+
+func toTUIOverlayOptions(value extensions.OverlayOptions) tui.OverlayOptions {
+	return tui.OverlayOptions{
+		Width:        overlaySizeValue(value.Width),
+		MinWidth:     value.MinWidth,
+		MaxHeight:    overlaySizeValue(value.MaxHeight),
+		Anchor:       overlayAnchor(value.Anchor),
+		OffsetX:      value.OffsetX,
+		OffsetY:      value.OffsetY,
+		Row:          overlaySizeValue(value.Row),
+		Col:          overlaySizeValue(value.Column),
+		Margin:       overlayMargin(value.Margin),
+		Visible:      value.Visible,
+		NonCapturing: value.NonCapturing,
+	}
+}
+
+func overlaySizeValue(value any) tui.SizeValue {
+	switch typed := value.(type) {
+	case int:
+		return tui.AbsoluteSize(typed)
+	case int64:
+		return tui.AbsoluteSize(int(typed))
+	case float64:
+		return tui.AbsoluteSize(int(typed))
+	case string:
+		if strings.HasSuffix(typed, "%") {
+			var percent float64
+			if _, err := fmt.Sscanf(strings.TrimSuffix(typed, "%"), "%f", &percent); err == nil {
+				return tui.PercentSize(percent)
+			}
+		}
+	}
+	return tui.SizeValue{}
+}
+
+func overlayAnchor(value extensions.OverlayAnchor) tui.OverlayAnchor {
+	switch value {
+	case extensions.OverlayTop:
+		return tui.OverlayTopCenter
+	case extensions.OverlayLeft:
+		return tui.OverlayLeftCenter
+	case extensions.OverlayRight:
+		return tui.OverlayRightCenter
+	case extensions.OverlayBottom:
+		return tui.OverlayBottomCenter
+	default:
+		return tui.OverlayAnchor(value)
+	}
+}
+
+func overlayMargin(value any) *tui.OverlayMargin {
+	switch typed := value.(type) {
+	case int:
+		return tui.UniformOverlayMargin(typed)
+	case int64:
+		return tui.UniformOverlayMargin(int(typed))
+	case float64:
+		return tui.UniformOverlayMargin(int(typed))
+	case map[string]int:
+		return &tui.OverlayMargin{Top: typed["top"], Right: typed["right"], Bottom: typed["bottom"], Left: typed["left"]}
+	case *tui.OverlayMargin:
+		if typed == nil {
+			return nil
+		}
+		copy := *typed
+		return &copy
+	case tui.OverlayMargin:
+		copy := typed
+		return &copy
+	}
+	return nil
 }
 
 func overlayDimension(value any, total int) int {
@@ -489,65 +921,41 @@ func overlayCoordinate(value any) (int, bool) {
 	return 0, false
 }
 
-func layoutNonCapturing(opts *extensions.CustomOptions, _ tui.OverlayLayout) bool {
-	if opts == nil {
-		return false
-	}
-	resolved := opts.StaticOverlayOptions
-	if opts.DynamicOverlayOptions != nil {
-		value := opts.DynamicOverlayOptions()
-		resolved = &value
-	}
-	return resolved != nil && resolved.NonCapturing
-}
-
 type interactiveOverlayHandle struct {
-	mu        sync.Mutex
-	overlay   *tui.Overlay
-	mode      *InteractiveMode
-	component extensions.Component
-	focused   bool
+	overlay tui.OverlayHandle
 }
 
-func (handle *interactiveOverlayHandle) Hide()                 { handle.SetHidden(true) }
+func (handle *interactiveOverlayHandle) Hide()                 { handle.overlay.Hide() }
 func (handle *interactiveOverlayHandle) SetHidden(hidden bool) { handle.overlay.SetHidden(hidden) }
 func (handle *interactiveOverlayHandle) IsHidden() bool        { return handle.overlay.IsHidden() }
-func (handle *interactiveOverlayHandle) Focus() {
-	handle.mu.Lock()
-	handle.focused = true
-	handle.mu.Unlock()
-	focusExtensionComponent(handle.mode, handle.component)
-}
-func (handle *interactiveOverlayHandle) Unfocus(component extensions.Component) {
-	handle.mu.Lock()
-	handle.focused = false
-	handle.mu.Unlock()
-	if component != nil {
-		focusExtensionComponent(handle.mode, component)
-	} else {
-		handle.mode.ui.SetFocus(handle.mode.activeEditorFocus())
+func (handle *interactiveOverlayHandle) Focus()                { handle.overlay.Focus() }
+func (handle *interactiveOverlayHandle) Unfocus(options ...extensions.OverlayUnfocusOptions) {
+	if len(options) == 0 {
+		handle.overlay.Unfocus()
+		return
 	}
+	target := tui.Component(options[0].Target)
+	if editor, ok := options[0].Target.(extensions.EditorComponent); ok {
+		target = extensionEditorAdapter{EditorComponent: editor}
+	}
+	handle.overlay.Unfocus(tui.OverlayUnfocusOptions{Target: target})
 }
-func (handle *interactiveOverlayHandle) IsFocused() bool {
-	handle.mu.Lock()
-	defer handle.mu.Unlock()
-	return handle.focused
-}
+func (handle *interactiveOverlayHandle) IsFocused() bool { return handle.overlay.IsFocused() }
 
 // ─── Editor ──────────────────────────────────────────────
 
 func (ui *InteractiveUI) PasteToEditor(text string) {
-	ui.mode.editor.InsertTextAtCursor(text)
+	ui.mode.sendActiveEditorInput("\x1b[200~" + text + "\x1b[201~")
 	ui.mode.ui.RequestRender()
 }
 
 func (ui *InteractiveUI) SetEditorText(text string) {
-	ui.mode.editor.SetText(text)
+	ui.mode.setActiveEditorText(text)
 	ui.mode.ui.RequestRender()
 }
 
 func (ui *InteractiveUI) GetEditorText() string {
-	return ui.mode.editor.GetText()
+	return ui.mode.activeEditorText(true)
 }
 
 func (ui *InteractiveUI) Editor(ctx context.Context, title string, prefill *string) (string, bool, error) {
@@ -571,11 +979,23 @@ func (ui *InteractiveUI) Editor(ctx context.Context, title string, prefill *stri
 		func() { resolve(inputDialogResult{cancelled: true}) },
 		externalEditorCommand,
 	)
+	ui.mu.Lock()
+	previous := ui.activeEditorDialog
+	ui.activeEditorDialog = editor
+	ui.mu.Unlock()
+	if previous != nil {
+		previous.cancel()
+	}
 	ui.mode.editorContainer.Clear()
 	ui.mode.editorContainer.AddChild(editor)
 	ui.mode.ui.SetFocus(editor)
 	ui.mode.ui.RequestRender()
 	defer func() {
+		ui.mu.Lock()
+		if ui.activeEditorDialog == editor {
+			ui.activeEditorDialog = nil
+		}
+		ui.mu.Unlock()
 		ui.mode.editorContainer.Clear()
 		ui.mode.restoreEditorComponent()
 		ui.mode.ui.SetFocus(ui.mode.activeEditorFocus())
@@ -635,18 +1055,28 @@ func (ui *InteractiveUI) GetTheme(name string) extensions.Theme {
 }
 
 func (ui *InteractiveUI) SetTheme(value any) extensions.ThemeSetResult {
-	name, ok := value.(string)
-	if !ok {
-		return extensions.ThemeSetResult{Error: "theme must be a string name"}
+	switch typed := value.(type) {
+	case themeAdapter:
+		if ui.mode.themeController == nil {
+			return extensions.ThemeSetResult{Error: "theme controller is not initialized"}
+		}
+		if err := ui.mode.themeController.SetInstance(typed.value); err != nil {
+			return extensions.ThemeSetResult{Error: err.Error()}
+		}
+		ui.mode.applyTheme()
+		return extensions.ThemeSetResult{Success: true}
+	case string:
+		if err := theme.SetTheme(typed); err != nil {
+			return extensions.ThemeSetResult{Error: err.Error()}
+		}
+		if err := ui.mode.session.SetTheme(typed); err != nil {
+			return extensions.ThemeSetResult{Error: err.Error()}
+		}
+		ui.mode.applyTheme()
+		return extensions.ThemeSetResult{Success: true}
+	default:
+		return extensions.ThemeSetResult{Error: "theme must be a string name or theme instance"}
 	}
-	if err := theme.SetTheme(name); err != nil {
-		return extensions.ThemeSetResult{Error: err.Error()}
-	}
-	if err := ui.mode.session.SetTheme(name); err != nil {
-		return extensions.ThemeSetResult{Error: err.Error()}
-	}
-	ui.mode.applyTheme()
-	return extensions.ThemeSetResult{Success: true}
 }
 
 type extensionEditorAdapter struct{ extensions.EditorComponent }
@@ -654,7 +1084,11 @@ type extensionEditorAdapter struct{ extensions.EditorComponent }
 func (adapter extensionEditorAdapter) HandleInput(event tui.KeyEvent) {
 	adapter.EditorComponent.HandleInput(event.Raw)
 }
-func (extensionEditorAdapter) SetFocused(bool) {}
+func (adapter extensionEditorAdapter) SetFocused(focused bool) {
+	if component, ok := adapter.EditorComponent.(interface{ SetFocused(bool) }); ok {
+		component.SetFocused(focused)
+	}
+}
 
 type extensionKeybindings struct{ manager *tui.KeybindingsManager }
 
@@ -772,15 +1206,22 @@ func (ui *InteractiveUI) GetToolsExpanded() bool {
 func (ui *InteractiveUI) SetToolsExpanded(expanded bool) {
 	ui.mode.mu.Lock()
 	ui.mode.toolsExpanded = expanded
-	components := make([]*ToolExecutionComponent, 0, len(ui.mode.toolComponents))
-	for _, component := range ui.mode.toolComponents {
-		components = append(components, component)
-	}
 	ui.mode.mu.Unlock()
-	for _, tc := range components {
-		tc.SetExpanded(expanded)
+	for _, container := range []*tui.Container{ui.mode.header, ui.mode.chat} {
+		if container == nil {
+			continue
+		}
+		for _, component := range container.Children() {
+			setExpandedComponent(component, expanded)
+		}
 	}
 	ui.mode.ui.RequestRender()
+}
+
+func setExpandedComponent(component tui.Component, expanded bool) {
+	if expandable, ok := component.(interface{ SetExpanded(bool) }); ok {
+		expandable.SetExpanded(expanded)
+	}
 }
 
 // Verify interface compliance.
