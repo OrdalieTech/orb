@@ -7,7 +7,12 @@
     "packages/agent/src/harness/skills.ts",
     "packages/agent/src/harness/prompt-templates.ts",
     "packages/coding-agent/src/core/slash-commands.ts",
-    "packages/coding-agent/src/modes/rpc/rpc-mode.ts"
+    "packages/coding-agent/src/core/package-manager.ts",
+    "packages/coding-agent/src/core/settings-manager.ts",
+    "packages/coding-agent/src/modes/rpc/rpc-mode.ts",
+    "packages/coding-agent/src/modes/interactive/theme/theme.ts",
+    "packages/coding-agent/src/modes/interactive/theme/dark.json",
+    "packages/coding-agent/src/modes/interactive/interactive-mode.ts"
   ],
   "files": [
     "cases.json"

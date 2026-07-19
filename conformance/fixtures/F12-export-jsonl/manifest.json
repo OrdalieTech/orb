@@ -1,0 +1,24 @@
+{
+  "family": "F12-export-jsonl",
+  "schema": 1,
+  "upstream": {
+    "commit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
+    "files": [
+      {
+        "path": "packages/coding-agent/src/core/agent-session.ts",
+        "sha256": "6c3295050e9cd959db95be658249d3e0377eabba677ea870e5dd87cd9fd44923"
+      },
+      {
+        "path": "packages/coding-agent/src/core/session-manager.ts",
+        "sha256": "b135a1d19a70cc840658c995539dbcc01fc4eaa3ca6f0ff1df1cbf2c7fbe3cdd"
+      },
+      {
+        "path": "packages/coding-agent/src/utils/paths.ts",
+        "sha256": "c433bd9f98744aa9a373282fd50ab3657b6e2a366feecbfb177fe648746d1944"
+      }
+    ]
+  },
+  "cases": [
+    "branched-unknown-fields"
+  ]
+}

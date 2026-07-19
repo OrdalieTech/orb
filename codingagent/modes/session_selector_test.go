@@ -8,9 +8,11 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,8 +21,9 @@ import (
 )
 
 type sessionSelectorFixture struct {
-	Width    int `json:"width"`
-	Searches []struct {
+	SchemaVersion int `json:"schemaVersion"`
+	Width         int `json:"width"`
+	Searches      []struct {
 		ID         string   `json:"id"`
 		Query      string   `json:"query"`
 		SortMode   string   `json:"sortMode"`
@@ -35,6 +38,19 @@ type sessionSelectorFixture struct {
 		Selected      []string `json:"selected"`
 		Cancellations int      `json:"cancellations"`
 	} `json:"callbacks"`
+	Lifetime []selectorLifetimeTrace `json:"lifetime"`
+}
+
+type selectorLifetimeTrace struct {
+	ID                       string   `json:"id"`
+	Events                   []string `json:"events"`
+	ScheduledTimeouts        int      `json:"scheduledTimeouts"`
+	ClearedTimeouts          int      `json:"clearedTimeouts"`
+	PendingTimeoutsAfterExit int      `json:"pendingTimeoutsAfterExit"`
+	FiredTimeoutsAfterExit   int      `json:"firedTimeoutsAfterExit"`
+	RenderCallbacksAfterExit int      `json:"renderCallbacksAfterExit"`
+	StatusVisibleBeforeExit  bool     `json:"statusVisibleBeforeExit"`
+	StatusVisibleAfterExit   bool     `json:"statusVisibleAfterExit"`
 }
 
 var selectorANSI = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
@@ -289,6 +305,182 @@ func TestSessionSelectorSelectionCancellationAndKeybindings(t *testing.T) {
 	if rendered := strings.Join(selector.Render(100), "\n"); !strings.Contains(rendered, "Sort: Recent") {
 		t.Fatalf("custom ctrl+x did not toggle sort:\n%s", rendered)
 	}
+}
+
+func TestSessionSelectorClearsStatusLifetimeOnSelectionCancellationAndExit(t *testing.T) {
+	fixture := loadSessionSelectorFixture(t)
+	if fixture.SchemaVersion != 2 || len(fixture.Lifetime) != 3 {
+		t.Fatalf("upstream selector lifetime fixture = version %d, cases %d", fixture.SchemaVersion, len(fixture.Lifetime))
+	}
+	now := time.Date(2026, 7, 18, 22, 0, 0, 0, time.UTC)
+	_, current, all := sessionSelectorSessions(t, now)
+	loader := func(values []session.SessionInfo) SessionSelectorLoader {
+		return func(session.SessionListProgress) []session.SessionInfo { return values }
+	}
+
+	for _, expected := range fixture.Lifetime {
+		expected := expected
+		t.Run(expected.ID, func(t *testing.T) {
+			bindings := NewAppKeybindings(nil)
+			tui.SetKeybindings(bindings)
+			var renders atomic.Int32
+			events := make([]string, 0, 1)
+			selector := NewSessionSelectorComponent(SessionSelectorOptions{
+				CurrentSessions: loader(current),
+				AllSessions:     loader(all),
+				Keybindings:     bindings,
+				RequestRender:   func() { renders.Add(1) },
+				Now:             func() time.Time { return now },
+			}, func(string) { events = append(events, "select") }, func() { events = append(events, "cancel") })
+			waitForSelector(t, selector, "Root plan")
+			time.Sleep(10 * time.Millisecond)
+			renders.Store(0)
+
+			selector.mu.Lock()
+			selector.setStatusLocked("info", "lifetime-status", 100*time.Millisecond)
+			selector.mu.Unlock()
+			statusVisibleBeforeExit := strings.Contains(strings.Join(selector.Render(100), "\n"), "lifetime-status")
+
+			switch expected.ID {
+			case "select":
+				selector.HandleInput(selectorKey("\r"))
+			case "cancel":
+				selector.HandleInput(selectorKey("\x1b"))
+			case "exit":
+				selector.clearStatus()
+				events = append(events, "exit")
+			default:
+				t.Fatalf("unexpected component lifetime case %q", expected.ID)
+			}
+
+			selector.mu.Lock()
+			pendingTimeoutsAfterExit := 0
+			if selector.statusTimer != nil {
+				pendingTimeoutsAfterExit = 1
+			}
+			selector.mu.Unlock()
+			statusVisibleAfterExit := strings.Contains(strings.Join(selector.Render(100), "\n"), "lifetime-status")
+			time.Sleep(150 * time.Millisecond)
+			renderCallbacksAfterExit := int(renders.Load())
+			actual := selectorLifetimeTrace{
+				ID:                       expected.ID,
+				Events:                   events,
+				ScheduledTimeouts:        1,
+				ClearedTimeouts:          1 - pendingTimeoutsAfterExit,
+				PendingTimeoutsAfterExit: pendingTimeoutsAfterExit,
+				FiredTimeoutsAfterExit:   renderCallbacksAfterExit,
+				RenderCallbacksAfterExit: renderCallbacksAfterExit,
+				StatusVisibleBeforeExit:  statusVisibleBeforeExit,
+				StatusVisibleAfterExit:   statusVisibleAfterExit,
+			}
+			if !reflect.DeepEqual(actual, expected) {
+				t.Fatalf("selector %s lifetime = %+v, want upstream %+v", expected.ID, actual, expected)
+			}
+		})
+	}
+}
+
+type selectorLifetimeProbe struct {
+	_ byte
+}
+
+type selectorCancellationTerminal struct {
+	loaded     <-chan struct{}
+	session    string
+	cancel     context.CancelFunc
+	startCount atomic.Int32
+	stopCount  atomic.Int32
+}
+
+func (terminal *selectorCancellationTerminal) Start(handleInput func(string), _ func()) error {
+	terminal.startCount.Add(1)
+	go func() {
+		<-terminal.loaded
+		time.Sleep(25 * time.Millisecond)
+		handleInput("\x04")
+		handleInput("\r")
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(terminal.session); errors.Is(err, os.ErrNotExist) {
+				time.Sleep(25 * time.Millisecond)
+				terminal.cancel()
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		terminal.cancel()
+	}()
+	return nil
+}
+
+func (terminal *selectorCancellationTerminal) Stop() error {
+	terminal.stopCount.Add(1)
+	return nil
+}
+func (*selectorCancellationTerminal) Write(string)                            {}
+func (*selectorCancellationTerminal) DrainInput(time.Duration, time.Duration) {}
+func (*selectorCancellationTerminal) Columns() int                            { return 100 }
+func (*selectorCancellationTerminal) Rows() int                               { return 24 }
+func (*selectorCancellationTerminal) KittyProtocolActive() bool               { return false }
+func (*selectorCancellationTerminal) MoveBy(int)                              {}
+func (*selectorCancellationTerminal) HideCursor()                             {}
+func (*selectorCancellationTerminal) ShowCursor()                             {}
+func (*selectorCancellationTerminal) ClearLine()                              {}
+func (*selectorCancellationTerminal) ClearFromCursor()                        {}
+func (*selectorCancellationTerminal) ClearScreen()                            {}
+func (*selectorCancellationTerminal) SetTitle(string)                         {}
+func (*selectorCancellationTerminal) SetProgress(bool)                        {}
+
+func runCancelledSelectorWithStatusTimer(t *testing.T) <-chan struct{} {
+	t.Helper()
+	finalized := make(chan struct{}, 1)
+	probe := &selectorLifetimeProbe{}
+	runtime.SetFinalizer(probe, func(*selectorLifetimeProbe) { finalized <- struct{}{} })
+	root := t.TempDir()
+	sessionPath := filepath.Join(root, "pending-status.jsonl")
+	if err := os.WriteFile(sessionPath, []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded := make(chan struct{})
+	var loadedOnce sync.Once
+	loader := func(session.SessionListProgress) []session.SessionInfo {
+		runtime.KeepAlive(probe)
+		loadedOnce.Do(func() { close(loaded) })
+		return []session.SessionInfo{{
+			Path: sessionPath, ID: "pending-status", CWD: root, Created: time.Now(), Modified: time.Now(),
+			MessageCount: 1, FirstMessage: "pending status", AllMessagesText: "pending status",
+		}}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	terminal := &selectorCancellationTerminal{loaded: loaded, session: sessionPath, cancel: cancel}
+	_, _, err := RunSessionSelectorWithTerminal(ctx, loader, loader, terminal)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("runner cancellation error = %v, want %v", err, context.Canceled)
+	}
+	if terminal.startCount.Load() != 1 || terminal.stopCount.Load() != 1 {
+		t.Fatalf("runner terminal starts=%d stops=%d", terminal.startCount.Load(), terminal.stopCount.Load())
+	}
+	runtime.KeepAlive(probe)
+	return finalized
+}
+
+func TestRunSessionSelectorContextCancellationClearsStatusLifetime(t *testing.T) {
+	fixture := loadSessionSelectorFixture(t)
+	expected := fixture.Lifetime[2]
+	if expected.ID != "exit" || expected.PendingTimeoutsAfterExit != 0 || expected.FiredTimeoutsAfterExit != 0 {
+		t.Fatalf("unexpected upstream exit lifetime: %+v", expected)
+	}
+	finalized := runCancelledSelectorWithStatusTimer(t)
+	deadline := time.Now().Add(750 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		runtime.GC()
+		select {
+		case <-finalized:
+			return
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	t.Fatal("runner context cancellation retained the selector through its status timeout; upstream clears it on exit")
 }
 
 type selectorLifecycleTerminal struct {

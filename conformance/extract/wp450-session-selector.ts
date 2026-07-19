@@ -17,6 +17,18 @@ type SessionInfo = {
 	allMessagesText: string;
 };
 
+type LifetimeTrace = {
+	id: "select" | "cancel" | "exit";
+	events: string[];
+	scheduledTimeouts: number;
+	clearedTimeouts: number;
+	pendingTimeoutsAfterExit: number;
+	firedTimeoutsAfterExit: number;
+	renderCallbacksAfterExit: number;
+	statusVisibleBeforeExit: boolean;
+	statusVisibleAfterExit: boolean;
+};
+
 const WIDTH = 100;
 
 function stripTerminalControls(value: string): string {
@@ -27,11 +39,14 @@ function stripTerminalControls(value: string): string {
 }
 
 function normalizeLines(lines: string[], fixtureRoot: string): string[] {
-	const normalized = lines.map((line) => stripTerminalControls(line)
-		.replaceAll(fixtureRoot, "<fixture>")
-		.replaceAll(fixtureRoot.replaceAll("\\", "/"), "<fixture>")
-		.replace(/\s+$/g, ""));
-	while (normalized.length > 0 && normalized[normalized.length - 1] === "") normalized.pop();
+	const normalized = lines.map((line) =>
+		stripTerminalControls(line)
+			.replaceAll(fixtureRoot, "<fixture>")
+			.replaceAll(fixtureRoot.replaceAll("\\", "/"), "<fixture>")
+			.replace(/\s+$/g, ""),
+	);
+	while (normalized.length > 0 && normalized[normalized.length - 1] === "")
+		normalized.pop();
 	return normalized;
 }
 
@@ -51,23 +66,34 @@ export async function generateWP450SessionSelector(
 	outputRoot: string,
 	upstreamCommit: string,
 ): Promise<void> {
-	const load = async (relativePath: string) => import(pathToFileURL(path.join(upstreamRoot, relativePath)).href);
+	const load = async (relativePath: string) =>
+		import(pathToFileURL(path.join(upstreamRoot, relativePath)).href);
 	process.env.PI_PACKAGE_DIR = path.join(upstreamRoot, "packages/coding-agent");
 	process.env.FORCE_COLOR = "3";
 	const chalk = await load("node_modules/chalk/source/index.js");
 	(chalk.default as { level: number }).level = 3;
 	const tui = await load("packages/tui/src/index.ts");
-	const theme = await load("packages/coding-agent/src/modes/interactive/theme/theme.ts");
-	const keybindings = await load("packages/coding-agent/src/core/keybindings.ts");
-	const selectorModule = await load("packages/coding-agent/src/modes/interactive/components/session-selector.ts");
-	const search = await load("packages/coding-agent/src/modes/interactive/components/session-selector-search.ts");
+	const theme = await load(
+		"packages/coding-agent/src/modes/interactive/theme/theme.ts",
+	);
+	const keybindings = await load(
+		"packages/coding-agent/src/core/keybindings.ts",
+	);
+	const selectorModule = await load(
+		"packages/coding-agent/src/modes/interactive/components/session-selector.ts",
+	);
+	const search = await load(
+		"packages/coding-agent/src/modes/interactive/components/session-selector-search.ts",
+	);
 
 	tui.setCapabilities({ images: null, trueColor: true, hyperlinks: false });
 	theme.initTheme("dark");
 	const bindings = new keybindings.KeybindingsManager({});
 	tui.setKeybindings(bindings);
 
-	const fixtureRoot = await mkdtemp(path.join(tmpdir(), "pi-session-selector-"));
+	const fixtureRoot = await mkdtemp(
+		path.join(tmpdir(), "pi-session-selector-"),
+	);
 	try {
 		const now = Date.now();
 		const file = async (name: string) => {
@@ -79,52 +105,215 @@ export async function generateWP450SessionSelector(
 		const childPath = await file("child");
 		const incidentPath = await file("incident");
 		const miscPath = await file("misc");
-		const make = (value: Partial<SessionInfo> & Pick<SessionInfo, "path" | "id" | "modified" | "firstMessage" | "allMessagesText">): SessionInfo => ({
-			cwd: path.join(fixtureRoot, value.id === "incident" ? "other" : "project"),
+		const make = (
+			value: Partial<SessionInfo> &
+				Pick<
+					SessionInfo,
+					"path" | "id" | "modified" | "firstMessage" | "allMessagesText"
+				>,
+		): SessionInfo => ({
+			cwd: path.join(
+				fixtureRoot,
+				value.id === "incident" ? "other" : "project",
+			),
 			created: new Date(now - 3_600_000),
 			messageCount: 2,
 			...value,
 		});
 		const root = make({
-			path: rootPath, id: "root", name: "Root plan", modified: new Date(now - 20 * 60_000),
-			firstMessage: "Plan the alpha rollout", allMessagesText: "alpha rollout details",
+			path: rootPath,
+			id: "root",
+			name: "Root plan",
+			modified: new Date(now - 20 * 60_000),
+			firstMessage: "Plan the alpha rollout",
+			allMessagesText: "alpha rollout details",
 		});
 		const child = make({
-			path: childPath, id: "child", parentSessionPath: rootPath, modified: new Date(now - 5 * 60_000),
-			firstMessage: "Investigate Node CVE", allMessagesText: "node cve remediation",
+			path: childPath,
+			id: "child",
+			parentSessionPath: rootPath,
+			modified: new Date(now - 5 * 60_000),
+			firstMessage: "Investigate Node CVE",
+			allMessagesText: "node cve remediation",
 		});
 		const incident = make({
-			path: incidentPath, id: "incident", name: "Incident", modified: new Date(now - 60_000),
-			firstMessage: "Alpha failure", allMessagesText: "alpha fatal error",
+			path: incidentPath,
+			id: "incident",
+			name: "Incident",
+			modified: new Date(now - 60_000),
+			firstMessage: "Alpha failure",
+			allMessagesText: "alpha fatal error",
 		});
 		const misc = make({
-			path: miscPath, id: "misc", modified: new Date(now - 30 * 60_000),
-			firstMessage: "Misc notes", allMessagesText: "unrelated notes",
+			path: miscPath,
+			id: "misc",
+			modified: new Date(now - 30 * 60_000),
+			firstMessage: "Misc notes",
+			allMessagesText: "unrelated notes",
 		});
 		const current = [child, root, misc];
 		const all = [incident, child, root, misc];
+		const traceLifetime = async (
+			id: LifetimeTrace["id"],
+		): Promise<LifetimeTrace> => {
+			const originalSetTimeout = globalThis.setTimeout;
+			const originalClearTimeout = globalThis.clearTimeout;
+			type PendingTimeout = { callback: () => void; cleared: boolean };
+			const timeouts = new Map<number, PendingTimeout>();
+			let nextTimeout = 1;
+			let scheduledTimeouts = 0;
+			let clearedTimeouts = 0;
+			let firedTimeoutsAfterExit = 0;
+
+			globalThis.setTimeout = ((
+				callback: (...args: unknown[]) => void,
+				_delay?: number,
+				...args: unknown[]
+			) => {
+				const handle = nextTimeout++;
+				timeouts.set(handle, {
+					callback: () => callback(...args),
+					cleared: false,
+				});
+				scheduledTimeouts++;
+				return handle;
+			}) as typeof setTimeout;
+			globalThis.clearTimeout = ((handle: ReturnType<typeof setTimeout>) => {
+				const timeout = timeouts.get(Number(handle));
+				if (!timeout || timeout.cleared) return;
+				timeout.cleared = true;
+				clearedTimeouts++;
+			}) as typeof clearTimeout;
+
+			try {
+				const events: string[] = [];
+				let renderCallbacks = 0;
+				const lifetimeSelector = new selectorModule.SessionSelectorComponent(
+					async () => current,
+					async () => all,
+					() => events.push("select"),
+					() => events.push("cancel"),
+					() => events.push("exit"),
+					() => {
+						renderCallbacks++;
+					},
+					{ showRenameHint: false, keybindings: bindings },
+				);
+				await flush();
+				renderCallbacks = 0;
+				const selectorInternals = lifetimeSelector as unknown as {
+					header: {
+						setStatusMessage(
+							message: { type: "info"; message: string } | null,
+							autoHideMs?: number,
+						): void;
+					};
+				};
+				selectorInternals.header.setStatusMessage(
+					{ type: "info", message: "lifetime-status" },
+					1000,
+				);
+				const statusVisibleBeforeExit = normalizeLines(
+					lifetimeSelector.render(WIDTH),
+					fixtureRoot,
+				).some((line) => line.includes("lifetime-status"));
+
+				switch (id) {
+					case "select":
+						lifetimeSelector.handleInput("\r");
+						break;
+					case "cancel":
+						lifetimeSelector.handleInput("\u001b");
+						break;
+					case "exit":
+						lifetimeSelector.getSessionList().onExit();
+						break;
+				}
+
+				const renderCallbacksAtExit = renderCallbacks;
+				const pendingTimeoutsAfterExit = [...timeouts.values()].filter(
+					(timeout) => !timeout.cleared,
+				).length;
+				const statusVisibleAfterExit = normalizeLines(
+					lifetimeSelector.render(WIDTH),
+					fixtureRoot,
+				).some((line) => line.includes("lifetime-status"));
+				for (const timeout of timeouts.values()) {
+					if (timeout.cleared) continue;
+					firedTimeoutsAfterExit++;
+					timeout.callback();
+				}
+
+				return {
+					id,
+					events,
+					scheduledTimeouts,
+					clearedTimeouts,
+					pendingTimeoutsAfterExit,
+					firedTimeoutsAfterExit,
+					renderCallbacksAfterExit: renderCallbacks - renderCallbacksAtExit,
+					statusVisibleBeforeExit,
+					statusVisibleAfterExit,
+				};
+			} finally {
+				globalThis.setTimeout = originalSetTimeout;
+				globalThis.clearTimeout = originalClearTimeout;
+			}
+		};
 
 		const searches = [
-			{ id: "recent-alpha", query: "alpha", sortMode: "recent", nameFilter: "all" },
+			{
+				id: "recent-alpha",
+				query: "alpha",
+				sortMode: "recent",
+				nameFilter: "all",
+			},
 			{ id: "fuzzy", query: "ndcv", sortMode: "relevance", nameFilter: "all" },
-			{ id: "exact-phrase", query: '"node cve"', sortMode: "relevance", nameFilter: "all" },
-			{ id: "regex", query: "re:alpha.*error", sortMode: "relevance", nameFilter: "all" },
-			{ id: "invalid-regex", query: "re:[", sortMode: "relevance", nameFilter: "all" },
+			{
+				id: "exact-phrase",
+				query: '"node cve"',
+				sortMode: "relevance",
+				nameFilter: "all",
+			},
+			{
+				id: "regex",
+				query: "re:alpha.*error",
+				sortMode: "relevance",
+				nameFilter: "all",
+			},
+			{
+				id: "invalid-regex",
+				query: "re:[",
+				sortMode: "relevance",
+				nameFilter: "all",
+			},
 			{ id: "named", query: "", sortMode: "recent", nameFilter: "named" },
 		].map((entry) => ({
 			...entry,
-			result: ids(search.filterAndSortSessions(all, entry.query, entry.sortMode, entry.nameFilter)),
+			result: ids(
+				search.filterAndSortSessions(
+					all,
+					entry.query,
+					entry.sortMode,
+					entry.nameFilter,
+				),
+			),
 		}));
 
 		let releaseCurrent!: () => void;
-		const currentLoader = (onProgress?: (loaded: number, total: number) => void) => new Promise<SessionInfo[]>((resolve) => {
-			onProgress?.(1, current.length);
-			releaseCurrent = () => {
-				onProgress?.(current.length, current.length);
-				resolve(current.filter((session) => existsSync(session.path)));
-			};
-		});
-		const allLoader = async (onProgress?: (loaded: number, total: number) => void) => {
+		const currentLoader = (
+			onProgress?: (loaded: number, total: number) => void,
+		) =>
+			new Promise<SessionInfo[]>((resolve) => {
+				onProgress?.(1, current.length);
+				releaseCurrent = () => {
+					onProgress?.(current.length, current.length);
+					resolve(current.filter((session) => existsSync(session.path)));
+				};
+			});
+		const allLoader = async (
+			onProgress?: (loaded: number, total: number) => void,
+		) => {
 			onProgress?.(all.length, all.length);
 			return all.filter((session) => existsSync(session.path));
 		};
@@ -134,13 +323,19 @@ export async function generateWP450SessionSelector(
 			currentLoader,
 			allLoader,
 			(sessionPath: string) => selections.push(sessionPath),
-			() => { cancellations++; },
+			() => {
+				cancellations++;
+			},
 			() => {},
 			() => {},
 			{ showRenameHint: false, keybindings: bindings },
 		);
 		const frames: { id: string; lines: string[] }[] = [];
-		const capture = (id: string) => frames.push({ id, lines: normalizeLines(selector.render(WIDTH), fixtureRoot) });
+		const capture = (id: string) =>
+			frames.push({
+				id,
+				lines: normalizeLines(selector.render(WIDTH), fixtureRoot),
+			});
 
 		await flush();
 		capture("loading-progress");
@@ -176,7 +371,11 @@ export async function generateWP450SessionSelector(
 		capture("delete-cancelled");
 		selector.handleInput("\u0004");
 		selector.handleInput("\r");
-		for (let attempt = 0; attempt < 100 && existsSync(incidentPath); attempt++) {
+		for (
+			let attempt = 0;
+			attempt < 100 && existsSync(incidentPath);
+			attempt++
+		) {
 			await new Promise<void>((resolve) => setTimeout(resolve, 5));
 		}
 		await flush();
@@ -186,7 +385,9 @@ export async function generateWP450SessionSelector(
 			async () => current.filter((session) => existsSync(session.path)),
 			allLoader,
 			(sessionPath: string) => selections.push(sessionPath),
-			() => { cancellations++; },
+			() => {
+				cancellations++;
+			},
 			() => {},
 			() => {},
 			{ showRenameHint: false, keybindings: bindings },
@@ -198,38 +399,69 @@ export async function generateWP450SessionSelector(
 			async () => current.filter((session) => existsSync(session.path)),
 			allLoader,
 			(sessionPath: string) => selections.push(sessionPath),
-			() => { cancellations++; },
+			() => {
+				cancellations++;
+			},
 			() => {},
 			() => {},
 			{ showRenameHint: false, keybindings: bindings },
 		);
 		await flush();
 		cancelled.handleInput("\u001b");
+		const lifetime = [];
+		for (const id of ["select", "cancel", "exit"] as const) {
+			lifetime.push(await traceLifetime(id));
+		}
 
 		const familyDir = path.join(outputRoot, "WP450-session-selector");
 		await mkdir(familyDir, { recursive: true });
-		await writeFile(path.join(familyDir, "selector.json"), `${JSON.stringify({
-			schemaVersion: 1,
-			width: WIDTH,
-			searches,
-			frames,
-			callbacks: {
-				selected: selections.map((value) => value.replaceAll(fixtureRoot, "<fixture>")),
-				cancellations,
-			},
-		}, null, 2)}\n`);
-		await writeFile(path.join(familyDir, "manifest.json"), `${JSON.stringify({
-			family: "WP450-session-selector",
-			upstreamCommit,
-			generator: "conformance/extract/wp450-session-selector.ts",
-			sources: [
-				"packages/coding-agent/src/cli/session-picker.ts",
-				"packages/coding-agent/src/modes/interactive/components/session-selector.ts",
-				"packages/coding-agent/src/modes/interactive/components/session-selector-search.ts",
-			],
-			files: ["selector.json"],
-			metadata: { width: WIDTH, normalization: ["strip terminal controls", "replace temporary root with <fixture>"], divergences: [] },
-		}, null, 2)}\n`);
+		await writeFile(
+			path.join(familyDir, "selector.json"),
+			`${JSON.stringify(
+				{
+					schemaVersion: 2,
+					width: WIDTH,
+					searches,
+					frames,
+					callbacks: {
+						selected: selections.map((value) =>
+							value.replaceAll(fixtureRoot, "<fixture>"),
+						),
+						cancellations,
+					},
+					lifetime,
+				},
+				null,
+				2,
+			)}\n`,
+		);
+		await writeFile(
+			path.join(familyDir, "manifest.json"),
+			`${JSON.stringify(
+				{
+					family: "WP450-session-selector",
+					upstreamCommit,
+					generator: "conformance/extract/wp450-session-selector.ts",
+					sources: [
+						"packages/coding-agent/src/cli/session-picker.ts",
+						"packages/coding-agent/src/modes/interactive/components/header.ts",
+						"packages/coding-agent/src/modes/interactive/components/session-selector.ts",
+						"packages/coding-agent/src/modes/interactive/components/session-selector-search.ts",
+					],
+					files: ["selector.json"],
+					metadata: {
+						width: WIDTH,
+						normalization: [
+							"strip terminal controls",
+							"replace temporary root with <fixture>",
+						],
+						divergences: [],
+					},
+				},
+				null,
+				2,
+			)}\n`,
+		);
 	} finally {
 		await rm(fixtureRoot, { recursive: true, force: true });
 		tui.resetCapabilitiesCache();

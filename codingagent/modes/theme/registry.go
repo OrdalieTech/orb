@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 //go:embed dark.json light.json
@@ -43,12 +44,15 @@ type LoadOptions struct {
 }
 
 type Registry struct {
-	mode        ColorMode
-	cwd         string
-	builtins    map[string]*Theme
-	themes      map[string]*Theme
-	diagnostics []Diagnostic
-	loadedRoots map[string]bool
+	mu                   sync.RWMutex
+	mode                 ColorMode
+	cwd                  string
+	builtins             map[string]*Theme
+	themes               map[string]*Theme
+	themeOrder           []string
+	diagnostics          []Diagnostic
+	collisionDiagnostics []Diagnostic
+	loadedRoots          map[string]bool
 }
 
 func Load(options LoadOptions) *Registry {
@@ -95,21 +99,66 @@ func Load(options LoadOptions) *Registry {
 }
 
 func (registry *Registry) Extend(paths []string) {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
 	registry.loadPaths(resolvePaths(paths, registry.cwd))
 }
 
 func (registry *Registry) Register(theme *Theme) error {
+	if err := validateRegisteredTheme(theme); err != nil {
+		return err
+	}
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	registry.register(theme)
+	return nil
+}
+
+// ReplaceLoaded atomically replaces every nonbuiltin theme with the supplied
+// loader-owned objects. Validation happens before mutation so a bad override
+// leaves the prior registered set intact.
+func (registry *Registry) ReplaceLoaded(themes []*Theme) error {
+	replacement := make(map[string]*Theme, len(themes))
+	order := make([]string, 0, len(themes))
+	for _, loaded := range themes {
+		if loaded == nil || loaded.Name == "" {
+			continue
+		}
+		if strings.Contains(loaded.Name, "/") {
+			return fmt.Errorf("invalid theme name %q", loaded.Name)
+		}
+		if _, exists := replacement[loaded.Name]; !exists {
+			order = append(order, loaded.Name)
+		}
+		replacement[loaded.Name] = loaded
+	}
+	registry.mu.Lock()
+	registry.themes = replacement
+	registry.themeOrder = order
+	registry.mu.Unlock()
+	return nil
+}
+
+func validateRegisteredTheme(theme *Theme) error {
 	if theme == nil || theme.Name == "" {
 		return errors.New("theme requires a name")
 	}
 	if strings.Contains(theme.Name, "/") {
 		return fmt.Errorf("invalid theme name %q", theme.Name)
 	}
-	registry.themes[theme.Name] = theme
 	return nil
 }
 
+func (registry *Registry) register(theme *Theme) {
+	if _, exists := registry.themes[theme.Name]; !exists {
+		registry.themeOrder = append(registry.themeOrder, theme.Name)
+	}
+	registry.themes[theme.Name] = theme
+}
+
 func (registry *Registry) Get(name string) (*Theme, bool) {
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
 	if selected, ok := registry.themes[name]; ok {
 		return selected, true
 	}
@@ -118,6 +167,8 @@ func (registry *Registry) Get(name string) (*Theme, bool) {
 }
 
 func (registry *Registry) Available() []string {
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
 	names := make([]string, 0, len(registry.themes)+len(registry.builtins))
 	seen := make(map[string]bool, len(registry.themes)+len(registry.builtins))
 	for name := range registry.themes {
@@ -133,8 +184,25 @@ func (registry *Registry) Available() []string {
 	return names
 }
 
+// Loaded returns non-builtin themes in first-winner path order. ResourceLoader
+// exposes these exact objects to interactive mode, matching upstream identity.
+func (registry *Registry) Loaded() []*Theme {
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+	result := make([]*Theme, 0, len(registry.themeOrder))
+	for _, name := range registry.themeOrder {
+		if loaded := registry.themes[name]; loaded != nil {
+			result = append(result, loaded)
+		}
+	}
+	return result
+}
+
 func (registry *Registry) Diagnostics() []Diagnostic {
-	return append([]Diagnostic(nil), registry.diagnostics...)
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+	result := append([]Diagnostic(nil), registry.diagnostics...)
+	return append(result, registry.collisionDiagnostics...)
 }
 
 func (registry *Registry) loadPaths(paths []string) {
@@ -204,13 +272,14 @@ func (registry *Registry) loadFile(path string) {
 	}
 	theme.SourcePath = path
 	if winner, exists := registry.themes[theme.Name]; exists {
-		registry.diagnostics = append(registry.diagnostics, Diagnostic{
+		registry.collisionDiagnostics = append(registry.collisionDiagnostics, Diagnostic{
 			Type: "collision", Message: fmt.Sprintf("name %q collision", theme.Name), Path: path,
 			Collision: &Collision{ResourceType: "theme", Name: theme.Name, WinnerPath: winner.SourcePath, LoserPath: path},
 		})
 		return
 	}
 	registry.themes[theme.Name] = theme
+	registry.themeOrder = append(registry.themeOrder, theme.Name)
 }
 
 func cleanPath(path string) string {

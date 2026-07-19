@@ -1,0 +1,677 @@
+{
+  "schemaVersion": 6,
+  "frames": [
+    {
+      "id": "status-first",
+      "width": 48,
+      "lines": [
+        "",
+        " \u001b[38;5;241mSTATUS_ONE\u001b[39m                                     "
+      ]
+    },
+    {
+      "id": "status-replaced",
+      "width": 48,
+      "lines": [
+        "",
+        " \u001b[38;5;241mSTATUS_TWO\u001b[39m                                     "
+      ]
+    },
+    {
+      "id": "status-after-content",
+      "width": 48,
+      "lines": [
+        "",
+        " \u001b[38;5;241mSTATUS_TWO\u001b[39m                                     ",
+        " \u001b[38;5;109mOTHER\u001b[39m                                          ",
+        "",
+        " \u001b[38;5;241mSTATUS_THREE\u001b[39m                                   "
+      ]
+    },
+    {
+      "id": "status-after-content-replaced",
+      "width": 48,
+      "lines": [
+        "",
+        " \u001b[38;5;241mSTATUS_TWO\u001b[39m                                     ",
+        " \u001b[38;5;109mOTHER\u001b[39m                                          ",
+        "",
+        " \u001b[38;5;241mSTATUS_FOUR\u001b[39m                                    "
+      ]
+    },
+    {
+      "id": "status-first",
+      "width": 88,
+      "lines": [
+        "",
+        " \u001b[38;5;241mSTATUS_ONE\u001b[39m                                                                             "
+      ]
+    },
+    {
+      "id": "status-replaced",
+      "width": 88,
+      "lines": [
+        "",
+        " \u001b[38;5;241mSTATUS_TWO\u001b[39m                                                                             "
+      ]
+    },
+    {
+      "id": "status-after-content",
+      "width": 88,
+      "lines": [
+        "",
+        " \u001b[38;5;241mSTATUS_TWO\u001b[39m                                                                             ",
+        " \u001b[38;5;109mOTHER\u001b[39m                                                                                  ",
+        "",
+        " \u001b[38;5;241mSTATUS_THREE\u001b[39m                                                                           "
+      ]
+    },
+    {
+      "id": "status-after-content-replaced",
+      "width": 88,
+      "lines": [
+        "",
+        " \u001b[38;5;241mSTATUS_TWO\u001b[39m                                                                             ",
+        " \u001b[38;5;109mOTHER\u001b[39m                                                                                  ",
+        "",
+        " \u001b[38;5;241mSTATUS_FOUR\u001b[39m                                                                            "
+      ]
+    }
+  ],
+  "notificationFrames": [
+    {
+      "id": "notify-info",
+      "width": 48,
+      "lines": [
+        "",
+        " \u001b[38;5;241mNOTICE\u001b[39m                                         "
+      ]
+    },
+    {
+      "id": "notify-warning",
+      "width": 48,
+      "lines": [
+        "",
+        " \u001b[38;5;241mNOTICE\u001b[39m                                         ",
+        "",
+        " \u001b[38;5;226mWarning: CAUTION\u001b[39m                               "
+      ]
+    },
+    {
+      "id": "notify-error",
+      "width": 48,
+      "lines": [
+        "",
+        " \u001b[38;5;241mNOTICE\u001b[39m                                         ",
+        "",
+        " \u001b[38;5;226mWarning: CAUTION\u001b[39m                               ",
+        "",
+        " \u001b[38;5;167mError: BROKEN\u001b[39m                                  "
+      ]
+    },
+    {
+      "id": "notify-info",
+      "width": 88,
+      "lines": [
+        "",
+        " \u001b[38;5;241mNOTICE\u001b[39m                                                                                 "
+      ]
+    },
+    {
+      "id": "notify-warning",
+      "width": 88,
+      "lines": [
+        "",
+        " \u001b[38;5;241mNOTICE\u001b[39m                                                                                 ",
+        "",
+        " \u001b[38;5;226mWarning: CAUTION\u001b[39m                                                                       "
+      ]
+    },
+    {
+      "id": "notify-error",
+      "width": 88,
+      "lines": [
+        "",
+        " \u001b[38;5;241mNOTICE\u001b[39m                                                                                 ",
+        "",
+        " \u001b[38;5;226mWarning: CAUTION\u001b[39m                                                                       ",
+        "",
+        " \u001b[38;5;167mError: BROKEN\u001b[39m                                                                          "
+      ]
+    }
+  ],
+  "dialogFrames": [
+    {
+      "id": "selector-initial",
+      "width": 48,
+      "lines": [
+        "\u001b[38;5;69m────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;109m\u001b[1mPick one\u001b[22m\u001b[39m                                       ",
+        "",
+        " \u001b[38;5;109m→ \u001b[39m\u001b[38;5;109malpha\u001b[39m                                        ",
+        "   \u001b[38;5;188mbeta\u001b[39m                                         ",
+        "   \u001b[38;5;188mgamma\u001b[39m                                        ",
+        "",
+        " \u001b[38;5;241m↑↓\u001b[39m\u001b[38;5;244m navigate\u001b[39m  \u001b[38;5;241menter\u001b[39m\u001b[38;5;244m select\u001b[39m  \u001b[38;5;241mescape/ctrl+c\u001b[39m\u001b[38;5;244m       ",
+        " \u001b[38;5;244mcancel\u001b[39m                                         ",
+        "",
+        "\u001b[38;5;69m────────────────────────────────────────────────\u001b[39m"
+      ]
+    },
+    {
+      "id": "selector-down",
+      "width": 48,
+      "lines": [
+        "\u001b[38;5;69m────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;109m\u001b[1mPick one\u001b[22m\u001b[39m                                       ",
+        "",
+        "   \u001b[38;5;188malpha\u001b[39m                                        ",
+        " \u001b[38;5;109m→ \u001b[39m\u001b[38;5;109mbeta\u001b[39m                                         ",
+        "   \u001b[38;5;188mgamma\u001b[39m                                        ",
+        "",
+        " \u001b[38;5;241m↑↓\u001b[39m\u001b[38;5;244m navigate\u001b[39m  \u001b[38;5;241menter\u001b[39m\u001b[38;5;244m select\u001b[39m  \u001b[38;5;241mescape/ctrl+c\u001b[39m\u001b[38;5;244m       ",
+        " \u001b[38;5;244mcancel\u001b[39m                                         ",
+        "",
+        "\u001b[38;5;69m────────────────────────────────────────────────\u001b[39m"
+      ]
+    },
+    {
+      "id": "input-initial",
+      "width": 48,
+      "lines": [
+        "\u001b[38;5;69m────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;109mEnter value\u001b[39m                                    ",
+        "",
+        "> \u001b[7m \u001b[27m                                             ",
+        "",
+        " \u001b[38;5;241menter\u001b[39m\u001b[38;5;244m submit\u001b[39m  \u001b[38;5;241mescape/ctrl+c\u001b[39m\u001b[38;5;244m cancel\u001b[39m             ",
+        "",
+        "\u001b[38;5;69m────────────────────────────────────────────────\u001b[39m"
+      ]
+    },
+    {
+      "id": "input-typed",
+      "width": 48,
+      "lines": [
+        "\u001b[38;5;69m────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;109mEnter value\u001b[39m                                    ",
+        "",
+        "> abc\u001b[7m \u001b[27m                                          ",
+        "",
+        " \u001b[38;5;241menter\u001b[39m\u001b[38;5;244m submit\u001b[39m  \u001b[38;5;241mescape/ctrl+c\u001b[39m\u001b[38;5;244m cancel\u001b[39m             ",
+        "",
+        "\u001b[38;5;69m────────────────────────────────────────────────\u001b[39m"
+      ]
+    },
+    {
+      "id": "editor-prefill",
+      "width": 48,
+      "lines": [
+        "\u001b[38;5;69m────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;109mEdit value\u001b[39m                                     ",
+        "",
+        "\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m",
+        "alpha                                           ",
+        "beta\u001b[7m \u001b[0m                                           ",
+        "\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m",
+        "",
+        " \u001b[38;5;241menter\u001b[39m\u001b[38;5;244m submit\u001b[39m  \u001b[38;5;241mshift+enter/ctrl+j\u001b[39m\u001b[38;5;244m newline\u001b[39m       ",
+        " \u001b[38;5;241mescape/ctrl+c\u001b[39m\u001b[38;5;244m cancel\u001b[39m  \u001b[38;5;241mctrl+g\u001b[39m\u001b[38;5;244m external editor\u001b[39m   ",
+        "",
+        "\u001b[38;5;69m────────────────────────────────────────────────\u001b[39m"
+      ]
+    },
+    {
+      "id": "selector-initial",
+      "width": 88,
+      "lines": [
+        "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;109m\u001b[1mPick one\u001b[22m\u001b[39m                                                                               ",
+        "",
+        " \u001b[38;5;109m→ \u001b[39m\u001b[38;5;109malpha\u001b[39m                                                                                ",
+        "   \u001b[38;5;188mbeta\u001b[39m                                                                                 ",
+        "   \u001b[38;5;188mgamma\u001b[39m                                                                                ",
+        "",
+        " \u001b[38;5;241m↑↓\u001b[39m\u001b[38;5;244m navigate\u001b[39m  \u001b[38;5;241menter\u001b[39m\u001b[38;5;244m select\u001b[39m  \u001b[38;5;241mescape/ctrl+c\u001b[39m\u001b[38;5;244m cancel\u001b[39m                                        ",
+        "",
+        "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ]
+    },
+    {
+      "id": "selector-down",
+      "width": 88,
+      "lines": [
+        "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;109m\u001b[1mPick one\u001b[22m\u001b[39m                                                                               ",
+        "",
+        "   \u001b[38;5;188malpha\u001b[39m                                                                                ",
+        " \u001b[38;5;109m→ \u001b[39m\u001b[38;5;109mbeta\u001b[39m                                                                                 ",
+        "   \u001b[38;5;188mgamma\u001b[39m                                                                                ",
+        "",
+        " \u001b[38;5;241m↑↓\u001b[39m\u001b[38;5;244m navigate\u001b[39m  \u001b[38;5;241menter\u001b[39m\u001b[38;5;244m select\u001b[39m  \u001b[38;5;241mescape/ctrl+c\u001b[39m\u001b[38;5;244m cancel\u001b[39m                                        ",
+        "",
+        "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ]
+    },
+    {
+      "id": "input-initial",
+      "width": 88,
+      "lines": [
+        "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;109mEnter value\u001b[39m                                                                            ",
+        "",
+        "> \u001b[7m \u001b[27m                                                                                     ",
+        "",
+        " \u001b[38;5;241menter\u001b[39m\u001b[38;5;244m submit\u001b[39m  \u001b[38;5;241mescape/ctrl+c\u001b[39m\u001b[38;5;244m cancel\u001b[39m                                                     ",
+        "",
+        "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ]
+    },
+    {
+      "id": "input-typed",
+      "width": 88,
+      "lines": [
+        "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;109mEnter value\u001b[39m                                                                            ",
+        "",
+        "> abc\u001b[7m \u001b[27m                                                                                  ",
+        "",
+        " \u001b[38;5;241menter\u001b[39m\u001b[38;5;244m submit\u001b[39m  \u001b[38;5;241mescape/ctrl+c\u001b[39m\u001b[38;5;244m cancel\u001b[39m                                                     ",
+        "",
+        "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ]
+    },
+    {
+      "id": "editor-prefill",
+      "width": 88,
+      "lines": [
+        "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;109mEdit value\u001b[39m                                                                             ",
+        "",
+        "\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m",
+        "alpha                                                                                   ",
+        "beta\u001b[7m \u001b[0m                                                                                   ",
+        "\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m\u001b[38;5;239m─\u001b[39m",
+        "",
+        " \u001b[38;5;241menter\u001b[39m\u001b[38;5;244m submit\u001b[39m  \u001b[38;5;241mshift+enter/ctrl+j\u001b[39m\u001b[38;5;244m newline\u001b[39m  \u001b[38;5;241mescape/ctrl+c\u001b[39m\u001b[38;5;244m cancel\u001b[39m  \u001b[38;5;241mctrl+g\u001b[39m\u001b[38;5;244m external editor\u001b[39m ",
+        "",
+        "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ]
+    }
+  ],
+  "dialogResults": [
+    {
+      "width": 48,
+      "selected": "beta",
+      "selectorCancelled": false,
+      "inputValue": "abc",
+      "inputCancelled": false,
+      "placeholderVisible": false
+    },
+    {
+      "width": 88,
+      "selected": "beta",
+      "selectorCancelled": false,
+      "inputValue": "abc",
+      "inputCancelled": false,
+      "placeholderVisible": false
+    }
+  ],
+  "externalEditor": {
+    "keyData": "\u0007",
+    "hintVisible": true,
+    "initialText": "before",
+    "finalText": "edited externally",
+    "lifecycle": [
+      "stop",
+      "edit",
+      "start:edited externally",
+      "render:true"
+    ]
+  },
+  "autocomplete": {
+    "enabled": [
+      {
+        "input": "/review-prompt",
+        "result": {
+          "items": [
+            {
+              "value": "review-prompt",
+              "label": "review-prompt",
+              "description": "<path> — [p] Review a path"
+            }
+          ],
+          "prefix": "/review-prompt"
+        }
+      },
+      {
+        "input": "/extension-command",
+        "result": {
+          "items": [
+            {
+              "value": "extension-command",
+              "label": "extension-command",
+              "description": "[u] Run extension command"
+            }
+          ],
+          "prefix": "/extension-command"
+        }
+      },
+      {
+        "input": "/skill:inspect-skill",
+        "result": {
+          "items": [
+            {
+              "value": "skill:inspect-skill",
+              "label": "skill:inspect-skill",
+              "description": "[t] Inspect the workspace"
+            }
+          ],
+          "prefix": "/skill:inspect-skill"
+        }
+      },
+      {
+        "input": "/model:1",
+        "result": null
+      },
+      {
+        "input": "/model ",
+        "result": {
+          "items": [
+            {
+              "value": "anthropic/claude-sonnet-4-5",
+              "label": "claude-sonnet-4-5",
+              "description": "anthropic"
+            },
+            {
+              "value": "openai/gpt-5.1",
+              "label": "gpt-5.1",
+              "description": "openai"
+            },
+            {
+              "value": "openrouter/openai/gpt-5",
+              "label": "openai/gpt-5",
+              "description": "openrouter"
+            }
+          ],
+          "prefix": ""
+        }
+      },
+      {
+        "input": "/model openai",
+        "result": {
+          "items": [
+            {
+              "value": "openrouter/openai/gpt-5",
+              "label": "openai/gpt-5",
+              "description": "openrouter"
+            },
+            {
+              "value": "openai/gpt-5.1",
+              "label": "gpt-5.1",
+              "description": "openai"
+            },
+            {
+              "value": "anthropic/claude-sonnet-4-5",
+              "label": "claude-sonnet-4-5",
+              "description": "anthropic"
+            }
+          ],
+          "prefix": "openai"
+        }
+      },
+      {
+        "input": "/model sonnet",
+        "result": {
+          "items": [
+            {
+              "value": "anthropic/claude-sonnet-4-5",
+              "label": "claude-sonnet-4-5",
+              "description": "anthropic"
+            }
+          ],
+          "prefix": "sonnet"
+        }
+      },
+      {
+        "input": "/login ",
+        "result": {
+          "items": [
+            {
+              "value": "anthropic",
+              "label": "anthropic",
+              "description": "Anthropic · subscription/API key"
+            },
+            {
+              "value": "google",
+              "label": "google",
+              "description": "Google · API key"
+            },
+            {
+              "value": "openai",
+              "label": "openai",
+              "description": "OpenAI · subscription"
+            }
+          ],
+          "prefix": ""
+        }
+      },
+      {
+        "input": "/login api",
+        "result": {
+          "items": [
+            {
+              "value": "google",
+              "label": "google",
+              "description": "Google · API key"
+            },
+            {
+              "value": "anthropic",
+              "label": "anthropic",
+              "description": "Anthropic · subscription/API key"
+            },
+            {
+              "value": "openai",
+              "label": "openai",
+              "description": "OpenAI · subscription"
+            }
+          ],
+          "prefix": "api"
+        }
+      },
+      {
+        "input": "/login ant",
+        "result": {
+          "items": [
+            {
+              "value": "anthropic",
+              "label": "anthropic",
+              "description": "Anthropic · subscription/API key"
+            },
+            {
+              "value": "openai",
+              "label": "openai",
+              "description": "OpenAI · subscription"
+            }
+          ],
+          "prefix": "ant"
+        }
+      }
+    ],
+    "skillCommandsDisabled": [
+      {
+        "input": "/review-prompt",
+        "result": {
+          "items": [
+            {
+              "value": "review-prompt",
+              "label": "review-prompt",
+              "description": "<path> — [p] Review a path"
+            }
+          ],
+          "prefix": "/review-prompt"
+        }
+      },
+      {
+        "input": "/extension-command",
+        "result": {
+          "items": [
+            {
+              "value": "extension-command",
+              "label": "extension-command",
+              "description": "[u] Run extension command"
+            }
+          ],
+          "prefix": "/extension-command"
+        }
+      },
+      {
+        "input": "/skill:inspect-skill",
+        "result": null
+      },
+      {
+        "input": "/model:1",
+        "result": null
+      },
+      {
+        "input": "/model ",
+        "result": {
+          "items": [
+            {
+              "value": "anthropic/claude-sonnet-4-5",
+              "label": "claude-sonnet-4-5",
+              "description": "anthropic"
+            },
+            {
+              "value": "openai/gpt-5.1",
+              "label": "gpt-5.1",
+              "description": "openai"
+            },
+            {
+              "value": "openrouter/openai/gpt-5",
+              "label": "openai/gpt-5",
+              "description": "openrouter"
+            }
+          ],
+          "prefix": ""
+        }
+      },
+      {
+        "input": "/model openai",
+        "result": {
+          "items": [
+            {
+              "value": "openrouter/openai/gpt-5",
+              "label": "openai/gpt-5",
+              "description": "openrouter"
+            },
+            {
+              "value": "openai/gpt-5.1",
+              "label": "gpt-5.1",
+              "description": "openai"
+            },
+            {
+              "value": "anthropic/claude-sonnet-4-5",
+              "label": "claude-sonnet-4-5",
+              "description": "anthropic"
+            }
+          ],
+          "prefix": "openai"
+        }
+      },
+      {
+        "input": "/model sonnet",
+        "result": {
+          "items": [
+            {
+              "value": "anthropic/claude-sonnet-4-5",
+              "label": "claude-sonnet-4-5",
+              "description": "anthropic"
+            }
+          ],
+          "prefix": "sonnet"
+        }
+      },
+      {
+        "input": "/login ",
+        "result": {
+          "items": [
+            {
+              "value": "anthropic",
+              "label": "anthropic",
+              "description": "Anthropic · subscription/API key"
+            },
+            {
+              "value": "google",
+              "label": "google",
+              "description": "Google · API key"
+            },
+            {
+              "value": "openai",
+              "label": "openai",
+              "description": "OpenAI · subscription"
+            }
+          ],
+          "prefix": ""
+        }
+      },
+      {
+        "input": "/login api",
+        "result": {
+          "items": [
+            {
+              "value": "google",
+              "label": "google",
+              "description": "Google · API key"
+            },
+            {
+              "value": "anthropic",
+              "label": "anthropic",
+              "description": "Anthropic · subscription/API key"
+            },
+            {
+              "value": "openai",
+              "label": "openai",
+              "description": "OpenAI · subscription"
+            }
+          ],
+          "prefix": "api"
+        }
+      },
+      {
+        "input": "/login ant",
+        "result": {
+          "items": [
+            {
+              "value": "anthropic",
+              "label": "anthropic",
+              "description": "Anthropic · subscription/API key"
+            },
+            {
+              "value": "openai",
+              "label": "openai",
+              "description": "OpenAI · subscription"
+            }
+          ],
+          "prefix": "ant"
+        }
+      }
+    ],
+    "providerTransfer": {
+      "defaultAssigned": true,
+      "replacementAssigned": true,
+      "sameProvider": true,
+      "storedProvider": true
+    }
+  }
+}

@@ -2,6 +2,7 @@ package modes
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions"
 	"github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pi-go/tui"
 )
 
 func TestRunInteractiveModeAttachesUIBeforeSessionStartAndRendersUnderMutation(t *testing.T) {
@@ -148,6 +150,34 @@ func TestStartupVersionCheckNotifyIsRaceSafeAndStopsWithMode(t *testing.T) {
 	case <-stopped:
 	default:
 		t.Fatal("startup version check outlived interactive mode")
+	}
+}
+
+func TestConcurrentInfoNotificationsReplaceOneStatusLine(t *testing.T) {
+	initTestTheme(t)
+	mode := &InteractiveMode{
+		ui:   tui.NewTUI(newFakeTerminal(72, 18)),
+		chat: &tui.Container{},
+	}
+	uiContext := NewInteractiveUI(mode)
+	start := make(chan struct{})
+	var workers sync.WaitGroup
+	for worker := range 16 {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			<-start
+			for iteration := range 64 {
+				uiContext.Notify(fmt.Sprintf("status-%d-%d", worker, iteration), extensions.NotifyInfo)
+			}
+		}()
+	}
+	close(start)
+	workers.Wait()
+
+	lines := mode.chat.Render(72)
+	if len(lines) != 2 || lines[0] != "" || !strings.Contains(lines[1], "status-") {
+		t.Fatalf("concurrent adjacent statuses rendered %d lines: %#v", len(lines), lines)
 	}
 }
 

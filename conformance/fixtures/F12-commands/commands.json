@@ -1,0 +1,684 @@
+{
+  "schemaVersion": 4,
+  "visible": [
+    {
+      "name": "settings",
+      "description": "Open settings menu",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "model",
+      "description": "Select model (opens selector UI)",
+      "argumentHint": "<provider/model>",
+      "visible": true
+    },
+    {
+      "name": "scoped-models",
+      "description": "Enable/disable models for Ctrl+P cycling",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "export",
+      "description": "Export session (HTML default, or specify path: .html/.jsonl)",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "import",
+      "description": "Import and resume a session from a JSONL file",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "share",
+      "description": "Share session as a secret GitHub gist",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "copy",
+      "description": "Copy last agent message to clipboard",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "name",
+      "description": "Set session display name",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "session",
+      "description": "Show session info and stats",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "changelog",
+      "description": "Show changelog entries",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "hotkeys",
+      "description": "Show all keyboard shortcuts",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "fork",
+      "description": "Create a new fork from a previous user message",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "clone",
+      "description": "Duplicate the current session at the current position",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "tree",
+      "description": "Navigate session tree (switch branches)",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "trust",
+      "description": "Save project trust decision for future sessions",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "login",
+      "description": "Configure provider authentication",
+      "argumentHint": "<provider>",
+      "visible": true
+    },
+    {
+      "name": "logout",
+      "description": "Remove provider authentication",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "new",
+      "description": "Start a new session",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "compact",
+      "description": "Manually compact the session context",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "resume",
+      "description": "Resume a different session",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "reload",
+      "description": "Reload keybindings, extensions, skills, prompts, themes, and context files",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "quit",
+      "description": "Quit pi",
+      "argumentHint": null,
+      "visible": true
+    }
+  ],
+  "hidden": [
+    {
+      "name": "debug",
+      "description": null,
+      "argumentHint": null,
+      "visible": false
+    },
+    {
+      "name": "arminsayshi",
+      "description": null,
+      "argumentHint": null,
+      "visible": false
+    },
+    {
+      "name": "dementedelves",
+      "description": null,
+      "argumentHint": null,
+      "visible": false
+    }
+  ],
+  "dispatch": [
+    "settings",
+    "scoped-models",
+    "model",
+    "export",
+    "import",
+    "share",
+    "copy",
+    "name",
+    "session",
+    "changelog",
+    "hotkeys",
+    "fork",
+    "clone",
+    "tree",
+    "trust",
+    "login",
+    "logout",
+    "new",
+    "compact",
+    "reload",
+    "debug",
+    "arminsayshi",
+    "dementedelves",
+    "resume",
+    "quit"
+  ],
+  "unexpectedArguments": [
+    {
+      "name": "settings",
+      "input": "/settings unexpected",
+      "dispatchTrace": [
+        "input:\"/settings unexpected\"",
+        "history:\"/settings unexpected\""
+      ],
+      "finalEditorText": "/settings unexpected"
+    },
+    {
+      "name": "scoped-models",
+      "input": "/scoped-models unexpected",
+      "dispatchTrace": [
+        "input:\"/scoped-models unexpected\"",
+        "history:\"/scoped-models unexpected\""
+      ],
+      "finalEditorText": "/scoped-models unexpected"
+    },
+    {
+      "name": "share",
+      "input": "/share unexpected",
+      "dispatchTrace": [
+        "input:\"/share unexpected\"",
+        "history:\"/share unexpected\""
+      ],
+      "finalEditorText": "/share unexpected"
+    },
+    {
+      "name": "copy",
+      "input": "/copy unexpected",
+      "dispatchTrace": [
+        "input:\"/copy unexpected\"",
+        "history:\"/copy unexpected\""
+      ],
+      "finalEditorText": "/copy unexpected"
+    },
+    {
+      "name": "session",
+      "input": "/session unexpected",
+      "dispatchTrace": [
+        "input:\"/session unexpected\"",
+        "history:\"/session unexpected\""
+      ],
+      "finalEditorText": "/session unexpected"
+    },
+    {
+      "name": "changelog",
+      "input": "/changelog unexpected",
+      "dispatchTrace": [
+        "input:\"/changelog unexpected\"",
+        "history:\"/changelog unexpected\""
+      ],
+      "finalEditorText": "/changelog unexpected"
+    },
+    {
+      "name": "hotkeys",
+      "input": "/hotkeys unexpected",
+      "dispatchTrace": [
+        "input:\"/hotkeys unexpected\"",
+        "history:\"/hotkeys unexpected\""
+      ],
+      "finalEditorText": "/hotkeys unexpected"
+    },
+    {
+      "name": "fork",
+      "input": "/fork unexpected",
+      "dispatchTrace": [
+        "input:\"/fork unexpected\"",
+        "history:\"/fork unexpected\""
+      ],
+      "finalEditorText": "/fork unexpected"
+    },
+    {
+      "name": "clone",
+      "input": "/clone unexpected",
+      "dispatchTrace": [
+        "input:\"/clone unexpected\"",
+        "history:\"/clone unexpected\""
+      ],
+      "finalEditorText": "/clone unexpected"
+    },
+    {
+      "name": "tree",
+      "input": "/tree unexpected",
+      "dispatchTrace": [
+        "input:\"/tree unexpected\"",
+        "history:\"/tree unexpected\""
+      ],
+      "finalEditorText": "/tree unexpected"
+    },
+    {
+      "name": "trust",
+      "input": "/trust unexpected",
+      "dispatchTrace": [
+        "input:\"/trust unexpected\"",
+        "history:\"/trust unexpected\""
+      ],
+      "finalEditorText": "/trust unexpected"
+    },
+    {
+      "name": "logout",
+      "input": "/logout unexpected",
+      "dispatchTrace": [
+        "input:\"/logout unexpected\"",
+        "history:\"/logout unexpected\""
+      ],
+      "finalEditorText": "/logout unexpected"
+    },
+    {
+      "name": "new",
+      "input": "/new unexpected",
+      "dispatchTrace": [
+        "input:\"/new unexpected\"",
+        "history:\"/new unexpected\""
+      ],
+      "finalEditorText": "/new unexpected"
+    },
+    {
+      "name": "reload",
+      "input": "/reload unexpected",
+      "dispatchTrace": [
+        "input:\"/reload unexpected\"",
+        "history:\"/reload unexpected\""
+      ],
+      "finalEditorText": "/reload unexpected"
+    },
+    {
+      "name": "debug",
+      "input": "/debug unexpected",
+      "dispatchTrace": [
+        "input:\"/debug unexpected\"",
+        "history:\"/debug unexpected\""
+      ],
+      "finalEditorText": "/debug unexpected"
+    },
+    {
+      "name": "arminsayshi",
+      "input": "/arminsayshi unexpected",
+      "dispatchTrace": [
+        "input:\"/arminsayshi unexpected\"",
+        "history:\"/arminsayshi unexpected\""
+      ],
+      "finalEditorText": "/arminsayshi unexpected"
+    },
+    {
+      "name": "dementedelves",
+      "input": "/dementedelves unexpected",
+      "dispatchTrace": [
+        "input:\"/dementedelves unexpected\"",
+        "history:\"/dementedelves unexpected\""
+      ],
+      "finalEditorText": "/dementedelves unexpected"
+    },
+    {
+      "name": "resume",
+      "input": "/resume unexpected",
+      "dispatchTrace": [
+        "input:\"/resume unexpected\"",
+        "history:\"/resume unexpected\""
+      ],
+      "finalEditorText": "/resume unexpected"
+    },
+    {
+      "name": "quit",
+      "input": "/quit unexpected",
+      "dispatchTrace": [
+        "input:\"/quit unexpected\"",
+        "history:\"/quit unexpected\""
+      ],
+      "finalEditorText": "/quit unexpected"
+    }
+  ],
+  "behavior": {
+    "debug": {
+      "terminal": {
+        "columns": 42,
+        "rows": 17
+      },
+      "path": "<agent-dir>/pi-debug.log",
+      "content": "Debug output at <timestamp>\nTerminal: 42x17\nTotal lines: 2\n\n=== All rendered lines with visible widths ===\n[0] (w=15) \"debug <root>&  \"\n[1] (w=7) \"wide 界\"\n\n=== Agent messages (JSONL) ===\n{\"role\":\"user\",\"content\":\"debug <user>&  \",\"timestamp\":0}\n{\"role\":\"custom\",\"customType\":\"fixture\",\"content\":\"debug custom\",\"display\":true}\n",
+      "chatFrame": [
+        "",
+        "",
+        " ✓ Debug log written",
+        " <agent-dir>/pi-debug.log"
+      ],
+      "rawChatFrame": {
+        "lineCount": 5,
+        "sha256": "cb07db474360caaaa18b685df92caaf4f5eea09f1bcabff25852d7cc1a2da7ed",
+        "lines": [
+          "",
+          "                                                    ",
+          " \u001b[38;5;109m✓ Debug log written\u001b[39m                                ",
+          " \u001b[38;5;244m<agent-dir>/pi-debug.log\u001b[39m                           ",
+          "                                                    "
+        ]
+      },
+      "requestRenders": 1
+    },
+    "arminSaysHi": {
+      "effect": "scanline",
+      "intervalDelayMs": 33.333,
+      "ticks": 19,
+      "scheduledIntervals": 1,
+      "clearedIntervals": 1,
+      "requestRenders": 20,
+      "frames": [
+        {
+          "id": "initial",
+          "width": 40,
+          "lines": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            " ARMIN SAYS HI"
+          ],
+          "raw": {
+            "lineCount": 20,
+            "sha256": "a7a37acc3808b57dd8017a55d74d99cbbe562f41293c4a7b1e3e705fe5be2a04",
+            "lines": [
+              "",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109mARMIN SAYS HI\u001b[39m                          "
+            ]
+          }
+        },
+        {
+          "id": "tick-1",
+          "width": 40,
+          "lines": [
+            "",
+            "         ▄▄▄▄",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            " ARMIN SAYS HI"
+          ],
+          "raw": {
+            "lineCount": 20,
+            "sha256": "0d69d0d35a1d19bd2edc69043b084b8a0ae1de5b01c386fd85149a5d217315c7",
+            "lines": [
+              "",
+              " \u001b[38;5;109m        ▄▄▄▄                   \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109mARMIN SAYS HI\u001b[39m                          "
+            ]
+          }
+        },
+        {
+          "id": "tick-9",
+          "width": 40,
+          "lines": [
+            "",
+            "         ▄▄▄▄",
+            "          ▀▄ ▀▄",
+            "            █  ▀▄▄",
+            "      ▄▀▀▀▀▀     █",
+            "      █▄   ▄▄▄▄▀▀▀▀▄",
+            "    ▄▀  ▀▀▀  ▄▄▄▄▀▀ █",
+            "    █              ▄█▄",
+            "    ▀▄   ▄▄▄▀▀▀▀▀▀▀▀▄█  ▄▄▄▄▄",
+            "  ▄▄▄▀▀▀▀▄▄▄▄▄▄▄▄▄▄█▄ ▄▀   ▄ ▀▄",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            " ARMIN SAYS HI"
+          ],
+          "raw": {
+            "lineCount": 20,
+            "sha256": "86b06f8105239808073ae766e69877a6d6a0a594b3ebf4a246fe03bc9733bce8",
+            "lines": [
+              "",
+              " \u001b[38;5;109m        ▄▄▄▄                   \u001b[39m        ",
+              " \u001b[38;5;109m         ▀▄ ▀▄                 \u001b[39m        ",
+              " \u001b[38;5;109m           █  ▀▄▄              \u001b[39m        ",
+              " \u001b[38;5;109m     ▄▀▀▀▀▀     █              \u001b[39m        ",
+              " \u001b[38;5;109m     █▄   ▄▄▄▄▀▀▀▀▄            \u001b[39m        ",
+              " \u001b[38;5;109m   ▄▀  ▀▀▀  ▄▄▄▄▀▀ █           \u001b[39m        ",
+              " \u001b[38;5;109m   █              ▄█▄          \u001b[39m        ",
+              " \u001b[38;5;109m   ▀▄   ▄▄▄▀▀▀▀▀▀▀▀▄█  ▄▄▄▄▄   \u001b[39m        ",
+              " \u001b[38;5;109m ▄▄▄▀▀▀▀▄▄▄▄▄▄▄▄▄▄█▄ ▄▀   ▄ ▀▄ \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109m                               \u001b[39m        ",
+              " \u001b[38;5;109mARMIN SAYS HI\u001b[39m                          "
+            ]
+          }
+        },
+        {
+          "id": "complete",
+          "width": 40,
+          "lines": [
+            "",
+            "         ▄▄▄▄",
+            "          ▀▄ ▀▄",
+            "            █  ▀▄▄",
+            "      ▄▀▀▀▀▀     █",
+            "      █▄   ▄▄▄▄▀▀▀▀▄",
+            "    ▄▀  ▀▀▀  ▄▄▄▄▀▀ █",
+            "    █              ▄█▄",
+            "    ▀▄   ▄▄▄▀▀▀▀▀▀▀▀▄█  ▄▄▄▄▄",
+            "  ▄▄▄▀▀▀▀▄▄▄▄▄▄▄▄▄▄█▄ ▄▀   ▄ ▀▄",
+            "  █▄▄▄▄        ▀▀▀▀  █     ▀█ █",
+            "      ██ ▄█      █   █ ▄      █",
+            "      ▀█████▄▄▄▄███▄▄▀▄▀▄▄▄  ▄▀",
+            "        ▀██████▀▀▀▀   ▀▄▄▄▄▄▀",
+            "          ▀████████▀  ▄▄ ▄▄▄",
+            "            ▀█████▀  ██▀ ██▄",
+            "                     ██  ▄▄▄",
+            "                      █  ▀█▀",
+            "                       ▀▀▀",
+            " ARMIN SAYS HI"
+          ],
+          "raw": {
+            "lineCount": 20,
+            "sha256": "4c5ab04118f06cb84ad4c549c671143af5f596f70470ffe85cfb03323856245d",
+            "lines": [
+              "",
+              " \u001b[38;5;109m        ▄▄▄▄                   \u001b[39m        ",
+              " \u001b[38;5;109m         ▀▄ ▀▄                 \u001b[39m        ",
+              " \u001b[38;5;109m           █  ▀▄▄              \u001b[39m        ",
+              " \u001b[38;5;109m     ▄▀▀▀▀▀     █              \u001b[39m        ",
+              " \u001b[38;5;109m     █▄   ▄▄▄▄▀▀▀▀▄            \u001b[39m        ",
+              " \u001b[38;5;109m   ▄▀  ▀▀▀  ▄▄▄▄▀▀ █           \u001b[39m        ",
+              " \u001b[38;5;109m   █              ▄█▄          \u001b[39m        ",
+              " \u001b[38;5;109m   ▀▄   ▄▄▄▀▀▀▀▀▀▀▀▄█  ▄▄▄▄▄   \u001b[39m        ",
+              " \u001b[38;5;109m ▄▄▄▀▀▀▀▄▄▄▄▄▄▄▄▄▄█▄ ▄▀   ▄ ▀▄ \u001b[39m        ",
+              " \u001b[38;5;109m █▄▄▄▄        ▀▀▀▀  █     ▀█ █ \u001b[39m        ",
+              " \u001b[38;5;109m     ██ ▄█      █   █ ▄      █ \u001b[39m        ",
+              " \u001b[38;5;109m     ▀█████▄▄▄▄███▄▄▀▄▀▄▄▄  ▄▀ \u001b[39m        ",
+              " \u001b[38;5;109m       ▀██████▀▀▀▀   ▀▄▄▄▄▄▀   \u001b[39m        ",
+              " \u001b[38;5;109m         ▀████████▀  ▄▄ ▄▄▄    \u001b[39m        ",
+              " \u001b[38;5;109m           ▀█████▀  ██▀ ██▄    \u001b[39m        ",
+              " \u001b[38;5;109m                    ██  ▄▄▄    \u001b[39m        ",
+              " \u001b[38;5;109m                     █  ▀█▀    \u001b[39m        ",
+              " \u001b[38;5;109m                      ▀▀▀      \u001b[39m        ",
+              " \u001b[38;5;109mARMIN SAYS HI\u001b[39m                          "
+            ]
+          }
+        }
+      ]
+    },
+    "dementedElves": {
+      "requestRenders": 1,
+      "bundledImage": {
+        "filename": "clankolas.png",
+        "mimeType": "image/png",
+        "byteLength": 539053,
+        "sha256": "169acd0dfe6fbb8d8742ed24a3fc654fd0b2e2d4223c733249c5493723f1b72d",
+        "dimensions": {
+          "widthPx": 640,
+          "heightPx": 537
+        },
+        "imageChildren": 1,
+        "terminalCapability": null
+      },
+      "frames": [
+        {
+          "width": 32,
+          "lines": [
+            "",
+            "────────────────────────────────",
+            " pi has joined Earendil",
+            "",
+            " Read the blog post:",
+            " https://mariozechner.at/posts/",
+            " 2026-04-08-ive-sold-out/",
+            "",
+            "[Image: clankolas.png [image/png] 640x537]",
+            "",
+            "────────────────────────────────"
+          ],
+          "raw": {
+            "lineCount": 11,
+            "sha256": "ea47334e33aeb3d14a951f2749d7c9f3857209cdea8efd3b6de623094c896417",
+            "lines": [
+              "",
+              "\u001b[38;5;109m────────────────────────────────\u001b[39m",
+              " \u001b[1m\u001b[38;5;109mpi has joined Earendil\u001b[39m\u001b[22m         ",
+              "",
+              " \u001b[38;5;244mRead the blog post:\u001b[39m            ",
+              " \u001b[38;5;109mhttps://mariozechner.at/posts/ ",
+              " \u001b[38;5;109m2026-04-08-ive-sold-out/\u001b[39m       ",
+              "",
+              "\u001b[38;5;244m[Image: clankolas.png [image/png] 640x537]\u001b[39m",
+              "",
+              "\u001b[38;5;109m────────────────────────────────\u001b[39m"
+            ]
+          }
+        },
+        {
+          "width": 80,
+          "lines": [
+            "",
+            "────────────────────────────────────────────────────────────────────────────────",
+            " pi has joined Earendil",
+            "",
+            " Read the blog post:",
+            " https://mariozechner.at/posts/2026-04-08-ive-sold-out/",
+            "",
+            "[Image: clankolas.png [image/png] 640x537]",
+            "",
+            "────────────────────────────────────────────────────────────────────────────────"
+          ],
+          "raw": {
+            "lineCount": 10,
+            "sha256": "e18fc128725e0cca71074e4912b3d7d41f97c2b5f9f782ee0636631f23235d8e",
+            "lines": [
+              "",
+              "\u001b[38;5;109m────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+              " \u001b[1m\u001b[38;5;109mpi has joined Earendil\u001b[39m\u001b[22m                                                         ",
+              "",
+              " \u001b[38;5;244mRead the blog post:\u001b[39m                                                            ",
+              " \u001b[38;5;109mhttps://mariozechner.at/posts/2026-04-08-ive-sold-out/\u001b[39m                         ",
+              "",
+              "\u001b[38;5;244m[Image: clankolas.png [image/png] 640x537]\u001b[39m",
+              "",
+              "\u001b[38;5;109m────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

@@ -37,6 +37,23 @@ func (container *Container) childrenSnapshot() []Component {
 	return append([]Component(nil), container.children...)
 }
 
+// EndsWith safely exposes the suffix check needed by upstream components,
+// whose TypeScript container children are directly observable.
+func (container *Container) EndsWith(components ...Component) bool {
+	container.mu.RLock()
+	defer container.mu.RUnlock()
+	if len(components) > len(container.children) {
+		return false
+	}
+	offset := len(container.children) - len(components)
+	for index, component := range components {
+		if container.children[offset+index] != component {
+			return false
+		}
+	}
+	return true
+}
+
 func (container *Container) Invalidate() {
 	children := container.childrenSnapshot()
 	for _, child := range children {

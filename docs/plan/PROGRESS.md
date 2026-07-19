@@ -97,10 +97,18 @@ Status: **next active deterministic surface; Sprint 1 owner-run evidence remains
 
 - [x] Land the RED F12 component, editor, Markdown, overlay, terminal-color, and primitive-composite corpus.
 - [x] Turn core components, overlays, terminal colors, ICU navigation, stress/fuzz, and primitive frame budget green.
-- [ ] Land the session-selector lifetime fixture and stop status timers on confirm, cancel, and runner exit.
-- [ ] Complete ResourceLoader theme-object/source-info installation into the interactive registry.
+- [x] Land the session-selector lifetime fixture and stop status timers on confirm, cancel, and runner exit.
+- [x] Complete ResourceLoader theme-object/source-info installation into the interactive registry.
 - [ ] Reach application-level byte-reviewed frame parity and complete commands plus image/clipboard checks.
 - [ ] Publish `docs/compare/sprint-2.md`, complete trim pass #3, and check every M3 criterion.
+
+The selector lifetime trace is green for selection, cancellation, runner exit, and every emitted
+timer/render field. ResourceLoader package filters and theme accents now match pinned TS output,
+including negated package resources, exact object identity, source metadata, and replacement reloads.
+Application autocomplete, all visible and hidden command dispatch/behavior, branched JSONL export,
+and ordinary plus signal shutdown are green against executable upstream fixtures. Exact raw ANSI,
+padding, and line-count assertions are also green for every hidden frame and all 22 visible commands,
+including the full changelog. The remaining `ctx.ui` lifecycle cases are the active RED surface.
 
 ## Sprint 3 — Expansion (M4)
 

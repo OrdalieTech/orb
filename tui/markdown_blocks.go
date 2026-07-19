@@ -24,13 +24,18 @@ func (markdown *Markdown) renderList(list *ast.List, source []byte, depth, width
 		continuation := indent + strings.Repeat(" ", VisibleWidth(marker))
 		itemWidth := max(1, width-VisibleWidth(firstPrefix))
 		rendered := false
+		var previous ast.Node
 		for block := item.FirstChild(); block != nil; block = block.NextSibling() {
+			if rendered && blankLineBetween(previous, block, source) {
+				lines = append(lines, "")
+			}
 			if nested, ok := block.(*ast.List); ok {
 				lines = append(lines, markdown.renderList(nested, source, depth+1, width, style)...)
 				rendered = true
+				previous = block
 				continue
 			}
-			blockLines := markdown.renderBlock(block, source, itemWidth, block.NextSibling(), style)
+			blockLines := markdown.renderBlock(block, source, itemWidth, nil, style)
 			for _, line := range blockLines {
 				for _, wrapped := range WrapTextWithANSI(line, itemWidth) {
 					prefix := continuation
@@ -41,6 +46,7 @@ func (markdown *Markdown) renderList(list *ast.List, source []byte, depth, width
 					rendered = true
 				}
 			}
+			previous = block
 		}
 		if !rendered {
 			lines = append(lines, firstPrefix)

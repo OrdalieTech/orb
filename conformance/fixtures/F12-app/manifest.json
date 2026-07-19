@@ -1,0 +1,27 @@
+{
+  "family": "F12-app",
+  "upstreamCommit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
+  "generator": "conformance/extract/f12-app.ts",
+  "sources": [
+    "packages/coding-agent/src/modes/interactive/interactive-mode.ts",
+    "packages/coding-agent/src/core/slash-commands.ts",
+    "packages/coding-agent/src/core/keybindings.ts",
+    "packages/coding-agent/src/modes/interactive/model-search.ts",
+    "packages/coding-agent/src/modes/interactive/components/oauth-selector.ts",
+    "packages/tui/src/components/{spacer,text}.ts",
+    "packages/tui/src/tui.ts",
+    "packages/coding-agent/test/interactive-mode-status.test.ts",
+    "packages/coding-agent/src/modes/interactive/components/{extension-selector,extension-input,extension-editor,keybinding-hints,dynamic-border,countdown-timer}.ts"
+  ],
+  "files": [
+    "status-frames.json"
+  ],
+  "metadata": {
+    "widths": [
+      48,
+      88
+    ],
+    "normalization": [],
+    "divergences": []
+  }
+}

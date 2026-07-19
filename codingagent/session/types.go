@@ -94,6 +94,26 @@ func (entry SessionEntry) MarshalJSON() ([]byte, error) {
 	return newEntryRecord(entry).MarshalJSON()
 }
 
+// MarshalJSONWithParent preserves the entry's original member order and
+// unknown fields while replacing parentId, matching object spread followed by
+// a parentId override in upstream JSONL branch export.
+func (entry SessionEntry) MarshalJSONWithParent(parentID *string) ([]byte, error) {
+	if entry.object == nil {
+		entry.ParentID = cloneString(parentID)
+		return entry.MarshalJSON()
+	}
+	object := &orderedObject{members: make([]jsonMember, len(entry.object.members))}
+	for index, value := range entry.object.members {
+		object.members[index] = member(value.name, value.value)
+	}
+	parent := rawNull()
+	if parentID != nil {
+		parent = mustRawString(*parentID)
+	}
+	object.set("parentId", parent)
+	return object.marshal()
+}
+
 func (entry *FileEntry) Raw() ([]byte, error) {
 	return entry.MarshalJSON()
 }

@@ -1,6 +1,7 @@
 package modes
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
 	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
+	"github.com/OrdalieTech/pi-go/codingagent"
+	"github.com/OrdalieTech/pi-go/codingagent/config"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions"
 	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
 	"github.com/OrdalieTech/pi-go/tui"
@@ -51,6 +54,176 @@ func TestParseSlashCommand(t *testing.T) {
 		if name != tt.name || args != tt.args {
 			t.Errorf("parseSlashCommand(%q) = (%q, %q), want (%q, %q)", tt.input, name, args, tt.name, tt.args)
 		}
+	}
+}
+
+func TestInteractiveModeInstallsExactResourceLoaderThemeObject(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, file, _, _ := runtime.Caller(0)
+	builtin, err := os.ReadFile(filepath.Join(filepath.Dir(file), "theme", "dark.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	themePath := filepath.Join(cwd, "extension-theme.json")
+	if err := os.WriteFile(themePath, []byte(strings.Replace(string(builtin), `"name": "dark"`, `"name": "extension-theme"`, 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loader, err := codingagent.NewDefaultResourceLoader(codingagent.DefaultResourceLoaderOptions{
+		CWD: cwd, AgentDir: agentDir, SettingsManager: settings, NoThemes: true,
+		AdditionalThemePaths: []string{themePath}, NoContextFiles: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loader.Reload(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	loaded := loader.GetThemes().Themes
+	if len(loaded) != 1 {
+		t.Fatalf("loaded themes = %#v", loaded)
+	}
+	settings.SetTheme("extension-theme")
+	manager, err := sessionstore.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionRuntime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
+		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings, ResourceLoader: loader,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sessionRuntime.Dispose)
+	mode := &InteractiveMode{session: sessionRuntime, ui: tui.NewTUI(newFakeTerminal(80, 24)), cwd: cwd}
+	if err := mode.initializeTheme(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { theme.SetCurrent(nil) })
+	registered, found := mode.themeRegistry.Get("extension-theme")
+	if !found || registered != loaded[0] || mode.themeController.Current() != loaded[0] || theme.Current() != loaded[0] {
+		t.Fatalf("resource theme identity: found=%t registered=%p loaded=%p controller=%p current=%p",
+			found, registered, loaded[0], mode.themeController.Current(), theme.Current())
+	}
+}
+
+func TestInteractiveModeResourceThemeRefreshReplacesStaleThemesAndAppliesSettings(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, file, _, _ := runtime.Caller(0)
+	builtin, err := os.ReadFile(filepath.Join(filepath.Dir(file), "theme", "dark.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parse := func(name string) *theme.Theme {
+		t.Helper()
+		parsed, parseErr := theme.Parse(name, []byte(strings.Replace(string(builtin), `"name": "dark"`, `"name": "`+name+`"`, 1)), theme.TrueColor)
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		return parsed
+	}
+	themeA, themeB := parse("theme-a"), parse("theme-b")
+	loaded := []*theme.Theme{themeA}
+	loader, err := codingagent.NewDefaultResourceLoader(codingagent.DefaultResourceLoaderOptions{
+		CWD: cwd, AgentDir: agentDir, SettingsManager: settings, NoThemes: true, NoContextFiles: true,
+		ThemesOverride: func(codingagent.ResourceThemesResult) codingagent.ResourceThemesResult {
+			return codingagent.ResourceThemesResult{Themes: append([]*theme.Theme(nil), loaded...)}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loader.Reload(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	settings.SetTheme("theme-b")
+	manager, err := sessionstore.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionRuntime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
+		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings, ResourceLoader: loader,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sessionRuntime.Dispose)
+	mode := &InteractiveMode{session: sessionRuntime, ui: tui.NewTUI(newFakeTerminal(80, 24)), cwd: cwd}
+	if err := mode.initializeTheme(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { theme.SetCurrent(nil) })
+
+	loaded = []*theme.Theme{themeB}
+	if err := loader.Reload(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := mode.extendExtensionThemes(); err != nil {
+		t.Fatal(err)
+	}
+	if _, found := mode.themeRegistry.Get("theme-a"); found {
+		t.Error("theme-a remained registered after the loader replaced it")
+	}
+	registered, found := mode.themeRegistry.Get("theme-b")
+	if !found || registered != themeB || mode.themeController.Current() != themeB || theme.Current() != themeB {
+		t.Fatalf("refreshed theme identity: found=%t registered=%p loaded=%p controller=%p current=%p",
+			found, registered, themeB, mode.themeController.Current(), theme.Current())
+	}
+}
+
+func TestInteractiveModeRebindPropagatesInvalidResourceThemeName(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	newRuntime := func(loader codingagent.ResourceLoader) *codingagent.SessionRuntime {
+		t.Helper()
+		manager, managerErr := sessionstore.InMemory(cwd)
+		if managerErr != nil {
+			t.Fatal(managerErr)
+		}
+		created, runtimeErr := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
+			Agent: agent.NewAgent(), SessionManager: manager, Settings: settings, ResourceLoader: loader,
+		})
+		if runtimeErr != nil {
+			t.Fatal(runtimeErr)
+		}
+		t.Cleanup(created.Dispose)
+		return created
+	}
+	initial := newRuntime(nil)
+	mode := &InteractiveMode{
+		session: initial, ui: tui.NewTUI(newFakeTerminal(80, 24)), cwd: cwd,
+		keybindings: NewAppKeybindings(nil), inputCh: make(chan inputEntry, 1),
+		toolComponents: make(map[string]*ToolExecutionComponent), footerStatuses: make(map[string]string),
+	}
+	if err := mode.init(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { theme.SetCurrent(nil) })
+
+	loader, err := codingagent.NewDefaultResourceLoader(codingagent.DefaultResourceLoaderOptions{
+		CWD: cwd, AgentDir: agentDir, SettingsManager: settings, NoThemes: true, NoContextFiles: true,
+		ThemesOverride: func(codingagent.ResourceThemesResult) codingagent.ResourceThemesResult {
+			return codingagent.ResourceThemesResult{Themes: []*theme.Theme{{Name: "bad/name"}}}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loader.Reload(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := mode.rebindHostSession(newRuntime(loader)); err == nil || !strings.Contains(err.Error(), "invalid theme name") {
+		t.Fatalf("invalid loader theme rebind error = %v", err)
 	}
 }
 
@@ -268,6 +441,7 @@ func TestToolExecutionComponentLifecycle(t *testing.T) {
 }
 
 func TestDynamicBorderRender(t *testing.T) {
+	initTestTheme(t)
 	border := NewDynamicBorder()
 	lines := border.Render(10)
 	if len(lines) != 1 {
@@ -275,6 +449,9 @@ func TestDynamicBorderRender(t *testing.T) {
 	}
 	if !strings.Contains(lines[0], "─") {
 		t.Error("expected border character")
+	}
+	if want := theme.FG("border", strings.Repeat("─", 10)); lines[0] != want {
+		t.Fatalf("default border = %q, want upstream border color %q", lines[0], want)
 	}
 }
 

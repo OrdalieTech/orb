@@ -1,0 +1,29 @@
+{
+  "family": "F12-commands",
+  "upstreamCommit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
+  "generator": "conformance/extract/f12-commands.ts",
+  "sources": [
+    "packages/coding-agent/src/core/slash-commands.ts",
+    "packages/coding-agent/src/config.ts",
+    "packages/coding-agent/src/modes/interactive/interactive-mode.ts",
+    "packages/coding-agent/src/modes/interactive/components/armin.ts",
+    "packages/coding-agent/src/modes/interactive/components/earendil-announcement.ts",
+    "packages/coding-agent/src/modes/interactive/assets/clankolas.png",
+    "packages/tui/src/components/image.ts",
+    "packages/tui/src/terminal-image.ts"
+  ],
+  "files": [
+    "commands.json"
+  ],
+  "metadata": {
+    "normalization": [
+      "debug timestamp replaced with <timestamp>",
+      "temporary PI_CODING_AGENT_DIR replaced with <agent-dir>",
+      "raw frame digests preserve terminal controls, carriage returns, trailing padding, and trailing empty lines",
+      "readable frame lines additionally remove terminal controls and trailing render padding"
+    ],
+    "visibility": "commands absent from BUILTIN_SLASH_COMMANDS but present in setupEditorSubmitHandler are hidden",
+    "argumentDispatch": "unexpected arguments to exact-only commands fall through as normal messages",
+    "divergences": []
+  }
+}

@@ -48,6 +48,7 @@ type SessionRuntimeConfig struct {
 	ExcludedToolNames      []string
 	RebuildBaseTools       func() ([]agent.AgentTool, error)
 	SystemPromptOptions    *SystemPromptOptions
+	ResourceLoader         ResourceLoader
 	SessionStartEvent      *extensions.SessionStartEvent
 	DeferExtensionStart    bool
 	SessionStart           *extensions.SessionStartEvent
@@ -85,6 +86,7 @@ type SessionRuntime struct {
 	unsubscribeAgent     func()
 	slashResolver        *SlashResolver
 	baseSlashResolver    *SlashResolver
+	resourceLoader       ResourceLoader
 	activeRuns           int
 	idleWait             chan struct{}
 	extensionState       *extensionRuntimeState
@@ -243,6 +245,7 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 		scopedModels:      append([]ScopedModel(nil), runtimeConfig.ScopedModels...),
 		slashResolver:     cloneSlashResolver(runtimeConfig.SlashResolver),
 		baseSlashResolver: cloneSlashResolver(runtimeConfig.SlashResolver),
+		resourceLoader:    runtimeConfig.ResourceLoader,
 	}
 	runtimeConfig.SlashResolver = runtime.slashResolver
 	runtime.agent.SetSteeringMode(agent.QueueMode(runtime.settings.GetSteeringMode()))
@@ -252,6 +255,15 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 	}
 	runtime.unsubscribeAgent = runtime.agent.Subscribe(runtime.handleAgentEvent)
 	return runtime, nil
+}
+
+// ResourceLoader returns the resource instance that owns this session's
+// skills, prompts, and theme objects.
+func (runtime *SessionRuntime) ResourceLoader() ResourceLoader {
+	if runtime == nil {
+		return nil
+	}
+	return runtime.resourceLoader
 }
 
 func cloneSlashResolver(resolver *SlashResolver) *SlashResolver {

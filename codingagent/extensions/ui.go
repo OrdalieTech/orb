@@ -114,6 +114,13 @@ type EditorComponent interface {
 	HandleInput(string)
 }
 
+// AutocompleteEditorComponent is the optional editor capability used when an
+// extension replaces the active editor while autocomplete is configured.
+type AutocompleteEditorComponent interface {
+	EditorComponent
+	SetAutocompleteProvider(AutocompleteProvider)
+}
+
 type EditorFactory func(UIHost, Theme, Keybindings) EditorComponent
 
 type DisposableComponent interface {

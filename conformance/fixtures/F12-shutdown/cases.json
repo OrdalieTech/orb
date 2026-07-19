@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "ordinary": {
+    "order": [
+      "theme-stop",
+      "drain:1000",
+      "stop",
+      "dispose",
+      "exit:0"
+    ],
+    "output": "\u001b[2mTo resume this session:\u001b[22m pi --session-dir '<tmp>/custom pi'\\''s sessions' --session fixture-session\n"
+  },
+  "signal": {
+    "order": [
+      "dispose",
+      "theme-stop",
+      "drain:1000",
+      "stop",
+      "exit:0"
+    ],
+    "output": ""
+  }
+}

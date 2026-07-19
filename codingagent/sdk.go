@@ -568,6 +568,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		RebuildBaseTools: func() ([]agent.AgentTool, error) {
 			return buildBuiltInTools(cwd, settings)
 		},
+		ResourceLoader:      resourceLoader,
 		SystemPromptOptions: promptOptions,
 		SessionStartEvent:   opts.SessionStartEvent,
 		DeferExtensionStart: opts.DeferExtensionStart,
