@@ -95,6 +95,7 @@ func (controller *Controller) Reload() error {
 		return err
 	}
 	reloaded.SourcePath = controller.current.SourcePath
+	reloaded.SourceInfo = controller.current.SourceInfo
 	if err := controller.registry.Register(reloaded); err != nil {
 		return err
 	}

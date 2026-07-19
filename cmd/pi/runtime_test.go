@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -123,6 +124,61 @@ func TestCreateRuntimeInputsUsesResolvedResourcesAndToolSelection(t *testing.T) 
 	if expanded, handled := runtime.SlashResolver.ResolvePrompt("/review file.go"); handled || expanded != "Review file.go" {
 		t.Fatalf("prompt template = %q, handled %v", expanded, handled)
 	}
+}
+
+func TestCreateRuntimeInputsLoadsEnabledPackageThemesWithResolvedSourceInfo(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", filepath.Join(root, "home"))
+	agentDir := filepath.Join(root, "agent")
+	cwd := filepath.Join(root, "project")
+	packageDir := filepath.Join(root, "theme-package")
+	if err := os.MkdirAll(filepath.Join(packageDir, "themes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(cwd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, testFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve runtime test path")
+	}
+	builtin, err := os.ReadFile(filepath.Join(filepath.Dir(testFile), "..", "..", "codingagent", "modes", "theme", "dark.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	themePath := filepath.Join(packageDir, "themes", "package-theme.json")
+	encodedTheme := strings.Replace(string(builtin), `"name": "dark"`, `"name": "package-theme"`, 1)
+	if err := os.WriteFile(themePath, []byte(encodedTheme), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settingsJSON, err := json.Marshal(map[string]any{"packages": []string{packageDir}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), settingsJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(config.EnvAgentDir, agentDir)
+
+	inputs, err := createRuntimeInputs(cwd, CLIArgs{allowNoModel: true}, agent.AgentMessages{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, loaded := range inputs.ResourceLoader.GetThemes().Themes {
+		if loaded == nil || loaded.Name != "package-theme" {
+			continue
+		}
+		if loaded.SourcePath != themePath || loaded.SourceInfo == nil || loaded.SourceInfo.Path != themePath ||
+			loaded.SourceInfo.Source != packageDir || string(loaded.SourceInfo.Scope) != "user" ||
+			string(loaded.SourceInfo.Origin) != "package" || loaded.SourceInfo.BaseDir == nil || *loaded.SourceInfo.BaseDir != packageDir {
+			t.Fatalf("package theme source = %#v", loaded)
+		}
+		return
+	}
+	t.Fatalf("package theme not loaded: %#v", inputs.ResourceLoader.GetThemes())
 }
 
 func TestResolveRuntimeModelKeepsScopeAndUsesSavedDefaultWithinIt(t *testing.T) {
@@ -448,6 +504,39 @@ func TestCreateRuntimeInputsAllowsMissingModelOnlyForInteractiveBootstrap(t *tes
 	model := host.Session().State().Model
 	if model == nil || model.Provider != "anthropic" || model.ID != "claude-opus-4-8" {
 		t.Fatalf("post-login default model = %#v", model)
+	}
+}
+
+func TestCreateRuntimeInputsSharesResourceLoaderWithSession(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", filepath.Join(root, "home"))
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	for _, provider := range providers.List() {
+		for _, name := range provider.Env {
+			t.Setenv(name, "")
+		}
+	}
+
+	inputs, err := createRuntimeInputs(root, CLIArgs{allowNoModel: true, NoExtensions: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := session.InMemory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := buildSessionRuntime(inputs, manager, sessionRuntimeOptions{mode: extensions.ModeTUI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(runtime.Dispose)
+
+	loader := runtime.ResourceLoader()
+	if loader == nil {
+		t.Fatal("CLI session has no resource loader")
+	}
+	if loader.GetExtensions() != inputs.Extensions {
+		t.Fatal("CLI session and runtime inputs do not share the loader-owned extension registry")
 	}
 }
 

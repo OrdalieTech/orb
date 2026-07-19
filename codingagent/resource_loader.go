@@ -3,6 +3,7 @@ package codingagent
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 
@@ -22,7 +23,7 @@ type ResourcePromptsResult struct {
 }
 
 type ResourceThemesResult struct {
-	Themes      []extensions.ThemeInfo
+	Themes      []*modetheme.Theme
 	Diagnostics []ResourceDiagnostic
 }
 
@@ -68,7 +69,11 @@ type DefaultResourceLoaderOptions struct {
 	AdditionalSkillPaths          []string
 	AdditionalPromptTemplatePaths []string
 	AdditionalThemePaths          []string
+	PackageSkillPaths             []string
+	PackagePromptTemplatePaths    []string
+	PackageThemePaths             []ResourcePath
 	ExtensionFactories            []extensions.Factory
+	ExtensionRegistry             *extensions.Registry
 	NoExtensions                  bool
 	NoSkills                      bool
 	NoPromptTemplates             bool
@@ -88,6 +93,7 @@ type DefaultResourceLoaderOptions struct {
 type DefaultResourceLoader struct {
 	mu       sync.RWMutex
 	options  DefaultResourceLoaderOptions
+	resolved ResourceExtensionPaths
 	extended ResourceExtensionPaths
 
 	registry  *extensions.Registry
@@ -137,12 +143,18 @@ func (loader *DefaultResourceLoader) Reload(ctx context.Context, reloadOptions *
 	}
 	loader.mu.RLock()
 	options := loader.options
-	extended := cloneResourceExtensionPaths(loader.extended)
 	loader.mu.RUnlock()
+	extended := ResourceExtensionPaths{}
 
 	registry := extensions.NewRegistry(options.CWD)
 	diagnostics := make([]ResourceDiagnostic, 0)
-	if !options.NoExtensions {
+	if !options.NoExtensions && options.ExtensionRegistry != nil {
+		var err error
+		registry, err = options.ExtensionRegistry.Fresh(options.CWD)
+		if err != nil {
+			return err
+		}
+	} else if !options.NoExtensions {
 		for index, factory := range options.ExtensionFactories {
 			path := fmt.Sprintf("<inline:sdk-%d>", index+1)
 			if err := registry.Register(path, factory); err != nil {
@@ -163,31 +175,22 @@ func (loader *DefaultResourceLoader) Reload(ctx context.Context, reloadOptions *
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	options.SettingsManager.Reload()
+	projectTrusted = options.SettingsManager.IsProjectTrusted()
+	resolved, err := resolveResourceLoaderPaths(options)
+	if err != nil {
+		return err
+	}
 
-	skillPaths := append([]string(nil), options.AdditionalSkillPaths...)
-	skillMetadata := make(map[string]PathMetadata, len(extended.SkillPaths))
-	for _, path := range extended.SkillPaths {
-		skillPaths = append(skillPaths, path.Path)
-		skillMetadata[path.Path] = path.Metadata
-	}
-	promptPaths := append([]string(nil), options.AdditionalPromptTemplatePaths...)
-	promptMetadata := make(map[string]PathMetadata, len(extended.PromptPaths))
-	for _, path := range extended.PromptPaths {
-		promptPaths = append(promptPaths, path.Path)
-		promptMetadata[path.Path] = path.Metadata
-	}
+	commandOptions := resourceLoaderCommandOptions(options, resolved, extended, projectTrusted)
 	resources := LoadResources(ResourceOptions{
 		CWD: options.CWD, AgentDir: options.AgentDir, ProjectTrusted: &projectTrusted,
-		NoContextFiles: options.NoContextFiles, NoSkills: options.NoSkills,
-		NoPromptTemplates: options.NoPromptTemplates, SystemPrompt: options.SystemPrompt,
-		AppendSystemPrompt: options.AppendSystemPrompt, SkillPaths: skillPaths,
-		PromptTemplatePaths:        promptPaths,
-		GlobalSkillPaths:           options.SettingsManager.GetGlobalSkillPaths(),
-		ProjectSkillPaths:          options.SettingsManager.GetProjectSkillPaths(),
-		GlobalPromptTemplatePaths:  options.SettingsManager.GetGlobalPromptTemplatePaths(),
-		ProjectPromptTemplatePaths: options.SettingsManager.GetProjectPromptTemplatePaths(),
-		SkillPathMetadata:          skillMetadata,
-		PromptPathMetadata:         promptMetadata,
+		NoContextFiles: options.NoContextFiles, NoSkills: true,
+		NoPromptTemplates: true, SystemPrompt: options.SystemPrompt,
+		AppendSystemPrompt: options.AppendSystemPrompt, SkillPaths: commandOptions.skillPaths,
+		PromptTemplatePaths: commandOptions.promptPaths,
+		SkillPathMetadata:   commandOptions.metadata.skills,
+		PromptPathMetadata:  commandOptions.metadata.prompts,
 	})
 	skillDiagnostics := append([]ResourceDiagnostic(nil), resources.skillDiagnostics...)
 	promptDiagnostics := append([]ResourceDiagnostic(nil), resources.promptDiagnostics...)
@@ -216,9 +219,11 @@ func (loader *DefaultResourceLoader) Reload(ctx context.Context, reloadOptions *
 	if options.AppendSystemPromptOverride != nil {
 		resources.AppendSystemPrompt = append([]string(nil), options.AppendSystemPromptOverride(append([]string(nil), resources.AppendSystemPrompt...))...)
 	}
-	themes := loadResourceThemes(options, extended, projectTrusted)
+	themes := loadResourceThemes(options, resolved, extended)
 
 	loader.mu.Lock()
+	loader.resolved = resolved
+	loader.extended = extended
 	loader.registry = registry
 	loader.resources = resources
 	loader.themes = themes
@@ -256,7 +261,7 @@ func (loader *DefaultResourceLoader) GetThemes() ResourceThemesResult {
 	loader.mu.RLock()
 	defer loader.mu.RUnlock()
 	return ResourceThemesResult{
-		Themes:      append([]extensions.ThemeInfo(nil), loader.themes.Themes...),
+		Themes:      append([]*modetheme.Theme(nil), loader.themes.Themes...),
 		Diagnostics: append([]ResourceDiagnostic(nil), loader.themes.Diagnostics...),
 	}
 }
@@ -282,6 +287,7 @@ func (loader *DefaultResourceLoader) GetAppendSystemPrompt() []string {
 func (loader *DefaultResourceLoader) ExtendResources(paths ResourceExtensionPaths) {
 	loader.mu.RLock()
 	options := loader.options
+	resolved := cloneResourceExtensionPaths(loader.resolved)
 	loader.mu.RUnlock()
 	paths.SkillPaths = normalizeResourcePathEntries(paths.SkillPaths, options.CWD)
 	paths.PromptPaths = normalizeResourcePathEntries(paths.PromptPaths, options.CWD)
@@ -295,7 +301,7 @@ func (loader *DefaultResourceLoader) ExtendResources(paths ResourceExtensionPath
 	loader.mu.Unlock()
 
 	projectTrusted := options.SettingsManager.IsProjectTrusted()
-	commandOptions := resourceLoaderCommandOptions(options, extended, projectTrusted)
+	commandOptions := resourceLoaderCommandOptions(options, resolved, extended, projectTrusted)
 	if len(paths.SkillPaths) > 0 {
 		result := loadCommandSkills(commandOptions)
 		resolved := ResourceSkillsResult(result)
@@ -319,31 +325,24 @@ func (loader *DefaultResourceLoader) ExtendResources(paths ResourceExtensionPath
 		loader.mu.Unlock()
 	}
 	if len(paths.ThemePaths) > 0 {
-		themes := loadResourceThemes(options, extended, projectTrusted)
+		themes := loadResourceThemes(options, resolved, extended)
 		loader.mu.Lock()
 		loader.themes = themes
 		loader.mu.Unlock()
 	}
 }
 
-func loadResourceThemes(options DefaultResourceLoaderOptions, extended ResourceExtensionPaths, projectTrusted bool) ResourceThemesResult {
-	extensionPaths := make([]string, 0, len(extended.ThemePaths))
-	for _, entry := range extended.ThemePaths {
-		extensionPaths = append(extensionPaths, entry.Path)
-	}
+func loadResourceThemes(options DefaultResourceLoaderOptions, resolved, extended ResourceExtensionPaths) ResourceThemesResult {
+	paths, _ := resourceLoaderPaths(options.CWD, resolved.ThemePaths, options.AdditionalThemePaths, extended.ThemePaths)
 	registry := modetheme.Load(modetheme.LoadOptions{
-		CWD: options.CWD, AgentDir: options.AgentDir, ProjectTrusted: projectTrusted, NoThemes: options.NoThemes,
-		GlobalPaths: options.SettingsManager.GetGlobalThemePaths(), ProjectPaths: options.SettingsManager.GetProjectThemePaths(),
-		AdditionalPaths: options.AdditionalThemePaths, ResourceDiscoverPath: extensionPaths,
+		CWD: options.CWD, AgentDir: options.AgentDir, NoThemes: true, AdditionalPaths: paths,
 	})
-	result := ResourceThemesResult{Themes: []extensions.ThemeInfo{}, Diagnostics: []ResourceDiagnostic{}}
-	for _, name := range registry.Available() {
-		theme, found := registry.Get(name)
-		if !found || theme == nil || theme.SourcePath == "" {
+	result := ResourceThemesResult{Themes: []*modetheme.Theme{}, Diagnostics: []ResourceDiagnostic{}}
+	for _, theme := range registry.Loaded() {
+		if theme == nil || theme.SourcePath == "" {
 			continue
 		}
-		path := theme.SourcePath
-		result.Themes = append(result.Themes, extensions.ThemeInfo{Name: name, Path: &path})
+		result.Themes = append(result.Themes, theme)
 	}
 	for _, diagnostic := range registry.Diagnostics() {
 		converted := ResourceDiagnostic{Type: diagnostic.Type, Message: diagnostic.Message, Path: diagnostic.Path}
@@ -358,30 +357,171 @@ func loadResourceThemes(options DefaultResourceLoaderOptions, extended ResourceE
 	if options.ThemesOverride != nil {
 		result = options.ThemesOverride(result)
 	}
+	for _, theme := range result.Themes {
+		if theme == nil || theme.SourcePath == "" {
+			continue
+		}
+		if sourceInfo := resourceThemeMetadataSourceInfo(theme.SourcePath, resolved, extended); sourceInfo != nil {
+			theme.SourceInfo = sourceInfo
+		} else if theme.SourceInfo == nil {
+			theme.SourceInfo = defaultThemeSourceInfo(theme.SourcePath, options)
+		}
+	}
 	return result
 }
 
-func resourceLoaderCommandOptions(options DefaultResourceLoaderOptions, extended ResourceExtensionPaths, projectTrusted bool) commandResourceOptions {
-	metadata := resolveCommandResourceMetadata(options.CWD, options.AgentDir, projectTrusted)
-	skillPaths := append([]string(nil), options.AdditionalSkillPaths...)
-	for _, entry := range extended.SkillPaths {
-		skillPaths = append(skillPaths, entry.Path)
-		metadata.skills[canonicalResourcePath(entry.Path)] = entry.Metadata
+func resourceThemeMetadataSourceInfo(path string, resolved, extended ResourceExtensionPaths) *extensions.SourceInfo {
+	for _, entry := range extended.ThemePaths {
+		if pathIsWithin(path, entry.Path) {
+			return themeSourceInfoFromMetadata(path, entry.Metadata)
+		}
 	}
-	promptPaths := append([]string(nil), options.AdditionalPromptTemplatePaths...)
-	for _, entry := range extended.PromptPaths {
-		promptPaths = append(promptPaths, entry.Path)
-		metadata.prompts[canonicalResourcePath(entry.Path)] = entry.Metadata
+	for _, entry := range resolved.ThemePaths {
+		if pathIsWithin(path, entry.Path) {
+			return themeSourceInfoFromMetadata(path, entry.Metadata)
+		}
 	}
+	return nil
+}
+
+func themeSourceInfoFromMetadata(path string, metadata PathMetadata) *extensions.SourceInfo {
+	var baseDir *string
+	if metadata.BaseDir != "" {
+		value := metadata.BaseDir
+		baseDir = &value
+	}
+	return &extensions.SourceInfo{
+		Path: path, Source: metadata.Source, Scope: extensions.SourceScope(metadata.Scope),
+		Origin: extensions.SourceOrigin(metadata.Origin), BaseDir: baseDir,
+	}
+}
+
+func defaultThemeSourceInfo(path string, options DefaultResourceLoaderOptions) *extensions.SourceInfo {
+	baseDir := filepath.Dir(path)
+	scope := extensions.SourceScopeTemporary
+	for _, candidate := range []struct {
+		root  string
+		scope extensions.SourceScope
+	}{{filepath.Join(options.AgentDir, "themes"), extensions.SourceScopeUser}, {filepath.Join(options.CWD, ".pi", "themes"), extensions.SourceScopeProject}} {
+		if pathIsWithin(path, candidate.root) {
+			baseDir, scope = candidate.root, candidate.scope
+			break
+		}
+	}
+	return &extensions.SourceInfo{
+		Path: path, Source: "local", Scope: scope, Origin: extensions.SourceOriginTopLevel, BaseDir: &baseDir,
+	}
+}
+
+func resolveResourceLoaderPaths(options DefaultResourceLoaderOptions) (ResourceExtensionPaths, error) {
+	resolved, err := NewPackageManager(PackageManagerOptions{
+		CWD: options.CWD, AgentDir: options.AgentDir, Settings: options.SettingsManager,
+	}).Resolve(nil)
+	if err != nil {
+		return ResourceExtensionPaths{}, err
+	}
+	paths := ResourceExtensionPaths{}
+	if !options.NoSkills {
+		paths.SkillPaths = enabledResourcePaths(resolved.Skills, true)
+		packageMetadata := PathMetadata{Source: "package", Scope: "temporary", Origin: "package", BaseDir: options.CWD}
+		for _, path := range options.PackageSkillPaths {
+			paths.SkillPaths = appendUniqueResourcePath(paths.SkillPaths, mapSkillResourcePath(ResourcePath{Path: path, Metadata: packageMetadata}))
+		}
+	}
+	if !options.NoPromptTemplates {
+		paths.PromptPaths = enabledResourcePaths(resolved.Prompts, false)
+		packageMetadata := PathMetadata{Source: "package", Scope: "temporary", Origin: "package", BaseDir: options.CWD}
+		for _, path := range options.PackagePromptTemplatePaths {
+			paths.PromptPaths = appendUniqueResourcePath(paths.PromptPaths, ResourcePath{Path: path, Metadata: packageMetadata})
+		}
+	}
+	if !options.NoThemes {
+		paths.ThemePaths = enabledResourcePaths(resolved.Themes, false)
+		for _, entry := range options.PackageThemePaths {
+			paths.ThemePaths = appendUniqueResourcePath(paths.ThemePaths, entry)
+		}
+	}
+	paths.SkillPaths = normalizeResourcePathEntries(paths.SkillPaths, options.CWD)
+	paths.PromptPaths = normalizeResourcePathEntries(paths.PromptPaths, options.CWD)
+	paths.ThemePaths = normalizeResourcePathEntries(paths.ThemePaths, options.CWD)
+	return paths, nil
+}
+
+func enabledResourcePaths(resources []ResolvedResource, skills bool) []ResourcePath {
+	paths := make([]ResourcePath, 0, len(resources))
+	for _, resource := range resources {
+		if !resource.Enabled {
+			continue
+		}
+		entry := ResourcePath{Path: resource.Path, Metadata: resource.Metadata}
+		if skills {
+			entry = mapSkillResourcePath(entry)
+		}
+		paths = appendUniqueResourcePath(paths, entry)
+	}
+	return paths
+}
+
+func mapSkillResourcePath(resource ResourcePath) ResourcePath {
+	if resource.Metadata.Source != "auto" && resource.Metadata.Origin != "package" {
+		return resource
+	}
+	info, err := os.Stat(resource.Path)
+	if err != nil || !info.IsDir() {
+		return resource
+	}
+	skillFile := filepath.Join(resource.Path, "SKILL.md")
+	if pathExists(skillFile) {
+		resource.Path = skillFile
+	}
+	return resource
+}
+
+func appendUniqueResourcePath(paths []ResourcePath, entry ResourcePath) []ResourcePath {
+	canonical := canonicalResourcePath(entry.Path)
+	for _, existing := range paths {
+		if canonicalResourcePath(existing.Path) == canonical {
+			return paths
+		}
+	}
+	return append(paths, entry)
+}
+
+func resourceLoaderPaths(cwd string, resolved []ResourcePath, additional []string, extended []ResourcePath) ([]string, map[string]PathMetadata) {
+	paths := make([]string, 0, len(resolved)+len(additional)+len(extended))
+	metadata := make(map[string]PathMetadata, len(resolved)+len(extended))
+	seen := make(map[string]struct{}, cap(paths))
+	appendPath := func(path string) {
+		path = resolveResourcePathFrom(path, cwd)
+		canonical := canonicalResourcePath(path)
+		if _, exists := seen[canonical]; exists {
+			return
+		}
+		seen[canonical] = struct{}{}
+		paths = append(paths, path)
+	}
+	for _, entry := range resolved {
+		appendPath(entry.Path)
+		metadata[canonicalResourcePath(entry.Path)] = entry.Metadata
+	}
+	for _, path := range additional {
+		appendPath(path)
+	}
+	for _, entry := range extended {
+		appendPath(entry.Path)
+		metadata[canonicalResourcePath(entry.Path)] = entry.Metadata
+	}
+	return paths, metadata
+}
+
+func resourceLoaderCommandOptions(options DefaultResourceLoaderOptions, resolved, extended ResourceExtensionPaths, projectTrusted bool) commandResourceOptions {
+	skillPaths, skillMetadata := resourceLoaderPaths(options.CWD, resolved.SkillPaths, options.AdditionalSkillPaths, extended.SkillPaths)
+	promptPaths, promptMetadata := resourceLoaderPaths(options.CWD, resolved.PromptPaths, options.AdditionalPromptTemplatePaths, extended.PromptPaths)
 	return commandResourceOptions{
 		cwd: options.CWD, agentDir: options.AgentDir, trusted: projectTrusted,
-		noSkills: options.NoSkills, noPrompts: options.NoPromptTemplates,
+		noSkills: true, noPrompts: true,
 		skillPaths: skillPaths, promptPaths: promptPaths,
-		globalSkillPaths:   options.SettingsManager.GetGlobalSkillPaths(),
-		projectSkillPaths:  options.SettingsManager.GetProjectSkillPaths(),
-		globalPromptPaths:  options.SettingsManager.GetGlobalPromptTemplatePaths(),
-		projectPromptPaths: options.SettingsManager.GetProjectPromptTemplatePaths(),
-		metadata:           metadata,
+		metadata: commandResourceMetadata{skills: skillMetadata, prompts: promptMetadata},
 	}
 }
 

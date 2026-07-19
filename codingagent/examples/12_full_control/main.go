@@ -13,6 +13,7 @@ import (
 	"github.com/OrdalieTech/pi-go/codingagent"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+	modetheme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
 	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
 )
 
@@ -29,7 +30,7 @@ func (*fixedResourceLoader) GetPrompts() codingagent.ResourcePromptsResult {
 	return codingagent.ResourcePromptsResult{Prompts: []codingagent.PromptTemplate{}, Diagnostics: []codingagent.ResourceDiagnostic{}}
 }
 func (*fixedResourceLoader) GetThemes() codingagent.ResourceThemesResult {
-	return codingagent.ResourceThemesResult{Themes: []extensions.ThemeInfo{}, Diagnostics: []codingagent.ResourceDiagnostic{}}
+	return codingagent.ResourceThemesResult{Themes: []*modetheme.Theme{}, Diagnostics: []codingagent.ResourceDiagnostic{}}
 }
 func (*fixedResourceLoader) GetAgentsFiles() codingagent.ResourceAgentsFilesResult {
 	return codingagent.ResourceAgentsFilesResult{AgentsFiles: []codingagent.ContextFile{}}

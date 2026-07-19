@@ -30,7 +30,7 @@ func (border *DynamicBorder) Render(width int) []string {
 	if border.colorFn != nil {
 		line = border.colorFn(line)
 	} else {
-		line = theme.FG("dim", line)
+		line = theme.FG("border", line)
 	}
 	return []string{line}
 }

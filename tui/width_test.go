@@ -6,7 +6,7 @@ import (
 )
 
 func TestVisibleWidthAndTerminalNormalization(t *testing.T) {
-	cases := map[string]int{"ascii": 5, "界": 2, "🙂": 2, "🇦": 2, "🇨🇳": 2, "\t\x1b[31m界\x1b[0m": 5, "ำ": 1, "ຳ": 1, "กำ": 2, "ກຳ": 2}
+	cases := map[string]int{"ascii": 5, "界": 2, "🙂": 2, "🇦": 2, "🇨🇳": 2, "\t\x1b[31m界\x1b[0m": 5, "ำ": 1, "ຳ": 1, "กำ": 2, "ກຳ": 2, "\u2028\u2029": 2}
 	for value, expected := range cases {
 		if actual := VisibleWidth(value); actual != expected {
 			t.Errorf("VisibleWidth(%q) = %d, want %d", value, actual, expected)

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "width": 100,
   "searches": [
     {
@@ -317,5 +317,46 @@
       "<fixture>/child.jsonl"
     ],
     "cancellations": 1
-  }
+  },
+  "lifetime": [
+    {
+      "id": "select",
+      "events": [
+        "select"
+      ],
+      "scheduledTimeouts": 1,
+      "clearedTimeouts": 1,
+      "pendingTimeoutsAfterExit": 0,
+      "firedTimeoutsAfterExit": 0,
+      "renderCallbacksAfterExit": 0,
+      "statusVisibleBeforeExit": true,
+      "statusVisibleAfterExit": false
+    },
+    {
+      "id": "cancel",
+      "events": [
+        "cancel"
+      ],
+      "scheduledTimeouts": 1,
+      "clearedTimeouts": 1,
+      "pendingTimeoutsAfterExit": 0,
+      "firedTimeoutsAfterExit": 0,
+      "renderCallbacksAfterExit": 0,
+      "statusVisibleBeforeExit": true,
+      "statusVisibleAfterExit": false
+    },
+    {
+      "id": "exit",
+      "events": [
+        "exit"
+      ],
+      "scheduledTimeouts": 1,
+      "clearedTimeouts": 1,
+      "pendingTimeoutsAfterExit": 0,
+      "firedTimeoutsAfterExit": 0,
+      "renderCallbacksAfterExit": 0,
+      "statusVisibleBeforeExit": true,
+      "statusVisibleAfterExit": false
+    }
+  ]
 }

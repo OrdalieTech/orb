@@ -39,6 +39,9 @@ func graphemeWidth(value string) int {
 	if value == "\t" {
 		return 3
 	}
+	if value == "\u2028" || value == "\u2029" {
+		return 1
+	}
 	return uniseg.StringWidth(value)
 }
 
@@ -73,7 +76,12 @@ func VisibleWidth(text string) int {
 		plain.WriteString(text[pos : pos+size])
 		pos += size
 	}
-	return uniseg.StringWidth(plain.String())
+	width := 0
+	forEachGrapheme(plain.String(), func(segment string) bool {
+		width += graphemeWidth(segment)
+		return true
+	})
+	return width
 }
 
 // NormalizeTerminalOutput applies upstream's display-only Thai/Lao AM

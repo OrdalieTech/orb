@@ -64,6 +64,7 @@ func sessionRuntimeConfig(inputs runtimeInputs, manager *session.SessionManager,
 		BaseTools:             inputs.BaseTools, InitialActiveToolNames: inputs.ActiveToolNames,
 		AllowedToolNames: inputs.AllowedTools, ExcludedToolNames: inputs.ExcludedTools,
 		SystemPromptOptions: &inputs.PromptOptions,
+		ResourceLoader:      inputs.ResourceLoader,
 		SessionStart:        options.sessionStart,
 		DeferSessionStart:   options.deferSessionStart,
 	}
@@ -203,17 +204,18 @@ func forkReplacementManager(manager *session.SessionManager, entryID string, pos
 // synchronous UI invalidation, dispose the old runtime, create and apply the
 // replacement, then rebind it before the deferred session_start.
 type interactiveSessionHost struct {
-	mu               sync.Mutex
-	args             CLIArgs
-	dependencies     cliDependencies
-	agentDir         string
-	errorWriter      io.Writer
-	session          *codingagent.SessionRuntime
-	inputs           runtimeInputs
-	rebind           func(*codingagent.SessionRuntime) error
-	beforeInvalidate func()
-	replacing        bool
-	disposed         bool
+	mu                sync.Mutex
+	args              CLIArgs
+	dependencies      cliDependencies
+	agentDir          string
+	errorWriter       io.Writer
+	session           *codingagent.SessionRuntime
+	inputs            runtimeInputs
+	rebind            func(*codingagent.SessionRuntime) error
+	beforeInvalidate  func()
+	afterSessionStart func(*codingagent.SessionRuntime) error
+	replacing         bool
+	disposed          bool
 }
 
 func newInteractiveSessionHost(
@@ -250,6 +252,12 @@ func (host *interactiveSessionHost) SetBeforeSessionInvalidate(beforeInvalidate 
 	host.mu.Lock()
 	defer host.mu.Unlock()
 	host.beforeInvalidate = beforeInvalidate
+}
+
+func (host *interactiveSessionHost) SetAfterSessionStart(afterSessionStart func(*codingagent.SessionRuntime) error) {
+	host.mu.Lock()
+	defer host.mu.Unlock()
+	host.afterSessionStart = afterSessionStart
 }
 
 // bindCommandActions makes extension command-context session operations run
@@ -399,6 +407,14 @@ func (host *interactiveSessionHost) replace(
 // withSession callbacks can safely call back into the host.
 func (host *interactiveSessionHost) finishReplacement(ctx context.Context, replacement *codingagent.SessionRuntime, withSession func(context.Context, extensions.ReplacedSessionContext) error) error {
 	replacement.StartExtensions()
+	host.mu.Lock()
+	afterSessionStart := host.afterSessionStart
+	host.mu.Unlock()
+	if afterSessionStart != nil {
+		if err := afterSessionStart(replacement); err != nil {
+			return err
+		}
+	}
 	if withSession != nil {
 		if runner := replacement.ExtensionRunner(); runner != nil {
 			return withSession(ctx, runner.CreateReplacedSessionContext())

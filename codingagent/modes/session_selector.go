@@ -779,6 +779,9 @@ func (selector *SessionSelectorComponent) HandleInput(event tui.KeyEvent) {
 		if selector.selected >= 0 && selector.selected < len(selector.filtered) {
 			path = selector.filtered[selector.selected].session.Path
 		}
+		if path != "" {
+			selector.clearStatusLocked()
+		}
 		selector.mu.Unlock()
 		if callback != nil && path != "" {
 			callback(path)
@@ -786,6 +789,7 @@ func (selector *SessionSelectorComponent) HandleInput(event tui.KeyEvent) {
 		return
 	case tui.GetKeybindings().Matches(data, "tui.select.cancel"):
 		callback := selector.onCancel
+		selector.clearStatusLocked()
 		selector.mu.Unlock()
 		if callback != nil {
 			callback()
@@ -827,9 +831,7 @@ func (selector *SessionSelectorComponent) startDeleteLocked() {
 }
 
 func (selector *SessionSelectorComponent) setStatusLocked(kind, message string, duration time.Duration) {
-	if selector.statusTimer != nil {
-		selector.statusTimer.Stop()
-	}
+	selector.clearStatusLocked()
 	selector.status = &selectorStatus{kind: kind, message: message}
 	if duration <= 0 {
 		return
@@ -841,6 +843,20 @@ func (selector *SessionSelectorComponent) setStatusLocked(kind, message string, 
 		selector.mu.Unlock()
 		selector.requestRender()
 	})
+}
+
+func (selector *SessionSelectorComponent) clearStatusLocked() {
+	if selector.statusTimer != nil {
+		selector.statusTimer.Stop()
+		selector.statusTimer = nil
+	}
+	selector.status = nil
+}
+
+func (selector *SessionSelectorComponent) clearStatus() {
+	selector.mu.Lock()
+	selector.clearStatusLocked()
+	selector.mu.Unlock()
 }
 
 func (selector *SessionSelectorComponent) removeSession(path string) {
@@ -929,6 +945,7 @@ func RunSessionSelectorWithTerminal(ctx context.Context, current, all SessionSel
 	uiApp.AddChild(selector)
 	uiApp.SetFocus(selector)
 	if err := uiApp.Start(); err != nil {
+		selector.clearStatus()
 		return "", false, err
 	}
 	var selected result
@@ -938,6 +955,7 @@ func RunSessionSelectorWithTerminal(ctx context.Context, current, all SessionSel
 	case <-ctx.Done():
 		waitErr = ctx.Err()
 	}
+	selector.clearStatus()
 	stopErr := uiApp.Stop()
 	if err := errors.Join(waitErr, stopErr); err != nil {
 		return "", false, err

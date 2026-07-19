@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	chroma "github.com/alecthomas/chroma/v2"
@@ -130,6 +131,105 @@ func TestRegistryAdditionalExtendAndBuiltinSemantics(t *testing.T) {
 	assertSelectedTheme(t, registry, "shared", "<replacement>")
 }
 
+func TestRegistryDiagnosticsPlaceLoadWarningsBeforeCollisions(t *testing.T) {
+	root := t.TempDir()
+	first := filepath.Join(root, "first.json")
+	invalid := filepath.Join(root, "not-json.txt")
+	second := filepath.Join(root, "second.json")
+	missing := filepath.Join(root, "missing.json")
+	writeTestTheme(t, first, "shared", "#111111")
+	writeTestTheme(t, second, "shared", "#222222")
+	if err := os.WriteFile(invalid, []byte("not a theme"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	registry := Load(LoadOptions{
+		AgentDir: t.TempDir(), CWD: root, NoThemes: true, Mode: TrueColor,
+		AdditionalPaths: []string{first, invalid, second, missing},
+	})
+	loaded := registry.Loaded()
+	if len(loaded) != 1 || loaded[0].Name != "shared" || loaded[0].SourcePath != first {
+		t.Fatalf("loaded themes = %#v", loaded)
+	}
+	diagnostics := registry.Diagnostics()
+	if len(diagnostics) != 3 || diagnostics[0].Path != invalid || diagnostics[1].Path != missing || diagnostics[2].Path != second || diagnostics[2].Collision == nil {
+		t.Fatalf("ordered diagnostics = %#v", diagnostics)
+	}
+}
+
+func TestRegistryConcurrentReadsAndMutations(t *testing.T) {
+	registry := Load(LoadOptions{AgentDir: t.TempDir(), CWD: t.TempDir(), Mode: TrueColor})
+	themes := make([]*Theme, 64)
+	for index := range themes {
+		parsed, err := Parse(fmt.Sprintf("concurrent-%d", index), mustThemeJSON(t, fmt.Sprintf("concurrent-%d", index), "#112233"), TrueColor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		themes[index] = parsed
+	}
+
+	start := make(chan struct{})
+	var wait sync.WaitGroup
+	for index := range themes {
+		wait.Add(2)
+		go func(index int) {
+			defer wait.Done()
+			<-start
+			_ = registry.Register(themes[index])
+		}(index)
+		go func(index int) {
+			defer wait.Done()
+			<-start
+			for iteration := 0; iteration < 32; iteration++ {
+				_, _ = registry.Get(fmt.Sprintf("concurrent-%d", index))
+				_ = registry.Available()
+				_ = registry.Loaded()
+				_ = registry.Diagnostics()
+			}
+		}(index)
+	}
+	close(start)
+	wait.Wait()
+
+	if got := len(registry.Available()); got != len(themes)+2 {
+		t.Fatalf("available themes = %d, want %d", got, len(themes)+2)
+	}
+}
+
+func TestRegistryReplaceLoadedAtomicallyValidatesAndRemovesStaleThemes(t *testing.T) {
+	registry := Load(LoadOptions{AgentDir: t.TempDir(), CWD: t.TempDir(), Mode: TrueColor})
+	first, err := Parse("first", mustThemeJSON(t, "first", "#112233"), TrueColor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := Parse("second", mustThemeJSON(t, "second", "#445566"), TrueColor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Register(first); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := registry.ReplaceLoaded([]*Theme{second, {Name: "bad/name"}}); err == nil {
+		t.Fatal("invalid replacement theme name was accepted")
+	}
+	if retained, found := registry.Get("first"); !found || retained != first {
+		t.Fatal("failed replacement mutated the registered theme set")
+	}
+	if _, found := registry.Get("second"); found {
+		t.Fatal("failed replacement partially installed a valid prefix")
+	}
+
+	if err := registry.ReplaceLoaded([]*Theme{second}); err != nil {
+		t.Fatal(err)
+	}
+	if _, found := registry.Get("first"); found {
+		t.Fatal("successful replacement retained a stale nonbuiltin theme")
+	}
+	if replaced, found := registry.Get("second"); !found || replaced != second {
+		t.Fatal("successful replacement did not preserve the supplied theme object")
+	}
+}
+
 func TestRegistryNoThemesRelativePathsAndSymlinks(t *testing.T) {
 	root := t.TempDir()
 	cwd, agentDir := filepath.Join(root, "project"), filepath.Join(root, "agent")
@@ -229,6 +329,18 @@ func TestHighlightAndLanguageFromPath(t *testing.T) {
 	}
 	if LanguageFromPath("src/main.tsx") != "typescript" || LanguageFromPath("Dockerfile") != "dockerfile" || LanguageFromPath("README") != "" {
 		t.Fatal("language path mapping differs")
+	}
+}
+
+func TestHighlightECMAScriptPrimitiveAndUserTypeScopes(t *testing.T) {
+	registry := Load(LoadOptions{AgentDir: t.TempDir(), CWD: t.TempDir(), Mode: TrueColor})
+	dark, _ := registry.Get("dark")
+	line := Highlight("const answer: number = factory.value", "typescript", dark)[0]
+	if primitive := dark.Foreground("syntaxType", "number"); !strings.Contains(line, primitive) {
+		t.Fatalf("primitive type is not styled: %q", line)
+	}
+	if userDefined := dark.Foreground("syntaxType", "factory.value"); strings.Contains(line, userDefined) {
+		t.Fatalf("Chroma user-type false positive leaked through: %q", line)
 	}
 }
 

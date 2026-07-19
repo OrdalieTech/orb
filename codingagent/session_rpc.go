@@ -1,16 +1,21 @@
 package codingagent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/agent/harness"
 	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pi-go/codingagent/config"
 	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
 	"github.com/OrdalieTech/pi-go/codingagent/session/exporthtml"
 	"github.com/OrdalieTech/pi-go/codingagent/tools"
@@ -858,4 +863,54 @@ func (runtime *SessionRuntime) ExportHTML(outputPath string) (string, error) {
 	state := runtime.agent.State()
 	systemPrompt := state.SystemPrompt
 	return exporthtml.ExportSession(runtime.manager, exporthtml.Options{OutputPath: outputPath, SystemPrompt: &systemPrompt})
+}
+
+// ExportJSONL writes the current root-to-leaf branch as a standalone upstream
+// session file, re-chaining parentId values into a linear sequence.
+func (runtime *SessionRuntime) ExportJSONL(outputPath string) (string, error) {
+	if runtime == nil || runtime.manager == nil {
+		return "", errors.New("codingagent: nil session runtime")
+	}
+	if outputPath == "" {
+		timestamp := time.UnixMilli(runtime.clock()).UTC().Format("2006-01-02T15:04:05.000Z")
+		outputPath = "session-" + strings.NewReplacer(":", "-", ".", "-").Replace(timestamp) + ".jsonl"
+	}
+	normalized, err := config.NormalizePath(outputPath)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.Abs(filepath.Clean(normalized))
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
+		return "", err
+	}
+	version := sessionstore.CurrentVersion
+	header := sessionstore.SessionHeader{
+		Type: "session", Version: &version, ID: runtime.manager.GetSessionID(),
+		Timestamp: time.UnixMilli(runtime.clock()).UTC().Format("2006-01-02T15:04:05.000Z"), CWD: runtime.manager.GetCWD(),
+	}
+	encodedHeader, err := header.MarshalJSON()
+	if err != nil {
+		return "", err
+	}
+	var output bytes.Buffer
+	output.Write(encodedHeader)
+	output.WriteByte('\n')
+	var previous *string
+	for _, entry := range runtime.manager.GetBranch() {
+		encoded, marshalErr := entry.MarshalJSONWithParent(previous)
+		if marshalErr != nil {
+			return "", marshalErr
+		}
+		output.Write(encoded)
+		output.WriteByte('\n')
+		id := entry.ID
+		previous = &id
+	}
+	if err := os.WriteFile(resolved, output.Bytes(), 0o666); err != nil {
+		return "", fmt.Errorf("write JSONL export: %w", err)
+	}
+	return resolved, nil
 }

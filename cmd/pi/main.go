@@ -313,7 +313,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			SessionHeader:  manager.GetHeader(),
 			Diagnostics:    inputs.Diagnostics,
 			Host:           host,
-			Changelog:      "pi-go " + version,
+			Changelog:      "",
+			Output:         streams.Stdout,
+			OutputTTY:      streams.StdoutTTY,
 		})
 	}
 	extensionMode := extensions.ModePrint

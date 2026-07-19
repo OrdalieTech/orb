@@ -36,6 +36,7 @@ type runtimeInputs struct {
 	PromptOptions    codingagent.SystemPromptOptions
 	Auth             *config.AuthStorage
 	Diagnostics      []string
+	ResourceLoader   codingagent.ResourceLoader
 }
 
 func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMessages) (runtimeInputs, error) {
@@ -72,37 +73,44 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	if err != nil {
 		return runtimeInputs{}, err
 	}
-	resources := codingagent.LoadResources(codingagent.ResourceOptions{
-		CWD:                        cwd,
-		AgentDir:                   agentDir,
-		ProjectTrusted:             &projectTrusted,
-		NoContextFiles:             args.NoContextFiles,
-		NoSkills:                   args.NoSkills,
-		NoPromptTemplates:          args.NoPromptTemplates,
-		SystemPrompt:               args.SystemPrompt,
-		AppendSystemPrompt:         args.AppendSystemPrompt,
-		SkillPaths:                 args.Skills,
-		PromptTemplatePaths:        args.PromptTemplates,
-		GlobalSkillPaths:           settings.GetGlobalSkillPaths(),
-		ProjectSkillPaths:          settings.GetProjectSkillPaths(),
-		GlobalPromptTemplatePaths:  settings.GetGlobalPromptTemplatePaths(),
-		ProjectPromptTemplatePaths: settings.GetProjectPromptTemplatePaths(),
-		PackageSkillPaths:          enabledPackageResourcePaths(resolvedPaths.Skills),
-		PackagePromptTemplatePaths: enabledPackageResourcePaths(resolvedPaths.Prompts),
-	})
 	diagnostics := make([]string, 0)
 	for _, diagnostic := range settings.DrainErrors() {
 		diagnostics = append(diagnostics, diagnostic.Error())
-	}
-	for _, diagnostic := range resources.Diagnostics {
-		diagnostics = append(diagnostics, diagnostic.Message)
 	}
 	extensionRegistry := args.extensionRegistry
 	extensionDiagnostics := args.extensionWarnings
 	if !args.extensionsLoaded {
 		extensionRegistry, extensionDiagnostics = loadCompiledExtensions(cwd, args, settings)
 	}
+	hasExtensions := extensionRegistry != nil
 	diagnostics = append(diagnostics, extensionDiagnostics...)
+	resourceLoader, err := codingagent.NewDefaultResourceLoader(codingagent.DefaultResourceLoaderOptions{
+		CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
+		AdditionalSkillPaths: args.Skills, AdditionalPromptTemplatePaths: args.PromptTemplates,
+		PackageSkillPaths: enabledPackageResourcePaths(resolvedPaths.Skills), PackagePromptTemplatePaths: enabledPackageResourcePaths(resolvedPaths.Prompts),
+		PackageThemePaths: enabledPackageThemePaths(resolvedPaths.Themes),
+		ExtensionRegistry: extensionRegistry, NoExtensions: args.NoExtensions,
+		NoContextFiles: args.NoContextFiles, NoSkills: args.NoSkills, NoPromptTemplates: args.NoPromptTemplates,
+		SystemPrompt: args.SystemPrompt, AppendSystemPrompt: args.AppendSystemPrompt,
+	})
+	if err != nil {
+		return runtimeInputs{}, err
+	}
+	if err := resourceLoader.Reload(context.Background(), nil); err != nil {
+		return runtimeInputs{}, err
+	}
+	extensionRegistry = resourceLoader.GetExtensions()
+	skills := resourceLoader.GetSkills()
+	prompts := resourceLoader.GetPrompts()
+	resources := codingagent.Resources{
+		ContextFiles: resourceLoader.GetAgentsFiles().AgentsFiles, SystemPrompt: resourceLoader.GetSystemPrompt(),
+		AppendSystemPrompt: resourceLoader.GetAppendSystemPrompt(), Skills: skills.Skills, PromptTemplates: prompts.Prompts,
+	}
+	resources.Diagnostics = append(resources.Diagnostics, skills.Diagnostics...)
+	resources.Diagnostics = append(resources.Diagnostics, prompts.Diagnostics...)
+	for _, diagnostic := range resources.Diagnostics {
+		diagnostics = append(diagnostics, diagnostic.Message)
+	}
 
 	selection := ResolveBuiltInToolSelection(args)
 	activeTools, err := createBuiltInTools(cwd, selection, settings)
@@ -117,7 +125,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	initialNames := append([]string(nil), activeNames...)
 	var allowedTools *[]string
 	var excludedTools []string
-	if extensionRegistry != nil {
+	if hasExtensions {
 		baseTools, err = createBuiltInTools(cwd, defaultBuiltInTools, settings)
 		if err != nil {
 			return runtimeInputs{}, err
@@ -282,8 +290,9 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		RebuildBaseTools: func() ([]agent.AgentTool, error) {
 			return createBuiltInTools(cwd, baseToolNames, settings)
 		},
-		Auth:        authStorage,
-		Diagnostics: diagnostics,
+		Auth:           authStorage,
+		Diagnostics:    diagnostics,
+		ResourceLoader: resourceLoader,
 	}, nil
 }
 
@@ -308,6 +317,16 @@ func enabledPackageResourcePaths(resources []codingagent.ResolvedResource) []str
 	for _, resource := range resources {
 		if resource.Enabled && resource.Metadata.Origin == "package" {
 			paths = append(paths, resource.Path)
+		}
+	}
+	return paths
+}
+
+func enabledPackageThemePaths(resources []codingagent.ResolvedResource) []codingagent.ResourcePath {
+	paths := make([]codingagent.ResourcePath, 0, len(resources))
+	for _, resource := range resources {
+		if resource.Enabled && resource.Metadata.Origin == "package" {
+			paths = append(paths, codingagent.ResourcePath{Path: resource.Path, Metadata: resource.Metadata})
 		}
 	}
 	return paths

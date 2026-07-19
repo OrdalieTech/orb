@@ -28,8 +28,9 @@ type recordedLifecycleEvent struct {
 }
 
 type hostLifecycleRecorder struct {
-	events []recordedLifecycleEvent
-	trace  []string
+	events          []recordedLifecycleEvent
+	trace           []string
+	discoveredTheme string
 }
 
 func (recorder *hostLifecycleRecorder) registry(cwd string) *extensions.Registry {
@@ -61,6 +62,13 @@ func (recorder *hostLifecycleRecorder) registry(cwd string) *extensions.Registry
 			})
 			return nil, nil
 		})
+		if recorder.discoveredTheme != "" {
+			api.On(extensions.EventResourcesDiscover, func(_ context.Context, event extensions.Event, _ extensions.Context) (any, error) {
+				discover := event.(extensions.ResourcesDiscoverEvent)
+				recorder.trace = append(recorder.trace, "discover:"+string(discover.Reason))
+				return extensions.ResourcesDiscoverResult{ThemePaths: []string{recorder.discoveredTheme}}, nil
+			})
+		}
 		return nil
 	}); err != nil {
 		panic(err)
@@ -345,6 +353,32 @@ func TestInteractiveHostNewSessionRebindsBeforeSessionStart(t *testing.T) {
 	active, err := replacement.ExtensionRunner().ActiveTools()
 	if err != nil || !reflect.DeepEqual(active, []string{"host-tool"}) {
 		t.Fatalf("active tools = %#v, %v", active, err)
+	}
+}
+
+func TestInteractiveHostRunsAfterSessionStartHookAfterResourceDiscovery(t *testing.T) {
+	fixture := newHostFixture(t)
+	fixture.recorder.discoveredTheme = filepath.Join(fixture.root, "replacement-theme.json")
+	fixture.host.SetRebindSession(func(*codingagent.SessionRuntime) error {
+		fixture.recorder.trace = append(fixture.recorder.trace, "rebind")
+		return nil
+	})
+	fixture.host.SetAfterSessionStart(func(replacement *codingagent.SessionRuntime) error {
+		fixture.recorder.trace = append(fixture.recorder.trace, "after-start")
+		resources := replacement.ExtensionResources()
+		if len(resources.ThemePaths) != 1 || resources.ThemePaths[0].Path != fixture.recorder.discoveredTheme {
+			t.Fatalf("post-start resources = %#v", resources.ThemePaths)
+		}
+		return nil
+	})
+
+	result, err := fixture.host.NewSession(context.Background(), nil)
+	if err != nil || result.Cancelled {
+		t.Fatalf("new session = %+v, %v", result, err)
+	}
+	want := []string{"shutdown:new", "create", "rebind", "start:new", "discover:startup", "after-start"}
+	if !reflect.DeepEqual(fixture.recorder.trace, want) {
+		t.Fatalf("replacement lifecycle = %#v, want %#v", fixture.recorder.trace, want)
 	}
 }
 

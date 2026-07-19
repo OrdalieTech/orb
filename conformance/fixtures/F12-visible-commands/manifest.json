@@ -1,0 +1,33 @@
+{
+  "family": "F12-visible-commands",
+  "upstreamCommit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
+  "generator": "conformance/extract/f12-visible-commands.ts",
+  "sources": [
+    "packages/coding-agent/src/core/slash-commands.ts",
+    "packages/coding-agent/src/modes/interactive/interactive-mode.ts",
+    "packages/coding-agent/src/core/keybindings.ts",
+    "packages/coding-agent/CHANGELOG.md",
+    "packages/coding-agent/src/utils/changelog.ts",
+    "packages/coding-agent/test/interactive-mode-import-command.test.ts",
+    "packages/coding-agent/test/interactive-mode-clone-command.test.ts",
+    "packages/coding-agent/test/interactive-mode-status.test.ts",
+    "packages/coding-agent/test/session-selector-rename.test.ts",
+    "packages/coding-agent/test/trust-selector.test.ts",
+    "packages/coding-agent/test/suite/regressions/5943-session-start-notify.test.ts",
+    "packages/coding-agent/test/suite/regressions/5080-signal-shutdown-extension-cleanup.test.ts"
+  ],
+  "files": [
+    "cases.json"
+  ],
+  "metadata": {
+    "normalization": [
+      "temporary paths replaced with <tmp> in every observation",
+      "raw frame digests preserve terminal controls, carriage returns, trailing padding, and trailing empty lines",
+      "readable frame lines additionally remove terminal controls and trailing render padding"
+    ],
+    "scenarios": "one deterministic no-network/no-credential/no-native-clipboard scenario per visible built-in command",
+    "divergences": [
+      "/share uses upstream local HTML export behavior per docs/DECISIONS.md instead of upstream gist upload"
+    ]
+  }
+}

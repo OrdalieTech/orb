@@ -8,10 +8,12 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+	modetheme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
 	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
 )
 
@@ -56,7 +58,7 @@ func TestDefaultResourceLoaderOverridesAndSDKReuse(t *testing.T) {
 			return ResourcePromptsResult{Prompts: []PromptTemplate{{Name: "deploy", Content: "deploy now", FilePath: "/virtual/deploy.md"}}}
 		},
 		ThemesOverride: func(ResourceThemesResult) ResourceThemesResult {
-			return ResourceThemesResult{Themes: []extensions.ThemeInfo{{Name: "sdk"}}}
+			return ResourceThemesResult{Themes: []*modetheme.Theme{{Name: "sdk"}}}
 		},
 		AgentsFilesOverride: func(ResourceAgentsFilesResult) ResourceAgentsFilesResult {
 			return ResourceAgentsFilesResult{AgentsFiles: []ContextFile{{Path: "/virtual/AGENTS.md", Content: "SDK context"}}}
@@ -259,8 +261,140 @@ func TestDefaultResourceLoaderExtendResourcesLoadsThemesImmediately(t *testing.T
 	})
 
 	themes := loader.GetThemes()
-	if len(themes.Diagnostics) != 0 || len(themes.Themes) != 1 || themes.Themes[0].Name != "extension-theme" || themes.Themes[0].Path == nil || *themes.Themes[0].Path != themePath {
+	if len(themes.Diagnostics) != 0 || len(themes.Themes) != 1 || themes.Themes[0].Name != "extension-theme" || themes.Themes[0].SourcePath != themePath {
 		t.Fatalf("themes = %#v diagnostics = %#v", themes.Themes, themes.Diagnostics)
+	}
+	loaded := themes.Themes[0]
+	if loaded.SourceInfo == nil || loaded.SourceInfo.Path != themePath || loaded.SourceInfo.Source != "extension:theme" || loaded.SourceInfo.BaseDir == nil || *loaded.SourceInfo.BaseDir != cwd {
+		t.Fatalf("theme source info = %#v", loaded.SourceInfo)
+	}
+	if again := loader.GetThemes().Themes[0]; again != loaded {
+		t.Fatal("GetThemes replaced the parsed theme object")
+	}
+}
+
+func TestAgentSessionInstallsExtensionDiscoveredThemesIntoResourceLoader(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	themePath := filepath.Join(cwd, "extension-theme.json")
+	builtin, err := os.ReadFile(filepath.Join("modes", "theme", "dark.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeResourceFixture(t, themePath, strings.Replace(string(builtin), `"name": "dark"`, `"name": "extension-theme"`, 1))
+	loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+		CWD: cwd, AgentDir: agentDir, NoContextFiles: true, NoThemes: true, AppendSystemPrompt: []string{},
+		ExtensionFactories: []extensions.Factory{func(api extensions.API) error {
+			api.On(extensions.EventResourcesDiscover, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+				return extensions.ResourcesDiscoverResult{ThemePaths: []string{themePath}}, nil
+			})
+			return nil
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loader.Reload(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := testFaux(100_000)
+	result, err := NewAgentSession(AgentSessionOptions{
+		CWD: cwd, AgentDir: agentDir, SessionManager: manager, Model: provider.GetModel(),
+		StreamFn: provider.StreamSimple, ResourceLoader: loader, NoTools: "all",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Session.Dispose()
+
+	themes := loader.GetThemes().Themes
+	if len(themes) != 1 || themes[0].Name != "extension-theme" || themes[0].SourceInfo == nil {
+		t.Fatalf("extension-discovered themes = %#v", themes)
+	}
+	if got := themes[0].SourceInfo.Source; got != "extension:inline:sdk-1" {
+		t.Fatalf("extension-discovered source = %q", got)
+	}
+	if result.Session.ResourceLoader() != loader {
+		t.Fatal("session did not retain its resource loader")
+	}
+}
+
+func TestSessionRuntimeReloadReplacesExtensionDiscoveredResourcesAndSharesLoaderRegistry(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	builtin, err := os.ReadFile(filepath.Join("modes", "theme", "dark.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	themePaths := []string{filepath.Join(cwd, "theme-a.json"), filepath.Join(cwd, "theme-b.json")}
+	skillPaths := []string{filepath.Join(cwd, "skill-a"), filepath.Join(cwd, "skill-b")}
+	promptPaths := []string{filepath.Join(cwd, "prompt-a.md"), filepath.Join(cwd, "prompt-b.md")}
+	for index, suffix := range []string{"a", "b"} {
+		writeResourceFixture(t, themePaths[index], strings.Replace(string(builtin), `"name": "dark"`, `"name": "theme-`+suffix+`"`, 1))
+		writeSkillFixture(t, skillPaths[index], "skill-"+suffix, "Skill "+strings.ToUpper(suffix))
+		writeResourceFixture(t, promptPaths[index], "prompt "+suffix)
+	}
+
+	var generation atomic.Int32
+	loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+		CWD: cwd, AgentDir: agentDir, NoContextFiles: true, NoThemes: true, AppendSystemPrompt: []string{},
+		ExtensionFactories: []extensions.Factory{func(api extensions.API) error {
+			api.RegisterFlag("reload-registry", extensions.Flag{Type: extensions.FlagString, Default: "initial"})
+			api.On(extensions.EventResourcesDiscover, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+				index := int(generation.Load())
+				return extensions.ResourcesDiscoverResult{
+					SkillPaths: []string{skillPaths[index]}, PromptPaths: []string{promptPaths[index]}, ThemePaths: []string{themePaths[index]},
+				}, nil
+			})
+			return nil
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loader.Reload(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := testFaux(100_000)
+	result, err := NewAgentSession(AgentSessionOptions{
+		CWD: cwd, AgentDir: agentDir, SessionManager: manager, Model: provider.GetModel(),
+		StreamFn: provider.StreamSimple, ResourceLoader: loader, NoTools: "all",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Session.Dispose()
+
+	oldRegistry := loader.GetExtensions()
+	generation.Store(1)
+	if err := result.Session.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := loader.GetSkills().Skills; len(got) != 1 || got[0].Name != "skill-b" {
+		t.Errorf("reloaded skills = %#v, want only skill-b", got)
+	}
+	if got := loader.GetPrompts().Prompts; len(got) != 1 || got[0].Name != "prompt-b" {
+		t.Errorf("reloaded prompts = %#v, want only prompt-b", got)
+	}
+	if got := loader.GetThemes().Themes; len(got) != 1 || got[0].Name != "theme-b" {
+		t.Errorf("reloaded themes = %#v, want only theme-b", got)
+	}
+	newRegistry := loader.GetExtensions()
+	if newRegistry == oldRegistry {
+		t.Error("resource loader retained its pre-reload extension registry")
+	} else {
+		newRegistry.SetFlagValue("reload-registry", "owned-by-loader")
+		if got := result.Session.ExtensionRunner().FlagValues()["reload-registry"]; got != "owned-by-loader" {
+			t.Errorf("session runner flag = %#v, want loader registry value", got)
+		}
 	}
 }
 

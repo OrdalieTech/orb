@@ -41,6 +41,7 @@ type document struct {
 type Theme struct {
 	Name       string
 	SourcePath string
+	SourceInfo *extensions.SourceInfo
 	mode       ColorMode
 	foreground map[string]string
 	background map[string]string
@@ -258,7 +259,7 @@ func MarkdownTheme() tui.MarkdownTheme {
 
 func EditorTheme() tui.EditorTheme {
 	return tui.EditorTheme{
-		BorderColor: func(s string) string { return FG("border", s) },
+		BorderColor: func(s string) string { return FG("borderMuted", s) },
 	}
 }
 

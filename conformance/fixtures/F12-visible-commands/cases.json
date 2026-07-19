@@ -1,0 +1,782 @@
+{
+  "schemaVersion": 2,
+  "width": 100,
+  "commands": [
+    {
+      "name": "settings",
+      "input": "/settings",
+      "dispatchTrace": [
+        "action:showSettingsSelector:[]",
+        "editor:\"\""
+      ],
+      "finalEditorText": "",
+      "transition": "settings-selector",
+      "trace": [],
+      "chat": {
+        "lineCount": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "raw": {
+          "lineCount": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "lines": []
+        },
+        "lines": []
+      }
+    },
+    {
+      "name": "model",
+      "input": "/model fixture/model",
+      "dispatchTrace": [
+        "editor:\"\"",
+        "action:handleModelCommand:[\"fixture/model\"]"
+      ],
+      "finalEditorText": "",
+      "transition": "model-selector:fixture/model",
+      "trace": [],
+      "chat": {
+        "lineCount": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "raw": {
+          "lineCount": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "lines": []
+        },
+        "lines": []
+      }
+    },
+    {
+      "name": "scoped-models",
+      "input": "/scoped-models",
+      "dispatchTrace": [
+        "editor:\"\"",
+        "action:showModelsSelector:[]"
+      ],
+      "finalEditorText": "",
+      "transition": null,
+      "trace": [],
+      "chat": {
+        "lineCount": 2,
+        "sha256": "981d63532524d1f75c164354d4a6b3430ade51302d35af355fa471ee338023a6",
+        "raw": {
+          "lineCount": 2,
+          "sha256": "817b6a6fb9f74c4484cae3040c143c3f595b2cf24dc3dd4eec82243893d3eccb",
+          "lines": [
+            "",
+            " \u001b[38;5;241mNo models available\u001b[39m                                                                                "
+          ]
+        },
+        "lines": [
+          "",
+          " No models available"
+        ]
+      }
+    },
+    {
+      "name": "export",
+      "input": "/export \"<tmp>/session.jsonl\" ignored",
+      "dispatchTrace": [
+        "action:handleExportCommand:[\"/export \\\"<tmp>/session.jsonl\\\" ignored\"]",
+        "editor:\"\""
+      ],
+      "finalEditorText": "",
+      "transition": null,
+      "trace": [
+        "export:jsonl:<tmp>/session.jsonl"
+      ],
+      "chat": {
+        "lineCount": 2,
+        "sha256": "b3c187b0e30e2bd343330f879ef2a9570366d3deff0e01c0fa512585619a0fd7",
+        "raw": {
+          "lineCount": 2,
+          "sha256": "47a1062259f307c0944a8d2a22534ca848a1092ef5b011f2caad409bb6b50f48",
+          "lines": [
+            "",
+            " \u001b[38;5;241mSession exported to: <tmp>/session.jsonl\u001b[39m                                                           "
+          ]
+        },
+        "lines": [
+          "",
+          " Session exported to: <tmp>/session.jsonl"
+        ]
+      }
+    },
+    {
+      "name": "import",
+      "input": "/import \"fixture path/session.jsonl\" trailing",
+      "dispatchTrace": [
+        "action:handleImportCommand:[\"/import \\\"fixture path/session.jsonl\\\" trailing\"]",
+        "editor:\"\""
+      ],
+      "finalEditorText": "",
+      "transition": null,
+      "trace": [
+        "confirm:Import session:Replace current session with fixture path/session.jsonl?",
+        "clear-status",
+        "import:fixture path/session.jsonl"
+      ],
+      "chat": {
+        "lineCount": 2,
+        "sha256": "777eb28e34aa23c41aa395a88b791a2f6d9d72a885d82fff54aef70c607facc2",
+        "raw": {
+          "lineCount": 2,
+          "sha256": "caaa762a2d5a41a72e2fa626696741873803c69705c13788a3a376814aaba788",
+          "lines": [
+            "",
+            " \u001b[38;5;241mSession imported from: fixture path/session.jsonl\u001b[39m                                                  "
+          ]
+        },
+        "lines": [
+          "",
+          " Session imported from: fixture path/session.jsonl"
+        ]
+      }
+    },
+    {
+      "name": "share",
+      "input": "/share",
+      "dispatchTrace": [
+        "action:handleShareCommand:[]",
+        "editor:\"\""
+      ],
+      "finalEditorText": "",
+      "transition": null,
+      "trace": [
+        "export:html:<default>"
+      ],
+      "chat": {
+        "lineCount": 2,
+        "sha256": "d9f969b6a593297b544bec9e73f922eb16724abfeefa71c948eb6c7c73d17a2a",
+        "raw": {
+          "lineCount": 2,
+          "sha256": "df4fce9c2b07b34b0a914db61c1f3d99fe01ac13b69042dcbbfae3ffa4f99a0e",
+          "lines": [
+            "",
+            " \u001b[38;5;241mSession exported to: <tmp>/session.html\u001b[39m                                                            "
+          ]
+        },
+        "lines": [
+          "",
+          " Session exported to: <tmp>/session.html"
+        ]
+      }
+    },
+    {
+      "name": "copy",
+      "input": "/copy",
+      "dispatchTrace": [
+        "action:handleCopyCommand:[]",
+        "editor:\"\""
+      ],
+      "finalEditorText": "",
+      "transition": null,
+      "trace": [],
+      "chat": {
+        "lineCount": 2,
+        "sha256": "e8242c479d54ebbc1983b8e5833bcb5cc27ec6f227da6f86c36a04a7051b3319",
+        "raw": {
+          "lineCount": 2,
+          "sha256": "2fd18203fc0d92a987a8f4212602c38f057b999c0d8f53249196c8b18b03528a",
+          "lines": [
+            "",
+            " \u001b[38;5;167mError: No agent messages to copy yet.\u001b[39m                                                              "
+          ]
+        },
+        "lines": [
+          "",
+          " Error: No agent messages to copy yet."
+        ]
+      }
+    },
+    {
+      "name": "name",
+      "input": "/name fixture session",
+      "dispatchTrace": [
+        "action:handleNameCommand:[\"/name fixture session\"]",
+        "editor:\"\""
+      ],
+      "finalEditorText": "",
+      "transition": null,
+      "trace": [
+        "name:fixture session"
+      ],
+      "chat": {
+        "lineCount": 2,
+        "sha256": "264459805848cdd58976825df5706e5c9eb52fa54c14262f147faa3fdb7fef7a",
+        "raw": {
+          "lineCount": 2,
+          "sha256": "df3b017edc14f68b99021c7055f1b20c5a11d5de762c53a4b26c6e041f65db0c",
+          "lines": [
+            "",
+            " \u001b[38;5;241mSession name set: fixture session\u001b[39m                                                                  "
+          ]
+        },
+        "lines": [
+          "",
+          " Session name set: fixture session"
+        ]
+      }
+    },
+    {
+      "name": "session",
+      "input": "/session",
+      "dispatchTrace": [
+        "action:handleSessionCommand:[]",
+        "editor:\"\""
+      ],
+      "finalEditorText": "",
+      "transition": null,
+      "trace": [],
+      "chat": {
+        "lineCount": 17,
+        "sha256": "3da41e32ebe13cb0787f4f0632f1477fc7f5e9454173262b254e70ffb30f90ee",
+        "raw": {
+          "lineCount": 18,
+          "sha256": "58fbe49673dbc838ffbbd4cf271022f6abfd1298c044279136c26a34ff585bb9",
+          "lines": [
+            "",
+            " \u001b[1mSession Info\u001b[22m                                                                                       ",
+            "                                                                                                    ",
+            " \u001b[38;5;241mName:\u001b[39m fixture session                                                                              ",
+            " \u001b[38;5;241mFile:\u001b[39m In-memory                                                                                    ",
+            " \u001b[38;5;241mID:\u001b[39m fixture-session-id                                                                             ",
+            "                                                                                                    ",
+            " \u001b[1mMessages\u001b[22m                                                                                           ",
+            " \u001b[38;5;241mTotal:\u001b[39m 0                                                                                           ",
+            " \u001b[38;5;241mUser:\u001b[39m 0                                                                                            ",
+            " \u001b[38;5;241mAssistant:\u001b[39m 0                                                                                       ",
+            " \u001b[38;5;241mTools:\u001b[39m 0 calls, 0 results                                                                          ",
+            "                                                                                                    ",
+            " \u001b[1mTokens\u001b[22m                                                                                             ",
+            " \u001b[38;5;241mInput:\u001b[39m 0                                                                                           ",
+            " \u001b[38;5;241mOutput:\u001b[39m 0                                                                                          ",
+            " \u001b[38;5;241mTotal:\u001b[39m 0                                                                                           ",
+            "                                                                                                    "
+          ]
+        },
+        "lines": [
+          "",
+          " Session Info",
+          "",
+          " Name: fixture session",
+          " File: In-memory",
+          " ID: fixture-session-id",
+          "",
+          " Messages",
+          " Total: 0",
+          " User: 0",
+          " Assistant: 0",
+          " Tools: 0 calls, 0 results",
+          "",
+          " Tokens",
+          " Input: 0",
+          " Output: 0",
+          " Total: 0"
+        ]
+      }
+    },
+    {
+      "name": "changelog",
+      "input": "/changelog",
+      "dispatchTrace": [
+        "action:handleChangelogCommand:[]",
+        "editor:\"\""
+      ],
+      "finalEditorText": "",
+      "transition": null,
+      "trace": [],
+      "chat": {
+        "lineCount": 8688,
+        "sha256": "57e5e4d78f6c14364e029c3ae4725e6a2bc8172e90aea28f019100c9c9fc077d",
+        "raw": {
+          "lineCount": 8688,
+          "sha256": "78f5395a836d649c304333c195e9243e3da935c536d2194a5352314460473a06",
+          "head": [
+            "",
+            "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+            " \u001b[1m\u001b[38;5;109mWhat's New\u001b[39m\u001b[22m                                                                                         ",
+            "",
+            "                                                                                                    ",
+            " \u001b[38;5;222m\u001b[1m[0.10.0] - 2025-11-25\u001b[22m\u001b[39m                                                                              ",
+            "                                                                                                    ",
+            " Initial public release.                                                                            ",
+            "                                                                                                    ",
+            " \u001b[38;5;222m\u001b[1m### \u001b[22m\u001b[39m\u001b[38;5;222m\u001b[1mAdded\u001b[22m\u001b[39m                                                                                          ",
+            "                                                                                                    ",
+            " \u001b[38;5;109m- \u001b[39mInteractive TUI with streaming responses                                                         ",
+            " \u001b[38;5;109m- \u001b[39mConversation session management with \u001b[38;5;109m--continue\u001b[39m, \u001b[38;5;109m--resume\u001b[39m, and \u001b[38;5;109m--session\u001b[39m flags                   ",
+            " \u001b[38;5;109m- \u001b[39mMulti-line input support (Shift+Enter or Option+Enter for new lines)                             ",
+            " \u001b[38;5;109m- \u001b[39mTool execution: \u001b[38;5;109mread\u001b[39m, \u001b[38;5;109mwrite\u001b[39m, \u001b[38;5;109medit\u001b[39m, \u001b[38;5;109mbash\u001b[39m, \u001b[38;5;109mglob\u001b[39m, \u001b[38;5;109mgrep\u001b[39m, \u001b[38;5;109mthink\u001b[39m                                       ",
+            " \u001b[38;5;109m- \u001b[39mThinking mode support for Claude with visual indicator and \u001b[38;5;109m/thinking\u001b[39m selector                    ",
+            " \u001b[38;5;109m- \u001b[39mFile path autocompletion with \u001b[38;5;109m@\u001b[39m prefix                                                           ",
+            " \u001b[38;5;109m- \u001b[39mSlash command autocompletion                                                                     ",
+            " \u001b[38;5;109m- \u001b[39m\u001b[38;5;109m/export\u001b[39m command for HTML session export                                                          ",
+            " \u001b[38;5;109m- \u001b[39m\u001b[38;5;109m/model\u001b[39m command for runtime model switching                                                       "
+          ],
+          "tail": [
+            "                                                                                                    ",
+            " \u001b[38;5;109m- \u001b[39m\u001b[1mKimi Coding thinking compatibility\u001b[22m — Kimi Coding models now use adaptive thinking correctly; K3  ",
+            "   exposes its supported \u001b[38;5;109mmax\u001b[39m level and supports replaying empty-signature thinking blocks. See \u001b[38;5;109m\u001b[4mKimi\u001b[24m ",
+            "   \u001b[4;38;5;109mFor Coding setup\u001b[24m\u001b[39m\u001b[38;5;241m                                                                                 ",
+            "   \u001b[38;5;241m(https://github.com/earendil-works/pi/blob/v0.80.10/packages/coding-agent/docs/providers.md#api- ",
+            "   \u001b[38;5;241mkeys)\u001b[39m and \u001b[38;5;109m\u001b[4mModel Options\u001b[24m\u001b[39m\u001b[38;5;241m                                                                          ",
+            "   \u001b[38;5;241m(https://github.com/earendil-works/pi/blob/v0.80.10/packages/coding-agent/docs/usage.md#model-op ",
+            "   \u001b[38;5;241mtions)\u001b[39m.                                                                                          ",
+            "                                                                                                    ",
+            " \u001b[38;5;222m\u001b[1m### \u001b[22m\u001b[39m\u001b[38;5;222m\u001b[1mFixed\u001b[22m\u001b[39m                                                                                          ",
+            "                                                                                                    ",
+            " \u001b[38;5;109m- \u001b[39mFixed inherited Kimi Coding requests to use Anthropic adaptive thinking effort without token     ",
+            "   budgets, and enabled empty thinking signatures for K3 and \u001b[38;5;109mkimi-for-coding\u001b[39m.                       ",
+            " \u001b[38;5;109m- \u001b[39mFixed inherited Kimi K3 pricing metadata for Moonshot AI and Moonshot AI China.                  ",
+            " \u001b[38;5;109m- \u001b[39mFixed inherited Kimi Coding K3 thinking-level metadata to expose only the supported \u001b[38;5;109mmax\u001b[39m level    ",
+            "   (\u001b[38;5;109m\u001b[4m#6737\u001b[24m\u001b[39m\u001b[38;5;241m (https://github.com/earendil-works/pi/issues/6737)\u001b[39m).                                      ",
+            " \u001b[38;5;109m- \u001b[39mFixed inherited catalog generation restoring xAI models removed in 0.80.9 (\u001b[38;5;109m\u001b[4m#6736\u001b[24m\u001b[39m\u001b[38;5;241m                 ",
+            "   \u001b[38;5;241m(https://github.com/earendil-works/pi/issues/6736)\u001b[39m).                                             ",
+            "                                                                                                    ",
+            "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+          ]
+        },
+        "head": [
+          "",
+          "────────────────────────────────────────────────────────────────────────────────────────────────────",
+          " What's New",
+          "",
+          "",
+          " [0.10.0] - 2025-11-25",
+          "",
+          " Initial public release.",
+          "",
+          " ### Added",
+          "",
+          " - Interactive TUI with streaming responses",
+          " - Conversation session management with --continue, --resume, and --session flags",
+          " - Multi-line input support (Shift+Enter or Option+Enter for new lines)",
+          " - Tool execution: read, write, edit, bash, glob, grep, think",
+          " - Thinking mode support for Claude with visual indicator and /thinking selector",
+          " - File path autocompletion with @ prefix",
+          " - Slash command autocompletion",
+          " - /export command for HTML session export",
+          " - /model command for runtime model switching"
+        ],
+        "tail": [
+          "",
+          " - Kimi Coding thinking compatibility — Kimi Coding models now use adaptive thinking correctly; K3",
+          "   exposes its supported max level and supports replaying empty-signature thinking blocks. See Kimi",
+          "   For Coding setup",
+          "   (https://github.com/earendil-works/pi/blob/v0.80.10/packages/coding-agent/docs/providers.md#api-",
+          "   keys) and Model Options",
+          "   (https://github.com/earendil-works/pi/blob/v0.80.10/packages/coding-agent/docs/usage.md#model-op",
+          "   tions).",
+          "",
+          " ### Fixed",
+          "",
+          " - Fixed inherited Kimi Coding requests to use Anthropic adaptive thinking effort without token",
+          "   budgets, and enabled empty thinking signatures for K3 and kimi-for-coding.",
+          " - Fixed inherited Kimi K3 pricing metadata for Moonshot AI and Moonshot AI China.",
+          " - Fixed inherited Kimi Coding K3 thinking-level metadata to expose only the supported max level",
+          "   (#6737 (https://github.com/earendil-works/pi/issues/6737)).",
+          " - Fixed inherited catalog generation restoring xAI models removed in 0.80.9 (#6736",
+          "   (https://github.com/earendil-works/pi/issues/6736)).",
+          "",
+          "────────────────────────────────────────────────────────────────────────────────────────────────────"
+        ]
+      }
+    },
+    {
+      "name": "hotkeys",
+      "input": "/hotkeys",
+      "dispatchTrace": [
+        "action:handleHotkeysCommand:[]",
+        "editor:\"\""
+      ],
+      "finalEditorText": "",
+      "transition": null,
+      "trace": [],
+      "chat": {
+        "lineCount": 92,
+        "sha256": "5e85246fa5208f7fb26de0bb392f7cf120472e9badd07ac65654e7f0d27b0662",
+        "raw": {
+          "lineCount": 92,
+          "sha256": "b7d1505605cc8fc0c9d5dd2b40012c50b16bba7fd0ed0836b43be85f3c5551b2",
+          "head": [
+            "",
+            "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+            " \u001b[1m\u001b[38;5;109mKeyboard Shortcuts\u001b[39m\u001b[22m                                                                                 ",
+            "",
+            "                                                                                                    ",
+            " \u001b[1mNavigation\u001b[22m                                                                                         ",
+            "                                                                                                    ",
+            " ┌───────────────────────────────────────────────────────┬──────────────────────────────┐           ",
+            " │ \u001b[1mKey                                                  \u001b[22m │ \u001b[1mAction                      \u001b[22m │           ",
+            " ├───────────────────────────────────────────────────────┼──────────────────────────────┤           ",
+            " │ \u001b[38;5;109mUp\u001b[39m / \u001b[38;5;109mDown\u001b[39m / \u001b[38;5;109mLeft/Ctrl+B\u001b[39m / \u001b[38;5;109mRight/Ctrl+F\u001b[39m                │ Move cursor / browse history │           ",
+            " ├───────────────────────────────────────────────────────┼──────────────────────────────┤           ",
+            " │ \u001b[38;5;109mAlt+Left/Ctrl+Left/Alt+B\u001b[39m / \u001b[38;5;109mAlt+Right/Ctrl+Right/Alt+F\u001b[39m │ Move by word                 │           ",
+            " ├───────────────────────────────────────────────────────┼──────────────────────────────┤           ",
+            " │ \u001b[38;5;109mHome/Ctrl+A\u001b[39m                                           │ Start of line                │           ",
+            " ├───────────────────────────────────────────────────────┼──────────────────────────────┤           ",
+            " │ \u001b[38;5;109mEnd/Ctrl+E\u001b[39m                                            │ End of line                  │           ",
+            " ├───────────────────────────────────────────────────────┼──────────────────────────────┤           ",
+            " │ \u001b[38;5;109mCtrl+]\u001b[39m                                                │ Jump forward to character    │           ",
+            " ├───────────────────────────────────────────────────────┼──────────────────────────────┤           "
+          ],
+          "tail": [
+            " │ \u001b[38;5;109mCtrl+T\u001b[39m                │ Toggle thinking block visibility         │                               ",
+            " ├───────────────────────┼──────────────────────────────────────────┤                               ",
+            " │ \u001b[38;5;109mCtrl+G\u001b[39m                │ Edit message in external editor          │                               ",
+            " ├───────────────────────┼──────────────────────────────────────────┤                               ",
+            " │ \u001b[38;5;109mCtrl+X\u001b[39m                │ Copy last assistant message              │                               ",
+            " ├───────────────────────┼──────────────────────────────────────────┤                               ",
+            " │ \u001b[38;5;109mAlt+Enter\u001b[39m             │ Queue follow-up message                  │                               ",
+            " ├───────────────────────┼──────────────────────────────────────────┤                               ",
+            " │ \u001b[38;5;109mAlt+Up\u001b[39m                │ Restore queued messages                  │                               ",
+            " ├───────────────────────┼──────────────────────────────────────────┤                               ",
+            " │ \u001b[38;5;109mCtrl+V\u001b[39m                │ Paste image or text from clipboard       │                               ",
+            " ├───────────────────────┼──────────────────────────────────────────┤                               ",
+            " │ \u001b[38;5;109m/\u001b[39m                     │ Slash commands                           │                               ",
+            " ├───────────────────────┼──────────────────────────────────────────┤                               ",
+            " │ \u001b[38;5;109m!\u001b[39m                     │ Run bash command                         │                               ",
+            " ├───────────────────────┼──────────────────────────────────────────┤                               ",
+            " │ \u001b[38;5;109m!!\u001b[39m                    │ Run bash command (excluded from context) │                               ",
+            " └───────────────────────┴──────────────────────────────────────────┘                               ",
+            "                                                                                                    ",
+            "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+          ]
+        },
+        "head": [
+          "",
+          "────────────────────────────────────────────────────────────────────────────────────────────────────",
+          " Keyboard Shortcuts",
+          "",
+          "",
+          " Navigation",
+          "",
+          " ┌───────────────────────────────────────────────────────┬──────────────────────────────┐",
+          " │ Key                                                   │ Action                       │",
+          " ├───────────────────────────────────────────────────────┼──────────────────────────────┤",
+          " │ Up / Down / Left/Ctrl+B / Right/Ctrl+F                │ Move cursor / browse history │",
+          " ├───────────────────────────────────────────────────────┼──────────────────────────────┤",
+          " │ Alt+Left/Ctrl+Left/Alt+B / Alt+Right/Ctrl+Right/Alt+F │ Move by word                 │",
+          " ├───────────────────────────────────────────────────────┼──────────────────────────────┤",
+          " │ Home/Ctrl+A                                           │ Start of line                │",
+          " ├───────────────────────────────────────────────────────┼──────────────────────────────┤",
+          " │ End/Ctrl+E                                            │ End of line                  │",
+          " ├───────────────────────────────────────────────────────┼──────────────────────────────┤",
+          " │ Ctrl+]                                                │ Jump forward to character    │",
+          " ├───────────────────────────────────────────────────────┼──────────────────────────────┤"
+        ],
+        "tail": [
+          " │ Ctrl+T                │ Toggle thinking block visibility         │",
+          " ├───────────────────────┼──────────────────────────────────────────┤",
+          " │ Ctrl+G                │ Edit message in external editor          │",
+          " ├───────────────────────┼──────────────────────────────────────────┤",
+          " │ Ctrl+X                │ Copy last assistant message              │",
+          " ├───────────────────────┼──────────────────────────────────────────┤",
+          " │ Alt+Enter             │ Queue follow-up message                  │",
+          " ├───────────────────────┼──────────────────────────────────────────┤",
+          " │ Alt+Up                │ Restore queued messages                  │",
+          " ├───────────────────────┼──────────────────────────────────────────┤",
+          " │ Ctrl+V                │ Paste image or text from clipboard       │",
+          " ├───────────────────────┼──────────────────────────────────────────┤",
+          " │ /                     │ Slash commands                           │",
+          " ├───────────────────────┼──────────────────────────────────────────┤",
+          " │ !                     │ Run bash command                         │",
+          " ├───────────────────────┼──────────────────────────────────────────┤",
+          " │ !!                    │ Run bash command (excluded from context) │",
+          " └───────────────────────┴──────────────────────────────────────────┘",
+          "",
+          "────────────────────────────────────────────────────────────────────────────────────────────────────"
+        ]
+      }
+    },
+    {
+      "name": "fork",
+      "input": "/fork",
+      "dispatchTrace": [
+        "action:showUserMessageSelector:[]",
+        "editor:\"\""
+      ],
+      "finalEditorText": "",
+      "transition": null,
+      "trace": [],
+      "chat": {
+        "lineCount": 2,
+        "sha256": "3721fca1dcbcd8de9718e62a02d8e580934f7e0c2354c73f23a52f880266965a",
+        "raw": {
+          "lineCount": 2,
+          "sha256": "af75a208d36b226e54991af3ef96f93e30db62a86a0fe32c77008d96a21546ea",
+          "lines": [
+            "",
+            " \u001b[38;5;241mNo messages to fork from\u001b[39m                                                                           "
+          ]
+        },
+        "lines": [
+          "",
+          " No messages to fork from"
+        ]
+      }
+    },
+    {
+      "name": "clone",
+      "input": "/clone",
+      "dispatchTrace": [
+        "editor:\"\"",
+        "action:handleCloneCommand:[]"
+      ],
+      "finalEditorText": "",
+      "transition": null,
+      "trace": [],
+      "chat": {
+        "lineCount": 2,
+        "sha256": "326f389e3521ab6af741bea24e8b42cc59a024ed8f4eeaea222fb252eedc85b2",
+        "raw": {
+          "lineCount": 2,
+          "sha256": "6ac3899d80dddd826742a49c71b160b36ca3e91252939ff1f039fb989f0629f7",
+          "lines": [
+            "",
+            " \u001b[38;5;241mNothing to clone yet\u001b[39m                                                                               "
+          ]
+        },
+        "lines": [
+          "",
+          " Nothing to clone yet"
+        ]
+      }
+    },
+    {
+      "name": "tree",
+      "input": "/tree",
+      "dispatchTrace": [
+        "action:showTreeSelector:[]",
+        "editor:\"\""
+      ],
+      "finalEditorText": "",
+      "transition": null,
+      "trace": [],
+      "chat": {
+        "lineCount": 2,
+        "sha256": "4d11213b5aea785a42016b1fe587c296b1b47af814a90a6c5997cce530f9b9eb",
+        "raw": {
+          "lineCount": 2,
+          "sha256": "d0a98865006f6af0e2cc053778536ab1f3556b083de6d63008cac395968d9fb1",
+          "lines": [
+            "",
+            " \u001b[38;5;241mNo entries in session\u001b[39m                                                                              "
+          ]
+        },
+        "lines": [
+          "",
+          " No entries in session"
+        ]
+      }
+    },
+    {
+      "name": "trust",
+      "input": "/trust",
+      "dispatchTrace": [
+        "action:showTrustSelector:[]",
+        "editor:\"\""
+      ],
+      "finalEditorText": "",
+      "transition": "trust-selector",
+      "trace": [],
+      "chat": {
+        "lineCount": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "raw": {
+          "lineCount": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "lines": []
+        },
+        "lines": []
+      }
+    },
+    {
+      "name": "login",
+      "input": "/login missing-provider",
+      "dispatchTrace": [
+        "editor:\"\"",
+        "action:handleLoginCommand:[\"missing-provider\"]"
+      ],
+      "finalEditorText": "",
+      "transition": null,
+      "trace": [],
+      "chat": {
+        "lineCount": 2,
+        "sha256": "840f4bb2853326b8461636c8e502efed8518eda769becc91ac6af0910d98bfa6",
+        "raw": {
+          "lineCount": 2,
+          "sha256": "6451a7d968e253bbdd592f9b06698490dddb2888d87d5a3e62c129fec24380ab",
+          "lines": [
+            "",
+            " \u001b[38;5;241mNo login providers available.\u001b[39m                                                                      "
+          ]
+        },
+        "lines": [
+          "",
+          " No login providers available."
+        ]
+      }
+    },
+    {
+      "name": "logout",
+      "input": "/logout",
+      "dispatchTrace": [
+        "action:showOAuthSelector:[\"logout\"]",
+        "editor:\"\""
+      ],
+      "finalEditorText": "",
+      "transition": null,
+      "trace": [],
+      "chat": {
+        "lineCount": 3,
+        "sha256": "b45bd5f3afc54db09b425dfdc19874a9f8d8b3bca3782d4db492a34cff00afbd",
+        "raw": {
+          "lineCount": 3,
+          "sha256": "a07521ce3417affdb31d8eb7c13e70abfe2ecb3be6301cf2bac7db830c84b365",
+          "lines": [
+            "",
+            " \u001b[38;5;241mNo stored credentials to remove. /logout only removes credentials saved by /login; environment     ",
+            " \u001b[38;5;241mvariables and models.json config are unchanged.\u001b[39m                                                    "
+          ]
+        },
+        "lines": [
+          "",
+          " No stored credentials to remove. /logout only removes credentials saved by /login; environment",
+          " variables and models.json config are unchanged."
+        ]
+      }
+    },
+    {
+      "name": "new",
+      "input": "/new",
+      "dispatchTrace": [
+        "editor:\"\"",
+        "action:handleClearCommand:[]"
+      ],
+      "finalEditorText": "",
+      "transition": null,
+      "trace": [
+        "clear-status",
+        "new-session"
+      ],
+      "chat": {
+        "lineCount": 3,
+        "sha256": "a8b31d5995aee48bdfcaeef66c09429bbb766d351c29df5b856dc0f3290f3b07",
+        "raw": {
+          "lineCount": 4,
+          "sha256": "90baa22f93537a9a71d1e0fbb3c6eb5be926637c991fd56b3739d7bf521efd92",
+          "lines": [
+            "",
+            "                                                                                                    ",
+            " \u001b[38;5;109m✓ New session started\u001b[39m                                                                              ",
+            "                                                                                                    "
+          ]
+        },
+        "lines": [
+          "",
+          "",
+          " ✓ New session started"
+        ]
+      }
+    },
+    {
+      "name": "compact",
+      "input": "/compact fixture instructions",
+      "dispatchTrace": [
+        "editor:\"\"",
+        "action:handleCompactCommand:[\"fixture instructions\"]"
+      ],
+      "finalEditorText": "",
+      "transition": null,
+      "trace": [
+        "clear-status",
+        "compact:fixture instructions"
+      ],
+      "chat": {
+        "lineCount": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "raw": {
+          "lineCount": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "lines": []
+        },
+        "lines": []
+      }
+    },
+    {
+      "name": "resume",
+      "input": "/resume",
+      "dispatchTrace": [
+        "action:showSessionSelector:[]",
+        "editor:\"\""
+      ],
+      "finalEditorText": "",
+      "transition": "session-selector",
+      "trace": [],
+      "chat": {
+        "lineCount": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "raw": {
+          "lineCount": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "lines": []
+        },
+        "lines": []
+      }
+    },
+    {
+      "name": "reload",
+      "input": "/reload",
+      "dispatchTrace": [
+        "editor:\"\"",
+        "action:handleReloadCommand:[]"
+      ],
+      "finalEditorText": "",
+      "transition": null,
+      "trace": [],
+      "chat": {
+        "lineCount": 2,
+        "sha256": "c42ba6605c6c133cd41a31bb3bc3617fc892f26e7bf299d1afcba1dc427d7ee2",
+        "raw": {
+          "lineCount": 2,
+          "sha256": "eca02df254d7c23a5301251f3bad85846b868ed7104ea4b0d36f91f5229a6d19",
+          "lines": [
+            "",
+            " \u001b[38;5;226mWarning: Wait for the current response to finish before reloading.\u001b[39m                                 "
+          ]
+        },
+        "lines": [
+          "",
+          " Warning: Wait for the current response to finish before reloading."
+        ]
+      }
+    },
+    {
+      "name": "quit",
+      "input": "/quit",
+      "dispatchTrace": [
+        "editor:\"\"",
+        "action:shutdown:[]"
+      ],
+      "finalEditorText": "",
+      "transition": null,
+      "trace": [
+        "theme-stop",
+        "drain:1000",
+        "stop",
+        "dispose",
+        "exit:0"
+      ],
+      "chat": {
+        "lineCount": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "raw": {
+          "lineCount": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "lines": []
+        },
+        "lines": []
+      }
+    }
+  ]
+}

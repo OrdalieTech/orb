@@ -5,7 +5,7 @@ GOLANGCI_LINT := $(CURDIR)/.tools/bin/golangci-lint
 GO_ENV := GOCACHE=$(CURDIR)/.tools/cache/go-build GOMODCACHE=$(CURDIR)/.tools/cache/go-mod
 LINT_ENV := $(GO_ENV) GOLANGCI_LINT_CACHE=$(CURDIR)/.tools/cache/golangci-lint
 
-.PHONY: build test lint nightly-live upstream fixtures fixtures-check ensure-upstream-fixture-tools upstream-rpc-tests sync sync-bump
+.PHONY: build test lint nightly-live upstream product-assets product-assets-check fixtures fixtures-check ensure-upstream-fixture-tools upstream-rpc-tests sync sync-bump
 
 build:
 	$(GO_ENV) CGO_ENABLED=0 go build ./...
@@ -29,6 +29,12 @@ upstream:
 	@if ! git -C .upstream cat-file -e '$(UPSTREAM_COMMIT)^{commit}' 2>/dev/null; then git -C .upstream fetch origin $(UPSTREAM_COMMIT); fi
 	@git -C .upstream checkout --detach $(UPSTREAM_COMMIT)
 	@test "$$(git -C .upstream rev-parse HEAD)" = "$(UPSTREAM_COMMIT)"
+
+product-assets: upstream
+	@node conformance/extract/materialize-product-assets.ts .upstream .
+
+product-assets-check: upstream
+	@cmp .upstream/packages/coding-agent/CHANGELOG.md codingagent/modes/assets/CHANGELOG.md
 
 ensure-upstream-fixture-tools: upstream
 	@if [ ! -x .upstream/node_modules/.bin/tsx ] || \
@@ -58,10 +64,10 @@ ensure-upstream-fixture-tools: upstream
 			@silvia-odwyer/photon-node@0.3.4 undici@8.5.0 yaml@2.9.0; \
 	fi
 
-fixtures: ensure-upstream-fixture-tools
+fixtures: ensure-upstream-fixture-tools product-assets
 	@cd .upstream && node --import tsx ../conformance/extract/generate.ts ../conformance/fixtures $(UPSTREAM_COMMIT)
 
-fixtures-check: ensure-upstream-fixture-tools
+fixtures-check: ensure-upstream-fixture-tools product-assets-check
 	@fixture_tmp=$$(mktemp -d); \
 		trap 'rm -rf "$$fixture_tmp"' EXIT; \
 		cd .upstream && node --import tsx ../conformance/extract/generate.ts "$$fixture_tmp" $(UPSTREAM_COMMIT); \

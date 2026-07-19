@@ -4,6 +4,7 @@
   "generator": "conformance/extract/wp450-session-selector.ts",
   "sources": [
     "packages/coding-agent/src/cli/session-picker.ts",
+    "packages/coding-agent/src/modes/interactive/components/header.ts",
     "packages/coding-agent/src/modes/interactive/components/session-selector.ts",
     "packages/coding-agent/src/modes/interactive/components/session-selector-search.ts"
   ],

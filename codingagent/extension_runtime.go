@@ -331,6 +331,10 @@ func (runtime *SessionRuntime) reloadExtensions(ctx context.Context) error {
 	runner := state.runner
 	configuration := state.config
 	state.mu.Unlock()
+	flagValues := map[string]any{}
+	if runner != nil {
+		flagValues = runner.FlagValues()
+	}
 	activeTools := runtime.agent.State().Tools
 	configuration.InitialActiveToolNames = make([]string, 0, len(activeTools))
 	for _, tool := range activeTools {
@@ -340,11 +344,42 @@ func (runtime *SessionRuntime) reloadExtensions(ctx context.Context) error {
 	if runner != nil {
 		runner.Invalidate("")
 	}
-	registry, err := configuration.ExtensionRegistry.Fresh(runtime.manager.GetCWD())
-	if err != nil {
-		return err
-	}
 	runtime.settings.Reload()
+	var registry *extensions.Registry
+	if loader := runtime.ResourceLoader(); loader != nil {
+		loaderOwnedRegistry := configuration.ExtensionRegistry == loader.GetExtensions()
+		if err := loader.Reload(ctx, nil); err != nil {
+			return err
+		}
+		if loaderOwnedRegistry {
+			registry = loader.GetExtensions()
+		} else {
+			var err error
+			registry, err = configuration.ExtensionRegistry.Fresh(runtime.manager.GetCWD())
+			if err != nil {
+				return err
+			}
+		}
+		base := cloneSlashResolver(runtime.baseSlashResolver)
+		if base == nil {
+			base = &SlashResolver{}
+		}
+		base.Skills = loader.GetSkills().Skills
+		base.PromptTemplates = loader.GetPrompts().Prompts
+		runtime.baseSlashResolver = base
+	} else {
+		var err error
+		registry, err = configuration.ExtensionRegistry.Fresh(runtime.manager.GetCWD())
+		if err != nil {
+			return err
+		}
+	}
+	if registry == nil {
+		registry = extensions.NewRegistry(runtime.manager.GetCWD())
+	}
+	for name, value := range flagValues {
+		registry.SetFlagValue(name, value)
+	}
 	if configuration.RebuildBaseTools != nil {
 		baseTools, rebuildErr := configuration.RebuildBaseTools()
 		if rebuildErr != nil {
@@ -478,6 +513,15 @@ func (runtime *SessionRuntime) extendResourcesFromExtensions(resources extension
 		runtime.slashResolver = &SlashResolver{}
 	}
 	cwd := runtime.manager.GetCWD()
+	if loader := runtime.ResourceLoader(); loader != nil {
+		loader.ExtendResources(ResourceExtensionPaths{
+			SkillPaths:  resourcePathsFromExtensions(cwd, resources.SkillPaths),
+			PromptPaths: resourcePathsFromExtensions(cwd, resources.PromptPaths),
+			ThemePaths:  resourcePathsFromExtensions(cwd, resources.ThemePaths),
+		})
+		runtime.applyDiscoveredSlashResources(loader.GetSkills().Skills, loader.GetPrompts().Prompts)
+		return
+	}
 	agentDir := DefaultAgentDir()
 	skillInputs := []LoadSkillsResult{{Skills: append([]Skill(nil), runtime.slashResolver.Skills...)}}
 	for _, entry := range resources.SkillPaths {
@@ -506,8 +550,12 @@ func (runtime *SessionRuntime) extendResourcesFromExtensions(resources extension
 		promptInputs = append(promptInputs, loaded)
 	}
 	mergedPrompts, _ := combinePrompts(promptInputs)
-	runtime.slashResolver.Skills = mergedSkills
-	runtime.slashResolver.PromptTemplates = mergedPrompts
+	runtime.applyDiscoveredSlashResources(mergedSkills, mergedPrompts)
+}
+
+func (runtime *SessionRuntime) applyDiscoveredSlashResources(skills []Skill, prompts []PromptTemplate) {
+	runtime.slashResolver.Skills = append([]Skill(nil), skills...)
+	runtime.slashResolver.PromptTemplates = append([]PromptTemplate(nil), prompts...)
 
 	state := runtime.extensionState
 	if state == nil {
@@ -516,7 +564,7 @@ func (runtime *SessionRuntime) extendResourcesFromExtensions(resources extension
 	state.mu.Lock()
 	if state.promptOptions != nil {
 		options := cloneSystemPromptOptions(*state.promptOptions)
-		options.Skills = append([]Skill(nil), mergedSkills...)
+		options.Skills = append([]Skill(nil), skills...)
 		state.promptOptions = &options
 		state.baseSystemPrompt = BuildSystemPrompt(options)
 	}
@@ -526,6 +574,17 @@ func (runtime *SessionRuntime) extendResourcesFromExtensions(resources extension
 	if !overridden {
 		runtime.agent.SetSystemPrompt(basePrompt)
 	}
+}
+
+func resourcePathsFromExtensions(cwd string, paths []extensions.DiscoveredPath) []ResourcePath {
+	result := make([]ResourcePath, 0, len(paths))
+	for _, entry := range paths {
+		source, baseDir := extensionResourceMetadata(cwd, entry.ExtensionPath)
+		result = append(result, ResourcePath{Path: entry.Path, Metadata: PathMetadata{
+			Source: source, Scope: "temporary", Origin: "top-level", BaseDir: baseDir,
+		}})
+	}
+	return result
 }
 
 func extensionResourceMetadata(cwd, extensionPath string) (source, baseDir string) {

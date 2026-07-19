@@ -50,41 +50,38 @@ func (ui *InteractiveUI) selectItems(ctx context.Context, title string, items []
 	if len(items) == 0 {
 		return "", false, nil
 	}
+	if opts != nil && opts.Signal != nil {
+		select {
+		case <-opts.Signal.Done():
+			return "", false, nil
+		default:
+		}
+	}
 	result := make(chan selectResult, 1)
-
-	sl := tui.NewSelectList(items, 10, selectListTheme(), tui.SelectListLayoutOptions{})
-	sl.OnSelect = func(item tui.SelectItem) {
-		result <- selectResult{value: item.Value}
+	resolve := func(value selectResult) {
+		select {
+		case result <- value:
+		default:
+		}
 	}
-	sl.OnCancel = func() {
-		result <- selectResult{cancelled: true}
-	}
+	dialog := newExtensionSelectorItemsComponent(title, items,
+		func(value string) { resolve(selectResult{value: value}) },
+		func() { resolve(selectResult{cancelled: true}) },
+		&extensionDialogOptions{ui: ui.mode.ui, timeout: dialogTimeout(opts), onToggleToolsExpanded: func() {
+			ui.SetToolsExpanded(!ui.GetToolsExpanded())
+		}},
+	)
 
-	dialogContainer := &tui.Container{}
-	dialogContainer.AddChild(tui.NewText(theme.Bold(title), 1, 0, nil))
-	dialogContainer.AddChild(sl)
-
-	var timer *CountdownTimer
-	if opts != nil && opts.Timeout != nil {
-		countdownText := tui.NewText("", 1, 0, nil)
-		dialogContainer.AddChild(countdownText)
-		timer = NewCountdownTimer(*opts.Timeout, ui.mode.ui, func(remaining int) {
-			countdownText.SetText(theme.FG("dim", fmt.Sprintf("(%ds)", remaining)))
-		}, func() {
-			result <- selectResult{cancelled: true}
-		})
-	}
-
-	ui.mode.widgetAbove.AddChild(dialogContainer)
-	ui.mode.ui.SetFocus(sl)
+	ui.mode.editorContainer.Clear()
+	ui.mode.editorContainer.AddChild(dialog)
+	ui.mode.ui.SetFocus(dialog)
 	ui.mode.ui.RequestRender()
 
 	defer func() {
-		if timer != nil {
-			timer.Dispose()
-		}
-		ui.mode.widgetAbove.RemoveChild(dialogContainer)
-		ui.mode.ui.SetFocus(ui.mode.editor)
+		dialog.Dispose()
+		ui.mode.editorContainer.Clear()
+		ui.mode.restoreEditorComponent()
+		ui.mode.ui.SetFocus(ui.mode.activeEditorFocus())
 		ui.mode.ui.RequestRender()
 	}()
 
@@ -97,7 +94,7 @@ func (ui *InteractiveUI) selectItems(ctx context.Context, title string, items []
 	case r := <-result:
 		return r.value, !r.cancelled, nil
 	case <-signal.Done():
-		return "", false, signal.Err()
+		return "", false, nil
 	case <-ctx.Done():
 		return "", false, ctx.Err()
 	}
@@ -118,45 +115,40 @@ func (ui *InteractiveUI) Confirm(ctx context.Context, title, message string, opt
 }
 
 func (ui *InteractiveUI) Input(ctx context.Context, title string, placeholder *string, opts *extensions.DialogOptions) (string, bool, error) {
+	if opts != nil && opts.Signal != nil {
+		select {
+		case <-opts.Signal.Done():
+			return "", false, nil
+		default:
+		}
+	}
 	result := make(chan inputDialogResult, 1)
-
-	input := tui.NewInput()
+	resolve := func(value inputDialogResult) {
+		select {
+		case result <- value:
+		default:
+		}
+	}
+	placeholderValue := ""
 	if placeholder != nil {
-		input.SetValue(*placeholder)
+		placeholderValue = *placeholder
 	}
-	input.OnSubmit = func(value string) {
-		result <- inputDialogResult{value: value}
-	}
-	input.OnEscape = func() {
-		result <- inputDialogResult{cancelled: true}
-	}
+	dialog := newExtensionInputComponent(title, placeholderValue,
+		func(value string) { resolve(inputDialogResult{value: value}) },
+		func() { resolve(inputDialogResult{cancelled: true}) },
+		&extensionDialogOptions{ui: ui.mode.ui, timeout: dialogTimeout(opts)},
+	)
 
-	dialogContainer := &tui.Container{}
-	dialogContainer.AddChild(tui.NewText(theme.Bold(title), 1, 0, nil))
-	dialogContainer.AddChild(input)
-
-	var timer *CountdownTimer
-	if opts != nil && opts.Timeout != nil {
-		countdownText := tui.NewText("", 1, 0, nil)
-		dialogContainer.AddChild(countdownText)
-		timer = NewCountdownTimer(*opts.Timeout, ui.mode.ui, func(remaining int) {
-			countdownText.SetText(theme.FG("dim", fmt.Sprintf("(%ds)", remaining)))
-		}, func() {
-			result <- inputDialogResult{cancelled: true}
-		})
-	}
-
-	ui.mode.widgetAbove.AddChild(dialogContainer)
-	input.SetFocused(true)
-	ui.mode.ui.SetFocus(input)
+	ui.mode.editorContainer.Clear()
+	ui.mode.editorContainer.AddChild(dialog)
+	ui.mode.ui.SetFocus(dialog)
 	ui.mode.ui.RequestRender()
 
 	defer func() {
-		if timer != nil {
-			timer.Dispose()
-		}
-		ui.mode.widgetAbove.RemoveChild(dialogContainer)
-		ui.mode.ui.SetFocus(ui.mode.editor)
+		dialog.Dispose()
+		ui.mode.editorContainer.Clear()
+		ui.mode.restoreEditorComponent()
+		ui.mode.ui.SetFocus(ui.mode.activeEditorFocus())
 		ui.mode.ui.RequestRender()
 	}()
 
@@ -169,7 +161,7 @@ func (ui *InteractiveUI) Input(ctx context.Context, title string, placeholder *s
 	case r := <-result:
 		return r.value, !r.cancelled, nil
 	case <-signal.Done():
-		return "", false, signal.Err()
+		return "", false, nil
 	case <-ctx.Done():
 		return "", false, ctx.Err()
 	}
@@ -183,14 +175,17 @@ type inputDialogResult struct {
 // ─── Notifications & Status ──────────────────────────────
 
 func (ui *InteractiveUI) Notify(message string, notifyType extensions.NotificationType) {
-	color := "dim"
 	switch notifyType {
 	case extensions.NotifyWarning:
-		color = "warning"
+		ui.mode.chat.AddChild(tui.NewSpacer(1))
+		ui.mode.chat.AddChild(tui.NewText(theme.FG("warning", "Warning: "+message), 1, 0, nil))
 	case extensions.NotifyError:
-		color = "error"
+		ui.mode.chat.AddChild(tui.NewSpacer(1))
+		ui.mode.chat.AddChild(tui.NewText(theme.FG("error", "Error: "+message), 1, 0, nil))
+	default:
+		ui.mode.showStatusMessage(message)
+		return
 	}
-	ui.mode.chat.AddChild(newStyledText(color, message))
 	ui.mode.ui.RequestRender()
 }
 
@@ -555,20 +550,33 @@ func (ui *InteractiveUI) GetEditorText() string {
 	return ui.mode.editor.GetText()
 }
 
-func (ui *InteractiveUI) Editor(ctx context.Context, content string, language *string) (string, bool, error) {
+func (ui *InteractiveUI) Editor(ctx context.Context, title string, prefill *string) (string, bool, error) {
 	result := make(chan inputDialogResult, 1)
-	editor := NewCustomEditor(ui.mode.ui, theme.EditorTheme(), ui.mode.keybindings)
-	editor.SetText(content)
-	editor.OnSubmit = func(value string) { result <- inputDialogResult{value: value} }
-	editor.OnEscape = func() { result <- inputDialogResult{cancelled: true} }
-	ui.mode.editorContainer.Clear()
-	if language != nil && *language != "" {
-		ui.mode.editorContainer.AddChild(tui.NewText(theme.FG("dim", *language), 1, 0, nil))
+	resolve := func(value inputDialogResult) {
+		select {
+		case result <- value:
+		default:
+		}
 	}
+	prefillValue := ""
+	if prefill != nil {
+		prefillValue = *prefill
+	}
+	externalEditorCommand := ""
+	if ui.mode.session != nil {
+		externalEditorCommand = ui.mode.session.InteractiveModeSettings().ExternalEditor
+	}
+	editor := newExtensionEditorComponent(ui.mode.ui, ui.mode.keybindings, title, prefillValue,
+		func(value string) { resolve(inputDialogResult{value: value}) },
+		func() { resolve(inputDialogResult{cancelled: true}) },
+		externalEditorCommand,
+	)
+	ui.mode.editorContainer.Clear()
 	ui.mode.editorContainer.AddChild(editor)
 	ui.mode.ui.SetFocus(editor)
 	ui.mode.ui.RequestRender()
 	defer func() {
+		ui.mode.editorContainer.Clear()
 		ui.mode.restoreEditorComponent()
 		ui.mode.ui.SetFocus(ui.mode.activeEditorFocus())
 		ui.mode.ui.RequestRender()
@@ -579,6 +587,13 @@ func (ui *InteractiveUI) Editor(ctx context.Context, content string, language *s
 	case <-ctx.Done():
 		return "", false, ctx.Err()
 	}
+}
+
+func dialogTimeout(opts *extensions.DialogOptions) *int64 {
+	if opts == nil {
+		return nil
+	}
+	return opts.Timeout
 }
 
 func (ui *InteractiveUI) AddAutocompleteProvider(factory extensions.AutocompleteProviderFactory) {

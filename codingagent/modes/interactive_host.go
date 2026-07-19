@@ -29,6 +29,9 @@ type InteractiveSessionHost interface {
 	// SetBeforeSessionInvalidate registers synchronous listener teardown run
 	// after session_shutdown and before the current runtime is disposed.
 	SetBeforeSessionInvalidate(func())
+	// SetAfterSessionStart registers the TUI callback invoked after the
+	// replacement has discovered extension resources.
+	SetAfterSessionStart(func(*codingagent.SessionRuntime) error)
 
 	NewSession(ctx context.Context, options *extensions.NewSessionOptions) (extensions.SessionReplacementResult, error)
 	SwitchSession(ctx context.Context, sessionPath, cwdOverride string, options *extensions.SwitchSessionOptions) (extensions.SessionReplacementResult, error)

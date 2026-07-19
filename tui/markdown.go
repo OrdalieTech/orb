@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -54,6 +55,7 @@ type inlineStyleContext struct {
 }
 
 type Markdown struct {
+	mu           sync.Mutex
 	text         string
 	paddingX     int
 	paddingY     int
@@ -76,16 +78,23 @@ func NewMarkdown(text string, paddingX, paddingY int, theme MarkdownTheme, defau
 }
 
 func (markdown *Markdown) SetText(value string) {
+	markdown.mu.Lock()
+	defer markdown.mu.Unlock()
 	markdown.text = value
-	markdown.Invalidate()
+	markdown.cached = false
+	markdown.cachedLines = nil
 }
 
 func (markdown *Markdown) Invalidate() {
+	markdown.mu.Lock()
+	defer markdown.mu.Unlock()
 	markdown.cached = false
 	markdown.cachedLines = nil
 }
 
 func (markdown *Markdown) Render(width int) []string {
+	markdown.mu.Lock()
+	defer markdown.mu.Unlock()
 	if markdown.cached && markdown.cachedText == markdown.text && markdown.cachedWidth == width {
 		return markdown.cachedLines
 	}

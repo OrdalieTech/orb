@@ -1,0 +1,29 @@
+{
+  "family": "F12-shutdown",
+  "schema": 1,
+  "upstream": {
+    "commit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
+    "files": [
+      {
+        "path": "packages/coding-agent/src/modes/interactive/interactive-mode.ts",
+        "sha256": "7a6e5ce0cdedc7aa372ee3c6cfcf1ec660e6ec25448cd46403c342742bae6054"
+      },
+      {
+        "path": "packages/coding-agent/src/config.ts",
+        "sha256": "d9dce190990ce48a273ad04d06a51baba5c47904f39363521451225dbd3501b2"
+      },
+      {
+        "path": "packages/coding-agent/test/format-resume-command.test.ts",
+        "sha256": "910fedad6564980f3ee9369a798c90ca04647512f9a161a43b1997108bd7b271"
+      },
+      {
+        "path": "packages/coding-agent/test/suite/regressions/5080-signal-shutdown-extension-cleanup.test.ts",
+        "sha256": "3d8757525011c1294b87ad8615e153e99b04a5e7fd5a17dbba339aef1b16c6e3"
+      }
+    ]
+  },
+  "cases": [
+    "ordinary-persisted-custom-dir",
+    "signal-cleanup-order"
+  ]
+}
