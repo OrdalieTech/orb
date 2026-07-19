@@ -105,6 +105,7 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
 | Windows support | deferred | later parity wave (D8) |
 | darwin modifier-key native addon | gap | kitty keyboard protocol where possible; documented small parity gap |
 | win32 console native addon | deferred | Windows wave |
+| Bundled llama.cpp extension | excluded | shipped at the pinned commit but deleted upstream immediately after; porting would be dead-on-arrival work (2026-07-19 alignment audit; owner may amend) |
 
 ## Execution decisions
 

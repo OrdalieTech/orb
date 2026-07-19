@@ -5,7 +5,10 @@ GOLANGCI_LINT := $(CURDIR)/.tools/bin/golangci-lint
 GO_ENV := GOCACHE=$(CURDIR)/.tools/cache/go-build GOMODCACHE=$(CURDIR)/.tools/cache/go-mod
 LINT_ENV := $(GO_ENV) GOLANGCI_LINT_CACHE=$(CURDIR)/.tools/cache/golangci-lint
 
-.PHONY: build test lint nightly-live upstream product-assets product-assets-check fixtures fixtures-check ensure-upstream-fixture-tools upstream-rpc-tests sync sync-bump
+.PHONY: check build test lint nightly-live upstream product-assets product-assets-check fixtures fixtures-check ensure-upstream-fixture-tools upstream-rpc-tests sync sync-bump
+
+# The canonical gate (upstream's `npm run check` norm): run after any code change.
+check: build lint test
 
 build:
 	$(GO_ENV) CGO_ENABLED=0 go build ./...

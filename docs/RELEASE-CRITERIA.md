@@ -74,6 +74,9 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 - [ ] Nightly live suite ≥ 90% pass over the trailing 72 hours.
 - [ ] Docs newcomer path (install → first session → embed SDK → run an upstream extension) verified
       by following the docs literally; README credit/provenance; divergence ledger current.
+- [ ] Upstream alignment audit re-run at the release commit with zero open should-fix findings
+      (docs/compare/upstream-alignment.md); release notes extracted from CHANGELOG.md; version
+      injected via ldflags and printed with the upstream pin.
 - [ ] Final trim pass #5; LOC report: mirrored packages ≤ 1.3× upstream TS src LOC or justified
       per-package in the report; dep audit clean.
 
@@ -101,6 +104,8 @@ every sprint close. The deliverable is a **shrink diff** plus `docs/trim/M<n>.md
    justified in the report.
 6. **Size/speed trend** — binary size and cold start recorded; > 10% regression investigated.
 7. **Milestone verification** — every criterion of the current milestone checked and reported.
+8. **Upstream alignment** — the six-dimension alignment audit (docs/compare/upstream-alignment.md)
+   re-run; new should-fix findings become work items before the sprint closes.
 
 Iron rule: **a trim never changes behavior** — all fixtures stay green; a trim that breaks one is
 reverted, not adapted around.
