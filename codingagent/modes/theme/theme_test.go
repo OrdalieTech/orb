@@ -409,3 +409,10 @@ func assertSelectedTheme(t *testing.T, registry *Registry, name, sourcePath stri
 		t.Fatalf("selected %q = %#v, want source %q", name, selected, sourcePath)
 	}
 }
+
+func ThemeForRGB(r, g, b int) TerminalTheme {
+	if luminance(r, g, b) >= .5 {
+		return Light
+	}
+	return Dark
+}

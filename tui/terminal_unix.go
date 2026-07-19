@@ -433,5 +433,3 @@ func (terminal *ProcessTerminal) SetProgress(active bool) {
 		}
 	}()
 }
-
-func getenv(name string) string { return os.Getenv(name) }

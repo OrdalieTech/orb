@@ -416,13 +416,13 @@ func googleVertexFunctionDeclarations(value json.RawMessage) (json.RawMessage, e
 		if err := normalizeGoogleDeclarationSchema(&declaration, "response", "responseJsonSchema"); err != nil {
 			return nil, err
 		}
-		if _, exists := declaration.value("behavior"); exists {
+		if _, exists := declaration.Value("behavior"); exists {
 			return nil, errors.New("behavior parameter is not supported in Gemini Enterprise Agent Platform (previously known as Vertex AI).") //nolint:staticcheck // Exact SDK text.
 		}
 		ordered := googleJSONObject{}
 		for _, name := range []string{"description", "name", "parameters", "parametersJsonSchema", "response", "responseJsonSchema"} {
-			if field, exists := declaration.value(name); exists && field != nil {
-				ordered.set(name, field)
+			if field, exists := declaration.Value(name); exists && field != nil {
+				ordered.Set(name, field)
 			}
 		}
 		result = append(result, ordered)
@@ -485,28 +485,28 @@ func googleVertexImageConfig(value json.RawMessage) (json.RawMessage, error) {
 	}
 	output := googleJSONObject{}
 	for _, name := range []string{"aspectRatio", "imageSize", "personGeneration", "prominentPeople"} {
-		if field, exists := input.value(name); exists && field != nil {
-			output.set(name, field)
+		if field, exists := input.Value(name); exists && field != nil {
+			output.Set(name, field)
 		}
 	}
 	imageOutput := googleJSONObject{}
-	if field, exists := input.value("outputMimeType"); exists && field != nil {
-		imageOutput.set("mimeType", field)
+	if field, exists := input.Value("outputMimeType"); exists && field != nil {
+		imageOutput.Set("mimeType", field)
 	}
-	if field, exists := input.value("outputCompressionQuality"); exists && field != nil {
-		imageOutput.set("compressionQuality", field)
+	if field, exists := input.Value("outputCompressionQuality"); exists && field != nil {
+		imageOutput.Set("compressionQuality", field)
 	}
-	if field, exists := input.value("imageOutputOptions"); exists && field != nil {
+	if field, exists := input.Value("imageOutputOptions"); exists && field != nil {
 		provided, ok := field.(googleJSONObject)
 		if !ok {
 			return nil, errors.New("imageOutputOptions must be an object")
 		}
 		for _, member := range provided {
-			imageOutput.set(member.name, member.value)
+			imageOutput.Set(member.Name, member.Value)
 		}
 	}
 	if len(imageOutput) > 0 {
-		output.set("imageOutputOptions", imageOutput)
+		output.Set("imageOutputOptions", imageOutput)
 	}
 	return ai.Marshal(output)
 }

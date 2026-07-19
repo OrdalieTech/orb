@@ -37,8 +37,8 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 // {"type":"string","enum":[...]}.
 func StringEnum(values ...string) Schema {
 	b, err := jsonwire.Marshal(orderedObject{
-		{name: "type", value: "string"},
-		{name: "enum", value: values},
+		{Name: "type", Value: "string"},
+		{Name: "enum", Value: values},
 	})
 	if err != nil {
 		panic(err) // strings are always JSON-marshalable
@@ -46,32 +46,6 @@ func StringEnum(values ...string) Schema {
 	return Schema(b)
 }
 
-type orderedMember struct {
-	name  string
-	value any
-}
+type orderedMember = jsonwire.OrderedMember
 
-type orderedObject []orderedMember
-
-func (o orderedObject) MarshalJSON() ([]byte, error) {
-	var buf bytes.Buffer
-	buf.WriteByte('{')
-	for i, member := range o {
-		if i > 0 {
-			buf.WriteByte(',')
-		}
-		name, err := jsonwire.Marshal(member.name)
-		if err != nil {
-			return nil, err
-		}
-		value, err := jsonwire.Marshal(member.value)
-		if err != nil {
-			return nil, err
-		}
-		buf.Write(name)
-		buf.WriteByte(':')
-		buf.Write(value)
-	}
-	buf.WriteByte('}')
-	return buf.Bytes(), nil
-}
+type orderedObject = jsonwire.OrderedObject

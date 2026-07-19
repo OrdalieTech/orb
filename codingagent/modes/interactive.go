@@ -1185,14 +1185,6 @@ type slashCommandAction struct {
 	run       func()
 }
 
-func (mode *InteractiveMode) handleSlashCommand(name, args string) bool {
-	action, ok := mode.resolveSlashCommand(name, args)
-	if ok {
-		action.run()
-	}
-	return ok
-}
-
 func (mode *InteractiveMode) resolveSlashCommand(name, args string) (slashCommandAction, bool) {
 	if !isInteractiveCommandName(name) {
 		return slashCommandAction{}, false

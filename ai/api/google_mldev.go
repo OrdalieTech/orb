@@ -561,7 +561,7 @@ func googleFunctionDeclarations(value json.RawMessage) (json.RawMessage, error) 
 }
 
 func normalizeGoogleDeclarationSchema(declaration *googleJSONObject, legacy, jsonName string) error {
-	schema, ok := declaration.value(legacy)
+	schema, ok := declaration.Value(legacy)
 	if !ok || !googleJSONValueTruthy(schema) {
 		return nil
 	}
@@ -569,11 +569,11 @@ func normalizeGoogleDeclarationSchema(declaration *googleJSONObject, legacy, jso
 	if !ok {
 		return errors.New("Google function schema must be an object") //nolint:staticcheck // Public hook diagnostic.
 	}
-	if _, hasDollar := object.value("$schema"); hasDollar {
-		jsonSchema, _ := declaration.value(jsonName)
+	if _, hasDollar := object.Value("$schema"); hasDollar {
+		jsonSchema, _ := declaration.Value(jsonName)
 		if !googleJSONValueTruthy(jsonSchema) {
-			declaration.set(jsonName, object)
-			declaration.delete(legacy)
+			declaration.Set(jsonName, object)
+			declaration.Delete(legacy)
 		}
 		return nil
 	}
@@ -581,7 +581,7 @@ func normalizeGoogleDeclarationSchema(declaration *googleJSONObject, legacy, jso
 	if err != nil {
 		return err
 	}
-	declaration.set(legacy, normalized)
+	declaration.Set(legacy, normalized)
 	return nil
 }
 

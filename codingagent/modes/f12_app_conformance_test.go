@@ -1466,3 +1466,17 @@ func loadF12ApplicationFixture(t testing.TB) f12ApplicationFixture {
 	}
 	return fixture
 }
+
+func newExtensionSelectorComponent(
+	title string,
+	options []string,
+	onSelect func(string),
+	onCancel func(),
+	config *extensionDialogOptions,
+) *extensionSelectorComponent {
+	items := make([]tui.SelectItem, len(options))
+	for index, option := range options {
+		items[index] = tui.SelectItem{Value: option, Label: option}
+	}
+	return newExtensionSelectorItemsComponent(title, items, onSelect, onCancel, config)
+}

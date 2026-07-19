@@ -8,8 +8,9 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"github.com/bmatcuk/doublestar/v4"
 	"gopkg.in/yaml.v3"
+
+	"github.com/OrdalieTech/pi-go/internal/ignorerules"
 )
 
 const (
@@ -182,16 +183,8 @@ func loadSkillFromFile(filePath, source string) (*Skill, []ResourceDiagnostic) {
 	}, diagnostics
 }
 
-type skillIgnoreRule struct {
-	base         string
-	pattern      string
-	negated      bool
-	directory    bool
-	basenameOnly bool
-}
-
 type skillIgnoreMatcher struct {
-	rules []skillIgnoreRule
+	rules []ignorerules.Rule
 }
 
 func (matcher *skillIgnoreMatcher) addDirectoryRules(dir, root string) {
@@ -224,51 +217,16 @@ func (matcher *skillIgnoreMatcher) addDirectoryRules(dir, root string) {
 			if line == "" {
 				continue
 			}
-			matcher.rules = append(matcher.rules, skillIgnoreRule{
-				base: relativeDir, pattern: filepath.ToSlash(line), negated: negated,
-				directory: directory, basenameOnly: !anchored && !strings.Contains(line, "/"),
+			matcher.rules = append(matcher.rules, ignorerules.Rule{
+				Base: relativeDir, Pattern: filepath.ToSlash(line), Negated: negated,
+				Directory: directory, BasenameOnly: !anchored && !strings.Contains(line, "/"),
 			})
 		}
 	}
 }
 
 func (matcher *skillIgnoreMatcher) ignores(relativePath string, directory bool) bool {
-	relativePath = strings.TrimSuffix(filepath.ToSlash(relativePath), "/")
-	ignored := false
-	for _, rule := range matcher.rules {
-		local := relativePath
-		if rule.base != "" {
-			if local == rule.base {
-				local = ""
-			} else if strings.HasPrefix(local, rule.base+"/") {
-				local = strings.TrimPrefix(local, rule.base+"/")
-			} else {
-				continue
-			}
-		}
-		if local == "" {
-			continue
-		}
-		matched := false
-		if rule.basenameOnly {
-			parts := strings.Split(local, "/")
-			for index, part := range parts {
-				if ok, _ := doublestar.Match(rule.pattern, part); ok && (!rule.directory || directory || index < len(parts)-1) {
-					matched = true
-					break
-				}
-			}
-		} else {
-			matched, _ = doublestar.Match(rule.pattern, local)
-			if !matched {
-				matched, _ = doublestar.Match(strings.TrimSuffix(rule.pattern, "/")+"/**", local)
-			}
-		}
-		if matched {
-			ignored = !rule.negated
-		}
-	}
-	return ignored
+	return ignorerules.Ignores(matcher.rules, filepath.ToSlash(relativePath), directory)
 }
 
 func loadSkillsFromDirInternal(dir, source string, includeRootFiles bool, matcher *skillIgnoreMatcher, root string, stack map[string]bool) LoadSkillsResult {

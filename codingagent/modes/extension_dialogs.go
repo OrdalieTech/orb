@@ -33,20 +33,6 @@ type extensionSelectorComponent struct {
 	countdown             *CountdownTimer
 }
 
-func newExtensionSelectorComponent(
-	title string,
-	options []string,
-	onSelect func(string),
-	onCancel func(),
-	config *extensionDialogOptions,
-) *extensionSelectorComponent {
-	items := make([]tui.SelectItem, len(options))
-	for index, option := range options {
-		items[index] = tui.SelectItem{Value: option, Label: option}
-	}
-	return newExtensionSelectorItemsComponent(title, items, onSelect, onCancel, config)
-}
-
 func newExtensionSelectorItemsComponent(
 	title string,
 	options []tui.SelectItem,

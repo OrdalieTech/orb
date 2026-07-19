@@ -779,27 +779,6 @@ func focusExtensionComponent(mode *InteractiveMode, component extensions.Compone
 	}
 }
 
-func resolveOverlayLayout(opts *extensions.CustomOptions, width, height int) tui.OverlayLayout {
-	resolved := extensions.OverlayOptions{Anchor: extensions.OverlayCenter}
-	if opts != nil {
-		if opts.StaticOverlayOptions != nil {
-			resolved = *opts.StaticOverlayOptions
-		}
-		if opts.DynamicOverlayOptions != nil {
-			resolved = opts.DynamicOverlayOptions()
-		}
-	}
-	result := tui.OverlayLayout{Width: overlayDimension(resolved.Width, width), MinWidth: resolved.MinWidth, MaxHeight: overlayDimension(resolved.MaxHeight, height), Anchor: string(resolved.Anchor), OffsetX: resolved.OffsetX, OffsetY: resolved.OffsetY, Visible: resolved.Visible, NonCapturing: resolved.NonCapturing}
-	if value, ok := overlayCoordinate(resolved.Row); ok {
-		result.Row = &value
-	}
-	if value, ok := overlayCoordinate(resolved.Column); ok {
-		result.Column = &value
-	}
-	result.Margin = overlayMargin(resolved.Margin)
-	return result
-}
-
 func resolveCustomOverlayOptions(opts *extensions.CustomOptions, component extensions.Component) *extensions.OverlayOptions {
 	if opts != nil {
 		if opts.DynamicOverlayOptions != nil {
@@ -888,37 +867,6 @@ func overlayMargin(value any) *tui.OverlayMargin {
 		return &copy
 	}
 	return nil
-}
-
-func overlayDimension(value any, total int) int {
-	switch typed := value.(type) {
-	case int:
-		return typed
-	case int64:
-		return int(typed)
-	case float64:
-		return int(typed)
-	case string:
-		if strings.HasSuffix(typed, "%") {
-			var percent float64
-			if _, err := fmt.Sscanf(strings.TrimSuffix(typed, "%"), "%f", &percent); err == nil {
-				return int(float64(total) * percent / 100)
-			}
-		}
-	}
-	return 0
-}
-
-func overlayCoordinate(value any) (int, bool) {
-	switch typed := value.(type) {
-	case int:
-		return typed, true
-	case int64:
-		return int(typed), true
-	case float64:
-		return int(typed), true
-	}
-	return 0, false
 }
 
 type interactiveOverlayHandle struct {

@@ -117,40 +117,6 @@ func (ct *CountdownTimer) Dispose() {
 	ct.mu.Unlock()
 }
 
-// ExpandableText toggles between collapsed and expanded display.
-type ExpandableText struct {
-	tui.Component
-	collapsed  string
-	expanded   string
-	isExpanded bool
-	text       *tui.Text
-}
-
-func NewExpandableText(collapsed, expanded string, startExpanded bool, paddingX, paddingY int) *ExpandableText {
-	initial := collapsed
-	if startExpanded {
-		initial = expanded
-	}
-	return &ExpandableText{
-		collapsed:  collapsed,
-		expanded:   expanded,
-		isExpanded: startExpanded,
-		text:       tui.NewText(initial, paddingX, paddingY, nil),
-	}
-}
-
-func (et *ExpandableText) SetExpanded(expanded bool) {
-	et.isExpanded = expanded
-	if expanded {
-		et.text.SetText(et.expanded)
-	} else {
-		et.text.SetText(et.collapsed)
-	}
-}
-
-func (et *ExpandableText) Invalidate()               { et.text.Invalidate() }
-func (et *ExpandableText) Render(width int) []string { return et.text.Render(width) }
-
 // Keybinding hint helpers.
 
 func keyText(binding string) string {

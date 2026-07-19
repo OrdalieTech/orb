@@ -364,13 +364,6 @@ func DetectBackground(environment map[string]string) Detection {
 	return Detection{Theme: Dark, Source: "fallback", Detail: "no terminal background hint found", Confidence: "low"}
 }
 
-func ThemeForRGB(r, g, b int) TerminalTheme {
-	if luminance(r, g, b) >= .5 {
-		return Light
-	}
-	return Dark
-}
-
 func luminanceHex(value string) float64 {
 	r, g, b, err := parseHex(value)
 	if err != nil {

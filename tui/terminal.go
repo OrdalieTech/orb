@@ -1,16 +1,12 @@
 package tui
 
 import (
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
 )
 
-const (
-	kittyKeyboardFlags = 7
-	kittyKeyboardQuery = "\x1b[>7u\x1b[?u\x1b[c"
-)
+const kittyKeyboardQuery = "\x1b[>7u\x1b[?u\x1b[c"
 
 type KeyboardProtocolNegotiation struct {
 	Type  string
@@ -48,10 +44,6 @@ func isKeyboardProtocolNegotiationPrefix(sequence string) bool {
 		}
 	}
 	return true
-}
-
-func IsAppleTerminalSession() bool {
-	return runtime.GOOS == "darwin" && getenv("TERM_PROGRAM") == "Apple_Terminal"
 }
 
 func NormalizeAppleTerminalInput(data string, appleTerminal, shiftPressed bool) string {
