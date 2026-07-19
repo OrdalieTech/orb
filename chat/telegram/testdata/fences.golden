@@ -1,0 +1,8 @@
+Intro paragraph.
+----chunk----
+<pre><code class="language-python">def handler(update):
+    check(update)
+    respond(update)</code></pre>
+----chunk----
+<pre><code class="language-python">    archive(update)
+    metrics(update)</code></pre>

@@ -509,7 +509,7 @@ func TestBuildBuiltInToolsHonorsImageAutoResizeSetting(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cwd, "fixture.png"), imageBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	builtIns, err := buildBuiltInTools(cwd, settings)
+	builtIns, err := buildBuiltInTools(cwd, settings, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
