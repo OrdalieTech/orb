@@ -144,6 +144,11 @@ Status: **open; study surfaced to owner; proceeding on full-parity defaults**.
 - [ ] WP-550: F11 matrix ≥80% of the 69 single-file upstream examples unmodified;
       publish `docs/sync/extension-matrix.md`; six named extensions end-to-end.
 - [ ] Port the openrouter-images generation client (only unported API shape).
+- [ ] Alignment-audit work items (docs/compare/upstream-alignment.md): MIRROR triage rows for the
+      16 unmapped core modules and the agent facade files; implement-or-ledger `settings.httpProxy`;
+      SDK convenience surface (tool bundles, public ai model helpers, typed tool-event accessors,
+      public streaming-JSON entry point, UI component kit exports); port the six numbered upstream
+      regression tests and the small uncovered unit-test tail.
 - [ ] Publish `docs/compare/sprint-3.md`, complete trim pass #4, and check every M4 criterion.
 
 ## Sprint 4 — Ship (M5)
@@ -159,6 +164,12 @@ Status: **pending**.
 - **Decision pending: M5 binary-size cap** (`docs/plan/expansion-study.md`) — stripped binary is
   102,882 B over the decimal 35 MB cap before the bridge links sobek/esbuild; recommended: 45 MB
   cap + one bounded size pass in Sprint 4.
+- **Decision pending: AgentHarness facade** (alignment audit) — upstream's primary
+  `packages/agent` export has no Go equivalent; port it for SDK parity or record "dissolved into
+  the codingagent runtime" in DECISIONS. Recommended: record the dissolution; port only if an SDK
+  consumer asks.
+- **Recorded for review: llama.cpp extension excluded** (divergence ledger) — shipped at the pin
+  but deleted upstream right after; amend if you want it ported anyway.
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.
 - ChatGPT/Codex, Copilot, and xAI OAuth end-to-end runs likewise require subscribed accounts.
 - Tier-2/Tier-3 provider live tests require repository/API credentials and CI secrets.

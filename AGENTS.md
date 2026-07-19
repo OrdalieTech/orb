@@ -19,9 +19,10 @@ fully before touching code. It applies to any coding agent (Claude Code, Codex, 
 
 1. **One branch: `main`.** No GitButler lanes, no worktrees, no feature branches. Commit directly
    to main in coherent green chunks — a chunk may span what used to be several WPs.
-2. **Every commit on main builds and passes.** `CGO_ENABLED=0 go build ./...`, `go vet`, lint,
-   `go test -race ./...` including fixtures — before every commit, no exceptions. Bigger steps are
-   welcome; broken mainline commits are not.
+2. **Every commit on main builds and passes.** `make check` (build + vet/lint + race suite,
+   fixtures included) is THE pre-commit gate — before every commit, no exceptions. Bigger steps
+   are welcome; broken mainline commits are not. User-visible changes append a line to
+   `CHANGELOG.md` under `[Unreleased]`.
 3. **Fixtures first.** Open each sprint by landing its conformance surface (extraction scripts,
    goldens, runners, black-box adapters) so the sprint starts RED; implementation turns it GREEN.
    Never write the port first and the fixtures after.
