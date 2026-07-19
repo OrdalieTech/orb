@@ -313,29 +313,7 @@ func readSSE(body io.Reader, handle func(json.RawMessage) error) error {
 	return stream.Err()
 }
 
-func calculateCost(model *ai.Model, usage *ai.Usage) {
-	inputTokens := usage.Input + usage.CacheRead + usage.CacheWrite
-	rates := model.Cost.ModelCostRates
-	matchedThreshold := float64(-1)
-	if model.Cost.Tiers != nil {
-		for _, tier := range *model.Cost.Tiers {
-			if float64(inputTokens) > tier.InputTokensAbove && tier.InputTokensAbove > matchedThreshold {
-				rates = tier.ModelCostRates
-				matchedThreshold = tier.InputTokensAbove
-			}
-		}
-	}
-	longWrite := int64(0)
-	if usage.CacheWrite1h != nil {
-		longWrite = *usage.CacheWrite1h
-	}
-	shortWrite := usage.CacheWrite - longWrite
-	usage.Cost.Input = rates.Input / 1_000_000 * float64(usage.Input)
-	usage.Cost.Output = rates.Output / 1_000_000 * float64(usage.Output)
-	usage.Cost.CacheRead = rates.CacheRead / 1_000_000 * float64(usage.CacheRead)
-	usage.Cost.CacheWrite = (rates.CacheWrite*float64(shortWrite) + rates.Input*2*float64(longWrite)) / 1_000_000
-	usage.Cost.Total = usage.Cost.Input + usage.Cost.Output + usage.Cost.CacheRead + usage.Cost.CacheWrite
-}
+func calculateCost(model *ai.Model, usage *ai.Usage) { ai.CalculateCost(model, usage) }
 
 func formatOpenAIError(err error, prefix string) string {
 	var statusError *openAIStatusError

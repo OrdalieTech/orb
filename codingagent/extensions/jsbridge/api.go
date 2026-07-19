@@ -43,20 +43,26 @@ func newExtensionAPI(runtime *sobek.Runtime, vm *runtimeVM, api extensions.API) 
 			return runtime.ToValue(value)
 		},
 		"registerMessageRenderer": func(call sobek.FunctionCall) sobek.Value {
-			if _, ok := sobek.AssertFunction(call.Argument(1)); !ok {
+			renderer, ok := sobek.AssertFunction(call.Argument(1))
+			if !ok {
 				panic(runtime.NewTypeError("message renderer is not a function"))
 			}
-			api.RegisterMessageRenderer(call.Argument(0).String(), func(extensions.CustomMessage, extensions.MessageRenderOptions, extensions.Theme) extensions.Component {
-				return nil
+			api.RegisterMessageRenderer(call.Argument(0).String(), func(message extensions.CustomMessage, options extensions.MessageRenderOptions, theme extensions.Theme) extensions.Component {
+				return renderComponent(vm, renderer, func(runtime *sobek.Runtime) []sobek.Value {
+					return []sobek.Value{toJS(runtime, message), renderOptionsValue(runtime, options.Expanded), themeValue(runtime, vm, theme)}
+				})
 			})
 			return sobek.Undefined()
 		},
 		"registerEntryRenderer": func(call sobek.FunctionCall) sobek.Value {
-			if _, ok := sobek.AssertFunction(call.Argument(1)); !ok {
+			renderer, ok := sobek.AssertFunction(call.Argument(1))
+			if !ok {
 				panic(runtime.NewTypeError("entry renderer is not a function"))
 			}
-			api.RegisterEntryRenderer(call.Argument(0).String(), func(any, extensions.EntryRenderOptions, extensions.Theme) extensions.Component {
-				return nil
+			api.RegisterEntryRenderer(call.Argument(0).String(), func(entry any, options extensions.EntryRenderOptions, theme extensions.Theme) extensions.Component {
+				return renderComponent(vm, renderer, func(runtime *sobek.Runtime) []sobek.Value {
+					return []sobek.Value{toJS(runtime, entry), renderOptionsValue(runtime, options.Expanded), themeValue(runtime, vm, theme)}
+				})
 			})
 			return sobek.Undefined()
 		},
@@ -178,6 +184,32 @@ func must(runtime *sobek.Runtime, err error) {
 	if err != nil {
 		panic(runtime.NewGoError(err))
 	}
+}
+
+// renderComponent invokes a JS message/entry renderer and bridges the
+// returned component (upstream renderers run synchronously).
+func renderComponent(vm *runtimeVM, renderer sobek.Callable, arguments func(*sobek.Runtime) []sobek.Value) extensions.Component {
+	value, err := vm.do(context.Background(), func(runtime *sobek.Runtime) (any, error) {
+		result, err := renderer(sobek.Undefined(), arguments(runtime)...)
+		if err != nil {
+			return nil, err
+		}
+		if !present(result) {
+			return nil, nil
+		}
+		return decodeJSComponent(runtime, vm, result)
+	})
+	if err != nil {
+		return nil
+	}
+	component, _ := value.(extensions.Component)
+	return component
+}
+
+func renderOptionsValue(runtime *sobek.Runtime, expanded bool) sobek.Value {
+	object := runtime.NewObject()
+	must(runtime, object.Set("expanded", expanded))
+	return object
 }
 
 func present(value sobek.Value) bool {

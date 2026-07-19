@@ -44,7 +44,8 @@ via `sync.WaitGroup` before the run loop exits.
 |---|---|---|
 | `fs.watch` uses 100ms polling, not inotify/kqueue | Higher latency and CPU than native watchers; sufficient for file-trigger use | Implement platform-native watcher goroutine behind the same API |
 | `child_process.spawn` collects all output then delivers at once | Stream-based spawn consumers get all data at once, not incrementally | Async pipe bridging to VM callback queue |
-| `readline`, `module` (createRequire) | Used by 1–2 niche examples | Implement when an extension in the compatibility matrix needs them |
+| `module` (createRequire) | Used by 1–2 niche examples | Implement when an extension in the compatibility matrix needs it |
+| `readline` | interactive-shell example | Implemented: createInterface collecting piped input data events with question/close |
 | `process.exit` throws instead of exiting | Extensions should not kill the host | Intentional safety boundary |
 
 ## Pinned example behavioral status

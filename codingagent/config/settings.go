@@ -380,6 +380,28 @@ func (manager *SettingsManager) GetDefaultProvider() string {
 }
 func (manager *SettingsManager) GetDefaultModel() string { return manager.stringValue("defaultModel") }
 
+// GetHTTPProxy returns the settings-configured proxy for pi-managed HTTP
+// clients (upstream http-dispatcher's httpProxy key).
+func (manager *SettingsManager) GetHTTPProxy() string {
+	return strings.TrimSpace(manager.stringValue("httpProxy"))
+}
+
+// ApplyHTTPProxySettings exports the configured proxy as HTTP_PROXY and
+// HTTPS_PROXY unless the environment already sets them, matching upstream's
+// applyHttpProxySettings; Go's default transport then honors them.
+func ApplyHTTPProxySettings(proxy string) {
+	proxy = strings.TrimSpace(proxy)
+	if proxy == "" {
+		return
+	}
+	if os.Getenv("HTTP_PROXY") == "" {
+		_ = os.Setenv("HTTP_PROXY", proxy)
+	}
+	if os.Getenv("HTTPS_PROXY") == "" {
+		_ = os.Setenv("HTTPS_PROXY", proxy)
+	}
+}
+
 func (manager *SettingsManager) GetEnabledModels() []string {
 	value, exists := manager.value("enabledModels")
 	if !exists {

@@ -22,6 +22,22 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
   `OverlayHandle`, focusable components, `setEditorComponent`/`getEditorComponent`, and the
   `CustomEditor` base class backed by the real built-in editor — modal-editor and six more
   custom-UI examples wired.
+- JS extension bridge example matrix (M4): 61 of the 69 upstream single-file extension examples
+  (88%) run unmodified — pi-tui `Text`/`Box`/`Container`/`Spacer`/`Loader`/`CancellableLoader`
+  component classes, `BorderedLoader`/`DynamicBorder`, `convertToLlm`/`serializeConversation`,
+  truncation utilities, `CONFIG_DIR_NAME`, a `node:readline` shim, live message/entry renderers,
+  and Node-style `execSync` errors; full status in `docs/sync/extension-matrix.md`.
+- JS extensions load in the product: settings-configured and project extension paths plus the new
+  `--extension`/`-e` flag route through the bridge loader into the shared registry; `/reload`
+  rebuilds changed bundles and replaces per-path VMs.
+- OpenRouter image-generation client (`openrouter-images` API shape): non-streaming Chat
+  Completions request with image/text modalities, data-URL result decoding, and the `ai/api`
+  `GenerateImages` dispatch entry point.
+- SDK parity helpers mirroring upstream exports: `tools.NewCodingTools`/`NewReadOnlyTools`
+  bundles and public `ai.CalculateCost`, `ai.SupportedThinkingLevels`, `ai.ClampThinkingLevel`,
+  `ai.ModelsAreEqual`, `ai.HasAPI` (private duplicates removed).
+- `settings.httpProxy` is honored: exported as HTTP(S)_PROXY for pi-managed clients unless the
+  environment already sets them (upstream http-dispatcher semantics).
 
 ### Changed
 
