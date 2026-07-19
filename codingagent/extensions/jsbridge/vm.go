@@ -81,6 +81,10 @@ type runtimeVM struct {
 	factory       sobek.Callable
 	activeContext context.Context
 	signals       map[*sobek.Object]context.Context
+	// themes preserves JS-object identity for Theme values crossing the
+	// boundary so ui.setTheme round-trips the original Go theme (upstream
+	// Theme-object semantics).
+	themes        map[*sobek.Object]extensions.Theme
 	eventHandlers map[string][]vmEventHandler
 	nextEventID   uint64
 }
@@ -109,6 +113,7 @@ func newRuntimeVM(ctx context.Context, entry string, built artifact, cwd string)
 		rootCancel:    rootCancel,
 		ops:           make(map[int64]context.CancelFunc),
 		signals:       make(map[*sobek.Object]context.Context),
+		themes:        make(map[*sobek.Object]extensions.Theme),
 		eventHandlers: make(map[string][]vmEventHandler),
 	}
 	go vm.run()
@@ -170,6 +175,9 @@ func (vm *runtimeVM) evaluate(runtime *sobek.Runtime) error {
 	}
 	shims := newShimHost(vm.cwd, vm)
 	if err := shims.installGlobals(runtime); err != nil {
+		return err
+	}
+	if err := installAbortController(runtime, vm); err != nil {
 		return err
 	}
 	if err := installRequire(runtime, vm); err != nil {

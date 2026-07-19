@@ -20,6 +20,23 @@ const exampleNames = [
   "git-checkpoint",
   "dirty-repo-guard",
   "claude-rules",
+  "confirm-destructive",
+  "custom-footer",
+  "custom-header",
+  "github-issue-autocomplete",
+  "hidden-thinking-label",
+  "mac-system-theme",
+  "model-status",
+  "permission-gate",
+  "project-trust",
+  "rpc-demo",
+  "status-line",
+  "system-prompt-header",
+  "timed-confirm",
+  "titlebar-spinner",
+  "widget-placement",
+  "working-indicator",
+  "working-message-test",
 ];
 
 export async function generateF11JSBridge(

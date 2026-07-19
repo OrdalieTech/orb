@@ -80,15 +80,8 @@ func newContextObject(runtime *sobek.Runtime, vm *runtimeVM, contextValue extens
 			return nil, err
 		}
 	}
-	ui := runtime.NewObject()
-	if err := ui.Set("notify", func(call sobek.FunctionCall) sobek.Value {
-		notificationType := extensions.NotificationType(call.Argument(1).String())
-		if notificationType == "" || notificationType == "undefined" {
-			notificationType = extensions.NotifyInfo
-		}
-		contextValue.UI().Notify(call.Argument(0).String(), notificationType)
-		return sobek.Undefined()
-	}); err != nil {
+	ui, err := newUIObject(runtime, vm, contextValue)
+	if err != nil {
 		return nil, err
 	}
 	if err := object.Set("ui", ui); err != nil {

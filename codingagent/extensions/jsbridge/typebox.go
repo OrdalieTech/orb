@@ -5,12 +5,14 @@ import (
 	_ "embed"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/OrdalieTech/pi-go/ai"
 	aiapi "github.com/OrdalieTech/pi-go/ai/api"
 	aimodels "github.com/OrdalieTech/pi-go/ai/models"
+	"github.com/OrdalieTech/pi-go/tui"
 	"github.com/grafana/sobek"
 )
 
@@ -208,6 +210,59 @@ globalThis.URL.prototype.toString = function() { return this.href; };
 		return err
 	}
 
+	// pi-tui helper functions used by upstream single-file examples; component
+	// classes (Text, Container, Markdown) are the WP-542 custom-UI surface.
+	tuiModule := runtime.NewObject()
+	if err := tuiModule.Set("visibleWidth", func(call sobek.FunctionCall) sobek.Value {
+		return runtime.ToValue(tui.VisibleWidth(call.Argument(0).String()))
+	}); err != nil {
+		return err
+	}
+	if err := tuiModule.Set("truncateToWidth", func(call sobek.FunctionCall) sobek.Value {
+		ellipsis := "..."
+		if present(call.Argument(2)) {
+			ellipsis = call.Argument(2).String()
+		}
+		pad := false
+		if present(call.Argument(3)) {
+			pad = call.Argument(3).ToBoolean()
+		}
+		return runtime.ToValue(tui.TruncateToWidth(call.Argument(0).String(), int(call.Argument(1).ToInteger()), ellipsis, pad))
+	}); err != nil {
+		return err
+	}
+	if err := tuiModule.Set("matchesKey", func(call sobek.FunctionCall) sobek.Value {
+		return runtime.ToValue(tui.MatchesKey(call.Argument(0).String(), tui.KeyID(call.Argument(1).String())))
+	}); err != nil {
+		return err
+	}
+	if err := tuiModule.Set("fuzzyFilter", func(call sobek.FunctionCall) sobek.Value {
+		items := call.Argument(0).ToObject(runtime)
+		query := call.Argument(1).String()
+		getText, ok := sobek.AssertFunction(call.Argument(2))
+		if !ok {
+			panic(runtime.NewTypeError("fuzzyFilter requires a getText function"))
+		}
+		length := int(items.Get("length").ToInteger())
+		values := make([]sobek.Value, 0, length)
+		for index := range length {
+			values = append(values, items.Get(strconv.Itoa(index)))
+		}
+		filtered := tui.FuzzyFilter(values, query, func(value sobek.Value) string {
+			text, err := getText(sobek.Undefined(), value)
+			if err != nil {
+				panic(err)
+			}
+			return text.String()
+		})
+		array := make([]any, len(filtered))
+		for index, value := range filtered {
+			array[index] = value
+		}
+		return runtime.NewArray(array...)
+	}); err != nil {
+		return err
+	}
 	emptyModule := runtime.NewObject()
 	return runtime.Set("require", func(call sobek.FunctionCall) sobek.Value {
 		specifier := call.Argument(0).String()
@@ -231,6 +286,9 @@ globalThis.URL.prototype.toString = function() { return this.href; };
 		case specifier == "@earendil-works/pi-ai/compat",
 			specifier == "@mariozechner/pi-ai/compat":
 			return compatModule
+		case specifier == "@earendil-works/pi-tui",
+			specifier == "@mariozechner/pi-tui":
+			return tuiModule
 		case strings.HasPrefix(specifier, "@earendil-works/pi-"),
 			strings.HasPrefix(specifier, "@mariozechner/pi-"):
 			return emptyModule
