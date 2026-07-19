@@ -257,6 +257,9 @@ func newUIObject(runtime *sobek.Runtime, vm *runtimeVM, contextValue extensions.
 			}
 			return object
 		},
+		"custom":             uiCustom(runtime, vm, contextValue),
+		"setEditorComponent": uiSetEditorComponent(runtime, vm, contextValue),
+		"getEditorComponent": uiGetEditorComponent(vm),
 		"getToolsExpanded": func(sobek.FunctionCall) sobek.Value {
 			return runtime.ToValue(contextValue.UI().GetToolsExpanded())
 		},

@@ -2,7 +2,7 @@
   "family": "F11-jsbridge",
   "upstreamCommit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
   "generator": "conformance/extract/f11-jsbridge.ts",
-  "source": "packages/coding-agent/src/core/extensions/loader.ts; packages/coding-agent/examples/extensions/{hello,pirate,todo,summarize,commands,send-user-message,dynamic-tools,structured-output,tool-override,event-bus,file-trigger,protected-paths,git-checkpoint,dirty-repo-guard,claude-rules,confirm-destructive,custom-footer,custom-header,github-issue-autocomplete,hidden-thinking-label,mac-system-theme,model-status,permission-gate,project-trust,rpc-demo,status-line,system-prompt-header,timed-confirm,titlebar-spinner,widget-placement,working-indicator,working-message-test}.ts",
+  "source": "packages/coding-agent/src/core/extensions/loader.ts; packages/coding-agent/examples/extensions/{hello,pirate,todo,summarize,commands,send-user-message,dynamic-tools,structured-output,tool-override,event-bus,file-trigger,protected-paths,git-checkpoint,dirty-repo-guard,claude-rules,confirm-destructive,custom-footer,custom-header,github-issue-autocomplete,hidden-thinking-label,mac-system-theme,model-status,permission-gate,project-trust,rpc-demo,status-line,system-prompt-header,timed-confirm,titlebar-spinner,widget-placement,working-indicator,working-message-test,border-status-editor,interactive-shell,modal-editor,rainbow-editor,snake,space-invaders,tools}.ts",
   "files": [
     "hello.ts",
     "pirate.ts",
@@ -36,6 +36,13 @@
     "widget-placement.ts",
     "working-indicator.ts",
     "working-message-test.ts",
+    "border-status-editor.ts",
+    "interactive-shell.ts",
+    "modal-editor.ts",
+    "rainbow-editor.ts",
+    "snake.ts",
+    "space-invaders.ts",
+    "tools.ts",
     "discovery.json",
     "load-errors.json"
   ]

@@ -83,3 +83,11 @@ func (ce *CustomEditor) interceptInput(event tui.KeyEvent) bool {
 
 	return false
 }
+
+// bridgeEditorBase adapts the built-in editor to the extension seam's
+// string-input contract for the JS bridge's CustomEditor base class.
+type bridgeEditorBase struct{ *CustomEditor }
+
+func (base bridgeEditorBase) HandleInput(data string) {
+	base.CustomEditor.HandleInput(tui.KeyEvent{Raw: data})
+}

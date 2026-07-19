@@ -168,4 +168,9 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
   module or compiled-package entry against its consolidated parent. See `docs/plan/wp-221-g2-report.md`
   and `docs/plan/wp-222-vertex-report.md`.
 - **G3 (WP-542):** pi-tui Component bridge overlay/experimental surfaces — bridge now vs documented gap.
+  **Resolved (Sprint 3): bridge now.** `ctx.ui.custom` with overlay options (static and dynamic),
+  `OverlayHandle` round-trips, focusable JS components, and editor replacement including the
+  `CustomEditor` base class (JS class over the mode-registered real editor seam) are bridged; the
+  modal-editor example runs unmodified. Remaining pi-tui component classes (Text/Container/Markdown
+  construction from JS) are bridged on demand as the F11 matrix requires them.
 - **G4 (WP-661):** self-update mechanism — notify-only vs in-place binary self-update.

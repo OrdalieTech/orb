@@ -127,6 +127,13 @@ globalThis.URL.prototype.toString = function() { return this.href; };
 	}); err != nil {
 		return err
 	}
+	customEditorClass, err := installCustomEditorBase(runtime, vm)
+	if err != nil {
+		return err
+	}
+	if err := codingModule.Set("CustomEditor", customEditorClass); err != nil {
+		return err
+	}
 	aiModule := runtime.NewObject()
 	if err := aiModule.Set("Type", typebox.ToObject(runtime).Get("Type")); err != nil {
 		return err

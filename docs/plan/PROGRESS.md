@@ -138,9 +138,12 @@ Status: **open; study surfaced to owner; proceeding on full-parity defaults**.
       full-parity defaults; silence = defaults stand.**
 - [x] Audit the frozen expansion ring: providers (35/36 + codex), OAuth (all four flows), MCP,
       packages/trust, and the bridge runtime/non-UI/shims layers are already landed and green.
-- [ ] Land the RED `ctx.ui` F11 surface first (ui-dependent upstream examples wired and failing),
-      then turn WP-541 (ctx.ui bridge) green.
-- [ ] WP-542: custom components, editors, overlays over the bridge (gate G3), fixtures first.
+- [x] Land the RED `ctx.ui` F11 surface first (ui-dependent upstream examples wired and failing),
+      then turn WP-541 (ctx.ui bridge) green — seventeen examples, full dialog/status/widget/theme/
+      autocomplete surface, AbortController, pi-tui helper shim.
+- [x] WP-542: custom components, editors, overlays over the bridge (gate G3 resolved: bridge now) —
+      `ctx.ui.custom` with overlay options and handles, editor replacement, the `CustomEditor` base
+      over the registered real editor; modal-editor end-to-end plus six more custom-UI examples.
 - [ ] WP-550: F11 matrix ≥80% of the 69 single-file upstream examples unmodified;
       publish `docs/sync/extension-matrix.md`; six named extensions end-to-end.
 - [ ] Port the openrouter-images generation client (only unported API shape).
