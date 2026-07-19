@@ -49,6 +49,11 @@ func NewInteractiveUI(mode *InteractiveMode) *InteractiveUI {
 		terminalInputListeners: make(map[uint64]func()),
 		workingVisible:         true,
 	}
+	// The JS bridge's CustomEditor base constructs the current mode's real
+	// built-in editor (upstream custom-editor.ts extends the tui Editor).
+	extensions.RegisterCustomEditorBase(func(extensions.UIHost, extensions.Theme, extensions.Keybindings) extensions.EditorComponent {
+		return bridgeEditorBase{NewCustomEditor(mode.ui, theme.EditorTheme(), mode.keybindings)}
+	})
 	if mode.footer != nil {
 		ui.builtInFooter = mode.footer.Children()
 	}

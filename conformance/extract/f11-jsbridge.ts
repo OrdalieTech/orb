@@ -37,6 +37,13 @@ const exampleNames = [
   "widget-placement",
   "working-indicator",
   "working-message-test",
+  "border-status-editor",
+  "interactive-shell",
+  "modal-editor",
+  "rainbow-editor",
+  "snake",
+  "space-invaders",
+  "tools",
 ];
 
 export async function generateF11JSBridge(

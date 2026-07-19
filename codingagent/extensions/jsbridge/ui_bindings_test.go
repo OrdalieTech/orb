@@ -52,6 +52,10 @@ type scriptedUI struct {
 	terminalHandlers  []extensions.TerminalInputHandler
 	terminalUnsubs    int
 	setThemeInputs    []any
+	customOptions     []*extensions.CustomOptions
+	customDrive       func(extensions.Component)
+	customCancel      bool
+	editorFactories   []extensions.EditorFactory
 
 	selectCalls  []dialogCall
 	confirmCalls []dialogCall

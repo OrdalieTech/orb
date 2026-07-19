@@ -18,6 +18,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
   widgets, footer/header factories, hidden-thinking label, working indicator and message, title,
   theme access and switching, tools-expanded state, autocomplete providers, and AbortController —
   seventeen more upstream single-file examples run unmodified.
+- JS extension bridge custom UI (gate G3): `ctx.ui.custom` with overlay options and
+  `OverlayHandle`, focusable components, `setEditorComponent`/`getEditorComponent`, and the
+  `CustomEditor` base class backed by the real built-in editor — modal-editor and six more
+  custom-UI examples wired.
 
 ### Changed
 

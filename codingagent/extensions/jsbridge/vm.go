@@ -84,7 +84,9 @@ type runtimeVM struct {
 	// themes preserves JS-object identity for Theme values crossing the
 	// boundary so ui.setTheme round-trips the original Go theme (upstream
 	// Theme-object semantics).
-	themes        map[*sobek.Object]extensions.Theme
+	themes map[*sobek.Object]extensions.Theme
+	// editorFactory preserves identity for ui.getEditorComponent (VM thread only).
+	editorFactory sobek.Value
 	eventHandlers map[string][]vmEventHandler
 	nextEventID   uint64
 }
