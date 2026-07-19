@@ -32,9 +32,9 @@ type InteractiveUI struct {
 	widgetOrder               []string
 	builtInFooter             []tui.Component
 	builtInHeader             []tui.Component
-	activeSelector            *extensionSelectorComponent
-	activeInput               *extensionInputComponent
-	activeEditorDialog        *extensionEditorComponent
+	activeSelector            *ExtensionSelectorComponent
+	activeInput               *ExtensionInputComponent
+	activeEditorDialog        *ExtensionEditorComponent
 }
 
 type widgetEntry struct {
@@ -91,7 +91,7 @@ func (ui *InteractiveUI) selectItems(ctx context.Context, title string, items []
 		default:
 		}
 	}
-	dialog := newExtensionSelectorItemsComponent(title, items,
+	dialog := NewExtensionSelectorItemsComponent(title, items,
 		func(value string) { resolve(selectResult{value: value}) },
 		func() { resolve(selectResult{cancelled: true}) },
 		&extensionDialogOptions{ui: ui.mode.ui, timeout: dialogTimeout(opts), onToggleToolsExpanded: func() {
@@ -172,7 +172,7 @@ func (ui *InteractiveUI) Input(ctx context.Context, title string, placeholder *s
 	if placeholder != nil {
 		placeholderValue = *placeholder
 	}
-	dialog := newExtensionInputComponent(title, placeholderValue,
+	dialog := NewExtensionInputComponent(title, placeholderValue,
 		func(value string) { resolve(inputDialogResult{value: value}) },
 		func() { resolve(inputDialogResult{cancelled: true}) },
 		&extensionDialogOptions{ui: ui.mode.ui, timeout: dialogTimeout(opts)},
@@ -590,7 +590,7 @@ func (ui *InteractiveUI) resetExtensionUI() {
 	}
 	ui.mutateWorkingIndicator(func(indicator *StatusIndicator) {
 		indicator.SetIndicator(nil)
-		indicator.SetMessage(fmt.Sprintf("Working... (%s to interrupt)", keyText("app.interrupt")))
+		indicator.SetMessage(fmt.Sprintf("Working... (%s to interrupt)", KeyText("app.interrupt")))
 	})
 	ui.SetHiddenThinkingLabel(nil)
 }
@@ -927,7 +927,7 @@ func (ui *InteractiveUI) Editor(ctx context.Context, title string, prefill *stri
 	if ui.mode.session != nil {
 		externalEditorCommand = ui.mode.session.InteractiveModeSettings().ExternalEditor
 	}
-	editor := newExtensionEditorComponent(ui.mode.ui, ui.mode.keybindings, title, prefillValue,
+	editor := NewExtensionEditorComponent(ui.mode.ui, ui.mode.keybindings, title, prefillValue,
 		func(value string) { resolve(inputDialogResult{value: value}) },
 		func() { resolve(inputDialogResult{cancelled: true}) },
 		externalEditorCommand,

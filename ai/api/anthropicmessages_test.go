@@ -5,10 +5,12 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pi-go/ai/models"
 	"github.com/OrdalieTech/pi-go/internal/jsonschema"
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -220,6 +222,132 @@ func TestAnthropicRejectsUnserializableToolReplayAndSchema(t *testing.T) {
 	_, _, err = buildAnthropicMessagesPayload(model, ai.Context{Tools: &tools}, &AnthropicMessagesOptions{})
 	if err == nil || !strings.Contains(err.Error(), "schema") {
 		t.Fatalf("invalid schema error = %v", err)
+	}
+}
+
+// Ports packages/ai/test/anthropic-tool-name-normalization.test.ts: Claude
+// Code OAuth tool naming is a case-insensitive round-trip against CC's
+// canonical casing, never a mapping between different tool names.
+func TestAnthropicClaudeCodeToolNameNormalizationRoundTrip(t *testing.T) {
+	toolsNamed := func(names ...string) *[]ai.Tool {
+		list := make([]ai.Tool, len(names))
+		for index, name := range names {
+			list[index] = ai.Tool{Name: name}
+		}
+		return &list
+	}
+	// A user-defined tool matching a CC name round-trips: todowrite -> TodoWrite -> todowrite.
+	if got := toClaudeCodeToolName("todowrite"); got != "TodoWrite" {
+		t.Fatalf("toClaudeCodeToolName(todowrite) = %q, want TodoWrite", got)
+	}
+	if got := fromClaudeCodeToolName("TodoWrite", toolsNamed("todowrite")); got != "todowrite" {
+		t.Fatalf("fromClaudeCodeToolName(TodoWrite) = %q, want todowrite", got)
+	}
+	// pi's built-in tools convert to CC casing outbound and back to the
+	// original lowercase names inbound.
+	for lower, canonical := range map[string]string{"read": "Read", "write": "Write", "edit": "Edit", "bash": "Bash"} {
+		if got := toClaudeCodeToolName(lower); got != canonical {
+			t.Fatalf("toClaudeCodeToolName(%s) = %q, want %s", lower, got, canonical)
+		}
+		if got := fromClaudeCodeToolName(canonical, toolsNamed(lower)); got != lower {
+			t.Fatalf("fromClaudeCodeToolName(%s) = %q, want %s", canonical, got, lower)
+		}
+	}
+	// find is not a CC tool name: it must pass through, never map to Glob.
+	if got := toClaudeCodeToolName("find"); got != "find" {
+		t.Fatalf("toClaudeCodeToolName(find) = %q, want find", got)
+	}
+	// The old find->Glob mapping broke here: Glob has no matching context tool.
+	if got := fromClaudeCodeToolName("Glob", toolsNamed("find")); got != "Glob" {
+		t.Fatalf("fromClaudeCodeToolName(Glob) with only a find tool = %q, want Glob", got)
+	}
+	// Custom tool names pass through unchanged in both directions.
+	if got := toClaudeCodeToolName("my_custom_tool"); got != "my_custom_tool" {
+		t.Fatalf("toClaudeCodeToolName(my_custom_tool) = %q", got)
+	}
+	if got := fromClaudeCodeToolName("my_custom_tool", toolsNamed("my_custom_tool")); got != "my_custom_tool" {
+		t.Fatalf("fromClaudeCodeToolName(my_custom_tool) = %q", got)
+	}
+}
+
+// The two tests below port packages/ai/test/github-copilot-anthropic.test.ts
+// adaptive-thinking cases (the dynamic-header case lives in
+// TestAnthropicCopilotDynamicHeaders).
+
+func TestAnthropicCopilotAdaptiveThinkingEffortOverrides(t *testing.T) {
+	catalog, err := models.Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireLevel := func(t *testing.T, model *ai.Model, level ai.ModelThinkingLevel, want string) {
+		t.Helper()
+		if model.ThinkingLevelMap == nil {
+			t.Fatalf("%s/%s has no thinkingLevelMap", model.Provider, model.ID)
+		}
+		mapped := (*model.ThinkingLevelMap)[level]
+		if mapped == nil || *mapped != want {
+			t.Fatalf("%s/%s thinkingLevelMap[%s] = %v, want %q", model.Provider, model.ID, level, mapped, want)
+		}
+	}
+
+	opus, ok := catalog.Find("github-copilot", "claude-opus-4.7")
+	if !ok {
+		t.Fatal("github-copilot/claude-opus-4.7 missing from builtin catalog")
+	}
+	requireLevel(t, &opus, ai.ModelThinkingMinimal, "low")
+	requireLevel(t, &opus, ai.ModelThinkingXHigh, "xhigh")
+	requireLevel(t, &opus, ai.ModelThinkingMax, "max")
+	supported := ai.SupportedThinkingLevels(&opus)
+	if !slices.Contains(supported, ai.ModelThinkingXHigh) || !slices.Contains(supported, ai.ModelThinkingMax) {
+		t.Fatalf("opus-4.7 supported levels = %v, want xhigh and max", supported)
+	}
+	// Adapter side: the map drives the adaptive-thinking effort selection.
+	if got := mapAnthropicEffort(&opus, ai.ThinkingMinimal); got != AnthropicEffortLow {
+		t.Fatalf("mapAnthropicEffort(opus-4.7, minimal) = %q, want low", got)
+	}
+	if got := mapAnthropicEffort(&opus, ai.ThinkingXHigh); got != AnthropicEffort("xhigh") {
+		t.Fatalf("mapAnthropicEffort(opus-4.7, xhigh) = %q, want xhigh", got)
+	}
+	if got := mapAnthropicEffort(&opus, ai.ThinkingMax); got != AnthropicEffort("max") {
+		t.Fatalf("mapAnthropicEffort(opus-4.7, max) = %q, want max", got)
+	}
+
+	sonnet, ok := catalog.Find("github-copilot", "claude-sonnet-4.6")
+	if !ok {
+		t.Fatal("github-copilot/claude-sonnet-4.6 missing from builtin catalog")
+	}
+	requireLevel(t, &sonnet, ai.ModelThinkingMinimal, "low")
+	requireLevel(t, &sonnet, ai.ModelThinkingMax, "max")
+	supported = ai.SupportedThinkingLevels(&sonnet)
+	if !slices.Contains(supported, ai.ModelThinkingMax) {
+		t.Fatalf("sonnet-4.6 supported levels = %v, want max", supported)
+	}
+	if slices.Contains(supported, ai.ModelThinkingXHigh) {
+		t.Fatalf("sonnet-4.6 supported levels = %v, xhigh must be absent", supported)
+	}
+	if got := mapAnthropicEffort(&sonnet, ai.ThinkingMinimal); got != AnthropicEffortLow {
+		t.Fatalf("mapAnthropicEffort(sonnet-4.6, minimal) = %q, want low", got)
+	}
+}
+
+func TestAnthropicCopilotAdaptiveThinkingOmitsInterleavedBeta(t *testing.T) {
+	catalog, err := models.Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, ok := catalog.Find("github-copilot", "claude-sonnet-4.6")
+	if !ok {
+		t.Fatal("github-copilot/claude-sonnet-4.6 missing from builtin catalog")
+	}
+	interleaved := true
+	headers := anthropicHeaders(&model, ai.Context{}, nil, &AnthropicMessagesOptions{InterleavedThinking: &interleaved})
+	if strings.Contains(headers.Get("anthropic-beta"), "interleaved-thinking") {
+		t.Fatalf("adaptive-thinking Copilot model sent interleaved-thinking beta: %q", headers.Get("anthropic-beta"))
+	}
+	// Non-adaptive Claude keeps the interleaved-thinking beta.
+	control := anthropicHeaders(anthropicTestModel(), ai.Context{}, nil, &AnthropicMessagesOptions{InterleavedThinking: &interleaved})
+	if !strings.Contains(control.Get("anthropic-beta"), anthropicInterleavedThinkingBeta) {
+		t.Fatalf("non-adaptive model lost interleaved-thinking beta: %q", control.Get("anthropic-beta"))
 	}
 }
 

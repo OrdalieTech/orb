@@ -566,7 +566,7 @@ func TestCustomEditorInterceptor(t *testing.T) {
 func TestKeyText(t *testing.T) {
 	kb := NewAppKeybindings(nil)
 	tui.SetKeybindings(kb)
-	text := keyText("app.interrupt")
+	text := KeyText("app.interrupt")
 	if text == "" || text == "app.interrupt" {
 		t.Error("expected resolved key text for app.interrupt")
 	}
@@ -740,6 +740,15 @@ func TestGitBranchReportsDetachedHead(t *testing.T) {
 	if branch := mode.GitBranch(); branch != "trunk" {
 		t.Fatalf("GitBranch on branch = %q, want %q", branch, "trunk")
 	}
+	// Upstream footer-data-provider resolves the branch from nested
+	// directories of a regular repo too.
+	nested := filepath.Join(dir, "src", "nested")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if branch := (&InteractiveMode{cwd: nested}).GitBranch(); branch != "trunk" {
+		t.Fatalf("GitBranch from nested dir = %q, want %q", branch, "trunk")
+	}
 	git("checkout", "--detach")
 	// Upstream footer-data-provider labels detached HEAD "detached", never "HEAD".
 	if branch := mode.GitBranch(); branch != "detached" {
@@ -748,6 +757,48 @@ func TestGitBranchReportsDetachedHead(t *testing.T) {
 	outside := &InteractiveMode{cwd: t.TempDir()}
 	if branch := outside.GitBranch(); branch != "" {
 		t.Fatalf("GitBranch outside repo = %q, want empty", branch)
+	}
+}
+
+// Ports the reftable intents of upstream footer-data-provider.test.ts: in a
+// reftable repository .git/HEAD holds the "refs/heads/.invalid" sentinel and
+// only git itself can resolve the branch. pi-go always delegates to git, so
+// the branch and the detached state must come back correct regardless.
+func TestGitBranchReftableRepo(t *testing.T) {
+	dir := t.TempDir()
+	git := func(fatal bool, args ...string) bool {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t",
+			"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			if fatal {
+				t.Fatalf("git %v: %v: %s", args, err, output)
+			}
+			return false
+		}
+		return true
+	}
+	if !git(false, "init", "--ref-format=reftable", "--initial-branch=main") {
+		t.Skip("git without reftable support (needs git >= 2.45)")
+	}
+	git(true, "commit", "--allow-empty", "-m", "one")
+	head, err := os.ReadFile(filepath.Join(dir, ".git", "HEAD"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(head), ".invalid") {
+		t.Fatalf(".git/HEAD = %q, want the reftable .invalid sentinel", head)
+	}
+	mode := &InteractiveMode{cwd: dir}
+	if branch := mode.GitBranch(); branch != "main" {
+		t.Fatalf("GitBranch reftable = %q, want %q", branch, "main")
+	}
+	git(true, "checkout", "--detach")
+	if branch := mode.GitBranch(); branch != "detached" {
+		t.Fatalf("GitBranch reftable detached = %q, want %q", branch, "detached")
 	}
 }
 

@@ -59,8 +59,21 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
   provider retry guidance (6019), pending tool renders surviving chat rebuilds (4167),
   session_start render/notify ordering (5943), queued extension slash follow-ups staying raw
   text (2023), and the extension factory cache (bundle cached, factories re-run).
+- Typed per-tool event accessors in `codingagent/extensions` (`BashToolCall`/`BashToolResult`
+  through `LsToolCall`/`LsToolResult`) — the Go analog of upstream's `isBashToolResult`-family
+  type guards over the tool_call/tool_result union.
+- `ai.ParseStreamingJSON` exports the streaming tool-call argument parser publicly, matching
+  pi-ai's `parseStreamingJson` index export (delegates to the internal partial-JSON port).
+- Extension UI kit exports from `codingagent/modes`: `ExtensionSelectorComponent`,
+  `ExtensionInputComponent`, `ExtensionEditorComponent` (with constructors) and the
+  `KeyText`/`KeyHint`/`RawKeyHint` hint helpers from upstream's "UI components for extensions"
+  index block.
 
 ### Fixed
+
+- Legacy app-scoped keybinding names (`interrupt`, `expandTools`, `tree`, ...) now migrate to
+  their namespaced ids when `keybindings.json` loads, completing upstream's
+  `KEYBINDING_NAME_MIGRATIONS` table; previously only the `tui.*` names migrated.
 
 - Footer shows `detached` on a detached HEAD (was the literal `HEAD`), matching upstream's
   footer-data-provider.

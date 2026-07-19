@@ -20,7 +20,9 @@ type extensionDialogOptions struct {
 	onToggleToolsExpanded func()
 }
 
-type extensionSelectorComponent struct {
+// ExtensionSelectorComponent is the bordered option-list dialog behind
+// ctx.ui.select, exported for extension UI reuse as upstream exports it.
+type ExtensionSelectorComponent struct {
 	container             *tui.Container
 	list                  *tui.Container
 	title                 *tui.Text
@@ -33,14 +35,16 @@ type extensionSelectorComponent struct {
 	countdown             *CountdownTimer
 }
 
-func newExtensionSelectorItemsComponent(
+// NewExtensionSelectorItemsComponent builds the selector dialog from
+// pre-labelled select items.
+func NewExtensionSelectorItemsComponent(
 	title string,
 	options []tui.SelectItem,
 	onSelect func(string),
 	onCancel func(),
 	config *extensionDialogOptions,
-) *extensionSelectorComponent {
-	component := &extensionSelectorComponent{
+) *ExtensionSelectorComponent {
+	component := &ExtensionSelectorComponent{
 		container: &tui.Container{},
 		list:      &tui.Container{},
 		baseTitle: title,
@@ -64,9 +68,9 @@ func newExtensionSelectorItemsComponent(
 	component.container.AddChild(component.list)
 	component.container.AddChild(tui.NewSpacer(1))
 	component.container.AddChild(tui.NewText(
-		extensionRawKeyHint("↑↓", "navigate")+"  "+
-			extensionKeyHint("tui.select.confirm", "select")+"  "+
-			extensionKeyHint("tui.select.cancel", "cancel"),
+		RawKeyHint("↑↓", "navigate")+"  "+
+			KeyHint("tui.select.confirm", "select")+"  "+
+			KeyHint("tui.select.cancel", "cancel"),
 		1,
 		0,
 		nil,
@@ -77,7 +81,7 @@ func newExtensionSelectorItemsComponent(
 	return component
 }
 
-func (component *extensionSelectorComponent) updateList() {
+func (component *ExtensionSelectorComponent) updateList() {
 	component.list.Clear()
 	for index, option := range component.options {
 		label := option.Label
@@ -92,7 +96,7 @@ func (component *extensionSelectorComponent) updateList() {
 	}
 }
 
-func (component *extensionSelectorComponent) HandleInput(event tui.KeyEvent) {
+func (component *ExtensionSelectorComponent) HandleInput(event tui.KeyEvent) {
 	bindings := tui.GetKeybindings()
 	switch {
 	case bindings.Matches(event.Raw, "app.tools.expand"):
@@ -114,24 +118,26 @@ func (component *extensionSelectorComponent) HandleInput(event tui.KeyEvent) {
 	}
 }
 
-func (component *extensionSelectorComponent) cancel() {
+func (component *ExtensionSelectorComponent) cancel() {
 	if component.onCancel != nil {
 		component.onCancel()
 	}
 }
 
-func (component *extensionSelectorComponent) Dispose() {
+func (component *ExtensionSelectorComponent) Dispose() {
 	if component.countdown != nil {
 		component.countdown.Dispose()
 	}
 }
 
-func (component *extensionSelectorComponent) Invalidate() { component.container.Invalidate() }
-func (component *extensionSelectorComponent) Render(width int) []string {
+func (component *ExtensionSelectorComponent) Invalidate() { component.container.Invalidate() }
+func (component *ExtensionSelectorComponent) Render(width int) []string {
 	return component.container.Render(width)
 }
 
-type extensionInputComponent struct {
+// ExtensionInputComponent is the bordered single-line input dialog behind
+// ctx.ui.input, exported for extension UI reuse.
+type ExtensionInputComponent struct {
 	container *tui.Container
 	input     *tui.Input
 	title     *tui.Text
@@ -141,14 +147,15 @@ type extensionInputComponent struct {
 	countdown *CountdownTimer
 }
 
-func newExtensionInputComponent(
+// NewExtensionInputComponent builds the single-line input dialog.
+func NewExtensionInputComponent(
 	title string,
 	_ string,
 	onSubmit func(string),
 	onCancel func(),
 	config *extensionDialogOptions,
-) *extensionInputComponent {
-	component := &extensionInputComponent{
+) *ExtensionInputComponent {
+	component := &ExtensionInputComponent{
 		container: &tui.Container{},
 		input:     tui.NewInput(),
 		baseTitle: title,
@@ -168,7 +175,7 @@ func newExtensionInputComponent(
 	component.container.AddChild(component.input)
 	component.container.AddChild(tui.NewSpacer(1))
 	component.container.AddChild(tui.NewText(
-		extensionKeyHint("tui.select.confirm", "submit")+"  "+extensionKeyHint("tui.select.cancel", "cancel"),
+		KeyHint("tui.select.confirm", "submit")+"  "+KeyHint("tui.select.cancel", "cancel"),
 		1,
 		0,
 		nil,
@@ -178,7 +185,7 @@ func newExtensionInputComponent(
 	return component
 }
 
-func (component *extensionInputComponent) HandleInput(event tui.KeyEvent) {
+func (component *ExtensionInputComponent) HandleInput(event tui.KeyEvent) {
 	bindings := tui.GetKeybindings()
 	switch {
 	case bindings.Matches(event.Raw, "tui.select.confirm") || event.Raw == "\n":
@@ -192,26 +199,28 @@ func (component *extensionInputComponent) HandleInput(event tui.KeyEvent) {
 	}
 }
 
-func (component *extensionInputComponent) cancel() {
+func (component *ExtensionInputComponent) cancel() {
 	if component.onCancel != nil {
 		component.onCancel()
 	}
 }
 
-func (component *extensionInputComponent) SetFocused(focused bool) {
+func (component *ExtensionInputComponent) SetFocused(focused bool) {
 	component.input.SetFocused(focused)
 }
-func (component *extensionInputComponent) Dispose() {
+func (component *ExtensionInputComponent) Dispose() {
 	if component.countdown != nil {
 		component.countdown.Dispose()
 	}
 }
-func (component *extensionInputComponent) Invalidate() { component.container.Invalidate() }
-func (component *extensionInputComponent) Render(width int) []string {
+func (component *ExtensionInputComponent) Invalidate() { component.container.Invalidate() }
+func (component *ExtensionInputComponent) Render(width int) []string {
 	return component.container.Render(width)
 }
 
-type extensionEditorComponent struct {
+// ExtensionEditorComponent is the bordered multi-line editor dialog behind
+// ctx.ui.editor, exported for extension UI reuse.
+type ExtensionEditorComponent struct {
 	container             *tui.Container
 	editor                *tui.Editor
 	ui                    *tui.TUI
@@ -220,7 +229,8 @@ type extensionEditorComponent struct {
 	onCancel              func()
 }
 
-func newExtensionEditorComponent(
+// NewExtensionEditorComponent builds the multi-line editor dialog.
+func NewExtensionEditorComponent(
 	uiInstance *tui.TUI,
 	bindings *tui.KeybindingsManager,
 	title string,
@@ -228,11 +238,11 @@ func newExtensionEditorComponent(
 	onSubmit func(string),
 	onCancel func(),
 	externalEditorCommand string,
-) *extensionEditorComponent {
+) *ExtensionEditorComponent {
 	if bindings == nil {
 		bindings = tui.GetKeybindings()
 	}
-	component := &extensionEditorComponent{
+	component := &ExtensionEditorComponent{
 		container:             &tui.Container{},
 		ui:                    uiInstance,
 		bindings:              bindings,
@@ -251,11 +261,11 @@ func newExtensionEditorComponent(
 	component.container.AddChild(component.editor)
 	component.container.AddChild(tui.NewSpacer(1))
 	hint :=
-		extensionKeyHint("tui.select.confirm", "submit") + "  " +
-			extensionKeyHint("tui.input.newLine", "newline") + "  " +
-			extensionKeyHint("tui.select.cancel", "cancel")
+		KeyHint("tui.select.confirm", "submit") + "  " +
+			KeyHint("tui.input.newLine", "newline") + "  " +
+			KeyHint("tui.select.cancel", "cancel")
 	if component.getExternalEditorCommand() != "" {
-		hint += "  " + extensionKeyHint("app.editor.external", "external editor")
+		hint += "  " + KeyHint("app.editor.external", "external editor")
 	}
 	component.container.AddChild(tui.NewText(hint, 1, 0, nil))
 	component.container.AddChild(tui.NewSpacer(1))
@@ -263,7 +273,7 @@ func newExtensionEditorComponent(
 	return component
 }
 
-func (component *extensionEditorComponent) HandleInput(event tui.KeyEvent) {
+func (component *ExtensionEditorComponent) HandleInput(event tui.KeyEvent) {
 	if tui.GetKeybindings().Matches(event.Raw, "tui.select.cancel") {
 		component.cancel()
 		return
@@ -275,13 +285,13 @@ func (component *extensionEditorComponent) HandleInput(event tui.KeyEvent) {
 	component.editor.HandleInput(event)
 }
 
-func (component *extensionEditorComponent) cancel() {
+func (component *ExtensionEditorComponent) cancel() {
 	if component.onCancel != nil {
 		component.onCancel()
 	}
 }
 
-func (component *extensionEditorComponent) getExternalEditorCommand() string {
+func (component *ExtensionEditorComponent) getExternalEditorCommand() string {
 	if component.externalEditorCommand != "" {
 		return component.externalEditorCommand
 	}
@@ -297,7 +307,7 @@ func (component *extensionEditorComponent) getExternalEditorCommand() string {
 	return "nano"
 }
 
-func (component *extensionEditorComponent) openExternalEditor() {
+func (component *ExtensionEditorComponent) openExternalEditor() {
 	command := component.getExternalEditorCommand()
 	if command == "" {
 		return
@@ -333,17 +343,17 @@ func (component *extensionEditorComponent) openExternalEditor() {
 	}()
 }
 
-func (component *extensionEditorComponent) finishExternalEditor(path string) {
+func (component *ExtensionEditorComponent) finishExternalEditor(path string) {
 	_ = os.Remove(path)
 	_ = component.ui.Start()
 	component.ui.ForceRender()
 }
 
-func (component *extensionEditorComponent) SetFocused(focused bool) {
+func (component *ExtensionEditorComponent) SetFocused(focused bool) {
 	component.editor.SetFocused(focused)
 }
-func (component *extensionEditorComponent) Invalidate() { component.container.Invalidate() }
-func (component *extensionEditorComponent) Render(width int) []string {
+func (component *ExtensionEditorComponent) Invalidate() { component.container.Invalidate() }
+func (component *ExtensionEditorComponent) Render(width int) []string {
 	return component.container.Render(width)
 }
 
@@ -351,10 +361,14 @@ func extensionDialogBorder() *DynamicBorder {
 	return NewDynamicBorderWithColor(func(value string) string { return theme.FG("border", value) })
 }
 
-func extensionKeyHint(binding, description string) string {
-	return theme.FG("dim", keyText(binding)) + theme.FG("muted", " "+description)
+// KeyHint renders a dim key label plus muted description for the resolved
+// keybinding, mirroring upstream's exported keyHint helper.
+func KeyHint(binding, description string) string {
+	return theme.FG("dim", KeyText(binding)) + theme.FG("muted", " "+description)
 }
 
-func extensionRawKeyHint(key, description string) string {
+// RawKeyHint renders a dim literal key plus muted description without
+// keybinding resolution, mirroring upstream's exported rawKeyHint helper.
+func RawKeyHint(key, description string) string {
 	return theme.FG("dim", formatKeyText(key)) + theme.FG("muted", " "+description)
 }

@@ -395,11 +395,11 @@ func TestF12ResetExtensionUICancelsLiveDialogsInUpstreamOrder(t *testing.T) {
 				matched := false
 				switch kind {
 				case "selector":
-					_, matched = children[0].(*extensionSelectorComponent)
+					_, matched = children[0].(*ExtensionSelectorComponent)
 				case "input":
-					_, matched = children[0].(*extensionInputComponent)
+					_, matched = children[0].(*ExtensionInputComponent)
 				case "editor":
-					_, matched = children[0].(*extensionEditorComponent)
+					_, matched = children[0].(*ExtensionEditorComponent)
 				}
 				if matched {
 					return children[0]
@@ -416,17 +416,17 @@ func TestF12ResetExtensionUICancelsLiveDialogsInUpstreamOrder(t *testing.T) {
 		value, ok, err := ui.Select(ctx, "Pick one", []string{"alpha", "beta"}, nil)
 		selectorResult <- dialogResult{value: value, ok: ok, err: err}
 	}()
-	selector := waitForDialog("selector").(*extensionSelectorComponent)
+	selector := waitForDialog("selector").(*ExtensionSelectorComponent)
 	go func() {
 		value, ok, err := ui.Input(ctx, "Enter value", nil, nil)
 		inputResult <- dialogResult{value: value, ok: ok, err: err}
 	}()
-	input := waitForDialog("input").(*extensionInputComponent)
+	input := waitForDialog("input").(*ExtensionInputComponent)
 	go func() {
 		value, ok, err := ui.Editor(ctx, "Edit value", nil)
 		editorResult <- dialogResult{value: value, ok: ok, err: err}
 	}()
-	editorDialog := waitForDialog("editor").(*extensionEditorComponent)
+	editorDialog := waitForDialog("editor").(*ExtensionEditorComponent)
 
 	var closeOrderMu sync.Mutex
 	closeOrder := make([]string, 0, len(wantCloseOrder))

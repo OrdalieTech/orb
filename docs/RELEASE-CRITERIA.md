@@ -69,18 +69,25 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 
 ## M5 — v1.0 release (closes Sprint 4)
 
-- [ ] All M1–M4 criteria re-verified at the release commit, fixtures regenerated at current UPSTREAM.lock.
+- [x] All M1–M4 criteria re-verified at the release commit, fixtures regenerated at current UPSTREAM.lock.
 - [ ] One full sync cycle executed against a fresher upstream commit (≤ 30 days old) with a green
-      lock bump — proves the sync machinery, not just the snapshot.
+      lock bump — proves the sync machinery, not just the snapshot. (Machinery proven GREEN
+      end-to-end 2026-07-19; blocked: upstream has published nothing newer than the pin.)
 - [ ] goreleaser artifacts for all 4 targets; install script verified on clean linux + macOS VMs.
+      (All four snapshot artifacts built, checksum-verified, version-injected; script mechanics
+      verified against them — clean-VM end-to-end runs owner-blocked.)
 - [ ] Cold start < 50 ms; binary ≤ 35 MB (with bridge); numbers recorded in release notes.
-- [ ] Nightly live suite ≥ 90% pass over the trailing 72 hours.
+      (Cold start 45.0 ± 5.2 ms green with thin margin; bridged binary 51,478,690 B — cap decision
+      owner-pending, expansion-study decision 3.)
+- [ ] Nightly live suite ≥ 90% pass over the trailing 72 hours. (Owner-blocked: remote + secrets.)
 - [ ] Docs newcomer path (install → first session → embed SDK → run an upstream extension) verified
       by following the docs literally; README credit/provenance; divergence ledger current.
+      (SDK-embed and extension steps verified offline; install step needs a published release.)
 - [ ] Upstream alignment audit re-run at the release commit with zero open should-fix findings
       (docs/compare/upstream-alignment.md); release notes extracted from CHANGELOG.md; version
-      injected via ldflags and printed with the upstream pin.
-- [ ] Final trim pass #5; LOC report: mirrored packages ≤ 1.3× upstream TS src LOC or justified
+      injected via ldflags and printed with the upstream pin. (21/22 closed; open: AgentHarness
+      facade owner decision. Notes and version mechanics done; --version stays byte-parity bare.)
+- [x] Final trim pass #5; LOC report: mirrored packages ≤ 1.3× upstream TS src LOC or justified
       per-package in the report; dep audit clean.
 
 ## Live-test policy
