@@ -144,15 +144,20 @@ Status: **open; study surfaced to owner; proceeding on full-parity defaults**.
 - [x] WP-542: custom components, editors, overlays over the bridge (gate G3 resolved: bridge now) —
       `ctx.ui.custom` with overlay options and handles, editor replacement, the `CustomEditor` base
       over the registered real editor; modal-editor end-to-end plus six more custom-UI examples.
-- [ ] WP-550: F11 matrix ≥80% of the 69 single-file upstream examples unmodified;
-      publish `docs/sync/extension-matrix.md`; six named extensions end-to-end.
-- [ ] Port the openrouter-images generation client (only unported API shape).
-- [ ] Alignment-audit work items (docs/compare/upstream-alignment.md): MIRROR triage rows for the
-      16 unmapped core modules and the agent facade files; implement-or-ledger `settings.httpProxy`;
-      SDK convenience surface (tool bundles, public ai model helpers, typed tool-event accessors,
-      public streaming-JSON entry point, UI component kit exports); port the six numbered upstream
-      regression tests and the small uncovered unit-test tail.
-- [ ] Publish `docs/compare/sprint-3.md`, complete trim pass #4, and check every M4 criterion.
+- [x] WP-550: F11 matrix at 61/69 (88%) unmodified with `docs/sync/extension-matrix.md` published;
+      six named extensions end-to-end; bridge wired into the product (`--extension`, settings and
+      project paths, `/reload` per-path VM replacement) with a real-binary smoke.
+- [x] Port the openrouter-images generation client (only unported API shape).
+- [x] Alignment-audit work items closed this sprint: MIRROR triage (21 verified rows),
+      `settings.httpProxy` implemented with environment precedence, SDK convenience surface
+      (tool bundles, public ai model helpers with duplicates deleted).
+- [x] Publish `docs/compare/sprint-3.md`, complete trim pass #4 (`docs/trim/M4.md`), and check
+      every locally provable M4 criterion.
+- [ ] Pre-release parity tail (Sprint 4): the six numbered upstream regression tests; typed
+      tool-event accessors, public streaming-JSON entry, UI component kit exports; the five small
+      gaps found by MIRROR verification (`/session` cache-waste totals, opencode session-affinity
+      headers, live-export ToolHTMLRenderer, `/settings` idle-timeout entry, footer/tool-header
+      cosmetics).
 
 ## Sprint 4 — Ship (M5)
 
@@ -164,10 +169,12 @@ Status: **pending**.
 
 ## Owner-blocked evidence
 
-- **Decision pending: M5 binary-size cap** (`docs/plan/expansion-study.md`) — measured with the
-  bridge linked: stripped binary 51,376,290 B (49.0 MiB) vs the 35 MB cap (bridge cost ~16.3 MB);
-  recommended: 55 MB decimal cap + a bounded Sprint 4 size pass examining a bridge-less build
-  variant.
+- **Decision pending: M5 binary-size AND cold-start caps** (`docs/plan/expansion-study.md`,
+  decision 3; measured in `docs/trim/M4.md`) — bridged stripped binary 51,425,442 B vs the 35 MB
+  cap, and no-prompt cold start 50.4–50.9 ± 6-7 ms vs the 50 ms cap (pure binary-load cost; init
+  is clean). Options: raise caps for the bridged artifact, ship `pi` + bridge-less `pi-slim`
+  (35.1 MB / ~44 ms at M3), or fund deeper size work. Neither criterion is weakened pending your
+  call.
 - **Decision pending: AgentHarness facade** (alignment audit) — upstream's primary
   `packages/agent` export has no Go equivalent; port it for SDK parity or record "dissolved into
   the codingagent runtime" in DECISIONS. Recommended: record the dissolution; port only if an SDK
