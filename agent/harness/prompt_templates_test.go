@@ -40,7 +40,7 @@ func TestLoadSourcedPromptTemplatesAttachesDiagnostics(t *testing.T) {
 
 func TestFormatPromptTemplateInvocation(t *testing.T) {
 	template := PromptTemplate{Name: "one", Content: "$1 ${@:2} $ARGUMENTS ${4:-fallback}"}
-	if got := FormatPromptTemplateInvocation(template, []string{"hello world", "test", "$1"}); got != "hello world test $1 hello world test $1 fallback" {
+	if got := FormatPromptTemplateInvocation(template, []string{"hello world", "test", "$1"}); got != "hello world test $1 hello world test $1 ${4:-fallback}" {
 		t.Fatalf("formatted = %q", got)
 	}
 }

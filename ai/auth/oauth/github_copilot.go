@@ -39,7 +39,11 @@ type GitHubCopilotOptions struct {
 	Sleep           func(context.Context, time.Duration) error
 }
 
-type GitHubCopilot struct{ options GitHubCopilotOptions }
+type GitHubCopilot struct {
+	options             GitHubCopilotOptions
+	defaultModelIDsOnce sync.Once
+	defaultModelIDs     []string
+}
 
 func NewGitHubCopilot(options *GitHubCopilotOptions) *GitHubCopilot {
 	configured := GitHubCopilotOptions{}
@@ -49,9 +53,7 @@ func NewGitHubCopilot(options *GitHubCopilotOptions) *GitHubCopilot {
 	if configured.HTTPClient == nil {
 		configured.HTTPClient = http.DefaultClient
 	}
-	if configured.KnownModelIDs == nil {
-		configured.KnownModelIDs = builtInCopilotModelIDs()
-	} else {
+	if configured.KnownModelIDs != nil {
 		configured.KnownModelIDs = append([]string(nil), configured.KnownModelIDs...)
 	}
 	return &GitHubCopilot{options: configured}
@@ -280,7 +282,7 @@ func selectableCopilotModel(item map[string]any) bool {
 
 func (flow *GitHubCopilot) enableAllModels(ctx context.Context, token, enterpriseDomain string) {
 	var wait sync.WaitGroup
-	for _, modelID := range flow.options.KnownModelIDs {
+	for _, modelID := range flow.knownModelIDs() {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
@@ -301,6 +303,16 @@ func (flow *GitHubCopilot) enableAllModels(ctx context.Context, token, enterpris
 		}()
 	}
 	wait.Wait()
+}
+
+func (flow *GitHubCopilot) knownModelIDs() []string {
+	if flow.options.KnownModelIDs != nil {
+		return flow.options.KnownModelIDs
+	}
+	flow.defaultModelIDsOnce.Do(func() {
+		flow.defaultModelIDs = builtInCopilotModelIDs()
+	})
+	return flow.defaultModelIDs
 }
 
 func (flow *GitHubCopilot) fetchJSON(ctx context.Context, method, endpoint string, body []byte, form bool, headers http.Header) (map[string]any, error) {

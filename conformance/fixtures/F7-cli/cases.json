@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "model": {
+    "provider": "cli-fixture",
+    "id": "fixture-1"
+  },
+  "server": {
+    "path": "/v1/chat/completions",
+    "stream": "data: {\"id\":\"chatcmpl_cli_fixture\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"fixture-1\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"CLI fixture \"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl_cli_fixture\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"fixture-1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"complete.\\nUnicode: café 世界.\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":6,\"total_tokens\":10}}\n\ndata: [DONE]\n\n"
+  },
+  "cases": [
+    {
+      "name": "scripted-print-text",
+      "route": "print",
+      "args": [
+        "-p",
+        "--no-session",
+        "--no-extensions",
+        "--no-skills",
+        "--no-prompt-templates",
+        "--no-context-files",
+        "--no-tools",
+        "--provider",
+        "cli-fixture",
+        "--model",
+        "fixture-1",
+        "CLI prompt"
+      ],
+      "stdin": "piped context\n",
+      "configuredModel": true,
+      "expectedPrompt": "piped contextCLI prompt",
+      "expectedRequests": 1,
+      "expected": {
+        "exitCode": 0,
+        "stdout": "CLI fixture complete.\nUnicode: café 世界.\n",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "no-model-print",
+      "route": "print",
+      "args": [
+        "-p",
+        "--no-session",
+        "--no-extensions",
+        "--no-skills",
+        "--no-prompt-templates",
+        "--no-context-files",
+        "--no-tools",
+        "--session-id",
+        "f7-cli-print",
+        "unreachable prompt"
+      ],
+      "stdin": "",
+      "configuredModel": false,
+      "expectedRequests": 0,
+      "expected": {
+        "exitCode": 1,
+        "stdout": "",
+        "stderr": "No API key found for the selected model.\n\nUse /login to log into a provider via OAuth or API key. See:\n  <package>/docs/providers.md\n  <package>/docs/models.md\n"
+      }
+    },
+    {
+      "name": "no-model-json",
+      "route": "json",
+      "args": [
+        "--mode",
+        "json",
+        "--no-session",
+        "--no-extensions",
+        "--no-skills",
+        "--no-prompt-templates",
+        "--no-context-files",
+        "--no-tools",
+        "--session-id",
+        "f7-cli-json",
+        "unreachable prompt"
+      ],
+      "stdin": "",
+      "configuredModel": false,
+      "expectedRequests": 0,
+      "expected": {
+        "exitCode": 1,
+        "stdout": "{\"type\":\"session\",\"version\":3,\"id\":\"f7-cli-json\",\"timestamp\":\"<timestamp>\",\"cwd\":\"<cwd>\"}\n",
+        "stderr": "No API key found for the selected model.\n\nUse /login to log into a provider via OAuth or API key. See:\n  <package>/docs/providers.md\n  <package>/docs/models.md\n"
+      }
+    },
+    {
+      "name": "no-model-rpc",
+      "route": "rpc",
+      "args": [
+        "--mode",
+        "rpc",
+        "--no-session",
+        "--no-extensions",
+        "--no-skills",
+        "--no-prompt-templates",
+        "--no-context-files",
+        "--no-tools",
+        "--session-id",
+        "f7-cli-rpc"
+      ],
+      "stdin": "{\"id\":\"state\",\"type\":\"get_state\"}\n{\"id\":\"prompt\",\"type\":\"prompt\",\"message\":\"unreachable prompt\"}\n",
+      "configuredModel": false,
+      "expectedRequests": 0,
+      "expected": {
+        "exitCode": 0,
+        "stdout": "{\"id\":\"state\",\"type\":\"response\",\"command\":\"get_state\",\"success\":true,\"data\":{\"model\":{\"id\":\"unknown\",\"name\":\"unknown\",\"api\":\"unknown\",\"provider\":\"unknown\",\"baseUrl\":\"\",\"reasoning\":false,\"input\":[],\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0},\"contextWindow\":0,\"maxTokens\":0},\"thinkingLevel\":\"off\",\"isStreaming\":false,\"isCompacting\":false,\"steeringMode\":\"one-at-a-time\",\"followUpMode\":\"one-at-a-time\",\"sessionId\":\"f7-cli-rpc\",\"autoCompactionEnabled\":true,\"messageCount\":0,\"pendingMessageCount\":0}}\n{\"id\":\"prompt\",\"type\":\"response\",\"command\":\"prompt\",\"success\":false,\"error\":\"No API key found for the selected model.\\n\\nUse /login to log into a provider via OAuth or API key. See:\\n  <package>/docs/providers.md\\n  <package>/docs/models.md\"}\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

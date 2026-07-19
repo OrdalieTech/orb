@@ -76,6 +76,24 @@ func (registry *ModelRegistry) Reload() error {
 	}
 	base := builtin.Merge(stored).Models()
 	authProviders := cloneCredentials(readStoredCredentials(filepath.Join(registry.agentDir, "auth.json")))
+	return registry.refreshSnapshot(base, config, authProviders)
+}
+
+// RefreshAuth re-reads credentials without reloading models.json or the model
+// store. Login and logout use this path so unrelated config edits remain behind
+// the explicit reload boundary.
+func (registry *ModelRegistry) RefreshAuth() error {
+	registry.reloadMu.Lock()
+	defer registry.reloadMu.Unlock()
+	registry.mu.RLock()
+	base := append([]ai.Model(nil), registry.base...)
+	config := registry.config
+	registry.mu.RUnlock()
+	authProviders := cloneCredentials(readStoredCredentials(filepath.Join(registry.agentDir, "auth.json")))
+	return registry.refreshSnapshot(base, config, authProviders)
+}
+
+func (registry *ModelRegistry) refreshSnapshot(base []ai.Model, config *ModelConfig, authProviders map[string]*aiauth.Credential) error {
 	registry.opMu.Lock()
 	registry.mu.RLock()
 	providerConfigs := cloneProviderConfigs(registry.providerConfigs)

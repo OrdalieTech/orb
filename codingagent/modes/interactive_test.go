@@ -394,17 +394,6 @@ func TestKeyText(t *testing.T) {
 	}
 }
 
-func TestTruncateToVisualLines(t *testing.T) {
-	text := "line1\nline2\nline3\nline4\nline5"
-	lines, skipped := truncateToVisualLines(text, 3, 80)
-	if len(lines) != 3 {
-		t.Errorf("expected 3 lines, got %d", len(lines))
-	}
-	if skipped != 2 {
-		t.Errorf("expected 2 skipped, got %d", skipped)
-	}
-}
-
 func TestThemePackageLevelAccessors(t *testing.T) {
 	if text := theme.FG("dim", "test"); text != "test" {
 		t.Errorf("FG with nil theme should return text as-is, got %q", text)

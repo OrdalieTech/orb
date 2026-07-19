@@ -1,0 +1,15 @@
+{
+  "family": "F7-cli",
+  "upstreamCommit": "3da591ab74ab9ab407e72ed882600b2c851fae21",
+  "generator": "conformance/extract/f7-cli.ts",
+  "source": "packages/coding-agent/src/main.ts + src/core/agent-session.ts + src/modes/{print-mode,rpc/rpc-mode}.ts + test/{print-mode,stdout-cleanliness,initial-message}.test.ts",
+  "format": "black-box-cli-stdout-stderr-v1",
+  "canonicalized": [
+    "package installation directory",
+    "JSON session-header timestamp",
+    "temporary project cwd"
+  ],
+  "files": [
+    "cases.json"
+  ]
+}

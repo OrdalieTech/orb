@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
 	"github.com/OrdalieTech/pi-go/codingagent/session/exporthtml"
 	"github.com/OrdalieTech/pi-go/codingagent/tools"
+	"github.com/OrdalieTech/pi-go/internal/jsonwire"
 )
 
 type ModelCycleResult struct {
@@ -54,7 +56,7 @@ func (runtime *SessionRuntime) PromptPreflight(ctx context.Context) error {
 		return errors.New("codingagent: nil session runtime")
 	}
 	state := runtime.agent.State()
-	if state.Model == nil || IsUnknownModel(state.Model) {
+	if state.Model == nil || (IsUnknownModel(state.Model) && runtime.getRequestAuth == nil && runtime.getAPIKey == nil) {
 		return noModelSelectedError()
 	}
 	if ctx == nil {
@@ -65,7 +67,7 @@ func (runtime *SessionRuntime) PromptPreflight(ctx context.Context) error {
 		return err
 	}
 	if !hasAuth {
-		return errors.New("No API key found for " + string(state.Model.Provider) + ".\n\nUse /login to log into a provider via OAuth or API key. See:\n  docs/providers.md\n  docs/models.md") //nolint:staticcheck // Upstream RPC text.
+		return errors.New(formatNoAPIKeyFoundMessage(state.Model.Provider))
 	}
 	for index := len(state.Messages) - 1; index >= 0; index-- {
 		if assistant := asAssistant(state.Messages[index]); assistant != nil {
@@ -584,6 +586,17 @@ func noModelSelectedError() error {
 	return errors.New("No model selected.\n\nUse /login to log into a provider via OAuth or API key. See:\n  docs/providers.md\n  docs/models.md\n\nThen use /model to select a model.")
 }
 
+//nolint:staticcheck // User-visible auth guidance matches upstream.
+func formatNoAPIKeyFoundMessage(provider ai.ProviderID) string {
+	display := string(provider)
+	if display == "unknown" {
+		display = "the selected model"
+	}
+	docsDir := filepath.Join(resolvePromptPackageDir(""), "docs")
+	return "No API key found for " + display + ".\n\nUse /login to log into a provider via OAuth or API key. See:\n  " +
+		filepath.Join(docsDir, "providers.md") + "\n  " + filepath.Join(docsDir, "models.md")
+}
+
 func clampThinkingLevel(model *ai.Model, requested ai.ModelThinkingLevel) ai.ModelThinkingLevel {
 	levels := supportedThinkingLevels(model)
 	if slices.Contains(levels, requested) {
@@ -748,7 +761,7 @@ func (runtime *SessionRuntime) GetUserMessagesForForking() []struct {
 		if entry.Type != "message" {
 			continue
 		}
-		role, text := messageRoleAndText(entry.Message)
+		role, text := jsonwire.MessageRoleAndText(entry.Message)
 		if role == "user" && text != "" {
 			result = append(result, struct {
 				EntryID string `json:"entryId"`
@@ -845,32 +858,4 @@ func (runtime *SessionRuntime) ExportHTML(outputPath string) (string, error) {
 	state := runtime.agent.State()
 	systemPrompt := state.SystemPrompt
 	return exporthtml.ExportSession(runtime.manager, exporthtml.Options{OutputPath: outputPath, SystemPrompt: &systemPrompt})
-}
-
-func messageRoleAndText(raw json.RawMessage) (string, string) {
-	var message struct {
-		Role    string          `json:"role"`
-		Content json.RawMessage `json:"content"`
-	}
-	if json.Unmarshal(raw, &message) != nil {
-		return "", ""
-	}
-	var plain string
-	if json.Unmarshal(message.Content, &plain) == nil {
-		return message.Role, plain
-	}
-	var blocks []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
-	if json.Unmarshal(message.Content, &blocks) != nil {
-		return message.Role, ""
-	}
-	var text strings.Builder
-	for _, block := range blocks {
-		if block.Type == "text" {
-			text.WriteString(block.Text)
-		}
-	}
-	return message.Role, text.String()
 }

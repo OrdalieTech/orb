@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/OrdalieTech/pi-go/codingagent/config"
 	textunicode "golang.org/x/text/encoding/unicode"
 )
 
@@ -44,6 +45,8 @@ type ResourceOptions struct {
 	ProjectPromptTemplatePaths []string
 	PackageSkillPaths          []string
 	PackagePromptTemplatePaths []string
+	SkillPathMetadata          map[string]PathMetadata
+	PromptPathMetadata         map[string]PathMetadata
 }
 
 type Resources struct {
@@ -53,6 +56,8 @@ type Resources struct {
 	Skills             []Skill
 	PromptTemplates    []PromptTemplate
 	Diagnostics        []ResourceDiagnostic
+	skillDiagnostics   []ResourceDiagnostic
+	promptDiagnostics  []ResourceDiagnostic
 }
 
 // JoinedAppendSystemPrompt applies the separator used before prompt assembly.
@@ -128,8 +133,10 @@ func LoadResources(options ResourceOptions) Resources {
 			resources.AppendSystemPrompt = append(resources.AppendSystemPrompt, *resolved)
 		}
 	}
-	var fileDiagnostics []ResourceDiagnostic
-	resources.Skills, resources.PromptTemplates, fileDiagnostics = loadCommandResources(commandResourceOptions{
+	metadata := resolveCommandResourceMetadata(cwd, agentDir, trusted)
+	mergeCommandResourceMetadata(metadata.skills, options.SkillPathMetadata)
+	mergeCommandResourceMetadata(metadata.prompts, options.PromptPathMetadata)
+	commandOptions := commandResourceOptions{
 		cwd: cwd, agentDir: agentDir, trusted: trusted,
 		noSkills: options.NoSkills, noPrompts: options.NoPromptTemplates,
 		skillPaths: options.SkillPaths, promptPaths: options.PromptTemplatePaths,
@@ -137,8 +144,14 @@ func LoadResources(options ResourceOptions) Resources {
 		globalPromptPaths: options.GlobalPromptTemplatePaths, projectPromptPaths: options.ProjectPromptTemplatePaths,
 		packageSkillPaths:  options.PackageSkillPaths,
 		packagePromptPaths: options.PackagePromptTemplatePaths,
-	})
-	resources.Diagnostics = append(resources.Diagnostics, fileDiagnostics...)
+		metadata:           metadata,
+	}
+	skills := loadCommandSkills(commandOptions)
+	resources.Skills = skills.Skills
+	resources.skillDiagnostics = skills.Diagnostics
+	resources.PromptTemplates, resources.promptDiagnostics = loadCommandPrompts(commandOptions)
+	resources.Diagnostics = append(resources.Diagnostics, resources.skillDiagnostics...)
+	resources.Diagnostics = append(resources.Diagnostics, resources.promptDiagnostics...)
 	return resources
 }
 
@@ -150,13 +163,89 @@ type commandResourceOptions struct {
 	globalSkillPaths, projectSkillPaths   []string
 	globalPromptPaths, projectPromptPaths []string
 	packageSkillPaths, packagePromptPaths []string
+	metadata                              commandResourceMetadata
 }
 
-func retagSkills(result LoadSkillsResult, scope, baseDir, source string) LoadSkillsResult {
+type commandResourceMetadata struct {
+	skills  map[string]PathMetadata
+	prompts map[string]PathMetadata
+}
+
+func resolveCommandResourceMetadata(cwd, agentDir string, trusted bool) commandResourceMetadata {
+	metadata := commandResourceMetadata{skills: map[string]PathMetadata{}, prompts: map[string]PathMetadata{}}
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir), config.WithProjectTrusted(trusted))
+	if err != nil {
+		return metadata
+	}
+	resolved, err := NewPackageManager(PackageManagerOptions{CWD: cwd, AgentDir: agentDir, Settings: settings}).Resolve(
+		func(string) (MissingSourceAction, error) { return MissingSourceSkip, nil },
+	)
+	if err != nil || resolved == nil {
+		return metadata
+	}
+	for _, resource := range resolved.Skills {
+		if resource.Enabled {
+			metadata.skills[canonicalResourcePath(resource.Path)] = resource.Metadata
+		}
+	}
+	for _, resource := range resolved.Prompts {
+		if resource.Enabled {
+			metadata.prompts[canonicalResourcePath(resource.Path)] = resource.Metadata
+		}
+	}
+	return metadata
+}
+
+func sourceInfoFromMetadata(path string, metadata PathMetadata) SourceInfo {
+	return SourceInfo{
+		Path: path, Source: metadata.Source, Scope: metadata.Scope,
+		Origin: metadata.Origin, BaseDir: metadata.BaseDir,
+	}
+}
+
+func mergeCommandResourceMetadata(target, source map[string]PathMetadata) {
+	for path, metadata := range source {
+		target[canonicalResourcePath(path)] = metadata
+	}
+}
+
+func commandPathMetadata(path string, metadata map[string]PathMetadata) (PathMetadata, bool) {
+	canonical := canonicalResourcePath(path)
+	if resolved, exists := metadata[canonical]; exists {
+		return resolved, true
+	}
+	bestLength := -1
+	var best PathMetadata
+	for root, candidate := range metadata {
+		if canonical != root && !strings.HasPrefix(canonical, root+string(filepath.Separator)) {
+			continue
+		}
+		if len(root) > bestLength {
+			bestLength, best = len(root), candidate
+		}
+	}
+	return best, bestLength >= 0
+}
+
+func retagSkills(result LoadSkillsResult, metadata map[string]PathMetadata, scope, baseDir, source, origin string) LoadSkillsResult {
 	for index := range result.Skills {
+		path := result.Skills[index].FilePath
+		if resolved, exists := commandPathMetadata(path, metadata); exists {
+			result.Skills[index].SourceInfo = sourceInfoFromMetadata(path, resolved)
+			continue
+		}
 		result.Skills[index].SourceInfo = SourceInfo{
-			Path: result.Skills[index].FilePath, Source: source, Scope: scope,
-			Origin: "top-level", BaseDir: baseDir,
+			Path: path, Source: source, Scope: scope, Origin: origin, BaseDir: baseDir,
+		}
+	}
+	return result
+}
+
+func applySkillMetadata(result LoadSkillsResult, metadata map[string]PathMetadata) LoadSkillsResult {
+	for index := range result.Skills {
+		path := result.Skills[index].FilePath
+		if resolved, exists := commandPathMetadata(path, metadata); exists {
+			result.Skills[index].SourceInfo = sourceInfoFromMetadata(path, resolved)
 		}
 	}
 	return result
@@ -164,17 +253,24 @@ func retagSkills(result LoadSkillsResult, scope, baseDir, source string) LoadSki
 
 func combineSkills(inputs []LoadSkillsResult) LoadSkillsResult {
 	combined := LoadSkillsResult{Skills: []Skill{}, Diagnostics: []ResourceDiagnostic{}}
+	collisions := make([]ResourceDiagnostic, 0)
 	seenNames := make(map[string]Skill)
 	seenPaths := make(map[string]struct{})
 	for _, input := range inputs {
-		combined.Diagnostics = append(combined.Diagnostics, input.Diagnostics...)
+		for _, diagnostic := range input.Diagnostics {
+			if diagnostic.Type == "collision" {
+				collisions = append(collisions, diagnostic)
+			} else {
+				combined.Diagnostics = append(combined.Diagnostics, diagnostic)
+			}
+		}
 		for _, skill := range input.Skills {
 			canonical := canonicalResourcePath(skill.FilePath)
 			if _, duplicate := seenPaths[canonical]; duplicate {
 				continue
 			}
 			if winner, collision := seenNames[skill.Name]; collision {
-				combined.Diagnostics = append(combined.Diagnostics, ResourceDiagnostic{
+				collisions = append(collisions, ResourceDiagnostic{
 					Type: "collision", Message: fmt.Sprintf("name %q collision", skill.Name), Path: skill.FilePath,
 					Collision: &ResourceCollision{ResourceType: "skill", Name: skill.Name, WinnerPath: winner.FilePath, LoserPath: skill.FilePath},
 				})
@@ -185,6 +281,7 @@ func combineSkills(inputs []LoadSkillsResult) LoadSkillsResult {
 			combined.Skills = append(combined.Skills, skill)
 		}
 	}
+	combined.Diagnostics = append(combined.Diagnostics, collisions...)
 	return combined
 }
 
@@ -233,22 +330,23 @@ func resolveConfiguredPaths(paths []string, baseDir string) []string {
 
 func loadCommandSkills(options commandResourceOptions) LoadSkillsResult {
 	inputs := make([]LoadSkillsResult, 0)
-	if len(options.skillPaths) > 0 {
-		inputs = append(inputs, LoadSkills(LoadSkillsOptions{
-			CWD: options.cwd, AgentDir: options.agentDir, SkillPaths: options.skillPaths,
-		}))
-	}
 	projectBase := filepath.Join(options.cwd, ".pi")
 	if !options.noSkills && options.trusted {
 		configured := resolveConfiguredPaths(options.projectSkillPaths, projectBase)
 		if len(configured) > 0 {
 			inputs = append(inputs, retagSkills(LoadSkills(LoadSkillsOptions{
 				CWD: options.cwd, AgentDir: options.agentDir, SkillPaths: configured,
-			}), "project", projectBase, "local"))
+			}), options.metadata.skills, "project", projectBase, "local", "top-level"))
 		}
-		inputs = append(inputs, loadAutomaticSkills(filepath.Join(projectBase, "skills"), "project", true))
+		inputs = append(inputs, retagSkills(
+			loadAutomaticSkills(filepath.Join(projectBase, "skills"), "project", true),
+			options.metadata.skills, "project", projectBase, "auto", "top-level",
+		))
 		for _, dir := range ancestorAgentsSkillDirs(options.cwd) {
-			inputs = append(inputs, loadAutomaticSkills(dir, "project", false))
+			inputs = append(inputs, retagSkills(
+				loadAutomaticSkills(dir, "project", false), options.metadata.skills,
+				"project", filepath.Dir(dir), "auto", "top-level",
+			))
 		}
 	}
 	if !options.noSkills {
@@ -256,27 +354,52 @@ func loadCommandSkills(options commandResourceOptions) LoadSkillsResult {
 		if len(configured) > 0 {
 			inputs = append(inputs, retagSkills(LoadSkills(LoadSkillsOptions{
 				CWD: options.cwd, AgentDir: options.agentDir, SkillPaths: configured,
-			}), "user", options.agentDir, "local"))
+			}), options.metadata.skills, "user", options.agentDir, "local", "top-level"))
 		}
-		inputs = append(inputs, loadAutomaticSkills(filepath.Join(options.agentDir, "skills"), "user", true))
+		inputs = append(inputs, retagSkills(
+			loadAutomaticSkills(filepath.Join(options.agentDir, "skills"), "user", true),
+			options.metadata.skills, "user", options.agentDir, "auto", "top-level",
+		))
 		if home, err := os.UserHomeDir(); err == nil {
 			userAgentsDir := filepath.Join(home, ".agents", "skills")
-			inputs = append(inputs, loadAutomaticSkills(userAgentsDir, "user", false))
+			inputs = append(inputs, retagSkills(
+				loadAutomaticSkills(userAgentsDir, "user", false), options.metadata.skills,
+				"user", filepath.Dir(userAgentsDir), "auto", "top-level",
+			))
 		}
 		if len(options.packageSkillPaths) > 0 {
 			inputs = append(inputs, retagSkills(LoadSkills(LoadSkillsOptions{
 				CWD: options.cwd, AgentDir: options.agentDir, SkillPaths: options.packageSkillPaths,
-			}), "temporary", options.cwd, "package"))
+			}), options.metadata.skills, "temporary", options.cwd, "package", "package"))
 		}
+	}
+	if len(options.skillPaths) > 0 {
+		inputs = append(inputs, applySkillMetadata(LoadSkills(LoadSkillsOptions{
+			CWD: options.cwd, AgentDir: options.agentDir, SkillPaths: options.skillPaths,
+		}), options.metadata.skills))
 	}
 	return combineSkills(inputs)
 }
 
-func retagPrompts(prompts []PromptTemplate, scope, baseDir, source string) []PromptTemplate {
+func retagPrompts(prompts []PromptTemplate, metadata map[string]PathMetadata, scope, baseDir, source, origin string) []PromptTemplate {
 	for index := range prompts {
+		path := prompts[index].FilePath
+		if resolved, exists := commandPathMetadata(path, metadata); exists {
+			prompts[index].SourceInfo = sourceInfoFromMetadata(path, resolved)
+			continue
+		}
 		prompts[index].SourceInfo = SourceInfo{
-			Path: prompts[index].FilePath, Source: source, Scope: scope,
-			Origin: "top-level", BaseDir: baseDir,
+			Path: path, Source: source, Scope: scope, Origin: origin, BaseDir: baseDir,
+		}
+	}
+	return prompts
+}
+
+func applyPromptMetadata(prompts []PromptTemplate, metadata map[string]PathMetadata) []PromptTemplate {
+	for index := range prompts {
+		path := prompts[index].FilePath
+		if resolved, exists := commandPathMetadata(path, metadata); exists {
+			prompts[index].SourceInfo = sourceInfoFromMetadata(path, resolved)
 		}
 	}
 	return prompts
@@ -286,16 +409,22 @@ func combinePrompts(inputs [][]PromptTemplate) ([]PromptTemplate, []ResourceDiag
 	combined := make([]PromptTemplate, 0)
 	diagnostics := make([]ResourceDiagnostic, 0)
 	seen := make(map[string]PromptTemplate)
+	seenPaths := make(map[string]struct{})
 	for _, input := range inputs {
 		for _, prompt := range input {
+			canonical := canonicalResourcePath(prompt.FilePath)
+			if _, duplicate := seenPaths[canonical]; duplicate {
+				continue
+			}
 			if winner, collision := seen[prompt.Name]; collision {
 				diagnostics = append(diagnostics, ResourceDiagnostic{
-					Type: "collision", Message: fmt.Sprintf("name %q collision", prompt.Name), Path: prompt.FilePath,
+					Type: "collision", Message: fmt.Sprintf("name %q collision", "/"+prompt.Name), Path: prompt.FilePath,
 					Collision: &ResourceCollision{ResourceType: "prompt", Name: prompt.Name, WinnerPath: winner.FilePath, LoserPath: prompt.FilePath},
 				})
 				continue
 			}
 			seen[prompt.Name] = prompt
+			seenPaths[canonical] = struct{}{}
 			combined = append(combined, prompt)
 		}
 	}
@@ -311,29 +440,48 @@ func loadPromptsAtPaths(paths []string, cwd, agentDir string) []PromptTemplate {
 
 func loadCommandPrompts(options commandResourceOptions) ([]PromptTemplate, []ResourceDiagnostic) {
 	inputs := make([][]PromptTemplate, 0)
-	inputs = append(inputs, loadPromptsAtPaths(options.promptPaths, options.cwd, options.agentDir))
 	projectBase := filepath.Join(options.cwd, ".pi")
 	if !options.noPrompts && options.trusted {
 		paths := resolveConfiguredPaths(options.projectPromptPaths, projectBase)
-		inputs = append(inputs, retagPrompts(loadPromptsAtPaths(paths, options.cwd, options.agentDir), "project", projectBase, "local"))
-		inputs = append(inputs, loadPromptsAtPaths([]string{filepath.Join(projectBase, "prompts")}, options.cwd, options.agentDir))
+		inputs = append(inputs, retagPrompts(
+			loadPromptsAtPaths(paths, options.cwd, options.agentDir), options.metadata.prompts,
+			"project", projectBase, "local", "top-level",
+		))
+		inputs = append(inputs, retagPrompts(
+			loadPromptsAtPaths([]string{filepath.Join(projectBase, "prompts")}, options.cwd, options.agentDir),
+			options.metadata.prompts, "project", projectBase, "auto", "top-level",
+		))
 	}
 	if !options.noPrompts {
 		paths := resolveConfiguredPaths(options.globalPromptPaths, options.agentDir)
-		inputs = append(inputs, retagPrompts(loadPromptsAtPaths(paths, options.cwd, options.agentDir), "user", options.agentDir, "local"))
-		inputs = append(inputs, loadPromptsAtPaths([]string{filepath.Join(options.agentDir, "prompts")}, options.cwd, options.agentDir))
+		inputs = append(inputs, retagPrompts(
+			loadPromptsAtPaths(paths, options.cwd, options.agentDir), options.metadata.prompts,
+			"user", options.agentDir, "local", "top-level",
+		))
+		inputs = append(inputs, retagPrompts(
+			loadPromptsAtPaths([]string{filepath.Join(options.agentDir, "prompts")}, options.cwd, options.agentDir),
+			options.metadata.prompts, "user", options.agentDir, "auto", "top-level",
+		))
 		if len(options.packagePromptPaths) > 0 {
-			inputs = append(inputs, retagPrompts(loadPromptsAtPaths(options.packagePromptPaths, options.cwd, options.agentDir), "temporary", options.cwd, "package"))
+			inputs = append(inputs, retagPrompts(
+				loadPromptsAtPaths(options.packagePromptPaths, options.cwd, options.agentDir), options.metadata.prompts,
+				"temporary", options.cwd, "package", "package",
+			))
 		}
 	}
-	return combinePrompts(inputs)
-}
-
-func loadCommandResources(options commandResourceOptions) ([]Skill, []PromptTemplate, []ResourceDiagnostic) {
-	skills := loadCommandSkills(options)
-	prompts, promptDiagnostics := loadCommandPrompts(options)
-	diagnostics := append(skills.Diagnostics, promptDiagnostics...)
-	return skills.Skills, prompts, diagnostics
+	inputs = append(inputs, applyPromptMetadata(
+		loadPromptsAtPaths(options.promptPaths, options.cwd, options.agentDir), options.metadata.prompts,
+	))
+	prompts, diagnostics := combinePrompts(inputs)
+	for _, path := range options.promptPaths {
+		resolved := resolveResourcePathFrom(path, options.cwd)
+		if isLocalPathSource(path) && !pathExists(resolved) {
+			diagnostics = append(diagnostics, ResourceDiagnostic{
+				Type: "error", Message: "Prompt template path does not exist", Path: resolved,
+			})
+		}
+	}
+	return prompts, diagnostics
 }
 
 // LoadProjectContextFiles loads the global context file followed by one file

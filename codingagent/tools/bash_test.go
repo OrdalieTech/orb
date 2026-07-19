@@ -24,6 +24,12 @@ import (
 
 type bashOperationsFunc func(context.Context, string, string, BashExecOptions) (BashExecResult, error)
 
+func trackedDetachedChildCount() int {
+	trackedDetachedChildren.Lock()
+	defer trackedDetachedChildren.Unlock()
+	return len(trackedDetachedChildren.pids)
+}
+
 func (function bashOperationsFunc) Exec(
 	ctx context.Context,
 	command string,

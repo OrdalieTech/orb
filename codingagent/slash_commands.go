@@ -33,7 +33,7 @@ var BuiltinSlashCommands = []BuiltinSlashCommand{
 	{Name: "scoped-models", Description: "Enable/disable models for Ctrl+P cycling"},
 	{Name: "export", Description: "Export session (HTML default, or specify path: .html/.jsonl)"},
 	{Name: "import", Description: "Import and resume a session from a JSONL file"},
-	{Name: "share", Description: "Export session as local HTML"},
+	{Name: "share", Description: "Share session as a secret GitHub gist"},
 	{Name: "copy", Description: "Copy last agent message to clipboard"},
 	{Name: "name", Description: "Set session display name"},
 	{Name: "session", Description: "Show session info and stats"},
@@ -189,8 +189,10 @@ func FormatSkillInvocation(skill Skill, additionalInstructions string) string {
 	return block
 }
 
-// Commands returns the RPC command-list order: extension, prompt, then skill.
-func (resolver *SlashResolver) Commands(enableSkillCommands bool) []SlashCommandInfo {
+// Commands returns the core/RPC command-list order: extension, prompt, then skill.
+// enableSkillCommands is an interactive autocomplete setting and does not hide
+// commands from the session API.
+func (resolver *SlashResolver) Commands(_ bool) []SlashCommandInfo {
 	if resolver == nil {
 		return []SlashCommandInfo{}
 	}
@@ -201,13 +203,11 @@ func (resolver *SlashResolver) Commands(enableSkillCommands bool) []SlashCommand
 			SourceInfo: template.SourceInfo,
 		})
 	}
-	if enableSkillCommands {
-		for _, skill := range resolver.Skills {
-			commands = append(commands, SlashCommandInfo{
-				Name: "skill:" + skill.Name, Description: skill.Description, Source: SlashCommandSkill,
-				SourceInfo: skill.SourceInfo,
-			})
-		}
+	for _, skill := range resolver.Skills {
+		commands = append(commands, SlashCommandInfo{
+			Name: "skill:" + skill.Name, Description: skill.Description, Source: SlashCommandSkill,
+			SourceInfo: skill.SourceInfo,
+		})
 	}
 	return commands
 }

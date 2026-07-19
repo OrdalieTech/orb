@@ -222,8 +222,9 @@ func (mode *rpcMode) handleLine(line []byte, commands *sync.WaitGroup) {
 		return
 	}
 	_, command.HasID = raw["id"]
+	session := mode.host.Session()
 	execute := func() {
-		response := mode.handleCommand(command)
+		response := mode.handleCommand(session, command)
 		if response != nil {
 			_ = mode.writeObject(*response)
 		}
@@ -249,8 +250,7 @@ func rpcCommandIsAsync(command string) bool {
 	}
 }
 
-func (mode *rpcMode) handleCommand(command RPCCommand) *RPCResponse { //nolint:gocyclo,cyclop,funlen
-	session := mode.host.Session()
+func (mode *rpcMode) handleCommand(session *codingagent.SessionRuntime, command RPCCommand) *RPCResponse { //nolint:gocyclo,cyclop,funlen
 	if session == nil {
 		response := rpcError(command.ID, command.HasID, command.Type, "Session is unavailable")
 		return &response
@@ -517,7 +517,7 @@ func (mode *rpcMode) handleCommand(command RPCCommand) *RPCResponse { //nolint:g
 	case "set_session_name":
 		name := strings.TrimFunc(command.Name, isJSTrimSpace)
 		if name == "" {
-			return failure(errors.New("Session name cannot be empty"))
+			return failure(errors.New("Session name cannot be empty")) //nolint:staticcheck // Wire error matches upstream.
 		}
 		if err := session.SetSessionName(name); err != nil {
 			return failure(err)

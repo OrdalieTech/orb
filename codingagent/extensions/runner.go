@@ -3,6 +3,7 @@ package extensions
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"runtime/debug"
@@ -69,12 +70,13 @@ type Runner struct {
 	sessionManager ReadonlySessionManager
 	modelRegistry  ModelRegistry
 
-	mu             sync.RWMutex
-	ui             UI
-	mode           Mode
-	contextActions ContextActions
-	commandActions CommandActions
-	staleMessage   string
+	mu                sync.RWMutex
+	ui                UI
+	mode              Mode
+	contextActions    ContextActions
+	commandActions    CommandActions
+	staleMessage      string
+	deferredProviders *Actions
 
 	errorMu        sync.RWMutex
 	nextErrorID    uint64
@@ -106,7 +108,19 @@ func NewRunner(registry *Registry, options RunnerOptions) *Runner {
 	if options.ErrorHandler != nil {
 		runner.OnError(options.ErrorHandler)
 	}
-	runner.BindCore(options.Actions, options.ContextActions)
+	actions := options.Actions
+	if options.ModelRegistry != nil {
+		if actions.RegisterProvider == nil {
+			actions.RegisterProvider = options.ModelRegistry.RegisterProvider
+		}
+		if actions.RegisterProviderConfig == nil {
+			actions.RegisterProviderConfig = options.ModelRegistry.RegisterProviderConfig
+		}
+		if actions.UnregisterProvider == nil {
+			actions.UnregisterProvider = options.ModelRegistry.UnregisterProvider
+		}
+	}
+	runner.bindCore(actions, options.ContextActions, runner.HasHandlers(EventProjectTrust))
 	if options.CommandActions != nil {
 		runner.BindCommandContext(options.CommandActions)
 	} else {
@@ -117,10 +131,32 @@ func NewRunner(registry *Registry, options RunnerOptions) *Runner {
 }
 
 func (runner *Runner) BindCore(actions Actions, contextActions ContextActions) {
+	runner.bindCore(actions, contextActions, false)
+}
+
+func (runner *Runner) bindCore(actions Actions, contextActions ContextActions, deferProviders bool) {
 	runner.mu.Lock()
 	runner.contextActions = normalizeContextActions(contextActions, runner.cwd)
+	runner.deferredProviders = nil
 	runner.mu.Unlock()
-	runner.runtime.bind(actions, runner.emitError)
+	actions = runner.runtime.bindActions(actions)
+	if deferProviders {
+		runner.mu.Lock()
+		runner.deferredProviders = &actions
+		runner.mu.Unlock()
+		return
+	}
+	runner.runtime.bindProviderActions(actions, runner.emitError)
+}
+
+func (runner *Runner) bindDeferredProviders() {
+	runner.mu.Lock()
+	actions := runner.deferredProviders
+	runner.deferredProviders = nil
+	runner.mu.Unlock()
+	if actions != nil {
+		runner.runtime.bindProviderActions(*actions, runner.emitError)
+	}
 }
 
 func normalizeContextActions(actions ContextActions, cwd string) ContextActions {
@@ -585,6 +621,46 @@ type extensionContext struct {
 	systemPrompt func() string
 }
 
+type restrictedProjectTrustContext struct {
+	Context
+	cwd   string
+	mode  Mode
+	hasUI bool
+	ui    TrustUI
+}
+
+func restrictProjectTrustContext(value Context) Context {
+	return &restrictedProjectTrustContext{
+		cwd: value.CWD(), mode: value.Mode(), hasUI: value.HasUI(), ui: value.UI(),
+	}
+}
+
+func (value *restrictedProjectTrustContext) CWD() string { return value.cwd }
+func (value *restrictedProjectTrustContext) Mode() Mode  { return value.mode }
+func (value *restrictedProjectTrustContext) HasUI() bool { return value.hasUI }
+func (value *restrictedProjectTrustContext) UI() UI      { return restrictedProjectTrustUI{trust: value.ui} }
+
+type restrictedProjectTrustUI struct {
+	UI
+	trust TrustUI
+}
+
+func (value restrictedProjectTrustUI) Select(ctx context.Context, title string, options []string, config *DialogOptions) (string, bool, error) {
+	return value.trust.Select(ctx, title, options, config)
+}
+
+func (value restrictedProjectTrustUI) Confirm(ctx context.Context, title, message string, config *DialogOptions) (bool, error) {
+	return value.trust.Confirm(ctx, title, message, config)
+}
+
+func (value restrictedProjectTrustUI) Input(ctx context.Context, title string, placeholder *string, config *DialogOptions) (string, bool, error) {
+	return value.trust.Input(ctx, title, placeholder, config)
+}
+
+func (value restrictedProjectTrustUI) Notify(message string, notificationType NotificationType) {
+	value.trust.Notify(message, notificationType)
+}
+
 func (contextValue *extensionContext) UI() UI {
 	contextValue.runner.assertActive()
 	return contextValue.runner.UI()
@@ -736,9 +812,11 @@ func (runner *Runner) CreateReplacedSessionContext() ReplacedSessionContext {
 }
 
 func (runner *Runner) EmitProjectTrust(ctx context.Context, event ProjectTrustEvent, trustContext Context) (*ProjectTrustResult, []ExtensionError) {
+	defer runner.bindDeferredProviders()
 	if trustContext == nil {
 		trustContext = runner.CreateContext()
 	}
+	trustContext = restrictProjectTrustContext(trustContext)
 	var errorsSeen []ExtensionError
 	for _, extension := range runner.extensions {
 		for _, handler := range handlersFor(extension, EventProjectTrust) {
@@ -762,6 +840,9 @@ func (runner *Runner) EmitProjectTrust(ctx context.Context, event ProjectTrustEv
 func (runner *Runner) Emit(ctx context.Context, event Event) any {
 	if event == nil {
 		return nil
+	}
+	if event.Type() != EventProjectTrust {
+		runner.bindDeferredProviders()
 	}
 	extensionContext := runner.CreateContext()
 	var current any
@@ -1085,20 +1166,32 @@ func handlersFor(extension *Extension, event EventType) []Handler {
 
 func callHandler(ctx context.Context, handler Handler, event Event, extensionContext Context) (result any, err error) {
 	if handler == nil {
-		return nil, nil
+		return nil, errors.New("extension handler is not callable")
 	}
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("%v", recovered)
+			err = &handlerPanicError{message: fmt.Sprint(recovered), stack: string(debug.Stack())}
 		}
 	}()
 	return handler(ctx, event, extensionContext)
 }
 
+type handlerPanicError struct {
+	message string
+	stack   string
+}
+
+func (value *handlerPanicError) Error() string { return value.message }
+
 func makeExtensionError(path string, event EventType, err error) ExtensionError {
 	stack := ""
 	if err != nil {
-		stack = string(debug.Stack())
+		var panicError *handlerPanicError
+		if errors.As(err, &panicError) {
+			stack = panicError.stack
+		} else {
+			stack = string(debug.Stack())
+		}
 	}
 	return ExtensionError{ExtensionPath: path, Event: string(event), Error: err.Error(), Stack: stack}
 }

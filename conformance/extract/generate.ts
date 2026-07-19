@@ -12,6 +12,7 @@ import { generateF5 } from "./f5-truncation.ts";
 import { generateF6 } from "./f6-session.ts";
 import { generateF6Harness } from "./f6-harness.ts";
 import { generateF7 } from "./f7-rpc.ts";
+import { generateF7CLI } from "./f7-cli.ts";
 import { generateF8 } from "./f8-slash-templates.ts";
 import { generateF9 } from "./f9-system-prompt.ts";
 import { generateWP250 } from "./wp250-models.ts";
@@ -47,6 +48,7 @@ const generators = [
   generateF6,
   generateF6Harness,
   generateF7,
+  generateF7CLI,
   generateF8,
   generateF9,
   generateWP250,

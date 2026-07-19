@@ -1,8 +1,7 @@
 # WP-351 extension wire-through report
 
-Status: **integrated, Sprint 1 parity still red**. The retained `F11-wire` cases pass and the native
-runner reaches the agent, provider, tool, input, command, user-bash, resource, compaction/tree, and
-CLI paths, but those cases do not yet close the complete upstream extension seam.
+Status: **historical integration snapshot**. The gaps described here were open when WP-351 first
+landed; current Sprint 1 status and superseding evidence live in `docs/compare/sprint-1.md`.
 
 ## Behavior
 
@@ -51,11 +50,11 @@ through the full race suite. No dependency was added and no golden was hand-edit
 core-only consolidation does not include the historical TUI ancestry or its CJK observations;
 Sprint 2 owns that independently.
 
-Sprint 1 still has to expand the red wire surface around session replacement, provider/auth type
+At integration time, Sprint 1 still had to expand the open wire surface around session replacement, provider/auth type
 unification, runner lifecycle ordering, resource metadata/precedence, and the native-runner gaps
 listed in the WP-350 report. The retained matrix is evidence for the implemented seams, not M2.
 
-## Acceptance status
+## Status at integration time
 
 | Criterion | Status | Evidence |
 |---|---|---|

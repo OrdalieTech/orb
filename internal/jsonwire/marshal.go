@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
 )
@@ -194,6 +195,35 @@ func DecodeWTF8Surrogate(value string) (uint16, bool) {
 	}
 	unit := uint16(value[0]&0x0f)<<12 | uint16(value[1]&0x3f)<<6 | uint16(value[2]&0x3f)
 	return unit, unit >= 0xd800 && unit <= 0xdfff
+}
+
+// MessageRoleAndText preserves upstream's concatenation of text blocks with no separator.
+func MessageRoleAndText(raw json.RawMessage) (string, string) {
+	var message struct {
+		Role    string          `json:"role"`
+		Content json.RawMessage `json:"content"`
+	}
+	if json.Unmarshal(raw, &message) != nil {
+		return "", ""
+	}
+	var plain string
+	if json.Unmarshal(message.Content, &plain) == nil {
+		return message.Role, plain
+	}
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(message.Content, &blocks) != nil {
+		return message.Role, ""
+	}
+	var text strings.Builder
+	for _, block := range blocks {
+		if block.Type == "text" {
+			text.WriteString(block.Text)
+		}
+	}
+	return message.Role, text.String()
 }
 
 func restoreLineSeparators(data []byte) []byte {

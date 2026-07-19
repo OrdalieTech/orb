@@ -458,9 +458,3 @@ func KillProcessTree(pid int) {
 	}
 	_ = syscall.Kill(pid, syscall.SIGKILL)
 }
-
-func trackedDetachedChildCount() int {
-	trackedDetachedChildren.Lock()
-	defer trackedDetachedChildren.Unlock()
-	return len(trackedDetachedChildren.pids)
-}

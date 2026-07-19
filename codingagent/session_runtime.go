@@ -372,7 +372,7 @@ func (runtime *SessionRuntime) Prompt(ctx context.Context, input any, images ...
 		return errors.New("codingagent: nil session runtime")
 	}
 	if text, ok := input.(string); ok && runtime.extensionState != nil {
-		return runtime.promptExtensionInput(ctx, text, images, extensions.InputInteractive, true, nil, true)
+		return runtime.promptExtensionInput(ctx, text, images, extensions.InputInteractive, true, nil, true, nil)
 	}
 	if err := runtime.PromptPreflight(ctx); err != nil {
 		return err
@@ -388,7 +388,7 @@ func (runtime *SessionRuntime) SubmitInteractive(ctx context.Context, text strin
 		return errors.New("codingagent: nil session runtime")
 	}
 	if runtime.extensionState != nil {
-		return runtime.promptExtensionInput(ctx, text, images, extensions.InputInteractive, true, &delivery, true)
+		return runtime.promptExtensionInput(ctx, text, images, extensions.InputInteractive, true, &delivery, true, nil)
 	}
 	if !runtime.agent.IsIdle() {
 		if delivery == extensions.DeliverFollowUp {
@@ -457,7 +457,7 @@ func (runtime *SessionRuntime) PromptAfterPreflight(ctx context.Context, input a
 		return errors.New("codingagent: nil session runtime")
 	}
 	if text, ok := input.(string); ok && runtime.extensionState != nil {
-		return runtime.promptExtensionInput(ctx, text, images, extensions.InputInteractive, true, nil, false)
+		return runtime.promptExtensionInput(ctx, text, images, extensions.InputInteractive, true, nil, false, nil)
 	}
 	if text, ok := input.(string); ok && runtime.slashResolver != nil {
 		expanded, handled := runtime.slashResolver.ResolvePrompt(text)
@@ -1448,10 +1448,6 @@ func asAssistant(message agent.AgentMessage) *ai.AssistantMessage {
 		}
 	}
 	return nil
-}
-
-func userMessage(text string) *ai.UserMessage {
-	return userMessageWithImages(text, nil)
 }
 
 func userMessageWithImages(text string, images []*ai.ImageContent) *ai.UserMessage {

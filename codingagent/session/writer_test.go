@@ -8,6 +8,15 @@ import (
 	"time"
 )
 
+func parseWrittenEntry(t *testing.T, encoded []byte) *FileEntry {
+	t.Helper()
+	entries := ParseSessionEntries(string(encoded))
+	if len(entries) != 1 {
+		t.Fatalf("parsed entries = %d, want 1", len(entries))
+	}
+	return entries[0]
+}
+
 func TestManagerWritesExactCurrentMemberOrder(t *testing.T) {
 	now := fixedTestTime(t)
 	manager, err := InMemory(
@@ -167,10 +176,7 @@ func TestHeaderMetadataRoundTripsWithRawMemberOrder(t *testing.T) {
 		t.Fatalf("header = %s, want %s", encoded, want)
 	}
 
-	parsed, err := parseFileEntryLine(encoded)
-	if err != nil {
-		t.Fatal(err)
-	}
+	parsed := parseWrittenEntry(t, encoded)
 	if parsed.Header == nil || string(parsed.Header.Metadata) != string(metadata) {
 		t.Fatalf("parsed metadata = %s, want %s", parsed.Header.Metadata, metadata)
 	}
@@ -205,10 +211,7 @@ func TestActiveToolsChangeUsesUpstreamWireShape(t *testing.T) {
 		t.Fatalf("entry = %s, want %s", encoded, want)
 	}
 
-	parsed, err := parseFileEntryLine(encoded)
-	if err != nil {
-		t.Fatal(err)
-	}
+	parsed := parseWrittenEntry(t, encoded)
 	if parsed.Entry == nil || len(parsed.Entry.ActiveToolNames) != 2 || parsed.Entry.ActiveToolNames[1] != "bash <>&" {
 		t.Fatalf("active tools = %#v", parsed.Entry)
 	}
@@ -228,10 +231,7 @@ func TestLeafTargetPreservesNullAndEmptyString(t *testing.T) {
 	if string(nullEncoded) != nullWant {
 		t.Fatalf("null leaf = %s, want %s", nullEncoded, nullWant)
 	}
-	nullParsed, err := parseFileEntryLine(nullEncoded)
-	if err != nil {
-		t.Fatal(err)
-	}
+	nullParsed := parseWrittenEntry(t, nullEncoded)
 	if nullParsed.Entry == nil || nullParsed.Entry.LeafTargetID != nil {
 		t.Fatalf("parsed null leaf = %#v", nullParsed.Entry)
 	}
@@ -251,10 +251,7 @@ func TestLeafTargetPreservesNullAndEmptyString(t *testing.T) {
 	if string(emptyEncoded) != emptyWant {
 		t.Fatalf("empty leaf = %s, want %s", emptyEncoded, emptyWant)
 	}
-	emptyParsed, err := parseFileEntryLine(emptyEncoded)
-	if err != nil {
-		t.Fatal(err)
-	}
+	emptyParsed := parseWrittenEntry(t, emptyEncoded)
 	if emptyParsed.Entry == nil || emptyParsed.Entry.LeafTargetID == nil || *emptyParsed.Entry.LeafTargetID != "" {
 		t.Fatalf("parsed empty leaf = %#v", emptyParsed.Entry)
 	}

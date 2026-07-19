@@ -90,6 +90,8 @@ type InteractiveMode struct {
 	extensionEditor   extensions.EditorComponent
 	themeRegistry     *theme.Registry
 	themeController   *theme.Controller
+	authContext       context.Context
+	authCancel        context.CancelFunc
 
 	unsubscribe func()
 }
@@ -117,6 +119,13 @@ func RunInteractiveMode(ctx context.Context, session *codingagent.SessionRuntime
 }
 
 func (mode *InteractiveMode) run(ctx context.Context) int {
+	authContext, authCancel := context.WithCancel(ctx)
+	mode.mu.Lock()
+	mode.authContext = authContext
+	mode.authCancel = authCancel
+	mode.mu.Unlock()
+	defer authCancel()
+
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	defer func() {
@@ -1463,7 +1472,8 @@ func (mode *InteractiveMode) authenticateProvider(argument string, logout bool) 
 	}
 	provider := strings.TrimSpace(argument)
 	go func() {
-		options, err := mode.options.Host.AuthOptions(context.Background())
+		ctx := mode.authenticationContext()
+		options, err := mode.options.Host.AuthOptions(ctx)
 		if err != nil {
 			mode.showError(err)
 			return
@@ -1480,7 +1490,7 @@ func (mode *InteractiveMode) authenticateProvider(argument string, logout bool) 
 				mode.showError(fmt.Errorf("provider %q has no stored credential", provider))
 				return
 			}
-			selected, ok := mode.selectAuthProvider(context.Background(), "Provider to logout", candidates, false)
+			selected, ok := mode.selectAuthProvider(ctx, "Provider to logout", candidates, false)
 			if ok {
 				mode.runAuthentication(selected.ID, selected.AuthType, true)
 			}
@@ -1498,9 +1508,9 @@ func (mode *InteractiveMode) authenticateProvider(argument string, logout bool) 
 			if len(matched) > 1 {
 				var ok bool
 				if allAuthOptionsForSameProvider(matched) {
-					selected, ok = mode.selectAuthMethod(context.Background(), matched)
+					selected, ok = mode.selectAuthMethod(ctx, matched)
 				} else {
-					selected, ok = mode.selectAuthProvider(context.Background(), "Provider to login", matched, true)
+					selected, ok = mode.selectAuthProvider(ctx, "Provider to login", matched, true)
 				}
 				if !ok {
 					return
@@ -1523,7 +1533,7 @@ func (mode *InteractiveMode) authenticateProvider(argument string, logout bool) 
 		authType := types[0]
 		if len(types) > 1 {
 			labels := []string{"Sign in with an account", "Sign in with an API key"}
-			selected, ok, selectErr := mode.interactiveUI.Select(context.Background(), "Select authentication method", labels, nil)
+			selected, ok, selectErr := mode.interactiveUI.Select(ctx, "Select authentication method", labels, nil)
 			if selectErr != nil || !ok {
 				return
 			}
@@ -1537,7 +1547,7 @@ func (mode *InteractiveMode) authenticateProvider(argument string, logout bool) 
 				filtered = append(filtered, candidate)
 			}
 		}
-		selected, ok := mode.selectAuthProvider(context.Background(), "Provider to login", filtered, true)
+		selected, ok := mode.selectAuthProvider(ctx, "Provider to login", filtered, true)
 		if ok {
 			mode.startAuthentication(selected)
 		}
@@ -1683,7 +1693,7 @@ func (mode *InteractiveMode) startAuthentication(provider InteractiveAuthProvide
 }
 
 func (mode *InteractiveMode) runAuthentication(provider string, authType aiauth.AuthType, logout bool) {
-	ctx := context.Background()
+	ctx := mode.authenticationContext()
 	verb := "login"
 	var err error
 	if logout {
@@ -1701,6 +1711,15 @@ func (mode *InteractiveMode) runAuthentication(provider string, authType aiauth.
 		label = strings.ToUpper(label[:1]) + label[1:]
 	}
 	mode.showStatusMessage(label + " successful for " + provider)
+}
+
+func (mode *InteractiveMode) authenticationContext() context.Context {
+	mode.mu.Lock()
+	defer mode.mu.Unlock()
+	if mode.authContext != nil {
+		return mode.authContext
+	}
+	return context.Background()
 }
 
 type tuiAuthInteraction struct{ mode *InteractiveMode }
@@ -2515,7 +2534,11 @@ func (mode *InteractiveMode) renderCustomEntry(customType string, data json.RawM
 func (mode *InteractiveMode) shutdown() {
 	mode.mu.Lock()
 	mode.shutdownRequested = true
+	authCancel := mode.authCancel
 	mode.mu.Unlock()
+	if authCancel != nil {
+		authCancel()
+	}
 	mode.session.Abort()
 	// Unblock getUserInput
 	select {

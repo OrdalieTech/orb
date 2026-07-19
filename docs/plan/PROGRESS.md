@@ -61,41 +61,44 @@ but will not be extended until Sprint 3.
 
 ## Sprint 1 — Core headless correct (M2)
 
-Status: **in progress**.
+Status: **deterministic core GREEN; M2 awaits two owner-run checks**.
 
 - [x] Land the RED F7 RPC transcript/upstream-suite adapter and the retained F8 resource goldens first.
 - [x] Turn the upstream RPC suite, F7, retained F8 cases, F9, and F10 green.
-- [ ] Expand F8 to the remaining upstream resource precedence, dedupe, diagnostics, and command cases,
+- [x] Expand F8 to the remaining upstream resource precedence, dedupe, diagnostics, and command cases,
       then turn that surface green.
 - [x] Keep F2 green for all landed core API shapes and `auth.json` cross-compatible.
 - [x] Port harness `SessionRepo`/`FileSystem`, JSONL/memory repositories, and rehydrate-from-bytes.
 - [x] Keep all 13 SDK examples and the retained skills/templates/native-extension fixtures green.
-- [ ] Land exact pinned-upstream missing-model diagnostics for print/json/RPC and turn every byte green.
-- [ ] Land auth lifecycle/isolation tests, then bind login to mode cancellation and refresh only
+- [x] Land exact pinned-upstream missing-model diagnostics for print/json/RPC and turn every byte green.
+- [x] Land auth lifecycle/isolation tests, then bind login to mode cancellation and refresh only
       credential-dependent projections without reloading unrelated model configuration.
-- [ ] Close the uncovered resource, native-extension seam, and public SDK-facade cases from the RED audit.
+- [x] Close the uncovered resource, native-extension seam, and public SDK-facade cases from the RED audit.
 - [x] Build an external `go get` SDK smoke module and wire the nightly live suite.
-- [x] Publish `docs/compare/sprint-1.md` as the explicit RED parity audit.
-- [ ] Turn identical scripted print/json/rpc comparison green, complete trim pass #2, and check every M2 criterion.
+- [x] Publish `docs/compare/sprint-1.md` with identical scripted print/json/rpc evidence and complete trim pass #2.
+- [ ] Record one subscribed Anthropic Pro/Max browser login plus streamed request.
+- [ ] Record the first hosted nightly live-suite run with repository secrets.
 
-Current red-to-green evidence: F7 now runs six pinned upstream RPC files (27 tests) against
-`pi-go --mode rpc`, and the full regenerated fixture tree is byte-clean. Harness parity moved from
-missing public storage/environment contracts to green JSONL and memory repositories, delayed
-exclusive flush, byte rehydration, legacy migration, future-member preservation, runtime
-new/switch/fork/import lifecycle, and generated F6Harness fixtures. Headless replacement moved
-from stale extension contexts to green lifecycle and event rebinding across print, JSON, and RPC,
-including extension-initiated replacement followed by a prompt on the new session. `make build`,
-the full race suite, lint/vet, deterministic fixture regeneration, and all four CGO-disabled
-Linux/Darwin amd64/arm64 builds are green. Non-test harness Go is 5,074 lines against 6,032 lines
-of mirrored upstream TypeScript (0.84x).
+Current red-to-green evidence: F7-cli moved real text/JSON/RPC missing-model output to exact pinned
+TypeScript bytes and exposed an EOF race that previously returned `Session is unavailable`; the
+RPC dispatcher now retains the active session and the upstream prompt diagnostic. F8 now proves
+resource precedence, metadata, ordered diagnostics, immediate extension resources, command
+collisions, and harness substitution against TypeScript. Six native extension gaps moved green,
+including nil handlers, panic origin, provider queue/post-bind behavior, trust ordering, and input
+identity. Auth lifecycle, the public loader/service/session SDK controls, provider registration,
+all 13 isolated faux examples, and the external consumer smoke are green. Trim pass #2 removes 301
+net lines and cuts the accidental Copilot catalog startup cost, bringing the no-prompt mean from
+48.7 ms to 40.0 ms. The exact candidate passes byte-clean regeneration, 27/27 upstream RPC tests,
+the full race suite, lint/vet, module verification/tidy diff, and four CGO-disabled cross-builds.
 
 ## Sprint 2 — TUI complete (M3)
 
-Status: **fixture surface partially green; Sprint 1 closes first**.
+Status: **next active deterministic surface; Sprint 1 owner-run evidence remains open in parallel**.
 
 - [x] Land the RED F12 component, editor, Markdown, overlay, terminal-color, and primitive-composite corpus.
 - [x] Turn core components, overlays, terminal colors, ICU navigation, stress/fuzz, and primitive frame budget green.
 - [ ] Land the session-selector lifetime fixture and stop status timers on confirm, cancel, and runner exit.
+- [ ] Complete ResourceLoader theme-object/source-info installation into the interactive registry.
 - [ ] Reach application-level byte-reviewed frame parity and complete commands plus image/clipboard checks.
 - [ ] Publish `docs/compare/sprint-2.md`, complete trim pass #3, and check every M3 criterion.
 

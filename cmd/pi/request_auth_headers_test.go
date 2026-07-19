@@ -15,7 +15,7 @@ func TestRequestAuthResolverPreservesNullableHeaders(t *testing.T) {
 		"CLOUDFLARE_GATEWAY_ID": "gateway",
 	}
 	store := auth.NewMemoryStore(map[string]*auth.Credential{"cloudflare-ai-gateway": credential})
-	request, err := requestAuthResolver(CLIArgs{}, nil, store)(context.Background(), ai.ProviderID("cloudflare-ai-gateway"))
+	request, err := requestAuthResolverForProvider(CLIArgs{}, nil, nil, store)(context.Background(), ai.ProviderID("cloudflare-ai-gateway"))
 	if err != nil {
 		t.Fatal(err)
 	}

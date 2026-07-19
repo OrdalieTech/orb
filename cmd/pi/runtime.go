@@ -392,8 +392,10 @@ func resolveRuntimeModel(
 	}
 	model := codingagent.PreferredAvailableModel(available)
 	if model == nil {
-		if args.allowNoModel {
-			diagnostics = append(diagnostics, strings.TrimSuffix(formatModelList(nil, ""), "\n"))
+		if args.allowNoModel || args.useUnknownModel {
+			if args.allowNoModel {
+				diagnostics = append(diagnostics, strings.TrimSuffix(formatModelList(nil, ""), "\n"))
+			}
 			return nil, nil, scoped, diagnostics, nil
 		}
 		return nil, nil, scoped, diagnostics, fmt.Errorf("no model available; configure provider auth or use --model")
@@ -404,83 +406,6 @@ func resolveRuntimeModel(
 	return model, nil, scoped, diagnostics, nil
 }
 
-func resolveSkeletonModel(args CLIArgs, settings *config.SettingsManager) (*ai.Model, error) {
-	args = normalizeSkeletonCLIArgs(args)
-	providerID := ""
-	modelID := ""
-	if args.Model != nil {
-		providerID = "openai"
-		if args.Provider != nil {
-			providerID = *args.Provider
-		}
-		modelID = *args.Model
-	} else {
-		// Settings defaults are a pair. A provider-only CLI argument is ignored,
-		// matching upstream model selection precedence.
-		providerID = settings.GetDefaultProvider()
-		modelID = settings.GetDefaultModel()
-		if providerID == "" || modelID == "" {
-			return nil, fmt.Errorf("no model specified; use --model")
-		}
-	}
-	if !strings.EqualFold(providerID, "openai") {
-		return nil, fmt.Errorf("provider %q is not available in the phase-1 skeleton", providerID)
-	}
-	if modelID == "" {
-		return nil, fmt.Errorf("no model specified; use --model")
-	}
-	providerID = "openai"
-	return &ai.Model{
-		ID:            modelID,
-		Name:          modelID,
-		API:           ai.APIOpenAIResponses,
-		Provider:      ai.ProviderID(providerID),
-		BaseURL:       "https://api.openai.com/v1",
-		Reasoning:     true,
-		Input:         ai.InputModalities{ai.InputText, ai.InputImage},
-		Cost:          ai.ModelCost{},
-		ContextWindow: 128_000,
-		MaxTokens:     16_384,
-	}, nil
-}
-
-func normalizeSkeletonCLIArgs(args CLIArgs) CLIArgs {
-	if args.Provider != nil {
-		switch {
-		case *args.Provider == "":
-			args.Provider = nil
-		case strings.EqualFold(*args.Provider, "openai"):
-			args.Provider = stringValue("openai")
-		}
-	}
-	if args.Model == nil {
-		return args
-	}
-	if *args.Model == "" {
-		args.Model = nil
-		return args
-	}
-
-	modelID := *args.Model
-	if slash := strings.IndexByte(modelID, '/'); slash >= 0 && strings.EqualFold(modelID[:slash], "openai") {
-		modelID = modelID[slash+1:]
-		if args.Provider == nil {
-			args.Provider = stringValue("openai")
-		}
-	}
-	if args.Thinking == nil {
-		if colon := strings.LastIndexByte(modelID, ':'); colon >= 0 {
-			suffix := modelID[colon+1:]
-			if _, valid := validThinkingLevels[suffix]; valid {
-				modelID = modelID[:colon]
-				args.Thinking = stringValue(suffix)
-			}
-		}
-	}
-	args.Model = stringValue(modelID)
-	return args
-}
-
 func normalizeRuntimeCLIArgs(args CLIArgs) CLIArgs {
 	if args.Provider != nil && *args.Provider == "" {
 		args.Provider = nil
@@ -489,21 +414,6 @@ func normalizeRuntimeCLIArgs(args CLIArgs) CLIArgs {
 		args.Model = nil
 	}
 	return args
-}
-
-func apiKeyResolver(args CLIArgs, registry *config.ModelRegistry, credentials aiauth.CredentialStore) agent.GetAPIKeyFunc {
-	resolve := requestAuthResolver(args, registry, credentials)
-	return func(ctx context.Context, providerID ai.ProviderID) (*string, error) {
-		resolved, err := resolve(ctx, providerID)
-		if err != nil || resolved == nil {
-			return nil, err
-		}
-		return resolved.APIKey, nil
-	}
-}
-
-func requestAuthResolver(args CLIArgs, registry *config.ModelRegistry, credentials aiauth.CredentialStore) agent.GetRequestAuthFunc {
-	return requestAuthResolverForProvider(args, nil, registry, credentials)
 }
 
 func requestAuthResolverForProvider(

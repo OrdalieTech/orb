@@ -652,7 +652,7 @@ func (host *interactiveSessionHost) refreshAuthState(ctx context.Context, logged
 	if registry == nil {
 		return nil
 	}
-	if err := registry.Reload(); err != nil {
+	if err := registry.RefreshAuth(); err != nil {
 		return err
 	}
 	if current != nil {

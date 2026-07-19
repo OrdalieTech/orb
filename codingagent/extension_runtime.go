@@ -858,7 +858,7 @@ func (runtime *SessionRuntime) sendExtensionUserMessage(ctx context.Context, con
 		behavior := options.DeliverAs
 		streamingBehavior = &behavior
 	}
-	return runtime.promptExtensionInput(ctx, text, images, extensions.InputExtension, false, streamingBehavior, true)
+	return runtime.promptExtensionInput(ctx, text, images, extensions.InputExtension, false, streamingBehavior, true, nil)
 }
 
 func (runtime *SessionRuntime) appendExtensionEntry(_ context.Context, customType string, data any) error {
@@ -1363,12 +1363,19 @@ func (runtime *SessionRuntime) promptExtensionInput(
 	commands bool,
 	streamingBehavior *extensions.DeliveryMode,
 	runPreflight bool,
+	preflightResult func(bool),
 ) error {
 	state := runtime.extensionState
 	if state == nil || state.runner == nil {
 		if runPreflight {
 			if err := runtime.PromptPreflight(ctx); err != nil {
+				if preflightResult != nil {
+					preflightResult(false)
+				}
 				return err
+			}
+			if preflightResult != nil {
+				preflightResult(true)
 			}
 		}
 		return runtime.runPolicies(ctx, func() error { return runtime.agent.Prompt(ctx, text, images...) })
@@ -1377,6 +1384,9 @@ func (runtime *SessionRuntime) promptExtensionInput(
 		commandText := strings.TrimPrefix(text, "/")
 		name, args, _ := strings.Cut(commandText, " ")
 		if state.runner.ExecuteCommand(ctx, name, args) {
+			if preflightResult != nil {
+				preflightResult(true)
+			}
 			return nil
 		}
 	}
@@ -1387,6 +1397,9 @@ func (runtime *SessionRuntime) promptExtensionInput(
 		}
 		result := state.runner.EmitInput(ctx, text, images, source, eventStreamingBehavior)
 		if result.Action == extensions.InputHandled {
+			if preflightResult != nil {
+				preflightResult(true)
+			}
 			return nil
 		}
 		if result.Action == extensions.InputTransform {
@@ -1401,6 +1414,9 @@ func (runtime *SessionRuntime) promptExtensionInput(
 	}
 	if !runtime.agent.IsIdle() {
 		if streamingBehavior == nil {
+			if preflightResult != nil {
+				preflightResult(false)
+			}
 			return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.") //nolint:staticcheck // User-visible error matches upstream.
 		}
 		message := userMessageWithImages(text, images)
@@ -1415,11 +1431,20 @@ func (runtime *SessionRuntime) promptExtensionInput(
 			runtime.agent.Steer(message)
 		}
 		runtime.emitQueueUpdate()
+		if preflightResult != nil {
+			preflightResult(true)
+		}
 		return nil
 	}
 	if runPreflight {
 		if err := runtime.PromptPreflight(ctx); err != nil {
+			if preflightResult != nil {
+				preflightResult(false)
+			}
 			return err
+		}
+		if preflightResult != nil {
+			preflightResult(true)
 		}
 	}
 
