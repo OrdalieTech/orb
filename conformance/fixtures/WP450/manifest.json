@@ -7,8 +7,10 @@
     "packages/coding-agent/src/modes/interactive/components/user-message.ts",
     "packages/coding-agent/src/modes/interactive/components/assistant-message.ts",
     "packages/coding-agent/src/modes/interactive/components/tool-execution.ts",
+    "packages/coding-agent/src/modes/interactive/components/visual-truncate.ts",
     "packages/coding-agent/src/modes/interactive/components/diff.ts",
     "packages/coding-agent/src/modes/interactive/components/bash-execution.ts",
+    "packages/coding-agent/src/core/tools/bash.ts",
     "packages/coding-agent/src/modes/interactive/components/compaction-summary-message.ts",
     "packages/coding-agent/src/modes/interactive/components/branch-summary-message.ts",
     "packages/coding-agent/src/modes/interactive/components/custom-message.ts",
@@ -21,6 +23,7 @@
   ],
   "files": [
     "replay.json",
+    "tool-output-previews.json",
     "ui-demos.json"
   ],
   "metadata": {

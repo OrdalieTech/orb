@@ -210,6 +210,8 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/tui/src/undo-stack.ts` | `tui/undo_stack.go` | WP-420 |
 | `packages/tui/src/word-navigation.ts` | `tui/word_navigation.go`, `tui/word_navigation_test.go` | WP-420 |
 | `packages/tui/src/utils.ts` (segmenters, `sliceByColumn`) | `tui/segment.go`, `tui/width.go` | WP-420 |
+| `packages/coding-agent/src/modes/interactive/components/visual-truncate.ts` (`truncateToVisualLines`) | `tui/visual_truncate.go`, `tui/visual_truncate_test.go` | flicker-fix |
+| `packages/coding-agent/src/core/tools/bash.ts` (collapsed preview cap), `packages/coding-agent/src/modes/interactive/components/{tool-execution,bash-execution}.ts` (preview rendering) | `codingagent/modes/interactive_components.go` (`toolOutputPreview`, bash preview), `codingagent/modes/interactive.go` (bash seam), `conformance/extract/wp450-replay.ts`, `conformance/fixtures/WP450/tool-output-previews.json`, `codingagent/modes/tool_output_preview_test.go` | flicker-fix |
 | Node v24.15.0 `Intl.Segmenter`; ICU 78.2 `icu4c/source/common/{dictbe.cpp,dictionarydata.cpp}` and `icu4j/main/core/src/main/{java/com/ibm/icu/util/CharsTrie.java,resources/com/ibm/icu/impl/data/icudata/brkitr/cjdict.dict}` | `internal/cjksegment/{data.go,segment.go,trie.go,segment_test.go,data/cjdict.dict,data/LICENSE,data/PROVENANCE.md}` | WP-420 |
 | Editor/Input/SelectList/SettingsList scripted sessions, word-wrap, fuzzy, word-navigation goldens | `conformance/extract/f12-components.ts`, `conformance/fixtures/F12/{editor,input,select-list,settings-list,word-wrap,fuzzy,word-navigation}.json`, `conformance/runner/f12_components_test.go` | WP-420 |
 | WP-420 acceptance evidence | `docs/plan/wp-420-report.md` | WP-420 |

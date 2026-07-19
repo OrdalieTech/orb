@@ -6,6 +6,17 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Fixed
+
+- Streaming TUI flicker: long/streaming bash tool output is no longer rendered uncapped, which
+  had pushed the block above the viewport and forced a full-screen clear (ESC[2J) on every
+  streaming update (measured ~192 full clears over 260 tool-delta frames). Collapsed tool output
+  now shows a bounded preview of the last visual lines with an "(N earlier lines, … to expand)"
+  hint, mirroring upstream's bash renderer; `!` bash-mode output caps while still running, not
+  only when complete. Ported upstream's `truncateToVisualLines`; guarded by a renderer-level test
+  asserting zero full-screen clears during in-viewport streaming, plus a WP450 byte-parity golden.
+  The concurrent tool-component render race (torn frames during rebuild) was fixed separately.
+
 ## [0.1.0] - 2026-07-19
 
 Full-parity port of upstream pi v0.80.10 (`3da591ab`). Release-candidate tag: every locally

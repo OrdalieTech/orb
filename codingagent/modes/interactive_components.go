@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	osc133ZoneStart = "\x1b]133;A\x07"
-	osc133ZoneEnd   = "\x1b]133;B\x07"
-	osc133ZoneFinal = "\x1b]133;C\x07"
+	osc133ZoneStart  = "\x1b]133;A\x07"
+	osc133ZoneEnd    = "\x1b]133;B\x07"
+	osc133ZoneFinal  = "\x1b]133;C\x07"
+	toolPreviewLines = 5
 )
 
 // ─────────────────────────────────────────────────────────────
@@ -380,10 +381,46 @@ func (c *ToolExecutionComponent) updateDisplay() {
 		} else {
 			output := c.getTextOutput()
 			if output != "" {
-				c.contentBox.AddChild(tui.NewText(theme.FG("toolOutput", output), 0, 0, nil))
+				c.contentBox.AddChild(newToolOutputPreview(
+					output,
+					extensions.ToolRenderResultOptions{Expanded: c.expanded, IsPartial: c.isPartial},
+					themeAdapter{},
+				))
 			}
 		}
 	}
+}
+
+type toolOutputPreview struct {
+	output  string
+	options extensions.ToolRenderResultOptions
+	palette extensions.Theme
+}
+
+func newToolOutputPreview(output string, options extensions.ToolRenderResultOptions, palette extensions.Theme) *toolOutputPreview {
+	if palette == nil {
+		palette = themeAdapter{}
+	}
+	styledLines := strings.Split(output, "\n")
+	for index := range styledLines {
+		styledLines[index] = palette.FG("toolOutput", styledLines[index])
+	}
+	return &toolOutputPreview{output: strings.Join(styledLines, "\n"), options: options, palette: palette}
+}
+
+func (preview *toolOutputPreview) Render(width int) []string {
+	if preview.options.Expanded {
+		return tui.NewText("\n"+preview.output, 0, 0, nil).Render(width)
+	}
+	truncated := tui.TruncateToVisualLines(preview.output, toolPreviewLines, width, 0)
+	lines := make([]string, 0, len(truncated.VisualLines)+2)
+	lines = append(lines, "")
+	if truncated.SkippedCount > 0 {
+		hint := preview.palette.FG("muted", fmt.Sprintf("... (%d earlier lines,", truncated.SkippedCount)) +
+			" " + KeyHint("app.tools.expand", "to expand") + preview.palette.FG("muted", ")")
+		lines = append(lines, tui.TruncateToWidth(hint, width, "...", false))
+	}
+	return append(lines, truncated.VisualLines...)
 }
 
 func (c *ToolExecutionComponent) getTextOutput() string {
@@ -481,6 +518,16 @@ func (adapter themeAdapter) BashModeBorderColor() func(string) string {
 
 const bashPreviewLines = 20
 
+type visualLineTail struct {
+	text     string
+	maxLines int
+	paddingX int
+}
+
+func (preview visualLineTail) Render(width int) []string {
+	return tui.TruncateToVisualLines(preview.text, preview.maxLines, width, preview.paddingX).VisualLines
+}
+
 type BashExecutionComponent struct {
 	mu         sync.Mutex
 	container  *tui.Container
@@ -561,21 +608,27 @@ func (c *BashExecutionComponent) rebuild() {
 	// Output
 	output := c.output.String()
 	if output != "" {
-		if !c.expanded && c.complete {
-			lines := strings.Split(output, "\n")
-			if len(lines) > bashPreviewLines {
-				shown := strings.Join(lines[len(lines)-bashPreviewLines:], "\n")
-				skipped := len(lines) - bashPreviewLines
-				c.container.AddChild(tui.NewText(
-					theme.FG("dim", fmt.Sprintf("... %d lines hidden (%s to expand)", skipped, KeyText("app.tools.expand"))),
-					1, 0, nil,
-				))
-				c.container.AddChild(tui.NewText("\n"+shown, 1, 0, nil))
-			} else {
-				c.container.AddChild(tui.NewText("\n"+output, 1, 0, nil))
+		availableLines := strings.Split(output, "\n")
+		previewLines := availableLines
+		if len(previewLines) > bashPreviewLines {
+			previewLines = previewLines[len(previewLines)-bashPreviewLines:]
+		}
+		styledLines := make([]string, len(previewLines))
+		for index, line := range previewLines {
+			styledLines[index] = theme.FG("muted", line)
+		}
+		if c.expanded {
+			styledLines = make([]string, len(availableLines))
+			for index, line := range availableLines {
+				styledLines[index] = theme.FG("muted", line)
 			}
+			c.container.AddChild(tui.NewText("\n"+strings.Join(styledLines, "\n"), 1, 0, nil))
 		} else {
-			c.container.AddChild(tui.NewText("\n"+output, 1, 0, nil))
+			c.container.AddChild(visualLineTail{
+				text:     "\n" + strings.Join(styledLines, "\n"),
+				maxLines: bashPreviewLines,
+				paddingX: 1,
+			})
 		}
 	}
 
@@ -583,14 +636,27 @@ func (c *BashExecutionComponent) rebuild() {
 	if !c.complete && c.loader != nil {
 		c.container.AddChild(c.loader)
 	} else if c.complete {
-		var status string
-		if c.cancelled {
-			status = theme.FG("warning", "(cancelled)")
-		} else if c.exitCode != nil && *c.exitCode != 0 {
-			status = theme.FG("error", fmt.Sprintf("(exit %d)", *c.exitCode))
+		statusParts := make([]string, 0, 2)
+		hiddenLines := max(0, len(strings.Split(output, "\n"))-bashPreviewLines)
+		if hiddenLines > 0 {
+			if c.expanded {
+				statusParts = append(statusParts,
+					theme.FG("muted", "(")+KeyHint("app.tools.expand", "to collapse")+theme.FG("muted", ")"),
+				)
+			} else {
+				statusParts = append(statusParts,
+					theme.FG("muted", fmt.Sprintf("... %d more lines (", hiddenLines))+
+						KeyHint("app.tools.expand", "to expand")+theme.FG("muted", ")"),
+				)
+			}
 		}
-		if status != "" {
-			c.container.AddChild(tui.NewText(status, 1, 0, nil))
+		if c.cancelled {
+			statusParts = append(statusParts, theme.FG("warning", "(cancelled)"))
+		} else if c.exitCode != nil && *c.exitCode != 0 {
+			statusParts = append(statusParts, theme.FG("error", fmt.Sprintf("(exit %d)", *c.exitCode)))
+		}
+		if len(statusParts) > 0 {
+			c.container.AddChild(tui.NewText("\n"+strings.Join(statusParts, "\n"), 1, 0, nil))
 		}
 	}
 
@@ -598,7 +664,7 @@ func (c *BashExecutionComponent) rebuild() {
 	c.container.AddChild(NewDynamicBorderWithColor(borderColor))
 }
 
-func (c *BashExecutionComponent) Invalidate()               { c.container.Invalidate() }
+func (c *BashExecutionComponent) Invalidate() { c.container.Invalidate() }
 func (c *BashExecutionComponent) Render(width int) []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -3007,7 +3007,7 @@ func nativeToolDefinition(name string, registered agent.AgentTool) *extensions.T
 			container.AddChild(tui.NewText(strings.Join(theme.Highlight(preview.Diff, "diff", theme.Current()), "\n"), 0, 0, nil))
 			return container
 		},
-		RenderResult: func(result agent.AgentToolResult, _ extensions.ToolRenderResultOptions, palette extensions.Theme, context extensions.ToolRenderContext) extensions.Component {
+		RenderResult: func(result agent.AgentToolResult, options extensions.ToolRenderResultOptions, palette extensions.Theme, context extensions.ToolRenderContext) extensions.Component {
 			if name == "edit" {
 				if diff := editResultDiff(result.Details); diff != "" {
 					if preview, _ := context.State["editPreviewDiff"].(string); preview == diff {
@@ -3018,6 +3018,9 @@ func nativeToolDefinition(name string, registered agent.AgentTool) *extensions.T
 				if previewError, _ := context.State["editPreviewError"].(string); previewError == renderer.RenderResult(result) {
 					return &tui.Container{}
 				}
+			}
+			if name == "bash" {
+				return newToolOutputPreview(strings.TrimSpace(renderer.RenderResult(result)), options, palette)
 			}
 			return tui.NewText(palette.FG("toolOutput", renderer.RenderResult(result)), 0, 0, nil)
 		},
