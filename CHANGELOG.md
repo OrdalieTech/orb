@@ -6,6 +6,12 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-19
+
+Full-parity port of upstream pi v0.80.10 (`3da591ab`). Release-candidate tag: every locally
+provable M1–M5 criterion is green; the owner-gated verification remainder is listed in
+`docs/trim/M5.md`.
+
 ### Added
 
 - Full TUI parity with upstream pi 0.80.10: components, application frames, all interactive
