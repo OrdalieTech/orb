@@ -94,11 +94,12 @@ func New(opts Options) (*Processor, error) {
 	}
 	adapters := make(map[string]Adapter, len(opts.Adapters))
 	for _, adapter := range opts.Adapters {
-		platform := adapter.Platform()
-		if _, exists := adapters[platform]; exists {
-			return nil, fmt.Errorf("chat: duplicate adapter for platform %q", platform)
+		key := adapterKey(adapter.Platform(), adapter.Account())
+		if _, exists := adapters[key]; exists {
+			return nil, fmt.Errorf("chat: duplicate adapter for platform %q account %q",
+				adapter.Platform(), adapter.Account())
 		}
-		adapters[platform] = adapter
+		adapters[key] = adapter
 	}
 	return &Processor{
 		sessions:        opts.Sessions,
@@ -111,6 +112,21 @@ func New(opts Options) (*Processor, error) {
 		locks:           newKeyedMutex(),
 		active:          map[string]func(){},
 	}, nil
+}
+
+// adapterKey joins platform and account into a registration key; the NUL
+// separator cannot occur in either part.
+func adapterKey(platform, account string) string { return platform + "\x00" + account }
+
+// adapterFor resolves the adapter for a message: an exact
+// (platform, account) registration wins, then the platform's wildcard
+// (empty-account) adapter.
+func (p *Processor) adapterFor(m Message) (Adapter, bool) {
+	if adapter, ok := p.adapters[adapterKey(m.Platform, m.Account)]; ok {
+		return adapter, true
+	}
+	adapter, ok := p.adapters[adapterKey(m.Platform, "")]
+	return adapter, ok
 }
 
 // Handle processes one inbound message synchronously: it returns only when
@@ -132,9 +148,9 @@ func (p *Processor) Handle(ctx context.Context, m Message) error {
 	p.closeMu.Unlock()
 	defer p.wg.Done()
 
-	adapter, ok := p.adapters[m.Platform]
+	adapter, ok := p.adapterFor(m)
 	if !ok {
-		return fmt.Errorf("%w: no adapter for platform %q", ErrRejected, m.Platform)
+		return fmt.Errorf("%w: no adapter for platform %q account %q", ErrRejected, m.Platform, m.Account)
 	}
 	if err := p.authorize(m); err != nil {
 		return fmt.Errorf("%w: unauthorized message %q: %w", ErrRejected, m.EventID, err)

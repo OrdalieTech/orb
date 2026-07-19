@@ -108,6 +108,9 @@ func (d *fauxDelivery) snapshotPreviews() []string {
 
 // fauxAdapter records every created delivery.
 type fauxAdapter struct {
+	// account is the identity reported to the processor; "" registers the
+	// adapter as its platform's wildcard.
+	account    string
 	mu         sync.Mutex
 	deliveries []*fauxDelivery
 	// prepare tweaks each new delivery before it is returned.
@@ -121,6 +124,8 @@ type fauxAdapter struct {
 }
 
 func (a *fauxAdapter) Platform() string { return "faux" }
+
+func (a *fauxAdapter) Account() string { return a.account }
 
 func (a *fauxAdapter) NewDelivery(key ConversationKey, replyTo, resumePreviewID string) Delivery {
 	delivery := &fauxDelivery{key: key, replyTo: replyTo, resumePreviewID: resumePreviewID}

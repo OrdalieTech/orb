@@ -52,7 +52,7 @@ bounds concurrent turns. `Close` rejects new messages and waits for in-flight tu
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `Sessions` | `SessionProvider` | — | Exclusive conversation ownership. Required. |
-| `Adapters` | `[]Adapter` | — | One adapter per platform. Required, unique platforms. |
+| `Adapters` | `[]Adapter` | — | Required. Registered by `(Platform(), Account())` — run many accounts of one platform as separate adapter instances. An exact account match wins; an adapter with an empty `Account()` is its platform's wildcard. Duplicate pairs are rejected. |
 | `Authorize` | `func(Message) error` | — | Gates every inbound message. Required; pass `chat.AllowAll` to opt out explicitly. |
 | `MaxConcurrent` | `int` | 64 | Global concurrent-turn bound. |
 | `PreviewInterval` | `time.Duration` | 1s | Preview edit cadence. |
