@@ -38,6 +38,11 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
   `ai.ModelsAreEqual`, `ai.HasAPI` (private duplicates removed).
 - `settings.httpProxy` is honored: exported as HTTP(S)_PROXY for pi-managed clients unless the
   environment already sets them (upstream http-dispatcher semantics).
+- Release machinery: goreleaser config for linux/darwin × amd64/arm64 with ldflags-injected
+  version, a tag-triggered release workflow that re-runs the full gate and extracts notes from
+  this changelog, a checksum-verifying curl install script, and CI running `make check` on every
+  push. Update checks remain notify-only (gate G4 resolved).
+- README newcomer path: install, first session, SDK embedding, and running upstream extensions.
 
 ### Changed
 
