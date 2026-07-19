@@ -44,6 +44,50 @@ func (loader *Loader) Reload(ctx context.Context) LoadResult {
 	return loader.Load(ctx)
 }
 
+// RegisterInto registers one factory per discovered extension into the shared
+// product registry. Each factory run (initial load and every Registry.Fresh
+// on /reload) rebuilds changed bundles and replaces that path's VM, matching
+// upstream reload semantics.
+func (loader *Loader) RegisterInto(ctx context.Context, registry *extensions.Registry) LoadResult {
+	paths := Discover(loader.options)
+	result := LoadResult{Registry: registry, Paths: append([]string(nil), paths...)}
+	for _, path := range paths {
+		if err := registry.Register(path, loader.pathFactory(ctx, path)); err != nil {
+			result.Errors = append(result.Errors, upstreamLoadError(path, stripRegistryLoadPrefix(path, err)))
+		}
+	}
+	return result
+}
+
+func (loader *Loader) pathFactory(ctx context.Context, path string) extensions.Factory {
+	return func(api extensions.API) error {
+		built, err := loader.cache.build(path)
+		if err != nil {
+			return err
+		}
+		vm, err := newRuntimeVM(ctx, path, built, absoluteOrDot(loader.options.CWD))
+		if err != nil {
+			return err
+		}
+		if err := vm.initialize(ctx, api); err != nil {
+			vm.Close()
+			return err
+		}
+		loader.mu.Lock()
+		for index, existing := range loader.vms {
+			if existing.entry == path {
+				existing.Close()
+				loader.vms[index] = vm
+				loader.mu.Unlock()
+				return nil
+			}
+		}
+		loader.vms = append(loader.vms, vm)
+		loader.mu.Unlock()
+		return nil
+	}
+}
+
 func (loader *Loader) loadLocked(ctx context.Context) LoadResult {
 	loader.closeVMsLocked()
 	paths := Discover(loader.options)

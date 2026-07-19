@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/OrdalieTech/pi-go/codingagent/extensions/examples/permissiongate"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions/examples/pirate"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions/examples/statusline"
+	"github.com/OrdalieTech/pi-go/codingagent/extensions/jsbridge"
 	"github.com/OrdalieTech/pi-go/codingagent/mcp"
 )
 
@@ -35,6 +37,24 @@ func loadCompiledExtensions(cwd string, args CLIArgs, settings *config.SettingsM
 	registry, loadErrors := extensions.LoadCompiled(cwd, catalog, settings.GetGoExtensions(), args.NoExtensions)
 	for _, loadError := range loadErrors {
 		diagnostics = append(diagnostics, loadError.Error())
+	}
+	if !args.NoExtensions {
+		options := jsbridge.DiscoveryOptions{
+			CWD:                    cwd,
+			ProjectTrusted:         settings.IsProjectTrusted(),
+			ConfiguredPaths:        settings.GetGlobalExtensionPaths(),
+			ProjectConfiguredPaths: settings.GetProjectExtensionPaths(),
+			ExplicitPaths:          args.Extensions,
+		}
+		if paths := jsbridge.Discover(options); len(paths) > 0 {
+			if registry == nil {
+				registry = extensions.NewRegistry(cwd)
+			}
+			result := jsbridge.NewLoader(options).RegisterInto(context.Background(), registry)
+			for _, loadError := range result.Errors {
+				diagnostics = append(diagnostics, fmt.Sprintf("Extension error (%s): %s", loadError.Path, loadError.Error))
+			}
+		}
 	}
 	return registry, diagnostics
 }

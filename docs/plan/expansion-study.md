@@ -31,13 +31,15 @@ and still leave the matrix short of 80%).
 upstream-spec'd. **Recommendation: port it** (full-parity default); ledger it instead only if you
 want zero image-generation surface.
 
-**3. Binary size needs an owner decision before M5.** The stripped binary is already 102,882 bytes
-over the decimal 35 MB cap **before** `cmd/pi` links sobek and esbuild; the bridge will push it
-several MB further. Options: (a) raise the M5 cap and record the decision, (b) fund a size
-workstream (section-level audit, table compaction, build-tag split), (c) ship the bridge as the
-default build and accept the number the measurement gives, recording it honestly. **Recommendation:
-(a) + a bounded (b):** cap at 45 MB decimal, one size pass in Sprint 4's trim. The 50 ms cold-start
-cap stays.
+**3. Binary size needs an owner decision before M5.** Measured after the bridge wiring landed: the
+stripped binary with sobek and esbuild linked is **51,376,290 bytes (49.0 MiB)** against the
+35 MB M5 cap (it was 35.1 MB before the bridge — the bridge itself costs ~16.3 MB, dominated by
+the embedded esbuild toolchain and the sobek runtime). Options: (a) raise the M5 cap and record
+the decision, (b) fund a size workstream (build-tag split shipping a bridge-less variant,
+esbuild-external mode, section audit), (c) accept the measured number. **Recommendation: cap at
+55 MB decimal + one bounded size pass in Sprint 4's trim examining an optional bridge-less build
+target.** The 50 ms cold-start cap stays (bridge init is lazy; no extensions configured means no
+VM work).
 
 **4. Providers/MCP/packages need no owner input** — they are done to full-parity defaults already;
 only live smoke (CI secrets) and subscribed-account OAuth runs are open, and those are on the

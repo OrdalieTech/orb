@@ -46,6 +46,7 @@ type CLIArgs struct {
 	NoTools            bool
 	NoBuiltinTools     bool
 	NoExtensions       bool
+	Extensions         []string
 	Print              bool
 	Mode               string
 	Export             *string
@@ -150,6 +151,9 @@ func ParseArgs(argv []string) CLIArgs {
 			result.NoTools = true
 		case argument == "--no-builtin-tools" || argument == "-nbt":
 			result.NoBuiltinTools = true
+		case (argument == "--extension" || argument == "-e") && index+1 < len(argv):
+			index++
+			result.Extensions = append(result.Extensions, argv[index])
 		case argument == "--no-extensions" || argument == "-ne":
 			result.NoExtensions = true
 		case (argument == "--tools" || argument == "-t") && index+1 < len(argv):

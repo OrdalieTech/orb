@@ -56,6 +56,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	if err != nil {
 		return runtimeInputs{}, err
 	}
+	config.ApplyHTTPProxySettings(settings.GetHTTPProxy())
 	projectTrusted, err := codingagent.ResolveProjectTrusted(context.Background(), codingagent.ResolveProjectTrustedOptions{
 		CWD:                 cwd,
 		TrustStore:          config.NewProjectTrustStore(agentDir),

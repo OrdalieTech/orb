@@ -49,6 +49,8 @@ func (h *shimHost) resolveModule(rt *sobek.Runtime, specifier string) (*sobek.Ob
 		return h.newChildProcessModule(rt), true
 	case "events":
 		return newEventsModule(rt), true
+	case "readline":
+		return newReadlineModule(rt), true
 	default:
 		return nil, false
 	}
@@ -1030,7 +1032,14 @@ func (h *shimHost) newChildProcessModule(rt *sobek.Runtime) *sobek.Object {
 		opts := h.parseExecOptions(rt, call, 1)
 		result, _ := extensions.Exec(h.vm.rootCtx, "sh", []string{"-c", command}, opts)
 		if result.Code != 0 {
-			panic(rt.NewTypeError("Command failed: %s (exit %d)", command, result.Code))
+			// Node attaches the exit code as err.status (and .code) on the
+			// thrown execSync error; extensions branch on it.
+			failure := rt.NewTypeError("Command failed: %s (exit %d)", command, result.Code)
+			mustSet(rt, failure, "status", result.Code)
+			mustSet(rt, failure, "code", result.Code)
+			mustSet(rt, failure, "stdout", result.Stdout)
+			mustSet(rt, failure, "stderr", result.Stderr)
+			panic(failure)
 		}
 		return rt.ToValue(result.Stdout)
 	})
@@ -1224,6 +1233,76 @@ func (h *shimHost) parseExecOptions(rt *sobek.Runtime, call sobek.FunctionCall, 
 		break
 	}
 	return opts
+}
+
+// --- readline module ---
+
+// newReadlineModule supports the createInterface({ input }) + for-await usage
+// in upstream examples. The fs.createReadStream shim delivers the whole file
+// synchronously via .on("data"), so the interface iterates buffered lines.
+func newReadlineModule(rt *sobek.Runtime) *sobek.Object {
+	m := rt.NewObject()
+	mustSet(rt, m, "createInterface", func(call sobek.FunctionCall) sobek.Value {
+		var data []byte
+		if options := call.Argument(0); present(options) {
+			input := options.ToObject(rt).Get("input")
+			if present(input) {
+				inputObject := input.ToObject(rt)
+				if on, ok := sobek.AssertFunction(inputObject.Get("on")); ok {
+					collect := rt.ToValue(func(inner sobek.FunctionCall) sobek.Value {
+						data = append(data, exportBytes(rt, inner.Argument(0))...)
+						return sobek.Undefined()
+					})
+					_, _ = on(inputObject, rt.ToValue("data"), collect)
+				}
+			}
+		}
+		// Node readline emits one event per line with the terminator removed
+		// and no trailing empty line for a trailing newline.
+		text := strings.ReplaceAll(string(data), "\r\n", "\n")
+		text = strings.ReplaceAll(text, "\r", "\n")
+		lines := strings.Split(text, "\n")
+		if len(lines) > 0 && lines[len(lines)-1] == "" {
+			lines = lines[:len(lines)-1]
+		}
+		values := make([]any, len(lines))
+		for i, line := range lines {
+			values[i] = line
+		}
+		factoryValue, err := rt.RunString(`(function (lines) {
+			var index = 0;
+			var rl = {
+				close: function () {},
+				on: function () { return rl; },
+			};
+			rl[Symbol.asyncIterator] = function () {
+				return {
+					next: function () {
+						if (index < lines.length) {
+							var value = lines[index];
+							index += 1;
+							return Promise.resolve({ value: value, done: false });
+						}
+						return Promise.resolve({ value: undefined, done: true });
+					},
+				};
+			};
+			return rl;
+		})`)
+		if err != nil {
+			panic(rt.NewTypeError(err.Error()))
+		}
+		factory, ok := sobek.AssertFunction(factoryValue)
+		if !ok {
+			panic(rt.NewTypeError("readline interface factory is unavailable"))
+		}
+		value, err := factory(sobek.Undefined(), rt.NewArray(values...))
+		if err != nil {
+			panic(err)
+		}
+		return value
+	})
+	return m
 }
 
 // --- events module ---

@@ -318,6 +318,12 @@ func (vm *runtimeVM) promise(
 			if _, ok := value.(undefinedPromiseResult); ok {
 				return resolve(sobek.Undefined())
 			}
+			// Values that already live on this runtime (e.g. a custom
+			// component's done(value)) resolve as-is; a JSON round-trip
+			// would turn null into {} and drop object identity.
+			if jsValue, ok := value.(sobek.Value); ok {
+				return resolve(jsValue)
+			}
 			return resolve(toJS(runtime, value))
 		})
 	}()

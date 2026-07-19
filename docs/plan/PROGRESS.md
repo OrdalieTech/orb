@@ -164,9 +164,10 @@ Status: **pending**.
 
 ## Owner-blocked evidence
 
-- **Decision pending: M5 binary-size cap** (`docs/plan/expansion-study.md`) — stripped binary is
-  102,882 B over the decimal 35 MB cap before the bridge links sobek/esbuild; recommended: 45 MB
-  cap + one bounded size pass in Sprint 4.
+- **Decision pending: M5 binary-size cap** (`docs/plan/expansion-study.md`) — measured with the
+  bridge linked: stripped binary 51,376,290 B (49.0 MiB) vs the 35 MB cap (bridge cost ~16.3 MB);
+  recommended: 55 MB decimal cap + a bounded Sprint 4 size pass examining a bridge-less build
+  variant.
 - **Decision pending: AgentHarness facade** (alignment audit) — upstream's primary
   `packages/agent` export has no Go equivalent; port it for SDK parity or record "dissolved into
   the codingagent runtime" in DECISIONS. Recommended: record the dissolution; port only if an SDK

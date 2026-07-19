@@ -389,7 +389,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		}
 	}
 	if model != nil {
-		thinking = clampThinkingLevel(model, thinking)
+		thinking = ai.ClampThinkingLevel(model, thinking)
 	} else {
 		thinking = ai.ModelThinkingOff
 	}

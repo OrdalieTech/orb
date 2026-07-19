@@ -521,7 +521,7 @@ func (runtime *SessionRuntime) SetThinkingLevel(level ai.ModelThinkingLevel) err
 		return errors.New("codingagent: nil session runtime")
 	}
 	state := runtime.agent.State()
-	effective := clampThinkingLevel(state.Model, level)
+	effective := ai.ClampThinkingLevel(state.Model, level)
 	if effective == state.ThinkingLevel {
 		return nil
 	}
@@ -538,7 +538,7 @@ func (runtime *SessionRuntime) SetThinkingLevel(level ai.ModelThinkingLevel) err
 
 func (runtime *SessionRuntime) CycleThinkingLevel() (*ai.ModelThinkingLevel, error) {
 	state := runtime.agent.State()
-	levels := supportedThinkingLevels(state.Model)
+	levels := ai.SupportedThinkingLevels(state.Model)
 	if state.Model == nil || !state.Model.Reasoning {
 		return nil, nil
 	}
@@ -554,36 +554,7 @@ func (runtime *SessionRuntime) AvailableThinkingLevels() []ai.ModelThinkingLevel
 	if runtime == nil {
 		return nil
 	}
-	return append([]ai.ModelThinkingLevel(nil), supportedThinkingLevels(runtime.agent.State().Model)...)
-}
-
-func supportedThinkingLevels(model *ai.Model) []ai.ModelThinkingLevel {
-	all := []ai.ModelThinkingLevel{
-		ai.ModelThinkingOff, ai.ModelThinkingMinimal, ai.ModelThinkingLow, ai.ModelThinkingMedium,
-		ai.ModelThinkingHigh, ai.ModelThinkingXHigh, ai.ModelThinkingMax,
-	}
-	if model == nil {
-		return all
-	}
-	if !model.Reasoning {
-		return []ai.ModelThinkingLevel{ai.ModelThinkingOff}
-	}
-	result := make([]ai.ModelThinkingLevel, 0, len(all))
-	for _, level := range all {
-		present := false
-		var value *string
-		if model.ThinkingLevelMap != nil {
-			value, present = (*model.ThinkingLevelMap)[level]
-		}
-		if present && value == nil {
-			continue
-		}
-		if (level == ai.ModelThinkingXHigh || level == ai.ModelThinkingMax) && !present {
-			continue
-		}
-		result = append(result, level)
-	}
-	return result
+	return append([]ai.ModelThinkingLevel(nil), ai.SupportedThinkingLevels(runtime.agent.State().Model)...)
 }
 
 //nolint:staticcheck // User-visible auth guidance matches upstream.
@@ -600,32 +571,6 @@ func formatNoAPIKeyFoundMessage(provider ai.ProviderID) string {
 	docsDir := filepath.Join(resolvePromptPackageDir(""), "docs")
 	return "No API key found for " + display + ".\n\nUse /login to log into a provider via OAuth or API key. See:\n  " +
 		filepath.Join(docsDir, "providers.md") + "\n  " + filepath.Join(docsDir, "models.md")
-}
-
-func clampThinkingLevel(model *ai.Model, requested ai.ModelThinkingLevel) ai.ModelThinkingLevel {
-	levels := supportedThinkingLevels(model)
-	if slices.Contains(levels, requested) {
-		return requested
-	}
-	all := []ai.ModelThinkingLevel{
-		ai.ModelThinkingOff, ai.ModelThinkingMinimal, ai.ModelThinkingLow, ai.ModelThinkingMedium,
-		ai.ModelThinkingHigh, ai.ModelThinkingXHigh, ai.ModelThinkingMax,
-	}
-	index := slices.Index(all, requested)
-	if index < 0 {
-		return levels[0]
-	}
-	for candidate := index; candidate < len(all); candidate++ {
-		if slices.Contains(levels, all[candidate]) {
-			return all[candidate]
-		}
-	}
-	for candidate := index - 1; candidate >= 0; candidate-- {
-		if slices.Contains(levels, all[candidate]) {
-			return all[candidate]
-		}
-	}
-	return levels[0]
 }
 
 func (runtime *SessionRuntime) SetAutoCompactionEnabled(enabled bool) {

@@ -709,7 +709,7 @@ func TestNewAgentSessionThinkingLevelClamped(t *testing.T) {
 	defer result.Session.Dispose()
 
 	state := result.Session.State()
-	supported := supportedThinkingLevels(state.Model)
+	supported := ai.SupportedThinkingLevels(state.Model)
 	found := false
 	for _, level := range supported {
 		if level == state.ThinkingLevel {
