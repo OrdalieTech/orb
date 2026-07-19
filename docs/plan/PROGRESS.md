@@ -131,11 +131,19 @@ byte-clean full `make fixtures-check`.
 
 ## Sprint 3 — Expansion (M4)
 
-Status: **pending**.
+Status: **open; study surfaced to owner; proceeding on full-parity defaults**.
 
-- [ ] Publish `docs/plan/expansion-study.md` for owner review before extending breadth.
-- [ ] Land the RED provider, OAuth, MCP, package/trust, and F11 extension-matrix surfaces first.
-- [ ] Complete the full-parity defaults unless the owner records an amended decision.
+- [x] Publish `docs/plan/expansion-study.md` for owner review before extending breadth.
+      **OWNER: please review — it contains a binary-size cap decision (M5) and confirms the
+      full-parity defaults; silence = defaults stand.**
+- [x] Audit the frozen expansion ring: providers (35/36 + codex), OAuth (all four flows), MCP,
+      packages/trust, and the bridge runtime/non-UI/shims layers are already landed and green.
+- [ ] Land the RED `ctx.ui` F11 surface first (ui-dependent upstream examples wired and failing),
+      then turn WP-541 (ctx.ui bridge) green.
+- [ ] WP-542: custom components, editors, overlays over the bridge (gate G3), fixtures first.
+- [ ] WP-550: F11 matrix ≥80% of the 69 single-file upstream examples unmodified;
+      publish `docs/sync/extension-matrix.md`; six named extensions end-to-end.
+- [ ] Port the openrouter-images generation client (only unported API shape).
 - [ ] Publish `docs/compare/sprint-3.md`, complete trim pass #4, and check every M4 criterion.
 
 ## Sprint 4 — Ship (M5)
@@ -148,7 +156,11 @@ Status: **pending**.
 
 ## Owner-blocked evidence
 
+- **Decision pending: M5 binary-size cap** (`docs/plan/expansion-study.md`) — stripped binary is
+  102,882 B over the decimal 35 MB cap before the bridge links sobek/esbuild; recommended: 45 MB
+  cap + one bounded size pass in Sprint 4.
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.
+- ChatGPT/Codex, Copilot, and xAI OAuth end-to-end runs likewise require subscribed accounts.
 - Tier-2/Tier-3 provider live tests require repository/API credentials and CI secrets.
 - Real Kitty and iTerm2 image emission plus native Darwin/X11/Wayland clipboard smoke require those
   terminal and desktop environments.
