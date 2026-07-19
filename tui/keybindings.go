@@ -54,7 +54,10 @@ var TUIKeybindingDefinitions = []KeybindingDefinition{
 	{ID: "tui.select.cancel", DefaultKeys: []KeyID{"escape", "ctrl+c"}, Description: "Cancel selection"},
 }
 
-var legacyTUIKeybindings = map[string]string{
+// legacyKeybindingNames mirrors upstream KEYBINDING_NAME_MIGRATIONS
+// (coding-agent core/keybindings.ts). The single shared loader migrates both
+// tui.* and app.* ids, so the app-level names live here too.
+var legacyKeybindingNames = map[string]string{
 	"cursorUp": "tui.editor.cursorUp", "cursorDown": "tui.editor.cursorDown", "cursorLeft": "tui.editor.cursorLeft",
 	"cursorRight": "tui.editor.cursorRight", "cursorWordLeft": "tui.editor.cursorWordLeft", "cursorWordRight": "tui.editor.cursorWordRight",
 	"cursorLineStart": "tui.editor.cursorLineStart", "cursorLineEnd": "tui.editor.cursorLineEnd", "jumpForward": "tui.editor.jumpForward",
@@ -65,6 +68,17 @@ var legacyTUIKeybindings = map[string]string{
 	"yankPop": "tui.editor.yankPop", "undo": "tui.editor.undo", "newLine": "tui.input.newLine", "submit": "tui.input.submit",
 	"tab": "tui.input.tab", "copy": "tui.input.copy", "selectUp": "tui.select.up", "selectDown": "tui.select.down",
 	"selectPageUp": "tui.select.pageUp", "selectPageDown": "tui.select.pageDown", "selectConfirm": "tui.select.confirm", "selectCancel": "tui.select.cancel",
+	"interrupt": "app.interrupt", "clear": "app.clear", "exit": "app.exit", "suspend": "app.suspend",
+	"cycleThinkingLevel": "app.thinking.cycle", "cycleModelForward": "app.model.cycleForward",
+	"cycleModelBackward": "app.model.cycleBackward", "selectModel": "app.model.select",
+	"expandTools": "app.tools.expand", "toggleThinking": "app.thinking.toggle",
+	"toggleSessionNamedFilter": "app.session.toggleNamedFilter", "externalEditor": "app.editor.external",
+	"followUp": "app.message.followUp", "dequeue": "app.message.dequeue", "pasteImage": "app.clipboard.pasteImage",
+	"newSession": "app.session.new", "tree": "app.session.tree", "fork": "app.session.fork", "resume": "app.session.resume",
+	"treeFoldOrUp": "app.tree.foldOrUp", "treeUnfoldOrDown": "app.tree.unfoldOrDown", "treeEditLabel": "app.tree.editLabel",
+	"treeToggleLabelTimestamp": "app.tree.toggleLabelTimestamp", "toggleSessionPath": "app.session.togglePath",
+	"toggleSessionSort": "app.session.toggleSort", "renameSession": "app.session.rename",
+	"deleteSession": "app.session.delete", "deleteSessionNoninvasive": "app.session.deleteNoninvasive",
 }
 
 type KeybindingsManager struct {
@@ -229,7 +243,7 @@ func LoadKeybindingsFile(path string) KeybindingsConfig {
 	config := make(KeybindingsConfig)
 	for original, encoded := range raw {
 		id := original
-		if migrated := legacyTUIKeybindings[original]; migrated != "" {
+		if migrated := legacyKeybindingNames[original]; migrated != "" {
 			id = migrated
 			if _, canonical := raw[id]; canonical {
 				continue

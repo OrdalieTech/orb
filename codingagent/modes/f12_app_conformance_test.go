@@ -871,7 +871,7 @@ emptyDone:
 
 	timeout := int64(1001)
 	renderCounter := &f12LifecycleRenderCounter{}
-	timedInput := newExtensionInputComponent("Timed input", "ignored", func(string) {}, func() {}, &extensionDialogOptions{
+	timedInput := NewExtensionInputComponent("Timed input", "ignored", func(string) {}, func() {}, &extensionDialogOptions{
 		ui: renderCounter, timeout: &timeout,
 	})
 	if got := timedInput.Render(32); !reflect.DeepEqual(got, want.TimedInput.InitialLines) {
@@ -1157,7 +1157,7 @@ func TestF12ExtensionEditorExternalLifecycleMatchesUpstream(t *testing.T) {
 	tui.SetKeybindings(bindings)
 	terminal := &f12ExternalEditorTerminal{fakeTerminalImpl: newFakeTerminal(88, 40), lifecyclePath: lifecyclePath}
 	modeUI := tui.NewTUI(terminal)
-	editor := newExtensionEditorComponent(modeUI, bindings, "Edit value", fixture.InitialText, func(string) {}, func() {}, externalEditorCommand)
+	editor := NewExtensionEditorComponent(modeUI, bindings, "Edit value", fixture.InitialText, func(string) {}, func() {}, externalEditorCommand)
 	terminal.component = editor
 	modeUI.AddChild(editor)
 	if err := modeUI.Start(); err != nil {
@@ -1221,7 +1221,7 @@ func TestF12ExternalEditorHelper(t *testing.T) {
 
 type f12ExternalEditorTerminal struct {
 	*fakeTerminalImpl
-	component     *extensionEditorComponent
+	component     *ExtensionEditorComponent
 	lifecyclePath string
 	record        bool
 }
@@ -1275,7 +1275,7 @@ func TestF12ExtensionDialogFramesMatchUpstream(t *testing.T) {
 
 			var inputValue string
 			inputCancelled := false
-			input := newExtensionInputComponent(
+			input := NewExtensionInputComponent(
 				"Enter value",
 				"PLACEHOLDER_IS_IGNORED",
 				func(value string) { inputValue = value },
@@ -1289,7 +1289,7 @@ func TestF12ExtensionDialogFramesMatchUpstream(t *testing.T) {
 
 			terminal := newFakeTerminal(width, 40)
 			modeUI := tui.NewTUI(terminal)
-			editor := newExtensionEditorComponent(modeUI, bindings, "Edit value", "alpha\nbeta", func(string) {}, func() {}, "false")
+			editor := NewExtensionEditorComponent(modeUI, bindings, "Edit value", "alpha\nbeta", func(string) {}, func() {}, "false")
 			got = append(got, f12ApplicationFrame{ID: "editor-prefill", Width: width, Lines: editor.Render(width)})
 
 			var want []f12ApplicationFrame
@@ -1473,10 +1473,10 @@ func newExtensionSelectorComponent(
 	onSelect func(string),
 	onCancel func(),
 	config *extensionDialogOptions,
-) *extensionSelectorComponent {
+) *ExtensionSelectorComponent {
 	items := make([]tui.SelectItem, len(options))
 	for index, option := range options {
 		items[index] = tui.SelectItem{Value: option, Label: option}
 	}
-	return newExtensionSelectorItemsComponent(title, items, onSelect, onCancel, config)
+	return NewExtensionSelectorItemsComponent(title, items, onSelect, onCancel, config)
 }

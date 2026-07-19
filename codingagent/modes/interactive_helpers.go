@@ -117,9 +117,9 @@ func (ct *CountdownTimer) Dispose() {
 	ct.mu.Unlock()
 }
 
-// Keybinding hint helpers.
-
-func keyText(binding string) string {
+// KeyText formats the keys currently bound to a keybinding id (falling back
+// to the id itself), mirroring upstream's exported keyText helper.
+func KeyText(binding string) string {
 	kb := tui.GetKeybindings()
 	keys := kb.Keys(binding)
 	if len(keys) == 0 {

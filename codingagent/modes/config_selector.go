@@ -253,7 +253,7 @@ func (header *configSelectorHeader) Render(width int) []string {
 	separator := theme.FG("muted", " · ")
 	switchHint := ""
 	if projectModeAvailable {
-		switchHint = theme.FG("accent", keyText("tui.input.tab")) + " switch mode" + separator
+		switchHint = theme.FG("accent", KeyText("tui.input.tab")) + " switch mode" + separator
 	}
 	actionHint := "space toggle"
 	if scope == ConfigWriteProject {

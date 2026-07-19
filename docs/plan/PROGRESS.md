@@ -161,11 +161,24 @@ Status: **open; study surfaced to owner; proceeding on full-parity defaults**.
 
 ## Sprint 4 — Ship (M5)
 
-Status: **pending**.
+Status: **release candidate reached; every locally provable M1–M5 criterion green; remainder
+owner-gated** (see docs/trim/M5.md §Owner-gated remainder).
 
-- [ ] Re-verify M1–M4, execute a green upstream sync, and build/verify all release artifacts.
-- [ ] Complete the 72-hour live-suite window, newcomer docs walk-through, final size/LOC/dep audit.
-- [ ] Complete trim pass #5 and tag `v0.1.0` only when every M5 criterion is checked.
+- [x] Land the release machinery: goreleaser (4 targets, snapshot verified), tag-triggered
+      workflow re-running the gate, checksum-verifying install script, ldflags version, CI on
+      `make check`, README newcomer path, G4 resolved notify-only.
+- [x] Close the parity tail: six upstream regression tests ported, five MIRROR-verification gaps
+      fixed, three real defects found and fixed (CLI stream SessionID, live custom messages,
+      select-list theme), startup loaded-resources listing deferred with a MIRROR note.
+- [x] Close the alignment should-fix remainder: typed tool-event accessors, ai.ParseStreamingJSON,
+      UI component exports (absentees documented), unit-test tails including the 28 missing
+      app.* keybinding migrations found and fixed.
+- [x] Re-verify M1–M4 at the release candidate; run the sync cycle GREEN end-to-end (lock bump
+      blocked: upstream unmoved past the pin); final trim pass #5 with LOC (1.089x) and dep audit
+      (docs/trim/M5.md).
+- [ ] Owner-gated to tag `v0.1.0`: size-cap decision, OAuth live runs, remote + secrets (nightly
+      72h window), clean-VM install/docs verification, a fresher upstream commit for the bump,
+      AgentHarness facade decision — then `git tag v0.1.0`.
 
 ## Owner-blocked evidence
 

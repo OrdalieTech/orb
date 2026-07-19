@@ -503,7 +503,7 @@ func NewBashExecutionComponent(command string, ui tui.RenderRequester, excludeFr
 	c.loader = tui.NewLoader(ui,
 		func(s string) string { return theme.FG("bashMode", s) },
 		func(s string) string { return theme.FG("muted", s) },
-		"Running... ("+keyText("tui.select.cancel")+" to cancel)", nil,
+		"Running... ("+KeyText("tui.select.cancel")+" to cancel)", nil,
 	)
 	c.rebuild()
 	return c
@@ -565,7 +565,7 @@ func (c *BashExecutionComponent) rebuild() {
 				shown := strings.Join(lines[len(lines)-bashPreviewLines:], "\n")
 				skipped := len(lines) - bashPreviewLines
 				c.container.AddChild(tui.NewText(
-					theme.FG("dim", fmt.Sprintf("... %d lines hidden (%s to expand)", skipped, keyText("app.tools.expand"))),
+					theme.FG("dim", fmt.Sprintf("... %d lines hidden (%s to expand)", skipped, KeyText("app.tools.expand"))),
 					1, 0, nil,
 				))
 				c.container.AddChild(tui.NewText("\n"+shown, 1, 0, nil))
@@ -644,7 +644,7 @@ func NewWorkingStatusIndicator(ui tui.RenderRequester, message string, options .
 
 func NewRetryStatusIndicator(ui tui.RenderRequester, attempt, maxAttempts int, delayMS int64) *StatusIndicator {
 	msg := fmt.Sprintf("Retrying (%d/%d) in %ds... (%s to cancel)",
-		attempt, maxAttempts, (delayMS+999)/1000, keyText("app.interrupt"))
+		attempt, maxAttempts, (delayMS+999)/1000, KeyText("app.interrupt"))
 	return &StatusIndicator{
 		Loader: tui.NewLoader(ui,
 			func(s string) string { return theme.FG("warning", s) },
@@ -656,7 +656,7 @@ func NewRetryStatusIndicator(ui tui.RenderRequester, attempt, maxAttempts int, d
 }
 
 func NewCompactionStatusIndicator(ui tui.RenderRequester, reason string) *StatusIndicator {
-	cancelHint := fmt.Sprintf("(%s to cancel)", keyText("app.interrupt"))
+	cancelHint := fmt.Sprintf("(%s to cancel)", KeyText("app.interrupt"))
 	var label string
 	switch reason {
 	case "manual":
@@ -867,7 +867,7 @@ func (c *CompactionSummaryMessageComponent) updateDisplay() {
 	} else {
 		c.box.AddChild(tui.NewText(
 			theme.FG("customMessageText", fmt.Sprintf("Compacted from %s tokens (", tokenStr))+
-				theme.FG("dim", keyText("app.tools.expand"))+
+				theme.FG("dim", KeyText("app.tools.expand"))+
 				theme.FG("customMessageText", " to expand)"),
 			0, 0, nil,
 		))
@@ -916,7 +916,7 @@ func (c *BranchSummaryMessageComponent) updateDisplay() {
 	} else {
 		c.box.AddChild(tui.NewText(
 			theme.FG("customMessageText", "Branch summary (")+
-				theme.FG("dim", keyText("app.tools.expand"))+
+				theme.FG("dim", KeyText("app.tools.expand"))+
 				theme.FG("customMessageText", " to expand)"),
 			0, 0, nil,
 		))
@@ -965,7 +965,7 @@ func (c *SkillInvocationMessageComponent) updateDisplay() {
 	} else {
 		line := theme.FG("customMessageLabel", theme.Bold("[skill]")+" ") +
 			theme.FG("customMessageText", c.name) +
-			theme.FG("dim", fmt.Sprintf(" (%s to expand)", keyText("app.tools.expand")))
+			theme.FG("dim", fmt.Sprintf(" (%s to expand)", KeyText("app.tools.expand")))
 		c.box.AddChild(tui.NewText(line, 0, 0, nil))
 	}
 }

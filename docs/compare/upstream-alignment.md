@@ -17,10 +17,23 @@ detail: [upstream-alignment-findings.md](upstream-alignment-findings.md).
 release commit is an M5 gate.** New confirmed should-fix findings become work items before the
 sprint closes; the findings ledger is regenerated, not hand-edited.
 
-## Current verdict (2026-07-19, pi-go `edaa772`)
+## Current verdict (re-run 2026-07-19 at the release candidate, pi-go post-`529035c`)
 
-**No ship-blockers. 22 confirmed should-fix items, 36 watch items, 10 candidate findings refuted or
-already covered by DECISIONS.** Calibration from the auditors: the extension API core, the four
+**All 22 confirmed should-fix items are closed except one owner decision.** Closed across Sprints
+3–4: MIRROR triage (21 verified rows), llama ledgered, `httpProxy` implemented, the SDK surface
+(tool bundles, public model helpers, typed tool-event accessors, `ai.ParseStreamingJSON`, the
+existing UI component exports — absent components documented as method-based flows), the six
+numbered regression tests, the unit-test tails (tool-name normalization, Copilot effort overrides,
+keybindings migration — which surfaced and fixed 28 missing `app.*` legacy migrations —
+footer/branch detection), the five MIRROR-verification parity gaps, `make check`/CHANGELOG/
+CONTRIBUTING/SECURITY process items, and the release pipeline (goreleaser, tag workflow,
+ldflags version, install script). **Open: the AgentHarness facade decision (owner,
+PROGRESS.md).** Watch list (36 items) unchanged.
+
+### Original verdict (2026-07-19, pi-go `edaa772`)
+
+No ship-blockers. 22 confirmed should-fix items, 36 watch items, 10 candidate findings refuted or
+already covered by DECISIONS. Calibration from the auditors: the extension API core, the four
 package boundaries, wire formats, and LICENSE/attribution are an unusually faithful mirror; the
 drift is concentrated in bookkeeping (MIRROR coverage), SDK convenience surface, test-intent tails,
 and process scaffolding — exactly the things conformance fixtures cannot see.

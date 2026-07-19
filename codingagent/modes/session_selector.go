@@ -541,7 +541,7 @@ func (selector *SessionSelectorComponent) headerLinesLocked(width int) []string 
 }
 
 func selectorKeyHint(binding, label string) string {
-	return theme.FG("accent", keyText(binding)) + " " + theme.FG("muted", label)
+	return theme.FG("accent", KeyText(binding)) + " " + theme.FG("muted", label)
 }
 
 func (selector *SessionSelectorComponent) Render(width int) []string {
@@ -563,9 +563,9 @@ func (selector *SessionSelectorComponent) listLinesLocked(width int) []string {
 		message := "  No sessions in current folder. Press Tab to view all."
 		if selector.nameFilter == sessionNamesNamed {
 			if selector.scope == sessionScopeAll {
-				message = "  No named sessions found. Press " + keyText("app.session.toggleNamedFilter") + " to show all."
+				message = "  No named sessions found. Press " + KeyText("app.session.toggleNamedFilter") + " to show all."
 			} else {
-				message = "  No named sessions in current folder. Press " + keyText("app.session.toggleNamedFilter") + " to show all, or Tab to view all."
+				message = "  No named sessions in current folder. Press " + KeyText("app.session.toggleNamedFilter") + " to show all, or Tab to view all."
 			}
 		} else if selector.scope == sessionScopeAll {
 			message = "  No sessions found"
