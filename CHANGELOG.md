@@ -43,6 +43,31 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
   this changelog, a checksum-verifying curl install script, and CI running `make check` on every
   push. Update checks remain notify-only (gate G4 resolved).
 - README newcomer path: install, first session, SDK embedding, and running upstream extensions.
+- `/session` shows upstream's full cost panel: cached/uncached prompt split, per-model cost
+  breakdown (`provider/responseModel`, sorted by cost), and "Cache Re-billed" totals from the
+  ported cache-stats arithmetic (upstream unit cases included).
+- `/settings` gains upstream's "HTTP idle timeout" entry (30 sec/1 min/2 min/5 min/disabled),
+  persisted to `httpIdleTimeoutMs` and applied to the next request.
+- `/export` HTML pre-renders custom extension tool calls/results through their TUI renderers
+  with upstream's ANSI-to-HTML conversion, and embeds the active tool list.
+- opencode models send `x-opencode-session`/`x-opencode-client` session-affinity headers on
+  every request; the per-request stream session id now also reaches providers from the CLI
+  runtime path (prompt-cache keys and affinity headers for Anthropic/OpenAI/Mistral/Codex).
+- Tool headers `~`-shorten home paths and emit OSC 8 `file://` hyperlinks in terminals that
+  support them (upstream render-utils).
+- Six upstream numbered regression tests ported: message_end cost override (3982), explicit
+  provider retry guidance (6019), pending tool renders surviving chat rebuilds (4167),
+  session_start render/notify ordering (5943), queued extension slash follow-ups staying raw
+  text (2023), and the extension factory cache (bundle cached, factories re-run).
+
+### Fixed
+
+- Footer shows `detached` on a detached HEAD (was the literal `HEAD`), matching upstream's
+  footer-data-provider.
+- Live extension custom messages (`display: true`) render in the interactive transcript as they
+  arrive; previously only the rebuild-from-entries path showed them.
+- Selector lists use upstream's select-list palette (accent selection, muted descriptions);
+  the previous unknown `selectedText` color crashed once a real theme was active.
 
 ### Changed
 

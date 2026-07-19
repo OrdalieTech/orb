@@ -314,7 +314,7 @@ func (tool *findTool) RenderCall(args any) string {
 	if path == "" {
 		path = "."
 	}
-	text := "find " + pattern + " in " + path
+	text := "find " + pattern + " in " + ShortenPath(path)
 	if limit, err := optionalNumber(object, "limit"); err == nil && limit != nil {
 		text += " (limit " + formatSearchNumber(*limit) + ")"
 	}

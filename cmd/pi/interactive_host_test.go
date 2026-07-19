@@ -96,6 +96,55 @@ func newHostAgent(messages agent.AgentMessages) *agent.Agent {
 	return agent.NewAgent(agent.WithInitialState(agent.AgentState{Model: fauxHostModel("host-model"), Messages: messages}))
 }
 
+// The CLI runtime paths give the agent its per-request session id at
+// construction (upstream createAgentSession), backing provider affinity
+// headers and prompt-cache keys.
+func TestBuildSessionRuntimeSetsStreamSessionID(t *testing.T) {
+	root := t.TempDir()
+	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := session.InMemory(root, session.WithSessionID("affinity-session"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := ""
+	stream := func(ctx context.Context, model *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+		if options != nil && options.SessionID != nil {
+			seen = *options.SessionID
+		}
+		return func(yield func(ai.AssistantMessageEvent, error) bool) {
+			message := &ai.AssistantMessage{
+				Content: ai.AssistantContent{&ai.TextContent{Text: "ok"}},
+				API:     model.API, Provider: model.Provider, Model: model.ID,
+				StopReason: ai.StopReasonStop,
+			}
+			if !yield(ai.StartEvent{Partial: message}, nil) {
+				return
+			}
+			yield(ai.DoneEvent{Reason: ai.StopReasonStop, Message: message}, nil)
+		}, nil
+	}
+	created := agent.NewAgent(
+		agent.WithInitialState(agent.AgentState{Model: fauxHostModel("host-model")}),
+		agent.WithStreamFn(stream),
+		agent.WithConvertToLLM(codingagent.ConvertToLLM),
+	)
+	runtime, err := buildSessionRuntime(runtimeInputs{Agent: created, Settings: settings, StreamFn: stream},
+		manager, sessionRuntimeOptions{mode: extensions.ModeTUI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(runtime.Dispose)
+	if err := runtime.Prompt(context.Background(), "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if seen != "affinity-session" {
+		t.Fatalf("stream session id = %q, want %q", seen, "affinity-session")
+	}
+}
+
 type hostFixture struct {
 	root        string
 	agentDir    string

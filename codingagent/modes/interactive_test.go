@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -716,6 +717,37 @@ func TestFooterComponentRender(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected git branch in footer")
+	}
+}
+
+func TestGitBranchReportsDetachedHead(t *testing.T) {
+	dir := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t",
+			"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Skipf("git unavailable: %v: %s", err, output)
+		}
+	}
+	git("init", "--initial-branch=trunk")
+	git("commit", "--allow-empty", "-m", "one")
+
+	mode := &InteractiveMode{cwd: dir}
+	if branch := mode.GitBranch(); branch != "trunk" {
+		t.Fatalf("GitBranch on branch = %q, want %q", branch, "trunk")
+	}
+	git("checkout", "--detach")
+	// Upstream footer-data-provider labels detached HEAD "detached", never "HEAD".
+	if branch := mode.GitBranch(); branch != "detached" {
+		t.Fatalf("GitBranch detached = %q, want %q", branch, "detached")
+	}
+	outside := &InteractiveMode{cwd: t.TempDir()}
+	if branch := outside.GitBranch(); branch != "" {
+		t.Fatalf("GitBranch outside repo = %q, want empty", branch)
 	}
 }
 

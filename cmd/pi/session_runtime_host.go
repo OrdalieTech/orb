@@ -171,6 +171,9 @@ func newCLISessionRuntimeHost(
 		if inputs.ModelRegistry != nil {
 			sessionConfig.ModelRegistry = inputs.ModelRegistry
 		}
+		// Providers key affinity and prompt caches on the session id; upstream
+		// createAgentSession passes sessionId into the Agent at construction.
+		inputs.Agent.SetStreamSessionID(manager.GetSessionID())
 		created, err := codingagent.NewSessionRuntime(sessionConfig)
 		if err != nil {
 			return nil, err

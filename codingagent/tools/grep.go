@@ -408,7 +408,7 @@ func (tool *grepTool) RenderCall(args any) string {
 	if path == "" {
 		path = "."
 	}
-	text := "grep /" + pattern + "/ in " + path
+	text := "grep /" + pattern + "/ in " + ShortenPath(path)
 	if glob, ok := object["glob"].(string); ok && glob != "" {
 		text += " (" + glob + ")"
 	}

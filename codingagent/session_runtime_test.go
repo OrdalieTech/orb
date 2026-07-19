@@ -401,6 +401,56 @@ func TestSessionRuntimeRetriesAndEmitsLifecycle(t *testing.T) {
 	}
 }
 
+// Port of upstream regression 6019-explicit-provider-retry-message.test.ts:
+// explicit retry guidance emitted by OpenAI Responses and Bedrock stream
+// exceptions is classified as retryable.
+func TestSessionRuntimeRetriesExplicitProviderRetryMessages(t *testing.T) {
+	openAIExplicitRetryMessage := "An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID req_******** in your message."
+	bedrockExplicitRetryMessage := `{"message":"The system encountered an unexpected error during processing. Try your request again."}`
+	for _, test := range []struct {
+		name         string
+		errorMessage string
+	}{
+		{name: "openai", errorMessage: openAIExplicitRetryMessage},
+		{name: "bedrock", errorMessage: bedrockExplicitRetryMessage},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			provider := testFaux(1000)
+			provider.SetResponses([]faux.ResponseStep{
+				runtimeError(provider, test.errorMessage),
+				runtimeAssistant(provider, "recovered", 20),
+			})
+			runtime, _ := newTestRuntime(t, provider, map[string]any{
+				"compaction": map[string]any{"enabled": false},
+				"retry":      map[string]any{"enabled": true, "maxRetries": 3, "baseDelayMs": 1},
+			})
+			runtime.sleep = func(context.Context, time.Duration) error { return nil }
+			var startMessages []string
+			var endSuccesses []bool
+			runtime.Subscribe(func(event any) {
+				switch typed := event.(type) {
+				case AutoRetryStartEvent:
+					startMessages = append(startMessages, typed.ErrorMessage)
+				case AutoRetryEndEvent:
+					endSuccesses = append(endSuccesses, typed.Success)
+				}
+			})
+			if err := runtime.Prompt(context.Background(), "test"); err != nil {
+				t.Fatal(err)
+			}
+			if provider.State().CallCount != 2 {
+				t.Fatalf("call count = %d, want 2", provider.State().CallCount)
+			}
+			if !reflect.DeepEqual(startMessages, []string{test.errorMessage}) {
+				t.Fatalf("auto_retry_start errorMessages = %#v", startMessages)
+			}
+			if !reflect.DeepEqual(endSuccesses, []bool{true}) {
+				t.Fatalf("auto_retry_end successes = %#v", endSuccesses)
+			}
+		})
+	}
+}
+
 func TestSessionRuntimeRetryExhaustionAndCancellation(t *testing.T) {
 	provider := testFaux(1000)
 	provider.SetResponses([]faux.ResponseStep{
@@ -957,6 +1007,62 @@ func TestSessionRuntimeResolvesModelHeadersForSummaryRequests(t *testing.T) {
 				if headers["X-Dynamic"] != "request-time" {
 					t.Fatalf("provider headers = %#v", headers)
 				}
+			}
+		})
+	}
+}
+
+func TestSessionRuntimeAddsOpencodeSessionAffinityHeaders(t *testing.T) {
+	contextWindow, maxTokens := 100000.0, 100.0
+	newProvider := func(providerID string) *faux.Provider {
+		return faux.New(faux.Options{
+			API: "faux", Provider: ai.ProviderID(providerID),
+			Models:    []faux.ModelDefinition{{ID: "faux-1", ContextWindow: &contextWindow, MaxTokens: &maxTokens}},
+			TokenSize: faux.FixedTokenSize(1000),
+		})
+	}
+	for _, test := range []struct {
+		name       string
+		providerID string
+		wantAdded  bool
+	}{
+		{name: "opencode", providerID: "opencode", wantAdded: true},
+		{name: "opencode-go", providerID: "opencode-go", wantAdded: true},
+		{name: "other provider", providerID: "faux", wantAdded: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			provider := newProvider(test.providerID)
+			var seenHeaders map[string]string
+			response := faux.ResponseFactory(func(_ context.Context, _ ai.Context, _ *ai.StreamOptions, _ faux.State, model *ai.Model) (*ai.AssistantMessage, error) {
+				seenHeaders = map[string]string{}
+				if model.Headers != nil {
+					for name, value := range *model.Headers {
+						seenHeaders[name] = value
+					}
+				}
+				return runtimeAssistant(provider, "done", 10), nil
+			})
+			provider.SetResponses([]faux.ResponseStep{response})
+			runtime, manager := newTestRuntimeWithHeaders(t, provider, map[string]any{
+				"compaction": map[string]any{"enabled": false},
+			}, func(context.Context, *ai.Model, *string, ai.ProviderEnv) (*map[string]string, error) {
+				headers := map[string]string{"X-Config": "resolved"}
+				return &headers, nil
+			})
+			if err := runtime.Prompt(context.Background(), "hello"); err != nil {
+				t.Fatal(err)
+			}
+			if seenHeaders["X-Config"] != "resolved" {
+				t.Fatalf("configured headers dropped: %#v", seenHeaders)
+			}
+			if !test.wantAdded {
+				if _, exists := seenHeaders["x-opencode-session"]; exists {
+					t.Fatalf("unexpected session headers for %s: %#v", test.providerID, seenHeaders)
+				}
+				return
+			}
+			if seenHeaders["x-opencode-session"] != manager.GetSessionID() || seenHeaders["x-opencode-client"] != "pi" {
+				t.Fatalf("session affinity headers = %#v (session %q)", seenHeaders, manager.GetSessionID())
 			}
 		})
 	}

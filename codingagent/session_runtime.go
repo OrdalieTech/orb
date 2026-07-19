@@ -124,6 +124,7 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 	if runtimeConfig.Agent == nil || runtimeConfig.SessionManager == nil || runtimeConfig.Settings == nil {
 		return nil, errors.New("codingagent: session runtime requires agent, session manager, and settings")
 	}
+	runtimeConfig.GetModelHeaders = withSessionAffinityHeaders(runtimeConfig.GetModelHeaders, runtimeConfig.SessionManager)
 	modelRegistryAvailable := runtimeConfig.ModelRegistry != nil
 	if modelRegistryAvailable {
 		if runtimeConfig.RegisterProvider == nil {

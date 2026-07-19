@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -927,6 +929,192 @@ func extensionRuntimeDependencies(t *testing.T, cwd string) (*session.SessionMan
 		t.Fatal(err)
 	}
 	return manager, settings
+}
+
+// Port of upstream regression 2023-queued-slash-command-followup.test.ts:
+// extension-origin queued slash-command follow-ups are delivered as raw user
+// text to the model instead of dispatching the extension command.
+func TestExtensionQueuedSlashCommandFollowUpStaysRawText(t *testing.T) {
+	cwd := t.TempDir()
+	manager, settings := extensionRuntimeDependencies(t, cwd)
+	registry := extensions.NewRegistry(cwd)
+	var api extensions.API
+	var commandRuns []string
+	if err := registry.Register("<inline:queued-command>", func(registered extensions.API) error {
+		api = registered
+		registered.RegisterCommand("testcmd", extensions.Command{
+			Description: "Test command",
+			Handler: func(_ context.Context, args string, _ extensions.CommandContext) error {
+				commandRuns = append(commandRuns, args)
+				return nil
+			},
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	release := make(chan struct{})
+	waitTool := agent.AgentToolFunc{
+		AgentToolSpec: agent.AgentToolSpec{
+			Name: "wait", Label: "Wait", Description: "Wait for the test to release execution",
+			Parameters: jsonschema.Schema(`{"type":"object","properties":{}}`),
+		},
+		Run: func(ctx context.Context, _ string, _ any, _ agent.AgentToolUpdateCallback) (agent.AgentToolResult, error) {
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return agent.AgentToolResult{}, ctx.Err()
+			}
+			return agent.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: "released"}}}, nil
+		},
+	}
+	provider := faux.New()
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage(faux.ToolCall("wait", map[string]any{}, faux.ToolCallOptions{ID: "wait-1"}), faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse}),
+		faux.AssistantMessage("first turn complete"),
+		faux.AssistantMessage("queued follow-up handled by model"),
+	})
+	created := agent.NewAgent(
+		agent.WithInitialState(agent.AgentState{SystemPrompt: "test", Model: provider.GetModel(), Tools: []agent.AgentTool{waitTool}}),
+		agent.WithStreamFn(provider.StreamSimple), agent.WithConvertToLLM(ConvertToLLM),
+	)
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
+		Agent: created, SessionManager: manager, Settings: settings,
+		ExtensionRegistry: registry, ExtensionMode: extensions.ModePrint,
+		BaseTools: []agent.AgentTool{waitTool}, InitialActiveToolNames: []string{"wait"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+	toolStarted := make(chan struct{}, 1)
+	runtime.Subscribe(func(event any) {
+		if started, ok := event.(agent.ToolExecutionStartEvent); ok && started.ToolName == "wait" {
+			select {
+			case toolStarted <- struct{}{}:
+			default:
+			}
+		}
+	})
+	promptDone := make(chan error, 1)
+	go func() { promptDone <- runtime.Prompt(context.Background(), "start") }()
+	select {
+	case <-toolStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("wait tool did not start")
+	}
+	queued := "/testcmd queued"
+	if err := api.SendUserMessage(context.Background(), ai.UserContent{Text: &queued}, &extensions.SendUserMessageOptions{DeliverAs: extensions.DeliverFollowUp}); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	select {
+	case err := <-promptDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("prompt did not settle")
+	}
+	if len(commandRuns) != 0 {
+		t.Fatalf("extension command dispatched for queued follow-up: %#v", commandRuns)
+	}
+	var userTexts, assistantTexts []string
+	for _, message := range runtime.State().Messages {
+		if text := userMessageText(message); text != "" {
+			userTexts = append(userTexts, text)
+		}
+		if assistant := asAssistant(message); assistant != nil {
+			assistantTexts = append(assistantTexts, assistantText(assistant))
+		}
+	}
+	if !reflect.DeepEqual(userTexts, []string{"start", "/testcmd queued"}) {
+		t.Fatalf("user texts = %#v", userTexts)
+	}
+	if !slices.Contains(assistantTexts, "queued follow-up handled by model") {
+		t.Fatalf("assistant texts = %#v", assistantTexts)
+	}
+}
+
+// Port of upstream regression 3982-message-end-cost-override.test.ts:
+// extensions can replace the finalized assistant usage cost from message_end,
+// and both the session state and the emitted event carry the override.
+func TestExtensionMessageEndCanOverrideAssistantUsageCost(t *testing.T) {
+	cwd := t.TempDir()
+	manager, settings := extensionRuntimeDependencies(t, cwd)
+	registry := extensions.NewRegistry(cwd)
+	if err := registry.Register("<inline:cost-override>", func(api extensions.API) error {
+		api.On(extensions.EventMessageEnd, func(_ context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
+			message, ok := raw.(extensions.MessageEndEvent).Message.(*ai.AssistantMessage)
+			if !ok {
+				return nil, nil
+			}
+			replaced := *message
+			replaced.Usage.Cost.Total = 0.123
+			return extensions.MessageEndResult{Message: &replaced}, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	provider := faux.New()
+	provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("hello")})
+	created := agent.NewAgent(
+		agent.WithInitialState(agent.AgentState{SystemPrompt: "test", Model: provider.GetModel()}),
+		agent.WithStreamFn(provider.StreamSimple), agent.WithConvertToLLM(ConvertToLLM),
+	)
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
+		Agent: created, SessionManager: manager, Settings: settings,
+		ExtensionRegistry: registry, ExtensionMode: extensions.ModePrint,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+	var eventCost *float64
+	runtime.Subscribe(func(event any) {
+		if ended, ok := event.(agent.MessageEndEvent); ok {
+			if assistant := asAssistant(ended.Message); assistant != nil {
+				cost := assistant.Usage.Cost.Total
+				eventCost = &cost
+			}
+		}
+	})
+	if err := runtime.Prompt(context.Background(), "hi"); err != nil {
+		t.Fatal(err)
+	}
+	var stateAssistant *ai.AssistantMessage
+	for _, message := range runtime.State().Messages {
+		if assistant := asAssistant(message); assistant != nil {
+			stateAssistant = assistant
+		}
+	}
+	if stateAssistant == nil || stateAssistant.Usage.Cost.Total != 0.123 {
+		t.Fatalf("session assistant cost = %#v", stateAssistant)
+	}
+	if eventCost == nil || *eventCost != 0.123 {
+		t.Fatalf("message_end event cost = %#v", eventCost)
+	}
+	// The persisted entry carries the override too (message_end replacement
+	// happens before persistence).
+	var persistedCost float64
+	persisted := false
+	for _, entry := range manager.GetEntries() {
+		if entry.Type != "message" {
+			continue
+		}
+		decoded, decodeErr := ai.UnmarshalMessage(entry.Message)
+		if decodeErr != nil {
+			continue
+		}
+		if assistant, ok := decoded.(*ai.AssistantMessage); ok {
+			persistedCost = assistant.Usage.Cost.Total
+			persisted = true
+		}
+	}
+	if !persisted || persistedCost != 0.123 {
+		t.Fatalf("persisted assistant cost = %v (found=%t)", persistedCost, persisted)
+	}
 }
 
 func TestSessionStartEventNonDefault(t *testing.T) {

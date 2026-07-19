@@ -16,6 +16,7 @@ import (
 	"github.com/OrdalieTech/pi-go/agent/harness"
 	"github.com/OrdalieTech/pi-go/ai"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
+	"github.com/OrdalieTech/pi-go/codingagent/extensions"
 	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
 	"github.com/OrdalieTech/pi-go/codingagent/session/exporthtml"
 	"github.com/OrdalieTech/pi-go/codingagent/tools"
@@ -205,6 +206,7 @@ type InteractiveModeSettings struct {
 	BlockImages          bool
 	EnableSkillCommands  bool
 	Transport            ai.Transport
+	HTTPIdleTimeoutMS    int64
 	OutputPad            int
 	ExternalEditor       string
 	TreeFilterMode       string
@@ -215,6 +217,10 @@ type InteractiveModeSettings struct {
 func (runtime *SessionRuntime) InteractiveModeSettings() InteractiveModeSettings {
 	if runtime == nil {
 		return InteractiveModeSettings{}
+	}
+	httpIdleTimeout, err := runtime.settings.GetHTTPIdleTimeoutMS()
+	if err != nil {
+		httpIdleTimeout = 300000
 	}
 	return InteractiveModeSettings{
 		InteractiveSettings:  runtime.InteractiveSettings(),
@@ -227,6 +233,7 @@ func (runtime *SessionRuntime) InteractiveModeSettings() InteractiveModeSettings
 		BlockImages:          runtime.settings.GetBlockImages(),
 		EnableSkillCommands:  runtime.settings.GetEnableSkillCommands(),
 		Transport:            runtime.settings.GetTransport(),
+		HTTPIdleTimeoutMS:    httpIdleTimeout,
 		OutputPad:            runtime.settings.GetOutputPad(),
 		ExternalEditor:       runtime.settings.GetExternalEditor(),
 		TreeFilterMode:       runtime.settings.GetTreeFilterMode(),
@@ -289,6 +296,12 @@ func (runtime *SessionRuntime) SetTransport(transport ai.Transport) {
 	if runtime != nil {
 		runtime.settings.SetTransport(transport)
 		runtime.agent.SetTransport(transport)
+	}
+}
+
+func (runtime *SessionRuntime) SetHTTPIdleTimeoutMS(timeoutMS int64) {
+	if runtime != nil {
+		runtime.settings.SetHTTPIdleTimeoutMS(timeoutMS)
 	}
 }
 
@@ -807,7 +820,46 @@ func (runtime *SessionRuntime) SetSessionName(name string) error {
 func (runtime *SessionRuntime) ExportHTML(outputPath string) (string, error) {
 	state := runtime.agent.State()
 	systemPrompt := state.SystemPrompt
-	return exporthtml.ExportSession(runtime.manager, exporthtml.Options{OutputPath: outputPath, SystemPrompt: &systemPrompt})
+	// Custom extension tools are pre-rendered through their TUI renderers
+	// (upstream exportToHtml's createToolHtmlRenderer).
+	uiTheme := extensions.NewNoopUI().Theme()
+	if runner := runtime.ExtensionRunner(); runner != nil {
+		uiTheme = runner.UI().Theme()
+	}
+	renderer := exporthtml.NewToolHTMLRenderer(exporthtml.ToolHTMLRendererDeps{
+		GetToolDefinition: runtime.GetToolDefinition,
+		Theme:             uiTheme,
+		CWD:               runtime.manager.GetCWD(),
+	})
+	return exporthtml.ExportSession(runtime.manager, exporthtml.Options{
+		OutputPath:   outputPath,
+		SystemPrompt: &systemPrompt,
+		Tools:        exportToolList(state.Tools),
+		ToolRenderer: renderer,
+	})
+}
+
+// exportToolList mirrors upstream exportToHtml's tools mapping: name,
+// description, and parameters for each active tool.
+func exportToolList(tools []agent.AgentTool) json.RawMessage {
+	if tools == nil {
+		return nil
+	}
+	type exportTool struct {
+		Name        string        `json:"name"`
+		Description string        `json:"description"`
+		Parameters  ai.JSONSchema `json:"parameters"`
+	}
+	list := make([]exportTool, 0, len(tools))
+	for _, tool := range tools {
+		spec := tool.Spec()
+		list = append(list, exportTool{Name: spec.Name, Description: spec.Description, Parameters: spec.Parameters})
+	}
+	encoded, err := json.Marshal(list)
+	if err != nil {
+		return nil
+	}
+	return encoded
 }
 
 // ExportJSONL writes the current root-to-leaf branch as a standalone upstream

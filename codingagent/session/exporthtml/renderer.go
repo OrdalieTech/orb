@@ -23,8 +23,8 @@ type ToolHTMLRenderResult struct {
 }
 
 // ToolHTMLRenderer pre-renders custom tool calls and results for live exports.
-// TODO(WP-450): adapt registered TUI tool renderers to this seam, matching
-// upstream createToolHtmlRenderer and its ANSI-to-HTML conversion.
+// NewToolHTMLRenderer adapts registered TUI tool renderers to this seam,
+// matching upstream createToolHtmlRenderer and its ANSI-to-HTML conversion.
 type ToolHTMLRenderer interface {
 	RenderCall(toolCallID, toolName string, arguments any) *string
 	RenderResult(toolCallID, toolName string, content, details any, isError bool) *ToolHTMLRenderResult

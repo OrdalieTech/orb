@@ -377,6 +377,14 @@ func (agent *Agent) SetTransport(transport ai.Transport) {
 	agent.mu.Unlock()
 }
 
+// SetStreamSessionID sets the per-request session id providers use for
+// affinity and prompt-cache keys (upstream Agent's constructor sessionId).
+func (agent *Agent) SetStreamSessionID(sessionID string) {
+	agent.mu.Lock()
+	agent.streamOptions.SessionID = pointerTo(sessionID)
+	agent.mu.Unlock()
+}
+
 // Signal returns the active run context, matching upstream's abort signal
 // exposure to extensions. It is nil while the agent is idle.
 func (agent *Agent) Signal() context.Context {

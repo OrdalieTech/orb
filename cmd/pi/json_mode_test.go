@@ -472,6 +472,11 @@ func f3ScenarioSettings(t testing.TB, cwd, agentDir string, raw json.RawMessage)
 func f3RuntimeFactory(scenario f3SessionScenario, provider *faux.Provider, settings *config.SettingsManager) func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
 	return func(_ string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
 		now := func() int64 { return scenario.FixedNow }
+		// The F3 goldens were extracted from upstream's runPrintMode harness,
+		// whose raw Agent carries no session id; disable faux's session-keyed
+		// prompt-cache emulation so the CLI path (which sets the stream
+		// session id like upstream createAgentSession) matches them.
+		noCache := ai.CacheRetentionNone
 		created := agent.NewAgent(
 			agent.WithInitialState(agent.AgentState{
 				Model: provider.GetModel(), SystemPrompt: scenario.SystemPrompt, Messages: prior, Tools: []agent.AgentTool{},
@@ -479,6 +484,7 @@ func f3RuntimeFactory(scenario f3SessionScenario, provider *faux.Provider, setti
 			agent.WithStreamFn(provider.StreamSimple),
 			agent.WithConvertToLLM(codingagent.ConvertToLLM),
 			agent.WithClock(now),
+			agent.WithSimpleStreamOptions(ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{CacheRetention: &noCache}}),
 		)
 		return runtimeInputs{Agent: created, Settings: settings}, nil
 	}

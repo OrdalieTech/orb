@@ -440,6 +440,15 @@ func (manager *SettingsManager) SetTransport(transport ai.Transport) {
 	manager.setGlobalValues(settingMember("transport", transport))
 }
 
+// SetHTTPIdleTimeoutMS persists the provider idle timeout; negative values are
+// rejected upstream before reaching the store, so they are ignored here.
+func (manager *SettingsManager) SetHTTPIdleTimeoutMS(timeoutMS int64) {
+	if timeoutMS < 0 {
+		return
+	}
+	manager.setGlobalValues(settingMember("httpIdleTimeoutMs", timeoutMS))
+}
+
 func (manager *SettingsManager) SetEnabledModels(models []string) {
 	manager.setGlobalValues(settingMember("enabledModels", append([]string(nil), models...)))
 }

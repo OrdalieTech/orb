@@ -386,6 +386,33 @@ func (manager *SettingsManager) GetHTTPProxy() string {
 	return strings.TrimSpace(manager.stringValue("httpProxy"))
 }
 
+// HTTPIdleTimeoutChoice pairs an /settings label with its timeout value,
+// mirroring upstream http-dispatcher HTTP_IDLE_TIMEOUT_CHOICES.
+type HTTPIdleTimeoutChoice struct {
+	Label     string
+	TimeoutMS int64
+}
+
+// HTTPIdleTimeoutChoices lists the /settings selector values in upstream order.
+var HTTPIdleTimeoutChoices = []HTTPIdleTimeoutChoice{
+	{Label: "30 sec", TimeoutMS: 30_000},
+	{Label: "1 min", TimeoutMS: 60_000},
+	{Label: "2 min", TimeoutMS: 120_000},
+	{Label: "5 min", TimeoutMS: 300_000},
+	{Label: "disabled", TimeoutMS: 0},
+}
+
+// FormatHTTPIdleTimeoutMS renders a timeout as its choice label, falling back
+// to upstream's "<seconds> sec" (JS number formatting) for custom values.
+func FormatHTTPIdleTimeoutMS(timeoutMS int64) string {
+	for _, choice := range HTTPIdleTimeoutChoices {
+		if choice.TimeoutMS == timeoutMS {
+			return choice.Label
+		}
+	}
+	return strconv.FormatFloat(float64(timeoutMS)/1000, 'f', -1, 64) + " sec"
+}
+
 // ApplyHTTPProxySettings exports the configured proxy as HTTP_PROXY and
 // HTTPS_PROXY unless the environment already sets them, matching upstream's
 // applyHttpProxySettings; Go's default transport then honors them.

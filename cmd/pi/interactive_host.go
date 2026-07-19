@@ -79,6 +79,9 @@ func buildSessionRuntime(inputs runtimeInputs, manager *session.SessionManager, 
 	if err != nil {
 		return nil, err
 	}
+	// Providers key affinity and prompt caches on the session id; upstream
+	// createAgentSession passes sessionId into the Agent at construction.
+	inputs.Agent.SetStreamSessionID(manager.GetSessionID())
 	return codingagent.NewSessionRuntime(runtimeConfig)
 }
 
