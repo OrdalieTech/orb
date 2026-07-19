@@ -16,6 +16,7 @@ import (
 	"github.com/OrdalieTech/pi-go/ai/providers/faux"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions"
 	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pi-go/internal/jsonwire"
 )
 
 type agentSessionRuntimeEventLog struct {
@@ -381,10 +382,10 @@ func TestAgentSessionRuntimeReplacedContextTargetsFreshSession(t *testing.T) {
 	if len(messages) != 2 {
 		t.Fatalf("replacement messages = %d, want 2", len(messages))
 	}
-	if role, text := messageRoleAndText(messages[0]); role != "user" || text != "hello from replacement" {
+	if role, text := jsonwire.MessageRoleAndText(messages[0]); role != "user" || text != "hello from replacement" {
 		t.Fatalf("replacement user = %s:%q", role, text)
 	}
-	if role, text := messageRoleAndText(messages[1]); role != "assistant" || text != "replacement reply" {
+	if role, text := jsonwire.MessageRoleAndText(messages[1]); role != "assistant" || text != "replacement reply" {
 		t.Fatalf("replacement assistant = %s:%q", role, text)
 	}
 }

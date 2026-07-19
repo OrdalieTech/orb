@@ -200,14 +200,3 @@ func formatInteger(count int64) string {
 	}
 	return sign + digits
 }
-
-// truncateToVisualLines truncates text to maxVisualLines from the end,
-// accounting for terminal width wrapping.
-func truncateToVisualLines(text string, maxVisualLines, width int) (lines []string, skipped int) {
-	temp := tui.NewText(text, 0, 0, nil)
-	all := temp.Render(width)
-	if len(all) <= maxVisualLines {
-		return all, 0
-	}
-	return all[len(all)-maxVisualLines:], len(all) - maxVisualLines
-}

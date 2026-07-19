@@ -13,6 +13,7 @@ import (
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions"
 	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pi-go/internal/jsonwire"
 )
 
 // CreateAgentSessionRuntimeFactory recreates a session after new, resume,
@@ -441,7 +442,7 @@ func (runtime *AgentSessionRuntime) Fork(
 	targetID := selected.ID
 	var selectedText *string
 	if position != extensions.ForkAt {
-		role, text := messageRoleAndText(selected.Message)
+		role, text := jsonwire.MessageRoleAndText(selected.Message)
 		if selected.Type != "message" || role != "user" {
 			return AgentSessionRuntimeForkResult{}, errors.New("Invalid entry ID for forking") //nolint:staticcheck // Upstream text.
 		}

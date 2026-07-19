@@ -61,6 +61,7 @@ type CLIArgs struct {
 	Diagnostics        []CLIDiagnostic
 	RestoredModel      bool
 	allowNoModel       bool
+	useUnknownModel    bool
 	extensionsLoaded   bool
 	extensionRegistry  *extensions.Registry
 	extensionWarnings  []string

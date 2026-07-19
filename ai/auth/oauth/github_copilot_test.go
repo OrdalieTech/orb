@@ -160,6 +160,19 @@ func TestGitHubCopilotCurrentCompatibilityEdges(t *testing.T) {
 	}
 }
 
+func TestGitHubCopilotDefersDefaultModelCatalogUntilNeeded(t *testing.T) {
+	flow := NewGitHubCopilot(nil)
+	if flow.options.KnownModelIDs != nil {
+		t.Fatal("default Copilot model catalog was loaded during construction")
+	}
+	if modelIDs := flow.knownModelIDs(); len(modelIDs) == 0 {
+		t.Fatal("default Copilot model catalog was not loaded on demand")
+	}
+	if flow.options.KnownModelIDs != nil {
+		t.Fatal("lazy default model catalog replaced the nil option sentinel")
+	}
+}
+
 func TestGitHubCopilotModelsRequestAloneHasFiveSecondTimeout(t *testing.T) {
 	client := &http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
 		deadline, ok := request.Context().Deadline()

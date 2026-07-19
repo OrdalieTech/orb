@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,7 +20,6 @@ import (
 	"github.com/OrdalieTech/pi-go/codingagent/modes"
 	"github.com/OrdalieTech/pi-go/codingagent/session"
 	"github.com/OrdalieTech/pi-go/codingagent/session/exporthtml"
-	"github.com/OrdalieTech/pi-go/internal/jsonwire"
 	"golang.org/x/term"
 )
 
@@ -234,6 +232,8 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	}
 	if isInteractive {
 		args.allowNoModel = true
+	} else {
+		args.useUnknownModel = true
 	}
 	baseArgs := args
 	manager, sessionContext, err := createCLISession(cwd, args, streams, dependencies.selectSession)
@@ -467,54 +467,6 @@ func appendInitialRuntimeState(manager *session.SessionManager, state agent.Agen
 		return err
 	}
 	return nil
-}
-
-func persistAgentMessages(manager *session.SessionManager) agent.EventSink {
-	return func(_ context.Context, event agent.AgentEvent) error {
-		messageEnd, ok := event.(agent.MessageEndEvent)
-		if !ok {
-			return nil
-		}
-		encoded, err := ai.Marshal(messageEnd.Message)
-		if err != nil {
-			return err
-		}
-		var envelope struct {
-			Role       json.RawMessage `json:"role"`
-			CustomType json.RawMessage `json:"customType"`
-			Content    json.RawMessage `json:"content"`
-			Display    bool            `json:"display"`
-			Details    json.RawMessage `json:"details"`
-		}
-		if err := json.Unmarshal(encoded, &envelope); err != nil {
-			return err
-		}
-		role, err := jsonwire.UnmarshalString(bytes.TrimSpace(envelope.Role))
-		if err != nil {
-			return err
-		}
-		switch role {
-		case "user", "assistant", "toolResult":
-			_, err = manager.AppendMessage(messageEnd.Message)
-			return err
-		case "custom":
-			customType, decodeErr := jsonwire.UnmarshalString(bytes.TrimSpace(envelope.CustomType))
-			if decodeErr != nil {
-				return decodeErr
-			}
-			if len(envelope.Content) == 0 || bytes.Equal(bytes.TrimSpace(envelope.Content), []byte("null")) {
-				envelope.Content = json.RawMessage("[]")
-			}
-			if len(envelope.Details) > 0 {
-				_, err = manager.AppendCustomMessageEntry(customType, envelope.Content, envelope.Display, envelope.Details)
-			} else {
-				_, err = manager.AppendCustomMessageEntry(customType, envelope.Content, envelope.Display)
-			}
-			return err
-		default:
-			return nil
-		}
-	}
 }
 
 func isTerminalFile(file *os.File) bool {

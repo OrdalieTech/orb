@@ -156,31 +156,6 @@ func TestAppendInitialRuntimeStateChecksCurrentBranchForThinking(t *testing.T) {
 	}
 }
 
-func TestPersistAgentMessagesUsesRoleSpecificSessionEntries(t *testing.T) {
-	manager, err := session.InMemory(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	sink := persistAgentMessages(manager)
-	for _, message := range []agent.AgentMessage{
-		&ai.UserMessage{Content: ai.NewUserText("hello"), Timestamp: 1},
-		json.RawMessage(`{"role":"custom","customType":"note","content":"remember","display":true,"details":{"x":1},"timestamp":2}`),
-		json.RawMessage(`{"role":"branchSummary","summary":"skip","fromId":"root","timestamp":3}`),
-	} {
-		if err := sink(context.Background(), agent.MessageEndEvent{Message: message}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	entries := manager.GetEntries()
-	if len(entries) != 2 || entries[0].Type != "message" || entries[1].Type != "custom_message" {
-		t.Fatalf("entries = %#v", entries)
-	}
-	custom := entries[1]
-	if custom.CustomType != "note" || string(custom.Content) != `"remember"` || !custom.Display || string(custom.Details) != `{"x":1}` {
-		t.Fatalf("custom entry = %#v", custom)
-	}
-}
-
 func TestRunCLIRejectsAPIKeyWithoutExplicitModel(t *testing.T) {
 	var stderr bytes.Buffer
 	called := false

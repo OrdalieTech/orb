@@ -19,6 +19,10 @@ import (
 	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
 )
 
+func userMessage(text string) *ai.UserMessage {
+	return userMessageWithImages(text, nil)
+}
+
 func TestSessionEventWireShapes(t *testing.T) {
 	cases := []struct {
 		name  string

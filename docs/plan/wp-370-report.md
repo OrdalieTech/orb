@@ -1,6 +1,7 @@
 # Historical WP-370 SDK integration report
 
-Status: **integrated in Sprint 0; Sprint 1 SDK parity remains red**.
+Status: **historical integration snapshot**. The gaps described here were open when WP-370 first
+landed; current Sprint 1 status and superseding evidence live in `docs/compare/sprint-1.md`.
 
 ## Integrated surface
 
@@ -35,7 +36,7 @@ settings, and mapped extension reload starts to `resources_discover: reload` lik
 - Examples 06 and 12 no longer import an internal package, so their custom-tool declarations can be
   copied into an external module; an isolated consumer module with a local `replace` builds both.
 
-## Sprint 1 red surface
+## Open at integration time
 
 - Public prompt options, direct agent access, custom/user-message injection, and active-tool
   get/set methods still lack the upstream SDK surface.

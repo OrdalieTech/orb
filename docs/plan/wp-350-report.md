@@ -1,8 +1,7 @@
 # WP-350 Go-native ExtensionAPI report
 
-Status: **integrated, Sprint 1 parity still red**. The retained `F11-native` cases pass and the
-native registration, action, context, UI, provider, and event seams are wired, but the fixture
-surface does not yet prove the complete pinned TypeScript dispatch contract.
+Status: **historical integration snapshot**. The gaps described here were open when WP-350 first
+landed; current Sprint 1 status and superseding evidence live in `docs/compare/sprint-1.md`.
 
 ## Behavior
 
@@ -33,7 +32,7 @@ headers, resource discovery, project trust, and session cancellation. The Go con
 each scenario through the native public API and compares canonical JSON. This `F11-native` family
 is the core-runner precursor to the unmodified JavaScript example matrix in Sprint 3.
 
-Sprint 1 still has to close the known native-runner gaps: event emission must match upstream's
+At integration time, Sprint 1 still had to close the known native-runner gaps: event emission must match upstream's
 void/error-isolation contract, project-trust handlers need the limited context and startup order,
 provider registration must use the canonical provider/auth types without dropping queued entries,
 and input identity, panic-origin stacks, registration conflicts, and nil wiring need upstream-derived
@@ -52,7 +51,7 @@ git diff --check
 CGO_ENABLED=0 GOOS={linux,darwin} GOARCH={amd64,arm64} go build ./...
 ```
 
-## Acceptance status
+## Status at integration time
 
 | Criterion | Status | Evidence |
 |---|---|---|

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 3,
   "argumentCases": [
     {
       "name": "plain",
@@ -248,8 +248,53 @@
       "expected": "<skill name=\"inspect\" location=\"<fixture>/skills/inspect/SKILL.md\">\nReferences are relative to <fixture>/skills/inspect.\n\nUse inspection tools.\n</skill>\n\nCheck errors."
     }
   ],
+  "harnessSubstitutionCases": [
+    {
+      "name": "positional-slice-and-all",
+      "content": "$1 ${@:2} $ARGUMENTS",
+      "args": [
+        "hello world",
+        "test",
+        "$1"
+      ],
+      "expected": "hello world test $1 hello world test $1"
+    },
+    {
+      "name": "default-syntax-is-literal",
+      "content": "${4:-fallback}",
+      "args": [
+        "one",
+        "two"
+      ],
+      "expected": "${4:-fallback}"
+    },
+    {
+      "name": "sequential-reexpansion",
+      "content": "$1",
+      "args": [
+        "$ARGUMENTS",
+        "tail"
+      ],
+      "expected": "$ARGUMENTS tail"
+    },
+    {
+      "name": "slice-zero-length-quirk",
+      "content": "${@:2:0}",
+      "args": [
+        "one",
+        "two",
+        "three"
+      ],
+      "expected": ""
+    }
+  ],
   "harnessPrompts": {
     "promptTemplates": [
+      {
+        "name": "empty",
+        "description": "",
+        "content": ""
+      },
       {
         "name": "review",
         "description": "Review a path",
@@ -267,6 +312,16 @@
       }
     ],
     "diagnostics": [],
+    "directPrompt": {
+      "promptTemplates": [
+        {
+          "name": "empty",
+          "description": "",
+          "content": ""
+        }
+      ],
+      "diagnostics": []
+    },
     "invocation": "Review file.go with focus errors"
   },
   "discovery": {
@@ -280,6 +335,10 @@
         "content": "---\nname: hidden\ndescription: Explicit invocation only.\ndisable-model-invocation: true\n---\nHidden body."
       },
       {
+        "path": "skills/broken/SKILL.md",
+        "content": "---\nname: broken\n---\nThis skill is missing its required description."
+      },
+      {
         "path": "skills/root.md",
         "content": "---\nname: root\ndescription: Root markdown skill.\n---\nRoot body."
       },
@@ -290,6 +349,10 @@
       {
         "path": "prompts/skill:missing.md",
         "content": "Fallback template: $1"
+      },
+      {
+        "path": "prompts/empty.md",
+        "content": ""
       },
       {
         "path": "prompts/unicode.md",
@@ -344,8 +407,28 @@
         }
       }
     ],
-    "diagnostics": [],
+    "diagnostics": [
+      {
+        "type": "warning",
+        "message": "description is required",
+        "path": "<fixture>/skills/broken/SKILL.md"
+      }
+    ],
     "templates": [
+      {
+        "name": "empty",
+        "description": "",
+        "argumentHint": null,
+        "content": "",
+        "filePath": "<fixture>/prompts/empty.md",
+        "sourceInfo": {
+          "path": "<fixture>/prompts/empty.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/prompts"
+        }
+      },
       {
         "name": "review",
         "description": "Review a path",
@@ -390,6 +473,18 @@
       }
     ],
     "commands": [
+      {
+        "name": "empty",
+        "description": "",
+        "source": "prompt",
+        "sourceInfo": {
+          "path": "<fixture>/prompts/empty.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/prompts"
+        }
+      },
       {
         "name": "review",
         "description": "Review a path",
@@ -460,6 +555,747 @@
           "scope": "temporary",
           "origin": "top-level",
           "baseDir": "<fixture>/skills"
+        }
+      }
+    ],
+    "rpcCommandsWhenSkillCommandsDisabled": [
+      {
+        "name": "empty",
+        "description": "",
+        "source": "prompt",
+        "sourceInfo": {
+          "path": "<fixture>/prompts/empty.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/prompts"
+        }
+      },
+      {
+        "name": "review",
+        "description": "Review a path",
+        "source": "prompt",
+        "sourceInfo": {
+          "path": "<fixture>/prompts/review.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/prompts"
+        }
+      },
+      {
+        "name": "skill:missing",
+        "description": "Fallback template: $1",
+        "source": "prompt",
+        "sourceInfo": {
+          "path": "<fixture>/prompts/skill:missing.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/prompts"
+        }
+      },
+      {
+        "name": "unicode",
+        "description": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ud83c...",
+        "source": "prompt",
+        "sourceInfo": {
+          "path": "<fixture>/prompts/unicode.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/prompts"
+        }
+      },
+      {
+        "name": "skill:hidden",
+        "description": "Explicit invocation only.",
+        "source": "skill",
+        "sourceInfo": {
+          "path": "<fixture>/skills/hidden/SKILL.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/skills/hidden"
+        }
+      },
+      {
+        "name": "skill:inspect",
+        "description": "Inspect files & report findings.",
+        "source": "skill",
+        "sourceInfo": {
+          "path": "<fixture>/skills/inspect/SKILL.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/skills/inspect"
+        }
+      },
+      {
+        "name": "skill:root",
+        "description": "Root markdown skill.",
+        "source": "skill",
+        "sourceInfo": {
+          "path": "<fixture>/skills/root.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/skills"
+        }
+      }
+    ],
+    "builtinCommands": [
+      {
+        "name": "settings",
+        "description": "Open settings menu",
+        "argumentHint": null
+      },
+      {
+        "name": "model",
+        "description": "Select model (opens selector UI)",
+        "argumentHint": "<provider/model>"
+      },
+      {
+        "name": "scoped-models",
+        "description": "Enable/disable models for Ctrl+P cycling",
+        "argumentHint": null
+      },
+      {
+        "name": "export",
+        "description": "Export session (HTML default, or specify path: .html/.jsonl)",
+        "argumentHint": null
+      },
+      {
+        "name": "import",
+        "description": "Import and resume a session from a JSONL file",
+        "argumentHint": null
+      },
+      {
+        "name": "share",
+        "description": "Share session as a secret GitHub gist",
+        "argumentHint": null
+      },
+      {
+        "name": "copy",
+        "description": "Copy last agent message to clipboard",
+        "argumentHint": null
+      },
+      {
+        "name": "name",
+        "description": "Set session display name",
+        "argumentHint": null
+      },
+      {
+        "name": "session",
+        "description": "Show session info and stats",
+        "argumentHint": null
+      },
+      {
+        "name": "changelog",
+        "description": "Show changelog entries",
+        "argumentHint": null
+      },
+      {
+        "name": "hotkeys",
+        "description": "Show all keyboard shortcuts",
+        "argumentHint": null
+      },
+      {
+        "name": "fork",
+        "description": "Create a new fork from a previous user message",
+        "argumentHint": null
+      },
+      {
+        "name": "clone",
+        "description": "Duplicate the current session at the current position",
+        "argumentHint": null
+      },
+      {
+        "name": "tree",
+        "description": "Navigate session tree (switch branches)",
+        "argumentHint": null
+      },
+      {
+        "name": "trust",
+        "description": "Save project trust decision for future sessions",
+        "argumentHint": null
+      },
+      {
+        "name": "login",
+        "description": "Configure provider authentication",
+        "argumentHint": "<provider>"
+      },
+      {
+        "name": "logout",
+        "description": "Remove provider authentication",
+        "argumentHint": null
+      },
+      {
+        "name": "new",
+        "description": "Start a new session",
+        "argumentHint": null
+      },
+      {
+        "name": "compact",
+        "description": "Manually compact the session context",
+        "argumentHint": null
+      },
+      {
+        "name": "resume",
+        "description": "Resume a different session",
+        "argumentHint": null
+      },
+      {
+        "name": "reload",
+        "description": "Reload keybindings, extensions, skills, prompts, themes, and context files",
+        "argumentHint": null
+      },
+      {
+        "name": "quit",
+        "description": "Quit pi",
+        "argumentHint": null
+      }
+    ]
+  },
+  "resourceLoader": {
+    "files": [
+      {
+        "path": "resource/project/.git/.keep",
+        "content": ""
+      },
+      {
+        "path": "resource/project/.pi/skills/direct-wins/SKILL.md",
+        "content": "---\nname: direct-wins\ndescription: Project direct-wins skill\n---\nProject direct body."
+      },
+      {
+        "path": "resource/project/.pi/skills/project-wins/SKILL.md",
+        "content": "---\nname: project-wins\ndescription: Project project-wins skill\n---\nProject winner body."
+      },
+      {
+        "path": "resource/project/.pi/skills/broken/SKILL.md",
+        "content": "---\nname: broken\n---\nMissing description."
+      },
+      {
+        "path": "resource/agent/skills/direct-wins/SKILL.md",
+        "content": "---\nname: direct-wins\ndescription: User direct-wins skill\n---\nUser direct body."
+      },
+      {
+        "path": "resource/agent/skills/project-wins/SKILL.md",
+        "content": "---\nname: project-wins\ndescription: User project-wins skill\n---\nUser losing body."
+      },
+      {
+        "path": "resource/agent/skills/user-wins/SKILL.md",
+        "content": "---\nname: user-wins\ndescription: User user-wins skill\n---\nUser winner body."
+      },
+      {
+        "path": "resource/direct/skills/direct-wins/SKILL.md",
+        "content": "---\nname: direct-wins\ndescription: CLI direct-wins skill\n---\nCLI winner body."
+      },
+      {
+        "path": "resource/direct/skills/direct-only/SKILL.md",
+        "content": "---\nname: direct-only\ndescription: Direct-only skill\n---\nDirect-only body."
+      },
+      {
+        "path": "resource/package/skills/direct-wins/SKILL.md",
+        "content": "---\nname: direct-wins\ndescription: Package direct-wins skill\n---\nPackage direct body."
+      },
+      {
+        "path": "resource/package/skills/project-wins/SKILL.md",
+        "content": "---\nname: project-wins\ndescription: Package project-wins skill\n---\nPackage project body."
+      },
+      {
+        "path": "resource/package/skills/user-wins/SKILL.md",
+        "content": "---\nname: user-wins\ndescription: Package user-wins skill\n---\nPackage user body."
+      },
+      {
+        "path": "resource/package/skills/package-only/SKILL.md",
+        "content": "---\nname: package-only\ndescription: Package-only skill\n---\nPackage-only body."
+      },
+      {
+        "path": "resource/project/.pi/prompts/x.md",
+        "content": "Project x prompt."
+      },
+      {
+        "path": "resource/project/.pi/prompts/project-wins.md",
+        "content": "Project prompt winner."
+      },
+      {
+        "path": "resource/agent/prompts/x.md",
+        "content": "User x prompt."
+      },
+      {
+        "path": "resource/agent/prompts/project-wins.md",
+        "content": "User project prompt."
+      },
+      {
+        "path": "resource/agent/prompts/user-wins.md",
+        "content": "User prompt winner."
+      },
+      {
+        "path": "resource/direct/prompts/x.md",
+        "content": ""
+      },
+      {
+        "path": "resource/direct/prompts/repeat.md",
+        "content": "Repeated direct prompt."
+      },
+      {
+        "path": "resource/package/prompts/x.md",
+        "content": "Package x prompt."
+      },
+      {
+        "path": "resource/package/prompts/project-wins.md",
+        "content": "Package project prompt."
+      },
+      {
+        "path": "resource/package/prompts/user-wins.md",
+        "content": "Package user prompt."
+      },
+      {
+        "path": "resource/package/prompts/package-only.md",
+        "content": "Package-only prompt."
+      },
+      {
+        "path": "resource/package/package.json",
+        "content": "{\"name\":\"pi-go-f8-package\",\"version\":\"1.0.0\",\"pi\":{\"skills\":[\"skills\"],\"prompts\":[\"prompts\"]}}"
+      },
+      {
+        "path": "resource/agent/settings.json",
+        "content": "{\"packages\":[\"../package\"]}"
+      }
+    ],
+    "cwd": "<fixture>/resource/project",
+    "agentDir": "<fixture>/resource/agent",
+    "skillPaths": [
+      "<fixture>/resource/direct/skills/direct-wins/SKILL.md",
+      "<fixture>/resource/direct/skills/direct-only/SKILL.md",
+      "<fixture>/resource/direct/skills/direct-only/SKILL.md",
+      "<fixture>/resource/missing-skill"
+    ],
+    "promptPaths": [
+      "<fixture>/resource/direct/prompts/x.md",
+      "<fixture>/resource/direct/prompts/repeat.md",
+      "<fixture>/resource/direct/prompts/repeat.md",
+      "<fixture>/resource/missing-prompt"
+    ],
+    "packageSkillPaths": [
+      "<fixture>/resource/package/skills"
+    ],
+    "packagePromptPaths": [
+      "<fixture>/resource/package/prompts"
+    ],
+    "skills": [
+      {
+        "name": "direct-wins",
+        "description": "Project direct-wins skill",
+        "filePath": "<fixture>/resource/project/.pi/skills/direct-wins/SKILL.md",
+        "baseDir": "<fixture>/resource/project/.pi/skills/direct-wins",
+        "disableModelInvocation": false,
+        "sourceInfo": {
+          "path": "<fixture>/resource/project/.pi/skills/direct-wins/SKILL.md",
+          "source": "auto",
+          "scope": "project",
+          "origin": "top-level",
+          "baseDir": "<fixture>/resource/project/.pi"
+        }
+      },
+      {
+        "name": "project-wins",
+        "description": "Project project-wins skill",
+        "filePath": "<fixture>/resource/project/.pi/skills/project-wins/SKILL.md",
+        "baseDir": "<fixture>/resource/project/.pi/skills/project-wins",
+        "disableModelInvocation": false,
+        "sourceInfo": {
+          "path": "<fixture>/resource/project/.pi/skills/project-wins/SKILL.md",
+          "source": "auto",
+          "scope": "project",
+          "origin": "top-level",
+          "baseDir": "<fixture>/resource/project/.pi"
+        }
+      },
+      {
+        "name": "user-wins",
+        "description": "User user-wins skill",
+        "filePath": "<fixture>/resource/agent/skills/user-wins/SKILL.md",
+        "baseDir": "<fixture>/resource/agent/skills/user-wins",
+        "disableModelInvocation": false,
+        "sourceInfo": {
+          "path": "<fixture>/resource/agent/skills/user-wins/SKILL.md",
+          "source": "auto",
+          "scope": "user",
+          "origin": "top-level",
+          "baseDir": "<fixture>/resource/agent"
+        }
+      },
+      {
+        "name": "package-only",
+        "description": "Package-only skill",
+        "filePath": "<fixture>/resource/package/skills/package-only/SKILL.md",
+        "baseDir": "<fixture>/resource/package/skills/package-only",
+        "disableModelInvocation": false,
+        "sourceInfo": {
+          "path": "<fixture>/resource/package/skills/package-only/SKILL.md",
+          "source": "../package",
+          "scope": "user",
+          "origin": "package",
+          "baseDir": "<fixture>/resource/package"
+        }
+      },
+      {
+        "name": "direct-only",
+        "description": "Direct-only skill",
+        "filePath": "<fixture>/resource/direct/skills/direct-only/SKILL.md",
+        "baseDir": "<fixture>/resource/direct/skills/direct-only",
+        "disableModelInvocation": false,
+        "sourceInfo": {
+          "path": "<fixture>/resource/direct/skills/direct-only/SKILL.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/resource/direct/skills/direct-only"
+        }
+      }
+    ],
+    "templates": [
+      {
+        "name": "project-wins",
+        "description": "Project prompt winner.",
+        "argumentHint": null,
+        "content": "Project prompt winner.",
+        "filePath": "<fixture>/resource/project/.pi/prompts/project-wins.md",
+        "sourceInfo": {
+          "path": "<fixture>/resource/project/.pi/prompts/project-wins.md",
+          "source": "auto",
+          "scope": "project",
+          "origin": "top-level",
+          "baseDir": "<fixture>/resource/project/.pi"
+        }
+      },
+      {
+        "name": "x",
+        "description": "Project x prompt.",
+        "argumentHint": null,
+        "content": "Project x prompt.",
+        "filePath": "<fixture>/resource/project/.pi/prompts/x.md",
+        "sourceInfo": {
+          "path": "<fixture>/resource/project/.pi/prompts/x.md",
+          "source": "auto",
+          "scope": "project",
+          "origin": "top-level",
+          "baseDir": "<fixture>/resource/project/.pi"
+        }
+      },
+      {
+        "name": "user-wins",
+        "description": "User prompt winner.",
+        "argumentHint": null,
+        "content": "User prompt winner.",
+        "filePath": "<fixture>/resource/agent/prompts/user-wins.md",
+        "sourceInfo": {
+          "path": "<fixture>/resource/agent/prompts/user-wins.md",
+          "source": "auto",
+          "scope": "user",
+          "origin": "top-level",
+          "baseDir": "<fixture>/resource/agent"
+        }
+      },
+      {
+        "name": "package-only",
+        "description": "Package-only prompt.",
+        "argumentHint": null,
+        "content": "Package-only prompt.",
+        "filePath": "<fixture>/resource/package/prompts/package-only.md",
+        "sourceInfo": {
+          "path": "<fixture>/resource/package/prompts/package-only.md",
+          "source": "../package",
+          "scope": "user",
+          "origin": "package",
+          "baseDir": "<fixture>/resource/package"
+        }
+      },
+      {
+        "name": "repeat",
+        "description": "Repeated direct prompt.",
+        "argumentHint": null,
+        "content": "Repeated direct prompt.",
+        "filePath": "<fixture>/resource/direct/prompts/repeat.md",
+        "sourceInfo": {
+          "path": "<fixture>/resource/direct/prompts/repeat.md",
+          "source": "local",
+          "scope": "temporary",
+          "origin": "top-level",
+          "baseDir": "<fixture>/resource/direct/prompts"
+        }
+      }
+    ],
+    "diagnostics": [
+      {
+        "type": "warning",
+        "message": "description is required",
+        "path": "<fixture>/resource/project/.pi/skills/broken/SKILL.md"
+      },
+      {
+        "type": "warning",
+        "message": "skill path does not exist",
+        "path": "<fixture>/resource/missing-skill"
+      },
+      {
+        "type": "collision",
+        "message": "name \"direct-wins\" collision",
+        "path": "<fixture>/resource/agent/skills/direct-wins/SKILL.md",
+        "collision": {
+          "resourceType": "skill",
+          "name": "direct-wins",
+          "winnerPath": "<fixture>/resource/project/.pi/skills/direct-wins/SKILL.md",
+          "loserPath": "<fixture>/resource/agent/skills/direct-wins/SKILL.md"
+        }
+      },
+      {
+        "type": "collision",
+        "message": "name \"project-wins\" collision",
+        "path": "<fixture>/resource/agent/skills/project-wins/SKILL.md",
+        "collision": {
+          "resourceType": "skill",
+          "name": "project-wins",
+          "winnerPath": "<fixture>/resource/project/.pi/skills/project-wins/SKILL.md",
+          "loserPath": "<fixture>/resource/agent/skills/project-wins/SKILL.md"
+        }
+      },
+      {
+        "type": "collision",
+        "message": "name \"direct-wins\" collision",
+        "path": "<fixture>/resource/package/skills/direct-wins/SKILL.md",
+        "collision": {
+          "resourceType": "skill",
+          "name": "direct-wins",
+          "winnerPath": "<fixture>/resource/project/.pi/skills/direct-wins/SKILL.md",
+          "loserPath": "<fixture>/resource/package/skills/direct-wins/SKILL.md"
+        }
+      },
+      {
+        "type": "collision",
+        "message": "name \"project-wins\" collision",
+        "path": "<fixture>/resource/package/skills/project-wins/SKILL.md",
+        "collision": {
+          "resourceType": "skill",
+          "name": "project-wins",
+          "winnerPath": "<fixture>/resource/project/.pi/skills/project-wins/SKILL.md",
+          "loserPath": "<fixture>/resource/package/skills/project-wins/SKILL.md"
+        }
+      },
+      {
+        "type": "collision",
+        "message": "name \"user-wins\" collision",
+        "path": "<fixture>/resource/package/skills/user-wins/SKILL.md",
+        "collision": {
+          "resourceType": "skill",
+          "name": "user-wins",
+          "winnerPath": "<fixture>/resource/agent/skills/user-wins/SKILL.md",
+          "loserPath": "<fixture>/resource/package/skills/user-wins/SKILL.md"
+        }
+      },
+      {
+        "type": "collision",
+        "message": "name \"direct-wins\" collision",
+        "path": "<fixture>/resource/direct/skills/direct-wins/SKILL.md",
+        "collision": {
+          "resourceType": "skill",
+          "name": "direct-wins",
+          "winnerPath": "<fixture>/resource/project/.pi/skills/direct-wins/SKILL.md",
+          "loserPath": "<fixture>/resource/direct/skills/direct-wins/SKILL.md"
+        }
+      },
+      {
+        "type": "collision",
+        "message": "name \"/project-wins\" collision",
+        "path": "<fixture>/resource/agent/prompts/project-wins.md",
+        "collision": {
+          "resourceType": "prompt",
+          "name": "project-wins",
+          "winnerPath": "<fixture>/resource/project/.pi/prompts/project-wins.md",
+          "loserPath": "<fixture>/resource/agent/prompts/project-wins.md"
+        }
+      },
+      {
+        "type": "collision",
+        "message": "name \"/x\" collision",
+        "path": "<fixture>/resource/agent/prompts/x.md",
+        "collision": {
+          "resourceType": "prompt",
+          "name": "x",
+          "winnerPath": "<fixture>/resource/project/.pi/prompts/x.md",
+          "loserPath": "<fixture>/resource/agent/prompts/x.md"
+        }
+      },
+      {
+        "type": "collision",
+        "message": "name \"/project-wins\" collision",
+        "path": "<fixture>/resource/package/prompts/project-wins.md",
+        "collision": {
+          "resourceType": "prompt",
+          "name": "project-wins",
+          "winnerPath": "<fixture>/resource/project/.pi/prompts/project-wins.md",
+          "loserPath": "<fixture>/resource/package/prompts/project-wins.md"
+        }
+      },
+      {
+        "type": "collision",
+        "message": "name \"/user-wins\" collision",
+        "path": "<fixture>/resource/package/prompts/user-wins.md",
+        "collision": {
+          "resourceType": "prompt",
+          "name": "user-wins",
+          "winnerPath": "<fixture>/resource/agent/prompts/user-wins.md",
+          "loserPath": "<fixture>/resource/package/prompts/user-wins.md"
+        }
+      },
+      {
+        "type": "collision",
+        "message": "name \"/x\" collision",
+        "path": "<fixture>/resource/package/prompts/x.md",
+        "collision": {
+          "resourceType": "prompt",
+          "name": "x",
+          "winnerPath": "<fixture>/resource/project/.pi/prompts/x.md",
+          "loserPath": "<fixture>/resource/package/prompts/x.md"
+        }
+      },
+      {
+        "type": "collision",
+        "message": "name \"/x\" collision",
+        "path": "<fixture>/resource/direct/prompts/x.md",
+        "collision": {
+          "resourceType": "prompt",
+          "name": "x",
+          "winnerPath": "<fixture>/resource/project/.pi/prompts/x.md",
+          "loserPath": "<fixture>/resource/direct/prompts/x.md"
+        }
+      },
+      {
+        "type": "error",
+        "message": "Prompt template path does not exist",
+        "path": "<fixture>/resource/missing-prompt"
+      }
+    ]
+  },
+  "resourceLoaderExtension": {
+    "files": [
+      {
+        "path": "loader-extension/project/.git/.keep",
+        "content": ""
+      },
+      {
+        "path": "loader-extension/skills/instant/SKILL.md",
+        "content": "---\nname: instant\ndescription: Immediate extension skill\n---\nInstant skill body."
+      },
+      {
+        "path": "loader-extension/prompts/first/shared.md",
+        "content": "First shared prompt."
+      },
+      {
+        "path": "loader-extension/prompts/second/shared.md",
+        "content": "Second shared prompt."
+      }
+    ],
+    "cwd": "<fixture>/loader-extension/project",
+    "agentDir": "<fixture>/loader-extension/agent",
+    "skillPaths": [
+      {
+        "path": "../skills/instant",
+        "metadata": {
+          "source": "extension:first",
+          "scope": "temporary",
+          "origin": "extension",
+          "baseDir": "../skills"
+        }
+      },
+      {
+        "path": "file://<fixture>/loader-extension/skills/instant",
+        "metadata": {
+          "source": "extension:second",
+          "scope": "temporary",
+          "origin": "extension",
+          "baseDir": "file://<fixture>/loader-extension/skills"
+        }
+      },
+      {
+        "path": "../missing-skill",
+        "metadata": {
+          "source": "extension:missing",
+          "scope": "temporary",
+          "origin": "extension"
+        }
+      }
+    ],
+    "promptPaths": [
+      {
+        "path": "../prompts/first/shared.md",
+        "metadata": {
+          "source": "extension:prompt-one",
+          "scope": "temporary",
+          "origin": "extension",
+          "baseDir": "../prompts/first"
+        }
+      },
+      {
+        "path": "file://<fixture>/loader-extension/prompts/second/shared.md",
+        "metadata": {
+          "source": "extension:prompt-two",
+          "scope": "temporary",
+          "origin": "extension",
+          "baseDir": "file://<fixture>/loader-extension/prompts/second"
+        }
+      }
+    ],
+    "skills": [
+      {
+        "name": "instant",
+        "description": "Immediate extension skill",
+        "filePath": "<fixture>/loader-extension/skills/instant/SKILL.md",
+        "baseDir": "<fixture>/loader-extension/skills/instant",
+        "disableModelInvocation": false,
+        "sourceInfo": {
+          "path": "<fixture>/loader-extension/skills/instant/SKILL.md",
+          "source": "extension:second",
+          "scope": "temporary",
+          "origin": "extension",
+          "baseDir": "<fixture>/loader-extension/skills"
+        }
+      }
+    ],
+    "skillDiagnostics": [
+      {
+        "type": "warning",
+        "message": "skill path does not exist",
+        "path": "<fixture>/loader-extension/missing-skill"
+      }
+    ],
+    "templates": [
+      {
+        "name": "shared",
+        "description": "First shared prompt.",
+        "argumentHint": null,
+        "content": "First shared prompt.",
+        "filePath": "<fixture>/loader-extension/prompts/first/shared.md",
+        "sourceInfo": {
+          "path": "<fixture>/loader-extension/prompts/first/shared.md",
+          "source": "extension:prompt-one",
+          "scope": "temporary",
+          "origin": "extension",
+          "baseDir": "<fixture>/loader-extension/prompts/first"
+        }
+      }
+    ],
+    "promptDiagnostics": [
+      {
+        "type": "collision",
+        "message": "name \"/shared\" collision",
+        "path": "<fixture>/loader-extension/prompts/second/shared.md",
+        "collision": {
+          "resourceType": "prompt",
+          "name": "shared",
+          "winnerPath": "<fixture>/loader-extension/prompts/first/shared.md",
+          "loserPath": "<fixture>/loader-extension/prompts/second/shared.md"
         }
       }
     ]

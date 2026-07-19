@@ -1,5 +1,5 @@
-// Session runtime demonstrates replacing the active AgentSession while a host
-// keeps session-local subscriptions and extension bindings current.
+// Session runtime demonstrates recreating cwd-bound services when the active
+// AgentSession is replaced and rebinding session-local host state.
 package main
 
 import (
@@ -26,20 +26,34 @@ func main() {
 		}
 	}()
 
+	agentDir := filepath.Join(root, "agent")
 	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
-	provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("initial response")})
 	manager, err := sessionstore.Create(root, filepath.Join(root, "sessions"))
 	if err != nil {
 		log.Fatal(err)
 	}
-	host, err := codingagent.NewAgentSessionRuntime(ctx, codingagent.AgentSessionOptions{
-		CWD: root, AgentDir: filepath.Join(root, "agent"), SessionManager: manager,
-		StreamFn: provider.StreamSimple, Model: provider.GetModel(),
+	createRuntime := codingagent.CreateAgentSessionRuntimeFactory(func(_ context.Context, options codingagent.AgentSessionOptions) (*codingagent.AgentSessionResult, error) {
+		services, err := codingagent.CreateAgentSessionServices(codingagent.CreateAgentSessionServicesOptions{
+			CWD: options.CWD, AgentDir: options.AgentDir,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return codingagent.CreateAgentSessionFromServices(codingagent.CreateAgentSessionFromServicesOptions{
+			Services: services, SessionManager: options.SessionManager,
+			SessionStartEvent: options.SessionStartEvent, Model: provider.GetModel(),
+			ThinkingLevel: options.ThinkingLevel, ScopedModels: options.ScopedModels,
+			Tools: options.Tools, ExcludeTools: options.ExcludeTools,
+			NoTools: options.NoTools, CustomTools: options.CustomTools,
+		})
 	})
+	runtime, err := codingagent.NewAgentSessionRuntime(ctx, codingagent.AgentSessionOptions{
+		CWD: root, AgentDir: agentDir, SessionManager: manager,
+	}, createRuntime)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer host.Dispose(ctx)
+	defer runtime.Dispose(ctx)
 
 	var unsubscribe func()
 	bindSession := func(session *codingagent.AgentSession) error {
@@ -56,26 +70,22 @@ func main() {
 		})
 		return nil
 	}
-	host.SetRebindSession(bindSession)
-	if err := bindSession(host.Session()); err != nil {
+	runtime.SetRebindSession(bindSession)
+	if err := bindSession(runtime.Session()); err != nil {
 		log.Fatal(err)
 	}
-	if err := host.Session().PromptSync(ctx, "hello"); err != nil {
-		log.Fatal(err)
-	}
-	original := host.Session().Manager().GetSessionFile()
-	fmt.Println("Initial session:", original)
 
-	if _, err := host.NewSession(ctx, nil); err != nil {
+	originalSessionFile := runtime.Session().Manager().GetSessionFile()
+	fmt.Println("Initial session:", originalSessionFile)
+	if _, err := runtime.NewSession(ctx, nil); err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("After NewSession():", host.Session().Manager().GetSessionFile())
-
-	if original != "" {
-		if _, err := host.SwitchSession(ctx, original, nil); err != nil {
+	fmt.Println("After NewSession():", runtime.Session().Manager().GetSessionFile())
+	if originalSessionFile != "" {
+		if _, err := runtime.SwitchSession(ctx, originalSessionFile, nil); err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println("After SwitchSession():", host.Session().Manager().GetSessionFile())
+		fmt.Println("After SwitchSession():", runtime.Session().Manager().GetSessionFile())
 	}
 	if unsubscribe != nil {
 		unsubscribe()

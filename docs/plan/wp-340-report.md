@@ -1,9 +1,7 @@
 # WP-340 skills, prompt templates, and slash resolution report
 
-Status: **integrated, Sprint 1 parity still red**. The retained F8/F9 cases pass, but the current
-surface loses resolved-resource metadata, applies direct-path precedence incorrectly, gates core
-and RPC commands behind `enableSkillCommands`, and does not yet cover upstream's complete dedupe,
-diagnostic, empty-description, `/x` collision, or harness substitution behavior.
+Status: **historical integration snapshot**. The gaps described here were open when WP-340 first
+landed; current Sprint 1 status and superseding evidence live in `docs/compare/sprint-1.md`.
 
 ## Behavior
 
@@ -45,7 +43,7 @@ CGO_ENABLED=0 GOOS={linux,darwin} GOARCH={amd64,arm64} go build ./...
 git diff --check
 ```
 
-## Acceptance status
+## Status at integration time
 
 | Criterion | Status | Evidence |
 |---|---|---|

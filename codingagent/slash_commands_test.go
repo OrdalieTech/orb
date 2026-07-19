@@ -70,7 +70,7 @@ func TestSlashResolverInputHandledErrorsAndCommandList(t *testing.T) {
 	if len(commands) != 3 || commands[0].Source != SlashCommandExtension || commands[1].Source != SlashCommandPrompt || commands[2].Name != "skill:inspect" {
 		t.Fatalf("commands = %#v", commands)
 	}
-	if len(resolver.Commands(false)) != 2 {
+	if len(resolver.Commands(false)) != 3 {
 		t.Fatalf("command metadata = %#v", commands)
 	}
 }

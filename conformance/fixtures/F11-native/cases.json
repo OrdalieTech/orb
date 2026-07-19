@@ -149,5 +149,159 @@
     "result": {
       "cancel": true
     }
+  },
+  "genericVoidAndPanic": {
+    "calls": [
+      "returns-value",
+      "panic",
+      "after-panic"
+    ],
+    "result": null,
+    "errors": [
+      {
+        "extensionPath": "panic-origin",
+        "event": "agent_start",
+        "error": "panic-origin",
+        "hasStack": true,
+        "stackIncludesOrigin": true
+      }
+    ]
+  },
+  "nilHandler": {
+    "calls": [
+      "after-nil"
+    ],
+    "errors": [
+      {
+        "extensionPath": "nil-handler",
+        "event": "agent_start",
+        "reported": true
+      }
+    ]
+  },
+  "inputIdentity": {
+    "copied": {
+      "action": "transform",
+      "text": "same",
+      "images": [
+        {
+          "type": "image",
+          "data": "original",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    "retained": {
+      "action": "continue"
+    }
+  },
+  "projectTrustBoundary": {
+    "order": [
+      "broken",
+      "undecided",
+      "decided"
+    ],
+    "context": {
+      "cwd": "/fixture",
+      "mode": "print",
+      "hasUI": false,
+      "hasGetSystemPrompt": false,
+      "hasFullUI": false
+    },
+    "result": {
+      "trusted": "no",
+      "remember": true
+    },
+    "errors": [
+      {
+        "extensionPath": "trust-broken",
+        "event": "project_trust",
+        "error": "trust-boom"
+      }
+    ]
+  },
+  "projectTrustStartupOrder": [
+    "project_trust",
+    "register_provider"
+  ],
+  "providerRegistration": {
+    "registrations": [
+      {
+        "kind": "config",
+        "id": "config-first",
+        "name": "Config First",
+        "oauthName": "Fixture OAuth"
+      },
+      {
+        "kind": "config",
+        "id": "repeated-provider",
+        "name": "Repeated One",
+        "oauthName": null
+      },
+      {
+        "kind": "config",
+        "id": "repeated-provider",
+        "name": "Repeated Two",
+        "oauthName": null
+      },
+      {
+        "kind": "native",
+        "id": "native-provider",
+        "name": "Native Provider",
+        "apiKeyName": "Native API key",
+        "hasOAuth": false
+      },
+      {
+        "kind": "config",
+        "id": "post-bind",
+        "name": "Post Bind",
+        "oauthName": null
+      }
+    ],
+    "errors": [
+      {
+        "extensionPath": "broken-extension",
+        "event": "register_provider",
+        "error": "bad registration"
+      }
+    ],
+    "postBindError": null
+  },
+  "registrationConflicts": {
+    "toolDescriptions": [
+      "first-final"
+    ],
+    "commands": [
+      {
+        "name": "duplicate",
+        "invocationName": "duplicate:1",
+        "description": "first-final"
+      },
+      {
+        "name": "duplicate",
+        "invocationName": "duplicate:2",
+        "description": "second"
+      }
+    ],
+    "flag": {
+      "description": "first-final",
+      "value": true
+    }
+  },
+  "runnerLifecycle": {
+    "emitted": true,
+    "missing": false,
+    "records": [
+      {
+        "type": "session_shutdown",
+        "reason": "resume",
+        "targetSessionFile": "/fixture/next.jsonl"
+      }
+    ],
+    "errors": [
+      "shutdown-boom"
+    ],
+    "beforeInvalidation": "/fixture",
+    "staleError": "stale"
   }
 }

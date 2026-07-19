@@ -14,6 +14,8 @@ package codingagent
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 
@@ -104,8 +106,12 @@ type AgentSessionOptions struct {
 	Settings *config.SettingsManager
 
 	// Resources supplies context files, skills, prompt templates, and the
-	// system prompt. When nil resources are discovered from CWD and AgentDir.
+	// system prompt. ResourceLoader takes precedence when both are provided.
 	Resources *Resources
+
+	// ResourceLoader supplies reloadable resources and native extensions. When
+	// nil with no Resources override, DefaultResourceLoader is used.
+	ResourceLoader ResourceLoader
 
 	// ExtensionRegistry holds registered extensions. When non-nil and
 	// non-empty, extensions are bound to the session runtime.
@@ -145,8 +151,12 @@ type AgentSessionServices struct {
 	SettingsManager   *config.SettingsManager
 	ModelRegistry     *config.ModelRegistry
 	Resources         *Resources
+	ResourceLoader    ResourceLoader
 	ExtensionRegistry *extensions.Registry
+	Diagnostics       []AgentSessionRuntimeDiagnostic
 }
+
+var errMissingAgentSessionServices = errors.New("codingagent: agent session services are required")
 
 // AgentSessionResult is returned by [NewAgentSession].
 type AgentSessionResult struct {
@@ -243,6 +253,43 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 			return nil, err
 		}
 	}
+
+	// Resolve resources and bind extension providers before model selection so
+	// extension-supplied models participate in the same initial-model path as
+	// built-ins and models.json entries.
+	resourceLoader := opts.ResourceLoader
+	resources := opts.Resources
+	registry := opts.ExtensionRegistry
+	if resourceLoader == nil && resources == nil {
+		defaultLoader, loaderErr := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+			CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
+		})
+		if loaderErr != nil {
+			return nil, loaderErr
+		}
+		if loaderErr = defaultLoader.Reload(context.Background(), nil); loaderErr != nil {
+			return nil, loaderErr
+		}
+		resourceLoader = defaultLoader
+	}
+	if resourceLoader != nil {
+		resources = resourcesFromLoader(resourceLoader)
+		if registry == nil {
+			registry = resourceLoader.GetExtensions()
+		}
+	}
+	if resources == nil {
+		resources = &Resources{}
+	}
+	if registry == nil {
+		registry = extensions.NewRegistry(cwd)
+	}
+	providerDiagnostics := make([]AgentSessionRuntimeDiagnostic, 0)
+	registry.BindModelRegistry(modelRegistry, func(extensionError extensions.ExtensionError) {
+		providerDiagnostics = append(providerDiagnostics, AgentSessionRuntimeDiagnostic{
+			Type: "error", Message: fmt.Sprintf("Extension %q error: %s", extensionError.ExtensionPath, extensionError.Error),
+		})
+	})
 
 	streamFn := opts.StreamFn
 	if streamFn == nil {
@@ -362,13 +409,6 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		allowedToolNames = &empty
 	}
 
-	// Build system prompt from resources.
-	resources := opts.Resources
-	if resources == nil {
-		loaded := LoadResources(ResourceOptions{CWD: cwd, AgentDir: agentDir})
-		resources = &loaded
-	}
-
 	systemPrompt := buildSystemPromptFromResources(resources)
 
 	// Construct built-in tools for the resolved CWD.
@@ -379,10 +419,6 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 
 	// Register custom tools as synthetic SDK extensions so their source metadata
 	// matches upstream's per-tool <sdk:name> paths.
-	registry := opts.ExtensionRegistry
-	if registry == nil {
-		registry = extensions.NewRegistry(cwd)
-	}
 	if len(opts.CustomTools) > 0 {
 		for _, definition := range opts.CustomTools {
 			definition := definition
@@ -542,15 +578,18 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		return nil, err
 	}
 
+	diagnostics := append(resourceRuntimeDiagnostics(resources), providerDiagnostics...)
 	return &AgentSessionResult{
 		Session:              runtime,
 		ExtensionRegistry:    registry,
 		ModelFallbackMessage: fallback,
 		Services: &AgentSessionServices{
 			CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
-			ModelRegistry: modelRegistry, Resources: resources, ExtensionRegistry: registry,
+			ModelRegistry: modelRegistry, Resources: resources, ResourceLoader: resourceLoader,
+			ExtensionRegistry: registry,
+			Diagnostics:       append([]AgentSessionRuntimeDiagnostic(nil), diagnostics...),
 		},
-		Diagnostics: resourceRuntimeDiagnostics(resources),
+		Diagnostics: diagnostics,
 	}, nil
 }
 

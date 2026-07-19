@@ -24,19 +24,19 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 
 ## M2 — Headless parity (closes Sprint 1)
 
-- [ ] F2 green for the landed API shapes (openai-responses/completions, anthropic, google, vertex,
+- [x] F2 green for the landed API shapes (openai-responses/completions, anthropic, google, vertex,
       mistral, azure, bedrock, pi-messages). Codex shape, compat family, and further providers are
       Sprint-3 expansion (D26).
 - [ ] OAuth: Anthropic Pro/Max verified end-to-end once, documented; `auth.json` cross-compat
       fixture green. (ChatGPT/Codex, Copilot, xAI OAuth: Sprint-3 expansion.)
-- [ ] Harness `SessionRepo`/`FileSystem` parity landed (upstream harness types, jsonl-repo,
+- [x] Harness `SessionRepo`/`FileSystem` parity landed (upstream harness types, jsonl-repo,
       memory-repo, rehydrate-from-bytes) and wired into SessionRuntime.
-- [ ] Upstream's RPC test suite passes against `pi-go --mode rpc`; every exclusion listed with a
+- [x] Upstream's RPC test suite passes against `pi-go --mode rpc`; every exclusion listed with a
       reason; F7 transcript fixtures green.
-- [ ] F8, F9, F10 green — compaction picks the same boundaries as upstream on the fixture corpus.
-- [ ] SDK: all 13 ported examples run on faux; an external `go get` smoke module builds.
+- [x] F8, F9, F10 green — compaction picks the same boundaries as upstream on the fixture corpus.
+- [x] SDK: all 13 ported examples run on faux; an external `go get` smoke module builds.
 - [ ] Nightly live suite (Tier 3 below) wired into CI and running.
-- [ ] Trim pass #2 done.
+- [x] Trim pass #2 done.
 
 ## M3 — TUI parity (closes Sprint 2)
 

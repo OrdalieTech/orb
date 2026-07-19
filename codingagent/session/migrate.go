@@ -17,15 +17,6 @@ const sessionReadBufferSize = 1024 * 1024
 
 type IDGenerator func() (string, error)
 
-func parseFileEntryLine(line []byte) (*FileEntry, error) {
-	decoded, _ := textunicode.UTF8.NewDecoder().Bytes(line)
-	object, err := parseOrderedObject(decoded)
-	if err != nil {
-		return nil, err
-	}
-	return decodeFileEntry(object, json.RawMessage(decoded)), nil
-}
-
 // ParseSessionEntries parses valid JSON lines and silently skips blank or
 // malformed lines. It does not validate the session header or run migrations.
 func ParseSessionEntries(content string) []*FileEntry {

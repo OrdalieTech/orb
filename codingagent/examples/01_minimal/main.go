@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 
@@ -40,6 +41,14 @@ func main() {
 
 	if err := result.Session.Prompt(context.Background(), "What files are in the current directory?"); err != nil {
 		log.Fatal(err)
+	}
+	fmt.Println()
+	for _, message := range result.Session.Agent().State().Messages {
+		encoded, err := json.Marshal(message)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(string(encoded))
 	}
 	fmt.Println()
 }

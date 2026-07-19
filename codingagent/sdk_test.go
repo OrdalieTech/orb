@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -47,6 +48,214 @@ func TestNewAgentSessionMinimal(t *testing.T) {
 	}
 	if result.ModelFallbackMessage != "" {
 		t.Fatalf("unexpected fallback: %s", result.ModelFallbackMessage)
+	}
+}
+
+func TestSDKPublicSessionControlsMatchUpstream(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	manager, err := sessionstore.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := testFaux(100000)
+	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "accepted", 10)})
+	result, err := NewAgentSession(AgentSessionOptions{
+		CWD: cwd, AgentDir: agentDir, SessionManager: manager,
+		Model: provider.GetModel(), StreamFn: provider.StreamSimple, Resources: &Resources{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Session.Dispose()
+
+	if result.Session.Agent() == nil || result.Session.Agent().State().Model.ID != provider.GetModel().ID {
+		t.Fatalf("direct agent = %#v", result.Session.Agent())
+	}
+	if got := result.Session.GetActiveToolNames(); !reflect.DeepEqual(got, DefaultActiveToolNames) {
+		t.Fatalf("active tools = %#v", got)
+	}
+	if err := result.Session.SetActiveToolsByName([]string{"read", "missing"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := result.Session.GetActiveToolNames(); !reflect.DeepEqual(got, []string{"read"}) {
+		t.Fatalf("filtered active tools = %#v", got)
+	}
+
+	if err := result.Session.SendCustomMessage(context.Background(), CustomMessage{CustomType: "sdk", Content: nil, Display: true}, nil); err != nil {
+		t.Fatal(err)
+	}
+	state := result.Session.State()
+	custom, ok := state.Messages[len(state.Messages)-1].(*harness.CustomMessage)
+	if !ok || custom.CustomType != "sdk" || !reflect.DeepEqual(custom.Content, []any{}) {
+		t.Fatalf("custom message = %#v", state.Messages[len(state.Messages)-1])
+	}
+
+	var preflight []bool
+	if err := result.Session.PromptWithOptions(context.Background(), "hello", &PromptOptions{
+		PreflightResult: func(success bool) { preflight = append(preflight, success) },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(preflight, []bool{true}) {
+		t.Fatalf("preflight = %#v", preflight)
+	}
+}
+
+func TestSDKPromptOptionsReportUnknownModelPreflightRejection(t *testing.T) {
+	t.Setenv(config.EnvAgentDir, t.TempDir())
+	result, err := NewAgentSession(AgentSessionOptions{Resources: &Resources{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Session.Dispose()
+	var preflight []bool
+	err = result.Session.PromptWithOptions(context.Background(), "hello", &PromptOptions{
+		PreflightResult: func(success bool) { preflight = append(preflight, success) },
+	})
+	if err == nil || !strings.HasPrefix(err.Error(), "No API key found for the selected model.") {
+		t.Fatalf("prompt error = %v", err)
+	}
+	if !reflect.DeepEqual(preflight, []bool{false}) {
+		t.Fatalf("preflight = %#v", preflight)
+	}
+}
+
+func TestSDKServiceFactoriesReuseCWDServices(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	services, err := CreateAgentSessionServices(CreateAgentSessionServicesOptions{CWD: cwd, AgentDir: agentDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if services.CWD != cwd || services.AgentDir != agentDir || services.SettingsManager == nil || services.ModelRegistry == nil || services.Resources == nil || services.ExtensionRegistry == nil {
+		t.Fatalf("services = %#v", services)
+	}
+	manager, err := sessionstore.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := testFaux(100000)
+	result, err := CreateAgentSessionFromServices(CreateAgentSessionFromServicesOptions{
+		Services: services, SessionManager: manager, Model: provider.GetModel(), NoTools: "all",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Session.Dispose()
+	if result.Services != services || result.Session.Manager() != manager || result.Session.State().Model.ID != provider.GetModel().ID {
+		t.Fatalf("session result = %#v", result)
+	}
+}
+
+func TestSDKServiceFactoryForwardsResourceReloadOptions(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	trustCalls := 0
+	services, err := CreateAgentSessionServices(CreateAgentSessionServicesOptions{
+		CWD: cwd, AgentDir: agentDir,
+		ResourceLoaderOptions: &DefaultResourceLoaderOptions{
+			ExtensionFactories: []extensions.Factory{func(extensions.API) error { return nil }},
+		},
+		ResourceLoaderReloadOptions: &ResourceLoaderReloadOptions{
+			ResolveProjectTrust: func(_ context.Context, registry *extensions.Registry) (bool, error) {
+				trustCalls++
+				if !registry.HasPath("<inline:sdk-1>") {
+					t.Fatal("resource reload options ran before extension discovery")
+				}
+				return true, nil
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trustCalls != 1 || !services.SettingsManager.IsProjectTrusted() {
+		t.Fatalf("trust calls=%d trusted=%t", trustCalls, services.SettingsManager.IsProjectTrusted())
+	}
+}
+
+func sdkServiceProviderFactory(api extensions.API) error {
+	api.RegisterProviderConfig("sdk-service", extensions.ProviderConfig{
+		Name: "SDK service", BaseURL: "https://sdk.invalid/v1", APIKey: "sdk-key",
+		API: ai.APIOpenAIResponses,
+		Models: []extensions.ProviderModelConfig{{
+			ID: "sdk-model", Name: "SDK model", API: ai.APIOpenAIResponses,
+			BaseURL: "https://sdk.invalid/v1", Input: ai.InputModalities{ai.InputText},
+			ContextWindow: 1000, MaxTokens: 100,
+		}},
+	})
+	return nil
+}
+
+func TestSDKServiceFactoryPublishesNativeExtensionProvidersBeforeSessionCreation(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	services, err := CreateAgentSessionServices(CreateAgentSessionServicesOptions{
+		CWD: cwd, AgentDir: agentDir,
+		ResourceLoaderOptions: &DefaultResourceLoaderOptions{
+			ExtensionFactories: []extensions.Factory{sdkServiceProviderFactory},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := services.ModelRegistry.Find("sdk-service", "sdk-model"); !ok {
+		t.Fatal("cwd services returned before native extension providers were published")
+	}
+}
+
+func TestSDKDefaultModelSelectionIncludesResourceLoaderProviders(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+		CWD: cwd, AgentDir: agentDir, NoSkills: true, NoPromptTemplates: true, NoContextFiles: true,
+		AppendSystemPrompt: []string{}, ExtensionFactories: []extensions.Factory{sdkServiceProviderFactory},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loader.Reload(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	result, err := NewAgentSession(AgentSessionOptions{
+		CWD: cwd, AgentDir: agentDir, ResourceLoader: loader, NoTools: "all",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Session.Dispose()
+	model := result.Session.State().Model
+	if model == nil || model.Provider != "sdk-service" || model.ID != "sdk-model" {
+		t.Fatalf("selected model = %#v", model)
+	}
+}
+
+func TestSDKServiceFactoryAppliesExtensionFlagsAndReportsInvalidValues(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	services, err := CreateAgentSessionServices(CreateAgentSessionServicesOptions{
+		CWD: cwd, AgentDir: agentDir,
+		ResourceLoaderOptions: &DefaultResourceLoaderOptions{
+			ExtensionFactories: []extensions.Factory{func(api extensions.API) error {
+				api.RegisterFlag("enabled", extensions.Flag{Type: extensions.FlagBoolean})
+				api.RegisterFlag("label", extensions.Flag{Type: extensions.FlagString})
+				api.RegisterFlag("bad", extensions.Flag{Type: extensions.FlagString})
+				return nil
+			}},
+		},
+		ExtensionFlagValues: map[string]any{
+			"enabled": false, "label": "sdk", "bad": true, "unknown": true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := extensions.NewRunner(services.ExtensionRegistry, extensions.RunnerOptions{CWD: cwd})
+	flags := runner.FlagValues()
+	if flags["enabled"] != true || flags["label"] != "sdk" {
+		t.Fatalf("extension flags = %#v", flags)
+	}
+	wantDiagnostics := []AgentSessionRuntimeDiagnostic{
+		{Type: "error", Message: `Extension flag "--bad" requires a value`},
+		{Type: "error", Message: "Unknown option: --unknown"},
+	}
+	if !reflect.DeepEqual(services.Diagnostics, wantDiagnostics) {
+		t.Fatalf("diagnostics = %#v", services.Diagnostics)
 	}
 }
 

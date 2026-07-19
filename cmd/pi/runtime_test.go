@@ -238,116 +238,35 @@ func TestNoBuiltinToolsKeepsBuiltinsDiscoverableForExtensions(t *testing.T) {
 	}
 }
 
-func TestResolveSkeletonModelRequiresSupportedProviderAndModel(t *testing.T) {
-	root := t.TempDir()
-	manager, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := resolveSkeletonModel(CLIArgs{}, manager); err == nil || !strings.Contains(err.Error(), "--model") {
-		t.Fatalf("missing model error = %v", err)
-	}
-	provider := "anthropic"
-	model := "claude"
-	if _, err := resolveSkeletonModel(CLIArgs{Provider: &provider, Model: &model}, manager); err == nil || !strings.Contains(err.Error(), "not available") {
-		t.Fatalf("provider error = %v", err)
-	}
-}
-
-func TestNormalizeSkeletonCLIModelSyntax(t *testing.T) {
-	tests := []struct {
-		name         string
-		provider     *string
-		model        string
-		thinking     *string
-		wantProvider *string
-		wantModel    string
-		wantThinking *string
-	}{
-		{name: "bare model", model: "gpt-test", wantModel: "gpt-test"},
-		{name: "provider prefix", model: "OPENAI/gpt-test", wantProvider: stringValue("openai"), wantModel: "gpt-test"},
-		{name: "canonical provider", provider: stringValue("OpenAI"), model: "gpt-test", wantProvider: stringValue("openai"), wantModel: "gpt-test"},
-		{name: "matching repeated prefix", provider: stringValue("OPENAI"), model: "openai/gpt-test", wantProvider: stringValue("openai"), wantModel: "gpt-test"},
-		{name: "foreign slash belongs to custom id", provider: stringValue("openai"), model: "vendor/name", wantProvider: stringValue("openai"), wantModel: "vendor/name"},
-		{name: "thinking suffix", model: "openai/gpt-test:high", wantProvider: stringValue("openai"), wantModel: "gpt-test", wantThinking: stringValue("high")},
-		{name: "explicit thinking preserves custom suffix", provider: stringValue("openai"), model: "custom:high", thinking: stringValue("low"), wantProvider: stringValue("openai"), wantModel: "custom:high", wantThinking: stringValue("low")},
-		{name: "invalid suffix is model id", model: "custom:banana", wantModel: "custom:banana"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got := normalizeSkeletonCLIArgs(CLIArgs{Provider: test.provider, Model: &test.model, Thinking: test.thinking})
-			if !reflect.DeepEqual(got.Provider, test.wantProvider) || got.Model == nil || *got.Model != test.wantModel || !reflect.DeepEqual(got.Thinking, test.wantThinking) {
-				t.Fatalf("normalized = provider %v, model %v, thinking %v", got.Provider, got.Model, got.Thinking)
-			}
-		})
-	}
-}
-
-func TestNormalizeSkeletonCLIArgsTreatsEmptyModelAndProviderAsAbsent(t *testing.T) {
-	args := normalizeSkeletonCLIArgs(ParseArgs([]string{"--provider", "", "--model", ""}))
-	if args.Provider != nil || args.Model != nil {
-		t.Fatalf("normalized selection = %v/%v, want absent", args.Provider, args.Model)
-	}
-}
-
-func TestResolveSkeletonModelUsesPairedSelectionPrecedence(t *testing.T) {
-	root := t.TempDir()
-	agentDir := filepath.Join(root, "agent")
-	settingsPath := filepath.Join(agentDir, "settings.json")
-	if err := os.MkdirAll(agentDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(settingsPath, []byte(`{"defaultProvider":"openai","defaultModel":"settings-model"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	manager, err := config.NewSettingsManager(root, config.WithAgentDir(agentDir))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	providerOnly := "anthropic"
-	model, err := resolveSkeletonModel(CLIArgs{Provider: &providerOnly}, manager)
-	if err != nil || model.Provider != "openai" || model.ID != "settings-model" {
-		t.Fatalf("provider-only selection = %#v, %v", model, err)
-	}
-	cliModel := "gpt-cli"
-	model, err = resolveSkeletonModel(CLIArgs{Model: &cliModel}, manager)
-	if err != nil || model.Provider != "openai" || model.ID != cliModel {
-		t.Fatalf("CLI model selection = %#v, %v", model, err)
-	}
-	empty := ""
-	model, err = resolveSkeletonModel(CLIArgs{Provider: &empty, Model: &empty}, manager)
-	if err != nil || model.Provider != "openai" || model.ID != "settings-model" {
-		t.Fatalf("empty CLI selection = %#v, %v", model, err)
-	}
-	model, err = resolveSkeletonModel(CLIArgs{Provider: &empty, Model: &cliModel}, manager)
-	if err != nil || model.Provider != "openai" || model.ID != cliModel {
-		t.Fatalf("empty provider inference = %#v, %v", model, err)
-	}
-}
-
 func TestAPIKeyResolverPrecedence(t *testing.T) {
+	resolveKey := func(args CLIArgs, registry *config.ModelRegistry, credentials aiauth.CredentialStore, providerID ai.ProviderID) (*string, error) {
+		request, err := requestAuthResolverForProvider(args, nil, registry, credentials)(context.Background(), providerID)
+		if err != nil || request == nil {
+			return nil, err
+		}
+		return request.APIKey, nil
+	}
 	t.Setenv("OPENAI_API_KEY", "environment")
-	key, err := apiKeyResolver(CLIArgs{}, nil, nil)(context.Background(), ai.ProviderID("openai"))
+	key, err := resolveKey(CLIArgs{}, nil, nil, ai.ProviderID("openai"))
 	if err != nil || key == nil || *key != "environment" {
 		t.Fatalf("environment key = %v, %v", key, err)
 	}
 	cli := "cli"
-	key, err = apiKeyResolver(CLIArgs{APIKey: &cli}, nil, nil)(context.Background(), ai.ProviderID("openai"))
+	key, err = resolveKey(CLIArgs{APIKey: &cli}, nil, nil, ai.ProviderID("openai"))
 	if err != nil || key == nil || *key != "cli" {
 		t.Fatalf("CLI key = %v, %v", key, err)
 	}
 	empty := ""
-	key, err = apiKeyResolver(CLIArgs{APIKey: &empty}, nil, nil)(context.Background(), ai.ProviderID("openai"))
+	key, err = resolveKey(CLIArgs{APIKey: &empty}, nil, nil, ai.ProviderID("openai"))
 	if err != nil || key == nil || *key != "environment" {
 		t.Fatalf("empty CLI key fallback = %v, %v", key, err)
 	}
-	key, err = apiKeyResolver(CLIArgs{}, nil, nil)(context.Background(), ai.ProviderID("other"))
+	key, err = resolveKey(CLIArgs{}, nil, nil, ai.ProviderID("other"))
 	if err != nil || !reflect.DeepEqual(key, (*string)(nil)) {
 		t.Fatalf("other provider key = %v, %v", key, err)
 	}
 	stored := aiauth.NewMemoryStore(map[string]*aiauth.Credential{"openai": aiauth.APIKeyCredential("stored")})
-	key, err = apiKeyResolver(CLIArgs{}, nil, stored)(context.Background(), ai.ProviderID("openai"))
+	key, err = resolveKey(CLIArgs{}, nil, stored, ai.ProviderID("openai"))
 	if err != nil || key == nil || *key != "stored" {
 		t.Fatalf("stored key = %v, %v", key, err)
 	}
@@ -362,7 +281,7 @@ func TestAPIKeyResolverPrecedence(t *testing.T) {
 	oauthStore := aiauth.NewMemoryStore(map[string]*aiauth.Credential{
 		"anthropic": aiauth.OAuthCredential("refresh", "stored-oauth", time.Now().Add(time.Hour).UnixMilli()),
 	})
-	key, err = apiKeyResolver(CLIArgs{}, registry, oauthStore)(context.Background(), ai.ProviderID("anthropic"))
+	key, err = resolveKey(CLIArgs{}, registry, oauthStore, ai.ProviderID("anthropic"))
 	if err != nil || key == nil || *key != "stored-oauth" {
 		t.Fatalf("stored OAuth ownership = %v, %v", key, err)
 	}
@@ -387,7 +306,7 @@ func TestRequestAuthResolverPreservesStoredVertexADCEnvironment(t *testing.T) {
 		),
 	})
 
-	resolved, err := requestAuthResolver(CLIArgs{}, nil, store)(context.Background(), ai.ProviderID("google-vertex"))
+	resolved, err := requestAuthResolverForProvider(CLIArgs{}, nil, nil, store)(context.Background(), ai.ProviderID("google-vertex"))
 	if err != nil {
 		t.Fatal(err)
 	}

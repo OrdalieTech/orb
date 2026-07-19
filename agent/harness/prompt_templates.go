@@ -170,15 +170,12 @@ func LoadSourcedPromptTemplates[T any](env ResourceFileSystem, inputs []SourcedP
 	return templates, diagnostics
 }
 
-var harnessPromptArgumentPattern = regexp.MustCompile(`\$\{([0-9]+|ARGUMENTS|@):-([^}]*)\}|\$\{@:([0-9]+)(:([0-9]+))?\}|\$(ARGUMENTS|@|[0-9]+)`)
-
-func harnessPromptCapture(source string, indexes []int, group int) (string, bool) {
-	start := group * 2
-	if start+1 >= len(indexes) || indexes[start] < 0 {
-		return "", false
-	}
-	return source[indexes[start]:indexes[start+1]], true
-}
+var (
+	harnessPromptPositionalPattern = regexp.MustCompile(`\$([0-9]+)`)
+	harnessPromptSlicePattern      = regexp.MustCompile(`\$\{@:([0-9]+)(?::([0-9]+))?\}`)
+	harnessPromptAllPattern        = regexp.MustCompile(`\$ARGUMENTS`)
+	harnessPromptAtPattern         = regexp.MustCompile(`\$@`)
+)
 
 func harnessPromptIndex(value string) int {
 	parsed, err := strconv.Atoi(value)
@@ -188,59 +185,36 @@ func harnessPromptIndex(value string) int {
 	return parsed
 }
 
-// FormatPromptTemplateInvocation substitutes upstream's positional, wildcard, default, and slice forms once.
+// FormatPromptTemplateInvocation follows the harness's sequential replacement
+// passes; unlike coding-agent templates, the harness treats default syntax as
+// literal text and later passes can expand placeholders introduced earlier.
 func FormatPromptTemplateInvocation(template PromptTemplate, args []string) string {
 	allArgs := strings.Join(args, " ")
-	matches := harnessPromptArgumentPattern.FindAllStringSubmatchIndex(template.Content, -1)
-	if len(matches) == 0 {
-		return template.Content
-	}
-	var result strings.Builder
-	last := 0
-	for _, indexes := range matches {
-		result.WriteString(template.Content[last:indexes[0]])
-		replacement := ""
-		if target, ok := harnessPromptCapture(template.Content, indexes, 1); ok {
-			value := allArgs
-			if target != "@" && target != "ARGUMENTS" {
-				index := harnessPromptIndex(target) - 1
-				value = ""
-				if index >= 0 && index < len(args) {
-					value = args[index]
-				}
-			}
-			if value == "" {
-				value, _ = harnessPromptCapture(template.Content, indexes, 2)
-			}
-			replacement = value
-		} else if startText, ok := harnessPromptCapture(template.Content, indexes, 3); ok {
-			start := harnessPromptIndex(startText) - 1
-			if start < 0 {
-				start = 0
-			}
-			if start < len(args) {
-				end := len(args)
-				if lengthText, exists := harnessPromptCapture(template.Content, indexes, 5); exists {
-					length := harnessPromptIndex(lengthText)
-					if length <= len(args)-start {
-						end = start + length
-					}
-				}
-				replacement = strings.Join(args[start:end], " ")
-			}
-		} else if simple, ok := harnessPromptCapture(template.Content, indexes, 6); ok {
-			if simple == "@" || simple == "ARGUMENTS" {
-				replacement = allArgs
-			} else {
-				index := harnessPromptIndex(simple) - 1
-				if index >= 0 && index < len(args) {
-					replacement = args[index]
-				}
+	result := harnessPromptPositionalPattern.ReplaceAllStringFunc(template.Content, func(match string) string {
+		index := harnessPromptIndex(match[1:]) - 1
+		if index < 0 || index >= len(args) {
+			return ""
+		}
+		return args[index]
+	})
+	result = harnessPromptSlicePattern.ReplaceAllStringFunc(result, func(match string) string {
+		parts := harnessPromptSlicePattern.FindStringSubmatch(match)
+		start := harnessPromptIndex(parts[1]) - 1
+		if start < 0 {
+			start = 0
+		}
+		if start >= len(args) {
+			return ""
+		}
+		end := len(args)
+		if parts[2] != "" {
+			length := harnessPromptIndex(parts[2])
+			if length <= len(args)-start {
+				end = start + length
 			}
 		}
-		result.WriteString(replacement)
-		last = indexes[1]
-	}
-	result.WriteString(template.Content[last:])
-	return result.String()
+		return strings.Join(args[start:end], " ")
+	})
+	result = harnessPromptAllPattern.ReplaceAllStringFunc(result, func(string) string { return allArgs })
+	return harnessPromptAtPattern.ReplaceAllStringFunc(result, func(string) string { return allArgs })
 }

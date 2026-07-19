@@ -141,10 +141,16 @@ func normalizeActions(actions Actions) Actions {
 	return actions
 }
 
-func (runtime *runtimeState) bind(actions Actions, report func(ExtensionError)) {
+func (runtime *runtimeState) bindActions(actions Actions) Actions {
 	actions = normalizeActions(actions)
 	runtime.mu.Lock()
 	runtime.actions = actions
+	runtime.mu.Unlock()
+	return actions
+}
+
+func (runtime *runtimeState) bindProviderActions(actions Actions, report func(ExtensionError)) {
+	runtime.mu.Lock()
 	runtime.registerNative = actions.RegisterProvider
 	runtime.registerConfig = actions.RegisterProviderConfig
 	runtime.unregister = actions.UnregisterProvider
