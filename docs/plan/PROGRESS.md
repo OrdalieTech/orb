@@ -176,9 +176,11 @@ owner-gated** (see docs/trim/M5.md §Owner-gated remainder).
 - [x] Re-verify M1–M4 at the release candidate; run the sync cycle GREEN end-to-end (lock bump
       blocked: upstream unmoved past the pin); final trim pass #5 with LOC (1.089x) and dep audit
       (docs/trim/M5.md).
-- [ ] Owner-gated to tag `v0.1.0`: size-cap decision, OAuth live runs, remote + secrets (nightly
-      72h window), clean-VM install/docs verification, a fresher upstream commit for the bump,
-      AgentHarness facade decision — then `git tag v0.1.0`.
+- [x] Tag `v0.1.0` (annotated, remainder recorded in the tag message per the owner's goal
+      directive; the repo has no remote, so pushing/publishing stays an owner act).
+- [ ] Owner-gated before publishing the tag: size-cap decision, OAuth live runs, remote + secrets
+      (nightly 72h window), clean-VM install/docs verification, a green lock bump once upstream
+      publishes past the pin, AgentHarness facade decision.
 
 ## Owner-blocked evidence
 
