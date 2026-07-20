@@ -51,6 +51,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Fixed
 
+- Chat wave-2 transport hardening: WebSocket message limits cannot overflow,
+  Slack file tokens stay on Slack hosts, Google Chat JWKS refreshes and
+  per-space writes are throttled, Discord reconnect/heartbeat state is
+  bounded per connection, and Teams conversation state is bounded.
 - SECURITY: `pi --help` and unknown-flag invocations no longer load untrusted project settings.
   Previously those paths constructed settings without the project-trust gate, so an untrusted
   project's `mcpServers` could execute arbitrary commands and make network requests from the

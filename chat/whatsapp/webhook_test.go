@@ -243,7 +243,7 @@ func TestWebhookStatuses(t *testing.T) {
 }
 
 func TestStatusRankOrdering(t *testing.T) {
-	if !(StatusRank("read") > StatusRank("delivered") && StatusRank("delivered") > StatusRank("sent")) {
+	if StatusRank("read") <= StatusRank("delivered") || StatusRank("delivered") <= StatusRank("sent") {
 		t.Fatal("rank must order read > delivered > sent")
 	}
 	if StatusRank("sent") <= StatusRank("bogus") {

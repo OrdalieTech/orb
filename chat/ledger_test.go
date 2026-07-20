@@ -65,7 +65,8 @@ func TestConversationKeyStringIsSafeAndInjective(t *testing.T) {
 	if left.String() == right.String() {
 		t.Fatalf("segment boundary collision: %q", left.String())
 	}
-	if weird.String() != weird.String() {
+	first, second := weird.String(), weird.String()
+	if first != second {
 		t.Fatal("key string is not stable")
 	}
 }

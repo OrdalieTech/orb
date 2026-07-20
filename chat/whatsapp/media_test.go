@@ -23,7 +23,7 @@ func TestDownloadMediaFlow(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
 			t.Errorf("metadata Authorization = %q", got)
 		}
-		fmt.Fprintf(w, `{"url":%q,"mime_type":"image/jpeg","sha256":"abc","file_size":11,"id":"MEDIA123","messaging_product":"whatsapp"}`, server.URL+"/cdn/blob1")
+		_, _ = fmt.Fprintf(w, `{"url":%q,"mime_type":"image/jpeg","sha256":"abc","file_size":11,"id":"MEDIA123","messaging_product":"whatsapp"}`, server.URL+"/cdn/blob1")
 	})
 	mux.HandleFunc("GET /cdn/blob1", func(w http.ResponseWriter, r *http.Request) {
 		cdnCalls.Add(1)
@@ -40,7 +40,7 @@ func TestDownloadMediaFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	if mime != "image/jpeg" {
 		t.Fatalf("mime = %q", mime)
 	}
@@ -66,10 +66,10 @@ func TestDownloadRefetchesExpiredURLOnce(t *testing.T) {
 		// First metadata fetch hands out an already-expired URL; the
 		// refetch hands out a fresh one.
 		if metadataCalls.Add(1) == 1 {
-			fmt.Fprintf(w, `{"url":%q,"mime_type":"application/pdf"}`, server.URL+"/cdn/expired")
+			_, _ = fmt.Fprintf(w, `{"url":%q,"mime_type":"application/pdf"}`, server.URL+"/cdn/expired")
 			return
 		}
-		fmt.Fprintf(w, `{"url":%q,"mime_type":"application/pdf"}`, server.URL+"/cdn/fresh")
+		_, _ = fmt.Fprintf(w, `{"url":%q,"mime_type":"application/pdf"}`, server.URL+"/cdn/fresh")
 	})
 	mux.HandleFunc("GET /cdn/expired", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "url expired", http.StatusNotFound)
@@ -83,7 +83,7 @@ func TestDownloadRefetchesExpiredURLOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	content, _ := io.ReadAll(body)
 	if string(content) != "pdf bytes" || mime != "application/pdf" {
 		t.Fatalf("content/mime = %q/%q", content, mime)
@@ -101,7 +101,7 @@ func TestDownloadGivesUpAfterSecondFailure(t *testing.T) {
 
 	mux.HandleFunc("GET /"+GraphVersion+"/MEDIA123", func(w http.ResponseWriter, r *http.Request) {
 		metadataCalls.Add(1)
-		fmt.Fprintf(w, `{"url":%q,"mime_type":"image/jpeg"}`, server.URL+"/cdn/gone")
+		_, _ = fmt.Fprintf(w, `{"url":%q,"mime_type":"image/jpeg"}`, server.URL+"/cdn/gone")
 	})
 	mux.HandleFunc("GET /cdn/gone", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "gone", http.StatusNotFound)
