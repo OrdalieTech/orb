@@ -51,6 +51,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Fixed
 
+- RPC state responses can no longer overtake the prompt acknowledgement that initiated a session
+  replacement, while extension UI replies remain live during that replacement.
 - Chat wave-2 transport hardening: WebSocket message limits cannot overflow,
   Slack file tokens stay on Slack hosts, Google Chat JWKS refreshes and
   per-space writes are throttled, Discord reconnect/heartbeat state is
