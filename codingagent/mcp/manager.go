@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/OrdalieTech/pi-go/agent"
@@ -56,11 +57,14 @@ type progressTracker struct {
 }
 
 type serverConnection struct {
-	config  ServerConfig
-	session *mcpsdk.ClientSession
-	state   ServerState
-	err     string
-	tools   map[string]string
+	connectMu sync.Mutex // serializes connect attempts for this server only
+
+	config      ServerConfig
+	session     *mcpsdk.ClientSession
+	state       ServerState
+	err         string
+	tools       map[string]string
+	definitions []extensions.ToolDefinition
 }
 
 type progressRegistration struct {
@@ -83,7 +87,8 @@ type Manager struct {
 	cancel context.CancelFunc
 
 	mu                sync.Mutex
-	connectMu         sync.Mutex
+	activeMu          sync.Mutex // serializes read-modify-write of the active tool list
+	warnOutput        io.Writer
 	api               extensions.API
 	closed            bool
 	nextProgressToken uint64
@@ -94,7 +99,7 @@ func NewManager(cwd string, configs []ServerConfig) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	manager := &Manager{
 		cwd: cwd, servers: make(map[string]*serverConnection, len(configs)), connect: defaultConnect,
-		ctx: ctx, cancel: cancel, progress: make(map[string]*progressRegistration),
+		ctx: ctx, cancel: cancel, progress: make(map[string]*progressRegistration), warnOutput: os.Stderr,
 	}
 	for _, config := range configs {
 		copy := cloneServerConfig(config)
@@ -139,14 +144,21 @@ func (manager *Manager) Extension() extensions.Factory {
 		api.On(extensions.EventSessionShutdown, func(context.Context, extensions.Event, extensions.Context) (any, error) {
 			return nil, manager.Close()
 		})
-		_ = manager.Start(context.Background())
+		if err := manager.Start(context.Background()); err != nil {
+			for _, line := range strings.Split(err.Error(), "\n") {
+				_, _ = fmt.Fprintf(manager.warnOutput, "Warning: mcp: %s\n", line)
+			}
+		}
 		return nil
 	}
 }
 
-// Start connects every configured server and registers the tools available
-// from the successful sessions. Per-server failures remain visible in Status
-// and do not prevent other servers or the coding agent from starting.
+// Start connects every configured server concurrently, each bounded by its own
+// timeoutMs, and registers the tools available from the successful sessions.
+// Per-server failures remain visible in Status and do not prevent other
+// servers or the coding agent from starting. Calling Start again re-registers
+// the tools of already-connected servers against the currently bound API, so a
+// factory re-run against a fresh registry keeps every MCP tool exposed.
 func (manager *Manager) Start(ctx context.Context) error {
 	manager.mu.Lock()
 	if manager.closed {
@@ -159,31 +171,46 @@ func (manager *Manager) Start(ctx context.Context) error {
 	}
 	names := append([]string(nil), manager.order...)
 	manager.mu.Unlock()
-	var failures []error
-	for _, name := range names {
-		if err := manager.connectServer(ctx, name, false); err != nil {
-			failures = append(failures, fmt.Errorf("%s: %w", name, err))
-		}
+	failures := make([]error, len(names))
+	var group sync.WaitGroup
+	for index, name := range names {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			if err := manager.connectServer(ctx, name, false); err != nil {
+				failures[index] = fmt.Errorf("%s: %w", name, err)
+			}
+		}()
 	}
+	group.Wait()
 	return errors.Join(failures...)
 }
 
 func (manager *Manager) connectServer(ctx context.Context, name string, replace bool) error {
-	manager.connectMu.Lock()
-	defer manager.connectMu.Unlock()
-
 	manager.mu.Lock()
 	connection, exists := manager.servers[name]
+	manager.mu.Unlock()
 	if !exists {
-		manager.mu.Unlock()
 		return fmt.Errorf("unknown server %q", name)
 	}
+	connection.connectMu.Lock()
+	defer connection.connectMu.Unlock()
+
+	manager.mu.Lock()
 	if manager.closed {
 		manager.mu.Unlock()
 		return errors.New("manager is closed")
 	}
 	if !replace && connection.session != nil && connection.state == ServerConnected {
+		// A factory re-run rebinds manager.api to a fresh registry, so the
+		// already-discovered tools must be registered again or they would only
+		// exist in the discarded previous registry.
+		definitions := append([]extensions.ToolDefinition(nil), connection.definitions...)
+		api := manager.api
 		manager.mu.Unlock()
+		for _, definition := range definitions {
+			api.RegisterTool(definition)
+		}
 		return nil
 	}
 	previous := connection.session
@@ -255,6 +282,7 @@ func (manager *Manager) connectServer(ctx context.Context, name string, replace 
 	connection.state = ServerConnected
 	connection.err = ""
 	connection.tools = names
+	connection.definitions = definitions
 	manager.mu.Unlock()
 	for _, definition := range definitions {
 		api.RegisterTool(definition)
@@ -283,14 +311,23 @@ func defaultConnect(
 	} else {
 		base := headerRoundTripper{base: http.DefaultTransport, headers: config.Headers}
 		httpClient := &http.Client{Transport: progressRoundTripper{base: base, manager: tracker.manager}}
-		maxRetries := 0
-		if config.MaxRetries != nil {
-			maxRetries = *config.MaxRetries
-		}
-		transport = &mcpsdk.StreamableClientTransport{Endpoint: config.URL, HTTPClient: httpClient, MaxRetries: maxRetries}
+		transport = &mcpsdk.StreamableClientTransport{Endpoint: config.URL, HTTPClient: httpClient, MaxRetries: sdkMaxRetries(config.MaxRetries)}
 		return client.Connect(connectCtx, transport, nil)
 	}
 	return client.Connect(connectCtx, tracker.wrapTransport(transport), nil)
+}
+
+// sdkMaxRetries translates the configured maxRetries into the go-sdk field,
+// where 0 means "use the default of 5" and only a negative value disables
+// retries. A user's explicit 0 therefore maps to the disabled sentinel.
+func sdkMaxRetries(configured *int) int {
+	if configured == nil {
+		return 0 // SDK default
+	}
+	if *configured <= 0 {
+		return -1 // fail fast: no reconnect retries
+	}
+	return *configured
 }
 
 type progressTransport struct {
@@ -586,7 +623,7 @@ func (manager *Manager) execute(
 		}
 	}
 	if err != nil {
-		if errors.Is(err, mcpsdk.ErrConnectionClosed) {
+		if isConnectionDead(err) {
 			manager.mu.Lock()
 			previousTools := cloneStrings(connection.tools)
 			manager.mu.Unlock()
@@ -602,6 +639,16 @@ func (manager *Manager) execute(
 		return agent.AgentToolResult{}, errors.New(toolResultText(mapped.Content))
 	}
 	return mapped, nil
+}
+
+// isConnectionDead reports whether a tool call failed because the transport
+// itself is gone (closed connection, EOF or broken pipe from a dead child), in
+// which case the server's tools are deactivated immediately instead of only
+// after a second failing call.
+func isConnectionDead(err error) bool {
+	var exitError *exec.ExitError
+	return errors.Is(err, mcpsdk.ErrConnectionClosed) || errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrClosedPipe) || errors.Is(err, syscall.EPIPE) || errors.As(err, &exitError)
 }
 
 func (manager *Manager) handleProgress(params *mcpsdk.ProgressNotificationParams) {
@@ -727,6 +774,7 @@ func (manager *Manager) refreshServerTools(name string) {
 	manager.servers[name].tools = names
 	manager.servers[name].state = ServerConnected
 	manager.servers[name].err = ""
+	manager.servers[name].definitions = definitions
 	manager.mu.Unlock()
 	for _, definition := range definitions {
 		api.RegisterTool(definition)
@@ -741,6 +789,8 @@ func (manager *Manager) replaceActiveTools(previous, current map[string]string) 
 	if api == nil {
 		return
 	}
+	manager.activeMu.Lock()
+	defer manager.activeMu.Unlock()
 	active, err := api.GetActiveTools()
 	if err != nil {
 		return
@@ -790,6 +840,7 @@ func (manager *Manager) setServerUnavailable(name string, err error) {
 		connection.state = ServerError
 		connection.err = err.Error()
 		connection.tools = make(map[string]string)
+		connection.definitions = nil
 	}
 	manager.mu.Unlock()
 }
@@ -832,12 +883,21 @@ func (manager *Manager) Close() error {
 	manager.mu.Unlock()
 	var failures []error
 	for _, session := range sessions {
-		if err := session.Close(); err != nil {
+		if err := session.Close(); err != nil && !isChildExit(err) {
 			failures = append(failures, err)
 		}
 	}
 	manager.cancel()
 	return errors.Join(failures...)
+}
+
+// isChildExit reports whether err only describes the exit status of a stdio
+// child terminated during shutdown (for example "signal: terminated" after the
+// SDK's kill grace). Reporting those as session_shutdown extension errors
+// would turn every intentional stop of a stdio server into a diagnostic.
+func isChildExit(err error) bool {
+	var exitError *exec.ExitError
+	return errors.As(err, &exitError)
 }
 
 func (manager *Manager) Status() []ServerStatus {

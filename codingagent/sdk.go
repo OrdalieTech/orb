@@ -620,9 +620,9 @@ func resourceRuntimeDiagnostics(resources *Resources) []AgentSessionRuntimeDiagn
 }
 
 func formatNoModelsAvailableMessage() string {
-	docsDir := filepath.Join(resolvePromptPackageDir(""), "docs")
+	providersDoc, modelsDoc := authGuidanceDocPaths()
 	return "No models available. Use /login to log into a provider via OAuth or API key. See:\n  " +
-		filepath.Join(docsDir, "providers.md") + "\n  " + filepath.Join(docsDir, "models.md")
+		providersDoc + "\n  " + modelsDoc
 }
 
 func buildSystemPromptFromResources(res *Resources) string {

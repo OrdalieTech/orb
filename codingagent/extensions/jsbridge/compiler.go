@@ -5,9 +5,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -65,6 +67,10 @@ func (cache *buildCache) build(entry string) (artifact, error) {
 		Charset:        api.CharsetUTF8,
 		LegalComments:  api.LegalCommentsNone,
 		LogLevel:       api.LogLevelSilent,
+		// CommonJS output leaves import.meta empty; upstream runs under Node
+		// ESM where import.meta.url is the entry file URL. Extensions locate
+		// bundled resources through it (docs pattern), so define it per build.
+		Define: map[string]string{"import.meta.url": strconv.Quote(entryFileURL(entry))},
 		External: []string{
 			"pi",
 			"typebox",
@@ -157,11 +163,16 @@ func hashInputs(inputs []string) (string, error) {
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
+func entryFileURL(entry string) string {
+	return (&url.URL{Scheme: "file", Path: entry}).String()
+}
+
 func formatBuildError(messages []api.Message) error {
 	parts := make([]string, 0, len(messages))
 	for _, message := range messages {
+		text := clarifyBuildMessage(message.Text)
 		if message.Location == nil {
-			parts = append(parts, message.Text)
+			parts = append(parts, text)
 			continue
 		}
 		parts = append(parts, fmt.Sprintf(
@@ -169,8 +180,21 @@ func formatBuildError(messages []api.Message) error {
 			message.Location.File,
 			message.Location.Line,
 			message.Location.Column+1,
-			message.Text,
+			text,
 		))
 	}
 	return fmt.Errorf("%s", strings.Join(parts, "\n"))
+}
+
+// clarifyBuildMessage turns esbuild's generic loader errors for artifacts the
+// runtime can never execute into actionable diagnostics.
+func clarifyBuildMessage(text string) string {
+	switch {
+	case strings.Contains(text, `No loader is configured for ".node" files`):
+		return text + " (native Node addons are not supported by the pi-go extension runtime)"
+	case strings.Contains(text, `No loader is configured for ".wasm" files`):
+		return text + " (WebAssembly modules are not supported by the pi-go extension runtime)"
+	default:
+		return text
+	}
 }

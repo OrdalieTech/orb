@@ -19,9 +19,11 @@ import (
 
 // Port of packages/coding-agent/src/core/package-manager.ts. npm sources are
 // fetched natively from the registry (tarball + integrity check) instead of
-// shelling out to npm — pi-go runs without a Node toolchain (WP-360 scope);
-// the npmCommand setting is accepted but unused, and dependency installation
-// for git packages (upstream: npm install) is skipped.
+// shelling out to npm — pi-go runs without a Node toolchain (WP-360 scope).
+// Declared package dependencies are installed with the npmCommand setting
+// (default ["npm"], upstream getNpmCommand) after npm extraction and git
+// clone/reconcile; a missing npm binary degrades to a warning so the package
+// itself stays installed.
 
 const (
 	packageNetworkTimeout    = 10 * time.Second
@@ -134,18 +136,20 @@ type PackageManager struct {
 	registryBaseURL string
 	runCommand      func(spec execSpec) (string, error)
 
+	registryOnce   sync.Once
+	registryConfig npmRegistryConfig
+
 	stdout io.Writer
 	stderr io.Writer
 }
 
 func NewPackageManager(options PackageManagerOptions) *PackageManager {
 	manager := &PackageManager{
-		cwd:             pmResolvePath(options.CWD, ""),
-		agentDir:        pmResolvePath(options.AgentDir, ""),
-		settings:        options.Settings,
-		registryBaseURL: defaultNpmRegistry,
-		stdout:          os.Stdout,
-		stderr:          os.Stderr,
+		cwd:      pmResolvePath(options.CWD, ""),
+		agentDir: pmResolvePath(options.AgentDir, ""),
+		settings: options.Settings,
+		stdout:   os.Stdout,
+		stderr:   os.Stderr,
 	}
 	manager.runCommand = manager.execCommand
 	return manager
@@ -764,6 +768,96 @@ func getInstalledNpmVersion(installedPath string) string {
 	return version
 }
 
+// npm dependency installation (upstream getNpmCommand / runNpmCommand /
+// getGitDependencyInstallArgs).
+
+func settingsNpmCommand(settings *config.SettingsManager) []string {
+	if settings == nil {
+		return nil
+	}
+	raw, _ := settings.GetSettings()["npmCommand"].([]any)
+	if len(raw) == 0 {
+		return nil
+	}
+	command := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if text, ok := item.(string); ok {
+			command = append(command, text)
+		}
+	}
+	return command
+}
+
+// getNpmCommand mirrors upstream getNpmCommand: the argv-style npmCommand
+// setting, defaulting to ["npm"].
+func (manager *PackageManager) getNpmCommand() (string, []string, error) {
+	configured := settingsNpmCommand(manager.settings)
+	if len(configured) == 0 {
+		return "npm", nil, nil
+	}
+	if configured[0] == "" {
+		return "", nil, errors.New("Invalid npmCommand: first array entry must be a non-empty command") //nolint:staticcheck // Upstream error text is observable.
+	}
+	return configured[0], configured[1:], nil
+}
+
+// getDependencyInstallArgs mirrors upstream getGitDependencyInstallArgs:
+// npm-specific production flags are skipped for custom npmCommand values.
+func (manager *PackageManager) getDependencyInstallArgs() []string {
+	if len(settingsNpmCommand(manager.settings)) > 0 {
+		return []string{"install"}
+	}
+	return []string{"install", "--omit=dev"}
+}
+
+func declaredDependencies(packageJSONPath string) []string {
+	pkg, err := readPackageJSON(packageJSONPath)
+	if err != nil {
+		return nil
+	}
+	dependencies, _ := pkg["dependencies"].(map[string]any)
+	names := make([]string, 0, len(dependencies))
+	for name := range dependencies {
+		names = append(names, name)
+	}
+	return names
+}
+
+// installPackageDependencies runs the npmCommand install inside an installed
+// package dir (upstream runNpmCommand(getGitDependencyInstallArgs())).
+// Packages without declared dependencies — or shipping them bundled in
+// node_modules — need no Node toolchain; a missing npm binary is a warning,
+// not an install failure.
+func (manager *PackageManager) installPackageDependencies(packageDir string) error {
+	dependencies := declaredDependencies(filepath.Join(packageDir, "package.json"))
+	if len(dependencies) == 0 {
+		return nil
+	}
+	bundled := true
+	for _, name := range dependencies {
+		if !pathExists(filepath.Join(packageDir, "node_modules", name)) {
+			bundled = false
+			break
+		}
+	}
+	if bundled {
+		return nil
+	}
+	command, baseArgs, err := manager.getNpmCommand()
+	if err != nil {
+		return err
+	}
+	args := append(append([]string(nil), baseArgs...), manager.getDependencyInstallArgs()...)
+	if _, err := manager.runCommand(execSpec{name: command, args: args, dir: packageDir, stream: true}); err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			_, _ = fmt.Fprintf(manager.stderr, "Warning: %s not found; skipped installing dependencies for %s. Install npm or set the npmCommand setting.\n", command, packageDir)
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 // Git operations (system git binary; upstream behavior, minus npm install).
 
 type execSpec struct {
@@ -852,7 +946,7 @@ func (manager *PackageManager) getLocalGitUpdateTarget(installedPath string) (gi
 			return gitUpdateTarget{
 				ref: "@{upstream}",
 				fetchArgs: []string{
-					"fetch", "--prune", "--no-tags", "origin",
+					"fetch", "-q", "--prune", "--no-tags", "origin",
 					"+refs/heads/" + branch + ":refs/remotes/origin/" + branch,
 				},
 			}, nil
@@ -869,14 +963,14 @@ func (manager *PackageManager) getLocalGitUpdateTarget(installedPath string) (gi
 			return gitUpdateTarget{
 				ref: "origin/HEAD",
 				fetchArgs: []string{
-					"fetch", "--prune", "--no-tags", "origin",
+					"fetch", "-q", "--prune", "--no-tags", "origin",
 					"+refs/heads/" + branch + ":refs/remotes/origin/" + branch,
 				},
 			}, nil
 		}
 		return gitUpdateTarget{
 			ref:       "origin/HEAD",
-			fetchArgs: []string{"fetch", "--prune", "--no-tags", "origin", "+HEAD:refs/remotes/origin/HEAD"},
+			fetchArgs: []string{"fetch", "-q", "--prune", "--no-tags", "origin", "+HEAD:refs/remotes/origin/HEAD"},
 		}, nil
 	}
 	return gitUpdateTarget{}, err
@@ -965,7 +1059,7 @@ func (manager *PackageManager) installGit(source *GitSource, scope string) error
 	}
 	if pathExists(targetDir) {
 		if source.Ref != "" {
-			return manager.ensureGitRef(targetDir, []string{"fetch", "origin", source.Ref}, "FETCH_HEAD")
+			return manager.ensureGitRef(targetDir, []string{"fetch", "-q", "origin", source.Ref}, "FETCH_HEAD")
 		}
 		target, err := manager.getLocalGitUpdateTarget(targetDir)
 		if err != nil {
@@ -983,17 +1077,15 @@ func (manager *PackageManager) installGit(source *GitSource, scope string) error
 	if err := os.MkdirAll(filepath.Dir(targetDir), 0o755); err != nil {
 		return err
 	}
-	if err := manager.runGit("", "clone", source.Repo, targetDir); err != nil {
+	if err := manager.runGit("", "clone", "-q", source.Repo, targetDir); err != nil {
 		return err
 	}
 	if source.Ref != "" {
-		if err := manager.runGit(targetDir, "checkout", source.Ref); err != nil {
+		if err := manager.runGit(targetDir, "-c", "advice.detachedHead=false", "checkout", "-q", source.Ref); err != nil {
 			return err
 		}
 	}
-	// Upstream runs `npm install` here when package.json exists; pi-go skips
-	// dependency installation (no Node toolchain).
-	return nil
+	return manager.installPackageDependencies(targetDir)
 }
 
 func (manager *PackageManager) updateGit(source *GitSource, scope string) error {
@@ -1005,7 +1097,7 @@ func (manager *PackageManager) updateGit(source *GitSource, scope string) error 
 		return manager.installGit(source, scope)
 	}
 	if source.Ref != "" {
-		return manager.ensureGitRef(targetDir, []string{"fetch", "origin", source.Ref}, "FETCH_HEAD")
+		return manager.ensureGitRef(targetDir, []string{"fetch", "-q", "origin", source.Ref}, "FETCH_HEAD")
 	}
 	target, err := manager.getLocalGitUpdateTarget(targetDir)
 	if err != nil {
@@ -1035,7 +1127,10 @@ func (manager *PackageManager) ensureGitRef(targetDir string, fetchArgs []string
 		return err
 	}
 	// Clean untracked files (extensions should be pristine).
-	return manager.runGit(targetDir, "clean", "-fdx")
+	if err := manager.runGit(targetDir, "clean", "-fdx"); err != nil {
+		return err
+	}
+	return manager.installPackageDependencies(targetDir)
 }
 
 func (manager *PackageManager) refreshTemporaryGitSource(source *GitSource, sourceStr string) {

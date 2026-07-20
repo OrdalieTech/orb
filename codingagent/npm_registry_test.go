@@ -28,6 +28,7 @@ type fakeNpmRegistry struct {
 	server   *httptest.Server
 	packages map[string][]fakeNpmPackage
 	corrupt  bool
+	token    string
 }
 
 func newFakeNpmRegistry(t *testing.T) *fakeNpmRegistry {
@@ -45,6 +46,10 @@ func (registry *fakeNpmRegistry) add(pkg fakeNpmPackage) {
 }
 
 func (registry *fakeNpmRegistry) handle(writer http.ResponseWriter, request *http.Request) {
+	if registry.token != "" && request.Header.Get("Authorization") != "Bearer "+registry.token {
+		writer.WriteHeader(http.StatusUnauthorized)
+		return
+	}
 	path := strings.TrimPrefix(request.URL.Path, "/")
 	if tarballName, found := strings.CutPrefix(path, "tarballs/"); found {
 		name, version, _ := strings.Cut(strings.TrimSuffix(tarballName, ".tgz"), "@@")

@@ -27,6 +27,90 @@ import (
 
 const defaultNpmRegistry = "https://registry.npmjs.org"
 
+type npmRegistryConfig struct {
+	baseURL   string
+	authToken string
+}
+
+// npmRegistry resolves the registry once per manager: the registryBaseURL
+// test seam wins, then npm_config_registry, the project .npmrc, and ~/.npmrc
+// (registry= lines), defaulting to registry.npmjs.org. A //host/:_authToken=
+// line matching the registry is passed through as a bearer token.
+func (manager *PackageManager) npmRegistry() npmRegistryConfig {
+	manager.registryOnce.Do(func() {
+		if manager.registryBaseURL != "" {
+			manager.registryConfig = npmRegistryConfig{baseURL: strings.TrimSuffix(manager.registryBaseURL, "/")}
+			return
+		}
+		manager.registryConfig = resolveNpmRegistry(manager.cwd)
+	})
+	return manager.registryConfig
+}
+
+func resolveNpmRegistry(cwd string) npmRegistryConfig {
+	registry := ""
+	for _, key := range [...]string{"npm_config_registry", "NPM_CONFIG_REGISTRY"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			registry = value
+			break
+		}
+	}
+	projectRC := parseNpmrc(filepath.Join(cwd, ".npmrc"))
+	userRC := parseNpmrc(filepath.Join(pmHomeDir(), ".npmrc"))
+	if registry == "" {
+		registry = projectRC["registry"]
+	}
+	if registry == "" {
+		registry = userRC["registry"]
+	}
+	if registry == "" {
+		registry = defaultNpmRegistry
+	}
+	registry = strings.TrimSuffix(registry, "/")
+	tokenKey := npmNerfDart(registry) + ":_authToken"
+	token := projectRC[tokenKey]
+	if token == "" {
+		token = userRC[tokenKey]
+	}
+	return npmRegistryConfig{baseURL: registry, authToken: token}
+}
+
+// parseNpmrc is a minimal key=value parse: comments (#, ;) and blank lines
+// skipped, values unquoted; no ini sections, no ${VAR} expansion.
+func parseNpmrc(path string) map[string]string {
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	values := map[string]string{}
+	for line := range strings.SplitSeq(string(contents), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			continue
+		}
+		key, value, found := strings.Cut(line, "=")
+		if !found {
+			continue
+		}
+		values[strings.TrimSpace(key)] = strings.Trim(strings.TrimSpace(value), `"`)
+	}
+	return values
+}
+
+// npmNerfDart approximates npm's nerf-dart credential key for a registry URL:
+// protocol stripped, trailing slash ensured (e.g. //registry.npmjs.org/).
+func npmNerfDart(registry string) string {
+	parsed, err := url.Parse(registry)
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+	path := parsed.Path
+	if !strings.HasSuffix(path, "/") {
+		path += "/"
+	}
+	return "//" + parsed.Host + path
+}
+
 func isDarwin() bool { return runtime.GOOS == "darwin" }
 func isLinux() bool  { return runtime.GOOS == "linux" }
 
@@ -63,12 +147,16 @@ func (manager *PackageManager) httpClient() *http.Client {
 }
 
 func (manager *PackageManager) fetchPackument(name string) (*npmPackument, error) {
-	endpoint := strings.TrimSuffix(manager.registryBaseURL, "/") + "/" + url.PathEscape(name)
+	registry := manager.npmRegistry()
+	endpoint := registry.baseURL + "/" + url.PathEscape(name)
 	request, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
 	request.Header.Set("Accept", "application/vnd.npm.install-v1+json")
+	if registry.authToken != "" {
+		request.Header.Set("Authorization", "Bearer "+registry.authToken)
+	}
 	response, err := manager.httpClient().Do(request)
 	if err != nil {
 		return nil, err
@@ -153,7 +241,10 @@ func (manager *PackageManager) installNpm(source *npmSource, scope string, tempo
 		return fmt.Errorf("failed to download %s@%s: %s", source.name, info.Version, err)
 	}
 	destination := filepath.Join(installRoot, "node_modules", source.name)
-	return extractNpmTarball(tarball, destination)
+	if err := extractNpmTarball(tarball, destination); err != nil {
+		return err
+	}
+	return manager.installPackageDependencies(destination)
 }
 
 func (manager *PackageManager) uninstallNpm(source *npmSource, scope string) error {
@@ -172,7 +263,20 @@ func (manager *PackageManager) uninstallNpm(source *npmSource, scope string) err
 }
 
 func (manager *PackageManager) downloadNpmTarball(info npmVersionInfo) ([]byte, error) {
-	response, err := manager.httpClient().Get(info.Dist.Tarball)
+	request, err := http.NewRequest(http.MethodGet, info.Dist.Tarball, nil)
+	if err != nil {
+		return nil, err
+	}
+	registry := manager.npmRegistry()
+	if registry.authToken != "" {
+		// Send the token only to the registry's own host.
+		if base, baseErr := url.Parse(registry.baseURL); baseErr == nil {
+			if target, targetErr := url.Parse(info.Dist.Tarball); targetErr == nil && target.Host == base.Host {
+				request.Header.Set("Authorization", "Bearer "+registry.authToken)
+			}
+		}
+	}
+	response, err := manager.httpClient().Do(request)
 	if err != nil {
 		return nil, err
 	}

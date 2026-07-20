@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -51,6 +52,14 @@ func (h *shimHost) resolveModule(rt *sobek.Runtime, specifier string) (*sobek.Ob
 		return newEventsModule(rt), true
 	case "readline":
 		return newReadlineModule(rt), true
+	case "crypto":
+		return newCryptoModule(rt), true
+	case "http":
+		return h.newHTTPModule(rt), true
+	case "https":
+		return h.newHTTPSModule(rt), true
+	case "module":
+		return newModuleModule(rt), true
 	default:
 		return nil, false
 	}
@@ -67,6 +76,9 @@ func (h *shimHost) installGlobals(rt *sobek.Runtime) error {
 		return err
 	}
 	if err := installConsole(rt); err != nil {
+		return err
+	}
+	if err := installEncodingGlobals(rt); err != nil {
 		return err
 	}
 	return h.installTimers(rt)
@@ -402,7 +414,7 @@ func (h *shimHost) newFSModule(rt *sobek.Runtime) *sobek.Object {
 		p := h.resolvePath(call.Argument(0).String())
 		data, err := os.ReadFile(p)
 		if err != nil {
-			panic(rt.NewTypeError(err.Error()))
+			panicFS(rt, err, "open", p)
 		}
 		if hasEncoding(rt, call, 1) {
 			return rt.ToValue(string(data))
@@ -414,7 +426,7 @@ func (h *shimHost) newFSModule(rt *sobek.Runtime) *sobek.Object {
 		p := h.resolvePath(call.Argument(0).String())
 		content := exportBytes(rt, call.Argument(1))
 		if err := os.WriteFile(p, content, 0o644); err != nil {
-			panic(rt.NewTypeError(err.Error()))
+			panicFS(rt, err, "open", p)
 		}
 		return sobek.Undefined()
 	})
@@ -424,11 +436,11 @@ func (h *shimHost) newFSModule(rt *sobek.Runtime) *sobek.Object {
 		content := exportBytes(rt, call.Argument(1))
 		f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
-			panic(rt.NewTypeError(err.Error()))
+			panicFS(rt, err, "open", p)
 		}
 		defer func() { _ = f.Close() }()
 		if _, err := f.Write(content); err != nil {
-			panic(rt.NewTypeError(err.Error()))
+			panicFS(rt, err, "write", p)
 		}
 		return sobek.Undefined()
 	})
@@ -445,7 +457,7 @@ func (h *shimHost) newFSModule(rt *sobek.Runtime) *sobek.Object {
 		}
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			panic(rt.NewTypeError(err.Error()))
+			panicFS(rt, err, "scandir", dir)
 		}
 		if !withFileTypes {
 			names := make([]any, len(entries))
@@ -474,7 +486,7 @@ func (h *shimHost) newFSModule(rt *sobek.Runtime) *sobek.Object {
 		p := h.resolvePath(call.Argument(0).String())
 		info, err := os.Stat(p)
 		if err != nil {
-			panic(rt.NewTypeError(err.Error()))
+			panicFS(rt, err, "stat", p)
 		}
 		return newStatObject(rt, info)
 	})
@@ -483,7 +495,7 @@ func (h *shimHost) newFSModule(rt *sobek.Runtime) *sobek.Object {
 		p := h.resolvePath(call.Argument(0).String())
 		info, err := os.Lstat(p)
 		if err != nil {
-			panic(rt.NewTypeError(err.Error()))
+			panicFS(rt, err, "lstat", p)
 		}
 		return newStatObject(rt, info)
 	})
@@ -505,21 +517,23 @@ func (h *shimHost) newFSModule(rt *sobek.Runtime) *sobek.Object {
 			err = os.Mkdir(p, 0o755)
 		}
 		if err != nil {
-			panic(rt.NewTypeError(err.Error()))
+			panicFS(rt, err, "mkdir", p)
 		}
 		return sobek.Undefined()
 	})
 
 	set("unlinkSync", func(call sobek.FunctionCall) sobek.Value {
-		if err := os.Remove(h.resolvePath(call.Argument(0).String())); err != nil {
-			panic(rt.NewTypeError(err.Error()))
+		p := h.resolvePath(call.Argument(0).String())
+		if err := os.Remove(p); err != nil {
+			panicFS(rt, err, "unlink", p)
 		}
 		return sobek.Undefined()
 	})
 
 	set("rmdirSync", func(call sobek.FunctionCall) sobek.Value {
-		if err := os.Remove(h.resolvePath(call.Argument(0).String())); err != nil {
-			panic(rt.NewTypeError(err.Error()))
+		p := h.resolvePath(call.Argument(0).String())
+		if err := os.Remove(p); err != nil {
+			panicFS(rt, err, "rmdir", p)
 		}
 		return sobek.Undefined()
 	})
@@ -529,10 +543,10 @@ func (h *shimHost) newFSModule(rt *sobek.Runtime) *sobek.Object {
 		dst := h.resolvePath(call.Argument(1).String())
 		data, err := os.ReadFile(src)
 		if err != nil {
-			panic(rt.NewTypeError(err.Error()))
+			panicFS(rt, err, "copyfile", src)
 		}
 		if err := os.WriteFile(dst, data, 0o644); err != nil {
-			panic(rt.NewTypeError(err.Error()))
+			panicFS(rt, err, "copyfile", dst)
 		}
 		return sobek.Undefined()
 	})
@@ -541,7 +555,7 @@ func (h *shimHost) newFSModule(rt *sobek.Runtime) *sobek.Object {
 		oldPath := h.resolvePath(call.Argument(0).String())
 		newPath := h.resolvePath(call.Argument(1).String())
 		if err := os.Rename(oldPath, newPath); err != nil {
-			panic(rt.NewTypeError(err.Error()))
+			panicFS(rt, err, "rename", oldPath)
 		}
 		return sobek.Undefined()
 	})
@@ -618,7 +632,7 @@ func (h *shimHost) newFSModule(rt *sobek.Runtime) *sobek.Object {
 		p := h.resolvePath(call.Argument(0).String())
 		data, err := os.ReadFile(p)
 		if err != nil {
-			panic(rt.NewTypeError(err.Error()))
+			panicFS(rt, err, "open", p)
 		}
 		stream := rt.NewObject()
 		mustSet(rt, stream, "on", func(c sobek.FunctionCall) sobek.Value {
@@ -665,7 +679,7 @@ func (h *shimHost) newFSPromisesModule(rt *sobek.Runtime) *sobek.Object {
 		p := h.resolvePath(call.Argument(0).String())
 		data, err := os.ReadFile(p)
 		if err != nil {
-			return rejectPromise(rt, err)
+			return rejectFS(rt, err, "open", p)
 		}
 		if hasEncoding(rt, call, 1) {
 			return resolvePromise(rt, rt.ToValue(string(data)))
@@ -677,15 +691,16 @@ func (h *shimHost) newFSPromisesModule(rt *sobek.Runtime) *sobek.Object {
 		p := h.resolvePath(call.Argument(0).String())
 		content := exportBytes(rt, call.Argument(1))
 		if err := os.WriteFile(p, content, 0o644); err != nil {
-			return rejectPromise(rt, err)
+			return rejectFS(rt, err, "open", p)
 		}
 		return resolvePromise(rt, sobek.Undefined())
 	})
 
 	set("stat", func(call sobek.FunctionCall) sobek.Value {
-		info, err := os.Stat(h.resolvePath(call.Argument(0).String()))
+		p := h.resolvePath(call.Argument(0).String())
+		info, err := os.Stat(p)
 		if err != nil {
-			return rejectPromise(rt, err)
+			return rejectFS(rt, err, "stat", p)
 		}
 		return resolvePromise(rt, newStatObject(rt, info))
 	})
@@ -707,7 +722,7 @@ func (h *shimHost) newFSPromisesModule(rt *sobek.Runtime) *sobek.Object {
 			err = os.Mkdir(p, 0o755)
 		}
 		if err != nil {
-			return rejectPromise(rt, err)
+			return rejectFS(rt, err, "mkdir", p)
 		}
 		return resolvePromise(rt, sobek.Undefined())
 	})
@@ -716,7 +731,7 @@ func (h *shimHost) newFSPromisesModule(rt *sobek.Runtime) *sobek.Object {
 		p := h.resolvePath(call.Argument(0).String())
 		_, err := os.Stat(p)
 		if err != nil {
-			return rejectPromise(rt, err)
+			return rejectFS(rt, err, "access", p)
 		}
 		return resolvePromise(rt, sobek.Undefined())
 	})
@@ -726,11 +741,11 @@ func (h *shimHost) newFSPromisesModule(rt *sobek.Runtime) *sobek.Object {
 		content := exportBytes(rt, call.Argument(1))
 		f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
-			return rejectPromise(rt, err)
+			return rejectFS(rt, err, "open", p)
 		}
 		defer func() { _ = f.Close() }()
 		if _, err := f.Write(content); err != nil {
-			return rejectPromise(rt, err)
+			return rejectFS(rt, err, "write", p)
 		}
 		return resolvePromise(rt, sobek.Undefined())
 	})
@@ -742,14 +757,15 @@ func (h *shimHost) newFSPromisesModule(rt *sobek.Runtime) *sobek.Object {
 		}
 		dir, err := os.MkdirTemp(filepath.Dir(prefix), filepath.Base(prefix))
 		if err != nil {
-			return rejectPromise(rt, err)
+			return rejectFS(rt, err, "mkdtemp", prefix)
 		}
 		return resolvePromise(rt, rt.ToValue(dir))
 	})
 
 	set("unlink", func(call sobek.FunctionCall) sobek.Value {
-		if err := os.Remove(h.resolvePath(call.Argument(0).String())); err != nil {
-			return rejectPromise(rt, err)
+		p := h.resolvePath(call.Argument(0).String())
+		if err := os.Remove(p); err != nil {
+			return rejectFS(rt, err, "unlink", p)
 		}
 		return resolvePromise(rt, sobek.Undefined())
 	})
@@ -771,7 +787,7 @@ func (h *shimHost) newFSPromisesModule(rt *sobek.Runtime) *sobek.Object {
 			err = os.Remove(p)
 		}
 		if err != nil {
-			return rejectPromise(rt, err)
+			return rejectFS(rt, err, "rm", p)
 		}
 		return resolvePromise(rt, sobek.Undefined())
 	})
@@ -780,7 +796,7 @@ func (h *shimHost) newFSPromisesModule(rt *sobek.Runtime) *sobek.Object {
 		dir := h.resolvePath(call.Argument(0).String())
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			return rejectPromise(rt, err)
+			return rejectFS(rt, err, "scandir", dir)
 		}
 		names := make([]any, len(entries))
 		for i, e := range entries {
@@ -794,13 +810,13 @@ func (h *shimHost) newFSPromisesModule(rt *sobek.Runtime) *sobek.Object {
 		dst := h.resolvePath(call.Argument(1).String())
 		data, err := os.ReadFile(src)
 		if err != nil {
-			return rejectPromise(rt, err)
+			return rejectFS(rt, err, "cp", src)
 		}
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			return rejectPromise(rt, err)
+			return rejectFS(rt, err, "cp", dst)
 		}
 		if err := os.WriteFile(dst, data, 0o644); err != nil {
-			return rejectPromise(rt, err)
+			return rejectFS(rt, err, "cp", dst)
 		}
 		return resolvePromise(rt, sobek.Undefined())
 	})
@@ -922,6 +938,9 @@ func newURLModule(rt *sobek.Runtime) *sobek.Object {
 	mustSet(rt, m, "fileURLToPath", func(call sobek.FunctionCall) sobek.Value {
 		u := call.Argument(0).String()
 		if strings.HasPrefix(u, "file://") {
+			if parsed, err := url.Parse(u); err == nil && parsed.Path != "" {
+				return rt.ToValue(parsed.Path)
+			}
 			return rt.ToValue(strings.TrimPrefix(u, "file://"))
 		}
 		return rt.ToValue(u)

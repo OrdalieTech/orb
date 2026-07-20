@@ -428,11 +428,21 @@ func decodeCompactOptions(runtime *sobek.Runtime, vm *runtimeVM, value sobek.Val
 		return nil
 	}
 	object := value.ToObject(runtime)
-	callbackContext := vm.context()
+	dispatchContext := vm.context()
+	// Compaction outlives the dispatching event, whose context is cancelled
+	// once the handler returns; upstream still awaits the callbacks. Keep the
+	// dispatch context while it is alive (host calls inside the callback stay
+	// attributed to it) and fall back to the VM lifetime context afterwards.
+	callbackContext := func() context.Context {
+		if dispatchContext.Err() != nil {
+			return vm.rootCtx
+		}
+		return dispatchContext
+	}
 	options := &extensions.CompactOptions{CustomInstructions: stringProperty(object, "customInstructions")}
 	if callback, ok := sobek.AssertFunction(object.Get("onComplete")); ok {
 		options.OnComplete = func(result harness.CompactionResult) {
-			vm.postWithContext(callbackContext, func(runtime *sobek.Runtime) error {
+			vm.post(callbackContext(), true, func(runtime *sobek.Runtime) error {
 				value, err := callback(sobek.Undefined(), toJS(runtime, result))
 				if err != nil {
 					return err
@@ -444,7 +454,7 @@ func decodeCompactOptions(runtime *sobek.Runtime, vm *runtimeVM, value sobek.Val
 	}
 	if callback, ok := sobek.AssertFunction(object.Get("onError")); ok {
 		options.OnError = func(callbackError error) {
-			vm.postWithContext(callbackContext, func(runtime *sobek.Runtime) error {
+			vm.post(callbackContext(), true, func(runtime *sobek.Runtime) error {
 				value, err := callback(sobek.Undefined(), runtime.NewGoError(callbackError))
 				if err != nil {
 					return err

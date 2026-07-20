@@ -2,6 +2,7 @@ package codingagent
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -100,6 +101,28 @@ func utf16Length(value string) int {
 	return len(utf16.Encode([]rune(value)))
 }
 
+// frontmatterTruthy mirrors JS truthiness for decoded YAML frontmatter values.
+func frontmatterTruthy(value any) bool {
+	switch typed := value.(type) {
+	case nil:
+		return false
+	case bool:
+		return typed
+	case string:
+		return typed != ""
+	case int:
+		return typed != 0
+	case int64:
+		return typed != 0
+	case uint64:
+		return typed != 0
+	case float64:
+		return typed != 0 && !math.IsNaN(typed)
+	default:
+		return true
+	}
+}
+
 func validateSkillName(name string) []string {
 	errors := make([]string, 0, 4)
 	if length := utf16Length(name); length > maxSkillNameLength {
@@ -158,12 +181,27 @@ func loadSkillFromFile(filePath, source string) (*Skill, []ResourceDiagnostic) {
 	if err != nil {
 		return nil, []ResourceDiagnostic{{Type: "warning", Message: err.Error(), Path: filePath}}
 	}
-	description, _ := parsed.Values["description"].(string)
+	descriptionValue := parsed.Values["description"]
+	description, descriptionIsString := descriptionValue.(string)
+	if !descriptionIsString && frontmatterTruthy(descriptionValue) {
+		// Upstream validateDescription calls description.trim() on the raw value;
+		// a truthy non-string throws a TypeError the loader catches as a single
+		// warning, so no further validation runs and the skill is not loaded.
+		return nil, []ResourceDiagnostic{{Type: "warning", Message: "description.trim is not a function", Path: filePath}}
+	}
 	diagnostics := make([]ResourceDiagnostic, 0, 5)
 	for _, message := range validateSkillDescription(description) {
 		diagnostics = append(diagnostics, ResourceDiagnostic{Type: "warning", Message: message, Path: filePath})
 	}
-	name, _ := parsed.Values["name"].(string)
+	nameValue := parsed.Values["name"]
+	name, nameIsString := nameValue.(string)
+	if !nameIsString && frontmatterTruthy(nameValue) {
+		// Upstream keeps a truthy non-string name (no dir-name fallback) and
+		// validateName throws at name.startsWith; the caught TypeError trails any
+		// description diagnostics and the skill is not loaded.
+		diagnostics = append(diagnostics, ResourceDiagnostic{Type: "warning", Message: "name.startsWith is not a function", Path: filePath})
+		return nil, diagnostics
+	}
 	if name == "" {
 		name = filepath.Base(filepath.Dir(filePath))
 	}
@@ -210,7 +248,12 @@ func (matcher *skillIgnoreMatcher) addDirectoryRules(dir, root string) {
 			} else if strings.HasPrefix(line, `\!`) || strings.HasPrefix(line, `\#`) {
 				line = line[1:]
 			}
-			anchored := strings.HasPrefix(line, "/")
+			// Upstream prefixIgnorePattern strips a leading "/" and prefixes the
+			// pattern with the ignore file's relative dir before handing it to the
+			// npm ignore library: root-level slash-less patterns (including
+			// "/anchored" ones, an upstream bug kept for parity) match basenames at
+			// any depth, while patterns from nested ignore files gain a slash and
+			// therefore only match relative to that ignore file's own directory.
 			line = strings.TrimPrefix(line, "/")
 			directory := strings.HasSuffix(line, "/")
 			line = strings.TrimSuffix(line, "/")
@@ -219,7 +262,7 @@ func (matcher *skillIgnoreMatcher) addDirectoryRules(dir, root string) {
 			}
 			matcher.rules = append(matcher.rules, ignorerules.Rule{
 				Base: relativeDir, Pattern: filepath.ToSlash(line), Negated: negated,
-				Directory: directory, BasenameOnly: !anchored && !strings.Contains(line, "/"),
+				Directory: directory, BasenameOnly: relativeDir == "" && !strings.Contains(line, "/"),
 			})
 		}
 	}
@@ -348,6 +391,9 @@ func LoadSkills(options LoadSkillsOptions) LoadSkillsResult {
 	}
 
 	result := LoadSkillsResult{Skills: []Skill{}, Diagnostics: []ResourceDiagnostic{}}
+	// Upstream collects collision diagnostics separately and concatenates them
+	// after every warning, regardless of discovery order.
+	collisions := []ResourceDiagnostic{}
 	byName := make(map[string]Skill)
 	realPaths := make(map[string]struct{})
 	for _, input := range paths {
@@ -378,7 +424,7 @@ func LoadSkills(options LoadSkillsOptions) LoadSkillsResult {
 				continue
 			}
 			if winner, collision := byName[skill.Name]; collision {
-				result.Diagnostics = append(result.Diagnostics, ResourceDiagnostic{
+				collisions = append(collisions, ResourceDiagnostic{
 					Type: "collision", Message: fmt.Sprintf("name %q collision", skill.Name), Path: skill.FilePath,
 					Collision: &ResourceCollision{ResourceType: "skill", Name: skill.Name, WinnerPath: winner.FilePath, LoserPath: skill.FilePath},
 				})
@@ -389,6 +435,7 @@ func LoadSkills(options LoadSkillsOptions) LoadSkillsResult {
 			result.Skills = append(result.Skills, skill)
 		}
 	}
+	result.Diagnostics = append(result.Diagnostics, collisions...)
 	return result
 }
 

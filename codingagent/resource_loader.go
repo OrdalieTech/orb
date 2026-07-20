@@ -95,6 +95,7 @@ type DefaultResourceLoader struct {
 	options  DefaultResourceLoaderOptions
 	resolved ResourceExtensionPaths
 	extended ResourceExtensionPaths
+	loaded   bool
 
 	registry  *extensions.Registry
 	resources Resources
@@ -143,16 +144,25 @@ func (loader *DefaultResourceLoader) Reload(ctx context.Context, reloadOptions *
 	}
 	loader.mu.RLock()
 	options := loader.options
+	loaded := loader.loaded
 	loader.mu.RUnlock()
 	extended := ResourceExtensionPaths{}
 
 	registry := extensions.NewRegistry(options.CWD)
 	diagnostics := make([]ResourceDiagnostic, 0)
 	if !options.NoExtensions && options.ExtensionRegistry != nil {
-		var err error
-		registry, err = options.ExtensionRegistry.Fresh(options.CWD)
-		if err != nil {
-			return err
+		if !loaded {
+			// First load adopts the already-materialized instances, mirroring
+			// upstream loadFinalExtensionSet reusing pre-trust-loaded extensions
+			// (resource-loader.ts:517-560) so factories run once per startup.
+			// Later reloads (/reload) re-run every factory against a fresh registry.
+			registry = options.ExtensionRegistry
+		} else {
+			var err error
+			registry, err = options.ExtensionRegistry.Fresh(options.CWD)
+			if err != nil {
+				return err
+			}
 		}
 	} else if !options.NoExtensions {
 		for index, factory := range options.ExtensionFactories {
@@ -224,6 +234,7 @@ func (loader *DefaultResourceLoader) Reload(ctx context.Context, reloadOptions *
 	loader.mu.Lock()
 	loader.resolved = resolved
 	loader.extended = extended
+	loader.loaded = true
 	loader.registry = registry
 	loader.resources = resources
 	loader.themes = themes

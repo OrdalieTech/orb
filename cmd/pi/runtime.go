@@ -36,7 +36,10 @@ type runtimeInputs struct {
 	PromptOptions    codingagent.SystemPromptOptions
 	Auth             *config.AuthStorage
 	Diagnostics      []string
-	ResourceLoader   codingagent.ResourceLoader
+	// ResourceDiagnostics carries skill/prompt resource warnings, shown in
+	// interactive mode only; upstream print/RPC modes print none of them.
+	ResourceDiagnostics []string
+	ResourceLoader      codingagent.ResourceLoader
 }
 
 func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMessages) (runtimeInputs, error) {
@@ -81,7 +84,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	extensionRegistry := args.extensionRegistry
 	extensionDiagnostics := args.extensionWarnings
 	if !args.extensionsLoaded {
-		extensionRegistry, extensionDiagnostics = loadCompiledExtensions(cwd, args, settings)
+		extensionRegistry, extensionDiagnostics = loadCompiledExtensions(cwd, agentDir, args, settings, resolvedPaths)
 	}
 	hasExtensions := extensionRegistry != nil
 	diagnostics = append(diagnostics, extensionDiagnostics...)
@@ -109,8 +112,9 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	}
 	resources.Diagnostics = append(resources.Diagnostics, skills.Diagnostics...)
 	resources.Diagnostics = append(resources.Diagnostics, prompts.Diagnostics...)
+	resourceDiagnostics := make([]string, 0, len(resources.Diagnostics))
 	for _, diagnostic := range resources.Diagnostics {
-		diagnostics = append(diagnostics, diagnostic.Message)
+		resourceDiagnostics = append(resourceDiagnostics, diagnostic.Message)
 	}
 
 	selection := ResolveBuiltInToolSelection(args)
@@ -291,9 +295,10 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		RebuildBaseTools: func() ([]agent.AgentTool, error) {
 			return createBuiltInTools(cwd, baseToolNames, settings)
 		},
-		Auth:           authStorage,
-		Diagnostics:    diagnostics,
-		ResourceLoader: resourceLoader,
+		Auth:                authStorage,
+		Diagnostics:         diagnostics,
+		ResourceDiagnostics: resourceDiagnostics,
+		ResourceLoader:      resourceLoader,
 	}, nil
 }
 

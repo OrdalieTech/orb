@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pi-go/codingagent/extensions"
 )
 
 type RPCExtensionUIRequest struct {
@@ -281,6 +282,99 @@ func (ui *RPCExtensionUI) close() {
 		waiter <- rpcUIDialogResult{}
 	}
 }
+
+// rpcExtensionUIAdapter exposes the RPC dialog sub-protocol through the
+// extensions.UI seam, mirroring upstream createExtensionUIContext
+// (rpc-mode.ts:135-305): dialogs and fire-and-forget requests go over the
+// wire, TUI-only surfaces keep NoopUI behavior.
+type rpcExtensionUIAdapter struct {
+	extensions.NoopUI
+	ui *RPCExtensionUI
+}
+
+func newRPCExtensionUIAdapter(ui *RPCExtensionUI) extensions.UI {
+	return rpcExtensionUIAdapter{ui: ui}
+}
+
+func rpcDialogContext(ctx context.Context, options *extensions.DialogOptions) (context.Context, *int64) {
+	if options == nil {
+		return ctx, nil
+	}
+	if options.Signal != nil {
+		ctx = options.Signal
+	}
+	return ctx, options.Timeout
+}
+
+func (adapter rpcExtensionUIAdapter) Select(ctx context.Context, title string, options []string, dialogOptions *extensions.DialogOptions) (string, bool, error) {
+	ctx, timeout := rpcDialogContext(ctx, dialogOptions)
+	value, err := adapter.ui.Select(ctx, title, options, timeout)
+	if err != nil || value == nil {
+		return "", false, err
+	}
+	return *value, true, nil
+}
+
+func (adapter rpcExtensionUIAdapter) Confirm(ctx context.Context, title, message string, dialogOptions *extensions.DialogOptions) (bool, error) {
+	ctx, timeout := rpcDialogContext(ctx, dialogOptions)
+	return adapter.ui.Confirm(ctx, title, message, timeout)
+}
+
+func (adapter rpcExtensionUIAdapter) Input(ctx context.Context, title string, placeholder *string, dialogOptions *extensions.DialogOptions) (string, bool, error) {
+	ctx, timeout := rpcDialogContext(ctx, dialogOptions)
+	value, err := adapter.ui.Input(ctx, title, placeholder, timeout)
+	if err != nil || value == nil {
+		return "", false, err
+	}
+	return *value, true, nil
+}
+
+func (adapter rpcExtensionUIAdapter) Editor(ctx context.Context, title string, prefill *string) (string, bool, error) {
+	value, err := adapter.ui.Editor(ctx, title, prefill)
+	if err != nil || value == nil {
+		return "", false, err
+	}
+	return *value, true, nil
+}
+
+func (adapter rpcExtensionUIAdapter) Notify(message string, notifyType extensions.NotificationType) {
+	_ = adapter.ui.Notify(message, string(notifyType))
+}
+
+func (adapter rpcExtensionUIAdapter) SetStatus(key string, text *string) {
+	_ = adapter.ui.SetStatus(key, text)
+}
+
+func (adapter rpcExtensionUIAdapter) SetWidget(key string, widget *extensions.Widget, options *extensions.WidgetOptions) {
+	// Upstream RPC mode forwards only line content; component factories need a TUI.
+	if widget != nil && widget.Factory != nil {
+		return
+	}
+	var lines []string
+	if widget != nil {
+		lines = widget.Lines
+	}
+	placement := ""
+	if options != nil {
+		placement = string(options.Placement)
+	}
+	_ = adapter.ui.SetWidget(key, lines, placement)
+}
+
+func (adapter rpcExtensionUIAdapter) SetTitle(title string) {
+	_ = adapter.ui.SetTitle(title)
+}
+
+func (adapter rpcExtensionUIAdapter) PasteToEditor(text string) {
+	// Upstream RPC mode falls back to setEditorText for paste requests.
+	adapter.SetEditorText(text)
+}
+
+func (adapter rpcExtensionUIAdapter) SetEditorText(text string) {
+	_ = adapter.ui.SetEditorText(text)
+}
+
+var _ extensions.UI = rpcExtensionUIAdapter{}
 
 func newRPCID() (string, error) {
 	bytes := make([]byte, 16)

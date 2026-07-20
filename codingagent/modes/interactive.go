@@ -178,6 +178,7 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 		return 1
 	}
 	mode.setupAutocomplete()
+	mode.setupExtensionShortcuts()
 	versionContext, stopVersionCheck := context.WithCancel(ctx)
 	var versionCheck sync.WaitGroup
 	if mode.options.StartupVersionCheck != nil {
@@ -448,6 +449,7 @@ func (mode *InteractiveMode) refreshResourcesAfterSessionStart(replacement *codi
 		return err
 	}
 	mode.setupAutocomplete()
+	mode.setupExtensionShortcuts()
 	return nil
 }
 
@@ -738,6 +740,55 @@ func (mode *InteractiveMode) setupAutocomplete() {
 		mode.editor.SetAutocompleteProvider(provider)
 	}
 	mode.setExtensionEditorAutocompleteProvider(provider)
+}
+
+// setupExtensionShortcuts installs the extension shortcut dispatcher on the
+// default editor (upstream interactive-mode.ts setupExtensionShortcuts): the
+// resolved shortcuts are matched against raw key input ahead of built-in
+// keybindings and each hit runs its handler asynchronously.
+func (mode *InteractiveMode) setupExtensionShortcuts() {
+	runner := mode.session.ExtensionRunner()
+	if runner == nil || mode.editor == nil {
+		return
+	}
+	shortcuts := runner.Shortcuts(keybindingStrings(mode.keybindings.ResolvedBindings()))
+	if len(shortcuts) == 0 {
+		return
+	}
+	order := make([]string, 0, len(shortcuts))
+	for _, key := range runner.ShortcutOrder() {
+		if _, exists := shortcuts[key]; exists {
+			order = append(order, key)
+		}
+	}
+	mode.editor.OnExtensionShortcut = func(data string) bool {
+		for _, key := range order {
+			if !tui.MatchesKey(data, tui.KeyID(key)) {
+				continue
+			}
+			shortcut := shortcuts[key]
+			// Run handler async, don't block input (upstream interactive-mode.ts:1800).
+			go func() {
+				if err := callShortcutHandler(shortcut.Handler, runner.CreateContext()); err != nil {
+					mode.showError(errors.New("Shortcut handler error: " + err.Error()))
+				}
+			}()
+			return true
+		}
+		return false
+	}
+}
+
+func callShortcutHandler(handler func(context.Context, extensions.Context) error, extensionContext extensions.Context) (err error) {
+	if handler == nil {
+		return nil
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("%v", recovered)
+		}
+	}()
+	return handler(context.Background(), extensionContext)
 }
 
 type autocompleteModel struct {
@@ -3080,7 +3131,7 @@ func (mode *InteractiveMode) renderInitialMessages() {
 				mode.renderCustomMessage(entry.CustomType, entry.Content, entry.Details)
 			}
 		case "custom":
-			mode.renderCustomEntry(entry.CustomType, entry.Data)
+			mode.renderCustomEntry(entry)
 		case "compaction":
 			component := NewCompactionSummaryMessage(entry.Summary, int64(entry.TokensBefore), mode.mdTheme)
 			mode.addExpandable(component)
@@ -3288,16 +3339,30 @@ func (mode *InteractiveMode) renderCustomMessage(customType string, content, det
 	mode.chat.AddChild(component)
 }
 
-func (mode *InteractiveMode) renderCustomEntry(customType string, data json.RawMessage) {
+func (mode *InteractiveMode) renderCustomEntry(entry sessionstore.SessionEntry) {
 	runner := mode.session.ExtensionRunner()
 	if runner == nil {
 		return
 	}
-	renderer := runner.EntryRenderer(customType)
+	renderer := runner.EntryRenderer(entry.CustomType)
 	if renderer == nil {
 		return
 	}
-	component := renderer(decodeJSONValue(data), extensions.EntryRenderOptions{Expanded: mode.toolsExpanded}, themeAdapter{value: theme.Current()})
+	// Upstream passes the whole session entry to the renderer, not just its
+	// data payload (interactive-mode.ts addCustomEntryToChat -> CustomEntryComponent).
+	entryValue := map[string]any{
+		"type":       "custom",
+		"customType": entry.CustomType,
+		"id":         entry.ID,
+		"timestamp":  entry.Timestamp,
+	}
+	if entry.ParentID != nil {
+		entryValue["parentId"] = *entry.ParentID
+	}
+	if len(entry.Data) > 0 {
+		entryValue["data"] = decodeJSONValue(entry.Data)
+	}
+	component := renderer(entryValue, extensions.EntryRenderOptions{Expanded: mode.toolsExpanded}, themeAdapter{value: theme.Current()})
 	if component != nil {
 		mode.chat.AddChild(component)
 	}

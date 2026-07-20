@@ -33,21 +33,33 @@ type rawServerConfig struct {
 	URL        string            `json:"url"`
 	Headers    map[string]string `json:"headers"`
 	Enabled    *bool             `json:"enabled"`
+	Disabled   *bool             `json:"disabled"`
 	TimeoutMS  int               `json:"timeoutMs"`
 	MaxRetries *int              `json:"maxRetries"`
 }
 
 // ParseSettings reads the documented top-level mcpServers object. Unknown
 // settings and unknown per-server fields are retained by the settings manager
-// but ignored here so newer configurations remain forward-compatible.
+// but ignored here so newer configurations remain forward-compatible. Invalid
+// entries are skipped so one bad entry cannot disable every other server; use
+// ParseSettingsWithWarnings to report them.
 func ParseSettings(settings map[string]any) ([]ServerConfig, error) {
+	servers, _, err := ParseSettingsWithWarnings(settings)
+	return servers, err
+}
+
+// ParseSettingsWithWarnings is ParseSettings with per-entry isolation made
+// visible: every invalid entry contributes one warning and is skipped while
+// the remaining entries still parse. The error is reserved for total failures
+// such as an mcpServers value that is not an object.
+func ParseSettingsWithWarnings(settings map[string]any) ([]ServerConfig, []string, error) {
 	value, exists := settings["mcpServers"]
 	if !exists || value == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	data, err := json.Marshal(value)
 	if err != nil {
-		return nil, fmt.Errorf("mcpServers: %w", err)
+		return nil, nil, fmt.Errorf("mcpServers: %w", err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
@@ -56,7 +68,7 @@ func ParseSettings(settings map[string]any) ([]ServerConfig, error) {
 		if err == nil {
 			err = fmt.Errorf("must be an object")
 		}
-		return nil, fmt.Errorf("mcpServers: %w", err)
+		return nil, nil, fmt.Errorf("mcpServers: %w", err)
 	}
 
 	names := make([]string, 0, len(entries))
@@ -65,15 +77,18 @@ func ParseSettings(settings map[string]any) ([]ServerConfig, error) {
 	}
 	sort.Strings(names)
 	servers := make([]ServerConfig, 0, len(names))
+	var warnings []string
 	for _, name := range names {
 		if strings.TrimSpace(name) == "" {
-			return nil, fmt.Errorf("mcpServers: server name must not be empty")
+			warnings = append(warnings, "mcpServers: server name must not be empty")
+			continue
 		}
 		var raw rawServerConfig
 		if err := json.Unmarshal(entries[name], &raw); err != nil {
-			return nil, fmt.Errorf("mcpServers.%s: %w", name, err)
+			warnings = append(warnings, fmt.Sprintf("mcpServers.%s: %v", name, err))
+			continue
 		}
-		if raw.Enabled != nil && !*raw.Enabled {
+		if raw.Enabled != nil && !*raw.Enabled || raw.Disabled != nil && *raw.Disabled {
 			continue
 		}
 		server := ServerConfig{
@@ -84,11 +99,12 @@ func ParseSettings(settings map[string]any) ([]ServerConfig, error) {
 			server.TimeoutMS = defaultConnectTimeoutMS
 		}
 		if err := validateServer(server); err != nil {
-			return nil, fmt.Errorf("mcpServers.%s: %w", name, err)
+			warnings = append(warnings, fmt.Sprintf("mcpServers.%s: %v", name, err))
+			continue
 		}
 		servers = append(servers, server)
 	}
-	return servers, nil
+	return servers, warnings, nil
 }
 
 func validateServer(server ServerConfig) error {

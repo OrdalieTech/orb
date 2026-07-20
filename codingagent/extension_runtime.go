@@ -256,6 +256,28 @@ func (runtime *SessionRuntime) BindExtensions(ctx context.Context) error {
 	return nil
 }
 
+// BindExtensionUI installs the extension UI seam on the active runner and in
+// the stored runner configuration, so /reload rebuilds keep it. Upstream
+// rpc-mode rebindSession passes its uiContext into bindExtensions on every
+// rebind (rpc-mode.ts:311-320); this is the equivalent seam for Go hosts.
+func (runtime *SessionRuntime) BindExtensionUI(ui extensions.UI, mode extensions.Mode) {
+	if runtime == nil || runtime.extensionState == nil {
+		return
+	}
+	state := runtime.extensionState
+	state.mu.Lock()
+	state.config.ExtensionUI = ui
+	if mode != "" {
+		state.config.ExtensionMode = mode
+	}
+	runner := state.runner
+	mode = state.config.ExtensionMode
+	state.mu.Unlock()
+	if runner != nil {
+		runner.SetUI(ui, mode)
+	}
+}
+
 func (runtime *SessionRuntime) runtimeCommandActions() extensions.CommandActions {
 	return extensions.CommandActions{
 		WaitForIdle: runtime.agent.WaitForIdle,

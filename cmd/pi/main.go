@@ -147,11 +147,8 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if args.Help {
 		text := helpText
 		if cwd, cwdErr := os.Getwd(); cwdErr == nil {
-			if agentDir, dirErr := config.GetAgentDir(); dirErr == nil {
-				if settings, settingsErr := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir)); settingsErr == nil {
-					registry, _ := loadCompiledExtensions(cwd, args, settings)
-					text = extensionHelpText(registry)
-				}
+			if registry, _, loadErr := loadStartupExtensions(cwd, args); loadErr == nil {
+				text = extensionHelpText(registry)
 			}
 		}
 		_, _ = io.WriteString(metadataOutput(args, streams), text)
@@ -165,11 +162,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if len(args.UnknownFlags) > 0 && len(validationErrors) > 0 {
 		var registry *extensions.Registry
 		if validationCWD, cwdErr := os.Getwd(); cwdErr == nil {
-			if agentDir, dirErr := config.GetAgentDir(); dirErr == nil {
-				if validationSettings, settingsErr := config.NewSettingsManager(validationCWD, config.WithAgentDir(agentDir)); settingsErr == nil {
-					registry, _ = loadCompiledExtensions(validationCWD, args, validationSettings)
-				}
-			}
+			registry, _, _ = loadStartupExtensions(validationCWD, args)
 		}
 		flagErrors := applyExtensionFlags(registry, args.UnknownFlags)
 		validationErrors = append(flagErrors, validationErrors...)
@@ -185,15 +178,11 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		if cwdErr != nil {
 			return reportCLIError(streams.Stderr, cwdErr)
 		}
-		agentDir, dirErr := config.GetAgentDir()
-		if dirErr != nil {
-			return reportCLIError(streams.Stderr, dirErr)
+		registry, warnings, loadErr := loadStartupExtensions(validationCWD, args)
+		if loadErr != nil {
+			return reportCLIError(streams.Stderr, loadErr)
 		}
-		validationSettings, settingsErr := config.NewSettingsManager(validationCWD, config.WithAgentDir(agentDir))
-		if settingsErr != nil {
-			return reportCLIError(streams.Stderr, settingsErr)
-		}
-		args.extensionRegistry, args.extensionWarnings = loadCompiledExtensions(validationCWD, args, validationSettings)
+		args.extensionRegistry, args.extensionWarnings = registry, warnings
 		args.extensionsLoaded = true
 		flagErrors := applyExtensionFlags(args.extensionRegistry, args.UnknownFlags)
 		if len(flagErrors) > 0 {
@@ -207,18 +196,29 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		}
 	}
 	if args.ListModels != nil {
-		agentDir, err := config.GetAgentDir()
+		// Upstream lists models after full runtime creation (main.ts:747-764), so
+		// providers registered by extensions participate in the listing.
+		listCWD, err := os.Getwd()
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
-		registry, err := dependencies.loadModels(agentDir)
+		listArgs := args
+		listArgs.useUnknownModel = true
+		listArgs.metadataOnly = true
+		inputs, err := dependencies.createRuntime(listCWD, listArgs, nil)
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
-		if loadError := registry.Error(); loadError != "" {
-			_, _ = fmt.Fprintln(streams.Stderr, "Warning: errors loading models.json:\n"+loadError)
+		if inputs.ModelRegistry != nil {
+			if loadError := inputs.ModelRegistry.Error(); loadError != "" {
+				_, _ = fmt.Fprintln(streams.Stderr, "Warning: errors loading models.json:\n"+loadError)
+			}
 		}
-		_, _ = io.WriteString(metadataOutput(args, streams), formatModelList(registry.Available(nil), *args.ListModels))
+		var models []ai.Model
+		if inputs.AvailableModels != nil {
+			models = inputs.AvailableModels()
+		}
+		_, _ = io.WriteString(metadataOutput(args, streams), formatModelList(models, *args.ListModels))
 		return 0
 	}
 	isInteractive := !args.Print && args.Mode != "json" && args.Mode != "rpc" && streams.StdinTTY && streams.StdoutTTY
@@ -312,11 +312,13 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			InitialImages:  initialImages,
 			Messages:       append([]string(nil), args.Messages...),
 			SessionHeader:  manager.GetHeader(),
-			Diagnostics:    inputs.Diagnostics,
-			Host:           host,
-			Changelog:      "",
-			Output:         streams.Stdout,
-			OutputTTY:      streams.StdoutTTY,
+			// Skill/prompt resource diagnostics stay interactive-only; upstream
+			// print/RPC modes emit no resource diagnostics (main.ts:87-91).
+			Diagnostics: append(append([]string(nil), inputs.Diagnostics...), inputs.ResourceDiagnostics...),
+			Host:        host,
+			Changelog:   "",
+			Output:      streams.Stdout,
+			OutputTTY:   streams.StdoutTTY,
 		})
 	}
 	extensionMode := extensions.ModePrint
@@ -329,13 +331,18 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	sessionHost, err := newCLISessionRuntimeHost(ctx, cliSessionRuntimeHostOptions{
 		BaseArgs: baseArgs, Manager: manager,
 		Dependencies: dependencies, Streams: streams, ExtensionMode: extensionMode,
+		// RPC binds its extension UI in bindReplacement; hold session_start
+		// until then so extensions see a live ctx.ui (not the headless noop).
+		DeferSessionStart: args.Mode == "rpc",
 	})
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
 	sessionRuntime := sessionHost.Session()
 	if args.Mode == "rpc" {
-		host, hostErr := newRPCSessionHost(ctx, sessionHost)
+		// Defer the initial extension bind: RunRPCMode binds the RPC extension UI
+		// and then the extensions, so session_start fires once with a live ctx.ui.
+		host, hostErr := newRPCSessionHost(ctx, sessionHost, true)
 		if hostErr != nil {
 			sessionHost.Dispose(ctx)
 			return reportCLIError(streams.Stderr, hostErr)
@@ -493,6 +500,15 @@ Usage: pi [options] [@files...] [messages...]
 
 OAuth providers: anthropic, openai-codex, github-copilot, xai
 
+Commands:
+  pi install <source> [-l]     Install extension source and add to settings
+  pi remove <source> [-l]      Remove extension source from settings
+  pi uninstall <source> [-l]   Alias for remove
+  pi update [source|self|pi]   Update pi, extensions, or model catalogs
+  pi list                      List installed extensions from settings
+  pi config [-l]               Open TUI to enable/disable package resources (Tab switches scope)
+  pi <command> --help          Show help for install/remove/uninstall/update/list/config
+
   --provider <name>              Provider name
   --model <id>                   Model ID
   --models <patterns>            Comma-separated model cycling patterns
@@ -518,6 +534,7 @@ OAuth providers: anthropic, openai-codex, github-copilot, xai
   --no-skills, -ns               Disable discovered skills; --skill remains additive
   --prompt-template <path>       Load a prompt template file or directory; repeatable
   --no-prompt-templates, -np     Disable prompt template discovery
+  --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable compiled-in extension discovery
   --no-context-files, -nc        Disable AGENTS.md/CLAUDE.md discovery
   --approve, -a                  Trust project-local resources for this run

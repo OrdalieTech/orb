@@ -109,6 +109,7 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
 | Bundled llama.cpp extension | excluded | shipped at the pinned commit but deleted upstream immediately after; porting would be dead-on-arrival work (2026-07-19 alignment audit; owner may amend) |
 | `chat/` gateway package (+ `chat/telegram`, `chat/whatsapp`) | addition | owner requirement (D27); kept out of core, strictly one-way dependency on the SDK |
 | `AgentSessionOptions` tool-operations injection hook | addition | D27; ergonomic seam over the existing `NewSessionRuntime`/`BaseTools` path for VFS/sandboxed tool operations |
+| `chat/` platform wave 2 (`slack`, `teams`, `discord`, `messenger`, `googlechat` + `chat/internal/` ws/webhook helpers) | addition | owner requirement (D28); official APIs only, stdlib-only clients incl. hand-rolled RFC 6455 |
 
 ## Execution decisions
 
@@ -169,6 +170,17 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
   `NewSessionRuntime`/`BaseTools`). Second product-layer addition after the bundled MCP extension
   (D18's "one philosophical addition" phrasing is retired).
 
+- **D28 — Chat platform wave 2 (owner, 2026-07-19).** Five adapters join the gateway: Slack
+  (Events API, streamed previews via chat.update), Microsoft Teams (Bot Framework, final-only),
+  Discord (Gateway over a hand-rolled RFC 6455 websocket client — zero new dependencies, the
+  G1/G2 tradition), Facebook Messenger (Graph, shares the WhatsApp webhook idiom), and Google
+  Chat (service-account JWT). Shared webhook-signature and websocket helpers are extracted to
+  `chat/internal/` now that the third adapter triggers the extraction rule. Bridge-based
+  platforms (Signal, iMessage, personal WhatsApp) and E2EE Matrix remain excluded per D27's
+  official-API stance. Later waves ride the same seams and transport: Instagram DM, Line,
+  Twilio SMS/RCS, Mattermost, Rocket.Chat, Zulip, IRC; KakaoTalk/WeChat noted as
+  access-restricted. Zero new go.mod dependencies remains the rule for every wave.
+
 ## Standing assumptions (owner-confirmed)
 
 - Independent semver from `v0.1.0`; upstream snapshot recorded in `UPSTREAM.lock`.
@@ -202,3 +214,53 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
   releases per the divergence ledger) surfaces new versions; installation goes through the install
   script or package manager. In-place binary self-replacement is a security and failure-mode
   liability a slim port does not need.
+
+## Sprint 5 — ecosystem-compat sweep decisions
+
+The July 2026 real-world compat sweep (six dimensions, real npm MCP servers, published pi
+packages, upstream example extensions) fixed 41 findings. Decisions made while fixing, so they
+are not re-litigated:
+
+- **Skills ignore semantics are upstream-bug-for-bug.** `prefixIgnorePattern` semantics ported
+  exactly: nested ignore-file patterns anchor to the ignore file's own directory, and a leading
+  `/` is stripped (so root-level `/pattern` matches basenames at any depth). Correct gitignore
+  behavior loses to parity with the pinned upstream.
+- **Skills symlink-cycle guard stays.** Upstream has no visited-set and recurses cycles to
+  ELOOP (~40 levels), leaking cycle-expanded paths into system-prompt `<location>` entries.
+  pi-go keeps the canonical-path visit stack and returns each skill once under its clean path.
+  Deliberate hardening divergence.
+- **MCP `"disabled": true` is honored** as `"enabled": false` (portability with Cline/Roo/
+  Claude Desktop configs). MCP config parsing is per-entry tolerant: invalid entries warn and
+  are skipped, valid entries load.
+- **Package dependency installs are Node-optional.** The package tarball is still fetched
+  natively; `npmCommand` (default `npm install --omit=dev`) runs only when `package.json`
+  declares dependencies that are not bundled, and a missing npm binary degrades to a warning.
+  Supported `.npmrc` surface is deliberately minimal: `registry=` and nerf-darted `_authToken`
+  (no `${VAR}` expansion, no per-scope registries, no `_auth`/username/password).
+- **pi-* shim modules throw on unknown imports at first touch** ("'X' is not exported by ...
+  (pi-go shim)") with an honest `has()` so `in`-feature-detection still works. True Node-ESM
+  link-time failure is unreachable without a build-time export manifest; first-touch is the slim
+  faithful approximation (question.ts-style examples now fail loudly at load instead of
+  registering broken tools).
+- **jsbridge runtime ceilings**: native `.node` addons and WebAssembly are unsupported by
+  design (sobek); both fail with explicit one-line diagnostics. `node:net` raw sockets,
+  `node:vm`, and `node:worker_threads` are not shimmed. `node:vm` is a rabbit hole with no slim
+  faithful mapping onto sobek, and `worker_threads` (real threads sharing a JS heap) is
+  fundamentally incompatible with sobek's single-threaded model. Consequences: the upstream
+  `sandbox` example stays unsupported (needs `node:net` plus the unexported `createBashTool`
+  factory surface), and the real npm package `pi-subagentura` stays unsupported (its
+  `workflow-script`/`workflow-worker-thread` modules import `node:vm` and worker threads). The
+  original sweep finding — `node:crypto`/`node:http`/`node:module`/`atob`/`btoa` — is fixed and
+  verified; these three modules are a separate, deliberately-declined ceiling, each failing with
+  a clear `unsupported external module "node:X"` diagnostic.
+- **pi-* shim unknown-import failure is access-time, not link-time.** Node ESM would fail an
+  unknown named import at link time; over esbuild-CJS bundling that requires a build-time export
+  manifest, which pi-go does not maintain. The shim instead throws on first *access* of an
+  unexported name (with an honest `has()`), so `question.ts`/`questionnaire.ts`-style examples
+  that touch the missing pi-tui `Editor`/`Key` surface only inside a TUI-only custom-UI factory
+  still load silently in print mode (where that factory never runs, and the registered tool
+  behaves upstream-identically) and throw clearly the moment the factory runs in interactive
+  mode. Forcing load-time failure is not worth a build-time export manifest.
+- **Package git subprocesses are quiet** (`clone -q`, `checkout -q` with
+  `advice.detachedHead=false`, `fetch -q`) — a cosmetic deviation from upstream, which inherits
+  git's stderr chatter.

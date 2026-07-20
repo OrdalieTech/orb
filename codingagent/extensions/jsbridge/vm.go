@@ -60,9 +60,10 @@ func (tracker *vmAsyncContextTracker) Exited() {
 }
 
 type runtimeVM struct {
-	entry string
-	code  []byte
-	cwd   string
+	entry    string
+	code     []byte
+	cwd      string
+	agentDir string
 
 	requests chan vmRequest
 	posts    chan vmPost
@@ -101,12 +102,13 @@ type registrationValue struct {
 	value sobek.Value
 }
 
-func newRuntimeVM(ctx context.Context, entry string, built artifact, cwd string) (*runtimeVM, error) {
+func newRuntimeVM(ctx context.Context, entry string, built artifact, cwd, agentDir string) (*runtimeVM, error) {
 	rootCtx, rootCancel := context.WithCancel(context.Background())
 	vm := &runtimeVM{
 		entry:         entry,
 		code:          append([]byte(nil), built.code...),
 		cwd:           cwd,
+		agentDir:      agentDir,
 		requests:      make(chan vmRequest),
 		posts:         make(chan vmPost, 128),
 		stop:          make(chan struct{}),

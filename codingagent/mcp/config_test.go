@@ -53,9 +53,12 @@ func TestParseSettingsValidation(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			settings := decodeSettings(t, `{"mcpServers":{"server":`+test.config+`}}`)
-			_, err := ParseSettings(settings)
-			if err == nil || !strings.Contains(err.Error(), test.message) {
-				t.Fatalf("error = %v, want substring %q", err, test.message)
+			servers, warnings, err := ParseSettingsWithWarnings(settings)
+			if err != nil || len(servers) != 0 {
+				t.Fatalf("servers = %#v, error = %v", servers, err)
+			}
+			if len(warnings) != 1 || !strings.Contains(warnings[0], "mcpServers.server: ") || !strings.Contains(warnings[0], test.message) {
+				t.Fatalf("warnings = %q, want substring %q", warnings, test.message)
 			}
 		})
 	}
