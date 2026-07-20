@@ -11,7 +11,7 @@ builds:
     flags: [-trimpath]
     mod_timestamp: "{{ .CommitTimestamp }}"
     ldflags:
-      - -s -w -X main.version={{.Version}}
+      - -s -w -funcalign=4 -X main.version={{.Version}}
 archives:
   - formats: [tar.gz]
     name_template: "pi_{{ .Version }}_{{ .Os }}_{{ .Arch }}"

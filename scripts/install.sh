@@ -28,7 +28,15 @@ base="https://github.com/$REPO/releases/download/$tag"
 
 curl -fsSL -o "$tmp/$archive" "$base/$archive"
 curl -fsSL -o "$tmp/checksums.txt" "$base/checksums.txt"
-(cd "$tmp" && grep " $archive\$" checksums.txt | sha256sum -c - >/dev/null)
+if command -v sha256sum >/dev/null 2>&1; then
+  checksum="sha256sum -c"
+elif command -v shasum >/dev/null 2>&1; then
+  checksum="shasum -a 256 -c"
+else
+  echo "sha256sum or shasum is required" >&2
+  exit 1
+fi
+(cd "$tmp" && grep " $archive\$" checksums.txt | $checksum - >/dev/null)
 tar -xzf "$tmp/$archive" -C "$tmp"
 
 mkdir -p "$INSTALL_DIR"
