@@ -44,7 +44,7 @@ func (a *Adapter) fetchMediaURL(ctx context.Context, mediaURL string) (io.ReadCl
 	}
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBytes))
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("whatsapp: media download returned HTTP %d", resp.StatusCode)
 	}
 	return resp.Body, nil
