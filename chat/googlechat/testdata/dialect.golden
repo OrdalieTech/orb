@@ -1,0 +1,21 @@
+*Deploy report*
+
+This is *bold*, this is _italic_, this is *also bold*, and ~removed~.
+
+See the <https://example.com/runbook?step=2|runbook> and `kubectl get pods`.
+
+- first item with *bold*
+- second item
+  - nested item
+
+> a quoted *warning* line
+
+```
+if **not converted** && [not](a-link) {
+    fmt.Println("verbatim")
+}
+```
+
+*Follow-up*
+
+Inline ```ls -la``` span stays usable.

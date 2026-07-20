@@ -1,0 +1,13 @@
+This single markdown paragraph is deliberately
+----chunk----
+much longer than the chunk limit so the
+----chunk----
+splitter has to cut it at space boundaries
+----chunk----
+several times over.
+----chunk----
+supercalifragilisticexpialidocious-antidisestabl
+----chunk----
+ishmentarianism-pneumonoultramicroscopicsilicovo
+----chunk----
+lcanoconiosis

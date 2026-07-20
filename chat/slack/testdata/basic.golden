@@ -1,0 +1,24 @@
+*Deploy report*
+
+The build *succeeded* with *zero* warnings &amp; 3 skips.
+
+_Latency_ dropped ~20%~ 25% — see <https://grafana.example.com/d/1?from=now-7d&amp;to=now|the dashboard>.
+
+• first item
+• second item with `inline code`
+  • nested item
+• starred item
+
+1. ordered one
+2. ordered two
+
+> quoted wisdom
+> about a &lt; b
+
+Compare a &lt; b and b &gt; c, then run ```ls -la``` to check.
+
+```
+if a &lt; b &amp;&amp; c &gt; d {
+	fmt.Println("x &amp; y")
+}
+```

@@ -1,17 +1,14 @@
 package whatsapp
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/OrdalieTech/pi-go/chat"
+	"github.com/OrdalieTech/pi-go/chat/internal/graphhook"
 )
 
 // maxWebhookBody bounds inbound webhook bodies.
@@ -128,28 +125,13 @@ func (a *Adapter) Webhook(publish func(chat.Message) error) http.Handler {
 // handleVerify answers the subscribe handshake: echo the raw hub.challenge
 // iff hub.mode is "subscribe" and hub.verify_token matches (constant time).
 func (a *Adapter) handleVerify(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
-	mode := query.Get("hub.mode")
-	token := query.Get("hub.verify_token")
-	if mode != "subscribe" || !hmac.Equal([]byte(token), []byte(a.opts.VerifyToken)) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(query.Get("hub.challenge")))
+	graphhook.HandleVerify(w, r, a.opts.VerifyToken)
 }
 
 // validSignature checks X-Hub-Signature-256 = "sha256=" + hex(HMAC-SHA256(
 // raw body, app secret)) in constant time.
 func (a *Adapter) validSignature(header string, body []byte) bool {
-	const prefix = "sha256="
-	if !strings.HasPrefix(header, prefix) {
-		return false
-	}
-	mac := hmac.New(sha256.New, []byte(a.opts.AppSecret))
-	mac.Write(body)
-	expected := hex.EncodeToString(mac.Sum(nil))
-	return hmac.Equal([]byte(expected), []byte(header[len(prefix):]))
+	return graphhook.ValidSignature(header, body, a.opts.AppSecret)
 }
 
 func (a *Adapter) handleEvent(w http.ResponseWriter, r *http.Request, publish func(chat.Message) error) {

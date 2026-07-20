@@ -1,0 +1,18 @@
+Intro paragraph before the code.
+
+```
+def handler(event):
+    # long enough to force a split
+```
+----chunk----
+```
+    return normalize(event, strict=True)
+
+def normalize(event, strict):
+```
+----chunk----
+```
+    return {"name": event.name, "strict": strict}
+```
+
+Tail paragraph after the code block ends.
