@@ -24,6 +24,7 @@ import (
 	"github.com/OrdalieTech/pi-go/codingagent"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+	"github.com/OrdalieTech/pi-go/codingagent/modes"
 	"github.com/OrdalieTech/pi-go/codingagent/session"
 )
 
@@ -194,6 +195,113 @@ func TestRunCLIOfflineFlagSetsEnvironmentBeforeRuntimeCreation(t *testing.T) {
 	}})
 	if code != 1 || !called {
 		t.Fatalf("code=%d called=%t", code, called)
+	}
+}
+
+type versionNotificationUI struct {
+	extensions.NoopUI
+	messages []string
+}
+
+func (ui *versionNotificationUI) Notify(message string, _ extensions.NotificationType) {
+	ui.messages = append(ui.messages, message)
+}
+
+type versionRoundTrip func(*http.Request) (*http.Response, error)
+
+func (roundTrip versionRoundTrip) RoundTrip(request *http.Request) (*http.Response, error) {
+	return roundTrip(request)
+}
+
+func TestStartupVersionCheckNotifiesAndHonorsNetworkCeilings(t *testing.T) {
+	t.Setenv("PI_SKIP_VERSION_CHECK", "")
+	t.Setenv("PI_OFFLINE", "")
+	if !isNewerPackageVersion("v5.0.0-beta.20", "5.0.0-beta.9") || isNewerPackageVersion("v1.2.3", "1.2.3") {
+		t.Fatal("semver precedence mismatch")
+	}
+	requests := 0
+	client := &http.Client{Transport: versionRoundTrip(func(request *http.Request) (*http.Response, error) {
+		requests++
+		if request.URL.String() != latestReleaseURL {
+			t.Errorf("URL = %q", request.URL)
+		}
+		if request.Header.Get("User-Agent") != "pi-go/1.2.3" || request.Header.Get("Accept") != "application/vnd.github+json" {
+			t.Errorf("headers = %#v", request.Header)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"tag_name":"v1.2.4"}`))}, nil
+	})}
+
+	check := newStartupVersionCheck("1.2.3", client, latestReleaseURL, time.Second)
+	ui := &versionNotificationUI{}
+	check(context.Background(), ui)
+	if requests != 1 || len(ui.messages) != 1 || ui.messages[0] != "pi-go v1.2.4 is available: https://github.com/OrdalieTech/pi-go/releases" {
+		t.Fatalf("requests=%d notifications=%q", requests, ui.messages)
+	}
+
+	for _, variable := range []string{"PI_SKIP_VERSION_CHECK", "PI_OFFLINE"} {
+		t.Setenv(variable, "1")
+		check(context.Background(), &versionNotificationUI{})
+		t.Setenv(variable, "")
+	}
+	if requests != 1 {
+		t.Fatalf("request made while disabled: %d", requests)
+	}
+
+	bounded := false
+	blocked := &http.Client{Transport: versionRoundTrip(func(request *http.Request) (*http.Response, error) {
+		_, bounded = request.Context().Deadline()
+		return nil, context.Canceled
+	})}
+	newStartupVersionCheck("1.2.3", blocked, latestReleaseURL, 20*time.Millisecond)(context.Background(), &versionNotificationUI{})
+	if !bounded {
+		t.Fatal("request context has no deadline")
+	}
+}
+
+func TestRunCLIProvidesStartupVersionCheckToInteractiveMode(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	t.Setenv("PI_SKIP_VERSION_CHECK", "1")
+	wired := false
+	code := runCLIWithDependencies(context.Background(), []string{"--no-session"}, cliStreams{
+		Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard, StdinTTY: true, StdoutTTY: true,
+	}, cliDependencies{
+		createRuntime: fauxRuntimeFactory(faux.New()),
+		runInteractive: func(ctx context.Context, runtime *codingagent.SessionRuntime, options modes.InteractiveModeOptions) int {
+			defer runtime.Dispose()
+			if options.StartupVersionCheck == nil {
+				t.Fatal("StartupVersionCheck is nil")
+			}
+			options.StartupVersionCheck(ctx, extensions.NoopUI{})
+			wired = true
+			return 0
+		},
+	})
+	if code != 0 || !wired {
+		t.Fatalf("code=%d wired=%t", code, wired)
+	}
+}
+
+func TestRunCLIVersionIncludesUpstreamIdentity(t *testing.T) {
+	data, err := os.ReadFile("../../UPSTREAM.lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lock struct {
+		Version string `json:"version"`
+		Commit  string `json:"commit"`
+	}
+	if err := json.Unmarshal(data, &lock); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	if code := runCLI(context.Background(), []string{"--version"}, cliStreams{Stdout: &stdout}); code != 0 {
+		t.Fatalf("exit code = %d", code)
+	}
+	want := fmt.Sprintf("pi-go %s (upstream pi %s @ %.8s)\n", version, lock.Version, lock.Commit)
+	if stdout.String() != want {
+		t.Fatalf("version = %q, want %q", stdout.String(), want)
 	}
 }
 
@@ -455,7 +563,7 @@ func TestRunCLIParserErrorVersionAndHelpPrecedence(t *testing.T) {
 		{
 			name:       "version wins help and deferred validation",
 			argv:       []string{"--help", "--version", "--unknown", "--api-key", "secret"},
-			wantStdout: version + "\n",
+			wantStdout: versionOutput() + "\n",
 		},
 		{
 			name:       "help wins deferred validation",

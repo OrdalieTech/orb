@@ -18,6 +18,7 @@ import (
 	"github.com/OrdalieTech/pi-go/ai"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+	modetheme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
 	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
 	"github.com/OrdalieTech/pi-go/codingagent/session/exporthtml"
 	"github.com/OrdalieTech/pi-go/codingagent/tools"
@@ -899,6 +900,29 @@ func (runtime *SessionRuntime) SetSessionName(name string) error {
 func (runtime *SessionRuntime) ExportHTML(outputPath string) (string, error) {
 	state := runtime.agent.State()
 	systemPrompt := state.SystemPrompt
+	themeName := runtime.settings.GetTheme()
+	var exportTheme *modetheme.Theme
+	configured := themeName == "dark" || themeName == "light"
+	if themeName != "" && !configured {
+		exportTheme = modetheme.GetTheme(themeName)
+		if exportTheme == nil && runtime.resourceLoader != nil {
+			for _, candidate := range runtime.resourceLoader.GetThemes().Themes {
+				if candidate.Name == themeName {
+					exportTheme = candidate
+					break
+				}
+			}
+		}
+		configured = exportTheme != nil
+	}
+	if !configured {
+		if current := modetheme.Current(); current != nil {
+			themeName = current.Name
+			exportTheme = current
+		} else {
+			themeName = ""
+		}
+	}
 	// Custom extension tools are pre-rendered through their TUI renderers
 	// (upstream exportToHtml's createToolHtmlRenderer).
 	uiTheme := extensions.NewNoopUI().Theme()
@@ -915,6 +939,8 @@ func (runtime *SessionRuntime) ExportHTML(outputPath string) (string, error) {
 		SystemPrompt: &systemPrompt,
 		Tools:        exportToolList(state.Tools),
 		ToolRenderer: renderer,
+		ThemeName:    themeName,
+		Theme:        exportTheme,
 	})
 }
 

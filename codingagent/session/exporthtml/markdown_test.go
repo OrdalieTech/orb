@@ -88,16 +88,23 @@ func TestCollisionSafeMarkdownDelimiters(t *testing.T) {
 func TestParseSkillBlockRequiresUpstreamShape(t *testing.T) {
 	t.Parallel()
 	valid := "<skill name=\"demo\" location=\"/tmp/SKILL.md\">\nbody\n</skill>\n\nrun it"
-	got, ok := parseSkillBlock(valid)
-	if !ok || got.name != "demo" || got.location != "/tmp/SKILL.md" || got.content != "body" || got.userMessage != "run it" {
+	got, ok := ParseSkillBlock(valid)
+	if !ok || got.Name != "demo" || got.Location != "/tmp/SKILL.md" || got.Content != "body" || got.UserMessage != "run it" {
 		t.Fatalf("parseSkillBlock(valid) = %+v, %v", got, ok)
+	}
+	nested := "<skill name=\"demo\" location=\"/tmp/SKILL.md\">\nalpha\n</skill>literal\nomega\n</skill>"
+	got, ok = ParseSkillBlock(nested)
+	if !ok || got.Content != "alpha\n</skill>literal\nomega" {
+		t.Fatalf("parseSkillBlock(nested close) = %+v, %v", got, ok)
 	}
 	for _, invalid := range []string{
 		"prefix " + valid,
 		"<skill name=\"demo\" location=\"/tmp/SKILL.md\">\nbody\n</skill>suffix",
 		"<skill name=\"demo\" location=\"/tmp/SKILL.md\">\nbody\n</skill>\n\n",
+		"<skill name=\"de\"mo\" location=\"/tmp/SKILL.md\">\nbody\n</skill>",
+		"<skill name=\"demo\" location=\"/tmp/\"SKILL.md\">\nbody\n</skill>",
 	} {
-		if _, ok := parseSkillBlock(invalid); ok {
+		if _, ok := ParseSkillBlock(invalid); ok {
 			t.Errorf("parseSkillBlock accepted %q", invalid)
 		}
 	}

@@ -1,10 +1,6 @@
-package harness
+package ai
 
-import (
-	"regexp"
-
-	"github.com/OrdalieTech/pi-go/ai"
-)
+import "regexp"
 
 var nonRetryableProviderLimitPatterns = compilePatterns([]string{
 	`GoUsageLimitError`, `FreeUsageLimitError`, `Monthly usage limit reached`, `available balance`,
@@ -24,7 +20,7 @@ var retryableProviderPatterns = compilePatterns([]string{
 
 var overflowPatterns = compilePatterns([]string{
 	`prompt is too long`, `request_too_large`, `input is too long for requested model`,
-	`exceeds the context window`, `exceeds (the )?(model'?s )?maximum context length`,
+	`exceeds the context window`, `exceeds (the )?(model'?s )?maximum context length( of [0-9,]+ tokens?|[[:space:]]*\([0-9,]+\))`,
 	`input token count.*exceeds the maximum`, `maximum prompt length is [0-9]+`,
 	`reduce the length of the messages`, `range of input length should be`, `maximum context length is [0-9]+ tokens`,
 	`exceeds (the )?maximum allowed input length of [0-9,]+ tokens?`,
@@ -42,38 +38,38 @@ var nonOverflowPatterns = compilePatterns([]string{
 	`^(Throttling error|Service unavailable):`, `rate limit`, `too many requests`,
 })
 
-func IsRetryableAssistantError(message *ai.AssistantMessage) bool {
-	if message == nil || message.StopReason != ai.StopReasonError || message.ErrorMessage == nil || *message.ErrorMessage == "" {
+// IsRetryableAssistantError reports whether a failed assistant message is a
+// transient provider or transport error.
+func IsRetryableAssistantError(message *AssistantMessage) bool {
+	if message == nil || message.StopReason != StopReasonError || message.ErrorMessage == nil || *message.ErrorMessage == "" {
 		return false
 	}
 	text := *message.ErrorMessage
-	if matchesAny(nonRetryableProviderLimitPatterns, text) {
-		return false
-	}
-	return matchesAny(retryableProviderPatterns, text)
+	return !matchesAny(nonRetryableProviderLimitPatterns, text) && matchesAny(retryableProviderPatterns, text)
 }
 
-func IsContextOverflow(message *ai.AssistantMessage, contextWindow float64) bool {
+// IsContextOverflow recognizes upstream's explicit and silent overflow forms.
+func IsContextOverflow(message *AssistantMessage, contextWindow float64) bool {
 	if message == nil {
 		return false
 	}
-	if message.StopReason == ai.StopReasonError && message.ErrorMessage != nil {
+	if message.StopReason == StopReasonError && message.ErrorMessage != nil {
 		text := *message.ErrorMessage
 		if !matchesAny(nonOverflowPatterns, text) && matchesAny(overflowPatterns, text) {
 			return true
 		}
 	}
 	inputTokens := message.Usage.Input + message.Usage.CacheRead
-	if contextWindow > 0 && message.StopReason == ai.StopReasonStop && float64(inputTokens) > contextWindow {
+	if contextWindow > 0 && message.StopReason == StopReasonStop && float64(inputTokens) > contextWindow {
 		return true
 	}
-	return contextWindow > 0 && message.StopReason == ai.StopReasonLength && message.Usage.Output == 0 && float64(inputTokens) >= contextWindow*0.99
+	return contextWindow > 0 && message.StopReason == StopReasonLength && message.Usage.Output == 0 && float64(inputTokens) >= contextWindow*0.99
 }
 
 func compilePatterns(patterns []string) []*regexp.Regexp {
-	compiled := make([]*regexp.Regexp, 0, len(patterns))
-	for _, pattern := range patterns {
-		compiled = append(compiled, regexp.MustCompile(`(?i)`+pattern))
+	compiled := make([]*regexp.Regexp, len(patterns))
+	for index, pattern := range patterns {
+		compiled[index] = regexp.MustCompile(`(?i)` + pattern)
 	}
 	return compiled
 }

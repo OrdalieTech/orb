@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,11 +21,21 @@ import (
 	"github.com/OrdalieTech/pi-go/codingagent/modes"
 	"github.com/OrdalieTech/pi-go/codingagent/session"
 	"github.com/OrdalieTech/pi-go/codingagent/session/exporthtml"
+	"github.com/OrdalieTech/pi-go/internal/semver"
 	"golang.org/x/term"
 )
 
 // version is injected by goreleaser ldflags at release time.
 var version = "0.1.0-dev"
+
+const (
+	upstreamVersion        = "0.80.10"
+	upstreamCommit         = "3a40794ea14c6202586cc203d5b928eca9f6b673"
+	latestReleaseURL       = "https://api.github.com/repos/OrdalieTech/pi-go/releases/latest"
+	releasesURL            = "https://github.com/OrdalieTech/pi-go/releases"
+	versionCheckTimeout    = 10 * time.Second
+	versionResponseMaxSize = 64 << 10
+)
 
 type cliStreams struct {
 	Stdin     io.Reader
@@ -40,6 +51,7 @@ type cliDependencies struct {
 	runConfig               func(context.Context, modes.ConfigSelectorOptions) error
 	loadModels              func(string) (*config.ModelRegistry, error)
 	refreshModels           func(context.Context, string) error
+	runInteractive          func(context.Context, *codingagent.SessionRuntime, modes.InteractiveModeOptions) int
 	selectSession           SessionSelector
 	selectMissingSessionCWD func(context.Context, *MissingSessionCWDError) (string, bool, error)
 	runRPCFixture           func(context.Context, CLIArgs, cliStreams, string) (handled bool, code int)
@@ -84,6 +96,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if dependencies.refreshModels == nil {
 		dependencies.refreshModels = refreshModelCatalogs
 	}
+	if dependencies.runInteractive == nil {
+		dependencies.runInteractive = modes.RunInteractiveMode
+	}
 	if dependencies.selectSession == nil {
 		dependencies.selectSession = startupTUISessionSelector(ctx)
 	}
@@ -127,7 +142,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		return 1
 	}
 	if args.Version {
-		_, _ = fmt.Fprintln(streams.Stdout, version)
+		_, _ = fmt.Fprintln(streams.Stdout, versionOutput())
 		return 0
 	}
 	if args.Command != "" {
@@ -316,11 +331,14 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		}
 		startStartupModelRefresh(ctx, "interactive", offlineMode, !networkDisabled, agentDir, inputs.ModelRegistry, dependencies.refreshModels)
 		host := newInteractiveSessionHost(baseArgs, dependencies, sessionRuntime, inputs, agentDir, streams.Stderr)
-		return modes.RunInteractiveMode(ctx, host.Session(), modes.InteractiveModeOptions{
+		return dependencies.runInteractive(ctx, host.Session(), modes.InteractiveModeOptions{
 			InitialMessage: initial,
 			InitialImages:  initialImages,
 			Messages:       append([]string(nil), args.Messages...),
 			SessionHeader:  manager.GetHeader(),
+			StartupVersionCheck: newStartupVersionCheck(
+				version, http.DefaultClient, latestReleaseURL, versionCheckTimeout,
+			),
 			// Skill/prompt resource diagnostics stay interactive-only; upstream
 			// print/RPC modes emit no resource diagnostics (main.ts:87-91).
 			Diagnostics: append(append([]string(nil), inputs.Diagnostics...), inputs.ResourceDiagnostics...),
@@ -429,6 +447,55 @@ func refreshModelCatalogs(ctx context.Context, agentDir string) error {
 		return errors.New("model catalog refresh timed out")
 	}
 	return err
+}
+
+func versionOutput() string {
+	return fmt.Sprintf("pi-go %s (upstream pi %s @ %.8s)", version, upstreamVersion, upstreamCommit)
+}
+
+func newStartupVersionCheck(currentVersion string, client *http.Client, endpoint string, timeout time.Duration) func(context.Context, extensions.UI) {
+	return func(ctx context.Context, ui extensions.UI) {
+		if os.Getenv("PI_SKIP_VERSION_CHECK") != "" || os.Getenv("PI_OFFLINE") != "" {
+			return
+		}
+		requestContext, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		request, err := http.NewRequestWithContext(requestContext, http.MethodGet, endpoint, nil)
+		if err != nil {
+			return
+		}
+		request.Header.Set("Accept", "application/vnd.github+json")
+		request.Header.Set("User-Agent", "pi-go/"+currentVersion)
+		response, err := client.Do(request)
+		if err != nil {
+			return
+		}
+		defer func() { _ = response.Body.Close() }()
+		if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+			return
+		}
+		var release struct {
+			TagName string `json:"tag_name"`
+		}
+		if json.NewDecoder(io.LimitReader(response.Body, versionResponseMaxSize)).Decode(&release) != nil {
+			return
+		}
+		tag := strings.TrimSpace(release.TagName)
+		if tag == "" || !isNewerPackageVersion(tag, currentVersion) {
+			return
+		}
+		ui.Notify(fmt.Sprintf("pi-go %s is available: %s", tag, releasesURL), extensions.NotifyInfo)
+	}
+}
+
+func isNewerPackageVersion(candidate, current string) bool {
+	candidate, current = strings.TrimSpace(candidate), strings.TrimSpace(current)
+	candidateVersion, candidateOK := semver.Parse(candidate)
+	currentVersion, currentOK := semver.Parse(current)
+	if candidateOK && currentOK {
+		return semver.Compare(candidateVersion, currentVersion) > 0
+	}
+	return candidate != current
 }
 
 func startupModelRefreshEnabled(mode string, offline bool) bool {

@@ -86,26 +86,29 @@ type RPCSourceInfo struct {
 }
 
 type RPCCommand struct {
-	ID                 string             `json:"id,omitempty"`
-	Type               string             `json:"type"`
-	Message            string             `json:"message,omitempty"`
-	Images             []*ai.ImageContent `json:"images,omitempty"`
-	StreamingBehavior  string             `json:"streamingBehavior,omitempty"`
-	ParentSession      string             `json:"parentSession,omitempty"`
-	Provider           string             `json:"provider,omitempty"`
-	ModelID            string             `json:"modelId,omitempty"`
-	Level              string             `json:"level,omitempty"`
-	Mode               string             `json:"mode,omitempty"`
-	CustomInstructions string             `json:"customInstructions,omitempty"`
-	Enabled            *bool              `json:"enabled,omitempty"`
-	Command            string             `json:"command,omitempty"`
-	ExcludeFromContext *bool              `json:"excludeFromContext,omitempty"`
-	OutputPath         string             `json:"outputPath,omitempty"`
-	SessionPath        string             `json:"sessionPath,omitempty"`
-	EntryID            string             `json:"entryId,omitempty"`
-	Since              *string            `json:"since,omitempty"`
-	Name               string             `json:"name,omitempty"`
-	HasID              bool               `json:"-"`
+	ID                    string             `json:"id,omitempty"`
+	Type                  string             `json:"type"`
+	Message               string             `json:"message,omitempty"`
+	Images                []*ai.ImageContent `json:"images,omitempty"`
+	StreamingBehavior     string             `json:"streamingBehavior,omitempty"`
+	ParentSession         string             `json:"parentSession,omitempty"`
+	Provider              string             `json:"provider,omitempty"`
+	ModelID               string             `json:"modelId,omitempty"`
+	Level                 string             `json:"level,omitempty"`
+	Mode                  string             `json:"mode,omitempty"`
+	CustomInstructions    string             `json:"customInstructions,omitempty"`
+	Enabled               *bool              `json:"enabled,omitempty"`
+	Command               string             `json:"command,omitempty"`
+	ExcludeFromContext    *bool              `json:"excludeFromContext,omitempty"`
+	OutputPath            string             `json:"outputPath,omitempty"`
+	SessionPath           string             `json:"sessionPath,omitempty"`
+	EntryID               string             `json:"entryId,omitempty"`
+	Since                 *string            `json:"since,omitempty"`
+	Name                  string             `json:"name,omitempty"`
+	HasID                 bool               `json:"-"`
+	parentSessionSet      bool
+	customInstructionsSet bool
+	outputPathSet         bool
 }
 
 type RPCExtensionUIResponse struct {

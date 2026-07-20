@@ -13,6 +13,7 @@ import (
 	"github.com/OrdalieTech/pi-go/ai"
 	"github.com/OrdalieTech/pi-go/ai/providers/faux"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
+	modetheme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
 	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
 )
 
@@ -35,6 +36,77 @@ func TestPromptPreflightRejectsUnknownModelSentinel(t *testing.T) {
 	defer runtime.Dispose()
 	if err := runtime.PromptPreflight(context.Background()); err == nil || !strings.HasPrefix(err.Error(), "No model selected.") {
 		t.Fatalf("unknown-model preflight error = %v", err)
+	}
+}
+
+func TestExportHTMLPrefersConfiguredCustomThemeOverCurrent(t *testing.T) {
+	root, agentDir := t.TempDir(), t.TempDir()
+	settings, err := config.NewSettingsManager(root, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.SetTheme("configured-custom")
+	source, err := os.ReadFile(filepath.Join("modes", "theme", "dark.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	custom := strings.Replace(string(source), `"name": "dark"`, `"name": "configured-custom"`, 1)
+	custom = strings.Replace(custom, `"pageBg": "#18181e"`, `"pageBg": "#123456"`, 1)
+	themePath := filepath.Join(root, "configured-custom.json")
+	if err := os.WriteFile(themePath, []byte(custom), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+		CWD: root, AgentDir: agentDir, SettingsManager: settings, NoThemes: true,
+		AdditionalThemePaths: []string{themePath}, NoSkills: true, NoPromptTemplates: true, NoContextFiles: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loader.Reload(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	registry := modetheme.Load(modetheme.LoadOptions{CWD: root, AgentDir: agentDir, NoThemes: true, Mode: modetheme.TrueColor})
+	dark, found := registry.Get("dark")
+	if !found {
+		t.Fatal("dark theme is missing")
+	}
+	previous := modetheme.Current()
+	modetheme.SetCurrent(dark)
+	t.Cleanup(func() { modetheme.SetCurrent(previous) })
+
+	provider := testFaux(100_000)
+	manager, err := sessionstore.Create(root, filepath.Join(root, "sessions"), sessionstore.WithSessionID("configured-theme-export"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.AppendMessage(userMessage("hello")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.AppendMessage(runtimeAssistant(provider, "answer", 1)); err != nil {
+		t.Fatal(err)
+	}
+	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{
+		Model: provider.GetModel(), SystemPrompt: "test", Messages: agent.AgentMessages{}, Tools: []agent.AgentTool{},
+	}))
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
+		Agent: created, SessionManager: manager, Settings: settings, ResourceLoader: loader,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(runtime.Dispose)
+	output := filepath.Join(root, "session.html")
+	if _, err := runtime.ExportHTML(output); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(contents), "--exportPageBg: #123456;") {
+		t.Fatalf("configured custom theme did not win over current dark theme")
 	}
 }
 

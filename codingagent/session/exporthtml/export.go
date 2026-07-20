@@ -12,6 +12,7 @@ import (
 
 	"github.com/OrdalieTech/pi-go/ai"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
+	modetheme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
 	"github.com/OrdalieTech/pi-go/codingagent/session"
 )
 
@@ -36,6 +37,7 @@ type Options struct {
 	SystemPrompt *string
 	Tools        json.RawMessage
 	ToolRenderer ToolHTMLRenderer
+	Theme        *modetheme.Theme
 }
 
 type sessionData struct {
@@ -67,7 +69,7 @@ func ExportSession(manager *session.SessionManager, options Options) (string, er
 	if options.ToolRenderer != nil {
 		data.RenderedTools = preRenderCustomTools(entries, options.ToolRenderer)
 	}
-	contents, err := generateHTML(data, options.ThemeName)
+	contents, err := generateHTML(data, options.ThemeName, options.Theme)
 	if err != nil {
 		return "", err
 	}
@@ -109,8 +111,8 @@ func ExportFromFile(inputPath string, options Options) (string, error) {
 	return ExportSession(manager, options)
 }
 
-func generateHTML(data sessionData, themeName string) (string, error) {
-	theme, err := resolveExportTheme(themeName)
+func generateHTML(data sessionData, themeName string, selectedTheme *modetheme.Theme) (string, error) {
+	theme, err := resolveExportTheme(themeName, selectedTheme)
 	if err != nil {
 		return "", err
 	}

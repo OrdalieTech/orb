@@ -69,28 +69,32 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 
 ## M5 — v1.0 release (closes Sprint 4)
 
-- [x] All M1–M4 criteria re-verified at the release commit, fixtures regenerated at current UPSTREAM.lock.
+- [ ] All M1–M4 criteria re-verified at the release commit, fixtures regenerated at current
+      UPSTREAM.lock. (The deterministic surfaces are green, but the subscribed OAuth, hosted
+      nightly, and real-terminal checks in M2–M4 remain owner-blocked.)
 - [x] One full sync cycle executed against a fresher upstream commit (≤ 30 days old) with a green
       lock bump — proves the sync machinery, not just the snapshot. (`3a40794e`, 2026-07-20: 116
       changed paths classified, zero unmapped paths, fixtures regenerated, full race suite green.)
 - [ ] goreleaser artifacts for all 4 targets; install script verified on clean linux + macOS VMs.
-      (All four snapshot artifacts built, checksum-verified, version-injected; script mechanics
-      verified against them — clean-VM end-to-end runs owner-blocked.)
+      (All four current snapshot artifacts built and checksum-verified; the install script was
+      exercised as an unprivileged user in a network-disabled clean Linux container with both
+      checksum-tool paths. A real macOS VM remains owner-blocked.)
 - [ ] Cold start < 50 ms; binary ≤ 35 MB (with bridge); numbers recorded in release notes.
-      (Cold start 45.0 ± 5.2 ms green with thin margin; current bridged binary 51,703,970 B.
-      The size half is red: removing embedded sobek/esbuild would contradict D17, so closure needs
+      (The alignment-tail candidate measures 33.5 ± 4.8 ms and 50,966,690 B. The size half remains
+      red: removing embedded sobek/esbuild would contradict D17, so closure needs
       an owner amendment to D17 or this budget, not a weakened measurement.)
 - [ ] Nightly live suite ≥ 90% pass over the trailing 72 hours. (Owner-blocked: CI secrets and
       authorized hosted runs.)
 - [ ] Docs newcomer path (install → first session → embed SDK → run an upstream extension) verified
       by following the docs literally; README credit/provenance; divergence ledger current.
       (SDK-embed and extension steps verified offline; install step needs a published release.)
-- [x] Upstream alignment audit re-run at the release commit with zero open should-fix findings
+- [ ] Upstream alignment audit re-run at the release commit with zero open should-fix findings
       (docs/compare/upstream-alignment.md); release notes extracted from CHANGELOG.md; version
-      injected via ldflags and printed with the upstream pin. (22/22 closed; D29 records the
-      AgentHarness/streamProxy boundary. --version stays byte-parity bare.)
-- [x] Final trim pass #5; LOC report: mirrored packages ≤ 1.3× upstream TS src LOC or justified
-      per-package in the report; dep audit clean.
+      injected via ldflags and printed with the upstream pin. (The current candidate is zero-open,
+      maps 436/436 files, and prints both identities; this must run once more at the final commit.)
+- [ ] Final trim pass #5; LOC report: mirrored packages ≤ 1.3× upstream TS src LOC or justified
+      per-package in the report; dep audit clean. (Current candidate: 1.123x, 20 reviewed clone
+      groups, modules verified and tidy; this must run once more at the final commit.)
 
 ## Live-test policy
 
