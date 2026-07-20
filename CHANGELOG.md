@@ -8,6 +8,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Added
 
+- Chat gateway wave 2: stdlib-only Slack, Teams, Discord, Messenger, and Google Chat adapters,
+  plus shared RFC 6455 and Meta Graph webhook helpers.
 - jsbridge Node compatibility for real ecosystem extensions: `node:crypto` (randomUUID,
   randomBytes, createHash/createHmac with hex/base64/base64url digests), `node:http`/`node:https`
   (minimal server + client over Go net/http), `node:module` `createRequire`, and the

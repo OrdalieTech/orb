@@ -2,7 +2,9 @@
 
 The `chat` package (D27) turns the pi-go SDK into a multi-user messaging agent: a synchronous,
 at-least-once turn processor around `codingagent.AgentSession` with normalized platform messages,
-a `SessionProvider` ownership seam, and platform adapters in `chat/telegram` and `chat/whatsapp`.
+a `SessionProvider` ownership seam, and platform adapters in `chat/telegram`, `chat/whatsapp`,
+and — since wave 2 (D28) — `chat/slack`, `chat/teams`, `chat/discord`, `chat/messenger`, and
+`chat/googlechat` (see [Platforms](#platforms-wave-2)).
 Dependency direction is strictly `chat → codingagent`; nothing in the SDK imports `chat`.
 
 ## Quick start — local Telegram bot
@@ -236,3 +238,107 @@ until the user writes again; template messages are not implemented) and 190 (bad
 immediately and are never retried; 130429/131048 (rate limits) get bounded backoff retries;
 100/131026/131051 fail fast with a clear error. Media downloads resolve the media id to a
 short-lived URL and fetch it with the Bearer token, refetching the URL once on expiry.
+
+## Platforms (wave 2)
+
+Sprint 6 (D28) adds five adapters on the same frozen `chat` contracts. All of them speak only
+official platform APIs with caller-supplied credentials, drop the bot's own echoes before
+publishing, populate `Message.Account` to match `Account()` (multi-account routing relies on
+the pair), gate groups on an explicit mention with the mention stripped from `Text` (DMs always
+trigger), and normalize `/cmd` commands like the Telegram adapter. Streamed previews land where
+Sprint 6 enables them (Slack and Discord); Teams, Messenger, and Google Chat are final-only.
+
+### Slack (`chat/slack`)
+
+`slack.New(slack.Options{...})` requires `Token` (bot `xoxb-`) and `SigningSecret`; the bot
+user id used for echo filtering and mention gating is resolved via `auth.test` at startup
+unless pre-seeded (`BotUserID`). Ingress is the Events API over `Webhook(publish)`: v0 request
+signing with constant-time compare and a replay window (`ReplayWindow`, default 5m), the
+`url_verification` challenge, bot-echo drops. Slack requires a 2xx **within 3 seconds**, so the
+handler publishes to the durable queue and acks — it never waits on turn processing. `EventID`
+is `sl:<channel>:<ts>`, which also collapses the app_mention/message.channels double delivery
+of one mention (their event_ids differ; channel+ts do not). Delivery streams: a preview message
+is posted and then edited via `chat.update` (`PreviewMinInterval`, default 1s per channel);
+once Slack refuses edits (`edit_window_closed`, `cant_update_message`) the turn falls back to
+posting new messages. `FormatText` transcodes markdown to mrkdwn and `ChunkText` splits
+fence-aware at 4,000 characters (the `msg_too_long` ceiling). Slack has no typing indicator for
+bot messages — `Typing` is a no-op; the streamed preview is the activity signal.
+
+### Microsoft Teams (`chat/teams`)
+
+`teams.New(teams.Options{...})` requires `AppID` (outbound OAuth client id, inbound token
+audience, and the adapter's `Account()`) and `AppPassword`; `TenantID` selects the
+single-tenant token endpoint. Ingress is the Bot Framework webhook over `Webhook(publish)`.
+Inbound JWT validation is the trust boundary and is never skippable: RS256 against the cached
+JWKS (endorsements filtered), issuer, audience, a 5-minute skew window, and the `serviceUrl`
+claim matching `activity.serviceUrl` byte for byte — `New` refuses any configuration that would
+disable it. `EventID` is the activity id; `ChatID` is `conversation.id` **verbatim** (the
+`;messageid=N` suffix is the thread). Delivery is final-only in every conversation type, with
+typing activities refreshed at `TypingInterval` while the turn runs. Final markdown is chunked
+at 28,000 UTF-16 code units, paced per conversation, and halved recursively when the connector
+returns 413 `MessageSizeTooBig`.
+
+### Discord (`chat/discord`)
+
+`discord.New(discord.Options{Token})`; the bot identity is derived from the token and confirmed
+by the gateway READY event. Ingress is not a webhook: `Run(ctx, publish)` maintains a Gateway
+websocket session over `chat/internal/wsclient` — hello/heartbeat/identify, READY capture, and
+resume-first reconnects with capped backoff (a fresh IDENTIFY is budgeted 1000/day). The
+identify intents include MESSAGE_CONTENT and DIRECT_MESSAGES; MESSAGE_CONTENT is privileged,
+and close code 4014 surfaces an actionable "enable the Message Content Intent" error
+(4004/4012/4013/4014 are fatal, other closes reconnect). `EventID` is
+`dc:<channel_id>:<message_id>`; a missing `guild_id` is the DM detector. Delivery: typing POST
+refreshed every `TypingInterval` (default 4s; the indicator expires after ~10s), preview edits
+via PATCH at `PreviewMinInterval` (default 1.5s), chunking at the 2,000-rune content cap.
+Markdown is sent verbatim (Discord renders it natively), and every outbound payload carries
+`allowed_mentions: {"parse": []}` so model output can never ping @everyone. REST honors 429
+`retry_after`. Group gating uses Discord's structured mention token/list or a reply to the bot;
+plain `@username` text is not treated as a mention.
+
+### Facebook Messenger (`chat/messenger`)
+
+`messenger.New(messenger.Options{...})` refuses to construct without `Token` (Page Access
+Token), `PageID`, `AppSecret`, and `VerifyToken`. Ingress is the Graph "page" webhook over
+`Webhook(publish)`: the hub.challenge handshake and `X-Hub-Signature-256` raw-body HMAC ride
+`chat/internal/graphhook` (the WhatsApp idiom), `is_echo` events are dropped. Events only flow
+after subscribing **both ways** — the app dashboard webhook fields *and*
+`POST /{page-id}/subscribed_apps` with the page token; a missing page subscription is the usual
+cause of a silently dead webhook (documented on `New`). Messenger is 1:1 only: every
+conversation is a DM and PSIDs are page-scoped, so the key is the (page id, PSID) pair as
+Account + ChatID; `EventID` is the message mid. Delivery is final-only — there is no edit API,
+`Preview` is a no-op — with typing sustained by `sender_action: typing_on` re-fired every
+`TypingInterval` (default 15s) and chunks cut at 1,900 runes under the Send API's 2,000-char
+cap. The 24-hour standard-messaging window applies: code 10/2018278 (window expired) and
+551/1545041 (person unavailable) surface immediately and are never retried. Delivery/read
+watermarks go to `Options.OnWatermark` as `Watermark` values.
+
+### Google Chat (`chat/googlechat`)
+
+`googlechat.New(googlechat.Options{...})` refuses to construct without `ProjectNumber` (the
+**numeric** project number — the required audience of every inbound event JWT) and
+`CredentialsJSON` (the service-account key that signs the outbound JWT-bearer assertion for the
+`chat.bot` scope; RS256 built on the stdlib). Ingress is an HTTP-endpoint Chat app over
+`Webhook(publish)`: the inbound bearer JWT is verified against Google's
+`chat@system.gserviceaccount.com` JWKS before parsing. The handler acks empty and replies async
+via `spaces.messages.create`, avoiding the synchronous endpoint's 30-second/one-message limit.
+`argumentText` (mention-stripped) is preferred over `text`; in a SPACE the platform itself only
+delivers messages that @mention the app. `EventID` is `message.name`. Delivery is final-only:
+`Preview` and `Typing` are no-ops because D28 selects no edit stream and Chat has no typing API.
+Final chunks use deterministic client-assigned message ids (≤63 chars, derived from the inbound
+event), so a crash retry's create conflict degrades to `PATCH updateMask=text` rather than
+duplicating a message. Writes are serialized at 1/s per space, `FormatText` transcodes to the
+Chat dialect, and `ChunkText` cuts at 4,000 under the 4,096-character cap.
+
+### Internal helpers
+
+`chat/internal/wsclient` is a hand-rolled RFC 6455 WebSocket client on the standard library
+alone — client role only, no extensions, no compression, no subprotocol negotiation: `Dial`,
+`Conn.ReadMessage` (exactly one reader; pings are auto-ponged, fragments reassembled, close
+frames return a `*CloseError`), and `Conn.WriteText`/`Conn.WriteClose` safe from any goroutine.
+Heartbeats are the caller's job — the layer is protocol-only, and after any error the `Conn` is
+dead; callers reconnect rather than recover. `chat/internal/graphhook` is the Meta Graph
+webhook plumbing shared by WhatsApp and Messenger — `HandleVerify` (the one-time hub.challenge
+subscribe handshake) and `ValidSignature` (`X-Hub-Signature-256` raw-body HMAC), both
+constant-time via `hmac.Equal` — extracted from `chat/whatsapp` with zero behavior change (its
+existing tests pass unmodified). `chat/internal/runechunk` holds the identical readable-boundary
+splitter shared by Discord and Messenger, keeping their platform-specific limits in the adapters.

@@ -184,7 +184,7 @@ owner-gated** (see docs/trim/M5.md §Owner-gated remainder).
 
 ## Sprint 5 — Chat gateway (D27)
 
-Status: **implementation, tests, docs, and compare landed; commit/close pending**.
+Status: **closed in `43e5863`**.
 
 - [x] Land the chat core RED-first: processor + turn ledger recovery tests against the faux
       provider and in-memory sessions, then turn them green (`chat/`: message, adapter, provider,
@@ -213,7 +213,57 @@ Status: **implementation, tests, docs, and compare landed; commit/close pending*
 - [x] Publish `docs/chat.md` (embedding guide), the MIRROR.md D27 addition row, and
       `docs/compare/sprint-5.md` (pi-chat/Hermes cross-check with the deliberate-difference
       table).
-- [ ] Commit the sprint arc as green mainline chunks and close the sprint per D25.
+- [x] Commit the sprint arc as green mainline chunks and close the sprint per D25
+      (`43e5863`, exact `make check` green).
+
+## Sprint 6 — Chat platform wave 2 (D28)
+
+Status: **closed by the Sprint 6 commit containing this record**.
+
+- [x] Land `chat/internal/wsclient` RED-first (hand-rolled RFC 6455 client, stdlib-only) and
+      turn its protocol suite green against a fake hijacked server: handshake, masking,
+      16/64-bit lengths, fragmentation reassembly, ping auto-pong, clean close vs synthesized
+      1006, oversize rejection.
+- [x] Extract `chat/internal/graphhook` (hub.challenge handshake + `X-Hub-Signature-256`
+      raw-body HMAC) from `chat/whatsapp` with zero behavior change — the existing WhatsApp
+      tests pass unmodified — and reuse it in Messenger.
+- [x] Land the Slack adapter against a fake Web/Events API server: v0 signing with replay
+      window, url_verification, publish-and-ack within the 3s deadline, bot-echo drops,
+      `sl:<channel>:<ts>` dedupe collapsing the app_mention/message.channels double delivery,
+      preview streaming via `chat.update` with the edit-refused fallback, mrkdwn transcoding
+      and fence-aware 4,000-char chunk goldens.
+- [x] Land the Teams adapter against a fake JWKS/connector: the full inbound JWT validation
+      matrix (RS256, issuer, audience, skew, serviceUrl claim — constructor-enforced, never
+      skippable), typing + final-only delivery in every conversation type, 28,000-UTF-16-unit
+      chunking with pacing and recursive 413 halving.
+- [x] Land the Discord adapter: gateway session over wsclient against a scripted fake gateway
+      (hello→identify→READY→dispatch→heartbeat-ack loss→resume), resume-first reconnects with
+      capped backoff, fatal 4004/4012/4013/4014 with the actionable 4014 intent hint,
+      DIRECT_MESSAGES included in the intents, typing refresh, PATCH preview edits, 2,000-rune
+      chunking, `allowed_mentions: {"parse": []}` on every send, 429 retry_after honored.
+- [x] Land the Messenger adapter against a fake Graph server: graphhook-verified webhook,
+      is_echo drops, (page id, PSID) conversation keys, final-only delivery with typing_on
+      refresh and 1,900-rune chunks, 24h-window/policy errors never retried, watermark
+      callbacks; `subscribed_apps` step documented on the constructor.
+- [x] Land the Google Chat adapter against a fake JWKS/Chat API: inbound bearer-JWT
+      verification (project-number audience), stdlib RS256 service-account assertion, async
+      replies only, argumentText preference, final-only deterministic client-assigned ids
+      (create-conflict-to-PATCH crash idempotence, 1 write/s/space serialization), Chat-dialect
+      transcoding and chunk goldens.
+- [x] All five adapters: `Message.Account` consistent with `Account()`, group mention gating
+      with mention stripping, `/cmd` normalization, sent-chunk resume on Finalize retry, token
+      redaction. `CGO_ENABLED=0 go build ./...` and `go test -race ./chat/...` green, zero new
+      dependencies, `conformance/` untouched.
+- [x] Extend `docs/chat.md` with the Platforms section (five adapters + the three internal
+      helpers) and the MIRROR.md D28 addition row.
+- [x] Publish `docs/compare/sprint-6.md` (per-platform Hermes/pi-chat cross-check with the
+      deliberate-difference table, incl. the bridge/E2EE exclusions).
+- [x] Complete `docs/trim/S6.md`: remove 1,068 net lines from the inherited candidate, record zero
+      new dependencies and zero duplicate groups, and prove the SDK-only additions add zero
+      linked bytes to `cmd/pi`.
+- [x] Commit the sprint arc as one green mainline chunk and close it per D25; exact `make check`,
+      fixture regeneration, module verification, static analysis, and four CGO-disabled
+      cross-builds are green.
 
 ## Owner-blocked evidence
 

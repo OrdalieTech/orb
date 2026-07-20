@@ -101,6 +101,27 @@ resident actors or goroutines. Behavior is cross-checked against the reference i
 **Scope:** D27 only. No new deps; both platform clients stdlib HTTP/JSON per D10.
 Open with: processor + ledger recovery tests against the faux provider and in-memory sessions, RED.
 
+## Sprint 6 — Chat platform wave 2 (D28)
+
+**Definition of done:** `chat/slack/`, `chat/teams/`, `chat/discord/`, `chat/messenger/`,
+`chat/googlechat/` land against the existing `chat` contracts with deterministic fake-server
+tests per adapter (signature/auth rejection, ingress normalization, delivery sequences,
+chunking goldens, error-code policy); `chat/internal/wsclient` (hand-rolled RFC 6455 client:
+handshake, masking, fragmentation, ping/pong, close codes) with protocol tests against a fake
+websocket server, plus Discord Gateway session logic (hello/heartbeat/identify/resume,
+message_content intent) tested against a scripted gateway; shared webhook-signature helpers
+extracted to `chat/internal/` and adopted by the existing adapters without behavior change;
+streamed previews where the platform supports edits (Slack, Discord), final-only elsewhere
+(Teams, Messenger, Google Chat); zero new go.mod dependencies; `go test -race ./chat/...`
+green; docs/chat.md extended and `docs/compare/sprint-6.md` records reference cross-checks and
+deliberate exclusions (bridge platforms, E2EE Matrix). Behavior referenced against Hermes
+per-platform docs and pi-chat's Discord implementation.
+**Later waves (recorded, not scheduled):** Instagram DM (Graph, near-free after Messenger),
+Line, Twilio SMS/RCS, Mattermost, Rocket.Chat, Zulip, IRC (stdlib TCP, trivial);
+KakaoTalk/WeChat access-restricted; Signal/iMessage/personal-WhatsApp/E2EE-Matrix stay out per
+D27/D28.
+Open with: the wire briefs + wsclient protocol tests against the fake server, RED.
+
 ## Ambition setting
 
 Each working session aims to CLOSE a sprint, and must at minimum leave main green, fixtures green,

@@ -1,0 +1,13 @@
+Intro paragraph.
+----chunk----
+```python
+def handler(update):
+```
+----chunk----
+```python
+    check(update)
+```
+----chunk----
+```python
+    respond(update)
+```
