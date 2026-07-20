@@ -51,6 +51,9 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Fixed
 
+- `make test` and the fixture race checks explicitly enable CGo for Go's development-only race
+  runtime, so an inherited `CGO_ENABLED=0` no longer prevents the gate from starting; every product
+  and release build remains static with CGo disabled.
 - RPC state responses can no longer overtake the prompt acknowledgement that initiated a session
   replacement, while extension UI replies remain live during that replacement.
 - Chat wave-2 transport hardening: WebSocket message limits cannot overflow,

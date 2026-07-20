@@ -334,10 +334,12 @@ v8go/quickjs CGo bindings (D7), sqlite (no need — sessions are JSONL).
 
 ## 9. Build, size, release
 
-- `CGO_ENABLED=0`; targets `{linux,darwin} × {amd64,arm64}`; goreleaser for static binaries +
-  checksums; install via curl script + Homebrew tap. Version check against GitHub releases only.
-- Budgets: cold start < 50 ms; binary ≈ 25–35 MB (esbuild ≈ +9 MB, sobek ≈ +4 MB — accepted for
-  extension parity); `go vet` + golangci-lint clean; race detector on in CI tests.
+- `CGO_ENABLED=0` for every product/release target `{linux,darwin} × {amd64,arm64}`; goreleaser for
+  static binaries + checksums; install via curl script + Homebrew tap. Development race-test
+  binaries may enable CGo only for the Go race runtime (D7). Version checks use GitHub releases.
+- Budgets: cold start < 50 ms; bridged binary ≤ 55 MB decimal; `go vet` + golangci-lint clean;
+  race detector on in CI tests. The embedded esbuild/sobek cost is accepted for extension parity,
+  while > 10% size growth still triggers investigation.
 - Estimated final size: 60–90k LOC Go source (upstream ≈ 100k LOC TS) + fixtures. Slimness is
   enforced at the dependency table and by refusing speculative abstraction, not by dropping parity.
 

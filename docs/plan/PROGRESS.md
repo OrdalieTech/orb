@@ -131,11 +131,13 @@ byte-clean full `make fixtures-check`.
 
 ## Sprint 3 — Expansion (M4)
 
-Status: **open; study surfaced to owner; proceeding on full-parity defaults**.
+Status: **implementation and deterministic verification complete; only subscribed-account OAuth
+evidence remains owner-blocked**. The owner retained the full-parity scope and adopted the study's
+55 MB bridged-binary recommendation on 2026-07-20.
 
-- [x] Publish `docs/plan/expansion-study.md` for owner review before extending breadth.
-      **OWNER: please review — it contains a binary-size cap decision (M5) and confirms the
-      full-parity defaults; silence = defaults stand.**
+- [x] Publish `docs/plan/expansion-study.md` for owner review before extending breadth. The owner
+      retained the full-parity defaults and adopted its 55 MB decimal binary-size recommendation
+      on 2026-07-20.
 - [x] Audit the frozen expansion ring: providers (35/36 + codex), OAuth (all four flows), MCP,
       packages/trust, and the bridge runtime/non-UI/shims layers are already landed and green.
 - [x] Land the RED `ctx.ui` F11 surface first (ui-dependent upstream examples wired and failing),
@@ -161,9 +163,9 @@ Status: **open; study surfaced to owner; proceeding on full-parity defaults**.
 
 ## Sprint 4 — Ship (M5)
 
-Status: **deterministic release verification is green through the current upstream API tail, while
-M5 remains blocked by the 35 MB bridged-binary cap and owner-only live/VM checks** (see
-docs/trim/M5.md §Release remainder).
+Status: **deterministic release verification is green through the current upstream API tail. The
+owner resolved the size and race-gate decisions on 2026-07-20; M5 now remains open only on
+live/VM/publication checks** (see docs/trim/M5.md §Release remainder).
 
 - [x] Land the release machinery: goreleaser (4 targets, snapshot verified), tag-triggered
       workflow re-running the gate, checksum-verifying install script, ldflags version, CI on
@@ -178,17 +180,20 @@ docs/trim/M5.md §Release remainder).
       public retry/overflow and skill parsing, custom-theme export, G4 version checks, typed RPC
       client, and the exact 35-model ImagesModels/OpenRouter surface are green.
 - [x] Re-run the candidate trim: 1.123x mirror LOC, 20 reviewed clone groups, clean module audit,
-      50,966,690 B bridged artifact, and 33.5 ± 4.8 ms no-prompt cold start.
+      52,187,808 B largest bridged artifact across four targets, and 33.5 ± 4.8 ms no-prompt cold
+      start. The owner-set 55 MB decimal cap is green.
+- [x] Resolve the two binding-rule conflicts (owner, 2026-07-20): retain D17 and set the bridged
+      artifact cap to 55 MB decimal; clarify D7 so shipped builds remain static `CGO_ENABLED=0`
+      while development-only `-race` binaries may link Go's CGo-backed ThreadSanitizer runtime.
 - [ ] Re-verify every M1–M4 criterion at the release commit. The deterministic surfaces and the
       2026-07-20 lock bump to `3a40794e` are green (116 paths classified, zero unmapped), but the
       subscribed OAuth, hosted-nightly, and real-terminal criteria remain owner-blocked.
 - [ ] Create the final annotated `v0.1.0` tag only after the release commit is complete. The
       existing local tag points to stale commit `b20a03b`, predates this candidate, and is not a
       release tag.
-- [ ] Owner-gated before publishing the tag: size-cap decision, OAuth live runs, CI secrets
-      (nightly 72h window), clean-macOS install/docs verification, and correction of the canonical
-      GitHub remote (the checkout's `origin` is `netapy/pigo`, while release metadata targets
-      `OrdalieTech/pi-go`), plus clarification of D7 versus the mandatory race gate.
+- [ ] Owner-gated before publishing the tag: OAuth live runs, CI secrets (nightly 72h window),
+      clean-macOS install/docs verification, and correction of the canonical GitHub remote (the
+      checkout's `origin` is `netapy/pigo`, while release metadata targets `OrdalieTech/pi-go`).
 
 ## Sprint 5 — Chat gateway (D27)
 
@@ -273,17 +278,16 @@ Status: **closed by the Sprint 6 commit containing this record**.
       fixture regeneration, module verification, static analysis, and four CGO-disabled
       cross-builds are green.
 
-## Owner-blocked evidence
+## Resolved owner decisions
 
-- **Decision pending: M5 binary-size cap** (`docs/plan/expansion-study.md`, decision 3) — the
-  exact release-shaped bridged binary is 50,966,690 B vs the 35 MB cap. The controlled no-prompt
-  cold start is green at 33.5 ± 4.8 ms, but the size half cannot close while D17 requires
-  embedded sobek + esbuild; amend D17 or the budget. The criterion remains unchecked pending that
-  call.
-- **Decision contradiction: D7 versus the mandatory race gate** — D7 requires
-  `CGO_ENABLED=0 everywhere, forever`, while Go's `-race` mode requires cgo and `make check` runs
-  `go test -race ./...`. Both requirements cannot be true in the same invocation; the owner must
-  clarify whether D7 governs shipped builds only or amend one of the two binding requirements.
+- **M5 binary-size cap (2026-07-20)** — the owner adopted the expansion study's recommended 55 MB
+  decimal bridged cap while retaining D17 and the 50 ms cold-start cap. A clean snapshot of
+  `37d9ab7` built all four targets; the largest is darwin/amd64 at 52,187,808 B.
+- **D7 versus the mandatory race gate (2026-07-20)** — D7 now governs shipped product/release
+  binaries, which remain static `CGO_ENABLED=0`. Development-only `go test -race` binaries may
+  enable CGo solely because the Go race runtime links ThreadSanitizer; the exception never ships.
+
+## Owner-blocked evidence
 - **Canonical release remote mismatch** — module paths, docs, update checks, and release metadata
   target `github.com/OrdalieTech/pi-go`, but this checkout's `origin` is
   `https://github.com/netapy/pigo.git`. Remote ownership/configuration is external to the repo.
