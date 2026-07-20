@@ -143,6 +143,16 @@ func TestConvertToLLMPreservesLoneSurrogateFullOutputPath(t *testing.T) {
 	}
 }
 
+func TestParseSkillBlockPublicSurface(t *testing.T) {
+	got, ok := ParseSkillBlock("<skill name=\"review\" location=\"/skills/review\">\nInstructions\n</skill>\n\n  inspect this  ")
+	if !ok || got.Name != "review" || got.Location != "/skills/review" || got.Content != "Instructions" || got.UserMessage != "inspect this" {
+		t.Fatalf("skill block = %#v, %v", got, ok)
+	}
+	if _, ok := ParseSkillBlock("<skill name=\"review\" location=\"/skills/review\">\nInstructions\n</skill>\n\n"); ok {
+		t.Fatal("empty trailing user message was accepted")
+	}
+}
+
 func assertUserText(t testing.TB, message ai.Message, want string, timestamp int64) {
 	t.Helper()
 	user, ok := message.(*ai.UserMessage)

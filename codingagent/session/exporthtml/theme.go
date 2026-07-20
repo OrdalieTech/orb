@@ -4,8 +4,13 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/OrdalieTech/pi-go/codingagent/config"
+	modetheme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
 )
 
 type exportTheme struct {
@@ -15,7 +20,7 @@ type exportTheme struct {
 	infoBg    string
 }
 
-func resolveExportTheme(name string) (exportTheme, error) {
+func resolveExportTheme(name string, selected *modetheme.Theme) (exportTheme, error) {
 	if name == "" {
 		name = defaultThemeName(os.Getenv("COLORFGBG"))
 	}
@@ -24,10 +29,117 @@ func resolveExportTheme(name string) (exportTheme, error) {
 		return exportTheme{darkThemeVariables, "#18181e", "#1e1e24", "#3c3728"}, nil
 	case "light":
 		return exportTheme{lightThemeVariables, "#f8f8f8", "#ffffff", "#fffae6"}, nil
-	default:
-		// TODO(WP-430): resolve custom theme files through the landed theme registry.
+	}
+	if selected == nil || selected.Name != name {
+		selected = modetheme.GetTheme(name)
+	}
+	if selected != nil {
+		if selected.SourcePath == "" {
+			return exportTheme{}, fmt.Errorf("Theme %q does not have a source path for export", name) //nolint:staticcheck // Upstream error capitalization is observable.
+		}
+		data, err := os.ReadFile(selected.SourcePath)
+		if err != nil {
+			return exportTheme{}, err
+		}
+		selected, err = modetheme.Parse(selected.SourcePath, data, modetheme.TrueColor)
+		if err != nil {
+			return exportTheme{}, err
+		}
+		return exportThemeFrom(selected), nil
+	}
+	agentDir, err := config.GetAgentDir()
+	if err != nil {
+		return exportTheme{}, err
+	}
+	data, err := os.ReadFile(filepath.Join(agentDir, "themes", name+".json"))
+	if os.IsNotExist(err) {
 		return exportTheme{}, fmt.Errorf("Theme not found: %s", name) //nolint:staticcheck // Upstream error capitalization is observable.
 	}
+	if err != nil {
+		return exportTheme{}, err
+	}
+	selected, err = modetheme.Parse(name, data, modetheme.TrueColor)
+	if err != nil {
+		return exportTheme{}, err
+	}
+	return exportThemeFrom(selected), nil
+}
+
+var exportColorOrder = []string{
+	"accent", "border", "borderAccent", "borderMuted", "success", "error", "warning", "muted", "dim", "text", "thinkingText",
+	"selectedBg", "userMessageBg", "userMessageText", "customMessageBg", "customMessageText", "customMessageLabel", "toolPendingBg", "toolSuccessBg", "toolErrorBg", "toolTitle", "toolOutput",
+	"mdHeading", "mdLink", "mdLinkUrl", "mdCode", "mdCodeBlock", "mdCodeBlockBorder", "mdQuote", "mdQuoteBorder", "mdHr", "mdListBullet",
+	"toolDiffAdded", "toolDiffRemoved", "toolDiffContext", "syntaxComment", "syntaxKeyword", "syntaxFunction", "syntaxVariable", "syntaxString", "syntaxNumber", "syntaxType", "syntaxOperator", "syntaxPunctuation",
+	"thinkingOff", "thinkingMinimal", "thinkingLow", "thinkingMedium", "thinkingHigh", "thinkingXhigh", "thinkingMax", "bashMode",
+}
+
+func exportThemeFrom(selected *modetheme.Theme) exportTheme {
+	colors := selected.ResolvedColors(selected.Name == "light")
+	backgrounds := deriveExportColors(colors["userMessageBg"])
+	for name, value := range selected.ExportColors() {
+		switch name {
+		case "pageBg":
+			backgrounds.pageBg = value
+		case "cardBg":
+			backgrounds.cardBg = value
+		case "infoBg":
+			backgrounds.infoBg = value
+		}
+	}
+	lines := make([]string, 0, len(colors)+3)
+	for _, name := range exportColorOrder {
+		if value, ok := colors[name]; ok {
+			lines = append(lines, "--"+name+": "+value+";")
+		}
+	}
+	lines = append(lines,
+		"--exportPageBg: "+backgrounds.pageBg+";",
+		"--exportCardBg: "+backgrounds.cardBg+";",
+		"--exportInfoBg: "+backgrounds.infoBg+";",
+	)
+	backgrounds.variables = strings.Join(lines, "\n      ")
+	return backgrounds
+}
+
+var rgbColorPattern = regexp.MustCompile(`^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$`)
+
+func deriveExportColors(color string) exportTheme {
+	r, g, b, ok := parseCSSColor(color)
+	if !ok {
+		return exportTheme{pageBg: "rgb(24, 24, 30)", cardBg: "rgb(30, 30, 36)", infoBg: "rgb(60, 55, 40)"}
+	}
+	if relativeLuminance(r, g, b) > 0.5 {
+		return exportTheme{
+			pageBg: adjustBrightness(r, g, b, 0.96), cardBg: color,
+			infoBg: fmt.Sprintf("rgb(%d, %d, %d)", min(255, r+10), min(255, g+5), max(0, b-20)),
+		}
+	}
+	return exportTheme{
+		pageBg: adjustBrightness(r, g, b, 0.7), cardBg: adjustBrightness(r, g, b, 0.85),
+		infoBg: fmt.Sprintf("rgb(%d, %d, %d)", min(255, r+20), min(255, g+15), b),
+	}
+}
+
+func parseCSSColor(color string) (int, int, int, bool) {
+	if len(color) == 7 && color[0] == '#' {
+		value, err := strconv.ParseUint(color[1:], 16, 24)
+		if err == nil {
+			return int(value >> 16), int(value>>8) & 255, int(value) & 255, true
+		}
+	}
+	match := rgbColorPattern.FindStringSubmatch(color)
+	if len(match) == 4 {
+		r, errR := strconv.Atoi(match[1])
+		g, errG := strconv.Atoi(match[2])
+		b, errB := strconv.Atoi(match[3])
+		return r, g, b, errR == nil && errG == nil && errB == nil
+	}
+	return 0, 0, 0, false
+}
+
+func adjustBrightness(r, g, b int, factor float64) string {
+	adjust := func(value int) int { return min(255, max(0, int(math.Round(float64(value)*factor)))) }
+	return fmt.Sprintf("rgb(%d, %d, %d)", adjust(r), adjust(g), adjust(b))
 }
 
 func defaultThemeName(colorFgBg string) string {

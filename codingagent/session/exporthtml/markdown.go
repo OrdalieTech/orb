@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/OrdalieTech/pi-go/codingagent/session"
@@ -200,7 +201,7 @@ func renderUserContentMarkdown(raw json.RawMessage) string {
 }
 
 func renderUserTextMarkdown(text string, images []string) string {
-	skill, ok := parseSkillBlock(text)
+	skill, ok := ParseSkillBlock(text)
 	if !ok {
 		parts := make([]string, 0, len(images)+1)
 		if text != "" {
@@ -209,55 +210,31 @@ func renderUserTextMarkdown(text string, images []string) string {
 		parts = append(parts, images...)
 		return strings.Join(parts, "\n\n")
 	}
-	parts := []string{"**Skill: " + inlineCode(skill.name) + "**", skill.content}
+	parts := []string{"**Skill: " + inlineCode(skill.Name) + "**", skill.Content}
 	parts = append(parts, images...)
-	if skill.userMessage != "" {
-		parts = append(parts, skill.userMessage)
+	if skill.UserMessage != "" {
+		parts = append(parts, skill.UserMessage)
 	}
 	return strings.Join(parts, "\n\n")
 }
 
-type skillBlock struct {
-	name        string
-	location    string
-	content     string
-	userMessage string
+// ParsedSkillBlock is an upstream skill invocation embedded in a user message.
+type ParsedSkillBlock struct {
+	Name        string
+	Location    string
+	Content     string
+	UserMessage string
 }
 
-func parseSkillBlock(text string) (skillBlock, bool) {
-	const namePrefix = `<skill name="`
-	if !strings.HasPrefix(text, namePrefix) {
-		return skillBlock{}, false
+var skillBlockPattern = regexp.MustCompile(`(?s)^<skill name="([^"]+)" location="([^"]+)">\n(.*?)\n</skill>(?:\n\n(.+))?$`)
+
+// ParseSkillBlock parses the exact upstream skill-message envelope.
+func ParseSkillBlock(text string) (ParsedSkillBlock, bool) {
+	match := skillBlockPattern.FindStringSubmatch(text)
+	if match == nil {
+		return ParsedSkillBlock{}, false
 	}
-	rest := text[len(namePrefix):]
-	nameEnd := strings.Index(rest, `" location="`)
-	if nameEnd <= 0 {
-		return skillBlock{}, false
-	}
-	name := rest[:nameEnd]
-	rest = rest[nameEnd+len(`" location="`):]
-	locationEnd := strings.Index(rest, "\">\n")
-	if locationEnd <= 0 {
-		return skillBlock{}, false
-	}
-	location := rest[:locationEnd]
-	rest = rest[locationEnd+len("\">\n"):]
-	contentEnd := strings.Index(rest, "\n</skill>")
-	if contentEnd < 0 {
-		return skillBlock{}, false
-	}
-	content := rest[:contentEnd]
-	rest = rest[contentEnd+len("\n</skill>"):]
-	if rest != "" && !strings.HasPrefix(rest, "\n\n") {
-		return skillBlock{}, false
-	}
-	if strings.HasPrefix(rest, "\n\n") {
-		rest = rest[2:]
-		if rest == "" {
-			return skillBlock{}, false
-		}
-	}
-	return skillBlock{name: name, location: location, content: content, userMessage: strings.TrimSpace(rest)}, true
+	return ParsedSkillBlock{Name: match[1], Location: match[2], Content: match[3], UserMessage: strings.TrimSpace(match[4])}, true
 }
 
 func renderAssistantContentMarkdown(raw json.RawMessage) string {

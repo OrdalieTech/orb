@@ -161,8 +161,8 @@ Status: **open; study surfaced to owner; proceeding on full-parity defaults**.
 
 ## Sprint 4 — Ship (M5)
 
-Status: **local release verification complete; the fresh upstream lock bump is green, while M5
-remains blocked by its 35 MB bridged-binary cap and owner-only live/VM checks** (see
+Status: **deterministic release verification is green through the current upstream API tail, while
+M5 remains blocked by the 35 MB bridged-binary cap and owner-only live/VM checks** (see
 docs/trim/M5.md §Release remainder).
 
 - [x] Land the release machinery: goreleaser (4 targets, snapshot verified), tag-triggered
@@ -174,13 +174,21 @@ docs/trim/M5.md §Release remainder).
 - [x] Close the alignment should-fix remainder: typed tool-event accessors, ai.ParseStreamingJSON,
       UI component exports (absentees documented), unit-test tails including the 28 missing
       app.* keybinding migrations found and fixed.
-- [x] Re-verify M1–M4 at the release candidate; promote the 2026-07-20 upstream sync and lock bump
-      to `3a40794e` GREEN (116 paths classified, zero unmapped, regenerated fixtures and full race
-      suite green); final trim pass #5 with LOC (1.085x) and dep audit (docs/trim/M5.md).
-- [x] Tag `v0.1.0` (annotated, remainder recorded in the tag message per the owner's goal
-      directive; it remains unpublished, so publication stays an owner act).
+- [x] Re-run current alignment: 436/436 upstream files mapped and zero open should-fix findings;
+      public retry/overflow and skill parsing, custom-theme export, G4 version checks, typed RPC
+      client, and the exact 35-model ImagesModels/OpenRouter surface are green.
+- [x] Re-run the candidate trim: 1.123x mirror LOC, 20 reviewed clone groups, clean module audit,
+      50,966,690 B bridged artifact, and 33.5 ± 4.8 ms no-prompt cold start.
+- [ ] Re-verify every M1–M4 criterion at the release commit. The deterministic surfaces and the
+      2026-07-20 lock bump to `3a40794e` are green (116 paths classified, zero unmapped), but the
+      subscribed OAuth, hosted-nightly, and real-terminal criteria remain owner-blocked.
+- [ ] Create the final annotated `v0.1.0` tag only after the release commit is complete. The
+      existing local tag points to stale commit `b20a03b`, predates this candidate, and is not a
+      release tag.
 - [ ] Owner-gated before publishing the tag: size-cap decision, OAuth live runs, CI secrets
-      (nightly 72h window), and clean-VM install/docs verification.
+      (nightly 72h window), clean-macOS install/docs verification, and correction of the canonical
+      GitHub remote (the checkout's `origin` is `netapy/pigo`, while release metadata targets
+      `OrdalieTech/pi-go`), plus clarification of D7 versus the mandatory race gate.
 
 ## Sprint 5 — Chat gateway (D27)
 
@@ -268,9 +276,17 @@ Status: **closed by the Sprint 6 commit containing this record**.
 ## Owner-blocked evidence
 
 - **Decision pending: M5 binary-size cap** (`docs/plan/expansion-study.md`, decision 3) — the
-  current release-shaped bridged binary is 51,703,970 B vs the 35 MB cap. The controlled no-prompt
-  cold start is green at 45.0 ± 5.2 ms, but the size half cannot close while D17 requires embedded
-  sobek + esbuild; amend D17 or the budget. The criterion remains unchecked pending that call.
+  exact release-shaped bridged binary is 50,966,690 B vs the 35 MB cap. The controlled no-prompt
+  cold start is green at 33.5 ± 4.8 ms, but the size half cannot close while D17 requires
+  embedded sobek + esbuild; amend D17 or the budget. The criterion remains unchecked pending that
+  call.
+- **Decision contradiction: D7 versus the mandatory race gate** — D7 requires
+  `CGO_ENABLED=0 everywhere, forever`, while Go's `-race` mode requires cgo and `make check` runs
+  `go test -race ./...`. Both requirements cannot be true in the same invocation; the owner must
+  clarify whether D7 governs shipped builds only or amend one of the two binding requirements.
+- **Canonical release remote mismatch** — module paths, docs, update checks, and release metadata
+  target `github.com/OrdalieTech/pi-go`, but this checkout's `origin` is
+  `https://github.com/netapy/pigo.git`. Remote ownership/configuration is external to the repo.
 - **Recorded for review: llama.cpp extension excluded** (divergence ledger) — shipped at the pin
   but deleted upstream right after; amend if you want it ported anyway.
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.
@@ -278,5 +294,5 @@ Status: **closed by the Sprint 6 commit containing this record**.
 - Tier-2/Tier-3 provider live tests require repository/API credentials and CI secrets.
 - Real Kitty and iTerm2 image emission plus native Darwin/X11/Wayland clipboard smoke require those
   terminal and desktop environments.
-- Off-machine clean macOS/Linux release validation and the 72-hour burn-in require owner-provided
-  hosts plus publication/CI access; all local and fixture work continues independently.
+- Off-machine clean macOS release validation and the 72-hour burn-in require owner-provided hosts
+  plus publication/CI access; clean Linux install paths are already verified hermetically.

@@ -8,6 +8,9 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Added
 
+- Current upstream SDK surface: image-model registry and OpenRouter catalog, typed RPC client,
+  public retry/overflow and skill-block helpers, custom-theme HTML export, and notify-only update
+  checks with pi-go and upstream version identity.
 - Release hardening: immutable CI action SHAs, fixture regeneration at tag time, strict changelog
   notes, clean-macOS checksum support, and a 754 KB amd64 linker-alignment reduction.
 - Upstream pi 0.80.10 sync to `3a40794e`: tool-result and summary usage accounting, Qwen Token

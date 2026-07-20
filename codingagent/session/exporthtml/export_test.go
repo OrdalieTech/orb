@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	modetheme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
 	"github.com/OrdalieTech/pi-go/codingagent/session"
 )
 
@@ -101,6 +102,95 @@ func TestDefaultThemeUsesCOLORFGBG(t *testing.T) {
 	}
 	if got := sha256Hex(contents); got != "06397f1a46c74fcfab93261e191e8636867c58bef1013ad7b7741965e09477cc" {
 		t.Fatalf("COLORFGBG light export sha256 = %s", got)
+	}
+}
+
+func TestExportUsesPinnedUpstreamCustomTheme(t *testing.T) {
+	agentDir := filepath.Join(t.TempDir(), "agent")
+	themeDir := filepath.Join(agentDir, "themes")
+	if err := os.MkdirAll(themeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.ReadFile(filepath.Join("..", "..", "modes", "theme", "dark.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	custom := strings.Replace(string(source), `"name": "dark"`, `"name": "custom-export"`, 1)
+	custom = strings.Replace(custom, `"userMsgBg": "#343541"`, `"userMsgBg": "#204060", "pageDeep": "#112233", "pageAlias": "pageDeep", "cardIndex": 24`, 1)
+	custom = strings.Replace(custom, `"export": { "pageBg": "#18181e", "cardBg": "#1e1e24", "infoBg": "#3c3728" }`, `"export": { "pageBg": "pageAlias", "cardBg": "cardIndex", "infoBg": "" }`, 1)
+	if err := os.WriteFile(filepath.Join(themeDir, "custom-export.json"), []byte(custom), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PI_CODING_AGENT_DIR", agentDir)
+
+	output := filepath.Join(t.TempDir(), "session.html")
+	if _, err := ExportFromFile(fixturePath(t), Options{OutputPath: output, ThemeName: "custom-export"}); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sha256Hex(contents); got != "23a0dba3ddb7c5a584aadad888a2d1c2b466a534d5dfc1b4fa2ba7ad19e951ee" {
+		t.Fatalf("custom-theme HTML sha256 = %s, want pinned-upstream fixture", got)
+	}
+	for _, want := range []string{
+		"--userMessageBg: #204060;",
+		"--exportPageBg: #112233;",
+		"--exportCardBg: #005f87;",
+		"--exportInfoBg: rgb(52, 79, 96);",
+		"--body-bg: #112233;",
+		"--container-bg: #005f87;",
+		"--info-bg: rgb(52, 79, 96);",
+	} {
+		if !strings.Contains(string(contents), want) {
+			t.Errorf("custom-theme export is missing %q", want)
+		}
+	}
+}
+
+func TestRegisteredCustomThemeExportReloadsSource(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "modes", "theme", "dark.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	custom := strings.Replace(string(source), `"name": "dark"`, `"name": "custom-reload"`, 1)
+	path := filepath.Join(t.TempDir(), "custom-reload.json")
+	if err := os.WriteFile(path, []byte(custom), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	selected, err := modetheme.Parse(path, []byte(custom), modetheme.TrueColor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected.SourcePath = path
+	updated := strings.Replace(custom, `"pageBg": "#18181e"`, `"pageBg": "#123456"`, 1)
+	if err := os.WriteFile(path, []byte(updated), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	resolved, err := resolveExportTheme("custom-reload", selected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.pageBg != "#123456" {
+		t.Fatalf("page background after source edit = %q", resolved.pageBg)
+	}
+}
+
+func TestRegisteredCustomThemeExportRequiresSourcePath(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "modes", "theme", "dark.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	custom := strings.Replace(string(source), `"name": "dark"`, `"name": "memory-only"`, 1)
+	selected, err := modetheme.Parse("memory-only", []byte(custom), modetheme.TrueColor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = resolveExportTheme("memory-only", selected)
+	if want := `Theme "memory-only" does not have a source path for export`; err == nil || err.Error() != want {
+		t.Fatalf("source-path error = %v, want %q", err, want)
 	}
 }
 

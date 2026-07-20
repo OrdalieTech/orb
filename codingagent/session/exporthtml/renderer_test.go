@@ -107,7 +107,7 @@ func TestRenderedToolsPayloadPreservesPlainObjectInsertionOrder(t *testing.T) {
 	html, err := generateHTML(sessionData{
 		Header:  &session.SessionHeader{Type: "session", ID: "order", Timestamp: "2025-01-01T00:00:00.000Z", CWD: "/tmp"},
 		Entries: entries, RenderedTools: preRenderCustomTools(entries, renderer),
-	}, "dark")
+	}, "dark", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

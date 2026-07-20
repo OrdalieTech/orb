@@ -852,7 +852,7 @@ func (runtime *SessionRuntime) isRetryable(message *ai.AssistantMessage) bool {
 	if state.Model != nil {
 		contextWindow = state.Model.ContextWindow
 	}
-	return !harness.IsContextOverflow(message, contextWindow) && harness.IsRetryableAssistantError(message)
+	return !ai.IsContextOverflow(message, contextWindow) && ai.IsRetryableAssistantError(message)
 }
 
 func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.AssistantMessage, skipAbortedCheck bool) (bool, error) {
@@ -869,7 +869,7 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 		return false, nil
 	}
 	sameModel := string(message.Provider) == string(state.Model.Provider) && message.Model == state.Model.ID
-	if sameModel && harness.IsContextOverflow(message, state.Model.ContextWindow) {
+	if sameModel && ai.IsContextOverflow(message, state.Model.ContextWindow) {
 		willRetry := message.StopReason != ai.StopReasonStop
 		if willRetry {
 			runtime.mu.Lock()

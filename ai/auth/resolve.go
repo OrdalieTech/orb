@@ -10,8 +10,12 @@ import (
 type ErrorCode string
 
 const (
-	ErrorAuth  ErrorCode = "auth"
-	ErrorOAuth ErrorCode = "oauth"
+	ErrorModelSource     ErrorCode = "model_source"
+	ErrorModelValidation ErrorCode = "model_validation"
+	ErrorProvider        ErrorCode = "provider"
+	ErrorStream          ErrorCode = "stream"
+	ErrorAuth            ErrorCode = "auth"
+	ErrorOAuth           ErrorCode = "oauth"
 )
 
 type Error struct {

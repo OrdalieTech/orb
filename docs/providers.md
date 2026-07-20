@@ -24,6 +24,8 @@ Set the provider's key in the environment before launching pi:
 ```sh
 export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
+export QWEN_TOKEN_PLAN_API_KEY=sk-sp-...
+export QWEN_TOKEN_PLAN_CN_API_KEY=sk-sp-...
 ```
 
 Every provider in the built-in catalog has a `<PROVIDER>_API_KEY` variable (e.g. `MISTRAL_API_KEY`,
@@ -38,8 +40,10 @@ Keys and OAuth tokens can also be written directly to `~/.pi/agent/auth.json`:
 
 ```json
 {
-  "anthropic": { "type": "apiKey", "key": "sk-ant-..." },
-  "openai":    { "type": "apiKey", "key": "sk-..." }
+  "anthropic":          { "type": "api_key", "key": "sk-ant-..." },
+  "openai":             { "type": "api_key", "key": "sk-..." },
+  "qwen-token-plan":    { "type": "api_key", "key": "sk-sp-..." },
+  "qwen-token-plan-cn":  { "type": "api_key", "key": "sk-sp-..." }
 }
 ```
 
@@ -54,6 +58,6 @@ their own `baseUrl`, headers, and auth resolver.
 
 ## Resolution order
 
-For a selected model, credentials resolve as: explicit `--api-key` → environment variable →
-`auth.json` (API key, then OAuth). The first that yields a usable credential wins; if none do,
+For a selected model, credentials resolve as: explicit `--api-key` → `auth.json` (API key or
+OAuth) → environment variable. The first that yields a usable credential wins; if none do,
 pi reports "No API key found" and points you back here.

@@ -182,36 +182,6 @@ func TestBranchPreparationAndPrompt(t *testing.T) {
 	}
 }
 
-func TestRetryAndOverflowClassification(t *testing.T) {
-	for _, text := range []string{"overloaded_error", "Provider finish_reason: network_error", "stream ended before a terminal response event"} {
-		message := assistantError(text)
-		if !IsRetryableAssistantError(message) {
-			t.Fatalf("not retryable: %q", text)
-		}
-	}
-	if IsRetryableAssistantError(assistantError("429 quota exceeded")) {
-		t.Fatal("quota exhaustion retried")
-	}
-	if !IsContextOverflow(assistantError("prompt is too long"), 200000) {
-		t.Fatal("explicit overflow not detected")
-	}
-	if !IsContextOverflow(assistantError("Range of input length should be [1, 999999]"), 200000) {
-		t.Fatal("Qwen Token Plan overflow not detected")
-	}
-	if IsContextOverflow(assistantError("Rate limit exceeded: too many tokens"), 200000) {
-		t.Fatal("rate limit classified as overflow")
-	}
-	if !IsContextOverflow(assistantError(" Throttling error: too many tokens"), 200000) {
-		t.Fatal("error text was trimmed before anchored upstream patterns")
-	}
-	silent := assistant("", 0)
-	silent.Usage.Input = 101
-	silent.StopReason = ai.StopReasonStop
-	if !IsContextOverflow(silent, 100) {
-		t.Fatal("silent overflow not detected")
-	}
-}
-
 func user(text string) *ai.UserMessage {
 	return &ai.UserMessage{Content: ai.NewUserContent(&ai.TextContent{Text: text}), Timestamp: 1}
 }
@@ -221,13 +191,6 @@ func assistant(text string, tokens int64) *ai.AssistantMessage {
 		Content: ai.AssistantContent{&ai.TextContent{Text: text}}, API: "faux", Provider: "faux", Model: "faux-1",
 		Usage: usage(tokens), StopReason: ai.StopReasonStop, Timestamp: 2,
 	}
-}
-
-func assistantError(text string) *ai.AssistantMessage {
-	message := assistant("", 0)
-	message.StopReason = ai.StopReasonError
-	message.ErrorMessage = &text
-	return message
 }
 
 func usage(tokens int64) ai.Usage {

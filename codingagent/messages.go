@@ -8,6 +8,7 @@ import (
 
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pi-go/codingagent/session/exporthtml"
 	"github.com/OrdalieTech/pi-go/internal/jsonwire"
 )
 
@@ -18,6 +19,14 @@ const (
 	BranchSummarySuffix     = "</summary>"
 	imageBlockedText        = "Image reading is disabled."
 )
+
+// ParsedSkillBlock is an upstream skill invocation embedded in a user message.
+type ParsedSkillBlock = exporthtml.ParsedSkillBlock
+
+// ParseSkillBlock parses the exact upstream skill-message envelope.
+func ParseSkillBlock(text string) (ParsedSkillBlock, bool) {
+	return exporthtml.ParseSkillBlock(text)
+}
 
 type codingAgentMessage struct {
 	Role               string          `json:"role"`

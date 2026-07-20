@@ -12,7 +12,7 @@ upstream version in [UPSTREAM.lock](UPSTREAM.lock); every divergence is recorded
 curl -fsSL https://raw.githubusercontent.com/OrdalieTech/pi-go/main/scripts/install.sh | sh
 ```
 
-or with Go ≥ 1.26: `go install github.com/OrdalieTech/pi-go/cmd/pi@latest`.
+or with Go ≥ 1.25: `go install github.com/OrdalieTech/pi-go/cmd/pi@latest`.
 
 ## First session
 

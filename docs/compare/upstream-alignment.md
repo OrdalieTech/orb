@@ -17,20 +17,20 @@ detail: [upstream-alignment-findings.md](upstream-alignment-findings.md).
 release commit is an M5 gate.** New confirmed should-fix findings become work items before the
 sprint closes; the findings ledger is regenerated, not hand-edited.
 
-## Current verdict (audit re-run 2026-07-19; final decision closed 2026-07-20)
+## Current verdict (fresh re-run 2026-07-20)
 
-**All 22 confirmed should-fix items are closed.** Closed across Sprints
-3–4: MIRROR triage (21 verified rows), llama ledgered, `httpProxy` implemented, the SDK surface
-(tool bundles, public model helpers, typed tool-event accessors, `ai.ParseStreamingJSON`, the
-existing UI component exports — absent components documented as method-based flows), the six
-numbered regression tests, the unit-test tails (tool-name normalization, Copilot effort overrides,
-keybindings migration — which surfaced and fixed 28 missing `app.*` legacy migrations —
-footer/branch detection), the five MIRROR-verification parity gaps, `make check`/CHANGELOG/
-CONTRIBUTING/SECURITY process items, and the release pipeline (goreleaser, tag workflow,
-ldflags version, install script). D29 closes the final item by retaining the harness primitives and
-dissolving the unused parallel `AgentHarness` orchestration facade into `codingagent.AgentSession`;
-the application-specific `streamProxy` protocol is ledgered behind `agent.WithStreamFn`. The
-`streamProxy` watch item is therefore closed; the other watch items are unchanged.
+**Zero open should-fix findings.** The mechanical source audit maps 436/436 files across upstream
+AI, agent, coding-agent, and TUI (including 185/185 coding-agent source files). The fresh public-API
+and wire pass closed the post-sync tail: public retry/overflow and skill-block parsing, custom-theme
+HTML export, notify-only update/version identity, the complete typed RPC client, and ImagesModels
+with the exact 35-model OpenRouter catalog (SHA-256
+`70b2efa95213e55d83092d94f5753c5affe509ee3543f66ec7451eb404378d11`). Adversarial review caught
+and fixed exact-pattern over-acceptance, custom-theme precedence/source reload, image-registry data
+races, and RPC listener reentrancy/panic handling; normal and race-focused suites are green.
+
+The original 22 confirmed items also remain closed. D29 retains the harness primitives while
+dissolving the unused parallel `AgentHarness` facade into `codingagent.AgentSession`, and the
+application-specific `streamProxy` protocol remains ledgered behind `agent.WithStreamFn`.
 
 ### Original verdict (2026-07-19, pi-go `edaa772`)
 
@@ -66,14 +66,14 @@ and process scaffolding — exactly the things conformance fixtures cannot see.
 5. **Release practice (Sprint 4 spec, recorded now):** the release workflow must re-run the full
    gate at the release commit, extract notes from `CHANGELOG.md`, inject the version via ldflags
    (no more hardcoded `0.1.0-dev`), and print the upstream pin alongside it —
-   `pi-go v0.1.0 (upstream pi v0.80.10 @ 3da591ab)`.
+   `pi-go 0.1.0 (upstream pi 0.80.10 @ 3a40794e)`.
 
 ### Watch list
 
-36 items — notably: upstream's dual-package compaction/skills duplication ported once (keep, but
-sync diffs need mapping), the RPC *client* half and `streamProxy` absent, `ModelRuntime` unnamed in
-Go, commit-message and pre-commit-hook conventions, npm-audit-equivalent dependency scanning, and
-the `pi-ai` standalone CLI. None blocks a ship; all re-checked at each audit.
+The historical watch list remains non-blocking. RPC client and `streamProxy` are now closed; the
+remaining examples are upstream's duplicated compaction/skills implementations ported once,
+`ModelRuntime` absorbed without its TS class name, npm-audit-equivalent scanning, and the `pi-ai`
+standalone CLI. Each is re-checked at the next audit rather than expanded speculatively.
 
 ## How to re-run
 
