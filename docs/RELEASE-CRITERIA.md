@@ -79,14 +79,15 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 - [ ] Cold start < 50 ms; binary ≤ 35 MB (with bridge); numbers recorded in release notes.
       (Cold start 45.0 ± 5.2 ms green with thin margin; bridged binary 51,478,690 B — cap decision
       owner-pending, expansion-study decision 3.)
-- [ ] Nightly live suite ≥ 90% pass over the trailing 72 hours. (Owner-blocked: remote + secrets.)
+- [ ] Nightly live suite ≥ 90% pass over the trailing 72 hours. (Owner-blocked: CI secrets and
+      authorized hosted runs.)
 - [ ] Docs newcomer path (install → first session → embed SDK → run an upstream extension) verified
       by following the docs literally; README credit/provenance; divergence ledger current.
       (SDK-embed and extension steps verified offline; install step needs a published release.)
-- [ ] Upstream alignment audit re-run at the release commit with zero open should-fix findings
+- [x] Upstream alignment audit re-run at the release commit with zero open should-fix findings
       (docs/compare/upstream-alignment.md); release notes extracted from CHANGELOG.md; version
-      injected via ldflags and printed with the upstream pin. (21/22 closed; open: AgentHarness
-      facade owner decision. Notes and version mechanics done; --version stays byte-parity bare.)
+      injected via ldflags and printed with the upstream pin. (22/22 closed; D29 records the
+      AgentHarness/streamProxy boundary. --version stays byte-parity bare.)
 - [x] Final trim pass #5; LOC report: mirrored packages ≤ 1.3× upstream TS src LOC or justified
       per-package in the report; dep audit clean.
 
