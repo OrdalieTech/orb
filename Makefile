@@ -14,7 +14,7 @@ build:
 	$(GO_ENV) CGO_ENABLED=0 go build ./...
 
 test:
-	$(GO_ENV) go test -race ./...
+	$(GO_ENV) CGO_ENABLED=1 go test -race ./...
 
 lint: $(GOLANGCI_LINT)
 	$(GO_ENV) go vet ./...
@@ -76,8 +76,8 @@ fixtures-check: ensure-upstream-fixture-tools product-assets-check
 		cd .upstream && node --import tsx ../conformance/extract/generate.ts "$$fixture_tmp" $(UPSTREAM_COMMIT); \
 		cd ..; \
 		diff -ru conformance/fixtures "$$fixture_tmp"
-	@PI_GO_F6_TS_VERIFY=1 $(GO_ENV) go test -race ./conformance/runner -run TestF6SessionWriteAndProjectionMatchUpstream
-	@PI_GO_AUTH_TS_VERIFY=1 $(GO_ENV) go test -race ./codingagent/config -run TestAuthStorageConformance
+	@PI_GO_F6_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./conformance/runner -run TestF6SessionWriteAndProjectionMatchUpstream
+	@PI_GO_AUTH_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./codingagent/config -run TestAuthStorageConformance
 
 upstream-rpc-tests: ensure-upstream-fixture-tools
 	@mkdir -p .tools/bin

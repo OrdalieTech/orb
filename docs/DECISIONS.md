@@ -44,8 +44,10 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
 
 ## Architecture decisions
 
-- **D7 — Strict pure Go.** `CGO_ENABLED=0` everywhere, forever. Single static binary. Anything
-  requiring CGo is disqualified by construction.
+- **D7 — Strict pure-Go product (owner-amended 2026-07-20).** Every product and release build uses
+  `CGO_ENABLED=0` and remains a single static binary; dependencies requiring CGo are disqualified.
+  Development-only test binaries may enable CGo when the Go toolchain requires it for `-race`
+  (ThreadSanitizer). That exception never ships.
 - **D8 — Platforms.** linux + darwin, amd64 + arm64, from day one. Windows is a later parity wave
   (upstream supports it; we port its git-bash/console strategy then). Not dropped — deferred.
 - **D9 — Single module, mirrored layout.** One `go.mod`. Packages mirror upstream packages
