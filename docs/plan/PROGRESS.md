@@ -153,7 +153,7 @@ Status: **open; study surfaced to owner; proceeding on full-parity defaults**.
       (tool bundles, public ai model helpers with duplicates deleted).
 - [x] Publish `docs/compare/sprint-3.md`, complete trim pass #4 (`docs/trim/M4.md`), and check
       every locally provable M4 criterion.
-- [ ] Pre-release parity tail (Sprint 4): the six numbered upstream regression tests; typed
+- [x] Pre-release parity tail (Sprint 4): the six numbered upstream regression tests; typed
       tool-event accessors, public streaming-JSON entry, UI component kit exports; the five small
       gaps found by MIRROR verification (`/session` cache-waste totals, opencode session-affinity
       headers, live-export ToolHTMLRenderer, `/settings` idle-timeout entry, footer/tool-header
@@ -177,10 +177,10 @@ owner-gated** (see docs/trim/M5.md §Owner-gated remainder).
       blocked: upstream unmoved past the pin); final trim pass #5 with LOC (1.089x) and dep audit
       (docs/trim/M5.md).
 - [x] Tag `v0.1.0` (annotated, remainder recorded in the tag message per the owner's goal
-      directive; the repo has no remote, so pushing/publishing stays an owner act).
-- [ ] Owner-gated before publishing the tag: size-cap decision, OAuth live runs, remote + secrets
+      directive; it remains unpublished, so publication stays an owner act).
+- [ ] Owner-gated before publishing the tag: size-cap decision, OAuth live runs, CI secrets
       (nightly 72h window), clean-VM install/docs verification, a green lock bump once upstream
-      publishes past the pin, AgentHarness facade decision.
+      publishes past the pin.
 
 ## Sprint 5 — Chat gateway (D27)
 
@@ -273,10 +273,6 @@ Status: **closed by the Sprint 6 commit containing this record**.
   is clean). Options: raise caps for the bridged artifact, ship `pi` + bridge-less `pi-slim`
   (35.1 MB / ~44 ms at M3), or fund deeper size work. Neither criterion is weakened pending your
   call.
-- **Decision pending: AgentHarness facade** (alignment audit) — upstream's primary
-  `packages/agent` export has no Go equivalent; port it for SDK parity or record "dissolved into
-  the codingagent runtime" in DECISIONS. Recommended: record the dissolution; port only if an SDK
-  consumer asks.
 - **Recorded for review: llama.cpp extension excluded** (divergence ledger) — shipped at the pin
   but deleted upstream right after; amend if you want it ported anyway.
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.
@@ -285,4 +281,4 @@ Status: **closed by the Sprint 6 commit containing this record**.
 - Real Kitty and iTerm2 image emission plus native Darwin/X11/Wayland clipboard smoke require those
   terminal and desktop environments.
 - Off-machine clean macOS/Linux release validation and the 72-hour burn-in require owner-provided
-  hosts/remotes; all local and fixture work continues independently.
+  hosts plus publication/CI access; all local and fixture work continues independently.

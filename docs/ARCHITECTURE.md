@@ -141,7 +141,9 @@ compaction + branch summarization, skills loading, prompt-template plumbing, sys
 execution-env abstraction (`env` interface — the seam later used by SSH/sandbox extensions). The
 `codingagent` layer's `AgentSession` (upstream `packages/coding-agent/src/core/agent-session.ts`,
 spec `packages/coding-agent/docs/sdk.md`) is the high-level embedding API and the thing the SDK
-advertises; its 13 upstream SDK examples get Go ports under `codingagent/examples/`.
+advertises; its 13 upstream SDK examples get Go ports under `codingagent/examples/`. D29 deliberately
+dissolves upstream's parallel `AgentHarness` facade into this runtime; the underlying harness
+primitives remain public without duplicating orchestration or making `agent` depend on `codingagent`.
 
 ## 4. `tui/` — terminal UI
 

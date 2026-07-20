@@ -107,6 +107,8 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
 | darwin modifier-key native addon | gap | kitty keyboard protocol where possible; documented small parity gap |
 | win32 console native addon | deferred | Windows wave |
 | Bundled llama.cpp extension | excluded | shipped at the pinned commit but deleted upstream immediately after; porting would be dead-on-arrival work (2026-07-19 alignment audit; owner may amend) |
+| `AgentHarness` orchestration facade | dissolved | D29; harness primitives remain in `agent/harness`, while the high-level embedding lifecycle stays in `codingagent.AgentSession` |
+| `streamProxy` `/api/stream` client | excluded | D29; application-specific proxy protocols use `agent.WithStreamFn` and the public streaming-JSON helper |
 | `chat/` gateway package (+ `chat/telegram`, `chat/whatsapp`) | addition | owner requirement (D27); kept out of core, strictly one-way dependency on the SDK |
 | `AgentSessionOptions` tool-operations injection hook | addition | D27; ergonomic seam over the existing `NewSessionRuntime`/`BaseTools` path for VFS/sandboxed tool operations |
 | `chat/` platform wave 2 (`slack`, `teams`, `discord`, `messenger`, `googlechat` + `chat/internal/` ws/webhook helpers) | addition | owner requirement (D28); official APIs only, stdlib-only clients incl. hand-rolled RFC 6455 |
@@ -180,6 +182,17 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
   official-API stance. Later waves ride the same seams and transport: Instagram DM, Line,
   Twilio SMS/RCS, Mattermost, Rocket.Chat, Zulip, IRC; KakaoTalk/WeChat noted as
   access-restricted. Zero new go.mod dependencies remains the rule for every wave.
+
+- **D29 — One high-level agent runtime (agent, 2026-07-20).** The pinned upstream exports a
+  second `AgentHarness` orchestrator from `packages/agent`, but its own coding-agent still uses
+  `AgentSession`; upstream documents that migration as pi 2.0 work. pi-go keeps the already-ported
+  session, repository, compaction, resource, and environment primitives in `agent/harness`, while
+  `codingagent.AgentSession` remains the sole high-level embedding runtime. Reimplementing the
+  1,029-line facade would duplicate queues, hooks, persistence ordering, and lifecycle state, and
+  placing a wrapper in `agent` would invert the package dependency. The adjacent `streamProxy`
+  client is also excluded: its `/api/stream` endpoint is an application protocol rather than agent
+  behavior, and embedders already have `agent.WithStreamFn` plus `ai.ParseStreamingJSON`. Revisit
+  either surface only when upstream's coding-agent adopts it or a real Go consumer requires it.
 
 ## Standing assumptions (owner-confirmed)
 
