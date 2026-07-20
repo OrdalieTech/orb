@@ -45,6 +45,40 @@ func TestModelRegistryFiltersCopilotModelsFromOAuthCredential(t *testing.T) {
 	}
 }
 
+func TestModelRegistryOfflineEnvUsesPresence(t *testing.T) {
+	original, present := os.LookupEnv("PI_OFFLINE")
+	if err := os.Unsetenv("PI_OFFLINE"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if present {
+			_ = os.Setenv("PI_OFFLINE", original)
+		} else {
+			_ = os.Unsetenv("PI_OFFLINE")
+		}
+	})
+	registry, err := NewModelRegistry(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !registry.allowModelNetwork {
+		t.Fatal("unset PI_OFFLINE disabled model network")
+	}
+
+	for _, value := range []string{"", "0", "false", "no", "1", "TRUE", "YeS"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("PI_OFFLINE", value)
+			registry, err := NewModelRegistry(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if registry.allowModelNetwork {
+				t.Fatal("present PI_OFFLINE allowed model network")
+			}
+		})
+	}
+}
+
 type registryAPIKeyAuth struct {
 	resolve func(context.Context, aiauth.AuthContext, *aiauth.Credential) (*aiauth.AuthResult, error)
 }

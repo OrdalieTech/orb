@@ -33,34 +33,66 @@ func Marshal(value any) ([]byte, error) {
 	return marshalJSON(value)
 }
 
+const (
+	usageOptionalsDefault uint8 = iota
+	usageOptionalsBeforeTotals
+	usageOptionalsAfterCost
+)
+
 func (usage Usage) MarshalJSON() ([]byte, error) {
-	if usage.CacheWrite1h != nil {
+	beforeTotals := usage.optionalOrder == usageOptionalsBeforeTotals ||
+		usage.optionalOrder == usageOptionalsDefault && usage.CacheWrite1h == nil
+	if beforeTotals {
 		return marshalJSON(struct {
 			Input        int64  `json:"input"`
 			Output       int64  `json:"output"`
 			CacheRead    int64  `json:"cacheRead"`
 			CacheWrite   int64  `json:"cacheWrite"`
+			CacheWrite1h *int64 `json:"cacheWrite1h,omitempty"`
+			Reasoning    *int64 `json:"reasoning,omitempty"`
 			TotalTokens  int64  `json:"totalTokens"`
 			Cost         Cost   `json:"cost"`
-			CacheWrite1h *int64 `json:"cacheWrite1h"`
-			Reasoning    *int64 `json:"reasoning,omitempty"`
 		}{
 			Input: usage.Input, Output: usage.Output, CacheRead: usage.CacheRead, CacheWrite: usage.CacheWrite,
-			TotalTokens: usage.TotalTokens, Cost: usage.Cost, CacheWrite1h: usage.CacheWrite1h, Reasoning: usage.Reasoning,
+			CacheWrite1h: usage.CacheWrite1h, Reasoning: usage.Reasoning, TotalTokens: usage.TotalTokens, Cost: usage.Cost,
 		})
 	}
 	return marshalJSON(struct {
-		Input       int64  `json:"input"`
-		Output      int64  `json:"output"`
-		CacheRead   int64  `json:"cacheRead"`
-		CacheWrite  int64  `json:"cacheWrite"`
-		Reasoning   *int64 `json:"reasoning,omitempty"`
-		TotalTokens int64  `json:"totalTokens"`
-		Cost        Cost   `json:"cost"`
+		Input        int64  `json:"input"`
+		Output       int64  `json:"output"`
+		CacheRead    int64  `json:"cacheRead"`
+		CacheWrite   int64  `json:"cacheWrite"`
+		TotalTokens  int64  `json:"totalTokens"`
+		Cost         Cost   `json:"cost"`
+		CacheWrite1h *int64 `json:"cacheWrite1h,omitempty"`
+		Reasoning    *int64 `json:"reasoning,omitempty"`
 	}{
 		Input: usage.Input, Output: usage.Output, CacheRead: usage.CacheRead, CacheWrite: usage.CacheWrite,
-		Reasoning: usage.Reasoning, TotalTokens: usage.TotalTokens, Cost: usage.Cost,
+		TotalTokens: usage.TotalTokens, Cost: usage.Cost, CacheWrite1h: usage.CacheWrite1h, Reasoning: usage.Reasoning,
 	})
+}
+
+func (usage *Usage) UnmarshalJSON(data []byte) error {
+	type plainUsage Usage
+	var decoded plainUsage
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*usage = Usage(decoded)
+	if usage.CacheWrite1h != nil || usage.Reasoning != nil {
+		usage.optionalOrder = usageOptionalsAfterCost
+		if topLevelMemberBefore(data, "cacheWrite1h", "totalTokens") || topLevelMemberBefore(data, "reasoning", "totalTokens") {
+			usage.optionalOrder = usageOptionalsBeforeTotals
+		}
+	}
+	return nil
+}
+
+// SetUsageOptionalsBeforeTotals preserves the order of upstream usage objects built by compaction aggregation.
+func SetUsageOptionalsBeforeTotals(usage *Usage) {
+	if usage != nil && (usage.CacheWrite1h != nil || usage.Reasoning != nil) {
+		usage.optionalOrder = usageOptionalsBeforeTotals
+	}
 }
 
 func UnmarshalMessage(data []byte) (Message, error) {
@@ -330,6 +362,7 @@ func (message ToolResultMessage) MarshalJSON() ([]byte, error) {
 		ToolName       json.RawMessage   `json:"toolName"`
 		Content        ToolResultContent `json:"content"`
 		Details        json.RawMessage   `json:"details,omitempty"`
+		Usage          *Usage            `json:"usage,omitempty"`
 		AddedToolNames json.RawMessage   `json:"addedToolNames,omitempty"`
 		IsError        bool              `json:"isError"`
 		Timestamp      int64             `json:"timestamp"`
@@ -339,6 +372,7 @@ func (message ToolResultMessage) MarshalJSON() ([]byte, error) {
 		ToolName:       toolName,
 		Content:        message.Content,
 		Details:        message.Details,
+		Usage:          message.Usage,
 		AddedToolNames: addedToolNames,
 		IsError:        message.IsError,
 		Timestamp:      message.Timestamp,
@@ -351,6 +385,7 @@ func (message *ToolResultMessage) UnmarshalJSON(data []byte) error {
 		ToolName       json.RawMessage   `json:"toolName"`
 		Content        ToolResultContent `json:"content"`
 		Details        json.RawMessage   `json:"details"`
+		Usage          *Usage            `json:"usage"`
 		AddedToolNames json.RawMessage   `json:"addedToolNames"`
 		IsError        bool              `json:"isError"`
 		Timestamp      int64             `json:"timestamp"`
@@ -375,11 +410,28 @@ func (message *ToolResultMessage) UnmarshalJSON(data []byte) error {
 		ToolName:       toolName,
 		Content:        raw.Content,
 		Details:        bytes.Clone(raw.Details),
+		Usage:          cloneUsage(raw.Usage),
 		AddedToolNames: addedToolNames,
 		IsError:        raw.IsError,
 		Timestamp:      raw.Timestamp,
 	}
 	return nil
+}
+
+func cloneUsage(usage *Usage) *Usage {
+	if usage == nil {
+		return nil
+	}
+	copy := *usage
+	if usage.Reasoning != nil {
+		value := *usage.Reasoning
+		copy.Reasoning = &value
+	}
+	if usage.CacheWrite1h != nil {
+		value := *usage.CacheWrite1h
+		copy.CacheWrite1h = &value
+	}
+	return &copy
 }
 
 func (info DiagnosticErrorInfo) MarshalJSON() ([]byte, error) {

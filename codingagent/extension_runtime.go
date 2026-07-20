@@ -860,7 +860,7 @@ func (runtime *SessionRuntime) afterExtensionToolCall(ctx context.Context, call 
 	}
 	result := state.runner.EmitToolResult(ctx, extensions.ToolResultEvent{
 		ToolCallID: call.ToolCall.ID, ToolName: call.ToolCall.Name, Input: call.ToolCall.Arguments,
-		Content: call.Result.Content, Details: call.Result.Details, IsError: call.IsError,
+		Content: call.Result.Content, Details: call.Result.Details, IsError: call.IsError, Usage: call.Result.Usage,
 	})
 	if result == nil {
 		return nil, nil
@@ -874,6 +874,7 @@ func (runtime *SessionRuntime) afterExtensionToolCall(ctx context.Context, call 
 		patch.DetailsSet = true
 	}
 	patch.IsError = result.IsError
+	patch.Usage = result.Usage
 	return patch, nil
 }
 

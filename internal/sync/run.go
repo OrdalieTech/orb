@@ -77,6 +77,7 @@ func Run(ctx context.Context, config Config) (Result, error) {
 		return Result{}, err
 	}
 	result.TargetVersion = targetVersion(ctx, config.UpstreamDir, target, lock.Version)
+	candidateLock := Lock{Repo: lock.Repo, Commit: target, Version: result.TargetVersion, SyncedAt: date}
 	result.Descendant, err = isAncestor(ctx, config.UpstreamDir, lock.Commit, target)
 	if err != nil {
 		return Result{}, err
@@ -127,7 +128,7 @@ func Run(ctx context.Context, config Config) (Result, error) {
 		if conformance == nil {
 			conformance = runConformance
 		}
-		conformanceOutput, conformanceErr := conformance(ctx, root, candidate)
+		conformanceOutput, conformanceErr := conformance(ctx, root, candidate, candidateLock)
 		result.Conformance = checkFrom(conformanceOutput, conformanceErr)
 		result.Green = conformanceErr == nil
 	}
@@ -140,13 +141,7 @@ func Run(ctx context.Context, config Config) (Result, error) {
 	case !result.Descendant:
 		result.Promotion = "Refused because the target does not descend from the pinned commit."
 	default:
-		promotedLock := Lock{
-			Repo:     lock.Repo,
-			Commit:   target,
-			Version:  result.TargetVersion,
-			SyncedAt: date,
-		}
-		if err := promote(root, candidate, promotedLock, result.Green, result.Descendant); err != nil {
+		if err := promote(root, candidate, candidateLock, result.Green, result.Descendant); err != nil {
 			return Result{}, err
 		}
 		result.Promotion = "Promoted generated fixtures and UPSTREAM.lock."
@@ -312,8 +307,8 @@ func generateFixtures(ctx context.Context, root, upstreamDir, outputDir, target 
 	return command(ctx, upstreamDir, nil, "node", "--import", "tsx", extractor, outputDir, target)
 }
 
-func runConformance(ctx context.Context, root, fixtureDir string) (string, error) {
-	copyRoot, cleanup, err := prepareConformanceCopy(root, fixtureDir)
+func runConformance(ctx context.Context, root, fixtureDir string, lock Lock) (string, error) {
+	copyRoot, cleanup, err := prepareConformanceCopy(root, fixtureDir, lock)
 	if err != nil {
 		return "", err
 	}

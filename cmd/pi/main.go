@@ -106,6 +106,14 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	}
 
 	args := normalizeRuntimeCLIArgs(ParseArgs(argv))
+	offlineValue, networkDisabled := os.LookupEnv("PI_OFFLINE")
+	offlineValue = strings.ToLower(offlineValue)
+	offlineMode := args.Offline || offlineValue == "1" || offlineValue == "true" || offlineValue == "yes"
+	if offlineMode {
+		_ = os.Setenv("PI_OFFLINE", "1")
+		_ = os.Setenv("PI_SKIP_VERSION_CHECK", "1")
+		networkDisabled = true
+	}
 	hasErrors := false
 	for _, diagnostic := range args.Diagnostics {
 		prefix := "Warning: "
@@ -306,6 +314,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			sessionRuntime.Dispose()
 			return reportCLIError(streams.Stderr, dirErr)
 		}
+		startStartupModelRefresh(ctx, "interactive", offlineMode, !networkDisabled, agentDir, inputs.ModelRegistry, dependencies.refreshModels)
 		host := newInteractiveSessionHost(baseArgs, dependencies, sessionRuntime, inputs, agentDir, streams.Stderr)
 		return modes.RunInteractiveMode(ctx, host.Session(), modes.InteractiveModeOptions{
 			InitialMessage: initial,
@@ -337,6 +346,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	})
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
+	}
+	if services := sessionHost.Services(); services != nil {
+		startStartupModelRefresh(ctx, args.Mode, offlineMode, !networkDisabled, services.AgentDir, services.ModelRegistry, dependencies.refreshModels)
 	}
 	sessionRuntime := sessionHost.Session()
 	if args.Mode == "rpc" {
@@ -417,6 +429,22 @@ func refreshModelCatalogs(ctx context.Context, agentDir string) error {
 		return errors.New("model catalog refresh timed out")
 	}
 	return err
+}
+
+func startupModelRefreshEnabled(mode string, offline bool) bool {
+	return !offline && (mode == "interactive" || mode == "rpc")
+}
+
+func startStartupModelRefresh(ctx context.Context, mode string, offline, allowNetwork bool, agentDir string, registry *config.ModelRegistry, refresh func(context.Context, string) error) {
+	if !startupModelRefreshEnabled(mode, offline) || registry == nil {
+		return
+	}
+	go func() {
+		if allowNetwork && refresh != nil {
+			_ = refresh(ctx, agentDir)
+		}
+		_ = registry.Reload()
+	}()
 }
 
 func applySessionDefaults(args *CLIArgs, context session.SessionContext, branch []session.SessionEntry) {
@@ -539,6 +567,7 @@ Commands:
   --no-context-files, -nc        Disable AGENTS.md/CLAUDE.md discovery
   --approve, -a                  Trust project-local resources for this run
   --no-approve, -na              Ignore project-local resources for this run
+  --offline                      Disable startup network operations (same as PI_OFFLINE=1)
   --help, -h                     Show help
   --version, -v                  Show version
 `

@@ -244,8 +244,22 @@ func TestF12UILifecycleManifestIsPinned(t *testing.T) {
 	if manifest.Family != "F12-ui-lifecycle" || manifest.Generator != "conformance/extract/f12-ui-lifecycle.ts" {
 		t.Fatalf("unexpected UI lifecycle manifest: %+v", manifest)
 	}
-	if manifest.UpstreamCommit != "3da591ab74ab9ab407e72ed882600b2c851fae21" {
-		t.Fatalf("UI lifecycle upstream commit = %q", manifest.UpstreamCommit)
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve UPSTREAM.lock path")
+	}
+	var lock struct {
+		Commit string `json:"commit"`
+	}
+	encoded, err := os.ReadFile(filepath.Join(filepath.Dir(file), "..", "..", "UPSTREAM.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(encoded, &lock); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.UpstreamCommit != lock.Commit {
+		t.Fatalf("UI lifecycle upstream commit = %q, lock = %q", manifest.UpstreamCommit, lock.Commit)
 	}
 	if !reflect.DeepEqual(manifest.Files, []string{"lifecycle.json"}) || len(manifest.Sources) != 8 {
 		t.Fatalf("UI lifecycle manifest coverage = files %v sources %v", manifest.Files, manifest.Sources)

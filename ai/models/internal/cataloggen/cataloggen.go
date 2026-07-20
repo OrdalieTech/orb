@@ -102,6 +102,8 @@ type rule struct {
 
 var directRules = []rule{
 	{"amazon-bedrock", "amazon-bedrock", ai.APIBedrockConverse, "https://bedrock-runtime.us-east-1.amazonaws.com"},
+	{"alibaba-token-plan", "qwen-token-plan", ai.APIOpenAICompletions, "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"},
+	{"alibaba-token-plan-cn", "qwen-token-plan-cn", ai.APIOpenAICompletions, "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"},
 	{"anthropic", "anthropic", ai.APIAnthropicMessages, "https://api.anthropic.com"},
 	{"cerebras", "cerebras", ai.APIOpenAICompletions, "https://api.cerebras.ai/v1"},
 	{"cloudflare-workers-ai", "cloudflare-workers-ai", ai.APIOpenAICompletions, "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1"},
@@ -194,7 +196,7 @@ func addRule(result map[string]map[string]ai.Model, source sourceProvider, item 
 		if name == "" {
 			name = id
 		}
-		if item.provider == "kimi-coding" && (id == "k2p5" || id == "k2p6") {
+		if item.provider == "kimi-coding" && (id == "k2p5" || id == "k2p6" || id == "k2p7") {
 			if _, exists := source.Models["kimi-for-coding"]; exists {
 				continue
 			}
@@ -242,11 +244,24 @@ func include(item rule, id string, model sourceModel) bool {
 			"google/gemma-3n-e2b-it", "google/gemma-3n-e4b-it", "google/gemma-4-31b-it",
 			"meta/llama-3.2-1b-instruct", "meta/llama-4-maverick-17b-128e-instruct",
 			"microsoft/phi-4-mini-instruct", "minimaxai/minimax-m2.7", "mistralai/mistral-nemotron",
-			"nvidia/nemotron-mini-4b-instruct", "qwen/qwen3-next-80b-a3b-instruct",
+			"nvidia/nemotron-mini-4b-instruct", "qwen/qwen3-next-80b-a3b-instruct", "qwen/qwen3.5-122b-a10b",
 			"qwen/qwen3.5-397b-a17b", "sarvamai/sarvam-m", "upstage/solar-10.7b-instruct",
 		}, id) {
 			return false
 		}
+	}
+	if item.provider == "openrouter" && slices.Contains([]string{
+		"meta-llama/llama-3.3-70b-instruct:free", "qwen/qwen3-coder:free", "qwen/qwen3-next-80b-a3b-instruct:free",
+	}, id) {
+		return false
+	}
+	if item.provider == "together" && slices.Contains([]string{
+		"Qwen/Qwen3-235B-A22B-Instruct-2507-tput", "Qwen/Qwen3.5-397B-A17B", "essentialai/Rnj-1-Instruct", "zai-org/GLM-5", "zai-org/GLM-5.1",
+	}, id) {
+		return false
+	}
+	if item.provider == "vercel-ai-gateway" && slices.Contains([]string{"meta/llama-3.2-11b", "meta/llama-3.2-90b"}, id) {
+		return false
 	}
 	if (item.provider == "minimax" || item.provider == "minimax-cn") && !slices.Contains([]string{"MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M3"}, id) {
 		return false
@@ -316,6 +331,9 @@ func addOpenCode(result map[string]map[string]ai.Model, source sourceProvider, p
 		}
 		if provider == "opencode-go" && (key == "minimax-m2.7" || key == "qwen3.5-plus" || key == "qwen3.6-plus") {
 			api, baseURL = ai.APIOpenAICompletions, basePath+"/v1"
+		}
+		if (provider == "opencode" || provider == "opencode-go") && key == "grok-4.5" {
+			api = ai.APIOpenAIResponses
 		}
 		model := normalizedModel(key, raw.Name, raw, api, provider, baseURL)
 		if raw.Provider.NPM == "@ai-sdk/alibaba" {
@@ -395,9 +413,9 @@ func addCodex(result map[string]map[string]ai.Model) {
 		{"gpt-5.4", "GPT-5.4", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: 2.5, Output: 15, CacheRead: .25}},
 		{"gpt-5.4-mini", "GPT-5.4 mini", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: .75, Output: 4.5, CacheRead: .075}},
 		{"gpt-5.5", "GPT-5.5", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: 5, Output: 30, CacheRead: .5}},
-		{"gpt-5.6-luna", "GPT-5.6 Luna", 372000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: 1, Output: 6, CacheRead: .1, CacheWrite: 1.25}},
-		{"gpt-5.6-sol", "GPT-5.6 Sol", 372000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: 5, Output: 30, CacheRead: .5, CacheWrite: 6.25}},
-		{"gpt-5.6-terra", "GPT-5.6 Terra", 372000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: 2.5, Output: 15, CacheRead: .25, CacheWrite: 3.125}},
+		{"gpt-5.6-luna", "GPT-5.6 Luna", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: 1, Output: 6, CacheRead: .1, CacheWrite: 1.25}},
+		{"gpt-5.6-sol", "GPT-5.6 Sol", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: 5, Output: 30, CacheRead: .5, CacheWrite: 6.25}},
+		{"gpt-5.6-terra", "GPT-5.6 Terra", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: 2.5, Output: 15, CacheRead: .25, CacheWrite: 3.125}},
 	}
 	for _, item := range items {
 		model := ai.Model{ID: item.id, Name: item.name, API: ai.APIOpenAICodexResponses, Provider: "openai-codex", BaseURL: "https://chatgpt.com/backend-api", Reasoning: true, Input: item.input, Cost: ai.ModelCost{ModelCostRates: item.cost}, ContextWindow: item.context, MaxTokens: 128000}

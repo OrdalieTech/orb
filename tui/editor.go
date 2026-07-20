@@ -3,7 +3,9 @@ package tui
 import (
 	"context"
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -224,6 +226,12 @@ type editorState struct {
 	cursorCol  int // rune index
 }
 
+type editorSnapshot struct {
+	state        editorState
+	pastes       map[int]string
+	pasteCounter int
+}
+
 func (state editorState) clone() editorState {
 	return editorState{lines: append([]string(nil), state.lines...), cursorLine: state.cursorLine, cursorCol: state.cursorCol}
 }
@@ -346,7 +354,7 @@ type Editor struct {
 	preferredVisualCol   int // -1 = unset (sticky column)
 	snappedFromCursorCol int // -1 = unset (pre-snap position on atomic segments)
 
-	undoStack undoStack[editorState]
+	undoStack undoStack[editorSnapshot]
 
 	pending []func()
 
@@ -1064,12 +1072,12 @@ func (editor *Editor) SetText(text string) {
 	editor.cancelAutocomplete()
 	editor.lastAction = ""
 	editor.exitHistoryBrowsing()
-	editor.pastes = map[int]string{}
-	editor.pasteCounter = 0
 	normalized := normalizeEditorText(text)
 	if editor.getTextLocked() != normalized {
 		editor.pushUndoSnapshot()
 	}
+	editor.pastes = map[int]string{}
+	editor.pasteCounter = 0
 	editor.setTextInternal(normalized, "end")
 	pending := editor.pending
 	editor.pending = nil
@@ -1356,6 +1364,17 @@ func (editor *Editor) handleBackspace() {
 			targetID, _ := strconv.Atoi(match[1])
 			delete(editor.pastes, targetID)
 			editor.pasteCounter--
+			higherIDs := make([]int, 0, len(editor.pastes))
+			for id := range editor.pastes {
+				if id > targetID {
+					higherIDs = append(higherIDs, id)
+				}
+			}
+			slices.Sort(higherIDs)
+			for _, id := range higherIDs {
+				editor.pastes[id-1] = editor.pastes[id]
+				delete(editor.pastes, id)
+			}
 
 			// Renumber markers with IDs greater than the removed one.
 			for index, mapLine := range editor.state.lines {
@@ -1371,14 +1390,7 @@ func (editor *Editor) handleBackspace() {
 					if sub[4] >= 0 {
 						suffix = fullMatch[sub[4]:sub[5]]
 					}
-					newText := fmt.Sprintf("[paste #%d%s]", id-1, suffix)
-					if content, ok := editor.pastes[id]; ok {
-						editor.pastes[id-1] = content
-					} else {
-						editor.pastes[id-1] = newText
-					}
-					delete(editor.pastes, id)
-					return newText
+					return fmt.Sprintf("[paste #%d%s]", id-1, suffix)
 				})
 			}
 		}
@@ -1894,7 +1906,7 @@ func (editor *Editor) deleteYankedText() {
 }
 
 func (editor *Editor) pushUndoSnapshot() {
-	editor.undoStack.push(editor.state.clone())
+	editor.undoStack.push(editorSnapshot{editor.state.clone(), maps.Clone(editor.pastes), editor.pasteCounter})
 }
 
 func (editor *Editor) undo() {
@@ -1903,7 +1915,9 @@ func (editor *Editor) undo() {
 	if !ok {
 		return
 	}
-	editor.state = snapshot
+	editor.state = snapshot.state
+	editor.pastes = snapshot.pastes
+	editor.pasteCounter = snapshot.pasteCounter
 	editor.lastAction = ""
 	editor.preferredVisualCol = -1
 	editor.emitChange()

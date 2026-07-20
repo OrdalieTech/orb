@@ -112,6 +112,12 @@ func decodeHarnessEntryObject(object map[string]json.RawMessage) (SessionTreeEnt
 		}
 	}
 	entry.Details = cloneHarnessRaw(object["details"])
+	if raw, ok := object["usage"]; ok {
+		var usage ai.Usage
+		if json.Unmarshal(raw, &usage) == nil {
+			entry.Usage = &usage
+		}
+	}
 	if raw, ok := object["fromHook"]; ok {
 		var value bool
 		if json.Unmarshal(raw, &value) == nil {
@@ -255,6 +261,9 @@ func marshalHarnessEntry(entry SessionTreeEntry) ([]byte, error) {
 		if len(entry.Details) != 0 {
 			members = append(members, harnessRawMember("details", entry.Details))
 		}
+		if entry.Usage != nil {
+			members = append(members, harnessJSONMember{name: "usage", value: mustHarnessJSON(entry.Usage)})
+		}
 		if entry.FromHook != nil {
 			members = append(members, harnessJSONMember{name: "fromHook", value: mustHarnessJSON(*entry.FromHook)})
 		}
@@ -262,6 +271,9 @@ func marshalHarnessEntry(entry SessionTreeEntry) ([]byte, error) {
 		members = append(members, harnessStringMember("fromId", entry.FromID), harnessStringMember("summary", entry.Summary))
 		if len(entry.Details) != 0 {
 			members = append(members, harnessRawMember("details", entry.Details))
+		}
+		if entry.Usage != nil {
+			members = append(members, harnessJSONMember{name: "usage", value: mustHarnessJSON(entry.Usage)})
 		}
 		if entry.FromHook != nil {
 			members = append(members, harnessJSONMember{name: "fromHook", value: mustHarnessJSON(*entry.FromHook)})

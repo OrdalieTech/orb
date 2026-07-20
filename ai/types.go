@@ -152,14 +152,15 @@ type Cost struct {
 }
 
 type Usage struct {
-	Input        int64  `json:"input"`
-	Output       int64  `json:"output"`
-	CacheRead    int64  `json:"cacheRead"`
-	CacheWrite   int64  `json:"cacheWrite"`
-	Reasoning    *int64 `json:"reasoning,omitempty"`
-	TotalTokens  int64  `json:"totalTokens"`
-	Cost         Cost   `json:"cost"`
-	CacheWrite1h *int64 `json:"cacheWrite1h,omitempty"`
+	Input         int64  `json:"input"`
+	Output        int64  `json:"output"`
+	CacheRead     int64  `json:"cacheRead"`
+	CacheWrite    int64  `json:"cacheWrite"`
+	Reasoning     *int64 `json:"reasoning,omitempty"`
+	TotalTokens   int64  `json:"totalTokens"`
+	Cost          Cost   `json:"cost"`
+	CacheWrite1h  *int64 `json:"cacheWrite1h,omitempty"`
+	optionalOrder uint8
 }
 
 type DiagnosticErrorInfo struct {
@@ -206,6 +207,7 @@ type ToolResultMessage struct {
 	ToolName       string            `json:"toolName"`
 	Content        ToolResultContent `json:"content"`
 	Details        json.RawMessage   `json:"details,omitempty"`
+	Usage          *Usage            `json:"usage,omitempty"`
 	AddedToolNames *[]string         `json:"addedToolNames,omitempty"`
 	IsError        bool              `json:"isError"`
 	Timestamp      int64             `json:"timestamp"`

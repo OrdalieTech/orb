@@ -3,6 +3,8 @@ package harness
 import (
 	"strings"
 	"time"
+
+	"github.com/OrdalieTech/pi-go/ai"
 )
 
 func (session *Session) LeafID() (*string, error) {
@@ -101,10 +103,13 @@ func (session *Session) AppendActiveToolsChange(toolNames []string) (string, err
 	return session.appendEntry(entry)
 }
 
-func (session *Session) AppendCompaction(summary, firstKeptEntryID string, tokensBefore float64, details any, fromHook *bool) (string, error) {
+func (session *Session) AppendCompaction(summary, firstKeptEntryID string, tokensBefore float64, details any, fromHook *bool, usage ...*ai.Usage) (string, error) {
 	entry := SessionTreeEntry{Type: "compaction"}
 	entry.Summary, entry.FirstKeptEntryID, entry.TokensBefore = summary, firstKeptEntryID, tokensBefore
 	entry.FromHook = cloneHarnessBool(fromHook)
+	if len(usage) > 0 {
+		entry.Usage = cloneHarnessUsage(usage[0])
+	}
 	if details != nil {
 		encoded, err := marshalHarnessValue(details)
 		if err != nil {
@@ -164,6 +169,7 @@ func (session *Session) AppendName(name string) (string, error) {
 type BranchSummary struct {
 	Summary  string
 	Details  any
+	Usage    *ai.Usage
 	FromHook *bool
 }
 
@@ -186,6 +192,7 @@ func (session *Session) MoveTo(entryID *string, summary *BranchSummary) (string,
 		entry.FromID = *entryID
 	}
 	entry.Summary, entry.FromHook = summary.Summary, cloneHarnessBool(summary.FromHook)
+	entry.Usage = cloneHarnessUsage(summary.Usage)
 	if summary.Details != nil {
 		encoded, err := marshalHarnessValue(summary.Details)
 		if err != nil {

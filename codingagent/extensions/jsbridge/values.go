@@ -231,6 +231,7 @@ func normalizeEventObject(event extensions.Event, object map[string]any) {
 			object["content"] = []any{}
 		}
 		delete(object, "details")
+		deleteNil("usage")
 	case extensions.InputEvent:
 		deleteNil("images", "streamingBehavior")
 	}
@@ -683,6 +684,13 @@ func decodeToolResultPatch(runtime *sobek.Runtime, value sobek.Value) (extension
 	if objectHas(object, "isError") {
 		isError := object.Get("isError").ToBoolean()
 		result.IsError = &isError
+	}
+	if objectHas(object, "usage") {
+		var usage ai.Usage
+		if err := decodeJSON(runtime, object.Get("usage"), &usage); err != nil {
+			return result, err
+		}
+		result.Usage = &usage
 	}
 	return result, nil
 }

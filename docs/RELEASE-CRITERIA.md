@@ -70,15 +70,16 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 ## M5 — v1.0 release (closes Sprint 4)
 
 - [x] All M1–M4 criteria re-verified at the release commit, fixtures regenerated at current UPSTREAM.lock.
-- [ ] One full sync cycle executed against a fresher upstream commit (≤ 30 days old) with a green
-      lock bump — proves the sync machinery, not just the snapshot. (Machinery proven GREEN
-      end-to-end 2026-07-19; blocked: upstream has published nothing newer than the pin.)
+- [x] One full sync cycle executed against a fresher upstream commit (≤ 30 days old) with a green
+      lock bump — proves the sync machinery, not just the snapshot. (`3a40794e`, 2026-07-20: 116
+      changed paths classified, zero unmapped paths, fixtures regenerated, full race suite green.)
 - [ ] goreleaser artifacts for all 4 targets; install script verified on clean linux + macOS VMs.
       (All four snapshot artifacts built, checksum-verified, version-injected; script mechanics
       verified against them — clean-VM end-to-end runs owner-blocked.)
 - [ ] Cold start < 50 ms; binary ≤ 35 MB (with bridge); numbers recorded in release notes.
-      (Cold start 45.0 ± 5.2 ms green with thin margin; bridged binary 51,478,690 B — cap decision
-      owner-pending, expansion-study decision 3.)
+      (Cold start 45.0 ± 5.2 ms green with thin margin; current bridged binary 51,703,970 B.
+      The size half is red: removing embedded sobek/esbuild would contradict D17, so closure needs
+      an owner amendment to D17 or this budget, not a weakened measurement.)
 - [ ] Nightly live suite ≥ 90% pass over the trailing 72 hours. (Owner-blocked: CI secrets and
       authorized hosted runs.)
 - [ ] Docs newcomer path (install → first session → embed SDK → run an upstream extension) verified

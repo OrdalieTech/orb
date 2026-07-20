@@ -56,6 +56,7 @@ type CLIArgs struct {
 	PromptTemplates    []string
 	NoPromptTemplates  bool
 	ProjectTrusted     *bool
+	Offline            bool
 	Messages           []string
 	FileArgs           []string
 	UnknownFlags       []CLIUnknownFlag
@@ -204,6 +205,8 @@ func ParseArgs(argv []string) CLIArgs {
 		case argument == "--no-approve" || argument == "-na":
 			trusted := false
 			result.ProjectTrusted = &trusted
+		case argument == "--offline":
+			result.Offline = true
 		case strings.HasPrefix(argument, "@"):
 			result.FileArgs = append(result.FileArgs, argument[1:])
 		case strings.HasPrefix(argument, "--"):

@@ -247,11 +247,13 @@ func (result AgentToolResult) MarshalJSON() ([]byte, error) {
 	return ai.Marshal(struct {
 		Content        ai.ToolResultContent `json:"content"`
 		Details        any                  `json:"details,omitempty"`
+		Usage          *ai.Usage            `json:"usage,omitempty"`
 		AddedToolNames *[]string            `json:"addedToolNames,omitempty"`
 		Terminate      *bool                `json:"terminate,omitempty"`
 	}{
 		Content:        result.Content,
 		Details:        result.Details,
+		Usage:          result.Usage,
 		AddedToolNames: result.AddedToolNames,
 		Terminate:      result.Terminate,
 	})

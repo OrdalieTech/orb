@@ -174,8 +174,14 @@ func TestOpenAICompletionsOmitsAffinityHeadersForEmptySession(t *testing.T) {
 
 func TestOpenAICompletionsToolCallIDUsesUTF16Semantics(t *testing.T) {
 	model := &ai.Model{Provider: "openai"}
-	if got := normalizeOpenAICompletionsToolCallID("a😀b|suffix", model, nil); got != "a__b" {
+	if got := normalizeOpenAICompletionsToolCallID("a😀b|suffix", model, nil); got != "a__b_suffix" {
 		t.Fatalf("pipe ID = %q", got)
+	}
+	firstInput, secondInput := "shared|"+strings.Repeat("a", 100), "shared|"+strings.Repeat("b", 100)
+	first := normalizeOpenAICompletionsToolCallID(firstInput, model, nil)
+	second := normalizeOpenAICompletionsToolCallID(secondInput, model, nil)
+	if first != "shared_"+shortHash(firstInput)[:8] || second != "shared_"+shortHash(secondInput)[:8] || first == second {
+		t.Fatalf("long pipe IDs = %q, %q", first, second)
 	}
 	got := normalizeOpenAICompletionsToolCallID(strings.Repeat("a", 39)+"😀tail", model, nil)
 	if utf8.ValidString(got) {

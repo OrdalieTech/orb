@@ -87,7 +87,6 @@ func applyCorrections(model *ai.Model) {
 			applyImpliedCost(model, ai.ModelCostRates{Input: 3, Output: 15, CacheRead: .3})
 		} else {
 			costs := map[string]ai.ModelCostRates{
-				"k2p7":                      {Input: .95, Output: 4, CacheRead: .19},
 				"kimi-for-coding":           {Input: .95, Output: 4, CacheRead: .19},
 				"kimi-for-coding-highspeed": {Input: 1.9, Output: 8, CacheRead: .38},
 				"kimi-k2-thinking":          {Input: .6, Output: 2.5, CacheRead: .15},
@@ -265,8 +264,8 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 	}
 	if provider == "kimi-coding" && id == "k3" || (provider == "moonshotai" || provider == "moonshotai-cn") && id == "kimi-k3" {
 		values := map[ai.ModelThinkingLevel]*string{
-			ai.ModelThinkingOff: nil, ai.ModelThinkingMinimal: nil, ai.ModelThinkingLow: nil,
-			ai.ModelThinkingMedium: nil, ai.ModelThinkingHigh: nil, ai.ModelThinkingXHigh: nil,
+			ai.ModelThinkingOff: nil, ai.ModelThinkingMinimal: nil, ai.ModelThinkingLow: ptr("low"),
+			ai.ModelThinkingMedium: nil, ai.ModelThinkingHigh: ptr("high"), ai.ModelThinkingXHigh: nil,
 			ai.ModelThinkingMax: ptr("max"),
 		}
 		mergeThinking(model, values)
@@ -355,6 +354,9 @@ func applyExplicitCompletionsCompat(model *ai.Model, compat *ai.OpenAICompletion
 			compat.RequiresReasoningContentOnAssistantMessages = ptr(true)
 			compat.DeferredToolsMode = ptr(ai.DeferredToolsKimi)
 		}
+	case "qwen-token-plan", "qwen-token-plan-cn":
+		compat.SupportsStore, compat.SupportsDeveloperRole = ptr(false), ptr(false)
+		compat.ThinkingFormat = ptr(ai.ThinkingFormatQwen)
 	case "xiaomi", "xiaomi-token-plan-ams", "xiaomi-token-plan-cn", "xiaomi-token-plan-sgp":
 		compat.RequiresReasoningContentOnAssistantMessages = ptr(true)
 		compat.ThinkingFormat = ptr(ai.ThinkingFormatDeepSeek)

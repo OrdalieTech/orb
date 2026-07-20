@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/pi-go/agent/harness"
+	"github.com/OrdalieTech/pi-go/ai"
 )
 
 type Clock func() time.Time
@@ -28,6 +29,7 @@ type NewSessionOptions struct {
 type OptionalEntryFields struct {
 	Details    any
 	HasDetails bool
+	Usage      *ai.Usage
 	FromHook   *bool
 }
 
@@ -177,13 +179,13 @@ func Open(path, sessionDir string, options ...Option) (*SessionManager, error) {
 	if err != nil {
 		return nil, err
 	}
-	entries, err := LoadEntriesFromFile(resolvedPath)
+	loaded, err := loadSessionFile(resolvedPath)
 	if err != nil {
 		return nil, err
 	}
 	cwd := resolved.cwdOverride
 	if cwd == "" {
-		if header := findHeader(entries); header != nil && header.Header != nil {
+		if header := findHeader(loaded.entries); header != nil && header.Header != nil {
 			cwd = header.Header.CWD
 		}
 	}
@@ -203,7 +205,7 @@ func Open(path, sessionDir string, options ...Option) (*SessionManager, error) {
 		sessionDir = normalizePath(sessionDir)
 	}
 	manager := newManager(cwd, sessionDir, true, resolved)
-	if err := manager.setSessionFileLocked(resolvedPath); err != nil {
+	if err := manager.setLoadedSessionFileLocked(resolvedPath, loaded); err != nil {
 		return nil, err
 	}
 	return manager, nil
@@ -292,12 +294,16 @@ func (manager *SessionManager) setSessionFileLocked(path string) error {
 	if err != nil {
 		return err
 	}
-	manager.sessionFile = resolved
-	exists, err := pathExists(resolved)
+	loaded, err := loadSessionFile(resolved)
 	if err != nil {
 		return err
 	}
-	if !exists {
+	return manager.setLoadedSessionFileLocked(resolved, loaded)
+}
+
+func (manager *SessionManager) setLoadedSessionFileLocked(resolved string, loaded loadedSessionFile) error {
+	manager.sessionFile = resolved
+	if !loaded.exists {
 		if _, err := manager.newSessionLocked(nil); err != nil {
 			return err
 		}
@@ -305,16 +311,9 @@ func (manager *SessionManager) setSessionFileLocked(path string) error {
 		return nil
 	}
 
-	entries, err := LoadEntriesFromFile(resolved)
-	if err != nil {
-		return err
-	}
+	entries := loaded.entries
 	if len(entries) == 0 {
-		info, statErr := os.Stat(resolved)
-		if statErr != nil {
-			return statErr
-		}
-		if info.Size() > 0 {
+		if loaded.size > 0 {
 			return fmt.Errorf("Session file is not a valid pi session: %s", resolved) //nolint:staticcheck // Upstream error capitalization is observable.
 		}
 		if _, err := manager.newSessionLocked(nil); err != nil {
@@ -334,10 +333,11 @@ func (manager *SessionManager) setSessionFileLocked(path string) error {
 		manager.sessionID = header.Header.ID
 	}
 	if manager.sessionID == "" {
-		manager.sessionID, err = manager.sessionIDGenerator(manager.clock())
+		generated, err := manager.sessionIDGenerator(manager.clock())
 		if err != nil {
 			return err
 		}
+		manager.sessionID = generated
 	}
 	migrated, err := MigrateSessionEntries(manager.fileEntries, manager.entryIDGenerator)
 	if err != nil {
@@ -686,6 +686,7 @@ func (manager *SessionManager) AppendCompaction(
 			}
 		}
 		entry.FromHook = options[0].FromHook
+		entry.Usage = cloneSessionUsage(options[0].Usage)
 	}
 	return manager.appendEntryLocked(entry)
 }
@@ -873,6 +874,7 @@ func cloneEntry(entry *SessionEntry) *SessionEntry {
 	copy.ActiveToolNames = cloneStringSlice(entry.ActiveToolNames)
 	copy.Message = cloneRaw(entry.Message)
 	copy.Details = cloneRaw(entry.Details)
+	copy.Usage = cloneSessionUsage(entry.Usage)
 	copy.Data = cloneRaw(entry.Data)
 	copy.Content = cloneRaw(entry.Content)
 	return &copy
@@ -1113,6 +1115,7 @@ func (manager *SessionManager) BranchWithSummary(
 				}
 			}
 			entry.FromHook = options[0].FromHook
+			entry.Usage = cloneSessionUsage(options[0].Usage)
 		}
 		return manager.appendEntryLocked(entry)
 	}
@@ -1140,6 +1143,7 @@ func (manager *SessionManager) BranchWithSummary(
 			}
 		}
 		entry.FromHook = options[0].FromHook
+		entry.Usage = cloneSessionUsage(options[0].Usage)
 	}
 	return manager.appendEntryLocked(entry)
 }

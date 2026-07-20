@@ -348,11 +348,13 @@ func TestRunnerToolResultChainsPartialPatchesAndErrors(t *testing.T) {
 	registry := NewRegistry(t.TempDir())
 	content := ai.ToolResultContent{&ai.TextContent{Text: "first"}}
 	details := any(map[string]any{"source": "first"})
+	firstUsage := &ai.Usage{Input: 2, TotalTokens: 2, Cost: ai.Cost{Total: 0.2}}
+	finalUsage := &ai.Usage{Input: 3, TotalTokens: 3, Cost: ai.Cost{Total: 0.3}}
 	isError := true
 	for _, factory := range []Factory{
 		func(api API) error {
 			api.On(EventToolResult, func(context.Context, Event, Context) (any, error) {
-				return ToolResultResult{Content: &content, Details: &details}, nil
+				return ToolResultResult{Content: &content, Details: &details, Usage: firstUsage}, nil
 			})
 			return nil
 		},
@@ -365,10 +367,10 @@ func TestRunnerToolResultChainsPartialPatchesAndErrors(t *testing.T) {
 		func(api API) error {
 			api.On(EventToolResult, func(_ context.Context, raw Event, _ Context) (any, error) {
 				event := raw.(ToolResultEvent)
-				if event.Content[0].(*ai.TextContent).Text != "first" || event.Details.(map[string]any)["source"] != "first" {
+				if event.Content[0].(*ai.TextContent).Text != "first" || event.Details.(map[string]any)["source"] != "first" || event.Usage == nil || event.Usage.TotalTokens != 2 {
 					return nil, errors.New("middleware did not receive prior patch")
 				}
-				return ToolResultResult{IsError: &isError}, nil
+				return ToolResultResult{IsError: &isError, Usage: finalUsage}, nil
 			})
 			return nil
 		},
@@ -384,7 +386,7 @@ func TestRunnerToolResultChainsPartialPatchesAndErrors(t *testing.T) {
 		ToolName: "tool", ToolCallID: "call", Input: map[string]any{},
 		Content: ai.ToolResultContent{&ai.TextContent{Text: "base"}}, Details: map[string]any{"base": true},
 	})
-	if result == nil || result.Content == nil || (*result.Content)[0].(*ai.TextContent).Text != "first" || result.IsError == nil || !*result.IsError {
+	if result == nil || result.Content == nil || (*result.Content)[0].(*ai.TextContent).Text != "first" || result.IsError == nil || !*result.IsError || result.Usage == nil || result.Usage.TotalTokens != 3 {
 		t.Fatalf("result = %#v", result)
 	}
 	if len(reported) != 1 || reported[0].Error != "ignored" {

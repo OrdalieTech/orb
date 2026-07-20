@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -48,6 +49,65 @@ type SessionStats struct {
 	Tokens            SessionTokenTotals    `json:"tokens"`
 	Cost              float64               `json:"cost"`
 	ContextUsage      *harness.ContextUsage `json:"contextUsage,omitempty"`
+}
+
+type UsageCostBreakdownEntry struct {
+	Key    string  `json:"key"`
+	Cost   float64 `json:"cost"`
+	Tokens int64   `json:"tokens"`
+}
+
+func addSessionUsage(tokens *SessionTokenTotals, cost *float64, usage *ai.Usage) {
+	if usage == nil {
+		return
+	}
+	tokens.Input += usage.Input
+	tokens.Output += usage.Output
+	tokens.CacheRead += usage.CacheRead
+	tokens.CacheWrite += usage.CacheWrite
+	*cost += usage.Cost.Total
+}
+
+// GetUsageCostBreakdown groups model-attributed usage and auxiliary tool/summary usage.
+func GetUsageCostBreakdown(entries []sessionstore.SessionEntry) []UsageCostBreakdownEntry {
+	result := make([]UsageCostBreakdownEntry, 0)
+	byKey := make(map[string]int)
+	for _, entry := range entries {
+		key := ""
+		var usage *ai.Usage
+		if entry.Type == "compaction" || entry.Type == "branch_summary" {
+			key, usage = "Tools/summaries", entry.Usage
+		} else if entry.Type == "message" {
+			message, err := ai.UnmarshalMessage(entry.Message)
+			if err != nil {
+				continue
+			}
+			switch typed := message.(type) {
+			case *ai.AssistantMessage:
+				model := typed.Model
+				if typed.ResponseModel != nil {
+					model = *typed.ResponseModel
+				}
+				key, usage = string(typed.Provider)+"/"+model, &typed.Usage
+			case *ai.ToolResultMessage:
+				key, usage = "Tools/summaries", typed.Usage
+			}
+		}
+		if key == "" || usage == nil {
+			continue
+		}
+		index, ok := byKey[key]
+		if !ok {
+			index = len(result)
+			byKey[key] = index
+			result = append(result, UsageCostBreakdownEntry{Key: key})
+		}
+		result[index].Cost += usage.Cost.Total
+		result[index].Tokens += usage.Input + usage.Output + usage.CacheRead + usage.CacheWrite
+	}
+	result = slices.DeleteFunc(result, func(entry UsageCostBreakdownEntry) bool { return entry.Cost == 0 && entry.Tokens == 0 })
+	sort.SliceStable(result, func(left, right int) bool { return result[left].Cost > result[right].Cost })
+	return result
 }
 
 func (runtime *SessionRuntime) Manager() *sessionstore.SessionManager {
@@ -752,6 +812,9 @@ func (runtime *SessionRuntime) GetUserMessagesForForking() []struct {
 func (runtime *SessionRuntime) GetSessionStats() SessionStats {
 	stats := SessionStats{SessionFile: runtime.manager.GetSessionFile(), SessionID: runtime.manager.GetSessionID()}
 	for _, entry := range runtime.manager.GetEntries() {
+		if entry.Type == "compaction" || entry.Type == "branch_summary" {
+			addSessionUsage(&stats.Tokens, &stats.Cost, entry.Usage)
+		}
 		if entry.Type != "message" {
 			continue
 		}
@@ -767,6 +830,12 @@ func (runtime *SessionRuntime) GetSessionStats() SessionStats {
 			stats.UserMessages++
 		case "toolResult":
 			stats.ToolResults++
+			message, err := ai.UnmarshalMessage(entry.Message)
+			if err == nil {
+				if toolResult, ok := message.(*ai.ToolResultMessage); ok {
+					addSessionUsage(&stats.Tokens, &stats.Cost, toolResult.Usage)
+				}
+			}
 		case "assistant":
 			message, err := ai.UnmarshalMessage(entry.Message)
 			if err != nil {
@@ -782,11 +851,7 @@ func (runtime *SessionRuntime) GetSessionStats() SessionStats {
 					stats.ToolCalls++
 				}
 			}
-			stats.Tokens.Input += assistant.Usage.Input
-			stats.Tokens.Output += assistant.Usage.Output
-			stats.Tokens.CacheRead += assistant.Usage.CacheRead
-			stats.Tokens.CacheWrite += assistant.Usage.CacheWrite
-			stats.Cost += assistant.Usage.Cost.Total
+			addSessionUsage(&stats.Tokens, &stats.Cost, &assistant.Usage)
 		}
 	}
 	stats.Tokens.Total = stats.Tokens.Input + stats.Tokens.Output + stats.Tokens.CacheRead + stats.Tokens.CacheWrite

@@ -17,6 +17,12 @@ const sessionReadBufferSize = 1024 * 1024
 
 type IDGenerator func() (string, error)
 
+type loadedSessionFile struct {
+	entries []*FileEntry
+	exists  bool
+	size    int64
+}
+
 // ParseSessionEntries parses valid JSON lines and silently skips blank or
 // malformed lines. It does not validate the session header or run migrations.
 func ParseSessionEntries(content string) []*FileEntry {
@@ -64,13 +70,18 @@ func isJSTrimSpace(character rune) bool {
 // LoadEntriesFromFile streams a session without imposing a maximum line size.
 // A valid file starts with a session record whose id is a JSON string.
 func LoadEntriesFromFile(path string) ([]*FileEntry, error) {
+	loaded, err := loadSessionFile(path)
+	return loaded.entries, err
+}
+
+func loadSessionFile(path string) (loadedSessionFile, error) {
 	path = normalizePath(path)
 	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return loadedSessionFile{}, nil
 	}
 	if err != nil {
-		return nil, err
+		return loadedSessionFile{}, err
 	}
 	defer func() { _ = file.Close() }()
 
@@ -83,15 +94,19 @@ func LoadEntriesFromFile(path string) ([]*FileEntry, error) {
 		}
 		if readErr != nil {
 			if !errors.Is(readErr, io.EOF) {
-				return nil, readErr
+				return loadedSessionFile{}, readErr
 			}
 			break
 		}
 	}
-	if !validSessionHeader(entries) {
-		return nil, nil
+	info, err := file.Stat()
+	if err != nil {
+		return loadedSessionFile{}, err
 	}
-	return entries, nil
+	if !validSessionHeader(entries) {
+		entries = nil
+	}
+	return loadedSessionFile{entries: entries, exists: true, size: info.Size()}, nil
 }
 
 func validSessionHeader(entries []*FileEntry) bool {

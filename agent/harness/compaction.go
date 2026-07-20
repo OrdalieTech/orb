@@ -389,35 +389,42 @@ func Compact(
 		return nil, errors.New("First kept entry has no UUID - session may need migration")
 	}
 	var summary string
+	var summaryUsage ai.Usage
 	if preparation.IsSplitTurn && len(preparation.TurnPrefixMessages) > 0 {
 		history := "No prior history."
+		var historyUsage *ai.Usage
 		if len(preparation.MessagesToSummarize) > 0 {
-			generated, err := GenerateSummary(ctx, preparation.MessagesToSummarize, model, complete,
+			generated, err := GenerateSummaryWithUsage(ctx, preparation.MessagesToSummarize, model, complete,
 				preparation.Settings.ReserveTokens, customInstructions, preparation.PreviousSummary, thinkingLevel)
 			if err != nil {
 				return nil, err
 			}
-			history = generated
+			history, historyUsage = generated.Text, &generated.Usage
 		}
 		prefix, err := generateTurnPrefixSummary(ctx, preparation.TurnPrefixMessages, model, complete,
 			preparation.Settings.ReserveTokens, thinkingLevel)
 		if err != nil {
 			return nil, err
 		}
-		summary = history + "\n\n---\n\n**Turn Context (split turn):**\n\n" + prefix
+		summary = history + "\n\n---\n\n**Turn Context (split turn):**\n\n" + prefix.Text
+		summaryUsage = prefix.Usage
+		if historyUsage != nil {
+			summaryUsage = combineUsage(*historyUsage, prefix.Usage)
+		}
 	} else {
-		generated, err := GenerateSummary(ctx, preparation.MessagesToSummarize, model, complete,
+		generated, err := GenerateSummaryWithUsage(ctx, preparation.MessagesToSummarize, model, complete,
 			preparation.Settings.ReserveTokens, customInstructions, preparation.PreviousSummary, thinkingLevel)
 		if err != nil {
 			return nil, err
 		}
-		summary = generated
+		summary, summaryUsage = generated.Text, generated.Usage
 	}
 	readFiles, modifiedFiles := computeFileLists(preparation.FileOps)
 	summary += FormatFileOperations(readFiles, modifiedFiles)
 	return &CompactionResult{
 		Summary: summary, FirstKeptEntryID: preparation.FirstKeptEntryID,
 		TokensBefore: preparation.TokensBefore,
+		Usage:        &summaryUsage,
 		Details:      CompactionDetails{ReadFiles: readFiles, ModifiedFiles: modifiedFiles},
 	}, nil
 }
@@ -432,6 +439,28 @@ func GenerateSummary(
 	previousSummary *string,
 	thinkingLevel ai.ModelThinkingLevel,
 ) (string, error) {
+	result, err := GenerateSummaryWithUsage(ctx, messages, model, complete, reserveTokens, customInstructions, previousSummary, thinkingLevel)
+	if err != nil {
+		return "", err
+	}
+	return result.Text, nil
+}
+
+type SummaryResult struct {
+	Text  string
+	Usage ai.Usage
+}
+
+func GenerateSummaryWithUsage(
+	ctx context.Context,
+	messages agent.AgentMessages,
+	model *ai.Model,
+	complete CompleteFunc,
+	reserveTokens int64,
+	customInstructions string,
+	previousSummary *string,
+	thinkingLevel ai.ModelThinkingLevel,
+) (*SummaryResult, error) {
 	base := SummarizationPrompt
 	if previousSummary != nil && *previousSummary != "" {
 		base = UpdateSummarizationPrompt
@@ -448,28 +477,28 @@ func GenerateSummary(
 }
 
 //nolint:staticcheck // CompactionError messages match upstream capitalization.
-func generateTurnPrefixSummary(ctx context.Context, messages agent.AgentMessages, model *ai.Model, complete CompleteFunc, reserveTokens int64, thinkingLevel ai.ModelThinkingLevel) (string, error) {
+func generateTurnPrefixSummary(ctx context.Context, messages agent.AgentMessages, model *ai.Model, complete CompleteFunc, reserveTokens int64, thinkingLevel ai.ModelThinkingLevel) (*SummaryResult, error) {
 	prompt := "<conversation>\n" + SerializeConversation(messages) + "\n</conversation>\n\n" + TurnPrefixSummarizationPrompt
 	result, err := runSummary(ctx, prompt, model, complete, minTokenLimit(reserveTokens/2, model), thinkingLevel)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return "", err
+			return nil, err
 		}
 		if err.Error() == "Summarization aborted" {
-			return "", errors.New("Turn prefix summarization aborted")
+			return nil, errors.New("Turn prefix summarization aborted")
 		}
 		if strings.HasPrefix(err.Error(), "Summarization failed:") {
-			return "", errors.New("Turn prefix summarization failed:" + strings.TrimPrefix(err.Error(), "Summarization failed:"))
+			return nil, errors.New("Turn prefix summarization failed:" + strings.TrimPrefix(err.Error(), "Summarization failed:"))
 		}
-		return "", err
+		return nil, err
 	}
 	return result, nil
 }
 
 //nolint:staticcheck // CompactionError messages match upstream capitalization.
-func runSummary(ctx context.Context, prompt string, model *ai.Model, complete CompleteFunc, maxTokens float64, thinkingLevel ai.ModelThinkingLevel) (string, error) {
+func runSummary(ctx context.Context, prompt string, model *ai.Model, complete CompleteFunc, maxTokens float64, thinkingLevel ai.ModelThinkingLevel) (*SummaryResult, error) {
 	if model == nil || complete == nil {
-		return "", errors.New("Summarization failed: no model or completion function")
+		return nil, errors.New("Summarization failed: no model or completion function")
 	}
 	system := SummarizationSystemPrompt
 	request := ai.Context{
@@ -483,20 +512,20 @@ func runSummary(ctx context.Context, prompt string, model *ai.Model, complete Co
 	}
 	response, err := complete(ctx, model, request, options)
 	if err != nil {
-		return "", fmt.Errorf("Summarization failed: %w", err)
+		return nil, fmt.Errorf("Summarization failed: %w", err)
 	}
 	if response.StopReason == ai.StopReasonAborted {
 		if response.ErrorMessage != nil && *response.ErrorMessage != "" {
-			return "", errors.New(*response.ErrorMessage)
+			return nil, errors.New(*response.ErrorMessage)
 		}
-		return "", errors.New("Summarization aborted")
+		return nil, errors.New("Summarization aborted")
 	}
 	if response.StopReason == ai.StopReasonError {
 		message := "Unknown error"
 		if response.ErrorMessage != nil && *response.ErrorMessage != "" {
 			message = *response.ErrorMessage
 		}
-		return "", errors.New("Summarization failed: " + message)
+		return nil, errors.New("Summarization failed: " + message)
 	}
 	var texts []string
 	for _, block := range response.Content {
@@ -504,7 +533,37 @@ func runSummary(ctx context.Context, prompt string, model *ai.Model, complete Co
 			texts = append(texts, text.Text)
 		}
 	}
-	return strings.Join(texts, "\n"), nil
+	return &SummaryResult{Text: strings.Join(texts, "\n"), Usage: response.Usage}, nil
+}
+
+func combineUsage(first, second ai.Usage) ai.Usage {
+	combined := ai.Usage{
+		Input: first.Input + second.Input, Output: first.Output + second.Output,
+		CacheRead: first.CacheRead + second.CacheRead, CacheWrite: first.CacheWrite + second.CacheWrite,
+		TotalTokens: first.TotalTokens + second.TotalTokens,
+		Cost: ai.Cost{
+			Input: first.Cost.Input + second.Cost.Input, Output: first.Cost.Output + second.Cost.Output,
+			CacheRead: first.Cost.CacheRead + second.Cost.CacheRead, CacheWrite: first.Cost.CacheWrite + second.Cost.CacheWrite,
+			Total: first.Cost.Total + second.Cost.Total,
+		},
+	}
+	if first.CacheWrite1h != nil || second.CacheWrite1h != nil {
+		value := usagePart(first.CacheWrite1h) + usagePart(second.CacheWrite1h)
+		combined.CacheWrite1h = &value
+	}
+	if first.Reasoning != nil || second.Reasoning != nil {
+		value := usagePart(first.Reasoning) + usagePart(second.Reasoning)
+		combined.Reasoning = &value
+	}
+	ai.SetUsageOptionalsBeforeTotals(&combined)
+	return combined
+}
+
+func usagePart(value *int64) int64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 func SerializeConversation(messages agent.AgentMessages) string {

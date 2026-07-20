@@ -11,6 +11,7 @@ import (
 
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pi-go/ai/providers/faux"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
 )
@@ -34,6 +35,56 @@ func TestPromptPreflightRejectsUnknownModelSentinel(t *testing.T) {
 	defer runtime.Dispose()
 	if err := runtime.PromptPreflight(context.Background()); err == nil || !strings.HasPrefix(err.Error(), "No model selected.") {
 		t.Fatalf("unknown-model preflight error = %v", err)
+	}
+}
+
+func TestSessionUsageStatsAndCostBreakdownIncludeAuxiliaryCalls(t *testing.T) {
+	provider := faux.New()
+	runtime, manager := newTestRuntime(t, provider, nil)
+	defer runtime.Dispose()
+	root, err := manager.AppendMessage(userMessage("hello"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	responseModel := "actual-model"
+	assistant := runtimeAssistant(provider, "answer", 100)
+	assistant.ResponseModel = &responseModel
+	assistant.Usage.Cost.Total = 0.5
+	if _, err := manager.AppendMessage(assistant); err != nil {
+		t.Fatal(err)
+	}
+	usage := func(cost float64) *ai.Usage {
+		return &ai.Usage{Input: 100, TotalTokens: 100, Cost: ai.Cost{Total: cost}}
+	}
+	if _, err := manager.AppendMessage(&ai.ToolResultMessage{ToolCallID: "call", ToolName: "nested", Content: ai.ToolResultContent{}, Usage: usage(1), Timestamp: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.AppendCompaction("summary", root, 100, sessionstore.OptionalEntryFields{Usage: usage(2)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.BranchWithSummary(nil, "branch", sessionstore.OptionalEntryFields{Usage: usage(3)}); err != nil {
+		t.Fatal(err)
+	}
+
+	stats := runtime.GetSessionStats()
+	if stats.Tokens.Input != 400 || stats.Tokens.Total != 400 || stats.Cost != 6.5 || stats.AssistantMessages != 1 || stats.ToolResults != 1 {
+		t.Fatalf("stats = %#v", stats)
+	}
+	want := []UsageCostBreakdownEntry{{Key: "Tools/summaries", Cost: 6, Tokens: 300}, {Key: string(assistant.Provider) + "/" + responseModel, Cost: 0.5, Tokens: 100}}
+	if got := GetUsageCostBreakdown(manager.GetEntries()); !reflect.DeepEqual(got, want) {
+		t.Fatalf("breakdown = %#v, want %#v", got, want)
+	}
+
+	message := func(provider string) json.RawMessage {
+		encoded, err := ai.MarshalMessage(&ai.AssistantMessage{Provider: ai.ProviderID(provider), Model: "model", Usage: *usage(1)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return encoded
+	}
+	ties := GetUsageCostBreakdown([]sessionstore.SessionEntry{{Type: "message", Message: message("first")}, {Type: "message", Message: message("second")}})
+	if len(ties) != 2 || ties[0].Key != "first/model" || ties[1].Key != "second/model" {
+		t.Fatalf("stable ties = %#v", ties)
 	}
 }
 

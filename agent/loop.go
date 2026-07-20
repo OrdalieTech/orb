@@ -844,6 +844,9 @@ func finalizeExecutedToolCall(
 			if after.DetailsSet || after.Details != nil {
 				result.Details = after.Details
 			}
+			if after.Usage != nil {
+				result.Usage = after.Usage
+			}
 			if after.Terminate != nil {
 				result.Terminate = after.Terminate
 			}
@@ -894,6 +897,7 @@ func createToolResultMessage(finalized finalizedToolCall, config AgentLoopConfig
 		ToolName:       finalized.toolCall.Name,
 		Content:        content,
 		Details:        details,
+		Usage:          finalized.result.Usage,
 		AddedToolNames: addedToolNames,
 		IsError:        finalized.isError,
 		Timestamp:      loopNow(config),

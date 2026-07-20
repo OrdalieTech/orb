@@ -61,6 +61,19 @@ func TestResolveProviderAuthPrecedenceAndStoredOwnership(t *testing.T) {
 	}
 }
 
+func TestEnvAPIKeyAuthReturnsStoredCredentialEnvironment(t *testing.T) {
+	credential := APIKeyCredential("stored")
+	credential.Env = map[string]string{"REGION": "stored-region"}
+	result, err := (EnvAPIKeyAuth{DisplayName: "Key"}).Resolve(context.Background(), testContext{}, credential)
+	if err != nil || result == nil || result.Auth.APIKey == nil || *result.Auth.APIKey != "stored" || result.Env["REGION"] != "stored-region" {
+		t.Fatalf("stored result = %#v, %v", result, err)
+	}
+	result.Env["REGION"] = "changed"
+	if credential.Env["REGION"] != "stored-region" {
+		t.Fatal("resolved environment aliases stored credential")
+	}
+}
+
 func TestResolveProviderAuthRefreshesExpiredOAuthOnce(t *testing.T) {
 	ctx := context.Background()
 	flow := &testOAuth{}

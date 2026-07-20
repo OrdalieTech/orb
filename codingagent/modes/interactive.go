@@ -2725,7 +2725,7 @@ func (mode *InteractiveMode) handleSessionCommand() {
 	stats := mode.session.GetSessionStats()
 	entries := mode.session.Manager().GetEntries()
 	cacheWaste := computeCacheWaste(entries, mode.session.AvailableModels())
-	perModel := sessionCostPerModel(entries)
+	usageBreakdown := codingagent.GetUsageCostBreakdown(entries)
 
 	var info strings.Builder
 	info.WriteString(theme.Bold("Session Info"))
@@ -2770,11 +2770,11 @@ func (mode *InteractiveMode) handleSessionCommand() {
 		info.WriteString(theme.Bold("Cost"))
 		info.WriteByte('\n')
 		fmt.Fprintf(&info, "%s $%.3f", theme.FG("dim", "Total:"), stats.Cost)
-		if len(perModel) > 1 {
-			for _, entry := range perModel {
+		if len(usageBreakdown) > 1 {
+			for _, entry := range usageBreakdown {
 				fmt.Fprintf(&info, "\n  %s $%.3f %s",
-					theme.FG("dim", entry.key+":"), entry.cost,
-					theme.FG("dim", fmt.Sprintf("(%s tokens)", formatTokens(entry.tokens))))
+					theme.FG("dim", entry.Key+":"), entry.Cost,
+					theme.FG("dim", fmt.Sprintf("(%s tokens)", formatTokens(entry.Tokens))))
 			}
 		}
 		if cacheWaste.missedTokens > 0 {
@@ -2793,57 +2793,6 @@ func (mode *InteractiveMode) handleSessionCommand() {
 	mode.chat.AddChild(tui.NewSpacer(1))
 	mode.chat.AddChild(tui.NewText(info.String(), 1, 0, nil))
 	mode.ui.RequestRender()
-}
-
-type sessionModelCost struct {
-	key    string
-	cost   float64
-	tokens int64
-}
-
-// sessionCostPerModel totals cost/tokens per provider/model actually used
-// (e.g. OpenRouter `auto` resolves to a concrete responseModel), sorted by
-// cost descending with insertion order preserved on ties.
-func sessionCostPerModel(entries []sessionstore.SessionEntry) []sessionModelCost {
-	indexes := make(map[string]int)
-	var totals []sessionModelCost
-	for _, entry := range entries {
-		if entry.Type != "message" {
-			continue
-		}
-		decoded, err := ai.UnmarshalMessage(entry.Message)
-		if err != nil {
-			continue
-		}
-		message := asAssistantMessage(decoded)
-		if message == nil {
-			continue
-		}
-		model := message.Model
-		if message.ResponseModel != nil {
-			model = *message.ResponseModel
-		}
-		key := string(message.Provider) + "/" + model
-		index, exists := indexes[key]
-		if !exists {
-			index = len(totals)
-			indexes[key] = index
-			totals = append(totals, sessionModelCost{key: key})
-		}
-		totals[index].cost += message.Usage.Cost.Total
-		totals[index].tokens += message.Usage.Input + message.Usage.Output + message.Usage.CacheRead + message.Usage.CacheWrite
-	}
-	slices.SortStableFunc(totals, func(a, b sessionModelCost) int {
-		switch {
-		case b.cost > a.cost:
-			return 1
-		case b.cost < a.cost:
-			return -1
-		default:
-			return 0
-		}
-	})
-	return totals
 }
 
 func (mode *InteractiveMode) handleEvent(event any) {

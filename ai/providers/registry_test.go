@@ -80,3 +80,41 @@ func TestEveryRegisteredProviderHasBuiltinModels(t *testing.T) {
 		}
 	}
 }
+
+func TestFreshUpstreamProviderRoutes(t *testing.T) {
+	catalog, err := aimodels.Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		id      ai.ProviderID
+		name    string
+		baseURL string
+		env     string
+	}{
+		{"qwen-token-plan", "Qwen Token Plan", "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1", "QWEN_TOKEN_PLAN_API_KEY"},
+		{"qwen-token-plan-cn", "Qwen Token Plan CN", "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1", "QWEN_TOKEN_PLAN_CN_API_KEY"},
+	} {
+		provider, ok := providers.Get(test.id)
+		if !ok || provider.Name != test.name || provider.BaseURL != test.baseURL || !slices.Equal(provider.APIs, []ai.API{ai.APIOpenAICompletions}) || !slices.Equal(provider.Env, []string{test.env}) {
+			t.Fatalf("%s provider = %#v", test.id, provider)
+		}
+		models := catalog.Models(string(test.id))
+		if len(models) != 14 {
+			t.Fatalf("%s models = %d, want 14", test.id, len(models))
+		}
+		for _, excluded := range []string{"qwen-image-2.0", "qwen-image-2.0-pro", "wan2.7-image", "wan2.7-image-pro"} {
+			if _, ok := catalog.Find(string(test.id), excluded); ok {
+				t.Fatalf("%s exposes image model %s", test.id, excluded)
+			}
+		}
+	}
+	opencode, ok := providers.Get("opencode-go")
+	if !ok || !slices.Contains(opencode.APIs, ai.APIOpenAIResponses) {
+		t.Fatalf("OpenCode Go APIs = %v", opencode.APIs)
+	}
+	grok, ok := catalog.Find("opencode-go", "grok-4.5")
+	if !ok || grok.API != ai.APIOpenAIResponses {
+		t.Fatalf("OpenCode Go grok-4.5 = %#v", grok)
+	}
+}

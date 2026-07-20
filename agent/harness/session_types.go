@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/OrdalieTech/pi-go/ai"
 )
 
 // SessionErrorCode is the stable failure classification used by harness
@@ -78,6 +80,7 @@ type SessionTreeEntry struct {
 	FirstKeptEntryID string
 	TokensBefore     float64
 	Details          json.RawMessage
+	Usage            *ai.Usage
 	FromHook         *bool
 	FromID           string
 	CustomType       string
@@ -103,6 +106,7 @@ func (entry SessionTreeEntry) clone() SessionTreeEntry {
 	copy.ActiveToolNames = cloneHarnessStrings(entry.ActiveToolNames)
 	copy.Message = cloneHarnessRaw(entry.Message)
 	copy.Details = cloneHarnessRaw(entry.Details)
+	copy.Usage = cloneHarnessUsage(entry.Usage)
 	copy.FromHook = cloneHarnessBool(entry.FromHook)
 	copy.Data = cloneHarnessRaw(entry.Data)
 	copy.Content = cloneHarnessRaw(entry.Content)
@@ -110,6 +114,22 @@ func (entry SessionTreeEntry) clone() SessionTreeEntry {
 	copy.Label = cloneHarnessString(entry.Label)
 	copy.raw = cloneHarnessRaw(entry.raw)
 	return copy
+}
+
+func cloneHarnessUsage(usage *ai.Usage) *ai.Usage {
+	if usage == nil {
+		return nil
+	}
+	copy := *usage
+	if usage.Reasoning != nil {
+		value := *usage.Reasoning
+		copy.Reasoning = &value
+	}
+	if usage.CacheWrite1h != nil {
+		value := *usage.CacheWrite1h
+		copy.CacheWrite1h = &value
+	}
+	return &copy
 }
 
 func cloneHarnessEntries(entries []SessionTreeEntry) []SessionTreeEntry {

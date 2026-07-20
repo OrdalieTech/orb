@@ -279,6 +279,67 @@ func TestToolResultSecondaryStringsPreserveLoneSurrogates(t *testing.T) {
 	}
 }
 
+func TestToolResultUsageRoundTripsInUpstreamOrder(t *testing.T) {
+	input := []byte(`{"role":"toolResult","toolCallId":"call","toolName":"nested","content":[],"details":{},"usage":{"input":1,"output":2,"cacheRead":3,"cacheWrite":4,"totalTokens":10,"cost":{"input":0.1,"output":0.2,"cacheRead":0.3,"cacheWrite":0.4,"total":1}},"isError":false,"timestamp":1}`)
+	message, err := ai.UnmarshalMessage(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := message.(*ai.ToolResultMessage)
+	if result.Usage == nil || result.Usage.TotalTokens != 10 {
+		t.Fatalf("usage = %#v", result.Usage)
+	}
+	encoded, err := ai.MarshalMessage(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(encoded, input) {
+		t.Fatalf("encoded = %s\nwant    = %s", encoded, input)
+	}
+}
+
+func TestUsagePreservesOptionalMemberPlacement(t *testing.T) {
+	for _, input := range [][]byte{
+		[]byte(`{"role":"toolResult","toolCallId":"call","toolName":"nested","content":[],"usage":{"input":1,"output":2,"cacheRead":3,"cacheWrite":4,"cacheWrite1h":5,"reasoning":6,"totalTokens":21,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"isError":false,"timestamp":1}`),
+		[]byte(`{"role":"toolResult","toolCallId":"call","toolName":"nested","content":[],"usage":{"input":1,"output":2,"cacheRead":3,"cacheWrite":4,"totalTokens":21,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0},"cacheWrite1h":5,"reasoning":6},"isError":false,"timestamp":1}`),
+	} {
+		message, err := ai.UnmarshalMessage(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := ai.MarshalMessage(message)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(encoded, input) {
+			t.Fatalf("encoded = %s\nwant    = %s", encoded, input)
+		}
+	}
+}
+
+func TestConstructedUsageKeepsProviderOptionalMemberOrder(t *testing.T) {
+	cacheWrite1h, reasoning := int64(5), int64(6)
+	encoded, err := ai.Marshal(ai.Usage{
+		Input: 1, Output: 2, CacheRead: 3, CacheWrite: 4, CacheWrite1h: &cacheWrite1h, Reasoning: &reasoning, TotalTokens: 21, Cost: ai.Cost{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []byte(`{"input":1,"output":2,"cacheRead":3,"cacheWrite":4,"totalTokens":21,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0},"cacheWrite1h":5,"reasoning":6}`)
+	if !bytes.Equal(encoded, want) {
+		t.Fatalf("encoded = %s\nwant    = %s", encoded, want)
+	}
+
+	encoded, err = ai.Marshal(ai.Usage{Input: 1, Output: 2, CacheRead: 3, CacheWrite: 4, Reasoning: &reasoning, TotalTokens: 15, Cost: ai.Cost{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = []byte(`{"input":1,"output":2,"cacheRead":3,"cacheWrite":4,"reasoning":6,"totalTokens":15,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}`)
+	if !bytes.Equal(encoded, want) {
+		t.Fatalf("reasoning-only encoded = %s\nwant                   = %s", encoded, want)
+	}
+}
+
 func assertWTF8String(t *testing.T, name, got string) {
 	t.Helper()
 	const want = "\xed\xa0\x80"

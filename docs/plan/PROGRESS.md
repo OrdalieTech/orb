@@ -161,8 +161,9 @@ Status: **open; study surfaced to owner; proceeding on full-parity defaults**.
 
 ## Sprint 4 — Ship (M5)
 
-Status: **release candidate reached; every locally provable M1–M5 criterion green; remainder
-owner-gated** (see docs/trim/M5.md §Owner-gated remainder).
+Status: **local release verification complete; the fresh upstream lock bump is green, while M5
+remains blocked by its 35 MB bridged-binary cap and owner-only live/VM checks** (see
+docs/trim/M5.md §Release remainder).
 
 - [x] Land the release machinery: goreleaser (4 targets, snapshot verified), tag-triggered
       workflow re-running the gate, checksum-verifying install script, ldflags version, CI on
@@ -173,14 +174,13 @@ owner-gated** (see docs/trim/M5.md §Owner-gated remainder).
 - [x] Close the alignment should-fix remainder: typed tool-event accessors, ai.ParseStreamingJSON,
       UI component exports (absentees documented), unit-test tails including the 28 missing
       app.* keybinding migrations found and fixed.
-- [x] Re-verify M1–M4 at the release candidate; run the sync cycle GREEN end-to-end (lock bump
-      blocked: upstream unmoved past the pin); final trim pass #5 with LOC (1.089x) and dep audit
-      (docs/trim/M5.md).
+- [x] Re-verify M1–M4 at the release candidate; promote the 2026-07-20 upstream sync and lock bump
+      to `3a40794e` GREEN (116 paths classified, zero unmapped, regenerated fixtures and full race
+      suite green); final trim pass #5 with LOC (1.085x) and dep audit (docs/trim/M5.md).
 - [x] Tag `v0.1.0` (annotated, remainder recorded in the tag message per the owner's goal
       directive; it remains unpublished, so publication stays an owner act).
 - [ ] Owner-gated before publishing the tag: size-cap decision, OAuth live runs, CI secrets
-      (nightly 72h window), clean-VM install/docs verification, a green lock bump once upstream
-      publishes past the pin.
+      (nightly 72h window), and clean-VM install/docs verification.
 
 ## Sprint 5 — Chat gateway (D27)
 
@@ -267,12 +267,10 @@ Status: **closed by the Sprint 6 commit containing this record**.
 
 ## Owner-blocked evidence
 
-- **Decision pending: M5 binary-size AND cold-start caps** (`docs/plan/expansion-study.md`,
-  decision 3; measured in `docs/trim/M4.md`) — bridged stripped binary 51,425,442 B vs the 35 MB
-  cap, and no-prompt cold start 50.4–50.9 ± 6-7 ms vs the 50 ms cap (pure binary-load cost; init
-  is clean). Options: raise caps for the bridged artifact, ship `pi` + bridge-less `pi-slim`
-  (35.1 MB / ~44 ms at M3), or fund deeper size work. Neither criterion is weakened pending your
-  call.
+- **Decision pending: M5 binary-size cap** (`docs/plan/expansion-study.md`, decision 3) — the
+  current release-shaped bridged binary is 51,703,970 B vs the 35 MB cap. The controlled no-prompt
+  cold start is green at 45.0 ± 5.2 ms, but the size half cannot close while D17 requires embedded
+  sobek + esbuild; amend D17 or the budget. The criterion remains unchecked pending that call.
 - **Recorded for review: llama.cpp extension excluded** (divergence ledger) — shipped at the pin
   but deleted upstream right after; amend if you want it ported anyway.
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.

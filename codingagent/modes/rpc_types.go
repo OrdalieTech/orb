@@ -66,6 +66,10 @@ type RPCSessionState struct {
 	PendingMessageCount   int                   `json:"pendingMessageCount"`
 }
 
+type RPCThinkingLevels struct {
+	Levels []ai.ModelThinkingLevel `json:"levels"`
+}
+
 type RPCSlashCommand struct {
 	Name        string        `json:"name"`
 	Description *string       `json:"description,omitempty"`

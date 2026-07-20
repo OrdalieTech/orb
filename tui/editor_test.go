@@ -684,6 +684,14 @@ func pasteWithMarker(t *testing.T, editor *Editor) string {
 	return editor.GetText()
 }
 
+func taggedPaste(tag string) string {
+	lines := make([]string, 12)
+	for index := range lines {
+		lines[index] = tag + string(rune('a'+index))
+	}
+	return strings.Join(lines, "\n")
+}
+
 func TestEditorPasteMarkers(t *testing.T) {
 	editor := newTestEditor()
 	text := pasteWithMarker(t, editor)
@@ -722,6 +730,54 @@ func TestEditorPasteMarkers(t *testing.T) {
 	// Undo restores it.
 	press(editor, "\x1f")
 	wantText(t, editor, "A"+marker+"B")
+}
+
+func TestEditorPasteRegistryTracksMarkerDeletion(t *testing.T) {
+	t.Run("undo deletion", func(t *testing.T) {
+		editor := newTestEditor()
+		paste := taggedPaste("alpha")
+		editor.HandleInput(keyEventFor("\x1b[200~" + paste + "\x1b[201~"))
+		press(editor, "\x7f", "\x1f")
+		if got := editor.GetExpandedText(); got != paste {
+			t.Fatalf("expanded after undo = %q, want %q", got, paste)
+		}
+	})
+
+	t.Run("undo first of two", func(t *testing.T) {
+		editor := newTestEditor()
+		pasteA, pasteB := taggedPaste("alpha"), taggedPaste("beta")
+		editor.HandleInput(keyEventFor("\x1b[200~" + pasteA + "\x1b[201~"))
+		editor.HandleInput(keyEventFor("\x1b[200~" + pasteB + "\x1b[201~"))
+		press(editor, "\x01", "\x1b[C", "\x7f", "\x1f")
+		if got := editor.GetExpandedText(); got != pasteA+pasteB {
+			t.Fatalf("expanded after undo = %q, want both pastes", got)
+		}
+	})
+
+	t.Run("out of order markers", func(t *testing.T) {
+		editor := newTestEditor()
+		pasteA, pasteB, pasteC := taggedPaste("alpha"), taggedPaste("beta"), taggedPaste("gamma")
+		editor.HandleInput(keyEventFor("\x1b[200~" + pasteA + "\x1b[201~"))
+		press(editor, "\x01")
+		editor.HandleInput(keyEventFor("\x1b[200~" + pasteB + "\x1b[201~"))
+		press(editor, "\x01")
+		editor.HandleInput(keyEventFor("\x1b[200~" + pasteC + "\x1b[201~"))
+		press(editor, "\x05", "\x7f")
+		if got := editor.GetExpandedText(); got != pasteC+pasteB {
+			t.Fatalf("expanded after renumber = %q, want reordered pastes", got)
+		}
+	})
+
+	t.Run("undo set text", func(t *testing.T) {
+		editor := newTestEditor()
+		paste := taggedPaste("alpha")
+		editor.HandleInput(keyEventFor("\x1b[200~" + paste + "\x1b[201~"))
+		editor.SetText("replacement")
+		press(editor, "\x1f")
+		if got := editor.GetExpandedText(); got != paste {
+			t.Fatalf("expanded after undo = %q, want %q", got, paste)
+		}
+	})
 }
 
 func TestEditorPasteMarkerExpansion(t *testing.T) {

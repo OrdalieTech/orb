@@ -400,7 +400,8 @@
       "name": "OpenCode Zen Go",
       "apis": [
         "anthropic-messages",
-        "openai-completions"
+        "openai-completions",
+        "openai-responses"
       ],
       "auth": {
         "kind": "api_key",
@@ -423,6 +424,38 @@
         "name": "OpenRouter API key",
         "env": [
           "OPENROUTER_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "qwen-token-plan",
+      "name": "Qwen Token Plan",
+      "baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Qwen Token Plan API key",
+        "env": [
+          "QWEN_TOKEN_PLAN_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "qwen-token-plan-cn",
+      "name": "Qwen Token Plan CN",
+      "baseUrl": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Qwen Token Plan CN API key",
+        "env": [
+          "QWEN_TOKEN_PLAN_CN_API_KEY"
         ],
         "oauth": false
       }

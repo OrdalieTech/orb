@@ -127,7 +127,7 @@ func projectTreeEntry(entry SessionTreeEntry) SessionEntry {
 	return SessionEntry{
 		Type: entry.Type, ID: entry.ID, ParentID: cloneHarnessString(entry.ParentID), Timestamp: entry.Timestamp,
 		Message: entry.Message, Summary: entry.Summary, FirstKeptEntryID: entry.FirstKeptEntryID,
-		TokensBefore: entry.TokensBefore, Details: entry.Details, FromHook: fromHook,
+		TokensBefore: entry.TokensBefore, Details: entry.Details, Usage: cloneHarnessUsage(entry.Usage), FromHook: fromHook,
 		FromID: entry.FromID, CustomType: entry.CustomType, Content: entry.Content, Display: entry.Display,
 	}
 }

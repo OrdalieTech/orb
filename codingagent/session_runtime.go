@@ -955,7 +955,7 @@ func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason str
 		runtime.emit(CompactionEndEvent{Reason: reason, ErrorMessage: &message})
 		return false, nil
 	}
-	fields := sessionstore.OptionalEntryFields{Details: result.Details, HasDetails: true}
+	fields := sessionstore.OptionalEntryFields{Details: result.Details, HasDetails: true, Usage: result.Usage}
 	if runtime.extensionState != nil {
 		fields.FromHook = &fromExtension
 	}
@@ -1052,7 +1052,7 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 		runtime.emit(CompactionEndEvent{Reason: "manual", ErrorMessage: &message})
 		return nil, err
 	}
-	fields := sessionstore.OptionalEntryFields{Details: result.Details, HasDetails: true}
+	fields := sessionstore.OptionalEntryFields{Details: result.Details, HasDetails: true, Usage: result.Usage}
 	if runtime.extensionState != nil {
 		fields.FromHook = &fromExtension
 	}
@@ -1190,6 +1190,7 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 
 	var summary string
 	var details any = harness.BranchSummaryDetails{}
+	var summaryUsage *ai.Usage
 	fromExtension := false
 	customInstructions := options.CustomInstructions
 	replaceInstructions := options.ReplaceInstructions
@@ -1233,6 +1234,7 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 			if hookResult.Summary != nil && options.Summarize {
 				summary = hookResult.Summary.Summary
 				details = hookResult.Summary.Details
+				summaryUsage = hookResult.Summary.Usage
 				fromExtension = true
 			}
 			if hookResult.CustomInstructions != nil {
@@ -1260,6 +1262,7 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 			return NavigateTreeResult{}, summaryErr
 		}
 		summary = result.Summary
+		summaryUsage = result.Usage
 		details = harness.BranchSummaryDetails{ReadFiles: result.ReadFiles, ModifiedFiles: result.ModifiedFiles}
 	}
 
@@ -1281,7 +1284,7 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 	}
 	var summaryEntry *sessionstore.SessionEntry
 	if summary != "" {
-		fields := sessionstore.OptionalEntryFields{Details: details, HasDetails: true}
+		fields := sessionstore.OptionalEntryFields{Details: details, HasDetails: true, Usage: summaryUsage}
 		if runtime.extensionState != nil {
 			fields.FromHook = &fromExtension
 		}
@@ -1424,7 +1427,7 @@ func projectSessionEntries(entries []sessionstore.SessionEntry) []harness.Sessio
 			Type: entry.Type, ID: entry.ID, ParentID: entry.ParentID, Timestamp: entry.Timestamp,
 			Message: decodeSessionMessage(entry.Message), Summary: entry.Summary,
 			FirstKeptEntryID: entry.FirstKeptEntryID, TokensBefore: entry.TokensBefore,
-			Details: details, FromHook: fromHook, FromID: entry.FromID,
+			Details: details, Usage: entry.Usage, FromHook: fromHook, FromID: entry.FromID,
 			CustomType: entry.CustomType, Content: content, Display: entry.Display,
 		})
 	}

@@ -225,6 +225,24 @@ func TestTUIHardwareCursorMarkerAndReleaseFiltering(t *testing.T) {
 	}
 }
 
+func TestTUIStopClearsInvertedCursor(t *testing.T) {
+	terminal := newFakeTerminal(20, 5)
+	ui := NewTUI(terminal)
+	editor := NewEditor(ui, EditorTheme{})
+	ui.AddChild(editor)
+	ui.SetFocus(editor)
+	if err := ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+	terminal.resetOutput()
+	if err := ui.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if output := terminal.output(); !strings.HasPrefix(output, " ") {
+		t.Fatalf("stop output = %q, want cursor-clearing space first", output)
+	}
+}
+
 type focusRecorder struct {
 	focused bool
 	events  []KeyEvent
