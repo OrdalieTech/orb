@@ -1,6 +1,8 @@
 package session
 
 import (
+	"bufio"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -8,6 +10,8 @@ import (
 	"strings"
 	"time"
 )
+
+const maxSessionHeaderScanBytes = 1024 * 1024
 
 type recentSession struct {
 	path     string
@@ -71,20 +75,32 @@ func readSessionHeader(path string) *SessionHeader {
 		return nil
 	}
 	defer func() { _ = file.Close() }()
-	buffer := make([]byte, 512)
-	count, err := file.Read(buffer)
-	if err != nil && err != io.EOF {
-		return nil
+	reader := bufio.NewReaderSize(io.LimitReader(file, maxSessionHeaderScanBytes+1), 4096)
+	scanned := 0
+	for {
+		line, readErr := reader.ReadString('\n')
+		scanned += len(line)
+		if scanned > maxSessionHeaderScanBytes {
+			return nil
+		}
+		if entry := parseSessionEntryLine(line); entry != nil {
+			if entry.Type != "session" || entry.Header == nil {
+				return nil
+			}
+			rawID, ok := entry.object.get("id")
+			if !ok {
+				return nil
+			}
+			if _, valid := decodeString(rawID); !valid {
+				return nil
+			}
+			return entry.Header
+		}
+		if readErr != nil {
+			if !errors.Is(readErr, io.EOF) {
+				return nil
+			}
+			return nil
+		}
 	}
-	firstLine := strings.SplitN(string(buffer[:count]), "\n", 2)[0]
-	entry := parseSessionEntryLine(firstLine)
-	if entry == nil || entry.Type != "session" || entry.Header == nil {
-		return nil
-	}
-	if rawID, ok := entry.object.get("id"); !ok {
-		return nil
-	} else if _, valid := decodeString(rawID); !valid {
-		return nil
-	}
-	return entry.Header
 }

@@ -26,6 +26,23 @@ type fakeCodexWebSocket struct {
 	closed bool
 }
 
+func TestOpenAICodexSessionlessRequestIDUsesUUIDv7(t *testing.T) {
+	first, err := codexWebSocketRequestID(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := codexWebSocketRequestID(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) != 36 || len(second) != 36 || first[14] != '7' || second[14] != '7' {
+		t.Fatalf("request IDs are not UUIDv7: %q, %q", first, second)
+	}
+	if first >= second {
+		t.Fatalf("request IDs are not monotonic: %q, %q", first, second)
+	}
+}
+
 func TestF2OpenAICodexWebSocketTrace(t *testing.T) {
 	var fixture struct {
 		Cases []struct {

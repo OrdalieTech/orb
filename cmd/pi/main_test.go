@@ -174,6 +174,160 @@ func TestRunCLIRejectsAPIKeyWithoutExplicitModel(t *testing.T) {
 	}
 }
 
+func TestRunCLIOfflineFlagSetsEnvironmentBeforeRuntimeCreation(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	t.Setenv("PI_OFFLINE", "0")
+	called := false
+	code := runCLIWithDependencies(context.Background(), []string{"--offline"}, cliStreams{
+		Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard, StdinTTY: true, StdoutTTY: true,
+	}, cliDependencies{createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+		called = true
+		if value := os.Getenv("PI_OFFLINE"); value != "1" {
+			t.Fatalf("PI_OFFLINE = %q, want 1", value)
+		}
+		if value := os.Getenv("PI_SKIP_VERSION_CHECK"); value != "1" {
+			t.Fatalf("PI_SKIP_VERSION_CHECK = %q, want 1", value)
+		}
+		return runtimeInputs{}, errors.New("stop after environment check")
+	}})
+	if code != 1 || !called {
+		t.Fatalf("code=%d called=%t", code, called)
+	}
+}
+
+func TestStartupModelRefreshModes(t *testing.T) {
+	for _, test := range []struct {
+		mode    string
+		offline bool
+		want    bool
+	}{
+		{mode: "interactive", want: true},
+		{mode: "rpc", want: true},
+		{mode: ""},
+		{mode: "text"},
+		{mode: "json"},
+		{mode: "interactive", offline: true},
+		{mode: "rpc", offline: true},
+	} {
+		if got := startupModelRefreshEnabled(test.mode, test.offline); got != test.want {
+			t.Errorf("mode=%q offline=%t: enabled=%t, want %t", test.mode, test.offline, got, test.want)
+		}
+	}
+}
+
+func TestStartupModelRefreshIsNonBlockingAndRefreshesRegisteredProviders(t *testing.T) {
+	original, present := os.LookupEnv("PI_OFFLINE")
+	if err := os.Unsetenv("PI_OFFLINE"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if present {
+			_ = os.Setenv("PI_OFFLINE", original)
+		} else {
+			_ = os.Unsetenv("PI_OFFLINE")
+		}
+	})
+	agentDir := t.TempDir()
+	registry, err := config.NewModelRegistry(agentDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerRefresh := make(chan bool, 2)
+	if err := registry.RegisterProviderConfig("startup", extensions.ProviderConfig{
+		APIKey: "key",
+		RefreshModels: func(ctx extensions.RefreshModelsContext) ([]extensions.ProviderModelConfig, error) {
+			providerRefresh <- ctx.AllowNetwork
+			return nil, nil
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case allowNetwork := <-providerRefresh:
+		if allowNetwork {
+			t.Fatal("registration refresh allowed network access")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("registration refresh did not run")
+	}
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	returned := make(chan struct{})
+	go func() {
+		startStartupModelRefresh(context.Background(), "interactive", false, true, agentDir, registry, func(context.Context, string) error {
+			close(started)
+			<-release
+			return errors.New("catalog unavailable")
+		})
+		close(returned)
+	}()
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("startup refresh blocked the caller")
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("startup refresh did not run")
+	}
+	close(release)
+	select {
+	case allowNetwork := <-providerRefresh:
+		if !allowNetwork {
+			t.Fatal("startup reload disabled registered provider network access")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("startup reload did not refresh registered providers")
+	}
+}
+
+func TestStartupModelRefreshWithPresentFalseEnvIsCacheOnly(t *testing.T) {
+	t.Setenv("PI_OFFLINE", "0")
+	registry, err := config.NewModelRegistry(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerRefresh := make(chan bool, 2)
+	if err := registry.RegisterProviderConfig("startup", extensions.ProviderConfig{
+		APIKey: "key",
+		RefreshModels: func(ctx extensions.RefreshModelsContext) ([]extensions.ProviderModelConfig, error) {
+			providerRefresh <- ctx.AllowNetwork
+			return nil, nil
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-providerRefresh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("registration refresh did not run")
+	}
+	catalogRefresh := make(chan struct{}, 1)
+	startStartupModelRefresh(context.Background(), "interactive", false, false, t.TempDir(), registry, func(context.Context, string) error {
+		catalogRefresh <- struct{}{}
+		return nil
+	})
+	select {
+	case allowNetwork := <-providerRefresh:
+		if allowNetwork {
+			t.Fatal("cache-only refresh allowed provider network access")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("cache-only provider refresh did not run")
+	}
+	select {
+	case <-catalogRefresh:
+		t.Fatal("cache-only refresh fetched the catalog")
+	default:
+	}
+}
+
 func TestRunCLIDispatchesAuthSubcommandsBeforeSessionSetup(t *testing.T) {
 	called := false
 	code := runCLIWithDependencies(context.Background(), []string{"logout", "anthropic"}, cliStreams{

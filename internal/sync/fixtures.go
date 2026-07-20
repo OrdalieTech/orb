@@ -96,7 +96,7 @@ func snapshotFiles(root string) (map[string]fixtureSnapshot, error) {
 	return files, err
 }
 
-func prepareConformanceCopy(root, fixtures string) (string, func(), error) {
+func prepareConformanceCopy(root, fixtures string, lock Lock) (string, func(), error) {
 	temporary, err := os.MkdirTemp("", "pi-go-sync-test-*")
 	if err != nil {
 		return "", nil, err
@@ -104,6 +104,10 @@ func prepareConformanceCopy(root, fixtures string) (string, func(), error) {
 	cleanup := func() { _ = os.RemoveAll(temporary) }
 	copyRoot := filepath.Join(temporary, "repo")
 	if err := copyProject(root, copyRoot); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	if err := writeLock(filepath.Join(copyRoot, "UPSTREAM.lock"), lock); err != nil {
 		cleanup()
 		return "", nil, err
 	}

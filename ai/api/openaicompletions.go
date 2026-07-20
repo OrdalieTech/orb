@@ -703,17 +703,29 @@ func buildOpenAICompletionsPayload(
 
 func normalizeOpenAICompletionsToolCallID(id string, model *ai.Model, _ *ai.AssistantMessage) string {
 	if separator := strings.IndexByte(id, '|'); separator >= 0 {
-		units := utf16.Encode([]rune(id[:separator]))
-		var normalized strings.Builder
-		for _, unit := range units {
-			if (unit >= 'a' && unit <= 'z') || (unit >= 'A' && unit <= 'Z') ||
-				(unit >= '0' && unit <= '9') || unit == '_' || unit == '-' {
-				normalized.WriteByte(byte(unit))
-			} else {
-				normalized.WriteByte('_')
+		normalize := func(value string) string {
+			units := utf16.Encode([]rune(value))
+			var normalized strings.Builder
+			for _, unit := range units {
+				if (unit >= 'a' && unit <= 'z') || (unit >= 'A' && unit <= 'Z') ||
+					(unit >= '0' && unit <= '9') || unit == '_' || unit == '-' {
+					normalized.WriteByte(byte(unit))
+				} else {
+					normalized.WriteByte('_')
+				}
 			}
+			return normalized.String()
 		}
-		return truncateASCII(normalized.String(), 40)
+		callID, itemID := normalize(id[:separator]), normalize(id[separator+1:])
+		combined := callID
+		if itemID != "" {
+			combined += "_" + itemID
+		}
+		if len(combined) <= 40 {
+			return combined
+		}
+		hash := truncateASCII(shortHash(id), 8)
+		return truncateASCII(callID, max(1, 40-len(hash)-1)) + "_" + hash
 	}
 	if model.Provider == "openai" {
 		return truncateOpenAICompletionsUTF16(id, 40)

@@ -201,12 +201,13 @@ func TestAmazonBedrockStoredAuthFeedsRequestEnvironment(t *testing.T) {
 	}
 
 	bearer := auth.APIKeyCredential("stored-bearer")
+	bearer.Env = map[string]string{"AWS_REGION": "eu-west-1"}
 	store = auth.NewMemoryStore(map[string]*auth.Credential{string(provider.ID): bearer})
 	result, err = auth.ResolveProviderAuth(
 		context.Background(), string(provider.ID), provider.Methods, store,
 		bedrockAuthContext{"AWS_BEARER_TOKEN_BEDROCK": "ambient-bearer"}, nil,
 	)
-	if err != nil || result == nil || result.Auth.APIKey == nil || *result.Auth.APIKey != "stored-bearer" {
+	if err != nil || result == nil || result.Auth.APIKey == nil || *result.Auth.APIKey != "stored-bearer" || !reflect.DeepEqual(result.Env, bearer.Env) {
 		t.Fatalf("stored bearer resolution = %#v, %v", result, err)
 	}
 }

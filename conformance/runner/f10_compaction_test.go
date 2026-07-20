@@ -167,6 +167,7 @@ type f10CompactionOutput struct {
 	Summary          string                    `json:"summary"`
 	FirstKeptEntryID string                    `json:"firstKeptEntryId"`
 	TokensBefore     int64                     `json:"tokensBefore"`
+	Usage            *ai.Usage                 `json:"usage"`
 	Details          harness.CompactionDetails `json:"details"`
 }
 
@@ -376,7 +377,7 @@ func TestF10BranchAndSplitTurnPromptsMatchUpstream(t *testing.T) {
 			for index := range captures {
 				assertF10Capture(t, captures[index], fixtureCase.Expected.Captured[index])
 			}
-			output := f10CompactionOutput{Summary: got.Summary, FirstKeptEntryID: got.FirstKeptEntryID, TokensBefore: got.TokensBefore, Details: got.Details}
+			output := f10CompactionOutput{Summary: got.Summary, FirstKeptEntryID: got.FirstKeptEntryID, TokensBefore: got.TokensBefore, Usage: got.Usage, Details: got.Details}
 			if !reflect.DeepEqual(output, fixtureCase.Expected.Output) {
 				t.Fatalf("compaction output = %+v, want %+v", output, fixtureCase.Expected.Output)
 			}
@@ -573,6 +574,7 @@ func assertF10Capture(t testing.TB, got f10ActualCapture, expected f10CapturedRe
 func f10Response(text string) *ai.AssistantMessage {
 	return &ai.AssistantMessage{
 		Content:    ai.AssistantContent{&ai.TextContent{Text: text}},
+		Usage:      ai.Usage{Input: 10, Output: 5, TotalTokens: 15, Cost: ai.Cost{}},
 		StopReason: ai.StopReasonStop,
 	}
 }

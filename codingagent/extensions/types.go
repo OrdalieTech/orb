@@ -434,6 +434,7 @@ type ToolResultEvent struct {
 	Content    ai.ToolResultContent
 	Details    any
 	IsError    bool
+	Usage      *ai.Usage
 }
 
 func (ToolResultEvent) Type() EventType { return EventToolResult }
@@ -442,6 +443,7 @@ type ToolResultResult struct {
 	Content *ai.ToolResultContent
 	Details *any
 	IsError *bool
+	Usage   *ai.Usage
 }
 
 type BashResult struct {
@@ -519,6 +521,7 @@ type SessionBeforeCompactResult struct {
 type TreeSummary struct {
 	Summary string
 	Details any
+	Usage   *ai.Usage
 }
 
 type SessionBeforeTreeResult struct {

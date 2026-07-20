@@ -11,6 +11,7 @@ import (
 	"github.com/OrdalieTech/pi-go/ai"
 	"github.com/OrdalieTech/pi-go/codingagent"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
 	"github.com/OrdalieTech/pi-go/tui"
 
 	theme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
@@ -803,6 +804,48 @@ func (f *FooterComponent) Render(width int) []string {
 	}); ok {
 		stats = session.GetSessionStats()
 	}
+	var latestCacheHitRate *float64
+	if session, ok := f.session.(interface {
+		Manager() *sessionstore.SessionManager
+	}); ok && session.Manager() != nil {
+		stats.Tokens, stats.Cost = codingagent.SessionTokenTotals{}, 0
+		addUsage := func(usage *ai.Usage) {
+			if usage == nil {
+				return
+			}
+			stats.Tokens.Input += usage.Input
+			stats.Tokens.Output += usage.Output
+			stats.Tokens.CacheRead += usage.CacheRead
+			stats.Tokens.CacheWrite += usage.CacheWrite
+			stats.Cost += usage.Cost.Total
+		}
+		for _, entry := range session.Manager().GetEntries() {
+			if entry.Type == "compaction" || entry.Type == "branch_summary" {
+				addUsage(entry.Usage)
+				continue
+			}
+			if entry.Type != "message" {
+				continue
+			}
+			message, err := ai.UnmarshalMessage(entry.Message)
+			if err != nil {
+				continue
+			}
+			switch message := message.(type) {
+			case *ai.AssistantMessage:
+				addUsage(&message.Usage)
+				promptTokens := message.Usage.Input + message.Usage.CacheRead + message.Usage.CacheWrite
+				latestCacheHitRate = nil
+				if promptTokens > 0 {
+					rate := float64(message.Usage.CacheRead) / float64(promptTokens) * 100
+					latestCacheHitRate = &rate
+				}
+			case *ai.ToolResultMessage:
+				addUsage(message.Usage)
+			}
+		}
+		stats.Tokens.Total = stats.Tokens.Input + stats.Tokens.Output + stats.Tokens.CacheRead + stats.Tokens.CacheWrite
+	}
 	statsParts := make([]string, 0, 7)
 	if stats.Tokens.Input > 0 {
 		statsParts = append(statsParts, "↑"+formatTokens(stats.Tokens.Input))
@@ -815,6 +858,9 @@ func (f *FooterComponent) Render(width int) []string {
 	}
 	if stats.Tokens.CacheWrite > 0 {
 		statsParts = append(statsParts, "W"+formatTokens(stats.Tokens.CacheWrite))
+	}
+	if (stats.Tokens.CacheRead > 0 || stats.Tokens.CacheWrite > 0) && latestCacheHitRate != nil {
+		statsParts = append(statsParts, fmt.Sprintf("CH%.1f%%", *latestCacheHitRate))
 	}
 	if stats.Cost > 0 {
 		statsParts = append(statsParts, fmt.Sprintf("$%.3f", stats.Cost))

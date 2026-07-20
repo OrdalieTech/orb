@@ -22,6 +22,7 @@ func TestHelpTextDocumentsExtensionFlagAndCommands(t *testing.T) {
 		"pi update",
 		"pi list",
 		"pi config",
+		"--offline",
 	} {
 		if !strings.Contains(helpText, want) {
 			t.Fatalf("help text missing %q", want)

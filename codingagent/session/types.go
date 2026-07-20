@@ -3,6 +3,8 @@ package session
 import (
 	"encoding/json"
 	"strings"
+
+	"github.com/OrdalieTech/pi-go/ai"
 )
 
 const CurrentVersion = 3
@@ -34,6 +36,7 @@ type SessionEntry struct {
 	FirstKeptEntryID string
 	TokensBefore     float64
 	Details          json.RawMessage
+	Usage            *ai.Usage
 	FromHook         *bool
 	FromID           string
 	CustomType       string
@@ -167,6 +170,12 @@ func decodeFileEntry(object *orderedObject, raw json.RawMessage) *FileEntry {
 		entry.TokensBefore, _ = decodeNumber(value)
 	}
 	entry.Details, _ = object.get("details")
+	if value, ok := object.get("usage"); ok {
+		var usage ai.Usage
+		if json.Unmarshal(value, &usage) == nil {
+			entry.Usage = &usage
+		}
+	}
 	if value, ok := object.get("fromHook"); ok {
 		entry.FromHook, _ = decodeBool(value)
 	}
@@ -260,6 +269,9 @@ func newEntryRecord(entry SessionEntry) *FileEntry {
 		if entry.Details != nil {
 			members = append(members, member("details", entry.Details))
 		}
+		if entry.Usage != nil {
+			members = append(members, member("usage", rawUsage(entry.Usage)))
+		}
 		if entry.FromHook != nil {
 			members = append(members, member("fromHook", rawBool(*entry.FromHook)))
 		}
@@ -270,6 +282,9 @@ func newEntryRecord(entry SessionEntry) *FileEntry {
 		)
 		if entry.Details != nil {
 			members = append(members, member("details", entry.Details))
+		}
+		if entry.Usage != nil {
+			members = append(members, member("usage", rawUsage(entry.Usage)))
 		}
 		if entry.FromHook != nil {
 			members = append(members, member("fromHook", rawBool(*entry.FromHook)))
@@ -314,6 +329,30 @@ func newEntryRecord(entry SessionEntry) *FileEntry {
 	}
 	object := newOrderedObject(members...)
 	return decodeFileEntry(object, nil)
+}
+
+func rawUsage(usage *ai.Usage) json.RawMessage {
+	encoded, err := ai.Marshal(usage)
+	if err != nil {
+		panic(err)
+	}
+	return encoded
+}
+
+func cloneSessionUsage(usage *ai.Usage) *ai.Usage {
+	if usage == nil {
+		return nil
+	}
+	copy := *usage
+	if usage.Reasoning != nil {
+		value := *usage.Reasoning
+		copy.Reasoning = &value
+	}
+	if usage.CacheWrite1h != nil {
+		value := *usage.CacheWrite1h
+		copy.CacheWrite1h = &value
+	}
+	return &copy
 }
 
 func sanitizeSessionName(name string) string {

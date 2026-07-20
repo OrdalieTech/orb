@@ -401,6 +401,8 @@ func (mode *rpcMode) handleCommand(session *codingagent.SessionRuntime, command 
 		return success(struct {
 			Level ai.ModelThinkingLevel `json:"level"`
 		}{*level})
+	case "get_available_thinking_levels":
+		return success(RPCThinkingLevels{Levels: session.AvailableThinkingLevels()})
 	case "set_steering_mode":
 		session.SetSteeringMode(agent.QueueMode(command.Mode))
 		return success()

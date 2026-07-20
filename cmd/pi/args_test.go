@@ -25,6 +25,7 @@ func TestParseArgsCoreSubset(t *testing.T) {
 		"--no-skills",
 		"--no-prompt-templates",
 		"--no-approve",
+		"--offline",
 		"@prompt.md",
 		"message",
 	})
@@ -56,7 +57,7 @@ func TestParseArgsCoreSubset(t *testing.T) {
 	if !reflect.DeepEqual(args.Skills, []string{"one/SKILL.md", "skills"}) || !reflect.DeepEqual(args.PromptTemplates, []string{"review.md"}) {
 		t.Fatalf("skill/prompt paths = %#v/%#v", args.Skills, args.PromptTemplates)
 	}
-	if !args.NoSkills || !args.NoPromptTemplates || args.ProjectTrusted == nil || *args.ProjectTrusted {
+	if !args.NoSkills || !args.NoPromptTemplates || args.ProjectTrusted == nil || *args.ProjectTrusted || !args.Offline {
 		t.Fatalf("resource/trust flags = %#v", args)
 	}
 }

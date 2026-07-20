@@ -63,7 +63,7 @@ func (method EnvAPIKeyAuth) Resolve(
 ) (*AuthResult, error) {
 	if credential != nil && credential.Key != nil && *credential.Key != "" {
 		key := *credential.Key
-		return &AuthResult{Auth: ModelAuth{APIKey: &key}, Source: "stored credential"}, nil
+		return &AuthResult{Auth: ModelAuth{APIKey: &key}, Env: cloneStrings(credential.Env), Source: "stored credential"}, nil
 	}
 	for _, name := range method.EnvVars {
 		if value, ok := authContext.Env(ctx, name); ok {

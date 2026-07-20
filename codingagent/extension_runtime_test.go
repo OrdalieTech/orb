@@ -732,6 +732,7 @@ func TestExtensionCompactionHooksCanProvideSummary(t *testing.T) {
 	}
 	manager, settings := extensionRuntimeDependencies(t, cwd)
 	registry := extensions.NewRegistry(cwd)
+	usage := &ai.Usage{Input: 2, Output: 3, TotalTokens: 5, Cost: ai.Cost{Total: 0.5}}
 	var completed *extensions.SessionCompactEvent
 	if err := registry.Register("<inline:compaction>", func(api extensions.API) error {
 		api.On(extensions.EventSessionBeforeCompact, func(_ context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
@@ -742,6 +743,7 @@ func TestExtensionCompactionHooksCanProvideSummary(t *testing.T) {
 			return extensions.SessionBeforeCompactResult{Compaction: &harness.CompactionResult{
 				Summary: "extension summary", FirstKeptEntryID: event.Preparation.FirstKeptEntryID,
 				TokensBefore: event.Preparation.TokensBefore,
+				Usage:        usage,
 				Details:      harness.CompactionDetails{ReadFiles: []string{"read.go"}, ModifiedFiles: []string{}},
 			}}, nil
 		})
@@ -781,7 +783,7 @@ func TestExtensionCompactionHooksCanProvideSummary(t *testing.T) {
 		t.Fatalf("result=%#v completed=%#v", result, completed)
 	}
 	entry := manager.GetEntry(completed.CompactionEntry.ID)
-	if entry == nil || entry.FromHook == nil || !*entry.FromHook {
+	if entry == nil || entry.FromHook == nil || !*entry.FromHook || entry.Usage == nil || entry.Usage.TotalTokens != usage.TotalTokens {
 		t.Fatalf("compaction entry = %#v", entry)
 	}
 }
@@ -791,6 +793,7 @@ func TestExtensionTreeHooksCanProvideSummaryAndLabel(t *testing.T) {
 	manager, settings := extensionRuntimeDependencies(t, cwd)
 	registry := extensions.NewRegistry(cwd)
 	label := "from-extension"
+	usage := &ai.Usage{Input: 4, Output: 5, TotalTokens: 9, Cost: ai.Cost{Total: 0.9}}
 	var completed *extensions.SessionTreeEvent
 	if err := registry.Register("<inline:tree>", func(api extensions.API) error {
 		api.On(extensions.EventSessionBeforeTree, func(_ context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
@@ -799,7 +802,7 @@ func TestExtensionTreeHooksCanProvideSummaryAndLabel(t *testing.T) {
 				t.Fatalf("before tree event = %#v", event)
 			}
 			return extensions.SessionBeforeTreeResult{
-				Summary: &extensions.TreeSummary{Summary: "extension branch", Details: map[string]any{"source": "hook"}},
+				Summary: &extensions.TreeSummary{Summary: "extension branch", Details: map[string]any{"source": "hook"}, Usage: usage},
 				Label:   &label,
 			}, nil
 		})
@@ -829,7 +832,7 @@ func TestExtensionTreeHooksCanProvideSummaryAndLabel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.SummaryEntry == nil || result.SummaryEntry.Summary != "extension branch" || result.SummaryEntry.FromHook == nil || !*result.SummaryEntry.FromHook {
+	if result.SummaryEntry == nil || result.SummaryEntry.Summary != "extension branch" || result.SummaryEntry.FromHook == nil || !*result.SummaryEntry.FromHook || result.SummaryEntry.Usage == nil || result.SummaryEntry.Usage.TotalTokens != usage.TotalTokens {
 		t.Fatalf("tree result = %#v", result)
 	}
 	if got := manager.GetLabel(result.SummaryEntry.ID); got == nil || *got != label {

@@ -270,6 +270,20 @@ func TestPreferredAvailableModelUsesPinnedProviderDefaults(t *testing.T) {
 	}
 }
 
+func TestQwenTokenPlanProviderDefaults(t *testing.T) {
+	models := []ai.Model{
+		{Provider: "qwen-token-plan", ID: "qwen3.6-plus"},
+		{Provider: "qwen-token-plan", ID: "qwen3.7-max"},
+		{Provider: "qwen-token-plan-cn", ID: "qwen3.7-max"},
+	}
+	for _, provider := range []string{"qwen-token-plan", "qwen-token-plan-cn"} {
+		selected := DefaultAvailableModel(provider, models)
+		if selected == nil || selected.ID != "qwen3.7-max" {
+			t.Fatalf("%s default = %#v", provider, selected)
+		}
+	}
+}
+
 func mustJSON(t *testing.T, value any) []byte {
 	t.Helper()
 	data, err := json.Marshal(value)

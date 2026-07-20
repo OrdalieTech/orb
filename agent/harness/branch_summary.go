@@ -186,5 +186,6 @@ func GenerateBranchSummary(ctx context.Context, entries []SessionEntry, options 
 	if summary == "" {
 		summary = "No summary generated"
 	}
-	return &BranchSummaryResult{Summary: summary, ReadFiles: readFiles, ModifiedFiles: modifiedFiles}, nil
+	usage := response.Usage
+	return &BranchSummaryResult{Summary: summary, Usage: &usage, ReadFiles: readFiles, ModifiedFiles: modifiedFiles}, nil
 }

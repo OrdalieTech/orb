@@ -26,7 +26,7 @@ var overflowPatterns = compilePatterns([]string{
 	`prompt is too long`, `request_too_large`, `input is too long for requested model`,
 	`exceeds the context window`, `exceeds (the )?(model'?s )?maximum context length`,
 	`input token count.*exceeds the maximum`, `maximum prompt length is [0-9]+`,
-	`reduce the length of the messages`, `maximum context length is [0-9]+ tokens`,
+	`reduce the length of the messages`, `range of input length should be`, `maximum context length is [0-9]+ tokens`,
 	`exceeds (the )?maximum allowed input length of [0-9,]+ tokens?`,
 	`input \([0-9]+ tokens\) is longer than the model'?s context length \([0-9]+ tokens\)`,
 	`exceeds the limit of [0-9]+`, `exceeds the available context size`, `greater than the context length`,

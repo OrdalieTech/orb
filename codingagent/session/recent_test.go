@@ -75,15 +75,22 @@ func TestContinueRecentUsesCustomFilterAndPreservesRequestedCWD(t *testing.T) {
 	}
 }
 
-func TestReadSessionHeaderOnlyUsesFirst512Bytes(t *testing.T) {
+func TestReadSessionHeaderScansBoundedMalformedPrefixes(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "oversized.jsonl")
-	header := fmt.Sprintf(`{"type":"session","id":"s","padding":"%s"}`, strings.Repeat("x", 600))
-	if err := os.WriteFile(path, []byte(header+"\n"), 0o600); err != nil {
+	valid := filepath.Join(dir, "valid.jsonl")
+	header := fmt.Sprintf(`{"type":"session","id":"%s","cwd":%q}`, strings.Repeat("x", 8192), dir)
+	if err := os.WriteFile(valid, []byte("\nnot json\n"+header+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := FindMostRecentSession(dir, ""); got != "" {
-		t.Fatalf("truncated 512-byte header was accepted: %q", got)
+	if got := FindMostRecentSession(dir, ""); got != valid {
+		t.Fatalf("multi-buffer header = %q, want %q", got, valid)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "oversized.jsonl"), []byte(strings.Repeat("x", maxSessionHeaderScanBytes+1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := readSessionHeader(filepath.Join(dir, "oversized.jsonl")); got != nil {
+		t.Fatalf("oversized corrupt header = %#v", got)
 	}
 }
 

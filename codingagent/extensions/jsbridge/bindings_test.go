@@ -99,9 +99,11 @@ export default function (pi) {
   });
   pi.on("tool_result", async (event) => ({
 	...(event.details === undefined ? {} : (() => { throw new Error("undefined tool details became null"); })()),
+	...(event.usage?.totalTokens === 1 ? {} : (() => { throw new Error("tool usage missing"); })()),
     content: [{ type: "text", text: event.content[0].text + "-patched" }],
     details: { from: event.toolCallId },
     isError: true,
+	usage: { input: 2, output: 3, cacheRead: 4, cacheWrite: 5, totalTokens: 14, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.14 } },
   }));
   pi.on("before_provider_request", (event) => ({ ...event.payload, chained: true }));
   pi.on("before_agent_start", (event, ctx) => ({ systemPrompt: ctx.getSystemPrompt() + ":one" }));
@@ -169,9 +171,9 @@ export default function (pi) {
 		t.Fatalf("headers = %#v", headers)
 	}
 	patched := runner.EmitToolResult(context.Background(), extensions.ToolResultEvent{
-		ToolCallID: "call-1", ToolName: "echo", Content: ai.ToolResultContent{&ai.TextContent{Text: "result"}},
+		ToolCallID: "call-1", ToolName: "echo", Content: ai.ToolResultContent{&ai.TextContent{Text: "result"}}, Usage: &ai.Usage{Input: 1, TotalTokens: 1},
 	})
-	if patched == nil || patched.Content == nil || (*patched.Content)[0].(*ai.TextContent).Text != "result-patched" || patched.IsError == nil || !*patched.IsError {
+	if patched == nil || patched.Content == nil || (*patched.Content)[0].(*ai.TextContent).Text != "result-patched" || patched.IsError == nil || !*patched.IsError || patched.Usage == nil || patched.Usage.TotalTokens != 14 || patched.Usage.Cost.Total != 0.14 {
 		t.Fatalf("tool result patch = %#v", patched)
 	}
 	if got := runner.EmitBeforeProviderRequest(context.Background(), map[string]any{"base": true}); !reflect.DeepEqual(got, map[string]any{"base": true, "chained": true}) {

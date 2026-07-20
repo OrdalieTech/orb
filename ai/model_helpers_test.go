@@ -1,6 +1,9 @@
 package ai
 
-import "testing"
+import (
+	"regexp"
+	"testing"
+)
 
 func thinkingMap(pairs map[ModelThinkingLevel]*string) *map[ModelThinkingLevel]*string { return &pairs }
 
@@ -69,5 +72,36 @@ func TestModelsAreEqualAndHasAPI(t *testing.T) {
 	}
 	if !HasAPI(a, APIOpenAIResponses) || HasAPI(a, APIAnthropicMessages) || HasAPI(nil, APIOpenAIResponses) {
 		t.Fatal("HasAPI mismatch")
+	}
+}
+
+func TestContentTextAndUUIDv7PublicHelpers(t *testing.T) {
+	content := AssistantContent{
+		&ThinkingContent{Thinking: "reasoning"},
+		&TextContent{Text: "first"},
+		&ToolCall{ID: "1", Name: "read", Arguments: map[string]any{}},
+		&TextContent{Text: "second"},
+	}
+	if got := ContentText(content); got != "first\nsecond" {
+		t.Fatalf("assistant text = %q", got)
+	}
+	if got := ContentText(ToolResultContent{&TextContent{Text: "first"}, &ImageContent{}, &TextContent{Text: "second"}}, ""); got != "firstsecond" {
+		t.Fatalf("tool result text = %q", got)
+	}
+	if got := ContentText("hello"); got != "hello" {
+		t.Fatalf("string text = %q", got)
+	}
+
+	first, err := UUIDv7()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := UUIDv7()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pattern := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	if !pattern.MatchString(first) || !pattern.MatchString(second) || first >= second {
+		t.Fatalf("UUIDv7 values = %q, %q", first, second)
 	}
 }

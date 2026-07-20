@@ -120,6 +120,38 @@ func TestOpenHandlesEmptyInvalidAndMissingFiles(t *testing.T) {
 	}
 }
 
+func TestOpenHandlesSessionsBeyondHeaderDiscoveryLimit(t *testing.T) {
+	dir := t.TempDir()
+	storedCWD := filepath.Join(dir, "stored")
+	overrideCWD := filepath.Join(dir, "override")
+	for _, test := range []struct {
+		name, id, prefix string
+	}{
+		{name: "large-header", id: strings.Repeat("a", maxSessionHeaderScanBytes+1)},
+		{name: "large-prefix", id: "large-prefix", prefix: strings.Repeat("x", maxSessionHeaderScanBytes+1) + "\n"},
+	} {
+		path := filepath.Join(dir, test.name+".jsonl")
+		header := fmt.Sprintf(`{"type":"session","version":3,"id":%q,"timestamp":"2026-07-20T00:00:00Z","cwd":%q}`, test.id, storedCWD)
+		if err := os.WriteFile(path, []byte(test.prefix+header+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		manager, err := Open(path, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if manager.GetSessionID() != test.id || manager.GetCwd() != storedCWD {
+			t.Fatalf("%s opened id=%q cwd=%q", test.name, manager.GetSessionID(), manager.GetCwd())
+		}
+		manager, err = Open(path, dir, WithCwdOverride(overrideCWD))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if manager.GetSessionID() != test.id || manager.GetCwd() != overrideCWD {
+			t.Fatalf("%s override id=%q cwd=%q", test.name, manager.GetSessionID(), manager.GetCwd())
+		}
+	}
+}
+
 func TestBranchTraversalLabelsAndLeafSurviveOpen(t *testing.T) {
 	dir := t.TempDir()
 	now := fixedTestTime(t)

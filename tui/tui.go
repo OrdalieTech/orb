@@ -188,6 +188,7 @@ func (ui *TUI) Stop() error {
 	}
 	ui.notificationMu.Unlock()
 	if lines > 0 {
+		ui.terminal.Write(" ")
 		target := lines
 		if difference := target - row; difference > 0 {
 			ui.terminal.MoveBy(difference)

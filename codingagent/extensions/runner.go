@@ -953,6 +953,10 @@ func (runner *Runner) EmitToolResult(ctx context.Context, event ToolResultEvent)
 				current.IsError = *patch.IsError
 				modified = true
 			}
+			if patch.Usage != nil {
+				current.Usage = patch.Usage
+				modified = true
+			}
 		}
 	}
 	if !modified {
@@ -961,7 +965,7 @@ func (runner *Runner) EmitToolResult(ctx context.Context, event ToolResultEvent)
 	content := current.Content
 	details := current.Details
 	isError := current.IsError
-	return &ToolResultResult{Content: &content, Details: &details, IsError: &isError}
+	return &ToolResultResult{Content: &content, Details: &details, IsError: &isError, Usage: current.Usage}
 }
 
 func (runner *Runner) EmitToolCall(ctx context.Context, event ToolCallEvent) *ToolCallResult {

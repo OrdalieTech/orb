@@ -64,7 +64,7 @@ func (bedrockAuth) Resolve(
 ) (*auth.AuthResult, error) {
 	if credential != nil && credential.Key != nil && *credential.Key != "" {
 		key := *credential.Key
-		return &auth.AuthResult{Auth: auth.ModelAuth{APIKey: &key}, Source: "stored credential"}, nil
+		return &auth.AuthResult{Auth: auth.ModelAuth{APIKey: &key}, Env: cloneProviderEnv(credential.Env), Source: "stored credential"}, nil
 	}
 	if value, _ := authContext.Env(ctx, "AWS_BEARER_TOKEN_BEDROCK"); value != "" {
 		return &auth.AuthResult{Source: "AWS_BEARER_TOKEN_BEDROCK"}, nil

@@ -135,3 +135,24 @@ func TestApplyCatalogMetadataMatchesRepresentativePinnedCompat(t *testing.T) {
 		t.Fatalf("Cloudflare Workers compat = %s", workers.Compat)
 	}
 }
+
+func TestFreshUpstreamThinkingMetadata(t *testing.T) {
+	kimi := ai.Model{ID: "k3", API: ai.APIAnthropicMessages, Provider: "kimi-coding", Reasoning: true}
+	applyCatalogMetadata(&kimi)
+	levels := *kimi.ThinkingLevelMap
+	for level, want := range map[ai.ModelThinkingLevel]string{ai.ModelThinkingLow: "low", ai.ModelThinkingHigh: "high", ai.ModelThinkingMax: "max"} {
+		if levels[level] == nil || *levels[level] != want {
+			t.Fatalf("Kimi K3 %s = %#v", level, levels[level])
+		}
+	}
+
+	qwen := ai.Model{ID: "qwen3.7-max", API: ai.APIOpenAICompletions, Provider: "qwen-token-plan", BaseURL: "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1", Reasoning: true}
+	applyCatalogMetadata(&qwen)
+	var compat ai.OpenAICompletionsCompat
+	if err := json.Unmarshal(qwen.Compat, &compat); err != nil {
+		t.Fatal(err)
+	}
+	if compat.SupportsStore == nil || *compat.SupportsStore || compat.SupportsDeveloperRole == nil || *compat.SupportsDeveloperRole || compat.ThinkingFormat == nil || *compat.ThinkingFormat != ai.ThinkingFormatQwen {
+		t.Fatalf("Qwen Token Plan compat = %s", qwen.Compat)
+	}
+}

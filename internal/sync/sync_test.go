@@ -115,7 +115,7 @@ func TestDryRunAgainstKnownNewerCommitProducesReadableReport(t *testing.T) {
 func TestLockBumpRefusesRedConformance(t *testing.T) {
 	fixture := newSyncFixture(t)
 	config := fixture.config(true, true)
-	config.conformance = func(context.Context, string, string) (string, error) {
+	config.conformance = func(context.Context, string, string, Lock) (string, error) {
 		return "--- FAIL: TestWire\nFAIL\n", errors.New("exit status 1")
 	}
 	result, err := Run(context.Background(), config)
@@ -126,6 +126,29 @@ func TestLockBumpRefusesRedConformance(t *testing.T) {
 		t.Fatalf("red report = %s", result.Report)
 	}
 	assertPinnedState(t, fixture)
+}
+
+func TestCandidateConformanceCopyUsesTargetLock(t *testing.T) {
+	fixture := newSyncFixture(t)
+	config := fixture.config(false, false)
+	config.conformance = func(_ context.Context, root, fixtures string, lock Lock) (string, error) {
+		copyRoot, cleanup, err := prepareConformanceCopy(root, fixtures, lock)
+		if err != nil {
+			return "", err
+		}
+		defer cleanup()
+		candidate, err := readLock(filepath.Join(copyRoot, "UPSTREAM.lock"))
+		if err != nil {
+			return "", err
+		}
+		if candidate.Commit != fixture.target {
+			return "", errors.New("conformance copy kept pinned lock")
+		}
+		return "ok\n", nil
+	}
+	if _, err := Run(context.Background(), config); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestGreenLockBumpPromotesFixturesAndLock(t *testing.T) {
@@ -213,7 +236,7 @@ func (fixture syncFixture) config(bump, red bool) Config {
 		}
 		return "generated F1\n", nil
 	}
-	config.conformance = func(context.Context, string, string) (string, error) {
+	config.conformance = func(context.Context, string, string, Lock) (string, error) {
 		if red {
 			return "FAIL\n", errors.New("exit status 1")
 		}

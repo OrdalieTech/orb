@@ -1,7 +1,6 @@
 package session
 
 import (
-	"errors"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -83,15 +82,4 @@ func DefaultSessionDir(cwd, agentDir string) (string, error) {
 		return "", err
 	}
 	return dir, nil
-}
-
-func pathExists(path string) (bool, error) {
-	_, err := os.Stat(path)
-	if err == nil {
-		return true, nil
-	}
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	return false, err
 }

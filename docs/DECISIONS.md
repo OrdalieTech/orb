@@ -9,7 +9,7 @@ else (implementation detail) is decided by whoever executes the work package, wi
 | | |
 |---|---|
 | Upstream project | **pi** — https://pi.dev, repo `earendil-works/pi` (formerly `badlogic/pi-mono`) |
-| Pinned reference | commit `3da591ab74ab9ab407e72ed882600b2c851fae21`, version **0.80.10** (2026-07-17) |
+| Pinned reference | commit `3a40794ea14c6202586cc203d5b928eca9f6b673`, version **0.80.10** (2026-07-20) |
 | Upstream license | MIT, © 2025 Mario Zechner |
 | This project | `github.com/OrdalieTech/pi-go`, MIT, © Ordalie — with attribution to upstream in LICENSE and README |
 

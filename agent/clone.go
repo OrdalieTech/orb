@@ -26,6 +26,7 @@ func cloneAgentMessage(message AgentMessage) AgentMessage {
 		copy := *value
 		copy.Content = cloneToolResultContent(value.Content)
 		copy.Details = bytes.Clone(value.Details)
+		copy.Usage = cloneUsage(value.Usage)
 		copy.AddedToolNames = cloneStringSlicePointer(value.AddedToolNames)
 		return &copy
 	default:
@@ -156,9 +157,26 @@ func cloneAgentToolResult(result AgentToolResult) AgentToolResult {
 	copy := result
 	copy.Content = cloneToolResultContent(result.Content)
 	copy.Details = cloneJSONValue(result.Details)
+	copy.Usage = cloneUsage(result.Usage)
 	copy.AddedToolNames = cloneStringSlicePointer(result.AddedToolNames)
 	copy.Terminate = cloneBoolPointer(result.Terminate)
 	return copy
+}
+
+func cloneUsage(usage *ai.Usage) *ai.Usage {
+	if usage == nil {
+		return nil
+	}
+	copy := *usage
+	if usage.Reasoning != nil {
+		value := *usage.Reasoning
+		copy.Reasoning = &value
+	}
+	if usage.CacheWrite1h != nil {
+		value := *usage.CacheWrite1h
+		copy.CacheWrite1h = &value
+	}
+	return &copy
 }
 
 func cloneJSONObject(source map[string]any) map[string]any {

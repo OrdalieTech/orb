@@ -294,6 +294,35 @@ func TestRPCPromptPreflightFailureEmitsExactlyOneResponse(t *testing.T) {
 	}
 }
 
+func TestRPCGetAvailableThinkingLevels(t *testing.T) {
+	root := t.TempDir()
+	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(root, sessionstore.WithSessionID("thinking-levels"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
+		Agent:          agent.NewAgent(agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}})),
+		SessionManager: manager,
+		Settings:       settings,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	exitCode := RunRPCMode(context.Background(), &rpcTestHost{runtime: runtime}, RPCModeOptions{
+		Stdin:  strings.NewReader("{\"id\":\"levels\",\"type\":\"get_available_thinking_levels\"}\n"),
+		Stdout: &stdout, Stderr: &stderr,
+	})
+	want := "{\"id\":\"levels\",\"type\":\"response\",\"command\":\"get_available_thinking_levels\",\"success\":true,\"data\":{\"levels\":[\"off\"]}}\n"
+	if exitCode != 0 || stderr.Len() != 0 || stdout.String() != want {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+}
+
 func TestRPCImmediateFollowUpAfterPromptResponseIsQueued(t *testing.T) {
 	root := t.TempDir()
 	agentDir := filepath.Join(root, "agent")

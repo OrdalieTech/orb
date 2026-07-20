@@ -1,6 +1,12 @@
 package ai
 
-import "slices"
+import (
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/OrdalieTech/pi-go/internal/uuidv7"
+)
 
 // Public model helpers mirroring packages/ai/src/models.ts exports.
 
@@ -105,4 +111,45 @@ func ModelsAreEqual(a, b *Model) bool {
 		return false
 	}
 	return a.ID == b.ID && a.Provider == b.Provider
+}
+
+// ContentText extracts text blocks and joins them with a newline by default.
+func ContentText(content any, separators ...string) string {
+	if value, ok := content.(string); ok {
+		return value
+	}
+	separator := "\n"
+	if len(separators) != 0 {
+		separator = separators[0]
+	}
+	var text []string
+	appendText := func(block any) {
+		if value, ok := block.(*TextContent); ok {
+			text = append(text, value.Text)
+		}
+	}
+	switch blocks := content.(type) {
+	case UserContentBlocks:
+		for _, block := range blocks {
+			appendText(block)
+		}
+	case AssistantContent:
+		for _, block := range blocks {
+			appendText(block)
+		}
+	case ToolResultContent:
+		for _, block := range blocks {
+			appendText(block)
+		}
+	case ImagesContent:
+		for _, block := range blocks {
+			appendText(block)
+		}
+	}
+	return strings.Join(text, separator)
+}
+
+// UUIDv7 returns a monotonic UUIDv7.
+func UUIDv7() (string, error) {
+	return uuidv7.Generate(time.Now())
 }

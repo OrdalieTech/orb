@@ -50,6 +50,7 @@ const (
 type AgentToolResult struct {
 	Content        ai.ToolResultContent
 	Details        any
+	Usage          *ai.Usage
 	AddedToolNames *[]string
 	Terminate      *bool
 }
@@ -160,6 +161,7 @@ type AfterToolCallResult struct {
 	Details    any
 	DetailsSet bool
 	IsError    *bool
+	Usage      *ai.Usage
 	Terminate  *bool
 }
 

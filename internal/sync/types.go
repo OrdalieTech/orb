@@ -85,4 +85,4 @@ type Result struct {
 }
 
 type generateFunc func(context.Context, string, string, string, string) (string, error)
-type conformanceFunc func(context.Context, string, string) (string, error)
+type conformanceFunc func(context.Context, string, string, Lock) (string, error)

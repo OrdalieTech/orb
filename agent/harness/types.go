@@ -176,6 +176,7 @@ type SessionEntry struct {
 	FirstKeptEntryID string
 	TokensBefore     float64
 	Details          any
+	Usage            *ai.Usage
 	FromHook         bool
 	FromID           string
 	CustomType       string
@@ -251,6 +252,7 @@ type CompactionResult struct {
 	FirstKeptEntryID     string            `json:"firstKeptEntryId"`
 	TokensBefore         int64             `json:"tokensBefore"`
 	EstimatedTokensAfter int64             `json:"estimatedTokensAfter"`
+	Usage                *ai.Usage         `json:"usage,omitempty"`
 	Details              CompactionDetails `json:"details"`
 }
 
@@ -298,6 +300,7 @@ type BranchSummaryDetails struct {
 
 type BranchSummaryResult struct {
 	Summary       string
+	Usage         *ai.Usage
 	ReadFiles     []string
 	ModifiedFiles []string
 }

@@ -195,6 +195,9 @@ func TestRetryAndOverflowClassification(t *testing.T) {
 	if !IsContextOverflow(assistantError("prompt is too long"), 200000) {
 		t.Fatal("explicit overflow not detected")
 	}
+	if !IsContextOverflow(assistantError("Range of input length should be [1, 999999]"), 200000) {
+		t.Fatal("Qwen Token Plan overflow not detected")
+	}
 	if IsContextOverflow(assistantError("Rate limit exceeded: too many tokens"), 200000) {
 		t.Fatal("rate limit classified as overflow")
 	}

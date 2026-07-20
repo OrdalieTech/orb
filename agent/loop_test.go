@@ -260,6 +260,8 @@ func TestRunLoopHooksMutateWithoutRevalidationAndIgnoreLateUpdates(t *testing.T)
 	}}
 	var late AgentToolUpdateCallback
 	var executed any
+	toolUsage := &ai.Usage{Input: 1, Output: 2, TotalTokens: 3, Cost: ai.Cost{Total: 0.3}}
+	patchedUsage := &ai.Usage{Input: 4, Output: 5, TotalTokens: 9, Cost: ai.Cost{Total: 0.9}}
 	tool := AgentToolFunc{
 		AgentToolSpec: AgentToolSpec{
 			Name:       "mutate",
@@ -269,12 +271,14 @@ func TestRunLoopHooksMutateWithoutRevalidationAndIgnoreLateUpdates(t *testing.T)
 			executed = params.(map[string]any)["value"]
 			update(textToolResult("working"))
 			late = update
-			return textToolResult("complete"), nil
+			result := textToolResult("complete")
+			result.Usage = toolUsage
+			return result, nil
 		},
 	}
 	updates := 0
 	var final ToolExecutionEndEvent
-	_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
+	messages, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
 		Model:    loopModel(),
 		StreamFn: responses.stream,
 		BeforeToolCall: func(_ context.Context, hook BeforeToolCallContext) (*BeforeToolCallResult, error) {
@@ -285,8 +289,11 @@ func TestRunLoopHooksMutateWithoutRevalidationAndIgnoreLateUpdates(t *testing.T)
 			if hook.Args.(map[string]any)["value"] != 17 {
 				t.Fatalf("after hook args = %#v", hook.Args)
 			}
+			if hook.Result.Usage == nil || hook.Result.Usage.TotalTokens != toolUsage.TotalTokens {
+				t.Fatalf("hook usage = %#v", hook.Result.Usage)
+			}
 			isError := true
-			return &AfterToolCallResult{Content: ai.ToolResultContent{}, IsError: &isError}, nil
+			return &AfterToolCallResult{Content: ai.ToolResultContent{}, IsError: &isError, Usage: patchedUsage}, nil
 		},
 	}, func(_ context.Context, event AgentEvent) error {
 		switch value := event.(type) {
@@ -308,6 +315,20 @@ func TestRunLoopHooksMutateWithoutRevalidationAndIgnoreLateUpdates(t *testing.T)
 	}
 	if !final.IsError || final.Result.Content == nil || len(final.Result.Content) != 0 {
 		t.Fatalf("finalized result = %#v", final)
+	}
+	if final.Result.Usage == nil || final.Result.Usage.TotalTokens != patchedUsage.TotalTokens {
+		t.Fatalf("final usage = %#v", final.Result.Usage)
+	}
+	foundToolResult := false
+	for _, message := range messages {
+		if result, ok := message.(*ai.ToolResultMessage); ok && (result.Usage == nil || result.Usage.TotalTokens != patchedUsage.TotalTokens) {
+			t.Fatalf("persisted tool usage = %#v", result.Usage)
+		} else if ok {
+			foundToolResult = true
+		}
+	}
+	if !foundToolResult {
+		t.Fatal("tool result message missing")
 	}
 	late(textToolResult("too late"))
 	if updates != 1 {

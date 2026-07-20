@@ -8,6 +8,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Added
 
+- Upstream pi 0.80.10 sync to `3a40794e`: tool-result and summary usage accounting, Qwen Token
+  Plan and refreshed provider catalogs, deferred model refresh with upstream's offline quirk,
+  public text and UUIDv7 helpers, RPC thinking levels, editor paste history, cursor cleanup, and
+  regenerated conformance fixtures.
 - Chat gateway wave 2: stdlib-only Slack, Teams, Discord, Messenger, and Google Chat adapters,
   plus shared RFC 6455 and Meta Graph webhook helpers.
 - jsbridge Node compatibility for real ecosystem extensions: `node:crypto` (randomUUID,
