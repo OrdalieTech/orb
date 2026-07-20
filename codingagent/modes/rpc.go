@@ -43,17 +43,19 @@ type RPCModeOptions struct {
 }
 
 type rpcMode struct {
-	ctx       context.Context
-	cancel    context.CancelFunc
-	host      RPCSessionHost
-	options   RPCModeOptions
-	output    *serializedOutput
-	ui        *RPCExtensionUI
-	mu        sync.Mutex
-	unsub     func()
-	disposed  bool
-	promptMu  sync.Mutex
-	prompting bool
+	ctx             context.Context
+	cancel          context.CancelFunc
+	host            RPCSessionHost
+	options         RPCModeOptions
+	output          *serializedOutput
+	ui              *RPCExtensionUI
+	mu              sync.Mutex
+	unsub           func()
+	disposed        bool
+	promptMu        sync.Mutex
+	prompting       bool
+	promptSession   *codingagent.SessionRuntime
+	promptPreflight chan struct{}
 }
 
 // RunRPCMode serves upstream's strict-LF, bidirectional JSONL protocol until
@@ -223,13 +225,29 @@ func (mode *rpcMode) handleLine(line []byte, commands *sync.WaitGroup) {
 	}
 	_, command.HasID = raw["id"]
 	session := mode.host.Session()
+	var preflight <-chan struct{}
+	// JS drains the replacement handler's promise continuation before the next
+	// stdin event; keep that state barrier asynchronous so UI replies stay live.
+	if command.Type == "get_state" {
+		mode.promptMu.Lock()
+		if mode.promptSession != session {
+			preflight = mode.promptPreflight
+		}
+		mode.promptMu.Unlock()
+	}
 	execute := func() {
+		if preflight != nil {
+			select {
+			case <-preflight:
+			case <-mode.ctx.Done():
+			}
+		}
 		response := mode.handleCommand(session, command)
 		if response != nil {
 			_ = mode.writeObject(*response)
 		}
 	}
-	if rpcCommandIsAsync(command.Type) {
+	if preflight != nil || rpcCommandIsAsync(command.Type) {
 		commands.Add(1)
 		go func() {
 			defer commands.Done()
@@ -291,10 +309,17 @@ func (mode *rpcMode) handleCommand(session *codingagent.SessionRuntime, command 
 			return success()
 		}
 		mode.prompting = true
+		mode.promptSession = session
+		preflight := make(chan struct{})
+		mode.promptPreflight = preflight
 		mode.promptMu.Unlock()
+		finishPreflight := sync.OnceFunc(func() { close(preflight) })
 		defer func() {
+			finishPreflight()
 			mode.promptMu.Lock()
 			mode.prompting = false
+			mode.promptSession = nil
+			mode.promptPreflight = nil
 			mode.promptMu.Unlock()
 		}()
 		// Upstream dispatches extension commands before any model/API-key
@@ -310,10 +335,12 @@ func (mode *rpcMode) handleCommand(session *codingagent.SessionRuntime, command 
 				}
 				responded = true
 				_ = mode.writeObject(*success())
+				finishPreflight()
 			},
 		})
 		if err != nil && !responded {
-			return failure(err)
+			_ = mode.writeObject(*failure(err))
+			finishPreflight()
 		}
 		return nil
 	case "steer":
