@@ -1134,7 +1134,11 @@ export default function (pi) {
 	}
 }
 
-func TestCancelledContextDropsQueuedHostCallback(t *testing.T) {
+func TestCompactCallbackSurvivesCancelledDispatchContext(t *testing.T) {
+	// Compaction resolves long after the dispatching event's context is
+	// cancelled; upstream still invokes onComplete/onError, so the bridge
+	// falls back to the VM lifetime context (WP sweep: ctx.compact()
+	// callbacks were silently dropped in every mode).
 	project := t.TempDir()
 	source := `
 export default function (pi) {
@@ -1159,8 +1163,8 @@ export default function (pi) {
 	complete(harness.CompactionResult{Summary: "late"})
 	select {
 	case <-called:
-		t.Fatal("queued callback ran after its context was cancelled")
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(2 * time.Second):
+		t.Fatal("compact onComplete was dropped after the dispatch context was cancelled")
 	}
 }
 

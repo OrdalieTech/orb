@@ -35,20 +35,32 @@ server's local name and each value selects exactly one transport:
 ```
 
 `command` selects stdio and accepts `args`, `env`, and `cwd`; `url` selects streamable HTTP and
-accepts `headers` and the SDK's `maxRetries` value. `cwd` is resolved from pi-go's working
-directory. The process inherits the current environment before applying `env` overrides.
-`timeoutMs` defaults to 10 seconds and bounds connect, initialization, and initial tool discovery.
-Unknown fields are ignored so settings remain forward-compatible. Project entries are invisible
-until the existing project-trust flow accepts that project. Setting `goExtensions.mcp` to `false`
-or passing `--no-extensions` disables the bundled extension as a whole.
+accepts `headers` and `maxRetries`. Omit `maxRetries` for the SDK default of 5 reconnect attempts;
+an explicit `0` (or any negative value) disables retries so a dropped connection fails fast. `cwd`
+is resolved from pi-go's working directory. The process inherits the current environment before
+applying `env` overrides. `timeoutMs` defaults to 10 seconds and bounds connect, initialization,
+and initial tool discovery. `"disabled": true` — the convention used by Cline, Roo, and
+Claude Desktop configs — is honored exactly like `"enabled": false`. Other unknown fields are
+ignored so settings remain forward-compatible. Invalid entries are skipped with a per-entry
+warning while the remaining valid servers still load (`ParseSettingsWithWarnings` reports them);
+only a malformed `mcpServers` value itself is an error. Project entries are invisible until the
+existing project-trust flow accepts that project. Setting `goExtensions.mcp` to `false` or passing
+`--no-extensions` disables the bundled extension as a whole.
 
 ## Lifecycle and tool mapping
 
-All enabled servers connect independently during extension loading, so one unavailable server is
-reported by `/mcp` without preventing the session from starting. `/mcp reconnect [server]`
-recreates one or every connection. Session shutdown closes the SDK sessions and stdio children.
-Server tool-list notifications add new tools and deactivate removed ones without retrying calls
-whose side effects may already have run.
+All enabled servers connect concurrently during extension loading, each bounded by its own
+`timeoutMs`, so one unavailable server is reported by `/mcp` without preventing the session from
+starting and without delaying the other servers. Startup failures are also printed as warnings.
+(A stdio child that ignores shutdown still adds the SDK's ~5s kill grace on top of `timeoutMs`
+before its process is killed.) `/mcp reconnect [server]` recreates one or every connection;
+re-running the extension factory against a fresh registry re-registers the already-discovered
+tools without reconnecting. A call that fails because the connection died (closed connection, EOF
+or a broken pipe from a dead child) deactivates that server's tools immediately. Session shutdown
+closes the SDK sessions and stdio children; a child's exit status (for example
+`signal: terminated` after the kill grace) is expected there and not reported as an error. Server
+tool-list notifications add new tools and deactivate removed ones without retrying calls whose
+side effects may already have run.
 
 Remote names are exposed as stable, provider-safe names of the form
 `mcp__<server>__<tool>_<hash>`. The hash prevents collisions after sanitizing or truncating long

@@ -553,6 +553,25 @@ func (runner *Runner) Shortcuts(bindings map[string][]string) map[string]Shortcu
 	return result
 }
 
+// ShortcutOrder returns registered shortcut keys in extension registration
+// order. Upstream getShortcuts returns an insertion-ordered Map; the TUI
+// dispatcher walks this order so first-registered shortcuts win ties.
+func (runner *Runner) ShortcutOrder() []string {
+	var order []string
+	seen := make(map[string]struct{})
+	for _, extension := range runner.extensions {
+		extension.mu.RLock()
+		for _, key := range extension.shortcutOrder {
+			if _, exists := seen[key]; !exists {
+				seen[key] = struct{}{}
+				order = append(order, key)
+			}
+		}
+		extension.mu.RUnlock()
+	}
+	return order
+}
+
 func (runner *Runner) ShortcutDiagnostics() []Diagnostic {
 	runner.diagnosticsMu.RLock()
 	diagnostics := append([]Diagnostic(nil), runner.shortcutDiagnostics...)

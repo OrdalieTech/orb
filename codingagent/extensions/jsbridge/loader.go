@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/OrdalieTech/pi-go/codingagent/config"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions"
 )
 
@@ -59,13 +60,26 @@ func (loader *Loader) RegisterInto(ctx context.Context, registry *extensions.Reg
 	return result
 }
 
+// agentDir resolves the process agent directory with the same precedence as
+// Discover: explicit option first, then config.GetAgentDir (env override or
+// ~/.pi/agent), matching upstream getAgentDir (src/config.ts:515).
+func (loader *Loader) agentDir() string {
+	if loader.options.AgentDir != "" {
+		return absoluteOrDot(loader.options.AgentDir)
+	}
+	if configured, err := config.GetAgentDir(); err == nil {
+		return absoluteOrDot(configured)
+	}
+	return absoluteOrDot("")
+}
+
 func (loader *Loader) pathFactory(ctx context.Context, path string) extensions.Factory {
 	return func(api extensions.API) error {
 		built, err := loader.cache.build(path)
 		if err != nil {
 			return err
 		}
-		vm, err := newRuntimeVM(ctx, path, built, absoluteOrDot(loader.options.CWD))
+		vm, err := newRuntimeVM(ctx, path, built, absoluteOrDot(loader.options.CWD), loader.agentDir())
 		if err != nil {
 			return err
 		}
@@ -99,7 +113,7 @@ func (loader *Loader) loadLocked(ctx context.Context) LoadResult {
 			result.Errors = append(result.Errors, upstreamLoadError(path, err))
 			continue
 		}
-		vm, err := newRuntimeVM(ctx, path, built, absoluteOrDot(loader.options.CWD))
+		vm, err := newRuntimeVM(ctx, path, built, absoluteOrDot(loader.options.CWD), loader.agentDir())
 		if err != nil {
 			result.Errors = append(result.Errors, upstreamLoadError(path, err))
 			continue

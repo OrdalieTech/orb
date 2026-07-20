@@ -43,7 +43,13 @@ func rpcSlashCommands(runtime *codingagent.SessionRuntime) []modes.RPCSlashComma
 	return result
 }
 
-func newRPCSessionHost(ctx context.Context, runtime *codingagent.AgentSessionRuntime) (*rpcSessionHost, error) {
+// newRPCSessionHost builds the RPC host. By default it binds the session's
+// extensions at construction (emitting the initial session_start). Pass
+// deferInitialBind when RunRPCMode will bind extensions itself after installing
+// the RPC extension UI, so session_start fires once, with a live ctx.ui rather
+// than the headless noop (the session must also be created with
+// DeferSessionStart so construction does not fire session_start first).
+func newRPCSessionHost(ctx context.Context, runtime *codingagent.AgentSessionRuntime, deferInitialBind ...bool) (*rpcSessionHost, error) {
 	if runtime == nil || runtime.Session() == nil {
 		return nil, errors.New("RPC session host requires an agent session runtime")
 	}
@@ -54,6 +60,9 @@ func newRPCSessionHost(ctx context.Context, runtime *codingagent.AgentSessionRun
 	runtime.SetRebindSession(func(replacement *codingagent.AgentSession) error {
 		return replacement.BindExtensions(ctx)
 	})
+	if len(deferInitialBind) > 0 && deferInitialBind[0] {
+		return host, nil
+	}
 	if err := runtime.Session().BindExtensions(ctx); err != nil {
 		return nil, err
 	}

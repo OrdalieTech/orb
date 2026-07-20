@@ -220,31 +220,28 @@ func TestRunCLIHelpAndListModelsRunAuthMigration(t *testing.T) {
 }
 
 func TestRunCLIListModelsIsReadOnly(t *testing.T) {
+	// Upstream runs listModels after full runtime creation (main.ts:747-764) so
+	// extension-registered providers are listed; the run must stay read-only.
 	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(t.TempDir())
 	var stdout bytes.Buffer
 	createdRuntime := false
-	registry, err := config.NewModelRegistry(os.Getenv("PI_CODING_AGENT_DIR"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	code := runCLIWithDependencies(context.Background(), []string{"--list-models"}, cliStreams{
 		Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: io.Discard, StdinTTY: true, StdoutTTY: true,
 	}, cliDependencies{
-		createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+		createRuntime: func(cwd string, args CLIArgs, messages agent.AgentMessages) (runtimeInputs, error) {
 			createdRuntime = true
-			return runtimeInputs{}, nil
+			return createRuntimeInputs(cwd, args, messages)
 		},
-		loadModels: func(string) (*config.ModelRegistry, error) { return registry, nil },
 	})
-	if code != 0 || createdRuntime || stdout.Len() == 0 {
+	if code != 0 || !createdRuntime || stdout.Len() == 0 {
 		t.Fatalf("code=%d createdRuntime=%t stdout=%q", code, createdRuntime, stdout.String())
 	}
-	entries, err := os.ReadDir(os.Getenv("PI_CODING_AGENT_DIR"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 0 {
-		t.Fatalf("--list-models created files: %#v", entries)
+	// Runtime creation writes only benign config (auth.json); it must never
+	// persist a session for a metadata-only command.
+	if _, err := os.Stat(filepath.Join(os.Getenv("PI_CODING_AGENT_DIR"), "sessions")); !os.IsNotExist(err) {
+		t.Fatalf("--list-models persisted a session (stat err = %v)", err)
 	}
 }
 

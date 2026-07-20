@@ -390,15 +390,17 @@ func TestCLIJSONModeResumeAndForkHeaders(t *testing.T) {
 
 func TestCLIJSONModeKeepsMetadataOffStdout(t *testing.T) {
 	for _, test := range []struct {
-		name       string
-		argv       []string
-		wantText   string
-		wantStderr bool
+		name        string
+		argv        []string
+		wantText    string
+		wantStderr  bool
+		wantRuntime bool
 	}{
 		{name: "plain help", argv: []string{"--help"}, wantText: "Usage: pi", wantStderr: false},
 		{name: "json help", argv: []string{"--mode", "json", "--help"}, wantText: "Usage: pi", wantStderr: true},
-		{name: "plain model list", argv: []string{"--list-models"}, wantText: "No models available", wantStderr: false},
-		{name: "json model list", argv: []string{"--mode", "json", "--list-models"}, wantText: "No models available", wantStderr: true},
+		// Upstream lists models after full runtime creation (main.ts:747-764).
+		{name: "plain model list", argv: []string{"--list-models"}, wantText: "No models available", wantStderr: false, wantRuntime: true},
+		{name: "json model list", argv: []string{"--mode", "json", "--list-models"}, wantText: "No models available", wantStderr: true, wantRuntime: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			agentDir := t.TempDir()
@@ -418,8 +420,8 @@ func TestCLIJSONModeKeepsMetadataOffStdout(t *testing.T) {
 					return runtimeInputs{}, nil
 				},
 			})
-			if exitCode != 0 || createdRuntime {
-				t.Fatalf("exit=%d createdRuntime=%t", exitCode, createdRuntime)
+			if exitCode != 0 || createdRuntime != test.wantRuntime {
+				t.Fatalf("exit=%d createdRuntime=%t want %t", exitCode, createdRuntime, test.wantRuntime)
 			}
 			if test.wantStderr {
 				if stdout.Len() != 0 || !strings.Contains(stderr.String(), test.wantText) {

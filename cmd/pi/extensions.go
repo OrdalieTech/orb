@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
+	"github.com/OrdalieTech/pi-go/codingagent"
 	"github.com/OrdalieTech/pi-go/codingagent/config"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions"
 	"github.com/OrdalieTech/pi-go/codingagent/extensions/examples/permissiongate"
@@ -14,20 +16,34 @@ import (
 	"github.com/OrdalieTech/pi-go/codingagent/mcp"
 )
 
+// Each runtime (re)load builds a fresh jsbridge loader; the previous one's
+// goroutine-backed VMs must be closed or /reload leaks them (~16MB each).
+// If cmd/pi ever hosts two concurrent live runtimes, move Close ownership to
+// runtime disposal instead of this process-scoped slot.
+var (
+	jsLoaderMu     sync.Mutex
+	activeJSLoader *jsbridge.Loader
+)
+
 var compiledExtensions = []extensions.CompiledExtension{
 	{Name: "permission-gate", Factory: permissiongate.Extension},
 	{Name: "pirate", Factory: pirate.Extension},
 	{Name: "status-line", Factory: statusline.Extension},
 }
 
-func loadCompiledExtensions(cwd string, args CLIArgs, settings *config.SettingsManager) (*extensions.Registry, []string) {
+func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config.SettingsManager, packages *codingagent.ResolvedPaths) (*extensions.Registry, []string) {
 	catalog := append([]extensions.CompiledExtension(nil), compiledExtensions...)
 	var diagnostics []string
-	if !args.NoExtensions {
-		servers, err := mcp.ParseSettings(map[string]any(settings.GetSettings()))
+	// metadataOnly runs (e.g. --list-models) build the runtime purely to
+	// enumerate models/providers; MCP servers contribute tools, not models, so
+	// skip them rather than eagerly spawn and connect every configured server.
+	if !args.NoExtensions && !args.metadataOnly {
+		servers, warnings, err := mcp.ParseSettingsWithWarnings(map[string]any(settings.GetSettings()))
+		diagnostics = append(diagnostics, warnings...)
 		if err != nil {
 			diagnostics = append(diagnostics, err.Error())
-		} else if len(servers) > 0 {
+		}
+		if len(servers) > 0 {
 			manager := mcp.NewManager(cwd, servers)
 			catalog = append(catalog, extensions.CompiledExtension{
 				Name: "mcp", Factory: manager.Extension(), Hidden: true, DefaultEnabled: true,
@@ -39,24 +55,125 @@ func loadCompiledExtensions(cwd string, args CLIArgs, settings *config.SettingsM
 		diagnostics = append(diagnostics, loadError.Error())
 	}
 	if !args.NoExtensions {
+		explicitPaths := make([]string, 0, len(args.Extensions))
+		var sourceSpecs []string
+		for _, extension := range args.Extensions {
+			if isPackageSourceSpec(extension) {
+				sourceSpecs = append(sourceSpecs, extension)
+			} else {
+				explicitPaths = append(explicitPaths, extension)
+			}
+		}
+		if len(sourceSpecs) > 0 {
+			// Upstream resource-loader.ts:355 resolves -e package specs through
+			// packageManager.resolveExtensionSources with temporary install semantics.
+			manager := codingagent.NewPackageManager(codingagent.PackageManagerOptions{
+				CWD: cwd, AgentDir: agentDir, Settings: settings,
+			})
+			resolved, err := manager.ResolveExtensionSources(sourceSpecs, false, true)
+			if err != nil {
+				diagnostics = append(diagnostics, err.Error())
+			} else {
+				for _, resource := range resolved.Extensions {
+					if resource.Enabled {
+						explicitPaths = append(explicitPaths, resource.Path)
+					}
+				}
+			}
+		}
 		options := jsbridge.DiscoveryOptions{
 			CWD:                    cwd,
+			AgentDir:               agentDir,
 			ProjectTrusted:         settings.IsProjectTrusted(),
 			ConfiguredPaths:        settings.GetGlobalExtensionPaths(),
 			ProjectConfiguredPaths: settings.GetProjectExtensionPaths(),
-			ExplicitPaths:          args.Extensions,
+			ExplicitPaths:          explicitPaths,
+		}
+		if packages != nil {
+			options.ResolvedPackagePaths, options.ProjectResolvedPackagePaths = packageExtensionPaths(packages.Extensions)
 		}
 		if paths := jsbridge.Discover(options); len(paths) > 0 {
 			if registry == nil {
 				registry = extensions.NewRegistry(cwd)
 			}
-			result := jsbridge.NewLoader(options).RegisterInto(context.Background(), registry)
+			loader := jsbridge.NewLoader(options)
+			jsLoaderMu.Lock()
+			previous := activeJSLoader
+			activeJSLoader = loader
+			jsLoaderMu.Unlock()
+			if previous != nil {
+				previous.Close()
+			}
+			result := loader.RegisterInto(context.Background(), registry)
 			for _, loadError := range result.Errors {
 				diagnostics = append(diagnostics, fmt.Sprintf("Extension error (%s): %s", loadError.Path, loadError.Error))
 			}
 		}
 	}
 	return registry, diagnostics
+}
+
+// isPackageSourceSpec mirrors upstream isLocalPath: known package/URL prefixes
+// are package sources, everything else is a local path.
+func isPackageSourceSpec(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	for _, prefix := range [...]string{"npm:", "git:", "github:", "http:", "https:", "ssh:"} {
+		if strings.HasPrefix(trimmed, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// packageExtensionPaths splits enabled package-provided extension entry points
+// by scope; project-scope entries stay invisible until the project is trusted
+// (jsbridge.Discover gates ProjectResolvedPackagePaths on ProjectTrusted).
+func packageExtensionPaths(resources []codingagent.ResolvedResource) (user, project []string) {
+	for _, resource := range resources {
+		if !resource.Enabled || resource.Metadata.Origin != "package" {
+			continue
+		}
+		if resource.Metadata.Scope == "project" {
+			project = append(project, resource.Path)
+		} else {
+			user = append(user, resource.Path)
+		}
+	}
+	return user, project
+}
+
+// loadStartupExtensions loads the discovered extension set for runtime-metadata
+// paths (--help, unknown-flag validation) with the same project-trust gating as
+// createRuntimeInputs: untrusted project settings contribute nothing, so no
+// project-configured MCP server or extension can run before trust is granted.
+func loadStartupExtensions(cwd string, args CLIArgs) (*extensions.Registry, []string, error) {
+	agentDir, err := config.GetAgentDir()
+	if err != nil {
+		return nil, nil, err
+	}
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir), config.WithProjectTrusted(false))
+	if err != nil {
+		return nil, nil, err
+	}
+	projectTrusted, err := codingagent.ResolveProjectTrusted(context.Background(), codingagent.ResolveProjectTrustedOptions{
+		CWD:                 cwd,
+		TrustStore:          config.NewProjectTrustStore(agentDir),
+		TrustOverride:       args.ProjectTrusted,
+		DefaultProjectTrust: settings.GetDefaultProjectTrust(),
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	settings.SetProjectTrusted(projectTrusted)
+	packageManager := codingagent.NewPackageManager(codingagent.PackageManagerOptions{
+		CWD: cwd, AgentDir: agentDir, Settings: settings,
+	})
+	resolvedPaths, err := packageManager.Resolve(nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	registry, diagnostics := loadCompiledExtensions(cwd, agentDir, args, settings, resolvedPaths)
+	return registry, diagnostics, nil
 }
 
 func applyExtensionFlags(registry *extensions.Registry, flags []CLIUnknownFlag) []string {

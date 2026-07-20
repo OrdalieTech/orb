@@ -581,9 +581,23 @@ func formatNoAPIKeyFoundMessage(provider ai.ProviderID) string {
 	if display == "unknown" {
 		display = "the selected model"
 	}
-	docsDir := filepath.Join(resolvePromptPackageDir(""), "docs")
+	providersDoc, modelsDoc := authGuidanceDocPaths()
 	return "No API key found for " + display + ".\n\nUse /login to log into a provider via OAuth or API key. See:\n  " +
-		filepath.Join(docsDir, "providers.md") + "\n  " + filepath.Join(docsDir, "models.md")
+		providersDoc + "\n  " + modelsDoc
+}
+
+// authGuidanceDocPaths mirrors upstream getDocsPath (auth-guidance.ts:6-12)
+// when a package layout is configured or the docs ship next to the binary, and
+// falls back to the hosted docs for standalone binaries where
+// <dir-of-binary>/docs does not exist.
+func authGuidanceDocPaths() (providersDoc, modelsDoc string) {
+	docsDir := filepath.Join(resolvePromptPackageDir(""), "docs")
+	providersDoc = filepath.Join(docsDir, "providers.md")
+	if _, err := os.Stat(providersDoc); err != nil && os.Getenv("PI_PACKAGE_DIR") == "" {
+		return "https://github.com/OrdalieTech/pi-go/blob/main/docs/providers.md",
+			"https://github.com/OrdalieTech/pi-go/blob/main/docs/models.md"
+	}
+	return providersDoc, filepath.Join(docsDir, "models.md")
 }
 
 func (runtime *SessionRuntime) SetAutoCompactionEnabled(enabled bool) {

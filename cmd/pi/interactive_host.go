@@ -98,6 +98,16 @@ func createReplacementRuntime(
 	if len(manager.GetEntries()) > 0 {
 		applySessionDefaults(&args, contextState, manager.GetBranch())
 	}
+	if args.extensionsLoaded && args.extensionRegistry != nil {
+		// Replacement runtimes need fresh extension instances (upstream re-runs
+		// factories per session); the resource loader reuses whatever registry it
+		// receives on its first load, so refresh the startup-preloaded one here.
+		fresh, freshErr := args.extensionRegistry.Fresh(manager.GetCWD())
+		if freshErr != nil {
+			return nil, runtimeInputs{}, freshErr
+		}
+		args.extensionRegistry = fresh
+	}
 	inputs, err := dependencies.createRuntime(manager.GetCWD(), args, decodeSessionMessages(contextState.Messages))
 	if err != nil {
 		return nil, runtimeInputs{}, err

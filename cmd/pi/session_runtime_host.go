@@ -20,6 +20,10 @@ type cliSessionRuntimeHostOptions struct {
 	Dependencies  cliDependencies
 	Streams       cliStreams
 	ExtensionMode extensions.Mode
+	// DeferSessionStart holds session_start until the mode binds its extension
+	// UI, so extensions see a live ctx.ui on session_start. RPC mode sets this
+	// (it binds the RPC UI in bindReplacement); the TUI path defers separately.
+	DeferSessionStart bool
 }
 
 type cliPrintSession struct {
@@ -167,6 +171,7 @@ func newCLISessionRuntimeHost(
 			SystemPromptOptions: &inputs.PromptOptions,
 			SessionStartEvent:   runtimeOptions.SessionStartEvent,
 			DeferExtensionStart: runtimeOptions.DeferExtensionStart,
+			DeferSessionStart:   options.DeferSessionStart,
 		}
 		if inputs.ModelRegistry != nil {
 			sessionConfig.ModelRegistry = inputs.ModelRegistry

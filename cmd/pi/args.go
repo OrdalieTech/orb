@@ -63,6 +63,7 @@ type CLIArgs struct {
 	RestoredModel      bool
 	allowNoModel       bool
 	useUnknownModel    bool
+	metadataOnly       bool
 	extensionsLoaded   bool
 	extensionRegistry  *extensions.Registry
 	extensionWarnings  []string

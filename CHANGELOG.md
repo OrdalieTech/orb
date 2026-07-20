@@ -6,7 +6,72 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Added
+
+- jsbridge Node compatibility for real ecosystem extensions: `node:crypto` (randomUUID,
+  randomBytes, createHash/createHmac with hex/base64/base64url digests), `node:http`/`node:https`
+  (minimal server + client over Go net/http), `node:module` `createRequire`, and the
+  `atob`/`btoa`/`TextDecoder`/`structuredClone` globals; fs shim errors are Node-shaped
+  (`code`/`errno`/`syscall`/`path`, so `err.code === "ENOENT"` idioms work); `import.meta.url`
+  is defined per bundle as the entry's `file://` URL; `.node` native addons and WebAssembly
+  modules fail with explicit "not supported by the pi-go extension runtime" diagnostics.
+- jsbridge pi-* module surface: `@earendil-works/pi-ai` exports `EventStream`,
+  `AssistantMessageEventStream`, `createAssistantMessageEventStream` (upstream
+  `utils/event-stream.ts` port) and `calculateCost`; `pi-coding-agent` exports `getAgentDir`,
+  `getMarkdownTheme`, `VERSION`, `parseFrontmatter`/`stripFrontmatter`; `pi-tui` exports the
+  full `Key` builder and `isKeyRelease`. Unknown imports from the pi-* shims now fail at first
+  touch with a clear "not exported" error instead of resolving `undefined` and breaking later.
+- Extensions from installed pi packages load in every session (`pi install` now delivers its
+  main payload), and `-e npm:<pkg>` / `-e git:<repo>` performs upstream's temporary-install
+  resolution instead of treating the spec as a literal path. npm/git package dependencies are
+  installed through the settings `npmCommand` (default `npm install --omit=dev`), skipped when
+  deps are absent or bundled, with a warning instead of a failure when npm is missing. The npm
+  registry honors `npm_config_registry`, project and user `.npmrc` `registry=` lines, and
+  nerf-darted `_authToken` bearer auth.
+- Interactive extension shortcuts: `pi.registerShortcut` handlers now dispatch on keypress
+  (matched before built-in keybindings, reserved bindings still win with a stored diagnostic),
+  mirroring upstream interactive-mode dispatch and insertion order.
+- RPC extension UI: the extension UI bridge is bound on every session rebind, so
+  `extension_ui_request` events (notify, dialogs, status, widgets) stream to RPC clients and
+  `ctx.hasUI` is true, matching upstream rpc-mode. MCP: `"disabled": true` on a server entry is
+  honored as a disable switch (config portability from other MCP clients); one invalid
+  `mcpServers` entry no longer disables the rest (per-entry warnings); explicit `maxRetries: 0`
+  disables streamable-HTTP reconnect retries; startup connects run concurrently per server.
+
 ### Fixed
+
+- SECURITY: `pi --help` and unknown-flag invocations no longer load untrusted project settings.
+  Previously those paths constructed settings without the project-trust gate, so an untrusted
+  project's `mcpServers` could execute arbitrary commands and make network requests from the
+  most innocuous invocations.
+- RPC mode dispatches extension commands (`/mcp`, ...) before model/API-key preflight, matching
+  upstream agent-session ordering — MCP diagnostics work on keyless installs.
+- Extension factories ran twice per startup (duplicated side effects); the resource loader now
+  adopts the pre-loaded registry once and only `Fresh()`es on real reloads.
+- MCP tools survive session registry rebinds: re-running the MCP extension factory re-registers
+  discovered tools on the new API instead of silently dropping all of them; `Start()` failures
+  surface as warnings; child exit statuses no longer report as `session_shutdown` extension
+  errors; a tool call failing with EOF deactivates that server's tools immediately.
+- Interactive `/reload` leaked ~16 MB per reload (previous jsbridge loader VMs were never
+  closed); RSS now plateaus.
+- `registerEntryRenderer` receives the full custom session entry (`entry.data` works) instead
+  of the bare data payload; `ctx.compact()` `onComplete`/`onError` fire even when the
+  dispatching event's context is gone.
+- Skills parity edges: nested ignore-file basename patterns scope to the ignore file's own
+  directory and root-anchored `/patterns` match at any depth (upstream npm-ignore semantics,
+  bug-for-bug); non-string frontmatter `name`/`description` reject the skill with upstream's
+  type-error warning shape; collision diagnostics trail all warnings; headless (`-p`/RPC) runs
+  no longer print per-skill validation warnings (interactive keeps them, with paths).
+- `--list-models` creates the full runtime so extension-registered providers appear (but skips
+  MCP servers, which contribute tools not models, so model enumeration no longer spawns and
+  connects them); `--help` documents `--extension/-e` and the package subcommands; package git
+  operations are quiet (`-q`, no detached-HEAD advice).
+- RPC extensions see a live `ctx.ui` on `session_start`: the session defers its start until the
+  RPC extension UI is bound, so startup `notify`/`setTitle`/`setWidget`/`setStatus` calls reach
+  the client instead of firing against the headless noop UI.
+- Ported upstream's `docs/providers.md` and `docs/models.md`, which the "No API key found"
+  guidance and the system prompt reference; the guidance falls back to the hosted copies when no
+  docs directory ships next to the binary.
 
 - Streaming TUI flicker: long/streaming bash tool output is no longer rendered uncapped, which
   had pushed the block above the viewport and forced a full-screen clear (ESC[2J) on every

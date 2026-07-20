@@ -22,7 +22,7 @@ func TestLoadCompiledExtensionsUsesSettingsAndCatalogOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	registry, diagnostics := loadCompiledExtensions(cwd, CLIArgs{}, settings)
+	registry, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{}, settings, nil)
 	if len(diagnostics) != 0 {
 		t.Fatalf("diagnostics = %v", diagnostics)
 	}
@@ -30,7 +30,7 @@ func TestLoadCompiledExtensionsUsesSettingsAndCatalogOrder(t *testing.T) {
 	if got := strings.Join(runner.ExtensionPaths(), ","); got != "<inline:pirate>,<inline:status-line>" {
 		t.Fatalf("compiled extension order = %q", got)
 	}
-	disabled, diagnostics := loadCompiledExtensions(cwd, CLIArgs{NoExtensions: true}, settings)
+	disabled, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{NoExtensions: true}, settings, nil)
 	if disabled != nil || len(diagnostics) != 0 {
 		t.Fatalf("disabled registry = %#v, diagnostics = %v", disabled, diagnostics)
 	}
@@ -62,7 +62,7 @@ func TestLoadCompiledExtensionsAddsMCPOnlyForEnabledConfiguration(t *testing.T) 
 			if err != nil {
 				t.Fatal(err)
 			}
-			registry, diagnostics := loadCompiledExtensions(cwd, test.args, settings)
+			registry, diagnostics := loadCompiledExtensions(cwd, agentDir, test.args, settings, nil)
 			runner := extensions.NewRunner(registry, extensions.RunnerOptions{})
 			paths := strings.Join(runner.ExtensionPaths(), ",")
 			if paths != test.wantPath {

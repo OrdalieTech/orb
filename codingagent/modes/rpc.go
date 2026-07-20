@@ -18,6 +18,7 @@ import (
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
 	"github.com/OrdalieTech/pi-go/codingagent"
+	"github.com/OrdalieTech/pi-go/codingagent/extensions"
 	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
 	"github.com/OrdalieTech/pi-go/codingagent/tools"
 )
@@ -35,11 +36,10 @@ type rpcSessionRebindHost interface {
 }
 
 type RPCModeOptions struct {
-	Stdin           io.Reader
-	Stdout          io.Writer
-	Stderr          io.Writer
-	Commands        func() []RPCSlashCommand
-	BindExtensionUI func(*RPCExtensionUI)
+	Stdin    io.Reader
+	Stdout   io.Writer
+	Stderr   io.Writer
+	Commands func() []RPCSlashCommand
 }
 
 type rpcMode struct {
@@ -80,9 +80,6 @@ func RunRPCMode(ctx context.Context, host RPCSessionHost, options RPCModeOptions
 	rpcContext, cancel := context.WithCancel(ctx)
 	mode := &rpcMode{ctx: rpcContext, cancel: cancel, host: host, options: options, output: newSerializedOutput(options.Stdout)}
 	mode.ui = newRPCExtensionUI(mode.writeObject)
-	if options.BindExtensionUI != nil {
-		options.BindExtensionUI(mode.ui)
-	}
 	if rebindHost, ok := host.(rpcSessionRebindHost); ok {
 		rebindHost.SetRebindSession(mode.bindReplacement)
 	}
@@ -150,6 +147,9 @@ func (mode *rpcMode) bindReplacement(session *codingagent.SessionRuntime) error 
 	if session == nil {
 		return errors.New("rpc mode: session replacement returned nil")
 	}
+	// Upstream rebindSession passes the RPC uiContext into bindExtensions on
+	// every rebind (rpc-mode.ts:311-320) so extensions get a live UI seam.
+	session.BindExtensionUI(newRPCExtensionUIAdapter(mode.ui), extensions.ModeRPC)
 	if err := session.BindExtensions(mode.ctx); err != nil {
 		return err
 	}
@@ -290,10 +290,6 @@ func (mode *rpcMode) handleCommand(session *codingagent.SessionRuntime, command 
 			mode.promptMu.Unlock()
 			return success()
 		}
-		if err := session.PromptPreflight(mode.ctx); err != nil {
-			mode.promptMu.Unlock()
-			return failure(err)
-		}
 		mode.prompting = true
 		mode.promptMu.Unlock()
 		defer func() {
@@ -301,11 +297,24 @@ func (mode *rpcMode) handleCommand(session *codingagent.SessionRuntime, command 
 			mode.prompting = false
 			mode.promptMu.Unlock()
 		}()
-		response := success()
-		if err := mode.writeObject(*response); err != nil {
-			return nil
+		// Upstream dispatches extension commands before any model/API-key
+		// validation and emits the authoritative response from preflightResult
+		// (agent-session.ts:1102-1117, rpc-mode.ts:393-414).
+		responded := false
+		err := session.PromptWithOptions(mode.ctx, command.Message, &codingagent.PromptOptions{
+			Images: command.Images,
+			Source: extensions.InputRPC,
+			PreflightResult: func(succeeded bool) {
+				if !succeeded {
+					return
+				}
+				responded = true
+				_ = mode.writeObject(*success())
+			},
+		})
+		if err != nil && !responded {
+			return failure(err)
 		}
-		_ = session.PromptAfterPreflight(mode.ctx, command.Message, command.Images...)
 		return nil
 	case "steer":
 		if err := session.SteerImages(command.Message, command.Images); err != nil {
