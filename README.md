@@ -43,11 +43,15 @@ bundled faux provider.
 
 ## Run an upstream extension
 
-pi-go executes upstream's TypeScript extensions unmodified in an embedded JS runtime:
+pi-go executes upstream's TypeScript extensions unmodified in an embedded JS runtime. Fetch the
+pirate example from the pinned upstream revision and load it:
 
 ```sh
-pi --extension path/to/extension.ts
+curl -fsSLO https://raw.githubusercontent.com/earendil-works/pi/3a40794ea14c6202586cc203d5b928eca9f6b673/packages/coding-agent/examples/extensions/pirate.ts
+pi --extension ./pirate.ts
 ```
+
+Run `/pirate` in the TUI to exercise the extension.
 
 61 of upstream's 69 single-file extension examples run as-is (status per example in
 [docs/sync/extension-matrix.md](docs/sync/extension-matrix.md)); `.pi/extensions/` in a trusted

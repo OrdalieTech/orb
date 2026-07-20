@@ -11,24 +11,33 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
       # The full gate re-runs at the release commit; a red gate fails the tag.
       - run: make check
+      - run: make fixtures-check
       - name: Extract release notes from CHANGELOG.md
         run: |
+          awk '
+            /^## \[Unreleased\]$/ {p=1; next}
+            p && /^## \[/ {exit}
+            p && /^- / {exit 1}
+          ' CHANGELOG.md
           awk -v ver="${GITHUB_REF_NAME#v}" '
             $0 ~ "^## \\[" ver "\\]" {p=1; next}
             p && /^## \[/ {exit}
             p {print}
           ' CHANGELOG.md > /tmp/notes.md
-          test -s /tmp/notes.md || echo "See CHANGELOG.md." > /tmp/notes.md
-      - uses: goreleaser/goreleaser-action@v6
+          test -s /tmp/notes.md
+      - uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
           args: release --clean --release-notes /tmp/notes.md
         env:

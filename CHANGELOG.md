@@ -8,6 +8,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Added
 
+- Release hardening: immutable CI action SHAs, fixture regeneration at tag time, strict changelog
+  notes, clean-macOS checksum support, and a 754 KB amd64 linker-alignment reduction.
 - Upstream pi 0.80.10 sync to `3a40794e`: tool-result and summary usage accounting, Qwen Token
   Plan and refreshed provider catalogs, deferred model refresh with upstream's offline quirk,
   public text and UUIDv7 helpers, RPC thinking levels, editor paste history, cursor cleanup, and
