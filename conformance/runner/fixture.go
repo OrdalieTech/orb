@@ -34,6 +34,14 @@ func FixtureRoot() string {
 	return filepath.Clean(filepath.Join(filepath.Dir(filename), "..", "fixtures"))
 }
 
+// ReplacePathAliases replaces both a path and its realpath alias.
+func ReplacePathAliases(value, path, replacement string) string {
+	if canonical, err := filepath.EvalSymlinks(path); err == nil {
+		value = strings.ReplaceAll(value, canonical, replacement)
+	}
+	return strings.ReplaceAll(value, path, replacement)
+}
+
 // ReadFixture reads one file from a fixture family.
 func ReadFixture(family, name string) ([]byte, error) {
 	if !validPathElement(family) || !validPathElement(name) {

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 func TestExpandPath(t *testing.T) {
@@ -130,8 +132,12 @@ func TestResolveReadPathVariants(t *testing.T) {
 			if err := os.WriteFile(created, []byte("content"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if got, err := ResolveReadPath(test.provided, dir); err != nil || got != created {
-				t.Fatalf("ResolveReadPath = %q, want %q", got, created)
+			got, err := ResolveReadPath(test.provided, dir)
+			if err != nil || norm.NFC.String(got) != norm.NFC.String(created) {
+				t.Fatalf("ResolveReadPath = %q, %v; want canonically equivalent to %q", got, err, created)
+			}
+			if _, err := os.Stat(got); err != nil {
+				t.Fatalf("resolved path does not exist: %v", err)
 			}
 		})
 	}

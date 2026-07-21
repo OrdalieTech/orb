@@ -993,7 +993,7 @@ func normalizeF6HarnessValue(value any, root string) any {
 }
 
 func normalizeF6HarnessPath(value, root string) string {
-	return strings.ReplaceAll(filepath.ToSlash(value), filepath.ToSlash(root), "<fixture>")
+	return runner.ReplacePathAliases(filepath.ToSlash(value), filepath.ToSlash(root), "<fixture>")
 }
 
 func assertF6HarnessJSONEqual(t *testing.T, want, got any) {

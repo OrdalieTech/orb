@@ -516,7 +516,7 @@ func newF12VisibleMode(t *testing.T, command string) (*InteractiveMode, *f12Visi
 		mdTheme: theme.MarkdownTheme(), options: InteractiveModeOptions{},
 		chat: &tui.Container{}, pendingMessages: &tui.Container{}, status: &tui.Container{},
 		editorContainer: &tui.Container{}, footerStatuses: map[string]string{},
-		inputCh: make(chan inputEntry, 8), toolComponents: map[string]*ToolExecutionComponent{}, cwd: cwd,
+		inputCh: make(chan inputEntry, 8), toolComponents: map[string]*ToolExecutionComponent{}, cwd: cwd, keyDisplayOS: "linux",
 	}
 	mode.status.AddChild(tui.NewText("fixture status", 0, 0, nil))
 	// Fixtures were extracted in 256-color mode; pin it so the live COLORTERM cannot leak in.

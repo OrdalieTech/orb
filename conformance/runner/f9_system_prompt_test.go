@@ -104,6 +104,11 @@ func TestF9ResourceDiscoveryMatchesUpstream(t *testing.T) {
 		t.Run(fixtureCase.Name, func(t *testing.T) {
 			fixtureRoot := t.TempDir()
 			writeF9Tree(t, fixtureRoot, fixtureCase.Files)
+			if fixtureCase.Name == "global-root-ancestor-cwd-order-and-case-priority" {
+				if _, err := os.Stat(filepath.Join(fixtureRoot, "project", "AGENTS.md")); err == nil {
+					t.Skip("case-insensitive filesystem cannot represent the upstream case-priority fixture")
+				}
+			}
 
 			cwd := filepath.Join(fixtureRoot, filepath.FromSlash(fixtureCase.CWD))
 			agentDir := filepath.Join(fixtureRoot, filepath.FromSlash(fixtureCase.AgentDir))
@@ -245,5 +250,5 @@ func f9MaterializePath(value, fixtureRoot string) string {
 }
 
 func f9NormalizeFixturePath(value, fixtureRoot string) string {
-	return strings.ReplaceAll(value, filepath.ToSlash(fixtureRoot), "<fixture>")
+	return runner.ReplacePathAliases(value, filepath.ToSlash(fixtureRoot), "<fixture>")
 }

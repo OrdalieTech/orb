@@ -235,7 +235,7 @@ func f7CLIEnvironment(homeDir, agentDir string) []string {
 var f7CLITimestamp = regexp.MustCompile(`"timestamp":"[^"]+"`)
 
 func f7CLICanonicalizeJSONStdout(encoded []byte, projectDir string) []byte {
-	canonical := bytes.ReplaceAll(encoded, []byte(projectDir), []byte("<cwd>"))
+	canonical := []byte(runner.ReplacePathAliases(string(encoded), projectDir, "<cwd>"))
 	return f7CLITimestamp.ReplaceAll(canonical, []byte(`"timestamp":"<timestamp>"`))
 }
 

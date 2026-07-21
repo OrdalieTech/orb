@@ -2,10 +2,27 @@ package runner_test
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/OrdalieTech/pi-go/conformance/runner"
 )
+
+func TestReplacePathAliases(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation is not generally available without privileges")
+	}
+	target, alias := t.TempDir(), filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(target, alias); err != nil {
+		t.Fatal(err)
+	}
+	got := runner.ReplacePathAliases(filepath.Join(target, "file"), alias, "<root>")
+	if got != filepath.Join("<root>", "file") {
+		t.Fatalf("replaced path = %q", got)
+	}
+}
 
 func TestF5Manifest(t *testing.T) {
 	manifest := runner.LoadManifest(t, "F5")

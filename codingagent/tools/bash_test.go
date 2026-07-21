@@ -561,7 +561,7 @@ func TestLocalBashOperationsCapturesActiveInheritedStdioPastGrace(t *testing.T) 
 	startedAt := time.Now()
 	result, err := NewLocalBashOperations().Exec(
 		context.Background(),
-		`(for value in 1 2 3 4 5; do printf 'chunk-%s\n' "$value"; sleep 0.06; done) &`,
+		`(for value in {1..30}; do printf 'chunk-%s\n' "$value"; sleep 0.01; done) &`,
 		dir,
 		BashExecOptions{
 			Env: mustShellEnv(t),
@@ -582,7 +582,7 @@ func TestLocalBashOperationsCapturesActiveInheritedStdioPastGrace(t *testing.T) 
 	outputMu.Lock()
 	text := output.String()
 	outputMu.Unlock()
-	if !strings.Contains(text, "chunk-1\n") || !strings.Contains(text, "chunk-5\n") {
+	if !strings.Contains(text, "chunk-1\n") || !strings.Contains(text, "chunk-30\n") {
 		t.Fatalf("active inherited output = %q", text)
 	}
 	if elapsed < 200*time.Millisecond {

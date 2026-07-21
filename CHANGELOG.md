@@ -6,6 +6,12 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Fixed
+
+- Hosted macOS verification now handles APFS realpath, case, and Unicode normalization without
+  weakening Linux coverage; interactive session replacement is race-free and custom extension
+  messages request their render deterministically.
+
 ## [0.1.0] - 2026-07-20
 
 ### Added

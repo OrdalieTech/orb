@@ -13,7 +13,7 @@ func TestLoadProjectContextFilesGlobalThenAncestorsThenCWD(t *testing.T) {
 	project := filepath.Join(root, "project")
 	cwd := filepath.Join(project, "nested")
 	mustWriteResource(t, filepath.Join(agentDir, "CLAUDE.md"), "global")
-	mustWriteResource(t, filepath.Join(root, "AGENTS.MD"), "root")
+	mustWriteResource(t, filepath.Join(root, "AGENTS.md"), "root")
 	mustWriteResource(t, filepath.Join(project, "CLAUDE.md"), "project")
 	mustWriteResource(t, filepath.Join(cwd, "CLAUDE.md"), "lower-priority")
 	mustWriteResource(t, filepath.Join(cwd, "AGENTS.md"), "cwd")
@@ -24,7 +24,7 @@ func TestLoadProjectContextFilesGlobalThenAncestorsThenCWD(t *testing.T) {
 	}
 	wantPaths := []string{
 		filepath.Join(agentDir, "CLAUDE.md"),
-		filepath.Join(root, "AGENTS.MD"),
+		filepath.Join(root, "AGENTS.md"),
 		filepath.Join(project, "CLAUDE.md"),
 		filepath.Join(cwd, "AGENTS.md"),
 	}
@@ -36,6 +36,19 @@ func TestLoadProjectContextFilesGlobalThenAncestorsThenCWD(t *testing.T) {
 		if files[index].Path != wantPaths[index] || files[index].Content != wantContents[index] {
 			t.Fatalf("files[%d] = %#v, want path %q content %q", index, files[index], wantPaths[index], wantContents[index])
 		}
+	}
+}
+
+func TestLoadProjectContextFilesUppercaseFallback(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "AGENTS.MD")
+	mustWriteResource(t, path, "upper")
+	if _, err := os.Stat(filepath.Join(root, "AGENTS.md")); err == nil {
+		t.Skip("case-insensitive filesystem cannot represent the uppercase fallback")
+	}
+	files, diagnostics := LoadProjectContextFiles(root, filepath.Join(root, "agent"))
+	if len(diagnostics) != 0 || len(files) != 1 || files[0].Path != path || files[0].Content != "upper" {
+		t.Fatalf("files = %#v, diagnostics = %#v", files, diagnostics)
 	}
 }
 
@@ -52,7 +65,11 @@ func TestLoadProjectContextFilesFallsThroughUnreadableCandidate(t *testing.T) {
 	if len(files) != 1 || files[0].Path != filepath.Join(cwd, "CLAUDE.md") {
 		t.Fatalf("files = %#v", files)
 	}
-	if len(diagnostics) != 1 || diagnostics[0].Path != filepath.Join(cwd, "AGENTS.md") || strings.HasPrefix(diagnostics[0].Message, "Warning:") {
+	wantDiagnostics := 1
+	if _, err := os.Stat(filepath.Join(cwd, "AGENTS.MD")); err == nil {
+		wantDiagnostics = 2
+	}
+	if len(diagnostics) != wantDiagnostics || diagnostics[0].Path != filepath.Join(cwd, "AGENTS.md") || strings.HasPrefix(diagnostics[0].Message, "Warning:") {
 		t.Fatalf("diagnostics = %#v", diagnostics)
 	}
 }

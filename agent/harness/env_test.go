@@ -127,7 +127,8 @@ func TestNodeExecutionEnvSymlinksCancellationAndTemps(t *testing.T) {
 		t.Fatalf("symlink FileInfo = %#v, %v", info, err)
 	}
 	canonical, err := env.CanonicalPath(ctx, "link.txt")
-	if err != nil || canonical != filepath.Join(root, "target.txt") {
+	canonicalRoot, rootErr := filepath.EvalSymlinks(root)
+	if err != nil || rootErr != nil || canonical != filepath.Join(canonicalRoot, "target.txt") {
 		t.Fatalf("CanonicalPath = %q, %v", canonical, err)
 	}
 	if _, err := env.ReadTextFile(ctx, "missing"); err == nil {

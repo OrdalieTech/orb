@@ -100,6 +100,7 @@ type InteractiveMode struct {
 	themeController      *theme.Controller
 	authContext          context.Context
 	authCancel           context.CancelFunc
+	keyDisplayOS         string
 	arminRandom          func() float64
 	arminScheduler       arminScheduler
 	exportHTML           func(string) (string, error)
@@ -336,9 +337,11 @@ func (mode *InteractiveMode) rebindHostSession(replacement *codingagent.SessionR
 	if replacement == nil {
 		return errors.New("session host returned a nil replacement runtime")
 	}
+	mode.mu.Lock()
 	mode.session = replacement
 	mode.cwd = replacement.Manager().GetCWD()
 	mode.options.SessionHeader = replacement.Manager().GetHeader()
+	mode.mu.Unlock()
 	mode.header.Clear()
 	mode.chat.Clear()
 	mode.pendingMessages.Clear()
@@ -1307,11 +1310,15 @@ func commandText(name, args string) string {
 }
 
 func (mode *InteractiveMode) handleHotkeysCommand() {
+	goos := mode.keyDisplayOS
+	if goos == "" {
+		goos = runtime.GOOS
+	}
 	display := func(binding string) string {
 		keys := mode.keybindings.Keys(binding)
 		formatted := make([]string, len(keys))
 		for index, key := range keys {
-			formatted[index] = formatKeyDisplayText(string(key))
+			formatted[index] = formatKeyDisplayTextForOS(string(key), goos)
 		}
 		return strings.Join(formatted, "/")
 	}
@@ -1395,10 +1402,10 @@ func (mode *InteractiveMode) handleChangelogCommand() {
 
 func markdownKey(value string) string { return "`" + value + "`" }
 
-func formatKeyDisplayText(key string) string {
+func formatKeyDisplayTextForOS(key, goos string) string {
 	parts := strings.Split(key, "/")
 	for index, binding := range parts {
-		modifiers := strings.Split(formatKeyText(binding), "+")
+		modifiers := strings.Split(formatKeyTextForOS(binding, goos), "+")
 		for modifier := range modifiers {
 			if modifiers[modifier] != "" {
 				modifiers[modifier] = strings.ToUpper(modifiers[modifier][:1]) + modifiers[modifier][1:]
@@ -2657,8 +2664,9 @@ func (mode *InteractiveMode) applyScopedModelSelection(models []ai.Model, select
 }
 
 func (mode *InteractiveMode) GitBranch() string {
+	_, cwd := mode.sessionSnapshot()
 	cmd := exec.Command("git", "--no-optional-locks", "rev-parse", "--abbrev-ref", "HEAD")
-	cmd.Dir = mode.cwd
+	cmd.Dir = cwd
 	out, err := cmd.Output()
 	if err != nil {
 		return ""
@@ -2673,8 +2681,12 @@ func (mode *InteractiveMode) GitBranch() string {
 }
 
 func (mode *InteractiveMode) AvailableProviderCount() int {
+	session, _ := mode.sessionSnapshot()
+	if session == nil {
+		return 0
+	}
 	seen := make(map[ai.ProviderID]struct{})
-	for _, model := range mode.session.AvailableModels() {
+	for _, model := range session.AvailableModels() {
 		seen[model.Provider] = struct{}{}
 	}
 	return len(seen)
@@ -2690,12 +2702,22 @@ func (mode *InteractiveMode) Statuses() map[string]string {
 	return result
 }
 
-func (mode *InteractiveMode) CurrentCWD() string { return mode.cwd }
+func (mode *InteractiveMode) sessionSnapshot() (*codingagent.SessionRuntime, string) {
+	mode.mu.Lock()
+	defer mode.mu.Unlock()
+	return mode.session, mode.cwd
+}
+
+func (mode *InteractiveMode) CurrentCWD() string {
+	_, cwd := mode.sessionSnapshot()
+	return cwd
+}
 func (mode *InteractiveMode) SessionName() string {
-	if mode.session == nil || mode.session.Manager() == nil {
+	session, _ := mode.sessionSnapshot()
+	if session == nil || session.Manager() == nil {
 		return ""
 	}
-	name := mode.session.Manager().GetSessionName()
+	name := session.Manager().GetSessionName()
 	if name == nil {
 		return ""
 	}
@@ -2706,11 +2728,11 @@ func (mode *InteractiveMode) updateTerminalTitle() {
 	if mode.ui == nil {
 		return
 	}
-	cwd := mode.cwd
+	session, cwd := mode.sessionSnapshot()
 	name := ""
-	if mode.session != nil && mode.session.Manager() != nil {
-		cwd = mode.session.Manager().GetCWD()
-		if sessionName := mode.session.Manager().GetSessionName(); sessionName != nil {
+	if session != nil && session.Manager() != nil {
+		cwd = session.Manager().GetCWD()
+		if sessionName := session.Manager().GetSessionName(); sessionName != nil {
 			name = *sessionName
 		}
 	}
@@ -2813,6 +2835,7 @@ func (mode *InteractiveMode) handleEvent(event any) {
 	case agent.MessageStartEvent:
 		if !isAssistantMessage(ev.Message) {
 			mode.renderAgentMessage(ev.Message)
+			mode.ui.RequestRender()
 			return
 		}
 		assistant := asAssistantMessage(ev.Message)

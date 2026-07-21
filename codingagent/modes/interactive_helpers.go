@@ -133,7 +133,11 @@ func KeyText(binding string) string {
 }
 
 func formatKeyText(key string) string {
-	if runtime.GOOS == "darwin" {
+	return formatKeyTextForOS(key, runtime.GOOS)
+}
+
+func formatKeyTextForOS(key, goos string) string {
+	if goos == "darwin" {
 		parts := strings.Split(key, "+")
 		for index, part := range parts {
 			if strings.EqualFold(part, "alt") {

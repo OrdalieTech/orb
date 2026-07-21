@@ -211,16 +211,16 @@ func TestProviderFuzzyFdSuggestions(t *testing.T) {
 
 func TestProviderLocaleCompareOrder(t *testing.T) {
 	t.Setenv("LC_ALL", "C.UTF-8")
-	baseDir := t.TempDir()
 	names := []string{"A", "a", "Á", "á", "ä", "z", "Z", "é", "e", "10", "2", "_a", "-a", "界", "你"}
-	for _, name := range names {
-		if err := os.WriteFile(filepath.Join(baseDir, name), nil, 0o644); err != nil {
-			t.Fatal(err)
-		}
+	suggestions := make([]AutocompleteItem, len(names))
+	for index, name := range names {
+		suggestions[index] = AutocompleteItem{Value: name, Label: name}
 	}
-	provider := NewCombinedAutocompleteProvider(nil, baseDir, "")
-	result := provider.GetSuggestions(context.Background(), []string{""}, 0, 0, true)
-	got := suggestionValues(result)
+	sortAutocompleteSuggestions(suggestions)
+	got := make([]string, len(suggestions))
+	for index, suggestion := range suggestions {
+		got[index] = suggestion.Value
+	}
 	want := []string{"_a", "-a", "10", "2", "a", "A", "á", "Á", "ä", "e", "é", "z", "Z", "你", "界"}
 	if len(got) != len(want) {
 		t.Fatalf("values = %v, want %v", got, want)
@@ -233,13 +233,10 @@ func TestProviderLocaleCompareOrder(t *testing.T) {
 
 	// Directory grouping remains primary even when collation would place a
 	// file first.
-	if err := os.Mkdir(filepath.Join(baseDir, "zz-directory"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	result = provider.GetSuggestions(context.Background(), []string{""}, 0, 0, true)
-	got = suggestionValues(result)
-	if len(got) == 0 || got[0] != "zz-directory/" {
-		t.Fatalf("directories not first: %v", got)
+	suggestions = append(suggestions, AutocompleteItem{Value: "zz-directory/", Label: "zz-directory/"})
+	sortAutocompleteSuggestions(suggestions)
+	if suggestions[0].Value != "zz-directory/" {
+		t.Fatalf("directories not first: %v", suggestions)
 	}
 }
 

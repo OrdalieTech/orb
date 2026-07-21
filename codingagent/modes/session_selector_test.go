@@ -55,6 +55,8 @@ type selectorLifetimeTrace struct {
 
 var selectorANSI = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
 
+const selectorDisplayRoot = "/tmp/pi-session-selector-fixdir"
+
 func loadSessionSelectorFixture(t *testing.T) sessionSelectorFixture {
 	t.Helper()
 	encoded, err := os.ReadFile(filepath.Join("..", "..", "conformance", "fixtures", "WP450-session-selector", "selector.json"))
@@ -74,7 +76,7 @@ func selectorSession(root, id, first, allText string, modified time.Time, name *
 		project = "other"
 	}
 	return session.SessionInfo{
-		Path: filepath.Join(root, id+".jsonl"), ID: id, CWD: filepath.Join(root, project), Name: name,
+		Path: filepath.Join(root, id+".jsonl"), ID: id, CWD: filepath.Join(selectorDisplayRoot, project), Name: name,
 		ParentSessionPath: parent, Created: modified.Add(-time.Hour), Modified: modified,
 		MessageCount: 2, FirstMessage: first, AllMessagesText: allText,
 	}
@@ -118,6 +120,7 @@ func normalizeSelectorFrame(lines []string, root string) []string {
 	for index, line := range lines {
 		line = selectorANSI.ReplaceAllString(line, "")
 		line = strings.ReplaceAll(line, root, "<fixture>")
+		line = strings.ReplaceAll(line, selectorDisplayRoot, "<fixture>")
 		result[index] = strings.TrimRight(line, " \t")
 	}
 	for len(result) > 0 && result[len(result)-1] == "" {
