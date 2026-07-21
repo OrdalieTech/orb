@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,12 +21,11 @@ import (
 // and optional response headers.
 func newSendServer(t *testing.T, graph *fakeGraph, respond func(seq int) (int, string, http.Header)) *httptest.Server {
 	t.Helper()
-	seq := 0
+	var seq atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		graph.record(capturedRequest{Method: r.Method, Path: r.URL.Path, Body: body, Header: r.Header.Clone()})
-		seq++
-		status, response, headers := respond(seq)
+		status, response, headers := respond(int(seq.Add(1)))
 		for key, values := range headers {
 			for _, value := range values {
 				w.Header().Add(key, value)
