@@ -176,6 +176,37 @@ func TestStreamSimpleOpenAIResponsesClampsContextAndReasoning(t *testing.T) {
 	}
 }
 
+func TestBeforeProviderHeadersPrecedesSessionAffinity(t *testing.T) {
+	var sent http.Header
+	previousClient := openAIHTTPClient
+	openAIHTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		sent = request.Header.Clone()
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(
+			"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"r\",\"status\":\"completed\",\"output\":[]}}\n\ndata: [DONE]\n\n",
+		)), Request: request}, nil
+	})}
+	defer func() { openAIHTTPClient = previousClient }()
+	model, key, sessionID := responsesTestModel(), "key", "session"
+	seenAffinity := false
+	stream, err := StreamSimple(context.Background(), model, ai.Context{}, &ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{
+		APIKey: &key, SessionID: &sessionID, TransformHeaders: func(_ context.Context, headers ai.ProviderHeaders, _ *ai.Model) (ai.ProviderHeaders, error) {
+			for name := range headers {
+				seenAffinity = seenAffinity || strings.EqualFold(name, "session_id") || strings.EqualFold(name, "x-client-request-id")
+			}
+			return headers, nil
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ai.Collect(stream); err != nil {
+		t.Fatal(err)
+	}
+	if seenAffinity || sent.Get("session_id") != sessionID || sent.Get("x-client-request-id") != sessionID {
+		t.Fatalf("hook saw affinity=%t, sent=%v", seenAffinity, sent)
+	}
+}
+
 func TestOpenAIResponsesValidatesAuthBeforePayloadHook(t *testing.T) {
 	model := responsesTestModel()
 	model.Provider = "fixture-provider"

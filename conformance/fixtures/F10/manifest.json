@@ -4,6 +4,7 @@
   "generator": "conformance/extract/f10-compaction.ts",
   "source": "packages/agent/src/harness/compaction/compaction.ts",
   "additionalSources": [
+    "packages/coding-agent/src/core/compaction/compaction.ts",
     "packages/agent/src/harness/compaction/branch-summarization.ts",
     "packages/agent/src/harness/messages.ts",
     "packages/agent/src/harness/compaction/utils.ts"

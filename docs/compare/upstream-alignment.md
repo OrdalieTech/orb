@@ -13,11 +13,11 @@ candidate against `docs/DECISIONS.md`, then regenerate the
 
 ## Current verdict
 
-The 2026-07-20 full audit, refreshed for the release closure descending from `fbcabf9` on
-2026-07-21, has **zero open should-fix findings**. Mechanical coverage remains 436/436 upstream
-source files. The final delta makes session publication race-safe, restores immediate custom-message
-and collapsible skill-invocation rendering from upstream, removes a quadratic Go-only ID-index copy,
-and consolidates identical locale and branch code without changing wire or runtime behavior.
+The 2026-07-21 release-worktree audit has **zero open should-fix findings** and retains 436/436
+upstream source mappings. Its final context-lifecycle pass found and closed four gaps: next-turn
+prompt/tool/model/thinking refresh, custom/branch compaction weight, unified model/thinking mutation
+effects, and provider-header hook ordering. Each is covered by an upstream-derived regression or
+fixture; `make check` and `make fixtures-check` are green.
 
 D29 keeps reusable harness primitives while dissolving the parallel `AgentHarness` facade into
 `codingagent.AgentSession`; application-specific stream proxying remains available through

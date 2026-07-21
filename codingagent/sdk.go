@@ -500,6 +500,13 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		agent.WithSteeringMode(agent.QueueMode(settings.GetSteeringMode())),
 		agent.WithFollowUpMode(agent.QueueMode(settings.GetFollowUpMode())),
 	}
+	var a *agent.Agent
+	agentOpts = append(agentOpts, agent.WithPrepareNextTurnContext(func(_ context.Context, turn agent.PrepareNextTurnContext) (*agent.AgentLoopTurnUpdate, error) {
+		state := a.State()
+		next := *turn.Context
+		next.SystemPrompt, next.Tools = state.SystemPrompt, state.Tools
+		return &agent.AgentLoopTurnUpdate{Context: &next, Model: state.Model, ThinkingLevel: &state.ThinkingLevel}, nil
+	}))
 	providerRetry := settings.GetProviderRetrySettings()
 	maxRetryDelay := providerRetry.MaxRetryDelayMS
 	transport := settings.GetTransport()
@@ -521,7 +528,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	if getModelHeaders != nil {
 		agentOpts = append(agentOpts, agent.WithModelHeadersResolver(getModelHeaders))
 	}
-	a := agent.NewAgent(agentOpts...)
+	a = agent.NewAgent(agentOpts...)
 
 	if hasExisting {
 		messages := make(agent.AgentMessages, 0, len(existing.Messages))

@@ -91,11 +91,13 @@ function capturedRequest(context: any, options: any, hasSignal = false) {
 
 export async function generateF10(upstreamRoot: string, outputRoot: string, upstreamCommit: string): Promise<void> {
   const compactionSource = "packages/agent/src/harness/compaction/compaction.ts";
+  const codingCompactionSource = "packages/coding-agent/src/core/compaction/compaction.ts";
   const branchSource = "packages/agent/src/harness/compaction/branch-summarization.ts";
   const messagesSource = "packages/agent/src/harness/messages.ts";
   const utilsSource = "packages/agent/src/harness/compaction/utils.ts";
-  const { compaction, branch, messages, utils } = await withUpstreamModelData(upstreamRoot, async () => ({
+  const { compaction, codingCompaction, branch, messages, utils } = await withUpstreamModelData(upstreamRoot, async () => ({
     compaction: await import(pathToFileURL(path.join(upstreamRoot, compactionSource)).href) as any,
+    codingCompaction: await import(pathToFileURL(path.join(upstreamRoot, codingCompactionSource)).href) as any,
     branch: await import(pathToFileURL(path.join(upstreamRoot, branchSource)).href) as any,
     messages: await import(pathToFileURL(path.join(upstreamRoot, messagesSource)).href) as any,
     utils: await import(pathToFileURL(path.join(upstreamRoot, utilsSource)).href) as any,
@@ -175,6 +177,18 @@ export async function generateF10(upstreamRoot: string, outputRoot: string, upst
     messageEntry("split-tool", "split-a1", toolResult("tool ".repeat(80), 12), 12),
     messageEntry("split-a2", "split-tool", assistant([{ type: "text", text: "recent ".repeat(80) }], 13), 13),
   ];
+  const customEntries = [
+    messageEntry("custom-u", null, user("hi", 14), 14),
+    messageEntry("custom-a1", "custom-u", assistant([{ type: "text", text: "hello" }], 15), 15),
+    { type: "custom_message", id: "custom", parentId: "custom-a1", timestamp: iso(16), customType: "fixture", content: "x".repeat(4000), display: true },
+    messageEntry("custom-a2", "custom", assistant([{ type: "text", text: "ok" }], 17), 17),
+  ];
+  const branchSummaryEntries = [
+    messageEntry("branch-cut-u", null, user("hi", 14), 14),
+    messageEntry("branch-cut-a1", "branch-cut-u", assistant([{ type: "text", text: "hello" }], 15), 15),
+    { type: "branch_summary", id: "branch-cut", parentId: "branch-cut-a1", timestamp: iso(16), fromId: "old", summary: "x".repeat(4000) },
+    messageEntry("branch-cut-a2", "branch-cut", assistant([{ type: "text", text: "ok" }], 17), 17),
+  ];
   const longEntries: any[] = [];
   let parentId: string | null = null;
   for (let turn = 0; turn < 30; turn++) {
@@ -187,12 +201,14 @@ export async function generateF10(upstreamRoot: string, outputRoot: string, upst
   const cutInputs = [
     { name: "whole-turn-boundary-with-metadata", entries: boundaryEntries, startIndex: 0, endIndex: boundaryEntries.length, keepRecentTokens: 75 },
     { name: "split-large-turn", entries: splitEntries, startIndex: 0, endIndex: splitEntries.length, keepRecentTokens: 130 },
+    { name: "custom-message-weight", entries: customEntries, startIndex: 0, endIndex: customEntries.length, keepRecentTokens: 2 },
+    { name: "branch-summary-weight", entries: branchSummaryEntries, startIndex: 0, endIndex: branchSummaryEntries.length, keepRecentTokens: 2 },
     { name: "no-valid-message-cut-point", entries: [{ type: "label", id: "label", parentId: null, timestamp: iso(1), targetId: "missing", label: "x" }], startIndex: 0, endIndex: 1, keepRecentTokens: 20 },
     { name: "long-faux-session", entries: longEntries, startIndex: 0, endIndex: longEntries.length, keepRecentTokens: 620 },
   ];
   const cutCases = cutInputs.map((fixtureCase) => ({
     ...fixtureCase,
-    expected: compaction.findCutPoint(fixtureCase.entries, fixtureCase.startIndex, fixtureCase.endIndex, fixtureCase.keepRecentTokens),
+    expected: codingCompaction.findCutPoint(fixtureCase.entries, fixtureCase.startIndex, fixtureCase.endIndex, fixtureCase.keepRecentTokens),
   }));
 
   const prepareInputs = [
@@ -361,7 +377,7 @@ export async function generateF10(upstreamRoot: string, outputRoot: string, upst
     upstreamCommit,
     generator: "conformance/extract/f10-compaction.ts",
     source: compactionSource,
-    additionalSources: [branchSource, messagesSource, utilsSource],
+    additionalSources: [codingCompactionSource, branchSource, messagesSource, utilsSource],
     files: ["cases.json"],
   };
   await writeFile(path.join(familyDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);

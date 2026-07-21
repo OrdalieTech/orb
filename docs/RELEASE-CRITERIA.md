@@ -82,7 +82,8 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
       checksum-tool paths. A real macOS VM remains owner-blocked.)
 - [x] Cold start < 50 ms; every bridged release binary ≤ 55 MB decimal; numbers recorded in release
       notes. (Owner-amended 2026-07-20 without changing D17. The Go 1.26.5 candidate measures
-      42.1 ± 0.9 ms on one CPU; the largest current artifact is darwin/amd64 at 52,240,976 B.)
+      42.1 ± 0.9 ms on one CPU; the final candidate's largest artifact is darwin/amd64 at
+      52,236,720 B.)
 - [ ] Nightly live suite ≥ 90% pass over the trailing 72 hours. (Owner-blocked: CI secrets and
       authorized hosted runs.)
 - [ ] Docs newcomer path (install → first session → embed SDK → run an upstream extension) verified

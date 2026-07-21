@@ -975,114 +975,15 @@ func (runtime *SessionRuntime) setExtensionModel(ctx context.Context, model *ai.
 	if state == nil || state.runner.ModelRegistry() == nil || !state.runner.ModelRegistry().HasConfiguredAuth(string(model.Provider), nil) {
 		return false, nil
 	}
-	previous := runtime.agent.State().Model
-	thinkingLevel := runtime.agent.State().ThinkingLevel
-	if previous == nil || !previous.Reasoning {
-		thinkingLevel = runtime.settings.GetDefaultThinkingLevel()
-		if thinkingLevel == "" {
-			thinkingLevel = ai.ModelThinkingMedium
-		}
-	}
-	runtime.agent.SetModel(model)
-	if _, err := runtime.manager.AppendModelChange(string(model.Provider), model.ID); err != nil {
-		return false, err
-	}
-	if err := runtime.setExtensionThinkingLevel(thinkingLevel); err != nil {
-		return false, err
-	}
-	if state.runner.HasHandlers(extensions.EventModelSelect) && !sameModel(previous, model) {
-		state.runner.Emit(ctx, extensions.ModelSelectEvent{Model: model, PreviousModel: previous, Source: extensions.ModelSelectSet})
-	}
-	return true, nil
+	return true, runtime.setModel(ctx, *model, nil, false, extensions.ModelSelectSet)
 }
 
 func (runtime *SessionRuntime) setExtensionThinkingLevel(level agent.ThinkingLevel) error {
-	previous := runtime.agent.State().ThinkingLevel
-	effective := clampExtensionThinkingLevel(runtime.agent.State().Model, level)
-	runtime.agent.SetThinkingLevel(effective)
-	if effective == previous {
-		return nil
-	}
-	if _, err := runtime.manager.AppendThinkingLevelChange(string(effective)); err != nil {
-		return err
-	}
-	runtime.emit(ThinkingLevelChangedEvent{Level: effective})
-	state := runtime.extensionState
-	if state != nil && state.runner.HasHandlers(extensions.EventThinkingLevelSelect) {
-		state.runner.Emit(context.Background(), extensions.ThinkingLevelSelectEvent{Level: effective, PreviousLevel: previous})
-	}
-	return nil
+	return runtime.SetThinkingLevel(level)
 }
 
 func sameModel(left, right *ai.Model) bool {
 	return left != nil && right != nil && left.Provider == right.Provider && left.ID == right.ID
-}
-
-func clampExtensionThinkingLevel(model *ai.Model, level agent.ThinkingLevel) agent.ThinkingLevel {
-	levels := []agent.ThinkingLevel{
-		agent.ThinkingOff, agent.ThinkingMinimal, agent.ThinkingLow, agent.ThinkingMedium,
-		agent.ThinkingHigh, agent.ThinkingXHigh, agent.ThinkingMax,
-	}
-	available := levels[:5]
-	if model == nil {
-		for _, candidate := range available {
-			if candidate == level {
-				return level
-			}
-		}
-		return agent.ThinkingOff
-	}
-	if !model.Reasoning {
-		return agent.ThinkingOff
-	}
-	available = make([]agent.ThinkingLevel, 0, len(levels))
-	for _, candidate := range levels {
-		var mapped *string
-		present := false
-		if model.ThinkingLevelMap != nil {
-			mapped, present = (*model.ThinkingLevelMap)[ai.ModelThinkingLevel(candidate)]
-			if present && mapped == nil {
-				continue
-			}
-		}
-		if (candidate == agent.ThinkingXHigh || candidate == agent.ThinkingMax) && !present {
-			continue
-		}
-		available = append(available, candidate)
-	}
-	for _, supported := range available {
-		if supported == level {
-			return level
-		}
-	}
-	if len(available) == 0 {
-		return agent.ThinkingOff
-	}
-	requested := -1
-	for index, candidate := range levels {
-		if candidate == level {
-			requested = index
-			break
-		}
-	}
-	if requested < 0 {
-		return available[0]
-	}
-	for index := requested; index < len(levels); index++ {
-		for _, supported := range available {
-			if supported == levels[index] {
-				return supported
-			}
-		}
-	}
-	for index := requested - 1; index >= 0; index-- {
-		for _, supported := range available {
-			if supported == levels[index] {
-				return supported
-			}
-		}
-	}
-	return agent.ThinkingOff
 }
 
 func (runtime *SessionRuntime) extensionSystemPromptOptions() extensions.SystemPromptOptions {

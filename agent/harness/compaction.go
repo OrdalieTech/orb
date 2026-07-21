@@ -217,18 +217,22 @@ func EstimateTokens(message agent.AgentMessage) int64 {
 
 func FindTurnStartIndex(entries []SessionEntry, entryIndex, startIndex int) int {
 	for index := entryIndex; index >= startIndex; index-- {
-		entry := entries[index]
-		if entry.Type == "branch_summary" || entry.Type == "custom_message" {
+		if isTurnStartEntry(entries[index]) {
 			return index
-		}
-		if entry.Type == "message" {
-			role := messageRole(entry.Message)
-			if role == "user" || role == "bashExecution" {
-				return index
-			}
 		}
 	}
 	return -1
+}
+
+func isTurnStartEntry(entry SessionEntry) bool {
+	if entry.Type == "compaction" {
+		return false
+	}
+	switch messageRole(entryMessage(entry, false)) {
+	case "user", "bashExecution", "custom", "branchSummary", "compactionSummary":
+		return true
+	}
+	return false
 }
 
 func FindCutPoint(entries []SessionEntry, startIndex, endIndex int, keepRecentTokens int64) CutPointResult {
@@ -239,11 +243,11 @@ func FindCutPoint(entries []SessionEntry, startIndex, endIndex int, keepRecentTo
 	var accumulated int64
 	cutIndex := cutPoints[0]
 	for index := endIndex - 1; index >= startIndex; index-- {
-		entry := entries[index]
-		if entry.Type != "message" {
+		message := entryMessage(entries[index], false)
+		if message == nil {
 			continue
 		}
-		accumulated += EstimateTokens(entry.Message)
+		accumulated += EstimateTokens(message)
 		if accumulated >= keepRecentTokens {
 			for _, candidate := range cutPoints {
 				if candidate >= index {
@@ -256,20 +260,20 @@ func FindCutPoint(entries []SessionEntry, startIndex, endIndex int, keepRecentTo
 	}
 	for cutIndex > startIndex {
 		previous := entries[cutIndex-1]
-		if previous.Type == "compaction" || previous.Type == "message" {
+		if previous.Type == "compaction" || entryMessage(previous, false) != nil {
 			break
 		}
 		cutIndex--
 	}
-	isUser := entries[cutIndex].Type == "message" && messageRole(entries[cutIndex].Message) == "user"
+	startsTurn := isTurnStartEntry(entries[cutIndex])
 	turnStart := -1
-	if !isUser {
+	if !startsTurn {
 		turnStart = FindTurnStartIndex(entries, cutIndex, startIndex)
 	}
 	return CutPointResult{
 		FirstKeptEntryIndex: cutIndex,
 		TurnStartIndex:      turnStart,
-		IsSplitTurn:         !isUser && turnStart != -1,
+		IsSplitTurn:         !startsTurn && turnStart != -1,
 	}
 }
 

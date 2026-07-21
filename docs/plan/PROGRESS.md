@@ -181,10 +181,13 @@ docs/trim/M5.md §Release remainder).
 - [x] Re-run current alignment: the 2026-07-21 release-closure refresh descending from `fbcabf9`
       keeps 436/436 upstream files mapped and zero open should-fix findings; it also closes the
       previously unwired skill-invocation renderer, with no new MIRROR row needed.
+- [x] Close the final context-lifecycle audit: next-turn state refresh, custom/branch compaction
+      weight, unified model/thinking mutation effects, and provider-header hook ordering now match
+      upstream with focused regressions; production code is 69 raw lines smaller.
 - [x] Publish `docs/compare/sprint-4.md` with the final deterministic TS/Go comparison and every
       release-platform difference fixed or ledgered.
 - [x] Re-run the candidate trim: 111,431 / 99,172 = 1.124x mirror LOC, 19 reviewed clone groups,
-      clean module audit, 52,240,976 B largest bridged artifact across four targets, and 42.1 ± 0.9
+      clean module audit, 52,236,720 B largest bridged artifact across four targets, and 42.1 ± 0.9
       ms no-prompt cold start on one CPU. The owner-set size and 50 ms mean caps are green.
 - [x] Resolve the two binding-rule conflicts (owner, 2026-07-20): retain D17 and set the bridged
       artifact cap to 55 MB decimal; clarify D7 so shipped builds remain static `CGO_ENABLED=0`
