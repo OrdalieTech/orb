@@ -186,6 +186,7 @@ done
 	t.Cleanup(func() { _ = client.Stop() })
 
 	listenerDone := make(chan error, 1)
+	var listenerErr error
 	order := make([]string, 0, 2)
 	var orderMu sync.Mutex
 	client.OnEvent(func(event RPCEvent) {
@@ -201,13 +202,14 @@ done
 		orderMu.Lock()
 		order = append(order, "first")
 		orderMu.Unlock()
-		listenerDone <- err
+		listenerErr = err
 	})
 	client.OnEvent(func(event RPCEvent) {
 		if event.Type == "queue_update" {
 			orderMu.Lock()
 			order = append(order, "second")
 			orderMu.Unlock()
+			listenerDone <- listenerErr
 		}
 	})
 	promptCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
