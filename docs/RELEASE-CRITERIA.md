@@ -81,9 +81,8 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
       exercised as an unprivileged user in a network-disabled clean Linux container with both
       checksum-tool paths. A real macOS VM remains owner-blocked.)
 - [x] Cold start < 50 ms; every bridged release binary ≤ 55 MB decimal; numbers recorded in release
-      notes. (Owner-amended 2026-07-20 without changing D17. The candidate measures 47.4 ± 7.4 ms
-      unpinned and 40.9 ± 0.9 ms on one isolated CPU after the final resource-loader trim;
-      the largest current artifact is darwin/amd64 at 52,187,712 B.)
+      notes. (Owner-amended 2026-07-20 without changing D17. The Go 1.26.5 candidate measures
+      42.1 ± 0.9 ms on one CPU; the largest current artifact is darwin/amd64 at 52,240,976 B.)
 - [ ] Nightly live suite ≥ 90% pass over the trailing 72 hours. (Owner-blocked: CI secrets and
       authorized hosted runs.)
 - [ ] Docs newcomer path (install → first session → embed SDK → run an upstream extension) verified
