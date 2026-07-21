@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/OrdalieTech/pi-go/agent"
@@ -554,40 +555,37 @@ func TestLocalBashOperationsTracksDetachedProcessUntilItSettles(t *testing.T) {
 	}
 }
 
-func TestLocalBashOperationsCapturesActiveInheritedStdioPastGrace(t *testing.T) {
-	dir := t.TempDir()
-	var output strings.Builder
-	var outputMu sync.Mutex
-	startedAt := time.Now()
-	result, err := NewLocalBashOperations().Exec(
-		context.Background(),
-		`(for value in {1..30}; do printf 'chunk-%s\n' "$value"; sleep 0.01; done) &`,
-		dir,
-		BashExecOptions{
-			Env: mustShellEnv(t),
-			OnData: func(data []byte) {
-				outputMu.Lock()
-				output.Write(data)
-				outputMu.Unlock()
-			},
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.ExitCode == nil || *result.ExitCode != 0 {
-		t.Fatalf("result = %+v", result)
-	}
-	elapsed := time.Since(startedAt)
-	outputMu.Lock()
-	text := output.String()
-	outputMu.Unlock()
-	if !strings.Contains(text, "chunk-1\n") || !strings.Contains(text, "chunk-30\n") {
-		t.Fatalf("active inherited output = %q", text)
-	}
-	if elapsed < 200*time.Millisecond {
-		t.Fatalf("operation returned after %s before active descendant output settled", elapsed)
-	}
+func TestWaitForProcessPipesRearmsActiveGrace(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		stdout, err := os.Open(os.DevNull)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stderr, err := os.Open(os.DevNull)
+		if err != nil {
+			t.Fatal(err)
+		}
+		activity := make(chan struct{})
+		readerDone := make(chan struct{})
+		done := make(chan struct{})
+		go func() {
+			waitForProcessPipes(stdout, stderr, activity, readerDone, &processPipeCallbackState{})
+			close(done)
+		}()
+		synctest.Wait()
+		for range 3 {
+			time.Sleep(exitStdioGrace - time.Nanosecond)
+			activity <- struct{}{}
+		}
+		readerDone <- struct{}{}
+		readerDone <- struct{}{}
+		synctest.Wait()
+		select {
+		case <-done:
+		default:
+			t.Fatal("pipe wait did not finish")
+		}
+	})
 }
 
 func TestLocalBashOperationsReleasesQuietInheritedStdioAfterGrace(t *testing.T) {
