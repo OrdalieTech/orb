@@ -177,7 +177,11 @@ func TestF12HiddenCommandBehaviorMatchesUpstream(t *testing.T) {
 
 	t.Run("debug", func(t *testing.T) {
 		initF12RawTheme(t)
-		agentDir, err := os.MkdirTemp("", "pi-f12-debug-")
+		tempRoot := os.TempDir()
+		if runtime.GOOS == "darwin" {
+			tempRoot = "/tmp"
+		}
+		agentDir, err := os.MkdirTemp(tempRoot, "pi-f12-debug-")
 		if err != nil {
 			t.Fatal(err)
 		}

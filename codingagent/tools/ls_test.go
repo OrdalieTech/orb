@@ -40,8 +40,8 @@ func TestLsToolListsDotfilesAndDirectoriesInOrder(t *testing.T) {
 }
 
 func TestLsToolDecodesInvalidFilenameBytesLikeNode(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows filenames cannot contain arbitrary byte sequences")
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+		t.Skip("this filesystem cannot create invalid UTF-8 filenames")
 	}
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "good"), nil, 0o600); err != nil {

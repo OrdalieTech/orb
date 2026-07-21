@@ -588,6 +588,11 @@ func (provider *CombinedAutocompleteProvider) getFileSuggestions(prefix string) 
 		suggestions = append(suggestions, AutocompleteItem{Value: value, Label: label})
 	}
 
+	sortAutocompleteSuggestions(suggestions)
+	return suggestions
+}
+
+func sortAutocompleteSuggestions(suggestions []AutocompleteItem) {
 	collator := collate.New(autocompleteCollationLanguage())
 	sort.SliceStable(suggestions, func(a, b int) bool {
 		aIsDir := strings.HasSuffix(suggestions[a].Value, "/")
@@ -597,7 +602,6 @@ func (provider *CombinedAutocompleteProvider) getFileSuggestions(prefix string) 
 		}
 		return collator.CompareString(suggestions[a].Label, suggestions[b].Label) < 0
 	})
-	return suggestions
 }
 
 // scoreEntry ranks an entry against the query (higher is better); folders
