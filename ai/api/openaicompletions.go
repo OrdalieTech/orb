@@ -104,6 +104,18 @@ func StreamSimpleOpenAICompletions(
 	})
 }
 
+// completionsStreamFailure augments the shared failure formatting with
+// OpenRouter's error.metadata.raw, which upstream appends to the completions
+// error message when it is not already present (OA-m1).
+func completionsStreamFailure(ctx context.Context, output *ai.AssistantMessage, err error) ai.ErrorEvent {
+	event := streamFailure(ctx, output, err, "")
+	if raw := openRouterErrorMetadataRaw(err); raw != "" && output.ErrorMessage != nil && !strings.Contains(*output.ErrorMessage, raw) {
+		message := *output.ErrorMessage + "\n" + raw
+		output.ErrorMessage = &message
+	}
+	return event
+}
+
 // StreamOpenAICompletionsWithOptions exposes Chat Completions-specific tool
 // choice and reasoning-effort controls.
 func StreamOpenAICompletionsWithOptions(
@@ -122,23 +134,23 @@ func StreamOpenAICompletionsWithOptions(
 	stream := func(yield func(ai.AssistantMessageEvent, error) bool) {
 		output := newAssistantMessage(model)
 		if _, err := resolveOpenAIAPIKey(model, &options.StreamOptions); err != nil {
-			yield(streamFailure(ctx, output, err, ""), nil)
+			yield(completionsStreamFailure(ctx, output, err), nil)
 			return
 		}
 		compat, err := resolveOpenAICompletionsCompat(model)
 		if err != nil {
-			yield(streamFailure(ctx, output, err, ""), nil)
+			yield(completionsStreamFailure(ctx, output, err), nil)
 			return
 		}
 		retention := resolveCacheRetention(&options.StreamOptions)
 		payload, err := buildOpenAICompletionsPayload(model, requestContext, options, compat, retention)
 		if err != nil {
-			yield(streamFailure(ctx, output, err, ""), nil)
+			yield(completionsStreamFailure(ctx, output, err), nil)
 			return
 		}
 		payloadValue, err := applyPayloadHook(ctx, model, &options.StreamOptions, payload)
 		if err != nil {
-			yield(streamFailure(ctx, output, err, ""), nil)
+			yield(completionsStreamFailure(ctx, output, err), nil)
 			return
 		}
 		payloadValue = openAICompletionsWireValue(payloadValue, compat.chatTemplateKwargOrder)
@@ -146,7 +158,7 @@ func StreamOpenAICompletionsWithOptions(
 		headers := buildOpenAICompletionsHeaders(model, requestContext, &options.StreamOptions, compat, retention)
 		headers, err = applyHeadersHook(ctx, model, &options.StreamOptions, headers)
 		if err != nil {
-			yield(streamFailure(ctx, output, err, ""), nil)
+			yield(completionsStreamFailure(ctx, output, err), nil)
 			return
 		}
 		response, err := postOpenAIStream(
@@ -158,7 +170,7 @@ func StreamOpenAICompletionsWithOptions(
 			headers,
 		)
 		if err != nil {
-			yield(streamFailure(ctx, output, err, ""), nil)
+			yield(completionsStreamFailure(ctx, output, err), nil)
 			return
 		}
 		defer func() { _ = response.Body.Close() }()
@@ -180,7 +192,7 @@ func StreamOpenAICompletionsWithOptions(
 		}
 		if err != nil {
 			state.clearScratch()
-			yield(streamFailure(ctx, output, err, ""), nil)
+			yield(completionsStreamFailure(ctx, output, err), nil)
 			return
 		}
 
@@ -193,7 +205,7 @@ func StreamOpenAICompletionsWithOptions(
 			return
 		}
 		if ctx.Err() != nil {
-			yield(streamFailure(ctx, output, errors.New("Request was aborted"), ""), nil) //nolint:staticcheck // Exact upstream error text is observable.
+			yield(completionsStreamFailure(ctx, output, errors.New("Request was aborted")), nil) //nolint:staticcheck // Exact upstream error text is observable.
 			return
 		}
 		if output.StopReason == ai.StopReasonError {
@@ -201,11 +213,11 @@ func StreamOpenAICompletionsWithOptions(
 			if output.ErrorMessage != nil {
 				message = *output.ErrorMessage
 			}
-			yield(streamFailure(ctx, output, errors.New(message), ""), nil)
+			yield(completionsStreamFailure(ctx, output, errors.New(message)), nil)
 			return
 		}
 		if !state.hasFinishReason {
-			yield(streamFailure(ctx, output, errors.New("Stream ended without finish_reason"), ""), nil) //nolint:staticcheck // Exact upstream error text is observable.
+			yield(completionsStreamFailure(ctx, output, errors.New("Stream ended without finish_reason")), nil) //nolint:staticcheck // Exact upstream error text is observable.
 			return
 		}
 		yield(ai.DoneEvent{Reason: output.StopReason, Message: output}, nil)
@@ -1130,9 +1142,10 @@ func applyOpenAICompletionsCacheControl(messages []any, tools []any, cacheContro
 		if !ok || (message["role"] != "system" && message["role"] != "developer") {
 			continue
 		}
-		if addOpenAICompletionsCacheControlToText(message, cacheControl) {
-			break
-		}
+		// Upstream returns after the first system/developer message whether or
+		// not the cache anchor could be attached (OA-m4).
+		addOpenAICompletionsCacheControlToText(message, cacheControl)
+		break
 	}
 	if len(tools) > 0 {
 		if tool, ok := tools[len(tools)-1].(map[string]any); ok {

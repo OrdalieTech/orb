@@ -52,8 +52,9 @@ func TestInteractiveAuthMutatesCredentialsWithoutReloadingSession(t *testing.T) 
 		options: InteractiveModeOptions{Host: host},
 	}
 
-	mode.runAuthentication("groq", aiauth.AuthTypeAPIKey, false)
-	mode.runAuthentication("groq", aiauth.AuthTypeAPIKey, true)
+	groq := InteractiveAuthProvider{ID: "groq", Name: "Groq", AuthType: aiauth.AuthTypeAPIKey, LoginAvailable: true}
+	mode.runLogin(groq)
+	mode.runLogout(groq)
 
 	if host.loginCalls != 1 || host.logoutCalls != 1 {
 		t.Fatalf("login calls=%d logout calls=%d", host.loginCalls, host.logoutCalls)
@@ -75,7 +76,7 @@ func TestInteractiveAuthStopsWithModeContext(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		mode.runAuthentication("blocking", aiauth.AuthTypeAPIKey, false)
+		mode.runLogin(InteractiveAuthProvider{ID: "blocking", Name: "Blocking", AuthType: aiauth.AuthTypeAPIKey, LoginAvailable: true})
 		close(done)
 	}()
 	select {

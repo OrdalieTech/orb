@@ -12,16 +12,31 @@ import (
 )
 
 func TestAgentCoalescesMissingInitialModelToUnknownSentinel(t *testing.T) {
-	created := NewAgent(WithInitialState(AgentState{}))
+	created := NewAgent(nil, WithInitialState(AgentState{}))
 	model := created.State().Model
 	if model == nil || model.Provider != "unknown" || model.ID != "unknown" || model.API != "unknown" {
 		t.Fatalf("default model = %#v", model)
 	}
 }
 
+func TestV081AgentRequiresStreamFunctionAtConstruction(t *testing.T) {
+	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{loopAssistant(ai.StopReasonStop)}}
+	created := NewAgent(responses.stream, WithInitialState(AgentState{Model: loopModel()}))
+	if created.StreamFn() == nil {
+		t.Fatal("constructor stream function was not retained")
+	}
+	if err := created.Prompt(context.Background(), "hello"); err != nil {
+		t.Fatal(err)
+	}
+	state := created.State()
+	if state.ErrorMessage != nil {
+		t.Fatalf("error message = %q", *state.ErrorMessage)
+	}
+}
+
 func TestAgentStatePreservesRawCustomMessageType(t *testing.T) {
 	original := json.RawMessage(`{"role":"custom","content":"original"}`)
-	created := NewAgent(WithInitialState(AgentState{Model: loopModel(), Messages: AgentMessages{original}}))
+	created := NewAgent(nil, WithInitialState(AgentState{Model: loopModel(), Messages: AgentMessages{original}}))
 	original[0] = 'x'
 	state := created.State()
 	preserved, ok := state.Messages[0].(json.RawMessage)
@@ -38,8 +53,7 @@ func TestAgentStatePreservesRawCustomMessageType(t *testing.T) {
 func TestAgentAwaitsOrderedSubscribersBeforeIdle(t *testing.T) {
 	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{loopAssistant(ai.StopReasonStop, &ai.TextContent{Text: "done"})}}
 	agent := NewAgent(
-		WithInitialState(AgentState{Model: loopModel()}),
-		WithStreamFn(responses.stream),
+		responses.stream, WithInitialState(AgentState{Model: loopModel()}),
 		WithClock(func() int64 { return 77 }),
 	)
 	entered := make(chan struct{})
@@ -98,10 +112,9 @@ func TestAgentAwaitsOrderedSubscribersBeforeIdle(t *testing.T) {
 
 func TestAgentConvertsThrownRunFailureToLifecycle(t *testing.T) {
 	agent := NewAgent(
-		WithInitialState(AgentState{Model: loopModel()}),
-		WithStreamFn(func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+		func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
 			return nil, errors.New("provider exploded")
-		}),
+		}, WithInitialState(AgentState{Model: loopModel()}),
 		WithClock(func() int64 { return 88 }),
 	)
 	var eventTypes []AgentEventType
@@ -140,8 +153,7 @@ func TestAgentContinueDrainsAssistantTailSteeringOneAtATime(t *testing.T) {
 		loopAssistant(ai.StopReasonStop, &ai.TextContent{Text: "second response"}),
 	}}
 	agent := NewAgent(
-		WithInitialState(AgentState{Model: loopModel(), Messages: AgentMessages{initial}}),
-		WithStreamFn(responses.stream),
+		responses.stream, WithInitialState(AgentState{Model: loopModel(), Messages: AgentMessages{initial}}),
 	)
 	agent.Steer(loopUser("first steering"))
 	agent.Steer(loopUser("second steering"))
@@ -182,7 +194,7 @@ func TestAgentStateReturnsIndependentCollections(t *testing.T) {
 		&ai.UnknownContentBlock{Raw: json.RawMessage(`{"type":"future","value":"original"}`)},
 	)
 	customOriginal := &customMessage{Role: "custom", Meta: customMeta{"labels": customLabels{"original"}}}
-	agent := NewAgent(WithInitialState(AgentState{
+	agent := NewAgent(nil, WithInitialState(AgentState{
 		Model: &ai.Model{
 			ID: "model", ThinkingLevelMap: &levelMap,
 			Cost: ai.ModelCost{Tiers: &tiers},
@@ -252,7 +264,7 @@ func TestAgentStreamingStateOwnsProviderSnapshot(t *testing.T) {
 			yield(ai.DoneEvent{Reason: ai.StopReasonStop, Message: loopAssistant(ai.StopReasonStop, &ai.TextContent{Text: "done"})}, nil)
 		}, nil
 	}
-	agent := NewAgent(WithInitialState(AgentState{Model: loopModel()}), WithStreamFn(stream))
+	agent := NewAgent(stream, WithInitialState(AgentState{Model: loopModel()}))
 	done := make(chan error, 1)
 	go func() { done <- agent.Prompt(context.Background(), "go") }()
 	<-providerMutated
@@ -277,8 +289,7 @@ func TestAgentInitialStateDefaultsAndHighLevelQueueHook(t *testing.T) {
 	externalMessage := loopUser("external steering")
 	getterCalls := 0
 	agent := NewAgent(
-		WithInitialState(AgentState{Model: loopModel()}),
-		WithStreamFn(responses.stream),
+		responses.stream, WithInitialState(AgentState{Model: loopModel()}),
 		WithGetSteeringMessages(func(context.Context) (AgentMessages, error) {
 			getterCalls++
 			if getterCalls == 1 {

@@ -501,9 +501,18 @@ func TestCreateRuntimeInputsAllowsMissingModelOnlyForInteractiveBootstrap(t *tes
 	if err := host.Login(context.Background(), "anthropic", aiauth.AuthTypeAPIKey, fixedPromptInteraction{value: "bootstrap-key"}); err != nil {
 		t.Fatal(err)
 	}
+	// LOG-M4: default-model selection after login belongs to the TUI
+	// (completeProviderAuthentication); the host only refreshes credentials,
+	// so the sentinel stays and the provider's default becomes available.
 	model := host.Session().State().Model
-	if model == nil || model.Provider != "anthropic" || model.ID != "claude-opus-4-8" {
-		t.Fatalf("post-login default model = %#v", model)
+	if model == nil || model.Provider != "unknown" || model.ID != "unknown" {
+		t.Fatalf("post-login host model = %#v, want untouched unknown sentinel", model)
+	}
+	available := host.Session().AvailableModels()
+	if !slices.ContainsFunc(available, func(candidate ai.Model) bool {
+		return candidate.Provider == "anthropic" && candidate.ID == "claude-opus-4-8"
+	}) {
+		t.Fatalf("post-login available models missing anthropic default: %#v", available)
 	}
 }
 

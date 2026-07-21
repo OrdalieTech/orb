@@ -40,9 +40,6 @@ func parseStreamingJSONOrdered(input string) any {
 		}
 		value, err := (&parser{input: candidate, allow: AllowAll, preserveObjectOrder: true}).parseAny()
 		if err == nil {
-			if value == nil {
-				return orderedObject{}
-			}
 			return value
 		}
 	}

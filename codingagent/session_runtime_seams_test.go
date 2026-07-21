@@ -61,7 +61,7 @@ func TestGetToolDefinitionKeepsCustomRenderersReachable(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := seamStubTool{name: "stub"}
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}}))
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}}))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings,
 		ExtensionRegistry: registry, BaseTools: []agent.AgentTool{base},
@@ -107,11 +107,49 @@ func TestGetToolDefinitionKeepsCustomRenderersReachable(t *testing.T) {
 	}
 }
 
+func TestV081SessionRuntimeInjectsAStreamWithoutReplacingAnAgentStream(t *testing.T) {
+	t.Run("preserves constructor stream", func(t *testing.T) {
+		cwd := t.TempDir()
+		manager, settings := extensionRuntimeDependencies(t, cwd)
+		called := false
+		stream := func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+			called = true
+			return nil, nil
+		}
+		created := agent.NewAgent(stream)
+		runtime, err := NewSessionRuntime(SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: settings})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer runtime.Dispose()
+		if _, err := created.StreamFn()(context.Background(), nil, ai.Context{}, nil); err != nil {
+			t.Fatal(err)
+		}
+		if !called {
+			t.Fatal("runtime replaced the constructor stream")
+		}
+	})
+
+	t.Run("fills an explicitly nil stream", func(t *testing.T) {
+		cwd := t.TempDir()
+		manager, settings := extensionRuntimeDependencies(t, cwd)
+		created := agent.NewAgent(nil)
+		runtime, err := NewSessionRuntime(SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: settings})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer runtime.Dispose()
+		if created.StreamFn() == nil {
+			t.Fatal("runtime left the agent without a stream")
+		}
+	})
+}
+
 func TestRegisteredToolWithoutExtensionsScansAgentTools(t *testing.T) {
 	cwd := t.TempDir()
 	manager, settings := extensionRuntimeDependencies(t, cwd)
 	base := seamStubTool{name: "stub"}
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{
 		Messages: agent.AgentMessages{}, Tools: []agent.AgentTool{base},
 	}))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: settings})
@@ -130,7 +168,7 @@ func TestRegisteredToolWithoutExtensionsScansAgentTools(t *testing.T) {
 func TestPendingMessagesSnapshotsQueueOrderAndCopies(t *testing.T) {
 	cwd := t.TempDir()
 	manager, settings := extensionRuntimeDependencies(t, cwd)
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}}))
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}}))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: settings})
 	if err != nil {
 		t.Fatal(err)
@@ -188,7 +226,7 @@ func TestPendingMessagesSnapshotsQueueOrderAndCopies(t *testing.T) {
 func TestInteractiveSettingsSnapshotUsesDocumentedDefaults(t *testing.T) {
 	cwd := t.TempDir()
 	manager, settings := extensionRuntimeDependencies(t, cwd)
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}}))
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}}))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: settings})
 	if err != nil {
 		t.Fatal(err)

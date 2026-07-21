@@ -42,6 +42,39 @@ func TestCompatPreservesExplicitFalseAndEmptyCollections(t *testing.T) {
 	}
 }
 
+func TestOpenRouterRoutingDecodePopulatesTypedFieldsOAm5(t *testing.T) {
+	var compat ai.OpenAICompletionsCompat
+	if err := json.Unmarshal([]byte(`{"openRouterRouting":{"zdr":true,"order":["fast"],"sort":"price","custom_key":1}}`), &compat); err != nil {
+		t.Fatal(err)
+	}
+	routing := compat.OpenRouterRouting
+	if routing == nil || routing.ZDR == nil || !*routing.ZDR || routing.Order == nil || len(*routing.Order) != 1 || (*routing.Order)[0] != "fast" || string(routing.Sort) != `"price"` {
+		t.Fatalf("decoded routing = %#v", routing)
+	}
+}
+
+func TestOpenRouterRoutingMarshalReflectsTypedMutationsOAm5(t *testing.T) {
+	var routing ai.OpenRouterRouting
+	if err := json.Unmarshal([]byte(`{"zdr":true,"custom_key":{"b":1,"a":2},"order":["x"],"sort":"price"}`), &routing); err != nil {
+		t.Fatal(err)
+	}
+	falseValue := false
+	ignore := []string{"slow"}
+	routing.ZDR = &falseValue
+	routing.Order = nil
+	routing.Sort = json.RawMessage(`{"by":"latency"}`)
+	routing.Ignore = &ignore
+
+	encoded, err := json.Marshal(routing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"zdr":false,"custom_key":{"b":1,"a":2},"sort":{"by":"latency"},"ignore":["slow"]}`
+	if string(encoded) != want {
+		t.Fatalf("mutated routing = %s, want %s", encoded, want)
+	}
+}
+
 func TestStreamOptionsPreserveExplicitZeroAndEmpty(t *testing.T) {
 	zeroFloat := 0.0
 	zeroInt := int64(0)

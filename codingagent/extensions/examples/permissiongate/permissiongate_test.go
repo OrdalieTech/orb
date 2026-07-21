@@ -47,8 +47,7 @@ func TestPermissionGateBlocksDangerousToolCallInFauxSession(t *testing.T) {
 		},
 	}
 	agentInstance := agent.NewAgent(
-		agent.WithInitialState(agent.AgentState{Model: provider.GetModel(), Tools: []agent.AgentTool{bash}}),
-		agent.WithStreamFn(provider.StreamSimple),
+		provider.StreamSimple, agent.WithInitialState(agent.AgentState{Model: provider.GetModel(), Tools: []agent.AgentTool{bash}}),
 		agent.WithBeforeToolCall(func(ctx context.Context, call agent.BeforeToolCallContext) (*agent.BeforeToolCallResult, error) {
 			result := runner.EmitToolCall(ctx, extensions.ToolCallEvent{
 				ToolCallID: call.ToolCall.ID, ToolName: call.ToolCall.Name, Input: call.Args.(map[string]any),

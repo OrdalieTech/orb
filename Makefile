@@ -1,5 +1,7 @@
 UPSTREAM_REPO := $(shell sed -n 's/.*"repo": "\([^"]*\)".*/\1/p' UPSTREAM.lock)
 UPSTREAM_COMMIT := $(shell sed -n 's/.*"commit": "\([^"]*\)".*/\1/p' UPSTREAM.lock)
+UPSTREAM_DIR ?= $(CURDIR)/.upstream
+UPSTREAM_READONLY ?= 0
 GOLANGCI_LINT_VERSION ?= v2.7.2
 GOLANGCI_LINT := $(CURDIR)/.tools/bin/golangci-lint
 GO_ENV := GOCACHE=$(CURDIR)/.tools/cache/go-build GOMODCACHE=$(CURDIR)/.tools/cache/go-mod
@@ -28,37 +30,42 @@ $(GOLANGCI_LINT):
 	$(GO_ENV) GOBIN=$(dir $@) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 upstream:
-	@if [ ! -d .upstream/.git ]; then git clone $(UPSTREAM_REPO) .upstream; fi
-	@if ! git -C .upstream cat-file -e '$(UPSTREAM_COMMIT)^{commit}' 2>/dev/null; then git -C .upstream fetch origin $(UPSTREAM_COMMIT); fi
-	@git -C .upstream checkout --detach $(UPSTREAM_COMMIT)
-	@test "$$(git -C .upstream rev-parse HEAD)" = "$(UPSTREAM_COMMIT)"
+	@if [ "$(UPSTREAM_READONLY)" != "1" ]; then \
+		if [ ! -d "$(UPSTREAM_DIR)/.git" ]; then git clone $(UPSTREAM_REPO) "$(UPSTREAM_DIR)"; fi; \
+		if ! git -C "$(UPSTREAM_DIR)" cat-file -e '$(UPSTREAM_COMMIT)^{commit}' 2>/dev/null; then git -C "$(UPSTREAM_DIR)" fetch origin $(UPSTREAM_COMMIT); fi; \
+		git -C "$(UPSTREAM_DIR)" checkout --detach $(UPSTREAM_COMMIT); \
+	fi
+	@test "$$(git -C "$(UPSTREAM_DIR)" rev-parse HEAD)" = "$(UPSTREAM_COMMIT)"
 
 product-assets: upstream
-	@node conformance/extract/materialize-product-assets.ts .upstream .
+	@node conformance/extract/materialize-product-assets.ts "$(UPSTREAM_DIR)" "$(CURDIR)"
 
 product-assets-check: upstream
-	@cmp .upstream/packages/coding-agent/CHANGELOG.md codingagent/modes/assets/CHANGELOG.md
+	@cmp "$(UPSTREAM_DIR)/packages/coding-agent/CHANGELOG.md" codingagent/modes/assets/CHANGELOG.md
 
 ensure-upstream-fixture-tools: upstream
-	@if [ ! -x .upstream/node_modules/.bin/tsx ] || \
-		[ "$$(node -p 'require("./.upstream/node_modules/vitest/package.json").version' 2>/dev/null)" != "4.1.9" ] || \
-		[ "$$(node -p 'require("./.upstream/node_modules/@xterm/headless/package.json").version' 2>/dev/null)" != "5.5.0" ] || \
-		[ "$$(node -p 'require("./.upstream/node_modules/partial-json/package.json").version' 2>/dev/null)" != "0.1.7" ] || \
-		[ "$$(node -p 'require("./.upstream/node_modules/typebox/package.json").version' 2>/dev/null)" != "1.1.38" ] || \
-		[ "$$(node -p 'require("./.upstream/node_modules/openai/package.json").version' 2>/dev/null)" != "6.26.0" ] || \
-		[ "$$(node -p 'require("./.upstream/node_modules/@anthropic-ai/sdk/package.json").version' 2>/dev/null)" != "0.91.1" ] || \
-		[ "$$(node -p 'require("./.upstream/node_modules/@aws-sdk/client-bedrock-runtime/package.json").version' 2>/dev/null)" != "3.1048.0" ] || \
-		[ "$$(node -p 'require("./.upstream/node_modules/@smithy/node-http-handler/package.json").version' 2>/dev/null)" != "4.7.3" ] || \
-		[ "$$(node -p 'require("./.upstream/node_modules/http-proxy-agent/package.json").version' 2>/dev/null)" != "7.0.2" ] || \
-		[ "$$(node -p 'require("./.upstream/node_modules/https-proxy-agent/package.json").version' 2>/dev/null)" != "7.0.6" ] || \
-		[ "$$(node -p 'require("./.upstream/node_modules/@google/genai/package.json").version' 2>/dev/null)" != "1.52.0" ] || \
-		[ "$$(node -p 'require("./.upstream/node_modules/@mistralai/mistralai/package.json").version' 2>/dev/null)" != "2.2.6" ] || \
-		[ "$$(node -p 'require("./.upstream/node_modules/diff/package.json").version' 2>/dev/null)" != "8.0.4" ] || \
-		[ "$$(node -p 'require("./.upstream/node_modules/cross-spawn/package.json").version' 2>/dev/null)" != "7.0.6" ] || \
-		[ "$$(node -p 'require("./.upstream/node_modules/yaml/package.json").version' 2>/dev/null)" != "2.9.0" ] || \
-		[ "$$(node -p 'require("./.upstream/node_modules/@silvia-odwyer/photon-node/package.json").version' 2>/dev/null)" != "0.3.4" ] || \
-		[ "$$(node -p 'require("./.upstream/node_modules/undici/package.json").version' 2>/dev/null)" != "8.5.0" ]; then \
-		cd .upstream && npm install --ignore-scripts --no-save --workspaces=false \
+	@if [ ! -x "$(UPSTREAM_DIR)/node_modules/.bin/tsx" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/vitest/package.json").version' 2>/dev/null)" != "4.1.9" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@xterm/headless/package.json").version' 2>/dev/null)" != "5.5.0" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/partial-json/package.json").version' 2>/dev/null)" != "0.1.7" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/typebox/package.json").version' 2>/dev/null)" != "1.1.38" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/openai/package.json").version' 2>/dev/null)" != "6.26.0" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@anthropic-ai/sdk/package.json").version' 2>/dev/null)" != "0.91.1" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@aws-sdk/client-bedrock-runtime/package.json").version' 2>/dev/null)" != "3.1048.0" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@smithy/node-http-handler/package.json").version' 2>/dev/null)" != "4.7.3" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/http-proxy-agent/package.json").version' 2>/dev/null)" != "7.0.2" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/https-proxy-agent/package.json").version' 2>/dev/null)" != "7.0.6" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@google/genai/package.json").version' 2>/dev/null)" != "1.52.0" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@mistralai/mistralai/package.json").version' 2>/dev/null)" != "2.2.6" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/diff/package.json").version' 2>/dev/null)" != "8.0.4" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/cross-spawn/package.json").version' 2>/dev/null)" != "7.0.6" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/yaml/package.json").version' 2>/dev/null)" != "2.9.0" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@silvia-odwyer/photon-node/package.json").version' 2>/dev/null)" != "0.3.4" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/undici/package.json").version' 2>/dev/null)" != "8.5.0" ]; then \
+		if [ "$(UPSTREAM_READONLY)" = "1" ]; then \
+			echo "upstream fixture tools are missing from read-only $(UPSTREAM_DIR)" >&2; exit 1; \
+		fi; \
+		cd "$(UPSTREAM_DIR)" && npm install --ignore-scripts --no-save --workspaces=false \
 			tsx@4.22.1 vitest@4.1.9 @xterm/headless@5.5.0 partial-json@0.1.7 typebox@1.1.38 openai@6.26.0 @anthropic-ai/sdk@0.91.1 \
 			@aws-sdk/client-bedrock-runtime@3.1048.0 @smithy/node-http-handler@4.7.3 http-proxy-agent@7.0.2 https-proxy-agent@7.0.6 \
 			@mistralai/mistralai@2.2.6 @google/genai@1.52.0 diff@8.0.4 cross-spawn@7.0.6 \
@@ -68,21 +75,20 @@ ensure-upstream-fixture-tools: upstream
 	fi
 
 fixtures: ensure-upstream-fixture-tools product-assets
-	@cd .upstream && node --import tsx ../conformance/extract/generate.ts ../conformance/fixtures $(UPSTREAM_COMMIT)
+	@cd "$(UPSTREAM_DIR)" && node --import tsx "$(CURDIR)/conformance/extract/generate.ts" "$(CURDIR)/conformance/fixtures" $(UPSTREAM_COMMIT)
 
 fixtures-check: ensure-upstream-fixture-tools product-assets-check
 	@fixture_tmp=$$(mktemp -d); \
 		trap 'rm -rf "$$fixture_tmp"' EXIT; \
-		cd .upstream && node --import tsx ../conformance/extract/generate.ts "$$fixture_tmp" $(UPSTREAM_COMMIT); \
-		cd ..; \
-		diff -ru conformance/fixtures "$$fixture_tmp"
+		cd "$(UPSTREAM_DIR)" && node --import tsx "$(CURDIR)/conformance/extract/generate.ts" "$$fixture_tmp" $(UPSTREAM_COMMIT); \
+		diff -ru "$(CURDIR)/conformance/fixtures" "$$fixture_tmp"
 	@PIGO_F6_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./conformance/runner -run TestF6SessionWriteAndProjectionMatchUpstream
 	@PIGO_AUTH_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./codingagent/config -run TestAuthStorageConformance
 
 upstream-rpc-tests: ensure-upstream-fixture-tools
 	@mkdir -p .tools/bin
 	@$(GO_ENV) CGO_ENABLED=0 go build -o .tools/bin/pigo-rpc-test ./cmd/pigo
-	@cd .upstream && node --import tsx ../conformance/extract/run-upstream-rpc-tests.ts ../.tools/bin/pigo-rpc-test
+	@cd "$(UPSTREAM_DIR)" && node --import tsx "$(CURDIR)/conformance/extract/run-upstream-rpc-tests.ts" "$(CURDIR)/.tools/bin/pigo-rpc-test"
 
 sync: ensure-upstream-fixture-tools
 	$(GO_ENV) CGO_ENABLED=0 go run ./internal/sync/cmd/pigosync --dry-run $(SYNC_ARGS)

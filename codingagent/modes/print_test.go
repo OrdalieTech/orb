@@ -371,8 +371,7 @@ func TestPrintModeSignalSetExcludesInterrupt(t *testing.T) {
 
 func newPrintAgent(provider *faux.Provider) *agent.Agent {
 	return agent.NewAgent(
-		agent.WithInitialState(agent.AgentState{Model: provider.GetModel()}),
-		agent.WithStreamFn(provider.StreamSimple),
+		provider.StreamSimple, agent.WithInitialState(agent.AgentState{Model: provider.GetModel()}),
 	)
 }
 

@@ -63,7 +63,7 @@ func TestEntryRendererReceivesWholeEntryObject(t *testing.T) {
 	}
 
 	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
-		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings, ExtensionRegistry: registry,
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings, ExtensionRegistry: registry,
 	})
 	if err != nil {
 		t.Fatal(err)

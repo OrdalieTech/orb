@@ -184,6 +184,13 @@ func (adc *googleVertexADC) loadSource(ctx context.Context) error {
 }
 
 func (adc *googleVertexADC) metadataAvailable(ctx context.Context) (bool, error) {
+	// google-auth-library 10.6.2 computes checkIsGCE as
+	// `getGCPResidency() || (await gcpMetadata.isAvailable())`, so GCP
+	// residency short-circuits before METADATA_SERVER_DETECTION is
+	// consulted, even under none/ping-only. (OT-m4)
+	if adc.gcpResident() {
+		return true, nil
+	}
 	detection := strings.ToLower(strings.TrimSpace(adc.providerEnv("METADATA_SERVER_DETECTION")))
 	switch detection {
 	case "assume-present":
@@ -191,16 +198,15 @@ func (adc *googleVertexADC) metadataAvailable(ctx context.Context) (bool, error)
 	case "none":
 		return false, nil
 	case "bios-only":
-		return adc.gcpResident(), nil
+		return false, nil
 	case "", "ping-only":
 	default:
 		return false, fmt.Errorf("unknown METADATA_SERVER_DETECTION value %q; want assume-present, none, bios-only, ping-only, or unset", detection)
 	}
-	if detection == "" && adc.gcpResident() {
-		return true, nil
-	}
+	// gcp-metadata isAvailable swallows every probe failure into "not
+	// available", which surfaces the canonical no-credentials message. (OT-M8)
 	if err := adc.probeMetadata(ctx); err != nil {
-		return false, err
+		return false, nil
 	}
 	return true, nil
 }

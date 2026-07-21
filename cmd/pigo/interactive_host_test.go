@@ -93,7 +93,7 @@ func fauxHostModel(id string) *ai.Model {
 }
 
 func newHostAgent(messages agent.AgentMessages) *agent.Agent {
-	return agent.NewAgent(agent.WithInitialState(agent.AgentState{Model: fauxHostModel("host-model"), Messages: messages}))
+	return agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Model: fauxHostModel("host-model"), Messages: messages}))
 }
 
 // The CLI runtime paths give the agent its per-request session id at
@@ -127,8 +127,7 @@ func TestBuildSessionRuntimeSetsStreamSessionID(t *testing.T) {
 		}, nil
 	}
 	created := agent.NewAgent(
-		agent.WithInitialState(agent.AgentState{Model: fauxHostModel("host-model")}),
-		agent.WithStreamFn(stream),
+		stream, agent.WithInitialState(agent.AgentState{Model: fauxHostModel("host-model")}),
 		agent.WithConvertToLLM(codingagent.ConvertToLLM),
 	)
 	runtime, err := buildSessionRuntime(runtimeInputs{Agent: created, Settings: settings, StreamFn: stream},
@@ -201,7 +200,7 @@ func (fixture *hostFixture) createRuntime(cwd string, args CLIArgs, prior agent.
 		if args.Thinking != nil {
 			thinking = ai.ModelThinkingLevel(*args.Thinking)
 		}
-		created = agent.NewAgent(agent.WithInitialState(agent.AgentState{Model: &model, ThinkingLevel: thinking, Messages: prior}))
+		created = agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Model: &model, ThinkingLevel: thinking, Messages: prior}))
 	}
 	return runtimeInputs{
 		Agent:           created,

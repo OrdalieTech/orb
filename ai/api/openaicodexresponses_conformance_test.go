@@ -101,6 +101,13 @@ func runF2CodexCase(t *testing.T, fixtureCase f2CodexCase, fixtureResponse f2HTT
 		if err != nil {
 			return nil, err
 		}
+		// The SSE path zstd-compresses the request body (CX-M3); fixtures
+		// describe the logical JSON body.
+		if request.Header.Get("Content-Encoding") == "zstd" {
+			if body, err = codexDecodeZstd(body); err != nil {
+				return nil, err
+			}
+		}
 		captured = capturedProviderRequest{
 			Method: request.Method, URL: request.URL.String(), Headers: request.Header.Clone(), Body: body,
 		}

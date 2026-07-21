@@ -3,10 +3,12 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/OrdalieTech/pigo/ai"
 )
@@ -473,4 +475,346 @@ func TestSetResponsesObjectFieldMatchesObjectSpread(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Gap OA-M1: upstream openai-node applies timeoutMs to time-to-headers only
+// (openai-responses.ts:134-138), so a long generation must keep streaming after
+// the headers arrive even when the body outlives the timeout.
+func TestOpenAIResponsesTimeoutDisarmsAfterHeadersOAM1(t *testing.T) {
+	previousClient := openAIHTTPClient
+	openAIHTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body: &contextGatedBody{
+				ctx:   request.Context(),
+				delay: 200 * time.Millisecond,
+				reader: strings.NewReader(
+					"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_slow\",\"status\":\"completed\",\"output\":[]}}\n\n",
+				),
+			},
+			Request: request,
+		}, nil
+	})}
+	t.Cleanup(func() { openAIHTTPClient = previousClient })
+
+	key := "fixture-key"
+	timeout := int64(50)
+	model := responsesTestModel()
+	model.BaseURL = "https://fixture.invalid/v1"
+	stream, err := StreamOpenAIResponses(context.Background(), ai.Request{
+		Model: model,
+		Context: ai.Context{Messages: ai.MessageList{
+			&ai.UserMessage{Content: ai.NewUserText("hello"), Timestamp: 1},
+		}},
+		Options: &ai.StreamOptions{APIKey: &key, TimeoutMS: &timeout},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := ai.Collect(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.StopReason != ai.StopReasonStop || message.ErrorMessage != nil {
+		t.Fatalf("slow body after fast headers = %#v", message)
+	}
+}
+
+func TestOpenAIResponsesTimeoutStartsAfterRequestHooksOAM1(t *testing.T) {
+	previousClient := openAIHTTPClient
+	openAIHTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if err := request.Context().Err(); err != nil {
+			return nil, err
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_hook\",\"status\":\"completed\",\"output\":[]}}\n\n")),
+			Request:    request,
+		}, nil
+	})}
+	t.Cleanup(func() { openAIHTTPClient = previousClient })
+
+	key := "fixture-key"
+	timeout := int64(20)
+	model := responsesTestModel()
+	model.BaseURL = "https://fixture.invalid/v1"
+	stream, err := StreamOpenAIResponses(context.Background(), ai.Request{
+		Model: model,
+		Context: ai.Context{Messages: ai.MessageList{
+			&ai.UserMessage{Content: ai.NewUserText("hello"), Timestamp: 1},
+		}},
+		Options: &ai.StreamOptions{
+			APIKey: &key, TimeoutMS: &timeout,
+			OnPayload: func(_ context.Context, payload any, _ *ai.Model) (any, bool, error) {
+				time.Sleep(35 * time.Millisecond)
+				return payload, false, nil
+			},
+			TransformHeaders: func(_ context.Context, headers ai.ProviderHeaders, _ *ai.Model) (ai.ProviderHeaders, error) {
+				time.Sleep(35 * time.Millisecond)
+				return headers, nil
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := ai.Collect(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.StopReason != ai.StopReasonStop || message.ErrorMessage != nil {
+		t.Fatalf("slow request hooks consumed header timeout: %#v", message)
+	}
+}
+
+// Gap OA-M1: the timeout must still bound time-to-headers.
+func TestOpenAIResponsesTimeoutStillBoundsHeadersOAM1(t *testing.T) {
+	previousClient := openAIHTTPClient
+	openAIHTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		select {
+		case <-request.Context().Done():
+			return nil, request.Context().Err()
+		case <-time.After(5 * time.Second):
+			return nil, errors.New("headers were not bounded by the timeout")
+		}
+	})}
+	t.Cleanup(func() { openAIHTTPClient = previousClient })
+
+	key := "fixture-key"
+	timeout := int64(50)
+	model := responsesTestModel()
+	model.BaseURL = "https://fixture.invalid/v1"
+	stream, err := StreamOpenAIResponses(context.Background(), ai.Request{
+		Model: model,
+		Context: ai.Context{Messages: ai.MessageList{
+			&ai.UserMessage{Content: ai.NewUserText("hello"), Timestamp: 1},
+		}},
+		Options: &ai.StreamOptions{APIKey: &key, TimeoutMS: &timeout},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := ai.Collect(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errorMessage := "<nil>"
+	if message.ErrorMessage != nil {
+		errorMessage = *message.ErrorMessage
+	}
+	if message.StopReason != ai.StopReasonError || errorMessage != "Request timed out." {
+		t.Fatalf("blocked headers did not time out: reason=%q error=%q", message.StopReason, errorMessage)
+	}
+}
+
+func TestOpenAIResponsesRejectsNegativeHeaderTimeoutOAM1(t *testing.T) {
+	previousClient := openAIHTTPClient
+	requests := 0
+	openAIHTTPClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		requests++
+		return nil, errors.New("unexpected request")
+	})}
+	t.Cleanup(func() { openAIHTTPClient = previousClient })
+
+	key := "fixture-key"
+	timeout := int64(-1)
+	hookCalled := false
+	model := responsesTestModel()
+	model.BaseURL = "https://fixture.invalid/v1"
+	stream, err := StreamOpenAIResponses(context.Background(), ai.Request{
+		Model: model,
+		Context: ai.Context{Messages: ai.MessageList{
+			&ai.UserMessage{Content: ai.NewUserText("hello"), Timestamp: 1},
+		}},
+		Options: &ai.StreamOptions{
+			APIKey: &key, TimeoutMS: &timeout,
+			OnPayload: func(_ context.Context, payload any, _ *ai.Model) (any, bool, error) {
+				hookCalled = true
+				return payload, false, nil
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := ai.Collect(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hookCalled || requests != 0 || message.StopReason != ai.StopReasonError || message.ErrorMessage == nil || *message.ErrorMessage != "timeout must be a positive integer" {
+		t.Fatalf("hook=%v requests=%d message=%#v", hookCalled, requests, message)
+	}
+}
+
+func TestOpenAIResponsesHeaderTimeoutResetsForEachRetryOAM1(t *testing.T) {
+	previousClient := openAIHTTPClient
+	attempts := 0
+	openAIHTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		attempts++
+		select {
+		case <-request.Context().Done():
+			return nil, request.Context().Err()
+		case <-time.After(45 * time.Millisecond):
+		}
+		if attempts == 1 {
+			return &http.Response{
+				StatusCode: http.StatusInternalServerError,
+				Header:     http.Header{"Retry-After-Ms": []string{"0"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"retry"}}`)),
+				Request:    request,
+			}, nil
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body: io.NopCloser(strings.NewReader(
+				"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_retry\",\"status\":\"completed\",\"output\":[]}}\n\n",
+			)),
+			Request: request,
+		}, nil
+	})}
+	t.Cleanup(func() { openAIHTTPClient = previousClient })
+
+	key := "fixture-key"
+	timeout := int64(70)
+	maxRetries := 1
+	model := responsesTestModel()
+	model.BaseURL = "https://fixture.invalid/v1"
+	stream, err := StreamOpenAIResponses(context.Background(), ai.Request{
+		Model: model,
+		Context: ai.Context{Messages: ai.MessageList{
+			&ai.UserMessage{Content: ai.NewUserText("hello"), Timestamp: 1},
+		}},
+		Options: &ai.StreamOptions{APIKey: &key, TimeoutMS: &timeout, MaxRetries: &maxRetries},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := ai.Collect(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 || message.StopReason != ai.StopReasonStop || message.ErrorMessage != nil {
+		t.Fatalf("retry attempts=%d message=%#v", attempts, message)
+	}
+}
+
+// Gap OA-M2: the plain OpenAI stream opts into service-tier pricing
+// (openai-responses.ts:143-146, openai-responses-shared.ts:436-441); Azure has
+// the mirror-image test asserting the multiplier never applies.
+func TestOpenAIResponsesAppliesServiceTierPricingOAM2(t *testing.T) {
+	model := responsesTestModel()
+	output := newAssistantMessage(model)
+	processor := newOpenAIResponsesProcessor(model, output, nil, func(ai.AssistantMessageEvent) bool { return true })
+	err := processor.handle(json.RawMessage(
+		`{"type":"response.completed","response":{"id":"resp_tier","status":"completed","service_tier":"flex","output":[],` +
+			`"usage":{"input_tokens":1000000,"output_tokens":1000000,"total_tokens":2000000}}}`,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cost := output.Usage.Cost
+	if cost.Input != 0.5 || cost.Output != 1 || cost.Total != 1.5 {
+		t.Fatalf("flex cost = %#v, want halved rates", cost)
+	}
+}
+
+// Gap OA-m7: degenerate Responses edges must match upstream bug-for-bug.
+func TestOpenAIResponsesDegenerateEdgesOAm7(t *testing.T) {
+	t.Run("error event renders missing members like a template literal", func(t *testing.T) {
+		processor := newOpenAIResponsesProcessor(responsesTestModel(), newAssistantMessage(responsesTestModel()), nil, func(ai.AssistantMessageEvent) bool { return true })
+		err := processor.handle(json.RawMessage(`{"type":"error"}`))
+		if err == nil || err.Error() != "Error Code undefined: undefined" {
+			t.Fatalf("missing members = %v, want Error Code undefined: undefined", err)
+		}
+		err = processor.handle(json.RawMessage(`{"type":"error","code":429,"message":null}`))
+		if err == nil || err.Error() != "Error Code 429: null" {
+			t.Fatalf("scalar members = %v, want Error Code 429: null", err)
+		}
+		err = processor.handle(json.RawMessage(`{"type":"error","code":1e2,"message":["bad",null,{"detail":true}]}`))
+		if err == nil || err.Error() != "Error Code 100: bad,,[object Object]" {
+			t.Fatalf("coerced members = %v, want JavaScript template coercion", err)
+		}
+	})
+	t.Run("empty signature id falls back to msg_pi_N", func(t *testing.T) {
+		model := responsesTestModel()
+		signature := `{"v":1,"id":""}`
+		input, err := convertResponsesMessages(model, ai.Context{Messages: ai.MessageList{
+			&ai.AssistantMessage{
+				Content:    ai.AssistantContent{&ai.TextContent{Text: "answer", TextSignature: &signature}},
+				API:        model.API,
+				Provider:   model.Provider,
+				Model:      model.ID,
+				Usage:      zeroUsage(),
+				StopReason: ai.StopReasonStop,
+			},
+		}}, map[string]ai.Tool{}, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		message, ok := input[0].(responsesOutputMessage)
+		if !ok || message.ID != "msg_pi_0" {
+			t.Fatalf("replayed message = %#v, want id msg_pi_0", input[0])
+		}
+	})
+	t.Run("empty phase is omitted from the text signature", func(t *testing.T) {
+		model := responsesTestModel()
+		output := newAssistantMessage(model)
+		processor := newOpenAIResponsesProcessor(model, output, nil, func(ai.AssistantMessageEvent) bool { return true })
+		for _, raw := range []string{
+			`{"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","content":[],"status":"in_progress"}}`,
+			`{"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"hi","annotations":[]}],"status":"completed","phase":""}}`,
+		} {
+			if err := processor.handle(json.RawMessage(raw)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		text := output.Content[0].(*ai.TextContent)
+		if text.TextSignature == nil || *text.TextSignature != `{"v":1,"id":"msg_1"}` {
+			t.Fatalf("text signature = %v, want empty phase omitted", text.TextSignature)
+		}
+	})
+	t.Run("done event for an unhandled item type keeps the slot", func(t *testing.T) {
+		model := responsesTestModel()
+		output := newAssistantMessage(model)
+		processor := newOpenAIResponsesProcessor(model, output, nil, func(ai.AssistantMessageEvent) bool { return true })
+		for _, raw := range []string{
+			`{"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","content":[],"status":"in_progress"}}`,
+			`{"type":"response.output_text.delta","output_index":0,"delta":"before"}`,
+			`{"type":"response.output_item.done","output_index":0,"item":{"type":"web_search_call","id":"ws_1","status":"completed"}}`,
+			`{"type":"response.output_text.delta","output_index":0,"delta":" after"}`,
+		} {
+			if err := processor.handle(json.RawMessage(raw)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		text := output.Content[0].(*ai.TextContent)
+		if text.Text != "before after" {
+			t.Fatalf("text = %q, want the slot to survive the unhandled done event", text.Text)
+		}
+	})
+	t.Run("replayed TS-era reasoning signature is re-normalized", func(t *testing.T) {
+		model := responsesTestModel()
+		signature := `{"type":"reasoning","id":"rs_1","count":1e2,"lt":"<"}`
+		input, err := convertResponsesMessages(model, ai.Context{Messages: ai.MessageList{
+			&ai.AssistantMessage{
+				Content:    ai.AssistantContent{&ai.ThinkingContent{Thinking: "", ThinkingSignature: &signature}},
+				API:        model.API,
+				Provider:   model.Provider,
+				Model:      model.ID,
+				Usage:      zeroUsage(),
+				StopReason: ai.StopReasonStop,
+			},
+		}}, map[string]ai.Tool{}, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, ok := input[0].(json.RawMessage)
+		want := `{"type":"reasoning","id":"rs_1","count":100,"lt":"<"}`
+		if !ok || string(raw) != want {
+			t.Fatalf("replayed reasoning = %#v, want %s", input[0], want)
+		}
+	})
 }

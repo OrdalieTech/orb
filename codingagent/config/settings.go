@@ -699,6 +699,13 @@ func (manager *SettingsManager) GetShellCommandPrefix() string {
 	return manager.stringValue("shellCommandPrefix")
 }
 
+// GetWarningAnthropicExtraUsage reads warnings.anthropicExtraUsage, the gate
+// for the Anthropic subscription-auth warning (upstream settings-manager
+// WarningSettings.anthropicExtraUsage; default true).
+func (manager *SettingsManager) GetWarningAnthropicExtraUsage() bool {
+	return boolDefault(manager.objectValue("warnings"), "anthropicExtraUsage", true)
+}
+
 func (manager *SettingsManager) stringValue(key string) string {
 	value, _ := manager.value(key)
 	result, _ := value.(string)

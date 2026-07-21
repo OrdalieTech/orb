@@ -1179,6 +1179,538 @@
         },
         "body": "{\"model\":\"chat-template-fixture-model\",\"messages\":[{\"role\":\"system\",\"content\":\"Use the configured chat template.\"},{\"role\":\"user\",\"content\":\"map the effort\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"chat_template_kwargs\":{\"zeta_mode\":\"fixture\",\"preserve_thinking\":true,\"reasoning_effort\":\"max\",\"alpha_enabled\":true}}"
       }
+    },
+    {
+      "name": "responses-copilot-dynamic-headers",
+      "api": "openai-responses",
+      "model": {
+        "id": "gpt-fixture-responses",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-responses",
+        "provider": "github-copilot",
+        "baseUrl": "https://api.githubcopilot.com",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192
+      },
+      "context": {
+        "systemPrompt": "Use tools.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "inspect",
+            "timestamp": 1700000000120
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call_copilot",
+                "name": "echo",
+                "arguments": {
+                  "text": "vision"
+                }
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "github-copilot",
+            "model": "gpt-fixture-responses",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call_copilot",
+            "toolName": "echo",
+            "content": [
+              {
+                "type": "text",
+                "text": "tool caption"
+              },
+              {
+                "type": "image",
+                "data": "AAEC",
+                "mimeType": "image/png"
+              }
+            ],
+            "isError": false,
+            "timestamp": 1700000000122
+          }
+        ],
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo structured text",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "plain",
+                    "loud"
+                  ]
+                },
+                "metadata": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-copilot-token",
+        "cacheRetention": "none"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.githubcopilot.com/responses",
+        "headers": {
+          "authorization": "Bearer fixture-copilot-token",
+          "content-type": "application/json",
+          "copilot-vision-request": "true",
+          "openai-intent": "conversation-edits",
+          "x-initiator": "agent"
+        },
+        "body": "{\"model\":\"gpt-fixture-responses\",\"input\":[{\"role\":\"developer\",\"content\":\"Use tools.\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"inspect\"}]},{\"type\":\"function_call\",\"call_id\":\"call_copilot\",\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"vision\\\"}\"},{\"type\":\"function_call_output\",\"call_id\":\"call_copilot\",\"output\":[{\"type\":\"input_text\",\"text\":\"tool caption\"},{\"type\":\"input_image\",\"detail\":\"auto\",\"image_url\":\"data:image/png;base64,AAEC\"}]}],\"stream\":true,\"store\":false,\"tools\":[{\"type\":\"function\",\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false},\"strict\":false}]}"
+      }
+    },
+    {
+      "name": "completions-copilot-dynamic-headers",
+      "api": "openai-completions",
+      "model": {
+        "id": "gpt-fixture-completions",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-completions",
+        "provider": "github-copilot",
+        "baseUrl": "https://api.githubcopilot.com",
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192
+      },
+      "context": {
+        "systemPrompt": "Inspect images.",
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call_copilot",
+                "name": "echo",
+                "arguments": {
+                  "text": "vision"
+                }
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "github-copilot",
+            "model": "gpt-fixture-completions",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call_copilot",
+            "toolName": "echo",
+            "content": [
+              {
+                "type": "text",
+                "text": "tool caption"
+              }
+            ],
+            "isError": false,
+            "timestamp": 1700000000122
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "user image"
+              },
+              {
+                "type": "image",
+                "data": "AQID",
+                "mimeType": "image/jpeg"
+              }
+            ],
+            "timestamp": 1700000000123
+          }
+        ],
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo structured text",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "plain",
+                    "loud"
+                  ]
+                },
+                "metadata": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-copilot-token",
+        "cacheRetention": "none"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.githubcopilot.com/chat/completions",
+        "headers": {
+          "authorization": "Bearer fixture-copilot-token",
+          "content-type": "application/json",
+          "copilot-vision-request": "true",
+          "openai-intent": "conversation-edits",
+          "x-initiator": "user"
+        },
+        "body": "{\"model\":\"gpt-fixture-completions\",\"messages\":[{\"role\":\"system\",\"content\":\"Inspect images.\"},{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_copilot\",\"type\":\"function\",\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"vision\\\"}\"}}]},{\"role\":\"tool\",\"content\":\"tool caption\",\"tool_call_id\":\"call_copilot\"},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"user image\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/jpeg;base64,AQID\"}}]}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false},\"strict\":false}}]}"
+      }
+    },
+    {
+      "name": "responses-developer-role-disabled",
+      "api": "openai-responses",
+      "model": {
+        "id": "gpt-fixture-responses",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-responses",
+        "provider": "openai",
+        "baseUrl": "https://api.openai.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "compat": {
+          "supportsDeveloperRole": false
+        }
+      },
+      "context": {
+        "systemPrompt": "Stay on the system role.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hello",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "cacheRetention": "none"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/responses",
+        "headers": {
+          "authorization": "Bearer fixture-key",
+          "content-type": "application/json"
+        },
+        "body": "{\"model\":\"gpt-fixture-responses\",\"input\":[{\"role\":\"system\",\"content\":\"Stay on the system role.\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hello\"}]}],\"stream\":true,\"store\":false,\"reasoning\":{\"effort\":\"none\"}}"
+      }
+    },
+    {
+      "name": "responses-xai-include-injection",
+      "api": "openai-responses",
+      "model": {
+        "id": "grok-fixture",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-responses",
+        "provider": "xai",
+        "baseUrl": "https://api.x.ai/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192
+      },
+      "context": {
+        "systemPrompt": "Reason quietly.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hello",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-xai-key",
+        "cacheRetention": "none"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.x.ai/v1/responses",
+        "headers": {
+          "authorization": "Bearer fixture-xai-key",
+          "content-type": "application/json"
+        },
+        "body": "{\"model\":\"grok-fixture\",\"input\":[{\"role\":\"developer\",\"content\":\"Reason quietly.\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hello\"}]}],\"stream\":true,\"store\":false,\"reasoning\":{\"effort\":\"none\"},\"include\":[\"reasoning.encrypted_content\"]}"
+      }
+    },
+    {
+      "name": "completions-kimi-deferred-tools",
+      "api": "openai-completions",
+      "model": {
+        "id": "kimi-fixture",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-completions",
+        "provider": "moonshot",
+        "baseUrl": "https://api.moonshot.ai/v1",
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "compat": {
+          "deferredToolsMode": "kimi"
+        }
+      },
+      "context": {
+        "systemPrompt": "Use tools.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "echo once",
+            "timestamp": 1700000000118
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call_kimi",
+                "name": "echo",
+                "arguments": {
+                  "text": "first"
+                }
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "moonshot",
+            "model": "kimi-fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call_kimi",
+            "toolName": "echo",
+            "content": [
+              {
+                "type": "text",
+                "text": "loaded late_tool"
+              }
+            ],
+            "addedToolNames": [
+              "late_tool"
+            ],
+            "isError": false,
+            "timestamp": 1700000000122
+          },
+          {
+            "role": "user",
+            "content": "continue",
+            "timestamp": 1700000000123
+          }
+        ],
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo structured text",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "plain",
+                    "loud"
+                  ]
+                },
+                "metadata": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "late_tool",
+            "description": "A tool loaded after a tool result",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-kimi-key",
+        "cacheRetention": "none"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.moonshot.ai/v1/chat/completions",
+        "headers": {
+          "authorization": "Bearer fixture-kimi-key",
+          "content-type": "application/json"
+        },
+        "body": "{\"model\":\"kimi-fixture\",\"messages\":[{\"role\":\"system\",\"content\":\"Use tools.\"},{\"role\":\"user\",\"content\":\"echo once\"},{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_kimi\",\"type\":\"function\",\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"first\\\"}\"}}]},{\"role\":\"tool\",\"content\":\"loaded late_tool\",\"tool_call_id\":\"call_kimi\"},{\"role\":\"system\",\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"late_tool\",\"description\":\"A tool loaded after a tool result\",\"parameters\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"boolean\"}},\"required\":[\"value\"],\"additionalProperties\":false}}}]},{\"role\":\"user\",\"content\":\"continue\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false}}}]}"
+      }
     }
   ]
 }

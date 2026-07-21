@@ -178,7 +178,8 @@ func (socket *codexWebSocket) ReadMessage(ctx context.Context, idleTimeout time.
 		_ = socket.forceClose()
 		return nil, errors.New("Request was aborted") //nolint:staticcheck // Upstream capitalization is observable.
 	case <-timeoutChannel:
-		_ = socket.forceClose()
+		// Upstream closes with an explicit close frame (1000, "idle_timeout").
+		_ = socket.Close(1000, "idle_timeout")
 		return nil, fmt.Errorf("WebSocket idle timeout after %dms", idleTimeout.Milliseconds()) //nolint:staticcheck // Upstream capitalization is observable.
 	case completed := <-result:
 		return completed.contents, completed.err

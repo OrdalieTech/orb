@@ -2296,6 +2296,307 @@
           }
         }
       ]
+    },
+    {
+      "name": "responses-priority-service-tier-pricing",
+      "api": "openai-responses",
+      "model": {
+        "id": "gpt-stream-responses",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-responses",
+        "provider": "openai",
+        "baseUrl": "https://api.openai.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1000000,
+          "output": 2000000,
+          "cacheRead": 3000000,
+          "cacheWrite": 4000000
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "stream priority",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "cacheRetention": "none",
+        "serviceTier": "flex"
+      },
+      "sse": "data: {\"type\":\"response.completed\",\"sequence_number\":0,\"response\":{\"id\":\"resp_f2_priority\",\"status\":\"completed\",\"service_tier\":\"priority\",\"output\":[],\"usage\":{\"input_tokens\":20,\"output_tokens\":7,\"total_tokens\":27,\"input_tokens_details\":{\"cached_tokens\":2,\"cache_write_tokens\":3},\"output_tokens_details\":{\"reasoning_tokens\":4}}}}\n\ndata: [DONE]\n\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-stream-responses",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "done",
+          "reason": "stop",
+          "message": {
+            "role": "assistant",
+            "content": [],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-stream-responses",
+            "usage": {
+              "input": 15,
+              "output": 7,
+              "cacheRead": 2,
+              "cacheWrite": 3,
+              "reasoning": 4,
+              "totalTokens": 27,
+              "cost": {
+                "input": 30,
+                "output": 28,
+                "cacheRead": 12,
+                "cacheWrite": 24,
+                "total": 94
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "resp_f2_priority"
+          }
+        }
+      ]
+    },
+    {
+      "name": "completions-content-filter",
+      "api": "openai-completions",
+      "model": {
+        "id": "gpt-stream-completions",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-completions",
+        "provider": "openai",
+        "baseUrl": "https://api.openai.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1000000,
+          "output": 2000000,
+          "cacheRead": 3000000,
+          "cacheWrite": 4000000
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "stream filtered",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "cacheRetention": "none"
+      },
+      "expectsErrorEvent": true,
+      "sse": "data: {\"id\":\"chatcmpl_f2_content_filter\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"gpt-stream-completions\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"blocked\"},\"finish_reason\":\"content_filter\"}]}\n\ndata: [DONE]\n\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "openai-completions",
+            "provider": "openai",
+            "model": "gpt-stream-completions",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "text_start",
+          "contentIndex": 0,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "blocked"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "openai",
+            "model": "gpt-stream-completions",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "responseId": "chatcmpl_f2_content_filter",
+            "errorMessage": "Provider finish_reason: content_filter"
+          }
+        },
+        {
+          "type": "text_delta",
+          "contentIndex": 0,
+          "delta": "blocked",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "blocked"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "openai",
+            "model": "gpt-stream-completions",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "responseId": "chatcmpl_f2_content_filter",
+            "errorMessage": "Provider finish_reason: content_filter"
+          }
+        },
+        {
+          "type": "text_end",
+          "contentIndex": 0,
+          "content": "blocked",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "blocked"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "openai",
+            "model": "gpt-stream-completions",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "responseId": "chatcmpl_f2_content_filter",
+            "errorMessage": "Provider finish_reason: content_filter"
+          }
+        },
+        {
+          "type": "error",
+          "reason": "error",
+          "error": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "blocked"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "openai",
+            "model": "gpt-stream-completions",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1700000000123,
+            "responseId": "chatcmpl_f2_content_filter",
+            "errorMessage": "Provider finish_reason: content_filter"
+          }
+        }
+      ]
     }
   ]
 }

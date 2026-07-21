@@ -105,6 +105,9 @@ func decodeHarnessEntryObject(object map[string]json.RawMessage) (SessionTreeEnt
 	}
 	decodeHarnessStringInto(object["summary"], &entry.Summary)
 	decodeHarnessStringInto(object["firstKeptEntryId"], &entry.FirstKeptEntryID)
+	if raw, ok := object["retainedTail"]; ok {
+		_ = json.Unmarshal(raw, &entry.RetainedTail)
+	}
 	if raw, ok := object["tokensBefore"]; ok {
 		var number float64
 		if json.Unmarshal(raw, &number) == nil {
@@ -253,11 +256,18 @@ func marshalHarnessEntry(entry SessionTreeEntry) ([]byte, error) {
 		}
 		members = append(members, harnessJSONMember{name: "activeToolNames", value: encoded})
 	case "compaction":
-		members = append(members,
-			harnessStringMember("summary", entry.Summary),
-			harnessStringMember("firstKeptEntryId", entry.FirstKeptEntryID),
-			harnessJSONMember{name: "tokensBefore", value: mustHarnessJSON(entry.TokensBefore)},
-		)
+		members = append(members, harnessStringMember("summary", entry.Summary))
+		if entry.FirstKeptEntryID != "" {
+			members = append(members, harnessStringMember("firstKeptEntryId", entry.FirstKeptEntryID))
+		}
+		members = append(members, harnessJSONMember{name: "tokensBefore", value: mustHarnessJSON(entry.TokensBefore)})
+		if entry.RetainedTail != nil {
+			encoded, err := jsonwire.Marshal(entry.RetainedTail)
+			if err != nil {
+				return nil, err
+			}
+			members = append(members, harnessJSONMember{name: "retainedTail", value: encoded})
+		}
 		if len(entry.Details) != 0 {
 			members = append(members, harnessRawMember("details", entry.Details))
 		}

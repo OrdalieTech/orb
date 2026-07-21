@@ -39,7 +39,10 @@ const (
 )
 
 var (
-	bedrockStandardEndpoint   = regexp.MustCompile(`^bedrock-runtime(?:-fips)?\.([a-z0-9-]+)\.amazonaws\.com(?:\.cn)?$`)
+	bedrockStandardEndpoint = regexp.MustCompile(`^bedrock-runtime(?:-fips)?\.([a-z0-9-]+)\.amazonaws\.com(?:\.cn)?$`)
+	// bedrockARNRegionPattern matches upstream bedrock-converse-stream.ts:166
+	// exactly; laxer prefix checks accepted malformed ARNs. (OT-m6)
+	bedrockARNRegionPattern   = regexp.MustCompile(`^arn:aws(?:-[a-z0-9-]+)?:bedrock:([a-z0-9-]+):`)
 	newBedrockTransport       = newAWSBedrockTransport
 	bedrockHTTPClientOverride aws.HTTPClient
 )
@@ -91,11 +94,18 @@ type BedrockConverseStreamPayload struct {
 	ToolConfig                   *BedrockToolConfiguration   `json:"toolConfig,omitempty"`
 	AdditionalModelRequestFields map[string]any              `json:"additionalModelRequestFields,omitempty"`
 	RequestMetadata              map[string]string           `json:"requestMetadata,omitempty"`
+
+	// Extra retains hook-injected top-level members without a typed field
+	// (guardrailConfig, performanceConfig, ...) so they reach the SDK input,
+	// mirroring upstream's verbatim ConverseStreamCommand pass-through. (OT-M7)
+	Extra map[string]json.RawMessage `json:"-"`
 }
 
 type BedrockInferenceConfig struct {
-	MaxTokens   *float64 `json:"maxTokens,omitempty"`
-	Temperature *float64 `json:"temperature,omitempty"`
+	MaxTokens     *float64 `json:"maxTokens,omitempty"`
+	Temperature   *float64 `json:"temperature,omitempty"`
+	StopSequences []string `json:"stopSequences,omitempty"`
+	TopP          *float64 `json:"topP,omitempty"`
 }
 
 type BedrockMessage struct {
@@ -384,7 +394,32 @@ func coerceBedrockPayload(value any) (*BedrockConverseStreamPayload, error) {
 	if err := json.Unmarshal(encoded, &payload); err != nil {
 		return nil, fmt.Errorf("decode Bedrock payload hook result: %w", err)
 	}
+	payload.Extra = bedrockPayloadExtras(encoded)
 	return &payload, nil
+}
+
+var bedrockKnownPayloadKeys = map[string]bool{
+	"modelId": true, "messages": true, "system": true, "inferenceConfig": true,
+	"toolConfig": true, "additionalModelRequestFields": true, "requestMetadata": true,
+}
+
+// bedrockPayloadExtras collects hook-injected top-level members that the typed
+// payload does not model, so they are not silently dropped. (OT-M7)
+func bedrockPayloadExtras(encoded []byte) map[string]json.RawMessage {
+	var members map[string]json.RawMessage
+	if json.Unmarshal(encoded, &members) != nil {
+		return nil
+	}
+	extras := make(map[string]json.RawMessage)
+	for name, raw := range members {
+		if !bedrockKnownPayloadKeys[name] {
+			extras[name] = raw
+		}
+	}
+	if len(extras) == 0 {
+		return nil
+	}
+	return extras
 }
 
 func buildBedrockPayload(
@@ -944,10 +979,11 @@ func (processor *bedrockStreamProcessor) blockAt(index int) (int, ai.AssistantCo
 func (processor *bedrockStreamProcessor) handleDelta(item bedrockStreamItem) {
 	position, content := processor.blockAt(item.ContentBlockIndex)
 	if item.Text != nil {
-		block, ok := content.(*ai.TextContent)
-		if !ok {
+		// Upstream only creates a block when NO block exists at the stream
+		// index; a type-mismatched block drops the delta. (OT-m5)
+		if content == nil {
 			index := item.ContentBlockIndex
-			block = &ai.TextContent{Text: *item.Text, Index: &index}
+			block := &ai.TextContent{Text: *item.Text, Index: &index}
 			processor.output.Content = append(processor.output.Content, block)
 			position = len(processor.output.Content) - 1
 			processor.blocks = append(processor.blocks, bedrockBlock{content: block, index: item.ContentBlockIndex})
@@ -955,7 +991,7 @@ func (processor *bedrockStreamProcessor) handleDelta(item bedrockStreamItem) {
 			if !processor.stopped {
 				processor.stopped = !processor.sink(ai.TextDeltaEvent{ContentIndex: position, Delta: *item.Text, Partial: processor.output})
 			}
-		} else if !processor.stopped {
+		} else if block, ok := content.(*ai.TextContent); ok && !processor.stopped {
 			block.Text += *item.Text
 			processor.stopped = !processor.sink(ai.TextDeltaEvent{ContentIndex: position, Delta: *item.Text, Partial: processor.output})
 		}
@@ -974,15 +1010,14 @@ func (processor *bedrockStreamProcessor) handleDelta(item bedrockStreamItem) {
 		return
 	}
 	if item.ReasoningText != nil || item.ReasoningSignature != nil {
-		block, ok := content.(*ai.ThinkingContent)
-		if !ok {
+		if content == nil {
 			index := item.ContentBlockIndex
 			empty := ""
-			block = &ai.ThinkingContent{ThinkingSignature: &empty, Index: &index}
+			block := &ai.ThinkingContent{ThinkingSignature: &empty, Index: &index}
 			if item.ReasoningText != nil {
 				block.Thinking = *item.ReasoningText
 			}
-			if item.ReasoningSignature != nil {
+			if item.ReasoningSignature != nil && *item.ReasoningSignature != "" {
 				value := *item.ReasoningSignature
 				block.ThinkingSignature = &value
 			}
@@ -990,15 +1025,15 @@ func (processor *bedrockStreamProcessor) handleDelta(item bedrockStreamItem) {
 			position = len(processor.output.Content) - 1
 			processor.blocks = append(processor.blocks, bedrockBlock{content: block, index: item.ContentBlockIndex})
 			processor.stopped = !processor.sink(ai.ThinkingStartEvent{ContentIndex: position, Partial: processor.output})
-			if item.ReasoningText != nil && !processor.stopped {
+			if item.ReasoningText != nil && *item.ReasoningText != "" && !processor.stopped {
 				processor.stopped = !processor.sink(ai.ThinkingDeltaEvent{ContentIndex: position, Delta: *item.ReasoningText, Partial: processor.output})
 			}
-		} else {
-			if item.ReasoningText != nil && !processor.stopped {
+		} else if block, ok := content.(*ai.ThinkingContent); ok {
+			if item.ReasoningText != nil && *item.ReasoningText != "" && !processor.stopped {
 				block.Thinking += *item.ReasoningText
 				processor.stopped = !processor.sink(ai.ThinkingDeltaEvent{ContentIndex: position, Delta: *item.ReasoningText, Partial: processor.output})
 			}
-			if item.ReasoningSignature != nil {
+			if item.ReasoningSignature != nil && *item.ReasoningSignature != "" {
 				value := *item.ReasoningSignature
 				if block.ThinkingSignature != nil {
 					value = *block.ThinkingSignature + value
@@ -1307,9 +1342,9 @@ func shouldUseExplicitBedrockEndpoint(baseURL, configuredRegion string, hasAmbie
 }
 
 func bedrockARNRegion(modelID string) string {
-	parts := strings.Split(modelID, ":")
-	if len(parts) >= 4 && strings.HasPrefix(parts[0], "arn") && parts[2] == "bedrock" {
-		return parts[3]
+	match := bedrockARNRegionPattern.FindStringSubmatch(modelID)
+	if len(match) == 2 {
+		return match[1]
 	}
 	return ""
 }
@@ -1508,6 +1543,12 @@ func bedrockSDKInput(payload *BedrockConverseStreamPayload) (*bedrockruntime.Con
 	if payload.InferenceConfig.Temperature != nil {
 		input.InferenceConfig.Temperature = aws.Float32(float32(*payload.InferenceConfig.Temperature))
 	}
+	if payload.InferenceConfig.TopP != nil {
+		input.InferenceConfig.TopP = aws.Float32(float32(*payload.InferenceConfig.TopP))
+	}
+	if payload.InferenceConfig.StopSequences != nil {
+		input.InferenceConfig.StopSequences = payload.InferenceConfig.StopSequences
+	}
 	if payload.AdditionalModelRequestFields != nil {
 		input.AdditionalModelRequestFields = bedrockdocument.NewLazyDocument(payload.AdditionalModelRequestFields)
 	}
@@ -1547,7 +1588,98 @@ func bedrockSDKInput(payload *BedrockConverseStreamPayload) (*bedrockruntime.Con
 		configuration.ToolChoice = bedrockSDKToolChoice(payload.ToolConfig.ToolChoice)
 		input.ToolConfig = configuration
 	}
+	if err := applyBedrockPayloadExtras(input, payload.Extra); err != nil {
+		return nil, err
+	}
 	return input, nil
+}
+
+// applyBedrockPayloadExtras merges hook-injected top-level members back into
+// the SDK input; upstream passes the hook return verbatim to
+// ConverseStreamCommand, which serializes every modeled member. (OT-M7)
+func applyBedrockPayloadExtras(input *bedrockruntime.ConverseStreamInput, extras map[string]json.RawMessage) error {
+	for name, raw := range extras {
+		switch name {
+		case "guardrailConfig":
+			config := &bedrocktypes.GuardrailStreamConfiguration{}
+			if err := json.Unmarshal(raw, config); err != nil {
+				return fmt.Errorf("decode Bedrock guardrailConfig: %w", err)
+			}
+			input.GuardrailConfig = config
+		case "performanceConfig":
+			config := &bedrocktypes.PerformanceConfiguration{}
+			if err := json.Unmarshal(raw, config); err != nil {
+				return fmt.Errorf("decode Bedrock performanceConfig: %w", err)
+			}
+			input.PerformanceConfig = config
+		case "additionalModelResponseFieldPaths":
+			var paths []string
+			if err := json.Unmarshal(raw, &paths); err != nil {
+				return fmt.Errorf("decode Bedrock additionalModelResponseFieldPaths: %w", err)
+			}
+			input.AdditionalModelResponseFieldPaths = paths
+		case "promptVariables":
+			var values map[string]struct {
+				Text *string `json:"text"`
+			}
+			if err := json.Unmarshal(raw, &values); err != nil {
+				return fmt.Errorf("decode Bedrock promptVariables: %w", err)
+			}
+			variables := make(map[string]bedrocktypes.PromptVariableValues, len(values))
+			for name, value := range values {
+				if value.Text != nil {
+					variables[name] = &bedrocktypes.PromptVariableValuesMemberText{Value: *value.Text}
+				}
+			}
+			input.PromptVariables = variables
+		case "serviceTier":
+			config := &bedrocktypes.ServiceTier{}
+			if err := json.Unmarshal(raw, config); err != nil {
+				return fmt.Errorf("decode Bedrock serviceTier: %w", err)
+			}
+			input.ServiceTier = config
+		case "outputConfig":
+			config, err := decodeBedrockOutputConfig(raw)
+			if err != nil {
+				return err
+			}
+			input.OutputConfig = config
+		default:
+			// Members the SDK does not model are dropped at serialization
+			// upstream as well.
+		}
+	}
+	return nil
+}
+
+func decodeBedrockOutputConfig(raw json.RawMessage) (*bedrocktypes.OutputConfig, error) {
+	var wire struct {
+		TextFormat *struct {
+			Type      string `json:"type"`
+			Structure struct {
+				JSONSchema *struct {
+					Schema      *string `json:"schema"`
+					Name        *string `json:"name"`
+					Description *string `json:"description"`
+				} `json:"jsonSchema"`
+			} `json:"structure"`
+		} `json:"textFormat"`
+	}
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		return nil, fmt.Errorf("decode Bedrock outputConfig: %w", err)
+	}
+	config := &bedrocktypes.OutputConfig{}
+	if wire.TextFormat == nil {
+		return config, nil
+	}
+	format := &bedrocktypes.OutputFormat{Type: bedrocktypes.OutputFormatType(wire.TextFormat.Type)}
+	if schema := wire.TextFormat.Structure.JSONSchema; schema != nil {
+		format.Structure = &bedrocktypes.OutputFormatStructureMemberJsonSchema{Value: bedrocktypes.JsonSchemaDefinition{
+			Schema: schema.Schema, Name: schema.Name, Description: schema.Description,
+		}}
+	}
+	config.TextFormat = format
+	return config, nil
 }
 
 func bedrockSDKContentBlock(block BedrockContentBlock) (bedrocktypes.ContentBlock, error) {

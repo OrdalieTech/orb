@@ -93,7 +93,7 @@ func TestInteractiveModeInstallsExactResourceLoaderThemeObject(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessionRuntime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
-		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings, ResourceLoader: loader,
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings, ResourceLoader: loader,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestInteractiveModeResourceThemeRefreshReplacesStaleThemesAndAppliesSetting
 		t.Fatal(err)
 	}
 	sessionRuntime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
-		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings, ResourceLoader: loader,
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings, ResourceLoader: loader,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -192,7 +192,7 @@ func TestInteractiveModeRebindPropagatesInvalidResourceThemeName(t *testing.T) {
 			t.Fatal(managerErr)
 		}
 		created, runtimeErr := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
-			Agent: agent.NewAgent(), SessionManager: manager, Settings: settings, ResourceLoader: loader,
+			Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings, ResourceLoader: loader,
 		})
 		if runtimeErr != nil {
 			t.Fatal(runtimeErr)
@@ -228,7 +228,10 @@ func TestInteractiveModeRebindPropagatesInvalidResourceThemeName(t *testing.T) {
 	}
 }
 
-func TestAuthProviderLabelDescribesConfiguredTypeAndSource(t *testing.T) {
+// LOG-m3: status indicators render the raw runtime sources like upstream
+// oauth-selector.ts formatStatusIndicator ("stored", "models_json_key",
+// "runtime", env names), not invented friendly labels.
+func TestLOGm3AuthStatusIndicatorDescribesConfiguredTypeAndSource(t *testing.T) {
 	tests := []struct {
 		name   string
 		option InteractiveAuthProvider
@@ -238,24 +241,42 @@ func TestAuthProviderLabelDescribesConfiguredTypeAndSource(t *testing.T) {
 			name: "different auth type",
 			option: InteractiveAuthProvider{Name: "Anthropic", AuthType: aiauth.AuthTypeOAuth,
 				Status: &InteractiveAuthStatus{Type: aiauth.AuthTypeAPIKey, Source: "stored credential"}},
-			want: "Anthropic • API key configured",
+			want: " • API key configured",
 		},
 		{
 			name: "environment source",
 			option: InteractiveAuthProvider{Name: "Groq", AuthType: aiauth.AuthTypeAPIKey,
 				Status: &InteractiveAuthStatus{Type: aiauth.AuthTypeAPIKey, Source: "GROQ_API_KEY"}},
-			want: "Groq ✓ env: GROQ_API_KEY",
+			want: " ✓ env: GROQ_API_KEY",
 		},
 		{
 			name:   "unconfigured",
 			option: InteractiveAuthProvider{Name: "Google", AuthType: aiauth.AuthTypeAPIKey},
-			want:   "Google • unconfigured",
+			want:   " • unconfigured",
+		},
+		{
+			name: "raw stored source",
+			option: InteractiveAuthProvider{Name: "Anthropic", AuthType: aiauth.AuthTypeAPIKey,
+				Status: &InteractiveAuthStatus{Type: aiauth.AuthTypeAPIKey, Source: "stored"}},
+			want: " ✓ stored",
+		},
+		{
+			name: "raw models.json source",
+			option: InteractiveAuthProvider{Name: "Custom", AuthType: aiauth.AuthTypeAPIKey,
+				Status: &InteractiveAuthStatus{Type: aiauth.AuthTypeAPIKey, Source: "models_json_key"}},
+			want: " ✓ models_json_key",
+		},
+		{
+			name: "stored credential collapses to configured",
+			option: InteractiveAuthProvider{Name: "Anthropic", AuthType: aiauth.AuthTypeOAuth,
+				Status: &InteractiveAuthStatus{Type: aiauth.AuthTypeOAuth, Source: "stored credential"}},
+			want: " ✓ configured",
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := authProviderLabel(test.option, true); got != test.want {
-				t.Fatalf("authProviderLabel() = %q, want %q", got, test.want)
+			if got := selectorANSI.ReplaceAllString(formatAuthStatusIndicator(test.option), ""); got != test.want {
+				t.Fatalf("formatAuthStatusIndicator() = %q, want %q", got, test.want)
 			}
 		})
 	}
@@ -291,12 +312,14 @@ func TestDuplicateLoginProviderNamesRemainDistinct(t *testing.T) {
 	if allAuthOptionsForSameProvider(matched) {
 		t.Fatal("duplicate display name was routed to auth-method selection")
 	}
-	items := authProviderSelectItems(matched, true)
-	if len(items) != 2 || items[0].Value == items[1].Value {
-		t.Fatalf("provider selector identities = %#v", items)
-	}
-	if items[0].Label != items[1].Label {
-		t.Fatalf("duplicate upstream labels changed: %#v", items)
+	var selected []InteractiveAuthProvider
+	component := NewOAuthSelectorComponent(oauthSelectorLogin, matched,
+		func(provider InteractiveAuthProvider) { selected = append(selected, provider) }, func() {}, "")
+	component.HandleInput(tui.KeyEvent{Raw: "\r"})
+	component.HandleInput(tui.KeyEvent{Raw: "\x1b[B"})
+	component.HandleInput(tui.KeyEvent{Raw: "\r"})
+	if len(selected) != 2 || selected[0].ID != "first" || selected[1].ID != "second" {
+		t.Fatalf("selector identities = %#v", selected)
 	}
 }
 

@@ -142,11 +142,12 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 		streamFn = runtimeConfig.ModelRegistry.StreamSimple
 	}
 	if streamFn == nil {
+		streamFn = runtimeConfig.Agent.StreamFn()
+	}
+	if streamFn == nil {
 		streamFn = aiapi.StreamSimple
 	}
-	if runtimeConfig.StreamFn != nil || modelRegistryAvailable {
-		runtimeConfig.Agent.SetStreamFn(streamFn)
-	}
+	runtimeConfig.Agent.SetStreamFn(streamFn)
 	runtimeConfig.Agent.SetRequestResolvers(runtimeConfig.GetAPIKey, runtimeConfig.GetRequestAuth, runtimeConfig.GetModelHeaders)
 	complete := runtimeConfig.Complete
 	if complete == nil {
@@ -913,7 +914,7 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason string, willRetry bool) (bool, error) {
 	settings := runtime.settings.GetCompactionSettings()
 	branch := runtime.manager.GetBranch()
-	preparation, err := harness.PrepareCompaction(projectSessionEntries(branch), harness.CompactionSettings{
+	preparation, err := harness.PrepareLegacyCompaction(projectSessionEntries(branch), harness.CompactionSettings{
 		Enabled: runtime.autoCompactionEnabled(), ReserveTokens: settings.ReserveTokens, KeepRecentTokens: settings.KeepRecentTokens,
 	})
 	if err != nil || preparation == nil {
@@ -937,7 +938,9 @@ func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason str
 	if extensionCancelled {
 		compactErr = context.Canceled
 	} else if result == nil {
-		result, compactErr = harness.Compact(compactionContext, preparation, runtime.agent.State().Model, runtime.complete, "", runtime.agent.State().ThinkingLevel)
+		var harnessResult *harness.CompactionResult
+		harnessResult, compactErr = harness.Compact(compactionContext, preparation, runtime.agent.State().Model, runtime.complete, "", runtime.agent.State().ThinkingLevel)
+		result = codingCompactionResult(harnessResult)
 	}
 	wasCancelled := compactionContext.Err() != nil
 	if compactErr == nil && wasCancelled {
@@ -983,7 +986,7 @@ func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason str
 }
 
 //nolint:staticcheck // User-visible compaction errors match upstream capitalization.
-func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions string) (*harness.CompactionResult, error) {
+func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions string) (*sessionstore.CompactionResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -1012,7 +1015,7 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 	}
 	settings := runtime.settings.GetCompactionSettings()
 	branch := runtime.manager.GetBranch()
-	preparation, err := harness.PrepareCompaction(projectSessionEntries(branch), harness.CompactionSettings{
+	preparation, err := harness.PrepareLegacyCompaction(projectSessionEntries(branch), harness.CompactionSettings{
 		Enabled: settings.Enabled, ReserveTokens: settings.ReserveTokens, KeepRecentTokens: settings.KeepRecentTokens,
 	})
 	if err != nil || preparation == nil {
@@ -1037,7 +1040,9 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 	if extensionCancelled {
 		err = errors.New("Compaction cancelled")
 	} else if result == nil {
-		result, err = harness.Compact(compactionContext, preparation, runtime.agent.State().Model, runtime.complete, customInstructions, runtime.agent.State().ThinkingLevel)
+		var harnessResult *harness.CompactionResult
+		harnessResult, err = harness.Compact(compactionContext, preparation, runtime.agent.State().Model, runtime.complete, customInstructions, runtime.agent.State().ThinkingLevel)
+		result = codingCompactionResult(harnessResult)
 	}
 	if err == nil && compactionContext.Err() != nil {
 		runtime.emit(CompactionEndEvent{Reason: "manual", Aborted: true})
@@ -1076,7 +1081,7 @@ func (runtime *SessionRuntime) beforeExtensionCompaction(
 	customInstructions *string,
 	reason extensions.CompactionReason,
 	willRetry bool,
-) (*harness.CompactionResult, bool, bool) {
+) (*sessionstore.CompactionResult, bool, bool) {
 	state := runtime.extensionState
 	if state == nil || state.runner == nil || !state.runner.HasHandlers(extensions.EventSessionBeforeCompact) {
 		return nil, false, false
@@ -1103,6 +1108,16 @@ func (runtime *SessionRuntime) beforeExtensionCompaction(
 	}
 	copy := *result.Compaction
 	return &copy, true, false
+}
+
+func codingCompactionResult(result *harness.CompactionResult) *sessionstore.CompactionResult {
+	if result == nil {
+		return nil
+	}
+	return &sessionstore.CompactionResult{
+		Summary: result.Summary, FirstKeptEntryID: result.FirstKeptEntryID,
+		TokensBefore: result.TokensBefore, Usage: result.Usage, Details: result.Details,
+	}
 }
 
 func (runtime *SessionRuntime) emitExtensionCompaction(

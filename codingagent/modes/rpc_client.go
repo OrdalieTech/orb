@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/agent/harness"
 	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/codingagent"
 	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
@@ -396,12 +395,12 @@ func (client *RPCClient) SetFollowUpMode(ctx context.Context, mode agent.QueueMo
 	return client.sendOnly(ctx, RPCCommand{Type: "set_follow_up_mode", Mode: string(mode)})
 }
 
-func (client *RPCClient) Compact(ctx context.Context, customInstructions *string) (harness.CompactionResult, error) {
+func (client *RPCClient) Compact(ctx context.Context, customInstructions *string) (sessionstore.CompactionResult, error) {
 	command := RPCCommand{Type: "compact"}
 	if customInstructions != nil {
 		command.CustomInstructions, command.customInstructionsSet = *customInstructions, true
 	}
-	return rpcClientData[harness.CompactionResult](ctx, client, command)
+	return rpcClientData[sessionstore.CompactionResult](ctx, client, command)
 }
 
 func (client *RPCClient) SetAutoCompaction(ctx context.Context, enabled bool) error {

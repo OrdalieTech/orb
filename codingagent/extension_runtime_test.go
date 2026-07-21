@@ -172,8 +172,8 @@ func TestSessionRuntimeWiresExtensionHooksAndLifecycle(t *testing.T) {
 	}
 	promptOptions := SystemPromptOptions{CWD: cwd, SelectedTools: []string{"bash"}, ToolSnippets: map[string]string{"bash": "base"}}
 	created := agent.NewAgent(
-		agent.WithInitialState(agent.AgentState{SystemPrompt: "base", Model: provider.GetModel(), Tools: []agent.AgentTool{baseBash}}),
-		agent.WithStreamFn(stream), agent.WithConvertToLLM(ConvertToLLM),
+		stream, agent.WithInitialState(agent.AgentState{SystemPrompt: "base", Model: provider.GetModel(), Tools: []agent.AgentTool{baseBash}}),
+		agent.WithConvertToLLM(ConvertToLLM),
 	)
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings, ExtensionRegistry: registry,
@@ -327,10 +327,9 @@ func TestExtensionCommandInputAndNativeResourcesShareUpstreamOrder(t *testing.T)
 	provider := faux.New()
 	provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("done")})
 	created := agent.NewAgent(
-		agent.WithInitialState(agent.AgentState{
+		provider.StreamSimple, agent.WithInitialState(agent.AgentState{
 			SystemPrompt: BuildSystemPrompt(promptOptions), Model: provider.GetModel(), Tools: []agent.AgentTool{readTool},
 		}),
-		agent.WithStreamFn(provider.StreamSimple),
 	)
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings, ExtensionRegistry: registry,
@@ -406,7 +405,7 @@ func TestDynamicActiveToolsReportOnlyAdditions(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{SystemPrompt: "base"}))
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{SystemPrompt: "base"}))
 	promptOptions := SystemPromptOptions{CWD: cwd}
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings, ExtensionRegistry: registry,
@@ -452,7 +451,7 @@ func TestExtensionToolOverrideReplacesBuiltInPromptMetadata(t *testing.T) {
 	base := agent.AgentToolFunc{AgentToolSpec: agent.AgentToolSpec{Name: "read", Description: "base", Parameters: jsonschema.Schema(`{}`)}}
 	snippets, guidelines := BuiltInToolPromptData([]string{"read"})
 	promptOptions := SystemPromptOptions{CWD: cwd, SelectedTools: []string{"read"}, ToolSnippets: snippets, PromptGuidelines: guidelines}
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{SystemPrompt: BuildSystemPrompt(promptOptions), Tools: []agent.AgentTool{base}}))
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{SystemPrompt: BuildSystemPrompt(promptOptions), Tools: []agent.AgentTool{base}}))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings, ExtensionRegistry: registry,
 		BaseTools: []agent.AgentTool{base}, InitialActiveToolNames: []string{"read"}, SystemPromptOptions: &promptOptions,
@@ -497,7 +496,7 @@ func TestExtensionToolsApplyAllowlistAndDenylist(t *testing.T) {
 				t.Fatal(err)
 			}
 			base := agent.AgentToolFunc{AgentToolSpec: agent.AgentToolSpec{Name: "read", Description: "base", Parameters: jsonschema.Schema(`{}`)}}
-			created := agent.NewAgent(agent.WithInitialState(agent.AgentState{SystemPrompt: "base", Tools: []agent.AgentTool{base}}))
+			created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{SystemPrompt: "base", Tools: []agent.AgentTool{base}}))
 			runtime, err := NewSessionRuntime(SessionRuntimeConfig{
 				Agent: created, SessionManager: manager, Settings: settings, ExtensionRegistry: registry,
 				BaseTools: []agent.AgentTool{base}, InitialActiveToolNames: []string{"read"},
@@ -538,7 +537,7 @@ func TestUserBashHandlerCanReplaceOperations(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	created := agent.NewAgent()
+	created := agent.NewAgent(nil)
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: settings, ExtensionRegistry: registry})
 	if err != nil {
 		t.Fatal(err)
@@ -597,7 +596,7 @@ func TestExtensionUserMessageRunsInputHookBeforeStreamingQueue(t *testing.T) {
 		}),
 		faux.AssistantMessage("second"),
 	})
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{SystemPrompt: "base", Model: provider.GetModel()}), agent.WithStreamFn(provider.StreamSimple), agent.WithConvertToLLM(ConvertToLLM))
+	created := agent.NewAgent(provider.StreamSimple, agent.WithInitialState(agent.AgentState{SystemPrompt: "base", Model: provider.GetModel()}), agent.WithConvertToLLM(ConvertToLLM))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: settings, ExtensionRegistry: registry})
 	if err != nil {
 		t.Fatal(err)
@@ -702,7 +701,7 @@ func TestExtensionCustomMessageMatchesUpstreamNullPersistenceQuirk(t *testing.T)
 		t.Fatal(err)
 	}
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
-		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings, ExtensionRegistry: registry,
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings, ExtensionRegistry: registry,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -740,7 +739,7 @@ func TestExtensionCompactionHooksCanProvideSummary(t *testing.T) {
 			if event.Reason != extensions.CompactionManual || event.WillRetry || len(event.BranchEntries) != 3 {
 				t.Fatalf("before compact event = %#v", event)
 			}
-			return extensions.SessionBeforeCompactResult{Compaction: &harness.CompactionResult{
+			return extensions.SessionBeforeCompactResult{Compaction: &session.CompactionResult{
 				Summary: "extension summary", FirstKeptEntryID: event.Preparation.FirstKeptEntryID,
 				TokensBefore: event.Preparation.TokensBefore,
 				Usage:        usage,
@@ -757,7 +756,7 @@ func TestExtensionCompactionHooksCanProvideSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 	provider := faux.New()
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{Model: provider.GetModel()}))
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Model: provider.GetModel()}))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings, ExtensionRegistry: registry,
 	})
@@ -815,7 +814,7 @@ func TestExtensionTreeHooksCanProvideSummaryAndLabel(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	created := agent.NewAgent()
+	created := agent.NewAgent(nil)
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings, ExtensionRegistry: registry,
 	})
@@ -846,7 +845,7 @@ func TestExtensionTreeHooksCanProvideSummaryAndLabel(t *testing.T) {
 func TestExtensionThinkingLevelClampsAndSkipsDuplicatePersistence(t *testing.T) {
 	cwd := t.TempDir()
 	manager, settings := extensionRuntimeDependencies(t, cwd)
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{
 		Model: &ai.Model{Reasoning: false}, ThinkingLevel: agent.ThinkingOff,
 	}))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: settings})
@@ -912,7 +911,7 @@ func TestModelAndThinkingMutationsSharePersistenceAndExtensionEvents(t *testing.
 		t.Fatal(err)
 	}
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
-		Agent:          agent.NewAgent(agent.WithInitialState(agent.AgentState{Model: &modelA, ThinkingLevel: ai.ModelThinkingLow})),
+		Agent:          agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Model: &modelA, ThinkingLevel: ai.ModelThinkingLow})),
 		SessionManager: manager, Settings: settings, ExtensionRegistry: registry, ModelRegistry: models,
 	})
 	if err != nil {
@@ -942,7 +941,7 @@ func TestModelAndThinkingMutationsSharePersistenceAndExtensionEvents(t *testing.
 func TestNoExtensionsLeavesRuntimeSeamUnallocated(t *testing.T) {
 	cwd := t.TempDir()
 	manager, settings := extensionRuntimeDependencies(t, cwd)
-	runtime, err := NewSessionRuntime(SessionRuntimeConfig{Agent: agent.NewAgent(), SessionManager: manager, Settings: settings})
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -968,7 +967,7 @@ func TestExtensionContextUsesResolvedProjectTrust(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
-		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings, ExtensionRegistry: registry,
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings, ExtensionRegistry: registry,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1042,8 +1041,8 @@ func TestExtensionQueuedSlashCommandFollowUpStaysRawText(t *testing.T) {
 		faux.AssistantMessage("queued follow-up handled by model"),
 	})
 	created := agent.NewAgent(
-		agent.WithInitialState(agent.AgentState{SystemPrompt: "test", Model: provider.GetModel(), Tools: []agent.AgentTool{waitTool}}),
-		agent.WithStreamFn(provider.StreamSimple), agent.WithConvertToLLM(ConvertToLLM),
+		provider.StreamSimple, agent.WithInitialState(agent.AgentState{SystemPrompt: "test", Model: provider.GetModel(), Tools: []agent.AgentTool{waitTool}}),
+		agent.WithConvertToLLM(ConvertToLLM),
 	)
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings,
@@ -1127,8 +1126,8 @@ func TestExtensionMessageEndCanOverrideAssistantUsageCost(t *testing.T) {
 	provider := faux.New()
 	provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("hello")})
 	created := agent.NewAgent(
-		agent.WithInitialState(agent.AgentState{SystemPrompt: "test", Model: provider.GetModel()}),
-		agent.WithStreamFn(provider.StreamSimple), agent.WithConvertToLLM(ConvertToLLM),
+		provider.StreamSimple, agent.WithInitialState(agent.AgentState{SystemPrompt: "test", Model: provider.GetModel()}),
+		agent.WithConvertToLLM(ConvertToLLM),
 	)
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings,
@@ -1200,7 +1199,7 @@ func TestSessionStartEventNonDefault(t *testing.T) {
 	}
 	resumeEvent := &extensions.SessionStartEvent{Reason: extensions.SessionStartResume}
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
-		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings,
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings,
 		ExtensionRegistry: registry, SessionStartEvent: resumeEvent,
 	})
 	if err != nil {
@@ -1227,7 +1226,7 @@ func TestSessionStartEventDefaultIsStartup(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
-		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings,
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings,
 		ExtensionRegistry: registry,
 	})
 	if err != nil {
@@ -1264,7 +1263,7 @@ func TestResourcesDiscoverReasonFollowsSessionStart(t *testing.T) {
 			}
 			start := &extensions.SessionStartEvent{Reason: test.start}
 			runtime, err := NewSessionRuntime(SessionRuntimeConfig{
-				Agent: agent.NewAgent(), SessionManager: manager, Settings: settings,
+				Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings,
 				ExtensionRegistry: registry, SessionStartEvent: start,
 			})
 			if err != nil {
@@ -1344,8 +1343,8 @@ func TestSessionRuntimeReloadClearsHooksRemovedByFreshRegistry(t *testing.T) {
 		return provider.StreamSimple(ctx, model, request, &copy)
 	}
 	created := agent.NewAgent(
-		agent.WithInitialState(agent.AgentState{Model: provider.GetModel(), Tools: []agent.AgentTool{tool}}),
-		agent.WithStreamFn(stream), agent.WithConvertToLLM(ConvertToLLM),
+		stream, agent.WithInitialState(agent.AgentState{Model: provider.GetModel(), Tools: []agent.AgentTool{tool}}),
+		agent.WithConvertToLLM(ConvertToLLM),
 	)
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings, StreamFn: stream,

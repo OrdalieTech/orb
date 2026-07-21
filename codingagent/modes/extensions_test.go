@@ -66,7 +66,7 @@ func TestCompiledDemosBehaveInHeadlessPrintAndJSON(t *testing.T) {
 				return provider.StreamSimple(ctx, model, request, options)
 			}
 			promptOptions := codingagent.SystemPromptOptions{CWD: cwd, SelectedTools: []string{"bash"}, ToolSnippets: map[string]string{"bash": "bash"}}
-			created := agent.NewAgent(agent.WithInitialState(agent.AgentState{SystemPrompt: "base", Model: provider.GetModel(), Tools: []agent.AgentTool{bash}}), agent.WithStreamFn(stream), agent.WithConvertToLLM(codingagent.ConvertToLLM))
+			created := agent.NewAgent(stream, agent.WithInitialState(agent.AgentState{SystemPrompt: "base", Model: provider.GetModel(), Tools: []agent.AgentTool{bash}}), agent.WithConvertToLLM(codingagent.ConvertToLLM))
 			extensionMode := extensions.ModePrint
 			if outputMode == PrintOutputJSON {
 				extensionMode = extensions.ModeJSON

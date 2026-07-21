@@ -304,6 +304,7 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | evanw/esbuild (pkg/api) | jsbridge | TS transpile + bundling (pure Go, official API) |
 | openai/openai-go/v3 | ai/api | OpenAI responses+completions (D10) |
 | anthropics/anthropic-sdk-go | ai/api | Anthropic messages + caching (D10) |
+| klauspost/compress | ai/api | zstd request compression required by the OpenAI Codex Responses wire |
 | aws-sdk-go-v2, aws-sdk-go-v2/{config,credentials,service/bedrockruntime}, smithy-go | ai/api | Official Bedrock client, credential chain, SigV4/bearer auth, and converse-stream (D10) |
 | modelcontextprotocol/go-sdk | mcp | official MCP SDK v1.6+ |
 | yuin/goldmark | tui | CommonMark parsing (render stays ours) |
@@ -329,7 +330,8 @@ request-scoped pure-Go ADC; against its consolidated parent it adds 393,216 byte
 module, and no compiled package. See `docs/plan/wp-222-vertex-report.md`.
 
 Explicitly rejected: TUI frameworks (D15), langchaingo/fantasy-style unified LLM libs (D10),
-v8go/quickjs CGo bindings (D7), sqlite (no need — sessions are JSONL).
+v8go/quickjs CGo bindings (D7), and native SQLite bindings (the v0.81.0 storage package is ledgered;
+sessions remain JSONL or memory-backed).
 
 ## 9. Build, size, release
 

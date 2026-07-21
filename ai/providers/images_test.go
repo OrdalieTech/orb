@@ -21,7 +21,7 @@ func TestBuiltinImagesModelsMatchesPinnedOpenRouterCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := fmt.Sprintf("%x", sha256.Sum256(encoded)); got != "70b2efa95213e55d83092d94f5753c5affe509ee3543f66ec7451eb404378d11" {
+	if got := fmt.Sprintf("%x", sha256.Sum256(encoded)); got != "40c176ec0df9d315d0f5920a3ed4550e084daa9e07533a838f5464e1135a3106" {
 		t.Fatalf("catalog hash = %s (%d models)", got, len(list))
 	}
 	resolved, err := models.GetAuth(context.Background(), ai.ImagesProviderOpenRouter, nil)

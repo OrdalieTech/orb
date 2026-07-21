@@ -1,6 +1,6 @@
 {
   "family": "F2",
-  "upstreamCommit": "3a40794ea14c6202586cc203d5b928eca9f6b673",
+  "upstreamCommit": "9c480b6ad2c7419875a7a850fb4ad5f9232313b8",
   "generator": "conformance/extract/f2-openai.ts + conformance/extract/f2-codex.ts",
   "source": "packages/ai/src/api/openai-responses.ts + packages/ai/src/api/openai-responses-shared.ts + packages/ai/src/api/openai-completions.ts + packages/ai/src/api/openai-prompt-cache.ts + packages/ai/src/api/anthropic-messages.ts + packages/ai/src/api/bedrock-converse-stream.ts + packages/ai/src/api/google-generative-ai.ts + packages/ai/src/api/google-vertex.ts + packages/ai/src/api/google-shared.ts + packages/ai/src/api/mistral-conversations.ts + packages/ai/src/api/azure-openai-responses.ts + packages/ai/src/api/pi-messages.ts + packages/ai/src/utils/deferred-tools.ts + packages/ai/src/api/transform-messages.ts + packages/ai/src/providers/*.ts + packages/ai/src/env-api-keys.ts + packages/ai/src/auth/helpers.ts + packages/ai/src/auth/oauth/oauth-page.ts + packages/ai/src/models.ts + packages/ai/scripts/generate-models.ts + packages/coding-agent/src/core/auth-storage.ts + packages/coding-agent/src/core/resolve-config-value.ts + packages/coding-agent/src/migrations.ts + packages/ai/src/api/openai-codex-responses.ts + packages/ai/src/auth/oauth/{openai-codex,github-copilot,xai,device-code}.ts + packages/ai/src/providers/{openai-codex,github-copilot,xai}.ts",
   "files": [

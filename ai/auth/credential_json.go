@@ -58,9 +58,22 @@ func (credential *Credential) UnmarshalJSON(data []byte) error {
 				return fmt.Errorf("auth credential access: %w", err)
 			}
 		case "expires":
-			if err := json.Unmarshal(raw, &decoded.Expires); err != nil {
+			// TS pi writes expires as a JavaScript number, including fractional
+			// values produced by OAuth providers. Keep the public Go field in
+			// integer milliseconds, while retaining the parsed JS-number value and
+			// wire spelling until a caller changes Expires.
+			var number json.Number
+			if err := json.Unmarshal(raw, &number); err != nil {
 				return fmt.Errorf("auth credential expires: %w", err)
 			}
+			value, err := number.Float64()
+			if err != nil {
+				return fmt.Errorf("auth credential expires: %w", err)
+			}
+			decoded.Expires = int64(value)
+			decoded.expiresJSON = append(json.RawMessage(nil), raw...)
+			decoded.expiresNumber = value
+			decoded.expiresBaseline = decoded.Expires
 		default:
 			decoded.Extra[name] = append(json.RawMessage(nil), raw...)
 		}
@@ -158,11 +171,24 @@ func (credential Credential) member(name string) ([]byte, bool, error) {
 		if credential.Expires == 0 && credential.Type != CredentialOAuth && !contains(credential.order, name) {
 			return nil, false, nil
 		}
+		if len(credential.expiresJSON) != 0 && credential.Expires == credential.expiresBaseline {
+			return append([]byte(nil), credential.expiresJSON...), true, nil
+		}
 		return []byte(strconv.FormatInt(credential.Expires, 10)), true, nil
 	default:
 		value, exists := credential.Extra[name]
 		return value, exists, nil
 	}
+}
+
+func (credential *Credential) expiredAt(now int64) bool {
+	if credential == nil {
+		return true
+	}
+	if len(credential.expiresJSON) != 0 && credential.Expires == credential.expiresBaseline {
+		return credential.expiresNumber <= float64(now)
+	}
+	return credential.Expires <= now
 }
 
 func decodeOrderedObject(data []byte) (map[string]json.RawMessage, []string, error) {

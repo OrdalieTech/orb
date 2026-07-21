@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/pigo/ai"
+	bedrocktypes "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 )
 
 func bedrockTestModel(id, name string) *ai.Model {
@@ -289,6 +291,197 @@ func TestStreamSimpleDispatchesAndClampsFixedThinking(t *testing.T) {
 	thinking := sent.AdditionalModelRequestFields["thinking"].(map[string]any)
 	if budget := thinking["budget_tokens"].(int); budget > int(*sent.InferenceConfig.MaxTokens-1024) {
 		t.Fatalf("thinking budget = %d, exceeds maxTokens reserve", budget)
+	}
+}
+
+// TestBedrockPayloadHookPreservesUnmodeledFields_OTM7 pins the upstream hook
+// contract (bedrock-converse-stream.ts:223-239): the onPayload return is used
+// verbatim as the ConverseStreamCommand input, so hook-injected members the
+// typed Go payload does not model (guardrailConfig, performanceConfig, topP,
+// stopSequences, ...) must reach the SDK input instead of being silently
+// dropped. (OT-M7)
+func TestBedrockPayloadHookPreservesUnmodeledFields_OTM7(t *testing.T) {
+	model := bedrockTestModel("anthropic.claude-sonnet-4-5", "Claude")
+	payload, err := buildBedrockPayload(model, ai.Context{
+		Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hello")}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := &ai.StreamOptions{OnPayload: func(_ context.Context, payload any, _ *ai.Model) (any, bool, error) {
+		encoded, err := ai.Marshal(payload)
+		if err != nil {
+			return nil, false, err
+		}
+		var generic map[string]any
+		if err := json.Unmarshal(encoded, &generic); err != nil {
+			return nil, false, err
+		}
+		generic["guardrailConfig"] = map[string]any{
+			"guardrailIdentifier": "guardrail-1",
+			"guardrailVersion":    "2",
+			"trace":               "enabled",
+		}
+		generic["performanceConfig"] = map[string]any{"latency": "optimized"}
+		generic["serviceTier"] = map[string]any{"type": "priority"}
+		generic["outputConfig"] = map[string]any{"textFormat": map[string]any{
+			"type": "json_schema",
+			"structure": map[string]any{"jsonSchema": map[string]any{
+				"name": "answer", "description": "structured answer", "schema": `{"type":"object"}`,
+			}},
+		}}
+		generic["additionalModelResponseFieldPaths"] = []string{"/stop_sequence"}
+		generic["promptVariables"] = map[string]any{"topic": map[string]any{"text": "space"}}
+		inference, _ := generic["inferenceConfig"].(map[string]any)
+		if inference == nil {
+			inference = map[string]any{}
+		}
+		inference["topP"] = 0.9
+		inference["stopSequences"] = []string{"STOP"}
+		generic["inferenceConfig"] = inference
+		return generic, true, nil
+	}}
+	hooked, err := applyPayloadHook(context.Background(), model, options, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coerced, err := coerceBedrockPayload(hooked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := bedrockSDKInput(coerced)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.GuardrailConfig == nil ||
+		input.GuardrailConfig.GuardrailIdentifier == nil || *input.GuardrailConfig.GuardrailIdentifier != "guardrail-1" ||
+		input.GuardrailConfig.GuardrailVersion == nil || *input.GuardrailConfig.GuardrailVersion != "2" ||
+		string(input.GuardrailConfig.Trace) != "enabled" {
+		t.Fatalf("hook-injected guardrailConfig did not reach the SDK input: %#v", input.GuardrailConfig)
+	}
+	if input.PerformanceConfig == nil || string(input.PerformanceConfig.Latency) != "optimized" {
+		t.Fatalf("hook-injected performanceConfig did not reach the SDK input: %#v", input.PerformanceConfig)
+	}
+	if input.ServiceTier == nil || string(input.ServiceTier.Type) != "priority" {
+		t.Fatalf("hook-injected serviceTier did not reach the SDK input: %#v", input.ServiceTier)
+	}
+	if input.OutputConfig == nil || input.OutputConfig.TextFormat == nil ||
+		string(input.OutputConfig.TextFormat.Type) != "json_schema" {
+		t.Fatalf("hook-injected outputConfig did not reach the SDK input: %#v", input.OutputConfig)
+	}
+	outputSchema, ok := input.OutputConfig.TextFormat.Structure.(*bedrocktypes.OutputFormatStructureMemberJsonSchema)
+	if !ok || outputSchema.Value.Schema == nil || *outputSchema.Value.Schema != `{"type":"object"}` ||
+		outputSchema.Value.Name == nil || *outputSchema.Value.Name != "answer" ||
+		outputSchema.Value.Description == nil || *outputSchema.Value.Description != "structured answer" {
+		t.Fatalf("hook-injected output schema = %#v", input.OutputConfig.TextFormat.Structure)
+	}
+	if len(input.AdditionalModelResponseFieldPaths) != 1 || input.AdditionalModelResponseFieldPaths[0] != "/stop_sequence" {
+		t.Fatalf("hook-injected response field paths = %#v", input.AdditionalModelResponseFieldPaths)
+	}
+	topic, ok := input.PromptVariables["topic"].(*bedrocktypes.PromptVariableValuesMemberText)
+	if !ok || topic.Value != "space" {
+		t.Fatalf("hook-injected promptVariables = %#v", input.PromptVariables)
+	}
+	if input.InferenceConfig == nil || input.InferenceConfig.TopP == nil || *input.InferenceConfig.TopP != 0.9 {
+		t.Fatalf("hook-injected topP = %#v", input.InferenceConfig)
+	}
+	if len(input.InferenceConfig.StopSequences) != 1 || input.InferenceConfig.StopSequences[0] != "STOP" {
+		t.Fatalf("hook-injected stopSequences = %#v", input.InferenceConfig.StopSequences)
+	}
+}
+
+// TestBedrockTypeMismatchedDeltaDropped_OTm5 pins upstream
+// handleContentBlockDelta (bedrock-converse-stream.ts:471-518): a delta whose
+// block index resolves to a block of a different type is dropped; a new block
+// is only created when NO block exists at that stream index. (OT-m5)
+func TestBedrockTypeMismatchedDeltaDropped_OTm5(t *testing.T) {
+	previousTransport := newBedrockTransport
+	defer func() { newBedrockTransport = previousTransport }()
+	mismatchedText := "dropped"
+	mismatchedReasoning := "also dropped"
+	freshText := "kept"
+	newBedrockTransport = func(context.Context, *ai.Model, *BedrockConverseStreamOptions) (bedrockTransport, error) {
+		return bedrockTransportFunc(func(context.Context, *BedrockConverseStreamPayload) (bedrockResponse, error) {
+			return &fixtureBedrockResponse{items: []bedrockStreamItem{
+				{Kind: bedrockItemMessageStart, Role: "assistant"},
+				{Kind: bedrockItemContentStart, ContentBlockIndex: 1, ToolUseID: "tool-1", ToolName: "echo"},
+				{Kind: bedrockItemContentDelta, ContentBlockIndex: 1, Text: &mismatchedText},
+				{Kind: bedrockItemContentDelta, ContentBlockIndex: 1, ReasoningText: &mismatchedReasoning},
+				{Kind: bedrockItemContentDelta, ContentBlockIndex: 2, Text: &freshText},
+				{Kind: bedrockItemContentStop, ContentBlockIndex: 1},
+				{Kind: bedrockItemContentStop, ContentBlockIndex: 2},
+				{Kind: bedrockItemMessageStop, StopReason: "tool_use"},
+			}}, nil
+		}), nil
+	}
+	stream, err := StreamBedrockConverseWithOptions(context.Background(), bedrockTestModel("anthropic.claude-sonnet-4-5", "Claude"), ai.Context{
+		Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hello")}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := ai.Collect(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(message.Content) != 2 {
+		t.Fatalf("content = %#v, want tool call plus fresh text only", message.Content)
+	}
+	call, ok := message.Content[0].(*ai.ToolCall)
+	if !ok || call.Name != "echo" {
+		t.Fatalf("first block = %#v, want the tool call", message.Content[0])
+	}
+	text, ok := message.Content[1].(*ai.TextContent)
+	if !ok || text.Text != freshText {
+		t.Fatalf("second block = %#v, want fresh text %q", message.Content[1], freshText)
+	}
+}
+
+func TestOTm5BedrockEmptyReasoningDeltaOnlyStartsBlock(t *testing.T) {
+	empty := ""
+	output := &ai.AssistantMessage{Content: ai.AssistantContent{}}
+	var events []ai.AssistantMessageEvent
+	processor := &bedrockStreamProcessor{
+		output: output,
+		sink: func(event ai.AssistantMessageEvent) bool {
+			events = append(events, event)
+			return true
+		},
+	}
+	processor.handleDelta(bedrockStreamItem{ContentBlockIndex: 3, ReasoningText: &empty})
+	if len(events) != 1 {
+		t.Fatalf("empty initial reasoning delta emitted %d events, want one start: %#v", len(events), events)
+	}
+	if _, ok := events[0].(ai.ThinkingStartEvent); !ok {
+		t.Fatalf("empty initial reasoning event = %T, want ThinkingStartEvent", events[0])
+	}
+	events = nil
+	processor.handleDelta(bedrockStreamItem{ContentBlockIndex: 3, ReasoningText: &empty, ReasoningSignature: &empty})
+	if len(events) != 0 {
+		t.Fatalf("empty reasoning update emitted events: %#v", events)
+	}
+}
+
+// TestBedrockARNRegionMatchesUpstreamPattern_OTm6 pins the upstream ARN
+// region regex (bedrock-converse-stream.ts:166). (OT-m6)
+func TestBedrockARNRegionMatchesUpstreamPattern_OTm6(t *testing.T) {
+	tests := []struct {
+		modelID string
+		want    string
+	}{
+		{"arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude", "us-east-1"},
+		{"arn:aws-us-gov:bedrock:us-gov-west-1:123456789012:inference-profile/profile", "us-gov-west-1"},
+		{"arn:aws-cn:bedrock:cn-north-1:123456789012:application-inference-profile/x", "cn-north-1"},
+		{"arnX:aws:bedrock:us-east-1:123:profile", ""},
+		{"arn:aws:bedrock:US-EAST-1:123:profile", ""},
+		{"arn:aws:sagemaker:us-east-1:123:endpoint/x", ""},
+		{"arn:awsgov:bedrock:us-gov-west-1:123:profile", ""},
+		{"anthropic.claude-sonnet-4-5", ""},
+	}
+	for _, test := range tests {
+		if got := bedrockARNRegion(test.modelID); got != test.want {
+			t.Fatalf("bedrockARNRegion(%q) = %q, want %q", test.modelID, got, test.want)
+		}
 	}
 }
 

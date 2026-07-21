@@ -14,10 +14,7 @@ import (
 	"github.com/OrdalieTech/pigo/internal/jsonschema"
 )
 
-var (
-	errNoModel    = errors.New("agent: loop requires a model")
-	errNoStreamFn = errors.New("agent: loop requires a stream function")
-)
+var errNoModel = errors.New("agent: loop requires a model")
 
 // RunLoop starts a loop with prompt messages and returns only messages created
 // by this invocation. The caller-owned context is copied before it is changed.
@@ -27,6 +24,7 @@ func RunLoop(
 	loopContext AgentContext,
 	config AgentLoopConfig,
 	sink EventSink,
+	streamFn StreamFn,
 ) (AgentMessages, error) {
 	current := copyAgentContext(loopContext)
 	current.Messages = append(current.Messages, prompts...)
@@ -48,7 +46,7 @@ func RunLoop(
 		}
 	}
 
-	if err := runLoop(ctx, &current, &newMessages, config, emitter); err != nil {
+	if err := runLoop(ctx, &current, &newMessages, config, emitter, streamFn); err != nil {
 		return nil, err
 	}
 	return newMessages, nil
@@ -60,6 +58,7 @@ func RunLoopContinue(
 	loopContext *AgentContext,
 	config AgentLoopConfig,
 	sink EventSink,
+	streamFn StreamFn,
 ) (AgentMessages, error) {
 	if loopContext == nil || len(loopContext.Messages) == 0 {
 		return nil, upstreamError("Cannot continue: no messages in context")
@@ -76,7 +75,7 @@ func RunLoopContinue(
 	if err := emitter.emit(ctx, TurnStartEvent{}); err != nil {
 		return nil, err
 	}
-	if err := runLoop(ctx, loopContext, &newMessages, config, emitter); err != nil {
+	if err := runLoop(ctx, loopContext, &newMessages, config, emitter, streamFn); err != nil {
 		return nil, err
 	}
 	return newMessages, nil
@@ -88,6 +87,7 @@ func runLoop(
 	newMessages *AgentMessages,
 	config AgentLoopConfig,
 	emitter *eventEmitter,
+	streamFn StreamFn,
 ) error {
 	firstTurn := true
 	pendingMessages, err := queuedMessages(ctx, config.GetSteeringMessages)
@@ -116,7 +116,7 @@ func runLoop(
 				currentContext.Messages = append(currentContext.Messages, message)
 				*newMessages = append(*newMessages, message)
 			}
-			message, err := streamAssistantResponse(ctx, currentContext, config, emitter)
+			message, err := streamAssistantResponse(ctx, currentContext, config, emitter, streamFn)
 			if err != nil {
 				return err
 			}
@@ -213,14 +213,11 @@ func streamAssistantResponse(
 	loopContext *AgentContext,
 	config AgentLoopConfig,
 	emitter *eventEmitter,
+	streamFn StreamFn,
 ) (*ai.AssistantMessage, error) {
 	if config.Model == nil {
 		return nil, errNoModel
 	}
-	if config.StreamFn == nil {
-		return nil, errNoStreamFn
-	}
-
 	messages := loopContext.Messages
 	var err error
 	if config.TransformContext != nil {
@@ -282,7 +279,7 @@ func streamAssistantResponse(
 		}
 		requestModel.Headers = mergeRequestHeaders(requestModel.Headers, headers)
 	}
-	stream, err := config.StreamFn(ctx, requestModel, llmContext, &options)
+	stream, err := streamFn(ctx, requestModel, llmContext, &options)
 	if err != nil {
 		return nil, err
 	}
@@ -698,7 +695,7 @@ func prepareToolCall(
 	}
 
 	spec := tool.Spec()
-	args := any(toolCall.Arguments)
+	args := ai.ToolCallArgumentsValue(toolCall)
 	argumentJSON, err := ai.MarshalToolCallArguments(toolCall)
 	if err == nil && spec.PrepareArguments != nil {
 		originalArgs := args

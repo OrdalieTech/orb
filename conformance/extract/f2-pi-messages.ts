@@ -87,6 +87,15 @@ const requestDefinitions: PiMessagesDefinition[] = [
       headers: { "x-fixture": "pi-messages" },
     },
   },
+  {
+    // Minimal options: unset fields vanish from the JSON options object, no
+    // debug query parameter, and cacheRetention stays a backend default.
+    name: "pi-messages-request-minimal-options",
+    api: "pi-messages",
+    model,
+    context,
+    options: { apiKey: "fixture-key" },
+  },
 ];
 
 function encodeSSE(events: unknown[], trailingDelimiter = true): string {

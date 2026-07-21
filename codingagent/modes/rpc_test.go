@@ -266,7 +266,7 @@ func TestRPCPromptPreflightFailureEmitsExactlyOneResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}}))
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}}))
 	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings,
 	})
@@ -305,7 +305,7 @@ func TestRPCGetAvailableThinkingLevels(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
-		Agent:          agent.NewAgent(agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}})),
+		Agent:          agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}})),
 		SessionManager: manager,
 		Settings:       settings,
 	})
@@ -341,8 +341,7 @@ func TestRPCImmediateFollowUpAfterPromptResponseIsQueued(t *testing.T) {
 	})
 	model := provider.GetModel()
 	created := agent.NewAgent(
-		agent.WithInitialState(agent.AgentState{Model: model, Messages: agent.AgentMessages{}, Tools: []agent.AgentTool{}}),
-		agent.WithStreamFn(provider.StreamSimple),
+		provider.StreamSimple, agent.WithInitialState(agent.AgentState{Model: model, Messages: agent.AgentMessages{}, Tools: []agent.AgentTool{}}),
 		agent.WithConvertToLLM(codingagent.ConvertToLLM),
 	)
 	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
@@ -425,7 +424,7 @@ func TestRPCEOFAbortsRunningCommandBeforeWaiting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}}))
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}}))
 	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings,
 	})

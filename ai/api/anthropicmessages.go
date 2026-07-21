@@ -1098,7 +1098,9 @@ func anthropicHeaders(
 	if len(betas) > 0 {
 		headers.Set("anthropic-beta", strings.Join(betas, ","))
 	}
-	if !oauth && options != nil && resolveCacheRetention(options) != ai.CacheRetentionNone && options.SessionID != nil && *options.SessionID != "" && compat.sendSessionAffinityHeaders {
+	// Upstream's github-copilot client branch never adds session affinity
+	// headers, so copilot is excluded alongside OAuth (OA-m6).
+	if !oauth && model.Provider != "github-copilot" && options != nil && resolveCacheRetention(options) != ai.CacheRetentionNone && options.SessionID != nil && *options.SessionID != "" && compat.sendSessionAffinityHeaders {
 		headers.Set("x-session-affinity", *options.SessionID)
 	}
 	modelHeaders := copyModelHeaders(model)

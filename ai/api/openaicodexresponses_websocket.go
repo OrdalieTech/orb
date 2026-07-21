@@ -425,11 +425,11 @@ func processOpenAICodexWebSocket(
 		if !started {
 			started = true
 			if !sink(ai.StartEvent{Partial: output}) {
-				return true, nil
+				return true, errStopSSE
 			}
 			for _, event := range pending {
 				if !sink(event) {
-					return true, nil
+					return true, errStopSSE
 				}
 			}
 			pending = nil

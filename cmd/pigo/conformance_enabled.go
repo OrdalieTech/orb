@@ -114,10 +114,9 @@ func newF7SessionRuntime(scenario f7Scenario) (*codingagent.SessionRuntime, erro
 	}
 	model := provider.GetModel()
 	created := agent.NewAgent(
-		agent.WithInitialState(agent.AgentState{
+		provider.StreamSimple, agent.WithInitialState(agent.AgentState{
 			Model: model, SystemPrompt: scenario.SystemPrompt, Messages: agent.AgentMessages{}, Tools: []agent.AgentTool{},
 		}),
-		agent.WithStreamFn(provider.StreamSimple),
 		agent.WithConvertToLLM(codingagent.ConvertToLLM),
 		agent.WithClock(func() int64 { return scenario.FixedNow }),
 	)

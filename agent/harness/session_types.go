@@ -78,6 +78,7 @@ type SessionTreeEntry struct {
 	ActiveToolNames  []string
 	Summary          string
 	FirstKeptEntryID string
+	RetainedTail     []json.RawMessage
 	TokensBefore     float64
 	Details          json.RawMessage
 	Usage            *ai.Usage
@@ -105,6 +106,7 @@ func (entry SessionTreeEntry) clone() SessionTreeEntry {
 	copy.ParentID = cloneHarnessString(entry.ParentID)
 	copy.ActiveToolNames = cloneHarnessStrings(entry.ActiveToolNames)
 	copy.Message = cloneHarnessRaw(entry.Message)
+	copy.RetainedTail = cloneHarnessRawMessages(entry.RetainedTail)
 	copy.Details = cloneHarnessRaw(entry.Details)
 	copy.Usage = cloneHarnessUsage(entry.Usage)
 	copy.FromHook = cloneHarnessBool(entry.FromHook)
@@ -160,6 +162,17 @@ func cloneHarnessRaw(value json.RawMessage) json.RawMessage {
 	return append(json.RawMessage(nil), value...)
 }
 
+func cloneHarnessRawMessages(values []json.RawMessage) []json.RawMessage {
+	if values == nil {
+		return nil
+	}
+	copy := make([]json.RawMessage, len(values))
+	for index := range values {
+		copy[index] = cloneHarnessRaw(values[index])
+	}
+	return copy
+}
+
 func cloneHarnessStrings(values []string) []string {
 	if values == nil {
 		return nil
@@ -177,8 +190,10 @@ type SessionStorage interface {
 	Entry(string) (*SessionTreeEntry, bool)
 	EntriesByType(string) []SessionTreeEntry
 	Label(string) (string, bool)
-	PathToRoot(*string) ([]SessionTreeEntry, error)
-	Entries() []SessionTreeEntry
+	SessionName() (string, bool)
+	SessionStats() SessionStats
+	PathToRootOrCompaction(*string) ([]SessionTreeEntry, error)
+	Entries(...SessionEntryCursorOptions) []SessionTreeEntry
 }
 
 // ByteSessionStorage exposes the exact serialized representation of a
@@ -199,6 +214,23 @@ const (
 type SessionModel struct {
 	Provider string `json:"provider"`
 	ModelID  string `json:"modelId"`
+}
+
+// SessionStats accounts for all physical session entries, including summary
+// entries outside the active branch.
+type SessionStats struct {
+	MessageCount   int     `json:"messageCount"`
+	CachedTokens   float64 `json:"cachedTokens"`
+	UncachedTokens float64 `json:"uncachedTokens"`
+	TotalTokens    float64 `json:"totalTokens"`
+	CostTotal      float64 `json:"costTotal"`
+}
+
+// SessionEntryCursorOptions follows Array.slice semantics for the ordinary
+// non-negative cursors emitted by upstream consumers.
+type SessionEntryCursorOptions struct {
+	AfterEntrySeq int
+	Limit         *int
 }
 
 type SessionContext struct {
@@ -244,7 +276,7 @@ func (session *Session) Context(options ...SessionContextBuildOptions) (SessionC
 	if err != nil {
 		return SessionContext{}, err
 	}
-	entries, err := session.storage.PathToRoot(leaf)
+	entries, err := session.storage.PathToRootOrCompaction(leaf)
 	if err != nil {
 		return SessionContext{}, err
 	}
@@ -259,7 +291,7 @@ func (session *Session) ContextEntries(options ...SessionContextBuildOptions) ([
 	if err != nil {
 		return nil, err
 	}
-	entries, err := session.storage.PathToRoot(leaf)
+	entries, err := session.storage.PathToRootOrCompaction(leaf)
 	if err != nil {
 		return nil, err
 	}
@@ -270,13 +302,13 @@ func (session *Session) Name() (string, bool, error) {
 	if session == nil || session.storage == nil {
 		return "", false, nil
 	}
-	entries := session.storage.EntriesByType("session_info")
-	if len(entries) == 0 {
-		return "", false, nil
+	name, ok := session.storage.SessionName()
+	return name, ok, nil
+}
+
+func (session *Session) Stats() SessionStats {
+	if session == nil || session.storage == nil {
+		return SessionStats{}
 	}
-	name := trimHarnessJSSpace(entries[len(entries)-1].Name)
-	if name == "" {
-		return "", false, nil
-	}
-	return name, true, nil
+	return session.storage.SessionStats()
 }

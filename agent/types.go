@@ -218,7 +218,6 @@ type AfterToolCallFunc func(context.Context, AfterToolCallContext) (*AfterToolCa
 type AgentLoopConfig struct {
 	ai.SimpleStreamOptions
 	Model               *ai.Model
-	StreamFn            StreamFn
 	ConvertToLLM        ConvertToLLMFunc
 	TransformContext    TransformContextFunc
 	GetAPIKey           GetAPIKeyFunc

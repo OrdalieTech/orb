@@ -499,7 +499,7 @@ func newF12VisibleMode(t *testing.T, command string) (*InteractiveMode, *f12Visi
 		}
 	}
 	sessionRuntime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
-		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings,
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings,
 	})
 	if err != nil {
 		t.Fatal(err)

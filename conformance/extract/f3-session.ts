@@ -215,7 +215,7 @@ export async function generateF3Session(
         const agent = new agentModule.Agent({
           getApiKey: () => "faux-key",
           initialState: { model, systemPrompt: "Exercise JSON event streaming.", tools: [] },
-          streamFn: core.streamSimple,
+          streamFunction: core.streamSimple,
         });
         const session = new sessionModule.AgentSession({
           agent,

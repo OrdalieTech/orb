@@ -86,12 +86,6 @@ func StreamAzureOpenAIResponsesWithOptions(
 	deploymentName := resolveAzureOpenAIDeploymentName(model, options)
 
 	return func(yield func(ai.AssistantMessageEvent, error) bool) {
-		httpContext := ctx
-		cancel := func() {}
-		if streamOptions != nil && streamOptions.TimeoutMS != nil {
-			httpContext, cancel = context.WithTimeout(ctx, time.Duration(*streamOptions.TimeoutMS)*time.Millisecond)
-		}
-		defer cancel()
 		sink := func(event ai.AssistantMessageEvent) bool { return yield(event, nil) }
 		fail := func(err error) {
 			clearResponsesStreamingFields(output)
@@ -118,7 +112,7 @@ func StreamAzureOpenAIResponsesWithOptions(
 			fail(err)
 			return
 		}
-		response, err := postAzureOpenAIStream(httpContext, model, streamOptions, config, apiKey, hookedPayload)
+		response, err := postAzureOpenAIStream(ctx, model, streamOptions, config, apiKey, hookedPayload)
 		if err != nil {
 			fail(err)
 			return
@@ -135,6 +129,9 @@ func StreamAzureOpenAIResponsesWithOptions(
 		}
 
 		processor := newOpenAIResponsesProcessor(model, output, nil, sink)
+		// Upstream's Azure stream never passes applyServiceTierPricing to
+		// processResponsesStream, so service-tier multipliers are ignored (OA-M2).
+		processor.applyServiceTierPricing = false
 		err = readSSE(response.Body, processor.handle)
 		if errors.Is(err, errStopSSE) {
 			return
@@ -371,6 +368,10 @@ func postAzureOpenAIStream(
 	if err != nil {
 		return nil, err
 	}
+	httpClient, err := openAIHeaderTimeoutClient(azureOpenAIHTTPClient, streamTimeoutMS(options))
+	if err != nil {
+		return nil, err
+	}
 	for attempt := 0; ; attempt++ {
 		request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(body))
 		if err != nil {
@@ -379,7 +380,7 @@ func postAzureOpenAIStream(
 		for name, values := range headers {
 			request.Header[name] = append([]string(nil), values...)
 		}
-		response, requestErr := azureOpenAIHTTPClient.Do(request)
+		response, requestErr := httpClient.Do(request)
 		if attempt < maxRetries && shouldRetryAzureOpenAI(response, requestErr) {
 			if response != nil && response.Body != nil {
 				_ = response.Body.Close()

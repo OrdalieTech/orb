@@ -152,6 +152,15 @@ const requestDefinitions: Definition[] = [
     options: { apiKey: ACCESS_TOKEN, transport: "sse", reasoning: "high" },
     simple: true,
   },
+  {
+    // CX-M4: a null thinkingLevelMap entry coalesces back to the requested
+    // effort (?? in openai-codex-responses.ts:523), so reasoning is still sent.
+    name: "codex-null-thinking-level-map-keeps-reasoning",
+    api: "openai-codex-responses",
+    model: model({ thinkingLevelMap: { off: "none", high: null } }),
+    context: { messages: [{ role: "user", content: "think hard", timestamp: FIXED_NOW }] },
+    options: { apiKey: ACCESS_TOKEN, transport: "sse", reasoningEffort: "high" },
+  },
 ];
 
 const richSSE = encodeSSE([

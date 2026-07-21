@@ -67,7 +67,7 @@ func newShortcutTestMode(t *testing.T, register func(extensions.API)) (*Interact
 		t.Fatal(err)
 	}
 	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
-		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings, ExtensionRegistry: registry,
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings, ExtensionRegistry: registry,
 	})
 	if err != nil {
 		t.Fatal(err)

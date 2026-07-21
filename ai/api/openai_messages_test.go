@@ -98,3 +98,35 @@ func TestTransformMessagesDropsIncompleteAssistantAndCrossModelSecrets(t *testin
 		t.Fatalf("cross-model tool = %#v", tool)
 	}
 }
+
+// Gap OA-m3: upstream keeps same-model thinking blocks on a truthy signature
+// (transform-messages.ts:109), so an empty-string thinkingSignature must not
+// preserve an otherwise-empty thinking block.
+func TestTransformMessagesDropsEmptyThinkingSignatureOAm3(t *testing.T) {
+	model := responsesTestModel()
+	empty := ""
+	kept := `{"type":"reasoning","id":"rs_1","summary":[]}`
+	messages := ai.MessageList{
+		&ai.AssistantMessage{
+			Content: ai.AssistantContent{
+				&ai.ThinkingContent{Thinking: "   ", ThinkingSignature: &empty},
+				&ai.ThinkingContent{Thinking: "", ThinkingSignature: &kept},
+				&ai.TextContent{Text: "answer"},
+			},
+			API:        model.API,
+			Provider:   model.Provider,
+			Model:      model.ID,
+			Usage:      zeroUsage(),
+			StopReason: ai.StopReasonStop,
+		},
+	}
+	got := transformMessages(messages, model, nil)
+	assistant := got[0].(*ai.AssistantMessage)
+	if len(assistant.Content) != 2 {
+		t.Fatalf("content = %#v, want only signature-backed thinking and text", assistant.Content)
+	}
+	thinking, ok := assistant.Content[0].(*ai.ThinkingContent)
+	if !ok || thinking.ThinkingSignature == nil || *thinking.ThinkingSignature != kept {
+		t.Fatalf("kept thinking = %#v", assistant.Content[0])
+	}
+}

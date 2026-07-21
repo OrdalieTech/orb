@@ -9,9 +9,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 
 	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/ai/auth/oauth"
@@ -26,6 +29,8 @@ const (
 var (
 	errCodexTerminal = errors.New("ai/api: Codex terminal response")
 	openAICodexSleep = sleepWithContext
+	// Mirrors upstream /rate.?limit|overloaded|service.?unavailable|upstream.?connect|connection.?refused/i.
+	codexRetryableTextPattern = regexp.MustCompile(`(?i)rate.?limit|overloaded|service.?unavailable|upstream.?connect|connection.?refused`)
 )
 
 type codexAPIError struct {
@@ -195,7 +200,14 @@ func StreamOpenAICodexResponsesWithOptions(
 			retriedConnectionLimit := false
 			for {
 				started, webSocketErr := processOpenAICodexWebSocket(ctx, model, body, webSocketHeaders, options, output, sink)
+				if errors.Is(webSocketErr, errStopSSE) {
+					return
+				}
 				if webSocketErr == nil {
+					if ctx.Err() != nil {
+						fail(errors.New("Request was aborted")) //nolint:staticcheck // Upstream capitalization is observable.
+						return
+					}
 					clearResponsesStreamingFields(output)
 					sink(ai.DoneEvent{Reason: output.StopReason, Message: output})
 					return
@@ -224,7 +236,15 @@ func StreamOpenAICodexResponsesWithOptions(
 			}
 		}
 		headers := buildOpenAICodexHeaders(model, streamOptions, apiKey, accountID)
-		response, err := postOpenAICodexStream(ctx, model, streamOptions, body, headers)
+		// The Codex backend decodes Content-Encoding: zstd on the SSE path; the
+		// WebSocket transport above sends the uncompressed JSON frame, matching
+		// the official Codex client.
+		sseBody := body
+		if compressed, ok := compressOpenAICodexRequestBody(body); ok {
+			headers.Set("Content-Encoding", "zstd")
+			sseBody = compressed
+		}
+		response, err := postOpenAICodexStream(ctx, model, streamOptions, sseBody, headers)
 		if err != nil {
 			fail(err)
 			return
@@ -243,6 +263,9 @@ func StreamOpenAICodexResponsesWithOptions(
 		err = readOpenAICodexSSE(response.Body, func(raw json.RawMessage) error {
 			return handleOpenAICodexEvent(processor, raw)
 		})
+		if errors.Is(err, errStopSSE) {
+			return
+		}
 		if errors.Is(err, errCodexTerminal) {
 			err = nil
 		}
@@ -367,14 +390,17 @@ func buildOpenAICodexResponsesPayload(
 	if options != nil {
 		payload.ServiceTier = options.ServiceTier
 		if options.ReasoningEffort != nil {
-			effort, include := openAICodexReasoningEffort(model, *options.ReasoningEffort)
-			if include {
-				summary := "auto"
-				if options.ReasoningSummary != nil {
-					summary = *options.ReasoningSummary
-				}
-				payload.Reasoning = &OpenAIReasoningParams{Effort: effort, Summary: &summary}
+			// Upstream coalesces a null thinkingLevelMap entry back to the
+			// requested effort with ??, so a nil mapping never omits reasoning.
+			level, fallback := *options.ReasoningEffort, *options.ReasoningEffort
+			if level == "none" {
+				level, fallback = "off", "none"
 			}
+			summary := "auto"
+			if options.ReasoningSummary != nil {
+				summary = *options.ReasoningSummary
+			}
+			payload.Reasoning = &OpenAIReasoningParams{Effort: mappedThinkingLevel(model, level, fallback), Summary: &summary}
 		}
 	}
 	if len(placement.immediate) > 0 {
@@ -386,24 +412,6 @@ func buildOpenAICodexResponsesPayload(
 		}
 	}
 	return payload, nil
-}
-
-func openAICodexReasoningEffort(model *ai.Model, requested string) (string, bool) {
-	level, fallback := ai.ModelThinkingLevel(requested), requested
-	if requested == "none" {
-		level, fallback = ai.ModelThinkingOff, "none"
-	}
-	if model.ThinkingLevelMap == nil {
-		return fallback, true
-	}
-	mapped, exists := (*model.ThinkingLevelMap)[level]
-	if !exists {
-		return fallback, true
-	}
-	if mapped == nil {
-		return "", false
-	}
-	return *mapped, true
 }
 
 func buildOpenAICodexHeaders(model *ai.Model, options *ai.StreamOptions, token, accountID string) http.Header {
@@ -426,6 +434,18 @@ func buildOpenAICodexHeaders(model *ai.Model, options *ai.StreamOptions, token, 
 		}
 	}
 	return headers
+}
+
+// compressOpenAICodexRequestBody returns the zstd-compressed body bytes at the
+// level the official Codex client uses (zstd level 3, klauspost SpeedDefault).
+// Callers fall back to sending the uncompressed JSON when compression fails.
+func compressOpenAICodexRequestBody(body []byte) ([]byte, bool) {
+	encoder, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedDefault))
+	if err != nil {
+		return nil, false
+	}
+	defer func() { _ = encoder.Close() }()
+	return encoder.EncodeAll(body, nil), true
 }
 
 func resolveOpenAICodexURL(baseURL string) string {
@@ -622,25 +642,22 @@ func (body *codexCancelReadCloser) Close() error {
 }
 
 func handleOpenAICodexEvent(processor *openAIResponsesProcessor, raw json.RawMessage) error {
-	var envelope struct {
-		Type     string           `json:"type"`
-		Code     string           `json:"code"`
-		Message  string           `json:"message"`
-		Error    *codexEventError `json:"error"`
-		Response json.RawMessage  `json:"response"`
-	}
+	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		return &codexProtocolError{message: err.Error()}
 	}
-	switch envelope.Type {
+	typeName, _ := codexString(envelope["type"])
+	switch typeName {
 	case "error":
-		code, message := envelope.Code, envelope.Message
-		if envelope.Error != nil {
+		code, _ := codexString(envelope["code"])
+		message, _ := codexString(envelope["message"])
+		var nested map[string]json.RawMessage
+		if json.Unmarshal(envelope["error"], &nested) == nil {
 			if code == "" {
-				code = envelope.Error.Code
+				code, _ = codexString(nested["code"])
 			}
 			if message == "" {
-				message = envelope.Error.Message
+				message, _ = codexString(nested["message"])
 			}
 		}
 		if message == "" {
@@ -651,22 +668,25 @@ func handleOpenAICodexEvent(processor *openAIResponsesProcessor, raw json.RawMes
 		}
 		return &codexAPIError{message: "Codex error: " + message, code: code}
 	case "response.failed":
-		var response struct {
-			Error *codexEventError `json:"error"`
+		var response, nested map[string]json.RawMessage
+		_ = json.Unmarshal(envelope["response"], &response)
+		_ = json.Unmarshal(response["error"], &nested)
+		message, code := "Codex response failed", ""
+		if rawCode, ok := nested["code"]; ok {
+			var flexible codexFlexibleCode
+			_ = flexible.UnmarshalJSON(rawCode)
+			code = flexible.text
 		}
-		if err := json.Unmarshal(envelope.Response, &response); err != nil {
-			return &codexProtocolError{message: err.Error()}
+		if nestedMessage, ok := codexString(nested["message"]); ok && nestedMessage != "" {
+			message = nestedMessage
 		}
-		if response.Error != nil && response.Error.Message != "" {
-			return &codexAPIError{message: response.Error.Message, code: response.Error.Code}
-		}
-		return &codexAPIError{message: "Codex response failed"} //nolint:staticcheck // Upstream capitalization is observable.
+		return &codexAPIError{message: message, code: code}
 	case "response.done", "response.completed", "response.incomplete":
 		var requestedServiceTier *string
 		if processor.options != nil {
 			requestedServiceTier = processor.options.ServiceTier
 		}
-		normalized, err := normalizeOpenAICodexTerminalEvent(envelope.Response, requestedServiceTier)
+		normalized, err := normalizeOpenAICodexTerminalEvent(envelope["response"], requestedServiceTier)
 		if err != nil {
 			return err
 		}
@@ -676,6 +696,14 @@ func handleOpenAICodexEvent(processor *openAIResponsesProcessor, raw json.RawMes
 		return errCodexTerminal
 	}
 	return processor.handle(raw)
+}
+
+func codexString(raw json.RawMessage) (string, bool) {
+	var value string
+	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
+		return "", false
+	}
+	return value, true
 }
 
 func readOpenAICodexSSE(body io.Reader, handle func(json.RawMessage) error) error {
@@ -710,9 +738,26 @@ func readOpenAICodexSSE(body io.Reader, handle func(json.RawMessage) error) erro
 	}
 }
 
-type codexEventError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+// codexFlexibleCode decodes an error code that providers send as either a JSON
+// string or a number without failing the strict event unmarshal.
+type codexFlexibleCode struct {
+	text     string
+	isString bool
+}
+
+func (code *codexFlexibleCode) UnmarshalJSON(data []byte) error {
+	var text string
+	if json.Unmarshal(data, &text) == nil {
+		code.text, code.isString = text, true
+		return nil
+	}
+	var number json.Number
+	if json.Unmarshal(data, &number) == nil {
+		code.text, code.isString = number.String(), false
+		return nil
+	}
+	code.text, code.isString = "", false
+	return nil
 }
 
 func compactCodexEvent(raw json.RawMessage) string {
@@ -768,13 +813,7 @@ func retryableCodexError(status int, text string) bool {
 	if status == 429 || status == 500 || status == 502 || status == 503 || status == 504 {
 		return true
 	}
-	normalized := strings.ToLower(text)
-	for _, marker := range []string{"rate limit", "rate-limit", "ratelimit", "overloaded", "service unavailable", "service-unavailable", "upstream connect", "upstream-connect", "connection refused", "connection-refused"} {
-		if strings.Contains(normalized, marker) {
-			return true
-		}
-	}
-	return false
+	return codexRetryableTextPattern.MatchString(text)
 }
 
 func regexpMatchFold(text string, markers ...string) bool {

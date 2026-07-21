@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/agent/harness"
 	"github.com/OrdalieTech/pigo/ai"
 	aiauth "github.com/OrdalieTech/pigo/ai/auth"
 	"github.com/OrdalieTech/pigo/codingagent"
@@ -535,7 +534,7 @@ func TestCommandActionsContextsSignalAndRegistrations(t *testing.T) {
 		Compact: func(options *extensions.CompactOptions) {
 			record("compact", options.CustomInstructions)
 			if options.OnComplete != nil {
-				options.OnComplete(harness.CompactionResult{Summary: "compacted"})
+				options.OnComplete(session.CompactionResult{Summary: "compacted"})
 			}
 		},
 		GetSystemPromptOptions: func() extensions.SystemPromptOptions {
@@ -1149,7 +1148,7 @@ export default function (pi) {
   }});
 }
 `
-	var complete func(harness.CompactionResult)
+	var complete func(session.CompactionResult)
 	called := make(chan struct{}, 1)
 	actions := extensions.Actions{AppendEntry: func(context.Context, string, any) error {
 		called <- struct{}{}
@@ -1162,7 +1161,7 @@ export default function (pi) {
 		t.Fatal(err)
 	}
 	cancel()
-	complete(harness.CompactionResult{Summary: "late"})
+	complete(session.CompactionResult{Summary: "late"})
 	select {
 	case <-called:
 	case <-time.After(2 * time.Second):
@@ -1458,7 +1457,7 @@ export default function (pi) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{
 		Model: &model, SystemPrompt: "test", Messages: agent.AgentMessages{}, Tools: []agent.AgentTool{},
 	}))
 	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{

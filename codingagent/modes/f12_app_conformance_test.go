@@ -1106,7 +1106,7 @@ func newF12AutocompleteMode(t *testing.T, enableSkillCommands bool) *Interactive
 		t.Fatal(err)
 	}
 	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
-		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings,
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings,
 		ExtensionRegistry: registry, ResourceLoader: loader,
 		SlashResolver: &codingagent.SlashResolver{PromptTemplates: prompts, Skills: skills},
 		AvailableModels: func() []ai.Model {

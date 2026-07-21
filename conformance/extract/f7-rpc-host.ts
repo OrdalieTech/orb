@@ -69,7 +69,7 @@ syncBuiltinESMExports();
       systemPrompt: "Return one short answer.",
       tools: [],
     },
-    streamFn: core.provider.streamSimple.bind(core.provider),
+    streamFunction: core.provider.streamSimple.bind(core.provider),
   });
   const manager = sessionManagerModule.SessionManager.inMemory(FIXTURE_CWD, {
     id: "fixture-rpc-session",

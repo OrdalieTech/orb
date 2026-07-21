@@ -32,7 +32,7 @@ func TestSessionEventWireShapes(t *testing.T) {
 		{"queue", QueueUpdateEvent{Steering: []string{"s"}, FollowUp: []string{}}, `{"type":"queue_update","steering":["s"],"followUp":[]}`},
 		{"compaction-start", CompactionStartEvent{Reason: "threshold"}, `{"type":"compaction_start","reason":"threshold"}`},
 		{"compaction-end-error", CompactionEndEvent{Reason: "overflow", ErrorMessage: stringPointer("failed")}, `{"type":"compaction_end","reason":"overflow","aborted":false,"willRetry":false,"errorMessage":"failed"}`},
-		{"compaction-end-result", CompactionEndEvent{Reason: "threshold", Result: &harness.CompactionResult{Summary: "s", FirstKeptEntryID: "id", TokensBefore: 12, Usage: &ai.Usage{Input: 1, TotalTokens: 1, Cost: ai.Cost{}}, Details: harness.CompactionDetails{ReadFiles: []string{}, ModifiedFiles: []string{}}}}, `{"type":"compaction_end","reason":"threshold","result":{"summary":"s","firstKeptEntryId":"id","tokensBefore":12,"estimatedTokensAfter":0,"usage":{"input":1,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":1,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"details":{"readFiles":[],"modifiedFiles":[]}},"aborted":false,"willRetry":false}`},
+		{"compaction-end-result", CompactionEndEvent{Reason: "threshold", Result: &sessionstore.CompactionResult{Summary: "s", FirstKeptEntryID: "id", TokensBefore: 12, Usage: &ai.Usage{Input: 1, TotalTokens: 1, Cost: ai.Cost{}}, Details: harness.CompactionDetails{ReadFiles: []string{}, ModifiedFiles: []string{}}}}, `{"type":"compaction_end","reason":"threshold","result":{"summary":"s","firstKeptEntryId":"id","tokensBefore":12,"estimatedTokensAfter":0,"usage":{"input":1,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":1,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"details":{"readFiles":[],"modifiedFiles":[]}},"aborted":false,"willRetry":false}`},
 		{"retry-start", AutoRetryStartEvent{Attempt: 1, MaxAttempts: 3, DelayMS: 2000, ErrorMessage: "overloaded"}, `{"type":"auto_retry_start","attempt":1,"maxAttempts":3,"delayMs":2000,"errorMessage":"overloaded"}`},
 		{"retry-end", AutoRetryEndEvent{Success: true, Attempt: 2}, `{"type":"auto_retry_end","success":true,"attempt":2}`},
 		{"entry-appended", EntryAppendedEvent{Entry: sessionstore.SessionEntry{Type: "custom", ID: "entry", Timestamp: "2026-01-02T03:04:05.000Z"}}, `{"type":"entry_appended","entry":{"type":"custom","customType":"","id":"entry","parentId":null,"timestamp":"2026-01-02T03:04:05.000Z"}}`},
@@ -153,7 +153,7 @@ func TestSessionRuntimeDefaultCompletionAppliesRequestAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{
 		Model: provider.GetModel(), SystemPrompt: "test", Messages: agent.AgentMessages{}, Tools: []agent.AgentTool{},
 	}))
 	baseURL := "https://vertex.example.test/v1"
@@ -883,7 +883,7 @@ func TestLongFauxSessionCompactsAtHarnessBoundary(t *testing.T) {
 		t.Fatalf("last entry = %#v", branch[len(branch)-1])
 	}
 	before := projectSessionEntries(branch[:len(branch)-1])
-	want, err := harness.PrepareCompaction(before, harness.CompactionSettings{Enabled: true, ReserveTokens: 50, KeepRecentTokens: 8})
+	want, err := harness.PrepareLegacyCompaction(before, harness.CompactionSettings{Enabled: true, ReserveTokens: 50, KeepRecentTokens: 8})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1121,8 +1121,8 @@ func newTestRuntimeWithHeaders(t *testing.T, provider *faux.Provider, settings m
 		t.Fatal(err)
 	}
 	created := agent.NewAgent(
-		agent.WithInitialState(agent.AgentState{Model: provider.GetModel(), SystemPrompt: "test", Messages: agent.AgentMessages{}, Tools: []agent.AgentTool{}}),
-		agent.WithStreamFn(provider.StreamSimple), agent.WithConvertToLLM(ConvertToLLM),
+		provider.StreamSimple, agent.WithInitialState(agent.AgentState{Model: provider.GetModel(), SystemPrompt: "test", Messages: agent.AgentMessages{}, Tools: []agent.AgentTool{}}),
+		agent.WithConvertToLLM(ConvertToLLM),
 	)
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settingsManager, StreamFn: provider.StreamSimple,

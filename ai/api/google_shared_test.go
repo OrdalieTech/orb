@@ -23,6 +23,33 @@ func TestConvertGoogleToolsPreservesStringEnumSchema(t *testing.T) {
 	}
 }
 
+// TestMapGoogleStopReasonThrowsOnUnknown_OTm1 pins google-shared.ts
+// mapStopReason (:309-336): every known FinishReason maps explicitly and an
+// unknown value throws `Unhandled stop reason: X` immediately instead of
+// silently mapping to error. (OT-m1)
+func TestMapGoogleStopReasonThrowsOnUnknown_OTm1(t *testing.T) {
+	if reason, err := mapGoogleStopReason("STOP"); err != nil || reason != ai.StopReasonStop {
+		t.Fatalf("STOP = %q, %v", reason, err)
+	}
+	if reason, err := mapGoogleStopReason("MAX_TOKENS"); err != nil || reason != ai.StopReasonLength {
+		t.Fatalf("MAX_TOKENS = %q, %v", reason, err)
+	}
+	for _, known := range []string{
+		"BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "SAFETY", "IMAGE_SAFETY",
+		"IMAGE_PROHIBITED_CONTENT", "IMAGE_RECITATION", "IMAGE_OTHER", "RECITATION",
+		"FINISH_REASON_UNSPECIFIED", "OTHER", "LANGUAGE", "MALFORMED_FUNCTION_CALL",
+		"UNEXPECTED_TOOL_CALL", "NO_IMAGE",
+	} {
+		if reason, err := mapGoogleStopReason(known); err != nil || reason != ai.StopReasonError {
+			t.Fatalf("%s = %q, %v", known, reason, err)
+		}
+	}
+	_, err := mapGoogleStopReason("BRAND_NEW_REASON")
+	if err == nil || err.Error() != "Unhandled stop reason: BRAND_NEW_REASON" {
+		t.Fatalf("unknown reason error = %v", err)
+	}
+}
+
 func TestGoogleThoughtSignatureValidation(t *testing.T) {
 	valid := "AAAAAAAAAAAAAAAAAAAAAA=="
 	if got := resolveGoogleThoughtSignature(true, &valid); got == nil || *got != valid {

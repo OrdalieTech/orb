@@ -45,7 +45,7 @@ func TestF12JSONLExportMatchesUpstreamBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
-		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings,
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings,
 		Clock: func() int64 { return fixture.NowUnixMilli },
 	})
 	if err != nil {

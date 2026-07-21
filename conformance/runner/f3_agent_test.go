@@ -263,7 +263,6 @@ func runF3Case(t *testing.T, fixedNow int64, fixtureCase f3Case) {
 
 	config := agent.AgentLoopConfig{
 		Model:         provider.GetModel(),
-		StreamFn:      provider.StreamSimple,
 		ToolExecution: agent.ToolExecutionMode(fixtureCase.ToolExecution),
 		Now:           func() int64 { return fixedNow },
 	}
@@ -279,7 +278,7 @@ func runF3Case(t *testing.T, fixedNow int64, fixtureCase f3Case) {
 	_, err := agent.RunLoop(ctx, agent.AgentMessages{prompt}, agent.AgentContext{
 		SystemPrompt: fixtureCase.SystemPrompt,
 		Tools:        tools,
-	}, config, sink)
+	}, config, sink, provider.StreamSimple)
 	if err != nil {
 		t.Fatalf("RunLoop: %v", err)
 	}

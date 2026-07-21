@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 type ContextEntryTransform func([]SessionTreeEntry) []SessionTreeEntry
@@ -81,6 +82,9 @@ func BuildSessionContext(entries []SessionTreeEntry, options ...SessionContextBu
 		if message := entryMessage(projectTreeEntry(entry), true); message != nil {
 			contextState.Messages = append(contextState.Messages, message)
 		}
+		if entry.Type == "compaction" {
+			contextState.Messages = append(contextState.Messages, decodeHarnessAgentMessages(entry.RetainedTail)...)
+		}
 	}
 	return contextState
 }
@@ -107,6 +111,9 @@ func DefaultContextEntryTransform(entries []SessionTreeEntry) []SessionTreeEntry
 		return cloneHarnessEntries(entries)
 	}
 	selected := []SessionTreeEntry{entries[latest].clone()}
+	if entries[latest].RetainedTail != nil {
+		return append(selected, cloneHarnessEntries(entries[latest+1:])...)
+	}
 	foundFirstKept := false
 	for index := 0; index < latest; index++ {
 		if entries[index].ID == entries[latest].FirstKeptEntryID {
@@ -127,9 +134,50 @@ func projectTreeEntry(entry SessionTreeEntry) SessionEntry {
 	return SessionEntry{
 		Type: entry.Type, ID: entry.ID, ParentID: cloneHarnessString(entry.ParentID), Timestamp: entry.Timestamp,
 		Message: entry.Message, Summary: entry.Summary, FirstKeptEntryID: entry.FirstKeptEntryID,
+		RetainedTail: decodeHarnessAgentMessages(entry.RetainedTail),
 		TokensBefore: entry.TokensBefore, Details: entry.Details, Usage: cloneHarnessUsage(entry.Usage), FromHook: fromHook,
 		FromID: entry.FromID, CustomType: entry.CustomType, Content: entry.Content, Display: entry.Display,
 	}
+}
+
+func decodeHarnessAgentMessages(values []json.RawMessage) agent.AgentMessages {
+	if values == nil {
+		return nil
+	}
+	messages := make(agent.AgentMessages, 0, len(values))
+	for _, raw := range values {
+		if message, err := ai.UnmarshalMessage(raw); err == nil {
+			messages = append(messages, message)
+			continue
+		}
+		var envelope struct {
+			Role string `json:"role"`
+		}
+		if json.Unmarshal(raw, &envelope) == nil {
+			switch envelope.Role {
+			case "custom":
+				var message CustomMessage
+				if json.Unmarshal(raw, &message) == nil {
+					messages = append(messages, &message)
+					continue
+				}
+			case "bashExecution":
+				var message BashExecutionMessage
+				if json.Unmarshal(raw, &message) == nil {
+					messages = append(messages, &message)
+					continue
+				}
+			case "branchSummary", "compactionSummary":
+				var message SummaryMessage
+				if json.Unmarshal(raw, &message) == nil {
+					messages = append(messages, &message)
+					continue
+				}
+			}
+		}
+		messages = append(messages, cloneHarnessRaw(raw))
+	}
+	return messages
 }
 
 // EntriesToFork selects the source entries copied by repository fork.
@@ -151,7 +199,7 @@ func EntriesToFork(storage SessionStorage, entryID string, position ForkPosition
 		}
 		leaf = *target.ParentID
 	}
-	return storage.PathToRoot(&leaf)
+	return storage.PathToRootOrCompaction(&leaf)
 }
 
 func rawMessageRole(message json.RawMessage) string {

@@ -10,17 +10,13 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/internal/jsonschema"
 	"github.com/OrdalieTech/pigo/internal/partialjson"
 )
 
-const (
-	mistralToolCallIDLength = 9
-	mistralRequestTimeout   = 60 * time.Second
-)
+const mistralToolCallIDLength = 9
 
 type mistralHTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
@@ -161,12 +157,6 @@ func StreamMistralConversationsWithOptions(
 	streamOptions := mistralStreamOptions(options)
 
 	return func(yield func(ai.AssistantMessageEvent, error) bool) {
-		httpContext := ctx
-		cancel := func() {}
-		if _, hasDeadline := ctx.Deadline(); !hasDeadline {
-			httpContext, cancel = context.WithTimeout(ctx, mistralRequestTimeout)
-		}
-		defer cancel()
 		sink := func(event ai.AssistantMessageEvent) bool { return yield(event, nil) }
 		fail := func(err error) {
 			clearMistralStreamingFields(output)
@@ -195,7 +185,7 @@ func StreamMistralConversationsWithOptions(
 			fail(err)
 			return
 		}
-		response, err := postMistralStream(httpContext, model, streamOptions, apiKey, hookedPayload)
+		response, err := postMistralStream(ctx, model, streamOptions, apiKey, hookedPayload)
 		if err != nil {
 			fail(err)
 			return
@@ -805,7 +795,7 @@ func (processor *mistralStreamProcessor) consumeToolCall(raw mistralStreamToolCa
 		block.PartialArgs = &value
 	}
 	*block.PartialArgs += argsDelta
-	block.Arguments = parseMistralArguments(*block.PartialArgs)
+	setMistralStreamArguments(block, *block.PartialArgs)
 	if !processor.sink(ai.ToolCallDeltaEvent{ContentIndex: contentIndex, Delta: argsDelta, Partial: processor.output}) {
 		return errStopSSE
 	}
@@ -813,26 +803,39 @@ func (processor *mistralStreamProcessor) consumeToolCall(raw mistralStreamToolCa
 }
 
 func mistralArgumentsText(raw json.RawMessage) string {
-	if len(raw) == 0 || string(raw) == "null" {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
 		return "{}"
 	}
 	var text string
-	if json.Unmarshal(raw, &text) == nil {
+	if json.Unmarshal(trimmed, &text) == nil {
 		return text
 	}
-	normalized, err := ai.NormalizeJSONStringifyJSON(raw)
+	var scalar any
+	if json.Unmarshal(trimmed, &scalar) == nil {
+		switch value := scalar.(type) {
+		case bool:
+			if !value {
+				return "{}"
+			}
+		case float64:
+			if value == 0 {
+				return "{}"
+			}
+		}
+	}
+	normalized, err := ai.NormalizeJSONStringifyJSON(trimmed)
 	if err != nil {
-		return string(raw)
+		return string(trimmed)
 	}
 	return string(normalized)
 }
 
-func parseMistralArguments(value string) map[string]any {
-	parsed := partialjson.ParseStreamingJSON(value)
-	if object, ok := parsed.(map[string]any); ok {
-		return object
+func setMistralStreamArguments(block *ai.ToolCall, value string) {
+	arguments, err := partialjson.StringifyStreamingJSON(value)
+	if err != nil || ai.SetToolCallArgumentsJSON(block, arguments) != nil {
+		_ = ai.SetToolCallArgumentsJSON(block, []byte(`{}`))
 	}
-	return map[string]any{}
 }
 
 func (processor *mistralStreamProcessor) finish() error {
@@ -845,13 +848,9 @@ func (processor *mistralStreamProcessor) finish() error {
 			continue
 		}
 		if block.PartialArgs != nil {
-			arguments, err := partialjson.StringifyStreamingJSON(*block.PartialArgs)
-			if err != nil {
-				return err
-			}
-			if err := ai.SetToolCallArgumentsJSON(block, arguments); err != nil {
-				return err
-			}
+			// parseStreamingJson retains valid non-object JSON at runtime even
+			// though Mistral's TypeScript cast says Record. (OT-m8)
+			setMistralStreamArguments(block, *block.PartialArgs)
 		}
 		block.PartialArgs = nil
 		if !processor.sink(ai.ToolCallEndEvent{ContentIndex: index, ToolCall: block, Partial: processor.output}) {
@@ -899,15 +898,55 @@ func mistralUsageNumber(raw map[string]json.RawMessage, keys ...string) int64 {
 	return 0
 }
 
+// mistralCachedPromptTokens mirrors upstream's ?? fallback chain (ts:283-292):
+// a candidate is consumed only when present and non-null, and a consumed
+// non-number terminates the chain with zero cached tokens. (OT-m7)
 func mistralCachedPromptTokens(raw map[string]json.RawMessage, prompt int64) int64 {
-	for _, detailKey := range []string{"prompt_tokens_details", "promptTokensDetails", "prompt_token_details", "promptTokenDetails"} {
-		var details map[string]json.RawMessage
-		if value, ok := raw[detailKey]; ok && json.Unmarshal(value, &details) == nil {
-			cached := mistralUsageNumber(details, "cached_tokens", "cachedTokens")
-			return min(prompt, max(0, cached))
+	cached := int64(0)
+	if value, ok := mistralRawCachedTokens(raw); ok {
+		var number float64
+		if json.Unmarshal(value, &number) == nil {
+			cached = int64(number)
 		}
 	}
-	return min(prompt, max(0, mistralUsageNumber(raw, "num_cached_tokens", "numCachedTokens")))
+	return min(prompt, max(0, cached))
+}
+
+func mistralRawCachedTokens(raw map[string]json.RawMessage) (json.RawMessage, bool) {
+	details := []struct{ parent, key string }{
+		{"promptTokensDetails", "cachedTokens"},
+		{"prompt_tokens_details", "cached_tokens"},
+		{"promptTokenDetails", "cachedTokens"},
+		{"prompt_token_details", "cached_tokens"},
+	}
+	for _, entry := range details {
+		parentRaw, ok := raw[entry.parent]
+		if !ok || mistralJSONNull(parentRaw) {
+			continue
+		}
+		var parent map[string]json.RawMessage
+		if json.Unmarshal(parentRaw, &parent) != nil {
+			// Optional chaining on a non-object parent yields undefined upstream.
+			continue
+		}
+		value, ok := parent[entry.key]
+		if !ok || mistralJSONNull(value) {
+			continue
+		}
+		return value, true
+	}
+	for _, key := range []string{"numCachedTokens", "num_cached_tokens"} {
+		value, ok := raw[key]
+		if !ok || mistralJSONNull(value) {
+			continue
+		}
+		return value, true
+	}
+	return nil, false
+}
+
+func mistralJSONNull(value json.RawMessage) bool {
+	return string(bytes.TrimSpace(value)) == "null"
 }
 
 func mapMistralStopReason(reason *string) ai.StopReason {

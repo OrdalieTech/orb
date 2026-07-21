@@ -268,8 +268,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		return result
 	}
 	created := agent.NewAgent(
-		agent.WithInitialState(state),
-		agent.WithStreamFn(streamFn),
+		streamFn, agent.WithInitialState(state),
 		agent.WithConvertToLLM(codingagent.ConvertToLLMWithBlockImages(settings.GetBlockImages)),
 		agent.WithSteeringMode(agent.QueueMode(settings.GetSteeringMode())),
 		agent.WithFollowUpMode(agent.QueueMode(settings.GetFollowUpMode())),

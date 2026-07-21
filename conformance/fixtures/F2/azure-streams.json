@@ -410,6 +410,109 @@
           }
         }
       ]
+    },
+    {
+      "name": "azure-priority-service-tier-unpriced",
+      "api": "azure-openai-responses",
+      "model": {
+        "id": "gpt-fixture-azure",
+        "name": "Azure Fixture",
+        "api": "azure-openai-responses",
+        "provider": "azure-openai-responses",
+        "baseUrl": "https://model-resource.openai.azure.com",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "xhigh"
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1000000,
+          "output": 2000000,
+          "cacheRead": 3000000,
+          "cacheWrite": 4000000
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "headers": {
+          "x-model-header": "azure"
+        }
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "priority",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "azureBaseUrl": "https://fixture-resource.openai.azure.com",
+        "cacheRetention": "none"
+      },
+      "sse": "data: {\"type\":\"response.completed\",\"sequence_number\":0,\"response\":{\"id\":\"azure-priority-fixture\",\"status\":\"completed\",\"service_tier\":\"priority\",\"output\":[],\"usage\":{\"input_tokens\":20,\"output_tokens\":7,\"total_tokens\":27,\"input_tokens_details\":{\"cached_tokens\":2},\"output_tokens_details\":{\"reasoning_tokens\":4}}}}\n\ndata: [DONE]\n\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "azure-openai-responses",
+            "provider": "azure-openai-responses",
+            "model": "gpt-fixture-azure",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "done",
+          "reason": "stop",
+          "message": {
+            "role": "assistant",
+            "content": [],
+            "api": "azure-openai-responses",
+            "provider": "azure-openai-responses",
+            "model": "gpt-fixture-azure",
+            "usage": {
+              "input": 18,
+              "output": 7,
+              "cacheRead": 2,
+              "cacheWrite": 0,
+              "reasoning": 4,
+              "totalTokens": 27,
+              "cost": {
+                "input": 18,
+                "output": 14,
+                "cacheRead": 6,
+                "cacheWrite": 0,
+                "total": 38
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "azure-priority-fixture"
+          }
+        }
+      ]
     }
   ]
 }

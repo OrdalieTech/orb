@@ -4,13 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -229,5 +233,24 @@ func TestAnthropicTokenFailuresKeepUpstreamWrapping(t *testing.T) {
 		if err == nil || err.Error() != test.want {
 			t.Errorf("%s error = %q, want %q", test.label, err, test.want)
 		}
+	}
+}
+
+// LOG-m7: formatOAuthErrorDetails ports upstream formatErrorDetails
+// (anthropic.ts:82-97): name/message first, then errno where a syscall error
+// surfaces, then the wrapped cause chain.
+func TestLOGm7FormatOAuthErrorDetailsIncludesErrnoAndCause(t *testing.T) {
+	errno := syscall.ECONNREFUSED
+	if got, want := formatOAuthErrorDetails(errno), "Error: "+errno.Error()+"; errno="+strconv.Itoa(int(errno)); got != want {
+		t.Fatalf("bare errno details = %q, want %q", got, want)
+	}
+	wrapped := fmt.Errorf("dial tcp 127.0.0.1:1: %w", errno)
+	want := "Error: dial tcp 127.0.0.1:1: " + errno.Error() +
+		"; cause=Error: " + errno.Error() + "; errno=" + strconv.Itoa(int(errno))
+	if got := formatOAuthErrorDetails(wrapped); got != want {
+		t.Fatalf("wrapped details = %q, want %q", got, want)
+	}
+	if got := formatOAuthErrorDetails(errors.New("plain")); got != "Error: plain" {
+		t.Fatalf("plain details = %q", got)
 	}
 }

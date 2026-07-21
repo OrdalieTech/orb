@@ -9,7 +9,7 @@ else (implementation detail) is decided by whoever executes the work package, wi
 | | |
 |---|---|
 | Upstream project | **pi** — https://pi.dev, repo `earendil-works/pi` (formerly `badlogic/pi-mono`) |
-| Pinned reference | commit `3a40794ea14c6202586cc203d5b928eca9f6b673`, version **0.80.10** (2026-07-20) |
+| Pinned reference | commit `9c480b6ad2c7419875a7a850fb4ad5f9232313b8`, version **0.81.0** (2026-07-21) |
 | Upstream license | MIT, © 2025 Mario Zechner |
 | This project | `github.com/OrdalieTech/pigo`, MIT, © Ordalie — with attribution to upstream in LICENSE and README |
 
@@ -20,7 +20,7 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
 
 - **D1 — SDK-first.** pigo is a Go module first; the `pigo` CLI is one consumer of it. The `ai`
   layer must be importable on its own (as `@earendil-works/pi-ai` is upstream).
-- **D2 — Full parity, no staged v1.** The whole of pi v0.80.10 is in scope: agent core, all tools,
+- **D2 — Full parity, no staged v1.** The whole of pi v0.81.0 is in scope: agent core, all tools,
   session tree + compaction, skills, prompt templates, themes, TUI, print/JSON/RPC modes, extension
   system, OAuth flows, HTML export, terminal images, pi packages, project trust. Exclusions are only
   those in the divergence ledger below. Sequencing exists (see plan phases); feature cuts do not.
@@ -63,9 +63,11 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
   also unlocks Azure and the compat family — Groq, Cerebras, xAI, OpenRouter, DeepSeek, Fireworks,
   Together, etc. via baseURL + compat flags). Then Anthropic (+ prompt caching + Claude Pro/Max OAuth),
   then Gemini, Mistral, Bedrock/Vertex, Codex/Copilot, remainder of the ~34-provider catalog.
-- **D12 — Model catalog: models.dev direct.** Build-time generation from `models.dev/api.json` into
-  an embedded catalog + runtime refresh from models.dev into `~/.pi` cache. No dependence on pi.dev
-  endpoints. `models.json` user overrides behave exactly as upstream (`docs/models.md`).
+- **D12 — Model catalog: direct authoritative sources.** Build-time generation uses
+  `models.dev/api.json` for the baseline, intersects NVIDIA's manifest with the live NIM listing,
+  and uses the live OpenRouter and Vercel AI Gateway APIs for those two catalogs. Runtime refresh
+  remains a direct models.dev fetch into the `~/.pi` cache, never a pi.dev endpoint. `models.json`
+  user overrides behave exactly as upstream (`docs/models.md`).
 - **D13 — SDK style: mirror + Go idioms.** Same conceptual API and event taxonomy as upstream
   (`Agent`, `prompt/steer/followUp/abort/waitForIdle/subscribe/reset`; `AgentEvent` union as typed
   structs with upstream names) with Go-native mechanics: `context.Context`, error returns, functional
@@ -99,7 +101,7 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
 | Divergence | Kind | Rationale |
 |---|---|---|
 | Bundled MCP extension | addition | owner requirement; kept out of core |
-| `packages/orchestrator` | removed | experimental upstream side product |
+| `packages/server` (formerly `packages/orchestrator`) | removed | experimental upstream side product; the v0.81.0 rename does not change the D2 product boundary |
 | Telemetry/analytics (`enableInstallTelemetry`, `enableAnalytics`, `trackingId`) | removed | owner decision; unknown settings keys tolerated on parse, nothing sent, no plumbing |
 | Radius provider + Radius OAuth | removed | pi.dev-coupled service; the generic `pi-messages` SSE wire shape IS ported (usable by any backend, e.g. an Ordalie gateway) |
 | Version/update checks | neutralized | point at OrdalieTech/pigo GitHub releases, never pi.dev |
@@ -109,7 +111,11 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
 | Windows support | deferred | later parity wave (D8) |
 | darwin modifier-key native addon | gap | kitty keyboard protocol where possible; documented small parity gap |
 | win32 console native addon | deferred | Windows wave |
-| Bundled llama.cpp extension | excluded | shipped at the pinned commit but deleted upstream immediately after; porting would be dead-on-arrival work (2026-07-19 alignment audit; owner may amend) |
+| Bundled llama.cpp extension | excluded | v0.81.0 still ships and modifies this optional native Node/llama.cpp integration; it cannot satisfy the pure-Go, single-static-binary rule in D7 |
+| `packages/storage/sqlite-node` | excluded | v0.81.0's optional Node SQLite storage package requires a native runtime; pigo retains the session repository interfaces and JSONL/memory implementations under D7 |
+| `pigo login` / `pigo logout` CLI subcommands | addition | headless Go deployments need auth lifecycle commands; bare `pigo logout` deliberately lists stored credential names and requires an explicit provider instead of silently choosing one |
+| NVIDIA `qwen/qwen3.5-122b-a10b` denylist | addition | the live NIM endpoint advertises it, but its current metadata cannot satisfy pigo's chat-model contract; keep the Go-only exclusion explicit until the live shape is usable |
+| Moonshot Kimi K3 compat metadata | ahead-of-pin backport | `thinkingFormat: openai` and reasoning-effort support come from upstream commit `959cc1897e` in v0.81.1; retained because this was the specified SYNC-1 behavior and is regression-tested |
 | `AgentHarness` orchestration facade | dissolved | D29; harness primitives remain in `agent/harness`, while the high-level embedding lifecycle stays in `codingagent.AgentSession` |
 | `streamProxy` `/api/stream` client | excluded | D29; application-specific proxy protocols use `agent.WithStreamFn` and the public streaming-JSON helper |
 | `chat/` gateway package (+ `chat/telegram`, `chat/whatsapp`) | addition | owner requirement (D27); kept out of core, strictly one-way dependency on the SDK |
@@ -205,6 +211,17 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
   `pi-messages`, the JS extension `pi` API and `@earendil-works/pi-*` imports, embedded upstream
   assets, and extracted goldens. Conformance adapters may account only for exact public-name
   substitutions while separately asserting the `pigo` spelling.
+
+## 2026-07-21 parity-sync amendments
+
+- Codex request compression uses `github.com/klauspost/compress/zstd` as a direct dependency. The
+  upstream wire requires zstd request bodies, and the standard library has no zstd encoder.
+- The v0.81.0 image catalog is checked in as deterministic Go data and pinned by an exact digest.
+  Upstream's strict TypeScript model-data validator has no runtime Go analogue, so generation-time
+  validation plus full-catalog tests enforce the same accepted shape.
+- Remote-catalog freshness preserves upstream's `checkedAt`/`lastModified` semantics, while D12's
+  single direct models.dev endpoint replaces pi.dev's provider-scoped service. The pigo identity in
+  its User-Agent remains the D30 public-name substitution.
 
 ## Standing assumptions (owner-confirmed)
 

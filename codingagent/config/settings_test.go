@@ -712,6 +712,33 @@ func TestSettingsResourcePathAndSkillCommandGetters(t *testing.T) {
 	}
 }
 
+// LOG-M4: warnings.anthropicExtraUsage gates the Anthropic subscription-auth
+// warning (upstream settings-manager.ts WarningSettings; default true).
+func TestLOGM4WarningsAnthropicExtraUsageGate(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	projectDir := filepath.Join(root, "project")
+
+	manager, err := NewSettingsManager(projectDir, WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !manager.GetWarningAnthropicExtraUsage() {
+		t.Fatal("warnings.anthropicExtraUsage must default to true")
+	}
+
+	writeSettings(t, filepath.Join(agentDir, "settings.json"), map[string]any{
+		"warnings": map[string]any{"anthropicExtraUsage": false},
+	})
+	manager, err = NewSettingsManager(projectDir, WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manager.GetWarningAnthropicExtraUsage() {
+		t.Fatal("explicit warnings.anthropicExtraUsage=false must disable the warning")
+	}
+}
+
 func writeSettings(t *testing.T, path string, value any) {
 	t.Helper()
 	encoded, err := json.Marshal(value)

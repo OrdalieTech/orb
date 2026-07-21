@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -142,20 +143,85 @@ func TestGoogleThinkingConfiguration(t *testing.T) {
 		t.Fatalf("disabled Pro config = %#v", disabled)
 	}
 	flashLite := googleTestModel("gemini-2.5-flash-lite")
-	if got := googleThinkingBudget(flashLite, ai.ThinkingMinimal, nil); got != 512 {
-		t.Fatalf("flash-lite minimal budget = %d", got)
+	if got := googleThinkingBudget(flashLite, ai.ThinkingMinimal, nil); got == nil || *got != 512 {
+		t.Fatalf("flash-lite minimal budget = %v", got)
 	}
 	custom := 99
-	if got := googleThinkingBudget(flashLite, ai.ThinkingHigh, &ai.ThinkingBudgets{High: &custom}); got != 99 {
-		t.Fatalf("custom high budget = %d", got)
+	if got := googleThinkingBudget(flashLite, ai.ThinkingHigh, &ai.ThinkingBudgets{High: &custom}); got == nil || *got != 99 {
+		t.Fatalf("custom high budget = %v", got)
 	}
 	uppercaseFlash := googleTestModel("GEMINI-FLASH-LATEST")
 	if disabled := disabledGoogleThinkingConfig(uppercaseFlash); disabled.ThinkingLevel == nil || *disabled.ThinkingLevel != GoogleThinkingMinimal {
 		t.Fatalf("uppercase Flash disabled config = %#v", disabled)
 	}
 	uppercase25 := googleTestModel("GEMINI-2.5-FLASH")
-	if got := googleThinkingBudget(uppercase25, ai.ThinkingHigh, nil); got != -1 {
-		t.Fatalf("uppercase 2.5 budget = %d, want upstream case-sensitive fallback", got)
+	if got := googleThinkingBudget(uppercase25, ai.ThinkingHigh, nil); got == nil || *got != -1 {
+		t.Fatalf("uppercase 2.5 budget = %v, want upstream case-sensitive fallback", got)
+	}
+}
+
+// TestGoogleThinkingBudgetOmittedForUnmappedEffort_OTm9 pins upstream
+// getGoogleBudget/getThinkingLevel: xhigh/max efforts without an explicit
+// mapping resolve to undefined, so thinkingConfig carries only
+// includeThoughts instead of a zero budget or empty level. (OT-m9)
+func TestGoogleThinkingBudgetOmittedForUnmappedEffort_OTm9(t *testing.T) {
+	flashLite := googleTestModel("gemini-2.5-flash-lite")
+	if got := googleThinkingBudget(flashLite, ai.ThinkingXHigh, nil); got != nil {
+		t.Fatalf("flash-lite xhigh budget = %v, want omitted", *got)
+	}
+	if got := googleThinkingBudget(flashLite, ai.ThinkingMax, nil); got != nil {
+		t.Fatalf("flash-lite max budget = %v, want omitted", *got)
+	}
+	if got := googleThinkingLevel(ai.ThinkingXHigh, googleTestModel("gemini-3.1-pro-preview")); got != nil {
+		t.Fatalf("gemini-3 pro xhigh level = %v, want omitted", *got)
+	}
+	if got := googleVertexThinkingBudget(flashLite, ai.ThinkingXHigh, nil); got != nil {
+		t.Fatalf("vertex flash-lite xhigh budget = %v, want omitted", *got)
+	}
+
+	parameters, err := buildGoogleParameters(flashLite, ai.Context{Messages: ai.MessageList{
+		&ai.UserMessage{Content: ai.NewUserText("hello")},
+	}}, &GoogleOptions{Thinking: &GoogleThinkingOptions{Enabled: true, BudgetTokens: googleThinkingBudget(flashLite, ai.ThinkingXHigh, nil)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := parameters.Config
+	if config.ThinkingConfig == nil || config.ThinkingConfig.IncludeThoughts == nil || !*config.ThinkingConfig.IncludeThoughts {
+		t.Fatalf("thinking config = %#v", config.ThinkingConfig)
+	}
+	if config.ThinkingConfig.ThinkingBudget != nil || config.ThinkingConfig.ThinkingLevel != nil {
+		t.Fatalf("thinking config carries an invented budget or level: %#v", config.ThinkingConfig)
+	}
+}
+
+// TestGoogleStreamUnknownFinishReasonFailsStream_OTm1 pins the streaming
+// consequence of google-shared.ts mapStopReason throwing: an unknown
+// finishReason turns the stream into an error event carrying the exact
+// upstream message. (OT-m1)
+func TestGoogleStreamUnknownFinishReasonFailsStream_OTm1(t *testing.T) {
+	model := googleTestModel("gemini-2.5-flash")
+	apiKey := "key"
+	previousClient := googleHTTPClient
+	googleHTTPClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return googleTestResponse("data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hi\"}]},\"finishReason\":\"BRAND_NEW_REASON\"}]}\n\n"), nil
+	})}
+	t.Cleanup(func() { googleHTTPClient = previousClient })
+	stream, err := StreamGoogleGenerativeAIWithOptions(context.Background(), model, ai.Context{
+		Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hello")}},
+	}, &GoogleOptions{StreamOptions: ai.StreamOptions{APIKey: &apiKey}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := ai.Collect(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errorMessage := ""
+	if message.ErrorMessage != nil {
+		errorMessage = *message.ErrorMessage
+	}
+	if message.StopReason != ai.StopReasonError || errorMessage != "Unhandled stop reason: BRAND_NEW_REASON" {
+		t.Fatalf("stop=%q error=%q", message.StopReason, errorMessage)
 	}
 }
 
@@ -243,13 +309,34 @@ func TestGoogleProviderHeadersMatchSDKCaseSensitivePatchThenFetchNormalization(t
 
 	exactOverride := "application/exact-option"
 	headers = googleProviderHeaders(model, &ai.StreamOptions{Headers: ai.ProviderHeaders{"Content-Type": &exactOverride}})
-	if len(headers) != 2 || headers["Content-Type"][0] != exactOverride {
+	if len(headers) != 4 || headers["Content-Type"][0] != exactOverride {
 		t.Fatalf("same-case Content-Type override = %#v", headers)
 	}
 
 	headers = googleProviderHeaders(model, &ai.StreamOptions{Headers: ai.ProviderHeaders{"Content-Type": nil}})
 	if got := headers["Content-Type"]; len(got) != 1 || got[0] != "application/json" {
 		t.Fatalf("null custom Content-Type should expose SDK default: %#v", headers)
+	}
+}
+
+// TestGoogleProviderHeadersCarrySDKTelemetry_OTm2 pins the x-goog-api-client
+// and user-agent telemetry headers the genai 1.52.0 SDK sends on every
+// request, shared by the mldev and Vertex posters. (OT-m2)
+func TestGoogleProviderHeadersCarrySDKTelemetry_OTm2(t *testing.T) {
+	headers := googleProviderHeaders(googleTestModel("gemini-2.5-flash"), nil)
+	want := "google-genai-sdk/1.52.0 gl-go/" + runtime.Version()
+	if got := headers["User-Agent"]; len(got) != 1 || got[0] != want {
+		t.Fatalf("User-Agent = %#v, want %q", got, want)
+	}
+	var got []string
+	for name, values := range headers {
+		if strings.EqualFold(name, "x-goog-api-client") {
+			got = values
+			break
+		}
+	}
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("x-goog-api-client = %#v, want %q", got, want)
 	}
 }
 

@@ -33,6 +33,17 @@ type OptionalEntryFields struct {
 	FromHook   *bool
 }
 
+// CompactionResult is the coding-agent event/RPC shape. The public agent
+// harness has a separate retained-tail result contract in v0.81.
+type CompactionResult struct {
+	Summary              string    `json:"summary"`
+	FirstKeptEntryID     string    `json:"firstKeptEntryId"`
+	TokensBefore         int64     `json:"tokensBefore"`
+	EstimatedTokensAfter int64     `json:"estimatedTokensAfter"`
+	Usage                *ai.Usage `json:"usage,omitempty"`
+	Details              any       `json:"details,omitempty"`
+}
+
 type SessionModel struct {
 	Provider string `json:"provider"`
 	ModelID  string `json:"modelId"`
@@ -1014,10 +1025,7 @@ func (manager *SessionManager) GetBranch(fromID ...string) []SessionEntry {
 				return nil
 			}
 		}
-		entries, err := manager.harnessStorage.PathToRoot(leaf)
-		if err != nil {
-			return nil
-		}
+		entries := harnessPathToRoot(manager.harnessStorage, leaf)
 		converted := make([]SessionEntry, len(entries))
 		for index := range entries {
 			converted[index] = sessionEntryFromHarness(entries[index])
@@ -1027,6 +1035,29 @@ func (manager *SessionManager) GetBranch(fromID ...string) []SessionEntry {
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
 	return manager.getBranchLocked(fromID...)
+}
+
+func harnessPathToRoot(storage harness.SessionStorage, leafID *string) []harness.SessionTreeEntry {
+	if leafID == nil {
+		return []harness.SessionTreeEntry{}
+	}
+	path := make([]harness.SessionTreeEntry, 0)
+	currentID := *leafID
+	for {
+		entry, ok := storage.Entry(currentID)
+		if !ok {
+			return nil
+		}
+		path = append(path, *entry)
+		if entry.ParentID == nil || *entry.ParentID == "" {
+			break
+		}
+		currentID = *entry.ParentID
+	}
+	for left, right := 0, len(path)-1; left < right; left, right = left+1, right-1 {
+		path[left], path[right] = path[right], path[left]
+	}
+	return path
 }
 
 func (manager *SessionManager) GetLatestCompactionTimestamp() (string, bool) {

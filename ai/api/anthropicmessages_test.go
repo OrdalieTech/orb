@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"slices"
@@ -357,5 +358,24 @@ func anthropicTestModel() *ai.Model {
 		BaseURL: "https://api.anthropic.com", Reasoning: true, Input: ai.InputModalities{ai.InputText, ai.InputImage},
 		Cost:          ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: 1, Output: 2, CacheRead: 0.1, CacheWrite: 1.25}},
 		ContextWindow: 200_000, MaxTokens: 4_096,
+	}
+}
+
+// Gap OA-m6: upstream's github-copilot client branch never adds session
+// affinity headers (anthropic-messages.ts:852-898), so copilot must be
+// excluded even when compat opts in.
+func TestAnthropicCopilotExcludedFromSessionAffinityOAm6(t *testing.T) {
+	model := anthropicTestModel()
+	model.Compat = json.RawMessage(`{"sendSessionAffinityHeaders":true}`)
+	sessionID := "session-1"
+	options := &ai.StreamOptions{SessionID: &sessionID}
+	headers := anthropicHeaders(model, ai.Context{}, options, nil)
+	if headers.Get("x-session-affinity") != sessionID {
+		t.Fatalf("api-key provider affinity = %q, want %q", headers.Get("x-session-affinity"), sessionID)
+	}
+	model.Provider = "github-copilot"
+	headers = anthropicHeaders(model, ai.Context{}, options, nil)
+	if got := headers.Get("x-session-affinity"); got != "" {
+		t.Fatalf("copilot affinity header = %q, want none", got)
 	}
 }

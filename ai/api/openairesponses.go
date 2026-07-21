@@ -542,14 +542,17 @@ func convertResponsesMessages(
 			for _, content := range value.Content {
 				switch block := content.(type) {
 				case *ai.ThinkingContent:
-					if block.ThinkingSignature == nil {
+					if block.ThinkingSignature == nil || *block.ThinkingSignature == "" {
 						continue
 					}
-					raw := json.RawMessage(*block.ThinkingSignature)
-					if !json.Valid(raw) {
+					// Upstream JSON.parses the stored signature and re-stringifies
+					// it into the request, so TS-era signatures are re-normalized
+					// through JSON.stringify spelling on replay (OA-m7).
+					normalized, err := ai.NormalizeJSONStringifyJSON([]byte(*block.ThinkingSignature))
+					if err != nil {
 						return nil, fmt.Errorf("parse OpenAI reasoning signature: invalid JSON")
 					}
-					output = append(output, raw)
+					output = append(output, json.RawMessage(normalized))
 				case *ai.TextContent:
 					id, phase := parseResponsesTextSignature(block.TextSignature)
 					fallback := fmt.Sprintf("msg_pi_%d", messageIndex)
@@ -687,16 +690,21 @@ func parseResponsesTextSignature(signature *string) (string, *string) {
 		return "", nil
 	}
 	if strings.HasPrefix(*signature, "{") {
-		var parsed struct {
-			Version int    `json:"v"`
-			ID      string `json:"id"`
-			Phase   string `json:"phase"`
-		}
-		if json.Unmarshal([]byte(*signature), &parsed) == nil && parsed.Version == 1 && parsed.ID != "" {
-			if parsed.Phase == "commentary" || parsed.Phase == "final_answer" {
-				return parsed.ID, &parsed.Phase
+		var parsed map[string]json.RawMessage
+		if json.Unmarshal([]byte(*signature), &parsed) == nil {
+			var version float64
+			var id string
+			// Upstream checks `parsed.v === 1 && typeof parsed.id === "string"`,
+			// so an empty id is accepted here and falls back to msg_pi_N at the
+			// call site (OA-m7).
+			if json.Unmarshal(parsed["v"], &version) == nil && version == 1 &&
+				parsed["id"] != nil && json.Unmarshal(parsed["id"], &id) == nil {
+				var phase string
+				if json.Unmarshal(parsed["phase"], &phase) == nil && (phase == "commentary" || phase == "final_answer") {
+					return id, &phase
+				}
+				return id, nil
 			}
-			return parsed.ID, nil
 		}
 	}
 	return *signature, nil
@@ -766,10 +774,14 @@ func shortHash(value string) string {
 }
 
 type openAIResponsesProcessor struct {
-	model                    *ai.Model
-	output                   *ai.AssistantMessage
-	options                  *OpenAIResponsesOptions
-	sink                     eventSink
+	model   *ai.Model
+	output  *ai.AssistantMessage
+	options *OpenAIResponsesOptions
+	sink    eventSink
+	// applyServiceTierPricing mirrors upstream's opt-in pricing hook: only the
+	// plain OpenAI and Codex streams pass applyServiceTierPricing to
+	// processResponsesStream; Azure never does (OA-M2).
+	applyServiceTierPricing  bool
 	slots                    map[int]*responsesOutputSlot
 	reasoningBlocksByID      map[string]*ai.ThinkingContent
 	sawTerminalResponseEvent bool
@@ -789,10 +801,23 @@ type responsesStreamEvent struct {
 	OutputIndex int             `json:"output_index"`
 	Delta       string          `json:"delta"`
 	Arguments   string          `json:"arguments"`
-	Code        string          `json:"code"`
-	Message     string          `json:"message"`
+	Code        json.RawMessage `json:"code"`
+	Message     json.RawMessage `json:"message"`
 	Item        json.RawMessage `json:"item"`
 	Response    json.RawMessage `json:"response"`
+}
+
+// responsesEventTemplateValue renders an optional JSON member the way a
+// JavaScript template literal would.
+func responsesEventTemplateValue(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return "undefined"
+	}
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return string(raw)
+	}
+	return openAIJSString(value)
 }
 
 type responsesOutputItemEnvelope struct {
@@ -823,12 +848,13 @@ func newOpenAIResponsesProcessor(
 	sink eventSink,
 ) *openAIResponsesProcessor {
 	return &openAIResponsesProcessor{
-		model:               model,
-		output:              output,
-		options:             options,
-		sink:                sink,
-		slots:               make(map[int]*responsesOutputSlot),
-		reasoningBlocksByID: make(map[string]*ai.ThinkingContent),
+		model:                   model,
+		output:                  output,
+		options:                 options,
+		sink:                    sink,
+		applyServiceTierPricing: true,
+		slots:                   make(map[int]*responsesOutputSlot),
+		reasoningBlocksByID:     make(map[string]*ai.ThinkingContent),
 	}
 }
 
@@ -906,7 +932,7 @@ func (processor *openAIResponsesProcessor) handle(raw json.RawMessage) error {
 		processor.sawTerminalResponseEvent = true
 		return processor.finalizeResponse(event.Response)
 	case "error":
-		return fmt.Errorf("Error Code %s: %s", event.Code, event.Message)
+		return fmt.Errorf("Error Code %s: %s", responsesEventTemplateValue(event.Code), responsesEventTemplateValue(event.Message))
 	case "response.failed":
 		processor.sawTerminalResponseEvent = true
 		return responsesFailedError(event.Response)
@@ -1010,6 +1036,7 @@ func (processor *openAIResponsesProcessor) finishItem(outputIndex int, raw json.
 		if !processor.sink(ai.ThinkingEndEvent{ContentIndex: slot.contentIndex, Content: slot.thinking.Thinking, Partial: processor.output}) {
 			return errStopSSE
 		}
+		delete(processor.slots, outputIndex)
 	case "message":
 		if slot.kind != "text" {
 			return nil
@@ -1027,11 +1054,17 @@ func (processor *openAIResponsesProcessor) finishItem(outputIndex int, raw json.
 		if item.ID != nil {
 			id = *item.ID
 		}
+		// Upstream only stores a truthy phase, so an empty phase is omitted
+		// from the signature like a missing one (OA-m7).
+		phase := item.Phase
+		if phase != nil && *phase == "" {
+			phase = nil
+		}
 		signaturePayload := struct {
 			Version int     `json:"v"`
 			ID      string  `json:"id"`
 			Phase   *string `json:"phase,omitempty"`
-		}{Version: 1, ID: id, Phase: item.Phase}
+		}{Version: 1, ID: id, Phase: phase}
 		encoded, err := ai.Marshal(signaturePayload)
 		if err != nil {
 			return err
@@ -1041,6 +1074,7 @@ func (processor *openAIResponsesProcessor) finishItem(outputIndex int, raw json.
 		if !processor.sink(ai.TextEndEvent{ContentIndex: slot.contentIndex, Content: slot.text.Text, Partial: processor.output}) {
 			return errStopSSE
 		}
+		delete(processor.slots, outputIndex)
 	case "function_call":
 		if slot.kind != "toolCall" {
 			return nil
@@ -1059,8 +1093,10 @@ func (processor *openAIResponsesProcessor) finishItem(outputIndex int, raw json.
 		if !processor.sink(ai.ToolCallEndEvent{ContentIndex: slot.contentIndex, ToolCall: slot.toolCall, Partial: processor.output}) {
 			return errStopSSE
 		}
+		delete(processor.slots, outputIndex)
 	}
-	delete(processor.slots, outputIndex)
+	// Upstream deletes the slot only inside the matched branches above, so a
+	// done event for an unhandled item type leaves existing slots alone (OA-m7).
 	return nil
 }
 
@@ -1173,12 +1209,14 @@ func (processor *openAIResponsesProcessor) finalizeResponse(raw json.RawMessage)
 		}
 	}
 	calculateCost(processor.model, &processor.output.Usage)
-	serviceTier := response.ServiceTier
-	if serviceTier == nil && processor.options != nil {
-		serviceTier = processor.options.ServiceTier
-	}
-	if serviceTier != nil {
-		applyResponsesServiceTierPricing(&processor.output.Usage, *serviceTier, processor.model)
+	if processor.applyServiceTierPricing {
+		serviceTier := response.ServiceTier
+		if serviceTier == nil && processor.options != nil {
+			serviceTier = processor.options.ServiceTier
+		}
+		if serviceTier != nil {
+			applyResponsesServiceTierPricing(&processor.output.Usage, *serviceTier, processor.model)
+		}
 	}
 	stopReason, err := mapResponsesStopReason(response.Status)
 	if err != nil {

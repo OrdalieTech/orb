@@ -377,7 +377,11 @@ func TestF10BranchAndSplitTurnPromptsMatchUpstream(t *testing.T) {
 			for index := range captures {
 				assertF10Capture(t, captures[index], fixtureCase.Expected.Captured[index])
 			}
-			output := f10CompactionOutput{Summary: got.Summary, FirstKeptEntryID: got.FirstKeptEntryID, TokensBefore: got.TokensBefore, Usage: got.Usage, Details: got.Details}
+			details, ok := got.Details.(harness.CompactionDetails)
+			if !ok {
+				t.Fatalf("compaction details = %T, want harness.CompactionDetails", got.Details)
+			}
+			output := f10CompactionOutput{Summary: got.Summary, FirstKeptEntryID: got.FirstKeptEntryID, TokensBefore: got.TokensBefore, Usage: got.Usage, Details: details}
 			if !reflect.DeepEqual(output, fixtureCase.Expected.Output) {
 				t.Fatalf("compaction output = %+v, want %+v", output, fixtureCase.Expected.Output)
 			}

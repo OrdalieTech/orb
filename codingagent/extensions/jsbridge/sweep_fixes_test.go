@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/agent/harness"
 	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 // --- finding 1: pi-ai createAssistantMessageEventStream + calculateCost ---
@@ -628,7 +628,7 @@ export default function (pi) {
 	if len(captured) != 1 || captured[0].OnComplete == nil || captured[0].OnError == nil {
 		t.Fatalf("captured compact options = %#v", captured)
 	}
-	captured[0].OnComplete(harness.CompactionResult{Summary: "squashed", TokensBefore: 10})
+	captured[0].OnComplete(session.CompactionResult{Summary: "squashed", TokensBefore: 10})
 	select {
 	case got := <-entries:
 		if got.kind != "compact-done" || fmt.Sprint(got.data["summary"]) != "squashed" {

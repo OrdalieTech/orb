@@ -24,28 +24,35 @@ func TestCloudflarePreparationMatchesPinnedProviderFixture(t *testing.T) {
 	runner.LoadJSON(t, "F2", "providers.json", &fixture)
 	for _, item := range fixture.Cloudflare {
 		t.Run(string(item.Provider), func(t *testing.T) {
-			key := item.Auth.APIKey
-			if item.Provider == "cloudflare-ai-gateway" {
-				key = "fixture-cloudflare-key"
-			}
+			// Auth-resolve (ai/providers) produces the fixture auth shape; the
+			// stream-time preparation only resolves endpoint placeholders and
+			// must pass the resolved auth through untouched. (OT-CF)
 			model := &ai.Model{Provider: item.Provider, BaseURL: item.BaseURL}
-			options := &ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{APIKey: &key, Env: item.Env}}
+			options := &ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{Env: item.Env, Headers: item.Auth.Headers}}
+			if item.Auth.APIKey != "" {
+				key := item.Auth.APIKey
+				options.APIKey = &key
+			}
 			gotModel, gotOptions := prepareCloudflareRequest(model, options)
 			if gotModel.BaseURL != item.ResolvedBaseURL {
 				t.Fatalf("resolved base URL = %q, want %q", gotModel.BaseURL, item.ResolvedBaseURL)
 			}
-			if item.Provider == "cloudflare-ai-gateway" {
-				if gotOptions.APIKey != nil || !providerHeadersEqual(gotOptions.Headers, item.Auth.Headers) {
-					t.Fatalf("resolved auth = %#v, want %#v", gotOptions.StreamOptions, item.Auth)
-				}
-			} else if gotOptions.APIKey == nil || *gotOptions.APIKey != item.Auth.APIKey {
+			if gotOptions != options {
+				t.Fatalf("stream-time preparation replaced the options: %#v", gotOptions)
+			}
+			if !providerHeadersEqual(gotOptions.Headers, item.Auth.Headers) {
+				t.Fatalf("resolved headers = %#v, want %#v", gotOptions.Headers, item.Auth.Headers)
+			}
+			if item.Auth.APIKey != "" && (gotOptions.APIKey == nil || *gotOptions.APIKey != item.Auth.APIKey) {
 				t.Fatalf("resolved API key = %#v, want %q", gotOptions.APIKey, item.Auth.APIKey)
 			}
 		})
 	}
 }
 
-func TestPrepareCloudflareGatewayRequest(t *testing.T) {
+// OT-CF: upstream cloudflare-stream.ts resolves placeholders from options.env
+// only; stream-time preparation must not rewrite auth or consult os.Getenv.
+func TestPrepareCloudflareGatewayRequestLeavesAuthUntouched(t *testing.T) {
 	key := "fixture-key"
 	keep := "keep"
 	model := &ai.Model{
@@ -64,48 +71,19 @@ func TestPrepareCloudflareGatewayRequest(t *testing.T) {
 	if gotModel.BaseURL != "https://gateway.ai.cloudflare.com/v1/account/gateway/openai" {
 		t.Fatalf("resolved base URL = %q", gotModel.BaseURL)
 	}
-	if gotOptions.APIKey != nil {
-		t.Fatalf("gateway API key was not moved to a header: %#v", gotOptions.APIKey)
+	if gotOptions.APIKey != &key {
+		t.Fatalf("explicit API key was rewritten: %#v", gotOptions.APIKey)
 	}
-	if value, exists := cloudflareHeader(gotOptions.Headers, "cf-aig-authorization"); !exists || value == nil || *value != "Bearer fixture-key" {
-		t.Fatalf("gateway authorization header = %#v", gotOptions.Headers)
-	}
-	for _, name := range []string{"authorization", "x-api-key"} {
-		if value, exists := cloudflareHeader(gotOptions.Headers, name); !exists || value != nil {
-			t.Fatalf("%s was not explicitly suppressed: %#v", name, gotOptions.Headers)
+	for _, name := range []string{"cf-aig-authorization", "authorization", "x-api-key"} {
+		if _, exists := cloudflareHeader(gotOptions.Headers, name); exists {
+			t.Fatalf("stream-time preparation invented %s: %#v", name, gotOptions.Headers)
 		}
 	}
 	if gotOptions.Headers["x-fixture"] != &keep {
 		t.Fatalf("custom header was not retained: %#v", gotOptions.Headers)
 	}
-	if model.BaseURL == gotModel.BaseURL || options.APIKey == nil || options.Headers["cf-aig-authorization"] != nil {
-		t.Fatal("provider preparation mutated its inputs")
-	}
-}
-
-func TestPrepareCloudflareGatewayPreservesExplicitHeaderOverrides(t *testing.T) {
-	key := "fixture-key"
-	customGateway := "custom-gateway"
-	customAuthorization := "Bearer custom-origin"
-	customAPIKey := "custom-api-key"
-	options := &ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{
-		APIKey: &key,
-		Headers: ai.ProviderHeaders{
-			"CF-AIG-Authorization": &customGateway,
-			"authorization":        &customAuthorization,
-			"X-API-KEY":            &customAPIKey,
-		},
-	}}
-	_, got := prepareCloudflareRequest(&ai.Model{Provider: "cloudflare-ai-gateway"}, options)
-	for name, want := range map[string]string{
-		"cf-aig-authorization": customGateway,
-		"authorization":        customAuthorization,
-		"x-api-key":            customAPIKey,
-	} {
-		value, exists := cloudflareHeader(got.Headers, name)
-		if !exists || value == nil || *value != want {
-			t.Fatalf("explicit %s override = %#v, want %q", name, value, want)
-		}
+	if model.BaseURL == gotModel.BaseURL {
+		t.Fatal("provider preparation mutated its input model")
 	}
 }
 
@@ -119,15 +97,21 @@ func TestPrepareCloudflareWorkersRequest(t *testing.T) {
 	}
 }
 
-func TestPrepareCloudflareRequestUsesAmbientScopeWithoutMutatingUnresolvedPlaceholders(t *testing.T) {
+// OT-CF: ambient process env must not leak into placeholder resolution, and
+// placeholders without a provider env value stay unresolved.
+func TestPrepareCloudflareRequestIgnoresAmbientProcessEnvironment(t *testing.T) {
 	t.Setenv(cloudflareAccountID, "ambient-account")
-	t.Setenv(cloudflareGatewayID, "")
+	t.Setenv(cloudflareGatewayID, "ambient-gateway")
 	model := &ai.Model{
 		Provider: "cloudflare-ai-gateway",
 		BaseURL:  "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/compat",
 	}
-	got, _ := prepareCloudflareRequest(model, nil)
-	if got.BaseURL != "https://gateway.ai.cloudflare.com/v1/ambient-account/{CLOUDFLARE_GATEWAY_ID}/compat" {
+	if got, _ := prepareCloudflareRequest(model, nil); got.BaseURL != model.BaseURL {
+		t.Fatalf("nil options resolved from ambient env: %q", got.BaseURL)
+	}
+	options := &ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{Env: ai.ProviderEnv{cloudflareAccountID: "env-account"}}}
+	got, _ := prepareCloudflareRequest(model, options)
+	if got.BaseURL != "https://gateway.ai.cloudflare.com/v1/env-account/{CLOUDFLARE_GATEWAY_ID}/compat" {
 		t.Fatalf("partially resolved URL = %q", got.BaseURL)
 	}
 }

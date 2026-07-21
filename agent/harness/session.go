@@ -1,9 +1,11 @@
 package harness
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
+	"github.com/OrdalieTech/pigo/agent"
 	"github.com/OrdalieTech/pigo/ai"
 )
 
@@ -21,11 +23,11 @@ func (session *Session) Entry(id string) (*SessionTreeEntry, bool) {
 	return session.storage.Entry(id)
 }
 
-func (session *Session) Entries() []SessionTreeEntry {
+func (session *Session) Entries(options ...SessionEntryCursorOptions) []SessionTreeEntry {
 	if session == nil || session.storage == nil {
 		return []SessionTreeEntry{}
 	}
-	return session.storage.Entries()
+	return session.storage.Entries(options...)
 }
 
 func (session *Session) Branch(fromID ...string) ([]SessionTreeEntry, error) {
@@ -42,7 +44,7 @@ func (session *Session) Branch(fromID ...string) ([]SessionTreeEntry, error) {
 			return nil, err
 		}
 	}
-	return session.storage.PathToRoot(leaf)
+	return session.storage.PathToRootOrCompaction(leaf)
 }
 
 func (session *Session) Label(id string) (string, bool) {
@@ -104,11 +106,37 @@ func (session *Session) AppendActiveToolsChange(toolNames []string) (string, err
 }
 
 func (session *Session) AppendCompaction(summary, firstKeptEntryID string, tokensBefore float64, details any, fromHook *bool, usage ...*ai.Usage) (string, error) {
+	var summaryUsage *ai.Usage
+	if len(usage) > 0 {
+		summaryUsage = usage[0]
+	}
+	return session.AppendCompactionWithTail(summary, firstKeptEntryID, tokensBefore, details, fromHook, summaryUsage, nil)
+}
+
+// AppendCompactionWithTail persists the v0.81 checkpoint form. A non-nil
+// retained tail, including an empty one, marks the compaction as a complete
+// ancestry checkpoint.
+func (session *Session) AppendCompactionWithTail(
+	summary, firstKeptEntryID string,
+	tokensBefore float64,
+	details any,
+	fromHook *bool,
+	usage *ai.Usage,
+	retainedTail agent.AgentMessages,
+) (string, error) {
 	entry := SessionTreeEntry{Type: "compaction"}
 	entry.Summary, entry.FirstKeptEntryID, entry.TokensBefore = summary, firstKeptEntryID, tokensBefore
 	entry.FromHook = cloneHarnessBool(fromHook)
-	if len(usage) > 0 {
-		entry.Usage = cloneHarnessUsage(usage[0])
+	entry.Usage = cloneHarnessUsage(usage)
+	if retainedTail != nil {
+		entry.RetainedTail = make([]json.RawMessage, len(retainedTail))
+		for index, message := range retainedTail {
+			encoded, err := marshalHarnessValue(message)
+			if err != nil {
+				return "", err
+			}
+			entry.RetainedTail[index] = encoded
+		}
 	}
 	if details != nil {
 		encoded, err := marshalHarnessValue(details)

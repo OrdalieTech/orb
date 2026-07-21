@@ -114,7 +114,7 @@ func TestF6HarnessForkContextAndErrorsMatchUpstream(t *testing.T) {
 	assertF6HarnessJSONEqual(t, fixture.Session["forks"], gotForks)
 
 	compaction := "compaction"
-	pathEntries, err := storage.PathToRoot(&compaction)
+	pathEntries, err := storage.PathToRootOrCompaction(&compaction)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestF6HarnessForkContextAndErrorsMatchUpstream(t *testing.T) {
 
 	t.Run("branchSummaryContext", func(t *testing.T) {
 		branchSummary := "branch-summary"
-		branchEntries, err := storage.PathToRoot(&branchSummary)
+		branchEntries, err := storage.PathToRootOrCompaction(&branchSummary)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -137,7 +137,7 @@ func TestF6HarnessForkContextAndErrorsMatchUpstream(t *testing.T) {
 
 	t.Run("emptyParentPath", func(t *testing.T) {
 		emptyParent := "empty-parent"
-		emptyParentEntries, err := storage.PathToRoot(&emptyParent)
+		emptyParentEntries, err := storage.PathToRootOrCompaction(&emptyParent)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -651,7 +651,7 @@ func observeF6HarnessStorage(t *testing.T, storage agentharness.SessionStorage, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	branch, err := storage.PathToRoot(leaf)
+	branch, err := storage.PathToRootOrCompaction(leaf)
 	if err != nil {
 		t.Fatal(err)
 	}

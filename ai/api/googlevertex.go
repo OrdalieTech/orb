@@ -64,11 +64,9 @@ func StreamSimpleGoogleVertex(
 	}
 	thinking := &GoogleThinkingOptions{Enabled: true}
 	if isGemini3Pro(model) || isGemini3Flash(model) {
-		level := googleThinkingLevel(effort, model)
-		thinking.Level = &level
+		thinking.Level = googleThinkingLevel(effort, model)
 	} else {
-		budget := googleVertexThinkingBudget(model, effort, options.ThinkingBudgets)
-		thinking.BudgetTokens = &budget
+		thinking.BudgetTokens = googleVertexThinkingBudget(model, effort, options.ThinkingBudgets)
 	}
 	return StreamGoogleVertexWithOptions(ctx, model, requestContext, &GoogleVertexOptions{
 		StreamOptions: base, Thinking: thinking,
@@ -148,6 +146,10 @@ func postGoogleVertexStream(
 		}
 	} else if !googleHeaderPresent(headers, "X-Goog-Api-Key") {
 		headers.Set("X-Goog-Api-Key", auth.apiKey)
+	}
+	headers, err = applyHeadersHook(ctx, model, streamOptions, headers)
+	if err != nil {
+		return nil, err
 	}
 	request.Header = headers
 	return doGoogleRequest(request)
@@ -279,7 +281,10 @@ func disabledGoogleVertexThinkingConfig(model *ai.Model) *GoogleThinkingConfig {
 	return &GoogleThinkingConfig{ThinkingBudget: &zero}
 }
 
-func googleVertexThinkingBudget(model *ai.Model, effort ai.ThinkingLevel, custom *ai.ThinkingBudgets) int64 {
+// googleVertexThinkingBudget mirrors google-vertex.ts getGoogleBudget; efforts
+// without an explicit table entry resolve to undefined, omitting the
+// thinkingConfig budget instead of sending 0. (OT-m9)
+func googleVertexThinkingBudget(model *ai.Model, effort ai.ThinkingLevel, custom *ai.ThinkingBudgets) *int64 {
 	if custom != nil {
 		var value *int
 		switch effort {
@@ -293,7 +298,8 @@ func googleVertexThinkingBudget(model *ai.Model, effort ai.ThinkingLevel, custom
 			value = custom.High
 		}
 		if value != nil {
-			return int64(*value)
+			budget := int64(*value)
+			return &budget
 		}
 	}
 	var budgets map[ai.ThinkingLevel]int64
@@ -303,7 +309,11 @@ func googleVertexThinkingBudget(model *ai.Model, effort ai.ThinkingLevel, custom
 	case strings.Contains(model.ID, "2.5-flash"):
 		budgets = map[ai.ThinkingLevel]int64{ai.ThinkingMinimal: 128, ai.ThinkingLow: 2048, ai.ThinkingMedium: 8192, ai.ThinkingHigh: 24576}
 	default:
-		return -1
+		fallback := int64(-1)
+		return &fallback
 	}
-	return budgets[effort]
+	if budget, ok := budgets[effort]; ok {
+		return &budget
+	}
+	return nil
 }

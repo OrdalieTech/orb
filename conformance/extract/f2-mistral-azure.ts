@@ -448,6 +448,53 @@ const azureBackfillSSE = encodeSSE([
   },
 ]);
 
+// G6: a streamed tool call without an id derives its id from the stream index,
+// and finish_reason tool_calls maps to toolUse.
+const mistralMissingToolIDSSE = encodeSSE([
+  {
+    id: "mistral-missing-id-fixture",
+    model: mistralModel.id,
+    choices: [
+      {
+        index: 0,
+        delta: {
+          tool_calls: [
+            { type: "function", index: 0, function: { name: "echo", arguments: '{"text":' } },
+          ],
+        },
+        finish_reason: null,
+      },
+    ],
+  },
+  {
+    id: "mistral-missing-id-fixture",
+    model: mistralModel.id,
+    choices: [
+      {
+        index: 0,
+        delta: {
+          tool_calls: [
+            { id: "null", type: "function", index: 0, function: { name: "echo", arguments: '"anon"}' } },
+          ],
+        },
+        finish_reason: "tool_calls",
+      },
+    ],
+    usage: { prompt_tokens: 6, completion_tokens: 2, total_tokens: 8 },
+  },
+]);
+
+function mistralFinishReasonSSE(finishReason: string): string {
+  return encodeSSE([
+    {
+      id: `mistral-${finishReason}-fixture`,
+      model: mistralModel.id,
+      choices: [{ index: 0, delta: { content: "partial" }, finish_reason: finishReason }],
+      usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 },
+    },
+  ]);
+}
+
 const streamDefinitions: StreamDefinition[] = [
   {
     name: "mistral-thinking-text-tool-cache-usage",
@@ -456,6 +503,30 @@ const streamDefinitions: StreamDefinition[] = [
     context: { messages: [{ role: "user", content: "stream", timestamp: FIXED_NOW }] },
     options: { apiKey: "fixture-key", cacheRetention: "none" },
     sse: mistralRichSSE,
+  },
+  {
+    name: "mistral-missing-tool-call-id",
+    api: "mistral-conversations",
+    model: mistralModel,
+    context: { messages: [{ role: "user", content: "anonymous tool", timestamp: FIXED_NOW }] },
+    options: { apiKey: "fixture-key", cacheRetention: "none" },
+    sse: mistralMissingToolIDSSE,
+  },
+  {
+    name: "mistral-length-finish-reason",
+    api: "mistral-conversations",
+    model: mistralModel,
+    context: { messages: [{ role: "user", content: "too long", timestamp: FIXED_NOW }] },
+    options: { apiKey: "fixture-key", cacheRetention: "none" },
+    sse: mistralFinishReasonSSE("length"),
+  },
+  {
+    name: "mistral-model-length-finish-reason",
+    api: "mistral-conversations",
+    model: mistralModel,
+    context: { messages: [{ role: "user", content: "context overflow", timestamp: FIXED_NOW }] },
+    options: { apiKey: "fixture-key", cacheRetention: "none" },
+    sse: mistralFinishReasonSSE("model_length"),
   },
   {
     name: "mistral-http-403-body",
@@ -502,6 +573,38 @@ const streamDefinitions: StreamDefinition[] = [
     httpStatus: 403,
     httpBody: "denied",
     httpContentType: "text/plain",
+  },
+  {
+    // OA-M2 negative: Azure never passes applyServiceTierPricing, so a
+    // priority response tier leaves the cost trace unmultiplied.
+    name: "azure-priority-service-tier-unpriced",
+    api: "azure-openai-responses",
+    model: azureModel,
+    context: { messages: [{ role: "user", content: "priority", timestamp: FIXED_NOW }] },
+    options: {
+      apiKey: "fixture-key",
+      azureBaseUrl: "https://fixture-resource.openai.azure.com",
+      cacheRetention: "none",
+    },
+    sse: encodeSSE([
+      {
+        type: "response.completed",
+        sequence_number: 0,
+        response: {
+          id: "azure-priority-fixture",
+          status: "completed",
+          service_tier: "priority",
+          output: [],
+          usage: {
+            input_tokens: 20,
+            output_tokens: 7,
+            total_tokens: 27,
+            input_tokens_details: { cached_tokens: 2 },
+            output_tokens_details: { reasoning_tokens: 4 },
+          },
+        },
+      },
+    ]),
   },
 ];
 

@@ -57,7 +57,9 @@ func MigrateAuthToAuthJSON(agentDir string) ([]string, error) {
 					order = removeOrderedName(order, "apiKeys")
 					encoded, marshalErr := marshalOrderedRawObject(order, settings)
 					if marshalErr == nil {
-						_ = os.WriteFile(settingsPath, encoded, 0o600)
+						// settings.json already exists, so WriteFile preserves
+						// its mode just like upstream writeFileSync.
+						_ = os.WriteFile(settingsPath, encoded, 0o644)
 					}
 				}
 			}

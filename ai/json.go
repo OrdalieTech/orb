@@ -756,8 +756,11 @@ func (content *ToolCall) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// SetToolCallArgumentsJSON records a complete provider-emitted argument object
-// so a later replay preserves JSON.stringify's original member order.
+// SetToolCallArgumentsJSON records a complete provider-emitted argument value
+// so a later replay preserves JSON.stringify's original shape and member order.
+// ToolCall.Arguments remains an object-oriented Go convenience; malformed
+// provider values are retained in the wire representation and exposed through
+// ToolCallArgumentsValue.
 func SetToolCallArgumentsJSON(content *ToolCall, data []byte) error {
 	if content == nil {
 		return errors.New("ai: nil tool call")
@@ -766,17 +769,49 @@ func SetToolCallArgumentsJSON(content *ToolCall, data []byte) error {
 	if err != nil {
 		return err
 	}
-	arguments, err := decodeJSONObject(normalizedArguments)
+	value, err := decodeJSONValue(normalizedArguments)
 	if err != nil {
 		return err
+	}
+	arguments, ok := value.(map[string]any)
+	if !ok {
+		arguments = map[string]any{}
 	}
 	content.Arguments = arguments
 	content.rawArguments = normalizedArguments
 	return nil
 }
 
-// MarshalToolCallArguments preserves decoded object member order while the
-// public argument map remains semantically unchanged.
+// ToolCallArgumentsValue returns the provider-emitted JSON value. Valid tool
+// calls return the public argument map; malformed non-object values remain
+// observable so schema validation and transforms see the same runtime value as
+// upstream.
+func ToolCallArgumentsValue(content *ToolCall) any {
+	if content == nil {
+		return nil
+	}
+	arguments := content.Arguments
+	if arguments == nil {
+		arguments = map[string]any{}
+	}
+	if len(content.rawArguments) > 0 {
+		original, err := decodeJSONValue(content.rawArguments)
+		if err == nil {
+			if object, ok := original.(map[string]any); ok {
+				if reflect.DeepEqual(object, arguments) {
+					return arguments
+				}
+			} else if len(arguments) == 0 {
+				return original
+			}
+		}
+	}
+	return arguments
+}
+
+// MarshalToolCallArguments preserves the provider's decoded JSON shape and
+// object member order while the public argument map remains convenient for
+// ordinary object-shaped tool calls.
 func MarshalToolCallArguments(content *ToolCall) ([]byte, error) {
 	if content == nil {
 		return nil, errors.New("ai: nil tool call")
@@ -786,9 +821,15 @@ func MarshalToolCallArguments(content *ToolCall) ([]byte, error) {
 		arguments = map[string]any{}
 	}
 	if len(content.rawArguments) > 0 {
-		original, err := decodeJSONObject(content.rawArguments)
-		if err == nil && reflect.DeepEqual(original, arguments) {
-			return bytes.Clone(content.rawArguments), nil
+		original, err := decodeJSONValue(content.rawArguments)
+		if err == nil {
+			if object, ok := original.(map[string]any); ok {
+				if reflect.DeepEqual(object, arguments) {
+					return bytes.Clone(content.rawArguments), nil
+				}
+			} else if len(arguments) == 0 {
+				return bytes.Clone(content.rawArguments), nil
+			}
 		}
 	}
 	for _, partial := range []*string{content.PartialJSON, content.PartialArgs} {
@@ -797,9 +838,7 @@ func MarshalToolCallArguments(content *ToolCall) ([]byte, error) {
 		}
 		encoded, err := partialjson.StringifyStreamingJSON(*partial)
 		if err == nil {
-			if _, objectErr := decodeJSONObject(encoded); objectErr == nil {
-				return encoded, nil
-			}
+			return encoded, nil
 		}
 	}
 	return marshalJSON(stringifyJSONObject(arguments))
@@ -1038,12 +1077,12 @@ func unmarshalTypedBlocks[T any](data []byte, factories map[string]func() any) (
 	return result, nil
 }
 
-func decodeJSONObject(data []byte) (map[string]any, error) {
+func decodeJSONValue(data []byte) (any, error) {
 	if len(data) == 0 {
-		return nil, errors.New("missing object")
+		return nil, errors.New("missing JSON value")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
-	var value map[string]any
+	var value any
 	if err := decoder.Decode(&value); err != nil {
 		return nil, err
 	}
@@ -1052,9 +1091,6 @@ func decodeJSONObject(data []byte) (map[string]any, error) {
 			return nil, errors.New("multiple JSON values")
 		}
 		return nil, err
-	}
-	if value == nil {
-		return nil, errors.New("arguments must be an object")
 	}
 	return value, nil
 }

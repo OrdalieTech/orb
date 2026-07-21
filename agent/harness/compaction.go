@@ -279,6 +279,17 @@ func FindCutPoint(entries []SessionEntry, startIndex, endIndex int, keepRecentTo
 
 //nolint:staticcheck // CompactionError messages match upstream capitalization.
 func PrepareCompaction(pathEntries []SessionEntry, settings CompactionSettings) (*CompactionPreparation, error) {
+	return prepareCompaction(pathEntries, settings, true)
+}
+
+// PrepareLegacyCompaction retains the coding-agent compaction behavior, whose
+// persisted session format has not adopted harness retained-tail checkpoints.
+func PrepareLegacyCompaction(pathEntries []SessionEntry, settings CompactionSettings) (*CompactionPreparation, error) {
+	return prepareCompaction(pathEntries, settings, false)
+}
+
+//nolint:staticcheck // CompactionError messages match upstream capitalization.
+func prepareCompaction(pathEntries []SessionEntry, settings CompactionSettings, retainTail bool) (*CompactionPreparation, error) {
 	if len(pathEntries) == 0 || pathEntries[len(pathEntries)-1].Type == "compaction" {
 		return nil, nil
 	}
@@ -325,7 +336,16 @@ func PrepareCompaction(pathEntries []SessionEntry, settings CompactionSettings) 
 			}
 		}
 	}
-	if len(messages) == 0 && len(prefix) == 0 {
+	tail := agent.AgentMessages(nil)
+	if retainTail {
+		tail = make(agent.AgentMessages, 0, len(pathEntries)-cut.FirstKeptEntryIndex)
+		for index := cut.FirstKeptEntryIndex; index < len(pathEntries); index++ {
+			if message := entryMessage(pathEntries[index], false); message != nil {
+				tail = append(tail, message)
+			}
+		}
+	}
+	if !retainTail && len(messages) == 0 && len(prefix) == 0 {
 		return nil, nil
 	}
 	fileOps := newFileOperations()
@@ -342,6 +362,7 @@ func PrepareCompaction(pathEntries []SessionEntry, settings CompactionSettings) 
 		FirstKeptEntryID:    pathEntries[cut.FirstKeptEntryIndex].ID,
 		MessagesToSummarize: messages,
 		TurnPrefixMessages:  prefix,
+		RetainedTail:        tail,
 		IsSplitTurn:         cut.IsSplitTurn,
 		TokensBefore:        EstimateContextTokens(ContextMessages(pathEntries)).Tokens,
 		PreviousSummary:     previousSummary,
@@ -360,13 +381,15 @@ func ContextMessages(entries []SessionEntry) agent.AgentMessages {
 	selected := entries
 	if latest >= 0 {
 		selected = []SessionEntry{entries[latest]}
-		found := false
-		for index := 0; index < latest; index++ {
-			if entries[index].ID == entries[latest].FirstKeptEntryID {
-				found = true
-			}
-			if found {
-				selected = append(selected, entries[index])
+		if entries[latest].RetainedTail == nil {
+			found := false
+			for index := 0; index < latest; index++ {
+				if entries[index].ID == entries[latest].FirstKeptEntryID {
+					found = true
+				}
+				if found {
+					selected = append(selected, entries[index])
+				}
 			}
 		}
 		selected = append(selected, entries[latest+1:]...)
@@ -375,6 +398,9 @@ func ContextMessages(entries []SessionEntry) agent.AgentMessages {
 	for _, entry := range selected {
 		if message := entryMessage(entry, true); message != nil {
 			messages = append(messages, message)
+		}
+		if entry.Type == "compaction" {
+			messages = append(messages, entry.RetainedTail...)
 		}
 	}
 	return messages
@@ -429,6 +455,7 @@ func Compact(
 		Summary: summary, FirstKeptEntryID: preparation.FirstKeptEntryID,
 		TokensBefore: preparation.TokensBefore,
 		Usage:        &summaryUsage,
+		RetainedTail: preparation.RetainedTail,
 		Details:      CompactionDetails{ReadFiles: readFiles, ModifiedFiles: modifiedFiles},
 	}, nil
 }

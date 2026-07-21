@@ -788,6 +788,66 @@
         },
         "body": "{\"model\":\"claude-opus-4-6\",\"messages\":[{\"role\":\"user\",\"content\":\"answer directly\"}],\"max_tokens\":32000,\"stream\":true,\"thinking\":{\"type\":\"disabled\"}}"
       }
+    },
+    {
+      "name": "anthropic-cloudflare-gateway-null-header-auth",
+      "api": "anthropic-messages",
+      "simple": true,
+      "model": {
+        "id": "claude-opus-4-6",
+        "name": "Anthropic Fixture Model",
+        "api": "anthropic-messages",
+        "provider": "cloudflare-ai-gateway",
+        "baseUrl": "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/anthropic",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 3,
+          "output": 15,
+          "cacheRead": 0.3,
+          "cacheWrite": 3.75
+        },
+        "contextWindow": 200000,
+        "maxTokens": 32000
+      },
+      "context": {
+        "systemPrompt": "Answer through the gateway.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hello <gateway>",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "cacheRetention": "none",
+        "headers": {
+          "cf-aig-authorization": "Bearer fixture-cloudflare-key",
+          "Authorization": null,
+          "x-api-key": null
+        },
+        "env": {
+          "CLOUDFLARE_ACCOUNT_ID": "fixture-account",
+          "CLOUDFLARE_GATEWAY_ID": "fixture-gateway"
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://gateway.ai.cloudflare.com/v1/fixture-account/fixture-gateway/anthropic/v1/messages",
+        "headers": {
+          "accept": "application/json",
+          "anthropic-beta": "interleaved-thinking-2025-05-14",
+          "anthropic-dangerous-direct-browser-access": "true",
+          "anthropic-version": "2023-06-01",
+          "cf-aig-authorization": "Bearer fixture-cloudflare-key",
+          "content-type": "application/json"
+        },
+        "body": "{\"model\":\"claude-opus-4-6\",\"messages\":[{\"role\":\"user\",\"content\":\"hello <gateway>\"}],\"max_tokens\":32000,\"stream\":true,\"system\":[{\"type\":\"text\",\"text\":\"Answer through the gateway.\"}],\"thinking\":{\"type\":\"disabled\"}}"
+      }
     }
   ]
 }

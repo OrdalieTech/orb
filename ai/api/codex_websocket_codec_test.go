@@ -123,9 +123,22 @@ func TestCodexWebSocketCloseAndIdleErrors(t *testing.T) {
 
 	client, server := net.Pipe()
 	defer func() { _ = server.Close() }()
+	written := make(chan []byte, 1)
+	go func() {
+		buffer := make([]byte, 256)
+		read, _ := server.Read(buffer)
+		written <- buffer[:read]
+	}()
 	idleSocket := &codexWebSocket{connection: client, reader: bufioNewReader(client), cancel: func() {}}
 	if _, err := idleSocket.ReadMessage(context.Background(), 5*time.Millisecond); err == nil || err.Error() != "WebSocket idle timeout after 5ms" {
 		t.Fatalf("idle error = %v", err)
+	}
+	// CX-m4: the idle timeout must send a close frame 1000 "idle_timeout"
+	// before dropping the connection, matching upstream closeWebSocketSilently.
+	frame := <-written
+	opcode, payload, _, err := decodeCodexClientFrame(frame)
+	if err != nil || opcode != 0x8 || len(payload) < 2 || binary.BigEndian.Uint16(payload[:2]) != 1000 || string(payload[2:]) != "idle_timeout" {
+		t.Fatalf("idle close frame opcode=%d payload=%q err=%v", opcode, payload, err)
 	}
 }
 

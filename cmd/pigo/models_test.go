@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/codingagent"
 )
 
 func TestFormatModelListMatchesUpstreamFixture(t *testing.T) {
@@ -40,6 +41,10 @@ func TestFormatModelListMatchesUpstreamFixture(t *testing.T) {
 	if err := json.Unmarshal(caseData, &cases); err != nil {
 		t.Fatal(err)
 	}
+	// LOG-m6: the empty-list guidance resolves doc pointers through
+	// authGuidanceDocPaths like formatNoAPIKeyFoundMessage, so the fixture's
+	// literal upstream paths are substituted with the resolved ones.
+	providersDoc, modelsDoc := codingagent.AuthGuidanceDocPaths()
 	for _, test := range cases {
 		t.Run(test.Name, func(t *testing.T) {
 			models := fixture.Models
@@ -48,10 +53,20 @@ func TestFormatModelListMatchesUpstreamFixture(t *testing.T) {
 			} else if test.Models != nil {
 				models = test.Models
 			}
-			if got := formatModelList(models, test.Search); got != test.Expected {
-				t.Fatalf("filtered model list mismatch\n--- got ---\n%s--- want ---\n%s", got, test.Expected)
+			expected := strings.Replace(test.Expected, "  docs/providers.md", "  "+providersDoc, 1)
+			expected = strings.Replace(expected, "  docs/models.md", "  "+modelsDoc, 1)
+			if got := formatModelList(models, test.Search); got != expected {
+				t.Fatalf("filtered model list mismatch\n--- got ---\n%s--- want ---\n%s", got, expected)
 			}
 		})
+	}
+}
+
+// LOG-m6: --list-models empty output shares upstream
+// formatNoModelsAvailableMessage via the same doc-path resolution.
+func TestLOGm6FormatModelListUsesAuthGuidance(t *testing.T) {
+	if got, want := formatModelList(nil, ""), codingagent.FormatNoModelsAvailableMessage()+"\n"; got != want {
+		t.Fatalf("empty model list = %q, want %q", got, want)
 	}
 }
 
@@ -63,7 +78,8 @@ func TestFormatModelListFilteringAndEmptyResults(t *testing.T) {
 	if got := formatModelList(models, "claude"); got != "No models matching \"claude\"\n" {
 		t.Fatalf("no-match output = %q", got)
 	}
-	if got := formatModelList(nil, ""); got != "No models available. Use /login to log into a provider via OAuth or API key. See:\n  docs/providers.md\n  docs/models.md\n" {
+	// LOG-m6: empty output flows through codingagent.FormatNoModelsAvailableMessage.
+	if got := formatModelList(nil, ""); got != codingagent.FormatNoModelsAvailableMessage()+"\n" {
 		t.Fatalf("empty output = %q", got)
 	}
 }

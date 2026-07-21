@@ -56,7 +56,7 @@ func TestSessionStorageLeafEdgeCases(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = storage.PathToRoot(stringPointer("child"))
+		_, err = storage.PathToRootOrCompaction(stringPointer("child"))
 		assertSessionErrorCode(t, err, harness.SessionErrorInvalidSession)
 	})
 }

@@ -118,7 +118,84 @@ func (state *sessionStorageState) label(id string) (string, bool) {
 	return label, ok
 }
 
-func (state *sessionStorageState) pathToRoot(leafID *string) ([]SessionTreeEntry, error) {
+func (state *sessionStorageState) sessionName() (string, bool) {
+	for index := len(state.entries) - 1; index >= 0; index-- {
+		if state.entries[index].Type != "session_info" {
+			continue
+		}
+		name := trimHarnessJSSpace(state.entries[index].Name)
+		return name, name != ""
+	}
+	return "", false
+}
+
+func (state *sessionStorageState) sessionStats() SessionStats {
+	var stats SessionStats
+	for _, entry := range state.entries {
+		if entry.Type == "message" {
+			stats.MessageCount++
+		}
+		input, output, cacheRead, cacheWrite, costTotal, ok := harnessEntryUsage(entry)
+		if !ok {
+			continue
+		}
+		stats.CachedTokens += cacheRead
+		stats.UncachedTokens += input + cacheWrite
+		stats.TotalTokens += input + output + cacheRead + cacheWrite
+		stats.CostTotal += costTotal
+	}
+	return stats
+}
+
+func harnessEntryUsage(entry SessionTreeEntry) (input, output, cacheRead, cacheWrite, costTotal float64, ok bool) {
+	var raw json.RawMessage
+	switch entry.Type {
+	case "message":
+		var message struct {
+			Role  string          `json:"role"`
+			Usage json.RawMessage `json:"usage"`
+		}
+		if json.Unmarshal(entry.Message, &message) != nil || message.Role != "assistant" {
+			return 0, 0, 0, 0, 0, false
+		}
+		raw = message.Usage
+	case "compaction", "branch_summary":
+		if len(entry.raw) != 0 {
+			var object map[string]json.RawMessage
+			if json.Unmarshal(entry.raw, &object) != nil {
+				return 0, 0, 0, 0, 0, false
+			}
+			raw = object["usage"]
+		} else {
+			if entry.Usage == nil {
+				return 0, 0, 0, 0, 0, false
+			}
+			raw, _ = json.Marshal(entry.Usage)
+		}
+	default:
+		return 0, 0, 0, 0, 0, false
+	}
+	var usage struct {
+		Input      *float64 `json:"input"`
+		Output     *float64 `json:"output"`
+		CacheRead  *float64 `json:"cacheRead"`
+		CacheWrite *float64 `json:"cacheWrite"`
+		Cost       *struct {
+			Total *float64 `json:"total"`
+		} `json:"cost"`
+	}
+	if json.Unmarshal(raw, &usage) != nil || usage.Input == nil || usage.Output == nil || usage.CacheRead == nil ||
+		usage.CacheWrite == nil || usage.Cost == nil || usage.Cost.Total == nil {
+		return 0, 0, 0, 0, 0, false
+	}
+	return *usage.Input, *usage.Output, *usage.CacheRead, *usage.CacheWrite, *usage.Cost.Total, true
+}
+
+func (state *sessionStorageState) pathToRootOrCompaction(leafID *string) ([]SessionTreeEntry, error) {
+	return state.pathToRootWithCompaction(leafID, true)
+}
+
+func (state *sessionStorageState) pathToRootWithCompaction(leafID *string, stopAtCompaction bool) ([]SessionTreeEntry, error) {
 	if leafID == nil {
 		return []SessionTreeEntry{}, nil
 	}
@@ -127,8 +204,18 @@ func (state *sessionStorageState) pathToRoot(leafID *string) ([]SessionTreeEntry
 		return nil, newSessionError(SessionErrorNotFound, "Entry %s not found", *leafID)
 	}
 	path := make([]SessionTreeEntry, 0)
+	stopAtEntryID := ""
 	for {
 		path = append(path, current.clone())
+		if stopAtEntryID != "" && current.ID == stopAtEntryID {
+			break
+		}
+		if stopAtCompaction && current.Type == "compaction" {
+			if current.RetainedTail != nil {
+				break
+			}
+			stopAtEntryID = current.FirstKeptEntryID
+		}
 		if current.ParentID == nil || *current.ParentID == "" {
 			break
 		}
@@ -142,6 +229,35 @@ func (state *sessionStorageState) pathToRoot(leafID *string) ([]SessionTreeEntry
 		path[left], path[right] = path[right], path[left]
 	}
 	return path, nil
+}
+
+func (state *sessionStorageState) entriesWithCursor(options ...SessionEntryCursorOptions) []SessionTreeEntry {
+	if len(options) == 0 {
+		return cloneHarnessEntries(state.entries)
+	}
+	option := options[0]
+	start := normalizeHarnessSliceIndex(option.AfterEntrySeq, len(state.entries))
+	end := len(state.entries)
+	if option.Limit != nil {
+		end = normalizeHarnessSliceIndex(option.AfterEntrySeq+*option.Limit, len(state.entries))
+		if end < start {
+			end = start
+		}
+	}
+	return cloneHarnessEntries(state.entries[start:end])
+}
+
+func normalizeHarnessSliceIndex(index, length int) int {
+	if index < 0 {
+		index = length + index
+		if index < 0 {
+			return 0
+		}
+	}
+	if index > length {
+		return length
+	}
+	return index
 }
 
 // InMemorySessionStorage stores the complete physical entry log in memory.
@@ -224,16 +340,28 @@ func (storage *InMemorySessionStorage) Label(id string) (string, bool) {
 	return storage.state.label(id)
 }
 
-func (storage *InMemorySessionStorage) PathToRoot(leafID *string) ([]SessionTreeEntry, error) {
+func (storage *InMemorySessionStorage) SessionName() (string, bool) {
 	storage.mu.RLock()
 	defer storage.mu.RUnlock()
-	return storage.state.pathToRoot(leafID)
+	return storage.state.sessionName()
 }
 
-func (storage *InMemorySessionStorage) Entries() []SessionTreeEntry {
+func (storage *InMemorySessionStorage) SessionStats() SessionStats {
 	storage.mu.RLock()
 	defer storage.mu.RUnlock()
-	return cloneHarnessEntries(storage.state.entries)
+	return storage.state.sessionStats()
+}
+
+func (storage *InMemorySessionStorage) PathToRootOrCompaction(leafID *string) ([]SessionTreeEntry, error) {
+	storage.mu.RLock()
+	defer storage.mu.RUnlock()
+	return storage.state.pathToRootOrCompaction(leafID)
+}
+
+func (storage *InMemorySessionStorage) Entries(options ...SessionEntryCursorOptions) []SessionTreeEntry {
+	storage.mu.RLock()
+	defer storage.mu.RUnlock()
+	return storage.state.entriesWithCursor(options...)
 }
 
 // JSONLSessionStorage retains the exact input bytes until a mutation appends
@@ -451,16 +579,28 @@ func (storage *JSONLSessionStorage) Label(id string) (string, bool) {
 	return storage.state.label(id)
 }
 
-func (storage *JSONLSessionStorage) PathToRoot(leafID *string) ([]SessionTreeEntry, error) {
+func (storage *JSONLSessionStorage) SessionName() (string, bool) {
 	storage.mu.RLock()
 	defer storage.mu.RUnlock()
-	return storage.state.pathToRoot(leafID)
+	return storage.state.sessionName()
 }
 
-func (storage *JSONLSessionStorage) Entries() []SessionTreeEntry {
+func (storage *JSONLSessionStorage) SessionStats() SessionStats {
 	storage.mu.RLock()
 	defer storage.mu.RUnlock()
-	return cloneHarnessEntries(storage.state.entries)
+	return storage.state.sessionStats()
+}
+
+func (storage *JSONLSessionStorage) PathToRootOrCompaction(leafID *string) ([]SessionTreeEntry, error) {
+	storage.mu.RLock()
+	defer storage.mu.RUnlock()
+	return storage.state.pathToRootOrCompaction(leafID)
+}
+
+func (storage *JSONLSessionStorage) Entries(options ...SessionEntryCursorOptions) []SessionTreeEntry {
+	storage.mu.RLock()
+	defer storage.mu.RUnlock()
+	return storage.state.entriesWithCursor(options...)
 }
 
 func (storage *JSONLSessionStorage) Bytes() ([]byte, error) {
