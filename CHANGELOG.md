@@ -6,6 +6,11 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Fixed
+
+- `--no-extensions` now disables discovery while preserving explicit `-e` extensions, and the
+  upstream `--theme`/`--no-themes` resource-selection flags are available.
+
 ## [0.1.1] - 2026-07-21
 
 ### Fixed

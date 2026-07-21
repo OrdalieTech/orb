@@ -90,11 +90,11 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	diagnostics = append(diagnostics, extensionDiagnostics...)
 	resourceLoader, err := codingagent.NewDefaultResourceLoader(codingagent.DefaultResourceLoaderOptions{
 		CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
-		AdditionalSkillPaths: args.Skills, AdditionalPromptTemplatePaths: args.PromptTemplates,
+		AdditionalSkillPaths: args.Skills, AdditionalPromptTemplatePaths: args.PromptTemplates, AdditionalThemePaths: args.Themes,
 		PackageSkillPaths: enabledPackageResourcePaths(resolvedPaths.Skills), PackagePromptTemplatePaths: enabledPackageResourcePaths(resolvedPaths.Prompts),
 		PackageThemePaths: enabledPackageThemePaths(resolvedPaths.Themes),
 		ExtensionRegistry: extensionRegistry, NoExtensions: args.NoExtensions,
-		NoContextFiles: args.NoContextFiles, NoSkills: args.NoSkills, NoPromptTemplates: args.NoPromptTemplates,
+		NoContextFiles: args.NoContextFiles, NoSkills: args.NoSkills, NoPromptTemplates: args.NoPromptTemplates, NoThemes: args.NoThemes,
 		SystemPrompt: args.SystemPrompt, AppendSystemPrompt: args.AppendSystemPrompt,
 	})
 	if err != nil {

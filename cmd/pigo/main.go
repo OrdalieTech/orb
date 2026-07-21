@@ -632,7 +632,9 @@ Commands:
   --prompt-template <path>       Load a prompt template file or directory; repeatable
   --no-prompt-templates, -np     Disable prompt template discovery
   --extension, -e <path>         Load an extension file (can be used multiple times)
-  --no-extensions, -ne           Disable compiled-in extension discovery
+  --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
+  --theme <path>                 Load a theme file or directory; repeatable
+  --no-themes                    Disable theme discovery
   --no-context-files, -nc        Disable AGENTS.md/CLAUDE.md discovery
   --approve, -a                  Trust project-local resources for this run
   --no-approve, -na              Ignore project-local resources for this run

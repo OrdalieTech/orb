@@ -150,7 +150,7 @@ func (loader *DefaultResourceLoader) Reload(ctx context.Context, reloadOptions *
 
 	registry := extensions.NewRegistry(options.CWD)
 	diagnostics := make([]ResourceDiagnostic, 0)
-	if !options.NoExtensions && options.ExtensionRegistry != nil {
+	if options.ExtensionRegistry != nil {
 		if !loaded {
 			// First load adopts the already-materialized instances, mirroring
 			// upstream loadFinalExtensionSet reusing pre-trust-loaded extensions

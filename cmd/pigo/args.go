@@ -55,6 +55,8 @@ type CLIArgs struct {
 	NoSkills           bool
 	PromptTemplates    []string
 	NoPromptTemplates  bool
+	Themes             []string
+	NoThemes           bool
 	ProjectTrusted     *bool
 	Offline            bool
 	Messages           []string
@@ -199,6 +201,11 @@ func ParseArgs(argv []string) CLIArgs {
 			result.PromptTemplates = append(result.PromptTemplates, argv[index])
 		case argument == "--no-prompt-templates" || argument == "-np":
 			result.NoPromptTemplates = true
+		case argument == "--theme" && index+1 < len(argv):
+			index++
+			result.Themes = append(result.Themes, argv[index])
+		case argument == "--no-themes":
+			result.NoThemes = true
 		case argument == "--approve" || argument == "-a":
 			trusted := true
 			result.ProjectTrusted = &trusted
