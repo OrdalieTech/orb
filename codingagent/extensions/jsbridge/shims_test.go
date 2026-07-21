@@ -222,6 +222,28 @@ export default function(pi) {
 	assertRegisteredDescription(t, result, "result", "shim_value")
 }
 
+func TestBareProcessModuleInBundledDependency(t *testing.T) {
+	t.Setenv("PI_TEST_SHIM_VAR", "shim_value")
+	cwd := t.TempDir()
+	mustWrite(t, filepath.Join(cwd, "process-consumer.cjs"), `
+const imported = require("process");
+exports.describe = () => [
+  imported === globalThis.process,
+  imported.env.PI_TEST_SHIM_VAR,
+  imported.cwd(),
+].join(":");
+`)
+	result := loadAndRunExtension(t, cwd, `
+import nodeProcess from "node:process";
+import { describe } from "./process-consumer.cjs";
+export default function(pi) {
+  const description = [nodeProcess === globalThis.process, describe()].join(":");
+  pi.registerCommand("result", {description, handler: async () => {}});
+}
+`)
+	assertRegisteredDescription(t, result, "result", "true:true:shim_value:"+cwd)
+}
+
 // --- url module tests ---
 
 func TestURLFileURLToPath(t *testing.T) {

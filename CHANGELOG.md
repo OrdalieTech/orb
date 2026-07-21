@@ -6,6 +6,13 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-21
+
+### Fixed
+
+- JS extensions and bundled dependencies can import the Node process built-in as `process` or
+  `node:process`; both resolve to the existing process global.
+
 ## [0.1.0] - 2026-07-21
 
 ### Added
