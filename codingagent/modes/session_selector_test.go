@@ -84,7 +84,11 @@ func selectorSession(root, id, first, allText string, modified time.Time, name *
 
 func sessionSelectorSessions(t *testing.T, now time.Time) (string, []session.SessionInfo, []session.SessionInfo) {
 	t.Helper()
-	seed, err := os.MkdirTemp("", "pi-selector-seed-")
+	tempRoot := os.TempDir()
+	if runtime.GOOS == "darwin" {
+		tempRoot = "/tmp"
+	}
+	seed, err := os.MkdirTemp(tempRoot, "pi-selector-seed-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +96,7 @@ func sessionSelectorSessions(t *testing.T, now time.Time) (string, []session.Ses
 	if err := os.Remove(seed); err != nil {
 		t.Fatal(err)
 	}
-	root := filepath.Join(os.TempDir(), "pi-session-selector-"+seedName[len(seedName)-6:])
+	root := filepath.Join(tempRoot, "pi-session-selector-"+seedName[len(seedName)-6:])
 	if err := os.Mkdir(root, 0o755); err != nil {
 		t.Fatal(err)
 	}

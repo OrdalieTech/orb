@@ -18,9 +18,15 @@ func TestReplacePathAliases(t *testing.T) {
 	if err := os.Symlink(target, alias); err != nil {
 		t.Fatal(err)
 	}
-	got := runner.ReplacePathAliases(filepath.Join(target, "file"), alias, "<root>")
-	if got != filepath.Join("<root>", "file") {
-		t.Fatalf("replaced path = %q", got)
+	canonical, err := filepath.EvalSymlinks(alias)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, root := range []string{alias, canonical} {
+		got := runner.ReplacePathAliases(filepath.Join(root, "file"), alias, "<root>")
+		if got != filepath.Join("<root>", "file") {
+			t.Fatalf("replaced path = %q", got)
+		}
 	}
 }
 
