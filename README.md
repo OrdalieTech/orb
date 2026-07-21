@@ -13,7 +13,7 @@ upstream version in [UPSTREAM.lock](UPSTREAM.lock); every divergence is recorded
 curl -fsSL https://raw.githubusercontent.com/OrdalieTech/pi-go/main/scripts/install.sh | sh
 ```
 
-Alternatively, run `brew install OrdalieTech/tap/pi`, or with Go ≥ 1.25:
+Alternatively, run `brew install OrdalieTech/tap/pi`, or with Go ≥ 1.26.5:
 `go install github.com/OrdalieTech/pi-go/cmd/pi@latest`.
 
 ## First session

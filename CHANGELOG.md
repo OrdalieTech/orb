@@ -6,6 +6,12 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Changed
+
+- Releases, CI, and `go install` now pin Go 1.26.5. On identical source, the 1,000-turn chat load
+  and F12 renderer are each 2.8% faster; no-prompt startup is 1.7% slower, minimal session creation
+  is 4.8% slower, and the stripped Linux binary is 0.9% larger than with Go 1.25.0.
+
 ### Fixed
 
 - Hosted macOS verification now handles APFS realpath, case, and Unicode normalization without

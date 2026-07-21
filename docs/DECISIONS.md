@@ -205,7 +205,7 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
 - `rg`/`fd` auto-download into `~/.pi/agent/bin` ported as-is (system binaries preferred). This is
   upstream behavior, not a single-binary violation.
 - Clipboard via OSC52 / shell-out (`pbcopy`/`xclip`/`wl-copy`), no native addon.
-- Go ≥ 1.25 baseline (sobek requirement); repo developed on Go 1.26.
+- Go ≥ 1.25 baseline (sobek requirement); releases and CI pin Go 1.26.5.
 - Node ≥ 22 is a *development-tooling* dependency only (fixture extraction against the upstream clone).
 
 ## Deferred decision gates (resolved inside the named work package)
