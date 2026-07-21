@@ -168,8 +168,9 @@ owner resolved the size and race-gate decisions on 2026-07-20; M5 now remains op
 live/VM/publication checks** (see docs/trim/M5.md §Release remainder).
 
 - [x] Land the release machinery: goreleaser (4 targets, snapshot verified), tag-triggered
-      workflow re-running the gate, checksum-verifying install script, ldflags version, CI on
-      `make check`, README newcomer path, G4 resolved notify-only.
+      workflow re-running the gate, checksum-verifying install script, Homebrew formula generation,
+      ldflags version, CI on `make check`, README newcomer path, G4 resolved
+      notify-only.
 - [x] Close the parity tail: six upstream regression tests ported, five MIRROR-verification gaps
       fixed, three real defects found and fixed (CLI stream SessionID, live custom messages,
       select-list theme), startup loaded-resources listing deferred with a MIRROR note.
@@ -179,9 +180,11 @@ live/VM/publication checks** (see docs/trim/M5.md §Release remainder).
 - [x] Re-run current alignment: 436/436 upstream files mapped and zero open should-fix findings;
       public retry/overflow and skill parsing, custom-theme export, G4 version checks, typed RPC
       client, and the exact 35-model ImagesModels/OpenRouter surface are green.
-- [x] Re-run the candidate trim: 1.123x mirror LOC, 20 reviewed clone groups, clean module audit,
-      52,187,808 B largest bridged artifact across four targets, and 33.5 ± 4.8 ms no-prompt cold
-      start. The owner-set 55 MB decimal cap is green.
+- [x] Publish `docs/compare/sprint-4.md` with the final deterministic TS/Go comparison and every
+      release-platform difference fixed or ledgered.
+- [x] Re-run the candidate trim: 1.124x mirror LOC, 20 reviewed clone groups, clean module audit,
+      52,187,712 B largest bridged artifact across four targets, and 47.4 ± 7.4 ms no-prompt cold
+      start (40.9 ± 0.9 ms on one isolated CPU). The owner-set size and 50 ms mean caps are green.
 - [x] Resolve the two binding-rule conflicts (owner, 2026-07-20): retain D17 and set the bridged
       artifact cap to 55 MB decimal; clarify D7 so shipped builds remain static `CGO_ENABLED=0`
       while development-only `-race` binaries may link Go's CGo-backed ThreadSanitizer runtime.
@@ -192,8 +195,9 @@ live/VM/publication checks** (see docs/trim/M5.md §Release remainder).
       existing local tag points to stale commit `b20a03b`, predates this candidate, and is not a
       release tag.
 - [ ] Owner-gated before publishing the tag: OAuth live runs, CI secrets (nightly 72h window),
-      clean-macOS install/docs verification, and correction of the canonical GitHub remote (the
-      checkout's `origin` is `netapy/pigo`, while release metadata targets `OrdalieTech/pi-go`).
+      and clean-macOS install/docs verification. The canonical public repositories now exist and
+      this checkout's `origin` points to `OrdalieTech/pi-go`; Homebrew publication uses the
+      authenticated release operator instead of a persistent cross-repository secret.
 
 ## Sprint 5 — Chat gateway (D27)
 
@@ -225,7 +229,7 @@ Status: **closed in `43e5863`**.
 - [x] Land `chat/examples/localbot` (runnable Telegram long-poll gateway over the local spool).
 - [x] Publish `docs/chat.md` (embedding guide), the MIRROR.md D27 addition row, and
       `docs/compare/sprint-5.md` (pi-chat/Hermes cross-check with the deliberate-difference
-      table).
+      table); complete the eight-point trim in `docs/trim/S5.md`.
 - [x] Commit the sprint arc as green mainline chunks and close the sprint per D25
       (`43e5863`, exact `make check` green).
 
@@ -286,11 +290,11 @@ Status: **closed by the Sprint 6 commit containing this record**.
 - **D7 versus the mandatory race gate (2026-07-20)** — D7 now governs shipped product/release
   binaries, which remain static `CGO_ENABLED=0`. Development-only `go test -race` binaries may
   enable CGo solely because the Go race runtime links ThreadSanitizer; the exception never ships.
+- **Canonical release repositories (2026-07-20)** — public `OrdalieTech/pi-go` and
+  `OrdalieTech/homebrew-tap` repositories now exist; this checkout's `origin` points to the
+  canonical source repository and preserves the former `netapy/pigo` remote as `legacy`.
 
 ## Owner-blocked evidence
-- **Canonical release remote mismatch** — module paths, docs, update checks, and release metadata
-  target `github.com/OrdalieTech/pi-go`, but this checkout's `origin` is
-  `https://github.com/netapy/pigo.git`. Remote ownership/configuration is external to the repo.
 - **Recorded for review: llama.cpp extension excluded** (divergence ledger) — shipped at the pin
   but deleted upstream right after; amend if you want it ported anyway.
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.

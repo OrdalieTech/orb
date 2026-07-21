@@ -11,10 +11,7 @@ import (
 type Version struct {
 	Major, Minor, Patch int
 	Prerelease          []string
-	raw                 string
 }
-
-func (v Version) String() string { return v.raw }
 
 // Parse accepts an exact npm version ("1.2.3", "v1.2.3", "1.2.3-rc.1+build").
 func Parse(input string) (Version, bool) {
@@ -49,7 +46,7 @@ func Parse(input string) (Version, bool) {
 		}
 		numbers[index] = value
 	}
-	return Version{Major: numbers[0], Minor: numbers[1], Patch: numbers[2], Prerelease: prerelease, raw: raw}, true
+	return Version{Major: numbers[0], Minor: numbers[1], Patch: numbers[2], Prerelease: prerelease}, true
 }
 
 func validIdentifier(id string) bool {
@@ -187,7 +184,6 @@ type comparatorSet []comparator
 // Range is a parsed npm range: OR of comparator sets.
 type Range struct {
 	sets []comparatorSet
-	raw  string
 }
 
 // ValidRange reports whether input parses as an npm range.
@@ -206,7 +202,7 @@ func ParseRange(input string) (Range, bool) {
 		}
 		sets = append(sets, set)
 	}
-	return Range{sets: sets, raw: raw}, true
+	return Range{sets: sets}, true
 }
 
 func parseComparatorSet(input string) (comparatorSet, bool) {

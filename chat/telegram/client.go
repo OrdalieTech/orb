@@ -74,9 +74,8 @@ type apiUser struct {
 }
 
 type apiChat struct {
-	ID    int64  `json:"id"`
-	Type  string `json:"type"`
-	Title string `json:"title"`
+	ID   int64  `json:"id"`
+	Type string `json:"type"`
 }
 
 type apiEntity struct {
@@ -87,8 +86,6 @@ type apiEntity struct {
 
 type apiPhotoSize struct {
 	FileID   string `json:"file_id"`
-	Width    int    `json:"width"`
-	Height   int    `json:"height"`
 	FileSize int64  `json:"file_size"`
 }
 
@@ -127,8 +124,6 @@ type apiUpdate struct {
 }
 
 type apiFilePath struct {
-	FileID   string `json:"file_id"`
-	FileSize int64  `json:"file_size"`
 	FilePath string `json:"file_path"`
 }
 

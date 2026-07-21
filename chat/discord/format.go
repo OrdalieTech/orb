@@ -1,6 +1,10 @@
 package discord
 
-import "github.com/OrdalieTech/pi-go/chat/internal/runechunk"
+import (
+	"unicode/utf8"
+
+	"github.com/OrdalieTech/pi-go/chat/internal/runechunk"
+)
 
 const messageLimit = 2000
 
@@ -21,9 +25,8 @@ func chunkText(text string, limit int) []string {
 }
 
 func truncateRunes(s string, limit int) string {
-	runes := []rune(s)
-	if len(runes) <= limit {
+	if len(s) <= limit || utf8.RuneCountInString(s) <= limit {
 		return s
 	}
-	return string(runes[:limit])
+	return string([]rune(s)[:limit])
 }

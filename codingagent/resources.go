@@ -83,6 +83,10 @@ func DefaultAgentDir() string {
 
 // LoadResources discovers context and prompt files, then applies CLI overrides.
 func LoadResources(options ResourceOptions) Resources {
+	return loadResources(options, true)
+}
+
+func loadResources(options ResourceOptions, resolveMetadata bool) Resources {
 	cwd := resolveResourcePath(options.CWD)
 	agentDir := options.AgentDir
 	if agentDir == "" {
@@ -133,7 +137,10 @@ func LoadResources(options ResourceOptions) Resources {
 			resources.AppendSystemPrompt = append(resources.AppendSystemPrompt, *resolved)
 		}
 	}
-	metadata := resolveCommandResourceMetadata(cwd, agentDir, trusted)
+	metadata := commandResourceMetadata{skills: map[string]PathMetadata{}, prompts: map[string]PathMetadata{}}
+	if resolveMetadata {
+		metadata = resolveCommandResourceMetadata(cwd, agentDir, trusted)
+	}
 	mergeCommandResourceMetadata(metadata.skills, options.SkillPathMetadata)
 	mergeCommandResourceMetadata(metadata.prompts, options.PromptPathMetadata)
 	commandOptions := commandResourceOptions{

@@ -15,6 +15,17 @@ builds:
 archives:
   - formats: [tar.gz]
     name_template: "pi_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+brews:
+  - name: pi
+    repository:
+      owner: OrdalieTech
+      name: homebrew-tap
+    skip_upload: true
+    homepage: https://github.com/OrdalieTech/pi-go
+    description: Faithful, slim, pure-Go port of the pi coding agent
+    license: MIT
+    install: bin.install "pi"
+    test: system "#{bin}/pi", "--version"
 checksum:
   name_template: checksums.txt
 release:

@@ -145,11 +145,11 @@ func TestNormalizeFields(t *testing.T) {
 			Author: author("999", "pibot", true),
 		},
 		Attachments: []gwAttachment{
-			{ID: "a1", Filename: "chart.png", ContentType: "image/png", Size: 1234,
+			{Filename: "chart.png", ContentType: "image/png", Size: 1234,
 				URL: "https://cdn.example.com/attachments/1/a1/chart.png?ex=1&is=2&hm=3"},
-			{ID: "a2", Filename: "notes.pdf", ContentType: "application/pdf", Size: 999,
+			{Filename: "notes.pdf", ContentType: "application/pdf", Size: 999,
 				URL: "https://cdn.example.com/attachments/1/a2/notes.pdf?ex=1&is=2&hm=3"},
-			{ID: "a3", Filename: "voice.ogg", ContentType: "audio/ogg", Size: 555,
+			{Filename: "voice.ogg", ContentType: "audio/ogg", Size: 555,
 				URL: "https://cdn.example.com/attachments/1/a3/voice.ogg?ex=1&is=2&hm=3"},
 		},
 	}

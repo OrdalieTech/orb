@@ -16,7 +16,7 @@ func partialUpdate(text string) agent.MessageUpdateEvent {
 }
 
 func TestCoalescerKeepsLatestSnapshotOnly(t *testing.T) {
-	c := newCoalescer()
+	c := new(coalescer)
 	c.observe(partialUpdate("he"))
 	c.observe(partialUpdate("hello"))
 	c.observe(partialUpdate("hello wor"))
@@ -37,7 +37,7 @@ func TestCoalescerKeepsLatestSnapshotOnly(t *testing.T) {
 }
 
 func TestCoalescerObserveNeverPanicsOrBlocks(t *testing.T) {
-	c := newCoalescer()
+	c := new(coalescer)
 	events := []any{
 		nil,
 		"garbage",
@@ -49,7 +49,7 @@ func TestCoalescerObserveNeverPanicsOrBlocks(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		// Repeated observes must never block even though nobody drains notify.
+		// Repeated observes must never block.
 		for range 100 {
 			for _, event := range events {
 				c.observe(event)
@@ -68,7 +68,7 @@ func TestCoalescerObserveNeverPanicsOrBlocks(t *testing.T) {
 }
 
 func TestPreviewRendererSurvivesAdapterPanics(t *testing.T) {
-	c := newCoalescer()
+	c := new(coalescer)
 	delivery := &fauxDelivery{previewPanics: 1}
 	c.observe(partialUpdate("first"))
 	var previewIDs []string
@@ -91,7 +91,7 @@ func TestPreviewRendererSurvivesAdapterPanics(t *testing.T) {
 }
 
 func TestPreviewRendererStopsCleanly(t *testing.T) {
-	c := newCoalescer()
+	c := new(coalescer)
 	delivery := &fauxDelivery{}
 	stop := startPreviewRenderer(context.Background(), c, delivery, time.Millisecond, func(string) {})
 	c.observe(partialUpdate("tick"))

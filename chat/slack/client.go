@@ -146,8 +146,6 @@ func (c *client) doCall(ctx context.Context, method string, payload []byte, out 
 
 type authTestResponse struct {
 	UserID string `json:"user_id"`
-	BotID  string `json:"bot_id"`
-	Team   string `json:"team"`
 }
 
 func (c *client) authTest(ctx context.Context) (*authTestResponse, error) {

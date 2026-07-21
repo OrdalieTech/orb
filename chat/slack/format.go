@@ -202,7 +202,7 @@ func splitLongLine(line string, limit int) []string {
 }
 
 func truncateRunes(s string, limit int) string {
-	if utf8.RuneCountInString(s) <= limit {
+	if len(s) <= limit || utf8.RuneCountInString(s) <= limit {
 		return s
 	}
 	return string([]rune(s)[:limit])

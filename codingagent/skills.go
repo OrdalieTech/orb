@@ -5,7 +5,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"unicode/utf16"
 
@@ -480,9 +479,4 @@ func FormatSkillsForPrompt(skills []Skill) string {
 func escapeSkillXML(value string) string {
 	replacer := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&apos;")
 	return replacer.Replace(value)
-}
-
-// SortSkillsByName is useful to applications that need a stable presentation order.
-func SortSkillsByName(skills []Skill) {
-	sort.SliceStable(skills, func(left, right int) bool { return skills[left].Name < skills[right].Name })
 }

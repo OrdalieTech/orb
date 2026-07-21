@@ -1,7 +1,10 @@
 // Package runechunk splits platform text at readable rune boundaries.
 package runechunk
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // Split cuts text into chunks of at most limit runes, preferring paragraph
 // breaks, then line breaks, then spaces, then a hard cut. Empty input or a
@@ -9,6 +12,13 @@ import "strings"
 func Split(text string, limit int) []string {
 	if limit <= 0 {
 		return nil
+	}
+	if len(text) <= limit && utf8.ValidString(text) {
+		text = strings.TrimRight(text, "\n ")
+		if text == "" {
+			return nil
+		}
+		return []string{text}
 	}
 	runes := []rune(text)
 	var chunks []string

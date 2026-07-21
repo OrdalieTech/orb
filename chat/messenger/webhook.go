@@ -35,7 +35,6 @@ type webhookPayload struct {
 	Object string `json:"object"`
 	Entry  []struct {
 		ID        string           `json:"id"`
-		Time      int64            `json:"time"`
 		Messaging []messagingEvent `json:"messaging"`
 	} `json:"entry"`
 }
@@ -44,9 +43,6 @@ type messagingEvent struct {
 	Sender struct {
 		ID string `json:"id"`
 	} `json:"sender"`
-	Recipient struct {
-		ID string `json:"id"`
-	} `json:"recipient"`
 	Timestamp int64           `json:"timestamp"` // epoch milliseconds
 	Message   *inboundMessage `json:"message"`
 	Postback  *struct {
@@ -64,11 +60,9 @@ type messagingEvent struct {
 }
 
 type inboundMessage struct {
-	MID    string `json:"mid"`
-	Text   string `json:"text"`
-	IsEcho bool   `json:"is_echo"`
-	// AppID is set on echoes: the app that sent the echoed message.
-	AppID      int64 `json:"app_id"`
+	MID        string `json:"mid"`
+	Text       string `json:"text"`
+	IsEcho     bool   `json:"is_echo"`
 	QuickReply *struct {
 		Payload string `json:"payload"`
 	} `json:"quick_reply"`

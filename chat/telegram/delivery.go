@@ -258,8 +258,10 @@ func eventMessageID(eventID string) int64 {
 	if eventID == "" {
 		return 0
 	}
-	parts := strings.Split(eventID, ":")
-	id, err := strconv.ParseInt(parts[len(parts)-1], 10, 64)
+	if i := strings.LastIndexByte(eventID, ':'); i >= 0 {
+		eventID = eventID[i+1:]
+	}
+	id, err := strconv.ParseInt(eventID, 10, 64)
 	if err != nil {
 		return 0
 	}

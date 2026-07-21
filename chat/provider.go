@@ -116,7 +116,7 @@ func (p *LocalProvider) Acquire(_ context.Context, key ConversationKey) (*Conver
 		p.mu.Unlock()
 	}
 
-	sessionDir := p.SessionDir(key)
+	sessionDir := filepath.Join(p.root, id)
 	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
 		release()
 		return nil, fmt.Errorf("chat: create session dir: %w", err)

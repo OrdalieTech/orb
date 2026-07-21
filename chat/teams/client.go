@@ -118,9 +118,8 @@ type resourceResponse struct {
 }
 
 type channelAccount struct {
-	ID          string `json:"id"`
-	Name        string `json:"name,omitempty"`
-	AADObjectID string `json:"aadObjectId,omitempty"`
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
 }
 
 type conversationAccount struct {

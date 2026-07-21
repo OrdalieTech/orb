@@ -26,25 +26,28 @@ type ConversationKey struct {
 // String returns a stable, filesystem- and partition-safe join of the key
 // segments. The encoding is injective: distinct keys never collide.
 func (k ConversationKey) String() string {
-	segments := []string{k.Tenant, k.Platform, k.Account, k.ChatID, k.ThreadID}
-	escaped := make([]string, len(segments))
-	for i, segment := range segments {
-		escaped[i] = escapeKeySegment(segment)
+	segments := [...]string{k.Tenant, k.Platform, k.Account, k.ChatID, k.ThreadID}
+	size := len(segments) - 1
+	for _, segment := range segments {
+		size += len(segment)
+		for i := range len(segment) {
+			if !safeKeyByte(segment[i]) {
+				size += 2
+			}
+		}
 	}
-	return strings.Join(escaped, "~")
-}
-
-// escapeKeySegment keeps [A-Za-z0-9._-] and percent-encodes every other byte,
-// so segments never contain the '~' joiner or filesystem separators.
-func escapeKeySegment(segment string) string {
 	var builder strings.Builder
-	for i := 0; i < len(segment); i++ {
-		c := segment[i]
-		switch {
-		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9',
-			c == '.', c == '_', c == '-':
-			builder.WriteByte(c)
-		default:
+	builder.Grow(size)
+	for i, segment := range segments {
+		if i > 0 {
+			builder.WriteByte('~')
+		}
+		for j := range len(segment) {
+			c := segment[j]
+			if safeKeyByte(c) {
+				builder.WriteByte(c)
+				continue
+			}
 			const hex = "0123456789ABCDEF"
 			builder.WriteByte('%')
 			builder.WriteByte(hex[c>>4])
@@ -52,6 +55,11 @@ func escapeKeySegment(segment string) string {
 		}
 	}
 	return builder.String()
+}
+
+func safeKeyByte(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' ||
+		c == '.' || c == '_' || c == '-'
 }
 
 // AttachmentRef is an opaque platform reference to an inbound media object.

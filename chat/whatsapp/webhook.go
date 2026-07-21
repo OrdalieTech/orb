@@ -52,7 +52,6 @@ func StatusRank(status string) int {
 type webhookPayload struct {
 	Object string `json:"object"`
 	Entry  []struct {
-		ID      string `json:"id"`
 		Changes []struct {
 			Field string      `json:"field"`
 			Value changeValue `json:"value"`
@@ -62,8 +61,7 @@ type webhookPayload struct {
 
 type changeValue struct {
 	Metadata struct {
-		DisplayPhoneNumber string `json:"display_phone_number"`
-		PhoneNumberID      string `json:"phone_number_id"`
+		PhoneNumberID string `json:"phone_number_id"`
 	} `json:"metadata"`
 	Contacts []struct {
 		Profile struct {
@@ -88,7 +86,6 @@ type inboundMessage struct {
 	From      string `json:"from"`
 	ID        string `json:"id"`
 	Timestamp string `json:"timestamp"`
-	Type      string `json:"type"`
 	Text      *struct {
 		Body string `json:"body"`
 	} `json:"text"`
@@ -98,8 +95,7 @@ type inboundMessage struct {
 	Document *inboundMedia `json:"document"`
 	Audio    *inboundMedia `json:"audio"`
 	Context  *struct {
-		From string `json:"from"`
-		ID   string `json:"id"`
+		ID string `json:"id"`
 	} `json:"context"`
 }
 
@@ -113,7 +109,7 @@ func (a *Adapter) Webhook(publish func(chat.Message) error) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			a.handleVerify(w, r)
+			graphhook.HandleVerify(w, r, a.opts.VerifyToken)
 		case http.MethodPost:
 			a.handleEvent(w, r, publish)
 		default:
@@ -122,25 +118,13 @@ func (a *Adapter) Webhook(publish func(chat.Message) error) http.Handler {
 	})
 }
 
-// handleVerify answers the subscribe handshake: echo the raw hub.challenge
-// iff hub.mode is "subscribe" and hub.verify_token matches (constant time).
-func (a *Adapter) handleVerify(w http.ResponseWriter, r *http.Request) {
-	graphhook.HandleVerify(w, r, a.opts.VerifyToken)
-}
-
-// validSignature checks X-Hub-Signature-256 = "sha256=" + hex(HMAC-SHA256(
-// raw body, app secret)) in constant time.
-func (a *Adapter) validSignature(header string, body []byte) bool {
-	return graphhook.ValidSignature(header, body, a.opts.AppSecret)
-}
-
 func (a *Adapter) handleEvent(w http.ResponseWriter, r *http.Request, publish func(chat.Message) error) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBody))
 	if err != nil {
 		http.Error(w, "unreadable body", http.StatusBadRequest)
 		return
 	}
-	if !a.validSignature(r.Header.Get("X-Hub-Signature-256"), body) {
+	if !graphhook.ValidSignature(r.Header.Get("X-Hub-Signature-256"), body, a.opts.AppSecret) {
 		http.Error(w, "invalid signature", http.StatusForbidden)
 		return
 	}

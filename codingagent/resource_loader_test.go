@@ -237,6 +237,33 @@ func TestDefaultResourceLoaderKeepsSkillAndPromptDiagnosticsIndependent(t *testi
 	}
 }
 
+func TestDefaultResourceLoaderKeepsDisabledDiscoveryMetadataForExplicitPaths(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	skillDir := filepath.Join(agentDir, "skills", "explicit")
+	promptPath := filepath.Join(agentDir, "prompts", "explicit.md")
+	writeSkillFixture(t, skillDir, "explicit", "Explicit skill")
+	writeResourceFixture(t, promptPath, "explicit prompt")
+	loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+		CWD: cwd, AgentDir: agentDir, NoSkills: true, NoPromptTemplates: true, NoContextFiles: true,
+		AdditionalSkillPaths: []string{skillDir}, AdditionalPromptTemplatePaths: []string{promptPath},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loader.Reload(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	for name, source := range map[string]SourceInfo{
+		"skill":  loader.GetSkills().Skills[0].SourceInfo,
+		"prompt": loader.GetPrompts().Prompts[0].SourceInfo,
+	} {
+		if source.Source != "auto" || source.Scope != "user" || source.Origin != "top-level" || source.BaseDir != agentDir {
+			t.Errorf("%s source = %#v", name, source)
+		}
+	}
+}
+
 func TestDefaultResourceLoaderExtendResourcesLoadsThemesImmediately(t *testing.T) {
 	cwd, agentDir := t.TempDir(), t.TempDir()
 	themePath := filepath.Join(cwd, "extension-theme.json")
