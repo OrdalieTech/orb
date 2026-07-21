@@ -875,6 +875,70 @@ func TestExtensionThinkingLevelClampsAndSkipsDuplicatePersistence(t *testing.T) 
 	}
 }
 
+func TestModelAndThinkingMutationsSharePersistenceAndExtensionEvents(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(agentDir, "auth.json"), []byte(`{"openai":{"type":"api_key","key":"test"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	models, err := config.NewModelRegistry(agentDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := session.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	modelA := ai.Model{Provider: "openai", ID: "a", Reasoning: true}
+	modelB := ai.Model{Provider: "openai", ID: "b", Reasoning: true}
+	registry := extensions.NewRegistry(cwd)
+	var api extensions.API
+	var selected []string
+	if err := registry.Register("<inline:selection>", func(registered extensions.API) error {
+		api = registered
+		registered.On(extensions.EventModelSelect, func(_ context.Context, event extensions.Event, _ extensions.Context) (any, error) {
+			selected = append(selected, "model:"+event.(extensions.ModelSelectEvent).Model.ID)
+			return nil, nil
+		})
+		registered.On(extensions.EventThinkingLevelSelect, func(_ context.Context, event extensions.Event, _ extensions.Context) (any, error) {
+			selected = append(selected, "thinking:"+string(event.(extensions.ThinkingLevelSelectEvent).Level))
+			return nil, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
+		Agent:          agent.NewAgent(agent.WithInitialState(agent.AgentState{Model: &modelA, ThinkingLevel: ai.ModelThinkingLow})),
+		SessionManager: manager, Settings: settings, ExtensionRegistry: registry, ModelRegistry: models,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+	if err := runtime.SetModel(context.Background(), modelB); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SetThinkingLevel(ai.ModelThinkingHigh); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := api.SetModel(context.Background(), &modelA); err != nil || !ok {
+		t.Fatalf("extension set model = %t, %v", ok, err)
+	}
+	if err := api.SetThinkingLevel(ai.ModelThinkingMedium); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := selected, []string{"model:b", "thinking:high", "model:a", "thinking:medium"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("selection events = %#v, want %#v", got, want)
+	}
+	if settings.GetDefaultProvider() != "openai" || settings.GetDefaultModel() != "a" || settings.GetDefaultThinkingLevel() != ai.ModelThinkingMedium {
+		t.Fatalf("selection settings = %q/%q/%q", settings.GetDefaultProvider(), settings.GetDefaultModel(), settings.GetDefaultThinkingLevel())
+	}
+}
+
 func TestNoExtensionsLeavesRuntimeSeamUnallocated(t *testing.T) {
 	cwd := t.TempDir()
 	manager, settings := extensionRuntimeDependencies(t, cwd)

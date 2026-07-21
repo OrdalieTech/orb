@@ -600,6 +600,79 @@ func TestNewAgentSessionPrompt(t *testing.T) {
 	}
 }
 
+func TestNewAgentSessionRefreshesStateBetweenToolTurns(t *testing.T) {
+	cwd := t.TempDir()
+	manager, err := sessionstore.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := testFaux(100000)
+	modelA, modelB := *provider.GetModel(), *provider.GetModel()
+	modelA.ID, modelB.ID, modelA.Reasoning, modelB.Reasoning = "before", "after", true, true
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage(faux.ToolCall("switch", map[string]any{}, faux.ToolCallOptions{ID: "call"}), faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse}),
+		faux.AssistantMessage("done"),
+	})
+	var calls []struct {
+		model, prompt, tools, thinking string
+	}
+	stream := func(ctx context.Context, model *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+		toolNames := []string{}
+		if request.Tools != nil {
+			for _, tool := range *request.Tools {
+				toolNames = append(toolNames, tool.Name)
+			}
+		}
+		prompt := ""
+		if request.SystemPrompt != nil {
+			prompt = *request.SystemPrompt
+		}
+		thinking := ""
+		if options.Reasoning != nil {
+			thinking = string(*options.Reasoning)
+		}
+		calls = append(calls, struct{ model, prompt, tools, thinking string }{model.ID, prompt, strings.Join(toolNames, ","), thinking})
+		return provider.StreamSimple(ctx, model, request, options)
+	}
+	registry := extensions.NewRegistry(cwd)
+	var result *AgentSessionResult
+	if err := registry.Register("<inline:refresh>", func(api extensions.API) error {
+		api.On(extensions.EventBeforeAgentStart, func(_ context.Context, _ extensions.Event, _ extensions.Context) (any, error) {
+			prompt := "overridden"
+			return extensions.BeforeAgentStartResult{SystemPrompt: &prompt}, nil
+		})
+		api.RegisterTool(extensions.ToolDefinition{Name: "switch", Parameters: ai.JSONSchema(`{"type":"object"}`), Execute: func(context.Context, string, any, agent.AgentToolUpdateCallback, extensions.Context) (agent.AgentToolResult, error) {
+			if err := result.Session.SetActiveToolsByName([]string{"after"}); err != nil {
+				return agent.AgentToolResult{}, err
+			}
+			result.Session.Agent().SetModel(&modelB)
+			result.Session.Agent().SetThinkingLevel(ai.ModelThinkingHigh)
+			return agent.AgentToolResult{}, nil
+		}})
+		api.RegisterTool(extensions.ToolDefinition{Name: "after", Parameters: ai.JSONSchema(`{"type":"object"}`)})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err = NewAgentSession(AgentSessionOptions{
+		CWD: cwd, AgentDir: t.TempDir(), SessionManager: manager, Model: &modelA, ThinkingLevel: ai.ModelThinkingLow,
+		StreamFn: stream, ExtensionRegistry: registry, NoTools: "builtin", Resources: &Resources{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Session.Dispose()
+	if err := result.Session.SetActiveToolsByName([]string{"switch"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := result.Session.PromptSync(context.Background(), "go"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := calls, []struct{ model, prompt, tools, thinking string }{{"before", "overridden", "switch", "low"}, {"after", "overridden", "after", "high"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("provider calls = %#v, want %#v", got, want)
+	}
+}
+
 func TestNewAgentSessionWithExplicitSessionManager(t *testing.T) {
 	isolateSDKAgentDir(t)
 	provider := testFaux(100000)

@@ -11,7 +11,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 - Renamed the repository, Go module, release artifacts, and CLI from `pi-go`/`pi` to `pigo`, so it
   installs beside upstream `pi`; `pigo update` now prints exact installer and Go routes.
 
-## [0.1.0] - 2026-07-20
+## [0.1.0] - 2026-07-21
 
 ### Added
 
@@ -64,6 +64,9 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Fixed
 
+- Turn refresh now carries prompt, tools, model, and thinking changes into the next provider call;
+  custom and branch-summary entries count toward compaction; model/thinking mutations share
+  persistence and extension events; provider-header hooks run before affinity headers.
 - CI now pins the signed Node 24 `actions/checkout` v7.0.1 commit instead of the deprecated
   Node 20 action runtime.
 - Hosted macOS verification now handles APFS realpath, case, and Unicode normalization without

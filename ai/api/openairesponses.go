@@ -199,12 +199,20 @@ func StreamOpenAIResponsesWithOptions(
 			return
 		}
 
-		headers := buildOpenAIResponsesHeaders(model, requestContext, streamOptions, compat)
-		headers, err = applyHeadersHook(ctx, model, streamOptions, headers)
-		if err != nil {
-			fail(err)
-			return
+		if streamOptions != nil && streamOptions.TransformHeaders != nil {
+			copy := *streamOptions
+			copy.Headers, err = streamOptions.TransformHeaders(ctx, cloneProviderHeaders(streamOptions.Headers), model)
+			if err != nil {
+				fail(err)
+				return
+			}
+			if copy.Headers == nil {
+				copy.Headers = ai.ProviderHeaders{}
+			}
+			copy.TransformHeaders = nil
+			streamOptions = &copy
 		}
+		headers := buildOpenAIResponsesHeaders(model, requestContext, streamOptions, compat)
 		response, err := postOpenAIStream(ctx, model, streamOptions, "responses", hookedPayload, headers)
 		if err != nil {
 			fail(err)

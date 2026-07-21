@@ -393,7 +393,7 @@ func loadF10Fixture(t testing.TB) f10Fixture {
 	}
 	var fixture f10Fixture
 	runner.LoadJSON(t, "F10", "cases.json", &fixture)
-	if fixture.SchemaVersion != 1 || len(fixture.TokenCases) != 8 || len(fixture.CutCases) != 4 || len(fixture.SummaryPromptCases) != 3 {
+	if fixture.SchemaVersion != 1 || len(fixture.TokenCases) != 8 || len(fixture.CutCases) != 6 || len(fixture.SummaryPromptCases) != 3 {
 		t.Fatalf("unexpected F10 fixture header: version=%d token=%d cut=%d prompts=%d", fixture.SchemaVersion, len(fixture.TokenCases), len(fixture.CutCases), len(fixture.SummaryPromptCases))
 	}
 	return fixture

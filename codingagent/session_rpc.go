@@ -457,7 +457,7 @@ func (runtime *SessionRuntime) SetFollowUpMode(mode agent.QueueMode) {
 }
 
 func (runtime *SessionRuntime) SetModel(ctx context.Context, model ai.Model) error {
-	return runtime.setModel(ctx, model, nil, true)
+	return runtime.setModel(ctx, model, nil, true, extensions.ModelSelectSet)
 }
 
 func (runtime *SessionRuntime) setModel(
@@ -465,6 +465,7 @@ func (runtime *SessionRuntime) setModel(
 	model ai.Model,
 	explicitThinking *ai.ModelThinkingLevel,
 	checkAuth bool,
+	source extensions.ModelSelectSource,
 ) error {
 	if runtime == nil {
 		return errors.New("codingagent: nil session runtime")
@@ -482,13 +483,20 @@ func (runtime *SessionRuntime) setModel(
 		}
 	}
 	state := runtime.agent.State()
+	previous := state.Model
 	thinkingLevel := runtime.thinkingLevelForModelSwitch(state, explicitThinking)
 	runtime.agent.SetModel(&model)
 	if _, err := runtime.manager.AppendModelChange(string(model.Provider), model.ID); err != nil {
 		return err
 	}
 	runtime.settings.SetDefaultModelAndProvider(string(model.Provider), model.ID)
-	return runtime.SetThinkingLevel(thinkingLevel)
+	if err := runtime.SetThinkingLevel(thinkingLevel); err != nil {
+		return err
+	}
+	if state := runtime.extensionState; state != nil && state.runner.HasHandlers(extensions.EventModelSelect) && !sameModel(previous, &model) {
+		state.runner.Emit(ctx, extensions.ModelSelectEvent{Model: &model, PreviousModel: previous, Source: source})
+	}
+	return nil
 }
 
 func (runtime *SessionRuntime) CycleModel(ctx context.Context) (*ModelCycleResult, error) {
@@ -530,7 +538,7 @@ func (runtime *SessionRuntime) cycleModel(ctx context.Context, step int) (*Model
 			index = 0
 		}
 		next := models[(index+step+len(models))%len(models)]
-		if err := runtime.setModel(ctx, next.Model, next.ThinkingLevel, false); err != nil {
+		if err := runtime.setModel(ctx, next.Model, next.ThinkingLevel, false, extensions.ModelSelectCycle); err != nil {
 			return nil, err
 		}
 		return &ModelCycleResult{
@@ -549,7 +557,7 @@ func (runtime *SessionRuntime) cycleModel(ctx context.Context, step int) (*Model
 		index = 0
 	}
 	next := models[(index+step+len(models))%len(models)]
-	if err := runtime.SetModel(ctx, next); err != nil {
+	if err := runtime.setModel(ctx, next, nil, true, extensions.ModelSelectCycle); err != nil {
 		return nil, err
 	}
 	return &ModelCycleResult{Model: next, ThinkingLevel: runtime.agent.State().ThinkingLevel}, nil
@@ -607,6 +615,9 @@ func (runtime *SessionRuntime) SetThinkingLevel(level ai.ModelThinkingLevel) err
 		runtime.settings.SetDefaultThinkingLevel(effective)
 	}
 	runtime.emit(ThinkingLevelChangedEvent{Level: effective})
+	if extensionState := runtime.extensionState; extensionState != nil && extensionState.runner.HasHandlers(extensions.EventThinkingLevelSelect) {
+		extensionState.runner.Emit(context.Background(), extensions.ThinkingLevelSelectEvent{Level: effective, PreviousLevel: state.ThinkingLevel})
+	}
 	return nil
 }
 
