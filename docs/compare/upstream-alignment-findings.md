@@ -1,235 +1,52 @@
-# Upstream alignment — full findings ledger (2026-07-19 audit)
-
-Verified detail behind [upstream-alignment.md](upstream-alignment.md). Generated from the
-38-agent audit at pi-go `edaa772` vs upstream `3da591ab` (pi 0.80.10). Severity: should-fix →
-work item; watch → re-check at the next audit; fine → aligned, recorded for calibration.
-
-## Confirmed (adversarially verified)
-
-### [should-fix] Mirror coverage — coding-agent core runtime modules (layout)
-
-Sixteen live modules in packages/coding-agent/src/core have no MIRROR.md row and no ledger entry: http-dispatcher.ts (proxy config wired into cli.ts, main.ts, settings-manager and the /settings selector), output-guard.ts (stdout guarding in print/rpc/package-manager), cache-stats.ts, footer-data-provider.ts, auth-guidance.ts, provider-attribution.ts, runtime-credentials.ts, defaults.ts, experimental.ts, timings.ts, source-info.ts, diagnostics.ts, bash-executor.ts, tools/render-utils.ts, tools/tool-definition-wrapper.ts, export-html/ansi-to-html.ts. All are imported by ported surfaces at the pinned commit. Some behavior is demonstrably folded into Go files (footer conformance passes; codingagent/tools/bash_executor.go exists) but the mapping is unrecorded, and http-dispatcher's settings-driven proxy key appears to have no Go implementation at all (only env-proxy via net/http defaults; the key would be silently swallowed by the tolerate-unknown-settings rule).
-
-- upstream: .upstream/packages/coding-agent/src/core/{http-dispatcher,output-guard,cache-stats,footer-data-provider,auth-guidance,provider-attribution,runtime-credentials,defaults,experimental,timings,source-info,diagnostics,bash-executor}.ts, core/tools/{render-utils,tool-definition-wrapper}.ts, core/export-html/ansi-to-html.ts
-- pi-go: No MIRROR.md row for any of them; behavior partially folded into codingagent/modes/interactive_components.go, codingagent/tools/bash_executor.go, codingagent/session/exporthtml/renderer.go and others without attribution; docs/sync/reports/2026-07-18.md already shows core/compaction and similar paths classifying to '—'
-- **Recommendation:** Triage the sixteen files once: add a MIRROR.md row per file pointing at the Go file that absorbed it, or an explicit 'N/A — folded/excluded' row. Separately decide http-dispatcher: implement the settings-driven proxy or add a ledger row saying env-proxy-only.
-
-### [should-fix] Mirror coverage — packages/agent public facade (layout)
-
-agent-harness.ts (1029 lines — the AgentHarness class, the package's primary index.ts export), proxy.ts (367 lines), harness/system-prompt.ts, and harness/utils/{shell-output,truncate}.ts have no file-level MIRROR row. The 2026-07-18 sync dry-run already had to map agent-harness.ts changes to the vague targets 'agent/, agent/harness/' with WP '—', proving diffs here do not localize. Go ported the harness internals (session, env, compaction, skills) but never the facade, and this is nowhere recorded as a decision.
-
-- upstream: .upstream/packages/agent/src/harness/agent-harness.ts, .upstream/packages/agent/src/proxy.ts, harness/system-prompt.ts, harness/utils/{shell-output,truncate}.ts
-- pi-go: agent/harness/ has the internals (session.go, env.go, compaction.go, skills.go, prompt_templates.go) but no facade type and no rows for these five files; skills-disclosure formatting exists only on the codingagent side (codingagent/system_prompt.go)
-- **Recommendation:** Decide explicitly: port an AgentHarness-equivalent facade (SDK parity for library consumers) or record 'facade intentionally dissolved into codingagent runtime' in DECISIONS + MIRROR rows for all five files, including where proxy.ts stands.
-
-### [should-fix] Mirror coverage — bundled llama.cpp extension (layout)
-
-packages/coding-agent/src/extensions/llama/ (~1.4k lines across client/huggingface/index/provider/ui.ts plus src/extensions/index.ts) is a shipped local-models feature at the pinned v0.80.10 commit, unported with no MIRROR row and no ledger entry. Mitigating fact: the sync dry-run against newer upstream shows all llama files as Deleted upstream, so porting is likely wasted work — but today it is an undocumented silent gap in a user-facing surface.
-
-- upstream: .upstream/packages/coding-agent/src/extensions/llama/{client,huggingface,index,provider,ui}.ts, src/extensions/index.ts, docs/llama-cpp.md
-- pi-go: Nothing; no mention anywhere in docs/MIRROR.md or docs/DECISIONS.md
-- **Recommendation:** Cheap fix: add a divergence-ledger row 'llama extension — excluded (removed upstream post-pin)' and a MIRROR '— excluded' row. No port needed given upstream deletion.
-
-### [should-fix] Extension events: typed per-tool variants and type guards (api)
-
-Upstream's tool_call/tool_result events are a discriminated union of per-tool typed events (BashToolCallEvent, ReadToolCallEvent, EditToolCallEvent, ..., BashToolResultEvent, etc.) plus exported type guards isBashToolResult/isReadToolResult/.../isToolCallEventType, all in the public index. pi-go collapses this to one untyped shape.
-
-- upstream: .upstream/packages/coding-agent/src/core/extensions/types.ts:846-1000 (per-tool event interfaces + isXToolResult guards), re-exported from src/index.ts
-- pi-go: /home/ordalie/pi-go/codingagent/extensions/types.go:417-445 — ToolCallEvent{Input map[string]any}, ToolResultEvent{Input map[string]any, Details any}. The typed structs exist (codingagent/tools: BashToolInput, BashToolDetails, EditToolDetails, ...) but no helpers connect them to events.
-- **Recommendation:** Add typed accessor helpers in extensions (e.g. BashCall(ToolCallEvent) (tools.BashToolInput, bool), BashResult(ToolResultEvent) (tools.BashToolDetails, bool), one per built-in tool) mirroring the isXToolResult family. Extension authors porting upstream extensions currently must hand-roll map[string]any decoding and guess which concrete type hides behind Details any.
-
-### [should-fix] ai package: public model helpers missing, reimplemented privately 3x (api)
-
-Upstream pi-ai publicly exports calculateCost, clampThinkingLevel, getSupportedThinkingLevels, modelsAreEqual, hasApi from models.ts. pi-go exports none of them; clampThinkingLevel exists as three separate unexported copies in three packages, calculateCost is unexported in ai/api.
-
-- upstream: .upstream/packages/ai/src/models.ts:635-699 (hasApi, calculateCost, getSupportedThinkingLevels, clampThinkingLevel, modelsAreEqual), all in the pi-ai index
-- pi-go: ai/api/openai_common.go:316 (unexported calculateCost), ai/api/simple_options.go:218 (clampSimpleReasoning), codingagent/session_rpc.go:605 (clampThinkingLevel), codingagent/extension_runtime.go:998 (clampExtensionThinkingLevel) — no public equivalent anywhere
-- **Recommendation:** Export ai.CalculateCost(model, usage), ai.ClampThinkingLevel(model, level), ai.SupportedThinkingLevels(model), ai.ModelsAreEqual(a, b) once in the ai package and delete the three private clamp copies. This is simultaneously an SDK gap (custom footer/status extensions need cost math) and a drift-magnet: three copies of clamp logic can diverge on the next upstream sync.
-
-### [should-fix] Extension-author UI component kit largely unexported (api)
-
-Upstream's index has an explicit '// UI components for extensions' block exporting ModelSelectorComponent, ThemeSelectorComponent, ThinkingSelectorComponent, LoginDialogComponent, OAuthSelectorComponent, TreeSelectorComponent, UserMessageSelectorComponent, ExtensionSelectorComponent, ShowImagesSelectorComponent, SettingsSelectorComponent, BorderedLoader, renderDiff, truncateToVisualLines, keyHint/keyText/rawKeyHint. In pi-go most of these are unexported internals of InteractiveMode.
-
-- upstream: .upstream/packages/coding-agent/src/index.ts ('UI components for extensions' export block from modes/interactive/components)
-- pi-go: codingagent/modes exports only a subset (SessionSelectorComponent, FooterComponent, message components, CustomEditor, DynamicBorder, ArminComponent); model/theme/thinking/login/oauth/tree selectors live as unexported methods like showModelSelector (codingagent/modes/interactive.go:1445), keyHint is private selectorKeyHint (codingagent/modes/session_selector.go:519), renderDiff/BorderedLoader/truncateToVisualLines have no exported equivalent
-- **Recommendation:** Since D16 makes the Go-native extension API the foundation and upstream deliberately exports these for extension UI reuse, either export the missing components/helpers from codingagent/modes (or tui) or record the reduced UI kit as a decided divergence. renderDiff and keyHint/truncateToVisualLines are the ones real upstream extensions use most.
-
-### [should-fix] SDK tool bundles createCodingTools / createReadOnlyTools (api)
-
-Upstream's SDK block exports createCodingTools(cwd) and createReadOnlyTools(cwd) as the canonical tool-set factories next to the individual create*Tool factories. pi-go has only the seven individual constructors.
-
-- upstream: .upstream/packages/coding-agent/src/core/sdk.ts (createCodingTools, createReadOnlyTools re-exported in index.ts)
-- pi-go: codingagent/tools has NewBashTool/NewEditTool/NewFindTool/NewGrepTool/NewLsTool/NewReadTool/NewWriteTool but no bundle; grep for CodingTools/ReadOnlyTools across the repo returns nothing outside .upstream
-- **Recommendation:** Add tools.NewCodingTools(cwd, opts) and tools.NewReadOnlyTools(cwd, opts) returning []agent.AgentTool in the upstream ordering. Trivial to add, and it is the first symbol an upstream SDK user will look for.
-
-### [should-fix] ai streaming-JSON utility hidden in internal/ (api)
-
-Upstream pi-ai publicly exports its partial/streaming JSON parser (utils/json-parse.ts, parseStreamingJson) via the package index — custom-provider authors use it to build streamSimple handlers that surface partial tool-call args. pi-go buries the equivalent in internal/partialjson, unreachable from outside the module.
-
-- upstream: .upstream/packages/ai/src/index.ts exports * from ./utils/json-parse.ts (parseStreamingJson), used by proxy.ts and provider implementations
-- pi-go: internal/partialjson (ParseStreamingJSON, StringifyStreamingJSON) — consumed by ai/api/*.go but not importable by SDK users who register a custom provider via extensions.RegisterProvider with a custom stream function
-- **Recommendation:** Promote partialjson to a public location (e.g. ai/partialjson or export ParseStreamingJSON from ai). The extension API supports custom providers with custom stream handlers (Provider.StreamSimple), so the ecosystem needs the same primitive upstream ships.
-
-### [should-fix] summary — per-package intent coverage (326 upstream *.test.ts files under .upstream/packages/*/test) (tests)
-
-packages/agent: 16 files — 14 covered / 2 partial / 0 uncovered. packages/ai: 100 files — ~64 covered (unit tests + F1/F2/F3 fixtures) / ~29 partial (mostly the live-e2e matrix narrowed per D24) / 6 uncovered / 1 N/A (lazy-module-load, moot for a static Go binary). packages/coding-agent: 176 files — ~135 covered / ~8 partial / ~26 uncovered (incl. 6 numbered upstream regression tests and 7 example-extension tests) / 7 settled-or-N/A (radius, clipboard-native, bash-close-hang-windows, restore-sandbox-env, test-harness self-test, version-check + install-method tied to the neutralized update channel). packages/tui: 27 files — 24 covered / 2 partial / 1 uncovered. Net: ~33 upstream test files carry intent with no undecided Go counterpart.
-
-- upstream: .upstream/packages/{agent,ai,coding-agent,tui}/test/**/*.test.ts
-- pi-go: Go unit tests + conformance families F1–F12, F6Harness, F3-session, F7/F7-cli, F11-{native,wire,jsbridge}, WP250/WP360/WP370/WP440/WP450 (mapping cross-checked against /home/ordalie/pi-go/docs/MIRROR.md)
-- **Recommendation:** Treat the per-file findings below as the Sprint 3 test-debt ledger; add a MIRROR.md-style row per upstream test file so future syncs detect new upstream tests with no Go counterpart mechanically.
-
-### [should-fix] ai — Anthropic tool-name normalization untested (tests)
-
-Upstream anthropic-tool-name-normalization.test.ts pins the CC-compat round-trip (todowrite -> TodoWrite -> todowrite, built-in tools passthrough). Go implements the map at ai/api/anthropicmessages.go:931 but no Go test and no fixture mentions TodoWrite — grep of all *_test.go and conformance/fixtures finds zero hits.
-
-- upstream: .upstream/packages/ai/test/anthropic-tool-name-normalization.test.ts
-- pi-go: ai/api/anthropicmessages.go:931 (implementation only; no test)
-- **Recommendation:** Add normalization round-trip cases to ai/api/anthropicmessages_test.go or extend conformance/extract/f2-anthropic.ts with a tool-name case.
-
-### [should-fix] ai — Copilot-specific Anthropic thinking-effort overrides untested (tests)
-
-github-copilot-anthropic.test.ts protects Copilot Claude adaptive-thinking effort overrides. In Go the flags exist only in the generated catalog (ai/models/generated.go); the adapter-side override behavior has no test (anthropicmessages_test.go only covers Copilot dynamic headers).
-
-- upstream: .upstream/packages/ai/test/github-copilot-anthropic.test.ts
-- pi-go: ai/models/generated.go (catalog flags); ai/api/anthropicmessages_test.go:130 (headers only)
-- **Recommendation:** Port the effort-override assertions into anthropicmessages_test.go; note D26 places Copilot in the expansion ring, so at minimum record it in the Sprint 3 expansion study.
-
-### [should-fix] coding-agent — cache-waste statistics math untested (tests)
-
-cache-stats.test.ts pins computeCacheWaste/collectCacheMisses/detectCacheMiss ($-cost of cache misses shown in /stats). Go implements cache-miss detection (referenced from codingagent/modes/interactive.go, codingagent/session_rpc.go) but no *_test.go exercises the waste math and no fixture family records it.
-
-- upstream: .upstream/packages/coding-agent/test/cache-stats.test.ts
-- pi-go: codingagent/session_rpc.go, codingagent/modes/interactive.go (implementation, untested)
-- **Recommendation:** Port the upstream arithmetic cases (full-miss fallback to cacheRead price, accumulation across turns) as a Go unit test.
-
-### [should-fix] coding-agent — settings.httpProxy silently missing (tests)
-
-http-dispatcher.test.ts pins that the httpProxy setting is applied as HTTP_PROXY/HTTPS_PROXY for pi-managed HTTP clients. The setting does not exist in codingagent/config/settings.go (zero 'Proxy' hits) — a documented upstream settings key is silently dropped, and only Bedrock honors NO_PROXY via its own path.
-
-- upstream: .upstream/packages/coding-agent/test/http-dispatcher.test.ts; upstream settings-manager.ts:126
-- pi-go: codingagent/config/settings.go (key absent); ai/api/bedrockconversestream_test.go (NO_PROXY only)
-- **Recommendation:** Go's net/http honors proxy env vars natively, so the port may be trivial: accept the settings key, set the env (or a Transport), and port the test; otherwise ledger the divergence — users with settings.json httpProxy will be surprised.
-
-### [should-fix] coding-agent — interactive-mode niceties untested: Anthropic subscription warning, Ctrl+Z suspend, keybindings migration, footer git-branch detection, ANSI-strip corpus (tests)
-
-Five upstream unit intents have implementation but no Go test: (1) interactive-mode-anthropic-warning.test.ts — warn-once on Anthropic subscription auth (no warn code/test found); (2) interactive-mode-suspend.test.ts — Ctrl+Z suspend behavior (binding exists in codingagent/modes/interactive_keybindings.go, untested); (3) keybindings-migration.test.ts — legacy key-name rewrite (tui/keybindings.go:232 legacyTUIKeybindings map, zero 'legacy' hits in tui/keybindings_test.go); (4) footer-data-provider.test.ts — real git branch detection incl. reftable repos (InteractiveMode.GitBranch at codingagent/modes/interactive.go:2591 is only exercised through fakes); (5) ansi-utils.test.ts — stripAnsi compatibility corpus vs chalk (no Go analog test).
-
-- upstream: .upstream/packages/coding-agent/test/{interactive-mode-anthropic-warning,interactive-mode-suspend,keybindings-migration,footer-data-provider,ansi-utils}.test.ts
-- pi-go: codingagent/modes/interactive.go:2591, interactive_keybindings.go:10, tui/keybindings.go:232 (all untested paths)
-- **Recommendation:** Cheap unit tests; the keybindings migration and reftable branch detection are the two that will silently break user setups if regressed.
-
-### [should-fix] coding-agent — six numbered upstream regression tests with no traceable Go counterpart (tests)
-
-Of the 41 files in test/suite/regressions/, most map to Go tests or fixture families (F7 covers 5868; f12-shutdown covers 5080/5724; tool_selection_test covers 2835/3592/5109; session_runtime_test covers 3688/pre-prompt-compaction; bash_test covers 5303/5208; retry.go+compaction_test cover 3317; exporthtml export_test covers 5596; harness_runtime_* cover 2860). No evidence found for: 3982-message-end-cost-override (extensions replacing finalized assistant usage cost), 6019-explicit-provider-retry-message (explicit provider retry guidance text), 4167-thinking-toggle-pending-tool-render (pending tool renders survive thinking toggle; f12-ui-lifecycle extract pins interactive-mode-status + overlay tests, not 4167), 5943-session-start-notify (loaded-resources render before restored messages), 2023-queued-slash-command-followup (extension-origin queued slash follow-ups treated as raw text), extension-factory-cache (module cached but factories rerun).
-
-- upstream: .upstream/packages/coding-agent/test/suite/regressions/{3982-message-end-cost-override,6019-explicit-provider-retry-message,4167-thinking-toggle-pending-tool-render,5943-session-start-notify,2023-queued-slash-command-followup,extension-factory-cache}.test.ts
-- pi-go: searched codingagent/*_test.go, codingagent/modes/*_test.go, conformance/extract/f12-ui-lifecycle.ts — no hits
-- **Recommendation:** These encode real user-reported bugs upstream already shipped fixes for; port each as a Go regression test (or pin into an F12/F3 fixture) before v0.1.0 — dropped regression tests are the classic way a port re-ships old bugs.
-
-### [should-fix] CHANGELOG practice (docs)
-
-pi-go maintains no changelog of its own. The in-app /changelog is driven by an embedded copy of upstream's CHANGELOG.md (codingagent/modes/assets/CHANGELOG.md, byte-identical to .upstream/packages/coding-agent/CHANGELOG.md), frozen at the v0.80.10 lock, with links tag-pinned to github.com/earendil-works/pi. Meanwhile the binary reports version 0.1.0-dev (cmd/pi/main.go:26) and update checks point at OrdalieTech releases (settled). The undecided part: when Ordalie ships v0.1.0, v0.1.1... there is no changelog artifact in Ordalie's numbering — /changelog will show only upstream 0.80.x entries that don't correspond to any release the user can update to, and post-update 'what's new' has nothing to render for pi-go releases.
-
-- upstream: packages/coding-agent/CHANGELOG.md (5050 lines, keep-a-changelog style, one ## [x.y.z] section per release) is updated every release and drives the in-app /changelog after updates.
-- pi-go: No CHANGELOG.md at repo root; only the embedded upstream copy at codingagent/modes/assets/CHANGELOG.md; own version series (0.1.0-dev) has zero changelog entries anywhere.
-- **Recommendation:** Decide (owner question, batch with other decisions): (a) start a root CHANGELOG.md in Ordalie's 0.x numbering and make the embedded asset build from it, keeping upstream's parsed format so FormatChangelog works unchanged; or (b) keep bundling upstream's changelog and additionally prepend pi-go release sections. Either way, record the decision in DECISIONS.md before v0.1.0 — the /changelog-vs-OrdalieTech-updates mismatch will be user-visible on the first shipped update.
-
-### [should-fix] Single canonical check command (conventions)
-
-Upstream has one aggregate gate that every agent and the pre-commit hook run after any code change; pi-go spreads the same gate across prose and three separate Makefile targets with no aggregate.
-
-- upstream: `npm run check` chains biome (write + error-on-warnings), pinned-deps, ts-imports, shrinkwrap, install-lock, tsgo --noEmit, browser-smoke; AGENTS.md line 28 mandates it after every code change; CONTRIBUTING.md requires `npm run check` + `./test.sh` before any PR.
-- pi-go: Makefile at /home/ordalie/pi-go/Makefile has separate `build`, `test`, `lint` targets; AGENTS.md working-mode item 2 lists the four commands as prose ('CGO_ENABLED=0 go build ./..., go vet, lint, go test -race'); CI runs `make build test lint` as a shell-level sequence. No `make check`.
-- **Recommendation:** Add `check: build lint test` (and optionally fixtures-check) to the Makefile, reference `make check` as THE pre-commit gate in AGENTS.md, and use `run: make check` in ci.yml. One-line change that restores upstream's single-command norm and removes ambiguity about what 'lint' means for a new agent session.
-
-### [should-fix] Changelog discipline (conventions)
-
-Upstream maintains per-package CHANGELOG.md files with strict [Unreleased] discipline audited at every release; pi-go has no changelog for itself at all (it only mirrors upstream's coding-agent CHANGELOG as a product asset for byte-parity).
-
-- upstream: AGENTS.md Changelog section: entries go under `## [Unreleased]` with Breaking Changes/Added/Changed/Fixed/Removed subsections; released sections immutable; attribution format specified; release step 1 is a changelog audit; log shows `docs(coding-agent): audit unreleased changelog` and `Add [Unreleased] section for next cycle` commits.
-- pi-go: No CHANGELOG.md anywhere outside .upstream/ and the mirrored asset codingagent/modes/assets/CHANGELOG.md. History lives only in git log ('Sprint N: ...') and docs/plan/PROGRESS.md, neither of which is a user-facing release-notes source for v0.1.0.
-- **Recommendation:** Create a root CHANGELOG.md now, in upstream's exact section format, with an `## [Unreleased]` section that sprints append to as they land user-visible surface. Cheap while memory is fresh, and it makes the v0.1.0 GitHub release notes (which the update checker will surface to users) a copy-paste instead of an archaeology dig.
-
-### [should-fix] Public-repo hygiene files (CONTRIBUTING.md, SECURITY.md) (conventions)
-
-Upstream ships CONTRIBUTING.md (philosophy, quality bar, check-before-PR requirement) and SECURITY.md; pi-go root has only AGENTS.md, LICENSE, Makefile, README.md, UPSTREAM.lock.
-
-- upstream: .upstream/CONTRIBUTING.md (core-is-minimal philosophy, `npm run check` + `./test.sh` gate, changelog is maintainer-only) and .upstream/SECURITY.md exist; plus issue templates and contributor-gate workflows (issue-gate.yml, pr-gate.yml, approve-contributor.yml).
-- pi-go: None of these exist. Anyone arriving from the upstream repo at public release will look for the contribution rules and the security contact and find nothing.
-- **Recommendation:** Before the repo goes public: add SECURITY.md (reporting contact) and a one-page CONTRIBUTING.md stating the port's contract — upstream behavior is spec, fixtures are the gate (`make check` + `make fixtures-check`), quirks are not bugs, changelog entries per upstream format. Skip the auto-close/lgtm gating automation until issue volume warrants it — that part of upstream's process is scale-driven, not principle-driven.
-
-### [should-fix] Release pipeline (release)
-
-pi-go has zero release machinery in the repo despite 'Sprint 4: ship v0.1.0' being the next pending task: no .goreleaser.yml, no tag-triggered workflow, no install script, no scripts/ directory. The plan exists only as prose (docs/plan/phase-6-ops.md WP-661, docs/RELEASE-CRITERIA.md M5), and that prose omits several safety practices upstream treats as mandatory: staged draft-release-then-publish ordering, full test rerun inside the release job, checksummed asset validation, and SHA-pinned actions.
-
-- upstream: .upstream/.github/workflows/build-binaries.yml: tag push triggers build via scripts/build-binaries.sh, stages assets in a DRAFT GitHub Release (refusing to mutate a published one), re-runs full build+check+test before npm trusted publishing, only then flips the draft public, with a cleanup job deleting the draft on any failure; SHA256SUMS generated and re-verified; all actions pinned by commit SHA. scripts/release.mjs gates tagging on clean tree, version bump, CHANGELOG roll, checks and tests.
-- pi-go: /home/ordalie/pi-go has only ci.yml and nightly-live.yml; make targets stop at build/test/lint/fixtures. WP-661 plans goreleaser + curl install + Homebrew tap but nothing is implemented, and the plan text does not mention draft-staging, release-time test rerun, or action pinning.
-- **Recommendation:** When implementing WP-661, mirror upstream's release shape, not just its artifact list: tag-triggered workflow that (1) re-runs `make build test lint fixtures-check` at the release commit, (2) stages a draft GitHub Release with goreleaser artifacts + SHA256SUMS (keep upstream-style asset names pi-<os>-<arch>.tar.gz for user muscle memory), (3) publishes the draft only after all gates pass, with failure cleanup, and (4) pins third-party actions by SHA in the release workflow as upstream does. A small release script (Go or make target) should enforce clean-tree + changelog-roll before tagging, like release.mjs.
-
-### [should-fix] Changelog / release-notes source (release)
-
-pi-go has no CHANGELOG.md anywhere in its own tree, so there is no source to extract v0.1.0 release notes from — while it DOES bundle upstream's CHANGELOG.md verbatim as a product asset, meaning the in-product changelog surface will show pi 0.80.x entries with no pi-go history at all.
-
-- upstream: Per-package CHANGELOG.md files with an [Unreleased] section; scripts/release.mjs rolls [Unreleased] into the version at tag time, scripts/release-notes.mjs extracts and validates the notes, and build-binaries.yml fails if extraction fails.
-- pi-go: /home/ordalie/pi-go/CHANGELOG.md does not exist; the only changelog is the mirrored upstream asset at /home/ordalie/pi-go/codingagent/modes/assets/CHANGELOG.md (byte-compared against .upstream in `make product-assets-check`).
-- **Recommendation:** Create a root CHANGELOG.md now with an [Unreleased] section and start recording sprint-level changes, so v0.1.0 notes have a source and the release workflow can validate them upstream-style. Separately decide (and document in DECISIONS.md) what the in-product changelog command shows for a pi-go release: upstream 0.80.x entries, pi-go entries, or both.
-
-### [should-fix] Version embedding and communication (release)
-
-The independent-semver-from-v0.1.0 scheme is settled (DECISIONS standing assumption — not re-litigated here), but its execution has three gaps: the binary version is a hardcoded `const version = "0.1.0-dev"` with no build-time ldflags injection; `pi --version` output carries no upstream-parity marker, so a binary claiming byte-parity with pi v0.80.10 prints an unrelated 0.1.0 — confusing for users and bug triage; and pi-go's own docs disagree with themselves: RELEASE-CRITERIA.md line 67 titles M5 'v1.0 release' while WP-661 and task #12 say ship v0.1.0.
-
-- upstream: All packages versioned in lockstep at 0.80.10 (packages/*/package.json), bumped atomically by release.mjs / sync-versions.js, so the printed version IS the release identity users track.
-- pi-go: /home/ordalie/pi-go/cmd/pi/main.go:26 `const version = "0.1.0-dev"`; no ldflags in Makefile or workflows; the UPSTREAM.lock pin (3da591ab / v0.80.10) is never surfaced in version output; /home/ordalie/pi-go/docs/RELEASE-CRITERIA.md:67 says 'M5 — v1.0 release'.
-- **Recommendation:** Make version a var injected via goreleaser ldflags, and print the upstream pin alongside it, e.g. `pi-go v0.1.0 (upstream pi v0.80.10 @ 3da591ab)` — the UPSTREAM.lock values are already machine-readable. Reconcile the v0.1.0-vs-v1.0 wording (e.g. Sprint 4 cuts v0.1.0 pre-release, v1.0.0 reserved for full parity per D26) in RELEASE-CRITERIA.md, and add the version-mapping explanation to the README install section when WP-620 writes it.
-
-## Watch / fine (unverified low severity)
-
-- **[watch] Package boundary — modules upstream keeps in two packages, Go ports once** (layout): Upstream duplicates compaction (agent/src/harness/compaction/ AND coding-agent/src/core/compaction/, 1.4k lines) and skills system-prompt formatting (agent/src/harness/system-prompt.ts AND coding-agent/src/core/system-prompt.ts). Go carries a single copy (agent/harness/compaction.go; codingagent/system_prompt.go). MIRROR maps only the agent-side compaction, so upstream diffs to coding-agent/core/compaction/* land with no target — the 2026-07-18 report shows exactly that ('—' rows for core/compaction/{compaction,branch-summarization}.ts). — *Add MIRROR rows mapping coding-agent/src/core/compaction/* and agent/src/harness/system-prompt.ts to the single Go copies, noting 'upstream dual-copy, Go unified' so sync diffs on either upstream copy localize.*
-- **[watch] Mirror coverage — packaging/runtime scaffolding with no Go analog** (layout): The lazy-loading layer (api/lazy.ts + 12 *.lazy.ts wrappers), legacy-api-aliases.ts, compat/extension-oauth-types.ts, bun-oauth.ts, bun/{register-bedrock,restore-sandbox-env}.ts, bedrock-provider.ts split, and the index.ts/node.ts entrypoints are TS/Bun packaging mechanics that genuinely need no Go port — but MIRROR is silent, so every future upstream touch to these ~20 files shows up unmapped in sync reports and must be re-triaged from scratch each time. — *Add one blanket MIRROR row: 'TS/Bun packaging scaffolding (lazy wrappers, entrypoints, bun shims) — N/A in Go' listing the paths, so internal/sync classifies them automatically.*
-- **[watch] Exports parity — pi-ai bin and small utils** (layout): package.json audit: ai exposes bin 'pi-ai' (src/cli.ts, 118 lines, a standalone provider-CLI) with no Go counterpart and no rationale; the other subpath exports all have Go package analogs (./oauth→ai/auth/oauth, ./api/*→ai/api, ./providers/*→ai/providers, coding-agent ./rpc-entry→cmd/pi/rpc_host.go, agent ./node→N/A). Also a tail of small unmapped utils: ansi.ts, deprecation.ts, frontmatter.ts, fs-watch.ts, html.ts, json.ts, open-browser.ts (browser-launch for OAuth; Go appears to print URLs only), photon.ts, pi-user-agent.ts, sleep.ts; and Go-only cmd/pi/tool_selection.go has no MIRROR row. — *One sweep: decide pi-ai (likely 'excluded — dev tool' ledger row), map or N/A the ten utils, and add a row for cmd/pi/tool_selection.go (maps to args.ts/tools-manager.ts tool-selection precedence).*
-- **[watch] Process — sync tool only surfaces gaps on changed paths** (layout): internal/sync reports unmapped paths only among paths that changed between lock and target (report.go: 'Add MIRROR.md coverage for N unmapped path(s)'). Files at the pinned commit that never get touched upstream stay silently uncovered forever — which is exactly how the ~60 files above went unnoticed despite the mirror discipline being otherwise excellent (all Go packages, layout, and naming track upstream module boundaries cleanly; /pi root binary is properly gitignored). — *Add a full-coverage mode to pisync (every upstream src file must match a MIRROR row, a glob row, or an explicit N/A row; fail otherwise) and run it in CI; it would have caught every finding in this audit mechanically.*
-- **[fine] Repo layout — overall structure** (layout): No material boundary drift beyond the items above: ai/, agent/, codingagent/, tui/ mirror the four upstream packages one-to-one; internal/ holds only npm-dependency replacements and sync machinery, all with MIRROR rows; cmd/pi absorbing src/cli/* + main.ts + rpc-entry.ts is declared in the MIRROR baseline table. — *None — keep the current package cut.*
-- **[watch] Overflow/retry classifiers relocated from ai to agent/harness** (api): isContextOverflow and isRetryableAssistantError are pi-ai exports upstream (utils/overflow.ts, utils/retry.ts). pi-go ports them but parks them in agent/harness, so a user of the Go ai package alone (the documented provider-neutral layer) will not find them. — *Either move (or alias) IsContextOverflow/IsRetryableAssistantError into ai, or note the relocation in docs/sdk.md's upstream-mapping section. They operate purely on ai.AssistantMessage, so ai is their natural home and matches where upstream users will look.*
-- **[watch] RPC client absent (server half only)** (api): Upstream exports RpcClient/RpcClientOptions/RpcEventListener — a programmatic client for driving a pi process in RPC mode — alongside runRpcMode. pi-go ships only the server half (RunRPCMode, RPCCommand, RPCSessionHost); there is no RPCClient anywhere. — *Decide explicitly: either port RPCClient (useful for Go programs supervising a pi subprocess, and for testing RPC mode the way upstream does) or record 'RpcClient: knowingly absent — Go embedders use the in-process SDK' in the divergence ledger. Right now it is silently missing.*
-- **[watch] ModelRuntime has no named Go equivalent** (api): Upstream exports ModelRuntime / createModelRuntime / ModelRuntimeAuthOverrides (core/model-runtime.ts) as the SDK object bundling model resolution + auth into a stream function. pi-go has no symbol containing 'ModelRuntime'; the responsibilities are dissolved into config.ModelRegistry, config.FallbackRequestAuthResolver, and AgentSessionServices. — *No need to reify the class, but document the mapping (upstream ModelRuntime -> ModelRegistry + RequestAuth resolver + services) in docs/sdk.md so upstream-familiar users and future sync work don't hunt for a missing type.*
-- **[watch] Public helpers demoted to private/internal: parseSkillBlock, uuidv7, main/parseArgs/VERSION** (api): Three upstream-public symbols are unreachable in pi-go: (1) parseSkillBlock/ParsedSkillBlock (public on agent-session.ts) exists only as a private copy inside session/exporthtml; (2) uuidv7 (public from pi-agent, needed to mint pi-compatible session/entry IDs) is internal/uuidv7; (3) main()/MainOptions/parseArgs/Args and VERSION are public upstream for embedding the full CLI, but cmd/pi is package main with an unexported version const. — *Export ParseSkillBlock from codingagent (it already exports FormatSkillInvocation), move uuidv7 under agent/harness or session as a public helper, and consider a small public codingagent.Version() plus an importable Main/ParseArgs if CLI embedding is meant to be supported; otherwise ledger these as knowingly absent.*
-- **[watch] agent streamProxy absent** (api): Upstream pi-agent exports streamProxy/ProxyStreamOptions/ProxyAssistantMessageEvent (proxy.ts) — the stream function for apps that route LLM calls through their own server with server-managed auth. pi-go's agent package has no equivalent. — *This is not orchestrator/Radius (those removals are settled) — it is a generic embedder feature. Decide whether an Ordalie-gateway story needs it (agent.WithStreamFn makes a hand-rolled version possible today) and either port it or add it to the divergence ledger.*
-- **[watch] Constructor naming: New* vs Create* mixed in one family** (api): Upstream has a consistent factory family: createAgentSession / createAgentSessionFromServices / createAgentSessionServices / createAgentSessionRuntime. pi-go renamed only the first to Go-idiomatic NewAgentSession but kept CreateAgentSessionFromServices and CreateAgentSessionServices (while also having NewAgentSessionRuntime, NewSessionRuntime). Neither an upstream user (expects Create* everywhere) nor a Go user (expects New* everywhere) can guess the whole family. Related: upstream DefaultPackageManager became PackageManager while DefaultResourceLoader kept its prefix. — *Before v0.1.0 (renames are free until then): pick one convention — idiomatic Go would be NewAgentSession / NewAgentSessionFromServices / NewAgentSessionServices — and align the PackageManager/DefaultResourceLoader 'Default' convention. Document the create->New mapping rule in docs/sdk.md so the whole surface stays guessable.*
-- **[fine] Surfaces verified as well-aligned (calibration)** (api): For calibration: the extension API core is an unusually faithful mirror — extensions.API matches upstream ExtensionAPI method-for-method (On, RegisterTool/Command/Shortcut/Flag, GetFlag, renderers, sendMessage/sendUserMessage/appendEntry, session metadata, exec, tool management, model/thinking, registerProvider/unregisterProvider, events); Context/CommandContext/ReplacedSessionContext, the full event list incl. TurnStart/End, UserBash, ToolResult, the ctx.ui surface incl. overlays/widgets/working indicator, ai/auth, tools operations interfaces, harness compaction exports, and session-manager entry points all track upstream with predictable Extension-prefix-dropped naming. — *No action on these — but consider growing codingagent/sdk_public_surface_test.go (currently 28 lines, two spot checks) into a generated upstream-export-to-Go-symbol mapping table; it would have caught every gap above mechanically and will keep future upstream syncs honest.*
-- **[watch] ai — compat legacy-API fallback dispatch untested** (tests): compat-env.test.ts pins that unknown providers dispatch through the legacy API registry. Go's ai/api/stream_simple.go is a closed switch on model.API with no tested fallback path; no 'legacy' dispatch test exists. — *Add a test pinning the error/fallback behavior for an unknown model.API so upstream's fallback semantics are a conscious divergence, not an accident.*
-- **[watch] ai — images API surface untested beyond type shape** (tests): images-models.test.ts (provider/model registry for image generation), images.test.ts and openrouter-images.test.ts (generation e2e) have no Go tests. Go defines ai.ImagesModel and F1 covers its JSON shape only; no registry or adapter tests exist. — *If image generation is ported functionality, add registry unit tests; if it is type-only scaffolding, say so in DECISIONS/MIRROR.*
-- **[watch] ai — live e2e matrix intent narrowed (D24-adjacent)** (tests): ~27 upstream live tests (abort, empty, interleaved-thinking, responseid, tokens, total-tokens, stream, xhigh, zen, opus-4-8 smoke, xiaomi smoke, eager-tool-input e2e, long-cache-retention e2e, codex/responses cache-affinity e2e, reasoning-replay e2e, tool-result-images x2, image-tool-result, openrouter-cache-write-repro, context-overflow, google-thinking-disable, tool-call-id-normalization live, cross-provider-handoff) map to per-provider *_live_test.go plus the D24 nightly (OpenAI+Anthropic, 3 tasks). D24 settles the tiering, but specific intents — cache-affinity identifiers, reasoning replay after abort, cross-provider tool-call handoff — are asserted only in recorded fixtures, never live in Go. — *In the Sprint 3 expansion study, enumerate which live intents the nightly corpus actually exercises (cache affinity and post-abort reasoning replay are the two most regression-prone) and extend the 3-task corpus or the opt-in live tests accordingly.*
-- **[watch] coding-agent — PI_EXPERIMENTAL gate and first-time setup absent** (tests): experimental.test.ts, first-time-setup.test.ts and first-time-setup-fork.test.ts protect the PI_EXPERIMENTAL flag and the first-run setup flow (incl. forked-distribution suppression — directly relevant to pi-go as a fork). No 'experimental' or first-time-setup code exists in Go. — *Probably intentional slimness, but it is not in the divergence ledger; add a ledger row (the fork-suppression test shows upstream itself expects forks to opt out — citing it makes the decision defensible).*
-- **[watch] coding-agent — theme fs-watch resilience (regression 2791) structurally divergent** (tests): 2791-fswatch-error-crash.test.ts protects survival of fs.watch error events on the theme watcher. Go has no fsnotify dependency at all (manual reload via the interactive reload command instead of file watching), so the test intent is moot but the hot-reload feature difference is not ledgered. — *Add a one-line ledger/MIRROR note that theme/extension hot-watch is replaced by manual reload, so a future sync doesn't try to 'restore' watching casually.*
-- **[watch] coding-agent — 7 example-extension test files outside the F11 matrix** (tests): F11-jsbridge fixtures cover 18 upstream examples, but these upstream example tests have no fixture or Go counterpart: llama-extension.test.ts (llama.cpp native provider + /llama command), git-merge-and-resolve-extension.test.ts, input-transform-streaming-example.test.ts (skip exec during steering), plan-mode-extension.test.ts + plan-mode-utils.test.ts (isSafeCommand classification), trigger-compact-extension.test.ts (threshold-only auto-compact), compaction-extensions-example.test.ts (docs example type-checks). conformance/README.md already flags the broader F11 matrix as a Sprint 3 expansion gate, but these named files should be in that gate's checklist. — *Fold these seven into the documented Sprint 3 F11 expansion gate explicitly; plan-mode's isSafeCommand list is the one with user-facing safety semantics.*
-- **[watch] tui — two shrink/cell-size nuances only partially pinned** (tests): tui-shrink.test.ts (clears all rendered lines when content shrinks to zero) and tui-cell-size-input.test.ts (forwards a bare ESC even while a cell-size query is outstanding) have no directly matching Go cases; tui_test.go covers resize/differential rendering and cell-size responses (TestTUIImageCellQueryAndReservedRows sends \x1b[6;22;11t) but not these exact edge intents. — *Add a shrink-to-zero case and a bare-ESC-during-cell-size-query case to tui/tui_test.go.*
-- **[watch] agent — harness stream-options patch semantics partially pinned** (tests): agent-harness-stream.test.ts pins that stream options are snapshotted before provider request hooks, that provider request patches chain with deletion semantics, and that save-point snapshots use updated options without mutating the active request. Go covers the hook seam (codingagent/extension_runtime_test.go before_provider_request payload mutation) but the chaining/deletion and snapshot-isolation assertions have no named Go counterpart; agent-harness.test.ts queue-drain intents are covered via agent/harness/session_facade_behavior_test.go and F6Harness. — *Port the patch-chaining + deletion + snapshot-isolation cases to agent/harness tests; extensions mutating provider requests is a high-blast-radius seam.*
-- **[fine] settled / N-A upstream test files (for completeness, not action)** (tests): Classified as settled by the DECISIONS ledger or moot by construction, and therefore NOT counted as drift: radius.test.ts (Radius removed), clipboard-native.test.ts (D7 pure Go), bash-close-hang-windows.test.ts (Windows deferred), restore-sandbox-env.test.ts (bun-specific), lazy-module-load.test.ts (static binary), test-harness.test.ts (vitest harness self-test), version-check.test.ts + config.test.ts detectInstallMethod + pi-user-agent.test.ts + remote-catalog-provider.test.ts (all serve the neutralized pi.dev update/catalog channel; Go's OrdalieTech substitutes have their own coverage in codingagent/modes/interactive_lifecycle_test.go and ai/models/store_test.go). — *None — kept here so the uncovered count is auditable.*
-- **[watch] Examples — extensions** (docs): Upstream ships ~80 extension examples plus rpc-extension-ui.ts under examples/extensions/; pi-go has no in-repo extension examples surface at all. This is presumably intentional (M4 requires >=80% of upstream single-file examples to run unmodified via the extension bridge, so porting them would be wrong), but nothing in the repo says so — someone who knows upstream will look for examples/extensions/ and find nothing, with no signpost. — *Do not port them. Once the M4 bridge lands, document the F11 compatibility matrix location and 'run upstream examples directly from .upstream/ (or a checkout)' in the examples README and user docs — this doubles as the M5 'run an upstream extension' docs step.*
-- **[watch] Repo process files (CONTRIBUTING, SECURITY)** (docs): Upstream root carries CONTRIBUTING.md and SECURITY.md (and its README's contribution policy links them). pi-go has neither, and its AGENTS.md is an internal agent-execution contract (fixtures, sprints, trunk discipline) rather than the contributor-facing rules upstream's AGENTS.md serves — reasonable while private, but a public release with no CONTRIBUTING/SECURITY and an internals-only AGENTS.md will read as unfinished to anyone comparing against upstream. — *Before the repo goes public: add a short SECURITY.md (contact + the same 'no built-in permission system, containerize it' posture upstream states) and a CONTRIBUTING.md that at minimum explains the mirror/sync model (changes must respect UPSTREAM.lock and MIRROR.md). Decide whether AGENTS.md stays as-is publicly or gets a contributor-facing preamble.*
-- **[watch] Package metadata / version** (docs): Version is a hardcoded const "0.1.0-dev" in cmd/pi/main.go:26, with no goreleaser config yet (M5-tracked) and no ldflags injection point, and no stated relationship between the Go module tag (github.com/OrdalieTech/pi-go vX.Y.Z), the CLI-reported version, and the upstream version it tracks (0.80.10 in UPSTREAM.lock). Upstream derives version from package.json in one place. — *When goreleaser lands (M5), inject the version via -ldflags from the git tag so the const cannot drift from the release tag, and have `pi --version` (or at least the docs/release notes) surface the tracked upstream version from UPSTREAM.lock — 'pi-go 0.1.0 (upstream pi 0.80.10)' is the honest identity for a parity port and preempts user confusion with real pi's numbering.*
-- **[fine] LICENSE / attribution** (docs): None worth acting on. LICENSE is MIT with dual copyright lines (Mario Zechner 2025, Ordalie 2026), satisfying upstream's MIT notice-retention requirement in a single file; README credits Mario Zechner and links pi.dev. — *No change. The remaining attribution work (upstream repo link + pinned-commit provenance) belongs to the README finding above.*
-- **[watch] Commit message convention** (conventions): Upstream uses conventional `{feat,fix,docs}(scope): message` with `closes #N` keywords, giving a scannable log that maps commits to packages; pi-go uses `Sprint N: <what>` (mandated by AGENTS.md/D25 for the porting phase), which carries no scope information and will look alien post-release. — *At Sprint 4 close, add one line to AGENTS.md switching post-v0.1.0 commits to upstream's `{feat,fix,docs}(scope):` format with pi-go's package names (ai, tui, agent, codingagent, conformance) as scopes. No change needed during the remaining sprints.*
-- **[watch] Pre-commit enforcement** (conventions): Upstream mechanically enforces its check gate via a husky pre-commit hook (lockfile guard + full `npm run check` + conditional browser smoke + restage); pi-go's equivalent gate exists only as an AGENTS.md instruction ('before every commit, no exceptions') with nothing enforcing it. — *Commit a plain scripts/githooks/pre-commit that runs `make check`, activated by a documented one-time `git config core.hooksPath scripts/githooks` in AGENTS.md — the dependency-free Go-repo analog of husky. Optional while the repo is single-operator; worth landing before external contributors arrive.*
-- **[watch] Dependency vulnerability auditing** (conventions): Upstream runs a dedicated scheduled npm-audit workflow plus pinned-deps and shrinkwrap-allowlist checks as part of its check chain; pi-go CI has no vulnerability scanning at all. — *Add `govulncheck ./...` as a weekly scheduled workflow (mirroring npm-audit.yml's cadence) or as a non-blocking CI step. One dependency-free command; the direct Go analog of upstream's audit posture.*
-- **[fine] Lint/format strictness** (conventions): Upstream enforces biome recommended rules with error-on-warnings plus a strict type check across all packages; pi-go's .golangci.yml is the minimal v2 config (standard linters + gofmt). — *No change needed. If anything ever gets added, limit it to one or two targeted linters rather than importing a 30-linter golangci config.*
-- **[fine] CI workflow shape** (conventions): Upstream CI is a single ubuntu job with a concurrency group that cancels superseded runs; pi-go CI is a 2-OS verify matrix plus a 4-way cross-build matrix with no concurrency group. — *Optionally copy upstream's 4-line concurrency block into ci.yml. Everything else is fine — pi-go's CI is stricter than upstream's, which is the right direction for a parity port.*
-- **[fine] AGENTS.md working-mode content** (conventions): Upstream's AGENTS.md carries conversational-style rules, multi-session git-safety rules, and 'never commit unless asked'; pi-go's AGENTS.md replaces these with the trunk-based fixtures-first contract and autonomous green-chunk commits. — *No change during the port. When the repo opens to outside contributors, revisit whether upstream's git-safety rules (explicit-path staging, no destructive commands) and the tmux TUI-testing recipe are worth importing — the latter is genuinely useful for anyone driving the pi-go TUI from an agent.*
-- **[watch] Auto-update / `pi update` surface** (release): Upstream ships a startup update notice plus a `pi update` command family (`--self`, `--extensions`, `--all`); pi-go currently implements none of it — PI_SKIP_VERSION_CHECK appears only as a test-environment variable in a conformance fixture, and no update-check or update subcommand code exists. The notify-vs-self-update question is gate G4 (a tracked deferred decision, not undecided drift by itself), but the gate is still open with Sprint 4 imminent, and `pi update --extensions` interacts with the pi-packages parity criterion (RELEASE-CRITERIA line 59: packages install/update/list as upstream). — *Resolve G4 at Sprint 4 open, before the release workflow is built (self-update changes what artifacts/signing the release must produce). Minimum ship: notify-only startup check against OrdalieTech/pi-go GitHub releases honoring PI_SKIP_VERSION_CHECK (already exercised by the F7 fixture env), plus `pi update --extensions` for package parity; defer `--self` binary replacement if supply-chain review says no.*
-- **[watch] Dependency-audit CI** (release): Upstream runs a daily scheduled supply-chain audit; pi-go has no vulnerability scanning at all. — *Add the Go analog before public release: a scheduled (weekly is fine) workflow running `govulncheck ./...`, and optionally dependabot/renovate for go.mod. Cheap, and its absence next to upstream's daily audit would be noticed.*
-- **[watch] Public-repo process files and gate workflows** (release): Upstream's repo presents a full open-source process surface that pi-go lacks entirely; a public release without at least the documents would look unfinished next to upstream. — *Add SECURITY.md to WP-620's scope (disclosure contact + supported-versions statement + the Go supply-chain story: static binary, no install scripts, govulncheck cadence). Ship CONTRIBUTING.md with the docs WP as planned. The issue/PR gate automation is optional — adopt only if the repo actually opens to outside contributors.*
-- **[watch] CI network dependency of the conformance leg** (release): pi-go's mainline CI health depends on external services upstream's CI does not: every push re-clones the real pi repo and npm-installs a large pinned toolchain into it to regenerate fixtures for byte-comparison. If earendil-works/pi is renamed or the pinned commit becomes unfetchable, or the npm registry hiccups, main CI goes red with no code change. — *Cache the .upstream clone and its node_modules in actions/cache keyed on UPSTREAM.lock plus the pinned tool list, so runs are fast and resilient; keep the uncached path as fallback. Long-term (public release), consider a mirror of the pinned upstream commit under OrdalieTech so CI never depends on a third party's repo retention.*
-- **[fine] Push/PR CI coverage** (release): No gap — flagged in the brief as a suspected hole, but pi-go runs CI on every push to main and every PR, and its gate is stronger than upstream's single ubuntu job. — *No action. Optionally add a concurrency group with cancel-in-progress to ci.yml (upstream has one) to save runner minutes on rapid pushes.*
-
-## Dropped by adversarial verification
-
-- layout/Mirror coverage — packages/ai image-generation subsystem: already-decided — Covered by docs/plan/expansion-study.md item 2 — the owner-review decision memo mandated by DECISION
-- tests/ai — 1h cache-write pricing path untested: refuted — The 2x-input 1h cache-write pricing branch IS test-covered, byte-exactly, by the conformance suite. 
-- tests/ai + coding-agent — RuntimeCredentials layer absent: refuted — The finding's evidence is wrong: the RuntimeCredentials layer is not absent, it was absorbed into Go
-- tests/coding-agent — OpenRouter attribution headers dropped: already-decided — Covered by the divergence ledger in docs/DECISIONS.md (line 100): "Telemetry/analytics (enableInstal
-- tests/coding-agent — lax message-content tolerance untested (both packages): refuted — The finding's evidence is wrong on all three claims. (1) "No counterpart found": the lax null/missin
-- tests/tui — partial-flag (regional indicator) width regression dropped: refuted — The finding's factual basis is wrong on both counts. (1) A test counterpart DOES exist: /home/ordali
-- docs/User docs (newcomer path): already-decided — Covered by an explicit plan doc: WP-620 "Documentation" in docs/plan/phase-6-ops.md (README with ins
-- docs/README: already-decided — The factual observation is correct (README.md is a deliberate 3-line stub), but this is planned stat
-- docs/Examples — SDK: refuted — The finding's core claim ("no index or run instructions... no pi-go equivalent") is factually wrong.
-- conventions/Release and version-bump flow: already-decided — Covered by WP-661 "Release pipeline — gate G4" in docs/plan/phase-6-ops.md (lines 27-35), which spec
+# Upstream alignment — current findings ledger
+
+Last full audit: 2026-07-20; compact refresh: 2026-07-20. Candidate: release closure descending
+from `e46f671`; upstream: pi `0.80.10` at `3a40794ea14c6202586cc203d5b928eca9f6b673`.
+This file replaces the previous historical backlog on every audit.
+
+## Open should-fix findings
+
+**None.** Mechanical source coverage is 436/436, and every previously confirmed item is fixed or
+recorded as a settled divergence.
+
+## Current evidence
+
+| Dimension | Evidence |
+|---|---|
+| Source mapping | `docs/MIRROR.md` maps all upstream AI, agent, coding-agent, and TUI source files |
+| Public API | `ai/model_helpers.go`, `ai/retry.go`, `ai/streaming_json.go`, `ai/images_models.go`, `codingagent/messages.go`, and `codingagent/modes/rpc_client.go` close the final exported surface |
+| Test intent | The six numbered regression tails, provider edge cases, keybinding migrations, theme precedence, RPC reentrancy/panic isolation, and image-registry races have Go tests |
+| Wire behavior | F1–F12 regenerate byte-clean and the black-box upstream RPC suite passes 28/28 |
+| Docs/process | README, SDK/examples, changelog, contribution/security policy, comparison reports, and trim reports cover the newcomer and maintainer paths |
+| Release | `make check`, four static GoReleaser targets, checksums, curl install, Homebrew formula configuration, and ldflags identity cover the deterministic release surface |
+
+## Settled divergences
+
+| Surface | Resolution |
+|---|---|
+| Radius, telemetry, pi.dev services | Removed or neutralized by D2 |
+| Bundled llama extension | Excluded by D2 because upstream removed it immediately after the pin |
+| `AgentHarness` and `streamProxy` | Dissolved/excluded by D29; reusable primitives and stream injection remain public |
+| Bun/Node packaging and extension native addons | Replaced by static Go and the documented JS shim ceiling under D1, D7, and D17 |
+| Native terminal helpers | Darwin modifier-key support remains a ledgered gap; Windows console support remains deferred by D8 |
+| Update/self-update | Notify-only OrdalieTech release checks under G4 |
+| Chat gateway | Explicit D27/D28 addition, isolated from the mirrored core |
+
+## Watch items
+
+- **Unified implementations:** upstream carries duplicate compaction and skill-prompt paths; Go
+  maps both sources to one implementation. Re-check both upstream copies on every sync.
+- **Absorbed `ModelRuntime`:** its behavior lives in `config.ModelRegistry`, request-auth
+  resolution, and `AgentSessionServices`. Reconsider only if upstream adds behavior that cannot map
+  cleanly to those seams.
+- **Standalone `pi-ai` CLI:** the importable `ai` package is present, but upstream's small provider
+  command has no Go command. Promote only if it becomes part of the coding-agent release path or an
+  owner requests it.
+- **Vulnerability scanning:** module verification and pinned CI are present, but there is no
+  scheduled `govulncheck` equivalent to upstream's npm-audit workflow. This is repository hardening,
+  not a current parity defect.
+
+## Release condition
+
+Re-run at the final commit. Zero open should-fix findings is required; watches remain non-blocking
+unless their stated promotion condition is met.

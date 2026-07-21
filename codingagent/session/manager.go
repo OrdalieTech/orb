@@ -1027,6 +1027,31 @@ func (manager *SessionManager) GetBranch(fromID ...string) []SessionEntry {
 	return manager.getBranchLocked(fromID...)
 }
 
+func (manager *SessionManager) GetLatestCompactionTimestamp() (string, bool) {
+	if manager.harnessStorage != nil {
+		latest := GetLatestCompactionEntry(manager.GetBranch())
+		if latest != nil {
+			return latest.Timestamp, true
+		}
+		return "", false
+	}
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
+	if manager.leafID == nil {
+		return "", false
+	}
+	for current := manager.byID[*manager.leafID]; current != nil; {
+		if current.Type == "compaction" {
+			return current.Timestamp, true
+		}
+		if current.ParentID == nil {
+			break
+		}
+		current = manager.byID[*current.ParentID]
+	}
+	return "", false
+}
+
 func (manager *SessionManager) getBranchLocked(fromID ...string) []SessionEntry {
 	var start string
 	if len(fromID) > 0 {

@@ -109,12 +109,6 @@ func BuildInitialMessage(args *CLIArgs, stdinContent *string, fileText string) *
 	return &message
 }
 
-// PrepareInitialMessage processes text attachments and builds the first turn.
-func PrepareInitialMessage(args *CLIArgs, cwd string, stdinContent *string) (*string, error) {
-	message, _, err := PrepareInitialInput(args, cwd, stdinContent)
-	return message, err
-}
-
 func PrepareInitialInput(args *CLIArgs, cwd string, stdinContent *string) (*string, []*ai.ImageContent, error) {
 	files, err := ProcessFileArguments(args.FileArgs, cwd)
 	if err != nil {

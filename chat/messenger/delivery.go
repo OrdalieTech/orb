@@ -153,8 +153,7 @@ func (a *Adapter) senderAction(ctx context.Context, psid, action string) error {
 }
 
 type sendResponse struct {
-	RecipientID string `json:"recipient_id"`
-	MessageID   string `json:"message_id"`
+	MessageID string `json:"message_id"`
 }
 
 func (a *Adapter) sendText(ctx context.Context, psid, body, messagingType string) (string, error) {

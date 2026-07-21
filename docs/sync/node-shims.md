@@ -3,6 +3,20 @@
 Shims implemented in `codingagent/extensions/jsbridge/shims.go`, backed by Go host functions.
 Upstream extensions run in Sobek (pure-Go JS engine); these shims replace Node.js built-in modules.
 
+## Loading and packages
+
+Load a file or package directory with `pi --extension PATH`. pi-go also discovers `.ts`/`.js`
+files and package `index.ts`/`index.js` entries under the global agent `extensions/` directory and,
+after trust approval, `.pi/extensions/`. Settings and `pi install` may resolve additional local,
+`npm:`, or `git:` package entries; a package's `package.json` may list entries in `pi.extensions`.
+
+Embedded esbuild bundles TypeScript, local imports, and pure-JS dependencies from `node_modules`.
+Node built-ins and the upstream pi packages stay external and resolve to the Go shims below, so no
+Node runtime is required. Native `.node` addons and imported `.wasm` files are rejected clearly;
+`worker_threads` and raw `net`/`tls`/`dgram` sockets are not exposed. The
+[extension matrix](extension-matrix.md) is the authoritative list of supported pi and pi-tui
+exports.
+
 ## Module coverage
 
 | Module | Functions | Status |
@@ -14,6 +28,10 @@ Upstream extensions run in Sobek (pure-Go JS engine); these shims replace Node.j
 | `process` (global) | `cwd` (extension cwd), `env`, `platform`, `arch` (Node names), `pid`, `argv`, `execPath`, `exit` (throws), `kill` (no-op), `stdout.write`, `stderr.write`, `version`, `versions` | implemented |
 | `url` | `fileURLToPath`, `pathToFileURL`, `URL` (minimal constructor) | implemented |
 | `util` | `promisify`, `inspect` (JSON-based), `format` (%s/%d/%j) | implemented |
+| `crypto` | `randomUUID`, `randomBytes`, `createHash`, `createHmac` | implemented |
+| `http` / `https` | buffered request/get clients; HTTP createServer/listen/close/address | implemented subset |
+| `module` | `createRequire` backed by the bridge module resolver | implemented subset |
+| `readline` | `createInterface`, line events, async iteration, question/close | implemented subset |
 | `child_process` | `execSync`, `exec` (deferred callback via event loop), `execFile` (deferred callback via event loop), `spawnSync`, `spawn` (deferred execution via event loop; stdout/stderr/close/exit); options: cwd, env | implemented |
 | `fetch` (global) | `fetch(url, opts)` or `fetch(Request)`→ Promise\<Response\>; resolves on headers (true streaming); body read incrementally via `getReader().read()` off VM goroutine with per-chunk 50MB enforcement; `text()`, `json()`, `arrayBuffer()` drain the stream; `bodyUsed` single-consumption semantics; reader `cancel()`/VM `Close()` clean up without leak or deadlock; Headers input: object/pairs/Headers-like | implemented |
 | `Headers` (global) | Constructor: `new Headers(init?)` — init is object/pairs; methods: get (combines duplicates), has (present-empty-aware), set, append, delete, forEach, entries (deterministic sorted order) | implemented |
@@ -21,6 +39,7 @@ Upstream extensions run in Sobek (pure-Go JS engine); these shims replace Node.j
 | `Response` (global) | Constructor: `new Response(body?, opts?)` — opts: status, headers; methods: text(), json(), arrayBuffer(), body.getReader(); bodyUsed single-consumption semantics | implemented |
 | `Buffer` (global) | `from`, `alloc`, `concat`, `byteLength`, `isBuffer`; instances: `length`, `toString`, `slice` (negative/end bounds) | implemented |
 | `console` (global) | `log`, `info`, `warn`, `error`, `debug`, `trace` | implemented |
+| encoding globals | `atob`, `btoa`, `TextDecoder`, `structuredClone` | implemented subset |
 | `setTimeout`/`clearTimeout` | deferred via VM event loop; honors delay; returns cancellable handle | implemented |
 | `setInterval`/`clearInterval` | repeating via VM event loop; cancellable; stopped on VM close | implemented |
 | `events` | `EventEmitter` (on/once/off/removeListener/removeAllListeners/addListener/emit/listenerCount) | implemented |
@@ -44,9 +63,8 @@ via `sync.WaitGroup` before the run loop exits.
 |---|---|---|
 | `fs.watch` uses 100ms polling, not inotify/kqueue | Higher latency and CPU than native watchers; sufficient for file-trigger use | Implement platform-native watcher goroutine behind the same API |
 | `child_process.spawn` collects all output then delivers at once | Stream-based spawn consumers get all data at once, not incrementally | Async pipe bridging to VM callback queue |
-| `module` (createRequire) | Used by 1–2 niche examples | Implement when an extension in the compatibility matrix needs it |
-| `readline` | interactive-shell example | Implemented: createInterface collecting piped input data events with question/close |
-| `process.exit` throws instead of exiting | Extensions should not kill the host | Intentional safety boundary |
+
+`process.exit` deliberately throws instead of terminating the host process.
 
 ## Pinned example behavioral status
 

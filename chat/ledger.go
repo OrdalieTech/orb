@@ -164,6 +164,11 @@ func assistantText(message *ai.AssistantMessage) string {
 	if message == nil {
 		return ""
 	}
+	if len(message.Content) == 1 {
+		if text, ok := message.Content[0].(*ai.TextContent); ok {
+			return text.Text
+		}
+	}
 	var builder strings.Builder
 	for _, block := range message.Content {
 		if text, ok := block.(*ai.TextContent); ok {

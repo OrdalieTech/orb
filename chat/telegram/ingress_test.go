@@ -294,7 +294,7 @@ func TestNormalizeGroupGating(t *testing.T) {
 	f := newFakeAPI(t)
 	adapter := newTestAdapter(t, f) // BotUsername pre-seeded: no getMe needed
 	ctx := context.Background()
-	group := apiChat{ID: -100123, Type: "supergroup", Title: "Team"}
+	group := apiChat{ID: -100123, Type: "supergroup"}
 	from := &apiUser{ID: 111, FirstName: "Léa"}
 	botReply := &apiMessage{MessageID: 9, From: &apiUser{ID: 42, IsBot: true, Username: "pigobot"}}
 

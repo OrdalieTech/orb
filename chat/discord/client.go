@@ -75,12 +75,9 @@ type apiMessage struct {
 
 type gatewayBotResponse struct {
 	URL               string `json:"url"`
-	Shards            int    `json:"shards"`
 	SessionStartLimit struct {
-		Total          int   `json:"total"`
-		Remaining      int   `json:"remaining"`
-		ResetAfter     int64 `json:"reset_after"` // milliseconds
-		MaxConcurrency int   `json:"max_concurrency"`
+		Remaining  int   `json:"remaining"`
+		ResetAfter int64 `json:"reset_after"` // milliseconds
 	} `json:"session_start_limit"`
 }
 

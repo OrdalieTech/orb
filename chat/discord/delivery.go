@@ -214,12 +214,9 @@ func isUnknownMessage(err error) bool {
 }
 
 func eventMessageID(eventID string) string {
-	if eventID == "" {
+	last := strings.LastIndexByte(eventID, ':')
+	if last < 0 || strings.IndexByte(eventID[:last], ':') < 0 {
 		return ""
 	}
-	parts := strings.Split(eventID, ":")
-	if len(parts) < 3 {
-		return ""
-	}
-	return parts[len(parts)-1]
+	return eventID[last+1:]
 }

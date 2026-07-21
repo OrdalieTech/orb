@@ -170,7 +170,7 @@ func (f *fakeAPI) handle(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 400, "Bad Request: invalid file_id", 0)
 			return
 		}
-		writeResult(w, apiFilePath{FileID: fileID, FilePath: filePath})
+		writeResult(w, apiFilePath{FilePath: filePath})
 	default:
 		writeError(w, 404, "Not Found: method not found", 0)
 	}

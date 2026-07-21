@@ -4,7 +4,8 @@ A faithful, slim, pure-Go port of Mario Zechner's MIT-licensed [pi coding agent]
 built by Ordalie as an SDK-first Go module and a single static CLI binary. Byte-compatible with
 upstream pi's session format, wire protocols, config files, and extension examples at the pinned
 upstream version in [UPSTREAM.lock](UPSTREAM.lock); every divergence is recorded in
-[docs/DECISIONS.md](docs/DECISIONS.md).
+[docs/DECISIONS.md](docs/DECISIONS.md). This module is unrelated to the older
+`github.com/dimetron/pi-go` project.
 
 ## Install
 
@@ -12,7 +13,8 @@ upstream version in [UPSTREAM.lock](UPSTREAM.lock); every divergence is recorded
 curl -fsSL https://raw.githubusercontent.com/OrdalieTech/pi-go/main/scripts/install.sh | sh
 ```
 
-or with Go ≥ 1.25: `go install github.com/OrdalieTech/pi-go/cmd/pi@latest`.
+Alternatively, run `brew install OrdalieTech/tap/pi`, or with Go ≥ 1.25:
+`go install github.com/OrdalieTech/pi-go/cmd/pi@latest`.
 
 ## First session
 
@@ -54,8 +56,9 @@ pi --extension ./pirate.ts
 Run `/pirate` in the TUI to exercise the extension.
 
 61 of upstream's 69 single-file extension examples run as-is (status per example in
-[docs/sync/extension-matrix.md](docs/sync/extension-matrix.md)); `.pi/extensions/` in a trusted
-project and the global agent directory are discovered like upstream.
+[docs/sync/extension-matrix.md](docs/sync/extension-matrix.md)); the
+[bridge guide](docs/sync/node-shims.md) documents loading, package support, and runtime ceilings.
+`.pi/extensions/` in a trusted project and the global agent directory are discovered like upstream.
 
 ## Provenance
 

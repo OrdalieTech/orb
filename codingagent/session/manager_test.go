@@ -235,6 +235,101 @@ func entryIDs(entries []SessionEntry) string {
 	return strings.Join(ids, ",")
 }
 
+func TestLatestCompactionTimestampFollowsActiveBranch(t *testing.T) {
+	now := fixedTestTime(t)
+	manager, err := InMemory(t.TempDir(), WithClock(func() time.Time {
+		now = now.Add(time.Second)
+		return now
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := manager.AppendMessage(json.RawMessage(`{"role":"user","content":"root"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	compaction, err := manager.AppendCompaction("summary", root, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.AppendMessage(json.RawMessage(`{"role":"assistant","content":[]}`)); err != nil {
+		t.Fatal(err)
+	}
+	want := manager.GetEntry(compaction).Timestamp
+	if got, ok := manager.GetLatestCompactionTimestamp(); !ok || got != want {
+		t.Fatalf("latest compaction = %q, %v; want %q", got, ok, want)
+	}
+	if err := manager.Branch(root); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := manager.GetLatestCompactionTimestamp(); ok {
+		t.Fatalf("root branch latest compaction = %q", got)
+	}
+}
+
+func BenchmarkLatestCompactionLookup(b *testing.B) {
+	const historyEntries = 20_000
+	now := time.Date(2025, time.January, 2, 3, 4, 5, 0, time.UTC)
+	manager, err := InMemory(b.TempDir(),
+		WithClock(func() time.Time {
+			now = now.Add(time.Millisecond)
+			return now
+		}),
+		WithEntryIDGenerator(prefixedIDGenerator("bench")),
+	)
+	if err != nil {
+		b.Fatal(err)
+	}
+	messages := [...]json.RawMessage{
+		json.RawMessage(`{"role":"user","content":"Inspect the current implementation and report the smallest correct change."}`),
+		json.RawMessage(`{"role":"assistant","content":[{"type":"text","text":"The implementation is correct and the focused checks pass."}]}`),
+	}
+	root, err := manager.AppendMessage(messages[0])
+	if err != nil {
+		b.Fatal(err)
+	}
+	latestID := ""
+	for index := 1; index < historyEntries; index++ {
+		if index%5_000 == 0 {
+			latestID, err = manager.AppendCompaction("Compacted session history.", root, int64(index*128))
+		} else {
+			_, err = manager.AppendMessage(messages[index%len(messages)])
+		}
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+	want := manager.GetEntry(latestID).Timestamp
+
+	b.Run("FormerGetBranchReverseScan", func(b *testing.B) {
+		b.ReportAllocs()
+		var got string
+		b.ResetTimer()
+		for index := 0; index < b.N; index++ {
+			latest := GetLatestCompactionEntry(manager.GetBranch())
+			if latest != nil {
+				got = latest.Timestamp
+			}
+		}
+		if got != want {
+			b.Fatalf("latest compaction = %q, want %q", got, want)
+		}
+	})
+
+	b.Run("GetLatestCompactionTimestamp", func(b *testing.B) {
+		b.ReportAllocs()
+		var got string
+		var ok bool
+		b.ResetTimer()
+		for index := 0; index < b.N; index++ {
+			got, ok = manager.GetLatestCompactionTimestamp()
+		}
+		if !ok || got != want {
+			b.Fatalf("latest compaction = %q, %v; want %q", got, ok, want)
+		}
+	})
+}
+
 func TestNewSessionResetsStateAndValidatesExplicitID(t *testing.T) {
 	manager, err := InMemory(t.TempDir(), WithSessionID("first"))
 	if err != nil {

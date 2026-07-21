@@ -36,7 +36,6 @@ const localWorkers = 8
 // deployments.
 type Local struct {
 	handler Handler
-	path    string
 
 	fileMu sync.Mutex
 	file   *os.File
@@ -70,7 +69,6 @@ func NewLocal(handler Handler, spoolPath string) (*Local, error) {
 	}
 	local := &Local{
 		handler:  handler,
-		path:     spoolPath,
 		file:     file,
 		queues:   map[string][]Message{},
 		inflight: map[string]bool{},
@@ -174,7 +172,7 @@ func (l *Local) enqueue(m Message) {
 	l.mu.Lock()
 	l.queues[key] = append(l.queues[key], m)
 	l.mu.Unlock()
-	l.cond.Broadcast()
+	l.cond.Signal()
 }
 
 // next blocks until a key with pending work and no in-flight turn exists,
@@ -248,7 +246,7 @@ func (l *Local) process(key string, m Message) {
 	}
 	delete(l.inflight, key)
 	l.mu.Unlock()
-	l.cond.Broadcast()
+	l.cond.Signal()
 }
 
 // replaySpool reads the spool and returns unacked messages in publish order.

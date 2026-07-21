@@ -68,7 +68,7 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
       test-guarded); `/reload` works; TS errors map to source lines.
 - [x] Trim pass #4 done.
 
-## M5 — v1.0 release (closes Sprint 4)
+## M5 — v0.1.0 release (closes Sprint 4)
 
 - [ ] All M1–M4 criteria re-verified at the release commit, fixtures regenerated at current
       UPSTREAM.lock. (The deterministic surfaces are green, but the subscribed OAuth, hosted
@@ -81,20 +81,21 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
       exercised as an unprivileged user in a network-disabled clean Linux container with both
       checksum-tool paths. A real macOS VM remains owner-blocked.)
 - [x] Cold start < 50 ms; every bridged release binary ≤ 55 MB decimal; numbers recorded in release
-      notes. (Owner-amended 2026-07-20 without changing D17. The candidate measures 33.5 ± 4.8 ms;
-      the largest current artifact is darwin/amd64 at 52,187,808 B.)
+      notes. (Owner-amended 2026-07-20 without changing D17. The candidate measures 47.4 ± 7.4 ms
+      unpinned and 40.9 ± 0.9 ms on one isolated CPU after the final resource-loader trim;
+      the largest current artifact is darwin/amd64 at 52,187,712 B.)
 - [ ] Nightly live suite ≥ 90% pass over the trailing 72 hours. (Owner-blocked: CI secrets and
       authorized hosted runs.)
 - [ ] Docs newcomer path (install → first session → embed SDK → run an upstream extension) verified
       by following the docs literally; README credit/provenance; divergence ledger current.
       (SDK-embed and extension steps verified offline; install step needs a published release.)
-- [ ] Upstream alignment audit re-run at the release commit with zero open should-fix findings
+- [x] Upstream alignment audit re-run at the release commit with zero open should-fix findings
       (docs/compare/upstream-alignment.md); release notes extracted from CHANGELOG.md; version
-      injected via ldflags and printed with the upstream pin. (The current candidate is zero-open,
-      maps 436/436 files, and prints both identities; this must run once more at the final commit.)
-- [ ] Final trim pass #5; LOC report: mirrored packages ≤ 1.3× upstream TS src LOC or justified
-      per-package in the report; dep audit clean. (Current candidate: 1.123x, 20 reviewed clone
-      groups, modules verified and tidy; this must run once more at the final commit.)
+      injected via ldflags and printed with the upstream pin. (The exact commit tree is zero-open,
+      maps 436/436 files, has release-ready `0.1.0` notes, and prints both identities.)
+- [x] Final trim pass #5; LOC report: mirrored packages ≤ 1.3× upstream TS src LOC or justified
+      per-package in the report; dep audit clean. (Final tree: 1.124x, 20 reviewed clone groups,
+      modules verified and tidy.)
 
 ## Live-test policy
 

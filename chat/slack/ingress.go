@@ -24,7 +24,6 @@ const maxEventBody = 1 << 20
 type eventEnvelope struct {
 	Type           string       `json:"type"`
 	Challenge      string       `json:"challenge"`
-	EventID        string       `json:"event_id"`
 	Event          eventPayload `json:"event"`
 	Authorizations []struct {
 		UserID string `json:"user_id"`
@@ -46,7 +45,6 @@ type eventPayload struct {
 }
 
 type eventFile struct {
-	ID                 string `json:"id"`
 	Name               string `json:"name"`
 	Mimetype           string `json:"mimetype"`
 	Size               int64  `json:"size"`

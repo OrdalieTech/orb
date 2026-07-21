@@ -626,6 +626,12 @@ func TestUnauthorizedMessageRejected(t *testing.T) {
 	}
 }
 
+func TestParseCommandWhitespace(t *testing.T) {
+	if got := parseCommand("\u2003/status\textra"); got != "/status" {
+		t.Fatalf("parseCommand = %q", got)
+	}
+}
+
 func TestConcurrentTurnsOverManyKeys(t *testing.T) {
 	const keys = 100
 	const perKey = 10

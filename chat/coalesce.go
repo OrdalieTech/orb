@@ -18,11 +18,6 @@ type coalescer struct {
 	mu     sync.Mutex
 	latest string
 	dirty  bool
-	notify chan struct{}
-}
-
-func newCoalescer() *coalescer {
-	return &coalescer{notify: make(chan struct{}, 1)}
 }
 
 // observe is a session event listener extracting partial assistant text.
@@ -46,10 +41,6 @@ func (c *coalescer) observe(event any) {
 		c.dirty = true
 	}
 	c.mu.Unlock()
-	select {
-	case c.notify <- struct{}{}:
-	default:
-	}
 }
 
 // snapshot returns the latest text and whether it is unrendered.

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/OrdalieTech/pi-go/ai"
 	"github.com/OrdalieTech/pi-go/codingagent"
@@ -52,7 +53,7 @@ type Options struct {
 // mid-turn injection.
 type Processor struct {
 	sessions        SessionProvider
-	adapters        map[string]Adapter
+	adapters        map[adapterID]Adapter
 	authorize       func(Message) error
 	previewInterval time.Duration
 	turnTimeout     time.Duration
@@ -68,6 +69,8 @@ type Processor struct {
 	closed  bool
 	wg      sync.WaitGroup
 }
+
+type adapterID struct{ platform, account string }
 
 // New validates opts and creates a Processor.
 func New(opts Options) (*Processor, error) {
@@ -92,9 +95,9 @@ func New(opts Options) (*Processor, error) {
 	if opts.Logger == nil {
 		opts.Logger = slog.New(slog.DiscardHandler)
 	}
-	adapters := make(map[string]Adapter, len(opts.Adapters))
+	adapters := make(map[adapterID]Adapter, len(opts.Adapters))
 	for _, adapter := range opts.Adapters {
-		key := adapterKey(adapter.Platform(), adapter.Account())
+		key := adapterID{adapter.Platform(), adapter.Account()}
 		if _, exists := adapters[key]; exists {
 			return nil, fmt.Errorf("chat: duplicate adapter for platform %q account %q",
 				adapter.Platform(), adapter.Account())
@@ -114,18 +117,14 @@ func New(opts Options) (*Processor, error) {
 	}, nil
 }
 
-// adapterKey joins platform and account into a registration key; the NUL
-// separator cannot occur in either part.
-func adapterKey(platform, account string) string { return platform + "\x00" + account }
-
 // adapterFor resolves the adapter for a message: an exact
 // (platform, account) registration wins, then the platform's wildcard
 // (empty-account) adapter.
 func (p *Processor) adapterFor(m Message) (Adapter, bool) {
-	if adapter, ok := p.adapters[adapterKey(m.Platform, m.Account)]; ok {
+	if adapter, ok := p.adapters[adapterID{m.Platform, m.Account}]; ok {
 		return adapter, true
 	}
-	adapter, ok := p.adapters[adapterKey(m.Platform, "")]
+	adapter, ok := p.adapters[adapterID{m.Platform, ""}]
 	return adapter, ok
 }
 
@@ -180,7 +179,7 @@ func (p *Processor) Handle(ctx context.Context, m Message) error {
 
 	turnCtx, cancel := context.WithTimeout(ctx, p.turnTimeout)
 	defer cancel()
-	return p.runTurn(turnCtx, adapter, key, m)
+	return p.runTurn(turnCtx, adapter, key, lockKey, m)
 }
 
 // Close waits for in-flight turns and rejects new ones.
@@ -234,10 +233,10 @@ func (p *Processor) clearActive(lockKey string) {
 }
 
 // runTurn executes the turn protocol inside the keyed lock.
-func (p *Processor) runTurn(ctx context.Context, adapter Adapter, key ConversationKey, m Message) (err error) {
+func (p *Processor) runTurn(ctx context.Context, adapter Adapter, key ConversationKey, lockKey string, m Message) (err error) {
 	conv, err := p.sessions.Acquire(ctx, key)
 	if err != nil {
-		return fmt.Errorf("chat: acquire conversation %q: %w", key.String(), err)
+		return fmt.Errorf("chat: acquire conversation %q: %w", lockKey, err)
 	}
 	defer func() {
 		if closeErr := conv.Close(context.WithoutCancel(ctx)); closeErr != nil && err == nil {
@@ -276,7 +275,7 @@ func (p *Processor) runTurn(ctx context.Context, adapter Adapter, key Conversati
 	if command := parseCommand(m.Text); command != "" {
 		return p.runCommand(ctx, adapter, conv, key, m, command)
 	}
-	return p.runPromptTurn(ctx, adapter, conv, key, m, startedID)
+	return p.runPromptTurn(ctx, adapter, conv, key, lockKey, m, startedID)
 }
 
 // recoveredReplyPrefix marks a recovered (possibly duplicated) reply.
@@ -315,7 +314,7 @@ func (p *Processor) recoverSettled(ctx context.Context, adapter Adapter, conv *C
 }
 
 // runPromptTurn prompts the agent and delivers the settled reply.
-func (p *Processor) runPromptTurn(ctx context.Context, adapter Adapter, conv *Conversation, key ConversationKey, m Message, startedID string) error {
+func (p *Processor) runPromptTurn(ctx context.Context, adapter Adapter, conv *Conversation, key ConversationKey, lockKey string, m Message, startedID string) error {
 	delivery := adapter.NewDelivery(key, m.EventID, "")
 	if err := delivery.Typing(ctx); err != nil {
 		p.logger.Debug("chat: typing failed", "error", err)
@@ -327,7 +326,7 @@ func (p *Processor) runPromptTurn(ctx context.Context, adapter Adapter, conv *Co
 	promptCtx, cancelPrompt := context.WithCancel(ctx)
 	defer cancelPrompt()
 
-	co := newCoalescer()
+	co := new(coalescer)
 	unsubscribe := conv.Session.Subscribe(co.observe)
 	previewRecorded := false // renderer-goroutine only; retried until an append succeeds
 	onPreview := func(previewID string) {
@@ -343,7 +342,6 @@ func (p *Processor) runPromptTurn(ctx context.Context, adapter Adapter, conv *Co
 	}
 	stopRenderer := startPreviewRenderer(promptCtx, co, delivery, p.previewInterval, onPreview)
 
-	lockKey := key.String()
 	p.setActive(lockKey, func() {
 		cancelPrompt()
 		conv.Session.Abort()
@@ -594,13 +592,13 @@ func statusSummary(conv *Conversation) string {
 
 // parseCommand returns the recognized slash command leading m's text, or "".
 func parseCommand(text string) string {
-	fields := strings.Fields(strings.TrimSpace(text))
-	if len(fields) == 0 || !strings.HasPrefix(fields[0], "/") {
-		return ""
+	text = strings.TrimSpace(text)
+	if i := strings.IndexFunc(text, unicode.IsSpace); i >= 0 {
+		text = text[:i]
 	}
-	switch fields[0] {
+	switch text {
 	case "/stop", "/new", "/status", "/compact":
-		return fields[0]
+		return text
 	}
 	return ""
 }

@@ -223,11 +223,12 @@ esbuild. Pipeline: discover (same paths as upstream: `~/.pi/agent/extensions/*.t
 `node_modules` bundled if pure-JS; `pi`, `typebox`-equivalent, `pi-tui` marked external) → evaluate
 in sobek → factory invoked with the JS ExtensionAPI object whose methods proxy to the Go API.
 Node shims: `fs`, `path`, `os`, `process`, `url`, `util` implemented against Go host functions
-(goja_nodejs reused where sobek-compatible: console, buffer, url); `child_process` subset routed via
-the exec bridge; `fetch` via net/http binding. typebox: the real JS library bundled in-engine —
-schemas surface as JSON Schema, which is all Go needs. pi-tui bridge: JS objects implementing
-`render(width): string[]` wrapped as Go `Component`s; dialogs/status/widgets proxy directly; custom
-editors and overlays are the last wave (gate G3). Hot `/reload` = rebuild + fresh VM.
+with no Node compatibility dependency; `child_process` routes through the exec bridge and `fetch`
+through net/http. typebox: the real JS library bundled in-engine — schemas surface as JSON Schema,
+which is all Go needs. pi-tui bridge: JS objects implementing `render(width): string[]` wrapped as
+Go `Component`s; dialogs, status, widgets, custom editors, and overlays proxy to the native TUI.
+F11 records the remaining embeddable-component and tool-factory gaps. Hot `/reload` = rebuild +
+fresh VM.
 Threading rule: **one goroutine per VM** — all calls into a sobek VM are serialized through its
 event-loop goroutine; Go→JS callbacks post onto it (sobek/goja VMs are not goroutine-safe).
 
@@ -301,7 +302,6 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 |---|---|---|
 | grafana/sobek | jsbridge | JS engine (pure Go, ESM, k6-proven) |
 | evanw/esbuild (pkg/api) | jsbridge | TS transpile + bundling (pure Go, official API) |
-| dop251/goja_nodejs (selected) | jsbridge | console/buffer/url shims where sobek-compatible |
 | openai/openai-go/v3 | ai/api | OpenAI responses+completions (D10) |
 | anthropics/anthropic-sdk-go | ai/api | Anthropic messages + caching (D10) |
 | aws-sdk-go-v2, aws-sdk-go-v2/{config,credentials,service/bedrockruntime}, smithy-go | ai/api | Official Bedrock client, credential chain, SigV4/bearer auth, and converse-stream (D10) |
@@ -314,7 +314,6 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | gopkg.in/yaml.v3 | skills, config | frontmatter + YAML settings surfaces |
 | aymanbagabas/go-udiff | tools | unified diff for edit rendering (upstream: `diff`) |
 | gofrs/flock | session, config | file locking (upstream: proper-lockfile) |
-| sabhiram/go-gitignore (or internal) | tools, harness | .gitignore semantics (upstream: `ignore`) |
 
 **G1 resolution (WP-110):** `internal/jsonschema` uses a stdlib-only reflector. The evaluated
 `invopop/jsonschema` output required stripping `$schema`/`$defs`/`$ref` and undoing closed-object
@@ -340,15 +339,13 @@ v8go/quickjs CGo bindings (D7), sqlite (no need — sessions are JSONL).
 - Budgets: cold start < 50 ms; bridged binary ≤ 55 MB decimal; `go vet` + golangci-lint clean;
   race detector on in CI tests. The embedded esbuild/sobek cost is accepted for extension parity,
   while > 10% size growth still triggers investigation.
-- Estimated final size: 60–90k LOC Go source (upstream ≈ 100k LOC TS) + fixtures. Slimness is
-  enforced at the dependency table and by refusing speculative abstraction, not by dropping parity.
 
 ## 10. Risks & mitigations
 
 | Risk | Mitigation |
 |---|---|
 | sobek ES gaps vs modern TS extensions | esbuild lowering to es2017; F11 matrix quantifies reality; qjs(WASM) is the researched fallback engine behind the same bridge interface |
-| Extension API breadth (2,943-line spec) | phased bridge (hooks → registrations → UI → overlays); Go-native API first proves semantics; matrix tracks coverage honestly |
+| Extension API breadth (2,943-line spec) | Go-native API proves semantics; F11 tracks the remaining tool-factory and embeddable-component gaps |
 | TUI fidelity drift | F12 render goldens + side-by-side session comparison protocol in phase 4 |
 | Provider SDK churn (openai v1→v3 history) | SDK usage confined to `ai/api/*` adapter files; unified types are ours; F2 pins request shapes |
 | Upstream velocity (multi-release weeks) | pin + sync reports; formats-first tracking (D5); mirror layout keeps diffs mappable |

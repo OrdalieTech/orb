@@ -6,6 +6,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-20
+
 ### Added
 
 - Current upstream SDK surface: image-model registry and OpenRouter catalog, typed RPC client,
@@ -51,6 +53,12 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Fixed
 
+- Long-session compaction checks now walk directly from the active leaf to the latest compaction,
+  avoiding a full cloned branch on every turn; the retained 20,000-entry benchmark is allocation-free.
+- Resource discovery now deduplicates canonical paths in linear time and reuses package metadata,
+  cutting minimal agent-session creation from about 49 ms to 32 ms on a 25-skill install.
+- Chat gateway hot paths allocate less and wake only the worker needed, with wire, authentication,
+  Unicode, recovery, and per-conversation ordering behavior unchanged.
 - `make test` and the fixture race checks explicitly enable CGo for Go's development-only race
   runtime, so an inherited `CGO_ENABLED=0` no longer prevents the gate from starting; every product
   and release build remains static with CGo disabled.
@@ -102,9 +110,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
   asserting zero full-screen clears during in-viewport streaming, plus a WP450 byte-parity golden.
   The concurrent tool-component render race (torn frames during rebuild) was fixed separately.
 
-## [0.1.0] - 2026-07-19
-
-Full-parity port of upstream pi v0.80.10 (`3da591ab`). Release-candidate tag: every locally
+Full-parity port of upstream pi v0.80.10 (`3a40794e`). Release candidate: every locally
 provable M1–M5 criterion is green; the owner-gated verification remainder is listed in
 `docs/trim/M5.md`.
 

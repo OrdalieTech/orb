@@ -48,7 +48,6 @@ type eventSpace struct {
 }
 
 type attachment struct {
-	Name              string `json:"name"`
 	ContentName       string `json:"contentName"`
 	ContentType       string `json:"contentType"`
 	Source            string `json:"source"`

@@ -864,8 +864,8 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 	if state.Model == nil || IsUnknownModel(state.Model) {
 		return false, nil
 	}
-	latest := sessionstore.GetLatestCompactionEntry(runtime.manager.GetBranch())
-	if latest != nil && message.Timestamp <= parseSessionTimestamp(latest.Timestamp) {
+	latestTimestamp, hasLatest := runtime.manager.GetLatestCompactionTimestamp()
+	if hasLatest && message.Timestamp <= parseSessionTimestamp(latestTimestamp) {
 		return false, nil
 	}
 	sameModel := string(message.Provider) == string(state.Model.Provider) && message.Model == state.Model.ID
@@ -894,9 +894,9 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 		if estimate.LastUsageIndex == nil {
 			return false, nil
 		}
-		if latest != nil {
+		if hasLatest {
 			usageMessage := asAssistant(state.Messages[*estimate.LastUsageIndex])
-			if usageMessage != nil && usageMessage.Timestamp <= parseSessionTimestamp(latest.Timestamp) {
+			if usageMessage != nil && usageMessage.Timestamp <= parseSessionTimestamp(latestTimestamp) {
 				return false, nil
 			}
 		}
