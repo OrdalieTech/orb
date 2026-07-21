@@ -22,8 +22,11 @@ func TestParseArgsCoreSubset(t *testing.T) {
 		"--skill", "one/SKILL.md",
 		"--skill", "skills",
 		"--prompt-template", "review.md",
+		"--theme", "dark.json",
+		"--theme", "themes",
 		"--no-skills",
 		"--no-prompt-templates",
+		"--no-themes",
 		"--no-approve",
 		"--offline",
 		"@prompt.md",
@@ -57,7 +60,10 @@ func TestParseArgsCoreSubset(t *testing.T) {
 	if !reflect.DeepEqual(args.Skills, []string{"one/SKILL.md", "skills"}) || !reflect.DeepEqual(args.PromptTemplates, []string{"review.md"}) {
 		t.Fatalf("skill/prompt paths = %#v/%#v", args.Skills, args.PromptTemplates)
 	}
-	if !args.NoSkills || !args.NoPromptTemplates || args.ProjectTrusted == nil || *args.ProjectTrusted || !args.Offline {
+	if !reflect.DeepEqual(args.Themes, []string{"dark.json", "themes"}) {
+		t.Fatalf("theme paths = %#v", args.Themes)
+	}
+	if !args.NoSkills || !args.NoPromptTemplates || !args.NoThemes || args.ProjectTrusted == nil || *args.ProjectTrusted || !args.Offline {
 		t.Fatalf("resource/trust flags = %#v", args)
 	}
 }

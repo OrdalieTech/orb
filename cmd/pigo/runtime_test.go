@@ -181,6 +181,66 @@ func TestCreateRuntimeInputsLoadsEnabledPackageThemesWithResolvedSourceInfo(t *t
 	t.Fatalf("package theme not loaded: %#v", inputs.ResourceLoader.GetThemes())
 }
 
+func TestCreateRuntimeInputsKeepsExplicitResourcesWhenDiscoveryIsDisabled(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", filepath.Join(root, "home"))
+	agentDir := filepath.Join(root, "agent")
+	cwd := filepath.Join(root, "project")
+	if err := os.MkdirAll(filepath.Join(agentDir, "extensions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(cwd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	explicitExtension := filepath.Join(root, "explicit.ts")
+	autoExtension := filepath.Join(agentDir, "extensions", "auto.ts")
+	if err := os.WriteFile(explicitExtension, []byte(`export default pi => pi.registerCommand("explicit", { handler: async () => {} })`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(autoExtension, []byte(`export default pi => pi.registerCommand("auto", { handler: async () => {} })`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, testFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve runtime test path")
+	}
+	builtin, err := os.ReadFile(filepath.Join(filepath.Dir(testFile), "..", "..", "codingagent", "modes", "theme", "dark.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	themePath := filepath.Join(root, "explicit-theme.json")
+	if err := os.WriteFile(themePath, []byte(strings.Replace(string(builtin), `"name": "dark"`, `"name": "explicit-theme"`, 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(config.EnvAgentDir, agentDir)
+
+	inputs, err := createRuntimeInputs(cwd, CLIArgs{
+		allowNoModel: true,
+		NoExtensions: true,
+		Extensions:   []string{explicitExtension},
+		NoThemes:     true,
+		Themes:       []string{themePath},
+	}, agent.AgentMessages{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := extensions.NewRunner(inputs.Extensions, extensions.RunnerOptions{})
+	if runner.Command("explicit") == nil || runner.Command("auto") != nil {
+		t.Fatalf("commands = %#v; explicit -e must load while discovered extensions stay disabled", runner.RegisteredCommands())
+	}
+	loadedThemes := inputs.ResourceLoader.GetThemes().Themes
+	foundTheme := false
+	for _, theme := range loadedThemes {
+		if theme != nil && theme.Name == "explicit-theme" {
+			foundTheme = true
+			break
+		}
+	}
+	if !foundTheme {
+		t.Fatalf("explicit --theme missing with --no-themes: %#v", loadedThemes)
+	}
+}
+
 func TestResolveRuntimeModelKeepsScopeAndUsesSavedDefaultWithinIt(t *testing.T) {
 	root := t.TempDir()
 	agentDir := filepath.Join(root, "agent")

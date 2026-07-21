@@ -16,6 +16,9 @@ import (
 func TestHelpTextDocumentsExtensionFlagAndCommands(t *testing.T) {
 	for _, want := range []string{
 		"--extension, -e <path>",
+		"--no-extensions, -ne           Disable extension discovery (explicit -e paths still work)",
+		"--theme <path>",
+		"--no-themes",
 		"pigo install <source>",
 		"pigo remove <source>",
 		"pigo uninstall <source>",

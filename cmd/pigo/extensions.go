@@ -54,7 +54,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 	for _, loadError := range loadErrors {
 		diagnostics = append(diagnostics, loadError.Error())
 	}
-	if !args.NoExtensions {
+	if len(args.Extensions) > 0 || !args.NoExtensions {
 		explicitPaths := make([]string, 0, len(args.Extensions))
 		var sourceSpecs []string
 		for _, extension := range args.Extensions {
@@ -85,6 +85,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 			CWD:                    cwd,
 			AgentDir:               agentDir,
 			ProjectTrusted:         settings.IsProjectTrusted(),
+			NoDiscovery:            args.NoExtensions,
 			ConfiguredPaths:        settings.GetGlobalExtensionPaths(),
 			ProjectConfiguredPaths: settings.GetProjectExtensionPaths(),
 			ExplicitPaths:          explicitPaths,

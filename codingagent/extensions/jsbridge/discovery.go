@@ -18,6 +18,7 @@ type DiscoveryOptions struct {
 	CWD                         string
 	AgentDir                    string
 	ProjectTrusted              bool
+	NoDiscovery                 bool
 	ConfiguredPaths             []string
 	ProjectConfiguredPaths      []string
 	ResolvedPackagePaths        []string
@@ -50,20 +51,22 @@ func Discover(options DiscoveryOptions) []string {
 		}
 	}
 
-	if options.ProjectTrusted {
-		add(discoverDirectory(filepath.Join(cwd, configDirName, "extensions")))
-	}
-	add(discoverDirectory(filepath.Join(agentDir, "extensions")))
-	configuredPaths := append([]string(nil), options.ConfiguredPaths...)
-	if options.ProjectTrusted {
-		configuredPaths = append(configuredPaths, options.ProjectConfiguredPaths...)
-	}
-	configuredPaths = append(configuredPaths, options.ResolvedPackagePaths...)
-	if options.ProjectTrusted {
-		configuredPaths = append(configuredPaths, options.ProjectResolvedPackagePaths...)
-	}
-	for _, configured := range configuredPaths {
-		add(resolveConfiguredPath(configured, cwd))
+	if !options.NoDiscovery {
+		if options.ProjectTrusted {
+			add(discoverDirectory(filepath.Join(cwd, configDirName, "extensions")))
+		}
+		add(discoverDirectory(filepath.Join(agentDir, "extensions")))
+		configuredPaths := append([]string(nil), options.ConfiguredPaths...)
+		if options.ProjectTrusted {
+			configuredPaths = append(configuredPaths, options.ProjectConfiguredPaths...)
+		}
+		configuredPaths = append(configuredPaths, options.ResolvedPackagePaths...)
+		if options.ProjectTrusted {
+			configuredPaths = append(configuredPaths, options.ProjectResolvedPackagePaths...)
+		}
+		for _, configured := range configuredPaths {
+			add(resolveConfiguredPath(configured, cwd))
+		}
 	}
 	for _, explicit := range options.ExplicitPaths {
 		add(resolveConfiguredPath(explicit, cwd))
