@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pi-go/internal/localecompare"
 )
 
 func TestLsToolListsDotfilesAndDirectoriesInOrder(t *testing.T) {
@@ -187,8 +188,8 @@ func TestLsToolIgnoresLCOnlyLocaleLikeNodeIntl(t *testing.T) {
 	t.Setenv("LC_ALL", "")
 	t.Setenv("LANG", "C.UTF-8")
 	t.Setenv("LC_COLLATE", "sv_SE.UTF-8")
-	if got := defaultCollationLanguage().String(); got != "en-US" {
-		t.Fatalf("default locale = %q, want en-US", got)
+	if got := localecompare.New().CompareString("å", "z"); got >= 0 {
+		t.Fatalf("C locale comparison å/z = %d, want å before z", got)
 	}
 }
 
@@ -196,8 +197,8 @@ func TestLsToolUsesLCMessagesBeforeLangLikeNodeIntl(t *testing.T) {
 	t.Setenv("LC_ALL", "")
 	t.Setenv("LC_MESSAGES", "sv_SE.UTF-8")
 	t.Setenv("LANG", "en_US.UTF-8")
-	if got := defaultCollationLanguage().String(); got != "sv-SE" {
-		t.Fatalf("default locale = %q, want sv-SE", got)
+	if got := localecompare.New().CompareString("z", "å"); got >= 0 {
+		t.Fatalf("Swedish locale comparison z/å = %d, want z before å", got)
 	}
 }
 

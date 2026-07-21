@@ -12,9 +12,9 @@ import (
 	"github.com/OrdalieTech/pi-go/agent"
 	"github.com/OrdalieTech/pi-go/ai"
 	"github.com/OrdalieTech/pi-go/internal/jsonschema"
+	"github.com/OrdalieTech/pi-go/internal/localecompare"
 	"github.com/OrdalieTech/pi-go/internal/truncate"
 	"golang.org/x/text/cases"
-	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
 )
 
@@ -158,7 +158,7 @@ func (tool *lsTool) execute(ctx context.Context, input LsToolInput) (agent.Agent
 	if err != nil {
 		return agent.AgentToolResult{}, upstreamToolErrorf("Cannot read directory: %s", err)
 	}
-	collator := collate.New(defaultCollationLanguage())
+	collator := localecompare.New()
 	lower := cases.Lower(language.Und)
 	sort.SliceStable(entries, func(left, right int) bool {
 		return collator.CompareString(lower.String(entries[left]), lower.String(entries[right])) < 0
@@ -216,26 +216,6 @@ func (tool *lsTool) execute(ctx context.Context, input LsToolInput) (agent.Agent
 		Content: ai.ToolResultContent{&ai.TextContent{Text: output}},
 		Details: resultDetails,
 	}, nil
-}
-
-func defaultCollationLanguage() language.Tag {
-	locale := ""
-	for _, name := range []string{"LC_ALL", "LC_MESSAGES", "LANG"} {
-		if value := os.Getenv(name); value != "" {
-			locale = value
-			break
-		}
-	}
-	locale = strings.SplitN(locale, ".", 2)[0]
-	locale = strings.SplitN(locale, "@", 2)[0]
-	if locale == "" || locale == "C" || locale == "POSIX" {
-		return language.AmericanEnglish
-	}
-	tag, err := language.Parse(strings.ReplaceAll(locale, "_", "-"))
-	if err != nil {
-		return language.AmericanEnglish
-	}
-	return tag
 }
 
 func lsInput(params any) (LsToolInput, error) {

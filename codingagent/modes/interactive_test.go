@@ -533,6 +533,64 @@ func TestSkillInvocationMessageRender(t *testing.T) {
 	}
 }
 
+func TestSkillInvocationInvalidateRebuildsTheme(t *testing.T) {
+	theme.SetCurrent(nil)
+	comp := NewSkillInvocationMessage("test-skill", "Skill content", theme.MarkdownTheme())
+	initTestTheme(t)
+	comp.Invalidate()
+	if rendered := strings.Join(comp.Render(60), "\n"); !strings.Contains(rendered, theme.FG("customMessageLabel", theme.Bold("[skill]")+" ")) {
+		t.Fatalf("invalidated render did not adopt current theme: %q", rendered)
+	}
+}
+
+func TestRestoredSkillInvocationRendersSeparateUserMessage(t *testing.T) {
+	for _, test := range []struct {
+		name, suffix string
+		children     int
+	}{
+		{name: "skill only", children: 1},
+		{name: "with user message", suffix: "\n\n  inspect this  ", children: 3},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			text := `<skill name="audit" location="/tmp/audit/SKILL.md">
+References are relative to /tmp/audit.
+
+Read the logs.
+</skill>` + test.suffix
+			mode := newPendingToolMode(t, []any{&ai.UserMessage{Content: ai.NewUserText(text)}})
+			mode.renderInitialMessages()
+
+			children := mode.chat.Children()
+			if len(children) != test.children {
+				t.Fatalf("children = %d, want %d (%T)", len(children), test.children, children[0])
+			}
+			skill, ok := children[0].(*SkillInvocationMessageComponent)
+			if !ok || len(mode.expandables) != 1 || mode.expandables[0] != skill {
+				t.Fatalf("skill child/expandables = %T/%#v", children[0], mode.expandables)
+			}
+			if test.suffix != "" {
+				if _, ok := children[1].(*tui.Spacer); !ok {
+					t.Fatalf("middle child = %T, want spacer", children[1])
+				}
+				if _, ok := children[2].(*UserMessageComponent); !ok {
+					t.Fatalf("last child = %T, want user message", children[2])
+				}
+			}
+			rendered := strings.Join(normalizeWP450Lines(mode.chat.Render(120)), "\n")
+			if strings.Contains(rendered, "<skill") || strings.Contains(rendered, "Read the logs.") {
+				t.Fatalf("collapsed render exposed raw skill: %q", rendered)
+			}
+			if !strings.Contains(rendered, "audit") || test.suffix != "" && !strings.Contains(rendered, "inspect this") {
+				t.Fatalf("collapsed render = %q", rendered)
+			}
+			skill.SetExpanded(true)
+			if expanded := strings.Join(normalizeWP450Lines(mode.chat.Render(120)), "\n"); !strings.Contains(expanded, "Read the logs.") {
+				t.Fatalf("expanded render = %q", expanded)
+			}
+		})
+	}
+}
+
 func TestAppKeybindings(t *testing.T) {
 	kb := NewAppKeybindings(nil)
 	if kb == nil {

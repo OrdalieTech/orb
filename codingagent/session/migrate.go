@@ -267,21 +267,25 @@ func syncFileEntry(entry *FileEntry) {
 	entry.raw = nil
 }
 
-func generateUniqueID(existing map[string]struct{}, generator IDGenerator) (string, error) {
+func findUniqueID[V any](existing map[string]V, generator IDGenerator) (string, error) {
 	for range 100 {
 		id, err := generator()
 		if err != nil {
 			return "", err
 		}
 		if _, found := existing[id]; !found {
-			existing[id] = struct{}{}
 			return id, nil
 		}
 	}
-	id, err := randomUUID()
+	return randomUUID()
+}
+
+func generateUniqueID[V any](existing map[string]V, generator IDGenerator) (string, error) {
+	id, err := findUniqueID(existing, generator)
 	if err != nil {
 		return "", err
 	}
-	existing[id] = struct{}{}
+	var reserved V
+	existing[id] = reserved
 	return id, nil
 }

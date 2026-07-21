@@ -163,9 +163,10 @@ evidence remains owner-blocked**. The owner retained the full-parity scope and a
 
 ## Sprint 4 — Ship (M5)
 
-Status: **deterministic release verification is green through the current upstream API tail. The
-owner resolved the size and race-gate decisions on 2026-07-20; M5 now remains open only on
-live/VM/publication checks** (see docs/trim/M5.md §Release remainder).
+Status: **deterministic release-candidate verification is green through the current upstream API
+tail. The owner resolved the size and race-gate decisions on 2026-07-20; M5 remains open on
+live/VM/publication checks and the final commit-specific audit/tag after they close** (see
+docs/trim/M5.md §Release remainder).
 
 - [x] Land the release machinery: goreleaser (4 targets, snapshot verified), tag-triggered
       workflow re-running the gate, checksum-verifying install script, Homebrew formula generation,
@@ -177,26 +178,26 @@ live/VM/publication checks** (see docs/trim/M5.md §Release remainder).
 - [x] Close the alignment should-fix remainder: typed tool-event accessors, ai.ParseStreamingJSON,
       UI component exports (absentees documented), unit-test tails including the 28 missing
       app.* keybinding migrations found and fixed.
-- [x] Re-run current alignment: 436/436 upstream files mapped and zero open should-fix findings;
-      public retry/overflow and skill parsing, custom-theme export, G4 version checks, typed RPC
-      client, and the exact 35-model ImagesModels/OpenRouter surface are green.
+- [x] Re-run current alignment: the 2026-07-21 release-closure refresh descending from `fbcabf9`
+      keeps 436/436 upstream files mapped and zero open should-fix findings; it also closes the
+      previously unwired skill-invocation renderer, with no new MIRROR row needed.
 - [x] Publish `docs/compare/sprint-4.md` with the final deterministic TS/Go comparison and every
       release-platform difference fixed or ledgered.
-- [x] Re-run the candidate trim: 1.124x mirror LOC, 20 reviewed clone groups, clean module audit,
-      52,240,976 B largest bridged artifact across four targets, and 42.1 ± 0.9 ms no-prompt cold
-      start on one CPU. The owner-set size and 50 ms mean caps are green.
+- [x] Re-run the candidate trim: 111,431 / 99,172 = 1.124x mirror LOC, 19 reviewed clone groups,
+      clean module audit, 52,240,976 B largest bridged artifact across four targets, and 42.1 ± 0.9
+      ms no-prompt cold start on one CPU. The owner-set size and 50 ms mean caps are green.
 - [x] Resolve the two binding-rule conflicts (owner, 2026-07-20): retain D17 and set the bridged
       artifact cap to 55 MB decimal; clarify D7 so shipped builds remain static `CGO_ENABLED=0`
       while development-only `-race` binaries may link Go's CGo-backed ThreadSanitizer runtime.
 - [x] Pin releases and CI to Go 1.26.5. An identical-source comparison records 2.8% gains in the
-      1,000-turn chat load and F12 rendering, with the startup, session-creation, compaction, and
-      binary-size regressions retained in `docs/trim/M5.md` rather than hidden by an aggregate.
+      in-memory 1,000-turn Processor core and F12 rendering, with the startup, session-creation,
+      compaction, and binary-size regressions retained in `docs/trim/M5.md` rather than hidden by
+      an aggregate.
 - [ ] Re-verify every M1–M4 criterion at the release commit. The deterministic surfaces and the
       2026-07-20 lock bump to `3a40794e` are green (116 paths classified, zero unmapped), but the
       subscribed OAuth, hosted-nightly, and real-terminal criteria remain owner-blocked.
-- [ ] Create the final annotated `v0.1.0` tag only after the release commit is complete. The
-      existing local tag points to stale commit `b20a03b`, predates this candidate, and is not a
-      release tag.
+- [ ] Create the final annotated `v0.1.0` tag only after the release commit is complete. The stale
+      local tag at `b20a03b` was removed; no local or remote release tag exists.
 - [ ] Owner-gated before publishing the tag: OAuth live runs, CI secrets (nightly 72h window),
       and clean-macOS install/docs verification. The canonical public repositories now exist and
       this checkout's `origin` points to `OrdalieTech/pi-go`; Homebrew publication uses the

@@ -6,18 +6,6 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
-### Changed
-
-- Releases, CI, and `go install` now pin Go 1.26.5. On identical source, the 1,000-turn chat load
-  and F12 renderer are each 2.8% faster; no-prompt startup is 1.7% slower, minimal session creation
-  is 4.8% slower, and the stripped Linux binary is 0.9% larger than with Go 1.25.0.
-
-### Fixed
-
-- Hosted macOS verification now handles APFS realpath, case, and Unicode normalization without
-  weakening Linux coverage; interactive session replacement is race-free and custom extension
-  messages request their render deterministically.
-
 ## [0.1.0] - 2026-07-20
 
 ### Added
@@ -63,8 +51,23 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
   `mcpServers` entry no longer disables the rest (per-entry warnings); explicit `maxRetries: 0`
   disables streamable-HTTP reconnect retries; startup connects run concurrently per server.
 
+### Changed
+
+- Releases, CI, and `go install` now pin Go 1.26.5. On identical source, the in-memory 1,000-turn
+  Processor core and F12 renderer are each 2.8% faster; no-prompt startup is 1.7% slower, minimal
+  session creation is 4.8% slower, and the stripped Linux binary is 0.9% larger than Go 1.25.0.
+
 ### Fixed
 
+- CI now pins the signed Node 24 `actions/checkout` v7.0.1 commit instead of the deprecated
+  Node 20 action runtime.
+- Hosted macOS verification now handles APFS realpath, case, and Unicode normalization without
+  weakening Linux coverage; interactive session replacement is race-free and custom extension
+  messages request their render deterministically.
+- Session entry IDs no longer copy the complete ID index before every append, removing quadratic
+  allocation growth from long sessions while preserving collision handling.
+- Interactive history renders skill invocations as the upstream collapsible skill block plus an
+  optional separate user message instead of exposing the raw `<skill>` envelope.
 - Long-session compaction checks now walk directly from the active leaf to the latest compaction,
   avoiding a full cloned branch on every turn; the retained 20,000-entry benchmark is allocation-free.
 - Resource discovery now deduplicates canonical paths in linear time and reuses package metadata,

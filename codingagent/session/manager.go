@@ -579,7 +579,7 @@ func (manager *SessionManager) newEntryBaseLocked(entryType string) (SessionEntr
 	if manager.harnessStorage != nil {
 		return SessionEntry{Type: entryType}, nil
 	}
-	id, err := generateUniqueIDFromIndex(manager.byID, manager.entryIDGenerator)
+	id, err := findUniqueID(manager.byID, manager.entryIDGenerator)
 	if err != nil {
 		return SessionEntry{}, err
 	}
@@ -589,14 +589,6 @@ func (manager *SessionManager) newEntryBaseLocked(entryType string) (SessionEntr
 		ParentID:  cloneString(manager.leafID),
 		Timestamp: formatTimestamp(manager.clock()),
 	}, nil
-}
-
-func generateUniqueIDFromIndex(index map[string]*SessionEntry, generator IDGenerator) (string, error) {
-	existing := make(map[string]struct{}, len(index))
-	for id := range index {
-		existing[id] = struct{}{}
-	}
-	return generateUniqueID(existing, generator)
 }
 
 func cloneString(value *string) *string {
@@ -678,17 +670,27 @@ func (manager *SessionManager) AppendCompaction(
 	entry.Summary = summary
 	entry.FirstKeptEntryID = firstKeptEntryID
 	entry.TokensBefore = float64(tokensBefore)
-	if len(options) > 0 {
-		if options[0].HasDetails {
-			entry.Details, err = rawValue(options[0].Details)
-			if err != nil {
-				return "", err
-			}
-		}
-		entry.FromHook = options[0].FromHook
-		entry.Usage = cloneSessionUsage(options[0].Usage)
+	if err := applyOptionalEntryFields(&entry, options); err != nil {
+		return "", err
 	}
 	return manager.appendEntryLocked(entry)
+}
+
+func applyOptionalEntryFields(entry *SessionEntry, options []OptionalEntryFields) error {
+	if len(options) == 0 {
+		return nil
+	}
+	option := options[0]
+	if option.HasDetails {
+		details, err := rawValue(option.Details)
+		if err != nil {
+			return err
+		}
+		entry.Details = details
+	}
+	entry.FromHook = option.FromHook
+	entry.Usage = cloneSessionUsage(option.Usage)
+	return nil
 }
 
 func (manager *SessionManager) AppendCustomEntry(customType string, data ...any) (string, error) {
@@ -1122,53 +1124,26 @@ func (manager *SessionManager) BranchWithSummary(
 		if err := manager.harnessStorage.SetLeafID(branchFromID); err != nil {
 			return "", err
 		}
-		entry, err := manager.newEntryBaseLocked("branch_summary")
-		if err != nil {
-			return "", err
-		}
-		entry.ParentID = cloneString(branchFromID)
-		entry.FromID = "root"
+	} else {
 		if branchFromID != nil {
-			entry.FromID = *branchFromID
-		}
-		entry.Summary = summary
-		if len(options) > 0 {
-			if options[0].HasDetails {
-				entry.Details, err = rawValue(options[0].Details)
-				if err != nil {
-					return "", err
-				}
+			if _, ok := manager.byID[*branchFromID]; !ok {
+				return "", fmt.Errorf("Entry %s not found", *branchFromID) //nolint:staticcheck // Upstream error capitalization is observable.
 			}
-			entry.FromHook = options[0].FromHook
-			entry.Usage = cloneSessionUsage(options[0].Usage)
 		}
-		return manager.appendEntryLocked(entry)
+		manager.leafID = cloneString(branchFromID)
 	}
-	if branchFromID != nil {
-		if _, ok := manager.byID[*branchFromID]; !ok {
-			return "", fmt.Errorf("Entry %s not found", *branchFromID) //nolint:staticcheck // Upstream error capitalization is observable.
-		}
-	}
-	manager.leafID = cloneString(branchFromID)
 	entry, err := manager.newEntryBaseLocked("branch_summary")
 	if err != nil {
 		return "", err
 	}
-	if branchFromID == nil {
-		entry.FromID = "root"
-	} else {
+	entry.ParentID = cloneString(branchFromID)
+	entry.FromID = "root"
+	if branchFromID != nil {
 		entry.FromID = *branchFromID
 	}
 	entry.Summary = summary
-	if len(options) > 0 {
-		if options[0].HasDetails {
-			entry.Details, err = rawValue(options[0].Details)
-			if err != nil {
-				return "", err
-			}
-		}
-		entry.FromHook = options[0].FromHook
-		entry.Usage = cloneSessionUsage(options[0].Usage)
+	if err := applyOptionalEntryFields(&entry, options); err != nil {
+		return "", err
 	}
 	return manager.appendEntryLocked(entry)
 }

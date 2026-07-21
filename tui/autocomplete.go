@@ -9,8 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/text/collate"
-	"golang.org/x/text/language"
+	"github.com/OrdalieTech/pi-go/internal/localecompare"
 )
 
 type AutocompleteItem struct {
@@ -465,26 +464,6 @@ func scopedPathForDisplay(displayBase, relativePath string) string {
 	return toDisplayPath(displayBase) + normalizedRelativePath
 }
 
-func autocompleteCollationLanguage() language.Tag {
-	locale := ""
-	for _, name := range []string{"LC_ALL", "LC_MESSAGES", "LANG"} {
-		if value := os.Getenv(name); value != "" {
-			locale = value
-			break
-		}
-	}
-	locale = strings.SplitN(locale, ".", 2)[0]
-	locale = strings.SplitN(locale, "@", 2)[0]
-	if locale == "" || locale == "C" || locale == "POSIX" {
-		return language.AmericanEnglish
-	}
-	tag, err := language.Parse(strings.ReplaceAll(locale, "_", "-"))
-	if err != nil {
-		return language.AmericanEnglish
-	}
-	return tag
-}
-
 func (provider *CombinedAutocompleteProvider) getFileSuggestions(prefix string) []AutocompleteItem {
 	parsed := parsePathPrefix(prefix)
 	rawPrefix := parsed.rawPrefix
@@ -593,7 +572,7 @@ func (provider *CombinedAutocompleteProvider) getFileSuggestions(prefix string) 
 }
 
 func sortAutocompleteSuggestions(suggestions []AutocompleteItem) {
-	collator := collate.New(autocompleteCollationLanguage())
+	collator := localecompare.New()
 	sort.SliceStable(suggestions, func(a, b int) bool {
 		aIsDir := strings.HasSuffix(suggestions[a].Value, "/")
 		bIsDir := strings.HasSuffix(suggestions[b].Value, "/")

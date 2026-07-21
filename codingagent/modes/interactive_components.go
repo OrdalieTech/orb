@@ -1088,7 +1088,10 @@ func (c *SkillInvocationMessageComponent) updateDisplay() {
 	}
 }
 
-func (c *SkillInvocationMessageComponent) Invalidate()               { c.box.Invalidate() }
+func (c *SkillInvocationMessageComponent) Invalidate() {
+	c.box.Invalidate()
+	c.updateDisplay()
+}
 func (c *SkillInvocationMessageComponent) Render(width int) []string { return c.box.Render(width) }
 
 // ─────────────────────────────────────────────────────────────
