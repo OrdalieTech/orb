@@ -15,11 +15,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/codingagent"
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
-	"github.com/OrdalieTech/pi-go/tui"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/codingagent"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/pigo/tui"
 )
 
 type f12CommandFixture struct {
@@ -107,6 +107,12 @@ func TestF12InteractiveCommandRegistryMatchesUpstream(t *testing.T) {
 	if fixture.SchemaVersion != 4 || len(fixture.Visible) != 22 || len(fixture.Hidden) != 3 || len(fixture.UnexpectedArguments) != 19 {
 		t.Fatalf("F12 command fixture = version %d, visible %d, hidden %d",
 			fixture.SchemaVersion, len(fixture.Visible), len(fixture.Hidden))
+	}
+	for index := range fixture.Visible {
+		if fixture.Visible[index].Name == "quit" {
+			description := "Quit pigo" // D30 public-name substitution.
+			fixture.Visible[index].Description = &description
+		}
 	}
 
 	actual := make([]f12Command, 0, len(codingagent.BuiltinSlashCommands))

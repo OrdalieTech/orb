@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
+	aiauth "github.com/OrdalieTech/pigo/ai/auth"
 )
 
 func TestAuthStorageReadsConfigValuesAndPreservesRawFile(t *testing.T) {

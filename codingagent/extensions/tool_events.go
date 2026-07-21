@@ -3,7 +3,7 @@ package extensions
 import (
 	"encoding/json"
 
-	"github.com/OrdalieTech/pi-go/codingagent/tools"
+	"github.com/OrdalieTech/pigo/codingagent/tools"
 )
 
 // Typed accessors for the built-in tool_call/tool_result event variants.

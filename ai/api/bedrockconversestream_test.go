@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 func bedrockTestModel(id, name string) *ai.Model {

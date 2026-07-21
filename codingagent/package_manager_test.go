@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/codingagent/config"
+	"github.com/OrdalieTech/pigo/codingagent/config"
 )
 
 func newTestPackageManager(t *testing.T) (*PackageManager, string, string, *config.SettingsManager) {

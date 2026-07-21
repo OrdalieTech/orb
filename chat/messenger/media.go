@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/OrdalieTech/pi-go/chat"
+	"github.com/OrdalieTech/pigo/chat"
 )
 
 // Download implements chat.Adapter. Messenger attachment refs carry the

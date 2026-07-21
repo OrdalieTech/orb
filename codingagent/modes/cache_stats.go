@@ -1,8 +1,8 @@
 package modes
 
 import (
-	"github.com/OrdalieTech/pi-go/ai"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pigo/ai"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 // Prompt-cache accounting, mirroring upstream core/cache-stats.ts. The price

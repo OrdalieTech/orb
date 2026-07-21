@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/chat"
+	"github.com/OrdalieTech/pigo/chat"
 )
 
 // NewDelivery implements [chat.Adapter]. replyTo is the inbound

@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/OrdalieTech/pi-go/internal/jsonschema"
+	"github.com/OrdalieTech/pigo/internal/jsonschema"
 )
 
 type CacheRetention string

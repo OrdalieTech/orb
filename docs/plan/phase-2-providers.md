@@ -24,8 +24,8 @@ round-trip preserves signatures across turns (F3 scenario on faux-anthropic reco
 
 **Scope:** `codingagent/config/auth.go` (`auth.json`, 0600, flock, legacy migration; `$ENV` /
 `!command` apiKey interpolation), `ai/auth/oauth`: PKCE flow for Claude Pro/Max (authorize URL,
-localhost :53692 callback server, manual code-paste fallback), token refresh; headless `pi login
-anthropic` / `pi logout` (TUI `/login` arrives Phase 4 on the same core).
+localhost :53692 callback server, manual code-paste fallback), token refresh; headless `pigo login
+anthropic` / `pigo logout` (TUI `/login` arrives Phase 4 on the same core).
 
 **Acceptance:** auth.json written by Go is readable by TS pi and vice versa (fixture: cross-read);
 full OAuth flow manually verified once and documented; refresh path unit-tested with a fake token server.
@@ -98,7 +98,7 @@ manual end-to-end verification each, documented.
 `packages/coding-agent/docs/models.md`; per-provider `.models.ts` structure.
 
 **Scope:** `go:generate` fetcher: models.dev `api.json` → `ai/models/generated.go` (+ hand-corrections
-file, mirroring upstream's correction mechanism); runtime `pi update --models` refresh from
+file, mirroring upstream's correction mechanism); runtime `pigo update --models` refresh from
 models.dev into `~/.pi/agent` cache; `models.json` overlay (custom providers/models, compat flags,
 per-model overrides of built-ins, hot reload semantics); model pattern matching
 (`provider/id:thinkinglevel`, `--models` cycling patterns, `--list-models`).

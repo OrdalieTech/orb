@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const miniTreeHelperEnv = "PI_GO_SEARCH_MINITREE_HELPER"
+const miniTreeHelperEnv = "PIGO_SEARCH_MINITREE_HELPER"
 
 func TestSearchToolsActuallySearchCommittedMiniTree(t *testing.T) {
 	requireUnixSearchTest(t)

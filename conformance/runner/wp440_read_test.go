@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/codingagent/tools"
-	"github.com/OrdalieTech/pi-go/conformance/runner"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/codingagent/tools"
+	"github.com/OrdalieTech/pigo/conformance/runner"
 )
 
 type wp440ReadFixture struct {

@@ -1,4 +1,4 @@
-// Package discord implements the Discord adapter for the pi-go chat
+// Package discord implements the Discord adapter for the pigo chat
 // gateway: Gateway (WebSocket) ingress over the internal RFC 6455 client —
 // hello/heartbeat/identify, READY capture, resume-first reconnects — plus
 // REST delivery with a refreshed typing indicator, streamed preview edits,
@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/chat"
+	"github.com/OrdalieTech/pigo/chat"
 )
 
 // DefaultBaseURL is the production REST API endpoint.

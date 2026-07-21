@@ -1,6 +1,6 @@
-# pi-go — Agent execution contract
+# pigo — Agent execution contract
 
-You are implementing pi-go, a faithful Go port of the pi coding agent (pi.dev). Read this file
+You are implementing pigo, a faithful Go port of the pi coding agent (pi.dev). Read this file
 fully before touching code. It applies to any coding agent (Claude Code, Codex, or other).
 
 ## Ground truth, in order
@@ -27,7 +27,7 @@ fully before touching code. It applies to any coding agent (Claude Code, Codex, 
    goldens, runners, black-box adapters) so the sprint starts RED; implementation turns it GREEN.
    Never write the port first and the fixtures after.
 4. **Compare to TS pi.** Each sprint closes with `docs/compare/sprint-N.md`: identical scripted
-   scenarios through TS pi (`.upstream/`) and pi-go, every difference fixed or ledgered.
+   scenarios through TS pi (`.upstream/`) and pigo, every difference fixed or ledgered.
 5. **Close the sprint**: trim checklist (RELEASE-CRITERIA), milestone boxes checked with evidence,
    comparison report committed, `docs/plan/PROGRESS.md` updated. Commit messages: `Sprint N: <what>`
    with verified checks in the body.
@@ -59,7 +59,7 @@ fully before touching code. It applies to any coding agent (Claude Code, Codex, 
 ## Layout quick reference
 
 `ai/` unified LLM layer · `agent/` loop+Agent+harness · `tui/` renderer/components ·
-`codingagent/` tools, session, config, extensions (+`jsbridge/`, `mcp/`), modes · `cmd/pi` CLI ·
+`codingagent/` tools, session, config, extensions (+`jsbridge/`, `mcp/`), modes · `cmd/pigo` CLI ·
 `internal/` jsonschema, jsonwire, partialjson, truncate, sync · `conformance/` extract (TS,
 dev-only), fixtures, runner. Full tree: ARCHITECTURE §1.
 

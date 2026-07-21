@@ -7,14 +7,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/codingagent"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
-	"github.com/OrdalieTech/pi-go/tui"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/codingagent"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/pigo/tui"
 
-	theme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
+	theme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
 )
 
 const (

@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 type googleVertexADCRoundTripFunc func(*http.Request) (*http.Response, error)

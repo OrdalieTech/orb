@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/conformance/runner"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/conformance/runner"
 )
 
 type f2Case struct {

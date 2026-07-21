@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 	textunicode "golang.org/x/text/encoding/unicode"
 )
 

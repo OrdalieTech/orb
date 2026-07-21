@@ -70,7 +70,7 @@ autocomplete providers), built-in interactive commands (`/login /logout /model /
 /reload /hotkeys /changelog /quit`, `/share`→local export), changelog display, quiet startup,
 `terminal.clearOnShrink`, `hideThinkingBlock`, `showCacheMissNotices` and remaining UI settings.
 
-**Acceptance:** side-by-side protocol: scripted faux session replayed in TS pi and pi-go, per-frame
+**Acceptance:** side-by-side protocol: scripted faux session replayed in TS pi and pigo, per-frame
 diff reviewed and deviations either fixed or ledgered; all listed commands functional; extension
 ctx.ui demos (status-line, widget-placement ports) behave per upstream docs.
 

@@ -7,8 +7,8 @@ import (
 	"os"
 	"sort"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
 	"github.com/grafana/sobek"
 )
 

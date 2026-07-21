@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/agent/harness"
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/agent/harness"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
 )
 
 // --- finding 1: pi-ai createAssistantMessageEventStream + calculateCost ---
@@ -430,7 +430,7 @@ export default function(pi) { void addon; }
 	loader := NewLoader(DiscoveryOptions{CWD: cwd, AgentDir: filepath.Join(cwd, "agent"), ExplicitPaths: []string{entry}})
 	t.Cleanup(loader.Close)
 	loaded := loader.Load(context.Background())
-	if len(loaded.Errors) != 1 || !strings.Contains(loaded.Errors[0].Error, "native Node addons are not supported by the pi-go extension runtime") {
+	if len(loaded.Errors) != 1 || !strings.Contains(loaded.Errors[0].Error, "native Node addons are not supported by the pigo extension runtime") {
 		t.Fatalf("native addon load errors = %#v", loaded.Errors)
 	}
 
@@ -442,7 +442,7 @@ export default function(pi) { void mod; }
 	wasmLoader := NewLoader(DiscoveryOptions{CWD: cwd, AgentDir: filepath.Join(cwd, "agent"), ExplicitPaths: []string{wasmEntry}})
 	t.Cleanup(wasmLoader.Close)
 	wasmLoaded := wasmLoader.Load(context.Background())
-	if len(wasmLoaded.Errors) != 1 || !strings.Contains(wasmLoaded.Errors[0].Error, "WebAssembly modules are not supported by the pi-go extension runtime") {
+	if len(wasmLoaded.Errors) != 1 || !strings.Contains(wasmLoaded.Errors[0].Error, "WebAssembly modules are not supported by the pigo extension runtime") {
 		t.Fatalf("wasm load errors = %#v", wasmLoaded.Errors)
 	}
 }
@@ -527,7 +527,7 @@ export default function(pi) { void instance; }
 	loader := NewLoader(DiscoveryOptions{CWD: cwd, AgentDir: filepath.Join(cwd, "agent"), ExplicitPaths: []string{entry}})
 	t.Cleanup(loader.Close)
 	loaded := loader.Load(context.Background())
-	if len(loaded.Errors) != 1 || !strings.Contains(loaded.Errors[0].Error, "'Editor' is not exported by @earendil-works/pi-tui (pi-go shim)") {
+	if len(loaded.Errors) != 1 || !strings.Contains(loaded.Errors[0].Error, "'Editor' is not exported by @earendil-works/pi-tui (pigo shim)") {
 		t.Fatalf("unknown import load errors = %#v", loaded.Errors)
 	}
 }
@@ -551,7 +551,7 @@ export default function(pi) {
 		t.Fatalf("feature detection command = %#v", command)
 	}
 	err := command.Handler(context.Background(), "", runner.CreateCommandContext())
-	if err == nil || !strings.Contains(err.Error(), "'SettingsList' is not exported by @earendil-works/pi-tui (pi-go shim)") {
+	if err == nil || !strings.Contains(err.Error(), "'SettingsList' is not exported by @earendil-works/pi-tui (pigo shim)") {
 		t.Fatalf("use-time error = %v", err)
 	}
 }
@@ -571,7 +571,7 @@ func TestQuestionExampleFailsAtLoadWithClearError(t *testing.T) {
 	loaded := loader.Load(context.Background())
 	if len(loaded.Errors) != 0 {
 		// Acceptable outcome: a load-time diagnostic naming the missing export.
-		if !strings.Contains(loaded.Errors[0].Error, "is not exported by @earendil-works/pi-tui (pi-go shim)") {
+		if !strings.Contains(loaded.Errors[0].Error, "is not exported by @earendil-works/pi-tui (pigo shim)") {
 			t.Fatalf("question.ts load errors = %#v", loaded.Errors)
 		}
 		return
@@ -586,7 +586,7 @@ func TestQuestionExampleFailsAtLoadWithClearError(t *testing.T) {
 	_, execErr := tool.Execute(context.Background(), "q-1", map[string]any{
 		"question": "Pick one", "options": []any{map[string]any{"label": "a"}, map[string]any{"label": "b"}},
 	}, nil, runner.CreateContext())
-	if execErr == nil || !strings.Contains(execErr.Error(), "is not exported by @earendil-works/pi-tui (pi-go shim)") {
+	if execErr == nil || !strings.Contains(execErr.Error(), "is not exported by @earendil-works/pi-tui (pigo shim)") {
 		t.Fatalf("question execute error = %v", execErr)
 	}
 }

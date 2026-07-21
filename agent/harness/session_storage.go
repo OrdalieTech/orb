@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/internal/uuidv7"
+	"github.com/OrdalieTech/pigo/internal/uuidv7"
 )
 
 type sessionStorageState struct {

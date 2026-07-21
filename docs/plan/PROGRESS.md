@@ -200,7 +200,7 @@ docs/trim/M5.md §Release remainder).
       local tag at `b20a03b` was removed; no local or remote release tag exists.
 - [ ] Owner-gated before publishing the tag: OAuth live runs, CI secrets (nightly 72h window),
       and clean-macOS install/docs verification. The canonical public repositories now exist and
-      this checkout's `origin` points to `OrdalieTech/pi-go`; Homebrew publication uses the
+      this checkout's `origin` points to `OrdalieTech/pigo`; Homebrew publication uses the
       authenticated release operator instead of a persistent cross-repository secret.
 
 ## Sprint 5 — Chat gateway (D27)
@@ -281,7 +281,7 @@ Status: **closed by the Sprint 6 commit containing this record**.
       deliberate-difference table, incl. the bridge/E2EE exclusions).
 - [x] Complete `docs/trim/S6.md`: remove 1,068 net lines from the inherited candidate, record zero
       new dependencies and zero duplicate groups, and prove the SDK-only additions add zero
-      linked bytes to `cmd/pi`.
+      linked bytes to `cmd/pigo`.
 - [x] Commit the sprint arc as one green mainline chunk and close it per D25; exact `make check`,
       fixture regeneration, module verification, static analysis, and four CGO-disabled
       cross-builds are green.
@@ -294,7 +294,7 @@ Status: **closed by the Sprint 6 commit containing this record**.
 - **D7 versus the mandatory race gate (2026-07-20)** — D7 now governs shipped product/release
   binaries, which remain static `CGO_ENABLED=0`. Development-only `go test -race` binaries may
   enable CGo solely because the Go race runtime links ThreadSanitizer; the exception never ships.
-- **Canonical release repositories (2026-07-20)** — public `OrdalieTech/pi-go` and
+- **Canonical release repositories (2026-07-20)** — public `OrdalieTech/pigo` and
   `OrdalieTech/homebrew-tap` repositories now exist; this checkout's `origin` points to the
   canonical source repository and preserves the former `netapy/pigo` remote as `legacy`.
 

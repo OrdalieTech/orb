@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 const googleVertexCredentialMarker = "gcp-vertex-credentials"

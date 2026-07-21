@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
 )
 
 const PromptSuffix = `

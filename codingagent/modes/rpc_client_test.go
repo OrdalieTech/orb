@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 func TestRPCClientLifecycleAndStrictRouting(t *testing.T) {

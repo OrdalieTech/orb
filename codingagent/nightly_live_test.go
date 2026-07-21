@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/ai"
-	aimodels "github.com/OrdalieTech/pi-go/ai/models"
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai"
+	aimodels "github.com/OrdalieTech/pigo/ai/models"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 const (
@@ -51,12 +51,12 @@ func TestNightlyLiveSuite(t *testing.T) {
 			t.Fatalf("nightly default %s/%s is absent from the pinned catalog", model.provider, model.id)
 		}
 	}
-	if os.Getenv("PI_GO_NIGHTLY_LIVE") != "1" {
-		t.Skip("set PI_GO_NIGHTLY_LIVE=1 to run the capped OpenAI and Anthropic nightly suite")
+	if os.Getenv("PIGO_NIGHTLY_LIVE") != "1" {
+		t.Skip("set PIGO_NIGHTLY_LIVE=1 to run the capped OpenAI and Anthropic nightly suite")
 	}
 	providers := []nightlyLiveProvider{
-		newNightlyLiveProvider(t, catalog, "openai", "OPENAI_API_KEY", "PI_GO_OPENAI_MODEL", nightlyLiveOpenAIModel),
-		newNightlyLiveProvider(t, catalog, "anthropic", "ANTHROPIC_API_KEY", "PI_GO_ANTHROPIC_MODEL", nightlyLiveAnthropicModel),
+		newNightlyLiveProvider(t, catalog, "openai", "OPENAI_API_KEY", "PIGO_OPENAI_MODEL", nightlyLiveOpenAIModel),
+		newNightlyLiveProvider(t, catalog, "anthropic", "ANTHROPIC_API_KEY", "PIGO_ANTHROPIC_MODEL", nightlyLiveAnthropicModel),
 	}
 	budget := &nightlyLiveBudget{max: loadNightlyLiveBudget(t)}
 
@@ -83,7 +83,7 @@ func newNightlyLiveProvider(t *testing.T, catalog *aimodels.Catalog, provider, a
 	t.Helper()
 	apiKey := strings.TrimSpace(os.Getenv(apiEnv))
 	if apiKey == "" {
-		t.Fatalf("PI_GO_NIGHTLY_LIVE=1 requires %s", apiEnv)
+		t.Fatalf("PIGO_NIGHTLY_LIVE=1 requires %s", apiEnv)
 	}
 	modelID := strings.TrimSpace(os.Getenv(modelEnv))
 	if modelID == "" {
@@ -102,13 +102,13 @@ func newNightlyLiveProvider(t *testing.T, catalog *aimodels.Catalog, provider, a
 
 func loadNightlyLiveBudget(t *testing.T) float64 {
 	t.Helper()
-	raw := strings.TrimSpace(os.Getenv("PI_GO_NIGHTLY_MAX_USD"))
+	raw := strings.TrimSpace(os.Getenv("PIGO_NIGHTLY_MAX_USD"))
 	if raw == "" {
 		return nightlyLiveDefaultBudgetUSD
 	}
 	value, err := strconv.ParseFloat(raw, 64)
 	if err != nil || value <= 0 {
-		t.Fatalf("PI_GO_NIGHTLY_MAX_USD must be a positive number, got %q", raw)
+		t.Fatalf("PIGO_NIGHTLY_MAX_USD must be a positive number, got %q", raw)
 	}
 	return value
 }

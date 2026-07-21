@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/conformance/runner"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/conformance/runner"
 )
 
 func TestRenderMatchesCheckedInCatalog(t *testing.T) {
@@ -56,7 +56,7 @@ func TestGenerateCommittedSnapshotIsDeterministic(t *testing.T) {
 		t.Fatalf("generated only %d providers", len(first))
 	}
 	if _, exists := first["radius"]; exists {
-		t.Fatal("Radius must not enter the pi-go catalog")
+		t.Fatal("Radius must not enter the pigo catalog")
 	}
 	model, exists := first["openai"]["gpt-5.4"]
 	if !exists {

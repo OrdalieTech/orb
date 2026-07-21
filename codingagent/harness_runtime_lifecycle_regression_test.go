@@ -7,9 +7,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/agent/harness"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pigo/agent/harness"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 func TestHarnessBackedReplacementHooksCanCancelBeforeReplacementErrors(t *testing.T) {

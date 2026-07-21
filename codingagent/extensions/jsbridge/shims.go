@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
 	"github.com/grafana/sobek"
 )
 
@@ -885,12 +885,12 @@ func (h *shimHost) installProcess(rt *sobek.Runtime) error {
 	mustSet(rt, proc, "platform", runtime.GOOS)
 	mustSet(rt, proc, "arch", nodeArch())
 	mustSet(rt, proc, "pid", os.Getpid())
-	mustSet(rt, proc, "argv", []string{"pi-go", "extension"})
+	mustSet(rt, proc, "argv", []string{"pigo", "extension"})
 	mustSet(rt, proc, "execPath", func() string {
 		if p, err := os.Executable(); err == nil {
 			return p
 		}
-		return "pi-go"
+		return "pigo"
 	}())
 	mustSet(rt, proc, "exit", func(call sobek.FunctionCall) sobek.Value {
 		// Extensions should not kill the host process; throw instead

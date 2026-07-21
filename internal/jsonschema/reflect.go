@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/OrdalieTech/pi-go/internal/jsonwire"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
 )
 
 // FromStruct derives a plain, inline JSON Schema from T. Fields are required

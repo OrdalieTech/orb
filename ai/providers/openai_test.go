@@ -4,9 +4,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/ai/providers"
-	"github.com/OrdalieTech/pi-go/conformance/runner"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/ai/providers"
+	"github.com/OrdalieTech/pigo/conformance/runner"
 )
 
 type openAIProviderFixture struct {

@@ -1,4 +1,4 @@
-# pi-go — Decision Record
+# pigo — Decision Record
 
 Outcome of the planning interview (2026-07-17). Every architectural and product decision below is
 settled and confirmed by the project owner. Changes to this record require owner sign-off; everything
@@ -11,21 +11,21 @@ else (implementation detail) is decided by whoever executes the work package, wi
 | Upstream project | **pi** — https://pi.dev, repo `earendil-works/pi` (formerly `badlogic/pi-mono`) |
 | Pinned reference | commit `3a40794ea14c6202586cc203d5b928eca9f6b673`, version **0.80.10** (2026-07-20) |
 | Upstream license | MIT, © 2025 Mario Zechner |
-| This project | `github.com/OrdalieTech/pi-go`, MIT, © Ordalie — with attribution to upstream in LICENSE and README |
+| This project | `github.com/OrdalieTech/pigo`, MIT, © Ordalie — with attribution to upstream in LICENSE and README |
 
-pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinned commit
+pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinned commit
 (`docs/*.md` in each package) are the specification; where this record is silent, upstream behavior wins.
 
 ## Product decisions
 
-- **D1 — SDK-first.** pi-go is a Go module first; the `pi` CLI is one consumer of it. The `ai`
+- **D1 — SDK-first.** pigo is a Go module first; the `pigo` CLI is one consumer of it. The `ai`
   layer must be importable on its own (as `@earendil-works/pi-ai` is upstream).
 - **D2 — Full parity, no staged v1.** The whole of pi v0.80.10 is in scope: agent core, all tools,
   session tree + compaction, skills, prompt templates, themes, TUI, print/JSON/RPC modes, extension
   system, OAuth flows, HTML export, terminal images, pi packages, project trust. Exclusions are only
   those in the divergence ledger below. Sequencing exists (see plan phases); feature cuts do not.
 - **D3 — Audience.** Ordalie production embedding + personal daily-driver + public OSS, simultaneously.
-- **D4 — File-format compatibility.** pi-go reads/writes pi's data formats and locations so both
+- **D4 — File-format compatibility.** pigo reads/writes pi's data formats and locations so both
   agents coexist on one machine: `~/.pi/agent/` layout, session JSONL **v3** tree format (with v1/v2
   migration), `settings.json` (global + `.pi/settings.json` project merge), `models.json`,
   `auth.json` (0600), `trust.json`, `keybindings.json`. CLI-flag parity is pursued but not contractual.
@@ -39,7 +39,7 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
 - **D6 — Upstream tests must run against the port.** Strategy: **fixtures + black-box**.
   Language-neutral golden fixtures are generated from the upstream repo by extraction scripts and
   consumed by both vitest (upstream side) and `go test` (our side). Upstream's RPC/CLI-level tests
-  additionally run as-is against the pi-go binary. Node/TS is permitted as *development tooling*
+  additionally run as-is against the pigo binary. Node/TS is permitted as *development tooling*
   (fixture extraction); the shipped product is pure Go.
 
 ## Architecture decisions
@@ -51,7 +51,7 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
 - **D8 — Platforms.** linux + darwin, amd64 + arm64, from day one. Windows is a later parity wave
   (upstream supports it; we port its git-bash/console strategy then). Not dropped — deferred.
 - **D9 — Single module, mirrored layout.** One `go.mod`. Packages mirror upstream packages
-  (`ai/`, `agent/`, `tui/`, `codingagent/`, plus `cmd/pi`, `internal/`); files track upstream files
+  (`ai/`, `agent/`, `tui/`, `codingagent/`, plus `cmd/pigo`, `internal/`); files track upstream files
   where idiomatic (`agent-loop.ts` → `loop.go`). Mirroring is what makes agent-driven upstream
   syncing and diff-mapping mechanical. A `MIRROR.md` map records the correspondence.
 - **D10 — Provider layer: SDK-preferring hybrid.** Use official Go SDKs where they exist and are
@@ -102,7 +102,8 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
 | `packages/orchestrator` | removed | experimental upstream side product |
 | Telemetry/analytics (`enableInstallTelemetry`, `enableAnalytics`, `trackingId`) | removed | owner decision; unknown settings keys tolerated on parse, nothing sent, no plumbing |
 | Radius provider + Radius OAuth | removed | pi.dev-coupled service; the generic `pi-messages` SSE wire shape IS ported (usable by any backend, e.g. an Ordalie gateway) |
-| Version/update checks | neutralized | point at OrdalieTech/pi-go GitHub releases, never pi.dev |
+| Version/update checks | neutralized | point at OrdalieTech/pigo GitHub releases, never pi.dev |
+| Public identity and executable | renamed | D30; `pigo` avoids colliding with an installed upstream `pi` |
 | `/share` | neutralized | local HTML export instead of pi.dev upload |
 | Model catalog runtime refresh | neutralized | models.dev directly, not pi.dev overlay endpoints |
 | Windows support | deferred | later parity wave (D8) |
@@ -187,7 +188,7 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
 
 - **D29 — One high-level agent runtime (agent, 2026-07-20).** The pinned upstream exports a
   second `AgentHarness` orchestrator from `packages/agent`, but its own coding-agent still uses
-  `AgentSession`; upstream documents that migration as pi 2.0 work. pi-go keeps the already-ported
+  `AgentSession`; upstream documents that migration as pi 2.0 work. pigo keeps the already-ported
   session, repository, compaction, resource, and environment primitives in `agent/harness`, while
   `codingagent.AgentSession` remains the sole high-level embedding runtime. Reimplementing the
   1,029-line facade would duplicate queues, hooks, persistence ordering, and lifecycle state, and
@@ -195,6 +196,15 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
   client is also excluded: its `/api/stream` endpoint is an application protocol rather than agent
   behavior, and embedders already have `agent.WithStreamFn` plus `ai.ParseStreamingJSON`. Revisit
   either surface only when upstream's coding-agent adopts it or a real Go consumer requires it.
+
+- **D30 — Public identity is pigo (owner, 2026-07-21).** The repository, Go module, executable,
+  release artifacts, installer variables, terminal title, resume hints, and default RPC client
+  command use `pigo`; no legacy `pi` executable or alias is shipped, so upstream pi can coexist on
+  the same machine. Upstream compatibility names remain unchanged where they are the contract:
+  `.pi`/`~/.pi`, upstream `PI_*` runtime variables, session and wire formats, pi package manifests,
+  `pi-messages`, the JS extension `pi` API and `@earendil-works/pi-*` imports, embedded upstream
+  assets, and extracted goldens. Conformance adapters may account only for exact public-name
+  substitutions while separately asserting the `pigo` spelling.
 
 ## Standing assumptions (owner-confirmed)
 
@@ -225,7 +235,7 @@ pi-go is a faithful Go port of pi, not a reimagining. Upstream's docs at the pin
   modal-editor example runs unmodified. Remaining pi-tui component classes (Text/Container/Markdown
   construction from JS) are bridged on demand as the F11 matrix requires them.
 - **G4 (WP-661):** self-update mechanism — notify-only vs in-place binary self-update.
-  **Resolved (Sprint 4): notify-only.** The update check (already pointed at OrdalieTech/pi-go
+  **Resolved (Sprint 4): notify-only.** The update check (already pointed at OrdalieTech/pigo
   releases per the divergence ledger) surfaces new versions; installation goes through the install
   script or package manager. In-place binary self-replacement is a security and failure-mode
   liability a slim port does not need.
@@ -242,7 +252,7 @@ are not re-litigated:
   behavior loses to parity with the pinned upstream.
 - **Skills symlink-cycle guard stays.** Upstream has no visited-set and recurses cycles to
   ELOOP (~40 levels), leaking cycle-expanded paths into system-prompt `<location>` entries.
-  pi-go keeps the canonical-path visit stack and returns each skill once under its clean path.
+  pigo keeps the canonical-path visit stack and returns each skill once under its clean path.
   Deliberate hardening divergence.
 - **MCP `"disabled": true` is honored** as `"enabled": false` (portability with Cline/Roo/
   Claude Desktop configs). MCP config parsing is per-entry tolerant: invalid entries warn and
@@ -253,7 +263,7 @@ are not re-litigated:
   Supported `.npmrc` surface is deliberately minimal: `registry=` and nerf-darted `_authToken`
   (no `${VAR}` expansion, no per-scope registries, no `_auth`/username/password).
 - **pi-* shim modules throw on unknown imports at first touch** ("'X' is not exported by ...
-  (pi-go shim)") with an honest `has()` so `in`-feature-detection still works. True Node-ESM
+  (pigo shim)") with an honest `has()` so `in`-feature-detection still works. True Node-ESM
   link-time failure is unreachable without a build-time export manifest; first-touch is the slim
   faithful approximation (question.ts-style examples now fail loudly at load instead of
   registering broken tools).
@@ -270,7 +280,7 @@ are not re-litigated:
   a clear `unsupported external module "node:X"` diagnostic.
 - **pi-* shim unknown-import failure is access-time, not link-time.** Node ESM would fail an
   unknown named import at link time; over esbuild-CJS bundling that requires a build-time export
-  manifest, which pi-go does not maintain. The shim instead throws on first *access* of an
+  manifest, which pigo does not maintain. The shim instead throws on first *access* of an
   unexported name (with an honest `has()`), so `question.ts`/`questionnaire.ts`-style examples
   that touch the missing pi-tui `Editor`/`Key` surface only inside a TUI-only custom-UI factory
   still load silently in print mode (where that factory never runs, and the registered tool

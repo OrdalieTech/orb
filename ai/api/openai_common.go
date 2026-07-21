@@ -15,7 +15,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/ssestream"

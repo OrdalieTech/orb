@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/chat"
+	"github.com/OrdalieTech/pigo/chat"
 )
 
 // TestWebhookJWTValidationMatrix drives the full inbound trust boundary

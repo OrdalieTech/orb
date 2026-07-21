@@ -13,13 +13,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	"github.com/OrdalieTech/pi-go/internal/semver"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/pigo/internal/semver"
 )
 
 // Port of packages/coding-agent/src/core/package-manager.ts. npm sources are
 // fetched natively from the registry (tarball + integrity check) instead of
-// shelling out to npm — pi-go runs without a Node toolchain (WP-360 scope).
+// shelling out to npm — pigo runs without a Node toolchain (WP-360 scope).
 // Declared package dependencies are installed with the npmCommand setting
 // (default ["npm"], upstream getNpmCommand) after npm extraction and git
 // clone/reconcile; a missing npm binary degrades to a warning so the package

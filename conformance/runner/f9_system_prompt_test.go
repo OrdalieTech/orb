@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/codingagent"
-	"github.com/OrdalieTech/pi-go/conformance/runner"
+	"github.com/OrdalieTech/pigo/codingagent"
+	"github.com/OrdalieTech/pigo/conformance/runner"
 )
 
 type f9Fixture struct {

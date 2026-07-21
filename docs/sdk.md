@@ -1,14 +1,14 @@
 # Go SDK
 
-The `codingagent` package provides the public embedding API for pi-go.
+The `codingagent` package provides the public embedding API for pigo.
 
 ## Quick start
 
 ```go
 import (
     "context"
-    "github.com/OrdalieTech/pi-go/ai/providers/faux"
-    "github.com/OrdalieTech/pi-go/codingagent"
+    "github.com/OrdalieTech/pigo/ai/providers/faux"
+    "github.com/OrdalieTech/pigo/codingagent"
 )
 
 provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})

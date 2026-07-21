@@ -3,8 +3,8 @@ package codingagent
 import (
 	"context"
 
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
 )
 
 // Port of packages/coding-agent/src/core/project-trust.ts.

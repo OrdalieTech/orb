@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/chat"
+	"github.com/OrdalieTech/pigo/chat"
 )
 
 // newSendServer runs a fake Graph /me/messages endpoint. respond is called

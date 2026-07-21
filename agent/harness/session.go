@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 func (session *Session) LeafID() (*string, error) {

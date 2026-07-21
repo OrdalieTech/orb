@@ -12,7 +12,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/OrdalieTech/pi-go/chat"
+	"github.com/OrdalieTech/pigo/chat"
 )
 
 // secretTokenHeader carries the webhook secret set via setWebhook.

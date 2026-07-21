@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -132,11 +132,11 @@ func TestRegistryFreshKeepsMCPToolsRegistered(t *testing.T) {
 }
 
 func TestExecuteDeactivatesToolsAfterChildDies(t *testing.T) {
-	if os.Getenv("PI_GO_MCP_CRASH_HELPER") == "1" {
+	if os.Getenv("PIGO_MCP_CRASH_HELPER") == "1" {
 		return
 	}
 	manager := NewManager(t.TempDir(), []ServerConfig{{
-		Name: "crashy", Command: os.Args[0], Args: []string{"-test.run=^TestMCPCrashStdioHelper$"}, Env: map[string]string{"PI_GO_MCP_CRASH_HELPER": "1"},
+		Name: "crashy", Command: os.Args[0], Args: []string{"-test.run=^TestMCPCrashStdioHelper$"}, Env: map[string]string{"PIGO_MCP_CRASH_HELPER": "1"},
 	}})
 	runner, active := registerManager(t, manager)
 	defer closeManager(t, manager)
@@ -159,7 +159,7 @@ func TestExecuteDeactivatesToolsAfterChildDies(t *testing.T) {
 }
 
 func TestMCPCrashStdioHelper(t *testing.T) {
-	if os.Getenv("PI_GO_MCP_CRASH_HELPER") != "1" {
+	if os.Getenv("PIGO_MCP_CRASH_HELPER") != "1" {
 		return
 	}
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "crash-helper", Version: "1"}, nil)
@@ -208,14 +208,14 @@ func TestStartConnectsServersConcurrently(t *testing.T) {
 }
 
 func TestCloseIgnoresStdioChildExitStatus(t *testing.T) {
-	if os.Getenv("PI_GO_MCP_STUBBORN_HELPER") == "1" {
+	if os.Getenv("PIGO_MCP_STUBBORN_HELPER") == "1" {
 		return
 	}
 	manager := NewManager(t.TempDir(), []ServerConfig{{Name: "stubborn", Command: "unused"}})
 	manager.connect = func(connectCtx, lifecycleCtx context.Context, _ ServerConfig, options *mcpsdk.ClientOptions, tracker progressTracker) (*mcpsdk.ClientSession, error) {
 		command := exec.CommandContext(lifecycleCtx, os.Args[0], "-test.run=^TestMCPStubbornStdioHelper$")
-		command.Env = append(os.Environ(), "PI_GO_MCP_STUBBORN_HELPER=1")
-		client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "pi-go-test", Version: "0"}, options)
+		command.Env = append(os.Environ(), "PIGO_MCP_STUBBORN_HELPER=1")
+		client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "pigo-test", Version: "0"}, options)
 		transport := &mcpsdk.CommandTransport{Command: command, TerminateDuration: 50 * time.Millisecond}
 		return client.Connect(connectCtx, tracker.wrapTransport(transport), nil)
 	}
@@ -229,7 +229,7 @@ func TestCloseIgnoresStdioChildExitStatus(t *testing.T) {
 }
 
 func TestMCPStubbornStdioHelper(t *testing.T) {
-	if os.Getenv("PI_GO_MCP_STUBBORN_HELPER") != "1" {
+	if os.Getenv("PIGO_MCP_STUBBORN_HELPER") != "1" {
 		return
 	}
 	signal.Ignore(syscall.SIGTERM)

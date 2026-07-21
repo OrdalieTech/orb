@@ -1,6 +1,6 @@
 package modes
 
-import "github.com/OrdalieTech/pi-go/tui"
+import "github.com/OrdalieTech/pigo/tui"
 
 // CustomEditor wraps tui.Editor with app-level keybinding dispatch.
 type CustomEditor struct {

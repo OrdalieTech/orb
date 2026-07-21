@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/codingagent"
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	"github.com/OrdalieTech/pi-go/tui"
+	"github.com/OrdalieTech/pigo/codingagent"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/pigo/tui"
 )
 
 func selectorSettings(t *testing.T, global, project string, trusted bool) (*config.SettingsManager, string, string) {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 // Catalog is an immutable-by-convention provider/model lookup.

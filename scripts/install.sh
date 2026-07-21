@@ -1,9 +1,9 @@
 #!/bin/sh
-# pi-go installer: downloads the latest release binary for this platform.
+# pigo installer: downloads the latest release binary for this platform.
 set -eu
 
-REPO="OrdalieTech/pi-go"
-INSTALL_DIR="${PI_INSTALL_DIR:-$HOME/.local/bin}"
+REPO="OrdalieTech/pigo"
+INSTALL_DIR="${PIGO_INSTALL_DIR:-$HOME/.local/bin}"
 
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 arch=$(uname -m)
@@ -17,13 +17,13 @@ case "$os" in
   *) echo "unsupported OS: $os (Windows is a later parity wave)" >&2; exit 1 ;;
 esac
 
-tag=${PI_VERSION:-$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')}
+tag=${PIGO_VERSION:-$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')}
 [ -n "$tag" ] || { echo "could not resolve the latest release tag" >&2; exit 1; }
 version=${tag#v}
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-archive="pi_${version}_${os}_${arch}.tar.gz"
+archive="pigo_${version}_${os}_${arch}.tar.gz"
 base="https://github.com/$REPO/releases/download/$tag"
 
 curl -fsSL -o "$tmp/$archive" "$base/$archive"
@@ -40,9 +40,12 @@ fi
 tar -xzf "$tmp/$archive" -C "$tmp"
 
 mkdir -p "$INSTALL_DIR"
-install -m 0755 "$tmp/pi" "$INSTALL_DIR/pi"
-echo "pi $tag installed to $INSTALL_DIR/pi"
+install -m 0755 "$tmp/pigo" "$INSTALL_DIR/pigo"
+echo "pigo $tag is ready at $INSTALL_DIR/pigo"
 case ":$PATH:" in
   *":$INSTALL_DIR:"*) ;;
-  *) echo "note: add $INSTALL_DIR to your PATH" ;;
+  *)
+    echo "note: add $INSTALL_DIR to your PATH:"
+    printf '  export PATH="%s:$PATH"\n' "$INSTALL_DIR"
+    ;;
 esac

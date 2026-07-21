@@ -13,9 +13,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/codingagent"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/codingagent"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 // AllowAll is an explicit opt-out authorizer accepting every message.

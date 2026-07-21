@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/internal/jsonschema"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/internal/jsonschema"
 )
 
 type loopResponseQueue struct {

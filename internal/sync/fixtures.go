@@ -97,7 +97,7 @@ func snapshotFiles(root string) (map[string]fixtureSnapshot, error) {
 }
 
 func prepareConformanceCopy(root, fixtures string, lock Lock) (string, func(), error) {
-	temporary, err := os.MkdirTemp("", "pi-go-sync-test-*")
+	temporary, err := os.MkdirTemp("", "pigo-sync-test-*")
 	if err != nil {
 		return "", nil, err
 	}

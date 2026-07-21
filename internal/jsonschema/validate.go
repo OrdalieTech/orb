@@ -14,7 +14,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/OrdalieTech/pi-go/internal/jsonwire"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
 )
 
 type ValidationIssue struct {

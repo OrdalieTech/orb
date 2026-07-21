@@ -406,7 +406,7 @@ async function writeCaseTree(root: string, files?: FileSpec[], dirs?: string[], 
 }
 
 async function withCaseRoot<T>(run: (root: string) => Promise<T>): Promise<T> {
-  const root = await mkdtemp(path.join(realpathSync(os.tmpdir()), "pi-go-wp360-"));
+  const root = await mkdtemp(path.join(realpathSync(os.tmpdir()), "pigo-wp360-"));
   try {
     return await run(root);
   } finally {

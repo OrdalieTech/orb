@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai/auth"
-	aimodels "github.com/OrdalieTech/pi-go/ai/models"
+	"github.com/OrdalieTech/pigo/ai/auth"
+	aimodels "github.com/OrdalieTech/pigo/ai/models"
 )
 
 const (

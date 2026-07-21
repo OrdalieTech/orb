@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/agent/harness"
-	"github.com/OrdalieTech/pi-go/ai"
-	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
-	"github.com/OrdalieTech/pi-go/codingagent/session"
-	"github.com/OrdalieTech/pi-go/codingagent/tools"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/agent/harness"
+	"github.com/OrdalieTech/pigo/ai"
+	aiauth "github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/pigo/codingagent/tools"
 )
 
 type Mode string

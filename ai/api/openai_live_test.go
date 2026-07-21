@@ -7,19 +7,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/internal/jsonschema"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/internal/jsonschema"
 )
 
 func TestOpenAIResponsesLiveToolCallRoundTrip(t *testing.T) {
-	if os.Getenv("PI_GO_LIVE_TESTS") != "1" {
-		t.Skip("set PI_GO_LIVE_TESTS=1 to run the OpenAI live smoke test")
+	if os.Getenv("PIGO_LIVE_TESTS") != "1" {
+		t.Skip("set PIGO_LIVE_TESTS=1 to run the OpenAI live smoke test")
 	}
 	if os.Getenv("OPENAI_API_KEY") == "" {
-		t.Fatal("PI_GO_LIVE_TESTS=1 requires OPENAI_API_KEY")
+		t.Fatal("PIGO_LIVE_TESTS=1 requires OPENAI_API_KEY")
 	}
 
-	modelID := os.Getenv("PI_GO_OPENAI_MODEL")
+	modelID := os.Getenv("PIGO_OPENAI_MODEL")
 	if modelID == "" {
 		modelID = "gpt-4o-mini"
 	}
@@ -38,7 +38,7 @@ func TestOpenAIResponsesLiveToolCallRoundTrip(t *testing.T) {
 		Description: "Return the supplied text unchanged.",
 		Parameters:  jsonschema.Schema(`{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}`),
 	}}
-	userText := "Call the echo tool exactly once with text pi-go-live. After receiving its result, answer with that result."
+	userText := "Call the echo tool exactly once with text pigo-live. After receiving its result, answer with that result."
 	messages := ai.MessageList{&ai.UserMessage{Content: ai.NewUserText(userText), Timestamp: time.Now().UnixMilli()}}
 	maxTokens := float64(256)
 	timeoutMS := int64(60_000)
@@ -69,14 +69,14 @@ func TestOpenAIResponsesLiveToolCallRoundTrip(t *testing.T) {
 	if call == nil {
 		t.Fatal("first response contained no tool call")
 	}
-	if call.Name != "echo" || call.Arguments["text"] != "pi-go-live" {
-		t.Fatalf("tool call = %q %#v, want echo with pi-go-live", call.Name, call.Arguments)
+	if call.Name != "echo" || call.Arguments["text"] != "pigo-live" {
+		t.Fatalf("tool call = %q %#v, want echo with pigo-live", call.Name, call.Arguments)
 	}
 
 	toolResult := &ai.ToolResultMessage{
 		ToolCallID: call.ID,
 		ToolName:   call.Name,
-		Content:    ai.ToolResultContent{&ai.TextContent{Text: "pi-go-live"}},
+		Content:    ai.ToolResultContent{&ai.TextContent{Text: "pigo-live"}},
 		Timestamp:  time.Now().UnixMilli(),
 	}
 	messages = append(messages, toolRequest, toolResult)

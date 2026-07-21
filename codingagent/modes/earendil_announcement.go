@@ -5,9 +5,9 @@ import (
 	"encoding/base64"
 	"sync"
 
-	"github.com/OrdalieTech/pi-go/tui"
+	"github.com/OrdalieTech/pigo/tui"
 
-	theme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
+	theme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
 )
 
 const (

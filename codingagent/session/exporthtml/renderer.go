@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 
-	"github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 // RenderedToolHTML is the custom-tool HTML envelope consumed by the embedded

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
-	"github.com/OrdalieTech/pi-go/tui"
+	aiauth "github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/pigo/tui"
 )
 
 type cancellingAuthHost struct {

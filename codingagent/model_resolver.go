@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/internal/localecompare"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/internal/localecompare"
 )
 
 const maxGlobBraceExpansions = 4096

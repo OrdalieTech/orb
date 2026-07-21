@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/OrdalieTech/pi-go/tui"
+	"github.com/OrdalieTech/pigo/tui"
 )
 
 type StartupChoice struct {

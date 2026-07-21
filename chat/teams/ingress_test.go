@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/chat"
+	"github.com/OrdalieTech/pigo/chat"
 )
 
 func TestIngressNormalizesPersonalMessage(t *testing.T) {

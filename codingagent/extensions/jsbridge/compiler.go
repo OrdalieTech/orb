@@ -191,9 +191,9 @@ func formatBuildError(messages []api.Message) error {
 func clarifyBuildMessage(text string) string {
 	switch {
 	case strings.Contains(text, `No loader is configured for ".node" files`):
-		return text + " (native Node addons are not supported by the pi-go extension runtime)"
+		return text + " (native Node addons are not supported by the pigo extension runtime)"
 	case strings.Contains(text, `No loader is configured for ".wasm" files`):
-		return text + " (WebAssembly modules are not supported by the pi-go extension runtime)"
+		return text + " (WebAssembly modules are not supported by the pigo extension runtime)"
 	default:
 		return text
 	}

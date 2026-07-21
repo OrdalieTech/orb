@@ -7,19 +7,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/internal/jsonschema"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/internal/jsonschema"
 )
 
 func TestBedrockConverseStreamLiveToolCallRoundTrip(t *testing.T) {
-	if os.Getenv("PI_GO_LIVE_TESTS") != "1" {
-		t.Skip("set PI_GO_LIVE_TESTS=1 to run the Amazon Bedrock live smoke test")
+	if os.Getenv("PIGO_LIVE_TESTS") != "1" {
+		t.Skip("set PIGO_LIVE_TESTS=1 to run the Amazon Bedrock live smoke test")
 	}
 	if !hasLiveBedrockCredentials() {
-		t.Fatal("PI_GO_LIVE_TESTS=1 requires a Bedrock bearer token, AWS profile, IAM keys, ECS task role, or web identity")
+		t.Fatal("PIGO_LIVE_TESTS=1 requires a Bedrock bearer token, AWS profile, IAM keys, ECS task role, or web identity")
 	}
 
-	modelID := os.Getenv("PI_GO_BEDROCK_MODEL")
+	modelID := os.Getenv("PIGO_BEDROCK_MODEL")
 	if modelID == "" {
 		modelID = "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
 	}
@@ -34,13 +34,13 @@ func TestBedrockConverseStreamLiveToolCallRoundTrip(t *testing.T) {
 		Parameters:  jsonschema.Schema(`{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}`),
 	}}
 	messages := ai.MessageList{&ai.UserMessage{
-		Content:   ai.NewUserText("Call the echo tool exactly once with text pi-go-live, then wait for its result."),
+		Content:   ai.NewUserText("Call the echo tool exactly once with text pigo-live, then wait for its result."),
 		Timestamp: time.Now().UnixMilli(),
 	}}
 	maxTokens := float64(256)
 	timeoutMS := int64(60_000)
 	required := &BedrockToolChoice{Type: "tool", Name: "echo"}
-	region := os.Getenv("PI_GO_BEDROCK_REGION")
+	region := os.Getenv("PIGO_BEDROCK_REGION")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -64,14 +64,14 @@ func TestBedrockConverseStreamLiveToolCallRoundTrip(t *testing.T) {
 			break
 		}
 	}
-	if call == nil || call.Name != "echo" || call.Arguments["text"] != "pi-go-live" {
-		t.Fatalf("tool call = %#v, want echo with pi-go-live", call)
+	if call == nil || call.Name != "echo" || call.Arguments["text"] != "pigo-live" {
+		t.Fatalf("tool call = %#v, want echo with pigo-live", call)
 	}
 
 	messages = append(messages, toolRequest, &ai.ToolResultMessage{
 		ToolCallID: call.ID,
 		ToolName:   call.Name,
-		Content:    ai.ToolResultContent{&ai.TextContent{Text: "pi-go-live"}},
+		Content:    ai.ToolResultContent{&ai.TextContent{Text: "pigo-live"}},
 		Timestamp:  time.Now().UnixMilli(),
 	})
 	second, err := StreamBedrockConverseWithOptions(ctx, model, ai.Context{Messages: messages, Tools: &tools}, &BedrockConverseStreamOptions{

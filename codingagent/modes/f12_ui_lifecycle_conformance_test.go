@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
-	theme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
-	"github.com/OrdalieTech/pi-go/tui"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	theme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
+	"github.com/OrdalieTech/pigo/tui"
 )
 
 type f12UILifecycleFixture struct {

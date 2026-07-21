@@ -3,8 +3,8 @@ package truncate_test
 import (
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/internal/jsonwire"
-	"github.com/OrdalieTech/pi-go/internal/truncate"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
+	"github.com/OrdalieTech/pigo/internal/truncate"
 )
 
 func TestTruncateHeadDistinguishesOmittedAndZeroLimits(t *testing.T) {

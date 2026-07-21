@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/OrdalieTech/pi-go/internal/jsonwire"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
 )
 
 // StringifyStreamingJSON parses an incomplete value and serializes the

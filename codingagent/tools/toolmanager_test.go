@@ -238,8 +238,8 @@ func TestToolManagerFailsClosedWithoutChecksum(t *testing.T) {
 }
 
 func TestToolManagerLiveDownload(t *testing.T) {
-	if os.Getenv("PI_GO_LIVE_TESTS") != "1" {
-		t.Skip("set PI_GO_LIVE_TESTS=1 to download a real managed tool")
+	if os.Getenv("PIGO_LIVE_TESTS") != "1" {
+		t.Skip("set PIGO_LIVE_TESTS=1 to download a real managed tool")
 	}
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		t.Skip("managed downloads target linux and darwin")

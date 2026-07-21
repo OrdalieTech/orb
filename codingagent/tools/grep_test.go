@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/internal/truncate"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/internal/truncate"
 )
 
 func TestGrepIgnoresMalformedRGRecordsAndContinues(t *testing.T) {

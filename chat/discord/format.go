@@ -3,7 +3,7 @@ package discord
 import (
 	"unicode/utf8"
 
-	"github.com/OrdalieTech/pi-go/chat/internal/runechunk"
+	"github.com/OrdalieTech/pigo/chat/internal/runechunk"
 )
 
 const messageLimit = 2000

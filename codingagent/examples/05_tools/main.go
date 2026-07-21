@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/ai/providers/faux"
-	"github.com/OrdalieTech/pi-go/codingagent"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai/providers/faux"
+	"github.com/OrdalieTech/pigo/codingagent"
 )
 
 func main() {

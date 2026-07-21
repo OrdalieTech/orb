@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/codingagent/session"
-	"github.com/OrdalieTech/pi-go/codingagent/session/exporthtml"
-	"github.com/OrdalieTech/pi-go/conformance/runner"
+	"github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/pigo/codingagent/session/exporthtml"
+	"github.com/OrdalieTech/pigo/conformance/runner"
 )
 
 type f6WP320Fixture struct {

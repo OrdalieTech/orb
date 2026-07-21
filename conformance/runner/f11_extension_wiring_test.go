@@ -5,14 +5,14 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions/examples/permissiongate"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions/examples/pirate"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions/examples/statusline"
-	"github.com/OrdalieTech/pi-go/conformance/runner"
-	"github.com/OrdalieTech/pi-go/internal/jsonschema"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/codingagent/extensions/examples/permissiongate"
+	"github.com/OrdalieTech/pigo/codingagent/extensions/examples/pirate"
+	"github.com/OrdalieTech/pigo/codingagent/extensions/examples/statusline"
+	"github.com/OrdalieTech/pigo/conformance/runner"
+	"github.com/OrdalieTech/pigo/internal/jsonschema"
 )
 
 func TestF11ExtensionWiringMatchesUpstream(t *testing.T) {

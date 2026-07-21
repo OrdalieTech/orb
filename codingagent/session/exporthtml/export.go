@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	modetheme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
-	"github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	modetheme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
+	"github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 //go:embed assets/template.html

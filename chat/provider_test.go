@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/ai/providers/faux"
-	"github.com/OrdalieTech/pi-go/codingagent"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/ai/providers/faux"
+	"github.com/OrdalieTech/pigo/codingagent"
 )
 
 func newTestLocalProvider(t testing.TB, opts ...LocalProviderOption) (*LocalProvider, string) {

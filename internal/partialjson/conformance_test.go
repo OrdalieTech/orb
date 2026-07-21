@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/conformance/runner"
+	"github.com/OrdalieTech/pigo/conformance/runner"
 )
 
 type conformanceFixture struct {

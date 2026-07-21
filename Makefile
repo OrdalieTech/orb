@@ -21,7 +21,7 @@ lint: $(GOLANGCI_LINT)
 	$(LINT_ENV) $(GOLANGCI_LINT) run
 
 nightly-live:
-	$(GO_ENV) CGO_ENABLED=0 PI_GO_NIGHTLY_LIVE=1 go test -v -count=1 -timeout=20m ./codingagent -run '^TestNightlyLiveSuite$$'
+	$(GO_ENV) CGO_ENABLED=0 PIGO_NIGHTLY_LIVE=1 go test -v -count=1 -timeout=20m ./codingagent -run '^TestNightlyLiveSuite$$'
 
 $(GOLANGCI_LINT):
 	mkdir -p $(dir $@)
@@ -76,16 +76,16 @@ fixtures-check: ensure-upstream-fixture-tools product-assets-check
 		cd .upstream && node --import tsx ../conformance/extract/generate.ts "$$fixture_tmp" $(UPSTREAM_COMMIT); \
 		cd ..; \
 		diff -ru conformance/fixtures "$$fixture_tmp"
-	@PI_GO_F6_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./conformance/runner -run TestF6SessionWriteAndProjectionMatchUpstream
-	@PI_GO_AUTH_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./codingagent/config -run TestAuthStorageConformance
+	@PIGO_F6_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./conformance/runner -run TestF6SessionWriteAndProjectionMatchUpstream
+	@PIGO_AUTH_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./codingagent/config -run TestAuthStorageConformance
 
 upstream-rpc-tests: ensure-upstream-fixture-tools
 	@mkdir -p .tools/bin
-	@$(GO_ENV) CGO_ENABLED=0 go build -o .tools/bin/pi-go-rpc-test ./cmd/pi
-	@cd .upstream && node --import tsx ../conformance/extract/run-upstream-rpc-tests.ts ../.tools/bin/pi-go-rpc-test
+	@$(GO_ENV) CGO_ENABLED=0 go build -o .tools/bin/pigo-rpc-test ./cmd/pigo
+	@cd .upstream && node --import tsx ../conformance/extract/run-upstream-rpc-tests.ts ../.tools/bin/pigo-rpc-test
 
 sync: ensure-upstream-fixture-tools
-	$(GO_ENV) CGO_ENABLED=0 go run ./internal/sync/cmd/pisync --dry-run $(SYNC_ARGS)
+	$(GO_ENV) CGO_ENABLED=0 go run ./internal/sync/cmd/pigosync --dry-run $(SYNC_ARGS)
 
 sync-bump: ensure-upstream-fixture-tools
-	$(GO_ENV) CGO_ENABLED=0 go run ./internal/sync/cmd/pisync --bump $(SYNC_ARGS)
+	$(GO_ENV) CGO_ENABLED=0 go run ./internal/sync/cmd/pigosync --bump $(SYNC_ARGS)

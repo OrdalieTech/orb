@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/internal/uuidv7"
+	"github.com/OrdalieTech/pigo/internal/uuidv7"
 )
 
 // Public model helpers mirroring packages/ai/src/models.ts exports.

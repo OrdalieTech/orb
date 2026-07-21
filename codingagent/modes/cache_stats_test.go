@@ -5,12 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/codingagent"
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
-	"github.com/OrdalieTech/pi-go/tui"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/codingagent"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/pigo/tui"
 )
 
 // Ports of upstream test/cache-stats.test.ts. The price source is a model list

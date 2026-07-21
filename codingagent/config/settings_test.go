@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 func TestSettingsLoadMigrateMergeAndPreserveUnknown(t *testing.T) {

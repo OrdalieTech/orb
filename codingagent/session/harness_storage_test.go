@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/agent/harness"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pigo/agent/harness"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 func TestHarnessStorageBecomesAByteExactSessionManager(t *testing.T) {

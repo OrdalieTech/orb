@@ -7,17 +7,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/ai"
-	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
-	"github.com/OrdalieTech/pi-go/codingagent"
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai"
+	aiauth "github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/pigo/codingagent"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 // recordingSessionHost captures the TUI callbacks so the test can drive the
-// replacement flow the way cmd/pi's interactive host does: teardown, rebind
+// replacement flow the way cmd/pigo's interactive host does: teardown, rebind
 // (render + subscribe), then deferred session_start.
 type recordingSessionHost struct {
 	session          *codingagent.SessionRuntime
@@ -103,11 +103,11 @@ func newSessionStartRuntime(t *testing.T, settingsJSON map[string]any, registry 
 }
 
 // Port of upstream regression 5943-session-start-notify.test.ts for the
-// surfaces pi-go has: a replacement renders its restored session state and is
+// surfaces pigo has: a replacement renders its restored session state and is
 // subscribed before deferred session_start handlers notify or send messages,
 // and hide-thinking is refreshed from settings before the chat rebuild.
-// (Upstream's loaded-resources container has no pi-go equivalent; the host
-// ordering itself is pinned by cmd/pi interactive_host tests.)
+// (Upstream's loaded-resources container has no pigo equivalent; the host
+// ordering itself is pinned by cmd/pigo interactive_host tests.)
 func TestReplacementRendersAndSubscribesBeforeSessionStartHandlers(t *testing.T) {
 	host := &recordingSessionHost{}
 	initial := newSessionStartRuntime(t, nil, nil, []any{

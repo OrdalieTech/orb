@@ -18,9 +18,9 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/internal/truncate"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/internal/truncate"
 )
 
 type bashOperationsFunc func(context.Context, string, string, BashExecOptions) (BashExecResult, error)
@@ -48,9 +48,9 @@ func TestBashToolSchemaBytesMatchUpstreamTypeBox(t *testing.T) {
 }
 
 func TestBashToolRunsLocalShellAndCommandPrefix(t *testing.T) {
-	tool := NewBashTool(t.TempDir(), &BashToolOptions{CommandPrefix: "export PI_GO_BASH_TEST=prefix"})
+	tool := NewBashTool(t.TempDir(), &BashToolOptions{CommandPrefix: "export PIGO_BASH_TEST=prefix"})
 	result, err := tool.Execute(context.Background(), "call", map[string]any{
-		"command": "printf '%s' \"$PI_GO_BASH_TEST\"",
+		"command": "printf '%s' \"$PIGO_BASH_TEST\"",
 	}, nil)
 	if err != nil {
 		t.Fatal(err)

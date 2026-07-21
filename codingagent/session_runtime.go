@@ -10,14 +10,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/agent/harness"
-	"github.com/OrdalieTech/pi-go/ai"
-	aiapi "github.com/OrdalieTech/pi-go/ai/api"
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
-	"github.com/OrdalieTech/pi-go/internal/jsonwire"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/agent/harness"
+	"github.com/OrdalieTech/pigo/ai"
+	aiapi "github.com/OrdalieTech/pigo/ai/api"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
 )
 
 type SessionRuntimeConfig struct {

@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/OrdalieTech/pi-go/internal/jsonwire"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
 )
 
 // Port of packages/coding-agent/src/core/trust-manager.ts.
@@ -305,6 +305,6 @@ func FormatProjectTrustPrompt(cwd string) string {
 		"Trust project folder?",
 		cwd,
 		"",
-		fmt.Sprintf("This allows pi to load %s settings and resources, install missing project packages, and execute project extensions.", ConfigDirName),
+		fmt.Sprintf("This allows pigo to load %s settings and resources, install missing project packages, and execute project extensions.", ConfigDirName),
 	}, "\n")
 }

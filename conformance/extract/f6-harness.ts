@@ -597,7 +597,7 @@ async function generateEnvFixture(upstreamRoot: string, root: string): Promise<u
   const callbackError = await resultRecord(env.exec("printf boom", {
     onStdout: () => { throw new Error("callback boom"); },
   }), root);
-  const tempDir = get(await env.createTempDir("pi-go-harness-"));
+  const tempDir = get(await env.createTempDir("pigo-harness-"));
   const tempFile = get(await env.createTempFile({ prefix: "pre-", suffix: ".tmp" }));
   const cleanupPaths = [tempDir, path.dirname(tempFile)];
   try {
@@ -608,7 +608,7 @@ async function generateEnvFixture(upstreamRoot: string, root: string): Promise<u
     const emptyDirectoryRemove = await resultRecord(env.remove("empty-remove", { recursive: false, force: true }), root);
     const signaledExec = await resultRecord(env.exec("kill -9 $$"), root);
     get(await env.writeFile("abort/remove.txt", "remove me"));
-    const preAbortedTempDir = await (env as any).createTempDir("pi-go-aborted-", aborted.signal);
+    const preAbortedTempDir = await (env as any).createTempDir("pigo-aborted-", aborted.signal);
     const preAbortedTempFile = await (env as any).createTempFile(
       { prefix: "aborted-", suffix: ".tmp", abortSignal: aborted.signal },
     );
@@ -637,7 +637,7 @@ async function generateEnvFixture(upstreamRoot: string, root: string): Promise<u
       createTempDir: await mappedResultRecord(
         Promise.resolve(preAbortedTempDir),
         root,
-        (createdPath) => path.basename(createdPath).startsWith("pi-go-aborted-"),
+        (createdPath) => path.basename(createdPath).startsWith("pigo-aborted-"),
       ),
       createTempFile: await mappedResultRecord(
         Promise.resolve(preAbortedTempFile),
@@ -671,7 +671,7 @@ async function generateEnvFixture(upstreamRoot: string, root: string): Promise<u
       timedOutExec: await resultRecord(env.exec("sleep 1", { timeout: 0.01 }), root),
       callbackError,
       temp: {
-        dirPrefix: path.basename(tempDir).startsWith("pi-go-harness-"),
+        dirPrefix: path.basename(tempDir).startsWith("pigo-harness-"),
         filePrefix: path.basename(tempFile).startsWith("pre-"),
         fileSuffix: tempFile.endsWith(".tmp"),
         fileExists: tempFileExists,
@@ -684,7 +684,7 @@ async function generateEnvFixture(upstreamRoot: string, root: string): Promise<u
 }
 
 export async function generateF6Harness(upstreamRoot: string, outputRoot: string, upstreamCommit: string): Promise<void> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "pi-go-f6-harness-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "pigo-f6-harness-"));
   try {
     const sessionFixture = await generateSessionFixture(upstreamRoot, root);
     const observations = {

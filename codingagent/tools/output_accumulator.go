@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/OrdalieTech/pi-go/internal/truncate"
+	"github.com/OrdalieTech/pigo/internal/truncate"
 	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
 )

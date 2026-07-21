@@ -56,7 +56,7 @@ async function extractAuthMigrationFixture(temporaryRoot: string): Promise<unkno
 }
 
 export async function extractAuthStorageFixture(): Promise<unknown> {
-  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "pi-go-f2-auth-"));
+  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "pigo-f2-auth-"));
   const authPath = path.join(temporaryRoot, "auth.json");
   const previousAmbient = process.env.AUTH_FIXTURE_AMBIENT;
   process.env.AUTH_FIXTURE_AMBIENT = "ambient-key";

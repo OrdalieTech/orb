@@ -7,9 +7,9 @@ import (
 	"log"
 	"os"
 
-	"github.com/OrdalieTech/pi-go/ai/providers/faux"
-	"github.com/OrdalieTech/pi-go/codingagent"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pigo/ai/providers/faux"
+	"github.com/OrdalieTech/pigo/codingagent"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 func main() {

@@ -190,7 +190,7 @@ async function pathExists(filePath: string): Promise<boolean> {
 }
 
 async function buildWriteFixture(session: SessionModule) {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "pi-go-f6-"));
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "pigo-f6-"));
   try {
     const sessionDir = path.join(tempRoot, "sessions");
     await mkdir(sessionDir, { recursive: true });
@@ -259,7 +259,7 @@ async function buildWriteFixture(session: SessionModule) {
 }
 
 async function buildInvalidUTF8Fixture(session: SessionModule): Promise<InvalidUTF8Fixture> {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "pi-go-f6-invalid-utf8-"));
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "pigo-f6-invalid-utf8-"));
   try {
     const sessionPath = path.join(tempRoot, "session.jsonl");
     const input = Buffer.concat([
@@ -430,7 +430,7 @@ async function buildTreeFixture(session: SessionModule) {
   manager.createBranchedSession(alternate);
   const branched = normalizedTreeProjection(manager, "tree-branched", sourceLabelTimestamps);
 
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "pi-go-f6-branch-persistence-"));
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "pigo-f6-branch-persistence-"));
   try {
     return {
       before,
@@ -459,7 +459,7 @@ function normalizedError(error: unknown, tempRoot: string) {
 }
 
 async function buildForkFixture(session: SessionModule) {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "pi-go-f6-fork-"));
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "pigo-f6-fork-"));
   const OriginalDate = globalThis.Date;
   try {
     const sourcePath = path.join(tempRoot, "source.jsonl");
@@ -547,7 +547,7 @@ function sessionInfoProjection(info: Awaited<ReturnType<SessionModule["SessionMa
 }
 
 async function buildListFixture(session: SessionModule) {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "pi-go-f6-list-"));
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "pigo-f6-list-"));
   try {
     const flatDir = path.join(tempRoot, "flat");
     const projectA = path.join(tempRoot, "project-a");
@@ -627,7 +627,7 @@ function htmlStructure(html: string) {
 }
 
 async function buildExportFixture(upstreamRoot: string, exportModule: ExportModule) {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "pi-go-f6-export-"));
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "pigo-f6-export-"));
   try {
     const input =
       '{"type":"session","version":3,"id":"export-source","timestamp":"2025-01-01T00:00:00.000Z","cwd":"/fixture/project"}\n' +

@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/url"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/ai"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 // Session-affinity headers from upstream core/provider-attribution.ts. The

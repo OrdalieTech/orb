@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
 )
 
 // TestBridgeCallBudget guards the M4 criterion: VM bridge calls stay under

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 func TestGenerateUniqueIDReservesSessionIndex(t *testing.T) {

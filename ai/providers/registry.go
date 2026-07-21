@@ -3,8 +3,8 @@ package providers
 import (
 	"slices"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/ai/auth"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/ai/auth"
 )
 
 // The order matches builtinProviders() at the pinned upstream commit. Radius

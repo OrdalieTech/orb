@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 const (

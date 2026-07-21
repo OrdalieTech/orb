@@ -1,9 +1,9 @@
 package providers
 
 import (
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/ai/auth"
-	"github.com/OrdalieTech/pi-go/ai/auth/oauth"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/pigo/ai/auth/oauth"
 )
 
 var openAICodexProvider = Provider{

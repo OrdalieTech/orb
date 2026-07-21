@@ -5,10 +5,10 @@
 **Objective:** a building, linting, CI-green empty module ready for WPs.
 
 **Scope**
-- `go.mod` (`github.com/OrdalieTech/pi-go`, go ≥ 1.25), directory skeleton per ARCHITECTURE §1
+- `go.mod` (`github.com/OrdalieTech/pigo`, go ≥ 1.25), directory skeleton per ARCHITECTURE §1
   (empty packages with doc.go only where needed — no speculative code).
 - `LICENSE`: MIT, dual copyright (© 2025 Mario Zechner — upstream pi; © 2026 Ordalie — this port).
-- `README.md` stub: one paragraph — what pi-go is, provenance + credit to pi (pi.dev), status: under construction.
+- `README.md` stub: one paragraph — what pigo is, provenance + credit to pi (pi.dev), status: under construction.
 - `Makefile`: `build`, `test`, `lint`, `upstream` (clone `earendil-works/pi` at `UPSTREAM.lock` commit
   into `.upstream/`, gitignored), `sync` (placeholder until WP-610).
 - CI (GitHub Actions): matrix `{linux,darwin} × {amd64,arm64}` cross-build with `CGO_ENABLED=0`,

@@ -5,7 +5,7 @@ import (
 	"slices"
 	"unicode/utf16"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 const (

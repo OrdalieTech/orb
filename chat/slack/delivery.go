@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/chat"
+	"github.com/OrdalieTech/pigo/chat"
 )
 
 // NewDelivery implements [chat.Adapter]. The conversation ThreadID (thread_ts

@@ -16,7 +16,7 @@ them for *what to port*, ignore their sequencing.
 2. **Fixtures first, then port.** Open each sprint by landing its conformance surface so the sprint
    starts RED and is done when it is GREEN. Never the reverse order again.
 3. **Compare to TS pi, continuously.** Each sprint closes with `docs/compare/sprint-N.md`: the same
-   scripted scenarios through TS pi (`.upstream/`) and pi-go, every difference fixed or ledgered.
+   scripted scenarios through TS pi (`.upstream/`) and pigo, every difference fixed or ledgered.
 4. **Close = trim + criteria.** Sprint close: trim checklist (RELEASE-CRITERIA), milestone boxes
    checked, comparison report committed. No separate trim WPs.
 5. Hard rules from AGENTS.md unchanged: byte-compat wire formats, dependency table, never weaken a
@@ -33,7 +33,7 @@ docs. From then on: single branch.
 
 ## Sprint 1 — Core headless correct (closes M2)
 
-**Definition of done:** upstream's RPC test suite passes against `pi-go --mode rpc`; F7/F8 green;
+**Definition of done:** upstream's RPC test suite passes against `pigo --mode rpc`; F7/F8 green;
 F2 green for the LANDED shapes (openai-responses/completions, anthropic, google, vertex, mistral,
 azure, bedrock, pi-messages); Anthropic OAuth verified with `auth.json` cross-compat green; skills
 and prompt templates conformant; extension-API seams wired internally; SDK examples run; harness

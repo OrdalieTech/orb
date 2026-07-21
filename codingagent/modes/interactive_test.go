@@ -11,16 +11,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/ai"
-	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
-	"github.com/OrdalieTech/pi-go/codingagent"
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
-	"github.com/OrdalieTech/pi-go/tui"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai"
+	aiauth "github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/pigo/codingagent"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/pigo/tui"
 
-	theme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
+	theme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
 )
 
 func initTestTheme(t *testing.T) {
@@ -820,7 +820,7 @@ func TestGitBranchReportsDetachedHead(t *testing.T) {
 
 // Ports the reftable intents of upstream footer-data-provider.test.ts: in a
 // reftable repository .git/HEAD holds the "refs/heads/.invalid" sentinel and
-// only git itself can resolve the branch. pi-go always delegates to git, so
+// only git itself can resolve the branch. pigo always delegates to git, so
 // the branch and the detached state must come back correct regardless.
 func TestGitBranchReftableRepo(t *testing.T) {
 	dir := t.TempDir()

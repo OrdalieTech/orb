@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/conformance/runner"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/conformance/runner"
 )
 
 func TestAgentEventsMarshalInUpstreamMemberOrder(t *testing.T) {

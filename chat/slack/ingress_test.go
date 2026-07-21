@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/chat"
+	"github.com/OrdalieTech/pigo/chat"
 )
 
 // fixedNow pins the adapter clock so signature timestamps are deterministic.

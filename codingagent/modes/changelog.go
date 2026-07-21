@@ -4,7 +4,7 @@ import (
 	_ "embed"
 	"sync"
 
-	"github.com/OrdalieTech/pi-go/codingagent"
+	"github.com/OrdalieTech/pigo/codingagent"
 )
 
 //go:embed assets/CHANGELOG.md

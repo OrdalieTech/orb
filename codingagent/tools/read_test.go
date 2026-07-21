@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/internal/truncate"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/internal/truncate"
 )
 
 func TestReadToolReadsTextAndPagesByLine(t *testing.T) {

@@ -1,6 +1,6 @@
 # Chat gateway
 
-The `chat` package (D27) turns the pi-go SDK into a multi-user messaging agent: a synchronous,
+The `chat` package (D27) turns the pigo SDK into a multi-user messaging agent: a synchronous,
 at-least-once turn processor around `codingagent.AgentSession` with normalized platform messages,
 a `SessionProvider` ownership seam, and platform adapters in `chat/telegram`, `chat/whatsapp`,
 and — since wave 2 (D28) — `chat/slack`, `chat/teams`, `chat/discord`, `chat/messenger`, and

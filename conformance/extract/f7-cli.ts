@@ -54,7 +54,7 @@ async function runCLI(
   configuredModel: boolean,
   baseURL: string,
 ): Promise<ProcessResult> {
-  const root = await mkdtemp(path.join(tmpdir(), "pi-go-f7-cli-"));
+  const root = await mkdtemp(path.join(tmpdir(), "pigo-f7-cli-"));
   const agentDir = path.join(root, "agent");
   const projectDir = path.join(root, "project");
   const homeDir = path.join(root, "home");

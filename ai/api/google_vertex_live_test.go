@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/internal/jsonschema"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/internal/jsonschema"
 )
 
 func TestGoogleVertexLiveToolCallRoundTrip(t *testing.T) {
-	if os.Getenv("PI_GO_LIVE_TESTS") != "1" {
-		t.Skip("set PI_GO_LIVE_TESTS=1 to run the Google Vertex live smoke test")
+	if os.Getenv("PIGO_LIVE_TESTS") != "1" {
+		t.Skip("set PIGO_LIVE_TESTS=1 to run the Google Vertex live smoke test")
 	}
 	apiKey := os.Getenv("GOOGLE_CLOUD_API_KEY")
 	project := os.Getenv("GOOGLE_CLOUD_PROJECT")
@@ -22,9 +22,9 @@ func TestGoogleVertexLiveToolCallRoundTrip(t *testing.T) {
 	}
 	location := os.Getenv("GOOGLE_CLOUD_LOCATION")
 	if apiKey == "" && (project == "" || location == "") {
-		t.Fatal("PI_GO_LIVE_TESTS=1 requires GOOGLE_CLOUD_API_KEY or ADC with GOOGLE_CLOUD_PROJECT/GCLOUD_PROJECT and GOOGLE_CLOUD_LOCATION")
+		t.Fatal("PIGO_LIVE_TESTS=1 requires GOOGLE_CLOUD_API_KEY or ADC with GOOGLE_CLOUD_PROJECT/GCLOUD_PROJECT and GOOGLE_CLOUD_LOCATION")
 	}
-	modelID := os.Getenv("PI_GO_GOOGLE_VERTEX_MODEL")
+	modelID := os.Getenv("PIGO_GOOGLE_VERTEX_MODEL")
 	if modelID == "" {
 		modelID = "gemini-2.5-flash"
 	}
@@ -37,7 +37,7 @@ func TestGoogleVertexLiveToolCallRoundTrip(t *testing.T) {
 		Parameters: jsonschema.Schema(`{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}`),
 	}}
 	messages := ai.MessageList{&ai.UserMessage{
-		Content:   ai.NewUserText("Call the echo tool exactly once with text pi-go-live, then wait for its result."),
+		Content:   ai.NewUserText("Call the echo tool exactly once with text pigo-live, then wait for its result."),
 		Timestamp: time.Now().UnixMilli(),
 	}}
 	maxTokens := float64(256)
@@ -76,12 +76,12 @@ func TestGoogleVertexLiveToolCallRoundTrip(t *testing.T) {
 			break
 		}
 	}
-	if call == nil || call.Name != "echo" || call.Arguments["text"] != "pi-go-live" {
-		t.Fatalf("tool call = %#v, want echo with pi-go-live", call)
+	if call == nil || call.Name != "echo" || call.Arguments["text"] != "pigo-live" {
+		t.Fatalf("tool call = %#v, want echo with pigo-live", call)
 	}
 	messages = append(messages, toolRequest, &ai.ToolResultMessage{
 		ToolCallID: call.ID, ToolName: call.Name,
-		Content:   ai.ToolResultContent{&ai.TextContent{Text: "pi-go-live"}},
+		Content:   ai.ToolResultContent{&ai.TextContent{Text: "pigo-live"}},
 		Timestamp: time.Now().UnixMilli(),
 	})
 	secondOptions := vertexOptions()

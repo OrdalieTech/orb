@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/OrdalieTech/pi-go/internal/cjksegment"
+	"github.com/OrdalieTech/pigo/internal/cjksegment"
 	"github.com/rivo/uniseg"
 )
 

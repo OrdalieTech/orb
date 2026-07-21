@@ -49,7 +49,7 @@ var BuiltinSlashCommands = []BuiltinSlashCommand{
 	{Name: "compact", Description: "Manually compact the session context"},
 	{Name: "resume", Description: "Resume a different session"},
 	{Name: "reload", Description: "Reload keybindings, extensions, skills, prompts, themes, and context files"},
-	{Name: "quit", Description: "Quit pi"},
+	{Name: "quit", Description: "Quit pigo"},
 }
 
 type InputAction string

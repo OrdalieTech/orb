@@ -11,10 +11,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
-	modetheme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	modetheme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 func writeSkillFixture(t *testing.T, directory, name, description string) {

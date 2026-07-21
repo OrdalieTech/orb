@@ -1,6 +1,6 @@
 # Phase 3 — Harness & headless parity
 
-Lane B: everything that makes pi-go a complete headless product and embeddable SDK.
+Lane B: everything that makes pigo a complete headless product and embeddable SDK.
 
 ## WP-310 — Compaction, branch summaries, auto-retry, queue
 
@@ -41,7 +41,7 @@ extras), stdin prompt handling, clean shutdown semantics.
 **Fixtures:** **F3-session** traces (json-mode event streams for scripted faux runs) — byte-equal
 lines modulo documented nondeterminism (timestamps, ids — canonicalized by the differ).
 
-**Acceptance:** trace fixtures green; `pi --mode json` drives a faux session identically to upstream.
+**Acceptance:** trace fixtures green; `pigo --mode json` drives a faux session identically to upstream.
 
 ## WP-331 — RPC mode
 
@@ -53,10 +53,10 @@ follow-up, abort, session mgmt, get_commands, state queries), extension-UI proto
 (dialog/notify round-trips surface as RPC exchanges), error frames. This is the embedding surface
 for non-Go hosts and the conformance crown jewel.
 
-**Fixtures:** **F7** — recorded upstream RPC transcripts replayed against `pi-go --mode rpc`;
+**Fixtures:** **F7** — recorded upstream RPC transcripts replayed against `pigo --mode rpc`;
 PLUS upstream's own RPC test files executed unmodified against the Go binary via the WP-002 adapter.
 
-**Acceptance:** F7 green; upstream RPC test suite passes against pi-go (exclusions documented
+**Acceptance:** F7 green; upstream RPC test suite passes against pigo (exclusions documented
 one-by-one with reasons).
 
 ## WP-340 — Skills, prompt templates, slash resolution
@@ -123,7 +123,7 @@ session; disabling removes them; core binary without config performs zero MCP wo
 **Upstream refs:** `docs/packages.md`, `src/core/` package manager + trust flow
 (`project_trust` hook, `trust.json`), settings `packages[]`.
 
-**Scope:** `pi install/remove/update/list/config` for `npm:` (registry tarball fetch + extract,
+**Scope:** `pigo install/remove/update/list/config` for `npm:` (registry tarball fetch + extract,
 integrity check, no node) and `git:` sources into `~/.pi/agent/npm/` + project `.pi/npm/`;
 resource contribution (extensions/skills/prompts/themes) into discovery; project trust flow +
 `defaultProjectTrust` + trust-gated project resources.

@@ -275,7 +275,7 @@ export async function generateF9(upstreamRoot: string, outputRoot: string, upstr
   }
 
   for (const fixtureCase of discoveryCases) {
-    const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "pi-go-f9-"));
+    const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "pigo-f9-"));
     try {
       await writeTree(fixtureRoot, fixtureCase.files);
       const cwd = path.join(fixtureRoot, fixtureCase.cwd);

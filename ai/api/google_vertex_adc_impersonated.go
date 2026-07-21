@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 const googleVertexDefaultUniverseDomain = "googleapis.com"

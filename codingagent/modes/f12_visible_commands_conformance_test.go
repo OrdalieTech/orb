@@ -17,16 +17,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
-	"github.com/OrdalieTech/pi-go/codingagent"
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
-	"github.com/OrdalieTech/pi-go/internal/jsonwire"
-	"github.com/OrdalieTech/pi-go/tui"
+	"github.com/OrdalieTech/pigo/agent"
+	aiauth "github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/pigo/codingagent"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
+	"github.com/OrdalieTech/pigo/tui"
 
-	theme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
+	theme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
 )
 
 type f12VisibleFixture struct {

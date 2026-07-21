@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/OrdalieTech/pi-go/codingagent/config"
+	"github.com/OrdalieTech/pigo/codingagent/config"
 )
 
 var defaultSystemPromptTools = []string{"read", "bash", "edit", "write"}

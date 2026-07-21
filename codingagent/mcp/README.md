@@ -37,7 +37,7 @@ server's local name and each value selects exactly one transport:
 `command` selects stdio and accepts `args`, `env`, and `cwd`; `url` selects streamable HTTP and
 accepts `headers` and `maxRetries`. Omit `maxRetries` for the SDK default of 5 reconnect attempts;
 an explicit `0` (or any negative value) disables retries so a dropped connection fails fast. `cwd`
-is resolved from pi-go's working directory. The process inherits the current environment before
+is resolved from pigo's working directory. The process inherits the current environment before
 applying `env` overrides. `timeoutMs` defaults to 10 seconds and bounds connect, initialization,
 and initial tool discovery. `"disabled": true` — the convention used by Cline, Roo, and
 Claude Desktop configs — is honored exactly like `"enabled": false`. Other unknown fields are
@@ -64,7 +64,7 @@ side effects may already have run.
 
 Remote names are exposed as stable, provider-safe names of the form
 `mcp__<server>__<tool>_<hash>`. The hash prevents collisions after sanitizing or truncating long
-names. JSON input schemas pass through unchanged. Text and image results map to pi-go's native tool
+names. JSON input schemas pass through unchanged. Text and image results map to pigo's native tool
 result blocks, structured content and MCP metadata remain in `Details`, and MCP progress
 notifications become normal tool execution updates. MCP tool errors are returned through the
 agent's ordinary error path so providers receive an error tool result.

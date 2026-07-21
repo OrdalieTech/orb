@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
-	conformance "github.com/OrdalieTech/pi-go/conformance/runner"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	conformance "github.com/OrdalieTech/pigo/conformance/runner"
 )
 
 func TestBridgeLoadsToolAndCommand(t *testing.T) {

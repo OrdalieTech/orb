@@ -1,6 +1,6 @@
 package modes
 
-import "github.com/OrdalieTech/pi-go/tui"
+import "github.com/OrdalieTech/pigo/tui"
 
 // AppKeybindingDefinitions are the app-level keybindings that extend TUI defaults.
 var AppKeybindingDefinitions = []tui.KeybindingDefinition{

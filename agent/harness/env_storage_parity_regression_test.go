@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	harness "github.com/OrdalieTech/pi-go/agent/harness"
+	harness "github.com/OrdalieTech/pigo/agent/harness"
 )
 
 func TestNodeExecutionEnvChecksRelativeCustomShellFromProcessCWDBeforeSpawn(t *testing.T) {

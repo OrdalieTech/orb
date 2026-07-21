@@ -1,13 +1,13 @@
 # Providers
 
-pi-go authenticates the same way as upstream pi and shares its on-disk layout: OAuth tokens and
+pigo authenticates the same way as upstream pi and shares its on-disk layout: OAuth tokens and
 API keys live in `~/.pi/agent/auth.json` (override the agent directory with `PI_CODING_AGENT_DIR`).
-A session written by pi-go opens in TS pi and vice versa, so any provider you can reach from
+A session written by pigo opens in TS pi and vice versa, so any provider you can reach from
 upstream pi you can reach here.
 
 ## Subscriptions (OAuth)
 
-Run `pi login` (headless) or `/login` in the interactive TUI, then pick a provider. OAuth-capable
+Run `pigo login` (headless) or `/login` in the interactive TUI, then pick a provider. OAuth-capable
 providers:
 
 - `anthropic` — Claude Pro/Max
@@ -15,7 +15,7 @@ providers:
 - `github-copilot` — GitHub Copilot (press Enter for github.com, or enter an Enterprise domain)
 - `xai` — Grok / X subscription
 
-Tokens auto-refresh when they expire. Clear them with `pi logout` / `/logout`.
+Tokens auto-refresh when they expire. Clear them with `pigo logout` / `/logout`.
 
 ## API keys (environment variables)
 
@@ -48,7 +48,7 @@ Keys and OAuth tokens can also be written directly to `~/.pi/agent/auth.json`:
 ```
 
 OAuth entries carry `{ "type": "oauth", "access": "...", "refresh": "...", "expires": <ms> }` and
-are managed by `pi login`.
+are managed by `pigo login`.
 
 ## Custom providers
 
@@ -60,4 +60,4 @@ their own `baseUrl`, headers, and auth resolver.
 
 For a selected model, credentials resolve as: explicit `--api-key` → `auth.json` (API key or
 OAuth) → environment variable. The first that yields a usable credential wins; if none do,
-pi reports "No API key found" and points you back here.
+pigo reports "No API key found" and points you back here.

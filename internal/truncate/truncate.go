@@ -6,7 +6,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/OrdalieTech/pi-go/internal/jsonwire"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
 )
 
 const (

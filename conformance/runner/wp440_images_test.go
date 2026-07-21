@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/codingagent/tools"
-	"github.com/OrdalieTech/pi-go/conformance/runner"
+	"github.com/OrdalieTech/pigo/codingagent/tools"
+	"github.com/OrdalieTech/pigo/conformance/runner"
 )
 
 type wp440Fixture struct {

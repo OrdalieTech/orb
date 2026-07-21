@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/chat"
-	"github.com/OrdalieTech/pi-go/chat/internal/graphhook"
+	"github.com/OrdalieTech/pigo/chat"
+	"github.com/OrdalieTech/pigo/chat/internal/graphhook"
 )
 
 const maxWebhookBody = 5 << 20

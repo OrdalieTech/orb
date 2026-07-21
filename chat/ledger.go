@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pigo/ai"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 // turnCustomType is the session custom-entry type of turn ledger markers.

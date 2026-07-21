@@ -283,7 +283,7 @@ export async function generateWP250(
 
     const docsPath = path.join(upstreamRoot, "packages/coding-agent/docs/models.md");
     const markdown = await readFile(docsPath, "utf8");
-    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "pi-go-wp250-"));
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "pigo-wp250-"));
     const docsCases: object[] = [];
     const validationCases: object[] = [];
     const compositionCases: object[] = [];

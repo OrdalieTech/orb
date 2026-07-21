@@ -1,5 +1,5 @@
 // Package teams implements the Microsoft Teams (Bot Framework) adapter for
-// the pi-go chat gateway, speaking the raw connector REST API with no SDK:
+// the pigo chat gateway, speaking the raw connector REST API with no SDK:
 // JWT-validated webhook ingress, typing plus final-only delivery,
 // markdown-subset formatting with UTF-16 chunking, and authenticated
 // attachment download. It plugs into the chat processor via [chat.Adapter].
@@ -25,7 +25,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/chat"
+	"github.com/OrdalieTech/pigo/chat"
 )
 
 // DefaultOpenIDMetadataURL is the Bot Framework OpenID metadata document

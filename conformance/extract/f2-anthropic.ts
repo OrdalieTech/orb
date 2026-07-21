@@ -753,7 +753,7 @@ async function runAnthropic(
 }
 
 async function extractAnthropicProvider(upstreamRoot: string): Promise<AnthropicProviderFixture> {
-  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "pi-go-f2-anthropic-provider-"));
+  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "pigo-f2-anthropic-provider-"));
   const packageRoot = path.join(temporaryRoot, "ai");
   try {
     await cp(path.join(upstreamRoot, "packages/ai"), packageRoot, { recursive: true });

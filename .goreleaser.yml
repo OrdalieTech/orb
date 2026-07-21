@@ -1,9 +1,9 @@
 version: 2
-project_name: pi
+project_name: pigo
 builds:
-  - id: pi
-    main: ./cmd/pi
-    binary: pi
+  - id: pigo
+    main: ./cmd/pigo
+    binary: pigo
     env:
       - CGO_ENABLED=0
     goos: [linux, darwin]
@@ -14,18 +14,18 @@ builds:
       - -s -w -funcalign=4 -X main.version={{.Version}}
 archives:
   - formats: [tar.gz]
-    name_template: "pi_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "pigo_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 brews:
-  - name: pi
+  - name: pigo
     repository:
       owner: OrdalieTech
       name: homebrew-tap
     skip_upload: true
-    homepage: https://github.com/OrdalieTech/pi-go
+    homepage: https://github.com/OrdalieTech/pigo
     description: Faithful, slim, pure-Go port of the pi coding agent
     license: MIT
-    install: bin.install "pi"
-    test: system "#{bin}/pi", "--version"
+    install: bin.install "pigo"
+    test: system "#{bin}/pigo", "--version"
 checksum:
   name_template: checksums.txt
 release:

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/chat"
+	"github.com/OrdalieTech/pigo/chat"
 )
 
 func deliveryKey(chatID string) chat.ConversationKey {

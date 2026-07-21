@@ -18,20 +18,20 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/agent/harness"
-	"github.com/OrdalieTech/pi-go/ai"
-	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
-	"github.com/OrdalieTech/pi-go/codingagent"
-	"github.com/OrdalieTech/pi-go/codingagent/clipboard"
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
-	"github.com/OrdalieTech/pi-go/codingagent/tools"
-	"github.com/OrdalieTech/pi-go/internal/localecompare"
-	"github.com/OrdalieTech/pi-go/tui"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/agent/harness"
+	"github.com/OrdalieTech/pigo/ai"
+	aiauth "github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/pigo/codingagent"
+	"github.com/OrdalieTech/pigo/codingagent/clipboard"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/pigo/codingagent/tools"
+	"github.com/OrdalieTech/pigo/internal/localecompare"
+	"github.com/OrdalieTech/pigo/tui"
 
-	theme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
+	theme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
 )
 
 // InteractiveModeOptions configures the interactive TUI mode.
@@ -2440,7 +2440,7 @@ func (mode *InteractiveMode) startAuthentication(provider InteractiveAuthProvide
 		if method == "" {
 			method = "Authentication"
 		}
-		mode.showStatusMessage(method + " is configured outside pi.")
+		mode.showStatusMessage(method + " is configured outside pigo.")
 		return
 	}
 	mode.runAuthentication(provider.ID, provider.AuthType, false)
@@ -2537,7 +2537,7 @@ func (mode *InteractiveMode) openExternalEditor() {
 	}
 	initial := mode.editor.GetText()
 	go func() {
-		file, err := os.CreateTemp("", "pi-editor-*.md")
+		file, err := os.CreateTemp("", "pigo-editor-*.md")
 		if err != nil {
 			mode.showError(err)
 			return
@@ -2561,7 +2561,7 @@ func (mode *InteractiveMode) openExternalEditor() {
 		if runtime.GOOS == "windows" {
 			process = exec.Command("cmd", "/C", command+" \""+path+"\"")
 		} else {
-			process = exec.Command("sh", "-c", command+` "$1"`, "pi-editor", path)
+			process = exec.Command("sh", "-c", command+` "$1"`, "pigo-editor", path)
 		}
 		process.Stdin, process.Stdout, process.Stderr = os.Stdin, os.Stdout, os.Stderr
 		runErr := process.Run()
@@ -2736,9 +2736,9 @@ func (mode *InteractiveMode) updateTerminalTitle() {
 			name = *sessionName
 		}
 	}
-	title := "pi - " + filepath.Base(cwd)
+	title := "pigo - " + filepath.Base(cwd)
 	if name != "" {
-		title = "pi - " + name + " - " + filepath.Base(cwd)
+		title = "pigo - " + name + " - " + filepath.Base(cwd)
 	}
 	mode.ui.Terminal().SetTitle(title)
 }
@@ -3431,7 +3431,7 @@ func formatResumeCommand(manager *sessionstore.SessionManager, outputTTY bool) s
 	if _, err := os.Stat(sessionFile); err != nil {
 		return ""
 	}
-	arguments := []string{"pi"}
+	arguments := []string{"pigo"}
 	if !manager.UsesDefaultSessionDir() {
 		arguments = append(arguments, "--session-dir", quoteResumeArgument(manager.GetSessionDir()))
 	}

@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/internal/jsonwire"
-	"github.com/OrdalieTech/pi-go/tui"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
+	"github.com/OrdalieTech/pigo/tui"
 
-	theme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
+	theme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
 )
 
 func (mode *InteractiveMode) handleDebugCommand() {
