@@ -747,10 +747,12 @@ func TestF12CustomOverlayEarlyDoneAndFailuresMatchUpstream(t *testing.T) {
 		_, ui := f12UILifecycleOverlayHarness()
 		component := &f12UILifecycleOverlayComponent{label: "throwing", panicOnDispose: true}
 		doneReady := make(chan extensions.CustomDone, 1)
+		handleReady := make(chan extensions.OverlayHandle, 1)
 		outcome := f12UILifecycleRunCustom(t.Context(), ui, func(_ extensions.UIHost, _ extensions.Theme, _ extensions.Keybindings, done extensions.CustomDone) (extensions.Component, error) {
 			doneReady <- done
 			return component, nil
-		}, &extensions.CustomOptions{Overlay: true})
+		}, &extensions.CustomOptions{Overlay: true, OnHandle: func(handle extensions.OverlayHandle) { handleReady <- handle }})
+		f12UILifecycleReceive(t, handleReady, "throwing overlay handle")
 		done := f12UILifecycleReceive(t, doneReady, "throwing overlay done callback")
 		done(fixture.CustomOverlay.DisposeFailure.Result)
 		result := f12UILifecycleReceive(t, outcome, "throwing overlay result")
