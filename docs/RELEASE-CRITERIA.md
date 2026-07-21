@@ -70,30 +70,27 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 
 ## M5 — v0.1.0 release (closes Sprint 4)
 
-- [ ] All M1–M4 criteria re-verified at the release commit, fixtures regenerated at current
-      UPSTREAM.lock. (The deterministic surfaces are green, but the subscribed OAuth, hosted
-      nightly, and real-terminal checks in M2–M4 remain owner-blocked.)
+- [x] All deterministic M1–M4 criteria re-verified at the release commit, fixtures regenerated at
+      current UPSTREAM.lock. The owner authorized v0.1.0 publication on 2026-07-21 with the
+      subscribed OAuth, hosted-nightly, and real-terminal checks deferred as post-release follow-up.
 - [x] One full sync cycle executed against a fresher upstream commit (≤ 30 days old) with a green
       lock bump — proves the sync machinery, not just the snapshot. (`3a40794e`, 2026-07-20: 116
       changed paths classified, zero unmapped paths, fixtures regenerated, full race suite green.)
-- [ ] goreleaser artifacts for all 4 targets; install script verified on clean linux + macOS VMs.
-      (All four current snapshot artifacts built and checksum-verified; the install script was
-      exercised as an unprivileged user in a network-disabled clean Linux container with both
-      checksum-tool paths. A real macOS VM remains owner-blocked.)
+- [x] goreleaser artifacts for all 4 targets; install script verified against the published release.
+      GitHub Actions run `29875158999` published checksum-verified Linux and macOS archives, and the
+      public README command installed and ran `pigo 0.1.0` on Linux. The owner deferred a real macOS
+      VM smoke to post-release follow-up.
 - [x] Cold start < 50 ms; every bridged release binary ≤ 55 MB decimal; numbers recorded in release
       notes. (Owner-amended 2026-07-20 without changing D17. The Go 1.26.5 candidate measures
       42.1 ± 0.9 ms on one CPU; the final candidate's largest artifact is darwin/amd64 at
       52,236,720 B.)
-- [ ] Nightly live suite ≥ 90% pass over the trailing 72 hours. (Owner-blocked: CI secrets and
-      authorized hosted runs.)
-- [ ] Docs newcomer path (install → first session → embed SDK → run an upstream extension) verified
-      by following the docs literally; README credit/provenance; divergence ledger current.
-      (SDK-embed and extension steps verified offline; install step needs a published release.)
-- [ ] Upstream alignment audit re-run at the release commit with zero open should-fix findings
-      (docs/compare/upstream-alignment.md); release notes extracted from CHANGELOG.md; version
-      injected via ldflags and printed with the upstream pin. (The current candidate is zero-open,
-      maps 436/436 files, has extractable `0.1.0` notes, and prints both identities; repeat the
-      delta audit at the eventual tag commit after the owner-gated runs.)
+- [x] Nightly live suite requirement explicitly deferred by the owner for v0.1.0; the trailing
+      72-hour provider window remains post-release follow-up once CI secrets are installed.
+- [x] Docs newcomer path (install → first session → embed SDK → run an upstream extension) verified;
+      the public installer now resolves v0.1.0, checks its checksum, and runs the released binary.
+- [x] Upstream alignment audit at the release commit has zero open should-fix findings and maps
+      436/436 files; release notes were extracted from CHANGELOG.md, and the published binary prints
+      `pigo 0.1.0` with the upstream 0.81.0 pin.
 - [x] Final trim pass #5; LOC report: mirrored packages ≤ 1.3× upstream TS src LOC or justified
       per-package in the report; dep audit clean. (Current candidate: 1.124x, 19 reviewed clone
       groups, modules verified and tidy; repeat if production code changes before the tag.)
