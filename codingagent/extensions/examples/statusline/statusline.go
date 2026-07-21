@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
 )
 
 func Extension(api extensions.API) error {

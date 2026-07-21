@@ -1,6 +1,6 @@
 # Phase 5 — JS extension bridge
 
-Runs upstream's TS extensions inside pi-go: sobek + embedded esbuild (D17), API-complete-subset
+Runs upstream's TS extensions inside pigo: sobek + embedded esbuild (D17), API-complete-subset
 fidelity. The Go ExtensionAPI (WP-350/351) is the target surface; the bridge is a *client* of it —
 no special powers. Threading rule (ARCHITECTURE §5): one goroutine per VM, message-passing only.
 

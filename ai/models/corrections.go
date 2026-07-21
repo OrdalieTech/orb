@@ -3,7 +3,7 @@ package models
 import (
 	"strings"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 // applyCorrection keeps source-data fixes separate from generated catalog data.

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/OrdalieTech/pi-go/agent"
+	"github.com/OrdalieTech/pigo/agent"
 )
 
 type ContextEntryTransform func([]SessionTreeEntry) []SessionTreeEntry

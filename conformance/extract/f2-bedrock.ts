@@ -440,7 +440,7 @@ async function runBedrockStream(
 }
 
 async function extractBedrockProvider(upstreamRoot: string): Promise<BedrockProviderFixture> {
-  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "pi-go-f2-bedrock-provider-"));
+  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "pigo-f2-bedrock-provider-"));
   const packageRoot = path.join(temporaryRoot, "ai");
   try {
     await cp(path.join(upstreamRoot, "packages/ai"), packageRoot, { recursive: true });

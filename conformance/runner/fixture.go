@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/internal/jsonwire"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
 )
 
 // Manifest identifies the upstream source and generator for a fixture family.

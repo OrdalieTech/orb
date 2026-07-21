@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/OrdalieTech/pi-go/internal/localecompare"
+	"github.com/OrdalieTech/pigo/internal/localecompare"
 )
 
 type AutocompleteItem struct {

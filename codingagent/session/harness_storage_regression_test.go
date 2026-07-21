@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/agent/harness"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pigo/agent/harness"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 func TestRehydratedHarnessBytesDoNotClaimDurablePersistence(t *testing.T) {

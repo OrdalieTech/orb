@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/chat"
-	"github.com/OrdalieTech/pi-go/chat/internal/wsclient"
+	"github.com/OrdalieTech/pigo/chat"
+	"github.com/OrdalieTech/pigo/chat/internal/wsclient"
 )
 
 const (
@@ -265,7 +265,7 @@ func (a *Adapter) gatewayCycle(ctx context.Context, st *gatewayState, publish fu
 				OS      string `json:"os"`
 				Browser string `json:"browser"`
 				Device  string `json:"device"`
-			}{OS: runtime.GOOS, Browser: "pi-go", Device: "pi-go"},
+			}{OS: runtime.GOOS, Browser: "pigo", Device: "pigo"},
 		})
 	}
 	if err != nil {

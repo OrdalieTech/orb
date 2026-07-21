@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 var (

@@ -1,4 +1,4 @@
-# pi-go — Architecture
+# pigo — Architecture
 
 Companion to [DECISIONS.md](DECISIONS.md) (the *why*). This document is the *what and how*: layout,
 per-package design, cross-cutting mechanics, conformance, sync, dependencies, build. The upstream
@@ -12,9 +12,9 @@ e.g. `packages/agent/src/agent-loop.ts`. The sync tool materializes that checkou
 ## 1. Repository layout
 
 ```
-pi-go/
-├── go.mod                    module github.com/OrdalieTech/pi-go   (go ≥ 1.26.5)
-├── cmd/pi/                   CLI entry point (thin: arg parsing → codingagent)
+pigo/
+├── go.mod                    module github.com/OrdalieTech/pigo   (go ≥ 1.26.5)
+├── cmd/pigo/                   CLI entry point (thin: arg parsing → codingagent)
 ├── ai/                       port of packages/ai        — importable alone
 │   ├── api/                  one file per API shape (openaresponses.go, anthropicmessages.go, …)
 │   ├── providers/            provider registry + per-provider metadata (generated + hand corrections)
@@ -249,7 +249,7 @@ upstream's RPC tests run against our binary (F7).
 disclosure + trust gating (upstream `src/core/skills.ts`); prompt templates with bash-style arg
 expansion (`$1`, `$@`, `${1:-default}`, `${@:N:L}`); themes as data (registerable via resources).
 
-**pi packages:** `pi install/remove/update/list/config` for `npm:`/`git:` extension/skill/theme
+**pi packages:** `pigo install/remove/update/list/config` for `npm:`/`git:` extension/skill/theme
 packages — npm registry tarball fetch + extract (no node at runtime), git clone; storage
 `~/.pi/agent/npm/` + project `.pi/npm/` (upstream `docs/packages.md`).
 
@@ -278,7 +278,7 @@ Where upstream lacks a directly extractable test, the extractor drives upstream'
 (`packages/ai/src/providers/faux`) or public APIs to synthesize goldens. LLM-dependent behavior
 (compaction summaries) is fixture-tested at the boundary (prompts + structure), not on model output.
 
-**Black-box:** upstream RPC/CLI tests run unmodified against `pi-go --mode rpc` via a thin adapter
+**Black-box:** upstream RPC/CLI tests run unmodified against `pigo --mode rpc` via a thin adapter
 that swaps the spawned binary. The F11 matrix runner executes each upstream example extension
 headlessly (json mode) and asserts its observable effects; results published to
 `docs/sync/extension-matrix.md`.

@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/chat"
+	"github.com/OrdalieTech/pigo/chat"
 )
 
 const (
@@ -143,7 +143,7 @@ func (f *fakeAPI) handle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	switch method {
 	case "auth.test":
-		_, _ = fmt.Fprintf(w, `{"ok":true,"user_id":%q,"bot_id":"B0BOT","team":"pi-go"}`, testBotUser)
+		_, _ = fmt.Fprintf(w, `{"ok":true,"user_id":%q,"bot_id":"B0BOT","team":"pigo"}`, testBotUser)
 	case "chat.postMessage":
 		f.mu.Lock()
 		ts := fmt.Sprintf("1700000000.%06d", f.nextTS)

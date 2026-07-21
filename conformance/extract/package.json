@@ -1,5 +1,5 @@
 {
-  "name": "pi-go-conformance-extract",
+  "name": "pigo-conformance-extract",
   "private": true,
   "type": "module",
   "scripts": {

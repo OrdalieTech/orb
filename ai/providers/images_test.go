@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 func TestBuiltinImagesModelsMatchesPinnedOpenRouterCatalog(t *testing.T) {

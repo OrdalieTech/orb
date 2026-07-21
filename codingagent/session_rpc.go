@@ -13,16 +13,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/agent/harness"
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
-	modetheme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
-	"github.com/OrdalieTech/pi-go/codingagent/session/exporthtml"
-	"github.com/OrdalieTech/pi-go/codingagent/tools"
-	"github.com/OrdalieTech/pi-go/internal/jsonwire"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/agent/harness"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	modetheme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/pigo/codingagent/session/exporthtml"
+	"github.com/OrdalieTech/pigo/codingagent/tools"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
 )
 
 type ModelCycleResult struct {
@@ -655,8 +655,8 @@ func authGuidanceDocPaths() (providersDoc, modelsDoc string) {
 	docsDir := filepath.Join(resolvePromptPackageDir(""), "docs")
 	providersDoc = filepath.Join(docsDir, "providers.md")
 	if _, err := os.Stat(providersDoc); err != nil && os.Getenv("PI_PACKAGE_DIR") == "" {
-		return "https://github.com/OrdalieTech/pi-go/blob/main/docs/providers.md",
-			"https://github.com/OrdalieTech/pi-go/blob/main/docs/models.md"
+		return "https://github.com/OrdalieTech/pigo/blob/main/docs/providers.md",
+			"https://github.com/OrdalieTech/pigo/blob/main/docs/models.md"
 	}
 	return providersDoc, filepath.Join(docsDir, "models.md")
 }

@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 export async function extractCompatModelsF2(upstreamRoot: string) {
-  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "pi-go-f2-compat-models-"));
+  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "pigo-f2-compat-models-"));
   const packageRoot = path.join(temporaryRoot, "ai");
   const outputRoot = path.join(temporaryRoot, "catalog");
   const snapshot = path.resolve(upstreamRoot, "../ai/models/testdata/api.json");
@@ -18,7 +18,7 @@ export async function extractCompatModelsF2(upstreamRoot: string) {
     await writeFile(
       preload,
       `import { readFileSync } from "node:fs";
-const snapshot = JSON.parse(readFileSync(process.env.PI_GO_MODEL_SNAPSHOT, "utf8"));
+const snapshot = JSON.parse(readFileSync(process.env.PIGO_MODEL_SNAPSHOT, "utf8"));
 globalThis.fetch = async (input) => {
   const url = String(input instanceof Request ? input.url : input);
   if (url === "https://models.dev/api.json") return Response.json(snapshot);
@@ -46,7 +46,7 @@ globalThis.fetch = async (input) => {
       ],
       {
         cwd: packageRoot,
-        env: { ...process.env, PI_GO_MODEL_SNAPSHOT: snapshot },
+        env: { ...process.env, PIGO_MODEL_SNAPSHOT: snapshot },
         maxBuffer: 16 * 1024 * 1024,
       },
     );

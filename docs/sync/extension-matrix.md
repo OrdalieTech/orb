@@ -1,7 +1,7 @@
 # Upstream single-file extension example matrix (F11-jsbridge)
 
 Status of every upstream example in `packages/coding-agent/examples/extensions/*.ts`
-(pinned commit in `UPSTREAM.lock`) against the pi-go JS extension bridge.
+(pinned commit in `UPSTREAM.lock`) against the pigo JS extension bridge.
 
 **runs-unmodified** means the example file is copied verbatim into
 `conformance/fixtures/F11-jsbridge/` by `conformance/extract/f11-jsbridge.ts`, loads through the
@@ -99,7 +99,7 @@ All eight unsupported examples need one of two surfaces the bridge does not expo
 1. **Built-in tool factories** (`createBashTool`, `createEditTool`, `createReadTool`,
    `createWriteTool`, `createFindTool`, `createGrepTool`, `createLsTool`) as JS values with
    overridable operations/spawn hooks: bash-spawn-hook, built-in-tool-renderer, minimal-mode, ssh.
-   pi-go's built-in tools are native Go; wrapping them as JS-callable factories with faithful
+   pigo's built-in tools are native Go; wrapping them as JS-callable factories with faithful
    operations injection is a dedicated work package.
 2. **Interactive pi-tui component classes** (`Editor`, `SelectList`, `Input`, `Key`): preset,
    question, questionnaire, overlay-qa-tests. These are full keyboard-driven components; the

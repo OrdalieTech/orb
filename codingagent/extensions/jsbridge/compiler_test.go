@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
 )
 
 func TestCompilerTargetsES2017AndEmbedsSourceMap(t *testing.T) {

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/internal/localecompare"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/internal/localecompare"
 )
 
 func TestLsToolListsDotfilesAndDirectoriesInOrder(t *testing.T) {

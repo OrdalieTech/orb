@@ -3,7 +3,7 @@ package extensions
 import (
 	"context"
 
-	"github.com/OrdalieTech/pi-go/agent"
+	"github.com/OrdalieTech/pigo/agent"
 )
 
 type registeredAgentTool struct {

@@ -5,7 +5,7 @@ import (
 	"iter"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 func TestCollectDoneAndErrorMessages(t *testing.T) {

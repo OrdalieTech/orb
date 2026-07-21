@@ -9,10 +9,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/codingagent/session"
-	"github.com/OrdalieTech/pi-go/internal/jsonschema"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/pigo/internal/jsonschema"
 )
 
 func TestRegistryResolvesExtensionPathsAgainstItsCWD(t *testing.T) {
@@ -635,7 +635,7 @@ func TestExecCapturesExitAndTimeout(t *testing.T) {
 	if err != nil || !result.Killed || result.Code != 0 {
 		t.Fatalf("timeout = %#v, error = %v", result, err)
 	}
-	result, err = Exec(context.Background(), "pi-go-command-that-does-not-exist", nil, nil)
+	result, err = Exec(context.Background(), "pigo-command-that-does-not-exist", nil, nil)
 	if err != nil || result.Code != 1 || result.Killed {
 		t.Fatalf("spawn failure = %#v, error = %v", result, err)
 	}

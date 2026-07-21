@@ -24,8 +24,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/chat"
-	"github.com/OrdalieTech/pi-go/chat/telegram"
+	"github.com/OrdalieTech/pigo/chat"
+	"github.com/OrdalieTech/pigo/chat/telegram"
 )
 
 func main() {

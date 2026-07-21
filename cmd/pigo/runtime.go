@@ -1,0 +1,500 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai"
+	aiauth "github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/pigo/codingagent"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/codingagent/tools"
+)
+
+type runtimeInputs struct {
+	Agent            *agent.Agent
+	Settings         *config.SettingsManager
+	StreamFn         agent.StreamFn
+	AvailableModels  func() []ai.Model
+	ScopedModels     []codingagent.ScopedModel
+	GetAPIKey        agent.GetAPIKeyFunc
+	GetRequestAuth   agent.GetRequestAuthFunc
+	GetModelHeaders  agent.GetModelHeadersFunc
+	SlashResolver    *codingagent.SlashResolver
+	ModelRegistry    *config.ModelRegistry
+	Extensions       *extensions.Registry
+	BaseTools        []agent.AgentTool
+	ActiveToolNames  []string
+	AllowedTools     *[]string
+	ExcludedTools    []string
+	RebuildBaseTools func() ([]agent.AgentTool, error)
+	PromptOptions    codingagent.SystemPromptOptions
+	Auth             *config.AuthStorage
+	Diagnostics      []string
+	// ResourceDiagnostics carries skill/prompt resource warnings, shown in
+	// interactive mode only; upstream print/RPC modes print none of them.
+	ResourceDiagnostics []string
+	ResourceLoader      codingagent.ResourceLoader
+}
+
+func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMessages) (runtimeInputs, error) {
+	args = normalizeRuntimeCLIArgs(args)
+	agentDir, err := config.GetAgentDir()
+	if err != nil {
+		return runtimeInputs{}, err
+	}
+	if _, err := config.MigrateAuthToAuthJSON(agentDir); err != nil {
+		return runtimeInputs{}, err
+	}
+	authStorage, err := config.NewAuthStorage(filepath.Join(agentDir, "auth.json"))
+	if err != nil {
+		return runtimeInputs{}, err
+	}
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir), config.WithProjectTrusted(false))
+	if err != nil {
+		return runtimeInputs{}, err
+	}
+	config.ApplyHTTPProxySettings(settings.GetHTTPProxy())
+	projectTrusted, err := codingagent.ResolveProjectTrusted(context.Background(), codingagent.ResolveProjectTrustedOptions{
+		CWD:                 cwd,
+		TrustStore:          config.NewProjectTrustStore(agentDir),
+		TrustOverride:       args.ProjectTrusted,
+		DefaultProjectTrust: settings.GetDefaultProjectTrust(),
+	})
+	if err != nil {
+		return runtimeInputs{}, err
+	}
+	settings.SetProjectTrusted(projectTrusted)
+	packageManager := codingagent.NewPackageManager(codingagent.PackageManagerOptions{
+		CWD: cwd, AgentDir: agentDir, Settings: settings,
+	})
+	resolvedPaths, err := packageManager.Resolve(nil)
+	if err != nil {
+		return runtimeInputs{}, err
+	}
+	diagnostics := make([]string, 0)
+	for _, diagnostic := range settings.DrainErrors() {
+		diagnostics = append(diagnostics, diagnostic.Error())
+	}
+	extensionRegistry := args.extensionRegistry
+	extensionDiagnostics := args.extensionWarnings
+	if !args.extensionsLoaded {
+		extensionRegistry, extensionDiagnostics = loadCompiledExtensions(cwd, agentDir, args, settings, resolvedPaths)
+	}
+	hasExtensions := extensionRegistry != nil
+	diagnostics = append(diagnostics, extensionDiagnostics...)
+	resourceLoader, err := codingagent.NewDefaultResourceLoader(codingagent.DefaultResourceLoaderOptions{
+		CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
+		AdditionalSkillPaths: args.Skills, AdditionalPromptTemplatePaths: args.PromptTemplates,
+		PackageSkillPaths: enabledPackageResourcePaths(resolvedPaths.Skills), PackagePromptTemplatePaths: enabledPackageResourcePaths(resolvedPaths.Prompts),
+		PackageThemePaths: enabledPackageThemePaths(resolvedPaths.Themes),
+		ExtensionRegistry: extensionRegistry, NoExtensions: args.NoExtensions,
+		NoContextFiles: args.NoContextFiles, NoSkills: args.NoSkills, NoPromptTemplates: args.NoPromptTemplates,
+		SystemPrompt: args.SystemPrompt, AppendSystemPrompt: args.AppendSystemPrompt,
+	})
+	if err != nil {
+		return runtimeInputs{}, err
+	}
+	if err := resourceLoader.Reload(context.Background(), nil); err != nil {
+		return runtimeInputs{}, err
+	}
+	extensionRegistry = resourceLoader.GetExtensions()
+	skills := resourceLoader.GetSkills()
+	prompts := resourceLoader.GetPrompts()
+	resources := codingagent.Resources{
+		ContextFiles: resourceLoader.GetAgentsFiles().AgentsFiles, SystemPrompt: resourceLoader.GetSystemPrompt(),
+		AppendSystemPrompt: resourceLoader.GetAppendSystemPrompt(), Skills: skills.Skills, PromptTemplates: prompts.Prompts,
+	}
+	resources.Diagnostics = append(resources.Diagnostics, skills.Diagnostics...)
+	resources.Diagnostics = append(resources.Diagnostics, prompts.Diagnostics...)
+	resourceDiagnostics := make([]string, 0, len(resources.Diagnostics))
+	for _, diagnostic := range resources.Diagnostics {
+		resourceDiagnostics = append(resourceDiagnostics, diagnostic.Message)
+	}
+
+	selection := ResolveBuiltInToolSelection(args)
+	activeTools, err := createBuiltInTools(cwd, selection, settings)
+	if err != nil {
+		return runtimeInputs{}, err
+	}
+	activeNames := make([]string, 0, len(activeTools))
+	for _, tool := range activeTools {
+		activeNames = append(activeNames, tool.Spec().Name)
+	}
+	baseTools := activeTools
+	initialNames := append([]string(nil), activeNames...)
+	var allowedTools *[]string
+	var excludedTools []string
+	if hasExtensions {
+		baseTools, err = createBuiltInTools(cwd, defaultBuiltInTools, settings)
+		if err != nil {
+			return runtimeInputs{}, err
+		}
+		if args.Tools != nil {
+			initialNames = filterExcludedTools(args.Tools, args.ExcludeTools)
+			allowed := append([]string(nil), args.Tools...)
+			allowedTools = &allowed
+		} else if args.NoTools {
+			empty := []string{}
+			allowedTools = &empty
+		}
+		excludedTools = append([]string(nil), args.ExcludeTools...)
+	}
+	baseToolNames := make([]string, 0, len(baseTools))
+	for _, tool := range baseTools {
+		baseToolNames = append(baseToolNames, tool.Spec().Name)
+	}
+	if extensionRegistry == nil {
+		extensionRegistry = extensions.NewRegistry(cwd)
+	}
+	snippets, guidelines := codingagent.BuiltInToolPromptData(activeNames)
+	promptOptions := codingagent.SystemPromptOptions{
+		CustomPrompt:       resources.SystemPrompt,
+		SelectedTools:      activeNames,
+		ToolSnippets:       snippets,
+		PromptGuidelines:   guidelines,
+		AppendSystemPrompt: resources.JoinedAppendSystemPrompt(),
+		CWD:                cwd,
+		ContextFiles:       resources.ContextFiles,
+		Skills:             resources.Skills,
+	}
+	systemPrompt := codingagent.BuildSystemPrompt(promptOptions)
+
+	registry, err := config.NewModelRegistry(agentDir)
+	if err != nil {
+		return runtimeInputs{}, err
+	}
+	if extensionRegistry != nil {
+		extensionRegistry.BindModelRegistry(registry, func(extensionError extensions.ExtensionError) {
+			diagnostics = append(diagnostics, fmt.Sprintf("Extension error (%s, %s): %s", extensionError.ExtensionPath, extensionError.Event, extensionError.Error))
+		})
+	}
+	model, scopedThinking, scopedModels, modelDiagnostics, err := resolveRuntimeModel(args, settings, registry)
+	if err != nil {
+		return runtimeInputs{}, err
+	}
+	diagnostics = append(diagnostics, modelDiagnostics...)
+	thinking := settings.GetDefaultThinkingLevel()
+	if thinking == "" {
+		thinking = ai.ModelThinkingMedium
+	}
+	if args.Thinking != nil {
+		thinking = ai.ModelThinkingLevel(*args.Thinking)
+	} else if scopedThinking != nil {
+		thinking = *scopedThinking
+	}
+	if model == nil {
+		thinking = ai.ModelThinkingOff
+	}
+	transport := settings.GetTransport()
+	providerRetry := settings.GetProviderRetrySettings()
+	maxRetryDelay := providerRetry.MaxRetryDelayMS
+	streamFn := func(
+		ctx context.Context,
+		model *ai.Model,
+		request ai.Context,
+		options *ai.SimpleStreamOptions,
+	) (ai.AssistantMessageEventStream, error) {
+		merged := ai.SimpleStreamOptions{}
+		if options != nil {
+			merged = *options
+		}
+		currentRetry := settings.GetProviderRetrySettings()
+		if merged.TimeoutMS == nil {
+			merged.TimeoutMS = currentRetry.TimeoutMS
+		}
+		if merged.TimeoutMS == nil {
+			httpIdleTimeout, timeoutErr := settings.GetHTTPIdleTimeoutMS()
+			if timeoutErr != nil {
+				return nil, timeoutErr
+			}
+			if httpIdleTimeout == 0 {
+				httpIdleTimeout = 2147483647
+			}
+			merged.TimeoutMS = &httpIdleTimeout
+		}
+		if merged.WebSocketConnectTimeoutMS == nil {
+			webSocketConnectTimeout, timeoutErr := settings.GetWebSocketConnectTimeoutMS()
+			if timeoutErr != nil {
+				return nil, timeoutErr
+			}
+			merged.WebSocketConnectTimeoutMS = webSocketConnectTimeout
+		}
+		if merged.MaxRetries == nil {
+			merged.MaxRetries = currentRetry.MaxRetries
+		}
+		return registry.StreamSimple(ctx, model, request, &merged)
+	}
+	state := agent.AgentState{
+		SystemPrompt:  systemPrompt,
+		Model:         model,
+		ThinkingLevel: thinking,
+		Tools:         activeTools,
+		Messages:      priorMessages,
+	}
+	var cliAPIKeyProvider *ai.ProviderID
+	if args.APIKey != nil && *args.APIKey != "" && model != nil {
+		provider := model.Provider
+		cliAPIKeyProvider = &provider
+	}
+	resolveRequestAuth := requestAuthResolverForProvider(args, cliAPIKeyProvider, registry, authStorage)
+	resolveAPIKey := func(ctx context.Context, providerID ai.ProviderID) (*string, error) {
+		resolved, err := resolveRequestAuth(ctx, providerID)
+		if err != nil || resolved == nil {
+			return nil, err
+		}
+		return resolved.APIKey, nil
+	}
+	resolveModelHeaders := func(ctx context.Context, model *ai.Model, apiKey *string, env ai.ProviderEnv) (*map[string]string, error) {
+		return registry.ResolveModelHeaders(ctx, *model, map[string]string(env), apiKey)
+	}
+	availableModels := func() []ai.Model {
+		result, _ := registry.AvailableWithError(nil)
+		if cliAPIKeyProvider != nil {
+			for _, candidate := range registry.Models() {
+				if candidate.Provider != *cliAPIKeyProvider || slices.ContainsFunc(result, func(model ai.Model) bool {
+					return model.Provider == candidate.Provider && model.ID == candidate.ID
+				}) {
+					continue
+				}
+				result = append(result, candidate)
+			}
+		}
+		return result
+	}
+	created := agent.NewAgent(
+		agent.WithInitialState(state),
+		agent.WithStreamFn(streamFn),
+		agent.WithConvertToLLM(codingagent.ConvertToLLMWithBlockImages(settings.GetBlockImages)),
+		agent.WithSteeringMode(agent.QueueMode(settings.GetSteeringMode())),
+		agent.WithFollowUpMode(agent.QueueMode(settings.GetFollowUpMode())),
+		agent.WithSimpleStreamOptions(ai.SimpleStreamOptions{
+			StreamOptions: ai.StreamOptions{
+				Transport: &transport, TimeoutMS: providerRetry.TimeoutMS, MaxRetries: providerRetry.MaxRetries,
+				MaxRetryDelayMS: &maxRetryDelay,
+			},
+			ThinkingBudgets: settings.GetThinkingBudgets(),
+		}),
+		agent.WithAPIKeyResolver(resolveAPIKey),
+		agent.WithRequestAuthResolver(resolveRequestAuth),
+		agent.WithModelHeadersResolver(resolveModelHeaders),
+	)
+	return runtimeInputs{
+		Agent: created, Settings: settings, StreamFn: streamFn, AvailableModels: availableModels, ScopedModels: scopedModels, GetAPIKey: resolveAPIKey,
+		GetRequestAuth:  resolveRequestAuth,
+		GetModelHeaders: resolveModelHeaders,
+		SlashResolver:   &codingagent.SlashResolver{Skills: resources.Skills, PromptTemplates: resources.PromptTemplates},
+		ModelRegistry:   registry,
+		Extensions:      extensionRegistry, BaseTools: baseTools, ActiveToolNames: initialNames,
+		AllowedTools: allowedTools, ExcludedTools: excludedTools, PromptOptions: promptOptions,
+		RebuildBaseTools: func() ([]agent.AgentTool, error) {
+			return createBuiltInTools(cwd, baseToolNames, settings)
+		},
+		Auth:                authStorage,
+		Diagnostics:         diagnostics,
+		ResourceDiagnostics: resourceDiagnostics,
+		ResourceLoader:      resourceLoader,
+	}, nil
+}
+
+func filterExcludedTools(names, excluded []string) []string {
+	denied := make(map[string]struct{}, len(excluded))
+	for _, name := range excluded {
+		denied[name] = struct{}{}
+	}
+	result := make([]string, 0, len(names))
+	for _, name := range names {
+		if _, exists := denied[name]; !exists {
+			result = append(result, name)
+		}
+	}
+	return result
+}
+
+// enabledPackageResourcePaths keeps enabled package-contributed resources;
+// local and auto-discovered entries stay with the existing resource loaders.
+func enabledPackageResourcePaths(resources []codingagent.ResolvedResource) []string {
+	paths := make([]string, 0, len(resources))
+	for _, resource := range resources {
+		if resource.Enabled && resource.Metadata.Origin == "package" {
+			paths = append(paths, resource.Path)
+		}
+	}
+	return paths
+}
+
+func enabledPackageThemePaths(resources []codingagent.ResolvedResource) []codingagent.ResourcePath {
+	paths := make([]codingagent.ResourcePath, 0, len(resources))
+	for _, resource := range resources {
+		if resource.Enabled && resource.Metadata.Origin == "package" {
+			paths = append(paths, codingagent.ResourcePath{Path: resource.Path, Metadata: resource.Metadata})
+		}
+	}
+	return paths
+}
+
+func resolveRuntimeModel(
+	args CLIArgs,
+	settings *config.SettingsManager,
+	registry *config.ModelRegistry,
+) (*ai.Model, *ai.ModelThinkingLevel, []codingagent.ScopedModel, []string, error) {
+	args = normalizeRuntimeCLIArgs(args)
+	all := registry.Models()
+	available, err := registry.AvailableWithError(nil)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	diagnostics := make([]string, 0)
+	patterns := args.Models
+	if patterns == nil {
+		patterns = settings.GetEnabledModels()
+	}
+	var scoped []codingagent.ScopedModel
+	if len(patterns) > 0 {
+		var warnings []codingagent.ModelDiagnostic
+		scoped, warnings = codingagent.ResolveModelScope(patterns, available)
+		for _, warning := range warnings {
+			diagnostics = append(diagnostics, warning.Message)
+		}
+	}
+	if args.Model == nil && len(scoped) > 0 && !args.RestoredModel {
+		selected := 0
+		defaultProvider, defaultID := settings.GetDefaultProvider(), settings.GetDefaultModel()
+		if defaultProvider != "" && defaultID != "" {
+			if index := slices.IndexFunc(scoped, func(candidate codingagent.ScopedModel) bool {
+				return string(candidate.Model.Provider) == defaultProvider && candidate.Model.ID == defaultID
+			}); index >= 0 {
+				selected = index
+			}
+		}
+		model := scoped[selected].Model
+		return &model, scoped[selected].ThinkingLevel, scoped, diagnostics, nil
+	}
+	provider, pattern := "", ""
+	restoreWarning := ""
+	if args.Model != nil {
+		pattern = *args.Model
+		if args.Provider != nil {
+			provider = *args.Provider
+		}
+		if args.RestoredModel {
+			restored, found := registry.Find(provider, pattern)
+			if found && registry.HasConfiguredAuth(string(restored.Provider), nil) {
+				return &restored, nil, scoped, diagnostics, nil
+			}
+			restoreWarning = fmt.Sprintf("Could not restore model %s/%s", provider, pattern)
+		} else {
+			var cliThinking *ai.ModelThinkingLevel
+			if args.Thinking != nil {
+				level := ai.ModelThinkingLevel(*args.Thinking)
+				cliThinking = &level
+			}
+			resolved := codingagent.ResolveCLIModel(provider, pattern, cliThinking, all, func(provider string) bool {
+				return registry.HasConfiguredAuth(provider, nil)
+			})
+			if resolved.Error != "" {
+				return nil, nil, scoped, diagnostics, fmt.Errorf("%s", resolved.Error)
+			}
+			if resolved.Warning != "" {
+				diagnostics = append(diagnostics, resolved.Warning)
+			}
+			return resolved.Model, resolved.ThinkingLevel, scoped, diagnostics, nil
+		}
+	}
+	defaultProvider, defaultID := settings.GetDefaultProvider(), settings.GetDefaultModel()
+	if defaultProvider != "" && defaultID != "" && registry.HasConfiguredAuth(defaultProvider, nil) {
+		if model, found := registry.Find(defaultProvider, defaultID); found {
+			if restoreWarning != "" {
+				diagnostics = append(diagnostics, fmt.Sprintf("%s. Using %s/%s", restoreWarning, model.Provider, model.ID))
+			}
+			return &model, nil, scoped, diagnostics, nil
+		}
+	}
+	model := codingagent.PreferredAvailableModel(available)
+	if model == nil {
+		if args.allowNoModel || args.useUnknownModel {
+			if args.allowNoModel {
+				diagnostics = append(diagnostics, strings.TrimSuffix(formatModelList(nil, ""), "\n"))
+			}
+			return nil, nil, scoped, diagnostics, nil
+		}
+		return nil, nil, scoped, diagnostics, fmt.Errorf("no model available; configure provider auth or use --model")
+	}
+	if restoreWarning != "" {
+		diagnostics = append(diagnostics, fmt.Sprintf("%s. Using %s/%s", restoreWarning, model.Provider, model.ID))
+	}
+	return model, nil, scoped, diagnostics, nil
+}
+
+func normalizeRuntimeCLIArgs(args CLIArgs) CLIArgs {
+	if args.Provider != nil && *args.Provider == "" {
+		args.Provider = nil
+	}
+	if args.Model != nil && *args.Model == "" {
+		args.Model = nil
+	}
+	return args
+}
+
+func requestAuthResolverForProvider(
+	args CLIArgs,
+	cliProvider *ai.ProviderID,
+	registry *config.ModelRegistry,
+	credentials aiauth.CredentialStore,
+) agent.GetRequestAuthFunc {
+	var baseResolver func(context.Context, ai.ProviderID) (*config.RequestAuth, error)
+	if registry != nil {
+		baseResolver = registry.DefaultRequestAuthResolver(credentials)
+	} else {
+		baseResolver = config.FallbackRequestAuthResolver(credentials)
+	}
+	return func(ctx context.Context, providerID ai.ProviderID) (*agent.RequestAuth, error) {
+		if args.APIKey != nil && *args.APIKey != "" && (cliProvider == nil || providerID == *cliProvider) {
+			return &agent.RequestAuth{APIKey: args.APIKey}, nil
+		}
+		resolved, err := baseResolver(ctx, providerID)
+		if err != nil || resolved == nil {
+			return nil, err
+		}
+		return &agent.RequestAuth{
+			APIKey: resolved.APIKey, Headers: resolved.Headers,
+			Env: resolved.Env, BaseURL: resolved.BaseURL,
+		}, nil
+	}
+}
+
+func createBuiltInTools(cwd string, names []string, settings *config.SettingsManager) ([]agent.AgentTool, error) {
+	result := make([]agent.AgentTool, 0, len(names))
+	for _, name := range names {
+		switch name {
+		case "read":
+			autoResize := settings.GetImageAutoResize()
+			result = append(result, tools.NewReadTool(cwd, &tools.ReadToolOptions{AutoResizeImages: &autoResize}))
+		case "bash":
+			shellPath, err := settings.GetShellPath()
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, tools.NewBashTool(cwd, &tools.BashToolOptions{
+				ShellPath:     shellPath,
+				CommandPrefix: settings.GetShellCommandPrefix(),
+			}))
+		case "edit":
+			result = append(result, tools.NewEditTool(cwd, nil))
+		case "write":
+			result = append(result, tools.NewWriteTool(cwd, nil))
+		case "grep":
+			result = append(result, tools.NewGrepTool(cwd, nil))
+		case "find":
+			result = append(result, tools.NewFindTool(cwd, nil))
+		case "ls":
+			result = append(result, tools.NewLsTool(cwd, nil))
+		}
+	}
+	return result, nil
+}

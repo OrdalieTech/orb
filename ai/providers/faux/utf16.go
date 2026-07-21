@@ -4,7 +4,7 @@ import (
 	"math/rand/v2"
 	"unicode/utf8"
 
-	"github.com/OrdalieTech/pi-go/internal/jsonwire"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
 )
 
 type utf16Chunk struct {

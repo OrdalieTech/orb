@@ -1,11 +1,11 @@
 # Models
 
-pi-go ships a built-in model catalog (mirrored from upstream pi's generated model registry) and
+pigo ships a built-in model catalog (mirrored from upstream pi's generated model registry) and
 lets you add or override models through `models.json`. List what is available with:
 
 ```sh
-pi --list-models            # all models
-pi --list-models anthropic  # filter by provider or substring
+pigo --list-models            # all models
+pigo --list-models anthropic  # filter by provider or substring
 ```
 
 Select a model with `--model` on the command line or `/model` in the interactive TUI. Once a

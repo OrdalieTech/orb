@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
-	modetheme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	modetheme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
 )
 
 type ResourceSkillsResult struct {

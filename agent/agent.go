@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	aiapi "github.com/OrdalieTech/pi-go/ai/api"
+	"github.com/OrdalieTech/pigo/ai"
+	aiapi "github.com/OrdalieTech/pigo/ai/api"
 )
 
 const alreadyPromptingMessage = "Agent is already processing a prompt. Use Steer() or FollowUp() to queue messages, or wait for completion."

@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/internal/truncate"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/internal/truncate"
 )
 
 func TestGrepToolMiniTreeContextLimitAndOutputShape(t *testing.T) {
@@ -44,8 +44,8 @@ func TestGrepToolMiniTreeContextLimitAndOutputShape(t *testing.T) {
 }
 
 func TestSearchToolsLiveMiniTree(t *testing.T) {
-	if os.Getenv("PI_GO_LIVE_TESTS") != "1" {
-		t.Skip("set PI_GO_LIVE_TESTS=1 to download rg and fd")
+	if os.Getenv("PIGO_LIVE_TESTS") != "1" {
+		t.Skip("set PIGO_LIVE_TESTS=1 to download rg and fd")
 	}
 	requireUnixSearchTest(t)
 	agentDir := t.TempDir()
@@ -397,14 +397,14 @@ func installFakeManagedTool(t *testing.T, name, stdout, stderr string, exitCode 
 		fmt.Fprintf(&script, "printf '%%s\\n' \"$@\" > %s\n", shellSingleQuote(recordPath))
 	}
 	if stdout != "" {
-		script.WriteString("cat <<'PI_GO_STDOUT'\n")
+		script.WriteString("cat <<'PIGO_STDOUT'\n")
 		script.WriteString(stdout)
-		script.WriteString("\nPI_GO_STDOUT\n")
+		script.WriteString("\nPIGO_STDOUT\n")
 	}
 	if stderr != "" {
-		script.WriteString("cat >&2 <<'PI_GO_STDERR'\n")
+		script.WriteString("cat >&2 <<'PIGO_STDERR'\n")
 		script.WriteString(stderr)
-		script.WriteString("\nPI_GO_STDERR\n")
+		script.WriteString("\nPIGO_STDERR\n")
 	}
 	fmt.Fprintf(&script, "exit %d\n", exitCode)
 	writeSearchExecutable(t, filepath.Join(binDir, name), script.String())

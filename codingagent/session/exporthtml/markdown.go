@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 // ExportSessionMarkdown writes the active session branch as portable Markdown.

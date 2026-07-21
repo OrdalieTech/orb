@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/conformance/runner"
-	"github.com/OrdalieTech/pi-go/internal/partialjson"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/conformance/runner"
+	"github.com/OrdalieTech/pigo/internal/partialjson"
 )
 
 func TestF1Serialization(t *testing.T) {

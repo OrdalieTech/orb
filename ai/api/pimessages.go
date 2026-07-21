@@ -11,8 +11,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/internal/partialjson"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/internal/partialjson"
 )
 
 // PiMessagesOptions contains the gateway-specific options sent through the

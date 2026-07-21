@@ -29,7 +29,7 @@ each verified by following the docs literally.
 **Scope:** goreleaser: static `CGO_ENABLED=0` binaries for `{linux,darwin}×{amd64,arm64}`,
 checksums, GitHub Releases; curl install script + Homebrew tap; version embedding; update check
 against GitHub releases only (never pi.dev), honoring `PI_SKIP_VERSION_CHECK`; **gate G4**: notify-
-only vs in-place self-update for `pi update` — decide by weighing supply-chain surface vs
+only vs in-place self-update for `pigo update` — decide by weighing supply-chain surface vs
 convenience, record in DECISIONS.
 **Acceptance:** `v0.1.0` pre-release cut from CI; install script verified on clean linux + macOS
 VMs; binary size and cold-start budgets (ARCHITECTURE §9) measured and recorded in release notes.

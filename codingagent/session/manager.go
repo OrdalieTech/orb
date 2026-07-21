@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/agent/harness"
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/agent/harness"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 type Clock func() time.Time

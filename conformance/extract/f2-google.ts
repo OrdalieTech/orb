@@ -683,7 +683,7 @@ async function runGoogle(
 }
 
 async function extractGoogleProvider(upstreamRoot: string): Promise<GoogleProviderFixture> {
-  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "pi-go-f2-google-provider-"));
+  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "pigo-f2-google-provider-"));
   const packageRoot = path.join(temporaryRoot, "ai");
   try {
     await cp(path.join(upstreamRoot, "packages/ai"), packageRoot, { recursive: true });

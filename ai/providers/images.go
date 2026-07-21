@@ -3,10 +3,10 @@ package providers
 import (
 	"context"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/ai/api"
-	"github.com/OrdalieTech/pi-go/ai/auth"
-	"github.com/OrdalieTech/pi-go/ai/models"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/ai/api"
+	"github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/pigo/ai/models"
 )
 
 func OpenRouterImages() ai.ImagesProvider {

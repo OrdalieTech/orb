@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/OrdalieTech/pi-go/internal/jsonwire"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
 )
 
 func (credential *Credential) UnmarshalJSON(data []byte) error {

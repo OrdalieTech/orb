@@ -18,12 +18,12 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/OrdalieTech/pi-go/internal/semver"
+	"github.com/OrdalieTech/pigo/internal/semver"
 )
 
 // Native npm registry client: metadata fetch, version selection, tarball
 // download with integrity verification, and extraction — replacing upstream's
-// npm/bun/pnpm subprocess calls (pi-go ships without a Node toolchain).
+// npm/bun/pnpm subprocess calls (pigo ships without a Node toolchain).
 
 const defaultNpmRegistry = "https://registry.npmjs.org"
 

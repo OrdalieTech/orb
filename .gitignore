@@ -3,5 +3,5 @@
 .env
 .pi-agent/
 dist/
-/pi
+/pigo
 coverage.out

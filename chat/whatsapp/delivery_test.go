@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/chat"
+	"github.com/OrdalieTech/pigo/chat"
 )
 
 // newSendServer runs a fake Graph /messages endpoint. respond is called per

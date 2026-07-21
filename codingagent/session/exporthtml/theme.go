@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	modetheme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	modetheme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
 )
 
 type exportTheme struct {

@@ -10,7 +10,7 @@ import (
 
 func TestFindMiniTreeOutsideGitUsesHierarchicalIgnoreMode(t *testing.T) {
 	requireUnixSearchTest(t)
-	root := filepath.Join(string(filepath.Separator), "usr", "share", "pi-go-search-fixture")
+	root := filepath.Join(string(filepath.Separator), "usr", "share", "pigo-search-fixture")
 	wantedPaths := []string{
 		"a/deep/kept.txt",
 		"a/kept.txt",

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"path/filepath"
 
-	"github.com/OrdalieTech/pi-go/agent/harness"
+	"github.com/OrdalieTech/pigo/agent/harness"
 )
 
 // ErrHarnessStorageReplacement prevents lifecycle operations from silently

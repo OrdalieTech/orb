@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 // SessionErrorCode is the stable failure classification used by harness

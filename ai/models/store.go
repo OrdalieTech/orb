@@ -13,8 +13,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/ai/models/internal/cataloggen"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/ai/models/internal/cataloggen"
 	"github.com/gofrs/flock"
 )
 

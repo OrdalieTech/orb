@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 func TestPreRenderCustomToolsMatchesUpstreamSelectionAndMerge(t *testing.T) {

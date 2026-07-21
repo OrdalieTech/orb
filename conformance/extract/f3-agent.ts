@@ -82,7 +82,7 @@ export async function withOfflineGeneratedCatalog<T>(upstreamRoot: string, run: 
   // agent-loop.ts imports the legacy compat entrypoint, which eagerly imports
   // generated, gitignored provider JSON. Generate that pinned baseline in a
   // temporary package copy, then restore the checkout byte-for-byte afterward.
-  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "pi-go-f3-agent-"));
+  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "pigo-f3-agent-"));
   const temporaryPackage = path.join(temporaryRoot, "ai");
   const generatedData = path.join(temporaryPackage, "src/providers/data");
   const targetData = path.join(upstreamRoot, "packages/ai/src/providers/data");

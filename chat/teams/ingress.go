@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/chat"
+	"github.com/OrdalieTech/pigo/chat"
 )
 
 const maxWebhookBody = 5 << 20

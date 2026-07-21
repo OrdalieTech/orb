@@ -14,15 +14,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/ai"
-	aiauth "github.com/OrdalieTech/pi-go/ai/auth"
-	"github.com/OrdalieTech/pi-go/codingagent"
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
-	"github.com/OrdalieTech/pi-go/codingagent/modes/theme"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
-	"github.com/OrdalieTech/pi-go/tui"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai"
+	aiauth "github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/pigo/codingagent"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/codingagent/modes/theme"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/pigo/tui"
 )
 
 type f12ApplicationFixture struct {
@@ -529,7 +529,7 @@ func TestInteractiveSessionTitleSurvivesEventsAndExtensionReset(t *testing.T) {
 	mode.footer = &tui.Container{}
 	mode.editorContainer.AddChild(mode.editor)
 	mode.interactiveUI = NewInteractiveUI(mode)
-	want := "pi - named session - " + filepath.Base(mode.cwd)
+	want := "pigo - named session - " + filepath.Base(mode.cwd)
 
 	mode.handleEvent(codingagent.SessionInfoChangedEvent{})
 	if got := terminal.lastTitle(); got != want {
@@ -1148,9 +1148,9 @@ func TestF12ExtensionEditorExternalLifecycleMatchesUpstream(t *testing.T) {
 	initF12ApplicationTheme(t)
 	fixture := loadF12ApplicationFixture(t).ExternalEditor
 	lifecyclePath := filepath.Join(t.TempDir(), "lifecycle.txt")
-	t.Setenv("PI_GO_F12_EXTERNAL_EDITOR_LOG", lifecyclePath)
+	t.Setenv("PIGO_F12_EXTERNAL_EDITOR_LOG", lifecyclePath)
 	externalEditorCommand := strings.Join([]string{os.Args[0], "-test.run=TestF12ExternalEditorHelper", "--"}, " ")
-	t.Setenv("VISUAL", "pi-go-f12-visual-must-not-run")
+	t.Setenv("VISUAL", "pigo-f12-visual-must-not-run")
 	t.Setenv("EDITOR", "")
 
 	bindings := NewAppKeybindings(nil)
@@ -1196,7 +1196,7 @@ func TestF12ExtensionEditorExternalLifecycleMatchesUpstream(t *testing.T) {
 }
 
 func TestF12ExternalEditorHelper(t *testing.T) {
-	logPath := os.Getenv("PI_GO_F12_EXTERNAL_EDITOR_LOG")
+	logPath := os.Getenv("PIGO_F12_EXTERNAL_EDITOR_LOG")
 	if logPath == "" {
 		return
 	}

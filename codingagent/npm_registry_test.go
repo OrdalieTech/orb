@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/codingagent/config"
+	"github.com/OrdalieTech/pigo/codingagent/config"
 )
 
 type fakeNpmPackage struct {

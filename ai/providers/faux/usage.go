@@ -3,7 +3,7 @@ package faux
 import (
 	"fmt"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 func estimateTokens(text string) int64 {

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
 )
 
 // Sweep regression (modes-ext): headless ctx.ui must mirror upstream

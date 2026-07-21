@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai/auth"
+	"github.com/OrdalieTech/pigo/ai/auth"
 )
 
 type ModelsError = auth.Error

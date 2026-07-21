@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 func TestTurnLedgerRoundTrip(t *testing.T) {

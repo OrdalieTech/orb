@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 type googleVertexExternalAccountRoundTripFunc func(*http.Request) (*http.Response, error)
@@ -183,7 +183,7 @@ func TestGoogleVertexExternalAccountExecutableSource(t *testing.T) {
 	})
 	options := &ai.StreamOptions{Env: ai.ProviderEnv{
 		"GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES": "1",
-		"PI_GO_ADC_EXECUTABLE_HELPER":               "1",
+		"PIGO_ADC_EXECUTABLE_HELPER":                "1",
 	}}
 	adc := newGoogleVertexADC(options)
 	adc.client = &http.Client{Transport: googleVertexExternalAccountRoundTripFunc(func(request *http.Request) (*http.Response, error) {
@@ -228,7 +228,7 @@ func TestGoogleVertexExternalAccountExecutableCommandParsing(t *testing.T) {
 }
 
 func TestGoogleVertexExternalAccountExecutableHelper(t *testing.T) {
-	if os.Getenv("PI_GO_ADC_EXECUTABLE_HELPER") != "1" {
+	if os.Getenv("PIGO_ADC_EXECUTABLE_HELPER") != "1" {
 		return
 	}
 	if os.Getenv("GOOGLE_EXTERNAL_ACCOUNT_AUDIENCE") == "" || os.Getenv("GOOGLE_EXTERNAL_ACCOUNT_INTERACTIVE") != "0" {

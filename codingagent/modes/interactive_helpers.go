@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/tui"
+	"github.com/OrdalieTech/pigo/tui"
 
-	theme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
+	theme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
 )
 
 // DynamicBorder renders a horizontal line that stretches to fit the terminal width.

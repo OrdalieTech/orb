@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
 )
 
 // ─── scriptedUI custom/editor overrides ─────────────────────

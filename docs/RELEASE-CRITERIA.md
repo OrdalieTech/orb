@@ -16,11 +16,11 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 
 ## M1 — Skeleton (closes Phase 1; verified by WP-180)
 
-- [x] `pi -p "<task>"` completes a real OpenAI round-trip with tool calls on a sample repo.
-- [x] Session written in `-p` mode opens in TS pi; a TS-pi session resumes with `pi -c`. (F6 cross-read)
+- [x] `pigo -p "<task>"` completes a real OpenAI round-trip with tool calls on a sample repo.
+- [x] Session written in `-p` mode opens in TS pi; a TS-pi session resumes with `pigo -c`. (F6 cross-read)
 - [x] Fixture families F1, F2(openai), F3, F4, F5, F6, F9 green; `make fixtures` regeneration is clean.
 - [x] Cold start < 50 ms (hyperfine, warm cache); binary < 25 MB.
-- [x] Dogfood: ≥ 1 real pi-go WP executed using pi-go itself; transcript committed.
+- [x] Dogfood: ≥ 1 real pigo WP executed using pigo itself; transcript committed.
 - [x] Trim pass #1 done (checklist below), report committed.
 
 ## M2 — Headless parity (closes Sprint 1)
@@ -32,7 +32,7 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
       fixture green. (ChatGPT/Codex, Copilot, xAI OAuth: Sprint-3 expansion.)
 - [x] Harness `SessionRepo`/`FileSystem` parity landed (upstream harness types, jsonl-repo,
       memory-repo, rehydrate-from-bytes) and wired into SessionRuntime.
-- [x] Upstream's RPC test suite passes against `pi-go --mode rpc`; every exclusion listed with a
+- [x] Upstream's RPC test suite passes against `pigo --mode rpc`; every exclusion listed with a
       reason; F7 transcript fixtures green.
 - [x] F8, F9, F10 green — compaction picks the same boundaries as upstream on the fixture corpus.
 - [x] SDK: all 13 ported examples run on faux; an external `go get` smoke module builds.
@@ -100,7 +100,7 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 ## Live-test policy
 
 - **Tier 1 — every merge:** no network. Fixtures and unit tests only.
-- **Tier 2 — provider WPs:** opt-in (`PI_GO_LIVE_TESTS=1`): one real streamed tool-call round-trip
+- **Tier 2 — provider WPs:** opt-in (`PIGO_LIVE_TESTS=1`): one real streamed tool-call round-trip
   per provider, run before merging that provider's WP and on demand.
 - **Tier 3 — nightly (from M2):** CI workflow, secrets from repo settings, cheap models, spend cap.
   Corpus: 3 scripted tasks (multi-turn read+edit+bash; parallel tool calls; compaction-length

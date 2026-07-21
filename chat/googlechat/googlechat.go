@@ -1,4 +1,4 @@
-// Package googlechat implements the Google Chat adapter for the pi-go chat
+// Package googlechat implements the Google Chat adapter for the pigo chat
 // gateway: an HTTP-endpoint Chat app with bearer-JWT-verified ingress,
 // service-account authenticated delivery, and authenticated media download.
 //
@@ -33,7 +33,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/chat"
+	"github.com/OrdalieTech/pigo/chat"
 )
 
 const platformName = "googlechat"

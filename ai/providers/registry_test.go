@@ -4,10 +4,10 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	aimodels "github.com/OrdalieTech/pi-go/ai/models"
-	"github.com/OrdalieTech/pi-go/ai/providers"
-	"github.com/OrdalieTech/pi-go/conformance/runner"
+	"github.com/OrdalieTech/pigo/ai"
+	aimodels "github.com/OrdalieTech/pigo/ai/models"
+	"github.com/OrdalieTech/pigo/ai/providers"
+	"github.com/OrdalieTech/pigo/conformance/runner"
 )
 
 type providerFixture struct {

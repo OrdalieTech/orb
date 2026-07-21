@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/tui"
+	"github.com/OrdalieTech/pigo/tui"
 
-	theme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
+	theme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
 )
 
 type extensionDialogOptions struct {
@@ -328,7 +328,7 @@ func (component *ExtensionEditorComponent) openExternalEditor() {
 		process = exec.Command(parts[0], arguments...)
 	}
 	process.Stdin, process.Stdout, process.Stderr = os.Stdin, os.Stdout, os.Stderr
-	_, _ = fmt.Fprintf(os.Stdout, "Launching external editor: %s\nPi will resume when the editor exits.\n", command)
+	_, _ = fmt.Fprintf(os.Stdout, "Launching external editor: %s\npigo will resume when the editor exits.\n", command)
 	if err := process.Start(); err != nil {
 		component.finishExternalEditor(path)
 		return

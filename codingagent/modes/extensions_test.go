@@ -7,17 +7,17 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/ai/providers/faux"
-	"github.com/OrdalieTech/pi-go/codingagent"
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions/examples/permissiongate"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions/examples/pirate"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions/examples/statusline"
-	"github.com/OrdalieTech/pi-go/codingagent/session"
-	"github.com/OrdalieTech/pi-go/internal/jsonschema"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/ai/providers/faux"
+	"github.com/OrdalieTech/pigo/codingagent"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/codingagent/extensions/examples/permissiongate"
+	"github.com/OrdalieTech/pigo/codingagent/extensions/examples/pirate"
+	"github.com/OrdalieTech/pigo/codingagent/extensions/examples/statusline"
+	"github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/pigo/internal/jsonschema"
 )
 
 func TestCompiledDemosBehaveInHeadlessPrintAndJSON(t *testing.T) {

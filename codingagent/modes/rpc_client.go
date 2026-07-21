@@ -14,12 +14,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/agent/harness"
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/codingagent"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
-	"github.com/OrdalieTech/pi-go/codingagent/tools"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/agent/harness"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/codingagent"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/pigo/codingagent/tools"
 )
 
 // RPCClientOptions configure the pi process spawned by [NewRPCClient].
@@ -233,7 +233,7 @@ func (client *RPCClient) Start(ctx context.Context) error {
 	client.exitError = nil
 	path := client.options.CLIPath
 	if path == "" {
-		path = "pi"
+		path = "pigo"
 	}
 	args := []string{"--mode", "rpc"}
 	if client.options.Provider != "" {

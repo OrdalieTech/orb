@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/chat"
-	"github.com/OrdalieTech/pi-go/chat/internal/graphhook"
+	"github.com/OrdalieTech/pigo/chat"
+	"github.com/OrdalieTech/pigo/chat/internal/graphhook"
 )
 
 // maxWebhookBody bounds inbound webhook bodies.

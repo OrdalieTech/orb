@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 func TestMarkdownExportMatchesActiveBranchGolden(t *testing.T) {

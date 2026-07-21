@@ -1,6 +1,6 @@
 package messenger
 
-import "github.com/OrdalieTech/pi-go/chat/internal/runechunk"
+import "github.com/OrdalieTech/pigo/chat/internal/runechunk"
 
 const maxMessageLen = 2000
 

@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
 )
 
 // Port of upstream regression extension-factory-cache.test.ts. Upstream caches
 // the imported module per cwd while re-running the default-export factory on
-// every cached load; pi-go's analog is the content-hash bundle cache plus one
+// every cached load; pigo's analog is the content-hash bundle cache plus one
 // fresh isolated VM per factory run (module-level state is deliberately not
 // shared between runs). The protected behavior is the same: repeated loads
 // must not rebuild unchanged sources, must re-run factories, and must produce

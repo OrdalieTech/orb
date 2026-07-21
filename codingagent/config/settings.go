@@ -15,7 +15,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 const (

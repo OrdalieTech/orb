@@ -1,4 +1,4 @@
-module github.com/OrdalieTech/pi-go
+module github.com/OrdalieTech/pigo
 
 go 1.26.5
 

@@ -1,10 +1,15 @@
 # Changelog
 
-pi-go's own release history (independent 0.x semver; upstream parity target recorded per release).
+pigo's own release history (independent 0.x semver; upstream parity target recorded per release).
 The embedded upstream changelog under `codingagent/modes/assets/` is a product asset driving
 `/changelog` and is not this file.
 
 ## [Unreleased]
+
+### Changed
+
+- Renamed the repository, Go module, release artifacts, and CLI from `pi-go`/`pi` to `pigo`, so it
+  installs beside upstream `pi`; `pigo update` now prints exact installer and Go routes.
 
 ## [0.1.0] - 2026-07-20
 
@@ -12,7 +17,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 - Current upstream SDK surface: image-model registry and OpenRouter catalog, typed RPC client,
   public retry/overflow and skill-block helpers, custom-theme HTML export, and notify-only update
-  checks with pi-go and upstream version identity.
+  checks with pigo and upstream version identity.
 - Release hardening: immutable CI action SHAs, fixture regeneration at tag time, strict changelog
   notes, clean-macOS checksum support, and a 754 KB amd64 linker-alignment reduction.
 - Upstream pi 0.80.10 sync to `3a40794e`: tool-result and summary usage accounting, Qwen Token
@@ -27,14 +32,14 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
   `atob`/`btoa`/`TextDecoder`/`structuredClone` globals; fs shim errors are Node-shaped
   (`code`/`errno`/`syscall`/`path`, so `err.code === "ENOENT"` idioms work); `import.meta.url`
   is defined per bundle as the entry's `file://` URL; `.node` native addons and WebAssembly
-  modules fail with explicit "not supported by the pi-go extension runtime" diagnostics.
+  modules fail with explicit "not supported by the pigo extension runtime" diagnostics.
 - jsbridge pi-* module surface: `@earendil-works/pi-ai` exports `EventStream`,
   `AssistantMessageEventStream`, `createAssistantMessageEventStream` (upstream
   `utils/event-stream.ts` port) and `calculateCost`; `pi-coding-agent` exports `getAgentDir`,
   `getMarkdownTheme`, `VERSION`, `parseFrontmatter`/`stripFrontmatter`; `pi-tui` exports the
   full `Key` builder and `isKeyRelease`. Unknown imports from the pi-* shims now fail at first
   touch with a clear "not exported" error instead of resolving `undefined` and breaking later.
-- Extensions from installed pi packages load in every session (`pi install` now delivers its
+- Extensions from installed pi packages load in every session (`pigo install` now delivers its
   main payload), and `-e npm:<pkg>` / `-e git:<repo>` performs upstream's temporary-install
   resolution instead of treating the spec as a literal path. npm/git package dependencies are
   installed through the settings `npmCommand` (default `npm install --omit=dev`), skipped when
@@ -83,7 +88,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
   Slack file tokens stay on Slack hosts, Google Chat JWKS refreshes and
   per-space writes are throttled, Discord reconnect/heartbeat state is
   bounded per connection, and Teams conversation state is bounded.
-- SECURITY: `pi --help` and unknown-flag invocations no longer load untrusted project settings.
+- SECURITY: `pigo --help` and unknown-flag invocations no longer load untrusted project settings.
   Previously those paths constructed settings without the project-trust gate, so an untrusted
   project's `mcpServers` could execute arbitrary commands and make network requests from the
   most innocuous invocations.

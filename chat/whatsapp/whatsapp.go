@@ -1,5 +1,5 @@
 // Package whatsapp implements the WhatsApp Business Cloud API adapter for
-// the pi-go chat gateway: webhook ingress (hub handshake + HMAC-signed
+// the pigo chat gateway: webhook ingress (hub handshake + HMAC-signed
 // events), final-message delivery with reply threading, and authenticated
 // media download.
 //
@@ -20,7 +20,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/chat"
+	"github.com/OrdalieTech/pigo/chat"
 )
 
 // GraphVersion is the pinned Graph API version used for every call.

@@ -3,8 +3,8 @@ package runner_test
 import (
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/conformance/runner"
-	"github.com/OrdalieTech/pi-go/tui"
+	"github.com/OrdalieTech/pigo/conformance/runner"
+	"github.com/OrdalieTech/pigo/tui"
 )
 
 type f12MarkdownFixture struct {

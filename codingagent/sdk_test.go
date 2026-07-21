@@ -15,13 +15,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/agent/harness"
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/ai/providers/faux"
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	"github.com/OrdalieTech/pi-go/codingagent/extensions"
-	sessionstore "github.com/OrdalieTech/pi-go/codingagent/session"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/agent/harness"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/ai/providers/faux"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 func isolateSDKAgentDir(t *testing.T) {
@@ -428,7 +428,7 @@ func TestNewAgentSessionReloadRebuildsSettingsBoundTools(t *testing.T) {
 	cwd := t.TempDir()
 	agentDir := t.TempDir()
 	settingsPath := filepath.Join(agentDir, "settings.json")
-	if err := os.WriteFile(settingsPath, []byte(`{"shellCommandPrefix":"export PI_GO_RELOAD_PREFIX=old"}`), 0o644); err != nil {
+	if err := os.WriteFile(settingsPath, []byte(`{"shellCommandPrefix":"export PIGO_RELOAD_PREFIX=old"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
@@ -462,7 +462,7 @@ func TestNewAgentSessionReloadRebuildsSettingsBoundTools(t *testing.T) {
 			t.Fatal("active bash tool is missing")
 		}
 		output, executeErr := bash.Execute(context.Background(), "reload", map[string]any{
-			"command": `printf '%s' "$PI_GO_RELOAD_PREFIX"`,
+			"command": `printf '%s' "$PIGO_RELOAD_PREFIX"`,
 		}, nil)
 		if executeErr != nil {
 			t.Fatal(executeErr)
@@ -480,7 +480,7 @@ func TestNewAgentSessionReloadRebuildsSettingsBoundTools(t *testing.T) {
 	if got := runBash(); got != "old" {
 		t.Fatalf("initial bash prefix = %q", got)
 	}
-	if err := os.WriteFile(settingsPath, []byte(`{"shellCommandPrefix":"export PI_GO_RELOAD_PREFIX=new"}`), 0o644); err != nil {
+	if err := os.WriteFile(settingsPath, []byte(`{"shellCommandPrefix":"export PIGO_RELOAD_PREFIX=new"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := result.Session.Reload(context.Background()); err != nil {
@@ -1618,7 +1618,7 @@ func TestNewAgentSessionThreadsShellSettingsToBashTool(t *testing.T) {
 	if err := os.MkdirAll(agentDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(`{"shellCommandPrefix":"export PI_GO_SDK_PREFIX=threaded"}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(`{"shellCommandPrefix":"export PIGO_SDK_PREFIX=threaded"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	provider := testFaux(100000)
@@ -1634,7 +1634,7 @@ func TestNewAgentSessionThreadsShellSettingsToBashTool(t *testing.T) {
 	}
 	defer result.Session.Dispose()
 	tool := result.Session.State().Tools[0]
-	got, err := tool.Execute(context.Background(), "call", map[string]any{"command": "printf %s \"$PI_GO_SDK_PREFIX\""}, nil)
+	got, err := tool.Execute(context.Background(), "call", map[string]any{"command": "printf %s \"$PIGO_SDK_PREFIX\""}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

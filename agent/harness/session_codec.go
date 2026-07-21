@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/internal/jsonwire"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
 )
 
 type harnessSessionHeader struct {

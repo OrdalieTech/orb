@@ -92,7 +92,7 @@ func Run(ctx context.Context, config Config) (Result, error) {
 		}
 	}
 
-	temporary, err := os.MkdirTemp("", "pi-go-sync-fixtures-*")
+	temporary, err := os.MkdirTemp("", "pigo-sync-fixtures-*")
 	if err != nil {
 		return Result{}, err
 	}
@@ -184,7 +184,7 @@ func resolveRoot(configured string) (string, error) {
 		}
 		parent := filepath.Dir(directory)
 		if parent == directory {
-			return "", fmt.Errorf("cannot find pi-go root from current directory")
+			return "", fmt.Errorf("cannot find pigo root from current directory")
 		}
 		directory = parent
 	}

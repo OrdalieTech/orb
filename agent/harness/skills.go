@@ -10,7 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/OrdalieTech/pi-go/internal/ignorerules"
+	"github.com/OrdalieTech/pigo/internal/ignorerules"
 )
 
 const (

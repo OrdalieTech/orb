@@ -9,11 +9,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/internal/jsonschema"
-	"github.com/OrdalieTech/pi-go/internal/localecompare"
-	"github.com/OrdalieTech/pi-go/internal/truncate"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/internal/jsonschema"
+	"github.com/OrdalieTech/pigo/internal/localecompare"
+	"github.com/OrdalieTech/pigo/internal/truncate"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )

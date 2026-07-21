@@ -1,4 +1,4 @@
-// Package chat implements the core of the pi-go chat gateway (D27):
+// Package chat implements the core of the pigo chat gateway (D27):
 // platform-agnostic messages, the synchronous turn processor with its durable
 // turn ledger, a preview coalescer, and a local single-process runner with a
 // durable spool.

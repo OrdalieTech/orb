@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/OrdalieTech/pi-go/codingagent/config"
+	"github.com/OrdalieTech/pigo/codingagent/config"
 	"github.com/bmatcuk/doublestar/v4"
 )
 

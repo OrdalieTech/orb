@@ -377,7 +377,7 @@ async function generateThemeDiscovery(upstreamRoot: string) {
   return withOfflineGeneratedCatalog(upstreamRoot, async () => {
     const source = "packages/coding-agent/src/core/resource-loader.ts";
     const resourceModule = (await import(pathToFileURL(path.join(upstreamRoot, source)).href)) as ResourceLoaderModule;
-    const root = await mkdtemp(path.join(tmpdir(), "pi-go-f12-theme-"));
+    const root = await mkdtemp(path.join(tmpdir(), "pigo-f12-theme-"));
     try {
       const agentDir = path.join(root, "agent");
       const cwd = path.join(root, "project");
@@ -547,7 +547,7 @@ export async function generateF12(upstreamRoot: string, outputRoot: string, upst
       export: themeModule.getThemeExportColors(name),
     };
   });
-  const validationRoot = await mkdtemp(path.join(tmpdir(), "pi-go-f12-theme-validation-"));
+  const validationRoot = await mkdtemp(path.join(tmpdir(), "pigo-f12-theme-validation-"));
   let trailingDocumentAccepted = false;
   let unknownForegroundThrows = false;
   try {

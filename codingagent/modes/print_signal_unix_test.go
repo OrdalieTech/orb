@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/ai/providers/faux"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai/providers/faux"
 )
 
 func TestRunPrintModeSubprocessExitsWithSignalCode(t *testing.T) {
@@ -22,8 +22,8 @@ func TestRunPrintModeSubprocessExitsWithSignalCode(t *testing.T) {
 	ready := filepath.Join(root, "ready")
 	command := exec.Command(os.Args[0], "-test.run=^TestRunPrintModeSignalHelper$")
 	command.Env = append(os.Environ(),
-		"PI_GO_PRINT_SIGNAL_HELPER=1",
-		"PI_GO_PRINT_SIGNAL_READY="+ready,
+		"PIGO_PRINT_SIGNAL_HELPER=1",
+		"PIGO_PRINT_SIGNAL_READY="+ready,
 	)
 	output := &lockedBuffer{}
 	command.Stdout = output
@@ -62,14 +62,14 @@ func TestRunPrintModeSubprocessExitsWithSignalCode(t *testing.T) {
 }
 
 func TestRunPrintModeSignalHelper(t *testing.T) {
-	if os.Getenv("PI_GO_PRINT_SIGNAL_HELPER") != "1" {
+	if os.Getenv("PIGO_PRINT_SIGNAL_HELPER") != "1" {
 		t.Skip("subprocess helper")
 	}
 	provider := faux.New()
 	provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("unused")})
 	session := newPrintAgent(provider)
 	session.Subscribe(func(ctx context.Context, _ agent.AgentEvent) error {
-		if err := os.WriteFile(os.Getenv("PI_GO_PRINT_SIGNAL_READY"), []byte("ready"), 0o600); err != nil {
+		if err := os.WriteFile(os.Getenv("PIGO_PRINT_SIGNAL_READY"), []byte("ready"), 0o600); err != nil {
 			return err
 		}
 		<-ctx.Done()

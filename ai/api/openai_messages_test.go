@@ -3,7 +3,7 @@ package api
 import (
 	"testing"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 func TestTransformMessagesDowngradesImagesAndFillsOrphanedCalls(t *testing.T) {

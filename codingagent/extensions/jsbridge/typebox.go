@@ -10,17 +10,17 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/OrdalieTech/pi-go/agent"
-	"github.com/OrdalieTech/pi-go/agent/harness"
-	"github.com/OrdalieTech/pi-go/ai"
-	aiapi "github.com/OrdalieTech/pi-go/ai/api"
-	aimodels "github.com/OrdalieTech/pi-go/ai/models"
-	"github.com/OrdalieTech/pi-go/codingagent"
-	"github.com/OrdalieTech/pi-go/codingagent/config"
-	modetheme "github.com/OrdalieTech/pi-go/codingagent/modes/theme"
-	"github.com/OrdalieTech/pi-go/codingagent/tools"
-	"github.com/OrdalieTech/pi-go/internal/truncate"
-	"github.com/OrdalieTech/pi-go/tui"
+	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/agent/harness"
+	"github.com/OrdalieTech/pigo/ai"
+	aiapi "github.com/OrdalieTech/pigo/ai/api"
+	aimodels "github.com/OrdalieTech/pigo/ai/models"
+	"github.com/OrdalieTech/pigo/codingagent"
+	"github.com/OrdalieTech/pigo/codingagent/config"
+	modetheme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
+	"github.com/OrdalieTech/pigo/codingagent/tools"
+	"github.com/OrdalieTech/pigo/internal/truncate"
+	"github.com/OrdalieTech/pigo/tui"
 	"github.com/grafana/sobek"
 	"gopkg.in/yaml.v3"
 )
@@ -384,7 +384,7 @@ func guardShimModule(runtime *sobek.Runtime, module *sobek.Object, name string) 
 			if (typeof prop !== "string" || prop in t || interop[prop] === true) {
 				return Reflect.get(t, prop, receiver);
 			}
-			throw new TypeError("'" + prop + "' is not exported by " + name + " (pi-go shim)");
+			throw new TypeError("'" + prop + "' is not exported by " + name + " (pigo shim)");
 		},
 	});
 })`)
@@ -543,7 +543,7 @@ func installExampleHelpers(runtime *sobek.Runtime, vm *runtimeVM, codingModule, 
 		return err
 	}
 	// Mirrors upstream VERSION (src/config.ts:492, the package version).
-	// pi-go tracks the pinned upstream release in UPSTREAM.lock.
+	// pigo tracks the pinned upstream release in UPSTREAM.lock.
 	if err := codingModule.Set("VERSION", upstreamPackageVersion); err != nil {
 		return err
 	}

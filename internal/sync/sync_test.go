@@ -15,11 +15,11 @@ import (
 func TestMirrorMappingPrefersFileRowsAndExpandsBraces(t *testing.T) {
 	mirror, err := parseMirror([]byte(`# MIRROR
 
-| Upstream | pi-go |
+| Upstream | pigo |
 |---|---|
 | ` + "`packages/ai/src/`" + ` | ` + "`ai/`" + ` |
 
-| Upstream file | pi-go file | WP |
+| Upstream file | pigo file | WP |
 |---|---|---|
 | ` + "`packages/ai/src/types.ts`" + ` | ` + "`ai/types.go`, `codingagent/messages.go`" + ` | WP-110 |
 | ` + "`packages/agent/src/harness/compaction/{compaction,branch-summarization,utils}.ts`" + ` | ` + "`agent/harness/compaction.go`" + ` | WP-310 |
@@ -209,13 +209,13 @@ func newSyncFixture(t *testing.T) syncFixture {
 
 	writeTestFile(t, filepath.Join(root, ".gitignore"), ".upstream/\n")
 	writeTestFile(t, filepath.Join(root, "UPSTREAM.lock"), "{\n  \"repo\": \""+upstream+"\",\n  \"commit\": \""+base+"\",\n  \"version\": \"1.0.0\",\n  \"syncedAt\": \"2026-07-17\"\n}\n")
-	writeTestFile(t, filepath.Join(root, "docs", "MIRROR.md"), "| Upstream file | pi-go file | WP |\n|---|---|---|\n| `packages/ai/src/types.ts` | `ai/types.go` | WP-110 |\n")
+	writeTestFile(t, filepath.Join(root, "docs", "MIRROR.md"), "| Upstream file | pigo file | WP |\n|---|---|---|\n| `packages/ai/src/types.ts` | `ai/types.go` | WP-110 |\n")
 	writeTestFile(t, filepath.Join(root, "conformance", "fixtures", "F1", "cases.json"), "old fixture\n")
 	gitTest(t, root, "init", "-b", "main")
 	gitTest(t, root, "config", "user.name", "Sync Test")
 	gitTest(t, root, "config", "user.email", "sync@example.test")
 	gitTest(t, root, "add", ".")
-	gitTest(t, root, "commit", "-m", "pi-go base")
+	gitTest(t, root, "commit", "-m", "pigo base")
 	return syncFixture{root: root, upstream: upstream, base: base, target: target}
 }
 
@@ -240,7 +240,7 @@ func (fixture syncFixture) config(bump, red bool) Config {
 		if red {
 			return "FAIL\n", errors.New("exit status 1")
 		}
-		return "ok github.com/OrdalieTech/pi-go/conformance/runner\n", nil
+		return "ok github.com/OrdalieTech/pigo/conformance/runner\n", nil
 	}
 	return config
 }

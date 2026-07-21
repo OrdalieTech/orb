@@ -6,19 +6,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/internal/jsonschema"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/internal/jsonschema"
 )
 
 func TestAzureOpenAIResponsesLiveToolCallRoundTrip(t *testing.T) {
-	if os.Getenv("PI_GO_LIVE_TESTS") != "1" {
-		t.Skip("set PI_GO_LIVE_TESTS=1 to run the Azure OpenAI live smoke test")
+	if os.Getenv("PIGO_LIVE_TESTS") != "1" {
+		t.Skip("set PIGO_LIVE_TESTS=1 to run the Azure OpenAI live smoke test")
 	}
 	apiKey := os.Getenv("AZURE_OPENAI_API_KEY")
 	if apiKey == "" || (os.Getenv("AZURE_OPENAI_BASE_URL") == "" && os.Getenv("AZURE_OPENAI_RESOURCE_NAME") == "") {
-		t.Fatal("PI_GO_LIVE_TESTS=1 requires AZURE_OPENAI_API_KEY and AZURE_OPENAI_BASE_URL or AZURE_OPENAI_RESOURCE_NAME")
+		t.Fatal("PIGO_LIVE_TESTS=1 requires AZURE_OPENAI_API_KEY and AZURE_OPENAI_BASE_URL or AZURE_OPENAI_RESOURCE_NAME")
 	}
-	modelID := os.Getenv("PI_GO_AZURE_OPENAI_MODEL")
+	modelID := os.Getenv("PIGO_AZURE_OPENAI_MODEL")
 	if modelID == "" {
 		modelID = "gpt-4o-mini"
 	}
@@ -31,7 +31,7 @@ func TestAzureOpenAIResponsesLiveToolCallRoundTrip(t *testing.T) {
 		Parameters: jsonschema.Schema(`{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}`),
 	}}
 	messages := ai.MessageList{&ai.UserMessage{
-		Content: ai.NewUserText("Call the echo tool exactly once with text pi-go-live. Do not answer until the tool result arrives."), Timestamp: time.Now().UnixMilli(),
+		Content: ai.NewUserText("Call the echo tool exactly once with text pigo-live. Do not answer until the tool result arrives."), Timestamp: time.Now().UnixMilli(),
 	}}
 	maxTokens := float64(256)
 	timeoutMS := int64(60_000)
@@ -51,12 +51,12 @@ func TestAzureOpenAIResponsesLiveToolCallRoundTrip(t *testing.T) {
 	if toolRequest.StopReason != ai.StopReasonToolUse || call == nil {
 		t.Fatalf("first response stop reason = %q, tool call = %#v: %s", toolRequest.StopReason, call, assistantError(toolRequest))
 	}
-	if call.Name != "echo" || call.Arguments["text"] != "pi-go-live" {
-		t.Fatalf("tool call = %q %#v, want echo with pi-go-live", call.Name, call.Arguments)
+	if call.Name != "echo" || call.Arguments["text"] != "pigo-live" {
+		t.Fatalf("tool call = %q %#v, want echo with pigo-live", call.Name, call.Arguments)
 	}
 	messages = append(messages, toolRequest, &ai.ToolResultMessage{
 		ToolCallID: call.ID, ToolName: call.Name,
-		Content: ai.ToolResultContent{&ai.TextContent{Text: "pi-go-live"}}, Timestamp: time.Now().UnixMilli(),
+		Content: ai.ToolResultContent{&ai.TextContent{Text: "pigo-live"}}, Timestamp: time.Now().UnixMilli(),
 	})
 	second, err := StreamAzureOpenAIResponsesWithOptions(ctx, model, ai.Context{Messages: messages, Tools: &tools}, &AzureOpenAIResponsesOptions{
 		StreamOptions: ai.StreamOptions{APIKey: &apiKey, MaxTokens: &maxTokens, TimeoutMS: &timeoutMS},

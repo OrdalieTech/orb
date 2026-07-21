@@ -1166,7 +1166,7 @@ async function extractOpenAIProvider(upstreamRoot: string): Promise<ProviderFixt
   // Provider catalogs are generated and gitignored upstream. Materialize the pinned
   // offline baseline in a temporary copy so extraction never dirties .upstream and
   // does not let a changing remote model catalog alter conformance goldens.
-  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "pi-go-f2-openai-provider-"));
+  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "pigo-f2-openai-provider-"));
   const packageRoot = path.join(temporaryRoot, "ai");
   try {
     await cp(path.join(upstreamRoot, "packages/ai"), packageRoot, { recursive: true });

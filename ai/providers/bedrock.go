@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/ai/auth"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/ai/auth"
 )
 
 type bedrockAuth struct{}

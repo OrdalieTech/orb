@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	conformance "github.com/OrdalieTech/pi-go/conformance/runner"
+	conformance "github.com/OrdalieTech/pigo/conformance/runner"
 )
 
 func TestDiscoveryFixtureMatchesUpstream(t *testing.T) {

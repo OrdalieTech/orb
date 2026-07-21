@@ -76,7 +76,7 @@ export async function generateF11JSBridge(
   await withUpstreamModelData(upstreamRoot, async () => {
     const loaderSource = "packages/coding-agent/src/core/extensions/loader.ts";
     const loader = (await import(pathToFileURL(path.join(upstreamRoot, loaderSource)).href)) as any;
-    const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "pi-go-f11-jsbridge-"));
+    const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "pigo-f11-jsbridge-"));
     try {
       const cwd = path.join(temporaryRoot, "project");
       const agentDir = path.join(temporaryRoot, "agent");

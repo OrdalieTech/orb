@@ -11,7 +11,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/OrdalieTech/pi-go/ai"
+	"github.com/OrdalieTech/pigo/ai"
 )
 
 type ModelConfig struct {
@@ -227,7 +227,7 @@ func validateModelConfig(config *ModelConfig) error {
 			}
 		}
 		if provider.OAuth != nil {
-			return fmt.Errorf("providers.%s.oauth: Radius is not part of pi-go", providerID)
+			return fmt.Errorf("providers.%s.oauth: Radius is not part of pigo", providerID)
 		}
 		for index, model := range provider.Models {
 			path := fmt.Sprintf("providers.%s.models.%d", providerID, index)

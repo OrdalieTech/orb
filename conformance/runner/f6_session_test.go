@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pi-go/ai"
-	"github.com/OrdalieTech/pi-go/codingagent/session"
-	"github.com/OrdalieTech/pi-go/conformance/runner"
+	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/pigo/conformance/runner"
 )
 
 type f6Fixture struct {
@@ -184,7 +184,7 @@ func TestF6SessionWriteAndProjectionMatchUpstream(t *testing.T) {
 	}
 	f6CompareProjection(t, wantProjection, gotProjection, "Go")
 
-	if os.Getenv("PI_GO_F6_TS_VERIFY") == "1" {
+	if os.Getenv("PIGO_F6_TS_VERIFY") == "1" {
 		tsProjection := f6VerifyWithUpstream(t, sessionPath)
 		f6CompareProjection(t, wantProjection, tsProjection, "upstream TypeScript")
 	}
