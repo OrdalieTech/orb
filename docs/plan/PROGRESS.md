@@ -163,10 +163,10 @@ evidence remains owner-blocked**. The owner retained the full-parity scope and a
 
 ## Sprint 4 — Ship (M5)
 
-Status: **deterministic release-candidate verification is green through the current upstream API
-tail. The owner resolved the size and race-gate decisions on 2026-07-20; M5 remains open on
-live/VM/publication checks and the final commit-specific audit/tag after they close** (see
-docs/trim/M5.md §Release remainder).
+Status: **v0.1.0 was published on 2026-07-21 from `600198b` after the owner explicitly authorized
+the deterministic green candidate for release. GitHub Actions run `29875158999` passed the full
+gate and published all four archives; subscribed OAuth, hosted-nightly, and real-terminal/macOS
+smokes remain post-release follow-up** (see docs/trim/M5.md §Release closure).
 
 - [x] Land the release machinery: goreleaser (4 targets, snapshot verified), tag-triggered
       workflow re-running the gate, checksum-verifying install script, Homebrew formula generation,
@@ -196,15 +196,13 @@ docs/trim/M5.md §Release remainder).
       in-memory 1,000-turn Processor core and F12 rendering, with the startup, session-creation,
       compaction, and binary-size regressions retained in `docs/trim/M5.md` rather than hidden by
       an aggregate.
-- [ ] Re-verify every M1–M4 criterion at the release commit. The deterministic surfaces and the
-      2026-07-20 lock bump to `3a40794e` are green (116 paths classified, zero unmapped), but the
-      subscribed OAuth, hosted-nightly, and real-terminal criteria remain owner-blocked.
-- [ ] Create the final annotated `v0.1.0` tag only after the release commit is complete. The stale
-      local tag at `b20a03b` was removed; no local or remote release tag exists.
-- [ ] Owner-gated before publishing the tag: OAuth live runs, CI secrets (nightly 72h window),
-      and clean-macOS install/docs verification. The canonical public repositories now exist and
-      this checkout's `origin` points to `OrdalieTech/pigo`; Homebrew publication uses the
-      authenticated release operator instead of a persistent cross-repository secret.
+- [x] Re-verify the deterministic M1–M4 criteria at the release commit. The v0.81.0 lock is green,
+      436/436 upstream files are mapped, and the owner deferred subscribed OAuth, hosted-nightly,
+      and real-terminal checks to post-release follow-up.
+- [x] Create the final annotated `v0.1.0` tag at release commit `600198b` and publish the GitHub
+      release with checksum-verified Linux and macOS archives.
+- [x] Owner authorized publication on 2026-07-21 without waiting for the subscribed OAuth,
+      trailing-72-hour nightly, and clean-macOS/terminal smokes; those remain explicit follow-up.
 
 ## Sprint 5 — Chat gateway (D27)
 
