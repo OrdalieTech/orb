@@ -27,9 +27,9 @@ func TestGenerateAppliesPinnedCatalogQuirksWithoutLosingFloatMetadata(t *testing
 			"mistral-test":{"tool_call":true,"modalities":{"input":["text"],"output":["text"]},"cost":{"input":0.1234567}}
 		}},
 		"nvidia":{"models":{
-			"kept":{"tool_call":true,"modalities":{"input":["text"],"output":["text"]}},
+			"z-ai/glm-5.2":{"tool_call":true,"reasoning":true,"modalities":{"input":["text"],"output":["text"]}},
 			"no-text-output":{"tool_call":true,"modalities":{"input":["text"],"output":["image"]}},
-			"upstage/solar-10.7b-instruct":{"tool_call":true,"modalities":{"input":["text"],"output":["text"]}}
+			"upstage/solar-10_7b-instruct":{"tool_call":true,"modalities":{"input":["text"],"output":["text"]}}
 		}},
 		"github-copilot":{"models":{
 			"claude-sonnet-4.6":{"tool_call":true,"modalities":{"input":["text"],"output":["text"]},"cost":{"input":3,"tiers":[{"input":6,"output":9,"tier":{"type":"context","size":200000.5}}]}}
@@ -38,7 +38,7 @@ func TestGenerateAppliesPinnedCatalogQuirksWithoutLosingFloatMetadata(t *testing
 			"qwen-alibaba":{"tool_call":true,"modalities":{"input":["text"],"output":["text"]},"provider":{"npm":"@ai-sdk/alibaba"}}
 		}}
 	}`)
-	catalog, err := Generate(data)
+	catalog, err := Generate(Sources{ModelsDev: data})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestGenerateAppliesPinnedCatalogQuirksWithoutLosingFloatMetadata(t *testing
 	if vertex.Cost.CacheRead != 0.03 || vertex.Cost.CacheWrite != 0 {
 		t.Fatalf("Vertex Gemini 2.5 Flash cache costs = %#v", vertex.Cost)
 	}
-	if len(catalog["nvidia"]) != 1 || catalog["nvidia"]["kept"].ID == "" {
+	if len(catalog["nvidia"]) != 1 || catalog["nvidia"]["z-ai/glm-5.2"].ID == "" {
 		t.Fatalf("NVIDIA filtering = %#v", catalog["nvidia"])
 	}
 
@@ -90,7 +90,7 @@ func TestGenerateAppliesPinnedCatalogQuirksWithoutLosingFloatMetadata(t *testing
 		t.Fatalf("Alibaba cache-control compat = %s", catalog["opencode"]["qwen-alibaba"].Compat)
 	}
 
-	rendered, err := Render(data)
+	rendered, err := Render(Sources{ModelsDev: data, GeneratedAt: pinnedGeneratedAt})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,6 +133,38 @@ func TestApplyCatalogMetadataMatchesRepresentativePinnedCompat(t *testing.T) {
 	}
 	if compat.SendSessionAffinityHeaders == nil || !*compat.SendSessionAffinityHeaders || compat.SupportsLongCacheRetention == nil || *compat.SupportsLongCacheRetention {
 		t.Fatalf("Cloudflare Workers compat = %s", workers.Compat)
+	}
+}
+
+// SYNC-1: upstream HEAD gives moonshot kimi-k3 the OpenAI thinking format and
+// reasoning-effort support (generate-models.ts:1761-1766).
+func TestSYNC1MoonshotKimiK3Compat(t *testing.T) {
+	for _, provider := range []string{"moonshotai", "moonshotai-cn"} {
+		model := ai.Model{ID: "kimi-k3", API: ai.APIOpenAICompletions, Provider: ai.ProviderID(provider), Reasoning: true}
+		applyCatalogMetadata(&model)
+		var compat ai.OpenAICompletionsCompat
+		if err := json.Unmarshal(model.Compat, &compat); err != nil {
+			t.Fatal(err)
+		}
+		if compat.ThinkingFormat == nil || *compat.ThinkingFormat != ai.ThinkingFormatOpenAI {
+			t.Fatalf("%s kimi-k3 thinkingFormat = %s", provider, model.Compat)
+		}
+		if compat.SupportsReasoningEffort == nil || !*compat.SupportsReasoningEffort {
+			t.Fatalf("%s kimi-k3 supportsReasoningEffort = %s", provider, model.Compat)
+		}
+		if compat.RequiresReasoningContentOnAssistantMessages == nil || !*compat.RequiresReasoningContentOnAssistantMessages ||
+			compat.DeferredToolsMode == nil || *compat.DeferredToolsMode != ai.DeferredToolsKimi {
+			t.Fatalf("%s kimi-k3 lost pinned compat = %s", provider, model.Compat)
+		}
+		other := ai.Model{ID: "kimi-k2.7-code", API: ai.APIOpenAICompletions, Provider: ai.ProviderID(provider)}
+		applyCatalogMetadata(&other)
+		var otherCompat ai.OpenAICompletionsCompat
+		if err := json.Unmarshal(other.Compat, &otherCompat); err != nil {
+			t.Fatal(err)
+		}
+		if otherCompat.ThinkingFormat == nil || *otherCompat.ThinkingFormat != ai.ThinkingFormatDeepSeek {
+			t.Fatalf("%s kimi-k2.7-code thinkingFormat = %s", provider, other.Compat)
+		}
 	}
 }
 

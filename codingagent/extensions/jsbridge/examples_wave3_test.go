@@ -438,7 +438,7 @@ func TestWave3ExampleTriggerCompact(t *testing.T) {
 	if manual.CustomInstructions != "keep the decisions" || manual.OnComplete == nil || manual.OnError == nil {
 		t.Fatalf("manual compact options = %#v", manual)
 	}
-	manual.OnComplete(harness.CompactionResult{Summary: "done", TokensBefore: 150_000})
+	manual.OnComplete(session.CompactionResult{Summary: "done", TokensBefore: 150_000})
 	waitForNotification(t, ui, "Compaction completed", "info")
 	manual.OnError(context.DeadlineExceeded)
 	waitForNotification(t, ui, "Compaction failed: context deadline exceeded", "error")

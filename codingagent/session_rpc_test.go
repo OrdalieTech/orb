@@ -28,7 +28,7 @@ func TestPromptPreflightRejectsUnknownModelSentinel(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
-		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings,
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +87,7 @@ func TestExportHTMLPrefersConfiguredCustomThemeOverCurrent(t *testing.T) {
 	if _, err := manager.AppendMessage(runtimeAssistant(provider, "answer", 1)); err != nil {
 		t.Fatal(err)
 	}
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{
 		Model: provider.GetModel(), SystemPrompt: "test", Messages: agent.AgentMessages{}, Tools: []agent.AgentTool{},
 	}))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
@@ -179,7 +179,7 @@ func TestCycleModelUsesAuthenticatedScopeAndScopedThinking(t *testing.T) {
 		modelB.Provider: true,
 		modelC.Provider: true,
 	}
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{
 		Model: &modelA, ThinkingLevel: ai.ModelThinkingLow, Messages: agent.AgentMessages{},
 	}))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
@@ -255,7 +255,7 @@ func TestCycleModelBackwardWrapsScopeAndFiltersAuth(t *testing.T) {
 		modelB.Provider: true,
 		modelC.Provider: true,
 	}
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{
 		Model: &modelA, ThinkingLevel: ai.ModelThinkingLow, Messages: agent.AgentMessages{},
 	}))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
@@ -317,7 +317,7 @@ func TestCycleModelBackwardFromAbsentCurrentModelUsesIndexZero(t *testing.T) {
 	modelB := rpcTestModel("provider-b", "b")
 	modelC := rpcTestModel("provider-c", "c")
 	outside := rpcTestModel("provider-d", "outside")
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{
 		Model: &outside, ThinkingLevel: ai.ModelThinkingLow, Messages: agent.AgentMessages{},
 	}))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
@@ -364,7 +364,7 @@ func TestCycleModelPreservesFullModelFields(t *testing.T) {
 	rich.Input = ai.InputModalities{ai.InputText, ai.InputImage}
 	rich.Cost = ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: 1.25, Output: 6.5, CacheRead: 0.5, CacheWrite: 2}}
 	rich.Compat = json.RawMessage(`{"supportsStore":false}`)
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{
 		Model: &modelA, ThinkingLevel: ai.ModelThinkingLow, Messages: agent.AgentMessages{},
 	}))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
@@ -405,7 +405,7 @@ func TestCycleModelReportsUnscopedCatalogCycle(t *testing.T) {
 	}
 	modelA := rpcTestModel("provider-a", "a")
 	modelB := rpcTestModel("provider-b", "b")
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{
 		Model: &modelA, ThinkingLevel: ai.ModelThinkingLow, Messages: agent.AgentMessages{},
 	}))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
@@ -439,7 +439,7 @@ func TestAvailableModelsUsesEmptyArrayShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}}))
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}}))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings,
 	})
@@ -463,7 +463,7 @@ func TestSetThinkingLevelWithUnknownModelMatchesUpstream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{ThinkingLevel: ai.ModelThinkingOff, Messages: agent.AgentMessages{}}))
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{ThinkingLevel: ai.ModelThinkingOff, Messages: agent.AgentMessages{}}))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: settings})
 	if err != nil {
 		t.Fatal(err)
@@ -495,7 +495,7 @@ func TestLastAssistantTextUsesECMAScriptTrim(t *testing.T) {
 		t.Fatal(err)
 	}
 	message := &ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: "\u0085"}}, StopReason: ai.StopReasonStop}
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{message}}))
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{message}}))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: settings})
 	if err != nil {
 		t.Fatal(err)
@@ -521,7 +521,7 @@ func TestManualCompactionWithoutModelUsesAuthGuidance(t *testing.T) {
 	if _, err := manager.AppendMessage(userMessage("work")); err != nil {
 		t.Fatal(err)
 	}
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{userMessage("work")}}))
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{userMessage("work")}}))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: settings})
 	if err != nil {
 		t.Fatal(err)
@@ -564,7 +564,7 @@ func TestPromptPreflightCompactsAbortedHighUsageResponse(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{Model: &model, Messages: messages}))
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Model: &model, Messages: messages}))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings,
 		GetAPIKey: func(context.Context, ai.ProviderID) (*string, error) {
@@ -616,7 +616,7 @@ func TestRPCTogglesKeepProjectOverridesEffective(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}}))
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}}))
 	runtime, err := NewSessionRuntime(SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: settings})
 	if err != nil {
 		t.Fatal(err)

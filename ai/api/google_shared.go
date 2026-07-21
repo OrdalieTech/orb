@@ -478,14 +478,21 @@ func mapGoogleToolChoice(choice GoogleToolChoice) string {
 	}
 }
 
-func mapGoogleStopReason(reason string) ai.StopReason {
+// mapGoogleStopReason mirrors google-shared.ts mapStopReason: every known
+// FinishReason maps explicitly and an unknown value throws immediately. (OT-m1)
+func mapGoogleStopReason(reason string) (ai.StopReason, error) {
 	switch reason {
 	case "STOP":
-		return ai.StopReasonStop
+		return ai.StopReasonStop, nil
 	case "MAX_TOKENS":
-		return ai.StopReasonLength
+		return ai.StopReasonLength, nil
+	case "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "SAFETY", "IMAGE_SAFETY",
+		"IMAGE_PROHIBITED_CONTENT", "IMAGE_RECITATION", "IMAGE_OTHER", "RECITATION",
+		"FINISH_REASON_UNSPECIFIED", "OTHER", "LANGUAGE", "MALFORMED_FUNCTION_CALL",
+		"UNEXPECTED_TOOL_CALL", "NO_IMAGE":
+		return ai.StopReasonError, nil
 	default:
-		return ai.StopReasonError
+		return ai.StopReasonError, fmt.Errorf("Unhandled stop reason: %s", reason) //nolint:staticcheck // Exact upstream text.
 	}
 }
 

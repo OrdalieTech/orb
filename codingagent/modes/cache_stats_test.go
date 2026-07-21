@@ -70,7 +70,7 @@ func newCacheStatsRuntime(t *testing.T, manager *sessionstore.SessionManager) *c
 		t.Fatal(err)
 	}
 	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
-		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings,
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings,
 		AvailableModels: func() []ai.Model { return cacheStatsModels },
 	})
 	if err != nil {

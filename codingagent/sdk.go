@@ -495,7 +495,6 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 			ThinkingLevel: thinking,
 			Tools:         activeTools,
 		}),
-		agent.WithStreamFn(streamFn),
 		agent.WithConvertToLLM(ConvertToLLMWithBlockImages(settings.GetBlockImages)),
 		agent.WithSteeringMode(agent.QueueMode(settings.GetSteeringMode())),
 		agent.WithFollowUpMode(agent.QueueMode(settings.GetFollowUpMode())),
@@ -528,7 +527,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	if getModelHeaders != nil {
 		agentOpts = append(agentOpts, agent.WithModelHeadersResolver(getModelHeaders))
 	}
-	a = agent.NewAgent(agentOpts...)
+	a = agent.NewAgent(streamFn, agentOpts...)
 
 	if hasExisting {
 		messages := make(agent.AgentMessages, 0, len(existing.Messages))

@@ -515,7 +515,7 @@ type SessionBeforeForkResult struct {
 
 type SessionBeforeCompactResult struct {
 	Cancel     bool
-	Compaction *harness.CompactionResult
+	Compaction *session.CompactionResult
 }
 
 type TreeSummary struct {
@@ -695,7 +695,7 @@ type ContextUsage struct {
 
 type CompactOptions struct {
 	CustomInstructions string
-	OnComplete         func(harness.CompactionResult)
+	OnComplete         func(session.CompactionResult)
 	OnError            func(error)
 }
 

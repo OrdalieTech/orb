@@ -93,7 +93,7 @@ func newSessionStartRuntime(t *testing.T, settingsJSON map[string]any, registry 
 		}
 	}
 	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
-		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings,
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings,
 		ExtensionRegistry: registry, ExtensionMode: extensions.ModeTUI, DeferSessionStart: true,
 	})
 	if err != nil {

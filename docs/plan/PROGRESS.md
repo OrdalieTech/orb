@@ -289,6 +289,26 @@ Status: **closed by the Sprint 6 commit containing this record**.
       fixture regeneration, module verification, static analysis, and four CGO-disabled
       cross-builds are green.
 
+## Upstream v0.81.0 sync — 2026-07-21
+
+Status: **green; closes with the commit containing this record**.
+
+- [x] Independently adversarially verify all 52 provider, catalog, and login gap IDs against their
+      TypeScript implementations and regression tests; the final evidence table is
+      `docs/compare/provider-login-parity-2026-07-21.md` with no unresolved verdict.
+- [x] Port the complete in-scope v0.81.0 delta: required stream injection, public compaction/session
+      contracts, retained-tail identity, catalog/image generation and freshness, version/product
+      assets, and renamed fixture APIs. Ledger server, native SQLite, and llama as D2/D7 exclusions.
+- [x] Regenerate every fixture from exact tag `9c480b6a`; all 30 manifests are byte-clean, F10
+      payloads are unchanged, and only the expected changelog/version product payloads differ.
+- [x] Verify the NVIDIA 19-ID manifest exactly, full OpenRouter/Vercel ID-set digests, all 39 image
+      models, `go mod tidy -diff`, direct zstd dependency placement, and the protected WIP surfaces.
+- [x] Run `make check` (static product build, vet, zero lint findings, tree-wide race suite) and
+      `make fixtures-check` against the read-only exact-tag checkout; both are green.
+- [x] GitHub CLI confirmed v0.81.1 was published while this exact-tag sync was running. Only the
+      requested SYNC-1 Kimi K3 change is retained as an explicit ahead-of-pin backport; the other
+      v0.81.1 commits are not silently attributed to v0.81.0 and belong to the next sync cycle.
+
 ## Resolved owner decisions
 
 - **M5 binary-size cap (2026-07-20)** — the owner adopted the expansion study's recommended 55 MB
@@ -302,8 +322,6 @@ Status: **closed by the Sprint 6 commit containing this record**.
   canonical source repository and preserves the former `netapy/pigo` remote as `legacy`.
 
 ## Owner-blocked evidence
-- **Recorded for review: llama.cpp extension excluded** (divergence ledger) — shipped at the pin
-  but deleted upstream right after; amend if you want it ported anyway.
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.
 - ChatGPT/Codex, Copilot, and xAI OAuth end-to-end runs likewise require subscribed accounts.
 - Tier-2/Tier-3 provider live tests require repository/API credentials and CI secrets.

@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/OrdalieTech/pigo/ai"
@@ -64,16 +65,15 @@ func TestMergeProviderHeadersIsCaseInsensitive(t *testing.T) {
 	}
 }
 
-func TestResolveOpenAIAPIKeyPrecedenceAndEnvironment(t *testing.T) {
+// Gap OA-m2: upstream getClientApiKey resolves options.apiKey and auth headers
+// only; OPENAI_API_KEY resolution lives in the higher registry/auth layer, so
+// the api layer must not fall back to the environment.
+func TestResolveOpenAIAPIKeyPrecedenceWithoutEnvFallbackOAm2(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "process-key")
 	model := &ai.Model{Provider: "openai"}
 	envKey := "option-env-key"
-	key, err := resolveOpenAIAPIKey(model, &ai.StreamOptions{Env: ai.ProviderEnv{"OPENAI_API_KEY": envKey}})
-	if err != nil || key != envKey {
-		t.Fatalf("option environment key = %q, %v", key, err)
-	}
 	explicit := "explicit-key"
-	key, err = resolveOpenAIAPIKey(model, &ai.StreamOptions{APIKey: &explicit, Env: ai.ProviderEnv{"OPENAI_API_KEY": envKey}})
+	key, err := resolveOpenAIAPIKey(model, &ai.StreamOptions{APIKey: &explicit, Env: ai.ProviderEnv{"OPENAI_API_KEY": envKey}})
 	if err != nil || key != explicit {
 		t.Fatalf("explicit key = %q, %v", key, err)
 	}
@@ -82,9 +82,11 @@ func TestResolveOpenAIAPIKeyPrecedenceAndEnvironment(t *testing.T) {
 	if err != nil || key != "unused" {
 		t.Fatalf("header-backed key = %q, %v", key, err)
 	}
-	key, err = resolveOpenAIAPIKey(model, nil)
-	if err != nil || key != "process-key" {
-		t.Fatalf("process key = %q, %v", key, err)
+	if _, err := resolveOpenAIAPIKey(model, &ai.StreamOptions{Env: ai.ProviderEnv{"OPENAI_API_KEY": envKey}}); err == nil {
+		t.Fatal("api layer consumed OPENAI_API_KEY from options env")
+	}
+	if _, err := resolveOpenAIAPIKey(model, nil); err == nil {
+		t.Fatal("api layer consumed OPENAI_API_KEY from the process environment")
 	}
 	if _, err := resolveOpenAIAPIKey(&ai.Model{Provider: "custom"}, &ai.StreamOptions{Env: ai.ProviderEnv{"OPENAI_API_KEY": envKey}}); err == nil {
 		t.Fatal("custom provider incorrectly consumed OPENAI_API_KEY")
@@ -252,3 +254,30 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (roundTrip roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
 	return roundTrip(request)
 }
+
+// contextGatedBody mimics a real streamed response body: the first read stalls
+// for delay, and every read fails once the request context is cancelled. It
+// lets tests prove a request timeout no longer races the streamed body (OA-M1).
+type contextGatedBody struct {
+	ctx    context.Context
+	delay  time.Duration
+	waited bool
+	reader io.Reader
+}
+
+func (body *contextGatedBody) Read(buffer []byte) (int, error) {
+	if !body.waited {
+		body.waited = true
+		select {
+		case <-body.ctx.Done():
+			return 0, body.ctx.Err()
+		case <-time.After(body.delay):
+		}
+	}
+	if err := body.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return body.reader.Read(buffer)
+}
+
+func (body *contextGatedBody) Close() error { return nil }

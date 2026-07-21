@@ -63,7 +63,14 @@ func eventWireValue(event extensions.Event) (any, map[string]any, error) {
 		copy.Preparation = harness.CompactionPreparation{}
 		copy.BranchEntries = nil
 		shallow = copy
-		deferred["preparation"] = typed.Preparation
+		preparation, preparationErr := wireValue(typed.Preparation)
+		if preparationErr != nil {
+			return nil, nil, preparationErr
+		}
+		if object, ok := preparation.(map[string]any); ok {
+			delete(object, "retainedTail")
+		}
+		deferred["preparation"] = preparation
 		deferred["branchEntries"] = nonNilSlice(typed.BranchEntries)
 	case extensions.SessionCompactEvent:
 		copy := typed

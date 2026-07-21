@@ -1,10 +1,13 @@
 package ai
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/OrdalieTech/pigo/internal/jsonschema"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
 )
 
 type CacheRetention string
@@ -169,6 +172,10 @@ type DeferredToolsMode string
 
 const DeferredToolsKimi DeferredToolsMode = "kimi"
 
+// OpenRouterRouting is passed through to the provider verbatim. Upstream never
+// re-types the compat object, so decoded values carry the raw JSON to preserve
+// unknown keys and member order on the wire; the typed fields only serve
+// Go-side construction.
 type OpenRouterRouting struct {
 	AllowFallbacks         *bool           `json:"allow_fallbacks,omitempty"`
 	RequireParameters      *bool           `json:"require_parameters,omitempty"`
@@ -183,6 +190,159 @@ type OpenRouterRouting struct {
 	MaxPrice               json.RawMessage `json:"max_price,omitempty"`
 	PreferredMinThroughput json.RawMessage `json:"preferred_min_throughput,omitempty"`
 	PreferredMaxLatency    json.RawMessage `json:"preferred_max_latency,omitempty"`
+
+	raw           json.RawMessage
+	originalKnown map[string]json.RawMessage
+}
+
+func (routing *OpenRouterRouting) UnmarshalJSON(data []byte) error {
+	type openRouterRoutingFields OpenRouterRouting
+	var decoded openRouterRoutingFields
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*routing = OpenRouterRouting(decoded)
+	routing.raw = append(json.RawMessage(nil), data...)
+	known, err := openRouterRoutingKnownFields(*routing)
+	if err != nil {
+		return err
+	}
+	routing.originalKnown = known
+	return nil
+}
+
+func (routing OpenRouterRouting) MarshalJSON() ([]byte, error) {
+	type openRouterRoutingFields OpenRouterRouting
+	if len(routing.raw) == 0 {
+		return marshalJSON(openRouterRoutingFields(routing))
+	}
+	current, err := openRouterRoutingKnownFields(routing)
+	if err != nil {
+		return nil, err
+	}
+	members, err := openRouterRoutingMembers(routing.raw)
+	if err != nil {
+		return nil, err
+	}
+	for _, name := range openRouterRoutingKnownFieldOrder {
+		before, hadBefore := routing.originalKnown[name]
+		after, hasAfter := current[name]
+		if hadBefore == hasAfter && bytes.Equal(before, after) {
+			continue
+		}
+		index := -1
+		for candidate := range members {
+			if members[candidate].name == name {
+				index = candidate
+				break
+			}
+		}
+		if !hasAfter {
+			if index >= 0 {
+				members = append(members[:index], members[index+1:]...)
+			}
+			continue
+		}
+		if index >= 0 {
+			members[index].value = after
+		} else {
+			members = append(members, openRouterRoutingMember{name: name, value: after})
+		}
+	}
+	var output bytes.Buffer
+	output.WriteByte('{')
+	for index, member := range members {
+		if index > 0 {
+			output.WriteByte(',')
+		}
+		name, err := jsonwire.MarshalString(member.name)
+		if err != nil {
+			return nil, err
+		}
+		output.Write(name)
+		output.WriteByte(':')
+		output.Write(member.value)
+	}
+	output.WriteByte('}')
+	return output.Bytes(), nil
+}
+
+var openRouterRoutingKnownFieldOrder = []string{
+	"allow_fallbacks",
+	"require_parameters",
+	"data_collection",
+	"zdr",
+	"enforce_distillable_text",
+	"order",
+	"only",
+	"ignore",
+	"quantizations",
+	"sort",
+	"max_price",
+	"preferred_min_throughput",
+	"preferred_max_latency",
+}
+
+type openRouterRoutingMember struct {
+	name  string
+	value json.RawMessage
+}
+
+func openRouterRoutingKnownFields(routing OpenRouterRouting) (map[string]json.RawMessage, error) {
+	type openRouterRoutingFields OpenRouterRouting
+	encoded, err := marshalJSON(openRouterRoutingFields(routing))
+	if err != nil {
+		return nil, err
+	}
+	normalized, err := NormalizeJSONStringifyJSON(encoded)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(normalized, &fields); err != nil {
+		return nil, err
+	}
+	return fields, nil
+}
+
+func openRouterRoutingMembers(raw json.RawMessage) ([]openRouterRoutingMember, error) {
+	normalized, err := NormalizeJSONStringifyJSON(raw)
+	if err != nil {
+		return nil, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(normalized))
+	source := jsonStringifyDecoder{decoder: decoder, data: normalized}
+	opening, err := source.token()
+	if err != nil {
+		return nil, err
+	}
+	if opening != json.Delim('{') {
+		return nil, errors.New("openRouterRouting must be a JSON object")
+	}
+	members := make([]openRouterRoutingMember, 0)
+	for decoder.More() {
+		name, err := source.token()
+		if err != nil {
+			return nil, err
+		}
+		memberName, ok := name.(string)
+		if !ok {
+			return nil, errors.New("openRouterRouting object key must be a string")
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return nil, err
+		}
+		members = append(members, openRouterRoutingMember{name: memberName, value: value})
+	}
+	closing, err := source.token()
+	if err != nil {
+		return nil, err
+	}
+	if closing != json.Delim('}') {
+		return nil, errors.New("openRouterRouting JSON object is not closed")
+	}
+	return members, nil
 }
 
 type VercelGatewayRouting struct {

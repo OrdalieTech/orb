@@ -296,9 +296,9 @@ func TestAgentParallelWritesLeaveLaterSourceCallContent(t *testing.T) {
 	_, err := agent.RunLoop(context.Background(), agent.AgentMessages{&ai.UserMessage{Content: ai.NewUserText("write twice")}}, agent.AgentContext{
 		Tools: []agent.AgentTool{NewWriteTool(dir, nil)},
 	}, agent.AgentLoopConfig{
-		Model: &ai.Model{ID: "test-model", API: "test", Provider: "test"}, StreamFn: stream,
+		Model:         &ai.Model{ID: "test-model", API: "test", Provider: "test"},
 		ToolExecution: agent.ToolExecutionParallel,
-	}, nil)
+	}, nil, stream)
 	if err != nil {
 		t.Fatal(err)
 	}

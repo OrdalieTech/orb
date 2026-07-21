@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -90,18 +91,26 @@ type ErrorEvent struct {
 	Error  *AssistantMessage `json:"error"`
 }
 
-func (StartEvent) isAssistantMessageEvent()         {}
-func (TextStartEvent) isAssistantMessageEvent()     {}
-func (TextDeltaEvent) isAssistantMessageEvent()     {}
-func (TextEndEvent) isAssistantMessageEvent()       {}
-func (ThinkingStartEvent) isAssistantMessageEvent() {}
-func (ThinkingDeltaEvent) isAssistantMessageEvent() {}
-func (ThinkingEndEvent) isAssistantMessageEvent()   {}
-func (ToolCallStartEvent) isAssistantMessageEvent() {}
-func (ToolCallDeltaEvent) isAssistantMessageEvent() {}
-func (ToolCallEndEvent) isAssistantMessageEvent()   {}
-func (DoneEvent) isAssistantMessageEvent()          {}
-func (ErrorEvent) isAssistantMessageEvent()         {}
+// RawAssistantMessageEvent retains a future event shape emitted by a provider
+// while attaching the partial assistant message expected by stream consumers.
+type RawAssistantMessageEvent struct {
+	Raw     json.RawMessage
+	Partial *AssistantMessage
+}
+
+func (StartEvent) isAssistantMessageEvent()               {}
+func (TextStartEvent) isAssistantMessageEvent()           {}
+func (TextDeltaEvent) isAssistantMessageEvent()           {}
+func (TextEndEvent) isAssistantMessageEvent()             {}
+func (ThinkingStartEvent) isAssistantMessageEvent()       {}
+func (ThinkingDeltaEvent) isAssistantMessageEvent()       {}
+func (ThinkingEndEvent) isAssistantMessageEvent()         {}
+func (ToolCallStartEvent) isAssistantMessageEvent()       {}
+func (ToolCallDeltaEvent) isAssistantMessageEvent()       {}
+func (ToolCallEndEvent) isAssistantMessageEvent()         {}
+func (DoneEvent) isAssistantMessageEvent()                {}
+func (ErrorEvent) isAssistantMessageEvent()               {}
+func (RawAssistantMessageEvent) isAssistantMessageEvent() {}
 
 func MarshalAssistantMessageEvent(event AssistantMessageEvent) ([]byte, error) {
 	if event == nil {
@@ -347,4 +356,36 @@ func (event ErrorEvent) MarshalJSON() ([]byte, error) {
 		Reason StopReason        `json:"reason"`
 		Error  *AssistantMessage `json:"error"`
 	}{Type: "error", Reason: event.Reason, Error: event.Error})
+}
+
+func (event RawAssistantMessageEvent) MarshalJSON() ([]byte, error) {
+	normalized, err := NormalizeJSONStringifyJSON(event.Raw)
+	if err != nil {
+		return nil, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(normalized))
+	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+		return nil, errors.New("ai: raw assistant message event must be an object")
+	}
+	object := jsonwire.OrderedObject{}
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		name, ok := token.(string)
+		if !ok {
+			return nil, errors.New("ai: raw assistant message event has a non-string member name")
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return nil, err
+		}
+		object.Set(name, value)
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
+		return nil, errors.New("ai: raw assistant message event is incomplete")
+	}
+	object.Set("partial", event.Partial)
+	return jsonwire.Marshal(object)
 }

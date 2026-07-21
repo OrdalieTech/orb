@@ -12,6 +12,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	bedrocktypes "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
+
 	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/conformance/runner"
 )
@@ -100,6 +103,9 @@ type bedrockFixtureItem struct {
 			TotalTokens      int64 `json:"totalTokens"`
 		} `json:"usage,omitempty"`
 	} `json:"metadata,omitempty"`
+	ThrottlingException *struct {
+		Message string `json:"message"`
+	} `json:"throttlingException,omitempty"`
 }
 
 const f2FixedTimestamp int64 = 1_700_000_000_123
@@ -368,9 +374,10 @@ func TestF2BedrockStreamTraces(t *testing.T) {
 			previousTransport := newBedrockTransport
 			previousNow := openAINowUnixMilli
 			openAINowUnixMilli = func() int64 { return f2FixedTimestamp }
+			items, streamErr := fixtureBedrockItems(fixtureCase.BedrockItems)
 			newBedrockTransport = func(context.Context, *ai.Model, *BedrockConverseStreamOptions) (bedrockTransport, error) {
 				return &fixtureBedrockTransport{response: &fixtureBedrockResponse{
-					items: fixtureBedrockItems(fixtureCase.BedrockItems), status: fixtureCase.Status, requestID: fixtureCase.RequestID,
+					items: items, status: fixtureCase.Status, requestID: fixtureCase.RequestID, err: streamErr,
 				}}, nil
 			}
 			t.Cleanup(func() {
@@ -609,7 +616,9 @@ func streamF2Case(fixtureCase f2Case) (ai.AssistantMessageEventStream, error) {
 				return nil, err
 			}
 			setF2AnthropicPayloadHook(fixtureCase.PayloadHook, &options.StreamOptions)
-			return StreamSimpleAnthropicMessages(context.Background(), &fixtureCase.Model, fixtureCase.Context, &options)
+			// Route through the production dispatcher so cloudflare endpoint
+			// placeholders resolve exactly as upstream cloudflareStreams does (G1).
+			return StreamSimple(context.Background(), &fixtureCase.Model, fixtureCase.Context, &options)
 		}
 		var options AnthropicMessagesOptions
 		if err := json.Unmarshal(fixtureCase.Options, &options); err != nil {
@@ -745,8 +754,11 @@ func selectedF2Headers(apiShape ai.API, headers http.Header) map[string]string {
 		"x-session-affinity",
 		"x-session-id",
 	}
+	if apiShape == ai.APIOpenAIResponses || apiShape == ai.APIOpenAICompletions {
+		names = append(names, "copilot-vision-request", "openai-intent", "x-initiator")
+	}
 	if apiShape == ai.APIAnthropicMessages {
-		names = append(names, "accept", "anthropic-beta", "anthropic-dangerous-direct-browser-access", "anthropic-version", "x-api-key", "x-app")
+		names = append(names, "accept", "anthropic-beta", "anthropic-dangerous-direct-browser-access", "anthropic-version", "cf-aig-authorization", "x-api-key", "x-app")
 		if strings.HasPrefix(headers.Get("user-agent"), "claude-cli/") {
 			names = append(names, "user-agent")
 		}
@@ -803,12 +815,15 @@ type fixtureBedrockResponse struct {
 	index     int
 	status    int
 	requestID string
+	// err mirrors the AWS Go SDK surface for mid-stream exception events: the
+	// event channel closes and the exception is reported via stream.Err() (G8).
+	err error
 }
 
 func (response *fixtureBedrockResponse) Status() int       { return response.status }
 func (response *fixtureBedrockResponse) RequestID() string { return response.requestID }
 func (response *fixtureBedrockResponse) Close() error      { return nil }
-func (response *fixtureBedrockResponse) Err() error        { return nil }
+func (response *fixtureBedrockResponse) Err() error        { return response.err }
 
 func (response *fixtureBedrockResponse) Next(context.Context) (bedrockStreamItem, bool) {
 	if response.index >= len(response.items) {
@@ -819,9 +834,14 @@ func (response *fixtureBedrockResponse) Next(context.Context) (bedrockStreamItem
 	return item, true
 }
 
-func fixtureBedrockItems(values []bedrockFixtureItem) []bedrockStreamItem {
+func fixtureBedrockItems(values []bedrockFixtureItem) ([]bedrockStreamItem, error) {
 	result := make([]bedrockStreamItem, 0, len(values))
 	for _, value := range values {
+		if value.ThrottlingException != nil {
+			// The SDK ends the event stream at an exception member and reports
+			// it through Err(); later fixture items are unreachable (G8).
+			return result, &bedrocktypes.ThrottlingException{Message: aws.String(value.ThrottlingException.Message)}
+		}
 		item := bedrockStreamItem{}
 		switch {
 		case value.MessageStart != nil:
@@ -856,7 +876,7 @@ func fixtureBedrockItems(values []bedrockFixtureItem) []bedrockStreamItem {
 		}
 		result = append(result, item)
 	}
-	return result
+	return result, nil
 }
 
 func diffStringMap(want, got map[string]string) string {

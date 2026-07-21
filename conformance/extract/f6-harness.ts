@@ -227,7 +227,7 @@ async function observeStorage(storage: any, Session: any, metadataRoot: string):
   const session = new Session(storage);
   const leafId = await storage.getLeafId();
   const entries = await storage.getEntries();
-  const branch = await storage.getPathToRoot(leafId);
+  const branch = await storage.getPathToRootOrCompaction(leafId);
   const context = await session.buildContext();
   return normalize({
     metadata: await storage.getMetadata(),
@@ -341,11 +341,11 @@ async function generateSessionFixture(upstreamRoot: string, root: string): Promi
     () => repoUtils.getEntriesToFork(reopened, { entryId: "main-assistant" }),
     root,
   );
-  const compactionPath = await reopened.getPathToRoot("compaction");
+  const compactionPath = await reopened.getPathToRootOrCompaction("compaction");
   const compactedContext = sessionModule.buildSessionContext(compactionPath);
-  const branchSummaryPath = await reopened.getPathToRoot("branch-summary");
+  const branchSummaryPath = await reopened.getPathToRootOrCompaction("branch-summary");
   const branchSummaryContext = sessionModule.buildSessionContext(branchSummaryPath);
-  const emptyParentPath = await reopened.getPathToRoot("empty-parent");
+  const emptyParentPath = await reopened.getPathToRootOrCompaction("empty-parent");
 
   const invalidCases = [
     { name: "missing-header", content: "" },

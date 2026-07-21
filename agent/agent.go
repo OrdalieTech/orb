@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/pigo/ai"
-	aiapi "github.com/OrdalieTech/pigo/ai/api"
 )
 
 const alreadyPromptingMessage = "Agent is already processing a prompt. Use Steer() or FollowUp() to queue messages, or wait for completion."
@@ -51,10 +50,6 @@ func WithConvertToLLM(convert ConvertToLLMFunc) AgentOption {
 
 func WithTransformContext(transform TransformContextFunc) AgentOption {
 	return func(options *agentOptions) { options.transformContext = transform }
-}
-
-func WithStreamFn(stream StreamFn) AgentOption {
-	return func(options *agentOptions) { options.streamFn = stream }
 }
 
 func WithAPIKeyResolver(resolve GetAPIKeyFunc) AgentOption {
@@ -163,10 +158,10 @@ type Agent struct {
 	nextListenerID uint64
 }
 
-func NewAgent(option ...AgentOption) *Agent {
+func NewAgent(stream StreamFn, option ...AgentOption) *Agent {
 	options := agentOptions{
 		convertToLLM:  defaultConvertToLLMFunc,
-		streamFn:      aiapi.StreamSimple,
+		streamFn:      stream,
 		steeringMode:  QueueOneAtATime,
 		followUpMode:  QueueOneAtATime,
 		toolExecution: ToolExecutionParallel,
@@ -484,12 +479,15 @@ func (agent *Agent) SetTransformContext(transform TransformContextFunc) {
 }
 
 func (agent *Agent) SetStreamFn(stream StreamFn) {
-	if stream == nil {
-		stream = aiapi.StreamSimple
-	}
 	agent.mu.Lock()
 	agent.streamFn = stream
 	agent.mu.Unlock()
+}
+
+func (agent *Agent) StreamFn() StreamFn {
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	return agent.streamFn
 }
 
 func (agent *Agent) SetRequestResolvers(apiKey GetAPIKeyFunc, auth GetRequestAuthFunc, headers GetModelHeadersFunc) {
@@ -563,7 +561,7 @@ func (agent *Agent) runPromptMessages(ctx context.Context, messages AgentMessage
 	return agent.runWithLifecycle(ctx, func(runContext context.Context) error {
 		loopContext := agent.contextSnapshot()
 		config := agent.loopConfig(skipInitialSteeringPoll)
-		_, err := RunLoop(runContext, messages, loopContext, config, agent.processEvent)
+		_, err := RunLoop(runContext, messages, loopContext, config, agent.processEvent, agent.StreamFn())
 		return err
 	})
 }
@@ -572,7 +570,7 @@ func (agent *Agent) runPromptMessagesReserved(active *activeRun, messages AgentM
 	return agent.runReserved(active, func(runContext context.Context) error {
 		loopContext := agent.contextSnapshot()
 		config := agent.loopConfig(skipInitialSteeringPoll)
-		_, err := RunLoop(runContext, messages, loopContext, config, agent.processEvent)
+		_, err := RunLoop(runContext, messages, loopContext, config, agent.processEvent, agent.StreamFn())
 		return err
 	})
 }
@@ -581,7 +579,7 @@ func (agent *Agent) runContinuationReserved(active *activeRun) error {
 	return agent.runReserved(active, func(runContext context.Context) error {
 		loopContext := agent.contextSnapshot()
 		config := agent.loopConfig(false)
-		_, err := RunLoopContinue(runContext, &loopContext, config, agent.processEvent)
+		_, err := RunLoopContinue(runContext, &loopContext, config, agent.processEvent, agent.StreamFn())
 		return err
 	})
 }
@@ -730,7 +728,6 @@ func (agent *Agent) loopConfig(skipInitialSteeringPoll bool) AgentLoopConfig {
 	config := AgentLoopConfig{
 		SimpleStreamOptions: agent.streamOptions,
 		Model:               model,
-		StreamFn:            agent.streamFn,
 		ConvertToLLM:        agent.convertToLLM,
 		TransformContext:    agent.transformContext,
 		GetAPIKey:           agent.getAPIKey,

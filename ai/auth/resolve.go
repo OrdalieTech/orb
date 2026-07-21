@@ -136,12 +136,12 @@ func resolveStoredOAuth(
 	stored *Credential,
 ) (*AuthResult, error) {
 	credential := stored
-	if time.Now().UnixMilli() >= credential.Expires {
+	if credential.expiredAt(time.Now().UnixMilli()) {
 		post, err := credentials.Modify(ctx, providerID, func(current *Credential) (*Credential, error) {
 			if current == nil || current.Type != CredentialOAuth {
 				return nil, nil
 			}
-			if time.Now().UnixMilli() < current.Expires {
+			if !current.expiredAt(time.Now().UnixMilli()) {
 				return nil, nil
 			}
 			refreshed, refreshErr := method.Refresh(ctx, current)

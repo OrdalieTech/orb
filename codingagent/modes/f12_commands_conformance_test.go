@@ -332,7 +332,7 @@ func newF12DebugMode(t testing.TB, size f12TerminalSize) *InteractiveMode {
 		json.RawMessage(`{"role":"custom","customType":"fixture","content":"debug custom","display":true}`),
 	}
 	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
-		Agent:          agent.NewAgent(agent.WithInitialState(agent.AgentState{Messages: messages})),
+		Agent:          agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Messages: messages})),
 		SessionManager: manager,
 		Settings:       settings,
 	})

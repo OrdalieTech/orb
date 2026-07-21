@@ -43,7 +43,9 @@ func transformMessages(messages ai.MessageList, model *ai.Model, normalizeToolCa
 						}
 						continue
 					}
-					if isSameModel && block.ThinkingSignature != nil {
+					// Upstream keeps same-model thinking blocks on a truthy
+					// signature, so an empty string does not count (OA-m3).
+					if isSameModel && block.ThinkingSignature != nil && *block.ThinkingSignature != "" {
 						copy := *block
 						clone.Content = append(clone.Content, &copy)
 						continue

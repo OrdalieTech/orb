@@ -673,7 +673,7 @@ func (host *interactiveSessionHost) authStorage() (*config.AuthStorage, error) {
 	return config.NewAuthStorage(filepath.Join(host.agentDir, "auth.json"))
 }
 
-func (host *interactiveSessionHost) refreshAuthState(ctx context.Context, loggedInProvider string) error {
+func (host *interactiveSessionHost) refreshAuthState(_ context.Context, _ string) error {
 	host.mu.Lock()
 	registry := host.inputs.ModelRegistry
 	current := host.session
@@ -685,12 +685,11 @@ func (host *interactiveSessionHost) refreshAuthState(ctx context.Context, logged
 		return err
 	}
 	if current != nil {
-		if codingagent.IsUnknownModel(current.State().Model) && loggedInProvider != "" {
-			if selected := codingagent.DefaultAvailableModel(loggedInProvider, registry.Available(nil)); selected != nil {
-				return current.SetModel(ctx, *selected)
-			}
-			return nil
-		}
+		// Default-model selection after login belongs to the TUI
+		// (completeProviderAuthentication, interactive-mode.ts:5033-5084);
+		// the host only refreshes credentials and the current model
+		// projection. RefreshCurrentModelFromRegistry is a no-op for the
+		// unknown-model sentinel.
 		current.RefreshCurrentModelFromRegistry(registry)
 	}
 	return nil
@@ -755,12 +754,13 @@ func (host *interactiveSessionHost) AuthOptions(ctx context.Context) (modes.Inte
 			name = provider.Name
 			methods = provider.Methods
 		}
-		if storedType, exists := storedTypes[id]; exists {
-			source := "stored credential"
-			if storedType == aiauth.CredentialOAuth {
-				source = "OAuth"
+		if status == nil {
+			// Registry-less fallback only: with a registry, the stored
+			// credential already surfaces as the raw "stored" source above
+			// (upstream getProviderAuthStatus).
+			if storedType, exists := storedTypes[id]; exists {
+				status = &modes.InteractiveAuthStatus{Type: aiauth.AuthType(storedType), Source: "stored"}
 			}
-			status = &modes.InteractiveAuthStatus{Type: aiauth.AuthType(storedType), Source: source}
 		}
 		configured := status != nil
 		if methods.OAuth != nil {
@@ -800,20 +800,14 @@ func (host *interactiveSessionHost) AuthOptions(ctx context.Context) (modes.Inte
 	return options, nil
 }
 
+// interactiveAuthStatusSource mirrors upstream getLoginProviderOptions
+// (interactive-mode.ts:4795-4825): the label when present, otherwise the raw
+// runtime source ("stored", "models_json_key", "runtime", ...).
 func interactiveAuthStatusSource(status extensions.AuthStatus) string {
 	if status.Label != "" {
 		return status.Label
 	}
-	switch status.Source {
-	case "models_json_key":
-		return "key in models.json"
-	case "models_json_command":
-		return "command in models.json"
-	case "stored":
-		return "stored credential"
-	default:
-		return status.Source
-	}
+	return status.Source
 }
 
 func (host *interactiveSessionHost) Login(ctx context.Context, providerID string, authType aiauth.AuthType, interaction aiauth.AuthInteraction) error {

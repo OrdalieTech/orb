@@ -15,6 +15,7 @@ require (
 	github.com/evanw/esbuild v0.28.1
 	github.com/gofrs/flock v0.13.0
 	github.com/grafana/sobek v0.0.0-20260708062710-267a0e055bb4
+	github.com/klauspost/compress v1.19.1
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/openai/openai-go/v3 v3.43.0
 	github.com/rivo/uniseg v0.4.7

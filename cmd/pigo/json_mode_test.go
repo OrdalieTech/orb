@@ -152,10 +152,9 @@ func newF3SessionRuntime(t testing.TB, scenario f3SessionScenario, headerTime ti
 	now := func() int64 { return scenario.FixedNow }
 	provider := f3ScenarioProvider(t, scenario)
 	created := agent.NewAgent(
-		agent.WithInitialState(agent.AgentState{
+		provider.StreamSimple, agent.WithInitialState(agent.AgentState{
 			Model: provider.GetModel(), SystemPrompt: scenario.SystemPrompt, Messages: agent.AgentMessages{}, Tools: []agent.AgentTool{},
 		}),
-		agent.WithStreamFn(provider.StreamSimple),
 		agent.WithConvertToLLM(codingagent.ConvertToLLM),
 		agent.WithClock(now),
 	)
@@ -480,10 +479,9 @@ func f3RuntimeFactory(scenario f3SessionScenario, provider *faux.Provider, setti
 		// session id like upstream createAgentSession) matches them.
 		noCache := ai.CacheRetentionNone
 		created := agent.NewAgent(
-			agent.WithInitialState(agent.AgentState{
+			provider.StreamSimple, agent.WithInitialState(agent.AgentState{
 				Model: provider.GetModel(), SystemPrompt: scenario.SystemPrompt, Messages: prior, Tools: []agent.AgentTool{},
 			}),
-			agent.WithStreamFn(provider.StreamSimple),
 			agent.WithConvertToLLM(codingagent.ConvertToLLM),
 			agent.WithClock(now),
 			agent.WithSimpleStreamOptions(ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{CacheRetention: &noCache}}),

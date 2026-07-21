@@ -175,11 +175,13 @@ func TestInteractiveHostDescribesConfiguredAuthPerMethod(t *testing.T) {
 		t.Fatalf("missing auth option %s/%s", id, authType)
 		return modes.InteractiveAuthProvider{}
 	}
+	// LOG-m3: statuses surface the raw runtime sources like upstream
+	// getProviderAuthStatus ("stored", env label, ...), not invented labels.
 	for _, option := range []modes.InteractiveAuthProvider{
 		find("anthropic", aiauth.AuthTypeOAuth),
 		find("anthropic", aiauth.AuthTypeAPIKey),
 	} {
-		if option.Status == nil || option.Status.Type != aiauth.AuthTypeAPIKey || option.Status.Source != "stored credential" {
+		if option.Status == nil || option.Status.Type != aiauth.AuthTypeAPIKey || option.Status.Source != "stored" {
 			t.Fatalf("anthropic %s status = %#v", option.AuthType, option.Status)
 		}
 	}
@@ -191,7 +193,7 @@ func TestInteractiveHostDescribesConfiguredAuthPerMethod(t *testing.T) {
 		find("xai", aiauth.AuthTypeOAuth),
 		find("xai", aiauth.AuthTypeAPIKey),
 	} {
-		if option.Status == nil || option.Status.Type != aiauth.AuthTypeOAuth || option.Status.Source != "OAuth" {
+		if option.Status == nil || option.Status.Type != aiauth.AuthTypeOAuth || option.Status.Source != "stored" {
 			t.Fatalf("xAI %s status = %#v", option.AuthType, option.Status)
 		}
 	}
@@ -251,7 +253,9 @@ func TestInteractiveHostMapsConfiguredAuthSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]string{"key-auth": "key in models.json", "command-auth": "command in models.json"}
+	// LOG-m3: raw upstream sources (provider-composer.ts
+	// configuredRequestAuthStatus), not invented friendly labels.
+	want := map[string]string{"key-auth": "models_json_key", "command-auth": "models_json_command"}
 	for _, option := range options.Login {
 		source, expected := want[option.ID]
 		if !expected || option.AuthType != aiauth.AuthTypeAPIKey {

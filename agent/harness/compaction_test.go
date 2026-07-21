@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -66,7 +67,7 @@ func TestFindCutPointAndPrepareCompaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared == nil || prepared.FirstKeptEntryID != entries[2].ID || len(prepared.MessagesToSummarize) != 2 {
+	if prepared == nil || prepared.FirstKeptEntryID != entries[2].ID || len(prepared.MessagesToSummarize) != 2 || len(prepared.RetainedTail) != 2 {
 		t.Fatalf("preparation = %#v", prepared)
 	}
 	if prepared.TokensBefore != 100 {
@@ -74,9 +75,54 @@ func TestFindCutPointAndPrepareCompaction(t *testing.T) {
 	}
 }
 
-func TestPrepareCompactionRejectsSessionWithNoDiscardableMessages(t *testing.T) {
+func TestV081CompactPropagatesRetainedTail(t *testing.T) {
+	tail := agent.AgentMessages{user("retained")}
+	preparation := &CompactionPreparation{
+		FirstKeptEntryID: "kept", MessagesToSummarize: agent.AgentMessages{user("old")}, RetainedTail: tail,
+		TokensBefore: 20, FileOps: newFileOperations(), Settings: CompactionSettings{ReserveTokens: 100},
+	}
+	complete := func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
+		return assistant("summary", 3), nil
+	}
+	result, err := Compact(context.Background(), preparation, &ai.Model{MaxTokens: 100}, complete, "", ai.ModelThinkingOff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.FirstKeptEntryID != "kept" || len(result.RetainedTail) != 1 || messageRole(result.RetainedTail[0]) != "user" {
+		t.Fatalf("compaction result = %#v", result)
+	}
+	tail[0] = assistant("mutated", 1)
+	if messageRole(result.RetainedTail[0]) != "assistant" {
+		t.Fatal("result did not retain the upstream preparation slice")
+	}
+	preparation.FirstKeptEntryID = ""
+	if _, err := Compact(context.Background(), preparation, &ai.Model{MaxTokens: 100}, complete, "", ai.ModelThinkingOff); err == nil || !strings.Contains(err.Error(), "First kept entry") {
+		t.Fatalf("missing firstKeptEntryId error = %v", err)
+	}
+}
+
+func TestV081PublicCompactionResultWirePreservesEmptyRetainedTail(t *testing.T) {
+	withTail, err := json.Marshal(CompactionResult{
+		Summary: "summary", TokensBefore: 12, RetainedTail: agent.AgentMessages{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(withTail), `{"summary":"summary","tokensBefore":12,"retainedTail":[]}`; got != want {
+		t.Fatalf("public compaction result = %s, want %s", got, want)
+	}
+	withoutTail, err := json.Marshal(CompactionResult{Summary: "summary", TokensBefore: 12})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(withoutTail), `{"summary":"summary","tokensBefore":12}`; got != want {
+		t.Fatalf("legacy public compaction result = %s, want %s", got, want)
+	}
+}
+
+func TestPrepareLegacyCompactionRejectsSessionWithNoDiscardableMessages(t *testing.T) {
 	entries := linearEntries(user("short request"), assistant("short answer", 10))
-	prepared, err := PrepareCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 16384, KeepRecentTokens: 20000})
+	prepared, err := PrepareLegacyCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 16384, KeepRecentTokens: 20000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,9 +131,9 @@ func TestPrepareCompactionRejectsSessionWithNoDiscardableMessages(t *testing.T) 
 	}
 }
 
-func TestPrepareCompactionRejectsSingleUserMessage(t *testing.T) {
+func TestPrepareLegacyCompactionRejectsSingleUserMessage(t *testing.T) {
 	entries := linearEntries(user("only request"))
-	prepared, err := PrepareCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 20_000})
+	prepared, err := PrepareLegacyCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 20_000})
 	if err != nil {
 		t.Fatal(err)
 	}

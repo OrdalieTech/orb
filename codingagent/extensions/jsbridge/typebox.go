@@ -668,7 +668,7 @@ func installExampleHelpers(runtime *sobek.Runtime, vm *runtimeVM, codingModule, 
 
 // upstreamPackageVersion is the upstream coding-agent package version this
 // port mirrors (UPSTREAM.lock); upstream exports it as VERSION.
-const upstreamPackageVersion = "0.80.10"
+const upstreamPackageVersion = "0.81.0"
 
 // keyBuilderSource ports upstream pi-tui's Key helper object
 // (packages/tui/src/keys.ts:163) verbatim: special-key and symbol-key

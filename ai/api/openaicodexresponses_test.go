@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 
 	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/internal/jsonschema"
@@ -46,12 +49,12 @@ func TestOpenAICodexRequestShapeAndDoneEvent(t *testing.T) {
 		TextVerbosity: &verbosity, ToolChoice: &toolChoice,
 	}
 
-	var capturedBody string
+	var capturedBody []byte
 	var capturedHeaders http.Header
 	var capturedURL string
 	withCodexHTTPClient(t, func(request *http.Request) (*http.Response, error) {
 		body, _ := io.ReadAll(request.Body)
-		capturedBody, capturedHeaders, capturedURL = string(body), request.Header.Clone(), request.URL.String()
+		capturedBody, capturedHeaders, capturedURL = body, request.Header.Clone(), request.URL.String()
 		return codexHTTPResponse(http.StatusOK, codexSSE(
 			map[string]any{"type": "response.done", "response": map[string]any{
 				"id": "resp-codex", "status": "completed", "service_tier": "default", "output": []any{},
@@ -76,9 +79,16 @@ func TestOpenAICodexRequestShapeAndDoneEvent(t *testing.T) {
 	if messageResult.Usage.Input != 8 || messageResult.Usage.CacheRead != 2 || messageResult.Usage.Cost.Input != 16 || messageResult.Usage.Cost.Output != 12 || messageResult.Usage.Cost.CacheRead != 12 || messageResult.Usage.Cost.Total != 40 {
 		t.Fatalf("usage = %#v", messageResult.Usage)
 	}
+	if capturedHeaders.Get("Content-Encoding") != "zstd" {
+		t.Fatalf("Content-Encoding = %q", capturedHeaders.Get("Content-Encoding"))
+	}
+	decodedBody, err := codexDecodeZstd(capturedBody)
+	if err != nil {
+		t.Fatal(err)
+	}
 	wantBody := `{"model":"gpt-codex-fixture","store":false,"stream":true,"instructions":"Use the tool.","input":[{"role":"user","content":[{"type":"input_text","text":"hello"}]}],"text":{"verbosity":"high"},"include":["reasoning.encrypted_content"],"prompt_cache_key":"` + strings.Repeat("s", 64) + `","tool_choice":"required","parallel_tool_calls":true,"temperature":0,"service_tier":"priority","tools":[{"type":"function","name":"echo","description":"Echo text","parameters":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]},"strict":null}],"reasoning":{"effort":"xhigh","summary":"concise"}}`
-	if capturedBody != wantBody {
-		t.Fatalf("body = %s\nwant = %s", capturedBody, wantBody)
+	if string(decodedBody) != wantBody {
+		t.Fatalf("body = %s\nwant = %s", decodedBody, wantBody)
 	}
 	if capturedURL != "https://codex.fixture.invalid/backend-api/codex/responses" {
 		t.Fatalf("URL = %q", capturedURL)
@@ -261,9 +271,11 @@ func TestOpenAICodexEmptySessionIDStillSerializesPromptCacheKey(t *testing.T) {
 	}
 }
 
-func TestOpenAICodexNullThinkingMappingOmitsReasoning(t *testing.T) {
+// CX-M4: upstream coalesces a null thinkingLevelMap entry back to the requested
+// effort with ??, so reasoning{effort, summary:"auto"} must still be sent.
+func TestCXM4OpenAICodexNullThinkingMappingFallsBackToEffort(t *testing.T) {
 	model := codexTestModel()
-	model.ThinkingLevelMap = &map[ai.ModelThinkingLevel]*string{ai.ModelThinkingHigh: nil}
+	model.ThinkingLevelMap = &map[ai.ModelThinkingLevel]*string{ai.ModelThinkingHigh: nil, ai.ModelThinkingOff: nil}
 	high := "high"
 	payload, err := buildOpenAICodexResponsesPayload(&model, ai.Context{Messages: ai.MessageList{}}, &OpenAICodexResponsesOptions{
 		ReasoningEffort: &high,
@@ -271,9 +283,205 @@ func TestOpenAICodexNullThinkingMappingOmitsReasoning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if payload.Reasoning != nil {
+	if payload.Reasoning == nil || payload.Reasoning.Effort != "high" || payload.Reasoning.Summary == nil || *payload.Reasoning.Summary != "auto" {
 		t.Fatalf("reasoning = %#v", payload.Reasoning)
 	}
+
+	none := "none"
+	payload, err = buildOpenAICodexResponsesPayload(&model, ai.Context{Messages: ai.MessageList{}}, &OpenAICodexResponsesOptions{
+		ReasoningEffort: &none,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.Reasoning == nil || payload.Reasoning.Effort != "none" {
+		t.Fatalf("none reasoning = %#v", payload.Reasoning)
+	}
+
+	minimal := "minimal"
+	model.ThinkingLevelMap = &map[ai.ModelThinkingLevel]*string{ai.ModelThinkingOff: &minimal}
+	payload, err = buildOpenAICodexResponsesPayload(&model, ai.Context{Messages: ai.MessageList{}}, &OpenAICodexResponsesOptions{
+		ReasoningEffort: &none,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.Reasoning == nil || payload.Reasoning.Effort != "minimal" {
+		t.Fatalf("mapped none reasoning = %#v", payload.Reasoning)
+	}
+}
+
+// B1: a consumer breaking out of the SSE event stream must end the iterator
+// silently instead of panicking via a yield-after-false fail().
+func TestB1OpenAICodexSSEConsumerBreakStopsCleanly(t *testing.T) {
+	for breakAfter := 1; breakAfter <= 3; breakAfter++ {
+		model := codexTestModel()
+		token := codexAPITestToken(t, "account")
+		transport := ai.TransportSSE
+		withCodexHTTPClient(t, func(*http.Request) (*http.Response, error) {
+			return codexHTTPResponse(http.StatusOK, codexSSE(
+				map[string]any{"type": "response.output_item.added", "output_index": 0, "item": map[string]any{"type": "message", "id": "m1", "role": "assistant", "status": "in_progress", "content": []any{}}},
+				map[string]any{"type": "response.output_text.delta", "output_index": 0, "delta": "hello"},
+				map[string]any{"type": "response.done", "response": map[string]any{"id": "resp-b1", "status": "completed", "output": []any{}}},
+			)), nil
+		})
+		stream, err := StreamOpenAICodexResponsesWithOptions(context.Background(), &model, ai.Context{Messages: ai.MessageList{}}, &OpenAICodexResponsesOptions{
+			StreamOptions: ai.StreamOptions{APIKey: &token, Transport: &transport},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		events := 0
+		for _, streamErr := range stream {
+			if streamErr != nil {
+				t.Fatal(streamErr)
+			}
+			events++
+			if events == breakAfter {
+				break
+			}
+		}
+		if events != breakAfter {
+			t.Fatalf("breakAfter=%d saw %d events", breakAfter, events)
+		}
+	}
+}
+
+// CX-M3: the SSE path sends the JSON body zstd-compressed (level 3) with
+// content-encoding: zstd, and the body decompresses to the exact JSON.
+func TestCXM3OpenAICodexSSERequestBodyIsZstdCompressed(t *testing.T) {
+	model := codexTestModel()
+	token := codexAPITestToken(t, "account")
+	transport := ai.TransportSSE
+	options := &OpenAICodexResponsesOptions{StreamOptions: ai.StreamOptions{APIKey: &token, Transport: &transport}}
+	requestContext := ai.Context{Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("compress me"), Timestamp: 1}}}
+	var rawBody []byte
+	var headers http.Header
+	withCodexHTTPClient(t, func(request *http.Request) (*http.Response, error) {
+		rawBody, _ = io.ReadAll(request.Body)
+		headers = request.Header.Clone()
+		return codexHTTPResponse(http.StatusOK, codexSSE(map[string]any{
+			"type": "response.done", "response": map[string]any{"id": "compressed", "status": "completed", "output": []any{}},
+		})), nil
+	})
+	message := collectOpenAICodex(t, &model, requestContext, options)
+	if message.StopReason != ai.StopReasonStop {
+		t.Fatalf("message = %#v", message)
+	}
+	if headers.Get("Content-Encoding") != "zstd" {
+		t.Fatalf("Content-Encoding = %q", headers.Get("Content-Encoding"))
+	}
+	decoded, err := codexDecodeZstd(rawBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := buildOpenAICodexResponsesPayload(&model, requestContext, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := ai.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(decoded, want) {
+		t.Fatalf("decompressed body = %s\nwant = %s", decoded, want)
+	}
+}
+
+// CX-m1: retryable markers use the upstream regex rate.?limit etc, so
+// rate_limit_exceeded and friends match regardless of separator or case.
+func TestCXm1CodexRetryableErrorMatchesUpstreamRegex(t *testing.T) {
+	retryable := []string{"rate_limit_exceeded", "Rate Limit", "ratelimit", "OVERLOADED", "service_unavailable", "Service Unavailable", "upstream connect error", "connection_refused"}
+	for _, text := range retryable {
+		if !retryableCodexError(http.StatusBadRequest, text) {
+			t.Fatalf("%q should be retryable", text)
+		}
+	}
+	if retryableCodexError(http.StatusBadRequest, "invalid request") {
+		t.Fatal("plain 400 should not be retryable")
+	}
+	if retryableCodexError(http.StatusTooManyRequests, "insufficient_quota") {
+		t.Fatal("terminal 429 should not be retryable")
+	}
+}
+
+// CX-m2: numeric error codes must not hard-fail the strict unmarshal, nested
+// string codes still drive connection-limit detection, and response.failed
+// always attaches the code.
+func TestCXm2CodexEventErrorCodeDecoding(t *testing.T) {
+	model := codexTestModel()
+	processor := newOpenAIResponsesProcessor(&model, newAssistantMessage(&model), &OpenAIResponsesOptions{}, func(ai.AssistantMessageEvent) bool { return true })
+
+	err := handleOpenAICodexEvent(processor, json.RawMessage(`{"type":"error","code":4009,"error":{"code":"websocket_connection_limit_reached","message":"limit reached"}}`))
+	var apiFailure *codexAPIError
+	if !errors.As(err, &apiFailure) || apiFailure.code != "websocket_connection_limit_reached" || apiFailure.message != "Codex error: limit reached" {
+		t.Fatalf("error event = %#v", err)
+	}
+	if !isCodexConnectionLimitError(err) {
+		t.Fatal("numeric top-level code defeated connection-limit detection")
+	}
+
+	err = handleOpenAICodexEvent(processor, json.RawMessage(`{"type":"error","code":500}`))
+	if !errors.As(err, &apiFailure) || apiFailure.code != "" || apiFailure.message != `Codex error: {"type":"error","code":500}` {
+		t.Fatalf("numeric-only code event = %#v", err)
+	}
+
+	err = handleOpenAICodexEvent(processor, json.RawMessage(`{"type":"response.failed","response":{"error":{"code":429,"message":""}}}`))
+	if !errors.As(err, &apiFailure) || apiFailure.code != "429" || apiFailure.message != "Codex response failed" {
+		t.Fatalf("response.failed numeric code = %#v", err)
+	}
+
+	err = handleOpenAICodexEvent(processor, json.RawMessage(`{"type":"response.failed","response":{"error":{"code":"quota_exceeded","message":"over quota"}}}`))
+	if !errors.As(err, &apiFailure) || apiFailure.code != "quota_exceeded" || apiFailure.message != "over quota" {
+		t.Fatalf("response.failed string code = %#v", err)
+	}
+
+	err = handleOpenAICodexEvent(processor, json.RawMessage(`{"type":"error","message":42,"error":{"code":[],"message":{"bad":true}}}`))
+	if !errors.As(err, &apiFailure) || apiFailure.code != "" || apiFailure.message != `Codex error: {"type":"error","message":42,"error":{"code":[],"message":{"bad":true}}}` {
+		t.Fatalf("malformed error fields = %#v", err)
+	}
+
+	err = handleOpenAICodexEvent(processor, json.RawMessage(`{"type":"response.failed","response":{"error":"not-an-object"}}`))
+	if !errors.As(err, &apiFailure) || apiFailure.code != "" || apiFailure.message != "Codex response failed" {
+		t.Fatalf("malformed response.failed fields = %#v", err)
+	}
+}
+
+// CX-m3: User-Agent platform/arch tokens follow Node os naming (win32, ia32).
+func TestCXm3CodexUserAgentUsesNodeOsNaming(t *testing.T) {
+	platforms := map[string]string{
+		"windows": "win32",
+		"solaris": "sunos",
+		"illumos": "sunos",
+		"linux":   "linux",
+		"darwin":  "darwin",
+	}
+	for goos, want := range platforms {
+		if got := codexNodePlatform(goos); got != want {
+			t.Fatalf("platform mapping %s = %q, want %q", goos, got, want)
+		}
+	}
+	architectures := map[string]string{
+		"386":     "ia32",
+		"amd64":   "x64",
+		"mipsle":  "mipsel",
+		"ppc64le": "ppc64",
+		"arm64":   "arm64",
+	}
+	for goarch, want := range architectures {
+		if got := codexNodeArchitecture(goarch); got != want {
+			t.Fatalf("architecture mapping %s = %q, want %q", goarch, got, want)
+		}
+	}
+}
+
+func codexDecodeZstd(contents []byte) ([]byte, error) {
+	decoder, err := zstd.NewReader(nil)
+	if err != nil {
+		return nil, err
+	}
+	defer decoder.Close()
+	return decoder.DecodeAll(contents, nil)
 }
 
 func codexTestModel() ai.Model {

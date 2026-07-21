@@ -1,12 +1,36 @@
 package ai_test
 
 import (
+	"encoding/json"
 	"errors"
 	"iter"
+	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/pigo/ai"
 )
+
+func TestOTM6RawAssistantMessageEventMatchesObjectSpreadWire(t *testing.T) {
+	partial := &ai.AssistantMessage{Content: ai.AssistantContent{}, Timestamp: 7}
+	partialJSON, err := ai.Marshal(partial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventJSON, err := ai.MarshalAssistantMessageEvent(ai.RawAssistantMessageEvent{
+		Raw:     json.RawMessage(`{"type":"future_event","partial":{"stale":true},"x":1}`),
+		Partial: partial,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"type":"future_event","partial":` + string(partialJSON) + `,"x":1}`
+	if string(eventJSON) != want {
+		t.Fatalf("unknown event wire\n got: %s\nwant: %s", eventJSON, want)
+	}
+	if strings.Count(string(eventJSON), `"partial"`) != 1 {
+		t.Fatalf("unknown event duplicated partial: %s", eventJSON)
+	}
+}
 
 func TestCollectDoneAndErrorMessages(t *testing.T) {
 	doneMessage := ai.AssistantMessage{Model: "done", Content: ai.AssistantContent{}, StopReason: ai.StopReasonStop}

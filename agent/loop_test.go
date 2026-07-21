@@ -67,7 +67,6 @@ func TestRunLoopParallelCompletionAndSourceOrder(t *testing.T) {
 		SystemPrompt: "echo twice", Tools: []AgentTool{tool},
 	}, AgentLoopConfig{
 		Model:         loopModel(),
-		StreamFn:      responses.stream,
 		ToolExecution: ToolExecutionParallel,
 		Now:           func() int64 { return 1234 },
 	}, func(_ context.Context, event AgentEvent) error {
@@ -86,7 +85,7 @@ func TestRunLoopParallelCompletionAndSourceOrder(t *testing.T) {
 			}
 		}
 		return nil
-	})
+	}, responses.stream)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,8 +132,8 @@ func TestRunLoopSuppliesModelSnapshotToParallelToolExecutions(t *testing.T) {
 		},
 	}
 	_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
-		Model: model, StreamFn: responses.stream, ToolExecution: ToolExecutionParallel,
-	}, nil)
+		Model: model, ToolExecution: ToolExecutionParallel,
+	}, nil, responses.stream)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,8 +185,8 @@ func TestRunLoopPreparesParallelToolsInSourceOrder(t *testing.T) {
 	}}
 	tool := &preparingLoopTool{}
 	_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
-		Model: loopModel(), StreamFn: responses.stream, ToolExecution: ToolExecutionParallel,
-	}, nil)
+		Model: loopModel(), ToolExecution: ToolExecutionParallel,
+	}, nil, responses.stream)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,8 +207,8 @@ func TestRunLoopPreparesInvocationOrderedResourcesInSourceOrder(t *testing.T) {
 	}}
 	tool := &parallelPreparationTestTool{}
 	_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
-		Model: loopModel(), StreamFn: responses.stream, ToolExecution: ToolExecutionParallel,
-	}, nil)
+		Model: loopModel(), ToolExecution: ToolExecutionParallel,
+	}, nil, responses.stream)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,8 +278,7 @@ func TestRunLoopHooksMutateWithoutRevalidationAndIgnoreLateUpdates(t *testing.T)
 	updates := 0
 	var final ToolExecutionEndEvent
 	messages, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
-		Model:    loopModel(),
-		StreamFn: responses.stream,
+		Model: loopModel(),
 		BeforeToolCall: func(_ context.Context, hook BeforeToolCallContext) (*BeforeToolCallResult, error) {
 			hook.Args.(map[string]any)["value"] = 17
 			return nil, nil
@@ -303,7 +301,7 @@ func TestRunLoopHooksMutateWithoutRevalidationAndIgnoreLateUpdates(t *testing.T)
 			final = value
 		}
 		return nil
-	})
+	}, responses.stream)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,13 +351,13 @@ func TestRunLoopLengthStopFailsEveryToolWithoutExecuting(t *testing.T) {
 	var result AgentToolResult
 	var isError bool
 	_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
-		Model: loopModel(), StreamFn: responses.stream,
+		Model: loopModel(),
 	}, func(_ context.Context, event AgentEvent) error {
 		if end, ok := event.(ToolExecutionEndEvent); ok {
 			result, isError = end.Result, end.IsError
 		}
 		return nil
-	})
+	}, responses.stream)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,11 +375,12 @@ func TestRunLoopLengthStopFailsEveryToolWithoutExecuting(t *testing.T) {
 }
 
 func TestRunLoopContinueValidation(t *testing.T) {
-	config := AgentLoopConfig{Model: loopModel(), StreamFn: (&loopResponseQueue{}).stream}
-	if _, err := RunLoopContinue(context.Background(), &AgentContext{}, config, nil); err == nil || err.Error() != "Cannot continue: no messages in context" {
+	stream := (&loopResponseQueue{}).stream
+	config := AgentLoopConfig{Model: loopModel()}
+	if _, err := RunLoopContinue(context.Background(), &AgentContext{}, config, nil, stream); err == nil || err.Error() != "Cannot continue: no messages in context" {
 		t.Fatalf("empty continuation error = %v", err)
 	}
-	if _, err := RunLoopContinue(context.Background(), &AgentContext{Messages: AgentMessages{loopAssistant(ai.StopReasonStop)}}, config, nil); err == nil || err.Error() != "Cannot continue from message role: assistant" {
+	if _, err := RunLoopContinue(context.Background(), &AgentContext{Messages: AgentMessages{loopAssistant(ai.StopReasonStop)}}, config, nil, stream); err == nil || err.Error() != "Cannot continue from message role: assistant" {
 		t.Fatalf("assistant continuation error = %v", err)
 	}
 }
@@ -391,8 +390,8 @@ func TestRunLoopContinueAppendsToCallerContextLikeUpstream(t *testing.T) {
 	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{response}}
 	loopContext := &AgentContext{Messages: AgentMessages{loopUser("existing")}, Tools: []AgentTool{}}
 	newMessages, err := RunLoopContinue(context.Background(), loopContext, AgentLoopConfig{
-		Model: loopModel(), StreamFn: responses.stream,
-	}, nil)
+		Model: loopModel(),
+	}, nil, responses.stream)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -420,11 +419,10 @@ func TestRunLoopEmptyResolvedAPIKeyFallsBackToConfiguredKey(t *testing.T) {
 	_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{}, AgentLoopConfig{
 		SimpleStreamOptions: ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{APIKey: &fallback}},
 		Model:               loopModel(),
-		StreamFn:            stream,
 		GetAPIKey: func(context.Context, ai.ProviderID) (*string, error) {
 			return &empty, nil
 		},
-	}, nil)
+	}, nil, stream)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,7 +474,6 @@ func TestRunLoopAppliesRequestAuthWithoutMutatingConfiguredOptions(t *testing.T)
 	_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{}, AgentLoopConfig{
 		SimpleStreamOptions: configuredOptions,
 		Model:               model,
-		StreamFn:            stream,
 		GetRequestAuth: func(context.Context, ai.ProviderID) (*RequestAuth, error) {
 			resolvedKey := "resolved-key"
 			resolvedHeader := "resolved"
@@ -497,7 +494,7 @@ func TestRunLoopAppliesRequestAuthWithoutMutatingConfiguredOptions(t *testing.T)
 			}
 			return nil, nil
 		},
-	}, nil)
+	}, nil, stream)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -531,7 +528,7 @@ func TestRunLoopResolvesModelHeadersForEveryProviderRequest(t *testing.T) {
 		return textToolResult("done"), nil
 	}}
 	_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
-		Model: model, StreamFn: stream,
+		Model: model,
 		GetModelHeaders: func(_ context.Context, _ *ai.Model, apiKey *string, env ai.ProviderEnv) (*map[string]string, error) {
 			if apiKey != nil {
 				t.Fatalf("unexpected API key: %q", *apiKey)
@@ -543,7 +540,7 @@ func TestRunLoopResolvesModelHeadersForEveryProviderRequest(t *testing.T) {
 			headers := map[string]string{"X-Dynamic": strconv.Itoa(resolutions), "x-same": "resolved"}
 			return &headers, nil
 		},
-	}, nil)
+	}, nil, stream)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -577,13 +574,13 @@ func TestRunLoopToolUpdateDoesNotBlockToolExecution(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
-			Model: loopModel(), StreamFn: responses.stream,
+			Model: loopModel(),
 		}, func(_ context.Context, event AgentEvent) error {
 			if _, ok := event.(ToolExecutionUpdateEvent); ok {
 				<-toolReturned
 			}
 			return nil
-		})
+		}, responses.stream)
 		done <- err
 	}()
 	select {
@@ -623,7 +620,7 @@ func TestRunLoopParallelEventSinksMayOverlap(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
-			Model: loopModel(), StreamFn: responses.stream,
+			Model: loopModel(),
 		}, func(_ context.Context, event AgentEvent) error {
 			end, ok := event.(ToolExecutionEndEvent)
 			if !ok {
@@ -636,7 +633,7 @@ func TestRunLoopParallelEventSinksMayOverlap(t *testing.T) {
 				secondEndedOnce.Do(func() { close(secondEnded) })
 			}
 			return nil
-		})
+		}, responses.stream)
 		done <- err
 	}()
 	select {
@@ -673,13 +670,13 @@ func TestRunLoopIdentityPreparePreservesRawArgumentOrderInValidationError(t *tes
 	}
 	var errorText string
 	_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
-		Model: loopModel(), StreamFn: responses.stream,
+		Model: loopModel(),
 	}, func(_ context.Context, event AgentEvent) error {
 		if end, ok := event.(ToolExecutionEndEvent); ok {
 			errorText = end.Result.Content[0].(*ai.TextContent).Text
 		}
 		return nil
-	})
+	}, responses.stream)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -712,8 +709,8 @@ func TestRunLoopIdentityPrepareValidatesMutatedArguments(t *testing.T) {
 		},
 	}
 	if _, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
-		Model: loopModel(), StreamFn: responses.stream,
-	}, nil); err != nil {
+		Model: loopModel(),
+	}, nil, responses.stream); err != nil {
 		t.Fatal(err)
 	}
 	if executed != float64(42) {
@@ -745,7 +742,7 @@ func TestRunLoopToolUpdatesStartIndependentlyAndOwnTheirPayloads(t *testing.T) {
 		},
 	}
 	_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
-		Model: loopModel(), StreamFn: responses.stream,
+		Model: loopModel(),
 	}, func(_ context.Context, event AgentEvent) error {
 		update, ok := event.(ToolExecutionUpdateEvent)
 		if !ok {
@@ -766,7 +763,7 @@ func TestRunLoopToolUpdatesStartIndependentlyAndOwnTheirPayloads(t *testing.T) {
 			t.Fatalf("first update was mutated after callback return: %#v", update.PartialResult)
 		}
 		return nil
-	})
+	}, responses.stream)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -803,7 +800,7 @@ func TestRunLoopIgnoresSettledToolUpdateWhileSiblingRuns(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{settled, slow}}, AgentLoopConfig{
-			Model: loopModel(), StreamFn: responses.stream,
+			Model: loopModel(),
 		}, func(_ context.Context, event AgentEvent) error {
 			switch value := event.(type) {
 			case ToolExecutionEndEvent:
@@ -814,7 +811,7 @@ func TestRunLoopIgnoresSettledToolUpdateWhileSiblingRuns(t *testing.T) {
 				updateSeen <- struct{}{}
 			}
 			return nil
-		})
+		}, responses.stream)
 		done <- err
 	}()
 	<-slowStarted

@@ -268,6 +268,61 @@
         },
         "body": "{\"model\":\"gpt-codex-fixture\",\"store\":false,\"stream\":true,\"instructions\":\"You are a helpful assistant.\",\"input\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"simple\"}]}],\"text\":{\"verbosity\":\"low\"},\"include\":[\"reasoning.encrypted_content\"],\"tool_choice\":\"auto\",\"parallel_tool_calls\":true}"
       }
+    },
+    {
+      "name": "codex-null-thinking-level-map-keeps-reasoning",
+      "api": "openai-codex-responses",
+      "model": {
+        "id": "gpt-codex-fixture",
+        "name": "Codex Fixture Model",
+        "api": "openai-codex-responses",
+        "provider": "openai-codex",
+        "baseUrl": "https://codex.fixture.invalid/backend-api",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": null
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "think hard",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "header.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC1mMi1jb2RleCJ9fQ.signature",
+        "transport": "sse",
+        "reasoningEffort": "high"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://codex.fixture.invalid/backend-api/codex/responses",
+        "headers": {
+          "accept": "text/event-stream",
+          "authorization": "Bearer header.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC1mMi1jb2RleCJ9fQ.signature",
+          "chatgpt-account-id": "account-f2-codex",
+          "content-type": "application/json",
+          "openai-beta": "responses=experimental",
+          "originator": "pi"
+        },
+        "body": "{\"model\":\"gpt-codex-fixture\",\"store\":false,\"stream\":true,\"instructions\":\"You are a helpful assistant.\",\"input\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"think hard\"}]}],\"text\":{\"verbosity\":\"low\"},\"include\":[\"reasoning.encrypted_content\"],\"tool_choice\":\"auto\",\"parallel_tool_calls\":true,\"reasoning\":{\"effort\":\"high\",\"summary\":\"auto\"}}"
+      }
     }
   ]
 }

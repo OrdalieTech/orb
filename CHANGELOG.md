@@ -8,8 +8,21 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Changed
 
+- Synchronized the behavioral target to upstream pi 0.81.0 (`9c480b6a`): required stream injection,
+  retained-tail session APIs, split public/coding compaction contracts, refreshed model and image
+  catalogs, strict catalog validation, product assets, actions, and regenerated conformance goldens.
+- Model generation now intersects NVIDIA NIM and consumes the live OpenRouter and Vercel catalogs;
+  runtime catalog freshness follows upstream's `checkedAt`/`lastModified` rules.
+- Interactive login now auto-opens OAuth URLs, uses the searchable fuzzy selector, reports exact
+  completion/default-model outcomes, and warns once for Anthropic subscription extra usage.
 - Renamed the repository, Go module, release artifacts, and CLI from `pi-go`/`pi` to `pigo`, so it
   installs beside upstream `pi`; `pigo update` now prints exact installer and Go routes.
+
+### Fixed
+
+- Closed 52 provider, catalog, and login parity gaps, including Codex consumer cancellation and
+  zstd transport, OpenAI/Azure timeout and pricing behavior, lossless unknown pi-message events,
+  Bedrock payload hooks, Mistral streamed arguments, Cloudflare auth, and OAuth credential wire data.
 
 ## [0.1.0] - 2026-07-21
 

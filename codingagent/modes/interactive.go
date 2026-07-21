@@ -100,10 +100,13 @@ type InteractiveMode struct {
 	themeController      *theme.Controller
 	authContext          context.Context
 	authCancel           context.CancelFunc
-	keyDisplayOS         string
-	arminRandom          func() float64
-	arminScheduler       arminScheduler
-	exportHTML           func(string) (string, error)
+	// anthropicSubscriptionWarningShown gates the once-per-session Anthropic
+	// extra-usage warning (upstream anthropicSubscriptionWarningShown).
+	anthropicSubscriptionWarningShown bool
+	keyDisplayOS                      string
+	arminRandom                       func() float64
+	arminScheduler                    arminScheduler
+	exportHTML                        func(string) (string, error)
 
 	unsubscribe func()
 	cleanupOnce sync.Once
@@ -201,6 +204,7 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 	for _, diagnostic := range mode.options.Diagnostics {
 		mode.chat.AddChild(tui.NewText(theme.FG("warning", "Warning: "+diagnostic), 1, 0, nil))
 	}
+	mode.maybeWarnAboutAnthropicSubscriptionAuth(ctx, mode.session.State().Model)
 
 	// Preserve positional startup message order. The first turn carries decoded
 	// startup images; remaining positional messages become subsequent steers.
@@ -1098,6 +1102,7 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 			mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
 		} else if result != nil {
 			mode.chat.AddChild(newStyledText("dim", fmt.Sprintf("Model: %s/%s (thinking: %s)", result.Model.Provider, result.Model.ID, result.ThinkingLevel)))
+			mode.maybeWarnAboutAnthropicSubscriptionAuth(context.Background(), &result.Model)
 		}
 		mode.ui.RequestRender()
 	})
@@ -1108,6 +1113,7 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 			mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
 		} else if result != nil {
 			mode.chat.AddChild(newStyledText("dim", fmt.Sprintf("Model: %s/%s (thinking: %s)", result.Model.Provider, result.Model.ID, result.ThinkingLevel)))
+			mode.maybeWarnAboutAnthropicSubscriptionAuth(context.Background(), &result.Model)
 		}
 		mode.ui.RequestRender()
 	})
@@ -1488,6 +1494,7 @@ func (mode *InteractiveMode) handleModelCommand(args string) {
 					mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
 				} else {
 					mode.chat.AddChild(newStyledText("dim", fmt.Sprintf("Model set to %s/%s", model.Provider, model.ID)))
+					mode.maybeWarnAboutAnthropicSubscriptionAuth(context.Background(), &model)
 				}
 				mode.ui.RequestRender()
 				return
@@ -1524,6 +1531,7 @@ func (mode *InteractiveMode) showModelSelector(initialSearch string) {
 					mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
 				} else {
 					mode.chat.AddChild(newStyledText("dim", "Model: "+selected))
+					mode.maybeWarnAboutAnthropicSubscriptionAuth(context.Background(), &model)
 				}
 				mode.ui.RequestRender()
 				return
@@ -2223,18 +2231,20 @@ func (mode *InteractiveMode) authenticateProvider(argument string, logout bool) 
 				return
 			}
 			if provider != "" {
+				// Go-only CLI-style ref; the upstream /logout command is
+				// always selector-driven.
 				for _, candidate := range candidates {
 					if strings.EqualFold(candidate.ID, provider) || strings.EqualFold(candidate.Name, provider) {
-						mode.runAuthentication(candidate.ID, candidate.AuthType, true)
+						mode.runLogout(candidate)
 						return
 					}
 				}
 				mode.showError(fmt.Errorf("provider %q has no stored credential", provider))
 				return
 			}
-			selected, ok := mode.selectAuthProvider(ctx, "Provider to logout", candidates, false)
+			selected, ok := mode.selectAuthProviderSearchable(ctx, oauthSelectorLogout, candidates, "")
 			if ok {
-				mode.runAuthentication(selected.ID, selected.AuthType, true)
+				mode.runLogout(selected)
 			}
 			return
 		}
@@ -2245,59 +2255,116 @@ func (mode *InteractiveMode) authenticateProvider(argument string, logout bool) 
 			return
 		}
 		if provider != "" {
+			// Upstream handleLoginCommand (interactive-mode.ts:4849-4873):
+			// an exact id/name match starts the login, one provider with
+			// several methods asks for the method, and anything else opens
+			// the provider selector pre-filtered with the ref.
 			matched := matchingAuthProviders(candidates, provider)
-			if len(matched) == 0 {
-				mode.showError(fmt.Errorf("provider %q does not support login", provider))
+			if len(matched) == 1 {
+				mode.startProviderLogin(ctx, matched[0])
 				return
 			}
-			selected := matched[0]
-			if len(matched) > 1 {
-				var ok bool
-				if allAuthOptionsForSameProvider(matched) {
-					selected, ok = mode.selectAuthMethod(ctx, matched)
-				} else {
-					selected, ok = mode.selectAuthProvider(ctx, "Provider to login", matched, true)
-				}
-				if !ok {
-					return
-				}
-			}
-			mode.startAuthentication(selected)
-			return
-		}
-
-		types := make([]aiauth.AuthType, 0, 2)
-		for _, authType := range []aiauth.AuthType{aiauth.AuthTypeOAuth, aiauth.AuthTypeAPIKey} {
-			if slices.ContainsFunc(candidates, func(candidate InteractiveAuthProvider) bool { return candidate.AuthType == authType }) {
-				types = append(types, authType)
-			}
-		}
-		if len(types) == 0 {
-			mode.showStatusMessage("No providers available to login")
-			return
-		}
-		authType := types[0]
-		if len(types) > 1 {
-			labels := []string{"Sign in with an account", "Sign in with an API key"}
-			selected, ok, selectErr := mode.interactiveUI.Select(ctx, "Select authentication method", labels, nil)
-			if selectErr != nil || !ok {
+			if len(matched) > 1 && allAuthOptionsForSameProvider(matched) {
+				mode.showLoginAuthTypeSelector(ctx, candidates, matched)
 				return
 			}
-			if selected == labels[1] {
-				authType = aiauth.AuthTypeAPIKey
-			}
+			mode.showLoginProviderSelector(ctx, candidates, nil, provider)
+			return
 		}
-		filtered := make([]InteractiveAuthProvider, 0, len(candidates))
-		for _, candidate := range candidates {
-			if candidate.AuthType == authType {
-				filtered = append(filtered, candidate)
-			}
-		}
-		selected, ok := mode.selectAuthProvider(ctx, "Provider to login", filtered, true)
-		if ok {
-			mode.startAuthentication(selected)
-		}
+		mode.showLoginAuthTypeSelector(ctx, candidates, nil)
 	}()
+}
+
+// showLoginAuthTypeSelector ports upstream showLoginAuthTypeSelector
+// (interactive-mode.ts:4885-4940): subscription vs API key first, then the
+// provider selector; with providerOptions it selects among one provider's
+// methods instead.
+func (mode *InteractiveMode) showLoginAuthTypeSelector(ctx context.Context, candidates, providerOptions []InteractiveAuthProvider) {
+	subscriptionLabel := "Sign in with an account"
+	for _, option := range providerOptions {
+		if option.AuthType == aiauth.AuthTypeOAuth {
+			subscriptionLabel = authMethodLabel(option)
+			break
+		}
+	}
+	apiKeyLabel := "Sign in with an API key"
+	availableTypes := map[aiauth.AuthType]bool{aiauth.AuthTypeOAuth: true, aiauth.AuthTypeAPIKey: true}
+	if providerOptions != nil {
+		availableTypes = make(map[aiauth.AuthType]bool, 2)
+		for _, option := range providerOptions {
+			availableTypes[option.AuthType] = true
+		}
+	}
+	labels := make([]string, 0, 2)
+	if availableTypes[aiauth.AuthTypeOAuth] {
+		labels = append(labels, subscriptionLabel)
+	}
+	if availableTypes[aiauth.AuthTypeAPIKey] {
+		labels = append(labels, apiKeyLabel)
+	}
+	if len(labels) == 0 {
+		mode.showStatusMessage("No login methods available.")
+		return
+	}
+	if providerOptions != nil && len(labels) == 1 {
+		mode.startProviderLogin(ctx, providerOptions[0])
+		return
+	}
+	title := "Select authentication method:"
+	if len(providerOptions) > 0 {
+		title = "Select authentication method for " + providerOptions[0].Name + ":"
+	}
+	selected, ok, err := mode.interactiveUI.Select(ctx, title, labels, nil)
+	if err != nil || !ok {
+		return
+	}
+	authType := aiauth.AuthTypeAPIKey
+	if selected == subscriptionLabel {
+		authType = aiauth.AuthTypeOAuth
+	}
+	if providerOptions != nil {
+		for _, option := range providerOptions {
+			if option.AuthType == authType {
+				mode.startProviderLogin(ctx, option)
+				return
+			}
+		}
+		return
+	}
+	mode.showLoginProviderSelector(ctx, candidates, &authType, "")
+}
+
+// showLoginProviderSelector ports upstream showLoginProviderSelector
+// (interactive-mode.ts:4942-4984); cancelling a type-scoped list returns to
+// the auth-type selector.
+func (mode *InteractiveMode) showLoginProviderSelector(ctx context.Context, candidates []InteractiveAuthProvider, authType *aiauth.AuthType, initialSearchInput string) {
+	providerOptions := candidates
+	if authType != nil {
+		providerOptions = make([]InteractiveAuthProvider, 0, len(candidates))
+		for _, candidate := range candidates {
+			if candidate.AuthType == *authType {
+				providerOptions = append(providerOptions, candidate)
+			}
+		}
+	}
+	if len(providerOptions) == 0 {
+		message := "No login providers available."
+		if authType != nil && *authType == aiauth.AuthTypeOAuth {
+			message = "No subscription providers available."
+		} else if authType != nil {
+			message = "No API key providers available."
+		}
+		mode.showStatusMessage(message)
+		return
+	}
+	selected, ok := mode.selectAuthProviderSearchable(ctx, oauthSelectorLogin, providerOptions, initialSearchInput)
+	if !ok {
+		if authType != nil {
+			mode.showLoginAuthTypeSelector(ctx, candidates, nil)
+		}
+		return
+	}
+	mode.startProviderLogin(ctx, selected)
 }
 
 func (mode *InteractiveMode) handleLoginCommand(provider string) {
@@ -2331,23 +2398,6 @@ func allAuthOptionsForSameProvider(options []InteractiveAuthProvider) bool {
 	return true
 }
 
-func (mode *InteractiveMode) selectAuthMethod(ctx context.Context, options []InteractiveAuthProvider) (InteractiveAuthProvider, bool) {
-	labels := make([]string, len(options))
-	for index, option := range options {
-		labels[index] = authMethodLabel(option)
-	}
-	selected, ok, err := mode.interactiveUI.Select(ctx, "Select authentication method for "+options[0].Name, labels, nil)
-	if err != nil || !ok {
-		return InteractiveAuthProvider{}, false
-	}
-	for index, label := range labels {
-		if label == selected {
-			return options[index], true
-		}
-	}
-	return InteractiveAuthProvider{}, false
-}
-
 func authMethodLabel(option InteractiveAuthProvider) string {
 	if option.AuthType == aiauth.AuthTypeOAuth {
 		if option.LoginLabel != "" {
@@ -2356,67 +2406,6 @@ func authMethodLabel(option InteractiveAuthProvider) string {
 		return "Sign in with an account"
 	}
 	return "Sign in with an API key"
-}
-
-func (mode *InteractiveMode) selectAuthProvider(ctx context.Context, title string, options []InteractiveAuthProvider, showConfigured bool) (InteractiveAuthProvider, bool) {
-	if len(options) == 0 {
-		mode.showStatusMessage("No providers available")
-		return InteractiveAuthProvider{}, false
-	}
-	selected, ok, err := mode.interactiveUI.selectItems(ctx, title, authProviderSelectItems(options, showConfigured), nil)
-	if err != nil || !ok {
-		return InteractiveAuthProvider{}, false
-	}
-	index, err := strconv.Atoi(selected)
-	if err != nil || index < 0 || index >= len(options) {
-		return InteractiveAuthProvider{}, false
-	}
-	return options[index], true
-}
-
-func authProviderSelectItems(options []InteractiveAuthProvider, showStatus bool) []tui.SelectItem {
-	showAuthType := false
-	if len(options) > 1 {
-		first := options[0].AuthType
-		showAuthType = slices.ContainsFunc(options[1:], func(option InteractiveAuthProvider) bool { return option.AuthType != first })
-	}
-	items := make([]tui.SelectItem, len(options))
-	for index, option := range options {
-		display := option
-		if showAuthType {
-			authType := "API key"
-			if option.AuthType == aiauth.AuthTypeOAuth {
-				authType = "subscription"
-			}
-			display.Name += " [" + authType + "]"
-		}
-		items[index] = tui.SelectItem{Value: strconv.Itoa(index), Label: authProviderLabel(display, showStatus)}
-	}
-	return items
-}
-
-func authProviderLabel(option InteractiveAuthProvider, showStatus bool) string {
-	if !showStatus {
-		return option.Name
-	}
-	if option.Status == nil {
-		return option.Name + " • unconfigured"
-	}
-	if option.Status.Type != option.AuthType {
-		configured := "API key configured"
-		if option.Status.Type == aiauth.AuthTypeOAuth {
-			configured = "subscription configured"
-		}
-		return option.Name + " • " + configured
-	}
-	source := option.Status.Source
-	if source == "" || source == "OAuth" || source == "stored credential" {
-		return option.Name + " ✓ configured"
-	}
-	if isAuthEnvironmentSource(source) {
-		source = "env: " + source
-	}
-	return option.Name + " ✓ " + source
 }
 
 func isAuthEnvironmentSource(source string) bool {
@@ -2434,37 +2423,188 @@ func isAuthEnvironmentSource(source string) bool {
 	return true
 }
 
-func (mode *InteractiveMode) startAuthentication(provider InteractiveAuthProvider) {
-	if !provider.LoginAvailable {
-		method := provider.MethodName
-		if method == "" {
-			method = "Authentication"
-		}
-		mode.showStatusMessage(method + " is configured outside pigo.")
+// startProviderLogin ports upstream startProviderLogin
+// (interactive-mode.ts:4875-4883): OAuth and login-capable API-key methods run
+// the login flow, everything else gets the ambient-configuration dialog.
+func (mode *InteractiveMode) startProviderLogin(ctx context.Context, provider InteractiveAuthProvider) {
+	if provider.AuthType != aiauth.AuthTypeOAuth && !provider.LoginAvailable {
+		mode.showAmbientAuthDialog(ctx, provider)
 		return
 	}
-	mode.runAuthentication(provider.ID, provider.AuthType, false)
+	mode.runLogin(provider)
 }
 
-func (mode *InteractiveMode) runAuthentication(provider string, authType aiauth.AuthType, logout bool) {
+func (mode *InteractiveMode) runLogin(provider InteractiveAuthProvider) {
 	ctx := mode.authenticationContext()
-	verb := "login"
-	var err error
-	if logout {
-		verb = "logout"
-		err = mode.options.Host.Logout(ctx, provider)
-	} else {
-		err = mode.options.Host.Login(ctx, provider, authType, tuiAuthInteraction{mode: mode})
+	var previousModel *ai.Model
+	if mode.session != nil {
+		previousModel = mode.session.State().Model
 	}
-	if err != nil {
-		mode.showError(err)
+	interaction := tuiAuthInteraction{mode: mode}
+	if provider.ID == "amazon-bedrock" && provider.AuthType == aiauth.AuthTypeAPIKey {
+		providersDoc, _ := codingagent.AuthGuidanceDocPaths()
+		interaction.details = "You can also use an AWS profile, IAM keys, or role-based credentials.\nSee:\n  " + providersDoc
+	}
+	if err := mode.options.Host.Login(ctx, provider.ID, provider.AuthType, interaction); err != nil {
+		if errors.Is(err, context.Canceled) {
+			// Upstream stays silent for "Login cancelled".
+			return
+		}
+		if provider.AuthType == aiauth.AuthTypeOAuth {
+			mode.showError(errors.New("Failed to login to " + provider.Name + ": " + err.Error())) //nolint:staticcheck // Upstream error text.
+		} else {
+			mode.showError(errors.New("Failed to save API key for " + provider.Name + ": " + err.Error())) //nolint:staticcheck // Upstream error text.
+		}
 		return
 	}
-	label := verb
-	if label != "" {
-		label = strings.ToUpper(label[:1]) + label[1:]
+	mode.completeProviderAuthentication(ctx, provider, previousModel)
+}
+
+func (mode *InteractiveMode) runLogout(provider InteractiveAuthProvider) {
+	ctx := mode.authenticationContext()
+	if err := mode.options.Host.Logout(ctx, provider.ID); err != nil {
+		mode.showError(errors.New("Logout failed: " + err.Error())) //nolint:staticcheck // Upstream error text.
+		return
 	}
-	mode.showStatusMessage(label + " successful for " + provider)
+	if provider.AuthType == aiauth.AuthTypeOAuth {
+		mode.showStatusMessage("Logged out of " + provider.Name)
+	} else {
+		mode.showStatusMessage("Removed stored API key for " + provider.Name + ". Environment variables and models.json config are unchanged.")
+	}
+}
+
+// resolveDefaultModelSelection ports the default-model block of upstream
+// completeProviderAuthentication (interactive-mode.ts:5040-5069): pick the
+// provider's pinned default from the now-available models or explain exactly
+// why no model was selected.
+func resolveDefaultModelSelection(actionLabel, providerID string, available []ai.Model) (*ai.Model, string) {
+	providerModels := make([]ai.Model, 0, len(available))
+	for _, model := range available {
+		if string(model.Provider) == providerID {
+			providerModels = append(providerModels, model)
+		}
+	}
+	defaultModelID, hasDefault := codingagent.DefaultModelIDForProvider(providerID)
+	if !hasDefault {
+		return nil, actionLabel + `, but no default model is configured for provider "` + providerID + `". Use /model to select a model.`
+	}
+	if len(providerModels) == 0 {
+		return nil, actionLabel + ", but no models are available for that provider. Use /model to select a model."
+	}
+	for _, model := range providerModels {
+		if model.ID == defaultModelID {
+			selected := model
+			return &selected, ""
+		}
+	}
+	return nil, actionLabel + `, but its default model "` + defaultModelID + `" is not available. Use /model to select a model.`
+}
+
+// completeProviderAuthentication ports upstream completeProviderAuthentication
+// (interactive-mode.ts:5033-5084).
+func (mode *InteractiveMode) completeProviderAuthentication(ctx context.Context, provider InteractiveAuthProvider, previousModel *ai.Model) {
+	actionLabel := "Saved API key for " + provider.Name
+	if provider.AuthType == aiauth.AuthTypeOAuth {
+		actionLabel = "Logged in to " + provider.Name
+	}
+	var selectedModel *ai.Model
+	selectionError := ""
+	if codingagent.IsUnknownModel(previousModel) && mode.session != nil {
+		selectedModel, selectionError = resolveDefaultModelSelection(actionLabel, provider.ID, mode.session.AvailableModels())
+		if selectedModel != nil {
+			if err := mode.session.SetModel(ctx, *selectedModel); err != nil {
+				selectedModel = nil
+				selectionError = actionLabel + ", but selecting its default model failed: " + err.Error() + ". Use /model to select a model."
+			}
+		}
+	}
+	authPath := filepath.Join(mode.session.InteractiveModeSettings().AgentDir, "auth.json")
+	if selectedModel != nil {
+		mode.showStatusMessage(actionLabel + ". Selected " + selectedModel.ID + ". Credentials saved to " + authPath)
+		mode.maybeWarnAboutAnthropicSubscriptionAuth(ctx, selectedModel)
+		return
+	}
+	mode.showStatusMessage(actionLabel + ". Credentials saved to " + authPath)
+	if selectionError != "" {
+		mode.showError(errors.New(selectionError))
+		return
+	}
+	var currentModel *ai.Model
+	if mode.session != nil {
+		currentModel = mode.session.State().Model
+	}
+	mode.maybeWarnAboutAnthropicSubscriptionAuth(ctx, currentModel)
+}
+
+// anthropicSubscriptionAuthWarning is ANTHROPIC_SUBSCRIPTION_AUTH_WARNING
+// (interactive-mode.ts:207).
+const anthropicSubscriptionAuthWarning = "Anthropic subscription auth is active. Third-party harness usage draws from extra usage and is billed per token, not your Claude plan limits. Manage extra usage at https://claude.ai/settings/usage. Disable this warning in /settings."
+
+// isAnthropicSubscriptionAuthKey mirrors interactive-mode.ts:210-212.
+func isAnthropicSubscriptionAuthKey(apiKey string) bool {
+	return strings.HasPrefix(apiKey, "sk-ant-oat")
+}
+
+// maybeWarnAboutAnthropicSubscriptionAuth ports upstream
+// maybeWarnAboutAnthropicSubscriptionAuth (interactive-mode.ts:4336-4364):
+// warn once per TUI session when the anthropic model runs on subscription
+// auth, gated by settings warnings.anthropicExtraUsage.
+func (mode *InteractiveMode) maybeWarnAboutAnthropicSubscriptionAuth(ctx context.Context, model *ai.Model) {
+	if mode.session == nil || !mode.session.WarnAnthropicExtraUsage() {
+		return
+	}
+	mode.mu.Lock()
+	shown := mode.anthropicSubscriptionWarningShown
+	mode.mu.Unlock()
+	if shown || model == nil || model.Provider != "anthropic" {
+		return
+	}
+	key, err := mode.session.ProviderAPIKey(ctx, model.Provider)
+	if err != nil {
+		// Auth lookup failures are ignored for warning-only checks.
+		return
+	}
+	if key != "" {
+		if !isAnthropicSubscriptionAuthKey(key) {
+			return
+		}
+		mode.showAnthropicSubscriptionWarningOnce()
+		return
+	}
+
+	oauthStored := false
+	if mode.options.Host != nil {
+		if options, err := mode.options.Host.AuthOptions(ctx); err == nil {
+			for _, credential := range options.Logout {
+				// Upstream checkAuth("anthropic")?.type === "oauth".
+				if credential.ID == "anthropic" && credential.AuthType == aiauth.AuthTypeOAuth {
+					oauthStored = true
+				}
+			}
+		}
+	}
+	if !oauthStored {
+		return
+	}
+	mode.showAnthropicSubscriptionWarningOnce()
+}
+
+func (mode *InteractiveMode) showAnthropicSubscriptionWarningOnce() {
+	mode.mu.Lock()
+	if mode.anthropicSubscriptionWarningShown {
+		mode.mu.Unlock()
+		return
+	}
+	mode.anthropicSubscriptionWarningShown = true
+	mode.mu.Unlock()
+	mode.showWarning(anthropicSubscriptionAuthWarning)
+}
+
+// showWarning mirrors upstream showWarning (interactive-mode.ts:3849-3853).
+func (mode *InteractiveMode) showWarning(message string) {
+	mode.chat.AddChild(tui.NewSpacer(1))
+	mode.chat.AddChild(tui.NewText(theme.FG("warning", "Warning: "+message), 1, 0, nil))
+	mode.ui.RequestRender()
 }
 
 func (mode *InteractiveMode) authenticationContext() context.Context {
@@ -2476,9 +2616,16 @@ func (mode *InteractiveMode) authenticationContext() context.Context {
 	return context.Background()
 }
 
-type tuiAuthInteraction struct{ mode *InteractiveMode }
+type tuiAuthInteraction struct {
+	mode    *InteractiveMode
+	details string
+}
 
 func (interaction tuiAuthInteraction) Prompt(ctx context.Context, prompt aiauth.AuthPrompt) (string, error) {
+	title := prompt.Message
+	if interaction.details != "" {
+		title = interaction.details + "\n\n" + title
+	}
 	if prompt.Type == aiauth.PromptSelect {
 		labels := make([]string, 0, len(prompt.Options))
 		ids := make(map[string]string, len(prompt.Options))
@@ -2490,7 +2637,7 @@ func (interaction tuiAuthInteraction) Prompt(ctx context.Context, prompt aiauth.
 			labels = append(labels, label)
 			ids[label] = option.ID
 		}
-		selected, ok, err := interaction.mode.interactiveUI.Select(ctx, prompt.Message, labels, nil)
+		selected, ok, err := interaction.mode.interactiveUI.Select(ctx, title, labels, nil)
 		if err != nil {
 			return "", err
 		}
@@ -2500,7 +2647,7 @@ func (interaction tuiAuthInteraction) Prompt(ctx context.Context, prompt aiauth.
 		return ids[selected], nil
 	}
 	placeholder := prompt.Placeholder
-	value, ok, err := interaction.mode.interactiveUI.Input(ctx, prompt.Message, &placeholder, nil)
+	value, ok, err := interaction.mode.interactiveUI.Input(ctx, title, &placeholder, nil)
 	if err != nil {
 		return "", err
 	}
@@ -2510,11 +2657,21 @@ func (interaction tuiAuthInteraction) Prompt(ctx context.Context, prompt aiauth.
 	return value, nil
 }
 
+// openAuthURLInBrowser is swappable for tests; production uses the platform
+// launcher port (codingagent/open_browser.go).
+var openAuthURLInBrowser = codingagent.OpenBrowser
+
 func (interaction tuiAuthInteraction) Notify(event aiauth.AuthEvent) {
 	message := event.Message
 	switch event.Type {
 	case aiauth.EventAuthURL:
 		message = strings.TrimSpace(event.Instructions + "\n" + event.URL)
+		// Upstream auto-opens the browser when the login dialog receives the
+		// auth URL (login-dialog.ts:111); launch is best-effort and the URL
+		// stays visible either way.
+		if event.URL != "" {
+			openAuthURLInBrowser(event.URL)
+		}
 	case aiauth.EventDeviceCode:
 		message = strings.TrimSpace(event.VerificationURI + "\nCode: " + event.UserCode)
 	}

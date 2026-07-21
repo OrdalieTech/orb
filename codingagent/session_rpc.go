@@ -642,9 +642,21 @@ func (runtime *SessionRuntime) AvailableThinkingLevels() []ai.ModelThinkingLevel
 	return append([]ai.ModelThinkingLevel(nil), ai.SupportedThinkingLevels(runtime.agent.State().Model)...)
 }
 
+// providerLoginHelp mirrors upstream getProviderLoginHelp (auth-guidance.ts:6-12).
+func providerLoginHelp() string {
+	providersDoc, modelsDoc := authGuidanceDocPaths()
+	return "Use /login to log into a provider via OAuth or API key. See:\n  " + providersDoc + "\n  " + modelsDoc
+}
+
 //nolint:staticcheck // User-visible auth guidance matches upstream.
 func noModelSelectedError() error {
-	return errors.New("No model selected.\n\nUse /login to log into a provider via OAuth or API key. See:\n  docs/providers.md\n  docs/models.md\n\nThen use /model to select a model.")
+	return errors.New("No model selected.\n\n" + providerLoginHelp() + "\n\nThen use /model to select a model.")
+}
+
+// FormatNoModelsAvailableMessage exposes upstream
+// formatNoModelsAvailableMessage (auth-guidance.ts:14-16) to CLI callers.
+func FormatNoModelsAvailableMessage() string {
+	return formatNoModelsAvailableMessage()
 }
 
 //nolint:staticcheck // User-visible auth guidance matches upstream.
@@ -653,9 +665,7 @@ func formatNoAPIKeyFoundMessage(provider ai.ProviderID) string {
 	if display == "unknown" {
 		display = "the selected model"
 	}
-	providersDoc, modelsDoc := authGuidanceDocPaths()
-	return "No API key found for " + display + ".\n\nUse /login to log into a provider via OAuth or API key. See:\n  " +
-		providersDoc + "\n  " + modelsDoc
+	return "No API key found for " + display + ".\n\n" + providerLoginHelp()
 }
 
 // authGuidanceDocPaths mirrors upstream getDocsPath (auth-guidance.ts:6-12)
@@ -670,6 +680,13 @@ func authGuidanceDocPaths() (providersDoc, modelsDoc string) {
 			"https://github.com/OrdalieTech/pigo/blob/main/docs/models.md"
 	}
 	return providersDoc, filepath.Join(docsDir, "models.md")
+}
+
+// AuthGuidanceDocPaths exposes the auth-guidance doc pointers to the CLI and
+// TUI so every login/model hint resolves docs the same way (upstream
+// getDocsPath consumers in auth-guidance.ts and interactive-mode.ts).
+func AuthGuidanceDocPaths() (providersDoc, modelsDoc string) {
+	return authGuidanceDocPaths()
 }
 
 func (runtime *SessionRuntime) SetAutoCompactionEnabled(enabled bool) {

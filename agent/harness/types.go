@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/OrdalieTech/pigo/agent"
@@ -174,6 +175,7 @@ type SessionEntry struct {
 	Message          agent.AgentMessage
 	Summary          string
 	FirstKeptEntryID string
+	RetainedTail     agent.AgentMessages
 	TokensBefore     float64
 	Details          any
 	Usage            *ai.Usage
@@ -235,6 +237,7 @@ type CompactionPreparation struct {
 	FirstKeptEntryID    string
 	MessagesToSummarize agent.AgentMessages
 	TurnPrefixMessages  agent.AgentMessages
+	RetainedTail        agent.AgentMessages
 	IsSplitTurn         bool
 	TokensBefore        int64
 	PreviousSummary     *string
@@ -248,12 +251,31 @@ type CompactionDetails struct {
 }
 
 type CompactionResult struct {
-	Summary              string            `json:"summary"`
-	FirstKeptEntryID     string            `json:"firstKeptEntryId"`
-	TokensBefore         int64             `json:"tokensBefore"`
-	EstimatedTokensAfter int64             `json:"estimatedTokensAfter"`
-	Usage                *ai.Usage         `json:"usage,omitempty"`
-	Details              CompactionDetails `json:"details"`
+	Summary          string
+	FirstKeptEntryID string
+	TokensBefore     int64
+	Usage            *ai.Usage
+	RetainedTail     agent.AgentMessages
+	Details          any
+}
+
+func (result CompactionResult) MarshalJSON() ([]byte, error) {
+	var retainedTail *agent.AgentMessages
+	if result.RetainedTail != nil {
+		retainedTail = &result.RetainedTail
+	}
+	return json.Marshal(struct {
+		Summary          string               `json:"summary"`
+		FirstKeptEntryID string               `json:"firstKeptEntryId,omitempty"`
+		TokensBefore     int64                `json:"tokensBefore"`
+		Usage            *ai.Usage            `json:"usage,omitempty"`
+		RetainedTail     *agent.AgentMessages `json:"retainedTail,omitempty"`
+		Details          any                  `json:"details,omitempty"`
+	}{
+		Summary: result.Summary, FirstKeptEntryID: result.FirstKeptEntryID,
+		TokensBefore: result.TokensBefore, Usage: result.Usage,
+		RetainedTail: retainedTail, Details: result.Details,
+	})
 }
 
 type ContextUsageEstimate struct {

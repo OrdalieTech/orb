@@ -5,7 +5,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/OrdalieTech/pigo/agent/harness"
 	"github.com/OrdalieTech/pigo/ai"
 	aiauth "github.com/OrdalieTech/pigo/ai/auth"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
@@ -441,7 +440,7 @@ func decodeCompactOptions(runtime *sobek.Runtime, vm *runtimeVM, value sobek.Val
 	}
 	options := &extensions.CompactOptions{CustomInstructions: stringProperty(object, "customInstructions")}
 	if callback, ok := sobek.AssertFunction(object.Get("onComplete")); ok {
-		options.OnComplete = func(result harness.CompactionResult) {
+		options.OnComplete = func(result session.CompactionResult) {
 			vm.post(callbackContext(), true, func(runtime *sobek.Runtime) error {
 				value, err := callback(sobek.Undefined(), toJS(runtime, result))
 				if err != nil {

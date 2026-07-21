@@ -1100,10 +1100,9 @@ func TestRunCLIHeadlessModesBindSessionReplacementLifecycle(t *testing.T) {
 			}
 			createRuntime := func(_ string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
 				created := agent.NewAgent(
-					agent.WithInitialState(agent.AgentState{
+					provider.StreamSimple, agent.WithInitialState(agent.AgentState{
 						SystemPrompt: "test", Model: provider.GetModel(), Messages: prior,
 					}),
-					agent.WithStreamFn(provider.StreamSimple),
 					agent.WithConvertToLLM(codingagent.ConvertToLLM),
 				)
 				return runtimeInputs{Agent: created, Extensions: registry}, nil
@@ -1168,10 +1167,9 @@ func TestRunCLIHeadlessModesContinuePromptingReplacementSession(t *testing.T) {
 			}
 			createRuntime := func(_ string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
 				created := agent.NewAgent(
-					agent.WithInitialState(agent.AgentState{
+					provider.StreamSimple, agent.WithInitialState(agent.AgentState{
 						SystemPrompt: "test", Model: provider.GetModel(), Messages: prior,
 					}),
-					agent.WithStreamFn(provider.StreamSimple),
 					agent.WithConvertToLLM(codingagent.ConvertToLLM),
 				)
 				return runtimeInputs{Agent: created, Extensions: registry}, nil
@@ -1223,10 +1221,9 @@ func TestRunCLIJSONMovesEventSubscriptionBeforeReplacementWithSession(t *testing
 	}
 	createRuntime := func(_ string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
 		created := agent.NewAgent(
-			agent.WithInitialState(agent.AgentState{
+			provider.StreamSimple, agent.WithInitialState(agent.AgentState{
 				SystemPrompt: "test", Model: provider.GetModel(), Messages: prior,
 			}),
-			agent.WithStreamFn(provider.StreamSimple),
 			agent.WithConvertToLLM(codingagent.ConvertToLLM),
 		)
 		return runtimeInputs{Agent: created, Extensions: registry}, nil
@@ -1276,10 +1273,9 @@ func TestRunCLIRPCMovesEventSubscriptionForExtensionInitiatedReplacement(t *test
 	}
 	createRuntime := func(_ string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
 		created := agent.NewAgent(
-			agent.WithInitialState(agent.AgentState{
+			provider.StreamSimple, agent.WithInitialState(agent.AgentState{
 				SystemPrompt: "test", Model: provider.GetModel(), Messages: prior,
 			}),
-			agent.WithStreamFn(provider.StreamSimple),
 			agent.WithConvertToLLM(codingagent.ConvertToLLM),
 		)
 		return runtimeInputs{Agent: created, Extensions: registry}, nil
@@ -1368,12 +1364,11 @@ streamComplete:
 func fauxRuntimeFactory(provider *faux.Provider) func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
 	return func(_ string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
 		created := agent.NewAgent(
-			agent.WithInitialState(agent.AgentState{
+			provider.StreamSimple, agent.WithInitialState(agent.AgentState{
 				SystemPrompt: "test",
 				Model:        provider.GetModel(),
 				Messages:     prior,
 			}),
-			agent.WithStreamFn(provider.StreamSimple),
 			agent.WithConvertToLLM(codingagent.ConvertToLLM),
 		)
 		return runtimeInputs{Agent: created}, nil

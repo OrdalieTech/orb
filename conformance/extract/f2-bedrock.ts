@@ -353,6 +353,20 @@ const streamDefinitions: BedrockStreamDefinition[] = [
     options: { cacheRetention: "none", region: "us-east-1" },
     items: [{ messageStart: { role: "user" } }],
   },
+  {
+    // G8: a mid-stream ThrottlingException aborts the stream with the
+    // human-readable prefix (bedrock-converse-stream.ts:276-277,319).
+    name: "bedrock-mid-stream-throttling",
+    api: "bedrock-converse-stream",
+    model: textModel,
+    context: { messages: [{ role: "user", content: "throttle", timestamp: FIXED_NOW }] },
+    options: { cacheRetention: "none", region: "us-east-1" },
+    items: [
+      { messageStart: { role: "assistant" } },
+      { contentBlockDelta: { contentBlockIndex: 0, delta: { text: "part" } } },
+      { throttlingException: { message: "Rate exceeded" } },
+    ],
+  },
 ];
 
 function cloneEvent(event: AssistantMessageEvent): AssistantMessageEvent {
@@ -414,6 +428,22 @@ async function runBedrockStream(
   const require = createRequire(path.join(upstreamRoot, "package.json"));
   const sdk = require("@aws-sdk/client-bedrock-runtime") as {
     BedrockRuntimeClient: { prototype: { send: (...args: unknown[]) => Promise<unknown> } };
+    ThrottlingException: new (input: { message: string; $metadata: object }) => Error;
+  };
+  // Fixture items are plain JSON; the real SDK deserializes stream exception
+  // members into BedrockRuntimeServiceException subclasses, so hydrate them
+  // to keep formatBedrockError's instanceof branch on the production path.
+  const hydrateItem = (item: unknown): unknown => {
+    const record = item as { throttlingException?: { message: string } };
+    if (record.throttlingException) {
+      return {
+        throttlingException: new sdk.ThrottlingException({
+          message: record.throttlingException.message,
+          $metadata: {},
+        }),
+      };
+    }
+    return item;
   };
   const originalSend = sdk.BedrockRuntimeClient.prototype.send;
   sdk.BedrockRuntimeClient.prototype.send = async () => ({
@@ -424,7 +454,7 @@ async function runBedrockStream(
     stream: (async function* () {
       for (const item of definition.items) {
         await new Promise<void>((resolve) => setImmediate(resolve));
-        yield item;
+        yield hydrateItem(item);
       }
     })(),
   });

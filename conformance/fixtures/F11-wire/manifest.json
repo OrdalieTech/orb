@@ -1,6 +1,6 @@
 {
   "family": "F11-wire",
-  "upstreamCommit": "3a40794ea14c6202586cc203d5b928eca9f6b673",
+  "upstreamCommit": "9c480b6ad2c7419875a7a850fb4ad5f9232313b8",
   "generator": "conformance/extract/f11-extension-wiring.ts",
   "source": "packages/coding-agent/src/core/extensions/wrapper.ts",
   "files": [

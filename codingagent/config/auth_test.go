@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -188,5 +189,40 @@ func TestMigrateLegacyOAuth(t *testing.T) {
 	credential, err := storage.Read(context.Background(), "anthropic")
 	if err != nil || credential.Type != aiauth.CredentialOAuth || credential.Access != "access" || string(credential.Extra["scope"]) != `"all"` {
 		t.Fatalf("migrated credential = %#v, %v", credential, err)
+	}
+}
+
+// LOG-m9: upstream writeFileSync rewrites the existing settings.json inode, so
+// migration preserves a restrictive mode while auth.json is also created 0600.
+func TestLOGm9MigrationPreservesSettingsJSONMode(t *testing.T) {
+	agentDir := t.TempDir()
+	settingsPath := filepath.Join(agentDir, "settings.json")
+	if err := os.WriteFile(settingsPath, []byte(`{"apiKeys":{"groq":"secret"},"theme":"dark"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(settingsPath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	providers, err := MigrateAuthToAuthJSON(agentDir)
+	if err != nil || !reflect.DeepEqual(providers, []string{"groq"}) {
+		t.Fatalf("migration = %#v, %v", providers, err)
+	}
+	contents, err := os.ReadFile(settingsPath)
+	if err != nil || strings.Contains(string(contents), "apiKeys") {
+		t.Fatalf("settings.json after migration = %q, %v", contents, err)
+	}
+	info, err := os.Stat(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("settings.json permissions = %v, want preserved 0600", info.Mode().Perm())
+	}
+	info, err = os.Stat(filepath.Join(agentDir, "auth.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("auth.json permissions = %v, want 0600", info.Mode().Perm())
 	}
 }

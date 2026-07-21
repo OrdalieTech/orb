@@ -49,6 +49,9 @@ interface StreamDefinition extends RequestDefinition {
   httpStatus?: number;
   httpBody?: string;
   httpContentType?: string;
+  // Set when a 200 SSE legitimately terminates in an error event
+  // (e.g. finish_reason content_filter).
+  expectsErrorEvent?: boolean;
 }
 
 interface FixtureResponse {
@@ -82,9 +85,12 @@ const FIXED_NOW = 1_700_000_000_123;
 const SELECTED_HEADERS = [
   "authorization",
   "content-type",
+  "copilot-vision-request",
+  "openai-intent",
   "session_id",
   "x-client-request-id",
   "x-fixture",
+  "x-initiator",
   "x-model-header",
   "x-session-affinity",
   "x-session-id",
@@ -320,6 +326,41 @@ const zaiCompatModel = model("openai-completions", {
     thinkingFormat: "zai",
     zaiToolStream: true,
   },
+});
+
+// G2: Copilot dynamic headers (X-Initiator, Openai-Intent,
+// Copilot-Vision-Request) on both OpenAI wire shapes.
+const responsesCopilotModel = model("openai-responses", {
+  provider: "github-copilot",
+  baseUrl: "https://api.githubcopilot.com",
+  reasoning: true,
+});
+
+const completionsCopilotModel = model("openai-completions", {
+  provider: "github-copilot",
+  baseUrl: "https://api.githubcopilot.com",
+});
+
+// G3: system role spelling when the responses compat disables the developer role.
+const responsesDeveloperRoleOffModel = model("openai-responses", {
+  reasoning: true,
+  compat: { supportsDeveloperRole: false },
+});
+
+// G5: xai always requests encrypted reasoning content on responses.
+const responsesXaiModel = model("openai-responses", {
+  id: "grok-fixture",
+  provider: "xai",
+  baseUrl: "https://api.x.ai/v1",
+  reasoning: true,
+});
+
+// G4: kimi deferred tools re-declare transcript-loaded tools inline.
+const completionsKimiModel = model("openai-completions", {
+  id: "kimi-fixture",
+  provider: "moonshot",
+  baseUrl: "https://api.moonshot.ai/v1",
+  compat: { deferredToolsMode: "kimi" },
 });
 
 const requestDefinitions: RequestDefinition[] = [
@@ -592,6 +633,88 @@ const requestDefinitions: RequestDefinition[] = [
       cacheRetention: "none",
       reasoningEffort: "xhigh",
     },
+  },
+  {
+    name: "responses-copilot-dynamic-headers",
+    api: "openai-responses",
+    model: responsesCopilotModel,
+    context: {
+      systemPrompt: "Use tools.",
+      messages: [
+        { role: "user", content: "inspect", timestamp: FIXED_NOW - 3 },
+        assistant("openai-responses", responsesCopilotModel.id, [
+          { type: "toolCall", id: "call_copilot", name: "echo", arguments: { text: "vision" } },
+        ], { provider: responsesCopilotModel.provider }),
+        toolResult("call_copilot", [
+          { type: "text", text: "tool caption" },
+          { type: "image", data: "AAEC", mimeType: "image/png" },
+        ]),
+      ],
+      tools: [echoTool],
+    },
+    options: { apiKey: "fixture-copilot-token", cacheRetention: "none" },
+  },
+  {
+    name: "completions-copilot-dynamic-headers",
+    api: "openai-completions",
+    model: completionsCopilotModel,
+    context: {
+      systemPrompt: "Inspect images.",
+      messages: [
+        assistant("openai-completions", completionsCopilotModel.id, [
+          { type: "toolCall", id: "call_copilot", name: "echo", arguments: { text: "vision" } },
+        ], { provider: completionsCopilotModel.provider }),
+        toolResult("call_copilot", [{ type: "text", text: "tool caption" }]),
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "user image" },
+            { type: "image", data: "AQID", mimeType: "image/jpeg" },
+          ],
+          timestamp: FIXED_NOW,
+        },
+      ],
+      tools: [echoTool],
+    },
+    options: { apiKey: "fixture-copilot-token", cacheRetention: "none" },
+  },
+  {
+    name: "responses-developer-role-disabled",
+    api: "openai-responses",
+    model: responsesDeveloperRoleOffModel,
+    context: {
+      systemPrompt: "Stay on the system role.",
+      messages: [{ role: "user", content: "hello", timestamp: FIXED_NOW }],
+    },
+    options: { apiKey: "fixture-key", cacheRetention: "none" },
+  },
+  {
+    name: "responses-xai-include-injection",
+    api: "openai-responses",
+    model: responsesXaiModel,
+    context: {
+      systemPrompt: "Reason quietly.",
+      messages: [{ role: "user", content: "hello", timestamp: FIXED_NOW }],
+    },
+    options: { apiKey: "fixture-xai-key", cacheRetention: "none" },
+  },
+  {
+    name: "completions-kimi-deferred-tools",
+    api: "openai-completions",
+    model: completionsKimiModel,
+    context: {
+      systemPrompt: "Use tools.",
+      messages: [
+        { role: "user", content: "echo once", timestamp: FIXED_NOW - 5 },
+        assistant("openai-completions", completionsKimiModel.id, [
+          { type: "toolCall", id: "call_kimi", name: "echo", arguments: { text: "first" } },
+        ], { provider: completionsKimiModel.provider }),
+        toolResult("call_kimi", [{ type: "text", text: "loaded late_tool" }], ["late_tool"]),
+        { role: "user", content: "continue", timestamp: FIXED_NOW },
+      ],
+      tools: [echoTool, lateTool],
+    },
+    options: { apiKey: "fixture-kimi-key", cacheRetention: "none" },
   },
 ];
 
@@ -1084,6 +1207,53 @@ const streamDefinitions: StreamDefinition[] = [
     httpBody: "",
     httpContentType: "text/plain",
   },
+  {
+    // G3: plain OpenAI opts into service-tier pricing, and the response tier
+    // wins over the requested one (priority doubles every cost component).
+    name: "responses-priority-service-tier-pricing",
+    api: "openai-responses",
+    model: responsesStreamModel,
+    context: { messages: [{ role: "user", content: "stream priority", timestamp: FIXED_NOW }] },
+    options: { apiKey: "fixture-key", cacheRetention: "none", serviceTier: "flex" },
+    sse: encodeSSE([
+      {
+        type: "response.completed",
+        sequence_number: 0,
+        response: {
+          id: "resp_f2_priority",
+          status: "completed",
+          service_tier: "priority",
+          output: [],
+          usage: {
+            input_tokens: 20,
+            output_tokens: 7,
+            total_tokens: 27,
+            input_tokens_details: { cached_tokens: 2, cache_write_tokens: 3 },
+            output_tokens_details: { reasoning_tokens: 4 },
+          },
+        },
+      },
+    ]),
+  },
+  {
+    // G4: content_filter surfaces as a provider error with the exact
+    // upstream finish_reason spelling.
+    name: "completions-content-filter",
+    api: "openai-completions",
+    model: completionsStreamModel,
+    context: { messages: [{ role: "user", content: "stream filtered", timestamp: FIXED_NOW }] },
+    options: { apiKey: "fixture-key", cacheRetention: "none" },
+    expectsErrorEvent: true,
+    sse: encodeSSE([
+      {
+        id: "chatcmpl_f2_content_filter",
+        object: "chat.completion.chunk",
+        created: 0,
+        model: completionsStreamModel.id,
+        choices: [{ index: 0, delta: { content: "blocked" }, finish_reason: "content_filter" }],
+      },
+    ]),
+  },
 ];
 
 function cloneEvent(event: AssistantMessageEvent): AssistantMessageEvent {
@@ -1120,7 +1290,7 @@ function streamFixtureResponse(definition: StreamDefinition): FixtureResponse {
 }
 
 async function runUpstream(
-  definition: RequestDefinition,
+  definition: RequestDefinition & { expectsErrorEvent?: boolean },
   fixtureResponse: FixtureResponse,
 ): Promise<{ request: CapturedRequest; events: AssistantMessageEvent[] }> {
   let request: CapturedRequest | undefined;
@@ -1153,7 +1323,7 @@ async function runUpstream(
       `${definition.name}: upstream adapter did not issue a request: ${JSON.stringify(terminal)}`,
     );
   }
-  const expectsError = fixtureResponse.status >= 400;
+  const expectsError = fixtureResponse.status >= 400 || definition.expectsErrorEvent === true;
   if (!terminal || (terminal.type === "error") !== expectsError) {
     throw new Error(
       `${definition.name}: upstream adapter terminal event did not match HTTP ${fixtureResponse.status}: ${JSON.stringify(terminal)}`,

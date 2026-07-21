@@ -481,3 +481,103 @@ func collectOpenAICompletionsFixture(
 	}
 	return terminal, events
 }
+
+// Gap OA-m1: upstream appends OpenRouter error.metadata.raw to the completions
+// error message only when it is not already present (openai-completions.ts:498-505).
+func TestOpenAICompletionsAppendsOpenRouterMetadataRawOAm1(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "appends unseen raw",
+			body: `{"error":{"message":"bad","metadata":{"raw":"upstream said:\nboom"}}}`,
+			want: "400: {\"message\":\"bad\",\"metadata\":{\"raw\":\"upstream said:\\nboom\"}}\nupstream said:\nboom",
+		},
+		{
+			name: "skips raw already present",
+			body: `{"error":{"message":"bad","metadata":{"raw":"boom"}}}`,
+			want: `400: {"message":"bad","metadata":{"raw":"boom"}}`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			previousClient := openAIHTTPClient
+			openAIHTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusBadRequest,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(test.body)),
+					Request:    request,
+				}, nil
+			})}
+			t.Cleanup(func() { openAIHTTPClient = previousClient })
+
+			key := "fixture-key"
+			model := &ai.Model{
+				ID: "fixture-model", API: ai.APIOpenAICompletions, Provider: "openrouter",
+				BaseURL: "https://fixture.invalid/v1", Input: ai.InputModalities{ai.InputText},
+			}
+			stream, err := StreamOpenAICompletions(context.Background(), ai.Request{
+				Model:   model,
+				Options: &ai.StreamOptions{APIKey: &key},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			message, _ := collectOpenAICompletionsFixture(t, stream)
+			if message.ErrorMessage == nil {
+				t.Fatalf("error message = nil, want %q", test.want)
+			}
+			if *message.ErrorMessage != test.want {
+				t.Fatalf("error message = %q, want %q", *message.ErrorMessage, test.want)
+			}
+		})
+	}
+}
+
+// Gap OA-m4: the anthropic-style cache anchor stops at the first
+// system/developer message whether or not the anchor could attach
+// (openai-completions.ts:794-804).
+func TestOpenAICompletionsCacheAnchorStopsAtFirstSystemOAm4(t *testing.T) {
+	cacheControl := map[string]any{"type": "ephemeral"}
+	first := map[string]any{"role": "system", "content": ""}
+	second := map[string]any{"role": "system", "content": "second"}
+	applyOpenAICompletionsCacheControl([]any{first, second}, nil, cacheControl)
+	if _, ok := first["content"].(string); !ok {
+		t.Fatalf("empty first system content was rewritten: %#v", first)
+	}
+	if content, ok := second["content"].(string); !ok || content != "second" {
+		t.Fatalf("scan continued past the first system message: %#v", second)
+	}
+}
+
+// Gap OA-m5: upstream passes the openRouterRouting compat object through to
+// the provider verbatim (openai-completions.ts:716-718), so unknown keys and
+// member order must survive to the wire like chatTemplateKwargs does.
+func TestOpenAICompletionsOpenRouterRoutingPreservesRawJSONOAm5(t *testing.T) {
+	const routing = `{"zdr":true,"custom_key":{"b":1,"a":2},"order":["x"],"sort":"price"}`
+	model := &ai.Model{
+		ID: "fixture-model", API: ai.APIOpenAICompletions, Provider: "openrouter",
+		BaseURL: "https://openrouter.ai/api/v1", Input: ai.InputModalities{ai.InputText},
+		Compat: json.RawMessage(`{"openRouterRouting":` + routing + `}`),
+	}
+	compat, err := resolveOpenAICompletionsCompat(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := buildOpenAICompletionsPayload(model, ai.Context{Messages: ai.MessageList{
+		&ai.UserMessage{Content: ai.NewUserText("hello"), Timestamp: 1},
+	}}, &OpenAICompletionsOptions{}, compat, ai.CacheRetentionShort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := ai.Marshal(payload["provider"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(encoded) != routing {
+		t.Fatalf("provider wire JSON = %s, want %s", encoded, routing)
+	}
+}

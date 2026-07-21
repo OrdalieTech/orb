@@ -310,6 +310,99 @@ func TestPiMessagesPayloadHookAndHeaderOverride(t *testing.T) {
 	}
 }
 
+// TestPiMessagesUnknownEventTypesPassThrough_OTM6 pins the upstream converter
+// (pi-messages.ts:189-263): unknown event objects are re-emitted with the
+// evolving partial message, and the stream still completes. (OT-M6)
+func TestPiMessagesUnknownEventTypesPassThrough_OTM6(t *testing.T) {
+	server := piMessagesEventServer(t, strings.Join([]string{
+		`data: {"type":"start"}`,
+		`data: {"type":"future_event","contentIndex":0,"delta":"ignored"}`,
+		`data: {"type":"text_start","contentIndex":0}`,
+		`data: {"type":"text_delta","contentIndex":0,"delta":"Hello"}`,
+		`data: {"type":"another_unknown"}`,
+		`data: {"type":"text_end","contentIndex":0,"content":"Hello"}`,
+		`data: {"type":"done","reason":"stop","usage":{"input":1,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":3,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}`,
+		`data: [DONE]`,
+	}, "\n\n")+"\n\n")
+	defer server.Close()
+	key := "key"
+	stream, err := StreamPiMessagesWithOptions(context.Background(), piMessagesTestModel(server.URL, nil), piMessagesTestContext(), &PiMessagesOptions{
+		StreamOptions: ai.StreamOptions{APIKey: &key},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var message *ai.AssistantMessage
+	var eventTypes []string
+	unknown := make(map[string]map[string]any)
+	for event, streamErr := range stream {
+		if streamErr != nil {
+			t.Fatal(streamErr)
+		}
+		encoded, marshalErr := ai.MarshalAssistantMessageEvent(event)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		var decoded map[string]any
+		if unmarshalErr := json.Unmarshal(encoded, &decoded); unmarshalErr != nil {
+			t.Fatal(unmarshalErr)
+		}
+		eventType, _ := decoded["type"].(string)
+		eventTypes = append(eventTypes, eventType)
+		if eventType == "future_event" || eventType == "another_unknown" {
+			unknown[eventType] = decoded
+		}
+		if done, ok := event.(ai.DoneEvent); ok {
+			message = done.Message
+		}
+	}
+	wantTypes := "start,future_event,text_start,text_delta,another_unknown,text_end,done"
+	if got := strings.Join(eventTypes, ","); got != wantTypes {
+		t.Fatalf("event types = %q, want %q", got, wantTypes)
+	}
+	future := unknown["future_event"]
+	if future["contentIndex"] != float64(0) || future["delta"] != "ignored" {
+		t.Fatalf("future event fields = %#v", future)
+	}
+	partial, ok := future["partial"].(map[string]any)
+	if !ok || partial["role"] != "assistant" {
+		t.Fatalf("future event partial = %#v", future["partial"])
+	}
+	afterDelta, ok := unknown["another_unknown"]
+	if !ok {
+		t.Fatalf("unknown events = %#v", unknown)
+	}
+	afterPartial, ok := afterDelta["partial"].(map[string]any)
+	if !ok {
+		t.Fatalf("post-delta partial = %#v", afterDelta["partial"])
+	}
+	content, ok := afterPartial["content"].([]any)
+	if !ok || len(content) != 1 {
+		t.Fatalf("post-delta content = %#v", afterPartial["content"])
+	}
+	textBlock, ok := content[0].(map[string]any)
+	if !ok || textBlock["text"] != "Hello" {
+		t.Fatalf("post-delta text block = %#v", content[0])
+	}
+	if message == nil {
+		t.Fatal("missing terminal message")
+	}
+	if message.StopReason != ai.StopReasonStop {
+		errorMessage := ""
+		if message.ErrorMessage != nil {
+			errorMessage = *message.ErrorMessage
+		}
+		t.Fatalf("stop reason = %q (error %q), want stop", message.StopReason, errorMessage)
+	}
+	if len(message.Content) != 1 {
+		t.Fatalf("content = %#v, want a single text block", message.Content)
+	}
+	text, ok := message.Content[0].(*ai.TextContent)
+	if !ok || text.Text != "Hello" {
+		t.Fatalf("text block = %#v", message.Content[0])
+	}
+}
+
 func piMessagesTestModel(baseURL string, headers *map[string]string) *ai.Model {
 	return &ai.Model{
 		ID: "fixture-model", Name: "Fixture Gateway Model", API: ai.APIPiMessages,

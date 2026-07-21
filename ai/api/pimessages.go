@@ -104,6 +104,22 @@ type piMessagesWireEvent struct {
 	ErrorMessage     *string                  `json:"errorMessage,omitempty"`
 	ResponseID       *string                  `json:"responseId,omitempty"`
 	Rewrite          *PiMessagesRewriteImpact `json:"rewrite,omitempty"`
+	Raw              json.RawMessage          `json:"-"`
+}
+
+func (event *piMessagesWireEvent) UnmarshalJSON(data []byte) error {
+	type plainEvent piMessagesWireEvent
+	var decoded plainEvent
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	normalized, err := ai.NormalizeJSONStringifyJSON(data)
+	if err != nil {
+		return err
+	}
+	*event = piMessagesWireEvent(decoded)
+	event.Raw = normalized
+	return nil
 }
 
 type piMessagesErrorBody struct {
@@ -397,7 +413,7 @@ func (converter *piMessagesEventConverter) convert(wire piMessagesWireEvent) (ai
 		delete(converter.toolJSON, wire.ContentIndex)
 		return ai.ToolCallEndEvent{ContentIndex: wire.ContentIndex, ToolCall: call, Partial: partial}, false, nil
 	default:
-		return nil, false, fmt.Errorf("pi-messages unknown event type %q", wire.Type)
+		return ai.RawAssistantMessageEvent{Raw: wire.Raw, Partial: partial}, false, nil
 	}
 }
 

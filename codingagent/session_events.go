@@ -4,7 +4,6 @@ import (
 	"errors"
 
 	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/agent/harness"
 	"github.com/OrdalieTech/pigo/ai"
 	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 )
@@ -40,11 +39,11 @@ type CompactionStartEvent struct {
 }
 
 type CompactionEndEvent struct {
-	Reason       string                    `json:"reason"`
-	Result       *harness.CompactionResult `json:"result,omitempty"`
-	Aborted      bool                      `json:"aborted"`
-	WillRetry    bool                      `json:"willRetry"`
-	ErrorMessage *string                   `json:"errorMessage,omitempty"`
+	Reason       string                         `json:"reason"`
+	Result       *sessionstore.CompactionResult `json:"result,omitempty"`
+	Aborted      bool                           `json:"aborted"`
+	WillRetry    bool                           `json:"willRetry"`
+	ErrorMessage *string                        `json:"errorMessage,omitempty"`
 }
 
 type AutoRetryStartEvent struct {
@@ -100,12 +99,12 @@ func MarshalSessionEvent(event any) ([]byte, error) {
 		}{EventCompactionStart, typed.Reason})
 	case CompactionEndEvent:
 		return ai.Marshal(struct {
-			Type         SessionEventType          `json:"type"`
-			Reason       string                    `json:"reason"`
-			Result       *harness.CompactionResult `json:"result,omitempty"`
-			Aborted      bool                      `json:"aborted"`
-			WillRetry    bool                      `json:"willRetry"`
-			ErrorMessage *string                   `json:"errorMessage,omitempty"`
+			Type         SessionEventType               `json:"type"`
+			Reason       string                         `json:"reason"`
+			Result       *sessionstore.CompactionResult `json:"result,omitempty"`
+			Aborted      bool                           `json:"aborted"`
+			WillRetry    bool                           `json:"willRetry"`
+			ErrorMessage *string                        `json:"errorMessage,omitempty"`
 		}{EventCompactionEnd, typed.Reason, typed.Result, typed.Aborted, typed.WillRetry, typed.ErrorMessage})
 	case AutoRetryStartEvent:
 		return ai.Marshal(struct {

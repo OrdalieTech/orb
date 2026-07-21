@@ -29,8 +29,8 @@ import (
 var version = "0.1.0-dev"
 
 const (
-	upstreamVersion        = "0.80.10"
-	upstreamCommit         = "3a40794ea14c6202586cc203d5b928eca9f6b673"
+	upstreamVersion        = "0.81.0"
+	upstreamCommit         = "9c480b6ad2c7419875a7a850fb4ad5f9232313b8"
 	latestReleaseURL       = "https://api.github.com/repos/OrdalieTech/pigo/releases/latest"
 	versionCheckTimeout    = 10 * time.Second
 	versionResponseMaxSize = 64 << 10
@@ -441,7 +441,10 @@ func migrateStartupAuth() (string, error) {
 func refreshModelCatalogs(ctx context.Context, agentDir string) error {
 	timeoutContext, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	_, err := aimodels.Refresh(timeoutContext, aimodels.RefreshOptions{StorePath: filepath.Join(agentDir, "models-store.json")})
+	_, err := aimodels.Refresh(timeoutContext, aimodels.RefreshOptions{
+		StorePath: filepath.Join(agentDir, "models-store.json"),
+		UserAgent: aimodels.PiUserAgent(version),
+	})
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(timeoutContext.Err(), context.DeadlineExceeded) {
 		return errors.New("model catalog refresh timed out")
 	}

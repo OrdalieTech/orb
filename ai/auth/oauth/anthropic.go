@@ -13,7 +13,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/OrdalieTech/pigo/ai/auth"
@@ -264,7 +266,24 @@ func (flow *Anthropic) postJSON(ctx context.Context, body []byte) ([]byte, error
 	return responseBody, nil
 }
 
-func formatOAuthErrorDetails(err error) string { return "Error: " + err.Error() }
+// formatOAuthErrorDetails ports upstream formatErrorDetails
+// (ai/src/auth/oauth/anthropic.ts:82-97): name/message first, then code/errno,
+// then the cause chain. Go errors carry no JS error name, Node-style code
+// string, or stack, so those collapse to the "Error:" prefix, the errno when a
+// syscall error is at this level of the chain, and the wrapped cause.
+func formatOAuthErrorDetails(err error) string {
+	if err == nil {
+		return "Error: <nil>"
+	}
+	details := []string{"Error: " + err.Error()}
+	if errno, ok := err.(syscall.Errno); ok {
+		details = append(details, "errno="+strconv.Itoa(int(errno)))
+	}
+	if cause := errors.Unwrap(err); cause != nil {
+		details = append(details, "cause="+formatOAuthErrorDetails(cause))
+	}
+	return strings.Join(details, "; ")
+}
 
 type callbackResult struct {
 	code  string

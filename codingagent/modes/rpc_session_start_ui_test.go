@@ -44,7 +44,7 @@ func TestRPCSessionStartSeesLiveExtensionUI(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	created := agent.NewAgent(agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}}))
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}}))
 	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings,
 		ExtensionRegistry: registry, ExtensionMode: extensions.ModeRPC,

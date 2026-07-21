@@ -20,10 +20,11 @@ type codexWebSocketStep struct {
 }
 
 type fakeCodexWebSocket struct {
-	mu     sync.Mutex
-	steps  []codexWebSocketStep
-	writes [][]byte
-	closed bool
+	mu        sync.Mutex
+	steps     []codexWebSocketStep
+	writes    [][]byte
+	closed    bool
+	onMessage func([]byte)
 }
 
 func TestOpenAICodexSessionlessRequestIDUsesUUIDv7(t *testing.T) {
@@ -159,6 +160,9 @@ func (socket *fakeCodexWebSocket) ReadMessage(context.Context, time.Duration) ([
 	}
 	step := socket.steps[0]
 	socket.steps = socket.steps[1:]
+	if socket.onMessage != nil {
+		socket.onMessage(step.message)
+	}
 	return append([]byte(nil), step.message...), step.err
 }
 
@@ -402,6 +406,83 @@ func TestOpenAICodexCachedWebSocketClosesWithSessionResources(t *testing.T) {
 	}
 	if socket.IsOpen() {
 		t.Fatal("cached Codex WebSocket remained open after session disposal")
+	}
+}
+
+// B1: a consumer breaking out of the event stream on the WebSocket path must
+// end the iterator silently; the transport must not sink Done or fail() after
+// yield returned false.
+func TestB1OpenAICodexWebSocketConsumerBreakStopsCleanly(t *testing.T) {
+	for breakAfter := 1; breakAfter <= 3; breakAfter++ {
+		socket := &fakeCodexWebSocket{steps: codexWebSocketTextResponse("ws-b1", "hello")}
+		withOpenAICodexWebSocketConnector(t, func(context.Context, string, http.Header, time.Duration) (openAICodexSocket, error) {
+			return socket, nil
+		})
+		withCodexHTTPClient(t, func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("unexpected SSE request")
+		})
+		model := codexTestModel()
+		token := codexAPITestToken(t, "account")
+		transport := ai.TransportWebSocket
+		stream, err := StreamOpenAICodexResponsesWithOptions(context.Background(), &model, ai.Context{Messages: ai.MessageList{}}, &OpenAICodexResponsesOptions{
+			StreamOptions: ai.StreamOptions{APIKey: &token, Transport: &transport},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		events := 0
+		for _, streamErr := range stream {
+			if streamErr != nil {
+				t.Fatal(streamErr)
+			}
+			events++
+			if events == breakAfter {
+				break
+			}
+		}
+		if events != breakAfter {
+			t.Fatalf("breakAfter=%d saw %d events", breakAfter, events)
+		}
+		if socket.IsOpen() {
+			t.Fatalf("breakAfter=%d left the WebSocket open", breakAfter)
+		}
+	}
+}
+
+// CX-m4: like the SSE path, an abort that lands after the terminal WebSocket
+// event must surface as "Request was aborted" instead of a Done event.
+func TestCXm4OpenAICodexWebSocketAbortAfterTerminalEventFails(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	socket := &fakeCodexWebSocket{steps: []codexWebSocketStep{{message: codexWebSocketJSON(map[string]any{
+		"type": "response.done", "response": map[string]any{"id": "aborted-late", "status": "completed", "output": []any{}},
+	})}}}
+	socket.onMessage = func(message []byte) {
+		if bytesContain(message, `"response.done"`) {
+			cancel()
+		}
+	}
+	withOpenAICodexWebSocketConnector(t, func(context.Context, string, http.Header, time.Duration) (openAICodexSocket, error) {
+		return socket, nil
+	})
+	withCodexHTTPClient(t, func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("unexpected SSE request")
+	})
+	model := codexTestModel()
+	token := codexAPITestToken(t, "account")
+	transport := ai.TransportWebSocket
+	stream, err := StreamOpenAICodexResponsesWithOptions(ctx, &model, ai.Context{Messages: ai.MessageList{}}, &OpenAICodexResponsesOptions{
+		StreamOptions: ai.StreamOptions{APIKey: &token, Transport: &transport},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := ai.Collect(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.StopReason != ai.StopReasonAborted || message.ErrorMessage == nil || *message.ErrorMessage != "Request was aborted" {
+		t.Fatalf("message = %#v", message)
 	}
 }
 

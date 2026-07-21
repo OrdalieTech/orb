@@ -127,3 +127,27 @@ func TestHarnessStorageRestoresActiveToolsIntoSessionContext(t *testing.T) {
 		t.Fatalf("active tools = %v, want explicit empty state", got)
 	}
 }
+
+func TestV081CodingManagerKeepsItsFullBranchWithoutLegacyStorageAPI(t *testing.T) {
+	rootID := "root"
+	keptID := "kept"
+	storage, err := harness.NewInMemorySessionStorage([]harness.SessionTreeEntry{
+		{Type: "message", ID: rootID, Timestamp: "2026-07-21T00:00:00.000Z", Message: json.RawMessage(`{"role":"user","content":"old"}`)},
+		{Type: "message", ID: keptID, ParentID: &rootID, Timestamp: "2026-07-21T00:00:01.000Z", Message: json.RawMessage(`{"role":"user","content":"kept"}`)},
+		{
+			Type: "compaction", ID: "checkpoint", ParentID: &keptID, Timestamp: "2026-07-21T00:00:02.000Z",
+			Summary: "summary", FirstKeptEntryID: keptID, TokensBefore: 10, RetainedTail: []json.RawMessage{},
+		},
+	}, harness.SessionMetadata{ID: "session", CreatedAt: "2026-07-21T00:00:00.000Z", CWD: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.FromHarnessStorage(storage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch := manager.GetBranch("checkpoint")
+	if len(branch) != 3 || branch[0].ID != rootID || branch[1].ID != keptID || branch[2].ID != "checkpoint" {
+		t.Fatalf("coding branch = %#v", branch)
+	}
+}

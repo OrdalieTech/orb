@@ -8,11 +8,14 @@ import {
   streamSimple as streamSimpleAnthropic,
   type AnthropicOptions,
 } from "../../.upstream/packages/ai/src/api/anthropic-messages.ts";
+import { cloudflareAIGatewayAuth } from "../../.upstream/packages/ai/src/providers/cloudflare-auth.ts";
+import { cloudflareStreams } from "../../.upstream/packages/ai/src/providers/cloudflare-stream.ts";
 import type {
   AssistantMessage,
   AssistantMessageEvent,
   Context,
   Model,
+  ProviderStreams,
   SimpleStreamOptions,
   Tool,
 } from "../../.upstream/packages/ai/src/types.ts";
@@ -64,6 +67,7 @@ const selectedHeaders = [
   "anthropic-dangerous-direct-browser-access",
   "anthropic-version",
   "authorization",
+  "cf-aig-authorization",
   "content-type",
   "x-api-key",
   "x-app",
@@ -690,6 +694,59 @@ const streamDefinitions: AnthropicStreamDefinition[] = [
   },
 ];
 
+// G1: the gateway-anthropic wire golden. Auth-resolve emits the
+// cf-aig-authorization triple (cloudflare-auth.ts:84-89) whose null members
+// must delete the SDK-owned x-api-key / authorization headers, and
+// cloudflare-stream.ts materializes the endpoint placeholders from the
+// resolved provider env.
+async function buildCloudflareGatewayDefinition(): Promise<AnthropicDefinition> {
+  const values: Record<string, string> = {
+    CLOUDFLARE_API_KEY: "fixture-cloudflare-key",
+    CLOUDFLARE_ACCOUNT_ID: "fixture-account",
+    CLOUDFLARE_GATEWAY_ID: "fixture-gateway",
+  };
+  const resolved = await cloudflareAIGatewayAuth().resolve?.({
+    ctx: {
+      env: async (name: string) => values[name],
+      fileExists: async () => false,
+    },
+  } as never);
+  const auth = resolved as
+    | { auth: { headers?: Record<string, string | null> }; env?: Record<string, string> }
+    | undefined;
+  if (!auth?.auth.headers || !auth.env) {
+    throw new Error("cloudflareAIGatewayAuth() did not resolve the header triple");
+  }
+  return {
+    name: "anthropic-cloudflare-gateway-null-header-auth",
+    api: "anthropic-messages",
+    simple: true,
+    model: anthropicModel({
+      provider: "cloudflare-ai-gateway",
+      baseUrl: "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/anthropic",
+    }),
+    context: {
+      systemPrompt: "Answer through the gateway.",
+      messages: [{ role: "user", content: "hello <gateway>", timestamp: FIXED_NOW }],
+    },
+    options: {
+      cacheRetention: "none",
+      headers: auth.auth.headers,
+      env: auth.env,
+    } as SimpleStreamOptions,
+  };
+}
+
+function pickAnthropicStream(definition: AnthropicDefinition) {
+  const base = definition.simple ? streamSimpleAnthropic : streamAnthropic;
+  if (!definition.model.provider.startsWith("cloudflare-")) return base;
+  const wrapped = cloudflareStreams({
+    stream: streamAnthropic,
+    streamSimple: streamSimpleAnthropic,
+  } as unknown as ProviderStreams);
+  return (definition.simple ? wrapped.streamSimple.bind(wrapped) : wrapped.stream.bind(wrapped)) as typeof base;
+}
+
 function cloneEvent(event: AssistantMessageEvent): AssistantMessageEvent {
   return JSON.parse(JSON.stringify(event)) as AssistantMessageEvent;
 }
@@ -731,17 +788,11 @@ async function runAnthropic(
         payload.stream = false;
       };
     }
-    const stream = definition.simple
-      ? streamSimpleAnthropic(
-          definition.model,
-          definition.context,
-          options,
-        )
-      : streamAnthropic(
-          definition.model,
-          definition.context,
-          options,
-        );
+    const stream = pickAnthropicStream(definition)(
+      definition.model,
+      definition.context,
+      options,
+    );
     for await (const event of stream) {
       events.push(cloneEvent(event));
     }
@@ -842,7 +893,7 @@ export async function extractAnthropicF2(upstreamRoot: string): Promise<{
 }> {
   const provider = await extractAnthropicProvider(upstreamRoot);
   const requests = [];
-  for (const definition of requestDefinitions) {
+  for (const definition of [...requestDefinitions, await buildCloudflareGatewayDefinition()]) {
     const { request } = await runAnthropic(definition, "");
     requests.push({ ...definition, expected: request });
   }

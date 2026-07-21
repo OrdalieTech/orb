@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -45,6 +46,11 @@ type GoogleOptions struct {
 	ToolChoice GoogleToolChoice       `json:"toolChoice,omitempty"`
 	Thinking   *GoogleThinkingOptions `json:"thinking,omitempty"`
 }
+
+// googleGenAIVersionHeader mirrors the @google/genai 1.52.0 telemetry label
+// `google-genai-sdk/<version> gl-node/<runtime>`, with a gl-go language label
+// for this port. Sent as both user-agent and x-goog-api-client. (OT-m2)
+var googleGenAIVersionHeader = "google-genai-sdk/1.52.0 gl-go/" + runtime.Version()
 
 var (
 	googleHTTPClient      = http.DefaultClient
@@ -108,11 +114,9 @@ func StreamSimpleGoogleGenerativeAI(
 	}
 	thinking := &GoogleThinkingOptions{Enabled: true}
 	if isGemini3Pro(model) || isGemini3Flash(model) || isGemma4(model) {
-		level := googleThinkingLevel(effort, model)
-		thinking.Level = &level
+		thinking.Level = googleThinkingLevel(effort, model)
 	} else {
-		budget := googleThinkingBudget(model, effort, options.ThinkingBudgets)
-		thinking.BudgetTokens = &budget
+		thinking.BudgetTokens = googleThinkingBudget(model, effort, options.ThinkingBudgets)
 	}
 	return StreamGoogleGenerativeAIWithOptions(ctx, model, requestContext, &GoogleOptions{
 		StreamOptions: base, Thinking: thinking,
@@ -205,12 +209,13 @@ func streamGoogleWithOptions(
 			if err := json.Unmarshal(raw, &chunk); err != nil {
 				return err
 			}
-			for _, event := range processor.process(chunk) {
+			events, processErr := processor.process(chunk)
+			for _, event := range events {
 				if !yield(event, nil) {
 					return errStopSSE
 				}
 			}
-			return nil
+			return processErr
 		})
 		if errors.Is(err, errStopSSE) {
 			return
@@ -378,7 +383,11 @@ func googleProviderHeaders(model *ai.Model, options *ai.StreamOptions) http.Head
 			custom[name] = value
 		}
 	}
-	headers := http.Header{"Content-Type": []string{"application/json"}}
+	headers := http.Header{
+		"Content-Type":      []string{"application/json"},
+		"User-Agent":        []string{googleGenAIVersionHeader},
+		"x-goog-api-client": []string{googleGenAIVersionHeader},
+	}
 	for name, value := range custom {
 		if value != nil {
 			headers[name] = []string{*value}
@@ -517,7 +526,7 @@ type googleStreamProcessor struct {
 	currentThink *ai.ThinkingContent
 }
 
-func (processor *googleStreamProcessor) process(chunk googleGenerateContentResponse) []ai.AssistantMessageEvent {
+func (processor *googleStreamProcessor) process(chunk googleGenerateContentResponse) ([]ai.AssistantMessageEvent, error) {
 	if processor.output.ResponseID == nil && chunk.ResponseID != "" {
 		value := chunk.ResponseID
 		processor.output.ResponseID = &value
@@ -571,7 +580,13 @@ func (processor *googleStreamProcessor) process(chunk googleGenerateContentRespo
 			}
 		}
 		if candidate.FinishReason != "" {
-			processor.output.StopReason = mapGoogleStopReason(candidate.FinishReason)
+			reason, err := mapGoogleStopReason(candidate.FinishReason)
+			if err != nil {
+				// Upstream throws before the toolUse override; events pushed so
+				// far still reach the consumer ahead of the error. (OT-m1)
+				return compactGoogleEvents(events), err
+			}
+			processor.output.StopReason = reason
 			if googleOutputHasToolCall(processor.output) {
 				processor.output.StopReason = ai.StopReasonToolUse
 			}
@@ -588,7 +603,7 @@ func (processor *googleStreamProcessor) process(chunk googleGenerateContentRespo
 		}
 		calculateCost(processor.model, &processor.output.Usage)
 	}
-	return compactGoogleEvents(events)
+	return compactGoogleEvents(events), nil
 }
 
 func (processor *googleStreamProcessor) closeCurrent() ai.AssistantMessageEvent {
@@ -694,32 +709,47 @@ func disabledGoogleThinkingConfig(model *ai.Model) *GoogleThinkingConfig {
 	return &GoogleThinkingConfig{ThinkingBudget: &zero}
 }
 
-func googleThinkingLevel(effort ai.ThinkingLevel, model *ai.Model) GoogleThinkingLevel {
+// googleThinkingLevel mirrors upstream getThinkingLevel: efforts outside the
+// explicit switch (xhigh/max on custom models) fall off the end and the level
+// stays unset, so thinkingConfig only carries includeThoughts. (OT-m9)
+func googleThinkingLevel(effort ai.ThinkingLevel, model *ai.Model) *GoogleThinkingLevel {
 	if isGemini3Pro(model) {
-		if effort == ai.ThinkingMinimal || effort == ai.ThinkingLow {
-			return GoogleThinkingLow
+		switch effort {
+		case ai.ThinkingMinimal, ai.ThinkingLow:
+			return googleThinkingLevelPointer(GoogleThinkingLow)
+		case ai.ThinkingMedium, ai.ThinkingHigh:
+			return googleThinkingLevelPointer(GoogleThinkingHigh)
 		}
-		return GoogleThinkingHigh
 	}
 	if isGemma4(model) {
-		if effort == ai.ThinkingMinimal || effort == ai.ThinkingLow {
-			return GoogleThinkingMinimal
+		switch effort {
+		case ai.ThinkingMinimal, ai.ThinkingLow:
+			return googleThinkingLevelPointer(GoogleThinkingMinimal)
+		case ai.ThinkingMedium, ai.ThinkingHigh:
+			return googleThinkingLevelPointer(GoogleThinkingHigh)
 		}
-		return GoogleThinkingHigh
 	}
 	switch effort {
 	case ai.ThinkingMinimal:
-		return GoogleThinkingMinimal
+		return googleThinkingLevelPointer(GoogleThinkingMinimal)
 	case ai.ThinkingLow:
-		return GoogleThinkingLow
+		return googleThinkingLevelPointer(GoogleThinkingLow)
 	case ai.ThinkingMedium:
-		return GoogleThinkingMedium
-	default:
-		return GoogleThinkingHigh
+		return googleThinkingLevelPointer(GoogleThinkingMedium)
+	case ai.ThinkingHigh:
+		return googleThinkingLevelPointer(GoogleThinkingHigh)
 	}
+	return nil
 }
 
-func googleThinkingBudget(model *ai.Model, effort ai.ThinkingLevel, custom *ai.ThinkingBudgets) int64 {
+func googleThinkingLevelPointer(level GoogleThinkingLevel) *GoogleThinkingLevel {
+	return &level
+}
+
+// googleThinkingBudget mirrors upstream getGoogleBudget: an effort missing
+// from a model's budget table resolves to undefined, which omits the
+// thinkingConfig budget instead of sending 0. (OT-m9)
+func googleThinkingBudget(model *ai.Model, effort ai.ThinkingLevel, custom *ai.ThinkingBudgets) *int64 {
 	if custom != nil {
 		var value *int
 		switch effort {
@@ -733,7 +763,8 @@ func googleThinkingBudget(model *ai.Model, effort ai.ThinkingLevel, custom *ai.T
 			value = custom.High
 		}
 		if value != nil {
-			return int64(*value)
+			budget := int64(*value)
+			return &budget
 		}
 	}
 	id := model.ID
@@ -746,7 +777,11 @@ func googleThinkingBudget(model *ai.Model, effort ai.ThinkingLevel, custom *ai.T
 	case strings.Contains(id, "2.5-flash"):
 		budgets = map[ai.ThinkingLevel]int64{ai.ThinkingMinimal: 128, ai.ThinkingLow: 2048, ai.ThinkingMedium: 8192, ai.ThinkingHigh: 24576}
 	default:
-		return -1
+		fallback := int64(-1)
+		return &fallback
 	}
-	return budgets[effort]
+	if budget, ok := budgets[effort]; ok {
+		return &budget
+	}
+	return nil
 }

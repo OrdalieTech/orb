@@ -5,5 +5,5 @@ package api
 import "runtime"
 
 func openAICodexUserAgent() string {
-	return "pi (" + runtime.GOOS + " unknown; " + codexArchitecture() + ")"
+	return "pi (" + codexNodePlatform(runtime.GOOS) + " unknown; " + codexArchitecture() + ")"
 }

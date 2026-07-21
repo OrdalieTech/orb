@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/codingagent"
 	"github.com/OrdalieTech/pigo/internal/localecompare"
 )
 
@@ -26,7 +27,7 @@ func formatModelList(models []ai.Model, search string) string {
 		if search != "" {
 			return fmt.Sprintf("No models matching %q\n", search)
 		}
-		return "No models available. Use /login to log into a provider via OAuth or API key. See:\n  docs/providers.md\n  docs/models.md\n"
+		return codingagent.FormatNoModelsAvailableMessage() + "\n"
 	}
 	collator := localecompare.New()
 	slices.SortFunc(models, func(left, right ai.Model) int {

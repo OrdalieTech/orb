@@ -245,8 +245,7 @@ func (s *fauxSessions) Acquire(_ context.Context, key ConversationKey) (*Convers
 	s.mu.Unlock()
 
 	created := agent.NewAgent(
-		agent.WithInitialState(agent.AgentState{SystemPrompt: "test", Model: s.provider.GetModel()}),
-		agent.WithStreamFn(s.provider.StreamSimple),
+		s.provider.StreamSimple, agent.WithInitialState(agent.AgentState{SystemPrompt: "test", Model: s.provider.GetModel()}),
 		agent.WithConvertToLLM(codingagent.ConvertToLLM),
 	)
 	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{

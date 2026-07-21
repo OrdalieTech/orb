@@ -79,6 +79,70 @@
         },
         "body": "{\"model\":\"gateway-auto\",\"context\":{\"systemPrompt\":\"Use the gateway.\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello <gateway>\",\"timestamp\":1700000000122}],\"tools\":[{\"name\":\"read\",\"description\":\"Read a file\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"],\"additionalProperties\":false}}]},\"options\":{\"temperature\":0,\"maxTokens\":100,\"reasoning\":\"high\",\"cacheRetention\":\"long\",\"sessionId\":\"session-fixture\",\"toolChoice\":{\"type\":\"function\",\"function\":{\"name\":\"read\"}}}}"
       }
+    },
+    {
+      "name": "pi-messages-request-minimal-options",
+      "api": "pi-messages",
+      "model": {
+        "id": "gateway-auto",
+        "name": "Gateway Auto",
+        "api": "pi-messages",
+        "provider": "fixture-gateway",
+        "baseUrl": "https://gateway.fixture.invalid/v1///",
+        "reasoning": true,
+        "input": [
+          "text"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 16384
+      },
+      "context": {
+        "systemPrompt": "Use the gateway.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Hello <gateway>",
+            "timestamp": 1700000000122
+          }
+        ],
+        "tools": [
+          {
+            "name": "read",
+            "description": "Read a file",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://gateway.fixture.invalid/v1/messages",
+        "headers": {
+          "accept": "text/event-stream",
+          "authorization": "Bearer fixture-key",
+          "content-type": "application/json"
+        },
+        "body": "{\"model\":\"gateway-auto\",\"context\":{\"systemPrompt\":\"Use the gateway.\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello <gateway>\",\"timestamp\":1700000000122}],\"tools\":[{\"name\":\"read\",\"description\":\"Read a file\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"],\"additionalProperties\":false}}]},\"options\":{}}"
+      }
     }
   ]
 }

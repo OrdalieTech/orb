@@ -28,7 +28,7 @@ func TestRPCSessionHostRebindsNewSessionAndForksUserEntry(t *testing.T) {
 	}
 	provider := faux.New(faux.Options{API: "faux", Provider: "faux"})
 	newAgent := func(messages agent.AgentMessages) *agent.Agent {
-		return agent.NewAgent(agent.WithInitialState(agent.AgentState{
+		return agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{
 			Model: provider.GetModel(), Messages: messages,
 		}))
 	}
@@ -128,7 +128,7 @@ func TestRPCSessionHostPreservesExtensionLifecycleAcrossNewSession(t *testing.T)
 		t.Fatal(err)
 	}
 	newAgent := func(messages agent.AgentMessages) *agent.Agent {
-		return agent.NewAgent(agent.WithInitialState(agent.AgentState{
+		return agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{
 			Model: provider.GetModel(), Messages: messages,
 		}))
 	}
@@ -201,12 +201,12 @@ func TestRPCSessionHostRestoresEachTargetModelFromImmutableCLIArgs(t *testing.T)
 		Dependencies: cliDependencies{
 			createRuntime: func(_ string, args CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
 				if args.Provider == nil || args.Model == nil || args.Thinking == nil {
-					created := agent.NewAgent(agent.WithInitialState(agent.AgentState{Messages: prior}))
+					created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Messages: prior}))
 					return runtimeInputs{Agent: created, Settings: settings, Extensions: registry}, nil
 				}
 				selections = append(selections, *args.Provider+"/"+*args.Model+":"+*args.Thinking)
 				model := ai.Model{ID: *args.Model, Provider: ai.ProviderID(*args.Provider), API: "faux", Reasoning: true, ContextWindow: 100, MaxTokens: 10}
-				created := agent.NewAgent(agent.WithInitialState(agent.AgentState{
+				created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{
 					Model: &model, ThinkingLevel: ai.ModelThinkingLevel(*args.Thinking), Messages: prior,
 				}))
 				return runtimeInputs{Agent: created, Settings: settings, Extensions: registry}, nil
@@ -251,7 +251,7 @@ func TestRPCSlashCommandsPreserveOptionalWireFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
-		Agent:             agent.NewAgent(agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}})),
+		Agent:             agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}})),
 		SessionManager:    manager,
 		Settings:          settings,
 		ExtensionRegistry: registry,

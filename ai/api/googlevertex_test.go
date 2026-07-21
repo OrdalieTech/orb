@@ -446,15 +446,15 @@ func TestGoogleVertexThinkingDiffersFromMLDev(t *testing.T) {
 	}
 
 	flashLite := vertexTestModel("gemini-2.5-flash-lite")
-	if got := googleVertexThinkingBudget(flashLite, ai.ThinkingMinimal, nil); got != 128 {
-		t.Fatalf("Vertex flash-lite minimal budget = %d", got)
+	if got := googleVertexThinkingBudget(flashLite, ai.ThinkingMinimal, nil); got == nil || *got != 128 {
+		t.Fatalf("Vertex flash-lite minimal budget = %v", got)
 	}
-	if got := googleThinkingBudget(flashLite, ai.ThinkingMinimal, nil); got != 512 {
-		t.Fatalf("MLDev flash-lite minimal budget = %d", got)
+	if got := googleThinkingBudget(flashLite, ai.ThinkingMinimal, nil); got == nil || *got != 512 {
+		t.Fatalf("MLDev flash-lite minimal budget = %v", got)
 	}
 	custom := 77
-	if got := googleVertexThinkingBudget(flashLite, ai.ThinkingHigh, &ai.ThinkingBudgets{High: &custom}); got != 77 {
-		t.Fatalf("custom Vertex high budget = %d", got)
+	if got := googleVertexThinkingBudget(flashLite, ai.ThinkingHigh, &ai.ThinkingBudgets{High: &custom}); got == nil || *got != 77 {
+		t.Fatalf("custom Vertex high budget = %v", got)
 	}
 
 	requestContext := ai.Context{Messages: ai.MessageList{
@@ -563,6 +563,45 @@ func TestGoogleVertexStreamRequestHeadersAndEvents(t *testing.T) {
 	}
 	if message.Usage.Input != 8 || message.Usage.Output != 7 || message.Usage.CacheRead != 2 || message.Usage.Reasoning == nil || *message.Usage.Reasoning != 4 || message.Usage.TotalTokens != 17 {
 		t.Fatalf("usage = %#v", message.Usage)
+	}
+}
+
+// TestGoogleVertexPosterAppliesTransformHeaders_OTm3 pins that the Vertex
+// poster applies the TransformHeaders hook identically to the mldev poster
+// before dispatching the request. (OT-m3)
+func TestGoogleVertexPosterAppliesTransformHeaders_OTm3(t *testing.T) {
+	model := vertexTestModel("gemini-2.5-flash-lite")
+	apiKey := "vertex-key"
+	var capturedHeader string
+	previousClient := googleHTTPClient
+	googleHTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		capturedHeader = request.Header.Get("X-Extension")
+		return googleTestResponse("data: {\"candidates\":[{\"content\":{\"parts\":[]},\"finishReason\":\"STOP\"}]}\n\n"), nil
+	})}
+	t.Cleanup(func() { googleHTTPClient = previousClient })
+	options := &GoogleVertexOptions{StreamOptions: ai.StreamOptions{
+		APIKey: &apiKey,
+		TransformHeaders: func(_ context.Context, headers ai.ProviderHeaders, _ *ai.Model) (ai.ProviderHeaders, error) {
+			value := "yes"
+			headers["X-Extension"] = &value
+			return headers, nil
+		},
+	}}
+	stream, err := StreamGoogleVertexWithOptions(context.Background(), model, ai.Context{
+		Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hello")}},
+	}, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := ai.Collect(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.ErrorMessage != nil {
+		t.Fatalf("stream failed before the poster ran: %s", *message.ErrorMessage)
+	}
+	if capturedHeader != "yes" {
+		t.Fatalf("hooked header = %q, want %q", capturedHeader, "yes")
 	}
 }
 

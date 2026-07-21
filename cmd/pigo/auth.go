@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -16,13 +17,13 @@ import (
 )
 
 func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
-	if args.Command == "logout" && len(args.CommandArgs) == 0 {
-		args.CommandArgs = []string{"anthropic"}
-	}
-	if len(args.CommandArgs) != 1 {
+	if len(args.CommandArgs) > 1 || (args.Command != "logout" && len(args.CommandArgs) == 0) {
 		return reportCLIError(streams.Stderr, fmt.Errorf("usage: pigo %s <provider>", args.Command))
 	}
-	provider := strings.ToLower(args.CommandArgs[0])
+	provider := ""
+	if len(args.CommandArgs) == 1 {
+		provider = strings.ToLower(args.CommandArgs[0])
+	}
 	var method aiauth.OAuth
 	if args.Command != "logout" {
 		definition, known := providers.Get(ai.ProviderID(provider))
@@ -41,6 +42,25 @@ func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
 	storage, err := config.NewAuthStorage(filepath.Join(agentDir, "auth.json"))
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
+	}
+	if args.Command == "logout" && provider == "" {
+		// Bare `pigo logout` lists the stored credentials instead of silently
+		// picking a provider; removal always names its target explicitly.
+		stored, err := storage.List(ctx)
+		if err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+		names := make([]string, 0, len(stored))
+		for _, credential := range stored {
+			names = append(names, credential.ProviderID)
+		}
+		_, _ = fmt.Fprintln(streams.Stderr, "usage: pigo logout <provider>")
+		if len(names) == 0 {
+			_, _ = fmt.Fprintln(streams.Stderr, "No stored credentials.")
+		} else {
+			_, _ = fmt.Fprintf(streams.Stderr, "Stored credentials: %s\n", strings.Join(names, ", "))
+		}
+		return 1
 	}
 	if args.Command == "logout" {
 		if err := storage.Delete(ctx, provider); err != nil {
@@ -79,6 +99,15 @@ func (interaction *headlessAuthInteraction) Prompt(ctx context.Context, prompt a
 	interaction.mu.Lock()
 	defer interaction.mu.Unlock()
 	_, _ = fmt.Fprintln(interaction.err, prompt.Message)
+	if prompt.Type == aiauth.PromptSelect {
+		for index, option := range prompt.Options {
+			label := option.Label
+			if option.Description != "" {
+				label += " — " + option.Description
+			}
+			_, _ = fmt.Fprintf(interaction.err, "  %d) %s\n", index+1, label)
+		}
+	}
 	result := make(chan struct {
 		value string
 		err   error
@@ -101,8 +130,26 @@ func (interaction *headlessAuthInteraction) Prompt(ctx context.Context, prompt a
 	case <-ctx.Done():
 		return "", ctx.Err()
 	case resolved := <-result:
-		return resolved.value, resolved.err
+		if resolved.err != nil || prompt.Type != aiauth.PromptSelect {
+			return resolved.value, resolved.err
+		}
+		return resolveSelectAnswer(prompt.Options, resolved.value)
 	}
+}
+
+// resolveSelectAnswer maps a numbered choice (or a literal option id) typed on
+// stdin to the option id expected by auth flows.
+func resolveSelectAnswer(options []aiauth.PromptOption, answer string) (string, error) {
+	trimmed := strings.TrimSpace(answer)
+	if number, err := strconv.Atoi(trimmed); err == nil && number >= 1 && number <= len(options) {
+		return options[number-1].ID, nil
+	}
+	for _, option := range options {
+		if strings.EqualFold(option.ID, trimmed) {
+			return option.ID, nil
+		}
+	}
+	return "", fmt.Errorf("invalid selection %q", trimmed)
 }
 
 func (interaction *headlessAuthInteraction) Notify(event aiauth.AuthEvent) {

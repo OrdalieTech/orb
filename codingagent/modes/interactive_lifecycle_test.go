@@ -9,12 +9,59 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/codingagent"
 	"github.com/OrdalieTech/pigo/codingagent/config"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
 	"github.com/OrdalieTech/pigo/codingagent/session"
 	"github.com/OrdalieTech/pigo/tui"
 )
+
+// LOG-M4: startup checks the active Anthropic model through the real warning
+// path, matching the initial interactive-mode call before the first prompt.
+func TestLOGM4StartupWarnsForAnthropicSubscriptionAuth(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := session.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := &ai.Model{Provider: "anthropic", ID: "claude-opus-4-8"}
+	key := "sk-ant-oat-startup"
+	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
+		Agent:          agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Model: model})),
+		SessionManager: manager,
+		Settings:       settings,
+		GetRequestAuth: func(context.Context, ai.ProviderID) (*agent.RequestAuth, error) {
+			return &agent.RequestAuth{APIKey: &key}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	terminal := newLifecycleTerminal(72, 18)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan int, 1)
+	go func() { done <- RunInteractiveMode(ctx, runtime, InteractiveModeOptions{Terminal: terminal}) }()
+	if !terminal.waitFor("Anthropic subscription auth is active", 2*time.Second) {
+		cancel()
+		<-done
+		t.Fatalf("startup warning was not rendered: %q", terminal.output())
+	}
+	cancel()
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("exit code = %d", code)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("interactive mode did not stop")
+	}
+}
 
 func TestRunInteractiveModeAttachesUIBeforeSessionStartAndRendersUnderMutation(t *testing.T) {
 	cwd, agentDir := t.TempDir(), t.TempDir()
@@ -43,7 +90,7 @@ func TestRunInteractiveModeAttachesUIBeforeSessionStartAndRendersUnderMutation(t
 		t.Fatal(err)
 	}
 	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
-		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings,
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings,
 		ExtensionRegistry: registry, ExtensionMode: extensions.ModeTUI, DeferSessionStart: true,
 	})
 	if err != nil {
@@ -98,7 +145,7 @@ func TestStartupVersionCheckNotifyIsRaceSafeAndStopsWithMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
-		Agent: agent.NewAgent(), SessionManager: manager, Settings: settings,
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings,
 	})
 	if err != nil {
 		t.Fatal(err)

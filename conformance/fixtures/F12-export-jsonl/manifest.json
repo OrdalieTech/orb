@@ -2,11 +2,11 @@
   "family": "F12-export-jsonl",
   "schema": 1,
   "upstream": {
-    "commit": "3a40794ea14c6202586cc203d5b928eca9f6b673",
+    "commit": "9c480b6ad2c7419875a7a850fb4ad5f9232313b8",
     "files": [
       {
         "path": "packages/coding-agent/src/core/agent-session.ts",
-        "sha256": "fea5772455a031c9540dd41e62a3e8df4de098a7ad35d1ada9ee40df0e2d321c"
+        "sha256": "1474829c1da14f2a7a68c36c707766fce9257d0e964670a56d0fac147f170c05"
       },
       {
         "path": "packages/coding-agent/src/core/session-manager.ts",

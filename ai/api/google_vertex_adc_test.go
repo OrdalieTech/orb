@@ -323,6 +323,8 @@ func TestGoogleVertexADCMetadataProbeTokenAndHeaderValidation(t *testing.T) {
 	})
 
 	t.Run("probe requires response flavor", func(t *testing.T) {
+		// gcp-metadata isAvailable swallows the flavor-validation failure, so
+		// the canonical no-credentials message surfaces instead. (OT-M8)
 		isolateGoogleVertexADCEnvironment(t)
 		handler := http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 			_, _ = io.WriteString(writer, `{}`)
@@ -330,8 +332,8 @@ func TestGoogleVertexADCMetadataProbeTokenAndHeaderValidation(t *testing.T) {
 		adc := newGoogleVertexADC(&ai.StreamOptions{Env: ai.ProviderEnv{"GCE_METADATA_HOST": "metadata.example.test"}})
 		adc.client = googleVertexADCTestClient(handler)
 		_, err := adc.headers(context.Background())
-		if err == nil || !strings.Contains(err.Error(), "incorrect Metadata-Flavor header") {
-			t.Fatalf("error = %v", err)
+		if err == nil || err.Error() != googleVertexNoADCMessage {
+			t.Fatalf("error = %v, want %q", err, googleVertexNoADCMessage)
 		}
 	})
 
@@ -355,6 +357,9 @@ func TestGoogleVertexADCMetadataProbeTokenAndHeaderValidation(t *testing.T) {
 	})
 
 	t.Run("probe uses the pinned off-GCP detection deadline", func(t *testing.T) {
+		// The pinned probe deadline still fires (the fake transport only
+		// returns once the context is done), but the timeout is swallowed
+		// into "not available" and the canonical message surfaces. (OT-M8)
 		isolateGoogleVertexADCEnvironment(t)
 		oldTimeout := googleVertexMetadataProbeTimeout
 		googleVertexMetadataProbeTimeout = 5 * time.Millisecond
@@ -365,8 +370,8 @@ func TestGoogleVertexADCMetadataProbeTokenAndHeaderValidation(t *testing.T) {
 			return nil, request.Context().Err()
 		})}
 		_, err := adc.headers(context.Background())
-		if !errors.Is(err, context.DeadlineExceeded) {
-			t.Fatalf("metadata probe error = %v, want deadline exceeded", err)
+		if err == nil || err.Error() != googleVertexNoADCMessage {
+			t.Fatalf("metadata probe error = %v, want %q", err, googleVertexNoADCMessage)
 		}
 	})
 }
@@ -383,6 +388,12 @@ func TestGoogleVertexADCMetadataDetectionModes(t *testing.T) {
 		{name: "bios only on serverless", detection: "bios-only", env: ai.ProviderEnv{"K_SERVICE": "vertex-service"}},
 		{name: "default on serverless", env: ai.ProviderEnv{"K_SERVICE": "vertex-service"}},
 		{name: "unknown", detection: "surprise", wantErr: "unknown METADATA_SERVER_DETECTION value"},
+		// google-auth-library 10.6.2 computes checkIsGCE as
+		// `getGCPResidency() || (await gcpMetadata.isAvailable())`, so GCP
+		// residency short-circuits before METADATA_SERVER_DETECTION is
+		// consulted, even under none/ping-only. (OT-m4)
+		{name: "none on serverless still resident OT-m4", detection: "none", env: ai.ProviderEnv{"K_SERVICE": "vertex-service"}},
+		{name: "ping-only on serverless skips the probe OT-m4", detection: "ping-only", env: ai.ProviderEnv{"K_SERVICE": "vertex-service"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			isolateGoogleVertexADCEnvironment(t)
@@ -416,6 +427,26 @@ func TestGoogleVertexADCMetadataDetectionModes(t *testing.T) {
 				t.Fatalf("metadata probe requests = %d, want 0", got)
 			}
 		})
+	}
+}
+
+// TestGoogleVertexADCUnreachableMetadataEmitsCanonicalMessage_OTM8 pins the
+// upstream no-credentials failure: gcp-metadata isAvailable swallows probe
+// failures (unreachable host, dial errors) into "not available", so with no
+// other credential source loadSource emits the canonical Google message
+// instead of surfacing the raw dial error. (OT-M8)
+func TestGoogleVertexADCUnreachableMetadataEmitsCanonicalMessage_OTM8(t *testing.T) {
+	isolateGoogleVertexADCEnvironment(t)
+	adc := newGoogleVertexADC(&ai.StreamOptions{Env: ai.ProviderEnv{"GCE_METADATA_HOST": "metadata.example.test"}})
+	adc.client = &http.Client{Transport: googleVertexADCRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("dial tcp 169.254.169.254:80: connect: network is unreachable")
+	})}
+	err := adc.loadSource(context.Background())
+	if err == nil || err.Error() != googleVertexNoADCMessage {
+		t.Fatalf("loadSource error = %v, want %q", err, googleVertexNoADCMessage)
+	}
+	if adc.sourceLoaded {
+		t.Fatal("unreachable metadata server must not mark the source loaded")
 	}
 }
 

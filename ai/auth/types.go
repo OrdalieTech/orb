@@ -23,8 +23,11 @@ type Credential struct {
 	Expires int64
 	Extra   map[string]json.RawMessage
 
-	order    []string
-	envOrder []string
+	order           []string
+	envOrder        []string
+	expiresJSON     json.RawMessage
+	expiresNumber   float64
+	expiresBaseline int64
 }
 
 func APIKeyCredential(key string) *Credential {
@@ -77,6 +80,7 @@ func (credential *Credential) Clone() *Credential {
 	cloned.Extra = cloneRaw(credential.Extra)
 	cloned.order = append([]string(nil), credential.order...)
 	cloned.envOrder = append([]string(nil), credential.envOrder...)
+	cloned.expiresJSON = append(json.RawMessage(nil), credential.expiresJSON...)
 	return &cloned
 }
 

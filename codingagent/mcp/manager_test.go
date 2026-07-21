@@ -147,7 +147,7 @@ func TestManagerDeliversWirePriorProgressBeforeAgentSettlesTool(t *testing.T) {
 			context.Background(),
 			agent.AgentMessages{&ai.UserMessage{Content: ai.NewUserText("work")}},
 			agent.AgentContext{Tools: []agent.AgentTool{tool}},
-			agent.AgentLoopConfig{Model: &ai.Model{ID: "test-model", API: "test", Provider: "test"}, StreamFn: stream},
+			agent.AgentLoopConfig{Model: &ai.Model{ID: "test-model", API: "test", Provider: "test"}},
 			func(_ context.Context, event agent.AgentEvent) error {
 				eventsMu.Lock()
 				defer eventsMu.Unlock()
@@ -159,6 +159,7 @@ func TestManagerDeliversWirePriorProgressBeforeAgentSettlesTool(t *testing.T) {
 				}
 				return nil
 			},
+			stream,
 		)
 		done <- err
 	}()

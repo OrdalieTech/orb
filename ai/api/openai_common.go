@@ -27,9 +27,10 @@ const (
 )
 
 var (
-	errStopSSE                           = errors.New("ai/api: stop SSE stream")
-	openAIHTTPClient   option.HTTPClient = http.DefaultClient
-	openAINowUnixMilli                   = func() int64 { return time.Now().UnixMilli() }
+	errStopSSE                               = errors.New("ai/api: stop SSE stream")
+	errOpenAIHeaderTimeout                   = errors.New("Request timed out.") //nolint:staticcheck // Exact upstream SDK error text is observable.
+	openAIHTTPClient       option.HTTPClient = http.DefaultClient
+	openAINowUnixMilli                       = func() int64 { return time.Now().UnixMilli() }
 )
 
 type eventSink func(ai.AssistantMessageEvent) bool
@@ -210,11 +211,8 @@ func resolveOpenAIAPIKey(model *ai.Model, options *ai.StreamOptions) (string, er
 	if options != nil && (hasUsableHeader(options.Headers, "authorization") || hasUsableHeader(options.Headers, "cf-aig-authorization")) {
 		return "unused", nil
 	}
-	if model.Provider == "openai" {
-		if key := providerEnvValue("OPENAI_API_KEY", options); key != "" {
-			return key, nil
-		}
-	}
+	// Upstream getClientApiKey never consults the environment; env-based key
+	// resolution lives in the higher provider registry/auth layer (OA-m2).
 	return "", fmt.Errorf("No API key for provider: %s", model.Provider) //nolint:staticcheck // Exact upstream error text is observable.
 }
 
@@ -248,20 +246,19 @@ func postOpenAIStream(
 	if err != nil {
 		return nil, fmt.Errorf("encode OpenAI request: %w", err)
 	}
+	httpClient, err := openAIHeaderTimeoutClient(openAIHTTPClient, streamTimeoutMS(options))
+	if err != nil {
+		return nil, err
+	}
 
 	client := openai.NewClient(
 		option.WithAPIKey(apiKey),
 		option.WithBaseURL(model.BaseURL),
-		option.WithHTTPClient(openAIHTTPClient),
+		option.WithHTTPClient(httpClient),
 	)
 	requestOptions := []option.RequestOption{option.WithMaxRetries(0)}
-	if options != nil {
-		if options.MaxRetries != nil {
-			requestOptions[0] = option.WithMaxRetries(*options.MaxRetries)
-		}
-		if options.TimeoutMS != nil {
-			requestOptions = append(requestOptions, option.WithRequestTimeout(time.Duration(*options.TimeoutMS)*time.Millisecond))
-		}
+	if options != nil && options.MaxRetries != nil {
+		requestOptions[0] = option.WithMaxRetries(*options.MaxRetries)
 	}
 	for name, values := range headers {
 		if len(values) == 0 {
@@ -285,6 +282,69 @@ func postOpenAIStream(
 		}
 	}
 	return response, nil
+}
+
+type openAIHTTPDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
+type openAIHeaderTimeoutDoer struct {
+	base    openAIHTTPDoer
+	timeout time.Duration
+}
+
+func streamTimeoutMS(options *ai.StreamOptions) *int64 {
+	if options == nil {
+		return nil
+	}
+	return options.TimeoutMS
+}
+
+func openAIHeaderTimeoutClient(base openAIHTTPDoer, timeoutMS *int64) (openAIHTTPDoer, error) {
+	if timeoutMS == nil {
+		return base, nil
+	}
+	if *timeoutMS < 0 {
+		return nil, errors.New("timeout must be a positive integer")
+	}
+	return &openAIHeaderTimeoutDoer{base: base, timeout: time.Duration(*timeoutMS) * time.Millisecond}, nil
+}
+
+func (client *openAIHeaderTimeoutDoer) Do(request *http.Request) (*http.Response, error) {
+	requestContext, cancel := context.WithCancel(request.Context())
+	timedOut := make(chan struct{})
+	timer := time.AfterFunc(client.timeout, func() {
+		cancel()
+		close(timedOut)
+	})
+	response, err := client.base.Do(request.Clone(requestContext))
+	if !timer.Stop() {
+		<-timedOut
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
+		cancel()
+		return nil, errOpenAIHeaderTimeout
+	}
+	if err != nil || response == nil || response.Body == nil {
+		cancel()
+		return response, err
+	}
+	response.Body = &cancelOnCloseBody{ReadCloser: response.Body, cancel: cancel}
+	return response, nil
+}
+
+// cancelOnCloseBody releases the request-scoped cancel context once the caller
+// finishes reading the streamed body.
+type cancelOnCloseBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (body *cancelOnCloseBody) Close() error {
+	err := body.ReadCloser.Close()
+	body.cancel()
+	return err
 }
 
 func providerResponse(response *http.Response) ai.ProviderResponse {
@@ -345,6 +405,74 @@ func formatOpenAIError(err error, prefix string) string {
 		return fmt.Sprintf("%s (%d): %s", prefix, apiError.StatusCode, body)
 	}
 	return fmt.Sprintf("%d: %s", apiError.StatusCode, body)
+}
+
+// openRouterErrorMetadataRaw extracts error.metadata.raw from the parsed
+// provider error body. Some providers behind OpenRouter relay the raw upstream
+// response there, and upstream appends it to the completions error message
+// when it is not already present (OA-m1).
+func openRouterErrorMetadataRaw(err error) string {
+	var statusError *openAIStatusError
+	if errors.As(err, &statusError) {
+		return openRouterMetadataFromErrorBody([]byte(statusError.body))
+	}
+	var apiError *openai.Error
+	if errors.As(err, &apiError) {
+		// The SDK already unwraps the body's "error" member into RawJSON.
+		return openRouterMetadataFromErrorBody([]byte(apiError.RawJSON()))
+	}
+	return ""
+}
+
+func openRouterMetadataFromErrorBody(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	var parsed struct {
+		Metadata struct {
+			Raw json.RawMessage `json:"raw"`
+		} `json:"metadata"`
+	}
+	if json.Unmarshal(body, &parsed) != nil || len(parsed.Metadata.Raw) == 0 {
+		return ""
+	}
+	var value any
+	if json.Unmarshal(parsed.Metadata.Raw, &value) != nil || !openAIJSONTruthy(value) {
+		return ""
+	}
+	return openAIJSString(value)
+}
+
+// openAIJSString mirrors JavaScript String() for JSON-decoded values.
+func openAIJSString(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return "null"
+	case string:
+		return typed
+	case bool:
+		if typed {
+			return "true"
+		}
+		return "false"
+	case float64:
+		encoded, err := ai.Marshal(typed)
+		if err != nil {
+			return ""
+		}
+		return string(encoded)
+	case []any:
+		parts := make([]string, len(typed))
+		for index, item := range typed {
+			if item == nil {
+				continue
+			}
+			parts[index] = openAIJSString(item)
+		}
+		return strings.Join(parts, ",")
+	default:
+		return "[object Object]"
+	}
 }
 
 type openAIStatusError struct {
