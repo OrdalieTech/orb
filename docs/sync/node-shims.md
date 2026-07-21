@@ -25,7 +25,7 @@ exports.
 | `fs/promises` | `readFile`, `writeFile`, `stat`, `mkdir`, `access`, `appendFile`, `mkdtemp` (resolves relative prefixes against extension cwd), `unlink`, `rm`, `readdir`, `cp` | implemented |
 | `path` | `join`, `dirname`, `basename`, `extname`, `resolve` (uses extension cwd), `relative`, `isAbsolute`, `normalize`, `parse`, `format`, `sep`, `delimiter`, `posix` — POSIX semantics validated against 119-entry Node v24 differential corpus | implemented |
 | `os` | `homedir`, `tmpdir`, `hostname`, `platform()` (function), `arch()` (Node names: x64/ia32/arm/arm64), `type`, `EOL`, `cpus` | implemented |
-| `process` (global) | `cwd` (extension cwd), `env`, `platform`, `arch` (Node names), `pid`, `argv`, `execPath`, `exit` (throws), `kill` (no-op), `stdout.write`, `stderr.write`, `version`, `versions` | implemented |
+| `process` (global and `process`/`node:process` module) | `cwd` (extension cwd), `env`, `platform`, `arch` (Node names), `pid`, `argv`, `execPath`, `exit` (throws), `kill` (no-op), `stdout.write`, `stderr.write`, `version`, `versions` | implemented |
 | `url` | `fileURLToPath`, `pathToFileURL`, `URL` (minimal constructor) | implemented |
 | `util` | `promisify`, `inspect` (JSON-based), `format` (%s/%d/%j) | implemented |
 | `crypto` | `randomUUID`, `randomBytes`, `createHash`, `createHmac` | implemented |

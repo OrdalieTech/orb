@@ -42,6 +42,8 @@ func (h *shimHost) resolveModule(rt *sobek.Runtime, specifier string) (*sobek.Ob
 		return h.newPathModule(rt), true
 	case "os":
 		return newOSModule(rt), true
+	case "process":
+		return rt.Get("process").ToObject(rt), true
 	case "url":
 		return newURLModule(rt), true
 	case "util":
