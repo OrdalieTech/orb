@@ -13,7 +13,7 @@ e.g. `packages/agent/src/agent-loop.ts`. The sync tool materializes that checkou
 
 ```
 pi-go/
-├── go.mod                    module github.com/OrdalieTech/pi-go   (go ≥ 1.25)
+├── go.mod                    module github.com/OrdalieTech/pi-go   (go ≥ 1.26.5)
 ├── cmd/pi/                   CLI entry point (thin: arg parsing → codingagent)
 ├── ai/                       port of packages/ai        — importable alone
 │   ├── api/                  one file per API shape (openaresponses.go, anthropicmessages.go, …)

@@ -183,11 +183,14 @@ live/VM/publication checks** (see docs/trim/M5.md §Release remainder).
 - [x] Publish `docs/compare/sprint-4.md` with the final deterministic TS/Go comparison and every
       release-platform difference fixed or ledgered.
 - [x] Re-run the candidate trim: 1.124x mirror LOC, 20 reviewed clone groups, clean module audit,
-      52,187,712 B largest bridged artifact across four targets, and 47.4 ± 7.4 ms no-prompt cold
-      start (40.9 ± 0.9 ms on one isolated CPU). The owner-set size and 50 ms mean caps are green.
+      52,240,976 B largest bridged artifact across four targets, and 42.1 ± 0.9 ms no-prompt cold
+      start on one CPU. The owner-set size and 50 ms mean caps are green.
 - [x] Resolve the two binding-rule conflicts (owner, 2026-07-20): retain D17 and set the bridged
       artifact cap to 55 MB decimal; clarify D7 so shipped builds remain static `CGO_ENABLED=0`
       while development-only `-race` binaries may link Go's CGo-backed ThreadSanitizer runtime.
+- [x] Pin releases and CI to Go 1.26.5. An identical-source comparison records 2.8% gains in the
+      1,000-turn chat load and F12 rendering, with the startup, session-creation, compaction, and
+      binary-size regressions retained in `docs/trim/M5.md` rather than hidden by an aggregate.
 - [ ] Re-verify every M1–M4 criterion at the release commit. The deterministic surfaces and the
       2026-07-20 lock bump to `3a40794e` are green (116 paths classified, zero unmapped), but the
       subscribed OAuth, hosted-nightly, and real-terminal criteria remain owner-blocked.
