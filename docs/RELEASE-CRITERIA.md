@@ -88,13 +88,14 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 - [ ] Docs newcomer path (install → first session → embed SDK → run an upstream extension) verified
       by following the docs literally; README credit/provenance; divergence ledger current.
       (SDK-embed and extension steps verified offline; install step needs a published release.)
-- [x] Upstream alignment audit re-run at the release commit with zero open should-fix findings
+- [ ] Upstream alignment audit re-run at the release commit with zero open should-fix findings
       (docs/compare/upstream-alignment.md); release notes extracted from CHANGELOG.md; version
-      injected via ldflags and printed with the upstream pin. (The exact commit tree is zero-open,
-      maps 436/436 files, has release-ready `0.1.0` notes, and prints both identities.)
+      injected via ldflags and printed with the upstream pin. (The current candidate is zero-open,
+      maps 436/436 files, has extractable `0.1.0` notes, and prints both identities; repeat the
+      delta audit at the eventual tag commit after the owner-gated runs.)
 - [x] Final trim pass #5; LOC report: mirrored packages ≤ 1.3× upstream TS src LOC or justified
-      per-package in the report; dep audit clean. (Final tree: 1.124x, 20 reviewed clone groups,
-      modules verified and tidy.)
+      per-package in the report; dep audit clean. (Current candidate: 1.124x, 19 reviewed clone
+      groups, modules verified and tidy; repeat if production code changes before the tag.)
 
 ## Live-test policy
 

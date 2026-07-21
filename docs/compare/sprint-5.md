@@ -59,6 +59,7 @@ attachment (`chat_attach`) — tools are off by default in v1.
 | Difference | Rationale |
 |---|---|
 | FIFO turns per conversation key; no message merging into a waiting prompt | The keyed mutex + external queue is the whole concurrency model; simpler than pi-chat's job records or Hermes's two-level guard. `ponytail:` marker in `chat/processor.go`. |
+| Per-turn session lease instead of pi-chat's long-lived process or Hermes's cached agent | Disk remains authoritative for crash recovery, and every lease re-applies dynamic model/tool/extension options then disposes their resources. Hermes's reuse needs bounded TTL/LRU, configuration signatures, stale-history invalidation, and eviction cleanup; the retained durable benchmark exposes the cost without adding an unbounded cache. |
 | No steer-into-active-run (Hermes `interrupt`/`steer`/`queue` busy modes) | Only Hermes's `queue` semantics are kept; mid-turn injection is deferred until users demand it. |
 | `edited_message` ignored (`allowed_updates: ["message"]`) | pi-chat re-ingests edits as fresh messages and can re-trigger; a stable `EventID` dedupe and edit-retriggering don't compose honestly. v1 drops them. |
 | No voice STT/TTS (Hermes: whisper STT, native voice-bubble TTS) | Voice notes arrive as attachment notes to the prompt; no audio pipeline in scope. |
@@ -71,9 +72,9 @@ attachment (`chat_attach`) — tools are off by default in v1.
 
 ```text
 CGO_ENABLED=0 go build ./...
-go test -race ./chat/...        # processor crash-boundary replays, 1,000 concurrent turns over
-                                # ~100 keys, idle-residue zero, fake Bot API / Graph API servers,
-                                # chunk goldens, secret/HMAC rejection, offset redelivery
+go test -race ./chat/...        # processor crash-boundary replays, 1,000 in-memory turns over
+                                # ~100 keys, durable-turn benchmark, idle-residue zero, fake API
+                                # servers, chunk goldens, secret/HMAC rejection, offset redelivery
 go test -race ./codingagent/    # ToolOptions hook: injected operations used + survive rebuild
 gofmt -l . ; go vet ./...
 ```

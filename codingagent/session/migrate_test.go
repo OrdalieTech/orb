@@ -9,6 +9,34 @@ import (
 	"github.com/OrdalieTech/pi-go/ai"
 )
 
+func TestGenerateUniqueIDReservesSessionIndex(t *testing.T) {
+	existing := map[string]*SessionEntry{"taken": {ID: "taken"}}
+	id, err := generateUniqueID(existing, sequenceIDGenerator("taken", "fresh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "fresh" {
+		t.Fatalf("id = %q, want fresh", id)
+	}
+	if entry, ok := existing[id]; !ok || entry != nil {
+		t.Fatalf("reserved entry = %#v, %t; want nil, true", entry, ok)
+	}
+}
+
+func TestFindUniqueIDDoesNotReserveSessionIndex(t *testing.T) {
+	existing := map[string]*SessionEntry{"taken": {ID: "taken"}}
+	id, err := findUniqueID(existing, sequenceIDGenerator("taken", "fresh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "fresh" {
+		t.Fatalf("id = %q, want fresh", id)
+	}
+	if _, ok := existing[id]; ok {
+		t.Fatalf("findUniqueID reserved %q", id)
+	}
+}
+
 func TestParseSessionEntriesSkipsOnlyBlankAndMalformedLines(t *testing.T) {
 	entries := ParseSessionEntries("  \nnot-json\n42\nnull\n{\"type\":\"session\",\"id\":\"s\"}\n")
 	if len(entries) != 3 {

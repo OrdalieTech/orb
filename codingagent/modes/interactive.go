@@ -2975,7 +2975,17 @@ func (mode *InteractiveMode) showError(err error) {
 }
 
 func (mode *InteractiveMode) addUserMessageToChat(text string) {
-	mode.chat.AddChild(NewUserMessageComponent(text, mode.mdTheme, mode.currentOutputPad()))
+	if skill, ok := codingagent.ParseSkillBlock(text); ok {
+		component := NewSkillInvocationMessage(skill.Name, skill.Content, mode.mdTheme)
+		mode.addExpandable(component)
+		mode.chat.AddChild(component)
+		if skill.UserMessage != "" {
+			mode.chat.AddChild(tui.NewSpacer(1))
+			mode.chat.AddChild(NewUserMessageComponent(skill.UserMessage, mode.mdTheme, mode.currentOutputPad()))
+		}
+	} else {
+		mode.chat.AddChild(NewUserMessageComponent(text, mode.mdTheme, mode.currentOutputPad()))
+	}
 	mode.ui.RequestRender()
 }
 

@@ -5,17 +5,21 @@ package chat
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	goruntime "runtime"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/OrdalieTech/pi-go/ai"
 	"github.com/OrdalieTech/pi-go/ai/providers/faux"
 	"github.com/OrdalieTech/pi-go/codingagent"
 )
 
-func newTestLocalProvider(t *testing.T, opts ...LocalProviderOption) (*LocalProvider, string) {
+func newTestLocalProvider(t testing.TB, opts ...LocalProviderOption) (*LocalProvider, string) {
 	t.Helper()
 	root := t.TempDir()
 	provider, err := NewLocalProvider(root, append([]LocalProviderOption{WithAgentDir(t.TempDir())}, opts...)...)
@@ -197,5 +201,116 @@ func TestLocalProviderEnforcesExclusiveAcquire(t *testing.T) {
 	}
 	if _, err := provider.Acquire(context.Background(), ConversationKey{Platform: "faux"}); err == nil {
 		t.Fatal("incomplete key accepted")
+	}
+}
+
+func BenchmarkDurableTurn(b *testing.B) {
+	for _, test := range []struct {
+		name, chatID string
+		history      int
+	}{
+		{name: "Fresh", chatID: "fresh"},
+		{name: "LongHistory", chatID: "long", history: 1000},
+	} {
+		b.Run(test.name, func(b *testing.B) {
+			agentDir := b.TempDir()
+			if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(`{"retry":{"enabled":false},"compaction":{"enabled":false}}`), 0o644); err != nil {
+				b.Fatal(err)
+			}
+			llm := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+			provider, root := newTestLocalProvider(b, WithAgentDir(agentDir), WithSessionOptions(func(_ ConversationKey, o *codingagent.AgentSessionOptions) {
+				o.Model, o.StreamFn = llm.GetModel(), llm.StreamSimple
+			}))
+			key := ConversationKey{Platform: "faux", Account: "bot", ChatID: test.chatID}
+			seedBenchmarkHistory(b, provider, key, test.history)
+
+			adapter := &fauxAdapter{}
+			processor, err := New(Options{
+				Sessions: provider, Adapters: []Adapter{adapter}, Authorize: AllowAll,
+				PreviewInterval: time.Hour, TurnTimeout: time.Minute,
+			})
+			if err != nil {
+				b.Fatal(err)
+			}
+			defer func() { _ = processor.Close(context.Background()) }()
+			local, err := NewLocal(processor, filepath.Join(root, "spool.jsonl"))
+			if err != nil {
+				b.Fatal(err)
+			}
+			defer func() { _ = local.Close(context.Background()) }()
+
+			response := faux.AssistantMessage("ok")
+			responses := make([]faux.ResponseStep, b.N)
+			messages := make([]Message, b.N)
+			for i := range b.N {
+				responses[i] = response
+				chatID := test.chatID
+				if test.history == 0 {
+					chatID = fmt.Sprintf("fresh-%d", i)
+				}
+				messages[i] = testMessage(fmt.Sprintf("bench-%d", i), chatID, "go")
+			}
+			llm.SetResponses(responses)
+			b.ReportAllocs()
+
+			b.ResetTimer()
+			for i := range b.N {
+				if err := local.Publish(messages[i]); err != nil {
+					b.Fatal(err)
+				}
+				deadline := time.Now().Add(time.Minute)
+				for spins := 0; ; spins++ {
+					local.mu.Lock()
+					idle := len(local.queues) == 0 && len(local.inflight) == 0
+					local.mu.Unlock()
+					if idle {
+						break
+					}
+					if spins&1023 == 0 && time.Now().After(deadline) {
+						b.Fatal("durable turn did not finish")
+					}
+					goruntime.Gosched()
+				}
+			}
+			b.StopTimer()
+			b.ReportMetric(float64(test.history), "seed_turns")
+			if calls := llm.State().CallCount; calls != int64(b.N) {
+				b.Fatalf("model calls = %d, want %d", calls, b.N)
+			}
+		})
+	}
+}
+
+func seedBenchmarkHistory(b *testing.B, provider *LocalProvider, key ConversationKey, turns int) {
+	b.Helper()
+	if turns == 0 {
+		return
+	}
+	conversation, err := provider.Acquire(context.Background(), key)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer func() { _ = conversation.Close(context.Background()) }()
+	user := &ai.UserMessage{Content: ai.NewUserText("go"), Timestamp: 1700000000000}
+	assistant := faux.AssistantMessage("ok")
+	receipt := &Receipt{MessageIDs: []string{"seed"}, At: time.Unix(1700000000, 0).UTC()}
+	for i := range turns {
+		eventID := fmt.Sprintf("seed-%d", i)
+		if _, err := appendTurnMarker(conversation.Manager, turnMarker{EventID: eventID, Phase: phaseStarted}); err != nil {
+			b.Fatal(err)
+		}
+		if _, err := conversation.Manager.AppendMessage(user); err != nil {
+			b.Fatal(err)
+		}
+		assistantID, err := conversation.Manager.AppendMessage(assistant)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if _, err := appendTurnMarker(conversation.Manager, turnMarker{EventID: eventID, Phase: phaseSettled, Outcome: outcomeOK, AssistantEntryID: assistantID}); err != nil {
+			b.Fatal(err)
+		}
+		if _, err := appendTurnMarker(conversation.Manager, turnMarker{EventID: eventID, Phase: phaseDelivered, Receipt: receipt}); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

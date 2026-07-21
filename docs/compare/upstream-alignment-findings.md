@@ -1,7 +1,7 @@
 # Upstream alignment — current findings ledger
 
-Last full audit: 2026-07-20; compact refresh: 2026-07-20. Candidate: release closure descending
-from `e46f671`; upstream: pi `0.80.10` at `3a40794ea14c6202586cc203d5b928eca9f6b673`.
+Last full audit: 2026-07-20; final delta refresh: 2026-07-21. Candidate: release closure descending
+from `fbcabf9`; upstream: pi `0.80.10` at `3a40794ea14c6202586cc203d5b928eca9f6b673`.
 This file replaces the previous historical backlog on every audit.
 
 ## Open should-fix findings
@@ -15,7 +15,7 @@ recorded as a settled divergence.
 |---|---|
 | Source mapping | `docs/MIRROR.md` maps all upstream AI, agent, coding-agent, and TUI source files |
 | Public API | `ai/model_helpers.go`, `ai/retry.go`, `ai/streaming_json.go`, `ai/images_models.go`, `codingagent/messages.go`, and `codingagent/modes/rpc_client.go` close the final exported surface |
-| Test intent | The six numbered regression tails, provider edge cases, keybinding migrations, theme precedence, RPC reentrancy/panic isolation, and image-registry races have Go tests |
+| Test intent | The six numbered regression tails, provider edge cases, keybinding migrations, restored skill-invocation rendering, theme precedence, RPC reentrancy/panic isolation, and image-registry races have Go tests |
 | Wire behavior | F1–F12 regenerate byte-clean and the black-box upstream RPC suite passes 28/28 |
 | Docs/process | README, SDK/examples, changelog, contribution/security policy, comparison reports, and trim reports cover the newcomer and maintainer paths |
 | Release | `make check`, four static GoReleaser targets, checksums, curl install, Homebrew formula configuration, and ldflags identity cover the deterministic release surface |
