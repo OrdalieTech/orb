@@ -11,6 +11,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 - Interactive mode now keeps the status, extension widgets, input, and footer fixed at the bottom
   while the transcript scrolls independently. Mouse-wheel or `Ctrl+PageUp` scrolling pauses live
   follow, and scrolling down or pressing `Ctrl+End` returns to the latest loading or streamed output.
+- Huge transcripts now cache stable message layout and render only the visible window plus a changed
+  tail, keeping loading and streaming frame cost independent of conversation length after warm-up.
 
 ## [0.2.1] - 2026-07-22
 

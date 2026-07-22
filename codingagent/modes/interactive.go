@@ -113,6 +113,48 @@ type InteractiveMode struct {
 	cleanupOnce sync.Once
 }
 
+type chatRenderRequester struct {
+	mu        sync.RWMutex
+	mode      *InteractiveMode
+	component tui.Component
+}
+
+func (requester *chatRenderRequester) Bind(component tui.Component) {
+	requester.mu.Lock()
+	requester.component = component
+	requester.mu.Unlock()
+}
+
+func (requester *chatRenderRequester) RequestRender() {
+	requester.mu.RLock()
+	component := requester.component
+	requester.mu.RUnlock()
+	requester.mode.requestChatRender(component)
+}
+
+func (mode *InteractiveMode) requestChatRender(component tui.Component) {
+	if mode.chat != nil && component != nil {
+		mode.chat.ChildChanged(component)
+	}
+	if mode.ui != nil {
+		mode.ui.RequestRender()
+	}
+}
+
+func (mode *InteractiveMode) newToolExecutionComponent(name, id string, args any) *ToolExecutionComponent {
+	requester := &chatRenderRequester{mode: mode}
+	component := NewToolExecutionComponent(name, id, args, mode.showImages(), mode.toolDefinition(name), requester, mode.cwd)
+	requester.Bind(component)
+	return component
+}
+
+func (mode *InteractiveMode) newBashExecutionComponent(command string, excludeFromContext bool) *BashExecutionComponent {
+	requester := &chatRenderRequester{mode: mode}
+	component := NewBashExecutionComponent(command, requester, excludeFromContext)
+	requester.Bind(component)
+	return component
+}
+
 type inputEntry struct {
 	text   string
 	images []*ai.ImageContent
@@ -279,7 +321,7 @@ func (mode *InteractiveMode) init() error {
 	}
 	mode.mdTheme = theme.MarkdownTheme()
 	mode.header = &tui.Container{}
-	mode.chat = &tui.Container{}
+	mode.chat = tui.NewWindowedContainer()
 	mode.pendingMessages = &tui.Container{}
 	mode.status = &tui.Container{}
 	mode.widgetAbove = &tui.Container{}
@@ -518,7 +560,7 @@ func (mode *InteractiveMode) Height() int {
 }
 func (mode *InteractiveMode) Invalidate() {
 	if mode.ui != nil {
-		mode.ui.Invalidate()
+		mode.ui.RequestRender()
 	}
 }
 
@@ -1074,6 +1116,7 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 		for _, component := range expandables {
 			component.SetExpanded(expanded)
 		}
+		mode.chat.Invalidate()
 		mode.ui.RequestRender()
 	})
 
@@ -1431,7 +1474,7 @@ func formatKeyDisplayTextForOS(key, goos string) string {
 }
 
 func (mode *InteractiveMode) executeUserBash(command string, excludeFromContext bool) {
-	comp := NewBashExecutionComponent(command, mode.ui, excludeFromContext)
+	comp := mode.newBashExecutionComponent(command, excludeFromContext)
 	mode.chat.AddChild(comp)
 	mode.ui.RequestRender()
 
@@ -1442,7 +1485,7 @@ func (mode *InteractiveMode) executeUserBash(command string, excludeFromContext 
 			excludeFromContext,
 			func(chunk string) {
 				comp.AppendOutput(chunk)
-				mode.ui.RequestRender()
+				mode.requestChatRender(comp)
 			},
 		)
 		if err != nil {
@@ -1451,7 +1494,7 @@ func (mode *InteractiveMode) executeUserBash(command string, excludeFromContext 
 		} else {
 			comp.SetComplete(result.ExitCode, result.Cancelled)
 		}
-		mode.ui.RequestRender()
+		mode.requestChatRender(comp)
 	}()
 }
 
@@ -1962,7 +2005,7 @@ func (mode *InteractiveMode) showStatusMessage(text string) {
 	if mode.lastStatusSpacer != nil && mode.lastStatusText != nil &&
 		mode.chat.EndsWith(mode.lastStatusSpacer, mode.lastStatusText) {
 		mode.lastStatusText.SetText(theme.FG("dim", text))
-		mode.ui.RequestRender()
+		mode.requestChatRender(mode.lastStatusText)
 		return
 	}
 	spacer := tui.NewSpacer(1)
@@ -3095,7 +3138,7 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		mode.mu.Unlock()
 		if comp != nil {
 			comp.UpdateContent(assistant)
-			mode.ui.RequestRender()
+			mode.requestChatRender(comp)
 		}
 
 	case agent.MessageEndEvent:
@@ -3108,12 +3151,13 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		mode.mu.Unlock()
 		if comp != nil {
 			comp.UpdateContent(assistant)
+			mode.chat.ChildChanged(comp)
 		}
 		mode.maybeShowCacheMiss(assistant)
 		mode.ui.RequestRender()
 
 	case agent.ToolExecutionStartEvent:
-		tc := NewToolExecutionComponent(ev.ToolName, ev.ToolCallID, ev.Args, mode.showImages(), mode.toolDefinition(ev.ToolName), mode.ui, mode.cwd)
+		tc := mode.newToolExecutionComponent(ev.ToolName, ev.ToolCallID, ev.Args)
 		tc.SetArgsComplete()
 		mode.mu.Lock()
 		mode.toolComponents[ev.ToolCallID] = tc
@@ -3132,7 +3176,7 @@ func (mode *InteractiveMode) handleEvent(event any) {
 			if ev.PartialResult.Content != nil {
 				tc.UpdateResult(ev.PartialResult.Content, false, ev.PartialResult.Details, true)
 			}
-			mode.ui.RequestRender()
+			mode.requestChatRender(tc)
 		}
 
 	case agent.ToolExecutionEndEvent:
@@ -3141,7 +3185,7 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		mode.mu.Unlock()
 		if tc != nil {
 			tc.UpdateResult(ev.Result.Content, ev.IsError, ev.Result.Details, false)
-			mode.ui.RequestRender()
+			mode.requestChatRender(tc)
 		}
 
 	case codingagent.AgentSettledEvent:
@@ -3401,7 +3445,7 @@ func (mode *InteractiveMode) renderAgentMessage(message any) {
 			if !ok || call == nil {
 				continue
 			}
-			toolComponent := NewToolExecutionComponent(call.Name, call.ID, call.Arguments, mode.showImages(), mode.toolDefinition(call.Name), mode.ui, mode.cwd)
+			toolComponent := mode.newToolExecutionComponent(call.Name, call.ID, call.Arguments)
 			toolComponent.SetArgsComplete()
 			mode.mu.Lock()
 			toolComponent.SetExpanded(mode.toolsExpanded)
@@ -3514,7 +3558,7 @@ func (mode *InteractiveMode) renderToolResult(message *ai.ToolResultMessage) {
 	component := mode.toolComponents[message.ToolCallID]
 	mode.mu.Unlock()
 	if component == nil {
-		component = NewToolExecutionComponent(message.ToolName, message.ToolCallID, nil, mode.showImages(), mode.toolDefinition(message.ToolName), mode.ui, mode.cwd)
+		component = mode.newToolExecutionComponent(message.ToolName, message.ToolCallID, nil)
 		mode.mu.Lock()
 		mode.toolComponents[message.ToolCallID] = component
 		mode.expandables = append(mode.expandables, component)
@@ -3522,10 +3566,11 @@ func (mode *InteractiveMode) renderToolResult(message *ai.ToolResultMessage) {
 		mode.chat.AddChild(component)
 	}
 	component.UpdateResult(message.Content, message.IsError, message.Details, false)
+	mode.chat.ChildChanged(component)
 }
 
 func (mode *InteractiveMode) renderBashMessage(message harness.BashExecutionMessage) {
-	component := NewBashExecutionComponent(message.Command, mode.ui, message.ExcludeFromContext != nil && *message.ExcludeFromContext)
+	component := mode.newBashExecutionComponent(message.Command, message.ExcludeFromContext != nil && *message.ExcludeFromContext)
 	if message.Output != "" {
 		component.AppendOutput(message.Output)
 	}

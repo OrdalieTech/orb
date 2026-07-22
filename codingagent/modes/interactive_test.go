@@ -58,6 +58,44 @@ func TestParseSlashCommand(t *testing.T) {
 	}
 }
 
+func TestInteractiveChatRenderInvalidatesChangedChild(t *testing.T) {
+	chat := tui.NewWindowedContainer()
+	component := tui.NewText("before", 0, 0, nil)
+	chat.AddChild(component)
+	_ = chat.LineCount(80)
+	component.SetText("after")
+
+	mode := &InteractiveMode{ui: tui.NewTUI(newFakeTerminal(80, 24)), chat: chat}
+	mode.requestChatRender(component)
+	if got := strings.Join(chat.RenderLines(80, 0, chat.LineCount(80)), "\n"); !strings.Contains(got, "after") || strings.Contains(got, "before") {
+		t.Fatalf("changed child render = %q", got)
+	}
+}
+
+type countedInteractiveComponent struct{ renders int }
+
+func (component *countedInteractiveComponent) Render(int) []string {
+	component.renders++
+	return []string{"line"}
+}
+
+func TestInteractiveHostInvalidateDoesNotRebuildTranscript(t *testing.T) {
+	chat := tui.NewWindowedContainer()
+	component := &countedInteractiveComponent{}
+	chat.AddChild(component)
+	_ = chat.LineCount(80)
+	body := &tui.Container{}
+	body.AddChild(chat)
+	uiRoot := tui.NewTUI(newFakeTerminal(80, 24))
+	uiRoot.AddChild(body)
+
+	(&InteractiveMode{ui: uiRoot, chat: chat}).Invalidate()
+	_ = chat.LineCount(80)
+	if component.renders != 1 {
+		t.Fatalf("extension invalidate rebuilt transcript %d times", component.renders)
+	}
+}
+
 func TestInteractiveModeInstallsExactResourceLoaderThemeObject(t *testing.T) {
 	cwd, agentDir := t.TempDir(), t.TempDir()
 	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
