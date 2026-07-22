@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 
@@ -26,6 +27,7 @@ type packageCommandOptions struct {
 	source                  string
 	updateTarget            *updateTarget
 	showPackagesSkippedNote bool
+	offline                 bool
 	local                   bool
 	projectTrustOverride    *bool
 	help                    bool
@@ -212,6 +214,7 @@ func parsePackageCommand(args []string) *packageCommandOptions {
 	options := &packageCommandOptions{command: command}
 	var selfFlag, extensionsFlag, modelsFlag, allFlag bool
 	var extensionFlagSource string
+	var offlineFlag bool
 
 	setInvalidOption := func(arg string) {
 		if options.invalidOption == "" {
@@ -256,6 +259,12 @@ func parsePackageCommand(args []string) *packageCommandOptions {
 		case arg == "--all":
 			if command == "update" {
 				allFlag = true
+			} else {
+				setInvalidOption(arg)
+			}
+		case arg == "--offline":
+			if command == "update" {
+				offlineFlag = true
 			} else {
 				setInvalidOption(arg)
 			}
@@ -338,6 +347,13 @@ func parsePackageCommand(args []string) *packageCommandOptions {
 		default:
 			options.updateTarget = &updateTarget{kind: "self"}
 			options.showPackagesSkippedNote = true
+		}
+		if offlineFlag {
+			if options.showPackagesSkippedNote {
+				options.offline = true
+			} else {
+				setInvalidOption("--offline")
+			}
 		}
 	}
 	return options
@@ -530,9 +546,16 @@ func handlePackageCommand(ctx context.Context, argv []string, streams cliStreams
 	}
 	if options.command == "update" && options.updateTarget != nil && options.updateTarget.kind == "self" {
 		if options.showPackagesSkippedNote {
-			_, _ = fmt.Fprintln(streams.Stdout, "Installed packages are skipped. Run pigo update --extensions to update them.")
+			offline := options.offline || os.Getenv("PI_OFFLINE") != ""
+			latestVersion := ""
+			var checkErr error
+			if !offline && !isDevelopmentVersion(version) {
+				latestVersion, checkErr = fetchLatestReleaseVersion(ctx, version, http.DefaultClient, latestReleaseURL, selfUpdateCheckTimeout)
+			}
+			printSelfUpdateStatus(streams.Stdout, version, latestVersion, checkErr, offline)
+		} else {
+			printSelfUpdateInstructions(streams.Stdout)
 		}
-		printSelfUpdateInstructions(streams.Stdout)
 		return true, 0
 	}
 
@@ -654,4 +677,40 @@ Re-run the method used to install it:
   Installer: curl -fsSL https://raw.githubusercontent.com/OrdalieTech/pigo/main/scripts/install.sh | sh
   Go:        go install github.com/OrdalieTech/pigo/cmd/pigo@latest
 `)
+}
+
+func printSelfUpdateStatus(writer io.Writer, currentVersion, latestVersion string, checkErr error, offline bool) {
+	current := displayVersion(currentVersion)
+	switch {
+	case isDevelopmentVersion(currentVersion):
+		_, _ = fmt.Fprintln(writer, "pigo dev build — update check skipped.")
+	case offline:
+		_, _ = fmt.Fprintf(writer, "pigo %s — offline mode — update check skipped.\n", current)
+	case checkErr != nil:
+		_, _ = fmt.Fprintf(writer, "pigo %s — could not check for updates (%s).\n", current, checkErr)
+	case isNewerPackageVersion(latestVersion, currentVersion):
+		latest := displayVersion(latestVersion)
+		_, _ = fmt.Fprintf(writer, "Update available: %s -> %s\n", current, latest)
+		_, _ = fmt.Fprintf(writer, "Release: https://github.com/OrdalieTech/pigo/releases/tag/%s\n", strings.TrimSpace(latestVersion))
+		printSelfUpdateInstructions(writer)
+		return
+	default:
+		_, _ = fmt.Fprintf(writer, "pigo %s — already the latest version.\n", current)
+		_, _ = fmt.Fprintln(writer, "Installed packages are skipped. Run pigo update --extensions to update them.")
+		return
+	}
+	printSelfUpdateInstructions(writer)
+}
+
+func displayVersion(value string) string {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "v") {
+		return value
+	}
+	return "v" + value
+}
+
+func isDevelopmentVersion(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	return value == "" || value == "dev" || strings.Contains(value, "-dev")
 }

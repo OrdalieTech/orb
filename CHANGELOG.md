@@ -6,6 +6,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+- `pigo update` now reports whether the running release is current before showing reinstall instructions.
+
 ## [0.3.0] - 2026-07-22
 
 ### Added

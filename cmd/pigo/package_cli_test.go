@@ -308,9 +308,9 @@ func TestPackageCLIUpdateTargets(t *testing.T) {
 		t.Fatalf("code=%d stdout=%q", code, stdout)
 	}
 
-	// Bare update is the stable, notify-only route to exact installer commands.
+	// The unstamped test binary takes the dev-build route without a network call.
 	code, stdout, stderr = runPackageCLI(t, []string{"update"})
-	if code != 0 || stderr != "" || !strings.Contains(stdout, "Installed packages are skipped. Run pigo update --extensions to update them.") {
+	if code != 0 || stderr != "" || !strings.HasPrefix(stdout, "pigo dev build — update check skipped.\n") {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	for _, want := range []string{
@@ -321,6 +321,15 @@ func TestPackageCLIUpdateTargets(t *testing.T) {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("update output missing %q: %q", want, stdout)
 		}
+	}
+
+	// --offline is handled by the bare self-update route and never fetches.
+	previousVersion := version
+	version = "0.2.1"
+	code, stdout, stderr = runPackageCLI(t, []string{"update", "--offline"})
+	version = previousVersion
+	if code != 0 || stderr != "" || !strings.HasPrefix(stdout, "pigo v0.2.1 — offline mode — update check skipped.\n") {
+		t.Fatalf("offline: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 
 	// The explicit self aliases use the same instruction-only route.
@@ -344,6 +353,67 @@ func TestPackageCLIUpdateTargets(t *testing.T) {
 	code, _, stderr = runPackageCLI(t, []string{"update", "pi-formatter"})
 	if code != 1 || !strings.Contains(stderr, "Did you mean npm:pi-formatter?") {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestSelfUpdateMessageSelection(t *testing.T) {
+	instructions := `pigo does not replace its running binary.
+Re-run the method used to install it:
+
+  Installer: curl -fsSL https://raw.githubusercontent.com/OrdalieTech/pigo/main/scripts/install.sh | sh
+  Go:        go install github.com/OrdalieTech/pigo/cmd/pigo@latest
+`
+	tests := []struct {
+		name           string
+		currentVersion string
+		latestVersion  string
+		checkErr       error
+		offline        bool
+		want           string
+	}{
+		{
+			name:           "up to date",
+			currentVersion: "0.3.0",
+			latestVersion:  "v0.3.0",
+			want: "pigo v0.3.0 — already the latest version.\n" +
+				"Installed packages are skipped. Run pigo update --extensions to update them.\n",
+		},
+		{
+			name:           "update available",
+			currentVersion: "0.2.1",
+			latestVersion:  "v0.3.0",
+			want: "Update available: v0.2.1 -> v0.3.0\n" +
+				"Release: https://github.com/OrdalieTech/pigo/releases/tag/v0.3.0\n" + instructions,
+		},
+		{
+			name:           "check failed",
+			currentVersion: "0.2.1",
+			checkErr:       errors.New("network error"),
+			want:           "pigo v0.2.1 — could not check for updates (network error).\n" + instructions,
+		},
+		{
+			name:           "dev build",
+			currentVersion: "0.1.0-dev",
+			latestVersion:  "v0.3.0",
+			want:           "pigo dev build — update check skipped.\n" + instructions,
+		},
+		{
+			name:           "offline",
+			currentVersion: "0.2.1",
+			latestVersion:  "v0.3.0",
+			offline:        true,
+			want:           "pigo v0.2.1 — offline mode — update check skipped.\n" + instructions,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			printSelfUpdateStatus(&output, test.currentVersion, test.latestVersion, test.checkErr, test.offline)
+			if got := output.String(); got != test.want {
+				t.Fatalf("output = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 
