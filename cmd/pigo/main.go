@@ -8,13 +8,23 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/OrdalieTech/pigo/agent"
 	"github.com/OrdalieTech/pigo/ai"
 	aimodels "github.com/OrdalieTech/pigo/ai/models"
+	"github.com/OrdalieTech/pigo/chat"
+	"github.com/OrdalieTech/pigo/chat/discord"
+	"github.com/OrdalieTech/pigo/chat/googlechat"
+	"github.com/OrdalieTech/pigo/chat/messenger"
+	"github.com/OrdalieTech/pigo/chat/slack"
+	"github.com/OrdalieTech/pigo/chat/teams"
+	"github.com/OrdalieTech/pigo/chat/telegram"
+	"github.com/OrdalieTech/pigo/chat/whatsapp"
 	"github.com/OrdalieTech/pigo/codingagent"
 	"github.com/OrdalieTech/pigo/codingagent/config"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
@@ -111,6 +121,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 				},
 			})
 		}
+	}
+	if len(argv) > 0 && argv[0] == "chat" {
+		return runChatCommand(ctx, argv[1:], streams)
 	}
 	if handled, code := handlePackageCommand(ctx, argv, streams, dependencies); handled {
 		return code
@@ -604,23 +617,247 @@ func reportCLIError(writer io.Writer, err error) int {
 	return 1
 }
 
+func runChatCommand(ctx context.Context, args []string, streams cliStreams) int {
+	if len(args) == 0 || (len(args) == 1 && (args[0] == "--help" || args[0] == "-h")) ||
+		(len(args) == 2 && (args[1] == "--help" || args[1] == "-h")) {
+		_, _ = io.WriteString(streams.Stdout, chatHelpText)
+		return 0
+	}
+	if len(args) != 1 {
+		return reportCLIError(streams.Stderr, errors.New("usage: pigo chat <platform>"))
+	}
+	platform := strings.ToLower(args[0])
+	switch platform {
+	case "telegram", "discord", "slack", "teams", "whatsapp", "messenger", "googlechat":
+	default:
+		return reportCLIError(streams.Stderr, fmt.Errorf("unsupported chat platform %q", platform))
+	}
+	authorize, err := chatAuthorizer(os.Getenv("PIGO_CHAT_ALLOWED_SENDERS"))
+	if err != nil {
+		return reportCLIError(streams.Stderr, err)
+	}
+	agentDir, err := migrateStartupAuth()
+	if err != nil {
+		return reportCLIError(streams.Stderr, err)
+	}
+	dataDir := strings.TrimSpace(os.Getenv("PIGO_CHAT_DATA_DIR"))
+	if dataDir == "" {
+		dataDir = filepath.Join(agentDir, "chat", platform)
+	}
+
+	var adapter chat.Adapter
+	var ingress func(context.Context, func(chat.Message) error) error
+	// ponytail: credentials stay in the process environment; add named account
+	// persistence only when one process needs to switch between accounts.
+	switch platform {
+	case "telegram":
+		token := strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN"))
+		if token == "" {
+			return reportCLIError(streams.Stderr, errors.New("TELEGRAM_BOT_TOKEN is required"))
+		}
+		telegramAdapter, createErr := telegram.New(telegram.Options{Token: token})
+		if createErr != nil {
+			return reportCLIError(streams.Stderr, createErr)
+		}
+		adapter, ingress = telegramAdapter, telegramAdapter.Poll
+	case "discord":
+		token := strings.TrimSpace(os.Getenv("DISCORD_BOT_TOKEN"))
+		if token == "" {
+			return reportCLIError(streams.Stderr, errors.New("DISCORD_BOT_TOKEN is required"))
+		}
+		discordAdapter, createErr := discord.New(discord.Options{Token: token})
+		if createErr != nil {
+			return reportCLIError(streams.Stderr, createErr)
+		}
+		adapter, ingress = discordAdapter, discordAdapter.Run
+	case "slack":
+		slackAdapter, createErr := slack.New(slack.Options{
+			Token: os.Getenv("SLACK_BOT_TOKEN"), SigningSecret: os.Getenv("SLACK_SIGNING_SECRET"),
+			BotUserID: os.Getenv("SLACK_BOT_USER_ID"),
+		})
+		if createErr != nil {
+			return reportCLIError(streams.Stderr, createErr)
+		}
+		adapter, ingress = slackAdapter, webhookIngress(platform, slackAdapter.Webhook)
+	case "teams":
+		teamsAdapter, createErr := teams.New(teams.Options{
+			AppID: os.Getenv("TEAMS_APP_ID"), AppPassword: os.Getenv("TEAMS_APP_PASSWORD"),
+			TenantID: os.Getenv("TEAMS_TENANT_ID"),
+		})
+		if createErr != nil {
+			return reportCLIError(streams.Stderr, createErr)
+		}
+		adapter, ingress = teamsAdapter, webhookIngress(platform, teamsAdapter.Webhook)
+	case "whatsapp":
+		whatsappAdapter, createErr := whatsapp.New(whatsapp.Options{
+			Token: os.Getenv("WHATSAPP_TOKEN"), PhoneNumberID: os.Getenv("WHATSAPP_PHONE_NUMBER_ID"),
+			AppSecret: os.Getenv("WHATSAPP_APP_SECRET"), VerifyToken: os.Getenv("WHATSAPP_VERIFY_TOKEN"),
+		})
+		if createErr != nil {
+			return reportCLIError(streams.Stderr, createErr)
+		}
+		adapter, ingress = whatsappAdapter, webhookIngress(platform, whatsappAdapter.Webhook)
+	case "messenger":
+		messengerAdapter, createErr := messenger.New(messenger.Options{
+			Token: os.Getenv("MESSENGER_TOKEN"), PageID: os.Getenv("MESSENGER_PAGE_ID"),
+			AppSecret: os.Getenv("MESSENGER_APP_SECRET"), VerifyToken: os.Getenv("MESSENGER_VERIFY_TOKEN"),
+		})
+		if createErr != nil {
+			return reportCLIError(streams.Stderr, createErr)
+		}
+		adapter, ingress = messengerAdapter, webhookIngress(platform, messengerAdapter.Webhook)
+	case "googlechat":
+		credentials, readErr := os.ReadFile(os.Getenv("GOOGLE_CHAT_CREDENTIALS_FILE"))
+		if readErr != nil {
+			return reportCLIError(streams.Stderr, fmt.Errorf("read GOOGLE_CHAT_CREDENTIALS_FILE: %w", readErr))
+		}
+		googleAdapter, createErr := googlechat.New(googlechat.Options{
+			ProjectNumber: os.Getenv("GOOGLE_CHAT_PROJECT_NUMBER"), CredentialsJSON: credentials,
+		})
+		if createErr != nil {
+			return reportCLIError(streams.Stderr, createErr)
+		}
+		adapter, ingress = googleAdapter, webhookIngress(platform, googleAdapter.Webhook)
+	}
+	return runLocalChat(ctx, platform, dataDir, adapter, ingress, authorize, streams)
+}
+
+func webhookIngress(
+	platform string,
+	webhook func(func(chat.Message) error) http.Handler,
+) func(context.Context, func(chat.Message) error) error {
+	return func(ctx context.Context, publish func(chat.Message) error) error {
+		listen := strings.TrimSpace(os.Getenv("PIGO_CHAT_LISTEN"))
+		if listen == "" {
+			listen = "127.0.0.1:8080"
+		}
+		webhookPath := strings.TrimSpace(os.Getenv("PIGO_CHAT_PATH"))
+		if webhookPath == "" {
+			webhookPath = "/" + platform
+		}
+		if !strings.HasPrefix(webhookPath, "/") || strings.ContainsAny(webhookPath, "{} \t\r\n") {
+			return errors.New("PIGO_CHAT_PATH must be a literal path starting with /")
+		}
+		mux := http.NewServeMux()
+		mux.Handle(webhookPath, webhook(publish))
+		// ponytail: one stdlib webhook server per process; terminate TLS and
+		// multiplex public routes in the deployment's reverse proxy.
+		server := &http.Server{Addr: listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+		result := make(chan error, 1)
+		go func() { result <- server.ListenAndServe() }()
+		select {
+		case err := <-result:
+			if errors.Is(err, http.ErrServerClosed) {
+				return nil
+			}
+			return err
+		case <-ctx.Done():
+			shutdownContext, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := server.Shutdown(shutdownContext); err != nil {
+				return err
+			}
+			return ctx.Err()
+		}
+	}
+}
+
+func runLocalChat(
+	ctx context.Context,
+	platform, dataDir string,
+	adapter chat.Adapter,
+	ingress func(context.Context, func(chat.Message) error) error,
+	authorize func(chat.Message) error,
+	streams cliStreams,
+) int {
+	provider, err := chat.NewLocalProvider(filepath.Join(dataDir, "sessions"))
+	if err != nil {
+		return reportCLIError(streams.Stderr, err)
+	}
+	processor, err := chat.New(chat.Options{
+		Sessions: provider, Adapters: []chat.Adapter{adapter}, Authorize: authorize,
+	})
+	if err != nil {
+		return reportCLIError(streams.Stderr, err)
+	}
+	local, err := chat.NewLocal(processor, filepath.Join(dataDir, "spool.jsonl"))
+	if err != nil {
+		return reportCLIError(streams.Stderr, err)
+	}
+
+	pollContext, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	_, _ = fmt.Fprintf(streams.Stderr, "%s gateway running; press Ctrl-C to stop\n", platform)
+	ingressErr := ingress(pollContext, local.Publish)
+	shutdownContext, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	closeErr := errors.Join(local.Close(shutdownContext), processor.Close(shutdownContext))
+	if ingressErr != nil && !errors.Is(ingressErr, context.Canceled) {
+		return reportCLIError(streams.Stderr, ingressErr)
+	}
+	if closeErr != nil {
+		return reportCLIError(streams.Stderr, closeErr)
+	}
+	return 0
+}
+
+func chatAuthorizer(allowed string) (func(chat.Message) error, error) {
+	ids := map[string]struct{}{}
+	for _, id := range strings.Split(allowed, ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			ids[id] = struct{}{}
+		}
+	}
+	if len(ids) == 0 {
+		return nil, errors.New("PIGO_CHAT_ALLOWED_SENDERS is required")
+	}
+	return func(message chat.Message) error {
+		if _, ok := ids[message.SenderID]; ok {
+			return nil
+		}
+		return fmt.Errorf("sender %s is not in PIGO_CHAT_ALLOWED_SENDERS", message.SenderID)
+	}, nil
+}
+
+const chatHelpText = `Usage: pigo chat <platform>
+
+Platforms: telegram, discord, slack, teams, whatsapp, messenger, googlechat
+
+Common environment:
+  PIGO_CHAT_ALLOWED_SENDERS Comma-separated platform user IDs (required)
+  PIGO_CHAT_DATA_DIR        Session and spool directory (default ~/.pi/agent/chat/<platform>)
+  PIGO_CHAT_LISTEN          Webhook listen address (default 127.0.0.1:8080)
+  PIGO_CHAT_PATH            Webhook path (default /<platform>)
+
+Platform credentials:
+  TELEGRAM_BOT_TOKEN        Telegram bot token
+  DISCORD_BOT_TOKEN         Discord bot token
+  SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, SLACK_BOT_USER_ID
+  TEAMS_APP_ID, TEAMS_APP_PASSWORD, TEAMS_TENANT_ID
+  WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN
+  MESSENGER_TOKEN, MESSENGER_PAGE_ID, MESSENGER_APP_SECRET, MESSENGER_VERIFY_TOKEN
+  GOOGLE_CHAT_PROJECT_NUMBER, GOOGLE_CHAT_CREDENTIALS_FILE
+`
+
 const helpText = `pigo - AI coding assistant
 
 Usage: pigo [options] [@files...] [messages...]
 
        pigo login <provider>
        pigo logout [provider]
+       pigo chat <platform>
 
 OAuth providers: anthropic, openai-codex, github-copilot, xai
 
 Commands:
+  pigo chat <platform>         Run a chat gateway
   pigo install <source> [-l]   Install a package source and save it to settings
   pigo remove <source> [-l]    Remove a package source from settings
   pigo uninstall <source> [-l] Alias for remove
   pigo update [target]         Show pigo update instructions or update packages/models
   pigo list                    List installed packages from settings
   pigo config [-l]             Open TUI to enable/disable package resources (Tab switches scope)
-  pigo <command> --help        Show help for install/remove/uninstall/update/list/config
+  pigo <command> --help        Show help for chat/install/remove/uninstall/update/list/config
 
   --provider <name>              Provider name
   --model <id>                   Model ID
