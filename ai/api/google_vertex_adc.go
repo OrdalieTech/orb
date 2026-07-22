@@ -174,7 +174,7 @@ func (adc *googleVertexADC) loadSource(ctx context.Context) error {
 	adc.metadataBase = strings.TrimRight(base, "/") + "/computeMetadata/v1"
 	available, err := adc.metadataAvailable(ctx)
 	if err != nil {
-		return fmt.Errorf("could not find Google application default credentials: %w", err)
+		return err
 	}
 	if !available {
 		return errors.New(googleVertexNoADCMessage) //nolint:staticcheck // Exact upstream text.
@@ -201,7 +201,7 @@ func (adc *googleVertexADC) metadataAvailable(ctx context.Context) (bool, error)
 		return false, nil
 	case "", "ping-only":
 	default:
-		return false, fmt.Errorf("unknown METADATA_SERVER_DETECTION value %q; want assume-present, none, bios-only, ping-only, or unset", detection)
+		return false, fmt.Errorf("Unknown `METADATA_SERVER_DETECTION` env variable. Got `%s`, but it should be `assume-present`, `none`, `bios-only`, `ping-only`, or unset", detection) //nolint:staticcheck // Exact upstream RangeError message.
 	}
 	// gcp-metadata isAvailable swallows every probe failure into "not
 	// available", which surfaces the canonical no-credentials message. (OT-M8)

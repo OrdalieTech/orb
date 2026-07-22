@@ -387,7 +387,11 @@ func TestGoogleVertexADCMetadataDetectionModes(t *testing.T) {
 		{name: "none", detection: "none", wantErr: googleVertexNoADCMessage},
 		{name: "bios only on serverless", detection: "bios-only", env: ai.ProviderEnv{"K_SERVICE": "vertex-service"}},
 		{name: "default on serverless", env: ai.ProviderEnv{"K_SERVICE": "vertex-service"}},
-		{name: "unknown", detection: "surprise", wantErr: "unknown METADATA_SERVER_DETECTION value"},
+		{
+			name:      "unknown",
+			detection: "  SuRpRiSe  ",
+			wantErr:   "Unknown `METADATA_SERVER_DETECTION` env variable. Got `surprise`, but it should be `assume-present`, `none`, `bios-only`, `ping-only`, or unset",
+		},
 		// google-auth-library 10.6.2 computes checkIsGCE as
 		// `getGCPResidency() || (await gcpMetadata.isAvailable())`, so GCP
 		// residency short-circuits before METADATA_SERVER_DETECTION is
@@ -420,8 +424,8 @@ func TestGoogleVertexADCMetadataDetectionModes(t *testing.T) {
 				if !adc.sourceLoaded {
 					t.Fatal("metadata source was not loaded")
 				}
-			} else if err == nil || !strings.Contains(err.Error(), test.wantErr) {
-				t.Fatalf("error = %v, want substring %q", err, test.wantErr)
+			} else if err == nil || err.Error() != test.wantErr {
+				t.Fatalf("error = %v, want %q", err, test.wantErr)
 			}
 			if got := requests.Load(); got != 0 {
 				t.Fatalf("metadata probe requests = %d, want 0", got)

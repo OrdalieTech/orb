@@ -18,6 +18,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 - OpenAI and Azure Responses requests now match the pinned SDK's ten-minute header timeout and
   `X-Stainless-Timeout` wire format, while Codex error fallbacks stringify parsed events and drop
   non-string event types like upstream.
+- Bedrock payload hooks preserve a deleted `inferenceConfig`, Vertex ADC reports unknown metadata
+  detection modes verbatim, and Anthropic's subscription warning survives OAuth refresh failures.
 
 ## [0.1.1] - 2026-07-21
 
