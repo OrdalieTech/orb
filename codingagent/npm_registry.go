@@ -3,6 +3,7 @@ package codingagent
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"crypto/sha1" //nolint:gosec // npm legacy shasum verification
 	"crypto/sha512"
 	"encoding/base64"
@@ -147,9 +148,13 @@ func (manager *PackageManager) httpClient() *http.Client {
 }
 
 func (manager *PackageManager) fetchPackument(name string) (*npmPackument, error) {
+	return manager.fetchPackumentContext(context.Background(), name)
+}
+
+func (manager *PackageManager) fetchPackumentContext(ctx context.Context, name string) (*npmPackument, error) {
 	registry := manager.npmRegistry()
 	endpoint := registry.baseURL + "/" + url.PathEscape(name)
-	request, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +211,11 @@ func selectNpmVersion(packument *npmPackument, source *npmSource) (npmVersionInf
 }
 
 func (manager *PackageManager) getLatestNpmVersion(source *npmSource) (string, error) {
-	packument, err := manager.fetchPackument(source.name)
+	return manager.getLatestNpmVersionContext(context.Background(), source)
+}
+
+func (manager *PackageManager) getLatestNpmVersionContext(ctx context.Context, source *npmSource) (string, error) {
+	packument, err := manager.fetchPackumentContext(ctx, source.name)
 	if err != nil {
 		return "", err
 	}

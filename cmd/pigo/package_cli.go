@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/OrdalieTech/pigo/codingagent"
 	"github.com/OrdalieTech/pigo/codingagent/config"
@@ -545,18 +546,10 @@ func handlePackageCommand(ctx context.Context, argv []string, streams cliStreams
 		return true, 0
 	}
 	if options.command == "update" && options.updateTarget != nil && options.updateTarget.kind == "self" {
-		if options.showPackagesSkippedNote {
-			offline := options.offline || os.Getenv("PI_OFFLINE") != ""
-			latestVersion := ""
-			var checkErr error
-			if !offline && !isDevelopmentVersion(version) {
-				latestVersion, checkErr = fetchLatestReleaseVersion(ctx, version, http.DefaultClient, latestReleaseURL, selfUpdateCheckTimeout)
-			}
-			printSelfUpdateStatus(streams.Stdout, version, latestVersion, checkErr, offline)
-		} else {
+		if !options.showPackagesSkippedNote {
 			printSelfUpdateInstructions(streams.Stdout)
+			return true, 0
 		}
-		return true, 0
 	}
 
 	cwd, agentDir, err := packageCommandDirs()
@@ -649,19 +642,33 @@ func handlePackageCommand(ctx context.Context, argv []string, streams cliStreams
 		if target == nil {
 			target = &updateTarget{kind: "self"}
 		}
+		if target.kind == "self" && options.showPackagesSkippedNote {
+			offline := packageUpdateOffline(options.offline)
+			latestVersion := ""
+			var selfCheckErr error
+			if !offline && !isDevelopmentVersion(version) {
+				latestVersion, selfCheckErr = fetchLatestReleaseVersion(ctx, version, http.DefaultClient, latestReleaseURL, selfUpdateCheckTimeout)
+			}
+			checkCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			if offline {
+				cancel()
+			}
+			packageCheck, packageCheckErr := packageManager.CheckForPackageUpdates(checkCtx)
+			cancel()
+			printSelfUpdateStatus(streams.Stdout, version, latestVersion, selfCheckErr, offline)
+			printPackageUpdateStatus(streams.Stdout, packageCheck, offline || packageCheckErr != nil)
+			return true, 0
+		}
 		if target.kind == "all" || target.kind == "extensions" {
 			updateSource := ""
 			if target.kind == "extensions" {
 				updateSource = target.source
 			}
-			if err := packageManager.Update(updateSource); err != nil {
+			updates, err := packageManager.UpdateWithResults(updateSource)
+			if err != nil {
 				return true, reportCLIError(streams.Stderr, err)
 			}
-			if updateSource != "" {
-				_, _ = fmt.Fprintln(streams.Stdout, "Updated "+updateSource)
-			} else {
-				_, _ = fmt.Fprintln(streams.Stdout, "Updated packages")
-			}
+			printUpdatedPackages(streams.Stdout, updates)
 		}
 		if target.kind == "all" || target.kind == "self" {
 			printSelfUpdateInstructions(streams.Stdout)
@@ -696,10 +703,64 @@ func printSelfUpdateStatus(writer io.Writer, currentVersion, latestVersion strin
 		return
 	default:
 		_, _ = fmt.Fprintf(writer, "pigo %s — already the latest version.\n", current)
-		_, _ = fmt.Fprintln(writer, "Installed packages are skipped. Run pigo update --extensions to update them.")
 		return
 	}
 	printSelfUpdateInstructions(writer)
+}
+
+func packageUpdateOffline(explicit bool) bool {
+	if explicit {
+		return true
+	}
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("PI_OFFLINE")))
+	return value == "1" || value == "true" || value == "yes"
+}
+
+func printPackageUpdateStatus(writer io.Writer, check codingagent.PackageUpdateCheck, skipped bool) {
+	if check.Installed == 0 {
+		return
+	}
+	if skipped {
+		_, _ = fmt.Fprintf(writer, "Packages: %d installed (update check skipped) — run pigo update --extensions\n", check.Installed)
+		return
+	}
+	if len(check.Updates) == 0 {
+		_, _ = fmt.Fprintf(writer, "Packages: all %d up to date.\n", check.Installed)
+		return
+	}
+	formatted := make([]string, len(check.Updates))
+	for index, update := range check.Updates {
+		formatted[index] = formatPackageUpdate(update)
+	}
+	_, _ = fmt.Fprintf(writer, "Package updates available: %s — run pigo update --extensions\n", strings.Join(formatted, ", "))
+}
+
+func printUpdatedPackages(writer io.Writer, updates []codingagent.PackageVersionUpdate) {
+	if len(updates) == 0 {
+		_, _ = fmt.Fprintln(writer, "All packages up to date.")
+		return
+	}
+	for _, update := range updates {
+		_, _ = fmt.Fprintln(writer, formatPackageUpdate(update))
+	}
+}
+
+func formatPackageUpdate(update codingagent.PackageVersionUpdate) string {
+	return fmt.Sprintf("%s %s -> %s", update.DisplayName, displayPackageRevision(update.Type, update.CurrentVersion), displayPackageRevision(update.Type, update.LatestVersion))
+}
+
+func displayPackageRevision(packageType, value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "(not installed)"
+	}
+	if packageType == "npm" {
+		return displayVersion(value)
+	}
+	if len(value) > 12 {
+		return value[:12]
+	}
+	return value
 }
 
 func displayVersion(value string) string {

@@ -6,6 +6,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+- `pigo update` now reports installed package versions dynamically and `--extensions` names every package that changed.
+
 ## [0.3.1] - 2026-07-22
 
 ### Changed
