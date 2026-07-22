@@ -157,6 +157,15 @@ func mustWrite(t *testing.T, path, content string) {
 	}
 }
 
+func canonicalTestPath(t *testing.T, path string) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resolved
+}
+
 func fixtureSource(t *testing.T, name string) string {
 	t.Helper()
 	content, err := conformance.ReadFixture("F11-jsbridge", name)

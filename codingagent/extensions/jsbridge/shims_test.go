@@ -439,6 +439,7 @@ func TestCommonNodeFSAndExecFileSyncSurface(t *testing.T) {
 	if err := os.Symlink(sourceFile, link); err != nil {
 		t.Fatal(err)
 	}
+	canonicalSourceFile := canonicalTestPath(t, sourceFile)
 	copyDir := filepath.Join(cwd, "copy")
 	result := loadAndRunExtension(t, cwd, `
 import {
@@ -456,10 +457,10 @@ export default async function(pi) {
   const copied = "`+filepath.Join(copyDir, "value.txt")+`";
   chmodSync(copied, 0o600);
   const temp = mkdtempSync("`+filepath.Join(cwd, "matrix-")+`");
-  const syncOK = realpathSync("`+link+`") === "`+sourceFile+`" &&
+  const syncOK = realpathSync("`+link+`") === "`+canonicalSourceFile+`" &&
     readlinkSync("`+link+`") === "`+sourceFile+`" && readFileSync(copied, "utf8") === "value";
   const asyncOK = (await lstat("`+link+`")).isSymbolicLink() &&
-    await realpath("`+link+`") === "`+sourceFile+`" && await readlink("`+link+`") === "`+sourceFile+`";
+    await realpath("`+link+`") === "`+canonicalSourceFile+`" && await readlink("`+link+`") === "`+sourceFile+`";
   const renamed = copied + ".renamed";
   await rename(copied, renamed);
   await chmod(renamed, 0o644);

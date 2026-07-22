@@ -32,6 +32,7 @@ func TestEcosystemCreateRequireResolveUsesCallingModule(t *testing.T) {
 	marker := filepath.Join(cwd, "marker.js")
 	mustWrite(t, packageJSON, `{"name":"@fixture/tool","version":"1.0.0"}`)
 	mustWrite(t, marker, `module.exports = true;`)
+	canonicalCWD := canonicalTestPath(t, cwd)
 	result := loadAndRunExtension(t, cwd, `
 import { createRequire } from "node:module";
 export default function(pi) {
@@ -48,7 +49,7 @@ export default function(pi) {
   });
 }
 `)
-	assertRegisteredDescription(t, result, "result", packageJSON+"|"+marker+"|tty|node:zlib|true")
+	assertRegisteredDescription(t, result, "result", filepath.Join(canonicalCWD, "node_modules", "@fixture", "tool", "package.json")+"|"+filepath.Join(canonicalCWD, "marker.js")+"|tty|node:zlib|true")
 }
 
 func TestEcosystemPackageDirAndUtilDeprecate(t *testing.T) {
