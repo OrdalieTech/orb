@@ -2560,11 +2560,7 @@ func (mode *InteractiveMode) maybeWarnAboutAnthropicSubscriptionAuth(ctx context
 		return
 	}
 	key, err := mode.session.ProviderAPIKey(ctx, model.Provider)
-	if err != nil {
-		// Auth lookup failures are ignored for warning-only checks.
-		return
-	}
-	if key != "" {
+	if err == nil && key != "" {
 		if !isAnthropicSubscriptionAuthKey(key) {
 			return
 		}

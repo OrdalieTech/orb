@@ -294,6 +294,23 @@ func TestLOGM4AnthropicWarningUsesEffectiveRuntimeCredential(t *testing.T) {
 	}
 }
 
+// LOG-M4: upstream checkAuth reads stored OAuth without refreshing it before
+// resolving a request key. A failed refresh therefore cannot hide the warning.
+func TestLOGM4AnthropicWarningSurvivesOAuthRefreshFailure(t *testing.T) {
+	host := &authFlowHost{options: InteractiveAuthOptions{Logout: []InteractiveAuthProvider{{
+		ID: "anthropic", Name: "Anthropic", AuthType: aiauth.AuthTypeOAuth,
+	}}}}
+	mode := newAnthropicWarningTestModeWithResolver(t, host, func(context.Context, ai.ProviderID) (*agent.RequestAuth, error) {
+		return nil, errors.New("refresh failed")
+	})
+
+	mode.maybeWarnAboutAnthropicSubscriptionAuth(context.Background(), mode.session.State().Model)
+
+	if !anthropicWarningShown(mode) {
+		t.Fatal("stored OAuth warning was hidden by a refresh failure")
+	}
+}
+
 // LOG-M4: an exact /model change immediately checks the newly active model,
 // matching handleModelCommand's upstream warning call site.
 func TestLOGM4DirectModelChangeWarnsForAnthropicSubscriptionAuth(t *testing.T) {

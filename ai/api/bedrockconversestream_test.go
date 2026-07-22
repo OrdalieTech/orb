@@ -390,6 +390,43 @@ func TestBedrockPayloadHookPreservesUnmodeledFields_OTM7(t *testing.T) {
 	}
 }
 
+func TestBedrockPayloadHookPreservesInferenceConfigDeletion_OTM7(t *testing.T) {
+	model := bedrockTestModel("anthropic.claude-sonnet-4-5", "Claude")
+	payload, err := buildBedrockPayload(model, ai.Context{
+		Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hello")}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := &ai.StreamOptions{OnPayload: func(_ context.Context, payload any, _ *ai.Model) (any, bool, error) {
+		encoded, err := ai.Marshal(payload)
+		if err != nil {
+			return nil, false, err
+		}
+		var replacement map[string]any
+		if err := json.Unmarshal(encoded, &replacement); err != nil {
+			return nil, false, err
+		}
+		delete(replacement, "inferenceConfig")
+		return replacement, true, nil
+	}}
+	hooked, err := applyPayloadHook(context.Background(), model, options, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coerced, err := coerceBedrockPayload(hooked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := bedrockSDKInput(coerced)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.InferenceConfig != nil {
+		t.Fatalf("deleted inferenceConfig was recreated at the SDK boundary: %#v", input.InferenceConfig)
+	}
+}
+
 // TestBedrockTypeMismatchedDeltaDropped_OTm5 pins upstream
 // handleContentBlockDelta (bedrock-converse-stream.ts:471-518): a delta whose
 // block index resolves to a block of a different type is dropped; a new block

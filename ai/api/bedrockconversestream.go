@@ -99,6 +99,9 @@ type BedrockConverseStreamPayload struct {
 	// (guardrailConfig, performanceConfig, ...) so they reach the SDK input,
 	// mirroring upstream's verbatim ConverseStreamCommand pass-through. (OT-M7)
 	Extra map[string]json.RawMessage `json:"-"`
+
+	// Distinguishes a hook-deleted inferenceConfig from a present empty object.
+	inferenceConfigOmitted bool
 }
 
 type BedrockInferenceConfig struct {
@@ -394,7 +397,11 @@ func coerceBedrockPayload(value any) (*BedrockConverseStreamPayload, error) {
 	if err := json.Unmarshal(encoded, &payload); err != nil {
 		return nil, fmt.Errorf("decode Bedrock payload hook result: %w", err)
 	}
-	payload.Extra = bedrockPayloadExtras(encoded)
+	var members map[string]json.RawMessage
+	_ = json.Unmarshal(encoded, &members)
+	rawInferenceConfig, hasInferenceConfig := members["inferenceConfig"]
+	payload.inferenceConfigOmitted = !hasInferenceConfig || strings.TrimSpace(string(rawInferenceConfig)) == "null"
+	payload.Extra = bedrockPayloadExtras(members)
 	return &payload, nil
 }
 
@@ -405,11 +412,7 @@ var bedrockKnownPayloadKeys = map[string]bool{
 
 // bedrockPayloadExtras collects hook-injected top-level members that the typed
 // payload does not model, so they are not silently dropped. (OT-M7)
-func bedrockPayloadExtras(encoded []byte) map[string]json.RawMessage {
-	var members map[string]json.RawMessage
-	if json.Unmarshal(encoded, &members) != nil {
-		return nil
-	}
+func bedrockPayloadExtras(members map[string]json.RawMessage) map[string]json.RawMessage {
 	extras := make(map[string]json.RawMessage)
 	for name, raw := range members {
 		if !bedrockKnownPayloadKeys[name] {
@@ -1532,22 +1535,24 @@ func bedrockSDKInput(payload *BedrockConverseStreamPayload) (*bedrockruntime.Con
 		ModelId:         aws.String(payload.ModelID),
 		RequestMetadata: payload.RequestMetadata,
 	}
-	input.InferenceConfig = &bedrocktypes.InferenceConfiguration{}
-	if payload.InferenceConfig.MaxTokens != nil {
-		value := *payload.InferenceConfig.MaxTokens
-		if math.IsNaN(value) || math.IsInf(value, 0) || math.Trunc(value) != value || value < math.MinInt32 || value > math.MaxInt32 {
-			return nil, fmt.Errorf("bedrock maxTokens %g is not an SDK int32 value", value)
+	if !payload.inferenceConfigOmitted {
+		input.InferenceConfig = &bedrocktypes.InferenceConfiguration{}
+		if payload.InferenceConfig.MaxTokens != nil {
+			value := *payload.InferenceConfig.MaxTokens
+			if math.IsNaN(value) || math.IsInf(value, 0) || math.Trunc(value) != value || value < math.MinInt32 || value > math.MaxInt32 {
+				return nil, fmt.Errorf("bedrock maxTokens %g is not an SDK int32 value", value)
+			}
+			input.InferenceConfig.MaxTokens = aws.Int32(int32(value))
 		}
-		input.InferenceConfig.MaxTokens = aws.Int32(int32(value))
-	}
-	if payload.InferenceConfig.Temperature != nil {
-		input.InferenceConfig.Temperature = aws.Float32(float32(*payload.InferenceConfig.Temperature))
-	}
-	if payload.InferenceConfig.TopP != nil {
-		input.InferenceConfig.TopP = aws.Float32(float32(*payload.InferenceConfig.TopP))
-	}
-	if payload.InferenceConfig.StopSequences != nil {
-		input.InferenceConfig.StopSequences = payload.InferenceConfig.StopSequences
+		if payload.InferenceConfig.Temperature != nil {
+			input.InferenceConfig.Temperature = aws.Float32(float32(*payload.InferenceConfig.Temperature))
+		}
+		if payload.InferenceConfig.TopP != nil {
+			input.InferenceConfig.TopP = aws.Float32(float32(*payload.InferenceConfig.TopP))
+		}
+		if payload.InferenceConfig.StopSequences != nil {
+			input.InferenceConfig.StopSequences = payload.InferenceConfig.StopSequences
+		}
 	}
 	if payload.AdditionalModelRequestFields != nil {
 		input.AdditionalModelRequestFields = bedrockdocument.NewLazyDocument(payload.AdditionalModelRequestFields)
