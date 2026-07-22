@@ -6,6 +6,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Added
+
+- `pigo chat <platform>` runs every built-in chat adapter through one durable CLI gateway system.
+
 ### Changed
 
 - Interactive mode now keeps the status, extension widgets, input, and footer fixed at the bottom

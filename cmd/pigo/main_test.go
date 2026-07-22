@@ -21,6 +21,7 @@ import (
 	"github.com/OrdalieTech/pigo/ai"
 	aiauth "github.com/OrdalieTech/pigo/ai/auth"
 	"github.com/OrdalieTech/pigo/ai/providers/faux"
+	"github.com/OrdalieTech/pigo/chat"
 	"github.com/OrdalieTech/pigo/codingagent"
 	"github.com/OrdalieTech/pigo/codingagent/config"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
@@ -491,6 +492,59 @@ func TestRunCLIDispatchesAuthSubcommandsBeforeSessionSetup(t *testing.T) {
 	})
 	if code != 7 || !called {
 		t.Fatalf("auth dispatch = code %d, called %t", code, called)
+	}
+}
+
+func TestRunCLIChatCommand(t *testing.T) {
+	t.Setenv("TELEGRAM_BOT_TOKEN", "")
+	t.Setenv("DISCORD_BOT_TOKEN", "")
+	t.Setenv("PIGO_CHAT_ALLOWED_SENDERS", "")
+
+	var stdout, stderr bytes.Buffer
+	code := runCLIWithDependencies(context.Background(), []string{"chat", "--help"}, cliStreams{
+		Stdout: &stdout, Stderr: &stderr,
+	}, cliDependencies{})
+	if code != 0 || stdout.String() != chatHelpText || stderr.Len() != 0 {
+		t.Fatalf("help: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+
+	stdout.Reset()
+	t.Setenv("PIGO_CHAT_ALLOWED_SENDERS", "123")
+	code = runCLIWithDependencies(context.Background(), []string{"chat", "telegram"}, cliStreams{
+		Stdout: &stdout, Stderr: &stderr,
+	}, cliDependencies{})
+	if code != 1 || stderr.String() != "Error: TELEGRAM_BOT_TOKEN is required\n" {
+		t.Fatalf("missing token: code=%d stderr=%q", code, stderr.String())
+	}
+
+	stderr.Reset()
+	code = runCLIWithDependencies(context.Background(), []string{"chat", "discord"}, cliStreams{
+		Stdout: &stdout, Stderr: &stderr,
+	}, cliDependencies{})
+	if code != 1 || stderr.String() != "Error: DISCORD_BOT_TOKEN is required\n" {
+		t.Fatalf("missing Discord token: code=%d stderr=%q", code, stderr.String())
+	}
+
+	stderr.Reset()
+	code = runCLIWithDependencies(context.Background(), []string{"chat", "unknown"}, cliStreams{
+		Stdout: &stdout, Stderr: &stderr,
+	}, cliDependencies{})
+	if code != 1 || stderr.String() != "Error: unsupported chat platform \"unknown\"\n" {
+		t.Fatalf("unknown platform: code=%d stderr=%q", code, stderr.String())
+	}
+
+	authorize, err := chatAuthorizer("123, 456")
+	if err != nil || authorize(chat.Message{SenderID: "456"}) != nil {
+		t.Fatalf("allowed sender failed: %v", err)
+	}
+	if err := authorize(chat.Message{SenderID: "789"}); err == nil {
+		t.Fatal("unexpectedly allowed sender 789")
+	}
+
+	t.Setenv("PIGO_CHAT_PATH", "missing-slash")
+	ingress := webhookIngress("fixture", func(func(chat.Message) error) http.Handler { return http.NotFoundHandler() })
+	if err := ingress(context.Background(), func(chat.Message) error { return nil }); err == nil {
+		t.Fatal("webhook ingress accepted an invalid path")
 	}
 }
 

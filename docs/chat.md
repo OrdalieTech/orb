@@ -9,13 +9,13 @@ Dependency direction is strictly `chat → codingagent`; nothing in the SDK impo
 
 ## Quick start — local Telegram bot
 
-`chat/examples/localbot` is a complete runnable gateway: long-poll ingress, the durable local
-spool, and per-conversation sessions under a data directory.
+`pigo chat telegram` runs the complete local gateway: long-poll ingress, the durable local spool,
+and per-conversation sessions under `~/.pi/agent/chat/telegram` by default.
 
 ```bash
 TELEGRAM_BOT_TOKEN=<token from @BotFather> \
-TELEGRAM_ALLOWED_SENDERS=<your telegram user id> \
-go run ./chat/examples/localbot
+PIGO_CHAT_ALLOWED_SENDERS=<your telegram user id> \
+pigo chat telegram
 ```
 
 The wiring, in full:
@@ -32,8 +32,8 @@ local, err := chat.NewLocal(processor, filepath.Join(dataDir, "spool.jsonl"))
 err = adapter.Poll(ctx, local.Publish)
 ```
 
-Without `TELEGRAM_ALLOWED_SENDERS`, every Telegram user who can reach the bot may drive your
-agent session and spend your tokens. Set the allowlist in production.
+`PIGO_CHAT_ALLOWED_SENDERS` is required; this CLI path never exposes an allow-all bot.
+`chat/examples/localbot` remains the embeddable example for custom authorization.
 
 ## Processor
 
