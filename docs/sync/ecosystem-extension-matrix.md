@@ -1,15 +1,19 @@
-# Ecosystem extension compatibility matrix — 2026-07-22
+# Ecosystem extension compatibility matrix — 2026-07-22 host-tier run
 
-Pigo has exact load-and-registration parity for 24 of the 44 most-downloaded valid Pi extension
-packages in this snapshot: 20 register the same observable commands and tools as Pi, and four are
-stable load-only or event-driven packages. That is 54.5% by package count and 60.4% when weighted by
-the snapshot's monthly npm downloads.
+The host-only Pigo runtime loads 43 of the 44 most-downloaded valid Pi extension packages in this
+snapshot. Thirty-five have exact load-and-registration parity and four event-driven packages have
+exact load-only parity, for 39/44 exact-compatible packages (88.6% by package count and 96.3% when
+weighted by monthly downloads). Four more packages load stably with registration differences, and
+one still fails during load.
 
-Load parity is not workflow parity. A separate line-grounded audit classifies 13 packages as likely
-compatible, six as useful but partial, five as loading successfully while their defining feature is
-blocked, and 20 as blocked during load. Only one real package workflow and seven read-only command
-handlers were safe enough to execute in the offline comparison, so `likely_compatible` remains a
-testable hypothesis rather than an end-to-end guarantee.
+All 20 packages that had load-and-registration parity through the embedded bridge retain exact
+parity. Of the 20 packages that the bridge could not load, 19 now load through local Node: 15 reach
+exact registration parity and four have registration differences. The four prior load-only packages
+remain exact load-only packages.
+
+Load parity is not workflow parity. The line-grounded workflow audit and offline command smokes below
+were produced for the embedded-bridge run and were not rerun in this cutover. Their evidence remains
+useful, but their old `load blocked` labels describe the deleted bridge rather than the host tier.
 
 ## What was tested
 
@@ -21,12 +25,20 @@ extension. Exact top-level versions and integrity hashes are in
 [`conformance/extensions/corpus.json`](../../conformance/extensions/corpus.json), and the committed
 lock pins the full dependency graph.
 
-The load matrix compared upstream Pi 0.81.1 with `pigo 0.1.2 (upstream pi 0.81.1 @ 20be4b18)`
-under Node 24.18.0. Each runtime received one cold run, two warm-ups, and eleven measured samples in
+The host-tier load matrix compared upstream Pi 0.81.1 with
+`pigo 0.1.0-dev (upstream pi 0.81.1 @ 20be4b18)` under Node 24.18.0. JavaScript ran only through
+Pigo's out-of-process extension host; the embedded engine and its opt-in flag were absent. Each
+runtime received one cold run, two warm-ups, and eleven measured samples in
 alternating order with a 30-second timeout. Every successful status below means all attempts were
 stable. The observer subtracts each runtime's own baseline and compares active tools, full tool
 names/descriptions/parameter schemas/prompt guidelines, and command names/descriptions. It expands
 manifest directories itself, so this result does not test package-directory discovery semantics.
+
+The complete host-tier result is
+[`conformance/extensions/results/pi-0.81.1-pigo-host.json`](../../conformance/extensions/results/pi-0.81.1-pigo-host.json).
+Ranks 16, 26, 30, and 35 are exact load-only; ranks 22, 39, 41, and 43 load stably with registration
+differences; rank 40 is the sole load failure. The other 35 ranks have exact load-and-registration
+parity.
 
 The static workflow verdict comes from
 [`conformance/extensions/workflow-audit.json`](../../conformance/extensions/workflow-audit.json).
@@ -46,7 +58,11 @@ attempt starting model activity. Its network-namespace check found no external i
 smokes prove only their read-only handler output; they do not prove tools, renderers, providers,
 event hooks, external services, or model-driven workflows.
 
-## Complete 44-package matrix
+## Historical embedded-bridge workflow matrix
+
+The table below retains the previous run's per-package workflow audit and performance evidence. Its
+load-status column is the embedded-bridge baseline; the host-tier classifications above and in the
+new result artifact supersede it.
 
 The final column is `Pigo / Pi` for total process startup followed by observer-baseline-subtracted
 extension load. A value below `1×` favors Pigo. `—` means Pigo could not load the package, `n/r`
@@ -207,8 +223,10 @@ These hashes identify the exact inputs and raw outputs used for this report:
 | raw `matrix-final.json` | `c2b9226b83c6bea78817e64cea2563826e7daf6e145bbc4e6a6c6f5e493b554f` |
 | raw `smoke-final.json` | `fe5336aa077801dbaa574acd0dc29c10785d729b2cb00eb9677184f4c5c8c946` |
 | compact [`pi-0.81.1-pigo-v0.1.2.json`](../../conformance/extensions/results/pi-0.81.1-pigo-v0.1.2.json) | `db741d55c76c31f25384af923b99e34c49ead208be97bca1f482db626efcd9eb` |
+| host-tier [`pi-0.81.1-pigo-host.json`](../../conformance/extensions/results/pi-0.81.1-pigo-host.json) | `d9f1baa88d6cf875973d5842b4d2d8f286060c9ac105c3954ca75c540820ee4e` |
 | tested upstream Pi executable | `af302f231437eaf6f37691bce4b34234fcb626bcb5eb3910d4fc3f6519bf78ca` |
 | tested Pigo executable | `a616d8486ce6047976b7688d9b641b5ff51d9ef781351b6f8433a340faaa375e` |
+| tested host-tier Pigo executable | `f3a38dd794abdfc8993b56394a65c132ba8860a01f41b31a35512672736a4215` |
 
 The raw result files were generated at
 `/tmp/pigo-extension-matrix-v0811.954GWz/results/{matrix-final.json,smoke-final.json}`. The matrix
@@ -216,3 +234,6 @@ artifact is 2.5 MiB because it retains every attempt and canonical registration 
 artifact is 938,604 bytes because it retains every normalized event and workflow payload. The
 tracked compact artifact contains all verdicts, remediation, summary statistics, and provenance;
 the raw hashes preserve the complete attempt-level audit identity.
+
+The tracked host-tier artifact is the full 3,839,265-byte raw matrix, including every attempt and
+registration snapshot; it was copied directly from the isolated run without compaction.

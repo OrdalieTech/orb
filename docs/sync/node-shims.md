@@ -1,5 +1,8 @@
 # Node shim coverage — jsbridge
 
+> Historical pre-D31 record. The jsbridge and all shims described here were deleted on 2026-07-22;
+> JavaScript extensions now use the real Node/Bun host documented in `docs/extension-host-protocol.md`.
+
 Shims implemented in `codingagent/extensions/jsbridge/shims.go`, backed by Go host functions.
 Upstream extensions run in Sobek (pure-Go JS engine); these shims replace Node.js built-in modules.
 
