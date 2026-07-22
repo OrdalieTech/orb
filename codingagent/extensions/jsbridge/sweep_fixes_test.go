@@ -488,6 +488,45 @@ export default function(pi) {
 	assertRegisteredDescription(t, result, "result", "file://"+entry+"|"+entry+"|"+cwd+"|"+cwd)
 }
 
+func TestImportMetaValuesArePreservedPerModule(t *testing.T) {
+	cwd := t.TempDir()
+	entry := filepath.Join(cwd, "index.ts")
+	nested := filepath.Join(cwd, "src", "agents", "agents.ts")
+	agentsDir := filepath.Join(cwd, "agents")
+	for index := range 8 {
+		mustWrite(t, filepath.Join(agentsDir, fmt.Sprintf("agent-%d.md", index)), "agent")
+	}
+	mustWrite(t, nested, `
+import { readdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+const agents = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "agents");
+export const nestedMeta = [import.meta.url, import.meta.filename, import.meta.dirname, readdirSync(agents).length];
+`)
+	mustWrite(t, entry, `
+import { nestedMeta } from "./src/agents/agents";
+export default function(pi) {
+  pi.registerCommand("result", {
+    description: [import.meta.url, ...nestedMeta].join("|"),
+    handler: async () => {},
+  });
+}
+`)
+	loader := NewLoader(DiscoveryOptions{CWD: cwd, AgentDir: filepath.Join(cwd, "agent"), ExplicitPaths: []string{entry}})
+	t.Cleanup(loader.Close)
+	loaded := loader.Load(context.Background())
+	if len(loaded.Errors) != 0 {
+		t.Fatalf("load errors = %#v", loaded.Errors)
+	}
+	assertRegisteredDescription(t, loaded, "result", strings.Join([]string{
+		"file://" + entry,
+		"file://" + nested,
+		nested,
+		filepath.Dir(nested),
+		"8",
+	}, "|"))
+}
+
 func TestDynamicResourcesExampleDiscoversBundledFiles(t *testing.T) {
 	_, runner, extensionDir := loadUpstreamDirectoryExampleWithDir(t, "dynamic-resources")
 	resources := runner.EmitResourcesDiscover(context.Background(), extensionDir, extensions.ResourcesDiscoverStartup)

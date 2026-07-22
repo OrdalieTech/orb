@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -67,14 +66,13 @@ func (cache *buildCache) build(entry string) (artifact, error) {
 		Charset:        api.CharsetUTF8,
 		LegalComments:  api.LegalCommentsNone,
 		LogLevel:       api.LogLevelSilent,
-		Plugins:        []api.Plugin{packageImportsExtensionPlugin()},
-		// CommonJS output leaves import.meta empty; upstream runs under Node
-		// ESM where import.meta.url is the entry file URL. Extensions locate
-		// bundled resources through it (docs pattern), so define it per build.
+		Plugins:        []api.Plugin{importMetaPlugin(), packageImportsExtensionPlugin()},
+		// CommonJS output leaves import.meta empty; upstream runs each source
+		// as ESM, so preserve module-local metadata before bundling.
 		Define: map[string]string{
-			"import.meta.url":      strconv.Quote(entryFileURL(entry)),
-			"import.meta.filename": strconv.Quote(entry),
-			"import.meta.dirname":  strconv.Quote(filepath.Dir(entry)),
+			"import.meta.url":      importMetaBinding + ".url",
+			"import.meta.filename": importMetaBinding + ".filename",
+			"import.meta.dirname":  importMetaBinding + ".dirname",
 		},
 		External: []string{
 			"pi",
@@ -121,7 +119,7 @@ func metafileInputs(metafile, workingDir, entry string) ([]string, error) {
 	}
 	seen := map[string]struct{}{filepath.Clean(entry): {}}
 	for input := range decoded.Inputs {
-		if strings.HasPrefix(input, "<") {
+		if strings.HasPrefix(input, "<") || strings.HasPrefix(input, "pigo-import-meta:") {
 			continue
 		}
 		if !filepath.IsAbs(input) {
