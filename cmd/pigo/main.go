@@ -43,6 +43,7 @@ const (
 	upstreamCommit         = "20be4b18d4c57487f8993d2762bace129f0cf7c6"
 	latestReleaseURL       = "https://api.github.com/repos/OrdalieTech/pigo/releases/latest"
 	versionCheckTimeout    = 10 * time.Second
+	selfUpdateCheckTimeout = 3 * time.Second
 	versionResponseMaxSize = 64 << 10
 )
 
@@ -482,34 +483,48 @@ func newStartupVersionCheck(currentVersion string, client *http.Client, endpoint
 		if os.Getenv("PI_SKIP_VERSION_CHECK") != "" || os.Getenv("PI_OFFLINE") != "" {
 			return
 		}
-		requestContext, cancel := context.WithTimeout(ctx, timeout)
-		defer cancel()
-		request, err := http.NewRequestWithContext(requestContext, http.MethodGet, endpoint, nil)
-		if err != nil {
-			return
-		}
-		request.Header.Set("Accept", "application/vnd.github+json")
-		request.Header.Set("User-Agent", "pigo/"+currentVersion)
-		response, err := client.Do(request)
-		if err != nil {
-			return
-		}
-		defer func() { _ = response.Body.Close() }()
-		if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-			return
-		}
-		var release struct {
-			TagName string `json:"tag_name"`
-		}
-		if json.NewDecoder(io.LimitReader(response.Body, versionResponseMaxSize)).Decode(&release) != nil {
-			return
-		}
-		tag := strings.TrimSpace(release.TagName)
-		if tag == "" || !isNewerPackageVersion(tag, currentVersion) {
+		tag, err := fetchLatestReleaseVersion(ctx, currentVersion, client, endpoint, timeout)
+		if err != nil || !isNewerPackageVersion(tag, currentVersion) {
 			return
 		}
 		ui.Notify(fmt.Sprintf("pigo %s is available. Run: pigo update", tag), extensions.NotifyInfo)
 	}
+}
+
+func fetchLatestReleaseVersion(ctx context.Context, currentVersion string, client *http.Client, endpoint string, timeout time.Duration) (string, error) {
+	requestContext, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestContext, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", errors.New("invalid release endpoint")
+	}
+	request.Header.Set("Accept", "application/vnd.github+json")
+	request.Header.Set("User-Agent", "pigo/"+currentVersion)
+	response, err := client.Do(request)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(requestContext.Err(), context.DeadlineExceeded) {
+			return "", errors.New("timed out")
+		}
+		if errors.Is(err, context.Canceled) {
+			return "", errors.New("canceled")
+		}
+		return "", errors.New("network error")
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return "", fmt.Errorf("GitHub returned %s", response.Status)
+	}
+	var release struct {
+		TagName string `json:"tag_name"`
+	}
+	if json.NewDecoder(io.LimitReader(response.Body, versionResponseMaxSize)).Decode(&release) != nil {
+		return "", errors.New("invalid GitHub response")
+	}
+	tag := strings.TrimSpace(release.TagName)
+	if tag == "" {
+		return "", errors.New("GitHub response had no version")
+	}
+	return tag, nil
 }
 
 func isNewerPackageVersion(candidate, current string) bool {
