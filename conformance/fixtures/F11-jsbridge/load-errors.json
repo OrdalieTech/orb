@@ -1,7 +1,0 @@
-{
-  "syntax": {
-    "prefix": "Failed to load extension",
-    "line": 3
-  },
-  "invalidFactoryPrefix": "Extension does not export a valid factory function"
-}

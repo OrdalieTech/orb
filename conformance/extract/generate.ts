@@ -19,7 +19,6 @@ import { generateWP250 } from "./wp250-models.ts";
 import { generateF10 } from "./f10-compaction.ts";
 import { generateF11ExtensionRunner } from "./f11-extension-runner.ts";
 import { generateF11ExtensionWiring } from "./f11-extension-wiring.ts";
-import { generateF11JSBridge } from "./f11-jsbridge.ts";
 import { generateWP360 } from "./wp360-packages.ts";
 import { generateF12 } from "./f12-tui.ts";
 import { generateF12App } from "./f12-app.ts";
@@ -82,7 +81,6 @@ const generators = [
 	generateWP370Runtime,
 	generateWP450Replay,
 	generateWP450SessionSelector,
-	generateF11JSBridge,
 ];
 for (const generate of generators) {
 	await generate(upstreamRoot, outputRoot, upstreamCommit);
