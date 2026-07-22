@@ -22,8 +22,8 @@ exports.
 
 | Module | Functions | Status |
 |---|---|---|
-| `fs` (sync/stream subset) | `existsSync`, `readFileSync`, `writeFileSync`, `appendFileSync`, `readdirSync` (withFileTypes+Dirent), `statSync`, `lstatSync`, `mkdirSync`, `unlinkSync`, `rmdirSync`, `copyFileSync`, `renameSync`, `createReadStream`, `createWriteStream` (`write`/`end`, standard append/write flags), `watch` (100ms poll), `constants` | implemented |
-| `fs/promises` | `readFile`, `writeFile`, `stat`, `mkdir`, `access`, `appendFile`, `mkdtemp` (resolves relative prefixes against extension cwd), `unlink`, `rm`, `readdir`, `cp` | implemented |
+| `fs` (sync/stream subset) | `existsSync`, `accessSync`, `realpathSync`, `readFileSync`, `writeFileSync`, `appendFileSync`, `readdirSync` (withFileTypes+Dirent), `statSync`, `lstatSync`, `mkdirSync`, `mkdtempSync`, `chmodSync`, `readlinkSync`, `unlinkSync`, `rmdirSync`, `rmSync`, `copyFileSync`, `cpSync`, `renameSync`, `createReadStream`, `createWriteStream` (`write`/`end`, standard append/write flags), `watch` (100ms poll), `constants` | implemented |
+| `fs/promises` | `readFile`, `writeFile`, `stat`, `lstat`, `realpath`, `mkdir`, `access`, `appendFile`, `mkdtemp` (resolves relative prefixes against extension cwd), `unlink`, `rename`, `chmod`, `readlink`, `rm`, `readdir`, `copyFile`, `cp` | implemented |
 | `path` | `join`, `dirname`, `basename`, `extname`, `resolve` (uses extension cwd), `relative`, `isAbsolute`, `normalize`, `parse`, `format`, `sep`, `delimiter`, `posix` — POSIX semantics validated against 119-entry Node v24 differential corpus | implemented |
 | `os` | `homedir`, `tmpdir`, `hostname`, `platform()` (function), `arch()` (Node names: x64/ia32/arm/arm64), `type`, `EOL`, `cpus` | implemented |
 | `process` (global and `process`/`node:process` module) | `cwd` (extension cwd), `env`, `platform`, `arch` (Node names), `pid`, `argv`, `execPath`, `exit` (throws), `kill` (no-op), `stdout.write`, `stderr.write`, `version`, `versions` | implemented |
@@ -33,7 +33,7 @@ exports.
 | `http` / `https` | buffered request/get clients; HTTP createServer/listen/close/address | implemented subset |
 | `module` | `createRequire` backed by the bridge module resolver | implemented subset |
 | `readline` | `createInterface`, line events, async iteration, question/close | implemented subset |
-| `child_process` | `execSync`, `exec` (deferred callback via event loop), `execFile` (deferred callback via event loop), `spawnSync`, `spawn` (deferred execution via event loop; stdout/stderr/close/exit); options: cwd, env | implemented |
+| `child_process` | `execSync`, `execFileSync`, `exec` (deferred callback via event loop), `execFile` (deferred callback via event loop), `spawnSync`, `spawn` (deferred execution via event loop; stdout/stderr/close/exit); options: cwd, env, timeout | implemented |
 | `fetch` (global) | `fetch(url, opts)` or `fetch(Request)`→ Promise\<Response\>; resolves on headers (true streaming); body read incrementally via `getReader().read()` off VM goroutine with per-chunk 50MB enforcement; `text()`, `json()`, `arrayBuffer()` drain the stream; `bodyUsed` single-consumption semantics; reader `cancel()`/VM `Close()` clean up without leak or deadlock; Headers input: object/pairs/Headers-like | implemented |
 | `Headers` (global) | Constructor: `new Headers(init?)` — init is object/pairs; methods: get (combines duplicates), has (present-empty-aware), set, append, delete, forEach, entries (deterministic sorted order) | implemented |
 | `Request` (global) | Constructor: `new Request(url, opts?)` — opts: method, headers, body; usable with `fetch(req)` | implemented |
