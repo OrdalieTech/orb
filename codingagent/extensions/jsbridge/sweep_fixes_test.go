@@ -506,8 +506,9 @@ export default function(pi) {
   ].join("|"), handler: async () => {} });
 }
 `)
-	entry := filepath.Join(cwd, "extension.ts")
-	assertRegisteredDescription(t, result, "result", "file://"+entry+"|"+entry+"|"+cwd+"|"+cwd)
+	canonicalCWD := canonicalTestPath(t, cwd)
+	entry := filepath.Join(canonicalCWD, "extension.ts")
+	assertRegisteredDescription(t, result, "result", "file://"+entry+"|"+entry+"|"+canonicalCWD+"|"+canonicalCWD)
 }
 
 func TestImportMetaValuesArePreservedPerModule(t *testing.T) {
@@ -540,11 +541,14 @@ export default function(pi) {
 	if len(loaded.Errors) != 0 {
 		t.Fatalf("load errors = %#v", loaded.Errors)
 	}
+	canonicalCWD := canonicalTestPath(t, cwd)
+	canonicalEntry := filepath.Join(canonicalCWD, "index.ts")
+	canonicalNested := filepath.Join(canonicalCWD, "src", "agents", "agents.ts")
 	assertRegisteredDescription(t, loaded, "result", strings.Join([]string{
-		"file://" + entry,
-		"file://" + nested,
-		nested,
-		filepath.Dir(nested),
+		"file://" + canonicalEntry,
+		"file://" + canonicalNested,
+		canonicalNested,
+		filepath.Dir(canonicalNested),
 		"8",
 	}, "|"))
 }
