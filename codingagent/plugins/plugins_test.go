@@ -112,6 +112,11 @@ func TestPermissionsPolicyRules(t *testing.T) {
 			info:   ToolCallInfo{Tool: "custom", Args: map[string]any{"path": filepath.Join(link, "file")}, CWD: root}, want: Deny,
 		},
 		{
+			name:   "canonical rule path",
+			policy: &Policy{Rules: []Rule{{Path: filepath.Join(link, "*"), Action: Deny}}},
+			info:   ToolCallInfo{Tool: "custom", Args: map[string]any{"path": filepath.Join(realDir, "file")}, CWD: root}, want: Deny,
+		},
+		{
 			name:   "unparseable bash is ask with restrictive rule",
 			policy: &Policy{Rules: []Rule{{Tool: "bash", Command: "git push*", Action: Deny}}},
 			info:   ToolCallInfo{Tool: "bash", Args: map[string]any{}, CWD: root}, want: Ask,

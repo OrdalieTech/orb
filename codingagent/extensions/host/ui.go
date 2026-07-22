@@ -173,14 +173,8 @@ func (manager *Manager) handleUIRequest(generation *generation, frameValue frame
 	ctx, cancel := generation.ui.requestContext(uiContext)
 	defer cancel(nil)
 	if request.Method == "select" || request.Method == "confirm" || request.Method == "input" {
-		generation.ui.contextMu.Lock()
-		generation.ui.dialogs[frameValue.ID] = cancel
-		generation.ui.contextMu.Unlock()
-		defer func() {
-			generation.ui.contextMu.Lock()
-			delete(generation.ui.dialogs, frameValue.ID)
-			generation.ui.contextMu.Unlock()
-		}()
+		generation.ui.registerDialog(frameValue.ID, cancel)
+		defer generation.ui.unregisterDialog(frameValue.ID)
 	}
 	userInterface := uiContext.UI()
 	dialogOptions := &extensions.DialogOptions{Signal: ctx, Timeout: request.Timeout}
@@ -318,12 +312,31 @@ func (ui *uiGeneration) requestContext(value extensions.Context) (context.Contex
 }
 
 func (ui *uiGeneration) cancelDialog(id string) {
-	ui.contextMu.RLock()
-	cancel := ui.dialogs[id]
-	ui.contextMu.RUnlock()
+	ui.contextMu.Lock()
+	cancel, registered := ui.dialogs[id]
+	if !registered {
+		ui.dialogs[id] = nil
+	}
+	ui.contextMu.Unlock()
 	if cancel != nil {
 		cancel(context.Canceled)
 	}
+}
+
+func (ui *uiGeneration) registerDialog(id string, cancel context.CancelCauseFunc) {
+	ui.contextMu.Lock()
+	_, cancelled := ui.dialogs[id]
+	ui.dialogs[id] = cancel
+	ui.contextMu.Unlock()
+	if cancelled {
+		cancel(context.Canceled)
+	}
+}
+
+func (ui *uiGeneration) unregisterDialog(id string) {
+	ui.contextMu.Lock()
+	delete(ui.dialogs, id)
+	ui.contextMu.Unlock()
 }
 
 func uiRequestError(err error) *protocolError {
