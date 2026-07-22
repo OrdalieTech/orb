@@ -102,7 +102,7 @@ func TestToolResultAccessorsExtractMatchingDetails(t *testing.T) {
 	if !ok || ls.EntryLimitReached == nil || *ls.EntryLimitReached != 500 {
 		t.Fatalf("LsToolResult = %#v, %v", ls, ok)
 	}
-	// Details patched by a jsbridge extension arrive as a decoded JSON map.
+	// Details patched by a JavaScript extension arrive as a decoded JSON map.
 	line := 3
 	patched, ok := EditToolResult(ToolResultEvent{ToolName: "edit", Details: map[string]any{"diff": "dd", "patch": "pp", "firstChangedLine": 3.0}})
 	if !ok || patched.Diff != "dd" || patched.Patch != "pp" || patched.FirstChangedLine == nil || *patched.FirstChangedLine != line {
