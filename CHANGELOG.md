@@ -8,6 +8,9 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Added
 
+- A bundled-but-dormant tasks plugin adds the `todo` tool and live session checklist, enabled through settings, `pigo plugins`, or `/plugins`.
+- A bundled-but-dormant websearch plugin adds Exa, Brave, and Tavily search plus lightweight HTML/text fetching.
+- A bundled-but-dormant subagents plugin adds injectable in-process scout, worker, and reviewer child sessions with bounded parallel execution.
 - `pigo chat <platform>` runs every built-in chat adapter through one durable CLI gateway system.
 - An out-of-process extension host runs the full JavaScript/TypeScript extension API through a
   local Node.js or Bun process, including providers, UI callbacks, state synchronization, package

@@ -15,6 +15,7 @@ import (
 	"github.com/OrdalieTech/pigo/codingagent/extensions/examples/statusline"
 	extensionhost "github.com/OrdalieTech/pigo/codingagent/extensions/host"
 	"github.com/OrdalieTech/pigo/codingagent/mcp"
+	firstpartyplugins "github.com/OrdalieTech/pigo/codingagent/plugins"
 )
 
 // Each runtime (re)load builds a fresh extension host; the previous child must
@@ -34,6 +35,13 @@ var compiledExtensions = []extensions.CompiledExtension{
 
 func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config.SettingsManager, packages *codingagent.ResolvedPaths) (*extensions.Registry, []string) {
 	catalog := append([]extensions.CompiledExtension(nil), compiledExtensions...)
+	catalog = append(catalog, extensions.CompiledExtension{
+		Name: "plugin-control", Factory: firstpartyplugins.Control(settings), Hidden: true, DefaultEnabled: true,
+	})
+	pluginCatalog := firstpartyplugins.Catalog()
+	for _, name := range firstpartyplugins.Names() {
+		catalog = append(catalog, extensions.CompiledExtension{Name: name, Factory: pluginCatalog[name]})
+	}
 	var diagnostics []string
 	// metadataOnly runs (e.g. --list-models) build the runtime purely to
 	// enumerate models/providers; MCP servers contribute tools, not models, so
@@ -51,7 +59,18 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 			})
 		}
 	}
-	registry, loadErrors := extensions.LoadCompiled(cwd, catalog, settings.GetGoExtensions(), args.NoExtensions)
+	overrides := settings.GetGoExtensions()
+	if overrides == nil {
+		overrides = make(map[string]bool)
+	}
+	// Built-in plugin gates are separate from goExtensions: control is always
+	// available, while every actual plugin is off unless settings.plugins says on.
+	overrides["plugin-control"] = true
+	pluginSettings := settings.GetPlugins()
+	for _, name := range firstpartyplugins.Names() {
+		overrides[name] = pluginSettings[name]
+	}
+	registry, loadErrors := extensions.LoadCompiled(cwd, catalog, overrides, args.NoExtensions)
 	for _, loadError := range loadErrors {
 		diagnostics = append(diagnostics, loadError.Error())
 	}

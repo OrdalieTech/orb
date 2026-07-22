@@ -10,6 +10,7 @@ import (
 	"github.com/OrdalieTech/pigo/codingagent"
 	"github.com/OrdalieTech/pigo/codingagent/config"
 	"github.com/OrdalieTech/pigo/codingagent/modes"
+	firstpartyplugins "github.com/OrdalieTech/pigo/codingagent/plugins"
 )
 
 // Port of packages/coding-agent/src/package-manager-cli.ts (pi
@@ -48,6 +49,59 @@ func getPackageCommandUsage(command string) string {
 }
 
 const configCommandUsage = "pigo config [-l] [--approve|--no-approve]"
+
+const pluginsCommandUsage = "pigo plugins list|enable|disable [name]"
+
+func handlePluginsCommand(ctx context.Context, argv []string, streams cliStreams) (bool, int) {
+	if len(argv) == 0 || argv[0] != "plugins" {
+		return false, 0
+	}
+	if len(argv) == 2 && (argv[1] == "-h" || argv[1] == "--help") {
+		_, _ = fmt.Fprintln(streams.Stdout, "Usage: "+pluginsCommandUsage)
+		return true, 0
+	}
+	if len(argv) < 2 || argv[1] != "list" && argv[1] != "enable" && argv[1] != "disable" {
+		_, _ = fmt.Fprintln(streams.Stderr, "Usage: "+pluginsCommandUsage)
+		return true, 1
+	}
+	action := argv[1]
+	if action == "list" && len(argv) != 2 || action != "list" && len(argv) != 3 {
+		_, _ = fmt.Fprintln(streams.Stderr, "Usage: "+pluginsCommandUsage)
+		return true, 1
+	}
+	cwd, agentDir, err := packageCommandDirs()
+	if err != nil {
+		return true, reportCLIError(streams.Stderr, err)
+	}
+	settings, err := createCommandSettingsManager(ctx, cwd, agentDir, nil, false)
+	if err != nil {
+		return true, reportCLIError(streams.Stderr, err)
+	}
+	reportPackageSettingsErrors(streams.Stderr, settings, "plugins command")
+	if action == "list" {
+		enabled := settings.GetPlugins()
+		for _, name := range firstpartyplugins.Names() {
+			state := "off"
+			if enabled[name] {
+				state = "on"
+			}
+			_, _ = fmt.Fprintf(streams.Stdout, "%s\t%s\t%s\n", name, state, firstpartyplugins.Description(name))
+		}
+		return true, 0
+	}
+	name := argv[2]
+	if firstpartyplugins.Description(name) == "" {
+		_, _ = fmt.Fprintf(streams.Stderr, "Unknown plugin %q.\n", name)
+		return true, 1
+	}
+	enabled := action == "enable"
+	settings.SetPluginEnabled(name, enabled)
+	if errors := settings.DrainErrors(); len(errors) > 0 {
+		return true, reportCLIError(streams.Stderr, errors[0])
+	}
+	_, _ = fmt.Fprintf(streams.Stdout, "%s %s\n", strings.ToUpper(action[:1])+action[1:], name)
+	return true, 0
+}
 
 func printConfigCommandHelp(writer io.Writer) {
 	_, _ = fmt.Fprintf(writer, `Usage:

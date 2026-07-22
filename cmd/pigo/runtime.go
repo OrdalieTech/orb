@@ -182,7 +182,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	if !args.extensionsLoaded {
 		extensionRegistry, extensionDiagnostics = loadCompiledExtensions(cwd, agentDir, args, settings, resolvedPaths)
 	}
-	hasExtensions := extensionRegistry != nil
+	hasExtensions := hasNonControlExtensions(extensionRegistry)
 	diagnostics = append(diagnostics, extensionDiagnostics...)
 	resourceLoader, err := codingagent.NewDefaultResourceLoader(codingagent.DefaultResourceLoaderOptions{
 		CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
@@ -400,6 +400,18 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		ResourceDiagnostics: resourceDiagnostics,
 		ResourceLoader:      resourceLoader,
 	}, nil
+}
+
+func hasNonControlExtensions(registry *extensions.Registry) bool {
+	if registry == nil {
+		return false
+	}
+	for _, extension := range registry.Extensions() {
+		if extension.Path != "<inline:plugin-control>" {
+			return true
+		}
+	}
+	return false
 }
 
 func filterExcludedTools(names, excluded []string) []string {

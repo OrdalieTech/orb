@@ -436,6 +436,12 @@ func (manager *SettingsManager) SetEnableSkillCommands(enabled bool) {
 	manager.setGlobalValues(settingMember("enableSkillCommands", enabled))
 }
 
+// SetPluginEnabled persists a user-level gate while project settings continue
+// to overlay it through the existing one-level merge.
+func (manager *SettingsManager) SetPluginEnabled(name string, enabled bool) {
+	manager.setGlobalNested("plugins", name, enabled)
+}
+
 func (manager *SettingsManager) SetTransport(transport ai.Transport) {
 	manager.setGlobalValues(settingMember("transport", transport))
 }
