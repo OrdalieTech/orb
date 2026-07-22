@@ -789,8 +789,8 @@ func (ui *TUI) renderViewport(width, height int) []string {
 		ui.viewportEnd = end
 	}
 	start := max(0, end-bodyHeight)
-	lines := make([]string, bodyHeight-(end-start), height)
-	lines = append(lines, body[start:end]...)
+	lines := append([]string(nil), body[start:end]...)
+	lines = append(lines, make([]string, bodyHeight-len(lines))...)
 	return append(lines, chrome...)
 }
 
