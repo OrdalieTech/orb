@@ -270,6 +270,11 @@ func TestTUIViewportPinsChromeAndKeepsDetachedBodyStable(t *testing.T) {
 	ui.AddChild(body)
 	ui.AddChild(chrome)
 	ui.SetViewport(body, chrome)
+	body.lines = []string{"short body"}
+	if frame := ui.renderViewport(20, 6); frame[0] != "short body" || frame[3] != "" || frame[4] != "editor" {
+		t.Fatalf("short viewport is not top-aligned: %#v", frame)
+	}
+	body.lines = []string{"body 0", "body 1", "body 2", "body 3", "body 4", "body 5"}
 	if err := ui.Start(); err != nil {
 		t.Fatal(err)
 	}
