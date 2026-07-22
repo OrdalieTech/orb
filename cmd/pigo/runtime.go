@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/OrdalieTech/pigo/agent"
 	"github.com/OrdalieTech/pigo/ai"
@@ -35,11 +36,106 @@ type runtimeInputs struct {
 	RebuildBaseTools func() ([]agent.AgentTool, error)
 	PromptOptions    codingagent.SystemPromptOptions
 	Auth             *config.AuthStorage
+	RuntimeAuth      *runtimeCredentials
 	Diagnostics      []string
 	// ResourceDiagnostics carries skill/prompt resource warnings, shown in
 	// interactive mode only; upstream print/RPC modes print none of them.
 	ResourceDiagnostics []string
 	ResourceLoader      codingagent.ResourceLoader
+}
+
+// runtimeCredentials is the Go port of upstream RuntimeCredentials: CLI API
+// keys form a non-persistent overlay over auth.json, but otherwise participate
+// in credential reads, status enumeration, and logout like stored API keys.
+type runtimeCredentials struct {
+	store aiauth.CredentialStore
+
+	mu            sync.RWMutex
+	overrides     map[string]string
+	overrideOrder []string
+}
+
+func newRuntimeCredentials(store aiauth.CredentialStore) *runtimeCredentials {
+	if store == nil {
+		store = aiauth.NewMemoryStore(nil)
+	}
+	return &runtimeCredentials{store: store, overrides: make(map[string]string)}
+}
+
+func (credentials *runtimeCredentials) SetRuntimeAPIKey(providerID, apiKey string) {
+	credentials.mu.Lock()
+	if _, exists := credentials.overrides[providerID]; !exists {
+		credentials.overrideOrder = append(credentials.overrideOrder, providerID)
+	}
+	credentials.overrides[providerID] = apiKey
+	credentials.mu.Unlock()
+}
+
+func (credentials *runtimeCredentials) RemoveRuntimeAPIKey(providerID string) {
+	credentials.mu.Lock()
+	delete(credentials.overrides, providerID)
+	credentials.overrideOrder = slices.DeleteFunc(credentials.overrideOrder, func(id string) bool { return id == providerID })
+	credentials.mu.Unlock()
+}
+
+func (credentials *runtimeCredentials) HasRuntimeAPIKey(providerID string) bool {
+	if credentials == nil {
+		return false
+	}
+	credentials.mu.RLock()
+	_, exists := credentials.overrides[providerID]
+	credentials.mu.RUnlock()
+	return exists
+}
+
+func (credentials *runtimeCredentials) Read(ctx context.Context, providerID string) (*aiauth.Credential, error) {
+	credentials.mu.RLock()
+	apiKey, exists := credentials.overrides[providerID]
+	credentials.mu.RUnlock()
+	if exists {
+		return aiauth.APIKeyCredential(apiKey), nil
+	}
+	return credentials.store.Read(ctx, providerID)
+}
+
+func (credentials *runtimeCredentials) List(ctx context.Context) ([]aiauth.CredentialInfo, error) {
+	entries, err := credentials.store.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := append([]aiauth.CredentialInfo(nil), entries...)
+	byProvider := make(map[string]int, len(result))
+	for index, entry := range result {
+		byProvider[entry.ProviderID] = index
+	}
+	credentials.mu.RLock()
+	defer credentials.mu.RUnlock()
+	for _, providerID := range credentials.overrideOrder {
+		if _, exists := credentials.overrides[providerID]; !exists {
+			continue
+		}
+		entry := aiauth.CredentialInfo{ProviderID: providerID, Type: aiauth.CredentialAPIKey}
+		if index, exists := byProvider[providerID]; exists {
+			result[index] = entry
+		} else {
+			byProvider[providerID] = len(result)
+			result = append(result, entry)
+		}
+	}
+	return result, nil
+}
+
+func (credentials *runtimeCredentials) Modify(
+	ctx context.Context,
+	providerID string,
+	modify aiauth.ModifyFunc,
+) (*aiauth.Credential, error) {
+	return credentials.store.Modify(ctx, providerID, modify)
+}
+
+func (credentials *runtimeCredentials) Delete(ctx context.Context, providerID string) error {
+	credentials.RemoveRuntimeAPIKey(providerID)
+	return credentials.store.Delete(ctx, providerID)
 }
 
 func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMessages) (runtimeInputs, error) {
@@ -242,7 +338,11 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		provider := model.Provider
 		cliAPIKeyProvider = &provider
 	}
-	resolveRequestAuth := requestAuthResolverForProvider(args, cliAPIKeyProvider, registry, authStorage)
+	runtimeAuth := newRuntimeCredentials(authStorage)
+	if cliAPIKeyProvider != nil {
+		runtimeAuth.SetRuntimeAPIKey(string(*cliAPIKeyProvider), *args.APIKey)
+	}
+	resolveRequestAuth := requestAuthResolverWithCredentials(registry, runtimeAuth)
 	resolveAPIKey := func(ctx context.Context, providerID ai.ProviderID) (*string, error) {
 		resolved, err := resolveRequestAuth(ctx, providerID)
 		if err != nil || resolved == nil {
@@ -255,7 +355,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	}
 	availableModels := func() []ai.Model {
 		result, _ := registry.AvailableWithError(nil)
-		if cliAPIKeyProvider != nil {
+		if cliAPIKeyProvider != nil && runtimeAuth.HasRuntimeAPIKey(string(*cliAPIKeyProvider)) {
 			for _, candidate := range registry.Models() {
 				if candidate.Provider != *cliAPIKeyProvider || slices.ContainsFunc(result, func(model ai.Model) bool {
 					return model.Provider == candidate.Provider && model.ID == candidate.ID
@@ -295,6 +395,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 			return createBuiltInTools(cwd, baseToolNames, settings)
 		},
 		Auth:                authStorage,
+		RuntimeAuth:         runtimeAuth,
 		Diagnostics:         diagnostics,
 		ResourceDiagnostics: resourceDiagnostics,
 		ResourceLoader:      resourceLoader,
@@ -446,6 +547,31 @@ func requestAuthResolverForProvider(
 	registry *config.ModelRegistry,
 	credentials aiauth.CredentialStore,
 ) agent.GetRequestAuthFunc {
+	runtimeAuth := newRuntimeCredentials(credentials)
+	if args.APIKey != nil && *args.APIKey != "" {
+		providerID := ""
+		if cliProvider != nil {
+			providerID = string(*cliProvider)
+		}
+		if providerID != "" {
+			runtimeAuth.SetRuntimeAPIKey(providerID, *args.APIKey)
+		}
+	}
+	base := requestAuthResolverWithCredentials(registry, runtimeAuth)
+	if args.APIKey == nil || *args.APIKey == "" || cliProvider != nil {
+		return base
+	}
+	// Tests and SDK-style callers without a selected model historically use a
+	// provider-agnostic --api-key override. The CLI always supplies cliProvider.
+	return func(ctx context.Context, providerID ai.ProviderID) (*agent.RequestAuth, error) {
+		return &agent.RequestAuth{APIKey: args.APIKey}, nil
+	}
+}
+
+func requestAuthResolverWithCredentials(
+	registry *config.ModelRegistry,
+	credentials aiauth.CredentialStore,
+) agent.GetRequestAuthFunc {
 	var baseResolver func(context.Context, ai.ProviderID) (*config.RequestAuth, error)
 	if registry != nil {
 		baseResolver = registry.DefaultRequestAuthResolver(credentials)
@@ -453,9 +579,6 @@ func requestAuthResolverForProvider(
 		baseResolver = config.FallbackRequestAuthResolver(credentials)
 	}
 	return func(ctx context.Context, providerID ai.ProviderID) (*agent.RequestAuth, error) {
-		if args.APIKey != nil && *args.APIKey != "" && (cliProvider == nil || providerID == *cliProvider) {
-			return &agent.RequestAuth{APIKey: args.APIKey}, nil
-		}
 		resolved, err := baseResolver(ctx, providerID)
 		if err != nil || resolved == nil {
 			return nil, err

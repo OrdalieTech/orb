@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/OrdalieTech/pigo/agent"
 	"github.com/OrdalieTech/pigo/ai"
 	aiauth "github.com/OrdalieTech/pigo/ai/auth"
 	"github.com/OrdalieTech/pigo/codingagent/config"
@@ -196,6 +197,112 @@ func TestInteractiveHostDescribesConfiguredAuthPerMethod(t *testing.T) {
 		if option.Status == nil || option.Status.Type != aiauth.AuthTypeOAuth || option.Status.Source != "stored" {
 			t.Fatalf("xAI %s status = %#v", option.AuthType, option.Status)
 		}
+	}
+}
+
+// LOG-m3: --api-key is a runtime credential upstream, so it must surface as
+// source "runtime", participate in /logout, and disappear from both request
+// auth and the stored credential beneath it when logged out.
+func TestLOGm3InteractiveHostRuntimeAPIKeyStatusAndLogout(t *testing.T) {
+	fixture := newHostFixture(t)
+	registry, err := config.NewModelRegistry(fixture.agentDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+		return nil, nil
+	}
+	if err := registry.RegisterProvider(extensions.Provider{
+		ID: "runtime-auth", Name: "Runtime Auth",
+		Auth: aiauth.ProviderAuth{APIKey: fixedInteractiveAPIKeyAuth{}},
+		GetModels: func() ([]ai.Model, error) {
+			return []ai.Model{{ID: "runtime-model", Provider: "runtime-auth", API: ai.APIOpenAIResponses}}, nil
+		},
+		Stream: stream, StreamSimple: stream,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	baseStore := aiauth.NewMemoryStore(map[string]*aiauth.Credential{
+		"runtime-auth": aiauth.APIKeyCredential("stored-under-runtime"),
+	})
+	runtimeAuth := newRuntimeCredentials(baseStore)
+	runtimeAuth.SetRuntimeAPIKey("runtime-auth", "runtime-key")
+	resolver := requestAuthResolverWithCredentials(registry, runtimeAuth)
+	cliKey := "runtime-key"
+	fixture.host.mu.Lock()
+	fixture.host.args.APIKey = &cliKey
+	fixture.host.inputs.RuntimeAuth = runtimeAuth
+	fixture.host.inputs.ModelRegistry = registry
+	fixture.host.inputs.GetRequestAuth = resolver
+	fixture.host.mu.Unlock()
+
+	options, err := fixture.host.AuthOptions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var loginStatus *modes.InteractiveAuthStatus
+	for _, option := range options.Login {
+		if option.ID == "runtime-auth" && option.AuthType == aiauth.AuthTypeAPIKey {
+			loginStatus = option.Status
+		}
+	}
+	if loginStatus == nil || loginStatus.Type != aiauth.AuthTypeAPIKey || loginStatus.Source != "runtime" {
+		t.Fatalf("runtime login status = %#v in %#v", loginStatus, options.Login)
+	}
+	if len(options.Logout) != 1 || options.Logout[0].ID != "runtime-auth" || options.Logout[0].AuthType != aiauth.AuthTypeAPIKey {
+		t.Fatalf("runtime logout options = %#v", options.Logout)
+	}
+	resolved, err := resolver(context.Background(), "runtime-auth")
+	if err != nil || resolved == nil || resolved.APIKey == nil || *resolved.APIKey != "runtime-key" {
+		t.Fatalf("runtime request auth = %#v, %v", resolved, err)
+	}
+
+	if err := fixture.host.Logout(context.Background(), "runtime-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if runtimeAuth.HasRuntimeAPIKey("runtime-auth") {
+		t.Fatal("runtime API key survived logout")
+	}
+	credential, err := baseStore.Read(context.Background(), "runtime-auth")
+	if err != nil || credential != nil {
+		t.Fatalf("stored credential after runtime logout = %#v, %v", credential, err)
+	}
+	resolved, err = resolver(context.Background(), "runtime-auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != nil && resolved.APIKey != nil && *resolved.APIKey == "runtime-key" {
+		t.Fatalf("request auth retained runtime key after logout: %#v", resolved)
+	}
+	fixture.host.mu.Lock()
+	remainingCLIKey := fixture.host.args.APIKey
+	fixture.host.mu.Unlock()
+	if remainingCLIKey != nil {
+		t.Fatalf("replacement runtime would restore --api-key: %q", *remainingCLIKey)
+	}
+	options, err = fixture.host.AuthOptions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, option := range options.Logout {
+		if option.ID == "runtime-auth" {
+			t.Fatalf("runtime credential remained in logout list: %#v", options.Logout)
+		}
+	}
+	originalCreateRuntime := fixture.host.dependencies.createRuntime
+	replacementCalled := false
+	fixture.host.dependencies.createRuntime = func(cwd string, args CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
+		replacementCalled = true
+		if args.APIKey != nil {
+			t.Fatalf("replacement runtime received logged-out --api-key: %q", *args.APIKey)
+		}
+		return originalCreateRuntime(cwd, args, prior)
+	}
+	if _, err := fixture.host.NewSession(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if !replacementCalled {
+		t.Fatal("session replacement did not rebuild the runtime")
 	}
 }
 

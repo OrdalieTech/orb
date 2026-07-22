@@ -266,21 +266,38 @@ func (flow *Anthropic) postJSON(ctx context.Context, body []byte) ([]byte, error
 	return responseBody, nil
 }
 
+type oauthNamedError interface{ Name() string }
+type oauthCodedError interface{ Code() string }
+type oauthErrnoError interface{ Errno() any }
+type oauthStackError interface{ Stack() string }
+
 // formatOAuthErrorDetails ports upstream formatErrorDetails
-// (ai/src/auth/oauth/anthropic.ts:82-97): name/message first, then code/errno,
-// then the cause chain. Go errors carry no JS error name, Node-style code
-// string, or stack, so those collapse to the "Error:" prefix, the errno when a
-// syscall error is at this level of the chain, and the wrapped cause.
+// (ai/src/auth/oauth/anthropic.ts:82-97): name/message first, then code, errno,
+// cause, and stack. Generic Go errors do not retain a creation stack, so stack
+// is emitted when the concrete error exposes one instead of fabricating a
+// formatter-site stack.
 func formatOAuthErrorDetails(err error) string {
 	if err == nil {
 		return "Error: <nil>"
 	}
-	details := []string{"Error: " + err.Error()}
+	name := "Error"
+	if named, ok := err.(oauthNamedError); ok && named.Name() != "" {
+		name = named.Name()
+	}
+	details := []string{name + ": " + err.Error()}
+	if coded, ok := err.(oauthCodedError); ok && coded.Code() != "" {
+		details = append(details, "code="+coded.Code())
+	}
 	if errno, ok := err.(syscall.Errno); ok {
 		details = append(details, "errno="+strconv.Itoa(int(errno)))
+	} else if numbered, ok := err.(oauthErrnoError); ok && numbered.Errno() != nil {
+		details = append(details, "errno="+fmt.Sprint(numbered.Errno()))
 	}
 	if cause := errors.Unwrap(err); cause != nil {
 		details = append(details, "cause="+formatOAuthErrorDetails(cause))
+	}
+	if stacked, ok := err.(oauthStackError); ok && stacked.Stack() != "" {
+		details = append(details, "stack="+stacked.Stack())
 	}
 	return strings.Join(details, "; ")
 }

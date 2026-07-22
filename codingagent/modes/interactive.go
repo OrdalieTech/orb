@@ -2435,17 +2435,33 @@ func (mode *InteractiveMode) startProviderLogin(ctx context.Context, provider In
 }
 
 func (mode *InteractiveMode) runLogin(provider InteractiveAuthProvider) {
-	ctx := mode.authenticationContext()
+	ctx, cancel := context.WithCancel(mode.authenticationContext())
+	defer cancel()
 	var previousModel *ai.Model
 	if mode.session != nil {
 		previousModel = mode.session.State().Model
 	}
-	interaction := tuiAuthInteraction{mode: mode}
+	dialog := newLoginAuthDialogComponent("Login to "+provider.Name, cancel)
+	dialogMounted := mode.mountLoginAuthDialog(dialog)
+	restoreDialog := func() {
+		if !dialogMounted {
+			return
+		}
+		dialogMounted = false
+		mode.editorContainer.Clear()
+		mode.restoreEditorComponent()
+		mode.ui.SetFocus(mode.activeEditorFocus())
+		mode.ui.RequestRender()
+	}
+	defer restoreDialog()
+	interaction := tuiAuthInteraction{mode: mode, dialog: dialog, ctx: ctx, mounted: dialogMounted}
 	if provider.ID == "amazon-bedrock" && provider.AuthType == aiauth.AuthTypeAPIKey {
 		providersDoc, _ := codingagent.AuthGuidanceDocPaths()
 		interaction.details = "You can also use an AWS profile, IAM keys, or role-based credentials.\nSee:\n  " + providersDoc
+		dialog.showDetails("You can also use an AWS profile, IAM keys, or role-based credentials.", "See:", "  "+providersDoc)
 	}
 	if err := mode.options.Host.Login(ctx, provider.ID, provider.AuthType, interaction); err != nil {
+		restoreDialog()
 		if errors.Is(err, context.Canceled) {
 			// Upstream stays silent for "Login cancelled".
 			return
@@ -2457,7 +2473,19 @@ func (mode *InteractiveMode) runLogin(provider InteractiveAuthProvider) {
 		}
 		return
 	}
+	restoreDialog()
 	mode.completeProviderAuthentication(ctx, provider, previousModel)
+}
+
+func (mode *InteractiveMode) mountLoginAuthDialog(dialog *loginAuthDialogComponent) bool {
+	if dialog == nil || mode.editorContainer == nil || mode.ui == nil {
+		return false
+	}
+	mode.editorContainer.Clear()
+	mode.editorContainer.AddChild(dialog)
+	mode.ui.SetFocus(dialog)
+	mode.ui.RequestRender()
+	return true
 }
 
 func (mode *InteractiveMode) runLogout(provider InteractiveAuthProvider) {
@@ -2615,13 +2643,19 @@ func (mode *InteractiveMode) authenticationContext() context.Context {
 type tuiAuthInteraction struct {
 	mode    *InteractiveMode
 	details string
+	dialog  *loginAuthDialogComponent
+	ctx     context.Context
+	mounted bool
 }
 
 func (interaction tuiAuthInteraction) Prompt(ctx context.Context, prompt aiauth.AuthPrompt) (string, error) {
 	title := prompt.Message
-	if interaction.details != "" {
+	if interaction.dialog != nil && interaction.mounted {
+		title = interaction.dialog.promptTitle(prompt.Message)
+	} else if interaction.details != "" {
 		title = interaction.details + "\n\n" + title
 	}
+	defer interaction.restoreDialog()
 	if prompt.Type == aiauth.PromptSelect {
 		labels := make([]string, 0, len(prompt.Options))
 		ids := make(map[string]string, len(prompt.Options))
@@ -2653,11 +2687,42 @@ func (interaction tuiAuthInteraction) Prompt(ctx context.Context, prompt aiauth.
 	return value, nil
 }
 
+func (interaction tuiAuthInteraction) restoreDialog() {
+	if interaction.dialog == nil || !interaction.mounted || interaction.mode == nil || interaction.mode.editorContainer == nil || interaction.mode.ui == nil {
+		return
+	}
+	if interaction.ctx != nil {
+		select {
+		case <-interaction.ctx.Done():
+			return
+		default:
+		}
+	}
+	interaction.mode.mountLoginAuthDialog(interaction.dialog)
+}
+
 // openAuthURLInBrowser is swappable for tests; production uses the platform
 // launcher port (codingagent/open_browser.go).
 var openAuthURLInBrowser = codingagent.OpenBrowser
 
 func (interaction tuiAuthInteraction) Notify(event aiauth.AuthEvent) {
+	if interaction.dialog != nil && interaction.mounted {
+		switch event.Type {
+		case aiauth.EventAuthURL:
+			interaction.dialog.showAuth(event.URL, event.Instructions)
+			if event.URL != "" {
+				openAuthURLInBrowser(event.URL)
+			}
+		case aiauth.EventDeviceCode:
+			interaction.dialog.showDeviceCode(event.VerificationURI, event.UserCode)
+		case aiauth.EventInfo:
+			interaction.dialog.showInfo(event.Message, event.Links)
+		default:
+			interaction.dialog.showProgress(event.Message)
+		}
+		interaction.mode.ui.RequestRender()
+		return
+	}
 	message := event.Message
 	switch event.Type {
 	case aiauth.EventAuthURL:
