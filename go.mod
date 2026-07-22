@@ -12,9 +12,7 @@ require (
 	github.com/aws/smithy-go v1.27.3
 	github.com/aymanbagabas/go-udiff v0.2.0
 	github.com/bmatcuk/doublestar/v4 v4.9.1
-	github.com/evanw/esbuild v0.28.1
 	github.com/gofrs/flock v0.13.0
-	github.com/grafana/sobek v0.0.0-20260708062710-267a0e055bb4
 	github.com/klauspost/compress v1.19.1
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/openai/openai-go/v3 v3.43.0
@@ -40,9 +38,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.37.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.44.1 // indirect
 	github.com/dlclark/regexp2/v2 v2.2.2 // indirect
-	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
-	github.com/google/pprof v0.0.0-20230207041349-798e818bf904 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/rogpeppe/go-internal v1.15.0 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
