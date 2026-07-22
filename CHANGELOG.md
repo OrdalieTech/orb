@@ -6,6 +6,14 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Changed
+
+- Synchronized the complete in-scope upstream target to pi 0.81.1: compaction and branch-summary
+  retries with lifecycle events, the restored default stream fallback, deferred interactive model
+  refresh, Kimi K3 compatibility metadata, and regenerated Gemini catalogs and conformance fixtures.
+- Releases now include a checksummed deterministic source archive that CI rebuilds before publish;
+  the Homebrew publisher uses GoReleaser's current cask configuration.
+
 ### Fixed
 
 - `--no-extensions` now disables discovery while preserving explicit `-e` extensions, and the
@@ -24,6 +32,9 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
   while concurrent and cancelled remote-catalog refreshes preserve upstream cache semantics.
 - The extension runtime now supports Piolium child sessions and its filesystem, streaming decode,
   and cancellation workflows, alongside the Node/SDK surfaces used by more ecosystem packages.
+- Bundled dependencies now keep module-local `import.meta` paths, Node-compatible UID scoping, and
+  `Buffer.byteLength`; this restores exact `pi-subagents /subagents-doctor` discovery of all eight
+  shipped agents and Piolium's bounded file-reading workflow.
 
 ## [0.1.1] - 2026-07-21
 

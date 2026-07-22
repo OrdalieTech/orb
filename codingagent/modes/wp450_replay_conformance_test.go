@@ -316,7 +316,7 @@ func RenderWP450UIDemoArtifact() ConformanceUIDemoArtifact {
 	sort.Strings(artifact.HeaderFooterInitialization.Retained.WidgetKeys)
 	artifact.HeaderFooterInitialization.Retained.Header = containsWP450Line(
 		artifact.HeaderFooterInitialization.Header,
-		"shitty coding agent v0.81.0",
+		"shitty coding agent v0.81.1",
 	)
 	artifact.HeaderFooterInitialization.Retained.Footer = containsWP450Line(
 		artifact.HeaderFooterInitialization.Footer,
@@ -362,7 +362,7 @@ func wp450HeaderFactory(_ extensions.UIHost, theme extensions.Theme) extensions.
 		leg,
 		leg,
 		"",
-		theme.FG("muted", "   shitty coding agent") + dim(" v0.81.0"),
+		theme.FG("muted", "   shitty coding agent") + dim(" v0.81.1"),
 	}
 }
 

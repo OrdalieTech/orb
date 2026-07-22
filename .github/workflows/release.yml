@@ -37,8 +37,41 @@ jobs:
             p {print}
           ' CHANGELOG.md > /tmp/notes.md
           test -s /tmp/notes.md
-      - uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
+      - name: Build release artifacts without publishing
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
+          version: v2.17.0
+          args: release --clean --skip=publish --release-notes /tmp/notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify source archive
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          source_archive="dist/pigo_${version}_source.tar.gz"
+          test -f "${source_archive}"
+          grep -F "pigo_${version}_source.tar.gz" dist/checksums.txt
+          (cd dist && sha256sum -c checksums.txt)
+          build_root="$(mktemp -d)"
+          trap 'rm -rf "${build_root}"' EXIT
+          tar -xzf "${source_archive}" -C "${build_root}"
+          source_root="${build_root}/pigo-${version}"
+          test -f "${source_root}/go.mod"
+          test -f "${source_root}/cmd/pigo/main.go"
+          test -f "${source_root}/codingagent/modes/assets/CHANGELOG.md"
+          if tar -tzf "${source_archive}" | grep -Eq '(^|/)(\.git|\.upstream|dist|node_modules)(/|$)'; then
+            echo "source archive contains generated or private state" >&2
+            exit 1
+          fi
+          (cd "${source_root}" && CGO_ENABLED=0 go build ./...)
+          (cd "${source_root}" && CGO_ENABLED=0 go build -trimpath -o /tmp/pigo-source-check ./cmd/pigo)
+          sha256sum "${source_archive}" > /tmp/pigo-source.sha256
+      - name: Publish verified release artifacts
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
+        with:
+          version: v2.17.0
           args: release --clean --release-notes /tmp/notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify published source archive is deterministic
+        run: sha256sum -c /tmp/pigo-source.sha256

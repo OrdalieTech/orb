@@ -856,6 +856,34 @@ func (runtime *SessionRuntime) isRetryable(message *ai.AssistantMessage) bool {
 	return !ai.IsContextOverflow(message, contextWindow) && ai.IsRetryableAssistantError(message)
 }
 
+func (runtime *SessionRuntime) summarizationComplete(source, reason string) harness.CompleteFunc {
+	return func(ctx context.Context, model *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
+		settings := runtime.settings.GetRetrySettings()
+		policy := &ai.RetryPolicy{
+			Enabled: settings.Enabled, MaxRetries: settings.MaxRetries, BaseDelayMS: settings.BaseDelayMS,
+		}
+		callbacks := &ai.RetryCallbacks{
+			OnRetryScheduled: func(attempt, maxAttempts int, delayMS int64, errorMessage string) error {
+				runtime.emit(SummarizationRetryScheduledEvent{
+					Attempt: attempt, MaxAttempts: maxAttempts, DelayMS: delayMS, ErrorMessage: errorMessage,
+				})
+				return nil
+			},
+			OnRetryAttemptStart: func() error {
+				runtime.emit(SummarizationRetryAttemptStartEvent{Source: source, Reason: reason})
+				return nil
+			},
+			OnRetryFinished: func(bool, int, *string) error {
+				runtime.emit(SummarizationRetryFinishedEvent{})
+				return nil
+			},
+		}
+		return ai.RetryAssistantCall(ctx, func() (*ai.AssistantMessage, error) {
+			return runtime.complete(ctx, model, request, options)
+		}, policy, callbacks)
+	}
+}
+
 func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.AssistantMessage, skipAbortedCheck bool) (bool, error) {
 	settings := runtime.settings.GetCompactionSettings()
 	if !runtime.autoCompactionEnabled() || (skipAbortedCheck && message.StopReason == ai.StopReasonAborted) {
@@ -939,7 +967,7 @@ func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason str
 		compactErr = context.Canceled
 	} else if result == nil {
 		var harnessResult *harness.CompactionResult
-		harnessResult, compactErr = harness.Compact(compactionContext, preparation, runtime.agent.State().Model, runtime.complete, "", runtime.agent.State().ThinkingLevel)
+		harnessResult, compactErr = harness.Compact(compactionContext, preparation, runtime.agent.State().Model, runtime.summarizationComplete("compaction", reason), "", runtime.agent.State().ThinkingLevel)
 		result = codingCompactionResult(harnessResult)
 	}
 	wasCancelled := compactionContext.Err() != nil
@@ -1041,7 +1069,7 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 		err = errors.New("Compaction cancelled")
 	} else if result == nil {
 		var harnessResult *harness.CompactionResult
-		harnessResult, err = harness.Compact(compactionContext, preparation, runtime.agent.State().Model, runtime.complete, customInstructions, runtime.agent.State().ThinkingLevel)
+		harnessResult, err = harness.Compact(compactionContext, preparation, runtime.agent.State().Model, runtime.summarizationComplete("compaction", "manual"), customInstructions, runtime.agent.State().ThinkingLevel)
 		result = codingCompactionResult(harnessResult)
 	}
 	if err == nil && compactionContext.Err() != nil {
@@ -1266,7 +1294,7 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 	if options.Summarize && len(collected.Entries) > 0 && !fromExtension {
 		settings := runtime.settings.GetBranchSummarySettings()
 		result, summaryErr := harness.GenerateBranchSummary(branchContext, collected.Entries, harness.GenerateBranchSummaryOptions{
-			Model: runtime.agent.State().Model, Complete: runtime.complete,
+			Model: runtime.agent.State().Model, Complete: runtime.summarizationComplete("branchSummary", ""),
 			CustomInstructions: customInstructions, ReplaceInstructions: replaceInstructions,
 			ReserveTokens: &settings.ReserveTokens,
 		})

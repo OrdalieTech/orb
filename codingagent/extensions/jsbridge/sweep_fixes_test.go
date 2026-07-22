@@ -8,9 +8,11 @@ package jsbridge
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -186,6 +188,26 @@ export default function(pi) {
 }
 
 // --- finding 2: getAgentDir / getMarkdownTheme / parseFrontmatter ---
+
+func TestExportedVersionMatchesUpstreamLock(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve test path")
+	}
+	encoded, err := os.ReadFile(filepath.Join(filepath.Dir(filename), "..", "..", "..", "UPSTREAM.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lock struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(encoded, &lock); err != nil {
+		t.Fatal(err)
+	}
+	if upstreamPackageVersion != lock.Version {
+		t.Fatalf("exported VERSION = %q, UPSTREAM.lock = %q", upstreamPackageVersion, lock.Version)
+	}
+}
 
 func TestGetAgentDirReturnsResolvedAgentDir(t *testing.T) {
 	cwd := t.TempDir()

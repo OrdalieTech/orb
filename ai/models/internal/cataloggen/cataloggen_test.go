@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -262,6 +263,73 @@ func TestGenerateFreshUpstreamCatalogChanges(t *testing.T) {
 	}
 }
 
+func TestV0811CatalogDeltasMatchPublishedPackage(t *testing.T) {
+	catalog, err := Generate(pinnedSources(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for provider, want := range map[string]struct {
+		count int
+		hash  string
+	}{
+		"google":            {18, "26b54727f38b22f753c6f85fcfd790f9be0c60ca19b94444326fc400feaddd05"},
+		"opencode":          {55, "fe54453668b9fb5f805067f8a1cf5f9ff22a603daab975719606e851de34edbd"},
+		"openrouter":        {271, "76a3833444dbe6dab7a6edd4fd29915efe3047634b0b8909eb73111086ca0cb4"},
+		"vercel-ai-gateway": {190, "312246de110840fbe5eea7ed506dd387aaebd77f26e3c7e01e868220808658a2"},
+	} {
+		if got := len(catalog[provider]); got != want.count {
+			t.Errorf("%s model count = %d, published v0.81.1 has %d", provider, got, want.count)
+		}
+		if got := modelIDSetHash(catalog[provider]); got != want.hash {
+			t.Errorf("%s ID set hash = %s, published v0.81.1 has %s", provider, got, want.hash)
+		}
+	}
+	var fixture struct {
+		SchemaVersion int `json:"schemaVersion"`
+		Source        struct {
+			Package       string `json:"package"`
+			Version       string `json:"version"`
+			TarballSHA256 string `json:"tarballSHA256"`
+		} `json:"source"`
+		Models []ai.Model `json:"models"`
+	}
+	if err := json.Unmarshal(readCatalogTestFile(t, "../../testdata/v0.81.1-model-deltas.json"), &fixture); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.SchemaVersion != 1 || fixture.Source.Package != "@earendil-works/pi-ai" || fixture.Source.Version != "0.81.1" ||
+		fixture.Source.TarballSHA256 != "c79dcc0f90d4dfbd1974da33dfa3fe396663195a68339b1f55c114dbf7240f2f" {
+		t.Fatalf("unexpected v0.81.1 fixture provenance: %#v", fixture.Source)
+	}
+	if len(fixture.Models) != 10 {
+		t.Fatalf("v0.81.1 delta fixture has %d models, want 10", len(fixture.Models))
+	}
+	for _, want := range fixture.Models {
+		got, ok := catalog[string(want.Provider)][want.ID]
+		if !ok {
+			t.Errorf("generated catalog is missing v0.81.1 model %s/%s", want.Provider, want.ID)
+			continue
+		}
+		gotJSON, err := json.Marshal(got)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantJSON, err := json.Marshal(want)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var gotValue, wantValue any
+		if err := json.Unmarshal(gotJSON, &gotValue); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(wantJSON, &wantValue); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(gotValue, wantValue) {
+			t.Errorf("%s/%s differs from published v0.81.1 package\n got: %s\nwant: %s", want.Provider, want.ID, gotJSON, wantJSON)
+		}
+	}
+}
+
 // CAT-M1: models.dev nvidia must be intersected with the live NIM listing,
 // with underscore-to-dot ID normalization before the denylist check.
 func TestCATM1NvidiaCatalogIntersectsLiveNIMListing(t *testing.T) {
@@ -383,8 +451,7 @@ func TestCATM3OpenRouterCatalogFromLiveListing(t *testing.T) {
 	if len(openrouter) != 271 {
 		t.Fatalf("openrouter models = %d, want 271", len(openrouter))
 	}
-	// Independently derived from the 269 v0.81.0 manifest IDs plus the two
-	// tool-capable models present in the captured live API response.
+	// Byte-identical to the 271 IDs in the published v0.81.1 manifest.
 	if got, want := modelIDSetHash(openrouter), "76a3833444dbe6dab7a6edd4fd29915efe3047634b0b8909eb73111086ca0cb4"; got != want {
 		t.Fatalf("openrouter ID set hash = %s, want %s", got, want)
 	}
@@ -426,8 +493,7 @@ func TestCATM3VercelCatalogFromLiveListing(t *testing.T) {
 	if len(gateway) != 190 {
 		t.Fatalf("vercel-ai-gateway models = %d, want 190", len(gateway))
 	}
-	// Independently derived from the 188 v0.81.0 manifest IDs plus the two
-	// tool-use-tagged models present in the captured live API response.
+	// Byte-identical to the 190 IDs in the published v0.81.1 manifest.
 	if got, want := modelIDSetHash(gateway), "312246de110840fbe5eea7ed506dd387aaebd77f26e3c7e01e868220808658a2"; got != want {
 		t.Fatalf("vercel-ai-gateway ID set hash = %s, want %s", got, want)
 	}
@@ -483,8 +549,8 @@ func TestSYNC3OpenCodeHy3FreeExcluded(t *testing.T) {
 	if _, ok := catalog["opencode"]["hy3-free"]; ok {
 		t.Fatal("opencode/hy3-free must not re-enter the catalog")
 	}
-	if len(catalog["opencode"]) != 53 {
-		t.Fatalf("opencode models = %d, want 53", len(catalog["opencode"]))
+	if len(catalog["opencode"]) != 55 {
+		t.Fatalf("opencode models = %d, want 55", len(catalog["opencode"]))
 	}
 }
 

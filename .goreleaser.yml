@@ -15,7 +15,12 @@ builds:
 archives:
   - formats: [tar.gz]
     name_template: "pigo_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-brews:
+source:
+  enabled: true
+  name_template: "pigo_{{ .Version }}_source"
+  format: tar.gz
+  prefix_template: "pigo-{{ .Version }}/"
+homebrew_casks:
   - name: pigo
     repository:
       owner: OrdalieTech
@@ -24,8 +29,6 @@ brews:
     homepage: https://github.com/OrdalieTech/pigo
     description: Faithful, slim, pure-Go port of the pi coding agent
     license: MIT
-    install: bin.install "pigo"
-    test: system "#{bin}/pigo", "--version"
 checksum:
   name_template: checksums.txt
 release:

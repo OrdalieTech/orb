@@ -749,6 +749,17 @@ func NewCompactionStatusIndicator(ui tui.RenderRequester, reason string) *Status
 	}
 }
 
+func NewBranchSummaryStatusIndicator(ui tui.RenderRequester) *StatusIndicator {
+	return &StatusIndicator{
+		Loader: tui.NewLoader(ui,
+			func(s string) string { return theme.FG("accent", s) },
+			func(s string) string { return theme.FG("muted", s) },
+			fmt.Sprintf("Summarizing branch... (%s to cancel)", KeyText("app.interrupt")), nil,
+		),
+		Kind: StatusBranchSummary,
+	}
+}
+
 // IdleStatus renders two empty lines (same height as a status indicator).
 type IdleStatus struct{}
 

@@ -45,6 +45,13 @@ func RunLoop(
 			return nil, err
 		}
 	}
+	if streamFn == nil {
+		var err error
+		streamFn, err = getDefaultStreamFn()
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	if err := runLoop(ctx, &current, &newMessages, config, emitter, streamFn); err != nil {
 		return nil, err
@@ -74,6 +81,13 @@ func RunLoopContinue(
 	}
 	if err := emitter.emit(ctx, TurnStartEvent{}); err != nil {
 		return nil, err
+	}
+	if streamFn == nil {
+		var err error
+		streamFn, err = getDefaultStreamFn()
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err := runLoop(ctx, loopContext, &newMessages, config, emitter, streamFn); err != nil {
 		return nil, err

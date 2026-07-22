@@ -308,6 +308,22 @@ Status: **green; closes with the commit containing this record**.
       requested SYNC-1 Kimi K3 change is retained as an explicit ahead-of-pin backport; the other
       v0.81.1 commits are not silently attributed to v0.81.0 and belong to the next sync cycle.
 
+## Upstream v0.81.1 sync — 2026-07-22
+
+Status: **green; closes with the commit containing this record**.
+
+- [x] Diff all 14 commits from v0.81.0 (`9c480b6a`) through v0.81.1 (`20be4b18`) and classify every
+      changed upstream path against the mirror and divergence ledger.
+- [x] Port shared assistant retry behavior, compaction/branch-summary retry events, the restored
+      default stream fallback, deferred interactive catalog refresh, Kimi K3 metadata, and the
+      published 1,098-model catalog.
+- [x] Map upstream source-archive publication onto deterministic GoReleaser output with checksum,
+      content-exclusion, clean static rebuild, and two-pass byte-stability checks.
+- [x] Regenerate all conformance families from the exact v0.81.1 checkout; F10 payloads remain
+      byte-identical and only its manifest provenance changes.
+- [x] Run the complete race/lint/fixture/tidy/static-cross-build/release-config gate and commit the
+      green sync.
+
 ## Resolved owner decisions
 
 - **M5 binary-size cap (2026-07-20)** — the owner adopted the expansion study's recommended 55 MB

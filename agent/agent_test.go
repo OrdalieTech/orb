@@ -19,7 +19,7 @@ func TestAgentCoalescesMissingInitialModelToUnknownSentinel(t *testing.T) {
 	}
 }
 
-func TestV081AgentRequiresStreamFunctionAtConstruction(t *testing.T) {
+func TestAgentRetainsExplicitStreamFunction(t *testing.T) {
 	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{loopAssistant(ai.StopReasonStop)}}
 	created := NewAgent(responses.stream, WithInitialState(AgentState{Model: loopModel()}))
 	if created.StreamFn() == nil {
