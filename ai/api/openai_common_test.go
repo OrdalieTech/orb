@@ -281,3 +281,36 @@ func (body *contextGatedBody) Read(buffer []byte) (int, error) {
 }
 
 func (body *contextGatedBody) Close() error { return nil }
+
+func TestOpenAIHeaderTimeoutDefaultsToPinnedSDKValueOAM1(t *testing.T) {
+	base := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if got := request.Header.Get("X-Stainless-Timeout"); got != "" {
+			t.Fatalf("default X-Stainless-Timeout = %q, want absent", got)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("")),
+			Request:    request,
+		}, nil
+	})}
+	client, err := openAIHeaderTimeoutClient(base, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	timeoutClient, ok := client.(*openAIHeaderTimeoutDoer)
+	if !ok || timeoutClient.timeout != 10*time.Minute {
+		t.Fatalf("default timeout client = %#v, want 10m header timeout", client)
+	}
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "https://fixture.invalid/responses", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := response.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+}

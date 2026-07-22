@@ -15,6 +15,9 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
   `import.meta.dirname`/`filename` to locate bundled resources from the package directory.
 - Popular extensions can use common `fs` realpath/copy/remove/access APIs, their promise
   counterparts, and synchronous argument-safe child processes through `execFileSync`.
+- OpenAI and Azure Responses requests now match the pinned SDK's ten-minute header timeout and
+  `X-Stainless-Timeout` wire format, while Codex error fallbacks stringify parsed events and drop
+  non-string event types like upstream.
 
 ## [0.1.1] - 2026-07-21
 

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -24,6 +25,7 @@ import (
 const (
 	openAIPromptCacheKeyMaxLength = 64
 	maxProviderErrorBodyChars     = 4000
+	openAIDefaultTimeout          = 10 * time.Minute
 )
 
 var (
@@ -246,7 +248,7 @@ func postOpenAIStream(
 	if err != nil {
 		return nil, fmt.Errorf("encode OpenAI request: %w", err)
 	}
-	httpClient, err := openAIHeaderTimeoutClient(openAIHTTPClient, streamTimeoutMS(options))
+	httpClient, err := openAIHeaderTimeoutClient(openAIHTTPClient, streamTimeoutMS(options), headers)
 	if err != nil {
 		return nil, err
 	}
@@ -289,8 +291,9 @@ type openAIHTTPDoer interface {
 }
 
 type openAIHeaderTimeoutDoer struct {
-	base    openAIHTTPDoer
-	timeout time.Duration
+	base             openAIHTTPDoer
+	timeout          time.Duration
+	stainlessTimeout *string
 }
 
 func streamTimeoutMS(options *ai.StreamOptions) *int64 {
@@ -300,17 +303,29 @@ func streamTimeoutMS(options *ai.StreamOptions) *int64 {
 	return options.TimeoutMS
 }
 
-func openAIHeaderTimeoutClient(base openAIHTTPDoer, timeoutMS *int64) (openAIHTTPDoer, error) {
-	if timeoutMS == nil {
-		return base, nil
-	}
-	if *timeoutMS < 0 {
+// The pinned JavaScript SDK times fetch only until response headers arrive.
+// Its timeout header is added here because openai-go treats the value "0" as
+// an internal sentinel, but JavaScript emits "0" for positive subsecond values.
+func openAIHeaderTimeoutClient(base openAIHTTPDoer, timeoutMS *int64, headers http.Header) (openAIHTTPDoer, error) {
+	timeout := openAIDefaultTimeout
+	if timeoutMS != nil && *timeoutMS < 0 {
 		return nil, errors.New("timeout must be a positive integer")
 	}
-	return &openAIHeaderTimeoutDoer{base: base, timeout: time.Duration(*timeoutMS) * time.Millisecond}, nil
+	if timeoutMS != nil {
+		timeout = time.Duration(*timeoutMS) * time.Millisecond
+	}
+	stainlessTimeout, headerOverridden := httpHeaderLastValue(headers, "X-Stainless-Timeout")
+	if timeoutMS != nil && *timeoutMS > 0 && !headerOverridden {
+		value := strconv.FormatInt(*timeoutMS/1000, 10)
+		stainlessTimeout = &value
+	}
+	return &openAIHeaderTimeoutDoer{base: base, timeout: timeout, stainlessTimeout: stainlessTimeout}, nil
 }
 
 func (client *openAIHeaderTimeoutDoer) Do(request *http.Request) (*http.Response, error) {
+	if client.stainlessTimeout != nil {
+		request.Header.Set("X-Stainless-Timeout", *client.stainlessTimeout)
+	}
 	requestContext, cancel := context.WithCancel(request.Context())
 	timedOut := make(chan struct{})
 	timer := time.AfterFunc(client.timeout, func() {
@@ -332,6 +347,19 @@ func (client *openAIHeaderTimeoutDoer) Do(request *http.Request) (*http.Response
 	}
 	response.Body = &cancelOnCloseBody{ReadCloser: response.Body, cancel: cancel}
 	return response, nil
+}
+
+func httpHeaderLastValue(headers http.Header, name string) (*string, bool) {
+	for key, values := range headers {
+		if strings.EqualFold(key, name) {
+			if len(values) == 0 {
+				return nil, true
+			}
+			value := values[len(values)-1]
+			return &value, true
+		}
+	}
+	return nil, false
 }
 
 // cancelOnCloseBody releases the request-scoped cancel context once the caller
