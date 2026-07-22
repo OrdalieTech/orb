@@ -10,6 +10,9 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 - `--no-extensions` now disables discovery while preserving explicit `-e` extensions, and the
   upstream `--theme`/`--no-themes` resource-selection flags are available.
+- JS extensions can import `buffer`/`node:buffer`, append transcript streams with
+  `fs.createWriteStream`, resolve the pi-ai root as the upstream compat superset, and use
+  `import.meta.dirname`/`filename` to locate bundled resources from the package directory.
 
 ## [0.1.1] - 2026-07-21
 

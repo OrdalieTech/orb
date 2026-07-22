@@ -210,7 +210,8 @@ globalThis.URL.prototype.toString = function() { return this.href; };
 	}); err != nil {
 		return err
 	}
-	compatModule := runtime.NewObject()
+	// Upstream resolves both specifiers to the same strict superset module.
+	compatModule := aiModule
 	if err := compatModule.Set("getModel", func(call sobek.FunctionCall) sobek.Value {
 		catalog, err := builtins()
 		if err != nil {
@@ -355,7 +356,7 @@ globalThis.URL.prototype.toString = function() { return this.href; };
 			return guardedAI
 		case specifier == "@earendil-works/pi-ai/compat",
 			specifier == "@mariozechner/pi-ai/compat":
-			return compatModule
+			return guardedAI
 		case specifier == "@earendil-works/pi-tui",
 			specifier == "@mariozechner/pi-tui":
 			return guardedTUI
