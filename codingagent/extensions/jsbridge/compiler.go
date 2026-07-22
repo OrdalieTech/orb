@@ -67,6 +67,7 @@ func (cache *buildCache) build(entry string) (artifact, error) {
 		Charset:        api.CharsetUTF8,
 		LegalComments:  api.LegalCommentsNone,
 		LogLevel:       api.LogLevelSilent,
+		Plugins:        []api.Plugin{packageImportsExtensionPlugin()},
 		// CommonJS output leaves import.meta empty; upstream runs under Node
 		// ESM where import.meta.url is the entry file URL. Extensions locate
 		// bundled resources through it (docs pattern), so define it per build.

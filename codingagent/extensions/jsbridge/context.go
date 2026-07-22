@@ -651,13 +651,19 @@ func newWritableSessionManagerObject(runtime *sobek.Runtime, manager *session.Se
 type abortSignalState struct {
 	mu        sync.Mutex
 	aborted   bool
+	reason    sobek.Value
 	onabort   sobek.Value
 	listeners []sobek.Value
 }
 
 func newAbortSignal(runtime *sobek.Runtime, vm *runtimeVM, ctx context.Context) (sobek.Value, error) {
+	signal, _, err := newAbortSignalWithState(runtime, vm, ctx)
+	return signal, err
+}
+
+func newAbortSignalWithState(runtime *sobek.Runtime, vm *runtimeVM, ctx context.Context) (sobek.Value, *abortSignalState, error) {
 	if ctx == nil {
-		return sobek.Undefined(), nil
+		return sobek.Undefined(), nil, nil
 	}
 	object := runtime.NewObject()
 	state := &abortSignalState{aborted: ctx.Err() != nil}
@@ -668,15 +674,21 @@ func newAbortSignal(runtime *sobek.Runtime, vm *runtimeVM, ctx context.Context) 
 		state.mu.Unlock()
 		return runtime.ToValue(aborted)
 	}); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := defineGetter(runtime, object, "reason", func() sobek.Value {
+		state.mu.Lock()
+		reason := state.reason
+		state.mu.Unlock()
+		if present(reason) {
+			return reason
+		}
 		if ctx.Err() == nil {
 			return sobek.Undefined()
 		}
 		return runtime.NewGoError(context.Cause(ctx))
 	}); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := object.DefineAccessorProperty(
 		"onabort",
@@ -702,15 +714,21 @@ func newAbortSignal(runtime *sobek.Runtime, vm *runtimeVM, ctx context.Context) 
 		sobek.FLAG_TRUE,
 		sobek.FLAG_FALSE,
 	); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := object.Set("throwIfAborted", func(sobek.FunctionCall) sobek.Value {
 		if ctx.Err() != nil {
+			state.mu.Lock()
+			reason := state.reason
+			state.mu.Unlock()
+			if present(reason) {
+				panic(reason)
+			}
 			panic(runtime.NewGoError(context.Cause(ctx)))
 		}
 		return sobek.Undefined()
 	}); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := object.Set("addEventListener", func(call sobek.FunctionCall) sobek.Value {
 		if call.Argument(0).String() != "abort" {
@@ -724,7 +742,7 @@ func newAbortSignal(runtime *sobek.Runtime, vm *runtimeVM, ctx context.Context) 
 		state.mu.Unlock()
 		return sobek.Undefined()
 	}); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := object.Set("removeEventListener", func(call sobek.FunctionCall) sobek.Value {
 		if call.Argument(0).String() != "abort" {
@@ -741,7 +759,7 @@ func newAbortSignal(runtime *sobek.Runtime, vm *runtimeVM, ctx context.Context) 
 		state.mu.Unlock()
 		return sobek.Undefined()
 	}); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if done := ctx.Done(); done != nil && ctx.Err() == nil {
 		go func() {
@@ -777,5 +795,5 @@ func newAbortSignal(runtime *sobek.Runtime, vm *runtimeVM, ctx context.Context) 
 			})
 		}()
 	}
-	return object, nil
+	return object, state, nil
 }

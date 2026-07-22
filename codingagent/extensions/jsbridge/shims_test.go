@@ -244,6 +244,38 @@ export default function(pi) {
 	assertRegisteredDescription(t, result, "result", "true:true:shim_value:"+cwd)
 }
 
+func TestGlobalAliasesGlobalThis(t *testing.T) {
+	result := loadAndRunExtension(t, t.TempDir(), `
+export default function(pi) {
+  global.TESTING_WINDOWS = true;
+  pi.registerCommand("result", {
+    description: String(global === globalThis) + ":" + String(globalThis.TESTING_WINDOWS),
+    handler: async () => {}
+  });
+}
+`)
+	assertRegisteredDescription(t, result, "result", "true:true")
+}
+
+func TestOSTotalmemReturnsPhysicalBytes(t *testing.T) {
+	memory := nodeTotalMemory()
+	if memory < 8*1024*1024 {
+		t.Fatalf("nodeTotalMemory() = %d, want at least 8 MiB", memory)
+	}
+	result := loadAndRunExtension(t, t.TempDir(), `
+import os from "node:os";
+export default function(pi) {
+  const memory = os.totalmem();
+  const limit = Math.max(8 * 1024 * 1024, Math.min(Number.MAX_SAFE_INTEGER, Math.floor(memory)));
+  pi.registerCommand("result", {
+    description: [typeof os.totalmem, typeof memory, Number.isSafeInteger(memory), limit >= 8 * 1024 * 1024].join(":"),
+    handler: async () => {}
+  });
+}
+`)
+	assertRegisteredDescription(t, result, "result", "function:number:true:true")
+}
+
 // --- url module tests ---
 
 func TestURLFileURLToPath(t *testing.T) {
@@ -255,6 +287,48 @@ export default function(pi) {
 }
 `)
 	assertRegisteredDescription(t, result, "result", "/tmp/test.txt")
+}
+
+func TestURLConstructorsResolveRelativeFileURL(t *testing.T) {
+	result := loadAndRunExtension(t, t.TempDir(), `
+import { URL as NodeURL } from "node:url";
+export default function(pi) {
+  const base = "file:///packages/node_modules/pi-readseek/dist/index.js";
+  const globalURL = new URL("../prompts/search.md", base);
+  const nodeURL = new NodeURL("../prompts/search.md", base);
+  pi.registerCommand("result", {
+    description: [
+      NodeURL === URL,
+      globalURL.href,
+      globalURL.pathname,
+      nodeURL.href,
+      nodeURL.pathname
+    ].join("|"),
+    handler: async () => {}
+  });
+}
+`)
+	assertRegisteredDescription(t, result, "result", "true|file:///packages/node_modules/pi-readseek/prompts/search.md|/packages/node_modules/pi-readseek/prompts/search.md|file:///packages/node_modules/pi-readseek/prompts/search.md|/packages/node_modules/pi-readseek/prompts/search.md")
+}
+
+func TestFSReadFileSyncAcceptsFileURL(t *testing.T) {
+	cwd := t.TempDir()
+	target := filepath.Join(cwd, "packages", "node_modules", "pi-readseek", "prompts", "search.md")
+	mustWrite(t, target, "search prompt")
+	base := "file://" + filepath.ToSlash(filepath.Join(cwd, "packages", "node_modules", "pi-readseek", "dist", "index.js"))
+	result := loadAndRunExtension(t, cwd, `
+import { readFileSync } from "node:fs";
+export default function(pi) {
+  const promptURL = new URL("../prompts/search.md", "`+base+`");
+  const fromObject = readFileSync(promptURL, "utf8");
+  const fromString = readFileSync(promptURL.href, "utf8");
+  pi.registerCommand("result", {
+    description: fromObject + "|" + fromString,
+    handler: async () => {}
+  });
+}
+`)
+	assertRegisteredDescription(t, result, "result", "search prompt|search prompt")
 }
 
 // --- util module tests ---
@@ -707,6 +781,90 @@ export default async function(pi) {
 	assertRegisteredDescription(t, result, "result", "async content")
 }
 
+func TestFSPromisesFileHandleAndDirents(t *testing.T) {
+	cwd := t.TempDir()
+	dir := filepath.Join(cwd, "knowledge-base")
+	mustWrite(t, filepath.Join(dir, "input.md"), "hello")
+	result := loadAndRunExtension(t, cwd, `
+import { open, readdir } from "node:fs/promises";
+export default async function(pi) {
+  const entries = await readdir("`+dir+`", { withFileTypes: true });
+  const handle = await open("`+filepath.Join(dir, "input.md")+`", "r");
+  try {
+    const info = await handle.stat();
+    const buffer = Buffer.allocUnsafe(info.size);
+    const first = await handle.read(buffer, 0, 2, null);
+    const second = await handle.read(buffer, 2, buffer.length - 2, null);
+    const overflow = Buffer.allocUnsafe(1);
+    const eof = await handle.read(overflow, 0, 1, null);
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, first.bytesRead + second.bytesRead));
+    const entry = entries[0];
+    pi.registerCommand("result", {
+      description: [entry.name, entry.isFile(), entry.isDirectory(), info.size, text, eof.bytesRead].join(":"),
+      handler: async () => {},
+    });
+  } finally {
+    await handle.close();
+  }
+}
+`)
+	assertRegisteredDescription(t, result, "result", "input.md:true:false:5:hello:0")
+}
+
+func TestTextDecoderFatalRejectsInvalidUTF8(t *testing.T) {
+	cwd := t.TempDir()
+	result := loadAndRunExtension(t, cwd, `
+export default function(pi) {
+  let rejected = false;
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from([255]));
+  } catch {
+    rejected = true;
+  }
+  pi.registerCommand("result", { description: String(rejected), handler: async () => {} });
+}
+`)
+	assertRegisteredDescription(t, result, "result", "true")
+}
+
+func TestTextDecoderPreservesSplitStreamingUTF8(t *testing.T) {
+	cwd := t.TempDir()
+	result := loadAndRunExtension(t, cwd, `
+export default function(pi) {
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const first = decoder.decode(Buffer.from([0x41, 0xe2, 0x82]), { stream: true });
+  const second = decoder.decode(Buffer.from([0xac, 0x42]), { stream: true });
+  const flushed = decoder.decode();
+  pi.registerCommand("result", { description: first + "|" + second + "|" + flushed, handler: async () => {} });
+}
+`)
+	assertRegisteredDescription(t, result, "result", "A|€B|")
+}
+
+func TestAbortControllerPreservesReasonIdentity(t *testing.T) {
+	cwd := t.TempDir()
+	result := loadAndRunExtension(t, cwd, `
+export default function(pi) {
+  class TaskTimeoutError extends Error {}
+  const controller = new AbortController();
+  const reason = new TaskTimeoutError("timed out");
+  controller.abort(reason);
+  controller.abort(new Error("replacement"));
+  let thrown;
+  try {
+    controller.signal.throwIfAborted();
+  } catch (error) {
+    thrown = error;
+  }
+  pi.registerCommand("result", {
+    description: [controller.signal.aborted, controller.signal.reason === reason, controller.signal.reason instanceof TaskTimeoutError, thrown === reason].join(":"),
+    handler: async () => {},
+  });
+}
+`)
+	assertRegisteredDescription(t, result, "result", "true:true:true:true")
+}
+
 // --- bare specifier tests ---
 
 func TestBareSpecifierWithoutNodePrefix(t *testing.T) {
@@ -1109,6 +1267,67 @@ export default async function(pi) {
 }
 `)
 	assertRegisteredDescription(t, result, "result", "spawn-test:0")
+}
+
+func TestSpawnChildUsesEventEmitter(t *testing.T) {
+	result := loadAndRunExtension(t, t.TempDir(), `
+import { spawn } from "node:child_process";
+export default async function(pi) {
+  const result = await new Promise((resolve, reject) => {
+    const events = [];
+    const chunks = [];
+    const cp = spawn("echo", ["event-emitter"]);
+    const unrefReturnsChild = cp.unref() === cp;
+    let spawnCount = 0;
+    let exitCode;
+    cp.once("error", reject);
+    cp.once("spawn", () => {
+      spawnCount++;
+      events.push("spawn");
+    });
+    cp.stdout.on("data", data => {
+      chunks.push(data.toString());
+      events.push("data");
+    });
+    cp.on("exit", code => {
+      exitCode = code;
+      events.push("exit");
+    });
+    cp.on("close", code => {
+      events.push("close");
+      cp.emit("spawn");
+      resolve([
+        unrefReturnsChild,
+        spawnCount,
+        events.join(","),
+        chunks.join("").trim(),
+        exitCode,
+        code
+      ].join("|"));
+    });
+  });
+  pi.registerCommand("result", {description: result, handler: async () => {}});
+}
+`)
+	assertRegisteredDescription(t, result, "result", "true|1|spawn,data,exit,close|event-emitter|0|0")
+}
+
+func TestSpawnMissingExecutableEmitsError(t *testing.T) {
+	result := loadAndRunExtension(t, t.TempDir(), `
+import { spawn } from "node:child_process";
+export default async function(pi) {
+  const result = await new Promise(resolve => {
+    const cp = spawn("pigo-jsbridge-command-that-does-not-exist");
+    let spawnCount = 0;
+    cp.once("spawn", () => { spawnCount++; });
+    cp.once("error", error => {
+      resolve([spawnCount, error.code, cp.unref() === cp].join("|"));
+    });
+  });
+  pi.registerCommand("result", {description: result, handler: async () => {}});
+}
+`)
+	assertRegisteredDescription(t, result, "result", "0|ENOENT|true")
 }
 
 func TestSpawnWithCwd(t *testing.T) {

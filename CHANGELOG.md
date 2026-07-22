@@ -22,6 +22,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
   detection modes verbatim, and Anthropic's subscription warning survives OAuth refresh failures.
 - Model generation now requires an explicit NVIDIA NIM listing instead of an invented fallback,
   while concurrent and cancelled remote-catalog refreshes preserve upstream cache semantics.
+- The extension runtime now supports Piolium child sessions and its filesystem, streaming decode,
+  and cancellation workflows, alongside the Node/SDK surfaces used by more ecosystem packages.
 
 ## [0.1.1] - 2026-07-21
 

@@ -25,8 +25,11 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/grafana/sobek"
+	"github.com/rivo/uniseg"
 )
 
 // --- Node-style fs errors ---
@@ -158,25 +161,147 @@ func installEncodingGlobals(rt *sobek.Runtime) error {
 };`); err != nil {
 		return err
 	}
+	if err := installIntlSegmenter(rt); err != nil {
+		return err
+	}
 	return rt.Set("TextDecoder", func(call sobek.ConstructorCall) *sobek.Object {
+		fatal := false
+		var pending []byte
+		if options := call.Argument(1); present(options) {
+			value := options.ToObject(rt).Get("fatal")
+			fatal = present(value) && value.ToBoolean()
+		}
 		mustSet(rt, call.This, "decode", func(inner sobek.FunctionCall) sobek.Value {
 			input := inner.Argument(0)
-			if !present(input) {
-				return rt.ToValue("")
+			var chunk []byte
+			if present(input) {
+				switch exported := input.Export().(type) {
+				case []byte:
+					chunk = exported
+				case sobek.ArrayBuffer:
+					chunk = exported.Bytes()
+				case string:
+					chunk = []byte(exported)
+				default:
+					chunk = exportBytes(rt, input)
+				}
 			}
-			switch exported := input.Export().(type) {
-			case []byte:
-				return rt.ToValue(string(exported))
-			case sobek.ArrayBuffer:
-				return rt.ToValue(string(exported.Bytes()))
-			case string:
-				return rt.ToValue(exported)
-			default:
-				return rt.ToValue(string(exportBytes(rt, input)))
+			decoded := make([]byte, 0, len(pending)+len(chunk))
+			decoded = append(decoded, pending...)
+			decoded = append(decoded, chunk...)
+			stream := false
+			if options := inner.Argument(1); present(options) {
+				value := options.ToObject(rt).Get("stream")
+				stream = present(value) && value.ToBoolean()
 			}
+			if stream {
+				prefix, remainder, invalid := splitStreamingUTF8(decoded)
+				pending = append(pending[:0], remainder...)
+				if fatal && invalid {
+					panic(rt.NewTypeError("The encoded data was not valid for encoding utf-8"))
+				}
+				return rt.ToValue(string([]rune(string(prefix))))
+			}
+			pending = nil
+			if fatal && !utf8.Valid(decoded) {
+				panic(rt.NewTypeError("The encoded data was not valid for encoding utf-8"))
+			}
+			return rt.ToValue(string([]rune(string(decoded))))
 		})
 		return nil
 	})
+}
+
+func splitStreamingUTF8(data []byte) (prefix, remainder []byte, invalid bool) {
+	for index := 0; index < len(data); {
+		if data[index] < utf8.RuneSelf {
+			index++
+			continue
+		}
+		r, size := utf8.DecodeRune(data[index:])
+		if r == utf8.RuneError && size == 1 {
+			if !utf8.FullRune(data[index:]) {
+				return data[:index], data[index:], invalid
+			}
+			invalid = true
+		}
+		index += size
+	}
+	return data, nil, invalid
+}
+
+type segmenterEntry struct {
+	value string
+	index int
+	end   int
+}
+
+func installIntlSegmenter(rt *sobek.Runtime) error {
+	intl := rt.NewObject()
+	if current := rt.Get("Intl"); present(current) {
+		intl = current.ToObject(rt)
+	} else if err := rt.Set("Intl", intl); err != nil {
+		return err
+	}
+	constructor := func(call sobek.ConstructorCall) *sobek.Object {
+		granularity := "grapheme"
+		if options := call.Argument(1); present(options) {
+			if value := options.ToObject(rt).Get("granularity"); present(value) {
+				granularity = value.String()
+			}
+		}
+		if granularity != "grapheme" {
+			panic(rt.NewTypeError("Intl.Segmenter granularity %q is not supported", granularity))
+		}
+		mustSet(rt, call.This, "segment", func(inner sobek.FunctionCall) sobek.Value {
+			input := inner.Argument(0).String()
+			entries := make([]segmenterEntry, 0, len(input))
+			segments := uniseg.NewGraphemes(input)
+			index := 0
+			for segments.Next() {
+				value := segments.Str()
+				end := index + utf16Length(value)
+				entries = append(entries, segmenterEntry{value: value, index: index, end: end})
+				index = end
+			}
+			values := make([]any, len(entries))
+			for position, entry := range entries {
+				values[position] = segmenterEntryObject(rt, input, entry)
+			}
+			result := rt.NewArray(values...)
+			mustSet(rt, result, "containing", func(lookup sobek.FunctionCall) sobek.Value {
+				offset := int(lookup.Argument(0).ToInteger())
+				for _, entry := range entries {
+					if offset >= entry.index && offset < entry.end {
+						return segmenterEntryObject(rt, input, entry)
+					}
+				}
+				return sobek.Undefined()
+			})
+			return result
+		})
+		mustSet(rt, call.This, "resolvedOptions", func(sobek.FunctionCall) sobek.Value {
+			return toJS(rt, map[string]any{"locale": "en-US", "granularity": granularity})
+		})
+		return nil
+	}
+	return intl.Set("Segmenter", constructor)
+}
+
+func utf16Length(value string) int {
+	length := 0
+	for _, character := range value {
+		length += utf16.RuneLen(character)
+	}
+	return length
+}
+
+func segmenterEntryObject(rt *sobek.Runtime, input string, entry segmenterEntry) *sobek.Object {
+	value := rt.NewObject()
+	mustSet(rt, value, "segment", entry.value)
+	mustSet(rt, value, "index", entry.index)
+	mustSet(rt, value, "input", input)
+	return value
 }
 
 // --- node:crypto ---
@@ -262,9 +387,31 @@ func newCryptoModule(rt *sobek.Runtime) *sobek.Object {
 
 func newModuleModule(rt *sobek.Runtime) *sobek.Object {
 	m := rt.NewObject()
-	// createRequire returns the shim resolver; every module shares it.
-	mustSet(rt, m, "createRequire", func(sobek.FunctionCall) sobek.Value {
-		return rt.Get("require")
+	mustSet(rt, m, "createRequire", func(call sobek.FunctionCall) sobek.Value {
+		base := call.Argument(0).String()
+		globalRequire, ok := sobek.AssertFunction(rt.Get("require"))
+		if !ok {
+			panic(rt.NewTypeError("extension module loader is unavailable"))
+		}
+		localRequire := rt.ToValue(func(inner sobek.FunctionCall) sobek.Value {
+			value, err := globalRequire(sobek.Undefined(), inner.Arguments...)
+			if err != nil {
+				panic(err)
+			}
+			return value
+		}).ToObject(rt)
+		mustSet(rt, localRequire, "resolve", func(inner sobek.FunctionCall) sobek.Value {
+			resolver, ok := sobek.AssertFunction(rt.Get("__piGoRequireResolve"))
+			if !ok {
+				panic(rt.NewTypeError("require.resolve is unavailable"))
+			}
+			value, err := resolver(sobek.Undefined(), inner.Argument(0), rt.ToValue(base))
+			if err != nil {
+				panic(err)
+			}
+			return value
+		})
+		return localRequire
 	})
 	return m
 }

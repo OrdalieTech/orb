@@ -803,15 +803,22 @@ func requestSignal(request extensions.AutocompleteRequest) context.Context {
 func installAbortController(runtime *sobek.Runtime, vm *runtimeVM) error {
 	return runtime.Set("AbortController", func(call sobek.ConstructorCall) *sobek.Object {
 		ctx, cancel := context.WithCancelCause(context.Background())
-		signal, err := newAbortSignal(runtime, vm, ctx)
+		signal, state, err := newAbortSignalWithState(runtime, vm, ctx)
 		must(runtime, err)
 		must(runtime, call.This.Set("signal", signal))
 		must(runtime, call.This.Set("abort", func(inner sobek.FunctionCall) sobek.Value {
+			if ctx.Err() != nil {
+				return sobek.Undefined()
+			}
 			reason := errors.New("This operation was aborted") //nolint:staticcheck // upstream AbortController reason message
-
+			reasonValue := sobek.Value(runtime.NewGoError(reason))
 			if present(inner.Argument(0)) {
 				reason = errors.New(inner.Argument(0).String())
+				reasonValue = inner.Argument(0)
 			}
+			state.mu.Lock()
+			state.reason = reasonValue
+			state.mu.Unlock()
 			cancel(reason)
 			return sobek.Undefined()
 		}))

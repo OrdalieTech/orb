@@ -50,17 +50,26 @@ func registerHandler(
 }
 
 func registerTool(runtime *sobek.Runtime, vm *runtimeVM, api extensions.API, value sobek.Value) error {
+	definition, err := decodeToolDefinition(runtime, vm, value)
+	if err != nil {
+		return err
+	}
+	api.RegisterTool(definition)
+	return nil
+}
+
+func decodeToolDefinition(runtime *sobek.Runtime, vm *runtimeVM, value sobek.Value) (extensions.ToolDefinition, error) {
 	if !present(value) {
-		return fmt.Errorf("registerTool requires a tool definition")
+		return extensions.ToolDefinition{}, fmt.Errorf("registerTool requires a tool definition")
 	}
 	object := value.ToObject(runtime)
 	execute, ok := sobek.AssertFunction(object.Get("execute"))
 	if !ok {
-		return fmt.Errorf("tool %q has no execute function", object.Get("name").String())
+		return extensions.ToolDefinition{}, fmt.Errorf("tool %q has no execute function", object.Get("name").String())
 	}
 	parameters, err := stringifyJSON(runtime, object.Get("parameters"))
 	if err != nil {
-		return fmt.Errorf("tool %q parameters: %w", object.Get("name").String(), err)
+		return extensions.ToolDefinition{}, fmt.Errorf("tool %q parameters: %w", object.Get("name").String(), err)
 	}
 	definition := extensions.ToolDefinition{
 		Name:          stringProperty(object, "name"),
@@ -73,7 +82,7 @@ func registerTool(runtime *sobek.Runtime, vm *runtimeVM, api extensions.API, val
 	}
 	if guidelines := object.Get("promptGuidelines"); present(guidelines) {
 		if err := decodeJSON(runtime, guidelines, &definition.PromptGuidelines); err != nil {
-			return fmt.Errorf("tool %q promptGuidelines: %w", definition.Name, err)
+			return extensions.ToolDefinition{}, fmt.Errorf("tool %q promptGuidelines: %w", definition.Name, err)
 		}
 	}
 	if prepare, ok := sobek.AssertFunction(object.Get("prepareArguments")); ok {
@@ -137,8 +146,7 @@ func registerTool(runtime *sobek.Runtime, vm *runtimeVM, api extensions.API, val
 		}
 		return result.(agent.AgentToolResult), nil
 	}
-	api.RegisterTool(definition)
-	return nil
+	return definition, nil
 }
 
 func decodeToolResult(runtime *sobek.Runtime, value sobek.Value) (agent.AgentToolResult, error) {
