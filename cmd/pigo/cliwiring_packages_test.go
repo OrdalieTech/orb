@@ -18,6 +18,7 @@ import (
 	"github.com/OrdalieTech/pigo/codingagent"
 	"github.com/OrdalieTech/pigo/codingagent/config"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	extensionhost "github.com/OrdalieTech/pigo/codingagent/extensions/host"
 )
 
 const packageToolExtension = `export default function (pi) {
@@ -53,10 +54,19 @@ func loadedToolNames(t *testing.T, registry *extensions.Registry) []string {
 	return names
 }
 
+func requireExtensionHostRuntime(t *testing.T) {
+	t.Helper()
+	if _, err := extensionhost.DiscoverRuntime(t.Context()); err != nil {
+		t.Skip("extension-host CLI test requires Node.js >=22.6 or Bun on PATH")
+	}
+}
+
 // Finding 2: extensions provided by installed pi packages must load. cmd/pigo now
-// forwards resolvedPaths.Extensions into jsbridge's package-path fields; a
+// forwards resolvedPaths.Extensions into the host's package-path fields; a
 // user-scope package extension therefore reaches the loaded tool set.
 func TestLoadCompiledExtensionsLoadsPackageProvidedExtensions(t *testing.T) {
+	requireExtensionHostRuntime(t)
+	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
 	cwd := t.TempDir()
 	agentDir := t.TempDir()
 	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
@@ -79,10 +89,63 @@ func TestLoadCompiledExtensionsLoadsPackageProvidedExtensions(t *testing.T) {
 	}
 }
 
+func TestLoadCompiledExtensionsUsesExtensionHost(t *testing.T) {
+	requireExtensionHostRuntime(t)
+	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
+	cwd := t.TempDir()
+	agentDir := t.TempDir()
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	extPath := writeJSExtension(t, filepath.Join(t.TempDir(), "pkg"), packageToolExtension)
+	packages := &codingagent.ResolvedPaths{
+		Extensions: []codingagent.ResolvedResource{{
+			Path: extPath, Enabled: true,
+			Metadata: codingagent.PathMetadata{Source: "npm:pkg", Scope: "user", Origin: "package"},
+		}},
+	}
+	registry, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{}, settings, packages)
+	if registry == nil || len(diagnostics) != 0 {
+		t.Fatalf("registry = %#v, diagnostics = %v", registry, diagnostics)
+	}
+	if names := loadedToolNames(t, registry); !containsString(names, "parse_duration") {
+		t.Fatalf("package tool did not load through host: %v", names)
+	}
+	extensionHostMu.Lock()
+	manager := activeExtensionHost
+	extensionHostMu.Unlock()
+	if manager == nil {
+		t.Fatal("extension host manager was not retained")
+	}
+}
+
+func TestLoadCompiledExtensionsKeepsNativeExtensionsWithoutJSRuntime(t *testing.T) {
+	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
+	cwd := t.TempDir()
+	agentDir := t.TempDir()
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeJSExtension(t, filepath.Join(agentDir, "extensions", "local"), packageToolExtension)
+	t.Setenv("PATH", t.TempDir())
+	registry, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{}, settings, nil)
+	if registry == nil {
+		t.Fatal("native extension registry was lost without a JavaScript runtime")
+	}
+	want := "JS extensions require Node.js ≥22.6 or Bun; skills, prompt templates, MCP servers and built-in tools work without it"
+	if len(diagnostics) != 1 || diagnostics[0] != want {
+		t.Fatalf("diagnostics = %#v, want only %q", diagnostics, want)
+	}
+}
+
 // Finding 2, trust gate: a project-scope package extension stays invisible until
-// the project is trusted (jsbridge gates ProjectResolvedPackagePaths behind
+// the project is trusted (the host gates ProjectResolvedPackagePaths behind
 // ProjectTrusted).
 func TestLoadCompiledExtensionsHidesProjectPackageExtensionsUntilTrusted(t *testing.T) {
+	requireExtensionHostRuntime(t)
+	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
 	cwd := t.TempDir()
 	agentDir := t.TempDir()
 	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir), config.WithProjectTrusted(false))
@@ -110,7 +173,7 @@ func TestLoadCompiledExtensionsHidesProjectPackageExtensionsUntilTrusted(t *test
 
 // Finding 3: isPackageSourceSpec routes npm:/git:/http(s)/ssh specs through the
 // package resolver instead of treating them as literal file paths, while plain
-// paths continue straight to jsbridge.
+// paths continue straight to the extension host.
 func TestIsPackageSourceSpecClassification(t *testing.T) {
 	for _, spec := range []string{"npm:pi-skillful", "git:github.com/u/r", "github:u/r", "https://x/y.git", "ssh://git@h/r"} {
 		if !isPackageSourceSpec(spec) {
@@ -128,6 +191,8 @@ func TestIsPackageSourceSpecClassification(t *testing.T) {
 // and loads its extension, rather than failing on a literal `<cwd>/npm:<pkg>`
 // path. A fake registry (via npm_config_registry) keeps the test offline.
 func TestExtensionFlagResolvesNpmSourceInsteadOfLiteralPath(t *testing.T) {
+	requireExtensionHostRuntime(t)
+	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
 	registry := newInlineNpmRegistry(t)
 	registry.add("pi-fixture-ext", "1.0.0", map[string]string{
 		"package.json": `{"name":"pi-fixture-ext","version":"1.0.0","pi":{"extensions":["index.ts"]}}`,
