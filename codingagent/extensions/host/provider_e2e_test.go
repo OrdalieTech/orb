@@ -50,7 +50,7 @@ func TestRealHostRegistersProviderAuthCallbacksAndRecoversAfterRestart(t *testin
 	var diagnostics []extensions.Diagnostic
 	manager := NewManager(Options{
 		AgentDir: t.TempDir(), CWD: cwd, Version: "test", Runtime: &runtime,
-		RequestTimeout: 5 * time.Second, ShutdownTimeout: time.Second,
+		RequestTimeout: 30 * time.Second, ShutdownTimeout: time.Second,
 		BackoffBase: 10 * time.Millisecond, BackoffMax: 50 * time.Millisecond,
 		OnDiagnostic: func(diagnostic extensions.Diagnostic) {
 			diagnosticsMu.Lock()

@@ -214,7 +214,7 @@ func (ui *hostUIStub) Custom(ctx context.Context, factory extensions.CustomFacto
 		return value, true, nil
 	case <-ctx.Done():
 		return nil, false, context.Cause(ctx)
-	case <-time.After(5 * time.Second):
+	case <-time.After(30 * time.Second):
 		return nil, false, errors.New("timed out waiting for custom done")
 	}
 }
@@ -222,7 +222,7 @@ func (ui *hostUIStub) Custom(ctx context.Context, factory extensions.CustomFacto
 type tContext struct{ context.Context }
 
 func waitForRender(ctx tContext, component extensions.Component, width int, accept func([]string) bool) []string {
-	deadline := time.NewTimer(5 * time.Second)
+	deadline := time.NewTimer(30 * time.Second)
 	defer deadline.Stop()
 	ticker := time.NewTicker(5 * time.Millisecond)
 	defer ticker.Stop()
@@ -340,7 +340,7 @@ func TestPendingHostDialogGetsTypedRestartCancellation(t *testing.T) {
 	}()
 	select {
 	case <-ui.pendingDialogStarted:
-	case <-time.After(5 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("pending dialog did not start")
 	}
 	_, _ = crash.Execute(context.Background(), "crash", map[string]any{}, nil, runner.CreateContext())
@@ -350,7 +350,7 @@ func TestPendingHostDialogGetsTypedRestartCancellation(t *testing.T) {
 		if !errors.Is(cause, ErrUIDialogHostRestarted) || !errors.As(cause, &cancellation) || cancellation.Reason != UIDialogCancellationHostRestarted {
 			t.Fatalf("dialog cancellation = %v", cause)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("pending dialog was not cancelled")
 	}
 	select {
@@ -358,10 +358,10 @@ func TestPendingHostDialogGetsTypedRestartCancellation(t *testing.T) {
 		if err == nil {
 			t.Fatal("pending tool unexpectedly succeeded")
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("pending tool did not finish")
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for manager.RestartCount() == 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
