@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -328,8 +329,8 @@ func TestCATm1RefreshGateRequiresCheckedAtAndLastModified(t *testing.T) {
 }
 
 // CAT-m1: upstream treats an unavailable provider endpoint as a completed
-// check. It preserves the cached catalog and suppresses another request for
-// four hours.
+// check. It retains the already-loaded overlay for the current refresh while
+// persisting lastModified=0 for the next refresh or process.
 func TestCATm1UnavailableResponsesStampCheckedAtAndGate(t *testing.T) {
 	for _, status := range []int{http.StatusNotFound, http.StatusNotImplemented} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
@@ -365,8 +366,8 @@ func TestCATm1UnavailableResponsesStampCheckedAtAndGate(t *testing.T) {
 			if _, ok := catalog.Find("extension", "preserved"); !ok {
 				t.Fatal("unavailable response replaced the stored catalog")
 			}
-			if _, ok := catalog.Find("anthropic", "stale"); ok {
-				t.Fatal("unavailable response kept a bundled-provider overlay with lastModified=0")
+			if _, ok := catalog.Find("anthropic", "stale"); !ok {
+				t.Fatal("unavailable response dropped the overlay loaded before the request")
 			}
 			data, err := os.ReadFile(storePath)
 			if err != nil {
@@ -386,8 +387,12 @@ func TestCATm1UnavailableResponsesStampCheckedAtAndGate(t *testing.T) {
 			}
 
 			options.Now = func() time.Time { return base.Add(time.Minute) }
-			if _, err := Refresh(context.Background(), options); err != nil {
+			catalog, err = Refresh(context.Background(), options)
+			if err != nil {
 				t.Fatal(err)
+			}
+			if _, ok := catalog.Find("anthropic", "stale"); ok {
+				t.Fatal("gated refresh ignored the persisted lastModified=0")
 			}
 			if requests != 1 {
 				t.Fatalf("request count = %d, want one request followed by a gated refresh", requests)
@@ -596,6 +601,153 @@ func TestCATm1TransportFailureDoesNotStampOrGate(t *testing.T) {
 		t.Fatalf("request count = %d, want transport failure to remain ungated", requests)
 	}
 }
+
+func TestCATm1ConcurrentForcedRefreshesShareInflightResult(t *testing.T) {
+	source := []byte(`{"anthropic":{"models":{"fixture":{"name":"Fixture","tool_call":true,"modalities":{"input":["text"]},"limit":{"context":4096,"output":512},"cost":{"input":1,"output":2}}}}}`)
+	for _, test := range []struct {
+		name      string
+		storePath func(*testing.T) string
+	}{
+		{name: "pathless", storePath: func(*testing.T) string { return "" }},
+		{name: "stored", storePath: func(t *testing.T) string { return filepath.Join(t.TempDir(), "models-store.json") }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var requests atomic.Int32
+			started := make(chan struct{})
+			release := make(chan struct{})
+			lastModified := time.UnixMilli(generatedCatalogLastModified).Add(time.Hour).UTC()
+			client := &http.Client{Transport: catalogRoundTripFunc(func(*http.Request) (*http.Response, error) {
+				if requests.Add(1) == 1 {
+					close(started)
+				}
+				<-release
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Status:     "200 OK",
+					Header:     http.Header{"Last-Modified": []string{lastModified.Format(http.TimeFormat)}},
+					Body:       io.NopCloser(bytes.NewReader(source)),
+				}, nil
+			})}
+			options := RefreshOptions{
+				URL: "https://catalog.test/" + test.name, StorePath: test.storePath(t), Client: client,
+				Now: func() time.Time { return lastModified }, Force: true,
+			}
+			type result struct {
+				catalog *Catalog
+				err     error
+			}
+			first := make(chan result, 1)
+			go func() {
+				catalog, err := Refresh(context.Background(), options)
+				first <- result{catalog: catalog, err: err}
+			}()
+			<-started
+			time.AfterFunc(100*time.Millisecond, func() { close(release) })
+			secondCatalog, secondErr := Refresh(context.Background(), options)
+			firstResult := <-first
+			if firstResult.err != nil || secondErr != nil {
+				t.Fatalf("shared refresh errors = first %v, second %v", firstResult.err, secondErr)
+			}
+			if got := requests.Load(); got != 1 {
+				t.Fatalf("concurrent forced refreshes made %d requests, want one", got)
+			}
+			if firstResult.catalog != secondCatalog {
+				t.Fatal("concurrent refresh callers did not receive the shared result")
+			}
+			if _, ok := secondCatalog.Find("anthropic", "fixture"); !ok {
+				t.Fatal("shared refresh result is missing the fetched model")
+			}
+		})
+	}
+}
+
+func TestCATm1CancellationAfterResponseDoesNotMutateStore(t *testing.T) {
+	source := []byte(`{"anthropic":{"models":{"replacement":{"name":"Replacement","tool_call":true,"modalities":{"input":["text"]},"limit":{"context":4096,"output":512},"cost":{"input":1,"output":2}}}}}`)
+	for _, test := range []struct {
+		name     string
+		response func(context.CancelFunc) *http.Response
+	}{
+		{
+			name: "after headers",
+			response: func(cancel context.CancelFunc) *http.Response {
+				cancel()
+				return &http.Response{
+					StatusCode: http.StatusNotFound, Status: "404 Not Found", Header: make(http.Header),
+					Body: io.NopCloser(strings.NewReader("unavailable")),
+				}
+			},
+		},
+		{
+			name: "after parsing",
+			response: func(cancel context.CancelFunc) *http.Response {
+				return &http.Response{
+					StatusCode: http.StatusOK, Status: "200 OK", Header: make(http.Header),
+					Body: &cancelAfterReadBody{data: source, cancel: cancel},
+				}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			storePath := filepath.Join(t.TempDir(), "models-store.json")
+			lastModified := generatedCatalogLastModified + time.Hour.Milliseconds()
+			cached := &Catalog{providers: map[string]map[string]ai.Model{
+				"anthropic": {"cached": {ID: "cached", Provider: "anthropic"}},
+			}}
+			if err := writeStore(storePath, cached, lastModified, storeTimestamp(lastModified)); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(storePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			client := &http.Client{Transport: catalogRoundTripFunc(func(*http.Request) (*http.Response, error) {
+				return test.response(cancel), nil
+			})}
+			catalog, err := Refresh(ctx, RefreshOptions{
+				URL: "https://catalog.test/cancel/" + test.name, StorePath: storePath, Client: client, Force: true,
+			})
+			if err != nil {
+				t.Fatalf("refresh returned an error after response cancellation: %v", err)
+			}
+			if !errors.Is(ctx.Err(), context.Canceled) {
+				t.Fatalf("context error = %v, want canceled", ctx.Err())
+			}
+			if _, ok := catalog.Find("anthropic", "cached"); !ok {
+				t.Fatal("canceled refresh did not retain the previously loaded overlay")
+			}
+			if _, ok := catalog.Find("anthropic", "replacement"); ok {
+				t.Fatal("canceled refresh published the parsed replacement")
+			}
+			after, err := os.ReadFile(storePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(after, before) {
+				t.Fatalf("canceled refresh changed the store\n--- before ---\n%s\n--- after ---\n%s", before, after)
+			}
+		})
+	}
+}
+
+type cancelAfterReadBody struct {
+	data   []byte
+	cancel context.CancelFunc
+	read   bool
+}
+
+func (body *cancelAfterReadBody) Read(buffer []byte) (int, error) {
+	if body.read {
+		return 0, io.EOF
+	}
+	body.read = true
+	count := copy(buffer, body.data)
+	body.cancel()
+	return count, nil
+}
+
+func (*cancelAfterReadBody) Close() error { return nil }
 
 func TestWriteStoreRejectsTrailingContent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "models-store.json")

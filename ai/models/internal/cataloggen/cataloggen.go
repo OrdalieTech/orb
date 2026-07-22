@@ -226,9 +226,6 @@ func validateCatalog(catalog map[string]map[string]ai.Model) error {
 	}
 	for _, provider := range sortedKeys(catalog) {
 		models := catalog[provider]
-		if len(models) == 0 {
-			return fmt.Errorf("validate model catalog: provider %q has no models", provider)
-		}
 		for _, id := range sortedKeys(models) {
 			model := models[id]
 			if model.ID != id {
@@ -484,20 +481,6 @@ var nvidiaNIMUnsupportedModels = []string{
 	"qwen/qwen3.5-122b-a10b",
 }
 
-// nvidiaCuratedNIMIDs snapshots the models.dev x NIM /v1/models intersection
-// (2026-07-21, matching upstream nvidia.models.ts). It is the fallback when no
-// live NIM listing is supplied, e.g. the runtime models.dev refresh, so the
-// generator never trusts models.dev alone for NVIDIA availability.
-var nvidiaCuratedNIMIDs = []string{
-	"meta/llama-3.1-70b-instruct", "meta/llama-3.1-8b-instruct", "meta/llama-3.2-11b-vision-instruct",
-	"meta/llama-3.2-90b-vision-instruct", "meta/llama-3.3-70b-instruct", "minimaxai/minimax-m3",
-	"mistralai/mistral-large-3-675b-instruct-2512", "mistralai/mistral-small-4-119b-2603",
-	"moonshotai/kimi-k2.6", "nvidia/nemotron-3-nano-30b-a3b", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
-	"nvidia/nemotron-3-super-120b-a12b", "nvidia/nemotron-3-ultra-550b-a55b", "nvidia/nvidia-nemotron-nano-9b-v2",
-	"openai/gpt-oss-120b", "openai/gpt-oss-20b", "stepfun-ai/step-3.5-flash", "stepfun-ai/step-3.7-flash",
-	"z-ai/glm-5.2",
-}
-
 // addNvidia intersects models.dev nvidia with the live NIM /v1/models listing,
 // normalizing IDs before the denylist check (generate-models.ts:764-766,
 // 1414-1446). Without the intersection models.dev leaks models NIM never serves.
@@ -528,20 +511,20 @@ func addNvidia(result map[string]map[string]ai.Model, source sourceProvider, lis
 }
 
 func nvidiaLiveIDs(listing []byte) (map[string]string, error) {
-	ids := nvidiaCuratedNIMIDs
-	if len(listing) != 0 {
-		var parsed struct {
-			Data []struct {
-				ID string `json:"id"`
-			} `json:"data"`
-		}
-		if err := json.Unmarshal(listing, &parsed); err != nil {
-			return nil, fmt.Errorf("parse NVIDIA NIM models listing: %w", err)
-		}
-		ids = make([]string, 0, len(parsed.Data))
-		for _, model := range parsed.Data {
-			ids = append(ids, model.ID)
-		}
+	if len(listing) == 0 {
+		return map[string]string{}, nil
+	}
+	var parsed struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(listing, &parsed); err != nil {
+		return nil, fmt.Errorf("parse NVIDIA NIM models listing: %w", err)
+	}
+	ids := make([]string, 0, len(parsed.Data))
+	for _, model := range parsed.Data {
+		ids = append(ids, model.ID)
 	}
 	result := make(map[string]string, 2*len(ids))
 	for _, id := range ids {
