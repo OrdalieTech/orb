@@ -47,7 +47,8 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
 - **D7 — Strict pure-Go product (owner-amended 2026-07-20).** Every product and release build uses
   `CGO_ENABLED=0` and remains a single static binary; dependencies requiring CGo are disqualified.
   Development-only test binaries may enable CGo when the Go toolchain requires it for `-race`
-  (ThreadSanitizer). That exception never ships.
+  (ThreadSanitizer). That exception never ships. D31's optional user-provided Node/Bun process is
+  not part of the shipped artifact and does not change the static pigo build.
 - **D8 — Platforms.** linux + darwin, amd64 + arm64, from day one. Windows is a later parity wave
   (upstream supports it; we port its git-bash/console strategy then). Not dropped — deferred.
 - **D9 — Single module, mirrored layout.** One `go.mod`. Packages mirror upstream packages
@@ -75,7 +76,7 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
   conformance trace comparison — do not "improve" event names or payloads.
 - **D14 — Tool schemas.** JSON Schema is a first-class value on tools (raw schema type) — required
   anyway for extension/MCP-registered tools — plus a reflection helper deriving schemas from Go
-  structs for ergonomic typed tools. In the JS bridge, typebox runs in-engine and hands us JSON Schema.
+  structs for ergonomic typed tools. JavaScript schema objects cross the extension-host protocol as JSON Schema.
 - **D15 — TUI: faithful pi-tui port.** Hand-rolled differential line renderer mirroring pi-tui
   (Component contract: `Render(width) []string`), no TUI framework. The Component contract is what
   extension custom-UI rides on; preserving it is non-negotiable.
@@ -104,6 +105,7 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
   common node builtins (`fs`, `path`, `os`, `process`, `url`, `util`; `child_process` routed through
   the exec bridge; `fetch` via Go http) + pure-JS npm deps via esbuild bundling. Native addons and
   exotic Node APIs are out of scope; the example-extension compatibility matrix documents reality.
+  **Superseded by D31 (2026-07-22): the embedded engine and shim ceiling were deleted.**
 - **D18 — MCP: bundled first-party Go extension.** Built on `modelcontextprotocol/go-sdk`, compiled
   into the binary, enabled via settings. The core stays faithful to pi's no-MCP philosophy; this was
   our first philosophical addition (the second is the chat gateway, D27), and it doubles as the
@@ -226,6 +228,16 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
   assets, and extracted goldens. Conformance adapters may account only for exact public-name
   substitutions while separately asserting the `pigo` spelling.
 
+- **D31 — Host-only JavaScript execution (owner, 2026-07-22).** All JavaScript and TypeScript
+  extensions, including installed npm packages, project/global extension files, and explicit `-e`
+  entries, run out of process in the extension host. Pigo selects local Node.js ≥22.6 (native type
+  stripping) or Bun, with no embedded JavaScript engine, transpiler, Node shims, or runtime feature
+  flag. When neither runtime is available, extension loading emits exactly `JS extensions require
+  Node.js ≥22.6 or Bun; skills, prompt templates, MCP servers and built-in tools work without it`
+  and the rest of the product remains available. The host owns real Node/Bun module, worker,
+  top-level-await, WebAssembly, and native-addon semantics; pigo remains a static `CGO_ENABLED=0`
+  binary and ships neither runtime.
+
 ## 2026-07-21 parity-sync amendments
 
 - Codex request compression uses `github.com/klauspost/compress/zstd` as a direct dependency. The
@@ -259,8 +271,9 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
 - `rg`/`fd` auto-download into `~/.pi/agent/bin` ported as-is (system binaries preferred). This is
   upstream behavior, not a single-binary violation.
 - Clipboard via OSC52 / shell-out (`pbcopy`/`xclip`/`wl-copy`), no native addon.
-- Go ≥ 1.25 baseline (sobek requirement); releases and CI pin Go 1.26.5.
-- Node ≥ 22 is a *development-tooling* dependency only (fixture extraction against the upstream clone).
+- Go ≥ 1.25 baseline; releases and CI pin Go 1.26.5.
+- Node.js ≥22.6 or Bun is an optional runtime dependency for JavaScript/TypeScript extensions and
+  Node remains development tooling for fixture extraction against the upstream clone.
 
 ## Deferred decision gates (resolved inside the named work package)
 
@@ -311,7 +324,7 @@ are not re-litigated:
   link-time failure is unreachable without a build-time export manifest; first-touch is the slim
   faithful approximation (question.ts-style examples now fail loudly at load instead of
   registering broken tools).
-- **jsbridge runtime ceilings**: native `.node` addons and WebAssembly are unsupported by
+- **jsbridge runtime ceilings (superseded by D31 on 2026-07-22).** Native `.node` addons and WebAssembly are unsupported by
   design (sobek); both fail with explicit one-line diagnostics. `node:net` raw sockets,
   `node:vm`, and `node:worker_threads` are not shimmed. `node:vm` is a rabbit hole with no slim
   faithful mapping onto sobek, and `worker_threads` (real threads sharing a JS heap) is
@@ -322,7 +335,7 @@ are not re-litigated:
   original sweep finding — `node:crypto`/`node:http`/`node:module`/`atob`/`btoa` — is fixed and
   verified; these three modules are a separate, deliberately-declined ceiling, each failing with
   a clear `unsupported external module "node:X"` diagnostic.
-- **pi-* shim unknown-import failure is access-time, not link-time.** Node ESM would fail an
+- **pi-* shim unknown-import failure is access-time, not link-time (superseded by D31 on 2026-07-22).** Node ESM would fail an
   unknown named import at link time; over esbuild-CJS bundling that requires a build-time export
   manifest, which pigo does not maintain. The shim instead throws on first *access* of an
   unexported name (with an honest `has()`), so `question.ts`/`questionnaire.ts`-style examples

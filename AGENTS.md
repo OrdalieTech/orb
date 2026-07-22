@@ -59,7 +59,7 @@ fully before touching code. It applies to any coding agent (Claude Code, Codex, 
 ## Layout quick reference
 
 `ai/` unified LLM layer · `agent/` loop+Agent+harness · `tui/` renderer/components ·
-`codingagent/` tools, session, config, extensions (+`jsbridge/`, `mcp/`), modes · `cmd/pigo` CLI ·
+`codingagent/` tools, session, config, extensions (+`host/`, `mcp/`), modes · `cmd/pigo` CLI ·
 `internal/` jsonschema, jsonwire, partialjson, truncate, sync · `conformance/` extract (TS,
 dev-only), fixtures, runner. Full tree: ARCHITECTURE §1.
 

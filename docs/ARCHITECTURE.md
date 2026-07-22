@@ -26,7 +26,7 @@ pigo/
 ├── codingagent/              port of packages/coding-agent — the product wiring
 │   ├── tools/                read, bash, edit, write, grep, find, ls (+ operations interfaces)
 │   ├── extensions/           Go-native extension API: types, registry, runner (event dispatch)
-│   │   └── jsbridge/         sobek runtime, esbuild pipeline, node shims, JS ExtensionAPI bindings
+│   │   └── host/             Node/Bun child host, protocol, JS ExtensionAPI bindings
 │   ├── session/              session manager (JSONL v3 tree, migrations), export-html
 │   ├── config/               settings manager, trust, keybindings, auth storage, models.json
 │   ├── modes/                tui, print, json, rpc
@@ -164,7 +164,7 @@ goldmark AST → own ANSI renderer (upstream: marked + own renderer); code highl
 (upstream: highlight.js). Native addons (darwin modifier keys, win32 console) are NOT ported —
 kitty keyboard protocol covers modifier reporting where the terminal supports it (ledger gap).
 
-`Render(width) []string` is pure → TUI components are golden-testable (F12) and JS-bridgeable.
+`Render(width) []string` is pure → TUI components are golden-testable (F12) and host-proxyable.
 
 ## 5. `codingagent/` — the product
 
@@ -216,21 +216,26 @@ Dispatch semantics ported from `runner.ts`: ordered middleware chains, error iso
 errors logged, agent continues; `tool_call` handler error blocks the call fail-safe), per-mode UI
 degradation (RPC bridges dialogs over the protocol; print/json = no-ops).
 
-**Extensions — JS bridge** (`codingagent/extensions/jsbridge/`): sobek VM per extension + embedded
-esbuild. Pipeline: discover (same paths as upstream: `~/.pi/agent/extensions/*.ts|*/index.ts`,
-`.pi/extensions/…` trust-gated, settings `extensions[]`/`packages[]`, `-e`) → esbuild bundle
-(entry = extension file; TS→`es2017`; async generators lowered; npm deps from the extension's
-`node_modules` bundled if pure-JS; `pi`, `typebox`-equivalent, `pi-tui` marked external) → evaluate
-in sobek → factory invoked with the JS ExtensionAPI object whose methods proxy to the Go API.
-Node shims: `fs`, `path`, `os`, `process`, `url`, `util` implemented against Go host functions
-with no Node compatibility dependency; `child_process` routes through the exec bridge and `fetch`
-through net/http. typebox: the real JS library bundled in-engine — schemas surface as JSON Schema,
-which is all Go needs. pi-tui bridge: JS objects implementing `render(width): string[]` wrapped as
-Go `Component`s; dialogs, status, widgets, custom editors, and overlays proxy to the native TUI.
-F11 records the remaining embeddable-component and tool-factory gaps. Hot `/reload` = rebuild +
-fresh VM.
-Threading rule: **one goroutine per VM** — all calls into a sobek VM are serialized through its
-event-loop goroutine; Go→JS callbacks post onto it (sobek/goja VMs are not goroutine-safe).
+**Extensions — JavaScript host** (`codingagent/extensions/host/`): all JavaScript and TypeScript
+extensions run in one owned local Node.js ≥22.6 or Bun child process. Discovery covers the
+trust-gated project directory, global directory, configured paths, resolved npm/git package paths,
+and explicit `-e` entries in upstream order. Node strips TypeScript natively and Bun executes it
+directly; Node package `.ts` entries are exposed through a stable symlink outside `node_modules`
+because Node deliberately refuses type stripping there, while package-relative files and hoisted
+dependencies remain reachable. The staged resolution layer preserves explicitly declared SDK
+versions and fills unresolved peer SDK imports from the pinned coding-agent family, including
+legacy package-name aliases; missing declared dependencies are materialized with npm or Bun before
+load.
+
+The embedded `host.mjs` dynamically imports each entry and proxies the complete ExtensionAPI over
+versioned bidirectional JSONL. Registrations, events, tools, commands, providers and auth callbacks,
+state snapshots/deltas, and the full `ctx.ui` surface terminate in the normal Go registry and UI
+interfaces. Component rendering is push-based so Go's synchronous `Render(width)` reads the latest
+host-provided frame. A PATH-prepended `pi` symlink points subagent processes back to pigo. Hot
+`/reload` stops the current generation, starts a fresh child, imports every entry again, and rebinds
+stable Go wrappers. Unexpected exits use bounded restart/backoff; shutdown cancels pending UI and
+in-flight requests. If neither supported runtime exists, pigo emits the D31 diagnostic once and
+continues without JavaScript extensions.
 
 **MCP** (`codingagent/mcp/`): bundled extension registering MCP servers from settings as tool
 sources via `modelcontextprotocol/go-sdk` (stdio + streamable HTTP), tools surfaced through the
@@ -251,7 +256,8 @@ expansion (`$1`, `$@`, `${1:-default}`, `${@:N:L}`); themes as data (registerabl
 
 **pi packages:** `pigo install/remove/update/list/config` for `npm:`/`git:` extension/skill/theme
 packages — npm registry tarball fetch + extract (no node at runtime), git clone; storage
-`~/.pi/agent/npm/` + project `.pi/npm/` (upstream `docs/packages.md`).
+`~/.pi/agent/npm/` + project `.pi/npm/` (upstream `docs/packages.md`). Package installation itself
+is native Go; executing package-provided JavaScript requires the D31 Node/Bun runtime.
 
 ## 6. Conformance architecture
 
@@ -270,7 +276,7 @@ Fixture families (each = extraction script in `conformance/extract/`, goldens in
 | F8 | slash/template expansion | arg expansion + resolution order |
 | F9 | system-prompt assembly | context files, SYSTEM/APPEND_SYSTEM, skills disclosure |
 | F10 | compaction | summarization boundaries, firstKeptEntryId, token accounting |
-| F11 | extension behavior | example-extension matrix under the bridge (per-example expected effects) |
+| F11 | extension behavior | Go-native extension runner and product-wiring effects |
 | F12 | TUI render goldens | Component.Render(width) line snapshots |
 
 Extraction runs Node/vitest **inside `.upstream/`** (dev-only), emitting JSON the Go tests consume.
@@ -279,9 +285,9 @@ Where upstream lacks a directly extractable test, the extractor drives upstream'
 (compaction summaries) is fixture-tested at the boundary (prompts + structure), not on model output.
 
 **Black-box:** upstream RPC/CLI tests run unmodified against `pigo --mode rpc` via a thin adapter
-that swaps the spawned binary. The F11 matrix runner executes each upstream example extension
-headlessly (json mode) and asserts its observable effects; results published to
-`docs/sync/extension-matrix.md`.
+that swaps the spawned binary. Host behavior is covered by real Node/Bun end-to-end tests and the
+locked 44-package harness under `conformance/extensions/`; F11 remains the extracted Go-native
+runner and wiring surface.
 
 ## 7. Upstream sync
 
@@ -300,8 +306,6 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 
 | Dependency | Where | Why |
 |---|---|---|
-| grafana/sobek | jsbridge | JS engine (pure Go, ESM, k6-proven) |
-| evanw/esbuild (pkg/api) | jsbridge | TS transpile + bundling (pure Go, official API) |
 | openai/openai-go/v3 | ai/api | OpenAI responses+completions (D10) |
 | anthropics/anthropic-sdk-go | ai/api | Anthropic messages + caching (D10) |
 | klauspost/compress | ai/api | zstd request compression required by the OpenAI Codex Responses wire |
@@ -338,19 +342,19 @@ sessions remain JSONL or memory-backed).
 - `CGO_ENABLED=0` for every product/release target `{linux,darwin} × {amd64,arm64}`; goreleaser for
   static binaries + checksums; install via curl script + Homebrew tap. Development race-test
   binaries may enable CGo only for the Go race runtime (D7). Version checks use GitHub releases.
-- Budgets: cold start < 50 ms; bridged binary ≤ 55 MB decimal; `go vet` + golangci-lint clean;
-  race detector on in CI tests. The embedded esbuild/sobek cost is accepted for extension parity,
-  while > 10% size growth still triggers investigation.
+- Budgets: cold start < 50 ms; release binary ≤ 55 MB decimal; `go vet` + golangci-lint clean;
+  race detector on in CI tests. JavaScript startup belongs to the optional external host, while
+  > 10% pigo binary-size growth still triggers investigation.
 
 ## 10. Risks & mitigations
 
 | Risk | Mitigation |
 |---|---|
-| sobek ES gaps vs modern TS extensions | esbuild lowering to es2017; F11 matrix quantifies reality; qjs(WASM) is the researched fallback engine behind the same bridge interface |
-| Extension API breadth (2,943-line spec) | Go-native API proves semantics; F11 tracks the remaining tool-factory and embeddable-component gaps |
+| Node/Bun version or module-resolution drift | minimum runtime probe, protocol handshake, real-host end-to-end tests, and the locked ecosystem matrix |
+| Extension API breadth (2,943-line spec) | Go-native API proves semantics; protocol/API inventory and host end-to-end tests cover callbacks and snapshots |
 | TUI fidelity drift | F12 render goldens + side-by-side session comparison protocol in phase 4 |
 | Provider SDK churn (openai v1→v3 history) | SDK usage confined to `ai/api/*` adapter files; unified types are ours; F2 pins request shapes |
 | Upstream velocity (multi-release weeks) | pin + sync reports; formats-first tracking (D5); mirror layout keeps diffs mappable |
 | Event/serialization drift breaking conformance | F1/F3/F6/F7 fixtures regenerate on every sync; wire-format struct tags reviewed against goldens |
 | Parallel tool execution races | file-mutation queue per realpath (upstream semantics); race detector in CI |
-| VM threading bugs in bridge | one-goroutine-per-VM rule; bridge API is message-passing only |
+| Host lifecycle and request races | generation-scoped correlation, bounded restart/backoff, typed UI cancellation, and race tests |

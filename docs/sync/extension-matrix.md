@@ -1,5 +1,8 @@
 # Upstream single-file extension example matrix (F11-jsbridge)
 
+> Historical pre-D31 record. Its copied bridge fixtures and tests were deleted with jsbridge;
+> current JavaScript compatibility evidence is the host-tier ecosystem matrix.
+
 Status of every upstream example in `packages/coding-agent/examples/extensions/*.ts`
 (pinned commit in `UPSTREAM.lock`) against the pigo JS extension bridge.
 

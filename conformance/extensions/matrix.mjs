@@ -2,7 +2,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -302,6 +302,10 @@ async function runProbe(executable, extensionPaths, options) {
 		mkdir(agentDir, { recursive: true }),
 	]);
 	await writeFile(path.join(agentDir, "settings.json"), '{"compaction":{"enabled":false},"retry":{"enabled":false}}\n');
+	const observerPath = path.join(runRoot, "observer.ts");
+	await symlink(options.observer, observerPath);
+	await symlink(path.join(options.packages, "node_modules"), path.join(runRoot, "node_modules"));
+	extensionPaths = extensionPaths.map((extensionPath) => extensionPath === options.observer ? observerPath : extensionPath);
 
 	const args = [
 		"--mode",
