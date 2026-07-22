@@ -865,6 +865,27 @@ export default function(pi) {
 	assertRegisteredDescription(t, result, "result", "true:true:true:true")
 }
 
+func TestAbortSignalTimeoutAndAny(t *testing.T) {
+	cwd := t.TempDir()
+	result := loadAndRunExtension(t, cwd, `
+export default async function(pi) {
+  const first = new AbortController();
+  const second = new AbortController();
+  const reason = new Error("second stopped");
+  const combined = AbortSignal.any([first.signal, second.signal]);
+  second.abort(reason);
+  await new Promise(resolve => combined.addEventListener("abort", resolve));
+  const timed = AbortSignal.timeout(1);
+  await new Promise(resolve => timed.addEventListener("abort", resolve));
+  pi.registerCommand("result", {
+    description: [combined.aborted, combined.reason === reason, timed.aborted, timed.reason.name].join(":"),
+    handler: async () => {},
+  });
+}
+`)
+	assertRegisteredDescription(t, result, "result", "true:true:true:TimeoutError")
+}
+
 // --- bare specifier tests ---
 
 func TestBareSpecifierWithoutNodePrefix(t *testing.T) {
