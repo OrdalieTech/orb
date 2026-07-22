@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -50,6 +52,9 @@ func builtins() (*aimodels.Catalog, error) {
 }
 
 func installRequire(runtime *sobek.Runtime, vm *runtimeVM) error {
+	if err := installRequireResolver(runtime, vm.entry); err != nil {
+		return err
+	}
 	if err := runtime.Set("__piGoEncodeUTF8", func(call sobek.FunctionCall) sobek.Value {
 		buffer := runtime.NewArrayBuffer([]byte(call.Argument(0).String()))
 		return runtime.ToValue(buffer)
@@ -259,6 +264,17 @@ globalThis.URL.prototype.toString = function() { return this.href; };
 	if err := compatModule.Set("completeSimple", complete); err != nil {
 		return err
 	}
+	if err := compatModule.Set("isContextOverflow", func(call sobek.FunctionCall) sobek.Value {
+		var message ai.AssistantMessage
+		must(runtime, decodeJSON(runtime, call.Argument(0), &message))
+		contextWindow := float64(0)
+		if value := call.Argument(1); present(value) {
+			contextWindow = value.ToFloat()
+		}
+		return runtime.ToValue(ai.IsContextOverflow(&message, contextWindow))
+	}); err != nil {
+		return err
+	}
 
 	// pi-tui helper functions used by upstream single-file examples; component
 	// classes (Text, Container, Markdown) are the WP-542 custom-UI surface.
@@ -314,6 +330,9 @@ globalThis.URL.prototype.toString = function() { return this.href; };
 		return err
 	}
 	if err := installExampleHelpers(runtime, vm, codingModule, tuiModule); err != nil {
+		return err
+	}
+	if err := installSDKFacade(runtime, vm, codingModule); err != nil {
 		return err
 	}
 	if err := installExampleComponents(runtime, tuiModule, codingModule); err != nil {
@@ -550,6 +569,24 @@ func installExampleHelpers(runtime *sobek.Runtime, vm *runtimeVM, codingModule, 
 	}
 	if err := codingModule.Set("getAgentDir", func(sobek.FunctionCall) sobek.Value {
 		return runtime.ToValue(vm.agentDir)
+	}); err != nil {
+		return err
+	}
+	if err := codingModule.Set("getPackageDir", func(sobek.FunctionCall) sobek.Value {
+		executable, err := os.Executable()
+		if err != nil {
+			return runtime.ToValue(".")
+		}
+		return runtime.ToValue(filepath.Dir(executable))
+	}); err != nil {
+		return err
+	}
+	if err := codingModule.Set("isToolCallEventType", func(call sobek.FunctionCall) sobek.Value {
+		event := call.Argument(1)
+		if !present(event) {
+			return runtime.ToValue(false)
+		}
+		return runtime.ToValue(event.ToObject(runtime).Get("toolName").String() == call.Argument(0).String())
 	}); err != nil {
 		return err
 	}

@@ -142,6 +142,9 @@ func (vm *runtimeVM) run() {
 	for {
 		select {
 		case <-vm.stop:
+			if process, ok := runtime.Get("process").(*sobek.Object); ok {
+				emitEvent(runtime, process, "exit", runtime.ToValue(0))
+			}
 			vm.cancelAll()
 			vm.wg.Wait()
 			return

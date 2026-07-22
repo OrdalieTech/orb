@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,8 +25,10 @@ import (
 // The vm reference is used to post async work (timers, fetch, fs.watch)
 // onto the single VM owner goroutine.
 type shimHost struct {
-	cwd string
-	vm  *runtimeVM
+	cwd                      string
+	vm                       *runtimeVM
+	diagnosticsChannelModule *sobek.Object
+	performanceModule        *sobek.Object
 }
 
 func newShimHost(cwd string, vm *runtimeVM) *shimHost {
@@ -64,6 +68,23 @@ func (h *shimHost) resolveModule(rt *sobek.Runtime, specifier string) (*sobek.Ob
 		return h.newHTTPSModule(rt), true
 	case "module":
 		return newModuleModule(rt), true
+	case "async_hooks":
+		return newAsyncHooksModule(rt, h.vm), true
+	case "diagnostics_channel":
+		if h.diagnosticsChannelModule == nil {
+			h.diagnosticsChannelModule = newDiagnosticsChannelModule(rt)
+		}
+		return h.diagnosticsChannelModule, true
+	case "tty":
+		return newTTYModule(rt), true
+	case "zlib":
+		return newZlibModule(rt, h.vm), true
+	case "dns/promises":
+		return newDNSPromisesModule(rt, h.vm), true
+	case "net":
+		return newNetModule(rt), true
+	case "perf_hooks":
+		return h.performanceHooksModule(rt), true
 	default:
 		return nil, false
 	}
@@ -85,10 +106,42 @@ func (h *shimHost) installGlobals(rt *sobek.Runtime) error {
 	if err := installEncodingGlobals(rt); err != nil {
 		return err
 	}
+	// Node's `global` is identity-equal to globalThis; packages read/write it
+	// (isexe checks global.TESTING_WINDOWS at module load).
+	if err := rt.Set("global", rt.GlobalObject()); err != nil {
+		return err
+	}
+	if err := rt.Set("performance", h.performanceHooksModule(rt).Get("performance")); err != nil {
+		return err
+	}
 	return h.installTimers(rt)
 }
 
+func (h *shimHost) performanceHooksModule(rt *sobek.Runtime) *sobek.Object {
+	if h.performanceModule != nil {
+		return h.performanceModule
+	}
+	origin := time.Now()
+	performance := rt.NewObject()
+	mustSet(rt, performance, "timeOrigin", float64(origin.UnixNano())/float64(time.Millisecond))
+	mustSet(rt, performance, "now", func(sobek.FunctionCall) sobek.Value {
+		return rt.ToValue(float64(time.Since(origin)) / float64(time.Millisecond))
+	})
+	module := rt.NewObject()
+	mustSet(rt, module, "performance", performance)
+	h.performanceModule = module
+	return module
+}
+
 func (h *shimHost) resolvePath(p string) string {
+	// Node fs accepts file: URL objects; ours stringify to their href
+	// (file:///abs/path). Recover the filesystem path so the URL from
+	// new URL("../x", import.meta.url) resolves instead of joining onto cwd.
+	if strings.HasPrefix(p, "file://") {
+		if u, err := url.Parse(p); err == nil && u.Path != "" {
+			p = u.Path
+		}
+	}
 	if filepath.IsAbs(p) {
 		return filepath.Clean(p)
 	}
@@ -559,14 +612,7 @@ func (h *shimHost) newFSModule(rt *sobek.Runtime) *sobek.Object {
 
 	set("readdirSync", func(call sobek.FunctionCall) sobek.Value {
 		dir := h.resolvePath(call.Argument(0).String())
-		withFileTypes := false
-		if len(call.Arguments) > 1 && !sobek.IsUndefined(call.Argument(1)) && !sobek.IsNull(call.Argument(1)) {
-			opts := call.Argument(1).ToObject(rt)
-			wft := opts.Get("withFileTypes")
-			if wft != nil && !sobek.IsUndefined(wft) {
-				withFileTypes = wft.ToBoolean()
-			}
-		}
+		withFileTypes := fsBooleanOption(rt, call.Argument(1), "withFileTypes")
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			panicFS(rt, err, "scandir", dir)
@@ -580,16 +626,7 @@ func (h *shimHost) newFSModule(rt *sobek.Runtime) *sobek.Object {
 		}
 		dirents := make([]any, len(entries))
 		for i, e := range entries {
-			d := rt.NewObject()
-			eName := e.Name()
-			eIsDir := e.IsDir()
-			eIsFile := e.Type().IsRegular()
-			eIsLink := e.Type()&os.ModeSymlink != 0
-			mustSet(rt, d, "name", eName)
-			mustSet(rt, d, "isDirectory", func(call sobek.FunctionCall) sobek.Value { return rt.ToValue(eIsDir) })
-			mustSet(rt, d, "isFile", func(call sobek.FunctionCall) sobek.Value { return rt.ToValue(eIsFile) })
-			mustSet(rt, d, "isSymbolicLink", func(call sobek.FunctionCall) sobek.Value { return rt.ToValue(eIsLink) })
-			dirents[i] = d
+			dirents[i] = newDirentObject(rt, e)
 		}
 		return rt.ToValue(dirents)
 	})
@@ -843,6 +880,27 @@ func (h *shimHost) newFSPromisesModule(rt *sobek.Runtime) *sobek.Object {
 		return resolvePromise(rt, newBufferValue(rt, data))
 	})
 
+	set("open", func(call sobek.FunctionCall) sobek.Value {
+		p := h.resolvePath(call.Argument(0).String())
+		flags := "r"
+		if present(call.Argument(1)) {
+			flags = call.Argument(1).String()
+		}
+		openFlags, ok := nodeOpenFlags(flags)
+		if !ok {
+			return rejectPromise(rt, fmt.Errorf("unsupported open flag %q", flags))
+		}
+		mode := os.FileMode(0o666)
+		if present(call.Argument(2)) {
+			mode = os.FileMode(call.Argument(2).ToInteger())
+		}
+		file, err := os.OpenFile(p, openFlags, mode)
+		if err != nil {
+			return rejectFS(rt, err, "open", p)
+		}
+		return resolvePromise(rt, newFileHandleObject(rt, file, p))
+	})
+
 	set("writeFile", func(call sobek.FunctionCall) sobek.Value {
 		p := h.resolvePath(call.Argument(0).String())
 		content := exportBytes(rt, call.Argument(1))
@@ -994,11 +1052,16 @@ func (h *shimHost) newFSPromisesModule(rt *sobek.Runtime) *sobek.Object {
 		if err != nil {
 			return rejectFS(rt, err, "scandir", dir)
 		}
-		names := make([]any, len(entries))
-		for i, e := range entries {
-			names[i] = e.Name()
+		values := make([]any, len(entries))
+		withFileTypes := fsBooleanOption(rt, call.Argument(1), "withFileTypes")
+		for i, entry := range entries {
+			if withFileTypes {
+				values[i] = newDirentObject(rt, entry)
+			} else {
+				values[i] = entry.Name()
+			}
 		}
-		return resolvePromise(rt, rt.ToValue(names))
+		return resolvePromise(rt, rt.ToValue(values))
 	})
 
 	set("cp", func(call sobek.FunctionCall) sobek.Value {
@@ -1012,6 +1075,78 @@ func (h *shimHost) newFSPromisesModule(rt *sobek.Runtime) *sobek.Object {
 	})
 
 	return m
+}
+
+func nodeOpenFlags(flag string) (int, bool) {
+	flags, ok := map[string]int{
+		"r": os.O_RDONLY, "r+": os.O_RDWR,
+		"rs": os.O_RDONLY | os.O_SYNC, "rs+": os.O_RDWR | os.O_SYNC,
+		"a": os.O_APPEND | os.O_CREATE | os.O_WRONLY, "a+": os.O_APPEND | os.O_CREATE | os.O_RDWR,
+		"ax": os.O_APPEND | os.O_CREATE | os.O_EXCL | os.O_WRONLY, "ax+": os.O_APPEND | os.O_CREATE | os.O_EXCL | os.O_RDWR,
+		"w": os.O_CREATE | os.O_TRUNC | os.O_WRONLY, "w+": os.O_CREATE | os.O_TRUNC | os.O_RDWR,
+		"wx": os.O_CREATE | os.O_EXCL | os.O_WRONLY, "wx+": os.O_CREATE | os.O_EXCL | os.O_RDWR,
+	}[flag]
+	return flags, ok
+}
+
+func newDirentObject(rt *sobek.Runtime, entry os.DirEntry) *sobek.Object {
+	dirent := rt.NewObject()
+	isDirectory := entry.IsDir()
+	isFile := entry.Type().IsRegular()
+	isSymbolicLink := entry.Type()&os.ModeSymlink != 0
+	mustSet(rt, dirent, "name", entry.Name())
+	mustSet(rt, dirent, "isDirectory", func(sobek.FunctionCall) sobek.Value { return rt.ToValue(isDirectory) })
+	mustSet(rt, dirent, "isFile", func(sobek.FunctionCall) sobek.Value { return rt.ToValue(isFile) })
+	mustSet(rt, dirent, "isSymbolicLink", func(sobek.FunctionCall) sobek.Value { return rt.ToValue(isSymbolicLink) })
+	return dirent
+}
+
+func newFileHandleObject(rt *sobek.Runtime, file *os.File, path string) *sobek.Object {
+	handle := rt.NewObject()
+	mustSet(rt, handle, "fd", int64(file.Fd()))
+	mustSet(rt, handle, "stat", func(sobek.FunctionCall) sobek.Value {
+		info, err := file.Stat()
+		if err != nil {
+			return rejectFS(rt, err, "fstat", path)
+		}
+		return resolvePromise(rt, newStatObject(rt, info))
+	})
+	mustSet(rt, handle, "read", func(call sobek.FunctionCall) sobek.Value {
+		buffer := call.Argument(0)
+		data := exportBytes(rt, buffer)
+		offset := int(call.Argument(1).ToInteger())
+		length := len(data) - offset
+		if present(call.Argument(2)) {
+			length = int(call.Argument(2).ToInteger())
+		}
+		if offset < 0 || length < 0 || offset > len(data) || length > len(data)-offset {
+			return rejectPromise(rt, fmt.Errorf("offset or length is out of range"))
+		}
+		var (
+			bytesRead int
+			err       error
+		)
+		position := call.Argument(3)
+		if present(position) {
+			bytesRead, err = file.ReadAt(data[offset:offset+length], position.ToInteger())
+		} else {
+			bytesRead, err = file.Read(data[offset : offset+length])
+		}
+		if err != nil && err != io.EOF {
+			return rejectFS(rt, err, "read", path)
+		}
+		result := rt.NewObject()
+		mustSet(rt, result, "bytesRead", bytesRead)
+		mustSet(rt, result, "buffer", buffer)
+		return resolvePromise(rt, result)
+	})
+	mustSet(rt, handle, "close", func(sobek.FunctionCall) sobek.Value {
+		if err := file.Close(); err != nil {
+			return rejectFS(rt, err, "close", path)
+		}
+		return resolvePromise(rt, sobek.Undefined())
+	})
+	return handle
 }
 
 func fsBooleanOption(rt *sobek.Runtime, value sobek.Value, name string) bool {
@@ -1143,13 +1278,49 @@ func newOSModule(rt *sobek.Runtime) *sobek.Object {
 	mustSet(rt, m, "cpus", func(sobek.FunctionCall) sobek.Value {
 		return rt.ToValue(make([]any, runtime.NumCPU()))
 	})
+	mustSet(rt, m, "totalmem", func(sobek.FunctionCall) sobek.Value {
+		return rt.ToValue(float64(nodeTotalMemory()))
+	})
 	return m
+}
+
+var (
+	totalMemoryOnce  sync.Once
+	totalMemoryBytes uint64
+)
+
+func nodeTotalMemory() uint64 {
+	totalMemoryOnce.Do(func() {
+		switch runtime.GOOS {
+		case "linux":
+			contents, err := os.ReadFile("/proc/meminfo")
+			if err != nil {
+				return
+			}
+			fields := strings.Fields(string(contents))
+			if len(fields) < 3 || fields[0] != "MemTotal:" {
+				return
+			}
+			kilobytes, err := strconv.ParseUint(fields[1], 10, 64)
+			if err == nil {
+				totalMemoryBytes = kilobytes * 1024
+			}
+		case "darwin":
+			contents, err := exec.Command("sysctl", "-n", "hw.memsize").Output()
+			if err != nil {
+				return
+			}
+			totalMemoryBytes, _ = strconv.ParseUint(strings.TrimSpace(string(contents)), 10, 64)
+		}
+	})
+	return totalMemoryBytes
 }
 
 // --- process global ---
 
 func (h *shimHost) installProcess(rt *sobek.Runtime) error {
 	proc := rt.NewObject()
+	populateEventEmitter(rt, proc)
 	mustSet(rt, proc, "cwd", func(sobek.FunctionCall) sobek.Value { return rt.ToValue(h.cwd) })
 	mustSet(rt, proc, "platform", runtime.GOOS)
 	mustSet(rt, proc, "arch", nodeArch())
@@ -1182,12 +1353,18 @@ func (h *shimHost) installProcess(rt *sobek.Runtime) error {
 
 	// process.stdout.write
 	stdout := rt.NewObject()
+	stdoutTTY := terminalFD(1)
+	mustSet(rt, stdout, "fd", 1)
+	mustSet(rt, stdout, "isTTY", stdoutTTY)
 	mustSet(rt, stdout, "write", func(call sobek.FunctionCall) sobek.Value {
 		_, _ = fmt.Fprint(os.Stdout, call.Argument(0).String())
 		return rt.ToValue(true)
 	})
 	mustSet(rt, proc, "stdout", stdout)
 	stderr := rt.NewObject()
+	stderrTTY := terminalFD(2)
+	mustSet(rt, stderr, "fd", 2)
+	mustSet(rt, stderr, "isTTY", stderrTTY)
 	mustSet(rt, stderr, "write", func(call sobek.FunctionCall) sobek.Value {
 		_, _ = fmt.Fprint(os.Stderr, call.Argument(0).String())
 		return rt.ToValue(true)
@@ -1222,23 +1399,8 @@ func newURLModule(rt *sobek.Runtime) *sobek.Object {
 		mustSet(rt, obj, "toString", func(sobek.FunctionCall) sobek.Value { return rt.ToValue("file://" + p) })
 		return obj
 	})
-	// URL constructor — minimal
-	mustSet(rt, m, "URL", func(call sobek.FunctionCall) sobek.Value {
-		raw := call.Argument(0).String()
-		if len(call.Arguments) > 1 && !sobek.IsUndefined(call.Argument(1)) {
-			base := call.Argument(1).String()
-			if !strings.Contains(raw, "://") {
-				raw = strings.TrimSuffix(base, "/") + "/" + strings.TrimPrefix(raw, "/")
-			}
-		}
-		obj := rt.NewObject()
-		mustSet(rt, obj, "href", raw)
-		mustSet(rt, obj, "toString", func(sobek.FunctionCall) sobek.Value { return rt.ToValue(raw) })
-		if strings.HasPrefix(raw, "file://") {
-			mustSet(rt, obj, "pathname", strings.TrimPrefix(raw, "file://"))
-		}
-		return obj
-	})
+	// Keep node:url and the global constructor on the same ResolveReference path.
+	mustSet(rt, m, "URL", rt.Get("URL"))
 	return m
 }
 
@@ -1246,6 +1408,33 @@ func newURLModule(rt *sobek.Runtime) *sobek.Object {
 
 func newUtilModule(rt *sobek.Runtime) *sobek.Object {
 	m := rt.NewObject()
+	mustSet(rt, m, "deprecate", func(call sobek.FunctionCall) sobek.Value {
+		fn, ok := sobek.AssertFunction(call.Argument(0))
+		if !ok {
+			panic(rt.NewTypeError("The \"fn\" argument must be of type function"))
+		}
+		message := call.Argument(1).String()
+		code := ""
+		if value := call.Argument(2); present(value) {
+			code = value.String()
+		}
+		warned := false
+		return rt.ToValue(func(inner sobek.FunctionCall) sobek.Value {
+			if !warned {
+				warned = true
+				if code == "" {
+					_, _ = fmt.Fprintf(os.Stderr, "DeprecationWarning: %s\n", message)
+				} else {
+					_, _ = fmt.Fprintf(os.Stderr, "[%s] DeprecationWarning: %s\n", code, message)
+				}
+			}
+			value, err := fn(inner.This, inner.Arguments...)
+			if err != nil {
+				panic(err)
+			}
+			return value
+		})
+	})
 	mustSet(rt, m, "promisify", func(call sobek.FunctionCall) sobek.Value {
 		fn, ok := sobek.AssertFunction(call.Argument(0))
 		if !ok {
@@ -1470,53 +1659,42 @@ func (h *shimHost) newChildProcessModule(rt *sobek.Runtime) *sobek.Object {
 		}
 		opts := h.parseExecOptions(rt, call, 2)
 
+		// EventEmitter surface (real once/off semantics) on the child and its
+		// streams; the detached flow does proc.once("spawn"/"error") + unref().
 		cp := rt.NewObject()
-		handlers := make(map[string]sobek.Callable)
+		populateEventEmitter(rt, cp)
 		stdout := rt.NewObject()
-		mustSet(rt, stdout, "on", func(c sobek.FunctionCall) sobek.Value {
-			if fn, ok := sobek.AssertFunction(c.Argument(1)); ok {
-				handlers["stdout:"+c.Argument(0).String()] = fn
-			}
-			return stdout
-		})
+		populateEventEmitter(rt, stdout)
 		stderr := rt.NewObject()
-		mustSet(rt, stderr, "on", func(c sobek.FunctionCall) sobek.Value {
-			if fn, ok := sobek.AssertFunction(c.Argument(1)); ok {
-				handlers["stderr:"+c.Argument(0).String()] = fn
-			}
-			return stderr
-		})
+		populateEventEmitter(rt, stderr)
 		mustSet(rt, cp, "stdout", stdout)
 		mustSet(rt, cp, "stderr", stderr)
 		mustSet(rt, cp, "stdin", rt.NewObject())
 		mustSet(rt, cp, "pid", 0)
-		mustSet(rt, cp, "on", func(c sobek.FunctionCall) sobek.Value {
-			event := c.Argument(0).String()
-			if fn, ok := sobek.AssertFunction(c.Argument(1)); ok {
-				handlers[event] = fn
-			}
-			return cp
-		})
 		mustSet(rt, cp, "kill", func(sobek.FunctionCall) sobek.Value { return rt.ToValue(true) })
+		mustSet(rt, cp, "unref", func(sobek.FunctionCall) sobek.Value { return cp })
 
-		// Defer execution so .on handlers are registered before data arrives.
+		// Defer execution so .on/.once handlers are registered before events fire.
 		h.vm.wg.Add(1)
 		go func() {
 			defer h.vm.wg.Done()
+			if _, err := exec.LookPath(command); err != nil {
+				h.vm.postCallback(func(rt *sobek.Runtime) {
+					emitEvent(rt, cp, "error", nodeFSErrorValue(rt, os.ErrNotExist, "spawn", command))
+				})
+				return
+			}
+			h.vm.postCallback(func(rt *sobek.Runtime) { emitEvent(rt, cp, "spawn") })
 			result, _ := extensions.Exec(h.vm.rootCtx, command, args, opts)
 			h.vm.postCallback(func(rt *sobek.Runtime) {
-				if fn, ok := handlers["stdout:data"]; ok && result.Stdout != "" {
-					_, _ = fn(sobek.Undefined(), newBufferValue(rt, []byte(result.Stdout)))
+				if result.Stdout != "" {
+					emitEvent(rt, stdout, "data", newBufferValue(rt, []byte(result.Stdout)))
 				}
-				if fn, ok := handlers["stderr:data"]; ok && result.Stderr != "" {
-					_, _ = fn(sobek.Undefined(), newBufferValue(rt, []byte(result.Stderr)))
+				if result.Stderr != "" {
+					emitEvent(rt, stderr, "data", newBufferValue(rt, []byte(result.Stderr)))
 				}
-				if fn, ok := handlers["close"]; ok {
-					_, _ = fn(sobek.Undefined(), rt.ToValue(result.Code))
-				}
-				if fn, ok := handlers["exit"]; ok {
-					_, _ = fn(sobek.Undefined(), rt.ToValue(result.Code))
-				}
+				emitEvent(rt, cp, "exit", rt.ToValue(result.Code))
+				emitEvent(rt, cp, "close", rt.ToValue(result.Code))
 			})
 		}()
 		return cp
@@ -1638,6 +1816,17 @@ func newEventsModule(rt *sobek.Runtime) *sobek.Object {
 	return m
 }
 
+// emitEvent invokes an emitter's own emit method from Go (used to drive
+// EventEmitter-backed shim objects like child processes).
+func emitEvent(rt *sobek.Runtime, emitter *sobek.Object, event string, args ...sobek.Value) {
+	fn, ok := sobek.AssertFunction(emitter.Get("emit"))
+	if !ok {
+		return
+	}
+	callArgs := append([]sobek.Value{rt.ToValue(event)}, args...)
+	_, _ = fn(emitter, callArgs...)
+}
+
 func populateEventEmitter(rt *sobek.Runtime, emitter *sobek.Object) {
 	type listener struct {
 		fn   sobek.Callable
@@ -1736,6 +1925,10 @@ func installBuffer(rt *sobek.Runtime) error {
 		size := int(call.Argument(0).ToInteger())
 		return newBufferValue(rt, make([]byte, size))
 	})
+	mustSet(rt, buf, "allocUnsafe", func(call sobek.FunctionCall) sobek.Value {
+		size := int(call.Argument(0).ToInteger())
+		return newBufferValue(rt, make([]byte, size))
+	})
 	mustSet(rt, buf, "concat", func(call sobek.FunctionCall) sobek.Value {
 		arr := call.Argument(0)
 		if arr == nil || sobek.IsUndefined(arr) {
@@ -1816,6 +2009,7 @@ func newBufferValue(rt *sobek.Runtime, data []byte) sobek.Value {
 		}
 		return newBufferValue(rt, data[start:end])
 	})
+	mustSet(rt, obj, "subarray", obj.Get("slice"))
 	return obj
 }
 

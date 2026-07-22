@@ -66,6 +66,27 @@ export default function(pi) { pi.registerCommand("dependency", {description: val
 	}
 }
 
+func TestCompilerResolvesExtensionlessPackageImports(t *testing.T) {
+	cwd := t.TempDir()
+	entry := filepath.Join(cwd, "src", "index.ts")
+	mustWrite(t, filepath.Join(cwd, "package.json"), `{"type":"module","imports":{"#src/*":"./src/*"}}`)
+	mustWrite(t, filepath.Join(cwd, "src", "fixture.ts"), `export const value = "package-import";`)
+	mustWrite(t, entry, `
+import { value } from "#src/fixture";
+export default function(pi) { pi.registerCommand("result", {description: value, handler: async () => {}}); }
+`)
+	loader := NewLoader(DiscoveryOptions{CWD: cwd, AgentDir: filepath.Join(cwd, "agent"), ExplicitPaths: []string{entry}})
+	t.Cleanup(loader.Close)
+	loaded := loader.Load(context.Background())
+	if len(loaded.Errors) != 0 {
+		t.Fatalf("load errors = %#v", loaded.Errors)
+	}
+	command := extensions.NewRunner(loaded.Registry, extensions.RunnerOptions{}).Command("result")
+	if command == nil || command.Description != "package-import" {
+		t.Fatalf("command = %#v", command)
+	}
+}
+
 func TestLoadIsolatesExtensionErrors(t *testing.T) {
 	cwd := t.TempDir()
 	bad := filepath.Join(cwd, "a-bad.ts")
