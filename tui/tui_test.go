@@ -92,6 +92,32 @@ type mutableLines struct{ lines []string }
 
 func (component *mutableLines) Render(int) []string { return component.lines }
 
+type scrollTrackingTerminal struct {
+	*fakeTerminal
+	mu             sync.Mutex
+	scrollOnOutput bool
+	userScrolled   bool
+}
+
+func newScrollTrackingTerminal(columns, rows int) *scrollTrackingTerminal {
+	return &scrollTrackingTerminal{fakeTerminal: newFakeTerminal(columns, rows), scrollOnOutput: true}
+}
+
+func (terminal *scrollTrackingTerminal) Write(data string) {
+	terminal.mu.Lock()
+	if strings.Contains(data, scrollOnOutputOff) {
+		terminal.scrollOnOutput = false
+	}
+	if terminal.userScrolled && terminal.scrollOnOutput && data != "" {
+		terminal.userScrolled = false
+	}
+	if strings.Contains(data, scrollOnOutputOn) {
+		terminal.scrollOnOutput = true
+	}
+	terminal.mu.Unlock()
+	terminal.fakeTerminal.Write(data)
+}
+
 type invalidationRequester struct{ ui RenderRequester }
 
 func (*invalidationRequester) Render(int) []string { return nil }
@@ -198,6 +224,38 @@ func TestTUIDifferentialRenderingAndResize(t *testing.T) {
 	ui.RenderNow()
 	if !strings.Contains(terminal.output(), "\x1b[2J\x1b[H\x1b[3J") {
 		t.Fatalf("resize did not full redraw: %q", terminal.output())
+	}
+}
+
+func TestTUIStreamingRenderPreservesTerminalScrollbackPosition(t *testing.T) {
+	terminal := newScrollTrackingTerminal(40, 10)
+	ui := NewTUI(terminal)
+	component := &mutableLines{lines: []string{"Header", "Loading 1", "Footer"}}
+	ui.AddChild(component)
+	if err := ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	terminal.mu.Lock()
+	terminal.userScrolled = true
+	terminal.mu.Unlock()
+	component.lines[1] = "Loading 2"
+	ui.RenderNow()
+
+	terminal.mu.Lock()
+	stillScrolled := terminal.userScrolled
+	terminal.mu.Unlock()
+	if !stillScrolled {
+		t.Fatal("streaming render forced terminal scrollback back to the active cursor")
+	}
+	if err := ui.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	terminal.mu.Lock()
+	scrollRestored := terminal.scrollOnOutput
+	terminal.mu.Unlock()
+	if !scrollRestored {
+		t.Fatal("stopping the TUI did not restore terminal scroll-on-output mode")
 	}
 }
 

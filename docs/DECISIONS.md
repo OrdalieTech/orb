@@ -79,6 +79,10 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
 - **D15 — TUI: faithful pi-tui port.** Hand-rolled differential line renderer mirroring pi-tui
   (Component contract: `Render(width) []string`), no TUI framework. The Component contract is what
   extension custom-UI rides on; preserving it is non-negotiable.
+- **Live TUI output disables xterm scroll-on-output mode.** Pigo sends private mode 1010 off after
+  terminal startup and restores it before shutdown so supporting terminals do not pull a user back
+  to the active cursor on every loading or streaming frame. Terminals that ignore mode 1010 retain
+  their native behavior; universal scroll locking would require an application-owned viewport.
 
 ## Extensibility decisions
 
@@ -320,6 +324,11 @@ are not re-litigated:
 - **Package git subprocesses are quiet** (`clone -q`, `checkout -q` with
   `advice.detachedHead=false`, `fetch -q`) — a cosmetic deviation from upstream, which inherits
   git's stderr chatter.
+- **Installed abbreviated Git commit pins resolve locally before fetch.** Git servers reject a
+  short object ID such as `f2433d1` as an unadvertised remote ref even when the normal clone
+  already contains that reachable commit. Pigo reconciles that detached object locally; branches,
+  tags, missing commits, and fresh installs retain upstream's fetch/checkout behavior. This is a
+  narrow usability divergence from upstream's failing `git fetch origin <short-sha>` path.
 - **Ecosystem compatibility claims stay layered.** A locked 44-package corpus separately records
   stable loading, observable registration parity, line-grounded workflow feasibility, and executed
   offline command/workflow probes. A package that only loads is never labeled end-to-end compatible.

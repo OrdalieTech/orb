@@ -12,6 +12,8 @@ import (
 const (
 	minRenderInterval = 16 * time.Millisecond
 	segmentReset      = "\x1b[0m\x1b]8;;\x07"
+	scrollOnOutputOff = "\x1b[?1010l"
+	scrollOnOutputOn  = "\x1b[?1010h"
 )
 
 type InputListenerResult struct {
@@ -148,6 +150,8 @@ func (ui *TUI) Start() error {
 	ui.lifecycleMu.Lock()
 	ui.hasStarted = true
 	ui.lifecycleMu.Unlock()
+	// Keep terminal scrollback stationary while live output updates the active cursor.
+	ui.terminal.Write(scrollOnOutputOff)
 	ui.terminal.HideCursor()
 	ui.notificationMu.Lock()
 	ui.colorMu.Lock()
@@ -198,6 +202,7 @@ func (ui *TUI) Stop() error {
 		ui.terminal.Write("\r\n")
 	}
 	ui.terminal.ShowCursor()
+	ui.terminal.Write(scrollOnOutputOn)
 	return ui.terminal.Stop()
 }
 
