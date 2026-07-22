@@ -584,6 +584,31 @@ func TestWorkingIndicatorMutationCannotResurrectDetachedTicker(t *testing.T) {
 	}
 }
 
+func TestClearOnShrinkKeepsStatusHeightWhenLoadingFinishes(t *testing.T) {
+	initF12ApplicationTheme(t)
+	modeUI := tui.NewTUI(newFakeTerminal(40, 8))
+	modeUI.SetClearOnShrink(true)
+	status := &tui.Container{}
+	mode := &InteractiveMode{ui: modeUI, status: status}
+	mode.setStatus(NewWorkingStatusIndicator(modeUI, "Working...", &extensions.WorkingIndicatorOptions{Frames: []string{"*"}}))
+	modeUI.AddChild(status)
+	if err := modeUI.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = modeUI.Stop() }()
+	initialRedraws := modeUI.FullRedraws()
+
+	mode.clearStatusIndicatorKind(StatusWorking)
+	modeUI.RenderNow()
+
+	if redraws := modeUI.FullRedraws(); redraws != initialRedraws {
+		t.Fatalf("clearing the loading indicator caused full redraws = %d, want %d", redraws, initialRedraws)
+	}
+	if lines := status.Render(40); len(lines) != 2 {
+		t.Fatalf("idle status height = %d, want 2 to match the loading indicator", len(lines))
+	}
+}
+
 func TestF12ApplicationTerminalInputLifecycleMatchesUpstream(t *testing.T) {
 	want := loadF12ApplicationFixture(t).Lifecycle.TerminalInput
 	terminal := &f12LifecycleInputTerminal{fakeTerminalImpl: newFakeTerminal(48, 24)}

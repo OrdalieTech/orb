@@ -1059,7 +1059,7 @@ func (manager *PackageManager) installGit(source *GitSource, scope string) error
 	}
 	if pathExists(targetDir) {
 		if source.Ref != "" {
-			return manager.ensureGitRef(targetDir, []string{"fetch", "-q", "origin", source.Ref}, "FETCH_HEAD")
+			return manager.ensureConfiguredGitRef(targetDir, source.Ref)
 		}
 		target, err := manager.getLocalGitUpdateTarget(targetDir)
 		if err != nil {
@@ -1097,7 +1097,7 @@ func (manager *PackageManager) updateGit(source *GitSource, scope string) error 
 		return manager.installGit(source, scope)
 	}
 	if source.Ref != "" {
-		return manager.ensureGitRef(targetDir, []string{"fetch", "-q", "origin", source.Ref}, "FETCH_HEAD")
+		return manager.ensureConfiguredGitRef(targetDir, source.Ref)
 	}
 	target, err := manager.getLocalGitUpdateTarget(targetDir)
 	if err != nil {
@@ -1106,11 +1106,41 @@ func (manager *PackageManager) updateGit(source *GitSource, scope string) error 
 	return manager.ensureGitRef(targetDir, target.fetchArgs, target.ref)
 }
 
+func (manager *PackageManager) ensureConfiguredGitRef(targetDir, ref string) error {
+	// Git servers do not accept abbreviated object IDs as fetch refs. A normal
+	// clone already contains a reachable pinned commit, so reconcile that object
+	// locally while named branches and tags keep the upstream fetch behavior.
+	if isHexGitObjectID(ref) {
+		symbolic, symbolicErr := manager.captureGit(targetDir, packageNetworkTimeout, "rev-parse", "--symbolic-full-name", ref)
+		_, commitErr := manager.captureGit(targetDir, packageNetworkTimeout, "rev-parse", "--verify", ref+"^{commit}")
+		if symbolicErr == nil && strings.TrimSpace(symbolic) == "" && commitErr == nil {
+			return manager.reconcileGitRef(targetDir, ref)
+		}
+	}
+	return manager.ensureGitRef(targetDir, []string{"fetch", "-q", "origin", ref}, "FETCH_HEAD")
+}
+
+func isHexGitObjectID(ref string) bool {
+	if len(ref) < 7 || len(ref) > 40 {
+		return false
+	}
+	for _, char := range ref {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", char) {
+			return false
+		}
+	}
+	return true
+}
+
 func (manager *PackageManager) ensureGitRef(targetDir string, fetchArgs []string, ref string) error {
 	// Fetch only the ref we will reset to, avoiding unrelated branch/tag noise.
 	if err := manager.runGit(targetDir, fetchArgs...); err != nil {
 		return err
 	}
+	return manager.reconcileGitRef(targetDir, ref)
+}
+
+func (manager *PackageManager) reconcileGitRef(targetDir, ref string) error {
 	localHead, err := manager.captureGit(targetDir, packageNetworkTimeout, "rev-parse", "HEAD")
 	if err != nil {
 		return err

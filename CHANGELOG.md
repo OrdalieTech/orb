@@ -6,6 +6,15 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-22
+
+### Fixed
+
+- `pigo update --extensions` now reconciles installed Git packages pinned to abbreviated commit
+  IDs from the existing clone instead of passing the abbreviation as an invalid remote fetch ref.
+- Live TUI redraws disable xterm-compatible scroll-on-output mode while Pigo is running, so
+  supporting terminals keep a user's scrollback position during loading and streamed responses.
+
 ## [0.1.2] - 2026-07-22
 
 ### Added

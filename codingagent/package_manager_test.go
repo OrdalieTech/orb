@@ -531,6 +531,38 @@ func TestInstallAndResolveGitPackage(t *testing.T) {
 	}
 }
 
+func TestUpdateGitPinnedShortCommitUsesInstalledObject(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	manager, _, agentDir, _ := newTestPackageManager(t)
+
+	origin := filepath.Join(filepath.Dir(agentDir), "origin-short-commit")
+	writeTestFile(t, filepath.Join(origin, "prompts", "first.md"), "First prompt")
+	gitRun(t, origin, "init", "--quiet", "--initial-branch=main")
+	gitRun(t, origin, "config", "user.email", "test@example.com")
+	gitRun(t, origin, "config", "user.name", "Test")
+	gitRun(t, origin, "add", ".")
+	gitRun(t, origin, "commit", "--quiet", "-m", "first")
+	shortOutput, err := exec.Command("git", "-C", origin, "rev-parse", "--short=7", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	shortCommit := strings.TrimSpace(string(shortOutput))
+
+	writeTestFile(t, filepath.Join(origin, "prompts", "later.md"), "Later prompt")
+	gitRun(t, origin, "add", ".")
+	gitRun(t, origin, "commit", "--quiet", "-m", "second")
+
+	source := &GitSource{Repo: origin, Host: "localhost", Path: "user/short-commit", Ref: shortCommit, Pinned: true}
+	if err := manager.installGit(source, "user"); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.updateGit(source, "user"); err != nil {
+		t.Fatalf("update pinned short commit: %v", err)
+	}
+}
+
 func gitRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	manager := &PackageManager{stdout: io.Discard, stderr: io.Discard}
