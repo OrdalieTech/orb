@@ -800,7 +800,7 @@ export default async function(pi) {
     const text = new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, first.bytesRead + second.bytesRead));
     const entry = entries[0];
     pi.registerCommand("result", {
-      description: [entry.name, entry.isFile(), entry.isDirectory(), info.size, text, eof.bytesRead].join(":"),
+      description: [entry.name, entry.isFile(), entry.isDirectory(), info.size, buffer.byteLength, buffer.subarray(1).byteLength, text, eof.bytesRead].join(":"),
       handler: async () => {},
     });
   } finally {
@@ -808,7 +808,7 @@ export default async function(pi) {
   }
 }
 `)
-	assertRegisteredDescription(t, result, "result", "input.md:true:false:5:hello:0")
+	assertRegisteredDescription(t, result, "result", "input.md:true:false:5:5:4:hello:0")
 }
 
 func TestTextDecoderFatalRejectsInvalidUTF8(t *testing.T) {

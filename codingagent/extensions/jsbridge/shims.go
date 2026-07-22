@@ -1979,6 +1979,7 @@ func newBufferValue(rt *sobek.Runtime, data []byte) sobek.Value {
 	mustSet(rt, obj, "_data", data)
 	mustSet(rt, obj, "_isBuffer", true)
 	mustSet(rt, obj, "length", len(data))
+	mustSet(rt, obj, "byteLength", len(data))
 	mustSet(rt, obj, "toString", func(call sobek.FunctionCall) sobek.Value {
 		return rt.ToValue(string(data))
 	})
