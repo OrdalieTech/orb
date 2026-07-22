@@ -1,6 +1,7 @@
 package codingagent
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -85,6 +87,17 @@ type PackageUpdate struct {
 	DisplayName string `json:"displayName"`
 	Type        string `json:"type"`
 	Scope       string `json:"scope"`
+}
+
+type PackageVersionUpdate struct {
+	PackageUpdate
+	CurrentVersion string
+	LatestVersion  string
+}
+
+type PackageUpdateCheck struct {
+	Installed int
+	Updates   []PackageVersionUpdate
 }
 
 type ConfiguredPackage struct {
@@ -570,6 +583,64 @@ func (manager *PackageManager) Update(source string) error {
 	return manager.updateConfiguredSources(updateSources)
 }
 
+// UpdateWithResults runs Update unchanged and reports packages whose installed
+// version or Git revision changed.
+func (manager *PackageManager) UpdateWithResults(source string) ([]PackageVersionUpdate, error) {
+	before := manager.installedPackageStates(source)
+	if err := manager.Update(source); err != nil {
+		return nil, err
+	}
+	after := manager.installedPackageStates(source)
+	updates := make([]PackageVersionUpdate, 0)
+	for key, current := range after {
+		previous := before[key]
+		if previous.LatestVersion == current.LatestVersion {
+			continue
+		}
+		current.CurrentVersion = previous.LatestVersion
+		updates = append(updates, current)
+	}
+	slices.SortFunc(updates, func(a, b PackageVersionUpdate) int {
+		return strings.Compare(a.DisplayName, b.DisplayName)
+	})
+	return updates, nil
+}
+
+func (manager *PackageManager) installedPackageStates(source string) map[string]PackageVersionUpdate {
+	identity := ""
+	if source != "" {
+		identity = manager.getPackageIdentity(source, "")
+	}
+	states := make(map[string]PackageVersionUpdate)
+	for _, entry := range manager.dedupePackages(manager.collectConfiguredPackages()) {
+		if identity != "" && manager.getPackageIdentity(entry.pkg.Source, entry.scope) != identity {
+			continue
+		}
+		parsed := manager.parseSource(entry.pkg.Source)
+		installedPath := manager.GetInstalledPath(entry.pkg.Source, entry.scope)
+		if installedPath == "" {
+			continue
+		}
+		state := PackageVersionUpdate{PackageUpdate: PackageUpdate{Source: entry.pkg.Source, Scope: entry.scope}}
+		switch {
+		case parsed.npm != nil:
+			state.DisplayName = parsed.npm.name
+			state.Type = "npm"
+			state.LatestVersion = getInstalledNpmVersion(installedPath)
+		case parsed.git != nil:
+			state.DisplayName = parsed.git.Host + "/" + parsed.git.Path
+			state.Type = "git"
+			state.LatestVersion, _ = manager.captureGit(installedPath, packageNetworkTimeout, "rev-parse", "HEAD")
+		default:
+			continue
+		}
+		if state.LatestVersion != "" {
+			states[entry.scope+"\x00"+manager.getPackageIdentity(entry.pkg.Source, entry.scope)] = state
+		}
+	}
+	return states
+}
+
 func (manager *PackageManager) updateConfiguredSources(sources []configuredUpdateSource) error {
 	if isOfflineModeEnabled() || len(sources) == 0 {
 		return nil
@@ -682,70 +753,96 @@ func (manager *PackageManager) shouldUpdateNpmSource(source *npmSource, scope st
 	return targetVersion != installedVersion
 }
 
-// CheckForAvailableUpdates reports installed, unpinned packages with a newer
-// version available.
-func (manager *PackageManager) CheckForAvailableUpdates() []PackageUpdate {
-	if isOfflineModeEnabled() {
-		return nil
+// CheckForPackageUpdates checks all installed, unpinned packages within ctx.
+func (manager *PackageManager) CheckForPackageUpdates(ctx context.Context) (PackageUpdateCheck, error) {
+	type installedPackage struct {
+		entry scopedPackageSource
+		path  string
 	}
-	packageSources := manager.dedupePackages(manager.collectConfiguredPackages())
-	results := runWithConcurrency(len(packageSources), updateCheckConcurrency, func(index int) *PackageUpdate {
-		entry := packageSources[index]
+	installed := make([]installedPackage, 0)
+	for _, entry := range manager.dedupePackages(manager.collectConfiguredPackages()) {
 		if entry.scope == "temporary" {
-			return nil
+			continue
 		}
-		parsed := manager.parseSource(entry.pkg.Source)
+		if path := manager.GetInstalledPath(entry.pkg.Source, entry.scope); path != "" {
+			installed = append(installed, installedPackage{entry: entry, path: path})
+		}
+	}
+	check := PackageUpdateCheck{Installed: len(installed)}
+	if len(installed) == 0 || isOfflineModeEnabled() {
+		return check, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return check, err
+	}
+
+	type result struct {
+		update *PackageVersionUpdate
+		err    error
+	}
+	results := runWithConcurrency(len(installed), updateCheckConcurrency, func(index int) result {
+		item := installed[index]
+		parsed := manager.parseSource(item.entry.pkg.Source)
 		switch {
 		case parsed.npm != nil:
 			if parsed.npm.pinned {
-				return nil
+				return result{}
 			}
-			installedPath, err := manager.getNpmInstallPath(parsed.npm, entry.scope)
-			if err != nil || !pathExists(installedPath) {
-				return nil
+			current := getInstalledNpmVersion(item.path)
+			if current == "" {
+				return result{err: fmt.Errorf("installed npm package %s has no version", parsed.npm.name)}
 			}
-			if !manager.npmHasAvailableUpdate(parsed.npm, installedPath) {
-				return nil
+			latest, err := manager.getLatestNpmVersionContext(ctx, parsed.npm)
+			if err != nil || latest == current {
+				return result{err: err}
 			}
-			return &PackageUpdate{Source: entry.pkg.Source, DisplayName: parsed.npm.name, Type: "npm", Scope: entry.scope}
+			return result{update: &PackageVersionUpdate{
+				PackageUpdate:  PackageUpdate{Source: item.entry.pkg.Source, DisplayName: parsed.npm.name, Type: "npm", Scope: item.entry.scope},
+				CurrentVersion: current, LatestVersion: latest,
+			}}
 		case parsed.git != nil:
 			if parsed.git.Pinned {
-				return nil
+				return result{}
 			}
-			installedPath, err := manager.getGitInstallPath(parsed.git, entry.scope)
-			if err != nil || !pathExists(installedPath) {
-				return nil
+			current, err := manager.captureGitContext(ctx, item.path, "rev-parse", "HEAD")
+			if err != nil {
+				return result{err: err}
 			}
-			if !manager.gitHasAvailableUpdate(installedPath) {
-				return nil
+			latest, err := manager.getRemoteGitHeadContext(ctx, item.path)
+			if err != nil || latest == current {
+				return result{err: err}
 			}
-			return &PackageUpdate{Source: entry.pkg.Source, DisplayName: parsed.git.Host + "/" + parsed.git.Path, Type: "git", Scope: entry.scope}
+			return result{update: &PackageVersionUpdate{
+				PackageUpdate:  PackageUpdate{Source: item.entry.pkg.Source, DisplayName: parsed.git.Host + "/" + parsed.git.Path, Type: "git", Scope: item.entry.scope},
+				CurrentVersion: current, LatestVersion: latest,
+			}}
 		default:
-			return nil
+			return result{}
 		}
 	})
-	updates := make([]PackageUpdate, 0)
+	var checkErrors []error
 	for _, result := range results {
-		if result != nil {
-			updates = append(updates, *result)
+		if result.update != nil {
+			check.Updates = append(check.Updates, *result.update)
+		}
+		if result.err != nil {
+			checkErrors = append(checkErrors, result.err)
 		}
 	}
-	return updates
+	return check, errors.Join(checkErrors...)
 }
 
-func (manager *PackageManager) npmHasAvailableUpdate(source *npmSource, installedPath string) bool {
-	if isOfflineModeEnabled() {
-		return false
+// CheckForAvailableUpdates keeps the upstream-shaped best-effort API.
+func (manager *PackageManager) CheckForAvailableUpdates() []PackageUpdate {
+	check, _ := manager.CheckForPackageUpdates(context.Background())
+	if len(check.Updates) == 0 {
+		return nil
 	}
-	installedVersion := getInstalledNpmVersion(installedPath)
-	if installedVersion == "" {
-		return false
+	updates := make([]PackageUpdate, len(check.Updates))
+	for index, update := range check.Updates {
+		updates[index] = update.PackageUpdate
 	}
-	targetVersion, err := manager.getLatestNpmVersion(source)
-	if err != nil {
-		return false
-	}
-	return targetVersion != installedVersion
+	return updates
 }
 
 func (manager *PackageManager) installedNpmMatchesConfiguredVersion(source *npmSource, installedPath string) bool {
@@ -870,6 +967,10 @@ type execSpec struct {
 }
 
 func (manager *PackageManager) execCommand(spec execSpec) (string, error) {
+	return manager.execCommandContext(context.Background(), spec)
+}
+
+func (manager *PackageManager) execCommandContext(ctx context.Context, spec execSpec) (string, error) {
 	cmd := exec.Command(spec.name, spec.args...)
 	cmd.Dir = spec.dir
 	cmd.Env = append(os.Environ(), spec.env...)
@@ -907,6 +1008,10 @@ func (manager *PackageManager) execCommand(spec execSpec) (string, error) {
 		_ = cmd.Process.Kill()
 		<-done
 		return "", fmt.Errorf("%s %s timed out after %s", spec.name, strings.Join(spec.args, " "), spec.timeout)
+	case <-ctx.Done():
+		_ = cmd.Process.Kill()
+		<-done
+		return "", ctx.Err()
 	}
 }
 
@@ -919,8 +1024,12 @@ func (manager *PackageManager) captureGit(dir string, timeout time.Duration, arg
 	return manager.runCommand(execSpec{name: "git", args: args, dir: dir, timeout: timeout})
 }
 
-func (manager *PackageManager) runGitRemoteCommand(installedPath string, args ...string) (string, error) {
-	return manager.runCommand(execSpec{
+func (manager *PackageManager) captureGitContext(ctx context.Context, dir string, args ...string) (string, error) {
+	return manager.execCommandContext(ctx, execSpec{name: "git", args: args, dir: dir, timeout: packageNetworkTimeout})
+}
+
+func (manager *PackageManager) runGitRemoteCommandContext(ctx context.Context, installedPath string, args ...string) (string, error) {
+	return manager.execCommandContext(ctx, execSpec{
 		name: "git", args: args, dir: installedPath,
 		timeout: packageNetworkTimeout,
 		env:     []string{"GIT_TERMINAL_PROMPT=0"},
@@ -976,8 +1085,8 @@ func (manager *PackageManager) getLocalGitUpdateTarget(installedPath string) (gi
 	return gitUpdateTarget{}, err
 }
 
-func (manager *PackageManager) getGitUpstreamRef(installedPath string) string {
-	upstreamRef, err := manager.captureGit(installedPath, packageNetworkTimeout, "rev-parse", "--abbrev-ref", "@{upstream}")
+func (manager *PackageManager) getGitUpstreamRefContext(ctx context.Context, installedPath string) string {
+	upstreamRef, err := manager.captureGitContext(ctx, installedPath, "rev-parse", "--abbrev-ref", "@{upstream}")
 	if err != nil {
 		return ""
 	}
@@ -992,16 +1101,16 @@ func (manager *PackageManager) getGitUpstreamRef(installedPath string) string {
 	return "refs/heads/" + branch
 }
 
-func (manager *PackageManager) getRemoteGitHead(installedPath string) (string, error) {
-	if upstreamRef := manager.getGitUpstreamRef(installedPath); upstreamRef != "" {
-		remoteHead, err := manager.runGitRemoteCommand(installedPath, "ls-remote", "origin", upstreamRef)
+func (manager *PackageManager) getRemoteGitHeadContext(ctx context.Context, installedPath string) (string, error) {
+	if upstreamRef := manager.getGitUpstreamRefContext(ctx, installedPath); upstreamRef != "" {
+		remoteHead, err := manager.runGitRemoteCommandContext(ctx, installedPath, "ls-remote", "origin", upstreamRef)
 		if err == nil {
 			if hash := firstGitHash(remoteHead, ""); hash != "" {
 				return hash, nil
 			}
 		}
 	}
-	remoteHead, err := manager.runGitRemoteCommand(installedPath, "ls-remote", "origin", "HEAD")
+	remoteHead, err := manager.runGitRemoteCommandContext(ctx, installedPath, "ls-remote", "origin", "HEAD")
 	if err != nil {
 		return "", err
 	}
@@ -1035,21 +1144,6 @@ func isHex40(value string) bool {
 		}
 	}
 	return true
-}
-
-func (manager *PackageManager) gitHasAvailableUpdate(installedPath string) bool {
-	if isOfflineModeEnabled() {
-		return false
-	}
-	localHead, err := manager.captureGit(installedPath, packageNetworkTimeout, "rev-parse", "HEAD")
-	if err != nil {
-		return false
-	}
-	remoteHead, err := manager.getRemoteGitHead(installedPath)
-	if err != nil {
-		return false
-	}
-	return strings.TrimSpace(localHead) != strings.TrimSpace(remoteHead)
 }
 
 func (manager *PackageManager) installGit(source *GitSource, scope string) error {

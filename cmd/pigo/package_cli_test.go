@@ -304,7 +304,7 @@ func TestPackageCLIUpdateTargets(t *testing.T) {
 
 	// --extensions with nothing configured succeeds.
 	code, stdout, _ = runPackageCLI(t, []string{"update", "--extensions"})
-	if code != 0 || !strings.Contains(stdout, "Updated packages") {
+	if code != 0 || stdout != "All packages up to date.\n" {
 		t.Fatalf("code=%d stdout=%q", code, stdout)
 	}
 
@@ -312,6 +312,9 @@ func TestPackageCLIUpdateTargets(t *testing.T) {
 	code, stdout, stderr = runPackageCLI(t, []string{"update"})
 	if code != 0 || stderr != "" || !strings.HasPrefix(stdout, "pigo dev build — update check skipped.\n") {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if strings.Contains(stdout, "Packages:") || strings.Contains(stdout, "extensions") {
+		t.Fatalf("zero-package update output = %q", stdout)
 	}
 	for _, want := range []string{
 		"pigo does not replace its running binary",
@@ -375,8 +378,7 @@ Re-run the method used to install it:
 			name:           "up to date",
 			currentVersion: "0.3.0",
 			latestVersion:  "v0.3.0",
-			want: "pigo v0.3.0 — already the latest version.\n" +
-				"Installed packages are skipped. Run pigo update --extensions to update them.\n",
+			want:           "pigo v0.3.0 — already the latest version.\n",
 		},
 		{
 			name:           "update available",
@@ -410,6 +412,53 @@ Re-run the method used to install it:
 		t.Run(test.name, func(t *testing.T) {
 			var output bytes.Buffer
 			printSelfUpdateStatus(&output, test.currentVersion, test.latestVersion, test.checkErr, test.offline)
+			if got := output.String(); got != test.want {
+				t.Fatalf("output = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestPackageUpdateMessageSelection(t *testing.T) {
+	updates := []codingagent.PackageVersionUpdate{
+		{PackageUpdate: codingagent.PackageUpdate{DisplayName: "alpha", Type: "npm"}, CurrentVersion: "1.0.0", LatestVersion: "1.1.0"},
+		{PackageUpdate: codingagent.PackageUpdate{DisplayName: "beta", Type: "npm"}, CurrentVersion: "2.0.0", LatestVersion: "2.2.0"},
+	}
+	tests := []struct {
+		name    string
+		check   codingagent.PackageUpdateCheck
+		skipped bool
+		want    string
+	}{
+		{name: "none installed", check: codingagent.PackageUpdateCheck{}, want: ""},
+		{name: "all current", check: codingagent.PackageUpdateCheck{Installed: 2}, want: "Packages: all 2 up to date.\n"},
+		{name: "updates available", check: codingagent.PackageUpdateCheck{Installed: 2, Updates: updates}, want: "Package updates available: alpha v1.0.0 -> v1.1.0, beta v2.0.0 -> v2.2.0 — run pigo update --extensions\n"},
+		{name: "check skipped", check: codingagent.PackageUpdateCheck{Installed: 2}, skipped: true, want: "Packages: 2 installed (update check skipped) — run pigo update --extensions\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			printPackageUpdateStatus(&output, test.check, test.skipped)
+			if got := output.String(); got != test.want {
+				t.Fatalf("output = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestUpdatedPackagesMessageSelection(t *testing.T) {
+	tests := []struct {
+		name    string
+		updates []codingagent.PackageVersionUpdate
+		want    string
+	}{
+		{name: "unchanged", want: "All packages up to date.\n"},
+		{name: "updated", updates: []codingagent.PackageVersionUpdate{{PackageUpdate: codingagent.PackageUpdate{DisplayName: "pi-hypa", Type: "npm"}, CurrentVersion: "0.4.0", LatestVersion: "0.5.0"}}, want: "pi-hypa v0.4.0 -> v0.5.0\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			printUpdatedPackages(&output, test.updates)
 			if got := output.String(); got != test.want {
 				t.Fatalf("output = %q, want %q", got, test.want)
 			}
