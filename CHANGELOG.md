@@ -6,7 +6,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-07-22
+## [0.2.1] - 2026-07-22
 
 ### Fixed
 
