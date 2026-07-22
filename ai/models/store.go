@@ -127,31 +127,74 @@ func PiUserAgent(version string) string {
 	return fmt.Sprintf("pigo/%s (%s; %s; %s)", version, runtime.GOOS, runtime.Version(), runtime.GOARCH)
 }
 
-// refreshLocks dedupes concurrent refreshes per store path: the second caller
-// waits, hits the checkedAt gate, and reuses the persisted result.
-var refreshLocks sync.Map
+type refreshCall struct {
+	done    chan struct{}
+	catalog *Catalog
+	err     error
+}
+
+type refreshCallGroup struct {
+	mu    sync.Mutex
+	calls map[string]*refreshCall
+}
+
+func (group *refreshCallGroup) do(key string, refresh func() (*Catalog, error)) (*Catalog, error) {
+	group.mu.Lock()
+	if group.calls == nil {
+		group.calls = make(map[string]*refreshCall)
+	}
+	if call := group.calls[key]; call != nil {
+		group.mu.Unlock()
+		<-call.done
+		return call.catalog, call.err
+	}
+	call := &refreshCall{done: make(chan struct{})}
+	group.calls[key] = call
+	group.mu.Unlock()
+
+	call.catalog, call.err = refresh()
+	group.mu.Lock()
+	delete(group.calls, key)
+	close(call.done)
+	group.mu.Unlock()
+	return call.catalog, call.err
+}
+
+var catalogRefreshCalls refreshCallGroup
 
 // Refresh fetches models.dev and replaces only fetched providers in the
 // persisted dynamic overlay. A completed refresh within the last 4 hours skips
 // the network and returns the stored overlay (upstream
 // remote-catalog-provider.ts gates on checkedAt plus lastModified presence).
 func Refresh(ctx context.Context, options RefreshOptions) (*Catalog, error) {
+	endpoint := options.URL
+	if endpoint == "" {
+		endpoint = ModelsDevURL
+	}
+	key := "url:" + endpoint
+	if options.StorePath != "" {
+		key = "store:" + options.StorePath
+	}
+	return catalogRefreshCalls.do(key, func() (*Catalog, error) {
+		return refresh(ctx, options, endpoint)
+	})
+}
+
+func refresh(ctx context.Context, options RefreshOptions, endpoint string) (*Catalog, error) {
 	now := options.Now
 	if now == nil {
 		now = time.Now
 	}
+	current := &Catalog{providers: make(map[string]map[string]ai.Model)}
 	if options.StorePath != "" {
-		locked, _ := refreshLocks.LoadOrStore(options.StorePath, &sync.Mutex{})
-		mutex := locked.(*sync.Mutex)
-		mutex.Lock()
-		defer mutex.Unlock()
-		if !options.Force && storeFreshAt(options.StorePath, now()) {
-			return LoadStore(options.StorePath)
+		var err error
+		current, err = LoadStore(options.StorePath)
+		if err != nil {
+			return nil, err
 		}
-	}
-	endpoint := options.URL
-	if endpoint == "" {
-		endpoint = ModelsDevURL
+		if !options.Force && storeFreshAt(options.StorePath, now()) {
+			return current, nil
+		}
 	}
 	client := options.Client
 	if client == nil {
@@ -170,9 +213,11 @@ func Refresh(ctx context.Context, options RefreshOptions) (*Catalog, error) {
 		return nil, err
 	}
 	defer func() { _ = response.Body.Close() }()
+	if ctx.Err() != nil {
+		return current, nil
+	}
 	checkedAt := now().UnixMilli()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, response.Body)
 		unavailable := response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusNotImplemented
 		if options.StorePath != "" {
 			if err := stampStoreResponse(options.StorePath, checkedAt, unavailable); err != nil {
@@ -180,10 +225,7 @@ func Refresh(ctx context.Context, options RefreshOptions) (*Catalog, error) {
 			}
 		}
 		if unavailable {
-			if options.StorePath != "" {
-				return LoadStore(options.StorePath)
-			}
-			return &Catalog{providers: make(map[string]map[string]ai.Model)}, nil
+			return current, nil
 		}
 		return nil, fmt.Errorf("models.dev request failed: %s", response.Status)
 	}
@@ -194,6 +236,9 @@ func Refresh(ctx context.Context, options RefreshOptions) (*Catalog, error) {
 	providers, err := cataloggen.Generate(cataloggen.Sources{ModelsDev: data})
 	if err != nil {
 		return nil, err
+	}
+	if ctx.Err() != nil {
+		return current, nil
 	}
 	catalog := &Catalog{providers: providers}
 	if options.StorePath != "" {

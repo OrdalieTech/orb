@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"slices"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -21,10 +22,77 @@ import (
 var pinnedGeneratedAt = time.Date(2026, 7, 21, 16, 28, 58, 0, time.UTC)
 
 func TestSYNC4GeneratedCatalogTimestampCoversAllSourceCaptures(t *testing.T) {
-	latestCapture := time.Date(2026, 7, 21, 16, 28, 57, 818287377, time.UTC)
-	if pinnedGeneratedAt.Before(latestCapture) {
-		t.Fatalf("generated catalog timestamp %s predates source capture %s", pinnedGeneratedAt, latestCapture)
+	doc := readCatalogTestFile(t, "../../doc.go")
+	generatedMatch := regexp.MustCompile(`-generated-at ([^[:space:]]+)`).FindSubmatch(doc)
+	if len(generatedMatch) != 2 {
+		t.Fatal("doc.go has no -generated-at value")
 	}
+	generatedAt, err := time.Parse(time.RFC3339Nano, string(generatedMatch[1]))
+	if err != nil {
+		t.Fatalf("parse doc.go -generated-at: %v", err)
+	}
+	if !pinnedGeneratedAt.Equal(generatedAt) {
+		t.Fatalf("test generation time %s differs from doc.go %s", pinnedGeneratedAt, generatedAt)
+	}
+
+	readme := readCatalogTestFile(t, "../../testdata/README.md")
+	captureMatch := regexp.MustCompile(`all captured by ([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z):`).FindSubmatch(readme)
+	if len(captureMatch) != 2 {
+		t.Fatal("catalog snapshot README has no live-source capture timestamp")
+	}
+	latestCapture, err := time.Parse(time.RFC3339Nano, string(captureMatch[1]))
+	if err != nil {
+		t.Fatalf("parse live-source capture timestamp: %v", err)
+	}
+	apiCaptureMatch := regexp.MustCompile("`api\\.json`[^\\n]*fetched on ([0-9]{4}-[0-9]{2}-[0-9]{2}) UTC").FindSubmatch(readme)
+	if len(apiCaptureMatch) != 2 {
+		t.Fatal("catalog snapshot README has no models.dev capture date")
+	}
+	apiCapture, err := time.Parse("2006-01-02", string(apiCaptureMatch[1]))
+	if err != nil {
+		t.Fatalf("parse models.dev capture date: %v", err)
+	}
+	if !apiCapture.Before(latestCapture) {
+		t.Fatalf("models.dev capture date %s is not covered by latest capture %s", apiCapture, latestCapture)
+	}
+	if generatedAt.Before(latestCapture) {
+		t.Fatalf("generated catalog timestamp %s predates source capture %s", generatedAt, latestCapture)
+	}
+
+	for _, name := range []string{"api.json", "nvidia-nim.json", "openrouter.json", "vercel.json"} {
+		digestPattern := regexp.MustCompile("(?m)`" + regexp.QuoteMeta(name) + "`[^\\n]*SHA-256(?: is)? `([0-9a-f]{64})`")
+		digestMatch := digestPattern.FindSubmatch(readme)
+		if len(digestMatch) != 2 {
+			t.Fatalf("catalog snapshot README has no digest for %s", name)
+		}
+		content := readCatalogTestFile(t, "../../testdata/"+name)
+		digest := sha256.Sum256(content)
+		if got, want := fmt.Sprintf("%x", digest), string(digestMatch[1]); got != want {
+			t.Fatalf("%s digest = %s, README records %s", name, got, want)
+		}
+	}
+
+	generated := readCatalogTestFile(t, "../../generated.go")
+	millisMatch := regexp.MustCompile(`const generatedCatalogLastModified int64 = ([0-9]+)`).FindSubmatch(generated)
+	if len(millisMatch) != 2 {
+		t.Fatal("generated.go has no catalog timestamp")
+	}
+	millis, err := strconv.ParseInt(string(millisMatch[1]), 10, 64)
+	if err != nil {
+		t.Fatalf("parse generated catalog timestamp: %v", err)
+	}
+	if millis != generatedAt.UnixMilli() {
+		t.Fatalf("generated.go timestamp %d differs from doc.go %d", millis, generatedAt.UnixMilli())
+	}
+}
+
+func readCatalogTestFile(t *testing.T, path string) []byte {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return content
 }
 
 func pinnedSources(t *testing.T) Sources {
@@ -206,9 +274,6 @@ func TestCATM1NvidiaCatalogIntersectsLiveNIMListing(t *testing.T) {
 		"openai/gpt-oss-120b", "openai/gpt-oss-20b", "stepfun-ai/step-3.5-flash", "stepfun-ai/step-3.7-flash",
 		"z-ai/glm-5.2",
 	}
-	if !slices.Equal(nvidiaCuratedNIMIDs, wantIDs) {
-		t.Fatalf("curated NVIDIA IDs differ from upstream nvidia.models.ts\n got: %#v\nwant: %#v", nvidiaCuratedNIMIDs, wantIDs)
-	}
 	catalog, err := Generate(pinnedSources(t))
 	if err != nil {
 		t.Fatal(err)
@@ -217,7 +282,7 @@ func TestCATM1NvidiaCatalogIntersectsLiveNIMListing(t *testing.T) {
 	if len(nvidia) != 19 {
 		t.Fatalf("nvidia models = %d, want 19", len(nvidia))
 	}
-	for _, id := range nvidiaCuratedNIMIDs {
+	for _, id := range wantIDs {
 		if _, ok := nvidia[id]; !ok {
 			t.Fatalf("missing NIM-served model nvidia/%s", id)
 		}
@@ -240,17 +305,17 @@ func TestCATM1NvidiaCatalogIntersectsLiveNIMListing(t *testing.T) {
 	}
 }
 
-// CAT-M1: without a NIM listing the curated snapshot must gate models.dev, so
-// the runtime models.dev refresh cannot resurrect NIM-unavailable models.
-func TestCATM1NvidiaCuratedFallbackWithoutNIMListing(t *testing.T) {
+// CAT-M1: upstream's non-strict fetch fallback is an empty NIM map, so a
+// missing listing must omit NVIDIA rather than trusting models.dev alone.
+func TestCATM1NvidiaOmittedWithoutNIMListing(t *testing.T) {
 	sources := pinnedSources(t)
 	sources.NvidiaNIM = nil
 	catalog, err := Generate(sources)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(catalog["nvidia"]) != 19 {
-		t.Fatalf("nvidia models = %d, want 19 from the curated fallback", len(catalog["nvidia"]))
+	if len(catalog["nvidia"]) != 0 {
+		t.Fatalf("nvidia models = %d without a NIM listing, want zero", len(catalog["nvidia"]))
 	}
 }
 
@@ -451,6 +516,9 @@ func TestSYNC5ValidateCatalogStructure(t *testing.T) {
 	if err := validateCatalog(valid); err != nil {
 		t.Fatalf("validateCatalog rejected a valid catalog: %v", err)
 	}
+	if err := validateCatalog(map[string]map[string]ai.Model{"anthropic": {}}); err != nil {
+		t.Fatalf("validateCatalog rejected a structurally consistent empty provider: %v", err)
+	}
 	invalidModality := validModel
 	invalidModality.Input = ai.InputModalities{ai.InputModality("audio")}
 	emptyName := validModel
@@ -464,7 +532,6 @@ func TestSYNC5ValidateCatalogStructure(t *testing.T) {
 	invalidCost := validModel
 	invalidCost.Cost.Input = math.Inf(1)
 	for name, catalog := range map[string]map[string]map[string]ai.Model{
-		"empty provider": {"anthropic": {}},
 		"id mismatch":    {"anthropic": {"m": withModelID(validModel, "other")}},
 		"provider drift": {"anthropic": {"m": withModelProvider(validModel, "openai")}},
 		"unknown api":    {"anthropic": {"m": withModelAPI(validModel, ai.API("wat"))}},

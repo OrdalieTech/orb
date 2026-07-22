@@ -38,13 +38,7 @@ func main() {
 		fatal(err)
 	}
 	if sources.NvidiaNIM, err = readInput(*nimInput, *nimEndpoint); err != nil {
-		if *nimInput != "" {
-			fatal(err)
-		}
-		// Loud fallback: without the live NIM listing the generator keeps only
-		// the curated snapshot of NIM-served models baked into cataloggen.
-		fmt.Fprintf(os.Stderr, "warning: NVIDIA NIM listing unavailable (%v); falling back to the curated NIM snapshot\n", err)
-		sources.NvidiaNIM = nil
+		fatal(fmt.Errorf("nvidia NIM listing is required (pass -nim with a snapshot): %w", err))
 	}
 	if sources.OpenRouter, err = readInput(*openRouterInput, *openRouterEndpoint); err != nil {
 		fatal(fmt.Errorf("OpenRouter listing is required (pass -openrouter with a snapshot): %w", err))

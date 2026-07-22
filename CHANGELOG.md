@@ -20,6 +20,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
   non-string event types like upstream.
 - Bedrock payload hooks preserve a deleted `inferenceConfig`, Vertex ADC reports unknown metadata
   detection modes verbatim, and Anthropic's subscription warning survives OAuth refresh failures.
+- Model generation now requires an explicit NVIDIA NIM listing instead of an invented fallback,
+  while concurrent and cancelled remote-catalog refreshes preserve upstream cache semantics.
 
 ## [0.1.1] - 2026-07-21
 

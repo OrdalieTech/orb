@@ -38,7 +38,9 @@ func TestGenerateAppliesPinnedCatalogQuirksWithoutLosingFloatMetadata(t *testing
 			"qwen-alibaba":{"tool_call":true,"modalities":{"input":["text"],"output":["text"]},"provider":{"npm":"@ai-sdk/alibaba"}}
 		}}
 	}`)
-	catalog, err := Generate(Sources{ModelsDev: data})
+	nim := []byte(`{"data":[{"id":"z-ai/glm-5.2"},{"id":"upstage/solar-10.7b-instruct"}]}`)
+	sources := Sources{ModelsDev: data, NvidiaNIM: nim}
+	catalog, err := Generate(sources)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +92,8 @@ func TestGenerateAppliesPinnedCatalogQuirksWithoutLosingFloatMetadata(t *testing
 		t.Fatalf("Alibaba cache-control compat = %s", catalog["opencode"]["qwen-alibaba"].Compat)
 	}
 
-	rendered, err := Render(Sources{ModelsDev: data, GeneratedAt: pinnedGeneratedAt})
+	sources.GeneratedAt = pinnedGeneratedAt
+	rendered, err := Render(sources)
 	if err != nil {
 		t.Fatal(err)
 	}
