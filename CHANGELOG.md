@@ -6,6 +6,12 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Changed
+
+- Interactive mode now keeps the status, extension widgets, input, and footer fixed at the bottom
+  while the transcript scrolls independently. Mouse-wheel or `Ctrl+PageUp` scrolling pauses live
+  follow, and scrolling down or pressing `Ctrl+End` returns to the latest loading or streamed output.
+
 ## [0.2.1] - 2026-07-22
 
 ### Fixed

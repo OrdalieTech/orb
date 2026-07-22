@@ -10,10 +10,12 @@ import (
 )
 
 const (
-	minRenderInterval = 16 * time.Millisecond
-	segmentReset      = "\x1b[0m\x1b]8;;\x07"
-	scrollOnOutputOff = "\x1b[?1010l"
-	scrollOnOutputOn  = "\x1b[?1010h"
+	minRenderInterval  = 16 * time.Millisecond
+	segmentReset       = "\x1b[0m\x1b]8;;\x07"
+	scrollOnOutputOff  = "\x1b[?1010l"
+	scrollOnOutputOn   = "\x1b[?1010h"
+	alternateScreenOn  = "\x1b[?1049h\x1b[?1000h\x1b[?1006h"
+	alternateScreenOff = "\x1b[?1006l\x1b[?1000l\x1b[?1049l"
 )
 
 type InputListenerResult struct {
@@ -45,6 +47,12 @@ type TUI struct {
 	previousImageIDs    []uint32
 	clearOnShrink       bool
 	showHardwareCursor  bool
+	viewportBody        Component
+	viewportChrome      Component
+	viewportEnd         int
+	viewportBodyLines   int
+	viewportBodyHeight  int
+	viewportFollow      bool
 
 	lifecycleMu sync.RWMutex
 	stopped     bool
@@ -123,6 +131,14 @@ func (ui *TUI) SetShowHardwareCursor(enabled bool) {
 	ui.RequestRender()
 }
 
+// SetViewport keeps chrome pinned below a scrollable body. It is opt-in so
+// embedders retain upstream's inline renderer unless they explicitly own the screen.
+func (ui *TUI) SetViewport(body, chrome Component) {
+	ui.renderMu.Lock()
+	ui.viewportBody, ui.viewportChrome, ui.viewportFollow = body, chrome, true
+	ui.renderMu.Unlock()
+}
+
 func (ui *TUI) AddInputListener(listener InputListener) func() {
 	ui.focusMu.Lock()
 	ui.nextListener++
@@ -150,6 +166,12 @@ func (ui *TUI) Start() error {
 	ui.lifecycleMu.Lock()
 	ui.hasStarted = true
 	ui.lifecycleMu.Unlock()
+	ui.renderMu.Lock()
+	viewport := ui.viewportBody != nil
+	ui.renderMu.Unlock()
+	if viewport {
+		ui.terminal.Write(alternateScreenOn)
+	}
 	// Keep terminal scrollback stationary while live output updates the active cursor.
 	ui.terminal.Write(scrollOnOutputOff)
 	ui.terminal.HideCursor()
@@ -181,7 +203,7 @@ func (ui *TUI) Stop() error {
 	ui.scheduleMu.Unlock()
 	ui.renderDispatchMu.Unlock()
 	ui.renderMu.Lock()
-	lines, row := len(ui.previousLines), ui.hardwareCursorRow
+	lines, row, viewport := len(ui.previousLines), ui.hardwareCursorRow, ui.viewportBody != nil
 	ui.renderMu.Unlock()
 	ui.notificationMu.Lock()
 	ui.colorMu.Lock()
@@ -191,7 +213,7 @@ func (ui *TUI) Stop() error {
 		ui.terminal.Write(terminalColorSchemeNotificationsOff)
 	}
 	ui.notificationMu.Unlock()
-	if lines > 0 {
+	if lines > 0 && !viewport {
 		ui.terminal.Write(" ")
 		target := lines
 		if difference := target - row; difference > 0 {
@@ -203,6 +225,9 @@ func (ui *TUI) Stop() error {
 	}
 	ui.terminal.ShowCursor()
 	ui.terminal.Write(scrollOnOutputOn)
+	if viewport {
+		ui.terminal.Write(alternateScreenOff)
+	}
 	return ui.terminal.Stop()
 }
 
@@ -299,6 +324,10 @@ func (ui *TUI) handleInput(data string) {
 		ui.OnDebug()
 		return
 	}
+	if ui.handleViewportInput(data) {
+		ui.RequestRender()
+		return
+	}
 	ui.focusMu.Lock()
 	if focusedOverlay := ui.overlayForComponentLocked(ui.focused); focusedOverlay != nil && !ui.isOverlayVisibleLocked(focusedOverlay) {
 		if top := ui.topmostVisibleOverlayLocked(); top != nil {
@@ -333,6 +362,48 @@ func (ui *TUI) handleInput(data string) {
 	}
 	handler.HandleInput(KeyEvent{Raw: data, Key: ParseKey(data), Type: KeyEventTypeOf(data)})
 	ui.RequestRender()
+}
+
+func (ui *TUI) handleViewportInput(data string) bool {
+	ui.renderMu.Lock()
+	defer ui.renderMu.Unlock()
+	if ui.viewportBody == nil {
+		return false
+	}
+	step := max(1, ui.viewportBodyHeight)
+	switch {
+	case MatchesKey(data, "ctrl+pageup"):
+		ui.scrollViewportLocked(-step)
+	case MatchesKey(data, "ctrl+pagedown"):
+		ui.scrollViewportLocked(step)
+	case MatchesKey(data, "ctrl+end"):
+		ui.viewportFollow = true
+	case strings.HasPrefix(data, "\x1b[<") && (strings.HasSuffix(data, "M") || strings.HasSuffix(data, "m")):
+		buttonEnd := strings.IndexByte(data[3:], ';')
+		if buttonEnd < 0 {
+			return true
+		}
+		button, err := strconv.Atoi(data[3 : 3+buttonEnd])
+		if err == nil && button&64 != 0 && button&3 < 2 {
+			if button&1 == 0 {
+				ui.scrollViewportLocked(-3)
+			} else {
+				ui.scrollViewportLocked(3)
+			}
+		}
+	default:
+		return false
+	}
+	return true
+}
+
+func (ui *TUI) scrollViewportLocked(delta int) {
+	end := ui.viewportEnd
+	if ui.viewportFollow {
+		end = ui.viewportBodyLines
+	}
+	end = max(0, min(ui.viewportBodyLines, end+delta))
+	ui.viewportEnd, ui.viewportFollow = end, end == ui.viewportBodyLines
 }
 
 func (ui *TUI) extractCursor(lines []string, height int) (row, column int, found bool) {
@@ -468,7 +539,7 @@ func (ui *TUI) RenderNow() {
 	}
 	viewportTop, hardwareCursorRow := previousViewportTop, ui.hardwareCursorRow
 	lineDifference := func(target int) int { return (target - viewportTop) - (hardwareCursorRow - previousViewportTop) }
-	newLines := append([]string(nil), ui.Render(width)...)
+	newLines := ui.renderViewport(width, height)
 	if ui.overlayCount() > 0 {
 		newLines = ui.compositeOverlays(newLines, width, height)
 	}
@@ -700,6 +771,27 @@ func (ui *TUI) RenderNow() {
 	ui.positionCursor(cursorRow, cursorColumn, hasCursor, len(newLines))
 	ui.previousLines, ui.previousWidth, ui.previousHeight = newLines, width, height
 	ui.previousImageIDs = collectKittyImageIDs(newLines)
+}
+
+func (ui *TUI) renderViewport(width, height int) []string {
+	if ui.viewportBody == nil {
+		return append([]string(nil), ui.Render(width)...)
+	}
+	body, chrome := ui.viewportBody.Render(width), ui.viewportChrome.Render(width)
+	if len(chrome) > height {
+		chrome = chrome[len(chrome)-height:]
+	}
+	bodyHeight := height - len(chrome)
+	ui.viewportBodyLines, ui.viewportBodyHeight = len(body), bodyHeight
+	end := len(body)
+	if !ui.viewportFollow {
+		end = min(ui.viewportEnd, len(body))
+		ui.viewportEnd = end
+	}
+	start := max(0, end-bodyHeight)
+	lines := make([]string, bodyHeight-(end-start), height)
+	lines = append(lines, body[start:end]...)
+	return append(lines, chrome...)
 }
 
 func (ui *TUI) positionCursor(row, column int, found bool, totalLines int) {

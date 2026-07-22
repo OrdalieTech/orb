@@ -297,16 +297,16 @@ func (mode *InteractiveMode) init() error {
 	mode.editor.SetPaddingX(settings.EditorPaddingX)
 	mode.editor.SetAutocompleteMaxVisible(settings.AutocompleteMaxVisible)
 
-	// UI tree assembly: header → chat → pendingMessages → status → widgetAbove → editor → widgetBelow
-	mode.ui.AddChild(mode.header)
-	mode.ui.AddChild(mode.chat)
-	mode.ui.AddChild(mode.pendingMessages)
-	mode.ui.AddChild(mode.status)
-	mode.ui.AddChild(mode.widgetAbove)
-	mode.ui.AddChild(mode.editorContainer)
-	mode.ui.AddChild(mode.widgetBelow)
-	mode.ui.AddChild(mode.footer)
-	mode.ui.AddChild(mode.overlay)
+	body, chrome := &tui.Container{}, &tui.Container{}
+	for _, component := range []tui.Component{mode.header, mode.chat, mode.pendingMessages} {
+		body.AddChild(component)
+	}
+	for _, component := range []tui.Component{mode.status, mode.widgetAbove, mode.editorContainer, mode.widgetBelow, mode.footer, mode.overlay} {
+		chrome.AddChild(component)
+	}
+	mode.ui.AddChild(body)
+	mode.ui.AddChild(chrome)
+	mode.ui.SetViewport(body, chrome)
 
 	mode.editorContainer.AddChild(mode.editor)
 
