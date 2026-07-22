@@ -6,6 +6,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-22
+
 ### Added
 
 - A bundled-but-dormant tasks plugin adds the `todo` tool and live session checklist, enabled through settings, `pigo plugins`, or `/plugins`.
