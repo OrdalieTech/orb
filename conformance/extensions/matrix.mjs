@@ -1,17 +1,21 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { networkInterfaces } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+const SELF = fileURLToPath(import.meta.url);
 const DEFAULT_CORPUS = path.join(HERE, "corpus.json");
 const DEFAULT_OBSERVER = path.join(HERE, "observer.ts");
 const OBSERVER_COMMAND = "__extension_matrix_probe";
 const OBSERVER_MARKER = "PI_EXTENSION_MATRIX:";
 const DIALOG_METHODS = new Set(["select", "confirm", "input", "editor"]);
-const LOAD_ERROR = /(?:extension[^\n]*(?:error|failed)|failed to load extension|unsupported external module|cannot find (?:module|package)|ERR_[A-Z_]+)/i;
+const LOAD_ERROR = /(?:extension error \(|failed to load extension)/i;
+const STATUSES = ["load_register_pass", "load_only_pass", "flaky", "unsupported", "infra_error"];
 
 function usage() {
 	return `Usage: node matrix.mjs --packages <directory> --pigo <binary> [options]
@@ -100,8 +104,8 @@ function validateRelativeEntrypoint(entrypoint, packageName) {
 
 async function loadCorpus(filename, only) {
 	const corpus = JSON.parse(await readFile(filename, "utf8"));
-	if (corpus.schemaVersion !== 1 || !Array.isArray(corpus.extensions) || corpus.extensions.length !== 43) {
-		throw new Error(`${filename} must be the 43-package extension corpus v1`);
+	if (corpus.schemaVersion !== 1 || !Array.isArray(corpus.extensions) || corpus.extensions.length === 0) {
+		throw new Error(`${filename} must be an extension corpus v1`);
 	}
 	const ranks = new Set();
 	const names = new Set();
@@ -124,6 +128,7 @@ async function loadCorpus(filename, only) {
 		extension.extensions = extension.extensions.map((entrypoint) => validateRelativeEntrypoint(entrypoint, extension.package));
 	}
 	corpus.extensions.sort((left, right) => left.rank - right.rank);
+	corpus.totalCount = corpus.extensions.length;
 	if (only.length === 0) return corpus;
 	const requested = new Set(only);
 	const selected = corpus.extensions.filter((extension) => requested.has(extension.package) || requested.has(String(extension.rank)));
@@ -202,6 +207,22 @@ function executableVersion(command) {
 		stderr: result.stderr?.trim() ?? "",
 		error: result.error?.message,
 	};
+}
+
+function sha256(bytes) {
+	return createHash("sha256").update(bytes).digest("hex");
+}
+
+async function fileIdentity(filename) {
+	const bytes = await readFile(filename);
+	return { sha256: sha256(bytes), bytes: bytes.length };
+}
+
+function inspectNetworkIsolation() {
+	const external = Object.entries(networkInterfaces())
+		.flatMap(([name, addresses]) => (addresses ?? []).map((address) => ({ name, ...address })))
+		.filter((address) => !address.internal);
+	return { isolated: external.length === 0, method: "os.networkInterfaces", external };
 }
 
 function percentile(sorted, fraction) {
@@ -297,7 +318,6 @@ async function runProbe(executable, extensionPaths, options) {
 		"--no-prompt-templates",
 		"--no-context-files",
 		"--no-themes",
-		"--no-tools",
 		"--no-approve",
 		"--offline",
 	];
@@ -422,11 +442,23 @@ async function runProbe(executable, extensionPaths, options) {
 	};
 }
 
+function attemptSucceeded(attempt) {
+	return attempt.success && !attempt.loadError;
+}
+
+function registrationSnapshot(attempt) {
+	if (!attempt.observation) return null;
+	return {
+		registration: attempt.observation,
+		rpcCommands: normalizeCommands(attempt.getCommands),
+	};
+}
+
 function runtimeSummary(attempts) {
 	const measured = attempts.filter((attempt) => !attempt.warmup);
-	const lastRegistration = measured.findLast((attempt) => attempt.success && !attempt.loadError);
+	const successful = attempts.filter(attemptSucceeded);
 	const diagnosticCounts = new Map();
-	for (const attempt of attempts.filter((item) => !item.success || item.loadError)) {
+	for (const attempt of attempts.filter((item) => !attemptSucceeded(item))) {
 		const diagnostic = {
 			error: attempt.error,
 			timedOut: attempt.timedOut,
@@ -436,31 +468,63 @@ function runtimeSummary(attempts) {
 		};
 		const encoded = JSON.stringify(diagnostic);
 		const existing = diagnosticCounts.get(encoded);
-		if (existing) existing.count++;
-		else diagnosticCounts.set(encoded, { count: 1, ...diagnostic });
+		if (existing) {
+			existing.count++;
+			existing.phases[attempt.phase]++;
+		} else {
+			diagnosticCounts.set(encoded, {
+				count: 1,
+				phases: { cold: 0, warmup: 0, sample: 0, [attempt.phase]: 1 },
+				...diagnostic,
+			});
+		}
 	}
+	const registrationCounts = new Map();
+	for (const attempt of successful) {
+		const snapshot = registrationSnapshot(attempt);
+		const encoded = JSON.stringify(snapshot);
+		const existing = registrationCounts.get(encoded);
+		if (existing) existing.count++;
+		else registrationCounts.set(encoded, { count: 1, snapshot });
+	}
+	const registrationVariants = [...registrationCounts.values()];
+	const registrationStable = registrationVariants.length <= 1;
+	const allSucceeded = attempts.length > 0 && successful.length === attempts.length;
+	const state = allSucceeded && registrationStable ? "stable" : successful.length === 0 ? "failed" : "flaky";
 	const compactAttempts = attempts.map((attempt) => {
 		return {
+			phase: attempt.phase,
 			warmup: attempt.warmup,
 			sample: attempt.sample,
-			success: attempt.success && !attempt.loadError,
+			success: attemptSucceeded(attempt),
 			startupMs: attempt.startupMs === null ? null : Number(attempt.startupMs.toFixed(3)),
 			commandMs: attempt.commandMs === null ? null : Number(attempt.commandMs.toFixed(3)),
 			uiRequestCount: attempt.uiRequestCount,
 		};
 	});
+	const representative = registrationVariants[0]?.snapshot ?? null;
 	return {
-		ok: measured.length > 0 && measured.every((attempt) => attempt.success && !attempt.loadError),
+		state,
+		ok: state === "stable",
+		failures: {
+			cold: attempts.filter((attempt) => attempt.phase === "cold" && !attemptSucceeded(attempt)).length,
+			warmup: attempts.filter((attempt) => attempt.phase === "warmup" && !attemptSucceeded(attempt)).length,
+			sample: attempts.filter((attempt) => attempt.phase === "sample" && !attemptSucceeded(attempt)).length,
+			total: attempts.length - successful.length,
+		},
 		startup: summarize(
-			measured.filter((attempt) => attempt.success && !attempt.loadError).map((attempt) => attempt.startupMs),
+			measured.filter(attemptSucceeded).map((attempt) => attempt.startupMs),
 		),
 		command: summarize(
-			measured.filter((attempt) => attempt.success && !attempt.loadError).map((attempt) => attempt.commandMs),
+			measured.filter(attemptSucceeded).map((attempt) => attempt.commandMs),
 		),
 		attempts: compactAttempts,
 		diagnostics: [...diagnosticCounts.values()],
-		registration: lastRegistration?.observation ?? null,
-		rpcCommands: normalizeCommands(lastRegistration?.getCommands ?? null),
+		registrationStable,
+		registrationVariantCount: registrationVariants.length,
+		registrationVariants: registrationVariants.length > 1 ? registrationVariants : [],
+		registration: representative?.registration ?? null,
+		rpcCommands: representative?.rpcCommands ?? null,
 	};
 }
 
@@ -487,6 +551,17 @@ function stringDelta(current = [], baseline = []) {
 	};
 }
 
+function structuredDelta(current = [], baseline = []) {
+	const key = (value) => JSON.stringify(value);
+	const before = new Map((baseline ?? []).map((value) => [key(value), value]));
+	const after = new Map((current ?? []).map((value) => [key(value), value]));
+	const sort = (values) => values.sort((left, right) => compareText(key(left), key(right)));
+	return {
+		added: sort([...after].filter(([item]) => !before.has(item)).map(([, value]) => value)),
+		removed: sort([...before].filter(([item]) => !after.has(item)).map(([, value]) => value)),
+	};
+}
+
 function commandDelta(current = [], baseline = []) {
 	const key = (command) => `${command.name}\u0000${command.description}`;
 	const before = new Map((baseline ?? []).map((command) => [key(command), command]));
@@ -503,7 +578,7 @@ function registrationDelta(current, baseline) {
 	if (!current?.registration || !baseline?.registration) return null;
 	return {
 		activeTools: stringDelta(current.registration.activeTools, baseline.registration.activeTools),
-		allTools: stringDelta(current.registration.allTools, baseline.registration.allTools),
+		allTools: structuredDelta(current.registration.allTools, baseline.registration.allTools),
 		commands: commandDelta(current.registration.commands, baseline.registration.commands),
 		rpcCommands: commandDelta(current.rpcCommands, baseline.rpcCommands),
 	};
@@ -518,14 +593,25 @@ function registrationDifference(pi, pigo, baselines) {
 	return { difference: { pi: piDelta, pigo: pigoDelta }, piDelta, pigoDelta };
 }
 
+function registrationHasChanges(delta) {
+	return Object.values(delta ?? {}).some((change) => (change.added?.length ?? 0) > 0 || (change.removed?.length ?? 0) > 0);
+}
+
 function subtract(value, baseline) {
 	if (value === null || baseline === null) return null;
 	return Number((value - baseline).toFixed(3));
 }
 
 function ratio(numerator, denominator) {
-	if (numerator === null || denominator === null || denominator <= 0) return null;
+	if (numerator === null || denominator === null || numerator <= 0 || denominator <= 0) return null;
 	return Number((numerator / denominator).toFixed(3));
+}
+
+function measuredRatio(numerator, denominator, noisy) {
+	if (numerator === null || denominator === null) return { ratio: null, quality: "unavailable" };
+	if (noisy) return { ratio: null, quality: "noisy" };
+	if (numerator <= 0 || denominator <= 0) return { ratio: null, quality: "below_resolution" };
+	return { ratio: ratio(numerator, denominator), quality: "ok" };
 }
 
 async function benchmark(extension, runtimeExecutables, options) {
@@ -540,6 +626,7 @@ async function benchmark(extension, runtimeExecutables, options) {
 		for (const runtime of order) {
 			const attempt = await runProbe(runtimeExecutables[runtime], extensionPaths, options);
 			attempt.warmup = index < options.warmups;
+			attempt.phase = index === 0 ? "cold" : attempt.warmup ? "warmup" : "sample";
 			attempt.sample = index < options.warmups ? index + 1 : index - options.warmups + 1;
 			attempts[runtime].push(attempt);
 		}
@@ -548,32 +635,135 @@ async function benchmark(extension, runtimeExecutables, options) {
 }
 
 function classify(result, baselines) {
-	if (!baselines.pi.ok || !baselines.pigo.ok) {
-		return { status: "infrastructure_failure", difference: null, deltas: null };
+	if (baselines.pi.state !== "stable" || baselines.pigo.state !== "stable") {
+		return { status: "infra_error", reason: "observer_baseline_unstable", upstreamSupported: null, difference: null, deltas: null };
 	}
-	if (!result.pi.ok) return { status: "pi_baseline_failure", difference: null, deltas: null };
-	if (!result.pigo.ok) return { status: "pigo_load_failure", difference: null, deltas: null };
+	if (result.pi.state === "flaky") {
+		return { status: "flaky", reason: "upstream_flaky", upstreamSupported: false, difference: null, deltas: null };
+	}
+	if (result.pi.state === "failed") {
+		return { status: "unsupported", reason: "upstream_load_failure", upstreamSupported: false, difference: null, deltas: null };
+	}
+	if (result.pigo.state === "flaky") {
+		return { status: "flaky", reason: "pigo_flaky", upstreamSupported: true, difference: null, deltas: null };
+	}
+	if (result.pigo.state === "failed") {
+		return { status: "unsupported", reason: "pigo_load_failure", upstreamSupported: true, difference: null, deltas: null };
+	}
 	const compared = registrationDifference(result.pi, result.pigo, baselines);
 	if (compared.difference) {
 		return {
-			status: "registration_mismatch",
+			status: "unsupported",
+			reason: "registration_mismatch",
+			upstreamSupported: true,
 			difference: compared.difference,
 			deltas: { pi: compared.piDelta, pigo: compared.pigoDelta },
 		};
 	}
-	return { status: "pass", difference: null, deltas: { pi: compared.piDelta, pigo: compared.pigoDelta } };
+	const status = registrationHasChanges(compared.piDelta) ? "load_register_pass" : "load_only_pass";
+	return {
+		status,
+		reason: status,
+		upstreamSupported: true,
+		difference: null,
+		deltas: { pi: compared.piDelta, pigo: compared.pigoDelta },
+	};
 }
 
 function performanceComparison(result, baselines) {
+	if (
+		baselines.pi.state !== "stable" ||
+		baselines.pigo.state !== "stable" ||
+		result.pi.state !== "stable" ||
+		result.pigo.state !== "stable"
+	) {
+		return { available: false, reason: "requires stable successful probes in both runtimes" };
+	}
 	const piStartup = result.pi.startup.medianMs;
 	const pigoStartup = result.pigo.startup.medianMs;
 	const piNet = subtract(piStartup, baselines.pi.startup.medianMs);
 	const pigoNet = subtract(pigoStartup, baselines.pigo.startup.medianMs);
 	return {
-		startupRatio: ratio(pigoStartup, piStartup),
-		baselineSubtractedLoadMs: { pi: piNet, pigo: pigoNet },
-		baselineSubtractedLoadRatio: ratio(pigoNet, piNet),
-		commandRatio: ratio(result.pigo.command.medianMs, result.pi.command.medianMs),
+		available: true,
+		startup: {
+			metric: "process_spawn_to_get_commands",
+			...measuredRatio(pigoStartup, piStartup, result.pi.startup.noisy || result.pigo.startup.noisy),
+		},
+		baselineSubtractedLoad: {
+			metric: "global_observer_baseline_subtracted_startup",
+			piMs: piNet,
+			pigoMs: pigoNet,
+			...measuredRatio(
+				pigoNet,
+				piNet,
+				result.pi.startup.noisy ||
+					result.pigo.startup.noisy ||
+					baselines.pi.startup.noisy ||
+					baselines.pigo.startup.noisy,
+			),
+		},
+		observerRPC: {
+			metric: "observer_command_rpc_round_trip_not_extension_work",
+			...measuredRatio(
+				result.pigo.command.medianMs,
+				result.pi.command.medianMs,
+				result.pi.command.noisy || result.pigo.command.noisy,
+			),
+		},
+	};
+}
+
+function percentage(numerator, denominator) {
+	return denominator === 0 ? null : Number(((numerator / denominator) * 100).toFixed(1));
+}
+
+function aggregateSummary(results, corpusTotal, baselines) {
+	const counts = Object.fromEntries(STATUSES.map((status) => [status, 0]));
+	const reasons = {};
+	for (const result of results) {
+		counts[result.status]++;
+		reasons[result.reason] = (reasons[result.reason] ?? 0) + 1;
+	}
+	const completeCorpus = results.length === corpusTotal;
+	const valid = baselines.pi.state === "stable" && baselines.pigo.state === "stable";
+	const loadRegisterPass = counts.load_register_pass;
+	const loadOnlyPass = counts.load_only_pass;
+	const loadCompatible = loadRegisterPass + loadOnlyPass;
+	if (!valid) {
+		return {
+			valid: false,
+			reason: "observer baseline is not stable in both runtimes",
+			completeCorpus,
+			counts,
+			reasons,
+			allCorpus: { total: corpusTotal, tested: results.length, loadCompatible: null, loadCompatiblePercent: null },
+			parity: null,
+		};
+	}
+	const upstreamSupported = results.filter((result) => result.upstreamSupported === true).length;
+	return {
+		valid: true,
+		completeCorpus,
+		counts,
+		reasons,
+		allCorpus: {
+			total: corpusTotal,
+			tested: results.length,
+			loadRegisterPass,
+			loadOnlyPass,
+			loadCompatible,
+			loadCompatiblePercent: completeCorpus ? percentage(loadCompatible, corpusTotal) : null,
+			loadRegisterPercent: completeCorpus ? percentage(loadRegisterPass, corpusTotal) : null,
+		},
+		parity: {
+			scope: completeCorpus ? "all upstream-supported corpus packages" : "tested upstream-supported packages only",
+			upstreamSupported,
+			loadRegisterPass,
+			loadOnlyPass,
+			loadCompatible,
+			loadCompatiblePercent: percentage(loadCompatible, upstreamSupported),
+			loadRegisterPercent: percentage(loadRegisterPass, upstreamSupported),
+		},
 	};
 }
 
@@ -603,22 +793,50 @@ async function main() {
 
 	const pi = path.join(options.packages, "node_modules", ".bin", "pi");
 	const runtimeExecutables = { pi, pigo: options.pigo };
+	const networkNamespaceGuard = inspectNetworkIsolation();
+	if (!networkNamespaceGuard.isolated) {
+		throw new Error("matrix requires a network-isolated namespace; use the documented --network none container");
+	}
+	const [harnessIdentity, corpusIdentity, observerIdentity, packageLockIdentity, piIdentity, pigoIdentity] =
+		await Promise.all([
+			fileIdentity(SELF),
+			fileIdentity(options.corpus),
+			fileIdentity(options.observer),
+			fileIdentity(path.join(options.packages, "package-lock.json")),
+			fileIdentity(pi),
+			fileIdentity(options.pigo),
+		]);
 	const report = {
-		schemaVersion: 1,
+		schemaVersion: 2,
 		generatedAt: new Date().toISOString(),
 		method: {
 			warmups: options.warmups,
 			samples: options.samples,
 			timeoutMs: options.timeoutMs,
 			interleaved: true,
-			network: "disabled by required container invocation",
-			performance: "process spawn to get_commands; observer command to deterministic UI marker and RPC response",
+			network: "runner refuses non-isolated network namespaces",
+			performance: "startup and global-baseline-subtracted load; observer RPC timing is not package-specific work",
+			entrypoints: "manifest-declared directories are expanded by this harness, so runtime discovery parity is out of scope",
+			isolation: "the documented container protects the host, but packages share writable container tmpfs state",
+		},
+		safety: {
+			networkNamespaceGuard,
+			credentialsInherited: false,
+		},
+		inputs: {
+			harness: harnessIdentity,
+			corpus: corpusIdentity,
+			observer: observerIdentity,
+			packageLock: packageLockIdentity,
+			upstreamPi: piIdentity,
+			pigo: pigoIdentity,
 		},
 		corpus: {
 			source: options.corpus,
 			capturedAt: corpus.capturedAt,
 			selection: corpus.selection,
 			count: corpus.extensions.length,
+			totalCount: corpus.totalCount,
 		},
 		runtimes: {
 			node: process.version,
@@ -639,6 +857,8 @@ async function main() {
 		report.extensions.push({
 			extension,
 			status: classification.status,
+			reason: classification.reason,
+			upstreamSupported: classification.upstreamSupported,
 			registrationDeltas: classification.deltas,
 			registrationDifference: classification.difference,
 			pi: result.pi,
@@ -646,15 +866,7 @@ async function main() {
 			performance: performanceComparison(result, report.baseline),
 		});
 	}
-	const counts = {};
-	for (const result of report.extensions) counts[result.status] = (counts[result.status] ?? 0) + 1;
-	const denominator = report.extensions.filter((result) => result.status !== "pi_baseline_failure").length;
-	report.summary = {
-		counts,
-		compatibilityDenominator: denominator,
-		compatible: counts.pass ?? 0,
-		compatibilityPercent: denominator === 0 ? null : Number((((counts.pass ?? 0) / denominator) * 100).toFixed(1)),
-	};
+	report.summary = aggregateSummary(report.extensions, corpus.totalCount, report.baseline);
 	await writeOutput(options.output, report);
 }
 

@@ -6,6 +6,12 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Added
+
+- A reproducible public-extension compatibility harness locks the 44 most-downloaded valid Pi
+  packages, compares stable load and registration behavior against Pi 0.81.1, audits each primary
+  workflow, and measures seven offline command handlers plus Piolium's knowledge-base workflow.
+
 ### Changed
 
 - Synchronized the complete in-scope upstream target to pi 0.81.1: compaction and branch-summary

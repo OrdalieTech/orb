@@ -63,8 +63,8 @@ jobs:
             echo "source archive contains generated or private state" >&2
             exit 1
           fi
-          (cd "${source_root}" && CGO_ENABLED=0 go build ./...)
-          (cd "${source_root}" && CGO_ENABLED=0 go build -trimpath -o /tmp/pigo-source-check ./cmd/pigo)
+          (cd "${source_root}" && CGO_ENABLED=0 go build -buildvcs=false ./...)
+          (cd "${source_root}" && CGO_ENABLED=0 go build -buildvcs=false -trimpath -o /tmp/pigo-source-check ./cmd/pigo)
           sha256sum "${source_archive}" > /tmp/pigo-source.sha256
       - name: Publish verified release artifacts
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6

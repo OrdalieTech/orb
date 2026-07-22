@@ -324,6 +324,23 @@ Status: **green; closes with the commit containing this record**.
 - [x] Run the complete race/lint/fixture/tidy/static-cross-build/release-config gate and commit the
       green sync.
 
+## Public extension ecosystem matrix — 2026-07-22
+
+Status: **complete for the locked offline surface; package-specific external-service workflows remain explicit**.
+
+- [x] Lock the 44 most-downloaded valid Pi package manifests from the public gallery snapshot,
+      including exact versions, top-level integrity hashes, and the complete npm dependency graph.
+- [x] Run every package under pinned Pi 0.81.1 and Pigo 0.1.2 with one cold attempt, two warm-ups,
+      and eleven interleaved measured samples in a credential-free, network-isolated container.
+- [x] Compare canonical tools, parameter schemas, prompt guidance, and commands after subtracting
+      each runtime's observer baseline; retain all attempts and diagnostics in the raw artifact.
+- [x] Inspect the defining workflow of all 44 packages with package-local file-and-line evidence,
+      then execute seven safe command handlers and Piolium's real knowledge-base staging workflow.
+- [x] Fix the unambiguous runtime gaps found by those workflows: Piolium Node/SDK surfaces,
+      `Buffer.byteLength`, `process.getuid()`, and per-source-module `import.meta` resource paths.
+- [x] Publish `docs/sync/ecosystem-extension-matrix.md` and the machine-readable compact report
+      with the complete result, performance limits, blocker families, remediation, and hashes.
+
 ## Resolved owner decisions
 
 - **M5 binary-size cap (2026-07-20)** — the owner adopted the expansion study's recommended 55 MB
