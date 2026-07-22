@@ -673,6 +673,16 @@ func (host *interactiveSessionHost) authStorage() (*config.AuthStorage, error) {
 	return config.NewAuthStorage(filepath.Join(host.agentDir, "auth.json"))
 }
 
+func (host *interactiveSessionHost) authCredentials() (aiauth.CredentialStore, error) {
+	host.mu.Lock()
+	runtimeAuth := host.inputs.RuntimeAuth
+	host.mu.Unlock()
+	if runtimeAuth != nil {
+		return runtimeAuth, nil
+	}
+	return host.authStorage()
+}
+
 func (host *interactiveSessionHost) refreshAuthState(_ context.Context, _ string) error {
 	host.mu.Lock()
 	registry := host.inputs.ModelRegistry
@@ -696,11 +706,11 @@ func (host *interactiveSessionHost) refreshAuthState(_ context.Context, _ string
 }
 
 func (host *interactiveSessionHost) AuthOptions(ctx context.Context) (modes.InteractiveAuthOptions, error) {
-	storage, err := host.authStorage()
+	credentials, err := host.authCredentials()
 	if err != nil {
 		return modes.InteractiveAuthOptions{}, err
 	}
-	stored, err := storage.List(ctx)
+	stored, err := credentials.List(ctx)
 	if err != nil {
 		return modes.InteractiveAuthOptions{}, err
 	}
@@ -710,6 +720,7 @@ func (host *interactiveSessionHost) AuthOptions(ctx context.Context) (modes.Inte
 	}
 	host.mu.Lock()
 	registry := host.inputs.ModelRegistry
+	runtimeAuth := host.inputs.RuntimeAuth
 	host.mu.Unlock()
 
 	providerIDs := make([]string, 0)
@@ -753,6 +764,9 @@ func (host *interactiveSessionHost) AuthOptions(ctx context.Context) (modes.Inte
 		} else if provider, known := providers.Get(ai.ProviderID(id)); known {
 			name = provider.Name
 			methods = provider.Methods
+		}
+		if runtimeAuth != nil && runtimeAuth.HasRuntimeAPIKey(id) {
+			status = &modes.InteractiveAuthStatus{Type: aiauth.AuthTypeAPIKey, Source: "runtime"}
 		}
 		if status == nil {
 			// Registry-less fallback only: with a registry, the stored
@@ -860,12 +874,21 @@ func (host *interactiveSessionHost) Login(ctx context.Context, providerID string
 }
 
 func (host *interactiveSessionHost) Logout(ctx context.Context, providerID string) error {
-	storage, err := host.authStorage()
+	credentials, err := host.authCredentials()
 	if err != nil {
 		return err
 	}
-	if err := storage.Delete(ctx, providerID); err != nil {
+	host.mu.Lock()
+	runtimeAuth := host.inputs.RuntimeAuth
+	wasRuntime := runtimeAuth != nil && runtimeAuth.HasRuntimeAPIKey(providerID)
+	host.mu.Unlock()
+	if err := credentials.Delete(ctx, providerID); err != nil {
 		return err
+	}
+	if wasRuntime {
+		host.mu.Lock()
+		host.args.APIKey = nil
+		host.mu.Unlock()
 	}
 	return host.refreshAuthState(ctx, "")
 }

@@ -177,6 +177,23 @@ type bedrockPromptHost struct {
 	promptStarted chan struct{}
 }
 
+type waitingOAuthHost struct {
+	authFlowHost
+	started chan struct{}
+	stopped chan struct{}
+}
+
+func (host *waitingOAuthHost) Login(ctx context.Context, _ string, _ aiauth.AuthType, interaction aiauth.AuthInteraction) error {
+	interaction.Notify(aiauth.AuthEvent{
+		Type: aiauth.EventAuthURL, URL: "https://example.test/oauth", Instructions: "Complete login in the browser.",
+	})
+	interaction.Notify(aiauth.AuthEvent{Type: aiauth.EventProgress, Message: "Waiting for authentication..."})
+	close(host.started)
+	<-ctx.Done()
+	close(host.stopped)
+	return ctx.Err()
+}
+
 func (host *bedrockPromptHost) Login(ctx context.Context, _ string, _ aiauth.AuthType, interaction aiauth.AuthInteraction) error {
 	close(host.promptStarted)
 	_, err := interaction.Prompt(ctx, aiauth.AuthPrompt{Type: aiauth.PromptSecret, Message: "Enter Amazon Bedrock bearer token"})
@@ -602,6 +619,59 @@ func TestLOGM1AuthURLEventOpensBrowser(t *testing.T) {
 	interaction.Notify(aiauth.AuthEvent{Type: aiauth.EventProgress, Message: "working"})
 	if len(opened) != 1 {
 		t.Fatalf("non-auth_url events opened the browser: %#v", opened)
+	}
+}
+
+// LOG-M1 adjacent lifecycle: upstream keeps the auth URL and later progress in
+// one login dialog, and Escape aborts even when the provider never asks for
+// input (device/polling and callback-server flows).
+func TestLOGM1OAuthWaitingDialogPreservesURLAndCancels(t *testing.T) {
+	host := &waitingOAuthHost{started: make(chan struct{}), stopped: make(chan struct{})}
+	mode := newAuthFlowTestMode(host)
+	mode.interactiveUI = NewInteractiveUI(mode)
+	original := openAuthURLInBrowser
+	openAuthURLInBrowser = func(string) {}
+	defer func() { openAuthURLInBrowser = original }()
+
+	done := make(chan struct{})
+	go func() {
+		mode.runLogin(InteractiveAuthProvider{ID: "oauth", Name: "OAuth", AuthType: aiauth.AuthTypeOAuth})
+		close(done)
+	}()
+	select {
+	case <-host.started:
+	case <-time.After(time.Second):
+		t.Fatal("prompt-free OAuth login did not start")
+	}
+
+	var dialog *loginAuthDialogComponent
+	for _, child := range mode.editorContainer.Children() {
+		dialog, _ = child.(*loginAuthDialogComponent)
+		if dialog != nil {
+			break
+		}
+	}
+	if dialog == nil {
+		t.Fatal("OAuth waiting dialog is not mounted")
+	}
+	rendered := renderPlain(t, dialog, 120)
+	if !strings.Contains(rendered, "https://example.test/oauth") || !strings.Contains(rendered, "Waiting for authentication...") {
+		t.Fatalf("OAuth URL/progress did not coexist:\n%s", rendered)
+	}
+	if chat := renderPlain(t, mode.chat, 120); strings.Contains(chat, "example.test/oauth") || strings.Contains(chat, "Waiting for authentication") {
+		t.Fatalf("OAuth dialog notifications leaked into replaceable chat status:\n%s", chat)
+	}
+
+	dialog.HandleInput(tui.KeyEvent{Raw: "\x1b"})
+	select {
+	case <-host.stopped:
+	case <-time.After(time.Second):
+		t.Fatal("Escape did not cancel prompt-free OAuth login")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("cancelled OAuth login did not return")
 	}
 }
 

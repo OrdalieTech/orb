@@ -2,7 +2,9 @@ package modes
 
 import (
 	"context"
+	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 
 	aiauth "github.com/OrdalieTech/pigo/ai/auth"
@@ -215,6 +217,163 @@ func (component *OAuthSelectorComponent) SetFocused(focused bool) {
 
 func (component *OAuthSelectorComponent) Invalidate() { component.container.Invalidate() }
 func (component *OAuthSelectorComponent) Render(width int) []string {
+	return component.container.Render(width)
+}
+
+type authDialogLine struct {
+	text  string
+	style string
+}
+
+// loginAuthDialogComponent keeps OAuth notifications in the editor area for
+// the lifetime of a login. It is the waiting-state subset of upstream's
+// LoginDialogComponent; prompt/select input continues through InteractiveUI.
+type loginAuthDialogComponent struct {
+	mu        sync.Mutex
+	container *tui.Container
+	content   *tui.Container
+	title     string
+	lines     []authDialogLine
+	onCancel  func()
+}
+
+func newLoginAuthDialogComponent(title string, onCancel func()) *loginAuthDialogComponent {
+	component := &loginAuthDialogComponent{
+		container: &tui.Container{}, content: &tui.Container{}, title: title, onCancel: onCancel,
+	}
+	component.container.AddChild(extensionDialogBorder())
+	component.container.AddChild(tui.NewText(theme.FG("accent", theme.Bold(title)), 1, 0, nil))
+	component.container.AddChild(component.content)
+	component.container.AddChild(extensionDialogBorder())
+	return component
+}
+
+func (component *loginAuthDialogComponent) replace(lines ...authDialogLine) {
+	component.mu.Lock()
+	component.lines = append([]authDialogLine(nil), lines...)
+	component.rebuildLocked()
+	component.mu.Unlock()
+}
+
+func (component *loginAuthDialogComponent) append(lines ...authDialogLine) {
+	component.mu.Lock()
+	component.lines = append(component.lines, lines...)
+	component.rebuildLocked()
+	component.mu.Unlock()
+}
+
+func (component *loginAuthDialogComponent) rebuildLocked() {
+	component.content.Clear()
+	for _, line := range component.lines {
+		if line.style == "spacer" {
+			component.content.AddChild(tui.NewSpacer(1))
+			continue
+		}
+		text := line.text
+		switch line.style {
+		case "accent":
+			text = theme.FG("accent", text)
+		case "dim":
+			text = theme.FG("dim", text)
+		case "warning":
+			text = theme.FG("warning", text)
+		default:
+			text = theme.FG("text", text)
+		}
+		component.content.AddChild(tui.NewText(text, 1, 0, nil))
+	}
+}
+
+func authDialogHyperlink(url, label string) string {
+	return "\x1b]8;;" + url + "\x07" + label + "\x1b]8;;\x07"
+}
+
+func (component *loginAuthDialogComponent) showAuth(url, instructions string) {
+	clickHint := "Ctrl+click to open"
+	if runtime.GOOS == "darwin" {
+		clickHint = "Cmd+click to open"
+	}
+	lines := []authDialogLine{
+		{style: "spacer"},
+		{text: authDialogHyperlink(url, url), style: "accent"},
+		{text: authDialogHyperlink(url, clickHint), style: "dim"},
+	}
+	if instructions != "" {
+		lines = append(lines, authDialogLine{style: "spacer"}, authDialogLine{text: instructions, style: "warning"})
+	}
+	component.replace(lines...)
+}
+
+func (component *loginAuthDialogComponent) showDeviceCode(verificationURI, userCode string) {
+	clickHint := "Ctrl+click to open"
+	if runtime.GOOS == "darwin" {
+		clickHint = "Cmd+click to open"
+	}
+	component.replace(
+		authDialogLine{style: "spacer"},
+		authDialogLine{text: authDialogHyperlink(verificationURI, verificationURI), style: "accent"},
+		authDialogLine{text: authDialogHyperlink(verificationURI, clickHint), style: "dim"},
+		authDialogLine{style: "spacer"},
+		authDialogLine{text: "Enter code: " + userCode, style: "warning"},
+		authDialogLine{style: "spacer"},
+		authDialogLine{text: "Waiting for authentication...", style: "dim"},
+		authDialogLine{text: "(" + KeyHint("tui.select.cancel", "to cancel") + ")"},
+	)
+}
+
+func (component *loginAuthDialogComponent) showInfo(message string, links []aiauth.AuthInfoLink) {
+	lines := []authDialogLine{{style: "spacer"}, {text: message}}
+	for _, link := range links {
+		label := link.URL
+		if link.Label != "" {
+			label = link.Label + ": " + link.URL
+		}
+		lines = append(lines, authDialogLine{text: authDialogHyperlink(link.URL, label), style: "accent"})
+	}
+	component.append(lines...)
+}
+
+func (component *loginAuthDialogComponent) showProgress(message string) {
+	component.append(authDialogLine{text: message, style: "dim"})
+}
+
+func (component *loginAuthDialogComponent) showDetails(lines ...string) {
+	entries := []authDialogLine{{style: "spacer"}}
+	for _, line := range lines {
+		entries = append(entries, authDialogLine{text: line})
+	}
+	component.replace(entries...)
+}
+
+func (component *loginAuthDialogComponent) promptTitle(message string) string {
+	component.mu.Lock()
+	defer component.mu.Unlock()
+	lines := []string{component.title}
+	for _, line := range component.lines {
+		if line.style == "spacer" || line.text == "" {
+			continue
+		}
+		lines = append(lines, line.text)
+	}
+	lines = append(lines, "", message)
+	return strings.Join(lines, "\n")
+}
+
+func (component *loginAuthDialogComponent) HandleInput(event tui.KeyEvent) {
+	if tui.GetKeybindings().Matches(event.Raw, "tui.select.cancel") && component.onCancel != nil {
+		component.onCancel()
+	}
+}
+
+func (component *loginAuthDialogComponent) SetFocused(bool) {}
+func (component *loginAuthDialogComponent) Invalidate() {
+	component.mu.Lock()
+	component.container.Invalidate()
+	component.mu.Unlock()
+}
+func (component *loginAuthDialogComponent) Render(width int) []string {
+	component.mu.Lock()
+	defer component.mu.Unlock()
 	return component.container.Render(width)
 }
 

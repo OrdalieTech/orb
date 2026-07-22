@@ -293,7 +293,8 @@ Status: **green; closes with the commit containing this record**.
 
 - [x] Independently adversarially verify all 52 provider, catalog, and login gap IDs against their
       TypeScript implementations and regression tests; the final evidence table is
-      `docs/compare/provider-login-parity-2026-07-21.md` with no unresolved verdict.
+      `docs/compare/provider-login-parity-2026-07-21.md`: 51 CONFIRMED, LOG-m7 INSUFFICIENT only
+      because ordinary Go errors lack JavaScript's creation stack, and zero REGRESSION verdicts.
 - [x] Port the complete in-scope v0.81.0 delta: required stream injection, public compaction/session
       contracts, retained-tail identity, catalog/image generation and freshness, version/product
       assets, and renamed fixture APIs. Ledger server, native SQLite, and llama as D2/D7 exclusions.

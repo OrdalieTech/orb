@@ -237,9 +237,8 @@ func TestAnthropicTokenFailuresKeepUpstreamWrapping(t *testing.T) {
 }
 
 // LOG-m7: formatOAuthErrorDetails ports upstream formatErrorDetails
-// (anthropic.ts:82-97): name/message first, then errno where a syscall error
-// surfaces, then the wrapped cause chain.
-func TestLOGm7FormatOAuthErrorDetailsIncludesErrnoAndCause(t *testing.T) {
+// (anthropic.ts:82-97): name/message first, then code, errno, cause, and stack.
+func TestLOGm7FormatOAuthErrorDetailsIncludesDiagnosticFields(t *testing.T) {
 	errno := syscall.ECONNREFUSED
 	if got, want := formatOAuthErrorDetails(errno), "Error: "+errno.Error()+"; errno="+strconv.Itoa(int(errno)); got != want {
 		t.Fatalf("bare errno details = %q, want %q", got, want)
@@ -253,4 +252,27 @@ func TestLOGm7FormatOAuthErrorDetailsIncludesErrnoAndCause(t *testing.T) {
 	if got := formatOAuthErrorDetails(errors.New("plain")); got != "Error: plain" {
 		t.Fatalf("plain details = %q", got)
 	}
+	diagnostic := oauthDiagnosticTestError{
+		name: "TypeError", message: "fetch failed", code: "UND_ERR_CONNECT_TIMEOUT",
+		errno: "ETIMEDOUT", cause: errors.New("socket closed"), stack: "TypeError: fetch failed\n    at postJson",
+	}
+	wantDiagnostic := "TypeError: fetch failed; code=UND_ERR_CONNECT_TIMEOUT; errno=ETIMEDOUT; " +
+		"cause=Error: socket closed; stack=TypeError: fetch failed\n    at postJson"
+	if got := formatOAuthErrorDetails(diagnostic); got != wantDiagnostic {
+		t.Fatalf("typed diagnostic details = %q, want %q", got, wantDiagnostic)
+	}
 }
+
+type oauthDiagnosticTestError struct {
+	name, message, code string
+	errno               any
+	cause               error
+	stack               string
+}
+
+func (err oauthDiagnosticTestError) Error() string { return err.message }
+func (err oauthDiagnosticTestError) Name() string  { return err.name }
+func (err oauthDiagnosticTestError) Code() string  { return err.code }
+func (err oauthDiagnosticTestError) Errno() any    { return err.errno }
+func (err oauthDiagnosticTestError) Unwrap() error { return err.cause }
+func (err oauthDiagnosticTestError) Stack() string { return err.stack }
