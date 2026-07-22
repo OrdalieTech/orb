@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 
@@ -12,17 +13,17 @@ import (
 	"github.com/OrdalieTech/pigo/codingagent/extensions/examples/permissiongate"
 	"github.com/OrdalieTech/pigo/codingagent/extensions/examples/pirate"
 	"github.com/OrdalieTech/pigo/codingagent/extensions/examples/statusline"
-	"github.com/OrdalieTech/pigo/codingagent/extensions/jsbridge"
+	extensionhost "github.com/OrdalieTech/pigo/codingagent/extensions/host"
 	"github.com/OrdalieTech/pigo/codingagent/mcp"
 )
 
-// Each runtime (re)load builds a fresh jsbridge loader; the previous one's
-// goroutine-backed VMs must be closed or /reload leaks them (~16MB each).
+// Each runtime (re)load builds a fresh extension host; the previous child must
+// be closed before it becomes unreachable.
 // If cmd/pigo ever hosts two concurrent live runtimes, move Close ownership to
 // runtime disposal instead of this process-scoped slot.
 var (
-	jsLoaderMu     sync.Mutex
-	activeJSLoader *jsbridge.Loader
+	extensionHostMu     sync.Mutex
+	activeExtensionHost *extensionhost.Manager
 )
 
 var compiledExtensions = []extensions.CompiledExtension{
@@ -81,7 +82,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 				}
 			}
 		}
-		options := jsbridge.DiscoveryOptions{
+		options := extensionhost.DiscoveryOptions{
 			CWD:                    cwd,
 			AgentDir:               agentDir,
 			ProjectTrusted:         settings.IsProjectTrusted(),
@@ -93,25 +94,39 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 		if packages != nil {
 			options.ResolvedPackagePaths, options.ProjectResolvedPackagePaths = packageExtensionPaths(packages.Extensions)
 		}
-		if paths := jsbridge.Discover(options); len(paths) > 0 {
+		if paths := extensionhost.Discover(options); len(paths) > 0 {
 			if registry == nil {
 				registry = extensions.NewRegistry(cwd)
 			}
-			loader := jsbridge.NewLoader(options)
-			jsLoaderMu.Lock()
-			previous := activeJSLoader
-			activeJSLoader = loader
-			jsLoaderMu.Unlock()
-			if previous != nil {
-				previous.Close()
+			manager := extensionhost.NewManager(extensionhost.Options{
+				AgentDir: agentDir,
+				CWD:      cwd,
+				Version:  version,
+				Stderr:   os.Stderr,
+			})
+			result := manager.RegisterInto(context.Background(), registry, paths)
+			replaceActiveExtensionHost(manager)
+			for _, diagnostic := range result.Diagnostics {
+				diagnostics = append(diagnostics, diagnostic.Message)
 			}
-			result := loader.RegisterInto(context.Background(), registry)
 			for _, loadError := range result.Errors {
 				diagnostics = append(diagnostics, fmt.Sprintf("Extension error (%s): %s", loadError.Path, loadError.Error))
 			}
+		} else {
+			replaceActiveExtensionHost(nil)
 		}
 	}
 	return registry, diagnostics
+}
+
+func replaceActiveExtensionHost(manager *extensionhost.Manager) {
+	extensionHostMu.Lock()
+	previousManager := activeExtensionHost
+	activeExtensionHost = manager
+	extensionHostMu.Unlock()
+	if previousManager != nil && previousManager != manager {
+		_ = previousManager.Close()
+	}
 }
 
 // isPackageSourceSpec mirrors upstream isLocalPath: known package/URL prefixes
@@ -128,7 +143,7 @@ func isPackageSourceSpec(value string) bool {
 
 // packageExtensionPaths splits enabled package-provided extension entry points
 // by scope; project-scope entries stay invisible until the project is trusted
-// (jsbridge.Discover gates ProjectResolvedPackagePaths on ProjectTrusted).
+// (host.Discover gates ProjectResolvedPackagePaths on ProjectTrusted).
 func packageExtensionPaths(resources []codingagent.ResolvedResource) (user, project []string) {
 	for _, resource := range resources {
 		if !resource.Enabled || resource.Metadata.Origin != "package" {
