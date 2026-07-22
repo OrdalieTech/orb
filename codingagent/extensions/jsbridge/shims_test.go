@@ -337,6 +337,55 @@ export default async function(pi) {
 	assertRegisteredDescription(t, result, "result", "true|true|8|before\none\ntwo\n")
 }
 
+func TestCommonNodeFSAndExecFileSyncSurface(t *testing.T) {
+	cwd := t.TempDir()
+	sourceDir := filepath.Join(cwd, "source")
+	if err := os.Mkdir(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sourceFile := filepath.Join(sourceDir, "value.txt")
+	mustWrite(t, sourceFile, "value")
+	link := filepath.Join(cwd, "value-link")
+	if err := os.Symlink(sourceFile, link); err != nil {
+		t.Fatal(err)
+	}
+	copyDir := filepath.Join(cwd, "copy")
+	result := loadAndRunExtension(t, cwd, `
+import {
+  accessSync, chmodSync, constants, cpSync, existsSync, mkdtempSync,
+  readFileSync, readlinkSync, realpathSync, rmSync,
+} from "node:fs";
+import { chmod, copyFile, lstat, readlink, realpath, rename, rm } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+export default async function(pi) {
+  accessSync("/bin/sh", constants.X_OK);
+  const output = execFileSync("/bin/sh", ["-c", "printf node-surface"], {
+    cwd: "`+cwd+`", encoding: "utf8", timeout: 1000,
+  });
+  cpSync("`+sourceDir+`", "`+copyDir+`", { recursive: true });
+  const copied = "`+filepath.Join(copyDir, "value.txt")+`";
+  chmodSync(copied, 0o600);
+  const temp = mkdtempSync("`+filepath.Join(cwd, "matrix-")+`");
+  const syncOK = realpathSync("`+link+`") === "`+sourceFile+`" &&
+    readlinkSync("`+link+`") === "`+sourceFile+`" && readFileSync(copied, "utf8") === "value";
+  const asyncOK = (await lstat("`+link+`")).isSymbolicLink() &&
+    await realpath("`+link+`") === "`+sourceFile+`" && await readlink("`+link+`") === "`+sourceFile+`";
+  const renamed = copied + ".renamed";
+  await rename(copied, renamed);
+  await chmod(renamed, 0o644);
+  await copyFile(renamed, copied);
+  rmSync("`+copyDir+`", { recursive: true, force: true });
+  await rm(temp, { recursive: true, force: true });
+  await rm("`+filepath.Join(cwd, "missing")+`", { force: true });
+  pi.registerCommand("result", {
+    description: [output, syncOK, asyncOK, existsSync("`+copyDir+`")].join(":"),
+    handler: async () => {},
+  });
+}
+`)
+	assertRegisteredDescription(t, result, "result", "node-surface:true:true:false")
+}
+
 // --- console tests ---
 
 func TestConsoleDoesNotPanic(t *testing.T) {

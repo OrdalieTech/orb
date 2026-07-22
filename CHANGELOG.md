@@ -13,6 +13,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 - JS extensions can import `buffer`/`node:buffer`, append transcript streams with
   `fs.createWriteStream`, resolve the pi-ai root as the upstream compat superset, and use
   `import.meta.dirname`/`filename` to locate bundled resources from the package directory.
+- Popular extensions can use common `fs` realpath/copy/remove/access APIs, their promise
+  counterparts, and synchronous argument-safe child processes through `execFileSync`.
 
 ## [0.1.1] - 2026-07-21
 

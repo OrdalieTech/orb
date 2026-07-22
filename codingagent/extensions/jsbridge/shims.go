@@ -414,6 +414,31 @@ func (h *shimHost) newFSModule(rt *sobek.Runtime) *sobek.Object {
 		return rt.ToValue(err == nil)
 	})
 
+	set("accessSync", func(call sobek.FunctionCall) sobek.Value {
+		p := h.resolvePath(call.Argument(0).String())
+		info, err := os.Stat(p)
+		if err == nil && len(call.Arguments) > 1 {
+			mode := int(call.Argument(1).ToInteger())
+			permissions := info.Mode().Perm()
+			if mode&4 != 0 && permissions&0o444 == 0 || mode&2 != 0 && permissions&0o222 == 0 || mode&1 != 0 && permissions&0o111 == 0 {
+				err = os.ErrPermission
+			}
+		}
+		if err != nil {
+			panicFS(rt, err, "access", p)
+		}
+		return sobek.Undefined()
+	})
+
+	set("realpathSync", func(call sobek.FunctionCall) sobek.Value {
+		p := h.resolvePath(call.Argument(0).String())
+		resolved, err := filepath.EvalSymlinks(p)
+		if err != nil {
+			panicFS(rt, err, "realpath", p)
+		}
+		return rt.ToValue(resolved)
+	})
+
 	set("readFileSync", func(call sobek.FunctionCall) sobek.Value {
 		p := h.resolvePath(call.Argument(0).String())
 		data, err := os.ReadFile(p)
@@ -609,6 +634,35 @@ func (h *shimHost) newFSModule(rt *sobek.Runtime) *sobek.Object {
 		return sobek.Undefined()
 	})
 
+	set("mkdtempSync", func(call sobek.FunctionCall) sobek.Value {
+		prefix := call.Argument(0).String()
+		if !filepath.IsAbs(prefix) {
+			prefix = filepath.Join(h.cwd, prefix)
+		}
+		dir, err := os.MkdirTemp(filepath.Dir(prefix), filepath.Base(prefix))
+		if err != nil {
+			panicFS(rt, err, "mkdtemp", prefix)
+		}
+		return rt.ToValue(dir)
+	})
+
+	set("chmodSync", func(call sobek.FunctionCall) sobek.Value {
+		p := h.resolvePath(call.Argument(0).String())
+		if err := os.Chmod(p, os.FileMode(call.Argument(1).ToInteger())); err != nil {
+			panicFS(rt, err, "chmod", p)
+		}
+		return sobek.Undefined()
+	})
+
+	set("readlinkSync", func(call sobek.FunctionCall) sobek.Value {
+		p := h.resolvePath(call.Argument(0).String())
+		target, err := os.Readlink(p)
+		if err != nil {
+			panicFS(rt, err, "readlink", p)
+		}
+		return rt.ToValue(target)
+	})
+
 	set("unlinkSync", func(call sobek.FunctionCall) sobek.Value {
 		p := h.resolvePath(call.Argument(0).String())
 		if err := os.Remove(p); err != nil {
@@ -625,15 +679,30 @@ func (h *shimHost) newFSModule(rt *sobek.Runtime) *sobek.Object {
 		return sobek.Undefined()
 	})
 
+	set("rmSync", func(call sobek.FunctionCall) sobek.Value {
+		p := h.resolvePath(call.Argument(0).String())
+		recursive, force := fsRemoveOptions(rt, call.Argument(1))
+		if err := removeFSPath(p, recursive, force); err != nil {
+			panicFS(rt, err, "rm", p)
+		}
+		return sobek.Undefined()
+	})
+
 	set("copyFileSync", func(call sobek.FunctionCall) sobek.Value {
 		src := h.resolvePath(call.Argument(0).String())
 		dst := h.resolvePath(call.Argument(1).String())
-		data, err := os.ReadFile(src)
-		if err != nil {
-			panicFS(rt, err, "copyfile", src)
-		}
-		if err := os.WriteFile(dst, data, 0o644); err != nil {
+		if err := copyFilePath(src, dst); err != nil {
 			panicFS(rt, err, "copyfile", dst)
+		}
+		return sobek.Undefined()
+	})
+
+	set("cpSync", func(call sobek.FunctionCall) sobek.Value {
+		src := h.resolvePath(call.Argument(0).String())
+		dst := h.resolvePath(call.Argument(1).String())
+		recursive := fsBooleanOption(rt, call.Argument(2), "recursive")
+		if err := copyFSPath(src, dst, recursive); err != nil {
+			panicFS(rt, err, "cp", src)
 		}
 		return sobek.Undefined()
 	})
@@ -792,6 +861,24 @@ func (h *shimHost) newFSPromisesModule(rt *sobek.Runtime) *sobek.Object {
 		return resolvePromise(rt, newStatObject(rt, info))
 	})
 
+	set("lstat", func(call sobek.FunctionCall) sobek.Value {
+		p := h.resolvePath(call.Argument(0).String())
+		info, err := os.Lstat(p)
+		if err != nil {
+			return rejectFS(rt, err, "lstat", p)
+		}
+		return resolvePromise(rt, newStatObject(rt, info))
+	})
+
+	set("realpath", func(call sobek.FunctionCall) sobek.Value {
+		p := h.resolvePath(call.Argument(0).String())
+		resolved, err := filepath.EvalSymlinks(p)
+		if err != nil {
+			return rejectFS(rt, err, "realpath", p)
+		}
+		return resolvePromise(rt, rt.ToValue(resolved))
+	})
+
 	set("mkdir", func(call sobek.FunctionCall) sobek.Value {
 		p := h.resolvePath(call.Argument(0).String())
 		recursive := false
@@ -857,24 +944,46 @@ func (h *shimHost) newFSPromisesModule(rt *sobek.Runtime) *sobek.Object {
 		return resolvePromise(rt, sobek.Undefined())
 	})
 
+	set("rename", func(call sobek.FunctionCall) sobek.Value {
+		oldPath := h.resolvePath(call.Argument(0).String())
+		newPath := h.resolvePath(call.Argument(1).String())
+		if err := os.Rename(oldPath, newPath); err != nil {
+			return rejectFS(rt, err, "rename", oldPath)
+		}
+		return resolvePromise(rt, sobek.Undefined())
+	})
+
+	set("chmod", func(call sobek.FunctionCall) sobek.Value {
+		p := h.resolvePath(call.Argument(0).String())
+		if err := os.Chmod(p, os.FileMode(call.Argument(1).ToInteger())); err != nil {
+			return rejectFS(rt, err, "chmod", p)
+		}
+		return resolvePromise(rt, sobek.Undefined())
+	})
+
+	set("readlink", func(call sobek.FunctionCall) sobek.Value {
+		p := h.resolvePath(call.Argument(0).String())
+		target, err := os.Readlink(p)
+		if err != nil {
+			return rejectFS(rt, err, "readlink", p)
+		}
+		return resolvePromise(rt, rt.ToValue(target))
+	})
+
 	set("rm", func(call sobek.FunctionCall) sobek.Value {
 		p := h.resolvePath(call.Argument(0).String())
-		recursive := false
-		if len(call.Arguments) > 1 && !sobek.IsUndefined(call.Argument(1)) {
-			opts := call.Argument(1).ToObject(rt)
-			r := opts.Get("recursive")
-			if r != nil && !sobek.IsUndefined(r) {
-				recursive = r.ToBoolean()
-			}
-		}
-		var err error
-		if recursive {
-			err = os.RemoveAll(p)
-		} else {
-			err = os.Remove(p)
-		}
-		if err != nil {
+		recursive, force := fsRemoveOptions(rt, call.Argument(1))
+		if err := removeFSPath(p, recursive, force); err != nil {
 			return rejectFS(rt, err, "rm", p)
+		}
+		return resolvePromise(rt, sobek.Undefined())
+	})
+
+	set("copyFile", func(call sobek.FunctionCall) sobek.Value {
+		src := h.resolvePath(call.Argument(0).String())
+		dst := h.resolvePath(call.Argument(1).String())
+		if err := copyFilePath(src, dst); err != nil {
+			return rejectFS(rt, err, "copyfile", dst)
 		}
 		return resolvePromise(rt, sobek.Undefined())
 	})
@@ -895,20 +1004,93 @@ func (h *shimHost) newFSPromisesModule(rt *sobek.Runtime) *sobek.Object {
 	set("cp", func(call sobek.FunctionCall) sobek.Value {
 		src := h.resolvePath(call.Argument(0).String())
 		dst := h.resolvePath(call.Argument(1).String())
-		data, err := os.ReadFile(src)
-		if err != nil {
+		recursive := fsBooleanOption(rt, call.Argument(2), "recursive")
+		if err := copyFSPath(src, dst, recursive); err != nil {
 			return rejectFS(rt, err, "cp", src)
-		}
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			return rejectFS(rt, err, "cp", dst)
-		}
-		if err := os.WriteFile(dst, data, 0o644); err != nil {
-			return rejectFS(rt, err, "cp", dst)
 		}
 		return resolvePromise(rt, sobek.Undefined())
 	})
 
 	return m
+}
+
+func fsBooleanOption(rt *sobek.Runtime, value sobek.Value, name string) bool {
+	if !present(value) {
+		return false
+	}
+	option := value.ToObject(rt).Get(name)
+	return present(option) && option.ToBoolean()
+}
+
+func fsRemoveOptions(rt *sobek.Runtime, value sobek.Value) (recursive, force bool) {
+	return fsBooleanOption(rt, value, "recursive"), fsBooleanOption(rt, value, "force")
+}
+
+func removeFSPath(path string, recursive, force bool) error {
+	if _, err := os.Lstat(path); err != nil {
+		if force && os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if recursive {
+		return os.RemoveAll(path)
+	}
+	return os.Remove(path)
+}
+
+func copyFilePath(src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	input, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = input.Close() }()
+	output, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, info.Mode().Perm())
+	if err != nil {
+		return err
+	}
+	if _, err = io.Copy(output, input); err != nil {
+		_ = output.Close()
+		return err
+	}
+	return output.Close()
+}
+
+func copyFSPath(src, dst string, recursive bool) error {
+	info, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		if !recursive {
+			return fmt.Errorf("recursive option is required to copy directory %s", src)
+		}
+		if err := os.MkdirAll(dst, info.Mode().Perm()); err != nil {
+			return err
+		}
+		entries, err := os.ReadDir(src)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if err := copyFSPath(filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name()), true); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(src)
+		if err != nil {
+			return err
+		}
+		return os.Symlink(target, dst)
+	}
+	return copyFilePath(src, dst)
 }
 
 func newStatObject(rt *sobek.Runtime, info os.FileInfo) *sobek.Object {
@@ -1150,6 +1332,35 @@ func (h *shimHost) newChildProcessModule(rt *sobek.Runtime) *sobek.Object {
 		return rt.ToValue(result.Stdout)
 	})
 
+	set("execFileSync", func(call sobek.FunctionCall) sobek.Value {
+		file := call.Argument(0).String()
+		var args []string
+		optionsIndex := 1
+		if len(call.Arguments) > 1 && !sobek.IsUndefined(call.Argument(1)) && !sobek.IsNull(call.Argument(1)) {
+			if exported, ok := call.Argument(1).Export().([]any); ok {
+				for _, argument := range exported {
+					args = append(args, fmt.Sprint(argument))
+				}
+				optionsIndex = 2
+			}
+		}
+		opts := h.parseExecOptions(rt, call, optionsIndex)
+		result, _ := extensions.Exec(h.vm.rootCtx, file, args, opts)
+		if result.Killed || result.Code != 0 {
+			failure := rt.NewTypeError("Command failed: %s", file)
+			mustSet(rt, failure, "status", result.Code)
+			mustSet(rt, failure, "code", result.Code)
+			mustSet(rt, failure, "stdout", result.Stdout)
+			mustSet(rt, failure, "stderr", result.Stderr)
+			mustSet(rt, failure, "killed", result.Killed)
+			panic(failure)
+		}
+		if hasEncoding(rt, call, optionsIndex) {
+			return rt.ToValue(result.Stdout)
+		}
+		return newBufferValue(rt, []byte(result.Stdout))
+	})
+
 	set("exec", func(call sobek.FunctionCall) sobek.Value {
 		command := call.Argument(0).String()
 		opts := h.parseExecOptions(rt, call, 1)
@@ -1335,6 +1546,9 @@ func (h *shimHost) parseExecOptions(rt *sobek.Runtime, call sobek.FunctionCall, 
 					opts.Env = append(opts.Env, k+"="+fmt.Sprint(v))
 				}
 			}
+		}
+		if timeoutVal := o.Get("timeout"); timeoutVal != nil && !sobek.IsUndefined(timeoutVal) {
+			opts.Timeout = timeoutVal.ToInteger()
 		}
 		break
 	}
