@@ -297,6 +297,46 @@ export default function(pi) {
 	assertRegisteredDescription(t, result, "result", "5")
 }
 
+func TestBareBufferModuleInBundledDependency(t *testing.T) {
+	cwd := t.TempDir()
+	mustWrite(t, filepath.Join(cwd, "buffer-consumer.cjs"), `
+const imported = require("buffer");
+exports.describe = () => [
+  imported.Buffer === globalThis.Buffer,
+  imported.Buffer.from("hello").toString(),
+].join(":");
+`)
+	result := loadAndRunExtension(t, cwd, `
+import { Buffer as NodeBuffer } from "node:buffer";
+import { describe } from "./buffer-consumer.cjs";
+export default function(pi) {
+  const description = [NodeBuffer === globalThis.Buffer, describe()].join(":");
+  pi.registerCommand("result", {description, handler: async () => {}});
+}
+`)
+	assertRegisteredDescription(t, result, "result", "true:true:hello")
+}
+
+func TestFSCreateWriteStreamAppendAndEndCallback(t *testing.T) {
+	cwd := t.TempDir()
+	target := filepath.Join(cwd, "transcript.jsonl")
+	mustWrite(t, target, "before\n")
+	result := loadAndRunExtension(t, cwd, `
+import { createWriteStream, readFileSync } from "node:fs";
+export default async function(pi) {
+  const stream = createWriteStream("`+target+`", { flags: "a" });
+  const first = stream.write("one\n");
+  stream.write(Buffer.from("two\n"));
+  await new Promise(resolve => stream.end(resolve));
+  pi.registerCommand("result", {
+    description: [first, stream.closed, stream.bytesWritten, readFileSync("`+target+`", "utf8")].join("|"),
+    handler: async () => {},
+  });
+}
+`)
+	assertRegisteredDescription(t, result, "result", "true|true|8|before\none\ntwo\n")
+}
+
 // --- console tests ---
 
 func TestConsoleDoesNotPanic(t *testing.T) {

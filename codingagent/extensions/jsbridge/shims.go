@@ -44,6 +44,8 @@ func (h *shimHost) resolveModule(rt *sobek.Runtime, specifier string) (*sobek.Ob
 		return newOSModule(rt), true
 	case "process":
 		return rt.Get("process").ToObject(rt), true
+	case "buffer":
+		return newBufferModule(rt), true
 	case "url":
 		return newURLModule(rt), true
 	case "util":
@@ -445,6 +447,89 @@ func (h *shimHost) newFSModule(rt *sobek.Runtime) *sobek.Object {
 			panicFS(rt, err, "write", p)
 		}
 		return sobek.Undefined()
+	})
+
+	set("createWriteStream", func(call sobek.FunctionCall) sobek.Value {
+		p := h.resolvePath(call.Argument(0).String())
+		flags := "w"
+		mode := os.FileMode(0o666)
+		if options := call.Argument(1); present(options) {
+			optionsObject := options.ToObject(rt)
+			if value := optionsObject.Get("flags"); present(value) {
+				flags = value.String()
+			}
+			if value := optionsObject.Get("mode"); present(value) {
+				mode = os.FileMode(value.ToInteger())
+			}
+		}
+		openFlags, ok := map[string]int{
+			"a": os.O_APPEND | os.O_CREATE | os.O_WRONLY, "a+": os.O_APPEND | os.O_CREATE | os.O_RDWR,
+			"ax": os.O_APPEND | os.O_CREATE | os.O_EXCL | os.O_WRONLY, "ax+": os.O_APPEND | os.O_CREATE | os.O_EXCL | os.O_RDWR,
+			"w": os.O_CREATE | os.O_TRUNC | os.O_WRONLY, "w+": os.O_CREATE | os.O_TRUNC | os.O_RDWR,
+			"wx": os.O_CREATE | os.O_EXCL | os.O_WRONLY, "wx+": os.O_CREATE | os.O_EXCL | os.O_RDWR,
+		}[flags]
+		if !ok {
+			panic(rt.NewTypeError("unsupported createWriteStream flag %q", flags))
+		}
+		file, err := os.OpenFile(p, openFlags, mode)
+		if err != nil {
+			panicFS(rt, err, "open", p)
+		}
+
+		stream := rt.NewObject()
+		closed := false
+		bytesWritten := int64(0)
+		mustSet(rt, stream, "path", p)
+		mustSet(rt, stream, "bytesWritten", bytesWritten)
+		mustSet(rt, stream, "closed", closed)
+		writeChunk := func(value sobek.Value) {
+			if closed {
+				panic(rt.NewTypeError("write after end"))
+			}
+			written, writeErr := file.Write(exportBytes(rt, value))
+			if writeErr != nil {
+				panicFS(rt, writeErr, "write", p)
+			}
+			bytesWritten += int64(written)
+			mustSet(rt, stream, "bytesWritten", bytesWritten)
+		}
+		postCallback := func(value sobek.Value) {
+			callback, callable := sobek.AssertFunction(value)
+			if !callable {
+				return
+			}
+			h.vm.post(h.vm.context(), true, func(_ *sobek.Runtime) error {
+				_, callbackErr := callback(sobek.Undefined())
+				return callbackErr
+			})
+		}
+		mustSet(rt, stream, "write", func(call sobek.FunctionCall) sobek.Value {
+			writeChunk(call.Argument(0))
+			if len(call.Arguments) > 1 {
+				postCallback(call.Arguments[len(call.Arguments)-1])
+			}
+			return rt.ToValue(true)
+		})
+		mustSet(rt, stream, "end", func(call sobek.FunctionCall) sobek.Value {
+			if closed {
+				return stream
+			}
+			if len(call.Arguments) > 0 {
+				if _, isCallback := sobek.AssertFunction(call.Argument(0)); !isCallback && present(call.Argument(0)) {
+					writeChunk(call.Argument(0))
+				}
+			}
+			if closeErr := file.Close(); closeErr != nil {
+				panicFS(rt, closeErr, "close", p)
+			}
+			closed = true
+			mustSet(rt, stream, "closed", closed)
+			if len(call.Arguments) > 0 {
+				postCallback(call.Arguments[len(call.Arguments)-1])
+			}
+			return stream
+		})
+		return stream
 	})
 
 	set("readdirSync", func(call sobek.FunctionCall) sobek.Value {
@@ -1474,6 +1559,12 @@ func installBuffer(rt *sobek.Runtime) error {
 		return rt.ToValue(false)
 	})
 	return rt.Set("Buffer", buf)
+}
+
+func newBufferModule(rt *sobek.Runtime) *sobek.Object {
+	module := rt.NewObject()
+	mustSet(rt, module, "Buffer", rt.Get("Buffer"))
+	return module
 }
 
 func newBufferValue(rt *sobek.Runtime, data []byte) sobek.Value {

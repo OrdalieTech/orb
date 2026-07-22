@@ -70,7 +70,11 @@ func (cache *buildCache) build(entry string) (artifact, error) {
 		// CommonJS output leaves import.meta empty; upstream runs under Node
 		// ESM where import.meta.url is the entry file URL. Extensions locate
 		// bundled resources through it (docs pattern), so define it per build.
-		Define: map[string]string{"import.meta.url": strconv.Quote(entryFileURL(entry))},
+		Define: map[string]string{
+			"import.meta.url":      strconv.Quote(entryFileURL(entry)),
+			"import.meta.filename": strconv.Quote(entry),
+			"import.meta.dirname":  strconv.Quote(filepath.Dir(entry)),
+		},
 		External: []string{
 			"pi",
 			"typebox",

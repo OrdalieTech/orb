@@ -91,6 +91,27 @@ export default function(pi) {
 	assertRegisteredDescription(t, result, "result", want)
 }
 
+func TestPiAIRootResolvesToCompatSuperset(t *testing.T) {
+	cwd := t.TempDir()
+	result := loadAndRunExtension(t, cwd, `
+import * as root from "@earendil-works/pi-ai";
+import * as compat from "@earendil-works/pi-ai/compat";
+export default function(pi) {
+  pi.registerCommand("result", {
+    description: [
+      typeof root.getModel,
+      typeof root.complete,
+      typeof root.completeSimple,
+      typeof compat.calculateCost,
+      root.getModel === compat.getModel,
+    ].join(":"),
+    handler: async () => {},
+  });
+}
+`)
+	assertRegisteredDescription(t, result, "result", "function:function:function:function:true")
+}
+
 func TestProviderStreamSimpleAcceptsEventStream(t *testing.T) {
 	cwd := t.TempDir()
 	source := `
@@ -455,11 +476,16 @@ func TestImportMetaURLPointsAtEntry(t *testing.T) {
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 export default function(pi) {
-  pi.registerCommand("result", { description: import.meta.url + "|" + dirname(fileURLToPath(import.meta.url)), handler: async () => {} });
+  pi.registerCommand("result", { description: [
+    import.meta.url,
+    import.meta.filename,
+    import.meta.dirname,
+    dirname(fileURLToPath(import.meta.url)),
+  ].join("|"), handler: async () => {} });
 }
 `)
 	entry := filepath.Join(cwd, "extension.ts")
-	assertRegisteredDescription(t, result, "result", "file://"+entry+"|"+cwd)
+	assertRegisteredDescription(t, result, "result", "file://"+entry+"|"+entry+"|"+cwd+"|"+cwd)
 }
 
 func TestDynamicResourcesExampleDiscoversBundledFiles(t *testing.T) {

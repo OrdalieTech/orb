@@ -13,7 +13,8 @@ after trust approval, `.pi/extensions/`. Settings and `pigo install` may resolve
 Embedded esbuild bundles TypeScript, local imports, and pure-JS dependencies from `node_modules`.
 Node built-ins and the upstream pi packages stay external and resolve to the Go shims below, so no
 Node runtime is required. Native `.node` addons and imported `.wasm` files are rejected clearly;
-`worker_threads` and raw `net`/`tls`/`dgram` sockets are not exposed. The
+`import.meta.url`, `import.meta.filename`, and `import.meta.dirname` identify the extension entry
+file. `worker_threads` and raw `net`/`tls`/`dgram` sockets are not exposed. The
 [extension matrix](extension-matrix.md) is the authoritative list of supported pi and pi-tui
 exports.
 
@@ -21,7 +22,7 @@ exports.
 
 | Module | Functions | Status |
 |---|---|---|
-| `fs` (sync) | `existsSync`, `readFileSync`, `writeFileSync`, `appendFileSync`, `readdirSync` (withFileTypes+Dirent), `statSync`, `lstatSync`, `mkdirSync`, `unlinkSync`, `rmdirSync`, `copyFileSync`, `renameSync`, `createReadStream`, `watch` (100ms poll), `constants` | implemented |
+| `fs` (sync/stream subset) | `existsSync`, `readFileSync`, `writeFileSync`, `appendFileSync`, `readdirSync` (withFileTypes+Dirent), `statSync`, `lstatSync`, `mkdirSync`, `unlinkSync`, `rmdirSync`, `copyFileSync`, `renameSync`, `createReadStream`, `createWriteStream` (`write`/`end`, standard append/write flags), `watch` (100ms poll), `constants` | implemented |
 | `fs/promises` | `readFile`, `writeFile`, `stat`, `mkdir`, `access`, `appendFile`, `mkdtemp` (resolves relative prefixes against extension cwd), `unlink`, `rm`, `readdir`, `cp` | implemented |
 | `path` | `join`, `dirname`, `basename`, `extname`, `resolve` (uses extension cwd), `relative`, `isAbsolute`, `normalize`, `parse`, `format`, `sep`, `delimiter`, `posix` — POSIX semantics validated against 119-entry Node v24 differential corpus | implemented |
 | `os` | `homedir`, `tmpdir`, `hostname`, `platform()` (function), `arch()` (Node names: x64/ia32/arm/arm64), `type`, `EOL`, `cpus` | implemented |
@@ -37,7 +38,7 @@ exports.
 | `Headers` (global) | Constructor: `new Headers(init?)` — init is object/pairs; methods: get (combines duplicates), has (present-empty-aware), set, append, delete, forEach, entries (deterministic sorted order) | implemented |
 | `Request` (global) | Constructor: `new Request(url, opts?)` — opts: method, headers, body; usable with `fetch(req)` | implemented |
 | `Response` (global) | Constructor: `new Response(body?, opts?)` — opts: status, headers; methods: text(), json(), arrayBuffer(), body.getReader(); bodyUsed single-consumption semantics | implemented |
-| `Buffer` (global) | `from`, `alloc`, `concat`, `byteLength`, `isBuffer`; instances: `length`, `toString`, `slice` (negative/end bounds) | implemented |
+| `Buffer` (global and `buffer`/`node:buffer` module export) | `from`, `alloc`, `concat`, `byteLength`, `isBuffer`; instances: `length`, `toString`, `slice` (negative/end bounds) | implemented |
 | `console` (global) | `log`, `info`, `warn`, `error`, `debug`, `trace` | implemented |
 | encoding globals | `atob`, `btoa`, `TextDecoder`, `structuredClone` | implemented subset |
 | `setTimeout`/`clearTimeout` | deferred via VM event loop; honors delay; returns cancellable handle | implemented |
