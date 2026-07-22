@@ -44,7 +44,7 @@ func toolResultDetails[T any](event ToolResultEvent, name string) (T, bool) {
 		}
 		return *details, true
 	}
-	// jsbridge extensions patch Details through JSON, leaving a decoded map;
+	// JavaScript extensions patch Details through JSON, leaving a decoded map;
 	// recover the typed shape from the wire form.
 	encoded, err := json.Marshal(event.Details)
 	if err != nil {
