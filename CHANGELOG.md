@@ -6,7 +6,18 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-22
+
+### Changed
+
 - `pigo update` now reports whether the running release is current before showing reinstall instructions.
+
+### Fixed
+
+- Permission `path` rules canonicalize both the rule pattern and the candidate path, so rules on
+  symlinked locations (e.g. macOS `/tmp`) match reliably.
+- Extension-host dialog cancellations arriving before the handler registers are preserved instead
+  of dropped, removing an intermittent hang in custom-component flows.
 
 ## [0.3.0] - 2026-07-22
 

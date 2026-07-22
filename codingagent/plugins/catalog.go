@@ -338,9 +338,9 @@ func matchesPath(pattern, raw, cwd string) bool {
 	if matched, err := path.Match(filepath.ToSlash(pattern), filepath.ToSlash(raw)); err == nil && matched {
 		return true
 	}
-	expandedPattern := expandHome(pattern)
+	canonicalPattern := canonicalPath(cwd, pattern)
 	canonical := canonicalPath(cwd, raw)
-	matched, err := path.Match(filepath.ToSlash(expandedPattern), filepath.ToSlash(canonical))
+	matched, err := path.Match(filepath.ToSlash(canonicalPattern), filepath.ToSlash(canonical))
 	return err == nil && matched
 }
 

@@ -324,6 +324,18 @@ func TestRealHostUISurfaceAndCustomComponent(t *testing.T) {
 	}
 }
 
+func TestDialogCancellationBeforeHandlerRegistration(t *testing.T) {
+	ui := newUIGeneration(nil)
+	ui.cancelDialog("host-1")
+	ctx, cancel := ui.requestContext(nil)
+	defer cancel(nil)
+	ui.registerDialog("host-1", cancel)
+	defer ui.unregisterDialog("host-1")
+	if !errors.Is(context.Cause(ctx), context.Canceled) {
+		t.Fatalf("dialog context cause = %v, want context canceled", context.Cause(ctx))
+	}
+}
+
 func TestPendingHostDialogGetsTypedRestartCancellation(t *testing.T) {
 	manager, registry, _, result, cwd := startFixtureManager(t, fixturePath(t, "ui.mjs"))
 	if len(result.Errors) != 0 || len(result.Diagnostics) != 0 {
