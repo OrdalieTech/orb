@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"time"
 
 	"github.com/OrdalieTech/pigo/agent"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
@@ -801,7 +802,7 @@ func requestSignal(request extensions.AutocompleteRequest) context.Context {
 // dismiss dialogs programmatically; abort cancels the backing context so
 // bridged DialogOptions.Signal observes it.
 func installAbortController(runtime *sobek.Runtime, vm *runtimeVM) error {
-	return runtime.Set("AbortController", func(call sobek.ConstructorCall) *sobek.Object {
+	if err := runtime.Set("AbortController", func(call sobek.ConstructorCall) *sobek.Object {
 		ctx, cancel := context.WithCancelCause(context.Background())
 		signal, state, err := newAbortSignalWithState(runtime, vm, ctx)
 		must(runtime, err)
@@ -823,5 +824,70 @@ func installAbortController(runtime *sobek.Runtime, vm *runtimeVM) error {
 			return sobek.Undefined()
 		}))
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	abortSignal := runtime.NewObject()
+	must(runtime, abortSignal.Set("timeout", func(call sobek.FunctionCall) sobek.Value {
+		milliseconds := call.Argument(0).ToInteger()
+		if milliseconds < 0 {
+			panic(runtime.NewTypeError("delay must be greater than or equal to 0"))
+		}
+		ctx, cancel := context.WithCancelCause(context.Background())
+		signal, state, err := newAbortSignalWithState(runtime, vm, ctx)
+		must(runtime, err)
+		timeoutReason, err := runtime.New(runtime.Get("Error"), runtime.ToValue("The operation was aborted due to timeout"))
+		must(runtime, err)
+		must(runtime, timeoutReason.Set("name", "TimeoutError"))
+		state.mu.Lock()
+		state.reason = timeoutReason
+		state.mu.Unlock()
+		delay := time.Duration(milliseconds) * time.Millisecond
+		go func() {
+			timer := time.NewTimer(delay)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+				cancel(errors.New("operation aborted due to timeout"))
+			case <-vm.done:
+				cancel(context.Canceled)
+			}
+		}()
+		return signal
+	}))
+	must(runtime, abortSignal.Set("any", func(call sobek.FunctionCall) sobek.Value {
+		ctx, cancel := context.WithCancelCause(context.Background())
+		combined, state, err := newAbortSignalWithState(runtime, vm, ctx)
+		must(runtime, err)
+		signals := call.Argument(0).ToObject(runtime)
+		length := int(signals.Get("length").ToInteger())
+		abortWith := func(reason sobek.Value) {
+			if ctx.Err() != nil {
+				return
+			}
+			state.mu.Lock()
+			state.reason = reason
+			state.mu.Unlock()
+			cancel(errors.New(reason.String()))
+		}
+		for index := 0; index < length; index++ {
+			signal := signals.Get(fmt.Sprint(index)).ToObject(runtime)
+			if signal.Get("aborted").ToBoolean() {
+				abortWith(signal.Get("reason"))
+				break
+			}
+			addEventListener, ok := sobek.AssertFunction(signal.Get("addEventListener"))
+			if !ok {
+				panic(runtime.NewTypeError("signal does not implement addEventListener"))
+			}
+			listener := runtime.ToValue(func(sobek.FunctionCall) sobek.Value {
+				abortWith(signal.Get("reason"))
+				return sobek.Undefined()
+			})
+			_, err := addEventListener(signal, runtime.ToValue("abort"), listener)
+			must(runtime, err)
+		}
+		return combined
+	}))
+	return runtime.Set("AbortSignal", abortSignal)
 }

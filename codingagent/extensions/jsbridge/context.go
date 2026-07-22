@@ -677,14 +677,14 @@ func newAbortSignalWithState(runtime *sobek.Runtime, vm *runtimeVM, ctx context.
 		return nil, nil, err
 	}
 	if err := defineGetter(runtime, object, "reason", func() sobek.Value {
+		if ctx.Err() == nil {
+			return sobek.Undefined()
+		}
 		state.mu.Lock()
 		reason := state.reason
 		state.mu.Unlock()
 		if present(reason) {
 			return reason
-		}
-		if ctx.Err() == nil {
-			return sobek.Undefined()
 		}
 		return runtime.NewGoError(context.Cause(ctx))
 	}); err != nil {
