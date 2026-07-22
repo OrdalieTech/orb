@@ -234,7 +234,8 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
   execution begins; constructor-time error timing is the Go API adaptation ledgered above.
 - Release source provenance maps upstream's source-archive feature onto GoReleaser. Every source
   archive is checksummed, excludes checkout/build state, and must rebuild with `CGO_ENABLED=0`
-  before the release is published.
+  and `-buildvcs=false` before the release is published; source archives intentionally omit the Git
+  metadata Go would otherwise inspect for VCS stamping.
 
 ## Standing assumptions (owner-confirmed)
 
@@ -319,3 +320,9 @@ are not re-litigated:
 - **Package git subprocesses are quiet** (`clone -q`, `checkout -q` with
   `advice.detachedHead=false`, `fetch -q`) — a cosmetic deviation from upstream, which inherits
   git's stderr chatter.
+- **Ecosystem compatibility claims stay layered.** A locked 44-package corpus separately records
+  stable loading, observable registration parity, line-grounded workflow feasibility, and executed
+  offline command/workflow probes. A package that only loads is never labeled end-to-end compatible.
+  The embedded CommonJS build preserves `import.meta.{url,filename,dirname}` per source module, but
+  variable dynamic imports, top-level-await-only modules, real Node streams/sockets, and native
+  addons remain explicit ceilings until their semantics can be implemented faithfully.

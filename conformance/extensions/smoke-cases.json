@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "upstreamVersion": "0.81.1",
+  "claimScope": "Read-only slash-command handler smoke only; this does not prove tools, renderers, providers, event hooks, external services, or model-driven workflows.",
+  "selection": {
+    "rule": "Commands from high-download corpus packages whose handlers were inspected and found to avoid model turns, external network calls, and durable project mutations.",
+    "capturedAt": "2026-07-22"
+  },
+  "cases": [
+    {
+      "id": "piolium-help",
+      "rank": 1,
+      "package": "@vigolium/piolium",
+      "command": "piolium-help",
+      "args": "",
+      "evidencePatterns": ["Piolium.*Help"],
+      "rationale": "Builds static help lines and opens a dismissible select dialog; the harness cancels it."
+    },
+    {
+      "id": "piolium-status-empty",
+      "rank": 1,
+      "package": "@vigolium/piolium",
+      "command": "piolium-status",
+      "args": "",
+      "evidencePatterns": ["No audit state"],
+      "rationale": "Reads the isolated empty project audit state and reports that no audit exists."
+    },
+    {
+      "id": "subagents-doctor",
+      "rank": 4,
+      "package": "pi-subagents",
+      "command": "subagents-doctor",
+      "args": "",
+      "evidencePatterns": [
+        "Subagents doctor report",
+        "agents: total 8 \\(builtin 8, package 0, user 0, project 0\\)"
+      ],
+      "rationale": "Builds a read-only local runtime, filesystem, discovery, budget, and intercom diagnostic."
+    },
+    {
+      "id": "fff-health",
+      "rank": 13,
+      "package": "@ff-labs/pi-fff",
+      "command": "fff-health",
+      "args": "",
+      "evidencePatterns": ["FFF (?:v|not initialized)"],
+      "rationale": "Reads the in-memory finder health initialized for the isolated empty project."
+    },
+    {
+      "id": "hypa-diagnostics",
+      "rank": 19,
+      "package": "@hypabolic/pi-hypa",
+      "command": "hypa",
+      "args": "",
+      "evidencePatterns": ["Hypa Pi extension"],
+      "rationale": "Reports local extension configuration and binary resolution without invoking Hypa."
+    },
+    {
+      "id": "goal-status-empty",
+      "rank": 20,
+      "package": "@narumitw/pi-goal",
+      "command": "goal",
+      "args": "status",
+      "evidencePatterns": ["No goal is currently set"],
+      "rationale": "Reads the empty isolated session goal state without creating or changing a goal."
+    },
+    {
+      "id": "lsp-status",
+      "rank": 37,
+      "package": "@narumitw/pi-lsp",
+      "command": "lsp",
+      "args": "",
+      "evidencePatterns": ["LSP (?:command|config)"],
+      "rationale": "Loads local LSP routing configuration and checks executable presence without starting a language server."
+    }
+  ],
+  "workflowCases": [
+    {
+      "id": "piolium-knowledge-base-stage",
+      "rank": 1,
+      "package": "@vigolium/piolium",
+      "module": "extensions/piolium/knowledge-base-input.ts",
+      "command": "__piolium_kb_workflow_probe",
+      "args": "",
+      "marker": "PIOLIUM_KB_WORKFLOW:",
+      "evidencePatterns": ["PIOLIUM_KB_WORKFLOW:"],
+      "fixtures": [
+        {
+          "path": "knowledge-base/overview.md",
+          "content": "# Compatibility fixture\n\nPigo must preserve UTF-8 text such as café.\n"
+        },
+        {
+          "path": "knowledge-base/nested/details.mdx",
+          "content": "## Nested source\n\nThe staged corpus must keep deterministic ordering.\n"
+        }
+      ],
+      "rationale": "A disposable wrapper imports Piolium's real resolver, stager, and staged loader, then exercises directory readdir, bounded FileHandle reads, fatal TextDecoder decoding, hashing, atomic staging, and reload without starting an audit or model."
+    }
+  ],
+  "inspectedExclusions": [
+    {
+      "rank": 44,
+      "package": "cc-safety-net",
+      "command": "cc-safety-net",
+      "reason": "The handler calls pi.sendUserMessage with a generated workflow prompt, which intentionally starts a model turn and is outside this offline smoke surface."
+    }
+  ]
+}

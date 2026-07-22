@@ -1,0 +1,448 @@
+{
+  "schemaVersion": 1,
+  "auditedAt": "2026-07-22",
+  "method": "Static, line-grounded audit of each pinned corpus package after the current Pigo runtime shims. Each declared extension entrypoint and the code behind its primary workflow were inspected; current load/registration artifacts were used only to identify reached paths.",
+  "caveat": "These verdicts do not claim workflow execution. likely_compatible means no remaining Pigo-specific blocker was found statically and still requires the stated smoke; partial means a useful subset appears viable; main_feature_blocked means the package loads but its defining workflow cannot run; load_blocked means at least one declared entrypoint cannot load.",
+  "entries": [
+    {
+      "rank": 1,
+      "package": "@vigolium/piolium",
+      "verdict": "likely_compatible",
+      "evidence": ["extensions/piolium/knowledge-base-input.ts:634-668", "extensions/piolium/tools/web-tools.ts:44-76", "extensions/piolium/scheduler.ts:187-205"],
+      "blockerCategory": "none",
+      "explanation": "The inspected workflows use FileHandle, streaming TextDecoder, AbortSignal reasons, finite child processes, createAgentSession, and createWriteStream, all covered by current Pigo shims; no native addon, socket, worker, WASM, or DOM dependency was found.",
+      "remediation": "None statically.",
+      "conditions": "Run real knowledge-base, web-tool, scheduler, and child-session smokes before claiming proven workflow compatibility."
+    },
+    {
+      "rank": 2,
+      "package": "pi-mcp-adapter",
+      "verdict": "load_blocked",
+      "evidence": ["@modelcontextprotocol/sdk/dist/esm/client/stdio.js:3", "@modelcontextprotocol/sdk/dist/esm/client/stdio.js:54"],
+      "blockerCategory": "node_stream_and_stdio_transport",
+      "explanation": "The MCP stdio client imports and constructs PassThrough streams, so a name-only stream stub would load falsely without providing the required duplex transport.",
+      "remediation": "Implement stream-capable child stdio and MCP transport semantics, or provide an intentional native Go MCP adapter.",
+      "conditions": "Load the extension and connect it to a real stdio MCP server."
+    },
+    {
+      "rank": 3,
+      "package": "pi-web-access",
+      "verdict": "partial",
+      "evidence": ["extract.ts:1-2", "ssrf-protection.ts:51", "chrome-cookies.ts:95-153"],
+      "blockerCategory": "optional_crypto_cookie_import",
+      "explanation": "Search, fetch, extraction, and SSRF IP checks are statically viable, but optional Chrome-cookie import requires PBKDF2 and AES decipher APIs that Pigo does not provide.",
+      "remediation": "Add standards-faithful PBKDF2 and AES decipher support only if Chrome-cookie import is prioritized.",
+      "conditions": "Smoke ordinary search/fetch/extraction separately from authenticated Chrome-cookie import."
+    },
+    {
+      "rank": 4,
+      "package": "pi-subagents",
+      "verdict": "partial",
+      "evidence": ["src/runs/foreground/execution.ts:313", "src/extension/index.ts:341", "src/tui/render.ts:1571", "src/watchdog/lsp-diagnostics.ts:318-441"],
+      "blockerCategory": "private_sdk_tui_and_long_lived_stdio",
+      "explanation": "Basic finite foreground and background subagents appear viable, while rich UI, watchdog tool factories, and LSP diagnostics depend on missing keyText, Markdown, createReadOnlyTools, and writable long-lived child stdio.",
+      "remediation": "Validate the core subagent path first; treat rich TUI, tool factories, and interactive process pipes as a separate compatibility project.",
+      "conditions": "Classify basic foreground/background execution independently from watchdog and rich-UI workflows."
+    },
+    {
+      "rank": 5,
+      "package": "context-mode",
+      "verdict": "load_blocked",
+      "evidence": ["build/db-base.js:223", "build/db-base.js:289-294", "package.json:107"],
+      "blockerCategory": "native_sqlite_addon",
+      "explanation": "The mandatory persistence backend loads better-sqlite3 after createRequire setup, so the extension cannot initialize in Pigo's pure-Go runtime.",
+      "remediation": "Use an extension-supported non-native backend or design an explicit Go or service-backed SQLite integration; do not stub better-sqlite3.",
+      "conditions": "Load the extension, migrate its database, and exercise persistence and FTS."
+    },
+    {
+      "rank": 6,
+      "package": "@tintinweb/pi-subagents",
+      "verdict": "load_blocked",
+      "evidence": ["src/agent-types.ts:8-21", "src/agent-runner.ts:18", "src/index.ts:16"],
+      "blockerCategory": "private_coding_agent_and_tui_sdk",
+      "explanation": "Core initialization eagerly requires createCodingTools, createReadOnlyTools, SettingsManager, SettingsList, and Text rather than touching one optional symbol lazily.",
+      "remediation": "Implement the faithful tool-factory, settings, and TUI surfaces as an explicit compatibility project.",
+      "conditions": "Load the extension, launch an agent, and open its settings UI."
+    },
+    {
+      "rank": 7,
+      "package": "@remnic/plugin-pi",
+      "verdict": "likely_compatible",
+      "evidence": ["dist/index.js:14", "dist/index.js:398", "dist/index.js:910"],
+      "blockerCategory": "external_service_prerequisite",
+      "explanation": "The inspected paths use ordinary fetch and command registration; the only expected prerequisite is the configured Remnic daemon and token.",
+      "remediation": "None in Pigo.",
+      "conditions": "Run the commands against a real authenticated Remnic daemon."
+    },
+    {
+      "rank": 8,
+      "package": "pi-lens",
+      "verdict": "load_blocked",
+      "evidence": ["package.json:85-86", "dist/index.js:45280-45283"],
+      "blockerCategory": "native_ast_grep_addon",
+      "explanation": "The mandatory analysis backend resolves an @ast-grep N-API .node binary, which Sobek cannot execute.",
+      "remediation": "Use an upstream executable, WASM, or pure-JavaScript backend, or undertake native-addon support as a separate design project.",
+      "conditions": "Load the extension and execute lens map and analysis workflows."
+    },
+    {
+      "rank": 9,
+      "package": "@plannotator/pi-extension",
+      "verdict": "load_blocked",
+      "evidence": ["generated/ai/providers/claude-agent-sdk.ts:253", "index.ts:429", "index.ts:784"],
+      "blockerCategory": "eager_optional_dependency_resolution",
+      "explanation": "Pigo's CommonJS bundling resolves the deferred @anthropic-ai/claude-agent-sdk dynamic import at compile time even when that provider path is not selected.",
+      "remediation": "Correct dynamic-import externalization and package resolution, then install and test the real SDK rather than faking its exports.",
+      "conditions": "Load the extension and run its AI-provider workflow."
+    },
+    {
+      "rank": 10,
+      "package": "@quintinshaw/pi-dynamic-workflows",
+      "verdict": "load_blocked",
+      "evidence": ["src/workflow.ts:1-3", "src/workflow.ts:1251-1261", "src/agent.ts:528-758"],
+      "blockerCategory": "isolated_vm_and_private_sdk",
+      "explanation": "A real vm context and Script are central to workflow execution, and agent setup also requires missing createCodingTools and SettingsManager surfaces.",
+      "remediation": "Design a secure sandbox and implement the faithful coding-agent facade as explicit projects; do not emulate isolation with an unsafe stub.",
+      "conditions": "Load and execute a saved workflow with isolation assertions."
+    },
+    {
+      "rank": 11,
+      "package": "@gotgenes/pi-permission-system",
+      "verdict": "partial",
+      "evidence": ["src/access-intent/bash/parser.ts:29-68", "src/config-modal.ts:4-6", "src/config-modal.ts:192-195"],
+      "blockerCategory": "settings_tui_only",
+      "explanation": "The permission gate deliberately falls back to conservative whole-string parsing when tree-sitter WASM is unavailable, but the interactive config modal requires missing settings TUI components.",
+      "remediation": "Validate security decisions now; implement the settings components only if modal parity is required.",
+      "conditions": "Test allow, ask, and deny decisions including the parser fallback, then classify the config modal separately."
+    },
+    {
+      "rank": 12,
+      "package": "pi-simplify",
+      "verdict": "likely_compatible",
+      "evidence": ["dist/index.js:3"],
+      "blockerCategory": "none",
+      "explanation": "The extension is a narrow command-only surface and the inspected entrypoint has no native, stream, socket, WASM, or private-SDK dependency.",
+      "remediation": "None statically.",
+      "conditions": "Invoke the simplify command in a real session."
+    },
+    {
+      "rank": 13,
+      "package": "@ff-labs/pi-fff",
+      "verdict": "main_feature_blocked",
+      "evidence": ["src/sdk.ts:22-28", "src/index.ts:366-367"],
+      "blockerCategory": "lazy_native_ffi_backend",
+      "explanation": "Registration succeeds, but the main finder tools dynamically load @ff-labs/fff-node and invoke FileFinder, so useful work reaches a native backend Sobek cannot execute.",
+      "remediation": "Provide an upstream-supported executable or service backend, or undertake native-addon bridging separately.",
+      "conditions": "Execute finder, read, and edit tools rather than checking registration alone."
+    },
+    {
+      "rank": 14,
+      "package": "@mjasnikovs/pi-task",
+      "verdict": "load_blocked",
+      "evidence": ["ws/lib/receiver.js:1-24", "ws/lib/websocket.js:3-46", "dist/config/extension-list.js:4-46"],
+      "blockerCategory": "streams_networking_and_private_sdk",
+      "explanation": "The initial prototype failure comes from ws extending an absent stream class, while task networking and configuration also require net, TLS, SettingsManager, DefaultPackageManager, and SettingsList.",
+      "remediation": "Treat real streams and sockets plus the private settings/TUI surface as a broad compatibility project.",
+      "conditions": "Load all entrypoints and test websocket, task orchestration, and config UI paths."
+    },
+    {
+      "rank": 15,
+      "package": "@juicesharp/rpiv-ask-user-question",
+      "verdict": "load_blocked",
+      "evidence": ["index.ts:35", "state/i18n-bridge.ts:41"],
+      "blockerCategory": "top_level_await_module_loading",
+      "explanation": "The declared entrypoint uses top-level await, which esbuild cannot emit into Pigo's synchronous CommonJS execution model.",
+      "remediation": "Design true ESM and asynchronous module execution or a proven semantics-preserving transform; changing only the JavaScript target is insufficient.",
+      "conditions": "Load the extension and open the question UI after module support exists."
+    },
+    {
+      "rank": 16,
+      "package": "@raindrop-ai/pi-agent",
+      "verdict": "likely_compatible",
+      "evidence": ["dist/extension.js:45-58", "dist/extension.js:183", "dist/extension.js:459-464"],
+      "blockerCategory": "external_service_prerequisite",
+      "explanation": "This is intentionally an event-only extension with no commands or tools and it deliberately disables itself without a key or local daemon; no unsupported static API was found.",
+      "remediation": "None in Pigo.",
+      "conditions": "Smoke credentialed event delivery and flush behavior, and verify deliberate no-key disablement."
+    },
+    {
+      "rank": 17,
+      "package": "pi-hermes-memory",
+      "verdict": "load_blocked",
+      "evidence": ["src/index.ts:112", "src/store/sqlite-native.ts:169-176", "src/store/db.ts:93"],
+      "blockerCategory": "native_sqlite_addon",
+      "explanation": "Memory persistence initializes a mandatory better-sqlite3 backend at load; the alternative in the package targets Bun rather than Sobek.",
+      "remediation": "Adopt an extension-supported non-native backend or design an explicit Go or service-backed store.",
+      "conditions": "Load, migrate the database, and store and query memory."
+    },
+    {
+      "rank": 18,
+      "package": "@juicesharp/rpiv-todo",
+      "verdict": "load_blocked",
+      "evidence": ["index.ts:50", "state/i18n-bridge.ts:40"],
+      "blockerCategory": "top_level_await_module_loading",
+      "explanation": "The declared entrypoint and i18n bridge use top-level await, which Pigo's synchronous CommonJS execution model cannot compile.",
+      "remediation": "Design true ESM and asynchronous module execution or a semantics-preserving transform, then reassess UI compatibility.",
+      "conditions": "Load the extension and execute its todo UI and workflow."
+    },
+    {
+      "rank": 19,
+      "package": "@hypabolic/pi-hypa",
+      "verdict": "likely_compatible",
+      "evidence": ["extensions/index.ts:1", "extensions/index.ts:46-47", "extensions/tools.ts:396"],
+      "blockerCategory": "none",
+      "explanation": "The previously missing isToolCallEventType helper is now present, and the inspected registration and tool paths expose no remaining native, socket, WASM, or private unresolved surface.",
+      "remediation": "None statically.",
+      "conditions": "Smoke tool-call interception and each registered Hypa tool."
+    },
+    {
+      "rank": 20,
+      "package": "@narumitw/pi-goal",
+      "verdict": "likely_compatible",
+      "evidence": ["src/runtime.ts:3", "src/runtime.ts:815", "src/goal.ts:394-400", "src/goal.ts:463-790"],
+      "blockerCategory": "none",
+      "explanation": "The previously missing isContextOverflow helper is now present, and no remaining unsupported API was found in goal, lifecycle, or compaction paths.",
+      "remediation": "None statically.",
+      "conditions": "Smoke goal completion and blocking plus compaction and session lifecycle."
+    },
+    {
+      "rank": 21,
+      "package": "@ayulab/pi-rewind",
+      "verdict": "main_feature_blocked",
+      "evidence": ["index.js:6-7", "index.js:487", "index.js:849", "index.js:1323-1324"],
+      "blockerCategory": "session_listing_and_rich_tui",
+      "explanation": "Commands register, but their checkpoint and rewind selectors construct Input, Text, and TruncatedText and call SessionManager.list or listAll, which Pigo does not expose.",
+      "remediation": "Implement faithful session-list APIs and the required TUI components as an explicit compatibility surface.",
+      "conditions": "Invoke checkpoint and rewind selectors over real sessions."
+    },
+    {
+      "rank": 22,
+      "package": "gentle-pi",
+      "verdict": "load_blocked",
+      "evidence": ["extensions/pi-pretty.ts:10-14", "extensions/quiet-tools.ts:3-10", "extensions/quiet-tools.ts:22-29"],
+      "blockerCategory": "package_resolution_and_tool_factories",
+      "explanation": "Its two declared entrypoints fail independently: one dynamically loads @heyhuynhgiabuu/pi-pretty and the other eagerly requires the full native read, bash, edit, find, grep, ls, and write tool factories.",
+      "remediation": "Support executable package resolution and implement faithful native-tool factories.",
+      "conditions": "Load every manifest entrypoint and exercise all quiet tool replacements."
+    },
+    {
+      "rank": 23,
+      "package": "pi-agent-browser-native",
+      "verdict": "likely_compatible",
+      "evidence": ["dist/extensions/agent-browser/index.js:1-6", "dist/extensions/agent-browser/lib/process.js:289", "dist/extensions/agent-browser/index.js:682"],
+      "blockerCategory": "external_executable_prerequisite",
+      "explanation": "The base tool delegates finite operations to a separate agent-browser executable on PATH, and those buffered-at-exit process calls fit current Pigo semantics.",
+      "remediation": "None for the base path.",
+      "conditions": "Install the matching agent-browser and smoke open, snapshot, and click; assess Electron or long-lived progress paths separately."
+    },
+    {
+      "rank": 24,
+      "package": "@ollama/pi-web-search",
+      "verdict": "likely_compatible",
+      "evidence": ["index.ts:21-22", "index.ts:27-40", "index.ts:81-92"],
+      "blockerCategory": "external_service_prerequisite",
+      "explanation": "Both tools use ordinary fetch and JSON against Ollama's local experimental search endpoints, with no unsupported Pigo API in the inspected paths.",
+      "remediation": "None in Pigo.",
+      "conditions": "Run both tools against a real Ollama endpoint that exposes the expected APIs."
+    },
+    {
+      "rank": 25,
+      "package": "pi-readseek",
+      "verdict": "partial",
+      "evidence": ["dist/index.js:1405-1517", "dist/index.js:1806", "dist/index.js:1883", "dist/index.js:5228"],
+      "blockerCategory": "child_stdin_and_tool_factory",
+      "explanation": "Finite read and view operations may consume buffered output, but edit, write, check, map, and identify write to child stdin, while grep requires a missing createGrepTool factory.",
+      "remediation": "Implement finite writable child stdin and the faithful grep factory; do not claim streaming subprocess parity from buffered execution.",
+      "conditions": "Test every registered tool, especially edit, write, check, map, identify, and grep."
+    },
+    {
+      "rank": 26,
+      "package": "pi-deepseek-search",
+      "verdict": "likely_compatible",
+      "evidence": ["index.ts:59-62", "index.ts:187-197"],
+      "blockerCategory": "external_credentials_prerequisite",
+      "explanation": "Dynamic registration waits for credentials at session_start, while the search path uses AbortSignal timeout and any plus streaming TextDecoder, all now implemented in Pigo.",
+      "remediation": "None statically.",
+      "conditions": "With a DeepSeek key, verify session_start registration, streaming search, cancellation, and timeout."
+    },
+    {
+      "rank": 27,
+      "package": "pi-crew",
+      "verdict": "load_blocked",
+      "evidence": ["index.ts:71-79", "src/state/worker-atomic-writer.ts:27-171", "src/runtime/iteration-hooks.ts:164-235", "src/runtime/child-pi.ts:383"],
+      "blockerCategory": "top_level_await_workers_and_process_ipc",
+      "explanation": "Top-level await blocks compilation first, and the defining team workflows then require worker_threads and long-lived bidirectional child-process stdio.",
+      "remediation": "Treat ESM/TLA, workers, and process IPC as separate runtime design projects.",
+      "conditions": "Load the extension and test foreground and background team execution plus persistent state writes."
+    },
+    {
+      "rank": 28,
+      "package": "pi-landstrip",
+      "verdict": "load_blocked",
+      "evidence": ["index.ts:17-27", "index.ts:1489-1510", "index.ts:1515-1533"],
+      "blockerCategory": "real_socket_server_and_stream_decoding",
+      "explanation": "After the IP-only net shim, loading reaches node:string_decoder, and the main sandbox still requires net.createServer plus a connected socket pair.",
+      "remediation": "Implement a real socket and stream runtime or provide an intentional native Go sandbox integration; a StringDecoder stub alone would be false compatibility.",
+      "conditions": "Load the extension and enforce a real sandboxed command and network decision."
+    },
+    {
+      "rank": 29,
+      "package": "pi-fabric",
+      "verdict": "load_blocked",
+      "evidence": ["jsonc-parser/lib/umd/main.js:17-20", "dist/capture/interceptor.js:4-82", "dist/memory/regex.js:1-3", "dist/subagents/transports/herdr-transport.js:1"],
+      "blockerCategory": "cjs_resolution_private_runner_workers_and_sockets",
+      "explanation": "Loading first fails relative UMD requires, while main workflows also need ExtensionRunner interception, worker_threads, and net transport.",
+      "remediation": "Fix executable relative CommonJS resolution only as part of the broader runner, worker, and socket compatibility project.",
+      "conditions": "Load the package and test tool interception, regex memory, and Herdr transport."
+    },
+    {
+      "rank": 30,
+      "package": "@alexanderfortin/pi-deepseek-usage",
+      "verdict": "likely_compatible",
+      "evidence": ["@alexanderfortin/pi-usage-lib/dist/extension.js:37-58", "@alexanderfortin/pi-usage-lib/dist/api.js:29-58"],
+      "blockerCategory": "external_credentials_prerequisite",
+      "explanation": "This event-only extension uses modelRegistry credential lookup and ordinary fetch, with no commands, tools, or unsupported static API.",
+      "remediation": "None in Pigo.",
+      "conditions": "Select a DeepSeek model and verify footer refresh and error handling with real credentials."
+    },
+    {
+      "rank": 31,
+      "package": "pi-prompt-template-model",
+      "verdict": "likely_compatible",
+      "evidence": ["index.ts:152", "index.ts:1646-1706"],
+      "blockerCategory": "none",
+      "explanation": "The command, lifecycle, and model hooks use supported filesystem and path surfaces, and no native, stream, socket, WASM, or private unresolved API was found.",
+      "remediation": "None statically.",
+      "conditions": "Invoke templates, model selection, and chained prompts."
+    },
+    {
+      "rank": 32,
+      "package": "pi-intercom",
+      "verdict": "main_feature_blocked",
+      "evidence": ["broker/broker.ts:1", "broker/broker.ts:111", "broker/client.ts:152-158", "broker/spawn.ts:215"],
+      "blockerCategory": "real_unix_and_tcp_sockets",
+      "explanation": "Registration succeeds with Pigo's IP-only net helpers, but the defining broker calls net.createServer and net.connect, which the runtime does not implement.",
+      "remediation": "Implement real socket semantics or provide an intentional native Go intercom transport.",
+      "conditions": "Start a broker and exchange messages between two live sessions."
+    },
+    {
+      "rank": 33,
+      "package": "opencode-codebase-index",
+      "verdict": "main_feature_blocked",
+      "evidence": ["dist/pi-extension.js:3913-3947", "dist/pi-extension.js:3949-4011", "dist/pi-extension.js:9589"],
+      "blockerCategory": "native_codebase_index_addon",
+      "explanation": "Registration succeeds, but loading the platform .node binding falls back to a throwing mock, and every useful indexing operation reaches that unavailable native implementation.",
+      "remediation": "Use an upstream-supported pure, service, or Go backend, or undertake native-addon support separately.",
+      "conditions": "Build an index and execute parse, search, and reference tools."
+    },
+    {
+      "rank": 34,
+      "package": "@pi-stef/atlassian",
+      "verdict": "likely_compatible",
+      "evidence": ["extensions/atlassian.ts:3-6", "src/auth/AtlassianAuth.ts:25-69", "src/http/AtlassianClient.ts:24-99"],
+      "blockerCategory": "external_credentials_prerequisite",
+      "explanation": "The inspected Jira and Confluence paths use supported authentication storage, fetch, text, and arrayBuffer surfaces; only real credentials and network access are expected.",
+      "remediation": "None in Pigo.",
+      "conditions": "Run credentialed Jira and Confluence read and write smokes."
+    },
+    {
+      "rank": 35,
+      "package": "@braintrust/pi-extension",
+      "verdict": "partial",
+      "evidence": ["src/index.ts:1115-1575", "src/client.ts:95-110", "src/client.ts:270-279", "braintrust/dist/edge-light.mjs:5863-5865"],
+      "blockerCategory": "unproven_web_media_stream_and_crypto_apis",
+      "explanation": "Basic JSON tracing may be viable, but load-only evidence does not initialize or flush a trace and bundled media, attachment, stream, and hash paths reach Blob, FormData, ReadableStream, and crypto.subtle APIs.",
+      "remediation": "Run a credentialed plain-span smoke first, then add standards-faithful Web APIs only for paths proven reachable.",
+      "conditions": "Test plain spans separately from attachments, media, and streaming instrumentation."
+    },
+    {
+      "rank": 36,
+      "package": "pi-lean-ctx",
+      "verdict": "load_blocked",
+      "evidence": ["extensions/index.ts:8-19", "extensions/index.ts:400-411", "extensions/index.ts:488", "extensions/index.ts:664-666"],
+      "blockerCategory": "mcp_streams_and_tool_definition_factories",
+      "explanation": "Bundled MCP code requires node:stream, while core initialization eagerly calls missing bash, read, find, grep, and ls tool-definition factories.",
+      "remediation": "Implement faithful native-tool-definition factories and a real MCP stream transport; a stream stub only exposes the next failure.",
+      "conditions": "Load and execute ctx_shell, read, grep, and the MCP bridge."
+    },
+    {
+      "rank": 37,
+      "package": "@narumitw/pi-lsp",
+      "verdict": "main_feature_blocked",
+      "evidence": ["src/lsp-client.ts:78-85", "src/lsp-client.ts:288-299"],
+      "blockerCategory": "long_lived_bidirectional_child_stdio",
+      "explanation": "Registration succeeds, but LSP requires a persistent child process with writable stdin and streamed stdout, while Pigo currently buffers output until exit and exposes no writable pipe.",
+      "remediation": "Implement real os/exec pipe streaming, lifecycle, cancellation, and shutdown semantics.",
+      "conditions": "Initialize a real language server, send requests, receive diagnostics, and shut it down cleanly."
+    },
+    {
+      "rank": 38,
+      "package": "pi-shazam",
+      "verdict": "load_blocked",
+      "evidence": ["dist/core/treesitter.js:16-28", "dist/lsp/client.js:13-23"],
+      "blockerCategory": "native_tree_sitter_addons",
+      "explanation": "The mandatory AST backend loads native tree-sitter and grammar addons; optional LSP code can degrade when vscode-jsonrpc is missing, but AST initialization cannot.",
+      "remediation": "Use an upstream-supported alternate parser backend or undertake native-addon support separately.",
+      "conditions": "Load the extension and generate a repository map and symbol graph."
+    },
+    {
+      "rank": 39,
+      "package": "pi-cursor-sdk",
+      "verdict": "load_blocked",
+      "evidence": ["src/cursor-sdk-runtime.ts:1-4", "@cursor/sdk/dist/esm/914.js:1", "@cursor/sdk/package.json:24-39"],
+      "blockerCategory": "bun_sqlite_and_sdk_packaging",
+      "explanation": "The Cursor SDK build resolves bun:sqlite and references declaration maps and package JavaScript artifacts that Pigo's bundler cannot load; ignoring the map artifacts would still leave the mandatory Bun backend.",
+      "remediation": "Use an upstream Node-compatible Cursor SDK build and exports or create a dedicated integration; do not stub bun:sqlite.",
+      "conditions": "Load the extension and run a real Cursor SDK agent."
+    },
+    {
+      "rank": 40,
+      "package": "pi-llama-cpp",
+      "verdict": "load_blocked",
+      "evidence": ["src/index.ts:17-20", "src/resolver.ts:1-22", "src/resolver.ts:108-113"],
+      "blockerCategory": "private_settings_and_credential_sdk",
+      "explanation": "Core configuration eagerly constructs SettingsManager and calls readStoredCredential, so model registration cannot initialize without faithful private settings and credential APIs.",
+      "remediation": "Implement SettingsManager and readStoredCredential against Pigo's existing stores.",
+      "conditions": "Load, resolve global and project settings, authenticate, and register and select a model."
+    },
+    {
+      "rank": 41,
+      "package": "pi-vault-mind",
+      "verdict": "load_blocked",
+      "evidence": ["package.json:75-79", "@lancedb/lancedb/package.json:107-114", "onnxruntime-node/package.json:9-16", "sharp/package.json:176-188"],
+      "blockerCategory": "multiple_native_vector_ml_and_image_addons",
+      "explanation": "The core memory pipeline depends on LanceDB .node bindings, onnxruntime-node binaries, and sharp native assets through @lancedb/lancedb and @xenova/transformers.",
+      "remediation": "Use extension-specific remote or Go backends, or undertake native runtime support as a separate design project.",
+      "conditions": "Load, embed, index, persist, and query a vault."
+    },
+    {
+      "rank": 42,
+      "package": "gentle-engram",
+      "verdict": "partial",
+      "evidence": ["index.ts:19-22", "index.ts:251-258", "index.ts:288-313", "index.ts:764-768"],
+      "blockerCategory": "detached_daemon_lifecycle",
+      "explanation": "A configured healthy Engram service is statically viable with the fixed AbortSignal timeout path, but cold auto-start expects truly detached child semantics that Pigo's tracked buffered execution does not provide.",
+      "remediation": "Require a pre-running ENGRAM_URL for now, or implement faithful detached child lifecycle as a broader process change.",
+      "conditions": "Test an already-running daemon separately from cold auto-start and shutdown."
+    },
+    {
+      "rank": 43,
+      "package": "pi-hashline-edit-pro",
+      "verdict": "load_blocked",
+      "evidence": ["index.ts:36", "src/hashline/hash.ts:1-57", "src/prompts.ts:1-14", "src/read.ts:3", "src/replace.ts:279-282"],
+      "blockerCategory": "wasm_asset_urls_private_tool_factory_and_tui",
+      "explanation": "Loading independently hits missing WebAssembly and incorrect bundled import.meta asset URLs, while deeper read and replace paths require createReadTool and Markdown.",
+      "remediation": "Provide a hash backend or WASM support, preserve per-module asset URLs during bundling, then implement the required tool factory and TUI surface.",
+      "conditions": "Load the extension, read anchors, replace content, and render results."
+    },
+    {
+      "rank": 44,
+      "package": "cc-safety-net",
+      "verdict": "likely_compatible",
+      "evidence": ["dist/pi/index.js:305", "dist/pi/index.js:6458-6486", "dist/pi/index.js:6538"],
+      "blockerCategory": "none",
+      "explanation": "The inspected command and security hook paths use supported synchronous filesystem, path, crypto, and execFileSync APIs, with no native, socket, WASM, or private unresolved dependency.",
+      "remediation": "None statically.",
+      "conditions": "Behaviorally smoke allowed and blocked destructive commands plus redaction."
+    }
+  ]
+}

@@ -3,8 +3,8 @@
   "capturedAt": "2026-07-22",
   "selection": {
     "source": "https://pi.dev/packages?sort=downloads",
-    "rule": "Top 43 package entries declaring pi.extensions, ordered by displayed monthly npm downloads",
-    "caveat": "npm downloads measure registry traffic, not unique Pi users"
+    "rule": "Top 44 package entries with a non-empty pi.extensions array, ordered by displayed monthly npm downloads",
+    "caveat": "npm downloads measure registry traffic, not unique Pi users; malformed string-valued pi.extensions manifests are not loadable by upstream and are excluded"
   },
   "extensions": [
     {
@@ -265,6 +265,14 @@
     },
     {
       "rank": 33,
+      "package": "opencode-codebase-index",
+      "version": "0.14.0",
+      "downloads": { "monthly": 10061, "weekly": 2278 },
+      "integrity": "sha512-bYmZVDuUu4QZT6+YOZuUZfxy8EtLoJR1t2fSR+8uN14KEYhiWbPJ5z0sagm7i5FxMJVoD0qfVEEBnvv8hXWL1w==",
+      "extensions": ["./dist/pi-extension.js"]
+    },
+    {
+      "rank": 34,
       "package": "@pi-stef/atlassian",
       "version": "0.4.1",
       "downloads": { "monthly": 9894, "weekly": 2722 },
@@ -272,7 +280,7 @@
       "extensions": ["./extensions"]
     },
     {
-      "rank": 34,
+      "rank": 35,
       "package": "@braintrust/pi-extension",
       "version": "0.10.0",
       "downloads": { "monthly": 9831, "weekly": 1814 },
@@ -280,7 +288,7 @@
       "extensions": ["./src/index.ts"]
     },
     {
-      "rank": 35,
+      "rank": 36,
       "package": "pi-lean-ctx",
       "version": "3.9.12",
       "downloads": { "monthly": 9815, "weekly": 2717 },
@@ -288,7 +296,7 @@
       "extensions": ["./extensions/index.ts"]
     },
     {
-      "rank": 36,
+      "rank": 37,
       "package": "@narumitw/pi-lsp",
       "version": "0.25.0",
       "downloads": { "monthly": 9750, "weekly": 3754 },
@@ -296,7 +304,7 @@
       "extensions": ["./src/pi-lsp.ts"]
     },
     {
-      "rank": 37,
+      "rank": 38,
       "package": "pi-shazam",
       "version": "0.30.0",
       "downloads": { "monthly": 9662, "weekly": 502 },
@@ -304,7 +312,7 @@
       "extensions": ["./dist"]
     },
     {
-      "rank": 38,
+      "rank": 39,
       "package": "pi-cursor-sdk",
       "version": "0.1.60",
       "downloads": { "monthly": 9575, "weekly": 2239 },
@@ -312,7 +320,7 @@
       "extensions": ["./src/index.ts"]
     },
     {
-      "rank": 39,
+      "rank": 40,
       "package": "pi-llama-cpp",
       "version": "0.9.1",
       "downloads": { "monthly": 9549, "weekly": 3437 },
@@ -320,7 +328,7 @@
       "extensions": ["./src/index.ts"]
     },
     {
-      "rank": 40,
+      "rank": 41,
       "package": "pi-vault-mind",
       "version": "0.16.25",
       "downloads": { "monthly": 9356, "weekly": 1795 },
@@ -328,7 +336,7 @@
       "extensions": ["./dist/index.js"]
     },
     {
-      "rank": 41,
+      "rank": 42,
       "package": "gentle-engram",
       "version": "0.1.10",
       "downloads": { "monthly": 8665, "weekly": 1546 },
@@ -336,7 +344,7 @@
       "extensions": ["./index.ts"]
     },
     {
-      "rank": 42,
+      "rank": 43,
       "package": "pi-hashline-edit-pro",
       "version": "0.16.15",
       "downloads": { "monthly": 8541, "weekly": 1145 },
@@ -344,7 +352,7 @@
       "extensions": ["./index.ts"]
     },
     {
-      "rank": 43,
+      "rank": 44,
       "package": "cc-safety-net",
       "version": "1.0.6",
       "downloads": { "monthly": 8379, "weekly": 1941 },

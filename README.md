@@ -64,9 +64,12 @@ pigo --extension ./pirate.ts
 
 Run `/pirate` in the TUI to exercise the extension.
 
-61 of upstream's 69 single-file extension examples run as-is (status per example in
-[docs/sync/extension-matrix.md](docs/sync/extension-matrix.md)); the
-[bridge guide](docs/sync/node-shims.md) documents loading, package support, and runtime ceilings.
+61 of upstream's 69 single-file examples run as-is. In a locked snapshot of the 44 most-downloaded
+valid Pi packages, 24 load stably in both runtimes and 20 expose exactly the same observed tools and
+commands; six of seven safe command handlers and Piolium's real knowledge-base workflow also match.
+See the [ecosystem matrix](docs/sync/ecosystem-extension-matrix.md), the
+[example matrix](docs/sync/extension-matrix.md), and the [bridge guide](docs/sync/node-shims.md) for
+the exact package-by-package result and remaining runtime ceilings.
 `.pi/extensions/` in a trusted project and the global agent directory are discovered like upstream.
 
 ## Provenance
@@ -77,4 +80,5 @@ too; see [LICENSE](LICENSE), [CONTRIBUTING.md](CONTRIBUTING.md), and [SECURITY.m
 
 Every GitHub release includes a checksummed `pigo_<version>_source.tar.gz`. To verify that source
 independently, download it with `checksums.txt`, run `sha256sum -c checksums.txt`, extract it, and
-run `CGO_ENABLED=0 go build ./cmd/pigo`; release CI performs the same rebuild before publishing.
+run `CGO_ENABLED=0 go build -buildvcs=false ./cmd/pigo`; release CI performs the same rebuild before
+publishing. The flag is required because a source archive intentionally contains no `.git` metadata.

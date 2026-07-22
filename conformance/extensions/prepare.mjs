@@ -1,21 +1,22 @@
 #!/usr/bin/env node
 
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CORPUS = path.join(HERE, "corpus.json");
+const PACKAGE_MANIFEST = path.join(HERE, "package.json");
+const PACKAGE_LOCK = path.join(HERE, "package-lock.json");
 const PI_PACKAGE = "@earendil-works/pi-coding-agent";
-const PI_VERSION = "0.81.0";
+const PI_VERSION = "0.81.1";
 
 function usage() {
 	return `Usage: node prepare.mjs --output <empty-directory> [--corpus <corpus.json>]
 
-Creates an exact package manifest and installs the pinned Pi extension corpus. The
-output is intended to be mounted read-only by matrix.mjs. npm lifecycle scripts
-are always disabled.`;
+Installs the committed package-lock with npm ci. The output is intended to be
+mounted read-only by matrix.mjs. npm lifecycle scripts are always disabled.`;
 }
 
 function parseArgs(argv) {
@@ -53,7 +54,7 @@ async function runNPM(output) {
 	await new Promise((resolve, reject) => {
 		const child = spawn(
 			"npm",
-			["install", "--ignore-scripts", "--legacy-peer-deps", "--no-audit", "--no-fund"],
+			["ci", "--ignore-scripts", "--legacy-peer-deps", "--no-audit", "--no-fund"],
 			{ cwd: output, stdio: "inherit", env: process.env },
 		);
 		child.once("error", reject);
@@ -62,6 +63,20 @@ async function runNPM(output) {
 			else reject(new Error(`npm install failed (${signal ?? `exit ${code}`})`));
 		});
 	});
+}
+
+function expectedDependencies(corpus) {
+	const dependencies = { [PI_PACKAGE]: PI_VERSION };
+	for (const extension of corpus.extensions) dependencies[extension.package] = extension.version;
+	return dependencies;
+}
+
+async function verifyManifest(corpus) {
+	const manifest = JSON.parse(await readFile(PACKAGE_MANIFEST, "utf8"));
+	const expected = expectedDependencies(corpus);
+	if (JSON.stringify(Object.entries(manifest.dependencies ?? {}).sort()) !== JSON.stringify(Object.entries(expected).sort())) {
+		throw new Error("package.json dependencies do not match corpus.json");
+	}
 }
 
 async function verifyLock(output, corpus) {
@@ -88,23 +103,16 @@ async function main() {
 		return;
 	}
 	const corpus = await readCorpus(options.corpus);
+	await verifyManifest(corpus);
 	await mkdir(options.output, { recursive: true });
 	if ((await readdir(options.output)).length !== 0) {
 		throw new Error(`--output must be an empty disposable directory: ${options.output}`);
 	}
 
-	const dependencies = { [PI_PACKAGE]: PI_VERSION };
-	for (const extension of corpus.extensions) dependencies[extension.package] = extension.version;
-	const manifest = {
-		name: "pigo-extension-matrix",
-		version: "0.0.0",
-		private: true,
-		description: "Disposable dependency tree for the Pigo ecosystem extension matrix",
-		dependencies,
-	};
-	await writeFile(path.join(options.output, "package.json"), JSON.stringify(manifest, null, 2) + "\n", {
-		mode: 0o644,
-	});
+	await Promise.all([
+		copyFile(PACKAGE_MANIFEST, path.join(options.output, "package.json")),
+		copyFile(PACKAGE_LOCK, path.join(options.output, "package-lock.json")),
+	]);
 	await runNPM(options.output);
 	await verifyLock(options.output, corpus);
 }
