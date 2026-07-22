@@ -1325,6 +1325,9 @@ func (h *shimHost) installProcess(rt *sobek.Runtime) error {
 	mustSet(rt, proc, "platform", runtime.GOOS)
 	mustSet(rt, proc, "arch", nodeArch())
 	mustSet(rt, proc, "pid", os.Getpid())
+	if uid, ok := processUID(); ok {
+		mustSet(rt, proc, "getuid", func(sobek.FunctionCall) sobek.Value { return rt.ToValue(uid) })
+	}
 	mustSet(rt, proc, "argv", []string{"pigo", "extension"})
 	mustSet(rt, proc, "execPath", func() string {
 		if p, err := os.Executable(); err == nil {
