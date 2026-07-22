@@ -244,6 +244,22 @@ export default function(pi) {
 	assertRegisteredDescription(t, result, "result", "true:true:shim_value:"+cwd)
 }
 
+func TestProcessGetuidMatchesNodeSurface(t *testing.T) {
+	if _, ok := processUID(); !ok {
+		t.Skip("process.getuid is not available on this platform")
+	}
+	result := loadAndRunExtension(t, t.TempDir(), `
+export default function(pi) {
+  pi.registerCommand("result", {
+    description: [typeof process.getuid, process.getuid()].join(":"),
+    handler: async () => {},
+  });
+}
+`)
+	uid, _ := processUID()
+	assertRegisteredDescription(t, result, "result", fmt.Sprintf("function:%d", uid))
+}
+
 func TestGlobalAliasesGlobalThis(t *testing.T) {
 	result := loadAndRunExtension(t, t.TempDir(), `
 export default function(pi) {
