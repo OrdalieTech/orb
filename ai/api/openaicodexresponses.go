@@ -646,7 +646,10 @@ func handleOpenAICodexEvent(processor *openAIResponsesProcessor, raw json.RawMes
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		return &codexProtocolError{message: err.Error()}
 	}
-	typeName, _ := codexString(envelope["type"])
+	typeName, ok := codexString(envelope["type"])
+	if !ok || typeName == "" {
+		return nil
+	}
 	switch typeName {
 	case "error":
 		code, _ := codexString(envelope["code"])
@@ -761,9 +764,9 @@ func (code *codexFlexibleCode) UnmarshalJSON(data []byte) error {
 }
 
 func compactCodexEvent(raw json.RawMessage) string {
-	var compact bytes.Buffer
-	if err := json.Compact(&compact, raw); err == nil {
-		return compact.String()
+	normalized, err := ai.NormalizeJSONStringifyJSON(raw)
+	if err == nil {
+		return string(normalized)
 	}
 	return string(raw)
 }

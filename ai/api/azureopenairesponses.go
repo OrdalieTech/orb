@@ -368,7 +368,7 @@ func postAzureOpenAIStream(
 	if err != nil {
 		return nil, err
 	}
-	httpClient, err := openAIHeaderTimeoutClient(azureOpenAIHTTPClient, streamTimeoutMS(options))
+	httpClient, err := openAIHeaderTimeoutClient(azureOpenAIHTTPClient, streamTimeoutMS(options), headers)
 	if err != nil {
 		return nil, err
 	}

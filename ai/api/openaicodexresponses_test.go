@@ -406,11 +406,15 @@ func TestCXm1CodexRetryableErrorMatchesUpstreamRegex(t *testing.T) {
 }
 
 // CX-m2: numeric error codes must not hard-fail the strict unmarshal, nested
-// string codes still drive connection-limit detection, and response.failed
-// always attaches the code.
+// string codes still drive connection-limit detection, fallback messages use
+// parsed JSON spelling, and events without a string type are dropped.
 func TestCXm2CodexEventErrorCodeDecoding(t *testing.T) {
 	model := codexTestModel()
-	processor := newOpenAIResponsesProcessor(&model, newAssistantMessage(&model), &OpenAIResponsesOptions{}, func(ai.AssistantMessageEvent) bool { return true })
+	emitted := 0
+	processor := newOpenAIResponsesProcessor(&model, newAssistantMessage(&model), &OpenAIResponsesOptions{}, func(ai.AssistantMessageEvent) bool {
+		emitted++
+		return true
+	})
 
 	err := handleOpenAICodexEvent(processor, json.RawMessage(`{"type":"error","code":4009,"error":{"code":"websocket_connection_limit_reached","message":"limit reached"}}`))
 	var apiFailure *codexAPIError
@@ -424,6 +428,11 @@ func TestCXm2CodexEventErrorCodeDecoding(t *testing.T) {
 	err = handleOpenAICodexEvent(processor, json.RawMessage(`{"type":"error","code":500}`))
 	if !errors.As(err, &apiFailure) || apiFailure.code != "" || apiFailure.message != `Codex error: {"type":"error","code":500}` {
 		t.Fatalf("numeric-only code event = %#v", err)
+	}
+
+	err = handleOpenAICodexEvent(processor, json.RawMessage(`{"type":"error","value":1e3}`))
+	if !errors.As(err, &apiFailure) || apiFailure.code != "" || apiFailure.message != `Codex error: {"type":"error","value":1000}` {
+		t.Fatalf("parsed numeric fallback event = %#v", err)
 	}
 
 	err = handleOpenAICodexEvent(processor, json.RawMessage(`{"type":"response.failed","response":{"error":{"code":429,"message":""}}}`))
@@ -444,6 +453,14 @@ func TestCXm2CodexEventErrorCodeDecoding(t *testing.T) {
 	err = handleOpenAICodexEvent(processor, json.RawMessage(`{"type":"response.failed","response":{"error":"not-an-object"}}`))
 	if !errors.As(err, &apiFailure) || apiFailure.code != "" || apiFailure.message != "Codex response failed" {
 		t.Fatalf("malformed response.failed fields = %#v", err)
+	}
+
+	emittedBefore := emitted
+	if err = handleOpenAICodexEvent(processor, json.RawMessage(`{"type":7,"response":{"status":"failed"}}`)); err != nil {
+		t.Fatalf("non-string event type = %v, want dropped event", err)
+	}
+	if emitted != emittedBefore {
+		t.Fatalf("non-string event type emitted %d events, want 0", emitted-emittedBefore)
 	}
 }
 

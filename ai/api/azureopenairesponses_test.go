@@ -279,6 +279,44 @@ func TestAzureOpenAIResponsesTimeoutDisarmsAfterHeadersOAM1(t *testing.T) {
 	}
 }
 
+func TestAzureOpenAIResponsesTimeoutWireHeaderOAM1(t *testing.T) {
+	previousClient := azureOpenAIHTTPClient
+	t.Cleanup(func() { azureOpenAIHTTPClient = previousClient })
+	got := "not-called"
+	azureOpenAIHTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		got = request.Header.Get("X-Stainless-Timeout")
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body: io.NopCloser(strings.NewReader(
+				"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"azure_header\",\"status\":\"completed\",\"output\":[]}}\n\n",
+			)),
+			Request: request,
+		}, nil
+	})}
+
+	key := "fixture-key"
+	baseURL := "https://resource.openai.azure.com"
+	timeout := int64(2500)
+	model := &ai.Model{ID: "deployment", API: ai.APIAzureOpenAIResponses, Provider: "azure-openai-responses"}
+	stream, err := StreamAzureOpenAIResponsesWithOptions(context.Background(), model, ai.Context{}, &AzureOpenAIResponsesOptions{
+		StreamOptions: ai.StreamOptions{APIKey: &key, TimeoutMS: &timeout}, AzureBaseURL: &baseURL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := ai.Collect(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.StopReason != ai.StopReasonStop || message.ErrorMessage != nil {
+		t.Fatalf("message = %#v", message)
+	}
+	if got != "2" {
+		t.Fatalf("X-Stainless-Timeout = %q, want %q", got, "2")
+	}
+}
+
 func TestAzureOpenAIResponsesTimeoutStartsAfterPayloadHookOAM1(t *testing.T) {
 	previousClient := azureOpenAIHTTPClient
 	azureOpenAIHTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {

@@ -521,6 +521,65 @@ func TestOpenAIResponsesTimeoutDisarmsAfterHeadersOAM1(t *testing.T) {
 	}
 }
 
+func TestOpenAIResponsesTimeoutWireHeaderOAM1(t *testing.T) {
+	previousClient := openAIHTTPClient
+	t.Cleanup(func() { openAIHTTPClient = previousClient })
+
+	tests := []struct {
+		name      string
+		timeoutMS *int64
+		headers   ai.ProviderHeaders
+		want      string
+	}{
+		{name: "default", timeoutMS: nil, want: ""},
+		{name: "sub-second truncates", timeoutMS: func() *int64 { value := int64(999); return &value }(), want: "0"},
+		{name: "fractional seconds truncate", timeoutMS: func() *int64 { value := int64(1555); return &value }(), want: "1"},
+		{name: "ten minutes", timeoutMS: func() *int64 { value := int64(600_000); return &value }(), want: "600"},
+		{name: "literal zero override", timeoutMS: func() *int64 { value := int64(1555); return &value }(), headers: func() ai.ProviderHeaders { value := "0"; return ai.ProviderHeaders{"X-Stainless-Timeout": &value} }(), want: "0"},
+		{name: "deletion override", timeoutMS: func() *int64 { value := int64(1555); return &value }(), headers: ai.ProviderHeaders{"X-Stainless-Timeout": nil}, want: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := "not-called"
+			openAIHTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				got = request.Header.Get("X-Stainless-Timeout")
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+					Body: io.NopCloser(strings.NewReader(
+						"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_header\",\"status\":\"completed\",\"output\":[]}}\n\n",
+					)),
+					Request: request,
+				}, nil
+			})}
+
+			key := "fixture-key"
+			model := responsesTestModel()
+			model.BaseURL = "https://fixture.invalid/v1"
+			stream, err := StreamOpenAIResponses(context.Background(), ai.Request{
+				Model: model,
+				Context: ai.Context{Messages: ai.MessageList{
+					&ai.UserMessage{Content: ai.NewUserText("hello"), Timestamp: 1},
+				}},
+				Options: &ai.StreamOptions{APIKey: &key, TimeoutMS: test.timeoutMS, Headers: test.headers},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			message, err := ai.Collect(stream)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if message.StopReason != ai.StopReasonStop || message.ErrorMessage != nil {
+				t.Fatalf("message = %#v", message)
+			}
+			if got != test.want {
+				t.Fatalf("X-Stainless-Timeout = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestOpenAIResponsesTimeoutStartsAfterRequestHooksOAM1(t *testing.T) {
 	previousClient := openAIHTTPClient
 	openAIHTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
