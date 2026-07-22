@@ -262,6 +262,58 @@ func TestTUIStreamingRenderPreservesTerminalScrollbackPosition(t *testing.T) {
 	}
 }
 
+func TestTUIViewportPinsChromeAndKeepsDetachedBodyStable(t *testing.T) {
+	terminal := newFakeTerminal(20, 6)
+	ui := NewTUI(terminal)
+	body := &mutableLines{lines: []string{"body 0", "body 1", "body 2", "body 3", "body 4", "body 5"}}
+	chrome := &mutableLines{lines: []string{"editor", "footer"}}
+	ui.AddChild(body)
+	ui.AddChild(chrome)
+	ui.SetViewport(body, chrome)
+	if err := ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	initial := terminal.output()
+	if !strings.Contains(initial, "\x1b[?1049h") || strings.Contains(initial, "body 1") || !strings.Contains(initial, "body 2") || strings.Index(initial, "body 5") > strings.Index(initial, "editor") || strings.Index(initial, "editor") > strings.Index(initial, "footer") {
+		t.Fatalf("initial viewport = %q", initial)
+	}
+
+	terminal.send("\x1b[<64;10;3M") // SGR wheel up
+	ui.RenderNow()
+	detached := append([]string(nil), ui.previousLines...)
+	if joined := strings.Join(detached, "\n"); !strings.Contains(joined, "body 0") || strings.Contains(joined, "body 5") || !strings.HasSuffix(joined, "editor"+segmentReset+"\nfooter"+segmentReset) {
+		t.Fatalf("detached viewport = %q", joined)
+	}
+
+	terminal.resetOutput()
+	body.lines = append(body.lines, "loading frame")
+	chrome.lines[0] = "loader frame"
+	ui.RenderNow()
+	if got := ui.previousLines; !equalLines(got[:4], detached[:4]) {
+		t.Fatalf("streaming moved detached body:\n before=%q\n  after=%q", detached[:4], got[:4])
+	}
+	if output := terminal.output(); !strings.Contains(output, "loader frame") || strings.Contains(output, "loading frame") || strings.Contains(output, "\x1b[2J") {
+		t.Fatalf("detached streaming output = %q", output)
+	}
+
+	terminal.send("\x1b[6;5~") // ctrl+PageDown
+	ui.RenderNow()
+	terminal.send("\x1b[5;5~") // ctrl+PageUp
+	ui.RenderNow()
+	terminal.send("\x1b[1;5F") // ctrl+End
+	ui.RenderNow()
+	if joined := strings.Join(ui.previousLines, "\n"); !strings.Contains(joined, "loading frame") || !strings.HasSuffix(joined, "loader frame"+segmentReset+"\nfooter"+segmentReset) {
+		t.Fatalf("follow viewport = %q", joined)
+	}
+	if err := ui.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if output := terminal.output(); !strings.Contains(output, "\x1b[?1006l\x1b[?1000l\x1b[?1049l") {
+		t.Fatalf("stop did not restore mouse and alternate-screen modes: %q", output)
+	}
+}
+
 func TestTUIClearOnShrinkPreservesTerminalScrollbackPosition(t *testing.T) {
 	terminal := newScrollTrackingTerminal(40, 3)
 	ui := NewTUI(terminal)

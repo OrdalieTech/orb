@@ -79,15 +79,16 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
 - **D15 — TUI: faithful pi-tui port.** Hand-rolled differential line renderer mirroring pi-tui
   (Component contract: `Render(width) []string`), no TUI framework. The Component contract is what
   extension custom-UI rides on; preserving it is non-negotiable.
-- **Live TUI output disables xterm scroll-on-output mode.** Pigo sends private mode 1010 off after
-  terminal startup and restores it before shutdown so supporting terminals do not pull a user back
-  to the active cursor on every loading or streaming frame. Terminals that ignore mode 1010 retain
-  their native behavior; universal scroll locking would require an application-owned viewport.
+- **Interactive mode owns its viewport.** Pigo uses the alternate screen with a scrollable
+  transcript and pins status, extension widgets, editor, and footer at the bottom. Mouse-wheel or
+  `Ctrl+PageUp` scrolling detaches live follow; scrolling back down or `Ctrl+End` reattaches it, so
+  loading and streaming frames cannot move the viewed history. The reusable TUI stays inline unless
+  a caller opts into this viewport, and mode 1010 remains disabled while either renderer is live.
 - **Reachable clear-on-shrink updates stay differential.** When shorter content can be reconciled
   inside the renderer's active viewport, Pigo clears only the vacated rows and settles the tracked
-  height instead of taking upstream's destructive full-transcript redraw. True offscreen mutations
-  retain the upstream fallback because suppressing or partially replaying them would desynchronize
-  terminal history; eliminating that fallback requires an application-owned history viewport.
+  height instead of taking upstream's destructive full-transcript redraw. The inline renderer keeps
+  the upstream fallback for true offscreen mutations; interactive mode avoids it by rendering only
+  its owned viewport.
 
 ## Extensibility decisions
 
