@@ -17,8 +17,20 @@ case "$os" in
   *) echo "unsupported OS: $os (Windows is a later parity wave)" >&2; exit 1 ;;
 esac
 
-tag=${PIGO_VERSION:-$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')}
-[ -n "$tag" ] || { echo "could not resolve the latest release tag" >&2; exit 1; }
+resolve_tag_api() {
+  curl -fsSL --retry 3 --retry-delay 1 --retry-all-errors \
+    "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null |
+    sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1
+}
+# Fallback: the releases/latest redirect carries the tag and avoids API gateways/rate limits.
+resolve_tag_redirect() {
+  curl -fsSLI -o /dev/null -w '%{url_effective}' \
+    "https://github.com/$REPO/releases/latest" 2>/dev/null |
+    sed -n 's#.*/tag/\([^/?]*\).*#\1#p'
+}
+tag=${PIGO_VERSION:-$(resolve_tag_api)}
+[ -n "$tag" ] || tag=$(resolve_tag_redirect)
+[ -n "$tag" ] || { echo "could not resolve the latest release tag (github.com unreachable?)" >&2; exit 1; }
 version=${tag#v}
 
 tmp=$(mktemp -d)
