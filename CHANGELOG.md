@@ -11,6 +11,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 - A bundled-but-dormant tasks plugin adds the `todo` tool and live session checklist, enabled through settings, `pigo plugins`, or `/plugins`.
 - A bundled-but-dormant websearch plugin adds Exa, Brave, and Tavily search plus lightweight HTML/text fetching.
 - A bundled-but-dormant subagents plugin adds injectable in-process scout, worker, and reviewer child sessions with bounded parallel execution.
+- A bundled-but-dormant permissions plugin adds last-match-wins allow, deny, and ask rules with permissive audit-only defaults and inherited subagent policy.
 - `pigo chat <platform>` runs every built-in chat adapter through one durable CLI gateway system.
 - An out-of-process extension host runs the full JavaScript/TypeScript extension API through a
   local Node.js or Bun process, including providers, UI callbacks, state synchronization, package
@@ -26,6 +27,11 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
   follow, and scrolling down or pressing `Ctrl+End` returns to the latest loading or streamed output.
 - Huge transcripts now cache stable message layout and render only the visible window plus a changed
   tail, keeping loading and streaming frame cost independent of conversation length after warm-up.
+
+### Fixed
+
+- Subagent children now inherit request authentication from the parent model registry and surface
+  provider stream errors instead of reporting an empty final response.
 
 ### Removed
 

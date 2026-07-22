@@ -66,6 +66,188 @@ func TestPluginControlPersistsAndReloads(t *testing.T) {
 	}
 }
 
+func TestPermissionsPolicyRules(t *testing.T) {
+	root := t.TempDir()
+	realDir := filepath.Join(root, "real")
+	if err := os.Mkdir(realDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(realDir, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	tests := []struct {
+		name   string
+		policy *Policy
+		info   ToolCallInfo
+		want   Action
+	}{
+		{
+			name: "last match wins",
+			policy: &Policy{Rules: []Rule{
+				{Tool: "*", Action: Allow},
+				{Tool: "bash", Action: Deny},
+				{Tool: "bash", Command: "git status*", Action: Allow},
+			}},
+			info: ToolCallInfo{Tool: "bash", Args: map[string]any{"command": "git status --short"}, CWD: root}, want: Allow,
+		},
+		{
+			name:   "tool glob",
+			policy: &Policy{Rules: []Rule{{Tool: "mcp_*", Action: Deny}}},
+			info:   ToolCallInfo{Tool: "mcp_delete", Args: map[string]any{}, CWD: root}, want: Deny,
+		},
+		{
+			name:   "command glob treats slash as command text",
+			policy: &Policy{Rules: []Rule{{Tool: "bash", Command: "rm -rf *", Action: Deny}}},
+			info:   ToolCallInfo{Tool: "bash", Args: map[string]any{"command": "rm -rf /tmp/example"}, CWD: root}, want: Deny,
+		},
+		{
+			name:   "raw path",
+			policy: &Policy{Rules: []Rule{{Path: "link/*", Action: Deny}}},
+			info:   ToolCallInfo{Tool: "custom", Args: map[string]any{"path": "link/file"}, CWD: root}, want: Deny,
+		},
+		{
+			name:   "canonical path",
+			policy: &Policy{Rules: []Rule{{Path: filepath.Join(realDir, "*"), Action: Deny}}},
+			info:   ToolCallInfo{Tool: "custom", Args: map[string]any{"path": filepath.Join(link, "file")}, CWD: root}, want: Deny,
+		},
+		{
+			name:   "unparseable bash is ask with restrictive rule",
+			policy: &Policy{Rules: []Rule{{Tool: "bash", Command: "git push*", Action: Deny}}},
+			info:   ToolCallInfo{Tool: "bash", Args: map[string]any{}, CWD: root}, want: Ask,
+		},
+		{
+			name:   "unparseable bash is allow without restrictive rule",
+			policy: &Policy{Rules: []Rule{{Tool: "bash", Action: Allow}}},
+			info:   ToolCallInfo{Tool: "bash", Args: map[string]any{}, CWD: root}, want: Allow,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.policy.Evaluate(context.Background(), test.info).Action; got != test.want {
+				t.Fatalf("action = %q, want %q", got, test.want)
+			}
+		})
+	}
+
+	called := false
+	policy := &Policy{
+		Authorizer: func(context.Context, ToolCallInfo) (Action, error) { called = true; return Deny, nil },
+		Rules:      []Rule{{Tool: "*", Action: Allow}},
+	}
+	if got := policy.Evaluate(context.Background(), ToolCallInfo{Tool: "todo"}).Action; !called || got != Deny {
+		t.Fatalf("authorizer called=%t action=%q", called, got)
+	}
+}
+
+func TestPermissionsEnforceHidesAndBlocksStaticDeny(t *testing.T) {
+	logSession := newPermissionsSession(t, faux.New(), &Policy{Rules: []Rule{{Tool: "bash", Action: Deny}}})
+	if !containsName(logSession.GetActiveToolNames(), "bash") {
+		t.Fatal("log mode hid bash")
+	}
+	conditionalSession := newPermissionsSession(t, faux.New(), &Policy{Mode: "enforce", Rules: []Rule{{Tool: "bash", Command: "rm -rf *", Action: Deny}}})
+	if !containsName(conditionalSession.GetActiveToolNames(), "bash") {
+		t.Fatal("command-scoped deny hid the whole tool")
+	}
+
+	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+	var returned string
+	marker := filepath.Join(t.TempDir(), "must-not-exist")
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage(faux.ToolCall("bash", map[string]any{"command": "touch " + marker}, faux.ToolCallOptions{ID: "deny-1"})),
+		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+			returned = toolResultText(request, "bash")
+			return faux.AssistantMessage("done"), nil
+		}),
+	})
+	policy := &Policy{Mode: "enforce", Rules: []Rule{{Tool: "bash", Action: Deny}}}
+	session := newPermissionsSession(t, provider, policy)
+	if containsName(session.GetActiveToolNames(), "bash") {
+		t.Fatal("bash remained visible after session_start")
+	}
+	active := append(session.GetActiveToolNames(), "bash")
+	if err := session.SetActiveToolsByName(active); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.PromptSync(context.Background(), "try it"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(returned, `permissions: denied by rule 1 (tool="bash")`) {
+		t.Fatalf("tool result = %q", returned)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("denied command changed the filesystem: %v", err)
+	}
+}
+
+func TestPermissionsAskFallbackDeniesHeadless(t *testing.T) {
+	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+	var returned string
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage(faux.ToolCall("todo", map[string]any{"items": []any{}}, faux.ToolCallOptions{ID: "ask-1"})),
+		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+			returned = toolResultText(request, "todo")
+			return faux.AssistantMessage("done"), nil
+		}),
+	})
+	policy := &Policy{Mode: "enforce", AskFallback: Deny, Rules: []Rule{{Tool: "todo", Action: Ask}}}
+	session := newPermissionsSession(t, provider, policy, "tasks")
+	if err := session.PromptSync(context.Background(), "update tasks"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(returned, "ask resolved by askFallback") {
+		t.Fatalf("tool result = %q", returned)
+	}
+}
+
+type approvalUI struct {
+	extensions.NoopUI
+	mu      sync.Mutex
+	selects int
+}
+
+func (ui *approvalUI) Select(context.Context, string, []string, *extensions.DialogOptions) (string, bool, error) {
+	ui.mu.Lock()
+	ui.selects++
+	ui.mu.Unlock()
+	return "s approve for this session", true, nil
+}
+
+func (ui *approvalUI) count() int {
+	ui.mu.Lock()
+	defer ui.mu.Unlock()
+	return ui.selects
+}
+
+func TestPermissionsSessionApprovalAvoidsSecondPrompt(t *testing.T) {
+	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+	call := map[string]any{"items": []any{map[string]any{"text": "ship", "status": "pending"}}}
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage(faux.ToolCall("todo", call, faux.ToolCallOptions{ID: "ask-1"})),
+		faux.AssistantMessage(faux.ToolCall("todo", call, faux.ToolCallOptions{ID: "ask-2"})),
+		faux.AssistantMessage("done"),
+	})
+	policy := &Policy{Mode: "enforce", Rules: []Rule{{Tool: "todo", Action: Ask}}}
+	session := newPermissionsSession(t, provider, policy, "tasks")
+	ui := &approvalUI{}
+	session.ExtensionRunner().SetUI(ui, extensions.ModeTUI)
+	if err := session.PromptSync(context.Background(), "update twice"); err != nil {
+		t.Fatal(err)
+	}
+	if got := ui.count(); got != 1 {
+		t.Fatalf("permission prompts = %d, want 1", got)
+	}
+	logged := 0
+	for _, entry := range session.Manager().GetEntries() {
+		if entry.CustomType == "pigo.permissions.decision" {
+			logged++
+		}
+	}
+	if logged != 2 {
+		t.Fatalf("decision log entries = %d, want 2", logged)
+	}
+}
+
 func (ui *widgetUI) SetWidget(_ string, widget *extensions.Widget, _ *extensions.WidgetOptions) {
 	ui.mu.Lock()
 	defer ui.mu.Unlock()
@@ -231,6 +413,23 @@ func TestSubagentCompletesInProcessWithForkedContext(t *testing.T) {
 	}
 }
 
+func TestSubagentChildOptionsUseParentRegistryForDefaultStream(t *testing.T) {
+	registry, err := config.NewModelRegistry(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	options, err := childOptions(registry, nil, codingagent.AgentSessionOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.ModelRegistry != registry || options.StreamFn != nil {
+		t.Fatalf("model registry=%p want=%p stream set=%t", options.ModelRegistry, registry, options.StreamFn != nil)
+	}
+	if _, err := childOptions(nil, nil, codingagent.AgentSessionOptions{}); err == nil || !strings.Contains(err.Error(), "parent has no model registry") {
+		t.Fatalf("missing registry error = %v", err)
+	}
+}
+
 func TestSubagentParallelReturnsTwoChildResults(t *testing.T) {
 	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
 	var returned string
@@ -258,6 +457,61 @@ func TestSubagentParallelReturnsTwoChildResults(t *testing.T) {
 	}
 }
 
+func TestSubagentSurfacesChildStreamError(t *testing.T) {
+	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+	providerError := "No API key for provider: anthropic"
+	var returned string
+	var isError bool
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage(faux.ToolCall("subagent", map[string]any{"task": "inspect", "agent": "scout"}, faux.ToolCallOptions{ID: "sub-error"})),
+		faux.AssistantMessage(ai.AssistantContent{}, faux.AssistantMessageOptions{StopReason: ai.StopReasonError, ErrorMessage: &providerError}),
+		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+			for index := len(request.Messages) - 1; index >= 0; index-- {
+				if message, ok := request.Messages[index].(*ai.ToolResultMessage); ok && message.ToolName == "subagent" {
+					returned, isError = ai.ContentText(message.Content), message.IsError
+					break
+				}
+			}
+			return faux.AssistantMessage("parent done"), nil
+		}),
+	})
+	session := newSubagentParent(t, provider)
+	if err := session.PromptSync(context.Background(), "delegate"); err != nil {
+		t.Fatal(err)
+	}
+	if !isError || !strings.Contains(returned, "subagent: child failed: "+providerError) {
+		t.Fatalf("tool error=%t result=%q", isError, returned)
+	}
+}
+
+func TestSubagentInheritsPermissionsPolicy(t *testing.T) {
+	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+	childReadAbsent := false
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage(faux.ToolCall("subagent", map[string]any{"task": "inspect", "agent": "scout"}, faux.ToolCallOptions{ID: "sub-policy"})),
+		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+			childReadAbsent = true
+			if request.Tools != nil {
+				for _, tool := range *request.Tools {
+					if tool.Name == "read" {
+						childReadAbsent = false
+					}
+				}
+			}
+			return faux.AssistantMessage("child obeyed"), nil
+		}),
+		faux.AssistantMessage("parent done"),
+	})
+	policy := &Policy{Mode: "enforce", Rules: []Rule{{Tool: "read", Action: Deny}}}
+	session := newPermissionsSession(t, provider, policy, "subagents")
+	if err := session.PromptSync(context.Background(), "delegate"); err != nil {
+		t.Fatal(err)
+	}
+	if !childReadAbsent {
+		t.Fatal("read was advertised to the child despite the inherited deny rule")
+	}
+}
+
 func pluginTool(t *testing.T, plugin, tool string, options Options, runnerOptions extensions.RunnerOptions) agent.AgentTool {
 	t.Helper()
 	registry := extensions.NewRegistry(t.TempDir())
@@ -282,6 +536,46 @@ func pluginTool(t *testing.T, plugin, tool string, options Options, runnerOption
 	}
 	t.Fatalf("tool %q missing", tool)
 	return nil
+}
+
+func newPermissionsSession(t *testing.T, provider *faux.Provider, policy *Policy, enabled ...string) *codingagent.AgentSession {
+	t.Helper()
+	root := t.TempDir()
+	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := extensions.NewRegistry(root)
+	catalog := Catalog(Options{StreamFn: provider.StreamSimple, Policy: policy})
+	for _, name := range append([]string{"permissions"}, enabled...) {
+		if err := registry.Register("<inline:"+name+">", catalog[name]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	prompt := "permissions test"
+	result, err := codingagent.NewAgentSession(codingagent.AgentSessionOptions{
+		CWD: root, AgentDir: filepath.Join(root, "agent"), Settings: settings, SessionManager: manager,
+		Model: provider.GetModel(), StreamFn: provider.StreamSimple, Resources: &codingagent.Resources{SystemPrompt: &prompt},
+		ExtensionRegistry: registry,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(result.Session.Dispose)
+	return result.Session
+}
+
+func containsName(names []string, want string) bool {
+	for _, name := range names {
+		if name == want {
+			return true
+		}
+	}
+	return false
 }
 
 func response(status int, contentType, body string) *http.Response {

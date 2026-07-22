@@ -54,7 +54,7 @@ type subagentTask struct {
 
 type childProgress struct{ name, status string }
 
-func subagentsExtension(injected agent.StreamFn) extensions.Factory {
+func subagentsExtension(injected agent.StreamFn, policy *Policy) extensions.Factory {
 	return func(api extensions.API) error {
 		var progressMu sync.Mutex
 		api.RegisterTool(extensions.ToolDefinition{
@@ -135,7 +135,7 @@ func subagentsExtension(injected agent.StreamFn) extensions.Factory {
 						}
 						defer func() { <-semaphore }()
 						updateProgress(index, "running")
-						results[index], errorsByChild[index] = runChild(ctx, extensionContext, injected, task)
+						results[index], errorsByChild[index] = runChild(ctx, extensionContext, injected, policy, task)
 						if errorsByChild[index] != nil {
 							updateProgress(index, "error")
 						} else {
@@ -165,15 +165,27 @@ func subagentsExtension(injected agent.StreamFn) extensions.Factory {
 	}
 }
 
-func runChild(ctx context.Context, parent extensions.Context, injected agent.StreamFn, task subagentTask) (string, error) {
+func childOptions(parentRegistry extensions.ModelRegistry, injected agent.StreamFn, options codingagent.AgentSessionOptions) (codingagent.AgentSessionOptions, error) {
+	if injected != nil {
+		options.StreamFn = injected
+		return options, nil
+	}
+	if parentRegistry == nil {
+		return options, fmt.Errorf("subagent: parent has no model registry")
+	}
+	registry, ok := parentRegistry.(*config.ModelRegistry)
+	if !ok {
+		return options, fmt.Errorf("subagent: unsupported parent model registry %T", parentRegistry)
+	}
+	options.ModelRegistry = registry
+	return options, nil
+}
+
+func runChild(ctx context.Context, parent extensions.Context, injected agent.StreamFn, policy *Policy, task subagentTask) (string, error) {
 	role := archetypes[task.Agent]
-	stream := injected
-	if stream == nil {
-		registry := parent.ModelRegistry()
-		if registry == nil {
-			return "", fmt.Errorf("subagent: no stream function or model registry")
-		}
-		stream = registry.StreamSimple
+	options, err := childOptions(parent.ModelRegistry(), injected, codingagent.AgentSessionOptions{})
+	if err != nil {
+		return "", err
 	}
 	model := parent.Model()
 	if model == nil {
@@ -194,11 +206,19 @@ func runChild(ctx context.Context, parent extensions.Context, injected agent.Str
 	}
 	prompt := "You are the " + task.Agent + " subagent. " + role.prompt
 	tools := restrictTools(role.tools, task.Tools)
-	result, err := codingagent.NewAgentSession(codingagent.AgentSessionOptions{
-		CWD: parent.CWD(), AgentDir: settingsDir, Model: model, StreamFn: stream,
-		ThinkingLevel: ai.ModelThinkingOff, Tools: tools, SessionManager: manager, Settings: settings,
-		Resources: &codingagent.Resources{SystemPrompt: &prompt},
-	})
+	var extensionRegistry *extensions.Registry
+	if policy != nil {
+		extensionRegistry = extensions.NewRegistry(parent.CWD())
+		if err := extensionRegistry.Register("<inline:permissions>", permissionsExtension(policy, nil, parent)); err != nil {
+			return "", err
+		}
+	}
+	options.CWD, options.AgentDir, options.Model = parent.CWD(), settingsDir, model
+	options.ThinkingLevel, options.Tools = ai.ModelThinkingOff, tools
+	options.SessionManager, options.Settings = manager, settings
+	options.Resources = &codingagent.Resources{SystemPrompt: &prompt}
+	options.ExtensionRegistry = extensionRegistry
+	result, err := codingagent.NewAgentSession(options)
 	if err != nil {
 		return "", err
 	}
@@ -219,6 +239,17 @@ func runChild(ctx context.Context, parent extensions.Context, injected agent.Str
 	}
 	if err := result.Session.PromptSync(ctx, strings.TrimSpace(task.Task)); err != nil {
 		return "", err
+	}
+	state := result.Session.State()
+	if len(state.Messages) > 0 {
+		if assistant, ok := state.Messages[len(state.Messages)-1].(*ai.AssistantMessage); ok &&
+			(assistant.StopReason == ai.StopReasonError || assistant.StopReason == ai.StopReasonAborted) {
+			failure := string(assistant.StopReason)
+			if assistant.ErrorMessage != nil && strings.TrimSpace(*assistant.ErrorMessage) != "" {
+				failure = *assistant.ErrorMessage
+			}
+			return "", fmt.Errorf("subagent: child failed: %s", failure)
+		}
 	}
 	text := result.Session.GetLastAssistantText()
 	if text == nil {

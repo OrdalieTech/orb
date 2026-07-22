@@ -97,6 +97,15 @@ func (component *ExtensionSelectorComponent) updateList() {
 }
 
 func (component *ExtensionSelectorComponent) HandleInput(event tui.KeyEvent) {
+	for _, option := range component.options {
+		label := strings.TrimSpace(option.Value)
+		if len(event.Raw) == 1 && len(label) > 1 && label[1] == ' ' && strings.EqualFold(label[:1], event.Raw) {
+			if component.onSelect != nil {
+				component.onSelect(option.Value)
+			}
+			return
+		}
+	}
 	bindings := tui.GetKeybindings()
 	switch {
 	case bindings.Matches(event.Raw, "app.tools.expand"):

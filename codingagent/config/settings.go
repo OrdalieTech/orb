@@ -526,11 +526,29 @@ func (manager *SettingsManager) GetPlugins() map[string]bool {
 	configured := nestedObject(manager.effective, "plugins")
 	result := make(map[string]bool, len(configured))
 	for name, value := range configured {
-		if enabled, ok := value.(bool); ok {
-			result[name] = enabled
+		switch typed := value.(type) {
+		case bool:
+			result[name] = typed
+		case map[string]any:
+			enabled, configured := typed["enabled"].(bool)
+			result[name] = !configured || enabled
+		case Settings:
+			enabled, configured := typed["enabled"].(bool)
+			result[name] = !configured || enabled
 		}
 	}
 	return result
+}
+
+// GetPluginSettings returns a copy of one structured plugin configuration.
+func (manager *SettingsManager) GetPluginSettings(name string) map[string]any {
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
+	configured := nestedObject(nestedObject(manager.effective, "plugins"), name)
+	if configured == nil {
+		return nil
+	}
+	return cloneMap(configured)
 }
 
 func (manager *SettingsManager) GetDefaultThinkingLevel() ai.ModelThinkingLevel {
