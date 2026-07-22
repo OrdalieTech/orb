@@ -244,6 +244,8 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
   existing user/project settings overlay and runtime reload path own enablement; embedders bypass
   settings by selecting factories from `plugins.Catalog()`.
 
+- **D33 — Permissions plugin (owner, 2026-07-22).** The dormant first-party permissions plugin uses the standard allow/deny/ask, ordered last-match-wins model and defaults to permissive log mode.
+
 ## 2026-07-21 parity-sync amendments
 
 - Codex request compression uses `github.com/klauspost/compress/zstd` as a direct dependency. The

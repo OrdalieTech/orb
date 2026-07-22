@@ -439,7 +439,33 @@ func (manager *SettingsManager) SetEnableSkillCommands(enabled bool) {
 // SetPluginEnabled persists a user-level gate while project settings continue
 // to overlay it through the existing one-level merge.
 func (manager *SettingsManager) SetPluginEnabled(name string, enabled bool) {
+	manager.mu.RLock()
+	configured := nestedObject(nestedObject(manager.global, "plugins"), name)
+	if configured != nil {
+		configured = cloneMap(configured)
+	}
+	manager.mu.RUnlock()
+	if configured != nil {
+		configured["enabled"] = enabled
+		manager.setGlobalNested("plugins", name, configured)
+		return
+	}
 	manager.setGlobalNested("plugins", name, enabled)
+}
+
+// SetPluginSetting persists one value without discarding the plugin's rules.
+func (manager *SettingsManager) SetPluginSetting(name, key string, value any) {
+	manager.mu.RLock()
+	configured := nestedObject(nestedObject(manager.global, "plugins"), name)
+	if configured != nil {
+		configured = cloneMap(configured)
+	}
+	manager.mu.RUnlock()
+	if configured == nil {
+		configured = map[string]any{"enabled": true}
+	}
+	configured[key] = cloneValue(value)
+	manager.setGlobalNested("plugins", name, configured)
 }
 
 func (manager *SettingsManager) SetTransport(transport ai.Transport) {

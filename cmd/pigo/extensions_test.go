@@ -86,7 +86,7 @@ func TestFirstPartyPluginsAreDormantUntilEnabled(t *testing.T) {
 		want           []string
 	}{
 		{name: "default off", settings: `{}`},
-		{name: "enabled", settings: `{"plugins":{"tasks":true,"websearch":true,"subagents":true}}`, want: []string{"fetch_content", "subagent", "todo", "web_search"}},
+		{name: "enabled", settings: `{"plugins":{"tasks":true,"websearch":true,"subagents":true,"permissions":{"mode":"log"}}}`, want: []string{"fetch_content", "subagent", "todo", "web_search"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -113,6 +113,9 @@ func TestFirstPartyPluginsAreDormantUntilEnabled(t *testing.T) {
 			}
 			if runner.Command("plugins") == nil {
 				t.Fatal("/plugins control command missing")
+			}
+			if got := runner.Command("permissions") != nil; got != (test.name == "enabled") {
+				t.Fatalf("/permissions present = %t", got)
 			}
 		})
 	}

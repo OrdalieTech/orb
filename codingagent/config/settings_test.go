@@ -739,6 +739,29 @@ func TestLOGM4WarningsAnthropicExtraUsageGate(t *testing.T) {
 	}
 }
 
+func TestStructuredPluginSettingsEnableAndPersistWithoutLosingRules(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	writeSettings(t, filepath.Join(agentDir, "settings.json"), map[string]any{
+		"plugins": map[string]any{"permissions": map[string]any{
+			"mode": "log", "rules": []any{map[string]any{"tool": "bash", "action": "deny"}},
+		}},
+	})
+	manager, err := NewSettingsManager(root, WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !manager.GetPlugins()["permissions"] || manager.GetPluginSettings("permissions")["mode"] != "log" {
+		t.Fatalf("plugin settings = %#v", manager.GetPluginSettings("permissions"))
+	}
+	manager.SetPluginSetting("permissions", "mode", "enforce")
+	manager.SetPluginEnabled("permissions", false)
+	configured := manager.GetPluginSettings("permissions")
+	if configured["mode"] != "enforce" || configured["enabled"] != false || configured["rules"] == nil {
+		t.Fatalf("persisted plugin settings = %#v", configured)
+	}
+}
+
 func writeSettings(t *testing.T, path string, value any) {
 	t.Helper()
 	encoded, err := json.Marshal(value)

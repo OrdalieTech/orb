@@ -38,7 +38,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 	catalog = append(catalog, extensions.CompiledExtension{
 		Name: "plugin-control", Factory: firstpartyplugins.Control(settings), Hidden: true, DefaultEnabled: true,
 	})
-	pluginCatalog := firstpartyplugins.Catalog()
+	pluginCatalog := firstpartyplugins.Catalog(firstpartyplugins.Options{Settings: settings})
 	for _, name := range firstpartyplugins.Names() {
 		catalog = append(catalog, extensions.CompiledExtension{Name: name, Factory: pluginCatalog[name]})
 	}

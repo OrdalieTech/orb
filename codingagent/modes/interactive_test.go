@@ -58,6 +58,17 @@ func TestParseSlashCommand(t *testing.T) {
 	}
 }
 
+func TestExtensionSelectorAcceptsLeadingMnemonic(t *testing.T) {
+	selected := ""
+	component := NewExtensionSelectorItemsComponent("Permission", []tui.SelectItem{
+		{Value: "y approve once"}, {Value: "s approve for this session"},
+	}, func(value string) { selected = value }, nil, nil)
+	component.HandleInput(tui.KeyEvent{Raw: "s"})
+	if selected != "s approve for this session" {
+		t.Fatalf("selected = %q", selected)
+	}
+}
+
 func TestInteractiveChatRenderInvalidatesChangedChild(t *testing.T) {
 	chat := tui.NewWindowedContainer()
 	component := tui.NewText("before", 0, 0, nil)
