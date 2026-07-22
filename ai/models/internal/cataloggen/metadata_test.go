@@ -139,7 +139,7 @@ func TestApplyCatalogMetadataMatchesRepresentativePinnedCompat(t *testing.T) {
 	}
 }
 
-// SYNC-1: upstream HEAD gives moonshot kimi-k3 the OpenAI thinking format and
+// SYNC-1: upstream v0.81.1 gives moonshot kimi-k3 the OpenAI thinking format and
 // reasoning-effort support (generate-models.ts:1761-1766).
 func TestSYNC1MoonshotKimiK3Compat(t *testing.T) {
 	for _, provider := range []string{"moonshotai", "moonshotai-cn"} {

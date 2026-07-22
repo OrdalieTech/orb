@@ -29,8 +29,8 @@ import (
 var version = "0.1.0-dev"
 
 const (
-	upstreamVersion        = "0.81.0"
-	upstreamCommit         = "9c480b6ad2c7419875a7a850fb4ad5f9232313b8"
+	upstreamVersion        = "0.81.1"
+	upstreamCommit         = "20be4b18d4c57487f8993d2762bace129f0cf7c6"
 	latestReleaseURL       = "https://api.github.com/repos/OrdalieTech/pigo/releases/latest"
 	versionCheckTimeout    = 10 * time.Second
 	versionResponseMaxSize = 64 << 10
@@ -328,7 +328,12 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			sessionRuntime.Dispose()
 			return reportCLIError(streams.Stderr, dirErr)
 		}
-		startStartupModelRefresh(ctx, "interactive", offlineMode, !networkDisabled, agentDir, inputs.ModelRegistry, dependencies.refreshModels)
+		var startupModelRefresh func(context.Context) error
+		if startupModelRefreshEnabled("interactive", offlineMode, !networkDisabled) {
+			startupModelRefresh = func(refreshContext context.Context) error {
+				return refreshStartupModels(refreshContext, !networkDisabled, agentDir, inputs.ModelRegistry, dependencies.refreshModels)
+			}
+		}
 		host := newInteractiveSessionHost(baseArgs, dependencies, sessionRuntime, inputs, agentDir, streams.Stderr)
 		return dependencies.runInteractive(ctx, host.Session(), modes.InteractiveModeOptions{
 			InitialMessage: initial,
@@ -338,6 +343,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			StartupVersionCheck: newStartupVersionCheck(
 				version, http.DefaultClient, latestReleaseURL, versionCheckTimeout,
 			),
+			StartupModelRefresh: startupModelRefresh,
 			// Skill/prompt resource diagnostics stay interactive-only; upstream
 			// print/RPC modes emit no resource diagnostics (main.ts:87-91).
 			Diagnostics: append(append([]string(nil), inputs.Diagnostics...), inputs.ResourceDiagnostics...),
@@ -500,20 +506,30 @@ func isNewerPackageVersion(candidate, current string) bool {
 	return candidate != current
 }
 
-func startupModelRefreshEnabled(mode string, offline bool) bool {
-	return !offline && (mode == "interactive" || mode == "rpc")
+func startupModelRefreshEnabled(mode string, offline, allowNetwork bool) bool {
+	if mode == "interactive" {
+		return !offline && allowNetwork
+	}
+	return mode == "rpc" && !offline
 }
 
 func startStartupModelRefresh(ctx context.Context, mode string, offline, allowNetwork bool, agentDir string, registry *config.ModelRegistry, refresh func(context.Context, string) error) {
-	if !startupModelRefreshEnabled(mode, offline) || registry == nil {
+	if !startupModelRefreshEnabled(mode, offline, allowNetwork) || registry == nil {
 		return
 	}
 	go func() {
-		if allowNetwork && refresh != nil {
-			_ = refresh(ctx, agentDir)
-		}
-		_ = registry.Reload()
+		_ = refreshStartupModels(ctx, allowNetwork, agentDir, registry, refresh)
 	}()
+}
+
+func refreshStartupModels(ctx context.Context, allowNetwork bool, agentDir string, registry *config.ModelRegistry, refresh func(context.Context, string) error) error {
+	if registry == nil {
+		return nil
+	}
+	if allowNetwork && refresh != nil {
+		_ = refresh(ctx, agentDir)
+	}
+	return registry.Reload()
 }
 
 func applySessionDefaults(args *CLIArgs, context session.SessionContext, branch []session.SessionEntry) {

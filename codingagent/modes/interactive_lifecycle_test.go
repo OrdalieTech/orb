@@ -200,6 +200,61 @@ func TestStartupVersionCheckNotifyIsRaceSafeAndStopsWithMode(t *testing.T) {
 	}
 }
 
+func TestStartupModelRefreshBeginsAfterTUIStart(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := session.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(runtime.Dispose)
+
+	terminal := newLifecycleTerminal(72, 18)
+	startedAfterTUI := make(chan bool, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan int, 1)
+	go func() {
+		done <- RunInteractiveMode(ctx, runtime, InteractiveModeOptions{
+			Terminal: terminal,
+			StartupModelRefresh: func(context.Context) error {
+				terminal.mu.Lock()
+				started := terminal.onInput != nil
+				terminal.mu.Unlock()
+				startedAfterTUI <- started
+				return nil
+			},
+		})
+	}()
+	select {
+	case started := <-startedAfterTUI:
+		if !started {
+			t.Fatal("model refresh began before terminal start")
+		}
+	case <-time.After(2 * time.Second):
+		cancel()
+		<-done
+		t.Fatal("startup model refresh did not run")
+	}
+	cancel()
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("exit code = %d", code)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("interactive mode did not stop")
+	}
+}
+
 func TestConcurrentInfoNotificationsReplaceOneStatusLine(t *testing.T) {
 	initTestTheme(t)
 	mode := &InteractiveMode{

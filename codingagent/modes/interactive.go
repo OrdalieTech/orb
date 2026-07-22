@@ -46,6 +46,7 @@ type InteractiveModeOptions struct {
 	// StartupVersionCheck is the non-blocking startup seam used by WP-661. The
 	// interactive package owns no update transport or policy.
 	StartupVersionCheck func(context.Context, extensions.UI)
+	StartupModelRefresh func(context.Context) error
 	Changelog           string
 	Output              io.Writer
 	OutputTTY           bool
@@ -183,6 +184,13 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 	}
 	mode.setupAutocomplete()
 	mode.setupExtensionShortcuts()
+	if mode.options.StartupModelRefresh != nil {
+		go func() {
+			if mode.options.StartupModelRefresh(ctx) == nil {
+				mode.ui.RequestRender()
+			}
+		}()
+	}
 	versionContext, stopVersionCheck := context.WithCancel(ctx)
 	var versionCheck sync.WaitGroup
 	if mode.options.StartupVersionCheck != nil {
@@ -2904,6 +2912,12 @@ func (mode *InteractiveMode) AvailableProviderCount() int {
 		return 0
 	}
 	seen := make(map[ai.ProviderID]struct{})
+	if scoped := session.ScopedModels(); len(scoped) > 0 {
+		for _, model := range scoped {
+			seen[model.Model.Provider] = struct{}{}
+		}
+		return len(seen)
+	}
 	for _, model := range session.AvailableModels() {
 		seen[model.Provider] = struct{}{}
 	}
@@ -3159,6 +3173,21 @@ func (mode *InteractiveMode) handleEvent(event any) {
 
 	case codingagent.AutoRetryEndEvent:
 		mode.setStatus(&IdleStatus{})
+
+	case codingagent.SummarizationRetryScheduledEvent:
+		mode.showError(errors.New(ev.ErrorMessage))
+		mode.setStatus(NewRetryStatusIndicator(mode.ui, ev.Attempt, ev.MaxAttempts, ev.DelayMS))
+
+	case codingagent.SummarizationRetryAttemptStartEvent:
+		mode.clearStatusIndicatorKind(StatusRetry)
+		if ev.Source == "branchSummary" {
+			mode.setStatus(NewBranchSummaryStatusIndicator(mode.ui))
+		} else {
+			mode.setStatus(NewCompactionStatusIndicator(mode.ui, ev.Reason))
+		}
+
+	case codingagent.SummarizationRetryFinishedEvent:
+		mode.clearStatusIndicatorKind(StatusRetry)
 
 	case codingagent.ThinkingLevelChangedEvent:
 		mode.updateEditorBorderColor()

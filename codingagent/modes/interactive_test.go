@@ -522,6 +522,63 @@ func TestStatusIndicatorCreation(t *testing.T) {
 		t.Errorf("expected StatusCompaction, got %s", si3.Kind)
 	}
 	si3.Dispose()
+
+	si4 := NewBranchSummaryStatusIndicator(fake)
+	if si4.Kind != StatusBranchSummary {
+		t.Errorf("expected StatusBranchSummary, got %s", si4.Kind)
+	}
+	si4.Dispose()
+}
+
+func TestSummarizationRetryEventsRestoreUnderlyingStatus(t *testing.T) {
+	initTestTheme(t)
+	modeUI := tui.NewTUI(newFakeTerminal(80, 24))
+	mode := &InteractiveMode{ui: modeUI, status: &tui.Container{}, chat: &tui.Container{}}
+
+	mode.handleEvent(codingagent.SummarizationRetryScheduledEvent{
+		Attempt: 1, MaxAttempts: 3, DelayMS: 2000, ErrorMessage: "terminated",
+	})
+	if status, ok := mode.statusIndicator.(*StatusIndicator); !ok || status.Kind != StatusRetry {
+		t.Fatalf("scheduled status = %#v", mode.statusIndicator)
+	}
+	if rendered := strings.Join(mode.chat.Render(80), "\n"); !strings.Contains(rendered, "terminated") {
+		t.Fatalf("scheduled error was not rendered: %q", rendered)
+	}
+
+	mode.handleEvent(codingagent.SummarizationRetryAttemptStartEvent{Source: "compaction", Reason: "overflow"})
+	if status, ok := mode.statusIndicator.(*StatusIndicator); !ok || status.Kind != StatusCompaction {
+		t.Fatalf("compaction attempt status = %#v", mode.statusIndicator)
+	}
+
+	mode.handleEvent(codingagent.SummarizationRetryScheduledEvent{
+		Attempt: 2, MaxAttempts: 3, DelayMS: 4000, ErrorMessage: "terminated",
+	})
+	mode.handleEvent(codingagent.SummarizationRetryAttemptStartEvent{Source: "branchSummary"})
+	if status, ok := mode.statusIndicator.(*StatusIndicator); !ok || status.Kind != StatusBranchSummary {
+		t.Fatalf("branch attempt status = %#v", mode.statusIndicator)
+	}
+
+	mode.handleEvent(codingagent.SummarizationRetryScheduledEvent{
+		Attempt: 3, MaxAttempts: 3, DelayMS: 8000, ErrorMessage: "terminated",
+	})
+	mode.handleEvent(codingagent.SummarizationRetryFinishedEvent{})
+	if mode.statusIndicator != nil {
+		t.Fatalf("finished retry status = %#v", mode.statusIndicator)
+	}
+}
+
+func TestAvailableProviderCountUsesScopedModels(t *testing.T) {
+	mode := newF12AutocompleteMode(t, true)
+	if count := mode.AvailableProviderCount(); count != 3 {
+		t.Fatalf("available provider count = %d, want 3", count)
+	}
+	mode.session.SetScopedModels([]codingagent.ScopedModel{
+		{Model: ai.Model{Provider: "anthropic", ID: "first"}},
+		{Model: ai.Model{Provider: "anthropic", ID: "second"}},
+	})
+	if count := mode.AvailableProviderCount(); count != 1 {
+		t.Fatalf("scoped provider count = %d, want 1", count)
+	}
 }
 
 func TestCompactionSummaryMessageRender(t *testing.T) {

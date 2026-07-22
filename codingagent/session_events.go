@@ -11,15 +11,18 @@ import (
 type SessionEventType string
 
 const (
-	EventAgentSettled    SessionEventType = "agent_settled"
-	EventQueueUpdate     SessionEventType = "queue_update"
-	EventCompactionStart SessionEventType = "compaction_start"
-	EventCompactionEnd   SessionEventType = "compaction_end"
-	EventAutoRetryStart  SessionEventType = "auto_retry_start"
-	EventAutoRetryEnd    SessionEventType = "auto_retry_end"
-	EventEntryAppended   SessionEventType = "entry_appended"
-	EventSessionInfo     SessionEventType = "session_info_changed"
-	EventThinkingLevel   SessionEventType = "thinking_level_changed"
+	EventAgentSettled                   SessionEventType = "agent_settled"
+	EventQueueUpdate                    SessionEventType = "queue_update"
+	EventCompactionStart                SessionEventType = "compaction_start"
+	EventCompactionEnd                  SessionEventType = "compaction_end"
+	EventAutoRetryStart                 SessionEventType = "auto_retry_start"
+	EventAutoRetryEnd                   SessionEventType = "auto_retry_end"
+	EventSummarizationRetryScheduled    SessionEventType = "summarization_retry_scheduled"
+	EventSummarizationRetryAttemptStart SessionEventType = "summarization_retry_attempt_start"
+	EventSummarizationRetryFinished     SessionEventType = "summarization_retry_finished"
+	EventEntryAppended                  SessionEventType = "entry_appended"
+	EventSessionInfo                    SessionEventType = "session_info_changed"
+	EventThinkingLevel                  SessionEventType = "thinking_level_changed"
 )
 
 type SessionAgentEndEvent struct {
@@ -58,6 +61,20 @@ type AutoRetryEndEvent struct {
 	Attempt    int     `json:"attempt"`
 	FinalError *string `json:"finalError,omitempty"`
 }
+
+type SummarizationRetryScheduledEvent struct {
+	Attempt      int    `json:"attempt"`
+	MaxAttempts  int    `json:"maxAttempts"`
+	DelayMS      int64  `json:"delayMs"`
+	ErrorMessage string `json:"errorMessage"`
+}
+
+type SummarizationRetryAttemptStartEvent struct {
+	Source string `json:"source"`
+	Reason string `json:"reason,omitempty"`
+}
+
+type SummarizationRetryFinishedEvent struct{}
 
 type EntryAppendedEvent struct {
 	Entry sessionstore.SessionEntry `json:"entry"`
@@ -121,6 +138,24 @@ func MarshalSessionEvent(event any) ([]byte, error) {
 			Attempt    int              `json:"attempt"`
 			FinalError *string          `json:"finalError,omitempty"`
 		}{EventAutoRetryEnd, typed.Success, typed.Attempt, typed.FinalError})
+	case SummarizationRetryScheduledEvent:
+		return ai.Marshal(struct {
+			Type         SessionEventType `json:"type"`
+			Attempt      int              `json:"attempt"`
+			MaxAttempts  int              `json:"maxAttempts"`
+			DelayMS      int64            `json:"delayMs"`
+			ErrorMessage string           `json:"errorMessage"`
+		}{EventSummarizationRetryScheduled, typed.Attempt, typed.MaxAttempts, typed.DelayMS, typed.ErrorMessage})
+	case SummarizationRetryAttemptStartEvent:
+		return ai.Marshal(struct {
+			Type   SessionEventType `json:"type"`
+			Source string           `json:"source"`
+			Reason string           `json:"reason,omitempty"`
+		}{EventSummarizationRetryAttemptStart, typed.Source, typed.Reason})
+	case SummarizationRetryFinishedEvent:
+		return ai.Marshal(struct {
+			Type SessionEventType `json:"type"`
+		}{EventSummarizationRetryFinished})
 	case EntryAppendedEvent:
 		return ai.Marshal(struct {
 			Type  SessionEventType          `json:"type"`

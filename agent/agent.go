@@ -179,6 +179,11 @@ func NewAgent(stream StreamFn, option ...AgentOption) *Agent {
 	if options.now == nil {
 		options.now = func() int64 { return time.Now().UnixMilli() }
 	}
+	if options.streamFn == nil {
+		if streamFn, err := getDefaultStreamFn(); err == nil {
+			options.streamFn = streamFn
+		}
+	}
 
 	state := defaultAgentState()
 	if options.initialState != nil {
@@ -229,9 +234,13 @@ func NewAgent(stream StreamFn, option ...AgentOption) *Agent {
 func (agent *Agent) Prompt(ctx context.Context, input any, images ...*ai.ImageContent) error {
 	agent.mu.Lock()
 	busy := agent.active != nil
+	missingStreamFn := agent.streamFn == nil
 	agent.mu.Unlock()
 	if busy {
 		return upstreamError(alreadyPromptingMessage)
+	}
+	if missingStreamFn {
+		return upstreamError(missingDefaultStreamFnMessage)
 	}
 	messages, err := agent.normalizePromptInput(input, images)
 	if err != nil {
@@ -248,6 +257,10 @@ func (agent *Agent) Continue(ctx context.Context) error {
 	if agent.active != nil {
 		agent.mu.Unlock()
 		return upstreamError("Agent is already processing. Wait for completion before continuing.")
+	}
+	if agent.streamFn == nil {
+		agent.mu.Unlock()
+		return upstreamError(missingDefaultStreamFnMessage)
 	}
 	if len(agent.state.Messages) == 0 {
 		agent.mu.Unlock()

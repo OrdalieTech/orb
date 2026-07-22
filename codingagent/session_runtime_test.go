@@ -35,6 +35,10 @@ func TestSessionEventWireShapes(t *testing.T) {
 		{"compaction-end-result", CompactionEndEvent{Reason: "threshold", Result: &sessionstore.CompactionResult{Summary: "s", FirstKeptEntryID: "id", TokensBefore: 12, Usage: &ai.Usage{Input: 1, TotalTokens: 1, Cost: ai.Cost{}}, Details: harness.CompactionDetails{ReadFiles: []string{}, ModifiedFiles: []string{}}}}, `{"type":"compaction_end","reason":"threshold","result":{"summary":"s","firstKeptEntryId":"id","tokensBefore":12,"estimatedTokensAfter":0,"usage":{"input":1,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":1,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"details":{"readFiles":[],"modifiedFiles":[]}},"aborted":false,"willRetry":false}`},
 		{"retry-start", AutoRetryStartEvent{Attempt: 1, MaxAttempts: 3, DelayMS: 2000, ErrorMessage: "overloaded"}, `{"type":"auto_retry_start","attempt":1,"maxAttempts":3,"delayMs":2000,"errorMessage":"overloaded"}`},
 		{"retry-end", AutoRetryEndEvent{Success: true, Attempt: 2}, `{"type":"auto_retry_end","success":true,"attempt":2}`},
+		{"summarization-retry-scheduled", SummarizationRetryScheduledEvent{Attempt: 1, MaxAttempts: 3, DelayMS: 2000, ErrorMessage: "terminated"}, `{"type":"summarization_retry_scheduled","attempt":1,"maxAttempts":3,"delayMs":2000,"errorMessage":"terminated"}`},
+		{"summarization-retry-attempt-branch", SummarizationRetryAttemptStartEvent{Source: "branchSummary"}, `{"type":"summarization_retry_attempt_start","source":"branchSummary"}`},
+		{"summarization-retry-attempt-compaction", SummarizationRetryAttemptStartEvent{Source: "compaction", Reason: "overflow"}, `{"type":"summarization_retry_attempt_start","source":"compaction","reason":"overflow"}`},
+		{"summarization-retry-finished", SummarizationRetryFinishedEvent{}, `{"type":"summarization_retry_finished"}`},
 		{"entry-appended", EntryAppendedEvent{Entry: sessionstore.SessionEntry{Type: "custom", ID: "entry", Timestamp: "2026-01-02T03:04:05.000Z"}}, `{"type":"entry_appended","entry":{"type":"custom","customType":"","id":"entry","parentId":null,"timestamp":"2026-01-02T03:04:05.000Z"}}`},
 		{"session-info-missing", SessionInfoChangedEvent{}, `{"type":"session_info_changed"}`},
 		{"session-info", SessionInfoChangedEvent{Name: stringPointer("named")}, `{"type":"session_info_changed","name":"named"}`},
@@ -361,6 +365,217 @@ func TestSessionRuntimeCancellationWinsOverNonCooperativeCompactionResult(t *tes
 				}
 			}
 		})
+	}
+}
+
+// Port of upstream regression 6647-compaction-retries-transient-stream-drop.test.ts.
+func TestSessionRuntimeRetriesTransientSummarizationFailures(t *testing.T) {
+	seed := func(t *testing.T, manager *sessionstore.SessionManager, runtime *SessionRuntime, provider *faux.Provider) {
+		t.Helper()
+		if _, err := manager.AppendMessage(userMessage("message to compact")); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := manager.AppendMessage(runtimeAssistant(provider, "assistant response to compact", 100)); err != nil {
+			t.Fatal(err)
+		}
+		runtime.syncAgentMessages()
+	}
+
+	t.Run("recovers and emits lifecycle", func(t *testing.T) {
+		provider := testFaux(1000)
+		runtime, manager := newTestRuntime(t, provider, map[string]any{
+			"compaction": map[string]any{"enabled": true, "reserveTokens": 50, "keepRecentTokens": 1},
+			"retry":      map[string]any{"enabled": true, "maxRetries": 3, "baseDelayMs": 5},
+		})
+		seed(t, manager, runtime, provider)
+		script := []*ai.AssistantMessage{
+			runtimeError(provider, "terminated"), runtimeError(provider, "terminated"), runtimeAssistant(provider, "recovered summary", 10),
+		}
+		calls := 0
+		runtime.complete = func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
+			response := script[calls]
+			calls++
+			return response, nil
+		}
+		var scheduled []SummarizationRetryScheduledEvent
+		var started []SummarizationRetryAttemptStartEvent
+		finished := 0
+		runtime.Subscribe(func(event any) {
+			switch typed := event.(type) {
+			case SummarizationRetryScheduledEvent:
+				scheduled = append(scheduled, typed)
+			case SummarizationRetryAttemptStartEvent:
+				started = append(started, typed)
+			case SummarizationRetryFinishedEvent:
+				finished++
+			}
+		})
+		result, err := runtime.Compact(context.Background(), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if calls != 3 || result == nil || !strings.Contains(result.Summary, "recovered summary") {
+			t.Fatalf("calls=%d result=%#v", calls, result)
+		}
+		if len(scheduled) != 2 || scheduled[0].Attempt != 1 || scheduled[0].MaxAttempts != 3 || scheduled[0].DelayMS != 5 || scheduled[0].ErrorMessage != "terminated" || scheduled[1].Attempt != 2 || scheduled[1].DelayMS != 10 {
+			t.Fatalf("scheduled = %#v", scheduled)
+		}
+		if len(started) != 2 || started[0].Source != "compaction" || started[0].Reason != "manual" || finished != 1 {
+			t.Fatalf("started=%#v finished=%d", started, finished)
+		}
+	})
+
+	for _, test := range []struct {
+		name    string
+		retry   map[string]any
+		message string
+	}{
+		{name: "non-retryable", retry: map[string]any{"enabled": true, "maxRetries": 3, "baseDelayMs": 0}, message: "insufficient_quota"},
+		{name: "disabled", retry: map[string]any{"enabled": false, "maxRetries": 3, "baseDelayMs": 0}, message: "terminated"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			provider := testFaux(1000)
+			runtime, manager := newTestRuntime(t, provider, map[string]any{
+				"compaction": map[string]any{"enabled": true, "reserveTokens": 50, "keepRecentTokens": 1},
+				"retry":      test.retry,
+			})
+			seed(t, manager, runtime, provider)
+			calls, scheduled := 0, 0
+			runtime.complete = func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
+				calls++
+				return runtimeError(provider, test.message), nil
+			}
+			runtime.Subscribe(func(event any) {
+				if _, ok := event.(SummarizationRetryScheduledEvent); ok {
+					scheduled++
+				}
+			})
+			_, err := runtime.Compact(context.Background(), "")
+			if err == nil || !strings.Contains(err.Error(), test.message) {
+				t.Fatalf("error = %v", err)
+			}
+			if calls != 1 || scheduled != 0 {
+				t.Fatalf("calls=%d scheduled=%d", calls, scheduled)
+			}
+		})
+	}
+
+	t.Run("exhausts retry budget", func(t *testing.T) {
+		provider := testFaux(1000)
+		runtime, manager := newTestRuntime(t, provider, map[string]any{
+			"compaction": map[string]any{"enabled": true, "reserveTokens": 50, "keepRecentTokens": 1},
+			"retry":      map[string]any{"enabled": true, "maxRetries": 2, "baseDelayMs": 0},
+		})
+		seed(t, manager, runtime, provider)
+		calls, scheduled, finished := 0, 0, 0
+		runtime.complete = func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
+			calls++
+			return runtimeError(provider, "terminated"), nil
+		}
+		runtime.Subscribe(func(event any) {
+			switch event.(type) {
+			case SummarizationRetryScheduledEvent:
+				scheduled++
+			case SummarizationRetryFinishedEvent:
+				finished++
+			}
+		})
+		_, err := runtime.Compact(context.Background(), "")
+		if err == nil || !strings.Contains(err.Error(), "terminated") {
+			t.Fatalf("error = %v", err)
+		}
+		if calls != 3 || scheduled != 2 || finished != 1 {
+			t.Fatalf("calls=%d scheduled=%d finished=%d", calls, scheduled, finished)
+		}
+	})
+
+	t.Run("abort cancels backoff", func(t *testing.T) {
+		provider := testFaux(1000)
+		runtime, manager := newTestRuntime(t, provider, map[string]any{
+			"compaction": map[string]any{"enabled": true, "reserveTokens": 50, "keepRecentTokens": 1},
+			"retry":      map[string]any{"enabled": true, "maxRetries": 5, "baseDelayMs": 30000},
+		})
+		seed(t, manager, runtime, provider)
+		runtime.complete = func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
+			return runtimeError(provider, "terminated"), nil
+		}
+		scheduled := make(chan struct{}, 1)
+		var end CompactionEndEvent
+		finished := 0
+		runtime.Subscribe(func(event any) {
+			switch typed := event.(type) {
+			case SummarizationRetryScheduledEvent:
+				select {
+				case scheduled <- struct{}{}:
+				default:
+				}
+			case SummarizationRetryFinishedEvent:
+				finished++
+			case CompactionEndEvent:
+				end = typed
+			}
+		})
+		done := make(chan error, 1)
+		go func() {
+			_, err := runtime.Compact(context.Background(), "")
+			done <- err
+		}()
+		select {
+		case <-scheduled:
+		case <-time.After(time.Second):
+			t.Fatal("retry backoff did not start")
+		}
+		runtime.AbortCompaction()
+		select {
+		case err := <-done:
+			if err == nil {
+				t.Fatal("aborted compaction succeeded")
+			}
+		case <-time.After(time.Second):
+			t.Fatal("abort did not cancel retry backoff")
+		}
+		if !end.Aborted || finished != 1 {
+			t.Fatalf("end=%#v finished=%d", end, finished)
+		}
+	})
+}
+
+func TestSessionRuntimeRetriesBranchSummaryWithBranchSource(t *testing.T) {
+	provider := testFaux(1000)
+	runtime, manager := newTestRuntime(t, provider, map[string]any{
+		"branchSummary": map[string]any{"reserveTokens": 100},
+		"compaction":    map[string]any{"enabled": false},
+		"retry":         map[string]any{"enabled": true, "maxRetries": 2, "baseDelayMs": 0},
+	})
+	first, _ := manager.AppendMessage(userMessage("first"))
+	_, _ = manager.AppendMessage(runtimeAssistant(provider, "first answer", 10))
+	_, _ = manager.AppendMessage(userMessage("second"))
+	_, _ = manager.AppendMessage(runtimeAssistant(provider, "second answer", 20))
+	runtime.syncAgentMessages()
+	calls := 0
+	runtime.complete = func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
+		calls++
+		if calls == 1 {
+			return runtimeError(provider, "terminated"), nil
+		}
+		return runtimeAssistant(provider, "recovered branch", 10), nil
+	}
+	var started SummarizationRetryAttemptStartEvent
+	finished := 0
+	runtime.Subscribe(func(event any) {
+		switch typed := event.(type) {
+		case SummarizationRetryAttemptStartEvent:
+			started = typed
+		case SummarizationRetryFinishedEvent:
+			finished++
+		}
+	})
+	result, err := runtime.NavigateTree(context.Background(), first, NavigateTreeOptions{Summarize: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || result.SummaryEntry == nil || started.Source != "branchSummary" || started.Reason != "" || finished != 1 {
+		t.Fatalf("calls=%d result=%#v started=%#v finished=%d", calls, result, started, finished)
 	}
 }
 

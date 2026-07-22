@@ -54,11 +54,11 @@ bundled faux provider.
 
 ## Run an upstream extension
 
-pigo executes upstream's TypeScript extensions unmodified in an embedded JS runtime. Fetch the
+pigo executes many upstream TypeScript extensions unmodified in an embedded JS runtime. Fetch the
 pirate example from the pinned upstream revision and load it:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/earendil-works/pi/9c480b6ad2c7419875a7a850fb4ad5f9232313b8/packages/coding-agent/examples/extensions/pirate.ts
+curl -fsSLO https://raw.githubusercontent.com/earendil-works/pi/20be4b18d4c57487f8993d2762bace129f0cf7c6/packages/coding-agent/examples/extensions/pirate.ts
 pigo --extension ./pirate.ts
 ```
 
@@ -74,3 +74,7 @@ Run `/pirate` in the TUI to exercise the extension.
 Upstream pi is © Mario Zechner, MIT — this port tracks the exact commit in `UPSTREAM.lock` and
 regenerates its conformance goldens from upstream source (`make fixtures-check`). pigo is MIT
 too; see [LICENSE](LICENSE), [CONTRIBUTING.md](CONTRIBUTING.md), and [SECURITY.md](SECURITY.md).
+
+Every GitHub release includes a checksummed `pigo_<version>_source.tar.gz`. To verify that source
+independently, download it with `checksums.txt`, run `sha256sum -c checksums.txt`, extract it, and
+run `CGO_ENABLED=0 go build ./cmd/pigo`; release CI performs the same rebuild before publishing.

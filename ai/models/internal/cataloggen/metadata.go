@@ -353,7 +353,7 @@ func applyExplicitCompletionsCompat(model *ai.Model, compat *ai.OpenAICompletion
 		if id == "kimi-k3" {
 			compat.RequiresReasoningContentOnAssistantMessages = ptr(true)
 			compat.DeferredToolsMode = ptr(ai.DeferredToolsKimi)
-			// Upstream HEAD switches kimi-k3 to the OpenAI thinking format and
+			// Upstream v0.81.1 switches kimi-k3 to the OpenAI thinking format and
 			// enables reasoning effort (generate-models.ts:1761-1766).
 			compat.ThinkingFormat = ptr(ai.ThinkingFormatOpenAI)
 			compat.SupportsReasoningEffort = ptr(true)

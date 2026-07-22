@@ -157,7 +157,15 @@ func GenerateBranchSummary(ctx context.Context, entries []SessionEntry, options 
 		SystemPrompt: &system,
 		Messages:     ai.MessageList{&ai.UserMessage{Content: ai.NewUserContent(&ai.TextContent{Text: prompt})}},
 	}
-	response, err := options.Complete(ctx, options.Model, request, &ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{MaxTokens: &maxTokens}})
+	response, err := CompleteSimpleWithRetries(
+		ctx,
+		options.Complete,
+		options.Model,
+		request,
+		&ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{MaxTokens: &maxTokens}},
+		options.Retry,
+		options.Callbacks,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("Branch summary failed: %w", err)
 	}

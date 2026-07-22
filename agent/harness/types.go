@@ -333,4 +333,6 @@ type GenerateBranchSummaryOptions struct {
 	CustomInstructions  string
 	ReplaceInstructions bool
 	ReserveTokens       *int64
+	Retry               *ai.RetryPolicy
+	Callbacks           *ai.RetryCallbacks
 }

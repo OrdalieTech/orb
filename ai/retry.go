@@ -1,6 +1,30 @@
 package ai
 
-import "regexp"
+import (
+	"context"
+	"regexp"
+	"time"
+)
+
+// RetryPolicy applies bounded exponential backoff to assistant-producing calls.
+// MaxRetries counts retries after the initial call.
+type RetryPolicy struct {
+	Enabled     bool  `json:"enabled"`
+	MaxRetries  int   `json:"maxRetries"`
+	BaseDelayMS int64 `json:"baseDelayMs"`
+}
+
+// RetryCallbacks reports the lifecycle of retries after the initial call.
+// Callback errors stop the retry operation, matching rejected async callbacks upstream.
+type RetryCallbacks struct {
+	OnRetryScheduled    func(attempt, maxAttempts int, delayMS int64, errorMessage string) error
+	OnRetryAttemptStart func() error
+	OnRetryFinished     func(success bool, attempt int, finalError *string) error
+}
+
+// AssistantCall produces one terminal assistant message. Returned errors are
+// terminal because upstream retries message-level provider failures, not rejected calls.
+type AssistantCall func() (*AssistantMessage, error)
 
 var nonRetryableProviderLimitPatterns = compilePatterns([]string{
 	`GoUsageLimitError`, `FreeUsageLimitError`, `Monthly usage limit reached`, `available balance`,
@@ -46,6 +70,115 @@ func IsRetryableAssistantError(message *AssistantMessage) bool {
 	}
 	text := *message.ErrorMessage
 	return !matchesAny(nonRetryableProviderLimitPatterns, text) && matchesAny(retryableProviderPatterns, text)
+}
+
+// RetryAssistantCall runs produce once and retries transient assistant errors
+// according to policy. Cancellation during backoff is returned as a shallow
+// copy of the last response with an aborted stop reason and no error message.
+func RetryAssistantCall(
+	ctx context.Context,
+	produce AssistantCall,
+	policy *RetryPolicy,
+	callbacks *RetryCallbacks,
+) (*AssistantMessage, error) {
+	maxAttempts := 0
+	if policy != nil && policy.Enabled {
+		maxAttempts = policy.MaxRetries
+	}
+
+	attempt := 0
+	lastRetryError := ""
+	for {
+		response, err := produce()
+		if err != nil {
+			return nil, err
+		}
+
+		if response.StopReason == StopReasonAborted {
+			if attempt > 0 {
+				if err := retryFinished(callbacks, false, attempt, nil); err != nil {
+					return nil, err
+				}
+			}
+			return response, nil
+		}
+		if response.StopReason != StopReasonError {
+			if attempt > 0 {
+				if err := retryFinished(callbacks, true, attempt, nil); err != nil {
+					return nil, err
+				}
+			}
+			return response, nil
+		}
+		if attempt >= maxAttempts || !IsRetryableAssistantError(response) {
+			if attempt > 0 {
+				if err := retryFinished(callbacks, false, attempt, response.ErrorMessage); err != nil {
+					return nil, err
+				}
+			}
+			return response, nil
+		}
+
+		attempt++
+		lastRetryError = "Unknown error"
+		if response.ErrorMessage != nil && *response.ErrorMessage != "" {
+			lastRetryError = *response.ErrorMessage
+		}
+		delayMS := retryDelayMS(policy.BaseDelayMS, attempt)
+		if callbacks != nil && callbacks.OnRetryScheduled != nil {
+			if err := callbacks.OnRetryScheduled(attempt, maxAttempts, delayMS, lastRetryError); err != nil {
+				return nil, err
+			}
+		}
+
+		if !waitRetryDelay(ctx, delayMS) {
+			finalError := lastRetryError
+			if err := retryFinished(callbacks, false, attempt, &finalError); err != nil {
+				return nil, err
+			}
+			aborted := *response
+			aborted.StopReason = StopReasonAborted
+			aborted.ErrorMessage = nil
+			return &aborted, nil
+		}
+		if callbacks != nil && callbacks.OnRetryAttemptStart != nil {
+			if err := callbacks.OnRetryAttemptStart(); err != nil {
+				return nil, err
+			}
+		}
+	}
+}
+
+func retryFinished(callbacks *RetryCallbacks, success bool, attempt int, finalError *string) error {
+	if callbacks == nil || callbacks.OnRetryFinished == nil {
+		return nil
+	}
+	return callbacks.OnRetryFinished(success, attempt, finalError)
+}
+
+func retryDelayMS(baseDelayMS int64, attempt int) int64 {
+	delayMS := baseDelayMS
+	for current := 1; current < attempt; current++ {
+		delayMS *= 2
+	}
+	return delayMS
+}
+
+func waitRetryDelay(ctx context.Context, delayMS int64) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return false
+	}
+	timer := time.NewTimer(time.Duration(delayMS) * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // IsContextOverflow recognizes upstream's explicit and silent overflow forms.

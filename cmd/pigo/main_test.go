@@ -261,19 +261,56 @@ func TestStartupVersionCheckNotifiesAndHonorsNetworkCeilings(t *testing.T) {
 func TestRunCLIProvidesStartupVersionCheckToInteractiveMode(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
-	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	agentDir := filepath.Join(root, "agent")
+	t.Setenv(config.EnvAgentDir, agentDir)
 	t.Setenv("PI_SKIP_VERSION_CHECK", "1")
+	offline, hadOffline := os.LookupEnv("PI_OFFLINE")
+	if err := os.Unsetenv("PI_OFFLINE"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if hadOffline {
+			_ = os.Setenv("PI_OFFLINE", offline)
+		} else {
+			_ = os.Unsetenv("PI_OFFLINE")
+		}
+	})
 	wired := false
+	refreshCalls := 0
+	baseFactory := fauxRuntimeFactory(faux.New())
 	code := runCLIWithDependencies(context.Background(), []string{"--no-session"}, cliStreams{
 		Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard, StdinTTY: true, StdoutTTY: true,
 	}, cliDependencies{
-		createRuntime: fauxRuntimeFactory(faux.New()),
+		createRuntime: func(cwd string, args CLIArgs, messages agent.AgentMessages) (runtimeInputs, error) {
+			inputs, err := baseFactory(cwd, args, messages)
+			if err != nil {
+				return runtimeInputs{}, err
+			}
+			inputs.ModelRegistry, err = config.NewModelRegistry(agentDir)
+			return inputs, err
+		},
+		refreshModels: func(context.Context, string) error {
+			refreshCalls++
+			return nil
+		},
 		runInteractive: func(ctx context.Context, runtime *codingagent.SessionRuntime, options modes.InteractiveModeOptions) int {
 			defer runtime.Dispose()
 			if options.StartupVersionCheck == nil {
 				t.Fatal("StartupVersionCheck is nil")
 			}
+			if options.StartupModelRefresh == nil {
+				t.Fatal("StartupModelRefresh is nil")
+			}
+			if refreshCalls != 0 {
+				t.Fatalf("model refresh started before interactive mode: %d", refreshCalls)
+			}
 			options.StartupVersionCheck(ctx, extensions.NoopUI{})
+			if err := options.StartupModelRefresh(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if refreshCalls != 1 {
+				t.Fatalf("model refresh calls = %d, want 1", refreshCalls)
+			}
 			wired = true
 			return 0
 		},
@@ -307,20 +344,22 @@ func TestRunCLIVersionIncludesUpstreamIdentity(t *testing.T) {
 
 func TestStartupModelRefreshModes(t *testing.T) {
 	for _, test := range []struct {
-		mode    string
-		offline bool
-		want    bool
+		mode         string
+		offline      bool
+		allowNetwork bool
+		want         bool
 	}{
-		{mode: "interactive", want: true},
+		{mode: "interactive", allowNetwork: true, want: true},
+		{mode: "interactive"},
 		{mode: "rpc", want: true},
 		{mode: ""},
 		{mode: "text"},
 		{mode: "json"},
-		{mode: "interactive", offline: true},
+		{mode: "interactive", offline: true, allowNetwork: true},
 		{mode: "rpc", offline: true},
 	} {
-		if got := startupModelRefreshEnabled(test.mode, test.offline); got != test.want {
-			t.Errorf("mode=%q offline=%t: enabled=%t, want %t", test.mode, test.offline, got, test.want)
+		if got := startupModelRefreshEnabled(test.mode, test.offline, test.allowNetwork); got != test.want {
+			t.Errorf("mode=%q offline=%t allowNetwork=%t: enabled=%t, want %t", test.mode, test.offline, test.allowNetwork, got, test.want)
 		}
 	}
 }
@@ -395,7 +434,7 @@ func TestStartupModelRefreshIsNonBlockingAndRefreshesRegisteredProviders(t *test
 	}
 }
 
-func TestStartupModelRefreshWithPresentFalseEnvIsCacheOnly(t *testing.T) {
+func TestRPCStartupModelRefreshWithPresentFalseEnvIsCacheOnly(t *testing.T) {
 	t.Setenv("PI_OFFLINE", "0")
 	registry, err := config.NewModelRegistry(t.TempDir())
 	if err != nil {
@@ -417,7 +456,7 @@ func TestStartupModelRefreshWithPresentFalseEnvIsCacheOnly(t *testing.T) {
 		t.Fatal("registration refresh did not run")
 	}
 	catalogRefresh := make(chan struct{}, 1)
-	startStartupModelRefresh(context.Background(), "interactive", false, false, t.TempDir(), registry, func(context.Context, string) error {
+	startStartupModelRefresh(context.Background(), "rpc", false, false, t.TempDir(), registry, func(context.Context, string) error {
 		catalogRefresh <- struct{}{}
 		return nil
 	})
