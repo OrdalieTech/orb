@@ -6,6 +6,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-22
+
 ### Added
 
 - A reproducible public-extension compatibility harness locks the 44 most-downloaded valid Pi

@@ -323,6 +323,9 @@ Status: **green; closes with the commit containing this record**.
       byte-identical and only its manifest provenance changes.
 - [x] Run the complete race/lint/fixture/tidy/static-cross-build/release-config gate and commit the
       green sync.
+- [x] Rehearse GoReleaser v2.17 twice from the clean commit: checksums pass, the source archive is
+      byte-deterministic, excludes checkout/build state, and rebuilds the full module and product
+      with `CGO_ENABLED=0 -buildvcs=false`.
 
 ## Public extension ecosystem matrix — 2026-07-22
 
