@@ -518,6 +518,21 @@ func (manager *SettingsManager) GetGoExtensions() map[string]bool {
 	return result
 }
 
+// GetPlugins returns the effective bundled-plugin gates. Missing entries are
+// intentionally false so first-party plugins stay dormant by default.
+func (manager *SettingsManager) GetPlugins() map[string]bool {
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
+	configured := nestedObject(manager.effective, "plugins")
+	result := make(map[string]bool, len(configured))
+	for name, value := range configured {
+		if enabled, ok := value.(bool); ok {
+			result[name] = enabled
+		}
+	}
+	return result
+}
+
 func (manager *SettingsManager) GetDefaultThinkingLevel() ai.ModelThinkingLevel {
 	return ai.ModelThinkingLevel(manager.stringValue("defaultThinkingLevel"))
 }

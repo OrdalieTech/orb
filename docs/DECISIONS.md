@@ -238,6 +238,12 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
   top-level-await, WebAssembly, and native-addon semantics; pigo remains a static `CGO_ENABLED=0`
   binary and ships neither runtime.
 
+- **D32 — First-party plugins: bundled-but-dormant (owner, 2026-07-22).** Tasks, websearch, and
+  subagents ship in the binary but default off, preserving the upstream tool surface until a user
+  opts in through the `plugins` settings object, `pigo plugins`, or the `/plugins` selector. The
+  existing user/project settings overlay and runtime reload path own enablement; embedders bypass
+  settings by selecting factories from `plugins.Catalog()`.
+
 ## 2026-07-21 parity-sync amendments
 
 - Codex request compression uses `github.com/klauspost/compress/zstd` as a direct dependency. The

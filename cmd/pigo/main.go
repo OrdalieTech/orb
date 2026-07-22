@@ -125,6 +125,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if len(argv) > 0 && argv[0] == "chat" {
 		return runChatCommand(ctx, argv[1:], streams)
 	}
+	if handled, code := handlePluginsCommand(ctx, argv, streams); handled {
+		return code
+	}
 	if handled, code := handlePackageCommand(ctx, argv, streams, dependencies); handled {
 		return code
 	}

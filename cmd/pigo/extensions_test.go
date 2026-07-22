@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -27,7 +28,7 @@ func TestLoadCompiledExtensionsUsesSettingsAndCatalogOrder(t *testing.T) {
 		t.Fatalf("diagnostics = %v", diagnostics)
 	}
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{})
-	if got := strings.Join(runner.ExtensionPaths(), ","); got != "<inline:pirate>,<inline:status-line>" {
+	if got := strings.Join(runner.ExtensionPaths(), ","); got != "<inline:pirate>,<inline:status-line>,<inline:plugin-control>" {
 		t.Fatalf("compiled extension order = %q", got)
 	}
 	disabled, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{NoExtensions: true}, settings, nil)
@@ -44,12 +45,12 @@ func TestLoadCompiledExtensionsAddsMCPOnlyForEnabledConfiguration(t *testing.T) 
 		wantPath    string
 		wantWarning string
 	}{
-		{name: "absent", settings: `{}`},
-		{name: "server disabled", settings: `{"mcpServers":{"local":{"command":"ignored","enabled":false}}}`},
-		{name: "extension disabled", settings: `{"goExtensions":{"mcp":false},"mcpServers":{"local":{"command":"ignored"}}}`},
+		{name: "absent", settings: `{}`, wantPath: "<inline:plugin-control>"},
+		{name: "server disabled", settings: `{"mcpServers":{"local":{"command":"ignored","enabled":false}}}`, wantPath: "<inline:plugin-control>"},
+		{name: "extension disabled", settings: `{"goExtensions":{"mcp":false},"mcpServers":{"local":{"command":"ignored"}}}`, wantPath: "<inline:plugin-control>"},
 		{name: "all extensions disabled", settings: `{"mcpServers":[]}`, args: CLIArgs{NoExtensions: true}},
-		{name: "invalid", settings: `{"mcpServers":[]}`, wantWarning: "mcpServers"},
-		{name: "enabled", settings: `{"mcpServers":{"local":{"command":"pigo-mcp-command-that-does-not-exist","timeoutMs":20}}}`, wantPath: "<inline:mcp>"},
+		{name: "invalid", settings: `{"mcpServers":[]}`, wantPath: "<inline:plugin-control>", wantWarning: "mcpServers"},
+		{name: "enabled", settings: `{"mcpServers":{"local":{"command":"pigo-mcp-command-that-does-not-exist","timeoutMs":20}}}`, wantPath: "<inline:plugin-control>,<inline:mcp>"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -72,8 +73,46 @@ func TestLoadCompiledExtensionsAddsMCPOnlyForEnabledConfiguration(t *testing.T) 
 			if test.wantWarning == "" && warnings != "" || test.wantWarning != "" && !strings.Contains(warnings, test.wantWarning) {
 				t.Fatalf("diagnostics = %q, want substring %q", warnings, test.wantWarning)
 			}
-			if test.wantPath != "" && runner.Command("mcp") == nil {
+			if strings.Contains(test.wantPath, "<inline:mcp>") && runner.Command("mcp") == nil {
 				t.Fatal("/mcp command was not registered")
+			}
+		})
+	}
+}
+
+func TestFirstPartyPluginsAreDormantUntilEnabled(t *testing.T) {
+	tests := []struct {
+		name, settings string
+		want           []string
+	}{
+		{name: "default off", settings: `{}`},
+		{name: "enabled", settings: `{"plugins":{"tasks":true,"websearch":true,"subagents":true}}`, want: []string{"fetch_content", "subagent", "todo", "web_search"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cwd, agentDir := t.TempDir(), t.TempDir()
+			if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(test.settings), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+			if err != nil {
+				t.Fatal(err)
+			}
+			registry, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{}, settings, nil)
+			if len(diagnostics) != 0 {
+				t.Fatalf("diagnostics = %v", diagnostics)
+			}
+			runner := extensions.NewRunner(registry, extensions.RunnerOptions{})
+			var tools []string
+			for _, registered := range runner.AllRegisteredTools() {
+				tools = append(tools, registered.Definition.Name)
+			}
+			sort.Strings(tools)
+			if got := strings.Join(tools, ","); got != strings.Join(test.want, ",") {
+				t.Fatalf("tools = %q, want %q", got, strings.Join(test.want, ","))
+			}
+			if runner.Command("plugins") == nil {
+				t.Fatal("/plugins control command missing")
 			}
 		})
 	}

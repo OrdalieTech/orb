@@ -64,6 +64,36 @@ func writeProjectPiSettings(t *testing.T, env packageCLIEnv, contents string) {
 	}
 }
 
+func TestPluginsCLIListsAndTogglesUserSettings(t *testing.T) {
+	env := setupPackageCLI(t)
+	code, stdout, stderr := runPackageCLI(t, []string{"plugins", "list"})
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "tasks\toff") || !strings.Contains(stdout, "websearch\toff") || !strings.Contains(stdout, "subagents\toff") {
+		t.Fatalf("initial list: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, _, stderr = runPackageCLI(t, []string{"plugins", "enable", "tasks"})
+	if code != 0 || stderr != "" {
+		t.Fatalf("enable: code=%d stderr=%q", code, stderr)
+	}
+	contents, err := os.ReadFile(filepath.Join(env.agentDir, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored struct {
+		Plugins map[string]bool `json:"plugins"`
+	}
+	if err := json.Unmarshal(contents, &stored); err != nil || !stored.Plugins["tasks"] {
+		t.Fatalf("settings = %s, error = %v", contents, err)
+	}
+	code, stdout, stderr = runPackageCLI(t, []string{"plugins", "list"})
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "tasks\ton") {
+		t.Fatalf("enabled list: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, _, stderr = runPackageCLI(t, []string{"plugins", "disable", "tasks"})
+	if code != 0 || stderr != "" {
+		t.Fatalf("disable: code=%d stderr=%q", code, stderr)
+	}
+}
+
 func TestPackageCLIInstallPersistsRelativeLocalPath(t *testing.T) {
 	env := setupPackageCLI(t)
 	relativePkgDir := filepath.Join(env.projectDir, "packages", "local-package")
