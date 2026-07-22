@@ -108,6 +108,9 @@ func (terminal *scrollTrackingTerminal) Write(data string) {
 	if strings.Contains(data, scrollOnOutputOff) {
 		terminal.scrollOnOutput = false
 	}
+	if terminal.userScrolled && strings.Contains(data, "\x1b[2J\x1b[H\x1b[3J") {
+		terminal.userScrolled = false
+	}
 	if terminal.userScrolled && terminal.scrollOnOutput && data != "" {
 		terminal.userScrolled = false
 	}
@@ -256,6 +259,37 @@ func TestTUIStreamingRenderPreservesTerminalScrollbackPosition(t *testing.T) {
 	terminal.mu.Unlock()
 	if !scrollRestored {
 		t.Fatal("stopping the TUI did not restore terminal scroll-on-output mode")
+	}
+}
+
+func TestTUIClearOnShrinkPreservesTerminalScrollbackPosition(t *testing.T) {
+	terminal := newScrollTrackingTerminal(40, 3)
+	ui := NewTUI(terminal)
+	ui.SetClearOnShrink(true)
+	component := &mutableLines{lines: []string{"Header", "One", "Two", "Loading", "Footer"}}
+	ui.AddChild(component)
+	if err := ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ui.Stop() }()
+
+	terminal.mu.Lock()
+	terminal.userScrolled = true
+	terminal.mu.Unlock()
+	terminal.resetOutput()
+	component.lines = []string{"Header", "One", "Loading", "Footer"}
+	ui.RenderNow()
+
+	terminal.mu.Lock()
+	stillScrolled := terminal.userScrolled
+	terminal.mu.Unlock()
+	if !stillScrolled {
+		t.Fatal("clear-on-shrink forced terminal scrollback back to the active cursor")
+	}
+	if output := terminal.output(); strings.Contains(output, "\x1b[2J\x1b[H\x1b[3J") {
+		t.Fatalf("clear-on-shrink used a destructive full-screen redraw: %q", output)
+	} else if !strings.Contains(output, "\x1b[2K") {
+		t.Fatalf("clear-on-shrink did not erase the vacated row: %q", output)
 	}
 }
 

@@ -522,9 +522,13 @@ func (ui *TUI) RenderNow() {
 		fullRender(true)
 		return
 	}
-	if ui.clearOnShrink && len(newLines) < ui.maxLinesRendered && ui.overlayCount() == 0 {
-		fullRender(true)
-		return
+	clearShrunkRows := ui.clearOnShrink && len(newLines) < ui.maxLinesRendered && ui.overlayCount() == 0
+	settleRenderedHeight := func() {
+		if clearShrunkRows {
+			ui.maxLinesRendered = len(newLines)
+		} else {
+			ui.maxLinesRendered = max(ui.maxLinesRendered, len(newLines))
+		}
 	}
 
 	firstChanged, lastChanged := -1, -1
@@ -554,6 +558,7 @@ func (ui *TUI) RenderNow() {
 	if firstChanged < 0 {
 		ui.positionCursor(cursorRow, cursorColumn, hasCursor, len(newLines))
 		ui.previousViewportTop, ui.previousHeight = previousViewportTop, height
+		settleRenderedHeight()
 		return
 	}
 	firstChanged, lastChanged = expandChangedRangeForKittyImages(firstChanged, lastChanged, ui.previousLines, newLines)
@@ -602,6 +607,7 @@ func (ui *TUI) RenderNow() {
 		ui.positionCursor(cursorRow, cursorColumn, hasCursor, len(newLines))
 		ui.previousLines, ui.previousWidth, ui.previousHeight, ui.previousViewportTop = newLines, width, height, previousViewportTop
 		ui.previousImageIDs = collectKittyImageIDs(newLines)
+		settleRenderedHeight()
 		return
 	}
 	if firstChanged < previousViewportTop {
@@ -689,7 +695,7 @@ func (ui *TUI) RenderNow() {
 	output.WriteString("\x1b[?2026l")
 	ui.terminal.Write(output.String())
 	ui.cursorRow, ui.hardwareCursorRow = max(0, len(newLines)-1), finalCursorRow
-	ui.maxLinesRendered = max(ui.maxLinesRendered, len(newLines))
+	settleRenderedHeight()
 	ui.previousViewportTop = max(previousViewportTop, finalCursorRow-height+1)
 	ui.positionCursor(cursorRow, cursorColumn, hasCursor, len(newLines))
 	ui.previousLines, ui.previousWidth, ui.previousHeight = newLines, width, height

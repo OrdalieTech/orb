@@ -311,10 +311,14 @@ func TestOverlaySuppressesClearOnShrinkUntilRemoved(t *testing.T) {
 	if ui.FullRedraws() != redraws {
 		t.Fatalf("active overlay triggered clear-on-shrink: %d -> %d", redraws, ui.FullRedraws())
 	}
+	terminal.resetOutput()
 	handle.Hide()
 	ui.RenderNow()
-	if ui.FullRedraws() <= redraws {
-		t.Fatalf("overlay removal did not restore clear-on-shrink: %d -> %d", redraws, ui.FullRedraws())
+	if ui.FullRedraws() != redraws {
+		t.Fatalf("overlay removal triggered a destructive full redraw: %d -> %d", redraws, ui.FullRedraws())
+	}
+	if output := terminal.output(); !strings.Contains(output, "\x1b[2K") {
+		t.Fatalf("overlay removal did not clear vacated rows: %q", output)
 	}
 }
 

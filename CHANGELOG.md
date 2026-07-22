@@ -6,6 +6,14 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-22
+
+### Fixed
+
+- `terminal.clearOnShrink` now erases vacated visible rows with the differential renderer instead
+  of clearing and replaying the terminal, so streamed responses no longer destroy scrollback when
+  their Markdown or loading layout becomes shorter.
+
 ## [0.1.3] - 2026-07-22
 
 ### Fixed
