@@ -416,6 +416,9 @@ func (ui *InteractiveUI) SetHiddenThinkingLabel(label *string) {
 	if component != nil {
 		component.SetHiddenThinkingLabel(resolved)
 	}
+	if ui.mode.chat != nil {
+		ui.mode.chat.Invalidate()
+	}
 	ui.mode.ui.RequestRender()
 }
 
@@ -1167,6 +1170,9 @@ func (ui *InteractiveUI) SetToolsExpanded(expanded bool) {
 		for _, component := range container.Children() {
 			setExpandedComponent(component, expanded)
 		}
+	}
+	if ui.mode.chat != nil {
+		ui.mode.chat.Invalidate()
 	}
 	ui.mode.ui.RequestRender()
 }

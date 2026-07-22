@@ -84,6 +84,9 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
   `Ctrl+PageUp` scrolling detaches live follow; scrolling back down or `Ctrl+End` reattaches it, so
   loading and streaming frames cannot move the viewed history. The reusable TUI stays inline unless
   a caller opts into this viewport, and mode 1010 remains disabled while either renderer is live.
+- **Huge transcripts use windowed layout.** Interactive chat caches per-child lines and renders only
+  the visible range; steady frames are O(viewport + changed tail), while first render, resize, theme
+  changes, and global expansion intentionally remain O(history).
 - **Reachable clear-on-shrink updates stay differential.** When shorter content can be reconciled
   inside the renderer's active viewport, Pigo clears only the vacated rows and settles the tracked
   height instead of taking upstream's destructive full-transcript redraw. The inline renderer keeps

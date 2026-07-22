@@ -92,6 +92,35 @@ type mutableLines struct{ lines []string }
 
 func (component *mutableLines) Render(int) []string { return component.lines }
 
+type windowedLines struct {
+	lines       []string
+	fullRenders int
+}
+
+func (component *windowedLines) Render(int) []string {
+	component.fullRenders++
+	return component.lines
+}
+
+func (component *windowedLines) LineCount(int) int { return len(component.lines) }
+
+func (component *windowedLines) RenderLines(_ int, start, end int) []string {
+	return component.lines[start:end]
+}
+
+func TestTUIViewportDoesNotRenderHiddenHistory(t *testing.T) {
+	body := &windowedLines{lines: []string{"one", "two", "three", "four", "five"}}
+	ui := NewTUI(newFakeTerminal(20, 4))
+	ui.SetViewport(body, &mutableLines{lines: []string{"input"}})
+
+	if got := ui.renderViewport(20, 4); strings.Join(got, ",") != "three,four,five,input" {
+		t.Fatalf("viewport = %#v", got)
+	}
+	if body.fullRenders != 0 {
+		t.Fatalf("full history rendered %d times", body.fullRenders)
+	}
+}
+
 type scrollTrackingTerminal struct {
 	*fakeTerminal
 	mu             sync.Mutex
@@ -316,6 +345,44 @@ func TestTUIViewportPinsChromeAndKeepsDetachedBodyStable(t *testing.T) {
 	}
 	if output := terminal.output(); !strings.Contains(output, "\x1b[?1006l\x1b[?1000l\x1b[?1049l") {
 		t.Fatalf("stop did not restore mouse and alternate-screen modes: %q", output)
+	}
+}
+
+func TestTUIViewportNeverScrollsAboveFirstFullPage(t *testing.T) {
+	ui := NewTUI(newFakeTerminal(20, 6))
+	ui.viewportBodyLines, ui.viewportBodyHeight, ui.viewportFollow = 10, 4, true
+	ui.scrollViewportLocked(-100)
+	if ui.viewportEnd != 4 || ui.viewportFollow {
+		t.Fatalf("long history scroll = end %d follow %v, want 4 false", ui.viewportEnd, ui.viewportFollow)
+	}
+	ui.viewportBodyLines, ui.viewportBodyHeight, ui.viewportFollow = 3, 4, true
+	ui.scrollViewportLocked(-3)
+	if ui.viewportEnd != 3 || !ui.viewportFollow {
+		t.Fatalf("short history scroll = end %d follow %v, want 3 true", ui.viewportEnd, ui.viewportFollow)
+	}
+}
+
+func TestTUIViewportDefersDirtyHiddenTailWhileDetached(t *testing.T) {
+	body := NewWindowedContainer()
+	children := make([]*countedLines, 100)
+	for index := range children {
+		children[index] = &countedLines{lines: []string{"line"}}
+		body.AddChild(children[index])
+	}
+	ui := NewTUI(newFakeTerminal(20, 6))
+	ui.SetViewport(body, &mutableLines{lines: []string{"input"}})
+	_ = ui.renderViewport(20, 6)
+	ui.viewportFollow, ui.viewportEnd = false, 10
+	children[99].lines = []string{"changed", "extra"}
+	body.ChildChanged(children[99])
+	_ = ui.renderViewport(20, 6)
+	if children[99].renders != 1 {
+		t.Fatalf("hidden dirty tail rendered while detached: %d", children[99].renders)
+	}
+	ui.viewportFollow = true
+	_ = ui.renderViewport(20, 6)
+	if children[99].renders != 2 {
+		t.Fatalf("dirty tail renders after follow = %d, want 2", children[99].renders)
 	}
 }
 

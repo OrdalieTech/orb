@@ -402,7 +402,7 @@ func (ui *TUI) scrollViewportLocked(delta int) {
 	if ui.viewportFollow {
 		end = ui.viewportBodyLines
 	}
-	end = max(0, min(ui.viewportBodyLines, end+delta))
+	end = max(min(ui.viewportBodyHeight, ui.viewportBodyLines), min(ui.viewportBodyLines, end+delta))
 	ui.viewportEnd, ui.viewportFollow = end, end == ui.viewportBodyLines
 }
 
@@ -777,19 +777,29 @@ func (ui *TUI) renderViewport(width, height int) []string {
 	if ui.viewportBody == nil {
 		return append([]string(nil), ui.Render(width)...)
 	}
-	body, chrome := ui.viewportBody.Render(width), ui.viewportChrome.Render(width)
+	chrome := ui.viewportChrome.Render(width)
 	if len(chrome) > height {
 		chrome = chrome[len(chrome)-height:]
 	}
 	bodyHeight := height - len(chrome)
-	ui.viewportBodyLines, ui.viewportBodyHeight = len(body), bodyHeight
-	end := len(body)
+	body := buildLineLayout(ui.viewportBody, width)
+	bodyLines := body.total
+	end := bodyLines
 	if !ui.viewportFollow {
-		end = min(ui.viewportEnd, len(body))
-		ui.viewportEnd = end
+		end = min(ui.viewportEnd, bodyLines)
 	}
 	start := max(0, end-bodyHeight)
-	lines := append([]string(nil), body[start:end]...)
+	body.refreshRange(width, start, end, ui.viewportFollow)
+	bodyLines = body.total
+	ui.viewportBodyLines, ui.viewportBodyHeight = bodyLines, bodyHeight
+	end = bodyLines
+	if !ui.viewportFollow {
+		end = min(ui.viewportEnd, bodyLines)
+		ui.viewportEnd = end
+	}
+	start = max(0, end-bodyHeight)
+	lines := make([]string, 0, height)
+	lines = body.appendRange(lines, width, start, end)
 	lines = append(lines, make([]string, bodyHeight-len(lines))...)
 	return append(lines, chrome...)
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/codingagent"
 	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/pigo/codingagent/modes/theme"
 	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 	"github.com/OrdalieTech/pigo/tui"
 )
@@ -48,9 +49,10 @@ func newPendingToolMode(t *testing.T, entries []any) *InteractiveMode {
 	return &InteractiveMode{
 		session:        runtime,
 		ui:             ui,
-		chat:           &tui.Container{},
+		chat:           tui.NewWindowedContainer(),
 		toolComponents: make(map[string]*ToolExecutionComponent),
 		cwd:            cwd,
+		mdTheme:        theme.MarkdownTheme(),
 	}
 }
 
@@ -75,6 +77,56 @@ func pendingToolResultMessage(text string) *ai.ToolResultMessage {
 func renderChatText(t *testing.T, mode *InteractiveMode) string {
 	t.Helper()
 	return strings.Join(normalizeWP450Lines(mode.chat.Render(120)), "\n")
+}
+
+func renderWindowedChatText(mode *InteractiveMode) string {
+	height := mode.chat.LineCount(120)
+	return strings.Join(normalizeWP450Lines(mode.chat.RenderLines(120, 0, height)), "\n")
+}
+
+func assistantTextMessage(text string) *ai.AssistantMessage {
+	return &ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: text}}}
+}
+
+func TestWindowedChatProductionMutationsRefreshCachedChildren(t *testing.T) {
+	t.Run("assistant update", func(t *testing.T) {
+		mode := newPendingToolMode(t, nil)
+		mode.handleEvent(agent.MessageStartEvent{Message: assistantTextMessage("BEFORE_STREAM")})
+		_ = mode.chat.LineCount(120)
+		mode.handleEvent(agent.MessageUpdateEvent{Message: assistantTextMessage("AFTER_STREAM")})
+		if rendered := renderWindowedChatText(mode); !strings.Contains(rendered, "AFTER_STREAM") || strings.Contains(rendered, "BEFORE_STREAM") {
+			t.Fatalf("assistant cache did not refresh:\n%s", rendered)
+		}
+	})
+
+	t.Run("tool result", func(t *testing.T) {
+		mode := newPendingToolMode(t, nil)
+		mode.handleEvent(agent.ToolExecutionStartEvent{ToolCallID: "tool-window", ToolName: "window_tool"})
+		_ = mode.chat.LineCount(120)
+		mode.handleEvent(agent.ToolExecutionEndEvent{
+			ToolCallID: "tool-window",
+			ToolName:   "window_tool",
+			Result: agent.AgentToolResult{
+				Content: ai.ToolResultContent{&ai.TextContent{Text: "WINDOW_TOOL_RESULT"}},
+			},
+		})
+		if rendered := renderWindowedChatText(mode); !strings.Contains(rendered, "WINDOW_TOOL_RESULT") {
+			t.Fatalf("tool cache did not refresh:\n%s", rendered)
+		}
+	})
+
+	t.Run("bound bash requester", func(t *testing.T) {
+		mode := newPendingToolMode(t, nil)
+		component := mode.newBashExecutionComponent("printf test", false)
+		defer component.SetComplete(nil, true)
+		mode.chat.AddChild(component)
+		_ = mode.chat.LineCount(120)
+		component.AppendOutput("WINDOW_BASH_OUTPUT")
+		component.ui.RequestRender()
+		if rendered := renderWindowedChatText(mode); !strings.Contains(rendered, "WINDOW_BASH_OUTPUT") {
+			t.Fatalf("bash requester did not refresh cache:\n%s", rendered)
+		}
+	})
 }
 
 func TestRestoredPendingToolCallsReceiveLiveCompletionEvents(t *testing.T) {
