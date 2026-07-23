@@ -83,8 +83,9 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
 - **Interactive mode owns its viewport.** Pigo uses the alternate screen with a scrollable
   transcript and pins status, extension widgets, editor, and footer at the bottom. Mouse-wheel or
   `Ctrl+PageUp` scrolling detaches live follow; scrolling back down or `Ctrl+End` reattaches it, so
-  loading and streaming frames cannot move the viewed history. The reusable TUI stays inline unless
-  a caller opts into this viewport, and mode 1010 remains disabled while either renderer is live.
+  loading and streaming frames cannot move the viewed history. The status spacer is collapsed and
+  the right edge has a one-column proportional thumb with click-to-jump. The reusable TUI stays
+  inline unless a caller opts into this viewport, and mode 1010 remains disabled while either renderer is live.
 - **Huge transcripts use windowed layout.** Interactive chat caches per-child lines and renders only
   the visible range; steady frames are O(viewport + changed tail), while first render, resize, theme
   changes, and global expansion intentionally remain O(history).

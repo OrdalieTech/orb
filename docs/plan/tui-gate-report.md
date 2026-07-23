@@ -101,11 +101,12 @@ TypeScript median versus Go benchmark mean):
 
 | Lines | pi TypeScript | pigo | Speedup |
 | ---: | ---: | ---: | ---: |
-| 100,000 | 32.147 ms | 0.085 ms | ~380× |
-| 1,000,000 | 345.166 ms | 0.058 ms | ~6,000× |
+| 100,000 | 32.147 ms | 0.091 ms | ~350× |
+| 1,000,000 | 345.166 ms | 0.075 ms | ~4,600× |
 
 Reproduce with `go test ./tui -run '^$' -bench BenchmarkViewportHugeHistory -benchmem` and
 `node --import ./.upstream/node_modules/tsx/dist/loader.mjs conformance/benchmarks/tui_huge_history.ts`.
+The scroll thumb costs one allocation and about 160 bytes per full frame.
 Worst-case cold hydration with one unique component per line is 35 ms/23 MiB at 100k and
 441 ms/249 MiB at 1M (`-bench BenchmarkWindowedContainerColdUniqueHistory -benchtime=1x`).
 

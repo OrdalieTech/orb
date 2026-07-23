@@ -552,6 +552,22 @@ func TestIdleStatusRender(t *testing.T) {
 	}
 }
 
+func TestCompactStatusRender(t *testing.T) {
+	status := &tui.Container{}
+	status.AddChild(IdleStatus{})
+	if lines := (compactStatus{status}).Render(20); len(lines) != 0 {
+		t.Fatalf("compact idle status = %#v, want no rows", lines)
+	}
+
+	indicator := NewWorkingStatusIndicator(&fakeRenderRequester{}, "Working...", &extensions.WorkingIndicatorOptions{Frames: []string{"*"}})
+	defer indicator.Dispose()
+	status.Clear()
+	status.AddChild(indicator)
+	if lines := (compactStatus{status}).Render(20); len(lines) != 1 || !strings.Contains(lines[0], "Working...") {
+		t.Fatalf("compact working status = %#v, want one row", lines)
+	}
+}
+
 func TestStatusIndicatorCreation(t *testing.T) {
 	fake := &fakeRenderRequester{}
 	si := NewWorkingStatusIndicator(fake, "Testing...")
