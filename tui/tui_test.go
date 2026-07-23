@@ -383,6 +383,27 @@ func TestTUIViewportScrollbarClick(t *testing.T) {
 	}
 }
 
+func TestTUIViewportScrollbarDragDoesNotSelectText(t *testing.T) {
+	body := &mutableLines{}
+	for index := range 100 {
+		body.lines = append(body.lines, fmt.Sprintf("line %d", index))
+	}
+	ui := NewTUI(newFakeTerminal(10, 6))
+	ui.SetViewport(body, &mutableLines{lines: []string{"input"}})
+	ui.previousLines = ui.renderViewport(10, 6)
+	ui.SetSelectionHandler(func(string) { t.Fatal("scrollbar drag selected text") })
+
+	ui.handleViewportInput("\x1b[<0;10;1M")
+	ui.handleViewportInput("\x1b[<32;3;4M")
+	if !ui.selection.scrollbar || ui.selection.active || ui.viewportEnd <= 5 {
+		t.Fatalf("drag = %#v, end = %d", ui.selection, ui.viewportEnd)
+	}
+	ui.handleViewportInput("\x1b[<0;3;4m")
+	if ui.selection.scrollbar || ui.selection.active {
+		t.Fatalf("released drag = %#v", ui.selection)
+	}
+}
+
 func TestTUIViewportDragCopiesVisibleText(t *testing.T) {
 	terminal := newFakeTerminal(12, 4)
 	ui := NewTUI(terminal)
@@ -421,6 +442,26 @@ func TestTUIViewportDragCopiesVisibleText(t *testing.T) {
 	}
 	if output := terminal.output(); !strings.Contains(output, "\x1b[?1002h") {
 		t.Fatalf("button-motion tracking was not enabled: %q", output)
+	}
+}
+
+func TestTUIViewportDoubleClickCopiesVisibleSentence(t *testing.T) {
+	ui := NewTUI(newFakeTerminal(30, 3))
+	ui.SetViewport(&mutableLines{}, &mutableLines{})
+	ui.viewportBodyHeight = 2
+	ui.previousLines = []string{"First. Second", "sentence! Third.", ""}
+	copied := make(chan string, 1)
+	ui.SetSelectionHandler(func(text string) { copied <- text })
+
+	ui.handleViewportInput("\x1b[<0;8;1M")
+	ui.handleViewportInput("\x1b[<0;8;1m")
+	ui.handleViewportInput("\x1b[<0;8;1M")
+	if got := ui.selectedTextLocked(); got != "Second\nsentence!" {
+		t.Fatalf("double-click selection = %q", got)
+	}
+	ui.handleViewportInput("\x1b[<0;8;1m")
+	if got := <-copied; got != "Second\nsentence!" {
+		t.Fatalf("copied sentence = %q", got)
 	}
 }
 

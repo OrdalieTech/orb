@@ -11,13 +11,14 @@ import (
 )
 
 const (
-	minRenderInterval  = 16 * time.Millisecond
-	segmentReset       = "\x1b[0m\x1b]8;;\x07"
-	scrollbarThumb     = segmentReset + "\x1b[999C┃"
-	scrollOnOutputOff  = "\x1b[?1010l"
-	scrollOnOutputOn   = "\x1b[?1010h"
-	alternateScreenOn  = "\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1006h"
-	alternateScreenOff = "\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1049l"
+	minRenderInterval   = 16 * time.Millisecond
+	doubleClickInterval = 500 * time.Millisecond
+	segmentReset        = "\x1b[0m\x1b]8;;\x07"
+	scrollbarThumb      = segmentReset + "\x1b[999C┃"
+	scrollOnOutputOff   = "\x1b[?1010l"
+	scrollOnOutputOn    = "\x1b[?1010h"
+	alternateScreenOn   = "\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1006h"
+	alternateScreenOff  = "\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1049l"
 )
 
 type InputListenerResult struct {
@@ -34,8 +35,10 @@ type inputListenerEntry struct {
 
 type mousePoint struct{ row, column int }
 type mouseSelection struct {
-	anchor, focus mousePoint
-	active, moved bool
+	anchor, focus, lastClick mousePoint
+	active, moved, sentence  bool
+	scrollbar                bool
+	lastClickAt              time.Time
 }
 
 // TUI owns focus and performs synchronized line-level differential rendering.
@@ -391,13 +394,13 @@ func (ui *TUI) handleViewportInput(data string) bool {
 	step := max(1, ui.viewportBodyHeight)
 	switch {
 	case MatchesKey(data, "ctrl+pageup"):
-		ui.selection.active = false
+		ui.selection = mouseSelection{}
 		ui.scrollViewportLocked(-step)
 	case MatchesKey(data, "ctrl+pagedown"):
-		ui.selection.active = false
+		ui.selection = mouseSelection{}
 		ui.scrollViewportLocked(step)
 	case MatchesKey(data, "ctrl+end"):
-		ui.selection.active = false
+		ui.selection = mouseSelection{}
 		ui.viewportFollow = true
 	case strings.HasPrefix(data, "\x1b[<") && (strings.HasSuffix(data, "M") || strings.HasSuffix(data, "m")):
 		var button, column, row int
@@ -406,14 +409,18 @@ func (ui *TUI) handleViewportInput(data string) bool {
 		}
 		switch {
 		case button&64 != 0 && button&3 < 2:
-			ui.selection.active = false
+			ui.selection = mouseSelection{}
 			if button&1 == 0 {
 				ui.scrollViewportLocked(-3)
 			} else {
 				ui.scrollViewportLocked(3)
 			}
+		case data[len(data)-1] == 'm' && ui.selection.scrollbar:
+			ui.selection.scrollbar = false
+		case button&32 != 0 && ui.selection.scrollbar:
+			ui.scrollViewportToLocked(row - 1)
 		case data[len(data)-1] == 'm' && ui.selection.active:
-			if point, ok := ui.mousePointLocked(column, row); ok {
+			if point, ok := ui.mousePointLocked(column, row); ok && !ui.selection.sentence {
 				ui.selection.focus = point
 				ui.selection.moved = ui.selection.moved || point != ui.selection.anchor
 			}
@@ -422,16 +429,21 @@ func (ui *TUI) handleViewportInput(data string) bool {
 			}
 			ui.selection.active = false
 		case button&32 != 0 && ui.selection.active:
-			if point, ok := ui.mousePointLocked(column, row); ok {
+			if point, ok := ui.mousePointLocked(column, row); ok && !ui.selection.sentence {
 				ui.selection.focus = point
 				ui.selection.moved = ui.selection.moved || point != ui.selection.anchor
 			}
-		case data[len(data)-1] == 'M' && button&3 == 0 && column == ui.terminal.Columns() && row > 0 && row <= ui.viewportBodyHeight:
-			ui.selection.active = false
+		case data[len(data)-1] == 'M' && button&3 == 0 && column == ui.terminal.Columns() && row > 0 && row <= ui.viewportBodyHeight && ui.viewportBodyLines > ui.viewportBodyHeight:
+			ui.selection = mouseSelection{scrollbar: true}
 			ui.scrollViewportToLocked(row - 1)
 		case data[len(data)-1] == 'M' && button&3 == 0 && ui.selectionHandler != nil:
 			if point, ok := ui.mousePointLocked(column, row); ok {
-				ui.selection = mouseSelection{anchor: point, focus: point, active: true}
+				lastClick, lastClickAt, now := ui.selection.lastClick, ui.selection.lastClickAt, time.Now()
+				ui.selection = mouseSelection{anchor: point, focus: point, active: true, lastClick: point, lastClickAt: now}
+				if point == lastClick && now.Sub(lastClickAt) <= doubleClickInterval {
+					ui.selection.anchor, ui.selection.focus = ui.sentenceBoundsLocked(point)
+					ui.selection.moved, ui.selection.sentence = true, true
+				}
 				if point.row < ui.viewportBodyHeight && ui.viewportFollow && ui.viewportBodyLines > ui.viewportBodyHeight {
 					ui.viewportEnd, ui.viewportFollow = ui.viewportBodyLines, false
 				}
@@ -534,6 +546,65 @@ func (ui *TUI) selectedTextLocked() string {
 		lines = append(lines, plainTerminalText(SliceByColumn(line, from, max(0, to-from), false)))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (ui *TUI) sentenceBoundsLocked(point mousePoint) (mousePoint, mousePoint) {
+	top, bottom := 0, min(ui.viewportBodyHeight, len(ui.previousLines))
+	if point.row >= bottom {
+		top, bottom = point.row, min(point.row+1, len(ui.previousLines))
+	}
+	point.row -= top
+	start, end := sentenceBounds(ui.previousLines[top:bottom], point)
+	start.row, end.row = start.row+top, end.row+top
+	return start, end
+}
+
+// ponytail: scan visible text only; add wrap metadata if selection must cross viewport edges.
+func sentenceBounds(lines []string, point mousePoint) (mousePoint, mousePoint) {
+	plain, offset := make([]string, len(lines)), 0
+	for row, line := range lines {
+		plain[row] = plainTerminalText(strings.Replace(line, scrollbarThumb, "", 1))
+		if row < point.row {
+			offset += len(plain[row]) + 1
+		}
+	}
+	column := selectionColumnStart(plain[point.row], point.column)
+	offset += len(SliceByColumn(plain[point.row], 0, column, false))
+	text, start, end := strings.Join(plain, "\n"), 0, 0
+	offset = min(offset, len(text))
+	end = len(text)
+	if index := strings.LastIndexAny(text[:offset], ".!?。！？"); index >= 0 {
+		_, size := utf8.DecodeRuneInString(text[index:])
+		start = index + size
+	}
+	if index := strings.IndexAny(text[offset:], ".!?。！？"); index >= 0 {
+		_, size := utf8.DecodeRuneInString(text[offset+index:])
+		end = offset + index + size
+	}
+	segment := text[start:end]
+	trimmed := strings.TrimSpace(segment)
+	if trimmed == "" {
+		return point, point
+	}
+	start += strings.Index(segment, trimmed)
+	end = start + len(trimmed)
+	return textOffsetPoint(plain, start, false), textOffsetPoint(plain, end, true)
+}
+
+func textOffsetPoint(lines []string, offset int, inclusive bool) mousePoint {
+	cursor := 0
+	for row, line := range lines {
+		if offset <= cursor+len(line) {
+			column := VisibleWidth(line[:max(0, min(len(line), offset-cursor))])
+			if inclusive && column > 0 {
+				column--
+			}
+			return mousePoint{row: row, column: column}
+		}
+		cursor += len(line) + 1
+	}
+	row := len(lines) - 1
+	return mousePoint{row: row, column: max(0, VisibleWidth(lines[row])-1)}
 }
 
 func (ui *TUI) scrollViewportToLocked(row int) {
