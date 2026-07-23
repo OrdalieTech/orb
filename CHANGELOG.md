@@ -6,6 +6,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Fixed
+
+- Extensions can reuse SDK packages from an installed `pi`; incompatible extensions remain isolated warnings.
+
 ## [0.4.1] - 2026-07-23
 
 ### Fixed

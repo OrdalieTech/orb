@@ -1,5 +1,43 @@
 import { readFile, stat } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const sdkAliases = {
+	"@earendil-works/pi-coding-agent": "@earendil-works/pi-coding-agent",
+	"@earendil-works/pi-agent-core": "@earendil-works/pi-agent-core",
+	"@earendil-works/pi-ai": "@earendil-works/pi-ai/compat",
+	"@earendil-works/pi-ai/compat": "@earendil-works/pi-ai/compat",
+	"@earendil-works/pi-ai/oauth": "@earendil-works/pi-ai/oauth",
+	"@earendil-works/pi-ai/providers/all": "@earendil-works/pi-ai/providers/all",
+	"@earendil-works/pi-tui": "@earendil-works/pi-tui",
+	"@mariozechner/pi-coding-agent": "@earendil-works/pi-coding-agent",
+	"@mariozechner/pi-agent-core": "@earendil-works/pi-agent-core",
+	"@mariozechner/pi-ai": "@earendil-works/pi-ai/compat",
+	"@mariozechner/pi-ai/compat": "@earendil-works/pi-ai/compat",
+	"@mariozechner/pi-ai/oauth": "@earendil-works/pi-ai/oauth",
+	"@mariozechner/pi-ai/providers/all": "@earendil-works/pi-ai/providers/all",
+	"@mariozechner/pi-tui": "@earendil-works/pi-tui",
+	"@sinclair/typebox": "typebox",
+	"@sinclair/typebox/compile": "typebox/compile",
+	"@sinclair/typebox/value": "typebox/value",
+	typebox: "typebox",
+	"typebox/compile": "typebox/compile",
+	"typebox/value": "typebox/value",
+};
+
+async function installedSDK(specifier, context, nextResolve) {
+	const target = sdkAliases[specifier];
+	const root = process.env.PIGO_PI_SDK_ROOT;
+	if (!target || !root) return undefined;
+	try {
+		return await nextResolve(target, {
+			...context,
+			parentURL: pathToFileURL(join(root, "package.json")).href,
+		});
+	} catch {
+		return undefined;
+	}
+}
 
 function stagedTypeScriptURL(url) {
 	if (!url.startsWith("file:") || !/\.(?:ts|mts|cts)(?:\?|$)/.test(url)) return undefined;
@@ -111,6 +149,8 @@ export async function resolve(specifier, context, nextResolve) {
 			if (staged && await isFile(staged)) return { ...resolved, url: staged.href, shortCircuit: true };
 			return resolved;
 		}
+		const sdk = await installedSDK(specifier, context, nextResolve);
+		if (sdk) return { ...sdk, shortCircuit: true };
 		throw error;
 	}
 }

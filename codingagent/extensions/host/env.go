@@ -1,6 +1,7 @@
 package host
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ const (
 	piSubagentBinaryEnv = "PI_SUBAGENT_PI_BINARY"
 	piAgentDirEnv       = "PI_CODING_AGENT_DIR"
 	piAgentMarkerEnv    = "PI_CODING_AGENT"
+	piSDKRootEnv        = "PIGO_PI_SDK_ROOT"
 )
 
 func prepareHostEnvironment(agentDir string, base []string, executableOverride string) ([]string, error) {
@@ -48,7 +50,35 @@ func prepareHostEnvironment(agentDir string, base []string, executableOverride s
 	environment = setEnvironmentValue(environment, piSubagentBinaryEnv, shimPath)
 	environment = setEnvironmentValue(environment, piAgentDirEnv, agentDir)
 	environment = setEnvironmentValue(environment, piAgentMarkerEnv, "true")
+	sdkRoot := installedPiSDKRoot(base)
+	if sdkRoot == "" {
+		sdkRoot = environmentValue(base, piSDKRootEnv)
+	}
+	environment = setEnvironmentValue(environment, piSDKRootEnv, sdkRoot)
 	return environment, nil
+}
+
+func installedPiSDKRoot(environment []string) string {
+	executable, err := lookPathInEnvironment("pi", environment)
+	if err != nil {
+		return ""
+	}
+	executable, err = filepath.EvalSymlinks(executable)
+	if err != nil {
+		return ""
+	}
+	manifestPath, err := owningPackageJSON(executable)
+	if err != nil || manifestPath == "" {
+		return ""
+	}
+	encoded, err := os.ReadFile(manifestPath)
+	var manifest struct {
+		Name string `json:"name"`
+	}
+	if err != nil || json.Unmarshal(encoded, &manifest) != nil || manifest.Name != "@earendil-works/pi-coding-agent" {
+		return ""
+	}
+	return filepath.Dir(manifestPath)
 }
 
 func replaceExecutableLink(path, target string) error {
