@@ -86,7 +86,7 @@ func TestFirstPartyPluginsAreDormantUntilEnabled(t *testing.T) {
 		want           []string
 	}{
 		{name: "default off", settings: `{}`},
-		{name: "enabled", settings: `{"plugins":{"tasks":true,"websearch":true,"subagents":true,"permissions":{"mode":"log"}}}`, want: []string{"fetch_content", "subagent", "todo", "web_search"}},
+		{name: "enabled", settings: `{"plugins":{"tasks":true,"websearch":true,"subagents":true,"permissions":{"mode":"log"},"memory":{"inject":"index","indexLimit":20,"distill":false}}}`, want: []string{"fetch_content", "recall", "remember", "subagent", "todo", "web_search"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -110,6 +110,11 @@ func TestFirstPartyPluginsAreDormantUntilEnabled(t *testing.T) {
 			sort.Strings(tools)
 			if got := strings.Join(tools, ","); got != strings.Join(test.want, ",") {
 				t.Fatalf("tools = %q, want %q", got, strings.Join(test.want, ","))
+			}
+			if test.name == "default off" {
+				if _, err := os.Stat(filepath.Join(agentDir, "memory")); !os.IsNotExist(err) {
+					t.Fatalf("default-off memory plugin touched storage: %v", err)
+				}
 			}
 			if runner.Command("plugins") == nil {
 				t.Fatal("/plugins control command missing")

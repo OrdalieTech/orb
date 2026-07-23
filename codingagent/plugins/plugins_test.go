@@ -3,6 +3,7 @@ package plugins
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+	"unicode/utf8"
 
 	"github.com/OrdalieTech/pigo/agent"
 	"github.com/OrdalieTech/pigo/ai"
@@ -17,6 +20,7 @@ import (
 	"github.com/OrdalieTech/pigo/codingagent"
 	"github.com/OrdalieTech/pigo/codingagent/config"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	memorysdk "github.com/OrdalieTech/pigo/codingagent/memory"
 	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 )
 
@@ -517,6 +521,208 @@ func TestSubagentInheritsPermissionsPolicy(t *testing.T) {
 	}
 }
 
+type memoryTestStore struct {
+	mu       sync.Mutex
+	items    []memorysdk.Item
+	searched bool
+}
+
+func (store *memoryTestStore) Append(_ context.Context, item memorysdk.Item) (string, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	item.ID = fmt.Sprintf("custom-%d", len(store.items)+1)
+	if item.Time.IsZero() {
+		item.Time = time.Date(2026, 7, 23, 10, len(store.items), 0, 0, time.UTC)
+	}
+	store.items = append(store.items, item)
+	return item.ID, nil
+}
+
+func (store *memoryTestStore) Get(_ context.Context, id string) (memorysdk.Item, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	for _, item := range store.items {
+		if item.ID == id {
+			return item, nil
+		}
+	}
+	return memorysdk.Item{}, os.ErrNotExist
+}
+
+func (store *memoryTestStore) Query(_ context.Context, filter memorysdk.Filter) ([]memorysdk.Item, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	return filterMemoryTestItems(store.items, filter.Contains, filter.Tags, filter.Limit), nil
+}
+
+func (store *memoryTestStore) Delete(_ context.Context, id string) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	for index, item := range store.items {
+		if item.ID == id {
+			store.items = append(store.items[:index], store.items[index+1:]...)
+			break
+		}
+	}
+	return nil
+}
+
+func (store *memoryTestStore) Search(_ context.Context, query string, limit int) ([]memorysdk.Scored, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.searched = true
+	items := filterMemoryTestItems(store.items, query, nil, limit)
+	result := make([]memorysdk.Scored, len(items))
+	for index := range items {
+		result[index] = memorysdk.Scored{Item: items[index], Score: 1}
+	}
+	return result, nil
+}
+
+func (store *memoryTestStore) snapshot() ([]memorysdk.Item, bool) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	return append([]memorysdk.Item(nil), store.items...), store.searched
+}
+
+func filterMemoryTestItems(items []memorysdk.Item, contains string, tags []string, limit int) []memorysdk.Item {
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	var result []memorysdk.Item
+	for index := len(items) - 1; index >= 0 && len(result) < limit; index-- {
+		if contains != "" && !strings.Contains(strings.ToLower(items[index].Content), strings.ToLower(contains)) ||
+			!hasMemoryTags(items[index].Tags, tags) {
+			continue
+		}
+		result = append(result, items[index])
+	}
+	return result
+}
+
+func TestMemoryWithStoreRememberRecallThroughRegistry(t *testing.T) {
+	store := &memoryTestStore{}
+	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+	var recalled string
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage(faux.ToolCall("remember", map[string]any{
+			"content": "The durable marker is cobalt.", "tags": []any{" Project ", "PROJECT"},
+		}, faux.ToolCallOptions{ID: "memory-1"})),
+		faux.AssistantMessage(faux.ToolCall("recall", map[string]any{
+			"query": "cobalt", "tags": []any{"project"},
+		}, faux.ToolCallOptions{ID: "memory-2"})),
+		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+			recalled = toolResultText(request, "recall")
+			return faux.AssistantMessage("done"), nil
+		}),
+	})
+	session := newMemoryPluginSession(t, provider, MemoryWithStore(store), nil)
+	if err := session.PromptSync(context.Background(), "remember and recall"); err != nil {
+		t.Fatal(err)
+	}
+	items, searched := store.snapshot()
+	if len(items) != 1 || strings.Join(items[0].Tags, ",") != "project" || !searched {
+		t.Fatalf("custom store items = %#v, semantic searched = %t", items, searched)
+	}
+	if !strings.Contains(recalled, "The durable marker is cobalt.") {
+		t.Fatalf("recall result = %q", recalled)
+	}
+}
+
+func TestMemorySessionStartInjectionModes(t *testing.T) {
+	for _, inject := range []string{"index", "none"} {
+		t.Run(inject, func(t *testing.T) {
+			store := &memoryTestStore{}
+			if _, err := store.Append(context.Background(), memorysdk.Item{Content: "startup marker"}); err != nil {
+				t.Fatal(err)
+			}
+			provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+			sawMarker := false
+			provider.SetResponses([]faux.ResponseStep{
+				faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+					sawMarker = contextContains(request, "startup marker")
+					return faux.AssistantMessage("done"), nil
+				}),
+			})
+			root := t.TempDir()
+			settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var factory extensions.Factory
+			if inject == "none" {
+				settings.SetPluginSetting("memory", "inject", "none")
+				factory = memoryExtension(store, provider.StreamSimple, settings, "")
+			} else {
+				factory = MemoryWithStore(store)
+			}
+			session := newMemoryPluginSession(t, provider, factory, settings)
+			if err := session.PromptSync(context.Background(), "inspect context"); err != nil {
+				t.Fatal(err)
+			}
+			indexEntries := 0
+			for _, entry := range session.Manager().GetEntries() {
+				if entry.CustomType == "pigo.memory.index" {
+					indexEntries++
+				}
+			}
+			want := inject == "index"
+			if sawMarker != want || indexEntries != map[bool]int{false: 0, true: 1}[want] {
+				t.Fatalf("saw marker = %t, index entries = %d, want injection = %t", sawMarker, indexEntries, want)
+			}
+		})
+	}
+}
+
+func TestMemoryDistillUsesInjectedStream(t *testing.T) {
+	store := &memoryTestStore{}
+	root := t.TempDir()
+	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.SetPluginSetting("memory", "inject", "none")
+	settings.SetPluginSetting("memory", "distill", true)
+	settings.SetPluginSetting("memory", "distillPrompt", "CUSTOM DISTILL")
+	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+	var sawPrompt, sawTranscript bool
+	provider.SetResponses([]faux.ResponseStep{
+		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+			sawPrompt = request.SystemPrompt != nil && *request.SystemPrompt == "CUSTOM DISTILL"
+			sawTranscript = contextContains(request, "persistent transcript fact")
+			return faux.AssistantMessage("- distilled one\n- distilled two"), nil
+		}),
+	})
+	manager, err := sessionstore.InMemory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.AppendMessage(&ai.UserMessage{Content: ai.NewUserText("persistent transcript fact")}); err != nil {
+		t.Fatal(err)
+	}
+	factory := memoryExtension(store, provider.StreamSimple, settings, "")
+	session := newMemoryPluginSessionWithManager(t, provider, factory, settings, manager)
+	session.Dispose()
+	items, _ := store.snapshot()
+	if !sawPrompt || !sawTranscript || len(items) != 2 {
+		t.Fatalf("prompt = %t, transcript = %t, items = %#v", sawPrompt, sawTranscript, items)
+	}
+	for _, item := range items {
+		if strings.Join(item.Tags, ",") != "distilled" {
+			t.Fatalf("distilled tags = %v", item.Tags)
+		}
+	}
+}
+
+func TestMemoryIndexCapPreservesUTF8(t *testing.T) {
+	index := renderMemoryIndex([]memorysdk.Item{{
+		Time: time.Date(2026, 7, 23, 10, 0, 0, 0, time.UTC), Content: strings.Repeat("é", 100),
+	}}, 41)
+	if len(index) > 41 || !utf8.ValidString(index) {
+		t.Fatalf("index len = %d, valid UTF-8 = %t", len(index), utf8.ValidString(index))
+	}
+}
+
 func pluginTool(t *testing.T, plugin, tool string, options Options, runnerOptions extensions.RunnerOptions) agent.AgentTool {
 	t.Helper()
 	registry := extensions.NewRegistry(t.TempDir())
@@ -541,6 +747,55 @@ func pluginTool(t *testing.T, plugin, tool string, options Options, runnerOption
 	}
 	t.Fatalf("tool %q missing", tool)
 	return nil
+}
+
+func newMemoryPluginSession(
+	t *testing.T,
+	provider *faux.Provider,
+	factory extensions.Factory,
+	settings *config.SettingsManager,
+) *codingagent.AgentSession {
+	t.Helper()
+	root := t.TempDir()
+	manager, err := sessionstore.InMemory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return newMemoryPluginSessionWithManager(t, provider, factory, settings, manager)
+}
+
+func newMemoryPluginSessionWithManager(
+	t *testing.T,
+	provider *faux.Provider,
+	factory extensions.Factory,
+	settings *config.SettingsManager,
+	manager *sessionstore.SessionManager,
+) *codingagent.AgentSession {
+	t.Helper()
+	root := manager.GetCWD()
+	agentDir := filepath.Join(root, "agent")
+	if settings == nil {
+		var err error
+		settings, err = config.NewSettingsManager(root, config.WithAgentDir(agentDir))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	registry := extensions.NewRegistry(root)
+	if err := registry.Register("<inline:memory>", factory); err != nil {
+		t.Fatal(err)
+	}
+	prompt := "memory test"
+	result, err := codingagent.NewAgentSession(codingagent.AgentSessionOptions{
+		CWD: root, AgentDir: agentDir, Settings: settings, SessionManager: manager,
+		Model: provider.GetModel(), StreamFn: provider.StreamSimple, Resources: &codingagent.Resources{SystemPrompt: &prompt},
+		ExtensionRegistry: registry,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(result.Session.Dispose)
+	return result.Session
 }
 
 func newPermissionsSession(t *testing.T, provider *faux.Provider, policy *Policy, enabled ...string) *codingagent.AgentSession {

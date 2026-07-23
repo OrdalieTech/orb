@@ -6,6 +6,12 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-07-23
+
+### Changed
+
+- Mouse selection keeps scrollbar drags captured and double-clicks copy the visible sentence.
+
 ## [0.3.3] - 2026-07-23
 
 ### Added

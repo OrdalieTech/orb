@@ -207,6 +207,8 @@ func runChild(ctx context.Context, parent extensions.Context, injected agent.Str
 	prompt := "You are the " + task.Agent + " subagent. " + role.prompt
 	tools := restrictTools(role.tools, task.Tools)
 	var extensionRegistry *extensions.Registry
+	// ponytail: children inherit permissions only, never memory; add explicit
+	// child plugin selection when callers need cross-agent memory access.
 	if policy != nil {
 		extensionRegistry = extensions.NewRegistry(parent.CWD())
 		if err := extensionRegistry.Register("<inline:permissions>", permissionsExtension(policy, nil, parent)); err != nil {
@@ -268,7 +270,12 @@ func forkTranscript(messages []json.RawMessage) string {
 		var role, content string
 		switch typed := message.(type) {
 		case *ai.UserMessage:
-			role, content = "User", ai.ContentText(typed.Content.Blocks)
+			role = "User"
+			if typed.Content.Text != nil {
+				content = *typed.Content.Text
+			} else {
+				content = ai.ContentText(typed.Content.Blocks)
+			}
 		case *ai.AssistantMessage:
 			role, content = "Assistant", ai.ContentText(typed.Content)
 		case *ai.ToolResultMessage:
