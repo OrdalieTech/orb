@@ -6,6 +6,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-23
+
 ### Fixed
 
 - Loading frames reuse incremental session totals; Ctrl-C exits from an empty editor, and quit drains Ghostty/Kitty key releases before returning to the shell.
