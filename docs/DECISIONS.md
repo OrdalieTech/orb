@@ -133,6 +133,7 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
 | `pigo login` / `pigo logout` CLI subcommands | addition | headless Go deployments need auth lifecycle commands; bare `pigo logout` deliberately lists stored credential names and requires an explicit provider instead of silently choosing one |
 | NVIDIA `qwen/qwen3.5-122b-a10b` denylist | addition | the live NIM endpoint advertises it, but its current metadata cannot satisfy pigo's chat-model contract; keep the Go-only exclusion explicit until the live shape is usable |
 | Missing default stream error timing | Go API adaptation | upstream throws in the JavaScript `Agent` constructor; Go's fixed `NewAgent` signature cannot return an error, so pigo reports the identical error on the first prompt or low-level loop call |
+| Single Ctrl-C exit at an empty prompt | usability adaptation | owner requirement; a nonempty draft still clears without exiting, and focused selectors retain their cancel binding |
 | Moonshot Kimi K3 compat metadata | resolved parity | `thinkingFormat: openai` and reasoning-effort support entered the pinned upstream in v0.81.1 and remain regression-tested |
 | `AgentHarness` orchestration facade | dissolved | D29; harness primitives remain in `agent/harness`, while the high-level embedding lifecycle stays in `codingagent.AgentSession` |
 | `streamProxy` `/api/stream` client | excluded | D29; application-specific proxy protocols use `agent.WithStreamFn` and the public streaming-JSON helper |

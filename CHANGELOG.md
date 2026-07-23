@@ -8,7 +8,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Fixed
 
-- Loading frames reuse incremental session totals; double Ctrl-C exits, and quit drains Ghostty/Kitty key releases before returning to the shell.
+- Loading frames reuse incremental session totals; Ctrl-C exits from an empty editor, and quit drains Ghostty/Kitty key releases before returning to the shell.
+- The session tree keeps linear conversations flat and adds indentation and connectors only where branches exist.
 
 ## [0.4.0] - 2026-07-23
 
