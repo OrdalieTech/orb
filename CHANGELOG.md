@@ -6,6 +6,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-07-23
+
+### Changed
+
 - Interactive mode collapses the idle/working spacer and adds a one-column clickable scroll thumb.
 - `pigo update` now reports installed package versions dynamically and `--extensions` names every package that changed.
 
