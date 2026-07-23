@@ -4,7 +4,11 @@ UPSTREAM_DIR ?= $(CURDIR)/.upstream
 UPSTREAM_READONLY ?= 0
 GOLANGCI_LINT_VERSION ?= v2.7.2
 GOLANGCI_LINT := $(CURDIR)/.tools/bin/golangci-lint
+ifeq ($(CI),true)
+GO_ENV :=
+else
 GO_ENV := GOCACHE=$(CURDIR)/.tools/cache/go-build GOMODCACHE=$(CURDIR)/.tools/cache/go-mod
+endif
 LINT_ENV := $(GO_ENV) GOLANGCI_LINT_CACHE=$(CURDIR)/.tools/cache/golangci-lint
 
 .PHONY: check build test lint nightly-live upstream product-assets product-assets-check fixtures fixtures-check ensure-upstream-fixture-tools upstream-rpc-tests sync sync-bump
