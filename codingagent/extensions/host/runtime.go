@@ -65,7 +65,7 @@ func commandVersion(ctx context.Context, path string) (string, error) {
 }
 
 func nodeRuntimeArgs(version string) []string {
-	args := []string{"--experimental-strip-types", "--disable-warning=ExperimentalWarning"}
+	args := []string{"--experimental-strip-types", "--disable-warning=ExperimentalWarning", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON"}
 	if nodeAtLeast(version, 22, 7) {
 		args = append(args, "--experimental-transform-types")
 	}

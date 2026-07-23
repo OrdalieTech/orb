@@ -2,6 +2,10 @@
 
 This harness measures whether the most-downloaded public Pi extension packages load and expose the same observable tool and command registrations in pinned upstream Pi 0.81.1 and Pigo. It never sends a model request: RPC starts with a dummy API key, `get_commands` proves session startup, and `observer.ts` emits canonical JSON for `pi.getActiveTools()`, full tool definitions from `pi.getAllTools()`, and `pi.getCommands()`.
 
+The separate [live matrix](../../docs/sync/ecosystem-extension-live.md) installs packages through
+Pi and exercises representative model-driven workflows; do not infer workflow support from this
+offline harness alone.
+
 Registration comparison subtracts each runtime's own observer-only baseline, then compares stable active-tool names, canonical tool descriptions/parameter schemas/prompt guidelines, and command names/descriptions. Runtime-specific source paths and metadata are intentionally excluded. A package-specific command or tool is never executed, so `load_register_pass` is deliberately narrower than end-to-end extension compatibility. Flags, shortcuts, renderers, providers, event-handler behavior, credentials, model requests, and external services need separate workflow probes.
 
 Package install is deliberately separate from package execution. The install container uses the committed `package-lock.json` through `npm ci --ignore-scripts`. The runtime container has no network, no host credentials, a read-only root filesystem, dropped Linux capabilities, a PID and memory limit, and disposable tmpfs state. Both runners fail unless the network namespace contains only loopback interfaces, and the load result hashes the exact harness, corpus, observer, lock, and binaries it used. Do not run the corpus directly on a developer host.

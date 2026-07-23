@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -34,6 +34,17 @@ async function installedSDK(specifier, context, nextResolve) {
 			...context,
 			parentURL: pathToFileURL(join(root, "package.json")).href,
 		});
+	} catch {
+		return undefined;
+	}
+}
+
+async function resolveFromSource(specifier, context, nextResolve) {
+	if (!context.parentURL?.startsWith("file:") || !context.parentURL.includes("/host/entries/")) return undefined;
+	try {
+		const parentURL = pathToFileURL(await realpath(fileURLToPath(context.parentURL))).href;
+		if (parentURL === context.parentURL) return undefined;
+		return await nextResolve(specifier, { ...context, parentURL });
 	} catch {
 		return undefined;
 	}
@@ -151,6 +162,8 @@ export async function resolve(specifier, context, nextResolve) {
 		}
 		const sdk = await installedSDK(specifier, context, nextResolve);
 		if (sdk) return { ...sdk, shortCircuit: true };
+		const source = await resolveFromSource(specifier, context, nextResolve);
+		if (source) return { ...source, shortCircuit: true };
 		throw error;
 	}
 }
