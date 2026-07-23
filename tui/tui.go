@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -15,8 +16,8 @@ const (
 	scrollbarThumb     = segmentReset + "\x1b[999C┃"
 	scrollOnOutputOff  = "\x1b[?1010l"
 	scrollOnOutputOn   = "\x1b[?1010h"
-	alternateScreenOn  = "\x1b[?1049h\x1b[?1000h\x1b[?1006h"
-	alternateScreenOff = "\x1b[?1006l\x1b[?1000l\x1b[?1049l"
+	alternateScreenOn  = "\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1006h"
+	alternateScreenOff = "\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1049l"
 )
 
 type InputListenerResult struct {
@@ -29,6 +30,12 @@ type InputListener func(string) InputListenerResult
 type inputListenerEntry struct {
 	id       uint64
 	listener InputListener
+}
+
+type mousePoint struct{ row, column int }
+type mouseSelection struct {
+	anchor, focus mousePoint
+	active, moved bool
 }
 
 // TUI owns focus and performs synchronized line-level differential rendering.
@@ -54,6 +61,8 @@ type TUI struct {
 	viewportBodyLines   int
 	viewportBodyHeight  int
 	viewportFollow      bool
+	selection           mouseSelection
+	selectionHandler    func(string)
 
 	lifecycleMu sync.RWMutex
 	stopped     bool
@@ -137,6 +146,12 @@ func (ui *TUI) SetShowHardwareCursor(enabled bool) {
 func (ui *TUI) SetViewport(body, chrome Component) {
 	ui.renderMu.Lock()
 	ui.viewportBody, ui.viewportChrome, ui.viewportFollow = body, chrome, true
+	ui.renderMu.Unlock()
+}
+
+func (ui *TUI) SetSelectionHandler(handler func(string)) {
+	ui.renderMu.Lock()
+	ui.selectionHandler = handler
 	ui.renderMu.Unlock()
 }
 
@@ -367,36 +382,158 @@ func (ui *TUI) handleInput(data string) {
 
 func (ui *TUI) handleViewportInput(data string) bool {
 	ui.renderMu.Lock()
-	defer ui.renderMu.Unlock()
 	if ui.viewportBody == nil {
+		ui.renderMu.Unlock()
 		return false
 	}
+	var selected string
+	consumed := true
 	step := max(1, ui.viewportBodyHeight)
 	switch {
 	case MatchesKey(data, "ctrl+pageup"):
+		ui.selection.active = false
 		ui.scrollViewportLocked(-step)
 	case MatchesKey(data, "ctrl+pagedown"):
+		ui.selection.active = false
 		ui.scrollViewportLocked(step)
 	case MatchesKey(data, "ctrl+end"):
+		ui.selection.active = false
 		ui.viewportFollow = true
 	case strings.HasPrefix(data, "\x1b[<") && (strings.HasSuffix(data, "M") || strings.HasSuffix(data, "m")):
 		var button, column, row int
 		if _, err := fmt.Sscanf(data[:len(data)-1], "\x1b[<%d;%d;%d", &button, &column, &row); err != nil {
-			return true
+			break
 		}
-		if button&64 != 0 && button&3 < 2 {
+		switch {
+		case button&64 != 0 && button&3 < 2:
+			ui.selection.active = false
 			if button&1 == 0 {
 				ui.scrollViewportLocked(-3)
 			} else {
 				ui.scrollViewportLocked(3)
 			}
-		} else if data[len(data)-1] == 'M' && button&3 == 0 && column == ui.terminal.Columns() && row > 0 && row <= ui.viewportBodyHeight {
+		case data[len(data)-1] == 'm' && ui.selection.active:
+			if point, ok := ui.mousePointLocked(column, row); ok {
+				ui.selection.focus = point
+				ui.selection.moved = ui.selection.moved || point != ui.selection.anchor
+			}
+			if ui.selection.moved {
+				selected = ui.selectedTextLocked()
+			}
+			ui.selection.active = false
+		case button&32 != 0 && ui.selection.active:
+			if point, ok := ui.mousePointLocked(column, row); ok {
+				ui.selection.focus = point
+				ui.selection.moved = ui.selection.moved || point != ui.selection.anchor
+			}
+		case data[len(data)-1] == 'M' && button&3 == 0 && column == ui.terminal.Columns() && row > 0 && row <= ui.viewportBodyHeight:
+			ui.selection.active = false
 			ui.scrollViewportToLocked(row - 1)
+		case data[len(data)-1] == 'M' && button&3 == 0 && ui.selectionHandler != nil:
+			if point, ok := ui.mousePointLocked(column, row); ok {
+				ui.selection = mouseSelection{anchor: point, focus: point, active: true}
+				if point.row < ui.viewportBodyHeight && ui.viewportFollow && ui.viewportBodyLines > ui.viewportBodyHeight {
+					ui.viewportEnd, ui.viewportFollow = ui.viewportBodyLines, false
+				}
+			}
 		}
 	default:
-		return false
+		consumed = false
 	}
-	return true
+	handler := ui.selectionHandler
+	ui.renderMu.Unlock()
+	if selected != "" && handler != nil {
+		handler(selected)
+	}
+	return consumed
+}
+
+func (ui *TUI) mousePointLocked(column, row int) (mousePoint, bool) {
+	if column < 1 || row < 1 || row > len(ui.previousLines) {
+		return mousePoint{}, false
+	}
+	return mousePoint{row: row - 1, column: min(column-1, max(0, ui.terminal.Columns()-1))}, true
+}
+
+func (selection mouseSelection) bounds() (mousePoint, mousePoint) {
+	start, end := selection.anchor, selection.focus
+	if end.row < start.row || end.row == start.row && end.column < start.column {
+		start, end = end, start
+	}
+	return start, end
+}
+
+func selectionColumns(row int, start, end mousePoint, width int) (int, int) {
+	from, to := 0, width
+	if row == start.row {
+		from = start.column
+	}
+	if row == end.row {
+		to = end.column + 1
+	}
+	return min(from, width), min(to, width)
+}
+
+func selectionColumnStart(line string, column int) int {
+	current := 0
+	for pos := 0; pos < len(line) && current < column; {
+		if _, next, ok := extractANSI(line, pos); ok {
+			pos = next
+			continue
+		}
+		end := pos
+		for end < len(line) {
+			if _, _, ok := extractANSI(line, end); ok {
+				break
+			}
+			_, size := utf8.DecodeRuneInString(line[end:])
+			end += size
+		}
+		found := false
+		forEachGrapheme(line[pos:end], func(grapheme string) bool {
+			width := graphemeWidth(grapheme)
+			if current < column && column < current+width {
+				column, found = current, true
+				return false
+			}
+			current += width
+			return current < column
+		})
+		if found {
+			return column
+		}
+		pos = end
+	}
+	return column
+}
+
+func plainTerminalText(text string) string {
+	text = NormalizeTerminalOutput(text)
+	var result strings.Builder
+	for pos := 0; pos < len(text); {
+		if _, next, ok := extractANSI(text, pos); ok {
+			pos = next
+			continue
+		}
+		_, size := utf8.DecodeRuneInString(text[pos:])
+		result.WriteString(text[pos : pos+size])
+		pos += size
+	}
+	return result.String()
+}
+
+func (ui *TUI) selectedTextLocked() string {
+	start, end := ui.selection.bounds()
+	end.row = min(end.row, len(ui.previousLines)-1)
+	lines := make([]string, 0, end.row-start.row+1)
+	for row := start.row; row <= end.row; row++ {
+		line := strings.Replace(ui.previousLines[row], scrollbarThumb, "", 1)
+		width := VisibleWidth(line)
+		from, to := selectionColumns(row, start, end, width)
+		from = selectionColumnStart(line, from)
+		lines = append(lines, plainTerminalText(SliceByColumn(line, from, max(0, to-from), false)))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (ui *TUI) scrollViewportToLocked(row int) {
@@ -555,6 +692,7 @@ func (ui *TUI) RenderNow() {
 	if ui.overlayCount() > 0 {
 		newLines = ui.compositeOverlays(newLines, width, height)
 	}
+	newLines = ui.renderSelection(newLines)
 	cursorRow, cursorColumn, hasCursor := ui.extractCursor(newLines, height)
 	newLines = applyLineResets(newLines)
 	fullRender := func(clear bool) {
@@ -836,6 +974,34 @@ func scrollbar(total, height, end int) (top, size int) {
 	start := max(0, min(total-height, end-height))
 	top = start * (height - size) / (total - height)
 	return top, size
+}
+
+func (ui *TUI) renderSelection(lines []string) []string {
+	if !ui.selection.active || !ui.selection.moved {
+		return lines
+	}
+	start, end := ui.selection.bounds()
+	end.row = min(end.row, len(lines)-1)
+	result := append([]string(nil), lines...)
+	for row := start.row; row <= end.row; row++ {
+		line := result[row]
+		hasThumb := strings.Contains(line, scrollbarThumb)
+		line = strings.Replace(line, scrollbarThumb, "", 1)
+		width := VisibleWidth(line)
+		from, to := selectionColumns(row, start, end, width)
+		from = selectionColumnStart(line, from)
+		if to > from && !IsImageLine(line) {
+			before := SliceByColumn(line, 0, from, false)
+			selected := plainTerminalText(SliceByColumn(line, from, to-from, false))
+			after := SliceByColumn(line, to, width-to, false)
+			line = before + segmentReset + "\x1b[7m" + selected + segmentReset + after
+		}
+		if hasThumb {
+			line += scrollbarThumb
+		}
+		result[row] = line
+	}
+	return result
 }
 
 func (ui *TUI) positionCursor(row, column int, found bool, totalLines int) {

@@ -344,7 +344,7 @@ func TestTUIViewportPinsChromeAndKeepsDetachedBodyStable(t *testing.T) {
 	if err := ui.Stop(); err != nil {
 		t.Fatal(err)
 	}
-	if output := terminal.output(); !strings.Contains(output, "\x1b[?1006l\x1b[?1000l\x1b[?1049l") {
+	if output := terminal.output(); !strings.Contains(output, alternateScreenOff) {
 		t.Fatalf("stop did not restore mouse and alternate-screen modes: %q", output)
 	}
 }
@@ -380,6 +380,61 @@ func TestTUIViewportScrollbarClick(t *testing.T) {
 	}
 	if !ui.handleViewportInput("\x1b[<0;10;5M") || ui.viewportEnd != 100 || !ui.viewportFollow {
 		t.Fatalf("bottom click = end %d follow %v", ui.viewportEnd, ui.viewportFollow)
+	}
+}
+
+func TestTUIViewportDragCopiesVisibleText(t *testing.T) {
+	terminal := newFakeTerminal(12, 4)
+	ui := NewTUI(terminal)
+	body := &mutableLines{lines: []string{"old 0", "old 1", "alpha beta", "gamma delta", "third"}}
+	ui.SetViewport(
+		body,
+		&mutableLines{lines: []string{"input"}},
+	)
+	copied := make(chan string, 1)
+	ui.SetSelectionHandler(func(text string) { copied <- text })
+	if err := ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ui.Stop() }()
+
+	terminal.send("\x1b[<0;1;1M")
+	terminal.send("\x1b[<32;5;2M")
+	body.lines = append(body.lines, "streamed")
+	ui.RenderNow()
+	if frame := strings.Join(ui.previousLines, "\n"); !strings.Contains(frame, "\x1b[7m") || strings.Contains(frame, "streamed") {
+		t.Fatalf("selection did not remain highlighted over a stable viewport: %q", frame)
+	}
+	terminal.send("\x1b[<0;5;2m")
+	ui.RenderNow()
+	if frame := strings.Join(ui.previousLines, "\n"); strings.Contains(frame, "\x1b[7m") {
+		t.Fatalf("selection highlight remained after release: %q", frame)
+	}
+
+	select {
+	case got := <-copied:
+		if got != "alpha beta\ngamma" {
+			t.Fatalf("selection = %q", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("mouse drag did not copy the visible selection")
+	}
+	if output := terminal.output(); !strings.Contains(output, "\x1b[?1002h") {
+		t.Fatalf("button-motion tracking was not enabled: %q", output)
+	}
+}
+
+func TestTUISelectionPreservesWideStyledText(t *testing.T) {
+	ui := NewTUI(newFakeTerminal(10, 2))
+	ui.previousLines = []string{"\x1b[31mA界B\x1b[0m" + scrollbarThumb}
+	ui.selection = mouseSelection{
+		anchor: mousePoint{row: 0, column: 3},
+		focus:  mousePoint{row: 0, column: 2},
+		active: true,
+		moved:  true,
+	}
+	if got := ui.selectedTextLocked(); got != "界B" {
+		t.Fatalf("wide styled selection = %q", got)
 	}
 }
 

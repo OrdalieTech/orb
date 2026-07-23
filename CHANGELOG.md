@@ -6,6 +6,12 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-07-23
+
+### Added
+
+- Left-dragging in interactive mode highlights visible text, holds the viewport stable during streaming, and copies the selection on release.
+
 ## [0.3.2] - 2026-07-23
 
 ### Changed

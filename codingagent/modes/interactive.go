@@ -366,6 +366,13 @@ func (mode *InteractiveMode) init() error {
 	mode.footer.AddChild(NewFooterComponent(mode.session, mode))
 
 	mode.interactiveUI = NewInteractiveUI(mode)
+	mode.ui.SetSelectionHandler(func(text string) {
+		go func() {
+			if err := clipboard.CopyToClipboard(text); err != nil {
+				mode.interactiveUI.Notify("Copy failed: "+err.Error(), extensions.NotifyError)
+			}
+		}()
+	})
 	if runner := mode.session.ExtensionRunner(); runner != nil {
 		runner.SetUI(mode.interactiveUI, extensions.ModeTUI)
 	}
