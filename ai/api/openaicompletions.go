@@ -1154,7 +1154,7 @@ func applyOpenAICompletionsCacheControl(messages []any, tools []any, cacheContro
 	}
 	for index := len(messages) - 1; index >= 0; index-- {
 		message, ok := messages[index].(map[string]any)
-		if !ok || (message["role"] != "user" && message["role"] != "assistant") {
+		if !ok || (message["role"] != "user" && message["role"] != "assistant" && message["role"] != "tool") {
 			continue
 		}
 		if addOpenAICompletionsCacheControlToText(message, cacheControl) {

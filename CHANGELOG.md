@@ -6,6 +6,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-23
+
 ### Changed
 
 - The memory SDK moved from `codingagent/memory` to root-level `memory` before external adoption, changing its import path to `github.com/OrdalieTech/pigo/memory`.
@@ -13,6 +15,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 ### Fixed
 
 - Memory distillation now derives provider authentication through the model registry and cannot block session shutdown beyond 30 seconds.
+- OpenRouter Anthropic caching now anchors the latest tool result and enables cache controls for the `~anthropic/*-latest` aliases.
 
 ## [0.3.4] - 2026-07-23
 

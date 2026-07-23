@@ -348,6 +348,46 @@ func TestSimpleOpenAICompletionsForwardsBaseOptions(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsCachesLatestToolResult(t *testing.T) {
+	model := simpleOpenAICompletionsModel()
+	model.Provider = "openrouter"
+	model.Compat = json.RawMessage(`{"cacheControlFormat":"anthropic"}`)
+	apiKey := "simple-key"
+	payload, _ := captureSimpleOpenAICompletionsRequest(t, model, ai.Context{
+		Messages: ai.MessageList{
+			&ai.UserMessage{Content: ai.NewUserText("Read the file"), Timestamp: 1},
+			&ai.AssistantMessage{
+				Content: ai.AssistantContent{&ai.ToolCall{
+					ID: "call_1", Name: "read", Arguments: map[string]any{"path": "README.md"},
+				}},
+				API: ai.APIOpenAICompletions, Provider: "openrouter", Model: model.ID,
+				StopReason: ai.StopReasonToolUse, Timestamp: 2,
+			},
+			&ai.ToolResultMessage{
+				ToolCallID: "call_1", ToolName: "read",
+				Content:   ai.ToolResultContent{&ai.TextContent{Text: "file contents"}},
+				Timestamp: 3,
+			},
+		},
+	}, &ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{APIKey: &apiKey}})
+
+	messages := payload["messages"].([]any)
+	user := messages[0].(map[string]any)
+	if user["content"] != "Read the file" {
+		t.Fatalf("user cache marker moved incorrectly: %#v", user)
+	}
+	tool := messages[len(messages)-1].(map[string]any)
+	content, ok := tool["content"].([]any)
+	if tool["role"] != "tool" || !ok || len(content) != 1 {
+		t.Fatalf("latest tool message = %#v", tool)
+	}
+	part := content[0].(map[string]any)
+	control, ok := part["cache_control"].(map[string]any)
+	if !ok || control["type"] != "ephemeral" {
+		t.Fatalf("latest tool cache marker = %#v", part["cache_control"])
+	}
+}
+
 func simpleOpenAICompletionsModel() *ai.Model {
 	return &ai.Model{
 		ID:            "simple-model",

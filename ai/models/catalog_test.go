@@ -45,6 +45,31 @@ func TestBuiltinCatalogAndCorrections(t *testing.T) {
 	}
 }
 
+func TestOpenRouterAnthropicLatestAliasesEnableCacheControl(t *testing.T) {
+	catalog, err := Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{
+		"~anthropic/claude-fable-latest",
+		"~anthropic/claude-haiku-latest",
+		"~anthropic/claude-opus-latest",
+		"~anthropic/claude-sonnet-latest",
+	} {
+		model, ok := catalog.Find("openrouter", id)
+		if !ok {
+			t.Fatalf("missing openrouter/%s", id)
+		}
+		var compat ai.OpenAICompletionsCompat
+		if err := json.Unmarshal(model.Compat, &compat); err != nil {
+			t.Fatal(err)
+		}
+		if compat.CacheControlFormat == nil || *compat.CacheControlFormat != ai.CacheControlAnthropic {
+			t.Fatalf("openrouter/%s cacheControlFormat = %s", id, model.Compat)
+		}
+	}
+}
+
 func TestCatalogReturnsDetachedValuesAndMerges(t *testing.T) {
 	base, err := Decode([]byte(`{"p":{"m":{"id":"m","name":"M","api":"openai-completions","provider":"p","baseUrl":"https://base","reasoning":false,"input":["text"],"cost":{"input":1,"output":2,"cacheRead":0,"cacheWrite":0},"contextWindow":10,"maxTokens":5,"headers":{"x":"base"}}}}`))
 	if err != nil {
