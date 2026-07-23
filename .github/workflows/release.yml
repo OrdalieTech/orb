@@ -5,6 +5,7 @@ on:
     tags: ["v*"]
 
 permissions:
+  actions: read
   contents: write
 
 jobs:
@@ -21,12 +22,6 @@ jobs:
           cache-dependency-path: |
             go.sum
             Makefile
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-      # The full gate re-runs at the release commit; a red gate fails the tag.
-      - run: make check
-      - run: make fixtures-check
       - name: Extract release notes from CHANGELOG.md
         run: |
           awk '
@@ -69,6 +64,21 @@ jobs:
           (cd "${source_root}" && CGO_ENABLED=0 go build -buildvcs=false ./...)
           (cd "${source_root}" && CGO_ENABLED=0 go build -buildvcs=false -trimpath -o /tmp/pigo-source-check ./cmd/pigo)
           sha256sum "${source_archive}" > /tmp/pigo-source.sha256
+      - name: Require green CI for tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for _ in $(seq 1 60); do
+            state="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&event=push&per_page=1" \
+              --jq '.workflow_runs[0] | [.status, .conclusion] | join(":")')"
+            case "${state}" in
+              completed:success) exit 0 ;;
+              completed:*) echo "CI failed: ${state}" >&2; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "timed out waiting for CI" >&2
+          exit 1
       - name: Publish verified release artifacts
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
