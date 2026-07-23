@@ -358,3 +358,4 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/coding-agent/CHANGELOG.md`, v0.81.1 metadata, and fixture-visible output | `codingagent/modes/assets/CHANGELOG.md`, `cmd/pigo/main.go`, `UPSTREAM.lock`, regenerated `conformance/fixtures/` | v0.81.1 sync 2026-07-22 |
 | v0.81.1 `AgentOptions.streamFn` fixture API | `conformance/extract/{f3-session,f7-rpc-host}.ts` | v0.81.1 sync 2026-07-22 |
 | Ecosystem tasks, web-access, and subagent extensions (pigo first-party divergence) | `codingagent/plugins/`, `codingagent/config/{settings,settings_write}.go`, `cmd/pigo/{extensions,package_cli,runtime}.go` | First-party plugins 2026-07-22 |
+| MemoryStore seam (pigo first-party divergence; no upstream counterpart) | `memory/`, `codingagent/plugins/memory.go`, `docs/sdk.md` | Memory SDK 2026-07-23 |

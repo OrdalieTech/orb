@@ -6,6 +6,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Changed
+
+- The memory SDK moved from `codingagent/memory` to root-level `memory` before external adoption, changing its import path to `github.com/OrdalieTech/pigo/memory`.
+
 ### Fixed
 
 - Memory distillation now derives provider authentication through the model registry and cannot block session shutdown beyond 30 seconds.
