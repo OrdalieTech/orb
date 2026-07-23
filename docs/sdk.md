@@ -277,6 +277,13 @@ Passing an `ExtensionRegistry` directly remains useful for hosts that already
 own one, but `DefaultResourceLoader.ExtensionFactories` matches the upstream
 inline-extension path and keeps extension lifecycle coupled to resource reloads.
 
+### MemoryStore
+
+`codingagent/memory.Store` is the durable memory seam; `memory.NewFileStore(dir)`
+provides the append-only JSONL default. Embedders register
+`plugins.MemoryWithStore(store)` to use a per-tenant database or another custom
+backend without adding fields to `AgentSessionOptions`.
+
 ## Replaceable session runtime
 
 `NewAgentSessionRuntime` owns the active `AgentSession` and recreates cwd-bound

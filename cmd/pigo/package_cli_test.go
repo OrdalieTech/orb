@@ -67,7 +67,7 @@ func writeProjectPiSettings(t *testing.T, env packageCLIEnv, contents string) {
 func TestPluginsCLIListsAndTogglesUserSettings(t *testing.T) {
 	env := setupPackageCLI(t)
 	code, stdout, stderr := runPackageCLI(t, []string{"plugins", "list"})
-	if code != 0 || stderr != "" || !strings.Contains(stdout, "tasks\toff") || !strings.Contains(stdout, "websearch\toff") || !strings.Contains(stdout, "subagents\toff") || !strings.Contains(stdout, "permissions\toff") {
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "tasks\toff") || !strings.Contains(stdout, "websearch\toff") || !strings.Contains(stdout, "subagents\toff") || !strings.Contains(stdout, "permissions\toff") || !strings.Contains(stdout, "memory\toff") {
 		t.Fatalf("initial list: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	code, _, stderr = runPackageCLI(t, []string{"plugins", "enable", "tasks"})

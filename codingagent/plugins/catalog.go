@@ -1,4 +1,5 @@
 // Package plugins contains pigo's bundled, default-off first-party extensions.
+// They are pigo-original additions with no upstream mirror.
 package plugins
 
 import (
@@ -25,15 +26,17 @@ type Options struct {
 	HTTPClient *http.Client
 	Settings   *config.SettingsManager
 	Policy     *Policy
+	AgentDir   string
 }
 
-var names = []string{"tasks", "websearch", "subagents", "permissions"}
+var names = []string{"tasks", "websearch", "subagents", "permissions", "memory"}
 
 var descriptions = map[string]string{
 	"tasks":       "Live session task list and todo tool",
 	"websearch":   "Web search and readable page fetching",
 	"subagents":   "In-process single or parallel child agents",
 	"permissions": "Permissive audit and tool-call permission rules",
+	"memory":      "Persistent remember and recall tools",
 }
 
 // Names returns the stable first-party plugin order.
@@ -66,6 +69,7 @@ func Catalog(option ...Options) map[string]extensions.Factory {
 		"websearch":   websearchExtension(options.HTTPClient),
 		"subagents":   subagentsExtension(options.StreamFn, inheritPolicy),
 		"permissions": permissionsExtension(policy, options.Settings, nil),
+		"memory":      memoryExtension(nil, options.StreamFn, options.Settings, options.AgentDir),
 	}
 }
 
