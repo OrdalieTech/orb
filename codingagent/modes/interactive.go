@@ -113,6 +113,16 @@ type InteractiveMode struct {
 	cleanupOnce sync.Once
 }
 
+type compactStatus struct{ tui.Component }
+
+func (status compactStatus) Render(width int) []string {
+	lines := status.Component.Render(width)
+	for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
+		lines = lines[1:]
+	}
+	return lines
+}
+
 type chatRenderRequester struct {
 	mu        sync.RWMutex
 	mode      *InteractiveMode
@@ -343,7 +353,7 @@ func (mode *InteractiveMode) init() error {
 	for _, component := range []tui.Component{mode.header, mode.chat, mode.pendingMessages} {
 		body.AddChild(component)
 	}
-	for _, component := range []tui.Component{mode.status, mode.widgetAbove, mode.editorContainer, mode.widgetBelow, mode.footer, mode.overlay} {
+	for _, component := range []tui.Component{compactStatus{mode.status}, mode.widgetAbove, mode.editorContainer, mode.widgetBelow, mode.footer, mode.overlay} {
 		chrome.AddChild(component)
 	}
 	mode.ui.AddChild(body)

@@ -12,6 +12,7 @@ import (
 const (
 	minRenderInterval  = 16 * time.Millisecond
 	segmentReset       = "\x1b[0m\x1b]8;;\x07"
+	scrollbarThumb     = segmentReset + "\x1b[999C┃"
 	scrollOnOutputOff  = "\x1b[?1010l"
 	scrollOnOutputOn   = "\x1b[?1010h"
 	alternateScreenOn  = "\x1b[?1049h\x1b[?1000h\x1b[?1006h"
@@ -379,22 +380,33 @@ func (ui *TUI) handleViewportInput(data string) bool {
 	case MatchesKey(data, "ctrl+end"):
 		ui.viewportFollow = true
 	case strings.HasPrefix(data, "\x1b[<") && (strings.HasSuffix(data, "M") || strings.HasSuffix(data, "m")):
-		buttonEnd := strings.IndexByte(data[3:], ';')
-		if buttonEnd < 0 {
+		var button, column, row int
+		if _, err := fmt.Sscanf(data[:len(data)-1], "\x1b[<%d;%d;%d", &button, &column, &row); err != nil {
 			return true
 		}
-		button, err := strconv.Atoi(data[3 : 3+buttonEnd])
-		if err == nil && button&64 != 0 && button&3 < 2 {
+		if button&64 != 0 && button&3 < 2 {
 			if button&1 == 0 {
 				ui.scrollViewportLocked(-3)
 			} else {
 				ui.scrollViewportLocked(3)
 			}
+		} else if data[len(data)-1] == 'M' && button&3 == 0 && column == ui.terminal.Columns() && row > 0 && row <= ui.viewportBodyHeight {
+			ui.scrollViewportToLocked(row - 1)
 		}
 	default:
 		return false
 	}
 	return true
+}
+
+func (ui *TUI) scrollViewportToLocked(row int) {
+	scrollable := ui.viewportBodyLines - ui.viewportBodyHeight
+	if scrollable <= 0 {
+		return
+	}
+	row = max(0, min(row, ui.viewportBodyHeight-1))
+	ui.viewportEnd = ui.viewportBodyHeight + row*scrollable/max(1, ui.viewportBodyHeight-1)
+	ui.viewportFollow = ui.viewportEnd == ui.viewportBodyLines
 }
 
 func (ui *TUI) scrollViewportLocked(delta int) {
@@ -782,14 +794,18 @@ func (ui *TUI) renderViewport(width, height int) []string {
 		chrome = chrome[len(chrome)-height:]
 	}
 	bodyHeight := height - len(chrome)
-	body := buildLineLayout(ui.viewportBody, width)
+	bodyWidth := width
+	if width > 1 {
+		bodyWidth--
+	}
+	body := buildLineLayout(ui.viewportBody, bodyWidth)
 	bodyLines := body.total
 	end := bodyLines
 	if !ui.viewportFollow {
 		end = min(ui.viewportEnd, bodyLines)
 	}
 	start := max(0, end-bodyHeight)
-	body.refreshRange(width, start, end, ui.viewportFollow)
+	body.refreshRange(bodyWidth, start, end, ui.viewportFollow)
 	bodyLines = body.total
 	ui.viewportBodyLines, ui.viewportBodyHeight = bodyLines, bodyHeight
 	end = bodyLines
@@ -799,9 +815,27 @@ func (ui *TUI) renderViewport(width, height int) []string {
 	}
 	start = max(0, end-bodyHeight)
 	lines := make([]string, 0, height)
-	lines = body.appendRange(lines, width, start, end)
+	lines = body.appendRange(lines, bodyWidth, start, end)
 	lines = append(lines, make([]string, bodyHeight-len(lines))...)
+	if top, size := scrollbar(bodyLines, bodyHeight, end); width > 1 && size > 0 {
+		for row := top; row < top+size; row++ {
+			if IsImageLine(lines[row]) {
+				continue
+			}
+			lines[row] += scrollbarThumb
+		}
+	}
 	return append(lines, chrome...)
+}
+
+func scrollbar(total, height, end int) (top, size int) {
+	if height <= 0 || total <= height {
+		return 0, 0
+	}
+	size = max(1, height*height/total)
+	start := max(0, min(total-height, end-height))
+	top = start * (height - size) / (total - height)
+	return top, size
 }
 
 func (ui *TUI) positionCursor(row, column int, found bool, totalLines int) {

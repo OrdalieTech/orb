@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -113,7 +114,7 @@ func TestTUIViewportDoesNotRenderHiddenHistory(t *testing.T) {
 	ui := NewTUI(newFakeTerminal(20, 4))
 	ui.SetViewport(body, &mutableLines{lines: []string{"input"}})
 
-	if got := ui.renderViewport(20, 4); strings.Join(got, ",") != "three,four,five,input" {
+	if got := ui.renderViewport(20, 4); strings.Join(got, ",") != "three,four,five"+scrollbarThumb+",input" {
 		t.Fatalf("viewport = %#v", got)
 	}
 	if body.fullRenders != 0 {
@@ -359,6 +360,26 @@ func TestTUIViewportNeverScrollsAboveFirstFullPage(t *testing.T) {
 	ui.scrollViewportLocked(-3)
 	if ui.viewportEnd != 3 || !ui.viewportFollow {
 		t.Fatalf("short history scroll = end %d follow %v, want 3 true", ui.viewportEnd, ui.viewportFollow)
+	}
+}
+
+func TestTUIViewportScrollbarClick(t *testing.T) {
+	body := &mutableLines{}
+	for index := range 100 {
+		body.lines = append(body.lines, fmt.Sprintf("line %d", index))
+	}
+	ui := NewTUI(newFakeTerminal(10, 6))
+	ui.SetViewport(body, &mutableLines{lines: []string{"input"}})
+
+	frame := ui.renderViewport(10, 6)
+	if strings.HasSuffix(frame[0], "┃") || !strings.HasSuffix(frame[4], "┃") {
+		t.Fatalf("scrollbar = %#v", frame[:5])
+	}
+	if !ui.handleViewportInput("\x1b[<0;10;1M") || ui.viewportEnd != 5 || ui.viewportFollow {
+		t.Fatalf("top click = end %d follow %v", ui.viewportEnd, ui.viewportFollow)
+	}
+	if !ui.handleViewportInput("\x1b[<0;10;5M") || ui.viewportEnd != 100 || !ui.viewportFollow {
+		t.Fatalf("bottom click = end %d follow %v", ui.viewportEnd, ui.viewportFollow)
 	}
 }
 
