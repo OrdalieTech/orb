@@ -20,8 +20,8 @@ import (
 	"github.com/OrdalieTech/pigo/codingagent"
 	"github.com/OrdalieTech/pigo/codingagent/config"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	memorysdk "github.com/OrdalieTech/pigo/codingagent/memory"
 	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	memorysdk "github.com/OrdalieTech/pigo/memory"
 )
 
 type widgetUI struct {

@@ -251,9 +251,10 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
 - **D34 — MemoryStore seam + memory plugin (owner, 2026-07-23).** This pigo-original addition
   gives the dormant memory plugin one storage seam shared by per-profile JSONL stores and
   per-tenant database implementations, because three ecosystem memory packages otherwise
-  reinvent storage. The default injects a bounded recent index at session start and leaves
-  distillation off. V1 has no per-turn RAG, session search, secret scanning, widget, or subagent
-  inheritance.
+  reinvent storage. The seam lives at root-level `memory/`, following the pigo-original `chat/`
+  precedent, so embedders can import it standalone. The default injects a bounded recent index at
+  session start and leaves distillation off. V1 has no per-turn RAG, session search, secret
+  scanning, widget, or subagent inheritance.
 
 ## 2026-07-21 parity-sync amendments
 
