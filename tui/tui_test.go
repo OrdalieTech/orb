@@ -314,7 +314,7 @@ func TestTUIViewportPinsChromeAndKeepsDetachedBodyStable(t *testing.T) {
 		t.Fatalf("initial viewport = %q", initial)
 	}
 
-	terminal.send("\x1b[<64;10;3M") // SGR wheel up
+	ui.handleViewportInput("\x1b[<64;10;3M") // SGR wheel up
 	ui.RenderNow()
 	detached := append([]string(nil), ui.previousLines...)
 	if joined := strings.Join(detached, "\n"); !strings.Contains(joined, "body 0") || strings.Contains(joined, "body 5") || !strings.HasSuffix(joined, "editor"+segmentReset+"\nfooter"+segmentReset) {
@@ -332,11 +332,11 @@ func TestTUIViewportPinsChromeAndKeepsDetachedBodyStable(t *testing.T) {
 		t.Fatalf("detached streaming output = %q", output)
 	}
 
-	terminal.send("\x1b[6;5~") // ctrl+PageDown
+	ui.handleViewportInput("\x1b[6;5~") // ctrl+PageDown
 	ui.RenderNow()
-	terminal.send("\x1b[5;5~") // ctrl+PageUp
+	ui.handleViewportInput("\x1b[5;5~") // ctrl+PageUp
 	ui.RenderNow()
-	terminal.send("\x1b[1;5F") // ctrl+End
+	ui.handleViewportInput("\x1b[1;5F") // ctrl+End
 	ui.RenderNow()
 	if joined := strings.Join(ui.previousLines, "\n"); !strings.Contains(joined, "loading frame") || !strings.HasSuffix(joined, "loader frame"+segmentReset+"\nfooter"+segmentReset) {
 		t.Fatalf("follow viewport = %q", joined)
@@ -398,14 +398,14 @@ func TestTUIViewportDragCopiesVisibleText(t *testing.T) {
 	}
 	defer func() { _ = ui.Stop() }()
 
-	terminal.send("\x1b[<0;1;1M")
-	terminal.send("\x1b[<32;5;2M")
+	ui.handleViewportInput("\x1b[<0;1;1M")
+	ui.handleViewportInput("\x1b[<32;5;2M")
 	body.lines = append(body.lines, "streamed")
 	ui.RenderNow()
 	if frame := strings.Join(ui.previousLines, "\n"); !strings.Contains(frame, "\x1b[7m") || strings.Contains(frame, "streamed") {
 		t.Fatalf("selection did not remain highlighted over a stable viewport: %q", frame)
 	}
-	terminal.send("\x1b[<0;5;2m")
+	ui.handleViewportInput("\x1b[<0;5;2m")
 	ui.RenderNow()
 	if frame := strings.Join(ui.previousLines, "\n"); strings.Contains(frame, "\x1b[7m") {
 		t.Fatalf("selection highlight remained after release: %q", frame)
