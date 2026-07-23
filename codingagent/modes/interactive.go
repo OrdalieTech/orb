@@ -96,6 +96,7 @@ type InteractiveMode struct {
 	cwd                  string
 	outputPad            int
 	lastEscape           time.Time
+	lastCtrlC            time.Time
 	extensionEditor      extensions.EditorComponent
 	themeRegistry        *theme.Registry
 	themeController      *theme.Controller
@@ -1068,7 +1069,7 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 	}
 
 	mode.editor.OnCtrlD = func() {
-		mode.shutdown()
+		go mode.shutdown()
 	}
 
 	mode.editor.OnPasteImage = func() {
@@ -1095,6 +1096,15 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 
 	// App action handlers
 	mode.editor.OnAction("app.clear", func() {
+		now := time.Now()
+		mode.mu.Lock()
+		if !mode.lastCtrlC.IsZero() && now.Sub(mode.lastCtrlC) < 500*time.Millisecond {
+			mode.mu.Unlock()
+			go mode.shutdown()
+			return
+		}
+		mode.lastCtrlC = now
+		mode.mu.Unlock()
 		mode.editor.SetText("")
 	})
 

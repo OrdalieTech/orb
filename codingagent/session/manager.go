@@ -33,6 +33,16 @@ type OptionalEntryFields struct {
 	FromHook   *bool
 }
 
+type AggregateStats struct {
+	InputTokens           int64
+	OutputTokens          int64
+	CacheReadTokens       int64
+	CacheWriteTokens      int64
+	Cost                  float64
+	LatestCacheHitRate    float64
+	HasLatestCacheHitRate bool
+}
+
 // CompactionResult is the coding-agent event/RPC shape. The public agent
 // harness has a separate retained-tail result contract in v0.81.
 type CompactionResult struct {
@@ -131,6 +141,8 @@ type SessionManager struct {
 	agentDir           string
 	harnessStorage     harness.SessionStorage
 	harnessRepo        harness.SessionRepo
+	revision           uint64
+	aggregate          AggregateStats
 }
 
 var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$`)
@@ -406,6 +418,8 @@ func (manager *SessionManager) newSessionLocked(options *NewSessionOptions) (str
 	manager.labelsByID = make(map[string]string)
 	manager.labelTimestampsID = make(map[string]string)
 	manager.leafID = nil
+	manager.aggregate = AggregateStats{}
+	manager.revision++
 	manager.flushed = false
 	if manager.persist {
 		filenameTimestamp := strings.NewReplacer(":", "-", ".", "-").Replace(timestamp)
@@ -450,6 +464,55 @@ func (manager *SessionManager) buildIndexLocked() {
 			}
 		}
 	}
+	manager.rebuildAggregateLocked()
+	manager.revision++
+}
+
+func (manager *SessionManager) rebuildAggregateLocked() {
+	manager.aggregate = AggregateStats{}
+	for _, fileEntry := range manager.fileEntries {
+		if fileEntry != nil && fileEntry.Entry != nil && fileEntry.Type != "session" {
+			manager.addAggregateEntryLocked(fileEntry.Entry)
+		}
+	}
+}
+
+func (manager *SessionManager) addAggregateEntryLocked(entry *SessionEntry) {
+	if entry == nil {
+		return
+	}
+	if entry.Type == "compaction" || entry.Type == "branch_summary" {
+		addAggregateUsage(&manager.aggregate, entry.Usage)
+	}
+	if entry.Type != "message" {
+		return
+	}
+	message, err := ai.UnmarshalMessage(entry.Message)
+	if err != nil {
+		return
+	}
+	switch message := message.(type) {
+	case *ai.ToolResultMessage:
+		addAggregateUsage(&manager.aggregate, message.Usage)
+	case *ai.AssistantMessage:
+		addAggregateUsage(&manager.aggregate, &message.Usage)
+		promptTokens := message.Usage.Input + message.Usage.CacheRead + message.Usage.CacheWrite
+		manager.aggregate.HasLatestCacheHitRate = promptTokens > 0
+		if promptTokens > 0 {
+			manager.aggregate.LatestCacheHitRate = float64(message.Usage.CacheRead) / float64(promptTokens) * 100
+		}
+	}
+}
+
+func addAggregateUsage(stats *AggregateStats, usage *ai.Usage) {
+	if usage == nil {
+		return
+	}
+	stats.InputTokens += usage.Input
+	stats.OutputTokens += usage.Output
+	stats.CacheReadTokens += usage.CacheRead
+	stats.CacheWriteTokens += usage.CacheWrite
+	stats.Cost += usage.Cost.Total
 }
 
 func (manager *SessionManager) rewriteFileLocked() error {
@@ -580,6 +643,8 @@ func (manager *SessionManager) appendEntryLocked(entry SessionEntry) (string, er
 	manager.byID[entry.ID] = record.Entry
 	id := entry.ID
 	manager.leafID = &id
+	manager.addAggregateEntryLocked(record.Entry)
+	manager.revision++
 	if err := manager.persistEntryLocked(record); err != nil {
 		return "", err
 	}
@@ -913,6 +978,15 @@ func (manager *SessionManager) GetEntries() []SessionEntry {
 	return entries
 }
 
+func (manager *SessionManager) AggregateStats() (AggregateStats, uint64) {
+	if manager == nil {
+		return AggregateStats{}, 0
+	}
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
+	return manager.aggregate, manager.revision
+}
+
 func (manager *SessionManager) GetHeader() *SessionHeader {
 	if manager.harnessStorage != nil {
 		manager.mu.Lock()
@@ -1122,6 +1196,7 @@ func (manager *SessionManager) Branch(id string) error {
 		return fmt.Errorf("Entry %s not found", id) //nolint:staticcheck // Upstream error capitalization is observable.
 	}
 	manager.leafID = &id
+	manager.revision++
 	return nil
 }
 
@@ -1137,6 +1212,7 @@ func (manager *SessionManager) ResetLeaf() {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	manager.leafID = nil
+	manager.revision++
 }
 
 func (manager *SessionManager) BranchWithSummary(
@@ -1163,6 +1239,7 @@ func (manager *SessionManager) BranchWithSummary(
 		}
 		manager.leafID = cloneString(branchFromID)
 	}
+	manager.revision++
 	entry, err := manager.newEntryBaseLocked("branch_summary")
 	if err != nil {
 		return "", err

@@ -309,6 +309,25 @@ func TestUsageUIIncludesAuxiliaryUsageAndLatestAssistantCacheHit(t *testing.T) {
 	}
 }
 
+func TestFooterRenderCostDoesNotScaleWithSessionHistory(t *testing.T) {
+	initTestTheme(t)
+	manager, err := sessionstore.InMemory(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := cacheStatsAssistant(t, cacheStatsAssistantOptions{input: 100})
+	for range 1_000 {
+		if _, err := manager.AppendMessage(message); err != nil {
+			t.Fatal(err)
+		}
+	}
+	footer := NewFooterComponent(newCacheStatsRuntime(t, manager), &fakeFooterDataProvider{})
+	allocations := testing.AllocsPerRun(1, func() { _ = footer.Render(120) })
+	if allocations > 100 {
+		t.Fatalf("footer render allocated %.0f objects for unchanged history, want at most 100", allocations)
+	}
+}
+
 func TestHandleSessionCommandOmitsSingleUsageBreakdown(t *testing.T) {
 	initTestTheme(t)
 	manager, err := sessionstore.InMemory(t.TempDir())
