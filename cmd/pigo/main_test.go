@@ -26,6 +26,7 @@ import (
 	"github.com/OrdalieTech/pigo/codingagent/config"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
 	"github.com/OrdalieTech/pigo/codingagent/modes"
+	firstpartyplugins "github.com/OrdalieTech/pigo/codingagent/plugins"
 	"github.com/OrdalieTech/pigo/codingagent/session"
 )
 
@@ -1216,6 +1217,188 @@ func TestRunCLIHeadlessModesBindSessionReplacementLifecycle(t *testing.T) {
 	}
 }
 
+func TestRunCLIPrintDistillsMemoryAtShutdownThroughModelRegistry(t *testing.T) {
+	root := t.TempDir()
+	cwd := filepath.Join(root, "project")
+	agentDir := filepath.Join(root, "agent")
+	if err := os.MkdirAll(cwd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(cwd)
+	t.Setenv("HOME", root)
+	t.Setenv(config.EnvAgentDir, agentDir)
+	if err := os.MkdirAll(agentDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(
+		`{"plugins":{"memory":{"inject":"none","distill":true}}}`,
+	), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	authStorage, err := config.NewAuthStorage(filepath.Join(agentDir, "auth.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := authStorage.Modify(context.Background(), "xai", func(*aiauth.Credential) (*aiauth.Credential, error) {
+		return aiauth.APIKeyCredential("distill-secret"), nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{}, settings, nil)
+	if len(diagnostics) != 0 {
+		t.Fatalf("extension diagnostics = %v", diagnostics)
+	}
+
+	var sawAuth, sawTranscript bool
+	distillServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		sawAuth = request.Header.Get("Authorization") == "Bearer distill-secret"
+		sawTranscript = strings.Contains(string(body), "The deployment marker is cobalt.")
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(writer, strings.Join([]string{
+			`data: {"type":"response.created","response":{"id":"resp_distill"}}`,
+			`data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_distill","role":"assistant","content":[],"status":"in_progress"}}`,
+			`data: {"type":"response.output_text.delta","output_index":0,"delta":"- The deployment marker is cobalt."}`,
+			`data: {"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"msg_distill","role":"assistant","content":[{"type":"output_text","text":"- The deployment marker is cobalt.","annotations":[]}],"status":"completed","phase":"final_answer"}}`,
+			`data: {"type":"response.completed","response":{"id":"resp_distill","status":"completed","output":[]}}`,
+			"data: [DONE]",
+			"",
+		}, "\n\n"))
+	}))
+	defer distillServer.Close()
+	provider := faux.New(faux.Options{
+		API: ai.APIOpenAIResponses, Provider: "xai", TokenSize: faux.FixedTokenSize(1000),
+	})
+	provider.GetModel().BaseURL = distillServer.URL
+	provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("Main answer.")})
+	modelRegistry, err := config.NewModelRegistry(agentDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runCLIWithDependencies(context.Background(), []string{
+		"-p", "--no-session", "--model", "faux-1", "The deployment marker is cobalt.",
+	}, cliStreams{
+		Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr,
+		StdinTTY: true, StdoutTTY: false,
+	}, cliDependencies{
+		createRuntime: memoryDistillRuntimeFactory(provider, settings, modelRegistry, registry),
+	})
+	if code != 0 || stderr.Len() != 0 {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !sawAuth || !sawTranscript || provider.State().CallCount != 1 {
+		t.Fatalf("distill auth=%t transcript=%t provider calls=%d", sawAuth, sawTranscript, provider.State().CallCount)
+	}
+
+	file, err := os.Open(filepath.Join(agentDir, "memory", "memory.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+	var distilled []struct {
+		Content string   `json:"content"`
+		Tags    []string `json:"tags"`
+	}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		var record struct {
+			Item *struct {
+				Content string   `json:"content"`
+				Tags    []string `json:"tags"`
+			} `json:"item"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
+			t.Fatal(err)
+		}
+		if record.Item != nil {
+			distilled = append(distilled, *record.Item)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(distilled) != 1 || distilled[0].Content != "The deployment marker is cobalt." ||
+		strings.Join(distilled[0].Tags, ",") != "distilled" {
+		t.Fatalf("distilled items = %#v", distilled)
+	}
+}
+
+func TestRunCLIPrintDistillHangIsBoundedAndReportedOnce(t *testing.T) {
+	root := t.TempDir()
+	cwd := filepath.Join(root, "project")
+	agentDir := filepath.Join(root, "agent")
+	if err := os.MkdirAll(cwd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(cwd)
+	t.Setenv("HOME", root)
+	t.Setenv(config.EnvAgentDir, agentDir)
+	if err := os.MkdirAll(agentDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(
+		`{"plugins":{"memory":{"inject":"none","distill":true}}}`,
+	), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+	provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("Main answer.")})
+	distillCalled := make(chan struct{}, 1)
+	blockedStream := func(
+		context.Context,
+		*ai.Model,
+		ai.Context,
+		*ai.SimpleStreamOptions,
+	) (ai.AssistantMessageEventStream, error) {
+		distillCalled <- struct{}{}
+		select {}
+	}
+	registry := extensions.NewRegistry(cwd)
+	factory := firstpartyplugins.Catalog(firstpartyplugins.Options{
+		StreamFn: blockedStream, Settings: settings, AgentDir: agentDir,
+	})["memory"]
+	if err := registry.Register("<inline:memory>", factory); err != nil {
+		t.Fatal(err)
+	}
+
+	runContext, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	var stdout, stderr bytes.Buffer
+	started := time.Now()
+	code := runCLIWithDependencies(runContext, []string{
+		"-p", "--no-session", "--model", "faux-1", "Remember that the deployment marker is cobalt.",
+	}, cliStreams{
+		Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr,
+		StdinTTY: true, StdoutTTY: false,
+	}, cliDependencies{
+		createRuntime: memoryDistillRuntimeFactory(provider, settings, nil, registry),
+	})
+	elapsed := time.Since(started)
+	if code != 0 || elapsed >= 2*time.Second {
+		t.Fatalf("code=%d elapsed=%s stdout=%q stderr=%q", code, elapsed, stdout.String(), stderr.String())
+	}
+	select {
+	case <-distillCalled:
+	default:
+		t.Fatal("distill stream was not invoked")
+	}
+	diagnostic := strings.TrimSpace(stderr.String())
+	if !strings.Contains(diagnostic, "memory: distillation did not finish before shutdown deadline") ||
+		strings.Contains(diagnostic, "\n") {
+		t.Fatalf("distill diagnostic = %q, want one visible line", diagnostic)
+	}
+}
+
 func TestRunCLIHeadlessModesContinuePromptingReplacementSession(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -1465,6 +1648,26 @@ func fauxRuntimeFactory(provider *faux.Provider) func(string, CLIArgs, agent.Age
 			agent.WithConvertToLLM(codingagent.ConvertToLLM),
 		)
 		return runtimeInputs{Agent: created}, nil
+	}
+}
+
+func memoryDistillRuntimeFactory(
+	provider *faux.Provider,
+	settings *config.SettingsManager,
+	modelRegistry *config.ModelRegistry,
+	registry *extensions.Registry,
+) func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+	return func(_ string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
+		created := agent.NewAgent(
+			provider.StreamSimple, agent.WithInitialState(agent.AgentState{
+				SystemPrompt: "test", Model: provider.GetModel(), Messages: prior,
+			}),
+			agent.WithConvertToLLM(codingagent.ConvertToLLM),
+		)
+		return runtimeInputs{
+			Agent: created, Settings: settings, StreamFn: provider.StreamSimple,
+			ModelRegistry: modelRegistry, Extensions: registry,
+		}, nil
 	}
 }
 

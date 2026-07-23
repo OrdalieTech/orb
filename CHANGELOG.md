@@ -6,6 +6,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Fixed
+
+- Memory distillation now derives provider authentication through the model registry and cannot block session shutdown beyond 30 seconds.
+
 ## [0.3.4] - 2026-07-23
 
 ### Added
