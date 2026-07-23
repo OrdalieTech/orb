@@ -3,15 +3,19 @@ package plugins
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/OrdalieTech/pigo/agent"
 	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/codingagent"
 	"github.com/OrdalieTech/pigo/codingagent/config"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
 	memorysdk "github.com/OrdalieTech/pigo/codingagent/memory"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 )
 
 const (
@@ -19,7 +23,10 @@ const (
 	distillTranscriptBytes = 12 << 10
 	distillMessageLimit    = 40
 	distillItemLimit       = 20
-	defaultDistillPrompt   = "Extract durable facts, preferences, decisions, and reusable lessons from the transcript. Return one concise memory per line, or NONE."
+	// ponytail: one fixed shutdown deadline is enough; add configuration only
+	// when a real provider needs a different distillation budget.
+	distillTimeout       = 30 * time.Second
+	defaultDistillPrompt = "Extract durable facts, preferences, decisions, and reusable lessons from the transcript. Return one concise memory per line, or NONE."
 )
 
 var (
@@ -148,7 +155,14 @@ func memoryExtension(store memorysdk.Store, stream agent.StreamFn, settings *con
 			if strings.TrimSpace(transcript) == "" {
 				return nil, nil
 			}
-			return nil, distillMemory(ctx, activeStore, stream, extensionContext, options.distillPrompt, transcript)
+			model := extensionContext.Model()
+			modelRegistry := extensionContext.ModelRegistry()
+			cwd := extensionContext.CWD()
+			return nil, runDistillWithShutdownDeadline(ctx, func(distillContext context.Context) error {
+				return distillMemory(
+					distillContext, activeStore, stream, modelRegistry, model, cwd, options.distillPrompt, transcript,
+				)
+			})
 		})
 		return nil
 	}
@@ -275,38 +289,73 @@ func distillMemory(
 	ctx context.Context,
 	store memorysdk.Store,
 	injected agent.StreamFn,
-	extensionContext extensions.Context,
+	modelRegistry extensions.ModelRegistry,
+	model *ai.Model,
+	cwd string,
 	prompt string,
 	transcript string,
 ) error {
-	stream := injected
-	if stream == nil && extensionContext.ModelRegistry() != nil {
-		stream = extensionContext.ModelRegistry().StreamSimple
+	if model == nil {
+		return fmt.Errorf("memory: distillation requires a model")
 	}
-	if stream == nil || extensionContext.Model() == nil {
-		return fmt.Errorf("memory: distillation requires a model and stream function")
+	agentDir, err := os.MkdirTemp("", "pigo-memory-distill-")
+	if err != nil {
+		return fmt.Errorf("memory: prepare distillation: %w", err)
 	}
+	defer func() { _ = os.RemoveAll(agentDir) }()
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir), config.WithProjectTrusted(false))
+	if err != nil {
+		return fmt.Errorf("memory: prepare distillation: %w", err)
+	}
+	manager, err := sessionstore.InMemory(cwd)
+	if err != nil {
+		return fmt.Errorf("memory: prepare distillation: %w", err)
+	}
+	sessionOptions := codingagent.AgentSessionOptions{
+		CWD: cwd, AgentDir: agentDir, Model: model, ThinkingLevel: ai.ModelThinkingOff,
+		NoTools: "all", SessionManager: manager, Settings: settings,
+		Resources: &codingagent.Resources{SystemPrompt: &prompt},
+	}
+	if injected != nil {
+		sessionOptions.StreamFn = injected
+	} else {
+		registry, ok := modelRegistry.(*config.ModelRegistry)
+		if !ok {
+			return fmt.Errorf("memory: unsupported model registry %T", modelRegistry)
+		}
+		sessionOptions.ModelRegistry = registry
+	}
+	result, err := codingagent.NewAgentSession(sessionOptions)
+	if err != nil {
+		return fmt.Errorf("memory: prepare distillation: %w", err)
+	}
+	defer result.Session.Dispose()
+	distillAgent := result.Session.Agent()
+	distillAgent.SetSystemPrompt(prompt)
 	// ponytail: one bounded shutdown turn over the last 40 messages; add
 	// batching only when real transcripts produce missed durable facts.
-	events, err := stream(ctx, extensionContext.Model(), ai.Context{
-		SystemPrompt: &prompt,
-		Messages:     ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("Transcript:\n" + transcript)}},
-	}, nil)
-	if err != nil {
-		return err
+	if err := distillAgent.Prompt(ctx, "Transcript:\n"+transcript); err != nil {
+		return fmt.Errorf("memory: distillation failed: %w", err)
 	}
-	message, err := ai.Collect(events)
-	if err != nil {
-		return err
+	if err := distillAgent.WaitForIdle(ctx); err != nil {
+		return fmt.Errorf("memory: distillation failed: %w", err)
 	}
-	if message.StopReason == ai.StopReasonError || message.StopReason == ai.StopReasonAborted {
-		if message.ErrorMessage != nil {
-			return fmt.Errorf("memory: distillation failed: %s", *message.ErrorMessage)
+	state := result.Session.State()
+	if len(state.Messages) > 0 {
+		if message, ok := state.Messages[len(state.Messages)-1].(*ai.AssistantMessage); ok &&
+			(message.StopReason == ai.StopReasonError || message.StopReason == ai.StopReasonAborted) {
+			if message.ErrorMessage != nil {
+				return fmt.Errorf("memory: distillation failed: %s", *message.ErrorMessage)
+			}
+			return fmt.Errorf("memory: distillation failed: %s", message.StopReason)
 		}
-		return fmt.Errorf("memory: distillation failed: %s", message.StopReason)
+	}
+	text := result.Session.GetLastAssistantText()
+	if text == nil {
+		return nil
 	}
 	count := 0
-	for _, line := range strings.Split(ai.ContentText(message.Content), "\n") {
+	for _, line := range strings.Split(*text, "\n") {
 		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "- "))
 		if line == "" || strings.EqualFold(line, "none") {
 			continue
@@ -320,6 +369,31 @@ func distillMemory(
 		}
 	}
 	return nil
+}
+
+func runDistillWithShutdownDeadline(ctx context.Context, distill func(context.Context) error) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	distillContext, cancel := context.WithTimeout(ctx, distillTimeout)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		var err error
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				err = fmt.Errorf("memory: distillation panicked: %v", recovered)
+			}
+			result <- err
+		}()
+		err = distill(distillContext)
+	}()
+	select {
+	case err := <-result:
+		return err
+	case <-distillContext.Done():
+		return fmt.Errorf("memory: distillation did not finish before shutdown deadline: %w", distillContext.Err())
+	}
 }
 
 func trimTrailingBytes(value string, limit int) string {
