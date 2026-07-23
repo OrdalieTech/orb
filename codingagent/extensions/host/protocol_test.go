@@ -110,7 +110,7 @@ func TestDiscoverRuntimePrefersSupportedNode(t *testing.T) {
 	if runtime.Name != "node" || runtime.Version != "22.6.0" {
 		t.Fatalf("runtime = %#v", runtime)
 	}
-	if got := strings.Join(runtime.Args, " "); got != "--experimental-strip-types --disable-warning=ExperimentalWarning --preserve-symlinks" {
+	if got := strings.Join(runtime.Args, " "); got != "--experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --preserve-symlinks" {
 		t.Fatalf("node runtime arguments = %q", got)
 	}
 }
@@ -123,7 +123,7 @@ func TestDiscoverRuntimeTransformsNonErasableTypeScriptWhenSupported(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(runtime.Args, " "); got != "--experimental-strip-types --disable-warning=ExperimentalWarning --experimental-transform-types --preserve-symlinks" {
+	if got := strings.Join(runtime.Args, " "); got != "--experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-transform-types --preserve-symlinks" {
 		t.Fatalf("node runtime arguments = %q", got)
 	}
 }

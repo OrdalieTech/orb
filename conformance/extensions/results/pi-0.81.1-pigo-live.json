@@ -1,0 +1,183 @@
+{
+  "date": "2026-07-23",
+  "upstream": {
+    "version": "0.81.1",
+    "commit": "20be4b18"
+  },
+  "environment": {
+    "node": "24.15.0",
+    "installedThrough": "pi install",
+    "projects": 3,
+    "packagesInstalled": 30,
+    "directInternetFromTestContainers": false,
+    "model": "openai/gpt-4.1-mini",
+    "relayRequestLimit": 50
+  },
+  "summary": {
+    "loadedByPigo": 29,
+    "liveWorkflowPackages": 15,
+    "registeredOrLoadOnlyPackages": 14,
+    "incompatiblePackages": 1,
+    "upstreamPackageCollisions": 2,
+    "upstreamInstallFailures": 1
+  },
+  "resourceParity": {
+    "denseGlobal": {
+      "extensionCommands": 67,
+      "prompts": 7,
+      "skills": 35
+    },
+    "denseProject": {
+      "extensionCommands": 67,
+      "prompts": 8,
+      "skills": 36
+    },
+    "betaMain": {
+      "extensionCommands": 25,
+      "skills": 15
+    },
+    "crewOnly": {
+      "extensionCommands": 40,
+      "skills": 30
+    },
+    "lspOnly": {
+      "extensionCommands": 1
+    },
+    "indexAndSafety": {
+      "extensionCommands": 1,
+      "skills": 1
+    },
+    "gamma": {
+      "piResources": 26,
+      "pigoResources": 25,
+      "difference": "pi-llama-cpp"
+    }
+  },
+  "liveWorkflows": [
+    {
+      "package": "pi-mcp-adapter@2.11.0",
+      "surface": "MCP discovery and tool call",
+      "proof": "MCP_PROOF:LIVE_MCP_7"
+    },
+    {
+      "package": "context-mode@1.0.169",
+      "surface": "session lifecycle persistence",
+      "proof": "SQLite session state created and updated"
+    },
+    {
+      "package": "@tintinweb/pi-subagents@0.14.2",
+      "surface": "isolated child agent",
+      "proof": "SUBAGENT_PROOF:activeUserIds,summarizeUsers"
+    },
+    {
+      "package": "pi-lens@3.8.71",
+      "surface": "module_report and read_symbol",
+      "proof": "five Go symbols; Transfer body returned"
+    },
+    {
+      "package": "@quintinshaw/pi-dynamic-workflows@3.3.0",
+      "surface": "foreground workflow child",
+      "proof": "WORKFLOW_PROOF:summarizeUsers"
+    },
+    {
+      "package": "@gotgenes/pi-permission-system@20.10.0",
+      "surface": "tool preflight",
+      "proof": "headless MCP call blocked"
+    },
+    {
+      "package": "pi-hermes-memory@0.8.2",
+      "surface": "project memory add and search",
+      "proof": "compat-memory:cobalt-orchid found from a fresh process"
+    },
+    {
+      "package": "@juicesharp/rpiv-todo@2.0.0",
+      "surface": "create, complete, session resume",
+      "proof": "RESUME_TODO_OK"
+    },
+    {
+      "package": "pi-readseek@0.8.0",
+      "surface": "definition lookup",
+      "proof": "Balance found in main.go"
+    },
+    {
+      "package": "pi-crew@0.9.46",
+      "surface": "crew child agent",
+      "proof": "CREW_PROOF:pi-crew"
+    },
+    {
+      "package": "pi-fabric@0.22.4",
+      "surface": "QuickJS type-check and execute",
+      "proof": "proof: 42"
+    },
+    {
+      "package": "opencode-codebase-index@0.14.0",
+      "surface": "index and semantic search",
+      "proof": "three chunks; both target functions found"
+    },
+    {
+      "package": "@narumitw/pi-lsp@0.25.0",
+      "surface": "gopls diagnostics",
+      "proof": "intentional incompatible assignment diagnosed"
+    },
+    {
+      "package": "pi-shazam@0.30.0",
+      "surface": "code graph",
+      "proof": "ten symbols indexed"
+    },
+    {
+      "package": "pi-vault-mind@0.16.25",
+      "surface": "vault write and read",
+      "proof": "VAULT_PROOF:cobalt-orchid"
+    }
+  ],
+  "benchmark": {
+    "metric": "process_spawn_to_get_commands",
+    "warmups": 1,
+    "samples": 3,
+    "profileExtensions": 17,
+    "piSeconds": {
+      "mean": 14.586461263993334,
+      "stddev": 0.21164201695320906,
+      "min": 14.343810191660001,
+      "max": 14.73294005366
+    },
+    "pigoSeconds": {
+      "mean": 13.032843855993335,
+      "stddev": 0.37899524760095826,
+      "min": 12.65826704866,
+      "max": 13.41610817466
+    },
+    "pigoOverPi": 0.893489080052946
+  },
+  "incompatibilities": [
+    {
+      "package": "pi-llama-cpp@0.9.1",
+      "result": "isolated_warning",
+      "reason": "imports private SDK export ApiKeyCredential",
+      "sessionContinued": true
+    }
+  ],
+  "upstreamBaselines": [
+    {
+      "packages": [
+        "pi-lens@3.8.71",
+        "@narumitw/pi-lsp@0.25.0"
+      ],
+      "result": "registration_collision",
+      "name": "lsp_diagnostics"
+    },
+    {
+      "packages": [
+        "@tintinweb/pi-subagents@0.14.2",
+        "pi-crew@0.9.46"
+      ],
+      "result": "registration_collision",
+      "name": "Agent"
+    },
+    {
+      "package": "gentle-pi@1.2.0",
+      "result": "pi_install_failed",
+      "reason": "package postinstall tar extraction failed"
+    }
+  ]
+}

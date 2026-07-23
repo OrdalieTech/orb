@@ -1,9 +1,42 @@
+import { realpathSync } from "node:fs";
+import Module from "node:module";
+import { dirname } from "node:path";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 
 const PROTOCOL = "pigo-extension-host";
 const VERSION = 1;
 const MAX_FRAME_SIZE = 4 * 1024 * 1024;
+
+const resolveFilename = Module._resolveFilename;
+Module._resolveFilename = function (request, parent, isMain, options) {
+	try {
+		return resolveFilename.call(this, request, parent, isMain, options);
+	} catch (error) {
+		const filename = parent?.filename;
+		if (error?.code !== "MODULE_NOT_FOUND" || !filename?.replaceAll("\\", "/").includes("/host/entries/")) throw error;
+		let source;
+		try {
+			source = realpathSync(filename);
+		} catch {
+			throw error;
+		}
+		const sourceParent = Object.assign(Object.create(parent), {
+			filename: source,
+			paths: Module._nodeModulePaths(dirname(source)),
+		});
+		const sourceOptions = options?.paths
+			? { ...options, paths: options.paths.map((path) => {
+				try {
+					return realpathSync(path);
+				} catch {
+					return path;
+				}
+			}) }
+			: options;
+		return resolveFilename.call(this, request, sourceParent, isMain, sourceOptions);
+	}
+};
 
 let nextRequestId = 1;
 let agent = {};

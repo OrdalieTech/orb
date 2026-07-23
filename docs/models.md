@@ -23,14 +23,17 @@ and a base URL; each model names its provider, context window, and pricing:
     "my-openai-compatible": {
       "api": "openai-completions",
       "baseUrl": "http://127.0.0.1:8099/v1",
-      "apiKey": "sk-local"
-    }
-  },
-  "models": {
-    "my-model": {
-      "provider": "my-openai-compatible",
-      "contextWindow": 128000,
-      "maxOutputTokens": 8192
+      "apiKey": "sk-local",
+      "models": [
+        {
+          "id": "my-model",
+          "name": "My Model",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 128000,
+          "maxTokens": 8192
+        }
+      ]
     }
   }
 }

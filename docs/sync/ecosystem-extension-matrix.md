@@ -1,5 +1,8 @@
 # Ecosystem extension compatibility matrix — 2026-07-22 host-tier run
 
+The follow-up [normal-install live matrix](ecosystem-extension-live.md) installs 30 packages through
+Pi itself, opens the resulting state with Pigo, and executes 15 live extension workflows.
+
 The host-only Pigo runtime loads 43 of the 44 most-downloaded valid Pi extension packages in this
 snapshot. Thirty-five have exact load-and-registration parity and four event-driven packages have
 exact load-only parity, for 39/44 exact-compatible packages (88.6% by package count and 96.3% when
