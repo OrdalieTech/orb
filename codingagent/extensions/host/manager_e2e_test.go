@@ -158,6 +158,78 @@ export default function (pi: any) {
 	}
 }
 
+func TestRealHostResolvesPeerSDKFromInstalledPi(t *testing.T) {
+	runtime := requireRuntime(t)
+	if runtime.Name != "node" {
+		t.Skip("installed Pi SDK fallback is a Node loader feature")
+	}
+	root := t.TempDir()
+	piRoot := filepath.Join(root, "lib", "node_modules", "@earendil-works", "pi-coding-agent")
+	writeFile(t, filepath.Join(piRoot, "package.json"), `{"name":"@earendil-works/pi-coding-agent","type":"module","exports":"./dist/index.js"}`, 0o600)
+	cli := filepath.Join(piRoot, "dist", "cli.js")
+	writeFile(t, cli, "#!/usr/bin/env node\n", 0o700)
+	writeFile(t, filepath.Join(piRoot, "dist", "index.js"), "export const sdk = true;\n", 0o600)
+	writeFile(t, filepath.Join(piRoot, "node_modules", "@earendil-works", "pi-tui", "package.json"), `{"name":"@earendil-works/pi-tui","type":"module","exports":"./index.js"}`, 0o600)
+	writeFile(t, filepath.Join(piRoot, "node_modules", "@earendil-works", "pi-tui", "index.js"), `import { suffix } from "sdk-transitive"; export const sdkValue = "sdk-" + suffix;`, 0o600)
+	writeFile(t, filepath.Join(piRoot, "node_modules", "sdk-transitive", "package.json"), `{"name":"sdk-transitive","type":"module","exports":"./index.js"}`, 0o600)
+	writeFile(t, filepath.Join(piRoot, "node_modules", "sdk-transitive", "index.js"), `export const suffix = "ok";`, 0o600)
+	bin := filepath.Join(root, "bin")
+	if err := os.MkdirAll(bin, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(cli, filepath.Join(bin, "pi")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", prependPath(bin, os.Getenv("PATH")))
+
+	extensionDir := filepath.Join(t.TempDir(), "node_modules", "peer-extension")
+	writeFile(t, filepath.Join(extensionDir, "package.json"), `{"name":"peer-extension","type":"module","peerDependencies":{"@mariozechner/pi-tui":"^0.74.0"}}`, 0o600)
+	entry := filepath.Join(extensionDir, "index.ts")
+	writeFile(t, entry, `
+import { sdkValue } from "@mariozechner/pi-tui";
+export default function (pi: any) {
+  pi.registerTool({
+    name: "peer_sdk",
+    label: "Peer SDK",
+    description: "Installed Pi SDK fallback",
+    parameters: { type: "object", properties: {} },
+    async execute() { return { content: [{ type: "text", text: sdkValue }], details: {} }; }
+  });
+}
+`, 0o600)
+
+	manager, _, runner, result, _ := startFixtureManager(t,
+		entry,
+		fixturePath(t, "import-error.mjs"),
+		fixturePath(t, "working.mjs"),
+	)
+	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0].Error, "fixture import failed") {
+		t.Fatalf("load errors = %#v", result.Errors)
+	}
+	if runner.ToolDefinition("host_echo") == nil {
+		t.Fatal("working extension did not survive the incompatible extension")
+	}
+	execute := func() {
+		t.Helper()
+		peer := runner.ToolDefinition("peer_sdk")
+		if peer == nil {
+			t.Fatal("peer SDK extension did not load")
+		}
+		value, err := peer.Execute(context.Background(), "peer-call", map[string]any{}, nil, runner.CreateContext())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := toolText(value); got != "sdk-ok" {
+			t.Fatalf("peer SDK result = %q", got)
+		}
+	}
+	execute()
+	if err := manager.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	execute()
+}
+
 func TestRealHostIsolatesExtensionLoadErrors(t *testing.T) {
 	_, _, runner, result, _ := startFixtureManager(t,
 		fixturePath(t, "import-error.mjs"),
