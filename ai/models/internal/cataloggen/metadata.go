@@ -312,7 +312,7 @@ func applyOpenAICompletionsCompat(model *ai.Model) {
 	} else if isOpenRouter {
 		compat.ThinkingFormat = ptr(ai.ThinkingFormatOpenRouter)
 	}
-	if isOpenRouter && strings.HasPrefix(model.ID, "anthropic/") {
+	if isOpenRouter && strings.HasPrefix(strings.TrimPrefix(model.ID, "~"), "anthropic/") {
 		compat.CacheControlFormat = ptr(ai.CacheControlAnthropic)
 	}
 	if isMoonshot || isTogether || isGateway || isNVIDIA {
