@@ -8,6 +8,11 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [0.3.4] - 2026-07-23
 
+### Added
+
+- A pigo-original `codingagent/memory.Store` SDK seam ships with an append-only, locked JSONL file store and optional semantic-search interface.
+- A fifth bundled-but-dormant memory plugin adds `remember`/`recall`, bounded startup index injection, opt-in session distillation, and custom-store injection.
+
 ### Changed
 
 - Mouse selection keeps scrollbar drags captured and double-clicks copy the visible sentence.
