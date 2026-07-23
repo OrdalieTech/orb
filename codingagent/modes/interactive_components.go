@@ -777,6 +777,9 @@ type FooterComponent struct {
 	session            footerSession
 	provider           footerDataProvider
 	autoCompactEnabled bool
+	branchMu           sync.Mutex
+	branch             string
+	branchAt           time.Time
 }
 
 type footerSession interface {
@@ -795,12 +798,19 @@ func NewFooterComponent(session footerSession, provider footerDataProvider) *Foo
 func (f *FooterComponent) Invalidate() {}
 
 func (f *FooterComponent) Render(width int) []string {
-	state := f.session.State()
 	pwd := ""
 	if provider, ok := f.provider.(interface{ CurrentCWD() string }); ok {
 		pwd = provider.CurrentCWD()
 	}
-	if branch := f.provider.GitBranch(); branch != "" {
+	f.branchMu.Lock()
+	// ponytail: poll Git at 2 Hz; add repository watchers only if branch freshness needs it.
+	if time.Since(f.branchAt) >= 500*time.Millisecond {
+		f.branch = f.provider.GitBranch()
+		f.branchAt = time.Now()
+	}
+	branch := f.branch
+	f.branchMu.Unlock()
+	if branch != "" {
 		pwd += " (" + branch + ")"
 	}
 	if provider, ok := f.provider.(interface{ SessionName() string }); ok {
@@ -809,53 +819,56 @@ func (f *FooterComponent) Render(width int) []string {
 		}
 	}
 
+	display := agent.AgentDisplayState{}
 	stats := codingagent.SessionStats{}
-	if session, ok := f.session.(interface {
-		GetSessionStats() codingagent.SessionStats
-	}); ok {
-		stats = session.GetSessionStats()
-	}
 	var latestCacheHitRate *float64
+	autoCompactEnabled := f.autoCompactEnabled
 	if session, ok := f.session.(interface {
-		Manager() *sessionstore.SessionManager
-	}); ok && session.Manager() != nil {
-		stats.Tokens, stats.Cost = codingagent.SessionTokenTotals{}, 0
-		addUsage := func(usage *ai.Usage) {
-			if usage == nil {
-				return
-			}
-			stats.Tokens.Input += usage.Input
-			stats.Tokens.Output += usage.Output
-			stats.Tokens.CacheRead += usage.CacheRead
-			stats.Tokens.CacheWrite += usage.CacheWrite
-			stats.Cost += usage.Cost.Total
+		FooterSnapshot() codingagent.FooterSnapshot
+	}); ok {
+		snapshot := session.FooterSnapshot()
+		display = snapshot.Display
+		stats.Tokens = snapshot.Tokens
+		stats.Cost = snapshot.Cost
+		stats.ContextUsage = snapshot.ContextUsage
+		autoCompactEnabled = snapshot.AutoCompactEnabled
+		if snapshot.HasLatestCacheHitRate {
+			rate := snapshot.LatestCacheHitRate
+			latestCacheHitRate = &rate
 		}
-		for _, entry := range session.Manager().GetEntries() {
-			if entry.Type == "compaction" || entry.Type == "branch_summary" {
-				addUsage(entry.Usage)
-				continue
+	} else {
+		state := f.session.State()
+		display.ThinkingLevel = state.ThinkingLevel
+		if state.Model != nil {
+			display.HasModel = true
+			display.ModelID = state.Model.ID
+			display.Provider = state.Model.Provider
+			display.ContextWindow = state.Model.ContextWindow
+			display.Reasoning = state.Model.Reasoning
+		}
+		if session, ok := f.session.(interface {
+			GetSessionStats() codingagent.SessionStats
+		}); ok {
+			stats = session.GetSessionStats()
+		}
+		if session, ok := f.session.(interface {
+			Manager() *sessionstore.SessionManager
+		}); ok && session.Manager() != nil {
+			aggregate, _ := session.Manager().AggregateStats()
+			stats.Tokens = codingagent.SessionTokenTotals{
+				Input: aggregate.InputTokens, Output: aggregate.OutputTokens,
+				CacheRead: aggregate.CacheReadTokens, CacheWrite: aggregate.CacheWriteTokens,
 			}
-			if entry.Type != "message" {
-				continue
-			}
-			message, err := ai.UnmarshalMessage(entry.Message)
-			if err != nil {
-				continue
-			}
-			switch message := message.(type) {
-			case *ai.AssistantMessage:
-				addUsage(&message.Usage)
-				promptTokens := message.Usage.Input + message.Usage.CacheRead + message.Usage.CacheWrite
-				latestCacheHitRate = nil
-				if promptTokens > 0 {
-					rate := float64(message.Usage.CacheRead) / float64(promptTokens) * 100
-					latestCacheHitRate = &rate
-				}
-			case *ai.ToolResultMessage:
-				addUsage(message.Usage)
+			stats.Tokens.Total = stats.Tokens.Input + stats.Tokens.Output + stats.Tokens.CacheRead + stats.Tokens.CacheWrite
+			stats.Cost = aggregate.Cost
+			if aggregate.HasLatestCacheHitRate {
+				rate := aggregate.LatestCacheHitRate
+				latestCacheHitRate = &rate
 			}
 		}
-		stats.Tokens.Total = stats.Tokens.Input + stats.Tokens.Output + stats.Tokens.CacheRead + stats.Tokens.CacheWrite
+		if session, ok := f.session.(interface{ AutoCompactionEnabled() bool }); ok {
+			autoCompactEnabled = session.AutoCompactionEnabled()
+		}
 	}
 	statsParts := make([]string, 0, 7)
 	if stats.Tokens.Input > 0 {
@@ -876,10 +889,7 @@ func (f *FooterComponent) Render(width int) []string {
 	if stats.Cost > 0 {
 		statsParts = append(statsParts, fmt.Sprintf("$%.3f", stats.Cost))
 	}
-	contextWindow := int64(0)
-	if state.Model != nil {
-		contextWindow = int64(state.Model.ContextWindow)
-	}
+	contextWindow := int64(display.ContextWindow)
 	percent := "?"
 	if stats.ContextUsage != nil {
 		if stats.ContextUsage.ContextWindow > 0 {
@@ -888,10 +898,6 @@ func (f *FooterComponent) Render(width int) []string {
 		if stats.ContextUsage.Percent != nil {
 			percent = fmt.Sprintf("%.1f", *stats.ContextUsage.Percent)
 		}
-	}
-	autoCompactEnabled := f.autoCompactEnabled
-	if session, ok := f.session.(interface{ AutoCompactionEnabled() bool }); ok {
-		autoCompactEnabled = session.AutoCompactionEnabled()
 	}
 	auto := ""
 	if autoCompactEnabled {
@@ -908,13 +914,13 @@ func (f *FooterComponent) Render(width int) []string {
 	}
 
 	modelName := "no-model"
-	if state.Model != nil {
-		modelName = state.Model.ID
+	if display.HasModel {
+		modelName = display.ModelID
 		if provider, ok := f.provider.(interface{ AvailableProviderCount() int }); ok && provider.AvailableProviderCount() > 1 {
-			modelName = "(" + string(state.Model.Provider) + ") " + modelName
+			modelName = "(" + string(display.Provider) + ") " + modelName
 		}
-		if state.Model.Reasoning {
-			level := string(state.ThinkingLevel)
+		if display.Reasoning {
+			level := string(display.ThinkingLevel)
 			if level == "" {
 				level = "off"
 			}
@@ -926,8 +932,8 @@ func (f *FooterComponent) Render(width int) []string {
 		}
 	}
 	availableRight := width - tui.VisibleWidth(statsLeft) - 2
-	if availableRight < tui.VisibleWidth(modelName) && state.Model != nil && strings.HasPrefix(modelName, "(") {
-		modelName = state.Model.ID
+	if availableRight < tui.VisibleWidth(modelName) && display.HasModel && strings.HasPrefix(modelName, "(") {
+		modelName = display.ModelID
 	}
 	if availableRight < tui.VisibleWidth(modelName) {
 		modelName = tui.TruncateToWidth(modelName, max(0, availableRight), "", false)

@@ -63,6 +63,11 @@ type SessionRuntime struct {
 	sleep    func(context.Context, time.Duration) error
 	clock    func() int64
 
+	footerMu            sync.Mutex
+	footerRevision      uint64
+	footerContextWindow float64
+	footerContextUsage  *harness.ContextUsage
+
 	mu                   sync.Mutex
 	listeners            []sessionListener
 	nextListenerID       uint64
@@ -1435,7 +1440,10 @@ func (runtime *SessionRuntime) takeLastAssistant() *ai.AssistantMessage {
 func (runtime *SessionRuntime) dropLastAssistant() {
 	state := runtime.agent.State()
 	if len(state.Messages) > 0 && asAssistant(state.Messages[len(state.Messages)-1]) != nil {
+		runtime.footerMu.Lock()
 		runtime.agent.SetMessages(state.Messages[:len(state.Messages)-1])
+		runtime.footerRevision = 0
+		runtime.footerMu.Unlock()
 	}
 }
 
@@ -1451,7 +1459,10 @@ func (runtime *SessionRuntime) syncAgentMessages() {
 	for _, raw := range context.Messages {
 		messages = append(messages, decodeSessionMessage(raw))
 	}
+	runtime.footerMu.Lock()
 	runtime.agent.SetMessages(messages)
+	runtime.footerRevision = 0
+	runtime.footerMu.Unlock()
 }
 
 func projectSessionEntries(entries []sessionstore.SessionEntry) []harness.SessionEntry {

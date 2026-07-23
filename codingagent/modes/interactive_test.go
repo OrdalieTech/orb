@@ -1005,6 +1005,78 @@ func TestGitBranchReftableRepo(t *testing.T) {
 	}
 }
 
+type blockingDrainTerminal struct {
+	*fakeTerminalImpl
+	started chan struct{}
+	release chan struct{}
+}
+
+func (terminal *blockingDrainTerminal) DrainInput(time.Duration, time.Duration) {
+	close(terminal.started)
+	<-terminal.release
+}
+
+func TestQuitKeysDoNotBlockTerminalInputReader(t *testing.T) {
+	for name, ctrlC := range map[string]bool{"ctrl-d": false, "double-ctrl-c": true} {
+		t.Run(name, func(t *testing.T) {
+			manager, err := sessionstore.InMemory(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			terminal := &blockingDrainTerminal{
+				fakeTerminalImpl: newFakeTerminal(80, 24),
+				started:          make(chan struct{}),
+				release:          make(chan struct{}),
+			}
+			ui := tui.NewTUI(terminal)
+			keybindings := NewAppKeybindings(nil)
+			mode := &InteractiveMode{
+				session: newCacheStatsRuntime(t, manager), ui: ui, keybindings: keybindings,
+				editor: NewCustomEditor(ui, tui.EditorTheme{}, keybindings), inputCh: make(chan inputEntry, 1),
+			}
+			mode.setupKeyHandlers()
+			if ctrlC {
+				mode.editor.SetText("draft")
+				mode.editor.HandleInput(tui.KeyEvent{Raw: "\x03"})
+				mode.mu.Lock()
+				shuttingDown := mode.shutdownRequested
+				mode.mu.Unlock()
+				if mode.editor.GetText() != "" || shuttingDown {
+					t.Fatal("first Ctrl-C must clear without exiting")
+				}
+			}
+
+			returned := make(chan struct{})
+			go func() {
+				if ctrlC {
+					mode.editor.HandleInput(tui.KeyEvent{Raw: "\x03"})
+				} else {
+					mode.editor.OnCtrlD()
+				}
+				close(returned)
+			}()
+			select {
+			case <-terminal.started:
+			case <-time.After(time.Second):
+				t.Fatal("shutdown did not start")
+			}
+			select {
+			case <-returned:
+				close(terminal.release)
+			case <-time.After(100 * time.Millisecond):
+				close(terminal.release)
+				<-returned
+				t.Fatal("quit key blocked the terminal input reader during teardown")
+			}
+			select {
+			case <-mode.inputCh:
+			case <-time.After(time.Second):
+				t.Fatal("shutdown did not finish")
+			}
+		})
+	}
+}
+
 func TestFooterComponentStatuses(t *testing.T) {
 	initTestTheme(t)
 	session := &fakeFooterSession{}

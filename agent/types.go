@@ -151,6 +151,15 @@ type AgentState struct {
 	ErrorMessage     *string
 }
 
+type AgentDisplayState struct {
+	HasModel      bool
+	ModelID       string
+	Provider      ai.ProviderID
+	ContextWindow float64
+	Reasoning     bool
+	ThinkingLevel ThinkingLevel
+}
+
 type BeforeToolCallResult struct {
 	Block  bool
 	Reason string

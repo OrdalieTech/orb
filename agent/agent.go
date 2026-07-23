@@ -446,6 +446,22 @@ func (agent *Agent) State() AgentState {
 	return copyAgentState(agent.state)
 }
 
+func (agent *Agent) DisplayState() AgentDisplayState {
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	result := AgentDisplayState{
+		ThinkingLevel: agent.state.ThinkingLevel,
+	}
+	if agent.state.Model != nil {
+		result.HasModel = true
+		result.ModelID = agent.state.Model.ID
+		result.Provider = agent.state.Model.Provider
+		result.ContextWindow = agent.state.Model.ContextWindow
+		result.Reasoning = agent.state.Model.Reasoning
+	}
+	return result
+}
+
 func (agent *Agent) SetSystemPrompt(prompt string) {
 	agent.mu.Lock()
 	agent.state.SystemPrompt = prompt

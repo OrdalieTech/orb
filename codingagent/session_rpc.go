@@ -52,6 +52,16 @@ type SessionStats struct {
 	ContextUsage      *harness.ContextUsage `json:"contextUsage,omitempty"`
 }
 
+type FooterSnapshot struct {
+	Display               agent.AgentDisplayState
+	Tokens                SessionTokenTotals
+	Cost                  float64
+	ContextUsage          *harness.ContextUsage
+	LatestCacheHitRate    float64
+	HasLatestCacheHitRate bool
+	AutoCompactEnabled    bool
+}
+
 type UsageCostBreakdownEntry struct {
 	Key    string  `json:"key"`
 	Cost   float64 `json:"cost"`
@@ -886,6 +896,38 @@ func (runtime *SessionRuntime) GetSessionStats() SessionStats {
 	stats.Tokens.Total = stats.Tokens.Input + stats.Tokens.Output + stats.Tokens.CacheRead + stats.Tokens.CacheWrite
 	stats.ContextUsage = runtime.GetContextUsage()
 	return stats
+}
+
+func (runtime *SessionRuntime) FooterSnapshot() FooterSnapshot {
+	if runtime == nil {
+		return FooterSnapshot{}
+	}
+	display := runtime.agent.DisplayState()
+	aggregate, revision := runtime.manager.AggregateStats()
+
+	runtime.footerMu.Lock()
+	contextUsage := runtime.footerContextUsage
+	if runtime.footerRevision != revision || runtime.footerContextWindow != display.ContextWindow {
+		contextUsage = runtime.GetContextUsage()
+		runtime.footerRevision = revision
+		runtime.footerContextWindow = display.ContextWindow
+		runtime.footerContextUsage = contextUsage
+	}
+	runtime.footerMu.Unlock()
+
+	tokens := SessionTokenTotals{
+		Input:      aggregate.InputTokens,
+		Output:     aggregate.OutputTokens,
+		CacheRead:  aggregate.CacheReadTokens,
+		CacheWrite: aggregate.CacheWriteTokens,
+	}
+	tokens.Total = tokens.Input + tokens.Output + tokens.CacheRead + tokens.CacheWrite
+	return FooterSnapshot{
+		Display: display, Tokens: tokens, Cost: aggregate.Cost, ContextUsage: contextUsage,
+		LatestCacheHitRate:    aggregate.LatestCacheHitRate,
+		HasLatestCacheHitRate: aggregate.HasLatestCacheHitRate,
+		AutoCompactEnabled:    runtime.autoCompactionEnabled(),
+	}
 }
 
 func (runtime *SessionRuntime) GetLastAssistantText() *string {
