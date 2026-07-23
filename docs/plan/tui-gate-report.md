@@ -107,6 +107,7 @@ TypeScript median versus Go benchmark mean):
 Reproduce with `go test ./tui -run '^$' -bench BenchmarkViewportHugeHistory -benchmem` and
 `node --import ./.upstream/node_modules/tsx/dist/loader.mjs conformance/benchmarks/tui_huge_history.ts`.
 The scroll thumb costs one allocation and about 160 bytes per full frame.
+After selection support, full frames remain 0.073–0.110 ms and active drag work is bounded by the visible viewport.
 Worst-case cold hydration with one unique component per line is 35 ms/23 MiB at 100k and
 441 ms/249 MiB at 1M (`-bench BenchmarkWindowedContainerColdUniqueHistory -benchtime=1x`).
 
