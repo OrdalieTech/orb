@@ -5,7 +5,7 @@ import "github.com/OrdalieTech/pigo/tui"
 // AppKeybindingDefinitions are the app-level keybindings that extend TUI defaults.
 var AppKeybindingDefinitions = []tui.KeybindingDefinition{
 	{ID: "app.interrupt", DefaultKeys: []tui.KeyID{"escape"}, Description: "Cancel or abort"},
-	{ID: "app.clear", DefaultKeys: []tui.KeyID{"ctrl+c"}, Description: "Clear editor"},
+	{ID: "app.clear", DefaultKeys: []tui.KeyID{"ctrl+c"}, Description: "Clear editor or exit when empty"},
 	{ID: "app.exit", DefaultKeys: []tui.KeyID{"ctrl+d"}, Description: "Exit when editor is empty"},
 	{ID: "app.suspend", DefaultKeys: []tui.KeyID{"ctrl+z"}, Description: "Suspend to background"},
 	{ID: "app.thinking.cycle", DefaultKeys: []tui.KeyID{"shift+tab"}, Description: "Cycle thinking level"},

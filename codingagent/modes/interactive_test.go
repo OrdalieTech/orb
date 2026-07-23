@@ -1016,8 +1016,27 @@ func (terminal *blockingDrainTerminal) DrainInput(time.Duration, time.Duration) 
 	<-terminal.release
 }
 
+func TestCtrlCWithDraftClearsWithoutExiting(t *testing.T) {
+	ui := tui.NewTUI(newFakeTerminal(80, 24))
+	keybindings := NewAppKeybindings(nil)
+	mode := &InteractiveMode{
+		ui: ui, keybindings: keybindings,
+		editor: NewCustomEditor(ui, tui.EditorTheme{}, keybindings),
+	}
+	mode.setupKeyHandlers()
+	mode.editor.SetText("draft")
+	mode.editor.HandleInput(tui.KeyEvent{Raw: "\x03"})
+
+	mode.mu.Lock()
+	shuttingDown := mode.shutdownRequested
+	mode.mu.Unlock()
+	if mode.editor.GetText() != "" || shuttingDown {
+		t.Fatal("Ctrl-C with a draft must clear without exiting")
+	}
+}
+
 func TestQuitKeysDoNotBlockTerminalInputReader(t *testing.T) {
-	for name, ctrlC := range map[string]bool{"ctrl-d": false, "double-ctrl-c": true} {
+	for name, ctrlC := range map[string]bool{"ctrl-d": false, "single-ctrl-c": true} {
 		t.Run(name, func(t *testing.T) {
 			manager, err := sessionstore.InMemory(t.TempDir())
 			if err != nil {
@@ -1035,16 +1054,6 @@ func TestQuitKeysDoNotBlockTerminalInputReader(t *testing.T) {
 				editor: NewCustomEditor(ui, tui.EditorTheme{}, keybindings), inputCh: make(chan inputEntry, 1),
 			}
 			mode.setupKeyHandlers()
-			if ctrlC {
-				mode.editor.SetText("draft")
-				mode.editor.HandleInput(tui.KeyEvent{Raw: "\x03"})
-				mode.mu.Lock()
-				shuttingDown := mode.shutdownRequested
-				mode.mu.Unlock()
-				if mode.editor.GetText() != "" || shuttingDown {
-					t.Fatal("first Ctrl-C must clear without exiting")
-				}
-			}
 
 			returned := make(chan struct{})
 			go func() {

@@ -96,7 +96,6 @@ type InteractiveMode struct {
 	cwd                  string
 	outputPad            int
 	lastEscape           time.Time
-	lastCtrlC            time.Time
 	extensionEditor      extensions.EditorComponent
 	themeRegistry        *theme.Registry
 	themeController      *theme.Controller
@@ -1096,15 +1095,10 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 
 	// App action handlers
 	mode.editor.OnAction("app.clear", func() {
-		now := time.Now()
-		mode.mu.Lock()
-		if !mode.lastCtrlC.IsZero() && now.Sub(mode.lastCtrlC) < 500*time.Millisecond {
-			mode.mu.Unlock()
+		if mode.editor.GetText() == "" {
 			go mode.shutdown()
 			return
 		}
-		mode.lastCtrlC = now
-		mode.mu.Unlock()
 		mode.editor.SetText("")
 	})
 
@@ -1861,36 +1855,20 @@ func (mode *InteractiveMode) showTreeSelector() {
 		mode.showStatusMessage("No entries in session")
 		return
 	}
-	var options []string
-	ids := map[string]string{}
 	filterMode := mode.session.InteractiveModeSettings().TreeFilterMode
 	leaf := mode.session.Manager().GetLeafID()
-	var walk func([]*sessionstore.SessionTreeNode, int)
-	walk = func(nodes []*sessionstore.SessionTreeNode, depth int) {
-		for _, node := range nodes {
-			current := leaf != nil && *leaf == node.Entry.ID
-			if !treeEntryVisible(node, current, filterMode) {
-				walk(node.Children, depth)
-				continue
-			}
-			label := strings.Repeat("  ", depth) + sessionEntryLabel(node.Entry)
-			if node.Label != nil && *node.Label != "" {
-				label += " [" + *node.Label + "]"
-			}
-			label += "  {" + node.Entry.ID[:min(8, len(node.Entry.ID))] + "}"
-			options = append(options, label)
-			ids[label] = node.Entry.ID
-			walk(node.Children, depth+1)
-		}
+	leafID := ""
+	if leaf != nil {
+		leafID = *leaf
 	}
-	walk(tree, 0)
+	items := treeSelectItems(tree, leafID, filterMode)
 	go func() {
-		selected, ok, err := mode.interactiveUI.Select(context.Background(), "Session tree", options, nil)
+		selectedID, ok, err := mode.interactiveUI.selectItems(context.Background(), "Session tree", items, nil)
 		if err != nil || !ok {
 			return
 		}
 		currentLeaf := mode.session.Manager().GetLeafID()
-		if currentLeaf != nil && *currentLeaf == ids[selected] {
+		if currentLeaf != nil && *currentLeaf == selectedID {
 			mode.showStatusMessage("Already at this point")
 			return
 		}
@@ -1899,7 +1877,7 @@ func (mode *InteractiveMode) showTreeSelector() {
 			mode.showError(err)
 			return
 		}
-		result, err := mode.session.NavigateTree(context.Background(), ids[selected], codingagent.NavigateTreeOptions{Summarize: summarize})
+		result, err := mode.session.NavigateTree(context.Background(), selectedID, codingagent.NavigateTreeOptions{Summarize: summarize})
 		if err != nil {
 			mode.showError(err)
 			return
