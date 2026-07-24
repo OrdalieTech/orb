@@ -33,6 +33,32 @@ func TestHelpTextDocumentsExtensionFlagAndCommands(t *testing.T) {
 	}
 }
 
+func TestRunCLIClosesExtensionHostBeforeReturning(t *testing.T) {
+	requireExtensionHostRuntime(t)
+	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
+	cwd := t.TempDir()
+	agentDir := filepath.Join(t.TempDir(), "agent")
+	t.Setenv(config.EnvAgentDir, agentDir)
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(cwd)
+	extension := writeJSExtension(t, filepath.Join(cwd, "ext"), `export default function () {
+		setInterval(() => {}, 1000);
+	}`)
+
+	code := runCLI(context.Background(), []string{"--help", "--no-extensions", "-e", extension}, cliStreams{
+		Stdin: strings.NewReader(""), Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{},
+	})
+	if code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	extensionHostMu.Lock()
+	active := activeExtensionHost
+	extensionHostMu.Unlock()
+	if active != nil {
+		t.Fatal("runCLI returned with a live extension host")
+	}
+}
+
 const listModelsProviderExtension = `export default function (pi) {
   pi.registerProvider("fakeprov", {
     name: "Fake Provider",

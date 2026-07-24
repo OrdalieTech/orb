@@ -78,6 +78,7 @@ func main() {
 }
 
 func runCLI(ctx context.Context, argv []string, streams cliStreams) int {
+	defer replaceActiveExtensionHost(nil)
 	return runCLIWithDependencies(ctx, argv, streams, platformCLIDependencies())
 }
 

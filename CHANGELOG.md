@@ -6,6 +6,11 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Fixed
+
+- Extension hosts shut down with Pigo instead of becoming orphaned and crashing later with `EPIPE`.
+- Large sessions remain available to extensions without duplicating the transcript across bridge snapshots, and stale asynchronous extension actions are isolated instead of panicking Pigo.
+
 ## [0.4.3] - 2026-07-23
 
 ### Fixed

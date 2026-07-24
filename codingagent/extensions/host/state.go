@@ -30,6 +30,12 @@ type stateHost struct {
 	execCancelled  map[string]bool
 	environment    []string
 	nextSignalID   uint64
+	nextTransferID uint64
+
+	sessionCacheKey      string
+	sessionCacheRevision uint64
+	sessionCache         *stateSessionSnapshot
+	sentSessionRevisions map[string]bool
 }
 
 type stateRegistrations struct {
@@ -50,15 +56,16 @@ type wireBusSubscription struct {
 }
 
 type stateSnapshot struct {
-	Flags         map[string]any                `json:"flags"`
-	SessionName   *string                       `json:"sessionName"`
-	ActiveTools   []string                      `json:"activeTools"`
-	AllTools      []extensions.ToolInfo         `json:"allTools"`
-	Commands      []extensions.SlashCommandInfo `json:"commands"`
-	ThinkingLevel agent.ThinkingLevel           `json:"thinkingLevel"`
-	Context       stateContextSnapshot          `json:"context"`
-	Session       *stateSessionSnapshot         `json:"session"`
-	Models        *stateModelRegistrySnapshot   `json:"modelRegistry"`
+	Flags           map[string]any                `json:"flags"`
+	SessionName     *string                       `json:"sessionName"`
+	ActiveTools     []string                      `json:"activeTools"`
+	AllTools        []extensions.ToolInfo         `json:"allTools"`
+	Commands        []extensions.SlashCommandInfo `json:"commands"`
+	ThinkingLevel   agent.ThinkingLevel           `json:"thinkingLevel"`
+	Context         stateContextSnapshot          `json:"context"`
+	Session         *stateSessionSnapshot         `json:"session"`
+	SessionRevision string                        `json:"sessionRevision,omitempty"`
+	Models          *stateModelRegistrySnapshot   `json:"modelRegistry"`
 }
 
 type stateContextSnapshot struct {
@@ -86,26 +93,15 @@ type wireSignal struct {
 }
 
 type stateSessionSnapshot struct {
-	Persisted      bool                       `json:"persisted"`
-	CWD            string                     `json:"cwd"`
-	SessionDir     string                     `json:"sessionDir"`
-	SessionID      string                     `json:"sessionId"`
-	SessionFile    *string                    `json:"sessionFile"`
-	LeafID         *string                    `json:"leafId"`
-	Entries        []session.SessionEntry     `json:"entries"`
-	Header         *session.SessionHeader     `json:"header"`
-	SessionName    *string                    `json:"sessionName"`
-	Labels         map[string]*string         `json:"labels"`
-	Tree           []*session.SessionTreeNode `json:"tree"`
-	ContextEntries []session.SessionEntry     `json:"contextEntries"`
-	SessionContext stateSessionContext        `json:"sessionContext"`
-}
-
-type stateSessionContext struct {
-	Messages        []json.RawMessage     `json:"messages"`
-	ThinkingLevel   string                `json:"thinkingLevel"`
-	Model           *session.SessionModel `json:"model"`
-	ActiveToolNames []string              `json:"activeToolNames"`
+	Persisted   bool                   `json:"persisted"`
+	CWD         string                 `json:"cwd"`
+	SessionDir  string                 `json:"sessionDir"`
+	SessionID   string                 `json:"sessionId"`
+	SessionFile *string                `json:"sessionFile"`
+	LeafID      *string                `json:"leafId"`
+	Entries     []session.SessionEntry `json:"entries"`
+	Header      *session.SessionHeader `json:"header"`
+	SessionName *string                `json:"sessionName"`
 }
 
 type stateModelRegistrySnapshot struct {
@@ -147,10 +143,11 @@ func newStateHost(options Options) *stateHost {
 	return &stateHost{
 		base: base, registrations: make(map[string]*stateRegistrations), apis: make(map[string]extensions.API),
 		snapshots: make(map[string]stateSnapshot), contexts: make(map[string][]extensions.Context),
-		lastContexts:   make(map[string]extensions.Context),
-		busUnsubscribe: make(map[string]map[string]func()),
-		execCancels:    make(map[string]context.CancelFunc),
-		execCancelled:  make(map[string]bool),
+		lastContexts:         make(map[string]extensions.Context),
+		busUnsubscribe:       make(map[string]map[string]func()),
+		execCancels:          make(map[string]context.CancelFunc),
+		execCancelled:        make(map[string]bool),
+		sentSessionRevisions: make(map[string]bool),
 	}
 }
 
@@ -182,6 +179,7 @@ func (host *stateHost) reset(entries []extensionEntry) {
 	host.execCancelled = make(map[string]bool)
 	host.contexts = make(map[string][]extensions.Context)
 	host.lastContexts = make(map[string]extensions.Context)
+	host.sentSessionRevisions = make(map[string]bool)
 	for _, entry := range entries {
 		host.registrations[entry.ID] = &stateRegistrations{flags: make(map[string]wireFlag), bus: make(map[string]wireBusSubscription)}
 		if _, exists := host.snapshots[entry.ID]; !exists {
@@ -564,7 +562,13 @@ func stateExecKey(extensionID, operationID string) string {
 	return extensionID + "\x00" + operationID
 }
 
-func (host *stateHost) runAction(manager *Manager, generation *generation, raw json.RawMessage) (any, error) {
+func (host *stateHost) runAction(manager *Manager, generation *generation, raw json.RawMessage) (result any, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			result = nil
+			err = fmt.Errorf("extension host state: %v", recovered)
+		}
+	}()
 	var request struct {
 		ExtensionID string          `json:"extensionId"`
 		Action      string          `json:"action"`
@@ -579,7 +583,7 @@ func (host *stateHost) runAction(manager *Manager, generation *generation, raw j
 	}
 	ctx, cancel := manager.timeoutContext(context.Background())
 	defer cancel()
-	var result any = map[string]bool{"accepted": true}
+	result = map[string]bool{"accepted": true}
 	switch request.Action {
 	case "send_message":
 		var args struct {
@@ -783,17 +787,79 @@ func (host *stateHost) refreshAndPush(manager *Manager, generation *generation, 
 		return
 	}
 	snapshot := host.refreshSnapshot(extensionID, api, contextValue)
-	value, err := eventFrame("state_delta", struct {
-		ExtensionID string        `json:"extensionId"`
-		Snapshot    stateSnapshot `json:"stateSnapshot"`
-	}{extensionID, snapshot})
+	if err := host.writeStateDelta(generation, extensionID, snapshot); err != nil {
+		manager.report(extensions.Diagnostic{Type: "error", Message: err.Error(), Path: extensionID})
+	}
+}
+
+func (host *stateHost) writeStateDelta(generation *generation, extensionID string, snapshot stateSnapshot) error {
+	host.mu.RLock()
+	sessionSent := host.sentSessionRevisions[snapshot.SessionRevision]
+	host.mu.RUnlock()
+	if sessionSent {
+		snapshot.Session = nil
+	}
+	markSessionSent := func() {
+		if snapshot.SessionRevision == "" {
+			return
+		}
+		host.mu.Lock()
+		host.sentSessionRevisions[snapshot.SessionRevision] = true
+		host.mu.Unlock()
+	}
+	frameFor := func(transferID string) (frame, error) {
+		return eventFrame("state_delta", struct {
+			ExtensionID       string        `json:"extensionId"`
+			Snapshot          stateSnapshot `json:"stateSnapshot"`
+			SessionTransferID string        `json:"sessionTransferId,omitempty"`
+		}{extensionID, snapshot, transferID})
+	}
+	value, err := frameFor("")
 	if err != nil {
-		manager.report(extensions.Diagnostic{Type: "error", Message: err.Error(), Path: extensionID})
-		return
+		return err
 	}
-	if err := generation.codec.write(value); err != nil {
-		manager.report(extensions.Diagnostic{Type: "error", Message: err.Error(), Path: extensionID})
+	if err = generation.codec.write(value); err == nil {
+		markSessionSent()
+		return nil
 	}
+	if !errors.Is(err, ErrFrameTooLarge) || snapshot.Session == nil {
+		return err
+	}
+	encoded, err := ai.Marshal(snapshot.Session)
+	if err != nil {
+		return err
+	}
+	host.mu.Lock()
+	host.nextTransferID++
+	transferID := fmt.Sprintf("%s-session-%d", extensionID, host.nextTransferID)
+	host.mu.Unlock()
+	const chunkSize = 2 << 20
+	total := (len(encoded) + chunkSize - 1) / chunkSize
+	for index, offset := 0, 0; offset < len(encoded); index, offset = index+1, offset+chunkSize {
+		end := min(offset+chunkSize, len(encoded))
+		chunk, frameErr := eventFrame("state_session_chunk", struct {
+			TransferID string `json:"transferId"`
+			Index      int    `json:"index"`
+			Total      int    `json:"total"`
+			Data       string `json:"data"`
+		}{transferID, index, total, base64.StdEncoding.EncodeToString(encoded[offset:end])})
+		if frameErr != nil {
+			return frameErr
+		}
+		if frameErr = generation.codec.write(chunk); frameErr != nil {
+			return frameErr
+		}
+	}
+	snapshot.Session = nil
+	value, err = frameFor(transferID)
+	if err != nil {
+		return err
+	}
+	if err = generation.codec.write(value); err != nil {
+		return err
+	}
+	markSessionSent()
+	return nil
 }
 
 func (host *stateHost) refreshSnapshot(extensionID string, api extensions.API, contextValue extensions.Context) stateSnapshot {
@@ -856,7 +922,7 @@ func (host *stateHost) refreshSnapshot(extensionID string, api extensions.API, c
 		snapshot.ThinkingLevel = thinking
 	}
 	if contextValue != nil {
-		updateContextSnapshot(&snapshot, contextValue)
+		host.updateContextSnapshot(&snapshot, contextValue)
 	}
 	host.mu.Lock()
 	host.snapshots[extensionID] = cloneStateSnapshot(snapshot)
@@ -864,7 +930,7 @@ func (host *stateHost) refreshSnapshot(extensionID string, api extensions.API, c
 	return snapshot
 }
 
-func updateContextSnapshot(snapshot *stateSnapshot, contextValue extensions.Context) {
+func (host *stateHost) updateContextSnapshot(snapshot *stateSnapshot, contextValue extensions.Context) {
 	_ = callStateAPI(func() {
 		snapshot.Context.CWD = contextValue.CWD()
 		snapshot.Context.Mode = contextValue.Mode()
@@ -884,37 +950,47 @@ func updateContextSnapshot(snapshot *stateSnapshot, contextValue extensions.Cont
 			snapshot.Context.ContextUsage = nil
 		}
 		snapshot.Context.SystemPrompt = contextValue.GetSystemPrompt()
-		snapshot.Session = captureSession(contextValue.SessionManager())
+		snapshot.Session, snapshot.SessionRevision = host.captureSession(contextValue.SessionManager())
 		snapshot.Models = captureModelRegistry(contextValue.ModelRegistry())
 	})
 }
 
-func captureSession(manager extensions.ReadonlySessionManager) *stateSessionSnapshot {
+func (host *stateHost) captureSession(manager extensions.ReadonlySessionManager) (*stateSessionSnapshot, string) {
 	if manager == nil {
-		return nil
+		return nil, ""
 	}
+	leafID := manager.GetLeafID()
+	leaf := "\x00"
+	if leafID != nil {
+		leaf = *leafID
+	}
+	key := fmt.Sprintf("%T:%p\x00%s\x00%s\x00%s", manager, manager, manager.GetSessionID(), manager.GetSessionFile(), leaf)
+	host.mu.RLock()
+	if key == host.sessionCacheKey {
+		snapshot, revision := host.sessionCache, host.sessionCacheRevision
+		host.mu.RUnlock()
+		return snapshot, fmt.Sprintf("session-%d", revision)
+	}
+	host.mu.RUnlock()
 	entries := manager.GetEntries()
-	labels := make(map[string]*string, len(entries))
-	for _, entry := range entries {
-		if label := manager.GetLabel(entry.ID); label != nil {
-			labels[entry.ID] = cloneStringPointer(label)
-		}
-	}
 	var sessionFile *string
 	if value := manager.GetSessionFile(); value != "" {
 		sessionFile = &value
 	}
-	contextValue := manager.BuildSessionContext()
-	return &stateSessionSnapshot{
+	snapshot := &stateSessionSnapshot{
 		Persisted: manager.IsPersisted(), CWD: manager.GetCWD(), SessionDir: manager.GetSessionDir(), SessionID: manager.GetSessionID(),
-		SessionFile: sessionFile, LeafID: cloneStringPointer(manager.GetLeafID()), Entries: append([]session.SessionEntry(nil), entries...),
-		Header: manager.GetHeader(), SessionName: cloneStringPointer(manager.GetSessionName()), Labels: labels, Tree: manager.GetTree(),
-		ContextEntries: append([]session.SessionEntry(nil), manager.BuildContextEntries()...),
-		SessionContext: stateSessionContext{
-			Messages: append([]json.RawMessage(nil), contextValue.Messages...), ThinkingLevel: contextValue.ThinkingLevel,
-			Model: contextValue.Model, ActiveToolNames: append([]string(nil), contextValue.ActiveToolNames...),
-		},
+		SessionFile: sessionFile, LeafID: cloneStringPointer(leafID), Entries: append([]session.SessionEntry(nil), entries...),
+		Header: manager.GetHeader(), SessionName: cloneStringPointer(manager.GetSessionName()),
 	}
+	host.mu.Lock()
+	if key != host.sessionCacheKey {
+		host.sessionCacheKey = key
+		host.sessionCacheRevision++
+		host.sessionCache = snapshot
+	}
+	snapshot, revision := host.sessionCache, host.sessionCacheRevision
+	host.mu.Unlock()
+	return snapshot, fmt.Sprintf("session-%d", revision)
 }
 
 func captureModelRegistry(registry extensions.ModelRegistry) *stateModelRegistrySnapshot {

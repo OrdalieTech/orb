@@ -51,6 +51,12 @@ export default function stateExtension(pi) {
 		},
 	});
 
+	pi.registerCommand("state-late-append", {
+		handler() {
+			setTimeout(() => pi.appendEntry("late", {}), 20);
+		},
+	});
+
 	pi.registerCommand("state-signal", {
 		async handler(_args, ctx) {
 			if (!ctx.signal || typeof ctx.signal.addEventListener !== "function") throw new Error("ctx.signal is not an AbortSignal");
@@ -76,6 +82,26 @@ export default function stateExtension(pi) {
 
 	pi.on("session_before_tree", (event) => {
 		pi.sendUserMessage(`event-signal:${event.type}:${typeof event.signal?.addEventListener === "function"}:${event.signal?.aborted}`);
+	});
+
+	pi.on("session_start", (_event, ctx) => {
+		const manager = ctx.sessionManager;
+		const entries = manager.getEntries();
+		const tree = manager.getTree();
+		const context = manager.buildSessionContext();
+		pi.sendUserMessage(`session-probe:${JSON.stringify({
+			id: manager.getSessionId(),
+			persisted: manager.isPersisted(),
+			entries: entries.length,
+			branch: manager.getBranch().length,
+			children: manager.getChildren(entries[0]?.id).length,
+			label: manager.getLabel(entries[0]?.id),
+			contextEntries: manager.buildContextEntries().map((entry) => entry.type),
+			contextMessages: context.messages.map((message) => message.role),
+			model: context.model,
+			roots: tree.length,
+			rootLabel: tree[0]?.label,
+		})}`);
 	});
 
 	pi.on("before_provider_request", (event) => {
