@@ -6,6 +6,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-07-24
+
 ### Fixed
 
 - Extension hosts shut down with Pigo instead of becoming orphaned and crashing later with `EPIPE`.
