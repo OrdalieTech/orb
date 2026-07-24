@@ -1144,6 +1144,8 @@ registerHostSection((() => {
 // ===== SECTION: state (agent-e) =====
 registerHostSection((() => {
 	let baseSnapshot = normalizeSnapshot();
+	const sessionTransfers = new Map();
+	const sharedSessions = new Map();
 
 	function clone(value) {
 		if (value === undefined) return undefined;
@@ -1152,7 +1154,6 @@ registerHostSection((() => {
 
 	function normalizeSnapshot(value = {}) {
 		return {
-			...clone(value),
 			flags: { ...(value.flags ?? {}) },
 			sessionName: value.sessionName ?? null,
 			activeTools: [...(value.activeTools ?? [])],
@@ -1170,8 +1171,8 @@ registerHostSection((() => {
 				contextUsage: clone(value.context?.contextUsage),
 				systemPrompt: value.context?.systemPrompt ?? "",
 			},
-			session: value.session == null ? null : clone(value.session),
-			modelRegistry: value.modelRegistry == null ? null : clone(value.modelRegistry),
+			session: value.session ?? null,
+			modelRegistry: value.modelRegistry ?? null,
 		};
 	}
 
@@ -1247,8 +1248,110 @@ registerHostSection((() => {
 		return state.stateSnapshot.session;
 	}
 
+	function sessionView(state) {
+		const snapshot = sessionSnapshot(state);
+		if (state.sessionView?.snapshot === snapshot) return state.sessionView;
+		const entries = snapshot?.entries ?? [];
+		const byId = new Map(entries.map((entry) => [entry.id, entry]));
+		const labels = new Map();
+		const labelTimestamps = new Map();
+		for (const entry of entries) {
+			if (entry.type !== "label") continue;
+			if (entry.label) {
+				labels.set(entry.targetId, entry.label);
+				labelTimestamps.set(entry.targetId, entry.timestamp);
+			} else {
+				labels.delete(entry.targetId);
+				labelTimestamps.delete(entry.targetId);
+			}
+		}
+		const walk = (leaf, fallback) => {
+			if (leaf === null) return [];
+			let current = leaf ? byId.get(leaf) : undefined;
+			current ??= fallback ? entries.at(-1) : undefined;
+			const path = [];
+			const seen = new Set();
+			while (current && !seen.has(current.id)) {
+				seen.add(current.id);
+				path.push(current);
+				current = current.parentId ? byId.get(current.parentId) : undefined;
+			}
+			return path.reverse();
+		};
+		const path = () => walk(snapshot?.leafId, true);
+		const contextEntries = () => {
+			const branch = path();
+			const compaction = branch.findLast((entry) => entry.type === "compaction");
+			if (!compaction) return branch;
+			const index = branch.indexOf(compaction);
+			const kept = branch.slice(0, index);
+			const first = kept.findIndex((entry) => entry.id === compaction.firstKeptEntryId);
+			return [compaction, ...(first < 0 ? [] : kept.slice(first)), ...branch.slice(index + 1)];
+		};
+		const contextMessage = (entry) => {
+			if (entry.type === "message") {
+				const message = entry.message;
+				if (["user", "assistant", "toolResult"].includes(message.role) && message.content == null) {
+					return [{ ...message, content: [] }];
+				}
+				return [message];
+			}
+			const timestamp = new Date(entry.timestamp).getTime();
+			if (entry.type === "custom_message") {
+				return [{ role: "custom", customType: entry.customType, content: entry.content ?? [], display: entry.display, details: entry.details, timestamp }];
+			}
+			if (entry.type === "branch_summary" && entry.summary) {
+				return [{ role: "branchSummary", summary: entry.summary, fromId: entry.fromId, timestamp }];
+			}
+			if (entry.type === "compaction") {
+				return [{ role: "compactionSummary", summary: entry.summary, tokensBefore: entry.tokensBefore, timestamp }];
+			}
+			return [];
+		};
+		const view = {
+			snapshot, entries, byId, labels,
+			branch: (fromId) => walk(fromId ?? snapshot?.leafId, false),
+			contextEntries,
+			context() {
+				let thinkingLevel = "off";
+				let model = null;
+				let activeToolNames = [];
+				for (const entry of path()) {
+					if (entry.type === "thinking_level_change") thinkingLevel = entry.thinkingLevel;
+					else if (entry.type === "model_change") model = { provider: entry.provider, modelId: entry.modelId };
+					else if (entry.type === "active_tools_change") activeToolNames = [...(entry.activeToolNames ?? [])];
+					else if (entry.type === "message" && entry.message.role === "assistant") {
+						model = { provider: entry.message.provider, modelId: entry.message.model };
+					}
+				}
+				return { messages: contextEntries().flatMap(contextMessage), thinkingLevel, model, activeToolNames };
+			},
+			tree() {
+				const nodes = new Map(entries.map((entry) => [entry.id, {
+					entry, children: [], label: labels.get(entry.id), labelTimestamp: labelTimestamps.get(entry.id),
+				}]));
+				const roots = [];
+				for (const entry of entries) {
+					const node = nodes.get(entry.id);
+					const parent = entry.parentId !== null && entry.parentId !== entry.id ? nodes.get(entry.parentId) : undefined;
+					if (parent) parent.children.push(node);
+					else roots.push(node);
+				}
+				const stack = [...roots];
+				while (stack.length > 0) {
+					const node = stack.pop();
+					node.children.sort((a, b) => new Date(a.entry.timestamp).getTime() - new Date(b.entry.timestamp).getTime());
+					stack.push(...node.children);
+				}
+				return roots;
+			},
+		};
+		state.sessionView = view;
+		return view;
+	}
+
 	function sessionEntry(state, id) {
-		return sessionSnapshot(state)?.entries?.find((entry) => entry.id === id);
+		return sessionView(state).byId.get(id);
 	}
 
 	function createSessionManager(state) {
@@ -1264,31 +1367,14 @@ registerHostSection((() => {
 			getEntries: () => clone(sessionSnapshot(state)?.entries ?? []),
 			getHeader: () => clone(sessionSnapshot(state)?.header ?? null),
 			getSessionName: () => sessionSnapshot(state)?.sessionName ?? undefined,
-			getLabel: (id) => sessionSnapshot(state)?.labels?.[id] ?? undefined,
+			getLabel: (id) => sessionView(state).labels.get(id),
 			getChildren(parentId) {
-				return clone((sessionSnapshot(state)?.entries ?? []).filter((entry) => (entry.parentId ?? null) === (parentId ?? null)));
+				return clone(sessionView(state).entries.filter((entry) => (entry.parentId ?? null) === (parentId ?? null)));
 			},
-			getBranch(fromId) {
-				let current = fromId ?? sessionSnapshot(state)?.leafId;
-				const branch = [];
-				const seen = new Set();
-				while (current != null && !seen.has(current)) {
-					seen.add(current);
-					const entry = sessionEntry(state, current);
-					if (!entry) break;
-					branch.push(entry);
-					current = entry.parentId ?? null;
-				}
-				return clone(branch.reverse());
-			},
-			getTree: () => clone(sessionSnapshot(state)?.tree ?? []),
-			buildContextEntries: () => clone(sessionSnapshot(state)?.contextEntries ?? []),
-			buildSessionContext: () => clone(sessionSnapshot(state)?.sessionContext ?? {
-				messages: [],
-				thinkingLevel: state.stateSnapshot.thinkingLevel,
-				model: state.stateSnapshot.context.model,
-				activeToolNames: state.stateSnapshot.activeTools,
-			}),
+			getBranch: (fromId) => clone(sessionView(state).branch(fromId)),
+			getTree: () => clone(sessionView(state).tree()),
+			buildContextEntries: () => clone(sessionView(state).contextEntries()),
+			buildSessionContext: () => clone(sessionView(state).context()),
 		});
 	}
 
@@ -1457,11 +1543,9 @@ registerHostSection((() => {
 		};
 		api.getSessionName = () => state.stateSnapshot.sessionName ?? undefined;
 		api.setLabel = (entryId, label) => {
-			if (state.stateSnapshot.session) {
-				state.stateSnapshot.session.labels ??= {};
-				if (label === undefined) delete state.stateSnapshot.session.labels[entryId];
-				else state.stateSnapshot.session.labels[entryId] = String(label);
-			}
+			const labels = sessionView(state).labels;
+			if (!label) labels.delete(entryId);
+			else labels.set(entryId, String(label));
 			void fireStateAction(state, "set_label", { entryId: String(entryId), label: label === undefined ? null : String(label) });
 		};
 		api.exec = (command, args = [], options = {}) => {
@@ -1522,6 +1606,19 @@ registerHostSection((() => {
 			return { handled: false };
 		},
 		handleEvent(frame) {
+			if (frame.method === "state_session_chunk") {
+				const { transferId, index, total, data } = frame.params;
+				const transfer = sessionTransfers.get(transferId) ?? { parts: new Array(total), received: 0 };
+				if (transfer.parts[index] === undefined) {
+					transfer.parts[index] = Buffer.from(data, "base64");
+					transfer.received++;
+				}
+				if (transfer.received === total) {
+					transfer.session = JSON.parse(Buffer.concat(transfer.parts).toString());
+				}
+				sessionTransfers.set(transferId, transfer);
+				return;
+			}
 			const state = extensions.get(frame.params.extensionId);
 			if (!state) return;
 			if (frame.method === "state_signal_abort") {
@@ -1534,6 +1631,16 @@ registerHostSection((() => {
 				return;
 			}
 			if (frame.method !== "state_delta") return;
+			if (frame.params.sessionTransferId) {
+				frame.params.stateSnapshot.session = sessionTransfers.get(frame.params.sessionTransferId)?.session ?? null;
+				sessionTransfers.delete(frame.params.sessionTransferId);
+			}
+			const revision = frame.params.stateSnapshot.sessionRevision;
+			if (revision && frame.params.stateSnapshot.session) {
+				sharedSessions.clear();
+				sharedSessions.set(revision, frame.params.stateSnapshot.session);
+			}
+			if (revision) frame.params.stateSnapshot.session = sharedSessions.get(revision) ?? null;
 			state.stateSnapshot = normalizeSnapshot(frame.params.stateSnapshot);
 			for (const [name, definition] of state.stateFlags) {
 				if (!Object.hasOwn(state.stateSnapshot.flags, name) && definition.default !== undefined) {
@@ -1542,6 +1649,8 @@ registerHostSection((() => {
 			}
 		},
 		onClose() {
+			sessionTransfers.clear();
+			sharedSessions.clear();
 			for (const state of extensions.values()) {
 				state.stateBus?.clear();
 				state.bashOperations?.clear();

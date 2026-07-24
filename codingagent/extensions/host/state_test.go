@@ -11,6 +11,7 @@ import (
 	"github.com/OrdalieTech/pigo/agent"
 	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/codingagent/session"
 	"github.com/OrdalieTech/pigo/codingagent/tools"
 )
 
@@ -237,6 +238,125 @@ func TestStateSnapshotActionsEventBusAndToolCallVeto(t *testing.T) {
 	case value := <-errorsSeen:
 		t.Fatalf("extension error = %#v", value)
 	default:
+	}
+}
+
+func TestStateSnapshotKeepsLargeSessionManagerUsable(t *testing.T) {
+	pigoExecutable := filepath.Join(t.TempDir(), "pigo")
+	writeExecutable(t, pigoExecutable, "#!/bin/sh\nprintf '%s\\n' 'pigo fixture-version'\n")
+	_, registry, result, cwd := startStateFixtureManager(t, pigoExecutable)
+	if len(result.Diagnostics) != 0 || len(result.Errors) != 0 {
+		t.Fatalf("load result = %#v", result)
+	}
+
+	sessionManager, err := session.InMemory(cwd, session.WithSessionID("large-session"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootID, err := sessionManager.AppendMessage(map[string]any{
+		"role": "user", "content": strings.Repeat("x", 5<<20), "timestamp": 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assistantID, err := sessionManager.AppendMessage(map[string]any{
+		"role": "assistant", "content": []any{}, "provider": "xai", "model": "grok", "timestamp": 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	label := "root"
+	if _, err := sessionManager.AppendLabelChange(rootID, &label); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sessionManager.AppendCompaction("summary", assistantID, 42); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sessionManager.AppendCustomMessageEntry("probe", "after", true); err != nil {
+		t.Fatal(err)
+	}
+
+	messages := make(chan string, 1)
+	errorsSeen := make(chan extensions.ExtensionError, 1)
+	runner := extensions.NewRunner(registry, extensions.RunnerOptions{
+		CWD: cwd, SessionManager: sessionManager,
+		Actions: extensions.Actions{
+			SendUserMessage: func(_ context.Context, content ai.UserContent, _ *extensions.SendUserMessageOptions) error {
+				if content.Text != nil {
+					messages <- *content.Text
+				}
+				return nil
+			},
+		},
+		ErrorHandler: func(value extensions.ExtensionError) { errorsSeen <- value },
+	})
+
+	const want = `session-probe:{"id":"large-session","persisted":false,"entries":5,"branch":5,"children":1,"label":"root","contextEntries":["compaction","message","label","custom_message"],"contextMessages":["compactionSummary","assistant","custom"],"model":{"provider":"xai","modelId":"grok"},"roots":1,"rootLabel":"root"}`
+	assertProbe := func() {
+		t.Helper()
+		select {
+		case got := <-messages:
+			if got != want {
+				t.Fatalf("session snapshot = %q, want %q", got, want)
+			}
+		case value := <-errorsSeen:
+			t.Fatalf("extension error = %#v", value)
+		case <-time.After(5 * time.Second):
+			t.Fatal("large session snapshot did not reach the extension")
+		}
+	}
+	runner.Emit(context.Background(), extensions.SessionStartEvent{Reason: extensions.SessionStartResume})
+	assertProbe()
+	runner.Emit(context.Background(), extensions.SessionStartEvent{Reason: extensions.SessionStartResume})
+	assertProbe()
+}
+
+func TestStateActionFromStaleExtensionIsIsolated(t *testing.T) {
+	runtime := requireRuntime(t)
+	diagnostics := make(chan extensions.Diagnostic, 4)
+	cwd := t.TempDir()
+	manager := NewManager(Options{
+		AgentDir: t.TempDir(), CWD: cwd, Version: "test", Runtime: &runtime,
+		RequestTimeout: 30 * time.Second, ShutdownTimeout: time.Second,
+		BackoffBase: 10 * time.Millisecond, BackoffMax: 50 * time.Millisecond,
+		OnDiagnostic: func(value extensions.Diagnostic) { diagnostics <- value },
+	})
+	t.Cleanup(func() {
+		if err := manager.Close(); err != nil {
+			t.Errorf("close manager: %v", err)
+		}
+	})
+	registry := extensions.NewRegistry(cwd)
+	result := manager.RegisterInto(context.Background(), registry, []string{fixturePath(t, "state.mjs")})
+	if len(result.Diagnostics) != 0 || len(result.Errors) != 0 {
+		t.Fatalf("load result = %#v", result)
+	}
+	runner := extensions.NewRunner(registry, extensions.RunnerOptions{
+		CWD: cwd,
+		Actions: extensions.Actions{
+			AppendEntry: func(context.Context, string, any) error { return nil },
+		},
+	})
+	command := runner.Command("state-late-append")
+	if command == nil {
+		t.Fatal("state-late-append command was not registered")
+	}
+	if err := command.Handler(context.Background(), "", runner.CreateCommandContext()); err != nil {
+		t.Fatal(err)
+	}
+	runner.Invalidate("stale-fixture")
+
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case diagnostic := <-diagnostics:
+			if strings.Contains(diagnostic.Message, "append_entry failed:") && strings.Contains(diagnostic.Message, "stale-fixture") {
+				return
+			}
+		case <-timer.C:
+			t.Fatal("stale extension action was not reported")
+		}
 	}
 }
 
