@@ -321,6 +321,10 @@ type Editor struct {
 	lastWidth    int
 	scrollOffset int
 
+	// Where the last render put the text rows, for mouse hit-testing.
+	renderPaddingX int
+	renderVisible  int
+
 	borderColor StyleFunc
 
 	autocompleteProvider          AutocompleteProvider
@@ -612,6 +616,7 @@ func (editor *Editor) Render(width int) []string {
 	editor.scrollOffset = max(0, min(editor.scrollOffset, maxScrollOffset))
 
 	visibleLines := layoutLines[editor.scrollOffset:min(editor.scrollOffset+maxVisibleLines, len(layoutLines))]
+	editor.renderPaddingX, editor.renderVisible = paddingX, len(visibleLines)
 
 	result := make([]string, 0, len(visibleLines)+2)
 	leftPadding := strings.Repeat(" ", paddingX)
@@ -687,6 +692,58 @@ func (editor *Editor) Render(width int) []string {
 	}
 
 	return result
+}
+
+// HandleMouse places the cursor on a clicked character and accepts a clicked
+// autocomplete suggestion. Border rows and the wheel fall through so the
+// transcript keeps them.
+func (editor *Editor) HandleMouse(event MouseEvent) bool {
+	editor.mu.Lock()
+	autocompleteTop := editor.renderVisible + 2
+	if editor.autocompleteState != "" && editor.autocompleteList != nil && event.Row >= autocompleteTop {
+		local := event
+		local.Row, local.Column = event.Row-autocompleteTop, max(0, event.Column-editor.renderPaddingX)
+		if !editor.autocompleteList.HandleMouse(local) {
+			editor.mu.Unlock()
+			return false
+		}
+		// A suggestion is picked in one click; the list only moved its cursor.
+		if local.Type == MousePress {
+			if item, ok := editor.autocompleteList.GetSelectedItem(); ok && editor.autocompleteProvider != nil {
+				editor.pushUndoSnapshot()
+				editor.lastAction = ""
+				editor.applyCompletionResult(item)
+				editor.cancelAutocomplete()
+				editor.emitChange()
+			}
+		}
+		pending := editor.pending
+		editor.pending = nil
+		editor.mu.Unlock()
+		for _, callback := range pending {
+			callback()
+		}
+		return true
+	}
+	row := event.Row - 1
+	if event.Type != MousePress || event.Button != 0 || row < 0 || row >= editor.renderVisible {
+		editor.mu.Unlock()
+		return false
+	}
+	visualLines := editor.buildVisualLineMap(editor.lastWidth)
+	index := editor.scrollOffset + row
+	if index >= len(visualLines) {
+		editor.mu.Unlock()
+		return false
+	}
+	target := visualLines[index]
+	line := editor.line(target.logicalLine)
+	start := runeIndexFromUTF16(line, target.startCol)
+	chunk := runeSlice(line, start, runeIndexFromUTF16(line, target.startCol+target.length))
+	editor.state.cursorLine = target.logicalLine
+	editor.setCursorCol(start + runeIndexAtColumn(chunk, max(0, event.Column-editor.renderPaddingX)))
+	editor.mu.Unlock()
+	return true
 }
 
 func (editor *Editor) HandleInput(event KeyEvent) {

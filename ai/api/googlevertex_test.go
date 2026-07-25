@@ -705,3 +705,24 @@ func vertexTestModel(id string) *ai.Model {
 }
 
 func vertexStringPointer(value string) *string { return &value }
+
+// tModel in @google/genai truncates to two segments, so a publisher-qualified
+// id keeps only publisher and model name. Splitting on the first slash instead
+// would emit publishers/a/models/b/c and break the request URL.
+func TestGoogleVertexModelPathMatchesGenAITruncation(t *testing.T) {
+	tests := map[string]string{
+		"gemini-3-pro":                    "publishers/google/models/gemini-3-pro",
+		"meta/llama-3":                    "publishers/meta/models/llama-3",
+		"vendor/family/model":             "publishers/vendor/models/family",
+		"publishers/google/models/gemini": "publishers/google/models/gemini",
+	}
+	for model, want := range tests {
+		got, err := googleVertexModelPath(model)
+		if err != nil {
+			t.Fatalf("%q: %v", model, err)
+		}
+		if got != want {
+			t.Fatalf("%q = %q, want %q", model, got, want)
+		}
+	}
+}

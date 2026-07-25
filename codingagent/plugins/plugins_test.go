@@ -1181,3 +1181,73 @@ func toolResultText(request ai.Context, name string) string {
 	}
 	return ""
 }
+
+// Dispose while a fan-out is in flight used to panic the host: children read the
+// parent extensions.Context from their own goroutines, and every accessor panics
+// once the session is torn down.
+func TestSubagentSurvivesDisposeMidFanOut(t *testing.T) {
+	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(10)})
+	parent := newSubagentParent(t, provider)
+	started := make(chan struct{}, 8)
+	steps := []faux.ResponseStep{
+		faux.AssistantMessage(faux.ToolCall("subagent", map[string]any{"mode": "parallel", "tasks": []any{
+			map[string]any{"task": "a"}, map[string]any{"task": "b"},
+			map[string]any{"task": "c"}, map[string]any{"task": "d"},
+			map[string]any{"task": "e"}, map[string]any{"task": "f"},
+		}})),
+	}
+	for index := 0; index < 6; index++ {
+		steps = append(steps, faux.Factory(func(ctx context.Context, _ ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}))
+	}
+	steps = append(steps, faux.AssistantMessage("parent done"))
+	provider.SetResponses(steps)
+
+	go func() { _ = parent.PromptSync(context.Background(), "fan out") }()
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no child started")
+	}
+	time.Sleep(200 * time.Millisecond)
+	parent.Dispose()
+	// Late children keep touching the stale context after Dispose returns.
+	time.Sleep(500 * time.Millisecond)
+}
+
+// tasks is model-controlled, and every entry costs a goroutine, a temp dir, a
+// session, and a provider call, so the width is capped in Execute and not only
+// by the schema a host may or may not enforce.
+func TestSubagentParallelWidthIsCapped(t *testing.T) {
+	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(10)})
+	root := t.TempDir()
+	registry := extensions.NewRegistry(root)
+	if err := registry.Register("<inline:subagents>", Catalog(Options{StreamFn: provider.StreamSimple})["subagents"]); err != nil {
+		t.Fatal(err)
+	}
+	runner := extensions.NewRunner(registry, extensions.RunnerOptions{Mode: extensions.ModeTUI})
+	definition := runner.ToolDefinition("subagent")
+	if definition == nil {
+		t.Fatal("subagent tool missing")
+	}
+	tasks := make([]any, maxParallelTasks+1)
+	for index := range tasks {
+		tasks[index] = map[string]any{"task": "t"}
+	}
+	_, err := definition.Execute(
+		context.Background(), "call", map[string]any{"mode": "parallel", "tasks": tasks},
+		nil, runner.CreateContext(),
+	)
+	if err == nil || !strings.Contains(err.Error(), "at most") {
+		t.Fatalf("expected a width-cap refusal, got %v", err)
+	}
+	if provider.State().CallCount != 0 {
+		t.Fatalf("an over-wide fan-out reached the provider %d times", provider.State().CallCount)
+	}
+}

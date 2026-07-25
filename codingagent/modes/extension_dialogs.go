@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/OrdalieTech/pigo/tui"
@@ -33,6 +34,11 @@ type ExtensionSelectorComponent struct {
 	onCancel              func()
 	onToggleToolsExpanded func()
 	countdown             *CountdownTimer
+	// optionRows holds the first row of every option plus a trailing end row;
+	// options wrap at narrow widths, so their heights cannot be assumed. It is
+	// guarded because renders can overlap.
+	rowsMu     sync.Mutex
+	optionRows []int
 }
 
 // NewExtensionSelectorItemsComponent builds the selector dialog from
@@ -140,8 +146,64 @@ func (component *ExtensionSelectorComponent) Dispose() {
 }
 
 func (component *ExtensionSelectorComponent) Invalidate() { component.container.Invalidate() }
+
+// Render inlines the container walk so it can record where each option landed
+// for mouse hit-testing; the emitted lines are the container's own.
 func (component *ExtensionSelectorComponent) Render(width int) []string {
-	return component.container.Render(width)
+	lines, rows := make([]string, 0), make([]int, 0, len(component.options)+1)
+	for _, child := range component.container.Children() {
+		if child != component.list {
+			lines = append(lines, child.Render(width)...)
+			continue
+		}
+		for _, option := range component.list.Children() {
+			rows = append(rows, len(lines))
+			lines = append(lines, option.Render(width)...)
+		}
+		rows = append(rows, len(lines))
+	}
+	component.rowsMu.Lock()
+	component.optionRows = rows
+	component.rowsMu.Unlock()
+	return lines
+}
+
+// HandleMouse highlights the clicked option and requires a double click to
+// confirm, so a stray click cannot approve a tool call.
+func (component *ExtensionSelectorComponent) HandleMouse(event tui.MouseEvent) bool {
+	if len(component.options) == 0 {
+		return false
+	}
+	switch {
+	case event.Type == tui.MouseWheelUp || event.Type == tui.MouseWheelDown:
+		delta := -1
+		if event.Type == tui.MouseWheelDown {
+			delta = 1
+		}
+		component.selected = max(0, min(component.selected+delta, len(component.options)-1))
+		component.updateList()
+		return true
+	case event.Type == tui.MousePress && event.Button == 0:
+		component.rowsMu.Lock()
+		rows := component.optionRows
+		component.rowsMu.Unlock()
+		for index := range min(len(component.options), len(rows)-1) {
+			if event.Row < rows[index] || event.Row >= rows[index+1] {
+				continue
+			}
+			// The first press of a double click already selected this cell.
+			if event.Clicks >= 2 {
+				if component.selected < len(component.options) && component.onSelect != nil {
+					component.onSelect(component.options[component.selected].Value)
+				}
+				return true
+			}
+			component.selected = index
+			component.updateList()
+			return true
+		}
+	}
+	return false
 }
 
 // ExtensionInputComponent is the bordered single-line input dialog behind

@@ -164,3 +164,35 @@ func writeRuntimeFixture(t *testing.T, directory, name, version string) {
 		t.Fatal(err)
 	}
 }
+
+// Node writes fatal reports to fd 2 with bare LFs, which staircase once the TUI
+// has cleared OPOST. Only a terminal is translated; pipes stay byte-exact.
+func TestTerminalSafeStderrTranslatesBareLinefeeds(t *testing.T) {
+	var buffer bytes.Buffer
+	if got := terminalSafeStderr(&buffer); got != io.Writer(&buffer) {
+		t.Fatalf("non-terminal writer was wrapped")
+	}
+
+	for _, test := range []struct{ name, input, want string }{
+		{"bare", "a\nb\n", "a\r\nb\r\n"},
+		{"already paired", "a\r\nb", "a\r\nb"},
+		{"mixed", "a\r\nb\nc", "a\r\nb\r\nc"},
+		{"leading", "\nx", "\r\nx"},
+		{"none", "plain", "plain"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var sink bytes.Buffer
+			writer := crlfWriter{inner: &sink}
+			n, err := writer.Write([]byte(test.input))
+			if err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			if n != len(test.input) {
+				t.Fatalf("n = %d, want %d (io.Writer must report input length)", n, len(test.input))
+			}
+			if sink.String() != test.want {
+				t.Fatalf("got %q, want %q", sink.String(), test.want)
+			}
+		})
+	}
+}

@@ -6,6 +6,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Added
+
+- Native mouse support across interactive mode. Click a row in the session tree to select it, click the `⊞`/`⊟` marker to fold or unfold a branch, and double-click to open it. Clicking also works in `/resume`, `/settings`, `/model`, permission prompts and extension selectors — single click highlights, double click confirms — and clicking an autocomplete suggestion accepts it. Click anywhere in the input editor to place the cursor, and the wheel scrolls inside selectors as well as the transcript. Text selection is unchanged: hold shift to drag-select over any clickable surface, and the scrollbar, wheel-detach and `ctrl+end` reattach behave as before. Terminals without SGR mouse reporting stay keyboard-only.
+
 ### Fixed
 
 - Web search and page fetching returned nothing for any page larger than roughly 50 KB while still reporting success; readable extraction now keeps block structure so truncation returns the head of the page instead of an empty result.
@@ -33,6 +37,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 - Concurrent settings writes no longer lose updates, and a failed write no longer leaves the in-memory value ahead of what was persisted.
 - The chat gateway's `/stop` is bounded by its own worker pool instead of spawning a goroutine per message, and a permanently failing handler now gives up instead of retrying forever.
 - The chat gateway reuses a conversation's session manager between messages instead of re-reading and re-parsing the whole session file on every inbound message.
+- Disposing a session or reloading plugins while subagents were running could terminate the host process; child work now fails that child instead.
+- Parallel subagent runs are capped at 32 children per call, so one tool call can no longer fan out as wide as the model asks.
+- A JavaScript extension host that dies with a fatal error no longer leaves the terminal staggered; its output is line-normalised while stderr is a terminal.
+- Token costs recorded in sessions could differ from upstream by one unit in the last place in release builds. The compiler fused a multiply and an add on arm64, which the race-instrumented test builds did not, so the shipped binary wrote values the test suite never saw. `make check` now also verifies the byte-compared surfaces in the shipped build shape.
 
 ### Changed
 

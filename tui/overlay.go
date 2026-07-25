@@ -676,6 +676,13 @@ type overlayRenderEntry struct {
 	focusOrder uint64
 }
 
+// mouseOverlayBox is where an overlay was composited, in screen cells.
+type mouseOverlayBox struct {
+	component     Component
+	row, col      int
+	width, height int
+}
+
 func (ui *TUI) compositeOverlays(lines []string, termWidth, termHeight int) []string {
 	ui.focusMu.RLock()
 	entries := make([]overlayRenderEntry, 0, len(ui.overlayStack))
@@ -714,6 +721,14 @@ func (ui *TUI) compositeOverlays(lines []string, termWidth, termHeight int) []st
 		result = append(result, "")
 	}
 	viewportStart := max(0, workingHeight-termHeight)
+	ui.mouseOverlays = make([]mouseOverlayBox, len(rendered))
+	for index, overlay := range rendered {
+		ui.mouseOverlays[index] = mouseOverlayBox{
+			component: entries[index].component,
+			row:       viewportStart + overlay.row, col: overlay.col,
+			width: overlay.wid, height: len(overlay.lines),
+		}
+	}
 	for _, overlay := range rendered {
 		for lineIndex, line := range overlay.lines {
 			index := viewportStart + overlay.row + lineIndex

@@ -261,6 +261,10 @@ func googleVertexModelPath(model string) (string, error) {
 	case strings.HasPrefix(model, "publishers/"), strings.HasPrefix(model, "projects/"), strings.HasPrefix(model, "models/"):
 		return model, nil
 	case strings.Contains(model, "/"):
+		// @google/genai tModel uses JavaScript split("/", 2), which splits on
+		// every slash and then truncates, so a third segment is dropped rather
+		// than folded into the model name. SplitN with 3 reproduces that; 2
+		// would keep the tail and diverge.
 		parts := strings.SplitN(model, "/", 3)
 		return "publishers/" + parts[0] + "/models/" + parts[1], nil
 	default:

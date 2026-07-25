@@ -19,12 +19,17 @@ import (
 const (
 	childConcurrency = 4
 	forkMessageLimit = 20
+	// ponytail: one flat width cap, because `tasks` is model-controlled and each
+	// entry costs a goroutine, a temp dir, a session, and a real provider call.
+	// Uncapped, one tool call fans out as wide as the model asks. A per-session
+	// or per-run budget is the upgrade path when 32 stops being enough.
+	maxParallelTasks = 32
 )
 
 // ponytail: `mode` is the only unconditionally required field — task/tasks are
 // required per branch, which plain JSON Schema cannot say without a oneOf that
 // several providers reject. Execute rejects the wrong pairing with a clear error.
-var subagentSchema = ai.JSONSchema(`{"type":"object","required":["mode"],"properties":{"mode":{"type":"string","enum":["single","parallel"],"description":"single runs one child from task/agent; parallel runs every entry of tasks concurrently."},"task":{"type":"string","description":"Self-contained instruction for the child, including any context it needs. Required when mode is single."},"agent":{"type":"string","enum":["scout","worker","reviewer"],"description":"Child role: scout and reviewer are read-only, worker may edit and run commands. Defaults to worker."},"context":{"type":"string","enum":["fresh","fork"],"description":"fresh starts with an empty conversation; fork prepends a transcript of the recent parent conversation. Defaults to fresh."},"tools":{"type":"array","items":{"type":"string"},"description":"Optional subset of the role's tools; names outside the role are dropped, and an empty array leaves the child with no tools."},"tasks":{"type":"array","description":"Children to run concurrently. Required when mode is parallel; ignored otherwise.","items":{"type":"object","required":["task"],"properties":{"task":{"type":"string","description":"Self-contained instruction for this child."},"agent":{"type":"string","enum":["scout","worker","reviewer"],"description":"Child role for this task. Defaults to worker."},"context":{"type":"string","enum":["fresh","fork"],"description":"fresh or fork for this task. Defaults to fresh."},"tools":{"type":"array","items":{"type":"string"},"description":"Optional subset of this role's tools."}}}}}}`)
+var subagentSchema = ai.JSONSchema(`{"type":"object","required":["mode"],"properties":{"mode":{"type":"string","enum":["single","parallel"],"description":"single runs one child from task/agent; parallel runs every entry of tasks concurrently."},"task":{"type":"string","description":"Self-contained instruction for the child, including any context it needs. Required when mode is single."},"agent":{"type":"string","enum":["scout","worker","reviewer"],"description":"Child role: scout and reviewer are read-only, worker may edit and run commands. Defaults to worker."},"context":{"type":"string","enum":["fresh","fork"],"description":"fresh starts with an empty conversation; fork prepends a transcript of the recent parent conversation. Defaults to fresh."},"tools":{"type":"array","items":{"type":"string"},"description":"Optional subset of the role's tools; names outside the role are dropped, and an empty array leaves the child with no tools."},"tasks":{"type":"array","maxItems":32,"description":"Children to run concurrently, at most 32 per call. Required when mode is parallel; ignored otherwise.","items":{"type":"object","required":["task"],"properties":{"task":{"type":"string","description":"Self-contained instruction for this child."},"agent":{"type":"string","enum":["scout","worker","reviewer"],"description":"Child role for this task. Defaults to worker."},"context":{"type":"string","enum":["fresh","fork"],"description":"fresh or fork for this task. Defaults to fresh."},"tools":{"type":"array","items":{"type":"string"},"description":"Optional subset of this role's tools."}}}}}}`)
 
 type archetype struct {
 	prompt string
@@ -80,6 +85,11 @@ func subagentsExtension(injected agent.StreamFn, policy *Policy) extensions.Fact
 					if len(tasks) == 0 {
 						return agent.AgentToolResult{}, fmt.Errorf("subagent: parallel mode requires tasks")
 					}
+					if len(tasks) > maxParallelTasks {
+						return agent.AgentToolResult{}, fmt.Errorf(
+							"subagent: parallel mode accepts at most %d tasks, got %d; split the work across calls",
+							maxParallelTasks, len(tasks))
+					}
 				default:
 					return agent.AgentToolResult{}, fmt.Errorf("subagent: mode must be single or parallel")
 				}
@@ -107,7 +117,13 @@ func subagentsExtension(injected agent.StreamFn, policy *Policy) extensions.Fact
 				}
 				// The run owns the widget: every child is joined below, so no
 				// update can outlive this clear.
-				defer extensionContext.UI().SetWidget("subagents", nil, nil)
+				// extensions.Context has no staleness predicate and every accessor
+				// panics once the session is disposed or reloaded, so the UI is
+				// captured here while the context is provably live. A fan-out
+				// routinely outlives its session: Dispose during the run would
+				// otherwise panic a child goroutine and take the host down.
+				ui := extensionContext.UI()
+				defer ui.SetWidget("subagents", nil, nil)
 				updateProgress := func(index int, status string) {
 					// SetWidget stays under the lock, otherwise a stale line set
 					// can reach the UI after a newer one.
@@ -118,7 +134,7 @@ func subagentsExtension(injected agent.StreamFn, policy *Policy) extensions.Fact
 					for childIndex, child := range progress {
 						lines[childIndex] = child.name + ": " + child.status
 					}
-					extensionContext.UI().SetWidget("subagents", &extensions.Widget{Lines: lines}, nil)
+					ui.SetWidget("subagents", &extensions.Widget{Lines: lines}, nil)
 				}
 				for index := range progress {
 					updateProgress(index, "queued")
@@ -143,7 +159,7 @@ func subagentsExtension(injected agent.StreamFn, policy *Policy) extensions.Fact
 						}
 						defer func() { <-semaphore }()
 						updateProgress(index, "running")
-						results[index], errorsByChild[index] = runChild(ctx, extensionContext, injected, policy, task)
+						results[index], errorsByChild[index] = runChildGuarded(ctx, extensionContext, injected, policy, task)
 						if errorsByChild[index] != nil {
 							updateProgress(index, "error")
 						} else {
@@ -195,6 +211,24 @@ func childOptions(parentRegistry extensions.ModelRegistry, injected agent.Stream
 	}
 	options.ModelRegistry = registry
 	return options, nil
+}
+
+// runChildGuarded keeps one child's failure inside that child. A child runs in
+// its own goroutine and reads the parent extensions.Context, whose accessors
+// panic once the session is disposed or reloaded — an unrecovered panic there
+// would kill the embedding process instead of failing the tool call. The panic
+// text is reported, never swallowed.
+// ponytail: recover because extensions.Context exposes no way to ask whether it
+// is still live; drop it once the interface can be checked before the call.
+func runChildGuarded(
+	ctx context.Context, parent extensions.Context, injected agent.StreamFn, policy *Policy, task subagentTask,
+) (result string, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			result, err = "", fmt.Errorf("subagent: child stopped: %v", recovered)
+		}
+	}()
+	return runChild(ctx, parent, injected, policy, task)
 }
 
 func runChild(ctx context.Context, parent extensions.Context, injected agent.StreamFn, policy *Policy, task subagentTask) (string, error) {
