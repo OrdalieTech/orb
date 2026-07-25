@@ -6,6 +6,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-07-25
+
 ### Added
 
 - Native mouse support across interactive mode. Click a row in the session tree to select it, click the `⊞`/`⊟` marker to fold or unfold a branch, and double-click to open it. Clicking also works in `/resume`, `/settings`, `/model`, permission prompts and extension selectors — single click highlights, double click confirms — and clicking an autocomplete suggestion accepts it. Click anywhere in the input editor to place the cursor, and the wheel scrolls inside selectors as well as the transcript. Text selection is unchanged: hold shift to drag-select over any clickable surface, and the scrollbar, wheel-detach and `ctrl+end` reattach behave as before. Terminals without SGR mouse reporting stay keyboard-only.
