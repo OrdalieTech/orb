@@ -39,65 +39,22 @@ func TestDependenciesSatisfiedFindsHoistedNodeModules(t *testing.T) {
 	}
 }
 
-func TestPrepareRuntimeEntryPrefersCodingAgentSDKDependencies(t *testing.T) {
+// The SDK copy pinned inside pi-coding-agent is the one it was built against, so
+// it must win over a hoisted sibling of a different version. Only Bun consumes
+// this now; Node reaches the same copy through the loader's resolve hook.
+func TestResolveRuntimeSDKPrefersCodingAgentPin(t *testing.T) {
 	root := t.TempDir()
-	packageDir := filepath.Join(root, "node_modules", "extension")
-	entry := filepath.Join(packageDir, "index.ts")
-	writeFile(t, entry, "export default () => {};", 0o600)
-	writeFile(t, filepath.Join(packageDir, "package.json"), `{"dependencies":{"declared":"1.0.0"}}`, 0o600)
-	declared := filepath.Join(root, "node_modules", "declared")
-	writeFile(t, filepath.Join(declared, "package.json"), `{"name":"declared"}`, 0o600)
-	oldSDK := filepath.Join(root, "node_modules", "@earendil-works", "pi-ai")
-	writeFile(t, filepath.Join(oldSDK, "package.json"), `{"name":"@earendil-works/pi-ai","version":"old"}`, 0o600)
-	pinnedSDK := filepath.Join(root, "node_modules", "@earendil-works", "pi-coding-agent", "node_modules", "@earendil-works", "pi-ai")
-	writeFile(t, filepath.Join(pinnedSDK, "package.json"), `{"name":"@earendil-works/pi-ai","version":"pinned"}`, 0o600)
-	pinnedTypeBox := filepath.Join(root, "node_modules", "@earendil-works", "pi-coding-agent", "node_modules", "typebox")
-	writeFile(t, filepath.Join(pinnedTypeBox, "package.json"), `{"name":"typebox","version":"pinned"}`, 0o600)
+	nodeModules := filepath.Join(root, "node_modules")
+	hoisted := filepath.Join(nodeModules, "@earendil-works", "pi-ai")
+	writeFile(t, filepath.Join(hoisted, "package.json"), `{"name":"@earendil-works/pi-ai","version":"old"}`, 0o600)
+	pinned := filepath.Join(nodeModules, "@earendil-works", "pi-coding-agent", "node_modules", "@earendil-works", "pi-ai")
+	writeFile(t, filepath.Join(pinned, "package.json"), `{"name":"@earendil-works/pi-ai","version":"pinned"}`, 0o600)
 
-	agentDir := t.TempDir()
-	prepared, err := prepareRuntimeEntry(agentDir, Runtime{Name: "node"}, extensionEntry{ID: "ext-1", Path: entry})
-	if err != nil {
-		t.Fatal(err)
+	if got := resolveRuntimeSDK(nodeModules, "@earendil-works/pi-ai"); got != pinned {
+		t.Fatalf("resolveRuntimeSDK = %q, want the pinned copy %q", got, pinned)
 	}
-	stageDir := filepath.Dir(filepath.Dir(prepared.RuntimePath))
-	for name, want := range map[string]string{
-		"declared":              declared,
-		"@earendil-works/pi-ai": pinnedSDK,
-		"@mariozechner/pi-ai":   pinnedSDK,
-		"@sinclair/typebox":     pinnedTypeBox,
-	} {
-		got, err := os.Readlink(filepath.Join(stageDir, "node_modules", filepath.FromSlash(name)))
-		if err != nil {
-			t.Fatalf("read staged %s: %v", name, err)
-		}
-		if got != want {
-			t.Fatalf("staged %s = %q, want %q", name, got, want)
-		}
-	}
-}
-
-func TestPrepareRuntimeEntryKeepsDeclaredSDKDependency(t *testing.T) {
-	root := t.TempDir()
-	packageDir := filepath.Join(root, "node_modules", "extension")
-	entry := filepath.Join(packageDir, "index.ts")
-	writeFile(t, entry, "export default () => {};", 0o600)
-	writeFile(t, filepath.Join(packageDir, "package.json"), `{"dependencies":{"@earendil-works/pi-ai":"^0.74.0"}}`, 0o600)
-	declaredSDK := filepath.Join(root, "node_modules", "@earendil-works", "pi-ai")
-	writeFile(t, filepath.Join(declaredSDK, "package.json"), `{"name":"@earendil-works/pi-ai","version":"0.74.2"}`, 0o600)
-	pinnedSDK := filepath.Join(root, "node_modules", "@earendil-works", "pi-coding-agent", "node_modules", "@earendil-works", "pi-ai")
-	writeFile(t, filepath.Join(pinnedSDK, "package.json"), `{"name":"@earendil-works/pi-ai","version":"0.81.1"}`, 0o600)
-
-	prepared, err := prepareRuntimeEntry(t.TempDir(), Runtime{Name: "node"}, extensionEntry{ID: "ext-1", Path: entry})
-	if err != nil {
-		t.Fatal(err)
-	}
-	stageDir := filepath.Dir(filepath.Dir(prepared.RuntimePath))
-	got, err := os.Readlink(filepath.Join(stageDir, "node_modules", "@earendil-works", "pi-ai"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != declaredSDK {
-		t.Fatalf("declared SDK target = %q, want %q", got, declaredSDK)
+	if got := resolveRuntimeSDK(nodeModules, "@earendil-works/pi-tui"); got != "" {
+		t.Fatalf("resolveRuntimeSDK for an absent package = %q, want empty", got)
 	}
 }
 

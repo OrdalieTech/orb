@@ -6,7 +6,23 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Added
+
+- `PIGO_NODE` names the Node executable to use, for installs no search reaches; `PIGO_NODE=none` disables JavaScript extensions.
+- TypeScript published inside `node_modules` on Node 22.6-22.12 now reports the file, the running version and the fix instead of failing opaquely.
+
+### Removed
+
+- The staged-entry mechanism and its `packages/` mirror. Supplying transpiled source from the load hook covers the entry as well as its dependencies, so resolution is now exactly what the package manager laid out.
+
 ### Fixed
+
+- JavaScript extensions now run on Node 22.6, where every TypeScript extension previously failed: the module loader returned a string source for a format that release requires a buffer for.
+- The extension host no longer dies on Node 26, which removed `--experimental-transform-types`; an unknown flag aborts Node outright rather than warning. The flag set and the TypeScript transpiler options are now taken from what the Node build in hand accepts.
+- pnpm-installed extensions resolve their dependencies: `--preserve-symlinks` made a package reached through the `.pnpm` store resolve from the link site instead of the store. The flag existed only for the staged-entry mechanism and is gone with it.
+- An extension published as ESM without `"type": "module"` — the shape npm packs by default — no longer fails on `export`.
+- Node is found under nvm, fnm, volta, asdf, mise, nodenv, n, Homebrew and system packages even when a spawned process inherits no `node` on `PATH`, and a broken or chatty shim no longer hides a working install behind it. The chosen runtime is added to the extension host's `PATH`.
+- TypeScript published inside `node_modules` runs: Node refuses to type-strip any file under that path, which is where every installed extension and its dependencies live.
 
 - JS extensions importing the pi SDK now resolve the surface upstream gives them. Node's type stripping kept type-only imports from package specifiers, so an extension importing a type such as `ApiKeyCredential` failed to load; and `@earendil-works/pi-ai`'s root entry no longer carries the global API, so imports of `complete`, `stream` or `getModel` resolved to a narrower module than upstream's jiti loader provides. The extension host now elides type-only imports from package specifiers and resolves the legacy surface from the same installed copy, leaving pinned installs untouched.
 - Bun hosts resolve the SDK specifiers extensions import under their historical names (`@mariozechner/pi-tui`, `@earendil-works/pi-agent-core`, `@earendil-works/pi-ai/compat`), which previously only Node aliased. A package the extension installs itself still wins.

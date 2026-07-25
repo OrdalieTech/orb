@@ -1,11 +1,28 @@
-import { readdir, readFile, realpath, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import nodeModule from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-// Added in Node 22.13; absent on the 22.6-22.12 range the host still supports,
-// where the staged entry paths remain the only route around the restriction.
+// Added in Node 22.13; absent on the 22.6-22.12 range the host still runs, where
+// TypeScript under node_modules is refused with no way to transpile it and the
+// load hook says so precisely instead.
 const stripTypeScriptTypes = nodeModule.stripTypeScriptTypes;
+
+// Node 26 removed TypeScript transformation: it accepts only mode:"strip", and
+// rejects sourceMap alongside it because strip-only output keeps the original
+// positions. Enums and parameter properties therefore cannot run there at all,
+// natively or here. The call shape is taken from what this build accepts rather
+// than from its version, so a vendor or nightly build off the release timeline
+// keeps working.
+const stripOptions = (() => {
+	for (const options of [{ mode: "transform", sourceMap: true }, { mode: "strip" }]) {
+		try {
+			stripTypeScriptTypes?.("", { ...options, sourceUrl: "file:///probe.ts" });
+			return options;
+		} catch {}
+	}
+	return { mode: "strip" };
+})();
 
 const sdkAliases = {
 	"@earendil-works/pi-coding-agent": "@earendil-works/pi-coding-agent",
@@ -56,26 +73,6 @@ async function installedSDK(specifier, context, nextResolve) {
 	} catch {
 		return undefined;
 	}
-}
-
-async function resolveFromSource(specifier, context, nextResolve) {
-	if (!context.parentURL?.startsWith("file:") || !context.parentURL.includes("/host/entries/")) return undefined;
-	try {
-		const parentURL = pathToFileURL(await realpath(fileURLToPath(context.parentURL))).href;
-		if (parentURL === context.parentURL) return undefined;
-		return await nextResolve(specifier, { ...context, parentURL });
-	} catch {
-		return undefined;
-	}
-}
-
-function stagedTypeScriptURL(url) {
-	if (!url.startsWith("file:") || !/\.(?:ts|mts|cts)(?:\?|$)/.test(url)) return undefined;
-	const resolved = new URL(url);
-	const match = resolved.pathname.match(/^(.*\/host\/entries\/[^/]+)\/node_modules\/((?:@[^/]+\/)?[^/]+)(\/.*)$/);
-	if (!match) return undefined;
-	resolved.pathname = `${match[1]}/packages/${match[2]}${match[3]}`;
-	return resolved;
 }
 
 function fallbackResolvedURL(resolved) {
@@ -246,71 +243,86 @@ async function markTypeOnlyImports(source, url) {
 export async function resolve(specifier, context, nextResolve) {
 	try {
 		const legacy = await legacySurface(specifier, context, nextResolve);
-		const resolved = legacy ?? (await nextResolve(specifier, context));
-		const staged = stagedTypeScriptURL(resolved.url);
-		if (staged && await isFile(staged)) return { ...resolved, url: staged.href, shortCircuit: true };
-		return resolved;
+		return legacy ?? (await nextResolve(specifier, context));
 	} catch (error) {
 		for (const candidate of fallbackURLs(specifier, context.parentURL, error)) {
-			if (!await isFile(candidate)) continue;
-			const resolved = await nextResolve(candidate.href, context);
-			const staged = stagedTypeScriptURL(resolved.url);
-			if (staged && await isFile(staged)) return { ...resolved, url: staged.href, shortCircuit: true };
-			return resolved;
+			if (await isFile(candidate)) return await nextResolve(candidate.href, context);
 		}
 		const sdk = await installedSDK(specifier, context, nextResolve);
 		if (sdk) return { ...sdk, shortCircuit: true };
-		const source = await resolveFromSource(specifier, context, nextResolve);
-		if (source) return { ...source, shortCircuit: true };
 		throw error;
 	}
 }
 
 // Node refuses to strip types from any TypeScript file whose path contains a
 // node_modules segment, which is where every installed extension and its
-// dependencies live. Staging the entry escapes that for the entry alone; a
-// dependency published as TypeScript is reached through npm's own layout and
-// still refused, at any nesting depth. Supplying the transpiled source from the
-// load hook removes the restriction instead of routing around it: resolution
-// stays exactly as npm laid it out, so a dependency's own dependencies keep
-// resolving normally.
+// dependencies live. Supplying the transpiled source from the load hook removes
+// the restriction rather than routing around it: resolution stays exactly as the
+// package manager laid it out, so a dependency's own dependencies — at any
+// nesting depth, through pnpm's store symlinks — keep resolving normally.
 function isRefusedTypeScript(url) {
 	if (!url.startsWith("file:") || !/\.(?:ts|mts|cts)(?:\?|$)/.test(url)) return false;
 	return new URL(url).pathname.split("/").includes("node_modules");
 }
 
+// Below Node 22.13 there is no transpiler to substitute, so the refusal stands.
+// Node's own ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING names neither the
+// version that lifts it nor a way forward, and it is thrown from a worker whose
+// stack points into Node internals.
+function refusedTypeScriptError(url) {
+	return Object.assign(
+		new Error(
+			`${fileURLToPath(url)} is TypeScript published inside node_modules, which Node ${process.versions.node} cannot compile. Upgrade to Node >=22.13, or use a build of this package that ships JavaScript.`,
+		),
+		{ code: "ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING" },
+	);
+}
+
 async function loadRefusedTypeScript(url) {
 	const source = await markTypeOnlyImports(await readFile(fileURLToPath(url), "utf8"), url);
 	return {
-		format: await typeScriptFormat(url),
+		format: await typeScriptFormat(url, source),
 		shortCircuit: true,
-		// transform, not strip: the host passes --experimental-transform-types
-		// wherever this API exists, so enums and parameter properties must run.
-		source: stripTypeScriptTypes(source, { mode: "transform", sourceMap: true, sourceUrl: url }),
+		// transform wherever it exists, matching --experimental-transform-types,
+		// so enums and parameter properties run exactly as they do outside
+		// node_modules on the same build.
+		source: stripTypeScriptTypes(source, { ...stripOptions, sourceUrl: url }),
 	};
 }
 
-// Mirrors Node's own rule for a TypeScript file: the extension decides, and a
-// bare .ts follows the nearest package.json type, defaulting to commonjs.
-async function typeScriptFormat(url) {
+// A bare .ts with no top-level "type" is ambiguous, and Node resolves it by
+// looking for module syntax rather than assuming commonjs. Short-circuiting the
+// load hook takes that detection away, so it has to be reproduced: without it an
+// ESM extension published without "type":"module" — the shape npm packs by
+// default — fails on `export`.
+// ponytail: detection is a scan for a top-level import/export instead of a
+// parse, so a file whose only ESM marker is `import.meta` or top-level await is
+// read as commonjs; upgrade path is Node exposing containsModuleSyntax.
+const moduleSyntax = /^[ \t]*(?:export\b|import\s+(?:[\w*{"']|type\b))/m;
+
+async function typeScriptFormat(url, source) {
 	if (/\.mts(?:\?|$)/.test(url)) return "module";
 	if (/\.cts(?:\?|$)/.test(url)) return "commonjs";
 	for (let directory = dirname(fileURLToPath(url)); ; directory = dirname(directory)) {
 		try {
 			const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
-			return manifest.type === "module" ? "module" : "commonjs";
+			if (manifest.type === "module" || manifest.type === "commonjs") return manifest.type;
+			break;
 		} catch {
 			const parent = dirname(directory);
-			if (parent === directory) return "commonjs";
+			if (parent === directory) break;
 		}
 	}
+	return moduleSyntax.test(source) ? "module" : "commonjs";
 }
 
 export async function load(url, context, nextLoad) {
-	// Node reports module-typescript here and only refuses when it compiles, so
-	// the refusal cannot be caught around nextLoad; the condition is checked
-	// instead. Files outside node_modules keep Node's own native stripping.
-	if (stripTypeScriptTypes && isRefusedTypeScript(url)) {
+	// Where Node raises the refusal moves between versions — from inside nextLoad
+	// on 22.12-22.13 to compile time on 24 and later — so catching around nextLoad
+	// is not reliable and the condition is checked instead. Files outside
+	// node_modules keep Node's own native stripping.
+	if (isRefusedTypeScript(url)) {
+		if (!stripTypeScriptTypes) throw refusedTypeScriptError(url);
 		return await loadRefusedTypeScript(url);
 	}
 	const loaded = await nextLoad(url, context);
@@ -320,5 +332,8 @@ export async function load(url, context, nextLoad) {
 	const source = typeof loaded.source === "string"
 		? loaded.source
 		: Buffer.from(loaded.source).toString("utf8");
-	return { ...loaded, source: await markTypeOnlyImports(source, url) };
+	// Node 22.6 rejects a string here for the module-typescript format its own
+	// loader reports (ERR_INVALID_RETURN_PROPERTY_VALUE), which made every
+	// TypeScript extension fail on it; a buffer is accepted by every version.
+	return { ...loaded, source: Buffer.from(await markTypeOnlyImports(source, url)) };
 }

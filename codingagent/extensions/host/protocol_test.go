@@ -2,12 +2,9 @@ package host
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -82,86 +79,6 @@ func TestCodecWritesOneJSONLine(t *testing.T) {
 	}
 	if bytes.Count(output.Bytes(), []byte{'\n'}) != 1 || !json.Valid(bytes.TrimSuffix(output.Bytes(), []byte{'\n'})) {
 		t.Fatalf("encoded frame = %q", output.String())
-	}
-}
-
-func TestNodeAtLeast226(t *testing.T) {
-	for _, version := range []string{"22.6.0", "22.12.1", "23.0.0", "24.1.0-nightly"} {
-		if !nodeAtLeast226(version) {
-			t.Errorf("nodeAtLeast226(%q) = false", version)
-		}
-	}
-	for _, version := range []string{"", "22", "22.5.9", "21.99.0", "dev"} {
-		if nodeAtLeast226(version) {
-			t.Errorf("nodeAtLeast226(%q) = true", version)
-		}
-	}
-}
-
-func TestDiscoverRuntimePrefersSupportedNode(t *testing.T) {
-	directory := t.TempDir()
-	writeRuntimeFixture(t, directory, "node", "v22.6.0")
-	writeRuntimeFixture(t, directory, "bun", "1.3.0")
-	t.Setenv("PATH", directory)
-	runtime, err := DiscoverRuntime(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if runtime.Name != "node" || runtime.Version != "22.6.0" {
-		t.Fatalf("runtime = %#v", runtime)
-	}
-	if got := strings.Join(runtime.Args, " "); got != "--experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --preserve-symlinks" {
-		t.Fatalf("node runtime arguments = %q", got)
-	}
-}
-
-func TestDiscoverRuntimeTransformsNonErasableTypeScriptWhenSupported(t *testing.T) {
-	directory := t.TempDir()
-	writeRuntimeFixture(t, directory, "node", "v22.7.0")
-	t.Setenv("PATH", directory)
-	runtime, err := DiscoverRuntime(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.Join(runtime.Args, " "); got != "--experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-transform-types --preserve-symlinks" {
-		t.Fatalf("node runtime arguments = %q", got)
-	}
-}
-
-func TestDiscoverRuntimeFallsBackToBunForOldNode(t *testing.T) {
-	directory := t.TempDir()
-	writeRuntimeFixture(t, directory, "node", "v22.5.9")
-	writeRuntimeFixture(t, directory, "bun", "1.3.0")
-	t.Setenv("PATH", directory)
-	runtime, err := DiscoverRuntime(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if runtime.Name != "bun" || runtime.Version != "1.3.0" {
-		t.Fatalf("runtime = %#v", runtime)
-	}
-}
-
-func TestDiscoverRuntimeReturnsTypedError(t *testing.T) {
-	directory := t.TempDir()
-	writeRuntimeFixture(t, directory, "node", "v22.5.9")
-	t.Setenv("PATH", directory)
-	_, err := DiscoverRuntime(context.Background())
-	var unavailable *RuntimeUnavailableError
-	if !errors.As(err, &unavailable) || unavailable.NodeVersion != "22.5.9" {
-		t.Fatalf("error = %#v", err)
-	}
-	if unavailable.Diagnostic().Message != runtimeUnavailableMessage {
-		t.Fatalf("diagnostic = %#v", unavailable.Diagnostic())
-	}
-}
-
-func writeRuntimeFixture(t *testing.T, directory, name, version string) {
-	t.Helper()
-	path := filepath.Join(directory, name)
-	source := "#!/bin/sh\nprintf '%s\\n' '" + version + "'\n"
-	if err := os.WriteFile(path, []byte(source), 0o755); err != nil {
-		t.Fatal(err)
 	}
 }
 

@@ -126,11 +126,8 @@ type Manager struct {
 }
 
 type extensionEntry struct {
-	ID          string `json:"id"`
-	Path        string `json:"path"`
-	RuntimePath string `json:"runtimePath,omitempty"`
-	SourceRoot  string `json:"sourceRoot,omitempty"`
-	RuntimeRoot string `json:"runtimeRoot,omitempty"`
+	ID   string `json:"id"`
+	Path string `json:"path"`
 }
 
 type registrationState struct {
@@ -385,7 +382,7 @@ func (manager *Manager) startLocked(ctx context.Context) (generationLoadResult, 
 		}
 		commandArgs = append(commandArgs, "--experimental-loader", loaderPath)
 	}
-	hostEnvironment, err := prepareHostEnvironment(manager.options.AgentDir, os.Environ(), manager.options.PigoExecutable)
+	hostEnvironment, err := prepareHostEnvironment(manager.options.AgentDir, os.Environ(), manager.options.PigoExecutable, runtime.Path)
 	if err != nil {
 		return result, err
 	}
@@ -399,27 +396,15 @@ func (manager *Manager) startLocked(ctx context.Context) (generationLoadResult, 
 		}
 	}
 	entryFailures := make(map[string]bool)
-	preparedEntries := append([]extensionEntry(nil), manager.entries...)
-	for index, entry := range preparedEntries {
+	for _, entry := range manager.entries {
 		requestContext, requestCancel := manager.timeoutContext(ctx)
 		dependencyErr := materializeDependencies(requestContext, *runtime, entry.Path, hostEnvironment)
 		requestCancel()
 		if dependencyErr != nil {
 			result.Errors = append(result.Errors, LoadError{Path: entry.Path, Error: dependencyErr.Error()})
 			entryFailures[entry.ID] = true
-			continue
 		}
-		prepared, prepareErr := prepareRuntimeEntry(manager.options.AgentDir, *runtime, entry)
-		if prepareErr != nil {
-			result.Errors = append(result.Errors, LoadError{Path: entry.Path, Error: prepareErr.Error()})
-			entryFailures[entry.ID] = true
-			continue
-		}
-		preparedEntries[index] = prepared
 	}
-	manager.mu.Lock()
-	manager.entries = preparedEntries
-	manager.mu.Unlock()
 	manager.stateHost.setEnvironment(hostEnvironment)
 	manager.stateHost.reset(manager.entries)
 	command := exec.CommandContext(context.Background(), runtime.Path, append(commandArgs, scriptPath)...)

@@ -80,7 +80,7 @@ func requireNamedRuntime(t *testing.T, name string) Runtime {
 		if !nodeAtLeast226(version) {
 			t.Skipf("node %s is below 22.6", version)
 		}
-		runtime.Args = nodeRuntimeArgs(version)
+		runtime.Args = nodeRuntimeArgs(context.Background(), path, version)
 	}
 	return runtime
 }
