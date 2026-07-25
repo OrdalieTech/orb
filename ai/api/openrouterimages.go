@@ -285,6 +285,6 @@ func parseOpenRouterImagesUsage(raw json.RawMessage, model *ai.ImagesModel) ai.U
 	result.Cost.Output = model.Cost.Output / 1_000_000 * float64(completionTokens)
 	result.Cost.CacheRead = model.Cost.CacheRead / 1_000_000 * float64(cacheRead)
 	result.Cost.CacheWrite = model.Cost.CacheWrite / 1_000_000 * float64(cacheWrite)
-	result.Cost.Total = result.Cost.Input + result.Cost.Output + result.Cost.CacheRead + result.Cost.CacheWrite
+	result.Cost.Total = ai.TotalCost(result.Cost)
 	return result
 }

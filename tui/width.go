@@ -91,7 +91,10 @@ var thaiLaoAM = strings.NewReplacer("\u0e33", "\u0e4d\u0e32", "\u0eb3", "\u0ecd\
 // NormalizeTerminalOutput applies upstream's display-only Thai/Lao AM
 // decomposition and expands visible tabs without changing terminal strings.
 func NormalizeTerminalOutput(text string) string {
-	if strings.ContainsAny(text, "\u0e33\u0eb3") {
+	// Not ContainsAny: for an all-non-ASCII set it decodes every rune of the line,
+	// which cost more than the replace it guards. UTF-8 is self-synchronising, so
+	// a byte search for the encoded rune cannot match across a boundary.
+	if strings.Contains(text, "\u0e33") || strings.Contains(text, "\u0eb3") {
 		text = thaiLaoAM.Replace(text)
 	}
 	if !strings.ContainsRune(text, '\t') {

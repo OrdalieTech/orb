@@ -15,7 +15,7 @@ import (
 	aiauth "github.com/OrdalieTech/pigo/ai/auth"
 	"github.com/OrdalieTech/pigo/ai/providers"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	"github.com/gofrs/flock"
+	"github.com/OrdalieTech/pigo/internal/filelock"
 )
 
 func normalizeProviderConfig(config extensions.ProviderConfig) extensions.ProviderConfig {
@@ -877,15 +877,18 @@ func (store providerModelStore) Delete(_ context.Context) (err error) {
 	return writeProviderStore(store.path, values)
 }
 
+// Extension-registered provider catalogs share models-store.json with the model
+// store and with upstream pi, so this locks through filelock rather than flock:
+// a flock here left the regular lock file that wedges upstream permanently.
 func lockProviderStore(path string) (func() error, error) {
 	providerStoreMu.Lock()
-	lock := flock.New(path + ".lock")
-	if err := lock.Lock(); err != nil {
+	release, err := filelock.Acquire(path)
+	if err != nil {
 		providerStoreMu.Unlock()
 		return nil, err
 	}
 	return func() error {
-		err := lock.Unlock()
+		err := release()
 		providerStoreMu.Unlock()
 		return err
 	}, nil
