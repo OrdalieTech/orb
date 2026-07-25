@@ -245,8 +245,12 @@ async function captureBehavior(
 		}
 		case "scoped-models": {
 			context = baseContext(modules);
+			// Upstream >=0.82.0 reads the configured scope before the
+			// "no models available" early return; both are empty here.
 			context.runtimeHost = {
 				session: {
+					scopedModels: [],
+					settingsManager: { getEnabledModels: () => undefined },
 					modelRuntime: {
 						refresh: async () => {},
 						getAvailable: async () => [],

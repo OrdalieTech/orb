@@ -40,7 +40,9 @@ interface UpstreamProvider {
   };
 }
 
-function providerApis(source: string): string[] {
+// Derived from the provider factory rather than its generated catalog: upstream
+// >=0.82.0 no longer names the API in `<provider>.models.ts`.
+export function providerApis(source: string): string[] {
   const objectApis = [...source.matchAll(/^\s*"([a-z][a-z-]+)":\s*[A-Za-z]/gm)]
     .map((match) => match[1])
     .filter((value) => Object.values(apiFactories).includes(value));
