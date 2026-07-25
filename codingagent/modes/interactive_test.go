@@ -1035,6 +1035,62 @@ func TestCtrlCWithDraftClearsWithoutExiting(t *testing.T) {
 	}
 }
 
+func TestDoubleEscapeUsesActiveEditorAndResetsAfterOpeningTree(t *testing.T) {
+	manager, err := sessionstore.InMemory(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.AppendMessage(json.RawMessage(`{"role":"user","content":"root"}`)); err != nil {
+		t.Fatal(err)
+	}
+	runtime := newCacheStatsRuntime(t, manager)
+	t.Cleanup(runtime.Dispose)
+	modeUI := tui.NewTUI(newFakeTerminal(80, 24))
+	bindings := NewAppKeybindings(nil)
+	tui.SetKeybindings(bindings)
+	mode := &InteractiveMode{
+		session: runtime, ui: modeUI, keybindings: bindings,
+		editorContainer: &tui.Container{}, chat: &tui.Container{},
+	}
+	mode.editor = NewCustomEditor(modeUI, tui.EditorTheme{}, bindings)
+	replacement := &f12LifecycleReplacementEditor{text: "draft"}
+	mode.setExtensionEditor(replacement)
+	mode.editorContainer.AddChild(replacement)
+	mode.interactiveUI = NewInteractiveUI(mode)
+	mode.setupKeyHandlers()
+
+	mode.editor.OnEscape()
+	if !mode.lastEscape.IsZero() || replacement.text != "draft" {
+		t.Fatal("Escape with active editor text armed the double-Escape action")
+	}
+	replacement.text = " "
+	mode.editor.OnEscape()
+	if mode.lastEscape.IsZero() {
+		t.Fatal("whitespace-only active editor was not treated as empty")
+	}
+
+	runtime.SetDoubleEscapeAction("none")
+	mode.lastEscape = time.Time{}
+	mode.editor.OnEscape()
+	if !mode.lastEscape.IsZero() {
+		t.Fatal("disabled double-Escape action retained timing state")
+	}
+
+	runtime.SetDoubleEscapeAction("tree")
+	mode.lastEscape = time.Now()
+	mode.editor.OnEscape()
+	if !mode.lastEscape.IsZero() {
+		t.Fatal("completed double-Escape sequence was not reset")
+	}
+	children := mode.editorContainer.Children()
+	if len(children) != 1 {
+		t.Fatalf("tree editor children = %d", len(children))
+	}
+	if _, ok := children[0].(*TreeSelectorComponent); !ok {
+		t.Fatalf("double-Escape installed %T, want tree selector", children[0])
+	}
+}
+
 func TestQuitKeysDoNotBlockTerminalInputReader(t *testing.T) {
 	for name, ctrlC := range map[string]bool{"ctrl-d": false, "single-ctrl-c": true} {
 		t.Run(name, func(t *testing.T) {

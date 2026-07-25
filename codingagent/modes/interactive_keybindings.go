@@ -1,6 +1,10 @@
 package modes
 
-import "github.com/OrdalieTech/pigo/tui"
+import (
+	"runtime"
+
+	"github.com/OrdalieTech/pigo/tui"
+)
 
 // AppKeybindingDefinitions are the app-level keybindings that extend TUI defaults.
 var AppKeybindingDefinitions = []tui.KeybindingDefinition{
@@ -24,10 +28,17 @@ var AppKeybindingDefinitions = []tui.KeybindingDefinition{
 	{ID: "app.session.tree", DefaultKeys: nil, Description: "Open session tree"},
 	{ID: "app.session.fork", DefaultKeys: nil, Description: "Fork current session"},
 	{ID: "app.session.resume", DefaultKeys: nil, Description: "Resume a session"},
-	{ID: "app.tree.foldOrUp", DefaultKeys: []tui.KeyID{"ctrl+left", "alt+left"}, Description: "Fold tree branch or move up"},
-	{ID: "app.tree.unfoldOrDown", DefaultKeys: []tui.KeyID{"ctrl+right", "alt+right"}, Description: "Unfold tree branch or move down"},
+	{ID: "app.tree.foldOrUp", DefaultKeys: treeBranchKeys("left"), Description: "Fold tree branch or move up"},
+	{ID: "app.tree.unfoldOrDown", DefaultKeys: treeBranchKeys("right"), Description: "Unfold tree branch or move down"},
 	{ID: "app.tree.editLabel", DefaultKeys: []tui.KeyID{"shift+l"}, Description: "Edit tree label"},
 	{ID: "app.tree.toggleLabelTimestamp", DefaultKeys: []tui.KeyID{"shift+t"}, Description: "Toggle tree label timestamps"},
+	{ID: "app.tree.filter.default", DefaultKeys: []tui.KeyID{"ctrl+d"}, Description: "Show the default tree entries"},
+	{ID: "app.tree.filter.noTools", DefaultKeys: []tui.KeyID{"ctrl+t"}, Description: "Hide tree tool results"},
+	{ID: "app.tree.filter.userOnly", DefaultKeys: []tui.KeyID{"ctrl+u"}, Description: "Show tree user messages"},
+	{ID: "app.tree.filter.labeledOnly", DefaultKeys: []tui.KeyID{"ctrl+l"}, Description: "Show labeled tree entries"},
+	{ID: "app.tree.filter.all", DefaultKeys: []tui.KeyID{"ctrl+a"}, Description: "Show all tree entries"},
+	{ID: "app.tree.filter.cycleForward", DefaultKeys: []tui.KeyID{"ctrl+o"}, Description: "Cycle tree filter"},
+	{ID: "app.tree.filter.cycleBackward", DefaultKeys: []tui.KeyID{"shift+ctrl+o"}, Description: "Cycle tree filter backward"},
 	{ID: "app.session.togglePath", DefaultKeys: []tui.KeyID{"ctrl+p"}, Description: "Toggle session path display"},
 	{ID: "app.session.toggleSort", DefaultKeys: []tui.KeyID{"ctrl+s"}, Description: "Toggle session sort"},
 	{ID: "app.session.rename", DefaultKeys: []tui.KeyID{"ctrl+r"}, Description: "Rename session"},
@@ -39,6 +50,14 @@ var AppKeybindingDefinitions = []tui.KeybindingDefinition{
 	{ID: "app.models.toggleProvider", DefaultKeys: []tui.KeyID{"ctrl+p"}, Description: "Toggle provider models"},
 	{ID: "app.models.reorderUp", DefaultKeys: []tui.KeyID{"alt+up"}, Description: "Move model up"},
 	{ID: "app.models.reorderDown", DefaultKeys: []tui.KeyID{"alt+down"}, Description: "Move model down"},
+}
+
+func treeBranchKeys(direction string) []tui.KeyID {
+	ctrl, alt := tui.KeyID("ctrl+"+direction), tui.KeyID("alt+"+direction)
+	if runtime.GOOS == "darwin" {
+		return []tui.KeyID{alt, ctrl}
+	}
+	return []tui.KeyID{ctrl, alt}
 }
 
 // NewAppKeybindings creates a keybindings manager with all TUI + app definitions.

@@ -211,12 +211,14 @@ type RPCClient struct {
 	writeMu  sync.Mutex
 	stderrMu sync.Mutex
 	stderr   strings.Builder
+	stderrCh chan struct{}
 }
 
 func NewRPCClient(options RPCClientOptions) *RPCClient {
 	return &RPCClient{
 		options: options, pending: make(map[string]chan rpcClientResult),
 		requestTimeout: 30 * time.Second, stopTimeout: time.Second,
+		stderrCh: make(chan struct{}, 1),
 	}
 }
 
@@ -598,7 +600,7 @@ func (client *RPCClient) send(ctx context.Context, command RPCCommand) (rpcClien
 		return response, response.err
 	case <-timer.C:
 		client.removeRPCPending(command.ID)
-		return rpcClientResult{}, fmt.Errorf("Timeout waiting for response to %s. Stderr: %s", command.Type, client.GetStderr()) //nolint:staticcheck // Upstream text.
+		return rpcClientResult{}, fmt.Errorf("Timeout waiting for response to %s. Stderr: %s", command.Type, client.stderrAfterTimeout()) //nolint:staticcheck // Upstream text.
 	case <-ctx.Done():
 		client.removeRPCPending(command.ID)
 		return rpcClientResult{}, ctx.Err()
@@ -717,8 +719,24 @@ type rpcClientStderrWriter struct{ client *RPCClient }
 
 func (writer rpcClientStderrWriter) Write(data []byte) (int, error) {
 	writer.client.stderrMu.Lock()
-	defer writer.client.stderrMu.Unlock()
-	return writer.client.stderr.Write(data)
+	count, err := writer.client.stderr.Write(data)
+	writer.client.stderrMu.Unlock()
+	select {
+	case writer.client.stderrCh <- struct{}{}:
+	default:
+	}
+	return count, err
+}
+
+func (client *RPCClient) stderrAfterTimeout() string {
+	if value := client.GetStderr(); value != "" {
+		return value
+	}
+	select {
+	case <-client.stderrCh:
+	case <-time.After(50 * time.Millisecond):
+	}
+	return client.GetStderr()
 }
 
 func (client *RPCClient) waitRPCProcess(process *rpcClientProcess) {

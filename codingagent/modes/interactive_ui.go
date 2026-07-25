@@ -113,11 +113,15 @@ func (ui *InteractiveUI) selectItems(ctx context.Context, title string, items []
 
 	defer func() {
 		ui.mu.Lock()
-		if ui.activeSelector == dialog {
+		ownsEditor := ui.activeSelector == dialog
+		if ownsEditor {
 			ui.activeSelector = nil
 		}
 		ui.mu.Unlock()
 		dialog.Dispose()
+		if !ownsEditor {
+			return
+		}
 		ui.mode.editorContainer.Clear()
 		ui.mode.restoreEditorComponent()
 		ui.mode.ui.SetFocus(ui.mode.activeEditorFocus())
@@ -192,11 +196,15 @@ func (ui *InteractiveUI) Input(ctx context.Context, title string, placeholder *s
 
 	defer func() {
 		ui.mu.Lock()
-		if ui.activeInput == dialog {
+		ownsEditor := ui.activeInput == dialog
+		if ownsEditor {
 			ui.activeInput = nil
 		}
 		ui.mu.Unlock()
 		dialog.Dispose()
+		if !ownsEditor {
+			return
+		}
 		ui.mode.editorContainer.Clear()
 		ui.mode.restoreEditorComponent()
 		ui.mode.ui.SetFocus(ui.mode.activeEditorFocus())
@@ -948,10 +956,14 @@ func (ui *InteractiveUI) Editor(ctx context.Context, title string, prefill *stri
 	ui.mode.ui.RequestRender()
 	defer func() {
 		ui.mu.Lock()
-		if ui.activeEditorDialog == editor {
+		ownsEditor := ui.activeEditorDialog == editor
+		if ownsEditor {
 			ui.activeEditorDialog = nil
 		}
 		ui.mu.Unlock()
+		if !ownsEditor {
+			return
+		}
 		ui.mode.editorContainer.Clear()
 		ui.mode.restoreEditorComponent()
 		ui.mode.ui.SetFocus(ui.mode.activeEditorFocus())

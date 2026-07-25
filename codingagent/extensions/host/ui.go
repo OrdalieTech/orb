@@ -60,6 +60,10 @@ func (ui *uiGeneration) close() {
 		return
 	}
 	ui.cancel(ErrUIDialogHostRestarted)
+	ui.contextMu.Lock()
+	ui.contexts = make(map[string]extensions.Context)
+	ui.dialogs = make(map[string]context.CancelCauseFunc)
+	ui.contextMu.Unlock()
 	ui.componentMu.Lock()
 	unsubscribers := ui.terminal
 	ui.terminal = make(map[string]func())
@@ -106,6 +110,7 @@ func (bound *boundUIContext) close() {
 	if bound == nil || bound.generation.ui == nil {
 		return
 	}
+	bound.generation.waitEvents()
 	bound.generation.ui.contextMu.Lock()
 	delete(bound.generation.ui.contexts, bound.id)
 	bound.generation.ui.contextMu.Unlock()
@@ -170,13 +175,16 @@ func (manager *Manager) handleUIRequest(generation *generation, frameValue frame
 	if uiContext == nil {
 		return nil, uiProtocolError("stale_ui_context", errors.New("UI context is no longer active"))
 	}
+	userInterface, active := contextUI(uiContext)
+	if !active {
+		return nil, uiProtocolError("stale_ui_context", errors.New("UI context is no longer active"))
+	}
 	ctx, cancel := generation.ui.requestContext(uiContext)
 	defer cancel(nil)
 	if request.Method == "select" || request.Method == "confirm" || request.Method == "input" {
 		generation.ui.registerDialog(frameValue.ID, cancel)
 		defer generation.ui.unregisterDialog(frameValue.ID)
 	}
-	userInterface := uiContext.UI()
 	dialogOptions := &extensions.DialogOptions{Signal: ctx, Timeout: request.Timeout}
 
 	switch request.Method {
@@ -214,7 +222,7 @@ func (manager *Manager) handleUIRequest(generation *generation, frameValue frame
 		}
 		return wireUIDialogResult{Value: value}, nil
 	case "custom":
-		return manager.handleUICustom(ctx, generation, uiContext, request)
+		return manager.handleUICustom(ctx, generation, userInterface, request)
 	default:
 		return nil, uiProtocolError("unknown_ui_method", fmt.Errorf("unknown correlated UI method %q", request.Method))
 	}
@@ -231,7 +239,11 @@ func (manager *Manager) handleUIEvent(generation *generation, raw json.RawMessag
 	}
 	var userInterface extensions.UI
 	if uiContext != nil {
-		userInterface = uiContext.UI()
+		var active bool
+		userInterface, active = contextUI(uiContext)
+		if !active {
+			return
+		}
 	}
 	switch request.Method {
 	case "notify":
@@ -287,6 +299,15 @@ func (manager *Manager) handleUIEvent(generation *generation, raw json.RawMessag
 	case "cancelDialog":
 		generation.ui.cancelDialog(request.RequestID)
 	}
+}
+
+func contextUI(value extensions.Context) (result extensions.UI, active bool) {
+	defer func() {
+		if recover() != nil {
+			result, active = nil, false
+		}
+	}()
+	return value.UI(), true
 }
 
 func (ui *uiGeneration) contextValue(id string) extensions.Context {

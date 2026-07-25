@@ -20,6 +20,7 @@ const (
 	progressActive                  = "\x1b]9;4;3\x07"
 	progressClear                   = "\x1b]9;4;0;\x07"
 	keyboardProtocolFragmentTimeout = 150 * time.Millisecond
+	terminalReadPollInterval        = 25 * time.Millisecond
 )
 
 // ProcessTerminal owns raw-mode and protocol state for a pair of terminal
@@ -115,7 +116,24 @@ func (terminal *ProcessTerminal) Start(onInput func(string), onResize func()) er
 	go func() {
 		defer close(done)
 		bytes := make([]byte, 4096)
+		pollDescriptors := []unix.PollFd{{Fd: int32(reader.Fd()), Events: unix.POLLIN}}
 		for {
+			terminal.mu.Lock()
+			active := terminal.started && terminal.readInput == reader
+			terminal.mu.Unlock()
+			if !active {
+				return
+			}
+			ready, pollErr := unix.Poll(pollDescriptors, int(terminalReadPollInterval/time.Millisecond))
+			if errors.Is(pollErr, unix.EINTR) {
+				continue
+			}
+			if pollErr != nil {
+				return
+			}
+			if ready == 0 {
+				continue
+			}
 			count, readErr := reader.Read(bytes)
 			if count > 0 {
 				terminal.mu.Lock()
@@ -277,22 +295,21 @@ func (terminal *ProcessTerminal) Stop() error {
 		close(terminal.resizeSignals)
 		terminal.resizeSignals = nil
 	}
-	if terminal.readInput != nil {
-		_ = terminal.readInput.Close()
-		terminal.readInput = nil
-	}
-	state, input, done := terminal.rawState, terminal.input, terminal.readerDone
-	terminal.rawState, terminal.readerDone, terminal.inputHandler, terminal.resizeHandler = nil, nil, nil, nil
+	state, input, reader, done := terminal.rawState, terminal.input, terminal.readInput, terminal.readerDone
+	terminal.rawState, terminal.readInput, terminal.readerDone, terminal.inputHandler, terminal.resizeHandler = nil, nil, nil, nil, nil
 	terminal.mu.Unlock()
-	var restoreErr error
-	if state != nil {
-		restoreErr = term.Restore(int(input.Fd()), state)
-	}
 	if done != nil {
 		select {
 		case <-done:
 		case <-time.After(250 * time.Millisecond):
 		}
+	}
+	if reader != nil {
+		_ = reader.Close()
+	}
+	var restoreErr error
+	if state != nil {
+		restoreErr = term.Restore(int(input.Fd()), state)
 	}
 	return restoreErr
 }

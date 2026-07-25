@@ -1036,28 +1036,32 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 			return
 		}
 		if mode.bashMode {
+			mode.setActiveEditorText("")
 			mode.bashMode = false
 			mode.editor.SetBorderColor(nil)
 			return
 		}
-		if mode.editor.GetText() != "" {
-			mode.editor.SetText("")
-			mode.mu.Lock()
-			mode.lastEscape = time.Time{}
-			mode.mu.Unlock()
-			return
-		}
-		now := time.Now()
-		mode.mu.Lock()
-		double := !mode.lastEscape.IsZero() && now.Sub(mode.lastEscape) <= 500*time.Millisecond
-		mode.lastEscape = now
-		mode.mu.Unlock()
-		if !double {
+		if strings.TrimSpace(mode.activeEditorText(false)) != "" {
 			return
 		}
 		action := mode.session.InteractiveSettings().DoubleEscapeAction
 		if action == "" {
 			action = "tree"
+		}
+		if action == "none" {
+			return
+		}
+		now := time.Now()
+		mode.mu.Lock()
+		double := !mode.lastEscape.IsZero() && now.Sub(mode.lastEscape) <= 500*time.Millisecond
+		if double {
+			mode.lastEscape = time.Time{}
+		} else {
+			mode.lastEscape = now
+		}
+		mode.mu.Unlock()
+		if !double {
+			return
 		}
 		switch action {
 		case "tree":
@@ -1850,6 +1854,10 @@ func (mode *InteractiveMode) showUserMessageSelector() {
 }
 
 func (mode *InteractiveMode) showTreeSelector() {
+	mode.showTreeSelectorAt("")
+}
+
+func (mode *InteractiveMode) showTreeSelectorAt(initialSelectedID string) {
 	tree := mode.session.Manager().GetTree()
 	if len(tree) == 0 {
 		mode.showStatusMessage("No entries in session")
@@ -1861,33 +1869,106 @@ func (mode *InteractiveMode) showTreeSelector() {
 	if leaf != nil {
 		leafID = *leaf
 	}
-	items := treeSelectItems(tree, leafID, filterMode)
-	go func() {
-		selectedID, ok, err := mode.interactiveUI.selectItems(context.Background(), "Session tree", items, nil)
-		if err != nil || !ok {
+	var selector *TreeSelectorComponent
+	closeSelector := func() bool {
+		children := mode.editorContainer.Children()
+		if len(children) != 1 || children[0] != selector {
+			return false
+		}
+		mode.editorContainer.Clear()
+		mode.restoreEditorComponent()
+		mode.ui.SetFocus(mode.activeEditorFocus())
+		mode.ui.RequestRender()
+		return true
+	}
+	selector = NewTreeSelectorComponent(
+		tree, leafID, mode.ui.Terminal().Rows(),
+		func(selectedID string) {
+			if !closeSelector() {
+				return
+			}
+			if selectedID == leafID {
+				mode.showStatusMessage("Already at this point")
+				return
+			}
+			go mode.navigateFromTree(selectedID)
+		},
+		func() { closeSelector() },
+		func(entryID string, label *string) {
+			if _, err := mode.session.Manager().AppendLabelChange(entryID, label); err != nil {
+				mode.showError(err)
+			}
+		},
+		initialSelectedID, filterMode,
+	)
+	selector.OnCopy = func(text string) {
+		if text == "" {
+			mode.showError(errors.New("selected entry has no text to copy"))
 			return
 		}
-		currentLeaf := mode.session.Manager().GetLeafID()
-		if currentLeaf != nil && *currentLeaf == selectedID {
-			mode.showStatusMessage("Already at this point")
-			return
-		}
-		summarize, err := mode.interactiveUI.Confirm(context.Background(), "Summarize branch?", "Create a summary of the abandoned branch?", nil)
+		go func() {
+			if err := clipboard.CopyToClipboard(text); err != nil {
+				mode.showError(err)
+				return
+			}
+			mode.showStatusMessage("Copied selected message to clipboard")
+		}()
+	}
+	mode.editorContainer.Clear()
+	mode.editorContainer.AddChild(selector)
+	mode.ui.SetFocus(selector)
+	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) navigateFromTree(selectedID string) {
+	var summarize bool
+	var customInstructions string
+	for {
+		choice, ok, err := mode.interactiveUI.Select(context.Background(), "Summarize branch?", []string{
+			"No summary", "Summarize", "Summarize with custom prompt",
+		}, nil)
 		if err != nil {
 			mode.showError(err)
 			return
 		}
-		result, err := mode.session.NavigateTree(context.Background(), selectedID, codingagent.NavigateTreeOptions{Summarize: summarize})
+		if !ok {
+			mode.showTreeSelectorAt(selectedID)
+			return
+		}
+		summarize = choice != "No summary"
+		if choice != "Summarize with custom prompt" {
+			break
+		}
+		customInstructions, ok, err = mode.interactiveUI.Editor(context.Background(), "Custom summarization instructions", nil)
 		if err != nil {
 			mode.showError(err)
 			return
 		}
-		if result.Cancelled || result.Aborted {
-			return
+		if ok {
+			break
 		}
-		mode.editor.SetText(result.EditorText)
-		mode.renderInitialMessages()
-	}()
+	}
+	result, err := mode.session.NavigateTree(context.Background(), selectedID, codingagent.NavigateTreeOptions{
+		Summarize: summarize, CustomInstructions: customInstructions,
+	})
+	if err != nil {
+		mode.showError(err)
+		return
+	}
+	if result.Aborted {
+		mode.showStatusMessage("Branch summarization cancelled")
+		mode.showTreeSelectorAt(selectedID)
+		return
+	}
+	if result.Cancelled {
+		mode.showStatusMessage("Navigation cancelled")
+		return
+	}
+	if result.EditorText != "" && strings.TrimSpace(mode.activeEditorText(false)) == "" {
+		mode.setActiveEditorText(result.EditorText)
+	}
+	mode.renderInitialMessages()
+	mode.showStatusMessage("Navigated to selected point")
 }
 
 func treeEntryVisible(node *sessionstore.SessionTreeNode, current bool, filterMode string) bool {

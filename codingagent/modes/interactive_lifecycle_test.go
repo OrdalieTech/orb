@@ -15,6 +15,8 @@ import (
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
 	"github.com/OrdalieTech/pigo/codingagent/session"
 	"github.com/OrdalieTech/pigo/tui"
+
+	theme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
 )
 
 // LOG-M4: startup checks the active Anthropic model through the real warning
@@ -280,6 +282,57 @@ func TestConcurrentInfoNotificationsReplaceOneStatusLine(t *testing.T) {
 	lines := mode.chat.Render(72)
 	if len(lines) != 2 || lines[0] != "" || !strings.Contains(lines[1], "status-") {
 		t.Fatalf("concurrent adjacent statuses rendered %d lines: %#v", len(lines), lines)
+	}
+}
+
+func TestCancelledExtensionDialogCannotClearReboundEditor(t *testing.T) {
+	initTestTheme(t)
+	modeUI := tui.NewTUI(newFakeTerminal(72, 18))
+	bindings := NewAppKeybindings(nil)
+	tui.SetKeybindings(bindings)
+	mode := &InteractiveMode{
+		ui: modeUI, keybindings: bindings,
+		header: &tui.Container{}, chat: &tui.Container{}, status: &tui.Container{},
+		widgetAbove: &tui.Container{}, editorContainer: &tui.Container{}, widgetBelow: &tui.Container{},
+		footer: &tui.Container{}, footerStatuses: make(map[string]string),
+	}
+	mode.editor = NewCustomEditor(modeUI, theme.EditorTheme(), bindings)
+	mode.editorContainer.AddChild(mode.editor)
+	extensionUI := NewInteractiveUI(mode)
+	mode.interactiveUI = extensionUI
+
+	result := make(chan struct{})
+	go func() {
+		_, _, _ = extensionUI.Select(context.Background(), "Pick", []string{"one"}, nil)
+		close(result)
+	}()
+	var dialog *ExtensionSelectorComponent
+	deadline := time.Now().Add(time.Second)
+	for dialog == nil && time.Now().Before(deadline) {
+		extensionUI.mu.Lock()
+		dialog = extensionUI.activeSelector
+		extensionUI.mu.Unlock()
+		time.Sleep(time.Millisecond)
+	}
+	if dialog == nil {
+		t.Fatal("extension selector did not open")
+	}
+
+	extensionUI.mu.Lock()
+	extensionUI.activeSelector = nil
+	extensionUI.mu.Unlock()
+	rebound := lifecycleText("rebound editor")
+	mode.editorContainer.Clear()
+	mode.editorContainer.AddChild(rebound)
+	dialog.cancel()
+	select {
+	case <-result:
+	case <-time.After(time.Second):
+		t.Fatal("cancelled selector did not finish")
+	}
+	children := mode.editorContainer.Children()
+	if len(children) != 1 || children[0] != rebound {
+		t.Fatalf("late dialog cleanup replaced rebound editor: %#v", children)
 	}
 }
 

@@ -69,6 +69,25 @@ export default function (pi) {
 	});
 
 	pi.registerTool({
+		name: "host_ui_editor",
+		label: "Host UI editor",
+		description: "Install a host-backed editor",
+		parameters: { type: "object" },
+		execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+			ctx.ui.setEditorComponent(() => {
+				let text = "";
+				return {
+					render() { return [`editor:${text}`]; },
+					getText() { return text; },
+					setText(value) { text = value; },
+					handleInput(value) { text += value; },
+				};
+			});
+			return { content: [{ type: "text", text: "editor installed" }] };
+		},
+	});
+
+	pi.registerTool({
 		name: "host_ui_crash",
 		label: "Crash host UI fixture",
 		description: "Terminate the extension host",

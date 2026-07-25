@@ -178,19 +178,22 @@ func (ui *TUI) AddInputListener(listener InputListener) func() {
 
 func (ui *TUI) Start() error {
 	ui.setStopped(false)
-	if err := ui.terminal.Start(ui.handleInput, ui.RequestRender); err != nil {
-		ui.setStopped(true)
-		return err
-	}
-	ui.lifecycleMu.Lock()
-	ui.hasStarted = true
-	ui.lifecycleMu.Unlock()
 	ui.renderMu.Lock()
 	viewport := ui.viewportBody != nil
 	ui.renderMu.Unlock()
 	if viewport {
 		ui.terminal.Write(alternateScreenOn)
 	}
+	if err := ui.terminal.Start(ui.handleInput, ui.RequestRender); err != nil {
+		if viewport {
+			ui.terminal.Write(alternateScreenOff)
+		}
+		ui.setStopped(true)
+		return err
+	}
+	ui.lifecycleMu.Lock()
+	ui.hasStarted = true
+	ui.lifecycleMu.Unlock()
 	// Keep terminal scrollback stationary while live output updates the active cursor.
 	ui.terminal.Write(scrollOnOutputOff)
 	ui.terminal.HideCursor()
@@ -224,14 +227,6 @@ func (ui *TUI) Stop() error {
 	ui.renderMu.Lock()
 	lines, row, viewport := len(ui.previousLines), ui.hardwareCursorRow, ui.viewportBody != nil
 	ui.renderMu.Unlock()
-	ui.notificationMu.Lock()
-	ui.colorMu.Lock()
-	notificationsEnabled := ui.terminalColorSchemeNotificationsEnabled
-	ui.colorMu.Unlock()
-	if notificationsEnabled {
-		ui.terminal.Write(terminalColorSchemeNotificationsOff)
-	}
-	ui.notificationMu.Unlock()
 	if lines > 0 && !viewport {
 		ui.terminal.Write(" ")
 		target := lines
@@ -242,6 +237,18 @@ func (ui *TUI) Stop() error {
 		}
 		ui.terminal.Write("\r\n")
 	}
+	return ui.stopTerminal(viewport)
+}
+
+func (ui *TUI) stopTerminal(viewport bool) error {
+	ui.notificationMu.Lock()
+	ui.colorMu.Lock()
+	notificationsEnabled := ui.terminalColorSchemeNotificationsEnabled
+	ui.colorMu.Unlock()
+	if notificationsEnabled {
+		ui.terminal.Write(terminalColorSchemeNotificationsOff)
+	}
+	ui.notificationMu.Unlock()
 	ui.terminal.ShowCursor()
 	ui.terminal.Write(scrollOnOutputOn)
 	if viewport {
@@ -965,8 +972,7 @@ func (ui *TUI) RenderNow() {
 		output.WriteString("\x1b[2K")
 		if !IsImageLine(line) && VisibleWidth(line) > width {
 			ui.setStopped(true)
-			ui.terminal.ShowCursor()
-			_ = ui.terminal.Stop()
+			_ = ui.stopTerminal(ui.viewportBody != nil)
 			panic(fmt.Sprintf("rendered line %d exceeds terminal width (%d > %d)", index, VisibleWidth(newLines[index]), width))
 		}
 		output.WriteString(line)
