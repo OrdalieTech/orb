@@ -21,6 +21,10 @@ build:
 
 test:
 	$(GO_ENV) CGO_ENABLED=1 go test -race ./...
+	# Race instrumentation suppresses arm64 FMA contraction, so a -race-only gate
+	# cannot see wire-format drift in the shipped CGO_ENABLED=0 build. Re-run the
+	# byte-compared surfaces in the shape users actually get.
+	$(GO_ENV) CGO_ENABLED=0 go test ./ai/... ./conformance/runner/...
 
 lint: $(GOLANGCI_LINT)
 	$(GO_ENV) go vet ./...

@@ -110,6 +110,9 @@ type SessionSelectorComponent struct {
 	search     *tui.Input
 	focused    bool
 
+	// Where the last render put the session rows, for mouse hit-testing.
+	rowTop, rowStart, rowCount int
+
 	confirmingDelete string
 	status           *selectorStatus
 	loadProgress     string
@@ -553,9 +556,56 @@ func (selector *SessionSelectorComponent) Render(width int) []string {
 	lines = append(lines, "")
 	lines = append(lines, selector.search.Render(width)...)
 	lines = append(lines, "")
+	selector.rowTop = len(lines)
 	lines = append(lines, selector.listLinesLocked(width)...)
 	lines = append(lines, "", border)
 	return lines
+}
+
+// HandleMouse selects the clicked session and resumes it on a double click.
+func (selector *SessionSelectorComponent) HandleMouse(event tui.MouseEvent) bool {
+	selector.mu.Lock()
+	if selector.confirmingDelete != "" || len(selector.filtered) == 0 {
+		selector.mu.Unlock()
+		return false
+	}
+	var callback func(string)
+	path := ""
+	switch {
+	case event.Type == tui.MouseWheelUp || event.Type == tui.MouseWheelDown:
+		delta := -3
+		if event.Type == tui.MouseWheelDown {
+			delta = 3
+		}
+		selector.selected = max(0, min(selector.selected+delta, len(selector.filtered)-1))
+	case event.Type == tui.MousePress && event.Button == 0:
+		if event.Row < selector.rowTop || event.Row >= selector.rowTop+selector.rowCount {
+			selector.mu.Unlock()
+			return false
+		}
+		// The first press of a double click already selected this cell.
+		// Re-resolving would resume whatever the recentred list moved under it.
+		if event.Clicks >= 2 {
+			callback, path = selector.onSelect, selector.filtered[selector.selected].session.Path
+			selector.clearStatusLocked()
+			break
+		}
+		index := selector.rowStart + event.Row - selector.rowTop
+		if index >= len(selector.filtered) {
+			selector.mu.Unlock()
+			return false
+		}
+		selector.selected = index
+	default:
+		selector.mu.Unlock()
+		return false
+	}
+	selector.mu.Unlock()
+	selector.requestRender()
+	if callback != nil && path != "" {
+		callback(path)
+	}
+	return true
 }
 
 func (selector *SessionSelectorComponent) listLinesLocked(width int) []string {
@@ -574,6 +624,7 @@ func (selector *SessionSelectorComponent) listLinesLocked(width int) []string {
 	}
 	start := max(0, min(selector.selected-selector.maxVisible/2, len(selector.filtered)-selector.maxVisible))
 	end := min(start+selector.maxVisible, len(selector.filtered))
+	selector.rowStart, selector.rowCount = start, end-start
 	lines := make([]string, 0, end-start+1)
 	for index := start; index < end; index++ {
 		lines = append(lines, selector.renderSessionLineLocked(selector.filtered[index], index == selector.selected, width))

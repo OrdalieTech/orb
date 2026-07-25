@@ -110,7 +110,7 @@ func (list *SelectList) Render(width int) []string {
 	}
 
 	primaryColumnWidth := list.primaryColumnWidth()
-	startIndex := max(0, min(list.selectedIndex-list.maxVisible/2, len(list.filteredItems)-list.maxVisible))
+	startIndex := list.visibleStartLocked()
 	endIndex := min(startIndex+list.maxVisible, len(list.filteredItems))
 
 	lines := make([]string, 0, endIndex-startIndex+1)
@@ -166,6 +166,58 @@ func (list *SelectList) HandleInput(event KeyEvent) {
 	for _, callback := range pending {
 		callback()
 	}
+}
+
+// visibleStartLocked is the first item Render shows; hit-testing has to agree
+// with it exactly.
+func (list *SelectList) visibleStartLocked() int {
+	return max(0, min(list.selectedIndex-list.maxVisible/2, len(list.filteredItems)-list.maxVisible))
+}
+
+// HandleMouse selects the clicked row and confirms on a double click. The
+// scroll-info line below the items is not clickable.
+func (list *SelectList) HandleMouse(event MouseEvent) bool {
+	list.mu.Lock()
+	if len(list.filteredItems) == 0 {
+		list.mu.Unlock()
+		return false
+	}
+	switch {
+	case event.Type == MouseWheelUp || event.Type == MouseWheelDown:
+		delta := -1
+		if event.Type == MouseWheelDown {
+			delta = 1
+		}
+		list.selectedIndex = max(0, min(list.selectedIndex+delta, len(list.filteredItems)-1))
+		list.notifySelectionChange()
+	case event.Type == MousePress && event.Button == 0:
+		start := list.visibleStartLocked()
+		if event.Row < 0 || start+event.Row >= min(start+list.maxVisible, len(list.filteredItems)) {
+			list.mu.Unlock()
+			return false
+		}
+		// The first press of a double click already selected this cell.
+		// Re-resolving would confirm whatever the recentred list moved under it.
+		if event.Clicks >= 2 {
+			if item, ok := list.selectedItem(); ok && list.OnSelect != nil {
+				callback := list.OnSelect
+				list.pending = append(list.pending, func() { callback(item) })
+			}
+			break
+		}
+		list.selectedIndex = start + event.Row
+		list.notifySelectionChange()
+	default:
+		list.mu.Unlock()
+		return false
+	}
+	pending := list.pending
+	list.pending = nil
+	list.mu.Unlock()
+	for _, callback := range pending {
+		callback()
+	}
+	return true
 }
 
 func (list *SelectList) renderItem(item SelectItem, isSelected bool, width int, description string, primaryColumnWidth int) string {

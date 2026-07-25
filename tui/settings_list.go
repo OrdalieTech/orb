@@ -55,6 +55,9 @@ type SettingsList struct {
 	submenuComponent Component
 	submenuItemIndex int
 	submenuOpen      bool
+
+	// Where the item rows landed in the last render, for hit-testing.
+	rowTop, rowStart, rowCount int
 }
 
 func NewSettingsList(items []SettingItem, maxVisible int, theme SettingsListTheme, onChange func(id, newValue string), onCancel func(), options SettingsListOptions) *SettingsList {
@@ -135,6 +138,7 @@ func (list *SettingsList) renderMainList(width int) []string {
 
 	startIndex := max(0, min(list.selectedIndex-list.maxVisible/2, len(displayItems)-list.maxVisible))
 	endIndex := min(startIndex+list.maxVisible, len(displayItems))
+	list.rowTop, list.rowStart, list.rowCount = len(lines), startIndex, endIndex-startIndex
 
 	maxLabelWidth := 0
 	for _, item := range list.items {
@@ -204,6 +208,57 @@ func (list *SettingsList) HandleInput(event KeyEvent) {
 	for _, callback := range pending {
 		callback()
 	}
+}
+
+// HandleMouse selects the clicked setting and cycles its value on a double
+// click, matching Enter/Space. An open submenu keeps the mouse, as it keeps
+// keyboard input.
+func (list *SettingsList) HandleMouse(event MouseEvent) bool {
+	list.mu.Lock()
+	if list.submenuComponent != nil {
+		submenu, ok := list.submenuComponent.(MouseHandler)
+		list.mu.Unlock()
+		return ok && submenu.HandleMouse(event)
+	}
+	displayItems := list.displayItems()
+	switch {
+	case len(displayItems) == 0:
+		list.mu.Unlock()
+		return false
+	case event.Type == MouseWheelUp || event.Type == MouseWheelDown:
+		delta := -1
+		if event.Type == MouseWheelDown {
+			delta = 1
+		}
+		list.selectedIndex = max(0, min(list.selectedIndex+delta, len(displayItems)-1))
+	case event.Type == MousePress && event.Button == 0:
+		if event.Row < list.rowTop || event.Row >= list.rowTop+list.rowCount {
+			list.mu.Unlock()
+			return false
+		}
+		// The first press of a double click already selected this cell.
+		// Re-resolving would change whatever the recentred list moved under it.
+		if event.Clicks >= 2 {
+			list.activateItem()
+			break
+		}
+		index := list.rowStart + event.Row - list.rowTop
+		if index >= len(displayItems) {
+			list.mu.Unlock()
+			return false
+		}
+		list.selectedIndex = index
+	default:
+		list.mu.Unlock()
+		return false
+	}
+	pending := list.pending
+	list.pending = nil
+	list.mu.Unlock()
+	for _, callback := range pending {
+		callback()
+	}
+	return true
 }
 
 func (list *SettingsList) handleData(data string) {

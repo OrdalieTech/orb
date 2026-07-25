@@ -39,7 +39,13 @@ func CalculateCost(model *Model, usage *Usage) {
 	usage.Cost.Output = rates.Output / 1_000_000 * float64(usage.Output)
 	usage.Cost.CacheRead = rates.CacheRead / 1_000_000 * float64(usage.CacheRead)
 	usage.Cost.CacheWrite = (rates.CacheWrite*float64(shortWrite) + rates.Input*2*float64(longWrite)) / 1_000_000
-	usage.Cost.Total = usage.Cost.Input + usage.Cost.Output + usage.Cost.CacheRead + usage.Cost.CacheWrite
+	// Go may fuse a multiply and an add across statements (spec: Floating-point
+	// operators) unless an explicit conversion rounds first. On arm64 it does,
+	// so an unfused -race build matched upstream while the shipped CGO_ENABLED=0
+	// binary wrote costs one ULP off. JavaScript never fuses; these conversions
+	// pin the sum to the stored, individually rounded rates.
+	usage.Cost.Total = float64(usage.Cost.Input) + float64(usage.Cost.Output) +
+		float64(usage.Cost.CacheRead) + float64(usage.Cost.CacheWrite)
 }
 
 var extendedThinkingLevels = []ModelThinkingLevel{

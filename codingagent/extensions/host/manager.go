@@ -22,7 +22,40 @@ import (
 	"github.com/OrdalieTech/pigo/agent"
 	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"golang.org/x/term"
 )
+
+// terminalSafeStderr guards the parent terminal from the host's own output.
+// Node writes fatal reports (unhandled rejections, OOM) straight to fd 2 with
+// bare LFs, which staircase across the screen once the TUI has cleared OPOST
+// and cannot be repaired by a redraw. Translation applies only to a terminal so
+// piped logs keep byte-exact host output.
+func terminalSafeStderr(writer io.Writer) io.Writer {
+	file, ok := writer.(*os.File)
+	if !ok || !term.IsTerminal(int(file.Fd())) {
+		return writer
+	}
+	return crlfWriter{inner: writer}
+}
+
+type crlfWriter struct{ inner io.Writer }
+
+func (writer crlfWriter) Write(data []byte) (int, error) {
+	// ponytail: rewrites per call and treats a CR ending the previous chunk as
+	// unpaired; host stderr is diagnostic, so a stray CR beats a torn screen.
+	// A stateful splitter is the upgrade path if it ever carries volume.
+	converted := make([]byte, 0, len(data)+bytes.Count(data, []byte("\n")))
+	for index, current := range data {
+		if current == '\n' && (index == 0 || data[index-1] != '\r') {
+			converted = append(converted, '\r')
+		}
+		converted = append(converted, current)
+	}
+	if _, err := writer.inner.Write(converted); err != nil {
+		return 0, err
+	}
+	return len(data), nil
+}
 
 //go:embed host.mjs
 var hostSource []byte
@@ -389,7 +422,7 @@ func (manager *Manager) startLocked(ctx context.Context) (generationLoadResult, 
 	// Extensions must not inherit a terminal descriptor they can put in cooked mode.
 	// Wrapping forces a pipe, so Wait would otherwise block until every grandchild
 	// that inherited stderr closes it; WaitDelay bounds that.
-	command.Stderr = io.MultiWriter(manager.options.Stderr)
+	command.Stderr = io.MultiWriter(terminalSafeStderr(manager.options.Stderr))
 	command.WaitDelay = manager.options.ShutdownTimeout
 	stdin, err := command.StdinPipe()
 	if err != nil {

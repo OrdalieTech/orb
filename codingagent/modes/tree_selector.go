@@ -3,6 +3,7 @@ package modes
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
@@ -301,6 +302,13 @@ type TreeSelectorComponent struct {
 	onCancel            func()
 	onLabelChange       func(string, *string)
 
+	// Where the last render put the tree rows and how far it scrolled them
+	// sideways, so clicks resolve to the row and column the user saw. Guarded
+	// because renders can overlap; the rest of the component is single-writer.
+	rowsMu                                 sync.Mutex
+	treeTop, rowStart, rowCount, rowScroll int
+	foldedByClick                          bool
+
 	OnCopy func(string)
 }
 
@@ -446,6 +454,71 @@ func (component *TreeSelectorComponent) HandleInput(event tui.KeyEvent) {
 	default:
 		component.appendSearch(event.Raw)
 	}
+}
+
+// treeFoldSpan is the visible column range the ⊞/⊟ fold marker occupies inside
+// a row's prefix, or an empty span when the row is not foldable.
+func treeFoldSpan(row treeRow) (int, int) {
+	prefix := tui.SliceByColumn(row.label, 0, row.anchor, false)
+	index := strings.IndexAny(prefix, "⊞⊟")
+	if index < 0 {
+		return 0, 0
+	}
+	start := tui.VisibleWidth(prefix[:index])
+	return start, start + tui.VisibleWidth(prefix[index:index+len("⊞")])
+}
+
+// HandleMouse selects the clicked row, toggles the fold marker when the click
+// lands on it, confirms on a double click, and scrolls on the wheel. The two
+// leading cells are the selection cursor, and rowScroll undoes the horizontal
+// viewport so clicks stay on the glyph the user aimed at.
+func (component *TreeSelectorComponent) HandleMouse(event tui.MouseEvent) bool {
+	if component.labelInput != nil || len(component.view.rows) == 0 {
+		return false
+	}
+	switch {
+	case event.Type == tui.MouseWheelUp || event.Type == tui.MouseWheelDown:
+		delta := -3
+		if event.Type == tui.MouseWheelDown {
+			delta = 3
+		}
+		component.selected = max(0, min(component.selected+delta, len(component.view.rows)-1))
+		return true
+	case event.Type == tui.MousePress && event.Button == 0:
+		top, first, count, scroll := component.rowLayout()
+		if event.Row < top || event.Row >= top+count {
+			return false
+		}
+		// The first press of a double click already acted on this cell:
+		// re-resolving would open whatever the recentred viewport moved under
+		// it, and double-clicking a fold marker must not navigate the session.
+		if event.Clicks >= 2 {
+			if id := component.selectedID(); id != "" && !component.foldedByClick && component.onSelect != nil {
+				component.onSelect(id)
+			}
+			return true
+		}
+		index := first + event.Row - top
+		if index >= len(component.view.rows) {
+			return false
+		}
+		row := component.view.rows[index]
+		component.selected = index
+		id := row.node.Entry.ID
+		start, end := treeFoldSpan(row)
+		column := event.Column - 2 + scroll
+		component.foldedByClick = end > start && column >= start && column < end
+		if component.foldedByClick {
+			if component.folded[id] {
+				delete(component.folded, id)
+			} else {
+				component.folded[id] = true
+			}
+			component.refresh(id)
+		}
+		return true
+	}
+	return false
 }
 
 func (component *TreeSelectorComponent) move(delta int) {
@@ -621,14 +694,27 @@ func (component *TreeSelectorComponent) Render(width int) []string {
 		}
 		lines = append(lines, tui.TruncateToWidth("  "+KeyHint("tui.select.confirm", "save")+"  "+KeyHint("tui.select.cancel", "cancel"), width, "", false))
 	} else {
-		lines = append(lines, component.renderTree(width)...)
+		lines = append(lines, component.renderTree(width, len(lines))...)
 	}
 	lines = append(lines, "", border)
 	return lines
 }
 
-func (component *TreeSelectorComponent) renderTree(width int) []string {
+func (component *TreeSelectorComponent) setRowLayout(top, start, count, scroll int) {
+	component.rowsMu.Lock()
+	component.treeTop, component.rowStart, component.rowCount, component.rowScroll = top, start, count, scroll
+	component.rowsMu.Unlock()
+}
+
+func (component *TreeSelectorComponent) rowLayout() (int, int, int, int) {
+	component.rowsMu.Lock()
+	defer component.rowsMu.Unlock()
+	return component.treeTop, component.rowStart, component.rowCount, component.rowScroll
+}
+
+func (component *TreeSelectorComponent) renderTree(width, top int) []string {
 	if len(component.view.rows) == 0 {
+		component.setRowLayout(top, 0, 0, 0)
 		return []string{
 			tui.TruncateToWidth(theme.FG("muted", "  No entries found"), width, "", false),
 			tui.TruncateToWidth(theme.FG("muted", "  (0/0)"+component.statusLabels()), width, "", false),
@@ -648,6 +734,7 @@ func (component *TreeSelectorComponent) renderTree(width int) []string {
 			scroll = min(maxBodyWidth-bodyWidth, selected.anchor-max(2, min(12, bodyWidth/4)))
 		}
 	}
+	component.setRowLayout(top, start, end-start, scroll)
 	lines := make([]string, 0, end-start+1)
 	for index := start; index < end; index++ {
 		body := component.view.rows[index].label
