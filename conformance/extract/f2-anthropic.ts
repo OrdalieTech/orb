@@ -1,7 +1,9 @@
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+
+import { writeProviderModelData } from "./upstream-model-data.ts";
 
 import {
   stream as streamAnthropic,
@@ -56,7 +58,8 @@ interface AnthropicProviderFixture {
     name: string;
     oauthName?: string;
     env: string[];
-    resolved: { apiKey?: string };
+    // Recorded verbatim: upstream may resolve an API key or bearer headers.
+    resolved: Record<string, unknown>;
     source?: string;
   };
 }
@@ -808,25 +811,20 @@ async function extractAnthropicProvider(upstreamRoot: string): Promise<Anthropic
   const packageRoot = path.join(temporaryRoot, "ai");
   try {
     await cp(path.join(upstreamRoot, "packages/ai"), packageRoot, { recursive: true });
-    const providerData = path.join(packageRoot, "src/providers/data");
-    await mkdir(providerData, { recursive: true });
-    await writeFile(
-      path.join(providerData, "anthropic.json"),
-      `${JSON.stringify({
-        "fixture-anthropic-model": {
-          id: "fixture-anthropic-model",
-          name: "Fixture Anthropic Model",
-          api: "anthropic-messages",
-          provider: "anthropic",
-          baseUrl: "https://api.anthropic.com",
-          reasoning: false,
-          input: ["text"],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 1,
-          maxTokens: 1,
-        },
-      })}\n`,
-    );
+    await writeProviderModelData(path.join(packageRoot, "src/providers"), "anthropic", {
+      "fixture-anthropic-model": {
+        id: "fixture-anthropic-model",
+        name: "Fixture Anthropic Model",
+        api: "anthropic-messages",
+        provider: "anthropic",
+        baseUrl: "https://api.anthropic.com",
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 1,
+        maxTokens: 1,
+      },
+    });
     const providerModule = (await import(
       pathToFileURL(path.join(packageRoot, "src/providers/anthropic.ts")).href
     )) as {
@@ -842,7 +840,7 @@ async function extractAnthropicProvider(upstreamRoot: string): Promise<Anthropic
                 env(name: string): Promise<string | undefined>;
                 fileExists(path: string): Promise<boolean>;
               };
-            }): Promise<{ auth: { apiKey?: string }; source?: string } | undefined>;
+            }): Promise<{ auth: Record<string, unknown>; source?: string } | undefined>;
           };
           oauth?: { name: string };
         };
@@ -866,7 +864,7 @@ async function extractAnthropicProvider(upstreamRoot: string): Promise<Anthropic
     const resolved = await apiKeyAuth.resolve({
       ctx: { env: async () => "fixture-anthropic-api-key", fileExists: async () => false },
     });
-    if (!resolved?.auth.apiKey) throw new Error("anthropicProvider() did not resolve its environment API key");
+    if (!resolved) throw new Error("anthropicProvider() did not resolve an environment credential");
     return {
       id: provider.id,
       name: provider.name,

@@ -1,7 +1,9 @@
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+
+import { writeProviderModelData } from "./upstream-model-data.ts";
 
 import {
   stream as streamGoogle,
@@ -687,25 +689,20 @@ async function extractGoogleProvider(upstreamRoot: string): Promise<GoogleProvid
   const packageRoot = path.join(temporaryRoot, "ai");
   try {
     await cp(path.join(upstreamRoot, "packages/ai"), packageRoot, { recursive: true });
-    const providerData = path.join(packageRoot, "src/providers/data");
-    await mkdir(providerData, { recursive: true });
-    await writeFile(
-      path.join(providerData, "google.json"),
-      `${JSON.stringify({
-        "gemini-fixture": {
-          id: "gemini-fixture",
-          name: "Fixture Google Model",
-          api: "google-generative-ai",
-          provider: "google",
-          baseUrl: "https://generativelanguage.googleapis.com/v1beta",
-          reasoning: true,
-          input: ["text"],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 1,
-          maxTokens: 1,
-        },
-      })}\n`,
-    );
+    await writeProviderModelData(path.join(packageRoot, "src/providers"), "google", {
+      "gemini-fixture": {
+        id: "gemini-fixture",
+        name: "Fixture Google Model",
+        api: "google-generative-ai",
+        provider: "google",
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+        reasoning: true,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 1,
+        maxTokens: 1,
+      },
+    });
     const providerModule = (await import(
       pathToFileURL(path.join(packageRoot, "src/providers/google.ts")).href
     )) as {

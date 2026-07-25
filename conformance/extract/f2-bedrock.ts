@@ -1,9 +1,11 @@
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import { createRequire } from "node:module";
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+
+import { writeProviderModelData } from "./upstream-model-data.ts";
 
 import {
   stream as streamBedrock,
@@ -474,12 +476,9 @@ async function extractBedrockProvider(upstreamRoot: string): Promise<BedrockProv
   const packageRoot = path.join(temporaryRoot, "ai");
   try {
     await cp(path.join(upstreamRoot, "packages/ai"), packageRoot, { recursive: true });
-    const providerData = path.join(packageRoot, "src/providers/data");
-    await mkdir(providerData, { recursive: true });
-    await writeFile(
-      path.join(providerData, "amazon-bedrock.json"),
-      `${JSON.stringify({ "fixture-bedrock-model": bedrockModel({ id: "fixture-bedrock-model" }) })}\n`,
-    );
+    await writeProviderModelData(path.join(packageRoot, "src/providers"), "amazon-bedrock", {
+      "fixture-bedrock-model": bedrockModel({ id: "fixture-bedrock-model" }),
+    });
     const providerModule = (await import(
       pathToFileURL(path.join(packageRoot, "src/providers/amazon-bedrock.ts")).href
     )) as {

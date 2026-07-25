@@ -6,6 +6,16 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Changed
+
+- Conformance extraction now runs against upstream 0.82.x: it synthesizes the generated
+  `providers/data/.manifest.json` that `providers/all.ts` began importing, writes synthesized
+  provider catalogs in the flat or grouped-by-API shape the checked-out revision expects,
+  records the Anthropic provider's resolved credential verbatim so a headers-only resolution is
+  captured, derives subscription-provider APIs from the provider factory, and supplies the
+  session scope the `/models` command now reads. `UPSTREAM.lock` still pins 0.81.1; see
+  `docs/sync/reports/2026-07-25.md` for the measured 0.81.1 → 0.82.1 delta and the port work list.
+
 ## [0.4.6] - 2026-07-25
 
 ### Added

@@ -18,6 +18,7 @@ import type {
   SimpleStreamOptions,
   Tool,
 } from "../../.upstream/packages/ai/src/types.ts";
+import { providerApis } from "./f2-providers.ts";
 import { withUpstreamModelData } from "./upstream-model-data.ts";
 
 interface Definition {
@@ -454,9 +455,8 @@ async function extractSubscriptionProviders(upstreamRoot: string) {
       const module = (await import(pathToFileURL(path.join(providersDir, `${definition.file}.ts`)).href)) as Record<string, () => Provider>;
       const provider = module[definition.factory]?.();
       if (!provider) throw new Error(`${definition.factory}() was not exported`);
-      const modelSource = await readFile(path.join(providersDir, `${definition.file}.models.ts`), "utf8");
-      const apis = Array.from(modelSource.matchAll(/Model<"([^"]+)">/g), (match) => match[1]);
-      result.push(providerFixture(provider, Array.from(new Set(apis)).sort()));
+      const providerSource = await readFile(path.join(providersDir, `${definition.file}.ts`), "utf8");
+      result.push(providerFixture(provider, Array.from(new Set(providerApis(providerSource))).sort()));
     }
     return result;
   });
