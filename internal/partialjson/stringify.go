@@ -72,7 +72,7 @@ func writeStreamingJSON(output *bytes.Buffer, value any) error {
 			if index > 0 {
 				output.WriteByte(',')
 			}
-			name, err := jsonwire.Marshal(member.name)
+			name, err := jsonwire.MarshalString(member.name)
 			if err != nil {
 				return err
 			}
@@ -95,6 +95,15 @@ func writeStreamingJSON(output *bytes.Buffer, value any) error {
 			}
 		}
 		output.WriteByte(']')
+		return nil
+	case string:
+		// JSON.stringify re-escapes lone UTF-16 surrogates; encoding/json would
+		// replace them with U+FFFD and corrupt an emoji split across deltas.
+		encoded, err := jsonwire.MarshalString(value)
+		if err != nil {
+			return fmt.Errorf("partialjson: stringify: %w", err)
+		}
+		output.Write(encoded)
 		return nil
 	case float64:
 		if math.IsNaN(value) || math.IsInf(value, 0) {

@@ -23,14 +23,27 @@ type spoolLine struct {
 	Ack string   `json:"ack,omitempty"`
 }
 
-const localWorkers = 8
+const (
+	localWorkers = 8
+	// localStopWorkers bounds the /stop fan-out. /stop skips the keyed queue
+	// so it can preempt the turn it targets, but a goroutine per message let
+	// anyone who can message the bot set the concurrency.
+	localStopWorkers = 4
+	// localMaxAttempts caps in-process redelivery. An exhausted message stays
+	// unacked in the spool and replays on the next boot, so a permanently
+	// failing handler no longer pins a worker (and its key) forever.
+	//
+	// ponytail: ~4.6s of capped backoff before a message waits for the next
+	// boot; add a dead-letter path if outages routinely outlive it.
+	localMaxAttempts = 10
+)
 
 // Local is a durable single-process spool plus a keyed FIFO dispatcher:
 // per-key FIFO order, at most one in-flight Handle per key, a global worker
 // pool, and replay-with-compaction on boot. /stop messages bypass the keyed
-// queue so they can preempt the in-flight turn they target, and messages the
-// handler rejects permanently ([ErrRejected]) are acked and dropped instead
-// of retried.
+// queue so they can preempt the in-flight turn they target, running on their
+// own bounded pool, and messages the handler rejects permanently
+// ([ErrRejected]) are acked and dropped instead of retried.
 //
 // ponytail: single-process spool; swap Publish for a broker in clustered
 // deployments.
@@ -45,6 +58,10 @@ type Local struct {
 	queues   map[string][]Message
 	inflight map[string]bool
 	stopped  bool
+
+	// stops is unbuffered: Publish blocks until a stop worker takes the
+	// message, which is the backpressure the spool cannot apply itself.
+	stops chan Message
 
 	stop chan struct{}
 	wg   sync.WaitGroup
@@ -72,12 +89,17 @@ func NewLocal(handler Handler, spoolPath string) (*Local, error) {
 		file:     file,
 		queues:   map[string][]Message{},
 		inflight: map[string]bool{},
+		stops:    make(chan Message),
 		stop:     make(chan struct{}),
 	}
 	local.cond = sync.NewCond(&local.mu)
 	for range localWorkers {
 		local.wg.Add(1)
 		go local.worker()
+	}
+	for range localStopWorkers {
+		local.wg.Add(1)
+		go local.stopWorker()
 	}
 	for _, m := range pending {
 		local.enqueue(m)
@@ -153,19 +175,13 @@ func (l *Local) appendLine(line spoolLine) error {
 
 func (l *Local) enqueue(m Message) {
 	// /stop preempts: queued behind the per-key inflight gate it could only
-	// ever run after the turn it is meant to abort, so it dispatches directly.
+	// ever run after the turn it is meant to abort, so it goes to the separate
+	// stop pool instead.
 	if parseCommand(m.Text) == "/stop" {
-		l.mu.Lock()
-		if l.stopped {
-			l.mu.Unlock()
-			return
+		select {
+		case l.stops <- m:
+		case <-l.stop:
 		}
-		l.wg.Add(1)
-		l.mu.Unlock()
-		go func() {
-			defer l.wg.Done()
-			l.handleUntilAcked(m)
-		}()
 		return
 	}
 	key := m.Key().String()
@@ -205,20 +221,35 @@ func (l *Local) worker() {
 	}
 }
 
+func (l *Local) stopWorker() {
+	defer l.wg.Done()
+	for {
+		select {
+		case <-l.stop:
+			return
+		case m := <-l.stops:
+			l.handleUntilAcked(m)
+		}
+	}
+}
+
 // handleUntilAcked runs Handle and the ack append with capped backoff until
-// the event is acked or shutdown begins, reporting whether the ack was
-// written. Permanent rejections ([ErrRejected]) are acked and dropped — they
-// can never succeed, and retrying them would pin a worker (and its key)
-// forever. A failed ack append retries inside the same backoff loop instead
-// of respinning the head message with no delay.
+// the event is acked, the attempt cap is reached, or shutdown begins,
+// reporting whether the ack was written. Permanent rejections ([ErrRejected])
+// are acked and dropped — they can never succeed, and retrying them would pin
+// a worker (and its key) forever. A failed ack append retries inside the same
+// backoff loop instead of respinning the head message with no delay.
 func (l *Local) handleUntilAcked(m Message) bool {
 	backoff := 25 * time.Millisecond
-	for {
+	for attempt := 1; ; attempt++ {
 		err := l.handler.Handle(context.Background(), m)
 		if err == nil || errors.Is(err, ErrRejected) {
 			if ackErr := l.appendLine(spoolLine{Ack: m.EventID}); ackErr == nil {
 				return true
 			}
+		}
+		if attempt >= localMaxAttempts {
+			return false
 		}
 		select {
 		case <-l.stop:
@@ -230,11 +261,13 @@ func (l *Local) handleUntilAcked(m Message) bool {
 }
 
 // process drives one claimed head message to its ack, then pops it and
-// releases the key.
+// releases the key. An exhausted message is popped too: it is still unacked on
+// disk (so the next boot replays it), while leaving it queued would respin it
+// with no delay. Only a shutdown-interrupted message stays queued.
 func (l *Local) process(key string, m Message) {
 	acked := l.handleUntilAcked(m)
 	l.mu.Lock()
-	if acked {
+	if acked || !l.stopped {
 		if queue := l.queues[key]; len(queue) > 0 {
 			queue = queue[1:]
 			if len(queue) == 0 {

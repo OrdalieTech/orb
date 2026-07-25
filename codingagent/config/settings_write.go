@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"time"
@@ -209,14 +210,25 @@ func withSettingsLock(path string, operation func() error) (err error) {
 	return operation()
 }
 
+// acquireSettingsLock takes acquireAuthDirectoryLock's jittered exponential
+// backoff, which a flat 10 x 20 ms poll lacked: concurrent managers dropped a
+// double-digit percentage of writes outright. The delay ceiling stays far
+// below auth's because a settings write holds the lock for about a
+// millisecond, and the budget is wall-clock so a slow write cannot burn the
+// retries a fast one needs.
+//
+// ponytail: no ctx — every caller is a synchronous void setter with none to
+// pass; thread one through withSettingsLock when a public setter grows a ctx.
 func acquireSettingsLock(lockPath string) (func() error, error) {
 	const (
-		attempts = 10
-		retry    = 20 * time.Millisecond
+		budget   = 10 * time.Second
+		maxDelay = 50 * time.Millisecond
 		stale    = 10 * time.Second
 		update   = 5 * time.Second
 	)
-	for attempt := 1; attempt <= attempts; attempt++ {
+	deadline := time.Now().Add(budget)
+	delay := time.Millisecond
+	for {
 		err := os.Mkdir(lockPath, 0o755)
 		if err == nil {
 			stop := make(chan struct{})
@@ -248,11 +260,14 @@ func acquireSettingsLock(lockPath string) (func() error, error) {
 				continue
 			}
 		}
-		if attempt < attempts {
-			time.Sleep(retry)
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("settings lock is already held: %s", lockPath)
 		}
+		// Jitter breaks the herd: without it every loser of one race retries
+		// in lockstep with the others and keeps losing.
+		time.Sleep(delay/2 + rand.N(delay/2+1))
+		delay = min(delay*2, maxDelay)
 	}
-	return nil, fmt.Errorf("settings lock is already held: %s", lockPath)
 }
 
 func writeGlobalSettings(path string, values settingsObject, nestedField, nestedKey string, nestedValue json.RawMessage) error {
@@ -300,25 +315,31 @@ func writeGlobalSettings(path string, values settingsObject, nestedField, nested
 	})
 }
 
+// setGlobalValues persists first and only then advances in-memory state: a
+// setter that reported the new value while the file still held the old one
+// left the manager permanently disagreeing with disk, and the void signature
+// makes DrainErrors the only place a caller ever learns of the failure.
 func (manager *SettingsManager) setGlobalValues(values ...settingsMember) {
-	manager.mu.Lock()
-	defer manager.mu.Unlock()
-	for _, value := range values {
-		var decoded any
+	decoded := make([]any, len(values))
+	for index, value := range values {
 		decoder := json.NewDecoder(bytes.NewReader(value.value))
 		decoder.UseNumber()
-		if err := decoder.Decode(&decoded); err != nil {
+		if err := decoder.Decode(&decoded[index]); err != nil {
 			panic(fmt.Sprintf("config: invalid setting value: %v", err))
 		}
-		manager.global[value.name] = decoded
+	}
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if !manager.globalLoadError {
+		if err := writeGlobalSettings(manager.globalPath, settingsObject(values), "", "", nil); err != nil {
+			manager.errors = append(manager.errors, SettingsError{Scope: GlobalSettings, Err: err})
+			return
+		}
+	}
+	for index, value := range values {
+		manager.global[value.name] = decoded[index]
 	}
 	manager.effective = mergeSettings(manager.global, manager.project)
-	if manager.globalLoadError {
-		return
-	}
-	if err := writeGlobalSettings(manager.globalPath, settingsObject(values), "", "", nil); err != nil {
-		manager.errors = append(manager.errors, SettingsError{Scope: GlobalSettings, Err: err})
-	}
 }
 
 func (manager *SettingsManager) setGlobalNested(field, key string, value any) {
@@ -328,6 +349,12 @@ func (manager *SettingsManager) setGlobalNested(field, key string, value any) {
 	}
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
+	if !manager.globalLoadError {
+		if err := writeGlobalSettings(manager.globalPath, nil, field, key, raw); err != nil {
+			manager.errors = append(manager.errors, SettingsError{Scope: GlobalSettings, Err: err})
+			return
+		}
+	}
 	object := nestedObject(manager.global, field)
 	if object == nil {
 		object = map[string]any{}
@@ -337,12 +364,6 @@ func (manager *SettingsManager) setGlobalNested(field, key string, value any) {
 	object[key] = cloneValue(value)
 	manager.global[field] = object
 	manager.effective = mergeSettings(manager.global, manager.project)
-	if manager.globalLoadError {
-		return
-	}
-	if err := writeGlobalSettings(manager.globalPath, nil, field, key, raw); err != nil {
-		manager.errors = append(manager.errors, SettingsError{Scope: GlobalSettings, Err: err})
-	}
 }
 
 func settingMember(name string, value any) settingsMember {

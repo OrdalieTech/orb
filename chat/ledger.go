@@ -69,9 +69,10 @@ func appendTurnMarker(manager *sessionstore.SessionManager, marker turnMarker) (
 // scanTurnLedger reads every raw session entry (branch-independent) and
 // returns the ledger state for eventID.
 //
-// ponytail: O(session history) with deep clones per inbound message; a
+// ponytail: O(session history) with deep clones per inbound message, and now
+// the largest per-turn cost since Acquire caches its SessionManager; a
 // non-cloning entry iterator (or tail index) on SessionManager is the upgrade
-// path if profile time ever shows this next to the Acquire-time JSONL parse.
+// path when that starts to hurt.
 func scanTurnLedger(manager *sessionstore.SessionManager, eventID string) turnLedger {
 	var ledger turnLedger
 	for _, entry := range manager.GetEntries() {

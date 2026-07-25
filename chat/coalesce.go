@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/OrdalieTech/pigo/agent"
@@ -18,11 +19,18 @@ type coalescer struct {
 	mu     sync.Mutex
 	latest string
 	dirty  bool
+	// panics is atomic because the recover path must not touch c.mu: it may
+	// run from anywhere inside observe.
+	panics atomic.Int64
 }
 
 // observe is a session event listener extracting partial assistant text.
 func (c *coalescer) observe(event any) {
-	defer func() { _ = recover() }()
+	defer func() {
+		if recover() != nil {
+			c.panics.Add(1)
+		}
+	}()
 	update, ok := event.(agent.MessageUpdateEvent)
 	if !ok {
 		return

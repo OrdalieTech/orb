@@ -60,7 +60,11 @@ type Processor struct {
 	logger          *slog.Logger
 
 	semaphore chan struct{}
-	locks     *keyedMutex
+	// stopSemaphore bounds /stop separately from turns. Sharing the turn
+	// semaphore would deadlock: the slot /stop needs is held by the very turn
+	// it exists to abort.
+	stopSemaphore chan struct{}
+	locks         *keyedMutex
 
 	activeMu sync.Mutex
 	active   map[string]func()
@@ -112,6 +116,7 @@ func New(opts Options) (*Processor, error) {
 		turnTimeout:     opts.TurnTimeout,
 		logger:          opts.Logger,
 		semaphore:       make(chan struct{}, opts.MaxConcurrent),
+		stopSemaphore:   make(chan struct{}, opts.MaxConcurrent),
 		locks:           newKeyedMutex(),
 		active:          map[string]func(){},
 	}, nil
@@ -156,8 +161,15 @@ func (p *Processor) Handle(ctx context.Context, m Message) error {
 	}
 	key := m.Key()
 
-	// /stop preempts out of band: no keyed lock, no ledger write.
+	// /stop preempts out of band: no keyed lock, no ledger write — but still
+	// bounded, or an inbound /stop flood sets the concurrency itself.
 	if parseCommand(m.Text) == "/stop" {
+		select {
+		case p.stopSemaphore <- struct{}{}:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		defer func() { <-p.stopSemaphore }()
 		return p.preemptStop(ctx, adapter, key, m)
 	}
 
@@ -361,6 +373,9 @@ func (p *Processor) runPromptTurn(ctx context.Context, adapter Adapter, conv *Co
 	p.clearActive(lockKey)
 	unsubscribe()
 	stopRenderer()
+	if panics := co.panics.Load(); panics > 0 {
+		p.logger.Warn("chat: preview coalescer panicked", "count", panics, "event", m.EventID)
+	}
 
 	outcome, finalText, assistantEntryID, notice := settleTurn(conv.Manager, startedID, promptErr)
 	if outcome == outcomeError && promptCtx.Err() != nil && ctx.Err() == nil {

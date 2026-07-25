@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -557,6 +558,10 @@ func TestRunLoopResolvesModelHeadersForEveryProviderRequest(t *testing.T) {
 	}
 }
 
+// Upstream's update callback hands the event to an event-loop-driven
+// subscriber (agent-loop.ts:679-692): the tool never waits for it. A sink that
+// only unblocks once the tool has returned must not deadlock, and its update
+// must still be delivered before the run completes.
 func TestRunLoopToolUpdateDoesNotBlockToolExecution(t *testing.T) {
 	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{
 		loopAssistant(ai.StopReasonToolUse, &ai.ToolCall{ID: "call-1", Name: "update", Arguments: map[string]any{}}),
@@ -571,6 +576,9 @@ func TestRunLoopToolUpdateDoesNotBlockToolExecution(t *testing.T) {
 			return textToolResult("done"), nil
 		},
 	}
+	// Written by the drain goroutine, read after RunLoop returns: close() joins
+	// that goroutine, so -race also proves the teardown happens-before edge.
+	delivered := 0
 	done := make(chan error, 1)
 	go func() {
 		_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
@@ -578,6 +586,7 @@ func TestRunLoopToolUpdateDoesNotBlockToolExecution(t *testing.T) {
 		}, func(_ context.Context, event AgentEvent) error {
 			if _, ok := event.(ToolExecutionUpdateEvent); ok {
 				<-toolReturned
+				delivered++
 			}
 			return nil
 		}, responses.stream)
@@ -588,8 +597,123 @@ func TestRunLoopToolUpdateDoesNotBlockToolExecution(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("tool update blocked tool execution")
+	}
+	if delivered != 1 {
+		t.Fatalf("delivered %d updates, want 1", delivered)
+	}
+}
+
+// Updates are handed to one drain goroutine, so a sink observes them one at a
+// time, in the order the tool produced them, and always before the call's
+// tool_execution_end.
+func TestRunLoopToolUpdatesEmitSequentiallyInOrder(t *testing.T) {
+	const updateCount = 200
+	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{
+		loopAssistant(ai.StopReasonToolUse, &ai.ToolCall{ID: "call-1", Name: "update", Arguments: map[string]any{}}),
+		loopAssistant(ai.StopReasonStop),
+	}}
+	tool := AgentToolFunc{
+		AgentToolSpec: AgentToolSpec{Name: "update", Parameters: jsonschema.Schema(`{"type":"object"}`)},
+		Run: func(_ context.Context, _ string, _ any, update AgentToolUpdateCallback) (AgentToolResult, error) {
+			for index := 0; index < updateCount; index++ {
+				update(textToolResult(strconv.Itoa(index)))
+			}
+			return textToolResult("done"), nil
+		},
+	}
+	var mu sync.Mutex
+	var inFlight, overlaps int
+	var seen []string
+	_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
+		Model: loopModel(),
+	}, func(_ context.Context, event AgentEvent) error {
+		if _, ok := event.(ToolExecutionEndEvent); ok {
+			mu.Lock()
+			seen = append(seen, "end")
+			mu.Unlock()
+			return nil
+		}
+		update, ok := event.(ToolExecutionUpdateEvent)
+		if !ok {
+			return nil
+		}
+		mu.Lock()
+		inFlight++
+		if inFlight > 1 {
+			overlaps++
+		}
+		mu.Unlock()
+		time.Sleep(50 * time.Microsecond)
+		mu.Lock()
+		seen = append(seen, update.PartialResult.Content[0].(*ai.TextContent).Text)
+		inFlight--
+		mu.Unlock()
+		return nil
+	}, responses.stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overlaps != 0 {
+		t.Fatalf("sink invocations overlapped %d times", overlaps)
+	}
+	if len(seen) != updateCount+1 {
+		t.Fatalf("saw %d events, want %d updates plus one end", len(seen), updateCount)
+	}
+	for index, text := range seen[:updateCount] {
+		if text != strconv.Itoa(index) {
+			t.Fatalf("update %d delivered out of order: %q", index, text)
+		}
+	}
+	if seen[updateCount] != "end" {
+		t.Fatalf("tool_execution_end did not follow every update: %q", seen[updateCount])
+	}
+}
+
+// The update drain goroutine is owned by the run: every queued update must be
+// delivered and the goroutine must exit before RunLoop returns.
+func TestRunLoopDrainsUpdatesAndStopsDrainGoroutine(t *testing.T) {
+	const (
+		runs    = 100
+		updates = 50
+	)
+	run := func() int {
+		responses := &loopResponseQueue{messages: []*ai.AssistantMessage{
+			loopAssistant(ai.StopReasonToolUse, &ai.ToolCall{ID: "call-1", Name: "update", Arguments: map[string]any{}}),
+			loopAssistant(ai.StopReasonStop),
+		}}
+		tool := AgentToolFunc{
+			AgentToolSpec: AgentToolSpec{Name: "update", Parameters: jsonschema.Schema(`{"type":"object"}`)},
+			Run: func(_ context.Context, _ string, _ any, update AgentToolUpdateCallback) (AgentToolResult, error) {
+				for index := 0; index < updates; index++ {
+					update(textToolResult("x"))
+				}
+				return textToolResult("done"), nil
+			},
+		}
+		delivered := 0
+		if _, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
+			Model: loopModel(),
+		}, func(_ context.Context, event AgentEvent) error {
+			if _, ok := event.(ToolExecutionUpdateEvent); ok {
+				delivered++
+			}
+			return nil
+		}, responses.stream); err != nil {
+			t.Fatal(err)
+		}
+		return delivered
+	}
+	baseline := runtime.NumGoroutine()
+	for index := 0; index < runs; index++ {
+		if got := run(); got != updates {
+			t.Fatalf("run %d delivered %d updates, want %d", index, got, updates)
+		}
+	}
+	time.Sleep(50 * time.Millisecond)
+	if after := runtime.NumGoroutine(); after > baseline+2 {
+		t.Fatalf("goroutines after %d runs = %d, baseline %d", runs, after, baseline)
 	}
 }
 
@@ -718,16 +842,13 @@ func TestRunLoopIdentityPrepareValidatesMutatedArguments(t *testing.T) {
 	}
 }
 
-func TestRunLoopToolUpdatesStartIndependentlyAndOwnTheirPayloads(t *testing.T) {
+func TestRunLoopToolUpdatesOwnTheirPayloads(t *testing.T) {
 	type updateLabels []string
 	type updateDetails map[string]updateLabels
 	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{
 		loopAssistant(ai.StopReasonToolUse, &ai.ToolCall{ID: "call-1", Name: "update", Arguments: map[string]any{}}),
 		loopAssistant(ai.StopReasonStop),
 	}}
-	secondStarted := make(chan struct{})
-	mutated := make(chan struct{})
-	var secondStartedOnce sync.Once
 	partial := textToolResult("first")
 	partial.Details = updateDetails{"phase": updateLabels{"first"}}
 	tool := AgentToolFunc{
@@ -737,35 +858,32 @@ func TestRunLoopToolUpdatesStartIndependentlyAndOwnTheirPayloads(t *testing.T) {
 			update(textToolResult("second"))
 			partial.Content[0].(*ai.TextContent).Text = "mutated"
 			partial.Details.(updateDetails)["phase"][0] = "mutated"
-			close(mutated)
 			return textToolResult("done"), nil
 		},
 	}
+	var seen []ToolExecutionUpdateEvent
 	_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
 		Model: loopModel(),
 	}, func(_ context.Context, event AgentEvent) error {
-		update, ok := event.(ToolExecutionUpdateEvent)
-		if !ok {
-			return nil
-		}
-		text := update.PartialResult.Content[0].(*ai.TextContent).Text
-		if text == "second" {
-			secondStartedOnce.Do(func() { close(secondStarted) })
-			return nil
-		}
-		select {
-		case <-secondStarted:
-		case <-time.After(time.Second):
-			t.Fatal("successive update events were serialized")
-		}
-		<-mutated
-		if text != "first" || update.PartialResult.Details.(updateDetails)["phase"][0] != "first" {
-			t.Fatalf("first update was mutated after callback return: %#v", update.PartialResult)
+		if update, ok := event.(ToolExecutionUpdateEvent); ok {
+			seen = append(seen, update)
 		}
 		return nil
 	}, responses.stream)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(seen) != 2 {
+		t.Fatalf("saw %d updates, want 2", len(seen))
+	}
+	if text := seen[0].PartialResult.Content[0].(*ai.TextContent).Text; text != "first" {
+		t.Fatalf("first update was mutated after callback return: %q", text)
+	}
+	if label := seen[0].PartialResult.Details.(updateDetails)["phase"][0]; label != "first" {
+		t.Fatalf("first update details were mutated after callback return: %q", label)
+	}
+	if text := seen[1].PartialResult.Content[0].(*ai.TextContent).Text; text != "second" {
+		t.Fatalf("second update = %q", text)
 	}
 }
 

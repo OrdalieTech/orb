@@ -37,6 +37,64 @@ var (
 
 type eventSink func(ai.AssistantMessageEvent) bool
 
+// streamParseFloor is the accumulated tool-argument size below which every
+// delta re-parses, matching upstream exactly.
+const streamParseFloor = 8 << 10
+
+// streamBuffer accumulates streamed deltas. Upstream concatenates with `+=`
+// (anthropic-messages.ts:647) because V8 builds a rope; Go copies the whole
+// buffer per delta, so the same idiom is quadratic here. strings.Builder
+// appends in amortised constant time and String() aliases the buffer without
+// copying, so every accumulated value stays byte-identical to upstream's.
+type streamBuffer struct {
+	accumulated strings.Builder
+	parsed      int
+}
+
+// append returns accumulated+delta. Re-seeding whenever the caller's value no
+// longer matches the buffer keeps the result identical to `accumulated+delta`
+// even when something outside the stream replaced the field.
+func (buffer *streamBuffer) append(accumulated, delta string) string {
+	if buffer.accumulated.Len() != len(accumulated) {
+		buffer.accumulated.Reset()
+		buffer.accumulated.WriteString(accumulated)
+		buffer.parsed = 0
+	}
+	buffer.accumulated.WriteString(delta)
+	return buffer.accumulated.String()
+}
+
+// shouldParse gates the streaming re-parse of tool-call arguments. Rebuilding
+// the argument map costs O(len(buffer)), so parsing every delta is quadratic
+// no matter how the buffer is stored.
+//
+// ponytail: parse gated at 8 KB of accumulated arguments, then on each
+// doubling — below the floor (every fixture, every human-sized tool call) the
+// streamed arguments are byte-identical to upstream, above it only the live
+// preview lags while partialJson/partialArgs and the end event stay exact.
+// Upgrade path: a resumable partial-JSON parser that consumes only the
+// appended suffix.
+func (buffer *streamBuffer) shouldParse() bool {
+	size := buffer.accumulated.Len()
+	if size >= streamParseFloor && size < 2*buffer.parsed {
+		return false
+	}
+	buffer.parsed = size
+	return true
+}
+
+// streamBuffers hands out one accumulator per streamed block index.
+type streamBuffers map[int]*streamBuffer
+
+func (buffers streamBuffers) at(index int) *streamBuffer {
+	buffer := buffers[index]
+	if buffer == nil {
+		buffer = &streamBuffer{}
+		buffers[index] = buffer
+	}
+	return buffer
+}
+
 func newAssistantMessage(model *ai.Model) *ai.AssistantMessage {
 	return &ai.AssistantMessage{
 		Content:    ai.AssistantContent{},

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/OrdalieTech/pigo/agent"
 	"github.com/OrdalieTech/pigo/codingagent/config"
@@ -35,7 +36,7 @@ var descriptions = map[string]string{
 	"tasks":       "Live session task list and todo tool",
 	"websearch":   "Web search and readable page fetching",
 	"subagents":   "In-process single or parallel child agents",
-	"permissions": "Permissive audit and tool-call permission rules",
+	"permissions": "Permissive audit and tool-call permission rules (bash is matched by command text only)",
 	"memory":      "Persistent remember and recall tools",
 }
 
@@ -125,6 +126,10 @@ func Control(settings *config.SettingsManager) extensions.Factory {
 		return nil
 	}
 }
+
+// bashCaveat is shown wherever rules are presented: users must not read a
+// tool-scoped deny as a guarantee, because bash can do the same work.
+const bashCaveat = "Bash is matched by its command text only: a tool-scoped rule does not stop an equivalent shell command."
 
 // Action is the ecosystem-standard three-state permission result.
 type Action string
@@ -260,18 +265,28 @@ func ruleTool(rule Rule) string {
 	return rule.Tool
 }
 
+// ponytail: bash is judged by its command text, never by what the shell would
+// actually do. Path rules also scan the command's words (so a `path` deny stops
+// `cat secrets.txt`), but a `tool:"write"` deny cannot stop `echo > file`:
+// that needs a shell grammar this plugin deliberately does not have. Write
+// Command rules for the shell, or sandbox bash — permissionSummary and the
+// plugin description say the same thing to users.
 func ruleMatches(rule Rule, info ToolCallInfo) bool {
 	if !matchGlob(ruleTool(rule), info.Tool, false) {
 		return false
 	}
+	command, hasCommand := commandArgument(info.Args)
 	if rule.Command != "" {
-		command, ok := commandArgument(info.Args)
-		if info.Tool != "bash" || !ok || !matchGlob(rule.Command, command, true) {
+		if info.Tool != "bash" || !hasCommand || !matchGlob(rule.Command, command, true) {
 			return false
 		}
 	}
 	if rule.Path != "" {
-		for _, candidate := range pathArguments(info.Args) {
+		candidates := pathArguments(info.Args)
+		if info.Tool == "bash" && hasCommand {
+			candidates = append(candidates, commandPaths(command)...)
+		}
+		for _, candidate := range candidates {
 			if matchesPath(rule.Path, candidate, info.CWD) {
 				return true
 			}
@@ -279,6 +294,23 @@ func ruleMatches(rule Rule, info ToolCallInfo) bool {
 		return false
 	}
 	return true
+}
+
+// commandPaths returns the bare words of a shell command as path candidates.
+// Word splitting only: quoted paths containing spaces, $VARS, and command
+// substitution stay invisible, and unrelated words (`cat`, `--color`) become
+// candidates. Over-matching is the safe direction for denials.
+func commandPaths(command string) []string {
+	fields := strings.FieldsFunc(command, func(letter rune) bool {
+		return unicode.IsSpace(letter) || strings.ContainsRune("|&;<>()", letter)
+	})
+	candidates := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if field = strings.Trim(field, `"'`); field != "" && !strings.HasPrefix(field, "-") {
+			candidates = append(candidates, field)
+		}
+	}
+	return candidates
 }
 
 func matchGlob(pattern, value string, command bool) bool {
@@ -394,6 +426,10 @@ func formatRule(rule Rule) string {
 	return strings.Join(parts, ", ")
 }
 
+// ponytail: an unconditional deny hides the tool instead of refusing its calls,
+// so a model that wanted it goes looking for another route (usually bash) with
+// no refusal to learn from. The tool_call hook still blocks it if the tool is
+// re-added. Refuse visibly instead once models are seen substituting bash.
 func (policy *Policy) staticDeny(info ToolCallInfo) (Decision, bool) {
 	mode, _, rules, authorizer := policy.snapshot()
 	if mode != "enforce" || authorizer != nil {
@@ -653,7 +689,7 @@ func permissionDenied(decision Decision, reason string) string {
 }
 
 func permissionSummary(mode string, rules []Rule, decisions []Decision) string {
-	lines := []string{"Permissions mode: " + mode, "Rules:"}
+	lines := []string{"Permissions mode: " + mode, bashCaveat, "Rules:"}
 	if len(rules) == 0 {
 		lines = append(lines, "  (default allow)")
 	}

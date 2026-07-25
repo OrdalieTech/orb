@@ -1126,7 +1126,7 @@ type anthropicStreamProcessor struct {
 	output          *ai.AssistantMessage
 	oauth           bool
 	sink            eventSink
-	blocks          map[int]anthropicOutputBlock
+	blocks          map[int]*anthropicOutputBlock
 	sawMessageStart bool
 	sawMessageStop  bool
 }
@@ -1137,6 +1137,7 @@ type anthropicOutputBlock struct {
 	thinking     *ai.ThinkingContent
 	toolCall     *ai.ToolCall
 	partialJSON  string
+	accumulated  streamBuffer
 }
 
 type anthropicRawEvent struct {
@@ -1191,7 +1192,7 @@ func newAnthropicStreamProcessor(
 ) *anthropicStreamProcessor {
 	return &anthropicStreamProcessor{
 		model: model, requestContext: requestContext, output: output, oauth: oauth, sink: sink,
-		blocks: make(map[int]anthropicOutputBlock),
+		blocks: make(map[int]*anthropicOutputBlock),
 	}
 }
 
@@ -1298,7 +1299,7 @@ func pointerValue(value *int64) int64 {
 
 func (processor *anthropicStreamProcessor) startBlock(event anthropicRawEvent) error {
 	index := event.Index
-	slot := anthropicOutputBlock{contentIndex: len(processor.output.Content)}
+	slot := &anthropicOutputBlock{contentIndex: len(processor.output.Content)}
 	switch event.ContentBlock.Type {
 	case "text":
 		slot.text = &ai.TextContent{Text: "", Index: &index}
@@ -1351,14 +1352,14 @@ func (processor *anthropicStreamProcessor) updateBlock(event anthropicRawEvent) 
 	switch event.Delta.Type {
 	case "text_delta":
 		if slot.text != nil {
-			slot.text.Text += event.Delta.Text
+			slot.text.Text = slot.accumulated.append(slot.text.Text, event.Delta.Text)
 			if !processor.sink(ai.TextDeltaEvent{ContentIndex: slot.contentIndex, Delta: event.Delta.Text, Partial: processor.output}) {
 				return errStopSSE
 			}
 		}
 	case "thinking_delta":
 		if slot.thinking != nil {
-			slot.thinking.Thinking += event.Delta.Thinking
+			slot.thinking.Thinking = slot.accumulated.append(slot.thinking.Thinking, event.Delta.Thinking)
 			if !processor.sink(ai.ThinkingDeltaEvent{ContentIndex: slot.contentIndex, Delta: event.Delta.Thinking, Partial: processor.output}) {
 				return errStopSSE
 			}
@@ -1373,10 +1374,11 @@ func (processor *anthropicStreamProcessor) updateBlock(event anthropicRawEvent) 
 		}
 	case "input_json_delta":
 		if slot.toolCall != nil {
-			slot.partialJSON += event.Delta.PartialJSON
+			slot.partialJSON = slot.accumulated.append(slot.partialJSON, event.Delta.PartialJSON)
 			*slot.toolCall.PartialJSON = slot.partialJSON
-			setAnthropicStreamingArguments(slot.toolCall, slot.partialJSON)
-			processor.blocks[event.Index] = slot
+			if slot.accumulated.shouldParse() {
+				setAnthropicStreamingArguments(slot.toolCall, slot.partialJSON)
+			}
 			if !processor.sink(ai.ToolCallDeltaEvent{ContentIndex: slot.contentIndex, Delta: event.Delta.PartialJSON, Partial: processor.output}) {
 				return errStopSSE
 			}

@@ -289,7 +289,9 @@ func TestPreviewRendererAppendsPreviewMarkerOnce(t *testing.T) {
 }
 
 func TestStopPreemptsActiveTurn(t *testing.T) {
-	env := newTestEnv(t, nil)
+	// MaxConcurrent=1: /stop must not wait on the turn semaphore, whose only
+	// slot is held by the very turn it exists to abort.
+	env := newTestEnv(t, func(o *Options) { o.MaxConcurrent = 1 })
 	streaming := make(chan struct{})
 	env.provider.SetResponses([]faux.ResponseStep{
 		faux.Factory(func(ctx context.Context, _ ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
@@ -439,6 +441,65 @@ func TestBusyKeyWaitersDoNotHoldSemaphoreSlots(t *testing.T) {
 	close(release)
 	for range 3 {
 		if err := <-hotDone; err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestStopFanOutRespectsMaxConcurrent(t *testing.T) {
+	// /stop skips the keyed lock so it can preempt the turn it targets, but it
+	// used to skip MaxConcurrent too — an inbound flood set the concurrency.
+	// It needs its own bound: sharing the turn semaphore would deadlock on the
+	// slot held by the turn being aborted.
+	const limit = 2
+	env := newTestEnv(t, func(o *Options) { o.MaxConcurrent = limit })
+	gate := make(chan struct{})
+	var mu sync.Mutex
+	var live, peak int
+	env.adapter.prepare = func(d *fauxDelivery) {
+		d.notifyHook = func(ctx context.Context) error {
+			mu.Lock()
+			live++
+			peak = max(peak, live)
+			mu.Unlock()
+			defer func() {
+				mu.Lock()
+				live--
+				mu.Unlock()
+			}()
+			select {
+			case <-gate:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+	}
+
+	const flood = 50
+	done := make(chan error, flood)
+	for index := range flood {
+		go func() {
+			done <- env.proc.Handle(context.Background(), testMessage(fmt.Sprintf("ev-stop-%d", index), "chat-1", "/stop"))
+		}()
+	}
+	waitUntil(t, 5*time.Second, "the stop bound to saturate", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return live >= limit
+	})
+	// Give an unbounded implementation time to exceed the limit.
+	for deadline := time.Now().Add(500 * time.Millisecond); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		mu.Lock()
+		exceeded := peak > limit
+		mu.Unlock()
+		if exceeded {
+			t.Fatalf("concurrent /stop handlers reached %d, want at most MaxConcurrent=%d", peak, limit)
+		}
+	}
+	close(gate)
+	for range flood {
+		if err := <-done; err != nil {
 			t.Fatal(err)
 		}
 	}

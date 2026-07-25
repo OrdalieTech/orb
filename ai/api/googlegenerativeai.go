@@ -524,6 +524,7 @@ type googleStreamProcessor struct {
 	output       *ai.AssistantMessage
 	currentText  *ai.TextContent
 	currentThink *ai.ThinkingContent
+	accumulated  streamBuffer
 }
 
 func (processor *googleStreamProcessor) process(chunk googleGenerateContentResponse) ([]ai.AssistantMessageEvent, error) {
@@ -553,11 +554,11 @@ func (processor *googleStreamProcessor) process(chunk googleGenerateContentRespo
 						}
 					}
 					if thinking {
-						processor.currentThink.Thinking += *part.Text
+						processor.currentThink.Thinking = processor.accumulated.append(processor.currentThink.Thinking, *part.Text)
 						processor.currentThink.ThinkingSignature = retainGoogleThoughtSignature(processor.currentThink.ThinkingSignature, part.ThoughtSignature)
 						events = append(events, ai.ThinkingDeltaEvent{ContentIndex: len(processor.output.Content) - 1, Delta: *part.Text, Partial: processor.output})
 					} else {
-						processor.currentText.Text += *part.Text
+						processor.currentText.Text = processor.accumulated.append(processor.currentText.Text, *part.Text)
 						processor.currentText.TextSignature = retainGoogleThoughtSignature(processor.currentText.TextSignature, part.ThoughtSignature)
 						events = append(events, ai.TextDeltaEvent{ContentIndex: len(processor.output.Content) - 1, Delta: *part.Text, Partial: processor.output})
 					}

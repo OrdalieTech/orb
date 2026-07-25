@@ -75,6 +75,38 @@ func TestFindCutPointAndPrepareCompaction(t *testing.T) {
 	}
 }
 
+// On a second compaction the previous compaction entry sits inside the scanned
+// range (firstKeptEntryId points before it), and upstream weighs it through
+// sessionEntryToContextMessages. Expectations come from running upstream
+// findCutPoint (coding-agent compaction.ts:403) on the same entries.
+func TestFindCutPointWeighsPreviousCompactionEntry(t *testing.T) {
+	entries := linearEntries(
+		user("old request "+strings.Repeat("o", 60)),
+		assistant("old answer "+strings.Repeat("p", 60), 0),
+		user("kept request "+strings.Repeat("k", 60)),
+		assistant("kept answer "+strings.Repeat("q", 60), 0),
+	)
+	entries = append(entries,
+		SessionEntry{
+			Type: "compaction", ID: "compact-1", ParentID: ptr("entry-3"), Timestamp: timestamp(5),
+			Summary: strings.Repeat("S", 400), FirstKeptEntryID: "entry-2", TokensBefore: 900,
+		},
+		SessionEntry{Type: "message", ID: "entry-5", ParentID: ptr("compact-1"), Timestamp: timestamp(6), Message: user("new request " + strings.Repeat("n", 60))},
+		SessionEntry{Type: "message", ID: "entry-6", ParentID: ptr("entry-5"), Timestamp: timestamp(7), Message: assistant("new answer "+strings.Repeat("m", 60), 0)},
+	)
+	for _, testCase := range []struct {
+		keepRecentTokens int64
+		want             CutPointResult
+	}{
+		{keepRecentTokens: 40, want: CutPointResult{FirstKeptEntryIndex: 5, TurnStartIndex: -1}},
+		{keepRecentTokens: 140, want: CutPointResult{FirstKeptEntryIndex: 3, TurnStartIndex: 2, IsSplitTurn: true}},
+	} {
+		if got := FindCutPoint(entries, 2, len(entries), testCase.keepRecentTokens); got != testCase.want {
+			t.Fatalf("keepRecentTokens=%d cut = %#v, want %#v", testCase.keepRecentTokens, got, testCase.want)
+		}
+	}
+}
+
 func TestV081CompactPropagatesRetainedTail(t *testing.T) {
 	tail := agent.AgentMessages{user("retained")}
 	preparation := &CompactionPreparation{
@@ -168,6 +200,28 @@ func TestPrepareCompactionCarriesPreviousSummaryAndFileDetails(t *testing.T) {
 	}
 	if _, ok := prepared.FileOps.Written["new.go"]; !ok {
 		t.Fatal("tool operation missing")
+	}
+}
+
+func TestSerializeConversationSkipsUnprojectableCustomMessage(t *testing.T) {
+	messages := agent.AgentMessages{
+		&CustomMessage{Role: "custom", CustomType: "broken", Content: 42},
+		user("kept"),
+	}
+	if got := SerializeConversation(messages); got != "[User]: kept" {
+		t.Fatalf("serialized = %q", got)
+	}
+}
+
+func TestPrepareLegacyCompactionReportsNothingToCompactForUnmigratedEntry(t *testing.T) {
+	entries := linearEntries(user("old request"), assistant(strings.Repeat("old answer ", 30), 80), user("recent"))
+	entries[2].ID = ""
+	prepared, err := PrepareLegacyCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 1})
+	if err != nil || prepared != nil {
+		t.Fatalf("prepared = %#v, err = %v, want nil, nil", prepared, err)
+	}
+	if _, err := PrepareCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 1}); err == nil {
+		t.Fatal("harness preparation accepted an entry without a UUID")
 	}
 }
 

@@ -157,6 +157,58 @@ func TestTreeSelectorFoldCopyAndLabel(t *testing.T) {
 	}
 }
 
+// Folding hides whole subtrees, not just direct children: the skip set is built
+// in one pre-order pass, so a descendant is only hidden via its parent's entry.
+func TestTreeSelectorFoldHidesDeepDescendants(t *testing.T) {
+	useTreeTestKeybindings(t)
+	root := treeTestMessage("root", "", "user", "root")
+	branch := treeTestMessage("branch", "root", "assistant", "branch")
+	child := treeTestMessage("child", "branch", "user", "child")
+	grandchild := treeTestMessage("grandchild", "child", "assistant", "grandchild")
+	other := treeTestMessage("other", "root", "user", "other")
+	root.Children = []*sessionstore.SessionTreeNode{branch, other}
+	branch.Children = []*sessionstore.SessionTreeNode{child}
+	child.Children = []*sessionstore.SessionTreeNode{grandchild}
+
+	selector := NewTreeSelectorComponent(
+		[]*sessionstore.SessionTreeNode{root}, "grandchild", 40, nil, nil, nil, "branch", "default",
+	)
+	selector.HandleInput(tui.KeyEvent{Raw: "\x1b[1;5D"})
+	for _, hidden := range []string{"child", "grandchild"} {
+		if slices.Contains(visibleTreeIDs(selector), hidden) {
+			t.Fatalf("folded branch still shows %q: %#v", hidden, visibleTreeIDs(selector))
+		}
+	}
+	if !slices.Contains(visibleTreeIDs(selector), "other") {
+		t.Fatalf("folding hid an unrelated branch: %#v", visibleTreeIDs(selector))
+	}
+	selector.HandleInput(tui.KeyEvent{Raw: "\x1b[1;5C"})
+	if !slices.Contains(visibleTreeIDs(selector), "grandchild") {
+		t.Fatalf("unfolded branch hides its grandchild: %#v", visibleTreeIDs(selector))
+	}
+}
+
+// The renderer panics on any line wider than the terminal, so every line the
+// label editor emits has to be truncated, not just the input row.
+func TestTreeSelectorLabelEditorFitsNarrowWidth(t *testing.T) {
+	useTreeTestKeybindings(t)
+	root := treeTestMessage("root", "", "user", "root")
+	leaf := treeTestMessage("leaf", "root", "assistant", "leaf")
+	root.Children = []*sessionstore.SessionTreeNode{leaf}
+
+	for _, width := range []int{8, 16, 26, 34} {
+		selector := NewTreeSelectorComponent(
+			[]*sessionstore.SessionTreeNode{root}, "leaf", width, nil, nil, nil, "leaf", "default",
+		)
+		selector.HandleInput(tui.KeyEvent{Raw: "L"})
+		for _, line := range selector.Render(width) {
+			if got := tui.VisibleWidth(line); got > width {
+				t.Fatalf("width %d: rendered line of width %d: %q", width, got, line)
+			}
+		}
+	}
+}
+
 func assertTreeRows(t *testing.T, rows []treeRow, labels []string) {
 	t.Helper()
 	if len(rows) != len(labels) {

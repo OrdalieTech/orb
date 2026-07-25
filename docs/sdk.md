@@ -94,7 +94,7 @@ lifecycle:
 - `FollowUp(text string) error` — queue follow-up
 - `Abort()` — cancel current generation
 - `Dispose()` — release resources
-- `Compact(ctx, instructions string) (*harness.CompactionResult, error)` — compact message history
+- `Compact(ctx, instructions string) (*session.CompactionResult, error)` — compact message history
 - `SetModel(ctx, model ai.Model) error` — change model
 - `CycleModel(ctx) (*ModelCycleResult, error)` — cycle through available models
 - `SetThinkingLevel(level) error` — change thinking budget

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	goroutine "runtime"
 	"strings"
 	"testing"
 	"time"
@@ -120,6 +121,90 @@ func TestSessionRuntimeDisposeDropsListeners(t *testing.T) {
 	runtime.emit(AgentSettledEvent{})
 	if called {
 		t.Fatal("disposed runtime retained event listeners")
+	}
+}
+
+func TestSessionRuntimeDisposeCancelsSubscribeChannels(t *testing.T) {
+	provider := testFaux(1000)
+	settings := map[string]any{"compaction": map[string]any{"enabled": false}}
+	const sessions = 50
+	baseline := goroutine.NumGoroutine()
+	var last <-chan any
+	for range sessions {
+		session, _ := newTestRuntime(t, provider, settings)
+		last, _ = session.SubscribeChan(4)
+		session.Dispose()
+	}
+	select {
+	case _, open := <-last:
+		if open {
+			t.Fatal("SubscribeChan delivered an event after Dispose")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Dispose left the SubscribeChan pump running")
+	}
+	// One un-cancelled pump per disposed session used to survive forever.
+	deadline := time.Now().Add(2 * time.Second)
+	for goroutine.NumGoroutine() > baseline+sessions/2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if leaked := goroutine.NumGoroutine() - baseline; leaked > sessions/2 {
+		t.Fatalf("dispose leaked %d goroutines across %d sessions", leaked, sessions)
+	}
+}
+
+func TestSessionRuntimeRejectsWorkAfterDispose(t *testing.T) {
+	provider := testFaux(1000)
+	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "must not run", 10)})
+	session, manager := newTestRuntime(t, provider, map[string]any{"compaction": map[string]any{"enabled": false}})
+	session.Dispose()
+	entries := len(manager.GetEntries())
+
+	for name, err := range map[string]error{
+		"Prompt":          session.Prompt(context.Background(), "hello"),
+		"Continue":        session.Continue(context.Background()),
+		"SendUserMessage": session.SendUserMessage(context.Background(), ai.NewUserText("hello"), nil),
+		"Steer":           session.Steer("hello"),
+		"FollowUp":        session.FollowUp("hello"),
+	} {
+		if !errors.Is(err, ErrSessionDisposed) {
+			t.Fatalf("%s after dispose = %v, want ErrSessionDisposed", name, err)
+		}
+	}
+	if provider.PendingResponseCount() != 1 {
+		t.Fatal("a post-dispose prompt reached the model")
+	}
+	if got := len(manager.GetEntries()); got != entries {
+		t.Fatalf("session grew by %d entries after dispose", got-entries)
+	}
+}
+
+func TestDisposedSessionStillReportsTheSpecificFailure(t *testing.T) {
+	// RPC mode disposes on EOF and then lets in-flight commands unwind and
+	// report (modes/rpc.go), so the sentinel must not mask the reason a
+	// request was doomed anyway.
+	settings, err := config.NewSettingsManager(t.TempDir(), config.WithAgentDir(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewSessionRuntime(SessionRuntimeConfig{
+		Agent:          agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}})),
+		SessionManager: manager, Settings: settings,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.Dispose()
+	err = session.Prompt(context.Background(), "hello")
+	if err == nil || errors.Is(err, ErrSessionDisposed) {
+		t.Fatalf("prompt error = %v, want the no-model preflight failure", err)
+	}
+	if !strings.HasPrefix(err.Error(), "No model selected.") {
+		t.Fatalf("prompt error = %q, want the no-model preflight failure", err)
 	}
 }
 

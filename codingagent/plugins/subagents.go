@@ -21,7 +21,10 @@ const (
 	forkMessageLimit = 20
 )
 
-var subagentSchema = ai.JSONSchema(`{"type":"object","properties":{"task":{"type":"string"},"agent":{"type":"string","enum":["scout","worker","reviewer"]},"mode":{"type":"string","enum":["single","parallel"]},"tasks":{"type":"array","items":{"type":"object","required":["task"],"properties":{"task":{"type":"string"},"agent":{"type":"string","enum":["scout","worker","reviewer"]},"context":{"type":"string","enum":["fresh","fork"]},"tools":{"type":"array","items":{"type":"string"}}}}},"context":{"type":"string","enum":["fresh","fork"]},"tools":{"type":"array","items":{"type":"string"}}}}`)
+// ponytail: `mode` is the only unconditionally required field — task/tasks are
+// required per branch, which plain JSON Schema cannot say without a oneOf that
+// several providers reject. Execute rejects the wrong pairing with a clear error.
+var subagentSchema = ai.JSONSchema(`{"type":"object","required":["mode"],"properties":{"mode":{"type":"string","enum":["single","parallel"],"description":"single runs one child from task/agent; parallel runs every entry of tasks concurrently."},"task":{"type":"string","description":"Self-contained instruction for the child, including any context it needs. Required when mode is single."},"agent":{"type":"string","enum":["scout","worker","reviewer"],"description":"Child role: scout and reviewer are read-only, worker may edit and run commands. Defaults to worker."},"context":{"type":"string","enum":["fresh","fork"],"description":"fresh starts with an empty conversation; fork prepends a transcript of the recent parent conversation. Defaults to fresh."},"tools":{"type":"array","items":{"type":"string"},"description":"Optional subset of the role's tools; names outside the role are dropped, and an empty array leaves the child with no tools."},"tasks":{"type":"array","description":"Children to run concurrently. Required when mode is parallel; ignored otherwise.","items":{"type":"object","required":["task"],"properties":{"task":{"type":"string","description":"Self-contained instruction for this child."},"agent":{"type":"string","enum":["scout","worker","reviewer"],"description":"Child role for this task. Defaults to worker."},"context":{"type":"string","enum":["fresh","fork"],"description":"fresh or fork for this task. Defaults to fresh."},"tools":{"type":"array","items":{"type":"string"},"description":"Optional subset of this role's tools."}}}}}}`)
 
 type archetype struct {
 	prompt string
@@ -102,14 +105,19 @@ func subagentsExtension(injected agent.StreamFn, policy *Policy) extensions.Fact
 				for index, task := range tasks {
 					progress[index] = childProgress{name: fmt.Sprintf("%s-%d", task.Agent, index+1), status: "queued"}
 				}
+				// The run owns the widget: every child is joined below, so no
+				// update can outlive this clear.
+				defer extensionContext.UI().SetWidget("subagents", nil, nil)
 				updateProgress := func(index int, status string) {
+					// SetWidget stays under the lock, otherwise a stale line set
+					// can reach the UI after a newer one.
 					progressMu.Lock()
+					defer progressMu.Unlock()
 					progress[index].status = status
 					lines := make([]string, len(progress))
 					for childIndex, child := range progress {
 						lines[childIndex] = child.name + ": " + child.status
 					}
-					progressMu.Unlock()
 					extensionContext.UI().SetWidget("subagents", &extensions.Widget{Lines: lines}, nil)
 				}
 				for index := range progress {
@@ -151,14 +159,22 @@ func subagentsExtension(injected agent.StreamFn, policy *Policy) extensions.Fact
 					return textResult(results[0]), nil
 				}
 				sections := make([]string, len(tasks))
+				failures := 0
 				for index, task := range tasks {
 					body := results[index]
 					if errorsByChild[index] != nil {
 						body = "error: " + errorsByChild[index].Error()
+						failures++
 					}
 					sections[index] = fmt.Sprintf("[%d] %s\n%s", index+1, task.Agent, body)
 				}
-				return textResult(strings.Join(sections, "\n\n")), nil
+				report := strings.Join(sections, "\n\n")
+				if failures > 0 {
+					// Same signal as single mode: a failed child makes the call an
+					// error. The report is the message so surviving output survives.
+					return agent.AgentToolResult{}, fmt.Errorf("subagent: %d of %d children failed\n\n%s", failures, len(tasks), report)
+				}
+				return textResult(report), nil
 			},
 		})
 		return nil

@@ -70,6 +70,8 @@ type SessionRuntime struct {
 
 	mu                   sync.Mutex
 	listeners            []sessionListener
+	chanCancels          map[chan struct{}]func()
+	disposed             bool
 	nextListenerID       uint64
 	steering             []string
 	followUps            []string
@@ -359,10 +361,65 @@ func (runtime *SessionRuntime) dispose(emitExtensionShutdown bool) {
 	runtime.AbortBash()
 	runtime.disconnectFromAgent()
 	runtime.mu.Lock()
+	runtime.disposed = true
 	runtime.listeners = nil
+	cancels := make([]func(), 0, len(runtime.chanCancels))
+	for _, cancel := range runtime.chanCancels {
+		cancels = append(cancels, cancel)
+	}
+	runtime.chanCancels = nil
 	runtime.mu.Unlock()
+	// Each cancel re-enters Subscribe's unsubscribe and forgetChanCancel, so it
+	// must run outside runtime.mu.
+	for _, cancel := range cancels {
+		cancel()
+	}
 	// Provider session caches are process-scoped; upstream treats teardown as best-effort.
 	_ = ai.CleanupSessionResources(runtime.manager.GetSessionID())
+}
+
+// ErrSessionDisposed is returned instead of starting or queueing work on a
+// session that [SessionRuntime.Dispose] has already torn down. Without it a
+// straggler goroutine — a client that disconnected mid-turn, an RPC command
+// still unwinding after EOF — spends model budget and persists a turn into a
+// session whose listeners are already gone.
+var ErrSessionDisposed = errors.New("codingagent: session is disposed")
+
+// checkLive gates work where it would become irreversible, not at the public
+// entry points: RPC mode disposes on EOF and then lets in-flight commands
+// unwind and report, so a disposed session must still surface the specific
+// reason a request was doomed (no model selected) instead of masking it.
+func (runtime *SessionRuntime) checkLive() error {
+	if runtime == nil {
+		return errors.New("codingagent: nil session runtime")
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if runtime.disposed {
+		return ErrSessionDisposed
+	}
+	return nil
+}
+
+func (runtime *SessionRuntime) trackChanCancel(done chan struct{}, cancel func()) {
+	runtime.mu.Lock()
+	disposed := runtime.disposed
+	if !disposed {
+		if runtime.chanCancels == nil {
+			runtime.chanCancels = map[chan struct{}]func(){}
+		}
+		runtime.chanCancels[done] = cancel
+	}
+	runtime.mu.Unlock()
+	if disposed {
+		cancel()
+	}
+}
+
+func (runtime *SessionRuntime) forgetChanCancel(done chan struct{}) {
+	runtime.mu.Lock()
+	delete(runtime.chanCancels, done)
+	runtime.mu.Unlock()
 }
 
 func (runtime *SessionRuntime) Subscribe(listener func(any)) func() {
@@ -500,8 +557,8 @@ func (runtime *SessionRuntime) Steer(text string) error {
 }
 
 func (runtime *SessionRuntime) SteerImages(text string, images []*ai.ImageContent) error {
-	if runtime == nil {
-		return errors.New("codingagent: nil session runtime")
+	if err := runtime.checkLive(); err != nil {
+		return err
 	}
 	if runtime.slashResolver != nil {
 		var err error
@@ -524,8 +581,8 @@ func (runtime *SessionRuntime) FollowUp(text string) error {
 }
 
 func (runtime *SessionRuntime) FollowUpImages(text string, images []*ai.ImageContent) error {
-	if runtime == nil {
-		return errors.New("codingagent: nil session runtime")
+	if err := runtime.checkLive(); err != nil {
+		return err
 	}
 	if runtime.slashResolver != nil {
 		var err error
@@ -643,6 +700,12 @@ func (runtime *SessionRuntime) WaitForIdle(ctx context.Context) error {
 func (runtime *SessionRuntime) runPolicies(ctx context.Context, start func() error) (err error) {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	// Every turn — Prompt, Continue, extension and interactive submissions —
+	// funnels through here, so this is the one place a disposed session has to
+	// refuse before the model is called and the turn is persisted.
+	if err := runtime.checkLive(); err != nil {
+		return err
 	}
 	if !runtime.beginRun() {
 		return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.") //nolint:staticcheck // Upstream session error is observable.

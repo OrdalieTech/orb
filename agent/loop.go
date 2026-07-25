@@ -16,6 +16,10 @@ import (
 
 var errNoModel = errors.New("agent: loop requires a model")
 
+// maxParallelToolCalls bounds concurrently executing tool calls within one
+// assistant message. Result order is unaffected.
+const maxParallelToolCalls = 16
+
 // RunLoop starts a loop with prompt messages and returns only messages created
 // by this invocation. The caller-owned context is copied before it is changed.
 func RunLoop(
@@ -30,6 +34,7 @@ func RunLoop(
 	current.Messages = append(current.Messages, prompts...)
 	newMessages := append(AgentMessages(nil), prompts...)
 	emitter := newEventEmitter(sink)
+	defer emitter.close()
 
 	if err := emitter.emit(ctx, AgentStartEvent{}); err != nil {
 		return nil, err
@@ -76,6 +81,7 @@ func RunLoopContinue(
 
 	newMessages := AgentMessages{}
 	emitter := newEventEmitter(sink)
+	defer emitter.close()
 	if err := emitter.emit(ctx, AgentStartEvent{}); err != nil {
 		return nil, err
 	}
@@ -652,6 +658,11 @@ func executeToolCallsParallel(
 		prepared.releaseExecution = release
 	}
 
+	// ponytail: upstream Promise.all's every prepared call at once
+	// (agent-loop.ts:539); Go goroutines each own OS resources (a tool call can
+	// fork subprocesses), so cap in-flight calls. Raise or drop the cap if a
+	// model legitimately needs more than maxParallelToolCalls tools at once.
+	slots := make(chan struct{}, maxParallelToolCalls)
 	var wait sync.WaitGroup
 	for index := range entries {
 		if entries[index].prepared == nil {
@@ -660,6 +671,8 @@ func executeToolCallsParallel(
 		wait.Add(1)
 		go func(entry *toolEntry) {
 			defer wait.Done()
+			slots <- struct{}{}
+			defer func() { <-slots }()
 			executed, err := executePreparedToolCall(ctx, entry.prepared, emitter)
 			if err != nil {
 				entry.err = err
@@ -780,29 +793,19 @@ func executePreparedToolCall(
 	if prepared.releaseExecution != nil {
 		defer prepared.releaseExecution()
 	}
-	var updateWait sync.WaitGroup
 	var updateMu sync.Mutex
 	acceptingUpdates := true
-	var updateErr error
+	updateState := &toolUpdateState{}
+	// The lock keeps enqueue order well defined for tools that call onUpdate from
+	// several goroutines; the queue, not the sink, is what the tool waits on.
 	onUpdate := func(partial AgentToolResult) {
 		updateMu.Lock()
+		defer updateMu.Unlock()
 		if !acceptingUpdates {
-			updateMu.Unlock()
 			return
 		}
 		event := NewToolExecutionUpdateEvent(prepared.toolCall, cloneAgentToolResult(partial))
-		updateWait.Add(1)
-		updateMu.Unlock()
-		go func() {
-			defer updateWait.Done()
-			if err := emitter.emit(executionContext, event); err != nil {
-				updateMu.Lock()
-				if updateErr == nil {
-					updateErr = err
-				}
-				updateMu.Unlock()
-			}
-		}()
+		emitter.enqueueUpdate(executionContext, event, updateState)
 	}
 
 	var result AgentToolResult
@@ -813,10 +816,7 @@ func executePreparedToolCall(
 	updateMu.Lock()
 	acceptingUpdates = false
 	updateMu.Unlock()
-	updateWait.Wait()
-	updateMu.Lock()
-	emitErr := updateErr
-	updateMu.Unlock()
+	emitErr := emitter.flushUpdates(updateState)
 	if emitErr != nil {
 		return executedToolCall{}, emitErr
 	}
@@ -1022,11 +1022,88 @@ func loopNow(config AgentLoopConfig) int64 {
 func upstreamError(message string) error { return errors.New(message) }
 
 type eventEmitter struct {
-	sink EventSink
+	sink    EventSink
+	updates chan queuedUpdate
+	drained chan struct{}
+}
+
+// toolUpdateQueueDepth bounds pending tool_execution_update events. Producers
+// block once it fills rather than dropping an update, so a sink that stalls
+// longer than this many updates does eventually reach back into the tool.
+const toolUpdateQueueDepth = 256
+
+// queuedUpdate is either an event to deliver or, when flush is set, a barrier
+// the producer waits on.
+type queuedUpdate struct {
+	ctx   context.Context
+	event AgentEvent
+	state *toolUpdateState
+	flush chan struct{}
+}
+
+// toolUpdateState collects sink failures per tool call, matching upstream's
+// per-call updateEvents array (agent-loop.ts:673).
+type toolUpdateState struct {
+	mu  sync.Mutex
+	err error
+}
+
+func (state *toolUpdateState) record(err error) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.err == nil {
+		state.err = err
+	}
+}
+
+func (state *toolUpdateState) failure() error {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return state.err
 }
 
 func newEventEmitter(sink EventSink) *eventEmitter {
-	return &eventEmitter{sink: sink}
+	emitter := &eventEmitter{
+		sink:    sink,
+		updates: make(chan queuedUpdate, toolUpdateQueueDepth),
+		drained: make(chan struct{}),
+	}
+	// One drain goroutine per run: upstream's emit call is synchronous but its
+	// subscriber runs on the event loop, so updates stay totally ordered and
+	// never overlap while a slow sink cannot block the tool
+	// (agent-loop.ts:679-692).
+	go func() {
+		defer close(emitter.drained)
+		for item := range emitter.updates {
+			if item.flush != nil {
+				close(item.flush)
+				continue
+			}
+			if err := emitter.emit(item.ctx, item.event); err != nil {
+				item.state.record(err)
+			}
+		}
+	}()
+	return emitter
+}
+
+// close stops the drain goroutine after every queued update has been delivered.
+func (emitter *eventEmitter) close() {
+	close(emitter.updates)
+	<-emitter.drained
+}
+
+func (emitter *eventEmitter) enqueueUpdate(ctx context.Context, event AgentEvent, state *toolUpdateState) {
+	emitter.updates <- queuedUpdate{ctx: ctx, event: event, state: state}
+}
+
+// flushUpdates returns once every update this call enqueued has been delivered,
+// so a tool's updates always precede its tool_execution_end.
+func (emitter *eventEmitter) flushUpdates(state *toolUpdateState) error {
+	barrier := make(chan struct{})
+	emitter.updates <- queuedUpdate{flush: barrier}
+	<-barrier
+	return state.failure()
 }
 
 func (emitter *eventEmitter) emit(ctx context.Context, event AgentEvent) error {

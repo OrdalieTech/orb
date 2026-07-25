@@ -117,5 +117,8 @@ func (runtime *SessionRuntime) SendUserMessage(ctx context.Context, content ai.U
 }
 
 func (runtime *SessionRuntime) SendCustomMessage(ctx context.Context, message CustomMessage, options *SendCustomMessageOptions) error {
+	if err := runtime.checkLive(); err != nil {
+		return err
+	}
 	return runtime.sendExtensionMessage(ctx, message, options)
 }

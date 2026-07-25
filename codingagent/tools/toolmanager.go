@@ -129,6 +129,30 @@ func (manager *toolManager) getToolPath(ctx context.Context, tool managedTool) s
 	return ""
 }
 
+// ManagedFDPath returns an already-installed fd, preferring the managed binary
+// over a system one, or "" when neither is present. It never downloads and never
+// spawns a probe process, so callers on interactive render paths can call it
+// freely.
+func ManagedFDPath() string {
+	config := managedToolConfigs[managedFD]
+	binaryName := config.binaryName
+	if runtime.GOOS == "windows" {
+		binaryName += ".exe"
+	}
+	if binDir, err := managedBinDir(); err == nil {
+		localPath := filepath.Join(binDir, binaryName)
+		if _, statErr := os.Stat(localPath); statErr == nil {
+			return localPath
+		}
+	}
+	for _, name := range config.systemBinaryNames {
+		if path, err := exec.LookPath(name); err == nil {
+			return path
+		}
+	}
+	return ""
+}
+
 func commandExists(ctx context.Context, name string) bool {
 	command := exec.CommandContext(ctx, name, "--version")
 	command.Stdin = nil
