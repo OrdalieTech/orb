@@ -1,71 +1,281 @@
-# Ecosystem extension compatibility matrix — 2026-07-22 host-tier run
+# Ecosystem extension compatibility matrix — 2026-07-25 300-package, three-runtime run
+
+This supersedes the 2026-07-22 44-package host-tier run. The corpus grew from 44 to the 300 most
+downloaded valid gallery packages, and pigo is now measured on **both** JavaScript hosts it can
+resolve — local Node 24 and local Bun 1.3.14 — against the same pinned upstream Pi 0.81.1 reference.
+A single "does it work" number hid the runtime that produced it, so every package has an independent
+verdict per runtime.
 
 The follow-up [normal-install live matrix](ecosystem-extension-live.md) installs 30 packages through
 Pi itself, opens the resulting state with Pigo, and executes 15 live extension workflows.
 
-The host-only Pigo runtime loads 43 of the 44 most-downloaded valid Pi extension packages in this
-snapshot. Thirty-five have exact load-and-registration parity and four event-driven packages have
-exact load-only parity, for 39/44 exact-compatible packages (88.6% by package count and 96.3% when
-weighted by monthly downloads). Four more packages load stably with registration differences, and
-one still fails during load.
+## Headline
 
-All 20 packages that had load-and-registration parity through the embedded bridge retain exact
-parity. Of the 20 packages that the bridge could not load, 19 now load through local Node: 15 reach
-exact registration parity and four have registration differences. The four prior load-only packages
-remain exact load-only packages.
+Over the full 300-package corpus:
 
-Load parity is not workflow parity. The line-grounded workflow audit and offline command smokes below
-were produced for the embedded-bridge run and were not rerun in this cutover. Their evidence remains
-useful, but their old `load blocked` labels describe the deleted bridge rather than the host tier.
+| Runtime | load + registration | load-only | **load compatible** | flaky | unsupported |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `pigo-node` | 192 | 19 | **211 / 300 = 70.3 %** | 2 | 87 |
+| `pigo-bun` | 202 | 20 | **222 / 300 = 74.0 %** | 1 | 77 |
+
+Pinned upstream Pi 0.81.1 fails to load 15 of the 300 packages itself, and three more never reach a
+probe at all (see *Install and harness exclusions*). Against the 282 packages upstream actually
+supports, parity is **211/282 = 74.8 %** on Node and **222/282 = 78.7 %** on Bun.
+
+Tier 1 — the top 50 by monthly downloads, and the number that describes what most users install — is
+better than the corpus average and is the more meaningful user-facing figure:
+
+| Scope | `pigo-node` | `pigo-bun` |
+| --- | ---: | ---: |
+| Tier 1, `perf` profile (14 attempts/runtime, from the 300 run) | 42/50 = 84.0 % | 39/50 = 78.0 % |
+| Tier 1, `compat` profile (4 attempts/runtime, dedicated A/B run) | 44/50 = 88.0 % | 41/50 = 82.0 % |
+| Tier 1, weighted by monthly downloads (`perf` verdicts) | 93.4 % | 81.5 % |
+| All 300, weighted by monthly downloads | 84.6 % | 78.5 % |
+
+The two tier-1 rows are the same packages under different attempt budgets, and the difference is
+information rather than noise: with 14 attempts instead of 4, `pi-cursor-sdk` reveals a genuine
+registration race and `pi-intercom` trips a harness cleanup race. Neither is averaged away; both are
+named below.
+
+## What the SDK-resolution fix changed
+
+The pre-fix baseline for tier 1 on the same corpus, same profile (`compat`), same container was
+`pigo-node 39/50` and `pigo-bun 38/50`, with divergence `none 33, node_only 5, bun_only 6,
+both_fail 6`. The post-fix rerun is `pigo-node 44/50` and `pigo-bun 41/50`, divergence
+`none 38, node_only 3, bun_only 6, both_fail 3`.
+
+**Zero packages regressed on either runtime.** Per package:
+
+| Runtime | Package | Before | After |
+| --- | --- | --- | --- |
+| node | `pi-mcp-adapter` | `unsupported_sdk_export @earendil-works/pi-ai export complete` | pass |
+| node | `pi-powerline-footer` | `extension_load_error extension host exited: signal: killed` | pass |
+| node | `pi-vault-mind` | `registration_mismatch command_registration.description` | pass |
+| node | `open-zk-kb` | `flaky extension host exited: signal: terminated` | pass |
+| node | `pi-cursor-sdk` | `flaky registration_instability` | pass at 4 attempts, still flaky at 14 |
+| node | `pi-llama-cpp` | `unsupported_sdk_export … ApiKeyCredential` | still fails, now `Cannot access 'BaseModel' before initialization` |
+| bun | `pi-intercom` | `missing_dependency @mariozechner/pi-tui` | pass |
+| bun | `pi-powerline-footer` | `extension_load_error … signal: killed` | pass |
+| bun | `pi-vault-mind` | `registration_mismatch command_registration.description` | pass |
+
+Two parts of the fix did **not** carry to Bun, and this is the single most actionable finding:
+
+* **The `@earendil-works/pi-ai` → `/compat` redirect does not fire on Bun.** Node now resolves the
+  global API; Bun still resolves the deliberately narrow root entry. `pi-mcp-adapter`,
+  `@narumitw/pi-goal`, `pi-dgoal`, `zob-harness` and `@danmademe/pi-provider-litellm` fail on Bun
+  only, each naming a different missing export (`complete`, `isRetryableAssistantError`,
+  `streamSimple`, `completeSimple`, `streamSimpleOpenAICompletions`).
+* **The redirect is not applied to the legacy `@mariozechner/pi-ai` alias on either runtime.**
+  `pi-memory` fails on Node with `@mariozechner/pi-ai export complete` and on Bun with
+  `@earendil-works/pi-ai export complete`, so it is still `both_fail`.
+
+The Bun `NODE_PATH` aliasing did work for whole-module resolution (`@mariozechner/pi-tui` now
+resolves, fixing `pi-intercom`), but `@earendil-works/pi-coding-agent` still fails to resolve for
+`gentle-pi`, `@cynos-ai/engineer` and `@heyhuynhgiabuu/pi-pretty` on Bun.
+
+## Node versus Bun divergence
+
+Across all 300 packages: `none 191`, `node_only_failure 31`, `bun_only_failure 20`, `both_fail 58`,
+`disagree 0`. The two runtimes fail for structurally different reasons.
+
+**Node-only failures (31)** are dominated by one limitation:
+
+| Class | Count | Packages |
+| --- | ---: | --- |
+| `typescript_unsupported` | 22 | `@juicesharp/rpiv-{ask-user-question,todo,advisor,voice,web-tools,i18n,pi}`, `@mrclrchtr/supi-{ask-user,bash-timeout,cache,context,debug,extras,insights,prompt-suggestions,review,settings}`, `@aliou/pi-{guardrails,neuralwatt,synthetic}`, `@firstpick/pi-extension-todo-progress`, `@maestria/pi` |
+| `extension_load_error` | 6 | `@bacnh85/pi-munin` (`require is not defined in ES module scope`), `@bacnh85/pi-subagent` (`__dirname is not defined`), `@narumitw/pi-subagents`, `pi-chrome` (`Cannot use import statement outside a module`), `pi-grok-cli` (JSON import attribute), `pi-llama-cpp` |
+| `missing_dependency` | 1 | `pi-smart-router` |
+| `native_addon` | 1 | `pi-knowledge` (`better_sqlite3.node`) |
+| `registration_mismatch` | 1 | `pi-smart-ralph` (`active_tool_gating`) |
+
+Every one of the 22 is the known `typescript_in_node_modules` limitation: staging escapes
+`node_modules` for `manifest.Dependencies` only, so a **transitive** TypeScript dependency still
+resolves back to a real `node_modules` path Node's type stripper refuses. Bun evaluates all 22.
+
+**Bun-only failures (20)** are module resolution and platform surface:
+
+| Class | Count | Detail |
+| --- | ---: | --- |
+| `missing_dependency` | 8 | relative, subpath-imports and asset specifiers Bun's plugin never sees: `../hooks/ponytail-config.js`, `#src/async-cache`, `#src/config/agent-types`, `./package.json`, `../data/patch.json` (×2), `./prebuilds/linux-arm64/tree-sitter.node`, `@mariozechner/pi-agent-core` |
+| `unsupported_sdk_export` | 5 | the `/compat` gap described above |
+| `missing_node_builtin` | 4 | `node:sqlite` — `pi-autopilot`, `@spences10/pi-{mcp,observability,team-mode}` |
+| `extension_load_error` | 2 | `@xaccefy/pi-lookup` (`write \|1: file already closed`), `atlas-vision-mcp` |
+| `registration_mismatch` | 1 | `@pi-stef/atlassian` (`tool_definition.parameters`) |
+
+`#src/async-cache` is a package-`imports` specifier and is not aliasable on Bun.
+
+**Both fail (58)**, of which 18 are not pigo's fault (15 upstream Pi load failures plus 3 install or
+harness exclusions). The remaining 40 split, by their Node-side class, into `extension_load_error`
+(13), `registration_mismatch` (12), `unsupported_sdk_export` (7), `unsupported_pi_api` (3),
+`typescript_unsupported` (2), `flaky` (2) and `missing_dependency` (1). The same 40 seen from Bun are
+`registration_mismatch` (12), `extension_load_error` (11), `unsupported_sdk_export` (9),
+`missing_dependency` (5), `unsupported_pi_api` (2) and `flaky` (1) — the two runtimes agree that the
+package fails but frequently disagree about why.
+
+## Failure taxonomy
+
+Counted over the 282 upstream-supported packages, so upstream's own failures are never charged to
+pigo:
+
+| Class | `pigo-node` | `pigo-bun` |
+| --- | ---: | ---: |
+| `typescript_unsupported` | 24 | 0 |
+| `extension_load_error` | 19 | 13 |
+| `registration_mismatch` | 13 | 13 |
+| `unsupported_sdk_export` | 7 | 14 |
+| `unsupported_pi_api` | 3 | 2 |
+| `missing_dependency` | 2 | 13 |
+| `missing_node_builtin` | 0 | 4 |
+| `native_addon` | 1 | 0 |
+| `flaky` | 2 | 1 |
+| **total non-passing** | **71** | **60** |
+
+Every `unsupported_pi_api` failure in the run is the same missing member, `pi.unregisterProvider`,
+in `@gotgenes/pi-anthropic-auth`, `pi-omlx-picker` and `@router-for-me/pi-cliproxyapi-provider`.
+`registration_mismatch` is dominated by
+`builtin_tool_definition_override` (a package that redefines `edit`/`read`/`write`/`grep` and whose
+override upstream applies but pigo does not), `tool_definition.promptGuidelines` (pigo builtins carry
+no per-definition prompt metadata, `agent/types.go:91-98`), and `active_tool_gating` (a package that
+gates which tools are active).
+
+**`environment_constraint` count for this run is zero.** No corpus package was rejected for demanding
+a toolchain the harness does not provide; `pi-x-ide` (`engines.node >= 26`) and `@patimweb/pi-email`
+both install and pass under Node 24.
+
+### Install and harness exclusions — never counted as incompatibility
+
+Three packages produced no probe at all and are excluded from the parity denominator:
+
+| Package | Cause | Verdict |
+| --- | --- | --- |
+| `@firstpick/pi-package-webui` | manifest points at `node_modules/@firstpick/pi-extension-bang-command-autocomplete/index.ts` inside its own tree, which npm hoisted away | genuine install/tree-shape failure |
+| `@shanepadgett/tau-agent` | manifest declares the glob `extensions/*/index.ts`; the harness stats it literally | harness limitation, not a package or pigo defect |
+| `pi-intercom` | `ENOTEMPTY: directory not empty, rmdir '/work/matrix-7'` | **harness cleanup race, false failure** |
+
+`pi-intercom` passes on both runtimes in the dedicated tier-1 run. It leaks `npm exec tsx` children
+that outlive the probe (the tier-1 run recorded three in `resources.leaked`), the per-probe
+`rm(runRoot)` at `conformance/extensions/matrix.mjs:722` races them, and the resulting exception is
+swallowed by the catch-all at `matrix.mjs:1560-1573` which labels *any* harness-level exception
+`install_failure` (`matrix.mjs:1567-1568`). The orphan reap that would prevent it runs only after the
+record is appended (`matrix.mjs:1580-1587`). Treat `pi-intercom` as a pass.
+
+The 15 packages upstream Pi itself cannot load are `@zhachory1/mewrite-markdown-preview`,
+`@oas-framework/pi`, `@gamalan/pi-gateway`, `openlore`, `rolebox`, `@amaster.ai/pi-browser-use`,
+`pi-multi-account`, `@nquandt/pi-azure-foundry`, `@ch1nyzzz/pi-evo`, `pi-nocturne-memory`,
+`@cgh567/agent`, `@pi-archimedes/image-paste`, `@pi-archimedes/diff`, `@jaggerxtrm/pi-extensions`
+and `ultimate-pi`. Their causes are missing sibling packages, absent global CLIs, absent config
+files, `bun:sqlite` under Node, native addons and load-time crashes.
+
+## Flaky packages
+
+A flake is a finding, not an average. Two packages flaked, both by registration instability across
+attempts where every individual attempt succeeded:
+
+* **`pi-cursor-sdk` — flaky on `pigo-node` *and* `pigo-bun`.** Two distinct registration snapshots
+  across 14 attempts; `activeTools:cursor_ask_question` appears in some and not others. This is the
+  known late-registration race: `codingagent/extensions/host/manager.go:518-528` clones every
+  extension's registration state and freezes it into `manager.states`, while the `register_tool`
+  handler at `:933-954` appends to the live per-generation map (`:948`) and answers
+  `{"accepted": true}` (`:954`). A registration that lands after the freeze is acknowledged but never
+  reaches the snapshot the agent reads. It is not Node-specific — Bun flakes on the same package.
+* **`@lebronj/pi-suite` — flaky on `pigo-node`.** Same shape, `activeTools:autogoal`.
+
+`open-zk-kb`, which flaked in the pre-fix baseline, is stable in every attempt now.
+
+## Workflow smoke
+
+Six of seven read-only command handlers pass with byte-identical normalized output in both runtimes.
+`fff-health` is now one of them: in the 2026-07-22 run it was the sole handler difference, reporting
+a healthy initialized finder under Pi and `FFF not initialized` under Pigo. Two results need naming:
+
+* **`subagents-doctor` fails in *both* Pi and Pigo.** Both match `Subagents doctor report` and both
+  miss the fixture's `agents: total 8 (builtin 8, package 0, user 0, project 0)`. `pi-subagents`
+  moved 0.35.1 → 0.36.0 in the recapture and the agent census changed. This is fixture drift in
+  `conformance/extensions/smoke-cases.json`, not a pigo defect: the case is recorded `parity: false`
+  only because neither runtime produced comparable evidence, not because they differed.
+* **`piolium-knowledge-base-stage` passes under Pi and fails under Pigo on Node.** The probe imports
+  `@vigolium/piolium/extensions/piolium/knowledge-base-input.ts` directly, and Node refuses:
+  `Stripping types is currently unsupported for files under node_modules`. It is the same
+  `typescript_in_node_modules` limitation reached through a direct import rather than manifest
+  staging, so the staging escape does not cover it.
+
+## Performance
+
+Observer-only baseline startup, 11 samples each, all non-noisy: Pi 697.4 ms, pigo-node 187.8 ms,
+pigo-bun 60.4 ms. Pigo's base process is 3.7× cheaper than Pi's on Node and 11.5× cheaper on Bun.
+
+Across the 44 tier-1 packages with usable measurements, total startup is now at parity — median
+`pigo/pi` ratio **0.99**, range 0.278–2.191, pigo faster in 22 of 44. After subtracting each
+runtime's own global observer baseline, the median extension-load ratio is **2.755×**, range
+0.492–14.656. Pigo's cheaper process start is being spent again in out-of-process extension load.
+Subtraction amplifies drift when a package's incremental load is a few milliseconds, so treat the
+tail of that range as noise rather than as a workload measurement, and note that this run was
+CPU-capped at two cores on a shared machine. Bun and Node startup are not comparable to each other
+here; each tier is compared only against the shared Node reference.
 
 ## What was tested
 
-The corpus is the top 44 entries from `https://pi.dev/packages?sort=downloads` whose published
-`pi.extensions` field is a non-empty array, ordered by the displayed monthly npm download count on
-2026-07-22. Downloads are registry traffic, not unique users. Malformed string-valued extension
-manifests are excluded because pinned upstream Pi iterates them as characters and resolves no
-extension. Exact top-level versions and integrity hashes are in
-[`conformance/extensions/corpus.json`](../../conformance/extensions/corpus.json), and the committed
-lock pins the full dependency graph.
+The corpus is the 300 most downloaded `https://pi.dev/packages` entries whose published
+`pi.extensions` manifest field is a non-empty array, captured 2026-07-25. Downloads are registry
+traffic, not unique users. Exact versions and integrity hashes are in
+[`conformance/extensions/corpus.json`](../../conformance/extensions/corpus.json); the committed lock
+pins the full dependency graph. Tiers are 1 = ranks 1–50, 2 = 51–100, 3 = the rest.
 
-The host-tier load matrix compared upstream Pi 0.81.1 with
-`pigo 0.1.0-dev (upstream pi 0.81.1 @ 20be4b18)` under Node 24.18.0. JavaScript ran only through
-Pigo's out-of-process extension host; the embedded engine and its opt-in flag were absent. Each
-runtime received one cold run, two warm-ups, and eleven measured samples in
-alternating order with a 30-second timeout. Every successful status below means all attempts were
-stable. The observer subtracts each runtime's own baseline and compares active tools, full tool
-names/descriptions/parameter schemas/prompt guidelines, and command names/descriptions. It expands
-manifest directories itself, so this result does not test package-directory discovery semantics.
+Three runtimes ran interleaved inside one probe per package:
 
-The complete host-tier result is
-[`conformance/extensions/results/pi-0.81.1-pigo-host.json`](../../conformance/extensions/results/pi-0.81.1-pigo-host.json).
-Ranks 16, 26, 30, and 35 are exact load-only; ranks 22, 39, 41, and 43 load stably with registration
-differences; rank 40 is the sole load failure. The other 35 ranks have exact load-and-registration
-parity.
+| Tier | Role | Binary | Engine | Verified how |
+| --- | --- | --- | --- | --- |
+| `pi` | reference | `@earendil-works/pi-coding-agent@0.81.1` | Node 24.18.0 | engine self-report from inside the host process |
+| `pigo-node` | candidate | `pigo 0.1.0-dev (upstream pi 0.81.1 @ 20be4b18)` | Node 24.18.0 | idem |
+| `pigo-bun` | candidate | same binary | Bun 1.3.14 | private `PATH` with no `node`, plus engine self-report |
 
-The static workflow verdict comes from
-[`conformance/extensions/workflow-audit.json`](../../conformance/extensions/workflow-audit.json).
-Every entrypoint and the code behind the package's primary workflow was inspected with package-local
-file-and-line evidence. It does not claim execution:
+Sampling used the harness defaults: tier 1 on the `perf` profile (1 cold + 2 warm-ups + 11 measured
+samples per runtime), tiers 2 and 3 on `compat` (1 cold + 1 warm-up + 2 samples), 30 s per-process
+deadline, 420 s per-package budget. A package is `load_register_pass` only when every attempt
+succeeded and every attempt produced byte-identical baseline-subtracted registrations.
 
-- `likely` means no remaining Pigo-specific blocker was found, subject to the stated real-world
-  smoke and any credentials, service, or executable prerequisite.
-- `partial` means a useful subset appears viable but a named workflow remains blocked or unproven.
-- `main feature blocked` means the package loads and registers, but its defining operation reaches
-  an unsupported surface.
-- `load blocked` means at least one declared entrypoint cannot start in Pigo.
+Packages were installed once, in a container, by `prepare.mjs` running `npm ci --ignore-scripts`
+against the committed lock (3825 packages; every one of the 300 corpus entries verified at its pinned
+version). Execution ran in a separate container with `--network none --read-only --cap-drop ALL
+--security-opt no-new-privileges --pids-limit 1024 --memory 4g --cpus 2 --init`, tmpfs `/work` and
+`/tmp`, the repository bind-mounted read-only, and no host `HOME`, no `~/.pi` and no credential
+reachable. Both runners refuse to start unless the network namespace contains only loopback; the
+result records `networkNamespaceGuard.isolated: true` with no external interfaces and
+`credentialsInherited: false`. No corpus package ran outside a container.
 
-The offline smoke ran one warm-up and five measured samples per runtime with no inherited
-credentials, a dummy API key, a dead local proxy, cancelled dialogs, and a guard that failed any
-attempt starting model activity. Its network-namespace check found no external interfaces. Command
-smokes prove only their read-only handler output; they do not prove tools, renderers, providers,
-event hooks, external services, or model-driven workflows.
+The run was interrupted at package 166 and continued with `--resume`, which reuses stream records
+only when the harness, taxonomy, corpus, observer, lock and binary hashes all still match. One
+consequence: `resources.leaked` in the published aggregate covers only the resumed segment, so the
+`pi-intercom` leak recorded before the interruption is not in it.
+
+## Known harness limitations found by this run
+
+`report.mjs` cannot process a three-runtime, 300-package matrix. Four independent blockers, none
+fixed here because the harness is out of scope for this measurement:
+
+1. `report.mjs:768` reads `corpusFile.json`, but `loadFile` returns the parsed document under
+   `.value` (`report.mjs:141-153`). `EXPECTED_CORPUS_SIZE` is therefore always `0` and every
+   invocation fails `corpus is empty or unreadable` unless `--expect-corpus` is passed. This is a
+   plain bug.
+2. `report.mjs:272-275` requires `matrix.baseline.pigo`. `matrix.mjs` keys `baseline` by runtime id
+   (`pi`, `pigo-node`, `pigo-bun`) and provides the `pi`/`pigo` back-compat aliases only on
+   per-extension records (`matrix.mjs:1555-1556`), not on the baseline block. This fails with
+   `matrix.baseline.pigo must be an object`.
+3. `report.mjs:301` requires every `unsupported` package to carry `reason === "pigo_load_failure"`.
+   The current taxonomy also emits `registration_mismatch` (13), `upstream_load_failure` (15) and
+   `install_failure` (3).
+4. `report.mjs:296` requires `upstreamSupported === true` for every entry and `report.mjs:317`
+   requires `summary.counts.flaky === 0`. Both are legitimate outcomes at corpus scale, and the
+   README itself states a flake is never averaged into a pass.
+
+Consequently this run publishes the raw matrix and raw smoke rather than a compact report artifact.
 
 ## Historical embedded-bridge workflow matrix
 
-The table below retains the previous run's per-package workflow audit and performance evidence. Its
-load-status column is the embedded-bridge baseline; the host-tier classifications above and in the
-new result artifact supersede it.
+The table below retains the 2026-07-22 per-package workflow audit and performance evidence for the
+44-package corpus. Its load-status column is the embedded-bridge baseline and its `load blocked`
+labels describe a deleted bridge; the classifications above supersede it. It is kept because the
+line-grounded workflow verdicts were not rerun, and load parity is not workflow parity.
 
 The final column is `Pigo / Pi` for total process startup followed by observer-baseline-subtracted
 extension load. A value below `1×` favors Pigo. `—` means Pigo could not load the package, `n/r`
@@ -124,119 +334,36 @@ DeepSeek Search registers conditionally after credential lookup, and Braintrust 
 through lifecycle hooks. The matrix can prove stable loading for them but sees no unconditional
 tool or command registration to compare.
 
-## Workflow evidence
+## Caveats
 
-All seven read-only command handlers completed successfully in both runtimes. Six produced
-identical normalized observable output:
+`load_register_pass` is deliberately narrower than end-to-end extension compatibility. No
+package-specific tool or command is executed. Flags, shortcuts, renderers, providers, event-handler
+behavior, credentials, model requests and external services need separate workflow probes.
 
-- Piolium `/piolium-help` and `/piolium-status` matched exactly, including startup UI and dialog or
-  notification output.
-- Subagents `/subagents-doctor`, Hypa `/hypa`, Goal `/goal status`, and LSP `/lsp` matched exactly.
-  The LSP command only inspected configuration and missing executables; it did not start a language
-  server, so rank 37 remains correctly classified as main-feature-blocked.
-
-FFF was the sole handler difference. It reported a healthy initialized `0.10.1` finder under Pi,
-while Pigo reported `FFF not initialized` after `dynamic modules not enabled in the host program`.
-That is a native-backend compatibility finding, not normalization noise.
-
-The Piolium `piolium-knowledge-base-stage` probe exercised a real workflow rather than registration.
-A disposable wrapper imported Piolium's resolver, stager, and staged loader, then resolved two
-nested UTF-8 fixtures, performed bounded `FileHandle` reads and fatal `TextDecoder` decoding,
-hashed and atomically staged them, and loaded the result back. Pi and Pigo produced the same ordered
-two-file, 140-byte payload and the same aggregate SHA-256
-`56f24ae0be6d046a0b2bfad76d12a656e9274c9319777bd590993aa7a2f912eb` in all five measured
-samples. No model or external network was used.
-
-`cc-safety-net` was inspected but not executed because its command deliberately calls
-`pi.sendUserMessage` with a generated workflow prompt, which would start model activity and violate
-the offline smoke boundary.
-
-## Performance
-
-The observer-only median startup was 747.068 ms for Pi and 288.411 ms for Pigo, a Pigo/Pi ratio of
-0.386. Across all 24 load-compatible packages, total startup favored Pigo in every case; the median
-ratio was 0.421 and the range was 0.227–0.926. This measures process spawn through `get_commands`,
-so Pigo's lower base process cost is part of the result.
-
-After subtracting each runtime's single global observer baseline, the median extension-load ratio
-was 0.839 across 23 comparable packages. Pigo was lower for 12 and higher for 11, with a range of
-0.143–11.480; Raindrop was below resolution because its Pi median was 3.560 ms faster than the
-global baseline. The wide range is why the table must not be read as workload throughput:
-subtraction amplifies machine drift when a package's apparent incremental load is only a few
-milliseconds. Pi Simplify's 11.480×, for example, divides 31.306 ms by a 2.727 ms Pi delta rather
-than measuring an extension operation.
-
-The observer RPC is common harness work rather than package work and was noisy for 19 of 24
-load-compatible packages. Six of seven command-handler latency ratios and the Piolium workflow
-ratio were also suppressed because median absolute deviation exceeded 10% of the median. The sole
-stable command ratio favored Pigo—0.542 for `/subagents-doctor`—but five samples are not a
-performance guarantee. The evidence supports a startup-cost comparison; it does not yet support a
-claim about model turns, native tools, network operations, or long-running extension throughput.
-
-## Common blocker families and what would fix them
-
-The families overlap because several packages hit more than one independent blocker.
-
-1. **Private Pi SDK and TUI surfaces affect 12 packages** (ranks 4, 6, 10, 11, 14, 21, 22, 25,
-   29, 36, 40, and 43). The recurring gaps are native tool factories and definitions,
-   `SettingsManager` and credential reads, session listing, and keyboard-driven TUI components.
-   The useful fix is a native-backed, behavior-tested facade for each real surface. Placeholder
-   objects would merely convert load failures into later workflow failures.
-2. **Streams, sockets, and process lifecycle affect 11 packages** (ranks 2, 4, 14, 25, 27, 28,
-   29, 32, 36, 37, and 42). MCP, LSP, brokers, sandboxes, and several subagent workflows need
-   writable child stdin, incremental stdout/stderr events, backpressure, cancellation, detached
-   lifecycle, or real Unix/TCP sockets. This needs a coherent process and networking design; small
-   method-name shims cannot provide the semantics safely.
-3. **Native Node, Bun, or WASM backends affect nine packages** (ranks 5, 8, 13, 17, 33, 38, 39,
-   41, and 43). These include better-sqlite3, AST-grep, FFF, tree-sitter, LanceDB, ONNX, sharp,
-   Cursor's Bun store, and xxhash WASM. Generic `.node` loading conflicts with Pigo's pure-Go,
-   `CGO_ENABLED=0` product contract. Prefer upstream-supported executables, services, WASM where
-   the host can preserve module assets, or explicit Go adapters; do not pretend native bindings
-   loaded.
-4. **Module-loader and bundler semantics affect eight packages** (ranks 9, 15, 18, 22, 27, 29,
-   39, and 43). The shared gaps are top-level await in a synchronous CommonJS host, eager resolution
-   of optional dynamic imports, executable relative CommonJS requires, and per-module
-   `import.meta.url` assets. A true asynchronous ESM path plus lazy package resolution and
-   asset-preserving bundling would directly unlock ranks 15 and 18 and expose the next honest
-   blocker in several others.
-5. **Selective Web and crypto APIs limit two otherwise useful packages**. Rank 3's ordinary web
-   search/fetch path appears viable, but Chrome-cookie import needs PBKDF2 and AES decipher APIs.
-   Rank 35's plain JSON tracing may work, while attachment and streaming paths can reach `Blob`,
-   `FormData`, `ReadableStream`, and `crypto.subtle`. Add standards-faithful APIs only after a
-   focused smoke proves that a popular workflow reaches them.
-
-The highest-leverage compatibility work is faithful SDK/tool/settings facades followed by real
-streamed child-process I/O. Async ESM and bundler fixes would then remove several early load
-barriers. Native-addon packages need alternate backends rather than generic Sobek shims, so they
-should remain explicitly unsupported until such a backend exists.
+The harness expands manifest-declared extension directories before invoking either runtime, so this
+result does not test Pi versus Pigo package-directory discovery semantics. Packages share `/work`
+and `/tmp` inside one runtime container; the container protects the host, but a hostile package could
+contaminate a later package. Use one fresh runtime container per package before treating these
+results as adversarial security evidence.
 
 ## Reproducibility hashes
 
-These hashes identify the exact inputs and raw outputs used for this report:
-
 | Artifact | SHA-256 |
 | --- | --- |
-| `conformance/extensions/corpus.json` | `632bd7c8361fe33feec4155035eed879349b57c399684beb0a118f8ef99e8c33` |
-| `conformance/extensions/workflow-audit.json` | `28502fdfa428703a993db85e56456923db74a481efe1d9dd5f9a19dc0215b51e` |
-| `conformance/extensions/package-lock.json` | `05bdb25ad57e4fba4f15f4c9a8305663e592e6954f0a79e930866c3a827e2b6c` |
-| `conformance/extensions/matrix.mjs` | `704b9e9e6842d0e55cac21da493b112b1345a070bcf165f1afa8defba5d1f458` |
-| `conformance/extensions/observer.ts` | `f7a686a0ddfe60f015a310c94b748243568ec7667875607ed4965d3f6f5b62b3` |
-| `conformance/extensions/smoke.mjs` | `92623dcf16f5360d2cefe44ac39ee7aefd0078b88e99d872248964c18ff20042` |
-| `conformance/extensions/smoke-cases.json` | `a424e2cfc745e9e9f2d1146ca6ec4dfe379619957dfb49d081706f7750146aa5` |
-| raw `matrix-final.json` | `c2b9226b83c6bea78817e64cea2563826e7daf6e145bbc4e6a6c6f5e493b554f` |
-| raw `smoke-final.json` | `fe5336aa077801dbaa574acd0dc29c10785d729b2cb00eb9677184f4c5c8c946` |
-| compact [`pi-0.81.1-pigo-v0.1.2.json`](../../conformance/extensions/results/pi-0.81.1-pigo-v0.1.2.json) | `db741d55c76c31f25384af923b99e34c49ead208be97bca1f482db626efcd9eb` |
-| host-tier [`pi-0.81.1-pigo-host.json`](../../conformance/extensions/results/pi-0.81.1-pigo-host.json) | `d9f1baa88d6cf875973d5842b4d2d8f286060c9ac105c3954ca75c540820ee4e` |
+| `conformance/extensions/corpus.json` | `b3301f36cc8fb5ba26802ebff712349b9b99f4c3f01a08da1fd08d8c79cc90c6` |
+| `conformance/extensions/matrix.mjs` | `4d64e172743b79fd393d15ba3a19652ab788409b23a8b656fbf88a899b3b9075` |
+| `conformance/extensions/taxonomy.mjs` | `97c4215cdabc18231f04b56903cac121e29696102cd8cf3df0e883d13504babf` |
+| `conformance/extensions/observer.ts` | `de1baf804358c5ceb51a2a71a92bda587b47249429806741cd7c8c4c4e98d9e2` |
+| `conformance/extensions/package-lock.json` | `b95e4fc1d684711fddcb9408591197c4db26b9d615fc41af7647f5969a754960` |
 | tested upstream Pi executable | `af302f231437eaf6f37691bce4b34234fcb626bcb5eb3910d4fc3f6519bf78ca` |
-| tested Pigo executable | `a616d8486ce6047976b7688d9b641b5ff51d9ef781351b6f8433a340faaa375e` |
-| tested host-tier Pigo executable | `f3a38dd794abdfc8993b56394a65c132ba8860a01f41b31a35512672736a4215` |
+| tested Pigo executable (linux/arm64, `53222c3`) | `e49168f94e7fdcd35c60428d79a0698496858feb0c57505b47520715ed11ee5c` |
+| tested Bun 1.3.14 executable | `37141662ebed915a2ab89313156e455e2a1374395f5f6760d06407f49406f086` |
+| raw 300-package matrix [`pi-0.81.1-pigo-runtimes-300.json`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-300.json) | `6bcf1d54cf55bb35a9ef36f32b020934c832b6f93131c467ca931c8deba1842b` |
+| raw smoke [`pi-0.81.1-pigo-runtimes-300-smoke.json`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-300-smoke.json) | `876135a7c41a7559d2ef7821449637027914da1b67de54f3bf31ba1b0da9b73e` |
+| tier-1 `compat` A/B [`pi-0.81.1-pigo-runtimes-tier1-compat.json`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-tier1-compat.json) | `9891519e06c6bf986d2321495644550c304008081e76d857780255bf7f8f1cb1` |
+| superseded 44-package [`pi-0.81.1-pigo-host.json`](../../conformance/extensions/results/pi-0.81.1-pigo-host.json) | `d9f1baa88d6cf875973d5842b4d2d8f286060c9ac105c3954ca75c540820ee4e` |
 
-The raw result files were generated at
-`/tmp/pigo-extension-matrix-v0811.954GWz/results/{matrix-final.json,smoke-final.json}`. The matrix
-artifact is 2.5 MiB because it retains every attempt and canonical registration snapshot; the smoke
-artifact is 938,604 bytes because it retains every normalized event and workflow payload. The
-tracked compact artifact contains all verdicts, remediation, summary statistics, and provenance;
-the raw hashes preserve the complete attempt-level audit identity.
-
-The tracked host-tier artifact is the full 3,839,265-byte raw matrix, including every attempt and
-registration snapshot; it was copied directly from the isolated run without compaction.
+The 300-package aggregate is the full 37,227,960-byte raw matrix at the default
+`--retain-registrations diagnostic`, copied directly from the isolated run without compaction. It
+retains every attempt, every failure's registration snapshot and every diagnostic; the bulk of its
+bytes is the registration evidence a mismatch verdict rests on, not timing data.
