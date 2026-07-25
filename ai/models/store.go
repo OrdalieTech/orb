@@ -17,7 +17,6 @@ import (
 
 	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/ai/models/internal/cataloggen"
-	"github.com/gofrs/flock"
 )
 
 const ModelsDevURL = "https://models.dev/api.json"
@@ -279,11 +278,11 @@ func writeStore(path string, catalog *Catalog, checkedAt int64, lastModified *in
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	lock := flock.New(path + ".lock")
-	if err := lock.Lock(); err != nil {
-		return err
+	lock, lockErr := acquireStoreLock(path)
+	if lockErr != nil {
+		return lockErr
 	}
-	defer func() { err = errors.Join(err, lock.Unlock()) }()
+	defer func() { err = errors.Join(err, lock.release()) }()
 	stored := orderedStore{entries: make(map[string]storedProvider)}
 	data, readErr := os.ReadFile(path)
 	if readErr == nil && len(data) > 0 {
@@ -312,11 +311,11 @@ func stampStoreResponse(path string, checkedAt int64, unavailable bool) (err err
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	lock := flock.New(path + ".lock")
-	if err := lock.Lock(); err != nil {
-		return err
+	lock, lockErr := acquireStoreLock(path)
+	if lockErr != nil {
+		return lockErr
 	}
-	defer func() { err = errors.Join(err, lock.Unlock()) }()
+	defer func() { err = errors.Join(err, lock.release()) }()
 	stored := orderedStore{entries: make(map[string]storedProvider)}
 	data, readErr := os.ReadFile(path)
 	if readErr == nil && len(data) > 0 {
