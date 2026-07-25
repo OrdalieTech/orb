@@ -637,6 +637,10 @@ async function runProbe(runtime, extensionPaths, options) {
 	let promptResponse = false;
 	let uiRequestCount = 0;
 	let stdoutBuffer = "";
+	// Everything the runtime writes to stderr after the probe has been answered
+	// belongs to teardown, not to loading. Counting a shutdown-phase message as a
+	// load error turns a fully successful attempt into a false flake.
+	let stderrAtProbe = null;
 
 	const completion = new Promise((resolve) => {
 		const finish = (result) => {
@@ -701,6 +705,7 @@ async function runProbe(runtime, extensionPaths, options) {
 				}
 				if (observation && promptResponse && commandSentAt !== null) {
 					commandMs = performance.now() - commandSentAt;
+					stderrAtProbe = stderr.length;
 					clearTimeout(deadline);
 					finish({ error: null, timedOut: false });
 				}
@@ -718,6 +723,10 @@ async function runProbe(runtime, extensionPaths, options) {
 
 	// End-to-end proof of which engine evaluated the extension: the observer runs
 	// inside the extension host process, so this is the host's own self-report.
+	// Split stderr at the moment the probe completed. When it never completed the
+	// whole stream is load phase, which is what we want for a failed attempt.
+	const loadPhaseStderr = stderrAtProbe === null ? stderr : stderr.slice(0, stderrAtProbe);
+	const shutdownPhaseStderr = stderrAtProbe === null ? "" : stderr.slice(stderrAtProbe);
 	const host = observation?.host ?? null;
 	const observedEngine = host?.engine ?? null;
 	const runtimeNotForced = observedEngine !== null && observedEngine !== runtime.engine;
@@ -728,7 +737,8 @@ async function runProbe(runtime, extensionPaths, options) {
 		runtimeNotForced,
 		observedEngine,
 		host,
-		loadError: LOAD_ERROR.test(stderr) ? stderr.trim() : null,
+		loadError: LOAD_ERROR.test(loadPhaseStderr) ? loadPhaseStderr.trim() : null,
+		shutdownStderr: shutdownPhaseStderr.trim() || null,
 		startupMs,
 		commandMs,
 		getCommands,
