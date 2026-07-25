@@ -163,7 +163,6 @@ async function loadInputs(caseFilename, corpusFilename, selectors) {
 			typeof item.package !== "string" ||
 			typeof item.command !== "string" ||
 			typeof item.args !== "string" ||
-			!Number.isInteger(item.rank) ||
 			!Array.isArray(item.evidencePatterns) ||
 			item.evidencePatterns.length === 0
 		) {
@@ -171,10 +170,14 @@ async function loadInputs(caseFilename, corpusFilename, selectors) {
 		}
 		if (ids.has(item.id)) throw new Error(`${caseFilename} contains duplicate case id ${item.id}`);
 		ids.add(item.id);
+		// Cases are keyed by package name only. Gallery rank moves whenever the
+		// corpus is recaptured, so pinning it here just makes fixtures go stale;
+		// the rank published with a result is derived from the corpus instead.
 		const extension = corpusByPackage.get(item.package);
-		if (!extension || extension.rank !== item.rank) {
-			throw new Error(`${item.id} does not match rank/package in ${corpusFilename}`);
+		if (!extension) {
+			throw new Error(`${item.id} names ${item.package}, which is not in ${corpusFilename}`);
 		}
+		item.rank = extension.rank;
 		for (const pattern of item.evidencePatterns) {
 			if (typeof pattern !== "string" || pattern.length === 0) throw new Error(`${item.id} has an invalid evidence pattern`);
 			try {

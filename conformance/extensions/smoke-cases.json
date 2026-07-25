@@ -9,25 +9,26 @@
   "cases": [
     {
       "id": "piolium-help",
-      "rank": 1,
       "package": "@vigolium/piolium",
       "command": "piolium-help",
       "args": "",
-      "evidencePatterns": ["Piolium.*Help"],
+      "evidencePatterns": [
+        "Piolium.*Help"
+      ],
       "rationale": "Builds static help lines and opens a dismissible select dialog; the harness cancels it."
     },
     {
       "id": "piolium-status-empty",
-      "rank": 1,
       "package": "@vigolium/piolium",
       "command": "piolium-status",
       "args": "",
-      "evidencePatterns": ["No audit state"],
+      "evidencePatterns": [
+        "No audit state"
+      ],
       "rationale": "Reads the isolated empty project audit state and reports that no audit exists."
     },
     {
       "id": "subagents-doctor",
-      "rank": 4,
       "package": "pi-subagents",
       "command": "subagents-doctor",
       "args": "",
@@ -39,55 +40,60 @@
     },
     {
       "id": "fff-health",
-      "rank": 13,
       "package": "@ff-labs/pi-fff",
       "command": "fff-health",
       "args": "",
-      "evidencePatterns": ["FFF (?:v|not initialized)"],
+      "evidencePatterns": [
+        "FFF (?:v|not initialized)"
+      ],
       "rationale": "Reads the in-memory finder health initialized for the isolated empty project."
     },
     {
       "id": "hypa-diagnostics",
-      "rank": 19,
       "package": "@hypabolic/pi-hypa",
       "command": "hypa",
       "args": "",
-      "evidencePatterns": ["Hypa Pi extension"],
+      "evidencePatterns": [
+        "Hypa Pi extension"
+      ],
       "rationale": "Reports local extension configuration and binary resolution without invoking Hypa."
     },
     {
       "id": "goal-status-empty",
-      "rank": 20,
       "package": "@narumitw/pi-goal",
       "command": "goal",
       "args": "status",
-      "evidencePatterns": ["No goal is currently set"],
+      "evidencePatterns": [
+        "No goal is currently set"
+      ],
       "rationale": "Reads the empty isolated session goal state without creating or changing a goal."
     },
     {
       "id": "lsp-status",
-      "rank": 37,
       "package": "@narumitw/pi-lsp",
       "command": "lsp",
       "args": "",
-      "evidencePatterns": ["LSP (?:command|config)"],
+      "evidencePatterns": [
+        "LSP (?:command|config)"
+      ],
       "rationale": "Loads local LSP routing configuration and checks executable presence without starting a language server."
     }
   ],
   "workflowCases": [
     {
       "id": "piolium-knowledge-base-stage",
-      "rank": 1,
       "package": "@vigolium/piolium",
       "module": "extensions/piolium/knowledge-base-input.ts",
       "command": "__piolium_kb_workflow_probe",
       "args": "",
       "marker": "PIOLIUM_KB_WORKFLOW:",
-      "evidencePatterns": ["PIOLIUM_KB_WORKFLOW:"],
+      "evidencePatterns": [
+        "PIOLIUM_KB_WORKFLOW:"
+      ],
       "fixtures": [
         {
           "path": "knowledge-base/overview.md",
-          "content": "# Compatibility fixture\n\nPigo must preserve UTF-8 text such as café.\n"
+          "content": "# Compatibility fixture\n\nPigo must preserve UTF-8 text such as caf\u00e9.\n"
         },
         {
           "path": "knowledge-base/nested/details.mdx",

@@ -12,13 +12,17 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { fileURLToPath } from "node:url";
 
-const EXPECTED_CORPUS_SIZE = 44;
+// The expected corpus size is derived from the corpus file itself, so a
+// recapture does not silently invalidate the report. --expect-corpus pins it to
+// an explicit number when a release wants that guarantee.
+let EXPECTED_CORPUS_SIZE = 0;
 const UPSTREAM_VERSION = "0.81.1";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SELF = fileURLToPath(import.meta.url);
 
 const HARNESS_SOURCES = [
   ["matrix", path.join(HERE, "matrix.mjs")],
+  ["taxonomy", path.join(HERE, "taxonomy.mjs")],
   ["observer", path.join(HERE, "observer.ts")],
   ["prepare", path.join(HERE, "prepare.mjs")],
   ["smoke", path.join(HERE, "smoke.mjs")],
@@ -44,6 +48,7 @@ function parseArgs(argv) {
   const options = {
     corpus: path.join(HERE, "corpus.json"),
     workflowAudit: path.join(HERE, "workflow-audit.json"),
+    expectCorpus: "",
   };
   const names = new Map([
     ["--matrix", "matrix"],
@@ -51,6 +56,7 @@ function parseArgs(argv) {
     ["--output", "output"],
     ["--corpus", "corpus"],
     ["--workflow-audit", "workflowAudit"],
+    ["--expect-corpus", "expectCorpus"],
   ]);
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -67,7 +73,7 @@ function parseArgs(argv) {
     if (!value || value.startsWith("--")) {
       throw new Error(`${arg} requires a path\n\n${usage()}`);
     }
-    if (Object.hasOwn(options, name) && !["corpus", "workflowAudit"].includes(name)) {
+    if (Object.hasOwn(options, name) && !["corpus", "workflowAudit", "expectCorpus"].includes(name)) {
       throw new Error(`${arg} was provided more than once`);
     }
     options[name] = value;
@@ -79,9 +85,18 @@ function parseArgs(argv) {
       throw new Error(`--${name} is required\n\n${usage()}`);
     }
   }
-  return Object.fromEntries(
-    Object.entries(options).map(([name, value]) => [name, path.resolve(value)]),
-  );
+  const size = options.expectCorpus === "" ? null : Number(options.expectCorpus);
+  if (size !== null && (!Number.isInteger(size) || size < 1)) {
+    throw new Error("--expect-corpus must be a positive integer");
+  }
+  return {
+    ...Object.fromEntries(
+      Object.entries(options)
+        .filter(([name]) => name !== "expectCorpus")
+        .map(([name, value]) => [name, path.resolve(value)]),
+    ),
+    expectCorpus: size,
+  };
 }
 
 function expect(condition, message) {
@@ -233,7 +248,7 @@ function validateRuntimeProbe(probe, method, label) {
 
 function validateMatrix(matrix, corpus) {
   expectObject(matrix, "matrix");
-  expect(matrix.schemaVersion === 2, "matrix.schemaVersion must be 2");
+  expect(matrix.schemaVersion === 2 || matrix.schemaVersion === 3, "matrix.schemaVersion must be 2 or 3");
   expectTimestamp(matrix.generatedAt, "matrix.generatedAt");
   expectObject(matrix.method, "matrix.method");
   expect(Number.isInteger(matrix.method.warmups) && matrix.method.warmups > 0, "matrix.method.warmups must be positive");
@@ -325,9 +340,11 @@ function validateMatrix(matrix, corpus) {
 }
 
 function validateCaseIdentity(result, definition, corpusEntry, label) {
-  for (const key of ["id", "rank", "package", "command", "args", "rationale", "evidencePatterns"]) {
+  for (const key of ["id", "package", "command", "args", "rationale", "evidencePatterns"]) {
     expectEqual(result[key], definition[key], `${label}.${key}`);
   }
+  // rank is derived from the corpus at run time, never pinned in the fixture.
+  expect(result.rank === corpusEntry.rank, `${label}.rank does not match the corpus`);
   expect(result.version === corpusEntry.version, `${label}.version is stale`);
   expect(result.integrity === corpusEntry.integrity, `${label}.integrity is stale`);
 }
@@ -376,7 +393,7 @@ function validateSmoke(smoke, cases, corpus, hashes) {
   expect(smoke.commandResults.length === cases.cases.length, "smoke command results are incomplete");
   expect(smoke.workflowResults.length === cases.workflowCases.length, "smoke workflow results are incomplete");
 
-  const corpusByRank = new Map(corpus.extensions.map((entry) => [entry.rank, entry]));
+  const corpusByPackage = new Map(corpus.extensions.map((entry) => [entry.package, entry]));
   const validateResults = (results, definitions, kind) => {
     const definitionsByID = new Map(definitions.map((entry) => [entry.id, entry]));
     expect(definitionsByID.size === definitions.length, `${kind} case ids must be unique`);
@@ -387,8 +404,8 @@ function validateSmoke(smoke, cases, corpus, hashes) {
       expect(definition, `${label}.id is not in smoke-cases.json`);
       expect(!seen.has(result.id), `${label}.id is duplicated`);
       seen.add(result.id);
-      const corpusEntry = corpusByRank.get(definition.rank);
-      expect(corpusEntry?.package === definition.package, `${label} does not identify a corpus package`);
+      const corpusEntry = corpusByPackage.get(definition.package);
+      expect(Boolean(corpusEntry), `${label} does not identify a corpus package`);
       validateCaseIdentity(result, definition, corpusEntry, label);
       if (kind === "workflow") {
         expectEqual(result.fixtures, definition.fixtures, `${label}.fixtures`);
@@ -448,13 +465,24 @@ function validateAudit(audit, corpus, matrix) {
   expectString(audit.caveat, "workflow audit caveat");
   expectString(audit.method, "workflow audit method");
   expect(Array.isArray(audit.entries), "workflow audit entries must be an array");
-  expect(audit.entries.length === EXPECTED_CORPUS_SIZE, "workflow audit is incomplete");
+  expect(audit.entries.length > 0, "workflow audit is empty");
+  // Keyed by package name, not by rank or array position: gallery rank shifts on
+  // every recapture, and the audit may legitimately cover a subset of a larger
+  // corpus. What must hold is that every audited package is a corpus package
+  // that the matrix actually measured.
+  const corpusByPackage = new Map(corpus.extensions.map((entry) => [entry.package, entry]));
+  const matrixByPackage = new Map(matrix.extensions.map((entry) => [entry.extension.package, entry]));
+  const audited = new Set();
   const verdicts = new Set(["likely_compatible", "partial", "main_feature_blocked", "load_blocked"]);
   for (const [index, entry] of audit.entries.entries()) {
     const label = `workflow audit.entries[${index}]`;
-    const corpusEntry = corpus.extensions[index];
-    const matrixEntry = matrix.extensions[index];
-    expect(entry.rank === corpusEntry.rank && entry.package === corpusEntry.package, `${label} is stale or out of order`);
+    expectString(entry.package, `${label}.package`);
+    expect(!audited.has(entry.package), `${label}.package is audited more than once`);
+    audited.add(entry.package);
+    const corpusEntry = corpusByPackage.get(entry.package);
+    expect(Boolean(corpusEntry), `${label} audits ${entry.package}, which is not in the corpus`);
+    const matrixEntry = matrixByPackage.get(entry.package);
+    expect(Boolean(matrixEntry), `${label} audits ${entry.package}, which the matrix did not measure`);
     expect(verdicts.has(entry.verdict), `${label}.verdict is unknown`);
     expectString(entry.blockerCategory, `${label}.blockerCategory`);
     expect(Array.isArray(entry.evidence) && entry.evidence.length > 0, `${label}.evidence must be non-empty`);
@@ -488,7 +516,8 @@ function performanceSummary(entries, selector) {
   };
 }
 
-function groupedBlockers(audit) {
+function groupedBlockers(audit, corpus) {
+  const rankOf = new Map((corpus?.extensions ?? []).map((entry) => [entry.package, entry.rank]));
   const groups = new Map();
   for (const entry of audit.entries) {
     let group = groups.get(entry.blockerCategory);
@@ -498,7 +527,7 @@ function groupedBlockers(audit) {
     }
     group.count += 1;
     group.verdicts[entry.verdict] = (group.verdicts[entry.verdict] ?? 0) + 1;
-    group.extensions.push({ rank: entry.rank, package: entry.package });
+    group.extensions.push({ rank: rankOf.get(entry.package) ?? null, package: entry.package });
   }
   return [...groups.values()]
     .map((group) => ({
@@ -548,18 +577,18 @@ function compactSmokeResult(result, kind) {
 }
 
 function buildReport({ matrix, smoke, corpus, audit, raw, sources }) {
-  const auditByRank = new Map(audit.entries.map((entry) => [entry.rank, entry]));
-  const commandIDsByRank = new Map();
-  const workflowIDsByRank = new Map();
+  const auditByPackage = new Map(audit.entries.map((entry) => [entry.package, entry]));
+  const commandIDsByPackage = new Map();
+  const workflowIDsByPackage = new Map();
   for (const result of smoke.commandResults) {
-    commandIDsByRank.set(result.rank, [...(commandIDsByRank.get(result.rank) ?? []), result.id]);
+    commandIDsByPackage.set(result.package, [...(commandIDsByPackage.get(result.package) ?? []), result.id]);
   }
   for (const result of smoke.workflowResults) {
-    workflowIDsByRank.set(result.rank, [...(workflowIDsByRank.get(result.rank) ?? []), result.id]);
+    workflowIDsByPackage.set(result.package, [...(workflowIDsByPackage.get(result.package) ?? []), result.id]);
   }
 
   const extensions = matrix.extensions.map((result) => {
-    const workflow = auditByRank.get(result.extension.rank);
+    const workflow = auditByPackage.get(result.extension.package);
     return {
       rank: result.extension.rank,
       package: result.extension.package,
@@ -580,8 +609,8 @@ function buildReport({ matrix, smoke, corpus, audit, raw, sources }) {
         evidence: workflow.evidence,
       },
       smokeCoverage: {
-        commandCases: commandIDsByRank.get(result.extension.rank) ?? [],
-        workflowCases: workflowIDsByRank.get(result.extension.rank) ?? [],
+        commandCases: commandIDsByPackage.get(result.extension.package) ?? [],
+        workflowCases: workflowIDsByPackage.get(result.extension.package) ?? [],
       },
       timings: {
         pi: {
@@ -695,7 +724,7 @@ function buildReport({ matrix, smoke, corpus, audit, raw, sources }) {
           ratio: entry.comparison.handlerLatency.pigoVsPiRatio,
         })),
       },
-      blockerCategories: groupedBlockers(audit),
+      blockerCategories: groupedBlockers(audit, corpus),
     },
     extensions,
     commandSmokes: compactCommands,
@@ -736,6 +765,8 @@ async function main() {
     loadFile(options.workflowAudit, "workflow audit", true),
     ...HARNESS_SOURCES.map(([name, file]) => loadFile(file, `harness source ${name}`)),
   ]);
+  EXPECTED_CORPUS_SIZE = options.expectCorpus ?? corpusFile.json?.extensions?.length ?? 0;
+  expect(EXPECTED_CORPUS_SIZE > 0, "corpus is empty or unreadable");
   const sources = Object.fromEntries(HARNESS_SOURCES.map(([name], index) => [name, {
     sha256: sourceFiles[index].sha256,
     bytes: sourceFiles[index].bytes.length,

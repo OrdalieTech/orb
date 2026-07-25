@@ -1,363 +1,4364 @@
 {
-  "schemaVersion": 1,
-  "capturedAt": "2026-07-22",
-  "selection": {
-    "source": "https://pi.dev/packages?sort=downloads",
-    "rule": "Top 44 package entries with a non-empty pi.extensions array, ordered by displayed monthly npm downloads",
-    "caveat": "npm downloads measure registry traffic, not unique Pi users; malformed string-valued pi.extensions manifests are not loadable by upstream and are excluded"
-  },
-  "extensions": [
-    {
-      "rank": 1,
-      "package": "@vigolium/piolium",
-      "version": "0.0.13",
-      "downloads": { "monthly": 281805, "weekly": 31555 },
-      "integrity": "sha512-FrrGJR/XnAwUVdNsnAXEPS6mpHoUBS3nt8s5SKHOKM8P/8DOynYw+EGgEfbXPcaLHNjMnXChUMAlKN8G6ma8SA==",
-      "extensions": ["./extensions/piolium/index.ts"]
-    },
-    {
-      "rank": 2,
-      "package": "pi-mcp-adapter",
-      "version": "2.11.0",
-      "downloads": { "monthly": 138045, "weekly": 44449 },
-      "integrity": "sha512-4Y/eLbhbxnRih519dJUxMyQ5QASvPcdWyBlS8+dDXteAzaMuLnd4nMTWgoZw3JRIW+0r93KAQcz1Rbli4xCwEQ==",
-      "extensions": ["./index.ts"]
-    },
-    {
-      "rank": 3,
-      "package": "pi-web-access",
-      "version": "0.13.0",
-      "downloads": { "monthly": 132583, "weekly": 28522 },
-      "integrity": "sha512-ny0bHisMWdobmu1hcMp/jqjaRh6pYrH7dctBK2CVyRF4ia7bP47RnOPYdG1yiks9ohtcanWir5Hl9EFap8h0zQ==",
-      "extensions": ["./index.ts"]
-    },
-    {
-      "rank": 4,
-      "package": "pi-subagents",
-      "version": "0.35.1",
-      "downloads": { "monthly": 117670, "weekly": 28167 },
-      "integrity": "sha512-nIH6liO541FZ1RoeEu58Ligd59tiNw0/ODPgHh7uvx9Dk4UpWH08F84/l1+hXCzUgC85OCmyVtngWkZjcK94Cg==",
-      "extensions": ["./index.ts"]
-    },
-    {
-      "rank": 5,
-      "package": "context-mode",
-      "version": "1.0.169",
-      "downloads": { "monthly": 106249, "weekly": 14375 },
-      "integrity": "sha512-94JIaFuLjF9SO2BsGTrbGtyT44K95+9OC8BdbaL/UT76xOkanJLfUR5CzmNw+GELXZQqH4nBrKg9wjBnSFkVnQ==",
-      "extensions": ["./build/adapters/pi/extension.js"]
-    },
-    {
-      "rank": 6,
-      "package": "@tintinweb/pi-subagents",
-      "version": "0.14.2",
-      "downloads": { "monthly": 40400, "weekly": 11224 },
-      "integrity": "sha512-CV0FVE2uB+r3it45t9YJPgkB5mgwa4J65gfVCJOVpTzgVHR6mbDzRjeyMFmJufhBwICKO1YC4Cfq6FHNipNrVw==",
-      "extensions": ["./src/index.ts"]
-    },
-    {
-      "rank": 7,
-      "package": "@remnic/plugin-pi",
-      "version": "9.10.0",
-      "downloads": { "monthly": 35739, "weekly": 8764 },
-      "integrity": "sha512-gSzMnFQtQxWcvLPF6+5Y9PVCZM+W394v8m/SmiDtEmjewdl2ash0i5+l7XhbNRf1e/Mpo3dyGpjWUjUAXxbAWA==",
-      "extensions": ["./dist/index.js"]
-    },
-    {
-      "rank": 8,
-      "package": "pi-lens",
-      "version": "3.8.71",
-      "downloads": { "monthly": 31382, "weekly": 8752 },
-      "integrity": "sha512-GO9ctoWGpm71CnVbmHHorPHUwhwTUL0yy7TjA2415sWenhJGfbhF49zM9wVCQvW7fef9ufNjX/oErX4vE9LGyQ==",
-      "extensions": ["./dist/index.js"]
-    },
-    {
-      "rank": 9,
-      "package": "@plannotator/pi-extension",
-      "version": "0.24.2",
-      "downloads": { "monthly": 29485, "weekly": 7540 },
-      "integrity": "sha512-lKPUoHYyqM3pgVoF+CToDxyYFWJ8Qu4LTXeR/JZi2VsqGu0awj+gBxZT4d5IkGweTm/06FsAs3kGPuvhB1+QXw==",
-      "extensions": ["./"]
-    },
-    {
-      "rank": 10,
-      "package": "@quintinshaw/pi-dynamic-workflows",
-      "version": "3.3.0",
-      "downloads": { "monthly": 28294, "weekly": 9007 },
-      "integrity": "sha512-tPN7x3+M/OCYXcm786O9yNk8xKQKL8ui6P4noqC99Rn5/n0fUjizG0SnLChsNrZZXKVtqLRv8vKdzDmNPewvTA==",
-      "extensions": ["extensions/workflow.ts"]
-    },
-    {
-      "rank": 11,
-      "package": "@gotgenes/pi-permission-system",
-      "version": "20.10.0",
-      "downloads": { "monthly": 26894, "weekly": 7856 },
-      "integrity": "sha512-7jWdwzfwIYper9jeYkb3f74mPGZp/hYvzHYHgf6WFoSnAPq3nr4a/NeuBSCKax3Kv0r8EwScxNWQ5y25JcOJQg==",
-      "extensions": ["./src/index.ts"]
-    },
-    {
-      "rank": 12,
-      "package": "pi-simplify",
-      "version": "0.2.3",
-      "downloads": { "monthly": 24721, "weekly": 7037 },
-      "integrity": "sha512-9dxsXiGmO7DmjguC4Bk/lu7IYlYt0x1m2VneUpIGSQspx4BtshBgt+Vb8xvoxXc/Ugif7/sdwcbf7TgULqiSHg==",
-      "extensions": ["dist/index.js"]
-    },
-    {
-      "rank": 13,
-      "package": "@ff-labs/pi-fff",
-      "version": "0.10.1",
-      "downloads": { "monthly": 22067, "weekly": 6965 },
-      "integrity": "sha512-yLVSn/vIscEAgX9BM7gxOY/VtITJmMpxWhGTTFBYQj2Sos7RpWJ/X4+eWHS5p813rNr7gm8HP/U3cMxssXmD4Q==",
-      "extensions": ["./src/index.ts"]
-    },
-    {
-      "rank": 14,
-      "package": "@mjasnikovs/pi-task",
-      "version": "0.18.49",
-      "downloads": { "monthly": 21223, "weekly": 6637 },
-      "integrity": "sha512-NF70NWwmxmQHS31XT/YTDEmwi1hR1zx3bW/WPS9v8USGISxvl7v5XGiHUyMC47N4CuAnp9ifpUaTbEopra2bbw==",
-      "extensions": ["dist/index.js"]
-    },
-    {
-      "rank": 15,
-      "package": "@juicesharp/rpiv-ask-user-question",
-      "version": "2.0.0",
-      "downloads": { "monthly": 18955, "weekly": 4040 },
-      "integrity": "sha512-VvpqOT4UQtHjWGlXVAlMAUZoHjekneOmpGstJZrWinbH0UYt+4Kt3eTTW7VIORSYSwSYYjidZyoYT04Vx/zq0A==",
-      "extensions": ["./index.ts"]
-    },
-    {
-      "rank": 16,
-      "package": "@raindrop-ai/pi-agent",
-      "version": "0.1.0",
-      "downloads": { "monthly": 17023, "weekly": 6072 },
-      "integrity": "sha512-whWwTnzDruRvzGdLun2PprNqoVRNaaa5/yOQKQtKpTO4Ye+ycCpL3HI9jAhGMXSsCqEXLoWiUFHrgtB4WWbhNw==",
-      "extensions": ["./dist/extension.js"]
-    },
-    {
-      "rank": 17,
-      "package": "pi-hermes-memory",
-      "version": "0.8.2",
-      "downloads": { "monthly": 16573, "weekly": 4432 },
-      "integrity": "sha512-kE3kV1+hEPsguGdhhuIinaM9FeMlen/QbAQ8qW+Wgiu+tAvGNIyBsGF9Mu3wH64fhn0Qat+wLCT46vCr0EnkcA==",
-      "extensions": ["./src/index.ts"]
-    },
-    {
-      "rank": 18,
-      "package": "@juicesharp/rpiv-todo",
-      "version": "2.0.0",
-      "downloads": { "monthly": 16474, "weekly": 3474 },
-      "integrity": "sha512-Kh+r32eJ2OU7nZKKC4rvS0cOrjxeSQshYUZfE/go2odqlAmcuA5Df3Bs2LyL1fkbuGIRhjwJsSUjH+rpYe5odg==",
-      "extensions": ["./index.ts"]
-    },
-    {
-      "rank": 19,
-      "package": "@hypabolic/pi-hypa",
-      "version": "0.1.11",
-      "downloads": { "monthly": 16396, "weekly": 4570 },
-      "integrity": "sha512-EWe38nzQH+Jw6AsgnN2Cgy2wmo19JYsAaDgcegm6OQBOv9mwtpIvTjhW9PBHTFQ6+v2XYJgUiHQinnJJcllCXw==",
-      "extensions": ["./extensions"]
-    },
-    {
-      "rank": 20,
-      "package": "@narumitw/pi-goal",
-      "version": "0.24.0",
-      "downloads": { "monthly": 15934, "weekly": 5163 },
-      "integrity": "sha512-15FQOf84ZjEcG2tWBxM6QVYqGPiR1lCHYFfprImkzgelbeKP0qqQV9/HyWPThHMZWEpuO4NzwjHZocxL02G8cw==",
-      "extensions": ["./src/goal.ts"]
-    },
-    {
-      "rank": 21,
-      "package": "@ayulab/pi-rewind",
-      "version": "0.4.6",
-      "downloads": { "monthly": 15556, "weekly": 1864 },
-      "integrity": "sha512-pRinWV6H7JV/+gPePwlI00Pb99KhTKXDzefwqPxVnF7QvzrYfe2KHgYJV7efYNI4yJEgbnJNHrNGZR/n3EAhBA==",
-      "extensions": ["./index.js"]
-    },
-    {
-      "rank": 22,
-      "package": "gentle-pi",
-      "version": "1.2.0",
-      "downloads": { "monthly": 15065, "weekly": 4331 },
-      "integrity": "sha512-N92eg6TVB/bfsa9cUHPCj5SxBwdaQ5brJsxQel2Y+NUL5yL1sLrYtL99FwsxX1KhguQ6UvvpTslx69a55NEvxg==",
-      "extensions": ["./extensions"]
-    },
-    {
-      "rank": 23,
-      "package": "pi-agent-browser-native",
-      "version": "0.2.71",
-      "downloads": { "monthly": 12576, "weekly": 2711 },
-      "integrity": "sha512-9Co49k9axuxi8C8pUDsXJ7jj6bAAByvNk/e6/SA9N1XGmOzVIIZswjTd1Sf7uiXYMqdjvoWW5dxwNFwzN7Dgig==",
-      "extensions": ["./dist/extensions/agent-browser/index.js"]
-    },
-    {
-      "rank": 24,
-      "package": "@ollama/pi-web-search",
-      "version": "0.0.5",
-      "downloads": { "monthly": 12495, "weekly": 2243 },
-      "integrity": "sha512-qz6T31cccn5vg/+BeEwEylYpDU2hdrVGKhUzi4m7FZv5z9RTqF1HUQ8p4kHXhd0aYjd8TMcZvonjwnpTHPnYsQ==",
-      "extensions": ["./index.ts"]
-    },
-    {
-      "rank": 25,
-      "package": "pi-readseek",
-      "version": "0.8.0",
-      "downloads": { "monthly": 12409, "weekly": 5683 },
-      "integrity": "sha512-heaUx6KTrKUXK4Vg5JAu6JJZhuFzz7IQK2wx9+bZ60rYdyoD2nFuQoQub/kwP4UGIIpwenXhTP3/++KRRQhsBQ==",
-      "extensions": ["./dist/index.js"]
-    },
-    {
-      "rank": 26,
-      "package": "pi-deepseek-search",
-      "version": "1.0.15",
-      "downloads": { "monthly": 12021, "weekly": 3136 },
-      "integrity": "sha512-3qwsIs88Va9DXygXNEJ4gPmhWLcAgye+egWiIR85NOxDWFZIG3kdkQthR6VXDA/pWG8nnF2AbU9WL4SQr4IWgg==",
-      "extensions": ["./index.ts"]
-    },
-    {
-      "rank": 27,
-      "package": "pi-crew",
-      "version": "0.9.46",
-      "downloads": { "monthly": 11909, "weekly": 2493 },
-      "integrity": "sha512-OghQyuAsHpJwDUvaIypwcG1JKOWnXoC3mlc4BuX+UfWtw0JHpPm2YLV7ewBJ54jRb7/Rapwc6X81FK6DCbHKGA==",
-      "extensions": ["./index.ts"]
-    },
-    {
-      "rank": 28,
-      "package": "pi-landstrip",
-      "version": "0.17.31",
-      "downloads": { "monthly": 11382, "weekly": 4603 },
-      "integrity": "sha512-mez8CaVxFdCGzg5OU/9ulAHHU16fLL80OS5WYmg6Siw3GWf73f7cnBRbDhkC7KoN5hPR0j/y5Wh0wXFUb9PTPQ==",
-      "extensions": ["./index.ts"]
-    },
-    {
-      "rank": 29,
-      "package": "pi-fabric",
-      "version": "0.22.4",
-      "downloads": { "monthly": 11375, "weekly": 10597 },
-      "integrity": "sha512-yyqAbrEA+UwNU5P8I3WRN8Ubw+uY7W9HXlOxT23Eh6nrgC/EHeMeztQfF8JNltz3+Cidrcicwqen8KvwGfVK8w==",
-      "extensions": ["./dist/index.js"]
-    },
-    {
-      "rank": 30,
-      "package": "@alexanderfortin/pi-deepseek-usage",
-      "version": "0.3.12",
-      "downloads": { "monthly": 11205, "weekly": 1714 },
-      "integrity": "sha512-9GyVBT3aQV+uukBW/0Q7p9fT59hpuOUATdMrkwA+NSPvWN1e4nXjeytEtxotfBQf40T2a7AJJ+esOYA0O6gVaw==",
-      "extensions": ["./dist/index.js"]
-    },
-    {
-      "rank": 31,
-      "package": "pi-prompt-template-model",
-      "version": "0.10.0",
-      "downloads": { "monthly": 10543, "weekly": 2736 },
-      "integrity": "sha512-d8UovT5eTSR9B4/J9Tmh4skqjm8gDiagXzyymCciSXtGuzkbxWKiNPIucaA0Un4wgWe4EnNnp+jzA9NF8fG6LQ==",
-      "extensions": ["./index.ts"]
-    },
-    {
-      "rank": 32,
-      "package": "pi-intercom",
-      "version": "0.6.0",
-      "downloads": { "monthly": 10341, "weekly": 2087 },
-      "integrity": "sha512-OFPh/DXfPhUUSDLTRJiFPEvw00fOA/spjsxUcXiuCHvb2ZkRL02G8Q91mTd+3d42A9AK8BSmbD0+8imFPuHGoQ==",
-      "extensions": ["./index.ts"]
-    },
-    {
-      "rank": 33,
-      "package": "opencode-codebase-index",
-      "version": "0.14.0",
-      "downloads": { "monthly": 10061, "weekly": 2278 },
-      "integrity": "sha512-bYmZVDuUu4QZT6+YOZuUZfxy8EtLoJR1t2fSR+8uN14KEYhiWbPJ5z0sagm7i5FxMJVoD0qfVEEBnvv8hXWL1w==",
-      "extensions": ["./dist/pi-extension.js"]
-    },
-    {
-      "rank": 34,
-      "package": "@pi-stef/atlassian",
-      "version": "0.4.1",
-      "downloads": { "monthly": 9894, "weekly": 2722 },
-      "integrity": "sha512-eaAuj1oO1nOyceIsAZYKTk4RSv124rnDnjiT/aVVPSVdeQSBKvuICeax1QTffr+uu/lCtg62j8JBm1G3rdju8Q==",
-      "extensions": ["./extensions"]
-    },
-    {
-      "rank": 35,
-      "package": "@braintrust/pi-extension",
-      "version": "0.10.0",
-      "downloads": { "monthly": 9831, "weekly": 1814 },
-      "integrity": "sha512-2+ofAO/9SZ2aHrsFVs8mxozTwG4bZUY4ONd76WFlo/gnT+sXNSu3xqXc3C9COH6WyBIthfGJdq51cNriG/cFjw==",
-      "extensions": ["./src/index.ts"]
-    },
-    {
-      "rank": 36,
-      "package": "pi-lean-ctx",
-      "version": "3.9.12",
-      "downloads": { "monthly": 9815, "weekly": 2717 },
-      "integrity": "sha512-0HNUXhlPUUwUr3oAqkI3q29DUbwpPR1+Hz+7xSdlUP+1686CI4J/u13R80F6yXcHiFF5Pj7JADDrUIAvMf7siQ==",
-      "extensions": ["./extensions/index.ts"]
-    },
-    {
-      "rank": 37,
-      "package": "@narumitw/pi-lsp",
-      "version": "0.25.0",
-      "downloads": { "monthly": 9750, "weekly": 3754 },
-      "integrity": "sha512-EYibJwWa39UhA1XHMK84Jpykrx7D8AI23GbAYl05yPKmA3CQgevyHx7UPUyb+CmCx072vpwu2b23PuADqJrT/g==",
-      "extensions": ["./src/pi-lsp.ts"]
-    },
-    {
-      "rank": 38,
-      "package": "pi-shazam",
-      "version": "0.30.0",
-      "downloads": { "monthly": 9662, "weekly": 502 },
-      "integrity": "sha512-yPQ//P5LSdru1qyq2iqx1M+nXgogqIPhlKw0WAI+BauNgDcLp6j7MzYq/FUmFrW2HTZNqMKFmkHeKaACixwW3w==",
-      "extensions": ["./dist"]
-    },
-    {
-      "rank": 39,
-      "package": "pi-cursor-sdk",
-      "version": "0.1.60",
-      "downloads": { "monthly": 9575, "weekly": 2239 },
-      "integrity": "sha512-lSMytYroMriQLejvVDl25Vchm8sbkvBrAPyoRKhPEB4D+uJWeKT5F1YTnVfW7Nxd2yvYP3VEJfO5BlxntD2TFA==",
-      "extensions": ["./src/index.ts"]
-    },
-    {
-      "rank": 40,
-      "package": "pi-llama-cpp",
-      "version": "0.9.1",
-      "downloads": { "monthly": 9549, "weekly": 3437 },
-      "integrity": "sha512-iDOuYsS2EyGwGSGdv0gW37zg+xnChvZm6Msd5NAQg+eP/kJXv7sK0AEV6suDgIrUbMmP+uSxSUcWZeI6V9/flA==",
-      "extensions": ["./src/index.ts"]
-    },
-    {
-      "rank": 41,
-      "package": "pi-vault-mind",
-      "version": "0.16.25",
-      "downloads": { "monthly": 9356, "weekly": 1795 },
-      "integrity": "sha512-bpj5h3EpgIKJcRqObHxsG0fSAYWGNy4vd2OpDcVVsq00IZOcqqIFTst6UIx6VOB1xZvqkuMCCQgKiXt2R9haXA==",
-      "extensions": ["./dist/index.js"]
-    },
-    {
-      "rank": 42,
-      "package": "gentle-engram",
-      "version": "0.1.10",
-      "downloads": { "monthly": 8665, "weekly": 1546 },
-      "integrity": "sha512-j30QKNX9j0qIE6oOGky9u8konaJKANxE6x3FroNjoMdRq86FdPOtrRzfrTF1QVMK/y2byf3d7NQ+050y13t9GQ==",
-      "extensions": ["./index.ts"]
-    },
-    {
-      "rank": 43,
-      "package": "pi-hashline-edit-pro",
-      "version": "0.16.15",
-      "downloads": { "monthly": 8541, "weekly": 1145 },
-      "integrity": "sha512-ZcY4EkyBBcXlHhVmpiUoTILGejuO0omvwbD2K4X3iM3K+IJbf6ZyMnR8vZf4juIy13/PIunMmy3fYc6hw9YXkg==",
-      "extensions": ["./index.ts"]
-    },
-    {
-      "rank": 44,
-      "package": "cc-safety-net",
-      "version": "1.0.6",
-      "downloads": { "monthly": 8379, "weekly": 1941 },
-      "integrity": "sha512-uc2EmRXPXb08cfN1eGnr+h3tWHqxA20fJGZoGBgW6wFl+Nubmmy6jug18vc7WrOW7dGBMPxz4VuU8srfjHtWlw==",
-      "extensions": ["./dist/pi/index.js"]
-    }
-  ]
+	"schemaVersion": 1,
+	"capturedAt": "2026-07-25",
+	"selection": {
+		"source": "https://pi.dev/packages (paginated HTML; data-package-* card attributes) plus https://registry.npmjs.org/<name>/latest",
+		"rule": "Gallery packages whose published pi.extensions manifest field is a non-empty array of strings. The 900 most downloaded gallery entries were resolved against the npm registry; the top 300 keepers by the gallery's cached download counts form the pinned set, and rank and tier are assigned from freshly fetched npm last-month downloads.",
+		"caveat": "npm downloads measure registry traffic, not unique Pi users; malformed string-valued pi.extensions manifests are not loadable by upstream and are excluded; manifestFlags marks kept entries whose declared paths are absolute, escape the package root, or are not plain relative paths",
+		"tiers": {
+			"1": "top 50 by monthly downloads",
+			"2": "next 50 by monthly downloads",
+			"3": "remaining pinned packages"
+		},
+		"census": {
+			"galleryPages": 107,
+			"galleryPackages": 5310,
+			"galleryExtensionTyped": 3007,
+			"candidatesResolved": 900,
+			"kept": 826,
+			"pinned": 300,
+			"dropped": 74,
+			"dropReasons": {
+				"no_pi_extensions": 41,
+				"pi_extensions_string": 2,
+				"no_pi_field": 15,
+				"pi_extensions_empty_array": 16
+			}
+		}
+	},
+	"extensions": [
+		{
+			"rank": 1,
+			"tier": 1,
+			"package": "@vigolium/piolium",
+			"version": "0.0.13",
+			"downloads": {
+				"monthly": 478440,
+				"weekly": 228047
+			},
+			"integrity": "sha512-FrrGJR/XnAwUVdNsnAXEPS6mpHoUBS3nt8s5SKHOKM8P/8DOynYw+EGgEfbXPcaLHNjMnXChUMAlKN8G6ma8SA==",
+			"extensions": [
+				"./extensions/piolium/index.ts"
+			]
+		},
+		{
+			"rank": 2,
+			"tier": 1,
+			"package": "pi-mcp-adapter",
+			"version": "2.14.0",
+			"downloads": {
+				"monthly": 168206,
+				"weekly": 54087
+			},
+			"integrity": "sha512-GBcUsN9wff6jRDzAeomr+Q03YcEfZT9YzyujP0DKNQOoVB8njwOwiUNlUNZOC8p/e/JyN7+Xg8agAnUaC6KlLw==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 3,
+			"tier": 1,
+			"package": "pi-web-access",
+			"version": "0.13.0",
+			"downloads": {
+				"monthly": 135152,
+				"weekly": 32266
+			},
+			"integrity": "sha512-ny0bHisMWdobmu1hcMp/jqjaRh6pYrH7dctBK2CVyRF4ia7bP47RnOPYdG1yiks9ohtcanWir5Hl9EFap8h0zQ==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 4,
+			"tier": 1,
+			"package": "pi-subagents",
+			"version": "0.36.0",
+			"downloads": {
+				"monthly": 128039,
+				"weekly": 41552
+			},
+			"integrity": "sha512-sW42zSqlMZvvgrbKj0MIksyKkBnsFnzN9Bnibipt0SyCngjx7BQj2GKGjD0wIggRu050u7wxrrzbKvLaikSA5Q==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 5,
+			"tier": 1,
+			"package": "context-mode",
+			"version": "1.0.169",
+			"downloads": {
+				"monthly": 94771,
+				"weekly": 17046
+			},
+			"integrity": "sha512-94JIaFuLjF9SO2BsGTrbGtyT44K95+9OC8BdbaL/UT76xOkanJLfUR5CzmNw+GELXZQqH4nBrKg9wjBnSFkVnQ==",
+			"extensions": [
+				"./build/adapters/pi/extension.js"
+			]
+		},
+		{
+			"rank": 6,
+			"tier": 1,
+			"package": "@tintinweb/pi-subagents",
+			"version": "0.14.3",
+			"downloads": {
+				"monthly": 43612,
+				"weekly": 11813
+			},
+			"integrity": "sha512-iDqeadh6114AZvw8HYe1PEq8M0MZ9czJKTAIsklCPUbV9vUMS+g/LAV0vW3O9PiBXKNJh8hkrY8L6iIr8XNEqA==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 7,
+			"tier": 1,
+			"package": "@remnic/plugin-pi",
+			"version": "9.24.0",
+			"downloads": {
+				"monthly": 40857,
+				"weekly": 7398
+			},
+			"integrity": "sha512-Vrl3K6sUFb8GYRyLphAoKCUAbPwkgQT6ECcMzeVdgOTAq/cUCaLcPo4x3KMKGh1v9yClaHsyXTXxEy5goETKgA==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 8,
+			"tier": 1,
+			"package": "pi-lens",
+			"version": "3.8.71",
+			"downloads": {
+				"monthly": 36211,
+				"weekly": 9019
+			},
+			"integrity": "sha512-GO9ctoWGpm71CnVbmHHorPHUwhwTUL0yy7TjA2415sWenhJGfbhF49zM9wVCQvW7fef9ufNjX/oErX4vE9LGyQ==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 9,
+			"tier": 1,
+			"package": "@dietrichgebert/ponytail",
+			"version": "4.8.4",
+			"downloads": {
+				"monthly": 33153,
+				"weekly": 9068
+			},
+			"integrity": "sha512-MALDTmDxKa2SJ8zKVekuOwWvo6+PvypNf5xeV2AtLO5OBtkt1U7DLWOeUbb9Th3H9lV80EkWoRI05yK0/dnekA==",
+			"extensions": [
+				"./pi-extension/index.js"
+			]
+		},
+		{
+			"rank": 10,
+			"tier": 1,
+			"package": "@plannotator/pi-extension",
+			"version": "0.24.2",
+			"downloads": {
+				"monthly": 31691,
+				"weekly": 9262
+			},
+			"integrity": "sha512-lKPUoHYyqM3pgVoF+CToDxyYFWJ8Qu4LTXeR/JZi2VsqGu0awj+gBxZT4d5IkGweTm/06FsAs3kGPuvhB1+QXw==",
+			"extensions": [
+				"./"
+			]
+		},
+		{
+			"rank": 11,
+			"tier": 1,
+			"package": "@gotgenes/pi-permission-system",
+			"version": "23.0.0",
+			"downloads": {
+				"monthly": 29330,
+				"weekly": 8161
+			},
+			"integrity": "sha512-eWl7nsCCuH4blSCwqddBnTACIEyFW0HYeYqgX6UsQ7fI6R0FyCxgrd/8KpxW/Z2SzN0QcihCKlh98Pz+lhoXuQ==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 12,
+			"tier": 1,
+			"package": "@quintinshaw/pi-dynamic-workflows",
+			"version": "3.4.1",
+			"downloads": {
+				"monthly": 28554,
+				"weekly": 8605
+			},
+			"integrity": "sha512-oGvpEkqoG4MQ5HQsQ6zG+DuPmX3Z+AY+Fxx5qN7lqEQNl7Vvq3EU7jTRRJoeyTFPZNOsornqaqnUeGecpHEQoQ==",
+			"extensions": [
+				"extensions/workflow.ts"
+			]
+		},
+		{
+			"rank": 13,
+			"tier": 1,
+			"package": "@juicesharp/rpiv-ask-user-question",
+			"version": "2.1.0",
+			"downloads": {
+				"monthly": 26370,
+				"weekly": 11668
+			},
+			"integrity": "sha512-YU/ErypXm24MFkV15MVkb4cUnZ6ujshfY0Cu2dxQROM/rrKd1j77bXp3HOXNyOrK0tz6iC0qzDfK4Ir0vvjK3w==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 14,
+			"tier": 1,
+			"package": "@ff-labs/pi-fff",
+			"version": "0.10.1",
+			"downloads": {
+				"monthly": 25553,
+				"weekly": 9222
+			},
+			"integrity": "sha512-yLVSn/vIscEAgX9BM7gxOY/VtITJmMpxWhGTTFBYQj2Sos7RpWJ/X4+eWHS5p813rNr7gm8HP/U3cMxssXmD4Q==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 15,
+			"tier": 1,
+			"package": "pi-simplify",
+			"version": "0.2.3",
+			"downloads": {
+				"monthly": 24659,
+				"weekly": 6623
+			},
+			"integrity": "sha512-9dxsXiGmO7DmjguC4Bk/lu7IYlYt0x1m2VneUpIGSQspx4BtshBgt+Vb8xvoxXc/Ugif7/sdwcbf7TgULqiSHg==",
+			"extensions": [
+				"dist/index.js"
+			]
+		},
+		{
+			"rank": 16,
+			"tier": 1,
+			"package": "@juicesharp/rpiv-todo",
+			"version": "2.1.0",
+			"downloads": {
+				"monthly": 22437,
+				"weekly": 9662
+			},
+			"integrity": "sha512-xzj7iUcCbl2Ea6vufjgFApk1W7FSPDQm1Mxzfgmig+VjO1Uw3NGdRx53/IaYynH9gQPX6QMhpo5JGSzuE7OF3A==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 17,
+			"tier": 1,
+			"package": "@mjasnikovs/pi-task",
+			"version": "0.20.0",
+			"downloads": {
+				"monthly": 22206,
+				"weekly": 5960
+			},
+			"integrity": "sha512-P1pRmF0d50GN6wsazPYx4th8QO4WYE920470YcAwF+/jCjoAT4pg13R6KlRKifemy7UNvI/G4K9x55bFK4IFBA==",
+			"extensions": [
+				"dist/index.js"
+			]
+		},
+		{
+			"rank": 18,
+			"tier": 1,
+			"package": "@raindrop-ai/pi-agent",
+			"version": "0.1.0",
+			"downloads": {
+				"monthly": 20138,
+				"weekly": 5745
+			},
+			"integrity": "sha512-whWwTnzDruRvzGdLun2PprNqoVRNaaa5/yOQKQtKpTO4Ye+ycCpL3HI9jAhGMXSsCqEXLoWiUFHrgtB4WWbhNw==",
+			"extensions": [
+				"./dist/extension.js"
+			]
+		},
+		{
+			"rank": 19,
+			"tier": 1,
+			"package": "@narumitw/pi-goal",
+			"version": "0.31.0",
+			"downloads": {
+				"monthly": 18113,
+				"weekly": 5973
+			},
+			"integrity": "sha512-mI6sklxt+6OYwPqKDy2lAD1ZWt7bGb6gQJK9n2VlztQrb7t1xFSss/HMQRQzuMPwm60rApXkZX/uP/0F6GUC7w==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 20,
+			"tier": 1,
+			"package": "pi-hermes-memory",
+			"version": "0.8.2",
+			"downloads": {
+				"monthly": 17349,
+				"weekly": 4786
+			},
+			"integrity": "sha512-kE3kV1+hEPsguGdhhuIinaM9FeMlen/QbAQ8qW+Wgiu+tAvGNIyBsGF9Mu3wH64fhn0Qat+wLCT46vCr0EnkcA==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 21,
+			"tier": 1,
+			"package": "gentle-pi",
+			"version": "1.2.0",
+			"downloads": {
+				"monthly": 16111,
+				"weekly": 2973
+			},
+			"integrity": "sha512-N92eg6TVB/bfsa9cUHPCj5SxBwdaQ5brJsxQel2Y+NUL5yL1sLrYtL99FwsxX1KhguQ6UvvpTslx69a55NEvxg==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 22,
+			"tier": 1,
+			"package": "pi-fabric",
+			"version": "0.28.1",
+			"downloads": {
+				"monthly": 15815,
+				"weekly": 10176
+			},
+			"integrity": "sha512-SF4nRv9gq4onVLmXPEGCJ0slTO+Nhic+9m0sdPx1d5B0v5BafkTIcbdZiyC0/8lUsXZpcZyh2VYvad/8PpMDog==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 23,
+			"tier": 1,
+			"package": "@hypabolic/pi-hypa",
+			"version": "0.1.11",
+			"downloads": {
+				"monthly": 14516,
+				"weekly": 3012
+			},
+			"integrity": "sha512-EWe38nzQH+Jw6AsgnN2Cgy2wmo19JYsAaDgcegm6OQBOv9mwtpIvTjhW9PBHTFQ6+v2XYJgUiHQinnJJcllCXw==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 24,
+			"tier": 1,
+			"package": "pi-readseek",
+			"version": "0.8.9",
+			"downloads": {
+				"monthly": 13706,
+				"weekly": 4999
+			},
+			"integrity": "sha512-LDIGYv2oWJq7QJCng5HP3qSJ9ThjO/7LffeIOYCdzYt3oVNTeCLlXIwB7DGoV7vnv2x4gzmc3mHxDuzy5xGKVg==",
+			"extensions": [
+				"./dist/index.ts"
+			]
+		},
+		{
+			"rank": 25,
+			"tier": 1,
+			"package": "@braintrust/pi-extension",
+			"version": "0.10.0",
+			"downloads": {
+				"monthly": 13601,
+				"weekly": 4911
+			},
+			"integrity": "sha512-2+ofAO/9SZ2aHrsFVs8mxozTwG4bZUY4ONd76WFlo/gnT+sXNSu3xqXc3C9COH6WyBIthfGJdq51cNriG/cFjw==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 26,
+			"tier": 1,
+			"package": "pi-prompt-template-model",
+			"version": "0.10.0",
+			"downloads": {
+				"monthly": 13041,
+				"weekly": 3323
+			},
+			"integrity": "sha512-d8UovT5eTSR9B4/J9Tmh4skqjm8gDiagXzyymCciSXtGuzkbxWKiNPIucaA0Un4wgWe4EnNnp+jzA9NF8fG6LQ==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 27,
+			"tier": 1,
+			"package": "pi-agent-browser-native",
+			"version": "0.2.72",
+			"downloads": {
+				"monthly": 12999,
+				"weekly": 4108
+			},
+			"integrity": "sha512-p3uLyFD0RUYbVJII/URooQxRozmKxQdJdVkkIyzHgF/biXcuH9QRzYCXifSjkW3AGX6NVcMDTMjwdA6Y9/xtkw==",
+			"extensions": [
+				"./dist/extensions/agent-browser/index.js"
+			]
+		},
+		{
+			"rank": 28,
+			"tier": 1,
+			"package": "pi-deepseek-search",
+			"version": "1.0.15",
+			"downloads": {
+				"monthly": 11880,
+				"weekly": 1947
+			},
+			"integrity": "sha512-3qwsIs88Va9DXygXNEJ4gPmhWLcAgye+egWiIR85NOxDWFZIG3kdkQthR6VXDA/pWG8nnF2AbU9WL4SQr4IWgg==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 29,
+			"tier": 1,
+			"package": "pi-intercom",
+			"version": "0.6.0",
+			"downloads": {
+				"monthly": 11678,
+				"weekly": 2599
+			},
+			"integrity": "sha512-OFPh/DXfPhUUSDLTRJiFPEvw00fOA/spjsxUcXiuCHvb2ZkRL02G8Q91mTd+3d42A9AK8BSmbD0+8imFPuHGoQ==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 30,
+			"tier": 1,
+			"package": "pi-crew",
+			"version": "0.9.50",
+			"downloads": {
+				"monthly": 11556,
+				"weekly": 1812
+			},
+			"integrity": "sha512-cxV/k473Nev5vAbTAzLKzxH7afr4eOavmft2CROY19wrJZveELPM65DIcBb99t7yExsgaEAf8oU01sqlULghUA==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 31,
+			"tier": 1,
+			"package": "@narumitw/pi-lsp",
+			"version": "0.31.0",
+			"downloads": {
+				"monthly": 11432,
+				"weekly": 3714
+			},
+			"integrity": "sha512-XurK0QWHSv53m+reyryMqbn0wY6S/NNDQuRWXmwn9MEIUjeE3eCdCcwwDBxh4vtwaH+2n7OCAv4RshV0T0OBRw==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 32,
+			"tier": 1,
+			"package": "pi-vault-mind",
+			"version": "0.16.25",
+			"downloads": {
+				"monthly": 11173,
+				"weekly": 4115
+			},
+			"integrity": "sha512-bpj5h3EpgIKJcRqObHxsG0fSAYWGNy4vd2OpDcVVsq00IZOcqqIFTst6UIx6VOB1xZvqkuMCCQgKiXt2R9haXA==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 33,
+			"tier": 1,
+			"package": "@ollama/pi-web-search",
+			"version": "0.0.5",
+			"downloads": {
+				"monthly": 10765,
+				"weekly": 2251
+			},
+			"integrity": "sha512-qz6T31cccn5vg/+BeEwEylYpDU2hdrVGKhUzi4m7FZv5z9RTqF1HUQ8p4kHXhd0aYjd8TMcZvonjwnpTHPnYsQ==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 34,
+			"tier": 1,
+			"package": "pi-memory",
+			"version": "0.4.0",
+			"downloads": {
+				"monthly": 10633,
+				"weekly": 5205
+			},
+			"integrity": "sha512-5cPwK9BsW6jEBg0xoVscTWsxo40drrUqpA0la32XmkPhBhngVjD5nAqxMTUkdnGb6SDXIsKxd1+pYSaSAmLWhg==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 35,
+			"tier": 1,
+			"package": "pi-landstrip",
+			"version": "0.17.35",
+			"downloads": {
+				"monthly": 10603,
+				"weekly": 3571
+			},
+			"integrity": "sha512-ayMxLS+3dkCFyoa4VtUGr5lKTzRXBRbPLyWV0ufGzYSPLL+lbNLsK0gFiZHOjNdkMsDFXj3qg6Jm6h6oqJ45nQ==",
+			"extensions": [
+				"./dist/index.ts"
+			]
+		},
+		{
+			"rank": 36,
+			"tier": 1,
+			"package": "superpowers-zh",
+			"version": "1.7.1",
+			"downloads": {
+				"monthly": 10497,
+				"weekly": 2334
+			},
+			"integrity": "sha512-x/AKVSXybhvgBEbNVBdn1IsqBKWNl2wVJ1NiiJ5gX7y1M5rJoTnSocJmw7a67xiqgCi4E5Z2qArSVTCZKkODLA==",
+			"extensions": [
+				"./.pi/extensions/superpowers.ts"
+			]
+		},
+		{
+			"rank": 37,
+			"tier": 1,
+			"package": "opencode-codebase-index",
+			"version": "0.16.0",
+			"downloads": {
+				"monthly": 10461,
+				"weekly": 2661
+			},
+			"integrity": "sha512-2gZJGRqk67eke/vk/x+k28dWPosdOoYftdaCsMvmyQb+C0GQxa3gomyl9TYRv99Tq7pXiEFsOS9SpMk2Bp7RDg==",
+			"extensions": [
+				"./dist/pi-extension.js"
+			]
+		},
+		{
+			"rank": 38,
+			"tier": 1,
+			"package": "open-zk-kb",
+			"version": "1.4.2",
+			"downloads": {
+				"monthly": 10014,
+				"weekly": 6030
+			},
+			"integrity": "sha512-dHcmfHJL7BHZAp651azwqr5JvDdSMuTA7DRmLTb7yS0upSl/AZ3Pqq3uFD4HCnsfcH1UAk9HAl5gegoaUCiMpQ==",
+			"extensions": [
+				"./dist/pi/extension.js"
+			]
+		},
+		{
+			"rank": 39,
+			"tier": 1,
+			"package": "pi-llama-cpp",
+			"version": "0.9.1",
+			"downloads": {
+				"monthly": 9895,
+				"weekly": 2553
+			},
+			"integrity": "sha512-iDOuYsS2EyGwGSGdv0gW37zg+xnChvZm6Msd5NAQg+eP/kJXv7sK0AEV6suDgIrUbMmP+uSxSUcWZeI6V9/flA==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 40,
+			"tier": 1,
+			"package": "@pi-stef/atlassian",
+			"version": "0.4.1",
+			"downloads": {
+				"monthly": 9869,
+				"weekly": 1516
+			},
+			"integrity": "sha512-eaAuj1oO1nOyceIsAZYKTk4RSv124rnDnjiT/aVVPSVdeQSBKvuICeax1QTffr+uu/lCtg62j8JBm1G3rdju8Q==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 41,
+			"tier": 1,
+			"package": "@llblab/pi-telegram",
+			"version": "0.24.10",
+			"downloads": {
+				"monthly": 9796,
+				"weekly": 2799
+			},
+			"integrity": "sha512-87kBRyljkq3/Zi8vQSfx0A3VOa+v1YTaqRfHZRjh86XsRmoZLWSgf2OQWAMONSz6huVq408m7GULboHc4D4glg==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 42,
+			"tier": 1,
+			"package": "pi-hashline-edit-pro",
+			"version": "0.17.9",
+			"downloads": {
+				"monthly": 9620,
+				"weekly": 2741
+			},
+			"integrity": "sha512-7l8xnzP6zEamTIsF86nGed7TfRbrj5CM7JH10GeTNvcabh0bRmSywsV3J6qSyQdWgtscv37lrjkaD+iqOacPSg==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 43,
+			"tier": 1,
+			"package": "pi-cursor-sdk",
+			"version": "0.1.61",
+			"downloads": {
+				"monthly": 9356,
+				"weekly": 2364
+			},
+			"integrity": "sha512-A8D3BXeAtckPAz/BmvL6tTZ3Ipu+PZPLJXvX3x+iu6MifGHoGw5G9EI1tnuQuHHbcsDxBi+XNxlzi9CcCnBJYA==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 44,
+			"tier": 1,
+			"package": "@alexanderfortin/pi-deepseek-usage",
+			"version": "0.3.12",
+			"downloads": {
+				"monthly": 9266,
+				"weekly": 1802
+			},
+			"integrity": "sha512-9GyVBT3aQV+uukBW/0Q7p9fT59hpuOUATdMrkwA+NSPvWN1e4nXjeytEtxotfBQf40T2a7AJJ+esOYA0O6gVaw==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 45,
+			"tier": 1,
+			"package": "@narumitw/pi-plan-mode",
+			"version": "0.31.0",
+			"downloads": {
+				"monthly": 9265,
+				"weekly": 3039
+			},
+			"integrity": "sha512-si1m+6A+afX70q0Iq0xFV7AeGtfgu5hhdwAViVVxGDlP2sSIOnSr83T/xnJPBfOMfNqFKpgtacV8fk4DEpaS9g==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 46,
+			"tier": 1,
+			"package": "pi-rtk-optimizer",
+			"version": "0.9.0",
+			"downloads": {
+				"monthly": 9232,
+				"weekly": 3109
+			},
+			"integrity": "sha512-yj5DEdutRco5WvYEMEO0krZJP5Z6CpuNZoxlXSGmHEi2srB5Gao1xah/RnmVDn2se1FcqlmtS8+K/nzzkq0Pug==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 47,
+			"tier": 1,
+			"package": "pi-lean-ctx",
+			"version": "3.9.12",
+			"downloads": {
+				"monthly": 9143,
+				"weekly": 1341
+			},
+			"integrity": "sha512-0HNUXhlPUUwUr3oAqkI3q29DUbwpPR1+Hz+7xSdlUP+1686CI4J/u13R80F6yXcHiFF5Pj7JADDrUIAvMf7siQ==",
+			"extensions": [
+				"./extensions/index.ts"
+			]
+		},
+		{
+			"rank": 48,
+			"tier": 1,
+			"package": "cc-safety-net",
+			"version": "1.0.6",
+			"downloads": {
+				"monthly": 8754,
+				"weekly": 1635
+			},
+			"integrity": "sha512-uc2EmRXPXb08cfN1eGnr+h3tWHqxA20fJGZoGBgW6wFl+Nubmmy6jug18vc7WrOW7dGBMPxz4VuU8srfjHtWlw==",
+			"extensions": [
+				"./dist/pi/index.js"
+			]
+		},
+		{
+			"rank": 49,
+			"tier": 1,
+			"package": "pi-ask-user",
+			"version": "0.13.0",
+			"downloads": {
+				"monthly": 8236,
+				"weekly": 1911
+			},
+			"integrity": "sha512-A8IpRX240T4EJryp1n/O/FVUXl/EGQpngq075hL4xerLUoejic/gIIwBz79lQEKwNE5/ZY5BPtgqQPv7Jx5Zzg==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 50,
+			"tier": 1,
+			"package": "pi-powerline-footer",
+			"version": "0.7.0",
+			"downloads": {
+				"monthly": 8152,
+				"weekly": 2282
+			},
+			"integrity": "sha512-zzTq8LG/uCIeOevPjQFjn9c7wvaWWujaya0zzFHoUqXwW7iLvDTqblTKe5TowOfA/LPJT7HFUhaUggAddjJkMQ==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 51,
+			"tier": 2,
+			"package": "pi-provider-litellm",
+			"version": "2.0.1",
+			"downloads": {
+				"monthly": 7915,
+				"weekly": 2932
+			},
+			"integrity": "sha512-Kle6iLDTReTScYP9knYa2aRCTqEXMw5HDYejE7EZKC8lc/PsgwHOVhq9CLpSSE6aWq4lj3UZDUpwsKxsMbNraA==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 52,
+			"tier": 2,
+			"package": "pi-btw",
+			"version": "0.4.1",
+			"downloads": {
+				"monthly": 7858,
+				"weekly": 1818
+			},
+			"integrity": "sha512-8W5O0Z4yD/teGszo1d5uk8xSQiPQTa+SI0FKv0V3ENggzGzFfL3wze8RTNUDTzN1eRtBhKRoTFgae86ddvy47g==",
+			"extensions": [
+				"./extensions/btw.ts"
+			]
+		},
+		{
+			"rank": 53,
+			"tier": 2,
+			"package": "pi-goosedump",
+			"version": "0.12.4",
+			"downloads": {
+				"monthly": 7675,
+				"weekly": 3581
+			},
+			"integrity": "sha512-Z5xBcSV4aoTwY6gpjiahyHJWSLMtk7pBWhwEgLUfJUoE+0zBn7ujlW6EftOB1PIb5AoDrsam9VrD+oUcsxwuPg==",
+			"extensions": [
+				"./dist/index.ts"
+			]
+		},
+		{
+			"rank": 54,
+			"tier": 2,
+			"package": "@howaboua/pi-codex-conversion",
+			"version": "2.2.19",
+			"downloads": {
+				"monthly": 7620,
+				"weekly": 2254
+			},
+			"integrity": "sha512-Bux/tSLj6awoMpERZ4Ga1Enc2Ayj7wavZeQkPDy0uj7yiCqEgyFgl66EPZWANHpATX7YRTmFGOyHIU2VRQjYig==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 55,
+			"tier": 2,
+			"package": "gentle-engram",
+			"version": "0.1.10",
+			"downloads": {
+				"monthly": 7545,
+				"weekly": 1294
+			},
+			"integrity": "sha512-j30QKNX9j0qIE6oOGky9u8konaJKANxE6x3FroNjoMdRq86FdPOtrRzfrTF1QVMK/y2byf3d7NQ+050y13t9GQ==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 56,
+			"tier": 2,
+			"package": "pi-shazam",
+			"version": "0.30.0",
+			"downloads": {
+				"monthly": 7493,
+				"weekly": 539
+			},
+			"integrity": "sha512-yPQ//P5LSdru1qyq2iqx1M+nXgogqIPhlKw0WAI+BauNgDcLp6j7MzYq/FUmFrW2HTZNqMKFmkHeKaACixwW3w==",
+			"extensions": [
+				"./dist"
+			]
+		},
+		{
+			"rank": 57,
+			"tier": 2,
+			"package": "pi-codex-goal",
+			"version": "0.1.38",
+			"downloads": {
+				"monthly": 7437,
+				"weekly": 1963
+			},
+			"integrity": "sha512-ibXFriNs9xUxkMdNKA5BBk9hXLUPnZzpzJUBe6FUHvu6sfT2SwhJpJRAzbJXEVogRqwous++mhR6AaTsZbBnFA==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 58,
+			"tier": 2,
+			"package": "@runfusion/fusion",
+			"version": "0.73.0",
+			"downloads": {
+				"monthly": 7425,
+				"weekly": 2639
+			},
+			"integrity": "sha512-5H2c6M0FmD5PTDvPzWvuj4qhZNHMgR5EoH0039qr/3HKqkFEX9kc5wFb0w8rCus3Mpa7Fdg0C73/Us2prrmI5g==",
+			"extensions": [
+				"./dist/extension.js"
+			]
+		},
+		{
+			"rank": 59,
+			"tier": 2,
+			"package": "@ayulab/pi-rewind",
+			"version": "0.4.6",
+			"downloads": {
+				"monthly": 7207,
+				"weekly": 940
+			},
+			"integrity": "sha512-pRinWV6H7JV/+gPePwlI00Pb99KhTKXDzefwqPxVnF7QvzrYfe2KHgYJV7efYNI4yJEgbnJNHrNGZR/n3EAhBA==",
+			"extensions": [
+				"./index.js"
+			]
+		},
+		{
+			"rank": 60,
+			"tier": 2,
+			"package": "@preapexis/pi-kit",
+			"version": "2.3.8",
+			"downloads": {
+				"monthly": 7001,
+				"weekly": 929
+			},
+			"integrity": "sha512-uA2KvsCgIJ+kIKt77YhZwXimOrd+GSKFA1TCUztUe8WHHqlGzQhwMJtxuBBeUZ99fJGMJHUQhHDnmX9E/omu8A==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 61,
+			"tier": 2,
+			"package": "@adityaaria/spark",
+			"version": "6.5.0",
+			"downloads": {
+				"monthly": 6960,
+				"weekly": 1105
+			},
+			"integrity": "sha512-I2aGd0m18V1kuZj/fQXBdiLLnsnJ3pAyCNq7z/aMVWUaXqmJtRquKojP5AVa9U90bT1B+wqttGs3Qbhbfjcvpw==",
+			"extensions": [
+				"./.pi/extensions/spark.ts"
+			]
+		},
+		{
+			"rank": 62,
+			"tier": 2,
+			"package": "@juicesharp/rpiv-web-tools",
+			"version": "2.1.0",
+			"downloads": {
+				"monthly": 6959,
+				"weekly": 2817
+			},
+			"integrity": "sha512-QLEjAP0C2T1y5MV9Oxmalyb4LTJOLZanwoGsFYJzOQXxCvFGOfSNLFGPIZz1A1KKd4c5Jcsc6xYqIXGSEBy4Gw==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 63,
+			"tier": 2,
+			"package": "@firstpick/pi-package-webui",
+			"version": "0.7.5",
+			"downloads": {
+				"monthly": 6929,
+				"weekly": 1884
+			},
+			"integrity": "sha512-kn7KxaDC2MaishWpmO7MmoD96cIrRnblI9ajQdMtTMx046fx1xw02Dh81aGefOS5MG45BIf9ithAVPgH5XfCPA==",
+			"extensions": [
+				"./index.ts",
+				"node_modules/@firstpick/pi-extension-bang-command-autocomplete/index.ts",
+				"node_modules/@firstpick/pi-extension-fish-user-bash/index.ts",
+				"node_modules/@firstpick/pi-extension-btw/index.ts",
+				"node_modules/@firstpick/pi-extension-git-footer-status/index.ts",
+				"node_modules/@firstpick/pi-extension-release-aur/index.ts",
+				"node_modules/@firstpick/pi-extension-release-npm/index.ts",
+				"node_modules/@firstpick/pi-extension-workflows/index.ts",
+				"node_modules/@firstpick/pi-extension-safety-guard/index.ts",
+				"node_modules/@firstpick/pi-extension-setup-skills/index.ts",
+				"node_modules/@firstpick/pi-extension-stats/index.ts",
+				"node_modules/@firstpick/pi-extension-todo-progress/index.ts",
+				"node_modules/@firstpick/pi-extension-tools/index.ts",
+				"node_modules/@firstpick/pi-package-remote-webui/index.ts"
+			]
+		},
+		{
+			"rank": 64,
+			"tier": 2,
+			"package": "@juicesharp/rpiv-voice",
+			"version": "2.1.0",
+			"downloads": {
+				"monthly": 6845,
+				"weekly": 4519
+			},
+			"integrity": "sha512-eTpI5DMXFVPVmZp+CPY1BK5RQ1VJB58lT6d0Y7gt/DolTJx3n1icGKaQdu9W+T801oN57DdiCDV7UR4iZBO/jA==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 65,
+			"tier": 2,
+			"package": "@narumitw/pi-statusline",
+			"version": "0.31.0",
+			"downloads": {
+				"monthly": 6761,
+				"weekly": 2124
+			},
+			"integrity": "sha512-G1xqR4xOo1AeMdiDUYV/py1dTVkSPkmNA91J8yN9zDsi2Yy3vziMSoMYSr3U18dU3MqMJY7p9hYKK3CLTtJBug==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 66,
+			"tier": 2,
+			"package": "@narumitw/pi-codex-usage",
+			"version": "0.25.0",
+			"downloads": {
+				"monthly": 6696,
+				"weekly": 1473
+			},
+			"integrity": "sha512-Dz9FkI1Ir7r1obzgq7AkjJqxnTk0nWxOGy9LXQGoYhMa6pDaPcc8ZTkcwP10Sgda23av02a0M4KXKXwq2p/ptA==",
+			"extensions": [
+				"./src/codex-usage.ts"
+			]
+		},
+		{
+			"rank": 67,
+			"tier": 2,
+			"package": "pi-soly",
+			"version": "2.6.1",
+			"downloads": {
+				"monthly": 6538,
+				"weekly": 388
+			},
+			"integrity": "sha512-uGXf9Ic4A9fyr81hRwcQx+a0CqyAtwmJdcDdBFRe+L+BSxAaZptwF+/l/TQP8DpFznPMMhdQ6LjmIFw+BFLH7g==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 68,
+			"tier": 2,
+			"package": "@danypops/papyrus",
+			"version": "0.27.13",
+			"downloads": {
+				"monthly": 6511,
+				"weekly": 6511
+			},
+			"integrity": "sha512-iWjnhzms4nsEQTcanuHN6pbsbZXGlKmBDnJxjChNJwUDotrFNXBf4vdIRRogLReApghX7s4IuzZAbF7Xdd73Lw==",
+			"extensions": [
+				"extension/src/index.ts"
+			]
+		},
+		{
+			"rank": 69,
+			"tier": 2,
+			"package": "pi-mcp-extension",
+			"version": "1.5.0",
+			"downloads": {
+				"monthly": 6481,
+				"weekly": 2577
+			},
+			"integrity": "sha512-tfsgi8qSr3UUKMp4vS9/FwKv+Pn2U4T/rTlAwrZkEIvz616mFrU/Ryp3b69ZDfFdkQVVXriaQmZUj4vlZDV2Uw==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 70,
+			"tier": 2,
+			"package": "pire-browser",
+			"version": "0.2.35",
+			"downloads": {
+				"monthly": 6474,
+				"weekly": 243
+			},
+			"integrity": "sha512-cIOYXApT0lD6psz1YkkCeN2YnajXW00e4h/t07xrTgFSP0A5cGbEw/k4nFEDpK9/8DiVdMCqOftQ5d2k2NyFWQ==",
+			"extensions": [
+				"pi/extensions/pire-browser.ts"
+			]
+		},
+		{
+			"rank": 71,
+			"tier": 2,
+			"package": "atlas-vision-mcp",
+			"version": "1.2.0",
+			"downloads": {
+				"monthly": 6289,
+				"weekly": 495
+			},
+			"integrity": "sha512-CRe4kgpf9jVBBEG8ZdE8N4KVoljbsJthu+zefc68cG4aoMDdf+TT4fJjjz8wZjJSRMz+uXF4veuEf0uQTMyfpw==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 72,
+			"tier": 2,
+			"package": "@narumitw/pi-btw",
+			"version": "0.31.0",
+			"downloads": {
+				"monthly": 6235,
+				"weekly": 1611
+			},
+			"integrity": "sha512-nYaU4rRQZKNWhi7zQH+nbki6u8rFXFs45ec0t35sFCAq6Yhkcwf3D7SsvyIujMnhVfnIPcwIOWpTD0zWqjFHlw==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 73,
+			"tier": 2,
+			"package": "@eleboucher/pi-memini",
+			"version": "0.7.14",
+			"downloads": {
+				"monthly": 6202,
+				"weekly": 1404
+			},
+			"integrity": "sha512-zSy0ILoqA/vTpm8DEEsgBerIh+CD6SlW54sgE9pB0zNZAzN3qQDthYdIaU516Iw4tqPyIci6sVJw9NtUzrg5JA==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 74,
+			"tier": 2,
+			"package": "pine-of-glass",
+			"version": "0.8.5",
+			"downloads": {
+				"monthly": 6134,
+				"weekly": 1949
+			},
+			"integrity": "sha512-qUiT5Qjwr1GclOdOhkuLg2gXkYeSQ95pbxj0HDquRNHc0h6rwDcAoUS6jZc/RIM8AOCPDRA3P3YCw6bYSMvnTA==",
+			"extensions": [
+				"./extensions/pi-contextimate",
+				"./extensions/pi-traceline",
+				"./extensions/pi-cachemire",
+				"./extensions/pi-meantime"
+			]
+		},
+		{
+			"rank": 75,
+			"tier": 2,
+			"package": "@heyhuynhgiabuu/pi-pretty",
+			"version": "0.6.20",
+			"downloads": {
+				"monthly": 6127,
+				"weekly": 1652
+			},
+			"integrity": "sha512-kcxhU5NCeu67fPOUTDRFhuTP7di6tztcgqIDHTuCcT+YGH/YNUQnDpniqVkcsqPmm4jfEYbizVX2Z58avpeC2Q==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 76,
+			"tier": 2,
+			"package": "mitsupi",
+			"version": "1.6.0",
+			"downloads": {
+				"monthly": 6108,
+				"weekly": 2372
+			},
+			"integrity": "sha512-DIG4hF3k/tUFbwDKd1o+OZ7b2S9cjioVopZKp4sP/x7qh04J8nn0FtLuOCR/C8n+bUpRzyvpU41a1LH4zBmnLA==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 77,
+			"tier": 2,
+			"package": "pi-subagents-j0k3r",
+			"version": "1.4.1",
+			"downloads": {
+				"monthly": 5838,
+				"weekly": 795
+			},
+			"integrity": "sha512-pdjQSyHr1+yQmLibsv15tcz+1ezjwbp/dylVGwGjz8/90ZnIAyGwoLayJXS9hXPMXVRdReS2cjuA04l2lpAysw==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 78,
+			"tier": 2,
+			"package": "@juicesharp/rpiv-advisor",
+			"version": "2.1.0",
+			"downloads": {
+				"monthly": 5775,
+				"weekly": 2581
+			},
+			"integrity": "sha512-Uaa5ICTjWTESsWtFE6fZP2aqJPzYIafjEZfOhK8LgK9+WPoS273spHF0c/lq/PAzUrKhgSuTBtg8AsvIlnE64A==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 79,
+			"tier": 2,
+			"package": "@esso0428/pi-sidebar",
+			"version": "0.1.35",
+			"downloads": {
+				"monthly": 5773,
+				"weekly": 349
+			},
+			"integrity": "sha512-unGm0dPe6P+oORRnuBCJC7cTQtfgDbkOU5fxJ9e3xgXH7/Z+5n5NYONkamTyxyJCM7kY82DYktLihsUocX0PGg==",
+			"extensions": [
+				"./extensions/sidebar.ts"
+			]
+		},
+		{
+			"rank": 80,
+			"tier": 2,
+			"package": "@tmustier/pi-usage-extension",
+			"version": "0.9.4",
+			"downloads": {
+				"monthly": 5624,
+				"weekly": 2176
+			},
+			"integrity": "sha512-vdE7tPIFOio7gMvvZtJKFMalWs+qUchQ3cQxaDHbqxxwURMBe8nESDUuPgRK0dl/qBbtMA/P/qNrJvR0cOoJrQ==",
+			"extensions": [
+				"index.ts"
+			]
+		},
+		{
+			"rank": 81,
+			"tier": 2,
+			"package": "pi-interview",
+			"version": "0.8.7",
+			"downloads": {
+				"monthly": 5618,
+				"weekly": 2202
+			},
+			"integrity": "sha512-25Ti4JodqajFmoBBZ8E/45eIf6kdD0gPNcDY2Lw+JwclTdNo09TpCjIjPOHdMoMKzFk3oX0I7QjFScsiCiBdHA==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 82,
+			"tier": 2,
+			"package": "@gotgenes/pi-subagents",
+			"version": "18.1.2",
+			"downloads": {
+				"monthly": 5591,
+				"weekly": 1998
+			},
+			"integrity": "sha512-s/HhOcKxV6ysPI8mCxl/P99DcdmK6iCrgoiDB/0nMg1Rb7MGc7nomce4ukNDcduhn6/ZBYaNHT1u5Taqa3/kJw==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 83,
+			"tier": 2,
+			"package": "@cynos-ai/engineer",
+			"version": "0.27.0",
+			"downloads": {
+				"monthly": 5575,
+				"weekly": 904
+			},
+			"integrity": "sha512-8iIwx+zUGNty/epegCDZiChFX0xbPkgBLoAAIYPtl6pNSCRafG+K3Ss01zv4wnvotUIZ0LkAZ+EpqjoP60opdg==",
+			"extensions": [
+				"./index.js"
+			]
+		},
+		{
+			"rank": 84,
+			"tier": 2,
+			"package": "@odinlayer/pi-provider-litellm",
+			"version": "1.0.19",
+			"downloads": {
+				"monthly": 5557,
+				"weekly": 261
+			},
+			"integrity": "sha512-zPx05uJp3yh8J/lEy/EVHzTTWhufuBXHJYApE5oEUomJXO2nH1n2KKHi1UYOzEmZFMV+BhGGo0zPDIPuS/eQSA==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 85,
+			"tier": 2,
+			"package": "@juanibiapina/pi-extension-settings",
+			"version": "0.9.1",
+			"downloads": {
+				"monthly": 5540,
+				"weekly": 2057
+			},
+			"integrity": "sha512-CPt6zwYLxwwndrIsd4/IwZlm2SxWJIgmGL5a3b1paVl0Vm6TcppTn8LPA+AfoQPZZVoP6/VH/aiozqNWXdc7Mg==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 86,
+			"tier": 2,
+			"package": "pi-xai-oauth",
+			"version": "1.4.0",
+			"downloads": {
+				"monthly": 5509,
+				"weekly": 1520
+			},
+			"integrity": "sha512-VkvNeSSq77Xn/iBS+9XwP3+YyKSLNye5QXBE2O2o3LhmphOrD0vuI6aq2diXHVDSOMzUpQ2W8duHBeUoZCLAzA==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 87,
+			"tier": 2,
+			"package": "pi-zentui",
+			"version": "0.12.0",
+			"downloads": {
+				"monthly": 5473,
+				"weekly": 1374
+			},
+			"integrity": "sha512-WGaGAPHSNgYF+F/+TumKl0xnLrbDB98L7naLFGpZpROJh3AHecy0Os724LaQS68tpUEzG2ClruarV0NoYNvW4g==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 88,
+			"tier": 2,
+			"package": "pi-experiences",
+			"version": "0.1.49",
+			"downloads": {
+				"monthly": 5467,
+				"weekly": 1089
+			},
+			"integrity": "sha512-gmwgTtpVh2DF27u4EWwfSwHYLFFvIUoYJJF0nfHXIyQIcdzcac2ejjs3zz0s/wQ/XXJdTgFICxVq6siDn7L95w==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 89,
+			"tier": 2,
+			"package": "@amaster.ai/pi-image-gen",
+			"version": "0.1.6",
+			"downloads": {
+				"monthly": 5456,
+				"weekly": 1865
+			},
+			"integrity": "sha512-9sBaf0U9LuxCB7tw1TbGp58UALcQzb61Q96F8cFyA6RePzhaD6W9zZ8LeeRWSBXBSUvw5DPZa+9dJU9YNunt7A==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 90,
+			"tier": 2,
+			"package": "@orangekame3/pi-qdash",
+			"version": "0.16.0",
+			"downloads": {
+				"monthly": 5307,
+				"weekly": 396
+			},
+			"integrity": "sha512-YEmVcWbYybVGL+XV/QWGlu9A+coaB6sbw1itDCbeVak6D32RxrrEnad/pJQiD74+5Gkdtmf56tBUchiW5S5n1g==",
+			"extensions": [
+				"./extensions/qdash.ts"
+			]
+		},
+		{
+			"rank": 91,
+			"tier": 2,
+			"package": "@narumitw/pi-chrome-devtools",
+			"version": "0.31.0",
+			"downloads": {
+				"monthly": 5296,
+				"weekly": 1012
+			},
+			"integrity": "sha512-48RS2os+3JTdFPs8UC/49RatkHwfyovKkV4E4AjuZHSCm7OqqODMOs+WwOOEI3KK4DvnHsQ4MnlHW12c1/7o/A==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 92,
+			"tier": 2,
+			"package": "pi-sandbox",
+			"version": "0.6.1",
+			"downloads": {
+				"monthly": 5271,
+				"weekly": 2595
+			},
+			"integrity": "sha512-R0rTx37K51bhsv86Krtl3iSxpoFrFIs5fZwzFGzhOeERHWVVkl19FzMLJfzT5s1BXNd8ZSeojOqVbtEGjAzvOg==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 93,
+			"tier": 2,
+			"package": "pi-goal-list-loop-audit",
+			"version": "0.24.5",
+			"downloads": {
+				"monthly": 5163,
+				"weekly": 5163
+			},
+			"integrity": "sha512-4zDXvGi30CYQ4l9M3FjJrSFqP4X6bMFTtGh8Pn04YOuCyF/p2dOMrS8L85o1wq6mJBubdNF0jgzx3c6MEqEbDA==",
+			"extensions": [
+				"extensions/loops/goal.ts"
+			]
+		},
+		{
+			"rank": 94,
+			"tier": 2,
+			"package": "abmind",
+			"version": "0.3.0",
+			"downloads": {
+				"monthly": 5155,
+				"weekly": 488
+			},
+			"integrity": "sha512-bF36ynEyCgka7T/dvVhLZemDomKESiWfhGEmidWmIWy5abR52ETgNAkonZerDWtYQOTXG0v/oJyjyG8Pxdff7g==",
+			"extensions": [
+				"./dist/src/pi-plugin/index.js"
+			]
+		},
+		{
+			"rank": 95,
+			"tier": 2,
+			"package": "pi-multica-spine",
+			"version": "0.12.7",
+			"downloads": {
+				"monthly": 5134,
+				"weekly": 4084
+			},
+			"integrity": "sha512-kS+osvhvSh/B8oYdtEEiQLGEiJVHLklNT6ZREqgnLdU9AnXkELg3NF9fNz3HBsxHRJ4mU186v8LZERslHNCxXQ==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 96,
+			"tier": 2,
+			"package": "@narumitw/pi-retry",
+			"version": "0.31.0",
+			"downloads": {
+				"monthly": 5069,
+				"weekly": 1206
+			},
+			"integrity": "sha512-bEiuLuJWVfHZ6c+qj9xyOsYFM8/qB7SCMcT10BoMeMOzVUqKbyWc3jxt37oi+9/PHvszz1XxrqrxRE5UZz8SIA==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 97,
+			"tier": 2,
+			"package": "@zhachory1/mewrite-markdown-preview",
+			"version": "1.2.1",
+			"downloads": {
+				"monthly": 5063,
+				"weekly": 802
+			},
+			"integrity": "sha512-g5qbmvoV2mKJMEPti4pYGzi78cyXYWe5sf3j9tNPH1pIIA3rBw7yg9zv6x1UmN0Mt+XFiNomamolFd1kfI9rbQ==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 98,
+			"tier": 2,
+			"package": "pi-markdown-preview",
+			"version": "0.10.1",
+			"downloads": {
+				"monthly": 5038,
+				"weekly": 1890
+			},
+			"integrity": "sha512-mrVNSWTjp3/+QRFyH0LMPADiqzbOroevhmBoWe/mrGP2DAcUxkAVTp1w3MIruJC1Av2EqAsMvYj/fMYa+RsoVw==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 99,
+			"tier": 2,
+			"package": "pi-spine",
+			"version": "2.12.0",
+			"downloads": {
+				"monthly": 5032,
+				"weekly": 1028
+			},
+			"integrity": "sha512-O1vQHR54ZnJLvqrm/zHs1QsaIZrGrPdeSTDqLAWbjmtzlK0qWlp4eUL+jSldJ9ZyZ47e+iDUBBJe7dKvbc9DkQ==",
+			"extensions": [
+				"./extensions/spine-orchestrator.ts"
+			]
+		},
+		{
+			"rank": 100,
+			"tier": 2,
+			"package": "@shanepadgett/tau-agent",
+			"version": "0.26.0",
+			"downloads": {
+				"monthly": 4942,
+				"weekly": 2136
+			},
+			"integrity": "sha512-OwK7Hka/Uevj9Bo1KSy3+Jbe+bzzqNvGpUHp7dtTax25hPGmvRe2gPYodbPqdGwkV23IA++sZsHrK7FMlSdTTA==",
+			"extensions": [
+				"./extensions/*/index.ts"
+			]
+		},
+		{
+			"rank": 101,
+			"tier": 3,
+			"package": "@bacnh85/pi-plan",
+			"version": "0.8.0",
+			"downloads": {
+				"monthly": 4924,
+				"weekly": 1478
+			},
+			"integrity": "sha512-KSfvqdM0KceNuBsUeRhxB0FdMdAXJZvkc0CI52camyzoAGVzgqG5eBTPAn7piihDF2B8lNkhDd65wNiHpYb1nw==",
+			"extensions": [
+				"./extensions/index.ts"
+			]
+		},
+		{
+			"rank": 102,
+			"tier": 3,
+			"package": "@zephyrdeng/pi-review",
+			"version": "0.11.0",
+			"downloads": {
+				"monthly": 4910,
+				"weekly": 543
+			},
+			"integrity": "sha512-BwNQEvBD/GVSLpslX5IS17i3DBpJgsO9RbPopgkvbneUiWYOBpQ5fkQuAVNGYNpjKAtofOwM6cSdH06yiNWk1g==",
+			"extensions": [
+				"./extensions/review.ts"
+			]
+		},
+		{
+			"rank": 103,
+			"tier": 3,
+			"package": "@bacnh85/pi-serena",
+			"version": "0.9.2",
+			"downloads": {
+				"monthly": 4887,
+				"weekly": 291
+			},
+			"integrity": "sha512-F/irBEAnZ6WxuNz+EBb4/6Ke1O8BOzC/mn5cBD0RKJ6/kiGZN7jQWW4TFOf50bZI7nt1TIjXwyc2rmqWwaF/bA==",
+			"extensions": [
+				"./extensions/index.ts"
+			]
+		},
+		{
+			"rank": 104,
+			"tier": 3,
+			"package": "pi-autopilot",
+			"version": "1.2.0",
+			"downloads": {
+				"monthly": 4863,
+				"weekly": 346
+			},
+			"integrity": "sha512-1mbCKc9Pp2YYfeyI1p+zJEJeQTKTLryavCFqT57cPAehQ4zjDLn6C1m8MnmcuDfpvUJEGqf/0WUOuh6BbK7Feg==",
+			"extensions": [
+				"./extensions/autopilot.ts"
+			]
+		},
+		{
+			"rank": 105,
+			"tier": 3,
+			"package": "betterwright",
+			"version": "1.5.0",
+			"downloads": {
+				"monthly": 4854,
+				"weekly": 4241
+			},
+			"integrity": "sha512-Gv78q4GW2XkZHJC/YRGdiCZbubEGzc9qQCP7EaIuOu1P4lrCA8SEw7qKlnRrG3wT9ShAwRH8FvstPqbrqeZnfA==",
+			"extensions": [
+				"./dist/src/pi-extension.js"
+			]
+		},
+		{
+			"rank": 106,
+			"tier": 3,
+			"package": "pi-taskflow",
+			"version": "0.2.4",
+			"downloads": {
+				"monthly": 4808,
+				"weekly": 748
+			},
+			"integrity": "sha512-961P0Pk9OFX9vkqcZY9s7WTEZSNcoF26qGHw7zFAfFFH8VbA4DwQUn8sEAf4kmi+JhA2/iCikRtdFC4W5uhl8Q==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 107,
+			"tier": 3,
+			"package": "pi-pr-review",
+			"version": "1.11.3",
+			"downloads": {
+				"monthly": 4756,
+				"weekly": 655
+			},
+			"integrity": "sha512-4QIAJLYKpjZxwyow3L7/bDpMTVrReCF5GvkyeJyCkoQRB50kI8SN2ZfOQS2+IzdxtQk63Ckq3meIsnwsnOCHMg==",
+			"extensions": [
+				"./extensions/index.ts"
+			]
+		},
+		{
+			"rank": 108,
+			"tier": 3,
+			"package": "@narumitw/pi-subagents",
+			"version": "0.31.0",
+			"downloads": {
+				"monthly": 4726,
+				"weekly": 1356
+			},
+			"integrity": "sha512-c55SVL/YK6cr8hJOi9b1eVkyTxP3K15C0tn03fJyGgg/1XUcbOf/MpQ8J8SAjWiFk3+ItlfGfEnHavgtQH7/Ww==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 109,
+			"tier": 3,
+			"package": "pi-cache-optimizer",
+			"version": "2.6.21",
+			"downloads": {
+				"monthly": 4672,
+				"weekly": 1259
+			},
+			"integrity": "sha512-m7g6zvaoex93oCOpHtfUEbeQh4Lv0yfYZ0s4gAHDd+J3lZqbN/NtGDmVaEx0u+4fv8764/MLzSzK26BqW1+NEQ==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 110,
+			"tier": 3,
+			"package": "pi-harness-runtime",
+			"version": "0.9.20",
+			"downloads": {
+				"monthly": 4631,
+				"weekly": 1536
+			},
+			"integrity": "sha512-/lqq5JRuPpGKdI20hhuW6KiOUe9UVVWuGsrUF9wxzHi+LJl/TffZn875JbIV/xk5sLMnv1G0rnlmUyIXbGzNAw==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 111,
+			"tier": 3,
+			"package": "pi-cc-extensions",
+			"version": "0.8.8",
+			"downloads": {
+				"monthly": 4547,
+				"weekly": 4547
+			},
+			"integrity": "sha512-TGtXULsXKOw6yqh0WJq7QvrNerOeJ2nC2DQ4pkusEYj5vg1vpGtr1Q9mpdsqWMnnrPcsXK9cue1AekzIua65DQ==",
+			"extensions": [
+				"./extensions/claude-code-style.ts",
+				"./extensions/context.ts",
+				"./extensions/session-reference.ts",
+				"./extensions/agent-autocomplete.ts"
+			]
+		},
+		{
+			"rank": 112,
+			"tier": 3,
+			"package": "@narumitw/pi-caffeinate",
+			"version": "0.31.0",
+			"downloads": {
+				"monthly": 4530,
+				"weekly": 955
+			},
+			"integrity": "sha512-4dfLH4lUiaYPcBsWD8npAJnVkrOV4BgQ9G58IFB036s3SGtHyhS7wgivYfV2CzXW22Mv9eRt2gkVzUgNEsOWZw==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 113,
+			"tier": 3,
+			"package": "@oas-framework/pi",
+			"version": "0.18.5",
+			"downloads": {
+				"monthly": 4465,
+				"weekly": 2389
+			},
+			"integrity": "sha512-YFgrtfGhqC3hjbGW3Ho97O7U98KkD2JqNNZK4EY7DqTL7mCMkp0MabSdt1MBmi5f3iofZaTcMO/K4QMIfyVErA==",
+			"extensions": [
+				"./extension/index.ts"
+			]
+		},
+		{
+			"rank": 114,
+			"tier": 3,
+			"package": "@xynogen/pix-core",
+			"version": "0.4.41",
+			"downloads": {
+				"monthly": 4428,
+				"weekly": 1336
+			},
+			"integrity": "sha512-uWPzzpcE6aXqCuIZ9TVp6OZ7NAORPqpcqj7zZMzYHRs4jQotFsIgjYi4yF+jm1pu+2wgkEwB9Y3eQ9RyHwdr3g==",
+			"extensions": [
+				"src/extension.ts"
+			]
+		},
+		{
+			"rank": 115,
+			"tier": 3,
+			"package": "@houndmcp/hound-mcp-pi",
+			"version": "12.4.1",
+			"downloads": {
+				"monthly": 4350,
+				"weekly": 4350
+			},
+			"integrity": "sha512-E3PxRLbXChE6zE4JCFcIBTssTiButO2wKwC/KpRRHINiYzrBl5YwHrf927sauDDRT37jGOLjkSnlHebCCBGUIw==",
+			"extensions": [
+				"./extensions/hound.ts"
+			]
+		},
+		{
+			"rank": 116,
+			"tier": 3,
+			"package": "@jmfederico/pi-web",
+			"version": "1.202607.1",
+			"downloads": {
+				"monthly": 4326,
+				"weekly": 1684
+			},
+			"integrity": "sha512-7a9ZsvkWX71PAkZ8fOv+yCsADabTCFEAr+qXcdOE6ho/fUhMHaCKHP2LTDOaEHr/NK2w8+PKgCdPjrUfBfQwww==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 117,
+			"tier": 3,
+			"package": "@xaccefy/pi-casefile",
+			"version": "0.5.7",
+			"downloads": {
+				"monthly": 4294,
+				"weekly": 921
+			},
+			"integrity": "sha512-uQZVMNdWqfkcj0YcPMPOji/VagWI5O5f1TLIqQjYDEGyJAg8AL58hFHBODsq69ThkvS4P39Fm2mgxwndbQLeEw==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 118,
+			"tier": 3,
+			"package": "@narumitw/pi-firecrawl",
+			"version": "0.31.0",
+			"downloads": {
+				"monthly": 4287,
+				"weekly": 896
+			},
+			"integrity": "sha512-znzPpneK0jZ7jXfVSD19iyk754llReAt/zCoa34r6blgG1QsVGFHtRESL7p6vkKER1HaALFRMoGkfWaTKRTKDQ==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 119,
+			"tier": 3,
+			"package": "@xaccefy/pi-lookup",
+			"version": "0.5.7",
+			"downloads": {
+				"monthly": 4287,
+				"weekly": 846
+			},
+			"integrity": "sha512-7DFmP+oomILqQMm/0rYH2D6JObstR8R5AzrohbnZCJwSeiVn5X2GIyui6M/csuOZxq4jAJ403AFRq1a35Mcsxw==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 120,
+			"tier": 3,
+			"package": "@dreki-gg/pi-plan-mode",
+			"version": "0.40.0",
+			"downloads": {
+				"monthly": 4263,
+				"weekly": 2228
+			},
+			"integrity": "sha512-7b1ngZ8a3ZqPaR1vx8E0xoOzxJGdVbfI1XsaCSLLSHPh3Os5RsS+K/5n4z6nYkmXC170aAGGiWuJNkHog+DG/Q==",
+			"extensions": [
+				"./extensions/plan-mode"
+			]
+		},
+		{
+			"rank": 121,
+			"tier": 3,
+			"package": "@xynogen/pix-data",
+			"version": "0.3.4",
+			"downloads": {
+				"monthly": 4259,
+				"weekly": 1377
+			},
+			"integrity": "sha512-6p63IKmLtG+llm6Idah/uxgdy/HHjFxZhj743UNJdDY7g/XNhylXoS3ZarhGZYBeEwZ4+Aqe+8DDV6H0zZS0eQ==",
+			"extensions": [
+				"src/index.ts"
+			]
+		},
+		{
+			"rank": 122,
+			"tier": 3,
+			"package": "@mrclrchtr/supi-context",
+			"version": "2.6.1",
+			"downloads": {
+				"monthly": 4255,
+				"weekly": 610
+			},
+			"integrity": "sha512-+xppOkZ5pZzlAnfGHaN2wAKoXY7oDeOR0hIUisYlG3BQ9+9aUX4kpjiL+jZ2zIYQbOJpdPjjJaAwcwguWBNqmQ==",
+			"extensions": [
+				"./src/extension.ts"
+			]
+		},
+		{
+			"rank": 123,
+			"tier": 3,
+			"package": "pi-autoresearch",
+			"version": "1.6.2",
+			"downloads": {
+				"monthly": 4232,
+				"weekly": 906
+			},
+			"integrity": "sha512-IjFVFAnSxrMe4wsvkJnvzPcrGKV9xMuhBiE/uH9GSJTpXompPEt8MPHfAj8NBXYB3eYHO5RB5+iYXlUzHnGTDw==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 124,
+			"tier": 3,
+			"package": "pi-oc-style-agent-switcher",
+			"version": "0.3.26",
+			"downloads": {
+				"monthly": 4153,
+				"weekly": 335
+			},
+			"integrity": "sha512-X3Yqrr+oEI80aGA5+/F1CnhzHE2L+AB6OVUvBXlX+wlZxFc4mRnlsSyb1lKfIGS9QIYPVbRgvrjPrKc9xRCW0w==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 125,
+			"tier": 3,
+			"package": "@firstpick/pi-extension-git-footer-status",
+			"version": "0.4.3",
+			"downloads": {
+				"monthly": 4093,
+				"weekly": 1501
+			},
+			"integrity": "sha512-6DIoNSWgUtKjkf96yz4UeFMFVxl1p2ws4VpJ7PrBDpWWojVzARFCKAx6sDGKq9LInPyadTe2LDo811vgsSucYg==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 126,
+			"tier": 3,
+			"package": "@mrclrchtr/supi-web",
+			"version": "2.6.1",
+			"downloads": {
+				"monthly": 4073,
+				"weekly": 482
+			},
+			"integrity": "sha512-6us8wIC/gz88HyagXSXXzsnfxY6Dt03F+92w2Ig8Zek7RSDYE98unUrCrIJbFC22ncZF35aCWibohjIVb8qhcg==",
+			"extensions": [
+				"./src/extension.ts"
+			]
+		},
+		{
+			"rank": 127,
+			"tier": 3,
+			"package": "@fiale-plus/pi-rogue",
+			"version": "0.3.35",
+			"downloads": {
+				"monthly": 4066,
+				"weekly": 401
+			},
+			"integrity": "sha512-vEkR3iLG75wCaWQh6bWIHnFPiEq0gTbsZhsyfavDrdJRGJAy01ZKF+mCbp8pjoir9jDvnErJwrBoz2F2pG41gg==",
+			"extensions": [
+				"./src/extension.ts"
+			]
+		},
+		{
+			"rank": 128,
+			"tier": 3,
+			"package": "pi-chrome",
+			"version": "0.15.46",
+			"downloads": {
+				"monthly": 4066,
+				"weekly": 668
+			},
+			"integrity": "sha512-4ZG4h4F3OkAwb9Os2LAiMAFqCGdr6cgUZSna0d6L+cR8eUDvI537UMuqLrf4sepy7US5rk3W0dvqy19KGfK3IQ==",
+			"extensions": [
+				"./extensions/chrome-profile-bridge/index.ts"
+			]
+		},
+		{
+			"rank": 129,
+			"tier": 3,
+			"package": "pi-caveman",
+			"version": "1.0.7",
+			"downloads": {
+				"monthly": 4063,
+				"weekly": 1026
+			},
+			"integrity": "sha512-1eiX7JyMOJPGO4jq6KmfeKTpEyRvu0DFtLw1C1OwuJmtccg7XQDlkSetFYGUpTR4zkl54nO+H2wsXEKrvxEAqg==",
+			"extensions": [
+				"./extensions/caveman.ts"
+			]
+		},
+		{
+			"rank": 130,
+			"tier": 3,
+			"package": "@xaccefy/pi-xtodo",
+			"version": "0.5.7",
+			"downloads": {
+				"monthly": 4007,
+				"weekly": 894
+			},
+			"integrity": "sha512-ULebvu4i3CfyAw+b22QGHVCS53Jh4A1H5p8If1t4v9ssfECvWur3xW13VjOMYDgHfJex+cD7Wpytnh148As8VA==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 131,
+			"tier": 3,
+			"package": "@xaccefy/pi-exploitsearch",
+			"version": "0.5.7",
+			"downloads": {
+				"monthly": 3973,
+				"weekly": 836
+			},
+			"integrity": "sha512-QAJmotcQnHT/PGE+9vVDa0iQvEhffdPGILaHSAU8xVsj91N5svUpulVre5eXy+kxdNelxhB0sj1nl+8Dh5qCbA==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 132,
+			"tier": 3,
+			"package": "@narumitw/pi-sync",
+			"version": "0.31.0",
+			"downloads": {
+				"monthly": 3972,
+				"weekly": 1080
+			},
+			"integrity": "sha512-OU3yiCBjFQixscxaiPxZLGPePKajPiMUHC+GUMTjbIGyPdb+qBiFnawGW51WgJ8R28pCaL+MBoivF+cNMbGcpA==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 133,
+			"tier": 3,
+			"package": "pi-web-search",
+			"version": "1.3.1",
+			"downloads": {
+				"monthly": 3962,
+				"weekly": 1835
+			},
+			"integrity": "sha512-FBmGupWahqLU+uMSDLy+As7zn/4oiHGxC/MPtGuzOZNHEJw8ACJvCsZhyflprBJB31m0WIa4iiRKtbARRByaZg==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 134,
+			"tier": 3,
+			"package": "pi-loop-police",
+			"version": "1.14.0",
+			"downloads": {
+				"monthly": 3947,
+				"weekly": 1335
+			},
+			"integrity": "sha512-ZJS39Kmt98pcQhCvG7lAGIBC1VrFAJOPCvtgq+f1O4ZJZ/GudQkAe671TEUuzXBzxoTD8qbAUfGJI17vYagVTQ==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 135,
+			"tier": 3,
+			"package": "@agwab/pi-workflow",
+			"version": "0.10.1",
+			"downloads": {
+				"monthly": 3882,
+				"weekly": 410
+			},
+			"integrity": "sha512-m5dleQt9cN6ql1krIXnYEtorcOUucDxFk60BLvtGvdVndUY+CjDzUhF/pB6YsvZPsvXfhhkIl9HkS24ncW5lBg==",
+			"extensions": [
+				"./src/extension.ts"
+			]
+		},
+		{
+			"rank": 136,
+			"tier": 3,
+			"package": "@amaster.ai/pi-computer-use",
+			"version": "0.1.6",
+			"downloads": {
+				"monthly": 3858,
+				"weekly": 1145
+			},
+			"integrity": "sha512-C3hUzx86nT10DXC97be5hpb0UeopTxgvEomBj4riEPMZ46USyLIXYli4CCHpWg0bLpPPdRAYxUldu67zJoAx7g==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 137,
+			"tier": 3,
+			"package": "@gamalan/pi-gateway",
+			"version": "1.10.0",
+			"downloads": {
+				"monthly": 3857,
+				"weekly": 179
+			},
+			"integrity": "sha512-C+qJvTHGWXBGl0F7eoDkr+UizqkMfWz+jHLAaNiEnG+hYUIJQjsPhy08Ktz7QITCiL1i1S5GH+u7Fu1J+RtfVQ==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 138,
+			"tier": 3,
+			"package": "@spences10/pi-team-mode",
+			"version": "0.0.54",
+			"downloads": {
+				"monthly": 3838,
+				"weekly": 575
+			},
+			"integrity": "sha512-0sBXvEyvIMhfI/wgfeDbeQgTUGrpcboTgzwrAq4d+ErCzM4nvjI1AWSNmtsElhbP5LR1O1cA2KXkpY+qIddZIA==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 139,
+			"tier": 3,
+			"package": "pi-tool-display",
+			"version": "0.5.0",
+			"downloads": {
+				"monthly": 3779,
+				"weekly": 837
+			},
+			"integrity": "sha512-XiDiQ+pCiiR977DZgGKrOTDhGfJO/t8mmMM46tW+9G+BWHmvEl2fxlGpdhSGcvj++m37zvCS/CQG4xKg87Lsuw==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 140,
+			"tier": 3,
+			"package": "tokenomy-pi",
+			"version": "0.1.23-beta",
+			"downloads": {
+				"monthly": 3755,
+				"weekly": 155
+			},
+			"integrity": "sha512-k4dB/ep0bxdo5cCnwiwBoxqf7/9GPA75C+LSgbjqEF8ACkLJaUnj/1oLiJVfiSDYSdP/RWtFTlNWv0PoXrUVrg==",
+			"extensions": [
+				".pi/extensions/tokenomy/index.ts"
+			]
+		},
+		{
+			"rank": 141,
+			"tier": 3,
+			"package": "@gonrocca/zero-pi",
+			"version": "0.1.72",
+			"downloads": {
+				"monthly": 3747,
+				"weekly": 256
+			},
+			"integrity": "sha512-QZ4ZPaAPl0ksJpSSmkSSW80du9y7uozLJrx5sI0YbUEiVkMUoTdNNt1FazEiVSIEybAUzuG/aS6f95+RpYgMSw==",
+			"extensions": [
+				"./extensions/zero-banner.ts",
+				"./extensions/zero-hud.ts",
+				"./extensions/zero-theme.ts",
+				"./extensions/zero-pretty-code-fences.ts",
+				"./extensions/zero-pretty-input-box.ts",
+				"./extensions/zero-pretty-tool-cards.ts",
+				"./extensions/zero-activity-panel.ts",
+				"./extensions/working-phrases.ts",
+				"./extensions/win-tree-kill.ts",
+				"./extensions/sdd-agents.ts",
+				"./extensions/conversation-resume.ts",
+				"./extensions/zero-models.ts",
+				"./extensions/autotune-extension.ts",
+				"./extensions/spec-merge-extension.ts",
+				"./extensions/zero-validate-extension.ts",
+				"./extensions/zero-status-extension.ts",
+				"./extensions/zero-doctor-extension.ts",
+				"./extensions/zero-cost-extension.ts",
+				"./extensions/zero-checkpoint-extension.ts",
+				"./extensions/zero-pr-extension.ts",
+				"./extensions/zero-branch-extension.ts",
+				"./extensions/zero-git-validate-extension.ts",
+				"./extensions/zero-archive-extension.ts",
+				"./extensions/zero-issue-extension.ts",
+				"./extensions/zero-diff-extension.ts",
+				"./extensions/provider-guard-extension.ts",
+				"./extensions/scan-guard-extension.ts"
+			]
+		},
+		{
+			"rank": 142,
+			"tier": 3,
+			"package": "pi-autoresearch-vkf",
+			"version": "0.13.0",
+			"downloads": {
+				"monthly": 3732,
+				"weekly": 123
+			},
+			"integrity": "sha512-OsEdFZcDvALGljq2cWWxhmi/+tiN8FqqSxh7Thuw80N/1r5MArmD3FCT7j8QRh0sIvcOzrIkcm5F0Cp238orYA==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 143,
+			"tier": 3,
+			"package": "pi-token-speed",
+			"version": "0.7.1",
+			"downloads": {
+				"monthly": 3715,
+				"weekly": 813
+			},
+			"integrity": "sha512-Ut8Euqg5GUxRK7XruFNHQnGTsy1EP3YmR6E/vl+EPxiEcFuRDwk6OqfoW53eaupxgq0xDT0D0ykEpUV8ESyjCg==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 144,
+			"tier": 3,
+			"package": "pi-codebuddy-sdk",
+			"version": "0.3.0",
+			"downloads": {
+				"monthly": 3705,
+				"weekly": 101
+			},
+			"integrity": "sha512-TiWd28Nhn8d93t+jHlFIm5cY6NjtoPQhTNyiw3P7ET5mXKhvlzv7f2LPouR4PCp3Wqg8lm+cbOAYsEnTtNU6Qw==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 145,
+			"tier": 3,
+			"package": "@tangle-network/tcloud-agent",
+			"version": "0.3.3",
+			"downloads": {
+				"monthly": 3679,
+				"weekly": 2979
+			},
+			"integrity": "sha512-ix7BQjkp380NJUrQOIUNXVRnmpdBTiperZ/rehK2jORyI1bbbHl19ChfIydfkuZLVLIz2Wb8CfrXYuYbFTkJPA==",
+			"extensions": [
+				"./src/pi-extension.ts"
+			]
+		},
+		{
+			"rank": 146,
+			"tier": 3,
+			"package": "@demigodmode/pi-web-agent",
+			"version": "1.7.0",
+			"downloads": {
+				"monthly": 3661,
+				"weekly": 638
+			},
+			"integrity": "sha512-PVr83SywopAiJd3ODv3NmUCK9yOlan8+fPVJ1+4eJfbTfjrTIsjPFQl03K4DTxc1E+yLFarIYBeuJzjqa7mKLA==",
+			"extensions": [
+				"./dist/extension.js"
+			]
+		},
+		{
+			"rank": 147,
+			"tier": 3,
+			"package": "@fernado03/oh-my-pi-supreme-token-saver",
+			"version": "1.3.7",
+			"downloads": {
+				"monthly": 3661,
+				"weekly": 617
+			},
+			"integrity": "sha512-G/Srjer2UUNuH3t4hyhfQf2LzKmy0Ds/8JJMvtnCn/3d6m7OvAJimYqYrWZdJwL3jtEjjKobYysJR4C7tnqgmg==",
+			"extensions": [
+				"./extensions/amanai-reward/pi.js"
+			]
+		},
+		{
+			"rank": 148,
+			"tier": 3,
+			"package": "openlore",
+			"version": "2.1.6",
+			"downloads": {
+				"monthly": 3645,
+				"weekly": 1108
+			},
+			"integrity": "sha512-D0GNnstFyJ8iqtFhcf6rzvX/5r9bs0on4px/TNgZmnc2KU1iV2SdOlvqZu6/PEucfp0+V+wsw8zpBOi1WoxPgA==",
+			"extensions": [
+				"./dist/pi/extension.js"
+			]
+		},
+		{
+			"rank": 149,
+			"tier": 3,
+			"package": "pi-observational-memory",
+			"version": "3.0.3",
+			"downloads": {
+				"monthly": 3620,
+				"weekly": 830
+			},
+			"integrity": "sha512-YVbGRKQFRqBnj4K8TUYmRAaP+zpUptkdag3/GlzvmuVYEVi8aCHroPb8cKA8edYaUD2v291mJfojYl1TtTII7g==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 150,
+			"tier": 3,
+			"package": "@mrclrchtr/supi-claude-md",
+			"version": "2.6.1",
+			"downloads": {
+				"monthly": 3615,
+				"weekly": 433
+			},
+			"integrity": "sha512-ZJ5cmzLQlKCYlPdF3P9aEw9u+3t9MpJuo5m8d+IJS48XkqpeXeiQZ4F1TvvXuLv2KrE2xMOTx1r6YsZ6csMZqQ==",
+			"extensions": [
+				"./src/extension.ts"
+			]
+		},
+		{
+			"rank": 151,
+			"tier": 3,
+			"package": "nervous-system",
+			"version": "1.9.0",
+			"downloads": {
+				"monthly": 3598,
+				"weekly": 366
+			},
+			"integrity": "sha512-pGwMsgRRETWxNTQ9djIob4/tBcBnL40EtZ9ZvnM5v2k5zNDXLf1Y1+479hy7zAsbCCEsD1Y9nO1pApkYlbQuvQ==",
+			"extensions": [
+				"controller/extension/index.ts",
+				"magi/extension/index.ts",
+				"axon/extension/index.ts",
+				"synapse/extension/index.ts",
+				"cortex/extension/index.ts",
+				"lion/extension/index.ts",
+				"cerebel/extension/index.ts",
+				"ganglion/extension/index.ts",
+				"amygdala/extension/index.ts",
+				"dashboard/extension/index.ts"
+			]
+		},
+		{
+			"rank": 152,
+			"tier": 3,
+			"package": "@mrclrchtr/supi-code-intelligence",
+			"version": "2.6.1",
+			"downloads": {
+				"monthly": 3592,
+				"weekly": 441
+			},
+			"integrity": "sha512-1eBAYk3jtmnXvR5pv13ADPpLs0jkf7zturCJ1SIltBsm7YkI3sq1O9FByMGBOz5JFWMMlIkRqbFJWoe4pXIw0A==",
+			"extensions": [
+				"./src/extension.ts"
+			]
+		},
+		{
+			"rank": 153,
+			"tier": 3,
+			"package": "@ayulab/oh-my-pi",
+			"version": "0.4.17",
+			"downloads": {
+				"monthly": 3586,
+				"weekly": 299
+			},
+			"integrity": "sha512-5gmIO1sFsD2i3TkTNASbqi3tTva0+jGMqS56xP9T0tgQfvKtqEO7Q0Z2wxVsOF0ALZmQSKFOhyxDwlZoRF81Rw==",
+			"extensions": [
+				"node_modules/@ayulab/pi-rewind"
+			]
+		},
+		{
+			"rank": 154,
+			"tier": 3,
+			"package": "@juicesharp/rpiv-btw",
+			"version": "2.1.0",
+			"downloads": {
+				"monthly": 3570,
+				"weekly": 1724
+			},
+			"integrity": "sha512-VSrA7z5pmb/GiPR6XdrmOrPRASF2BP05GaUPD6tFc/R+BKurVnmMiACgGRfQyzXw8FacdFGu+wt2euVloAK6+Q==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 155,
+			"tier": 3,
+			"package": "@mrclrchtr/supi-cache",
+			"version": "2.6.1",
+			"downloads": {
+				"monthly": 3550,
+				"weekly": 416
+			},
+			"integrity": "sha512-7WlqxDQnZGCp188KG5koqQGuyb57JRLBF5oiSIi73mHjom+z9h/nTJ4/brVZHpniW/PQx53q44ikCPmyQhIDyQ==",
+			"extensions": [
+				"./src/extension.ts"
+			]
+		},
+		{
+			"rank": 156,
+			"tier": 3,
+			"package": "@mrclrchtr/supi-ask-user",
+			"version": "2.6.1",
+			"downloads": {
+				"monthly": 3514,
+				"weekly": 456
+			},
+			"integrity": "sha512-1yIJTFKHv58Z/I0x4LlK9iCr0ITsE/xdG5SzvgeHibYKUcq1b6+/2u0+K9os3PSZhpuxB+FThF6aVdCHGPrjDw==",
+			"extensions": [
+				"./src/extension.ts"
+			]
+		},
+		{
+			"rank": 157,
+			"tier": 3,
+			"package": "pi-all-search",
+			"version": "1.0.18",
+			"downloads": {
+				"monthly": 3511,
+				"weekly": 77
+			},
+			"integrity": "sha512-Kj83Wm0QhRmS8VPuJcumFSm4E9QO8LNlR2ss0IyXq7HWpTF7Bny9gOQADPuNyyZBS4HcHafhBadpfxhCAbrgfQ==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 158,
+			"tier": 3,
+			"package": "@companion-ai/feynman",
+			"version": "0.3.5",
+			"downloads": {
+				"monthly": 3491,
+				"weekly": 468
+			},
+			"integrity": "sha512-gTI7YC4B+1gp814qAGUwtf8JPcUU0ZJHqKSkP0V6DHgOYHBLThYstEykGypSBdy/6aLfbh9vmKIeeMgjZ7K8Ng==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 159,
+			"tier": 3,
+			"package": "@juicesharp/rpiv-i18n",
+			"version": "2.1.0",
+			"downloads": {
+				"monthly": 3483,
+				"weekly": 1668
+			},
+			"integrity": "sha512-RnrSoNhaq9+yDX0GDKaRcwGu+eW3LqAZpbKaJJS8A7XT7V2gy3Cp0u8jWSUmD1c5tsbw2bh2Vqk4AHCqQbhYxg==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 160,
+			"tier": 3,
+			"package": "@amaster.ai/pi-task-scheduler",
+			"version": "0.1.6",
+			"downloads": {
+				"monthly": 3482,
+				"weekly": 991
+			},
+			"integrity": "sha512-r0y/D+5G/QhLF1TxKC6og/HEo8AHwgrVKei5JimOVUss04rhtqyXBVt1P99X9dGuDU5TXLdIbGWok/FeTrZX9w==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 161,
+			"tier": 3,
+			"package": "@cortexkit/pi-anthropic-auth",
+			"version": "1.18.0",
+			"downloads": {
+				"monthly": 3481,
+				"weekly": 1551
+			},
+			"integrity": "sha512-+zdYB1fgRhhXTpueyF6ZyAzEpJlsIDZE9GKjjtDrB5sIU6r69laIT2DTA/v4eKpkE3VLaQ02N67XN9W27Zq6DA==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 162,
+			"tier": 3,
+			"package": "@maestria/pi",
+			"version": "0.5.10",
+			"downloads": {
+				"monthly": 3463,
+				"weekly": 920
+			},
+			"integrity": "sha512-LiOAdSWQm8ot8I6dLiREpSJYsLWunrjkH5YjIhoACp0GWDGA6gL3l3wGSNpi/GtoM0OxsOmcIW+rhQfo9jzKVQ==",
+			"extensions": [
+				"./dist/extension.mjs"
+			]
+		},
+		{
+			"rank": 163,
+			"tier": 3,
+			"package": "@mrclrchtr/supi-review",
+			"version": "2.6.1",
+			"downloads": {
+				"monthly": 3446,
+				"weekly": 395
+			},
+			"integrity": "sha512-HbrJfARFBJf9QLOh19OiKgjtB53Fz6gTpjwo1fElprKgzZBFeNtU2vkvg/WIEjsoBBqpB3T0aL+a39tU91dWxw==",
+			"extensions": [
+				"./src/extension.ts"
+			]
+		},
+		{
+			"rank": 164,
+			"tier": 3,
+			"package": "@gotgenes/pi-anthropic-auth",
+			"version": "2.0.1",
+			"downloads": {
+				"monthly": 3442,
+				"weekly": 1039
+			},
+			"integrity": "sha512-zxRjTL5QMDj3VlfJ0vAKATh0ArqeAAOHyQRJW8K+ol73/8773Q/JthYu6BGtPRM5KNg/OnR1dXsSKTgaZBLhoQ==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 165,
+			"tier": 3,
+			"package": "@mrclrchtr/supi-bash-timeout",
+			"version": "2.6.1",
+			"downloads": {
+				"monthly": 3421,
+				"weekly": 512
+			},
+			"integrity": "sha512-s1OXUST5d5O1HcHSEHpHCq64bRnm6GP4GaNVLu2YJdKP/OaIARwLEQmhEmxuCBm+y0sQM8GOz4wTLmS6hCqLuQ==",
+			"extensions": [
+				"./src/extension.ts"
+			]
+		},
+		{
+			"rank": 166,
+			"tier": 3,
+			"package": "rolebox",
+			"version": "0.24.0",
+			"downloads": {
+				"monthly": 3417,
+				"weekly": 373
+			},
+			"integrity": "sha512-+jMuTCFuUt8AfrPD120IDJrYDfAPgXWeQ95XLmZE5L8u7ihiwWvDhZPAusSFpwIi+NnBAyoHPbo6BjWnhk2jiA==",
+			"extensions": [
+				"./dist/pi-extension.js"
+			]
+		},
+		{
+			"rank": 167,
+			"tier": 3,
+			"package": "pi-dgoal",
+			"version": "0.7.9",
+			"downloads": {
+				"monthly": 3412,
+				"weekly": 553
+			},
+			"integrity": "sha512-As+a2azTXZnIw9QI/S/3EAmJEhpoR9WW1ESs90dpjoPUB0es77sxK/0YzxAfiG7iEtiZGE/h5dCl5sYO+64i8w==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 168,
+			"tier": 3,
+			"package": "@mrclrchtr/supi-insights",
+			"version": "2.6.1",
+			"downloads": {
+				"monthly": 3397,
+				"weekly": 406
+			},
+			"integrity": "sha512-G0/Fy2hLn3b/H4QkySIEYO/mRJdX6x39LNmn3whxZ/CcGgMdYMW1SXd1kABg4qi7kPRMuA+k0nRTaNVJ2nkVTg==",
+			"extensions": [
+				"./src/extension.ts"
+			]
+		},
+		{
+			"rank": 169,
+			"tier": 3,
+			"package": "@misunders2d/agentnet",
+			"version": "0.1.26",
+			"downloads": {
+				"monthly": 3395,
+				"weekly": 2009
+			},
+			"integrity": "sha512-GfNTh9sgL1wnOfJVzzEhK8UKByNAtKBfXFaYskAIUHSB9CthitESdvqLrV6UFhtOdz04YscS7rn4GS87D7NgvA==",
+			"extensions": [
+				"./src/agentnet/bindings/pi_extension.ts"
+			]
+		},
+		{
+			"rank": 170,
+			"tier": 3,
+			"package": "@bdsqqq/pi",
+			"version": "0.0.1784955332-gde96cb3",
+			"downloads": {
+				"monthly": 3379,
+				"weekly": 1147
+			},
+			"integrity": "sha512-uj3rxzYP5K/dt1g03narhVMsMQfF69BhtAdTATmV0PanecDEIBMInipNCTh85svXY5/6IZAhkALi2gcIr+Ku6w==",
+			"extensions": [
+				"./dist/extensions/apply-patch.js",
+				"./dist/extensions/bash.js",
+				"./dist/extensions/cmux-notify.js",
+				"./dist/extensions/code-review.js",
+				"./dist/extensions/delegate.js",
+				"./dist/extensions/editor.js",
+				"./dist/extensions/finder.js",
+				"./dist/extensions/format-file.js",
+				"./dist/extensions/git.js",
+				"./dist/extensions/github.js",
+				"./dist/extensions/glob.js",
+				"./dist/extensions/grep.js",
+				"./dist/extensions/librarian.js",
+				"./dist/extensions/look-at.js",
+				"./dist/extensions/ls.js",
+				"./dist/extensions/oracle.js",
+				"./dist/extensions/read.js",
+				"./dist/extensions/read-session.js",
+				"./dist/extensions/read-web-page.js",
+				"./dist/extensions/search-sessions.js",
+				"./dist/extensions/session-name.js",
+				"./dist/extensions/skill.js",
+				"./dist/extensions/system-prompt.js",
+				"./dist/extensions/tool-harness.js",
+				"./dist/extensions/undo-edit.js",
+				"./dist/extensions/web-search.js",
+				"./dist/extensions/workflow.js",
+				"./dist/extensions/zmx.js"
+			]
+		},
+		{
+			"rank": 171,
+			"tier": 3,
+			"package": "@aliou/pi-guardrails",
+			"version": "0.16.0",
+			"downloads": {
+				"monthly": 3377,
+				"weekly": 975
+			},
+			"integrity": "sha512-fxgY3VPbNN39BwrugVqC9MFJz9NVfUjauVu6qvj4+14zNEWgDLvfaYcJl5c7VvydP6wsX4yMIHZBaukbVlvT+A==",
+			"extensions": [
+				"./extensions/path-access/index.ts",
+				"./extensions/guardrails/index.ts",
+				"./extensions/permission-gate/index.ts",
+				"./extensions/herdr/index.ts"
+			]
+		},
+		{
+			"rank": 172,
+			"tier": 3,
+			"package": "@misunders2d/pi-goal",
+			"version": "1.0.19",
+			"downloads": {
+				"monthly": 3366,
+				"weekly": 459
+			},
+			"integrity": "sha512-6/HaMeytPg6+rjc2tKG2Klz+MSFdygBwwX0Habztff9meSVNXbXQziTcrzFMAzj0HD5ouCj5cj9Y0uLN2UgyOw==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 173,
+			"tier": 3,
+			"package": "pi-spark",
+			"version": "0.21.1",
+			"downloads": {
+				"monthly": 3364,
+				"weekly": 1011
+			},
+			"integrity": "sha512-9jxm/6N+zqGjPqFTkVr+Kcpsq+hWrJjRqRQarjIdpFx/easpNgkzaDPibFnLWn0J4LWHPxEkljQABcBR61Oy+A==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 174,
+			"tier": 3,
+			"package": "@tmustier/pi-ralph-wiggum",
+			"version": "0.2.3",
+			"downloads": {
+				"monthly": 3325,
+				"weekly": 1143
+			},
+			"integrity": "sha512-BYRoC4jAkxCbDIbkQsu4j0uA+B/phqHaIZ7b2Fcfa/sNq5gsJehbArtnFGeSqrmqtzr6xwO1yPHHaN3bforyXg==",
+			"extensions": [
+				"index.ts"
+			]
+		},
+		{
+			"rank": 175,
+			"tier": 3,
+			"package": "@mrclrchtr/supi-extras",
+			"version": "2.6.1",
+			"downloads": {
+				"monthly": 3317,
+				"weekly": 419
+			},
+			"integrity": "sha512-UM/Jm8WjDrDunTyrFY0b8CmNR2lco+1M30y0o6o6rRiWeVS2rOpPy1g1zT3+MPNUeI5CAQyNsXUBhsUXN41QnQ==",
+			"extensions": [
+				"./src/extension.ts"
+			]
+		},
+		{
+			"rank": 176,
+			"tier": 3,
+			"package": "pi-hashline-edit",
+			"version": "0.8.3",
+			"downloads": {
+				"monthly": 3317,
+				"weekly": 609
+			},
+			"integrity": "sha512-eQWvwvR8aS7e/8CLTt8sdGhFXJguPTyFK+m9IB2muQQHsPnyMlF/cXKzEo5mQ898LxAM1jl7UVhPsmNXR8y/Mw==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 177,
+			"tier": 3,
+			"package": "@fingerskier/augment",
+			"version": "0.5.5",
+			"downloads": {
+				"monthly": 3274,
+				"weekly": 455
+			},
+			"integrity": "sha512-GWsRzBsFIyys9AclG6AUDdTkNCC3C9tia0hZkdX/SPojHtOhpGxeJp2yVQrawi3pqZwPVN7I9BlgUFbHI+xV9A==",
+			"extensions": [
+				"./dist/pi/extension.js"
+			]
+		},
+		{
+			"rank": 178,
+			"tier": 3,
+			"package": "@heyhuynhgiabuu/pi-diff",
+			"version": "0.7.6",
+			"downloads": {
+				"monthly": 3268,
+				"weekly": 402
+			},
+			"integrity": "sha512-/77T8n1TdTO0QMHtOxPQM93Eb1wrtDTjiH8b+YcLFEhwvi9BcF4N1APq2iA8OPVGoXWNih55TPyU/DG9B4C+lw==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 179,
+			"tier": 3,
+			"package": "pi-squad",
+			"version": "0.19.5",
+			"downloads": {
+				"monthly": 3268,
+				"weekly": 1449
+			},
+			"integrity": "sha512-rcAHiSWaZ5qDrrIrl7gy7RLUrramBQAkKaoORodapM+T3GEhs5jS4zxaWD0jauRa8DrEFmovdTt0MrRwrUILUQ==",
+			"extensions": [
+				"src/index.ts"
+			]
+		},
+		{
+			"rank": 180,
+			"tier": 3,
+			"package": "@chainingintention/pi-web-cn",
+			"version": "1.202607.10",
+			"downloads": {
+				"monthly": 3262,
+				"weekly": 791
+			},
+			"integrity": "sha512-N5v7dyT/nt9GK/BvIE9wXeBI4FsKv3G9SFkfVAvljM1SX1KnqXfUjqedaS8SpcHWO3riUF2hRWg2p1KUI/6exg==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 181,
+			"tier": 3,
+			"package": "@mrclrchtr/supi-debug",
+			"version": "2.6.1",
+			"downloads": {
+				"monthly": 3262,
+				"weekly": 408
+			},
+			"integrity": "sha512-Bv9E1JzGIwj3wn6WRzXq6kwrIK0XUIpinVvGzNLNHg9+/UAF0Z2dVDxFC8UolPhFVT+pyf6h6n3A2sf21EAQ1g==",
+			"extensions": [
+				"./src/extension.ts"
+			]
+		},
+		{
+			"rank": 182,
+			"tier": 3,
+			"package": "pi-studio",
+			"version": "0.9.36",
+			"downloads": {
+				"monthly": 3243,
+				"weekly": 819
+			},
+			"integrity": "sha512-7W/PAQyD3E+OA8czGdQCptCcrU76p7rCP6pox6PoG5bzZ+JNAwh6Z/He5nKPHKyiKhdZfZXFgmily/S5NgEoRw==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 183,
+			"tier": 3,
+			"package": "@narumitw/pi-github-pr",
+			"version": "0.31.0",
+			"downloads": {
+				"monthly": 3225,
+				"weekly": 659
+			},
+			"integrity": "sha512-9HKNOvtYw4DQstt3Qpr+HAk6dq4sPVGkuUgIrVlWrKbBwa7xenAS1fa5VoX5R6Dhvp5Jm2oTpQd1TIaYYReoIw==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 184,
+			"tier": 3,
+			"package": "@mrclrchtr/supi-settings",
+			"version": "2.6.1",
+			"downloads": {
+				"monthly": 3224,
+				"weekly": 402
+			},
+			"integrity": "sha512-8vRzav6dhaDMid59ZpWfQyqLn5A6NAcQ3RAEc4LjL8gv2SQYUpsHZVum02zaZKrXjdZGxTq9foHjWm4nlevcnQ==",
+			"extensions": [
+				"./src/extension.ts"
+			]
+		},
+		{
+			"rank": 185,
+			"tier": 3,
+			"package": "@bacnh85/pi-subagent",
+			"version": "0.11.0",
+			"downloads": {
+				"monthly": 3219,
+				"weekly": 437
+			},
+			"integrity": "sha512-weLsEVcclHBcmK/CSsfRjMIENeluobAruO3QFCgYVxB7PQO4RSZqlhHw9BOFM1EtCzfIa4Vc2TE1BV4NvPZ46Q==",
+			"extensions": [
+				"./extensions/index.ts"
+			]
+		},
+		{
+			"rank": 186,
+			"tier": 3,
+			"package": "@thurstonsand/pi-paste",
+			"version": "0.4.0",
+			"downloads": {
+				"monthly": 3211,
+				"weekly": 231
+			},
+			"integrity": "sha512-q1uoRgHvzdwdg/VJ0OlsBTa/H8isZcV/a/hH5cBuiSFdgBuNIc7DSEc3f7AmZyBR3YV2Y8QRG0gHAH1QdvaK1w==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 187,
+			"tier": 3,
+			"package": "@pi-archimedes/core",
+			"version": "1.8.2",
+			"downloads": {
+				"monthly": 3192,
+				"weekly": 834
+			},
+			"integrity": "sha512-PELKSCSyWiCLQAeI6I5tmyl4pzYAu82nIcyZJwrEvTd1qiUM6whUQ4hLyvOUoM47ApY+ud20/JgQfqVdmfDf6Q==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 188,
+			"tier": 3,
+			"package": "@bacnh85/pi-sub",
+			"version": "0.1.18",
+			"downloads": {
+				"monthly": 3154,
+				"weekly": 589
+			},
+			"integrity": "sha512-G4/EFPmglrkuhAKsdREMqCLM9WhzuE5uRGAszyTsrCnjz12aGgnaIwLN99iPkkIGOiX49ILBbt4tlaGO7yUiGw==",
+			"extensions": [
+				"./extensions/index.ts"
+			]
+		},
+		{
+			"rank": 189,
+			"tier": 3,
+			"package": "pi-x-ide",
+			"version": "1.19.3",
+			"downloads": {
+				"monthly": 3152,
+				"weekly": 1243
+			},
+			"integrity": "sha512-KyzGpAayWUw8z+G7aVIfY/cPJDfAqGtG7PdGetOyKVuPk97lKKrghATK/gngqaTQbyrwwUqRbBUtSThvfRivBA==",
+			"extensions": [
+				"./dist/src/pi/index.js"
+			]
+		},
+		{
+			"rank": 190,
+			"tier": 3,
+			"package": "@xynogen/pix-skills",
+			"version": "0.7.1",
+			"downloads": {
+				"monthly": 3149,
+				"weekly": 904
+			},
+			"integrity": "sha512-316fOfGziugPHQ0B9ZD4YWbEu4aDfyD1rS/XTlBs9zJGWWbFCGe9ql3V1kxKPQYU4NA9T4WGL1e1uEkrwQCmlg==",
+			"extensions": [
+				"src/index.ts"
+			]
+		},
+		{
+			"rank": 191,
+			"tier": 3,
+			"package": "@tintinweb/pi-tasks",
+			"version": "0.7.2",
+			"downloads": {
+				"monthly": 3130,
+				"weekly": 1131
+			},
+			"integrity": "sha512-sVEgUOORXWAoatiJahVcSypLdNzA5LsYaUFc2uv1RUiDrc6tr86wLGS9FNX1ArvUd6OaPN5oKEa7FO3SiyiWWg==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 192,
+			"tier": 3,
+			"package": "@pi-stef/catalog",
+			"version": "0.6.7",
+			"downloads": {
+				"monthly": 3125,
+				"weekly": 645
+			},
+			"integrity": "sha512-an3yAsv2ZJGqIflVO33GXSVXnLmCk7JjlSjoMqFC0hZxys5zcuT50G3sUsK1FHhThmMBEF3q7/FIpxD+pMGERA==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 193,
+			"tier": 3,
+			"package": "@zosmaai/pi-llm-wiki",
+			"version": "0.10.4",
+			"downloads": {
+				"monthly": 3123,
+				"weekly": 410
+			},
+			"integrity": "sha512-83TwWqgbCamCzK3uer/Uc49cucX1fnbOv1Awqy320c8uOKAjwPTivXdr6JW5+YsJasveQwHgncyNLXYHdhjSTw==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 194,
+			"tier": 3,
+			"package": "@amaster.ai/pi-telemetry",
+			"version": "0.1.6",
+			"downloads": {
+				"monthly": 3109,
+				"weekly": 899
+			},
+			"integrity": "sha512-1xaHFnMBmk1sRNyU3FkziwbWjWdCU7qfam/iomq5YljHhl8Adx0zO4buI257w6h4MW3q9LIy6hOs8VGVgo1vVw==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 195,
+			"tier": 3,
+			"package": "@xynogen/pix-subagent",
+			"version": "0.5.6",
+			"downloads": {
+				"monthly": 3076,
+				"weekly": 566
+			},
+			"integrity": "sha512-g6w9ojoktZKcmSyNVB4B7uiBprgtzlcVGeZpgot8FYjqbChTDM+4gchCZa2gCVZHtBtgj7tLXvEWBh3tI0lHYg==",
+			"extensions": [
+				"src/extension.ts"
+			]
+		},
+		{
+			"rank": 196,
+			"tier": 3,
+			"package": "@pandi-coding-agent/pandi-dynamic-workflows",
+			"version": "0.4.13",
+			"downloads": {
+				"monthly": 3075,
+				"weekly": 212
+			},
+			"integrity": "sha512-4IbZe5geQWrH3zAtjvLvsdwpJE/s7lcwqw5N36Yhr+JLW2bnbw+zCQ0DZI3p8YSXXd1CBQ8Ujbm6u7S4nYl+sA==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 197,
+			"tier": 3,
+			"package": "@amaster.ai/pi-browser-use",
+			"version": "0.1.6",
+			"downloads": {
+				"monthly": 3070,
+				"weekly": 897
+			},
+			"integrity": "sha512-RBlTFcLaFjihd1cgdpQUINDu9ML+e2h3REC65Q6XFnDWhtM6PKmFAigHJ7h4xxW2Aq90ifxhTJF2U2M8gQy4kg==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 198,
+			"tier": 3,
+			"package": "pi-multi-account",
+			"version": "1.13.14",
+			"downloads": {
+				"monthly": 3060,
+				"weekly": 222
+			},
+			"integrity": "sha512-xbsaWneAx4m1El42lT1FtTSW6GjJDoKkLsFjtkf4zdQvrUVD3HZB3fw1UbzLaMIOuTb+vOqZrFApEVzxGR/pVA==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 199,
+			"tier": 3,
+			"package": "@xaccefy/pi-codeintel",
+			"version": "0.2.9",
+			"downloads": {
+				"monthly": 3057,
+				"weekly": 92
+			},
+			"integrity": "sha512-+lzByzSOryht8IKvJgqucJHt3NUmvCjZ8ROwfA+SCMBqPYvdtuAWXGk8LdH4BiLzhG13xkDPerr+J7nwi18WmA==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 200,
+			"tier": 3,
+			"package": "pi-hledit",
+			"version": "1.1.7",
+			"downloads": {
+				"monthly": 3051,
+				"weekly": 164
+			},
+			"integrity": "sha512-ZXNlJqpdBn77SKNEElMx0euS7KWxLVuaRlXHY9Ve2GoIywhxgd8yvGy5SpjrFBTMNf0I7+f2M/cURH/ZRq8BEQ==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 201,
+			"tier": 3,
+			"package": "pi-smart-fetch",
+			"version": "0.3.12",
+			"downloads": {
+				"monthly": 3009,
+				"weekly": 768
+			},
+			"integrity": "sha512-ohxF1T0epfnI6J69JFh31pmZohVXkZ8tyBo3IVJWmtdC6WaYyeQV5XwHT+hZzDlmsoQNlNbrAhprylKnyAJFNg==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 202,
+			"tier": 3,
+			"package": "dev-loops",
+			"version": "0.9.0",
+			"downloads": {
+				"monthly": 2998,
+				"weekly": 461
+			},
+			"integrity": "sha512-o2fZmK5DbYaDII9ilNm3LK+Q8BFdOwKs8dBI9r8Zd6t2veQgrAcRzejVZw6xwiI+e5hI0yFVCuCouLg1o7T3og==",
+			"extensions": [
+				"./extension/index.ts"
+			]
+		},
+		{
+			"rank": 203,
+			"tier": 3,
+			"package": "@amaster.ai/pi-attachments",
+			"version": "0.1.6",
+			"downloads": {
+				"monthly": 2994,
+				"weekly": 838
+			},
+			"integrity": "sha512-xLpF/KiXnO2+UQzxDaDxPweg3G7OCl6zdRESKa5Kh6gUQH4tL6mHA1Cgvjka4zlf0tqrvZBCpxJ7aMqkkQ8k3Q==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 204,
+			"tier": 3,
+			"package": "@spences10/pi-observability",
+			"version": "0.0.22",
+			"downloads": {
+				"monthly": 2987,
+				"weekly": 694
+			},
+			"integrity": "sha512-BnMf82A1/7B9YtJ4NufvdEOzGW9V0JQ0PtLJncqQwHDIpqKuMRIdyULvA8/HOJZs/is0/jUu/4NSiPJG099y3g==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 205,
+			"tier": 3,
+			"package": "@zeerke/ascet-copilot-ui",
+			"version": "0.1.26",
+			"downloads": {
+				"monthly": 2985,
+				"weekly": 1424
+			},
+			"integrity": "sha512-whLjBakBlahBw1WrSZVb5K9sONMdFSdZ15lrWN4+u6B49S3BH34mLEBATzpAexH7zcVlqXeBi3yPRhs6p0Zb7Q==",
+			"extensions": [
+				"./extensions/index.ts"
+			]
+		},
+		{
+			"rank": 206,
+			"tier": 3,
+			"package": "@amaster.ai/pi-channels",
+			"version": "0.1.6",
+			"downloads": {
+				"monthly": 2974,
+				"weekly": 862
+			},
+			"integrity": "sha512-fI60d/zuH1wW2VYRPi8zP+obo47NLaCyWF1PvUMRKenZCoaa4pxIMcvCZ/Sf20p0yIVocP3up5028lelBVvnvw==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 207,
+			"tier": 3,
+			"package": "@juicesharp/rpiv-pi",
+			"version": "2.1.0",
+			"downloads": {
+				"monthly": 2966,
+				"weekly": 1141
+			},
+			"integrity": "sha512-mmAhWtEXIm43hXZyQAj7Z1dsKrSl41tGUGh9zVFmtYLK6WuB4DcXeSieBbS5M3r3O3tpbzSV9dZilkzgQnjEYA==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 208,
+			"tier": 3,
+			"package": "@amaster.ai/pi-teamwork",
+			"version": "0.1.6",
+			"downloads": {
+				"monthly": 2960,
+				"weekly": 829
+			},
+			"integrity": "sha512-bZt4TUzxw7p9awC8/YxDPgWFzqe7yowmVDgsln/TeJYoCK5dxJ/fExk1qLHvXXxtFL4ngjsMVH26uYJ0ER9/Kw==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 209,
+			"tier": 3,
+			"package": "@nquandt/pi-azure-foundry",
+			"version": "1.0.3",
+			"downloads": {
+				"monthly": 2955,
+				"weekly": 2798
+			},
+			"integrity": "sha512-FoVV/xtME1lpBXoSSSNbOJMCeE7kse/wm+9U38RfQchcnuy2KJdys44u3rkNwGmq5uUy3QzaZ8GvK5J4YFOCMQ==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 210,
+			"tier": 3,
+			"package": "@heyhuynhgiabuu/pi-task",
+			"version": "0.3.7",
+			"downloads": {
+				"monthly": 2940,
+				"weekly": 1091
+			},
+			"integrity": "sha512-2dNXe/4VetbEa8kzjMbLQxQNYySXNiv696W2WS0/NHOv4/GB48G0gwqD1MTa9tamhxR/zwY4Zp+TbUX4/7UHKQ==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 211,
+			"tier": 3,
+			"package": "@xynogen/pix-optimizer",
+			"version": "1.1.18",
+			"downloads": {
+				"monthly": 2940,
+				"weekly": 741
+			},
+			"integrity": "sha512-9Sf+0HWmHY6QNxA+5yITYd3pAQm9hwAsyz12EbzEu+r0MiOf+SzG0q34Wpetg96gR6xP/nNS6GsBhX1c2R5m1g==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 212,
+			"tier": 3,
+			"package": "pi-extensions",
+			"version": "0.1.58",
+			"downloads": {
+				"monthly": 2922,
+				"weekly": 584
+			},
+			"integrity": "sha512-+pt/sZFD57QguRwQzmqrWQqCK02se2R6+UuuP+xOg1a9hF9atDS1sEt/lAU1cfOXRoJ2UOLUEWMdz4PmqEsM/Q==",
+			"extensions": [
+				"./agent-guidance/agent-guidance.ts",
+				"./arcade/spice-invaders.ts",
+				"./arcade/picman.ts",
+				"./arcade/ping.ts",
+				"./arcade/tetris.ts",
+				"./arcade/mario-not/mario-not.ts",
+				"./code-actions/index.ts",
+				"./files-widget/index.ts",
+				"./raw-paste/index.ts",
+				"./pi-ralph-wiggum/index.ts",
+				"./session-recap/index.ts",
+				"./tab-status/tab-status.ts",
+				"./usage-extension/index.ts"
+			]
+		},
+		{
+			"rank": 213,
+			"tier": 3,
+			"package": "@mrclrchtr/supi-prompt-suggestions",
+			"version": "2.6.1",
+			"downloads": {
+				"monthly": 2915,
+				"weekly": 334
+			},
+			"integrity": "sha512-3SJlFyIAUwVL3ZKI1CSqn+MitR6xB9gALgRxRrrPFZW88WWmNNmQ6168JBFKl/rh+QgejGhZWFzcuGpKcekLdA==",
+			"extensions": [
+				"./src/extension.ts"
+			]
+		},
+		{
+			"rank": 214,
+			"tier": 3,
+			"package": "@router-for-me/pi-cliproxyapi-provider",
+			"version": "1.4.9",
+			"downloads": {
+				"monthly": 2893,
+				"weekly": 673
+			},
+			"integrity": "sha512-zJfMI47bBfGPMF7dWtomxC/7ivLLk13h4YaydvhWmZatliegngJWjQ1qgPS58ptn0bLH2OerTnEQsPt1WwIHeA==",
+			"extensions": [
+				"./extensions/index.ts",
+				"./extensions/tps.ts"
+			]
+		},
+		{
+			"rank": 215,
+			"tier": 3,
+			"package": "@amaster.ai/pi-memory",
+			"version": "0.1.6",
+			"downloads": {
+				"monthly": 2888,
+				"weekly": 810
+			},
+			"integrity": "sha512-6relwhWZASk/U3vusbRhNFsT+Sf1vCckzUOnDOUqjg5dZab5i0BlRlYCboM44xxfZnCXHBFCXy4Ecbv+bT1GGA==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 216,
+			"tier": 3,
+			"package": "@ch1nyzzz/pi-evo",
+			"version": "0.80.23",
+			"downloads": {
+				"monthly": 2866,
+				"weekly": 458
+			},
+			"integrity": "sha512-ARFTt6avh1seuxmXHNbkmqRuIPl5qLc1uvx8+AqDmPlorhM9NeqosxnjlPC/w9U9PJxxx9cZUmfzujGwDXoK3A==",
+			"extensions": [
+				"./dist/extension.js"
+			]
+		},
+		{
+			"rank": 217,
+			"tier": 3,
+			"package": "pi-patty-bg-tasks",
+			"version": "1.1.6",
+			"downloads": {
+				"monthly": 2860,
+				"weekly": 202
+			},
+			"integrity": "sha512-RuYGIvkO6hqXqT1DUBRKMZuvMP4A90QubnzaCMl+iwZTeIYlHnAFeXbXG3zyVKObNPnnNZ1N7WY4VCKKrh/GUg==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 218,
+			"tier": 3,
+			"package": "@senomas/pi-git-hat",
+			"version": "1.0.0",
+			"downloads": {
+				"monthly": 2855,
+				"weekly": 244
+			},
+			"integrity": "sha512-03CXA/1TuhjM3pzyIuXr6XT3hpgO49ngulTZn2QOGVRieBz2TSRY9gDZKOEnfn01UVAeEPDu12pp5xSg9JG/lA==",
+			"extensions": [
+				"./git-hat.ts",
+				"./extensions/hat-host-tools/index.ts"
+			]
+		},
+		{
+			"rank": 219,
+			"tier": 3,
+			"package": "pi-agent-suite",
+			"version": "1.0.1",
+			"downloads": {
+				"monthly": 2852,
+				"weekly": 1040
+			},
+			"integrity": "sha512-6ysXUGQzwIJCa1qZQ5xg63ANv/pqThNtszNRpsynaSVGvxJWAFnntd0CyCx2N8dwFl/2zx24oNjSL6TWJTAvWA==",
+			"extensions": [
+				"./extensions/system-prompt/index.ts",
+				"./extensions/project-rules/index.ts",
+				"./extensions/mcp-wrapper/index.ts",
+				"./extensions/enable-tools/index.ts",
+				"./extensions/footer/index.ts",
+				"./extensions/codex-fast/index.ts",
+				"./extensions/codex-verbosity/index.ts",
+				"./extensions/codex-quota/index.ts",
+				"./extensions/custom-compaction/index.ts",
+				"./extensions/context-projection/index.ts",
+				"./extensions/mermaid/index.ts",
+				"./extensions/completion-sound/index.ts",
+				"./extensions/cmux/index.ts",
+				"./extensions/main-agent-selection/index.ts",
+				"./extensions/run-subagent/index.ts",
+				"./extensions/structured-prompt/index.ts",
+				"./extensions/ask-llm/index.ts",
+				"./extensions/consult-advisor/index.ts",
+				"./extensions/convene-council/index.ts"
+			]
+		},
+		{
+			"rank": 220,
+			"tier": 3,
+			"package": "@juicesharp/rpiv-args",
+			"version": "2.1.0",
+			"downloads": {
+				"monthly": 2846,
+				"weekly": 1218
+			},
+			"integrity": "sha512-RnwU0AfdPr9H+z1IGuHC7XhqgKMfnjZg1d/++8ngUfumcIJp7H8DEuJQojmfNaLptvQ3a3+GDHAIxHFuoweG0w==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 221,
+			"tier": 3,
+			"package": "@gjczone/pi-swarm",
+			"version": "0.9.5",
+			"downloads": {
+				"monthly": 2845,
+				"weekly": 179
+			},
+			"integrity": "sha512-93bJpnO2JyKvf1iBxJm36drGR1hEVJGkH7WeaJe/abj4zv9J7hEyJCy9cZGG4XEdxdxOrejZT9tCWkHfgaGVZQ==",
+			"extensions": [
+				"./dist"
+			]
+		},
+		{
+			"rank": 222,
+			"tier": 3,
+			"package": "pi-nocturne-memory",
+			"version": "1.0.14",
+			"downloads": {
+				"monthly": 2845,
+				"weekly": 37
+			},
+			"integrity": "sha512-acB386y9BVj62s9JYtJQTxT7houv1+fFXgditCSVcZx9j2p6FvKdWeN3aX0arnEUPLsConc3hUmKq8aBsKAhBw==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 223,
+			"tier": 3,
+			"package": "@amaster.ai/pi-security",
+			"version": "0.1.6",
+			"downloads": {
+				"monthly": 2838,
+				"weekly": 835
+			},
+			"integrity": "sha512-iBCJb8QRoPklm9zslG0uI3XK1UK8DSUQxAA4sZiUOkFJqpmoliz89NWD8nxRqa+CVZF4hOvY44bhnTW0DDpiHg==",
+			"extensions": [
+				"./dist/extension.js"
+			]
+		},
+		{
+			"rank": 224,
+			"tier": 3,
+			"package": "@zeerke/ascet-copilot",
+			"version": "0.1.26",
+			"downloads": {
+				"monthly": 2835,
+				"weekly": 1321
+			},
+			"integrity": "sha512-zMKRBZP3AEIRGTVRNtzZHKMvqob4n7dkYVHlWJ1ILFwMpUMDpOK6Vt5aZpVuFEg7fqWe7U0Tzp9XZMivZsTaSw==",
+			"extensions": [
+				"node_modules/@zeerke/ascet-copilot-extension/src/index.ts",
+				"node_modules/@zeerke/ascet-copilot-ui/extensions/index.ts",
+				"node_modules/pi-subagents/src/extension/index.ts",
+				"node_modules/@juicesharp/rpiv-todo/index.ts",
+				"node_modules/@juicesharp/rpiv-ask-user-question/index.ts",
+				"node_modules/@narumitw/pi-goal/src/goal.ts",
+				"node_modules/pi-hermes-memory/src/index.ts",
+				"node_modules/pi-web-access/index.ts"
+			]
+		},
+		{
+			"rank": 225,
+			"tier": 3,
+			"package": "@bacnh85/pi-munin",
+			"version": "0.4.7",
+			"downloads": {
+				"monthly": 2827,
+				"weekly": 84
+			},
+			"integrity": "sha512-JVchF2cua8c3hUmUBZH5G5l+YbecJLtgK7V8nVXzYJ6wMHQX9DGQI2jKdqnN179QvG84+GhPC+bk9a/6gouKdQ==",
+			"extensions": [
+				"./extensions/index.ts"
+			]
+		},
+		{
+			"rank": 226,
+			"tier": 3,
+			"package": "@danmademe/pi-provider-litellm",
+			"version": "0.12.0",
+			"downloads": {
+				"monthly": 2824,
+				"weekly": 242
+			},
+			"integrity": "sha512-s6diTdSCNZdp/SG7N6UDtlSNfn5gmRyT9OqZ5MNqjgQe+NrQpzy9mRC6SnAorgM5Fn53EDOYmUDYqCYf7INdmg==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 227,
+			"tier": 3,
+			"package": "@firstpick/pi-extension-todo-progress",
+			"version": "0.2.9",
+			"downloads": {
+				"monthly": 2811,
+				"weekly": 818
+			},
+			"integrity": "sha512-gs7tnt9SxH7Bh0JQnm101f7e9qYTSvqf7k7cBvZsiPIpEaBfn3SXMlEG0mKV311SVJ8EDzGCdAnuWoCNYLLrOQ==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 228,
+			"tier": 3,
+			"package": "pi-smart-router",
+			"version": "0.13.0",
+			"downloads": {
+				"monthly": 2784,
+				"weekly": 504
+			},
+			"integrity": "sha512-z7Lho5l9ptlAjvOmaFQzj28t6pSeabeWCZBWyiTA+QEJ1jODwx/kStijX0uJt5JB29I/JjGd1mr97AlXzlD5NQ==",
+			"extensions": [
+				".pi/extensions/smart-router/index.ts"
+			]
+		},
+		{
+			"rank": 229,
+			"tier": 3,
+			"package": "@thurstonsand/pi-permissions",
+			"version": "0.9.0",
+			"downloads": {
+				"monthly": 2776,
+				"weekly": 239
+			},
+			"integrity": "sha512-F3lRpnLdZrzbi3ow4Jrl/g86dAK/pmBDHC7grBFzPPVoaPv0cs3dvC2Mt44lnpcnw1MmozDqmSQSUbtnE1AV2A==",
+			"extensions": [
+				"./extensions/index.ts"
+			]
+		},
+		{
+			"rank": 230,
+			"tier": 3,
+			"package": "pi-free",
+			"version": "2.2.9",
+			"downloads": {
+				"monthly": 2762,
+				"weekly": 605
+			},
+			"integrity": "sha512-pEG6pYqKLcsySD+J26uG529O2Cofflc/op26J5lhUnpytH+ymVtvI/IXpsFxroAogir2hf7VyMY4ODLDRAVcsg==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 231,
+			"tier": 3,
+			"package": "@amaster.ai/pi-memory-mem0",
+			"version": "0.1.6",
+			"downloads": {
+				"monthly": 2745,
+				"weekly": 860
+			},
+			"integrity": "sha512-se61z1lUgeIFx2e+OnO5/EN/umTTkaR8z4yw76GgKOeoHF5NAJI25sd+pDZqcZUQOOrQIoNBVoo6Ah9TzLG3Hg==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 232,
+			"tier": 3,
+			"package": "@bacnh85/pi-web",
+			"version": "0.5.3",
+			"downloads": {
+				"monthly": 2718,
+				"weekly": 120
+			},
+			"integrity": "sha512-K4/PRWxEivinD/k8mK7BIHl3InOc9cLHsEOgET06TnhMvT2Nv7uPahj/oixZLj4MC89YJ9zHmfS/DGb+jk/eXg==",
+			"extensions": [
+				"./extensions/index.ts"
+			]
+		},
+		{
+			"rank": 233,
+			"tier": 3,
+			"package": "@trevonistrevon/pi-loop",
+			"version": "0.6.4",
+			"downloads": {
+				"monthly": 2714,
+				"weekly": 749
+			},
+			"integrity": "sha512-dJFsgRhdniQI51aRCa6fe8OcoQhHH5QpoE4ZSr8WfS/hEbvJiUdkNSUmj2K32kdWsgRiOyXhHJPAoMLiy1rO3A==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 234,
+			"tier": 3,
+			"package": "observal-pi",
+			"version": "1.10.6",
+			"downloads": {
+				"monthly": 2706,
+				"weekly": 1111
+			},
+			"integrity": "sha512-0290rZYHyPRcI7eaikPDDAL6Ur47Fsf2Mos530QUOigHQpH+fT2A2ukpzMcG+EztN7/BpubE6VdCxnz1GvkzjQ==",
+			"extensions": [
+				"./extensions/observal.ts"
+			]
+		},
+		{
+			"rank": 235,
+			"tier": 3,
+			"package": "zob-harness",
+			"version": "0.17.0",
+			"downloads": {
+				"monthly": 2704,
+				"weekly": 737
+			},
+			"integrity": "sha512-RF5mpdQ1IvqaAruL6SSkoQ1mbsbUTwgy4bF8lbKPvCWGpzPk5jnfDWR3A4MBuqmfuqOAxqg9v+c/BosPYifYww==",
+			"extensions": [
+				".pi/extensions/zob-switch/index.ts",
+				".pi/extensions/zob-harness/index.ts"
+			]
+		},
+		{
+			"rank": 236,
+			"tier": 3,
+			"package": "pi-smart-ralph",
+			"version": "0.1.9",
+			"downloads": {
+				"monthly": 2700,
+				"weekly": 92
+			},
+			"integrity": "sha512-7i+AB/yBPb8a9DY3H5kkiw5aFrq3FPeJ5+2rab/AGnnAo1wZ9/aWm0IKf11zGy4tPm8sCvh66kgerUdvTBo4Lg==",
+			"extensions": [
+				"./extensions/ralph-specum/index.ts"
+			]
+		},
+		{
+			"rank": 237,
+			"tier": 3,
+			"package": "@cgh567/agent",
+			"version": "2.6.3",
+			"downloads": {
+				"monthly": 2645,
+				"weekly": 359
+			},
+			"integrity": "sha512-msfiydCla/hGg5e6QhOFemFSlRu+W/fvtkWT+onoKKfA+CEjq133FIFlcaCBLXdfQsxLHjPlt2OJ1K0/VyV7JA==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 238,
+			"tier": 3,
+			"package": "@firstpick/pi-extension-workflows",
+			"version": "0.1.6",
+			"downloads": {
+				"monthly": 2645,
+				"weekly": 1062
+			},
+			"integrity": "sha512-0KxazAmz4FUo2D+F2mvovHec5xyPkolf5LRADxUVvRUVzxWFjKVah+bZ6SKA3Ir2hpiZlzA/QmgqMesspyKiag==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 239,
+			"tier": 3,
+			"package": "pi-omlx-picker",
+			"version": "0.3.6",
+			"downloads": {
+				"monthly": 2639,
+				"weekly": 172
+			},
+			"integrity": "sha512-6JbxZfjHLiEQ+kggWz5xzu3DidRBXwPAfOZ9KxhQZtzrWjLyS5dnZ7PDV0zx7zUQtetu8CBfnhgmiYV+V+8XgA==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 240,
+			"tier": 3,
+			"package": "@amaster.ai/pi-lark",
+			"version": "0.1.6",
+			"downloads": {
+				"monthly": 2619,
+				"weekly": 807
+			},
+			"integrity": "sha512-3NZHpJJpqMlg1xP3DZyoIVcSjvvzWmuAAR5Wn+pC3hD419eE7k+lonTzi3gJ+35PSGtkaCX3mg8DQuwju3eFQw==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 241,
+			"tier": 3,
+			"package": "@booplex/bpx-consult",
+			"version": "0.10.2",
+			"downloads": {
+				"monthly": 2616,
+				"weekly": 380
+			},
+			"integrity": "sha512-F98lLIfOcwKbDQ4pZqvcma/fPtSTpKNrpLk84jzTQB1HFL37z/RpS9UIV3XKbFn/xtdcKGNcjB5UW/bBhijpxw==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 242,
+			"tier": 3,
+			"package": "pi-agent-flow",
+			"version": "2.5.2",
+			"downloads": {
+				"monthly": 2616,
+				"weekly": 763
+			},
+			"integrity": "sha512-vYE1lT6vH7vhC5hrSsTQ5CrnNJTTSFxLZurXg6MDOoSDtRzlMxs9RS3lUNOSHVYwXHYjj3nWXgHeQ8Sg/+tNcg==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 243,
+			"tier": 3,
+			"package": "@amaster.ai/pi-web-access",
+			"version": "0.1.6",
+			"downloads": {
+				"monthly": 2614,
+				"weekly": 785
+			},
+			"integrity": "sha512-+tNRh6hCaMKCjlx/j+U2Ze7iNNjDQu21wuUEOU8dbEBEZDav1UCDgbv1IxrBSPjq7TknJKKNvKqRCiOUhly41g==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 244,
+			"tier": 3,
+			"package": "pi-vision-handoff",
+			"version": "0.9.0",
+			"downloads": {
+				"monthly": 2597,
+				"weekly": 499
+			},
+			"integrity": "sha512-ChKBv2j6CIuAkOT5ArSXYceo2VPGUB/Gyuqb0FI/EynU+XrzNXYPBWAaCpjTDfhcJl2DPRBz9tMizlG9wemlnw==",
+			"extensions": [
+				"./vision-handoff.ts"
+			]
+		},
+		{
+			"rank": 245,
+			"tier": 3,
+			"package": "@firstpick/pi-package-remote-webui",
+			"version": "0.1.8",
+			"downloads": {
+				"monthly": 2595,
+				"weekly": 937
+			},
+			"integrity": "sha512-WNWqUJInIz4Oth7HimdpaxuN9njiLbBykUTwlRApff4QaO7lf+FC+3F+jFOteAyaq89xR/mtfgmMCpzymkJ9XA==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 246,
+			"tier": 3,
+			"package": "pi-roblox-docs",
+			"version": "0.3.9",
+			"downloads": {
+				"monthly": 2594,
+				"weekly": 220
+			},
+			"integrity": "sha512-HCP43nmY/dOVyzjF6tEDiCtf6mzneoBGVK72BJd9ciZHPuDCeKDrefNnavoydPYRQoEmHjO1az3OMjUSeGLLtw==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 247,
+			"tier": 3,
+			"package": "@isr4el-silv4/pi-web-ui",
+			"version": "1.0.15",
+			"downloads": {
+				"monthly": 2574,
+				"weekly": 300
+			},
+			"integrity": "sha512-aMuzFbg57Z6kN2pqntoeb0g6beyh/GjIa/3P3Tu4zHYus+7OAcF6255q8RVaZ/sf4aEcSYC3mxlDdpR9IGSHzw==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 248,
+			"tier": 3,
+			"package": "@pi-archimedes/image-paste",
+			"version": "1.8.2",
+			"downloads": {
+				"monthly": 2556,
+				"weekly": 629
+			},
+			"integrity": "sha512-3wwV2PDtRbWcIFD7/IgAh6dBQnCMt2sVIQfhIa+aOg+8P7uiNsMTLlQKONdH+VKZITj2PZFSFi1sGfWl6lV5Qg==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 249,
+			"tier": 3,
+			"package": "pi-code-planner",
+			"version": "0.12.1",
+			"downloads": {
+				"monthly": 2556,
+				"weekly": 235
+			},
+			"integrity": "sha512-gaZcyh75w6JWuobi/OQNfEz5TIVXLFbbu/sg/Bq1z37sb5LLUKYpDn7AhKvI2QE24UnrwKc/AtgYSWH7+Y5EXQ==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 250,
+			"tier": 3,
+			"package": "pi-yaml-hooks",
+			"version": "2026.7.19",
+			"downloads": {
+				"monthly": 2539,
+				"weekly": 794
+			},
+			"integrity": "sha512-6LzpAS3RMupCEOKOv9+yQViXjWCb0DLvLh74yvReLB/375JSeX/8sfHrwL3lihulNRbp5pp8troNIoMe4P6mnQ==",
+			"extensions": [
+				"./extensions/pi-yaml-hooks/index.ts"
+			]
+		},
+		{
+			"rank": 251,
+			"tier": 3,
+			"package": "@firstpick/pi-extension-release-npm",
+			"version": "0.4.4",
+			"downloads": {
+				"monthly": 2537,
+				"weekly": 1152
+			},
+			"integrity": "sha512-WAaP35gF285wNVnVa445mlcn9jJoCOlygeRxkXu55uPQCIuAPATS1CLEXCOrlpHtRpktd55RByCBXwA3uZgXng==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 252,
+			"tier": 3,
+			"package": "@nguyenquangthai/pi-todo",
+			"version": "0.4.0",
+			"downloads": {
+				"monthly": 2532,
+				"weekly": 384
+			},
+			"integrity": "sha512-pwFCLlYLAznVIDPV3CT4QRKjjACiXTi2olf+1MJ5x6BLopqFyM1QH9Oa9cXT+LbRtN1uvLCH9/ICftcGThaNHQ==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 253,
+			"tier": 3,
+			"package": "@firstpick/pi-extension-safety-guard",
+			"version": "0.2.6",
+			"downloads": {
+				"monthly": 2515,
+				"weekly": 806
+			},
+			"integrity": "sha512-8aWJn03CKLIyo3/SuO4+NAuYwFbKAtaHLRuobMZqXlI6xP6I/Ut1+LQfh2SKENWrXaMziUPZmJi4B9T3RORvUw==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 254,
+			"tier": 3,
+			"package": "@xynogen/pix-models",
+			"version": "0.1.19",
+			"downloads": {
+				"monthly": 2513,
+				"weekly": 249
+			},
+			"integrity": "sha512-XUnLkvvrQmEhF2IgHsFIcGZy/2KdRcjoV8ZSUwuXQVeHBMcHZz9Fb5mz4f3KzCIlh1pbFRZkqsT/azJtB/4S3Q==",
+			"extensions": [
+				"src/extension.ts"
+			]
+		},
+		{
+			"rank": 255,
+			"tier": 3,
+			"package": "@amaster.ai/pi-wecom",
+			"version": "0.1.6",
+			"downloads": {
+				"monthly": 2507,
+				"weekly": 769
+			},
+			"integrity": "sha512-z+mUgCa56Rre/+xFtCeUSTMQbOCN0VmWSH5qGc4ASCYSX8u34hzXOyt4t4AEDluEZKReBInS6in9QJZI1E/4fg==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 256,
+			"tier": 3,
+			"package": "pi-claude-bridge",
+			"version": "0.6.2",
+			"downloads": {
+				"monthly": 2503,
+				"weekly": 499
+			},
+			"integrity": "sha512-+MGz9zSG4np4b/BnJOUatbXidSejQZXkj4vaIKIJzCfAEXLzFkarOxOdtKdnpNpk1aQUGCn1mXqUGkOtCFnOpg==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 257,
+			"tier": 3,
+			"package": "pi-ultra-compact",
+			"version": "1.3.0",
+			"downloads": {
+				"monthly": 2500,
+				"weekly": 317
+			},
+			"integrity": "sha512-K2VPG0iOgltb7M1BFReJ/vnJPlNH+YZwOTs1FORyvpW2WB2p2vuF1bJQh+OPReyB503H2YgLDh0FWR5WwzjhcQ==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 258,
+			"tier": 3,
+			"package": "pi-knowledge",
+			"version": "0.6.0",
+			"downloads": {
+				"monthly": 2494,
+				"weekly": 1019
+			},
+			"integrity": "sha512-WAVNrHyLpAG17YghY02bekAk9Zd8mx1CMhHIjS5ZZCh9YA5XqqXClc66txxJr30tPBBzgc+RSIo8j22m7mnDUw==",
+			"extensions": [
+				"./extension.js"
+			]
+		},
+		{
+			"rank": 259,
+			"tier": 3,
+			"package": "@pi-archimedes/subagent",
+			"version": "1.8.2",
+			"downloads": {
+				"monthly": 2485,
+				"weekly": 632
+			},
+			"integrity": "sha512-CaONwwujenagiq//k/KC5m3iX0f47Hk0mUocgQ+R78Egs3eI8EhYcRBhV5TZ7ER8oTj++z8uqMdZP37zFyu74A==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 260,
+			"tier": 3,
+			"package": "@amaster.ai/pi-dingtalk",
+			"version": "0.1.6",
+			"downloads": {
+				"monthly": 2478,
+				"weekly": 773
+			},
+			"integrity": "sha512-yRTPdwXP3p7Wn0ExbbpzSrkdm8hbyF9Ub+kUPBZ6Q6ytzl5GRvuALYkyXWRTJTq1G45RHRTs0AVF4sE3lod+9Q==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 261,
+			"tier": 3,
+			"package": "pi-orch-extension",
+			"version": "1.1.1",
+			"downloads": {
+				"monthly": 2475,
+				"weekly": 81
+			},
+			"integrity": "sha512-qUVjSgCnH4azv60mTYvSFh3g/H/w/JfXG5BKtXUG3BYAupVHjEFNrMrCeHOhTYP95JpzoxOblQETic6YvVOLAw==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 262,
+			"tier": 3,
+			"package": "@qianhuan-lxs/pi-mcp-bridge",
+			"version": "0.5.6",
+			"downloads": {
+				"monthly": 2452,
+				"weekly": 2452
+			},
+			"integrity": "sha512-ctKaGtZJpYi7BXobRUJqsx3tmdI4Ru6sYNgUbbB8BDH1E4UxFeH5YGeIDxBNi4wIFnKJqwpinAAC/+QPkUyg6Q==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 263,
+			"tier": 3,
+			"package": "pi-llm-bridge",
+			"version": "0.2.5",
+			"downloads": {
+				"monthly": 2452,
+				"weekly": 99
+			},
+			"integrity": "sha512-FmcC+65kV4aL1UCNN0nU2Oq0BgLrDJoIB5NEErfXUPq3B3VnF58QbrtXDpf0LIBMS20ol4edgllEox5XxDggbQ==",
+			"extensions": [
+				"./extension.ts"
+			]
+		},
+		{
+			"rank": 264,
+			"tier": 3,
+			"package": "@ahkohd/pi-oyo",
+			"version": "0.1.56",
+			"downloads": {
+				"monthly": 2451,
+				"weekly": 787
+			},
+			"integrity": "sha512-ItLYXe7Ha/08yTdHxjQxU4mtd9Zi1MJkFX9GleQeFavzUC/8YOetP1l/15vV2SVw6HtxvJgREAEDTB0uYmevoQ==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 265,
+			"tier": 3,
+			"package": "pi-grok-cli",
+			"version": "0.6.0",
+			"downloads": {
+				"monthly": 2423,
+				"weekly": 720
+			},
+			"integrity": "sha512-5P5QjqkXjCbHH4qs9fmksuHb7us+kjp/LR43SRDUCYNKOB34tqZ6e2rPQ4KNrF6H2iZ9fbr68ZBujLlR1fuFhw==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 266,
+			"tier": 3,
+			"package": "pi-conductor",
+			"version": "0.12.0",
+			"downloads": {
+				"monthly": 2418,
+				"weekly": 478
+			},
+			"integrity": "sha512-lmkDh5b6uHHF0RsilTRm4EQtRTthl4wF5lg6bkCdU1qflZ4e0fHq1zA5SIn5ZqWCi3J0mJMuCQsE5YNDLhW2Ag==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 267,
+			"tier": 3,
+			"package": "pi-smart-compact",
+			"version": "7.22.0",
+			"downloads": {
+				"monthly": 2415,
+				"weekly": 334
+			},
+			"integrity": "sha512-mjeWp5QceecQr3rvIXZYyBCA2Vfi9twwK4iMpxJd6dY1apScSyP/cz/MW6nnruZ0qNw/9xLoiV6taooGbn/uXA==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 268,
+			"tier": 3,
+			"package": "@aliou/pi-synthetic",
+			"version": "0.23.1",
+			"downloads": {
+				"monthly": 2396,
+				"weekly": 424
+			},
+			"integrity": "sha512-IyzCA4Noi60aSslsabM4bhQyYsg/i5/08o19IArilgNsZuPZ+lmigU8wUINdIIbu0DDCCQ57S7gK1CzKyDKbqw==",
+			"extensions": [
+				"./extensions/provider/index.ts",
+				"./extensions/web-search/index.ts",
+				"./extensions/command-quotas/index.ts",
+				"./extensions/sub-bar-integration/index.ts",
+				"./extensions/quota-warnings/index.ts",
+				"./extensions/usage-status/index.ts"
+			]
+		},
+		{
+			"rank": 269,
+			"tier": 3,
+			"package": "@chendpoc/pi-memory",
+			"version": "0.3.2",
+			"downloads": {
+				"monthly": 2394,
+				"weekly": 88
+			},
+			"integrity": "sha512-/RA9/TDLQJxnmX1Xh0rnQqmSNWzqGsAMZUm2t4cWmX1uCfkHKR/RtnkMacgF3Ps1LFxa7j4JZQj+tRrMYWx2DA==",
+			"extensions": [
+				"./dist/pi-extension.js"
+			]
+		},
+		{
+			"rank": 270,
+			"tier": 3,
+			"package": "@spences10/pi-mcp",
+			"version": "0.0.54",
+			"downloads": {
+				"monthly": 2387,
+				"weekly": 840
+			},
+			"integrity": "sha512-F5vwGt1xa4FPYPVdL1FAi6az5d5UuCY3BIyiqvJZ+E4Mid7KkuXWl60HpVFL+jsy8Z2asLNfuXw44CfyVoERSg==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 271,
+			"tier": 3,
+			"package": "@pi-archimedes/diff",
+			"version": "1.8.2",
+			"downloads": {
+				"monthly": 2385,
+				"weekly": 630
+			},
+			"integrity": "sha512-ycBst7YCtw3S44CrwkWbmaU1N6n3SOa3KWthrdJ1EgZ/IzhAj5KBU8HPSEH4+opZLrDoPNBsLriVacXw+ft9uA==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 272,
+			"tier": 3,
+			"package": "@k3_2o/pi-chrollo",
+			"version": "0.3.2",
+			"downloads": {
+				"monthly": 2377,
+				"weekly": 532
+			},
+			"integrity": "sha512-ld7blzf4jIzFIrmbM5f6UmdhgC8tfhggVJ1YtjPM87U+tI0S/PT6N5OTWhHX2ZUDo0IBab8VkEYNa2ousv0DbA==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 273,
+			"tier": 3,
+			"package": "vision-electronic-indexing-pi",
+			"version": "0.1.21",
+			"downloads": {
+				"monthly": 2369,
+				"weekly": 56
+			},
+			"integrity": "sha512-rP0XO1WbRVnHvJ1blqpu5uIjJBrF6cNE9VIbeoF3I4PdF+jXuBDkHWZQrEGGR1Wo1xOq0EQVB4iBb/FeWs74xw==",
+			"extensions": [
+				".pi/extensions/vision-inventory-mcp/index.ts"
+			]
+		},
+		{
+			"rank": 274,
+			"tier": 3,
+			"package": "pi-provider-kimi-code",
+			"version": "0.6.9",
+			"downloads": {
+				"monthly": 2359,
+				"weekly": 1011
+			},
+			"integrity": "sha512-YMwaN4CUPIOm5dlEDLUhDWlBJDQXFRdMrFm+aagk2zJ8jnoo1KZb/FjZWOzhlvRgdPkMTNSw2JJSEeeTkP/UZQ==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 275,
+			"tier": 3,
+			"package": "pi-cc-header",
+			"version": "0.9.5",
+			"downloads": {
+				"monthly": 2358,
+				"weekly": 755
+			},
+			"integrity": "sha512-Q5HHx34XmOZljOB7Zi1JLioEd3/ieVyXvy2AOhV8P/8EVrQgqLaYgzigTbMerqsSgF4TyChBV8/kQc+Xb+C0XQ==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 276,
+			"tier": 3,
+			"package": "@agwab/pi-subagent",
+			"version": "0.4.8",
+			"downloads": {
+				"monthly": 2356,
+				"weekly": 207
+			},
+			"integrity": "sha512-HPAzAye6maCpBHXpjsTRMGuwvXoD4FpUu5oKe0g1hdu6eGrao10/dzfx3XiIDsR7hD/aR3Gmob6+nAFY2vB+iw==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 277,
+			"tier": 3,
+			"package": "@wherever-dev/pi",
+			"version": "0.4.6",
+			"downloads": {
+				"monthly": 2351,
+				"weekly": 459
+			},
+			"integrity": "sha512-kBOGzk4CIGrgb5TrCSOAfNJPFdpIrbEU/SPfJQLF4+/8Awe/dJg/1VChxFVFNsutaFEtbm2h9J06z0kik7AboA==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 278,
+			"tier": 3,
+			"package": "@d3ara1n/pi-model-roles",
+			"version": "1.1.0",
+			"downloads": {
+				"monthly": 2337,
+				"weekly": 315
+			},
+			"integrity": "sha512-OopdqStn5867XX/ml4GIuxDDErpSxcOg15JSZ+NuK0zKDln9aeE2+tXB+FItmCl7xgL5f2DsV46WXO9T/Xivfw==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 279,
+			"tier": 3,
+			"package": "@jaggerxtrm/pi-extensions",
+			"version": "0.11.2",
+			"downloads": {
+				"monthly": 2326,
+				"weekly": 376
+			},
+			"integrity": "sha512-exk/xA3iyzaP8ss/0t04LXLM1lq6wmst5NmuchARxYJRESjDDiHZNsvajZRzzGDLwDIlKH7zr8TSzAxYNiKpiw==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 280,
+			"tier": 3,
+			"package": "pi-gitnexus",
+			"version": "0.6.4",
+			"downloads": {
+				"monthly": 2309,
+				"weekly": 525
+			},
+			"integrity": "sha512-VHDx8sMObMsb8RScSQk8w2XS9klgVFvzTyuIoc+7hdsZAuMIBZ4/ZILZo5g8cPY3bhAXVwsVttHlrxjpVHWFRg==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 281,
+			"tier": 3,
+			"package": "@yusukeshib/pi-babysit",
+			"version": "0.3.14",
+			"downloads": {
+				"monthly": 2288,
+				"weekly": 2013
+			},
+			"integrity": "sha512-r7bgA7w5a+8PxFMcj/dM8nN+jzj6KVEnBbaX1Hl8JkmeTkRJiW0nXZZm9c7FH/R0SVwRAqCL3DHAYzuNz17oTA==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 282,
+			"tier": 3,
+			"package": "pi-claude-code-tui",
+			"version": "0.1.11",
+			"downloads": {
+				"monthly": 2283,
+				"weekly": 319
+			},
+			"integrity": "sha512-Qr5//kvVrbsR6KfXnFDUemwX6xwlgTGrp4yqlI0w+FzOeW0mTrAoZEYTYGsEN+ZSOdsBJfasgTj+0Jde6CqnXQ==",
+			"extensions": [
+				"./extensions/claude-code-startup.ts"
+			]
+		},
+		{
+			"rank": 283,
+			"tier": 3,
+			"package": "@pi-archimedes/todo",
+			"version": "1.8.2",
+			"downloads": {
+				"monthly": 2269,
+				"weekly": 604
+			},
+			"integrity": "sha512-hSyj9/TTMli0ZlvZlkdeeSCJvX8h+eEZ2//vTEv86vkzZ6CPQgYyAqicVoQMUd3EYjb0y/y8x8wPHGxJhq1D/Q==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 284,
+			"tier": 3,
+			"package": "@juanibiapina/pi-plan",
+			"version": "0.3.1",
+			"downloads": {
+				"monthly": 2268,
+				"weekly": 543
+			},
+			"integrity": "sha512-BA1CnNkldppNCnKuBTL6DJDTsXPwn0L9ijsAIOQ7meCB/8o2vn5bRQpyGZK33nH/MAppKrNJLYQ0SGEmjIgY/Q==",
+			"extensions": [
+				"./dist/index.js"
+			]
+		},
+		{
+			"rank": 285,
+			"tier": 3,
+			"package": "@pi-archimedes/footer",
+			"version": "1.8.2",
+			"downloads": {
+				"monthly": 2252,
+				"weekly": 621
+			},
+			"integrity": "sha512-A3OcRykub6H/DXkx1pAZjinAQuGkIa3W4AKg4XCw0IcP8C1UmRTZZvvso+MDa5xVuMHuaOVroUovWxu9dLDQow==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 286,
+			"tier": 3,
+			"package": "@patimweb/pi-email",
+			"version": "1.4.2",
+			"downloads": {
+				"monthly": 2251,
+				"weekly": 1384
+			},
+			"integrity": "sha512-3lEZY+diinHKwsUXRKzAvogp3Ms8xvpk0qdBoyFGXEPe75AR/9iuxMxrVJQzCi1M4veTO5vcwtF96++fiO8jnA==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 287,
+			"tier": 3,
+			"package": "@zigai/pi-footer",
+			"version": "0.5.0",
+			"downloads": {
+				"monthly": 2225,
+				"weekly": 184
+			},
+			"integrity": "sha512-aLDf/j/Ry8QEEGSFJxIQkiQgqQxoIsXDQ4Q5/WAPoPkrxr8yjtUpnXxs6uU7u7zTkiYQNMDKujBaY6yHRmIwMA==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 288,
+			"tier": 3,
+			"package": "pi-archimedes",
+			"version": "1.8.2",
+			"downloads": {
+				"monthly": 2202,
+				"weekly": 570
+			},
+			"integrity": "sha512-SzVsHuasPO+Pf1LSOvrvcf0/G1IbFyxgRIf2XRQRJPYdNrhTSdfHCwAQavyVBFU4JNv0gk7LRMMLZQO/rGF+Rw==",
+			"extensions": [
+				"./src/index.ts"
+			]
+		},
+		{
+			"rank": 289,
+			"tier": 3,
+			"package": "sideshow",
+			"version": "0.11.1",
+			"downloads": {
+				"monthly": 2126,
+				"weekly": 190
+			},
+			"integrity": "sha512-0QQ592xR6QspXZnTNpUGt/SbVUELtN7gzbCOzKvOcBX4rTWi2O6CBrWCQymtHbZ0EJcYezEI15shLZCHQHmbxg==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 290,
+			"tier": 3,
+			"package": "@lebronj/pi-suite",
+			"version": "0.1.30",
+			"downloads": {
+				"monthly": 2055,
+				"weekly": 143
+			},
+			"integrity": "sha512-N5dGaNZ3wZcaMB4Ns5258VKfXLT2vqs2wFUPfw5L4NMvhA3+uYS5tPkUhnrBlGYG00s+SeT+yeHPNzI65olfeQ==",
+			"extensions": [
+				"./extensions",
+				"./vendor/pi-memory/index.ts"
+			]
+		},
+		{
+			"rank": 291,
+			"tier": 3,
+			"package": "@narumitw/pi-wait-what",
+			"version": "0.13.1",
+			"downloads": {
+				"monthly": 2035,
+				"weekly": 136
+			},
+			"integrity": "sha512-X7MfQNMUmqsO+U4fuPwR+Kdva574iLh+tyo/jHrun19JXjvU+r7Db9LLfpNfX2+4q6aRaGZkSviMa3mBeKcN9Q==",
+			"extensions": [
+				"./src/wait-what.ts"
+			]
+		},
+		{
+			"rank": 292,
+			"tier": 3,
+			"package": "@xynogen/pix-todo",
+			"version": "0.1.16",
+			"downloads": {
+				"monthly": 1978,
+				"weekly": 585
+			},
+			"integrity": "sha512-rMhAisg3Fx6rl51e3h7vcbWOkb8jLhsI0vPoLQaBIUE1IStqjYOSxsjwusn2Ohlqg/Ood3HO0RqWYJs3TATF/w==",
+			"extensions": [
+				"src/index.ts"
+			]
+		},
+		{
+			"rank": 293,
+			"tier": 3,
+			"package": "pi-canary",
+			"version": "1.5.0",
+			"downloads": {
+				"monthly": 1950,
+				"weekly": 244
+			},
+			"integrity": "sha512-yyDnH/mwK9QPZwMcuRIZp4RhS9KnIY9HvGtgOH1i85sBPavH2d4DOFO8f9QmSbot6t8Fojal13Dpo1QCLblh0Q==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 294,
+			"tier": 3,
+			"package": "ultimate-pi",
+			"version": "0.26.0",
+			"downloads": {
+				"monthly": 1886,
+				"weekly": 275
+			},
+			"integrity": "sha512-lGDD9HwiSu5OPpozqBxcn7rpS5LUHehdb+zzIrAGdHFCFWFsnLc8Nj7pCTUE2TkfluGCU1Y1tZejNRvpHJOisg==",
+			"extensions": [
+				"./.pi/extensions"
+			]
+		},
+		{
+			"rank": 295,
+			"tier": 3,
+			"package": "@aliou/pi-neuralwatt",
+			"version": "0.10.2",
+			"downloads": {
+				"monthly": 1763,
+				"weekly": 476
+			},
+			"integrity": "sha512-kqiVWQ3Uqacyff18Oi6JMN9fW9S6BlRAb9AgDUzsrNHQ1w90je7D+XXgBOhC2tIdZj76n12p6/xs3AEOucyYiA==",
+			"extensions": [
+				"./extensions/provider/index.ts",
+				"./extensions/command-quotas/index.ts",
+				"./extensions/quota-warnings/index.ts",
+				"./extensions/sub-bar-integration/index.ts"
+			]
+		},
+		{
+			"rank": 296,
+			"tier": 3,
+			"package": "pi-search-hub",
+			"version": "2.8.0",
+			"downloads": {
+				"monthly": 1761,
+				"weekly": 217
+			},
+			"integrity": "sha512-wk+yP2VH3Yge8Gixb1sJLjfjg6C01OSVDXNyQU1RhRsAWXvcJX2yPYsQmonIEqeNGZ0P4JJ6HcI0zcEW+jEuRg==",
+			"extensions": [
+				"./extensions/search-hub.ts"
+			]
+		},
+		{
+			"rank": 297,
+			"tier": 3,
+			"package": "@xynogen/pix-footer",
+			"version": "0.1.16",
+			"downloads": {
+				"monthly": 1697,
+				"weekly": 245
+			},
+			"integrity": "sha512-vY58OiXvN6E5/Cw9zNa5Fo0JTTqSDPb9iHEIbtBAWJAvz/Pa30aRo5bozkLN+Vu35Vnm5LsPhiNweFlh5FsXGw==",
+			"extensions": [
+				"src/extension.ts"
+			]
+		},
+		{
+			"rank": 298,
+			"tier": 3,
+			"package": "@geminixiang/pi-diff",
+			"version": "0.3.1",
+			"downloads": {
+				"monthly": 1618,
+				"weekly": 336
+			},
+			"integrity": "sha512-NSaEQgePxLhH7MQGIkLGK7uhmXPFOwGVwTTHrEt7faqDMNAHsNl2oLmT4H7XoYzKwueH/oB5LvOFSRSSNszyVw==",
+			"extensions": [
+				"./extensions"
+			]
+		},
+		{
+			"rank": 299,
+			"tier": 3,
+			"package": "pi-openmodel-provider",
+			"version": "0.2.20",
+			"downloads": {
+				"monthly": 901,
+				"weekly": 82
+			},
+			"integrity": "sha512-2IsRuT156rGlLwqlPXf0QP9jtlO1oQDnkgBohw8QhRIXfC41krzUjStOUcgXe8byqimlZ1vG1vAxi4IyMNiVqg==",
+			"extensions": [
+				"./index.ts"
+			]
+		},
+		{
+			"rank": 300,
+			"tier": 3,
+			"package": "pi-control-bridge",
+			"version": "0.3.17",
+			"downloads": {
+				"monthly": 107,
+				"weekly": 46
+			},
+			"integrity": "sha512-U85YxZhX2GpGg7i8Lf0GLZNMf+aaC/3KmQ5/rBisoxOWIyHZPFdrFY6LQjtR80RpQN7z+cWMpj87QXEvRnaUaA==",
+			"extensions": [
+				"./extension/index.ts"
+			]
+		}
+	]
 }
