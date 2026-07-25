@@ -128,3 +128,47 @@ func TestLoadSkillsCollisionDiagnosticsTrailWarnings(t *testing.T) {
 		t.Fatalf("last diagnostic = %#v, want trailing collision", last)
 	}
 }
+
+// Upstream slices the newline terminating the last frontmatter line off the YAML
+// text, but the npm yaml parser treats end-of-input as a line break, so clip
+// chomping still gives a trailing block scalar its newline. Pinned to
+// .upstream/packages/coding-agent/test/frontmatter.test.ts:25-30.
+func TestResourceFrontmatterBlockScalarKeepsClippedNewline(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		want    string
+		body    string
+	}{
+		{"literal", "---\ndescription: |\n  Line one\n  Line two\n---\n\nBody", "Line one\nLine two\n", "Body"},
+		{"folded", "---\ndescription: >\n  Line one\n  Line two\n---\n\nBody", "Line one Line two\n", "Body"},
+		{"stripped", "---\ndescription: |-\n  Line one\n  Line two\n---\n\nBody", "Line one\nLine two", "Body"},
+		{"plain", "---\ndescription: Line one\n---\n\nBody", "Line one", "Body"},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			parsed, err := parseResourceFrontmatter(testCase.content)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := parsed.Values["description"]; got != testCase.want {
+				t.Fatalf("description = %q, want %q", got, testCase.want)
+			}
+			if parsed.Body != testCase.body {
+				t.Fatalf("body = %q, want %q", parsed.Body, testCase.body)
+			}
+		})
+	}
+}
+
+// Upstream's slice(4, endIndex) yields "" for an empty frontmatter block; the Go
+// slice bounds must not invert.
+func TestResourceFrontmatterEmptyBlock(t *testing.T) {
+	parsed, err := parseResourceFrontmatter("---\n---\nBody")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Values) != 0 || parsed.Body != "Body" {
+		t.Fatalf("parsed = %#v", parsed)
+	}
+}

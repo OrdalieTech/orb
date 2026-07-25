@@ -46,7 +46,10 @@ func DiscoverRuntime(ctx context.Context) (Runtime, error) {
 	if path, err := exec.LookPath("bun"); err == nil {
 		version, versionErr := commandVersion(ctx, path)
 		if versionErr == nil {
-			return Runtime{Name: "bun", Version: strings.TrimPrefix(version, "v"), Path: path}, nil
+			// Dependencies are materialized by an explicit, audited install step, so
+			// Bun's implicit auto-install would fetch unresolved specifiers from npm
+			// mid-session; Node has no such behaviour.
+			return Runtime{Name: "bun", Version: strings.TrimPrefix(version, "v"), Path: path, Args: []string{"--no-install"}}, nil
 		}
 	}
 	return Runtime{}, &RuntimeUnavailableError{NodeVersion: nodeVersion}

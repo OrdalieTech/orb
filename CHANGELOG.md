@@ -6,6 +6,13 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Fixed
+
+- JS extensions importing the pi SDK now resolve the surface upstream gives them. Node's type stripping kept type-only imports from package specifiers, so an extension importing a type such as `ApiKeyCredential` failed to load; and `@earendil-works/pi-ai`'s root entry no longer carries the global API, so imports of `complete`, `stream` or `getModel` resolved to a narrower module than upstream's jiti loader provides. The extension host now elides type-only imports from package specifiers and resolves the legacy surface from the same installed copy, leaving pinned installs untouched.
+- Bun hosts resolve the SDK specifiers extensions import under their historical names (`@mariozechner/pi-tui`, `@earendil-works/pi-agent-core`, `@earendil-works/pi-ai/compat`), which previously only Node aliased. A package the extension installs itself still wins.
+- Bun's implicit auto-install is disabled, so an unresolved import can no longer fetch a package from npm mid-session; dependencies come only from the explicit install step.
+- Skill, prompt-template and slash-command frontmatter keeps the trailing newline that YAML clip chomping gives a closing `>` or `|` block scalar, matching upstream. Frontmatter consisting of an empty `---`/`---` block no longer panics.
+
 ### Changed
 
 - Conformance extraction now runs against upstream 0.82.x: it synthesizes the generated

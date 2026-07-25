@@ -80,7 +80,10 @@ func parseResourceFrontmatter(content string) (parsedFrontmatter, error) {
 		return parsedFrontmatter{Values: map[string]any{}, Body: normalized}, nil
 	}
 	end += 3
-	yamlText := normalized[4:end]
+	// Upstream slices the terminating newline off too, but the npm yaml parser
+	// treats end-of-input as a line break, so a trailing block scalar keeps the
+	// newline clip chomping gives it; yaml.v3 does not synthesize one.
+	yamlText := normalized[4 : end+1]
 	body := strings.TrimFunc(normalized[end+4:], isJSTrimSpace)
 	if yamlText == "" {
 		return parsedFrontmatter{Values: map[string]any{}, Body: body}, nil

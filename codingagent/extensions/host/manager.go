@@ -392,6 +392,12 @@ func (manager *Manager) startLocked(ctx context.Context) (generationLoadResult, 
 	if runtime.Name == "node" && environmentValue(hostEnvironment, "NODE_COMPILE_CACHE") == "" {
 		hostEnvironment = setEnvironmentValue(hostEnvironment, "NODE_COMPILE_CACHE", filepath.Join(manager.options.AgentDir, "host", "node-compile-cache"))
 	}
+	if runtime.Name == "bun" {
+		hostEnvironment, err = prepareRuntimeAliases(manager.options.AgentDir, hostEnvironment)
+		if err != nil {
+			return result, err
+		}
+	}
 	entryFailures := make(map[string]bool)
 	preparedEntries := append([]extensionEntry(nil), manager.entries...)
 	for index, entry := range preparedEntries {
