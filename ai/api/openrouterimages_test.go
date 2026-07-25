@@ -325,7 +325,9 @@ func TestOpenRouterImagesUsageCacheAccounting(t *testing.T) {
 		CacheRead:  model.Cost.CacheRead / 1_000_000 * 20,
 		CacheWrite: model.Cost.CacheWrite / 1_000_000 * 30,
 	}
-	wantCost.Total = wantCost.Input + wantCost.Output + wantCost.CacheRead + wantCost.CacheWrite
+	// Summing inline here would re-derive the production expression and so track
+	// whatever the compiler contracts, which is what let FMA drift ship unseen.
+	wantCost.Total = ai.TotalCost(wantCost)
 	if usage.Cost != wantCost {
 		t.Fatalf("cost = %#v, want %#v", usage.Cost, wantCost)
 	}

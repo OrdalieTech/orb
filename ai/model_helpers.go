@@ -39,13 +39,7 @@ func CalculateCost(model *Model, usage *Usage) {
 	usage.Cost.Output = rates.Output / 1_000_000 * float64(usage.Output)
 	usage.Cost.CacheRead = rates.CacheRead / 1_000_000 * float64(usage.CacheRead)
 	usage.Cost.CacheWrite = (rates.CacheWrite*float64(shortWrite) + rates.Input*2*float64(longWrite)) / 1_000_000
-	// Go may fuse a multiply and an add across statements (spec: Floating-point
-	// operators) unless an explicit conversion rounds first. On arm64 it does,
-	// so an unfused -race build matched upstream while the shipped CGO_ENABLED=0
-	// binary wrote costs one ULP off. JavaScript never fuses; these conversions
-	// pin the sum to the stored, individually rounded rates.
-	usage.Cost.Total = float64(usage.Cost.Input) + float64(usage.Cost.Output) +
-		float64(usage.Cost.CacheRead) + float64(usage.Cost.CacheWrite)
+	usage.Cost.Total = TotalCost(usage.Cost)
 }
 
 var extendedThinkingLevels = []ModelThinkingLevel{
@@ -158,4 +152,14 @@ func ContentText(content any, separators ...string) string {
 // UUIDv7 returns a monotonic UUIDv7.
 func UUIDv7() (string, error) {
 	return uuidv7.Generate(time.Now())
+}
+
+// TotalCost sums the individually rounded rate components. The explicit
+// conversions are contraction barriers: Go may fuse a multiply and an add across
+// statements (spec: Floating-point operators) unless a conversion rounds first,
+// and on arm64 it does. That made an unfused -race build match upstream while
+// the shipped CGO_ENABLED=0 binary wrote totals one ULP off and persisted them.
+// JavaScript never fuses, so every site whose total reaches the wire sums here.
+func TotalCost(cost Cost) float64 {
+	return float64(cost.Input) + float64(cost.Output) + float64(cost.CacheRead) + float64(cost.CacheWrite)
 }

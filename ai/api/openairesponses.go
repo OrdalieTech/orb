@@ -1268,7 +1268,7 @@ func applyResponsesServiceTierPricing(usage *ai.Usage, serviceTier string, model
 	usage.Cost.Output *= multiplier
 	usage.Cost.CacheRead *= multiplier
 	usage.Cost.CacheWrite *= multiplier
-	usage.Cost.Total = usage.Cost.Input + usage.Cost.Output + usage.Cost.CacheRead + usage.Cost.CacheWrite
+	usage.Cost.Total = ai.TotalCost(usage.Cost)
 }
 
 func responsesFailedError(raw json.RawMessage) error {

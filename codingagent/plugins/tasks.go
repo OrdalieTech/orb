@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -72,9 +73,14 @@ func todosFromBranch(manager extensions.ReadonlySessionManager) []todoItem {
 	if manager == nil {
 		return nil
 	}
-	var items []todoItem
-	for _, entry := range manager.GetBranch() {
-		if entry.Type != "message" {
+	branch := manager.GetBranch()
+	// Walk from the tail and skip entries that cannot name the tool: this runs on
+	// session start and on every tree navigation, and unmarshalling a whole branch
+	// to find its last todo result cost tens of milliseconds on long sessions. A
+	// substring hit is only a candidate; the checks below still reject it.
+	for index := len(branch) - 1; index >= 0; index-- {
+		entry := branch[index]
+		if entry.Type != "message" || !bytes.Contains(entry.Message, []byte(`"todo"`)) {
 			continue
 		}
 		message, err := ai.UnmarshalMessage(entry.Message)
@@ -87,10 +93,10 @@ func todosFromBranch(manager extensions.ReadonlySessionManager) []todoItem {
 		}
 		var details todoInput
 		if json.Unmarshal(result.Details, &details) == nil {
-			items = details.Items
+			return details.Items
 		}
 	}
-	return items
+	return nil
 }
 
 func renderTasks(items []todoItem) string {

@@ -405,7 +405,6 @@ func (ui *TUI) handleViewportInput(data string) bool {
 		ui.renderMu.Unlock()
 		return false
 	}
-	var selected string
 	consumed := true
 	step := max(1, ui.viewportBodyHeight)
 	switch {
@@ -421,11 +420,7 @@ func (ui *TUI) handleViewportInput(data string) bool {
 	default:
 		consumed = false
 	}
-	handler := ui.selectionHandler
 	ui.renderMu.Unlock()
-	if selected != "" && handler != nil {
-		handler(selected)
-	}
 	return consumed
 }
 
