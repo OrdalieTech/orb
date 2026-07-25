@@ -1251,3 +1251,16 @@ func TestSubagentParallelWidthIsCapped(t *testing.T) {
 		t.Fatalf("an over-wide fan-out reached the provider %d times", provider.State().CallCount)
 	}
 }
+
+// Command words widen the path candidate set, and rules are last-match-wins, so
+// widening an allow would let it override an earlier deny.
+func TestPermissionsCommandPathsDoNotWidenAllowRules(t *testing.T) {
+	policy := &Policy{Mode: "enforce", Rules: []Rule{
+		{Path: "secrets.txt", Action: Deny},
+		{Path: "src/**", Action: Allow},
+	}}
+	info := ToolCallInfo{Tool: "bash", Args: map[string]any{"command": "cat src/a.go && cat secrets.txt"}}
+	if decision := policy.Evaluate(context.Background(), info); decision.Action != Deny {
+		t.Fatalf("action = %q, want deny: an allow widened by command words outranked the deny", decision.Action)
+	}
+}

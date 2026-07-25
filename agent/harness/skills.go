@@ -182,7 +182,12 @@ func parseHarnessFrontmatter(content string) (map[string]any, string, error) {
 	}
 	end += 3
 	frontmatter := map[string]any{}
-	if yamlText := normalized[4:end]; yamlText != "" {
+	// Keep the newline terminating the last line: npm yaml treats end-of-input as
+	// a line break, so a trailing block scalar keeps the newline clip chomping
+	// gives it; yaml.v3 does not synthesize one. Upstream slices it off in both
+	// its parsers (harness/skills.ts:311, utils/frontmatter.ts:23), so both Go
+	// copies compensate. It also keeps an empty ---/--- block off normalized[4:3].
+	if yamlText := normalized[4 : end+1]; yamlText != "" {
 		if err := yaml.Unmarshal([]byte(yamlText), &frontmatter); err != nil {
 			return nil, "", err
 		}
