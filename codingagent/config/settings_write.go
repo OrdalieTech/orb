@@ -6,12 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand/v2"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/internal/filelock"
 	"github.com/OrdalieTech/pigo/internal/jsonwire"
 )
 
@@ -202,72 +201,12 @@ func withSettingsLock(path string, operation func() error) (err error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	release, err := acquireSettingsLock(path + ".lock")
+	release, err := filelock.Acquire(path)
 	if err != nil {
 		return err
 	}
 	defer func() { err = errors.Join(err, release()) }()
 	return operation()
-}
-
-// acquireSettingsLock takes acquireAuthDirectoryLock's jittered exponential
-// backoff, which a flat 10 x 20 ms poll lacked: concurrent managers dropped a
-// double-digit percentage of writes outright. The delay ceiling stays far
-// below auth's because a settings write holds the lock for about a
-// millisecond, and the budget is wall-clock so a slow write cannot burn the
-// retries a fast one needs.
-//
-// ponytail: no ctx — every caller is a synchronous void setter with none to
-// pass; thread one through withSettingsLock when a public setter grows a ctx.
-func acquireSettingsLock(lockPath string) (func() error, error) {
-	const (
-		budget   = 10 * time.Second
-		maxDelay = 50 * time.Millisecond
-		stale    = 10 * time.Second
-		update   = 5 * time.Second
-	)
-	deadline := time.Now().Add(budget)
-	delay := time.Millisecond
-	for {
-		err := os.Mkdir(lockPath, 0o755)
-		if err == nil {
-			stop := make(chan struct{})
-			done := make(chan struct{})
-			go func() {
-				defer close(done)
-				ticker := time.NewTicker(update)
-				defer ticker.Stop()
-				for {
-					select {
-					case now := <-ticker.C:
-						_ = os.Chtimes(lockPath, now, now)
-					case <-stop:
-						return
-					}
-				}
-			}()
-			return func() error {
-				close(stop)
-				<-done
-				return os.Remove(lockPath)
-			}, nil
-		}
-		if !errors.Is(err, os.ErrExist) {
-			return nil, err
-		}
-		if info, statErr := os.Stat(lockPath); statErr == nil && time.Since(info.ModTime()) > stale {
-			if removeErr := os.Remove(lockPath); removeErr == nil || errors.Is(removeErr, os.ErrNotExist) {
-				continue
-			}
-		}
-		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("settings lock is already held: %s", lockPath)
-		}
-		// Jitter breaks the herd: without it every loser of one race retries
-		// in lockstep with the others and keeps losing.
-		time.Sleep(delay/2 + rand.N(delay/2+1))
-		delay = min(delay*2, maxDelay)
-	}
 }
 
 func writeGlobalSettings(path string, values settingsObject, nestedField, nestedKey string, nestedValue json.RawMessage) error {

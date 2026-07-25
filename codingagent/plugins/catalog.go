@@ -283,7 +283,11 @@ func ruleMatches(rule Rule, info ToolCallInfo) bool {
 	}
 	if rule.Path != "" {
 		candidates := pathArguments(info.Args)
-		if info.Tool == "bash" && hasCommand {
+		// Command words widen the candidate set, and rules are last-match-wins, so
+		// widening an allow would let it override an earlier deny: `cat src/a.go &&
+		// cat secrets.txt` matches an allow on src/** and outranks a deny on
+		// secrets.txt. Over-matching is only the safe direction when it restricts.
+		if info.Tool == "bash" && hasCommand && rule.Action != Allow {
 			candidates = append(candidates, commandPaths(command)...)
 		}
 		for _, candidate := range candidates {
@@ -299,7 +303,8 @@ func ruleMatches(rule Rule, info ToolCallInfo) bool {
 // commandPaths returns the bare words of a shell command as path candidates.
 // Word splitting only: quoted paths containing spaces, $VARS, and command
 // substitution stay invisible, and unrelated words (`cat`, `--color`) become
-// candidates. Over-matching is the safe direction for denials.
+// candidates. Over-matching only restricts, so ruleMatches applies these to
+// deny and ask rules alone.
 func commandPaths(command string) []string {
 	fields := strings.FieldsFunc(command, func(letter rune) bool {
 		return unicode.IsSpace(letter) || strings.ContainsRune("|&;<>()", letter)
