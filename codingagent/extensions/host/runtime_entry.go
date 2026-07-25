@@ -48,6 +48,37 @@ func prepareRuntimeEntry(agentDir string, runtime Runtime, entry extensionEntry)
 	return entry, nil
 }
 
+// Bun has no equivalent of Node's resolve hook — its runtime `Bun.plugin`
+// onResolve never sees a nested import — but it does consult NODE_PATH, and only
+// after the node_modules walk, so a real install always wins and these links can
+// merely fill gaps. Node ignores NODE_PATH for ESM, so this cannot reach it.
+// ponytail: NODE_PATH links a whole package, so the root-to-"/compat" redirect
+// loader.mjs performs has no Bun counterpart; upgrade path is a Bun plugin API
+// that intercepts nested resolution.
+func prepareRuntimeAliases(agentDir string, environment []string) ([]string, error) {
+	root := environmentValue(environment, piSDKRootEnv)
+	if root == "" {
+		return environment, nil
+	}
+	aliasDir := filepath.Join(agentDir, "host", "aliases")
+	if err := os.MkdirAll(aliasDir, 0o700); err != nil {
+		return nil, fmt.Errorf("extension host: create alias directory: %w", err)
+	}
+	for exposed, canonical := range runtimeSDKPackages {
+		target := resolveRuntimeSDK(filepath.Join(root, "node_modules"), canonical)
+		if target == "" {
+			target = resolveRuntimeSDK(enclosingNodeModules(root), canonical)
+		}
+		if target == "" {
+			continue
+		}
+		if err := linkRuntimePackage(aliasDir, exposed, target); err != nil {
+			return nil, fmt.Errorf("extension host: link SDK alias %s: %w", exposed, err)
+		}
+	}
+	return setEnvironmentValue(environment, "NODE_PATH", prependPath(aliasDir, environmentValue(environment, "NODE_PATH"))), nil
+}
+
 var runtimeSDKPackages = map[string]string{
 	"@earendil-works/pi-coding-agent": "@earendil-works/pi-coding-agent",
 	"@earendil-works/pi-agent-core":   "@earendil-works/pi-agent-core",

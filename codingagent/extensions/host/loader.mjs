@@ -1,5 +1,5 @@
-import { readFile, realpath, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const sdkAliases = {
@@ -24,6 +24,20 @@ const sdkAliases = {
 	"typebox/compile": "typebox/compile",
 	"typebox/value": "typebox/value",
 };
+
+// pi-ai's root entry keeps only the side-effect-free core; the global API that
+// published extensions import lives on the "/compat" subpath, which re-exports
+// the root. Redirecting through the same context keeps the copy the extension
+// resolved to, so a pinned or older install still wins.
+async function legacySurface(specifier, context, nextResolve) {
+	const target = sdkAliases[specifier];
+	if (!target || !target.startsWith(`${specifier}/`)) return undefined;
+	try {
+		return await nextResolve(target, context);
+	} catch {
+		return undefined;
+	}
+}
 
 async function installedSDK(specifier, context, nextResolve) {
 	const target = sdkAliases[specifier];
@@ -120,19 +134,97 @@ async function sourceURL(specifier, parentURL) {
 	return undefined;
 }
 
+function declaredNames(source, names) {
+	for (const declaration of source.matchAll(/\bexport\s+(?:declare\s+)?(?:interface|type)\s+([A-Za-z_$][\w$]*)/g)) {
+		names.types.add(declaration[1]);
+	}
+	for (const declaration of source.matchAll(
+		/\bexport\s+(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(?:const|let|var|function|class|enum)\b[\s*]*([A-Za-z_$][\w$]*)/g,
+	)) {
+		names.values.add(declaration[1]);
+	}
+	for (const clause of source.matchAll(/\bexport\s+(type\s+)?\{([^}]*)\}/g)) {
+		for (const entry of clause[2].split(",")) {
+			const parts = entry.trim().split(/\s+as\s+/);
+			const exported = (parts[1] ?? parts[0] ?? "").trim().replace(/^type\s+/, "");
+			if (!/^[A-Za-z_$][\w$]*$/.test(exported)) continue;
+			(clause[1] || /^type\s/.test(entry.trim()) ? names.types : names.values).add(exported);
+		}
+	}
+	return names;
+}
+
+// ponytail: the package surface is read from its declaration files instead of a
+// real `exports`-map walk that follows `export *`; upgrade path is resolving the
+// subpath entry the way Node does and following its re-export graph.
+const packageDeclarationBudget = 4 << 20;
+const packageTypeNamesCache = new Map();
+
+async function packageTypeNames(directory) {
+	const cached = packageTypeNamesCache.get(directory);
+	if (cached) return cached;
+	const names = { types: new Set(), values: new Set() };
+	let budget = packageDeclarationBudget;
+	for (const pending = [directory]; pending.length > 0 && budget > 0; ) {
+		const current = pending.pop();
+		let listing;
+		try {
+			listing = await readdir(current, { withFileTypes: true });
+		} catch {
+			continue;
+		}
+		for (const child of listing) {
+			if (child.isDirectory()) {
+				if (child.name !== "node_modules") pending.push(join(current, child.name));
+			} else if (/\.(?:ts|mts|cts)$/.test(child.name) && budget > 0) {
+				try {
+					const source = await readFile(join(current, child.name), "utf8");
+					budget -= source.length;
+					declaredNames(source, names);
+				} catch {}
+			}
+		}
+	}
+	const types = new Set(Array.from(names.types).filter(name => !names.values.has(name)));
+	packageTypeNamesCache.set(directory, types);
+	return types;
+}
+
+async function packageDirectory(name, from) {
+	for (let directory = from; ; ) {
+		const candidate = join(directory, "node_modules", name);
+		if (await isFile(pathToFileURL(join(candidate, "package.json")))) return candidate;
+		const parent = dirname(directory);
+		if (parent === directory) return undefined;
+		directory = parent;
+	}
+}
+
+// Node's type stripping keeps every named import, so a type imported from a bare
+// specifier fails to link; upstream's jiti transform elides it.
+async function importedTypeNames(specifier, url) {
+	const target = await sourceURL(specifier, url);
+	if (target) {
+		if (!/\.(?:ts|mts|cts)$/.test(target.pathname)) return undefined;
+		return declaredNames(await readFile(target, "utf8"), { types: new Set(), values: new Set() }).types;
+	}
+	const name = specifier.match(/^(@[^/]+\/[^/]+|[^@.#/][^/:]*)(?:\/|$)/)?.[1];
+	if (!name) return undefined;
+	let directory = await packageDirectory(name, dirname(fileURLToPath(url)));
+	if (!directory && process.env.PIGO_PI_SDK_ROOT) {
+		const aliased = sdkAliases[specifier]?.match(/^(@[^/]+\/[^/]+|[^@./][^/]*)(?:\/|$)/)?.[1];
+		if (aliased) directory = await packageDirectory(aliased, process.env.PIGO_PI_SDK_ROOT);
+	}
+	return directory ? await packageTypeNames(directory) : undefined;
+}
+
 async function markTypeOnlyImports(source, url) {
 	const pattern = /import\s*\{([\s\S]*?)\}\s*from\s*(["'])([^"']+)\2/g;
 	let rewritten = "";
 	let offset = 0;
 	for (const match of source.matchAll(pattern)) {
-		const target = await sourceURL(match[3], url);
-		if (!target || !/\.(?:ts|mts|cts)$/.test(target.pathname)) continue;
-		const targetSource = await readFile(target, "utf8");
-		const typeNames = new Set(Array.from(
-			targetSource.matchAll(/\bexport\s+(?:declare\s+)?(?:interface|type)\s+([A-Za-z_$][\w$]*)/g),
-			declaration => declaration[1],
-		));
-		if (typeNames.size === 0) continue;
+		const typeNames = await importedTypeNames(match[3], url);
+		if (!typeNames || typeNames.size === 0) continue;
 		const imports = match[1].split(",").map(part => {
 			const trimmed = part.trim();
 			if (trimmed.startsWith("type ")) return part;
@@ -148,7 +240,8 @@ async function markTypeOnlyImports(source, url) {
 
 export async function resolve(specifier, context, nextResolve) {
 	try {
-		const resolved = await nextResolve(specifier, context);
+		const legacy = await legacySurface(specifier, context, nextResolve);
+		const resolved = legacy ?? (await nextResolve(specifier, context));
 		const staged = stagedTypeScriptURL(resolved.url);
 		if (staged && await isFile(staged)) return { ...resolved, url: staged.href, shortCircuit: true };
 		return resolved;
