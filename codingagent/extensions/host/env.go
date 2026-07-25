@@ -16,7 +16,7 @@ const (
 	piSDKRootEnv        = "PIGO_PI_SDK_ROOT"
 )
 
-func prepareHostEnvironment(agentDir string, base []string, executableOverride string) ([]string, error) {
+func prepareHostEnvironment(agentDir string, base []string, executableOverride, runtimePath string) ([]string, error) {
 	if agentDir == "" {
 		return nil, errors.New("extension host: agent directory is empty")
 	}
@@ -45,6 +45,12 @@ func prepareHostEnvironment(agentDir string, base []string, executableOverride s
 	pathValue := environmentValue(environment, "PATH")
 	if pathValue == "" {
 		pathValue = os.Getenv("PATH")
+	}
+	// The chosen runtime can sit outside PATH entirely — a version manager whose
+	// shims a spawned process never inherits — while extensions spawn `node`,
+	// `npx` and `npm` expecting the runtime they are already running on.
+	if runtimePath != "" {
+		pathValue = prependPath(filepath.Dir(runtimePath), pathValue)
 	}
 	environment = setEnvironmentValue(environment, "PATH", prependPath(shimDir, pathValue))
 	environment = setEnvironmentValue(environment, piSubagentBinaryEnv, shimPath)

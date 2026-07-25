@@ -129,12 +129,16 @@ func TestLoadCompiledExtensionsKeepsNativeExtensionsWithoutJSRuntime(t *testing.
 		t.Fatal(err)
 	}
 	writeJSExtension(t, filepath.Join(agentDir, "extensions", "local"), packageToolExtension)
-	t.Setenv("PATH", t.TempDir())
+	// Emptying PATH no longer hides a runtime: discovery deliberately reaches the
+	// install locations of version managers and system packages, because that is
+	// where a spawned process finds Node when the user's shell is what puts it on
+	// PATH. PIGO_NODE=none is the supported way to say "no JavaScript runtime".
+	t.Setenv("PIGO_NODE", "none")
 	registry, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{}, settings, nil)
 	if registry == nil {
 		t.Fatal("native extension registry was lost without a JavaScript runtime")
 	}
-	want := "JS extensions require Node.js ≥22.6 or Bun; skills, prompt templates, MCP servers and built-in tools work without it"
+	want := (&extensionhost.RuntimeUnavailableError{}).Error()
 	if len(diagnostics) != 1 || diagnostics[0] != want {
 		t.Fatalf("diagnostics = %#v, want only %q", diagnostics, want)
 	}

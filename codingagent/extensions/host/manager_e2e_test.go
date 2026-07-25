@@ -163,8 +163,16 @@ export default function (pi: any) {
 	if runner.ToolDefinition("typed_package_dependency-transitive_commonjs-transitive") == nil {
 		t.Fatal("TypeScript package imports were not resolved")
 	}
-	if got := runner.ToolDefinition("typed_package_dependency-transitive_commonjs-transitive").Description; got != packageDir {
-		t.Fatalf("tool source path = %q, want %q", got, packageDir)
+	// Node resolves module paths through symlinks unless told otherwise, so an
+	// extension sees where its code really lives — the same path upstream reports,
+	// since it imports extensions in-process with no flags of its own. On macOS
+	// even a temporary directory is reached through the /var symlink.
+	wantDir, err := filepath.EvalSymlinks(packageDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := runner.ToolDefinition("typed_package_dependency-transitive_commonjs-transitive").Description; got != wantDir {
+		t.Fatalf("tool source path = %q, want %q", got, wantDir)
 	}
 }
 

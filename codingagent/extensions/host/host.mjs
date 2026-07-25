@@ -1,42 +1,9 @@
-import { realpathSync } from "node:fs";
-import Module from "node:module";
-import { dirname } from "node:path";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 
 const PROTOCOL = "pigo-extension-host";
 const VERSION = 1;
 const MAX_FRAME_SIZE = 4 * 1024 * 1024;
-
-const resolveFilename = Module._resolveFilename;
-Module._resolveFilename = function (request, parent, isMain, options) {
-	try {
-		return resolveFilename.call(this, request, parent, isMain, options);
-	} catch (error) {
-		const filename = parent?.filename;
-		if (error?.code !== "MODULE_NOT_FOUND" || !filename?.replaceAll("\\", "/").includes("/host/entries/")) throw error;
-		let source;
-		try {
-			source = realpathSync(filename);
-		} catch {
-			throw error;
-		}
-		const sourceParent = Object.assign(Object.create(parent), {
-			filename: source,
-			paths: Module._nodeModulePaths(dirname(source)),
-		});
-		const sourceOptions = options?.paths
-			? { ...options, paths: options.paths.map((path) => {
-				try {
-					return realpathSync(path);
-				} catch {
-					return path;
-				}
-			}) }
-			: options;
-		return resolveFilename.call(this, request, sourceParent, isMain, sourceOptions);
-	}
-};
 
 let nextRequestId = 1;
 let agent = {};
@@ -151,24 +118,14 @@ function makeContext(value = {}, state) {
 }
 
 
-function restoreSourcePaths(value, state) {
-	if (!state.runtimeRoot || !state.sourceRoot) return value;
-	if (typeof value === "string") return value.split(state.runtimeRoot).join(state.sourceRoot);
-	if (Array.isArray(value)) return value.map((item) => restoreSourcePaths(item, state));
-	if (value && typeof value === "object") {
-		return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, restoreSourcePaths(item, state)]));
-	}
-	return value;
-}
-
 function serializableTool(tool, state) {
 	return {
 		name: tool.name,
 		label: tool.label ?? "",
-		description: restoreSourcePaths(tool.description ?? "", state),
-		...(tool.promptSnippet === undefined ? {} : { promptSnippet: restoreSourcePaths(tool.promptSnippet, state) }),
-		...(tool.promptGuidelines === undefined ? {} : { promptGuidelines: restoreSourcePaths(tool.promptGuidelines, state) }),
-		parameters: restoreSourcePaths(tool.parameters ?? {}, state),
+		description: tool.description ?? "",
+		...(tool.promptSnippet === undefined ? {} : { promptSnippet: tool.promptSnippet }),
+		...(tool.promptGuidelines === undefined ? {} : { promptGuidelines: tool.promptGuidelines }),
+		parameters: tool.parameters ?? {},
 		...(tool.renderShell === undefined ? {} : { renderShell: tool.renderShell }),
 		...(tool.executionMode === undefined ? {} : { executionMode: tool.executionMode }),
 	};
@@ -191,7 +148,7 @@ function createAPI(state) {
 			registerWithPigo(state, "register_command", {
 				extensionId: state.id,
 				name,
-				options: { description: restoreSourcePaths(options.description ?? "", state) },
+				options: { description: options.description ?? "" },
 			});
 		},
 		registerShortcut(shortcut, options) {
@@ -226,8 +183,6 @@ async function loadExtension(params) {
 	const state = {
 		id: entry.id,
 		path: entry.path,
-		sourceRoot: entry.sourceRoot,
-		runtimeRoot: entry.runtimeRoot,
 		tools: new Map(),
 		commands: new Map(),
 		shortcuts: new Map(),
@@ -238,7 +193,7 @@ async function loadExtension(params) {
 		nextSubscriptionId: 1,
 	};
 	try {
-		const moduleURL = pathToFileURL(entry.runtimePath ?? entry.path);
+		const moduleURL = pathToFileURL(entry.path);
 		moduleURL.searchParams.set("pigoHostGeneration", `${process.pid}`);
 		const imported = await import(moduleURL.href);
 		if (typeof imported.default !== "function") {

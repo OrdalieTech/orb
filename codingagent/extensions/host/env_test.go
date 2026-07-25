@@ -14,7 +14,7 @@ func TestPrepareHostEnvironmentMakesPiResolveConfiguredBinary(t *testing.T) {
 	binary := filepath.Join(root, "configured-pigo")
 	writeExecutable(t, binary, "#!/bin/sh\nprintf '%s\\n' 'pigo configured-version'\n")
 
-	environment, err := prepareHostEnvironment(agentDir, []string{"PATH=/usr/bin:/bin", "KEEP=value"}, binary)
+	environment, err := prepareHostEnvironment(agentDir, []string{"PATH=/usr/bin:/bin", "KEEP=value"}, binary, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,10 +49,10 @@ func TestPrepareHostEnvironmentAtomicallyRefreshesPiTarget(t *testing.T) {
 	second := filepath.Join(root, "pigo-second")
 	writeExecutable(t, first, "#!/bin/sh\nprintf first\n")
 	writeExecutable(t, second, "#!/bin/sh\nprintf second\n")
-	if _, err := prepareHostEnvironment(agentDir, nil, first); err != nil {
+	if _, err := prepareHostEnvironment(agentDir, nil, first, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := prepareHostEnvironment(agentDir, nil, second); err != nil {
+	if _, err := prepareHostEnvironment(agentDir, nil, second, ""); err != nil {
 		t.Fatal(err)
 	}
 	target, err := os.Readlink(filepath.Join(agentDir, "host", "bin", "pi"))

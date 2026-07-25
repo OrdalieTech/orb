@@ -1,52 +1,11 @@
 package host
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
-
-func prepareRuntimeEntry(agentDir string, runtime Runtime, entry extensionEntry) (extensionEntry, error) {
-	entry.RuntimePath = ""
-	entry.SourceRoot = ""
-	entry.RuntimeRoot = ""
-	if runtime.Name != "node" {
-		return entry, nil
-	}
-	manifestPath, err := owningPackageJSON(entry.Path)
-	if err != nil || manifestPath == "" {
-		return entry, err
-	}
-	packageDir := filepath.Dir(manifestPath)
-	nodeModulesDir := enclosingNodeModules(packageDir)
-	if nodeModulesDir == "" {
-		return entry, nil
-	}
-	relative, err := filepath.Rel(packageDir, entry.Path)
-	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
-		return entry, fmt.Errorf("stage Node TypeScript entry %s: path escapes package", entry.Path)
-	}
-	digest := sha256.Sum256([]byte(packageDir))
-	stageDir := filepath.Join(agentDir, "host", "entries", hex.EncodeToString(digest[:8]))
-	if err := os.MkdirAll(stageDir, 0o700); err != nil {
-		return entry, fmt.Errorf("stage Node TypeScript entry %s: %w", entry.Path, err)
-	}
-	sourceLink := filepath.Join(stageDir, "source")
-	if err := replaceExecutableLink(sourceLink, packageDir); err != nil {
-		return entry, fmt.Errorf("stage Node TypeScript entry %s: %w", entry.Path, err)
-	}
-	if err := stageRuntimeDependencies(stageDir, packageDir, nodeModulesDir, manifestPath); err != nil {
-		return entry, fmt.Errorf("stage Node TypeScript dependencies for %s: %w", entry.Path, err)
-	}
-	entry.RuntimePath = filepath.Join(sourceLink, relative)
-	entry.SourceRoot = packageDir
-	entry.RuntimeRoot = sourceLink
-	return entry, nil
-}
 
 // Bun has no equivalent of Node's resolve hook — its runtime `Bun.plugin`
 // onResolve never sees a nested import — but it does consult NODE_PATH, and only
@@ -92,60 +51,6 @@ var runtimeSDKPackages = map[string]string{
 	"pi-coding-agent":                 "@earendil-works/pi-coding-agent",
 	"pi-ai":                           "@earendil-works/pi-ai",
 	"pi-tui":                          "@earendil-works/pi-tui",
-}
-
-func stageRuntimeDependencies(stageDir, packageDir, nodeModulesDir, manifestPath string) error {
-	modulesDir := filepath.Join(stageDir, "node_modules")
-	packagesDir := filepath.Join(stageDir, "packages")
-	if info, err := os.Lstat(modulesDir); err == nil && !info.IsDir() {
-		if err := os.Remove(modulesDir); err != nil {
-			return err
-		}
-	} else if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	if err := os.MkdirAll(modulesDir, 0o700); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(packagesDir, 0o700); err != nil {
-		return err
-	}
-	encoded, err := os.ReadFile(manifestPath)
-	if err != nil {
-		return err
-	}
-	var manifest packageManifest
-	if err := json.Unmarshal(encoded, &manifest); err != nil {
-		return err
-	}
-	for name := range manifest.Dependencies {
-		parts := strings.Split(name, "/")
-		target := resolveDependencyDirectory(packageDir, parts)
-		if target != "" {
-			if err := linkStagedRuntimePackage(modulesDir, packagesDir, name, target); err != nil {
-				return err
-			}
-		}
-	}
-	for exposed, canonical := range runtimeSDKPackages {
-		if _, declared := manifest.Dependencies[exposed]; declared && exposed != "@sinclair/typebox" {
-			continue
-		}
-		target := resolveRuntimeSDK(nodeModulesDir, canonical)
-		if target != "" {
-			if err := linkStagedRuntimePackage(modulesDir, packagesDir, exposed, target); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func linkStagedRuntimePackage(modulesDir, packagesDir, name, target string) error {
-	if err := linkRuntimePackage(modulesDir, name, target); err != nil {
-		return err
-	}
-	return linkRuntimePackage(packagesDir, name, target)
 }
 
 func resolveRuntimeSDK(nodeModulesDir, name string) string {
