@@ -1,6 +1,11 @@
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
+import nodeModule from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
+// Added in Node 22.13; absent on the 22.6-22.12 range the host still supports,
+// where the staged entry paths remain the only route around the restriction.
+const stripTypeScriptTypes = nodeModule.stripTypeScriptTypes;
 
 const sdkAliases = {
 	"@earendil-works/pi-coding-agent": "@earendil-works/pi-coding-agent",
@@ -261,7 +266,53 @@ export async function resolve(specifier, context, nextResolve) {
 	}
 }
 
+// Node refuses to strip types from any TypeScript file whose path contains a
+// node_modules segment, which is where every installed extension and its
+// dependencies live. Staging the entry escapes that for the entry alone; a
+// dependency published as TypeScript is reached through npm's own layout and
+// still refused, at any nesting depth. Supplying the transpiled source from the
+// load hook removes the restriction instead of routing around it: resolution
+// stays exactly as npm laid it out, so a dependency's own dependencies keep
+// resolving normally.
+function isRefusedTypeScript(url) {
+	if (!url.startsWith("file:") || !/\.(?:ts|mts|cts)(?:\?|$)/.test(url)) return false;
+	return new URL(url).pathname.split("/").includes("node_modules");
+}
+
+async function loadRefusedTypeScript(url) {
+	const source = await markTypeOnlyImports(await readFile(fileURLToPath(url), "utf8"), url);
+	return {
+		format: await typeScriptFormat(url),
+		shortCircuit: true,
+		// transform, not strip: the host passes --experimental-transform-types
+		// wherever this API exists, so enums and parameter properties must run.
+		source: stripTypeScriptTypes(source, { mode: "transform", sourceMap: true, sourceUrl: url }),
+	};
+}
+
+// Mirrors Node's own rule for a TypeScript file: the extension decides, and a
+// bare .ts follows the nearest package.json type, defaulting to commonjs.
+async function typeScriptFormat(url) {
+	if (/\.mts(?:\?|$)/.test(url)) return "module";
+	if (/\.cts(?:\?|$)/.test(url)) return "commonjs";
+	for (let directory = dirname(fileURLToPath(url)); ; directory = dirname(directory)) {
+		try {
+			const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
+			return manifest.type === "module" ? "module" : "commonjs";
+		} catch {
+			const parent = dirname(directory);
+			if (parent === directory) return "commonjs";
+		}
+	}
+}
+
 export async function load(url, context, nextLoad) {
+	// Node reports module-typescript here and only refuses when it compiles, so
+	// the refusal cannot be caught around nextLoad; the condition is checked
+	// instead. Files outside node_modules keep Node's own native stripping.
+	if (stripTypeScriptTypes && isRefusedTypeScript(url)) {
+		return await loadRefusedTypeScript(url);
+	}
 	const loaded = await nextLoad(url, context);
 	if (!url.startsWith("file:") || !/\.(?:ts|mts|cts)(?:\?|$)/.test(url) || loaded.source == null) {
 		return loaded;
