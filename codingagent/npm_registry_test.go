@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -333,5 +334,50 @@ func TestOfflineModeSkipsUpdates(t *testing.T) {
 	}
 	if err := manager.Update(""); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// npm prunes any node_modules entry that package.json does not declare, so a
+// natively installed package has to be recorded or the next upstream pi run
+// deletes it while settings.json still lists it.
+func TestNpmDependencyDeclarationSurvivesPruneAndRemoval(t *testing.T) {
+	installRoot := t.TempDir()
+	path := filepath.Join(installRoot, "package.json")
+	if err := os.WriteFile(path, []byte("{\n  \"name\": \"pi-extensions\",\n  \"private\": true\n}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := setNpmDependency(installRoot, "pi-web-access", "0.13.0"); err != nil {
+		t.Fatalf("declare: %v", err)
+	}
+	if err := setNpmDependency(installRoot, "@vigolium/piolium", "0.0.13"); err != nil {
+		t.Fatalf("declare scoped: %v", err)
+	}
+
+	pkg, err := readPackageJSON(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if pkg["private"] != true || pkg["name"] != "pi-extensions" {
+		t.Fatalf("existing fields lost: %#v", pkg)
+	}
+	dependencies, _ := pkg["dependencies"].(map[string]any)
+	if dependencies["pi-web-access"] != "0.13.0" || dependencies["@vigolium/piolium"] != "0.0.13" {
+		t.Fatalf("dependencies = %#v", dependencies)
+	}
+
+	if err := removeNpmDependency(installRoot, "pi-web-access"); err != nil {
+		t.Fatalf("undeclare: %v", err)
+	}
+	pkg, err = readPackageJSON(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dependencies, _ = pkg["dependencies"].(map[string]any)
+	if _, present := dependencies["pi-web-access"]; present {
+		t.Fatal("removed package still declared; npm would reinstall it")
+	}
+	if dependencies["@vigolium/piolium"] != "0.0.13" {
+		t.Fatalf("unrelated dependency lost: %#v", dependencies)
 	}
 }
