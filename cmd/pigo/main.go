@@ -249,6 +249,11 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
+		// createRuntime drains settings errors into Diagnostics; without this the
+		// listing silently ran on defaults when settings.json failed to parse.
+		for _, diagnostic := range inputs.Diagnostics {
+			_, _ = fmt.Fprintln(streams.Stderr, "Warning: "+diagnostic)
+		}
 		if inputs.ModelRegistry != nil {
 			if loadError := inputs.ModelRegistry.Error(); loadError != "" {
 				_, _ = fmt.Fprintln(streams.Stderr, "Warning: errors loading models.json:\n"+loadError)

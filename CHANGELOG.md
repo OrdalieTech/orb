@@ -40,6 +40,9 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 - Disposing a session or reloading plugins while subagents were running could terminate the host process; child work now fails that child instead.
 - Parallel subagent runs are capped at 32 children per call, so one tool call can no longer fan out as wide as the model asks.
 - A JavaScript extension host that dies with a fatal error no longer leaves the terminal staggered; its output is line-normalised while stderr is a terminal.
+- `pigo install` now declares the package it installed in the install root's `package.json`. Packages are still fetched natively, so npm remains optional, but an undeclared entry looked extraneous to npm and the next `pi install` deleted it while `settings.json` still listed it.
+- `--list-models` now reports settings errors instead of silently listing against defaults when `settings.json` fails to parse.
+- Compacting a disposed session is refused instead of summarizing through the model and rewriting history.
 - Refreshing the model catalog left a zero-byte `models-store.json.lock` file behind, which permanently broke `pi update --models` for a coexisting upstream pi: upstream locks with `proper-lockfile`, which creates the lock as a directory and treats any existing path as held. pigo now uses the same directory protocol, removes the lock on release, and reclaims a leftover file from an older pigo. Delete a stale `~/.pi/agent/models-store.json.lock` once to recover.
 - Token costs recorded in sessions could differ from upstream by one unit in the last place in release builds. The compiler fused a multiply and an add on arm64, which the race-instrumented test builds did not, so the shipped binary wrote values the test suite never saw. `make check` now also verifies the byte-compared surfaces in the shipped build shape.
 

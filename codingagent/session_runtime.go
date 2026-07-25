@@ -1083,6 +1083,11 @@ func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason str
 
 //nolint:staticcheck // User-visible compaction errors match upstream capitalization.
 func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions string) (*sessionstore.CompactionResult, error) {
+	// Compaction summarizes through the model and rewrites session history, which
+	// is exactly the "call the model and persist" that disposal exists to stop.
+	if err := runtime.checkLive(); err != nil {
+		return nil, err
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}

@@ -253,7 +253,52 @@ func (manager *PackageManager) installNpm(source *npmSource, scope string, tempo
 	if err := extractNpmTarball(tarball, destination); err != nil {
 		return err
 	}
-	return manager.installPackageDependencies(destination)
+	if err := manager.installPackageDependencies(destination); err != nil {
+		return err
+	}
+	return setNpmDependency(installRoot, source.name, info.Version)
+}
+
+// setNpmDependency declares a natively installed package in the install root's
+// package.json. Extracting the tarball ourselves keeps installs working without
+// npm (DECISIONS: "a missing npm binary degrades to a warning"), but npm treats
+// an undeclared node_modules entry as extraneous, so the next `npm install` an
+// upstream pi runs prunes it while settings.json still lists it. Declaring the
+// resolved version is what makes the two installers coexist.
+func setNpmDependency(installRoot, name, version string) error {
+	if version == "" {
+		return nil
+	}
+	return updateNpmDependencies(installRoot, func(dependencies map[string]any) {
+		dependencies[name] = version
+	})
+}
+
+func removeNpmDependency(installRoot, name string) error {
+	return updateNpmDependencies(installRoot, func(dependencies map[string]any) {
+		delete(dependencies, name)
+	})
+}
+
+func updateNpmDependencies(installRoot string, apply func(map[string]any)) error {
+	path := filepath.Join(installRoot, "package.json")
+	pkg, err := readPackageJSON(path)
+	if err != nil {
+		return err
+	}
+	dependencies, _ := pkg["dependencies"].(map[string]any)
+	if dependencies == nil {
+		dependencies = make(map[string]any)
+	}
+	apply(dependencies)
+	pkg["dependencies"] = dependencies
+	// Marshal sorts keys, which is also how npm writes dependencies, so a pi run
+	// after a pigo install does not reorder the file.
+	encoded, err := json.MarshalIndent(pkg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, encoded, 0o644)
 }
 
 func (manager *PackageManager) uninstallNpm(source *npmSource, scope string) error {
@@ -268,7 +313,12 @@ func (manager *PackageManager) uninstallNpm(source *npmSource, scope string) err
 	if err != nil {
 		return err
 	}
-	return os.RemoveAll(installed)
+	if err := os.RemoveAll(installed); err != nil {
+		return err
+	}
+	// Leaving the declaration behind would make the next npm install reinstall
+	// what was just removed.
+	return removeNpmDependency(installRoot, source.name)
 }
 
 func (manager *PackageManager) downloadNpmTarball(info npmVersionInfo) ([]byte, error) {
