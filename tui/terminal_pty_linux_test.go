@@ -123,6 +123,40 @@ func TestProcessTerminalPTYRestoresRawModeAfterPanic(t *testing.T) {
 	}
 }
 
+func TestProcessTerminalPTYStopEndsReaderBeforeRestart(t *testing.T) {
+	master, slave := openPTY(t)
+	terminal := NewProcessTerminalFiles(slave, slave)
+	if err := terminal.Start(func(string) {}, func() {}); err != nil {
+		t.Fatal(err)
+	}
+	firstReaderDone := terminal.readerDone
+	if err := terminal.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-firstReaderDone:
+	default:
+		t.Fatal("terminal reader survived Stop")
+	}
+
+	input := make(chan string, 1)
+	if err := terminal.Start(func(value string) { input <- value }, func() {}); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = terminal.Stop() }()
+	if _, err := master.WriteString("x"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-input:
+		if got != "x" {
+			t.Fatalf("input after restart = %q", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("restarted terminal did not receive input")
+	}
+}
+
 func TestProcessTerminalPTYTerminalProfiles(t *testing.T) {
 	profiles := []struct {
 		name, term, program, colorTerm string

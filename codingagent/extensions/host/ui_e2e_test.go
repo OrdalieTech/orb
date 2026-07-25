@@ -2,6 +2,7 @@ package host
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"sync"
@@ -46,12 +47,14 @@ type hostUIStub struct {
 	customRenders          [][]string
 	pendingDialogStarted   chan struct{}
 	pendingDialogCancelled chan error
+	editorMounted          chan extensions.EditorComponent
 }
 
 func newHostUIStub() *hostUIStub {
 	return &hostUIStub{
 		pendingDialogStarted:   make(chan struct{}, 1),
 		pendingDialogCancelled: make(chan error, 1),
+		editorMounted:          make(chan extensions.EditorComponent, 1),
 	}
 }
 
@@ -157,6 +160,14 @@ func (ui *hostUIStub) SetEditorText(text string) {
 	ui.mu.Lock()
 	ui.editorText = text
 	ui.mu.Unlock()
+}
+
+func (ui *hostUIStub) SetEditorComponent(factory extensions.EditorFactory) {
+	if factory == nil {
+		return
+	}
+	host := &stubUIHost{invalidated: make(chan struct{}, 8)}
+	ui.editorMounted <- factory(host, ui.Theme(), stubKeybindings{})
 }
 
 func (ui *hostUIStub) GetEditorText() string {
@@ -324,6 +335,29 @@ func TestRealHostUISurfaceAndCustomComponent(t *testing.T) {
 	}
 }
 
+func TestRealHostUIEditorMountDoesNotBlockReader(t *testing.T) {
+	_, registry, _, result, cwd := startFixtureManager(t, fixturePath(t, "ui.mjs"))
+	if len(result.Errors) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("load result = %#v", result)
+	}
+	ui := newHostUIStub()
+	runner := extensions.NewRunner(registry, extensions.RunnerOptions{CWD: cwd, Mode: extensions.ModeTUI, UI: ui})
+	tool := runner.ToolDefinition("host_ui_editor")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := tool.Execute(ctx, "ui-editor", map[string]any{}, nil, runner.CreateContext()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case editor := <-ui.editorMounted:
+		if editor == nil {
+			t.Fatal("host-backed editor was not mounted")
+		}
+	case <-ctx.Done():
+		t.Fatal("host-backed editor mount blocked the protocol reader")
+	}
+}
+
 func TestDialogCancellationBeforeHandlerRegistration(t *testing.T) {
 	ui := newUIGeneration(nil)
 	ui.cancelDialog("host-1")
@@ -333,6 +367,74 @@ func TestDialogCancellationBeforeHandlerRegistration(t *testing.T) {
 	defer ui.unregisterDialog("host-1")
 	if !errors.Is(context.Cause(ctx), context.Canceled) {
 		t.Fatalf("dialog context cause = %v, want context canceled", context.Cause(ctx))
+	}
+}
+
+func TestStaleUIContextDoesNotPanicHostReader(t *testing.T) {
+	runner := extensions.NewRunner(extensions.NewRegistry(t.TempDir()), extensions.RunnerOptions{})
+	contextValue := runner.CreateContext()
+	runner.Invalidate("stale")
+	generation := &generation{}
+	generation.ui = newUIGeneration(generation)
+	generation.ui.contexts["stale"] = contextValue
+	request, err := json.Marshal(wireUIRequest{ContextID: "stale", Method: "notify"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := &Manager{}
+	manager.handleUIEvent(generation, request)
+	if _, protocolErr := manager.handleUIRequest(generation, frame{Params: request}); protocolErr == nil || protocolErr.Code != "stale_ui_context" {
+		t.Fatalf("stale UI request error = %#v", protocolErr)
+	}
+}
+
+type panickingHostUI struct{ extensions.NoopUI }
+
+func (*panickingHostUI) Notify(string, extensions.NotificationType) { panic("active UI panic") }
+
+func TestActiveUIEventPanicIsNotSwallowed(t *testing.T) {
+	runner := extensions.NewRunner(extensions.NewRegistry(t.TempDir()), extensions.RunnerOptions{Mode: extensions.ModeTUI, UI: &panickingHostUI{}})
+	generation := &generation{}
+	generation.ui = newUIGeneration(generation)
+	generation.ui.contexts["active"] = runner.CreateContext()
+	request, err := json.Marshal(wireUIRequest{ContextID: "active", Method: "notify"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if recovered := recover(); recovered != "active UI panic" {
+			t.Fatalf("active UI panic = %v, want propagation", recovered)
+		}
+	}()
+	(&Manager{}).handleUIEvent(generation, request)
+	t.Fatal("active UI panic was swallowed")
+}
+
+func TestWireComponentDoesNotReuseFrameAtDifferentWidth(t *testing.T) {
+	component := &wireComponent{
+		lines:          []string{"eighty-column frame"},
+		renderedWidth:  80,
+		requestPending: true,
+	}
+	if lines := component.Render(40); len(lines) != 0 {
+		t.Fatalf("stale-width render = %#v, want an empty frame", lines)
+	}
+	if lines := component.Render(80); !reflect.DeepEqual(lines, []string{"eighty-column frame"}) {
+		t.Fatalf("matching-width render = %#v", lines)
+	}
+}
+
+func TestUIGenerationCloseDropsBoundContexts(t *testing.T) {
+	runner := extensions.NewRunner(extensions.NewRegistry(t.TempDir()), extensions.RunnerOptions{})
+	generation := &generation{}
+	generation.ui = newUIGeneration(generation)
+	generation.ui.contexts["active"] = runner.CreateContext()
+	generation.ui.dialogs["dialog"] = nil
+	generation.ui.close()
+	generation.ui.contextMu.RLock()
+	defer generation.ui.contextMu.RUnlock()
+	if len(generation.ui.contexts) != 0 || len(generation.ui.dialogs) != 0 {
+		t.Fatalf("closed UI generation retained %d contexts and %d dialogs", len(generation.ui.contexts), len(generation.ui.dialogs))
 	}
 }
 

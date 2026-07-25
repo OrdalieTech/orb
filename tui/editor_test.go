@@ -1102,6 +1102,41 @@ func TestEditorSlashCommandConfirmSubmits(t *testing.T) {
 	wantText(t, editor, "")
 }
 
+func TestEditorStaleSlashAutocompleteDoesNotRewriteSubmit(t *testing.T) {
+	block := make(chan struct{})
+	released := false
+	defer func() {
+		if !released {
+			close(block)
+		}
+	}()
+	var calls atomic.Int64
+	provider := &scriptedProvider{suggest: func([]string, int, int, bool) *AutocompleteSuggestions {
+		if calls.Add(1) > 1 {
+			<-block
+		}
+		return &AutocompleteSuggestions{
+			Items:  []AutocompleteItem{{Value: "parallel-cleanup", Label: "parallel-cleanup"}},
+			Prefix: "/",
+		}
+	}}
+	editor := newTestEditor()
+	editor.SetAutocompleteProvider(provider)
+	var submitted string
+	editor.OnSubmit = func(text string) { submitted = text }
+
+	press(editor, "/")
+	editor.flushAutocomplete()
+	press(editor, "p", "l", "u", "g", "i", "n", "s", " ", "\r")
+	if submitted != "/plugins" {
+		t.Fatalf("submitted = %q, want /plugins", submitted)
+	}
+
+	close(block)
+	released = true
+	editor.flushAutocomplete()
+}
+
 func TestEditorRenderBordersAndCursor(t *testing.T) {
 	editor := newTestEditor()
 	lines := editor.Render(10)

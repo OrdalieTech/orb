@@ -14,6 +14,7 @@ type fakeTerminal struct {
 	writes           []string
 	onInput          func(string)
 	onResize         func()
+	startWrite       string
 	started, stopped bool
 	hidden           bool
 }
@@ -25,6 +26,9 @@ func (terminal *fakeTerminal) Start(input func(string), resize func()) error {
 	terminal.mu.Lock()
 	defer terminal.mu.Unlock()
 	terminal.onInput, terminal.onResize, terminal.started = input, resize, true
+	if terminal.startWrite != "" {
+		terminal.writes = append(terminal.writes, terminal.startWrite)
+	}
 	return nil
 }
 func (terminal *fakeTerminal) Stop() error {
@@ -294,6 +298,7 @@ func TestTUIStreamingRenderPreservesTerminalScrollbackPosition(t *testing.T) {
 
 func TestTUIViewportPinsChromeAndKeepsDetachedBodyStable(t *testing.T) {
 	terminal := newFakeTerminal(20, 6)
+	terminal.startWrite = kittyKeyboardQuery
 	ui := NewTUI(terminal)
 	body := &mutableLines{lines: []string{"body 0", "body 1", "body 2", "body 3", "body 4", "body 5"}}
 	chrome := &mutableLines{lines: []string{"editor", "footer"}}
@@ -310,7 +315,8 @@ func TestTUIViewportPinsChromeAndKeepsDetachedBodyStable(t *testing.T) {
 	}
 
 	initial := terminal.output()
-	if !strings.Contains(initial, "\x1b[?1049h") || strings.Contains(initial, "body 1") || !strings.Contains(initial, "body 2") || strings.Index(initial, "body 5") > strings.Index(initial, "editor") || strings.Index(initial, "editor") > strings.Index(initial, "footer") {
+	screen, keyboard := strings.Index(initial, alternateScreenOn), strings.Index(initial, kittyKeyboardQuery)
+	if screen < 0 || keyboard < screen || strings.Contains(initial, "body 1") || !strings.Contains(initial, "body 2") || strings.Index(initial, "body 5") > strings.Index(initial, "editor") || strings.Index(initial, "editor") > strings.Index(initial, "footer") {
 		t.Fatalf("initial viewport = %q", initial)
 	}
 
@@ -628,7 +634,9 @@ func TestTUITenThousandLineReplayStaysDifferential(t *testing.T) {
 func TestTUIStopsTerminalBeforeLineOverflowPanic(t *testing.T) {
 	terminal := newFakeTerminal(3, 3)
 	ui := NewTUI(terminal)
-	ui.AddChild(&mutableLines{lines: []string{"toolong"}})
+	body := &mutableLines{lines: []string{"toolong"}}
+	ui.AddChild(body)
+	ui.SetViewport(body, &mutableLines{})
 	ui.setStopped(false)
 	ui.renderMu.Lock()
 	ui.previousLines = []string{"old"}
@@ -640,6 +648,9 @@ func TestTUIStopsTerminalBeforeLineOverflowPanic(t *testing.T) {
 		}
 		if !terminal.stopped {
 			t.Fatal("terminal was not restored before panic")
+		}
+		if output := terminal.output(); !strings.Contains(output, alternateScreenOff) || !strings.Contains(output, scrollOnOutputOn) {
+			t.Fatalf("terminal protocols were not restored before panic: %q", output)
 		}
 	}()
 	ui.RenderNow()

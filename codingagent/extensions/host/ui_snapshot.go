@@ -31,7 +31,10 @@ var wireKeybindingIDs = []string{
 	"app.session.toggleNamedFilter", "app.editor.external", "app.message.copy", "app.message.followUp",
 	"app.message.dequeue", "app.clipboard.pasteImage", "app.session.new", "app.session.tree", "app.session.fork",
 	"app.session.resume", "app.tree.foldOrUp", "app.tree.unfoldOrDown", "app.tree.editLabel",
-	"app.tree.toggleLabelTimestamp", "app.session.togglePath", "app.session.toggleSort", "app.session.rename",
+	"app.tree.toggleLabelTimestamp", "app.tree.filter.default", "app.tree.filter.noTools",
+	"app.tree.filter.userOnly", "app.tree.filter.labeledOnly", "app.tree.filter.all",
+	"app.tree.filter.cycleForward", "app.tree.filter.cycleBackward",
+	"app.session.togglePath", "app.session.toggleSort", "app.session.rename",
 	"app.session.delete", "app.session.deleteNoninvasive", "app.models.save", "app.models.enableAll",
 	"app.models.clearAll", "app.models.toggleProvider", "app.models.reorderUp", "app.models.reorderDown",
 }

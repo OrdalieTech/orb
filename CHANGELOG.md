@@ -6,6 +6,16 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-07-25
+
+### Fixed
+
+- Terminal shutdown now stops the session picker's reader and restores keyboard mode on the same screen where it was enabled, preventing frozen input and CSI-u leakage into the shell on macOS.
+- JavaScript extension reloads no longer block the host reader, change the parent terminal mode through inherited stderr, or crash on late stale-context UI events.
+- Stale autocomplete results can no longer rewrite a complete slash command such as `/plugins` when Enter is pressed.
+- Double-Escape now opens the session tree at the current leaf with pi-compatible search, filters, paging, branch folding, copy, and labels.
+- Node caches compiled extension modules between runs, reducing repeat startup time with JavaScript extensions enabled.
+
 ## [0.4.4] - 2026-07-24
 
 ### Fixed

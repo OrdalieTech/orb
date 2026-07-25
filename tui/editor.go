@@ -782,7 +782,10 @@ func (editor *Editor) handleData(data string) {
 			return
 		}
 		if kb.Matches(data, "tui.select.confirm") {
-			if item, ok := editor.autocompleteList.GetSelectedItem(); ok && editor.autocompleteProvider != nil {
+			beforeCursor := runeSlice(editor.currentLine(), 0, editor.state.cursorCol)
+			if !strings.HasSuffix(beforeCursor, editor.autocompletePrefix) {
+				editor.cancelAutocomplete()
+			} else if item, ok := editor.autocompleteList.GetSelectedItem(); ok && editor.autocompleteProvider != nil {
 				editor.pushUndoSnapshot()
 				editor.lastAction = ""
 				editor.applyCompletionResult(item)

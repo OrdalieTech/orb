@@ -141,6 +141,11 @@ type pendingResponse struct {
 	err    error
 }
 
+type queuedEvent struct {
+	frame frame
+	done  chan struct{}
+}
+
 type generation struct {
 	manager *Manager
 	cmd     *exec.Cmd
@@ -155,6 +160,10 @@ type generation struct {
 
 	registrationsMu sync.Mutex
 	registrations   map[string]*registrationState
+
+	eventMu   sync.Mutex
+	events    []queuedEvent
+	eventWake chan struct{}
 
 	handshake       chan error
 	done            chan struct{}
@@ -347,6 +356,9 @@ func (manager *Manager) startLocked(ctx context.Context) (generationLoadResult, 
 	if err != nil {
 		return result, err
 	}
+	if runtime.Name == "node" && environmentValue(hostEnvironment, "NODE_COMPILE_CACHE") == "" {
+		hostEnvironment = setEnvironmentValue(hostEnvironment, "NODE_COMPILE_CACHE", filepath.Join(manager.options.AgentDir, "host", "node-compile-cache"))
+	}
 	entryFailures := make(map[string]bool)
 	preparedEntries := append([]extensionEntry(nil), manager.entries...)
 	for index, entry := range preparedEntries {
@@ -374,7 +386,8 @@ func (manager *Manager) startLocked(ctx context.Context) (generationLoadResult, 
 	command := exec.CommandContext(context.Background(), runtime.Path, append(commandArgs, scriptPath)...)
 	command.Dir = manager.options.CWD
 	command.Env = hostEnvironment
-	command.Stderr = manager.options.Stderr
+	// Extensions must not inherit a terminal descriptor they can put in cooked mode.
+	command.Stderr = io.MultiWriter(manager.options.Stderr)
 	stdin, err := command.StdinPipe()
 	if err != nil {
 		return result, fmt.Errorf("extension host: stdin: %w", err)
@@ -394,6 +407,7 @@ func (manager *Manager) startLocked(ctx context.Context) (generationLoadResult, 
 		pending:       make(map[string]chan pendingResponse),
 		updates:       make(map[string]func(json.RawMessage)),
 		registrations: make(map[string]*registrationState),
+		eventWake:     make(chan struct{}, 1),
 		handshake:     make(chan error, 1),
 		done:          make(chan struct{}),
 		waitDone:      make(chan struct{}),
@@ -405,6 +419,7 @@ func (manager *Manager) startLocked(ctx context.Context) (generationLoadResult, 
 	manager.mu.Lock()
 	manager.current = generation
 	manager.mu.Unlock()
+	go generation.eventLoop()
 	go generation.readLoop()
 	go generation.waitLoop()
 
@@ -1084,7 +1099,67 @@ func (generation *generation) readLoop() {
 				return
 			}
 		case frameEvent:
-			generation.manager.handleHostEvent(generation, value)
+			if value.Method == "ui_request" {
+				generation.enqueueEvent(value)
+			} else {
+				generation.manager.handleHostEvent(generation, value)
+			}
+		}
+	}
+}
+
+func (generation *generation) enqueueEvent(value frame) {
+	generation.eventMu.Lock()
+	generation.events = append(generation.events, queuedEvent{frame: value})
+	generation.eventMu.Unlock()
+	generation.wakeEvents()
+}
+
+func (generation *generation) waitEvents() {
+	if generation.eventWake == nil {
+		return
+	}
+	done := make(chan struct{})
+	generation.eventMu.Lock()
+	generation.events = append(generation.events, queuedEvent{done: done})
+	generation.eventMu.Unlock()
+	generation.wakeEvents()
+	select {
+	case <-done:
+	case <-generation.done:
+	}
+}
+
+func (generation *generation) wakeEvents() {
+	select {
+	case generation.eventWake <- struct{}{}:
+	default:
+	}
+}
+
+func (generation *generation) eventLoop() {
+	for {
+		select {
+		case <-generation.eventWake:
+			for {
+				generation.eventMu.Lock()
+				if len(generation.events) == 0 {
+					generation.events = nil
+					generation.eventMu.Unlock()
+					break
+				}
+				event := generation.events[0]
+				generation.events[0] = queuedEvent{}
+				generation.events = generation.events[1:]
+				generation.eventMu.Unlock()
+				if event.done != nil {
+					close(event.done)
+				} else {
+					generation.manager.handleHostEvent(generation, event.frame)
+				}
+			}
+		case <-generation.done:
+			return
 		}
 	}
 }

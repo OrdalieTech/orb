@@ -82,7 +82,10 @@ type wireComponent struct {
 
 func (component *wireComponent) Render(width int) []string {
 	component.mu.Lock()
-	lines := append([]string(nil), component.lines...)
+	var lines []string
+	if component.renderedWidth == width {
+		lines = append(lines, component.lines...)
+	}
 	shouldRequest := !component.disposed && !component.requestPending && component.renderedWidth != width
 	if shouldRequest {
 		component.requestPending = true
@@ -312,7 +315,7 @@ func (ui *uiGeneration) invalidateComponent(handle string) {
 func (manager *Manager) handleUICustom(
 	ctx context.Context,
 	generation *generation,
-	uiContext extensions.Context,
+	userInterface extensions.UI,
 	request wireUIRequest,
 ) (any, *protocolError) {
 	options := decodeWireCustomOptions(request.CustomOptions)
@@ -332,7 +335,7 @@ func (manager *Manager) handleUICustom(
 			ctx, request.ComponentHandle, request.FactoryHandle, "custom", host, theme, keybindings, nil, done,
 		)
 	}
-	value, resolved, err := uiContext.UI().Custom(ctx, factory, options)
+	value, resolved, err := userInterface.Custom(ctx, factory, options)
 	if err != nil {
 		return nil, uiRequestError(err)
 	}

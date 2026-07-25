@@ -641,6 +641,7 @@ func TestRunCLIModelUpdateDispatchAndConflicts(t *testing.T) {
 }
 
 func TestRunCLIParserErrorVersionAndHelpPrecedence(t *testing.T) {
+	t.Setenv(config.EnvAgentDir, t.TempDir())
 	tests := []struct {
 		name       string
 		argv       []string
