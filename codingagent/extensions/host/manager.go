@@ -387,7 +387,10 @@ func (manager *Manager) startLocked(ctx context.Context) (generationLoadResult, 
 	command.Dir = manager.options.CWD
 	command.Env = hostEnvironment
 	// Extensions must not inherit a terminal descriptor they can put in cooked mode.
+	// Wrapping forces a pipe, so Wait would otherwise block until every grandchild
+	// that inherited stderr closes it; WaitDelay bounds that.
 	command.Stderr = io.MultiWriter(manager.options.Stderr)
+	command.WaitDelay = manager.options.ShutdownTimeout
 	stdin, err := command.StdinPipe()
 	if err != nil {
 		return result, fmt.Errorf("extension host: stdin: %w", err)
@@ -537,7 +540,12 @@ func (manager *Manager) stopGeneration(generation *generation) {
 	case <-generation.waitDone:
 	case <-time.After(manager.options.ShutdownTimeout):
 		_ = generation.cmd.Process.Kill()
-		<-generation.waitDone
+		// WaitDelay bounds Wait itself; this bound also covers a failed Kill so
+		// shutdown can never block on an unreapable host.
+		select {
+		case <-generation.waitDone:
+		case <-time.After(manager.options.ShutdownTimeout):
+		}
 	}
 	manager.mu.Lock()
 	if manager.current == generation {

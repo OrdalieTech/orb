@@ -141,6 +141,59 @@ func TestStartNewSessionPersistsAcrossReacquire(t *testing.T) {
 	}
 }
 
+func TestLocalProviderReusesSessionManagerUntilTheFileChanges(t *testing.T) {
+	// Re-opening re-parsed the whole session JSONL on every inbound message.
+	provider, _ := newTestLocalProvider(t)
+	key := ConversationKey{Platform: "faux", Account: "bot", ChatID: "cache"}
+	first, err := provider.Acquire(context.Background(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustAppendMarker(t, first.Manager, turnMarker{EventID: "ev-cached", Phase: phaseStarted})
+	// The store only flushes once an assistant message exists.
+	if _, err := first.Manager.AppendMessage(faux.AssistantMessage("hello")); err != nil {
+		t.Fatal(err)
+	}
+	sessionFile := first.Manager.GetSessionFile()
+	if err := first.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := provider.Acquire(context.Background(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Manager != first.Manager {
+		t.Fatal("an untouched conversation re-parsed its session file")
+	}
+	if err := second.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// An external writer must invalidate the cache.
+	raw, err := os.ReadFile(sessionFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sessionFile, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(sessionFile, time.Now().Add(time.Second), time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	third, err := provider.Acquire(context.Background(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = third.Close(context.Background()) }()
+	if third.Manager == first.Manager {
+		t.Fatal("an externally modified session file was served from cache")
+	}
+	if ledger := scanTurnLedger(third.Manager, "ev-cached"); ledger.started == nil {
+		t.Fatal("re-parsed session lost its ledger markers")
+	}
+}
+
 func TestLocalProviderDisablesToolsUnlessHookOverrides(t *testing.T) {
 	provider, _ := newTestLocalProvider(t)
 	key := ConversationKey{Platform: "faux", Account: "bot", ChatID: "tools"}

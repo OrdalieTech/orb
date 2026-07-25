@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,6 +16,10 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
+
+	"golang.org/x/text/encoding/htmlindex"
+	"golang.org/x/text/transform"
 
 	"github.com/OrdalieTech/pigo/agent"
 	"github.com/OrdalieTech/pigo/ai"
@@ -21,21 +27,27 @@ import (
 	"github.com/OrdalieTech/pigo/internal/truncate"
 )
 
-const webBodyLimit = 2 << 20
+const (
+	webBodyLimit    = 2 << 20
+	webMaxRedirects = 5
+	webErrorSnippet = 200
+)
 
 var (
-	webSearchSchema = ai.JSONSchema(`{"type":"object","required":["query"],"properties":{"query":{"type":"string"}}}`)
-	fetchSchema     = ai.JSONSchema(`{"type":"object","required":["url"],"properties":{"url":{"type":"string"}}}`)
+	webSearchSchema = ai.JSONSchema(`{"type":"object","required":["query"],"properties":{"query":{"type":"string","description":"Search terms sent verbatim to the configured provider."}}}`)
+	fetchSchema     = ai.JSONSchema(`{"type":"object","required":["url"],"properties":{"url":{"type":"string","description":"Absolute http(s) URL of a publicly reachable page. Loopback, link-local, and private addresses are refused."}}}`)
 	scriptPattern   = regexp.MustCompile(`(?is)<script\b[^>]*>.*?</script>`)
 	stylePattern    = regexp.MustCompile(`(?is)<style\b[^>]*>.*?</style>`)
 	commentPattern  = regexp.MustCompile(`(?s)<!--.*?-->`)
+	blockPattern    = regexp.MustCompile(`(?i)</?(?:address|article|aside|blockquote|br|dd|div|dl|dt|fieldset|figcaption|figure|footer|form|h[1-6]|header|hr|li|main|nav|ol|p|pre|section|table|tbody|td|tfoot|th|thead|tr|ul)\b[^>]*>`)
 	tagPattern      = regexp.MustCompile(`(?s)<[^>]*>`)
 )
 
 type webKeys struct {
-	Exa    string `json:"exaApiKey"`
-	Brave  string `json:"braveApiKey"`
-	Tavily string `json:"tavilyApiKey"`
+	Provider string `json:"provider"`
+	Exa      string `json:"exaApiKey"`
+	Brave    string `json:"braveApiKey"`
+	Tavily   string `json:"tavilyApiKey"`
 }
 
 type searchResult struct{ title, url, snippet string }
@@ -102,6 +114,7 @@ func loadWebKeys() (webKeys, error) {
 	if err := json.Unmarshal(contents, &stored); err != nil {
 		return webKeys{}, fmt.Errorf("web_search: parse ~/.pi/web-search.json: %w", err)
 	}
+	keys.Provider = strings.ToLower(strings.TrimSpace(stored.Provider))
 	if keys.Exa == "" {
 		keys.Exa = strings.TrimSpace(stored.Exa)
 	}
@@ -119,16 +132,30 @@ func searchWeb(ctx context.Context, client *http.Client, query string) ([]search
 	if err != nil {
 		return nil, err
 	}
-	switch {
-	case keys.Exa != "":
-		return searchExa(ctx, client, query, keys.Exa)
-	case keys.Brave != "":
-		return searchBrave(ctx, client, query, keys.Brave)
-	case keys.Tavily != "":
-		return searchTavily(ctx, client, query, keys.Tavily)
-	default:
-		return nil, fmt.Errorf("web_search: set EXA_API_KEY, BRAVE_API_KEY, or TAVILY_API_KEY, or add one to ~/.pi/web-search.json")
+	backends := []struct {
+		name, key string
+		search    func(context.Context, *http.Client, string, string) ([]searchResult, error)
+	}{
+		{"exa", keys.Exa, searchExa},
+		{"brave", keys.Brave, searchBrave},
+		{"tavily", keys.Tavily, searchTavily},
 	}
+	for _, backend := range backends {
+		if keys.Provider != "" && keys.Provider != backend.name {
+			continue
+		}
+		if backend.key == "" {
+			if keys.Provider == "" {
+				continue
+			}
+			return nil, fmt.Errorf("web_search: ~/.pi/web-search.json selects provider %q but no %s key is set", keys.Provider, backend.name)
+		}
+		return backend.search(ctx, client, query, backend.key)
+	}
+	if keys.Provider != "" {
+		return nil, fmt.Errorf("web_search: unknown provider %q in ~/.pi/web-search.json", keys.Provider)
+	}
+	return nil, fmt.Errorf("web_search: set EXA_API_KEY, BRAVE_API_KEY, or TAVILY_API_KEY, or add one to ~/.pi/web-search.json")
 }
 
 func searchExa(ctx context.Context, client *http.Client, query, key string) ([]searchResult, error) {
@@ -216,7 +243,9 @@ func fetchJSON(client *http.Client, request *http.Request, target any) error {
 		return fmt.Errorf("web_search: read response: %w", err)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("web_search: %s: %s", response.Status, strings.TrimSpace(string(body)))
+		// The provider body is dropped, never summarised: 401 bodies echo the
+		// submitted API key, and this error reaches the model verbatim.
+		return fmt.Errorf("web_search: %s (provider body omitted: it can contain the API key)", response.Status)
 	}
 	if err := json.Unmarshal(body, target); err != nil {
 		return fmt.Errorf("web_search: decode response: %w", err)
@@ -225,45 +254,181 @@ func fetchJSON(client *http.Client, request *http.Request, target any) error {
 }
 
 func fetchContent(ctx context.Context, client *http.Client, rawURL string) (string, error) {
-	parsed, err := url.Parse(rawURL)
-	if err != nil || parsed.Host == "" || parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", fmt.Errorf("fetch_content: url must use http or https")
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	target, err := validateRemoteURL(ctx, rawURL)
 	if err != nil {
 		return "", err
 	}
-	request.Header.Set("User-Agent", "pigo/first-party-websearch")
-	response, err := client.Do(request)
-	if err != nil {
-		return "", fmt.Errorf("fetch_content: %w", err)
+	// Redirects are followed by hand so every hop is re-validated; the shared
+	// client would otherwise chase a public URL straight into the metadata service.
+	manual := *client
+	manual.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	for redirects := 0; ; redirects++ {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+		if err != nil {
+			return "", err
+		}
+		request.Header.Set("User-Agent", "pigo/first-party-websearch")
+		response, err := manual.Do(request)
+		if err != nil {
+			return "", fmt.Errorf("fetch_content: %w", err)
+		}
+		location := response.Header.Get("Location")
+		if !isRedirect(response.StatusCode) || location == "" {
+			return readFetched(response)
+		}
+		_ = response.Body.Close()
+		if redirects == webMaxRedirects {
+			return "", fmt.Errorf("fetch_content: too many redirects")
+		}
+		next, err := target.Parse(location)
+		if err != nil {
+			return "", fmt.Errorf("fetch_content: invalid redirect target %q", location)
+		}
+		if target, err = validateRemoteURL(ctx, next.String()); err != nil {
+			return "", err
+		}
 	}
+}
+
+func isRedirect(status int) bool {
+	switch status {
+	case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther,
+		http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+		return true
+	}
+	return false
+}
+
+// ponytail: one process-wide resolver seam so tests can pin hostnames; give
+// each client its own *net.Resolver only if split-horizon DNS shows up.
+var lookupIP = net.DefaultResolver.LookupIPAddr
+
+// validateRemoteURL mirrors pi-web-access/ssrf-protection.ts: http(s) only, and
+// every resolved address must be public. Callers must re-run it per redirect.
+func validateRemoteURL(ctx context.Context, rawURL string) (*url.URL, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, fmt.Errorf("fetch_content: url must use http or https")
+	}
+	host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+	if host == "" {
+		return nil, fmt.Errorf("fetch_content: url must include a hostname")
+	}
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return nil, fmt.Errorf("fetch_content: blocked internal hostname %q", host)
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return parsed, publicAddress(ip, host)
+	}
+	addresses, err := lookupIP(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("fetch_content: resolve %s: %w", host, err)
+	}
+	if len(addresses) == 0 {
+		return nil, fmt.Errorf("fetch_content: resolve %s: no addresses returned", host)
+	}
+	for _, address := range addresses {
+		if err := publicAddress(address.IP, host); err != nil {
+			return nil, err
+		}
+	}
+	return parsed, nil
+}
+
+// ponytail: the transport re-resolves after this check, so a rebinding DNS
+// server can still swing a second lookup inward; pin the dial to the address
+// validated here if untrusted URLs ever reach a network with real secrets.
+func publicAddress(ip net.IP, host string) error {
+	blocked := ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() ||
+		ip.IsLinkLocalUnicast() || ip.IsMulticast()
+	if v4 := ip.To4(); v4 != nil && !blocked {
+		// Ranges no net.IP helper covers: "this network", CGNAT, benchmarking, reserved.
+		blocked = v4[0] == 0 || (v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127) ||
+			(v4[0] == 198 && (v4[1] == 18 || v4[1] == 19)) || v4[0] >= 240
+	}
+	if blocked {
+		return fmt.Errorf("fetch_content: blocked non-public address %s for %s", ip, host)
+	}
+	return nil
+}
+
+// ponytail: HTML and text only; add MIME-specific PDF or media extractors when
+// those formats are demanded by real usage.
+func readFetched(response *http.Response) (string, error) {
 	defer func() { _ = response.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(response.Body, webBodyLimit))
 	if err != nil {
 		return "", fmt.Errorf("fetch_content: read response: %w", err)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", fmt.Errorf("fetch_content: %s: %s", response.Status, strings.TrimSpace(string(body)))
+		return "", fmt.Errorf("fetch_content: %s: %s", response.Status,
+			trimTrailingBytes(strings.TrimSpace(string(body)), webErrorSnippet))
 	}
-	contentType := strings.ToLower(response.Header.Get("Content-Type"))
-	if strings.Contains(contentType, "pdf") {
+	mediaType, charset := parseContentType(response.Header.Get("Content-Type"))
+	looksHTML := bytes.Contains(bytes.ToLower(body), []byte("<html"))
+	switch {
+	case strings.Contains(mediaType, "pdf"):
 		return "", fmt.Errorf("fetch_content: PDF extraction is not supported")
+	case !textualMedia(mediaType) && !looksHTML:
+		return "", fmt.Errorf("fetch_content: unsupported content type %q", mediaType)
 	}
-	if strings.Contains(contentType, "html") || bytes.Contains(bytes.ToLower(body), []byte("<html")) {
-		return htmlText(string(body)), nil
+	text := decodeCharset(body, charset)
+	if strings.Contains(mediaType, "html") || looksHTML {
+		return htmlText(text), nil
 	}
-	return strings.TrimSpace(string(body)), nil
+	return strings.TrimSpace(text), nil
 }
 
-// ponytail: This intentionally handles HTML/text only; add MIME-specific PDF
-// or media extractors when those formats are demanded by real usage.
+func parseContentType(header string) (string, string) {
+	mediaType, parameters, err := mime.ParseMediaType(header)
+	if err != nil {
+		mediaType, _, _ = strings.Cut(header, ";")
+	}
+	return strings.ToLower(strings.TrimSpace(mediaType)), parameters["charset"]
+}
+
+func textualMedia(mediaType string) bool {
+	switch {
+	case mediaType == "", strings.HasPrefix(mediaType, "text/"),
+		strings.HasSuffix(mediaType, "+json"), strings.HasSuffix(mediaType, "+xml"):
+		return true
+	}
+	switch mediaType {
+	case "application/json", "application/xml", "application/javascript", "application/x-javascript":
+		return true
+	}
+	return false
+}
+
+// ponytail: charset comes from the Content-Type header only, with an invalid-UTF-8
+// scrub as the floor; read <meta charset> too if mislabelled pages show up.
+func decodeCharset(body []byte, charset string) string {
+	if charset != "" && !strings.EqualFold(charset, "utf-8") {
+		if encoding, err := htmlindex.Get(charset); err == nil {
+			if decoded, _, err := transform.Bytes(encoding.NewDecoder(), body); err == nil {
+				body = decoded
+			}
+		}
+	}
+	return strings.ToValidUTF8(string(body), string(utf8.RuneError))
+}
+
 func htmlText(source string) string {
 	source = scriptPattern.ReplaceAllString(source, " ")
 	source = stylePattern.ReplaceAllString(source, " ")
 	source = commentPattern.ReplaceAllString(source, " ")
+	// Block tags become newlines before the rest are dropped: a page collapsed
+	// onto one line is truncated to nothing once it passes the byte cap.
+	source = blockPattern.ReplaceAllString(source, "\n")
 	source = tagPattern.ReplaceAllString(source, " ")
-	return strings.Join(strings.Fields(html.UnescapeString(source)), " ")
+	lines := strings.Split(html.UnescapeString(source), "\n")
+	kept := lines[:0]
+	for _, line := range lines {
+		if line = strings.Join(strings.Fields(line), " "); line != "" {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "\n")
 }
 
 func formatSearchResults(results []searchResult) string {
@@ -283,8 +448,15 @@ func formatSearchResults(results []searchResult) string {
 
 func truncateWeb(text string) string {
 	result := truncate.TruncateHead(text)
-	if result.Truncated {
-		return result.Content + "\n\n[output truncated]"
+	if !result.Truncated {
+		return result.Content
 	}
-	return result.Content
+	content := result.Content
+	if result.FirstLineExceedsLimit {
+		// TruncateHead returns nothing when line 1 alone busts the byte cap
+		// (faithful to upstream). A genuinely unbreakable line still has to
+		// yield its head rather than a bare marker.
+		content = trimTrailingBytes(text, result.MaxBytes)
+	}
+	return content + "\n\n[output truncated]"
 }

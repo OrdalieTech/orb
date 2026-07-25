@@ -37,6 +37,8 @@ type fauxDelivery struct {
 	finalizeFails   int
 	notifyFails     int
 	previewPanics   int
+	// notifyHook, when set, runs before the notice is recorded.
+	notifyHook func(context.Context) error
 }
 
 func (d *fauxDelivery) Typing(context.Context) error {
@@ -77,13 +79,22 @@ func (d *fauxDelivery) Finalize(_ context.Context, text string) (Receipt, error)
 	return Receipt{MessageIDs: []string{"fin-1"}, At: time.Now().UTC()}, nil
 }
 
-func (d *fauxDelivery) Notify(_ context.Context, text string) error {
+func (d *fauxDelivery) Notify(ctx context.Context, text string) error {
 	d.mu.Lock()
-	defer d.mu.Unlock()
+	hook := d.notifyHook
 	if d.notifyFails > 0 {
 		d.notifyFails--
+		d.mu.Unlock()
 		return fmt.Errorf("notify refused")
 	}
+	d.mu.Unlock()
+	if hook != nil {
+		if err := hook(ctx); err != nil {
+			return err
+		}
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.notices = append(d.notices, text)
 	return nil
 }

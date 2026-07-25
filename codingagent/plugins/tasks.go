@@ -5,14 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/OrdalieTech/pigo/agent"
 	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
 )
 
-var todoSchema = ai.JSONSchema(`{"type":"object","required":["items"],"properties":{"items":{"type":"array","items":{"type":"object","required":["text","status"],"properties":{"text":{"type":"string"},"status":{"type":"string","enum":["pending","in_progress","done"]}}}}}}`)
+var todoSchema = ai.JSONSchema(`{"type":"object","required":["items"],"properties":{"items":{"type":"array","description":"The complete task list. Every call replaces the previous list, so resend unchanged tasks.","items":{"type":"object","required":["text","status"],"properties":{"text":{"type":"string","description":"Short imperative description of one task."},"status":{"type":"string","enum":["pending","in_progress","done"],"description":"Task state; keep at most one task in_progress."}}}}}}`)
 
 type todoInput struct {
 	Items []todoItem `json:"items"`
@@ -25,10 +24,22 @@ type todoItem struct {
 
 func tasksExtension() extensions.Factory {
 	return func(api extensions.API) error {
-		// ponytail: Tasks live only for this extension/session instance; append a
-		// custom session entry when restored task state becomes a real need.
-		var mu sync.Mutex
-		var items []todoItem
+		show := func(ctx extensions.Context, items []todoItem) {
+			if len(items) == 0 {
+				ctx.UI().SetWidget("tasks", nil, nil)
+				return
+			}
+			ctx.UI().SetWidget("tasks", &extensions.Widget{Lines: strings.Split(renderTasks(items), "\n")}, nil)
+		}
+		// The list lives in tool-result details, as upstream todo.ts does, so a
+		// resumed or branched session shows the list that branch actually has.
+		// Nothing is kept in memory: every call replaces the whole list.
+		restore := func(_ context.Context, _ extensions.Event, ctx extensions.Context) (any, error) {
+			show(ctx, todosFromBranch(ctx.SessionManager()))
+			return nil, nil
+		}
+		api.On(extensions.EventSessionStart, restore)
+		api.On(extensions.EventSessionTree, restore)
 		api.RegisterTool(extensions.ToolDefinition{
 			Name: "todo", Label: "Todo", Description: "Replace the current session task list", Parameters: todoSchema,
 			Execute: func(_ context.Context, _ string, raw any, _ agent.AgentToolUpdateCallback, ctx extensions.Context) (agent.AgentToolResult, error) {
@@ -47,20 +58,39 @@ func tasksExtension() extensions.Factory {
 						return agent.AgentToolResult{}, fmt.Errorf("todo: items[%d].status must be pending, in_progress, or done", index)
 					}
 				}
-				mu.Lock()
-				items = append(items[:0], input.Items...)
-				text := renderTasks(items)
-				mu.Unlock()
-				if len(input.Items) == 0 {
-					ctx.UI().SetWidget("tasks", nil, nil)
-				} else {
-					ctx.UI().SetWidget("tasks", &extensions.Widget{Lines: strings.Split(text, "\n")}, nil)
-				}
-				return textResult(text), nil
+				show(ctx, input.Items)
+				result := textResult(renderTasks(input.Items))
+				result.Details = todoInput{Items: input.Items}
+				return result, nil
 			},
 		})
 		return nil
 	}
+}
+
+func todosFromBranch(manager extensions.ReadonlySessionManager) []todoItem {
+	if manager == nil {
+		return nil
+	}
+	var items []todoItem
+	for _, entry := range manager.GetBranch() {
+		if entry.Type != "message" {
+			continue
+		}
+		message, err := ai.UnmarshalMessage(entry.Message)
+		if err != nil {
+			continue
+		}
+		result, ok := message.(*ai.ToolResultMessage)
+		if !ok || result.ToolName != "todo" || result.IsError || len(result.Details) == 0 {
+			continue
+		}
+		var details todoInput
+		if json.Unmarshal(result.Details, &details) == nil {
+			items = details.Items
+		}
+	}
+	return items
 }
 
 func renderTasks(items []todoItem) string {

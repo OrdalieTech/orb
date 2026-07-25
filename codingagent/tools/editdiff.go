@@ -394,7 +394,13 @@ func GenerateUnifiedPatch(path, oldContent, newContent string, contextLines int)
 	}
 	var result strings.Builder
 	fmt.Fprintf(&result, "--- %s\n+++ %s\n", path, path)
-	for _, hunk := range structured.Hunks {
+	// go-udiff advances its new-file cursor only when it opens a hunk
+	// (unified.go:143), so every hunk after an edit that was joined into a
+	// previous hunk reports a ToLine short by the joined line count. Derive each
+	// start from the previous hunk: unchanged lines between hunks span the same
+	// count on both sides.
+	fromEnd, toEnd := 0, 0
+	for index, hunk := range structured.Hunks {
 		fromCount := 0
 		toCount := 0
 		for _, line := range hunk.Lines {
@@ -410,6 +416,10 @@ func GenerateUnifiedPatch(path, oldContent, newContent string, contextLines int)
 		}
 		fromLine := hunk.FromLine
 		toLine := hunk.ToLine
+		if index > 0 {
+			toLine = toEnd + fromLine - fromEnd
+		}
+		fromEnd, toEnd = fromLine+fromCount, toLine+toCount
 		if fromLine == 1 && fromCount == 0 {
 			fromLine = 0
 		}

@@ -81,13 +81,15 @@ ensure-upstream-fixture-tools: upstream
 fixtures: ensure-upstream-fixture-tools product-assets
 	@cd "$(UPSTREAM_DIR)" && node --import tsx "$(CURDIR)/conformance/extract/generate.ts" "$(CURDIR)/conformance/fixtures" $(UPSTREAM_COMMIT)
 
+# The reciprocal TS-reads-Go gates run first: as the last command of its recipe
+# line, a fixture diff aborts the target, which previously skipped them silently.
 fixtures-check: ensure-upstream-fixture-tools product-assets-check
+	@PIGO_F6_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./conformance/runner -run TestF6SessionWriteAndProjectionMatchUpstream
+	@PIGO_AUTH_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./codingagent/config -run TestAuthStorageConformance
 	@fixture_tmp=$$(mktemp -d); \
 		trap 'rm -rf "$$fixture_tmp"' EXIT; \
 		cd "$(UPSTREAM_DIR)" && node --import tsx "$(CURDIR)/conformance/extract/generate.ts" "$$fixture_tmp" $(UPSTREAM_COMMIT); \
 		diff -ru "$(CURDIR)/conformance/fixtures" "$$fixture_tmp"
-	@PIGO_F6_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./conformance/runner -run TestF6SessionWriteAndProjectionMatchUpstream
-	@PIGO_AUTH_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./codingagent/config -run TestAuthStorageConformance
 
 upstream-rpc-tests: ensure-upstream-fixture-tools
 	@mkdir -p .tools/bin

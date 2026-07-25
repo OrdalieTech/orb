@@ -28,9 +28,12 @@ type AgentEvent interface {
 	isAgentEvent()
 }
 
-// EventSink handles one event. Parallel tool calls and successive tool updates
-// may invoke the same sink concurrently, matching upstream's overlapping event
-// promises, so implementations that mutate shared state must synchronize it.
+// EventSink handles one event. Parallel tool calls may invoke the same sink
+// concurrently, matching upstream's overlapping event promises, so
+// implementations that mutate shared state must synchronize it. Updates within
+// one tool call arrive one at a time, in the order the tool produced them, and
+// on a goroutine the tool does not wait for: a slow sink lags behind the tool
+// rather than throttling it, up to toolUpdateQueueDepth pending updates.
 type EventSink func(ctx context.Context, event AgentEvent) error
 
 type AgentStartEvent struct{}

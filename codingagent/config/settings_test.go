@@ -3,9 +3,11 @@ package config
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -759,6 +761,80 @@ func TestStructuredPluginSettingsEnableAndPersistWithoutLosingRules(t *testing.T
 	configured := manager.GetPluginSettings("permissions")
 	if configured["mode"] != "enforce" || configured["enabled"] != false || configured["rules"] == nil {
 		t.Fatalf("persisted plugin settings = %#v", configured)
+	}
+}
+
+// Concurrent managers sharing one agent dir contend on the settings lock. A
+// flat 10 x 20 ms poll dropped a double-digit percentage of writes outright,
+// and the void setters reported nothing until a later DrainErrors.
+func TestConcurrentSettingsWritersLoseNothing(t *testing.T) {
+	agentDir := t.TempDir()
+	const managers, writes = 64, 4
+	all := make([]*SettingsManager, managers)
+	for index := range all {
+		manager, err := NewSettingsManager(t.TempDir(), WithAgentDir(agentDir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		all[index] = manager
+	}
+	var group sync.WaitGroup
+	for index, manager := range all {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			for write := range writes {
+				manager.setGlobalValues(settingMember(fmt.Sprintf("k%d-%d", index, write), index*writes+write))
+			}
+		}()
+	}
+	group.Wait()
+
+	raw, err := os.ReadFile(filepath.Join(agentDir, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber() // match the manager's own in-memory decoding
+	if err := decoder.Decode(&persisted); err != nil {
+		t.Fatalf("settings file is not valid JSON after %d concurrent writes: %v", managers*writes, err)
+	}
+	if len(persisted) != managers*writes {
+		t.Fatalf("persisted %d of %d updates", len(persisted), managers*writes)
+	}
+	for index, manager := range all {
+		if errs := manager.DrainErrors(); len(errs) != 0 {
+			t.Fatalf("manager %d reported write errors: %v", index, errs)
+		}
+		// Every value the manager believes it set must be on disk: in-memory
+		// state may never run ahead of a failed write.
+		for name, value := range manager.GetGlobalSettings() {
+			if !reflect.DeepEqual(persisted[name], value) {
+				t.Fatalf("manager %d holds %s=%v, file holds %v", index, name, value, persisted[name])
+			}
+		}
+	}
+}
+
+func TestFailedSettingsWriteLeavesInMemoryStateAlone(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	manager, err := NewSettingsManager(root, WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A directory where the settings file belongs makes the write fail after
+	// the manager has already decided on the new value.
+	if err := os.MkdirAll(filepath.Join(agentDir, "settings.json"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manager.SetSteeringMode("all")
+	if errs := manager.DrainErrors(); len(errs) != 1 {
+		t.Fatalf("write errors = %v, want exactly one", errs)
+	}
+	if mode := manager.GetSteeringMode(); mode != "one-at-a-time" {
+		t.Fatalf("steering mode = %q after a failed write, want the unchanged default", mode)
 	}
 }
 

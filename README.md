@@ -65,9 +65,12 @@ pigo --extension ./pirate.ts
 Run `/pirate` in the TUI to exercise the extension.
 
 61 of upstream's 69 single-file examples run as-is. In a locked snapshot of the 44 most-downloaded
-valid Pi packages, 24 load stably in both runtimes and 20 expose exactly the same observed tools and
-commands; six of seven safe command handlers and Piolium's real knowledge-base workflow also match.
+valid Pi packages, 43 load and 39 are exact-compatible — 35 with load-and-registration parity plus
+four event-driven packages with load-only parity — 88.6% by package count and 96.3% weighted by
+monthly downloads. In a follow-up run where real Pi installed 30 popular packages into isolated
+projects, pigo loaded 29 and 15 completed live tool or hook workflows.
 See the [ecosystem matrix](docs/sync/ecosystem-extension-matrix.md), the
+[live matrix](docs/sync/ecosystem-extension-live.md), the
 [example matrix](docs/sync/extension-matrix.md), and the [bridge guide](docs/sync/node-shims.md) for
 the exact package-by-package result and remaining runtime ceilings.
 `.pi/extensions/` in a trusted project and the global agent directory are discovered like upstream.

@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/OrdalieTech/pigo/agent"
@@ -20,6 +22,8 @@ import (
 
 const (
 	memoryIndexBytes       = 8 << 10
+	recallScanLimit        = 100
+	memoryPrefixMatch      = 4
 	distillTranscriptBytes = 12 << 10
 	distillMessageLimit    = 40
 	distillItemLimit       = 20
@@ -30,8 +34,8 @@ const (
 )
 
 var (
-	rememberSchema = ai.JSONSchema(`{"type":"object","required":["content"],"properties":{"content":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}}}}`)
-	recallSchema   = ai.JSONSchema(`{"type":"object","properties":{"query":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}},"limit":{"type":"integer","minimum":1,"maximum":100}}}`)
+	rememberSchema = ai.JSONSchema(`{"type":"object","required":["content"],"properties":{"content":{"type":"string","description":"One durable fact, preference, decision, or lesson, written to stand on its own in a later session."},"tags":{"type":"array","items":{"type":"string"},"description":"Lowercase labels used to filter recalls later, e.g. [\"project\",\"style\"]."}}}`)
+	recallSchema   = ai.JSONSchema(`{"type":"object","properties":{"query":{"type":"string","description":"Words to look for. Substring matches win; otherwise memories are ranked by word overlap, so paraphrases still match. Omit to list recent memories."},"tags":{"type":"array","items":{"type":"string"},"description":"Only return memories carrying every listed tag."},"limit":{"type":"integer","minimum":1,"maximum":100,"description":"Maximum memories to return. Defaults to 100."}}}`)
 )
 
 type memoryPluginSettings struct {
@@ -98,7 +102,7 @@ func memoryExtension(store memorysdk.Store, stream agent.StreamFn, settings *con
 			},
 		})
 		api.RegisterTool(extensions.ToolDefinition{
-			Name: "recall", Label: "Recall", Description: "Search durable memories", Parameters: recallSchema,
+			Name: "recall", Label: "Recall", Description: "Search durable memories by substring, then by word overlap", Parameters: recallSchema,
 			Execute: func(ctx context.Context, _ string, raw any, _ agent.AgentToolUpdateCallback, _ extensions.Context) (agent.AgentToolResult, error) {
 				var input struct {
 					Query string   `json:"query"`
@@ -237,7 +241,92 @@ func recallItems(ctx context.Context, store memorysdk.Store, query string, tags 
 		}
 		return items, nil
 	}
-	return store.Query(ctx, memorysdk.Filter{Tags: tags, Contains: query, Limit: limit})
+	items, err := store.Query(ctx, memorysdk.Filter{Tags: tags, Contains: query, Limit: limit})
+	if err != nil || query == "" || len(items) > 0 {
+		return items, err
+	}
+	recent, err := store.Query(ctx, memorysdk.Filter{Tags: tags, Limit: recallScanLimit})
+	if err != nil {
+		return nil, err
+	}
+	return rankMemories(recent, query, limit), nil
+}
+
+// ponytail: word overlap over one unfiltered page of recent memories (100 for
+// the bundled file store), with a 4-character prefix rule standing in for a
+// stemmer — no synonyms, no embeddings. Register a store implementing
+// memorysdk.SemanticSearcher when recall quality outgrows this.
+func rankMemories(items []memorysdk.Item, query string, limit int) []memorysdk.Item {
+	terms := memoryTerms(query)
+	if len(terms) == 0 {
+		return nil
+	}
+	type ranked struct {
+		item  memorysdk.Item
+		score int
+	}
+	matches := make([]ranked, 0, len(items))
+	for _, item := range items {
+		if score := memoryOverlap(memoryTerms(item.Content), terms); score > 0 {
+			matches = append(matches, ranked{item, score})
+		}
+	}
+	slices.SortStableFunc(matches, func(left, right ranked) int { return right.score - left.score })
+	if len(matches) > limit {
+		matches = matches[:limit]
+	}
+	result := make([]memorysdk.Item, len(matches))
+	for index := range matches {
+		result[index] = matches[index].item
+	}
+	return result
+}
+
+func memoryOverlap(itemTerms, queryTerms []string) int {
+	score := 0
+	for _, term := range queryTerms {
+		for _, candidate := range itemTerms {
+			if memoryTermsMatch(term, candidate) {
+				score++
+				break
+			}
+		}
+	}
+	return score
+}
+
+func memoryTermsMatch(left, right string) bool {
+	left, right = memoryStem(left), memoryStem(right)
+	if left == right {
+		return true
+	}
+	if len(right) < len(left) {
+		left, right = right, left
+	}
+	return len(left) >= memoryPrefixMatch && strings.HasPrefix(right, left)
+}
+
+func memoryStem(term string) string {
+	if len(term) > 3 && strings.HasSuffix(term, "s") && !strings.HasSuffix(term, "ss") {
+		return term[:len(term)-1]
+	}
+	return term
+}
+
+func memoryTerms(value string) []string {
+	fields := strings.FieldsFunc(strings.ToLower(value), func(letter rune) bool {
+		return !unicode.IsLetter(letter) && !unicode.IsDigit(letter)
+	})
+	terms := make([]string, 0, len(fields))
+	seen := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		if _, exists := seen[field]; exists {
+			continue
+		}
+		seen[field] = struct{}{}
+		terms = append(terms, field)
+	}
+	return terms
 }
 
 func hasMemoryTags(itemTags, required []string) bool {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -28,6 +29,7 @@ type widgetUI struct {
 	extensions.NoopUI
 	mu    sync.Mutex
 	lines []string
+	shown int
 }
 
 type selectorUI struct {
@@ -119,6 +121,21 @@ func TestPermissionsPolicyRules(t *testing.T) {
 			name:   "canonical rule path",
 			policy: &Policy{Rules: []Rule{{Path: filepath.Join(link, "*"), Action: Deny}}},
 			info:   ToolCallInfo{Tool: "custom", Args: map[string]any{"path": filepath.Join(realDir, "file")}, CWD: root}, want: Deny,
+		},
+		{
+			name:   "path rule matches a path inside a bash command",
+			policy: &Policy{Rules: []Rule{{Path: "secrets.txt", Action: Deny}}},
+			info:   ToolCallInfo{Tool: "bash", Args: map[string]any{"command": "cat secrets.txt"}, CWD: root}, want: Deny,
+		},
+		{
+			name:   "path rule ignores unrelated bash commands",
+			policy: &Policy{Rules: []Rule{{Path: "secrets.txt", Action: Deny}}},
+			info:   ToolCallInfo{Tool: "bash", Args: map[string]any{"command": "ls -la"}, CWD: root}, want: Allow,
+		},
+		{
+			name:   "path rule matches a redirect target",
+			policy: &Policy{Rules: []Rule{{Path: "*.env", Action: Deny}}},
+			info:   ToolCallInfo{Tool: "bash", Args: map[string]any{"command": "echo TOKEN=1 > prod.env"}, CWD: root}, want: Deny,
 		},
 		{
 			name:   "unparseable bash is ask with restrictive rule",
@@ -263,6 +280,7 @@ func (ui *widgetUI) SetWidget(_ string, widget *extensions.Widget, _ *extensions
 	ui.lines = nil
 	if widget != nil {
 		ui.lines = append([]string(nil), widget.Lines...)
+		ui.shown++
 	}
 }
 
@@ -270,6 +288,12 @@ func (ui *widgetUI) snapshot() []string {
 	ui.mu.Lock()
 	defer ui.mu.Unlock()
 	return append([]string(nil), ui.lines...)
+}
+
+func (ui *widgetUI) showCount() int {
+	ui.mu.Lock()
+	defer ui.mu.Unlock()
+	return ui.shown
 }
 
 func TestTasksToolReplacesTheLiveWidget(t *testing.T) {
@@ -298,6 +322,32 @@ func TestTasksToolReplacesTheLiveWidget(t *testing.T) {
 	}
 	if got := ai.ContentText(result.Content); got != "[ ] ship" || strings.Join(ui.snapshot(), "\n") != got {
 		t.Fatalf("replacement result = %q widget = %q", got, strings.Join(ui.snapshot(), "\n"))
+	}
+	details, ok := result.Details.(todoInput)
+	if !ok || len(details.Items) != 1 || details.Items[0].Text != "ship" {
+		t.Fatalf("result details = %#v", result.Details)
+	}
+}
+
+func TestTasksRebuildFromBranchDetails(t *testing.T) {
+	manager, err := sessionstore.InMemory(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, items := range []string{`[{"text":"first","status":"done"}]`, `[{"text":"second","status":"pending"}]`} {
+		if _, err := manager.AppendMessage(&ai.ToolResultMessage{
+			ToolName: "todo", Content: ai.ToolResultContent{&ai.TextContent{Text: "ok"}},
+			Details: json.RawMessage(`{"items":` + items + `}`),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	restored := todosFromBranch(manager)
+	if len(restored) != 1 || restored[0].Text != "second" || restored[0].Status != "pending" {
+		t.Fatalf("restored = %#v", restored)
+	}
+	if items := todosFromBranch(nil); items != nil {
+		t.Fatalf("nil manager returned %#v", items)
 	}
 }
 
@@ -349,6 +399,7 @@ func TestWebSearchBackendsAndFetchContent(t *testing.T) {
 	for _, key := range []string{"EXA_API_KEY", "BRAVE_API_KEY", "TAVILY_API_KEY"} {
 		t.Setenv(key, "")
 	}
+	stubDNS(t, map[string]string{"example.test": "93.184.216.34"})
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		return response(http.StatusOK, "text/html", `<html><style>no</style><body><h1>Hello &amp; hi</h1><script>no</script><p>Readable text.</p></body></html>`), nil
 	})}
@@ -357,8 +408,171 @@ func TestWebSearchBackendsAndFetchContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ai.ContentText(result.Content); got != "Hello & hi Readable text." {
+	// Block tags keep their line breaks so oversized pages stay truncatable.
+	if got := ai.ContentText(result.Content); got != "Hello & hi\nReadable text." {
 		t.Fatalf("content = %q", got)
+	}
+}
+
+// stubDNS pins hostname resolution so the SSRF guard is exercised without
+// depending on the network. Unlisted hosts fail to resolve, as they would live.
+func stubDNS(t *testing.T, addresses map[string]string) {
+	t.Helper()
+	original := lookupIP
+	lookupIP = func(_ context.Context, host string) ([]net.IPAddr, error) {
+		address, ok := addresses[host]
+		if !ok {
+			return nil, fmt.Errorf("no such host")
+		}
+		return []net.IPAddr{{IP: net.ParseIP(address)}}, nil
+	}
+	t.Cleanup(func() { lookupIP = original })
+}
+
+func TestFetchContentKeepsLargePagesReadable(t *testing.T) {
+	stubDNS(t, map[string]string{"example.test": "93.184.216.34"})
+	var page strings.Builder
+	page.WriteString("<html><body>")
+	for index := range 2000 {
+		fmt.Fprintf(&page, "<p>Paragraph %d carries enough prose to push this page past the fifty kilobyte cap.</p>", index)
+	}
+	page.WriteString("</body></html>")
+	if page.Len() <= 50<<10 {
+		t.Fatalf("fixture is only %d bytes", page.Len())
+	}
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return response(http.StatusOK, "text/html", page.String()), nil
+	})}
+	tool := pluginTool(t, "websearch", "fetch_content", Options{HTTPClient: client}, extensions.RunnerOptions{})
+	result, err := tool.Execute(context.Background(), "fetch", map[string]any{"url": "https://example.test/big"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := ai.ContentText(result.Content)
+	if !strings.Contains(got, "Paragraph 0 carries") || len(got) < 40<<10 {
+		t.Fatalf("large page returned %d bytes: %.120q", len(got), got)
+	}
+	if strings.Count(got, "\n") < 100 {
+		t.Fatalf("page collapsed onto %d lines", strings.Count(got, "\n")+1)
+	}
+	if !strings.HasSuffix(got, "[output truncated]") {
+		t.Fatalf("missing truncation marker: %.120q", got[max(0, len(got)-120):])
+	}
+	// A page with no break at all still has to yield its head, not just the marker.
+	if head := truncateWeb(strings.Repeat("x", 60<<10)); len(head) < 40<<10 {
+		t.Fatalf("unbreakable line truncated to %d bytes", len(head))
+	}
+}
+
+func TestFetchContentRejectsNonPublicDestinations(t *testing.T) {
+	stubDNS(t, map[string]string{
+		"public.test":   "93.184.216.34",
+		"internal.test": "10.0.0.5",
+	})
+	var requests int
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests++
+		switch request.URL.Path {
+		case "/to-loopback":
+			return redirect("http://127.0.0.1/admin"), nil
+		case "/loop":
+			return redirect("https://public.test/loop"), nil
+		}
+		return response(http.StatusOK, "text/plain", "reached "+request.URL.String()), nil
+	})}
+	tool := pluginTool(t, "websearch", "fetch_content", Options{HTTPClient: client}, extensions.RunnerOptions{})
+	for _, test := range []struct {
+		name, url, want string
+		wantRequests    int
+	}{
+		{name: "loopback literal", url: "http://127.0.0.1/", want: "blocked non-public address"},
+		{name: "metadata service", url: "http://169.254.169.254/latest/meta-data/", want: "blocked non-public address"},
+		{name: "rfc1918 literal", url: "http://192.168.1.1/", want: "blocked non-public address"},
+		{name: "ipv6 loopback", url: "http://[::1]/", want: "blocked non-public address"},
+		{name: "localhost name", url: "http://localhost:8080/", want: "blocked internal hostname"},
+		{name: "private via dns", url: "http://internal.test/", want: "blocked non-public address"},
+		{name: "non-http scheme", url: "file:///etc/passwd", want: "must use http or https"},
+		{name: "unresolvable host", url: "http://nowhere.test/", want: "resolve nowhere.test"},
+		{name: "redirect to loopback", url: "https://public.test/to-loopback", want: "blocked non-public address", wantRequests: 1},
+		{name: "redirect loop", url: "https://public.test/loop", want: "too many redirects", wantRequests: webMaxRedirects + 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			requests = 0
+			_, err := tool.Execute(context.Background(), "fetch", map[string]any{"url": test.url}, nil)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want %q", err, test.want)
+			}
+			if requests != test.wantRequests {
+				t.Fatalf("issued %d requests, want %d", requests, test.wantRequests)
+			}
+		})
+	}
+	if _, err := tool.Execute(context.Background(), "fetch", map[string]any{"url": "https://public.test/ok"}, nil); err != nil {
+		t.Fatalf("public destination rejected: %v", err)
+	}
+}
+
+func TestFetchContentDecodesCharsetAndRejectsBinary(t *testing.T) {
+	stubDNS(t, map[string]string{"public.test": "93.184.216.34"})
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Path == "/binary" {
+			return response(http.StatusOK, "image/png", "\x89PNG\r\n\x1a\n\xff\xfe"), nil
+		}
+		// 0x92 is a right single quote in windows-1252 and invalid UTF-8.
+		return response(http.StatusOK, "text/html; charset=windows-1252", "<p>caf\xe9 owner\x92s</p>"), nil
+	})}
+	tool := pluginTool(t, "websearch", "fetch_content", Options{HTTPClient: client}, extensions.RunnerOptions{})
+	result, err := tool.Execute(context.Background(), "fetch", map[string]any{"url": "https://public.test/legacy"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ai.ContentText(result.Content); got != "café owner’s" || !utf8.ValidString(got) {
+		t.Fatalf("decoded = %q", got)
+	}
+	if _, err := tool.Execute(context.Background(), "fetch", map[string]any{"url": "https://public.test/binary"}, nil); err == nil ||
+		!strings.Contains(err.Error(), "unsupported content type") {
+		t.Fatalf("binary error = %v", err)
+	}
+}
+
+func TestWebSearchDropsProviderErrorBody(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, key := range []string{"BRAVE_API_KEY", "TAVILY_API_KEY"} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("EXA_API_KEY", "sk-SECRET")
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return response(http.StatusUnauthorized, "application/json", `{"error":"invalid key sk-SECRET"}`), nil
+	})}
+	tool := pluginTool(t, "websearch", "web_search", Options{HTTPClient: client}, extensions.RunnerOptions{})
+	_, err := tool.Execute(context.Background(), "search", map[string]any{"query": "pigo"}, nil)
+	if err == nil || strings.Contains(err.Error(), "sk-SECRET") {
+		t.Fatalf("error leaked the provider body: %v", err)
+	}
+}
+
+func TestWebSearchHonoursConfiguredProvider(t *testing.T) {
+	for _, key := range []string{"EXA_API_KEY", "BRAVE_API_KEY", "TAVILY_API_KEY"} {
+		t.Setenv(key, "")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".pi"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := `{"provider":"brave","exaApiKey":"exa-key","braveApiKey":"brave-key"}`
+	if err := os.WriteFile(filepath.Join(home, ".pi", "web-search.json"), []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if !strings.Contains(request.URL.Host, "brave") {
+			t.Fatalf("provider ignored: %s", request.URL)
+		}
+		return response(http.StatusOK, "application/json", `{"web":{"results":[]}}`), nil
+	})}
+	tool := pluginTool(t, "websearch", "web_search", Options{HTTPClient: client}, extensions.RunnerOptions{})
+	if _, err := tool.Execute(context.Background(), "search", map[string]any{"query": "pigo"}, nil); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -403,7 +617,7 @@ func TestSubagentCompletesInProcessWithForkedContext(t *testing.T) {
 	var childSawParent bool
 	var returned string
 	provider.SetResponses([]faux.ResponseStep{
-		faux.AssistantMessage(faux.ToolCall("subagent", map[string]any{"task": "answer", "agent": "scout", "context": "fork"}, faux.ToolCallOptions{ID: "sub-1"})),
+		faux.AssistantMessage(faux.ToolCall("subagent", map[string]any{"mode": "single", "task": "answer", "agent": "scout", "context": "fork"}, faux.ToolCallOptions{ID: "sub-1"})),
 		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
 			childSawParent = contextContains(request, "parent seed")
 			return faux.AssistantMessage("child answer"), nil
@@ -472,7 +686,7 @@ func TestSubagentSurfacesChildStreamError(t *testing.T) {
 	var returned string
 	var isError bool
 	provider.SetResponses([]faux.ResponseStep{
-		faux.AssistantMessage(faux.ToolCall("subagent", map[string]any{"task": "inspect", "agent": "scout"}, faux.ToolCallOptions{ID: "sub-error"})),
+		faux.AssistantMessage(faux.ToolCall("subagent", map[string]any{"mode": "single", "task": "inspect", "agent": "scout"}, faux.ToolCallOptions{ID: "sub-error"})),
 		faux.AssistantMessage(ai.AssistantContent{}, faux.AssistantMessageOptions{StopReason: ai.StopReasonError, ErrorMessage: &providerError}),
 		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
 			for index := len(request.Messages) - 1; index >= 0; index-- {
@@ -497,7 +711,7 @@ func TestSubagentInheritsPermissionsPolicy(t *testing.T) {
 	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
 	childReadAbsent := false
 	provider.SetResponses([]faux.ResponseStep{
-		faux.AssistantMessage(faux.ToolCall("subagent", map[string]any{"task": "inspect", "agent": "scout"}, faux.ToolCallOptions{ID: "sub-policy"})),
+		faux.AssistantMessage(faux.ToolCall("subagent", map[string]any{"mode": "single", "task": "inspect", "agent": "scout"}, faux.ToolCallOptions{ID: "sub-policy"})),
 		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
 			childReadAbsent = true
 			if request.Tools != nil {
@@ -521,10 +735,78 @@ func TestSubagentInheritsPermissionsPolicy(t *testing.T) {
 	}
 }
 
+func TestSubagentClearsProgressWidgetAndFailsParallelRuns(t *testing.T) {
+	ui := &widgetUI{}
+	tool := pluginTool(t, "subagents", "subagent", Options{}, extensions.RunnerOptions{UI: ui, Mode: extensions.ModeTUI})
+	// No parent model registry, so every child fails: the widget must still go.
+	if _, err := tool.Execute(context.Background(), "sub-1", map[string]any{"mode": "single", "task": "work"}, nil); err == nil {
+		t.Fatal("child without a model registry succeeded")
+	}
+	if ui.showCount() == 0 {
+		t.Fatal("progress widget was never shown")
+	}
+	if lines := ui.snapshot(); len(lines) != 0 {
+		t.Fatalf("progress widget left on screen: %v", lines)
+	}
+
+	_, err := tool.Execute(context.Background(), "sub-2", map[string]any{"mode": "parallel", "tasks": []any{
+		map[string]any{"task": "alpha"}, map[string]any{"task": "beta"},
+	}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "2 of 2 children failed") || !strings.Contains(err.Error(), "[2] worker") {
+		t.Fatalf("parallel failure = %v", err)
+	}
+	if lines := ui.snapshot(); len(lines) != 0 {
+		t.Fatalf("progress widget left on screen: %v", lines)
+	}
+}
+
 type memoryTestStore struct {
 	mu       sync.Mutex
 	items    []memorysdk.Item
 	searched bool
+}
+
+// plainMemoryStore is a Store without SemanticSearcher, so recall takes the
+// substring-then-word-overlap path.
+type plainMemoryStore struct{ items []memorysdk.Item }
+
+func (store *plainMemoryStore) Append(_ context.Context, item memorysdk.Item) (string, error) {
+	store.items = append(store.items, item)
+	return item.ID, nil
+}
+
+func (store *plainMemoryStore) Get(context.Context, string) (memorysdk.Item, error) {
+	return memorysdk.Item{}, os.ErrNotExist
+}
+
+func (store *plainMemoryStore) Delete(context.Context, string) error { return nil }
+
+func (store *plainMemoryStore) Query(_ context.Context, filter memorysdk.Filter) ([]memorysdk.Item, error) {
+	return filterMemoryTestItems(store.items, filter.Contains, filter.Tags, filter.Limit), nil
+}
+
+func TestRecallFallsBackToWordOverlap(t *testing.T) {
+	store := &plainMemoryStore{items: []memorysdk.Item{
+		{ID: "tabs", Content: "The user prefers tabs over spaces."},
+		{ID: "deploy", Content: "Deploys run on Fridays."},
+	}}
+	for _, test := range []struct{ query, want string }{
+		{query: "indentation preference", want: "tabs"},
+		{query: "Fridays", want: "deploy"},
+		{query: "prefers tabs", want: "tabs"},
+	} {
+		items, err := recallItems(context.Background(), store, test.query, nil, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) != 1 || items[0].ID != test.want {
+			t.Fatalf("recall(%q) = %#v, want %q", test.query, items, test.want)
+		}
+	}
+	items, err := recallItems(context.Background(), store, "kubernetes rollout", nil, 10)
+	if err != nil || len(items) != 0 {
+		t.Fatalf("unrelated query matched %#v (%v)", items, err)
+	}
 }
 
 func (store *memoryTestStore) Append(_ context.Context, item memorysdk.Item) (string, error) {
@@ -840,6 +1122,13 @@ func containsName(names []string, want string) bool {
 
 func response(status int, contentType, body string) *http.Response {
 	return &http.Response{StatusCode: status, Status: http.StatusText(status), Header: http.Header{"Content-Type": []string{contentType}}, Body: io.NopCloser(strings.NewReader(body))}
+}
+
+func redirect(location string) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusFound, Status: http.StatusText(http.StatusFound),
+		Header: http.Header{"Location": []string{location}}, Body: io.NopCloser(strings.NewReader("")),
+	}
 }
 
 func newSubagentParent(t *testing.T, provider *faux.Provider) *codingagent.AgentSession {

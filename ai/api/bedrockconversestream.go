@@ -306,7 +306,7 @@ func StreamBedrockConverseWithOptions(
 			}
 		}
 
-		processor := bedrockStreamProcessor{model: model, output: output, sink: func(event ai.AssistantMessageEvent) bool {
+		processor := bedrockStreamProcessor{model: model, output: output, buffers: make(streamBuffers), sink: func(event ai.AssistantMessageEvent) bool {
 			return yield(event, nil)
 		}}
 		for {
@@ -930,6 +930,7 @@ type bedrockStreamProcessor struct {
 	model   *ai.Model
 	output  *ai.AssistantMessage
 	blocks  []bedrockBlock
+	buffers streamBuffers
 	sink    eventSink
 	stopped bool
 }
@@ -995,19 +996,23 @@ func (processor *bedrockStreamProcessor) handleDelta(item bedrockStreamItem) {
 				processor.stopped = !processor.sink(ai.TextDeltaEvent{ContentIndex: position, Delta: *item.Text, Partial: processor.output})
 			}
 		} else if block, ok := content.(*ai.TextContent); ok && !processor.stopped {
-			block.Text += *item.Text
+			block.Text = processor.buffers.at(item.ContentBlockIndex).append(block.Text, *item.Text)
 			processor.stopped = !processor.sink(ai.TextDeltaEvent{ContentIndex: position, Delta: *item.Text, Partial: processor.output})
 		}
 		return
 	}
 	if item.ToolInput != nil {
 		if block, ok := content.(*ai.ToolCall); ok {
-			partial := *item.ToolInput
+			buffer := processor.buffers.at(item.ContentBlockIndex)
+			previous := ""
 			if block.PartialJSON != nil {
-				partial = *block.PartialJSON + partial
+				previous = *block.PartialJSON
 			}
+			partial := buffer.append(previous, *item.ToolInput)
 			block.PartialJSON = &partial
-			block.Arguments = bedrockToolArguments(partial)
+			if buffer.shouldParse() {
+				block.Arguments = bedrockToolArguments(partial)
+			}
 			processor.stopped = !processor.sink(ai.ToolCallDeltaEvent{ContentIndex: position, Delta: *item.ToolInput, Partial: processor.output})
 		}
 		return
@@ -1033,7 +1038,7 @@ func (processor *bedrockStreamProcessor) handleDelta(item bedrockStreamItem) {
 			}
 		} else if block, ok := content.(*ai.ThinkingContent); ok {
 			if item.ReasoningText != nil && *item.ReasoningText != "" && !processor.stopped {
-				block.Thinking += *item.ReasoningText
+				block.Thinking = processor.buffers.at(item.ContentBlockIndex).append(block.Thinking, *item.ReasoningText)
 				processor.stopped = !processor.sink(ai.ThinkingDeltaEvent{ContentIndex: position, Delta: *item.ReasoningText, Partial: processor.output})
 			}
 			if item.ReasoningSignature != nil && *item.ReasoningSignature != "" {

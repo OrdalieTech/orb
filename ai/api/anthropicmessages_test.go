@@ -379,3 +379,39 @@ func TestAnthropicCopilotExcludedFromSessionAffinityOAm6(t *testing.T) {
 		t.Fatalf("copilot affinity header = %q, want none", got)
 	}
 }
+
+// BenchmarkAnthropicToolCallStreaming replays a 64 KB tool-call argument in
+// 256-byte input_json_delta chunks, the delta split that made accumulation and
+// re-parsing quadratic.
+func BenchmarkAnthropicToolCallStreaming(b *testing.B) {
+	model := anthropicTestModel()
+	stream := anthropicToolCallSSE(64<<10, 256)
+	b.ReportAllocs()
+	for b.Loop() {
+		output := newAssistantMessage(model)
+		processor := newAnthropicStreamProcessor(model, ai.Context{}, output, false, func(ai.AssistantMessageEvent) bool { return true })
+		if err := readAnthropicSSE(strings.NewReader(stream), processor.handleSSE); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func anthropicToolCallSSE(size, chunk int) string {
+	arguments, err := json.Marshal(map[string]string{"text": strings.Repeat("abcdefgh", size/8)})
+	if err != nil {
+		panic(err)
+	}
+	var sse strings.Builder
+	sse.WriteString("event: content_block_start\ndata: " +
+		`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_bench","name":"echo","input":{}}}` + "\n\n")
+	for start := 0; start < len(arguments); start += chunk {
+		delta, err := json.Marshal(string(arguments[start:min(start+chunk, len(arguments))]))
+		if err != nil {
+			panic(err)
+		}
+		sse.WriteString("event: content_block_delta\ndata: " +
+			`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":` + string(delta) + `}}` + "\n\n")
+	}
+	sse.WriteString("event: content_block_stop\ndata: " + `{"type":"content_block_stop","index":0}` + "\n\n")
+	return sse.String()
+}

@@ -65,6 +65,24 @@ func TestCoalescerObserveNeverPanicsOrBlocks(t *testing.T) {
 	if text, dirty := c.snapshot(); !dirty || text != "text" {
 		t.Fatalf("snapshot = %q dirty=%v", text, dirty)
 	}
+	if panics := c.panics.Load(); panics != 0 {
+		t.Fatalf("well-formed events counted %d panics", panics)
+	}
+}
+
+func TestCoalescerCountsSwallowedPanics(t *testing.T) {
+	// observe must recover (session Subscribe callbacks have none), but a
+	// blanket unreported recover hid every bug in the hot event path.
+	c := new(coalescer)
+	c.observe(agent.MessageUpdateEvent{
+		Message: &ai.AssistantMessage{Content: ai.AssistantContent{(*ai.TextContent)(nil)}},
+	})
+	if panics := c.panics.Load(); panics != 1 {
+		t.Fatalf("swallowed panics = %d, want 1", panics)
+	}
+	if _, dirty := c.snapshot(); dirty {
+		t.Fatal("a panicking observe published a snapshot")
+	}
 }
 
 func TestPreviewRendererSurvivesAdapterPanics(t *testing.T) {

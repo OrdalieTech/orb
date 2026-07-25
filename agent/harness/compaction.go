@@ -243,11 +243,17 @@ func FindCutPoint(entries []SessionEntry, startIndex, endIndex int, keepRecentTo
 	var accumulated int64
 	cutIndex := cutPoints[0]
 	for index := endIndex - 1; index >= startIndex; index-- {
-		message := entryMessage(entries[index], false)
+		// Compaction entries count here: upstream weighs each entry through
+		// sessionEntryToContextMessages, which projects them to a summary message.
+		message := entryMessage(entries[index], true)
 		if message == nil {
 			continue
 		}
-		accumulated += EstimateTokens(message)
+		messageTokens := EstimateTokens(message)
+		if messageTokens == 0 {
+			continue
+		}
+		accumulated += messageTokens
 		if accumulated >= keepRecentTokens {
 			for _, candidate := range cutPoints {
 				if candidate >= index {
@@ -316,6 +322,12 @@ func prepareCompaction(pathEntries []SessionEntry, settings CompactionSettings, 
 	}
 	cut := FindCutPoint(pathEntries, boundaryStart, len(pathEntries), settings.KeepRecentTokens)
 	if cut.FirstKeptEntryIndex < 0 || cut.FirstKeptEntryIndex >= len(pathEntries) || pathEntries[cut.FirstKeptEntryIndex].ID == "" {
+		if !retainTail {
+			// coding-agent returns undefined here and lets the caller report
+			// "Nothing to compact"; only the harness variant reports
+			// invalid_session (compaction.ts:735 vs harness compaction.ts:661).
+			return nil, nil
+		}
 		return nil, errors.New("First kept entry has no UUID - session may need migration")
 	}
 	historyEnd := cut.FirstKeptEntryIndex
@@ -1052,7 +1064,9 @@ func summaryMessageFromJSON(encoded []byte) ai.Message {
 	return nil
 }
 
-func customSummaryMessage(content any, timestamp int64) *ai.UserMessage {
+// Returns ai.Message, not *ai.UserMessage: a typed nil would survive the
+// interface conversion and panic in SerializeConversation's type switch.
+func customSummaryMessage(content any, timestamp int64) ai.Message {
 	var userContent ai.UserContent
 	switch typed := content.(type) {
 	case string:

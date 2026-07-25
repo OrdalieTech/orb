@@ -698,6 +698,11 @@ func (agent *Agent) processEvent(ctx context.Context, event AgentEvent) error {
 	case MessageStartEvent:
 		agent.state.StreamingMessage = cloneAgentMessage(value.Message)
 	case MessageUpdateEvent:
+		// ponytail: upstream just aliases the partial (agent.ts:536); providers
+		// mutate it in place, so Go must snapshot it here to keep State() honest.
+		// That makes a streamed tool call O(deltas x payload) — a 64 KB call over
+		// ~256 deltas clones ~8 MB. Fix by having providers emit immutable
+		// partials, not by dropping this copy.
 		agent.state.StreamingMessage = cloneAgentMessage(value.Message)
 	case MessageEndEvent:
 		agent.state.StreamingMessage = nil

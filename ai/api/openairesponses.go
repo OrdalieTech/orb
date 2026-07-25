@@ -794,6 +794,7 @@ type responsesOutputSlot struct {
 	text         *ai.TextContent
 	toolCall     *ai.ToolCall
 	partialJSON  string
+	accumulated  streamBuffer
 }
 
 type responsesStreamEvent struct {
@@ -880,7 +881,7 @@ func (processor *openAIResponsesProcessor) handle(raw json.RawMessage) error {
 		if slot == nil {
 			return nil
 		}
-		slot.thinking.Thinking += event.Delta
+		slot.thinking.Thinking = slot.accumulated.append(slot.thinking.Thinking, event.Delta)
 		if !processor.sink(ai.ThinkingDeltaEvent{ContentIndex: slot.contentIndex, Delta: event.Delta, Partial: processor.output}) {
 			return errStopSSE
 		}
@@ -889,7 +890,7 @@ func (processor *openAIResponsesProcessor) handle(raw json.RawMessage) error {
 		if slot == nil {
 			return nil
 		}
-		slot.thinking.Thinking += "\n\n"
+		slot.thinking.Thinking = slot.accumulated.append(slot.thinking.Thinking, "\n\n")
 		if !processor.sink(ai.ThinkingDeltaEvent{ContentIndex: slot.contentIndex, Delta: "\n\n", Partial: processor.output}) {
 			return errStopSSE
 		}
@@ -898,7 +899,7 @@ func (processor *openAIResponsesProcessor) handle(raw json.RawMessage) error {
 		if slot == nil {
 			return nil
 		}
-		slot.text.Text += event.Delta
+		slot.text.Text = slot.accumulated.append(slot.text.Text, event.Delta)
 		if !processor.sink(ai.TextDeltaEvent{ContentIndex: slot.contentIndex, Delta: event.Delta, Partial: processor.output}) {
 			return errStopSSE
 		}
@@ -907,8 +908,10 @@ func (processor *openAIResponsesProcessor) handle(raw json.RawMessage) error {
 		if slot == nil {
 			return nil
 		}
-		slot.partialJSON += event.Delta
-		slot.toolCall.Arguments = parseResponsesArguments(slot.partialJSON)
+		slot.partialJSON = slot.accumulated.append(slot.partialJSON, event.Delta)
+		if slot.accumulated.shouldParse() {
+			slot.toolCall.Arguments = parseResponsesArguments(slot.partialJSON)
+		}
 		if !processor.sink(ai.ToolCallDeltaEvent{ContentIndex: slot.contentIndex, Delta: event.Delta, Partial: processor.output}) {
 			return errStopSSE
 		}

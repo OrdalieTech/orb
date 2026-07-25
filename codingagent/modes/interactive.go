@@ -795,7 +795,9 @@ func (mode *InteractiveMode) setupAutocomplete() {
 		}
 	}
 	commands = append(commands, skillCommands...)
-	fdPath, _ := exec.LookPath("fd")
+	// Prefer the managed fd: a bare PATH lookup left @file completion silently
+	// inert on machines without a system fd, which pigo otherwise downloads.
+	fdPath := tools.ManagedFDPath()
 	var provider tui.AutocompleteProvider = tui.NewCombinedAutocompleteProvider(commands, mode.cwd, fdPath)
 	if mode.interactiveUI != nil {
 		mode.interactiveUI.mu.Lock()

@@ -581,12 +581,17 @@ type mistralStreamProcessor struct {
 	sink         eventSink
 	currentKind  string
 	currentIndex int
+	accumulated  streamBuffer
+	toolBuffers  streamBuffers
 	toolIndices  map[string]int
 	toolOrder    []int
 }
 
 func newMistralStreamProcessor(model *ai.Model, output *ai.AssistantMessage, sink eventSink) *mistralStreamProcessor {
-	return &mistralStreamProcessor{model: model, output: output, sink: sink, currentIndex: -1, toolIndices: make(map[string]int)}
+	return &mistralStreamProcessor{
+		model: model, output: output, sink: sink, currentIndex: -1,
+		toolBuffers: make(streamBuffers), toolIndices: make(map[string]int),
+	}
 }
 
 func (processor *mistralStreamProcessor) handle(raw json.RawMessage) error {
@@ -707,7 +712,7 @@ func (processor *mistralStreamProcessor) appendText(delta string) error {
 	}
 	block := processor.output.Content[processor.currentIndex].(*ai.TextContent)
 	delta = sanitizeText(delta)
-	block.Text += delta
+	block.Text = processor.accumulated.append(block.Text, delta)
 	if !processor.sink(ai.TextDeltaEvent{ContentIndex: processor.currentIndex, Delta: delta, Partial: processor.output}) {
 		return errStopSSE
 	}
@@ -729,7 +734,7 @@ func (processor *mistralStreamProcessor) appendThinking(delta string) error {
 	}
 	block := processor.output.Content[processor.currentIndex].(*ai.ThinkingContent)
 	delta = sanitizeText(delta)
-	block.Thinking += delta
+	block.Thinking = processor.accumulated.append(block.Thinking, delta)
 	if !processor.sink(ai.ThinkingDeltaEvent{ContentIndex: processor.currentIndex, Delta: delta, Partial: processor.output}) {
 		return errStopSSE
 	}
@@ -794,8 +799,11 @@ func (processor *mistralStreamProcessor) consumeToolCall(raw mistralStreamToolCa
 		value := ""
 		block.PartialArgs = &value
 	}
-	*block.PartialArgs += argsDelta
-	setMistralStreamArguments(block, *block.PartialArgs)
+	buffer := processor.toolBuffers.at(contentIndex)
+	*block.PartialArgs = buffer.append(*block.PartialArgs, argsDelta)
+	if buffer.shouldParse() {
+		setMistralStreamArguments(block, *block.PartialArgs)
+	}
 	if !processor.sink(ai.ToolCallDeltaEvent{ContentIndex: contentIndex, Delta: argsDelta, Partial: processor.output}) {
 		return errStopSSE
 	}

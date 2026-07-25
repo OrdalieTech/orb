@@ -984,6 +984,89 @@ func (function bashOperationsFunc) Exec(ctx context.Context, command, cwd string
 	return function(ctx, command, cwd, options)
 }
 
+// Upstream agent-session.ts:477 hands the tool_call hook the prepared args, so
+// docs/extensions.md's "mutations to event.input affect the actual tool
+// execution" holds and the recorded ToolCall stays the model's own request.
+func TestExtensionToolCallInputMutatesExecutionNotTheRecord(t *testing.T) {
+	cwd := t.TempDir()
+	manager, settings := extensionRuntimeDependencies(t, cwd)
+	registry := extensions.NewRegistry(cwd)
+	var resultInput map[string]any
+	if err := registry.Register("<inline:mutate-input>", func(api extensions.API) error {
+		api.On(extensions.EventToolCall, func(_ context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
+			raw.(extensions.ToolCallEvent).Input["path"] = "mutated"
+			return nil, nil
+		})
+		api.On(extensions.EventToolResult, func(_ context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
+			resultInput = raw.(extensions.ToolResultEvent).Input
+			return nil, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var executed any
+	tool := agent.AgentToolFunc{
+		AgentToolSpec: agent.AgentToolSpec{
+			Name:       "echo",
+			Parameters: jsonschema.Schema(`{"type":"object","properties":{"path":{"type":"string"}}}`),
+		},
+		Run: func(_ context.Context, _ string, args any, _ agent.AgentToolUpdateCallback) (agent.AgentToolResult, error) {
+			executed = args
+			return agent.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: "done"}}}, nil
+		},
+	}
+	provider := faux.New()
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage(
+			faux.ToolCall("echo", map[string]any{"path": "original"}, faux.ToolCallOptions{ID: "call-1"}),
+			faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse},
+		),
+		faux.AssistantMessage("done"),
+	})
+	created := agent.NewAgent(
+		provider.StreamSimple,
+		agent.WithInitialState(agent.AgentState{Model: provider.GetModel(), Tools: []agent.AgentTool{tool}}),
+		agent.WithConvertToLLM(ConvertToLLM),
+	)
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
+		Agent: created, SessionManager: manager, Settings: settings, StreamFn: provider.StreamSimple,
+		ExtensionRegistry: registry, BaseTools: []agent.AgentTool{tool}, InitialActiveToolNames: []string{"echo"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+	if err := runtime.PromptSync(context.Background(), "go"); err != nil {
+		t.Fatal(err)
+	}
+
+	args, _ := executed.(map[string]any)
+	if args["path"] != "mutated" {
+		t.Fatalf("executed args = %#v, want the mutated input", executed)
+	}
+	if resultInput["path"] != "mutated" {
+		t.Fatalf("tool_result input = %#v, want the same prepared args as tool_call", resultInput)
+	}
+	for _, message := range runtime.State().Messages {
+		assistant, ok := message.(*ai.AssistantMessage)
+		if !ok {
+			continue
+		}
+		for _, block := range assistant.Content {
+			call, ok := block.(*ai.ToolCall)
+			if !ok || call.Name != "echo" {
+				continue
+			}
+			if call.Arguments["path"] != "original" {
+				t.Fatalf("recorded tool call arguments = %#v, want the model's own request", call.Arguments)
+			}
+			return
+		}
+	}
+	t.Fatal("no recorded echo tool call")
+}
+
 func extensionRuntimeDependencies(t *testing.T, cwd string) (*session.SessionManager, *config.SettingsManager) {
 	t.Helper()
 	manager, err := session.InMemory(cwd)

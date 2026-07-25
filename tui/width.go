@@ -84,10 +84,16 @@ func VisibleWidth(text string) int {
 	return width
 }
 
+// thaiLaoAM is shared because NormalizeTerminalOutput runs per rendered line:
+// building the replacer inline rebuilt its trie on every line of every frame.
+var thaiLaoAM = strings.NewReplacer("\u0e33", "\u0e4d\u0e32", "\u0eb3", "\u0ecd\u0eb2")
+
 // NormalizeTerminalOutput applies upstream's display-only Thai/Lao AM
 // decomposition and expands visible tabs without changing terminal strings.
 func NormalizeTerminalOutput(text string) string {
-	text = strings.NewReplacer("\u0e33", "\u0e4d\u0e32", "\u0eb3", "\u0ecd\u0eb2").Replace(text)
+	if strings.ContainsAny(text, "\u0e33\u0eb3") {
+		text = thaiLaoAM.Replace(text)
+	}
 	if !strings.ContainsRune(text, '\t') {
 		return text
 	}

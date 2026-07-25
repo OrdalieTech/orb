@@ -6,6 +6,40 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Fixed
+
+- Web search and page fetching returned nothing for any page larger than roughly 50 KB while still reporting success; readable extraction now keeps block structure so truncation returns the head of the page instead of an empty result.
+- `fetch_content` now rejects loopback, private, link-local and unresolvable destinations, and re-validates every redirect against the same rules.
+- Permission `path` rules now also match paths named inside a bash command, so a rule that denies a file is no longer bypassed by reading it through the shell.
+- Streaming responses no longer accumulate quadratically: a 64 KB tool call is about 28x faster and allocates about 28x less. Emitted bytes are unchanged.
+- Lone UTF-16 surrogates split across streaming chunks are preserved instead of being replaced with U+FFFD, so emoji in tool arguments survive chunk boundaries.
+- Editing a session label in a terminal narrower than the label no longer panics the renderer.
+- The session tree no longer rebuilds in quadratic time; large sessions stay responsive per keystroke.
+- `pigo -p` no longer exits 0 with empty output when a prompt fails before producing a reply, such as on context overflow.
+- Extension host shutdown can no longer block indefinitely when a grandchild process inherited the host's stderr.
+- `pigo --help` no longer waits for configured MCP servers to connect.
+- `@file` completion now uses pigo's managed `fd`, so it works without a system `fd` on `PATH`.
+- Subagent progress widgets are cleared when a run ends, and a failing parallel child is reported as an error rather than a successful result.
+- `recall` falls back to word overlap, so a query no longer has to be a literal substring of a stored memory.
+- Web search honours an explicit `provider` in `web-search.json`, decodes non-UTF-8 pages, rejects binary responses, and no longer echoes provider error bodies that can contain an API key.
+- Compaction cut-point selection now counts earlier compaction entries, so a second and later compaction retains the same history upstream retains instead of compacting too little and risking overflow.
+- Unified patches now number the second and later hunks correctly; multi-edit patches previously reported the wrong new-file start line.
+- Serializing a session containing an unprojectable custom message no longer panics.
+- A legacy session that is too small to compact now reports "Nothing to compact" instead of failing.
+- Tool execution updates are delivered in order and no longer overlap; concurrent delivery could make streaming output visibly regress. Updates still reach the sink without the tool waiting on it.
+- Extensions handling `tool_call` and `tool_result` now receive the prepared arguments the tool actually executes, so documented argument rewriting works; previously the edit silently changed only the recorded call.
+- `Dispose()` now cancels every `SubscribeChan` it handed out, so a long-running embedder no longer leaks a goroutine per subscription.
+- A disposed session refuses further work instead of quietly calling the model and persisting the turn.
+- Concurrent settings writes no longer lose updates, and a failed write no longer leaves the in-memory value ahead of what was persisted.
+- The chat gateway's `/stop` is bounded by its own worker pool instead of spawning a goroutine per message, and a permanently failing handler now gives up instead of retrying forever.
+- The chat gateway reuses a conversation's session manager between messages instead of re-reading and re-parsing the whole session file on every inbound message.
+
+### Changed
+
+- Bundled plugin tools now describe every schema property and declare their required arguments.
+- Task list state moved into tool-result details, matching upstream's `todo` extension, so it survives resume and stays correct across branches.
+- `make fixtures-check` runs the reciprocal TypeScript-reads-Go gates before the fixture diff; a fixture difference previously aborted the target and skipped them silently.
+
 ## [0.4.5] - 2026-07-25
 
 ### Fixed

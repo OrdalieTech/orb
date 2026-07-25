@@ -52,6 +52,7 @@ type completionsToolState struct {
 	block        *ai.ToolCall
 	contentIndex int
 	partialArgs  string
+	argsBuffer   streamBuffer
 	streamIndex  *int
 }
 
@@ -61,6 +62,8 @@ type completionsStreamState struct {
 	textIndex               int
 	thinking                *ai.ThinkingContent
 	thinkingIndex           int
+	textBuffer              streamBuffer
+	thinkingBuffer          streamBuffer
 	toolsByIndex            map[int]*completionsToolState
 	toolsByID               map[string]*completionsToolState
 	toolStates              map[*ai.ToolCall]*completionsToolState
@@ -1425,7 +1428,7 @@ func (state *completionsStreamState) consumeDelta(
 				return err
 			}
 		}
-		state.text.Text += content
+		state.text.Text = state.textBuffer.append(state.text.Text, content)
 		if err := emit(ai.TextDeltaEvent{ContentIndex: state.textIndex, Delta: content, Partial: state.output}); err != nil {
 			return err
 		}
@@ -1444,7 +1447,7 @@ func (state *completionsStreamState) consumeDelta(
 				return err
 			}
 		}
-		state.thinking.Thinking += reasoning
+		state.thinking.Thinking = state.thinkingBuffer.append(state.thinking.Thinking, reasoning)
 		if err := emit(ai.ThinkingDeltaEvent{ContentIndex: state.thinkingIndex, Delta: reasoning, Partial: state.output}); err != nil {
 			return err
 		}
@@ -1525,10 +1528,12 @@ func (state *completionsStreamState) consumeToolCall(raw json.RawMessage, emit f
 		stateForCall.block.Name = name
 	}
 	if arguments != "" {
-		stateForCall.partialArgs += arguments
+		stateForCall.partialArgs = stateForCall.argsBuffer.append(stateForCall.partialArgs, arguments)
 		partialArgs := stateForCall.partialArgs
 		stateForCall.block.PartialArgs = &partialArgs
-		stateForCall.block.Arguments = parseOpenAICompletionsToolArguments(stateForCall.partialArgs)
+		if stateForCall.argsBuffer.shouldParse() {
+			stateForCall.block.Arguments = parseOpenAICompletionsToolArguments(stateForCall.partialArgs)
+		}
 	}
 	return emit(ai.ToolCallDeltaEvent{ContentIndex: stateForCall.contentIndex, Delta: arguments, Partial: state.output})
 }

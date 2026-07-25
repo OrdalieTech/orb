@@ -846,11 +846,22 @@ func (runtime *SessionRuntime) beforeExtensionToolCall(ctx context.Context, call
 	if state == nil || state.runner == nil || !state.runner.HasHandlers(extensions.EventToolCall) {
 		return nil, nil
 	}
-	result := state.runner.EmitToolCall(ctx, extensions.ToolCallEvent{ToolCallID: call.ToolCall.ID, ToolName: call.ToolCall.Name, Input: call.ToolCall.Arguments})
+	result := state.runner.EmitToolCall(ctx, extensions.ToolCallEvent{ToolCallID: call.ToolCall.ID, ToolName: call.ToolCall.Name, Input: toolCallInput(call.Args, call.ToolCall.Arguments)})
 	if result == nil {
 		return nil, nil
 	}
 	return &agent.BeforeToolCallResult{Block: result.Block, Reason: result.Reason}, nil
+}
+
+// toolCallInput exposes the prepared, validated arguments the loop is about to
+// execute. Handing over ToolCall.Arguments instead would invert the upstream
+// contract: mutations to event.input would rewrite the recorded call and leave
+// the execution untouched. Non-object schemas keep the recorded arguments.
+func toolCallInput(args any, recorded map[string]any) map[string]any {
+	if input, ok := args.(map[string]any); ok {
+		return input
+	}
+	return recorded
 }
 
 func (runtime *SessionRuntime) afterExtensionToolCall(ctx context.Context, call agent.AfterToolCallContext) (*agent.AfterToolCallResult, error) {
@@ -859,7 +870,7 @@ func (runtime *SessionRuntime) afterExtensionToolCall(ctx context.Context, call 
 		return nil, nil
 	}
 	result := state.runner.EmitToolResult(ctx, extensions.ToolResultEvent{
-		ToolCallID: call.ToolCall.ID, ToolName: call.ToolCall.Name, Input: call.ToolCall.Arguments,
+		ToolCallID: call.ToolCall.ID, ToolName: call.ToolCall.Name, Input: toolCallInput(call.Args, call.ToolCall.Arguments),
 		Content: call.Result.Content, Details: call.Result.Details, IsError: call.IsError, Usage: call.Result.Usage,
 	})
 	if result == nil {

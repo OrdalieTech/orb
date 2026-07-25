@@ -9,6 +9,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
+
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
 )
 
 // Allow controls which incomplete JSON values Parse may return.
@@ -424,16 +426,11 @@ func decodeJSON(input string) (any, error) {
 	return numbersToFloat64(value)
 }
 
+// decodeJSONString keeps lone UTF-16 surrogates as WTF-8 the way JSON.parse
+// does; encoding/json would replace them with U+FFFD and corrupt any emoji
+// split across two streamed deltas.
 func decodeJSONString(input string) (string, error) {
-	value, err := decodeJSON(input)
-	if err != nil {
-		return "", err
-	}
-	stringValue, ok := value.(string)
-	if !ok {
-		return "", errors.New("value is not a string")
-	}
-	return stringValue, nil
+	return jsonwire.UnmarshalString([]byte(input))
 }
 
 func ensureEOF(decoder *json.Decoder) error {

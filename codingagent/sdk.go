@@ -767,6 +767,8 @@ func filterExcluded(names []string, excluded []string) []string {
 // Delivery is ordered and lossless while the subscription is active. The
 // channel is closed promptly when cancel is called; events still queued at
 // cancellation are discarded so cancellation never waits for a consumer.
+// [SessionRuntime.Dispose] cancels every live subscription, so a caller that
+// never cancels leaks nothing past the session it belongs to.
 func (runtime *SessionRuntime) SubscribeChan(bufferSize int) (<-chan any, func()) {
 	if bufferSize <= 0 {
 		bufferSize = 64
@@ -827,8 +829,10 @@ func (runtime *SessionRuntime) SubscribeChan(bufferSize int) (<-chan any, func()
 			queue = nil
 			mu.Unlock()
 			close(done)
+			runtime.forgetChanCancel(done)
 		})
 	}
+	runtime.trackChanCancel(done, cancel)
 	return out, cancel
 }
 

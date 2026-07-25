@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/OrdalieTech/pigo/codingagent"
 	"github.com/OrdalieTech/pigo/codingagent/config"
@@ -57,8 +58,47 @@ type LocalProvider struct {
 	registry *config.ModelRegistry
 	settings *config.SettingsManager
 
-	mu    sync.Mutex
-	inUse map[string]bool
+	mu     sync.Mutex
+	inUse  map[string]bool
+	cached map[string]*cachedSession
+}
+
+// cachedSession keeps a released conversation's SessionManager hot. Re-opening
+// re-parsed the whole session JSONL on every inbound message, which dominated
+// both time and allocations per turn.
+//
+// ponytail: unbounded — one live manager per conversation ever acquired. Add
+// an idle TTL or LRU when a deployment holds more conversations than memory.
+type cachedSession struct {
+	manager *sessionstore.SessionManager
+	path    string
+	modTime time.Time
+	size    int64
+}
+
+// reuse returns the cached manager when the conversation would resolve to the
+// exact bytes it was released with; anything written outside this process
+// forces a re-parse.
+func (c *cachedSession) reuse(recent string) *sessionstore.SessionManager {
+	if c == nil || c.path != recent {
+		return nil
+	}
+	if c.path == "" {
+		return c.manager // never flushed: nothing on disk to diverge from
+	}
+	info, err := os.Stat(c.path)
+	if err != nil || !info.ModTime().Equal(c.modTime) || info.Size() != c.size {
+		return nil
+	}
+	return c.manager
+}
+
+func snapshotSession(manager *sessionstore.SessionManager) *cachedSession {
+	entry := &cachedSession{manager: manager, path: manager.GetSessionFile()}
+	if info, err := os.Stat(entry.path); err == nil {
+		entry.modTime, entry.size = info.ModTime(), info.Size()
+	}
+	return entry
 }
 
 // NewLocalProvider creates a single-process session provider rooted at root.
@@ -76,6 +116,7 @@ func NewLocalProvider(root string, opts ...LocalProviderOption) (*LocalProvider,
 		root:     absRoot,
 		agentDir: codingagent.DefaultAgentDir(),
 		inUse:    map[string]bool{},
+		cached:   map[string]*cachedSession{},
 	}
 	for _, opt := range opts {
 		opt(provider)
@@ -109,28 +150,39 @@ func (p *LocalProvider) Acquire(_ context.Context, key ConversationKey) (*Conver
 		return nil, fmt.Errorf("chat: conversation %q is already acquired", id)
 	}
 	p.inUse[id] = true
+	cached := p.cached[id]
 	p.mu.Unlock()
-	release := func() {
+	// keep is nil on every failure path, which drops the cache entry rather
+	// than handing a half-wired manager to the next turn.
+	release := func(keep *sessionstore.SessionManager) {
 		p.mu.Lock()
 		delete(p.inUse, id)
+		if keep == nil {
+			delete(p.cached, id)
+		} else {
+			p.cached[id] = snapshotSession(keep)
+		}
 		p.mu.Unlock()
 	}
 
 	sessionDir := filepath.Join(p.root, id)
 	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
-		release()
+		release(nil)
 		return nil, fmt.Errorf("chat: create session dir: %w", err)
 	}
-	var manager *sessionstore.SessionManager
-	var err error
-	if recent := sessionstore.FindMostRecentSession(sessionDir, ""); recent != "" {
-		manager, err = sessionstore.Open(recent, sessionDir)
-	} else {
-		manager, err = sessionstore.Create(p.root, sessionDir)
-	}
-	if err != nil {
-		release()
-		return nil, fmt.Errorf("chat: open conversation session: %w", err)
+	recent := sessionstore.FindMostRecentSession(sessionDir, "")
+	manager := cached.reuse(recent)
+	if manager == nil {
+		var err error
+		if recent != "" {
+			manager, err = sessionstore.Open(recent, sessionDir)
+		} else {
+			manager, err = sessionstore.Create(p.root, sessionDir)
+		}
+		if err != nil {
+			release(nil)
+			return nil, fmt.Errorf("chat: open conversation session: %w", err)
+		}
 	}
 
 	options := codingagent.AgentSessionOptions{
@@ -146,7 +198,7 @@ func (p *LocalProvider) Acquire(_ context.Context, key ConversationKey) (*Conver
 	}
 	result, err := codingagent.NewAgentSession(options)
 	if err != nil {
-		release()
+		release(nil)
 		return nil, fmt.Errorf("chat: create agent session: %w", err)
 	}
 
@@ -157,7 +209,7 @@ func (p *LocalProvider) Acquire(_ context.Context, key ConversationKey) (*Conver
 		Close: func(context.Context) error {
 			once.Do(func() {
 				result.Session.Dispose()
-				release()
+				release(manager)
 			})
 			return nil
 		},

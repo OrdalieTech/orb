@@ -3,9 +3,11 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -315,6 +317,128 @@ func TestLocalStopBypassesBusyKey(t *testing.T) {
 	if len(acks) != 2 {
 		t.Fatalf("acks = %v, want both events acked", acks)
 	}
+}
+
+func TestLocalStopFanOutStaysBounded(t *testing.T) {
+	// /stop skips the keyed queue, and it used to skip every bound with it:
+	// one goroutine per message let anyone who can message the bot pick the
+	// concurrency.
+	path := filepath.Join(t.TempDir(), "spool.jsonl")
+	release := make(chan struct{})
+	var mu sync.Mutex
+	var live, peak, done int
+	handler := handlerFunc(func(context.Context, Message) error {
+		mu.Lock()
+		live++
+		peak = max(peak, live)
+		mu.Unlock()
+		<-release
+		mu.Lock()
+		live--
+		done++
+		mu.Unlock()
+		return nil
+	})
+	local, err := NewLocal(handler, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline := goruntime.NumGoroutine()
+	const flood = 200
+	published := make(chan error, 1)
+	go func() {
+		for index := range flood {
+			// Publish blocks once the stop pool is saturated — that
+			// backpressure is the point, so it cannot run on the test
+			// goroutine.
+			if err := local.Publish(testMessage(fmt.Sprintf("ev-%d", index), "chat-1", "/stop")); err != nil {
+				published <- err
+				return
+			}
+		}
+		published <- nil
+	}()
+
+	waitUntil(t, 30*time.Second, "the stop pool to saturate", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return live == localStopWorkers
+	})
+	// Every /stop past the pool waits in the spool, not in a goroutine. Poll
+	// for a while: an unbounded dispatcher needs a moment to pile the whole
+	// flood up behind the blocked handlers.
+	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		if grown := goruntime.NumGoroutine() - baseline; grown > localStopWorkers {
+			t.Fatalf("a /stop flood spawned %d goroutines beyond the pool of %d", grown, localStopWorkers)
+		}
+	}
+	close(release)
+	if err := <-published; err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, 30*time.Second, "every /stop handled", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return done == flood
+	})
+	if err := local.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if peak > localStopWorkers {
+		t.Fatalf("peak concurrent /stop handlers = %d, want at most %d", peak, localStopWorkers)
+	}
+}
+
+func TestLocalGivesUpOnAPermanentlyFailingHandler(t *testing.T) {
+	// Retrying forever pinned a worker and its key; an exhausted message stays
+	// unacked on disk so the next boot replays it.
+	path := filepath.Join(t.TempDir(), "spool.jsonl")
+	var attempts int
+	var mu sync.Mutex
+	handler := handlerFunc(func(_ context.Context, m Message) error {
+		mu.Lock()
+		defer mu.Unlock()
+		if m.EventID == "ev-broken" {
+			attempts++
+			return errors.New("always fails")
+		}
+		return nil
+	})
+	local, err := NewLocal(handler, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := local.Publish(testMessage("ev-broken", "chat-1", "hi")); err != nil {
+		t.Fatal(err)
+	}
+	// The key must be released for the message behind it.
+	if err := local.Publish(testMessage("ev-next", "chat-1", "hi")); err != nil {
+		t.Fatal(err)
+	}
+	_, acks := waitForAcks(t, local, path, 1)
+	if len(acks) != 1 || acks[0] != "ev-next" {
+		t.Fatalf("acks = %v, want only ev-next", acks)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if attempts != localMaxAttempts {
+		t.Fatalf("handler attempts = %d, want the %d-attempt cap", attempts, localMaxAttempts)
+	}
+}
+
+// waitForAcks closes local once the spool holds want acks.
+func waitForAcks(t *testing.T, local *Local, path string, want int) (messages, acks []string) {
+	t.Helper()
+	waitUntil(t, 30*time.Second, "spool acks", func() bool {
+		_, current := readSpool(t, path)
+		return len(current) >= want
+	})
+	if err := local.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	return readSpool(t, path)
 }
 
 func TestLocalPublishAfterCloseFails(t *testing.T) {

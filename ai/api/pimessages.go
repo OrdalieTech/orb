@@ -305,12 +305,14 @@ func StreamPiMessagesWithOptions(
 type piMessagesEventConverter struct {
 	partial  *ai.AssistantMessage
 	toolJSON map[int]string
+	buffers  streamBuffers
 }
 
 func newPiMessagesEventConverter(model *ai.Model) *piMessagesEventConverter {
 	return &piMessagesEventConverter{
 		partial:  newAssistantMessage(model),
 		toolJSON: make(map[int]string),
+		buffers:  make(streamBuffers),
 	}
 }
 
@@ -346,7 +348,7 @@ func (converter *piMessagesEventConverter) convert(wire piMessagesWireEvent) (ai
 		if !ok {
 			return nil, false, fmt.Errorf("pi-messages text_delta has no text block at content index %d", wire.ContentIndex)
 		}
-		content.Text += wire.Delta
+		content.Text = converter.buffers.at(wire.ContentIndex).append(content.Text, wire.Delta)
 		return ai.TextDeltaEvent{ContentIndex: wire.ContentIndex, Delta: wire.Delta, Partial: partial}, false, nil
 	case "text_end":
 		content, ok := converter.textContent(wire.ContentIndex)
@@ -368,7 +370,7 @@ func (converter *piMessagesEventConverter) convert(wire piMessagesWireEvent) (ai
 		if !ok {
 			return nil, false, fmt.Errorf("pi-messages thinking_delta has no thinking block at content index %d", wire.ContentIndex)
 		}
-		content.Thinking += wire.Delta
+		content.Thinking = converter.buffers.at(wire.ContentIndex).append(content.Thinking, wire.Delta)
 		return ai.ThinkingDeltaEvent{ContentIndex: wire.ContentIndex, Delta: wire.Delta, Partial: partial}, false, nil
 	case "thinking_end":
 		content, ok := converter.thinkingContent(wire.ContentIndex)
@@ -394,11 +396,14 @@ func (converter *piMessagesEventConverter) convert(wire piMessagesWireEvent) (ai
 		if !ok {
 			return nil, false, fmt.Errorf("pi-messages toolcall_delta has no tool call at content index %d", wire.ContentIndex)
 		}
-		arguments := converter.toolJSON[wire.ContentIndex] + wire.Delta
+		buffer := converter.buffers.at(wire.ContentIndex)
+		arguments := buffer.append(converter.toolJSON[wire.ContentIndex], wire.Delta)
 		converter.toolJSON[wire.ContentIndex] = arguments
-		encoded, err := partialjson.StringifyStreamingJSON(arguments)
-		if err != nil || ai.SetToolCallArgumentsJSON(call, encoded) != nil {
-			_ = ai.SetToolCallArgumentsJSON(call, []byte(`{}`))
+		if buffer.shouldParse() {
+			encoded, err := partialjson.StringifyStreamingJSON(arguments)
+			if err != nil || ai.SetToolCallArgumentsJSON(call, encoded) != nil {
+				_ = ai.SetToolCallArgumentsJSON(call, []byte(`{}`))
+			}
 		}
 		return ai.ToolCallDeltaEvent{ContentIndex: wire.ContentIndex, Delta: wire.Delta, Partial: partial}, false, nil
 	case "toolcall_end":
@@ -411,6 +416,7 @@ func (converter *piMessagesEventConverter) convert(wire piMessagesWireEvent) (ai
 		}
 		*call = *wire.ToolCall
 		delete(converter.toolJSON, wire.ContentIndex)
+		delete(converter.buffers, wire.ContentIndex)
 		return ai.ToolCallEndEvent{ContentIndex: wire.ContentIndex, ToolCall: call, Partial: partial}, false, nil
 	default:
 		return ai.RawAssistantMessageEvent{Raw: wire.Raw, Partial: partial}, false, nil

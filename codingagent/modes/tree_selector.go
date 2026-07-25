@@ -77,10 +77,22 @@ func buildTreeView(
 	}
 
 	searchTokens := strings.Fields(strings.ToLower(query))
+	// ordered is DFS pre-order, so a parent always precedes its children and one
+	// pass builds the skip set. Walking ancestors per node instead is O(n^2) on
+	// the near-linear chains real sessions produce.
+	foldedDescendants := make(map[string]bool)
+	if len(folded) > 0 {
+		for _, node := range ordered {
+			parent := node.Entry.ParentID
+			if parent != nil && (folded[*parent] || foldedDescendants[*parent]) {
+				foldedDescendants[node.Entry.ID] = true
+			}
+		}
+	}
 	visible := make(map[string]bool)
 	for _, node := range ordered {
 		visible[node.Entry.ID] = treeEntryVisible(node, node.Entry.ID == leafID, filterMode) &&
-			treeMatchesSearch(node, searchTokens) && !treeHasFoldedAncestor(node, view.byID, folded)
+			treeMatchesSearch(node, searchTokens) && !foldedDescendants[node.Entry.ID]
 	}
 	visibleNodes := make(map[string][]*sessionstore.SessionTreeNode)
 	for _, node := range ordered {
@@ -188,24 +200,6 @@ func treeMatchesSearch(node *sessionstore.SessionTreeNode, tokens []string) bool
 		}
 	}
 	return true
-}
-
-func treeHasFoldedAncestor(
-	node *sessionstore.SessionTreeNode,
-	byID map[string]*sessionstore.SessionTreeNode,
-	folded map[string]bool,
-) bool {
-	for parent := node.Entry.ParentID; parent != nil; {
-		if folded[*parent] {
-			return true
-		}
-		parentNode := byID[*parent]
-		if parentNode == nil {
-			break
-		}
-		parent = parentNode.Entry.ParentID
-	}
-	return false
 }
 
 func nearestVisibleTreeParent(
@@ -621,11 +615,11 @@ func (component *TreeSelectorComponent) Render(width int) []string {
 	lines = append(lines, border)
 	lines = append(lines, "")
 	if component.labelInput != nil {
-		lines = append(lines, theme.FG("muted", "  Label (empty to remove):"))
+		lines = append(lines, tui.TruncateToWidth(theme.FG("muted", "  Label (empty to remove):"), width, "", false))
 		for _, line := range component.labelInput.Render(max(1, width-2)) {
 			lines = append(lines, tui.TruncateToWidth("  "+line, width, "", false))
 		}
-		lines = append(lines, "  "+KeyHint("tui.select.confirm", "save")+"  "+KeyHint("tui.select.cancel", "cancel"))
+		lines = append(lines, tui.TruncateToWidth("  "+KeyHint("tui.select.confirm", "save")+"  "+KeyHint("tui.select.cancel", "cancel"), width, "", false))
 	} else {
 		lines = append(lines, component.renderTree(width)...)
 	}

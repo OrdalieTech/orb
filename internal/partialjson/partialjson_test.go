@@ -254,3 +254,23 @@ func assertErrorType[E error](t *testing.T, input string, allow Allow) {
 		t.Fatalf("Parse(%q, %09b) error = %T (%v), want %T", input, allow, err, err, target)
 	}
 }
+
+// An emoji split across two input_json_delta chunks leaves a lone UTF-16
+// surrogate in the buffer. JSON.parse keeps it and JSON.stringify re-escapes
+// it, so the pair must survive the round trip instead of becoming U+FFFD.
+func TestStringifyStreamingJSONKeepsLoneSurrogate(t *testing.T) {
+	for input, want := range map[string]string{
+		`{"text":"\ud83d`:   `{"text":"\ud83d"}`,
+		`{"text":"\ud83d"}`: `{"text":"\ud83d"}`,
+		`{"\ud83d":"key"}`:  `{"\ud83d":"key"}`,
+		`{"text":"😀"}`:      `{"text":"😀"}`,
+	} {
+		got, err := StringifyStreamingJSON(input)
+		if err != nil {
+			t.Fatalf("StringifyStreamingJSON(%s) error = %v", input, err)
+		}
+		if string(got) != want {
+			t.Fatalf("StringifyStreamingJSON(%s) = %s, want %s", input, got, want)
+		}
+	}
+}
