@@ -1,6 +1,7 @@
 package runner_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,51 @@ import (
 	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 	"github.com/OrdalieTech/pigo/conformance/runner"
 )
+
+func TestF6HarnessPublicEntryCodecMatchesUpstreamJSONL(t *testing.T) {
+	input, err := runner.ReadFixture("F6Harness", "session.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := bytes.Split(bytes.TrimSpace(input), []byte{'\n'})
+	seen := map[string]bool{}
+	for index, line := range lines[1:] {
+		entry, parseErr := agentharness.ParseSessionTreeEntry(line)
+		if parseErr != nil {
+			t.Fatalf("parse fixture entry %d: %v", index+2, parseErr)
+		}
+		seen[entry.Type] = true
+		encoded, marshalErr := agentharness.MarshalSessionTreeEntry(entry)
+		if marshalErr != nil {
+			t.Fatalf("marshal fixture entry %d: %v", index+2, marshalErr)
+		}
+		if diff := runner.ByteDiff(line, encoded); diff != "" {
+			t.Fatalf("fixture entry %d changed:\n%s", index+2, diff)
+		}
+	}
+	for _, entryType := range []string{
+		"message", "thinking_level_change", "model_change", "active_tools_change",
+		"compaction", "branch_summary", "custom", "custom_message", "label",
+		"session_info", "leaf",
+	} {
+		if !seen[entryType] {
+			t.Errorf("fixture did not exercise %q", entryType)
+		}
+	}
+
+	unknown := []byte(`{"type":"future","id":"future","parentId":null,"timestamp":"2026-02-03T04:05:23.000Z","future":{"nested":true}}`)
+	entry, err := agentharness.ParseSessionTreeEntry(unknown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := agentharness.MarshalSessionTreeEntry(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := runner.ByteDiff(unknown, encoded); diff != "" {
+		t.Fatalf("unknown entry changed:\n%s", diff)
+	}
+}
 
 type f6HarnessFixture struct {
 	SchemaVersion int            `json:"schemaVersion"`

@@ -194,6 +194,17 @@ func marshalHarnessHeader(metadata SessionMetadata) ([]byte, error) {
 	return marshalHarnessMembers(members)
 }
 
+// ParseSessionTreeEntry decodes one upstream session entry while retaining
+// unknown members for a later wire-compatible marshal.
+func ParseSessionTreeEntry(data []byte) (SessionTreeEntry, error) {
+	return parseHarnessEntry(data, "<entry>", 1)
+}
+
+// MarshalSessionTreeEntry serializes one entry with upstream field order.
+func MarshalSessionTreeEntry(entry SessionTreeEntry) ([]byte, error) {
+	return marshalHarnessEntry(entry)
+}
+
 // MarshalSessionJSONL serializes a non-byte-backed session using the harness
 // object insertion order. cwd supplies the coding-session context omitted by
 // generic in-memory harness metadata.
