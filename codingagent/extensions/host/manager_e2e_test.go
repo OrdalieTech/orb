@@ -34,10 +34,15 @@ func fixturePath(t *testing.T, name string) string {
 
 func startFixtureManager(t *testing.T, paths ...string) (*Manager, *extensions.Registry, *extensions.Runner, LoadResult, string) {
 	t.Helper()
+	return startFixtureManagerIn(t, t.TempDir(), paths...)
+}
+
+func startFixtureManagerIn(t *testing.T, agentDir string, paths ...string) (*Manager, *extensions.Registry, *extensions.Runner, LoadResult, string) {
+	t.Helper()
 	runtime := requireRuntime(t)
 	cwd := t.TempDir()
 	manager := NewManager(Options{
-		AgentDir: t.TempDir(), CWD: cwd, Version: "test", Runtime: &runtime,
+		AgentDir: agentDir, CWD: cwd, Version: "test", Runtime: &runtime,
 		RequestTimeout: 30 * time.Second, ShutdownTimeout: time.Second,
 		BackoffBase: 10 * time.Millisecond, BackoffMax: 50 * time.Millisecond,
 	})
@@ -176,22 +181,31 @@ export default function (pi: any) {
 	}
 }
 
-func TestRealHostResolvesPeerSDKFromInstalledPi(t *testing.T) {
+// The peer-SDK fallback exists for extensions that import the coding-agent
+// family without declaring it. It is served from the npm root pigo manages
+// itself; the installed pi on PATH — a complete one, whose own pi-tui says
+// something else — is never consulted.
+func TestRealHostResolvesPeerSDKFromManagedNpmRoot(t *testing.T) {
 	runtime := requireRuntime(t)
 	if runtime.Name != "node" {
-		t.Skip("installed Pi SDK fallback is a Node loader feature")
+		t.Skip("managed Pi SDK fallback is a Node loader feature")
 	}
-	root := t.TempDir()
-	piRoot := filepath.Join(root, "lib", "node_modules", "@earendil-works", "pi-coding-agent")
-	writeFile(t, filepath.Join(piRoot, "package.json"), `{"name":"@earendil-works/pi-coding-agent","type":"module","exports":"./dist/index.js"}`, 0o600)
-	cli := filepath.Join(piRoot, "dist", "cli.js")
+	agentDir := t.TempDir()
+	sdkRoot := filepath.Join(agentDir, "npm", "node_modules", "@earendil-works", "pi-coding-agent")
+	writeFile(t, filepath.Join(sdkRoot, "package.json"), `{"name":"@earendil-works/pi-coding-agent","type":"module","exports":"./dist/index.js"}`, 0o600)
+	writeFile(t, filepath.Join(sdkRoot, "dist", "index.js"), "export const sdk = true;\n", 0o600)
+	writeFile(t, filepath.Join(sdkRoot, "node_modules", "@earendil-works", "pi-tui", "package.json"), `{"name":"@earendil-works/pi-tui","type":"module","exports":"./index.js"}`, 0o600)
+	writeFile(t, filepath.Join(sdkRoot, "node_modules", "@earendil-works", "pi-tui", "index.js"), `import { suffix } from "sdk-transitive"; export const sdkValue = "sdk-" + suffix;`, 0o600)
+	writeFile(t, filepath.Join(sdkRoot, "node_modules", "sdk-transitive", "package.json"), `{"name":"sdk-transitive","type":"module","exports":"./index.js"}`, 0o600)
+	writeFile(t, filepath.Join(sdkRoot, "node_modules", "sdk-transitive", "index.js"), `export const suffix = "ok";`, 0o600)
+
+	installedPi := filepath.Join(t.TempDir(), "lib", "node_modules", "@earendil-works", "pi-coding-agent")
+	writeFile(t, filepath.Join(installedPi, "package.json"), `{"name":"@earendil-works/pi-coding-agent","type":"module","exports":"./dist/index.js"}`, 0o600)
+	cli := filepath.Join(installedPi, "dist", "cli.js")
 	writeFile(t, cli, "#!/usr/bin/env node\n", 0o700)
-	writeFile(t, filepath.Join(piRoot, "dist", "index.js"), "export const sdk = true;\n", 0o600)
-	writeFile(t, filepath.Join(piRoot, "node_modules", "@earendil-works", "pi-tui", "package.json"), `{"name":"@earendil-works/pi-tui","type":"module","exports":"./index.js"}`, 0o600)
-	writeFile(t, filepath.Join(piRoot, "node_modules", "@earendil-works", "pi-tui", "index.js"), `import { suffix } from "sdk-transitive"; export const sdkValue = "sdk-" + suffix;`, 0o600)
-	writeFile(t, filepath.Join(piRoot, "node_modules", "sdk-transitive", "package.json"), `{"name":"sdk-transitive","type":"module","exports":"./index.js"}`, 0o600)
-	writeFile(t, filepath.Join(piRoot, "node_modules", "sdk-transitive", "index.js"), `export const suffix = "ok";`, 0o600)
-	bin := filepath.Join(root, "bin")
+	writeFile(t, filepath.Join(installedPi, "node_modules", "@earendil-works", "pi-tui", "package.json"), `{"name":"@earendil-works/pi-tui","type":"module","exports":"./index.js"}`, 0o600)
+	writeFile(t, filepath.Join(installedPi, "node_modules", "@earendil-works", "pi-tui", "index.js"), `export const sdkValue = "installed-pi";`, 0o600)
+	bin := filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(installedPi))), "bin")
 	if err := os.MkdirAll(bin, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -199,6 +213,7 @@ func TestRealHostResolvesPeerSDKFromInstalledPi(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", prependPath(bin, os.Getenv("PATH")))
+	t.Setenv(piSDKRootEnv, "")
 
 	extensionDir := filepath.Join(t.TempDir(), "node_modules", "peer-extension")
 	writeFile(t, filepath.Join(extensionDir, "package.json"), `{"name":"peer-extension","type":"module","peerDependencies":{"@mariozechner/pi-tui":"^0.74.0"}}`, 0o600)
@@ -216,7 +231,7 @@ export default function (pi: any) {
 }
 `, 0o600)
 
-	manager, _, runner, result, _ := startFixtureManager(t,
+	manager, _, runner, result, _ := startFixtureManagerIn(t, agentDir,
 		entry,
 		fixturePath(t, "import-error.mjs"),
 		fixturePath(t, "working.mjs"),

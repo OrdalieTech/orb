@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/OrdalieTech/pigo/codingagent/config"
 )
 
 const (
@@ -16,11 +18,17 @@ const (
 	piSDKRootEnv        = "PIGO_PI_SDK_ROOT"
 )
 
-func prepareHostEnvironment(agentDir string, base []string, executableOverride, runtimePath string) ([]string, error) {
+// piSDKPackage is the package whose directory PIGO_PI_SDK_ROOT names: the SDK an
+// extension imports when it treats the coding-agent family as provided by its
+// host rather than declaring it. Only a copy inside pigo's own npm roots counts.
+const piSDKPackage = "@earendil-works/pi-coding-agent"
+
+func prepareHostEnvironment(options Options, base []string, runtimePath string) ([]string, error) {
+	agentDir := options.AgentDir
 	if agentDir == "" {
 		return nil, errors.New("extension host: agent directory is empty")
 	}
-	executable := executableOverride
+	executable := options.PigoExecutable
 	if executable == "" {
 		var err error
 		executable, err = os.Executable()
@@ -56,35 +64,58 @@ func prepareHostEnvironment(agentDir string, base []string, executableOverride, 
 	environment = setEnvironmentValue(environment, piSubagentBinaryEnv, shimPath)
 	environment = setEnvironmentValue(environment, piAgentDirEnv, agentDir)
 	environment = setEnvironmentValue(environment, piAgentMarkerEnv, "true")
-	sdkRoot := installedPiSDKRoot(base)
+	// An explicitly set PIGO_PI_SDK_ROOT is an escape hatch — a checkout, a
+	// vendored copy, a tree pigo's own search cannot see — and is authoritative
+	// for that reason. It is not a fallback onto a third-party install: pigo
+	// never looks for an installed pi and never borrows its bundled SDK. Reading
+	// pi's config files is the D4 compatibility promise; executing its code is
+	// not, and the line stays clean.
+	sdkRoot := strings.TrimSpace(environmentValue(base, piSDKRootEnv))
 	if sdkRoot == "" {
-		sdkRoot = environmentValue(base, piSDKRootEnv)
+		sdkRoot = managedSDKRoot(options)
 	}
 	environment = setEnvironmentValue(environment, piSDKRootEnv, sdkRoot)
 	return environment, nil
 }
 
-func installedPiSDKRoot(environment []string) string {
-	executable, err := lookPathInEnvironment("pi", environment)
+// managedSDKRoot reports the pi SDK installed in pigo's own npm roots, project
+// scope before user scope — the precedence the package manager itself applies —
+// and only reaches the project root when the project is trusted, the same gate
+// every other project-scoped resource passes through (Discover,
+// getNpmInstallRoot). A root that is absent, empty, unreadable or half-written
+// by an interrupted install yields nothing rather than an error: the SDK is a
+// fallback for imports an extension did not declare, so its absence is reported
+// by loader.mjs at the failing import, where it names the extension.
+func managedSDKRoot(options Options) string {
+	roots := make([]string, 0, 2)
+	if options.ProjectTrusted && options.CWD != "" {
+		roots = append(roots, config.ProjectNpmInstallRoot(options.CWD))
+	}
+	roots = append(roots, config.UserNpmInstallRoot(options.AgentDir))
+	for _, root := range roots {
+		candidate := filepath.Join(append([]string{root, "node_modules"}, strings.Split(piSDKPackage, "/")...)...)
+		if installedPackageName(candidate) == piSDKPackage {
+			return candidate
+		}
+	}
+	return ""
+}
+
+// installedPackageName reads the name a package directory declares, following a
+// symlinked package dir the way every Node resolver does. Anything unreadable
+// or unparsable is reported as no package at all.
+func installedPackageName(directory string) string {
+	encoded, err := os.ReadFile(filepath.Join(directory, "package.json"))
 	if err != nil {
 		return ""
 	}
-	executable, err = filepath.EvalSymlinks(executable)
-	if err != nil {
-		return ""
-	}
-	manifestPath, err := owningPackageJSON(executable)
-	if err != nil || manifestPath == "" {
-		return ""
-	}
-	encoded, err := os.ReadFile(manifestPath)
 	var manifest struct {
 		Name string `json:"name"`
 	}
-	if err != nil || json.Unmarshal(encoded, &manifest) != nil || manifest.Name != "@earendil-works/pi-coding-agent" {
+	if json.Unmarshal(encoded, &manifest) != nil {
 		return ""
 	}
-	return filepath.Dir(manifestPath)
+	return manifest.Name
 }
 
 func replaceExecutableLink(path, target string) error {

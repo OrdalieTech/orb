@@ -17,6 +17,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Fixed
 
+- pigo no longer resolves the extension SDK from an installed upstream pi. It searched `PATH` for the `pi` executable and pointed extensions at the npm package that owns it, so a machine without pi got a different result from one with it. The SDK is now taken from pigo's own managed npm root, project scope first when the project is trusted, then the user scope. Reading pi's configuration files stays supported; borrowing its code does not. `PIGO_PI_SDK_ROOT` remains as an explicit override for a checkout or vendored copy.
 - JavaScript extensions now run on Node 22.6, where every TypeScript extension previously failed: the module loader returned a string source for a format that release requires a buffer for.
 - The extension host no longer dies on Node 26, which removed `--experimental-transform-types`; an unknown flag aborts Node outright rather than warning. The flag set and the TypeScript transpiler options are now taken from what the Node build in hand accepts.
 - pnpm-installed extensions resolve their dependencies: `--preserve-symlinks` made a package reached through the `.pnpm` store resolve from the link site instead of the store. The flag existed only for the staged-entry mechanism and is gone with it.

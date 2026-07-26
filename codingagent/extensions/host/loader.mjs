@@ -61,6 +61,20 @@ async function legacySurface(specifier, context, nextResolve) {
 	}
 }
 
+// PIGO_PI_SDK_ROOT is only ever pigo's own npm root — pigo never borrows the SDK
+// bundled inside an installed pi — so when it is empty the import cannot be
+// satisfied at all. Node's "Cannot find package" names neither the reason nor a
+// way forward, and this is the one place that knows both.
+// ponytail: Bun has no resolve hook, so there the same import fails with Bun's
+// own message; upgrade path is a Bun plugin that intercepts nested resolution.
+function sdkUnavailableError(specifier, cause) {
+	const root = join(process.env.PI_CODING_AGENT_DIR || "~/.pi/agent", "npm");
+	return new Error(
+		`${specifier} is part of the pi SDK, which is not installed in pigo's own npm root (${root}); pigo never borrows it from an installed pi. Install it with \`npm i --prefix ${root} @earendil-works/pi-coding-agent\`, or set PIGO_PI_SDK_ROOT to the copy pigo should use. Extensions that declare their own SDK dependency are unaffected`,
+		{ cause },
+	);
+}
+
 async function installedSDK(specifier, context, nextResolve) {
 	const target = sdkAliases[specifier];
 	const root = process.env.PIGO_PI_SDK_ROOT;
@@ -250,6 +264,7 @@ export async function resolve(specifier, context, nextResolve) {
 		}
 		const sdk = await installedSDK(specifier, context, nextResolve);
 		if (sdk) return { ...sdk, shortCircuit: true };
+		if (sdkAliases[specifier] && !process.env.PIGO_PI_SDK_ROOT) throw sdkUnavailableError(specifier, error);
 		throw error;
 	}
 }

@@ -118,10 +118,11 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 				registry = extensions.NewRegistry(cwd)
 			}
 			manager := extensionhost.NewManager(extensionhost.Options{
-				AgentDir: agentDir,
-				CWD:      cwd,
-				Version:  version,
-				Stderr:   os.Stderr,
+				AgentDir:       agentDir,
+				CWD:            cwd,
+				ProjectTrusted: settings.IsProjectTrusted(),
+				Version:        version,
+				Stderr:         os.Stderr,
 			})
 			result := manager.RegisterInto(context.Background(), registry, paths)
 			replaceActiveExtensionHost(manager)

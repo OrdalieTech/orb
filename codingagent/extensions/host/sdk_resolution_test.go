@@ -53,8 +53,9 @@ func startRuntimeManager(t *testing.T, runtime Runtime, entry string) (*extensio
 	return extensions.NewRunner(registry, extensions.RunnerOptions{CWD: cwd}), result
 }
 
-// isolateSDKRoot points the host at a stub SDK and hides any real `pi` install,
-// which prepareHostEnvironment would otherwise discover from PATH.
+// isolateSDKRoot points the host at a stub SDK through the explicit override,
+// and empties PATH so the test states plainly that no installed `pi` is part of
+// the setup.
 func isolateSDKRoot(t *testing.T, root string) {
 	t.Helper()
 	t.Setenv("PATH", t.TempDir())
@@ -120,6 +121,74 @@ export default function (pi: any) {
 	}
 	if got := definition.Description; got != "compat:core:api_key" {
 		t.Fatalf("description = %q, want %q", got, "compat:core:api_key")
+	}
+}
+
+// legacySurface redirects "@earendil-works/pi-ai" to its "/compat" subpath
+// through the caller's own context, so a copy the extension installed for
+// itself wins and resolves successfully — even when it is too old for the
+// import, which then fails on the missing export. Nothing throws during
+// resolution, so the PIGO_PI_SDK_ROOT fallback, reachable only from the catch
+// in resolve, never sees the specifier whatever that root holds. This is the
+// shape of the measured `unsupported_sdk_export isRetryableAssistantError`
+// regression, and it is unaffected by which copy the root names.
+func TestNodeKeepsTheExtensionsOwnSDKCopyOverTheManagedRoot(t *testing.T) {
+	runtime := requireNamedRuntime(t, "node")
+	sdkRoot := t.TempDir()
+	writeFixtureFile(t, filepath.Join(sdkRoot, "package.json"), `{"name":"@earendil-works/pi-coding-agent","version":"0.81.1","type":"module"}`)
+	current := filepath.Join(sdkRoot, "node_modules", "@earendil-works", "pi-ai")
+	stubPiAI(t, current)
+	writeFixtureFile(t, filepath.Join(current, "compat.js"), "export * from \"./index.js\";\nexport function isRetryableAssistantError() { return true; }\n")
+	isolateSDKRoot(t, sdkRoot)
+
+	extensionDir := t.TempDir()
+	writeFixtureFile(t, filepath.Join(extensionDir, "package.json"), `{"name":"pigo-old-sdk-fixture","version":"1.0.0","type":"module"}`)
+	stubPiAI(t, filepath.Join(extensionDir, "node_modules", "@earendil-works", "pi-ai"))
+	entry := filepath.Join(extensionDir, "extension.mjs")
+	writeFixtureFile(t, entry, `import { isRetryableAssistantError } from "@earendil-works/pi-ai";
+
+export default function () {
+	isRetryableAssistantError();
+}
+`)
+	_, result := startRuntimeManager(t, runtime, entry)
+	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0].Error, "isRetryableAssistantError") {
+		t.Fatalf("load errors = %#v, want the extension's own older copy to lose the export", result.Errors)
+	}
+}
+
+// With no SDK in pigo's own npm root there is nothing to fall back to — pigo
+// does not borrow the copy inside an installed pi — so the import has to name
+// what is missing and how to install it instead of failing with Node's bare
+// "Cannot find package".
+func TestNodeReportsMissingSDKWithInstallGuidance(t *testing.T) {
+	runtime := requireNamedRuntime(t, "node")
+	t.Setenv(piSDKRootEnv, "")
+	extensionDir := t.TempDir()
+	writeFixtureFile(t, filepath.Join(extensionDir, "package.json"), `{"name":"pigo-missing-sdk-fixture","version":"1.0.0","type":"module"}`)
+	entry := filepath.Join(extensionDir, "extension.mjs")
+	writeFixtureFile(t, entry, `import { complete } from "@earendil-works/pi-ai";
+
+export default function (pi) {
+	pi.registerTool({
+		name: "missing_probe",
+		label: "Missing Probe",
+		description: complete(),
+		parameters: { type: "object", properties: {} },
+		async execute() {
+			return { content: [{ type: "text", text: "ok" }] };
+		},
+	});
+}
+`)
+	_, result := startRuntimeManager(t, runtime, entry)
+	if len(result.Errors) != 1 {
+		t.Fatalf("load errors = %#v", result.Errors)
+	}
+	for _, fragment := range []string{"@earendil-works/pi-ai", "pigo's own npm root", "npm i --prefix", piSDKRootEnv} {
+		if !strings.Contains(result.Errors[0].Error, fragment) {
+			t.Fatalf("load error %q does not mention %q", result.Errors[0].Error, fragment)
+		}
 	}
 }
 

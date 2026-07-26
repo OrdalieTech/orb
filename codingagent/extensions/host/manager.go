@@ -76,8 +76,11 @@ type AgentInfo struct {
 }
 
 type Options struct {
-	AgentDir        string
-	CWD             string
+	AgentDir string
+	CWD      string
+	// ProjectTrusted gates the project-scoped npm root the SDK is resolved from,
+	// exactly as DiscoveryOptions.ProjectTrusted gates project extensions.
+	ProjectTrusted  bool
 	Version         string
 	Runtime         *Runtime
 	PigoExecutable  string
@@ -382,7 +385,7 @@ func (manager *Manager) startLocked(ctx context.Context) (generationLoadResult, 
 		}
 		commandArgs = append(commandArgs, "--experimental-loader", loaderPath)
 	}
-	hostEnvironment, err := prepareHostEnvironment(manager.options.AgentDir, os.Environ(), manager.options.PigoExecutable, runtime.Path)
+	hostEnvironment, err := prepareHostEnvironment(manager.options, os.Environ(), runtime.Path)
 	if err != nil {
 		return result, err
 	}
