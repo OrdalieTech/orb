@@ -187,7 +187,17 @@ func TestOpenRouterAllowsOnlyOneTokenExchange(t *testing.T) {
 		query.Set("code", "authorization-code")
 		callback.RawQuery = query.Encode()
 		go func() {
-			response, getErr := http.Get(callback.String())
+			// Under full-suite load the loopback listener can briefly refuse;
+			// retry the first callback within a bounded window.
+			var response *http.Response
+			var getErr error
+			for start := time.Now(); time.Since(start) < 5*time.Second; {
+				response, getErr = http.Get(callback.String())
+				if getErr == nil {
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
 			if getErr != nil {
 				firstDone <- nil
 				return
