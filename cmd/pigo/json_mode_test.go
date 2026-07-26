@@ -120,7 +120,7 @@ func TestJSONPrintModeMatchesUpstreamRunPrintModeFixtures(t *testing.T) {
 			}
 		})
 	}
-	if !strings.Contains(helpText, "pigo login <provider>") || !strings.Contains(helpText, "anthropic, openai-codex, github-copilot, xai") {
+	if !strings.Contains(helpText, "pigo login <provider>") || !strings.Contains(helpText, "anthropic, openai-codex, github-copilot, kimi-coding, openrouter, xai") {
 		t.Fatalf("headless OAuth help is incomplete: %q", helpText)
 	}
 }

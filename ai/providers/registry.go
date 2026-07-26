@@ -16,7 +16,9 @@ var registry = []Provider{
 		"AWS_WEB_IDENTITY_TOKEN_FILE",
 	}, []string{"AWS_BEARER_TOKEN_BEDROCK"}, ai.APIBedrockConverse),
 	envProvider("ant-ling", "Ant Ling", "https://api.ant-ling.com/v1", "Ant Ling API key", []string{"ANT_LING_API_KEY"}, ai.APIOpenAICompletions),
-	withProviderMetadata(anthropicProvider, "https://api.anthropic.com", []string{"ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"}, []string{"ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"}, ai.APIAnthropicMessages),
+	// ANTHROPIC_AUTH_TOKEN participates in env discovery/status, but the
+	// api-key lookup skips it because requests must pass it as Authorization: Bearer.
+	withProviderMetadata(anthropicProvider, "https://api.anthropic.com", []string{"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"}, []string{"ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"}, ai.APIAnthropicMessages),
 	withProviderMetadata(azureOpenAIResponsesProvider, "", []string{"AZURE_OPENAI_API_KEY"}, []string{"AZURE_OPENAI_API_KEY"}, ai.APIAzureOpenAIResponses),
 	envProvider("cerebras", "Cerebras", "https://api.cerebras.ai/v1", "Cerebras API key", []string{"CEREBRAS_API_KEY"}, ai.APIOpenAICompletions),
 	withProviderMetadata(cloudflareAIGatewayProvider, "", []string{"CLOUDFLARE_API_KEY", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_GATEWAY_ID"}, []string{"CLOUDFLARE_API_KEY"}, ai.APIAnthropicMessages, ai.APIOpenAICompletions, ai.APIOpenAIResponses),
@@ -28,7 +30,7 @@ var registry = []Provider{
 	withProviderMetadata(googleVertexProvider, "", []string{"GOOGLE_CLOUD_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_CLOUD_PROJECT", "GCLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION"}, []string{"GOOGLE_CLOUD_API_KEY"}, ai.APIGoogleVertex),
 	envProvider("groq", "Groq", "https://api.groq.com/openai/v1", "Groq API key", []string{"GROQ_API_KEY"}, ai.APIOpenAICompletions),
 	envProvider("huggingface", "Hugging Face", "https://router.huggingface.co/v1", "Hugging Face token", []string{"HF_TOKEN"}, ai.APIOpenAICompletions),
-	envProvider("kimi-coding", "Kimi For Coding", "https://api.kimi.com/coding", "Kimi API key", []string{"KIMI_API_KEY"}, ai.APIAnthropicMessages),
+	withProviderMetadata(kimiCodingProvider, "https://api.kimi.com/coding", []string{"KIMI_API_KEY"}, []string{"KIMI_API_KEY"}, ai.APIAnthropicMessages),
 	envProvider("minimax", "MiniMax", "https://api.minimax.io/anthropic", "MiniMax API key", []string{"MINIMAX_API_KEY"}, ai.APIAnthropicMessages),
 	envProvider("minimax-cn", "MiniMax CN", "https://api.minimaxi.com/anthropic", "MiniMax CN API key", []string{"MINIMAX_CN_API_KEY"}, ai.APIAnthropicMessages),
 	withProviderMetadata(mistralProvider, "https://api.mistral.ai", []string{"MISTRAL_API_KEY"}, []string{"MISTRAL_API_KEY"}, ai.APIMistralConversations),
@@ -39,7 +41,7 @@ var registry = []Provider{
 	withProviderMetadata(openAICodexProvider, "https://chatgpt.com/backend-api", nil, nil, ai.APIOpenAICodexResponses),
 	envProvider("opencode", "OpenCode Zen", "", "OpenCode API key", []string{"OPENCODE_API_KEY"}, ai.APIAnthropicMessages, ai.APIGoogleGenerativeAI, ai.APIOpenAICompletions, ai.APIOpenAIResponses),
 	envProvider("opencode-go", "OpenCode Zen Go", "", "OpenCode API key", []string{"OPENCODE_API_KEY"}, ai.APIAnthropicMessages, ai.APIOpenAICompletions, ai.APIOpenAIResponses),
-	envProvider("openrouter", "OpenRouter", "https://openrouter.ai/api/v1", "OpenRouter API key", []string{"OPENROUTER_API_KEY"}, ai.APIOpenAICompletions),
+	withProviderMetadata(openRouterProvider, "https://openrouter.ai/api/v1", []string{"OPENROUTER_API_KEY"}, []string{"OPENROUTER_API_KEY"}, ai.APIOpenAICompletions),
 	envProvider("qwen-token-plan", "Qwen Token Plan", "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1", "Qwen Token Plan API key", []string{"QWEN_TOKEN_PLAN_API_KEY"}, ai.APIOpenAICompletions),
 	envProvider("qwen-token-plan-cn", "Qwen Token Plan CN", "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1", "Qwen Token Plan CN API key", []string{"QWEN_TOKEN_PLAN_CN_API_KEY"}, ai.APIOpenAICompletions),
 	envProvider("together", "Together", "https://api.together.ai/v1", "Together API key", []string{"TOGETHER_API_KEY"}, ai.APIOpenAICompletions),

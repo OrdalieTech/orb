@@ -871,7 +871,7 @@ Usage: pigo [options] [@files...] [messages...]
        pigo logout [provider]
        pigo chat <platform>
 
-OAuth providers: anthropic, openai-codex, github-copilot, xai
+OAuth providers: anthropic, openai-codex, github-copilot, kimi-coding, openrouter, xai
 
 Commands:
   pigo chat <platform>         Run a chat gateway
