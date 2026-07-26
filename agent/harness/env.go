@@ -9,9 +9,11 @@ import (
 	"io"
 	"io/fs"
 	"math"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,17 +26,24 @@ import (
 
 const maxExecutionTimeoutSeconds = 2_147_483_647.0 / 1000.0
 
+// exitStdioGracePeriod bounds how long exec waits for stdio to drain after the
+// shell exits when a detached descendant retains the inherited pipes.
+const exitStdioGracePeriod = 100 * time.Millisecond
+
 // NodeExecutionEnv is the pure-Go local filesystem and shell backend.
 type NodeExecutionEnv struct {
 	CWD       string
 	ShellPath string
 	ShellEnv  map[string]string
+
+	childrenMu     sync.Mutex
+	activeChildren map[*os.Process]struct{}
 }
 
 // LocalExecutionEnv is the platform-neutral Go name for NodeExecutionEnv.
 type LocalExecutionEnv = NodeExecutionEnv
 
-func (env NodeExecutionEnv) WorkingDirectory() string {
+func (env *NodeExecutionEnv) WorkingDirectory() string {
 	cwd := env.CWD
 	if cwd == "" {
 		cwd, _ = os.Getwd()
@@ -46,11 +55,46 @@ func (env NodeExecutionEnv) WorkingDirectory() string {
 	return filepath.Clean(cwd)
 }
 
-func (env NodeExecutionEnv) resolve(path string) string {
-	if filepath.IsAbs(path) {
-		return path
+func (env *NodeExecutionEnv) resolve(path string) string {
+	normalized := path
+	if normalized == "~" {
+		if home, homeErr := os.UserHomeDir(); homeErr == nil {
+			normalized = home
+		}
+	} else if strings.HasPrefix(normalized, "~/") || (runtime.GOOS == "windows" && strings.HasPrefix(normalized, `~\`)) {
+		if home, homeErr := os.UserHomeDir(); homeErr == nil {
+			normalized = filepath.Join(home, normalized[2:])
+		}
+	} else if strings.HasPrefix(normalized, "file://") {
+		// Malformed URLs stay ordinary paths so filesystem methods preserve their non-throwing contract.
+		if converted, ok := fileURLPath(normalized); ok {
+			normalized = converted
+		}
 	}
-	return filepath.Clean(filepath.Join(env.WorkingDirectory(), path))
+	if filepath.IsAbs(normalized) {
+		return filepath.Clean(normalized)
+	}
+	return filepath.Clean(filepath.Join(env.WorkingDirectory(), normalized))
+}
+
+// fileURLPath mirrors Node's fileURLToPath for the URLs it accepts: a file
+// scheme, an empty or localhost host, and no percent-encoded separators.
+func fileURLPath(raw string) (string, bool) {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "file" {
+		return "", false
+	}
+	if parsed.Host != "" && parsed.Host != "localhost" {
+		return "", false
+	}
+	if parsed.Path == "" || strings.Contains(strings.ToLower(parsed.RawPath), "%2f") {
+		return "", false
+	}
+	path := parsed.Path
+	if runtime.GOOS == "windows" && len(path) >= 3 && path[0] == '/' && path[2] == ':' {
+		path = path[1:]
+	}
+	return filepath.FromSlash(path), true
 }
 
 func abortedFileError(ctx context.Context, path string) error {
@@ -117,15 +161,15 @@ func nodeFileInfo(path string, info fs.FileInfo) (FileInfo, error) {
 	}, nil
 }
 
-func (env NodeExecutionEnv) AbsolutePath(ctx context.Context, path string) (string, error) {
+func (env *NodeExecutionEnv) AbsolutePath(ctx context.Context, path string) (string, error) {
 	return env.resolve(path), nil
 }
 
-func (env NodeExecutionEnv) JoinPath(ctx context.Context, parts ...string) (string, error) {
+func (env *NodeExecutionEnv) JoinPath(ctx context.Context, parts ...string) (string, error) {
 	return filepath.Join(parts...), nil
 }
 
-func (env NodeExecutionEnv) ReadTextFile(ctx context.Context, path string) (string, error) {
+func (env *NodeExecutionEnv) ReadTextFile(ctx context.Context, path string) (string, error) {
 	contents, err := env.ReadBinaryFile(ctx, path)
 	if err != nil {
 		return "", err
@@ -134,7 +178,7 @@ func (env NodeExecutionEnv) ReadTextFile(ctx context.Context, path string) (stri
 	return string(decoded), nil
 }
 
-func (env NodeExecutionEnv) ReadTextLines(ctx context.Context, path string, maxLines int) ([]string, error) {
+func (env *NodeExecutionEnv) ReadTextLines(ctx context.Context, path string, maxLines int) ([]string, error) {
 	resolved := env.resolve(path)
 	if err := abortedFileError(ctx, resolved); err != nil {
 		return nil, err
@@ -173,7 +217,7 @@ func (env NodeExecutionEnv) ReadTextLines(ctx context.Context, path string, maxL
 	return lines, nil
 }
 
-func (env NodeExecutionEnv) ReadBinaryFile(ctx context.Context, path string) ([]byte, error) {
+func (env *NodeExecutionEnv) ReadBinaryFile(ctx context.Context, path string) ([]byte, error) {
 	resolved := env.resolve(path)
 	if err := abortedFileError(ctx, resolved); err != nil {
 		return nil, err
@@ -188,20 +232,20 @@ func (env NodeExecutionEnv) ReadBinaryFile(ctx context.Context, path string) ([]
 	return contents, nil
 }
 
-func (env NodeExecutionEnv) WriteFile(ctx context.Context, path string, content []byte) error {
+func (env *NodeExecutionEnv) WriteFile(ctx context.Context, path string, content []byte) error {
 	return env.write(ctx, path, content, false, true)
 }
 
 // WriteFileExclusive creates a new file without replacing a concurrent writer.
-func (env NodeExecutionEnv) WriteFileExclusive(ctx context.Context, path string, content []byte) error {
+func (env *NodeExecutionEnv) WriteFileExclusive(ctx context.Context, path string, content []byte) error {
 	return env.writeFlags(ctx, path, content, os.O_CREATE|os.O_EXCL|os.O_WRONLY, true)
 }
 
-func (env NodeExecutionEnv) AppendFile(ctx context.Context, path string, content []byte) error {
+func (env *NodeExecutionEnv) AppendFile(ctx context.Context, path string, content []byte) error {
 	return env.write(ctx, path, content, true, false)
 }
 
-func (env NodeExecutionEnv) write(ctx context.Context, path string, content []byte, appendMode, cancellable bool) error {
+func (env *NodeExecutionEnv) write(ctx context.Context, path string, content []byte, appendMode, cancellable bool) error {
 	flags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
 	if appendMode {
 		flags = os.O_CREATE | os.O_WRONLY | os.O_APPEND
@@ -209,7 +253,7 @@ func (env NodeExecutionEnv) write(ctx context.Context, path string, content []by
 	return env.writeFlags(ctx, path, content, flags, cancellable)
 }
 
-func (env NodeExecutionEnv) writeFlags(ctx context.Context, path string, content []byte, flags int, cancellable bool) error {
+func (env *NodeExecutionEnv) writeFlags(ctx context.Context, path string, content []byte, flags int, cancellable bool) error {
 	resolved := env.resolve(path)
 	if cancellable {
 		if err := abortedFileError(ctx, resolved); err != nil {
@@ -242,7 +286,7 @@ func (env NodeExecutionEnv) writeFlags(ctx context.Context, path string, content
 	return nil
 }
 
-func (env NodeExecutionEnv) FileInfo(ctx context.Context, path string) (FileInfo, error) {
+func (env *NodeExecutionEnv) FileInfo(ctx context.Context, path string) (FileInfo, error) {
 	resolved := env.resolve(path)
 	info, err := os.Lstat(resolved)
 	if err != nil {
@@ -251,7 +295,7 @@ func (env NodeExecutionEnv) FileInfo(ctx context.Context, path string) (FileInfo
 	return nodeFileInfo(resolved, info)
 }
 
-func (env NodeExecutionEnv) ListDir(ctx context.Context, path string) ([]FileInfo, error) {
+func (env *NodeExecutionEnv) ListDir(ctx context.Context, path string) ([]FileInfo, error) {
 	resolved := env.resolve(path)
 	if err := abortedFileError(ctx, resolved); err != nil {
 		return nil, err
@@ -278,7 +322,7 @@ func (env NodeExecutionEnv) ListDir(ctx context.Context, path string) ([]FileInf
 	return infos, nil
 }
 
-func (env NodeExecutionEnv) CanonicalPath(ctx context.Context, path string) (string, error) {
+func (env *NodeExecutionEnv) CanonicalPath(ctx context.Context, path string) (string, error) {
 	resolved := env.resolve(path)
 	canonical, err := filepath.EvalSymlinks(resolved)
 	if err != nil {
@@ -291,7 +335,7 @@ func (env NodeExecutionEnv) CanonicalPath(ctx context.Context, path string) (str
 	return filepath.Clean(absolute), nil
 }
 
-func (env NodeExecutionEnv) Exists(ctx context.Context, path string) (bool, error) {
+func (env *NodeExecutionEnv) Exists(ctx context.Context, path string) (bool, error) {
 	_, err := env.FileInfo(ctx, path)
 	if err == nil {
 		return true, nil
@@ -303,7 +347,7 @@ func (env NodeExecutionEnv) Exists(ctx context.Context, path string) (bool, erro
 	return false, err
 }
 
-func (env NodeExecutionEnv) CreateDir(ctx context.Context, path string, recursive bool) error {
+func (env *NodeExecutionEnv) CreateDir(ctx context.Context, path string, recursive bool) error {
 	resolved := env.resolve(path)
 	var err error
 	if recursive {
@@ -314,7 +358,7 @@ func (env NodeExecutionEnv) CreateDir(ctx context.Context, path string, recursiv
 	return nodeOperationError("mkdir", resolved, err)
 }
 
-func (env NodeExecutionEnv) Remove(ctx context.Context, path string, recursive, force bool) error {
+func (env *NodeExecutionEnv) Remove(ctx context.Context, path string, recursive, force bool) error {
 	resolved := env.resolve(path)
 	if !recursive {
 		info, err := os.Lstat(resolved)
@@ -348,7 +392,7 @@ func (env NodeExecutionEnv) Remove(ctx context.Context, path string, recursive, 
 	return nodeOperationError("rm", resolved, err)
 }
 
-func (env NodeExecutionEnv) CreateTempDir(ctx context.Context, prefix string) (string, error) {
+func (env *NodeExecutionEnv) CreateTempDir(ctx context.Context, prefix string) (string, error) {
 	if prefix == "" {
 		prefix = "tmp-"
 	}
@@ -359,7 +403,7 @@ func (env NodeExecutionEnv) CreateTempDir(ctx context.Context, prefix string) (s
 	return path, nil
 }
 
-func (env NodeExecutionEnv) CreateTempFile(ctx context.Context, prefix, suffix string) (string, error) {
+func (env *NodeExecutionEnv) CreateTempFile(ctx context.Context, prefix, suffix string) (string, error) {
 	dir, err := env.CreateTempDir(ctx, "tmp-")
 	if err != nil {
 		return "", err
@@ -375,31 +419,87 @@ func (env NodeExecutionEnv) CreateTempFile(ctx context.Context, prefix, suffix s
 	return path, nil
 }
 
-func (env NodeExecutionEnv) Cleanup() error { return nil }
+func (env *NodeExecutionEnv) Cleanup() error {
+	env.childrenMu.Lock()
+	for process := range env.activeChildren {
+		killProcessTree(process)
+	}
+	clear(env.activeChildren)
+	env.childrenMu.Unlock()
+	return nil
+}
 
-func (env NodeExecutionEnv) ResourceFileInfo(path string) (FileInfo, error) {
+func (env *NodeExecutionEnv) trackChild(process *os.Process) {
+	if process == nil {
+		return
+	}
+	env.childrenMu.Lock()
+	if env.activeChildren == nil {
+		env.activeChildren = make(map[*os.Process]struct{})
+	}
+	env.activeChildren[process] = struct{}{}
+	env.childrenMu.Unlock()
+}
+
+func (env *NodeExecutionEnv) untrackChild(process *os.Process) {
+	if process == nil {
+		return
+	}
+	env.childrenMu.Lock()
+	delete(env.activeChildren, process)
+	env.childrenMu.Unlock()
+}
+
+func (env *NodeExecutionEnv) ResourceFileInfo(path string) (FileInfo, error) {
 	return env.FileInfo(context.Background(), path)
 }
 
-func (env NodeExecutionEnv) ResourceListDir(path string) ([]FileInfo, error) {
+func (env *NodeExecutionEnv) ResourceListDir(path string) ([]FileInfo, error) {
 	return env.ListDir(context.Background(), path)
 }
 
-func (env NodeExecutionEnv) ResourceReadTextFile(path string) (string, error) {
+func (env *NodeExecutionEnv) ResourceReadTextFile(path string) (string, error) {
 	return env.ReadTextFile(context.Background(), path)
 }
 
-func (env NodeExecutionEnv) ResourceCanonicalPath(path string) (string, error) {
+func (env *NodeExecutionEnv) ResourceCanonicalPath(path string) (string, error) {
 	return env.CanonicalPath(context.Background(), path)
 }
 
-func (env NodeExecutionEnv) shell() (string, error) {
+func (env *NodeExecutionEnv) shell() (string, error) {
 	if env.ShellPath != "" {
 		info, err := os.Stat(env.ShellPath)
 		if err != nil || info.IsDir() {
 			return "", &ExecutionError{Code: ExecutionErrorShellUnavailable, Err: fmt.Errorf("Custom shell path not found: %s", env.ShellPath)} //nolint:staticcheck // Upstream error text is observable.
 		}
 		return env.ShellPath, nil
+	}
+	if runtime.GOOS == "windows" {
+		candidates := make([]string, 0, 2)
+		if programFiles := os.Getenv("ProgramFiles"); programFiles != "" {
+			candidates = append(candidates, programFiles+`\Git\bin\bash.exe`)
+		}
+		if programFilesX86 := os.Getenv("ProgramFiles(x86)"); programFilesX86 != "" {
+			candidates = append(candidates, programFilesX86+`\Git\bin\bash.exe`)
+		}
+		for _, candidate := range candidates {
+			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+				return candidate, nil
+			}
+		}
+		if shell, err := exec.LookPath("bash.exe"); err == nil {
+			return shell, nil
+		}
+		searched := make([]string, len(candidates))
+		for index, candidate := range candidates {
+			searched[index] = "  " + candidate
+		}
+		return "", &ExecutionError{Code: ExecutionErrorShellUnavailable, Err: fmt.Errorf( //nolint:staticcheck // Upstream error text is observable.
+			"No bash shell found. Options:\n"+
+				"  1. Install Git for Windows: https://git-scm.com/download/win\n"+
+				"  2. Add your bash to PATH (Cygwin, MSYS2, etc.)\n"+
+				"  3. Configure an explicit shellPath\n\n"+
+				"Searched Git Bash in:\n%s", strings.Join(searched, "\n"))}
 	}
 	if info, err := os.Stat("/bin/bash"); err == nil && !info.IsDir() {
 		return "/bin/bash", nil
@@ -432,6 +532,7 @@ type callbackBuffer struct {
 	callbackMu *sync.Mutex
 	callback   func(string) error
 	onError    func(error)
+	detached   bool
 }
 
 func (writer *callbackBuffer) Write(chunk []byte) (int, error) {
@@ -440,12 +541,22 @@ func (writer *callbackBuffer) Write(chunk []byte) (int, error) {
 	writer.mu.Unlock()
 	if writer.callback != nil {
 		writer.callbackMu.Lock()
-		if err := writer.callback(string(chunk)); err != nil {
-			writer.onError(err)
+		if !writer.detached {
+			if err := writer.callback(string(chunk)); err != nil {
+				writer.onError(err)
+			}
 		}
 		writer.callbackMu.Unlock()
 	}
 	return len(chunk), nil
+}
+
+// detach mirrors destroying the settled streams: late chunks from lingering
+// descendants must not reach the caller's callbacks after exec resolves.
+func (writer *callbackBuffer) detach() {
+	writer.callbackMu.Lock()
+	writer.detached = true
+	writer.callbackMu.Unlock()
 }
 
 func (writer *callbackBuffer) String() string {
@@ -478,7 +589,7 @@ func mergeExecutionEnvironment(base []string, layers ...map[string]string) []str
 	return result
 }
 
-func (env NodeExecutionEnv) Exec(ctx context.Context, command string, options ExecOptions) (ExecResult, error) {
+func (env *NodeExecutionEnv) Exec(ctx context.Context, command string, options ExecOptions) (ExecResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -496,9 +607,16 @@ func (env NodeExecutionEnv) Exec(ctx context.Context, command string, options Ex
 	if options.CWD != "" {
 		cwd = env.resolve(options.CWD)
 	}
+	if _, statErr := os.Stat(cwd); statErr != nil {
+		return ExecResult{}, &ExecutionError{Code: ExecutionErrorSpawn, Err: fmt.Errorf("Working directory does not exist: %s\nCannot execute bash commands.", cwd)} //nolint:staticcheck // Upstream error text is observable.
+	}
 	cmd := exec.Command(shell, "-c", command)
 	cmd.Dir = cwd
-	cmd.Env = mergeExecutionEnvironment(os.Environ(), env.ShellEnv, options.Env)
+	if options.InheritEnv != nil && !*options.InheritEnv {
+		cmd.Env = mergeExecutionEnvironment(nil, options.Env)
+	} else {
+		cmd.Env = mergeExecutionEnvironment(os.Environ(), env.ShellEnv, options.Env)
+	}
 	configureProcessTree(cmd)
 
 	callbackSignal := make(chan struct{}, 1)
@@ -515,14 +633,85 @@ func (env NodeExecutionEnv) Exec(ctx context.Context, command string, options Ex
 	}
 	stdout := &callbackBuffer{callbackMu: &callbackCallMu, callback: options.OnStdout, onError: recordCallbackError}
 	stderr := &callbackBuffer{callbackMu: &callbackCallMu, callback: options.OnStderr, onError: recordCallbackError}
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
+	stdoutRead, stdoutWrite, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		return ExecResult{}, &ExecutionError{Code: ExecutionErrorSpawn, Err: pipeErr}
+	}
+	stderrRead, stderrWrite, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		_ = stdoutRead.Close()
+		_ = stdoutWrite.Close()
+		return ExecResult{}, &ExecutionError{Code: ExecutionErrorSpawn, Err: pipeErr}
+	}
+	cmd.Stdout = stdoutWrite
+	cmd.Stderr = stderrWrite
 	if err := cmd.Start(); err != nil {
+		_ = stdoutRead.Close()
+		_ = stdoutWrite.Close()
+		_ = stderrRead.Close()
+		_ = stderrWrite.Close()
 		return ExecResult{}, &ExecutionError{Code: ExecutionErrorSpawn, Err: err}
 	}
+	_ = stdoutWrite.Close()
+	_ = stderrWrite.Close()
+	env.trackChild(cmd.Process)
+	defer env.untrackChild(cmd.Process)
 
+	dataSignal := make(chan struct{}, 1)
+	streamsDone := make(chan struct{})
+	var readers sync.WaitGroup
+	readers.Add(2)
+	drainStream := func(pipe *os.File, buffer *callbackBuffer) {
+		defer readers.Done()
+		chunk := make([]byte, 32*1024)
+		for {
+			count, readErr := pipe.Read(chunk)
+			if count > 0 {
+				_, _ = buffer.Write(chunk[:count])
+				select {
+				case dataSignal <- struct{}{}:
+				default:
+				}
+			}
+			if readErr != nil {
+				return
+			}
+		}
+	}
+	go drainStream(stdoutRead, stdout)
+	go drainStream(stderrRead, stderr)
+	go func() {
+		readers.Wait()
+		close(streamsDone)
+	}()
+
+	// Completion is process exit plus stdio close, or a short idle grace when a
+	// detached descendant retains the inherited pipes past the shell's exit.
 	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	go func() {
+		exitErr := cmd.Wait()
+		graceTimer := time.NewTimer(exitStdioGracePeriod)
+		defer graceTimer.Stop()
+		for {
+			select {
+			case <-streamsDone:
+				done <- exitErr
+				return
+			case <-dataSignal:
+				if !graceTimer.Stop() {
+					select {
+					case <-graceTimer.C:
+					default:
+					}
+				}
+				graceTimer.Reset(exitStdioGracePeriod)
+			case <-graceTimer.C:
+				done <- exitErr
+				return
+			}
+		}
+	}()
+
 	var timeout <-chan time.Time
 	var timer *time.Timer
 	if options.TimeoutSeconds != nil {
@@ -547,6 +736,10 @@ func (env NodeExecutionEnv) Exec(ctx context.Context, command string, options Ex
 	if timer != nil {
 		timer.Stop()
 	}
+	stdout.detach()
+	stderr.detach()
+	_ = stdoutRead.Close()
+	_ = stderrRead.Close()
 
 	callbackMu.Lock()
 	streamErr := callbackErr
@@ -575,5 +768,5 @@ func (env NodeExecutionEnv) Exec(ctx context.Context, command string, options Ex
 	return ExecResult{Stdout: stdout.String(), Stderr: stderr.String(), ExitCode: exitCode}, nil
 }
 
-var _ ExecutionEnv = NodeExecutionEnv{}
-var _ ResourceFileSystem = NodeExecutionEnv{}
+var _ ExecutionEnv = (*NodeExecutionEnv)(nil)
+var _ ResourceFileSystem = (*NodeExecutionEnv)(nil)

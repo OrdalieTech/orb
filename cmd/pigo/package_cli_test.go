@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -356,6 +357,40 @@ func TestPackageCLIUpdateTargets(t *testing.T) {
 	code, _, stderr = runPackageCLI(t, []string{"update", "pi-formatter"})
 	if code != 1 || !strings.Contains(stderr, "Did you mean npm:pi-formatter?") {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
+	}
+}
+
+// PI_SKIP_VERSION_CHECK only disables the automatic startup check; an explicit
+// update command still checks for a new release.
+func TestPackageCLIExplicitUpdateBypassesSkipVersionCheck(t *testing.T) {
+	setupPackageCLI(t)
+	t.Setenv("PI_SKIP_VERSION_CHECK", "1")
+	t.Setenv("PI_OFFLINE", "")
+	previousVersion := version
+	version = "0.2.1"
+	previousTransport := http.DefaultClient.Transport
+	requests := 0
+	http.DefaultClient.Transport = versionRoundTrip(func(request *http.Request) (*http.Response, error) {
+		requests++
+		if request.URL.String() != latestReleaseURL {
+			t.Errorf("URL = %q", request.URL)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"tag_name":"v0.2.1"}`))}, nil
+	})
+	t.Cleanup(func() {
+		version = previousVersion
+		http.DefaultClient.Transport = previousTransport
+	})
+
+	code, stdout, stderr := runPackageCLI(t, []string{"update"})
+	if code != 0 || stderr != "" {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if requests != 1 {
+		t.Fatalf("release requests = %d, want the explicit check to bypass PI_SKIP_VERSION_CHECK", requests)
+	}
+	if !strings.HasPrefix(stdout, "pigo v0.2.1 — already the latest version.\n") {
+		t.Fatalf("stdout = %q", stdout)
 	}
 }
 

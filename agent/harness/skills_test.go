@@ -15,7 +15,7 @@ func TestLoadSkillsUsesEnvironmentAndIgnoreRules(t *testing.T) {
 	writeHarnessSkillFile(t, root, "skills/ignored/SKILL.md", "---\nname: ignored\ndescription: Ignored.\n---\nIgnored.")
 	writeHarnessSkillFile(t, root, "skills/root.md", "---\nname: root\ndescription: Root file.\n---\nRoot body.")
 
-	result := LoadSkills(LocalExecutionEnv{CWD: root}, "skills")
+	result := LoadSkills(&LocalExecutionEnv{CWD: root}, "skills")
 	names := make([]string, len(result.Skills))
 	for index, skill := range result.Skills {
 		names[index] = skill.Name
@@ -33,7 +33,7 @@ func TestLoadSkillsReportsInvalidMetadataAndSkipsMissingDescription(t *testing.T
 	writeHarnessSkillFile(t, root, "different/SKILL.md", "---\nname: valid-name\ndescription: Present.\n---\nBody.")
 	writeHarnessSkillFile(t, root, "missing/SKILL.md", "---\nname: missing\n---\nBody.")
 
-	result := LoadSkills(LocalExecutionEnv{CWD: root}, root)
+	result := LoadSkills(&LocalExecutionEnv{CWD: root}, root)
 	if len(result.Skills) != 1 || result.Skills[0].Name != "valid-name" {
 		t.Fatalf("skills = %+v", result.Skills)
 	}
@@ -56,7 +56,7 @@ func TestLoadSourcedSkillsAndInvocation(t *testing.T) {
 	filePath := filepath.Join(root, "inspect", "SKILL.md")
 	writeHarnessSkillFile(t, root, "inspect/SKILL.md", "---\nname: inspect\ndescription: Inspect.\ndisable-model-invocation: true\n---\nRead files.")
 
-	skills, diagnostics := LoadSourcedSkills(LocalExecutionEnv{CWD: root}, []SourcedSkillInput[string]{{Path: root, Source: "project"}})
+	skills, diagnostics := LoadSourcedSkills(&LocalExecutionEnv{CWD: root}, []SourcedSkillInput[string]{{Path: root, Source: "project"}})
 	if len(diagnostics) != 0 || len(skills) != 1 || skills[0].Source != "project" || !skills[0].Skill.DisableModelInvocation {
 		t.Fatalf("sourced result = %+v, %+v", skills, diagnostics)
 	}

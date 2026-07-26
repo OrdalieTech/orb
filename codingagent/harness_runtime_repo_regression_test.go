@@ -18,7 +18,7 @@ func TestRepoBoundHarnessRuntimeSupportsAllReplacementOperations(t *testing.T) {
 	cwd := t.TempDir()
 	env := harness.NodeExecutionEnv{CWD: cwd}
 	t.Cleanup(func() { _ = env.Cleanup() })
-	repo := harness.NewJSONLSessionRepo(env, filepath.Join(cwd, "sessions"))
+	repo := harness.NewJSONLSessionRepo(&env, filepath.Join(cwd, "sessions"))
 	source, err := repo.Create(ctx, harness.SessionCreateOptions{ID: "source", CWD: cwd})
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +80,7 @@ func TestRepoBoundHarnessRuntimeSwitchAcceptsFutureSessionVersion(t *testing.T) 
 	cwd := t.TempDir()
 	env := harness.NodeExecutionEnv{CWD: cwd}
 	t.Cleanup(func() { _ = env.Cleanup() })
-	repo := harness.NewJSONLSessionRepo(env, filepath.Join(cwd, "sessions"))
+	repo := harness.NewJSONLSessionRepo(&env, filepath.Join(cwd, "sessions"))
 	current, err := repo.Create(ctx, harness.SessionCreateOptions{ID: "current", CWD: cwd})
 	if err != nil {
 		t.Fatal(err)

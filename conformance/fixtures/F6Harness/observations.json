@@ -1631,7 +1631,7 @@
     },
     "absolutePathAlreadyAbsolute": {
       "ok": true,
-      "value": "/a/../b"
+      "value": "/b"
     },
     "joinPath": {
       "ok": true,
@@ -1736,7 +1736,7 @@
     "preAborted": {
       "absolutePath": {
         "ok": true,
-        "value": "/a/../b"
+        "value": "/b"
       },
       "joinPath": {
         "ok": true,

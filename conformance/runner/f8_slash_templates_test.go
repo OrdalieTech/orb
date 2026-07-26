@@ -315,7 +315,7 @@ func TestF8ResourceDiscoveryMatchesUpstream(t *testing.T) {
 		t.Fatalf("commands mismatch\nwant: %+v\n got: %+v", fixture.Discovery.Commands, gotCommands)
 	}
 
-	harnessResult := agentharness.LoadSkills(agentharness.LocalExecutionEnv{CWD: fixtureRoot}, skillsDir)
+	harnessResult := agentharness.LoadSkills(&agentharness.LocalExecutionEnv{CWD: fixtureRoot}, skillsDir)
 	var inspect *agentharness.Skill
 	for index := range harnessResult.Skills {
 		if harnessResult.Skills[index].Name == "inspect" {
@@ -333,7 +333,7 @@ func TestF8ResourceDiscoveryMatchesUpstream(t *testing.T) {
 			t.Fatalf("%s invocation mismatch:\n%s", fixtureCase.Name, runner.ByteDiff([]byte(fixtureCase.Expected), []byte(got)))
 		}
 	}
-	harnessPrompts := agentharness.LoadPromptTemplates(agentharness.LocalExecutionEnv{CWD: fixtureRoot}, promptsDir)
+	harnessPrompts := agentharness.LoadPromptTemplates(&agentharness.LocalExecutionEnv{CWD: fixtureRoot}, promptsDir)
 	gotHarnessPrompts := make([]f8HarnessPrompt, len(harnessPrompts.PromptTemplates))
 	for index, template := range harnessPrompts.PromptTemplates {
 		gotHarnessPrompts[index] = f8HarnessPrompt{Name: template.Name, Description: template.Description, Content: template.Content}
@@ -600,7 +600,7 @@ func TestF8HarnessDirectPromptMatchesUpstream(t *testing.T) {
 	fixtureRoot := t.TempDir()
 	writeF8Tree(t, fixtureRoot, fixture.Discovery.Files)
 	result := agentharness.LoadPromptTemplates(
-		agentharness.LocalExecutionEnv{CWD: fixtureRoot},
+		&agentharness.LocalExecutionEnv{CWD: fixtureRoot},
 		filepath.Join(fixtureRoot, "prompts", "empty.md"),
 	)
 	got := f8HarnessResult{Diagnostics: []any{}}

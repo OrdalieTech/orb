@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func requireFileErrorCode(t testing.TB, err error, code FileErrorCode) *FileError {
@@ -251,5 +253,133 @@ func TestNodeExecutionEnvShellParityAndFailures(t *testing.T) {
 		t.Fatal("non-executable shell succeeded")
 	} else {
 		_ = requireExecutionErrorCode(t, err, ExecutionErrorSpawn)
+	}
+}
+
+func TestNodeExecutionEnvExpandsHomeRelativePathsAndFileURLs(t *testing.T) {
+	root := t.TempDir()
+	env := NodeExecutionEnv{CWD: root}
+	ctx := context.Background()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved, resolveErr := env.AbsolutePath(ctx, "~/pi-node-env-test"); resolveErr != nil || resolved != filepath.Join(home, "pi-node-env-test") {
+		t.Fatalf("AbsolutePath(~/pi-node-env-test) = %q, %v", resolved, resolveErr)
+	}
+	if resolved, resolveErr := env.AbsolutePath(ctx, "~"); resolveErr != nil || resolved != filepath.Clean(home) {
+		t.Fatalf("AbsolutePath(~) = %q, %v", resolved, resolveErr)
+	}
+	filePath := filepath.Join(root, "file with spaces.txt")
+	fileURL := (&url.URL{Scheme: "file", Path: filepath.ToSlash(filePath)}).String()
+	if resolved, resolveErr := env.AbsolutePath(ctx, fileURL); resolveErr != nil || resolved != filePath {
+		t.Fatalf("AbsolutePath(%q) = %q, %v", fileURL, resolved, resolveErr)
+	}
+	// Malformed URLs stay ordinary paths instead of failing.
+	malformed := "file://remote-host/target.txt"
+	if resolved, resolveErr := env.AbsolutePath(ctx, malformed); resolveErr != nil || resolved != filepath.Clean(filepath.Join(root, malformed)) {
+		t.Fatalf("AbsolutePath(file URL with host) = %q, %v", resolved, resolveErr)
+	}
+	if resolved, resolveErr := env.AbsolutePath(ctx, "/a/../b"); resolveErr != nil || resolved != filepath.Clean("/b") {
+		t.Fatalf("AbsolutePath(/a/../b) = %q, %v", resolved, resolveErr)
+	}
+}
+
+func TestNodeExecutionEnvCanReplaceInheritedShellEnvironment(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PI_NODE_ENV_INHERITED_TEST", "host")
+	env := NodeExecutionEnv{CWD: root, ShellEnv: map[string]string{"PI_NODE_ENV_CONFIGURED_TEST": "configured"}}
+	inherit := false
+	result, err := env.Exec(context.Background(), `printf '%s:%s:%s' "${PI_NODE_ENV_INHERITED_TEST-}" "${PI_NODE_ENV_CONFIGURED_TEST-}" "${PI_NODE_ENV_EXPLICIT_TEST-}"`, ExecOptions{
+		InheritEnv: &inherit,
+		Env:        map[string]string{"PI_NODE_ENV_EXPLICIT_TEST": "explicit"},
+	})
+	if err != nil || result.Stdout != "::explicit" {
+		t.Fatalf("Exec(inheritEnv=false) = %#v, %v", result, err)
+	}
+}
+
+func TestNodeExecutionEnvReportsMissingWorkingDirectoryBeforeSpawn(t *testing.T) {
+	root := t.TempDir()
+	env := NodeExecutionEnv{CWD: filepath.Join(root, "missing")}
+	_, err := env.Exec(context.Background(), "printf ok", ExecOptions{})
+	if err == nil {
+		t.Fatal("missing working directory succeeded")
+	}
+	typed := requireExecutionErrorCode(t, err, ExecutionErrorSpawn)
+	if !strings.Contains(typed.Error(), "Working directory does not exist") {
+		t.Fatalf("missing working directory error = %q", typed.Error())
+	}
+}
+
+func TestNodeExecutionEnvSettlesAfterExitWhenDescendantRetainsStdio(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the drain-grace command is a POSIX script")
+	}
+	root := t.TempDir()
+	env := NodeExecutionEnv{CWD: root}
+	started := time.Now()
+	type execOutcome struct {
+		result ExecResult
+		err    error
+	}
+	outcome := make(chan execOutcome, 1)
+	go func() {
+		result, err := env.Exec(context.Background(), "sleep 5 & echo child-exiting", ExecOptions{})
+		outcome <- execOutcome{result: result, err: err}
+	}()
+	select {
+	case settled := <-outcome:
+		if settled.err != nil || !strings.Contains(settled.result.Stdout, "child-exiting") {
+			t.Fatalf("Exec = %#v, %v", settled.result, settled.err)
+		}
+		if elapsed := time.Since(started); elapsed >= 4*time.Second {
+			t.Fatalf("exec settled after %s, want the post-exit stdio grace", elapsed)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("exec did not settle after the shell exited")
+	}
+}
+
+func TestNodeExecutionEnvCleanupTerminatesActiveShellProcesses(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the cleanup command is a POSIX script")
+	}
+	root := t.TempDir()
+	env := NodeExecutionEnv{CWD: root}
+	ctx := context.Background()
+	type execOutcome struct {
+		result ExecResult
+		err    error
+	}
+	outcome := make(chan execOutcome, 1)
+	go func() {
+		result, err := env.Exec(ctx, "touch started; sleep 60", ExecOptions{})
+		outcome <- execOutcome{result: result, err: err}
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		exists, existsErr := env.Exists(ctx, "started")
+		if existsErr != nil {
+			t.Fatal(existsErr)
+		}
+		if exists {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("shell process never started")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := env.Cleanup(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case settled := <-outcome:
+		if settled.err != nil {
+			t.Fatalf("Exec after cleanup = %v", settled.err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("cleanup did not terminate the active shell process")
 	}
 }

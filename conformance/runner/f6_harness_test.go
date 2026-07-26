@@ -410,7 +410,7 @@ func TestF6HarnessSessionReposMatchUpstream(t *testing.T) {
 
 	env := agentharness.NodeExecutionEnv{CWD: root}
 	defer func() { _ = env.Cleanup() }()
-	jsonlRepo := agentharness.NewJSONLSessionRepo(env, filepath.Join(root, "repo-sessions"))
+	jsonlRepo := agentharness.NewJSONLSessionRepo(&env, filepath.Join(root, "repo-sessions"))
 	jsonlSource, err := jsonlRepo.Create(ctx, agentharness.SessionCreateOptions{
 		ID: "jsonl-source", CWD: "/tmp/my-project",
 		Metadata: json.RawMessage(`{ "10" : "ten", "2" : "two", "profile" : "reviewer", "nested" : { "z" : 1, "a" : 2 } }`),
