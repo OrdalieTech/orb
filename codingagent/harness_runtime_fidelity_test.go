@@ -119,7 +119,7 @@ func newFidelityHarnessRepoRuntime(
 	ctx := context.Background()
 	env := harness.NodeExecutionEnv{CWD: cwd}
 	t.Cleanup(func() { _ = env.Cleanup() })
-	repo := harness.NewJSONLSessionRepo(env, filepath.Join(cwd, "sessions"))
+	repo := harness.NewJSONLSessionRepo(&env, filepath.Join(cwd, "sessions"))
 	active, err := repo.Create(ctx, harness.SessionCreateOptions{ID: "active", CWD: cwd})
 	if err != nil {
 		t.Fatal(err)

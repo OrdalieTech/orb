@@ -18,7 +18,7 @@ func TestLoadPromptTemplatesThroughEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result := LoadPromptTemplates(LocalExecutionEnv{CWD: root}, "a", "b", "link.md")
+	result := LoadPromptTemplates(&LocalExecutionEnv{CWD: root}, "a", "b", "link.md")
 	want := []PromptTemplate{
 		{Name: "one", Description: "One template", Content: "Hello $1"},
 		{Name: "two", Description: "First line description", Content: "First line description\nBody"},
@@ -32,7 +32,7 @@ func TestLoadPromptTemplatesThroughEnvironment(t *testing.T) {
 func TestLoadSourcedPromptTemplatesAttachesDiagnostics(t *testing.T) {
 	root := t.TempDir()
 	writeHarnessSkillFile(t, root, "broken.md", "---\ndescription: [unterminated\n---\nBody")
-	templates, diagnostics := LoadSourcedPromptTemplates(LocalExecutionEnv{CWD: root}, []SourcedPromptTemplateInput[string]{{Path: "broken.md", Source: "project"}})
+	templates, diagnostics := LoadSourcedPromptTemplates(&LocalExecutionEnv{CWD: root}, []SourcedPromptTemplateInput[string]{{Path: "broken.md", Source: "project"}})
 	if len(templates) != 0 || len(diagnostics) != 1 || diagnostics[0].Source != "project" || diagnostics[0].Code != PromptTemplateDiagnosticParseFailed {
 		t.Fatalf("sourced templates = %+v, diagnostics = %+v", templates, diagnostics)
 	}

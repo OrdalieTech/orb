@@ -46,14 +46,14 @@ type appendFailureFileSystem struct {
 	harness.NodeExecutionEnv
 }
 
-func (appendFailureFileSystem) AppendFile(context.Context, string, []byte) error {
+func (*appendFailureFileSystem) AppendFile(context.Context, string, []byte) error {
 	return errors.New("disk full")
 }
 
 func TestJSONLSessionStorageSetLeafReportsLeafAppendFailure(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	fileSystem := appendFailureFileSystem{NodeExecutionEnv: harness.NodeExecutionEnv{CWD: root}}
+	fileSystem := &appendFailureFileSystem{NodeExecutionEnv: harness.NodeExecutionEnv{CWD: root}}
 	repo := harness.NewJSONLSessionRepo(fileSystem, filepath.Join(root, "sessions"))
 	session, err := repo.Create(ctx, harness.SessionCreateOptions{ID: "leaf-errors", CWD: root})
 	if err != nil {

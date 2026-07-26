@@ -142,8 +142,13 @@ type FileSystem interface {
 }
 
 type ExecOptions struct {
-	CWD            string
-	Env            map[string]string
+	CWD string
+	// Env overrides inherited defaults when the environment is inherited, and
+	// is the entire child environment otherwise.
+	Env map[string]string
+	// InheritEnv controls whether the execution environment's default
+	// variables are inherited. Nil defaults to true.
+	InheritEnv     *bool
 	TimeoutSeconds *float64
 	OnStdout       func(string) error
 	OnStderr       func(string) error

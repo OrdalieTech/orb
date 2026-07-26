@@ -102,7 +102,7 @@ func TestJSONLSessionRepoEncodingListingAndMetadataInheritance(t *testing.T) {
 	root := t.TempDir()
 	env := harness.NodeExecutionEnv{CWD: root}
 	defer func() { _ = env.Cleanup() }()
-	repo := harness.NewJSONLSessionRepo(env, filepath.Join(root, "sessions"))
+	repo := harness.NewJSONLSessionRepo(&env, filepath.Join(root, "sessions"))
 	metadataRaw := json.RawMessage(`{"profile":"reviewer","nested":{"z":1, "a":2}}`)
 	source, err := repo.Create(ctx, harness.SessionCreateOptions{
 		ID: "source", CWD: `/tmp/a:b\c`, Metadata: metadataRaw,
