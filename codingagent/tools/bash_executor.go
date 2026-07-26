@@ -21,8 +21,9 @@ var rpcANSISequence = regexp.MustCompile(`(?:\x1b\][\s\S]*?(?:\x07|\x1b\\|\x{009
 
 // ExecuteBash mirrors the session-level bash executor rather than the bash
 // tool: a non-zero exit is data in RPC mode, while cancellation is reported in
-// the result instead of becoming a tool error.
-func ExecuteBash(ctx context.Context, command, cwd, prefix, shellPath string) (BashResult, error) {
+// the result instead of becoming a tool error. onChunk receives each sanitized
+// output chunk as it streams.
+func ExecuteBash(ctx context.Context, command, cwd, prefix, shellPath string, onChunk func(string)) (BashResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -46,7 +47,11 @@ func ExecuteBash(ctx context.Context, command, cwd, prefix, shellPath string) (B
 			appendMu.Lock()
 			defer appendMu.Unlock()
 			if appendErr == nil {
-				appendErr = output.appendTransformed(len(chunk), sanitizeBashOutput(decoder.Decode(chunk, false)))
+				text := sanitizeBashOutput(decoder.Decode(chunk, false))
+				appendErr = output.appendTransformed(len(chunk), text)
+				if onChunk != nil {
+					onChunk(text)
+				}
 			}
 		},
 	})

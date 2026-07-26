@@ -760,6 +760,9 @@ type Context interface {
 	SessionManager() ReadonlySessionManager
 	ModelRegistry() ModelRegistry
 	Model() *ai.Model
+	// ThinkingLevel is the current thinking level, when provided by the
+	// session runtime; empty otherwise.
+	ThinkingLevel() agent.ThinkingLevel
 	IsIdle() bool
 	IsProjectTrusted() bool
 	Signal() context.Context

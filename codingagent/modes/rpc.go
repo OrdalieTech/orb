@@ -460,7 +460,11 @@ func (mode *rpcMode) handleCommand(session *codingagent.SessionRuntime, command 
 		session.AbortRetry()
 		return success()
 	case "bash":
-		result, err := session.ExecuteBash(mode.ctx, command.Command, command.ExcludeFromContext)
+		var requestID *string
+		if command.HasID {
+			requestID = &command.ID
+		}
+		result, err := session.ExecuteBash(mode.ctx, command.Command, command.ExcludeFromContext, requestID)
 		if err != nil {
 			return failure(err)
 		}

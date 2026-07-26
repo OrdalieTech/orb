@@ -52,6 +52,9 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 	if len(state.baseTools) == 0 {
 		state.baseTools = append([]agent.AgentTool(nil), runtime.agent.State().Tools...)
 	}
+	// Rebuilt base tools (session replacement, cwd change) need the session
+	// environment rebound, mirroring upstream's per-refresh ctx wrapping.
+	runtime.bindBashSessionEnvironment(state.baseTools)
 	if runtimeConfig.AllowedToolNames != nil {
 		state.hasAllowlist = true
 		state.allowed = stringSet(*runtimeConfig.AllowedToolNames)
@@ -1065,6 +1068,7 @@ func (runtime *SessionRuntime) ExecuteUserBash(
 			if onChunk != nil {
 				onChunk(string(data))
 			}
+			runtime.emit(BashExecutionUpdateEvent{Delta: string(data)})
 		},
 		Env: environment,
 	})

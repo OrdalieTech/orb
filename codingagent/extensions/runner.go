@@ -723,6 +723,15 @@ func (contextValue *extensionContext) actions() ContextActions {
 
 func (contextValue *extensionContext) Model() *ai.Model { return contextValue.actions().GetModel() }
 
+func (contextValue *extensionContext) ThinkingLevel() agent.ThinkingLevel {
+	contextValue.runner.assertActive()
+	level, err := contextValue.runner.runtime.actionsSnapshot().GetThinkingLevel()
+	if err != nil {
+		return ""
+	}
+	return level
+}
+
 func (contextValue *extensionContext) IsIdle() bool { return contextValue.actions().IsIdle() }
 
 func (contextValue *extensionContext) IsProjectTrusted() bool {

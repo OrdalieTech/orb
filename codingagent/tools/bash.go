@@ -55,23 +55,54 @@ type BashSpawnContext struct {
 
 type BashSpawnHook func(BashSpawnContext) BashSpawnContext
 
+// BashSessionEnvironment carries the session metadata exposed to bash commands
+// as PI_* environment variables. It mirrors what the upstream bash tool reads
+// from the ExtensionContext in resolveSpawnContext.
+type BashSessionEnvironment struct {
+	SessionID      string
+	SessionFile    string
+	Provider       string
+	Model          string
+	ReasoningLevel string
+}
+
+// BashSessionEnvironmentSource resolves the current session metadata at
+// execution time. A nil result means no session context is available (the
+// upstream `ctx === undefined` case).
+type BashSessionEnvironmentSource func() *BashSessionEnvironment
+
+// BashSessionEnvironmentBinder is the pigo counterpart of upstream tools
+// receiving the ExtensionContext at execute time: built-ins implement
+// agent.AgentTool directly, so the session runtime binds a source instead.
+type BashSessionEnvironmentBinder interface {
+	BindSessionEnvironment(BashSessionEnvironmentSource)
+}
+
 type BashToolOptions struct {
 	Operations    BashOperations
 	CommandPrefix string
 	ShellPath     string
-	SpawnHook     BashSpawnHook
+	// ExposeSessionEnvironment exposes current Pi session metadata as PI_*
+	// environment variables. Default: true.
+	ExposeSessionEnvironment *bool
+	SpawnHook                BashSpawnHook
 }
 
 type bashTool struct {
-	cwd           string
-	operations    BashOperations
-	commandPrefix string
-	spawnHook     BashSpawnHook
+	cwd                      string
+	operations               BashOperations
+	commandPrefix            string
+	exposeSessionEnvironment bool
+	spawnHook                BashSpawnHook
+
+	sessionEnvMu       sync.Mutex
+	sessionEnvironment BashSessionEnvironmentSource
 }
 
 func NewBashTool(cwd string, options *BashToolOptions) agent.AgentTool {
 	operations := NewLocalBashOperations()
 	commandPrefix := ""
+	exposeSessionEnvironment := true
 	var spawnHook BashSpawnHook
 	if options != nil {
 		if options.Operations != nil {
@@ -80,14 +111,34 @@ func NewBashTool(cwd string, options *BashToolOptions) agent.AgentTool {
 			operations = NewLocalBashOperations(LocalBashOperationsOptions{ShellPath: options.ShellPath})
 		}
 		commandPrefix = options.CommandPrefix
+		if options.ExposeSessionEnvironment != nil {
+			exposeSessionEnvironment = *options.ExposeSessionEnvironment
+		}
 		spawnHook = options.SpawnHook
 	}
 	return &bashTool{
-		cwd:           cwd,
-		operations:    operations,
-		commandPrefix: commandPrefix,
-		spawnHook:     spawnHook,
+		cwd:                      cwd,
+		operations:               operations,
+		commandPrefix:            commandPrefix,
+		exposeSessionEnvironment: exposeSessionEnvironment,
+		spawnHook:                spawnHook,
 	}
+}
+
+func (tool *bashTool) BindSessionEnvironment(source BashSessionEnvironmentSource) {
+	tool.sessionEnvMu.Lock()
+	tool.sessionEnvironment = source
+	tool.sessionEnvMu.Unlock()
+}
+
+func (tool *bashTool) sessionEnvironmentInfo() *BashSessionEnvironment {
+	tool.sessionEnvMu.Lock()
+	source := tool.sessionEnvironment
+	tool.sessionEnvMu.Unlock()
+	if source == nil {
+		return nil
+	}
+	return source()
 }
 
 func (tool *bashTool) Spec() agent.AgentToolSpec {
@@ -119,6 +170,29 @@ func (tool *bashTool) Execute(
 	environment, err := GetShellEnv()
 	if err != nil {
 		return agent.AgentToolResult{}, err
+	}
+	// Ambient PI_* variables are always scrubbed so children never inherit
+	// stale session metadata (upstream resolveSpawnContext).
+	delete(environment, "PI_SESSION_ID")
+	delete(environment, "PI_SESSION_FILE")
+	delete(environment, "PI_PROVIDER")
+	delete(environment, "PI_MODEL")
+	delete(environment, "PI_REASONING_LEVEL")
+	if tool.exposeSessionEnvironment {
+		if info := tool.sessionEnvironmentInfo(); info != nil {
+			environment["PI_SESSION_ID"] = info.SessionID
+			if info.SessionFile != "" {
+				environment["PI_SESSION_FILE"] = info.SessionFile
+			}
+			// Provider and model are set together, gated on model presence.
+			if info.Provider != "" || info.Model != "" {
+				environment["PI_PROVIDER"] = info.Provider
+				environment["PI_MODEL"] = info.Model
+			}
+			if info.ReasoningLevel != "" {
+				environment["PI_REASONING_LEVEL"] = info.ReasoningLevel
+			}
+		}
 	}
 	spawnContext := BashSpawnContext{Command: command, Cwd: tool.cwd, Env: environment}
 	if tool.spawnHook != nil {

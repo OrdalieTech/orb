@@ -17,6 +17,7 @@ import (
 	"github.com/OrdalieTech/pigo/codingagent/config"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
 	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/pigo/codingagent/tools"
 	"github.com/OrdalieTech/pigo/internal/jsonwire"
 )
 
@@ -261,11 +262,41 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 	runtimeConfig.SlashResolver = runtime.slashResolver
 	runtime.agent.SetSteeringMode(agent.QueueMode(runtime.settings.GetSteeringMode()))
 	runtime.agent.SetFollowUpMode(agent.QueueMode(runtime.settings.GetFollowUpMode()))
+	sessionEnvTools := runtimeConfig.BaseTools
+	if len(sessionEnvTools) == 0 {
+		sessionEnvTools = runtime.agent.State().Tools
+	}
+	runtime.bindBashSessionEnvironment(sessionEnvTools)
 	if runtimeConfig.ExtensionRegistry != nil {
 		runtime.bindExtensions(runtimeConfig)
 	}
 	runtime.unsubscribeAgent = runtime.agent.Subscribe(runtime.handleAgentEvent)
 	return runtime, nil
+}
+
+// bindBashSessionEnvironment gives built-in bash tools access to the current
+// session metadata for PI_* variables. It is the pigo counterpart of upstream
+// wrapping built-in tool definitions with the extension runner's ctx factory.
+func (runtime *SessionRuntime) bindBashSessionEnvironment(baseTools []agent.AgentTool) {
+	for _, tool := range baseTools {
+		binder, ok := tool.(tools.BashSessionEnvironmentBinder)
+		if !ok {
+			continue
+		}
+		binder.BindSessionEnvironment(func() *tools.BashSessionEnvironment {
+			state := runtime.agent.State()
+			info := &tools.BashSessionEnvironment{
+				SessionID:      runtime.manager.GetSessionID(),
+				SessionFile:    runtime.manager.GetSessionFile(),
+				ReasoningLevel: string(state.ThinkingLevel),
+			}
+			if state.Model != nil {
+				info.Provider = string(state.Model.Provider)
+				info.Model = state.Model.ID
+			}
+			return info
+		})
+	}
 }
 
 // ResourceLoader returns the resource instance that owns this session's
