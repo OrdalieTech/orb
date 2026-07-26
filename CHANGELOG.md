@@ -8,6 +8,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Added
 
+- 0.82.1 port, first waves: `ANTHROPIC_AUTH_TOKEN` resolves to bearer headers ahead of the other anthropic credentials; `pigo login openrouter` (PKCE) and `pigo login kimi-coding` (device flow) mint credentials; bash commands see `PI_SESSION_ID`, `PI_SESSION_FILE`, `PI_PROVIDER`, `PI_MODEL` and `PI_REASONING_LEVEL`, and RPC clients receive streamed `bash_execution_update` events; `/models` lists configured-but-missing ids as `[unavailable]` and picks up `models.json` edits on open; custom renderers receive the live `outputPad`; the external editor works out of its own temp directory with the resolved `$VISUAL`/`$EDITOR`/nano chain; DNS failures retry; scroll borders survive narrow terminals; harness paths expand `~` and `file://` and children are reaped on cleanup.
+
 - Embedders can parse and marshal individual harness session-tree entries without constructing a JSONL file.
 - A loose extension that imports the pi SDK without declaring it — the shape upstream permits because pi bundles its SDK — now installs the pinned `@earendil-works/pi-coding-agent` into pigo's own npm root automatically on the launch that first needs it, from the npm registry, never from an installed pi. One line announces the install; `PIGO_PI_SDK_ROOT`, `PI_OFFLINE` and a missing npm all skip it, leaving the existing guidance message. Extensions that declare their dependencies are untouched.
 - `PIGO_NODE` names the Node executable to use, for installs no search reaches; `PIGO_NODE=none` disables JavaScript extensions.
