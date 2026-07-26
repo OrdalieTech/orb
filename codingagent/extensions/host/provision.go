@@ -36,8 +36,10 @@ var sdkImportPattern = regexp.MustCompile(`['"]@(?:earendil-works|mariozechner)/
 var runSDKInstall = func(ctx context.Context, npmPath, installRoot, spec string) error {
 	ctx, cancel := context.WithTimeout(ctx, sdkInstallTimeout)
 	defer cancel()
+	// --legacy-peer-deps: installed extension packages carry conflicting SDK
+	// peer ranges; this install pins one exact version regardless.
 	command := exec.CommandContext(ctx, npmPath,
-		"install", "--ignore-scripts", "--no-fund", "--no-audit", "--prefix", installRoot, spec)
+		"install", "--ignore-scripts", "--no-fund", "--no-audit", "--legacy-peer-deps", "--prefix", installRoot, spec)
 	command.Dir = installRoot
 	output, err := command.CombinedOutput()
 	if err != nil {
@@ -103,13 +105,11 @@ func (manager *Manager) ensureSDKProvisioned(ctx context.Context, runtime Runtim
 	}
 }
 
-// entryNeedsSDK reports whether a loose extension file imports the SDK with no
-// resolvable copy in its own tree. Anything under node_modules resolves its
-// declared dependencies and is never the trigger.
+// entryNeedsSDK reports whether an extension entry imports the SDK with no
+// resolvable copy anywhere up its tree. Package-installed extensions commonly
+// declare the SDK as a peerDependency - satisfied upstream by pi bundling it -
+// which npm does not materialize, so resolvability is the only criterion.
 func entryNeedsSDK(path string) bool {
-	if strings.Contains(path, "node_modules") {
-		return false
-	}
 	source, err := os.ReadFile(path)
 	if err != nil || !sdkImportPattern.Match(source) {
 		return false

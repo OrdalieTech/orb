@@ -29,10 +29,18 @@ func TestEntryNeedsSDKOnlyForBareLooseImports(t *testing.T) {
 		t.Error("no SDK import, nothing to provision")
 	}
 
+	// A packaged extension with an unmaterialized SDK peerDependency needs
+	// provisioning like any loose file...
 	packaged := filepath.Join(root, "npm", "node_modules", "some-ext", "index.js")
 	writeFile(t, packaged, `import "@earendil-works/pi-ai";`, 0o644)
+	if !entryNeedsSDK(packaged) {
+		t.Error("a packaged extension with no resolvable SDK needs provisioning")
+	}
+	// ...and one whose tree holds the SDK does not.
+	writeFile(t, filepath.Join(root, "npm", "node_modules", "@earendil-works", "pi-coding-agent", "package.json"),
+		`{"name":"@earendil-works/pi-coding-agent"}`, 0o644)
 	if entryNeedsSDK(packaged) {
-		t.Error("package-installed extensions resolve their declared dependencies")
+		t.Error("a resolvable SDK beside the package wins over provisioning")
 	}
 
 	// A loose file whose own tree already holds the SDK resolves without help.
