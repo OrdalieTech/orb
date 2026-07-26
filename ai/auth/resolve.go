@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -24,7 +25,19 @@ type Error struct {
 	Cause   error
 }
 
-func (authError *Error) Error() string { return authError.Message }
+// Error keeps the underlying cause in the surfaced message (upstream
+// 4cf0a729): callers surface the message only, so a bare wrapper such as
+// "OAuth refresh failed for openai-codex" would hide the provider response.
+func (authError *Error) Error() string {
+	if authError.Cause == nil {
+		return authError.Message
+	}
+	detail := strings.TrimSpace(authError.Cause.Error())
+	if detail == "" || strings.Contains(authError.Message, detail) {
+		return authError.Message
+	}
+	return authError.Message + ": " + detail
+}
 func (authError *Error) Unwrap() error { return authError.Cause }
 
 type APIKeyAuth interface {

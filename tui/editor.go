@@ -424,6 +424,21 @@ func (editor *Editor) validPasteIDs() map[int]bool {
 	return ids
 }
 
+// createScrollBorder mirrors upstream editor.ts createScrollBorder: on narrow
+// terminals the indicator is sliced by column with a width-bounded ellipsis
+// instead of overflowing (upstream #6962).
+func createScrollBorder(direction string, hiddenLineCount, width int) string {
+	availableWidth := max(0, width)
+	indicator := fmt.Sprintf("─── %s %d more ", direction, hiddenLineCount)
+	remaining := availableWidth - VisibleWidth(indicator)
+	if remaining >= 0 {
+		return indicator + strings.Repeat("─", remaining)
+	}
+	ellipsis := "..."[:min(3, availableWidth)]
+	indicatorWidth := availableWidth - VisibleWidth(ellipsis)
+	return SliceByColumn(indicator, 0, indicatorWidth, true) + ellipsis
+}
+
 func (editor *Editor) segment(text, mode string) []segment {
 	base := graphemeSegments
 	if mode == segmentModeWord {
@@ -623,13 +638,7 @@ func (editor *Editor) Render(width int) []string {
 	rightPadding := leftPadding
 
 	if editor.scrollOffset > 0 {
-		indicator := fmt.Sprintf("─── ↑ %d more ", editor.scrollOffset)
-		remaining := width - VisibleWidth(indicator)
-		if remaining >= 0 {
-			result = append(result, editor.borderColor(indicator+strings.Repeat("─", remaining)))
-		} else {
-			result = append(result, editor.borderColor(TruncateToWidth(indicator, width, "...", false)))
-		}
+		result = append(result, editor.borderColor(createScrollBorder("↑", editor.scrollOffset, width)))
 	} else {
 		result = append(result, strings.Repeat(horizontal, width))
 	}
@@ -677,9 +686,7 @@ func (editor *Editor) Render(width int) []string {
 
 	linesBelow := len(layoutLines) - (editor.scrollOffset + len(visibleLines))
 	if linesBelow > 0 {
-		indicator := fmt.Sprintf("─── ↓ %d more ", linesBelow)
-		remaining := width - VisibleWidth(indicator)
-		result = append(result, editor.borderColor(indicator+strings.Repeat("─", max(0, remaining))))
+		result = append(result, editor.borderColor(createScrollBorder("↓", linesBelow, width)))
 	} else {
 		result = append(result, strings.Repeat(horizontal, width))
 	}
