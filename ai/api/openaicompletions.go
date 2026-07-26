@@ -40,6 +40,7 @@ type resolvedOpenAICompletionsCompat struct {
 	openRouterRouting                           *ai.OpenRouterRouting
 	vercelGatewayRouting                        *ai.VercelGatewayRouting
 	zaiToolStream                               bool
+	supportsOpenAIGrammarTools                  bool
 	supportsStrictMode                          bool
 	cacheControlFormat                          *ai.CacheControlFormat
 	sendSessionAffinityHeaders                  bool
@@ -52,23 +53,25 @@ type completionsToolState struct {
 	block        *ai.ToolCall
 	contentIndex int
 	partialArgs  string
+	customInput  *responsesCustomInput
 	argsBuffer   streamBuffer
 	streamIndex  *int
 }
 
 type completionsStreamState struct {
-	output                  *ai.AssistantMessage
-	text                    *ai.TextContent
-	textIndex               int
-	thinking                *ai.ThinkingContent
-	thinkingIndex           int
-	textBuffer              streamBuffer
-	thinkingBuffer          streamBuffer
-	toolsByIndex            map[int]*completionsToolState
-	toolsByID               map[string]*completionsToolState
-	toolStates              map[*ai.ToolCall]*completionsToolState
-	pendingReasoningDetails map[string]string
-	hasFinishReason         bool
+	output                     *ai.AssistantMessage
+	text                       *ai.TextContent
+	textIndex                  int
+	thinking                   *ai.ThinkingContent
+	thinkingIndex              int
+	textBuffer                 streamBuffer
+	thinkingBuffer             streamBuffer
+	toolsByIndex               map[int]*completionsToolState
+	toolsByID                  map[string]*completionsToolState
+	toolStates                 map[*ai.ToolCall]*completionsToolState
+	pendingReasoningDetails    map[string]string
+	grammarToolInputProperties map[string]string
+	hasFinishReason            bool
 }
 
 // StreamOpenAICompletions adapts the provider-neutral request to OpenAI Chat
@@ -145,6 +148,13 @@ func StreamOpenAICompletionsWithOptions(
 			yield(completionsStreamFailure(ctx, output, err), nil)
 			return
 		}
+		grammarToolInputProperties, err := createGrammarToolInputProperties(
+			requestContext.Tools, compat.supportsOpenAIGrammarTools,
+		)
+		if err != nil {
+			yield(completionsStreamFailure(ctx, output, err), nil)
+			return
+		}
 		retention := resolveCacheRetention(&options.StreamOptions)
 		payload, err := buildOpenAICompletionsPayload(model, requestContext, options, compat, retention)
 		if err != nil {
@@ -182,6 +192,7 @@ func StreamOpenAICompletionsWithOptions(
 		}
 
 		state := newCompletionsStreamState(output)
+		state.grammarToolInputProperties = grammarToolInputProperties
 		err = readSSE(response.Body, func(raw json.RawMessage) error {
 			return state.consumeChunk(model, raw, func(event ai.AssistantMessageEvent) error {
 				if !yield(event, nil) {
@@ -362,6 +373,9 @@ func openAICompletionsObjectKeys(object map[string]any, root bool) []string {
 		if _, hasFunction := object["function"]; hasFunction {
 			return orderedOpenAICompletionsKeys(object, []string{"id", "type", "function"})
 		}
+		if _, hasCustom := object["custom"]; hasCustom {
+			return orderedOpenAICompletionsKeys(object, []string{"id", "type", "custom"})
+		}
 	}
 	if kind, ok := object["type"].(string); ok {
 		switch kind {
@@ -371,6 +385,10 @@ func openAICompletionsObjectKeys(object map[string]any, root bool) []string {
 			return orderedOpenAICompletionsKeys(object, []string{"type", "image_url"})
 		case "function":
 			return orderedOpenAICompletionsKeys(object, []string{"type", "function", "cache_control"})
+		case "custom":
+			return orderedOpenAICompletionsKeys(object, []string{"type", "custom", "cache_control"})
+		case "grammar":
+			return orderedOpenAICompletionsKeys(object, []string{"type", "grammar"})
 		case "ephemeral":
 			return orderedOpenAICompletionsKeys(object, []string{"type", "ttl"})
 		case "enabled", "disabled":
@@ -380,11 +398,22 @@ func openAICompletionsObjectKeys(object map[string]any, root bool) []string {
 		}
 	}
 	if _, hasName := object["name"]; hasName {
+		if _, hasInput := object["input"]; hasInput {
+			return orderedOpenAICompletionsKeys(object, []string{"name", "input"})
+		}
+		if _, hasFormat := object["format"]; hasFormat {
+			return orderedOpenAICompletionsKeys(object, []string{"name", "description", "format"})
+		}
 		if _, hasArguments := object["arguments"]; hasArguments {
 			return orderedOpenAICompletionsKeys(object, []string{"name", "arguments"})
 		}
 		if _, hasParameters := object["parameters"]; hasParameters {
 			return orderedOpenAICompletionsKeys(object, []string{"name", "description", "parameters", "strict"})
+		}
+	}
+	if _, hasSyntax := object["syntax"]; hasSyntax {
+		if _, hasDefinition := object["definition"]; hasDefinition {
+			return orderedOpenAICompletionsKeys(object, []string{"syntax", "definition"})
 		}
 	}
 	return orderedOpenAICompletionsKeys(object, nil)
@@ -456,6 +485,9 @@ func resolveOpenAICompletionsCompat(model *ai.Model) (resolvedOpenAICompletionsC
 	resolved.vercelGatewayRouting = overrides.VercelGatewayRouting
 	if overrides.ZAIToolStream != nil {
 		resolved.zaiToolStream = *overrides.ZAIToolStream
+	}
+	if overrides.SupportsOpenAIGrammarTools != nil {
+		resolved.supportsOpenAIGrammarTools = *overrides.SupportsOpenAIGrammarTools
 	}
 	if overrides.SupportsStrictMode != nil {
 		resolved.supportsStrictMode = *overrides.SupportsStrictMode
@@ -601,6 +633,7 @@ func detectOpenAICompletionsCompat(model *ai.Model) resolvedOpenAICompletionsCom
 		maxTokensField:                              maxTokensField,
 		thinkingFormat:                              thinkingFormat,
 		chatTemplateKwargs:                          map[string]any{},
+		supportsOpenAIGrammarTools:                  false,
 		supportsStrictMode:                          !isMoonshot && !isTogether && !isCloudflareGateway && !isNVIDIA,
 		cacheControlFormat:                          cacheControl,
 		sessionAffinityFormat:                       sessionFormat,
@@ -649,7 +682,13 @@ func buildOpenAICompletionsPayload(
 	compat resolvedOpenAICompletionsCompat,
 	retention ai.CacheRetention,
 ) (map[string]any, error) {
-	messages, err := convertOpenAICompletionsMessages(model, requestContext, compat)
+	grammarToolInputProperties, err := createGrammarToolInputProperties(
+		requestContext.Tools, compat.supportsOpenAIGrammarTools,
+	)
+	if err != nil {
+		return nil, err
+	}
+	messages, err := convertOpenAICompletionsMessages(model, requestContext, compat, grammarToolInputProperties)
 	if err != nil {
 		return nil, err
 	}
@@ -684,7 +723,10 @@ func buildOpenAICompletionsPayload(
 	activeTools := activeOpenAICompletionsTools(requestContext.Tools, deferredNames)
 	var tools []any
 	if len(activeTools) > 0 {
-		tools = convertOpenAICompletionsTools(activeTools, compat)
+		tools, err = convertOpenAICompletionsTools(activeTools, compat)
+		if err != nil {
+			return nil, err
+		}
 		payload["tools"] = tools
 		if compat.zaiToolStream {
 			payload["tool_stream"] = true
@@ -784,6 +826,7 @@ func convertOpenAICompletionsMessages(
 	model *ai.Model,
 	requestContext ai.Context,
 	compat resolvedOpenAICompletionsCompat,
+	grammarToolInputProperties map[string]string,
 ) ([]any, error) {
 	transformed := transformMessages(requestContext.Messages, model, normalizeOpenAICompletionsToolCallID)
 	messages := make([]any, 0, len(transformed)+1)
@@ -809,7 +852,9 @@ func convertOpenAICompletionsMessages(
 			messages = append(messages, converted)
 			lastRole = "user"
 		case *ai.AssistantMessage:
-			converted, include, err := convertOpenAICompletionsAssistantMessage(model, message, compat)
+			converted, include, err := convertOpenAICompletionsAssistantMessageWithGrammar(
+				model, message, compat, grammarToolInputProperties,
+			)
 			if err != nil {
 				return nil, err
 			}
@@ -856,9 +901,13 @@ func convertOpenAICompletionsMessages(
 			if len(deferredNames) > 0 {
 				deferredTools := toolsByName(requestContext.Tools, deferredNames)
 				if len(deferredTools) > 0 {
+					convertedTools, err := convertOpenAICompletionsTools(deferredTools, compat)
+					if err != nil {
+						return nil, err
+					}
 					messages = append(messages, map[string]any{
 						"role":  "system",
-						"tools": convertOpenAICompletionsTools(deferredTools, compat),
+						"tools": convertedTools,
 					})
 				}
 			}
@@ -896,6 +945,15 @@ func convertOpenAICompletionsAssistantMessage(
 	model *ai.Model,
 	message *ai.AssistantMessage,
 	compat resolvedOpenAICompletionsCompat,
+) (map[string]any, bool, error) {
+	return convertOpenAICompletionsAssistantMessageWithGrammar(model, message, compat, nil)
+}
+
+func convertOpenAICompletionsAssistantMessageWithGrammar(
+	model *ai.Model,
+	message *ai.AssistantMessage,
+	compat resolvedOpenAICompletionsCompat,
+	grammarToolInputProperties map[string]string,
 ) (map[string]any, bool, error) {
 	contentValue := any(nil)
 	if compat.requiresAssistantAfterToolResult {
@@ -957,15 +1015,26 @@ func convertOpenAICompletionsAssistantMessage(
 		convertedCalls := make([]any, 0, len(toolCalls))
 		reasoningDetails := make([]any, 0)
 		for _, call := range toolCalls {
-			encoded, err := ai.MarshalToolCallArguments(call)
-			if err != nil {
-				return nil, false, fmt.Errorf("marshal tool call %s arguments: %w", call.ID, err)
+			if inputProperty, custom := grammarToolInputProperties[call.Name]; custom {
+				input, err := getGrammarToolInput(call.Name, call.Arguments, inputProperty)
+				if err != nil {
+					return nil, false, err
+				}
+				convertedCalls = append(convertedCalls, map[string]any{
+					"id": call.ID, "type": "custom",
+					"custom": map[string]any{"name": call.Name, "input": sanitizeText(input)},
+				})
+			} else {
+				encoded, err := ai.MarshalToolCallArguments(call)
+				if err != nil {
+					return nil, false, fmt.Errorf("marshal tool call %s arguments: %w", call.ID, err)
+				}
+				convertedCalls = append(convertedCalls, map[string]any{
+					"id":       call.ID,
+					"type":     "function",
+					"function": map[string]any{"name": call.Name, "arguments": string(encoded)},
+				})
 			}
-			convertedCalls = append(convertedCalls, map[string]any{
-				"id":       call.ID,
-				"type":     "function",
-				"function": map[string]any{"name": call.Name, "arguments": string(encoded)},
-			})
 			if call.ThoughtSignature != nil {
 				var detail any
 				if json.Unmarshal([]byte(*call.ThoughtSignature), &detail) == nil && jsTruthy(detail) {
@@ -1093,20 +1162,45 @@ func toolsByName(tools *[]ai.Tool, names []string) []ai.Tool {
 	return result
 }
 
-func convertOpenAICompletionsTools(tools []ai.Tool, compat resolvedOpenAICompletionsCompat) []any {
+func convertOpenAICompletionsTools(tools []ai.Tool, compat resolvedOpenAICompletionsCompat) ([]any, error) {
 	result := make([]any, 0, len(tools))
 	for _, tool := range tools {
+		grammar, err := resolveGrammarConstrainedSampling(tool, compat.supportsOpenAIGrammarTools)
+		if err != nil {
+			return nil, err
+		}
+		if grammar != nil {
+			result = append(result, map[string]any{
+				"type": "custom",
+				"custom": map[string]any{
+					"name": tool.Name, "description": tool.Description,
+					"format": map[string]any{
+						"type":    "grammar",
+						"grammar": map[string]any{"syntax": grammar.format, "definition": grammar.definition},
+					},
+				},
+			})
+			continue
+		}
+		strict, err := resolveJSONSchemaStrictSampling(tool, compat.supportsStrictMode)
+		if err != nil {
+			return nil, err
+		}
 		function := map[string]any{
 			"name":        tool.Name,
 			"description": tool.Description,
 			"parameters":  tool.Parameters,
 		}
 		if compat.supportsStrictMode {
-			function["strict"] = false
+			if strict == nil {
+				function["strict"] = false
+			} else {
+				function["strict"] = *strict
+			}
 		}
 		result = append(result, map[string]any{"type": "function", "function": function})
 	}
-	return result
+	return result, nil
 }
 
 func hasOpenAICompletionsToolHistory(messages ai.MessageList) bool {
@@ -1483,6 +1577,13 @@ func (state *completionsStreamState) consumeToolCall(raw json.RawMessage, emit f
 	_ = json.Unmarshal(delta["function"], &function)
 	name, _ := rawJSONString(function["name"])
 	arguments, _ := rawJSONString(function["arguments"])
+	var custom map[string]json.RawMessage
+	hasCustom := json.Unmarshal(delta["custom"], &custom) == nil && custom != nil
+	customName, _ := rawJSONString(custom["name"])
+	customInput, _ := rawJSONString(custom["input"])
+	if name == "" {
+		name = customName
+	}
 
 	var stateForCall *completionsToolState
 	if hasIndex {
@@ -1492,9 +1593,26 @@ func (state *completionsStreamState) consumeToolCall(raw json.RawMessage, emit f
 		stateForCall = state.toolsByID[id]
 	}
 	if stateForCall == nil {
-		partialArgs := ""
-		call := &ai.ToolCall{ID: id, Name: name, Arguments: map[string]any{}, PartialArgs: &partialArgs}
+		inputProperty := ""
+		if hasCustom {
+			inputProperty = state.grammarToolInputProperties[name]
+			if inputProperty == "" {
+				inputProperty = "input"
+			}
+		}
+		argumentsValue := map[string]any{}
+		var partialArgs *string
+		var customState *responsesCustomInput
+		if inputProperty != "" {
+			argumentsValue[inputProperty] = ""
+			customState = &responsesCustomInput{property: inputProperty}
+		} else {
+			value := ""
+			partialArgs = &value
+		}
+		call := &ai.ToolCall{ID: id, Name: name, Arguments: argumentsValue, PartialArgs: partialArgs}
 		stateForCall = &completionsToolState{block: call, contentIndex: len(state.output.Content)}
+		stateForCall.customInput = customState
 		if hasIndex {
 			value := streamIndex
 			stateForCall.streamIndex = &value
@@ -1527,12 +1645,37 @@ func (state *completionsStreamState) consumeToolCall(raw json.RawMessage, emit f
 	if stateForCall.block.Name == "" && name != "" {
 		stateForCall.block.Name = name
 	}
+	if hasCustom && stateForCall.customInput == nil {
+		inputProperty := state.grammarToolInputProperties[stateForCall.block.Name]
+		if inputProperty == "" {
+			inputProperty = "input"
+		}
+		stateForCall.block.Arguments = map[string]any{inputProperty: ""}
+		stateForCall.block.PartialArgs = nil
+		stateForCall.customInput = &responsesCustomInput{property: inputProperty}
+		stateForCall.partialArgs = ""
+	}
 	if arguments != "" {
 		stateForCall.partialArgs = stateForCall.argsBuffer.append(stateForCall.partialArgs, arguments)
 		partialArgs := stateForCall.partialArgs
 		stateForCall.block.PartialArgs = &partialArgs
 		if stateForCall.argsBuffer.shouldParse() {
 			stateForCall.block.Arguments = parseOpenAICompletionsToolArguments(stateForCall.partialArgs)
+		}
+	} else if customInput != "" && stateForCall.customInput != nil {
+		current, _ := stateForCall.block.Arguments[stateForCall.customInput.property].(string)
+		delta, err := appendGrammarToolInputJSONDelta(
+			&stateForCall.customInput.buffer,
+			stateForCall.customInput.property,
+			current+customInput,
+			false,
+		)
+		if err != nil {
+			return err
+		}
+		stateForCall.block.Arguments = map[string]any{stateForCall.customInput.property: current + customInput}
+		if delta != nil {
+			arguments = *delta
 		}
 	}
 	return emit(ai.ToolCallDeltaEvent{ContentIndex: stateForCall.contentIndex, Delta: arguments, Partial: state.output})
@@ -1572,13 +1715,27 @@ func (state *completionsStreamState) applyPendingReasoningDetail(tool *completio
 func (state *completionsStreamState) finishBlocks(emit func(ai.AssistantMessageEvent) error) error {
 	// Upstream queues the complete end-event batch before its async consumer
 	// resumes, so even earlier end events observe finalized tool-call blocks.
+	finalCustomDeltas := make(map[*ai.ToolCall]string)
 	for _, rawBlock := range state.output.Content {
 		block, ok := rawBlock.(*ai.ToolCall)
 		if !ok {
 			continue
 		}
 		if tool := state.toolStates[block]; tool != nil {
-			if err := ai.SetToolCallArgumentsJSON(block, []byte(tool.partialArgs)); err != nil {
+			if tool.customInput != nil {
+				current, _ := block.Arguments[tool.customInput.property].(string)
+				delta, err := appendGrammarToolInputJSONDelta(
+					&tool.customInput.buffer, tool.customInput.property, current, true,
+				)
+				if err != nil {
+					return err
+				}
+				block.Arguments = map[string]any{tool.customInput.property: current}
+				if delta != nil {
+					finalCustomDeltas[block] = *delta
+				}
+				tool.customInput = nil
+			} else if err := ai.SetToolCallArgumentsJSON(block, []byte(tool.partialArgs)); err != nil {
 				block.Arguments = parseOpenAICompletionsToolArguments(tool.partialArgs)
 			}
 		}
@@ -1596,6 +1753,11 @@ func (state *completionsStreamState) finishBlocks(emit func(ai.AssistantMessageE
 				return err
 			}
 		case *ai.ToolCall:
+			if delta, ok := finalCustomDeltas[block]; ok {
+				if err := emit(ai.ToolCallDeltaEvent{ContentIndex: index, Delta: delta, Partial: state.output}); err != nil {
+					return err
+				}
+			}
 			if err := emit(ai.ToolCallEndEvent{ContentIndex: index, ToolCall: block, Partial: state.output}); err != nil {
 				return err
 			}
@@ -1605,9 +1767,10 @@ func (state *completionsStreamState) finishBlocks(emit func(ai.AssistantMessageE
 }
 
 func (state *completionsStreamState) clearScratch() {
-	for block := range state.toolStates {
+	for block, tool := range state.toolStates {
 		block.PartialArgs = nil
 		block.StreamIndex = nil
+		tool.customInput = nil
 	}
 }
 

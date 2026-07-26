@@ -59,6 +59,21 @@ func TestMistralReplayWireShape(t *testing.T) {
 	}
 }
 
+func TestMistralConstrainedSamplingWire(t *testing.T) {
+	model := &ai.Model{ID: "m", API: ai.APIMistralConversations, Provider: "mistral"}
+	tools := []ai.Tool{
+		constrainedSamplingTestTool("plain", nil),
+		constrainedSamplingTestTool("strict", strictSamplingTestConfig(ai.ConstrainedSamplingPrefer)),
+	}
+	payload, err := buildMistralPayload(model, ai.Context{Tools: &tools}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.Tools[0].Function.Strict || !payload.Tools[1].Function.Strict {
+		t.Fatalf("Mistral strict tools = %#v", payload.Tools)
+	}
+}
+
 func TestMistralSimpleReasoningSelection(t *testing.T) {
 	previousClient := mistralHTTPClient
 	mistralHTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {

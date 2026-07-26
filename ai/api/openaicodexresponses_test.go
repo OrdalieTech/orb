@@ -98,6 +98,31 @@ func TestOpenAICodexRequestShapeAndDoneEvent(t *testing.T) {
 	}
 }
 
+func TestOpenAICodexConstrainedSamplingWire(t *testing.T) {
+	model := codexTestModel()
+	model.Compat = json.RawMessage(`{"supportsOpenAIGrammarTools":true}`)
+	tools := []ai.Tool{
+		constrainedSamplingTestTool("plain", nil),
+		constrainedSamplingTestTool("strict", strictSamplingTestConfig(ai.ConstrainedSamplingPrefer)),
+		constrainedSamplingTestTool("grammar", grammarSamplingTestConfig()),
+	}
+	payload, err := buildOpenAICodexResponsesPayload(&model, ai.Context{Tools: &tools}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := ai.Marshal(payload.Tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(wire), `"name":"plain","description":"emit text","parameters":`) ||
+		!strings.Contains(string(wire), `"strict":null`) ||
+		!strings.Contains(string(wire), `"name":"strict"`) ||
+		!strings.Contains(string(wire), `"strict":true`) ||
+		!strings.Contains(string(wire), `"type":"custom"`) {
+		t.Fatalf("Codex constrained tools = %s", wire)
+	}
+}
+
 func TestOpenAICodexStreamErrorAndInvalidToken(t *testing.T) {
 	model := codexTestModel()
 	token := codexAPITestToken(t, "account")

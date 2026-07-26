@@ -23,6 +23,21 @@ func TestConvertGoogleToolsPreservesStringEnumSchema(t *testing.T) {
 	}
 }
 
+func TestGoogleConstrainedSamplingMode(t *testing.T) {
+	tool := constrainedSamplingTestTool("strict", strictSamplingTestConfig(ai.ConstrainedSamplingPrefer))
+	mode, set, err := resolveGoogleFunctionCallingMode([]ai.Tool{tool}, "", supportsGoogleStrictToolSampling("gemini-3-pro"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !set || mode != "VALIDATED" {
+		t.Fatalf("Gemini 3 mode = %q, set=%t", mode, set)
+	}
+	required := constrainedSamplingTestTool("required", strictSamplingTestConfig(ai.ConstrainedSamplingRequire))
+	if _, _, err := resolveGoogleFunctionCallingMode([]ai.Tool{required}, GoogleToolChoiceAny, false); err == nil {
+		t.Fatal("unsupported required strict sampling was accepted before tool-choice override")
+	}
+}
+
 // TestMapGoogleStopReasonThrowsOnUnknown_OTm1 pins google-shared.ts
 // mapStopReason (:309-336): every known FinishReason maps explicitly and an
 // unknown value throws `Unhandled stop reason: X` immediately instead of

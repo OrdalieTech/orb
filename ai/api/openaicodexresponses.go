@@ -86,11 +86,43 @@ type openAICodexText struct {
 }
 
 type openAICodexResponsesTool struct {
-	Type        string            `json:"type"`
-	Name        string            `json:"name"`
-	Description string            `json:"description"`
-	Parameters  jsonschema.Schema `json:"parameters"`
-	Strict      *bool             `json:"strict"`
+	Type         string                        `json:"type"`
+	Name         string                        `json:"name"`
+	Description  string                        `json:"description"`
+	Parameters   jsonschema.Schema             `json:"parameters,omitempty"`
+	Strict       *bool                         `json:"-"`
+	Format       *OpenAIResponsesGrammarFormat `json:"format,omitempty"`
+	OmitStrict   bool                          `json:"-"`
+	DeferLoading *bool                         `json:"defer_loading,omitempty"`
+}
+
+func (tool openAICodexResponsesTool) MarshalJSON() ([]byte, error) {
+	if tool.Type == "custom" {
+		return ai.Marshal(struct {
+			Type         string                        `json:"type"`
+			Name         string                        `json:"name"`
+			Description  string                        `json:"description"`
+			Format       *OpenAIResponsesGrammarFormat `json:"format,omitempty"`
+			DeferLoading *bool                         `json:"defer_loading,omitempty"`
+		}{tool.Type, tool.Name, tool.Description, tool.Format, tool.DeferLoading})
+	}
+	if tool.OmitStrict {
+		return ai.Marshal(struct {
+			Type         string            `json:"type"`
+			Name         string            `json:"name"`
+			Description  string            `json:"description"`
+			Parameters   jsonschema.Schema `json:"parameters"`
+			DeferLoading *bool             `json:"defer_loading,omitempty"`
+		}{tool.Type, tool.Name, tool.Description, tool.Parameters, tool.DeferLoading})
+	}
+	return ai.Marshal(struct {
+		Type         string            `json:"type"`
+		Name         string            `json:"name"`
+		Description  string            `json:"description"`
+		Parameters   jsonschema.Schema `json:"parameters"`
+		Strict       *bool             `json:"strict"`
+		DeferLoading *bool             `json:"defer_loading,omitempty"`
+	}{tool.Type, tool.Name, tool.Description, tool.Parameters, tool.Strict, tool.DeferLoading})
 }
 
 func StreamOpenAICodexResponses(ctx context.Context, request ai.Request) (ai.AssistantMessageEventStream, error) {
@@ -165,6 +197,17 @@ func StreamOpenAICodexResponsesWithOptions(
 			fail(errors.New("Failed to extract accountId from token")) //nolint:staticcheck // Upstream capitalization is observable.
 			return
 		}
+		rawCompat, err := decodeCompat[ai.OpenAIResponsesCompat](model)
+		if err != nil {
+			fail(err)
+			return
+		}
+		supportsGrammar := rawCompat.SupportsOpenAIGrammarTools != nil && *rawCompat.SupportsOpenAIGrammarTools
+		grammarToolInputProperties, err := createGrammarToolInputProperties(requestContext.Tools, supportsGrammar)
+		if err != nil {
+			fail(err)
+			return
+		}
 		payload, err := buildOpenAICodexResponsesPayload(model, requestContext, options)
 		if err != nil {
 			fail(err)
@@ -199,7 +242,9 @@ func StreamOpenAICodexResponsesWithOptions(
 			webSocketHeaders := buildOpenAICodexWebSocketHeaders(model, streamOptions, apiKey, accountID, requestID)
 			retriedConnectionLimit := false
 			for {
-				started, webSocketErr := processOpenAICodexWebSocket(ctx, model, body, webSocketHeaders, options, output, sink)
+				started, webSocketErr := processOpenAICodexWebSocket(
+					ctx, model, body, webSocketHeaders, grammarToolInputProperties, options, output, sink,
+				)
 				if errors.Is(webSocketErr, errStopSSE) {
 					return
 				}
@@ -260,6 +305,7 @@ func StreamOpenAICodexResponsesWithOptions(
 			processorOptions.ServiceTier = options.ServiceTier
 		}
 		processor := newOpenAIResponsesProcessor(model, output, processorOptions, sink)
+		processor.grammarToolInputProperties = grammarToolInputProperties
 		err = readOpenAICodexSSE(response.Body, func(raw json.RawMessage) error {
 			return handleOpenAICodexEvent(processor, raw)
 		})
@@ -351,10 +397,30 @@ func buildOpenAICodexResponsesPayload(
 	if err != nil {
 		return nil, err
 	}
+	rawCompat, err := decodeCompat[ai.OpenAIResponsesCompat](model)
+	if err != nil {
+		return nil, err
+	}
+	supportsStrictMode := true
+	if rawCompat.SupportsStrictMode != nil {
+		supportsStrictMode = *rawCompat.SupportsStrictMode
+	}
+	supportsGrammar := rawCompat.SupportsOpenAIGrammarTools != nil && *rawCompat.SupportsOpenAIGrammarTools
+	grammarToolInputProperties, err := createGrammarToolInputProperties(requestContext.Tools, supportsGrammar)
+	if err != nil {
+		return nil, err
+	}
+	toolOptions := responsesToolOptions{
+		supportsStrictMode: supportsStrictMode, supportsOpenAIGrammarTools: supportsGrammar, strictNull: true,
+	}
 	placement := splitResponsesTools(requestContext, compat.supportsToolSearch)
 	withoutSystem := requestContext
 	withoutSystem.SystemPrompt = nil
-	input, err := convertResponsesMessages(model, withoutSystem, placement.deferred, compat.supportsDeveloperRole)
+	input, err := convertResponsesMessagesWithOptions(model, withoutSystem, placement.deferred, responsesMessageOptions{
+		supportsDeveloperRole:      false,
+		grammarToolInputProperties: grammarToolInputProperties,
+		toolOptions:                toolOptions,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -404,14 +470,31 @@ func buildOpenAICodexResponsesPayload(
 		}
 	}
 	if len(placement.immediate) > 0 {
-		payload.Tools = make([]openAICodexResponsesTool, 0, len(placement.immediate))
-		for _, tool := range placement.immediate {
-			payload.Tools = append(payload.Tools, openAICodexResponsesTool{
-				Type: "function", Name: tool.Name, Description: tool.Description, Parameters: tool.Parameters,
-			})
+		payload.Tools, err = convertOpenAICodexResponsesTools(placement.immediate, toolOptions)
+		if err != nil {
+			return nil, err
 		}
 	}
 	return payload, nil
+}
+
+func convertOpenAICodexResponsesTools(
+	tools []ai.Tool,
+	options responsesToolOptions,
+) ([]openAICodexResponsesTool, error) {
+	converted, err := convertResponsesToolsWithOptions(tools, options)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]openAICodexResponsesTool, len(converted))
+	for index, tool := range converted {
+		result[index] = openAICodexResponsesTool{
+			Type: tool.Type, Name: tool.Name, Description: tool.Description, Parameters: tool.Parameters,
+			Strict: tool.Strict, Format: tool.Format, OmitStrict: !tool.StrictNull && tool.Strict == nil,
+			DeferLoading: tool.DeferLoading,
+		}
+	}
+	return result, nil
 }
 
 func buildOpenAICodexHeaders(model *ai.Model, options *ai.StreamOptions, token, accountID string) http.Header {

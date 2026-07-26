@@ -30,6 +30,74 @@ func TestOpenAICompletionsRejectsStreamWithoutFinishReason(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsConstrainedSamplingWire(t *testing.T) {
+	tools := []ai.Tool{
+		constrainedSamplingTestTool("strict", strictSamplingTestConfig(ai.ConstrainedSamplingPrefer)),
+		constrainedSamplingTestTool("grammar", grammarSamplingTestConfig()),
+	}
+	converted, err := convertOpenAICompletionsTools(tools, resolvedOpenAICompletionsCompat{
+		supportsStrictMode: true, supportsOpenAIGrammarTools: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := ai.Marshal(converted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(wire), `"strict":true`) ||
+		!strings.Contains(string(wire), `"type":"custom"`) ||
+		!strings.Contains(string(wire), `"syntax":"lark"`) {
+		t.Fatalf("constrained tools = %s", wire)
+	}
+}
+
+func TestOpenAICompletionsCustomToolCallStreamingRoundTrip(t *testing.T) {
+	model := &ai.Model{ID: "gpt-test", API: ai.APIOpenAICompletions, Provider: "openai"}
+	output := newAssistantMessage(model)
+	state := newCompletionsStreamState(output)
+	state.grammarToolInputProperties = map[string]string{"emit": "payload"}
+	var deltas strings.Builder
+	emit := func(event ai.AssistantMessageEvent) error {
+		if delta, ok := event.(ai.ToolCallDeltaEvent); ok {
+			deltas.WriteString(delta.Delta)
+		}
+		return nil
+	}
+	for _, raw := range []string{
+		`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"custom","custom":{"name":"emit","input":"a\""}}]}}]}`,
+		`{"choices":[{"delta":{"tool_calls":[{"index":0,"custom":{"input":"b"}}]},"finish_reason":"tool_calls"}]}`,
+	} {
+		if err := state.consumeChunk(model, json.RawMessage(raw), emit); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := state.finishBlocks(emit); err != nil {
+		t.Fatal(err)
+	}
+	if deltas.String() != `{"payload":"a\"b"}` {
+		t.Fatalf("streamed JSON deltas = %q", deltas.String())
+	}
+	call, ok := output.Content[0].(*ai.ToolCall)
+	if !ok || call.Name != "emit" || call.Arguments["payload"] != `a"b` {
+		t.Fatalf("custom tool call = %#v", output.Content)
+	}
+	replay, include, err := convertOpenAICompletionsAssistantMessageWithGrammar(
+		model, output, resolvedOpenAICompletionsCompat{}, map[string]string{"emit": "payload"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := ai.Marshal(replay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !include || !strings.Contains(string(wire), `"type":"custom"`) ||
+		!strings.Contains(string(wire), `"input":"a\"b"`) {
+		t.Fatalf("custom call replay = %s", wire)
+	}
+}
+
 func TestOpenAICompletionsKeepsToolCallsWithoutIndexesSeparate(t *testing.T) {
 	stream := openAICompletionsFixtureStream(t,
 		`{"id":"chatcmpl-tools","choices":[{"delta":{"tool_calls":[{"id":"call_a","function":{"name":"read","arguments":"{\"path\":\"A"}},{"id":"call_b","function":{"name":"read","arguments":"{\"path\":\"B"}}]},"finish_reason":null}]}`,

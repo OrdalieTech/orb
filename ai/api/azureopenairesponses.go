@@ -107,6 +107,17 @@ func StreamAzureOpenAIResponsesWithOptions(
 			fail(err)
 			return
 		}
+		rawCompat, err := decodeCompat[ai.OpenAIResponsesCompat](model)
+		if err != nil {
+			fail(err)
+			return
+		}
+		supportsGrammar := rawCompat.SupportsOpenAIGrammarTools != nil && *rawCompat.SupportsOpenAIGrammarTools
+		grammarToolInputProperties, err := createGrammarToolInputProperties(requestContext.Tools, supportsGrammar)
+		if err != nil {
+			fail(err)
+			return
+		}
 		hookedPayload, err := applyPayloadHook(ctx, model, streamOptions, payload)
 		if err != nil {
 			fail(err)
@@ -132,6 +143,7 @@ func StreamAzureOpenAIResponsesWithOptions(
 		// Upstream's Azure stream never passes applyServiceTierPricing to
 		// processResponsesStream, so service-tier multipliers are ignored (OA-M2).
 		processor.applyServiceTierPricing = false
+		processor.grammarToolInputProperties = grammarToolInputProperties
 		err = readSSE(response.Body, processor.handle)
 		if errors.Is(err, errStopSSE) {
 			return
@@ -286,7 +298,27 @@ func buildAzureOpenAIResponsesPayload(
 	if err != nil {
 		return nil, err
 	}
-	input, err := convertResponsesMessages(model, requestContext, map[string]ai.Tool{}, compat.supportsDeveloperRole)
+	rawCompat, err := decodeCompat[ai.OpenAIResponsesCompat](model)
+	if err != nil {
+		return nil, err
+	}
+	supportsStrictMode := true
+	if rawCompat.SupportsStrictMode != nil {
+		supportsStrictMode = *rawCompat.SupportsStrictMode
+	}
+	supportsGrammar := rawCompat.SupportsOpenAIGrammarTools != nil && *rawCompat.SupportsOpenAIGrammarTools
+	grammarToolInputProperties, err := createGrammarToolInputProperties(requestContext.Tools, supportsGrammar)
+	if err != nil {
+		return nil, err
+	}
+	toolOptions := responsesToolOptions{
+		supportsStrictMode: supportsStrictMode, supportsOpenAIGrammarTools: supportsGrammar,
+	}
+	input, err := convertResponsesMessagesWithOptions(model, requestContext, map[string]ai.Tool{}, responsesMessageOptions{
+		supportsDeveloperRole:      compat.supportsDeveloperRole,
+		grammarToolInputProperties: grammarToolInputProperties,
+		toolOptions:                toolOptions,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -305,7 +337,10 @@ func buildAzureOpenAIResponsesPayload(
 		payload.Temperature = streamOptions.Temperature
 	}
 	if requestContext.Tools != nil && len(*requestContext.Tools) > 0 {
-		payload.Tools = convertResponsesTools(*requestContext.Tools, false)
+		payload.Tools, err = convertResponsesToolsWithOptions(*requestContext.Tools, toolOptions)
+		if err != nil {
+			return nil, err
+		}
 	}
 	applyAzureOpenAIReasoning(payload, model, options)
 	return payload, nil

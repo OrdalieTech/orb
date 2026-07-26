@@ -15,6 +15,30 @@ import (
 	"github.com/OrdalieTech/pigo/ai"
 )
 
+func constrainedSamplingTestTool(name string, sampling *ai.ConstrainedSamplingConfig) ai.Tool {
+	return ai.Tool{
+		Name: name, Description: "emit text",
+		Parameters:          ai.JSONSchema(`{"type":"object","properties":{"payload":{"type":"string"}},"required":["payload"],"additionalProperties":false,"title":"Payload"}`),
+		ConstrainedSampling: sampling,
+	}
+}
+
+func strictSamplingTestConfig(strict ai.ConstrainedSamplingStrict) *ai.ConstrainedSamplingConfig {
+	return &ai.ConstrainedSamplingConfig{Type: ai.ConstrainedSamplingJSONSchema, Strict: strict}
+}
+
+func grammarSamplingTestConfig() *ai.ConstrainedSamplingConfig {
+	lark := `start: /[a-z"]+/`
+	regex := `[a-z"]+`
+	return &ai.ConstrainedSamplingConfig{
+		Type: ai.ConstrainedSamplingGrammar,
+		Variants: &ai.GrammarVariants{
+			OpenAILark:  &lark,
+			OpenAIRegex: &regex,
+		},
+	}
+}
+
 func TestReadSSE(t *testing.T) {
 	input := strings.NewReader(": comment\r\ndata: {\"one\":\r\ndata: 1}\r\n\r\ndata: [DONE]\r\n\r\ndata: {\"ignored\":true}\r\n\r\n")
 	var values []map[string]int

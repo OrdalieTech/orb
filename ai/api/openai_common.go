@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/ssestream"
@@ -36,6 +37,164 @@ var (
 )
 
 type eventSink func(ai.AssistantMessageEvent) bool
+
+type grammarConstrainedSampling struct {
+	format        string
+	definition    string
+	inputProperty string
+}
+
+type grammarToolInputJSONBuffer struct {
+	input   string
+	started bool
+	closed  bool
+}
+
+func getGrammarToolInput(toolName string, arguments map[string]any, inputProperty string) (string, error) {
+	input, ok := arguments[inputProperty].(string)
+	if !ok {
+		return "", fmt.Errorf("Grammar tool call %q requires argument %q to be a string.", toolName, inputProperty) //nolint:staticcheck // Exact upstream text.
+	}
+	return input, nil
+}
+
+func appendGrammarToolInputJSONDelta(
+	buffer *grammarToolInputJSONBuffer,
+	inputProperty string,
+	nextInput string,
+	closeInput bool,
+) (*string, error) {
+	if buffer.closed {
+		if closeInput && nextInput == buffer.input {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("grammar tool input for property %q changed after it was closed", inputProperty)
+	}
+	if !strings.HasPrefix(nextInput, buffer.input) {
+		return nil, fmt.Errorf("grammar tool input for property %q changed non-monotonically", inputProperty)
+	}
+
+	inputDelta := strings.TrimPrefix(nextInput, buffer.input)
+	if !closeInput && inputDelta == "" {
+		return nil, nil
+	}
+	var delta strings.Builder
+	if !buffer.started {
+		property, err := jsonwire.MarshalString(inputProperty)
+		if err != nil {
+			return nil, err
+		}
+		delta.WriteByte('{')
+		delta.Write(property)
+		delta.WriteString(`:"`)
+		buffer.started = true
+	}
+	encoded, err := jsonwire.MarshalString(inputDelta)
+	if err != nil {
+		return nil, err
+	}
+	delta.Write(encoded[1 : len(encoded)-1])
+	buffer.input = nextInput
+	if closeInput {
+		delta.WriteString(`"}`)
+		buffer.closed = true
+	}
+	value := delta.String()
+	return &value, nil
+}
+
+func resolveJSONSchemaStrictSampling(tool ai.Tool, supportsStrictMode bool) (*bool, error) {
+	config := tool.ConstrainedSampling
+	if config == nil || config.Type != ai.ConstrainedSamplingJSONSchema {
+		return nil, nil
+	}
+	if supportsStrictMode {
+		value := true
+		return &value, nil
+	}
+	if config.Strict == ai.ConstrainedSamplingRequire {
+		return nil, fmt.Errorf("Tool %q requires JSON-schema constrained sampling, but strict tools are unsupported.", tool.Name) //nolint:staticcheck // Exact upstream text.
+	}
+	return nil, nil
+}
+
+func resolveGrammarConstrainedSampling(tool ai.Tool, supportsOpenAIGrammarTools bool) (*grammarConstrainedSampling, error) {
+	config := tool.ConstrainedSampling
+	if config == nil || config.Type != ai.ConstrainedSamplingGrammar || !supportsOpenAIGrammarTools {
+		return nil, nil
+	}
+	var lark, regex string
+	if config.Variants != nil {
+		if config.Variants.OpenAILark != nil {
+			lark = *config.Variants.OpenAILark
+		}
+		if config.Variants.OpenAIRegex != nil {
+			regex = *config.Variants.OpenAIRegex
+		}
+	}
+	hasLark := strings.TrimSpace(lark) != ""
+	hasRegex := strings.TrimSpace(regex) != ""
+	if !hasLark && !hasRegex {
+		return nil, fmt.Errorf("Tool %q cannot use grammar constrained sampling: no supported grammar variant was provided.", tool.Name) //nolint:staticcheck // Exact upstream text.
+	}
+	inputProperty, err := inferGrammarInputProperty(tool)
+	if err != nil {
+		return nil, fmt.Errorf("Tool %q cannot use grammar constrained sampling: %s.", tool.Name, err) //nolint:staticcheck // Exact upstream text.
+	}
+	if hasLark {
+		return &grammarConstrainedSampling{format: "lark", definition: lark, inputProperty: inputProperty}, nil
+	}
+	return &grammarConstrainedSampling{format: "regex", definition: regex, inputProperty: inputProperty}, nil
+}
+
+func inferGrammarInputProperty(tool ai.Tool) (string, error) {
+	var schema struct {
+		Type       any                        `json:"type"`
+		Properties map[string]json.RawMessage `json:"properties"`
+		Required   []any                      `json:"required"`
+	}
+	if err := json.Unmarshal(tool.Parameters, &schema); err != nil {
+		return "", err
+	}
+	if schema.Type != "object" {
+		return "", errors.New("grammar constrained sampling requires an object parameter schema")
+	}
+	if len(schema.Required) != 1 {
+		return "", errors.New("grammar constrained sampling requires exactly one required string property")
+	}
+	inputProperty, ok := schema.Required[0].(string)
+	if !ok {
+		return "", errors.New("grammar constrained sampling requires exactly one required string property")
+	}
+	property, ok := schema.Properties[inputProperty]
+	if !ok || bytes.Equal(bytes.TrimSpace(property), []byte("null")) {
+		return "", fmt.Errorf("grammar constrained sampling requires a properties entry for %s", inputProperty)
+	}
+	var definition struct {
+		Type any `json:"type"`
+	}
+	if json.Unmarshal(property, &definition) != nil || definition.Type != "string" {
+		return "", fmt.Errorf("grammar constrained sampling property %s must have type string", inputProperty)
+	}
+	return inputProperty, nil
+}
+
+func createGrammarToolInputProperties(tools *[]ai.Tool, supportsOpenAIGrammarTools bool) (map[string]string, error) {
+	properties := make(map[string]string)
+	if tools == nil {
+		return properties, nil
+	}
+	for _, tool := range *tools {
+		grammar, err := resolveGrammarConstrainedSampling(tool, supportsOpenAIGrammarTools)
+		if err != nil {
+			return nil, err
+		}
+		if grammar != nil {
+			properties[tool.Name] = grammar.inputProperty
+		}
+	}
+	return properties, nil
+}
 
 // streamParseFloor is the accumulated tool-argument size below which every
 // delta re-parses, matching upstream exactly.
