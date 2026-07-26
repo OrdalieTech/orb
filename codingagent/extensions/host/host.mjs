@@ -652,7 +652,9 @@ registerHostSection((() => {
 		const state = extensions.get(params.extensionId);
 		const renderer = state?.renderers.get(`${params.kind}:${params.customType}`);
 		if (!renderer) throw new Error(`unknown ${params.kind} renderer ${params.customType}`);
-		const component = renderer(params.value, { expanded: params.expanded === true }, createTheme(params.theme));
+		const options = { expanded: params.expanded === true };
+		if (typeof params.outputPad === "number") options.outputPad = params.outputPad;
+		const component = renderer(params.value, options, createTheme(params.theme));
 		if (component && typeof component.then === "function") throw new TypeError("extension renderer must return synchronously");
 		if (component == null) return { present: false };
 		if (typeof component.render !== "function") throw new TypeError("extension renderer component has no render function");

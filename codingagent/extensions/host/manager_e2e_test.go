@@ -292,11 +292,11 @@ func TestRealHostRegistersAndExecutesMessageAndEntryRenderers(t *testing.T) {
 	if messageRenderer == nil {
 		t.Fatal("message renderer was not registered")
 	}
-	messageComponent := messageRenderer(extensions.CustomMessage{Content: "hello"}, extensions.MessageRenderOptions{Expanded: true}, nil)
+	messageComponent := messageRenderer(extensions.CustomMessage{Content: "hello"}, extensions.MessageRenderOptions{Expanded: true, OutputPad: 2}, nil)
 	if messageComponent == nil {
 		t.Fatal("message renderer returned no component")
 	}
-	if got := messageComponent.Render(72); len(got) != 1 || got[0] != "message:hello:true::72" {
+	if got := messageComponent.Render(72); len(got) != 1 || got[0] != "message:hello:true:2::72" {
 		t.Fatalf("message render = %#v", got)
 	}
 	if disposable, ok := messageComponent.(extensions.DisposableComponent); ok {

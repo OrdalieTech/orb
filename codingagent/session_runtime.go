@@ -87,6 +87,7 @@ type SessionRuntime struct {
 	autoCompaction       bool
 	autoRetry            bool
 	availableModels      func() []ai.Model
+	modelRegistry        extensions.ModelRegistry
 	scopedModels         []ScopedModel
 	getAPIKey            agent.GetAPIKeyFunc
 	getRequestAuth       agent.GetRequestAuthFunc
@@ -249,7 +250,8 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 		listeners: []sessionListener{}, steering: []string{}, followUps: []string{},
 		autoCompaction:  runtimeConfig.Settings.GetCompactionSettings().Enabled,
 		autoRetry:       runtimeConfig.Settings.GetRetrySettings().Enabled,
-		availableModels: runtimeConfig.AvailableModels, getAPIKey: runtimeConfig.GetAPIKey,
+		availableModels: runtimeConfig.AvailableModels, modelRegistry: runtimeConfig.ModelRegistry,
+		getAPIKey:         runtimeConfig.GetAPIKey,
 		getRequestAuth:    runtimeConfig.GetRequestAuth,
 		scopedModels:      append([]ScopedModel(nil), runtimeConfig.ScopedModels...),
 		slashResolver:     cloneSlashResolver(runtimeConfig.SlashResolver),

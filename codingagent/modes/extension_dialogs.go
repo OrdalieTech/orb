@@ -3,12 +3,9 @@ package modes
 import (
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/OrdalieTech/pigo/tui"
 
@@ -313,6 +310,21 @@ func NewExtensionEditorComponent(
 	if bindings == nil {
 		bindings = tui.GetKeybindings()
 	}
+	// The external editor command is always resolved (upstream 75e6123a):
+	// explicit command -> $VISUAL -> $EDITOR -> platform default.
+	if externalEditorCommand == "" {
+		externalEditorCommand = os.Getenv("VISUAL")
+	}
+	if externalEditorCommand == "" {
+		externalEditorCommand = os.Getenv("EDITOR")
+	}
+	if externalEditorCommand == "" {
+		if runtime.GOOS == "windows" {
+			externalEditorCommand = "notepad"
+		} else {
+			externalEditorCommand = "nano"
+		}
+	}
 	component := &ExtensionEditorComponent{
 		container:             &tui.Container{},
 		ui:                    uiInstance,
@@ -331,13 +343,13 @@ func NewExtensionEditorComponent(
 	component.editor.OnSubmit = onSubmit
 	component.container.AddChild(component.editor)
 	component.container.AddChild(tui.NewSpacer(1))
+	// The external-editor hint is unconditional now that the command always
+	// resolves (upstream 75e6123a).
 	hint :=
 		KeyHint("tui.select.confirm", "submit") + "  " +
 			KeyHint("tui.input.newLine", "newline") + "  " +
-			KeyHint("tui.select.cancel", "cancel")
-	if component.getExternalEditorCommand() != "" {
-		hint += "  " + KeyHint("app.editor.external", "external editor")
-	}
+			KeyHint("tui.select.cancel", "cancel") + "  " +
+			KeyHint("app.editor.external", "external editor")
 	component.container.AddChild(tui.NewText(hint, 1, 0, nil))
 	component.container.AddChild(tui.NewSpacer(1))
 	component.container.AddChild(extensionDialogBorder())
@@ -350,7 +362,7 @@ func (component *ExtensionEditorComponent) HandleInput(event tui.KeyEvent) {
 		return
 	}
 	if component.bindings.Matches(event.Raw, "app.editor.external") {
-		component.openExternalEditor()
+		component.handleOpenExternalEditor()
 		return
 	}
 	component.editor.HandleInput(event)
@@ -362,62 +374,21 @@ func (component *ExtensionEditorComponent) cancel() {
 	}
 }
 
-func (component *ExtensionEditorComponent) getExternalEditorCommand() string {
-	if component.externalEditorCommand != "" {
-		return component.externalEditorCommand
-	}
-	if command := os.Getenv("VISUAL"); command != "" {
-		return command
-	}
-	if command := os.Getenv("EDITOR"); command != "" {
-		return command
-	}
-	if runtime.GOOS == "windows" {
-		return "notepad"
-	}
-	return "nano"
-}
-
-func (component *ExtensionEditorComponent) openExternalEditor() {
-	command := component.getExternalEditorCommand()
-	if command == "" {
-		return
-	}
-	path := filepath.Join(os.TempDir(), fmt.Sprintf("pi-extension-editor-%d.md", time.Now().UnixMilli()))
-	if err := os.WriteFile(path, []byte(component.editor.GetText()), 0o666); err != nil {
-		component.finishExternalEditor(path)
-		return
-	}
-
+// handleOpenExternalEditor stops the TUI, edits the prompt through the shared
+// editInExternalEditor helper, and restarts with a forced re-render
+// (extension-editor.ts handleOpenExternalEditor).
+func (component *ExtensionEditorComponent) handleOpenExternalEditor() {
+	content := component.editor.GetText()
 	_ = component.ui.Stop()
-	parts := strings.Split(command, " ")
-	arguments := append(parts[1:], path)
-	var process *exec.Cmd
-	if runtime.GOOS == "windows" {
-		process = exec.Command("cmd", "/C", command+` "`+path+`"`)
-	} else {
-		process = exec.Command(parts[0], arguments...)
-	}
-	process.Stdin, process.Stdout, process.Stderr = os.Stdin, os.Stdout, os.Stderr
-	_, _ = fmt.Fprintf(os.Stdout, "Launching external editor: %s\npigo will resume when the editor exits.\n", command)
-	if err := process.Start(); err != nil {
-		component.finishExternalEditor(path)
-		return
-	}
 	go func() {
-		if process.Wait() == nil {
-			if content, readErr := os.ReadFile(path); readErr == nil {
-				component.editor.SetText(strings.TrimSuffix(string(content), "\n"))
-			}
+		result := editInExternalEditor(component.externalEditorCommand, content)
+		if result.complete {
+			component.editor.SetText(result.content)
 		}
-		component.finishExternalEditor(path)
+		_ = component.ui.Start()
+		// Force full re-render since the external editor uses the alternate screen.
+		component.ui.ForceRender()
 	}()
-}
-
-func (component *ExtensionEditorComponent) finishExternalEditor(path string) {
-	_ = os.Remove(path)
-	_ = component.ui.Start()
-	component.ui.ForceRender()
 }
 
 func (component *ExtensionEditorComponent) SetFocused(focused bool) {

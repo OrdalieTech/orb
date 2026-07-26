@@ -7,7 +7,7 @@ export default function (pi) {
 	});
 	pi.registerMessageRenderer("host-message", (message, options, theme) => ({
 		render(width) {
-			return [`message:${message.content}:${options.expanded}:${theme.getColorMode()}:${width}`];
+			return [`message:${message.content}:${options.expanded}:${options.outputPad}:${theme.getColorMode()}:${width}`];
 		},
 	}));
 	pi.registerEntryRenderer("host-entry", (entry, options) => ({
