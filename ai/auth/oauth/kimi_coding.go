@@ -94,7 +94,7 @@ func (flow *KimiCoding) Login(ctx context.Context, interaction auth.AuthInteract
 
 func (flow *KimiCoding) Refresh(ctx context.Context, credential *auth.Credential) (*auth.Credential, error) {
 	if credential == nil || credential.Type != auth.CredentialOAuth {
-		return nil, errors.New("Kimi Code OAuth refresh requires an OAuth credential")
+		return nil, errors.New("kimi-coding OAuth refresh requires an OAuth credential")
 	}
 	token, err := flow.refreshToken(ctx, flow.oauthHost(), credential.Refresh)
 	if err != nil {
@@ -105,7 +105,7 @@ func (flow *KimiCoding) Refresh(ctx context.Context, credential *auth.Credential
 
 func (*KimiCoding) ToAuth(credential *auth.Credential) (auth.ModelAuth, error) {
 	if credential == nil || credential.Type != auth.CredentialOAuth {
-		return auth.ModelAuth{}, errors.New("Kimi Code OAuth credential is required")
+		return auth.ModelAuth{}, errors.New("kimi-coding OAuth credential is required")
 	}
 	bearer := "Bearer " + credential.Access
 	return auth.ModelAuth{Headers: map[string]*string{"Authorization": &bearer}}, nil
@@ -239,7 +239,7 @@ func (flow *KimiCoding) refreshToken(ctx context.Context, oauthHost, refreshToke
 			_ = flow.options.Sleep(ctx, time.Duration(1000*(1<<(attempt-1)))*time.Millisecond)
 		}
 		if ctx.Err() != nil {
-			return kimiTokenResponse{}, errors.New(kimiCodingRefreshAbortedMessage)
+			return kimiTokenResponse{}, errors.New(kimiCodingRefreshAbortedMessage) //nolint:staticcheck // Exact upstream error text is observable (kimi-coding.ts:228).
 		}
 
 		status, contents, err := flow.postForm(ctx, oauthHost+"/api/oauth/token", orderedForm(
