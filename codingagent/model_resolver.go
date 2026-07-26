@@ -27,8 +27,10 @@ type ScopedModel struct {
 	ThinkingLevel *ai.ModelThinkingLevel
 }
 
+// ModelDiagnostic mirrors upstream ModelScopeDiagnostic; Code classifies the
+// warning as "no-match" or "invalid-thinking-level" (model-resolver.ts).
 type ModelDiagnostic struct {
-	Type, Message, Pattern string
+	Type, Code, Message, Pattern string
 }
 
 // ParseModelPattern matches the complete id first so colons inside model ids remain literal.
@@ -155,6 +157,14 @@ func ResolveModelScope(patterns []string, available []ai.Model) ([]ScopedModel, 
 	for _, patternValue := range patterns {
 		if strings.ContainsAny(patternValue, "*?[") {
 			glob, level := splitGlobThinking(patternValue)
+			// Ids containing glob metacharacters (e.g. "[1m]") resolve as
+			// exact references before glob matching (upstream da8dd872).
+			if exact := exactModelReference(glob, available); exact != nil {
+				if !containsScopedModel(models, *exact) {
+					models = append(models, ScopedModel{Model: *exact, ThinkingLevel: level})
+				}
+				continue
+			}
 			matched := false
 			for _, model := range available {
 				full := strings.ToLower(string(model.Provider) + "/" + model.ID)
@@ -175,7 +185,7 @@ func ResolveModelScope(patterns []string, available []ai.Model) ([]ScopedModel, 
 		}
 		parsed := ParseModelPattern(patternValue, available)
 		if parsed.Warning != "" {
-			diagnostics = append(diagnostics, ModelDiagnostic{Type: "warning", Message: parsed.Warning, Pattern: patternValue})
+			diagnostics = append(diagnostics, ModelDiagnostic{Type: "warning", Code: "invalid-thinking-level", Message: parsed.Warning, Pattern: patternValue})
 		}
 		if parsed.Model == nil {
 			diagnostics = append(diagnostics, noModelDiagnostic(patternValue))
@@ -633,7 +643,7 @@ func containsScopedModel(models []ScopedModel, target ai.Model) bool {
 }
 
 func noModelDiagnostic(patternValue string) ModelDiagnostic {
-	return ModelDiagnostic{Type: "warning", Message: `No models match pattern "` + patternValue + `"`, Pattern: patternValue}
+	return ModelDiagnostic{Type: "warning", Code: "no-match", Message: `No models match pattern "` + patternValue + `"`, Pattern: patternValue}
 }
 
 func modelThinkingLevel(value string) (ai.ModelThinkingLevel, bool) {

@@ -1168,7 +1168,7 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 	mode.editor.OnAction("app.session.tree", mode.showTreeSelector)
 	mode.editor.OnAction("app.session.fork", mode.showUserMessageSelector)
 	mode.editor.OnAction("app.session.resume", mode.showSessionSelector)
-	mode.editor.OnAction("app.editor.external", mode.openExternalEditor)
+	mode.editor.OnAction("app.editor.external", mode.handleOpenExternalEditor)
 
 	mode.editor.OnAction("app.message.copy", func() {
 		mode.handleCopyCommand()
@@ -1586,6 +1586,9 @@ func (mode *InteractiveMode) handleModelCommand(args string) {
 }
 
 func (mode *InteractiveMode) showModelSelector(initialSearch string) {
+	// f8746813: opening the model picker re-reads models.json so external
+	// edits show up without a restart.
+	_ = mode.session.RefreshModels()
 	models := mode.session.AvailableModels()
 	options := make([]string, len(models))
 	for i, m := range models {
@@ -2880,97 +2883,119 @@ func (interaction tuiAuthInteraction) Notify(event aiauth.AuthEvent) {
 	}
 }
 
-func (mode *InteractiveMode) openExternalEditor() {
+// handleOpenExternalEditor mirrors upstream 75e6123a: the editor command is
+// always resolved (settings -> $VISUAL -> $EDITOR -> platform default), so
+// there is no "no editor configured" warning, and the edit itself runs in the
+// shared editInExternalEditor helper.
+func (mode *InteractiveMode) handleOpenExternalEditor() {
 	command := mode.session.InteractiveModeSettings().ExternalEditor
-	if command == "" {
-		command = os.Getenv("VISUAL")
-	}
-	if command == "" {
-		command = os.Getenv("EDITOR")
-	}
-	if command == "" {
-		mode.showStatusMessage("No editor configured. Set externalEditor in settings.json or $VISUAL/$EDITOR.")
+	content := mode.editor.GetText()
+	if err := mode.ui.Stop(); err != nil {
+		mode.showError(err)
 		return
 	}
-	initial := mode.editor.GetText()
 	go func() {
-		file, err := os.CreateTemp("", "pigo-editor-*.md")
-		if err != nil {
+		result := editInExternalEditor(command, content)
+		if result.complete {
+			mode.editor.SetText(result.content)
+		}
+		if err := mode.ui.Start(); err != nil {
 			mode.showError(err)
 			return
 		}
-		path := file.Name()
-		defer func() { _ = os.Remove(path) }()
-		if _, err = file.WriteString(initial); err != nil {
-			_ = file.Close()
-			mode.showError(err)
-			return
-		}
-		if err = file.Close(); err != nil {
-			mode.showError(err)
-			return
-		}
-		if err = mode.ui.Stop(); err != nil {
-			mode.showError(err)
-			return
-		}
-		var process *exec.Cmd
-		if runtime.GOOS == "windows" {
-			process = exec.Command("cmd", "/C", command+" \""+path+"\"")
-		} else {
-			process = exec.Command("sh", "-c", command+` "$1"`, "pigo-editor", path)
-		}
-		process.Stdin, process.Stdout, process.Stderr = os.Stdin, os.Stdout, os.Stderr
-		runErr := process.Run()
-		startErr := mode.ui.Start()
-		if runErr != nil {
-			mode.showError(runErr)
-			return
-		}
-		if startErr != nil {
-			mode.showError(startErr)
-			return
-		}
-		content, err := os.ReadFile(path)
-		if err != nil {
-			mode.showError(err)
-			return
-		}
-		mode.editor.SetText(strings.TrimRight(string(content), "\r\n"))
-		mode.ui.RequestRender()
+		// Force full re-render since the external editor uses the alternate screen.
+		mode.ui.ForceRender()
 	}()
 }
 
+// scopedModelsSelectorState mirrors upstream showModelsSelector (a3ee1d28):
+// the enabled set comes from the session scope or the persisted patterns, and
+// configured patterns with a "no-match" diagnostic surface as unavailable
+// entries so they stay removable without editing settings manually.
+func scopedModelsSelectorState(
+	models []ai.Model,
+	configured []string,
+	sessionScoped []codingagent.ScopedModel,
+) (selected map[string]bool, unavailable []string) {
+	selected = map[string]bool{}
+	available := make(map[string]bool, len(models))
+	for _, model := range models {
+		available[fmt.Sprintf("%s/%s", model.Provider, model.ID)] = true
+	}
+	// enabled == nil means every model is enabled (no filter).
+	var enabled []string
+	var diagnostics []codingagent.ModelDiagnostic
+	if len(configured) > 0 {
+		var configuredScope []codingagent.ScopedModel
+		configuredScope, diagnostics = codingagent.ResolveModelScope(configured, models)
+		if len(sessionScoped) == 0 {
+			enabled = make([]string, 0, len(configuredScope))
+			for _, scoped := range configuredScope {
+				enabled = append(enabled, fmt.Sprintf("%s/%s", scoped.Model.Provider, scoped.Model.ID))
+			}
+		}
+	}
+	if len(sessionScoped) > 0 {
+		enabled = make([]string, 0, len(sessionScoped))
+		for _, scoped := range sessionScoped {
+			enabled = append(enabled, fmt.Sprintf("%s/%s", scoped.Model.Provider, scoped.Model.ID))
+		}
+	}
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Code != "no-match" {
+			continue
+		}
+		if enabled == nil {
+			enabled = []string{}
+		}
+		if !slices.Contains(enabled, diagnostic.Pattern) {
+			enabled = append(enabled, diagnostic.Pattern)
+		}
+	}
+	if enabled == nil {
+		for id := range available {
+			selected[id] = true
+		}
+		return selected, nil
+	}
+	for _, id := range enabled {
+		selected[id] = true
+		if !available[id] {
+			unavailable = append(unavailable, id)
+		}
+	}
+	return selected, unavailable
+}
+
 func (mode *InteractiveMode) showModelsSelector() {
+	// f8746813: opening the picker re-reads models.json before listing.
+	_ = mode.session.RefreshModels()
 	models := mode.session.AvailableModels()
-	if len(models) == 0 {
+	configured := mode.session.EnabledModels()
+	sessionScoped := mode.session.ScopedModels()
+	if len(models) == 0 && len(configured) == 0 && len(sessionScoped) == 0 {
 		mode.showStatusMessage("No models available")
 		return
 	}
-	selected := map[string]bool{}
-	current := mode.session.ScopedModels()
-	if len(current) == 0 {
-		for _, model := range models {
-			selected[fmt.Sprintf("%s/%s", model.Provider, model.ID)] = true
-		}
-	} else {
-		for _, scoped := range current {
-			selected[fmt.Sprintf("%s/%s", scoped.Model.Provider, scoped.Model.ID)] = true
-		}
-	}
+	selected, unavailable := scopedModelsSelectorState(models, configured, sessionScoped)
 	go func() {
 		for {
 			options := []string{"Save and close", "Enable all", "Clear all"}
 			ids := map[string]string{}
-			for _, model := range models {
-				id := fmt.Sprintf("%s/%s", model.Provider, model.ID)
+			appendOption := func(id, suffix string) {
 				mark := "[ ] "
 				if selected[id] {
 					mark = "[x] "
 				}
-				label := mark + id
+				label := mark + id + suffix
 				options = append(options, label)
 				ids[label] = id
+			}
+			for _, model := range models {
+				appendOption(fmt.Sprintf("%s/%s", model.Provider, model.ID), "")
+			}
+			for _, id := range unavailable {
+				appendOption(id, " [unavailable]")
 			}
 			choice, ok, err := mode.interactiveUI.Select(context.Background(), "Scoped models", options, nil)
 			if err != nil || !ok {
@@ -2984,19 +3009,19 @@ func (mode *InteractiveMode) showModelsSelector() {
 			case "Clear all":
 				clear(selected)
 			case "Save and close":
-				mode.applyScopedModelSelection(models, selected, true)
+				mode.applyScopedModelSelection(models, unavailable, selected, true)
 				mode.showStatusMessage("Model selection saved to settings")
 				return
 			default:
 				id := ids[choice]
 				selected[id] = !selected[id]
-				mode.applyScopedModelSelection(models, selected, false)
+				mode.applyScopedModelSelection(models, unavailable, selected, false)
 			}
 		}
 	}()
 }
 
-func (mode *InteractiveMode) applyScopedModelSelection(models []ai.Model, selected map[string]bool, persist bool) {
+func (mode *InteractiveMode) applyScopedModelSelection(models []ai.Model, unavailable []string, selected map[string]bool, persist bool) {
 	patterns := make([]string, 0, len(selected))
 	scoped := make([]codingagent.ScopedModel, 0, len(selected))
 	for _, model := range models {
@@ -3006,13 +3031,25 @@ func (mode *InteractiveMode) applyScopedModelSelection(models []ai.Model, select
 			scoped = append(scoped, codingagent.ScopedModel{Model: model})
 		}
 	}
+	unavailableEnabled := 0
+	for _, id := range unavailable {
+		if selected[id] {
+			patterns = append(patterns, id)
+			unavailableEnabled++
+		}
+	}
+	// Upstream updateSessionModels (a3ee1d28): the session scope forms only
+	// when at least one available model is enabled and not all of them are;
+	// enabled unavailable ids never clear a partial scope.
 	if len(scoped) == 0 || len(scoped) == len(models) {
 		mode.session.SetScopedModels(nil)
 	} else {
 		mode.session.SetScopedModels(scoped)
 	}
 	if persist {
-		if len(patterns) == len(models) {
+		// Upstream onPersist: the filter clears only when every enabled id is
+		// an available model and all available models are enabled.
+		if unavailableEnabled == 0 && len(patterns) == len(models) {
 			patterns = nil
 		}
 		mode.session.SetEnabledModels(patterns)
@@ -3689,7 +3726,7 @@ func (mode *InteractiveMode) renderCustomMessage(customType string, content, det
 	value := decodeMaybeJSON(content)
 	if runner := mode.session.ExtensionRunner(); runner != nil {
 		if renderer := runner.MessageRenderer(customType); renderer != nil {
-			component := renderer(extensions.CustomMessage{CustomType: customType, Content: value, Display: true, Details: decodeMaybeJSON(details)}, extensions.MessageRenderOptions{Expanded: mode.toolsExpanded}, themeAdapter{value: theme.Current()})
+			component := renderer(extensions.CustomMessage{CustomType: customType, Content: value, Display: true, Details: decodeMaybeJSON(details)}, extensions.MessageRenderOptions{Expanded: mode.toolsExpanded, OutputPad: mode.currentOutputPad()}, themeAdapter{value: theme.Current()})
 			if component != nil {
 				mode.chat.AddChild(component)
 				return

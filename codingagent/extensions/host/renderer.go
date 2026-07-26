@@ -24,17 +24,20 @@ type wireRendererComponent struct {
 
 func (manager *Manager) messageRenderer(extensionID, customType string) extensions.MessageRenderer {
 	return func(message extensions.CustomMessage, options extensions.MessageRenderOptions, theme extensions.Theme) extensions.Component {
-		return manager.createRendererComponent(extensionID, rendererMessage, customType, message, options.Expanded, theme)
+		// Only message renderers receive outputPad (518855dd); entry
+		// renderer options stay {expanded}.
+		outputPad := options.OutputPad
+		return manager.createRendererComponent(extensionID, rendererMessage, customType, message, options.Expanded, &outputPad, theme)
 	}
 }
 
 func (manager *Manager) entryRenderer(extensionID, customType string) extensions.EntryRenderer {
 	return func(entry any, options extensions.EntryRenderOptions, theme extensions.Theme) extensions.Component {
-		return manager.createRendererComponent(extensionID, rendererEntry, customType, entry, options.Expanded, theme)
+		return manager.createRendererComponent(extensionID, rendererEntry, customType, entry, options.Expanded, nil, theme)
 	}
 }
 
-func (manager *Manager) createRendererComponent(extensionID, kind, customType string, value any, expanded bool, theme extensions.Theme) extensions.Component {
+func (manager *Manager) createRendererComponent(extensionID, kind, customType string, value any, expanded bool, outputPad *int, theme extensions.Theme) extensions.Component {
 	manager.mu.Lock()
 	generation := manager.current
 	manager.mu.Unlock()
@@ -49,8 +52,9 @@ func (manager *Manager) createRendererComponent(extensionID, kind, customType st
 		CustomType  string     `json:"customType"`
 		Value       any        `json:"value"`
 		Expanded    bool       `json:"expanded"`
+		OutputPad   *int       `json:"outputPad,omitempty"`
 		Theme       *wireTheme `json:"theme,omitempty"`
-	}{extensionID, kind, customType, value, expanded, snapshotTheme(theme)}, nil)
+	}{extensionID, kind, customType, value, expanded, outputPad, snapshotTheme(theme)}, nil)
 	if err != nil {
 		manager.report(extensions.Diagnostic{Type: "error", Message: err.Error(), Path: extensionID})
 		return nil

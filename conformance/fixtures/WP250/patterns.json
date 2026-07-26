@@ -433,6 +433,7 @@
         "diagnostics": [
           {
             "type": "warning",
+            "code": "no-match",
             "message": "No models match pattern \"openrouter/*\"",
             "pattern": "openrouter/*"
           }
@@ -571,6 +572,7 @@
         "diagnostics": [
           {
             "type": "warning",
+            "code": "no-match",
             "message": "No models match pattern \"openrouter/**\"",
             "pattern": "openrouter/**"
           }

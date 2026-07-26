@@ -442,6 +442,26 @@ func (runtime *SessionRuntime) SetEnabledModels(models []string) {
 	}
 }
 
+// EnabledModels returns the persisted model-scope patterns (upstream
+// settingsManager.getEnabledModels), which /models resolves with diagnostics
+// so configured-but-unavailable ids stay editable.
+func (runtime *SessionRuntime) EnabledModels() []string {
+	if runtime == nil {
+		return nil
+	}
+	return runtime.settings.GetEnabledModels()
+}
+
+// RefreshModels mirrors upstream ModelRegistry.refresh() (model-registry.ts):
+// since f8746813 a picker refresh re-reads models.json before rebuilding the
+// provider snapshots, which pigo's Reload already combines.
+func (runtime *SessionRuntime) RefreshModels() error {
+	if runtime == nil || runtime.modelRegistry == nil {
+		return nil
+	}
+	return runtime.modelRegistry.Reload()
+}
+
 func (runtime *SessionRuntime) SteeringMode() agent.QueueMode {
 	if runtime == nil {
 		return agent.QueueOneAtATime

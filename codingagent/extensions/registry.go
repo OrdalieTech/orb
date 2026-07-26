@@ -17,7 +17,12 @@ var (
 	ErrUIUnavailable         = errors.New("UI not available")
 )
 
-type MessageRenderOptions struct{ Expanded bool }
+// MessageRenderOptions mirrors upstream MessageRenderOptions (types.ts):
+// OutputPad is the horizontal padding configured by the outputPad setting.
+type MessageRenderOptions struct {
+	Expanded  bool
+	OutputPad int
+}
 
 type EntryRenderOptions struct{ Expanded bool }
 

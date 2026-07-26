@@ -529,7 +529,13 @@ func loadContextFileFromDir(dir string) (*ContextFile, []ResourceDiagnostic) {
 	diagnostics := make([]ResourceDiagnostic, 0)
 	for _, filename := range contextFileCandidates {
 		path := filepath.Join(dir, filename)
-		if _, err := os.Stat(path); err != nil {
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		// Upstream 58c0bc2f: candidates that are not regular files (e.g. a
+		// directory named AGENTS.md) are skipped silently.
+		if !info.Mode().IsRegular() {
 			continue
 		}
 		content, err := os.ReadFile(path)

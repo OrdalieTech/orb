@@ -113,8 +113,8 @@ func TestResolveModelScopeMatchesUpstreamDiagnostics(t *testing.T) {
 		t.Fatalf("unexpected scoped thinking levels: %#v", models)
 	}
 	want := []ModelDiagnostic{
-		{Type: "warning", Message: `Invalid thinking level "invalid" in pattern "gpt-4o:invalid". Using default instead.`, Pattern: "gpt-4o:invalid"},
-		{Type: "warning", Message: `No models match pattern "missing"`, Pattern: "missing"},
+		{Type: "warning", Code: "invalid-thinking-level", Message: `Invalid thinking level "invalid" in pattern "gpt-4o:invalid". Using default instead.`, Pattern: "gpt-4o:invalid"},
+		{Type: "warning", Code: "no-match", Message: `No models match pattern "missing"`, Pattern: "missing"},
 	}
 	if string(mustJSON(t, diagnostics)) != string(mustJSON(t, want)) {
 		t.Fatalf("diagnostics = %#v, want %#v", diagnostics, want)
@@ -142,6 +142,27 @@ func TestResolveModelScopeMatchesUpstreamGlobFixtures(t *testing.T) {
 				t.Fatalf("diagnostics = %#v, want %#v", diagnostics, test.Expected.Diagnostics)
 			}
 		})
+	}
+}
+
+// Upstream da8dd872: bracketed scoped model ids resolve as literals before
+// glob matching.
+func TestResolveModelScopeResolvesBracketedIdsAsExactReferences(t *testing.T) {
+	available := append(loadPatternFixture(t).Models, ai.Model{
+		Provider: "custom", ID: "bracketed-model[1m]", Name: "Bracketed Model", Reasoning: true,
+	})
+
+	scoped, diagnostics := ResolveModelScope([]string{"custom/bracketed-model[1m]"}, available)
+	if len(diagnostics) != 0 || len(scoped) != 1 || scoped[0].Model.ID != "bracketed-model[1m]" || scoped[0].ThinkingLevel != nil {
+		t.Fatalf("bracketed scope = %#v, diagnostics = %#v", scoped, diagnostics)
+	}
+
+	scoped, diagnostics = ResolveModelScope([]string{"custom/bracketed-model[1m]:high"}, available)
+	if len(diagnostics) != 0 || len(scoped) != 1 || scoped[0].Model.ID != "bracketed-model[1m]" {
+		t.Fatalf("bracketed thinking scope = %#v, diagnostics = %#v", scoped, diagnostics)
+	}
+	if scoped[0].ThinkingLevel == nil || *scoped[0].ThinkingLevel != ai.ModelThinkingHigh {
+		t.Fatalf("bracketed thinking level = %v, want high", scoped[0].ThinkingLevel)
 	}
 }
 

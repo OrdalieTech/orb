@@ -52,7 +52,9 @@ func TestLoadProjectContextFilesUppercaseFallback(t *testing.T) {
 	}
 }
 
-func TestLoadProjectContextFilesFallsThroughUnreadableCandidate(t *testing.T) {
+// Upstream 58c0bc2f: a directory named AGENTS.md is skipped silently (no
+// unreadable-file diagnostic) and the next candidate is used instead.
+func TestLoadProjectContextFilesSkipsDirectoryCandidatesSilently(t *testing.T) {
 	root := t.TempDir()
 	cwd := filepath.Join(root, "project")
 	agentDir := filepath.Join(root, "agent")
@@ -62,14 +64,10 @@ func TestLoadProjectContextFilesFallsThroughUnreadableCandidate(t *testing.T) {
 	mustWriteResource(t, filepath.Join(cwd, "CLAUDE.md"), "fallback")
 
 	files, diagnostics := LoadProjectContextFiles(cwd, agentDir)
-	if len(files) != 1 || files[0].Path != filepath.Join(cwd, "CLAUDE.md") {
+	if len(files) != 1 || files[0].Path != filepath.Join(cwd, "CLAUDE.md") || files[0].Content != "fallback" {
 		t.Fatalf("files = %#v", files)
 	}
-	wantDiagnostics := 1
-	if _, err := os.Stat(filepath.Join(cwd, "AGENTS.MD")); err == nil {
-		wantDiagnostics = 2
-	}
-	if len(diagnostics) != wantDiagnostics || diagnostics[0].Path != filepath.Join(cwd, "AGENTS.md") || strings.HasPrefix(diagnostics[0].Message, "Warning:") {
+	if len(diagnostics) != 0 {
 		t.Fatalf("diagnostics = %#v", diagnostics)
 	}
 }
