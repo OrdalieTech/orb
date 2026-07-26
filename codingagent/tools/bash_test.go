@@ -145,6 +145,78 @@ func TestBashToolSpawnHookMutatesCommandCwdAndEnv(t *testing.T) {
 	}
 }
 
+func TestBashToolSessionEnvironmentExposureAndOptOut(t *testing.T) {
+	t.Setenv("PI_SESSION_ID", "stale-session")
+	t.Setenv("PI_REASONING_LEVEL", "stale-level")
+	captureEnv := func(target *map[string]string) BashOperations {
+		return bashOperationsFunc(func(
+			_ context.Context,
+			_ string,
+			_ string,
+			options BashExecOptions,
+		) (BashExecResult, error) {
+			*target = options.Env
+			code := 0
+			return BashExecResult{ExitCode: &code}, nil
+		})
+	}
+	source := func() *BashSessionEnvironment {
+		return &BashSessionEnvironment{
+			SessionID:      "session-1",
+			SessionFile:    "/sessions/session-1.jsonl",
+			Provider:       "anthropic",
+			Model:          "claude-sonnet-4-5",
+			ReasoningLevel: "high",
+		}
+	}
+	sessionKeys := []string{"PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL"}
+
+	var sessionEnv map[string]string
+	tool := NewBashTool(t.TempDir(), &BashToolOptions{Operations: captureEnv(&sessionEnv)})
+	tool.(BashSessionEnvironmentBinder).BindSessionEnvironment(source)
+	if _, err := tool.Execute(context.Background(), "call", BashToolInput{Command: "printf ok"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]string{
+		"PI_SESSION_ID":      "session-1",
+		"PI_SESSION_FILE":    "/sessions/session-1.jsonl",
+		"PI_PROVIDER":        "anthropic",
+		"PI_MODEL":           "claude-sonnet-4-5",
+		"PI_REASONING_LEVEL": "high",
+	} {
+		if sessionEnv[key] != want {
+			t.Fatalf("%s = %q, want %q", key, sessionEnv[key], want)
+		}
+	}
+
+	optOut := false
+	var optedOutEnv map[string]string
+	optedOutTool := NewBashTool(t.TempDir(), &BashToolOptions{
+		Operations: captureEnv(&optedOutEnv), ExposeSessionEnvironment: &optOut,
+	})
+	optedOutTool.(BashSessionEnvironmentBinder).BindSessionEnvironment(source)
+	if _, err := optedOutTool.Execute(context.Background(), "call", BashToolInput{Command: "printf ok"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range sessionKeys {
+		if value, exists := optedOutEnv[key]; exists {
+			t.Fatalf("opted-out env still has %s=%q", key, value)
+		}
+	}
+
+	// A tool without a bound session still scrubs ambient PI_* variables.
+	var unboundEnv map[string]string
+	unboundTool := NewBashTool(t.TempDir(), &BashToolOptions{Operations: captureEnv(&unboundEnv)})
+	if _, err := unboundTool.Execute(context.Background(), "call", BashToolInput{Command: "printf ok"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range sessionKeys {
+		if value, exists := unboundEnv[key]; exists {
+			t.Fatalf("unbound env still has %s=%q", key, value)
+		}
+	}
+}
+
 func TestBashToolEmitsInitialAndIncrementalUpdates(t *testing.T) {
 	operations := bashOperationsFunc(func(
 		_ context.Context,

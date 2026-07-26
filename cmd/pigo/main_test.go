@@ -1097,8 +1097,15 @@ func TestBuiltBinaryServesRPCConversation(t *testing.T) {
 	if line := exchange("{\"id\":\"unknown\",\"type\":\"missing\"}\n"); string(line) != `{"id":"unknown","type":"response","command":"missing","success":false,"error":"Unknown command: missing"}` {
 		t.Fatalf("unknown response = %s", line)
 	}
-	if line := exchange("{\"id\":\"bash\",\"type\":\"bash\",\"command\":\"printf false-value\",\"excludeFromContext\":false}\n"); !bytes.Contains(line, []byte(`"output":"false-value"`)) {
-		t.Fatalf("bash response = %s", line)
+	if line := exchange("{\"id\":\"bash\",\"type\":\"bash\",\"command\":\"printf false-value\",\"excludeFromContext\":false}\n"); string(line) != `{"type":"bash_execution_update","id":"bash","delta":"false-value"}` {
+		t.Fatalf("bash execution update = %s", line)
+	}
+	bashResponse, bashReadErr := reader.ReadBytes('\n')
+	if bashReadErr != nil {
+		t.Fatalf("read bash response: %v; stderr=%q", bashReadErr, stderr.String())
+	}
+	if !bytes.Contains(bashResponse, []byte(`"output":"false-value"`)) {
+		t.Fatalf("bash response = %s", bashResponse)
 	}
 	if line := exchange("{\"id\":\"entries\",\"type\":\"get_entries\"}\n"); !bytes.Contains(line, []byte(`"excludeFromContext":false`)) {
 		t.Fatalf("explicit-false bash entry = %s", line)

@@ -3358,6 +3358,9 @@ func (mode *InteractiveMode) handleEvent(event any) {
 	case codingagent.SummarizationRetryFinishedEvent:
 		mode.clearStatusIndicatorKind(StatusRetry)
 
+	case codingagent.BashExecutionUpdateEvent:
+		// The bash execution callback handles TUI output rendering.
+
 	case codingagent.ThinkingLevelChangedEvent:
 		mode.updateEditorBorderColor()
 		mode.ui.RequestRender()

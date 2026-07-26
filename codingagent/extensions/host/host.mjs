@@ -1421,6 +1421,11 @@ registerHostSection((() => {
 		context.getContextUsage = () => clone(state.stateSnapshot.context.contextUsage);
 		context.compact = (options) => compact(state, options);
 		context.getSystemPrompt = () => state.stateSnapshot.context.systemPrompt ?? "";
+		Object.defineProperty(context, "thinkingLevel", {
+			configurable: true,
+			enumerable: true,
+			get: () => state.stateSnapshot.thinkingLevel,
+		});
 		if (value.cwd === undefined) context.cwd = current.cwd;
 		if (value.mode === undefined) context.mode = current.mode;
 		if (value.hasUI === undefined) context.hasUI = current.hasUI === true;

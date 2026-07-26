@@ -20,6 +20,7 @@ const (
 	EventSummarizationRetryScheduled    SessionEventType = "summarization_retry_scheduled"
 	EventSummarizationRetryAttemptStart SessionEventType = "summarization_retry_attempt_start"
 	EventSummarizationRetryFinished     SessionEventType = "summarization_retry_finished"
+	EventBashExecutionUpdate            SessionEventType = "bash_execution_update"
 	EventEntryAppended                  SessionEventType = "entry_appended"
 	EventSessionInfo                    SessionEventType = "session_info_changed"
 	EventThinkingLevel                  SessionEventType = "thinking_level_changed"
@@ -75,6 +76,13 @@ type SummarizationRetryAttemptStartEvent struct {
 }
 
 type SummarizationRetryFinishedEvent struct{}
+
+// BashExecutionUpdateEvent streams one output chunk of a direct bash command.
+// ID matches the originating command's id when one was provided.
+type BashExecutionUpdateEvent struct {
+	ID    *string `json:"id,omitempty"`
+	Delta string  `json:"delta"`
+}
 
 type EntryAppendedEvent struct {
 	Entry sessionstore.SessionEntry `json:"entry"`
@@ -156,6 +164,12 @@ func MarshalSessionEvent(event any) ([]byte, error) {
 		return ai.Marshal(struct {
 			Type SessionEventType `json:"type"`
 		}{EventSummarizationRetryFinished})
+	case BashExecutionUpdateEvent:
+		return ai.Marshal(struct {
+			Type  SessionEventType `json:"type"`
+			ID    *string          `json:"id,omitempty"`
+			Delta string           `json:"delta"`
+		}{EventBashExecutionUpdate, typed.ID, typed.Delta})
 	case EntryAppendedEvent:
 		return ai.Marshal(struct {
 			Type  SessionEventType          `json:"type"`

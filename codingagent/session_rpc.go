@@ -758,7 +758,9 @@ func (runtime *SessionRuntime) AbortRetry() {
 	}
 }
 
-func (runtime *SessionRuntime) ExecuteBash(ctx context.Context, command string, excludeFromContext *bool) (tools.BashResult, error) {
+// ExecuteBash executes a direct bash command. id, when provided, is included
+// in the bash_execution_update events streamed for each output chunk.
+func (runtime *SessionRuntime) ExecuteBash(ctx context.Context, command string, excludeFromContext *bool, id *string) (tools.BashResult, error) {
 	if runtime == nil {
 		return tools.BashResult{}, errors.New("codingagent: nil session runtime")
 	}
@@ -781,6 +783,9 @@ func (runtime *SessionRuntime) ExecuteBash(ctx context.Context, command string, 
 	}
 	result, err := tools.ExecuteBash(
 		bashContext, command, runtime.manager.GetCWD(), runtime.settings.GetShellCommandPrefix(), shellPath,
+		func(delta string) {
+			runtime.emit(BashExecutionUpdateEvent{ID: id, Delta: delta})
+		},
 	)
 	if err != nil {
 		return result, err

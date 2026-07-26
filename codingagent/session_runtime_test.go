@@ -18,10 +18,60 @@ import (
 	"github.com/OrdalieTech/pigo/ai/providers/faux"
 	"github.com/OrdalieTech/pigo/codingagent/config"
 	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/pigo/codingagent/tools"
 )
 
 func userMessage(text string) *ai.UserMessage {
 	return userMessageWithImages(text, nil)
+}
+
+type captureBashOperations struct{ env map[string]string }
+
+func (operations *captureBashOperations) Exec(
+	_ context.Context,
+	_ string,
+	_ string,
+	options tools.BashExecOptions,
+) (tools.BashExecResult, error) {
+	operations.env = options.Env
+	code := 0
+	return tools.BashExecResult{ExitCode: &code}, nil
+}
+
+func TestSessionRuntimeBindsBashSessionEnvironment(t *testing.T) {
+	cwd := t.TempDir()
+	manager, settings := extensionRuntimeDependencies(t, cwd)
+	operations := &captureBashOperations{}
+	bashTool := tools.NewBashTool(cwd, &tools.BashToolOptions{Operations: operations})
+	created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{
+		Model:         &ai.Model{ID: "claude-sonnet-4-5", Provider: "anthropic"},
+		ThinkingLevel: ai.ModelThinkingHigh,
+		Tools:         []agent.AgentTool{bashTool},
+	}))
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
+		Agent: created, SessionManager: manager, Settings: settings,
+		BaseTools: []agent.AgentTool{bashTool},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+	if _, err := bashTool.Execute(context.Background(), "call", tools.BashToolInput{Command: "printf ok"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if operations.env["PI_SESSION_ID"] != manager.GetSessionID() {
+		t.Fatalf("PI_SESSION_ID = %q, want %q", operations.env["PI_SESSION_ID"], manager.GetSessionID())
+	}
+	if operations.env["PI_PROVIDER"] != "anthropic" || operations.env["PI_MODEL"] != "claude-sonnet-4-5" {
+		t.Fatalf("PI_PROVIDER/PI_MODEL = %q/%q", operations.env["PI_PROVIDER"], operations.env["PI_MODEL"])
+	}
+	if operations.env["PI_REASONING_LEVEL"] != "high" {
+		t.Fatalf("PI_REASONING_LEVEL = %q", operations.env["PI_REASONING_LEVEL"])
+	}
+	// In-memory sessions have no session file, so the variable stays unset.
+	if value, exists := operations.env["PI_SESSION_FILE"]; exists {
+		t.Fatalf("PI_SESSION_FILE = %q for in-memory session", value)
+	}
 }
 
 func TestSessionEventWireShapes(t *testing.T) {
@@ -40,6 +90,8 @@ func TestSessionEventWireShapes(t *testing.T) {
 		{"summarization-retry-attempt-branch", SummarizationRetryAttemptStartEvent{Source: "branchSummary"}, `{"type":"summarization_retry_attempt_start","source":"branchSummary"}`},
 		{"summarization-retry-attempt-compaction", SummarizationRetryAttemptStartEvent{Source: "compaction", Reason: "overflow"}, `{"type":"summarization_retry_attempt_start","source":"compaction","reason":"overflow"}`},
 		{"summarization-retry-finished", SummarizationRetryFinishedEvent{}, `{"type":"summarization_retry_finished"}`},
+		{"bash-execution-update", BashExecutionUpdateEvent{ID: stringPointer("bash-1"), Delta: "chunk"}, `{"type":"bash_execution_update","id":"bash-1","delta":"chunk"}`},
+		{"bash-execution-update-no-id", BashExecutionUpdateEvent{Delta: "chunk"}, `{"type":"bash_execution_update","delta":"chunk"}`},
 		{"entry-appended", EntryAppendedEvent{Entry: sessionstore.SessionEntry{Type: "custom", ID: "entry", Timestamp: "2026-01-02T03:04:05.000Z"}}, `{"type":"entry_appended","entry":{"type":"custom","customType":"","id":"entry","parentId":null,"timestamp":"2026-01-02T03:04:05.000Z"}}`},
 		{"session-info-missing", SessionInfoChangedEvent{}, `{"type":"session_info_changed"}`},
 		{"session-info", SessionInfoChangedEvent{Name: stringPointer("named")}, `{"type":"session_info_changed","name":"named"}`},

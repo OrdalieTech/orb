@@ -256,7 +256,7 @@
       "name": "bash",
       "input": "{\"id\":\"bash-1\",\"type\":\"bash\",\"command\":\"printf rpc-bash\",\"excludeFromContext\":true}",
       "framing": "lf",
-      "expectedLineCount": 1
+      "expectedLineCount": 2
     },
     {
       "name": "bash-entry",
