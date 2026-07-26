@@ -288,6 +288,15 @@ func PrepareCompaction(pathEntries []SessionEntry, settings CompactionSettings) 
 	return prepareCompaction(pathEntries, settings, true)
 }
 
+// PrepareTreeCompaction prepares the canonical persisted session entries.
+func PrepareTreeCompaction(pathEntries []SessionTreeEntry, settings CompactionSettings) (*CompactionPreparation, error) {
+	entries := make([]SessionEntry, len(pathEntries))
+	for index := range pathEntries {
+		entries[index] = projectTreeEntry(pathEntries[index])
+	}
+	return prepareCompaction(entries, settings, true)
+}
+
 // PrepareLegacyCompaction retains the coding-agent compaction behavior, whose
 // persisted session format has not adopted harness retained-tail checkpoints.
 func PrepareLegacyCompaction(pathEntries []SessionEntry, settings CompactionSettings) (*CompactionPreparation, error) {

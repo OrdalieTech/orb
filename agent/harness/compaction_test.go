@@ -75,6 +75,23 @@ func TestFindCutPointAndPrepareCompaction(t *testing.T) {
 	}
 }
 
+func TestPrepareTreeCompaction(t *testing.T) {
+	entries := []SessionTreeEntry{
+		{Type: "message", ID: "old-user", Timestamp: timestamp(1), Message: json.RawMessage(`{"role":"user","content":"old request that is long enough to summarize","timestamp":1}`)},
+		{Type: "message", ID: "old-assistant", ParentID: ptr("old-user"), Timestamp: timestamp(2), Message: json.RawMessage(`{"role":"assistant","content":[{"type":"text","text":"old answer that is long enough to summarize"}],"api":"x","provider":"x","model":"x","usage":{"input":30,"output":30,"cacheRead":0,"cacheWrite":0,"totalTokens":60,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":2}`)},
+		{Type: "message", ID: "recent-user", ParentID: ptr("old-assistant"), Timestamp: timestamp(3), Message: json.RawMessage(`{"role":"user","content":"recent request","timestamp":3}`)},
+		{Type: "message", ID: "recent-assistant", ParentID: ptr("recent-user"), Timestamp: timestamp(4), Message: json.RawMessage(`{"role":"assistant","content":[{"type":"text","text":"recent answer"}],"api":"x","provider":"x","model":"x","usage":{"input":50,"output":50,"cacheRead":0,"cacheWrite":0,"totalTokens":100,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":4}`)},
+	}
+
+	prepared, err := PrepareTreeCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared == nil || prepared.FirstKeptEntryID != "recent-user" || len(prepared.MessagesToSummarize) != 2 || len(prepared.RetainedTail) != 2 {
+		t.Fatalf("preparation = %#v", prepared)
+	}
+}
+
 // On a second compaction the previous compaction entry sits inside the scanned
 // range (firstKeptEntryId points before it), and upstream weighs it through
 // sessionEntryToContextMessages. Expectations come from running upstream
