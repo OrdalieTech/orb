@@ -7,6 +7,10 @@ changed, so the difference between the two runs is attributable to
 and to nothing else. pigo is measured on **both** JavaScript hosts it can resolve — local Node 24 and
 local Bun 1.3.14 — because a single "does it work" number hid the runtime that produced it.
 
+A later, deliberately narrower Node-only sweep at
+[`d620c01`](#node-only-regression-sweep-at-d620c01) re-measured all 300 packages after `77c4c33`
+deleted the staged-entry mechanism. Read that section before quoting any number here as current.
+
 The follow-up [normal-install live matrix](ecosystem-extension-live.md) installs 30 packages through
 Pi itself, opens the resulting state with Pigo, and executes 15 live extension workflows.
 
@@ -453,6 +457,100 @@ DeepSeek Search registers conditionally after credential lookup, and Braintrust 
 through lifecycle hooks. The matrix can prove stable loading for them but sees no unconditional
 tool or command registration to compare.
 
+## Node-only regression sweep at `d620c01`
+
+`77c4c33` *Run extensions on whatever Node the machine has* deletes the staged-entry mechanism and
+with it `--preserve-symlinks`. An extension entry under `node_modules` is no longer reached through
+`~/.pi/host/entries/<hash>/source/…`; it is loaded in place, through the same load hook as
+everything else. That touches the code path of **every** package, so the corpus was re-measured.
+
+This sweep answers one question — *did anything that passed at `f64f4f7` break?* — and is scoped to
+that question:
+
+* **`pigo-bun` was not run.** Staging early-returned for every non-Node runtime and
+  `--preserve-symlinks` is a Node flag, so `77c4c33` cannot have moved Bun. Bun's last measured
+  figure remains the `f64f4f7` 222/300 above.
+* **Attempt counts were cut** to `compat` (1 warm-up + 2 samples) for tier 1 and `quick`
+  (0 + 1) for tiers 2–3. Timing was not being measured.
+
+> **Profile caveat.** A `quick`-profile count is comparable to a `perf`-profile count for hard
+> pass/fail **and for nothing else**. One attempt cannot separate a transient failure from a real
+> one, no timing figure from this sweep is publishable, and a package whose registrations differ
+> between attempts can be recorded as stable simply because only one attempt ran. Every candidate
+> regression below was therefore re-probed at `perf` (2 + 11) before being called one.
+
+| Runtime | load + registration | load-only | **load compatible** | flaky | unsupported | vs `f64f4f7` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `pigo-node` | 215 | 21 | **236 / 300 = 78.7 %** | 1 | 63 | **+5** |
+
+Seven packages that failed at `f64f4f7` now pass, and two that passed now fail.
+
+### Seven fixed
+
+| Package | Tier | `f64f4f7` failure | Cause of the fix |
+| --- | ---: | --- | --- |
+| `@firstpick/pi-extension-todo-progress` | 3 | `unsupported_sdk_export @firstpick/pi-utils export extractChecklist` | the load hook no longer reads an ESM package published without `"type": "module"` as CommonJS — this is the defect `f64f4f7` named as its actionable finding |
+| `pi-memory` | 1 | `unsupported_sdk_export @mariozechner/pi-ai export complete` | same format-detection fix |
+| `pi-interview` | 2 | `unsupported_sdk_export @mariozechner/pi-ai export complete` | same format-detection fix |
+| `pi-smart-router` | 3 | `missing_dependency Cannot find module …/telemetry/telemetry-limits` | staging mirrored only the manifest's direct dependencies, so a deep relative import inside a dependency had nothing to resolve against; loading in place restores npm's own layout |
+| `pi-smart-ralph` | 3 | `registration_mismatch activeTools.added missing_in_candidate` | as above |
+| `pi-intercom` | 1 | `install_failure ENOTEMPTY rmdir '/work/matrix-7'` | not a verdict — the documented harness `rm(runRoot)` race (`matrix.mjs:722`) landed on the other side this time |
+| `@lebronj/pi-suite` | 3 | `flaky`, 2 distinct registration snapshots | not a verdict — the known registration race (`manager.go:518-528`, `:933-954`); it also ran at 1 attempt here, which cannot observe flakiness |
+
+`typescript_unsupported` is still down to the single package upstream Pi cannot load either
+(`@cgh567/agent`), unchanged from `f64f4f7`.
+
+### Two regressions, reproduced
+
+Both are **real and deterministic**. Each was re-probed alone at `perf` — 13 attempts per runtime —
+against a `d620c01` binary and against an `f64f4f7` binary, in the same container, on the same
+installed corpus, with the harness, corpus, observer, lock and upstream Pi byte-identical. The pigo
+binary hash is the only input that differs between the two columns.
+
+| Package | Tier | `f64f4f7` binary, 13 attempts | `d620c01` binary, 13 attempts |
+| --- | ---: | --- | --- |
+| `@narumitw/pi-goal` | 1 | `load_register_pass`, 0 failures | **fails 13/13** — `unsupported_sdk_export @earendil-works/pi-ai export isRetryableAssistantError` |
+| `@pi-stef/atlassian` | 1 | `load_register_pass`, 0 failures | **fails 13/13** — `registration_mismatch tool_definition.parameters`, `jira_add_comment: parameters_differs` |
+
+**Both had exactly these two signatures as `bun_only_failure` at `53222c3`, while passing on Node.**
+That is the tell, and it names the mechanism: one shared root cause, not two.
+
+Bun resolves the SDK through the real npm layout via `NODE_PATH`. Node used to resolve it through
+the staged mirror, which placed the SDK where the entry expected it. With staging deleted, Node
+resolves through the real npm layout too — so Node inherited Bun's failures because Node's
+resolution now *is* Bun's resolution. This is a change in **which copy of a duplicated dependency
+wins**, not a failure to resolve:
+
+* **`@narumitw/pi-goal`.** `isRetryableAssistantError` exists only in `@earendil-works/pi-ai`
+  ≥ 0.80.6. The hoisted `node_modules/@earendil-works/pi-ai` in the corpus is **0.80.2** and does
+  not export it; the copy Pigo ships under `PIGO_PI_SDK_ROOT` is **0.81.1** and does. `legacySurface`
+  in `codingagent/extensions/host/loader.mjs` redirects `@earendil-works/pi-ai` →
+  `@earendil-works/pi-ai/compat` *through the caller's own context*, by design, "so a pinned or
+  older install still wins". `installedSDK`, the fallback that resolves against `PIGO_PI_SDK_ROOT`,
+  is only reached from the `catch` in `resolve`. Resolving 0.80.2 does not throw — it succeeds and
+  then lacks the export — so the fallback never runs. Staging used to hide this by making the
+  in-context resolution land on the SDK copy.
+* **`@pi-stef/atlassian`.** `@pi-stef/atlassian@0.4.1` depends on `@pi-stef/atlassian@^0.3.0`, so
+  npm installs **0.3.4 nested inside 0.4.1**. Two copies of the same package with different tool
+  schemas; which one the extension's own imports reach changed with the resolution path. The
+  surviving difference is one `jira_add_comment` parameter pattern, `^.*$` upstream against
+  `^(.*)$` in the candidate. `zod` and `zod-to-json-schema` are single-version in this tree, which
+  rules out a converter-version explanation.
+
+Neither is a flake, and neither is on the known non-verdict list.
+
+**`resolveFromSource` is not dead code — `77c4c33` deleted it.** At `f64f4f7` it sat at
+`loader.mjs:61` gated on `context.parentURL.includes("/host/entries/")`, called from `resolve` at
+`:263`. At `d620c01` the symbol does not appear in the file at all. The remaining SDK path is
+`legacySurface` → `nextResolve` → `installedSDK`-on-throw, described above.
+
+### What this does not cover
+
+`pigo-bun` was not re-measured, so no Bun number here is current as of `d620c01`. The smoke and
+workflow suites were not re-run. Tier 2 and tier 3 verdicts rest on a single attempt each: a package
+recorded as passing there is not evidence of stability, only of one successful load, and the flaky
+count of 1 is a floor, not a measurement.
+
 ## Caveats
 
 `load_register_pass` is deliberately narrower than end-to-end extension compatibility. No
@@ -482,11 +580,24 @@ makes the comparison a controlled A/B rather than two separate measurements:
 | tested Pigo executable (linux/arm64, **`f64f4f7`**, 48,661,574 B) | `6efddd4ef4d1cd0162ab4a04cd49fd0bf306e3a545b00daed5902f416d2ff037` | **no** |
 | previous Pigo executable (linux/arm64, `53222c3`) | `e49168f94e7fdcd35c60428d79a0698496858feb0c57505b47520715ed11ee5c` | — |
 
+The `d620c01` sweep reuses every input above unchanged — same `corpus.json`, `matrix.mjs`,
+`taxonomy.mjs`, `observer.ts`, `package-lock.json` and upstream Pi hash — and changes only the pigo
+executable and the sampling profile. Both pigo binaries used there were built from detached
+worktrees, not a working tree:
+
+| Input | SHA-256 | Bytes |
+| --- | --- | ---: |
+| Pigo executable (linux/arm64, **`d620c01`**) | `4d32f6b3f91b38c4383d60a68d1bcd037707617dc3b66f72dd12060f8ae6d8d2` | 48,828,075 |
+| Pigo executable (linux/arm64, `f64f4f7`, rebuilt for the A/B) | `9ed29a838b84c668d3a3d242022ee9f776ce3a7fb55c66b57d143424aff13084` | — |
+
 Artifacts. Large raw artifacts are committed `gzip -9`; the *raw* SHA-256 is the hash of the
 uncompressed JSON inside, so it can be checked after `gunzip`:
 
 | Artifact | raw bytes | raw SHA-256 | committed SHA-256 |
 | --- | ---: | --- | --- |
+| 300-package Node-only sweep, `d620c01` [`…-300-d620c01.json.gz`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-300-d620c01.json.gz) | 14,602,607 | `dc91f9e0b145d5a35890f5802a8c49554b4a8d8b3e4e27960b0735b6cf9aabb0` | `9bbdafb514f4bdf2026a29f6ea0d22c01a0bb7736ab088f993f4785450af079e` |
+| regression A/B (2 packages, `perf`), `d620c01` binary [`…-regression-ab-d620c01.json.gz`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-regression-ab-d620c01.json.gz) | 1,050,292 | `3ca6f9d3833f41b68ea75b1a7867af9cc607d27e2a05057e78f1650dd0a93e29` | `4d3c3b9d4581447290b530031858a33fc23e649d04617014ace33f5ac5b544d0` |
+| regression A/B (2 packages, `perf`), `f64f4f7` binary [`…-regression-ab-f64f4f7.json.gz`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-regression-ab-f64f4f7.json.gz) | 226,747 | `dc7d71f068516109de5b3fde3a96d0187769818195b782eb7d3df5866f234bc5` | `d0459cace199a0839d41d51e97ba27f4ea348ae863247c16a4e39dfb97a7a1f8` |
 | 300-package matrix, `f64f4f7` [`…-300-f64f4f7.json.gz`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-300-f64f4f7.json.gz) | 18,818,163 | `764dec1736c7365c5d8db7f58965fa8b6f9830128ca0dc4eca6cdf568ad6ee77` | `7ef07b1e70fc215962c0c7cf7a08ca3b1b88a19fd575ceae95e08db1b94713c4` |
 | smoke, `f64f4f7` [`…-300-f64f4f7-smoke.json.gz`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-300-f64f4f7-smoke.json.gz) | 929,966 | `807611cf1a12b7a3841e5a88d085a1d5b48178fc5dc3ae3ed171187fa7a57339` | `d65699980f2f8486f6f398d00004eafe176aeb4151d9516e21eaa3a506dce243` |
 | tier-1 `compat` A/B, `f64f4f7` [`…-tier1-compat-f64f4f7.json.gz`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-tier1-compat-f64f4f7.json.gz) | 2,886,036 | `dcec6b9c5e0f0065d13a969c7b69d157a2856ac68ce1ff309bd052d21cb99581` | `00e5453acdcbd0406a810840df6e096980ccd3180877593438454d2ca6549866` |
