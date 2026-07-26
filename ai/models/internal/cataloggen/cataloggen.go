@@ -34,13 +34,20 @@ type sourceProvider struct {
 	Models map[string]sourceModel `json:"models"`
 }
 
+type sourceReasoningOption struct {
+	Type   string    `json:"type"`
+	Values []*string `json:"values"`
+}
+
 type sourceModel struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	ToolCall   bool   `json:"tool_call"`
-	Reasoning  bool   `json:"reasoning"`
-	Status     string `json:"status"`
-	Modalities struct {
+	ID               string                  `json:"id"`
+	Name             string                  `json:"name"`
+	ToolCall         bool                    `json:"tool_call"`
+	StructuredOutput bool                    `json:"structured_output"`
+	Reasoning        bool                    `json:"reasoning"`
+	ReasoningOptions []sourceReasoningOption `json:"reasoning_options"`
+	Status           string                  `json:"status"`
+	Modalities       struct {
 		Input  []string `json:"input"`
 		Output []string `json:"output"`
 	} `json:"modalities"`
@@ -290,6 +297,7 @@ func addRule(result map[string]map[string]ai.Model, source sourceProvider, item 
 		if item.provider == "fireworks" && strings.Contains(id, "glm-5p2") {
 			model.API = ai.APIOpenAICompletions
 			model.BaseURL = "https://api.fireworks.ai/inference/v1"
+			applyModelsDevReasoningOptionMetadata(&model, raw.ReasoningOptions)
 		}
 		if item.provider == "mistral" && model.Cost.CacheRead == 0 && model.Cost.Input != 0 {
 			model.Cost.CacheRead = roundCost(model.Cost.Input * 0.1)
@@ -297,6 +305,11 @@ func addRule(result map[string]map[string]ai.Model, source sourceProvider, item 
 		if item.provider == "google-vertex" && id == "gemini-2.5-flash" {
 			model.Cost.CacheRead = 0.03
 			model.Cost.CacheWrite = 0
+		}
+		if item.provider == "amazon-bedrock" && raw.StructuredOutput {
+			model.Compat = mustCompatJSON(struct {
+				SupportsStrictMode bool `json:"supportsStrictMode"`
+			}{true})
 		}
 		upsert(result, model)
 	}
@@ -310,6 +323,9 @@ func include(item rule, id string, model sourceModel) bool {
 		return false
 	}
 	if item.provider == "amazon-bedrock" && (strings.HasPrefix(id, "ai21.jamba") || strings.HasPrefix(id, "mistral.mistral-7b-instruct-v0")) {
+		return false
+	}
+	if item.provider == "amazon-bedrock" && id == "anthropic.claude-opus-5" {
 		return false
 	}
 	if item.provider == "google-vertex" && (!strings.HasPrefix(id, "gemini-") || id == "gemini-3.1-flash-lite-preview") {
@@ -342,7 +358,9 @@ func normalizedModel(id, name string, raw sourceModel, api ai.API, provider, bas
 		input = append(input, ai.InputImage)
 	}
 	cost := ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: raw.Cost.Input, Output: raw.Cost.Output, CacheRead: raw.Cost.CacheRead, CacheWrite: raw.Cost.CacheWrite}}
-	return ai.Model{ID: id, Name: name, API: api, Provider: ai.ProviderID(provider), BaseURL: baseURL, Reasoning: raw.Reasoning, Input: input, Cost: cost, ContextWindow: contextWindow, MaxTokens: maxTokens}
+	model := ai.Model{ID: id, Name: name, API: api, Provider: ai.ProviderID(provider), BaseURL: baseURL, Reasoning: raw.Reasoning, Input: input, Cost: cost, ContextWindow: contextWindow, MaxTokens: maxTokens}
+	applyModelsDevReasoningOptionMetadata(&model, raw.ReasoningOptions)
+	return model
 }
 
 func addCloudflareGateway(result map[string]map[string]ai.Model, source sourceProvider) {
@@ -769,6 +787,7 @@ func addAzure(result map[string]map[string]ai.Model) {
 		clone := model
 		clone.API, clone.Provider, clone.BaseURL = ai.APIAzureOpenAIResponses, "azure-openai-responses", ""
 		clone.Compat = nil
+		clone.ThinkingLevelMap = nil
 		clone.Cost.Tiers = nil
 		if slices.Contains([]string{"gpt-5.4", "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"}, clone.ID) {
 			clone.ContextWindow = 1050000
