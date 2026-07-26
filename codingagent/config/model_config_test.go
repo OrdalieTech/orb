@@ -177,6 +177,30 @@ func TestLoadModelsJSONRejectsInvalidSchema(t *testing.T) {
 	}
 }
 
+func TestModelsJSONAcceptsConstrainedSamplingCompatFlags(t *testing.T) {
+	for name, compat := range map[string]string{
+		"responses":   `{"supportsStrictMode":true,"supportsOpenAIGrammarTools":true}`,
+		"completions": `{"supportsOpenAIGrammarTools":true}`,
+		"anthropic":   `{"supportsStrictTools":true,"supportsTemperature":false,"allowEmptySignature":true}`,
+		"bedrock":     `{"supportsStrictMode":true}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "models.json")
+			content := `{"providers":{"p":{"compat":` + compat + `}}}`
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			config, err := LoadModelConfig(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if config.Error() != "" {
+				t.Fatalf("compat rejected: %s", config.Error())
+			}
+		})
+	}
+}
+
 func TestModelsJSONValidationMatchesUpstreamFixture(t *testing.T) {
 	data, err := os.ReadFile("../../conformance/fixtures/WP250/validation-cases.json")
 	if err != nil {

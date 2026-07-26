@@ -73,6 +73,24 @@ func TestBuildBedrockPayloadPreservesUpstreamReplayQuirks(t *testing.T) {
 	}
 }
 
+func TestBedrockConstrainedSamplingWire(t *testing.T) {
+	tools := []ai.Tool{constrainedSamplingTestTool("strict", strictSamplingTestConfig(ai.ConstrainedSamplingPrefer))}
+	converted, err := convertBedrockToolConfig(&tools, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if converted.Tools[0].ToolSpec.Strict == nil || !*converted.Tools[0].ToolSpec.Strict {
+		t.Fatalf("strict Bedrock tool = %#v", converted.Tools[0])
+	}
+	converted, err = convertBedrockToolConfig(&tools, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if converted.Tools[0].ToolSpec.Strict != nil {
+		t.Fatalf("unsupported Bedrock strict field survived: %#v", converted.Tools[0])
+	}
+}
+
 func TestBedrockThinkingReplayAndCacheSupport(t *testing.T) {
 	model := bedrockTestModel("anthropic.claude-sonnet-4-5-20250929-v1:0", "Claude Sonnet 4.5")
 	emptySignature, signature := " ", "signed"

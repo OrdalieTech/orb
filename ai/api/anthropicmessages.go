@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
 	"github.com/OrdalieTech/pigo/internal/partialjson"
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -144,17 +146,12 @@ type anthropicToolResultBlock struct {
 	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
 }
 
-type anthropicInputSchema struct {
-	Type       string          `json:"type"`
-	Properties json.RawMessage `json:"properties"`
-	Required   []string        `json:"required"`
-}
-
 type anthropicToolParam struct {
 	Name                string                 `json:"name"`
 	Description         string                 `json:"description"`
 	EagerInputStreaming *bool                  `json:"eager_input_streaming,omitempty"`
-	InputSchema         anthropicInputSchema   `json:"input_schema"`
+	Strict              *bool                  `json:"strict,omitempty"`
+	InputSchema         json.RawMessage        `json:"input_schema"`
 	DeferLoading        *bool                  `json:"defer_loading,omitempty"`
 	CacheControl        *anthropicCacheControl `json:"cache_control,omitempty"`
 }
@@ -190,6 +187,7 @@ type resolvedAnthropicCompat struct {
 	supportsTemperature             bool
 	forceAdaptiveThinking           *bool
 	allowEmptySignature             bool
+	supportsStrictTools             bool
 	supportsToolReferences          bool
 }
 
@@ -403,6 +401,9 @@ func getAnthropicCompat(model *ai.Model) (resolvedAnthropicCompat, error) {
 	if raw.AllowEmptySignature != nil {
 		compat.allowEmptySignature = *raw.AllowEmptySignature
 	}
+	if raw.SupportsStrictTools != nil {
+		compat.supportsStrictTools = *raw.SupportsStrictTools
+	}
 	if raw.SupportsToolReferences != nil {
 		compat.supportsToolReferences = *raw.SupportsToolReferences
 	}
@@ -531,11 +532,15 @@ func buildAnthropicMessagesPayload(
 		if !compat.supportsCacheControlOnTools {
 			immediateCache = nil
 		}
-		immediate, err := convertAnthropicTools(placement.immediate, isOAuth, compat.supportsEagerToolInputStreaming, immediateCache, false)
+		immediate, err := convertAnthropicTools(
+			placement.immediate, isOAuth, compat.supportsEagerToolInputStreaming, compat.supportsStrictTools, immediateCache, false,
+		)
 		if err != nil {
 			return nil, false, err
 		}
-		deferred, err := convertAnthropicTools(placement.deferred, isOAuth, compat.supportsEagerToolInputStreaming, nil, true)
+		deferred, err := convertAnthropicTools(
+			placement.deferred, isOAuth, compat.supportsEagerToolInputStreaming, compat.supportsStrictTools, nil, true,
+		)
 		if err != nil {
 			return nil, false, err
 		}
@@ -672,7 +677,14 @@ func splitAnthropicTools(requestContext ai.Context, enabled bool, normalizeName 
 	return placement
 }
 
-func convertAnthropicTools(tools []ai.Tool, oauth, eager bool, cacheControl *anthropicCacheControl, deferLoading bool) ([]anthropicToolParam, error) {
+func convertAnthropicTools(
+	tools []ai.Tool,
+	oauth bool,
+	eager bool,
+	supportsStrictTools bool,
+	cacheControl *anthropicCacheControl,
+	deferLoading bool,
+) ([]anthropicToolParam, error) {
 	result := make([]anthropicToolParam, 0, len(tools))
 	for index, tool := range tools {
 		name := tool.Name
@@ -683,10 +695,19 @@ func convertAnthropicTools(tools []ai.Tool, oauth, eager bool, cacheControl *ant
 		if err != nil {
 			return nil, err
 		}
+		strict, err := resolveJSONSchemaStrictSampling(tool, supportsStrictTools)
+		if err != nil {
+			return nil, err
+		}
+		inputSchema, err := buildAnthropicInputSchema(tool, properties, required, strict != nil && *strict)
+		if err != nil {
+			return nil, err
+		}
 		converted := anthropicToolParam{
 			Name:        name,
 			Description: tool.Description,
-			InputSchema: anthropicInputSchema{Type: "object", Properties: properties, Required: required},
+			Strict:      strict,
+			InputSchema: inputSchema,
 		}
 		if eager {
 			value := true
@@ -702,6 +723,59 @@ func convertAnthropicTools(tools []ai.Tool, oauth, eager bool, cacheControl *ant
 		result = append(result, converted)
 	}
 	return result, nil
+}
+
+func buildAnthropicInputSchema(
+	tool ai.Tool,
+	properties json.RawMessage,
+	required []string,
+	strict bool,
+) (json.RawMessage, error) {
+	legacy := jsonwire.OrderedObject{
+		{Name: "type", Value: "object"},
+		{Name: "properties", Value: properties},
+		{Name: "required", Value: required},
+	}
+	if !strict {
+		encoded, err := ai.Marshal(legacy)
+		return json.RawMessage(encoded), err
+	}
+	data, err := ai.Marshal(tool.Parameters)
+	if err != nil {
+		return nil, fmt.Errorf("marshal Anthropic tool %q schema: %w", tool.Name, err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, fmt.Errorf("decode Anthropic tool %q schema: %w", tool.Name, err)
+	}
+	if delimiter, ok := token.(json.Delim); !ok || delimiter != '{' {
+		return nil, fmt.Errorf("decode Anthropic tool %q schema: expected object", tool.Name)
+	}
+	schema := make(jsonwire.OrderedObject, 0)
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return nil, fmt.Errorf("decode Anthropic tool %q schema: %w", tool.Name, err)
+		}
+		name, ok := token.(string)
+		if !ok {
+			return nil, fmt.Errorf("decode Anthropic tool %q schema: expected object key", tool.Name)
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return nil, fmt.Errorf("decode Anthropic tool %q schema: %w", tool.Name, err)
+		}
+		schema.Set(name, value)
+	}
+	if _, err := decoder.Token(); err != nil {
+		return nil, fmt.Errorf("decode Anthropic tool %q schema: %w", tool.Name, err)
+	}
+	for _, member := range legacy {
+		schema.Set(member.Name, member.Value)
+	}
+	encoded, err := ai.Marshal(schema)
+	return json.RawMessage(encoded), err
 }
 
 func anthropicSchemaParts(tool ai.Tool) (json.RawMessage, []string, error) {

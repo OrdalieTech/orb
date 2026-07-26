@@ -183,6 +183,7 @@ type BedrockToolSpecification struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description"`
 	InputSchema BedrockToolInputSchema `json:"inputSchema"`
+	Strict      *bool                  `json:"strict,omitempty"`
 }
 
 type BedrockToolInputSchema struct {
@@ -436,7 +437,15 @@ func buildBedrockPayload(
 		return nil, err
 	}
 	system := buildBedrockSystemPrompt(requestContext.SystemPrompt, model, retention, bedrockStreamOptions(options))
-	toolConfig := convertBedrockToolConfig(requestContext.Tools, options)
+	compat, err := decodeCompat[ai.BedrockCompat](model)
+	if err != nil {
+		return nil, err
+	}
+	supportsStrictMode := compat.SupportsStrictMode != nil && *compat.SupportsStrictMode
+	toolConfig, err := convertBedrockToolConfig(requestContext.Tools, options, supportsStrictMode)
+	if err != nil {
+		return nil, err
+	}
 	additional := buildBedrockAdditionalFields(model, options)
 
 	var maxTokens *float64
@@ -665,14 +674,23 @@ func newBedrockImageBlock(mimeType, data string) (*BedrockImageBlock, error) {
 	return &BedrockImageBlock{Format: format, Source: BedrockImageSource{Bytes: data}}, nil
 }
 
-func convertBedrockToolConfig(tools *[]ai.Tool, options *BedrockConverseStreamOptions) *BedrockToolConfiguration {
+func convertBedrockToolConfig(
+	tools *[]ai.Tool,
+	options *BedrockConverseStreamOptions,
+	supportsStrictMode bool,
+) (*BedrockToolConfiguration, error) {
 	if tools == nil || len(*tools) == 0 || options != nil && options.ToolChoice != nil && options.ToolChoice.Type == "none" {
-		return nil
+		return nil, nil
 	}
 	result := &BedrockToolConfiguration{Tools: make([]BedrockTool, 0, len(*tools))}
 	for _, tool := range *tools {
+		strict, err := resolveJSONSchemaStrictSampling(tool, supportsStrictMode)
+		if err != nil {
+			return nil, err
+		}
 		result.Tools = append(result.Tools, BedrockTool{ToolSpec: BedrockToolSpecification{
 			Name: tool.Name, Description: tool.Description, InputSchema: BedrockToolInputSchema{JSON: tool.Parameters},
+			Strict: strict,
 		}})
 	}
 	if options != nil && options.ToolChoice != nil {
@@ -685,7 +703,7 @@ func convertBedrockToolConfig(tools *[]ai.Tool, options *BedrockConverseStreamOp
 			result.ToolChoice = map[string]any{"tool": map[string]any{"name": options.ToolChoice.Name}}
 		}
 	}
-	return result
+	return result, nil
 }
 
 func newBedrockCachePoint(retention ai.CacheRetention) *BedrockCachePoint {
@@ -1593,6 +1611,7 @@ func bedrockSDKInput(payload *BedrockConverseStreamPayload) (*bedrockruntime.Con
 			configuration.Tools = append(configuration.Tools, &bedrocktypes.ToolMemberToolSpec{Value: bedrocktypes.ToolSpecification{
 				Name: aws.String(tool.ToolSpec.Name), Description: aws.String(tool.ToolSpec.Description),
 				InputSchema: &bedrocktypes.ToolInputSchemaMemberJson{Value: bedrockdocument.NewLazyDocument(schema)},
+				Strict:      tool.ToolSpec.Strict,
 			}})
 		}
 		configuration.ToolChoice = bedrockSDKToolChoice(payload.ToolConfig.ToolChoice)

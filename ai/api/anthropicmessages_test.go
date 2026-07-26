@@ -226,6 +226,37 @@ func TestAnthropicRejectsUnserializableToolReplayAndSchema(t *testing.T) {
 	}
 }
 
+func TestAnthropicConstrainedSamplingWire(t *testing.T) {
+	tool := constrainedSamplingTestTool("strict", strictSamplingTestConfig(ai.ConstrainedSamplingPrefer))
+	converted, err := convertAnthropicTools([]ai.Tool{tool}, false, false, true, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := ai.Marshal(converted[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(wire), `"strict":true`) ||
+		!strings.Contains(string(wire), `"additionalProperties":false`) ||
+		!strings.Contains(string(wire), `"title":"Payload"`) {
+		t.Fatalf("strict Anthropic tool = %s", wire)
+	}
+
+	converted, err = convertAnthropicTools([]ai.Tool{tool}, false, false, false, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err = ai.Marshal(converted[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(wire), `"strict":`) ||
+		strings.Contains(string(wire), `"additionalProperties"`) ||
+		strings.Contains(string(wire), `"title"`) {
+		t.Fatalf("unsupported Anthropic strict fields survived: %s", wire)
+	}
+}
+
 // Ports packages/ai/test/anthropic-tool-name-normalization.test.ts: Claude
 // Code OAuth tool naming is a case-insensitive round-trip against CC's
 // canonical casing, never a mapping between different tool names.

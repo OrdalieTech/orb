@@ -138,6 +138,7 @@ type OpenAICompletionsCompat struct {
 	OpenRouterRouting                           *OpenRouterRouting     `json:"openRouterRouting,omitempty"`
 	VercelGatewayRouting                        *VercelGatewayRouting  `json:"vercelGatewayRouting,omitempty"`
 	ZAIToolStream                               *bool                  `json:"zaiToolStream,omitempty"`
+	SupportsOpenAIGrammarTools                  *bool                  `json:"supportsOpenAIGrammarTools,omitempty"`
 	SupportsStrictMode                          *bool                  `json:"supportsStrictMode,omitempty"`
 	CacheControlFormat                          *CacheControlFormat    `json:"cacheControlFormat,omitempty"`
 	SendSessionAffinityHeaders                  *bool                  `json:"sendSessionAffinityHeaders,omitempty"`
@@ -150,6 +151,8 @@ type OpenAIResponsesCompat struct {
 	SupportsDeveloperRole      *bool                  `json:"supportsDeveloperRole,omitempty"`
 	SessionAffinityFormat      *SessionAffinityFormat `json:"sessionAffinityFormat,omitempty"`
 	SupportsLongCacheRetention *bool                  `json:"supportsLongCacheRetention,omitempty"`
+	SupportsStrictMode         *bool                  `json:"supportsStrictMode,omitempty"`
+	SupportsOpenAIGrammarTools *bool                  `json:"supportsOpenAIGrammarTools,omitempty"`
 	SupportsToolSearch         *bool                  `json:"supportsToolSearch,omitempty"`
 }
 
@@ -161,7 +164,12 @@ type AnthropicMessagesCompat struct {
 	SupportsTemperature             *bool `json:"supportsTemperature,omitempty"`
 	ForceAdaptiveThinking           *bool `json:"forceAdaptiveThinking,omitempty"`
 	AllowEmptySignature             *bool `json:"allowEmptySignature,omitempty"`
+	SupportsStrictTools             *bool `json:"supportsStrictTools,omitempty"`
 	SupportsToolReferences          *bool `json:"supportsToolReferences,omitempty"`
+}
+
+type BedrockCompat struct {
+	SupportsStrictMode *bool `json:"supportsStrictMode,omitempty"`
 }
 
 type CacheControlFormat string
@@ -365,11 +373,37 @@ func JSONStringEnumSchema(values ...string) JSONSchema {
 	return jsonschema.StringEnum(values...)
 }
 
+type ConstrainedSamplingType string
+
+const (
+	ConstrainedSamplingJSONSchema ConstrainedSamplingType = "json_schema"
+	ConstrainedSamplingGrammar    ConstrainedSamplingType = "grammar"
+)
+
+type ConstrainedSamplingStrict string
+
+const (
+	ConstrainedSamplingPrefer  ConstrainedSamplingStrict = "prefer"
+	ConstrainedSamplingRequire ConstrainedSamplingStrict = "require"
+)
+
+type GrammarVariants struct {
+	OpenAILark  *string `json:"openai_lark,omitempty"`
+	OpenAIRegex *string `json:"openai_regex,omitempty"`
+}
+
+type ConstrainedSamplingConfig struct {
+	Type     ConstrainedSamplingType   `json:"type"`
+	Strict   ConstrainedSamplingStrict `json:"strict,omitempty"`
+	Variants *GrammarVariants          `json:"variants,omitempty"`
+}
+
 type Tool struct {
-	Name        string     `json:"name"`
-	Label       string     `json:"label,omitempty"`
-	Description string     `json:"description"`
-	Parameters  JSONSchema `json:"parameters"`
+	Name                string                     `json:"name"`
+	Label               string                     `json:"label,omitempty"`
+	Description         string                     `json:"description"`
+	Parameters          JSONSchema                 `json:"parameters"`
+	ConstrainedSampling *ConstrainedSamplingConfig `json:"constrainedSampling,omitempty"`
 }
 
 type Context struct {

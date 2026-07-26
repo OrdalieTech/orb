@@ -353,6 +353,7 @@ func processOpenAICodexWebSocket(
 	model *ai.Model,
 	requestBody []byte,
 	headers http.Header,
+	grammarToolInputProperties map[string]string,
 	options *OpenAICodexResponsesOptions,
 	output *ai.AssistantMessage,
 	sink func(ai.AssistantMessageEvent) bool,
@@ -403,6 +404,7 @@ func processOpenAICodexWebSocket(
 		}
 		return sink(event)
 	})
+	processor.grammarToolInputProperties = grammarToolInputProperties
 	for {
 		message, err := lease.socket.ReadMessage(ctx, codexWebSocketIdleTimeout(streamOptions))
 		if err != nil {
@@ -442,7 +444,9 @@ func processOpenAICodexWebSocket(
 		}
 	}
 	if useCachedContext && output.ResponseID != nil {
-		continuation, err := makeOpenAICodexContinuation(model, requestBody, *output.ResponseID, output)
+		continuation, err := makeOpenAICodexContinuation(
+			model, requestBody, *output.ResponseID, output, grammarToolInputProperties,
+		)
 		if err != nil {
 			return started, err
 		}
@@ -495,12 +499,18 @@ func makeOpenAICodexContinuation(
 	requestBody []byte,
 	responseID string,
 	output *ai.AssistantMessage,
+	grammarToolInputProperties map[string]string,
 ) (*openAICodexContinuation, error) {
 	other, input, err := openAICodexBodySnapshot(requestBody)
 	if err != nil {
 		return nil, err
 	}
-	items, err := convertResponsesMessages(model, ai.Context{Messages: ai.MessageList{output}}, nil, false)
+	items, err := convertResponsesMessagesWithOptions(
+		model,
+		ai.Context{Messages: ai.MessageList{output}},
+		nil,
+		responsesMessageOptions{grammarToolInputProperties: grammarToolInputProperties},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -514,7 +524,7 @@ func makeOpenAICodexContinuation(
 			Type string `json:"type"`
 		}
 		_ = json.Unmarshal(encoded, &kind)
-		if kind.Type != "function_call_output" {
+		if kind.Type != "function_call_output" && kind.Type != "custom_tool_call_output" {
 			responseItems = append(responseItems, encoded)
 		}
 	}

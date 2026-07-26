@@ -110,6 +110,103 @@ func TestBuildOpenAIResponsesPayloadDefaultOffAndZeroMaxTokens(t *testing.T) {
 	}
 }
 
+func TestOpenAIResponsesConstrainedSamplingWire(t *testing.T) {
+	plainTools := []ai.Tool{
+		constrainedSamplingTestTool("plain", nil),
+		constrainedSamplingTestTool("grammar-fallback", grammarSamplingTestConfig()),
+	}
+	payload, _, err := buildOpenAIResponsesPayload(responsesTestModel(), ai.Context{Tools: &plainTools}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range payload.Tools {
+		wire, err := ai.Marshal(tool)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tool.Type != "function" || strings.Contains(string(wire), `"strict"`) {
+			t.Fatalf("default Responses tool did not fall back without strict: %s", wire)
+		}
+	}
+
+	model := responsesTestModel()
+	model.Compat = json.RawMessage(`{"supportsStrictMode":true,"supportsOpenAIGrammarTools":true}`)
+	tools := []ai.Tool{
+		constrainedSamplingTestTool("strict", strictSamplingTestConfig(ai.ConstrainedSamplingPrefer)),
+		constrainedSamplingTestTool("grammar", grammarSamplingTestConfig()),
+	}
+	payload, _, err = buildOpenAIResponsesPayload(model, ai.Context{Tools: &tools}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Tools) != 2 || payload.Tools[0].Strict == nil || !*payload.Tools[0].Strict {
+		t.Fatalf("strict tool = %#v", payload.Tools)
+	}
+	if payload.Tools[1].Type != "custom" || payload.Tools[1].Format == nil ||
+		payload.Tools[1].Format.Syntax != "lark" || payload.Tools[1].Format.Definition != `start: /[a-z"]+/` {
+		t.Fatalf("grammar tool = %#v", payload.Tools[1])
+	}
+
+	required := []ai.Tool{constrainedSamplingTestTool("required", strictSamplingTestConfig(ai.ConstrainedSamplingRequire))}
+	if _, _, err := buildOpenAIResponsesPayload(responsesTestModel(), ai.Context{Tools: &required}, nil); err == nil {
+		t.Fatal("unsupported required strict sampling was accepted")
+	}
+}
+
+func TestOpenAIResponsesCustomToolCallStreamingRoundTrip(t *testing.T) {
+	model := responsesTestModel()
+	output := newAssistantMessage(model)
+	var deltas strings.Builder
+	processor := newOpenAIResponsesProcessor(model, output, nil, func(event ai.AssistantMessageEvent) bool {
+		if delta, ok := event.(ai.ToolCallDeltaEvent); ok {
+			deltas.WriteString(delta.Delta)
+		}
+		return true
+	})
+	processor.grammarToolInputProperties = map[string]string{"emit": "payload"}
+	for _, raw := range []string{
+		`{"type":"response.output_item.added","output_index":0,"item":{"type":"custom_tool_call","id":"ct_1","call_id":"call_1","name":"emit","input":""}}`,
+		`{"type":"response.custom_tool_call_input.delta","output_index":0,"delta":"a\""}`,
+		`{"type":"response.custom_tool_call_input.done","output_index":0,"input":"a\"b"}`,
+		`{"type":"response.output_item.done","output_index":0,"item":{"type":"custom_tool_call","id":"ct_1","call_id":"call_1","name":"emit","input":"a\"b"}}`,
+		`{"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[]}}`,
+	} {
+		if err := processor.handle(json.RawMessage(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if deltas.String() != `{"payload":"a\"b"}` {
+		t.Fatalf("streamed JSON deltas = %q", deltas.String())
+	}
+	call, ok := output.Content[0].(*ai.ToolCall)
+	if !ok || call.ID != "call_1|ct_1" || call.Arguments["payload"] != `a"b` ||
+		output.StopReason != ai.StopReasonToolUse {
+		t.Fatalf("custom tool call = %#v", output.Content)
+	}
+
+	messages, err := convertResponsesMessagesWithOptions(model, ai.Context{Messages: ai.MessageList{
+		output,
+		&ai.ToolResultMessage{
+			ToolCallID: call.ID, ToolName: call.Name,
+			Content: ai.ToolResultContent{&ai.TextContent{Text: "done"}},
+		},
+	}}, map[string]ai.Tool{}, responsesMessageOptions{
+		supportsDeveloperRole:      true,
+		grammarToolInputProperties: map[string]string{"emit": "payload"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayedCall, ok := messages[0].(responsesCustomToolCall)
+	if !ok || replayedCall.Type != "custom_tool_call" || replayedCall.Input != `a"b` {
+		t.Fatalf("custom call replay = %#v", messages[0])
+	}
+	replayedOutput, ok := messages[1].(responsesFunctionCallOutput)
+	if !ok || replayedOutput.Type != "custom_tool_call_output" {
+		t.Fatalf("custom output replay = %#v", messages[1])
+	}
+}
+
 func TestStreamSimpleOpenAIResponsesClampsContextAndReasoning(t *testing.T) {
 	var requestBody []byte
 	previousClient := openAIHTTPClient

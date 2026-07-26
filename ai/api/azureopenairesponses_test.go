@@ -45,6 +45,24 @@ func TestNormalizeAzureOpenAIBaseURL(t *testing.T) {
 	}
 }
 
+func TestAzureOpenAIResponsesConstrainedSamplingWire(t *testing.T) {
+	model := responsesTestModel()
+	model.API = ai.APIAzureOpenAIResponses
+	model.Provider = "azure-openai-responses"
+	model.Compat = json.RawMessage(`{"supportsOpenAIGrammarTools":true}`)
+	tools := []ai.Tool{
+		constrainedSamplingTestTool("strict", strictSamplingTestConfig(ai.ConstrainedSamplingPrefer)),
+		constrainedSamplingTestTool("grammar", grammarSamplingTestConfig()),
+	}
+	payload, err := buildAzureOpenAIResponsesPayload(model, ai.Context{Tools: &tools}, nil, "deployment")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.Tools[0].Strict == nil || !*payload.Tools[0].Strict || payload.Tools[1].Type != "custom" {
+		t.Fatalf("Azure constrained tools = %#v", payload.Tools)
+	}
+}
+
 func TestAzureOpenAIMaxRetries(t *testing.T) {
 	previousClient := azureOpenAIHTTPClient
 	attempts := 0

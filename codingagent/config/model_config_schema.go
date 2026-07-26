@@ -273,11 +273,12 @@ func validateOptionalCompat(object map[string]any, name, path string) error {
 }
 
 func validCompatObject(compat map[string]any) bool {
-	return validOpenAICompletionsCompat(compat) || validOpenAIResponsesCompat(compat) || validAnthropicCompat(compat)
+	return validOpenAICompletionsCompat(compat) || validOpenAIResponsesCompat(compat) ||
+		validAnthropicCompat(compat) || validBedrockCompat(compat)
 }
 
 func validOpenAICompletionsCompat(compat map[string]any) bool {
-	if !optionalBools(compat, "supportsStore", "supportsDeveloperRole", "supportsReasoningEffort", "supportsUsageInStreaming", "requiresToolResultName", "requiresAssistantAfterToolResult", "requiresThinkingAsText", "requiresReasoningContentOnAssistantMessages", "supportsStrictMode", "sendSessionAffinityHeaders", "supportsLongCacheRetention") {
+	if !optionalBools(compat, "supportsStore", "supportsDeveloperRole", "supportsReasoningEffort", "supportsUsageInStreaming", "requiresToolResultName", "requiresAssistantAfterToolResult", "requiresThinkingAsText", "requiresReasoningContentOnAssistantMessages", "supportsOpenAIGrammarTools", "supportsStrictMode", "sendSessionAffinityHeaders", "supportsLongCacheRetention") {
 		return false
 	}
 	if !optionalEnum(compat, "maxTokensField", "max_completion_tokens", "max_tokens") ||
@@ -299,12 +300,21 @@ func validOpenAICompletionsCompat(compat map[string]any) bool {
 }
 
 func validOpenAIResponsesCompat(compat map[string]any) bool {
-	return optionalBools(compat, "supportsDeveloperRole", "supportsLongCacheRetention", "supportsToolSearch") &&
+	return optionalBools(compat, "supportsDeveloperRole", "supportsLongCacheRetention", "supportsStrictMode", "supportsOpenAIGrammarTools", "supportsToolSearch") &&
 		optionalEnum(compat, "sessionAffinityFormat", "openai", "openai-nosession", "openrouter")
 }
 
 func validAnthropicCompat(compat map[string]any) bool {
-	return optionalBools(compat, "supportsEagerToolInputStreaming", "supportsLongCacheRetention", "sendSessionAffinityHeaders", "supportsCacheControlOnTools", "forceAdaptiveThinking", "supportsToolReferences")
+	return optionalBools(compat, "supportsEagerToolInputStreaming", "supportsLongCacheRetention", "sendSessionAffinityHeaders", "supportsCacheControlOnTools", "supportsTemperature", "forceAdaptiveThinking", "allowEmptySignature", "supportsStrictTools", "supportsToolReferences")
+}
+
+func validBedrockCompat(compat map[string]any) bool {
+	for name := range compat {
+		if name != "supportsStrictMode" {
+			return false
+		}
+	}
+	return optionalBools(compat, "supportsStrictMode")
 }
 
 func validChatTemplateKwargs(value any) bool {

@@ -55,12 +55,50 @@ type OpenAIReasoningParams struct {
 }
 
 type OpenAIResponsesTool struct {
-	Type         string            `json:"type"`
-	Name         string            `json:"name"`
-	Description  string            `json:"description"`
-	Parameters   jsonschema.Schema `json:"parameters"`
-	Strict       bool              `json:"strict"`
-	DeferLoading *bool             `json:"defer_loading,omitempty"`
+	Type         string                        `json:"type"`
+	Name         string                        `json:"name"`
+	Description  string                        `json:"description"`
+	Parameters   jsonschema.Schema             `json:"parameters,omitempty"`
+	Strict       *bool                         `json:"-"`
+	StrictNull   bool                          `json:"-"`
+	Format       *OpenAIResponsesGrammarFormat `json:"format,omitempty"`
+	DeferLoading *bool                         `json:"defer_loading,omitempty"`
+}
+
+func (tool OpenAIResponsesTool) MarshalJSON() ([]byte, error) {
+	if tool.Type == "custom" {
+		return ai.Marshal(struct {
+			Type         string                        `json:"type"`
+			Name         string                        `json:"name"`
+			Description  string                        `json:"description"`
+			Format       *OpenAIResponsesGrammarFormat `json:"format,omitempty"`
+			DeferLoading *bool                         `json:"defer_loading,omitempty"`
+		}{tool.Type, tool.Name, tool.Description, tool.Format, tool.DeferLoading})
+	}
+	if tool.StrictNull {
+		return ai.Marshal(struct {
+			Type         string            `json:"type"`
+			Name         string            `json:"name"`
+			Description  string            `json:"description"`
+			Parameters   jsonschema.Schema `json:"parameters"`
+			Strict       any               `json:"strict"`
+			DeferLoading *bool             `json:"defer_loading,omitempty"`
+		}{tool.Type, tool.Name, tool.Description, tool.Parameters, nil, tool.DeferLoading})
+	}
+	return ai.Marshal(struct {
+		Type         string            `json:"type"`
+		Name         string            `json:"name"`
+		Description  string            `json:"description"`
+		Parameters   jsonschema.Schema `json:"parameters"`
+		Strict       *bool             `json:"strict,omitempty"`
+		DeferLoading *bool             `json:"defer_loading,omitempty"`
+	}{tool.Type, tool.Name, tool.Description, tool.Parameters, tool.Strict, tool.DeferLoading})
+}
+
+type OpenAIResponsesGrammarFormat struct {
+	Type       string `json:"type"`
+	Syntax     string `json:"syntax"`
+	Definition string `json:"definition"`
 }
 
 type responsesInputMessage struct {
@@ -100,6 +138,14 @@ type responsesFunctionCall struct {
 	CallID    string  `json:"call_id"`
 	Name      string  `json:"name"`
 	Arguments string  `json:"arguments"`
+}
+
+type responsesCustomToolCall struct {
+	Type   string  `json:"type"`
+	ID     *string `json:"id,omitempty"`
+	CallID string  `json:"call_id"`
+	Name   string  `json:"name"`
+	Input  string  `json:"input"`
 }
 
 type responsesFunctionCallOutput struct {
@@ -193,6 +239,11 @@ func StreamOpenAIResponsesWithOptions(
 			fail(err)
 			return
 		}
+		grammarToolInputProperties, err := createGrammarToolInputProperties(requestContext.Tools, compat.supportsOpenAIGrammarTools)
+		if err != nil {
+			fail(err)
+			return
+		}
 		hookedPayload, err := applyPayloadHook(ctx, model, streamOptions, payload)
 		if err != nil {
 			fail(err)
@@ -224,6 +275,7 @@ func StreamOpenAIResponsesWithOptions(
 		}
 
 		processor := newOpenAIResponsesProcessor(model, output, options, sink)
+		processor.grammarToolInputProperties = grammarToolInputProperties
 		err = readSSE(response.Body, processor.handle)
 		if errors.Is(err, errStopSSE) {
 			return
@@ -263,7 +315,19 @@ func buildOpenAIResponsesPayload(
 		return nil, compat, err
 	}
 	placement := splitResponsesTools(requestContext, compat.supportsToolSearch)
-	input, err := convertResponsesMessages(model, requestContext, placement.deferred, compat.supportsDeveloperRole)
+	grammarToolInputProperties, err := createGrammarToolInputProperties(requestContext.Tools, compat.supportsOpenAIGrammarTools)
+	if err != nil {
+		return nil, compat, err
+	}
+	toolOptions := responsesToolOptions{
+		supportsStrictMode:         compat.supportsStrictMode,
+		supportsOpenAIGrammarTools: compat.supportsOpenAIGrammarTools,
+	}
+	input, err := convertResponsesMessagesWithOptions(model, requestContext, placement.deferred, responsesMessageOptions{
+		supportsDeveloperRole:      compat.supportsDeveloperRole,
+		grammarToolInputProperties: grammarToolInputProperties,
+		toolOptions:                toolOptions,
+	})
 	if err != nil {
 		return nil, compat, err
 	}
@@ -297,7 +361,10 @@ func buildOpenAIResponsesPayload(
 		payload.ToolChoice = options.ToolChoice
 	}
 	if len(placement.immediate) > 0 {
-		payload.Tools = convertResponsesTools(placement.immediate, false)
+		payload.Tools, err = convertResponsesToolsWithOptions(placement.immediate, toolOptions)
+		if err != nil {
+			return nil, compat, err
+		}
 	}
 	applyResponsesReasoning(payload, model, options)
 	return payload, compat, nil
@@ -351,6 +418,8 @@ type openAIResponsesCompat struct {
 	supportsDeveloperRole      bool
 	sessionAffinityFormat      ai.SessionAffinityFormat
 	supportsLongCacheRetention bool
+	supportsStrictMode         bool
+	supportsOpenAIGrammarTools bool
 	supportsToolSearch         bool
 }
 
@@ -372,6 +441,12 @@ func getOpenAIResponsesCompat(model *ai.Model) (openAIResponsesCompat, error) {
 	}
 	if raw.SupportsLongCacheRetention != nil {
 		compat.supportsLongCacheRetention = *raw.SupportsLongCacheRetention
+	}
+	if raw.SupportsStrictMode != nil {
+		compat.supportsStrictMode = *raw.SupportsStrictMode
+	}
+	if raw.SupportsOpenAIGrammarTools != nil {
+		compat.supportsOpenAIGrammarTools = *raw.SupportsOpenAIGrammarTools
 	}
 	if raw.SupportsToolSearch != nil {
 		compat.supportsToolSearch = *raw.SupportsToolSearch
@@ -474,23 +549,71 @@ func splitResponsesTools(requestContext ai.Context, enabled bool) responsesToolP
 	return placement
 }
 
-func convertResponsesTools(tools []ai.Tool, deferLoading bool) []OpenAIResponsesTool {
+type responsesToolOptions struct {
+	defaultStrict              bool
+	supportsStrictMode         bool
+	supportsOpenAIGrammarTools bool
+	strictNull                 bool
+	deferLoading               bool
+}
+
+type responsesMessageOptions struct {
+	supportsDeveloperRole      bool
+	grammarToolInputProperties map[string]string
+	toolOptions                responsesToolOptions
+}
+
+func convertResponsesToolsWithOptions(tools []ai.Tool, options responsesToolOptions) ([]OpenAIResponsesTool, error) {
 	result := make([]OpenAIResponsesTool, 0, len(tools))
 	for _, tool := range tools {
+		grammar, err := resolveGrammarConstrainedSampling(tool, options.supportsOpenAIGrammarTools)
+		if err != nil {
+			return nil, err
+		}
+		if grammar != nil {
+			converted := OpenAIResponsesTool{
+				Type:        "custom",
+				Name:        tool.Name,
+				Description: tool.Description,
+				Format: &OpenAIResponsesGrammarFormat{
+					Type: "grammar", Syntax: grammar.format, Definition: grammar.definition,
+				},
+			}
+			if options.deferLoading {
+				value := true
+				converted.DeferLoading = &value
+			}
+			result = append(result, converted)
+			continue
+		}
+		strict, err := resolveJSONSchemaStrictSampling(tool, options.supportsStrictMode)
+		if err != nil {
+			return nil, err
+		}
 		converted := OpenAIResponsesTool{
 			Type:        "function",
 			Name:        tool.Name,
 			Description: tool.Description,
 			Parameters:  tool.Parameters,
-			Strict:      false,
 		}
-		if deferLoading {
+		if options.supportsStrictMode {
+			if strict == nil && options.strictNull {
+				converted.StrictNull = true
+			} else if strict == nil {
+				value := options.defaultStrict
+				strict = &value
+				converted.Strict = strict
+			} else {
+				converted.Strict = strict
+			}
+		}
+		if options.deferLoading {
 			value := true
 			converted.DeferLoading = &value
 		}
 		result = append(result, converted)
 	}
-	return result
+	return result, nil
 }
 
 func convertResponsesMessages(
@@ -499,12 +622,24 @@ func convertResponsesMessages(
 	deferredTools map[string]ai.Tool,
 	supportsDeveloperRole bool,
 ) ([]any, error) {
+	return convertResponsesMessagesWithOptions(model, requestContext, deferredTools, responsesMessageOptions{
+		supportsDeveloperRole: supportsDeveloperRole,
+		toolOptions:           responsesToolOptions{supportsStrictMode: true},
+	})
+}
+
+func convertResponsesMessagesWithOptions(
+	model *ai.Model,
+	requestContext ai.Context,
+	deferredTools map[string]ai.Tool,
+	options responsesMessageOptions,
+) ([]any, error) {
 	messages := transformMessages(requestContext.Messages, model, normalizeResponsesToolCallID)
 	result := make([]any, 0, len(messages)+1)
 	loadedToolNames := make(map[string]struct{})
 	if requestContext.SystemPrompt != nil && *requestContext.SystemPrompt != "" {
 		role := "system"
-		if model.Reasoning && supportsDeveloperRole {
+		if model.Reasoning && options.supportsDeveloperRole {
 			role = "developer"
 		}
 		result = append(result, responsesInputMessage{Role: role, Content: sanitizeText(*requestContext.SystemPrompt)})
@@ -579,8 +714,22 @@ func convertResponsesMessages(
 					})
 				case *ai.ToolCall:
 					callID, itemID := splitResponsesToolCallID(block.ID)
+					customInputProperty, custom := options.grammarToolInputProperties[block.Name]
 					if isDifferentModel && itemID != nil && strings.HasPrefix(*itemID, "fc_") {
 						itemID = nil
+					}
+					if !custom && (itemID == nil || !strings.HasPrefix(*itemID, "fc_")) {
+						itemID = nil
+					}
+					if custom {
+						input, err := getGrammarToolInput(block.Name, block.Arguments, customInputProperty)
+						if err != nil {
+							return nil, err
+						}
+						output = append(output, responsesCustomToolCall{
+							Type: "custom_tool_call", ID: itemID, CallID: callID, Name: block.Name, Input: sanitizeText(input),
+						})
+						continue
 					}
 					encoded, err := ai.MarshalToolCallArguments(block)
 					if err != nil {
@@ -640,7 +789,11 @@ func convertResponsesMessages(
 				}
 				output = sanitizeText(text)
 			}
-			result = append(result, responsesFunctionCallOutput{Type: "function_call_output", CallID: callID, Output: output})
+			outputType := "function_call_output"
+			if _, custom := options.grammarToolInputProperties[value.ToolName]; custom {
+				outputType = "custom_tool_call_output"
+			}
+			result = append(result, responsesFunctionCallOutput{Type: outputType, CallID: callID, Output: output})
 
 			newTools := make([]ai.Tool, 0)
 			if value.AddedToolNames != nil {
@@ -662,6 +815,12 @@ func convertResponsesMessages(
 					names[index] = tool.Name
 				}
 				searchCallID := "pi_tool_load_" + shortHash(value.ToolCallID+":"+strings.Join(names, ","))
+				toolOptions := options.toolOptions
+				toolOptions.deferLoading = true
+				convertedTools, err := convertResponsesToolsWithOptions(newTools, toolOptions)
+				if err != nil {
+					return nil, err
+				}
 				result = append(result,
 					responsesToolSearchCall{
 						Type:      "tool_search_call",
@@ -675,7 +834,7 @@ func convertResponsesMessages(
 						CallID:    searchCallID,
 						Execution: "client",
 						Status:    "completed",
-						Tools:     convertResponsesTools(newTools, true),
+						Tools:     convertedTools,
 					},
 				)
 			}
@@ -774,10 +933,11 @@ func shortHash(value string) string {
 }
 
 type openAIResponsesProcessor struct {
-	model   *ai.Model
-	output  *ai.AssistantMessage
-	options *OpenAIResponsesOptions
-	sink    eventSink
+	model                      *ai.Model
+	output                     *ai.AssistantMessage
+	options                    *OpenAIResponsesOptions
+	sink                       eventSink
+	grammarToolInputProperties map[string]string
 	// applyServiceTierPricing mirrors upstream's opt-in pricing hook: only the
 	// plain OpenAI and Codex streams pass applyServiceTierPricing to
 	// processResponsesStream; Azure never does (OA-M2).
@@ -794,7 +954,13 @@ type responsesOutputSlot struct {
 	text         *ai.TextContent
 	toolCall     *ai.ToolCall
 	partialJSON  string
+	customInput  *responsesCustomInput
 	accumulated  streamBuffer
+}
+
+type responsesCustomInput struct {
+	property string
+	buffer   grammarToolInputJSONBuffer
 }
 
 type responsesStreamEvent struct {
@@ -802,6 +968,7 @@ type responsesStreamEvent struct {
 	OutputIndex int             `json:"output_index"`
 	Delta       string          `json:"delta"`
 	Arguments   string          `json:"arguments"`
+	Input       string          `json:"input"`
 	Code        json.RawMessage `json:"code"`
 	Message     json.RawMessage `json:"message"`
 	Item        json.RawMessage `json:"item"`
@@ -827,6 +994,7 @@ type responsesOutputItemEnvelope struct {
 	CallID    *string            `json:"call_id"`
 	Name      string             `json:"name"`
 	Arguments string             `json:"arguments"`
+	Input     *string            `json:"input"`
 	Summary   []responsesText    `json:"summary"`
 	Content   []responsesContent `json:"content"`
 	Phase     *string            `json:"phase"`
@@ -905,7 +1073,7 @@ func (processor *openAIResponsesProcessor) handle(raw json.RawMessage) error {
 		}
 	case "response.function_call_arguments.delta":
 		slot := processor.slot(event.OutputIndex, "toolCall")
-		if slot == nil {
+		if slot == nil || slot.customInput != nil {
 			return nil
 		}
 		slot.partialJSON = slot.accumulated.append(slot.partialJSON, event.Delta)
@@ -917,7 +1085,7 @@ func (processor *openAIResponsesProcessor) handle(raw json.RawMessage) error {
 		}
 	case "response.function_call_arguments.done":
 		slot := processor.slot(event.OutputIndex, "toolCall")
-		if slot == nil {
+		if slot == nil || slot.customInput != nil {
 			return nil
 		}
 		previous := slot.partialJSON
@@ -929,6 +1097,19 @@ func (processor *openAIResponsesProcessor) handle(raw json.RawMessage) error {
 				return errStopSSE
 			}
 		}
+	case "response.custom_tool_call_input.delta":
+		slot := processor.slot(event.OutputIndex, "toolCall")
+		if slot == nil || slot.customInput == nil {
+			return nil
+		}
+		current, _ := slot.toolCall.Arguments[slot.customInput.property].(string)
+		return processor.appendCustomToolCallInput(slot, current+event.Delta, false)
+	case "response.custom_tool_call_input.done":
+		slot := processor.slot(event.OutputIndex, "toolCall")
+		if slot == nil || slot.customInput == nil {
+			return nil
+		}
+		return processor.appendCustomToolCallInput(slot, event.Input, true)
 	case "response.output_item.done":
 		return processor.finishItem(event.OutputIndex, event.Item)
 	case "response.completed", "response.incomplete":
@@ -949,6 +1130,28 @@ func (processor *openAIResponsesProcessor) slot(outputIndex int, kind string) *r
 		return nil
 	}
 	return slot
+}
+
+func (processor *openAIResponsesProcessor) appendCustomToolCallInput(
+	slot *responsesOutputSlot,
+	nextInput string,
+	closeInput bool,
+) error {
+	customInput := slot.customInput
+	if customInput == nil {
+		return nil
+	}
+	delta, err := appendGrammarToolInputJSONDelta(&customInput.buffer, customInput.property, nextInput, closeInput)
+	if err != nil {
+		return err
+	}
+	slot.toolCall.Arguments = map[string]any{customInput.property: nextInput}
+	if delta != nil && !processor.sink(ai.ToolCallDeltaEvent{
+		ContentIndex: slot.contentIndex, Delta: *delta, Partial: processor.output,
+	}) {
+		return errStopSSE
+	}
+	return nil
 }
 
 func (processor *openAIResponsesProcessor) createSlot(outputIndex int, raw json.RawMessage) (*responsesOutputSlot, error) {
@@ -992,6 +1195,33 @@ func (processor *openAIResponsesProcessor) createSlot(outputIndex int, raw json.
 			partialJSON:  item.Arguments,
 		}
 		block.PartialJSON = &slot.partialJSON
+		processor.slots[outputIndex] = slot
+		if !processor.sink(ai.ToolCallStartEvent{ContentIndex: slot.contentIndex, Partial: processor.output}) {
+			return nil, errStopSSE
+		}
+	case "custom_tool_call":
+		callID := "undefined"
+		if item.CallID != nil {
+			callID = *item.CallID
+		}
+		itemID := "undefined"
+		if item.ID != nil {
+			itemID = *item.ID
+		}
+		property := processor.grammarToolInputProperties[item.Name]
+		if property == "" {
+			property = "input"
+		}
+		input := ""
+		if item.Input != nil {
+			input = *item.Input
+		}
+		block := &ai.ToolCall{ID: callID + "|" + itemID, Name: item.Name, Arguments: map[string]any{property: input}}
+		processor.output.Content = append(processor.output.Content, block)
+		slot = &responsesOutputSlot{
+			kind: "toolCall", contentIndex: len(processor.output.Content) - 1, toolCall: block,
+			customInput: &responsesCustomInput{property: property},
+		}
 		processor.slots[outputIndex] = slot
 		if !processor.sink(ai.ToolCallStartEvent{ContentIndex: slot.contentIndex, Partial: processor.output}) {
 			return nil, errStopSSE
@@ -1079,7 +1309,7 @@ func (processor *openAIResponsesProcessor) finishItem(outputIndex int, raw json.
 		}
 		delete(processor.slots, outputIndex)
 	case "function_call":
-		if slot.kind != "toolCall" {
+		if slot.kind != "toolCall" || slot.customInput != nil {
 			return nil
 		}
 		arguments := item.Arguments
@@ -1093,6 +1323,22 @@ func (processor *openAIResponsesProcessor) finishItem(outputIndex int, raw json.
 			slot.toolCall.Arguments = parseResponsesArguments(arguments)
 		}
 		slot.toolCall.PartialJSON = nil
+		if !processor.sink(ai.ToolCallEndEvent{ContentIndex: slot.contentIndex, ToolCall: slot.toolCall, Partial: processor.output}) {
+			return errStopSSE
+		}
+		delete(processor.slots, outputIndex)
+	case "custom_tool_call":
+		if slot.kind != "toolCall" || slot.customInput == nil {
+			return nil
+		}
+		input, _ := slot.toolCall.Arguments[slot.customInput.property].(string)
+		if item.Input != nil {
+			input = *item.Input
+		}
+		if err := processor.appendCustomToolCallInput(slot, input, true); err != nil {
+			return err
+		}
+		slot.customInput = nil
 		if !processor.sink(ai.ToolCallEndEvent{ContentIndex: slot.contentIndex, ToolCall: slot.toolCall, Partial: processor.output}) {
 			return errStopSSE
 		}

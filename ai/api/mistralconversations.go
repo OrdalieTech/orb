@@ -257,10 +257,15 @@ func buildMistralPayload(
 	if requestContext.Tools != nil && len(*requestContext.Tools) > 0 {
 		payload.Tools = make([]MistralConversationTool, 0, len(*requestContext.Tools))
 		for _, tool := range *requestContext.Tools {
+			strict, err := resolveJSONSchemaStrictSampling(tool, true)
+			if err != nil {
+				return nil, err
+			}
 			payload.Tools = append(payload.Tools, MistralConversationTool{
 				Type: "function",
 				Function: MistralConversationFunction{
-					Name: tool.Name, Description: tool.Description, Parameters: tool.Parameters, Strict: false,
+					Name: tool.Name, Description: tool.Description, Parameters: tool.Parameters,
+					Strict: strict != nil && *strict,
 				},
 			})
 		}

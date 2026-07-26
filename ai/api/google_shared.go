@@ -234,8 +234,18 @@ func buildGoogleParameters(model *ai.Model, requestContext ai.Context, options *
 	}
 	if requestContext.Tools != nil && len(*requestContext.Tools) > 0 {
 		config.Tools = convertGoogleTools(*requestContext.Tools)
-		if options != nil && options.ToolChoice != "" {
-			config.ToolConfig = &GoogleToolConfig{FunctionCallingConfig: &GoogleFunctionCallingConfig{Mode: mapGoogleToolChoice(options.ToolChoice)}}
+		toolChoice := GoogleToolChoice("")
+		if options != nil {
+			toolChoice = options.ToolChoice
+		}
+		mode, includeMode, err := resolveGoogleFunctionCallingMode(
+			*requestContext.Tools, toolChoice, supportsGoogleStrictToolSampling(model.ID),
+		)
+		if err != nil {
+			return GoogleGenerateContentParameters{}, err
+		}
+		if includeMode {
+			config.ToolConfig = &GoogleToolConfig{FunctionCallingConfig: &GoogleFunctionCallingConfig{Mode: mode}}
 		}
 	}
 	if model.Reasoning && options != nil && options.Thinking != nil {
@@ -476,6 +486,40 @@ func mapGoogleToolChoice(choice GoogleToolChoice) string {
 	default:
 		return "AUTO"
 	}
+}
+
+func supportsGoogleStrictToolSampling(modelID string) bool {
+	match := googleMajorVersionPattern.FindStringSubmatch(strings.ToLower(modelID))
+	if len(match) != 2 {
+		return false
+	}
+	major, err := strconv.Atoi(match[1])
+	return err == nil && major >= 3
+}
+
+func resolveGoogleFunctionCallingMode(
+	tools []ai.Tool,
+	toolChoice GoogleToolChoice,
+	supportsStrictMode bool,
+) (string, bool, error) {
+	useStrictMode := false
+	for _, tool := range tools {
+		strict, err := resolveJSONSchemaStrictSampling(tool, supportsStrictMode)
+		if err != nil {
+			return "", false, err
+		}
+		useStrictMode = useStrictMode || strict != nil && *strict
+	}
+	if toolChoice == GoogleToolChoiceNone || toolChoice == GoogleToolChoiceAny {
+		return mapGoogleToolChoice(toolChoice), true, nil
+	}
+	if useStrictMode {
+		return "VALIDATED", true, nil
+	}
+	if toolChoice != "" {
+		return mapGoogleToolChoice(toolChoice), true, nil
+	}
+	return "", false, nil
 }
 
 // mapGoogleStopReason mirrors google-shared.ts mapStopReason: every known
