@@ -84,6 +84,50 @@ func TestBuildOpenAIResponsesPayloadHonorsCompatAndReasoning(t *testing.T) {
 	}
 }
 
+func TestBuildOpenAIResponsesPayloadDisablesImplicitCacheWritesWhenSupported(t *testing.T) {
+	sessionID := "summary-session"
+	retention := ai.CacheRetentionNone
+	options := &OpenAIResponsesOptions{StreamOptions: ai.StreamOptions{
+		SessionID: &sessionID, CacheRetention: &retention,
+	}}
+	for _, test := range []struct {
+		name     string
+		compat   string
+		wantMode string
+	}{
+		{name: "supported", compat: `{"supportsExplicitPromptCacheMode":true}`, wantMode: "explicit"},
+		{name: "unsupported", compat: `{}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			model := responsesTestModel()
+			model.Compat = json.RawMessage(test.compat)
+			payload, _, err := buildOpenAIResponsesPayload(model, ai.Context{Messages: ai.MessageList{}}, options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if payload.PromptCacheKey != nil || payload.PromptCacheRetention != nil {
+				t.Fatalf("cache affinity remained enabled: %#v", payload)
+			}
+			if test.wantMode == "" {
+				if payload.PromptCacheOptions != nil {
+					t.Fatalf("unsupported model received prompt_cache_options: %#v", payload.PromptCacheOptions)
+				}
+				return
+			}
+			if payload.PromptCacheOptions == nil || payload.PromptCacheOptions.Mode != test.wantMode {
+				t.Fatalf("prompt_cache_options = %#v, want mode %q", payload.PromptCacheOptions, test.wantMode)
+			}
+			encoded, err := ai.Marshal(payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(encoded), `"prompt_cache_options":{"mode":"explicit"}`) {
+				t.Fatalf("payload wire = %s", encoded)
+			}
+		})
+	}
+}
+
 func TestBuildOpenAIResponsesPayloadDefaultOffAndZeroMaxTokens(t *testing.T) {
 	model := responsesTestModel()
 	zero := float64(0)

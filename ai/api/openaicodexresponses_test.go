@@ -98,6 +98,26 @@ func TestOpenAICodexRequestShapeAndDoneEvent(t *testing.T) {
 	}
 }
 
+func TestOpenAICodexCacheRetentionNoneOmitsCacheAffinity(t *testing.T) {
+	model := codexTestModel()
+	sessionID := "one-off-summary"
+	retention := ai.CacheRetentionNone
+	options := &OpenAICodexResponsesOptions{StreamOptions: ai.StreamOptions{
+		SessionID: &sessionID, CacheRetention: &retention,
+	}}
+	payload, err := buildOpenAICodexResponsesPayload(&model, ai.Context{Messages: ai.MessageList{}}, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.PromptCacheKey != nil {
+		t.Fatalf("prompt_cache_key = %#v", payload.PromptCacheKey)
+	}
+	headers := buildOpenAICodexHeaders(&model, &options.StreamOptions, "token", "account")
+	if headers.Get("session-id") != "" || headers.Get("x-client-request-id") != "" || codexCacheSessionID(&options.StreamOptions) != "" {
+		t.Fatalf("cache affinity remained enabled: %#v", headers)
+	}
+}
+
 func TestOpenAICodexConstrainedSamplingWire(t *testing.T) {
 	model := codexTestModel()
 	model.Compat = json.RawMessage(`{"supportsOpenAIGrammarTools":true}`)
@@ -153,33 +173,35 @@ func TestOpenAICodexStreamErrorAndInvalidToken(t *testing.T) {
 	}
 }
 
-func TestOpenAICodexRetriesAndCaps429Delay(t *testing.T) {
-	model := codexTestModel()
-	token := codexAPITestToken(t, "account")
-	maxRetries := 1
-	maxDelay := int64(3)
-	transport := ai.TransportSSE
-	requests := 0
-	withCodexHTTPClient(t, func(*http.Request) (*http.Response, error) {
-		requests++
-		if requests == 1 {
-			response := codexHTTPResponse(http.StatusTooManyRequests, `{"error":{"message":"busy"}}`)
-			response.Header.Set("Retry-After-Ms", "10000")
-			return response, nil
-		}
-		return codexHTTPResponse(http.StatusOK, codexSSE(map[string]any{"type": "response.completed", "response": map[string]any{"id": "ok", "status": "completed", "output": []any{}}})), nil
-	})
-	previousSleep := openAICodexSleep
-	var slept time.Duration
-	openAICodexSleep = func(_ context.Context, duration time.Duration) error { slept = duration; return nil }
-	t.Cleanup(func() { openAICodexSleep = previousSleep })
-	stream, err := StreamOpenAICodexResponsesWithOptions(context.Background(), &model, ai.Context{Messages: ai.MessageList{}}, &OpenAICodexResponsesOptions{StreamOptions: ai.StreamOptions{APIKey: &token, Transport: &transport, MaxRetries: &maxRetries, MaxRetryDelayMS: &maxDelay}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	message, err := ai.Collect(stream)
-	if err != nil || message.StopReason != ai.StopReasonStop || requests != 2 || slept != 3*time.Millisecond {
-		t.Fatalf("retry result = %#v, %v, requests=%d slept=%s", message, err, requests, slept)
+func TestOpenAICodexRejectsServerRetryDelayAboveLimit(t *testing.T) {
+	for _, status := range []int{http.StatusTooManyRequests, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			model := codexTestModel()
+			token := codexAPITestToken(t, "account")
+			maxRetries := 3
+			maxDelay := int64(1000)
+			transport := ai.TransportSSE
+			requests := 0
+			withCodexHTTPClient(t, func(*http.Request) (*http.Response, error) {
+				requests++
+				response := codexHTTPResponse(status, `{"error":{"message":"retry later"}}`)
+				response.Header.Set("Retry-After", "2")
+				return response, nil
+			})
+			stream, err := StreamOpenAICodexResponsesWithOptions(context.Background(), &model, ai.Context{Messages: ai.MessageList{}}, &OpenAICodexResponsesOptions{
+				StreamOptions: ai.StreamOptions{
+					APIKey: &token, Transport: &transport, MaxRetries: &maxRetries, MaxRetryDelayMS: &maxDelay,
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			message, err := ai.Collect(stream)
+			if err != nil || message.StopReason != ai.StopReasonError || message.ErrorMessage == nil ||
+				*message.ErrorMessage != "Server requested 2s retry delay (max: 1s)" || requests != 1 {
+				t.Fatalf("retry result = %#v, %v, requests=%d", message, err, requests)
+			}
+		})
 	}
 }
 

@@ -148,12 +148,13 @@ type OpenAICompletionsCompat struct {
 }
 
 type OpenAIResponsesCompat struct {
-	SupportsDeveloperRole      *bool                  `json:"supportsDeveloperRole,omitempty"`
-	SessionAffinityFormat      *SessionAffinityFormat `json:"sessionAffinityFormat,omitempty"`
-	SupportsLongCacheRetention *bool                  `json:"supportsLongCacheRetention,omitempty"`
-	SupportsStrictMode         *bool                  `json:"supportsStrictMode,omitempty"`
-	SupportsOpenAIGrammarTools *bool                  `json:"supportsOpenAIGrammarTools,omitempty"`
-	SupportsToolSearch         *bool                  `json:"supportsToolSearch,omitempty"`
+	SupportsDeveloperRole           *bool                  `json:"supportsDeveloperRole,omitempty"`
+	SessionAffinityFormat           *SessionAffinityFormat `json:"sessionAffinityFormat,omitempty"`
+	SupportsLongCacheRetention      *bool                  `json:"supportsLongCacheRetention,omitempty"`
+	SupportsStrictMode              *bool                  `json:"supportsStrictMode,omitempty"`
+	SupportsOpenAIGrammarTools      *bool                  `json:"supportsOpenAIGrammarTools,omitempty"`
+	SupportsToolSearch              *bool                  `json:"supportsToolSearch,omitempty"`
+	SupportsExplicitPromptCacheMode *bool                  `json:"supportsExplicitPromptCacheMode,omitempty"`
 }
 
 type AnthropicMessagesCompat struct {

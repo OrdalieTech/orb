@@ -179,7 +179,7 @@ func TestLoadModelsJSONRejectsInvalidSchema(t *testing.T) {
 
 func TestModelsJSONAcceptsConstrainedSamplingCompatFlags(t *testing.T) {
 	for name, compat := range map[string]string{
-		"responses":   `{"supportsStrictMode":true,"supportsOpenAIGrammarTools":true}`,
+		"responses":   `{"supportsStrictMode":true,"supportsOpenAIGrammarTools":true,"supportsExplicitPromptCacheMode":true}`,
 		"completions": `{"supportsOpenAIGrammarTools":true}`,
 		"anthropic":   `{"supportsStrictTools":true,"supportsTemperature":false,"allowEmptySignature":true}`,
 		"bedrock":     `{"supportsStrictMode":true}`,

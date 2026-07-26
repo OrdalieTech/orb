@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/pigo/agent"
@@ -186,17 +187,21 @@ type f10CapturedRequest struct {
 		} `json:"messages"`
 	} `json:"context"`
 	Options struct {
-		MaxTokens float64 `json:"maxTokens"`
-		Reasoning string  `json:"reasoning"`
-		Signal    string  `json:"signal"`
+		MaxTokens      float64 `json:"maxTokens"`
+		Reasoning      string  `json:"reasoning"`
+		Signal         string  `json:"signal"`
+		CacheRetention string  `json:"cacheRetention"`
+		SessionID      string  `json:"sessionId"`
 	} `json:"options"`
 }
 
 type f10ActualCapture struct {
-	SystemPrompt string
-	Prompt       string
-	MaxTokens    float64
-	Reasoning    string
+	SystemPrompt   string
+	Prompt         string
+	MaxTokens      float64
+	Reasoning      string
+	CacheRetention string
+	SessionID      string
 }
 
 func TestF10TokenAndConversationFixturesMatchUpstream(t *testing.T) {
@@ -553,6 +558,12 @@ func f10Capture(request ai.Context, options *ai.SimpleStreamOptions) f10ActualCa
 		if options.Reasoning != nil {
 			captured.Reasoning = string(*options.Reasoning)
 		}
+		if options.CacheRetention != nil {
+			captured.CacheRetention = string(*options.CacheRetention)
+		}
+		if options.SessionID != nil {
+			captured.SessionID = *options.SessionID
+		}
 	}
 	return captured
 }
@@ -560,12 +571,24 @@ func f10Capture(request ai.Context, options *ai.SimpleStreamOptions) f10ActualCa
 func assertF10Capture(t testing.TB, got f10ActualCapture, expected f10CapturedRequest) {
 	t.Helper()
 	want := f10ActualCapture{
-		SystemPrompt: expected.Context.SystemPrompt,
-		MaxTokens:    expected.Options.MaxTokens,
-		Reasoning:    expected.Options.Reasoning,
+		SystemPrompt:   expected.Context.SystemPrompt,
+		MaxTokens:      expected.Options.MaxTokens,
+		Reasoning:      expected.Options.Reasoning,
+		CacheRetention: expected.Options.CacheRetention,
 	}
 	if len(expected.Context.Messages) > 0 && len(expected.Context.Messages[0].Content) > 0 {
 		want.Prompt = expected.Context.Messages[0].Content[0].Text
+	}
+	if expected.Options.SessionID != "" {
+		if !f10UUIDv7(expected.Options.SessionID) {
+			t.Fatalf("fixture sessionId = %q, want UUIDv7", expected.Options.SessionID)
+		}
+		if !f10UUIDv7(got.SessionID) {
+			t.Fatalf("captured sessionId = %q, want UUIDv7", got.SessionID)
+		}
+		got.SessionID = ""
+	} else if got.SessionID != "" {
+		t.Fatalf("captured unexpected sessionId %q", got.SessionID)
 	}
 	if got != want {
 		if got.Prompt != want.Prompt {
@@ -573,6 +596,22 @@ func assertF10Capture(t testing.TB, got f10ActualCapture, expected f10CapturedRe
 		}
 		t.Fatalf("capture = %+v, want %+v", got, want)
 	}
+}
+
+func f10UUIDv7(value string) bool {
+	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' ||
+		value[14] != '7' || !strings.ContainsRune("89ab", rune(value[19])) {
+		return false
+	}
+	for index, character := range value {
+		if index == 8 || index == 13 || index == 18 || index == 23 {
+			continue
+		}
+		if !strings.ContainsRune("0123456789abcdef", character) {
+			return false
+		}
+	}
+	return true
 }
 
 func f10Response(text string) *ai.AssistantMessage {

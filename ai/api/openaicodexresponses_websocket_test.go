@@ -384,6 +384,97 @@ func TestOpenAICodexWebSocketCachedSendsOnlyInputDelta(t *testing.T) {
 	}
 }
 
+func TestOpenAICodexRecoversMissingCachedContinuation(t *testing.T) {
+	for _, recoveryTransport := range []string{"websocket", "sse"} {
+		t.Run(recoveryTransport, func(t *testing.T) {
+			sessionID := "missing-continuation-" + recoveryTransport
+			firstSteps := codexWebSocketTextResponse("resp-1", "Hello")
+			firstSteps = append(firstSteps,
+				codexWebSocketStep{message: codexWebSocketJSON(map[string]any{"type": "codex.rate_limits"})},
+				codexWebSocketStep{message: codexWebSocketJSON(map[string]any{
+					"type": "error", "error": map[string]any{
+						"code": previousResponseNotFound, "message": "Previous response not found.",
+					},
+				})},
+			)
+			firstSocket := &fakeCodexWebSocket{steps: firstSteps}
+			secondSocket := &fakeCodexWebSocket{steps: codexWebSocketTextResponse("resp-2", "Recovered")}
+			if recoveryTransport == "sse" {
+				secondSocket.steps = nil
+			}
+			connectCalls := 0
+			withOpenAICodexWebSocketConnector(t, func(context.Context, string, http.Header, time.Duration) (openAICodexSocket, error) {
+				connectCalls++
+				if connectCalls == 1 {
+					return firstSocket, nil
+				}
+				return secondSocket, nil
+			})
+			httpCalls := 0
+			withCodexHTTPClient(t, func(*http.Request) (*http.Response, error) {
+				httpCalls++
+				return codexHTTPResponse(http.StatusOK, codexSSE(map[string]any{
+					"type": "response.done", "response": map[string]any{
+						"id": "sse-recovered", "status": "completed", "output": []any{},
+					},
+				})), nil
+			})
+			model := codexTestModel()
+			token := codexAPITestToken(t, "account")
+			transport := ai.TransportWebSocketCached
+			options := &OpenAICodexResponsesOptions{StreamOptions: ai.StreamOptions{
+				APIKey: &token, Transport: &transport, SessionID: &sessionID,
+			}}
+			firstUser := &ai.UserMessage{Content: ai.NewUserText("first"), Timestamp: 1}
+			first := collectOpenAICodex(t, &model, ai.Context{Messages: ai.MessageList{firstUser}}, options)
+			secondUser := &ai.UserMessage{Content: ai.NewUserText("second"), Timestamp: 2}
+			stream, err := StreamOpenAICodexResponsesWithOptions(context.Background(), &model, ai.Context{
+				Messages: ai.MessageList{firstUser, first, secondUser},
+			}, options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			starts := 0
+			var result *ai.AssistantMessage
+			for event, streamErr := range stream {
+				if streamErr != nil {
+					t.Fatal(streamErr)
+				}
+				switch event := event.(type) {
+				case ai.StartEvent:
+					starts++
+				case ai.DoneEvent:
+					result = event.Message
+				case ai.ErrorEvent:
+					t.Fatalf("recovery emitted error: %#v", event.Error)
+				}
+			}
+			wantResponseID := "resp-2"
+			if recoveryTransport == "sse" {
+				wantResponseID = "sse-recovered"
+			}
+			if result == nil || result.StopReason != ai.StopReasonStop || result.ResponseID == nil ||
+				*result.ResponseID != wantResponseID || starts != 1 || connectCalls != 2 ||
+				httpCalls != map[bool]int{true: 1, false: 0}[recoveryTransport == "sse"] {
+				t.Fatalf("result=%#v starts=%d connects=%d http=%d", result, starts, connectCalls, httpCalls)
+			}
+			firstWrites, secondWrites := firstSocket.capturedWrites(), secondSocket.capturedWrites()
+			if len(firstWrites) != 2 || len(secondWrites) != 1 ||
+				!bytesContain(firstWrites[1], `"previous_response_id":"resp-1"`) ||
+				bytesContain(secondWrites[0], `"previous_response_id"`) {
+				t.Fatalf("first writes=%q second writes=%q", firstWrites, secondWrites)
+			}
+			stats := GetOpenAICodexWebSocketDebugStats(sessionID)
+			if stats == nil || stats.Requests != 3 || stats.ConnectionsCreated != 2 ||
+				stats.ConnectionsReused != 1 || stats.FullContextRequests != 2 || stats.DeltaRequests != 1 ||
+				stats.WebSocketFailures != map[bool]int{true: 1, false: 0}[recoveryTransport == "sse"] ||
+				stats.SSEFallbacks != map[bool]int{true: 1, false: 0}[recoveryTransport == "sse"] {
+				t.Fatalf("stats = %#v", stats)
+			}
+		})
+	}
+}
+
 func TestOpenAICodexCachedWebSocketClosesWithSessionResources(t *testing.T) {
 	sessionID := "ws-dispose"
 	socket := &fakeCodexWebSocket{steps: []codexWebSocketStep{{message: codexWebSocketJSON(map[string]any{

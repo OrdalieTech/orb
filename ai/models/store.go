@@ -34,6 +34,7 @@ type storedProvider struct {
 	// preserves the upstream distinction between an absent field and the
 	// explicit zero written for 404/501 or a missing Last-Modified header.
 	LastModified *int64 `json:"lastModified,omitempty"`
+	ETag         string `json:"etag,omitempty"`
 }
 
 type orderedStore struct {
@@ -186,6 +187,8 @@ func refresh(ctx context.Context, options RefreshOptions, endpoint string) (*Cat
 		now = time.Now
 	}
 	current := &Catalog{providers: make(map[string]map[string]ai.Model)}
+	var validator string
+	var hasStoredCatalog bool
 	if options.StorePath != "" {
 		var err error
 		current, err = LoadStore(options.StorePath)
@@ -195,6 +198,7 @@ func refresh(ctx context.Context, options RefreshOptions, endpoint string) (*Cat
 		if !options.Force && storeFreshAt(options.StorePath, now()) {
 			return current, nil
 		}
+		validator, hasStoredCatalog = storeValidator(options.StorePath)
 	}
 	client := options.Client
 	if client == nil {
@@ -208,6 +212,9 @@ func refresh(ctx context.Context, options RefreshOptions, endpoint string) (*Cat
 	if options.UserAgent != "" {
 		request.Header.Set("User-Agent", options.UserAgent)
 	}
+	if validator != "" {
+		request.Header.Set("If-None-Match", validator)
+	}
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, err
@@ -217,6 +224,12 @@ func refresh(ctx context.Context, options RefreshOptions, endpoint string) (*Cat
 		return current, nil
 	}
 	checkedAt := now().UnixMilli()
+	if response.StatusCode == http.StatusNotModified && hasStoredCatalog {
+		if err := stampStoreResponse(options.StorePath, checkedAt, false); err != nil {
+			return nil, err
+		}
+		return current, nil
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		unavailable := response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusNotImplemented
 		if options.StorePath != "" {
@@ -246,12 +259,36 @@ func refresh(ctx context.Context, options RefreshOptions, endpoint string) (*Cat
 		if parsed, parseErr := http.ParseTime(response.Header.Get("Last-Modified")); parseErr == nil {
 			lastModified = parsed.UnixMilli()
 		}
-		if err := writeStore(options.StorePath, catalog, checkedAt, &lastModified); err != nil {
+		if err := writeStoreResponse(options.StorePath, catalog, checkedAt, &lastModified, response.Header.Get("ETag")); err != nil {
 			return nil, err
 		}
 		return LoadStore(options.StorePath)
 	}
 	return catalog, nil
+}
+
+func storeValidator(path string) (string, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 {
+		return "", false
+	}
+	stored, err := decodeOrderedStore(data)
+	if err != nil {
+		return "", false
+	}
+	builtin := builtinProviderIDs()
+	hasStoredCatalog := false
+	for _, providerID := range stored.order {
+		entry := stored.entries[providerID]
+		if !builtin[providerID] {
+			continue
+		}
+		hasStoredCatalog = true
+		if len(entry.Models) > 0 && entry.ETag != "" {
+			return entry.ETag, true
+		}
+	}
+	return "", hasStoredCatalog
 }
 
 // storeFreshAt reports whether a models.dev refresh with both upstream
@@ -276,6 +313,10 @@ func storeFreshAt(path string, now time.Time) bool {
 }
 
 func writeStore(path string, catalog *Catalog, checkedAt int64, lastModified *int64) (err error) {
+	return writeStoreResponse(path, catalog, checkedAt, lastModified, "")
+}
+
+func writeStoreResponse(path string, catalog *Catalog, checkedAt int64, lastModified *int64, etag string) (err error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -303,7 +344,9 @@ func writeStore(path string, catalog *Catalog, checkedAt int64, lastModified *in
 		if _, exists := stored.entries[providerID]; !exists {
 			stored.order = append(stored.order, providerID)
 		}
-		stored.entries[providerID] = storedProvider{Models: catalog.Models(providerID), CheckedAt: checkedAt, LastModified: cloneTimestamp(lastModified)}
+		stored.entries[providerID] = storedProvider{
+			Models: catalog.Models(providerID), CheckedAt: checkedAt, LastModified: cloneTimestamp(lastModified), ETag: etag,
+		}
 	}
 	return writeOrderedStore(path, stored)
 }
@@ -341,6 +384,7 @@ func stampStoreResponse(path string, checkedAt int64, unavailable bool) (err err
 		entry.CheckedAt = checkedAt
 		if unavailable {
 			entry.LastModified = timestamp(0)
+			entry.ETag = ""
 		}
 		stored.entries[providerID] = entry
 	}

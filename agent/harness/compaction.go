@@ -562,7 +562,7 @@ func runSummary(ctx context.Context, prompt string, model *ai.Model, complete Co
 		level := ai.ThinkingLevel(thinkingLevel)
 		options.Reasoning = &level
 	}
-	response, err := complete(ctx, model, request, options)
+	response, err := CompleteSimpleWithRetries(ctx, complete, model, request, options, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("Summarization failed: %w", err)
 	}

@@ -34,19 +34,24 @@ type OpenAIResponsesOptions struct {
 
 // OpenAIResponsesPayload is the mutable request value passed to PayloadHook.
 type OpenAIResponsesPayload struct {
-	Model                string                 `json:"model"`
-	Input                []any                  `json:"input"`
-	Stream               bool                   `json:"stream"`
-	PromptCacheKey       *string                `json:"prompt_cache_key,omitempty"`
-	PromptCacheRetention *string                `json:"prompt_cache_retention,omitempty"`
-	Store                bool                   `json:"store"`
-	MaxOutputTokens      *float64               `json:"max_output_tokens,omitempty"`
-	Temperature          *float64               `json:"temperature,omitempty"`
-	ServiceTier          *string                `json:"service_tier,omitempty"`
-	Tools                []OpenAIResponsesTool  `json:"tools,omitempty"`
-	ToolChoice           any                    `json:"tool_choice,omitempty"`
-	Reasoning            *OpenAIReasoningParams `json:"reasoning,omitempty"`
-	Include              []string               `json:"include,omitempty"`
+	Model                string                    `json:"model"`
+	Input                []any                     `json:"input"`
+	Stream               bool                      `json:"stream"`
+	PromptCacheKey       *string                   `json:"prompt_cache_key,omitempty"`
+	PromptCacheRetention *string                   `json:"prompt_cache_retention,omitempty"`
+	PromptCacheOptions   *OpenAIPromptCacheOptions `json:"prompt_cache_options,omitempty"`
+	Store                bool                      `json:"store"`
+	MaxOutputTokens      *float64                  `json:"max_output_tokens,omitempty"`
+	Temperature          *float64                  `json:"temperature,omitempty"`
+	ServiceTier          *string                   `json:"service_tier,omitempty"`
+	Tools                []OpenAIResponsesTool     `json:"tools,omitempty"`
+	ToolChoice           any                       `json:"tool_choice,omitempty"`
+	Reasoning            *OpenAIReasoningParams    `json:"reasoning,omitempty"`
+	Include              []string                  `json:"include,omitempty"`
+}
+
+type OpenAIPromptCacheOptions struct {
+	Mode string `json:"mode"`
 }
 
 type OpenAIReasoningParams struct {
@@ -349,6 +354,9 @@ func buildOpenAIResponsesPayload(
 		retention := "24h"
 		payload.PromptCacheRetention = &retention
 	}
+	if cacheRetention == ai.CacheRetentionNone && compat.supportsExplicitPromptCacheMode {
+		payload.PromptCacheOptions = &OpenAIPromptCacheOptions{Mode: "explicit"}
+	}
 	if streamOptions != nil {
 		if streamOptions.MaxTokens != nil && *streamOptions.MaxTokens != 0 {
 			value := max(*streamOptions.MaxTokens, openAIResponsesMinOutputTokens)
@@ -415,12 +423,13 @@ func supportsOffReasoning(model *ai.Model) bool {
 }
 
 type openAIResponsesCompat struct {
-	supportsDeveloperRole      bool
-	sessionAffinityFormat      ai.SessionAffinityFormat
-	supportsLongCacheRetention bool
-	supportsStrictMode         bool
-	supportsOpenAIGrammarTools bool
-	supportsToolSearch         bool
+	supportsDeveloperRole           bool
+	sessionAffinityFormat           ai.SessionAffinityFormat
+	supportsLongCacheRetention      bool
+	supportsStrictMode              bool
+	supportsOpenAIGrammarTools      bool
+	supportsToolSearch              bool
+	supportsExplicitPromptCacheMode bool
 }
 
 func getOpenAIResponsesCompat(model *ai.Model) (openAIResponsesCompat, error) {
@@ -450,6 +459,9 @@ func getOpenAIResponsesCompat(model *ai.Model) (openAIResponsesCompat, error) {
 	}
 	if raw.SupportsToolSearch != nil {
 		compat.supportsToolSearch = *raw.SupportsToolSearch
+	}
+	if raw.SupportsExplicitPromptCacheMode != nil {
+		compat.supportsExplicitPromptCacheMode = *raw.SupportsExplicitPromptCacheMode
 	}
 	return compat, nil
 }

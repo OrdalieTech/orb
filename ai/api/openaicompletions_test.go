@@ -419,7 +419,7 @@ func TestSimpleOpenAICompletionsForwardsBaseOptions(t *testing.T) {
 func TestOpenAICompletionsCachesLatestToolResult(t *testing.T) {
 	model := simpleOpenAICompletionsModel()
 	model.Provider = "openrouter"
-	model.Compat = json.RawMessage(`{"cacheControlFormat":"anthropic"}`)
+	model.ID = "~anthropic/claude-sonnet-latest"
 	apiKey := "simple-key"
 	payload, _ := captureSimpleOpenAICompletionsRequest(t, model, ai.Context{
 		Messages: ai.MessageList{
