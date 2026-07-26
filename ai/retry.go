@@ -36,6 +36,10 @@ var retryableProviderPatterns = compilePatterns([]string{
 	`service.?unavailable`, `server.?error`, `internal.?error`, `provider.?returned.?error`,
 	`network.?error`, `connection.?error`, `connection.?refused`, `connection.?lost`, `other side closed`,
 	`fetch failed`, `upstream.?connect`, `reset before headers`, `socket hang up`,
+	// DNS transport failures (upstream 33e40c3e). The first three are Node's
+	// wording, kept for byte-parity with proxied provider bodies; "no such
+	// host" is what Go's own dialer emits for the same failure.
+	`getaddrinfo`, `ENOTFOUND`, `EAI_AGAIN`, `no such host`,
 	`socket connection was closed`, `timed? out`, `timeout`, `terminated`, `websocket.?closed`,
 	`websocket.?error`, `ended without`, `stream ended before message_stop`,
 	`stream ended before a terminal response event`, `http2 request did not get a response`, `retry delay`,

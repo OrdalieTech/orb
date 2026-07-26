@@ -104,7 +104,9 @@ func TestResolveProviderAuthWrapsRefreshFailure(t *testing.T) {
 	if !errors.As(err, &authError) || authError.Code != ErrorOAuth {
 		t.Fatalf("refresh error = %#v, want OAuth error", err)
 	}
-	if err.Error() != "OAuth refresh failed for provider" || !errors.Is(err, flow.err) {
+	// Upstream 4cf0a729: the surfaced message keeps the underlying cause,
+	// because callers show the message only.
+	if err.Error() != "OAuth refresh failed for provider: invalid grant" || !errors.Is(err, flow.err) {
 		t.Fatalf("refresh error message/cause = %q / %v", err, errors.Unwrap(err))
 	}
 }
