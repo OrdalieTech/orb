@@ -24,7 +24,7 @@ Live OAuth end-to-end runs and provider live smoke remain owner-blocked evidence
 | openrouter-images | **GREEN.** Last unported API shape landed: request-byte goldens, modality handling, data-URL decoding, dispatch entry point. |
 | MCP | **GREEN.** stdio + Streamable HTTP round-trips, trust gating, `/mcp` commands. (Upstream has no MCP source — this is the D18 addition; no upstream divergence possible.) |
 | Packages + trust | **GREEN.** npm:/git: install/update/list/remove, project trust, WP360 fixtures. |
-| JS bridge — matrix | **GREEN.** 61/69 examples run unmodified (`docs/sync/extension-matrix.md`); the 8 unsupported each name their missing surface (JS-exported tool factories, embeddable interactive tui classes) and none is among the named criteria set. |
+| JS bridge — matrix | **GREEN.** 61/69 examples run unmodified (69-example matrix, superseded by `docs/sync/ecosystem-extension-matrix.md`); the 8 unsupported each name their missing surface (JS-exported tool factories, embeddable interactive tui classes) and none is among the named criteria set. |
 | JS bridge — named six | **GREEN.** hello, todo, pirate, permission-gate, status-line, modal-editor end-to-end. |
 | JS bridge — mechanics | **GREEN.** Node-shim table (`docs/sync/node-shims.md`), TS errors mapped to source lines, `/reload` replaces per-path VMs, bridge call latency p90 137 µs against the 8 ms budget (guarded by test). |
 | Product wiring | **GREEN.** Settings/project paths plus `--extension`/`-e` load through the bridge into the shared registry; real-binary smoke shows a TypeScript extension loading before the credential error. |
@@ -48,7 +48,7 @@ go test ./codingagent/extensions/jsbridge/ -run TestBridgeCallBudget -v
 real-binary smoke: pi --extension probe.ts -p    # extension loads, then expected credential error
 ```
 
-Trim pass #4 and the size/cold-start trend are reported in `docs/trim/M4.md` — note the binary and
+Trim pass #4 (M4, retired) tracked the size/cold-start trend — note the binary and
 cold-start consequences of linking the bridge are material and carried there as release risks.
 
 ## M4 disposition
@@ -62,4 +62,3 @@ cold-start consequences of linking the bridge are material and carried there as 
 | F11 matrix ≥80% unmodified, published | **GREEN** — 61/69 (88%) |
 | Named six end-to-end | **GREEN** |
 | Node-shim table; <8 ms bridge calls; /reload; TS error mapping | **GREEN** — p90 137 µs |
-| Trim pass #4 | `docs/trim/M4.md` |

@@ -31,8 +31,7 @@ hosted-nightly, and real-terminal/macOS checks tracked in `docs/plan/PROGRESS.md
 - Go modules, static archives, and the Homebrew tap replace upstream's Node/Bun packaging under
   D1, D7, D8, and G4. These are release-platform differences, not wire or behavior drift.
 
-The compact current ledger is `docs/compare/upstream-alignment-findings.md`; M5 measurements and
-external blockers are in `docs/trim/M5.md`.
+The alignment findings were folded into the DECISIONS.md divergence ledger; the M5 trim checklist is retired.
 
 ## Verification
 

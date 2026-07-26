@@ -48,7 +48,7 @@ owner-blocked list, not scope decisions.
 ## Recommended cut (defaults I am proceeding on)
 
 1. WP-541 `ctx.ui` bridge → WP-542 custom components/overlays (G3: sobek marshaling of component
-   callbacks) → WP-550 matrix sweep to ≥80% with `docs/sync/extension-matrix.md`, fixtures first.
+   callbacks) → WP-550 matrix sweep to ≥80% (69-example matrix, superseded by the ecosystem matrix), fixtures first.
 2. Port openrouter-images.
 3. Treat binary size as a tracked constraint under the owner-approved 55 MB decimal M5 cap;
    everything else in M4 remains unchanged.

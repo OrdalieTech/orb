@@ -102,7 +102,7 @@ remain owner-blocked evidence (not waived)**.
 - [x] Complete ResourceLoader theme-object/source-info installation into the interactive registry.
 - [x] Reach application-level byte-reviewed frame parity and complete commands plus image/clipboard checks
       (deterministic surfaces; real-terminal smoke owner-blocked).
-- [x] Publish `docs/compare/sprint-2.md`, complete trim pass #3 (`docs/trim/M3.md`), and check every
+- [x] Publish `docs/compare/sprint-2.md`, complete trim pass #3 (M3, retired), and check every
       locally provable M3 criterion.
 
 The selector lifetime trace is green for selection, cancellation, runner exit, and every emitted
@@ -146,14 +146,14 @@ evidence remains owner-blocked**. The owner retained the full-parity scope and a
 - [x] WP-542: custom components, editors, overlays over the bridge (gate G3 resolved: bridge now) —
       `ctx.ui.custom` with overlay options and handles, editor replacement, the `CustomEditor` base
       over the registered real editor; modal-editor end-to-end plus six more custom-UI examples.
-- [x] WP-550: F11 matrix at 61/69 (88%) unmodified with `docs/sync/extension-matrix.md` published;
+- [x] WP-550: F11 matrix at 61/69 (88%) unmodified with the 69-example matrix published (superseded by the ecosystem matrix);
       six named extensions end-to-end; bridge wired into the product (`--extension`, settings and
       project paths, `/reload` per-path VM replacement) with a real-binary smoke.
 - [x] Port the openrouter-images generation client (only unported API shape).
 - [x] Alignment-audit work items closed this sprint: MIRROR triage (21 verified rows),
       `settings.httpProxy` implemented with environment precedence, SDK convenience surface
       (tool bundles, public ai model helpers with duplicates deleted).
-- [x] Publish `docs/compare/sprint-3.md`, complete trim pass #4 (`docs/trim/M4.md`), and check
+- [x] Publish `docs/compare/sprint-3.md`, complete trim pass #4 (M4, retired), and check
       every locally provable M4 criterion.
 - [x] Pre-release parity tail (Sprint 4): the six numbered upstream regression tests; typed
       tool-event accessors, public streaming-JSON entry, UI component kit exports; the five small
@@ -166,7 +166,7 @@ evidence remains owner-blocked**. The owner retained the full-parity scope and a
 Status: **v0.1.0 was published on 2026-07-21 from `600198b` after the owner explicitly authorized
 the deterministic green candidate for release. GitHub Actions run `29875158999` passed the full
 gate and published all four archives; subscribed OAuth, hosted-nightly, and real-terminal/macOS
-smokes remain post-release follow-up** (see docs/trim/M5.md §Release closure).
+smokes remain post-release follow-up** (see the retired M5 checklist §Release closure in history).
 
 - [x] Land the release machinery: goreleaser (4 targets, snapshot verified), tag-triggered
       workflow re-running the gate, checksum-verifying install script, Homebrew formula generation,
@@ -194,7 +194,7 @@ smokes remain post-release follow-up** (see docs/trim/M5.md §Release closure).
       while development-only `-race` binaries may link Go's CGo-backed ThreadSanitizer runtime.
 - [x] Pin releases and CI to Go 1.26.5. An identical-source comparison records 2.8% gains in the
       in-memory 1,000-turn Processor core and F12 rendering, with the startup, session-creation,
-      compaction, and binary-size regressions retained in `docs/trim/M5.md` rather than hidden by
+      compaction, and binary-size regressions retained in the M5 checklist (retired) rather than hidden by
       an aggregate.
 - [x] Re-verify the deterministic M1–M4 criteria at the release commit. The v0.81.0 lock is green,
       436/436 upstream files are mapped, and the owner deferred subscribed OAuth, hosted-nightly,
@@ -234,7 +234,7 @@ Status: **closed in `43e5863`**.
 - [x] Land `chat/examples/localbot` (runnable Telegram long-poll gateway over the local spool).
 - [x] Publish `docs/chat.md` (embedding guide), the MIRROR.md D27 addition row, and
       `docs/compare/sprint-5.md` (pi-chat/Hermes cross-check with the deliberate-difference
-      table); complete the eight-point trim in `docs/trim/S5.md`.
+      table); complete the eight-point S5 trim (retired).
 - [x] Commit the sprint arc as green mainline chunks and close the sprint per D25
       (`43e5863`, exact `make check` green).
 
@@ -280,7 +280,7 @@ Status: **closed by the Sprint 6 commit containing this record**.
       helpers) and the MIRROR.md D28 addition row.
 - [x] Publish `docs/compare/sprint-6.md` (per-platform Hermes/pi-chat cross-check with the
       deliberate-difference table, incl. the bridge/E2EE exclusions).
-- [x] Complete `docs/trim/S6.md`: remove 1,068 net lines from the inherited candidate, record zero
+- [x] Complete the S6 trim (retired): remove 1,068 net lines from the inherited candidate, record zero
       new dependencies and zero duplicate groups, and prove the SDK-only additions add zero
       linked bytes to `cmd/pigo`.
 - [x] Commit the sprint arc as one green mainline chunk and close it per D25; exact `make check`,
@@ -293,7 +293,7 @@ Status: **green; closes with the commit containing this record**.
 
 - [x] Independently adversarially verify all 52 provider, catalog, and login gap IDs against their
       TypeScript implementations and regression tests; the final evidence table is
-      `docs/compare/provider-login-parity-2026-07-21.md`: 51 CONFIRMED, LOG-m7 INSUFFICIENT only
+      the provider-login parity audit (retired): 51 CONFIRMED, LOG-m7 INSUFFICIENT only
       because ordinary Go errors lack JavaScript's creation stack, and zero REGRESSION verdicts.
 - [x] Port the complete in-scope v0.81.0 delta: required stream injection, public compaction/session
       contracts, retained-tail identity, catalog/image generation and freshness, version/product

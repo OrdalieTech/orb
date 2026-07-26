@@ -5,7 +5,7 @@ import "testing"
 // Cases ported from upstream packages/tui/test/word-navigation.test.ts.
 // The dictionary-segmented CJK case ("你好世界" splitting into two words) is
 // excluded: uniseg has no CJK dictionary; contiguous ideograph runs move as
-// one unit (recorded in docs/plan/wp-420-report.md).
+// one unit (WP-420).
 func TestFindWordBackward(t *testing.T) {
 	cases := []struct {
 		text   string

@@ -18,7 +18,7 @@ Node built-ins and the upstream pi packages stay external and resolve to the Go 
 Node runtime is required. Native `.node` addons and imported `.wasm` files are rejected clearly;
 `import.meta.url`, `import.meta.filename`, and `import.meta.dirname` identify the extension entry
 file. `worker_threads` and raw `net`/`tls`/`dgram` sockets are not exposed. The
-[extension matrix](extension-matrix.md) is the authoritative list of supported pi and pi-tui
+[ecosystem matrix](ecosystem-extension-matrix.md) is the authoritative list of supported pi and pi-tui
 exports.
 
 ## Module coverage

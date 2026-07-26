@@ -132,7 +132,7 @@ open in Go, Go-written in TS — extraction round-trips through upstream session
 ## WP-170 — Skeleton gate (integration)
 
 **Scope:** wire 120+130+140+150+160 into a working `pigo -p`; fix integration fallout; write
-`docs/plan/skeleton-gate-report.md` (what works, deviations found, perf snapshot: cold start, binary size).
+a gate report (retired; conclusions in PROGRESS.md — what works, deviations found, perf snapshot).
 
 **Acceptance (the gate)**
 - `pigo -p "read main.go and add a comment"` performs a real OpenAI round-trip with tool calls on a

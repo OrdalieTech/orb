@@ -405,7 +405,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 Full-parity port of upstream pi v0.80.10 (`3a40794e`). Release candidate: every locally
 provable M1–M5 criterion is green; the owner-gated verification remainder is listed in
-`docs/trim/M5.md`.
+the M5 trim checklist (retired).
 
 ### Added
 
@@ -427,7 +427,7 @@ provable M1–M5 criterion is green; the owner-gated verification remainder is l
   (88%) run unmodified — pi-tui `Text`/`Box`/`Container`/`Spacer`/`Loader`/`CancellableLoader`
   component classes, `BorderedLoader`/`DynamicBorder`, `convertToLlm`/`serializeConversation`,
   truncation utilities, `CONFIG_DIR_NAME`, a `node:readline` shim, live message/entry renderers,
-  and Node-style `execSync` errors; full status in `docs/sync/extension-matrix.md`.
+  and Node-style `execSync` errors; superseded by `docs/sync/ecosystem-extension-matrix.md`.
 - JS extensions load in the product: settings-configured and project extension paths plus the new
   `--extension`/`-e` flag route through the bridge loader into the shared registry; `/reload`
   rebuilds changed bundles and replaces per-path VMs.
