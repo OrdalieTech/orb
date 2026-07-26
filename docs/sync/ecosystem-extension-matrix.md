@@ -591,20 +591,22 @@ worktrees, not a working tree:
 | Pigo executable (linux/arm64, `f64f4f7`, rebuilt for the A/B) | `9ed29a838b84c668d3a3d242022ee9f776ce3a7fb55c66b57d143424aff13084` | — |
 
 Artifacts. Large raw artifacts are committed `gzip -9`; the *raw* SHA-256 is the hash of the
-uncompressed JSON inside, so it can be checked after `gunzip`:
+uncompressed JSON inside, so it can be checked after `gunzip`. Only the newest full sweep and the
+current A/B pair stay in the tree — earlier dumps are dropped once their conclusions are written up
+here, and their rows below keep the size and both hashes so a superseded run is still attested:
 
 | Artifact | raw bytes | raw SHA-256 | committed SHA-256 |
 | --- | ---: | --- | --- |
 | 300-package Node-only sweep, `d620c01` [`…-300-d620c01.json.gz`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-300-d620c01.json.gz) | 14,602,607 | `dc91f9e0b145d5a35890f5802a8c49554b4a8d8b3e4e27960b0735b6cf9aabb0` | `9bbdafb514f4bdf2026a29f6ea0d22c01a0bb7736ab088f993f4785450af079e` |
 | regression A/B (2 packages, `perf`), `d620c01` binary [`…-regression-ab-d620c01.json.gz`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-regression-ab-d620c01.json.gz) | 1,050,292 | `3ca6f9d3833f41b68ea75b1a7867af9cc607d27e2a05057e78f1650dd0a93e29` | `4d3c3b9d4581447290b530031858a33fc23e649d04617014ace33f5ac5b544d0` |
 | regression A/B (2 packages, `perf`), `f64f4f7` binary [`…-regression-ab-f64f4f7.json.gz`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-regression-ab-f64f4f7.json.gz) | 226,747 | `dc7d71f068516109de5b3fde3a96d0187769818195b782eb7d3df5866f234bc5` | `d0459cace199a0839d41d51e97ba27f4ea348ae863247c16a4e39dfb97a7a1f8` |
-| 300-package matrix, `f64f4f7` [`…-300-f64f4f7.json.gz`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-300-f64f4f7.json.gz) | 18,818,163 | `764dec1736c7365c5d8db7f58965fa8b6f9830128ca0dc4eca6cdf568ad6ee77` | `7ef07b1e70fc215962c0c7cf7a08ca3b1b88a19fd575ceae95e08db1b94713c4` |
-| smoke, `f64f4f7` [`…-300-f64f4f7-smoke.json.gz`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-300-f64f4f7-smoke.json.gz) | 929,966 | `807611cf1a12b7a3841e5a88d085a1d5b48178fc5dc3ae3ed171187fa7a57339` | `d65699980f2f8486f6f398d00004eafe176aeb4151d9516e21eaa3a506dce243` |
-| tier-1 `compat` A/B, `f64f4f7` [`…-tier1-compat-f64f4f7.json.gz`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-tier1-compat-f64f4f7.json.gz) | 2,886,036 | `dcec6b9c5e0f0065d13a969c7b69d157a2856ac68ce1ff309bd052d21cb99581` | `00e5453acdcbd0406a810840df6e096980ccd3180877593438454d2ca6549866` |
-| 300-package matrix, `53222c3` [`…-300.json.gz`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-300.json.gz) | 37,227,960 | `6bcf1d54cf55bb35a9ef36f32b020934c832b6f93131c467ca931c8deba1842b` | `dea7d00f08485c1ec8147e7ff7800f2a68191294ffd38ba9deb292ed3eced3d0` |
-| smoke, `53222c3` [`…-300-smoke.json`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-300-smoke.json) | 870,944 | `876135a7c41a7559d2ef7821449637027914da1b67de54f3bf31ba1b0da9b73e` | uncompressed |
-| tier-1 `compat` A/B, `53222c3` [`…-tier1-compat.json`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-tier1-compat.json) | 2,781,108 | `9891519e06c6bf986d2321495644550c304008081e76d857780255bf7f8f1cb1` | uncompressed |
-| superseded 44-package [`pi-0.81.1-pigo-host.json`](../../conformance/extensions/results/pi-0.81.1-pigo-host.json) | 3,839,265 | `d9f1baa88d6cf875973d5842b4d2d8f286060c9ac105c3954ca75c540820ee4e` | uncompressed |
+| 300-package matrix, `f64f4f7` `…-300-f64f4f7.json.gz` (raw artifact dropped) | 18,818,163 | `764dec1736c7365c5d8db7f58965fa8b6f9830128ca0dc4eca6cdf568ad6ee77` | `7ef07b1e70fc215962c0c7cf7a08ca3b1b88a19fd575ceae95e08db1b94713c4` |
+| smoke, `f64f4f7` `…-300-f64f4f7-smoke.json.gz` (raw artifact dropped) | 929,966 | `807611cf1a12b7a3841e5a88d085a1d5b48178fc5dc3ae3ed171187fa7a57339` | `d65699980f2f8486f6f398d00004eafe176aeb4151d9516e21eaa3a506dce243` |
+| tier-1 `compat` A/B, `f64f4f7` `…-tier1-compat-f64f4f7.json.gz` (raw artifact dropped) | 2,886,036 | `dcec6b9c5e0f0065d13a969c7b69d157a2856ac68ce1ff309bd052d21cb99581` | `00e5453acdcbd0406a810840df6e096980ccd3180877593438454d2ca6549866` |
+| 300-package matrix, `53222c3` `…-300.json.gz` (raw artifact dropped) | 37,227,960 | `6bcf1d54cf55bb35a9ef36f32b020934c832b6f93131c467ca931c8deba1842b` | `dea7d00f08485c1ec8147e7ff7800f2a68191294ffd38ba9deb292ed3eced3d0` |
+| smoke, `53222c3` `…-300-smoke.json` (raw artifact dropped) | 870,944 | `876135a7c41a7559d2ef7821449637027914da1b67de54f3bf31ba1b0da9b73e` | uncompressed |
+| tier-1 `compat` A/B, `53222c3` `…-tier1-compat.json` (raw artifact dropped) | 2,781,108 | `9891519e06c6bf986d2321495644550c304008081e76d857780255bf7f8f1cb1` | uncompressed |
+| superseded 44-package `pi-0.81.1-pigo-host.json` (raw artifact dropped) | 3,839,265 | `d9f1baa88d6cf875973d5842b4d2d8f286060c9ac105c3954ca75c540820ee4e` | uncompressed |
 
 Each aggregate is the raw matrix at the default `--retain-registrations diagnostic`, copied directly
 from the isolated run without compaction. It retains every attempt, every failure's registration
