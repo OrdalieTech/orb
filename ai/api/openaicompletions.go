@@ -621,7 +621,7 @@ func detectOpenAICompletionsCompat(model *ai.Model) resolvedOpenAICompletionsCom
 		sessionFormat = ai.SessionAffinityOpenRouter
 	}
 	var cacheControl *ai.CacheControlFormat
-	if provider == "openrouter" && strings.HasPrefix(model.ID, "anthropic/") {
+	if provider == "openrouter" && (strings.HasPrefix(model.ID, "anthropic/") || strings.HasPrefix(model.ID, "~anthropic/")) {
 		value := ai.CacheControlAnthropic
 		cacheControl = &value
 	}

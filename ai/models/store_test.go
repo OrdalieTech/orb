@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -101,6 +102,167 @@ func TestRefreshPersistsAndReloadsCatalog(t *testing.T) {
 	model, ok := loaded.Find("anthropic", "fixture")
 	if !ok || model.ContextWindow != 4096 {
 		t.Fatalf("bad reloaded model: %#v, %v", model, ok)
+	}
+}
+
+func TestRefreshRevalidatesStoredCatalogWithETag(t *testing.T) {
+	source := []byte(`{"anthropic":{"models":{"fixture":{"name":"Fixture","tool_call":true,"modalities":{"input":["text"]},"limit":{"context":4096,"output":512},"cost":{"input":1,"output":2}}}}}`)
+	base := time.UnixMilli(generatedCatalogLastModified + time.Hour.Milliseconds()).Truncate(time.Second)
+	now := base
+	requests := 0
+	client := &http.Client{Transport: catalogRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests++
+		if requests == 1 {
+			if got := request.Header.Get("If-None-Match"); got != "" {
+				t.Fatalf("first If-None-Match = %q", got)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK, Status: "200 OK",
+				Header: http.Header{"Last-Modified": []string{base.Format(http.TimeFormat)}, "Etag": []string{`"catalog-1"`}},
+				Body:   io.NopCloser(bytes.NewReader(source)),
+			}, nil
+		}
+		if got := request.Header.Get("If-None-Match"); got != `"catalog-1"` {
+			t.Fatalf("revalidation If-None-Match = %q", got)
+		}
+		return &http.Response{
+			StatusCode: http.StatusNotModified, Status: "304 Not Modified",
+			Header: make(http.Header), Body: io.NopCloser(strings.NewReader("")),
+		}, nil
+	})}
+	storePath := filepath.Join(t.TempDir(), "models-store.json")
+	options := RefreshOptions{
+		URL: "https://catalog.test", StorePath: storePath, Client: client, Force: true,
+		Now: func() time.Time { return now },
+	}
+	if _, err := Refresh(context.Background(), options); err != nil {
+		t.Fatal(err)
+	}
+	var before map[string]storedProvider
+	data, err := os.ReadFile(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &before); err != nil {
+		t.Fatal(err)
+	}
+
+	now = base.Add(time.Minute)
+	catalog, err := Refresh(context.Background(), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := catalog.Find("anthropic", "fixture"); !ok {
+		t.Fatal("304 dropped the stored overlay")
+	}
+	var after map[string]storedProvider
+	data, err = os.ReadFile(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &after); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 2 || after["anthropic"].CheckedAt != now.UnixMilli() ||
+		after["anthropic"].ETag != `"catalog-1"` ||
+		!reflect.DeepEqual(after["anthropic"].Models, before["anthropic"].Models) ||
+		!reflect.DeepEqual(after["anthropic"].LastModified, before["anthropic"].LastModified) {
+		t.Fatalf("304 store = %+v, before = %+v, requests = %d", after["anthropic"], before["anthropic"], requests)
+	}
+}
+
+func TestRefreshClearsETagWhenCatalogIsUnavailable(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusNotImplemented} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			base := time.UnixMilli(generatedCatalogLastModified + time.Hour.Milliseconds()).Truncate(time.Second)
+			storePath := filepath.Join(t.TempDir(), "models-store.json")
+			catalog := &Catalog{providers: map[string]map[string]ai.Model{
+				"anthropic": {"fixture": {ID: "fixture", Provider: "anthropic"}},
+			}}
+			if err := writeStoreResponse(storePath, catalog, base.UnixMilli(), storeTimestamp(base.UnixMilli()), `"catalog-1"`); err != nil {
+				t.Fatal(err)
+			}
+			client := &http.Client{Transport: catalogRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+				if got := request.Header.Get("If-None-Match"); got != `"catalog-1"` {
+					t.Fatalf("If-None-Match = %q", got)
+				}
+				return &http.Response{
+					StatusCode: status, Status: fmt.Sprintf("%d %s", status, http.StatusText(status)),
+					Header: make(http.Header), Body: io.NopCloser(strings.NewReader("unavailable")),
+				}, nil
+			})}
+			if _, err := Refresh(context.Background(), RefreshOptions{
+				URL: "https://catalog.test", StorePath: storePath, Client: client, Force: true,
+				Now: func() time.Time { return base.Add(time.Minute) },
+			}); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(storePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var stored map[string]storedProvider
+			if err := json.Unmarshal(data, &stored); err != nil {
+				t.Fatal(err)
+			}
+			if stored["anthropic"].ETag != "" {
+				t.Fatalf("unavailable catalog retained ETag %q", stored["anthropic"].ETag)
+			}
+			requireStoreTimestamp(t, stored["anthropic"].LastModified, 0)
+		})
+	}
+}
+
+func TestRefreshKeepsETagAcrossTransientFailure(t *testing.T) {
+	base := time.UnixMilli(generatedCatalogLastModified + time.Hour.Milliseconds()).Truncate(time.Second)
+	storePath := filepath.Join(t.TempDir(), "models-store.json")
+	catalog := &Catalog{providers: map[string]map[string]ai.Model{
+		"anthropic": {"fixture": {ID: "fixture", Provider: "anthropic"}},
+	}}
+	if err := writeStoreResponse(storePath, catalog, base.UnixMilli(), storeTimestamp(base.UnixMilli()), `"catalog-1"`); err != nil {
+		t.Fatal(err)
+	}
+	requests := 0
+	client := &http.Client{Transport: catalogRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests++
+		if got := request.Header.Get("If-None-Match"); got != `"catalog-1"` {
+			t.Fatalf("request %d If-None-Match = %q", requests, got)
+		}
+		if requests == 1 {
+			return &http.Response{
+				StatusCode: http.StatusTooManyRequests, Status: "429 Too Many Requests",
+				Header: make(http.Header), Body: io.NopCloser(strings.NewReader("rate limited")),
+			}, nil
+		}
+		return &http.Response{
+			StatusCode: http.StatusNotModified, Status: "304 Not Modified",
+			Header: make(http.Header), Body: io.NopCloser(strings.NewReader("")),
+		}, nil
+	})}
+	options := RefreshOptions{
+		URL: "https://catalog.test", StorePath: storePath, Client: client, Force: true,
+		Now: func() time.Time { return base.Add(time.Minute) },
+	}
+	if _, err := Refresh(context.Background(), options); err == nil {
+		t.Fatal("transient refresh succeeded")
+	}
+	refreshed, err := Refresh(context.Background(), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := refreshed.Find("anthropic", "fixture"); !ok {
+		t.Fatal("transient failure or later 304 dropped the stored overlay")
+	}
+	data, err := os.ReadFile(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored map[string]storedProvider
+	if err := json.Unmarshal(data, &stored); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 2 || stored["anthropic"].ETag != `"catalog-1"` || len(stored["anthropic"].Models) != 1 {
+		t.Fatalf("stored catalog = %+v, requests = %d", stored["anthropic"], requests)
 	}
 }
 

@@ -24,6 +24,7 @@ import (
 const (
 	defaultOpenAICodexBaseURL = "https://chatgpt.com/backend-api"
 	defaultCodexMaxRetryDelay = 60 * time.Second
+	previousResponseNotFound  = "previous_response_not_found"
 )
 
 var (
@@ -53,6 +54,11 @@ func isCodexNonTransportError(err error) bool {
 func isCodexConnectionLimitError(err error) bool {
 	var failure *codexAPIError
 	return errors.As(err, &failure) && failure.code == "websocket_connection_limit_reached"
+}
+
+func isCodexPreviousResponseNotFoundError(err error) bool {
+	var failure *codexAPIError
+	return errors.As(err, &failure) && failure.code == previousResponseNotFound
 }
 
 type OpenAICodexResponsesOptions struct {
@@ -228,7 +234,15 @@ func StreamOpenAICodexResponsesWithOptions(
 			return
 		}
 		transport := codexTransport(streamOptions)
-		sessionID := rawCodexSessionID(streamOptions)
+		sessionID := codexCacheSessionID(streamOptions)
+		startEmitted := false
+		emitStart := func() bool {
+			if startEmitted {
+				return true
+			}
+			startEmitted = true
+			return sink(ai.StartEvent{Partial: output})
+		}
 		webSocketDisabled := transport != ai.TransportSSE && openAICodexWebSocketFallbackActive(sessionID)
 		if webSocketDisabled {
 			recordOpenAICodexSSEFallback(sessionID)
@@ -241,9 +255,10 @@ func StreamOpenAICodexResponsesWithOptions(
 			}
 			webSocketHeaders := buildOpenAICodexWebSocketHeaders(model, streamOptions, apiKey, accountID, requestID)
 			retriedConnectionLimit := false
+			retriedMissingContinuation := false
 			for {
 				started, webSocketErr := processOpenAICodexWebSocket(
-					ctx, model, body, webSocketHeaders, grammarToolInputProperties, options, output, sink,
+					ctx, model, body, webSocketHeaders, grammarToolInputProperties, options, output, emitStart, sink,
 				)
 				if errors.Is(webSocketErr, errStopSSE) {
 					return
@@ -259,6 +274,10 @@ func StreamOpenAICodexResponsesWithOptions(
 				}
 				aborted := ctx.Err() != nil || webSocketErr.Error() == "Request was aborted"
 				connectionLimit := !started && isCodexConnectionLimitError(webSocketErr)
+				if !aborted && isCodexPreviousResponseNotFoundError(webSocketErr) && !retriedMissingContinuation {
+					retriedMissingContinuation = true
+					continue
+				}
 				if !aborted && connectionLimit && !retriedConnectionLimit {
 					retriedConnectionLimit = true
 					continue
@@ -295,7 +314,7 @@ func StreamOpenAICodexResponsesWithOptions(
 			return
 		}
 		defer func() { _ = response.Body.Close() }()
-		if !sink(ai.StartEvent{Partial: output}) {
+		if !emitStart() {
 			return
 		}
 
@@ -446,7 +465,7 @@ func buildOpenAICodexResponsesPayload(
 	streamOptions := codexStreamOptions(options)
 	if streamOptions != nil {
 		payload.Temperature = streamOptions.Temperature
-		if streamOptions.SessionID != nil {
+		if streamOptions.SessionID != nil && resolveCacheRetention(streamOptions) != ai.CacheRetentionNone {
 			clamped := clampOpenAIPromptCacheKey(streamOptions.SessionID)
 			if key, ok := clamped.(string); ok {
 				payload.PromptCacheKey = &key
@@ -509,8 +528,8 @@ func buildOpenAICodexHeaders(model *ai.Model, options *ai.StreamOptions, token, 
 	headers.Set("OpenAI-Beta", "responses=experimental")
 	headers.Set("Accept", "text/event-stream")
 	headers.Set("Content-Type", "application/json")
-	if options != nil && options.SessionID != nil {
-		clamped := clampOpenAIPromptCacheKey(options.SessionID)
+	if sessionID := codexCacheSessionID(options); sessionID != "" {
+		clamped := clampOpenAIPromptCacheKey(&sessionID)
 		if sessionID, ok := clamped.(string); ok && sessionID != "" {
 			headers.Set("session-id", sessionID)
 			headers.Set("x-client-request-id", sessionID)
@@ -613,7 +632,10 @@ func postOpenAICodexStream(
 			return nil, lastError
 		}
 		if attempt < maxRetries && retryableCodexError(response.StatusCode, string(contents)) {
-			delay := codexRetryDelay(response, attempt, options)
+			delay, err := codexRetryDelay(response, attempt, options)
+			if err != nil {
+				return nil, err
+			}
 			if err := openAICodexSleep(ctx, delay); err != nil {
 				return nil, errors.New("Request was aborted") //nolint:staticcheck // Upstream capitalization is observable.
 			}
@@ -912,36 +934,35 @@ func regexpMatchFold(text string, markers ...string) bool {
 	return false
 }
 
-func codexRetryDelay(response *http.Response, attempt int, options *ai.StreamOptions) time.Duration {
+func codexRetryDelay(response *http.Response, attempt int, options *ai.StreamOptions) (time.Duration, error) {
 	if value := response.Header.Get("retry-after-ms"); value != "" {
 		if milliseconds, err := strconv.ParseFloat(value, 64); err == nil {
-			return capCodexRetryDelay(time.Duration(max(0, milliseconds))*time.Millisecond, response.StatusCode, options)
+			return validateCodexRetryDelay(time.Duration(max(0, milliseconds)*float64(time.Millisecond)), options)
 		}
 	}
 	if value := response.Header.Get("retry-after"); value != "" {
 		if seconds, err := strconv.ParseFloat(value, 64); err == nil {
-			return capCodexRetryDelay(time.Duration(max(0, seconds)*float64(time.Second)), response.StatusCode, options)
+			return validateCodexRetryDelay(time.Duration(max(0, seconds)*float64(time.Second)), options)
 		}
 		if date, err := http.ParseTime(value); err == nil {
 			delay := max(time.Duration(0), date.Sub(time.UnixMilli(openAINowUnixMilli())))
-			return capCodexRetryDelay(delay, response.StatusCode, options)
+			return validateCodexRetryDelay(delay, options)
 		}
 	}
-	return time.Second * time.Duration(1<<attempt)
+	return time.Second * time.Duration(1<<attempt), nil
 }
 
-func capCodexRetryDelay(delay time.Duration, status int, options *ai.StreamOptions) time.Duration {
-	if status != http.StatusTooManyRequests {
-		return delay
-	}
+func validateCodexRetryDelay(delay time.Duration, options *ai.StreamOptions) (time.Duration, error) {
 	maximum := defaultCodexMaxRetryDelay
 	if options != nil && options.MaxRetryDelayMS != nil {
 		maximum = time.Duration(*options.MaxRetryDelayMS) * time.Millisecond
 	}
-	if maximum > 0 {
-		return min(delay, maximum)
+	if maximum > 0 && delay > maximum {
+		requested := (delay + time.Second - 1) / time.Second
+		allowed := (maximum + time.Second - 1) / time.Second
+		return 0, fmt.Errorf("Server requested %ds retry delay (max: %ds)", requested, allowed) //nolint:staticcheck // Upstream capitalization is observable.
 	}
-	return delay
+	return delay, nil
 }
 
 func parseOpenAICodexHTTPError(status int, statusText string, contents []byte) error {

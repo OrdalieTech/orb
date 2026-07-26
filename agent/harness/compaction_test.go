@@ -270,6 +270,42 @@ func TestSummaryPromptStructureAndReasoning(t *testing.T) {
 	}
 }
 
+func TestSummaryRequestsUseFreshSessionsWithoutCacheRetention(t *testing.T) {
+	model := &ai.Model{MaxTokens: 128, ContextWindow: 1000}
+	var seen []ai.SimpleStreamOptions
+	complete := func(_ context.Context, _ *ai.Model, _ ai.Context, options *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
+		seen = append(seen, *options)
+		return assistant("summary", 10), nil
+	}
+	for range 2 {
+		if _, err := GenerateSummary(context.Background(), agent.AgentMessages{user("work")}, model, complete, 1000, "", nil, ai.ModelThinkingOff); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reserveTokens := int64(100)
+	if _, err := GenerateBranchSummary(context.Background(), linearEntries(user("branch")), GenerateBranchSummaryOptions{
+		Model: model, Complete: complete, ReserveTokens: &reserveTokens,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 3 {
+		t.Fatalf("summary requests = %d, want 3", len(seen))
+	}
+	sessionIDs := make(map[string]struct{}, len(seen))
+	for _, options := range seen {
+		if options.CacheRetention == nil || *options.CacheRetention != ai.CacheRetentionNone {
+			t.Fatalf("cache retention = %#v", options.CacheRetention)
+		}
+		if options.SessionID == nil || len(*options.SessionID) != 36 || (*options.SessionID)[14] != '7' {
+			t.Fatalf("session ID = %#v, want UUIDv7", options.SessionID)
+		}
+		sessionIDs[*options.SessionID] = struct{}{}
+	}
+	if len(sessionIDs) != len(seen) {
+		t.Fatalf("summary session IDs were reused: %#v", seen)
+	}
+}
+
 func TestBranchPreparationAndPrompt(t *testing.T) {
 	read := &ai.ToolCall{ID: "read", Name: "read", Arguments: map[string]any{"path": "a.go"}}
 	entries := linearEntries(user("branch request"), &ai.AssistantMessage{Content: ai.AssistantContent{read}, StopReason: ai.StopReasonStop, Usage: usage(20)})

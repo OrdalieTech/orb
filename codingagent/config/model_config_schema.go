@@ -300,7 +300,7 @@ func validOpenAICompletionsCompat(compat map[string]any) bool {
 }
 
 func validOpenAIResponsesCompat(compat map[string]any) bool {
-	return optionalBools(compat, "supportsDeveloperRole", "supportsLongCacheRetention", "supportsStrictMode", "supportsOpenAIGrammarTools", "supportsToolSearch") &&
+	return optionalBools(compat, "supportsDeveloperRole", "supportsLongCacheRetention", "supportsStrictMode", "supportsOpenAIGrammarTools", "supportsToolSearch", "supportsExplicitPromptCacheMode") &&
 		optionalEnum(compat, "sessionAffinityFormat", "openai", "openai-nosession", "openrouter")
 }
 

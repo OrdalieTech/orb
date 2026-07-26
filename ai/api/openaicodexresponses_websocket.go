@@ -356,10 +356,11 @@ func processOpenAICodexWebSocket(
 	grammarToolInputProperties map[string]string,
 	options *OpenAICodexResponsesOptions,
 	output *ai.AssistantMessage,
+	onStart func() bool,
 	sink func(ai.AssistantMessageEvent) bool,
 ) (started bool, resultErr error) {
 	streamOptions := codexStreamOptions(options)
-	sessionID := rawCodexSessionID(streamOptions)
+	sessionID := codexCacheSessionID(streamOptions)
 	lease, err := acquireOpenAICodexWebSocket(
 		ctx,
 		resolveOpenAICodexWebSocketURL(model.BaseURL),
@@ -426,7 +427,7 @@ func processOpenAICodexWebSocket(
 		err = handleOpenAICodexEvent(processor, raw)
 		if !started {
 			started = true
-			if !sink(ai.StartEvent{Partial: output}) {
+			if !onStart() {
 				return true, errStopSSE
 			}
 			for _, event := range pending {
@@ -688,9 +689,16 @@ func rawCodexSessionID(options *ai.StreamOptions) string {
 	return *options.SessionID
 }
 
+func codexCacheSessionID(options *ai.StreamOptions) string {
+	if options != nil && options.CacheRetention != nil && *options.CacheRetention == ai.CacheRetentionNone {
+		return ""
+	}
+	return rawCodexSessionID(options)
+}
+
 func codexWebSocketRequestID(options *ai.StreamOptions) (string, error) {
-	if options != nil && options.SessionID != nil {
-		if clamped, ok := clampOpenAIPromptCacheKey(options.SessionID).(string); ok && clamped != "" {
+	if sessionID := codexCacheSessionID(options); sessionID != "" {
+		if clamped, ok := clampOpenAIPromptCacheKey(&sessionID).(string); ok && clamped != "" {
 			return clamped, nil
 		}
 	}
