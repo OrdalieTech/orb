@@ -885,6 +885,18 @@ func GetAgentDir() (string, error) {
 	return filepath.Join(home, ConfigDirName, "agent"), nil
 }
 
+// UserNpmInstallRoot and ProjectNpmInstallRoot name the npm projects pigo
+// manages itself — the only trees it installs packages into, and the only ones
+// the extension host resolves the pi SDK from. Both the package manager and the
+// host read them from here so the layout is stated once.
+func UserNpmInstallRoot(agentDir string) string {
+	return filepath.Join(agentDir, "npm")
+}
+
+func ProjectNpmInstallRoot(cwd string) string {
+	return filepath.Join(cwd, ConfigDirName, "npm")
+}
+
 // ResolveSessionDir applies CLI, environment, then merged-settings precedence.
 func ResolveSessionDir(cliValue string, manager *SettingsManager) (string, error) {
 	if cliValue != "" {

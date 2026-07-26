@@ -1349,9 +1349,9 @@ func (manager *PackageManager) getNpmInstallRoot(scope string, temporary bool) (
 		if err := manager.assertProjectTrustedForScope(scope); err != nil {
 			return "", err
 		}
-		return filepath.Join(manager.cwd, packageManagerProjectDir, "npm"), nil
+		return config.ProjectNpmInstallRoot(manager.cwd), nil
 	}
-	return filepath.Join(manager.agentDir, "npm"), nil
+	return config.UserNpmInstallRoot(manager.agentDir), nil
 }
 
 func (manager *PackageManager) getManagedNpmInstallPath(source *npmSource, scope string) (string, error) {
@@ -1366,9 +1366,9 @@ func (manager *PackageManager) getManagedNpmInstallPath(source *npmSource, scope
 		if err := manager.assertProjectTrustedForScope(scope); err != nil {
 			return "", err
 		}
-		return filepath.Join(manager.cwd, packageManagerProjectDir, "npm", "node_modules", source.name), nil
+		return filepath.Join(config.ProjectNpmInstallRoot(manager.cwd), "node_modules", source.name), nil
 	}
-	return filepath.Join(manager.agentDir, "npm", "node_modules", source.name), nil
+	return filepath.Join(config.UserNpmInstallRoot(manager.agentDir), "node_modules", source.name), nil
 }
 
 // getNpmInstallPath: upstream also probes legacy npm/pnpm global roots for

@@ -275,7 +275,7 @@ func TestPrepareHostEnvironmentExposesRuntimeDirectory(t *testing.T) {
 	runtimeDir := t.TempDir()
 	binary := filepath.Join(t.TempDir(), "pigo")
 	writeExecutable(t, binary, "#!/bin/sh\n")
-	environment, err := prepareHostEnvironment(agentDir, []string{"PATH=/usr/bin"}, binary, filepath.Join(runtimeDir, "node"))
+	environment, err := prepareHostEnvironment(Options{AgentDir: agentDir, PigoExecutable: binary}, []string{"PATH=/usr/bin"}, filepath.Join(runtimeDir, "node"))
 	if err != nil {
 		t.Fatal(err)
 	}
