@@ -47,6 +47,7 @@
         "kind": "api_key",
         "name": "Anthropic API key",
         "env": [
+          "ANTHROPIC_AUTH_TOKEN",
           "ANTHROPIC_OAUTH_TOKEN",
           "ANTHROPIC_API_KEY"
         ],
@@ -250,7 +251,7 @@
         "env": [
           "KIMI_API_KEY"
         ],
-        "oauth": false
+        "oauth": true
       }
     },
     {
@@ -425,7 +426,7 @@
         "env": [
           "OPENROUTER_API_KEY"
         ],
-        "oauth": false
+        "oauth": true
       }
     },
     {

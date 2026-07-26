@@ -10,12 +10,15 @@
     "name": "Anthropic API key",
     "oauthName": "Anthropic (Claude Pro/Max)",
     "env": [
+      "ANTHROPIC_AUTH_TOKEN",
       "ANTHROPIC_OAUTH_TOKEN",
       "ANTHROPIC_API_KEY"
     ],
     "resolved": {
-      "apiKey": "fixture-anthropic-api-key"
+      "headers": {
+        "Authorization": "Bearer fixture-anthropic-api-key"
+      }
     },
-    "source": "ANTHROPIC_OAUTH_TOKEN"
+    "source": "ANTHROPIC_AUTH_TOKEN"
   }
 }
