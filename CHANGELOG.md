@@ -8,6 +8,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Added
 
+- Embedders can parse and marshal individual harness session-tree entries without constructing a JSONL file.
 - `PIGO_NODE` names the Node executable to use, for installs no search reaches; `PIGO_NODE=none` disables JavaScript extensions.
 - TypeScript published inside `node_modules` on Node 22.6-22.12 now reports the file, the running version and the fix instead of failing opaquely.
 
