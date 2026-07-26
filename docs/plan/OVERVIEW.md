@@ -11,7 +11,7 @@ ceremony.
 
 ## Delivered under the old WP system (historical)
 
-001–002 bootstrap+conformance · 110–180 walking skeleton + **M1** (`docs/trim/M1.md`) ·
+001–002 bootstrap+conformance · 110–180 walking skeleton + **M1** (M1 trim, retired) ·
 210/211 Anthropic + OAuth · 221/222 Gemini + Vertex (G2: stdlib REST/SSE) · 231/232 Mistral/Azure +
 Bedrock · 250 catalog · 260 pi-messages · 310/320 compaction + session tree · 330 JSON mode.
 Live status: `docs/plan/PROGRESS.md` (sprint checklist).

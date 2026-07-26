@@ -70,8 +70,7 @@ four event-driven packages with load-only parity — 88.6% by package count and 
 monthly downloads. In a follow-up run where real Pi installed 30 popular packages into isolated
 projects, pigo loaded 29 and 15 completed live tool or hook workflows.
 See the [ecosystem matrix](docs/sync/ecosystem-extension-matrix.md), the
-[live matrix](docs/sync/ecosystem-extension-live.md), the
-[example matrix](docs/sync/extension-matrix.md), and the [bridge guide](docs/sync/node-shims.md) for
+[live matrix](docs/sync/ecosystem-extension-live.md), and the [bridge guide](docs/sync/node-shims.md) for
 the exact package-by-package result and remaining runtime ceilings.
 `.pi/extensions/` in a trusted project and the global agent directory are discovered like upstream.
 

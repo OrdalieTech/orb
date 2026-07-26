@@ -5,7 +5,7 @@ interactive command, and `ctx.ui` lifecycle surface renders byte-identical to ex
 pi on the pinned commit, within the 16 ms frame budget by a factor of thirty. Real-terminal image
 emission (kitty/iTerm2) and native-desktop clipboard smoke remain owner-blocked evidence; their
 encodings and command profiles are byte-tested. This report is the frame-diff deliverable required
-by SPRINTS.md and supersedes `wp-410-report.md` and `tui-gate-report.md` as the current statement.
+by SPRINTS.md and supersedes the WP-410 and TUI gate reports (retired) as the current statement.
 
 ## Revisions and method
 
@@ -55,7 +55,7 @@ CGO_ENABLED=0 GOOS={linux,darwin} GOARCH={amd64,arm64} go build ./...
 go test ./conformance/runner -run TestF12ReplayCorpusFrameBudget -v
 ```
 
-Trim pass #3 and the size/cold-start trend are reported in `docs/trim/M3.md`.
+Trim pass #3 (M3, retired) tracked the size/cold-start trend.
 
 ## M3 disposition
 
@@ -66,7 +66,6 @@ Trim pass #3 and the size/cold-start trend are reported in `docs/trim/M3.md`.
 | Built-in interactive commands + `ctx.ui` demos per upstream docs | **GREEN** — 22 visible + 3 hidden byte-tested; lifecycle transcripts |
 | Render < 16 ms/frame; resize/paste fuzz clean under `-race` | **GREEN** — p90 513 µs over 264 frames; four fuzz targets clean |
 | Images on kitty + iTerm2; `/copy` on darwin and linux | **OWNER-BLOCKED** for real terminals/desktops — encodings, capability profiles, and pbcopy/wl-copy/xclip/xsel/OSC52 command paths byte-tested with mocked exec |
-| Trim pass #3 | `docs/trim/M3.md` |
 
 No deterministic Sprint 2 divergence required a ledger entry, and the owner-blocked boxes are not
 waived: they are listed in PROGRESS.md with their exact unblocking environments.

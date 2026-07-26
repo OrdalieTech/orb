@@ -331,7 +331,7 @@ and 640 KiB to a stripped probe binary. No direct dependency was added.
 entries, and grew the compiled package graph from 294 to 477 packages. The final hand-rolled adapter
 adds 155,648 bytes (0.869%) and no modules. WP-222 completes Vertex with stdlib REST/SSE and
 request-scoped pure-Go ADC; against its consolidated parent it adds 393,216 bytes (2.177%), no
-module, and no compiled package. See `docs/plan/wp-222-vertex-report.md`.
+module, and no compiled package (WP-222).
 
 Explicitly rejected: TUI frameworks (D15), langchaingo/fantasy-style unified LLM libs (D10),
 v8go/quickjs CGo bindings (D7), and native SQLite bindings (the v0.81.0 storage package is ledgered;

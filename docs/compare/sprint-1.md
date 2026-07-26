@@ -5,8 +5,7 @@ produce byte-identical print, JSON, and RPC output in Go, and every locally runn
 is green. M2 itself remains open only for the subscribed Anthropic Pro/Max login and the first
 hosted nightly run, which require owner credentials and infrastructure.
 
-This report supersedes the integration-time gap lists in `wp-340-report.md`, `wp-350-report.md`,
-`wp-351-report.md`, and `wp-370-report.md`.
+This report supersedes the integration-time WP gap lists (WP-340/350/351/370 reports, retired).
 
 ## Revisions and method
 
@@ -61,7 +60,7 @@ CGO_ENABLED=0 GOOS={linux,darwin} GOARCH={amd64,arm64} go build ./...
 ```
 
 All 13 examples also run sequentially with isolated `HOME`, `PI_CODING_AGENT_DIR`, `PI_OFFLINE=1`,
-and the faux provider. `docs/trim/M2.md` records the shrink, dependency, LOC, binary-size, and
+and the faux provider. Trim pass #2 (M2, retired) recorded the shrink, dependency, LOC, binary-size, and
 cold-start evidence.
 
 ## M2 disposition

@@ -62,7 +62,7 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 - [x] pi packages (npm:/git:) install/update/list + project trust work as upstream.
 - [x] F11 matrix published; ≥ 80% of upstream single-file examples run **unmodified** with their
       documented behavior; every "unsupported" maps to a ledger line or a written WP proposal.
-      (61/69 = 88%; per-row missing-surface notes in docs/sync/extension-matrix.md.)
+      (61/69 = 88%; superseded by the 300-package run in docs/sync/ecosystem-extension-matrix.md.)
 - [x] hello, todo, pirate, permission-gate, status-line, modal-editor run unmodified end-to-end.
 - [x] Node-shim coverage table committed; VM bridge calls < 8 ms on the corpus (p90 137 µs,
       test-guarded); `/reload` works; TS errors map to source lines.
@@ -119,7 +119,7 @@ every sprint close. The deliverable is a **shrink diff** plus `docs/trim/M<n>.md
    justified in the report.
 6. **Size/speed trend** — binary size and cold start recorded; > 10% regression investigated.
 7. **Milestone verification** — every criterion of the current milestone checked and reported.
-8. **Upstream alignment** — the six-dimension alignment audit (docs/compare/upstream-alignment.md)
+8. **Upstream alignment** — the six-dimension alignment audit (retired; findings folded into the divergence ledger)
    re-run; new should-fix findings become work items before the sprint closes.
 
 Iron rule: **a trim never changes behavior** — all fixtures stay green; a trim that breaks one is

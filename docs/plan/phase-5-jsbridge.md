@@ -89,7 +89,7 @@ call > 8 ms on the corpus, measured); G3 decision recorded.
 
 **Scope:** harness executing all ~69 single-file + 9 directory upstream examples headlessly where
 possible (json mode + scripted faux sessions + synthetic inputs), asserting each one's documented
-observable effect; matrix published at `docs/sync/extension-matrix.md` (works / works-with-gap /
+observable effect; matrix published (69-example run, superseded by `docs/sync/ecosystem-extension-matrix.md`) (works / works-with-gap /
 unsupported+reason); one fix wave on the highest-value failures; matrix wired into `make fixtures`
 so sync runs regenerate it.
 

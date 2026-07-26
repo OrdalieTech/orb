@@ -82,4 +82,4 @@ the replay corpus), remaining `docs/tui.md` conformance sweep, ledger update for
 (e.g. darwin modifier addon).
 
 **Acceptance:** F12 suite green and adopted into `make fixtures`; fuzz run clean under `-race`;
-gate report `docs/plan/tui-gate-report.md`.
+gate report (retired; conclusions in docs/compare/sprint-2.md).

@@ -319,8 +319,7 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
 - **G2 (WP-221, resolved):** use the stdlib REST/SSE Gemini adapter. The correctly stripped official
   SDK probe added 8,466,432 bytes (47.278%), 35 module entries, and 183 compiled packages; Vertex
   is completed by WP-222 with stdlib REST/SSE and pure-Go ADC, adding 393,216 bytes (2.177%) and no
-  module or compiled-package entry against its consolidated parent. See `docs/plan/wp-221-g2-report.md`
-  and `docs/plan/wp-222-vertex-report.md`.
+  module or compiled-package entry against its consolidated parent (WP-221, WP-222).
 - **G3 (WP-542):** pi-tui Component bridge overlay/experimental surfaces — bridge now vs documented gap.
   **Resolved (Sprint 3): bridge now.** `ctx.ui.custom` with overlay options (static and dynamic),
   `OverlayHandle` round-trips, focusable JS components, and editor replacement including the
