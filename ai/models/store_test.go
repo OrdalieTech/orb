@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,17 +64,23 @@ func TestWriteStoreMatchesUpstreamFixture(t *testing.T) {
 func TestRefreshPersistsAndReloadsCatalog(t *testing.T) {
 	source := []byte(`{"anthropic":{"models":{"fixture":{"name":"Fixture","tool_call":true,"modalities":{"input":["text"]},"limit":{"context":4096,"output":512},"cost":{"input":1,"output":2,"cache_read":0.1,"cache_write":1}}}}}`)
 	wantTime := time.UnixMilli(generatedCatalogLastModified + 123456789).Truncate(time.Second)
-	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+	client := &http.Client{Transport: catalogRoundTripFunc(func(request *http.Request) (*http.Response, error) {
 		if request.Header.Get("Accept") != "application/json" {
 			t.Errorf("Accept = %q", request.Header.Get("Accept"))
 		}
-		response.Header().Set("Last-Modified", wantTime.UTC().Format(http.TimeFormat))
-		_, _ = response.Write(source)
-	}))
-	defer server.Close()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     http.Header{"Last-Modified": []string{wantTime.UTC().Format(http.TimeFormat)}},
+			Body:       io.NopCloser(bytes.NewReader(source)),
+		}, nil
+	})}
 
 	storePath := filepath.Join(t.TempDir(), "nested", "models-store.json")
-	catalog, err := Refresh(context.Background(), RefreshOptions{URL: server.URL, StorePath: storePath, Now: func() time.Time { return wantTime }})
+	catalog, err := Refresh(context.Background(), RefreshOptions{
+		URL: "https://catalog.test", StorePath: storePath, Client: client,
+		Now: func() time.Time { return wantTime },
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,13 +121,17 @@ func TestRefreshPreservesUnrelatedProviderCatalogs(t *testing.T) {
 
 	refreshedAt := generatedCatalogLastModified + 2000
 	source := []byte(`{"anthropic":{"models":{"fresh":{"name":"Fresh","tool_call":true,"modalities":{"input":["text"]},"limit":{"context":4096,"output":512},"cost":{"input":1,"output":2}}}}}`)
-	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
-		response.Header().Set("Last-Modified", time.UnixMilli(refreshedAt).UTC().Format(http.TimeFormat))
-		_, _ = response.Write(source)
-	}))
-	defer server.Close()
+	client := &http.Client{Transport: catalogRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     http.Header{"Last-Modified": []string{time.UnixMilli(refreshedAt).UTC().Format(http.TimeFormat)}},
+			Body:       io.NopCloser(bytes.NewReader(source)),
+		}, nil
+	})}
 	if _, err := Refresh(context.Background(), RefreshOptions{
-		URL: server.URL, StorePath: storePath, Now: func() time.Time { return time.UnixMilli(refreshedAt) },
+		URL: "https://catalog.test", StorePath: storePath, Client: client,
+		Now: func() time.Time { return time.UnixMilli(refreshedAt) },
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -160,11 +169,17 @@ func TestRefreshHTTPErrorDoesNotReplaceStore(t *testing.T) {
 	if err := os.WriteFile(storePath, original, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
-		http.Error(response, "unavailable", http.StatusServiceUnavailable)
-	}))
-	defer server.Close()
-	if _, err := Refresh(context.Background(), RefreshOptions{URL: server.URL, StorePath: storePath}); err == nil {
+	client := &http.Client{Transport: catalogRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Status:     "503 Service Unavailable",
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("unavailable\n")),
+		}, nil
+	})}
+	if _, err := Refresh(context.Background(), RefreshOptions{
+		URL: "https://catalog.test", StorePath: storePath, Client: client,
+	}); err == nil {
 		t.Fatal("Refresh succeeded on HTTP 503")
 	}
 	after, err := os.ReadFile(storePath)
@@ -231,19 +246,22 @@ func TestCATm1RefreshGatesOnCheckedAtAndSendsUserAgent(t *testing.T) {
 	requests := 0
 	base := time.UnixMilli(generatedCatalogLastModified + 1000)
 	source := []byte(`{"anthropic":{"models":{"fixture":{"name":"Fixture","tool_call":true,"modalities":{"input":["text"]},"limit":{"context":4096,"output":512},"cost":{"input":1,"output":2}}}}}`)
-	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+	client := &http.Client{Transport: catalogRoundTripFunc(func(request *http.Request) (*http.Response, error) {
 		requests++
 		if got := request.Header.Get("User-Agent"); got != PiUserAgent("1.2.3") {
 			t.Errorf("User-Agent = %q", got)
 		}
-		response.Header().Set("Last-Modified", base.UTC().Format(http.TimeFormat))
-		_, _ = response.Write(source)
-	}))
-	defer server.Close()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     http.Header{"Last-Modified": []string{base.UTC().Format(http.TimeFormat)}},
+			Body:       io.NopCloser(bytes.NewReader(source)),
+		}, nil
+	})}
 
 	storePath := filepath.Join(t.TempDir(), "models-store.json")
 	options := RefreshOptions{
-		URL: server.URL, StorePath: storePath, UserAgent: PiUserAgent("1.2.3"),
+		URL: "https://catalog.test", StorePath: storePath, Client: client, UserAgent: PiUserAgent("1.2.3"),
 		Now: func() time.Time { return base },
 	}
 	if _, err := Refresh(context.Background(), options); err != nil {

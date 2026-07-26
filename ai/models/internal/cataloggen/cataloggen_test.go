@@ -20,7 +20,7 @@ import (
 
 // pinnedGeneratedAt matches the -generated-at value in the ai/models doc.go
 // generation directive.
-var pinnedGeneratedAt = time.Date(2026, 7, 21, 16, 28, 58, 0, time.UTC)
+var pinnedGeneratedAt = time.Date(2026, 7, 26, 13, 35, 1, 0, time.UTC)
 
 func TestSYNC4GeneratedCatalogTimestampCoversAllSourceCaptures(t *testing.T) {
 	doc := readCatalogTestFile(t, "../../doc.go")
@@ -263,7 +263,7 @@ func TestGenerateFreshUpstreamCatalogChanges(t *testing.T) {
 	}
 }
 
-func TestV0811CatalogDeltasMatchPublishedPackage(t *testing.T) {
+func TestV0821CatalogDeltasMatchPublishedPackage(t *testing.T) {
 	catalog, err := Generate(pinnedSources(t))
 	if err != nil {
 		t.Fatal(err)
@@ -272,16 +272,18 @@ func TestV0811CatalogDeltasMatchPublishedPackage(t *testing.T) {
 		count int
 		hash  string
 	}{
-		"google":            {18, "26b54727f38b22f753c6f85fcfd790f9be0c60ca19b94444326fc400feaddd05"},
-		"opencode":          {55, "fe54453668b9fb5f805067f8a1cf5f9ff22a603daab975719606e851de34edbd"},
-		"openrouter":        {271, "76a3833444dbe6dab7a6edd4fd29915efe3047634b0b8909eb73111086ca0cb4"},
-		"vercel-ai-gateway": {190, "312246de110840fbe5eea7ed506dd387aaebd77f26e3c7e01e868220808658a2"},
+		"google":                 {24, "13a2f95e9df37bde37aea6fbbd413528546f94172e188a777c6b7a60c9259942"},
+		"opencode":               {58, "1230323f06f03cd57afe37daa33fa56d12c76f8a2d17f24e21edd7fa34aaf9b6"},
+		"openrouter":             {276, "1d6a4676a4dfb29ac6e953c33e80a887d2fc6903f1068d36a2e101e74ce62aea"},
+		"vercel-ai-gateway":      {192, "8a836f4c177943b72afaaae352b2c26a73118ee4ab5d973212fbe870c0f918ac"},
+		"azure-openai-responses": {38, "b49ac29bb376127532c4a7fe25a9c87564a24e86b588663fbda03436d6cdc0fb"},
+		"amazon-bedrock":         {114, "0f4ad04526540dcaf4435de9d18c4f230613331bcb110c3bf3abb384fd1dfeca"},
 	} {
 		if got := len(catalog[provider]); got != want.count {
-			t.Errorf("%s model count = %d, published v0.81.1 has %d", provider, got, want.count)
+			t.Errorf("%s model count = %d, published v0.82.1 has %d", provider, got, want.count)
 		}
 		if got := modelIDSetHash(catalog[provider]); got != want.hash {
-			t.Errorf("%s ID set hash = %s, published v0.81.1 has %s", provider, got, want.hash)
+			t.Errorf("%s ID set hash = %s, published v0.82.1 has %s", provider, got, want.hash)
 		}
 	}
 	var fixture struct {
@@ -293,20 +295,20 @@ func TestV0811CatalogDeltasMatchPublishedPackage(t *testing.T) {
 		} `json:"source"`
 		Models []ai.Model `json:"models"`
 	}
-	if err := json.Unmarshal(readCatalogTestFile(t, "../../testdata/v0.81.1-model-deltas.json"), &fixture); err != nil {
+	if err := json.Unmarshal(readCatalogTestFile(t, "../../testdata/v0.82.1-model-deltas.json"), &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.SchemaVersion != 1 || fixture.Source.Package != "@earendil-works/pi-ai" || fixture.Source.Version != "0.81.1" ||
-		fixture.Source.TarballSHA256 != "c79dcc0f90d4dfbd1974da33dfa3fe396663195a68339b1f55c114dbf7240f2f" {
-		t.Fatalf("unexpected v0.81.1 fixture provenance: %#v", fixture.Source)
+	if fixture.SchemaVersion != 1 || fixture.Source.Package != "@earendil-works/pi-ai" || fixture.Source.Version != "0.82.1" ||
+		fixture.Source.TarballSHA256 != "2f9df9522808b621cd3449876537f03d8a8df8b8d7ec2d5b18c6a910aa85b490" {
+		t.Fatalf("unexpected v0.82.1 fixture provenance: %#v", fixture.Source)
 	}
-	if len(fixture.Models) != 10 {
-		t.Fatalf("v0.81.1 delta fixture has %d models, want 10", len(fixture.Models))
+	if len(fixture.Models) != 12 {
+		t.Fatalf("v0.82.1 delta fixture has %d models, want 12", len(fixture.Models))
 	}
 	for _, want := range fixture.Models {
 		got, ok := catalog[string(want.Provider)][want.ID]
 		if !ok {
-			t.Errorf("generated catalog is missing v0.81.1 model %s/%s", want.Provider, want.ID)
+			t.Errorf("generated catalog is missing v0.82.1 model %s/%s", want.Provider, want.ID)
 			continue
 		}
 		gotJSON, err := json.Marshal(got)
@@ -325,7 +327,7 @@ func TestV0811CatalogDeltasMatchPublishedPackage(t *testing.T) {
 			t.Fatal(err)
 		}
 		if !reflect.DeepEqual(gotValue, wantValue) {
-			t.Errorf("%s/%s differs from published v0.81.1 package\n got: %s\nwant: %s", want.Provider, want.ID, gotJSON, wantJSON)
+			t.Errorf("%s/%s differs from published v0.82.1 package\n got: %s\nwant: %s", want.Provider, want.ID, gotJSON, wantJSON)
 		}
 	}
 }
@@ -336,8 +338,8 @@ func TestCATM1NvidiaCatalogIntersectsLiveNIMListing(t *testing.T) {
 	wantIDs := []string{
 		"meta/llama-3.1-70b-instruct", "meta/llama-3.1-8b-instruct", "meta/llama-3.2-11b-vision-instruct",
 		"meta/llama-3.2-90b-vision-instruct", "meta/llama-3.3-70b-instruct", "minimaxai/minimax-m3",
-		"mistralai/mistral-large-3-675b-instruct-2512", "mistralai/mistral-small-4-119b-2603",
-		"moonshotai/kimi-k2.6", "nvidia/nemotron-3-nano-30b-a3b", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+		"mistralai/mistral-small-4-119b-2603", "moonshotai/kimi-k2.6",
+		"nvidia/nemotron-3-nano-30b-a3b", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
 		"nvidia/nemotron-3-super-120b-a12b", "nvidia/nemotron-3-ultra-550b-a55b", "nvidia/nvidia-nemotron-nano-9b-v2",
 		"openai/gpt-oss-120b", "openai/gpt-oss-20b", "stepfun-ai/step-3.5-flash", "stepfun-ai/step-3.7-flash",
 		"z-ai/glm-5.2",
@@ -347,8 +349,8 @@ func TestCATM1NvidiaCatalogIntersectsLiveNIMListing(t *testing.T) {
 		t.Fatal(err)
 	}
 	nvidia := catalog["nvidia"]
-	if len(nvidia) != 19 {
-		t.Fatalf("nvidia models = %d, want 19", len(nvidia))
+	if len(nvidia) != 18 {
+		t.Fatalf("nvidia models = %d, want 18", len(nvidia))
 	}
 	for _, id := range wantIDs {
 		if _, ok := nvidia[id]; !ok {
@@ -357,7 +359,8 @@ func TestCATM1NvidiaCatalogIntersectsLiveNIMListing(t *testing.T) {
 	}
 	for _, id := range []string{
 		// models.dev-only entries that NIM does not serve.
-		"mistralai/mixtral-8x22b-instruct", "moonshotai/kimi-k2-instruct-0905",
+		"mistralai/mistral-large-3-675b-instruct-2512", "mistralai/mixtral-8x22b-instruct",
+		"moonshotai/kimi-k2-instruct-0905",
 		"nvidia/nemotron-voicechat", "qwen/qwen2.5-coder-32b-instruct",
 		// denylisted after underscore normalization against the live listing id.
 		"abacusai/dracarys-llama-3_1-70b-instruct", "abacusai/dracarys-llama-3.1-70b-instruct",
@@ -402,7 +405,7 @@ func TestCATM2QwenTokenPlanMaxPreviewInjection(t *testing.T) {
 		if !ok {
 			t.Fatalf("missing %s/qwen3.8-max-preview", provider)
 		}
-		if !model.Reasoning || model.ContextWindow != 1000000 || model.MaxTokens != 65536 || model.BaseURL != baseURL {
+		if !model.Reasoning || model.ContextWindow != 1000000 || model.MaxTokens != 131072 || model.BaseURL != baseURL {
 			t.Fatalf("%s/qwen3.8-max-preview = %#v", provider, model)
 		}
 		if len(model.Input) != 2 || model.Input[0] != ai.InputText || model.Input[1] != ai.InputImage {
@@ -448,11 +451,11 @@ func TestCATM3OpenRouterCatalogFromLiveListing(t *testing.T) {
 		t.Fatal(err)
 	}
 	openrouter := catalog["openrouter"]
-	if len(openrouter) != 271 {
-		t.Fatalf("openrouter models = %d, want 271", len(openrouter))
+	if len(openrouter) != 276 {
+		t.Fatalf("openrouter models = %d, want 276", len(openrouter))
 	}
-	// Byte-identical to the 271 IDs in the published v0.81.1 manifest.
-	if got, want := modelIDSetHash(openrouter), "76a3833444dbe6dab7a6edd4fd29915efe3047634b0b8909eb73111086ca0cb4"; got != want {
+	// Byte-identical to the 276 IDs in the published v0.82.1 manifest.
+	if got, want := modelIDSetHash(openrouter), "1d6a4676a4dfb29ac6e953c33e80a887d2fc6903f1068d36a2e101e74ce62aea"; got != want {
 		t.Fatalf("openrouter ID set hash = %s, want %s", got, want)
 	}
 	model, ok := openrouter["anthropic/claude-sonnet-4.5"]
@@ -490,11 +493,11 @@ func TestCATM3VercelCatalogFromLiveListing(t *testing.T) {
 		t.Fatal(err)
 	}
 	gateway := catalog["vercel-ai-gateway"]
-	if len(gateway) != 190 {
-		t.Fatalf("vercel-ai-gateway models = %d, want 190", len(gateway))
+	if len(gateway) != 192 {
+		t.Fatalf("vercel-ai-gateway models = %d, want 192", len(gateway))
 	}
-	// Byte-identical to the 190 IDs in the published v0.81.1 manifest.
-	if got, want := modelIDSetHash(gateway), "312246de110840fbe5eea7ed506dd387aaebd77f26e3c7e01e868220808658a2"; got != want {
+	// Byte-identical to the 192 IDs in the published v0.82.1 manifest.
+	if got, want := modelIDSetHash(gateway), "8a836f4c177943b72afaaae352b2c26a73118ee4ab5d973212fbe870c0f918ac"; got != want {
 		t.Fatalf("vercel-ai-gateway ID set hash = %s, want %s", got, want)
 	}
 	for id, model := range gateway {
@@ -549,8 +552,8 @@ func TestSYNC3OpenCodeHy3FreeExcluded(t *testing.T) {
 	if _, ok := catalog["opencode"]["hy3-free"]; ok {
 		t.Fatal("opencode/hy3-free must not re-enter the catalog")
 	}
-	if len(catalog["opencode"]) != 55 {
-		t.Fatalf("opencode models = %d, want 55", len(catalog["opencode"]))
+	if len(catalog["opencode"]) != 58 {
+		t.Fatalf("opencode models = %d, want 58", len(catalog["opencode"]))
 	}
 }
 

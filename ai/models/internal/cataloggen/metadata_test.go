@@ -173,6 +173,9 @@ func TestSYNC1MoonshotKimiK3Compat(t *testing.T) {
 
 func TestFreshUpstreamThinkingMetadata(t *testing.T) {
 	kimi := ai.Model{ID: "k3", API: ai.APIAnthropicMessages, Provider: "kimi-coding", Reasoning: true}
+	applyModelsDevReasoningOptionMetadata(&kimi, []sourceReasoningOption{{
+		Type: "effort", Values: []*string{ptr("low"), ptr("high"), ptr("max")},
+	}})
 	applyCatalogMetadata(&kimi)
 	levels := *kimi.ThinkingLevelMap
 	for level, want := range map[ai.ModelThinkingLevel]string{ai.ModelThinkingLow: "low", ai.ModelThinkingHigh: "high", ai.ModelThinkingMax: "max"} {

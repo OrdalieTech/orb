@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/OrdalieTech/pigo/ai"
@@ -12,6 +13,7 @@ import (
 var (
 	gemini3ProPattern   = regexp.MustCompile(`gemini-3(?:\.[0-9]+)?-pro`)
 	gemini3FlashPattern = regexp.MustCompile(`gemini-3(?:\.[0-9]+)?-flash`)
+	gptMajorPattern     = regexp.MustCompile(`^gpt-([0-9]+)`)
 )
 
 func applyCatalogMetadata(model *ai.Model) {
@@ -26,7 +28,7 @@ func applyCatalogMetadata(model *ai.Model) {
 		applyOpenAICompletionsCompat(model)
 	case ai.APIAnthropicMessages:
 		applyAnthropicCompat(model)
-	case ai.APIOpenAIResponses, ai.APIOpenAICodexResponses:
+	case ai.APIOpenAIResponses, ai.APIAzureOpenAIResponses, ai.APIOpenAICodexResponses:
 		applyOpenAIResponsesCompat(model)
 	}
 }
@@ -132,6 +134,77 @@ func applyProviderHeaders(model *ai.Model) {
 	}
 }
 
+func applyModelsDevReasoningOptionMetadata(model *ai.Model, options []sourceReasoningOption) {
+	if !supportsDirectReasoningEffort(model) {
+		return
+	}
+	supported := make(map[string]bool)
+	for _, option := range options {
+		if option.Type != "effort" {
+			continue
+		}
+		for _, value := range option.Values {
+			if value != nil {
+				supported[*value] = true
+			}
+		}
+	}
+	levels := []ai.ModelThinkingLevel{
+		ai.ModelThinkingMinimal,
+		ai.ModelThinkingLow,
+		ai.ModelThinkingMedium,
+		ai.ModelThinkingHigh,
+		ai.ModelThinkingXHigh,
+		ai.ModelThinkingMax,
+	}
+	if !supported["none"] && !slices.ContainsFunc(levels, func(level ai.ModelThinkingLevel) bool {
+		return supported[string(level)]
+	}) {
+		return
+	}
+	values := make(map[ai.ModelThinkingLevel]*string, len(levels)+1)
+	if supported["none"] {
+		values[ai.ModelThinkingOff] = ptr("none")
+	} else {
+		values[ai.ModelThinkingOff] = nil
+	}
+	for _, level := range levels {
+		if supported[string(level)] {
+			values[level] = ptr(string(level))
+		} else {
+			values[level] = nil
+		}
+	}
+	mergeThinking(model, values)
+}
+
+func supportsDirectReasoningEffort(model *ai.Model) bool {
+	switch model.API {
+	case ai.APIAnthropicMessages:
+		if model.Provider == "kimi-coding" {
+			return true
+		}
+		var compat ai.AnthropicMessagesCompat
+		_ = json.Unmarshal(model.Compat, &compat)
+		return compat.ForceAdaptiveThinking != nil && *compat.ForceAdaptiveThinking
+	case ai.APIOpenAIResponses, ai.APIAzureOpenAIResponses, ai.APIOpenAICodexResponses:
+		return true
+	case ai.APIOpenAICompletions:
+		clone := *model
+		applyOpenAICompletionsCompat(&clone)
+		var compat ai.OpenAICompletionsCompat
+		_ = json.Unmarshal(clone.Compat, &compat)
+		supportsEffort := compat.SupportsReasoningEffort == nil || *compat.SupportsReasoningEffort
+		format := ai.ThinkingFormatOpenAI
+		if compat.ThinkingFormat != nil {
+			format = *compat.ThinkingFormat
+		}
+		return supportsEffort && format == ai.ThinkingFormatOpenAI
+	default:
+		return false
+	}
+}
+
 func applyThinkingLevelMetadata(model *ai.Model) {
 	id, provider := model.ID, string(model.Provider)
 	if provider == "together" && model.Reasoning {
@@ -185,7 +258,7 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 	if containsAny(id, "opus-4-6", "opus-4.6", "sonnet-4-6", "sonnet-4.6") {
 		mergeThinking(model, thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingMax: "max"}))
 	}
-	if containsAny(id, "opus-4-7", "opus-4.7", "opus-4-8", "opus-4.8", "sonnet-5", "sonnet.5") {
+	if containsAny(id, "opus-4-7", "opus-4.7", "opus-4-8", "opus-4.8", "opus-5", "opus.5", "sonnet-5", "sonnet.5") {
 		mergeThinking(model, thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingXHigh: "xhigh", ai.ModelThinkingMax: "max"}))
 	}
 	if strings.Contains(id, "fable-5") {
@@ -261,14 +334,6 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 		case "claude-sonnet-4.6":
 			mergeThinking(model, thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingMinimal: "low", ai.ModelThinkingMax: "max"}))
 		}
-	}
-	if provider == "kimi-coding" && id == "k3" || (provider == "moonshotai" || provider == "moonshotai-cn") && id == "kimi-k3" {
-		values := map[ai.ModelThinkingLevel]*string{
-			ai.ModelThinkingOff: nil, ai.ModelThinkingMinimal: nil, ai.ModelThinkingLow: ptr("low"),
-			ai.ModelThinkingMedium: nil, ai.ModelThinkingHigh: ptr("high"), ai.ModelThinkingXHigh: nil,
-			ai.ModelThinkingMax: ptr("max"),
-		}
-		mergeThinking(model, values)
 	}
 }
 
@@ -435,7 +500,7 @@ func applyAnthropicCompat(model *ai.Model) {
 	if isAnthropicAdaptiveThinkingModel(id) {
 		compat.ForceAdaptiveThinking = ptr(true)
 	}
-	if containsAny(strings.ToLower(id), "opus-4-7", "opus-4.7", "opus-4-8", "opus-4.8") {
+	if containsAny(strings.ToLower(id), "opus-4-7", "opus-4.7", "opus-4-8", "opus-4.8", "opus-5", "opus.5") {
 		compat.SupportsTemperature = ptr(false)
 	}
 	if provider == "fireworks" {
@@ -457,11 +522,26 @@ func applyAnthropicCompat(model *ai.Model) {
 		model.Compat = mustCompatJSON(ordered)
 		return
 	}
+	if provider == "anthropic" {
+		model.Compat = mustCompatJSON(struct {
+			ai.AnthropicMessagesCompat
+			SupportsStrictTools *bool `json:"supportsStrictTools,omitempty"`
+		}{compat, ptr(true)})
+		return
+	}
 	model.Compat = mustCompatJSON(compat)
 }
 
 func applyOpenAIResponsesCompat(model *ai.Model) {
-	var compat ai.OpenAIResponsesCompat
+	var compat struct {
+		SupportsDeveloperRole           *bool                     `json:"supportsDeveloperRole,omitempty"`
+		SessionAffinityFormat           *ai.SessionAffinityFormat `json:"sessionAffinityFormat,omitempty"`
+		SupportsLongCacheRetention      *bool                     `json:"supportsLongCacheRetention,omitempty"`
+		SupportsStrictMode              *bool                     `json:"supportsStrictMode,omitempty"`
+		SupportsOpenAIGrammarTools      *bool                     `json:"supportsOpenAIGrammarTools,omitempty"`
+		SupportsToolSearch              *bool                     `json:"supportsToolSearch,omitempty"`
+		SupportsExplicitPromptCacheMode *bool                     `json:"supportsExplicitPromptCacheMode,omitempty"`
+	}
 	if len(model.Compat) != 0 {
 		_ = json.Unmarshal(model.Compat, &compat)
 	}
@@ -472,10 +552,26 @@ func applyOpenAIResponsesCompat(model *ai.Model) {
 	if provider == "opencode" || provider == "opencode-go" {
 		compat.SessionAffinityFormat = ptr(ai.SessionAffinityOpenAINoSession)
 	}
+	if provider == "openai" && model.API == ai.APIOpenAIResponses {
+		compat.SupportsStrictMode = ptr(true)
+	}
+	if slices.Contains([]string{"openai", "openai-codex", "azure-openai-responses", "github-copilot", "opencode", "cloudflare-ai-gateway"}, provider) &&
+		slices.Contains([]ai.API{ai.APIOpenAIResponses, ai.APIAzureOpenAIResponses, ai.APIOpenAICodexResponses}, model.API) {
+		match := gptMajorPattern.FindStringSubmatch(id)
+		if len(match) == 2 {
+			major, _ := strconv.Atoi(match[1])
+			if major >= 5 {
+				compat.SupportsOpenAIGrammarTools = ptr(true)
+			}
+		}
+	}
 	if (provider == "openai" && model.API == ai.APIOpenAIResponses || provider == "openai-codex" && model.API == ai.APIOpenAICodexResponses) && slices.Contains([]string{
 		"gpt-5.4", "gpt-5.4-mini", "gpt-5.4-pro", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
 	}, id) {
 		compat.SupportsToolSearch = ptr(true)
+	}
+	if provider == "openai" && model.API == ai.APIOpenAIResponses && model.Cost.CacheWrite > 0 {
+		compat.SupportsExplicitPromptCacheMode = ptr(true)
 	}
 	model.Compat = mustCompatJSON(compat)
 }
@@ -569,7 +665,7 @@ func supportsOpenAIXHigh(id string) bool {
 }
 
 func isAnthropicAdaptiveThinkingModel(id string) bool {
-	return containsAny(id, "opus-4-6", "opus-4.6", "opus-4-7", "opus-4.7", "opus-4-8", "opus-4.8", "sonnet-4-6", "sonnet-4.6", "sonnet-5", "sonnet.5", "fable-5")
+	return containsAny(id, "opus-4-6", "opus-4.6", "opus-4-7", "opus-4.7", "opus-4-8", "opus-4.8", "opus-5", "opus.5", "sonnet-4-6", "sonnet-4.6", "sonnet-5", "sonnet.5", "fable-5")
 }
 
 func containsAny(value string, needles ...string) bool {
