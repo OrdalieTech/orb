@@ -22,7 +22,9 @@ fully before touching code. It applies to any coding agent (Claude Code, Codex, 
 2. **Every commit on main builds and passes.** `make check` (build + vet/lint + race suite,
    fixtures included) is THE pre-commit gate — before every commit, no exceptions. Bigger steps
    are welcome; broken mainline commits are not. User-visible changes append a line to
-   `CHANGELOG.md` under `[Unreleased]`.
+   `CHANGELOG.md` under `[Unreleased]`. The commit is the record of the work: do not add a report
+   file per change. Only the documents named in this file get written, and a measurement write-up
+   supersedes the earlier one rather than joining it.
 3. **Fixtures first.** Open each sprint by landing its conformance surface (extraction scripts,
    goldens, runners, black-box adapters) so the sprint starts RED; implementation turns it GREEN.
    Never write the port first and the fixtures after.

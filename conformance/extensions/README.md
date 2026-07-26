@@ -164,6 +164,10 @@ With `--output <file>` the harness writes three artifacts:
   resident memory, last package and status.
 * `<file>` — the aggregate, written at the end, or after `SIGINT`/`SIGTERM` with `incomplete: true`.
 
+Commit only the newest full sweep and the A/B pair it is being compared against. Once a run's
+conclusions are written up under `docs/sync/`, drop its raw aggregate: the write-up keeps the byte
+count and both hashes, and the pinned corpus, lock and Dockerfile are what make it reproducible.
+
 `--resume` reuses `<file>.jsonl` records when the harness, taxonomy, corpus, observer, lock and
 binary hashes all still match, and re-runs only what is missing; a mismatched fingerprint starts a
 fresh stream instead of silently mixing two builds. `--finalize` rebuilds an aggregate from a
