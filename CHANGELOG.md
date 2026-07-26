@@ -8,6 +8,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Added
 
+- Interactive sessions place transient working/retry/compaction status in the built-in editor’s top border when it fits, with a right-aligned, truncated session-name badge; dialogs, scrolled drafts, and extension-provided editors retain the standard status lane and all existing UI/keybinding contracts.
+- The optional tasks plugin now keeps its persistent widget and collapsed tool results to a one-row current/progress/queue summary, lets the widget expand or collapse on click with dimmed, inset details, and exposes the full branch-aware list through `/tasks` and Ctrl+O expansion; retry statuses count down, and queued messages use one-row truncation with their count and configured dequeue-key hint.
 - 0.82.1 port, first waves: `ANTHROPIC_AUTH_TOKEN` resolves to bearer headers ahead of the other anthropic credentials; `pigo login openrouter` (PKCE) and `pigo login kimi-coding` (device flow) mint credentials; bash commands see `PI_SESSION_ID`, `PI_SESSION_FILE`, `PI_PROVIDER`, `PI_MODEL` and `PI_REASONING_LEVEL`, and RPC clients receive streamed `bash_execution_update` events; `/models` lists configured-but-missing ids as `[unavailable]` and picks up `models.json` edits on open; custom renderers receive the live `outputPad`; the external editor works out of its own temp directory with the resolved `$VISUAL`/`$EDITOR`/nano chain; DNS failures retry; scroll borders survive narrow terminals; harness paths expand `~` and `file://` and children are reaped on cleanup.
 
 - Embedders can parse and marshal individual harness session-tree entries without constructing a JSONL file.
@@ -22,6 +24,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Fixed
 
+- SDK auto-provisioning now also covers package-installed extensions: the ecosystem declares the SDK as a peerDependency (pi's bundling satisfied it implicitly), npm does not materialize absent peers, and conflicting peer ranges across installed packages are tolerated with --legacy-peer-deps. Resolvability up the entry's tree is now the only criterion.
 - pigo no longer resolves the extension SDK from an installed upstream pi. It searched `PATH` for the `pi` executable and pointed extensions at the npm package that owns it, so a machine without pi got a different result from one with it. The SDK is now taken from pigo's own managed npm root, project scope first when the project is trusted, then the user scope. Reading pi's configuration files stays supported; borrowing its code does not. `PIGO_PI_SDK_ROOT` remains as an explicit override for a checkout or vendored copy.
 - JavaScript extensions now run on Node 22.6, where every TypeScript extension previously failed: the module loader returned a string source for a format that release requires a buffer for.
 - The extension host no longer dies on Node 26, which removed `--experimental-transform-types`; an unknown flag aborts Node outright rather than warning. The flag set and the TypeScript transpiler options are now taken from what the Node build in hand accepts.
