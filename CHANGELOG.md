@@ -9,6 +9,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 ### Added
 
 - Embedders can parse and marshal individual harness session-tree entries without constructing a JSONL file.
+- A loose extension that imports the pi SDK without declaring it — the shape upstream permits because pi bundles its SDK — now installs the pinned `@earendil-works/pi-coding-agent` into pigo's own npm root automatically on the launch that first needs it, from the npm registry, never from an installed pi. One line announces the install; `PIGO_PI_SDK_ROOT`, `PI_OFFLINE` and a missing npm all skip it, leaving the existing guidance message. Extensions that declare their dependencies are untouched.
 - `PIGO_NODE` names the Node executable to use, for installs no search reaches; `PIGO_NODE=none` disables JavaScript extensions.
 - TypeScript published inside `node_modules` on Node 22.6-22.12 now reports the file, the running version and the fix instead of failing opaquely.
 

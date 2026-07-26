@@ -122,6 +122,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 				CWD:            cwd,
 				ProjectTrusted: settings.IsProjectTrusted(),
 				Version:        version,
+				SDKVersion:     upstreamVersion,
 				Stderr:         os.Stderr,
 			})
 			result := manager.RegisterInto(context.Background(), registry, paths)
