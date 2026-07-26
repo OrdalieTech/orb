@@ -80,8 +80,12 @@ type Options struct {
 	CWD      string
 	// ProjectTrusted gates the project-scoped npm root the SDK is resolved from,
 	// exactly as DiscoveryOptions.ProjectTrusted gates project extensions.
-	ProjectTrusted  bool
-	Version         string
+	ProjectTrusted bool
+	Version        string
+	// SDKVersion pins the @earendil-works/pi-coding-agent auto-provisioned into
+	// the user npm root when a loose extension imports the SDK and no copy
+	// resolves. Empty disables provisioning.
+	SDKVersion      string
 	Runtime         *Runtime
 	PigoExecutable  string
 	RequestTimeout  time.Duration
@@ -276,6 +280,7 @@ func (manager *Manager) RegisterInto(ctx context.Context, registry *extensions.R
 		return result
 	}
 	result.Runtime = &runtime
+	manager.ensureSDKProvisioned(ctx, runtime)
 
 	loaded, err := manager.startLocked(ctx)
 	if err != nil {
