@@ -36,6 +36,27 @@ type widgetUI struct {
 
 type taskWidgetHost struct{ invalidations int }
 type dimTaskTheme struct{}
+type countingTaskTheme struct{ calls int }
+type blockingTaskTheme struct {
+	calls   int
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (theme *countingTaskTheme) FG(_ string, text string) string {
+	theme.calls++
+	return text
+}
+
+func (theme *blockingTaskTheme) FG(_ string, text string) string {
+	theme.calls++
+	theme.once.Do(func() {
+		close(theme.started)
+		<-theme.release
+	})
+	return text
+}
 
 func (dimTaskTheme) FG(color, text string) string {
 	if color == "dim" {
@@ -378,6 +399,51 @@ func TestTasksToolReplacesTheLiveWidget(t *testing.T) {
 	details, ok := result.Details.(todoInput)
 	if !ok || len(details.Items) != 1 || details.Items[0].Text != "ship" {
 		t.Fatalf("result details = %#v", result.Details)
+	}
+}
+
+func TestTaskWidgetCachesStableRenders(t *testing.T) {
+	theme := &countingTaskTheme{}
+	widget := newTaskWidget([]todoItem{{Text: "inspect", Status: "done"}, {Text: "implement", Status: "in_progress"}}, nil, theme)
+	widget.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Button: 0, Clicks: 1})
+	first := widget.Render(80)
+	calls := theme.calls
+	second := widget.Render(80)
+	if strings.Join(first, "\n") != strings.Join(second, "\n") {
+		t.Fatalf("cached render changed: %#v != %#v", first, second)
+	}
+	if theme.calls != calls {
+		t.Fatalf("stable render restyled tasks: calls %d -> %d", calls, theme.calls)
+	}
+	widget.Render(40)
+	if theme.calls == calls {
+		t.Fatal("width change reused a stale task render")
+	}
+	calls = theme.calls
+	widget.Invalidate()
+	widget.Render(40)
+	if theme.calls == calls {
+		t.Fatal("invalidation reused stale themed task lines")
+	}
+}
+
+func TestTaskWidgetInvalidationWinsConcurrentRender(t *testing.T) {
+	theme := &blockingTaskTheme{started: make(chan struct{}), release: make(chan struct{})}
+	widget := newTaskWidget([]todoItem{{Text: "inspect", Status: "done"}}, nil, theme)
+	widget.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Button: 0, Clicks: 1})
+	done := make(chan struct{})
+	go func() {
+		widget.Render(80)
+		close(done)
+	}()
+	<-theme.started
+	widget.Invalidate()
+	close(theme.release)
+	<-done
+	calls := theme.calls
+	widget.Render(80)
+	if theme.calls == calls {
+		t.Fatal("concurrent invalidation allowed stale task lines back into the cache")
 	}
 }
 

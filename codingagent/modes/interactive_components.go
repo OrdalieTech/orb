@@ -790,7 +790,9 @@ type FooterComponent struct {
 	autoCompactEnabled bool
 	branchMu           sync.Mutex
 	branch             string
+	providerCount      int
 	branchAt           time.Time
+	branchRefreshing   bool
 }
 
 type footerSession interface {
@@ -808,19 +810,48 @@ func NewFooterComponent(session footerSession, provider footerDataProvider) *Foo
 
 func (f *FooterComponent) Invalidate() {}
 
+func (f *FooterComponent) metadata() (string, int) {
+	f.branchMu.Lock()
+	refresh := time.Since(f.branchAt) >= 500*time.Millisecond && !f.branchRefreshing
+	if refresh {
+		f.branchRefreshing = true
+	}
+	branch, providerCount := f.branch, f.providerCount
+	f.branchMu.Unlock()
+	if !refresh {
+		return branch, providerCount
+	}
+	load := func() (string, int) {
+		count := 0
+		if provider, ok := f.provider.(interface{ AvailableProviderCount() int }); ok {
+			count = provider.AvailableProviderCount()
+		}
+		return f.provider.GitBranch(), count
+	}
+	store := func(branch string, providerCount int) {
+		f.branchMu.Lock()
+		f.branch, f.providerCount = branch, providerCount
+		f.branchAt, f.branchRefreshing = time.Now(), false
+		f.branchMu.Unlock()
+	}
+	if invalidator, ok := f.provider.(interface{ Invalidate() }); ok {
+		go func() {
+			store(load())
+			invalidator.Invalidate()
+		}()
+		return branch, providerCount
+	}
+	branch, providerCount = load()
+	store(branch, providerCount)
+	return branch, providerCount
+}
+
 func (f *FooterComponent) Render(width int) []string {
 	pwd := ""
 	if provider, ok := f.provider.(interface{ CurrentCWD() string }); ok {
 		pwd = provider.CurrentCWD()
 	}
-	f.branchMu.Lock()
-	// ponytail: poll Git at 2 Hz; add repository watchers only if branch freshness needs it.
-	if time.Since(f.branchAt) >= 500*time.Millisecond {
-		f.branch = f.provider.GitBranch()
-		f.branchAt = time.Now()
-	}
-	branch := f.branch
-	f.branchMu.Unlock()
+	branch, providerCount := f.metadata()
 	if branch != "" {
 		pwd += " (" + branch + ")"
 	}
@@ -933,7 +964,7 @@ func (f *FooterComponent) Render(width int) []string {
 	modelName := "no-model"
 	if display.HasModel {
 		modelName = display.ModelID
-		if provider, ok := f.provider.(interface{ AvailableProviderCount() int }); ok && provider.AvailableProviderCount() > 1 {
+		if providerCount > 1 {
 			modelName = "(" + string(display.Provider) + ") " + modelName
 		}
 		if display.Reasoning {

@@ -21,18 +21,19 @@ import (
 type stateHost struct {
 	mu sync.RWMutex
 
-	base           stateSnapshot
-	registrations  map[string]*stateRegistrations
-	apis           map[string]extensions.API
-	snapshots      map[string]stateSnapshot
-	contexts       map[string][]extensions.Context
-	lastContexts   map[string]extensions.Context
-	busUnsubscribe map[string]map[string]func()
-	execCancels    map[string]context.CancelFunc
-	execCancelled  map[string]bool
-	environment    []string
-	nextSignalID   uint64
-	nextTransferID uint64
+	base              stateSnapshot
+	registrations     map[string]*stateRegistrations
+	apis              map[string]extensions.API
+	snapshots         map[string]stateSnapshot
+	contexts          map[string][]extensions.Context
+	lastContexts      map[string]extensions.Context
+	busUnsubscribe    map[string]map[string]func()
+	execCancels       map[string]context.CancelFunc
+	execCancelled     map[string]bool
+	environment       []string
+	environmentValues map[string]string
+	nextSignalID      uint64
+	nextTransferID    uint64
 
 	sessionCacheKey      string
 	sessionCacheRevision uint64
@@ -179,8 +180,16 @@ func (host *stateHost) handshakeSnapshot() stateSnapshot {
 }
 
 func (host *stateHost) setEnvironment(environment []string) {
+	values := make(map[string]string, len(environment))
+	for _, entry := range environment {
+		name, value, ok := strings.Cut(entry, "=")
+		if ok {
+			values[name] = value
+		}
+	}
 	host.mu.Lock()
 	host.environment = append([]string(nil), environment...)
+	host.environmentValues = values
 	host.mu.Unlock()
 }
 
@@ -765,7 +774,7 @@ func (host *stateHost) runAction(manager *Manager, generation *generation, raw j
 		if resolveErr != nil {
 			return nil, resolveErr
 		}
-		result = wireStateProviderAuth(resolved)
+		return wireStateProviderAuth(resolved), nil
 	case "model_registry_get_api_key_and_headers":
 		var args struct {
 			Model ai.Model `json:"model"`
@@ -780,10 +789,7 @@ func (host *stateHost) runAction(manager *Manager, generation *generation, raw j
 		if args.Model.Provider == "" {
 			return nil, errors.New("model registry auth requires a model provider")
 		}
-		result, err = resolveStateModelAuth(ctx, registry, args.Model, host.environmentMap())
-		if err != nil {
-			return nil, err
-		}
+		return resolveStateModelAuth(ctx, registry, args.Model, host.environmentMap())
 	case "abort":
 		contextValue := host.currentContext(request.ExtensionID)
 		if contextValue == nil {
@@ -846,16 +852,8 @@ func (host *stateHost) contextModelRegistry(extensionID string) (extensions.Mode
 
 func (host *stateHost) environmentMap() map[string]string {
 	host.mu.RLock()
-	environment := append([]string(nil), host.environment...)
-	host.mu.RUnlock()
-	result := make(map[string]string, len(environment))
-	for _, entry := range environment {
-		name, value, ok := strings.Cut(entry, "=")
-		if ok {
-			result[name] = value
-		}
-	}
-	return result
+	defer host.mu.RUnlock()
+	return cloneStringMap(host.environmentValues)
 }
 
 func wireStateProviderAuth(resolved *aiauth.AuthResult) *stateProviderAuthResult {
