@@ -12,7 +12,7 @@ import (
 )
 
 func TestMistralToolCallIDNormalizer(t *testing.T) {
-	normalize := createMistralToolCallIDNormalizer()
+	normalize := newMistralToolCallIDNormalizer()
 	if got := normalize("Abc123XYZ"); got != "Abc123XYZ" {
 		t.Fatalf("valid tool call ID = %q, want unchanged", got)
 	}
@@ -34,6 +34,14 @@ func TestMistralUsageCacheFieldVariants(t *testing.T) {
 	if usage.Input != 0 || usage.Output != 2 || usage.CacheRead != 5 || usage.TotalTokens != 7 {
 		t.Fatalf("snake-case usage = %#v", usage)
 	}
+}
+
+func parseMistralUsage(raw json.RawMessage, model *ai.Model) ai.Usage {
+	var values map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &values)
+	output := &ai.AssistantMessage{}
+	(&mistralStreamProcessor{model: model, output: output}).applyUsage(values)
+	return output.Usage
 }
 
 func TestMistralReplayWireShape(t *testing.T) {

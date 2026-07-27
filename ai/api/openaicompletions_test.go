@@ -133,10 +133,11 @@ func TestOpenAICompletionsPreservesStreamedArgumentOrderOnReplay(t *testing.T) {
 		`{"id":"chatcmpl-order","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_order","function":{"name":"echo","arguments":"{\"text\":\"first\",\"mode\":\"plain\",\"metadata\":{\"count\":1}}"}}]},"finish_reason":"tool_calls"}]}`,
 	)
 	message, _ := collectOpenAICompletionsFixture(t, stream)
-	converted, include, err := convertOpenAICompletionsAssistantMessage(
+	converted, include, err := convertOpenAICompletionsAssistantMessageWithGrammar(
 		&ai.Model{},
 		message,
 		resolvedOpenAICompletionsCompat{},
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -175,7 +176,7 @@ func TestOpenAICompletionsJSONStringifiesNonFiniteReplayArguments(t *testing.T) 
 			"values": []any{math.NaN(), math.Inf(1), negativeZero},
 		}},
 	}}
-	converted, include, err := convertOpenAICompletionsAssistantMessage(&ai.Model{}, message, resolvedOpenAICompletionsCompat{})
+	converted, include, err := convertOpenAICompletionsAssistantMessageWithGrammar(&ai.Model{}, message, resolvedOpenAICompletionsCompat{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -431,10 +431,6 @@ func newMistralToolCallIDNormalizer() func(string) string {
 	}
 }
 
-func createMistralToolCallIDNormalizer() func(string) string {
-	return newMistralToolCallIDNormalizer()
-}
-
 func deriveMistralToolCallID(id string, attempt int) string {
 	normalized := mistralAlphanumeric(id)
 	if attempt == 0 && len(normalized) == mistralToolCallIDLength {
@@ -889,15 +885,6 @@ func (processor *mistralStreamProcessor) applyUsage(raw map[string]json.RawMessa
 		processor.output.Usage.TotalTokens = processor.output.Usage.Input + processor.output.Usage.Output + processor.output.Usage.CacheRead
 	}
 	calculateCost(processor.model, &processor.output.Usage)
-}
-
-func parseMistralUsage(raw json.RawMessage, model *ai.Model) ai.Usage {
-	var values map[string]json.RawMessage
-	_ = json.Unmarshal(raw, &values)
-	output := &ai.AssistantMessage{}
-	processor := &mistralStreamProcessor{model: model, output: output}
-	processor.applyUsage(values)
-	return output.Usage
 }
 
 func mistralUsageNumber(raw map[string]json.RawMessage, keys ...string) int64 {

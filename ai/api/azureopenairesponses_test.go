@@ -163,12 +163,12 @@ func TestAzureDeploymentNameResolution(t *testing.T) {
 	options := &AzureOpenAIResponsesOptions{StreamOptions: ai.StreamOptions{Env: ai.ProviderEnv{
 		"AZURE_OPENAI_DEPLOYMENT_NAME_MAP": "other=ignored, gpt-4o-mini=mini-deployment, invalid, empty=",
 	}}}
-	if got := resolveAzureDeploymentName(model, options); got != "mini-deployment" {
+	if got := resolveAzureOpenAIDeploymentName(model, options); got != "mini-deployment" {
 		t.Fatalf("deployment = %q, want mini-deployment", got)
 	}
 	explicit := "explicit-deployment"
 	options.AzureDeploymentName = &explicit
-	if got := resolveAzureDeploymentName(model, options); got != explicit {
+	if got := resolveAzureOpenAIDeploymentName(model, options); got != explicit {
 		t.Fatalf("explicit deployment = %q, want %q", got, explicit)
 	}
 }

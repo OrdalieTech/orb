@@ -283,10 +283,6 @@ func resolveAzureOpenAIDeploymentName(model *ai.Model, options *AzureOpenAIRespo
 	return model.ID
 }
 
-func resolveAzureDeploymentName(model *ai.Model, options *AzureOpenAIResponsesOptions) string {
-	return resolveAzureOpenAIDeploymentName(model, options)
-}
-
 func buildAzureOpenAIResponsesPayload(
 	model *ai.Model,
 	requestContext ai.Context,

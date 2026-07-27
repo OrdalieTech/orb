@@ -79,7 +79,7 @@ func TestAnthropicMalformedEventUsesPartialJSONRepair(t *testing.T) {
 	model := anthropicTestModel()
 	output := newAssistantMessage(model)
 	processor := newAnthropicStreamProcessor(model, ai.Context{}, output, false, func(ai.AssistantMessageEvent) bool { return true })
-	if err := processor.handle("message_delta", []byte("{\"type\":\"message_delta\",\"note\":\"raw\nnewline\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":2}}")); err != nil {
+	if err := processor.handleSSE("message_delta", []byte("{\"type\":\"message_delta\",\"note\":\"raw\nnewline\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":2}}"), nil); err != nil {
 		t.Fatal(err)
 	}
 	if output.StopReason != ai.StopReasonToolUse || output.Usage.Output != 2 {
