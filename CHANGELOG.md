@@ -40,6 +40,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Changed
 
+- pigo now tracks upstream pi **0.82.1** (`b4f29368`); every item of the 0.81.1 → 0.82.1 delta is ported and the conformance goldens, embedded changelog, model catalog and version identity moved together. Second wave: `Tool.constrainedSampling` with OpenAI custom tool calls and strict/grammar flags across six providers; abortable provider retries owning the SDKs' backoff with an interruptible sleep; models-store ETag revalidation; compaction and branch summaries isolated with `cacheRetention: "none"` and fresh session ids; the Codex `previous_response_not_found` retry; OpenRouter cache breakpoints on tool results; and the catalog's reasoning-level derivation, at full ID-set parity with the published 0.82.1 package.
+- Fixture extraction now scrubs the terminal-identity environment (`GHOSTTY_RESOURCES_DIR` alone flipped the theme to truecolor), fixing most of the documented macOS extraction irreproducibility.
 - Conformance extraction now runs against upstream 0.82.x: it synthesizes the generated
   `providers/data/.manifest.json` that `providers/all.ts` began importing, writes synthesized
   provider catalogs in the flat or grouped-by-API shape the checked-out revision expects,
