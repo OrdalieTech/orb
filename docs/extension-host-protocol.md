@@ -389,7 +389,9 @@ in the correlated response. Credentials are never included in the state snapshot
 persistence, or diagnostics. The `exec` response is the upstream `{stdout,stderr,code,killed}`
 object; `set_model` returns its boolean selection result. State
 actions are serialized per extension, which preserves JavaScript call order even though void
-facades do not await their acknowledgements. An exec with an `AbortSignal` carries a generation-
+facades do not await their acknowledgements. The two credential reads return directly without a
+`state_delta`: they do not mutate mirrored state, and avoiding a full catalog/session refresh keeps
+request-time auth response-only and cheap. An exec with an `AbortSignal` carries a generation-
 scoped operation id; `state_exec_cancel` cancels the corresponding Go process context and the exec
 response reports `killed:true`.
 

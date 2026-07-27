@@ -631,6 +631,15 @@ func (editor *Editor) HasHiddenLinesAbove(width int) bool {
 	return editor.scrollOffsetForLayout(editor.layoutText(layoutWidth), maxVisibleLines) > 0
 }
 
+// HasHiddenLinesAboveLastRender reuses Render's scroll state so border
+// decoration does not repeat the O(draft size) layout pass.
+func (editor *Editor) HasHiddenLinesAboveLastRender(width int) bool {
+	editor.mu.Lock()
+	defer editor.mu.Unlock()
+	_, _, layoutWidth, _ := editor.renderLayoutMetrics(width)
+	return editor.lastWidth == layoutWidth && editor.scrollOffset > 0
+}
+
 func (editor *Editor) Render(width int) []string {
 	editor.mu.Lock()
 	defer editor.mu.Unlock()

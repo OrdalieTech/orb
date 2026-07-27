@@ -30,25 +30,39 @@ type taskWidgetTheme interface {
 }
 
 type taskWidget struct {
-	mu       sync.Mutex
-	items    []todoItem
-	expanded bool
-	host     extensions.UIHost
-	theme    taskWidgetTheme
+	mu             sync.Mutex
+	items          []todoItem
+	expanded       bool
+	host           extensions.UIHost
+	theme          taskWidgetTheme
+	cachedWidth    int
+	cachedExpanded bool
+	cachedLines    []string
+	cacheRevision  uint64
 }
 
 func newTaskWidget(items []todoItem, host extensions.UIHost, theme taskWidgetTheme) *taskWidget {
 	return &taskWidget{items: append([]todoItem(nil), items...), host: host, theme: theme}
 }
 
-func (widget *taskWidget) Invalidate() {}
+func (widget *taskWidget) Invalidate() {
+	widget.mu.Lock()
+	widget.cachedLines = nil
+	widget.cacheRevision++
+	widget.mu.Unlock()
+}
 
 func (widget *taskWidget) Render(width int) []string {
 	if width <= 0 {
 		return nil
 	}
 	widget.mu.Lock()
-	expanded := widget.expanded
+	expanded, revision := widget.expanded, widget.cacheRevision
+	if widget.cachedLines != nil && widget.cachedWidth == width && widget.cachedExpanded == expanded {
+		lines := append([]string(nil), widget.cachedLines...)
+		widget.mu.Unlock()
+		return lines
+	}
 	widget.mu.Unlock()
 	marker := "▸ "
 	if expanded {
@@ -59,18 +73,24 @@ func (widget *taskWidget) Render(width int) []string {
 		headerText = widget.theme.FG("dim", headerText)
 	}
 	headerPadding := min(1, max(0, (width-1)/2))
-	header := tui.NewTruncatedText(headerText, headerPadding, 0).Render(width)
-	if !expanded {
-		return header
-	}
-	taskLines := strings.Split(renderTasks(widget.items), "\n")
-	if widget.theme != nil {
-		for index := range taskLines {
-			taskLines[index] = widget.theme.FG("dim", taskLines[index])
+	lines := tui.NewTruncatedText(headerText, headerPadding, 0).Render(width)
+	if expanded {
+		taskLines := strings.Split(renderTasks(widget.items), "\n")
+		if widget.theme != nil {
+			for index := range taskLines {
+				taskLines[index] = widget.theme.FG("dim", taskLines[index])
+			}
 		}
+		listPadding := min(4, max(0, (width-1)/2))
+		lines = append(lines, tui.NewText(strings.Join(taskLines, "\n"), listPadding, 0, nil).Render(width)...)
 	}
-	listPadding := min(4, max(0, (width-1)/2))
-	return append(header, tui.NewText(strings.Join(taskLines, "\n"), listPadding, 0, nil).Render(width)...)
+	widget.mu.Lock()
+	if widget.expanded == expanded && widget.cacheRevision == revision {
+		widget.cachedWidth, widget.cachedExpanded = width, expanded
+		widget.cachedLines = append(widget.cachedLines[:0], lines...)
+	}
+	widget.mu.Unlock()
+	return lines
 }
 
 func (widget *taskWidget) HandleMouse(event tui.MouseEvent) bool {
@@ -82,6 +102,8 @@ func (widget *taskWidget) HandleMouse(event tui.MouseEvent) bool {
 	}
 	widget.mu.Lock()
 	widget.expanded = !widget.expanded
+	widget.cachedLines = nil
+	widget.cacheRevision++
 	widget.mu.Unlock()
 	if widget.host != nil {
 		widget.host.Invalidate()

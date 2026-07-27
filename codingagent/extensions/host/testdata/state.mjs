@@ -72,6 +72,20 @@ export default function stateExtension(pi) {
 		},
 	});
 
+	pi.registerCommand("state-auth-readonly", {
+		async handler(_args, ctx) {
+			for (let round = 0; round < 2; round++) {
+				const model = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
+				const provider = await ctx.modelRegistry.getProviderAuth("openai-codex");
+				if (
+					model?.ok !== true ||
+					model?.headers?.Authorization !== "Bearer codex-secret" ||
+					provider?.auth?.headers?.Authorization !== "Bearer codex-secret"
+				) throw new Error("readonly auth sequence returned the wrong credentials");
+			}
+		},
+	});
+
 	pi.registerCommand("state-late-append", {
 		handler() {
 			setTimeout(() => pi.appendEntry("late", {}), 20);

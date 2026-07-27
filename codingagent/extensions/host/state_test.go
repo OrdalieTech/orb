@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -33,6 +34,7 @@ func TestStateSnapshotActionsEventBusAndToolCallVeto(t *testing.T) {
 	errorsSeen := make(chan extensions.ExtensionError, 2)
 	callbackSignalContext, cancelCallbackSignal := context.WithCancel(context.Background())
 	defer cancelCallbackSignal()
+	var allToolReads atomic.Int32
 	actions := extensions.Actions{
 		SendUserMessage: func(_ context.Context, content ai.UserContent, _ *extensions.SendUserMessageOptions) error {
 			if content.Text == nil {
@@ -57,6 +59,7 @@ func TestStateSnapshotActionsEventBusAndToolCallVeto(t *testing.T) {
 		},
 		GetActiveTools: func() ([]string, error) { return []string{"runtime-read"}, nil },
 		GetAllTools: func() ([]extensions.ToolInfo, error) {
+			allToolReads.Add(1)
 			return []extensions.ToolInfo{{Name: "runtime-read", Description: "read"}}, nil
 		},
 		GetCommands: func() ([]extensions.SlashCommandInfo, error) {
@@ -166,6 +169,17 @@ func TestStateSnapshotActionsEventBusAndToolCallVeto(t *testing.T) {
 	}
 	if strings.Contains(string(encodedSnapshot), "codex-secret") || strings.Contains(string(encodedSnapshot), "codex-key") {
 		t.Fatalf("credential leaked into state snapshot: %s", encodedSnapshot)
+	}
+	readonlyAuth := runner.Command("state-auth-readonly")
+	if readonlyAuth == nil {
+		t.Fatal("state-auth-readonly command was not registered")
+	}
+	readsBefore := allToolReads.Load()
+	if err := readonlyAuth.Handler(context.Background(), "", runner.CreateCommandContext()); err != nil {
+		t.Fatal(err)
+	}
+	if reads := allToolReads.Load() - readsBefore; reads != 1 {
+		t.Fatalf("readonly auth sequence refreshed the full state %d times, want only the command-entry refresh", reads-1)
 	}
 
 	input := map[string]any{"original": true}

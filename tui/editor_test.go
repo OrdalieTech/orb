@@ -1189,6 +1189,12 @@ func TestEditorPredictsHiddenLinesBeforeRender(t *testing.T) {
 	if len(lines) == 0 || !strings.Contains(lines[0], "↑") {
 		t.Fatalf("predicted scroll border was not rendered: %#v", lines)
 	}
+	if !editor.HasHiddenLinesAboveLastRender(12) {
+		t.Fatal("editor lost the scroll state from its last render")
+	}
+	if editor.HasHiddenLinesAboveLastRender(30) {
+		t.Fatal("editor reused scroll state at a different width")
+	}
 }
 
 func TestEditorGetLinesDefensiveCopy(t *testing.T) {

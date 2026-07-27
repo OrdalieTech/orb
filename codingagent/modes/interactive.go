@@ -3075,7 +3075,9 @@ func (mode *InteractiveMode) applyScopedModelSelection(models []ai.Model, unavai
 
 func (mode *InteractiveMode) GitBranch() string {
 	_, cwd := mode.sessionSnapshot()
-	cmd := exec.Command("git", "--no-optional-locks", "rev-parse", "--abbrev-ref", "HEAD")
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "--no-optional-locks", "rev-parse", "--abbrev-ref", "HEAD")
 	cmd.Dir = cwd
 	out, err := cmd.Output()
 	if err != nil {
@@ -3152,7 +3154,7 @@ func (mode *InteractiveMode) editorTopBorder(width int, base string, border tui.
 	if !mode.builtInEditorMounted() {
 		return editorTopBorderProjection{Line: base}
 	}
-	if mode.editor.HasHiddenLinesAbove(width) {
+	if mode.editor.HasHiddenLinesAboveLastRender(width) {
 		mode.mu.Lock()
 		mode.editorChromeWidth = width
 		mode.editorChromeStatus = ""

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1022,6 +1023,37 @@ func TestFooterComponentRender(t *testing.T) {
 	}
 }
 
+func TestFooterMetadataDoesNotBlockRender(t *testing.T) {
+	initTestTheme(t)
+	provider := &blockingFooterDataProvider{
+		started: make(chan struct{}), release: make(chan struct{}), invalidated: make(chan struct{}, 1),
+	}
+	footer := NewFooterComponent(&fakeFooterSession{}, provider)
+	rendered := make(chan []string, 1)
+	go func() { rendered <- footer.Render(80) }()
+	select {
+	case <-rendered:
+	case <-time.After(time.Second):
+		close(provider.release)
+		<-rendered
+		t.Fatal("footer render blocked on Git metadata")
+	}
+	select {
+	case <-provider.started:
+	case <-time.After(time.Second):
+		t.Fatal("footer did not start its metadata refresh")
+	}
+	close(provider.release)
+	select {
+	case <-provider.invalidated:
+	case <-time.After(time.Second):
+		t.Fatal("footer metadata refresh did not request a redraw")
+	}
+	if lines := strings.Join(footer.Render(80), "\n"); !strings.Contains(lines, "async") {
+		t.Fatalf("refreshed footer = %q, want async branch", lines)
+	}
+}
+
 func TestGitBranchReportsDetachedHead(t *testing.T) {
 	dir := t.TempDir()
 	git := func(args ...string) {
@@ -1378,6 +1410,26 @@ func (f *fakeFooterSession) State() agent.AgentState {
 type fakeFooterDataProvider struct {
 	branch   string
 	statuses map[string]string
+}
+
+type blockingFooterDataProvider struct {
+	started     chan struct{}
+	release     chan struct{}
+	invalidated chan struct{}
+	startOnce   sync.Once
+}
+
+func (provider *blockingFooterDataProvider) GitBranch() string {
+	provider.startOnce.Do(func() { close(provider.started) })
+	<-provider.release
+	return "async"
+}
+func (*blockingFooterDataProvider) Statuses() map[string]string { return nil }
+func (provider *blockingFooterDataProvider) Invalidate() {
+	select {
+	case provider.invalidated <- struct{}{}:
+	default:
+	}
 }
 
 func (f *fakeFooterDataProvider) GitBranch() string { return f.branch }
