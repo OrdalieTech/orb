@@ -215,11 +215,17 @@ func StreamSimpleAnthropicMessages(
 	if err := assertAnthropicAuth(model, &base); err != nil {
 		return nil, err
 	}
+	toolChoice := simpleToolChoice(options, "any")
+	var anthropicToolChoice *AnthropicToolChoice
+	if toolChoice != "" {
+		anthropicToolChoice = &AnthropicToolChoice{Type: toolChoice}
+	}
 	if options == nil || options.Reasoning == nil {
 		disabled := false
 		return StreamAnthropicMessagesWithOptions(ctx, model, requestContext, &AnthropicMessagesOptions{
 			StreamOptions:   base,
 			ThinkingEnabled: &disabled,
+			ToolChoice:      anthropicToolChoice,
 		})
 	}
 
@@ -234,6 +240,7 @@ func StreamSimpleAnthropicMessages(
 			StreamOptions:   base,
 			ThinkingEnabled: &enabled,
 			Effort:          &effort,
+			ToolChoice:      anthropicToolChoice,
 		})
 	}
 
@@ -249,6 +256,7 @@ func StreamSimpleAnthropicMessages(
 		StreamOptions:        base,
 		ThinkingEnabled:      &enabled,
 		ThinkingBudgetTokens: &budget,
+		ToolChoice:           anthropicToolChoice,
 	})
 }
 

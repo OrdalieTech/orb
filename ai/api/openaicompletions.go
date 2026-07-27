@@ -88,9 +88,7 @@ func StreamOpenAICompletions(ctx context.Context, request ai.Request) (ai.Assist
 }
 
 // StreamSimpleOpenAICompletions applies the provider-neutral context and
-// reasoning clamps before entering the specialized Chat Completions path.
-// ToolChoice remains on OpenAICompletionsOptions because SimpleStreamOptions
-// has no structurally hidden fields in Go.
+// options before entering the specialized Chat Completions path.
 func StreamSimpleOpenAICompletions(
 	ctx context.Context,
 	model *ai.Model,
@@ -106,6 +104,7 @@ func StreamSimpleOpenAICompletions(
 	}
 	return StreamOpenAICompletionsWithOptions(ctx, model, requestContext, &OpenAICompletionsOptions{
 		StreamOptions:   buildBaseStreamOptions(model, requestContext, options),
+		ToolChoice:      simpleToolChoiceAny(options, "required"),
 		ReasoningEffort: clampSimpleReasoning(model, requestedReasoning),
 	})
 }

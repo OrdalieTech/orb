@@ -448,7 +448,16 @@ type SimpleStreamOptions struct {
 	StreamOptions
 	Reasoning       *ThinkingLevel   `json:"reasoning,omitempty"`
 	ThinkingBudgets *ThinkingBudgets `json:"thinkingBudgets,omitempty"`
+	ToolChoice      ToolChoice       `json:"toolChoice,omitempty"`
 }
+
+type ToolChoice string
+
+const (
+	ToolChoiceAuto     ToolChoice = "auto"
+	ToolChoiceNone     ToolChoice = "none"
+	ToolChoiceRequired ToolChoice = "required"
+)
 
 type Request struct {
 	Model   *Model

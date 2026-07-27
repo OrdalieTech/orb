@@ -55,7 +55,9 @@ func StreamSimpleGoogleVertex(
 	base := buildBaseStreamOptions(model, requestContext, options)
 	if options == nil || options.Reasoning == nil {
 		return StreamGoogleVertexWithOptions(ctx, model, requestContext, &GoogleVertexOptions{
-			StreamOptions: base, Thinking: &GoogleThinkingOptions{Enabled: false},
+			StreamOptions: base,
+			ToolChoice:    GoogleToolChoice(simpleToolChoice(options, "any")),
+			Thinking:      &GoogleThinkingOptions{Enabled: false},
 		})
 	}
 	effort := clampGoogleReasoning(model, *options.Reasoning)
@@ -69,7 +71,9 @@ func StreamSimpleGoogleVertex(
 		thinking.BudgetTokens = googleVertexThinkingBudget(model, effort, options.ThinkingBudgets)
 	}
 	return StreamGoogleVertexWithOptions(ctx, model, requestContext, &GoogleVertexOptions{
-		StreamOptions: base, Thinking: thinking,
+		StreamOptions: base,
+		ToolChoice:    GoogleToolChoice(simpleToolChoice(options, "any")),
+		Thinking:      thinking,
 	})
 }
 

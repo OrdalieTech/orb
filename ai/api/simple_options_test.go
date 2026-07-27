@@ -67,6 +67,17 @@ func TestClampSimpleReasoningMatchesSupportedModelLevels(t *testing.T) {
 	}
 }
 
+func TestSimpleToolChoiceMapsRequired(t *testing.T) {
+	options := &ai.SimpleStreamOptions{ToolChoice: ai.ToolChoiceRequired}
+	if got := simpleToolChoice(options, "any"); got != "any" {
+		t.Fatalf("required tool choice = %q, want any", got)
+	}
+	options.ToolChoice = ai.ToolChoiceNone
+	if got := simpleToolChoice(options, "any"); got != "none" {
+		t.Fatalf("none tool choice = %q, want none", got)
+	}
+}
+
 func TestEstimateTextTokensUsesJavaScriptUTF16Length(t *testing.T) {
 	if got := estimateTextTokens("abc😀"); got != 2 {
 		t.Fatalf("tokens = %d, want 2", got)

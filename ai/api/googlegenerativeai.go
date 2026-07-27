@@ -105,7 +105,9 @@ func StreamSimpleGoogleGenerativeAI(
 	}
 	if options == nil || options.Reasoning == nil {
 		return StreamGoogleGenerativeAIWithOptions(ctx, model, requestContext, &GoogleOptions{
-			StreamOptions: base, Thinking: &GoogleThinkingOptions{Enabled: false},
+			StreamOptions: base,
+			ToolChoice:    GoogleToolChoice(simpleToolChoice(options, "any")),
+			Thinking:      &GoogleThinkingOptions{Enabled: false},
 		})
 	}
 	effort := clampGoogleReasoning(model, *options.Reasoning)
@@ -119,7 +121,9 @@ func StreamSimpleGoogleGenerativeAI(
 		thinking.BudgetTokens = googleThinkingBudget(model, effort, options.ThinkingBudgets)
 	}
 	return StreamGoogleGenerativeAIWithOptions(ctx, model, requestContext, &GoogleOptions{
-		StreamOptions: base, Thinking: thinking,
+		StreamOptions: base,
+		ToolChoice:    GoogleToolChoice(simpleToolChoice(options, "any")),
+		Thinking:      thinking,
 	})
 }
 

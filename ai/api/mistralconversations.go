@@ -125,7 +125,10 @@ func StreamSimpleMistralConversations(
 	if err := assertMistralAPIKey(model, &base); err != nil {
 		return nil, err
 	}
-	result := &MistralConversationsOptions{StreamOptions: base}
+	result := &MistralConversationsOptions{
+		StreamOptions: base,
+		ToolChoice:    simpleToolChoiceAny(options, "required"),
+	}
 	var requested *ai.ThinkingLevel
 	if options != nil {
 		requested = options.Reasoning

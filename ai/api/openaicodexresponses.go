@@ -162,9 +162,14 @@ func StreamSimpleOpenAICodexResponses(
 		value := string(*clamped)
 		effort = &value
 	}
+	var toolChoice *string
+	if value := simpleToolChoice(options, "required"); value != "" {
+		toolChoice = &value
+	}
 	return StreamOpenAICodexResponsesWithOptions(ctx, model, requestContext, &OpenAICodexResponsesOptions{
 		StreamOptions:   base,
 		ReasoningEffort: effort,
+		ToolChoice:      toolChoice,
 	})
 }
 

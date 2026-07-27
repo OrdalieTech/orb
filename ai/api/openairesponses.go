@@ -214,6 +214,7 @@ func StreamSimpleOpenAIResponses(
 	return StreamOpenAIResponsesWithOptions(ctx, model, requestContext, &OpenAIResponsesOptions{
 		StreamOptions:   base,
 		ReasoningEffort: effort,
+		ToolChoice:      simpleToolChoiceAny(options, "required"),
 	})
 }
 

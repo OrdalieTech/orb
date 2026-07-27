@@ -81,8 +81,10 @@ tool-argument behavior; protocol code must not call `encoding/json.Marshal` dire
 type StreamFn func(ctx context.Context, req Request) (iter.Seq2[AssistantMessageEvent, error], error)
 ```
 
-plus a `Collect` helper folding a stream into the final `AssistantMessage`. Tool-call args stream
-through `internal/partialjson` exactly as upstream uses `partial-json`.
+plus a `Collect` helper folding a stream into the final `AssistantMessage`. `ai/api.StreamSimple`
+adapts the common options, including `auto|none|required` tool choice, and `CompleteSimple` is its
+collected form. Tool-call args stream through `internal/partialjson` exactly as upstream uses
+`partial-json`.
 
 **API shapes** (one file each under `ai/api/`): openai-responses, openai-completions,
 anthropic-messages, google-generative-ai, google-vertex, azure-openai-responses,
