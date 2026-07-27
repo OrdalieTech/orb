@@ -208,12 +208,36 @@ func StreamSimpleAnthropicMessages(
 	requestContext ai.Context,
 	options *ai.SimpleStreamOptions,
 ) (ai.AssistantMessageEventStream, error) {
+	return streamSimpleAnthropicMessages(ctx, model, requestContext, options, nil)
+}
+
+// StreamSimpleAnthropicMessagesWithClient preserves simple-call semantics while
+// letting hosts supply an upstream Anthropic client such as AnthropicVertex.
+func StreamSimpleAnthropicMessagesWithClient(
+	ctx context.Context,
+	model *ai.Model,
+	requestContext ai.Context,
+	options *ai.SimpleStreamOptions,
+	client *anthropic.Client,
+) (ai.AssistantMessageEventStream, error) {
+	return streamSimpleAnthropicMessages(ctx, model, requestContext, options, client)
+}
+
+func streamSimpleAnthropicMessages(
+	ctx context.Context,
+	model *ai.Model,
+	requestContext ai.Context,
+	options *ai.SimpleStreamOptions,
+	client *anthropic.Client,
+) (ai.AssistantMessageEventStream, error) {
 	if model == nil {
 		return nil, errors.New("ai/api: Anthropic Messages model is nil")
 	}
 	base := buildBaseStreamOptions(model, requestContext, options)
-	if err := assertAnthropicAuth(model, &base); err != nil {
-		return nil, err
+	if client == nil {
+		if err := assertAnthropicAuth(model, &base); err != nil {
+			return nil, err
+		}
 	}
 	toolChoice := simpleToolChoice(options, "any")
 	var anthropicToolChoice *AnthropicToolChoice
@@ -226,6 +250,7 @@ func StreamSimpleAnthropicMessages(
 			StreamOptions:   base,
 			ThinkingEnabled: &disabled,
 			ToolChoice:      anthropicToolChoice,
+			Client:          client,
 		})
 	}
 
@@ -241,6 +266,7 @@ func StreamSimpleAnthropicMessages(
 			ThinkingEnabled: &enabled,
 			Effort:          &effort,
 			ToolChoice:      anthropicToolChoice,
+			Client:          client,
 		})
 	}
 
@@ -257,6 +283,7 @@ func StreamSimpleAnthropicMessages(
 		ThinkingEnabled:      &enabled,
 		ThinkingBudgetTokens: &budget,
 		ToolChoice:           anthropicToolChoice,
+		Client:               client,
 	})
 }
 

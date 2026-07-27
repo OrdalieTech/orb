@@ -208,6 +208,39 @@ func TestAnthropicCustomClientSkipsAdapterAuthentication(t *testing.T) {
 	}
 }
 
+func TestSimpleAnthropicCustomClient(t *testing.T) {
+	requested := false
+	client := anthropic.NewClient(
+		option.WithAPIKey("client-owned-key"),
+		option.WithHTTPClient(&http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			requested = true
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body:       io.NopCloser(strings.NewReader(minimalF2SSE(ai.APIAnthropicMessages, "claude-test"))),
+				Request:    request,
+			}, nil
+		})}),
+	)
+	stream, err := StreamSimpleAnthropicMessagesWithClient(
+		context.Background(),
+		anthropicTestModel(),
+		ai.Context{Messages: ai.MessageList{}},
+		&ai.SimpleStreamOptions{},
+		&client,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := ai.Collect(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !requested || message.StopReason != ai.StopReasonStop {
+		t.Fatalf("custom client requested=%v message=%#v", requested, message)
+	}
+}
+
 func TestAnthropicRejectsUnserializableToolReplayAndSchema(t *testing.T) {
 	model := anthropicTestModel()
 	_, _, err := buildAnthropicMessagesPayload(model, ai.Context{Messages: ai.MessageList{
