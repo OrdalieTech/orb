@@ -23,13 +23,31 @@ import (
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
 	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 	memorysdk "github.com/OrdalieTech/pigo/memory"
+	"github.com/OrdalieTech/pigo/tui"
 )
 
 type widgetUI struct {
 	extensions.NoopUI
-	mu    sync.Mutex
-	lines []string
-	shown int
+	mu      sync.Mutex
+	lines   []string
+	factory extensions.ComponentFactory
+	shown   int
+}
+
+type taskWidgetHost struct{ invalidations int }
+type dimTaskTheme struct{}
+
+func (dimTaskTheme) FG(color, text string) string {
+	if color == "dim" {
+		return "\x1b[2m" + text + "\x1b[22m"
+	}
+	return text
+}
+
+func (*taskWidgetHost) Width() int  { return 80 }
+func (*taskWidgetHost) Height() int { return 24 }
+func (host *taskWidgetHost) Invalidate() {
+	host.invalidations++
 }
 
 type selectorUI struct {
@@ -277,9 +295,10 @@ func TestPermissionsSessionApprovalAvoidsSecondPrompt(t *testing.T) {
 func (ui *widgetUI) SetWidget(_ string, widget *extensions.Widget, _ *extensions.WidgetOptions) {
 	ui.mu.Lock()
 	defer ui.mu.Unlock()
-	ui.lines = nil
+	ui.lines, ui.factory = nil, nil
 	if widget != nil {
 		ui.lines = append([]string(nil), widget.Lines...)
+		ui.factory = widget.Factory
 		ui.shown++
 	}
 }
@@ -296,6 +315,12 @@ func (ui *widgetUI) showCount() int {
 	return ui.shown
 }
 
+func (ui *widgetUI) widgetFactory() extensions.ComponentFactory {
+	ui.mu.Lock()
+	defer ui.mu.Unlock()
+	return ui.factory
+}
+
 func TestTasksToolReplacesTheLiveWidget(t *testing.T) {
 	ui := &widgetUI{}
 	tool := pluginTool(t, "tasks", "todo", Options{}, extensions.RunnerOptions{UI: ui, Mode: extensions.ModeTUI})
@@ -310,8 +335,35 @@ func TestTasksToolReplacesTheLiveWidget(t *testing.T) {
 	if text != "[x] inspect\n→ [ ] implement" {
 		t.Fatalf("tool result = %q", text)
 	}
-	if got := strings.Join(ui.snapshot(), "\n"); got != text {
-		t.Fatalf("widget = %q, want %q", got, text)
+	if got, want := strings.Join(ui.snapshot(), "\n"), "✓ 1/2  → implement"; got != want {
+		t.Fatalf("widget = %q, want %q", got, want)
+	}
+	factory := ui.widgetFactory()
+	if factory == nil {
+		t.Fatal("TUI task widget has no click renderer")
+	}
+	host := &taskWidgetHost{}
+	component := factory(host, nil)
+	mouse, ok := component.(tui.MouseHandler)
+	if !ok || !mouse.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Button: 0, Clicks: 1}) {
+		t.Fatal("task widget did not accept a left click")
+	}
+	expanded := strings.Join(component.Render(80), "\n")
+	if !strings.Contains(expanded, "[x] inspect") || !strings.Contains(expanded, "→ [ ] implement") || host.invalidations != 1 {
+		t.Fatalf("expanded task widget = %q, invalidations = %d", expanded, host.invalidations)
+	}
+	for width := 1; width <= 4; width++ {
+		for _, line := range component.Render(width) {
+			if got := tui.VisibleWidth(line); got > width {
+				t.Fatalf("task widget width %d rendered %d cells: %q", width, got, line)
+			}
+		}
+	}
+	styled := newTaskWidget([]todoItem{{Text: "inspect", Status: "done"}, {Text: "implement", Status: "in_progress"}}, host, dimTaskTheme{})
+	styled.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Button: 0, Clicks: 1})
+	styledLines := styled.Render(80)
+	if len(styledLines) < 3 || !strings.Contains(strings.Join(styledLines, "\n"), "\x1b[2m") || !strings.HasPrefix(styledLines[1], "    ") {
+		t.Fatalf("styled expanded task widget = %#v", styledLines)
 	}
 
 	result, err = tool.Execute(context.Background(), "todo-2", map[string]any{"items": []any{
@@ -320,7 +372,7 @@ func TestTasksToolReplacesTheLiveWidget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ai.ContentText(result.Content); got != "[ ] ship" || strings.Join(ui.snapshot(), "\n") != got {
+	if got := ai.ContentText(result.Content); got != "[ ] ship" || strings.Join(ui.snapshot(), "\n") != "✓ 0/1  ·  +1 queued" {
 		t.Fatalf("replacement result = %q widget = %q", got, strings.Join(ui.snapshot(), "\n"))
 	}
 	details, ok := result.Details.(todoInput)

@@ -555,7 +555,7 @@ func TestIdleStatusRender(t *testing.T) {
 func TestCompactStatusRender(t *testing.T) {
 	status := &tui.Container{}
 	status.AddChild(IdleStatus{})
-	if lines := (compactStatus{status}).Render(20); len(lines) != 0 {
+	if lines := (compactStatus{Component: status}).Render(20); len(lines) != 0 {
 		t.Fatalf("compact idle status = %#v, want no rows", lines)
 	}
 
@@ -563,8 +563,107 @@ func TestCompactStatusRender(t *testing.T) {
 	defer indicator.Dispose()
 	status.Clear()
 	status.AddChild(indicator)
-	if lines := (compactStatus{status}).Render(20); len(lines) != 1 || !strings.Contains(lines[0], "Working...") {
+	if lines := (compactStatus{Component: status}).Render(20); len(lines) != 1 || !strings.Contains(lines[0], "Working...") {
 		t.Fatalf("compact working status = %#v, want one row", lines)
+	}
+	if lines := (compactStatus{Component: status, Inline: func(int, string) bool { return true }}).Render(20); len(lines) != 0 {
+		t.Fatalf("inlined compact status = %#v, want no rows", lines)
+	}
+}
+
+func TestComposeEditorTopBorderStatusAndSessionName(t *testing.T) {
+	initTestTheme(t)
+	const width = 48
+	border := func(text string) string { return "\x1b[34m" + text + "\x1b[39m" }
+	base := border(strings.Repeat("─", width))
+	projection := composeEditorTopBorder(base, width, "\x1b[36m⠋\x1b[39m Working...", "A deliberately long conversation title", border)
+	if !projection.StatusInline || !projection.TitleShown || tui.VisibleWidth(projection.Line) != width {
+		t.Fatalf("editor chrome projection = %#v", projection)
+	}
+	if !strings.Contains(projection.Line, "Working...") || !strings.Contains(projection.Line, "A deliberately") || !strings.Contains(projection.Line, "\x1b[48;2;") {
+		t.Fatalf("editor chrome omitted status or themed title: %q", projection.Line)
+	}
+	for testWidth := 0; testWidth <= 32; testWidth++ {
+		projection := composeEditorTopBorder(border(strings.Repeat("─", testWidth)), testWidth, "⠋ Working...", "会話 🙂 title", border)
+		if got := tui.VisibleWidth(projection.Line); got != testWidth {
+			t.Fatalf("editor chrome width %d rendered %d cells: %q", testWidth, got, projection.Line)
+		}
+	}
+}
+
+func TestEditorChromePreservesScrollHintAndUsesStatusLane(t *testing.T) {
+	initTestTheme(t)
+	ui := tui.NewTUI(newFakeTerminal(20, 24))
+	status := &tui.Container{}
+	indicator := NewWorkingStatusIndicator(ui, "Working...", &extensions.WorkingIndicatorOptions{Frames: []string{"*"}})
+	t.Cleanup(indicator.Dispose)
+	status.AddChild(indicator)
+	mode := &InteractiveMode{ui: ui, status: status, editorContainer: &tui.Container{}}
+	mode.editor = NewCustomEditor(ui, theme.EditorTheme(), NewAppKeybindings(nil))
+	mode.editor.setTopBorderDecorator(func(width int, base string, border tui.StyleFunc) string {
+		return mode.editorTopBorder(width, base, border).Line
+	})
+	mode.editorContainer.AddChild(mode.editor)
+	mode.editor.SetText(strings.TrimRight(strings.Repeat("long draft line\n", 20), "\n"))
+	lane := compactStatus{Component: status, Inline: mode.statusInEditor}
+	if lines := lane.Render(20); len(lines) != 1 || !strings.Contains(lines[0], "Working...") {
+		t.Fatalf("scrolled editor did not retain status lane: %#v", lines)
+	}
+	lines := mode.editor.Render(20)
+	if len(lines) == 0 || !strings.Contains(lines[0], "↑") || strings.Contains(lines[0], "Working...") {
+		t.Fatalf("scrolled editor chrome replaced its scroll hint: %#v", lines)
+	}
+}
+
+func TestRetryStatusIndicatorCountsDown(t *testing.T) {
+	indicator := NewRetryStatusIndicator(&fakeRenderRequester{}, 2, 4, 1500)
+	t.Cleanup(indicator.Dispose)
+	if rendered := strings.Join(indicator.Render(80), "\n"); !strings.Contains(rendered, "in 2s") {
+		t.Fatalf("initial retry status = %q", rendered)
+	}
+	deadline := time.Now().Add(1500 * time.Millisecond)
+	for {
+		rendered := strings.Join(indicator.Render(80), "\n")
+		if strings.Contains(rendered, "in 1s") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("retry status did not count down: %q", rendered)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestQueueUpdateRendersTruncatedMessagesCountAndConfiguredHint(t *testing.T) {
+	initTestTheme(t)
+	ui := tui.NewTUI(newFakeTerminal(80, 24))
+	mode := &InteractiveMode{
+		ui:              ui,
+		pendingMessages: &tui.Container{},
+		keybindings: NewAppKeybindings(tui.KeybindingsConfig{
+			"app.message.dequeue": {"ctrl+u"},
+		}),
+		keyDisplayOS: "linux",
+	}
+	mode.handleEvent(codingagent.QueueUpdateEvent{
+		Steering: []string{"inspect a very long queued steering message that must truncate\nnot rendered"},
+		FollowUp: []string{"summarize the result"},
+	})
+	wide := mode.pendingMessages.Render(80)
+	if len(wide) != 4 {
+		t.Fatalf("queued rows = %#v", wide)
+	}
+	joined := strings.Join(wide, "\n")
+	for _, want := range []string{"Steering: inspect", "Follow-up: summarize", "↳ 2 queued", "Ctrl+U", "edit all"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("queued display omitted %q: %q", want, joined)
+		}
+	}
+	if strings.Contains(joined, "not rendered") {
+		t.Fatalf("queued display rendered a second logical line: %q", joined)
+	}
+	if narrow := mode.pendingMessages.Render(24); len(narrow) != 4 || !strings.Contains(narrow[1], "...") {
+		t.Fatalf("queued display was not one-row truncated: %#v", narrow)
 	}
 }
 

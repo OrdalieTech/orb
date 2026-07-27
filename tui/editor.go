@@ -593,28 +593,19 @@ func (editor *Editor) setTextInternal(text, cursorPlacement string) {
 
 func (editor *Editor) Invalidate() {}
 
-func (editor *Editor) Render(width int) []string {
-	editor.mu.Lock()
-	defer editor.mu.Unlock()
-
+func (editor *Editor) renderLayoutMetrics(width int) (paddingX, contentWidth, layoutWidth, maxVisibleLines int) {
 	maxPadding := max(0, (width-1)/2)
-	paddingX := min(editor.paddingX, maxPadding)
-	contentWidth := max(1, width-paddingX*2)
-
-	// Layout width: with padding the cursor can overflow into it, without
-	// padding we reserve one column for the cursor.
-	layoutWidth := contentWidth
+	paddingX = min(editor.paddingX, maxPadding)
+	contentWidth = max(1, width-paddingX*2)
+	layoutWidth = contentWidth
 	if paddingX == 0 {
 		layoutWidth = max(1, contentWidth-1)
 	}
-	editor.lastWidth = layoutWidth
+	maxVisibleLines = max(5, editor.ui.Terminal().Rows()*3/10)
+	return
+}
 
-	horizontal := editor.borderColor("─")
-	layoutLines := editor.layoutText(layoutWidth)
-
-	terminalRows := editor.ui.Terminal().Rows()
-	maxVisibleLines := max(5, terminalRows*3/10)
-
+func (editor *Editor) scrollOffsetForLayout(layoutLines []layoutLine, maxVisibleLines int) int {
 	cursorLineIndex := 0
 	for index, line := range layoutLines {
 		if line.hasCursor {
@@ -622,13 +613,34 @@ func (editor *Editor) Render(width int) []string {
 			break
 		}
 	}
-	if cursorLineIndex < editor.scrollOffset {
-		editor.scrollOffset = cursorLineIndex
-	} else if cursorLineIndex >= editor.scrollOffset+maxVisibleLines {
-		editor.scrollOffset = cursorLineIndex - maxVisibleLines + 1
+	offset := editor.scrollOffset
+	if cursorLineIndex < offset {
+		offset = cursorLineIndex
+	} else if cursorLineIndex >= offset+maxVisibleLines {
+		offset = cursorLineIndex - maxVisibleLines + 1
 	}
 	maxScrollOffset := max(0, len(layoutLines)-maxVisibleLines)
-	editor.scrollOffset = max(0, min(editor.scrollOffset, maxScrollOffset))
+	return max(0, min(offset, maxScrollOffset))
+}
+
+// HasHiddenLinesAbove predicts whether the next render needs the top scroll border.
+func (editor *Editor) HasHiddenLinesAbove(width int) bool {
+	editor.mu.Lock()
+	defer editor.mu.Unlock()
+	_, _, layoutWidth, maxVisibleLines := editor.renderLayoutMetrics(width)
+	return editor.scrollOffsetForLayout(editor.layoutText(layoutWidth), maxVisibleLines) > 0
+}
+
+func (editor *Editor) Render(width int) []string {
+	editor.mu.Lock()
+	defer editor.mu.Unlock()
+
+	paddingX, contentWidth, layoutWidth, maxVisibleLines := editor.renderLayoutMetrics(width)
+	editor.lastWidth = layoutWidth
+
+	horizontal := editor.borderColor("─")
+	layoutLines := editor.layoutText(layoutWidth)
+	editor.scrollOffset = editor.scrollOffsetForLayout(layoutLines, maxVisibleLines)
 
 	visibleLines := layoutLines[editor.scrollOffset:min(editor.scrollOffset+maxVisibleLines, len(layoutLines))]
 	editor.renderPaddingX, editor.renderVisible = paddingX, len(visibleLines)

@@ -75,32 +75,35 @@ type InteractiveMode struct {
 	interactiveUI *InteractiveUI
 
 	// State
-	mu                   sync.Mutex
-	statusMessageMu      sync.Mutex
-	streaming            bool
-	toolsExpanded        bool
-	thinkingHidden       bool
-	thinkingLabel        string
-	bashMode             bool
-	shutdownRequested    bool
-	inputCh              chan inputEntry
-	pendingImages        []*ai.ImageContent
-	currentStreaming     *AssistantMessageComponent
-	toolComponents       map[string]*ToolExecutionComponent
-	expandables          []expandableComponent
-	statusIndicator      tui.Component
-	lastStatusSpacer     *tui.Spacer
-	lastStatusText       *tui.Text
-	footerStatuses       map[string]string
-	autocompleteProvider tui.AutocompleteProvider
-	cwd                  string
-	outputPad            int
-	lastEscape           time.Time
-	extensionEditor      extensions.EditorComponent
-	themeRegistry        *theme.Registry
-	themeController      *theme.Controller
-	authContext          context.Context
-	authCancel           context.CancelFunc
+	mu                     sync.Mutex
+	statusMessageMu        sync.Mutex
+	streaming              bool
+	toolsExpanded          bool
+	thinkingHidden         bool
+	thinkingLabel          string
+	bashMode               bool
+	shutdownRequested      bool
+	inputCh                chan inputEntry
+	pendingImages          []*ai.ImageContent
+	currentStreaming       *AssistantMessageComponent
+	toolComponents         map[string]*ToolExecutionComponent
+	expandables            []expandableComponent
+	statusIndicator        tui.Component
+	editorChromeWidth      int
+	editorChromeStatus     string
+	editorChromeTitleShown bool
+	lastStatusSpacer       *tui.Spacer
+	lastStatusText         *tui.Text
+	footerStatuses         map[string]string
+	autocompleteProvider   tui.AutocompleteProvider
+	cwd                    string
+	outputPad              int
+	lastEscape             time.Time
+	extensionEditor        extensions.EditorComponent
+	themeRegistry          *theme.Registry
+	themeController        *theme.Controller
+	authContext            context.Context
+	authCancel             context.CancelFunc
 	// anthropicSubscriptionWarningShown gates the once-per-session Anthropic
 	// extra-usage warning (upstream anthropicSubscriptionWarningShown).
 	anthropicSubscriptionWarningShown bool
@@ -113,12 +116,22 @@ type InteractiveMode struct {
 	cleanupOnce sync.Once
 }
 
-type compactStatus struct{ tui.Component }
+type compactStatus struct {
+	tui.Component
+	Inline func(width int, status string) bool
+}
 
 func (status compactStatus) Render(width int) []string {
 	lines := status.Component.Render(width)
 	for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
 		lines = lines[1:]
+	}
+	inlineText := ""
+	if len(lines) == 1 {
+		inlineText = strings.TrimSpace(lines[0])
+	}
+	if status.Inline != nil && status.Inline(width, inlineText) {
+		return nil
 	}
 	return lines
 }
@@ -345,6 +358,9 @@ func (mode *InteractiveMode) init() error {
 
 	editorTheme := theme.EditorTheme()
 	mode.editor = NewCustomEditor(mode.ui, editorTheme, mode.keybindings)
+	mode.editor.setTopBorderDecorator(func(width int, base string, border tui.StyleFunc) string {
+		return mode.editorTopBorder(width, base, border).Line
+	})
 	settings := mode.session.InteractiveSettings()
 	mode.editor.SetPaddingX(settings.EditorPaddingX)
 	mode.editor.SetAutocompleteMaxVisible(settings.AutocompleteMaxVisible)
@@ -353,7 +369,7 @@ func (mode *InteractiveMode) init() error {
 	for _, component := range []tui.Component{mode.header, mode.chat, mode.pendingMessages} {
 		body.AddChild(component)
 	}
-	for _, component := range []tui.Component{compactStatus{mode.status}, mode.widgetAbove, mode.editorContainer, mode.widgetBelow, mode.footer, mode.overlay} {
+	for _, component := range []tui.Component{compactStatus{Component: mode.status, Inline: mode.statusInEditor}, mode.widgetAbove, mode.editorContainer, mode.widgetBelow, mode.footer, mode.overlay} {
 		chrome.AddChild(component)
 	}
 	mode.ui.AddChild(body)
@@ -3124,6 +3140,66 @@ func (mode *InteractiveMode) SessionName() string {
 	return *name
 }
 
+func (mode *InteractiveMode) builtInEditorMounted() bool {
+	if mode == nil || mode.editor == nil || mode.editorContainer == nil {
+		return false
+	}
+	children := mode.editorContainer.Children()
+	return len(children) == 1 && children[0] == mode.editor
+}
+
+func (mode *InteractiveMode) editorTopBorder(width int, base string, border tui.StyleFunc) editorTopBorderProjection {
+	if !mode.builtInEditorMounted() {
+		return editorTopBorderProjection{Line: base}
+	}
+	if mode.editor.HasHiddenLinesAbove(width) {
+		mode.mu.Lock()
+		mode.editorChromeWidth = width
+		mode.editorChromeStatus = ""
+		mode.editorChromeTitleShown = false
+		mode.mu.Unlock()
+		return editorTopBorderProjection{Line: base}
+	}
+	mode.mu.Lock()
+	status := ""
+	if mode.editorChromeWidth == width {
+		status = mode.editorChromeStatus
+	}
+	mode.mu.Unlock()
+	projection := composeEditorTopBorder(base, width, status, mode.SessionName(), border)
+	mode.mu.Lock()
+	mode.editorChromeWidth = width
+	mode.editorChromeTitleShown = projection.TitleShown
+	mode.mu.Unlock()
+	return projection
+}
+
+func (mode *InteractiveMode) statusInEditor(width int, status string) bool {
+	inline := false
+	if mode.builtInEditorMounted() && mode.editor != nil && status != "" && !mode.editor.HasHiddenLinesAbove(width) {
+		border := mode.editor.GetBorderColor()
+		base := border(strings.Repeat("─", max(0, width)))
+		inline = composeEditorTopBorder(base, width, status, mode.SessionName(), border).StatusInline
+	}
+	mode.mu.Lock()
+	mode.editorChromeWidth = width
+	mode.editorChromeStatus = ""
+	if inline {
+		mode.editorChromeStatus = status
+	}
+	mode.mu.Unlock()
+	return inline
+}
+
+func (mode *InteractiveMode) SessionNameInEditor(width int) bool {
+	if !mode.builtInEditorMounted() {
+		return false
+	}
+	mode.mu.Lock()
+	defer mode.mu.Unlock()
+	return mode.editorChromeWidth == width && mode.editorChromeTitleShown
+}
+
 func (mode *InteractiveMode) updateTerminalTitle() {
 	if mode.ui == nil {
 		return
@@ -3321,14 +3397,7 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		mode.ui.Terminal().SetProgress(false)
 
 	case codingagent.QueueUpdateEvent:
-		mode.pendingMessages.Clear()
-		for _, text := range ev.Steering {
-			mode.pendingMessages.AddChild(tui.NewText(theme.FG("warning", "steer queued: "+text), 1, 0, nil))
-		}
-		for _, text := range ev.FollowUp {
-			mode.pendingMessages.AddChild(tui.NewText(theme.FG("dim", "follow-up queued: "+text), 1, 0, nil))
-		}
-		mode.ui.RequestRender()
+		mode.updatePendingMessagesDisplay(ev.Steering, ev.FollowUp)
 
 	case codingagent.CompactionStartEvent:
 		mode.setStatus(NewCompactionStatusIndicator(mode.ui, ev.Reason))
@@ -3369,6 +3438,44 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		mode.updateTerminalTitle()
 		mode.ui.RequestRender()
 	}
+}
+
+func (mode *InteractiveMode) updatePendingMessagesDisplay(steering, followUp []string) {
+	mode.pendingMessages.Clear()
+	count := len(steering) + len(followUp)
+	if count == 0 {
+		mode.ui.RequestRender()
+		return
+	}
+	mode.pendingMessages.AddChild(tui.NewSpacer(1))
+	for _, text := range steering {
+		mode.pendingMessages.AddChild(tui.NewTruncatedText(theme.FG("dim", "Steering: "+text), 1, 0))
+	}
+	for _, text := range followUp {
+		mode.pendingMessages.AddChild(tui.NewTruncatedText(theme.FG("dim", "Follow-up: "+text), 1, 0))
+	}
+	hint := fmt.Sprintf("↳ %d queued", count)
+	if dequeue := mode.appKeyDisplay("app.message.dequeue"); dequeue != "" {
+		hint += " · " + dequeue + " to edit all"
+	}
+	mode.pendingMessages.AddChild(tui.NewTruncatedText(theme.FG("dim", hint), 1, 0))
+	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) appKeyDisplay(binding string) string {
+	goos := mode.keyDisplayOS
+	if goos == "" {
+		goos = runtime.GOOS
+	}
+	if mode.keybindings != nil {
+		keys := mode.keybindings.Keys(binding)
+		formatted := make([]string, len(keys))
+		for index, key := range keys {
+			formatted[index] = formatKeyDisplayTextForOS(string(key), goos)
+		}
+		return strings.Join(formatted, "/")
+	}
+	return formatKeyDisplayTextForOS(KeyText(binding), goos)
 }
 
 func (mode *InteractiveMode) setStatus(indicator tui.Component) {

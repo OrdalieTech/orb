@@ -1178,6 +1178,19 @@ func TestEditorScrollIndicators(t *testing.T) {
 	}
 }
 
+func TestEditorPredictsHiddenLinesBeforeRender(t *testing.T) {
+	editor := NewEditor(NewTUI(newFakeTerminal(80, 24)), EditorTheme{})
+	editor.SetPaddingX(1)
+	editor.SetText(strings.TrimRight(strings.Repeat("a line that wraps\n", 12), "\n"))
+	if !editor.HasHiddenLinesAbove(12) {
+		t.Fatal("editor did not predict hidden lines before its first render")
+	}
+	lines := editor.Render(12)
+	if len(lines) == 0 || !strings.Contains(lines[0], "↑") {
+		t.Fatalf("predicted scroll border was not rendered: %#v", lines)
+	}
+}
+
 func TestEditorGetLinesDefensiveCopy(t *testing.T) {
 	editor := newTestEditor()
 	editor.SetText("a\nb")

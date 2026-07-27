@@ -88,7 +88,9 @@ func NewCountdownTimer(durationMS int64, ui tui.RenderRequester, onTick func(int
 				if ct.onTick != nil {
 					ct.onTick(remaining)
 				}
-				ui.RequestRender()
+				if ui != nil {
+					ui.RequestRender()
+				}
 				if remaining <= 0 {
 					ct.mu.Lock()
 					if ct.stopped {

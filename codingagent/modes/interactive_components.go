@@ -687,10 +687,16 @@ const (
 
 type StatusIndicator struct {
 	*tui.Loader
-	Kind StatusIndicatorKind
+	Kind      StatusIndicatorKind
+	countdown *CountdownTimer
 }
 
-func (si *StatusIndicator) Dispose() { si.Stop() }
+func (si *StatusIndicator) Dispose() {
+	if si.countdown != nil {
+		si.countdown.Dispose()
+	}
+	si.Stop()
+}
 
 func NewWorkingStatusIndicator(ui tui.RenderRequester, message string, options ...*extensions.WorkingIndicatorOptions) *StatusIndicator {
 	var indicator *tui.LoaderIndicatorOptions
@@ -716,16 +722,21 @@ func NewWorkingStatusIndicator(ui tui.RenderRequester, message string, options .
 }
 
 func NewRetryStatusIndicator(ui tui.RenderRequester, attempt, maxAttempts int, delayMS int64) *StatusIndicator {
-	msg := fmt.Sprintf("Retrying (%d/%d) in %ds... (%s to cancel)",
-		attempt, maxAttempts, (delayMS+999)/1000, KeyText("app.interrupt"))
-	return &StatusIndicator{
+	retryMessage := func(seconds int) string {
+		return fmt.Sprintf("Retrying (%d/%d) in %ds... (%s to cancel)", attempt, maxAttempts, seconds, KeyText("app.interrupt"))
+	}
+	status := &StatusIndicator{
 		Loader: tui.NewLoader(ui,
 			func(s string) string { return theme.FG("warning", s) },
 			func(s string) string { return theme.FG("muted", s) },
-			msg, nil,
+			retryMessage(int((delayMS+999)/1000)), nil,
 		),
 		Kind: StatusRetry,
 	}
+	status.countdown = NewCountdownTimer(delayMS, ui, func(seconds int) {
+		status.SetMessage(retryMessage(seconds))
+	}, nil)
+	return status
 }
 
 func NewCompactionStatusIndicator(ui tui.RenderRequester, reason string) *StatusIndicator {
@@ -815,7 +826,13 @@ func (f *FooterComponent) Render(width int) []string {
 	}
 	if provider, ok := f.provider.(interface{ SessionName() string }); ok {
 		if name := provider.SessionName(); name != "" {
-			pwd += " • " + name
+			shownInEditor := false
+			if placement, supported := f.provider.(interface{ SessionNameInEditor(int) bool }); supported {
+				shownInEditor = placement.SessionNameInEditor(width)
+			}
+			if !shownInEditor {
+				pwd += " • " + name
+			}
 		}
 	}
 
