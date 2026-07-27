@@ -104,7 +104,11 @@ func (flow *OpenRouter) Login(ctx context.Context, interaction auth.AuthInteract
 		serveDone <- err
 	}()
 	defer func() {
-		_ = server.Close()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if server.Shutdown(shutdownCtx) != nil {
+			_ = server.Close()
+		}
 		<-serveDone
 	}()
 

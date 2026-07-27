@@ -9,7 +9,7 @@ else (implementation detail) is decided by whoever executes the work package, wi
 | | |
 |---|---|
 | Upstream project | **pi** — https://pi.dev, repo `earendil-works/pi` (formerly `badlogic/pi-mono`) |
-| Pinned reference | commit `20be4b18d4c57487f8993d2762bace129f0cf7c6`, version **0.81.1** (2026-07-21) |
+| Pinned reference | commit `b4f293684bba718d59cc1157679bcf6157b3a7f5`, version **0.82.1** (2026-07-25) |
 | Upstream license | MIT, © 2025 Mario Zechner |
 | This project | `github.com/OrdalieTech/pigo`, MIT, © Ordalie — with attribution to upstream in LICENSE and README |
 
@@ -20,7 +20,7 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
 
 - **D1 — SDK-first.** pigo is a Go module first; the `pigo` CLI is one consumer of it. The `ai`
   layer must be importable on its own (as `@earendil-works/pi-ai` is upstream).
-- **D2 — Full parity, no staged v1.** The whole of pi v0.81.1 is in scope: agent core, all tools,
+- **D2 — Full parity, no staged v1.** The whole of the pinned pi release (currently v0.82.1) is in scope: agent core, all tools,
   session tree + compaction, skills, prompt templates, themes, TUI, print/JSON/RPC modes, extension
   system, OAuth flows, HTML export, terminal images, pi packages, project trust. Exclusions are only
   those in the divergence ledger below. Sequencing exists (see plan phases); feature cuts do not.

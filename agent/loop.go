@@ -261,7 +261,10 @@ func streamAssistantResponse(
 		tools := make([]ai.Tool, 0, len(loopContext.Tools))
 		for _, tool := range loopContext.Tools {
 			spec := tool.Spec()
-			tools = append(tools, ai.Tool{Name: spec.Name, Label: spec.Label, Description: spec.Description, Parameters: spec.Parameters})
+			tools = append(tools, ai.Tool{
+				Name: spec.Name, Label: spec.Label, Description: spec.Description, Parameters: spec.Parameters,
+				ConstrainedSampling: spec.ConstrainedSampling,
+			})
 		}
 		llmContext.Tools = &tools
 	}

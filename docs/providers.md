@@ -14,12 +14,15 @@ providers:
 - `openai-codex` — ChatGPT Plus/Pro (Codex)
 - `github-copilot` — GitHub Copilot (press Enter for github.com, or enter an Enterprise domain)
 - `xai` — Grok / X subscription
+- `openrouter` — OpenRouter credits through a PKCE-minted, user-controlled API key
+- `kimi-coding` — Kimi for Coding through device authorization
 
-Tokens auto-refresh when they expire. Clear them with `pigo logout` / `/logout`.
+Tokens auto-refresh when they expire. OpenRouter instead mints a non-expiring API key. Clear
+stored credentials with `pigo logout` / `/logout`.
 
 ## API keys (environment variables)
 
-Set the provider's key in the environment before launching pi:
+Set the provider's key in the environment before launching pigo:
 
 ```sh
 export OPENAI_API_KEY=sk-...

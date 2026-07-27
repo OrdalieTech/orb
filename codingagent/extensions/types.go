@@ -576,18 +576,19 @@ type ToolRenderContext struct {
 }
 
 type ToolDefinition struct {
-	Name             string
-	Label            string
-	Description      string
-	PromptSnippet    string
-	PromptGuidelines []string
-	Parameters       ai.JSONSchema
-	RenderShell      RenderShell
-	PrepareArguments agent.PrepareArgumentsFunc
-	ExecutionMode    agent.ToolExecutionMode
-	Execute          func(context.Context, string, any, agent.AgentToolUpdateCallback, Context) (agent.AgentToolResult, error)
-	RenderCall       func(any, Theme, ToolRenderContext) Component
-	RenderResult     func(agent.AgentToolResult, ToolRenderResultOptions, Theme, ToolRenderContext) Component
+	Name                string
+	Label               string
+	Description         string
+	PromptSnippet       string
+	PromptGuidelines    []string
+	Parameters          ai.JSONSchema
+	ConstrainedSampling *ai.ConstrainedSamplingConfig
+	RenderShell         RenderShell
+	PrepareArguments    agent.PrepareArgumentsFunc
+	ExecutionMode       agent.ToolExecutionMode
+	Execute             func(context.Context, string, any, agent.AgentToolUpdateCallback, Context) (agent.AgentToolResult, error)
+	RenderCall          func(any, Theme, ToolRenderContext) Component
+	RenderResult        func(agent.AgentToolResult, ToolRenderResultOptions, Theme, ToolRenderContext) Component
 }
 
 type RenderShell string

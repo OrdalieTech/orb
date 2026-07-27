@@ -148,14 +148,15 @@ type registrationState struct {
 }
 
 type wireToolDefinition struct {
-	Name             string                  `json:"name"`
-	Label            string                  `json:"label"`
-	Description      string                  `json:"description"`
-	PromptSnippet    string                  `json:"promptSnippet,omitempty"`
-	PromptGuidelines []string                `json:"promptGuidelines,omitempty"`
-	Parameters       json.RawMessage         `json:"parameters"`
-	RenderShell      extensions.RenderShell  `json:"renderShell,omitempty"`
-	ExecutionMode    agent.ToolExecutionMode `json:"executionMode,omitempty"`
+	Name                string                        `json:"name"`
+	Label               string                        `json:"label"`
+	Description         string                        `json:"description"`
+	PromptSnippet       string                        `json:"promptSnippet,omitempty"`
+	PromptGuidelines    []string                      `json:"promptGuidelines,omitempty"`
+	Parameters          json.RawMessage               `json:"parameters"`
+	ConstrainedSampling *ai.ConstrainedSamplingConfig `json:"constrainedSampling,omitempty"`
+	RenderShell         extensions.RenderShell        `json:"renderShell,omitempty"`
+	ExecutionMode       agent.ToolExecutionMode       `json:"executionMode,omitempty"`
 }
 
 type wireCommand struct {
@@ -708,14 +709,15 @@ func (manager *Manager) factory(extensionID string) extensions.Factory {
 
 func (manager *Manager) tool(extensionID string, definition wireToolDefinition) extensions.ToolDefinition {
 	return extensions.ToolDefinition{
-		Name:             definition.Name,
-		Label:            definition.Label,
-		Description:      definition.Description,
-		PromptSnippet:    definition.PromptSnippet,
-		PromptGuidelines: append([]string(nil), definition.PromptGuidelines...),
-		Parameters:       ai.JSONSchema(append(json.RawMessage(nil), definition.Parameters...)),
-		RenderShell:      definition.RenderShell,
-		ExecutionMode:    definition.ExecutionMode,
+		Name:                definition.Name,
+		Label:               definition.Label,
+		Description:         definition.Description,
+		PromptSnippet:       definition.PromptSnippet,
+		PromptGuidelines:    append([]string(nil), definition.PromptGuidelines...),
+		Parameters:          ai.JSONSchema(append(json.RawMessage(nil), definition.Parameters...)),
+		ConstrainedSampling: definition.ConstrainedSampling,
+		RenderShell:         definition.RenderShell,
+		ExecutionMode:       definition.ExecutionMode,
 		Execute: func(
 			ctx context.Context,
 			toolCallID string,

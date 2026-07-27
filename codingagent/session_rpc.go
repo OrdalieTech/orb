@@ -758,9 +758,18 @@ func (runtime *SessionRuntime) AbortRetry() {
 	}
 }
 
-// ExecuteBash executes a direct bash command. id, when provided, is included
-// in the bash_execution_update events streamed for each output chunk.
-func (runtime *SessionRuntime) ExecuteBash(ctx context.Context, command string, excludeFromContext *bool, id *string) (tools.BashResult, error) {
+// ExecuteBash executes a direct bash command.
+func (runtime *SessionRuntime) ExecuteBash(ctx context.Context, command string, excludeFromContext *bool) (tools.BashResult, error) {
+	return runtime.executeBash(ctx, command, excludeFromContext, nil)
+}
+
+// ExecuteBashWithID includes id in bash_execution_update events streamed for
+// each output chunk.
+func (runtime *SessionRuntime) ExecuteBashWithID(ctx context.Context, command string, excludeFromContext *bool, id *string) (tools.BashResult, error) {
+	return runtime.executeBash(ctx, command, excludeFromContext, id)
+}
+
+func (runtime *SessionRuntime) executeBash(ctx context.Context, command string, excludeFromContext *bool, id *string) (tools.BashResult, error) {
 	if runtime == nil {
 		return tools.BashResult{}, errors.New("codingagent: nil session runtime")
 	}

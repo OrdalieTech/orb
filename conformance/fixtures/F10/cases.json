@@ -3049,7 +3049,7 @@
             "maxTokens": 300,
             "reasoning": "high",
             "cacheRetention": "none",
-            "sessionId": "019f9e9a-9b59-761f-aba8-780bf1618b96"
+            "sessionId": "00000000-0000-7000-8000-000000000000"
           }
         },
         "output": "summary output"
@@ -3095,7 +3095,7 @@
           "options": {
             "maxTokens": 160,
             "cacheRetention": "none",
-            "sessionId": "019f9e9a-9b59-761f-aba8-7cb36c872645"
+            "sessionId": "00000000-0000-7000-8000-000000000000"
           }
         },
         "output": "summary output"
@@ -3141,7 +3141,7 @@
           "options": {
             "maxTokens": 160,
             "cacheRetention": "none",
-            "sessionId": "019f9e9a-9b59-761f-aba8-839857ca0b8b"
+            "sessionId": "00000000-0000-7000-8000-000000000000"
           }
         },
         "output": "summary output"
@@ -3284,7 +3284,7 @@
             "signal": "<signal>",
             "maxTokens": 2048,
             "cacheRetention": "none",
-            "sessionId": "019f9e9a-9b59-761f-aba8-87552931eb84"
+            "sessionId": "00000000-0000-7000-8000-000000000000"
           }
         },
         "output": {
@@ -3401,7 +3401,7 @@
               "maxTokens": 300,
               "reasoning": "high",
               "cacheRetention": "none",
-              "sessionId": "019f9e9a-9b5a-7fa1-b6fb-b134168595f5"
+              "sessionId": "00000000-0000-7000-8000-000000000000"
             }
           },
           {
@@ -3423,7 +3423,7 @@
               "maxTokens": 200,
               "reasoning": "high",
               "cacheRetention": "none",
-              "sessionId": "019f9e9a-9b5a-7fa1-b6fb-b48366136135"
+              "sessionId": "00000000-0000-7000-8000-000000000000"
             }
           }
         ],

@@ -50,8 +50,9 @@ func TestRunLoopParallelCompletionAndSourceOrder(t *testing.T) {
 	var secondFinishedOnce sync.Once
 	tool := AgentToolFunc{
 		AgentToolSpec: AgentToolSpec{
-			Name:       "echo",
-			Parameters: jsonschema.Schema(`{"type":"object","required":["value"],"properties":{"value":{"type":"string"}}}`),
+			Name:                "echo",
+			Parameters:          jsonschema.Schema(`{"type":"object","required":["value"],"properties":{"value":{"type":"string"}}}`),
+			ConstrainedSampling: &ai.ConstrainedSamplingConfig{Type: ai.ConstrainedSamplingJSONSchema, Strict: ai.ConstrainedSamplingPrefer},
 		},
 		Run: func(_ context.Context, _ string, params any, _ AgentToolUpdateCallback) (AgentToolResult, error) {
 			value := params.(map[string]any)["value"].(string)
@@ -98,6 +99,11 @@ func TestRunLoopParallelCompletionAndSourceOrder(t *testing.T) {
 	}
 	if len(responses.contexts) != 2 {
 		t.Fatalf("provider calls = %d", len(responses.contexts))
+	}
+	tools := responses.contexts[0].Tools
+	if tools == nil || len(*tools) != 1 || (*tools)[0].ConstrainedSampling == nil ||
+		(*tools)[0].ConstrainedSampling.Strict != ai.ConstrainedSamplingPrefer {
+		t.Fatalf("provider tools = %#v", tools)
 	}
 	secondContext := responses.contexts[1]
 	if got := len(secondContext.Messages); got != 4 {
