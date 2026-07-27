@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/OrdalieTech/pigo/agent"
 	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/tui"
 )
 
 var todoSchema = ai.JSONSchema(`{"type":"object","required":["items"],"properties":{"items":{"type":"array","description":"The complete task list. Every call replaces the previous list, so resend unchanged tasks.","items":{"type":"object","required":["text","status"],"properties":{"text":{"type":"string","description":"Short imperative description of one task."},"status":{"type":"string","enum":["pending","in_progress","done"],"description":"Task state; keep at most one task in_progress."}}}}}}`)
@@ -23,6 +25,70 @@ type todoItem struct {
 	Status string `json:"status"`
 }
 
+type taskWidgetTheme interface {
+	FG(color, text string) string
+}
+
+type taskWidget struct {
+	mu       sync.Mutex
+	items    []todoItem
+	expanded bool
+	host     extensions.UIHost
+	theme    taskWidgetTheme
+}
+
+func newTaskWidget(items []todoItem, host extensions.UIHost, theme taskWidgetTheme) *taskWidget {
+	return &taskWidget{items: append([]todoItem(nil), items...), host: host, theme: theme}
+}
+
+func (widget *taskWidget) Invalidate() {}
+
+func (widget *taskWidget) Render(width int) []string {
+	if width <= 0 {
+		return nil
+	}
+	widget.mu.Lock()
+	expanded := widget.expanded
+	widget.mu.Unlock()
+	marker := "▸ "
+	if expanded {
+		marker = "▾ "
+	}
+	headerText := marker + renderTaskSummary(widget.items)
+	if expanded && widget.theme != nil {
+		headerText = widget.theme.FG("dim", headerText)
+	}
+	headerPadding := min(1, max(0, (width-1)/2))
+	header := tui.NewTruncatedText(headerText, headerPadding, 0).Render(width)
+	if !expanded {
+		return header
+	}
+	taskLines := strings.Split(renderTasks(widget.items), "\n")
+	if widget.theme != nil {
+		for index := range taskLines {
+			taskLines[index] = widget.theme.FG("dim", taskLines[index])
+		}
+	}
+	listPadding := min(4, max(0, (width-1)/2))
+	return append(header, tui.NewText(strings.Join(taskLines, "\n"), listPadding, 0, nil).Render(width)...)
+}
+
+func (widget *taskWidget) HandleMouse(event tui.MouseEvent) bool {
+	if event.Type != tui.MousePress || event.Button != 0 {
+		return false
+	}
+	if event.Clicks > 1 {
+		return true
+	}
+	widget.mu.Lock()
+	widget.expanded = !widget.expanded
+	widget.mu.Unlock()
+	if widget.host != nil {
+		widget.host.Invalidate()
+	}
+	return true
+}
+
 func tasksExtension() extensions.Factory {
 	return func(api extensions.API) error {
 		show := func(ctx extensions.Context, items []todoItem) {
@@ -30,7 +96,14 @@ func tasksExtension() extensions.Factory {
 				ctx.UI().SetWidget("tasks", nil, nil)
 				return
 			}
-			ctx.UI().SetWidget("tasks", &extensions.Widget{Lines: strings.Split(renderTasks(items), "\n")}, nil)
+			summary := renderTaskSummary(items)
+			widget := &extensions.Widget{Lines: []string{summary}}
+			if ctx.Mode() == extensions.ModeTUI {
+				widget.Factory = func(host extensions.UIHost, theme extensions.Theme) extensions.Component {
+					return newTaskWidget(items, host, theme)
+				}
+			}
+			ctx.UI().SetWidget("tasks", widget, nil)
 		}
 		// The list lives in tool-result details, as upstream todo.ts does, so a
 		// resumed or branched session shows the list that branch actually has.
@@ -41,8 +114,29 @@ func tasksExtension() extensions.Factory {
 		}
 		api.On(extensions.EventSessionStart, restore)
 		api.On(extensions.EventSessionTree, restore)
+		api.RegisterCommand("tasks", extensions.Command{
+			Description: "Show all tasks on the current branch",
+			Handler: func(ctx context.Context, _ string, command extensions.CommandContext) error {
+				if command.Mode() != extensions.ModeTUI {
+					command.UI().Notify("/tasks requires interactive mode", extensions.NotifyError)
+					return nil
+				}
+				_, _, err := command.UI().Select(ctx, renderTaskPanel(todosFromBranch(command.SessionManager())), []string{"Close"}, nil)
+				return err
+			},
+		})
 		api.RegisterTool(extensions.ToolDefinition{
 			Name: "todo", Label: "Todo", Description: "Replace the current session task list", Parameters: todoSchema,
+			RenderResult: func(result agent.AgentToolResult, options extensions.ToolRenderResultOptions, _ extensions.Theme, _ extensions.ToolRenderContext) extensions.Component {
+				items, ok := todoItemsFromDetails(result.Details)
+				if !ok {
+					return tui.NewText(ai.ContentText(result.Content), 0, 0, nil)
+				}
+				if options.Expanded {
+					return tui.NewText(renderTasks(items), 0, 0, nil)
+				}
+				return tui.NewTruncatedText(renderTaskSummary(items), 0, 0)
+			},
 			Execute: func(_ context.Context, _ string, raw any, _ agent.AgentToolUpdateCallback, ctx extensions.Context) (agent.AgentToolResult, error) {
 				var input todoInput
 				if err := decode(raw, &input); err != nil {
@@ -97,6 +191,72 @@ func todosFromBranch(manager extensions.ReadonlySessionManager) []todoItem {
 		}
 	}
 	return nil
+}
+
+func renderTaskSummary(items []todoItem) string {
+	if len(items) == 0 {
+		return "No tasks."
+	}
+	done, queued := 0, 0
+	current := ""
+	for _, item := range items {
+		switch item.Status {
+		case "done":
+			done++
+		case "pending":
+			queued++
+		case "in_progress":
+			if current == "" {
+				current = item.Text
+			}
+		}
+	}
+	summary := fmt.Sprintf("✓ %d/%d", done, len(items))
+	if current != "" {
+		summary += "  → " + current
+	}
+	if queued > 0 {
+		summary += fmt.Sprintf("  ·  +%d queued", queued)
+	} else if current == "" {
+		summary += "  All tasks complete"
+	}
+	return summary
+}
+
+func renderTaskPanel(items []todoItem) string {
+	if len(items) == 0 {
+		return "No tasks."
+	}
+	done := 0
+	for _, item := range items {
+		if item.Status == "done" {
+			done++
+		}
+	}
+	return fmt.Sprintf("Tasks — %d/%d complete\n\n%s", done, len(items), renderTasks(items))
+}
+
+func todoItemsFromDetails(details any) ([]todoItem, bool) {
+	if details == nil {
+		return nil, false
+	}
+	if input, ok := details.(todoInput); ok {
+		return input.Items, true
+	}
+	if input, ok := details.(*todoInput); ok && input != nil {
+		return input.Items, true
+	}
+	encoded, err := json.Marshal(details)
+	if err != nil {
+		return nil, false
+	}
+	var input struct {
+		Items *[]todoItem `json:"items"`
+	}
+	if json.Unmarshal(encoded, &input) != nil || input.Items == nil {
+		return nil, false
+	}
+	return *input.Items, true
 }
 
 func renderTasks(items []todoItem) string {
