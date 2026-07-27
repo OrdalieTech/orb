@@ -2,6 +2,7 @@ package host
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/OrdalieTech/pigo/agent"
 	"github.com/OrdalieTech/pigo/ai"
+	aiauth "github.com/OrdalieTech/pigo/ai/auth"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
 	"github.com/OrdalieTech/pigo/codingagent/session"
 	"github.com/OrdalieTech/pigo/codingagent/tools"
@@ -18,7 +20,7 @@ import (
 func TestStateSnapshotActionsEventBusAndToolCallVeto(t *testing.T) {
 	pigoExecutable := filepath.Join(t.TempDir(), "pigo")
 	writeExecutable(t, pigoExecutable, "#!/bin/sh\nprintf '%s\\n' 'pigo fixture-version'\n")
-	_, registry, result, cwd := startStateFixtureManager(t, pigoExecutable)
+	manager, registry, result, cwd := startStateFixtureManager(t, pigoExecutable)
 	if len(result.Diagnostics) != 0 || len(result.Errors) != 0 {
 		t.Fatalf("load result = %#v", result)
 	}
@@ -62,9 +64,11 @@ func TestStateSnapshotActionsEventBusAndToolCallVeto(t *testing.T) {
 		},
 		GetThinkingLevel: func() (agent.ThinkingLevel, error) { return agent.ThinkingLow, nil },
 	}
+	model := ai.Model{Provider: "openai-codex", ID: "gpt-auth-probe"}
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{
-		CWD: cwd, Actions: actions,
+		CWD: cwd, Actions: actions, ModelRegistry: stateAuthRegistry{model: model},
 		ContextActions: extensions.ContextActions{
+			GetModel:  func() *ai.Model { return &model },
 			GetSignal: func() context.Context { return callbackSignalContext },
 			Abort:     func() { aborted <- struct{}{} },
 		},
@@ -142,6 +146,26 @@ func TestStateSnapshotActionsEventBusAndToolCallVeto(t *testing.T) {
 	}
 	if got := waitStateMessage(t, messages, "pi-version:"); got != "pi-version:pigo fixture-version" {
 		t.Fatalf("pi shim version message = %q", got)
+	}
+	authCommand := runner.Command("state-auth")
+	if authCommand == nil {
+		t.Fatal("state-auth command was not registered")
+	}
+	if err := authCommand.Handler(context.Background(), "", runner.CreateCommandContext()); err != nil {
+		t.Fatal(err)
+	}
+	if got := waitStateMessage(t, messages, "auth:"); got != "auth:true" {
+		t.Fatalf("model registry auth message = %q", got)
+	}
+	manager.stateHost.mu.RLock()
+	authSnapshot := cloneStateSnapshot(manager.stateHost.snapshots[manager.entries[0].ID])
+	manager.stateHost.mu.RUnlock()
+	encodedSnapshot, err := json.Marshal(authSnapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encodedSnapshot), "codex-secret") || strings.Contains(string(encodedSnapshot), "codex-key") {
+		t.Fatalf("credential leaked into state snapshot: %s", encodedSnapshot)
 	}
 
 	input := map[string]any{"original": true}
@@ -238,6 +262,32 @@ func TestStateSnapshotActionsEventBusAndToolCallVeto(t *testing.T) {
 	case value := <-errorsSeen:
 		t.Fatalf("extension error = %#v", value)
 	default:
+	}
+}
+
+func TestStateModelAuthPreservesExplicitEmptyMaps(t *testing.T) {
+	registry := emptyStateAuthRegistry{}
+	resolved, err := resolveStateModelAuth(context.Background(), registry, ai.Model{Provider: "empty", ID: "model"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(encoded), `{"ok":true,"headers":{},"env":{}}`; got != want {
+		t.Fatalf("request auth = %s, want %s", got, want)
+	}
+	provider, err := registry.ResolveProviderAuth(context.Background(), "empty", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err = json.Marshal(wireStateProviderAuth(provider))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(encoded), `{"auth":{"headers":{}},"env":{}}`; got != want {
+		t.Fatalf("provider auth = %s, want %s", got, want)
 	}
 }
 
@@ -388,6 +438,66 @@ func userText(message agent.AgentMessage) string {
 }
 
 func stringPointer(value string) *string { return &value }
+
+type emptyStateAuthRegistry struct{ extensions.ModelRegistry }
+
+func (emptyStateAuthRegistry) ResolveProviderAuth(context.Context, string, map[string]string) (*aiauth.AuthResult, error) {
+	return &aiauth.AuthResult{Auth: aiauth.ModelAuth{Headers: ai.ProviderHeaders{}}, Env: map[string]string{}}, nil
+}
+
+func (emptyStateAuthRegistry) ResolveModelHeaders(context.Context, ai.Model, map[string]string, ...*string) (*map[string]string, error) {
+	return nil, nil
+}
+
+type stateAuthRegistry struct {
+	extensions.ModelRegistry
+	model ai.Model
+}
+
+func (registry stateAuthRegistry) Error() string { return "" }
+
+func (registry stateAuthRegistry) Models() []ai.Model { return []ai.Model{registry.model} }
+
+func (registry stateAuthRegistry) AvailableWithError(map[string]string) ([]ai.Model, error) {
+	return registry.Models(), nil
+}
+
+func (stateAuthRegistry) RegisteredProviderIDs() []string { return []string{"openai-codex"} }
+
+func (stateAuthRegistry) ProviderDisplayName(string) string { return "OpenAI Codex" }
+
+func (stateAuthRegistry) GetProviderAuthStatus(string, map[string]string) extensions.AuthStatus {
+	return extensions.AuthStatus{Configured: true, Source: "stored"}
+}
+
+func (stateAuthRegistry) IsUsingOAuth(string) bool { return true }
+
+func (stateAuthRegistry) Provider(string) (extensions.Provider, bool) {
+	return extensions.Provider{ID: "openai-codex", Name: "OpenAI Codex", BaseURL: "https://chatgpt.com"}, true
+}
+
+func (stateAuthRegistry) RegisteredProviderConfig(string) (extensions.ProviderConfig, bool) {
+	return extensions.ProviderConfig{}, false
+}
+
+func (stateAuthRegistry) RegisteredNativeProvider(string) (extensions.Provider, bool) {
+	return extensions.Provider{}, false
+}
+
+func (stateAuthRegistry) ResolveProviderAuth(context.Context, string, map[string]string) (*aiauth.AuthResult, error) {
+	key, authorization, baseURL := "codex-key", "Bearer codex-secret", "https://chatgpt.com"
+	return &aiauth.AuthResult{
+		Auth: aiauth.ModelAuth{
+			APIKey: &key, Headers: ai.ProviderHeaders{"Authorization": &authorization}, BaseURL: &baseURL,
+		},
+		Env: map[string]string{"CODEX_ENV": "provider"}, Source: "OAuth",
+	}, nil
+}
+
+func (stateAuthRegistry) ResolveModelHeaders(_ context.Context, _ ai.Model, environment map[string]string, _ ...*string) (*map[string]string, error) {
+	headers := map[string]string{"X-Model": environment["CODEX_ENV"]}
+	return &headers, nil
+}
 
 func waitStateMessage(t *testing.T, messages <-chan string, prefix string) string {
 	t.Helper()

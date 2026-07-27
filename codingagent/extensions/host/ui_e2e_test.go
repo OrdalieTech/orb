@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"reflect"
 	"sync"
 	"testing"
@@ -230,6 +231,33 @@ func (ui *hostUIStub) Custom(ctx context.Context, factory extensions.CustomFacto
 	}
 }
 
+type sdkThemeUIStub struct {
+	extensions.NoopUI
+	rendered []string
+}
+
+func (ui *sdkThemeUIStub) Custom(ctx context.Context, factory extensions.CustomFactory, _ *extensions.CustomOptions) (any, bool, error) {
+	done := make(chan any, 1)
+	host := &stubUIHost{invalidated: make(chan struct{}, 8)}
+	component, err := factory(host, ui.Theme(), stubKeybindings{}, func(value any) { done <- value })
+	if err != nil {
+		return nil, false, err
+	}
+	if disposable, ok := component.(extensions.DisposableComponent); ok {
+		defer disposable.Dispose()
+	}
+	ui.rendered = waitForRender(tContext{ctx}, component, 40, func(lines []string) bool { return len(lines) > 0 })
+	if len(ui.rendered) == 0 {
+		return nil, false, errors.New("SDK-themed component did not render")
+	}
+	select {
+	case value := <-done:
+		return value, true, nil
+	case <-ctx.Done():
+		return nil, false, context.Cause(ctx)
+	}
+}
+
 type tContext struct{ context.Context }
 
 func waitForRender(ctx tContext, component extensions.Component, width int, accept func([]string) bool) []string {
@@ -279,6 +307,60 @@ func (stubKeybindings) Definition(string) extensions.KeybindingDefinition {
 func (stubKeybindings) Conflicts() []extensions.KeybindingConflict { return nil }
 func (stubKeybindings) UserBindings() map[string][]string          { return nil }
 func (stubKeybindings) ResolvedBindings() map[string][]string      { return nil }
+
+func TestHostInitializesSDKGlobalThemeBeforeCustomFactory(t *testing.T) {
+	agentDir := t.TempDir()
+	sdkRoot := filepath.Join(agentDir, "npm", "node_modules", "@earendil-works", "pi-coding-agent")
+	writeFile(t, filepath.Join(sdkRoot, "package.json"), `{"name":"@earendil-works/pi-coding-agent","type":"module","exports":"./dist/index.js"}`, 0o600)
+	writeFile(t, filepath.Join(sdkRoot, "dist", "index.js"), `
+const theme = new Proxy({}, {
+  get(_target, property) {
+    const value = globalThis[Symbol.for("@earendil-works/pi-coding-agent:theme")];
+    if (!value) throw new Error("Theme not initialized. Call initTheme() first.");
+    return value[property];
+  }
+});
+export class BorderedLoader {
+  constructor(_tui, _theme, label) { this.line = theme.fg("muted", label + " esc"); }
+  render() { return [this.line]; }
+  dispose() {}
+}
+`, 0o600)
+	entry := filepath.Join(t.TempDir(), "sdk-theme.mjs")
+	writeFile(t, entry, `
+import { BorderedLoader } from "@earendil-works/pi-coding-agent";
+export default function (pi) {
+  pi.registerCommand("sdk-theme-loader", {
+    async handler(_args, ctx) {
+      const value = await ctx.ui.custom((tui, theme, _keybindings, done) => {
+        const loader = new BorderedLoader(tui, theme, "Loading");
+        queueMicrotask(() => done("mounted"));
+        return loader;
+      });
+      if (value !== "mounted") throw new Error("custom loader did not complete");
+    }
+  });
+}
+`, 0o600)
+	_, registry, _, result, cwd := startFixtureManagerIn(t, agentDir, entry)
+	if len(result.Errors) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("load result = %#v", result)
+	}
+	ui := &sdkThemeUIStub{}
+	runner := extensions.NewRunner(registry, extensions.RunnerOptions{CWD: cwd, Mode: extensions.ModeTUI, UI: ui})
+	command := runner.Command("sdk-theme-loader")
+	if command == nil {
+		t.Fatal("sdk-theme-loader command was not registered")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := command.Handler(ctx, "", runner.CreateCommandContext()); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(ui.rendered, []string{"Loading esc"}) {
+		t.Fatalf("SDK-themed render = %#v", ui.rendered)
+	}
+}
 
 func TestRealHostUISurfaceAndCustomComponent(t *testing.T) {
 	_, registry, _, result, cwd := startFixtureManager(t, fixturePath(t, "ui.mjs"))

@@ -622,6 +622,16 @@ registerHostSection((() => {
 		return String(rendered ?? themeMarker).split(themeMarker).join(String(text));
 	}
 
+	const sdkThemeKeys = [
+		Symbol.for("@earendil-works/pi-coding-agent:theme"),
+		Symbol.for("@mariozechner/pi-coding-agent:theme"),
+	];
+
+	function activateSDKTheme(theme) {
+		for (const key of sdkThemeKeys) globalThis[key] = theme;
+		return theme;
+	}
+
 	function createTheme(snapshot, name) {
 		const value = snapshot ?? {};
 		const theme = {
@@ -657,7 +667,7 @@ registerHostSection((() => {
 		if (!renderer) throw new Error(`unknown ${params.kind} renderer ${params.customType}`);
 		const options = { expanded: params.expanded === true };
 		if (typeof params.outputPad === "number") options.outputPad = params.outputPad;
-		const component = renderer(params.value, options, createTheme(params.theme));
+		const component = renderer(params.value, options, activateSDKTheme(createTheme(params.theme)));
 		if (component && typeof component.then === "function") throw new TypeError("extension renderer must return synchronously");
 		if (component == null) return { present: false };
 		if (typeof component.render !== "function") throw new TypeError("extension renderer component has no render function");
@@ -809,7 +819,7 @@ registerHostSection((() => {
 			disposed: false,
 		};
 		const tui = createTUI(record, params.width, params.height);
-		const theme = createTheme(params.theme);
+		const theme = activateSDKTheme(createTheme(params.theme));
 		const keybindings = createKeybindings(params.keybindings);
 		let component;
 		if (retained.kind === "custom") {
@@ -978,6 +988,7 @@ registerHostSection((() => {
 		const context = { value, state };
 		const snapshot = value.ui ?? { editorText: "", toolsExpanded: false, themes: [] };
 		const themeByName = new Map((snapshot.themes ?? []).map((entry) => [entry.name, entry]));
+		activateSDKTheme(createTheme(snapshot.theme));
 		const ui = {
 			notify(message, type) { sendUIEvent(context, "notify", { message: String(message), ...(type === undefined ? {} : { notifyType: type }) }); },
 			select(title, options, dialogOptions) {
@@ -1056,13 +1067,14 @@ registerHostSection((() => {
 				if (!name && theme?.__pigoHostTheme === true) return { success: true };
 				if (!name || !themeByName.has(name)) return { success: false, error: `Theme not found: ${name ?? "unknown"}` };
 				snapshot.theme = themeByName.get(name).theme;
+				activateSDKTheme(createTheme(snapshot.theme, name));
 				sendUIEvent(context, "setTheme", { themeName: name });
 				return { success: true };
 			},
 			getToolsExpanded: () => snapshot.toolsExpanded === true,
 			setToolsExpanded(expanded) { snapshot.toolsExpanded = Boolean(expanded); sendUIEvent(context, "setToolsExpanded", { expanded: snapshot.toolsExpanded }); },
 		};
-		Object.defineProperty(ui, "theme", { enumerable: true, get: () => createTheme(snapshot.theme) });
+		Object.defineProperty(ui, "theme", { enumerable: true, get: () => activateSDKTheme(createTheme(snapshot.theme)) });
 		return Object.freeze(ui);
 	}
 
@@ -1355,6 +1367,13 @@ registerHostSection((() => {
 		});
 	}
 
+	function modelRegistryError(error) {
+		const message = errorValue(error).message;
+		return message.includes("authHeader requires a resolved API key")
+			? "No API key found for the model provider"
+			: message;
+	}
+
 	function createModelRegistry(state) {
 		return Object.freeze({
 			refresh: async () => {},
@@ -1370,11 +1389,30 @@ registerHostSection((() => {
 			getProviderAuthStatus(provider) {
 				return clone(state.stateSnapshot.modelRegistry?.providers?.[provider]?.authStatus ?? { configured: false });
 			},
-			async getApiKeyAndHeaders() {
-				return { ok: false, error: "credentials are unavailable in the extension host snapshot" };
+			async getApiKeyAndHeaders(model) {
+				try {
+					return await stateAction(state, "model_registry_get_api_key_and_headers", { model });
+				} catch (error) {
+					const message = modelRegistryError(error);
+					return {
+						ok: false,
+						error: message === "No API key found for the model provider"
+							? `No API key found for "${model?.provider ?? "unknown"}"`
+							: message,
+					};
+				}
 			},
-			getApiKeyForProvider: async () => undefined,
-			getProviderAuth: async () => undefined,
+			async getApiKeyForProvider(provider) {
+				try {
+					const result = await stateAction(state, "model_registry_get_provider_auth", { provider: String(provider) });
+					return result?.auth?.apiKey;
+				} catch {
+					return undefined;
+				}
+			},
+			async getProviderAuth(provider) {
+				return (await stateAction(state, "model_registry_get_provider_auth", { provider: String(provider) })) ?? undefined;
+			},
 			getProvider: (provider) => providerView(state, provider),
 			getProviderDisplayName(provider) {
 				return state.stateSnapshot.modelRegistry?.providers?.[provider]?.displayName ?? provider;

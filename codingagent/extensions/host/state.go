@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/OrdalieTech/pigo/agent"
 	"github.com/OrdalieTech/pigo/ai"
+	aiauth "github.com/OrdalieTech/pigo/ai/auth"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
 	"github.com/OrdalieTech/pigo/codingagent/session"
 	"github.com/OrdalieTech/pigo/codingagent/tools"
@@ -122,6 +124,25 @@ type stateProviderSnapshot struct {
 	UsingOAuth       bool                  `json:"usingOAuth"`
 	RegisteredConfig bool                  `json:"registeredConfig"`
 	RegisteredNative bool                  `json:"registeredNative"`
+}
+
+type stateResolvedRequestAuth struct {
+	OK      bool               `json:"ok"`
+	APIKey  *string            `json:"apiKey,omitempty"`
+	Headers *map[string]string `json:"headers,omitempty"`
+	Env     *map[string]string `json:"env,omitempty"`
+}
+
+type stateProviderAuthResult struct {
+	Auth   stateModelAuth     `json:"auth"`
+	Env    *map[string]string `json:"env,omitempty"`
+	Source string             `json:"source,omitempty"`
+}
+
+type stateModelAuth struct {
+	APIKey  *string             `json:"apiKey,omitempty"`
+	Headers *map[string]*string `json:"headers,omitempty"`
+	BaseURL *string             `json:"baseUrl,omitempty"`
 }
 
 type stateBusEnvelope struct {
@@ -726,6 +747,43 @@ func (host *stateHost) runAction(manager *Manager, generation *generation, raw j
 		if err := api.SetThinkingLevel(args.Level); err != nil {
 			return nil, err
 		}
+	case "model_registry_get_provider_auth":
+		var args struct {
+			Provider string `json:"provider"`
+		}
+		if err := json.Unmarshal(request.Args, &args); err != nil {
+			return nil, err
+		}
+		registry, registryErr := host.contextModelRegistry(request.ExtensionID)
+		if registryErr != nil {
+			return nil, registryErr
+		}
+		if args.Provider == "" {
+			return nil, errors.New("model registry auth requires a provider")
+		}
+		resolved, resolveErr := registry.ResolveProviderAuth(ctx, args.Provider, host.environmentMap())
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		result = wireStateProviderAuth(resolved)
+	case "model_registry_get_api_key_and_headers":
+		var args struct {
+			Model ai.Model `json:"model"`
+		}
+		if err := json.Unmarshal(request.Args, &args); err != nil {
+			return nil, err
+		}
+		registry, registryErr := host.contextModelRegistry(request.ExtensionID)
+		if registryErr != nil {
+			return nil, registryErr
+		}
+		if args.Model.Provider == "" {
+			return nil, errors.New("model registry auth requires a model provider")
+		}
+		result, err = resolveStateModelAuth(ctx, registry, args.Model, host.environmentMap())
+		if err != nil {
+			return nil, err
+		}
 	case "abort":
 		contextValue := host.currentContext(request.ExtensionID)
 		if contextValue == nil {
@@ -769,6 +827,112 @@ func (host *stateHost) api(extensionID string) extensions.API {
 	host.mu.RLock()
 	defer host.mu.RUnlock()
 	return host.apis[extensionID]
+}
+
+func (host *stateHost) contextModelRegistry(extensionID string) (extensions.ModelRegistry, error) {
+	contextValue := host.currentContext(extensionID)
+	if contextValue == nil {
+		return nil, errors.New("extension context is not active")
+	}
+	var registry extensions.ModelRegistry
+	if err := callStateAPI(func() { registry = contextValue.ModelRegistry() }); err != nil {
+		return nil, err
+	}
+	if registry == nil {
+		return nil, errors.New("model registry is unavailable")
+	}
+	return registry, nil
+}
+
+func (host *stateHost) environmentMap() map[string]string {
+	host.mu.RLock()
+	environment := append([]string(nil), host.environment...)
+	host.mu.RUnlock()
+	result := make(map[string]string, len(environment))
+	for _, entry := range environment {
+		name, value, ok := strings.Cut(entry, "=")
+		if ok {
+			result[name] = value
+		}
+	}
+	return result
+}
+
+func wireStateProviderAuth(resolved *aiauth.AuthResult) *stateProviderAuthResult {
+	if resolved == nil {
+		return nil
+	}
+	result := &stateProviderAuthResult{
+		Auth:   stateModelAuth{APIKey: cloneStringPointer(resolved.Auth.APIKey), BaseURL: cloneStringPointer(resolved.Auth.BaseURL)},
+		Source: resolved.Source,
+	}
+	if resolved.Auth.Headers != nil {
+		headers := make(map[string]*string, len(resolved.Auth.Headers))
+		for name, value := range resolved.Auth.Headers {
+			headers[name] = cloneStringPointer(value)
+		}
+		result.Auth.Headers = &headers
+	}
+	if resolved.Env != nil {
+		environment := cloneStringMap(resolved.Env)
+		result.Env = &environment
+	}
+	return result
+}
+
+func resolveStateModelAuth(ctx context.Context, registry extensions.ModelRegistry, model ai.Model, environment map[string]string) (stateResolvedRequestAuth, error) {
+	resolved, err := registry.ResolveProviderAuth(ctx, string(model.Provider), environment)
+	if err != nil {
+		return stateResolvedRequestAuth{}, err
+	}
+	var apiKey *string
+	var env *map[string]string
+	var headers *map[string]string
+	if resolved != nil {
+		apiKey = cloneStringPointer(resolved.Auth.APIKey)
+		if resolved.Env != nil {
+			copy := cloneStringMap(resolved.Env)
+			env = &copy
+		}
+		if resolved.Auth.Headers != nil {
+			copy := make(map[string]string, len(resolved.Auth.Headers))
+			for name, value := range resolved.Auth.Headers {
+				if value != nil {
+					copy[name] = *value
+				}
+			}
+			headers = &copy
+		}
+	}
+	headerEnvironment := cloneStringMap(environment)
+	if env != nil {
+		for name, value := range *env {
+			headerEnvironment[name] = value
+		}
+	}
+	configured, err := registry.ResolveModelHeaders(ctx, model, headerEnvironment, apiKey)
+	if err != nil {
+		return stateResolvedRequestAuth{}, err
+	}
+	if configured != nil {
+		if headers == nil {
+			copy := make(map[string]string, len(*configured))
+			headers = &copy
+		}
+		for name, value := range *configured {
+			setStateHeader(*headers, name, value)
+		}
+	}
+	return stateResolvedRequestAuth{OK: true, APIKey: apiKey, Headers: headers, Env: env}, nil
+}
+
+func setStateHeader(headers map[string]string, name, value string) {
+	for existing := range headers {
+		if strings.EqualFold(existing, name) {
+			delete(headers, existing)
+		}
+	}
+	headers[name] = value
 }
 
 func (host *stateHost) refreshCurrent(manager *Manager, extensionID string, contextValue extensions.Context) {
