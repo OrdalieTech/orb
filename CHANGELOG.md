@@ -8,6 +8,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Added
 
+- Anthropic simple streams accept an optional upstream client, preserving Pigo's tool and reasoning mapping for hosts that use AnthropicVertex or another client-owned transport.
 - Embedders can collect `CompleteSimple` directly and use portable `auto`, `none`, or `required` tool choice through `SimpleStreamOptions`; forcing a named tool stays compositionally small by advertising only that tool with `required`.
 - Interactive sessions place transient working/retry/compaction status in the built-in editor’s top border when it fits, with a right-aligned, truncated session-name badge; dialogs, scrolled drafts, and extension-provided editors retain the standard status lane and all existing UI/keybinding contracts.
 - The optional tasks plugin now keeps its persistent widget and collapsed tool results to a one-row current/progress/queue summary, lets the widget expand or collapse on click with dimmed, inset details, and exposes the full branch-aware list through `/tasks` and Ctrl+O expansion; retry statuses count down, and queued messages use one-row truncation with their count and configured dequeue-key hint.
