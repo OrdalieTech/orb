@@ -34,9 +34,22 @@ import { generateWP450Replay } from "./wp450-replay.ts";
 import { generateWP450SessionSelector } from "./wp450-session-selector.ts";
 
 // Goldens are pinned in 256-color mode; upstream capability detection reads
-// COLORTERM (packages/tui/src/terminal-image.ts), so the invoking terminal
-// must never leak truecolor into extraction.
-delete process.env.COLORTERM;
+// COLORTERM and the terminal-identity variables below (packages/tui/src/
+// terminal-image.ts detectCapabilities), so the invoking terminal must never
+// leak truecolor into extraction. GHOSTTY_RESOURCES_DIR alone flips the theme
+// to truecolor even with COLORTERM unset.
+for (const name of [
+	"COLORTERM",
+	"TERM_PROGRAM",
+	"GHOSTTY_RESOURCES_DIR",
+	"GHOSTTY_BIN_DIR",
+	"KITTY_WINDOW_ID",
+	"WEZTERM_PANE",
+	"TMUX",
+]) {
+	delete process.env[name];
+}
+process.env.TERM = "xterm-256color";
 
 const upstreamRoot = process.cwd();
 const outputRoot = path.resolve(

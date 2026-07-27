@@ -39,8 +39,8 @@ import (
 var version = "0.1.0-dev"
 
 const (
-	upstreamVersion        = "0.81.1"
-	upstreamCommit         = "20be4b18d4c57487f8993d2762bace129f0cf7c6"
+	upstreamVersion        = "0.82.1"
+	upstreamCommit         = "b4f293684bba718d59cc1157679bcf6157b3a7f5"
 	latestReleaseURL       = "https://api.github.com/repos/OrdalieTech/pigo/releases/latest"
 	versionCheckTimeout    = 10 * time.Second
 	selfUpdateCheckTimeout = 3 * time.Second
