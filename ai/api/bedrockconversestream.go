@@ -212,6 +212,9 @@ func StreamSimpleBedrockConverse(
 	}
 	base := buildBaseStreamOptions(model, requestContext, options)
 	bedrockOptions := &BedrockConverseStreamOptions{StreamOptions: base}
+	if choice := simpleToolChoice(options, "any"); choice != "" {
+		bedrockOptions.ToolChoice = &BedrockToolChoice{Type: choice}
+	}
 	if options == nil || options.Reasoning == nil {
 		return StreamBedrockConverseWithOptions(ctx, model, requestContext, bedrockOptions)
 	}

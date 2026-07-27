@@ -401,6 +401,7 @@ func TestSimpleOpenAICompletionsForwardsBaseOptions(t *testing.T) {
 				return nil
 			},
 		},
+		ToolChoice: ai.ToolChoiceRequired,
 	})
 	if !payloadHookCalled || !headersHookCalled || !responseHookCalled {
 		t.Fatalf("hooks called = payload %v, headers %v, response %v", payloadHookCalled, headersHookCalled, responseHookCalled)
@@ -408,11 +409,37 @@ func TestSimpleOpenAICompletionsForwardsBaseOptions(t *testing.T) {
 	if payload["temperature"] != float64(0) || payload["prompt_cache_key"] != sessionID || payload["prompt_cache_retention"] != "24h" || payload["simple_hook"] != true {
 		t.Fatalf("forwarded payload = %#v", payload)
 	}
-	if _, exists := payload["tool_choice"]; exists {
-		t.Fatalf("typed simple options unexpectedly emitted tool_choice: %v", payload["tool_choice"])
+	if payload["tool_choice"] != "required" {
+		t.Fatalf("tool choice = %v, want required", payload["tool_choice"])
 	}
 	if headers.Get("Authorization") != "Bearer "+apiKey || headers.Get("X-Simple-Option") != "" || headers.Get("X-Extension") != "extension" {
 		t.Fatalf("forwarded headers = %#v", headers)
+	}
+}
+
+func TestCompleteSimpleCollects(t *testing.T) {
+	previousClient := openAIHTTPClient
+	openAIHTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body: io.NopCloser(strings.NewReader(
+				"data: {\"id\":\"chatcmpl-simple\",\"choices\":[{\"delta\":{\"content\":\"done\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+			)),
+			Request: request,
+		}, nil
+	})}
+	t.Cleanup(func() { openAIHTTPClient = previousClient })
+
+	key := "test-key"
+	message, err := CompleteSimple(context.Background(), simpleOpenAICompletionsModel(), ai.Context{}, &ai.SimpleStreamOptions{
+		StreamOptions: ai.StreamOptions{APIKey: &key},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := message.Content[0].(*ai.TextContent).Text; got != "done" {
+		t.Fatalf("text = %q, want done", got)
 	}
 }
 

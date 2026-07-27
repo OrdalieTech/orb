@@ -36,6 +36,23 @@ func buildBaseStreamOptions(model *ai.Model, requestContext ai.Context, options 
 	return base
 }
 
+func simpleToolChoice(options *ai.SimpleStreamOptions, required string) string {
+	if options == nil {
+		return ""
+	}
+	if options.ToolChoice == ai.ToolChoiceRequired {
+		return required
+	}
+	return string(options.ToolChoice)
+}
+
+func simpleToolChoiceAny(options *ai.SimpleStreamOptions, required string) any {
+	if choice := simpleToolChoice(options, required); choice != "" {
+		return choice
+	}
+	return nil
+}
+
 func clampMaxTokensToContext(model *ai.Model, requestContext ai.Context, maxTokens float64) float64 {
 	if model.ContextWindow <= 0 {
 		return max(minimumMaxTokens, maxTokens)

@@ -25,6 +25,7 @@ type AzureOpenAIResponsesOptions struct {
 	ai.StreamOptions
 	ReasoningEffort     *string `json:"reasoningEffort,omitempty"`
 	ReasoningSummary    *string `json:"reasoningSummary,omitempty"`
+	ToolChoice          any     `json:"toolChoice,omitempty"`
 	AzureAPIVersion     *string `json:"azureApiVersion,omitempty"`
 	AzureResourceName   *string `json:"azureResourceName,omitempty"`
 	AzureBaseURL        *string `json:"azureBaseUrl,omitempty"`
@@ -66,7 +67,7 @@ func StreamSimpleAzureOpenAIResponses(
 		effort = &value
 	}
 	return StreamAzureOpenAIResponsesWithOptions(ctx, model, requestContext, &AzureOpenAIResponsesOptions{
-		StreamOptions: base, ReasoningEffort: effort,
+		StreamOptions: base, ReasoningEffort: effort, ToolChoice: simpleToolChoiceAny(options, "required"),
 	})
 }
 
@@ -339,6 +340,9 @@ func buildAzureOpenAIResponsesPayload(
 		if err != nil {
 			return nil, err
 		}
+	}
+	if options != nil {
+		payload.ToolChoice = options.ToolChoice
 	}
 	applyAzureOpenAIReasoning(payload, model, options)
 	return payload, nil

@@ -162,6 +162,7 @@ func StreamSimplePiMessages(
 	if options != nil {
 		piOptions.StreamOptions = options.StreamOptions
 		piOptions.Reasoning = options.Reasoning
+		piOptions.ToolChoice = simpleToolChoiceAny(options, "required")
 	}
 	return StreamPiMessagesWithOptions(ctx, model, requestContext, piOptions)
 }

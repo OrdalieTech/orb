@@ -44,3 +44,17 @@ func StreamSimple(
 		return nil, fmt.Errorf("ai: unsupported API %q", model.API)
 	}
 }
+
+// CompleteSimple collects StreamSimple into its terminal assistant message.
+func CompleteSimple(
+	ctx context.Context,
+	model *ai.Model,
+	requestContext ai.Context,
+	options *ai.SimpleStreamOptions,
+) (*ai.AssistantMessage, error) {
+	stream, err := StreamSimple(ctx, model, requestContext, options)
+	if err != nil {
+		return nil, err
+	}
+	return ai.Collect(stream)
+}
