@@ -629,18 +629,6 @@ func convertResponsesToolsWithOptions(tools []ai.Tool, options responsesToolOpti
 	return result, nil
 }
 
-func convertResponsesMessages(
-	model *ai.Model,
-	requestContext ai.Context,
-	deferredTools map[string]ai.Tool,
-	supportsDeveloperRole bool,
-) ([]any, error) {
-	return convertResponsesMessagesWithOptions(model, requestContext, deferredTools, responsesMessageOptions{
-		supportsDeveloperRole: supportsDeveloperRole,
-		toolOptions:           responsesToolOptions{supportsStrictMode: true},
-	})
-}
-
 func convertResponsesMessagesWithOptions(
 	model *ai.Model,
 	requestContext ai.Context,

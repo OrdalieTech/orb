@@ -940,14 +940,6 @@ func convertOpenAICompletionsUserMessage(message *ai.UserMessage) (map[string]an
 	return map[string]any{"role": "user", "content": content}, true
 }
 
-func convertOpenAICompletionsAssistantMessage(
-	model *ai.Model,
-	message *ai.AssistantMessage,
-	compat resolvedOpenAICompletionsCompat,
-) (map[string]any, bool, error) {
-	return convertOpenAICompletionsAssistantMessageWithGrammar(model, message, compat, nil)
-}
-
 func convertOpenAICompletionsAssistantMessageWithGrammar(
 	model *ai.Model,
 	message *ai.AssistantMessage,

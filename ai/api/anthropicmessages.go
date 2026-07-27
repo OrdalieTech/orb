@@ -1313,10 +1313,6 @@ func newAnthropicStreamProcessor(
 	}
 }
 
-func (processor *anthropicStreamProcessor) handle(eventName string, data []byte) error {
-	return processor.handleSSE(eventName, data, nil)
-}
-
 func (processor *anthropicStreamProcessor) handleSSE(eventName string, data []byte, raw []string) error {
 	if eventName == "error" {
 		return errors.New(string(data))
