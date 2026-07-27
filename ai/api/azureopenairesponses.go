@@ -8,9 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/OrdalieTech/pigo/ai"
 )
@@ -388,10 +386,6 @@ func postAzureOpenAIStream(
 	// api-version. If the configured proxy URL already has a query, /responses
 	// was parsed into that query and is discarded with it.
 	endpoint.RawQuery = url.Values{"api-version": []string{config.apiVersion}}.Encode()
-	maxRetries := 0
-	if options != nil && options.MaxRetries != nil {
-		maxRetries = max(0, *options.MaxRetries)
-	}
 	headers := copyModelHeaders(model)
 	headers.Set("Content-Type", "application/json")
 	headers.Set("Accept", "application/json")
@@ -407,7 +401,10 @@ func postAzureOpenAIStream(
 	if err != nil {
 		return nil, err
 	}
-	for attempt := 0; ; attempt++ {
+	// Upstream 7af8533c: the bespoke retry loop is replaced by the shared
+	// wrapper, which owns classification, backoff and the abort signal.
+	var lastResponse *http.Response
+	response, err := retryProviderRequest(ctx, options, func() (*http.Response, error) {
 		request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(body))
 		if err != nil {
 			return nil, err
@@ -415,81 +412,37 @@ func postAzureOpenAIStream(
 		for name, values := range headers {
 			request.Header[name] = append([]string(nil), values...)
 		}
-		response, requestErr := httpClient.Do(request)
-		if attempt < maxRetries && shouldRetryAzureOpenAI(response, requestErr) {
-			if response != nil && response.Body != nil {
-				_ = response.Body.Close()
-			}
-			if err := waitAzureOpenAIRetry(ctx, response, attempt); err != nil {
-				return response, err
-			}
-			continue
+		attempt, requestErr := httpClient.Do(request)
+		if lastResponse != nil && lastResponse != attempt && lastResponse.Body != nil {
+			_ = lastResponse.Body.Close()
 		}
+		lastResponse = attempt
 		if requestErr != nil {
-			return response, requestErr
+			return attempt, requestErr
 		}
-		if response == nil {
+		if attempt == nil {
 			return nil, errors.New("ai/api: Azure OpenAI API returned no HTTP response")
 		}
-		if response.StatusCode >= http.StatusBadRequest {
-			contents, readErr := io.ReadAll(response.Body)
-			_ = response.Body.Close()
+		if attempt.StatusCode >= http.StatusBadRequest {
+			contents, readErr := io.ReadAll(attempt.Body)
+			_ = attempt.Body.Close()
 			if readErr != nil {
-				return response, readErr
+				return attempt, readErr
 			}
-			return response, newOpenAIStatusError(response.StatusCode, contents)
+			return attempt, &retryableHTTPStatusError{
+				status:  attempt.StatusCode,
+				headers: attempt.Header,
+				inner:   newOpenAIStatusError(attempt.StatusCode, contents),
+			}
 		}
-		return response, nil
-	}
-}
-
-func shouldRetryAzureOpenAI(response *http.Response, err error) bool {
+		return attempt, nil
+	})
 	if err != nil {
-		return true
-	}
-	if value := response.Header.Get("x-should-retry"); value == "true" {
-		return true
-	} else if value == "false" {
-		return false
-	}
-	return response.StatusCode == http.StatusRequestTimeout || response.StatusCode == http.StatusConflict ||
-		response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= http.StatusInternalServerError
-}
-
-func waitAzureOpenAIRetry(ctx context.Context, response *http.Response, attempt int) error {
-	delay := azureOpenAIRetryAfter(response)
-	if delay < 0 {
-		delay = 500 * time.Millisecond * time.Duration(1<<min(attempt, 4))
-	}
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
-}
-
-func azureOpenAIRetryAfter(response *http.Response) time.Duration {
-	if response == nil {
-		return -1
-	}
-	if value := response.Header.Get("retry-after-ms"); value != "" {
-		if milliseconds, err := strconv.ParseFloat(value, 64); err == nil && milliseconds >= 0 && milliseconds <= 60_000 {
-			return time.Duration(milliseconds * float64(time.Millisecond))
+		var statusError *retryableHTTPStatusError
+		if errors.As(err, &statusError) {
+			return response, statusError.inner
 		}
+		return response, err
 	}
-	if value := response.Header.Get("retry-after"); value != "" {
-		if seconds, err := strconv.ParseFloat(value, 64); err == nil && seconds >= 0 && seconds <= 60 {
-			return time.Duration(seconds * float64(time.Second))
-		}
-		if retryAt, err := http.ParseTime(value); err == nil {
-			delay := time.Until(retryAt)
-			if delay >= 0 && delay <= time.Minute {
-				return delay
-			}
-		}
-	}
-	return -1
+	return response, nil
 }

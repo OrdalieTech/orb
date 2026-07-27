@@ -475,10 +475,9 @@ func postOpenAIStream(
 		option.WithBaseURL(model.BaseURL),
 		option.WithHTTPClient(httpClient),
 	)
+	// Upstream 7af8533c: the SDK runs with maxRetries 0 and retryProviderRequest
+	// owns retrying, so the backoff honours the abort signal.
 	requestOptions := []option.RequestOption{option.WithMaxRetries(0)}
-	if options != nil && options.MaxRetries != nil {
-		requestOptions[0] = option.WithMaxRetries(*options.MaxRetries)
-	}
 	for name, values := range headers {
 		if len(values) == 0 {
 			requestOptions = append(requestOptions, option.WithHeaderDel(name))
@@ -487,8 +486,17 @@ func postOpenAIStream(
 		requestOptions = append(requestOptions, option.WithHeader(name, values[len(values)-1]))
 	}
 
-	var response *http.Response
-	if err := client.Post(ctx, path, json.RawMessage(body), &response, requestOptions...); err != nil {
+	var lastResponse *http.Response
+	response, err := retryProviderRequest(ctx, options, func() (*http.Response, error) {
+		var attempt *http.Response
+		postErr := client.Post(ctx, path, json.RawMessage(body), &attempt, requestOptions...)
+		if lastResponse != nil && lastResponse != attempt && lastResponse.Body != nil {
+			_ = lastResponse.Body.Close()
+		}
+		lastResponse = attempt
+		return attempt, postErr
+	})
+	if err != nil {
 		return response, normalizeOpenAIRequestError(response, err)
 	}
 	if response == nil {

@@ -97,11 +97,10 @@ func generateOpenRouterImages(
 		option.WithBaseURL(model.BaseURL),
 		option.WithHTTPClient(openAIHTTPClient),
 	)
+	// Upstream 7af8533c: the SDK runs with maxRetries 0 and retryProviderRequest
+	// owns retrying.
 	requestOptions := []option.RequestOption{option.WithMaxRetries(0)}
 	if options != nil {
-		if options.MaxRetries != nil {
-			requestOptions[0] = option.WithMaxRetries(*options.MaxRetries)
-		}
 		if options.TimeoutMS != nil {
 			requestOptions = append(requestOptions, option.WithRequestTimeout(time.Duration(*options.TimeoutMS)*time.Millisecond))
 		}
@@ -122,8 +121,17 @@ func generateOpenRouterImages(
 		requestOptions = append(requestOptions, option.WithHeader(name, values[len(values)-1]))
 	}
 
-	var response *http.Response
-	if err := client.Post(ctx, "chat/completions", json.RawMessage(body), &response, requestOptions...); err != nil {
+	var lastResponse *http.Response
+	response, err := retryProviderRequest(ctx, imagesStreamOptions(options), func() (*http.Response, error) {
+		var attempt *http.Response
+		postErr := client.Post(ctx, "chat/completions", json.RawMessage(body), &attempt, requestOptions...)
+		if lastResponse != nil && lastResponse != attempt && lastResponse.Body != nil {
+			_ = lastResponse.Body.Close()
+		}
+		lastResponse = attempt
+		return attempt, postErr
+	})
+	if err != nil {
 		return normalizeOpenAIRequestError(response, err)
 	}
 	if response == nil {

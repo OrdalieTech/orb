@@ -1065,11 +1065,10 @@ func postAnthropicStream(
 	if err != nil {
 		return nil, fmt.Errorf("encode Anthropic request: %w", err)
 	}
+	// Upstream 7af8533c: the SDK runs with maxRetries 0 and retryProviderRequest
+	// owns retrying, so the backoff honours the abort signal.
 	requestOptions := []option.RequestOption{option.WithMaxRetries(0)}
 	if options != nil {
-		if options.MaxRetries != nil {
-			requestOptions[0] = option.WithMaxRetries(*options.MaxRetries)
-		}
 		if options.TimeoutMS != nil {
 			requestOptions = append(requestOptions, option.WithRequestTimeout(time.Duration(*options.TimeoutMS)*time.Millisecond))
 		}
@@ -1107,8 +1106,17 @@ func postAnthropicStream(
 		created := anthropic.NewClient(clientOptions...)
 		client = &created
 	}
-	var response *http.Response
-	if err := client.Post(ctx, "v1/messages", json.RawMessage(body), &response, requestOptions...); err != nil {
+	var lastResponse *http.Response
+	response, err := retryProviderRequest(ctx, options, func() (*http.Response, error) {
+		var attempt *http.Response
+		postErr := client.Post(ctx, "v1/messages", json.RawMessage(body), &attempt, requestOptions...)
+		if lastResponse != nil && lastResponse != attempt && lastResponse.Body != nil {
+			_ = lastResponse.Body.Close()
+		}
+		lastResponse = attempt
+		return attempt, postErr
+	})
+	if err != nil {
 		return response, normalizeAnthropicRequestError(response, err)
 	}
 	if response == nil {
