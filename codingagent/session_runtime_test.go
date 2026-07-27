@@ -25,6 +25,17 @@ func userMessage(text string) *ai.UserMessage {
 	return userMessageWithImages(text, nil)
 }
 
+func requireThreeArgumentExecuteBash(func(*SessionRuntime, context.Context, string, *bool) (tools.BashResult, error)) {
+}
+
+func TestSessionRuntimeExecuteBashRetainsThreeArgumentCall(t *testing.T) {
+	requireThreeArgumentExecuteBash((*SessionRuntime).ExecuteBash)
+	_, err := (*SessionRuntime)(nil).ExecuteBash(context.Background(), "true", nil)
+	if err == nil || err.Error() != "codingagent: nil session runtime" {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 type captureBashOperations struct{ env map[string]string }
 
 func (operations *captureBashOperations) Exec(

@@ -126,6 +126,9 @@ function serializableTool(tool, state) {
 		...(tool.promptSnippet === undefined ? {} : { promptSnippet: tool.promptSnippet }),
 		...(tool.promptGuidelines === undefined ? {} : { promptGuidelines: tool.promptGuidelines }),
 		parameters: tool.parameters ?? {},
+		...(tool.constrainedSampling === undefined || tool.constrainedSampling === false
+			? {}
+			: { constrainedSampling: tool.constrainedSampling }),
 		...(tool.renderShell === undefined ? {} : { renderShell: tool.renderShell }),
 		...(tool.executionMode === undefined ? {} : { executionMode: tool.executionMode }),
 	};

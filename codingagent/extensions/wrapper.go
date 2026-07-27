@@ -26,12 +26,13 @@ func WrapRegisteredTools(tools []RegisteredTool, runner *Runner) []agent.AgentTo
 func (tool *registeredAgentTool) Spec() agent.AgentToolSpec {
 	definition := tool.registered.Definition
 	return agent.AgentToolSpec{
-		Name:             definition.Name,
-		Label:            definition.Label,
-		Description:      definition.Description,
-		Parameters:       definition.Parameters,
-		PrepareArguments: definition.PrepareArguments,
-		ExecutionMode:    definition.ExecutionMode,
+		Name:                definition.Name,
+		Label:               definition.Label,
+		Description:         definition.Description,
+		Parameters:          definition.Parameters,
+		ConstrainedSampling: definition.ConstrainedSampling,
+		PrepareArguments:    definition.PrepareArguments,
+		ExecutionMode:       definition.ExecutionMode,
 	}
 }
 

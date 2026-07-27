@@ -84,6 +84,12 @@ function capturedRequest(context: any, options: any, hasSignal = false) {
   const capturedContext = JSON.parse(JSON.stringify(context));
   for (const message of capturedContext.messages ?? []) delete message.timestamp;
   const capturedOptions = { ...options };
+  if (capturedOptions.sessionId !== undefined) {
+    if (typeof capturedOptions.sessionId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(capturedOptions.sessionId)) {
+      throw new Error(`captured sessionId is not UUIDv7: ${String(capturedOptions.sessionId)}`);
+    }
+    capturedOptions.sessionId = "00000000-0000-7000-8000-000000000000";
+  }
   if (hasSignal) capturedOptions.signal = "<signal>";
   else delete capturedOptions.signal;
   return { context: capturedContext, options: capturedOptions };

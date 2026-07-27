@@ -648,6 +648,7 @@ func TestWrappedToolRecordsPurelyAdditiveActivations(t *testing.T) {
 	if err := registry.Register("tools", func(api API) error {
 		api.RegisterTool(ToolDefinition{
 			Name: "loader", Parameters: jsonschema.Schema(`{"type":"object"}`),
+			ConstrainedSampling: &ai.ConstrainedSamplingConfig{Type: ai.ConstrainedSamplingJSONSchema, Strict: ai.ConstrainedSamplingRequire},
 			Execute: func(context.Context, string, any, agent.AgentToolUpdateCallback, Context) (agent.AgentToolResult, error) {
 				activeMu.Lock()
 				active = []string{"loader", "loaded"}
@@ -666,6 +667,9 @@ func TestWrappedToolRecordsPurelyAdditiveActivations(t *testing.T) {
 	}}
 	runner := newRunner(t, registry, RunnerOptions{Actions: actions})
 	wrapped := WrapRegisteredTool(runner.AllRegisteredTools()[0], runner)
+	if sampling := wrapped.Spec().ConstrainedSampling; sampling == nil || sampling.Strict != ai.ConstrainedSamplingRequire {
+		t.Fatalf("constrained sampling = %#v", sampling)
+	}
 	result, err := wrapped.Execute(context.Background(), "call", map[string]any{}, nil)
 	if err != nil || result.AddedToolNames == nil || !reflect.DeepEqual(*result.AddedToolNames, []string{"loaded"}) {
 		t.Fatalf("result = %#v, error = %v", result, err)

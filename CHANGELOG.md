@@ -6,6 +6,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-07-27
+
 ### Added
 
 - Anthropic simple streams accept an optional upstream client, preserving Pigo's tool and reasoning mapping for hosts that use AnthropicVertex or another client-owned transport.
@@ -26,6 +28,9 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Fixed
 
+- Provider-side constrained sampling now survives the complete tool path, including Go agent tools and native or JavaScript extensions, instead of being dropped before the provider request.
+- `SessionRuntime.ExecuteBash` retains its exact three-argument Go signature while the new `ExecuteBashWithID` carries an RPC correlation id; OpenRouter’s callback server now drains its response before shutdown instead of intermittently resetting the browser connection.
+- Upstream fixture extraction validates and normalizes random summary session UUIDs, and the export/shutdown manifests now identify the 0.82.1 sources, restoring deterministic Linux CI.
 - SDK auto-provisioning now also covers package-installed extensions: the ecosystem declares the SDK as a peerDependency (pi's bundling satisfied it implicitly), npm does not materialize absent peers, and conflicting peer ranges across installed packages are tolerated with --legacy-peer-deps. Resolvability up the entry's tree is now the only criterion.
 - pigo no longer resolves the extension SDK from an installed upstream pi. It searched `PATH` for the `pi` executable and pointed extensions at the npm package that owns it, so a machine without pi got a different result from one with it. The SDK is now taken from pigo's own managed npm root, project scope first when the project is trusted, then the user scope. Reading pi's configuration files stays supported; borrowing its code does not. `PIGO_PI_SDK_ROOT` remains as an explicit override for a checkout or vendored copy.
 - JavaScript extensions now run on Node 22.6, where every TypeScript extension previously failed: the module loader returned a string source for a format that release requires a buffer for.
@@ -49,8 +54,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
   provider catalogs in the flat or grouped-by-API shape the checked-out revision expects,
   records the Anthropic provider's resolved credential verbatim so a headers-only resolution is
   captured, derives subscription-provider APIs from the provider factory, and supplies the
-  session scope the `/models` command now reads. `UPSTREAM.lock` still pins 0.81.1; see
-  `docs/sync/reports/2026-07-25.md` for the measured 0.81.1 → 0.82.1 delta and the port work list.
+  session scope the `/models` command now reads. `UPSTREAM.lock` and every committed manifest now
+  pin 0.82.1, with Linux CI regenerating the complete fixture tree before release.
 
 ## [0.4.6] - 2026-07-25
 

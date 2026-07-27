@@ -6,6 +6,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { withOfflineGeneratedCatalog } from "./f3-agent.ts";
+import { writeProviderModelData } from "./upstream-model-data.ts";
 
 const upstreamRoot = process.cwd();
 const binaryArgument = process.argv[2];
@@ -96,27 +97,23 @@ await mkdir(path.dirname(adapterPath), { recursive: true });
 await writeFile(adapterPath, adapter, { mode: 0o755 });
 try {
   await withOfflineGeneratedCatalog(upstreamRoot, async () => {
-    const anthropicCatalog = path.join(upstreamRoot, "packages/ai/src/providers/data/anthropic.json");
-    await writeFile(
-      anthropicCatalog,
-      `${JSON.stringify(
-        {
-          "claude-sonnet-4-5": {
-            id: "claude-sonnet-4-5",
-            name: "Claude Sonnet 4.5",
-            api: "anthropic-messages",
-            provider: "anthropic",
-            baseUrl: "https://api.anthropic.com",
-            reasoning: true,
-            input: ["text", "image"],
-            cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-            contextWindow: 200000,
-            maxTokens: 64000,
-          },
+    await writeProviderModelData(
+      path.join(upstreamRoot, "packages/ai/src/providers"),
+      "anthropic",
+      {
+        "claude-sonnet-4-5": {
+          id: "claude-sonnet-4-5",
+          name: "Claude Sonnet 4.5",
+          api: "anthropic-messages",
+          provider: "anthropic",
+          baseUrl: "https://api.anthropic.com",
+          reasoning: true,
+          input: ["text", "image"],
+          cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+          contextWindow: 200000,
+          maxTokens: 64000,
         },
-        null,
-        2,
-      )}\n`,
+      },
     );
     const rpcClientModule = await import(
       `${pathToFileURL(path.join(upstreamRoot, "packages/coding-agent/src/modes/rpc/rpc-client.ts")).href}?pigo-adapter`

@@ -89,12 +89,13 @@ func WithToolExecutionModel(ctx context.Context, model *ai.Model) context.Contex
 }
 
 type AgentToolSpec struct {
-	Name             string
-	Label            string
-	Description      string
-	Parameters       ai.JSONSchema
-	PrepareArguments PrepareArgumentsFunc
-	ExecutionMode    ToolExecutionMode
+	Name                string
+	Label               string
+	Description         string
+	Parameters          ai.JSONSchema
+	ConstrainedSampling *ai.ConstrainedSamplingConfig
+	PrepareArguments    PrepareArgumentsFunc
+	ExecutionMode       ToolExecutionMode
 }
 
 // AgentTool is the execution seam shared by built-in, extension, and MCP

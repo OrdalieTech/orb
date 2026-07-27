@@ -124,6 +124,7 @@ changes before processing the next agent action.
     "promptSnippet": "Greet a person",
     "promptGuidelines": ["Use hello for greetings."],
     "parameters": {"type":"object","properties":{"name":{"type":"string"}},"required":["name"]},
+    "constrainedSampling": {"type":"json_schema","strict":"prefer"},
     "renderShell": "default",
     "executionMode": "parallel"
   }
@@ -132,7 +133,8 @@ changes before processing the next agent action.
 
 The host retains the JavaScript `execute` callback. Pigo installs a normal Go
 `extensions.ToolDefinition` whose execution closure sends `execute_tool` back to the host.
-`prepareArguments` remains a separately inventoried compatibility surface.
+`constrainedSampling: false` is omitted as upstream's explicit-disable form; object configurations
+are forwarded to the provider. `prepareArguments` remains a separately inventoried compatibility surface.
 
 `register_command` carries `extensionId`, `name`, and an options object containing `description`.
 The host retains the handler; argument completion is outside Phase 1. Pigo installs a normal

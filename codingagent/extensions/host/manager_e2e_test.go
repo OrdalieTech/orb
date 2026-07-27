@@ -114,6 +114,7 @@ export default function (pi: any) {
     label: "Typed local",
     description: "Native TypeScript strip probe",
     parameters: { type: "object", properties: {} },
+    constrainedSampling: { type: "json_schema", strict: "prefer" },
     async execute() { return { content: [{ type: "text", text: "ok" }] }; }
   });
 }
@@ -122,8 +123,12 @@ export default function (pi: any) {
 	if len(result.Diagnostics) != 0 || len(result.Errors) != 0 {
 		t.Fatalf("load result = %#v", result)
 	}
-	if runner.ToolDefinition("typed_local") == nil {
+	definition := runner.ToolDefinition("typed_local")
+	if definition == nil {
 		t.Fatal("typed local extension was not registered")
+	}
+	if sampling := definition.ConstrainedSampling; sampling == nil || sampling.Type != ai.ConstrainedSamplingJSONSchema || sampling.Strict != ai.ConstrainedSamplingPrefer {
+		t.Fatalf("constrained sampling = %#v", sampling)
 	}
 }
 
