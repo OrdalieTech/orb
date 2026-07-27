@@ -251,9 +251,12 @@ their native behavior rather than acquiring a second mode-specific implementatio
 Component factories are retained in the host under generation-scoped `factoryHandle` values.
 Custom takeover adds a `componentHandle` and `customOptions`; pigo invokes the retained factory by
 sending a correlated `ui_component_event` request with `event: "mount"`, the live terminal size,
-theme snapshot, keybindings snapshot, and footer data when applicable. The same request method
-carries keyboard, focus, and editor operations (`input`, `focus`, `set_text`, terminal input, and
-editor autocomplete attachment). The mount response reports whether the component handles input,
+theme snapshot, keybindings snapshot, and footer data when applicable. Before invoking a factory
+or renderer, the host also publishes that snapshot under both SDK-global theme symbols used by the
+current and historical package scopes. SDK components such as `BorderedLoader` therefore observe
+the same theme object passed to the extension factory. The same request method carries keyboard,
+focus, and editor operations (`input`, `focus`, `set_text`, terminal input, and editor autocomplete
+attachment). The mount response reports whether the component handles input,
 tracks `focused`, or requests key-release events so the proxy implements the matching native TUI
 interfaces. Render and dispose notifications use event frames, because pigo never waits
 synchronously for JavaScript rendering.
@@ -379,8 +382,12 @@ upstream facade remains synchronous while the authoritative delta is in flight.
 registrations during extension loading. Runtime operations use a correlated `state_action`
 request with `{extensionId,action,args}`. Actions are `send_message`, `send_user_message`,
 `append_entry`, `set_session_name`, `set_label`, `exec`, `set_active_tools`, `set_model`,
-`set_thinking_level`, `abort`, `shutdown`, and `compact`. The `exec` response is the upstream
-`{stdout,stderr,code,killed}` object; `set_model` returns its boolean selection result. State
+`set_thinking_level`, `model_registry_get_provider_auth`,
+`model_registry_get_api_key_and_headers`, `abort`, `shutdown`, and `compact`. The two model-registry
+actions resolve credentials only from the live context owned by `extensionId` and return them only
+in the correlated response. Credentials are never included in the state snapshot, delta,
+persistence, or diagnostics. The `exec` response is the upstream `{stdout,stderr,code,killed}`
+object; `set_model` returns its boolean selection result. State
 actions are serialized per extension, which preserves JavaScript call order even though void
 facades do not await their acknowledgements. An exec with an `AbortSignal` carries a generation-
 scoped operation id; `state_exec_cancel` cancels the corresponding Go process context and the exec

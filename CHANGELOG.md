@@ -6,6 +6,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Fixed
+
+- JavaScript extension components can use SDK helpers such as `BorderedLoader` without an uninitialized-theme failure, and `ctx.modelRegistry` now resolves request-time credentials through the owning Go context so account-usage extensions no longer report `auth unavailable` for an authenticated provider.
+
 ## [0.4.7] - 2026-07-27
 
 ### Added

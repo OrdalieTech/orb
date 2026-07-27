@@ -51,6 +51,27 @@ export default function stateExtension(pi) {
 		},
 	});
 
+	pi.registerCommand("state-auth", {
+		async handler(_args, ctx) {
+			const provider = await ctx.modelRegistry.getProviderAuth("openai-codex");
+			const model = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
+			const key = await ctx.modelRegistry.getApiKeyForProvider("openai-codex");
+			pi.sendUserMessage(`auth:${[
+				provider?.auth?.apiKey === "codex-key",
+				provider?.auth?.headers?.Authorization === "Bearer codex-secret",
+				provider?.auth?.baseUrl === "https://chatgpt.com",
+				provider?.env?.CODEX_ENV === "provider",
+				provider?.source === "OAuth",
+				model?.ok === true,
+				model?.apiKey === "codex-key",
+				model?.headers?.Authorization === "Bearer codex-secret",
+				model?.headers?.["X-Model"] === "provider",
+				model?.env?.CODEX_ENV === "provider",
+				key === "codex-key",
+			].every(Boolean)}`);
+		},
+	});
+
 	pi.registerCommand("state-late-append", {
 		handler() {
 			setTimeout(() => pi.appendEntry("late", {}), 20);

@@ -132,6 +132,11 @@ The bridge binds this object in `codingagent/extensions/jsbridge/context.go:181-
 | `getRegisteredNativeProvider` | `(name:string): Provider \| undefined` (`codingagent/extensions/jsbridge/context.go:322-328,337-361`) | Same (`.upstream/packages/coding-agent/src/core/model-registry.ts:138-140`); foreign-owner callbacks are reduced as above. | `sync-needs-snapshot` S5 |
 | `getRegisteredProviderIds` | `(): string[]` (`codingagent/extensions/jsbridge/context.go:329`) | Same readonly list (`.upstream/packages/coding-agent/src/core/model-registry.ts:142-144`). | `sync-needs-snapshot` S5 |
 
+The current process host keeps catalog/status reads in the per-extension snapshot, but implements
+`getApiKeyAndHeaders`, `getApiKeyForProvider`, and `getProviderAuth` as correlated actions against
+the owning live Go context (`codingagent/extensions/host/{host.mjs,state.go}`). Their credential
+results exist only in the matching response and are not copied into snapshots or diagnostics.
+
 ### Command-only and replacement-session contexts: 12 rows
 
 | JS member | Exact signature and timing | Go target / payload | Upstream truth | Wire rating |
