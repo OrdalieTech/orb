@@ -668,6 +668,9 @@ func TestRunCLIParserErrorVersionAndHelpPrecedence(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			// This table pins byte-exact stderr; disable the stdout-keyed
+			// diagnostic coloring rather than re-encode ANSI in every row.
+			t.Setenv("NO_COLOR", "1")
 			var stdout, stderr bytes.Buffer
 			called := false
 			code := runCLIWithDependencies(context.Background(), test.argv, cliStreams{

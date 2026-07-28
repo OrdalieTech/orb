@@ -50,12 +50,15 @@ func TestLoadStartupExtensionsConsultsProjectTrustExtension(t *testing.T) {
 	})
 	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
 
-	registry, diagnostics, err := loadStartupExtensions(cwd, CLIArgs{})
+	registry, diagnostics, trusted, err := loadStartupExtensions(cwd, CLIArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if registry == nil {
 		t.Fatalf("no registry; diagnostics=%v", diagnostics)
+	}
+	if trusted == nil || !*trusted {
+		t.Fatalf("resolved trust = %v, want the extension's trusted=yes handed back to the runtime", trusted)
 	}
 	if len(eventCWDs) == 0 || eventCWDs[0] != cwd {
 		t.Fatalf("project_trust event cwds = %#v, want first event for %q", eventCWDs, cwd)
@@ -98,7 +101,7 @@ func TestLoadStartupExtensionsSkipsProjectTrustEventOnOverride(t *testing.T) {
 	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
 
 	trusted := true
-	if _, _, err := loadStartupExtensions(cwd, CLIArgs{ProjectTrusted: &trusted}); err != nil {
+	if _, _, _, err := loadStartupExtensions(cwd, CLIArgs{ProjectTrusted: &trusted}); err != nil {
 		t.Fatal(err)
 	}
 	if fired {
