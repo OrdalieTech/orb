@@ -19,6 +19,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
 	"github.com/OrdalieTech/pigo/internal/semver"
 )
 
@@ -294,7 +295,7 @@ func updateNpmDependencies(installRoot string, apply func(map[string]any)) error
 	pkg["dependencies"] = dependencies
 	// Marshal sorts keys, which is also how npm writes dependencies, so a pi run
 	// after a pigo install does not reorder the file.
-	encoded, err := json.MarshalIndent(pkg, "", "  ")
+	encoded, err := jsonwire.MarshalIndent(pkg, "", "  ")
 	if err != nil {
 		return err
 	}

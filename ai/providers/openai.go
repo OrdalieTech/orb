@@ -27,23 +27,16 @@ type Provider struct {
 }
 
 var openAI = Provider{
-	ID:        "openai",
-	Name:      "OpenAI",
-	API:       ai.APIOpenAIResponses,
-	APIs:      []ai.API{ai.APIOpenAIResponses},
-	BaseURL:   "https://api.openai.com/v1",
-	Auth:      AuthAPIKey,
-	Env:       []string{"OPENAI_API_KEY"},
-	APIKeyEnv: []string{"OPENAI_API_KEY"},
+	ID:   "openai",
+	Name: "OpenAI",
+	Auth: AuthAPIKey,
 	Methods: auth.ProviderAuth{APIKey: auth.EnvAPIKeyAuth{
 		DisplayName: "OpenAI API key",
 		EnvVars:     []string{"OPENAI_API_KEY"},
 	}},
 }
 
-func OpenAI() Provider {
-	return cloneProvider(openAI)
-}
+func OpenAI() Provider { return registered("openai") }
 
 func cloneProvider(provider Provider) Provider {
 	provider.Env = append([]string(nil), provider.Env...)

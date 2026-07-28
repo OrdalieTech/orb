@@ -122,7 +122,7 @@ func (bound *boundUIContext) request(
 	params any,
 	update func(json.RawMessage),
 ) (json.RawMessage, error) {
-	requestContext, cancel := bound.manager.timeoutContext(ctx)
+	requestContext, cancel := callbackContext(ctx)
 	defer cancel()
 	return bound.generation.request(requestContext, method, params, update)
 }

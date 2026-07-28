@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/OrdalieTech/pigo/internal/ignorerules"
+	"github.com/OrdalieTech/pigo/internal/jstrim"
 )
 
 const (
@@ -47,7 +48,7 @@ type harnessIgnoreMatcher struct {
 }
 
 func (matcher *harnessIgnoreMatcher) add(line, prefix string) {
-	trimmed := strings.TrimFunc(line, isHarnessTrimSpace)
+	trimmed := strings.TrimFunc(line, jstrim.IsSpace)
 	if trimmed == "" || strings.HasPrefix(trimmed, "#") && !strings.HasPrefix(line, `\#`) {
 		return
 	}
@@ -151,7 +152,7 @@ func loadHarnessSkill(env ResourceFileSystem, filePath string) (*Skill, []SkillD
 	}
 	diagnostics := make([]SkillDiagnostic, 0, 6)
 	description, _ := frontmatter["description"].(string)
-	if strings.TrimFunc(description, isHarnessTrimSpace) == "" {
+	if strings.TrimFunc(description, jstrim.IsSpace) == "" {
 		diagnostics = append(diagnostics, SkillDiagnostic{Type: "warning", Code: SkillDiagnosticInvalidMeta, Message: "description is required", Path: filePath})
 	} else if length := len(utf16.Encode([]rune(description))); length > maxHarnessSkillDescriptionLength {
 		diagnostics = append(diagnostics, SkillDiagnostic{Type: "warning", Code: SkillDiagnosticInvalidMeta, Message: fmt.Sprintf("description exceeds %d characters (%d)", maxHarnessSkillDescriptionLength, length), Path: filePath})
@@ -164,7 +165,7 @@ func loadHarnessSkill(env ResourceFileSystem, filePath string) (*Skill, []SkillD
 	for _, message := range validateHarnessSkillName(name, parentName) {
 		diagnostics = append(diagnostics, SkillDiagnostic{Type: "warning", Code: SkillDiagnosticInvalidMeta, Message: message, Path: filePath})
 	}
-	if strings.TrimFunc(description, isHarnessTrimSpace) == "" {
+	if strings.TrimFunc(description, jstrim.IsSpace) == "" {
 		return nil, diagnostics
 	}
 	disable, _ := frontmatter["disable-model-invocation"].(bool)
@@ -192,7 +193,7 @@ func parseHarnessFrontmatter(content string) (map[string]any, string, error) {
 			return nil, "", err
 		}
 	}
-	return frontmatter, strings.TrimFunc(normalized[end+4:], isHarnessTrimSpace), nil
+	return frontmatter, strings.TrimFunc(normalized[end+4:], jstrim.IsSpace), nil
 }
 
 func validateHarnessSkillName(name, parentName string) []string {
@@ -373,17 +374,4 @@ func relativeHarnessPath(root, path string) string {
 		return normalizedPath[len(normalizedRoot)+1:]
 	}
 	return strings.TrimLeft(normalizedPath, "/")
-}
-
-func isHarnessTrimSpace(character rune) bool {
-	switch {
-	case character >= '\t' && character <= '\r':
-		return true
-	case character == ' ', character == '\u00a0', character == '\u1680', character == '\u2028', character == '\u2029', character == '\u202f', character == '\u205f', character == '\u3000', character == '\ufeff':
-		return true
-	case character >= '\u2000' && character <= '\u200a':
-		return true
-	default:
-		return false
-	}
 }

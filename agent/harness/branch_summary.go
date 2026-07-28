@@ -108,7 +108,9 @@ func PrepareBranchEntries(entries []SessionEntry, tokenBudget float64) BranchPre
 	messages := agent.AgentMessages{}
 	var total int64
 	for index := len(entries) - 1; index >= 0; index-- {
-		message := entryMessage(entries[index], true)
+		// Both upstream branch-summarization getMessageFromEntry variants
+		// project a branch_summary unconditionally, even with an empty summary.
+		message := harnessEntryMessage(entries[index], true)
 		if message == nil || (entries[index].Type == "message" && messageRole(message) == "toolResult") {
 			continue
 		}

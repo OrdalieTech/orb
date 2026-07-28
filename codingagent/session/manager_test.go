@@ -41,8 +41,8 @@ func TestPersistedSessionFlushesOnFirstAssistant(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("session file missing after assistant: %v", err)
 	}
-	if _, err := os.Stat(path + ".lock"); err != nil {
-		t.Fatalf("lock sidecar missing: %v", err)
+	if _, err := os.Stat(path + ".lock"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("lock residue left after write: %v", err)
 	}
 	entries, err := LoadEntriesFromFile(path)
 	if err != nil {

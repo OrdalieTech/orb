@@ -183,34 +183,85 @@ func packageExtensionPaths(resources []codingagent.ResolvedResource) (user, proj
 // paths (--help, unknown-flag validation) with the same project-trust gating as
 // createRuntimeInputs: untrusted project settings contribute nothing, so no
 // project-configured MCP server or extension can run before trust is granted.
-func loadStartupExtensions(cwd string, args CLIArgs) (*extensions.Registry, []string, error) {
+func loadStartupExtensions(cwd string, args CLIArgs) (*extensions.Registry, []string, *bool, error) {
 	agentDir, err := config.GetAgentDir()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir), config.WithProjectTrusted(false))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	projectTrusted, err := codingagent.ResolveProjectTrusted(context.Background(), codingagent.ResolveProjectTrustedOptions{
-		CWD:                 cwd,
-		TrustStore:          config.NewProjectTrustStore(agentDir),
-		TrustOverride:       args.ProjectTrusted,
-		DefaultProjectTrust: settings.GetDefaultProjectTrust(),
-	})
+	trust, err := resolveStartupProjectTrust(context.Background(), cwd, agentDir, args, settings)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	settings.SetProjectTrusted(projectTrusted)
+	if trust.Undecided && !trust.Trusted {
+		return trust.PreTrustRegistry, trust.Diagnostics, &trust.Trusted, nil
+	}
+	trustDiagnostics := trust.Diagnostics
 	packageManager := codingagent.NewPackageManager(codingagent.PackageManagerOptions{
 		CWD: cwd, AgentDir: agentDir, Settings: settings,
 	})
 	resolvedPaths, err := packageManager.Resolve(nil)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	registry, diagnostics := loadCompiledExtensions(cwd, agentDir, args, settings, resolvedPaths)
-	return registry, diagnostics, nil
+	return registry, append(trustDiagnostics, diagnostics...), &trust.Trusted, nil
+}
+
+// projectTrustResolution is the outcome of the trust decision plus the pre-trust
+// extension set that made it: when trust is refused, that set is final because
+// project-scoped resources stay out.
+type projectTrustResolution struct {
+	Trusted          bool
+	Undecided        bool
+	PreTrustRegistry *extensions.Registry
+	Diagnostics      []string
+}
+
+// resolveStartupProjectTrust decides project trust the way upstream does: when
+// trust is genuinely in question it loads the pre-trust (global) extension set
+// first so a project_trust handler is consulted ahead of the trust store and the
+// interactive prompt (main.ts resolveProjectTrust wiring → project-trust.ts
+// emitProjectTrustEvent). It leaves settings carrying the decision.
+func resolveStartupProjectTrust(ctx context.Context, cwd, agentDir string, args CLIArgs, settings *config.SettingsManager) (projectTrustResolution, error) {
+	resolution := projectTrustResolution{Undecided: args.ProjectTrusted == nil && config.HasTrustRequiringProjectResources(cwd)}
+	var preTrustDiagnostics []string
+	var trustRunner *extensions.Runner
+	if resolution.Undecided {
+		untrustedPaths, err := codingagent.NewPackageManager(codingagent.PackageManagerOptions{
+			CWD: cwd, AgentDir: agentDir, Settings: settings,
+		}).Resolve(nil)
+		if err != nil {
+			return projectTrustResolution{}, err
+		}
+		resolution.PreTrustRegistry, preTrustDiagnostics = loadCompiledExtensions(cwd, agentDir, args, settings, untrustedPaths)
+		trustRunner = extensions.NewRunner(resolution.PreTrustRegistry, extensions.RunnerOptions{CWD: cwd})
+	}
+	trusted, err := codingagent.ResolveProjectTrusted(ctx, codingagent.ResolveProjectTrustedOptions{
+		CWD:                 cwd,
+		TrustStore:          config.NewProjectTrustStore(agentDir),
+		TrustOverride:       args.ProjectTrusted,
+		DefaultProjectTrust: settings.GetDefaultProjectTrust(),
+		Runner:              trustRunner,
+		OnExtensionError: func(message string) {
+			resolution.Diagnostics = append(resolution.Diagnostics, message)
+		},
+	})
+	if err != nil {
+		return projectTrustResolution{}, err
+	}
+	resolution.Trusted = trusted
+	// On the trusted path the post-trust reload re-reports the same global
+	// extension diagnostics; keep the pre-trust copies only when the refused
+	// pre-trust registry is the final one.
+	if !trusted {
+		resolution.Diagnostics = append(resolution.Diagnostics, preTrustDiagnostics...)
+	}
+	settings.SetProjectTrusted(trusted)
+	return resolution, nil
 }
 
 func applyExtensionFlags(registry *extensions.Registry, flags []CLIUnknownFlag) []string {

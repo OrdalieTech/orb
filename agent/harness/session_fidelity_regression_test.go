@@ -250,7 +250,7 @@ func TestSessionContextProjectsStandardMessagesAsAIMessages(t *testing.T) {
 	}
 }
 
-func TestSessionContextAloneOmitsEmptyBranchSummaries(t *testing.T) {
+func TestSessionContextOmitsEmptyBranchSummaries(t *testing.T) {
 	contextState := harness.BuildSessionContext([]harness.SessionTreeEntry{{
 		Type: "branch_summary", ID: "empty-summary", Timestamp: "2026-07-18T00:00:00.000Z",
 		FromID: "root", Summary: "",
@@ -263,8 +263,8 @@ func TestSessionContextAloneOmitsEmptyBranchSummaries(t *testing.T) {
 		Type: "branch_summary", ID: "empty-summary", Timestamp: "2026-07-18T00:00:00.000Z",
 		FromID: "root", Summary: "",
 	}})
-	if len(compactionMessages) != 1 {
-		t.Fatalf("compaction context messages = %d, want empty branch summary preserved", len(compactionMessages))
+	if len(compactionMessages) != 0 {
+		t.Fatalf("compaction context messages = %d, want empty branch summary omitted", len(compactionMessages))
 	}
 }
 

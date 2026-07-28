@@ -26,26 +26,28 @@ const (
 // ProcessTerminal owns raw-mode and protocol state for a pair of terminal
 // files. NewProcessTerminal uses the process standard streams.
 type ProcessTerminal struct {
-	mu                sync.Mutex
-	writeMu           sync.Mutex
-	input             *os.File
-	output            *os.File
-	readInput         *os.File
-	rawState          *term.State
-	started           bool
-	kitty             bool
-	modifyOther       bool
-	protocolPushed    bool
-	inputHandler      func(string)
-	resizeHandler     func()
-	buffer            *StdinBuffer
-	resizeSignals     chan os.Signal
-	progressStop      chan struct{}
-	readerDone        chan struct{}
-	writeLogPath      string
-	negotiationBuffer string
-	negotiationTimer  *time.Timer
-	lastInput         time.Time
+	mu                    sync.Mutex
+	writeMu               sync.Mutex
+	input                 *os.File
+	output                *os.File
+	readInput             *os.File
+	rawState              *term.State
+	started               bool
+	kitty                 bool
+	modifyOther           bool
+	protocolPushed        bool
+	inputHandler          func(string)
+	resizeHandler         func()
+	buffer                *StdinBuffer
+	resizeSignals         chan os.Signal
+	progressStop          chan struct{}
+	readerDone            chan struct{}
+	writeLogPath          string
+	negotiationBuffer     string
+	negotiationTimer      *time.Timer
+	negotiationGeneration uint64
+	lastInput             time.Time
+	crashRestoreCancel    func()
 }
 
 func NewProcessTerminal() *ProcessTerminal { return NewProcessTerminalFiles(os.Stdin, os.Stdout) }
@@ -99,10 +101,11 @@ func (terminal *ProcessTerminal) Start(onInput func(string), onResize func()) er
 	done := terminal.readerDone
 	buffer := terminal.buffer
 	terminal.protocolPushed = true
+	terminal.crashRestoreCancel = registerCrashRestore(func() { terminal.emergencyRestore(state) })
 	terminal.mu.Unlock()
 
 	terminal.Write("\x1b[?2004h" + kittyKeyboardQuery)
-	go func() {
+	go guarded(func() {
 		for range resizeSignals {
 			terminal.mu.Lock()
 			handler := terminal.resizeHandler
@@ -112,8 +115,8 @@ func (terminal *ProcessTerminal) Start(onInput func(string), onResize func()) er
 				handler()
 			}
 		}
-	}()
-	go func() {
+	})()
+	go guarded(func() {
 		defer close(done)
 		bytes := make([]byte, 4096)
 		pollDescriptors := []unix.PollFd{{Fd: int32(reader.Fd()), Events: unix.POLLIN}}
@@ -145,7 +148,7 @@ func (terminal *ProcessTerminal) Start(onInput func(string), onResize func()) er
 				return
 			}
 		}
-	}()
+	})()
 	return nil
 }
 
@@ -217,28 +220,57 @@ func (terminal *ProcessTerminal) handleNegotiationLocked(negotiation KeyboardPro
 }
 
 func (terminal *ProcessTerminal) setNegotiationBufferLocked(sequence string) {
+	// Bumping the generation invalidates a fired AfterFunc parked on mu:
+	// Timer.Stop cannot cancel it, but upstream's clearTimeout semantics
+	// require that only the most recently armed timeout ever runs.
+	terminal.negotiationGeneration++
+	generation := terminal.negotiationGeneration
 	if terminal.negotiationTimer != nil {
 		terminal.negotiationTimer.Stop()
 	}
 	terminal.negotiationBuffer = sequence
-	terminal.negotiationTimer = time.AfterFunc(keyboardProtocolFragmentTimeout, func() {
+	terminal.negotiationTimer = time.AfterFunc(keyboardProtocolFragmentTimeout, guarded(func() {
 		terminal.mu.Lock()
+		if generation != terminal.negotiationGeneration {
+			terminal.mu.Unlock()
+			return
+		}
 		buffered := terminal.negotiationBuffer
 		terminal.negotiationBuffer, terminal.negotiationTimer = "", nil
 		terminal.mu.Unlock()
 		if buffered != "" {
 			terminal.dispatchInput(buffered)
 		}
-	})
+	}))
 }
 
 func (terminal *ProcessTerminal) clearNegotiationBufferLocked() {
+	terminal.negotiationGeneration++
 	if terminal.negotiationTimer != nil {
 		terminal.negotiationTimer.Stop()
 		terminal.negotiationTimer = nil
 	}
 	terminal.negotiationBuffer = ""
 }
+
+// emergencyRestore is the crash path run by guarded after a panic. The
+// panicking goroutine may still hold terminal.mu (handleSequence) or
+// buffer.mu (StdinBuffer.Process holds it across processLocked), and a panic
+// does not release mutexes locked without defer, so Stop would deadlock and
+// turn the crash into a hang. Instead write the protocol resets and the
+// termios state saved at Start directly; input, output, and writeMu (only
+// ever held under defer) are safe to touch. The process exits immediately
+// afterwards, so skipping Stop's goroutine cleanup is fine.
+func (terminal *ProcessTerminal) emergencyRestore(state *term.State) {
+	terminal.Write(progressClear + "\x1b[?2004l\x1b[<u\x1b[>4;0m")
+	if state != nil {
+		_ = term.Restore(int(terminal.input.Fd()), state)
+	}
+}
+
+// crashRestoresSelf marks ProcessTerminal as registering its own lock-free
+// crash restore, so the TUI crash path must not call Stop on it.
+func (terminal *ProcessTerminal) crashRestoresSelf() {}
 
 func (terminal *ProcessTerminal) dispatchInput(sequence string) {
 	terminal.mu.Lock()
@@ -273,6 +305,10 @@ func (terminal *ProcessTerminal) Stop() error {
 		return nil
 	}
 	terminal.started = false
+	if terminal.crashRestoreCancel != nil {
+		terminal.crashRestoreCancel()
+		terminal.crashRestoreCancel = nil
+	}
 	if terminal.progressStop != nil {
 		close(terminal.progressStop)
 		terminal.progressStop = nil
@@ -432,7 +468,7 @@ func (terminal *ProcessTerminal) SetProgress(active bool) {
 	}
 	stop := make(chan struct{})
 	terminal.progressStop = stop
-	go func() {
+	go guarded(func() {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 		for {
@@ -448,5 +484,5 @@ func (terminal *ProcessTerminal) SetProgress(active bool) {
 				return
 			}
 		}
-	}()
+	})()
 }

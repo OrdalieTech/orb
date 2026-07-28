@@ -293,6 +293,11 @@ func cloneAuthDocument(document authDocument) authDocument {
 }
 
 func parseAuthDocument(data []byte) (authDocument, error) {
+	// Upstream parseStorageData treats empty content as an empty store
+	// (auth-storage.ts "if (!content) return {}"), self-healing a 0-byte file.
+	if len(data) == 0 {
+		return emptyAuthDocument(), nil
+	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	token, err := decoder.Token()
 	if err != nil {

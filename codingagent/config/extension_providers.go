@@ -16,6 +16,7 @@ import (
 	"github.com/OrdalieTech/pigo/ai/providers"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
 	"github.com/OrdalieTech/pigo/internal/filelock"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
 )
 
 func normalizeProviderConfig(config extensions.ProviderConfig) extensions.ProviderConfig {
@@ -913,7 +914,7 @@ func writeProviderStore(path string, values map[string]extensions.ProviderModels
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(values, "", "  ")
+	data, err := jsonwire.MarshalIndent(values, "", "  ")
 	if err != nil {
 		return err
 	}

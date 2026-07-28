@@ -155,19 +155,6 @@ func TestComputeCacheWasteSkipsProvidersWithoutCacheActivity(t *testing.T) {
 	}
 }
 
-func TestCollectCacheMissesMapsCountedMissesToEntries(t *testing.T) {
-	missTurn := cacheStatsEntry(t, "miss-turn", cacheStatsAssistant(t, cacheStatsAssistantOptions{
-		cacheWrite: 110_000, cost: ai.Cost{CacheWrite: 0.4125}, timestamp: 120_000,
-	}))
-	misses := collectCacheMisses([]sessionstore.SessionEntry{cacheStatsTurn1(t), cacheStatsTurn2(t), missTurn}, cacheStatsModels)
-	if len(misses) != 1 {
-		t.Fatalf("misses = %#v", misses)
-	}
-	if miss := misses["miss-turn"]; miss == nil || miss.tokens != 105_000 {
-		t.Fatalf("miss = %+v", miss)
-	}
-}
-
 // detectCacheMissFromEntries mirrors upstream detectCacheMiss for a message
 // not yet contained in entries (message_end fires before persistence).
 func detectCacheMissFromEntries(entries []sessionstore.SessionEntry, message *ai.AssistantMessage, models []ai.Model) *cacheMiss {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/ai/auth"
 )
 
@@ -100,23 +99,10 @@ func (bedrockAuth) Resolve(
 }
 
 var amazonBedrockProvider = Provider{
-	ID:   "amazon-bedrock",
-	Name: "Amazon Bedrock",
-	API:  ai.APIBedrockConverse,
-	APIs: []ai.API{ai.APIBedrockConverse},
-	Auth: AuthAPIKey,
-	Env: []string{
-		"AWS_BEARER_TOKEN_BEDROCK",
-		"AWS_PROFILE",
-		"AWS_ACCESS_KEY_ID",
-		"AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
-		"AWS_CONTAINER_CREDENTIALS_FULL_URI",
-		"AWS_WEB_IDENTITY_TOKEN_FILE",
-	},
-	APIKeyEnv: []string{"AWS_BEARER_TOKEN_BEDROCK"},
-	Methods:   auth.ProviderAuth{APIKey: bedrockAuth{}},
+	ID:      "amazon-bedrock",
+	Name:    "Amazon Bedrock",
+	Auth:    AuthAPIKey,
+	Methods: auth.ProviderAuth{APIKey: bedrockAuth{}},
 }
 
-func AmazonBedrock() Provider {
-	return cloneProvider(amazonBedrockProvider)
-}
+func AmazonBedrock() Provider { return registered("amazon-bedrock") }

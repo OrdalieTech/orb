@@ -551,6 +551,10 @@ func (manager *Manager) resolveRuntime(ctx context.Context) (Runtime, error) {
 	return runtime, nil
 }
 
+// timeoutContext bounds host infrastructure RPCs (handshake, load_extension,
+// dependency install) that would otherwise wedge startup. Extension-originated
+// callbacks must use callbackContext instead: upstream awaits them with no
+// timeout, only the caller's abort signal.
 func (manager *Manager) timeoutContext(parent context.Context) (context.Context, context.CancelFunc) {
 	if parent == nil {
 		parent = context.Background()
@@ -559,6 +563,13 @@ func (manager *Manager) timeoutContext(parent context.Context) (context.Context,
 		return context.WithCancel(parent)
 	}
 	return context.WithTimeout(parent, manager.options.RequestTimeout)
+}
+
+func callbackContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	return context.WithCancel(parent)
 }
 
 func (manager *Manager) stopGeneration(generation *generation) {
@@ -887,7 +898,7 @@ func (manager *Manager) request(ctx context.Context, method string, params any, 
 	if !generation.ready.Load() {
 		return nil, ErrRestarting
 	}
-	requestContext, cancel := manager.timeoutContext(ctx)
+	requestContext, cancel := callbackContext(ctx)
 	defer cancel()
 	return generation.request(requestContext, method, params, update)
 }
@@ -1091,6 +1102,14 @@ func (manager *Manager) handleHostEvent(generation *generation, value frame) {
 		if json.Unmarshal(value.Params, &update) == nil && update.RequestID != "" {
 			generation.routeUpdate(update.RequestID, update.Partial)
 		}
+	case "provider_stream_event":
+		var update struct {
+			RequestID string          `json:"requestId"`
+			Event     json.RawMessage `json:"event"`
+		}
+		if json.Unmarshal(value.Params, &update) == nil && update.RequestID != "" {
+			generation.routeUpdate(update.RequestID, update.Event)
+		}
 	case "log":
 		var diagnostic struct {
 			Level       string `json:"level"`
@@ -1272,9 +1291,26 @@ func (generation *generation) request(
 		return resolved.result, resolved.err
 	case <-ctx.Done():
 		generation.remove(id)
+		generation.notifyCancel(id, ctx)
 		return nil, ctx.Err()
 	case <-generation.done:
 		return nil, generation.failure()
+	}
+}
+
+// notifyCancel aborts the in-flight request inside the host so the positional
+// AbortSignal upstream extensions receive actually fires on Go-side ctx
+// cancellation; the host ignores ids it is not tracking.
+func (generation *generation) notifyCancel(id string, ctx context.Context) {
+	if generation.closed() {
+		return
+	}
+	value, err := eventFrame("cancel_request", struct {
+		RequestID string `json:"requestId"`
+		Reason    string `json:"reason,omitempty"`
+	}{RequestID: id, Reason: contextSignalReason(ctx)})
+	if err == nil {
+		_ = generation.codec.write(value)
 	}
 }
 

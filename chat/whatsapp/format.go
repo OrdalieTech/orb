@@ -3,6 +3,8 @@ package whatsapp
 import (
 	"regexp"
 	"strings"
+
+	"github.com/OrdalieTech/pigo/chat/internal/runechunk"
 )
 
 // maxMessageLen is the Cloud API text.body character limit.
@@ -84,45 +86,5 @@ func ChunkText(text string, limit int) []string {
 	if limit <= 0 {
 		limit = maxMessageLen
 	}
-	runes := []rune(text)
-	var chunks []string
-	for len(runes) > 0 {
-		if len(runes) <= limit {
-			if chunk := strings.TrimRight(string(runes), "\n "); chunk != "" {
-				chunks = append(chunks, chunk)
-			}
-			break
-		}
-		cut := splitIndex(runes[:limit])
-		if chunk := strings.TrimRight(string(runes[:cut]), "\n "); chunk != "" {
-			chunks = append(chunks, chunk)
-		}
-		runes = runes[cut:]
-		for len(runes) > 0 && (runes[0] == '\n' || runes[0] == ' ') {
-			runes = runes[1:]
-		}
-	}
-	return chunks
-}
-
-// splitIndex picks the cut point inside one window: after the last
-// paragraph break, else after the last newline, else after the last space,
-// else the full window.
-func splitIndex(window []rune) int {
-	for i := len(window) - 2; i > 0; i-- {
-		if window[i] == '\n' && window[i+1] == '\n' {
-			return i + 2
-		}
-	}
-	for i := len(window) - 1; i > 0; i-- {
-		if window[i] == '\n' {
-			return i + 1
-		}
-	}
-	for i := len(window) - 1; i > 0; i-- {
-		if window[i] == ' ' {
-			return i + 1
-		}
-	}
-	return len(window)
+	return runechunk.Split(text, limit)
 }

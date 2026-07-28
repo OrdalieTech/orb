@@ -12,6 +12,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const ptyIoctlGetTermios = unix.TCGETS
+
 func openPTY(t *testing.T) (*os.File, *os.File) {
 	t.Helper()
 	masterFD, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY, 0)

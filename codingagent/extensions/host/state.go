@@ -611,7 +611,7 @@ func (host *stateHost) runAction(manager *Manager, generation *generation, raw j
 	if api == nil {
 		return nil, errors.New("extension API is not bound")
 	}
-	ctx, cancel := manager.timeoutContext(context.Background())
+	ctx, cancel := callbackContext(context.Background())
 	defer cancel()
 	result = map[string]bool{"accepted": true}
 	switch request.Action {

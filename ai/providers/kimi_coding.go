@@ -1,18 +1,14 @@
 package providers
 
 import (
-	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/ai/auth"
 	"github.com/OrdalieTech/pigo/ai/auth/oauth"
 )
 
 var kimiCodingProvider = Provider{
-	ID:      "kimi-coding",
-	Name:    "Kimi For Coding",
-	API:     ai.APIAnthropicMessages,
-	BaseURL: "https://api.kimi.com/coding",
-	Auth:    AuthAPIKey,
-	Env:     []string{"KIMI_API_KEY"},
+	ID:   "kimi-coding",
+	Name: "Kimi For Coding",
+	Auth: AuthAPIKey,
 	Methods: auth.ProviderAuth{
 		APIKey: auth.EnvAPIKeyAuth{
 			DisplayName: "Kimi API key",
@@ -22,4 +18,4 @@ var kimiCodingProvider = Provider{
 	},
 }
 
-func KimiCoding() Provider { return cloneProvider(kimiCodingProvider) }
+func KimiCoding() Provider { return registered("kimi-coding") }

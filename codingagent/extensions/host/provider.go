@@ -338,7 +338,17 @@ func (manager *Manager) invokeProvider(
 	args any,
 	invocation providerInvocation,
 ) (json.RawMessage, bool, error) {
-	invokeContext, cancel := manager.timeoutContext(ctx)
+	return manager.invokeProviderUpdate(ctx, extensionID, providerID, method, args, invocation, nil)
+}
+
+func (manager *Manager) invokeProviderUpdate(
+	ctx context.Context,
+	extensionID, providerID, method string,
+	args any,
+	invocation providerInvocation,
+	update func(json.RawMessage),
+) (json.RawMessage, bool, error) {
+	invokeContext, cancel := callbackContext(ctx)
 	defer cancel()
 	invocation.ctx = invokeContext
 	handle, ok := manager.providerHandle(extensionID, providerID, method)
@@ -361,7 +371,7 @@ func (manager *Manager) invokeProvider(
 		InvocationID string `json:"invocationId,omitempty"`
 		Args         any    `json:"args,omitempty"`
 	}{extensionID, providerID, handle, method, invocationID, args}
-	raw, err := manager.request(invokeContext, "provider_invoke", request, nil)
+	raw, err := manager.request(invokeContext, "provider_invoke", request, update)
 	if err != nil {
 		manager.reportProviderInvokeError(extensionID, err)
 		var remote *protocolError
@@ -544,6 +554,73 @@ func (method *hostOAuthAuth) ToAuth(credential *aiauth.Credential) (aiauth.Model
 	return auth, nil
 }
 
+// providerEventQueue hands host-emitted stream events to the Go consumer as
+// they arrive. It is unbounded because pushes run on the host read loop, which
+// must never block on a slow stream consumer.
+type providerEventQueue struct {
+	mu     sync.Mutex
+	wake   chan struct{}
+	events []ai.AssistantMessageEvent
+	err    error
+	done   bool
+}
+
+func newProviderEventQueue() *providerEventQueue {
+	return &providerEventQueue{wake: make(chan struct{}, 1)}
+}
+
+func (queue *providerEventQueue) push(event ai.AssistantMessageEvent) {
+	queue.mu.Lock()
+	if !queue.done {
+		queue.events = append(queue.events, event)
+	}
+	queue.mu.Unlock()
+	queue.signal()
+}
+
+// finish is first-wins so a decode failure recorded mid-stream is not
+// overwritten by the cancellation error the aborted invoke returns.
+func (queue *providerEventQueue) finish(err error) {
+	queue.mu.Lock()
+	if !queue.done {
+		queue.err = err
+		queue.done = true
+	}
+	queue.mu.Unlock()
+	queue.signal()
+}
+
+func (queue *providerEventQueue) signal() {
+	select {
+	case queue.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (queue *providerEventQueue) stream() ai.AssistantMessageEventStream {
+	return func(yield func(ai.AssistantMessageEvent, error) bool) {
+		for {
+			queue.mu.Lock()
+			events := queue.events
+			queue.events = nil
+			err, done := queue.err, queue.done
+			queue.mu.Unlock()
+			for _, event := range events {
+				if !yield(event, nil) {
+					return
+				}
+			}
+			if done {
+				if err != nil {
+					yield(nil, err)
+				}
+				return
+			}
+			<-queue.wake
+		}
+	}
+}
+
 func (manager *Manager) providerStream(extensionID, providerID, method string) agent.StreamFn {
 	return func(
 		ctx context.Context,
@@ -551,37 +628,65 @@ func (manager *Manager) providerStream(extensionID, providerID, method string) a
 		requestContext ai.Context,
 		options *ai.SimpleStreamOptions,
 	) (ai.AssistantMessageEventStream, error) {
-		raw, present, err := manager.invokeProvider(ctx, extensionID, providerID, method, struct {
-			Model   *ai.Model               `json:"model"`
-			Context ai.Context              `json:"context"`
-			Options *ai.SimpleStreamOptions `json:"options,omitempty"`
-		}{model, requestContext, options}, providerInvocation{})
-		if err != nil {
-			return nil, err
-		}
-		if !present {
-			return nil, errors.New("provider stream returned no event stream")
-		}
-		var result struct {
-			Events []json.RawMessage `json:"events"`
-		}
-		if err := json.Unmarshal(raw, &result); err != nil {
-			return nil, fmt.Errorf("extension host: decode provider stream: %w", err)
-		}
-		events := make([]ai.AssistantMessageEvent, 0, len(result.Events))
-		for _, encoded := range result.Events {
-			event, err := ai.UnmarshalAssistantMessageEvent(encoded)
-			if err != nil {
-				return nil, err
+		if _, ok := manager.providerHandle(extensionID, providerID, method); !ok {
+			return nil, &ProviderInvokeError{
+				ExtensionID: extensionID, ProviderID: providerID, Method: method,
+				Cause: fmt.Errorf("callback is unavailable"),
 			}
-			events = append(events, event)
 		}
-		return func(yield func(ai.AssistantMessageEvent, error) bool) {
-			for _, event := range events {
-				if !yield(event, nil) {
+		queue := newProviderEventQueue()
+		// streamCancel fires when the consumer stops iterating, so the invoke
+		// goroutine unblocks and the host aborts the extension generator
+		// instead of buffering the remaining events unboundedly.
+		streamContext, streamCancel := callbackContext(ctx)
+		// The host emits provider_stream_event notifications while the
+		// provider_invoke request is in flight, so events reach the consumer as
+		// the extension's stream yields them instead of after it completes.
+		go func() {
+			raw, present, err := manager.invokeProviderUpdate(streamContext, extensionID, providerID, method, struct {
+				Model   *ai.Model               `json:"model"`
+				Context ai.Context              `json:"context"`
+				Options *ai.SimpleStreamOptions `json:"options,omitempty"`
+			}{model, requestContext, options}, providerInvocation{}, func(raw json.RawMessage) {
+				event, decodeErr := ai.UnmarshalAssistantMessageEvent(raw)
+				if decodeErr != nil {
+					// Fail the stream like the buffered result.Events path
+					// does instead of silently dropping the event.
+					queue.finish(decodeErr)
+					streamCancel()
 					return
 				}
+				queue.push(event)
+			})
+			if err != nil {
+				queue.finish(err)
+				return
 			}
+			if !present {
+				queue.finish(errors.New("provider stream returned no event stream"))
+				return
+			}
+			var result struct {
+				Events []json.RawMessage `json:"events"`
+			}
+			if err := json.Unmarshal(raw, &result); err != nil {
+				queue.finish(fmt.Errorf("extension host: decode provider stream: %w", err))
+				return
+			}
+			for _, encoded := range result.Events {
+				event, err := ai.UnmarshalAssistantMessageEvent(encoded)
+				if err != nil {
+					queue.finish(err)
+					return
+				}
+				queue.push(event)
+			}
+			queue.finish(nil)
+		}()
+		stream := queue.stream()
+		return func(yield func(ai.AssistantMessageEvent, error) bool) {
+			defer streamCancel()
+			stream(yield)
 		}, nil
 	}
 }

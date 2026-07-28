@@ -25,6 +25,34 @@ import (
 	"github.com/OrdalieTech/pigo/codingagent/session"
 )
 
+// requestAuthResolverForProvider is a test-only helper mirroring the CLI's
+// inline --api-key wiring in createRuntimeInputs, plus a provider-agnostic
+// override for callers that never select a model.
+func requestAuthResolverForProvider(
+	args CLIArgs,
+	cliProvider *ai.ProviderID,
+	registry *config.ModelRegistry,
+	credentials aiauth.CredentialStore,
+) agent.GetRequestAuthFunc {
+	runtimeAuth := newRuntimeCredentials(credentials)
+	if args.APIKey != nil && *args.APIKey != "" {
+		providerID := ""
+		if cliProvider != nil {
+			providerID = string(*cliProvider)
+		}
+		if providerID != "" {
+			runtimeAuth.SetRuntimeAPIKey(providerID, *args.APIKey)
+		}
+	}
+	base := requestAuthResolverWithCredentials(registry, runtimeAuth)
+	if args.APIKey == nil || *args.APIKey == "" || cliProvider != nil {
+		return base
+	}
+	return func(ctx context.Context, providerID ai.ProviderID) (*agent.RequestAuth, error) {
+		return &agent.RequestAuth{APIKey: args.APIKey}, nil
+	}
+}
+
 func TestCreateBuiltInToolsHonorsImageAutoResizeSetting(t *testing.T) {
 	cwd := t.TempDir()
 	agentDir := t.TempDir()

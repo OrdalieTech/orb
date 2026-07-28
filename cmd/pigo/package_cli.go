@@ -76,9 +76,12 @@ func handlePluginsCommand(ctx context.Context, argv []string, streams cliStreams
 	if err != nil {
 		return true, reportCLIError(streams.Stderr, err)
 	}
-	settings, err := createCommandSettingsManager(ctx, cwd, agentDir, nil, false)
+	settings, trustWarnings, err := createCommandSettingsManager(ctx, cwd, agentDir, nil, false)
 	if err != nil {
 		return true, reportCLIError(streams.Stderr, err)
+	}
+	for _, warning := range trustWarnings {
+		_, _ = fmt.Fprintln(streams.Stderr, "Warning: "+warning)
 	}
 	reportPackageSettingsErrors(streams.Stderr, settings, "plugins command")
 	if action == "list" {
@@ -371,10 +374,10 @@ func reportPackageSettingsErrors(stderr io.Writer, settings *config.SettingsMana
 // createCommandSettingsManager resolves project trust for a package command:
 // saved-trust-only for update, otherwise the full trust flow (headless — no
 // prompt, no project_trust extensions yet).
-func createCommandSettingsManager(ctx context.Context, cwd, agentDir string, projectTrustOverride *bool, useSavedProjectTrustOnly bool) (*config.SettingsManager, error) {
+func createCommandSettingsManager(ctx context.Context, cwd, agentDir string, projectTrustOverride *bool, useSavedProjectTrustOnly bool) (*config.SettingsManager, []string, error) {
 	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir), config.WithProjectTrusted(false))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	trustStore := config.NewProjectTrustStore(agentDir)
 	if useSavedProjectTrustOnly {
@@ -382,24 +385,22 @@ func createCommandSettingsManager(ctx context.Context, cwd, agentDir string, pro
 		if projectTrustOverride != nil {
 			trusted = *projectTrustOverride
 		} else if decision, err := trustStore.Get(cwd); err != nil {
-			return nil, err
+			return nil, nil, err
 		} else if decision != nil {
 			trusted = *decision
 		}
 		settings.SetProjectTrusted(trusted)
-		return settings, nil
+		return settings, nil, nil
 	}
-	trusted, err := codingagent.ResolveProjectTrusted(ctx, codingagent.ResolveProjectTrustedOptions{
-		CWD:                 cwd,
-		TrustStore:          trustStore,
-		TrustOverride:       projectTrustOverride,
-		DefaultProjectTrust: settings.GetDefaultProjectTrust(),
-	})
+	// Upstream loads the pre-trust extension set here too, so a project_trust
+	// handler decides package commands exactly as it decides a session
+	// (package-manager-cli.ts createCommandSettingsManager), and prints its
+	// warnings.
+	trust, err := resolveStartupProjectTrust(ctx, cwd, agentDir, CLIArgs{ProjectTrusted: projectTrustOverride}, settings)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	settings.SetProjectTrusted(trusted)
-	return settings, nil
+	return settings, trust.Diagnostics, nil
 }
 
 func handleConfigCommand(ctx context.Context, argv []string, streams cliStreams, dependencies cliDependencies) (bool, int) {
@@ -438,13 +439,16 @@ func handleConfigCommand(ctx context.Context, argv []string, streams cliStreams,
 	if err != nil {
 		return true, reportCLIError(streams.Stderr, err)
 	}
-	settings, err := createCommandSettingsManager(ctx, cwd, agentDir, projectTrustOverride, false)
+	settings, trustWarnings, err := createCommandSettingsManager(ctx, cwd, agentDir, projectTrustOverride, false)
 	if err != nil {
 		return true, reportCLIError(streams.Stderr, err)
 	}
 	if local && !settings.IsProjectTrusted() {
 		_, _ = fmt.Fprintln(streams.Stderr, "Project is not trusted. Use --approve to modify local resource config.")
 		return true, 1
+	}
+	for _, warning := range trustWarnings {
+		_, _ = fmt.Fprintln(streams.Stderr, "Warning: "+warning)
 	}
 	reportPackageSettingsErrors(streams.Stderr, settings, "config command")
 	if !streams.StdinTTY || !streams.StdoutTTY {
@@ -557,13 +561,16 @@ func handlePackageCommand(ctx context.Context, argv []string, streams cliStreams
 		return true, reportCLIError(streams.Stderr, err)
 	}
 	writesProjectPackageConfig := (options.command == "install" || options.command == "remove") && options.local
-	settings, err := createCommandSettingsManager(ctx, cwd, agentDir, options.projectTrustOverride, options.command == "update")
+	settings, trustWarnings, err := createCommandSettingsManager(ctx, cwd, agentDir, options.projectTrustOverride, options.command == "update")
 	if err != nil {
 		return true, reportCLIError(streams.Stderr, err)
 	}
 	if !settings.IsProjectTrusted() && writesProjectPackageConfig {
 		_, _ = fmt.Fprintln(streams.Stderr, "Project is not trusted. Use --approve to modify local package config.")
 		return true, 1
+	}
+	for _, warning := range trustWarnings {
+		_, _ = fmt.Fprintln(streams.Stderr, "Warning: "+warning)
 	}
 	reportPackageSettingsErrors(streams.Stderr, settings, "package command")
 

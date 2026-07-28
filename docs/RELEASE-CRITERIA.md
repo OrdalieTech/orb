@@ -64,8 +64,10 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
       documented behavior; every "unsupported" maps to a ledger line or a written WP proposal.
       (61/69 = 88%; superseded by the 300-package run in docs/sync/ecosystem-extension-matrix.md.)
 - [x] hello, todo, pirate, permission-gate, status-line, modal-editor run unmodified end-to-end.
-- [x] Node-shim coverage table committed; VM bridge calls < 8 ms on the corpus (p90 137 µs,
-      test-guarded); `/reload` works; TS errors map to source lines.
+- [x] Node-shim coverage table committed; extension callbacks stream through the D31 child-process
+      host with no artificial latency or timeout beyond host startup (the pre-D31 in-process
+      "< 8 ms, p90 137 µs" budget and its guard died with the jsbridge); `/reload` works; TS errors
+      map to source lines.
 - [x] Trim pass #4 done.
 
 ## M5 — v0.1.0 release (closes Sprint 4)
@@ -108,7 +110,8 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 ## Trim pass (closes every sprint)
 
 Slimness is a standing product goal: the fat accumulates as work lands, so it is burned off at
-every sprint close. The deliverable is a **shrink diff** plus `docs/trim/M<n>.md` reporting:
+every sprint close. The deliverable is a **shrink diff** plus a trim report folded into
+`docs/plan/PROGRESS.md` (per the AGENTS.md supersede rule; earlier drafts named `docs/trim/M<n>.md`):
 
 1. **Dead code** — staticcheck/unused + deadcode findings deleted (not suppressed).
 2. **Dependency audit** — `go mod graph` vs ARCHITECTURE §8; deps no longer pulling their weight

@@ -31,12 +31,15 @@ import (
 	"github.com/OrdalieTech/pigo/codingagent/modes"
 	"github.com/OrdalieTech/pigo/codingagent/session"
 	"github.com/OrdalieTech/pigo/codingagent/session/exporthtml"
+	"github.com/OrdalieTech/pigo/internal/jstrim"
 	"github.com/OrdalieTech/pigo/internal/semver"
 	"golang.org/x/term"
 )
 
-// version is injected by goreleaser ldflags at release time.
-var version = "0.1.0-dev"
+// version is injected by goreleaser ldflags at release time. The unstamped
+// default deliberately carries no number so a dev build can never masquerade
+// as an older (or newer) release.
+var version = "dev"
 
 const (
 	upstreamVersion        = "0.82.1"
@@ -53,6 +56,7 @@ type cliStreams struct {
 	Stderr    io.Writer
 	StdinTTY  bool
 	StdoutTTY bool
+	StderrTTY bool
 }
 
 type cliDependencies struct {
@@ -74,6 +78,7 @@ func main() {
 		Stderr:    os.Stderr,
 		StdinTTY:  isTerminalFile(os.Stdin),
 		StdoutTTY: isTerminalFile(os.Stdout),
+		StderrTTY: isTerminalFile(os.Stderr),
 	}))
 }
 
@@ -149,11 +154,13 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	hasErrors := false
 	for _, diagnostic := range args.Diagnostics {
 		prefix := "Warning: "
+		color := colorWarning
 		if diagnostic.Type == "error" {
 			prefix = "Error: "
+			color = colorError
 			hasErrors = true
 		}
-		_, _ = fmt.Fprintln(streams.Stderr, prefix+diagnostic.Message)
+		_, _ = fmt.Fprintln(streams.Stderr, colorizeDiagnostic(streams, color, prefix+diagnostic.Message))
 	}
 	if hasErrors {
 		return 1
@@ -170,15 +177,26 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		if len(args.Messages) > 0 {
 			outputPath = args.Messages[0]
 		}
-		path, err := exporthtml.ExportFromFile(*args.Export, exporthtml.Options{OutputPath: outputPath})
+		var path string
+		var err error
+		if strings.HasSuffix(outputPath, ".md") {
+			path, err = exporthtml.ExportMarkdownFromFile(*args.Export, outputPath)
+		} else {
+			path, err = exporthtml.ExportFromFile(*args.Export, exporthtml.Options{OutputPath: outputPath})
+		}
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
 		_, _ = fmt.Fprintln(streams.Stdout, "Exported to: "+path)
 		return 0
 	}
+	if args.Mode == "rpc" && len(args.FileArgs) > 0 {
+		// Upstream guards before session-flag validation (main.ts:546-549).
+		_, _ = fmt.Fprintln(streams.Stderr, colorizeDiagnostic(streams, colorError, "Error: @file arguments are not supported in RPC mode"))
+		return 1
+	}
 	if sessionErrors := validateSessionFlags(args); len(sessionErrors) > 0 {
-		_, _ = fmt.Fprintln(streams.Stderr, "Error: "+sessionErrors[0])
+		_, _ = fmt.Fprintln(streams.Stderr, colorizeDiagnostic(streams, colorError, "Error: "+sessionErrors[0]))
 		return 1
 	}
 	if _, err := migrateStartupAuth(); err != nil {
@@ -187,7 +205,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if args.Help {
 		text := helpText
 		if cwd, cwdErr := os.Getwd(); cwdErr == nil {
-			if registry, _, loadErr := loadStartupExtensions(cwd, args); loadErr == nil {
+			if registry, _, _, loadErr := loadStartupExtensions(cwd, args); loadErr == nil {
 				text = extensionHelpText(registry)
 			}
 		}
@@ -202,13 +220,13 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if len(args.UnknownFlags) > 0 && len(validationErrors) > 0 {
 		var registry *extensions.Registry
 		if validationCWD, cwdErr := os.Getwd(); cwdErr == nil {
-			registry, _, _ = loadStartupExtensions(validationCWD, args)
+			registry, _, _, _ = loadStartupExtensions(validationCWD, args)
 		}
 		flagErrors := applyExtensionFlags(registry, args.UnknownFlags)
 		validationErrors = append(flagErrors, validationErrors...)
 	}
 	for _, message := range validationErrors {
-		_, _ = fmt.Fprintln(streams.Stderr, "Error: "+message)
+		_, _ = fmt.Fprintln(streams.Stderr, colorizeDiagnostic(streams, colorError, "Error: "+message))
 	}
 	if len(validationErrors) > 0 {
 		return 1
@@ -218,19 +236,20 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		if cwdErr != nil {
 			return reportCLIError(streams.Stderr, cwdErr)
 		}
-		registry, warnings, loadErr := loadStartupExtensions(validationCWD, args)
+		registry, warnings, trusted, loadErr := loadStartupExtensions(validationCWD, args)
 		if loadErr != nil {
 			return reportCLIError(streams.Stderr, loadErr)
 		}
 		args.extensionRegistry, args.extensionWarnings = registry, warnings
 		args.extensionsLoaded = true
+		args.resolvedProjectTrust = trusted
 		flagErrors := applyExtensionFlags(args.extensionRegistry, args.UnknownFlags)
 		if len(flagErrors) > 0 {
 			for _, warning := range args.extensionWarnings {
-				_, _ = fmt.Fprintln(streams.Stderr, "Warning: "+warning)
+				_, _ = fmt.Fprintln(streams.Stderr, colorizeDiagnostic(streams, colorWarning, "Warning: "+warning))
 			}
 			for _, message := range flagErrors {
-				_, _ = fmt.Fprintln(streams.Stderr, "Error: "+message)
+				_, _ = fmt.Fprintln(streams.Stderr, colorizeDiagnostic(streams, colorError, "Error: "+message))
 			}
 			return 1
 		}
@@ -252,11 +271,11 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		// createRuntime drains settings errors into Diagnostics; without this the
 		// listing silently ran on defaults when settings.json failed to parse.
 		for _, diagnostic := range inputs.Diagnostics {
-			_, _ = fmt.Fprintln(streams.Stderr, "Warning: "+diagnostic)
+			_, _ = fmt.Fprintln(streams.Stderr, colorizeDiagnostic(streams, colorWarning, "Warning: "+diagnostic))
 		}
 		if inputs.ModelRegistry != nil {
 			if loadError := inputs.ModelRegistry.Error(); loadError != "" {
-				_, _ = fmt.Fprintln(streams.Stderr, "Warning: errors loading models.json:\n"+loadError)
+				_, _ = fmt.Fprintln(streams.Stderr, colorizeDiagnostic(streams, colorWarning, "Warning: errors loading models.json:\n"+loadError))
 			}
 		}
 		var models []ai.Model
@@ -311,7 +330,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		sessionContext = manager.BuildSessionContext()
 	}
 	if args.Name != nil {
-		name := strings.TrimFunc(*args.Name, isJSTrimSpace)
+		name := strings.TrimFunc(*args.Name, jstrim.IsSpace)
 		if name == "" {
 			return reportCLIError(streams.Stderr, errors.New("--name requires a non-empty value"))
 		}
@@ -363,6 +382,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			InitialImages:  initialImages,
 			Messages:       append([]string(nil), args.Messages...),
 			SessionHeader:  manager.GetHeader(),
+			Verbose:        args.Verbose,
 			StartupVersionCheck: newStartupVersionCheck(
 				version, http.DefaultClient, latestReleaseURL, versionCheckTimeout,
 			),
@@ -446,6 +466,23 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		Stdout:         streams.Stdout,
 		Stderr:         streams.Stderr,
 	})
+}
+
+const (
+	colorError   = "\x1b[31m"
+	colorWarning = "\x1b[33m"
+	colorClose   = "\x1b[39m"
+)
+
+// colorizeDiagnostic mirrors upstream's chalk.red/chalk.yellow startup
+// diagnostics (main.ts:87-93, 511-514). Upstream's default chalk keys color
+// support on STDOUT even though the lines go to stderr, with NO_COLOR and
+// TERM=dumb opt-outs.
+func colorizeDiagnostic(streams cliStreams, color, line string) string {
+	if !streams.StdoutTTY || os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
+		return line
+	}
+	return color + line + colorClose
 }
 
 func metadataOutput(args CLIArgs, streams cliStreams) io.Writer {
@@ -913,6 +950,7 @@ Commands:
   --theme <path>                 Load a theme file or directory; repeatable
   --no-themes                    Disable theme discovery
   --no-context-files, -nc        Disable AGENTS.md/CLAUDE.md discovery
+  --verbose                      Force verbose startup (overrides quietStartup setting)
   --approve, -a                  Trust project-local resources for this run
   --no-approve, -na              Ignore project-local resources for this run
   --offline                      Disable startup network operations (same as PI_OFFLINE=1)

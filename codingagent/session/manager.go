@@ -353,9 +353,10 @@ func (manager *SessionManager) setLoadedSessionFileLocked(resolved string, loade
 	manager.fileEntries = entries
 	header := findHeader(entries)
 	if header != nil && header.Header != nil {
+		// Upstream keeps the header id verbatim ("header?.id ?? createSessionId()"),
+		// including an explicit empty string.
 		manager.sessionID = header.Header.ID
-	}
-	if manager.sessionID == "" {
+	} else {
 		generated, err := manager.sessionIDGenerator(manager.clock())
 		if err != nil {
 			return err

@@ -443,7 +443,3 @@ func ComputeEditsDiff(path string, edits []Edit, cwd string) (DiffResult, error)
 	}
 	return GenerateDiffString(applied.BaseContent, applied.NewContent, 4), nil
 }
-
-func ComputeEditDiff(path, oldText, newText, cwd string) (DiffResult, error) {
-	return ComputeEditsDiff(path, []Edit{{OldText: oldText, NewText: newText}}, cwd)
-}

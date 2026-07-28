@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/ai/auth"
 )
 
@@ -145,16 +144,10 @@ func cloneProviderEnv(env map[string]string) map[string]string {
 }
 
 var googleVertexProvider = Provider{
-	ID:   "google-vertex",
-	Name: "Google Vertex AI",
-	API:  ai.APIGoogleVertex,
-	APIs: []ai.API{ai.APIGoogleVertex},
-	Auth: AuthAPIKey,
-	Env: []string{
-		"GOOGLE_CLOUD_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_CLOUD_PROJECT", "GCLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION",
-	},
-	APIKeyEnv: []string{"GOOGLE_CLOUD_API_KEY"},
-	Methods:   auth.ProviderAuth{APIKey: googleVertexAuth{}},
+	ID:      "google-vertex",
+	Name:    "Google Vertex AI",
+	Auth:    AuthAPIKey,
+	Methods: auth.ProviderAuth{APIKey: googleVertexAuth{}},
 }
 
-func GoogleVertex() Provider { return cloneProvider(googleVertexProvider) }
+func GoogleVertex() Provider { return registered("google-vertex") }

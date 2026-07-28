@@ -356,6 +356,20 @@ Status: **complete for the locked offline surface; package-specific external-ser
   `OrdalieTech/homebrew-tap` repositories now exist; this checkout's `origin` points to the
   canonical source repository and preserves the former `netapy/pigo` remote as `legacy`.
 
+- **Review-fix round (2026-07-28)** — full live audit at 2a5af4a produced 33 confirmed findings;
+  all fixed in one wave (ai timeouts/abort text, extension-host callback semantics + streaming
+  providers + live AbortSignal, TUI panic guard + width corrections + stdin race, auth self-heal,
+  session locks via internal/filelock, jsonwire persisted-file parity, CLI parity: --verbose,
+  @file-in-RPC, untyped RPC dispatch, ctx.shutdown, project_trust, diagnostics colors) plus the
+  verified trim list (corrections.go, dual-source provider metadata, test-only wrappers, jstrim
+  and ctxsleep consolidation, markdown exporter wired). `upstream-rpc-tests` added to CI.
+- **ai/ LOC budget justification (2026-07-28, per RELEASE-CRITERIA trim rule)** — ai/ measures
+  29.5k non-test LOC vs 21.1k upstream TS = 1.40x, over the 1.3x per-package budget. The driver is
+  `ai/api` at 1.78x: the G2/WP-222 decision to hand-roll Gemini/Vertex (and SSE plumbing generally)
+  on stdlib `net/http` instead of official SDKs trades LOC for zero native deps and is considered
+  paid for; the rest of ai/ sits at ~1.06x. Other mirrored packages are in budget (agent 0.85x,
+  tui 1.01x, codingagent 1.13x; aggregate 1.15x).
+
 ## Owner-blocked evidence
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.
 - ChatGPT/Codex, Copilot, and xAI OAuth end-to-end runs likewise require subscribed accounts.

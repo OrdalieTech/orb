@@ -515,6 +515,10 @@ type openAIHTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
+type openAIDoerFunc func(*http.Request) (*http.Response, error)
+
+func (do openAIDoerFunc) Do(request *http.Request) (*http.Response, error) { return do(request) }
+
 type openAIHeaderTimeoutDoer struct {
 	base             openAIHTTPDoer
 	timeout          time.Duration
@@ -748,6 +752,9 @@ func normalizeOpenAIRequestError(response *http.Response, err error) error {
 	if readErr != nil {
 		return err
 	}
+	// Close the replaced body: the header-timeout doer's wrapper releases its
+	// context cancel only on Close.
+	_ = response.Body.Close()
 	response.Body = io.NopCloser(bytes.NewReader(contents))
 	return newOpenAIStatusError(response.StatusCode, contents)
 }
@@ -862,11 +869,14 @@ func extractOpenAIErrorBody(raw string) string {
 
 func streamFailure(ctx context.Context, output *ai.AssistantMessage, err error, prefix string) ai.ErrorEvent {
 	reason := ai.StopReasonError
+	message := formatOpenAIError(err, prefix)
 	if ctx.Err() != nil {
 		reason = ai.StopReasonAborted
+		// Upstream aborts surface the plain abort Error's message, never the
+		// transport error text; the exact string is observable in the TUI.
+		message = "Request was aborted"
 	}
 	output.StopReason = reason
-	message := formatOpenAIError(err, prefix)
 	output.ErrorMessage = &message
 	return ai.ErrorEvent{Reason: reason, Error: output}
 }

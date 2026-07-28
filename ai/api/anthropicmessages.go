@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 	"unicode/utf16"
 
 	"github.com/OrdalieTech/pigo/ai"
@@ -1103,27 +1102,40 @@ func postAnthropicStream(
 	// Upstream 7af8533c: the SDK runs with maxRetries 0 and retryProviderRequest
 	// owns retrying, so the backoff honours the abort signal.
 	requestOptions := []option.RequestOption{option.WithMaxRetries(0)}
-	if options != nil {
-		if options.TimeoutMS != nil {
-			requestOptions = append(requestOptions, option.WithRequestTimeout(time.Duration(*options.TimeoutMS)*time.Millisecond))
-		}
-	}
 	var client *anthropic.Client
 	if anthropicOptions != nil {
 		client = anthropicOptions.Client
 	}
+	if client != nil {
+		// Upstream forwards timeoutMs per request even for caller-supplied
+		// clients; middleware wraps the client's own transport instead of
+		// replacing it.
+		requestOptions = append(requestOptions, option.WithMiddleware(func(request *http.Request, next option.MiddlewareNext) (*http.Response, error) {
+			doer, err := openAIHeaderTimeoutClient(openAIDoerFunc(next), streamTimeoutMS(options), nil)
+			if err != nil {
+				return nil, err
+			}
+			return doer.Do(request)
+		}))
+	}
 	if client == nil {
+		headers, err := applyHeadersHook(ctx, model, options, anthropicHeaders(model, requestContext, options, anthropicOptions))
+		if err != nil {
+			return nil, err
+		}
+		// TimeoutMS deadlines only the header phase, like the pinned JS SDK's
+		// fetch timeout; the streamed body is never raced (OA-M1).
+		httpClient, err := openAIHeaderTimeoutClient(anthropicHTTPClient, streamTimeoutMS(options), headers)
+		if err != nil {
+			return nil, err
+		}
 		clientOptions := []option.RequestOption{
 			option.WithBaseURL(model.BaseURL),
-			option.WithHTTPClient(anthropicHTTPClient),
+			option.WithHTTPClient(httpClient),
 			option.WithAPIKey(""),
 			option.WithAuthToken(""),
 			option.WithHeaderDel("X-Api-Key"),
 			option.WithHeaderDel("Authorization"),
-		}
-		headers, err := applyHeadersHook(ctx, model, options, anthropicHeaders(model, requestContext, options, anthropicOptions))
-		if err != nil {
-			return nil, err
 		}
 		apiKey := anthropicAPIKey(options)
 		if oauth || model.Provider == "github-copilot" {
@@ -1152,7 +1164,13 @@ func postAnthropicStream(
 		return attempt, postErr
 	})
 	if err != nil {
-		return response, normalizeAnthropicRequestError(response, err)
+		err = normalizeAnthropicRequestError(response, err)
+		// The header-timeout doer's body wrapper releases its context cancel
+		// only on Close, so the failed response must still be closed.
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
+		return response, err
 	}
 	if response == nil {
 		return nil, errors.New("anthropic API returned no HTTP response")
@@ -1178,6 +1196,9 @@ func normalizeAnthropicRequestError(response *http.Response, err error) error {
 	if readErr != nil {
 		return err
 	}
+	// Close the replaced body: the header-timeout doer's wrapper releases its
+	// context cancel only on Close.
+	_ = response.Body.Close()
 	response.Body = io.NopCloser(strings.NewReader(string(contents)))
 	if len(contents) == 0 {
 		return fmt.Errorf("%d status code (no body)", response.StatusCode)

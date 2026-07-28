@@ -436,3 +436,24 @@ func TestDownloadViaGetFile(t *testing.T) {
 		t.Fatalf("mime = %q", mime)
 	}
 }
+
+func TestWebhookOversizedBodyRejected(t *testing.T) {
+	f := newFakeAPI(t)
+	adapter := newTestAdapter(t, f, func(o *Options) { o.Secret = "s3cret" })
+	rec := &recorder{}
+	handler := adapter.Webhook(rec.publish)
+
+	body := `{"update_id":1,"message":{"message_id":55,"date":1752900000,` +
+		`"from":{"id":111,"first_name":"L"},"chat":{"id":10,"type":"private"},` +
+		`"text":"` + strings.Repeat("a", maxUpdateBody+1) + `"}}`
+	req := httptest.NewRequest(http.MethodPost, "/tg", strings.NewReader(body))
+	req.Header.Set(secretTokenHeader, "s3cret")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	if got := rec.snapshot(); len(got) != 0 {
+		t.Fatalf("published %d messages, want 0", len(got))
+	}
+}

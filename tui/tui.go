@@ -72,9 +72,10 @@ type TUI struct {
 	mouseClick          mousePoint
 	mouseClickAt        time.Time
 
-	lifecycleMu sync.RWMutex
-	stopped     bool
-	hasStarted  bool
+	lifecycleMu        sync.RWMutex
+	stopped            bool
+	hasStarted         bool
+	crashRestoreCancel func()
 
 	focusMu      sync.RWMutex
 	focused      Component
@@ -198,6 +199,24 @@ func (ui *TUI) Start() error {
 	}
 	ui.lifecycleMu.Lock()
 	ui.hasStarted = true
+	ui.crashRestoreCancel = registerCrashRestore(func() {
+		ui.setStopped(true)
+		// stopTerminal ends in ProcessTerminal.Stop, which blocks on
+		// terminal.mu and buffer.mu; the panicking goroutine may still hold
+		// either (both are locked without defer), which would turn the crash
+		// into a hang. Write the UI resets directly (no UI mutexes either)
+		// and leave termios restore to the terminal's own crash restore,
+		// calling Stop only for terminals without one.
+		ui.terminal.Write(terminalColorSchemeNotificationsOff)
+		ui.terminal.ShowCursor()
+		ui.terminal.Write(scrollOnOutputOn)
+		if viewport {
+			ui.terminal.Write(alternateScreenOff)
+		}
+		if _, selfRestoring := ui.terminal.(interface{ crashRestoresSelf() }); !selfRestoring {
+			_ = ui.terminal.Stop()
+		}
+	})
 	ui.lifecycleMu.Unlock()
 	// Keep terminal scrollback stationary while live output updates the active cursor.
 	ui.terminal.Write(scrollOnOutputOff)
@@ -219,6 +238,13 @@ func (ui *TUI) Start() error {
 
 func (ui *TUI) Stop() error {
 	ui.setStopped(true)
+	ui.lifecycleMu.Lock()
+	crashRestoreCancel := ui.crashRestoreCancel
+	ui.crashRestoreCancel = nil
+	ui.lifecycleMu.Unlock()
+	if crashRestoreCancel != nil {
+		crashRestoreCancel()
+	}
 	ui.renderDispatchMu.Lock()
 	ui.scheduleMu.Lock()
 	ui.renderGeneration++
@@ -288,7 +314,7 @@ func (ui *TUI) RequestRender() {
 	ui.renderGeneration++
 	generation := ui.renderGeneration
 	delay := max(time.Duration(0), minRenderInterval-time.Since(ui.lastRender))
-	ui.renderTimer = time.AfterFunc(delay, func() {
+	ui.renderTimer = time.AfterFunc(delay, guarded(func() {
 		ui.renderDispatchMu.Lock()
 		defer ui.renderDispatchMu.Unlock()
 		ui.scheduleMu.Lock()
@@ -299,7 +325,7 @@ func (ui *TUI) RequestRender() {
 		ui.renderRequested, ui.renderTimer, ui.lastRender = false, nil, time.Now()
 		ui.scheduleMu.Unlock()
 		ui.RenderNow()
-	})
+	}))
 	ui.scheduleMu.Unlock()
 }
 

@@ -121,8 +121,8 @@ func TestRetryProviderRequestAbortsDuringBackoff(t *testing.T) {
 		// A 30s server delay: only an interruptible sleep returns promptly.
 		return "", retryStatusError(500, http.Header{"Retry-After": []string{"30"}}, "hold")
 	})
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("err = %v, want context.Canceled", err)
+	if err == nil || err.Error() != "Request aborted" {
+		t.Fatalf("err = %v, want the upstream createAbortError text", err)
 	}
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
 		t.Fatalf("abort took %s; the backoff sleep is not interruptible", elapsed)

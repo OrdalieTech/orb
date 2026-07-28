@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/OrdalieTech/pigo/internal/jstrim"
 )
 
 type SlashCommandSource string
@@ -156,7 +158,7 @@ func ExpandSkillCommand(text string, skills []Skill) (string, error) {
 		name = text[7:]
 	} else {
 		name = text[7:space]
-		args = strings.TrimFunc(text[space+1:], isJSTrimSpace)
+		args = strings.TrimFunc(text[space+1:], jstrim.IsSpace)
 	}
 	for _, skill := range skills {
 		if skill.Name != name {
@@ -170,7 +172,7 @@ func ExpandSkillCommand(text string, skills []Skill) (string, error) {
 		if err != nil {
 			return text, fmt.Errorf("expand skill %s: %w", skill.Name, err)
 		}
-		body := strings.TrimFunc(parsed.Body, isJSTrimSpace)
+		body := strings.TrimFunc(parsed.Body, jstrim.IsSpace)
 		block := fmt.Sprintf("<skill name=\"%s\" location=\"%s\">\nReferences are relative to %s.\n\n%s\n</skill>", skill.Name, skill.FilePath, skill.BaseDir, body)
 		if args != "" {
 			block += "\n\n" + args

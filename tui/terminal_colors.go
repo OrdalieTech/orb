@@ -151,7 +151,7 @@ func (ui *TUI) QueryTerminalBackgroundColor(timeout time.Duration) <-chan *RgbCo
 	ui.colorMu.Lock()
 	ui.pendingOsc11BackgroundQueries = append(ui.pendingOsc11BackgroundQueries, query)
 	ui.pendingOsc11BackgroundReplies++
-	query.timer = time.AfterFunc(timeout, func() {
+	query.timer = time.AfterFunc(timeout, guarded(func() {
 		ui.colorMu.Lock()
 		defer ui.colorMu.Unlock()
 		if query.settled {
@@ -161,7 +161,7 @@ func (ui *TUI) QueryTerminalBackgroundColor(timeout time.Duration) <-chan *RgbCo
 		query.timer = nil
 		query.result <- nil
 		close(query.result)
-	})
+	}))
 	ui.colorMu.Unlock()
 	ui.terminal.Write(osc11BackgroundQuery)
 	return query.result
@@ -283,7 +283,7 @@ func (ui *TUI) QueryTerminalColorScheme(timeout time.Duration) <-chan TerminalCo
 		ui.terminal.Write(terminalColorSchemeQuery)
 		return result
 	}
-	timer = time.AfterFunc(timeout, func() { settle("") })
+	timer = time.AfterFunc(timeout, guarded(func() { settle("") }))
 	stateMu.Unlock()
 	ui.terminal.Write(terminalColorSchemeQuery)
 	return result

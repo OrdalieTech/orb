@@ -878,3 +878,10 @@ func TestNewRejectsDuplicatePlatformAccountPairs(t *testing.T) {
 		t.Fatalf("err = %v, want duplicate adapter error", err)
 	}
 }
+
+// size reports the live entry count (idle-residue checks in tests).
+func (m *keyedMutex) size() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.entries)
+}

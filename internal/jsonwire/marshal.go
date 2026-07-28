@@ -20,7 +20,22 @@ func Marshal(value any) ([]byte, error) {
 		return nil, err
 	}
 	encoded := bytes.TrimSuffix(buffer.Bytes(), []byte{'\n'})
-	return restoreLineSeparators(encoded), nil
+	return normalizeNegativeZeros(restoreLineSeparators(encoded)), nil
+}
+
+// MarshalIndent matches JSON.stringify(value, null, 2)-style layout when
+// called with ("", "  "): Marshal's escaping plus json.Indent, which inserts
+// whitespace without re-escaping.
+func MarshalIndent(value any, prefix, indent string) ([]byte, error) {
+	compact, err := Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var output bytes.Buffer
+	if err := json.Indent(&output, compact, prefix, indent); err != nil {
+		return nil, err
+	}
+	return output.Bytes(), nil
 }
 
 // MarshalString preserves WTF-8 encoded UTF-16 surrogates so Go can carry
@@ -224,6 +239,56 @@ func MessageRoleAndText(raw json.RawMessage) (string, string) {
 		}
 	}
 	return message.Role, text.String()
+}
+
+// normalizeNegativeZeros rewrites the number token -0 as 0, matching
+// JSON.stringify(-0) === "0" where encoding/json preserves the sign.
+func normalizeNegativeZeros(data []byte) []byte {
+	if !bytes.Contains(data, []byte("-0")) {
+		return data
+	}
+	var output bytes.Buffer
+	output.Grow(len(data))
+	inString := false
+	for index := 0; index < len(data); index++ {
+		char := data[index]
+		if inString {
+			output.WriteByte(char)
+			if char == '\\' && index+1 < len(data) {
+				index++
+				output.WriteByte(data[index])
+			} else if char == '"' {
+				inString = false
+			}
+			continue
+		}
+		if char == '"' {
+			inString = true
+			output.WriteByte(char)
+			continue
+		}
+		if char == '-' && index+1 < len(data) && data[index+1] == '0' &&
+			(index == 0 || tokenBoundaryBefore(data[index-1])) &&
+			(index+2 == len(data) || !numberContinues(data[index+2])) {
+			output.WriteByte('0')
+			index++
+			continue
+		}
+		output.WriteByte(char)
+	}
+	return output.Bytes()
+}
+
+func tokenBoundaryBefore(char byte) bool {
+	switch char {
+	case '[', ',', ':', ' ', '\t', '\n', '\r':
+		return true
+	}
+	return false
+}
+
+func numberContinues(char byte) bool {
+	return (char >= '0' && char <= '9') || char == '.' || char == 'e' || char == 'E'
 }
 
 func restoreLineSeparators(data []byte) []byte {

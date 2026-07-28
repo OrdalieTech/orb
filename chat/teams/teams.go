@@ -257,17 +257,3 @@ func (a *Adapter) Download(ctx context.Context, ref chat.AttachmentRef) (io.Read
 	}
 	return response.Body, mime, nil
 }
-
-func sleepContext(ctx context.Context, d time.Duration) error {
-	if d <= 0 {
-		return nil
-	}
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}

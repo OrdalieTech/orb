@@ -6,6 +6,7 @@ import (
 
 	"github.com/OrdalieTech/pigo/agent"
 	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/internal/jstrim"
 )
 
 type ContextEntryTransform func([]SessionTreeEntry) []SessionTreeEntry
@@ -211,16 +212,5 @@ func rawMessageRole(message json.RawMessage) string {
 }
 
 func trimHarnessJSSpace(value string) string {
-	return strings.TrimFunc(value, func(character rune) bool {
-		switch {
-		case character >= '\t' && character <= '\r':
-			return true
-		case character == ' ', character == '\u00a0', character == '\u1680', character == '\u2028', character == '\u2029', character == '\u202f', character == '\u205f', character == '\u3000', character == '\ufeff':
-			return true
-		case character >= '\u2000' && character <= '\u200a':
-			return true
-		default:
-			return false
-		}
-	})
+	return strings.TrimFunc(value, jstrim.IsSpace)
 }

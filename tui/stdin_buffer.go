@@ -158,15 +158,16 @@ func kittyPrintableCodepoint(sequence string) (rune, bool) {
 // StdinBuffer turns arbitrarily chunked terminal bytes into individual escape
 // sequences and bracketed-paste payloads.
 type StdinBuffer struct {
-	mu           sync.Mutex
-	timeout      time.Duration
-	buffer       string
-	timer        *time.Timer
-	pasteMode    bool
-	pasteBuffer  string
-	pendingKitty rune
-	onData       func(string)
-	onPaste      func(string)
+	mu              sync.Mutex
+	timeout         time.Duration
+	buffer          string
+	timer           *time.Timer
+	timerGeneration uint64
+	pasteMode       bool
+	pasteBuffer     string
+	pendingKitty    rune
+	onData          func(string)
+	onPaste         func(string)
 }
 
 func NewStdinBuffer(timeout time.Duration, onData, onPaste func(string)) *StdinBuffer {
@@ -188,6 +189,10 @@ func (buffer *StdinBuffer) ProcessBytes(data []byte) {
 
 func (buffer *StdinBuffer) Process(data string) {
 	buffer.mu.Lock()
+	// Bumping the generation invalidates a fired AfterFunc parked on mu:
+	// Timer.Stop cannot cancel it, but upstream's clearTimeout semantics
+	// require that only the most recently armed flush ever runs.
+	buffer.timerGeneration++
 	if buffer.timer != nil {
 		buffer.timer.Stop()
 		buffer.timer = nil
@@ -203,11 +208,12 @@ func (buffer *StdinBuffer) Process(data string) {
 	buffer.buffer += data
 	events := buffer.processLocked()
 	if buffer.buffer != "" {
-		buffer.timer = time.AfterFunc(buffer.timeout, func() {
-			for _, sequence := range buffer.Flush() {
+		generation := buffer.timerGeneration
+		buffer.timer = time.AfterFunc(buffer.timeout, guarded(func() {
+			for _, sequence := range buffer.flushExpired(generation) {
 				buffer.emitData(sequence)
 			}
-		})
+		}))
 	}
 	buffer.mu.Unlock()
 	for _, event := range events {
@@ -270,7 +276,9 @@ func (buffer *StdinBuffer) processLocked() []stdinEvent {
 func (buffer *StdinBuffer) emitData(sequence string) {
 	buffer.mu.Lock()
 	runes := []rune(sequence)
-	if len(runes) == 1 && runes[0] == buffer.pendingKitty {
+	// Upstream dedupes only when sequence.length === 1 in UTF-16 code units,
+	// so astral codepoints (two units) are never suppressed.
+	if len(runes) == 1 && runes[0] <= 0xffff && runes[0] == buffer.pendingKitty {
 		buffer.pendingKitty = 0
 		buffer.mu.Unlock()
 		return
@@ -302,9 +310,26 @@ func (buffer *StdinBuffer) resetPendingKitty() {
 	buffer.mu.Unlock()
 }
 
+// flushExpired is the timer path: a stale generation means Process re-armed
+// while this callback was parked on mu, so the fresh incomplete sequence
+// keeps its full completion window instead of being flushed early.
+func (buffer *StdinBuffer) flushExpired(generation uint64) []string {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+	if generation != buffer.timerGeneration {
+		return nil
+	}
+	return buffer.flushLocked()
+}
+
 func (buffer *StdinBuffer) Flush() []string {
 	buffer.mu.Lock()
 	defer buffer.mu.Unlock()
+	return buffer.flushLocked()
+}
+
+func (buffer *StdinBuffer) flushLocked() []string {
+	buffer.timerGeneration++
 	if buffer.timer != nil {
 		buffer.timer.Stop()
 		buffer.timer = nil
@@ -320,6 +345,7 @@ func (buffer *StdinBuffer) Flush() []string {
 func (buffer *StdinBuffer) Clear() {
 	buffer.mu.Lock()
 	defer buffer.mu.Unlock()
+	buffer.timerGeneration++
 	if buffer.timer != nil {
 		buffer.timer.Stop()
 		buffer.timer = nil

@@ -2,7 +2,6 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/OrdalieTech/pigo/agent"
@@ -269,7 +268,9 @@ func (result CompactionResult) MarshalJSON() ([]byte, error) {
 	if result.RetainedTail != nil {
 		retainedTail = &result.RetainedTail
 	}
-	return json.Marshal(struct {
+	// Wire emission goes through ai.Marshal (jsonwire): plain json.Marshal
+	// HTML-escapes <, >, & where upstream JSON.stringify emits literal bytes.
+	return ai.Marshal(struct {
 		Summary          string               `json:"summary"`
 		FirstKeptEntryID string               `json:"firstKeptEntryId,omitempty"`
 		TokensBefore     int64                `json:"tokensBefore"`

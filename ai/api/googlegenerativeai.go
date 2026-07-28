@@ -225,6 +225,11 @@ func streamGoogleWithOptions(
 			return
 		}
 		if err != nil {
+			if ctx.Err() != nil {
+				// Aborts persist the plain abort text, never the raw transport
+				// error, matching the other adapters' mid-stream failures.
+				err = errors.New("Request was aborted") //nolint:staticcheck // Exact upstream text.
+			}
 			fail(err)
 			return
 		}

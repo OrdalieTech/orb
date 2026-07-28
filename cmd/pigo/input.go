@@ -8,6 +8,7 @@ import (
 
 	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/codingagent/tools"
+	"github.com/OrdalieTech/pigo/internal/jstrim"
 	textunicode "golang.org/x/text/encoding/unicode"
 )
 
@@ -26,17 +27,11 @@ func ReadPipedStdin(reader io.Reader) (*string, error) {
 	if err != nil {
 		return nil, err
 	}
-	trimmed := strings.TrimFunc(decodeCLIUTF8(data), isJSTrimSpace)
+	trimmed := strings.TrimFunc(decodeCLIUTF8(data), jstrim.IsSpace)
 	if trimmed == "" {
 		return nil, nil
 	}
 	return stringValue(trimmed), nil
-}
-
-// ProcessTextFileArguments renders @file arguments into upstream file blocks.
-func ProcessTextFileArguments(fileArgs []string, cwd string) (string, error) {
-	processed, err := ProcessFileArguments(fileArgs, cwd)
-	return processed.Text, err
 }
 
 // ProcessFileArguments preserves upstream's split between textual <file>

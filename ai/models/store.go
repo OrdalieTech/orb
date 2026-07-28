@@ -18,6 +18,7 @@ import (
 	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/ai/models/internal/cataloggen"
 	"github.com/OrdalieTech/pigo/internal/filelock"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
 )
 
 const ModelsDevURL = "https://models.dev/api.json"
@@ -49,11 +50,11 @@ func (store orderedStore) MarshalJSON() ([]byte, error) {
 		if index > 0 {
 			output.WriteByte(',')
 		}
-		key, err := json.Marshal(providerID)
+		key, err := jsonwire.Marshal(providerID)
 		if err != nil {
 			return nil, err
 		}
-		value, err := json.Marshal(store.entries[providerID])
+		value, err := jsonwire.Marshal(store.entries[providerID])
 		if err != nil {
 			return nil, err
 		}
@@ -91,7 +92,6 @@ func LoadStore(path string) (*Catalog, error) {
 			if model.Provider != ai.ProviderID(providerID) || model.ID == "" {
 				continue
 			}
-			applyCorrection(&model)
 			providers[providerID][model.ID] = model
 		}
 	}
@@ -401,8 +401,11 @@ func cloneTimestamp(value *int64) *int64 {
 	return &copy
 }
 
+// writeOrderedStore persists with JSON.stringify(current, null, 2) byte parity
+// (upstream models-store.ts): jsonwire leaves <, >, and & literal where
+// json.MarshalIndent would HTML-escape them.
 func writeOrderedStore(path string, stored orderedStore) error {
-	data, err := json.MarshalIndent(stored, "", "  ")
+	data, err := jsonwire.MarshalIndent(stored, "", "  ")
 	if err != nil {
 		return err
 	}

@@ -6,6 +6,29 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Fixed
+
+- Anthropic streams are no longer hard-killed at `timeoutMs` (5 minutes by default): the timeout bounds only the header phase, matching the pinned `@anthropic-ai/sdk` (10-minute default when unset), so long streaming turns complete. Bedrock no longer applies `timeoutMs` as a whole-stream deadline at all (upstream applies none) and can no longer misreport an internal timeout as a user abort, and OpenRouter image generation no longer races the response body read.
+- Aborting a stream mid-flight records upstream's `Request was aborted` in every adapter (openai-responses, openai-completions, Azure, Google, Mistral) instead of raw Go error text such as `context canceled`; aborted provider-retry requests and aborted OpenRouter image body reads return upstream's `Request aborted`, and HTTP-error paths no longer leak the header-timeout wrapper's context.
+- JS extension callbacks (tools, commands, shortcuts, event handlers, providers, renderers, dialogs, state actions) are no longer capped at 30 seconds; only host startup RPCs stay bounded, matching upstream's untimed awaits. Extension tools and provider streams now receive a live positional `AbortSignal` that fires when the agent-side context is cancelled, extension-registered provider streams reach the agent incrementally instead of buffering the whole response, extensions get the full Node `console` surface, and the Node host exits when its transport closes so it cannot be orphaned by a hard pigo crash. A cancel arriving in the same stdin chunk as its request still aborts it, abandoning a provider stream mid-iteration terminates the host-side generator instead of buffering unboundedly, abort reasons arrive as Error values, undecodable streamed events fail the stream like the buffered path, and the console bridge adds profile/profileEnd/timeStamp/createTask and a constructible `console.Console`.
+- `extensions.Exec` sends SIGTERM and only SIGKILLs after a 5-second grace on abort or timeout, letting children trap TERM and clean up, and a successful command that leaves a background grandchild holding the stdio pipes keeps its own exit code after the bounded wait instead of reporting 1.
+- The `project_trust` extension event fires during startup project-trust resolution — for sessions and package commands alike — consulted ahead of the trust store and the interactive prompt as upstream does.
+- A panic on any TUI-spawned goroutine (render timer, input reader, loader ticker, autocomplete, colour-scheme timers, stdin flush) restores the terminal — cooked mode, main screen, cursor, bracketed paste off, kitty keyboard protocol popped — before printing the panic and exiting 1, instead of leaving the terminal raw with a hidden cursor. A split escape sequence whose second chunk arrives exactly at the stdin flush deadline keeps its full completion window (the same stale-timer guard now covers the capability-negotiation fragment buffer), astral-plane characters echoed after their kitty CSI-u printable report are no longer suppressed, and the crash restore path can no longer deadlock on a mutex the panicking goroutine holds.
+- Terminal cell widths match upstream for keycap emoji, East-Asian-Wide text-presentation symbols, and halfwidth voiced sound marks, fixing wrap and truncation drift on lines containing them.
+- A 0-byte `auth.json` (for example after a crash between create and first write) self-heals on the next credential write instead of failing every login with `EOF`.
+- Session-file writes no longer leave permanent `.jsonl.lock` files: session locking uses the proper-lockfile-compatible directory lock, which self-cleans on release, is stolen when stale, and interoperates with a concurrently running upstream pi.
+- Session files with an explicit empty header id keep it on load, `trust.json` keys sort in JS UTF-16 code-unit order, `models-store.json` and the extension provider store are byte-identical to upstream `JSON.stringify(value, null, 2)` instead of HTML-escaping `<`, `>` and `&`, `harness.CompactionResult` wire JSON routes through jsonwire, extension-host OAuth credentials serialize in upstream member order, and `jsonwire.Marshal` emits `0` for negative zero.
+- Harness `PrepareCompaction`/`PrepareTreeCompaction` use upstream harness's own cut-point algorithm, while `FindCutPoint`/`PrepareLegacyCompaction` keep the coding-agent algorithm and treat empty-summary `branch_summary` entries as invisible metadata in cut-point selection — while branch summarization still projects them unconditionally — matching upstream on both sides.
+- RPC frames with a missing or non-string `type` answer upstream's untyped `Unknown command` response with the id and type echoed in upstream's `JSON.stringify` canonical form, the untyped path honors a pending extension shutdown like every command, and `--mode rpc` with `@file` arguments fails up front with upstream's error instead of silently dropping them.
+- Startup `Error:`/`Warning:` diagnostics are coloured red and yellow when stderr is a TTY (`NO_COLOR` and `TERM=dumb` respected), and unstamped dev builds report `pigo dev` instead of a stale version number.
+- chat: the Telegram webhook caps request bodies at 1 MB, and image attachments larger than 20 MB fall back to a textual attachment note instead of being base64-inlined into the prompt.
+
+### Added
+
+- Upstream's `--verbose` flag forces verbose startup instead of being rejected as an unknown option.
+- `--export <session> <output>.md` writes the session as portable Markdown; every other output path keeps the HTML export.
+- Exported provider constructors such as `providers.GitHubCopilot()` return complete registry metadata (APIs, base URL, env-key lists) instead of a partially populated struct.
+
 ## [0.4.8] - 2026-07-27
 
 ### Fixed
