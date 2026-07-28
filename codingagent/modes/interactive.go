@@ -78,9 +78,12 @@ type InteractiveMode struct {
 	interactiveUI *InteractiveUI
 
 	// State
-	mu                sync.Mutex
-	statusMessageMu   sync.Mutex
-	streaming         bool
+	mu              sync.Mutex
+	statusMessageMu sync.Mutex
+	streaming       bool
+	// turnAnswered reports whether the running turn has shown anything yet;
+	// until it does, interrupting takes the prompt back (see abortAndRestore).
+	turnAnswered      bool
 	toolsExpanded     bool
 	thinkingHidden    bool
 	thinkingLabel     string
@@ -321,6 +324,7 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 			prompting = true
 			mode.mu.Lock()
 			mode.streaming = true
+			mode.turnAnswered = false
 			mode.mu.Unlock()
 			mode.interactiveUI.showWorkingIndicator()
 			go func(entry inputEntry) {
@@ -1057,9 +1061,10 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 	mode.editor.OnEscape = func() {
 		mode.mu.Lock()
 		streaming := mode.streaming
+		answered := mode.turnAnswered
 		mode.mu.Unlock()
 		if streaming {
-			mode.session.Abort()
+			mode.abortAndRestore(answered)
 			return
 		}
 		if mode.bashMode {
@@ -1183,9 +1188,11 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 
 	mode.editor.OnAction("app.message.dequeue", func() {
 		messages := mode.session.DequeueMessages()
-		if len(messages) > 0 {
-			mode.editor.SetText(strings.Join(messages, "\n"))
+		if len(messages) == 0 {
+			mode.showStatusMessage("No queued messages to restore")
+			return
 		}
+		mode.restoreToEditor(nil, messages)
 	})
 
 	mode.editor.OnAction("app.model.select", func() { mode.handleModelCommand("") })
@@ -2113,6 +2120,95 @@ func sessionMessageRoleText(raw json.RawMessage) (string, string) {
 		}
 	}
 	return message.Role, result.String()
+}
+
+// abortAndRestore interrupts the running turn and hands back everything the
+// user typed that never got answered. Queued messages return to the editor as
+// upstream does (interactive-mode.ts restoreQueuedMessagesToEditor); a turn
+// that has shown nothing yet additionally gives its prompt back and rewinds the
+// branch to before it, so an edited resend replaces the prompt instead of
+// stacking after it.
+func (mode *InteractiveMode) abortAndRestore(answered bool) {
+	queued := mode.session.DequeueMessages()
+	unsentID := ""
+	if !answered {
+		unsentID = mode.pendingPromptEntryID()
+	}
+	mode.session.Abort()
+	if unsentID == "" {
+		mode.restoreToEditor(nil, queued)
+		return
+	}
+	// The rewind has to wait for the aborted run to settle: NavigateTree
+	// re-syncs the agent's messages from the branch.
+	go func() {
+		if err := mode.session.WaitForIdle(context.Background()); err != nil {
+			mode.restoreToEditor(nil, queued)
+			return
+		}
+		result, err := mode.session.NavigateTree(context.Background(), unsentID, codingagent.NavigateTreeOptions{})
+		if err != nil || result.Cancelled {
+			mode.restoreToEditor(nil, queued)
+			return
+		}
+		mode.renderInitialMessages()
+		mode.restoreToEditor(&result.EditorText, queued)
+	}()
+}
+
+// pendingPromptEntryID returns the branch's trailing user message — the prompt
+// whose answer never arrived — or "" when the assistant already committed one.
+func (mode *InteractiveMode) pendingPromptEntryID() string {
+	branch := mode.session.Manager().GetBranch()
+	for index := len(branch) - 1; index >= 0; index-- {
+		entry := branch[index]
+		if entry.Type != "message" {
+			continue
+		}
+		role, _ := sessionMessageRoleText(entry.Message)
+		if role != "user" {
+			return ""
+		}
+		return entry.ID
+	}
+	return ""
+}
+
+// restoreToEditor puts the un-sent prompt, then any queued messages, then the
+// current draft back in the editor, in the order they were written.
+func (mode *InteractiveMode) restoreToEditor(unsent *string, queued []string) {
+	parts := make([]string, 0, len(queued)+2)
+	if unsent != nil && strings.TrimSpace(*unsent) != "" {
+		parts = append(parts, *unsent)
+	}
+	for _, message := range queued {
+		if strings.TrimSpace(message) != "" {
+			parts = append(parts, message)
+		}
+	}
+	if current := mode.activeEditorText(false); strings.TrimSpace(current) != "" {
+		parts = append(parts, current)
+	}
+	if len(parts) == 0 {
+		return
+	}
+	mode.setActiveEditorText(strings.Join(parts, "\n\n"))
+	switch {
+	case unsent != nil && len(queued) > 0:
+		mode.showStatusMessage(fmt.Sprintf("Restored the prompt and %s to editor", pluralMessages(len(queued))))
+	case unsent != nil:
+		mode.showStatusMessage("Restored the prompt to editor")
+	default:
+		mode.showStatusMessage(fmt.Sprintf("Restored %s to editor", pluralMessages(len(queued))))
+	}
+	mode.ui.RequestRender()
+}
+
+func pluralMessages(count int) string {
+	if count == 1 {
+		return "1 queued message"
+	}
+	return fmt.Sprintf("%d queued messages", count)
 }
 
 func (mode *InteractiveMode) showStatusMessage(text string) {
@@ -3309,6 +3405,7 @@ func (mode *InteractiveMode) handleEvent(event any) {
 	case agent.AgentStartEvent:
 		mode.mu.Lock()
 		mode.streaming = true
+		mode.turnAnswered = false
 		mode.mu.Unlock()
 		if mode.interactiveUI != nil {
 			mode.interactiveUI.showWorkingIndicator()
@@ -3347,6 +3444,9 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		}
 		mode.mu.Lock()
 		comp := mode.currentStreaming
+		if len(assistant.Content) > 0 {
+			mode.turnAnswered = true
+		}
 		mode.mu.Unlock()
 		if comp != nil {
 			comp.UpdateContent(assistant)
@@ -3369,6 +3469,9 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		mode.ui.RequestRender()
 
 	case agent.ToolExecutionStartEvent:
+		mode.mu.Lock()
+		mode.turnAnswered = true
+		mode.mu.Unlock()
 		tc := mode.newToolExecutionComponent(ev.ToolName, ev.ToolCallID, ev.Args)
 		tc.SetArgsComplete()
 		mode.mu.Lock()
