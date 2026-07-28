@@ -16,6 +16,25 @@ const pending = new Map();
 const entries = new Map();
 const extensions = new Map();
 const hostSections = [];
+// Per-in-flight-request abort controllers: pigo emits cancel_request when the
+// Go-side ctx for a pending request is cancelled, so the positional
+// AbortSignal handed to tool.execute and provider streams fires live.
+const requestAborts = new Map();
+// cancel_request frames that arrived before their request registered a
+// controller: readline replays every line of one stdin chunk synchronously,
+// so a coalesced request+cancel pair delivers the cancel first.
+const cancelledBeforeStart = new Map();
+
+function retainRequestAbort(requestId) {
+	const controller = new AbortController();
+	requestAborts.set(requestId, controller);
+	if (cancelledBeforeStart.has(requestId)) {
+		const reason = cancelledBeforeStart.get(requestId);
+		cancelledBeforeStart.delete(requestId);
+		controller.abort(reason);
+	}
+	return controller;
+}
 
 function registerHostSection(section) {
 	hostSections.push(section);
@@ -99,13 +118,68 @@ function log(level, values, extensionId) {
 	}
 }
 
-globalThis.console = Object.freeze({
-	debug: (...values) => log("debug", values),
-	log: (...values) => log("info", values),
-	info: (...values) => log("info", values),
-	warn: (...values) => log("warn", values),
-	error: (...values) => log("error", values),
-});
+// Full Node-shaped console mapped onto the log bridge: upstream runs
+// extensions in-process with Node's real console, so every standard method
+// must exist. Left unfrozen so extensions may patch it, as they can upstream.
+{
+	const createConsoleBridge = () => {
+		const counts = new Map();
+		const timers = new Map();
+		const consoleBridge = {
+			debug: (...values) => log("debug", values),
+			log: (...values) => log("info", values),
+			info: (...values) => log("info", values),
+			warn: (...values) => log("warn", values),
+			error: (...values) => log("error", values),
+			trace(...values) {
+				const stack = new Error().stack?.split("\n").slice(2).join("\n") ?? "";
+				log("error", ["Trace:", ...values, ...(stack ? [`\n${stack}`] : [])]);
+			},
+			dir: (value) => log("info", [value]),
+			dirxml: (...values) => log("info", values),
+			table: (data, columns) => log("info", columns === undefined ? [data] : [data, columns]),
+			group: (...values) => { if (values.length > 0) log("info", values); },
+			groupCollapsed: (...values) => { if (values.length > 0) log("info", values); },
+			groupEnd: () => {},
+			clear: () => {},
+			assert(condition, ...values) {
+				if (!condition) log("error", ["Assertion failed" + (values.length > 0 ? ":" : ""), ...values]);
+			},
+			count(label = "default") {
+				const next = (counts.get(label) ?? 0) + 1;
+				counts.set(label, next);
+				log("info", [`${label}: ${next}`]);
+			},
+			countReset(label = "default") { counts.delete(label); },
+			time(label = "default") { timers.set(label, Date.now()); },
+			timeLog(label = "default", ...values) {
+				const started = timers.get(label);
+				if (started === undefined) log("warn", [`Timer '${label}' does not exist`]);
+				else log("info", [`${label}: ${Date.now() - started}ms`, ...values]);
+			},
+			timeEnd(label = "default") {
+				const started = timers.get(label);
+				timers.delete(label);
+				if (started === undefined) log("warn", [`Timer '${label}' does not exist`]);
+				else log("info", [`${label}: ${Date.now() - started}ms`]);
+			},
+			// Inspector-backed members are no-ops without an inspector session,
+			// matching Node's behavior when none is attached.
+			profile: () => {},
+			profileEnd: () => {},
+			timeStamp: () => {},
+			createTask: () => ({ run: (callback) => callback() }),
+		};
+		return consoleBridge;
+	};
+	const consoleBridge = createConsoleBridge();
+	// new console.Console(stream) must construct; its output maps onto the log
+	// bridge because extension stdout carries the host protocol.
+	consoleBridge.Console = function Console() {
+		return createConsoleBridge();
+	};
+	globalThis.console = consoleBridge;
+}
 
 function makeContext(value = {}, state) {
 	const context = {
@@ -223,17 +297,22 @@ async function executeTool(frame) {
 	const state = extensions.get(frame.params.extensionId);
 	const tool = state?.tools.get(frame.params.toolName);
 	if (!tool) throw new Error(`unknown tool ${frame.params.toolName}`);
-	const controller = new AbortController();
+	const controller = retainRequestAbort(frame.id);
 	const onUpdate = (partial) => emit("tool_update", { requestId: frame.id, partial: partial ?? { content: [] } });
-	const result = await tool.execute(
-		frame.params.toolCallId,
-		frame.params.params,
-		controller.signal,
-		onUpdate,
-		makeContext(frame.params.context, state),
-	);
-	await state.registrationTail;
-	return result ?? { content: [] };
+	try {
+		const result = await tool.execute(
+			frame.params.toolCallId,
+			frame.params.params,
+			controller.signal,
+			onUpdate,
+			makeContext(frame.params.context, state),
+		);
+		await state.registrationTail;
+		return result ?? { content: [] };
+	} finally {
+		requestAborts.delete(frame.id);
+		cancelledBeforeStart.delete(frame.id);
+	}
 }
 
 async function executeCommand(frame) {
@@ -331,6 +410,20 @@ function handleFrame(frame) {
 		return;
 	}
 	if (frame.kind === "event" && typeof frame.method === "string") {
+		if (frame.method === "cancel_request") {
+			const requestId = frame.params?.requestId;
+			// Upstream abort reasons are Error values; wrap the wire string so
+			// signal.reason.message works. Without one, abort() keeps the
+			// default AbortError DOMException.
+			const reason = frame.params?.reason ? new Error(frame.params.reason) : undefined;
+			const controller = requestAborts.get(requestId);
+			if (!controller) {
+				if (typeof requestId === "string" && requestId !== "") cancelledBeforeStart.set(requestId, reason);
+			} else if (!controller.signal.aborted) {
+				controller.abort(reason);
+			}
+			return;
+		}
 		dispatchHostSectionEvent(frame);
 		return;
 	}
@@ -354,6 +447,10 @@ lines.on("close", () => {
 	for (const waiter of pending.values()) waiter.reject(new Error("pigo closed the extension host transport"));
 	pending.clear();
 	for (const section of hostSections) section.onClose?.();
+	// pigo owns this process: once the transport is gone (including a hard pigo
+	// crash that never sends shutdown) an extension's live handles must not keep
+	// an orphan alive. Deferred a tick so queued writes flush first.
+	setTimeout(() => process.exit(process.exitCode ?? 0), 0);
 });
 
 // ===== SECTION: providers (agent-c) =====
@@ -495,19 +592,29 @@ registerHostSection((() => {
 		registerWithPigo(state, "register_provider", { extensionId: state.id, provider });
 	}
 
-	async function collectProviderStream(callback, owner, args) {
-		const controller = new AbortController();
-		const options = args.options === undefined ? undefined : { ...args.options, signal: controller.signal };
-		const source = await callback.call(owner, args.model, args.context, options);
-		const iterator = typeof source?.[Symbol.asyncIterator] === "function" ? source[Symbol.asyncIterator]() : source;
-		if (!iterator || typeof iterator.next !== "function") throw new TypeError("provider stream is not async iterable");
-		const events = [];
-		while (true) {
-			const next = await iterator.next();
-			if (next.done) break;
-			events.push(next.value);
+	async function collectProviderStream(frame, callback, owner, args) {
+		const controller = retainRequestAbort(frame.id);
+		try {
+			const options = args.options === undefined ? undefined : { ...args.options, signal: controller.signal };
+			const source = await callback.call(owner, args.model, args.context, options);
+			const iterator = typeof source?.[Symbol.asyncIterator] === "function" ? source[Symbol.asyncIterator]() : source;
+			if (!iterator || typeof iterator.next !== "function") throw new TypeError("provider stream is not async iterable");
+			while (true) {
+				const next = await iterator.next();
+				if (next.done) break;
+				if (controller.signal.aborted) {
+					// pigo abandoned the stream: terminate the extension
+					// generator like an upstream consumer's iterator.return().
+					await iterator.return?.();
+					break;
+				}
+				emit("provider_stream_event", { requestId: frame.id, event: next.value });
+			}
+			return { events: [] };
+		} finally {
+			requestAborts.delete(frame.id);
+			cancelledBeforeStart.delete(frame.id);
 		}
-		return { events };
 	}
 
 	async function invokeProvider(frame) {
@@ -540,7 +647,7 @@ registerHostSection((() => {
 				break;
 			case "stream":
 			case "streamSimple":
-				value = await collectProviderStream(retained.callback, retained.owner, args);
+				value = await collectProviderStream(frame, retained.callback, retained.owner, args);
 				break;
 			default:
 				throw new Error(`unsupported provider callback ${retained.method}`);

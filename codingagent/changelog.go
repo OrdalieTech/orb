@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/OrdalieTech/pigo/internal/jstrim"
 )
 
 type changelogEntry struct {
@@ -55,7 +57,7 @@ func parseChangelog(content string) []changelogEntry {
 			return
 		}
 		entry := *current
-		entry.Content = strings.TrimFunc(strings.Join(lines, "\n"), isJSTrimSpace)
+		entry.Content = strings.TrimFunc(strings.Join(lines, "\n"), jstrim.IsSpace)
 		entries = append(entries, entry)
 	}
 	for _, line := range strings.Split(content, "\n") {

@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"regexp"
 	"slices"
-	"time"
 
 	"github.com/OrdalieTech/pigo/ai"
 	openai "github.com/openai/openai-go/v3"
@@ -57,12 +56,16 @@ func GenerateOpenRouterImages(
 		Timestamp:  openAINowUnixMilli(),
 	}
 	if err := generateOpenRouterImages(ctx, model, imagesContext, options, output); err != nil {
+		message := formatOpenAIError(err, "")
 		if ctx.Err() != nil {
 			output.StopReason = ai.ImagesStopReasonAborted
+			// The body read happens outside retryProviderRequest, so aborts
+			// surface createAbortError's text here, never the raw transport
+			// error, matching upstream's abort path inside the SDK create().
+			message = createProviderAbortError().Error()
 		} else {
 			output.StopReason = ai.ImagesStopReasonError
 		}
-		message := formatOpenAIError(err, "")
 		output.ErrorMessage = &message
 	}
 	return output, nil
@@ -92,19 +95,6 @@ func generateOpenRouterImages(
 		return fmt.Errorf("encode OpenRouter images request: %w", err)
 	}
 
-	client := openai.NewClient(
-		option.WithAPIKey(apiKey),
-		option.WithBaseURL(model.BaseURL),
-		option.WithHTTPClient(openAIHTTPClient),
-	)
-	// Upstream 7af8533c: the SDK runs with maxRetries 0 and retryProviderRequest
-	// owns retrying.
-	requestOptions := []option.RequestOption{option.WithMaxRetries(0)}
-	if options != nil {
-		if options.TimeoutMS != nil {
-			requestOptions = append(requestOptions, option.WithRequestTimeout(time.Duration(*options.TimeoutMS)*time.Millisecond))
-		}
-	}
 	headers := make(http.Header)
 	if model.Headers != nil {
 		for name, value := range *model.Headers {
@@ -117,6 +107,25 @@ func generateOpenRouterImages(
 		// drops nulls after the model/options spread merge.
 		mergeProviderHeaders(headers, options.Headers)
 	}
+	// TimeoutMS deadlines only the header phase, like the pinned JS SDK's
+	// fetch timeout; reading the response body is never raced (OA-M1).
+	var timeoutMS *int64
+	if options != nil {
+		timeoutMS = options.TimeoutMS
+	}
+	httpClient, err := openAIHeaderTimeoutClient(openAIHTTPClient, timeoutMS, headers)
+	if err != nil {
+		return err
+	}
+
+	client := openai.NewClient(
+		option.WithAPIKey(apiKey),
+		option.WithBaseURL(model.BaseURL),
+		option.WithHTTPClient(httpClient),
+	)
+	// Upstream 7af8533c: the SDK runs with maxRetries 0 and retryProviderRequest
+	// owns retrying.
+	requestOptions := []option.RequestOption{option.WithMaxRetries(0)}
 	for name, values := range headers {
 		requestOptions = append(requestOptions, option.WithHeader(name, values[len(values)-1]))
 	}
@@ -132,7 +141,13 @@ func generateOpenRouterImages(
 		return attempt, postErr
 	})
 	if err != nil {
-		return normalizeOpenAIRequestError(response, err)
+		err = normalizeOpenAIRequestError(response, err)
+		// The header-timeout doer's body wrapper releases its context cancel
+		// only on Close, so the failed response must still be closed.
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
+		return err
 	}
 	if response == nil {
 		return errors.New("OpenAI API returned no HTTP response")

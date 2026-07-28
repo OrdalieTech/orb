@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/pigo/chat"
+	"github.com/OrdalieTech/pigo/chat/internal/ctxsleep"
 )
 
 // DefaultBaseURL is the production REST API endpoint.
@@ -103,14 +104,14 @@ func New(opts Options) (*Adapter, error) {
 			baseURL: strings.TrimRight(opts.BaseURL, "/"),
 			token:   opts.Token,
 			http:    httpClient,
-			sleep:   sleepContext,
+			sleep:   ctxsleep.Sleep,
 		},
 		account:            account,
 		logger:             opts.Logger,
 		typingInterval:     opts.TypingInterval,
 		previewMinInterval: opts.PreviewMinInterval,
 		gatewayDialTimeout: 30 * time.Second,
-		sleep:              sleepContext,
+		sleep:              ctxsleep.Sleep,
 		jitter:             rand.Float64,
 		botUserID:          account,
 	}, nil
@@ -193,18 +194,4 @@ func accountFromToken(token string) string {
 		}
 	}
 	return ""
-}
-
-func sleepContext(ctx context.Context, d time.Duration) error {
-	if d <= 0 {
-		return ctx.Err()
-	}
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
 }

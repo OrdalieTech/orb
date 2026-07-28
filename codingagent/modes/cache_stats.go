@@ -137,19 +137,6 @@ func computeCacheWaste(entries []sessionstore.SessionEntry, models []ai.Model) c
 	return totals
 }
 
-// collectCacheMisses mirrors upstream collectCacheMisses; misses are keyed by
-// session entry ID because decoded messages have no stable identity in Go.
-func collectCacheMisses(entries []sessionstore.SessionEntry, models []ai.Model) map[string]*cacheMiss {
-	misses := make(map[string]*cacheMiss)
-	scanCacheEntries(entries, func(previous *cacheRequest, entryID string, message *ai.AssistantMessage) bool {
-		if miss := computeCacheMiss(previous, message, models); miss != nil {
-			misses[entryID] = miss
-		}
-		return true
-	})
-	return misses
-}
-
 // detectCacheMiss mirrors upstream detectCacheMiss for a just-completed or
 // re-rendered assistant message. When target is already persisted the scan
 // stops at its entry, so rebuilds resolve the same previous request the live

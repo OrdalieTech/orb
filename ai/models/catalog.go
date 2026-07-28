@@ -32,7 +32,6 @@ func Decode(data []byte) (*Catalog, error) {
 				model.Name = model.ID
 			}
 			model.Provider = ai.ProviderID(providerID)
-			applyCorrection(&model)
 			entries[modelID] = model
 		}
 	}

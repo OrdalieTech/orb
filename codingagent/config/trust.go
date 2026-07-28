@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf16"
 
 	"github.com/OrdalieTech/pigo/internal/jsonwire"
 )
@@ -148,7 +149,7 @@ func writeTrustFile(path string, data trustFile) error {
 	for key := range data {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
+	sort.Slice(keys, func(left, right int) bool { return lessUTF16(keys[left], keys[right]) })
 	var output bytes.Buffer
 	if len(keys) == 0 {
 		output.WriteString("{}")
@@ -182,6 +183,19 @@ func writeTrustFile(path string, data trustFile) error {
 		return err
 	}
 	return os.WriteFile(path, output.Bytes(), 0o644)
+}
+
+// lessUTF16 orders keys the way JS Array.prototype.sort() compares strings: by
+// UTF-16 code units, which diverges from Go byte order for astral characters.
+func lessUTF16(left, right string) bool {
+	leftUnits := utf16.Encode([]rune(left))
+	rightUnits := utf16.Encode([]rune(right))
+	for index := 0; index < len(leftUnits) && index < len(rightUnits); index++ {
+		if leftUnits[index] != rightUnits[index] {
+			return leftUnits[index] < rightUnits[index]
+		}
+	}
+	return len(leftUnits) < len(rightUnits)
 }
 
 func findNearestTrustEntry(data trustFile, cwd string) *ProjectTrustStoreEntry {

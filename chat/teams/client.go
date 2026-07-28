@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/OrdalieTech/pigo/chat/internal/ctxsleep"
 )
 
 const maxResponseBytes = 4 << 20
@@ -78,7 +80,7 @@ func newClient(tokens *tokenSource, httpClient *http.Client) *client {
 		maxAttempts: 4,
 		backoffBase: 2 * time.Second,
 		backoffCap:  20 * time.Second,
-		sleep:       sleepContext,
+		sleep:       ctxsleep.Sleep,
 		jitter: func(d time.Duration) time.Duration {
 			if d <= 0 {
 				return 0

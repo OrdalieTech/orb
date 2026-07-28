@@ -37,6 +37,7 @@ type extensionRuntimeState struct {
 	started              bool
 	config               SessionRuntimeConfig
 	shutdownEmitted      bool
+	shutdownHandler      func()
 }
 
 func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig) {
@@ -140,7 +141,14 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 			defer state.mu.Unlock()
 			return len(state.pendingNextTurn) > 0 || runtime.agent.HasQueuedMessages()
 		},
-		Shutdown: runtime.Abort,
+		Shutdown: func() {
+			state.mu.Lock()
+			handler := state.shutdownHandler
+			state.mu.Unlock()
+			if handler != nil {
+				handler()
+			}
+		},
 		GetContextUsage: func() *extensions.ContextUsage {
 			usage := runtime.GetContextUsage()
 			if usage == nil {
@@ -222,6 +230,19 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 	if !runtimeConfig.DeferExtensionStart && !runtimeConfig.DeferSessionStart {
 		_ = runtime.BindExtensions(context.Background())
 	}
+}
+
+// SetExtensionShutdownHandler installs the mode-specific behavior for an
+// extension's ctx.shutdown(). Upstream leaves it unset outside interactive and
+// RPC, where shutdown is a no-op.
+func (runtime *SessionRuntime) SetExtensionShutdownHandler(handler func()) {
+	if runtime == nil || runtime.extensionState == nil {
+		return
+	}
+	state := runtime.extensionState
+	state.mu.Lock()
+	state.shutdownHandler = handler
+	state.mu.Unlock()
 }
 
 // BindExtensions activates the session's extension instance and emits its

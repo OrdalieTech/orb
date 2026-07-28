@@ -111,3 +111,58 @@ func TestWrapTextWithANSIUpstreamRegressions(t *testing.T) {
 		}
 	}
 }
+
+// Expected widths generated from upstream's visibleWidth at the pinned commit
+// (packages/tui/src/utils.ts, get-east-asian-width via node), by running in
+// .upstream/:
+//
+//	node --import tsx -e 'import { visibleWidth } from "./packages/tui/src/utils.ts";
+//	  for (const s of [...vectors]) console.log(JSON.stringify(s), visibleWidth(s));'
+func TestVisibleWidthUpstreamCorrectionClasses(t *testing.T) {
+	cases := []struct {
+		text string
+		want int
+	}{
+		// Keycap sequences: RGI emoji upstream, narrow base under uniseg.
+		{"1️⃣", 2},
+		{"#️⃣", 2},
+		{"*️⃣", 2},
+		{"0️⃣", 2},
+		// East-Asian-Wide symbols with default text presentation.
+		{"㊗", 2},
+		{"㊙", 2},
+		{"〰", 2},
+		{"〽", 2},
+		{"\U0001f202", 2},
+		{"\U0001f237", 2},
+		// Halfwidth voiced sound marks are halfwidth forms upstream.
+		{"ﾞ", 1},
+		{"ﾟ", 1},
+		{"ｶﾞ", 2},
+		{"カﾞ", 3},
+		{"ﾞﾞ", 2},
+		// Controls that must not change.
+		{"abc", 3},
+		{"hello world", 11},
+		{"你好", 4},
+		{"カ", 2},
+		{"ｶ", 1},
+		{"\U0001f600", 2},
+		{"\U0001f469\u200d\U0001f4bb", 2},
+		{"\U0001f1eb\U0001f1f7", 2},
+		{"❤️", 2},
+		{"⚠️", 2},
+		{"#⃣", 1},
+		{"5️", 1},
+		{"㊙️", 2},
+		{"㊗️", 2},
+		{"ำ", 1},
+		{"กำ", 2},
+		{"x\ty", 5},
+	}
+	for _, entry := range cases {
+		if got := VisibleWidth(entry.text); got != entry.want {
+			t.Errorf("VisibleWidth(%q) = %d, want %d", entry.text, got, entry.want)
+		}
+	}
+}

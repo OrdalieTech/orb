@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/pigo/chat"
+	"github.com/OrdalieTech/pigo/chat/internal/ctxsleep"
 )
 
 const platformName = "googlechat"
@@ -169,7 +170,7 @@ func New(opts Options) (*Adapter, error) {
 		lastSpaceWrite: map[string]time.Time{},
 		maxAttempts:    4,
 		backoff:        defaultBackoff,
-		sleep:          sleepContext,
+		sleep:          ctxsleep.Sleep,
 		now:            time.Now,
 	}, nil
 }
@@ -440,20 +441,6 @@ func (a *Adapter) do(ctx context.Context, method, path string, query url.Values,
 			continue
 		}
 		return err
-	}
-}
-
-func sleepContext(ctx context.Context, d time.Duration) error {
-	if d <= 0 {
-		return nil
-	}
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
 	}
 }
 

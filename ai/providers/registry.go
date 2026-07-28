@@ -74,6 +74,17 @@ func withProviderMetadata(value Provider, baseURL string, env, apiKeyEnv []strin
 	return value
 }
 
+// registered backs the exported per-provider constructors so they return the
+// registry-completed metadata (single source; per-provider files only carry
+// identity and auth wiring).
+func registered(id ai.ProviderID) Provider {
+	provider, ok := Get(id)
+	if !ok {
+		panic("providers: unregistered provider " + string(id))
+	}
+	return provider
+}
+
 func Get(id ai.ProviderID) (Provider, bool) {
 	index := slices.IndexFunc(registry, func(provider Provider) bool { return provider.ID == id })
 	if index < 0 {

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"sync"
 	"testing"
 	"time"
 )
@@ -104,5 +105,91 @@ func TestStdinBufferReassemblesSplitUTF8(t *testing.T) {
 	buffer.Process("\xa9")
 	if !equalLines(data, []string{"é", "\x1bé"}) {
 		t.Fatalf("split UTF-8 = %#v", data)
+	}
+}
+
+func TestStdinBufferKittyDedupeSkipsAstralCodepoints(t *testing.T) {
+	var data []string
+	buffer := NewStdinBuffer(5*time.Millisecond, func(value string) { data = append(data, value) }, nil)
+	defer buffer.Close()
+	// Upstream compares sequence.length === 1 in UTF-16 code units, so an
+	// astral printable echoed after its kitty CSI-u report is never deduped.
+	buffer.Process("\x1b[128512u")
+	buffer.Process("\U0001f600")
+	if want := []string{"\x1b[128512u", "\U0001f600"}; !equalLines(data, want) {
+		t.Fatalf("astral data = %#v, want %#v", data, want)
+	}
+
+	data = nil
+	buffer.Process("\x1b[97u")
+	buffer.Process("a")
+	if want := []string{"\x1b[97u"}; !equalLines(data, want) {
+		t.Fatalf("bmp data = %#v, want %#v", data, want)
+	}
+}
+
+func TestStdinBufferStaleTimerCannotFlushFreshSequence(t *testing.T) {
+	var data []string
+	buffer := NewStdinBuffer(time.Hour, func(value string) { data = append(data, value) }, nil)
+	defer buffer.Close()
+
+	buffer.Process("\x1b[<35")
+	buffer.mu.Lock()
+	staleGeneration := buffer.timerGeneration
+	buffer.mu.Unlock()
+
+	buffer.Process(";10")
+
+	// Simulate the first timer having fired but parked on mu until after
+	// Process re-armed: the stale flush must not steal the fresh sequence's
+	// completion window.
+	if flushed := buffer.flushExpired(staleGeneration); flushed != nil {
+		t.Fatalf("stale timer flushed %#v", flushed)
+	}
+	if buffered := buffer.Buffered(); buffered != "\x1b[<35;10" {
+		t.Fatalf("buffered = %q", buffered)
+	}
+	if len(data) != 0 {
+		t.Fatalf("data = %#v", data)
+	}
+	if got := buffer.Flush(); !equalLines(got, []string{"\x1b[<35;10"}) {
+		t.Fatalf("flush = %#v", got)
+	}
+}
+
+func TestStdinBufferSplitSequenceKeepsCompletionWindow(t *testing.T) {
+	// Timing port of the review repro: the second chunk of a split escape
+	// sequence arriving at the flush deadline must still get a full timeout
+	// window before the combined incomplete sequence is flushed raw.
+	const timeout = 2 * time.Millisecond
+	type stamped struct {
+		value string
+		at    time.Time
+	}
+	for trial := 0; trial < 50; trial++ {
+		var mu sync.Mutex
+		var emitted []stamped
+		buffer := NewStdinBuffer(timeout, func(value string) {
+			now := time.Now()
+			mu.Lock()
+			emitted = append(emitted, stamped{value: value, at: now})
+			mu.Unlock()
+		}, nil)
+		buffer.Process("\x1b[<35")
+		deadline := time.Now().Add(timeout)
+		for time.Now().Before(deadline) {
+		}
+		buffer.Process(";10")
+		second := time.Now()
+		time.Sleep(4 * timeout)
+		mu.Lock()
+		for _, entry := range emitted {
+			if entry.value == "\x1b[<35;10" && entry.at.Before(second.Add(timeout/2)) {
+				mu.Unlock()
+				t.Fatalf("trial %d: incomplete sequence flushed %v after second chunk", trial, entry.at.Sub(second))
+			}
+		}
+		mu.Unlock()
+		buffer.Close()
 	}
 }

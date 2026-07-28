@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/OrdalieTech/pigo/internal/ignorerules"
+	"github.com/OrdalieTech/pigo/internal/jstrim"
 )
 
 const (
@@ -84,7 +85,7 @@ func parseResourceFrontmatter(content string) (parsedFrontmatter, error) {
 	// treats end-of-input as a line break, so a trailing block scalar keeps the
 	// newline clip chomping gives it; yaml.v3 does not synthesize one.
 	yamlText := normalized[4 : end+1]
-	body := strings.TrimFunc(normalized[end+4:], isJSTrimSpace)
+	body := strings.TrimFunc(normalized[end+4:], jstrim.IsSpace)
 	if yamlText == "" {
 		return parsedFrontmatter{Values: map[string]any{}, Body: body}, nil
 	}
@@ -150,7 +151,7 @@ func validateSkillName(name string) []string {
 }
 
 func validateSkillDescription(description string) []string {
-	if strings.TrimFunc(description, isJSTrimSpace) == "" {
+	if strings.TrimFunc(description, jstrim.IsSpace) == "" {
 		return []string{"description is required"}
 	}
 	if length := utf16Length(description); length > maxSkillDescriptionLength {
@@ -210,7 +211,7 @@ func loadSkillFromFile(filePath, source string) (*Skill, []ResourceDiagnostic) {
 	for _, message := range validateSkillName(name) {
 		diagnostics = append(diagnostics, ResourceDiagnostic{Type: "warning", Message: message, Path: filePath})
 	}
-	if strings.TrimFunc(description, isJSTrimSpace) == "" {
+	if strings.TrimFunc(description, jstrim.IsSpace) == "" {
 		return nil, diagnostics
 	}
 	allowedTools, _ := parsed.Values["allowed-tools"].(string)
@@ -442,7 +443,7 @@ func LoadSkills(options LoadSkillsOptions) LoadSkillsResult {
 }
 
 func resolveResourcePathFrom(path, cwd string) string {
-	path = normalizeResourcePath(strings.TrimFunc(path, isJSTrimSpace))
+	path = normalizeResourcePath(strings.TrimFunc(path, jstrim.IsSpace))
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(cwd, path)
 	}

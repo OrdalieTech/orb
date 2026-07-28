@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/pigo/internal/jstrim"
 )
 
 var defaultSystemPromptTools = []string{"read", "bash", "edit", "write"}
@@ -128,7 +129,7 @@ func BuildSystemPrompt(options SystemPromptOptions) string {
 		addGuideline("Use bash for file operations like ls, rg, find")
 	}
 	for _, guideline := range options.PromptGuidelines {
-		normalized := strings.TrimFunc(guideline, isJSTrimSpace)
+		normalized := strings.TrimFunc(guideline, jstrim.IsSpace)
 		if normalized != "" {
 			addGuideline(normalized)
 		}
@@ -208,17 +209,4 @@ func resolvePromptPackageDir(packageDir string) string {
 		return filepath.Clean(absolute)
 	}
 	return filepath.Clean(packageDir)
-}
-
-func isJSTrimSpace(character rune) bool {
-	switch {
-	case character >= '\t' && character <= '\r':
-		return true
-	case character == ' ', character == '\u00a0', character == '\u1680', character == '\u2028', character == '\u2029', character == '\u202f', character == '\u205f', character == '\u3000', character == '\ufeff':
-		return true
-	case character >= '\u2000' && character <= '\u200a':
-		return true
-	default:
-		return false
-	}
 }

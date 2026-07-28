@@ -33,6 +33,9 @@ jobs:
       - name: Verify conformance fixtures
         if: runner.os == 'Linux'
         run: make fixtures-check
+      - name: Run upstream RPC suite against pigo
+        if: runner.os == 'Linux'
+        run: make upstream-rpc-tests
 
   cross-build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})

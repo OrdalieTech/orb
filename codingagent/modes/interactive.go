@@ -40,9 +40,12 @@ type InteractiveModeOptions struct {
 	InitialImages  []*ai.ImageContent
 	Messages       []string
 	SessionHeader  *sessionstore.SessionHeader
-	Diagnostics    []string
-	Terminal       tui.Terminal
-	Host           InteractiveSessionHost
+	// Verbose forces verbose startup, overriding the quietStartup setting
+	// (upstream interactive-mode.ts:319-320).
+	Verbose     bool
+	Diagnostics []string
+	Terminal    tui.Terminal
+	Host        InteractiveSessionHost
 	// StartupVersionCheck is the non-blocking startup seam used by WP-661. The
 	// interactive package owns no update transport or policy.
 	StartupVersionCheck func(context.Context, extensions.UI)
@@ -75,35 +78,39 @@ type InteractiveMode struct {
 	interactiveUI *InteractiveUI
 
 	// State
-	mu                     sync.Mutex
-	statusMessageMu        sync.Mutex
-	streaming              bool
-	toolsExpanded          bool
-	thinkingHidden         bool
-	thinkingLabel          string
-	bashMode               bool
-	shutdownRequested      bool
-	inputCh                chan inputEntry
-	pendingImages          []*ai.ImageContent
-	currentStreaming       *AssistantMessageComponent
-	toolComponents         map[string]*ToolExecutionComponent
-	expandables            []expandableComponent
-	statusIndicator        tui.Component
-	editorChromeWidth      int
-	editorChromeStatus     string
-	editorChromeTitleShown bool
-	lastStatusSpacer       *tui.Spacer
-	lastStatusText         *tui.Text
-	footerStatuses         map[string]string
-	autocompleteProvider   tui.AutocompleteProvider
-	cwd                    string
-	outputPad              int
-	lastEscape             time.Time
-	extensionEditor        extensions.EditorComponent
-	themeRegistry          *theme.Registry
-	themeController        *theme.Controller
-	authContext            context.Context
-	authCancel             context.CancelFunc
+	mu                sync.Mutex
+	statusMessageMu   sync.Mutex
+	streaming         bool
+	toolsExpanded     bool
+	thinkingHidden    bool
+	thinkingLabel     string
+	bashMode          bool
+	shutdownRequested bool
+	// extensionShutdownRequested tracks extension ctx.shutdown() requests
+	// separately from shutdownRequested, which doubles as the "already shut
+	// down" latch (upstream keeps them distinct: interactive-mode.ts:404).
+	extensionShutdownRequested bool
+	inputCh                    chan inputEntry
+	pendingImages              []*ai.ImageContent
+	currentStreaming           *AssistantMessageComponent
+	toolComponents             map[string]*ToolExecutionComponent
+	expandables                []expandableComponent
+	statusIndicator            tui.Component
+	editorChromeWidth          int
+	editorChromeStatus         string
+	editorChromeTitleShown     bool
+	lastStatusSpacer           *tui.Spacer
+	lastStatusText             *tui.Text
+	footerStatuses             map[string]string
+	autocompleteProvider       tui.AutocompleteProvider
+	cwd                        string
+	outputPad                  int
+	lastEscape                 time.Time
+	extensionEditor            extensions.EditorComponent
+	themeRegistry              *theme.Registry
+	themeController            *theme.Controller
+	authContext                context.Context
+	authCancel                 context.CancelFunc
 	// anthropicSubscriptionWarningShown gates the once-per-session Anthropic
 	// extra-usage warning (upstream anthropicSubscriptionWarningShown).
 	anthropicSubscriptionWarningShown bool
@@ -242,6 +249,7 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 	mode.unsubscribe = mode.session.Subscribe(mode.handleEvent)
 	mode.mu.Unlock()
 	defer mode.detachSession()
+	mode.bindExtensionShutdownHandler(mode.session)
 	mode.session.StartExtensions()
 	if err := mode.extendExtensionThemes(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error loading themes:", err)
@@ -457,6 +465,7 @@ func (mode *InteractiveMode) rebindHostSession(replacement *codingagent.SessionR
 	mode.mu.Lock()
 	mode.unsubscribe = replacement.Subscribe(mode.handleEvent)
 	mode.mu.Unlock()
+	mode.bindExtensionShutdownHandler(replacement)
 	mode.renderInitialMessages()
 	mode.ui.SetFocus(mode.activeEditorFocus())
 	mode.updateTerminalTitle()
@@ -571,7 +580,7 @@ func (mode *InteractiveMode) addDefaultHeader() {
 	if mode.session == nil {
 		return
 	}
-	if mode.session.InteractiveSettings().QuietStartup {
+	if !mode.options.Verbose && mode.session.InteractiveSettings().QuietStartup {
 		return
 	}
 	if mode.options.SessionHeader != nil {
@@ -3397,6 +3406,9 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		mode.mu.Unlock()
 		mode.clearStatusIndicatorKind(StatusWorking)
 		mode.ui.Terminal().SetProgress(false)
+		// Upstream checks pending extension shutdown requests on
+		// agent_settled (interactive-mode.ts:3055-3057).
+		mode.checkExtensionShutdownRequested()
 
 	case codingagent.QueueUpdateEvent:
 		mode.updatePendingMessagesDisplay(ev.Steering, ev.FollowUp)
@@ -3876,6 +3888,42 @@ func (mode *InteractiveMode) renderCustomEntry(entry sessionstore.SessionEntry) 
 	component := renderer(entryValue, extensions.EntryRenderOptions{Expanded: mode.toolsExpanded}, themeAdapter{value: theme.Current()})
 	if component != nil {
 		mode.chat.AddChild(component)
+	}
+}
+
+// requestExtensionShutdown is the interactive shutdownHandler for extension
+// ctx.shutdown() (upstream interactive-mode.ts:1689-1694): remember the
+// request and quit immediately only when the session is idle; otherwise the
+// agent_settled check completes it.
+func (mode *InteractiveMode) requestExtensionShutdown() {
+	mode.mu.Lock()
+	mode.extensionShutdownRequested = true
+	session := mode.session
+	mode.mu.Unlock()
+	if session != nil && session.IsIdle() {
+		mode.shutdown()
+	}
+}
+
+// checkExtensionShutdownRequested mirrors checkShutdownRequested
+// (interactive-mode.ts:3626-3631).
+func (mode *InteractiveMode) checkExtensionShutdownRequested() {
+	mode.mu.Lock()
+	requested := mode.extensionShutdownRequested
+	mode.mu.Unlock()
+	if requested {
+		mode.shutdown()
+	}
+}
+
+// bindExtensionShutdownHandler installs the per-mode behavior for extension
+// ctx.shutdown() (upstream binds a shutdownHandler through
+// session.bindExtensions, runner.ts:343). The runtime setter is asserted
+// optionally so the modes-side wiring stands alone until SessionRuntime
+// exposes the seam.
+func (mode *InteractiveMode) bindExtensionShutdownHandler(session *codingagent.SessionRuntime) {
+	if binder, ok := any(session).(interface{ SetExtensionShutdownHandler(func()) }); ok {
+		binder.SetExtensionShutdownHandler(mode.requestExtensionShutdown)
 	}
 }
 

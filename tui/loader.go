@@ -90,7 +90,7 @@ func (loader *Loader) restartLocked() {
 	stop := make(chan struct{})
 	loader.stop = stop
 	interval := loader.interval
-	go func() {
+	go guarded(func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -108,7 +108,7 @@ func (loader *Loader) restartLocked() {
 				return
 			}
 		}
-	}()
+	})()
 }
 
 func (loader *Loader) stopLocked() {

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/pigo/internal/jstrim"
 )
 
 var validThinkingLevels = map[string]struct{}{
@@ -59,6 +60,7 @@ type CLIArgs struct {
 	NoThemes           bool
 	ProjectTrusted     *bool
 	Offline            bool
+	Verbose            bool
 	Messages           []string
 	FileArgs           []string
 	UnknownFlags       []CLIUnknownFlag
@@ -70,6 +72,10 @@ type CLIArgs struct {
 	extensionsLoaded   bool
 	extensionRegistry  *extensions.Registry
 	extensionWarnings  []string
+	// resolvedProjectTrust carries the trust decision loadStartupExtensions
+	// already made in this process, so the runtime neither re-fires the
+	// project_trust event nor replaces the live extension host.
+	resolvedProjectTrust *bool
 }
 
 // ParseArgs follows upstream's sequential CLI parsing rules.
@@ -206,6 +212,8 @@ func ParseArgs(argv []string) CLIArgs {
 			result.Themes = append(result.Themes, argv[index])
 		case argument == "--no-themes":
 			result.NoThemes = true
+		case argument == "--verbose":
+			result.Verbose = true
 		case argument == "--approve" || argument == "-a":
 			trusted := true
 			result.ProjectTrusted = &trusted
@@ -231,7 +239,7 @@ func ParseArgs(argv []string) CLIArgs {
 func parseModelList(value string) []string {
 	models := strings.Split(value, ",")
 	for index := range models {
-		models[index] = strings.TrimFunc(models[index], isJSTrimSpace)
+		models[index] = strings.TrimFunc(models[index], jstrim.IsSpace)
 	}
 	return models
 }
@@ -265,7 +273,7 @@ func setUnknownLongFlag(flags []CLIUnknownFlag, flag CLIUnknownFlag) []CLIUnknow
 func parseToolList(value string) []string {
 	result := make([]string, 0)
 	for _, name := range strings.Split(value, ",") {
-		if trimmed := strings.TrimFunc(name, isJSTrimSpace); trimmed != "" {
+		if trimmed := strings.TrimFunc(name, jstrim.IsSpace); trimmed != "" {
 			result = append(result, trimmed)
 		}
 	}
@@ -275,17 +283,4 @@ func parseToolList(value string) []string {
 func stringValue(value string) *string {
 	copy := value
 	return &copy
-}
-
-func isJSTrimSpace(character rune) bool {
-	switch {
-	case character >= '\t' && character <= '\r':
-		return true
-	case character == ' ', character == '\u00a0', character == '\u1680', character == '\u2028', character == '\u2029', character == '\u202f', character == '\u205f', character == '\u3000', character == '\ufeff':
-		return true
-	case character >= '\u2000' && character <= '\u200a':
-		return true
-	default:
-		return false
-	}
 }

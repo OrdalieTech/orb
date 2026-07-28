@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/signal"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -21,6 +23,8 @@ import (
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
 	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 	"github.com/OrdalieTech/pigo/codingagent/tools"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
+	"github.com/OrdalieTech/pigo/internal/jstrim"
 )
 
 type RPCSessionHost interface {
@@ -43,19 +47,44 @@ type RPCModeOptions struct {
 }
 
 type rpcMode struct {
-	ctx             context.Context
-	cancel          context.CancelFunc
-	host            RPCSessionHost
-	options         RPCModeOptions
-	output          *serializedOutput
-	ui              *RPCExtensionUI
-	mu              sync.Mutex
-	unsub           func()
-	disposed        bool
-	promptMu        sync.Mutex
-	prompting       bool
-	promptSession   *codingagent.SessionRuntime
-	promptPreflight chan struct{}
+	ctx      context.Context
+	cancel   context.CancelFunc
+	host     RPCSessionHost
+	options  RPCModeOptions
+	output   *serializedOutput
+	ui       *RPCExtensionUI
+	mu       sync.Mutex
+	unsub    func()
+	disposed bool
+	// shutdownRequested is set by extension ctx.shutdown() and honored after
+	// the current command or agent_settled (upstream rpc-mode.ts:85,344-346).
+	shutdownRequested bool
+	promptMu          sync.Mutex
+	prompting         bool
+	promptSession     *codingagent.SessionRuntime
+	promptPreflight   chan struct{}
+}
+
+// requestExtensionShutdown is the RPC shutdownHandler for extension
+// ctx.shutdown(): it only records the request (rpc-mode.ts:344-346); the
+// shutdown itself runs after the in-flight command settles.
+func (mode *rpcMode) requestExtensionShutdown() {
+	mode.mu.Lock()
+	mode.shutdownRequested = true
+	mode.mu.Unlock()
+}
+
+// checkShutdownRequested mirrors rpc-mode.ts:727-730: once a shutdown was
+// requested, cancel the serve loop, which disposes, flushes stdout, and
+// returns exit code 0 like upstream's shutdown().
+func (mode *rpcMode) checkShutdownRequested() {
+	mode.mu.Lock()
+	requested := mode.shutdownRequested
+	cancel := mode.cancel
+	mode.mu.Unlock()
+	if requested && cancel != nil {
+		cancel()
+	}
 }
 
 // RunRPCMode serves upstream's strict-LF, bidirectional JSONL protocol until
@@ -152,6 +181,12 @@ func (mode *rpcMode) bindReplacement(session *codingagent.SessionRuntime) error 
 	// Upstream rebindSession passes the RPC uiContext into bindExtensions on
 	// every rebind (rpc-mode.ts:311-320) so extensions get a live UI seam.
 	session.BindExtensionUI(newRPCExtensionUIAdapter(mode.ui), extensions.ModeRPC)
+	// Upstream binds the RPC shutdownHandler in the same rebind
+	// (rpc-mode.ts:344-346). The runtime setter is asserted optionally so the
+	// modes-side wiring stands alone until SessionRuntime exposes the seam.
+	if binder, ok := any(session).(interface{ SetExtensionShutdownHandler(func()) }); ok {
+		binder.SetExtensionShutdownHandler(mode.requestExtensionShutdown)
+	}
 	if err := session.BindExtensions(mode.ctx); err != nil {
 		return err
 	}
@@ -163,7 +198,14 @@ func (mode *rpcMode) bindReplacement(session *codingagent.SessionRuntime) error 
 	if mode.unsub != nil {
 		mode.unsub()
 	}
-	mode.unsub = session.Subscribe(mode.output.writeSessionEvent)
+	mode.unsub = session.Subscribe(func(event any) {
+		mode.output.writeSessionEvent(event)
+		// Upstream re-checks extension shutdown requests on agent_settled
+		// (rpc-mode.ts:353-358).
+		if _, settled := event.(codingagent.AgentSettledEvent); settled {
+			mode.checkShutdownRequested()
+		}
+	})
 	return nil
 }
 
@@ -204,9 +246,18 @@ func (mode *rpcMode) handleLine(line []byte, commands *sync.WaitGroup) {
 		_ = mode.writeObject(rpcError("", false, "parse", "Failed to parse command: "+javascriptParseError(line, err)))
 		return
 	}
-	typeName, err := rawString(raw["type"])
-	if err != nil {
-		_ = mode.writeObject(rpcError("", false, "", err.Error()))
+	typeRaw, hasType := raw["type"]
+	typeName, err := rawString(typeRaw)
+	// json.Unmarshal leaves the target untouched for JSON null, so route the
+	// literal null explicitly alongside missing and non-string members.
+	if err != nil || !hasType || string(typeRaw) == "null" {
+		// Upstream dispatches untyped: a missing or non-string type member
+		// reaches handleCommand's default and answers Unknown command with
+		// the raw id/type values echoed (rpc-mode.ts:695-698,735-770).
+		_ = mode.writeObject(rpcUnknownCommandResponse(raw))
+		// Upstream checks after every handled command, including the unknown
+		// default (rpc-mode.ts:766-771).
+		mode.checkShutdownRequested()
 		return
 	}
 	if typeName == "extension_ui_response" {
@@ -246,6 +297,8 @@ func (mode *rpcMode) handleLine(line []byte, commands *sync.WaitGroup) {
 		if response != nil {
 			_ = mode.writeObject(*response)
 		}
+		// Upstream checks after every handled command (rpc-mode.ts:764-771).
+		mode.checkShutdownRequested()
 	}
 	if preflight != nil || rpcCommandIsAsync(command.Type) {
 		commands.Add(1)
@@ -557,7 +610,7 @@ func (mode *rpcMode) handleCommand(session *codingagent.SessionRuntime, command 
 			Text *string `json:"text,omitempty"`
 		}{session.GetLastAssistantText()})
 	case "set_session_name":
-		name := strings.TrimFunc(command.Name, isJSTrimSpace)
+		name := strings.TrimFunc(command.Name, jstrim.IsSpace)
 		if name == "" {
 			return failure(errors.New("Session name cannot be empty")) //nolint:staticcheck // Wire error matches upstream.
 		}
@@ -587,6 +640,166 @@ func rpcSuccess(id string, hasID bool, command string) RPCResponse {
 
 func rpcError(id string, hasID bool, command, message string) RPCResponse {
 	return RPCResponse{ID: id, Type: "response", Command: command, Error: message, HasID: hasID}
+}
+
+// rpcRawResponse echoes id/command JSON for the untyped dispatch path. Field
+// order matches RPCResponse (id, type, command, success, error);
+// JSON.stringify drops absent members, hence omitempty.
+type rpcRawResponse struct {
+	ID      json.RawMessage `json:"id,omitempty"`
+	Type    string          `json:"type"`
+	Command json.RawMessage `json:"command,omitempty"`
+	Success bool            `json:"success"`
+	Error   string          `json:"error"`
+}
+
+func rpcUnknownCommandResponse(raw rawRPCObject) rpcRawResponse {
+	return rpcRawResponse{
+		ID:      canonicalRawJSON(raw["id"]),
+		Type:    "response",
+		Command: canonicalRawJSON(raw["type"]),
+		Success: false,
+		Error:   "Unknown command: " + jsDisplayString(raw["type"]),
+	}
+}
+
+// canonicalRawJSON re-serializes an echoed member the way JSON.stringify
+// renders JSON.parse's value: JS number formatting (5.0 -> 5, -0 -> 0),
+// insertion-ordered object keys, and no interior whitespace
+// (rpc-mode.ts:695-698 echoes the parsed id/type values).
+func canonicalRawJSON(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	value, err := decodeOrderedJSONValue(decoder)
+	if err != nil {
+		return raw
+	}
+	encoded, err := jsonwire.Marshal(value)
+	if err != nil {
+		return raw
+	}
+	return encoded
+}
+
+func decodeOrderedJSONValue(decoder *json.Decoder) (any, error) {
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	switch typed := token.(type) {
+	case json.Delim:
+		switch typed {
+		case '{':
+			object := jsonwire.OrderedObject{}
+			for decoder.More() {
+				nameToken, err := decoder.Token()
+				if err != nil {
+					return nil, err
+				}
+				name, ok := nameToken.(string)
+				if !ok {
+					return nil, fmt.Errorf("unexpected object member name %v", nameToken)
+				}
+				value, err := decodeOrderedJSONValue(decoder)
+				if err != nil {
+					return nil, err
+				}
+				// JSON.parse keeps a duplicate key at its first position with
+				// its last value, matching OrderedObject.Set.
+				object.Set(name, value)
+			}
+			if _, err := decoder.Token(); err != nil {
+				return nil, err
+			}
+			return object, nil
+		case '[':
+			values := []any{}
+			for decoder.More() {
+				value, err := decodeOrderedJSONValue(decoder)
+				if err != nil {
+					return nil, err
+				}
+				values = append(values, value)
+			}
+			if _, err := decoder.Token(); err != nil {
+				return nil, err
+			}
+			return values, nil
+		}
+		return nil, fmt.Errorf("unexpected delimiter %v", typed)
+	case json.Number:
+		value, err := typed.Float64()
+		if err != nil {
+			// JSON.parse overflows to Infinity, which JSON.stringify
+			// renders as null.
+			if parsed, parseErr := strconv.ParseFloat(typed.String(), 64); parseErr != nil && math.IsInf(parsed, 0) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		return value, nil
+	default:
+		return token, nil
+	}
+}
+
+// jsDisplayString renders a decoded JSON value the way a JS template literal
+// does (String(value)); an absent member renders "undefined".
+func jsDisplayString(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return "undefined"
+	}
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return string(raw)
+	}
+	return jsValueString(value)
+}
+
+func jsValueString(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return "null"
+	case bool:
+		if typed {
+			return "true"
+		}
+		return "false"
+	case string:
+		return typed
+	case float64:
+		return jsNumberString(typed)
+	case []any:
+		parts := make([]string, len(typed))
+		for index, element := range typed {
+			if element == nil {
+				continue // Array.prototype.join renders null empty.
+			}
+			parts[index] = jsValueString(element)
+		}
+		return strings.Join(parts, ",")
+	default:
+		return "[object Object]"
+	}
+}
+
+func jsNumberString(value float64) string {
+	if value == 0 {
+		return "0" // String(-0) === "0"
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Sprint(value)
+	}
+	text := string(encoded)
+	// encoding/json zero-pads exponents (1e-07); Number#toString does not.
+	if index := strings.IndexAny(text, "eE"); index >= 0 {
+		return text[:index+2] + strings.TrimLeft(text[index+2:], "0")
+	}
+	return text
 }
 
 func rawString(raw json.RawMessage) (string, error) {
@@ -642,11 +855,4 @@ func javascriptParseError(line []byte, parseError error) string {
 		}
 	}
 	return message
-}
-
-func isJSTrimSpace(character rune) bool {
-	return character == '\ufeff' || character == '\u00a0' || character == '\u1680' ||
-		character >= '\u2000' && character <= '\u200a' || character == '\u2028' || character == '\u2029' ||
-		character == '\u202f' || character == '\u205f' || character == '\u3000' ||
-		character == '\t' || character == '\n' || character == '\v' || character == '\f' || character == '\r' || character == ' '
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/OrdalieTech/pigo/codingagent"
 	"github.com/OrdalieTech/pigo/codingagent/config"
 	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/pigo/internal/jstrim"
 )
 
 func TestReadStrictJSONLinesMatchesUpstreamFraming(t *testing.T) {
@@ -82,7 +83,7 @@ func TestRPCResponsePreservesExplicitEmptyID(t *testing.T) {
 }
 
 func TestRPCSessionNameTrimMatchesECMAScript(t *testing.T) {
-	if !isJSTrimSpace('\ufeff') || !isJSTrimSpace('\u00a0') || isJSTrimSpace('\u0085') {
+	if !jstrim.IsSpace('\ufeff') || !jstrim.IsSpace('\u00a0') || jstrim.IsSpace('\u0085') {
 		t.Fatal("RPC session-name whitespace set differs from ECMAScript trim")
 	}
 }

@@ -206,7 +206,9 @@ func StreamMistralConversationsWithOptions(
 		if err == nil {
 			err = processor.finish()
 		}
-		if err == nil && ctx.Err() != nil {
+		if ctx.Err() != nil {
+			// Aborts persist the plain abort text, never the raw transport
+			// error, matching the other adapters' mid-stream failures.
 			err = errors.New("Request was aborted") //nolint:staticcheck // Exact upstream error text is observable.
 		}
 		if err == nil && (output.StopReason == ai.StopReasonAborted || output.StopReason == ai.StopReasonError) {

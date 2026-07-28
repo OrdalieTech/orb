@@ -13,10 +13,15 @@ import (
 	"unicode/utf16"
 
 	"github.com/OrdalieTech/pigo/chat"
+	"github.com/OrdalieTech/pigo/chat/internal/ctxsleep"
 )
 
 // secretTokenHeader carries the webhook secret set via setWebhook.
 const secretTokenHeader = "X-Telegram-Bot-Api-Secret-Token"
+
+// maxUpdateBody caps the webhook request body; updates carry JSON only
+// (attachments arrive as file ids), matching the Slack event cap.
+const maxUpdateBody = 1 << 20
 
 // Webhook returns the webhook ingress handler: it authenticates the secret
 // token (constant-time, 403 on mismatch), normalizes the update, and hands
@@ -50,7 +55,7 @@ func (a *Adapter) Webhook(publish func(chat.Message) error) http.Handler {
 			return
 		}
 		var update apiUpdate
-		if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxUpdateBody)).Decode(&update); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
@@ -114,7 +119,7 @@ func (a *Adapter) Poll(ctx context.Context, publish func(chat.Message) error) er
 				return ctx.Err()
 			}
 			a.logger.Warn("telegram: getUpdates failed", "error", err)
-			if sleepErr := sleepContext(ctx, time.Second); sleepErr != nil {
+			if sleepErr := ctxsleep.Sleep(ctx, time.Second); sleepErr != nil {
 				groups.settle()
 				return sleepErr
 			}

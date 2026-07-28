@@ -181,7 +181,7 @@ func (component *wireComponent) Dispose() {
 }
 
 func (component *wireComponent) call(event wireComponentEvent) wireComponentResponse {
-	ctx, cancel := component.generation.manager.timeoutContext(context.Background())
+	ctx, cancel := callbackContext(context.Background())
 	defer cancel()
 	raw, err := component.generation.request(ctx, "ui_component_event", event, nil)
 	if err != nil {
@@ -229,7 +229,7 @@ func (ui *uiGeneration) mountComponent(
 		event.Width = host.Width()
 		event.Height = host.Height()
 	}
-	requestContext, cancel := ui.generation.manager.timeoutContext(ctx)
+	requestContext, cancel := callbackContext(ctx)
 	defer cancel()
 	raw, err := ui.generation.request(requestContext, "ui_component_event", event, nil)
 	if err != nil {
@@ -431,7 +431,7 @@ func (manager *Manager) addUITerminalHandler(generation *generation, ui extensio
 		return
 	}
 	unsubscribe := ui.OnTerminalInput(func(data string) *extensions.TerminalInputResult {
-		ctx, cancel := generation.manager.timeoutContext(context.Background())
+		ctx, cancel := callbackContext(context.Background())
 		defer cancel()
 		raw, err := generation.request(ctx, "ui_component_event", wireComponentEvent{
 			ComponentHandle: request.HandlerHandle,

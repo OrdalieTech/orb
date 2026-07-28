@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/pigo/chat"
+	"github.com/OrdalieTech/pigo/chat/internal/ctxsleep"
 )
 
 // Options configures [New].
@@ -95,7 +96,7 @@ func New(opts Options) (*Adapter, error) {
 			token:    opts.Token,
 			http:     httpClient,
 			pollHTTP: pollClient,
-			sleep:    sleepContext,
+			sleep:    ctxsleep.Sleep,
 		},
 		account:            accountFromToken(opts.Token),
 		logger:             opts.Logger,

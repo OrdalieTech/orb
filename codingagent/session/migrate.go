@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/internal/jstrim"
 	textunicode "golang.org/x/text/encoding/unicode"
 )
 
@@ -26,7 +27,7 @@ type loadedSessionFile struct {
 // ParseSessionEntries parses valid JSON lines and silently skips blank or
 // malformed lines. It does not validate the session header or run migrations.
 func ParseSessionEntries(content string) []*FileEntry {
-	trimmed := strings.TrimFunc(content, isJSTrimSpace)
+	trimmed := strings.TrimFunc(content, jstrim.IsSpace)
 	if trimmed == "" {
 		return nil
 	}
@@ -43,7 +44,7 @@ func ParseSessionEntries(content string) []*FileEntry {
 func parseSessionEntryLine(line string) *FileEntry {
 	decoded, _ := textunicode.UTF8.NewDecoder().Bytes([]byte(line))
 	line = string(decoded)
-	if strings.TrimFunc(line, isJSTrimSpace) == "" || !json.Valid([]byte(line)) {
+	if strings.TrimFunc(line, jstrim.IsSpace) == "" || !json.Valid([]byte(line)) {
 		return nil
 	}
 	raw := json.RawMessage(line)
@@ -52,19 +53,6 @@ func parseSessionEntryLine(line string) *FileEntry {
 		return decodeFileEntry(nil, raw)
 	}
 	return decodeFileEntry(object, raw)
-}
-
-func isJSTrimSpace(character rune) bool {
-	switch {
-	case character >= '\t' && character <= '\r':
-		return true
-	case character == ' ', character == '\u00a0', character == '\u1680', character == '\u2028', character == '\u2029', character == '\u202f', character == '\u205f', character == '\u3000', character == '\ufeff':
-		return true
-	case character >= '\u2000' && character <= '\u200a':
-		return true
-	default:
-		return false
-	}
 }
 
 // LoadEntriesFromFile streams a session without imposing a maximum line size.

@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/rivo/uniseg"
+	xwidth "golang.org/x/text/width"
 )
 
 const fullReset = "\x1b[0m"
@@ -42,7 +43,49 @@ func graphemeWidth(value string) int {
 	if value == "\u2028" || value == "\u2029" {
 		return 1
 	}
-	return uniseg.StringWidth(value)
+	// Corrections for grapheme classes where uniseg disagrees with upstream's
+	// get-east-asian-width + RGI-emoji widths (packages/tui/src/utils.ts).
+	if isKeycapSequence(value) {
+		// RGI keycap sequences ([0-9#*] VS16 U+20E3) are emoji upstream.
+		return 2
+	}
+	width := uniseg.StringWidth(value)
+	if marks := halfwidthVoicedMarkCount(value); marks > 0 {
+		// Upstream widths U+FF9E/U+FF9F as halfwidth forms (1 cell each);
+		// uniseg treats them as zero-width extenders.
+		return width + marks
+	}
+	if width == 1 {
+		// East-Asian-Wide symbols with default text presentation (e.g. U+3297,
+		// U+3299) take eastAsianWidth(cp) = 2 upstream; uniseg says 1.
+		if first, _ := utf8.DecodeRuneInString(value); isEastAsianWideRune(first) {
+			return 2
+		}
+	}
+	return width
+}
+
+func isKeycapSequence(value string) bool {
+	runes := []rune(value)
+	if len(runes) != 3 || runes[1] != 0xfe0f || runes[2] != 0x20e3 {
+		return false
+	}
+	return runes[0] == '#' || runes[0] == '*' || (runes[0] >= '0' && runes[0] <= '9')
+}
+
+func halfwidthVoicedMarkCount(value string) int {
+	count := 0
+	for _, r := range value {
+		if r == 0xff9e || r == 0xff9f {
+			count++
+		}
+	}
+	return count
+}
+
+func isEastAsianWideRune(r rune) bool {
+	kind := xwidth.LookupRune(r).Kind()
+	return kind == xwidth.EastAsianWide || kind == xwidth.EastAsianFullwidth
 }
 
 func forEachGrapheme(value string, visit func(string) bool) {

@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf16"
+
+	"github.com/OrdalieTech/pigo/internal/jstrim"
 )
 
 type PromptTemplateDiagnosticCode string
@@ -69,7 +71,7 @@ func loadHarnessPromptTemplate(env ResourceFileSystem, path string) (*PromptTemp
 	description, _ := frontmatter["description"].(string)
 	if description == "" {
 		for _, line := range strings.Split(body, "\n") {
-			if strings.TrimFunc(line, isHarnessTrimSpace) == "" {
+			if strings.TrimFunc(line, jstrim.IsSpace) == "" {
 				continue
 			}
 			units := utf16.Encode([]rune(line))

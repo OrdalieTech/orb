@@ -243,7 +243,7 @@ func TestRunCLIExportRoutesBeforeRuntime(t *testing.T) {
 		wantMarker string
 	}{
 		{name: "html", extension: ".html", wantMarker: `id="session-data"`},
-		{name: "output extension does not change format", extension: ".md", wantMarker: `id="session-data"`},
+		{name: "markdown output extension routes to the markdown exporter", extension: ".md", wantMarker: "- Session ID: `"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			outputPath := filepath.Join(root, test.name+test.extension)

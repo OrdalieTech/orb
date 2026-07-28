@@ -30,12 +30,22 @@ pigo/
 │   ├── session/              session manager (JSONL v3 tree, migrations), export-html
 │   ├── config/               settings manager, trust, keybindings, auth storage, models.json
 │   ├── modes/                tui, print, json, rpc
-│   └── mcp/                  bundled MCP extension (official go-sdk), built on extensions API
+│   ├── mcp/                  bundled MCP extension (official go-sdk), built on extensions API
+│   └── plugins/              first-party bundled-but-dormant plugins (D32–D34)
+├── chat/                     chat gateway + platform adapters (D27/D28 additions; chat → codingagent only)
+├── memory/                   MemoryStore seam + JSONL store (D34 addition)
 ├── internal/
 │   ├── jsonschema/           Schema type + reflection helper (gate G1)
 │   ├── jsonwire/             JSON.stringify-compatible wire encoder
 │   ├── partialjson/          streaming tool-arg parser (port of `partial-json`)
 │   ├── truncate/             shared output truncation (50KB / 2000-line rules)
+│   ├── jstrim/               ECMAScript String.prototype.trim whitespace predicate
+│   ├── filelock/             proper-lockfile-compatible mkdir+heartbeat lock
+│   ├── cjksegment/           CJK segmentation helper
+│   ├── ignorerules/          gitignore-style matching
+│   ├── localecompare/        JS localeCompare ordering
+│   ├── semver/               semver range matching (packages)
+│   ├── uuidv7/               uuidv7 generation (upstream sequence scheme)
 │   └── sync/                 upstream sync tool (delta report, fixture regen driver)
 ├── conformance/
 │   ├── extract/              TS scripts run inside .upstream/ to emit fixtures (dev-only Node)
@@ -313,14 +323,14 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | klauspost/compress | ai/api | zstd request compression required by the OpenAI Codex Responses wire |
 | aws-sdk-go-v2, aws-sdk-go-v2/{config,credentials,service/bedrockruntime}, smithy-go | ai/api | Official Bedrock client, credential chain, SigV4/bearer auth, and converse-stream (D10) |
 | modelcontextprotocol/go-sdk | mcp | official MCP SDK v1.6+ |
-| yuin/goldmark | tui | CommonMark parsing (render stays ours) |
+| yuin/goldmark | tui, chat | CommonMark parsing (render stays ours) |
 | alecthomas/chroma/v2 | tui | syntax highlighting (upstream: highlight.js) |
 | rivo/uniseg | tui | grapheme/East-Asian width |
 | golang.org/x/{term,sys,image,text} | cli, tui, tools | terminal detection/raw mode, signals, image decode/resize, encoding |
 | bmatcuk/doublestar/v4 | tools, skills | `**` globbing (upstream: glob/minimatch) |
 | gopkg.in/yaml.v3 | skills, config | frontmatter + YAML settings surfaces |
 | aymanbagabas/go-udiff | tools | unified diff for edit rendering (upstream: `diff`) |
-| gofrs/flock | session, config | file locking (upstream: proper-lockfile) |
+| gofrs/flock | memory | file locking for the JSONL memory store (session/config use internal/filelock) |
 
 **G1 resolution (WP-110):** `internal/jsonschema` uses a stdlib-only reflector. The evaluated
 `invopop/jsonschema` output required stripping `$schema`/`$defs`/`$ref` and undoing closed-object

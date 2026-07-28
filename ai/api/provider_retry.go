@@ -124,6 +124,12 @@ func imagesStreamOptions(options *ai.ImagesOptions) *ai.StreamOptions {
 	return &ai.StreamOptions{MaxRetries: options.MaxRetries, MaxRetryDelayMS: options.MaxRetryDelayMS}
 }
 
+// createProviderAbortError mirrors createAbortError: aborts surface a plain
+// error whose message replaces whatever the request failed with.
+func createProviderAbortError() error {
+	return errors.New("Request aborted") //nolint:staticcheck // Exact upstream error text is observable.
+}
+
 // retryProviderRequest reproduces retryProviderRequest: each retry is a fresh
 // SDK request, and the sleep between attempts aborts with the context.
 func retryProviderRequest[T any](ctx context.Context, options *ai.StreamOptions, request func() (T, error)) (T, error) {
@@ -142,7 +148,7 @@ func retryProviderRequest[T any](ctx context.Context, options *ai.StreamOptions,
 			return value, nil
 		}
 		if ctx.Err() != nil {
-			return value, err
+			return value, createProviderAbortError()
 		}
 		status, headers, isProviderError := providerErrorParts(err)
 		if retriesRemaining <= 0 || !isProviderError || !isRetryableProviderError(status, headers) {
@@ -158,7 +164,7 @@ func retryProviderRequest[T any](ctx context.Context, options *ai.StreamOptions,
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return value, ctx.Err()
+			return value, createProviderAbortError()
 		case <-timer.C:
 		}
 	}

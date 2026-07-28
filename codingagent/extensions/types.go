@@ -3,6 +3,7 @@ package extensions
 import (
 	"context"
 	"encoding/json"
+	"slices"
 
 	"github.com/OrdalieTech/pigo/agent"
 	"github.com/OrdalieTech/pigo/agent/harness"
@@ -10,6 +11,7 @@ import (
 	aiauth "github.com/OrdalieTech/pigo/ai/auth"
 	"github.com/OrdalieTech/pigo/codingagent/session"
 	"github.com/OrdalieTech/pigo/codingagent/tools"
+	"github.com/OrdalieTech/pigo/internal/jsonwire"
 )
 
 type Mode string
@@ -824,14 +826,26 @@ type OAuthCredentials struct {
 }
 
 func (credentials OAuthCredentials) MarshalJSON() ([]byte, error) {
-	value := make(map[string]any, len(credentials.Extra)+3)
-	for name, field := range credentials.Extra {
-		value[name] = field
+	// Member order matches upstream OAuthCredentials (ai/src/auth/types.ts):
+	// refresh, access, expires, then extra members. jsonwire keeps <, >, and &
+	// literal on the extension-host protocol like JSON.stringify.
+	object := jsonwire.OrderedObject{
+		{Name: "refresh", Value: credentials.Refresh},
+		{Name: "access", Value: credentials.Access},
+		{Name: "expires", Value: credentials.Expires},
 	}
-	value["refresh"] = credentials.Refresh
-	value["access"] = credentials.Access
-	value["expires"] = credentials.Expires
-	return json.Marshal(value)
+	extras := make([]string, 0, len(credentials.Extra))
+	for name := range credentials.Extra {
+		if name == "refresh" || name == "access" || name == "expires" {
+			continue
+		}
+		extras = append(extras, name)
+	}
+	slices.Sort(extras)
+	for _, name := range extras {
+		object = append(object, jsonwire.OrderedMember{Name: name, Value: credentials.Extra[name]})
+	}
+	return object.MarshalJSON()
 }
 
 func (credentials *OAuthCredentials) UnmarshalJSON(data []byte) error {

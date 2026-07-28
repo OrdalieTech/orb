@@ -14,6 +14,7 @@ import (
 	"unicode"
 
 	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/chat/internal/ctxsleep"
 	"github.com/OrdalieTech/pigo/codingagent"
 	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 )
@@ -472,16 +473,29 @@ func (p *Processor) buildPrompt(ctx context.Context, adapter Adapter, m Message)
 	return text, images
 }
 
+// maxImageBytes bounds the attachment bytes buffered per image before
+// base64-encoding into the prompt; oversized images fall back to the
+// bracketed attachment note.
+const maxImageBytes = 20 << 20
+
 func (p *Processor) downloadImage(ctx context.Context, adapter Adapter, ref AttachmentRef) *ai.ImageContent {
+	if ref.Size > maxImageBytes {
+		p.logger.Warn("chat: attachment too large", "id", ref.ID, "size", ref.Size)
+		return nil
+	}
 	reader, mime, err := adapter.Download(ctx, ref)
 	if err != nil {
 		p.logger.Warn("chat: attachment download failed", "id", ref.ID, "error", err)
 		return nil
 	}
 	defer func() { _ = reader.Close() }()
-	data, err := io.ReadAll(reader)
+	data, err := io.ReadAll(io.LimitReader(reader, maxImageBytes+1))
 	if err != nil {
 		p.logger.Warn("chat: attachment read failed", "id", ref.ID, "error", err)
+		return nil
+	}
+	if len(data) > maxImageBytes {
+		p.logger.Warn("chat: attachment too large", "id", ref.ID, "size", len(data))
 		return nil
 	}
 	if mime == "" {
@@ -624,7 +638,7 @@ var deliveryBackoff = []time.Duration{0, 50 * time.Millisecond, 200 * time.Milli
 func (p *Processor) finalizeWithRetry(ctx context.Context, delivery Delivery, text string) (Receipt, error) {
 	var lastErr error
 	for _, delay := range deliveryBackoff {
-		if err := sleepContext(ctx, delay); err != nil {
+		if err := ctxsleep.Sleep(ctx, delay); err != nil {
 			return Receipt{}, err
 		}
 		receipt, err := delivery.Finalize(ctx, text)
@@ -639,7 +653,7 @@ func (p *Processor) finalizeWithRetry(ctx context.Context, delivery Delivery, te
 func (p *Processor) notifyWithRetry(ctx context.Context, delivery Delivery, text string) error {
 	var lastErr error
 	for _, delay := range deliveryBackoff {
-		if err := sleepContext(ctx, delay); err != nil {
+		if err := ctxsleep.Sleep(ctx, delay); err != nil {
 			return err
 		}
 		err := delivery.Notify(ctx, text)
@@ -649,20 +663,6 @@ func (p *Processor) notifyWithRetry(ctx context.Context, delivery Delivery, text
 		lastErr = err
 	}
 	return fmt.Errorf("chat: notify delivery: %w", lastErr)
-}
-
-func sleepContext(ctx context.Context, delay time.Duration) error {
-	if delay <= 0 {
-		return nil
-	}
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
 }
 
 // keyedMutex is a refcounted per-key mutex: the map entry is removed at
@@ -720,11 +720,4 @@ func (m *keyedMutex) release(key string, entry *keyedMutexEntry) {
 		delete(m.entries, key)
 	}
 	m.mu.Unlock()
-}
-
-// size reports the live entry count (idle-residue checks in tests).
-func (m *keyedMutex) size() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.entries)
 }

@@ -3,7 +3,6 @@ package providers
 import (
 	"context"
 
-	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/ai/auth"
 	"github.com/OrdalieTech/pigo/ai/auth/oauth"
 )
@@ -56,24 +55,13 @@ func (anthropicAPIKeyAuth) Resolve(
 }
 
 var anthropicProvider = Provider{
-	ID:      "anthropic",
-	Name:    "Anthropic",
-	API:     ai.APIAnthropicMessages,
-	APIs:    []ai.API{ai.APIAnthropicMessages},
-	BaseURL: "https://api.anthropic.com",
-	Auth:    AuthAPIKey,
-	OAuth:   true,
-	// ANTHROPIC_AUTH_TOKEN participates in env discovery/status, but the
-	// api-key lookup (APIKeyEnv) skips it because requests must pass it as
-	// Authorization: Bearer.
-	Env:       []string{anthropicAuthTokenEnv, anthropicOAuthTokenEnv, anthropicAPIKeyEnv},
-	APIKeyEnv: []string{anthropicOAuthTokenEnv, anthropicAPIKeyEnv},
+	ID:   "anthropic",
+	Name: "Anthropic",
+	Auth: AuthAPIKey,
 	Methods: auth.ProviderAuth{
 		APIKey: anthropicAPIKeyAuth{},
 		OAuth:  oauth.NewAnthropic(nil),
 	},
 }
 
-func Anthropic() Provider {
-	return cloneProvider(anthropicProvider)
-}
+func Anthropic() Provider { return registered("anthropic") }

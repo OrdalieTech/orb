@@ -335,6 +335,26 @@ func TestBranchPreparationAndPrompt(t *testing.T) {
 	}
 }
 
+// Regression: both upstream branch-summarization getMessageFromEntry variants
+// project a branch_summary unconditionally, so an empty summary still renders
+// its wrapper text instead of being dropped from the summarization prompt.
+func TestPrepareBranchEntriesProjectsEmptySummaryBranchSummary(t *testing.T) {
+	entries := linearEntries(user("branch request"))
+	entries = append(entries, SessionEntry{
+		Type: "branch_summary", ID: "entry-branch", ParentID: ptr(entries[0].ID),
+		Timestamp: timestamp(2), Summary: "", FromID: "entry-0",
+	})
+	prepared := PrepareBranchEntries(entries, 0)
+	if len(prepared.Messages) != 2 {
+		t.Fatalf("messages = %d, want 2 (empty-summary branch_summary must be projected)", len(prepared.Messages))
+	}
+	serialized := SerializeConversation(prepared.Messages)
+	want := "[User]: branch request\n\n[User]: " + branchSummaryPrefix + branchSummarySuffix
+	if serialized != want {
+		t.Fatalf("serialized = %q, want %q", serialized, want)
+	}
+}
+
 func user(text string) *ai.UserMessage {
 	return &ai.UserMessage{Content: ai.NewUserContent(&ai.TextContent{Text: text}), Timestamp: 1}
 }

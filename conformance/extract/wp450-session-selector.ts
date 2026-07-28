@@ -97,8 +97,12 @@ export async function generateWP450SessionSelector(
 	const bindings = new keybindings.KeybindingsManager({});
 	tui.setKeybindings(bindings);
 
+	// Frames embed the fixture path, so its length must not vary by host: macOS
+	// tmpdir() is a long /var/folders/... path that truncates rows differently
+	// than Linux /tmp. Use /tmp directly wherever it exists.
+	const fixtureBase = existsSync("/tmp") ? "/tmp" : tmpdir();
 	const fixtureRoot = await mkdtemp(
-		path.join(tmpdir(), "pi-session-selector-"),
+		path.join(fixtureBase, "pi-session-selector-"),
 	);
 	try {
 		const now = Date.now();
@@ -376,13 +380,23 @@ export async function generateWP450SessionSelector(
 		selector.handleInput("\u001b");
 		capture("delete-cancelled");
 		selector.handleInput("\u0004");
-		selector.handleInput("\r");
-		for (
-			let attempt = 0;
-			attempt < 100 && existsSync(incidentPath);
-			attempt++
-		) {
-			await new Promise<void>((resolve) => setTimeout(resolve, 5));
+		// Upstream deletes through the `trash` CLI when one is installed and unlinks
+		// otherwise, reporting each differently. Hide PATH so every host generates
+		// the deterministic unlink frame.
+		const hostPath = process.env.PATH;
+		process.env.PATH = "";
+		try {
+			selector.handleInput("\r");
+			for (
+				let attempt = 0;
+				attempt < 100 && existsSync(incidentPath);
+				attempt++
+			) {
+				await new Promise<void>((resolve) => setTimeout(resolve, 5));
+			}
+		} finally {
+			if (hostPath === undefined) delete process.env.PATH;
+			else process.env.PATH = hostPath;
 		}
 		await flush();
 		capture("after-delete");

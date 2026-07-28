@@ -44,7 +44,7 @@ func (manager *Manager) createRendererComponent(extensionID, kind, customType st
 	if generation == nil || !generation.ready.Load() {
 		return nil
 	}
-	ctx, cancel := manager.timeoutContext(context.Background())
+	ctx, cancel := callbackContext(context.Background())
 	defer cancel()
 	raw, err := generation.request(ctx, "create_registered_renderer_component", struct {
 		ExtensionID string     `json:"extensionId"`
@@ -70,7 +70,7 @@ func (manager *Manager) createRendererComponent(extensionID, kind, customType st
 }
 
 func (component *wireRendererComponent) Render(width int) []string {
-	ctx, cancel := component.generation.manager.timeoutContext(context.Background())
+	ctx, cancel := callbackContext(context.Background())
 	defer cancel()
 	raw, err := component.generation.request(ctx, "render_registered_renderer_component", struct {
 		Handle string `json:"handle"`
@@ -89,7 +89,7 @@ func (component *wireRendererComponent) Render(width int) []string {
 }
 
 func (component *wireRendererComponent) Dispose() {
-	ctx, cancel := component.generation.manager.timeoutContext(context.Background())
+	ctx, cancel := callbackContext(context.Background())
 	defer cancel()
 	_, _ = component.generation.request(ctx, "dispose_registered_renderer_component", struct {
 		Handle string `json:"handle"`

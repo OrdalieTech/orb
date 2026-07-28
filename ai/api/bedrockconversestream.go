@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 	"unicode"
 
 	"github.com/OrdalieTech/pigo/ai"
@@ -246,17 +245,13 @@ func StreamBedrockConverseWithOptions(
 	return func(yield func(ai.AssistantMessageEvent, error) bool) {
 		output := newAssistantMessage(model)
 		streamOptions := bedrockStreamOptions(options)
-		streamCtx := ctx
-		cancel := func() {}
-		if streamOptions.TimeoutMS != nil && *streamOptions.TimeoutMS > 0 {
-			streamCtx, cancel = context.WithTimeout(ctx, time.Duration(*streamOptions.TimeoutMS)*time.Millisecond)
-		}
-		defer cancel()
 
+		// Upstream bedrock-converse-stream.ts never applies timeoutMs; only the
+		// caller's abort signal (the parent ctx) can end the stream early.
 		fail := func(err error) {
 			clearBedrockStreamingFields(output)
 			reason := ai.StopReasonError
-			if streamCtx.Err() != nil {
+			if ctx.Err() != nil {
 				reason = ai.StopReasonAborted
 				err = errors.New("Request was aborted") //nolint:staticcheck // Exact upstream text is observable.
 			}
@@ -271,7 +266,7 @@ func StreamBedrockConverseWithOptions(
 			fail(err)
 			return
 		}
-		hooked, err := applyPayloadHook(streamCtx, model, streamOptions, payload)
+		hooked, err := applyPayloadHook(ctx, model, streamOptions, payload)
 		if err != nil {
 			fail(err)
 			return
@@ -282,18 +277,18 @@ func StreamBedrockConverseWithOptions(
 			return
 		}
 
-		requestOptions, err := applyBedrockHeadersHook(streamCtx, model, options)
+		requestOptions, err := applyBedrockHeadersHook(ctx, model, options)
 		if err != nil {
 			fail(err)
 			return
 		}
 		streamOptions = bedrockStreamOptions(requestOptions)
-		transport, err := newBedrockTransport(streamCtx, model, requestOptions)
+		transport, err := newBedrockTransport(ctx, model, requestOptions)
 		if err != nil {
 			fail(err)
 			return
 		}
-		response, err := transport.Send(streamCtx, payload)
+		response, err := transport.Send(ctx, payload)
 		if err != nil {
 			fail(err)
 			return
@@ -304,7 +299,7 @@ func StreamBedrockConverseWithOptions(
 			if requestID := response.RequestID(); requestID != "" {
 				headers["x-amzn-requestid"] = requestID
 			}
-			if err := streamOptions.OnResponse(streamCtx, ai.ProviderResponse{Status: response.Status(), Headers: headers}, model); err != nil {
+			if err := streamOptions.OnResponse(ctx, ai.ProviderResponse{Status: response.Status(), Headers: headers}, model); err != nil {
 				fail(err)
 				return
 			}
@@ -314,7 +309,7 @@ func StreamBedrockConverseWithOptions(
 			return yield(event, nil)
 		}}
 		for {
-			item, ok := response.Next(streamCtx)
+			item, ok := response.Next(ctx)
 			if !ok {
 				break
 			}
@@ -330,8 +325,8 @@ func StreamBedrockConverseWithOptions(
 			fail(err)
 			return
 		}
-		if streamCtx.Err() != nil {
-			fail(streamCtx.Err())
+		if ctx.Err() != nil {
+			fail(ctx.Err())
 			return
 		}
 		if output.StopReason == ai.StopReasonError || output.StopReason == ai.StopReasonAborted {

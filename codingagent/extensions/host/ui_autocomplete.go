@@ -56,7 +56,7 @@ func (manager *Manager) addUIAutocompleteProvider(generation *generation, ui ext
 	}
 	ui.AddAutocompleteProvider(func(current extensions.AutocompleteProvider) extensions.AutocompleteProvider {
 		handle := "autocomplete-" + request.FactoryHandle
-		ctx, cancel := generation.manager.timeoutContext(context.Background())
+		ctx, cancel := callbackContext(context.Background())
 		defer cancel()
 		raw, err := generation.request(ctx, "ui_autocomplete", wireAutocompleteMount{
 			FactoryHandle:  request.FactoryHandle,
@@ -126,7 +126,7 @@ func (provider *hostAutocompleteProvider) ShouldTriggerFileCompletion(request ex
 }
 
 func (provider *hostAutocompleteProvider) call(ctx context.Context, call wireAutocompleteCall) (wireAutocompleteResult, error) {
-	requestContext, cancel := provider.generation.manager.timeoutContext(ctx)
+	requestContext, cancel := callbackContext(ctx)
 	defer cancel()
 	raw, err := provider.generation.request(requestContext, "ui_autocomplete", call, nil)
 	if err != nil {

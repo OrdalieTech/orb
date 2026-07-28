@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/pigo/chat"
+	"github.com/OrdalieTech/pigo/chat/internal/ctxsleep"
 )
 
 const platformName = "slack"
@@ -100,7 +101,7 @@ func New(opts Options) (*Adapter, error) {
 		baseURL: strings.TrimRight(opts.BaseURL, "/"),
 		token:   opts.Token,
 		http:    httpClient,
-		sleep:   sleepContext,
+		sleep:   ctxsleep.Sleep,
 	}
 	if opts.BotUserID == "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

@@ -329,7 +329,16 @@ func prepareCompaction(pathEntries []SessionEntry, settings CompactionSettings, 
 			}
 		}
 	}
-	cut := FindCutPoint(pathEntries, boundaryStart, len(pathEntries), settings.KeepRecentTokens)
+	var cut CutPointResult
+	compactionMessage := entryMessage
+	if retainTail {
+		cut = harnessFindCutPoint(pathEntries, boundaryStart, len(pathEntries), settings.KeepRecentTokens)
+		// Harness getMessageFromEntryForCompaction projects an empty-summary
+		// branch_summary; the coding-agent projection drops it.
+		compactionMessage = harnessEntryMessage
+	} else {
+		cut = FindCutPoint(pathEntries, boundaryStart, len(pathEntries), settings.KeepRecentTokens)
+	}
 	if cut.FirstKeptEntryIndex < 0 || cut.FirstKeptEntryIndex >= len(pathEntries) || pathEntries[cut.FirstKeptEntryIndex].ID == "" {
 		if !retainTail {
 			// coding-agent returns undefined here and lets the caller report
@@ -345,14 +354,14 @@ func prepareCompaction(pathEntries []SessionEntry, settings CompactionSettings, 
 	}
 	messages := make(agent.AgentMessages, 0, historyEnd-boundaryStart)
 	for index := boundaryStart; index < historyEnd; index++ {
-		if message := entryMessage(pathEntries[index], false); message != nil {
+		if message := compactionMessage(pathEntries[index], false); message != nil {
 			messages = append(messages, message)
 		}
 	}
 	prefix := agent.AgentMessages{}
 	if cut.IsSplitTurn {
 		for index := cut.TurnStartIndex; index < cut.FirstKeptEntryIndex; index++ {
-			if message := entryMessage(pathEntries[index], false); message != nil {
+			if message := compactionMessage(pathEntries[index], false); message != nil {
 				prefix = append(prefix, message)
 			}
 		}
@@ -361,7 +370,7 @@ func prepareCompaction(pathEntries []SessionEntry, settings CompactionSettings, 
 	if retainTail {
 		tail = make(agent.AgentMessages, 0, len(pathEntries)-cut.FirstKeptEntryIndex)
 		for index := cut.FirstKeptEntryIndex; index < len(pathEntries); index++ {
-			if message := entryMessage(pathEntries[index], false); message != nil {
+			if message := harnessEntryMessage(pathEntries[index], false); message != nil {
 				tail = append(tail, message)
 			}
 		}
@@ -682,11 +691,92 @@ func validCutPoints(entries []SessionEntry, startIndex, endIndex int) []int {
 				result = append(result, index)
 			}
 		}
+		if (entry.Type == "branch_summary" && entry.Summary != "") || entry.Type == "custom_message" {
+			result = append(result, index)
+		}
+	}
+	return result
+}
+
+// The harness-package compaction algorithm (packages/agent/src/harness/
+// compaction/compaction.ts) diverges from the coding-agent one mirrored by
+// FindCutPoint: only message entries accumulate tokens, the metadata walk-back
+// stops at any message entry, only a user-role message cut avoids the
+// split-turn classification, and branch_summary entries count regardless of
+// an empty summary.
+func harnessValidCutPoints(entries []SessionEntry, startIndex, endIndex int) []int {
+	result := make([]int, 0)
+	for index := startIndex; index < endIndex; index++ {
+		entry := entries[index]
+		if entry.Type == "message" {
+			switch messageRole(harnessEntryMessage(entry, false)) {
+			case "bashExecution", "custom", "branchSummary", "compactionSummary", "user", "assistant":
+				result = append(result, index)
+			}
+		}
 		if entry.Type == "branch_summary" || entry.Type == "custom_message" {
 			result = append(result, index)
 		}
 	}
 	return result
+}
+
+func harnessFindTurnStartIndex(entries []SessionEntry, entryIndex, startIndex int) int {
+	for index := entryIndex; index >= startIndex; index-- {
+		entry := entries[index]
+		if entry.Type == "branch_summary" || entry.Type == "custom_message" {
+			return index
+		}
+		if entry.Type == "message" {
+			switch messageRole(harnessEntryMessage(entry, false)) {
+			case "user", "bashExecution":
+				return index
+			}
+		}
+	}
+	return -1
+}
+
+func harnessFindCutPoint(entries []SessionEntry, startIndex, endIndex int, keepRecentTokens int64) CutPointResult {
+	cutPoints := harnessValidCutPoints(entries, startIndex, endIndex)
+	if len(cutPoints) == 0 {
+		return CutPointResult{FirstKeptEntryIndex: startIndex, TurnStartIndex: -1}
+	}
+	var accumulated int64
+	cutIndex := cutPoints[0]
+	for index := endIndex - 1; index >= startIndex; index-- {
+		if entries[index].Type != "message" {
+			continue
+		}
+		accumulated += EstimateTokens(harnessEntryMessage(entries[index], false))
+		if accumulated >= keepRecentTokens {
+			for _, candidate := range cutPoints {
+				if candidate >= index {
+					cutIndex = candidate
+					break
+				}
+			}
+			break
+		}
+	}
+	for cutIndex > startIndex {
+		previous := entries[cutIndex-1]
+		if previous.Type == "compaction" || previous.Type == "message" {
+			break
+		}
+		cutIndex--
+	}
+	cutEntry := entries[cutIndex]
+	isUserMessage := cutEntry.Type == "message" && messageRole(harnessEntryMessage(cutEntry, false)) == "user"
+	turnStart := -1
+	if !isUserMessage {
+		turnStart = harnessFindTurnStartIndex(entries, cutIndex, startIndex)
+	}
+	return CutPointResult{
+		FirstKeptEntryIndex: cutIndex,
+		TurnStartIndex:      turnStart,
+		IsSplitTurn:         !isUserMessage && turnStart != -1,
+	}
 }
 
 func assistantUsage(message agent.AgentMessage) *ai.Usage {
@@ -706,6 +796,18 @@ func assistantUsage(message agent.AgentMessage) *ai.Usage {
 }
 
 func entryMessage(entry SessionEntry, includeCompaction bool) agent.AgentMessage {
+	// Mirrors coding-agent sessionEntryToContextMessages: an empty-summary
+	// branch_summary is invisible metadata (session-manager.ts guards with
+	// `entry.type === "branch_summary" && entry.summary`).
+	if entry.Type == "branch_summary" && entry.Summary == "" {
+		return nil
+	}
+	return harnessEntryMessage(entry, includeCompaction)
+}
+
+// harnessEntryMessage mirrors harness getMessageFromEntry, which projects a
+// branch_summary even when its summary is empty.
+func harnessEntryMessage(entry SessionEntry, includeCompaction bool) agent.AgentMessage {
 	switch entry.Type {
 	case "message":
 		if raw, ok := entry.Message.(json.RawMessage); ok {

@@ -334,9 +334,18 @@ used for another registration. `method` is one of `apiKey.resolve`, `apiKey.logi
 
 The response is `{"present":false}` for JavaScript `undefined`, or
 `{"present":true,"value":...}` for any other result. Stream callbacks are consumed as async
-iterators by the host and return `value.events` in upstream event order; each element has the
-normal `AssistantMessageEvent` shape. The enclosing request uses the manager request deadline, so
-provider calls cannot outlive the configured host timeout.
+iterators by the host: each yielded `AssistantMessageEvent` is forwarded immediately as a
+`provider_stream_event` notification `{"requestId":..., "event":...}` correlated to the pending
+request, and the final response carries any trailing `value.events` not yet notified — the full
+sequence is the notifications followed by the response's remainder, in upstream order.
+Extension callbacks (tools, commands, dialogs, event handlers, providers, renderers, state
+actions) carry no deadline — upstream awaits them untimed — and only host-infrastructure RPCs
+(handshake, `load_extension`, dependency install) stay bounded. Cancelling the Go-side context of
+a pending callback emits a `cancel_request` notification `{"requestId":..., "reason":...}`; the
+host aborts the per-request `AbortController` backing the positional `AbortSignal` upstream
+extensions receive. The host also exits when its stdin transport closes, so a hard pigo crash
+cannot orphan it, and extensions see the full Node `console` surface (`trace`, `table`, `group`,
+`time`/`timeEnd`, `count`, `assert`, …) routed through the log bridge.
 
 Auth callbacks can call back into Go while `provider_invoke` is pending. The host emits a
 `provider_interaction` event with the invocation id, a call id, and one of these operations:

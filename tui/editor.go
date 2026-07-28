@@ -2156,7 +2156,7 @@ func (editor *Editor) requestAutocomplete(force, explicitTab bool) {
 
 	if debounce := editor.autocompleteDebounceDuration(force, explicitTab); debounce > 0 {
 		editor.autocompleteBusy++
-		editor.autocompleteDebounceTimer = time.AfterFunc(debounce, func() {
+		editor.autocompleteDebounceTimer = time.AfterFunc(debounce, guarded(func() {
 			editor.mu.Lock()
 			editor.autocompleteDebounceTimer = nil
 			if startToken == editor.autocompleteStartToken {
@@ -2164,7 +2164,7 @@ func (editor *Editor) requestAutocomplete(force, explicitTab bool) {
 			}
 			editor.autocompleteDone()
 			editor.mu.Unlock()
-		})
+		}))
 		return
 	}
 	editor.startAutocompleteRequest(startToken, force, explicitTab)
@@ -2196,7 +2196,7 @@ func (editor *Editor) autocompleteDebounceDuration(force, explicitTab bool) time
 // mirroring upstream's chained async request task. Caller holds editor.mu.
 func (editor *Editor) startAutocompleteRequest(startToken int, force, explicitTab bool) {
 	editor.autocompleteBusy++
-	go func() {
+	go guarded(func() {
 		editor.autocompleteRunMu.Lock()
 		defer editor.autocompleteRunMu.Unlock()
 
@@ -2263,7 +2263,7 @@ func (editor *Editor) startAutocompleteRequest(startToken int, force, explicitTa
 			callback()
 		}
 		editor.ui.RequestRender()
-	}()
+	})()
 }
 
 func (editor *Editor) applyAutocompleteSuggestions(suggestions *AutocompleteSuggestions, state string) {

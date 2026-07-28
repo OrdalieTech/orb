@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf16"
+
+	"github.com/OrdalieTech/pigo/internal/jstrim"
 )
 
 // PromptTemplate is a file-backed slash command expanded before a prompt is sent.
@@ -34,7 +36,7 @@ func promptSourceInfo(filePath, baseDir, scope string) SourceInfo {
 
 func firstPromptDescriptionLine(body string) string {
 	for _, line := range strings.Split(body, "\n") {
-		if strings.TrimFunc(line, isJSTrimSpace) == "" {
+		if strings.TrimFunc(line, jstrim.IsSpace) == "" {
 			continue
 		}
 		codeUnits := utf16.Encode([]rune(line))
@@ -153,7 +155,7 @@ func ParseCommandArgs(argsString string) []string {
 			quote = character
 			continue
 		}
-		if isJSTrimSpace(character) {
+		if jstrim.IsSpace(character) {
 			if current.Len() > 0 {
 				args = append(args, current.String())
 				current.Reset()
@@ -254,7 +256,7 @@ func splitSlashInvocation(text string) (name, args string, matched bool) {
 	runes := []rune(text[1:])
 	commandEnd := len(runes)
 	for index, character := range runes {
-		if isJSTrimSpace(character) {
+		if jstrim.IsSpace(character) {
 			commandEnd = index
 			break
 		}
@@ -264,7 +266,7 @@ func splitSlashInvocation(text string) (name, args string, matched bool) {
 	}
 	name = string(runes[:commandEnd])
 	argumentStart := commandEnd
-	for argumentStart < len(runes) && isJSTrimSpace(runes[argumentStart]) {
+	for argumentStart < len(runes) && jstrim.IsSpace(runes[argumentStart]) {
 		argumentStart++
 	}
 	if commandEnd < len(runes) {

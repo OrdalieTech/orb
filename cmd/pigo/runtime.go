@@ -156,16 +156,20 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		return runtimeInputs{}, err
 	}
 	config.ApplyHTTPProxySettings(settings.GetHTTPProxy())
-	projectTrusted, err := codingagent.ResolveProjectTrusted(context.Background(), codingagent.ResolveProjectTrustedOptions{
-		CWD:                 cwd,
-		TrustStore:          config.NewProjectTrustStore(agentDir),
-		TrustOverride:       args.ProjectTrusted,
-		DefaultProjectTrust: settings.GetDefaultProjectTrust(),
-	})
-	if err != nil {
-		return runtimeInputs{}, err
+	var trust projectTrustResolution
+	if args.extensionsLoaded && args.resolvedProjectTrust != nil {
+		// loadStartupExtensions already resolved trust in this process (firing
+		// project_trust once) and its registry's extension host is live; a second
+		// pre-trust load would fire the event again and replace that host.
+		trust = projectTrustResolution{Trusted: *args.resolvedProjectTrust}
+		settings.SetProjectTrusted(trust.Trusted)
+	} else {
+		resolved, err := resolveStartupProjectTrust(context.Background(), cwd, agentDir, args, settings)
+		if err != nil {
+			return runtimeInputs{}, err
+		}
+		trust = resolved
 	}
-	settings.SetProjectTrusted(projectTrusted)
 	packageManager := codingagent.NewPackageManager(codingagent.PackageManagerOptions{
 		CWD: cwd, AgentDir: agentDir, Settings: settings,
 	})
@@ -174,6 +178,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		return runtimeInputs{}, err
 	}
 	diagnostics := make([]string, 0)
+	diagnostics = append(diagnostics, trust.Diagnostics...)
 	for _, diagnostic := range settings.DrainErrors() {
 		diagnostics = append(diagnostics, diagnostic.Error())
 	}
@@ -551,33 +556,6 @@ func normalizeRuntimeCLIArgs(args CLIArgs) CLIArgs {
 		args.Model = nil
 	}
 	return args
-}
-
-func requestAuthResolverForProvider(
-	args CLIArgs,
-	cliProvider *ai.ProviderID,
-	registry *config.ModelRegistry,
-	credentials aiauth.CredentialStore,
-) agent.GetRequestAuthFunc {
-	runtimeAuth := newRuntimeCredentials(credentials)
-	if args.APIKey != nil && *args.APIKey != "" {
-		providerID := ""
-		if cliProvider != nil {
-			providerID = string(*cliProvider)
-		}
-		if providerID != "" {
-			runtimeAuth.SetRuntimeAPIKey(providerID, *args.APIKey)
-		}
-	}
-	base := requestAuthResolverWithCredentials(registry, runtimeAuth)
-	if args.APIKey == nil || *args.APIKey == "" || cliProvider != nil {
-		return base
-	}
-	// Tests and SDK-style callers without a selected model historically use a
-	// provider-agnostic --api-key override. The CLI always supplies cliProvider.
-	return func(ctx context.Context, providerID ai.ProviderID) (*agent.RequestAuth, error) {
-		return &agent.RequestAuth{APIKey: args.APIKey}, nil
-	}
 }
 
 func requestAuthResolverWithCredentials(

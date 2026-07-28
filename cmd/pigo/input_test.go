@@ -54,10 +54,11 @@ func TestProcessTextFileArguments(t *testing.T) {
 	writeCLIFile(t, second, "second\n")
 	writeCLIFile(t, empty, "")
 
-	got, err := ProcessTextFileArguments([]string{"first.txt", empty, second}, cwd)
+	processed, err := ProcessFileArguments([]string{"first.txt", empty, second}, cwd)
 	if err != nil {
 		t.Fatal(err)
 	}
+	got := processed.Text
 	want := `<file name="` + first + `">` + "\nfirst\n</file>\n" +
 		`<file name="` + second + `">` + "\nsecond\n\n</file>\n"
 	if got != want {
@@ -67,7 +68,7 @@ func TestProcessTextFileArguments(t *testing.T) {
 
 func TestProcessTextFileArgumentsReportsResolvedMissingPath(t *testing.T) {
 	cwd := t.TempDir()
-	_, err := ProcessTextFileArguments([]string{"missing.txt"}, cwd)
+	_, err := ProcessFileArguments([]string{"missing.txt"}, cwd)
 	want := "File not found: " + filepath.Join(cwd, "missing.txt")
 	if err == nil || err.Error() != want {
 		t.Fatalf("error = %v, want %q", err, want)
@@ -97,10 +98,11 @@ func TestCLITextUsesNodeUTF8Replacement(t *testing.T) {
 	if err := os.WriteFile(path, []byte{0xff, 0xff, 0xe2, 0x82}, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	text, err := ProcessTextFileArguments([]string{"invalid.txt"}, cwd)
+	processed, err := ProcessFileArguments([]string{"invalid.txt"}, cwd)
 	if err != nil {
 		t.Fatal(err)
 	}
+	text := processed.Text
 	want := `<file name="` + path + `">` + "\n���\n</file>\n"
 	if text != want {
 		t.Fatalf("text = %q, want %q", text, want)

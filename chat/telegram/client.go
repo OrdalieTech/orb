@@ -296,18 +296,3 @@ func (c *client) downloadFile(ctx context.Context, filePath string) (io.ReadClos
 	}
 	return response.Body, nil
 }
-
-// sleepContext pauses for d, honoring ctx cancellation.
-func sleepContext(ctx context.Context, d time.Duration) error {
-	if d <= 0 {
-		return nil
-	}
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
