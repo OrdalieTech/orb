@@ -716,6 +716,16 @@ func textOffsetPoint(lines []string, offset int, inclusive bool) mousePoint {
 	return mousePoint{row: row, column: max(0, VisibleWidth(lines[row])-1)}
 }
 
+// ScrollToBottom reattaches live follow so the newest lines are visible again.
+// Scrolling away detaches follow on purpose, which keeps streaming frames from
+// moving viewed history; an explicit user action reattaches it, as ctrl+end does.
+func (ui *TUI) ScrollToBottom() {
+	ui.renderMu.Lock()
+	ui.viewportFollow = true
+	ui.renderMu.Unlock()
+	ui.RequestRender()
+}
+
 func (ui *TUI) scrollViewportToLocked(row int) {
 	scrollable := ui.viewportBodyLines - ui.viewportBodyHeight
 	if scrollable <= 0 {
