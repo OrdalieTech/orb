@@ -59,21 +59,24 @@ func TestUnstampedVersionIsDev(t *testing.T) {
 func TestStartupDiagnosticsColoredOnTTY(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
 	t.Setenv("TERM", "xterm-256color")
-	run := func(stderrTTY bool) string {
+	run := func(stdoutTTY bool) string {
 		var stdout, stderr bytes.Buffer
 		code := runCLIWithDependencies(context.Background(), []string{"-z"}, cliStreams{
-			Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr, StderrTTY: stderrTTY,
+			Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr, StdoutTTY: stdoutTTY, StderrTTY: !stdoutTTY,
 		}, cliDependencies{})
 		if code != 1 {
 			t.Fatalf("exit = %d, want 1", code)
 		}
 		return stderr.String()
 	}
+	// Upstream's default chalk keys color support on STDOUT even for lines it
+	// writes to stderr (chalk/source/index.js stdoutColor), so a TTY stderr
+	// alone stays plain.
 	if got, want := run(true), "\x1b[31mError: Unknown option: -z\x1b[39m\n"; got != want {
-		t.Fatalf("TTY stderr = %q, want %q (main.ts:511-514)", got, want)
+		t.Fatalf("stdout-TTY stderr = %q, want %q (main.ts:511-514)", got, want)
 	}
 	if got, want := run(false), "Error: Unknown option: -z\n"; got != want {
-		t.Fatalf("non-TTY stderr = %q, want %q", got, want)
+		t.Fatalf("non-TTY-stdout stderr = %q, want %q", got, want)
 	}
 }
 
