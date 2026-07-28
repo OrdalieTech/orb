@@ -1242,6 +1242,9 @@ func (mode *InteractiveMode) setupEditorSubmitHandler() {
 		if text == "" {
 			return
 		}
+		// Sending is an explicit request to watch what happens next, so a
+		// transcript scrolled up for reading snaps back to the live tail.
+		mode.ui.ScrollToBottom()
 
 		// Bash mode: !command
 		if strings.HasPrefix(text, "!") {

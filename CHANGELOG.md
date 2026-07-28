@@ -6,6 +6,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Changed
+
+- Sending a message snaps the transcript back to the live tail, so a view scrolled up for reading shows the message and its reply. Scrolling away still holds position against streaming frames.
+
 ## [0.4.9] - 2026-07-28
 
 ### Fixed
