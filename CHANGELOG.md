@@ -6,6 +6,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-07-28
+
 ### Fixed
 
 - Anthropic streams are no longer hard-killed at `timeoutMs` (5 minutes by default): the timeout bounds only the header phase, matching the pinned `@anthropic-ai/sdk` (10-minute default when unset), so long streaming turns complete. Bedrock no longer applies `timeoutMs` as a whole-stream deadline at all (upstream applies none) and can no longer misreport an internal timeout as a user abort, and OpenRouter image generation no longer races the response body read.
