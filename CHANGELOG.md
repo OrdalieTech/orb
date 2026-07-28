@@ -21,10 +21,12 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 - Harness `PrepareCompaction`/`PrepareTreeCompaction` use upstream harness's own cut-point algorithm, while `FindCutPoint`/`PrepareLegacyCompaction` keep the coding-agent algorithm and treat empty-summary `branch_summary` entries as invisible metadata in cut-point selection — while branch summarization still projects them unconditionally — matching upstream on both sides.
 - RPC frames with a missing or non-string `type` answer upstream's untyped `Unknown command` response with the id and type echoed in upstream's `JSON.stringify` canonical form, the untyped path honors a pending extension shutdown like every command, and `--mode rpc` with `@file` arguments fails up front with upstream's error instead of silently dropping them.
 - Startup `Error:`/`Warning:` diagnostics are coloured red and yellow when stderr is a TTY (`NO_COLOR` and `TERM=dumb` respected), and unstamped dev builds report `pigo dev` instead of a stale version number.
+- Interrupting a run restores queued messages to the editor instead of discarding them, and the dequeue binding keeps the current draft after them and reports what it restored, matching upstream.
 - chat: the Telegram webhook caps request bodies at 1 MB, and image attachments larger than 20 MB fall back to a textual attachment note instead of being base64-inlined into the prompt.
 
 ### Added
 
+- Interrupting a turn that has not shown anything yet now takes its prompt back: the branch rewinds to before it and the text returns to the editor, so you can edit and resend instead of leaving a stranded message (the abandoned attempt stays reachable in the session tree). Once any output has appeared, interrupting aborts as before.
 - Upstream's `--verbose` flag forces verbose startup instead of being rejected as an unknown option.
 - `--export <session> <output>.md` writes the session as portable Markdown; every other output path keeps the HTML export.
 - Exported provider constructors such as `providers.GitHubCopilot()` return complete registry metadata (APIs, base URL, env-key lists) instead of a partially populated struct.
