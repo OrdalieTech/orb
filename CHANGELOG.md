@@ -12,6 +12,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 - The upstream compatibility target is now pi v0.83.0. Stored OAuth credentials refresh with less than five minutes remaining, and tool-schema conformance follows TypeBox 1.3.7, including nullable arrays.
 - Sending a message snaps the transcript back to the live tail, so a view scrolled up for reading shows the message and its reply. Scrolling away still holds position against streaming frames.
 - When enabled, the memory plugin now has one Hermes-inspired behavior for local and SDK users: a frozen, character-bounded `USER PROFILE`/`MEMORY`, model-led consolidation through `replace`, and `remember`/`recall`/`forget` over the existing `memory.Store`. The former injection and shutdown-distillation options were removed.
+- Memory plugin instances no longer share one process-wide store lock: each `MemoryWithStore` instance serializes only its own operations, so multi-tenant embedders' stores can serve concurrent queries across instances. Cross-instance and cross-process coherence remains the `memory.Store`'s responsibility, as durable adapters already require.
 
 ### Added
 
