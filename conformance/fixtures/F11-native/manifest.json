@@ -1,6 +1,6 @@
 {
   "family": "F11-native",
-  "upstreamCommit": "b4f293684bba718d59cc1157679bcf6157b3a7f5",
+  "upstreamCommit": "845d6ff1f6643aba440341cce877ce1c43ebbc39",
   "generator": "conformance/extract/f11-extension-runner.ts",
   "source": "packages/coding-agent/src/core/extensions/runner.ts; packages/coding-agent/src/core/extensions/loader.ts; packages/coding-agent/test/extensions-runner.test.ts; packages/coding-agent/test/extensions-input-event.test.ts; packages/coding-agent/test/agent-session-dynamic-provider.test.ts; packages/coding-agent/test/agent-session-runtime-events.test.ts",
   "files": [

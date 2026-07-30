@@ -72,15 +72,16 @@ type stateSnapshot struct {
 }
 
 type stateContextSnapshot struct {
-	CWD                string             `json:"cwd"`
-	Mode               extensions.Mode    `json:"mode"`
-	HasUI              bool               `json:"hasUI"`
-	Model              *ai.Model          `json:"model"`
-	Idle               bool               `json:"idle"`
-	ProjectTrusted     bool               `json:"projectTrusted"`
-	HasPendingMessages bool               `json:"hasPendingMessages"`
-	ContextUsage       *stateContextUsage `json:"contextUsage"`
-	SystemPrompt       string             `json:"systemPrompt"`
+	CWD                string                   `json:"cwd"`
+	Mode               extensions.Mode          `json:"mode"`
+	HasUI              bool                     `json:"hasUI"`
+	Model              *ai.Model                `json:"model"`
+	ScopedModels       []extensions.ScopedModel `json:"scopedModels"`
+	Idle               bool                     `json:"idle"`
+	ProjectTrusted     bool                     `json:"projectTrusted"`
+	HasPendingMessages bool                     `json:"hasPendingMessages"`
+	ContextUsage       *stateContextUsage       `json:"contextUsage"`
+	SystemPrompt       string                   `json:"systemPrompt"`
 }
 
 type stateContextUsage struct {
@@ -159,7 +160,8 @@ func newStateHost(options Options) *stateHost {
 		Commands:      []extensions.SlashCommandInfo{},
 		ThinkingLevel: agent.ThinkingOff,
 		Context: stateContextSnapshot{
-			CWD: options.CWD, Mode: extensions.ModePrint, Idle: true, ProjectTrusted: true,
+			CWD: options.CWD, Mode: extensions.ModePrint, ScopedModels: []extensions.ScopedModel{},
+			Idle: true, ProjectTrusted: true,
 		},
 	}
 	return &stateHost{
@@ -1103,6 +1105,7 @@ func (host *stateHost) updateContextSnapshot(snapshot *stateSnapshot, contextVal
 		} else {
 			snapshot.Context.Model = nil
 		}
+		snapshot.Context.ScopedModels = append([]extensions.ScopedModel{}, contextValue.ScopedModels()...)
 		snapshot.Context.Idle = contextValue.IsIdle()
 		snapshot.Context.ProjectTrusted = contextValue.IsProjectTrusted()
 		snapshot.Context.HasPendingMessages = contextValue.HasPendingMessages()
@@ -1420,6 +1423,7 @@ func cloneStateSnapshot(value stateSnapshot) stateSnapshot {
 		model := *value.Context.Model
 		result.Context.Model = &model
 	}
+	result.Context.ScopedModels = append([]extensions.ScopedModel{}, value.Context.ScopedModels...)
 	if value.Context.ContextUsage != nil {
 		usage := *value.Context.ContextUsage
 		usage.Tokens = cloneInt64Pointer(usage.Tokens)

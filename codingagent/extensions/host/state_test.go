@@ -68,10 +68,16 @@ func TestStateSnapshotActionsEventBusAndToolCallVeto(t *testing.T) {
 		GetThinkingLevel: func() (agent.ThinkingLevel, error) { return agent.ThinkingLow, nil },
 	}
 	model := ai.Model{Provider: "openai-codex", ID: "gpt-auth-probe"}
+	scopedLevel := ai.ModelThinkingHigh
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{
 		CWD: cwd, Actions: actions, ModelRegistry: stateAuthRegistry{model: model},
 		ContextActions: extensions.ContextActions{
-			GetModel:  func() *ai.Model { return &model },
+			GetModel: func() *ai.Model { return &model },
+			GetScopedModels: func() []extensions.ScopedModel {
+				return []extensions.ScopedModel{{
+					Model: ai.Model{Provider: "anthropic", ID: "claude-test"}, ThinkingLevel: &scopedLevel,
+				}}
+			},
 			GetSignal: func() context.Context { return callbackSignalContext },
 			Abort:     func() { aborted <- struct{}{} },
 		},
@@ -159,6 +165,16 @@ func TestStateSnapshotActionsEventBusAndToolCallVeto(t *testing.T) {
 	}
 	if got := waitStateMessage(t, messages, "auth:"); got != "auth:true" {
 		t.Fatalf("model registry auth message = %q", got)
+	}
+	scopedCommand := runner.Command("state-scoped-models")
+	if scopedCommand == nil {
+		t.Fatal("state-scoped-models command was not registered")
+	}
+	if err := scopedCommand.Handler(context.Background(), "", runner.CreateCommandContext()); err != nil {
+		t.Fatal(err)
+	}
+	if got := waitStateMessage(t, messages, "scoped:"); got != "scoped:anthropic/claude-test:high" {
+		t.Fatalf("scoped models message = %q", got)
 	}
 	manager.stateHost.mu.RLock()
 	authSnapshot := cloneStateSnapshot(manager.stateHost.snapshots[manager.entries[0].ID])

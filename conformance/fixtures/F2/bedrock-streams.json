@@ -183,7 +183,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -217,7 +217,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -252,7 +252,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -286,7 +286,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -324,7 +324,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -363,7 +363,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -401,7 +401,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -446,7 +446,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -494,7 +494,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -543,7 +543,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -598,7 +598,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -645,7 +645,8 @@
               }
             },
             "stopReason": "toolUse",
-            "timestamp": 1700000000123
+            "timestamp": 1700000000123,
+            "rawStopReason": "tool_use"
           }
         }
       ]
@@ -745,7 +746,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -778,7 +779,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -812,7 +813,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -845,7 +846,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -878,7 +879,8 @@
               }
             },
             "stopReason": "length",
-            "timestamp": 1700000000123
+            "timestamp": 1700000000123,
+            "rawStopReason": "model_context_window_exceeded"
           }
         }
       ]
@@ -957,7 +959,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -986,7 +988,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "guardrail_intervened"
+            "rawStopReason": "guardrail_intervened",
+            "errorMessage": "Provider stopped with: guardrail_intervened"
           }
         }
       ]
@@ -1150,7 +1153,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -1183,7 +1186,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -1217,7 +1220,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },

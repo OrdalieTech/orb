@@ -773,19 +773,8 @@ func (runtime *SessionRuntime) executeBash(ctx context.Context, command string, 
 	if runtime == nil {
 		return tools.BashResult{}, errors.New("codingagent: nil session runtime")
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	bashContext, cancel := context.WithCancel(ctx)
-	runtime.mu.Lock()
-	runtime.bashCancel = cancel
-	runtime.mu.Unlock()
-	defer func() {
-		cancel()
-		runtime.mu.Lock()
-		runtime.bashCancel = nil
-		runtime.mu.Unlock()
-	}()
+	bashContext, finish := runtime.startBash(ctx)
+	defer finish()
 	shellPath, err := runtime.settings.GetShellPath()
 	if err != nil {
 		return tools.BashResult{}, err
@@ -804,11 +793,23 @@ func (runtime *SessionRuntime) executeBash(ctx context.Context, command string, 
 
 func (runtime *SessionRuntime) AbortBash() {
 	runtime.mu.Lock()
-	cancel := runtime.bashCancel
+	cancels := make([]context.CancelFunc, 0, len(runtime.bashCancels))
+	for _, cancel := range runtime.bashCancels {
+		cancels = append(cancels, cancel)
+	}
 	runtime.mu.Unlock()
-	if cancel != nil {
+	for _, cancel := range cancels {
 		cancel()
 	}
+}
+
+func (runtime *SessionRuntime) IsBashRunning() bool {
+	if runtime == nil {
+		return false
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	return len(runtime.bashCancels) > 0
 }
 
 func (runtime *SessionRuntime) recordBash(command string, result tools.BashResult, exclude *bool) error {
@@ -827,21 +828,29 @@ func (runtime *SessionRuntime) recordBash(command string, result tools.BashResul
 		Cancelled: result.Cancelled, Truncated: result.Truncated, FullOutputPath: fullOutputPath,
 		ExcludeFromContext: excludeFromContext, Timestamp: runtime.clock(),
 	}
+	return runtime.recordBashMessage(message)
+}
+
+func (runtime *SessionRuntime) recordBashMessage(message harness.BashExecutionMessage) error {
+	runtime.bashRecordMu.Lock()
+	defer runtime.bashRecordMu.Unlock()
 	if runtime.agent.State().IsStreaming {
 		runtime.mu.Lock()
 		runtime.pendingBash = append(runtime.pendingBash, message)
 		runtime.mu.Unlock()
 		return nil
 	}
-	return runtime.appendBash(message)
+	return runtime.appendBashLocked(message)
 }
 
 func (runtime *SessionRuntime) flushPendingBash() error {
+	runtime.bashRecordMu.Lock()
+	defer runtime.bashRecordMu.Unlock()
 	runtime.mu.Lock()
 	pending := append([]harness.BashExecutionMessage(nil), runtime.pendingBash...)
 	runtime.mu.Unlock()
 	for _, message := range pending {
-		if err := runtime.appendBash(message); err != nil {
+		if err := runtime.appendBashLocked(message); err != nil {
 			return err
 		}
 	}
@@ -851,7 +860,7 @@ func (runtime *SessionRuntime) flushPendingBash() error {
 	return nil
 }
 
-func (runtime *SessionRuntime) appendBash(message harness.BashExecutionMessage) error {
+func (runtime *SessionRuntime) appendBashLocked(message harness.BashExecutionMessage) error {
 	state := runtime.agent.State()
 	state.Messages = append(state.Messages, message)
 	runtime.agent.SetMessages(state.Messages)

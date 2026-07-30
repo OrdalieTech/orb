@@ -59,7 +59,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -93,7 +93,7 @@
                 "total": 0.0000245
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "vertex-rich-id"
           }
@@ -129,7 +129,7 @@
                 "total": 0.0000245
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "vertex-rich-id"
           }
@@ -185,7 +185,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-rich-id"
+            "responseId": "vertex-rich-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -238,7 +239,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-rich-id"
+            "responseId": "vertex-rich-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -292,7 +294,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-rich-id"
+            "responseId": "vertex-rich-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -346,7 +349,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-rich-id"
+            "responseId": "vertex-rich-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -399,7 +403,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-rich-id"
+            "responseId": "vertex-rich-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -453,7 +458,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-rich-id"
+            "responseId": "vertex-rich-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -519,7 +525,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-rich-id"
+            "responseId": "vertex-rich-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -572,7 +579,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-rich-id"
+            "responseId": "vertex-rich-id",
+            "rawStopReason": "STOP"
           }
         }
       ]
@@ -636,7 +644,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -689,7 +697,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-tool-ids"
+            "responseId": "vertex-tool-ids",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -742,7 +751,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-tool-ids"
+            "responseId": "vertex-tool-ids",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -800,7 +810,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-tool-ids"
+            "responseId": "vertex-tool-ids",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -852,7 +863,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-tool-ids"
+            "responseId": "vertex-tool-ids",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -905,7 +917,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-tool-ids"
+            "responseId": "vertex-tool-ids",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -965,7 +978,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-tool-ids"
+            "responseId": "vertex-tool-ids",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -1017,7 +1031,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-tool-ids"
+            "responseId": "vertex-tool-ids",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -1070,7 +1085,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-tool-ids"
+            "responseId": "vertex-tool-ids",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -1130,7 +1146,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-tool-ids"
+            "responseId": "vertex-tool-ids",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -1182,7 +1199,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-tool-ids"
+            "responseId": "vertex-tool-ids",
+            "rawStopReason": "STOP"
           }
         }
       ]
@@ -1246,7 +1264,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -1281,7 +1299,8 @@
             },
             "stopReason": "length",
             "timestamp": 1700000000123,
-            "responseId": "vertex-length"
+            "responseId": "vertex-length",
+            "rawStopReason": "MAX_TOKENS"
           }
         },
         {
@@ -1316,7 +1335,8 @@
             },
             "stopReason": "length",
             "timestamp": 1700000000123,
-            "responseId": "vertex-length"
+            "responseId": "vertex-length",
+            "rawStopReason": "MAX_TOKENS"
           }
         },
         {
@@ -1351,7 +1371,8 @@
             },
             "stopReason": "length",
             "timestamp": 1700000000123,
-            "responseId": "vertex-length"
+            "responseId": "vertex-length",
+            "rawStopReason": "MAX_TOKENS"
           }
         },
         {
@@ -1385,7 +1406,8 @@
             },
             "stopReason": "length",
             "timestamp": 1700000000123,
-            "responseId": "vertex-length"
+            "responseId": "vertex-length",
+            "rawStopReason": "MAX_TOKENS"
           }
         }
       ]
@@ -1449,7 +1471,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -1480,7 +1502,8 @@
             "stopReason": "error",
             "timestamp": 1700000000123,
             "responseId": "vertex-safety",
-            "errorMessage": "An unknown error occurred"
+            "rawStopReason": "SAFETY",
+            "errorMessage": "Provider stopped with: SAFETY"
           }
         }
       ]
@@ -1613,7 +1636,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -1650,7 +1673,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-multiline-id"
+            "responseId": "vertex-multiline-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -1687,7 +1711,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-multiline-id"
+            "responseId": "vertex-multiline-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -1729,7 +1754,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-multiline-id"
+            "responseId": "vertex-multiline-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -1765,7 +1791,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "vertex-multiline-id"
+            "responseId": "vertex-multiline-id",
+            "rawStopReason": "STOP"
           }
         }
       ]
@@ -1829,7 +1856,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },

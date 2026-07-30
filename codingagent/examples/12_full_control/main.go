@@ -35,8 +35,14 @@ func (*fixedResourceLoader) GetThemes() codingagent.ResourceThemesResult {
 func (*fixedResourceLoader) GetAgentsFiles() codingagent.ResourceAgentsFilesResult {
 	return codingagent.ResourceAgentsFilesResult{AgentsFiles: []codingagent.ContextFile{}}
 }
-func (loader *fixedResourceLoader) GetSystemPrompt() *string                    { return &loader.systemPrompt }
-func (*fixedResourceLoader) GetAppendSystemPrompt() []string                    { return []string{} }
+func (loader *fixedResourceLoader) GetSystemPrompt() *string { return &loader.systemPrompt }
+func (*fixedResourceLoader) GetSystemPromptSource() *codingagent.PromptSource {
+	return nil
+}
+func (*fixedResourceLoader) GetAppendSystemPrompt() []string { return []string{} }
+func (*fixedResourceLoader) GetAppendSystemPromptSources() []codingagent.PromptSource {
+	return []codingagent.PromptSource{}
+}
 func (*fixedResourceLoader) ExtendResources(codingagent.ResourceExtensionPaths) {}
 func (*fixedResourceLoader) Reload(ctx context.Context, _ *codingagent.ResourceLoaderReloadOptions) error {
 	return ctx.Err()

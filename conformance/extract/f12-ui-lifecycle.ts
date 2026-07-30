@@ -21,6 +21,9 @@ async function loadModules(upstreamRoot: string) {
 	const assistant = await load(
 		"packages/coding-agent/src/modes/interactive/components/assistant-message.ts",
 	);
+	const modelSelector = await load(
+		"packages/coding-agent/src/modes/interactive/components/model-selector.ts",
+	);
 	const keybindings = await load(
 		"packages/coding-agent/src/core/keybindings.ts",
 	);
@@ -31,6 +34,7 @@ async function loadModules(upstreamRoot: string) {
 		theme,
 		InteractiveMode: interactive.InteractiveMode,
 		AssistantMessageComponent: assistant.AssistantMessageComponent,
+		ModelSelectorComponent: modelSelector.ModelSelectorComponent,
 	};
 }
 
@@ -46,6 +50,14 @@ function prototypeMethod(
 
 function render(component: Renderable, width = 40): string[] {
 	return component.render(width);
+}
+
+const ansiEscape = /\u001B\[[0-?]*[ -/]*[@-~]/g;
+
+function renderPlain(component: Renderable, width = 40): string[] {
+	return render(component, width).map((line) =>
+		line.replace(ansiEscape, "").trimEnd(),
+	);
 }
 
 function replayReset(modules: Awaited<ReturnType<typeof loadModules>>) {
@@ -653,6 +665,9 @@ function replayToolsExpanded(
 				events.push("render");
 			},
 		},
+		showStatus() {
+			context.ui.requestRender();
+		},
 	};
 	context.headerContainer.addChild(builtIn);
 	context.loadedResourcesContainer.addChild(resource);
@@ -680,6 +695,169 @@ function replayToolsExpanded(
 	};
 }
 
+function replayLoadedContext(
+	modules: Awaited<ReturnType<typeof loadModules>>,
+) {
+	const cwd = "/fixture/project";
+	const renderListing = (
+		quietStartup: boolean,
+		verbose: boolean,
+		expanded: boolean,
+	): string[] => {
+		const context: Record<string, any> = {
+			loadedResourcesContainer: new modules.tui.Container(),
+			options: { verbose },
+			toolOutputExpanded: expanded,
+			settingsManager: {
+				getQuietStartup: () => quietStartup,
+			},
+			sessionManager: {
+				getCwd: () => cwd,
+			},
+			session: {
+				promptTemplates: [],
+				resourceLoader: {
+					getSystemPromptSource: () => ({
+						path: path.join(cwd, ".pi", "SYSTEM.md"),
+					}),
+					getAppendSystemPromptSources: () => [
+						{ path: path.join(cwd, ".pi", "APPEND_SYSTEM.md") },
+					],
+					getAgentsFiles: () => ({
+						agentsFiles: [{ path: path.join(cwd, "AGENTS.md") }],
+					}),
+					getSkills: () => ({ skills: [], diagnostics: [] }),
+					getPrompts: () => ({ prompts: [], diagnostics: [] }),
+					getThemes: () => ({ themes: [], diagnostics: [] }),
+					getExtensions: () => ({ extensions: [], errors: [] }),
+				},
+				extensionRunner: {
+					getCommandDiagnostics: () => [],
+					getShortcutDiagnostics: () => [],
+				},
+			},
+			getBuiltInCommandConflictDiagnostics: () => [],
+		};
+		for (const method of [
+			"formatDisplayPath",
+			"formatContextPath",
+			"getStartupExpansionState",
+		]) {
+			context[method] = prototypeMethod(modules, method).bind(context);
+		}
+		prototypeMethod(modules, "showLoadedResources").call(context, {
+			force: false,
+		});
+		return renderPlain(context.loadedResourcesContainer, 80);
+	};
+
+	return {
+		collapsed: renderListing(false, false, false),
+		expanded: renderListing(false, false, true),
+		quiet: renderListing(true, false, false),
+		verbose: renderListing(true, true, false),
+	};
+}
+
+function replayModelSelector(
+	modules: Awaited<ReturnType<typeof loadModules>>,
+) {
+	const models = [
+		{
+			provider: "fixture",
+			id: "alpha-1",
+			name: "Alpha One",
+			reasoning: true,
+		},
+		{
+			provider: "fixture",
+			id: "alpha-2",
+			name: "Alpha Two",
+			reasoning: true,
+		},
+		{
+			provider: "fixture",
+			id: "alpha-3",
+			name: "Alpha Three",
+			reasoning: true,
+		},
+		{
+			provider: "fixture",
+			id: "beta-1",
+			name: "Beta One",
+			reasoning: true,
+		},
+	];
+	const current = models[0];
+	const tui = { requestRender() {} };
+	const settingsManager = { setDefaultModelAndProvider() {} };
+	const modelRuntime = {
+		getAvailableSnapshot: () => models,
+		getModel: (provider: string, id: string) =>
+			models.find((model) => model.provider === provider && model.id === id),
+		refresh: ({ signal }: { signal: AbortSignal }) =>
+			new Promise((resolve) => {
+				signal.addEventListener(
+					"abort",
+					() => resolve({ aborted: true, errors: new Map() }),
+					{ once: true },
+				);
+			}),
+		getError: () => undefined,
+	};
+	const selectedModelId = (selector: Renderable): string => {
+		const line = renderPlain(selector, 120).find((value) =>
+			value.startsWith("→ "),
+		);
+		if (!line) throw new Error("model selector did not render a selected row");
+		return line.replace(/^→\s*/, "").split(" [")[0]?.trim() ?? "";
+	};
+	const createSelector = (scopedModels: Array<{ model: (typeof models)[number] }>) =>
+		new modules.ModelSelectorComponent(
+			tui,
+			current,
+			settingsManager,
+			modelRuntime,
+			scopedModels,
+			() => {},
+			() => {},
+		);
+
+	const all = createSelector([]);
+	all.handleInput("\x1b[B");
+	all.handleInput("\x1b[B");
+	const allBeforeQuery = selectedModelId(all);
+	for (const char of "alpha") all.handleInput(char);
+	const allAfterQuery = selectedModelId(all);
+	all.handleInput("\x1b[B");
+	all.handleInput("\x1b[B");
+	all.handleInput("\x15");
+	const allAfterClear = selectedModelId(all);
+	all.handleInput("\x1b");
+
+	const scoped = createSelector([
+		{ model: models[1] },
+		{ model: models[2] },
+		{ model: models[0] },
+	]);
+	const scopedBeforeQuery = selectedModelId(scoped);
+	for (const char of "alpha") scoped.handleInput(char);
+	const scopedAfterQuery = selectedModelId(scoped);
+	scoped.handleInput("\x1b");
+
+	return {
+		all: {
+			beforeQuery: allBeforeQuery,
+			afterQuery: allAfterQuery,
+			afterClear: allAfterClear,
+		},
+		scoped: {
+			beforeQuery: scopedBeforeQuery,
+			afterQuery: scopedAfterQuery,
+		},
+	};
+}
+
 export async function generateF12UILifecycle(
 	upstreamRoot: string,
 	outputRoot: string,
@@ -702,16 +880,27 @@ export async function generateF12UILifecycle(
 			"packages/coding-agent/test/interactive-mode-status.test.ts",
 			"packages/tui/test/overlay-non-capturing.test.ts",
 			"packages/tui/test/overlay-options.test.ts",
+			"packages/coding-agent/src/modes/interactive/components/model-selector.ts",
+			"packages/coding-agent/src/modes/interactive/model-search.ts",
+			"packages/coding-agent/test/suite/regressions/7209-model-selector-filter-resets-selection.test.ts",
 		],
 		files: ["lifecycle.json"],
-		metadata: { normalization: [], divergences: [] },
+		metadata: {
+			normalization: [
+				"loadedContext strips ANSI color and trailing terminal padding",
+				"modelSelector records selected model IDs from rendered rows",
+			],
+			divergences: [],
+		},
 	};
 	const fixture = {
-		schemaVersion: 2,
+		schemaVersion: 4,
 		reset: replayReset(modules),
 		widgets: replayWidgets(modules),
 		hiddenThinking: replayHiddenThinking(modules),
 		toolsExpanded: replayToolsExpanded(modules),
+		loadedContext: replayLoadedContext(modules),
+		modelSelector: replayModelSelector(modules),
 		customOverlay: await replayCustomOverlay(modules),
 	};
 	await writeFile(

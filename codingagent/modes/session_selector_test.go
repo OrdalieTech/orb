@@ -84,9 +84,9 @@ func selectorSession(root, id, first, allText string, modified time.Time, name *
 
 func sessionSelectorSessions(t *testing.T, now time.Time) (string, []session.SessionInfo, []session.SessionInfo) {
 	t.Helper()
-	tempRoot := os.TempDir()
-	if runtime.GOOS == "darwin" {
-		tempRoot = "/tmp"
+	tempRoot := "/tmp"
+	if info, err := os.Stat(tempRoot); err != nil || !info.IsDir() {
+		tempRoot = os.TempDir()
 	}
 	seed, err := os.MkdirTemp(tempRoot, "pi-selector-seed-")
 	if err != nil {

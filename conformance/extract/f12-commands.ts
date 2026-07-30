@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -144,7 +145,8 @@ async function captureUnexpectedArgument(
 async function captureDebugBehavior(
 	modules: Awaited<ReturnType<typeof loadInteractiveModules>>,
 ): Promise<Record<string, unknown>> {
-	const agentDir = await mkdtemp(path.join(tmpdir(), "pi-f12-debug-"));
+	const fixtureBase = existsSync("/tmp") ? "/tmp" : tmpdir();
+	const agentDir = await mkdtemp(path.join(fixtureBase, "pi-f12-debug-"));
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = agentDir;
 	try {

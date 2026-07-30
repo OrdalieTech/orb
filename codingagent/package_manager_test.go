@@ -1,6 +1,7 @@
 package codingagent
 
 import (
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -169,6 +170,60 @@ func TestGitInstallPathsRejectEscapes(t *testing.T) {
 	}
 	if path != filepath.Join(agentDir, "git", "github.com", "user", "repo") {
 		t.Fatalf("git install path = %q", path)
+	}
+}
+
+func TestInstallGitCleansPartialNewCheckoutOnFailure(t *testing.T) {
+	manager, _, agentDir, _ := newTestPackageManager(t)
+	source := &GitSource{Repo: "https://example.test/owner/repo.git", Host: "example.test", Path: "owner/repo"}
+	target, err := manager.getGitInstallPath(source, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.runCommand = func(spec execSpec) (string, error) {
+		if spec.name == "git" {
+			if err := os.MkdirAll(filepath.Join(target, ".git"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			return "", errors.New("clone failed")
+		}
+		return "", nil
+	}
+
+	if err := manager.installGit(source, "user"); err == nil || !strings.Contains(err.Error(), "clone failed") {
+		t.Fatalf("install error = %v", err)
+	}
+	if pathExists(target) {
+		t.Fatalf("partial checkout still exists at %q", target)
+	}
+	if pathExists(filepath.Join(agentDir, "git", "example.test", "owner")) {
+		t.Fatal("empty install parents were not pruned")
+	}
+}
+
+func TestInstallGitCleansNewCheckoutWhenDependencyInstallFails(t *testing.T) {
+	manager, _, agentDir, _ := newTestPackageManager(t)
+	source := &GitSource{Repo: "https://example.test/owner/repo.git", Host: "example.test", Path: "owner/repo"}
+	target, err := manager.getGitInstallPath(source, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.runCommand = func(spec execSpec) (string, error) {
+		if spec.name == "git" {
+			writeTestFile(t, filepath.Join(target, "package.json"), `{"dependencies":{"dep":"1.0.0"}}`)
+			return "", nil
+		}
+		return "", errors.New("dependency install failed")
+	}
+
+	if err := manager.installGit(source, "user"); err == nil || !strings.Contains(err.Error(), "dependency install failed") {
+		t.Fatalf("install error = %v", err)
+	}
+	if pathExists(target) {
+		t.Fatalf("checkout still exists at %q", target)
+	}
+	if pathExists(filepath.Join(agentDir, "git", "example.test", "owner")) {
+		t.Fatal("empty install parents were not pruned")
 	}
 }
 

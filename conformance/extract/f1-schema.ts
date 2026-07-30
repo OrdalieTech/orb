@@ -42,7 +42,7 @@ export async function generateF1Schema(
 		path.join(familyDir, "schema.json"),
 		`${JSON.stringify(
 			{
-				source: "typebox@1.1.38 + packages/ai/src/utils/typebox-helpers.ts",
+				source: "typebox@1.3.7 + packages/ai/src/utils/typebox-helpers.ts",
 				cases: [
 					{ name: "nested-object", schema: nestedObject },
 					{ name: "required-optional", schema: requiredOptional },

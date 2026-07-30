@@ -21,6 +21,7 @@ func (testContext) FileExists(context.Context, string) bool { return false }
 type testOAuth struct {
 	refreshes atomic.Int32
 	err       error
+	expiresIn time.Duration
 }
 
 func (*testOAuth) Name() string { return "OAuth" }
@@ -33,7 +34,11 @@ func (oauth *testOAuth) Refresh(_ context.Context, current *Credential) (*Creden
 		return nil, oauth.err
 	}
 	time.Sleep(10 * time.Millisecond)
-	return OAuthCredential("rotated", "fresh", time.Now().Add(time.Hour).UnixMilli()), nil
+	expiresIn := oauth.expiresIn
+	if expiresIn == 0 {
+		expiresIn = time.Hour
+	}
+	return OAuthCredential("rotated", "fresh", time.Now().Add(expiresIn).UnixMilli()), nil
 }
 func (*testOAuth) ToAuth(credential *Credential) (ModelAuth, error) {
 	key := credential.Access
@@ -93,6 +98,50 @@ func TestResolveProviderAuthRefreshesExpiredOAuthOnce(t *testing.T) {
 	wait.Wait()
 	if got := flow.refreshes.Load(); got != 1 {
 		t.Fatalf("refresh count = %d, want 1", got)
+	}
+}
+
+func TestResolveProviderAuthRefreshesOAuthWithinDefaultValidityWindow(t *testing.T) {
+	flow := &testOAuth{}
+	store := NewMemoryStore(map[string]*Credential{
+		"provider": OAuthCredential("refresh", "nearly-expired", time.Now().Add(2*time.Minute).UnixMilli()),
+	})
+	result, err := ResolveProviderAuth(context.Background(), "provider", ProviderAuth{OAuth: flow}, store, testContext{}, nil)
+	if err != nil || result == nil || result.Auth.APIKey == nil || *result.Auth.APIKey != "fresh" {
+		t.Fatalf("refresh result = %#v, %v", result, err)
+	}
+	if got := flow.refreshes.Load(); got != 1 {
+		t.Fatalf("refresh count = %d, want 1", got)
+	}
+}
+
+func TestResolveProviderAuthEnforcesExplicitMinimumAfterRefresh(t *testing.T) {
+	minimum := 30 * time.Minute
+	flow := &testOAuth{expiresIn: 20 * time.Minute}
+	store := NewMemoryStore(map[string]*Credential{
+		"provider": OAuthCredential("refresh", "old", time.Now().Add(25*time.Minute).UnixMilli()),
+	})
+	_, err := ResolveProviderAuth(context.Background(), "provider", ProviderAuth{OAuth: flow}, store, testContext{}, &ResolutionOverrides{
+		MinOAuthValidity: &minimum,
+	})
+	var authError *Error
+	if !errors.As(err, &authError) || authError.Code != ErrorOAuth ||
+		err.Error() != "OAuth refresh returned a token that expires too soon for provider" {
+		t.Fatalf("minimum-validity error = %#v", err)
+	}
+	if got := flow.refreshes.Load(); got != 1 {
+		t.Fatalf("refresh count = %d, want 1", got)
+	}
+}
+
+func TestResolveProviderAuthDefaultRefreshDoesNotImposeProviderContract(t *testing.T) {
+	flow := &testOAuth{expiresIn: 4 * time.Minute}
+	store := NewMemoryStore(map[string]*Credential{
+		"provider": OAuthCredential("refresh", "old", time.Now().Add(time.Minute).UnixMilli()),
+	})
+	result, err := ResolveProviderAuth(context.Background(), "provider", ProviderAuth{OAuth: flow}, store, testContext{}, nil)
+	if err != nil || result == nil || result.Auth.APIKey == nil || *result.Auth.APIKey != "fresh" {
+		t.Fatalf("default refresh result = %#v, %v", result, err)
 	}
 }
 

@@ -558,6 +558,89 @@ func TestUserBashHandlerCanReplaceOperations(t *testing.T) {
 	}
 }
 
+func TestConcurrentUserBashCancellationTracksEveryExecution(t *testing.T) {
+	cwd := t.TempDir()
+	manager, settings := extensionRuntimeDependencies(t, cwd)
+	registry := extensions.NewRegistry(cwd)
+	started := make(chan string, 2)
+	releaseFirst := make(chan struct{})
+	releaseSecond := make(chan struct{})
+	operations := bashOperationsFunc(func(ctx context.Context, command, _ string, _ tools.BashExecOptions) (tools.BashExecResult, error) {
+		started <- command
+		release := releaseSecond
+		if command == "first" {
+			release = releaseFirst
+		}
+		select {
+		case <-release:
+			exitCode := 0
+			return tools.BashExecResult{ExitCode: &exitCode}, nil
+		case <-ctx.Done():
+			return tools.BashExecResult{}, ctx.Err()
+		}
+	})
+	if err := registry.Register("<inline:concurrent-bash>", func(api extensions.API) error {
+		api.On(extensions.EventUserBash, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+			return extensions.UserBashResult{Operations: operations}, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings, ExtensionRegistry: registry,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+
+	type outcome struct {
+		result extensions.BashResult
+		err    error
+	}
+	firstDone, secondDone := make(chan outcome, 1), make(chan outcome, 1)
+	go func() {
+		result, err := runtime.ExecuteUserBash(context.Background(), "first", false, nil)
+		firstDone <- outcome{result, err}
+	}()
+	if command := <-started; command != "first" {
+		t.Fatalf("first command = %q", command)
+	}
+	go func() {
+		result, err := runtime.ExecuteUserBash(context.Background(), "second", false, nil)
+		secondDone <- outcome{result, err}
+	}()
+	if command := <-started; command != "second" {
+		t.Fatalf("second command = %q", command)
+	}
+	if !runtime.IsBashRunning() {
+		t.Fatal("concurrent bash executions were not tracked")
+	}
+
+	close(releaseFirst)
+	if first := <-firstDone; first.err != nil || first.result.Cancelled {
+		t.Fatalf("first result = %#v, %v", first.result, first.err)
+	}
+	if !runtime.IsBashRunning() {
+		t.Fatal("newer bash execution was untracked when the older one settled")
+	}
+	runtime.AbortBash()
+	select {
+	case second := <-secondDone:
+		if second.err != nil || !second.result.Cancelled {
+			t.Fatalf("second result = %#v, %v", second.result, second.err)
+		}
+	case <-time.After(time.Second):
+		close(releaseSecond)
+		<-secondDone
+		t.Fatal("remaining bash execution was not cancelled")
+	}
+	if runtime.IsBashRunning() {
+		t.Fatal("settled bash execution remained tracked")
+	}
+}
+
 func TestExtensionUserMessageRunsInputHookBeforeStreamingQueue(t *testing.T) {
 	cwd := t.TempDir()
 	manager, settings := extensionRuntimeDependencies(t, cwd)

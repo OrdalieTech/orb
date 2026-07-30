@@ -2,11 +2,11 @@
   "family": "F12-shutdown",
   "schema": 1,
   "upstream": {
-    "commit": "b4f293684bba718d59cc1157679bcf6157b3a7f5",
+    "commit": "845d6ff1f6643aba440341cce877ce1c43ebbc39",
     "files": [
       {
         "path": "packages/coding-agent/src/modes/interactive/interactive-mode.ts",
-        "sha256": "65a6e82be641fe78b80c1a7f9e041d6cae57feee94b1ca3d52cc94ae30f83354"
+        "sha256": "29848e3fbca0dfc7eb1c0ad5574f727f34607ad309ee6fff8fdc2596cbf217bd"
       },
       {
         "path": "packages/coding-agent/src/config.ts",

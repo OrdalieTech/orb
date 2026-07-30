@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/ai/models"
 )
 
 func TestOpenAICompletionsRejectsStreamWithoutFinishReason(t *testing.T) {
@@ -27,6 +28,121 @@ func TestOpenAICompletionsRejectsStreamWithoutFinishReason(t *testing.T) {
 	}
 	if _, ok := events[len(events)-1].(ai.ErrorEvent); !ok {
 		t.Fatalf("terminal event = %T, want ai.ErrorEvent", events[len(events)-1])
+	}
+}
+
+func TestOpenAICompletionsPreservesRawFinishReason(t *testing.T) {
+	message, _ := collectOpenAICompletionsFixture(t, openAICompletionsFixtureStream(t,
+		`{"id":"chatcmpl-filtered","choices":[{"delta":{},"finish_reason":"content_filter"}]}`,
+	))
+	if message.StopReason != ai.StopReasonError || message.RawStopReason == nil || *message.RawStopReason != "content_filter" {
+		t.Fatalf("message = %#v", message)
+	}
+	if message.ErrorMessage == nil || *message.ErrorMessage != "Provider finish_reason: content_filter" {
+		t.Fatalf("error message = %v", message.ErrorMessage)
+	}
+}
+
+func TestOpenAICompletionsUsesMaxTokensForZAI(t *testing.T) {
+	for _, model := range []*ai.Model{
+		{Provider: "zai", BaseURL: "https://api.z.ai/api/paas/v4"},
+		{Provider: "custom", BaseURL: "https://open.bigmodel.cn/api/paas/v4"},
+	} {
+		compat := detectOpenAICompletionsCompat(model)
+		if compat.maxTokensField != ai.MaxTokensFieldLegacy {
+			t.Fatalf("%s max tokens field = %q", model.BaseURL, compat.maxTokensField)
+		}
+	}
+}
+
+func TestOpenAICompletionsQwenReasoningControls(t *testing.T) {
+	high, max := "high", "max"
+	levels := map[ai.ModelThinkingLevel]*string{
+		ai.ModelThinkingMinimal: nil,
+		ai.ModelThinkingLow:     nil,
+		ai.ModelThinkingMedium:  nil,
+		ai.ModelThinkingHigh:    &high,
+		ai.ModelThinkingXHigh:   nil,
+		ai.ModelThinkingMax:     &max,
+	}
+	model := &ai.Model{Reasoning: true, ThinkingLevelMap: &levels}
+	for _, test := range []struct {
+		effort ai.ThinkingLevel
+		want   string
+	}{
+		{effort: ai.ThinkingHigh, want: "high"},
+		{effort: ai.ThinkingMax, want: "max"},
+		{effort: ai.ThinkingLow, want: "low"},
+	} {
+		payload := map[string]any{}
+		applyOpenAICompletionsThinking(payload, model, &OpenAICompletionsOptions{ReasoningEffort: &test.effort}, resolvedOpenAICompletionsCompat{
+			thinkingFormat: ai.ThinkingFormatQwen, supportsReasoningEffort: true,
+		})
+		if payload["enable_thinking"] != true {
+			t.Fatalf("%s enable_thinking = %#v", test.effort, payload["enable_thinking"])
+		}
+		if got, _ := payload["reasoning_effort"].(string); got != test.want {
+			t.Fatalf("%s reasoning_effort = %q, want %q", test.effort, got, test.want)
+		}
+	}
+}
+
+func TestOpenAICompletionsQwenTokenPlanGeneratedPayload(t *testing.T) {
+	catalog, err := models.Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		id     string
+		effort ai.ThinkingLevel
+		want   string
+	}{
+		{id: "deepseek-v4-pro", effort: ai.ThinkingHigh, want: "high"},
+		{id: "qwen3.8-max-preview", effort: ai.ThinkingMedium, want: "medium"},
+	} {
+		t.Run(test.id, func(t *testing.T) {
+			model, ok := catalog.Find("qwen-token-plan", test.id)
+			if !ok {
+				t.Fatalf("generated model qwen-token-plan/%s not found", test.id)
+			}
+			compat, err := resolveOpenAICompletionsCompat(&model)
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload, err := buildOpenAICompletionsPayload(
+				&model,
+				ai.Context{},
+				&OpenAICompletionsOptions{ReasoningEffort: &test.effort},
+				compat,
+				ai.CacheRetentionNone,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if payload["enable_thinking"] != true || payload["reasoning_effort"] != test.want {
+				t.Fatalf("thinking controls = %#v", payload)
+			}
+			if _, exists := payload["thinking"]; exists {
+				t.Fatalf("Qwen Token Plan emitted DeepSeek thinking payload: %#v", payload["thinking"])
+			}
+		})
+	}
+}
+
+func TestOpenAICompletionsFunctionWinsOverEmptyCustom(t *testing.T) {
+	model := &ai.Model{ID: "gpt-test", API: ai.APIOpenAICompletions, Provider: "openai"}
+	output := newAssistantMessage(model)
+	state := newCompletionsStreamState(output)
+	raw := json.RawMessage(`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"read","arguments":"{\"path\":\"README.md\"}"},"custom":{}}]},"finish_reason":"tool_calls"}]}`)
+	if err := state.consumeChunk(model, raw, func(ai.AssistantMessageEvent) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.finishBlocks(func(ai.AssistantMessageEvent) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	call, ok := output.Content[0].(*ai.ToolCall)
+	if !ok || call.Name != "read" || call.Arguments["path"] != "README.md" {
+		t.Fatalf("tool call = %#v", output.Content)
 	}
 }
 

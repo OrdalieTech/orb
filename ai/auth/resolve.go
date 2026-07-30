@@ -97,8 +97,9 @@ type ProviderAuth struct {
 }
 
 type ResolutionOverrides struct {
-	APIKey *string
-	Env    map[string]string
+	APIKey           *string
+	Env              map[string]string
+	MinOAuthValidity *time.Duration
 }
 
 func ResolveProviderAuth(
@@ -125,7 +126,11 @@ func ResolveProviderAuth(
 	if stored != nil {
 		switch {
 		case stored.Type == CredentialOAuth && methods.OAuth != nil:
-			return resolveStoredOAuth(ctx, providerID, methods.OAuth, credentials, stored)
+			var minimumValidity *time.Duration
+			if overrides != nil {
+				minimumValidity = overrides.MinOAuthValidity
+			}
+			return resolveStoredOAuth(ctx, providerID, methods.OAuth, credentials, stored, minimumValidity)
 		case stored.Type == CredentialAPIKey && methods.APIKey != nil:
 			if overrides != nil && overrides.Env != nil {
 				stored.Env = mergeStringMaps(stored.Env, overrides.Env)
@@ -152,14 +157,22 @@ func resolveStoredOAuth(
 	method OAuth,
 	credentials CredentialStore,
 	stored *Credential,
+	requestedMinimum *time.Duration,
 ) (*AuthResult, error) {
+	minimumValidity := 5 * time.Minute
+	if requestedMinimum != nil && *requestedMinimum > minimumValidity {
+		minimumValidity = *requestedMinimum
+	}
+	expiresSoon := func(credential *Credential) bool {
+		return credential.Expires <= time.Now().Add(minimumValidity).UnixMilli()
+	}
 	credential := stored
-	if credential.expiredAt(time.Now().UnixMilli()) {
+	if expiresSoon(credential) {
 		post, err := credentials.Modify(ctx, providerID, func(current *Credential) (*Credential, error) {
 			if current == nil || current.Type != CredentialOAuth {
 				return nil, nil
 			}
-			if !current.expiredAt(time.Now().UnixMilli()) {
+			if !expiresSoon(current) {
 				return nil, nil
 			}
 			refreshed, refreshErr := method.Refresh(ctx, current)
@@ -179,6 +192,12 @@ func resolveStoredOAuth(
 			return nil, nil
 		}
 		credential = post
+		if requestedMinimum != nil && expiresSoon(credential) {
+			return nil, &Error{
+				Code:    ErrorOAuth,
+				Message: fmt.Sprintf("OAuth refresh returned a token that expires too soon for %s", providerID),
+			}
+		}
 	}
 	modelAuth, err := method.ToAuth(credential)
 	if err != nil {

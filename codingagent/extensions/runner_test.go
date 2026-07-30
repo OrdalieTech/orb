@@ -129,6 +129,25 @@ func TestRunnerFlushesQueuedProviderConfigsBeforeNativeProviders(t *testing.T) {
 	}
 }
 
+func TestRunnerContextScopedModelsIsLiveAndNeverNil(t *testing.T) {
+	var scoped []ScopedModel
+	runner := newRunner(t, NewRegistry(t.TempDir()), RunnerOptions{
+		ContextActions: ContextActions{GetScopedModels: func() []ScopedModel {
+			return scoped
+		}},
+	})
+	contextValue := runner.CreateContext()
+	if got := contextValue.ScopedModels(); got == nil || len(got) != 0 {
+		t.Fatalf("default scoped models = %#v, want non-nil empty", got)
+	}
+	level := ai.ModelThinkingHigh
+	scoped = []ScopedModel{{Model: ai.Model{Provider: "anthropic", ID: "claude-test"}, ThinkingLevel: &level}}
+	got := contextValue.ScopedModels()
+	if len(got) != 1 || got[0].Model.ID != "claude-test" || got[0].ThinkingLevel == nil || *got[0].ThinkingLevel != level {
+		t.Fatalf("live scoped models = %#v", got)
+	}
+}
+
 func TestUnregisterProviderRemovesQueuedRegistrations(t *testing.T) {
 	registry := NewRegistry(t.TempDir())
 	if err := registry.Register("providers", func(api API) error {

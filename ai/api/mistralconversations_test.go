@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -33,6 +34,35 @@ func TestMistralUsageCacheFieldVariants(t *testing.T) {
 	usage = parseMistralUsage([]byte(`{"prompt_tokens":5,"completion_tokens":2,"num_cached_tokens":9}`), model)
 	if usage.Input != 0 || usage.Output != 2 || usage.CacheRead != 5 || usage.TotalTokens != 7 {
 		t.Fatalf("snake-case usage = %#v", usage)
+	}
+}
+
+func TestMistralRawAndUnknownStopReasons(t *testing.T) {
+	for _, test := range []struct {
+		raw        string
+		wantReason ai.StopReason
+		wantError  string
+	}{
+		{raw: "stop", wantReason: ai.StopReasonStop},
+		{raw: "error", wantReason: ai.StopReasonError, wantError: "Provider stopped with: error"},
+		{raw: "unmapped_error", wantReason: ai.StopReasonError, wantError: "Provider stopped with: unmapped_error"},
+	} {
+		output := newAssistantMessage(&ai.Model{})
+		processor := newMistralStreamProcessor(&ai.Model{}, output, func(ai.AssistantMessageEvent) bool { return true })
+		raw := fmt.Sprintf(`{"choices":[{"delta":{},"finish_reason":%q}]}`, test.raw)
+		if err := processor.handle(json.RawMessage(raw)); err != nil {
+			t.Fatal(err)
+		}
+		if output.StopReason != test.wantReason || output.RawStopReason == nil || *output.RawStopReason != test.raw {
+			t.Fatalf("%s output = %#v", test.raw, output)
+		}
+		if test.wantError == "" {
+			if output.ErrorMessage != nil {
+				t.Fatalf("%s error = %v", test.raw, output.ErrorMessage)
+			}
+		} else if output.ErrorMessage == nil || *output.ErrorMessage != test.wantError {
+			t.Fatalf("%s error = %v", test.raw, output.ErrorMessage)
+		}
 	}
 }
 

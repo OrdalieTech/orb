@@ -211,8 +211,15 @@ func StreamMistralConversationsWithOptions(
 			// error, matching the other adapters' mid-stream failures.
 			err = errors.New("Request was aborted") //nolint:staticcheck // Exact upstream error text is observable.
 		}
+		if err == nil && output.StopReason == ai.StopReasonPending {
+			err = errors.New("Mistral stream ended without a finish reason") //nolint:staticcheck // Exact upstream text is observable.
+		}
 		if err == nil && (output.StopReason == ai.StopReasonAborted || output.StopReason == ai.StopReasonError) {
-			err = errors.New("An unknown error occurred") //nolint:staticcheck // Exact upstream error text is observable.
+			message := "An unknown error occurred"
+			if output.ErrorMessage != nil {
+				message = *output.ErrorMessage
+			}
+			err = errors.New(message)
 		}
 		if err != nil {
 			fail(err)
@@ -504,7 +511,11 @@ func postMistralStream(
 	if err != nil {
 		return nil, err
 	}
-	response, err := mistralHTTPClient.Do(request)
+	client := mistralHTTPClient
+	if options != nil && options.HTTPClient != nil {
+		client = options.HTTPClient
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		return response, err
 	}
@@ -641,7 +652,9 @@ func (processor *mistralStreamProcessor) handleChunk(raw json.RawMessage) error 
 	}
 	choice := chunk.Choices[0]
 	if choice.FinishReason != nil && *choice.FinishReason != "" {
-		processor.output.StopReason = mapMistralStopReason(choice.FinishReason)
+		rawStopReason := *choice.FinishReason
+		processor.output.RawStopReason = &rawStopReason
+		processor.output.StopReason, processor.output.ErrorMessage = mapMistralStopReason(choice.FinishReason)
 	}
 	if len(choice.Delta.Content) > 0 && string(choice.Delta.Content) != "null" {
 		if err := processor.consumeContent(choice.Delta.Content); err != nil {
@@ -954,19 +967,23 @@ func mistralJSONNull(value json.RawMessage) bool {
 	return string(bytes.TrimSpace(value)) == "null"
 }
 
-func mapMistralStopReason(reason *string) ai.StopReason {
+func mapMistralStopReason(reason *string) (ai.StopReason, *string) {
 	if reason == nil {
-		return ai.StopReasonStop
+		return ai.StopReasonStop, nil
 	}
 	switch *reason {
+	case "stop":
+		return ai.StopReasonStop, nil
 	case "length", "model_length":
-		return ai.StopReasonLength
+		return ai.StopReasonLength, nil
 	case "tool_calls":
-		return ai.StopReasonToolUse
+		return ai.StopReasonToolUse, nil
 	case "error":
-		return ai.StopReasonError
+		message := "Provider stopped with: error"
+		return ai.StopReasonError, &message
 	default:
-		return ai.StopReasonStop
+		message := "Provider stopped with: " + *reason
+		return ai.StopReasonError, &message
 	}
 }
 

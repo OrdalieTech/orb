@@ -157,6 +157,28 @@ func TestAssistantMessageCanPreserveErrorBeforeTimestampOrder(t *testing.T) {
 	}
 }
 
+func TestAssistantMessagePreservesPendingAndRawStopReason(t *testing.T) {
+	input := []byte(`{"role":"assistant","content":[],"api":"openai-responses","provider":"openai","model":"gpt-test","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"pending","timestamp":123,"rawStopReason":"in_progress"}`)
+	message, err := ai.UnmarshalMessage(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assistant := message.(*ai.AssistantMessage)
+	if assistant.StopReason != ai.StopReasonPending {
+		t.Fatalf("stop reason = %q, want pending", assistant.StopReason)
+	}
+	if assistant.RawStopReason == nil || *assistant.RawStopReason != "in_progress" {
+		t.Fatalf("raw stop reason = %v", assistant.RawStopReason)
+	}
+	encoded, err := ai.MarshalMessage(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(encoded, input) {
+		t.Fatalf("encoded = %s\nwant    = %s", encoded, input)
+	}
+}
+
 func TestToolCallUnmarshalPreservesStreamingScratch(t *testing.T) {
 	var call ai.ToolCall
 	if err := json.Unmarshal([]byte(`{"id":"1","name":"n","arguments":{},"partialJson":"{","partialArgs":"{\"x\"","streamIndex":3}`), &call); err != nil {

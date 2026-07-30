@@ -1,6 +1,6 @@
 {
   "family": "F12-visible-commands",
-  "upstreamCommit": "b4f293684bba718d59cc1157679bcf6157b3a7f5",
+  "upstreamCommit": "845d6ff1f6643aba440341cce877ce1c43ebbc39",
   "generator": "conformance/extract/f12-visible-commands.ts",
   "sources": [
     "packages/coding-agent/src/core/slash-commands.ts",

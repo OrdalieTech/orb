@@ -183,12 +183,17 @@ func TestF12HiddenCommandBehaviorMatchesUpstream(t *testing.T) {
 
 	t.Run("debug", func(t *testing.T) {
 		initF12RawTheme(t)
-		tempRoot := os.TempDir()
-		if runtime.GOOS == "darwin" {
-			tempRoot = "/tmp"
+		tempRoot := "/tmp"
+		if info, err := os.Stat(tempRoot); err != nil || !info.IsDir() {
+			tempRoot = os.TempDir()
 		}
-		agentDir, err := os.MkdirTemp(tempRoot, "pi-f12-debug-")
+		seed, err := os.MkdirTemp(tempRoot, "pi-f12-debug-")
 		if err != nil {
+			t.Fatal(err)
+		}
+		seedName := filepath.Base(seed)
+		agentDir := filepath.Join(tempRoot, "pi-f12-debug-"+seedName[len(seedName)-6:])
+		if err := os.Rename(seed, agentDir); err != nil {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = os.RemoveAll(agentDir) })

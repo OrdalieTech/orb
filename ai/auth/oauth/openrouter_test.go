@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,11 +20,16 @@ import (
 
 type openRouterInteraction struct {
 	onAuthURL func(authorizeURL string)
+	prompt    func(context.Context, auth.AuthPrompt) (string, error)
 	events    []auth.AuthEvent
 }
 
-func (*openRouterInteraction) Prompt(context.Context, auth.AuthPrompt) (string, error) {
-	return "", nil
+func (interaction *openRouterInteraction) Prompt(ctx context.Context, prompt auth.AuthPrompt) (string, error) {
+	if interaction.prompt != nil {
+		return interaction.prompt(ctx, prompt)
+	}
+	<-ctx.Done()
+	return "", ctx.Err()
 }
 
 func (interaction *openRouterInteraction) Notify(event auth.AuthEvent) {
@@ -64,23 +70,31 @@ func TestOpenRouterLoginExchangesCodeForPermanentKey(t *testing.T) {
 	flow := NewOpenRouter(&OpenRouterOptions{TokenURL: server.URL})
 	var authorizeURL string
 	callbackDone := make(chan *http.Response, 1)
-	interaction := &openRouterInteraction{onAuthURL: func(value string) {
-		authorizeURL = value
-		callback := openRouterCallbackURL(t, value)
-		query := callback.Query()
-		query.Set("code", "authorization-code")
-		callback.RawQuery = query.Encode()
-		go func() {
-			response, err := http.Get(callback.String())
-			if err != nil {
-				t.Error(err)
-				callbackDone <- nil
-				return
-			}
-			_ = response.Body.Close()
-			callbackDone <- response
-		}()
-	}}
+	manualCancelled := make(chan struct{}, 1)
+	interaction := &openRouterInteraction{
+		onAuthURL: func(value string) {
+			authorizeURL = value
+			callback := openRouterCallbackURL(t, value)
+			query := callback.Query()
+			query.Set("code", "authorization-code")
+			callback.RawQuery = query.Encode()
+			go func() {
+				response, err := http.Get(callback.String())
+				if err != nil {
+					t.Error(err)
+					callbackDone <- nil
+					return
+				}
+				_ = response.Body.Close()
+				callbackDone <- response
+			}()
+		},
+		prompt: func(ctx context.Context, _ auth.AuthPrompt) (string, error) {
+			<-ctx.Done()
+			manualCancelled <- struct{}{}
+			return "", ctx.Err()
+		},
+	}
 	credential, err := flow.Login(context.Background(), interaction)
 	if err != nil {
 		t.Fatal(err)
@@ -93,8 +107,13 @@ func TestOpenRouterLoginExchangesCodeForPermanentKey(t *testing.T) {
 	if response := <-callbackDone; response == nil || response.StatusCode != http.StatusOK {
 		t.Fatalf("callback response = %#v", response)
 	}
+	select {
+	case <-manualCancelled:
+	case <-time.After(time.Second):
+		t.Fatal("manual prompt was not cancelled after callback success")
+	}
 	if len(interaction.events) != 2 || interaction.events[0].Type != auth.EventProgress ||
-		interaction.events[1].Instructions != "Complete sign-in in your browser." {
+		interaction.events[1].Instructions != "Complete sign-in in your browser. If the browser is on another machine, paste the final redirect URL here." {
 		t.Fatalf("events = %#v", interaction.events)
 	}
 
@@ -267,6 +286,135 @@ func TestOpenRouterRejectsSuccessWithoutKey(t *testing.T) {
 	}
 	if response := <-callbackDone; response == nil || response.StatusCode != http.StatusBadGateway {
 		t.Fatalf("callback response = %#v", response)
+	}
+}
+
+func TestOpenRouterManualRedirectAndBareCode(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		input func(string) string
+		code  string
+	}{
+		{name: "redirect URL", input: func(callback string) string { return callback + "?code=manual-code" }, code: "manual-code"},
+		{name: "query string", input: func(string) string { return "?code=query-code" }, code: "query-code"},
+		{name: "bare code", input: func(string) string { return "  bare-code  " }, code: "bare-code"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			captured := make(chan []byte, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				body, _ := io.ReadAll(request.Body)
+				captured <- body
+				writer.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(writer, `{"key":"sk-or-manual"}`)
+			}))
+			defer server.Close()
+
+			callbackURL := ""
+			flow := NewOpenRouter(&OpenRouterOptions{TokenURL: server.URL, LoginTimeout: 50 * time.Millisecond})
+			credential, err := flow.Login(context.Background(), &openRouterInteraction{
+				onAuthURL: func(authorizeURL string) {
+					callbackURL = openRouterCallbackURL(t, authorizeURL).String()
+				},
+				prompt: func(_ context.Context, prompt auth.AuthPrompt) (string, error) {
+					if prompt.Type != auth.PromptManualCode {
+						t.Fatalf("prompt type = %q", prompt.Type)
+					}
+					return test.input(callbackURL), nil
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if credential.Access != "sk-or-manual" {
+				t.Fatalf("credential = %#v", credential)
+			}
+			var exchange struct {
+				Code string `json:"code"`
+			}
+			if err := json.Unmarshal(<-captured, &exchange); err != nil {
+				t.Fatal(err)
+			}
+			if exchange.Code != test.code {
+				t.Fatalf("exchange code = %q, want %q", exchange.Code, test.code)
+			}
+		})
+	}
+}
+
+func TestOpenRouterManualPromptErrorsAndMissingCode(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		input   string
+		err     error
+		wantErr string
+	}{
+		{name: "cancelled", err: errors.New("prompt cancelled"), wantErr: "prompt cancelled"},
+		{name: "empty", input: "  ", wantErr: "Missing authorization code"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			flow := NewOpenRouter(&OpenRouterOptions{LoginTimeout: 50 * time.Millisecond})
+			_, err := flow.Login(context.Background(), &openRouterInteraction{
+				prompt: func(context.Context, auth.AuthPrompt) (string, error) {
+					return test.input, test.err
+				},
+			})
+			if err == nil || err.Error() != test.wantErr {
+				t.Fatalf("error = %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestOpenRouterClaimedCallbackWinsManualFallback(t *testing.T) {
+	exchangeCode := make(chan string, 1)
+	releaseExchange := make(chan struct{})
+	var exchangeCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		exchangeCalls.Add(1)
+		var body struct {
+			Code string `json:"code"`
+		}
+		_ = json.NewDecoder(request.Body).Decode(&body)
+		exchangeCode <- body.Code
+		<-releaseExchange
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(writer, `{"key":"sk-or-callback"}`)
+	}))
+	defer server.Close()
+
+	callbackDone := make(chan error, 1)
+	flow := NewOpenRouter(&OpenRouterOptions{TokenURL: server.URL})
+	credential, err := flow.Login(context.Background(), &openRouterInteraction{
+		onAuthURL: func(authorizeURL string) {
+			callback := openRouterCallbackURL(t, authorizeURL)
+			query := callback.Query()
+			query.Set("code", "callback-code")
+			callback.RawQuery = query.Encode()
+			go func() {
+				response, requestErr := http.Get(callback.String())
+				if response != nil {
+					_ = response.Body.Close()
+				}
+				callbackDone <- requestErr
+			}()
+		},
+		prompt: func(context.Context, auth.AuthPrompt) (string, error) {
+			code := <-exchangeCode
+			close(releaseExchange)
+			if code != "callback-code" {
+				return "", errors.New("callback exchange used the wrong code")
+			}
+			return "manual-code", nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if callbackErr := <-callbackDone; callbackErr != nil {
+		t.Fatal(callbackErr)
+	}
+	if credential.Access != "sk-or-callback" || exchangeCalls.Load() != 1 {
+		t.Fatalf("credential = %#v, exchange calls = %d", credential, exchangeCalls.Load())
 	}
 }
 

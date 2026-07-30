@@ -23,8 +23,14 @@ func (*publicResourceLoader) GetThemes() codingagent.ResourceThemesResult {
 func (*publicResourceLoader) GetAgentsFiles() codingagent.ResourceAgentsFilesResult {
 	return codingagent.ResourceAgentsFilesResult{}
 }
-func (*publicResourceLoader) GetSystemPrompt() *string        { return nil }
+func (*publicResourceLoader) GetSystemPrompt() *string { return nil }
+func (*publicResourceLoader) GetSystemPromptSource() *codingagent.PromptSource {
+	return nil
+}
 func (*publicResourceLoader) GetAppendSystemPrompt() []string { return nil }
+func (*publicResourceLoader) GetAppendSystemPromptSources() []codingagent.PromptSource {
+	return nil
+}
 func (*publicResourceLoader) ExtendResources(codingagent.ResourceExtensionPaths) {
 }
 func (*publicResourceLoader) Reload(context.Context, *codingagent.ResourceLoaderReloadOptions) error {
@@ -41,7 +47,9 @@ func TestResourceLoaderPublicSurface(t *testing.T) {
 	_ = resourceLoader.GetThemes()
 	_ = resourceLoader.GetAgentsFiles()
 	_ = resourceLoader.GetSystemPrompt()
+	_ = resourceLoader.GetSystemPromptSource()
 	_ = resourceLoader.GetAppendSystemPrompt()
+	_ = resourceLoader.GetAppendSystemPromptSources()
 	resourceLoader.ExtendResources(codingagent.ResourceExtensionPaths{})
 	_ = resourceLoader.Reload(context.Background(), nil)
 	_ = codingagent.AgentSessionOptions{ResourceLoader: loader}

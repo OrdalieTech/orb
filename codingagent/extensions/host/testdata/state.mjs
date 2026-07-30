@@ -86,6 +86,12 @@ export default function stateExtension(pi) {
 		},
 	});
 
+	pi.registerCommand("state-scoped-models", {
+		handler(_args, ctx) {
+			pi.sendUserMessage(`scoped:${ctx.scopedModels.map(({ model, thinkingLevel }) => `${model.provider}/${model.id}:${thinkingLevel ?? ""}`).join(",")}`);
+		},
+	});
+
 	pi.registerCommand("state-late-append", {
 		handler() {
 			setTimeout(() => pi.appendEntry("late", {}), 20);

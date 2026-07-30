@@ -517,6 +517,45 @@ func TestOTm5BedrockEmptyReasoningDeltaOnlyStartsBlock(t *testing.T) {
 	}
 }
 
+func TestBedrockRawStopReason(t *testing.T) {
+	output := newAssistantMessage(&ai.Model{})
+	processor := &bedrockStreamProcessor{output: output, sink: func(ai.AssistantMessageEvent) bool { return true }}
+	if err := processor.handle(bedrockStreamItem{Kind: bedrockItemMessageStop, StopReason: "guardrail_intervened"}); err != nil {
+		t.Fatal(err)
+	}
+	if output.StopReason != ai.StopReasonError || output.RawStopReason == nil || *output.RawStopReason != "guardrail_intervened" {
+		t.Fatalf("output = %#v", output)
+	}
+	if output.ErrorMessage == nil || *output.ErrorMessage != "Provider stopped with: guardrail_intervened" {
+		t.Fatalf("error message = %v", output.ErrorMessage)
+	}
+}
+
+func TestBedrockConfiguredProfileSuppressesStaticCredentials(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "ambient-access")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "ambient-secret")
+	t.Setenv("AWS_PROFILE", "")
+	for _, test := range []struct {
+		name    string
+		options *BedrockConverseStreamOptions
+		want    bool
+	}{
+		{name: "no profile", options: &BedrockConverseStreamOptions{}, want: false},
+		{name: "explicit profile", options: &BedrockConverseStreamOptions{Profile: "stored-profile"}, want: true},
+		{name: "scoped profile", options: &BedrockConverseStreamOptions{StreamOptions: ai.StreamOptions{Env: ai.ProviderEnv{"AWS_PROFILE": "scoped-profile"}}}, want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := configuredBedrockProfile(test.options); got != test.want {
+				t.Fatalf("configured profile = %t, want %t", got, test.want)
+			}
+		})
+	}
+	t.Setenv("AWS_PROFILE", "ambient-profile")
+	if configuredBedrockProfile(&BedrockConverseStreamOptions{}) {
+		t.Fatal("ambient profile counted as an explicit profile")
+	}
+}
+
 // TestBedrockARNRegionMatchesUpstreamPattern_OTm6 pins the upstream ARN
 // region regex (bedrock-converse-stream.ts:166). (OT-m6)
 func TestBedrockARNRegionMatchesUpstreamPattern_OTm6(t *testing.T) {

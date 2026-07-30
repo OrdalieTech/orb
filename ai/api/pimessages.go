@@ -228,7 +228,11 @@ func StreamPiMessagesWithOptions(
 			fail(err)
 			return
 		}
-		response, err := piMessagesHTTPClient.Do(request)
+		client := piMessagesHTTPClient
+		if options.HTTPClient != nil {
+			client = options.HTTPClient
+		}
+		response, err := client.Do(request)
 		if err != nil {
 			fail(err)
 			return

@@ -59,7 +59,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -92,7 +92,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "google-response-id"
           }
@@ -127,7 +127,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "google-response-id"
           }
@@ -162,7 +162,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "google-response-id"
           }
@@ -218,7 +218,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "google-response-id"
+            "responseId": "google-response-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -271,7 +272,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "google-response-id"
+            "responseId": "google-response-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -325,7 +327,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "google-response-id"
+            "responseId": "google-response-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -379,7 +382,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "google-response-id"
+            "responseId": "google-response-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -432,7 +436,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "google-response-id"
+            "responseId": "google-response-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -486,7 +491,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "google-response-id"
+            "responseId": "google-response-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -552,7 +558,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "google-response-id"
+            "responseId": "google-response-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -605,7 +612,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "google-response-id"
+            "responseId": "google-response-id",
+            "rawStopReason": "STOP"
           }
         }
       ]
@@ -669,7 +677,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -704,7 +712,8 @@
             },
             "stopReason": "length",
             "timestamp": 1700000000123,
-            "responseId": "google-length-id"
+            "responseId": "google-length-id",
+            "rawStopReason": "MAX_TOKENS"
           }
         },
         {
@@ -739,7 +748,8 @@
             },
             "stopReason": "length",
             "timestamp": 1700000000123,
-            "responseId": "google-length-id"
+            "responseId": "google-length-id",
+            "rawStopReason": "MAX_TOKENS"
           }
         },
         {
@@ -774,7 +784,8 @@
             },
             "stopReason": "length",
             "timestamp": 1700000000123,
-            "responseId": "google-length-id"
+            "responseId": "google-length-id",
+            "rawStopReason": "MAX_TOKENS"
           }
         },
         {
@@ -808,7 +819,8 @@
             },
             "stopReason": "length",
             "timestamp": 1700000000123,
-            "responseId": "google-length-id"
+            "responseId": "google-length-id",
+            "rawStopReason": "MAX_TOKENS"
           }
         }
       ]
@@ -872,7 +884,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -902,7 +914,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "An unknown error occurred"
+            "rawStopReason": "SAFETY",
+            "errorMessage": "Provider stopped with: SAFETY"
           }
         }
       ]
@@ -1245,7 +1258,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -1282,7 +1295,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "google-multiline-id"
+            "responseId": "google-multiline-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -1319,7 +1333,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "google-multiline-id"
+            "responseId": "google-multiline-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -1361,7 +1376,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "google-multiline-id"
+            "responseId": "google-multiline-id",
+            "rawStopReason": "STOP"
           }
         },
         {
@@ -1397,7 +1413,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "google-multiline-id"
+            "responseId": "google-multiline-id",
+            "rawStopReason": "STOP"
           }
         }
       ]
@@ -1461,7 +1478,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -1554,7 +1571,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },

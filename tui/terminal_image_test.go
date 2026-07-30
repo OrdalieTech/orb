@@ -3,6 +3,7 @@ package tui
 import (
 	"encoding/base64"
 	"encoding/binary"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -107,5 +108,45 @@ func TestImageComponentKittyITermAndFallback(t *testing.T) {
 	image.Invalidate()
 	if got, want := image.Render(80), []string{"[Image: sample.png [image/png] 400x200]"}; len(got) != 1 || got[0] != want[0] {
 		t.Fatalf("fallback = %#v", got)
+	}
+}
+
+func TestImageFallbackShortensLinksAndClamps(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	filename := filepath.Join(home, "images", strings.Repeat("long-name-", 8)+"shot.png")
+	dimensions := &ImageDimensions{WidthPx: 1280, HeightPx: 720}
+	t.Cleanup(ResetCapabilitiesCache)
+
+	SetCapabilities(TerminalCapabilities{})
+	fallback := ImageFallback("image/png", dimensions, filename)
+	if !strings.Contains(fallback, filepath.Join("~", "images")) || strings.Contains(fallback, home) {
+		t.Fatalf("fallback = %q, want shortened home path", fallback)
+	}
+	for _, separator := range []string{"/", "\\"} {
+		path := home + separator + "images" + separator + "shot.png"
+		got := ImageFallback("image/png", dimensions, path)
+		if !strings.Contains(got, "~"+separator+"images"+separator+"shot.png") || strings.Contains(got, home) {
+			t.Fatalf("fallback for separator %q = %q", separator, got)
+		}
+	}
+
+	SetCapabilities(TerminalCapabilities{Hyperlinks: true})
+	linked := ImageFallback("image/png", dimensions, filename)
+	if !strings.Contains(linked, "\x1b]8;;file://") || !strings.Contains(linked, filepath.Join("~", "images")) {
+		t.Fatalf("linked fallback = %q", linked)
+	}
+	if relative := ImageFallback("image/png", dimensions, "shot.png"); strings.Contains(relative, "\x1b]8;") {
+		t.Fatalf("relative fallback must not be linked: %q", relative)
+	}
+
+	SetCapabilities(TerminalCapabilities{})
+	image := NewImage("QUJD", "image/png", ImageTheme{
+		FallbackColor: func(value string) string { return "\x1b[33m" + value + "\x1b[0m" },
+	}, &ImageOptions{Filename: filename}, dimensions)
+	const width = 40
+	lines := image.Render(width)
+	if len(lines) != 1 || VisibleWidth(lines[0]) > width || !strings.Contains(lines[0], "...") {
+		t.Fatalf("fallback lines = %#v, visible width = %d", lines, VisibleWidth(lines[0]))
 	}
 }

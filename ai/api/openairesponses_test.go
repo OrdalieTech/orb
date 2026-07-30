@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -459,7 +460,8 @@ func TestOpenAIResponsesProcessorTextToolUsageAndScratchCleanup(t *testing.T) {
 }
 
 func TestOpenAIResponsesProcessorRejectsFailedAndUnknownTerminal(t *testing.T) {
-	processor := newOpenAIResponsesProcessor(responsesTestModel(), newAssistantMessage(responsesTestModel()), nil, func(ai.AssistantMessageEvent) bool { return true })
+	output := newAssistantMessage(responsesTestModel())
+	processor := newOpenAIResponsesProcessor(responsesTestModel(), output, nil, func(ai.AssistantMessageEvent) bool { return true })
 	err := processor.handle(json.RawMessage(`{"type":"response.failed","response":{"status":"failed","error":{"code":"server_error","message":"boom"}}}`))
 	if err == nil || err.Error() != "server_error: boom" {
 		t.Fatalf("failed error = %v", err)
@@ -467,8 +469,51 @@ func TestOpenAIResponsesProcessorRejectsFailedAndUnknownTerminal(t *testing.T) {
 	if !processor.sawTerminalResponseEvent {
 		t.Fatal("failed response did not count as terminal")
 	}
+	if output.RawStopReason == nil || *output.RawStopReason != "failed" {
+		t.Fatalf("raw stop reason = %v", output.RawStopReason)
+	}
 	if _, err := mapResponsesStopReason("future"); err == nil {
 		t.Fatal("unknown status was accepted")
+	}
+}
+
+func TestOpenAIResponsesTracksMessagePhaseAndTerminalStatus(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		addedPhase string
+		donePhase  string
+		status     string
+		wantBefore ai.StopReason
+		wantAfter  ai.StopReason
+	}{
+		{name: "commentary stays pending", addedPhase: "commentary", donePhase: "commentary", status: "completed", wantBefore: ai.StopReasonPending, wantAfter: ai.StopReasonStop},
+		{name: "final answer is provisional stop", addedPhase: "final_answer", donePhase: "final_answer", status: "completed", wantBefore: ai.StopReasonStop, wantAfter: ai.StopReasonStop},
+		{name: "done phase can switch to final answer", addedPhase: "commentary", donePhase: "final_answer", status: "completed", wantBefore: ai.StopReasonPending, wantAfter: ai.StopReasonStop},
+		{name: "incomplete overrides provisional stop", addedPhase: "final_answer", donePhase: "final_answer", status: "incomplete", wantBefore: ai.StopReasonStop, wantAfter: ai.StopReasonLength},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			model := responsesTestModel()
+			output := newAssistantMessage(model)
+			processor := newOpenAIResponsesProcessor(model, output, nil, func(ai.AssistantMessageEvent) bool { return true })
+			added := fmt.Sprintf(`{"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_phase","phase":%q,"content":[]}}`, test.addedPhase)
+			if err := processor.handle(json.RawMessage(added)); err != nil {
+				t.Fatal(err)
+			}
+			if output.StopReason != test.wantBefore {
+				t.Fatalf("after added stop = %q, want %q", output.StopReason, test.wantBefore)
+			}
+			done := fmt.Sprintf(`{"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"msg_phase","phase":%q,"content":[]}}`, test.donePhase)
+			if err := processor.handle(json.RawMessage(done)); err != nil {
+				t.Fatal(err)
+			}
+			terminal := fmt.Sprintf(`{"type":"response.%s","response":{"id":"resp_phase","status":%q}}`, test.status, test.status)
+			if err := processor.handle(json.RawMessage(terminal)); err != nil {
+				t.Fatal(err)
+			}
+			if output.StopReason != test.wantAfter || output.RawStopReason == nil || *output.RawStopReason != test.status {
+				t.Fatalf("terminal output = %#v", output)
+			}
+		})
 	}
 }
 

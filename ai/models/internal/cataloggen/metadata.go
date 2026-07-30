@@ -39,7 +39,7 @@ func applyCorrections(model *ai.Model) {
 		model.BaseURL = "https://bedrock-runtime.eu-central-1.amazonaws.com"
 	}
 	if provider == "github-copilot" && slices.Contains([]string{
-		"claude-fable-5", "claude-opus-4.6", "claude-opus-4.7", "claude-opus-4.8",
+		"claude-fable-5", "claude-opus-4.6", "claude-opus-4.7", "claude-opus-4.8", "claude-opus-5",
 		"claude-sonnet-4.6", "claude-sonnet-5", "gpt-5.3-codex", "gpt-5.4", "gpt-5.5",
 	}, id) {
 		model.ContextWindow = 1000000
@@ -266,13 +266,30 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 		values[ai.ModelThinkingOff] = nil
 		mergeThinking(model, values)
 	}
-	if model.API == ai.APIOpenAICompletions && strings.Contains(id, "deepseek-v4") {
+	if model.API == ai.APIOpenAICompletions && strings.Contains(id, "deepseek-v4") && !isQwenTokenPlanProvider(provider) {
 		values := thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingHigh: "high", ai.ModelThinkingMax: "max"})
 		values[ai.ModelThinkingMinimal], values[ai.ModelThinkingLow], values[ai.ModelThinkingMedium] = nil, nil, nil
 		if provider == "openrouter" {
 			values[ai.ModelThinkingXHigh], values[ai.ModelThinkingMax] = ptr("xhigh"), nil
 		}
 		mergeThinking(model, values)
+	}
+	if isQwenTokenPlanProvider(provider) {
+		if !qwenTokenPlanSupportsReasoningEffort(id) {
+			model.ThinkingLevelMap = nil
+		} else if id == "qwen3.8-max-preview" {
+			values := thinkingValues(map[ai.ModelThinkingLevel]string{
+				ai.ModelThinkingLow: "low", ai.ModelThinkingMedium: "medium", ai.ModelThinkingXHigh: "xhigh",
+			})
+			values[ai.ModelThinkingMinimal], values[ai.ModelThinkingHigh], values[ai.ModelThinkingMax] = nil, nil, nil
+			model.ThinkingLevelMap = &values
+		} else {
+			values := thinkingValues(map[ai.ModelThinkingLevel]string{
+				ai.ModelThinkingHigh: "high", ai.ModelThinkingMax: "max",
+			})
+			values[ai.ModelThinkingMinimal], values[ai.ModelThinkingLow], values[ai.ModelThinkingMedium], values[ai.ModelThinkingXHigh] = nil, nil, nil, nil
+			model.ThinkingLevelMap = &values
+		}
 	}
 	if model.API == ai.APIGoogleGenerativeAI || model.API == ai.APIGoogleVertex {
 		lower := strings.ToLower(id)
@@ -329,7 +346,7 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 	}
 	if provider == "github-copilot" {
 		switch id {
-		case "claude-opus-4.7", "claude-opus-4.8":
+		case "claude-opus-4.7", "claude-opus-4.8", "claude-opus-5":
 			mergeThinking(model, thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingMinimal: "low"}))
 		case "claude-sonnet-4.6":
 			mergeThinking(model, thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingMinimal: "low", ai.ModelThinkingMax: "max"}))
@@ -362,7 +379,7 @@ func applyOpenAICompletionsCompat(model *ai.Model) {
 	if isGrok || isZAI || isMoonshot || isTogether || isGateway || isNVIDIA || isAntLing {
 		compat.SupportsReasoningEffort = ptr(false)
 	}
-	if strings.Contains(baseURL, "chutes.ai") || isMoonshot || isGateway || isTogether || isNVIDIA || isAntLing {
+	if strings.Contains(baseURL, "chutes.ai") || isMoonshot || isGateway || isTogether || isNVIDIA || isAntLing || isZAI {
 		compat.MaxTokensField = ptr(ai.MaxTokensFieldLegacy)
 	}
 	if isDeepSeek {
@@ -398,7 +415,7 @@ func applyOpenAICompletionsCompat(model *ai.Model) {
 
 func applyExplicitCompletionsCompat(model *ai.Model, compat *ai.OpenAICompletionsCompat) {
 	provider, id := string(model.Provider), model.ID
-	if strings.Contains(id, "deepseek-v4") {
+	if strings.Contains(id, "deepseek-v4") && !isQwenTokenPlanProvider(provider) {
 		compat.RequiresReasoningContentOnAssistantMessages = ptr(true)
 		if provider != "openrouter" && provider != "opencode" {
 			compat.ThinkingFormat = ptr(ai.ThinkingFormatDeepSeek)
@@ -425,6 +442,7 @@ func applyExplicitCompletionsCompat(model *ai.Model, compat *ai.OpenAICompletion
 		}
 	case "qwen-token-plan", "qwen-token-plan-cn":
 		compat.SupportsStore, compat.SupportsDeveloperRole = ptr(false), ptr(false)
+		compat.SupportsReasoningEffort = ptr(qwenTokenPlanSupportsReasoningEffort(id))
 		compat.ThinkingFormat = ptr(ai.ThinkingFormatQwen)
 	case "xiaomi", "xiaomi-token-plan-ams", "xiaomi-token-plan-cn", "xiaomi-token-plan-sgp":
 		compat.RequiresReasoningContentOnAssistantMessages = ptr(true)
@@ -666,6 +684,17 @@ func supportsOpenAIXHigh(id string) bool {
 
 func isAnthropicAdaptiveThinkingModel(id string) bool {
 	return containsAny(id, "opus-4-6", "opus-4.6", "opus-4-7", "opus-4.7", "opus-4-8", "opus-4.8", "opus-5", "opus.5", "sonnet-4-6", "sonnet-4.6", "sonnet-5", "sonnet.5", "fable-5")
+}
+
+func isQwenTokenPlanProvider(provider string) bool {
+	return provider == "qwen-token-plan" || provider == "qwen-token-plan-cn"
+}
+
+func qwenTokenPlanSupportsReasoningEffort(id string) bool {
+	return !slices.Contains([]string{
+		"MiniMax-M2.5", "deepseek-v3.2", "kimi-k2.5", "kimi-k2.6", "kimi-k2.7-code",
+		"qwen3.6-flash", "qwen3.6-plus", "qwen3.7-max", "qwen3.7-plus",
+	}, id)
 }
 
 func containsAny(value string, needles ...string) bool {

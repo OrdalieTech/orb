@@ -53,6 +53,7 @@ async function runNewSessionCase(
         return undefined;
       },
     },
+    async abort() {},
     dispose() {},
     createReplacedSessionContext() {
       return { cwd };
@@ -106,6 +107,7 @@ async function runDisposeCase(
         records.push({ phase: "event", event: normalizedEvent(event) });
       },
     },
+    async abort() {},
     dispose() {},
   };
   const runtime = new Runtime(

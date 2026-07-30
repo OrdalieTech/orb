@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 
 	"github.com/OrdalieTech/pigo/internal/jsonschema"
 	"github.com/OrdalieTech/pigo/internal/jsonwire"
@@ -429,6 +430,7 @@ type StreamOptions struct {
 	Temperature               *float64        `json:"temperature,omitempty"`
 	MaxTokens                 *float64        `json:"maxTokens,omitempty"`
 	APIKey                    *string         `json:"apiKey,omitempty"`
+	HTTPClient                *http.Client    `json:"-"`
 	Transport                 *Transport      `json:"transport,omitempty"`
 	CacheRetention            *CacheRetention `json:"cacheRetention,omitempty"`
 	SessionID                 *string         `json:"sessionId,omitempty"`
@@ -470,6 +472,7 @@ type ImagesResponseHook func(ctx context.Context, response ProviderResponse, mod
 
 type ImagesOptions struct {
 	APIKey          *string            `json:"apiKey,omitempty"`
+	HTTPClient      *http.Client       `json:"-"`
 	Env             ProviderEnv        `json:"env,omitempty"`
 	OnPayload       ImagesPayloadHook  `json:"-"`
 	OnResponse      ImagesResponseHook `json:"-"`

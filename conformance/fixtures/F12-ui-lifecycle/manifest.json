@@ -1,6 +1,6 @@
 {
   "family": "F12-ui-lifecycle",
-  "upstreamCommit": "b4f293684bba718d59cc1157679bcf6157b3a7f5",
+  "upstreamCommit": "845d6ff1f6643aba440341cce877ce1c43ebbc39",
   "generator": "conformance/extract/f12-ui-lifecycle.ts",
   "sources": [
     "packages/coding-agent/src/modes/interactive/interactive-mode.ts",
@@ -10,13 +10,19 @@
     "packages/tui/src/{tui,container}.ts",
     "packages/coding-agent/test/interactive-mode-status.test.ts",
     "packages/tui/test/overlay-non-capturing.test.ts",
-    "packages/tui/test/overlay-options.test.ts"
+    "packages/tui/test/overlay-options.test.ts",
+    "packages/coding-agent/src/modes/interactive/components/model-selector.ts",
+    "packages/coding-agent/src/modes/interactive/model-search.ts",
+    "packages/coding-agent/test/suite/regressions/7209-model-selector-filter-resets-selection.test.ts"
   ],
   "files": [
     "lifecycle.json"
   ],
   "metadata": {
-    "normalization": [],
+    "normalization": [
+      "loadedContext strips ANSI color and trailing terminal padding",
+      "modelSelector records selected model IDs from rendered rows"
+    ],
     "divergences": []
   }
 }

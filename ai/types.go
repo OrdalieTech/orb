@@ -46,6 +46,7 @@ const (
 type StopReason string
 
 const (
+	StopReasonPending StopReason = "pending"
 	StopReasonStop    StopReason = "stop"
 	StopReasonLength  StopReason = "length"
 	StopReasonToolUse StopReason = "toolUse"
@@ -198,6 +199,7 @@ type AssistantMessage struct {
 	ResponseModel         *string                       `json:"responseModel,omitempty"`
 	Diagnostics           *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
 	ErrorMessage          *string                       `json:"errorMessage,omitempty"`
+	RawStopReason         *string                       `json:"rawStopReason,omitempty"`
 	errorBeforeTimestamp  bool
 	errorBeforeResponseID bool
 }

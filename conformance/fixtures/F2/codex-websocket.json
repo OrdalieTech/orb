@@ -103,7 +103,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "ws-fixture"
           }
@@ -133,7 +133,8 @@
             },
             "stopReason": "stop",
             "timestamp": 1700000000123,
-            "responseId": "ws-fixture"
+            "responseId": "ws-fixture",
+            "rawStopReason": "completed"
           }
         }
       ]

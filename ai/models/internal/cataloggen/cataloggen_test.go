@@ -311,6 +311,21 @@ func TestV0821CatalogDeltasMatchPublishedPackage(t *testing.T) {
 			t.Errorf("generated catalog is missing v0.82.1 model %s/%s", want.Provider, want.ID)
 			continue
 		}
+		// Preserve the historical fixture and overlay only metadata added by v0.83.
+		switch string(want.Provider) + "/" + want.ID {
+		case "github-copilot/claude-opus-5":
+			(*want.ThinkingLevelMap)[ai.ModelThinkingMinimal] = ptr("low")
+		case "qwen-token-plan/MiniMax-M2.5":
+			var compat map[string]any
+			if err := json.Unmarshal(want.Compat, &compat); err != nil {
+				t.Fatal(err)
+			}
+			compat["supportsReasoningEffort"] = false
+			want.Compat, err = json.Marshal(compat)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
 		gotJSON, err := json.Marshal(got)
 		if err != nil {
 			t.Fatal(err)
@@ -327,7 +342,7 @@ func TestV0821CatalogDeltasMatchPublishedPackage(t *testing.T) {
 			t.Fatal(err)
 		}
 		if !reflect.DeepEqual(gotValue, wantValue) {
-			t.Errorf("%s/%s differs from published v0.82.1 package\n got: %s\nwant: %s", want.Provider, want.ID, gotJSON, wantJSON)
+			t.Errorf("%s/%s differs from the published v0.82.1 baseline plus v0.83 metadata\n got: %s\nwant: %s", want.Provider, want.ID, gotJSON, wantJSON)
 		}
 	}
 }
@@ -390,9 +405,8 @@ func TestCATM1NvidiaOmittedWithoutNIMListing(t *testing.T) {
 	}
 }
 
-// CAT-M2: qwen3.8-max-preview is hardcoded for both Qwen Token Plan providers
-// (generate-models.ts:2281-2303) until models.dev includes it.
-func TestCATM2QwenTokenPlanMaxPreviewInjection(t *testing.T) {
+// CAT-M2: models.dev supplies qwen3.8-max-preview for both Token Plan regions.
+func TestCATM2QwenTokenPlanMaxPreviewFromModelsDev(t *testing.T) {
 	catalog, err := Generate(pinnedSources(t))
 	if err != nil {
 		t.Fatal(err)
@@ -423,8 +437,9 @@ func TestCATM2QwenTokenPlanMaxPreviewInjection(t *testing.T) {
 	}
 }
 
-// CAT-M2: the injection is guarded; a models.dev-provided entry wins.
-func TestCATM2QwenTokenPlanMaxPreviewInjectionIsGuarded(t *testing.T) {
+// CAT-M2: Qwen Token Plan entries come from models.dev without synthetic
+// cross-region catalog entries.
+func TestCATM2QwenTokenPlanMaxPreviewUsesModelsDev(t *testing.T) {
 	data := []byte(`{
 		"alibaba-token-plan":{"models":{
 			"qwen3.8-max-preview":{"name":"From models.dev","tool_call":true,"reasoning":true,"modalities":{"input":["text"]},"limit":{"context":42,"output":7},"cost":{"input":1,"output":2}}
@@ -438,8 +453,8 @@ func TestCATM2QwenTokenPlanMaxPreviewInjectionIsGuarded(t *testing.T) {
 	if model.Name != "From models.dev" || model.ContextWindow != 42 {
 		t.Fatalf("models.dev entry was overwritten: %#v", model)
 	}
-	if _, ok := catalog["qwen-token-plan-cn"]["qwen3.8-max-preview"]; !ok {
-		t.Fatal("missing injected qwen-token-plan-cn/qwen3.8-max-preview")
+	if _, ok := catalog["qwen-token-plan-cn"]["qwen3.8-max-preview"]; ok {
+		t.Fatal("unexpected synthetic qwen-token-plan-cn/qwen3.8-max-preview")
 	}
 }
 

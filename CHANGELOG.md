@@ -8,7 +8,21 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Changed
 
+- The upstream compatibility target is now pi v0.83.0. Stored OAuth credentials refresh with less than five minutes remaining, and tool-schema conformance follows TypeBox 1.3.7, including nullable arrays.
 - Sending a message snaps the transcript back to the live tail, so a view scrolled up for reading shows the message and its reply. Scrolling away still holds position against streaming frames.
+
+### Added
+
+- `pigo auth print-api-key` and `pigo auth print-bearer-token` export configured credentials without mixing diagnostics into stdout; bearer export refreshes tokens to a configurable minimum validity.
+- Streaming messages expose the upstream `pending` and raw provider stop reasons, supported provider requests accept an injected HTTP client, OpenRouter login accepts a pasted redirect URL or code, and extensions receive live `ctx.scopedModels`.
+- Interactive startup lists file-backed `SYSTEM.md` and `APPEND_SYSTEM.md` inputs alongside project context files, and `ResourceLoader` exposes their source paths to embedders.
+
+### Fixed
+
+- `/model <query>` opens a searchable model picker with all/scoped tabs and selects the best fuzzy match; session replacement and shutdown cancel the picker before tearing down its runtime.
+- Provider requests now use Qwen Token Plan thinking controls, Z.AI `max_tokens`, configured Bedrock profiles, GitHub Copilot Claude Opus 5 metadata, and valid OpenAI function arguments when malformed deltas also carry an empty custom payload.
+- Active session replacement and tree navigation settle aborted turns, concurrent bash commands all remain cancellable, and RPC bash commands pass through extension `user_bash` handlers.
+- Nested linked worktrees no longer load the same context file twice, failed Git package installs clean their partial checkout, tool-output toggles report their state, and image fallbacks shorten, link, and clamp long paths.
 
 ## [0.4.9] - 2026-07-28
 

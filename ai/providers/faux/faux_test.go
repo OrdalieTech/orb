@@ -549,6 +549,26 @@ func TestAbortBeforeAndDuringEachContentKind(t *testing.T) {
 	}
 }
 
+func TestStreamStartsPendingAndRejectsPendingResponse(t *testing.T) {
+	provider := New(Options{})
+	provider.SetResponses([]ResponseStep{
+		AssistantMessage("partial", AssistantMessageOptions{StopReason: ai.StopReasonPending}),
+	})
+	stream, err := provider.StreamSimple(context.Background(), provider.GetModel(), baseContext(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := collectEvents(t, stream)
+	if len(events) < 2 {
+		t.Fatalf("events = %v", eventTypes(events))
+	}
+	start, ok := events[0].(ai.StartEvent)
+	if !ok || start.Partial.StopReason != ai.StopReasonPending {
+		t.Fatalf("start = %#v, want pending partial", events[0])
+	}
+	assertErrorEvent(t, events[len(events)-1], ai.StopReasonError, "Faux response ended without a stop reason")
+}
+
 func TestUTF16ChunkingPreservesLoneSurrogateDeltas(t *testing.T) {
 	provider := New(Options{TokenSize: FixedTokenSize(1)})
 	provider.SetResponses([]ResponseStep{AssistantMessage("abc😀z")})

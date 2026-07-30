@@ -58,7 +58,7 @@ pigo executes many upstream TypeScript extensions unmodified in an embedded JS r
 pirate example from the pinned upstream revision and load it:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/earendil-works/pi/b4f293684bba718d59cc1157679bcf6157b3a7f5/packages/coding-agent/examples/extensions/pirate.ts
+curl -fsSLO https://raw.githubusercontent.com/earendil-works/pi/845d6ff1f6643aba440341cce877ce1c43ebbc39/packages/coding-agent/examples/extensions/pirate.ts
 pigo --extension ./pirate.ts
 ```
 

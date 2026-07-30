@@ -353,12 +353,13 @@ func TestLOGM4ModelSelectorWarnsForAnthropicSubscriptionAuth(t *testing.T) {
 	mode.interactiveUI = NewInteractiveUI(mode)
 
 	mode.showModelSelector("")
-	var selector *ExtensionSelectorComponent
+	var selector *ModelSelectorComponent
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		mode.interactiveUI.mu.Lock()
-		selector = mode.interactiveUI.activeSelector
-		mode.interactiveUI.mu.Unlock()
+		children := mode.editorContainer.Children()
+		if len(children) == 1 {
+			selector, _ = children[0].(*ModelSelectorComponent)
+		}
 		if selector != nil {
 			break
 		}
@@ -367,12 +368,96 @@ func TestLOGM4ModelSelectorWarnsForAnthropicSubscriptionAuth(t *testing.T) {
 	if selector == nil {
 		t.Fatal("model selector did not appear")
 	}
+	selector.HandleInput(tui.KeyEvent{Raw: "\x1b[B"})
 	selector.HandleInput(tui.KeyEvent{Raw: "\r"})
 	for time.Now().Before(deadline) && !anthropicWarningShown(mode) {
 		time.Sleep(time.Millisecond)
 	}
 	if !anthropicWarningShown(mode) {
 		t.Fatal("model selector did not run the Anthropic warning")
+	}
+}
+
+func TestModelSelectorIsCancelledBeforeSessionDetach(t *testing.T) {
+	mode := newAnthropicWarningTestMode(t, "sk-ant-oat-model-selector", &authFlowHost{})
+	mode.interactiveUI = NewInteractiveUI(mode)
+	mode.showModelSelector("")
+
+	deadline := time.Now().Add(time.Second)
+	opened := false
+	for time.Now().Before(deadline) {
+		children := mode.editorContainer.Children()
+		if len(children) == 1 {
+			if _, ok := children[0].(*ModelSelectorComponent); ok {
+				opened = true
+				break
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if !opened {
+		t.Fatal("model selector did not open")
+	}
+	mode.detachSession()
+
+	children := mode.editorContainer.Children()
+	if len(children) != 1 || children[0] != mode.editor {
+		t.Fatalf("detached model selector left editor children %#v", children)
+	}
+	mode.mu.Lock()
+	cancel, done := mode.modelSelectorCancel, mode.modelSelectorDone
+	mode.mu.Unlock()
+	if cancel != nil || done != nil {
+		t.Fatal("detached model selector retained lifecycle state")
+	}
+}
+
+func TestModelSelectorSelectionIsCancelledBeforeShutdown(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	mode := newAnthropicWarningTestModeWithResolver(t, nil, func(ctx context.Context, _ ai.ProviderID) (*agent.RequestAuth, error) {
+		close(started)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-release:
+			return nil, errors.New("released blocked model selection")
+		}
+	})
+	mode.interactiveUI = NewInteractiveUI(mode)
+	mode.options.Output = &strings.Builder{}
+	mode.showModelSelector("")
+
+	var selector *ModelSelectorComponent
+	deadline := time.Now().Add(time.Second)
+	for selector == nil && time.Now().Before(deadline) {
+		children := mode.editorContainer.Children()
+		if len(children) == 1 {
+			selector, _ = children[0].(*ModelSelectorComponent)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if selector == nil {
+		t.Fatal("model selector did not open")
+	}
+	selector.HandleInput(tui.KeyEvent{Raw: "\r"})
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("model selection did not start")
+	}
+
+	shutdownDone := make(chan struct{})
+	go func() {
+		mode.shutdown()
+		close(shutdownDone)
+	}()
+	select {
+	case <-shutdownDone:
+	case <-time.After(time.Second):
+		close(release)
+		<-shutdownDone
+		t.Fatal("shutdown did not cancel in-flight model selection")
 	}
 }
 

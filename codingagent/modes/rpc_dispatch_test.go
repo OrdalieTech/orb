@@ -3,14 +3,17 @@ package modes
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/pigo/agent/harness"
 	"github.com/OrdalieTech/pigo/codingagent"
 	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/pigo/codingagent/extensions"
 	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 )
 
@@ -146,6 +149,53 @@ func TestRPCExtensionShutdownHonoredAfterCommand(t *testing.T) {
 	case <-rpcContext.Done():
 	default:
 		t.Fatal("shutdown request not honored after command completed")
+	}
+}
+
+func TestRPCBashHonorsUserBashInterception(t *testing.T) {
+	root := t.TempDir()
+	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := extensions.NewRegistry(root)
+	exitCode := 7
+	if err := registry.Register("<inline:rpc-bash>", func(api extensions.API) error {
+		api.On(extensions.EventUserBash, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+			return extensions.UserBashResult{Result: &extensions.BashResult{Output: "handled", ExitCode: &exitCode}}, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings, ExtensionRegistry: registry,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+
+	mode := &rpcMode{ctx: context.Background()}
+	response := mode.handleCommand(runtime, RPCCommand{Type: "bash", Command: "printf local"})
+	if response == nil || !response.Success {
+		t.Fatalf("response = %#v", response)
+	}
+	encoded, err := json.Marshal(response.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"output":"handled"`) || strings.Contains(string(encoded), "local") {
+		t.Fatalf("bash data = %s", encoded)
+	}
+	messages := runtime.State().Messages
+	recorded, ok := messages[len(messages)-1].(harness.BashExecutionMessage)
+	if !ok || recorded.Command != "printf local" || recorded.Output != "handled" {
+		t.Fatalf("recorded bash = %#v", messages[len(messages)-1])
 	}
 }
 

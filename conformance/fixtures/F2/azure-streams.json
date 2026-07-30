@@ -68,7 +68,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -100,7 +100,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "azure-stream-fixture"
           }
@@ -134,7 +134,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "azure-stream-fixture"
           }
@@ -169,7 +169,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "azure-stream-fixture"
           }
@@ -207,7 +207,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "azure-stream-fixture"
           }
@@ -246,7 +246,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "azure-stream-fixture"
           }
@@ -286,7 +286,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "azure-stream-fixture"
           }
@@ -328,7 +328,8 @@
             },
             "stopReason": "stop",
             "timestamp": 1700000000123,
-            "responseId": "azure-stream-fixture"
+            "responseId": "azure-stream-fixture",
+            "rawStopReason": "completed"
           }
         }
       ]
@@ -479,7 +480,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -509,7 +510,8 @@
             },
             "stopReason": "stop",
             "timestamp": 1700000000123,
-            "responseId": "azure-priority-fixture"
+            "responseId": "azure-priority-fixture",
+            "rawStopReason": "completed"
           }
         }
       ]

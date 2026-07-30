@@ -1146,7 +1146,7 @@ func isHex40(value string) bool {
 	return true
 }
 
-func (manager *PackageManager) installGit(source *GitSource, scope string) error {
+func (manager *PackageManager) installGit(source *GitSource, scope string) (resultErr error) {
 	targetDir, err := manager.getGitInstallPath(source, scope)
 	if err != nil {
 		return err
@@ -1171,6 +1171,15 @@ func (manager *PackageManager) installGit(source *GitSource, scope string) error
 	if err := os.MkdirAll(filepath.Dir(targetDir), 0o755); err != nil {
 		return err
 	}
+	defer func() {
+		if resultErr == nil {
+			return
+		}
+		_ = os.RemoveAll(targetDir)
+		if gitRoot != "" {
+			pruneEmptyGitParents(targetDir, gitRoot)
+		}
+	}()
 	if err := manager.runGit("", "clone", "-q", source.Repo, targetDir); err != nil {
 		return err
 	}

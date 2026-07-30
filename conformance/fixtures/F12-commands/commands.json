@@ -625,13 +625,13 @@
             " https://mariozechner.at/posts/",
             " 2026-04-08-ive-sold-out/",
             "",
-            "[Image: clankolas.png [image/png] 640x537]",
+            "[Image: clankolas.png [image/...",
             "",
             "────────────────────────────────"
           ],
           "raw": {
             "lineCount": 11,
-            "sha256": "ea47334e33aeb3d14a951f2749d7c9f3857209cdea8efd3b6de623094c896417",
+            "sha256": "cfbd1dc89a3471d7c3a5f5940827a5c4f6f7ed91d206808c0015542ff519d8c0",
             "lines": [
               "",
               "\u001b[38;5;109m────────────────────────────────\u001b[39m",
@@ -641,7 +641,7 @@
               " \u001b[38;5;109mhttps://mariozechner.at/posts/ ",
               " \u001b[38;5;109m2026-04-08-ive-sold-out/\u001b[39m       ",
               "",
-              "\u001b[38;5;244m[Image: clankolas.png [image/png] 640x537]\u001b[39m",
+              "\u001b[38;5;244m[Image: clankolas.png [image/\u001b[0m...\u001b[0m",
               "",
               "\u001b[38;5;109m────────────────────────────────\u001b[39m"
             ]

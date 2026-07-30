@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { withUpstreamModelData } from "./upstream-model-data.ts";
 
 type ContextFile = { path: string; content: string };
+type PromptSource = { path: string };
 type PromptSkill = {
   name: string;
   description: string;
@@ -45,7 +46,9 @@ type DiscoveryCase = {
   expected?: {
     contextFiles: ContextFile[];
     systemPrompt: string | null;
+    systemPromptSource: PromptSource | null;
     appendSystemPrompt: string[];
+    appendSystemPromptSources: PromptSource[];
     assembledPrompt: string;
   };
 };
@@ -310,7 +313,9 @@ export async function generateF9(upstreamRoot: string, outputRoot: string, upstr
         content: file.content,
       }));
       const systemPrompt = loader.getSystemPrompt() ?? null;
+      const systemPromptSource = loader.getSystemPromptSource();
       const appendSystemPrompt = loader.getAppendSystemPrompt();
+      const appendSystemPromptSources = loader.getAppendSystemPromptSources();
       const assembledPrompt = promptModule.buildSystemPrompt({
         customPrompt: systemPrompt ?? undefined,
         selectedTools: ["read", "bash", "edit", "write"],
@@ -325,7 +330,18 @@ export async function generateF9(upstreamRoot: string, outputRoot: string, upstr
         contextFiles,
         skills: [],
       });
-      fixtureCase.expected = { contextFiles, systemPrompt, appendSystemPrompt, assembledPrompt };
+      fixtureCase.expected = {
+        contextFiles,
+        systemPrompt,
+        systemPromptSource: systemPromptSource
+          ? { path: replaceFixture(systemPromptSource.path, fixtureRoot) }
+          : null,
+        appendSystemPrompt,
+        appendSystemPromptSources: appendSystemPromptSources.map((source) => ({
+          path: replaceFixture(source.path, fixtureRoot),
+        })),
+        assembledPrompt,
+      };
     } finally {
       await rm(fixtureRoot, { recursive: true, force: true });
     }
@@ -344,6 +360,6 @@ export async function generateF9(upstreamRoot: string, outputRoot: string, upstr
   await writeFile(path.join(familyDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   await writeFile(
     path.join(familyDir, "cases.json"),
-    `${JSON.stringify({ schemaVersion: 1, packageDir: "/pi-package", promptCases, discoveryCases }, null, 2)}\n`,
+    `${JSON.stringify({ schemaVersion: 2, packageDir: "/pi-package", promptCases, discoveryCases }, null, 2)}\n`,
   );
 }

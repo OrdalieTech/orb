@@ -41,16 +41,25 @@ type ModelRegistry struct {
 }
 
 func NewModelRegistry(agentDir string) (*ModelRegistry, error) {
+	_, offline := os.LookupEnv("PI_OFFLINE")
+	return newModelRegistry(agentDir, !offline)
+}
+
+// NewOfflineModelRegistry loads the catalog without refreshing provider models.
+func NewOfflineModelRegistry(agentDir string) (*ModelRegistry, error) {
+	return newModelRegistry(agentDir, false)
+}
+
+func newModelRegistry(agentDir string, allowModelNetwork bool) (*ModelRegistry, error) {
 	normalized, err := NormalizePath(agentDir)
 	if err != nil {
 		return nil, err
 	}
-	_, offline := os.LookupEnv("PI_OFFLINE")
 	registry := &ModelRegistry{
 		agentDir: normalized, providerConfigs: make(map[string]extensions.ProviderConfig),
 		nativeProviders:   make(map[string]extensions.Provider),
 		providerVersions:  make(map[string]uint64),
-		allowModelNetwork: !offline,
+		allowModelNetwork: allowModelNetwork,
 	}
 	if err := registry.Reload(); err != nil {
 		return nil, err
@@ -509,11 +518,26 @@ func (registry *ModelRegistry) ResolveAPIKey(ctx context.Context, provider strin
 }
 
 func (registry *ModelRegistry) ResolveProviderAuth(ctx context.Context, provider string, env map[string]string) (*aiauth.AuthResult, error) {
+	return registry.ResolveProviderAuthWithOverrides(ctx, provider, env, nil)
+}
+
+// ResolveProviderAuthWithOverrides resolves against the live credential store
+// so OAuth refreshes are persisted for later processes.
+func (registry *ModelRegistry) ResolveProviderAuthWithOverrides(
+	ctx context.Context,
+	provider string,
+	env map[string]string,
+	overrides *aiauth.ResolutionOverrides,
+) (*aiauth.AuthResult, error) {
 	registry.mu.RLock()
 	methods := registry.providerAuthLocked(provider)
-	credentials := cloneCredentials(registry.authProviders)
+	agentDir := registry.agentDir
 	registry.mu.RUnlock()
-	return aiauth.ResolveProviderAuth(ctx, provider, methods, aiauth.NewMemoryStore(credentials), registryAuthContext{env: env}, nil)
+	credentials, err := NewAuthStorage(filepath.Join(agentDir, "auth.json"))
+	if err != nil {
+		return nil, err
+	}
+	return aiauth.ResolveProviderAuth(ctx, provider, methods, credentials, registryAuthContext{env: env}, overrides)
 }
 
 func (registry *ModelRegistry) ResolveModelHeaders(ctx context.Context, model ai.Model, env map[string]string, apiKeys ...*string) (*map[string]string, error) {

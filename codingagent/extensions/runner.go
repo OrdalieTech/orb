@@ -30,6 +30,7 @@ type Diagnostic struct {
 
 type ContextActions struct {
 	GetModel               func() *ai.Model
+	GetScopedModels        func() []ScopedModel
 	IsIdle                 func() bool
 	IsProjectTrusted       func() bool
 	GetSignal              func() context.Context
@@ -162,6 +163,9 @@ func (runner *Runner) bindDeferredProviders() {
 func normalizeContextActions(actions ContextActions, cwd string) ContextActions {
 	if actions.GetModel == nil {
 		actions.GetModel = func() *ai.Model { return nil }
+	}
+	if actions.GetScopedModels == nil {
+		actions.GetScopedModels = func() []ScopedModel { return []ScopedModel{} }
 	}
 	if actions.IsIdle == nil {
 		actions.IsIdle = func() bool { return true }
@@ -722,6 +726,14 @@ func (contextValue *extensionContext) actions() ContextActions {
 }
 
 func (contextValue *extensionContext) Model() *ai.Model { return contextValue.actions().GetModel() }
+
+func (contextValue *extensionContext) ScopedModels() []ScopedModel {
+	models := contextValue.actions().GetScopedModels()
+	if models == nil {
+		return []ScopedModel{}
+	}
+	return models
+}
 
 func (contextValue *extensionContext) ThinkingLevel() agent.ThinkingLevel {
 	contextValue.runner.assertActive()
