@@ -8,7 +8,7 @@ Live OAuth end-to-end runs and provider live smoke remain owner-blocked evidence
 
 ## Revisions and method
 
-- pi-go base: `7b86eda` (Sprint 2 closure); candidate: the Sprint 3 closure containing this report.
+- Orb base: `7b86eda` (Sprint 2 closure); candidate: the Sprint 3 closure containing this report.
 - upstream: pi `0.80.10`, `3da591ab74ab9ab407e72ed882600b2c851fae21`.
 - Bridge conformance executes the verbatim upstream example corpus (copied byte-identical by the
   extractor) inside the sobek VM against scripted UI seams; provider shapes are byte-compared by

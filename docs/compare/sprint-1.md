@@ -9,7 +9,7 @@ This report supersedes the integration-time WP gap lists (WP-340/350/351/370 rep
 
 ## Revisions and method
 
-- pi-go base: `1958a78f34aeaf07a2fc60925e566bc3a3818e5f` (Sprint 0 closure); candidate: the
+- Orb base: `1958a78f34aeaf07a2fc60925e566bc3a3818e5f` (Sprint 0 closure); candidate: the
   direct-main Sprint 1 closure containing this report.
 - upstream: pi `0.80.10`, `3da591ab74ab9ab407e72ed882600b2c851fae21`, matching both
   `UPSTREAM.lock` and the clean detached `.upstream/` checkout.
@@ -26,7 +26,7 @@ This report supersedes the integration-time WP gap lists (WP-340/350/351/370 rep
 | Print text | `F7-cli` runs the real pinned TS CLI and the real Go binary with the same piped input, CLI prompt, temporary `models.json`, and local OpenAI-compatible SSE stream. It compares exit status, stdout, stderr, request count, and the exact combined prompt. The missing-model case compares the complete diagnostic bytes. | **GREEN.** Success output, Unicode, LF framing, stdin concatenation, and missing-model exit/error bytes match. |
 | JSON | `F3-session` drives pinned `runPrintMode` and the Go JSON route through six faux-provider scenarios comprising 121 JSONL records. `F7-cli` separately compares the real CLI session header and missing-model diagnostic. | **GREEN.** Multiple prompts, queueing, retry, compaction failure, assistant error, abort, header emission, and failure exit behavior match. |
 | RPC transcript | `F7` replays 40 commands and 54 raw JSONL records in-process and through the Go binary with no payload canonicalization. `F7-cli` adds a real missing-model `get_state` plus `prompt` sequence and compares the exact unknown-model state and rejected-prompt frame. | **GREEN.** Commands, events, response ordering, strict LF/CRLF behavior, EOF dispatch, and missing-model bytes match. |
-| Upstream RPC suite | The adapter runs six pinned upstream test files unchanged against `pi-go --mode rpc`, substituting only the executable and the suite's local Anthropic SSE endpoint. | **GREEN: 6 files, 27/27 tests, zero exclusions.** |
+| Upstream RPC suite | The adapter runs six pinned upstream test files unchanged against `orb --mode rpc`, substituting only the executable and the suite's local Anthropic SSE endpoint. | **GREEN: 6 files, 27/27 tests, zero exclusions.** |
 
 ## Core surface comparison
 

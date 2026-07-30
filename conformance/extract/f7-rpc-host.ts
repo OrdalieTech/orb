@@ -3,7 +3,7 @@ import { createRequire, syncBuiltinESMExports } from "node:module";
 import { pathToFileURL } from "node:url";
 
 const FIXED_NOW = 1_700_000_200_321;
-const FIXTURE_CWD = "/tmp/pi-go-f7-project";
+const FIXTURE_CWD = "/tmp/orb-f7-project";
 const upstreamRoot = process.cwd();
 
 const RealDate = Date;

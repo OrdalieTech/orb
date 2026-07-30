@@ -1,7 +1,7 @@
 # Sprint 5 comparison — chat gateway (D27)
 
 Status: **GREEN for the D27 reference cross-check**. Unlike sprints 1–4, this sprint has no
-upstream TS-pi counterpart to byte-compare — `chat/` is a pi-go addition (divergence ledger,
+upstream TS-pi counterpart to byte-compare — `chat/` is an Orb addition (divergence ledger,
 D27). The comparison baseline is the two reference implementations named by the sprint:
 earendil-works/pi-chat (TypeScript pi extension, Telegram + Discord) and the Hermes messaging
 gateway (behavior per its published docs, fetched 2026-07-19). Every adoption, improvement, and
@@ -9,7 +9,7 @@ deliberate difference below is recorded against those references.
 
 ## Revisions and method
 
-- pi-go base: `d0cdeab` (Sprint 4 closure, `v0.1.0`); candidate: the Sprint 5 closure containing
+- Orb base: `d0cdeab` (Sprint 4 closure, `v0.1.0`); candidate: the Sprint 5 closure containing
   this report.
 - References: pi-chat source readout and Hermes gateway documentation, both captured 2026-07-19.
 - Verification is plain `go test` under `chat/` with `httptest` fake platform servers and a faux
@@ -18,7 +18,7 @@ deliberate difference below is recorded against those references.
 
 ## Adopted from pi-chat
 
-| Behavior | pi-go form |
+| Behavior | Orb form |
 |---|---|
 | Typing-indicator refresh during the turn (pi-chat: every 4s) | `chat/telegram/delivery.go` — `sendChatAction` refresher every 4.5s until Finalize/Notify (indicator shows ≤5s per call) |
 | Media-group (album) debounce merge, 1200 ms per `chat_id:media_group_id` | `chat/telegram/ingress.go` `mediaGroups` — same 1.2s default window, parts merged into one `Message` with every attachment and the first caption |
@@ -35,7 +35,7 @@ attachment (`chat_attach`) — tools are off by default in v1.
 
 ## Adopted from Hermes
 
-| Behavior | pi-go form |
+| Behavior | Orb form |
 |---|---|
 | "Honest at-least-once": durable delivery ledger, crash-recovered sends visibly marked | Turn ledger (`orb.chat.turn` markers) + `"♻ recovered reply"` prefix on any settled-but-not-delivered replay (`chat/processor.go` `recoveredReplyPrefix`) |
 | Control-command bypass of the busy guard | `/stop` is intercepted in `Handle` before the keyed lock and aborts the active run via the active-turn registry; no ledger write |
@@ -46,7 +46,7 @@ attachment (`chat_attach`) — tools are off by default in v1.
 
 ## Deliberately improved over pi-chat
 
-| pi-chat behavior | pi-go behavior |
+| pi-chat behavior | Orb behavior |
 |---|---|
 | Legacy `parse_mode: "Markdown"` with **zero escaping** and no fallback — a bad-markdown 400 fails the whole job | goldmark AST walk to Telegram HTML with `<>&` escaping (`chat/telegram/format.go`); a 400 "can't parse entities" resends that chunk with no parse mode instead of failing the turn |
 | Format-blind chunking — splits can land inside a code fence and break the parse mode | Fence-aware chunking at 4096 **UTF-16 code units** (the unit Telegram counts), splitting at paragraph/fence boundaries and closing/reopening `<pre>` across splits, with golden tests under `chat/telegram/testdata/` |

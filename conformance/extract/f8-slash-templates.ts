@@ -155,7 +155,7 @@ const resourceFiles: FixtureFile[] = [
 	{
 		path: "resource/package/package.json",
 		content: JSON.stringify({
-			name: "pi-go-f8-package",
+			name: "orb-f8-package",
 			version: "1.0.0",
 			pi: { skills: ["skills"], prompts: ["prompts"] },
 		}),
@@ -598,7 +598,7 @@ async function generateResourceFilteringFixture(
 			{
 				path: "resource-filtering/package/package.json",
 				content: JSON.stringify({
-					name: "pi-go-f8-filtered-package",
+					name: "orb-f8-filtered-package",
 					version: "1.0.0",
 					pi: { skills: ["skills"], prompts: ["prompts"], themes: ["themes"] },
 				}),
@@ -1074,7 +1074,7 @@ export async function generateF8(
 		);
 	}
 
-	const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "pi-go-f8-"));
+	const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "orb-f8-"));
 	try {
 		const { skillsDir, promptsDir, inspectPath } =
 			await writeFixtureTree(fixtureRoot);

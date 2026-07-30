@@ -76,7 +76,7 @@ async function loadModules(upstreamRoot: string) {
 		"packages/coding-agent/src/modes/interactive/components/dynamic-border.ts",
 	);
 	theme.initTheme("dark");
-	const bindings = keybindings.KeybindingsManager.create();
+	const bindings = new keybindings.KeybindingsManager();
 	tui.setKeybindings(bindings);
 	return {
 		tui,

@@ -17,7 +17,7 @@ a wire-format change upstream (simulated) is flagged as such; lock bump refuses 
 ## WP-620 — Documentation
 
 **Scope:** README (what/why, provenance + credit to Mario Zechner's pi, install, quickstart,
-divergence ledger link, dimetron/pi-go disambiguation note), Go SDK guide (mirroring upstream
+divergence ledger link), Go SDK guide (mirroring upstream
 `docs/sdk.md` structure), extension-author guide for the bridge (what works, shims table, matrix
 link), CONTRIBUTING (points at AGENTS.md + plan), doc comments sweep.
 

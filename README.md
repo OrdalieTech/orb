@@ -5,7 +5,7 @@ built by Ordalie as an SDK-first Go module and a single static CLI binary. Byte-
 upstream pi's session format, wire protocols, config files, and extension examples at the pinned
 upstream version in [UPSTREAM.lock](UPSTREAM.lock); every divergence is recorded in
 [docs/DECISIONS.md](docs/DECISIONS.md). The `orb` binary deliberately coexists with upstream's
-`pi`; this module is unrelated to the older `github.com/dimetron/pi-go` project.
+`pi`.
 
 ## Install
 
