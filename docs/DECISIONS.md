@@ -283,13 +283,16 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
 
 - **D33 — Permissions plugin (owner, 2026-07-22).** The dormant first-party permissions plugin uses the standard allow/deny/ask, ordered last-match-wins model and defaults to permissive log mode.
 
-- **D34 — MemoryStore seam + memory plugin (owner, 2026-07-23).** This pigo-original addition
-  gives the dormant memory plugin one storage seam shared by per-profile JSONL stores and
-  per-tenant database implementations, because three ecosystem memory packages otherwise
-  reinvent storage. The seam lives at root-level `memory/`, following the pigo-original `chat/`
-  precedent, so embedders can import it standalone. The default injects a bounded recent index at
-  session start and leaves distillation off. V1 has no per-turn RAG, session search, secret
-  scanning, widget, or subagent inheritance.
+- **D34 — MemoryStore seam + memory plugin (owner, 2026-07-23; amended 2026-07-30).** This
+  pigo-original addition gives the dormant memory plugin one storage seam shared by per-profile
+  JSONL stores and per-tenant database implementations, because three ecosystem memory packages
+  otherwise reinvent storage. The seam lives at root-level `memory/`, following the pigo-original
+  `chat/` precedent, so embedders can import it standalone. Enablement is the only mode: local and
+  SDK users get the same frozen `USER PROFILE`/`MEMORY` prompt, fixed 1,375/2,200-character budgets,
+  and `remember`/`recall`/`replace`/`forget`; capacity pressure drives model-led consolidation.
+  There is no separate injection or shutdown-distillation configuration. The profile uses the
+  Store's bounded 100-item query window and append-before-delete replacement. V1 has no per-turn
+  RAG, session search, secret scanning, widget, or subagent inheritance.
 
 ## 2026-07-21 parity-sync amendments
 
