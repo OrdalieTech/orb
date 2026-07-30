@@ -394,8 +394,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
   runtime catalog freshness follows upstream's `checkedAt`/`lastModified` rules.
 - Interactive login now auto-opens OAuth URLs, uses the searchable fuzzy selector, reports exact
   completion/default-model outcomes, and warns once for Anthropic subscription extra usage.
-- Renamed the repository, Go module, release artifacts, and CLI from `pi-go`/`pi` to `orb`, so it
-  installs beside upstream `pi`; `orb update` now prints exact installer and Go routes.
+- Renamed the repository, Go module, release artifacts, and CLI to `orb`, so it installs beside
+  upstream `pi`; `orb update` now prints exact installer and Go routes.
 - Releases, CI, and `go install` now pin Go 1.26.5. On identical source, the in-memory 1,000-turn
   Processor core and F12 renderer are each 2.8% faster; no-prompt startup is 1.7% slower, minimal
   session creation is 4.8% slower, and the stripped Linux binary is 0.9% larger than Go 1.25.0.

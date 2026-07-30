@@ -5,7 +5,7 @@ import path from "node:path";
 import { withOfflineGeneratedCatalog } from "./f3-agent.ts";
 
 const FIXED_NOW = 1_700_000_200_321;
-const FIXTURE_CWD = "/tmp/pi-go-f7-project";
+const FIXTURE_CWD = "/tmp/orb-f7-project";
 
 interface TranscriptStep {
   name: string;

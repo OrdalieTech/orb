@@ -857,7 +857,7 @@
       },
       {
         "path": "resource/package/package.json",
-        "content": "{\"name\":\"pi-go-f8-package\",\"version\":\"1.0.0\",\"pi\":{\"skills\":[\"skills\"],\"prompts\":[\"prompts\"]}}"
+        "content": "{\"name\":\"orb-f8-package\",\"version\":\"1.0.0\",\"pi\":{\"skills\":[\"skills\"],\"prompts\":[\"prompts\"]}}"
       },
       {
         "path": "resource/agent/settings.json",
@@ -1238,7 +1238,7 @@
       },
       {
         "path": "resource-filtering/package/package.json",
-        "content": "{\"name\":\"pi-go-f8-filtered-package\",\"version\":\"1.0.0\",\"pi\":{\"skills\":[\"skills\"],\"prompts\":[\"prompts\"],\"themes\":[\"themes\"]}}"
+        "content": "{\"name\":\"orb-f8-filtered-package\",\"version\":\"1.0.0\",\"pi\":{\"skills\":[\"skills\"],\"prompts\":[\"prompts\"],\"themes\":[\"themes\"]}}"
       }
     ],
     "cwd": "<fixture>/resource-filtering/project",

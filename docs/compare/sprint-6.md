@@ -1,7 +1,7 @@
 # Sprint 6 comparison — chat platform wave 2 (D28)
 
 Status: **GREEN for the D28 reference cross-check**. Like Sprint 5, this sprint has no upstream
-TS-pi counterpart — the five adapters and three `chat/internal/` helpers are pi-go additions
+TS-pi counterpart — the five adapters and three `chat/internal/` helpers are Orb additions
 (divergence ledger, D28). The comparison baseline is the same two references: earendil-works/
 pi-chat (TypeScript pi extension; its Discord implementation is the named reference for this
 wave) and the Hermes messaging gateway docs, plus the per-platform wire briefs captured for the
@@ -9,7 +9,7 @@ sprint. Every adoption, improvement, and deliberate difference below is recorded
 
 ## Revisions and method
 
-- pi-go base: the Sprint 5 closure; candidate: the Sprint 6 closure containing this report.
+- Orb base: the Sprint 5 closure; candidate: the Sprint 6 closure containing this report.
 - References inspected directly: pi-chat `9adbd29` (`src/live/discord.ts`,
   `src/render/{format,chunking,streaming}.ts`) and Hermes `9de9c25f6`
   (`plugins/platforms/{discord,slack,teams,google_chat}/adapter.py`), plus the five wire briefs.
@@ -20,7 +20,7 @@ sprint. Every adoption, improvement, and deliberate difference below is recorded
 
 ## Adopted per platform
 
-| Platform | From the references | pi-go form |
+| Platform | From the references | Orb form |
 |---|---|---|
 | Slack | Hermes: streaming via message editing, one bubble edited in place | Preview message + `chat.update` edits ≥1s/channel (`chat/slack/delivery.go`); fallback to new messages on `edit_window_closed`/`cant_update_message` |
 | Slack | Publish-and-ack ingress (Events API 3s deadline) | `Webhook` publishes to the durable queue synchronously and acks; a publish failure answers 500 so Slack redelivers |
@@ -33,7 +33,7 @@ sprint. Every adoption, improvement, and deliberate difference below is recorded
 
 ## Deliberately improved over the references
 
-| Reference behavior | pi-go behavior |
+| Reference behavior | Orb behavior |
 |---|---|
 | pi-chat Discord sends model output verbatim with no `allowed_mentions` — a model-emitted `@everyone` pings the whole server | Every outbound payload carries `allowed_mentions: {"parse": []}` (`chat/discord/delivery.go`) — mass mentions are disarmed |
 | pi-chat identifies with only Guilds + GuildMessages + MessageContent — DMs never arrive | Identify intents include DIRECT_MESSAGES (37377 total); DM ingress works and is tested |
@@ -54,7 +54,7 @@ sprint. Every adoption, improvement, and deliberate difference below is recorded
 | Google Chat final writes are serialized at 1/s/space | The API quota is shared across threads; deterministic client-assigned ids make create conflicts safely editable after a crash. |
 | Discord REST retry policy is `retry_after`-only, no bucket tracking | Simple policy, `ponytail:` ceiling in the adapter; a single bot conversation flow never approaches bucket complexity. |
 | Discord chunking ignores code fences (2,000-rune hard cuts inside a >2,000-rune fence) | `ponytail:` accepted ceiling — Discord renders the split fence tolerably and the cap is too small for fence gymnastics to pay. |
-| pi-chat also treats plain `@username` text as a mention | pi-go accepts Discord's structured `<@id>` tokens, `mentions` array, and replies to the bot; plain text is not a platform mention, so the legacy username fallback and its mutable username state are absent. |
+| pi-chat also treats plain `@username` text as a mention | Orb accepts Discord's structured `<@id>` tokens, `mentions` array, and replies to the bot; plain text is not a platform mention, so the legacy username fallback and its mutable username state are absent. |
 | Teams inbound JWT validation is constructor-enforced, never skippable | The references treat webhook auth as configuration; here a config that would disable the RS256/issuer/audience/serviceUrl chain is refused at `New`. Same stance for Google Chat's audience + service-account key. |
 | Messenger `subscribed_apps` is documented, not automated | The one-time page subscription is an operator act with the page token; the constructor comment names it because a missing subscription is the usual silently-dead webhook. |
 

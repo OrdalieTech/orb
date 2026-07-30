@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "fixedNow": 1700000200321,
-  "cwd": "/tmp/pi-go-f7-project",
+  "cwd": "/tmp/orb-f7-project",
   "sessionId": "fixture-rpc-session",
-  "systemPrompt": "Return one short answer.\nCurrent working directory: /tmp/pi-go-f7-project",
+  "systemPrompt": "Return one short answer.\nCurrent working directory: /tmp/orb-f7-project",
   "tokenSize": 4,
   "responses": [
     {

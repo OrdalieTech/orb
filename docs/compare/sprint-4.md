@@ -6,9 +6,9 @@ hosted-nightly, and real-terminal/macOS checks tracked in `docs/plan/PROGRESS.md
 ## Revisions and method
 
 - Upstream: pi `0.80.10` at `3a40794ea14c6202586cc203d5b928eca9f6b673`.
-- pi-go: release candidate containing this report, descending from `e46f671`.
+- Orb: release candidate containing this report, descending from `e46f671`.
 - The same pinned TypeScript extractors and black-box RPC scenarios run against `.upstream/` and
-  pi-go. Release-only Go surfaces are checked separately because TS pi has no GoReleaser,
+  Orb. Release-only Go surfaces are checked separately because TS pi has no GoReleaser,
   static-binary, or Homebrew counterpart.
 
 ## Results
