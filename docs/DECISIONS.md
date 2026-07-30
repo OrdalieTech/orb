@@ -287,12 +287,15 @@ Orb is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinne
   Orb-original addition gives the dormant memory plugin one storage seam shared by per-profile
   JSONL stores and per-tenant database implementations, because three ecosystem memory packages
   otherwise reinvent storage. The seam lives at root-level `memory/`, following the Orb-original
-  `chat/` precedent, so embedders can import it standalone. Enablement is the only mode: local and
-  SDK users get the same frozen `USER PROFILE`/`MEMORY` prompt, fixed 1,375/2,200-character budgets,
-  and `remember`/`recall`/`replace`/`forget`; capacity pressure drives model-led consolidation.
-  There is no separate injection or shutdown-distillation configuration. The profile uses the
-  Store's bounded 100-item query window and append-before-delete replacement. V1 has no per-turn
-  RAG, session search, secret scanning, widget, or subagent inheritance.
+  `chat/` precedent, so embedders can import it standalone. `memory/agent` owns the shared agent
+  behavior: plain `agent.Agent` SDK users attach it directly, while the coding-agent plugin is a
+  thin adapter over the same runtime. Enablement is the only mode: local and SDK users get the same
+  frozen `USER PROFILE`/`MEMORY` prompt, fixed 1,375/2,200-character budgets, and
+  `remember`/`recall`/`replace`/`forget`; capacity pressure drives model-led consolidation. Stores
+  are tenant-scoped and concurrent, with an optional transaction seam for compound mutations
+  shared by multiple sessions or processes. There is no separate injection or shutdown-distillation
+  configuration. The profile uses the Store's bounded 100-item query window and append-before-delete
+  replacement. V1 has no per-turn RAG, session search, secret scanning, widget, or subagent inheritance.
 
 ## 2026-07-21 parity-sync amendments
 

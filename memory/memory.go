@@ -23,6 +23,9 @@ type Filter struct {
 	Limit    int
 }
 
+// Store is a tenant-scoped durable memory backend. Implementations must accept
+// concurrent calls. Query returns newest items first, treats Tags as an AND
+// filter, matches Contains case-insensitively, and honors positive Limit values.
 type Store interface {
 	Append(context.Context, Item) (string, error)
 	Get(context.Context, string) (Item, error)
@@ -30,6 +33,15 @@ type Store interface {
 	Delete(context.Context, string) error
 }
 
+// TransactionalStore makes compound profile mutations atomic across runtime
+// instances and processes. The callback must use only the supplied Store.
+type TransactionalStore interface {
+	Store
+	Transact(context.Context, func(Store) error) error
+}
+
+// SemanticSearcher returns highest-scoring items first and honors positive
+// limit values.
 type SemanticSearcher interface {
 	Search(context.Context, string, int) ([]Scored, error)
 }

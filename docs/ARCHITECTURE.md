@@ -34,6 +34,7 @@ orb/
 │   └── plugins/              first-party bundled-but-dormant plugins (D32–D34)
 ├── chat/                     chat gateway + platform adapters (D27/D28 additions; chat → codingagent only)
 ├── memory/                   MemoryStore seam + JSONL store (D34 addition)
+│   └── agent/                generic Agent attachment + bounded memory tools
 ├── internal/
 │   ├── jsonschema/           Schema type + reflection helper (gate G1)
 │   ├── jsonwire/             JSON.stringify-compatible wire encoder

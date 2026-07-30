@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"sync"
@@ -136,5 +137,67 @@ func TestFileStoreSkipsCorruptLines(t *testing.T) {
 	items, err := store.Query(context.Background(), Filter{})
 	if err != nil || len(items) != 2 {
 		t.Fatalf("Query = %#v, %v", items, err)
+	}
+}
+
+func TestFileStoreTransactionKeepsCompoundWritesAtomic(t *testing.T) {
+	store, err := NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var group sync.WaitGroup
+	for range 2 {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			if txErr := store.Transact(context.Background(), func(tx Store) error {
+				items, queryErr := tx.Query(context.Background(), Filter{Contains: "same fact"})
+				if queryErr != nil || len(items) > 0 {
+					return queryErr
+				}
+				_, appendErr := tx.Append(context.Background(), Item{Content: "same fact"})
+				return appendErr
+			}); txErr != nil {
+				t.Errorf("Transact: %v", txErr)
+			}
+		}()
+	}
+	group.Wait()
+	items, err := store.Query(context.Background(), Filter{})
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items = %#v, error = %v", items, err)
+	}
+	originalID := items[0].ID
+	if err := store.Transact(context.Background(), func(tx Store) error {
+		if _, appendErr := tx.Append(context.Background(), Item{Content: "replacement"}); appendErr != nil {
+			return appendErr
+		}
+		return tx.Delete(context.Background(), originalID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	items, err = store.Query(context.Background(), Filter{})
+	if err != nil || len(items) != 1 || items[0].Content != "replacement" {
+		t.Fatalf("replacement items = %#v, error = %v", items, err)
+	}
+	raw, err := os.ReadFile(store.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines := strings.Count(string(raw), "\n"); lines != 2 {
+		t.Fatalf("transaction log lines = %d, want one line per committed transaction", lines)
+	}
+	stop := errors.New("stop")
+	if err := store.Transact(context.Background(), func(tx Store) error {
+		if _, appendErr := tx.Append(context.Background(), Item{Content: "rolled back"}); appendErr != nil {
+			return appendErr
+		}
+		return stop
+	}); !errors.Is(err, stop) {
+		t.Fatalf("rollback error = %v", err)
+	}
+	items, err = store.Query(context.Background(), Filter{Contains: "rolled back"})
+	if err != nil || len(items) != 0 {
+		t.Fatalf("rolled-back items = %#v, error = %v", items, err)
 	}
 }

@@ -338,7 +338,7 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/coding-agent/CHANGELOG.md`, v0.81.1 metadata, and fixture-visible output | `codingagent/modes/assets/CHANGELOG.md`, `cmd/orb/main.go`, `UPSTREAM.lock`, regenerated `conformance/fixtures/` | v0.81.1 sync 2026-07-22 |
 | v0.81.1 `AgentOptions.streamFn` fixture API | `conformance/extract/{f3-session,f7-rpc-host}.ts` | v0.81.1 sync 2026-07-22 |
 | Ecosystem tasks, web-access, and subagent extensions (orb first-party divergence) | `codingagent/plugins/`, `codingagent/config/{settings,settings_write}.go`, `cmd/orb/{extensions,package_cli,runtime}.go` | First-party plugins 2026-07-22 |
-| MemoryStore seam (orb first-party divergence; no upstream counterpart) | `memory/`, `codingagent/plugins/memory.go`, `docs/sdk.md` | Memory SDK 2026-07-23 |
+| MemoryStore seam (orb first-party divergence; no upstream counterpart) | `memory/`, `memory/agent/`, `codingagent/plugins/memory.go`, `docs/sdk.md` | Memory SDK 2026-07-23 |
 | `packages/ai/src/providers/data/.manifest.json`, `packages/ai/src/providers/*.models.ts` (v0.82.0 `flattenModelCatalog` grouping) | `conformance/extract/upstream-model-data.ts`, `conformance/extract/f2-{anthropic,bedrock,google,google-vertex,codex,providers}.ts` | 0.82.1 survey 2026-07-25 |
 | `packages/ai/src/model-catalog.ts` (type-level catalog flattening; orb's catalog is generated Go data) | `ai/models/{catalog,generated}.go`, `ai/models/internal/cataloggen/` | 0.82.1 survey 2026-07-25 |
 | `packages/ai/scripts/models-dev-reasoning-options.ts`, `scripts/generate-thinking-capabilities.mjs` | `ai/models/internal/cataloggen/{metadata,cataloggen}.go` | 0.82.1 port 2026-07-26 |

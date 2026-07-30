@@ -891,15 +891,6 @@ type memoryTestStore struct {
 // substring-then-word-overlap path.
 type plainMemoryStore struct{ items []memorysdk.Item }
 
-type overeagerMemoryStore struct {
-	plainMemoryStore
-	scored []memorysdk.Scored
-}
-
-func (store *overeagerMemoryStore) Search(context.Context, string, int) ([]memorysdk.Scored, error) {
-	return append([]memorysdk.Scored(nil), store.scored...), nil
-}
-
 // gatedMemoryStore signals each Query entry and waits for release, so a test
 // can pin one plugin instance inside its store mid-operation.
 type gatedMemoryStore struct {
@@ -931,45 +922,6 @@ func (store *plainMemoryStore) Delete(context.Context, string) error { return ni
 
 func (store *plainMemoryStore) Query(_ context.Context, filter memorysdk.Filter) ([]memorysdk.Item, error) {
 	return filterMemoryTestItems(store.items, filter.Contains, filter.Tags, filter.Limit), nil
-}
-
-func TestSemanticRecallFiltersTagsAndEnforcesLimit(t *testing.T) {
-	store := &overeagerMemoryStore{scored: []memorysdk.Scored{
-		{Item: memorysdk.Item{ID: "wrong", Content: "wrong", Tags: []string{"other"}}, Score: 1},
-		{Item: memorysdk.Item{ID: "right", Content: "right", Tags: []string{"wanted"}}, Score: .9},
-		{Item: memorysdk.Item{ID: "extra", Content: "extra", Tags: []string{"wanted"}}, Score: .8},
-	}}
-	items, err := recallItems(context.Background(), store, "query", []string{"wanted"}, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(items) != 1 || items[0].ID != "right" {
-		t.Fatalf("semantic recall = %#v", items)
-	}
-}
-
-func TestRecallFallsBackToWordOverlap(t *testing.T) {
-	store := &plainMemoryStore{items: []memorysdk.Item{
-		{ID: "tabs", Content: "The user prefers tabs over spaces."},
-		{ID: "deploy", Content: "Deploys run on Fridays."},
-	}}
-	for _, test := range []struct{ query, want string }{
-		{query: "indentation preference", want: "tabs"},
-		{query: "Fridays", want: "deploy"},
-		{query: "prefers tabs", want: "tabs"},
-	} {
-		items, err := recallItems(context.Background(), store, test.query, nil, 10)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(items) != 1 || items[0].ID != test.want {
-			t.Fatalf("recall(%q) = %#v, want %q", test.query, items, test.want)
-		}
-	}
-	items, err := recallItems(context.Background(), store, "kubernetes rollout", nil, 10)
-	if err != nil || len(items) != 0 {
-		t.Fatalf("unrelated query matched %#v (%v)", items, err)
-	}
 }
 
 func (store *memoryTestStore) Append(_ context.Context, item memorysdk.Item) (string, error) {
@@ -1055,6 +1007,22 @@ func filterMemoryTestItems(items []memorysdk.Item, contains string, tags []strin
 		result = append(result, items[index])
 	}
 	return result
+}
+
+const (
+	userMemoryChars = 1375
+	memoryChars     = 2200
+	userTargetTag   = "orb:memory:user"
+	memoryTargetTag = "orb:memory:memory"
+)
+
+func hasMemoryTags(itemTags, required []string) bool {
+	for _, tag := range required {
+		if !slices.Contains(itemTags, tag) {
+			return false
+		}
+	}
+	return true
 }
 
 func TestMemoryCatalogUsesAgentDirStore(t *testing.T) {

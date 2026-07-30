@@ -25,9 +25,18 @@ type FileStore struct {
 	lockPath string
 }
 
+var _ TransactionalStore = (*FileStore)(nil)
+
+type fileTransaction struct {
+	items   map[string]storedItem
+	records []fileRecord
+	order   int
+}
+
 type fileRecord struct {
-	Item   *Item  `json:"item,omitempty"`
-	Delete string `json:"delete,omitempty"`
+	Item   *Item        `json:"item,omitempty"`
+	Delete string       `json:"delete,omitempty"`
+	Batch  []fileRecord `json:"batch,omitempty"`
 }
 
 type storedItem struct {
@@ -51,19 +60,31 @@ func NewFileStore(dir string) (*FileStore, error) {
 }
 
 func (store *FileStore) Append(ctx context.Context, item Item) (string, error) {
+	return appendItem(ctx, item, store.append)
+}
+
+func appendItem(ctx context.Context, item Item, appendRecord func(context.Context, fileRecord) error) (string, error) {
+	item, id, err := prepareItem(item)
+	if err != nil {
+		return "", err
+	}
+	if err := appendRecord(ctx, fileRecord{Item: &item}); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func prepareItem(item Item) (Item, string, error) {
 	now := time.Now().UTC()
 	id, err := uuidv7.Generate(now)
 	if err != nil {
-		return "", err
+		return Item{}, "", err
 	}
 	item.ID = id
 	if item.Time.IsZero() {
 		item.Time = now
 	}
-	if err := store.append(ctx, fileRecord{Item: &item}); err != nil {
-		return "", err
-	}
-	return id, nil
+	return item, id, nil
 }
 
 func (store *FileStore) Get(ctx context.Context, id string) (Item, error) {
@@ -71,6 +92,10 @@ func (store *FileStore) Get(ctx context.Context, id string) (Item, error) {
 	if err != nil {
 		return Item{}, err
 	}
+	return getItem(items, id)
+}
+
+func getItem(items map[string]storedItem, id string) (Item, error) {
 	item, ok := items[id]
 	if !ok {
 		return Item{}, fmt.Errorf("memory: item %q not found", id)
@@ -83,6 +108,10 @@ func (store *FileStore) Query(ctx context.Context, filter Filter) ([]Item, error
 	if err != nil {
 		return nil, err
 	}
+	return queryItems(items, filter), nil
+}
+
+func queryItems(items map[string]storedItem, filter Filter) []Item {
 	result := make([]storedItem, 0, len(items))
 	contains := strings.ToLower(filter.Contains)
 	for _, item := range items {
@@ -111,11 +140,76 @@ func (store *FileStore) Query(ctx context.Context, filter Filter) ([]Item, error
 	for index := range result {
 		out[index] = result[index].Item
 	}
-	return out, nil
+	return out
 }
 
 func (store *FileStore) Delete(ctx context.Context, id string) error {
 	return store.append(ctx, fileRecord{Delete: id})
+}
+
+func (store *FileStore) Transact(ctx context.Context, fn func(Store) error) error {
+	if fn == nil {
+		return errors.New("memory: transaction callback is required")
+	}
+	lock := flock.New(store.lockPath)
+	locked, err := lock.TryLockContext(ctx, 10*time.Millisecond)
+	if err != nil {
+		return err
+	}
+	if !locked {
+		return ctx.Err()
+	}
+	defer func() { _ = lock.Unlock() }()
+	items, err := store.readLocked(ctx)
+	if err != nil {
+		return err
+	}
+	order := 0
+	for _, item := range items {
+		order = max(order, item.order+1)
+	}
+	transaction := &fileTransaction{items: items, order: order}
+	if err := fn(transaction); err != nil {
+		return err
+	}
+	return store.appendRecordsLocked(ctx, transaction.records)
+}
+
+func (transaction *fileTransaction) Append(ctx context.Context, item Item) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	item, id, err := prepareItem(item)
+	if err != nil {
+		return "", err
+	}
+	transaction.records = append(transaction.records, fileRecord{Item: &item})
+	transaction.items[id] = storedItem{Item: item, order: transaction.order}
+	transaction.order++
+	return id, nil
+}
+
+func (transaction *fileTransaction) Get(ctx context.Context, id string) (Item, error) {
+	if err := ctx.Err(); err != nil {
+		return Item{}, err
+	}
+	return getItem(transaction.items, id)
+}
+
+func (transaction *fileTransaction) Query(ctx context.Context, filter Filter) ([]Item, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return queryItems(transaction.items, filter), nil
+}
+
+func (transaction *fileTransaction) Delete(ctx context.Context, id string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	transaction.records = append(transaction.records, fileRecord{Delete: id})
+	delete(transaction.items, id)
+	return nil
 }
 
 func (store *FileStore) append(ctx context.Context, record fileRecord) error {
@@ -128,7 +222,24 @@ func (store *FileStore) append(ctx context.Context, record fileRecord) error {
 		return ctx.Err()
 	}
 	defer func() { _ = lock.Unlock() }()
+	return store.appendLocked(ctx, record)
+}
 
+func (store *FileStore) appendLocked(ctx context.Context, record fileRecord) error {
+	return store.appendRecordsLocked(ctx, []fileRecord{record})
+}
+
+func (store *FileStore) appendRecordsLocked(ctx context.Context, records []fileRecord) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if len(records) == 0 {
+		return nil
+	}
+	record := records[0]
+	if len(records) > 1 {
+		record = fileRecord{Batch: records}
+	}
 	line, err := json.Marshal(record)
 	if err != nil {
 		return err
@@ -156,7 +267,13 @@ func (store *FileStore) read(ctx context.Context) (map[string]storedItem, error)
 		return nil, ctx.Err()
 	}
 	defer func() { _ = lock.Unlock() }()
+	return store.readLocked(ctx)
+}
 
+func (store *FileStore) readLocked(ctx context.Context) (map[string]storedItem, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	file, err := os.Open(store.path)
 	if errors.Is(err, os.ErrNotExist) {
 		return map[string]storedItem{}, nil
@@ -175,14 +292,10 @@ func (store *FileStore) read(ctx context.Context) (map[string]storedItem, error)
 		line = bytes.TrimSpace(line)
 		var record fileRecord
 		if len(line) > 0 && json.Unmarshal(line, &record) == nil {
-			switch {
-			case record.Delete != "":
-				delete(items, record.Delete)
-			case record.Item != nil && record.Item.ID != "":
-				items[record.Item.ID] = storedItem{Item: *record.Item, order: order}
-			}
+			applyFileRecord(items, record, &order)
+		} else {
+			order++
 		}
-		order++
 		if errors.Is(readErr, io.EOF) {
 			break
 		}
@@ -191,6 +304,22 @@ func (store *FileStore) read(ctx context.Context) (map[string]storedItem, error)
 		}
 	}
 	return items, nil
+}
+
+func applyFileRecord(items map[string]storedItem, record fileRecord, order *int) {
+	records := record.Batch
+	if len(records) == 0 {
+		records = []fileRecord{record}
+	}
+	for _, current := range records {
+		switch {
+		case current.Delete != "":
+			delete(items, current.Delete)
+		case current.Item != nil && current.Item.ID != "":
+			items[current.Item.ID] = storedItem{Item: *current.Item, order: *order}
+		}
+		*order = *order + 1
+	}
 }
 
 func hasAllTags(itemTags, required []string) bool {
