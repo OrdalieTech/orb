@@ -279,11 +279,21 @@ inline-extension path and keeps extension lifecycle coupled to resource reloads.
 
 ### MemoryStore
 
-`memory.Store` from `github.com/OrdalieTech/pigo/memory` is the durable memory
-seam; `memory.NewFileStore(dir)`
-provides the append-only JSONL default. Embedders register
-`plugins.MemoryWithStore(store)` to use a per-tenant database or another custom
-backend without adding fields to `AgentSessionOptions`.
+`memory.Store` from `github.com/OrdalieTech/pigo/memory` is the durable seam;
+`memory.NewFileStore(dir)` provides the append-only JSONL default. The bundled plugin is
+disabled by default. Local users enable `"plugins":{"memory":true}`; embedders register
+`plugins.MemoryWithStore(store)`, which rejects a nil store and otherwise requires no
+file-backed implementation or `AgentSessionOptions` field.
+
+Enablement is the only mode. At session start the plugin freezes a bounded `USER PROFILE`
+(1,375 Unicode characters) and `MEMORY` (2,200) into the system prompt. `remember` adds a
+declarative fact, `recall` searches all items, `replace` consolidates one uniquely matched
+entry, and `forget` removes one. Capacity errors expose the bounded current section so the
+model can replace or remove entries. Replacement appends before deleting to avoid data loss;
+a failed delete can leave both copies because `memory.Store` has no transaction. All behavior
+uses the Store's bounded 100-item window. The plugin reserves and hides the tags
+`pigo:memory:user` and `pigo:memory:memory`; existing untagged items remain `MEMORY`, while
+items tagged `user` remain in `USER PROFILE`.
 
 ## Replaceable session runtime
 

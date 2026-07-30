@@ -460,3 +460,13 @@ func truncateWeb(text string) string {
 	}
 	return content + "\n\n[output truncated]"
 }
+
+func trimTrailingBytes(value string, limit int) string {
+	if len(value) <= limit {
+		return value
+	}
+	for limit > 0 && !utf8.RuneStart(value[limit]) {
+		limit--
+	}
+	return value[:limit]
+}

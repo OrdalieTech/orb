@@ -37,7 +37,7 @@ var descriptions = map[string]string{
 	"websearch":   "Web search and readable page fetching",
 	"subagents":   "In-process single or parallel child agents",
 	"permissions": "Permissive audit and tool-call permission rules (bash is matched by command text only)",
-	"memory":      "Persistent remember and recall tools",
+	"memory":      "Bounded persistent remember, recall, replace, and forget tools",
 }
 
 // Names returns the stable first-party plugin order.
@@ -70,7 +70,7 @@ func Catalog(option ...Options) map[string]extensions.Factory {
 		"websearch":   websearchExtension(options.HTTPClient),
 		"subagents":   subagentsExtension(options.StreamFn, inheritPolicy),
 		"permissions": permissionsExtension(policy, options.Settings, nil),
-		"memory":      memoryExtension(nil, options.StreamFn, options.Settings, options.AgentDir),
+		"memory":      memoryExtension(nil, options.AgentDir),
 	}
 }
 
