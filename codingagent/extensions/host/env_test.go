@@ -11,10 +11,10 @@ import (
 func TestPrepareHostEnvironmentMakesPiResolveConfiguredBinary(t *testing.T) {
 	root := t.TempDir()
 	agentDir := filepath.Join(root, "agent")
-	binary := filepath.Join(root, "configured-pigo")
-	writeExecutable(t, binary, "#!/bin/sh\nprintf '%s\\n' 'pigo configured-version'\n")
+	binary := filepath.Join(root, "configured-orb")
+	writeExecutable(t, binary, "#!/bin/sh\nprintf '%s\\n' 'orb configured-version'\n")
 
-	environment, err := prepareHostEnvironment(Options{AgentDir: agentDir, PigoExecutable: binary}, []string{"PATH=/usr/bin:/bin", "KEEP=value"}, "")
+	environment, err := prepareHostEnvironment(Options{AgentDir: agentDir, OrbExecutable: binary}, []string{"PATH=/usr/bin:/bin", "KEEP=value"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +24,7 @@ func TestPrepareHostEnvironmentMakesPiResolveConfiguredBinary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.TrimSpace(string(output)); got != "pigo configured-version" {
+	if got := strings.TrimSpace(string(output)); got != "orb configured-version" {
 		t.Fatalf("pi --version = %q", got)
 	}
 	shim := filepath.Join(agentDir, "host", "bin", "pi")
@@ -45,14 +45,14 @@ func TestPrepareHostEnvironmentMakesPiResolveConfiguredBinary(t *testing.T) {
 func TestPrepareHostEnvironmentAtomicallyRefreshesPiTarget(t *testing.T) {
 	root := t.TempDir()
 	agentDir := filepath.Join(root, "agent")
-	first := filepath.Join(root, "pigo-first")
-	second := filepath.Join(root, "pigo-second")
+	first := filepath.Join(root, "orb-first")
+	second := filepath.Join(root, "orb-second")
 	writeExecutable(t, first, "#!/bin/sh\nprintf first\n")
 	writeExecutable(t, second, "#!/bin/sh\nprintf second\n")
-	if _, err := prepareHostEnvironment(Options{AgentDir: agentDir, PigoExecutable: first}, nil, ""); err != nil {
+	if _, err := prepareHostEnvironment(Options{AgentDir: agentDir, OrbExecutable: first}, nil, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := prepareHostEnvironment(Options{AgentDir: agentDir, PigoExecutable: second}, nil, ""); err != nil {
+	if _, err := prepareHostEnvironment(Options{AgentDir: agentDir, OrbExecutable: second}, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	target, err := os.Readlink(filepath.Join(agentDir, "host", "bin", "pi"))

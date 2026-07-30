@@ -12,7 +12,7 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"github.com/OrdalieTech/pigo/internal/jsonwire"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 // Port of packages/coding-agent/src/core/trust-manager.ts.
@@ -319,6 +319,6 @@ func FormatProjectTrustPrompt(cwd string) string {
 		"Trust project folder?",
 		cwd,
 		"",
-		fmt.Sprintf("This allows pigo to load %s settings and resources, install missing project packages, and execute project extensions.", ConfigDirName),
+		fmt.Sprintf("This allows orb to load %s settings and resources, install missing project packages, and execute project extensions.", ConfigDirName),
 	}, "\n")
 }

@@ -1,10 +1,10 @@
 # Ecosystem extension compatibility matrix — 2026-07-26 300-package, three-runtime run at `f64f4f7`
 
 This supersedes the 2026-07-25 run at `53222c3`. Same corpus, same harness, same container, same
-upstream Pi 0.81.1 reference and same Bun build: the pigo binary is the only input whose hash
+upstream Pi 0.81.1 reference and same Bun build: the orb binary is the only input whose hash
 changed, so the difference between the two runs is attributable to
 [`f64f4f7` *Run TypeScript published inside node_modules*](#what-running-typescript-under-node_modules-changed)
-and to nothing else. pigo is measured on **both** JavaScript hosts it can resolve — local Node 24 and
+and to nothing else. orb is measured on **both** JavaScript hosts it can resolve — local Node 24 and
 local Bun 1.3.14 — because a single "does it work" number hid the runtime that produced it.
 
 A later, deliberately narrower Node-only sweep at
@@ -12,7 +12,7 @@ A later, deliberately narrower Node-only sweep at
 deleted the staged-entry mechanism. Read that section before quoting any number here as current.
 
 The follow-up [normal-install live matrix](ecosystem-extension-live.md) installs 30 packages through
-Pi itself, opens the resulting state with Pigo, and executes 15 live extension workflows.
+Pi itself, opens the resulting state with Orb, and executes 15 live extension workflows.
 
 ## Headline
 
@@ -20,8 +20,8 @@ Over the full 300-package corpus:
 
 | Runtime | load + registration | load-only | **load compatible** | flaky | unsupported | vs `53222c3` |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `pigo-node` | 210 | 21 | **231 / 300 = 77.0 %** | 2 | 67 | **+20** |
-| `pigo-bun` | 202 | 20 | **222 / 300 = 74.0 %** | 2 | 76 | ±0 |
+| `orb-node` | 210 | 21 | **231 / 300 = 77.0 %** | 2 | 67 | **+20** |
+| `orb-bun` | 202 | 20 | **222 / 300 = 74.0 %** | 2 | 76 | ±0 |
 
 Pinned upstream Pi 0.81.1 fails to load 15 of the 300 packages itself, and three more never reach a
 probe at all (see *Install and harness exclusions*). Against the 282 packages upstream actually
@@ -34,7 +34,7 @@ Bun is unchanged by construction: `loader.mjs` is installed only when the resolv
 Tier 1 — the top 50 by monthly downloads, and the number that describes what most users install — is
 better than the corpus average and is the more meaningful user-facing figure:
 
-| Scope | `pigo-node` | `pigo-bun` |
+| Scope | `orb-node` | `orb-bun` |
 | --- | ---: | ---: |
 | Tier 1, `perf` profile (13 attempts/runtime, from the 300 run) | 44/50 = 88.0 % | 39/50 = 78.0 % |
 | Tier 1, `compat` profile (3 attempts/runtime, dedicated A/B run) | 44/50 = 88.0 % | 39/50 = 78.0 % |
@@ -137,8 +137,8 @@ nothing else; no Bun-only verdict changed.
 ## What the SDK-resolution fix changed (previous step, `53222c3`)
 
 The pre-fix baseline for tier 1 on the same corpus, same profile (`compat`), same container was
-`pigo-node 39/50` and `pigo-bun 38/50`, with divergence `none 33, node_only 5, bun_only 6,
-both_fail 6`. The post-fix rerun is `pigo-node 44/50` and `pigo-bun 41/50`, divergence
+`orb-node 39/50` and `orb-bun 38/50`, with divergence `none 33, node_only 5, bun_only 6,
+both_fail 6`. The post-fix rerun is `orb-node 44/50` and `orb-bun 41/50`, divergence
 `none 38, node_only 3, bun_only 6, both_fail 3`.
 
 **Zero packages regressed on either runtime.** Per package:
@@ -203,7 +203,7 @@ remaining Node-only cluster.
 
 `#src/async-cache` is a package-`imports` specifier and is not aliasable on Bun.
 
-**Both fail (58)**, of which 18 are not pigo's fault (15 upstream Pi load failures plus 3 install or
+**Both fail (58)**, of which 18 are not orb's fault (15 upstream Pi load failures plus 3 install or
 harness exclusions). The remaining 40 split, by their Node-side class, into `extension_load_error`
 (14), `registration_mismatch` (12), `unsupported_sdk_export` (8), `unsupported_pi_api` (3), `flaky`
 (2) and `missing_dependency` (1). The same 40 seen from Bun are `registration_mismatch` (12),
@@ -216,9 +216,9 @@ moved into `extension_load_error` and `@mrclrchtr/supi-code-intelligence` into
 ## Failure taxonomy
 
 Counted over the 282 upstream-supported packages, so upstream's own failures are never charged to
-pigo:
+orb:
 
-| Class | `pigo-node` | (`53222c3`) | `pigo-bun` |
+| Class | `orb-node` | (`53222c3`) | `orb-bun` |
 | --- | ---: | ---: | ---: |
 | `typescript_unsupported` | **0** | (24) | 0 |
 | `extension_load_error` | 21 | (19) | 12 |
@@ -240,7 +240,7 @@ Every `unsupported_pi_api` failure in the run is the same missing member, `pi.un
 in `@gotgenes/pi-anthropic-auth`, `pi-omlx-picker` and `@router-for-me/pi-cliproxyapi-provider`.
 `registration_mismatch` is dominated by
 `builtin_tool_definition_override` (a package that redefines `edit`/`read`/`write`/`grep` and whose
-override upstream applies but pigo does not), `tool_definition.promptGuidelines` (pigo builtins carry
+override upstream applies but orb does not), `tool_definition.promptGuidelines` (orb builtins carry
 no per-definition prompt metadata, `agent/types.go:91-98`), and `active_tool_gating` (a package that
 gates which tools are active).
 
@@ -255,7 +255,7 @@ Three packages produced no probe at all and are excluded from the parity denomin
 | Package | Cause | Verdict |
 | --- | --- | --- |
 | `@firstpick/pi-package-webui` | manifest points at `node_modules/@firstpick/pi-extension-bang-command-autocomplete/index.ts` inside its own tree, which npm hoisted away | genuine install/tree-shape failure |
-| `@shanepadgett/tau-agent` | manifest declares the glob `extensions/*/index.ts`; the harness stats it literally | harness limitation, not a package or pigo defect |
+| `@shanepadgett/tau-agent` | manifest declares the glob `extensions/*/index.ts`; the harness stats it literally | harness limitation, not a package or orb defect |
 | `pi-intercom` | `ENOTEMPTY: directory not empty, rmdir '/work/matrix-7'` | **harness cleanup race, false failure** |
 
 `pi-intercom` leaks `npm exec tsx` children that outlive the probe (this run's `resources.leaked`
@@ -265,7 +265,7 @@ catch-all at `matrix.mjs:1560-1573` which labels *any* harness-level exception `
 (`matrix.mjs:1567-1568`). The orphan reap that would prevent it runs only after the record is
 appended (`matrix.mjs:1580-1587`). It landed on the losing side of that race in both runs here,
 including the dedicated tier-1 run where `53222c3` had caught it passing. Treat `pi-intercom` as a
-pass; the race is a harness defect, not a package or pigo verdict.
+pass; the race is a harness defect, not a package or orb verdict.
 
 The 15 packages upstream Pi itself cannot load are `@zhachory1/mewrite-markdown-preview`,
 `@oas-framework/pi`, `@gamalan/pi-gateway`, `openlore`, `rolebox`, `@amaster.ai/pi-browser-use`,
@@ -278,7 +278,7 @@ files, `bun:sqlite` under Node, native addons and load-time crashes.
 
 A flake is a finding, not an average. Named individually, never averaged into a pass:
 
-* **`pi-cursor-sdk` — flaky on `pigo-node` *and* `pigo-bun`, in both the 300 run and the dedicated
+* **`pi-cursor-sdk` — flaky on `orb-node` *and* `orb-bun`, in both the 300 run and the dedicated
   tier-1 run.** Two distinct registration snapshots across attempts;
   `activeTools:cursor_ask_question` appears in some and not others. This is the known
   late-registration race: `codingagent/extensions/host/manager.go:518-528` clones every extension's
@@ -287,8 +287,8 @@ A flake is a finding, not an average. Named individually, never averaged into a 
   (`:954`). A registration that lands after the freeze is acknowledged but never reaches the snapshot
   the agent reads. It is not Node-specific — Bun flakes on the same package. At 13 attempts it shows
   up reliably; at 3 it is a coin flip, and it came up heads at `53222c3` and tails here.
-* **`@lebronj/pi-suite` — flaky on `pigo-node`.** Same shape, `activeTools:autogoal`.
-* **`@xaccefy/pi-lookup` — flaky on `pigo-bun` only,** `write |1: broken pipe` on the probe command.
+* **`@lebronj/pi-suite` — flaky on `orb-node`.** Same shape, `activeTools:autogoal`.
+* **`@xaccefy/pi-lookup` — flaky on `orb-bun` only,** `write |1: broken pipe` on the probe command.
   It was a stable `extension_load_error` (`write |1: file already closed`) at `53222c3`: the same
   teardown race, observed from the other side. Bun-side and therefore untouched by this commit.
 
@@ -300,30 +300,30 @@ Six of seven read-only command handlers pass with byte-identical normalized outp
 unchanged. **The one workflow case now passes as well** — `workflowPassCount` went 0 → 1 and
 `allWorkflowsComparedPass` is `true`:
 
-* **`piolium-knowledge-base-stage` now passes under Pigo on Node, 6/6 attempts, `parity: true` with
+* **`piolium-knowledge-base-stage` now passes under Orb on Node, 6/6 attempts, `parity: true` with
   byte-identical observable output against Pi.** At `53222c3` the probe's direct import of
   `@vigolium/piolium/extensions/piolium/knowledge-base-input.ts` was refused with
   `Stripping types is currently unsupported for files under node_modules`. That is the same
   limitation reached through a direct import rather than manifest staging, which the staging escape
   could not cover and the `load`-hook approach does.
-* **`subagents-doctor` still fails in *both* Pi and Pigo.** Both match `Subagents doctor report` and
+* **`subagents-doctor` still fails in *both* Pi and Orb.** Both match `Subagents doctor report` and
   both miss the fixture's `agents: total 8 (builtin 8, package 0, user 0, project 0)`. `pi-subagents`
   moved 0.35.1 → 0.36.0 in the recapture and the agent census changed. This is fixture drift in
-  `conformance/extensions/smoke-cases.json`, not a pigo defect: the case is recorded `parity: false`
+  `conformance/extensions/smoke-cases.json`, not an Orb defect: the case is recorded `parity: false`
   only because neither runtime produced comparable evidence, not because they differed. It is the
   sole reason `smoke.mjs` still exits `2`.
 
 ## Performance
 
-Observer-only baseline startup, 11 samples each, all non-noisy: Pi 368.0 ms, pigo-node 99.5 ms,
-pigo-bun 32.7 ms. Pigo's base process is 3.7× cheaper than Pi's on Node and 11.3× cheaper on Bun.
+Observer-only baseline startup, 11 samples each, all non-noisy: Pi 368.0 ms, orb-node 99.5 ms,
+orb-bun 32.7 ms. Orb's base process is 3.7× cheaper than Pi's on Node and 11.3× cheaper on Bun.
 The absolute numbers are well below the `53222c3` run's (697.4 / 187.8 / 60.4 ms) because the host
 was less loaded, not because anything got faster; only the ratios within a run mean anything.
 
 Across the 41 tier-1 packages with usable measurements, total startup is at parity — median
-`pigo/pi` ratio **1.02**, range 0.274–2.228, pigo faster in 19 of 41. After subtracting each
+`orb/pi` ratio **1.02**, range 0.274–2.228, orb faster in 19 of 41. After subtracting each
 runtime's own global observer baseline, the median extension-load ratio is **3.26×**, range
-0.744–13.126. Pigo's cheaper process start is being spent again in out-of-process extension load.
+0.744–13.126. Orb's cheaper process start is being spent again in out-of-process extension load.
 Subtraction amplifies drift when a package's incremental load is a few milliseconds, so treat the
 tail of that range as noise rather than as a workload measurement, and note that this run was
 CPU-capped at two cores on a shared machine. Bun and Node startup are not comparable to each other
@@ -342,8 +342,8 @@ Three runtimes ran interleaved inside one probe per package:
 | Tier | Role | Binary | Engine | Verified how |
 | --- | --- | --- | --- | --- |
 | `pi` | reference | `@earendil-works/pi-coding-agent@0.81.1` | Node 24.18.0 | engine self-report from inside the host process |
-| `pigo-node` | candidate | `pigo 0.1.0-dev (upstream pi 0.81.1 @ 20be4b18)` | Node 24.18.0 | idem |
-| `pigo-bun` | candidate | same binary | Bun 1.3.14 | private `PATH` with no `node`, plus engine self-report |
+| `orb-node` | candidate | `orb 0.1.0-dev (upstream pi 0.81.1 @ 20be4b18)` | Node 24.18.0 | idem |
+| `orb-bun` | candidate | same binary | Bun 1.3.14 | private `PATH` with no `node`, plus engine self-report |
 
 Sampling used the harness defaults: tier 1 on the `perf` profile (1 cold + 1 warm-up + 11 measured
 samples per runtime = 13 attempts), tiers 2 and 3 on `compat` (1 cold + 2 samples = 3 attempts), 30 s
@@ -351,8 +351,8 @@ per-process deadline, 420 s per-package budget. The dedicated tier-1 A/B run for
 every tier. A package is `load_register_pass` only when every attempt succeeded and every attempt
 produced byte-identical baseline-subtracted registrations.
 
-The pigo binary was built from a detached worktree at `f64f4f7`, not from a working tree:
-`CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o bin/pigo ./cmd/pigo` with Go 1.26.5.
+The orb binary was built from a detached worktree at `f64f4f7`, not from a working tree:
+`CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o bin/orb ./cmd/orb` with Go 1.26.5.
 Every other input hashes identically to the `53222c3` run (see *Reproducibility hashes*), so the two
 runs differ in exactly one variable.
 
@@ -380,11 +380,11 @@ fixed here because the harness is out of scope for this measurement:
    `.value` (`report.mjs:141-153`). `EXPECTED_CORPUS_SIZE` is therefore always `0` and every
    invocation fails `corpus is empty or unreadable` unless `--expect-corpus` is passed. This is a
    plain bug.
-2. `report.mjs:272-275` requires `matrix.baseline.pigo`. `matrix.mjs` keys `baseline` by runtime id
-   (`pi`, `pigo-node`, `pigo-bun`) and provides the `pi`/`pigo` back-compat aliases only on
+2. `report.mjs:272-275` requires `matrix.baseline.orb`. `matrix.mjs` keys `baseline` by runtime id
+   (`pi`, `orb-node`, `orb-bun`) and provides the `pi`/`orb` back-compat aliases only on
    per-extension records (`matrix.mjs:1555-1556`), not on the baseline block. This fails with
-   `matrix.baseline.pigo must be an object`.
-3. `report.mjs:301` requires every `unsupported` package to carry `reason === "pigo_load_failure"`.
+   `matrix.baseline.orb must be an object`.
+3. `report.mjs:301` requires every `unsupported` package to carry `reason === "orb_load_failure"`.
    The current taxonomy also emits `registration_mismatch`, `upstream_load_failure` (15) and
    `install_failure` (3).
 4. `report.mjs:296` requires `upstreamSupported === true` for every entry and `report.mjs:317`
@@ -400,8 +400,8 @@ The table below retains the 2026-07-22 per-package workflow audit and performanc
 labels describe a deleted bridge; the classifications above supersede it. It is kept because the
 line-grounded workflow verdicts were not rerun, and load parity is not workflow parity.
 
-The final column is `Pigo / Pi` for total process startup followed by observer-baseline-subtracted
-extension load. A value below `1×` favors Pigo. `—` means Pigo could not load the package, `n/r`
+The final column is `Orb / Pi` for total process startup followed by observer-baseline-subtracted
+extension load. A value below `1×` favors Orb. `—` means Orb could not load the package, `n/r`
 means the adjusted value was below measurement resolution, and `not executed` means exactly that
 rather than a failed workflow.
 
@@ -467,7 +467,7 @@ everything else. That touches the code path of **every** package, so the corpus 
 This sweep answers one question — *did anything that passed at `f64f4f7` break?* — and is scoped to
 that question:
 
-* **`pigo-bun` was not run.** Staging early-returned for every non-Node runtime and
+* **`orb-bun` was not run.** Staging early-returned for every non-Node runtime and
   `--preserve-symlinks` is a Node flag, so `77c4c33` cannot have moved Bun. Bun's last measured
   figure remains the `f64f4f7` 222/300 above.
 * **Attempt counts were cut** to `compat` (1 warm-up + 2 samples) for tier 1 and `quick`
@@ -481,7 +481,7 @@ that question:
 
 | Runtime | load + registration | load-only | **load compatible** | flaky | unsupported | vs `f64f4f7` |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `pigo-node` | 215 | 21 | **236 / 300 = 78.7 %** | 1 | 63 | **+5** |
+| `orb-node` | 215 | 21 | **236 / 300 = 78.7 %** | 1 | 63 | **+5** |
 
 Seven packages that failed at `f64f4f7` now pass, and two that passed now fail.
 
@@ -504,7 +504,7 @@ Seven packages that failed at `f64f4f7` now pass, and two that passed now fail.
 
 Both are **real and deterministic**. Each was re-probed alone at `perf` — 13 attempts per runtime —
 against a `d620c01` binary and against an `f64f4f7` binary, in the same container, on the same
-installed corpus, with the harness, corpus, observer, lock and upstream Pi byte-identical. The pigo
+installed corpus, with the harness, corpus, observer, lock and upstream Pi byte-identical. The orb
 binary hash is the only input that differs between the two columns.
 
 | Package | Tier | `f64f4f7` binary, 13 attempts | `d620c01` binary, 13 attempts |
@@ -523,10 +523,10 @@ wins**, not a failure to resolve:
 
 * **`@narumitw/pi-goal`.** `isRetryableAssistantError` exists only in `@earendil-works/pi-ai`
   ≥ 0.80.6. The hoisted `node_modules/@earendil-works/pi-ai` in the corpus is **0.80.2** and does
-  not export it; the copy Pigo ships under `PIGO_PI_SDK_ROOT` is **0.81.1** and does. `legacySurface`
+  not export it; the copy Orb ships under `ORB_PI_SDK_ROOT` is **0.81.1** and does. `legacySurface`
   in `codingagent/extensions/host/loader.mjs` redirects `@earendil-works/pi-ai` →
   `@earendil-works/pi-ai/compat` *through the caller's own context*, by design, "so a pinned or
-  older install still wins". `installedSDK`, the fallback that resolves against `PIGO_PI_SDK_ROOT`,
+  older install still wins". `installedSDK`, the fallback that resolves against `ORB_PI_SDK_ROOT`,
   is only reached from the `catch` in `resolve`. Resolving 0.80.2 does not throw — it succeeds and
   then lacks the export — so the fallback never runs. Staging used to hide this by making the
   in-context resolution land on the SDK copy.
@@ -546,7 +546,7 @@ Neither is a flake, and neither is on the known non-verdict list.
 
 ### What this does not cover
 
-`pigo-bun` was not re-measured, so no Bun number here is current as of `d620c01`. The smoke and
+`orb-bun` was not re-measured, so no Bun number here is current as of `d620c01`. The smoke and
 workflow suites were not re-run. Tier 2 and tier 3 verdicts rest on a single attempt each: a package
 recorded as passing there is not evidence of stability, only of one successful load, and the flaky
 count of 1 is a floor, not a measurement.
@@ -558,14 +558,14 @@ package-specific tool or command is executed. Flags, shortcuts, renderers, provi
 behavior, credentials, model requests and external services need separate workflow probes.
 
 The harness expands manifest-declared extension directories before invoking either runtime, so this
-result does not test Pi versus Pigo package-directory discovery semantics. Packages share `/work`
+result does not test Pi versus Orb package-directory discovery semantics. Packages share `/work`
 and `/tmp` inside one runtime container; the container protects the host, but a hostile package could
 contaminate a later package. Use one fresh runtime container per package before treating these
 results as adversarial security evidence.
 
 ## Reproducibility hashes
 
-Inputs. Every row except the pigo executable is byte-identical to the `53222c3` run, which is what
+Inputs. Every row except the orb executable is byte-identical to the `53222c3` run, which is what
 makes the comparison a controlled A/B rather than two separate measurements:
 
 | Input | SHA-256 | Same as `53222c3`? |
@@ -577,18 +577,18 @@ makes the comparison a controlled A/B rather than two separate measurements:
 | `conformance/extensions/package-lock.json` | `b95e4fc1d684711fddcb9408591197c4db26b9d615fc41af7647f5969a754960` | yes |
 | tested upstream Pi executable | `af302f231437eaf6f37691bce4b34234fcb626bcb5eb3910d4fc3f6519bf78ca` | yes |
 | tested Bun 1.3.14 executable | `37141662ebed915a2ab89313156e455e2a1374395f5f6760d06407f49406f086` | yes |
-| tested Pigo executable (linux/arm64, **`f64f4f7`**, 48,661,574 B) | `6efddd4ef4d1cd0162ab4a04cd49fd0bf306e3a545b00daed5902f416d2ff037` | **no** |
-| previous Pigo executable (linux/arm64, `53222c3`) | `e49168f94e7fdcd35c60428d79a0698496858feb0c57505b47520715ed11ee5c` | — |
+| tested Orb executable (linux/arm64, **`f64f4f7`**, 48,661,574 B) | `6efddd4ef4d1cd0162ab4a04cd49fd0bf306e3a545b00daed5902f416d2ff037` | **no** |
+| previous Orb executable (linux/arm64, `53222c3`) | `e49168f94e7fdcd35c60428d79a0698496858feb0c57505b47520715ed11ee5c` | — |
 
 The `d620c01` sweep reuses every input above unchanged — same `corpus.json`, `matrix.mjs`,
-`taxonomy.mjs`, `observer.ts`, `package-lock.json` and upstream Pi hash — and changes only the pigo
-executable and the sampling profile. Both pigo binaries used there were built from detached
+`taxonomy.mjs`, `observer.ts`, `package-lock.json` and upstream Pi hash — and changes only the orb
+executable and the sampling profile. Both orb binaries used there were built from detached
 worktrees, not a working tree:
 
 | Input | SHA-256 | Bytes |
 | --- | --- | ---: |
-| Pigo executable (linux/arm64, **`d620c01`**) | `4d32f6b3f91b38c4383d60a68d1bcd037707617dc3b66f72dd12060f8ae6d8d2` | 48,828,075 |
-| Pigo executable (linux/arm64, `f64f4f7`, rebuilt for the A/B) | `9ed29a838b84c668d3a3d242022ee9f776ce3a7fb55c66b57d143424aff13084` | — |
+| Orb executable (linux/arm64, **`d620c01`**) | `4d32f6b3f91b38c4383d60a68d1bcd037707617dc3b66f72dd12060f8ae6d8d2` | 48,828,075 |
+| Orb executable (linux/arm64, `f64f4f7`, rebuilt for the A/B) | `9ed29a838b84c668d3a3d242022ee9f776ce3a7fb55c66b57d143424aff13084` | — |
 
 Artifacts. Large raw artifacts are committed `gzip -9`; the *raw* SHA-256 is the hash of the
 uncompressed JSON inside, so it can be checked after `gunzip`. Only the newest full sweep and the
@@ -597,16 +597,16 @@ here, and their rows below keep the size and both hashes so a superseded run is 
 
 | Artifact | raw bytes | raw SHA-256 | committed SHA-256 |
 | --- | ---: | --- | --- |
-| 300-package Node-only sweep, `d620c01` [`…-300-d620c01.json.gz`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-300-d620c01.json.gz) | 14,602,607 | `dc91f9e0b145d5a35890f5802a8c49554b4a8d8b3e4e27960b0735b6cf9aabb0` | `9bbdafb514f4bdf2026a29f6ea0d22c01a0bb7736ab088f993f4785450af079e` |
-| regression A/B (2 packages, `perf`), `d620c01` binary [`…-regression-ab-d620c01.json.gz`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-regression-ab-d620c01.json.gz) | 1,050,292 | `3ca6f9d3833f41b68ea75b1a7867af9cc607d27e2a05057e78f1650dd0a93e29` | `4d3c3b9d4581447290b530031858a33fc23e649d04617014ace33f5ac5b544d0` |
-| regression A/B (2 packages, `perf`), `f64f4f7` binary [`…-regression-ab-f64f4f7.json.gz`](../../conformance/extensions/results/pi-0.81.1-pigo-runtimes-regression-ab-f64f4f7.json.gz) | 226,747 | `dc7d71f068516109de5b3fde3a96d0187769818195b782eb7d3df5866f234bc5` | `d0459cace199a0839d41d51e97ba27f4ea348ae863247c16a4e39dfb97a7a1f8` |
+| 300-package Node-only sweep, `d620c01` [`…-300-d620c01.json.gz`](../../conformance/extensions/results/pi-0.81.1-orb-runtimes-300-d620c01.json.gz) | 14,600,769 | `97cf0b98ea561f892645c0f99a871b171ffaa7dcba05aa9804a4bc972c8c4b57` | `6bc9b0d65c9ef001380726093f9ac72f0c398820713628fb6b11642ad13d1225` |
+| regression A/B (2 packages, `perf`), `d620c01` binary [`…-regression-ab-d620c01.json.gz`](../../conformance/extensions/results/pi-0.81.1-orb-runtimes-regression-ab-d620c01.json.gz) | 1,050,262 | `e24f420f23916c2e97c8ab728fd98a8a4397cba0cafde84edb70f5c2ca41572c` | `0a6f503f5d21dc4709d03cfe385381652147d156c73d9a9ddd4f55f417183ed1` |
+| regression A/B (2 packages, `perf`), `f64f4f7` binary [`…-regression-ab-f64f4f7.json.gz`](../../conformance/extensions/results/pi-0.81.1-orb-runtimes-regression-ab-f64f4f7.json.gz) | 226,723 | `00eaec3f4bac07dfda4c133cfe59c4eb063cb383ddc97b7f5b022e6b9104e707` | `9d9ea39d679a6f514aa2a04b3c6cd0f9ab62df02f7752f991c827e72f871b5d1` |
 | 300-package matrix, `f64f4f7` `…-300-f64f4f7.json.gz` (raw artifact dropped) | 18,818,163 | `764dec1736c7365c5d8db7f58965fa8b6f9830128ca0dc4eca6cdf568ad6ee77` | `7ef07b1e70fc215962c0c7cf7a08ca3b1b88a19fd575ceae95e08db1b94713c4` |
 | smoke, `f64f4f7` `…-300-f64f4f7-smoke.json.gz` (raw artifact dropped) | 929,966 | `807611cf1a12b7a3841e5a88d085a1d5b48178fc5dc3ae3ed171187fa7a57339` | `d65699980f2f8486f6f398d00004eafe176aeb4151d9516e21eaa3a506dce243` |
 | tier-1 `compat` A/B, `f64f4f7` `…-tier1-compat-f64f4f7.json.gz` (raw artifact dropped) | 2,886,036 | `dcec6b9c5e0f0065d13a969c7b69d157a2856ac68ce1ff309bd052d21cb99581` | `00e5453acdcbd0406a810840df6e096980ccd3180877593438454d2ca6549866` |
 | 300-package matrix, `53222c3` `…-300.json.gz` (raw artifact dropped) | 37,227,960 | `6bcf1d54cf55bb35a9ef36f32b020934c832b6f93131c467ca931c8deba1842b` | `dea7d00f08485c1ec8147e7ff7800f2a68191294ffd38ba9deb292ed3eced3d0` |
 | smoke, `53222c3` `…-300-smoke.json` (raw artifact dropped) | 870,944 | `876135a7c41a7559d2ef7821449637027914da1b67de54f3bf31ba1b0da9b73e` | uncompressed |
 | tier-1 `compat` A/B, `53222c3` `…-tier1-compat.json` (raw artifact dropped) | 2,781,108 | `9891519e06c6bf986d2321495644550c304008081e76d857780255bf7f8f1cb1` | uncompressed |
-| superseded 44-package `pi-0.81.1-pigo-host.json` (raw artifact dropped) | 3,839,265 | `d9f1baa88d6cf875973d5842b4d2d8f286060c9ac105c3954ca75c540820ee4e` | uncompressed |
+| superseded 44-package `pi-0.81.1-orb-host.json` (raw artifact dropped) | 3,839,265 | `d9f1baa88d6cf875973d5842b4d2d8f286060c9ac105c3954ca75c540820ee4e` | uncompressed |
 
 Each aggregate is the raw matrix at the default `--retain-registrations diagnostic`, copied directly
 from the isolated run without compaction. It retains every attempt, every failure's registration

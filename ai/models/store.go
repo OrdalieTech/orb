@@ -15,10 +15,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/ai/models/internal/cataloggen"
-	"github.com/OrdalieTech/pigo/internal/filelock"
-	"github.com/OrdalieTech/pigo/internal/jsonwire"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/ai/models/internal/cataloggen"
+	"github.com/OrdalieTech/orb/internal/filelock"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 const ModelsDevURL = "https://models.dev/api.json"
@@ -122,10 +122,10 @@ type RefreshOptions struct {
 	Force bool
 }
 
-// PiUserAgent formats the catalog-refresh User-Agent, mirroring upstream
-// getPiUserAgent (pi-user-agent.ts).
-func PiUserAgent(version string) string {
-	return fmt.Sprintf("pigo/%s (%s; %s; %s)", version, runtime.GOOS, runtime.Version(), runtime.GOARCH)
+// OrbUserAgent formats the catalog-refresh User-Agent, mirroring upstream
+// getPiUserAgent (pi-user-agent.ts) with Orb's public identity.
+func OrbUserAgent(version string) string {
+	return fmt.Sprintf("orb/%s (%s; %s; %s)", version, runtime.GOOS, runtime.Version(), runtime.GOARCH)
 }
 
 type refreshCall struct {

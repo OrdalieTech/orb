@@ -9,11 +9,11 @@ import (
 	"os/signal"
 	"sync"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/codingagent"
-	"github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/codingagent/tools"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/codingagent"
+	"github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/codingagent/tools"
 )
 
 type PrintOutputMode string

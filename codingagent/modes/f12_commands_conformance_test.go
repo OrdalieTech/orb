@@ -15,11 +15,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/codingagent"
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/codingagent"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 type f12CommandFixture struct {
@@ -110,7 +110,7 @@ func TestF12InteractiveCommandRegistryMatchesUpstream(t *testing.T) {
 	}
 	for index := range fixture.Visible {
 		if fixture.Visible[index].Name == "quit" {
-			description := "Quit pigo" // D30 public-name substitution.
+			description := "Quit orb" // D30 public-name substitution.
 			fixture.Visible[index].Description = &description
 		}
 	}

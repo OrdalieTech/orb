@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/codingagent"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/codingagent"
 )
 
 // Upstream a3ee1d28: configured-but-missing model ids surface as unavailable

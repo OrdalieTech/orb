@@ -3,9 +3,9 @@ package exporthtml
 import (
 	"testing"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
 )
 
 func TestAnsiToHTMLConversions(t *testing.T) {

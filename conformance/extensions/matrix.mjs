@@ -21,17 +21,17 @@ const DIALOG_METHODS = new Set(["select", "confirm", "input", "editor"]);
 const LOAD_ERROR = /(?:extension error \(|failed to load extension)/i;
 const STATUSES = ["load_register_pass", "load_only_pass", "flaky", "unsupported", "infra_error"];
 
-// A candidate runtime is one pigo binary pinned to one JavaScript engine. The
+// A candidate runtime is one orb binary pinned to one JavaScript engine. The
 // reference is always upstream Pi on Node, because Node 24 is upstream's own
-// documented requirement; comparing pigo-on-Bun against pi-on-Bun would compare
+// documented requirement; comparing orb-on-Bun against pi-on-Bun would compare
 // two unknowns.
 export const RUNTIME_SPECS = {
 	pi: { role: "reference", engine: "node", binary: "pi" },
-	"pigo-node": { role: "candidate", engine: "node", binary: "pigo" },
-	"pigo-bun": { role: "candidate", engine: "bun", binary: "pigo" },
+	"orb-node": { role: "candidate", engine: "node", binary: "orb" },
+	"orb-bun": { role: "candidate", engine: "bun", binary: "orb" },
 };
-const DEFAULT_RUNTIMES = ["pi", "pigo-node"];
-const LEGACY_ALIAS = { pigo: "pigo-node" };
+const DEFAULT_RUNTIMES = ["pi", "orb-node"];
+const LEGACY_ALIAS = { orb: "orb-node" };
 
 // Sampling profiles. `perf` reproduces the historical 2 warm-up / 11 sample
 // methodology needed for publishable timing. `compat` is the cheap profile used
@@ -45,7 +45,7 @@ export const PROFILES = {
 const DEFAULT_TIER_PROFILES = { 1: "perf", 2: "compat", 3: "compat" };
 
 function usage() {
-	return `Usage: node matrix.mjs --packages <directory> --pigo <binary> [options]
+	return `Usage: node matrix.mjs --packages <directory> --orb <binary> [options]
 
 Selection:
   --corpus <file>       Corpus manifest (default: corpus.json beside this file)
@@ -55,7 +55,7 @@ Selection:
 
 Runtimes:
   --runtimes <list>     Comma list of ${Object.keys(RUNTIME_SPECS).join(", ")} (default: ${DEFAULT_RUNTIMES.join(",")})
-  --bun <binary>        Bun executable used by the pigo-bun tier (default: bun on PATH)
+  --bun <binary>        Bun executable used by the orb-bun tier (default: bun on PATH)
   --node <binary>       Node executable used by the node tiers (default: inherited PATH)
 
 Sampling:
@@ -95,7 +95,7 @@ function parseArgs(argv) {
 		corpus: DEFAULT_CORPUS,
 		observer: DEFAULT_OBSERVER,
 		packages: "",
-		pigo: "",
+		orb: "",
 		bun: "",
 		node: "",
 		output: "",
@@ -171,7 +171,7 @@ function parseArgs(argv) {
 			}
 			continue;
 		}
-		const paths = new Set(["--corpus", "--observer", "--packages", "--pigo", "--output", "--bun", "--node"]);
+		const paths = new Set(["--corpus", "--observer", "--packages", "--orb", "--output", "--bun", "--node"]);
 		if (paths.has(argument) && index + 1 < argv.length) {
 			options[argument.slice(2)] = path.resolve(argv[++index]);
 			continue;
@@ -203,8 +203,8 @@ function parseArgs(argv) {
 		throw new Error("at least one candidate runtime is required");
 	}
 	if (options.finalize && !options.output) throw new Error("--finalize requires --output");
-	if (!options.validateOnly && !options.finalize && (!options.packages || !options.pigo)) {
-		throw new Error("--packages and --pigo are required");
+	if (!options.validateOnly && !options.finalize && (!options.packages || !options.orb)) {
+		throw new Error("--packages and --orb are required");
 	}
 	return options;
 }
@@ -557,7 +557,7 @@ async function runProbe(runtime, extensionPaths, options) {
 	await symlink(path.join(options.packages, "node_modules"), path.join(runRoot, "node_modules"));
 	extensionPaths = extensionPaths.map((extensionPath) => (extensionPath === options.observer ? observerPath : extensionPath));
 
-	// Engine forcing. pigo's DiscoverRuntime (codingagent/extensions/host/runtime.go:32)
+	// Engine forcing. orb's DiscoverRuntime (codingagent/extensions/host/runtime.go:32)
 	// resolves `node` from PATH first and only falls back to `bun`, and there is no
 	// product env override. The bun tier therefore gets a PATH whose only engine is
 	// a bun symlink; `node` must not be resolvable at all, and the observer proves
@@ -906,7 +906,7 @@ function registrationDifference(reference, candidate, baselines, referenceId, ca
 		return { difference: null, referenceDelta, candidateDelta };
 	}
 	return {
-		difference: { pi: referenceDelta, pigo: candidateDelta },
+		difference: { pi: referenceDelta, orb: candidateDelta },
 		referenceDelta,
 		candidateDelta,
 	};
@@ -1001,7 +1001,7 @@ function classifyCandidate(reference, candidate, baselines, referenceId, candida
 				: classifyDiagnostics(candidate.diagnostics, engineContext);
 		return {
 			status: "flaky",
-			reason: underlying.class === "resource_exhaustion" ? "resource_exhaustion" : "pigo_flaky",
+			reason: underlying.class === "resource_exhaustion" ? "resource_exhaustion" : "orb_flaky",
 			upstreamSupported: true,
 			difference: null,
 			deltas: null,
@@ -1012,7 +1012,7 @@ function classifyCandidate(reference, candidate, baselines, referenceId, candida
 		const underlying = classifyDiagnostics(candidate.diagnostics, engineContext);
 		return {
 			status: "unsupported",
-			reason: candidate.budgetExceeded ? "package_budget_exceeded" : "pigo_load_failure",
+			reason: candidate.budgetExceeded ? "package_budget_exceeded" : "orb_load_failure",
 			upstreamSupported: true,
 			difference: null,
 			deltas: null,
@@ -1026,7 +1026,7 @@ function classifyCandidate(reference, candidate, baselines, referenceId, candida
 			reason: "registration_mismatch",
 			upstreamSupported: true,
 			difference: compared.difference,
-			deltas: { pi: compared.referenceDelta, pigo: compared.candidateDelta },
+			deltas: { pi: compared.referenceDelta, orb: compared.candidateDelta },
 			failure: { ...classifyMismatch(compared.referenceDelta, compared.candidateDelta), side: "candidate" },
 		};
 	}
@@ -1036,7 +1036,7 @@ function classifyCandidate(reference, candidate, baselines, referenceId, candida
 		reason: status,
 		upstreamSupported: true,
 		difference: null,
-		deltas: { pi: compared.referenceDelta, pigo: compared.candidateDelta },
+		deltas: { pi: compared.referenceDelta, orb: compared.candidateDelta },
 		failure: null,
 	};
 }
@@ -1051,21 +1051,21 @@ function performanceComparison(reference, candidate, baselines, referenceId, can
 		return { available: false, reason: "requires stable successful probes in both runtimes" };
 	}
 	const piStartup = reference.startup.medianMs;
-	const pigoStartup = candidate.startup.medianMs;
+	const orbStartup = candidate.startup.medianMs;
 	const piNet = subtract(piStartup, baselines[referenceId].startup.medianMs);
-	const pigoNet = subtract(pigoStartup, baselines[candidateId].startup.medianMs);
+	const orbNet = subtract(orbStartup, baselines[candidateId].startup.medianMs);
 	return {
 		available: true,
 		startup: {
 			metric: "process_spawn_to_get_commands",
-			...measuredRatio(pigoStartup, piStartup, reference.startup.noisy || candidate.startup.noisy),
+			...measuredRatio(orbStartup, piStartup, reference.startup.noisy || candidate.startup.noisy),
 		},
 		baselineSubtractedLoad: {
 			metric: "global_observer_baseline_subtracted_startup",
 			piMs: piNet,
-			pigoMs: pigoNet,
+			orbMs: orbNet,
 			...measuredRatio(
-				pigoNet,
+				orbNet,
 				piNet,
 				reference.startup.noisy ||
 					candidate.startup.noisy ||
@@ -1168,8 +1168,8 @@ export function aggregateSummary(results, corpusTotal, baselines, candidates, pr
 }
 
 function divergenceOf(candidates) {
-	const node = candidates["pigo-node"];
-	const bun = candidates["pigo-bun"];
+	const node = candidates["orb-node"];
+	const bun = candidates["orb-bun"];
 	if (!node || !bun) return null;
 	const passing = (entry) => entry.status === "load_register_pass" || entry.status === "load_only_pass";
 	if (passing(node) && passing(bun)) return node.status === bun.status ? "none" : "disagree";
@@ -1304,13 +1304,13 @@ export function skippedRecord(extension, candidates, failure, startedAt) {
 		registrationDifference: null,
 		candidates: Object.fromEntries(candidates.map((id) => [id, { ...candidateEntry }])),
 		crossRuntime: {
-			node: candidates.includes("pigo-node") ? "unsupported" : null,
-			bun: candidates.includes("pigo-bun") ? "unsupported" : null,
+			node: candidates.includes("orb-node") ? "unsupported" : null,
+			bun: candidates.includes("orb-bun") ? "unsupported" : null,
 			divergence: "both_fail",
 		},
 		runtimeSummaries: {},
 		pi: null,
-		pigo: null,
+		orb: null,
 		performance: { available: false, reason: failure.class },
 		elapsedMs: Date.now() - startedAt,
 	};
@@ -1338,21 +1338,21 @@ async function main() {
 		runtimes[id] = {
 			id,
 			engine: spec.engine,
-			executable: spec.binary === "pi" ? pi : options.pigo,
+			executable: spec.binary === "pi" ? pi : options.orb,
 			enginePath: spec.engine === "bun" ? options.bun || whichInPath("bun", process.env.PATH) : options.node || null,
 		};
 		if (spec.engine === "bun" && !runtimes[id].enginePath) {
-			throw new Error("the pigo-bun tier needs --bun <binary> or bun on PATH");
+			throw new Error("the orb-bun tier needs --bun <binary> or bun on PATH");
 		}
 	}
 	const candidates = options.runtimes.filter((id) => RUNTIME_SPECS[id].role === "candidate");
-	const primary = candidates.includes("pigo-node") ? "pigo-node" : candidates[0];
+	const primary = candidates.includes("orb-node") ? "orb-node" : candidates[0];
 
 	const networkNamespaceGuard = inspectNetworkIsolation();
 	if (!networkNamespaceGuard.isolated) {
 		throw new Error("matrix requires a network-isolated namespace; use the documented --network none container");
 	}
-	const [harnessIdentity, taxonomyIdentity, corpusIdentity, observerIdentity, packageLockIdentity, piIdentity, pigoIdentity] =
+	const [harnessIdentity, taxonomyIdentity, corpusIdentity, observerIdentity, packageLockIdentity, piIdentity, orbIdentity] =
 		await Promise.all([
 			fileIdentity(SELF),
 			fileIdentity(TAXONOMY),
@@ -1360,7 +1360,7 @@ async function main() {
 			fileIdentity(options.observer),
 			fileIdentity(path.join(options.packages, "package-lock.json")),
 			fileIdentity(pi),
-			fileIdentity(options.pigo),
+			fileIdentity(options.orb),
 		]);
 	const engineIdentities = {};
 	for (const [id, runtime] of Object.entries(runtimes)) {
@@ -1401,7 +1401,7 @@ async function main() {
 			observer: observerIdentity,
 			packageLock: packageLockIdentity,
 			upstreamPi: piIdentity,
-			pigo: pigoIdentity,
+			orb: orbIdentity,
 			engines: engineIdentities,
 		},
 		corpus: {
@@ -1416,7 +1416,7 @@ async function main() {
 		runtimes: {
 			node: process.version,
 			pi: { executable: pi, version: executableVersion(pi) },
-			pigo: { executable: options.pigo, version: executableVersion(options.pigo) },
+			orb: { executable: options.orb, version: executableVersion(options.orb) },
 			engines: Object.fromEntries(
 				Object.entries(runtimes).map(([id, runtime]) => [
 					id,
@@ -1444,7 +1444,7 @@ async function main() {
 		taxonomy: taxonomyIdentity.sha256,
 		observer: observerIdentity.sha256,
 		packageLock: packageLockIdentity.sha256,
-		pigo: pigoIdentity.sha256,
+		orb: orbIdentity.sha256,
 		pi: piIdentity.sha256,
 		runtimes: options.runtimes,
 		method: { timeoutMs: options.timeoutMs, tierProfiles: options.tierProfiles, profile: options.profile, warmups: options.warmups, samples: options.samples },
@@ -1547,13 +1547,13 @@ async function main() {
 				registrationDifference: head.difference,
 				candidates: candidateResults,
 				crossRuntime: {
-					node: candidateResults["pigo-node"]?.status ?? null,
-					bun: candidateResults["pigo-bun"]?.status ?? null,
+					node: candidateResults["orb-node"]?.status ?? null,
+					bun: candidateResults["orb-bun"]?.status ?? null,
 					divergence: divergenceOf(candidateResults),
 				},
 				runtimeSummaries: result,
 				pi: result.pi,
-				pigo: result[primary],
+				orb: result[primary],
 				performance: head.performance,
 				elapsedMs: Date.now() - packageStartedAt,
 			};

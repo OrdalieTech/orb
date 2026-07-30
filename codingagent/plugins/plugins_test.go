@@ -16,15 +16,15 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/ai/providers/faux"
-	"github.com/OrdalieTech/pigo/codingagent"
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
-	memorysdk "github.com/OrdalieTech/pigo/memory"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/ai/providers/faux"
+	"github.com/OrdalieTech/orb/codingagent"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	memorysdk "github.com/OrdalieTech/orb/memory"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 type widgetUI struct {
@@ -305,7 +305,7 @@ func TestPermissionsSessionApprovalAvoidsSecondPrompt(t *testing.T) {
 	}
 	logged := 0
 	for _, entry := range session.Manager().GetEntries() {
-		if entry.CustomType == "pigo.permissions.decision" {
+		if entry.CustomType == "orb.permissions.decision" {
 			logged++
 		}
 	}
@@ -478,9 +478,9 @@ func TestWebSearchBackendsAndFetchContent(t *testing.T) {
 	tests := []struct {
 		name, env, endpoint, method, header, body, response, want string
 	}{
-		{name: "exa", env: "EXA_API_KEY", endpoint: "api.exa.ai/search", method: http.MethodPost, header: "x-api-key", body: `"query":"pigo"`, response: `{"results":[{"title":"Exa result","url":"https://exa.test","highlights":["match"]}]}`, want: "Exa result\nhttps://exa.test\nmatch"},
+		{name: "exa", env: "EXA_API_KEY", endpoint: "api.exa.ai/search", method: http.MethodPost, header: "x-api-key", body: `"query":"orb"`, response: `{"results":[{"title":"Exa result","url":"https://exa.test","highlights":["match"]}]}`, want: "Exa result\nhttps://exa.test\nmatch"},
 		{name: "brave", env: "BRAVE_API_KEY", endpoint: "api.search.brave.com/res/v1/web/search", method: http.MethodGet, header: "X-Subscription-Token", response: `{"web":{"results":[{"title":"Brave result","url":"https://brave.test","description":"match"}]}}`, want: "Brave result\nhttps://brave.test\nmatch"},
-		{name: "tavily", env: "TAVILY_API_KEY", endpoint: "api.tavily.com/search", method: http.MethodPost, header: "Authorization", body: `"query":"pigo"`, response: `{"results":[{"title":"Tavily result","url":"https://tavily.test","content":"match"}]}`, want: "Tavily result\nhttps://tavily.test\nmatch"},
+		{name: "tavily", env: "TAVILY_API_KEY", endpoint: "api.tavily.com/search", method: http.MethodPost, header: "Authorization", body: `"query":"orb"`, response: `{"results":[{"title":"Tavily result","url":"https://tavily.test","content":"match"}]}`, want: "Tavily result\nhttps://tavily.test\nmatch"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -505,7 +505,7 @@ func TestWebSearchBackendsAndFetchContent(t *testing.T) {
 				return response(http.StatusOK, "application/json", test.response), nil
 			})}
 			tool := pluginTool(t, "websearch", "web_search", Options{HTTPClient: client}, extensions.RunnerOptions{})
-			result, err := tool.Execute(context.Background(), "search", map[string]any{"query": "pigo"}, nil)
+			result, err := tool.Execute(context.Background(), "search", map[string]any{"query": "orb"}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -664,7 +664,7 @@ func TestWebSearchDropsProviderErrorBody(t *testing.T) {
 		return response(http.StatusUnauthorized, "application/json", `{"error":"invalid key sk-SECRET"}`), nil
 	})}
 	tool := pluginTool(t, "websearch", "web_search", Options{HTTPClient: client}, extensions.RunnerOptions{})
-	_, err := tool.Execute(context.Background(), "search", map[string]any{"query": "pigo"}, nil)
+	_, err := tool.Execute(context.Background(), "search", map[string]any{"query": "orb"}, nil)
 	if err == nil || strings.Contains(err.Error(), "sk-SECRET") {
 		t.Fatalf("error leaked the provider body: %v", err)
 	}
@@ -690,7 +690,7 @@ func TestWebSearchHonoursConfiguredProvider(t *testing.T) {
 		return response(http.StatusOK, "application/json", `{"web":{"results":[]}}`), nil
 	})}
 	tool := pluginTool(t, "websearch", "web_search", Options{HTTPClient: client}, extensions.RunnerOptions{})
-	if _, err := tool.Execute(context.Background(), "search", map[string]any{"query": "pigo"}, nil); err != nil {
+	if _, err := tool.Execute(context.Background(), "search", map[string]any{"query": "orb"}, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -701,7 +701,7 @@ func TestWebSearchWithoutKeyReturnsActionableError(t *testing.T) {
 	}
 	t.Setenv("HOME", t.TempDir())
 	tool := pluginTool(t, "websearch", "web_search", Options{}, extensions.RunnerOptions{})
-	_, err := tool.Execute(context.Background(), "search", map[string]any{"query": "pigo"}, nil)
+	_, err := tool.Execute(context.Background(), "search", map[string]any{"query": "orb"}, nil)
 	if err == nil || !strings.Contains(err.Error(), "EXA_API_KEY") || !strings.Contains(err.Error(), "~/.pi/web-search.json") {
 		t.Fatalf("error = %v", err)
 	}
@@ -726,7 +726,7 @@ func TestWebSearchReadsPiWebSearchConfig(t *testing.T) {
 		return response(http.StatusOK, "application/json", `{"results":[]}`), nil
 	})}
 	tool := pluginTool(t, "websearch", "web_search", Options{HTTPClient: client}, extensions.RunnerOptions{})
-	if _, err := tool.Execute(context.Background(), "search", map[string]any{"query": "pigo"}, nil); err != nil {
+	if _, err := tool.Execute(context.Background(), "search", map[string]any{"query": "orb"}, nil); err != nil {
 		t.Fatal(err)
 	}
 }

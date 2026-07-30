@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 func cloneMessage(source *ai.AssistantMessage) (*ai.AssistantMessage, error) {

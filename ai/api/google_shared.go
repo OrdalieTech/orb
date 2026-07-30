@@ -9,8 +9,8 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/internal/jsonschema"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonschema"
 )
 
 var (

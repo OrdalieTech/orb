@@ -7,8 +7,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	"github.com/OrdalieTech/pigo/internal/jstrim"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/internal/jstrim"
 )
 
 var defaultSystemPromptTools = []string{"read", "bash", "edit", "write"}

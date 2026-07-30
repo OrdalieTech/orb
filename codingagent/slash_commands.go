@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/internal/jstrim"
+	"github.com/OrdalieTech/orb/internal/jstrim"
 )
 
 type SlashCommandSource string
@@ -51,7 +51,7 @@ var BuiltinSlashCommands = []BuiltinSlashCommand{
 	{Name: "compact", Description: "Manually compact the session context"},
 	{Name: "resume", Description: "Resume a different session"},
 	{Name: "reload", Description: "Reload keybindings, extensions, skills, prompts, themes, and context files"},
-	{Name: "quit", Description: "Quit pigo"},
+	{Name: "quit", Description: "Quit orb"},
 }
 
 type InputAction string

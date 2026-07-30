@@ -1,8 +1,8 @@
 {
-	"name": "pigo-extension-matrix",
+	"name": "orb-extension-matrix",
 	"version": "0.0.0",
 	"private": true,
-	"description": "Pinned dependency tree for the Pigo ecosystem extension matrix",
+	"description": "Pinned dependency tree for the Orb ecosystem extension matrix",
 	"dependencies": {
 		"@adityaaria/spark": "6.5.0",
 		"@agwab/pi-subagent": "0.4.8",

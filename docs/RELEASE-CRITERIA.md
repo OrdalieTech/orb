@@ -16,11 +16,11 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 
 ## M1 — Skeleton (closes Phase 1; verified by WP-180)
 
-- [x] `pigo -p "<task>"` completes a real OpenAI round-trip with tool calls on a sample repo.
-- [x] Session written in `-p` mode opens in TS pi; a TS-pi session resumes with `pigo -c`. (F6 cross-read)
+- [x] `orb -p "<task>"` completes a real OpenAI round-trip with tool calls on a sample repo.
+- [x] Session written in `-p` mode opens in TS pi; a TS-pi session resumes with `orb -c`. (F6 cross-read)
 - [x] Fixture families F1, F2(openai), F3, F4, F5, F6, F9 green; `make fixtures` regeneration is clean.
 - [x] Cold start < 50 ms (hyperfine, warm cache); binary < 25 MB.
-- [x] Dogfood: ≥ 1 real pigo WP executed using pigo itself; transcript committed.
+- [x] Dogfood: ≥ 1 real orb WP executed using orb itself; transcript committed.
 - [x] Trim pass #1 done (checklist below), report committed.
 
 ## M2 — Headless parity (closes Sprint 1)
@@ -32,7 +32,7 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
       fixture green. (ChatGPT/Codex, Copilot, xAI OAuth: Sprint-3 expansion.)
 - [x] Harness `SessionRepo`/`FileSystem` parity landed (upstream harness types, jsonl-repo,
       memory-repo, rehydrate-from-bytes) and wired into SessionRuntime.
-- [x] Upstream's RPC test suite passes against `pigo --mode rpc`; every exclusion listed with a
+- [x] Upstream's RPC test suite passes against `orb --mode rpc`; every exclusion listed with a
       reason; F7 transcript fixtures green.
 - [x] F8, F9, F10 green — compaction picks the same boundaries as upstream on the fixture corpus.
 - [x] SDK: all 13 ported examples run on faux; an external `go get` smoke module builds.
@@ -80,7 +80,7 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
       changed paths classified, zero unmapped paths, fixtures regenerated, full race suite green.)
 - [x] goreleaser artifacts for all 4 targets; install script verified against the published release.
       GitHub Actions run `29875158999` published checksum-verified Linux and macOS archives, and the
-      public README command installed and ran `pigo 0.1.0` on Linux. The owner deferred a real macOS
+      public README command installed and ran `orb 0.1.0` on Linux. The owner deferred a real macOS
       VM smoke to post-release follow-up.
 - [x] Cold start < 50 ms; every bridged release binary ≤ 55 MB decimal; numbers recorded in release
       notes. (Owner-amended 2026-07-20 without changing D17. The Go 1.26.5 candidate measures
@@ -92,7 +92,7 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
       the public installer now resolves v0.1.0, checks its checksum, and runs the released binary.
 - [x] Upstream alignment audit at the release commit has zero open should-fix findings and maps
       436/436 files; release notes were extracted from CHANGELOG.md, and the published binary prints
-      `pigo 0.1.0` with the upstream 0.81.0 pin.
+      `orb 0.1.0` with the upstream 0.81.0 pin.
 - [x] Final trim pass #5; LOC report: mirrored packages ≤ 1.3× upstream TS src LOC or justified
       per-package in the report; dep audit clean. (Current candidate: 1.124x, 19 reviewed clone
       groups, modules verified and tidy; repeat if production code changes before the tag.)
@@ -100,7 +100,7 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 ## Live-test policy
 
 - **Tier 1 — every merge:** no network. Fixtures and unit tests only.
-- **Tier 2 — provider WPs:** opt-in (`PIGO_LIVE_TESTS=1`): one real streamed tool-call round-trip
+- **Tier 2 — provider WPs:** opt-in (`ORB_LIVE_TESTS=1`): one real streamed tool-call round-trip
   per provider, run before merging that provider's WP and on demand.
 - **Tier 3 — nightly (from M2):** CI workflow, secrets from repo settings, cheap models, spend cap.
   Corpus: 3 scripted tasks (multi-turn read+edit+bash; parallel tool calls; compaction-length

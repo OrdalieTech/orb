@@ -20,9 +20,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	"github.com/OrdalieTech/pigo/internal/jsonschema"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
+	"github.com/OrdalieTech/orb/internal/jsonschema"
 	mcpjsonrpc "github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -299,7 +299,7 @@ func defaultConnect(
 	options *mcpsdk.ClientOptions,
 	tracker progressTracker,
 ) (*mcpsdk.ClientSession, error) {
-	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "pigo", Version: "0.1.0"}, options)
+	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "orb", Version: "0.1.0"}, options)
 	var transport mcpsdk.Transport
 	if config.Command != "" {
 		command := exec.CommandContext(lifecycleCtx, config.Command, config.Args...)

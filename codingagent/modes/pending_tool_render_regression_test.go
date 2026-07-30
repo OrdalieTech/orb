@@ -4,13 +4,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/codingagent"
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	"github.com/OrdalieTech/pigo/codingagent/modes/theme"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/codingagent"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/modes/theme"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 // Port of upstream regression 4167-thinking-toggle-pending-tool-render.test.ts:

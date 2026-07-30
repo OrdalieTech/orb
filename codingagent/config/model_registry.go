@@ -9,13 +9,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/OrdalieTech/pigo/ai"
-	aiapi "github.com/OrdalieTech/pigo/ai/api"
-	aiauth "github.com/OrdalieTech/pigo/ai/auth"
-	"github.com/OrdalieTech/pigo/ai/auth/oauth"
-	aimodels "github.com/OrdalieTech/pigo/ai/models"
-	"github.com/OrdalieTech/pigo/ai/providers"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/orb/ai"
+	aiapi "github.com/OrdalieTech/orb/ai/api"
+	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth/oauth"
+	aimodels "github.com/OrdalieTech/orb/ai/models"
+	"github.com/OrdalieTech/orb/ai/providers"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
 )
 
 type ModelRegistry struct {

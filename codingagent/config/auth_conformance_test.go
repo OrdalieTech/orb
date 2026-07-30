@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	aiauth "github.com/OrdalieTech/pigo/ai/auth"
-	"github.com/OrdalieTech/pigo/ai/auth/oauth"
-	"github.com/OrdalieTech/pigo/conformance/runner"
+	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth/oauth"
+	"github.com/OrdalieTech/orb/conformance/runner"
 )
 
 type authStorageFixture struct {
@@ -127,7 +127,7 @@ func TestAuthStorageConformance(t *testing.T) {
 	}
 	verifyAuthMigrationFixture(t, fixture.Migration)
 
-	if os.Getenv("PIGO_AUTH_TS_VERIFY") == "1" {
+	if os.Getenv("ORB_AUTH_TS_VERIFY") == "1" {
 		verifyAuthFileWithUpstream(t, authPath)
 		verifyAuthLockWithUpstream(t, authPath, storage)
 	}

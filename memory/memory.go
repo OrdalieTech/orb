@@ -1,5 +1,5 @@
-// Package memory defines pigo's root-level durable memory SDK seam. It is a
-// pigo-original addition with no upstream mirror and is importable standalone.
+// Package memory defines orb's root-level durable memory SDK seam. It is a
+// orb-original addition with no upstream mirror and is importable standalone.
 package memory
 
 import (

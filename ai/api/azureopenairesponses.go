@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 const defaultAzureOpenAIAPIVersion = "v1"

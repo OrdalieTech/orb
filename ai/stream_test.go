@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 func TestOTM6RawAssistantMessageEventMatchesObjectSpreadWire(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 type googleVertexWireRequest struct {

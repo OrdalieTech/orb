@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/config"
 )
 
 const configDirName = ".pi"

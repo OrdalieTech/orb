@@ -15,7 +15,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 const (
@@ -885,7 +885,7 @@ func GetAgentDir() (string, error) {
 	return filepath.Join(home, ConfigDirName, "agent"), nil
 }
 
-// UserNpmInstallRoot and ProjectNpmInstallRoot name the npm projects pigo
+// UserNpmInstallRoot and ProjectNpmInstallRoot name the npm projects orb
 // manages itself — the only trees it installs packages into, and the only ones
 // the extension host resolves the pi SDK from. Both the package manager and the
 // host read them from here so the layout is stated once.

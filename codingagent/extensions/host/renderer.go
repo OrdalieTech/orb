@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
 )
 
 const (

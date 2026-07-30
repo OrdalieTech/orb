@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 func TestGoogleSimpleRequiresAPIKey(t *testing.T) {

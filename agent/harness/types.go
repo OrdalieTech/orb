@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 // Skill is the harness-level, execution-environment-neutral Agent Skills shape.

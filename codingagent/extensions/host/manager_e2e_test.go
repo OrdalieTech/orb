@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
 )
 
 func requireRuntime(t *testing.T) Runtime {
@@ -29,6 +29,22 @@ func fixturePath(t *testing.T, name string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return path
+}
+
+// isolatedTempDir keeps Node's ancestor node_modules lookup inside the test
+// tree rather than inheriting packages installed under the system temp root.
+func isolatedTempDir(t *testing.T) string {
+	t.Helper()
+	path, err := os.MkdirTemp(".", ".orb-host-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err = filepath.Abs(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(path) })
 	return path
 }
 
@@ -187,7 +203,7 @@ export default function (pi: any) {
 }
 
 // The peer-SDK fallback exists for extensions that import the coding-agent
-// family without declaring it. It is served from the npm root pigo manages
+// family without declaring it. It is served from the npm root orb manages
 // itself; the installed pi on PATH — a complete one, whose own pi-tui says
 // something else — is never consulted.
 func TestRealHostResolvesPeerSDKFromManagedNpmRoot(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/conformance/runner"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/conformance/runner"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 // F12 component fixtures (WP-420): scripted upstream sessions replayed

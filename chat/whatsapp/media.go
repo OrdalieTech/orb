@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/OrdalieTech/pigo/chat"
+	"github.com/OrdalieTech/orb/chat"
 )
 
 // mediaInfo is the Graph media-metadata subset the gateway reads.

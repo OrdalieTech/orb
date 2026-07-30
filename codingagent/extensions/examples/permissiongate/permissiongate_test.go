@@ -6,12 +6,12 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/ai/providers/faux"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	"github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/internal/jsonschema"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/ai/providers/faux"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
+	"github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/internal/jsonschema"
 )
 
 func TestPermissionGateBlocksDangerousToolCallInFauxSession(t *testing.T) {

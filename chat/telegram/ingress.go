@@ -12,8 +12,8 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/OrdalieTech/pigo/chat"
-	"github.com/OrdalieTech/pigo/chat/internal/ctxsleep"
+	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
 )
 
 // secretTokenHeader carries the webhook secret set via setWebhook.

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 // Upstream ships two divergent findCutPoint algorithms at the pinned commit:
@@ -51,7 +51,7 @@ func TestHarnessCutPointDivergesFromCodingAgentOnBranchSummaryWeight(t *testing.
 
 // Verdict repro: upstream coding-agent treats an empty-summary branch_summary
 // as invisible metadata — the walk-back pulls the cut back onto it and it is
-// neither a cut point nor a turn start. pigo previously returned {3 2 true}.
+// neither a cut point nor a turn start. orb previously returned {3 2 true}.
 func TestFindCutPointTreatsEmptySummaryBranchSummaryAsInvisible(t *testing.T) {
 	entries := []SessionEntry{
 		{Type: "message", ID: "u", Timestamp: timestamp(1), Message: user("hello")},

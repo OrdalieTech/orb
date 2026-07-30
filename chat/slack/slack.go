@@ -1,4 +1,4 @@
-// Package slack implements the Slack adapter for the pigo chat gateway:
+// Package slack implements the Slack adapter for the orb chat gateway:
 // Events API ingress over HTTP (v0 request signing, url_verification
 // handshake, echo filtering), Web API delivery with a bot token (streamed
 // preview edits via chat.update, mrkdwn finalization with chunking), and
@@ -21,8 +21,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OrdalieTech/pigo/chat"
-	"github.com/OrdalieTech/pigo/chat/internal/ctxsleep"
+	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
 )
 
 const platformName = "slack"

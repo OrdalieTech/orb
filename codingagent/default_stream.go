@@ -1,8 +1,8 @@
 package codingagent
 
 import (
-	"github.com/OrdalieTech/pigo/agent"
-	aiapi "github.com/OrdalieTech/pigo/ai/api"
+	"github.com/OrdalieTech/orb/agent"
+	aiapi "github.com/OrdalieTech/orb/ai/api"
 )
 
 func init() {

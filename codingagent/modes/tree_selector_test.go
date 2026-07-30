@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/tui"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 func TestTreeSelectItemsKeepLinearConversationFlat(t *testing.T) {

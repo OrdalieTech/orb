@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	harness "github.com/OrdalieTech/pigo/agent/harness"
-	"github.com/OrdalieTech/pigo/ai"
+	harness "github.com/OrdalieTech/orb/agent/harness"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 // v0.81.0 stores the retained context directly on new compaction entries. The

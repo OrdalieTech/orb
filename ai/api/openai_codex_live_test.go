@@ -7,30 +7,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/internal/jsonschema"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonschema"
 )
 
 func TestOpenAICodexLiveToolCallRoundTrip(t *testing.T) {
-	if os.Getenv("PIGO_LIVE_TESTS") != "1" {
-		t.Skip("set PIGO_LIVE_TESTS=1 to run the OpenAI Codex live smoke test")
+	if os.Getenv("ORB_LIVE_TESTS") != "1" {
+		t.Skip("set ORB_LIVE_TESTS=1 to run the OpenAI Codex live smoke test")
 	}
-	accessToken := os.Getenv("PIGO_OPENAI_CODEX_ACCESS_TOKEN")
+	accessToken := os.Getenv("ORB_OPENAI_CODEX_ACCESS_TOKEN")
 	if accessToken == "" {
-		t.Fatal("PIGO_LIVE_TESTS=1 requires PIGO_OPENAI_CODEX_ACCESS_TOKEN")
+		t.Fatal("ORB_LIVE_TESTS=1 requires ORB_OPENAI_CODEX_ACCESS_TOKEN")
 	}
 
-	modelID := os.Getenv("PIGO_OPENAI_CODEX_MODEL")
+	modelID := os.Getenv("ORB_OPENAI_CODEX_MODEL")
 	if modelID == "" {
 		modelID = "gpt-5.4-mini"
 	}
 	transport := ai.TransportAuto
-	if configured := os.Getenv("PIGO_OPENAI_CODEX_TRANSPORT"); configured != "" {
+	if configured := os.Getenv("ORB_OPENAI_CODEX_TRANSPORT"); configured != "" {
 		transport = ai.Transport(configured)
 		switch transport {
 		case ai.TransportAuto, ai.TransportSSE, ai.TransportWebSocket, ai.TransportWebSocketCached:
 		default:
-			t.Fatalf("invalid PIGO_OPENAI_CODEX_TRANSPORT %q", configured)
+			t.Fatalf("invalid ORB_OPENAI_CODEX_TRANSPORT %q", configured)
 		}
 	}
 	model := &ai.Model{
@@ -44,10 +44,10 @@ func TestOpenAICodexLiveToolCallRoundTrip(t *testing.T) {
 		Parameters:  jsonschema.Schema(`{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}`),
 	}}
 	messages := ai.MessageList{&ai.UserMessage{
-		Content:   ai.NewUserText("Call the echo tool exactly once with text pigo-live, then wait for its result."),
+		Content:   ai.NewUserText("Call the echo tool exactly once with text orb-live, then wait for its result."),
 		Timestamp: time.Now().UnixMilli(),
 	}}
-	sessionID := "pigo-live-" + time.Now().UTC().Format("20060102T150405.000000000")
+	sessionID := "orb-live-" + time.Now().UTC().Format("20060102T150405.000000000")
 	t.Cleanup(func() { CloseOpenAICodexWebSocketSessions(sessionID) })
 	reasoningEffort, required := "low", "required"
 
@@ -75,14 +75,14 @@ func TestOpenAICodexLiveToolCallRoundTrip(t *testing.T) {
 			break
 		}
 	}
-	if call == nil || call.Name != "echo" || call.Arguments["text"] != "pigo-live" {
-		t.Fatalf("tool call = %#v, want echo with pigo-live", call)
+	if call == nil || call.Name != "echo" || call.Arguments["text"] != "orb-live" {
+		t.Fatalf("tool call = %#v, want echo with orb-live", call)
 	}
 
 	messages = append(messages, toolRequest, &ai.ToolResultMessage{
 		ToolCallID: call.ID,
 		ToolName:   call.Name,
-		Content:    ai.ToolResultContent{&ai.TextContent{Text: "pigo-live"}},
+		Content:    ai.ToolResultContent{&ai.TextContent{Text: "orb-live"}},
 		Timestamp:  time.Now().UnixMilli(),
 	})
 	second, err := StreamOpenAICodexResponsesWithOptions(ctx, model, ai.Context{Messages: messages}, &OpenAICodexResponsesOptions{

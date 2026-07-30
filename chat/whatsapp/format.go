@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/chat/internal/runechunk"
+	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 )
 
 // maxMessageLen is the Cloud API text.body character limit.

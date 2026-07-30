@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/internal/jsonwire"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 // Allow controls which incomplete JSON values Parse may return.

@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/codingagent"
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	"github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/codingagent"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
+	"github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/tui"
 
-	theme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
+	theme "github.com/OrdalieTech/orb/codingagent/modes/theme"
 )
 
 // LOG-M4: startup checks the active Anthropic model through the real warning

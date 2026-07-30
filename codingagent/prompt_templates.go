@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"github.com/OrdalieTech/pigo/internal/jstrim"
+	"github.com/OrdalieTech/orb/internal/jstrim"
 )
 
 // PromptTemplate is a file-backed slash command expanded before a prompt is sent.

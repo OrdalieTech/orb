@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/ai/auth"
 )
 
 // Upstream 7b52cef2/a5afc3f1: openrouter and kimi-coding expose OAuth login

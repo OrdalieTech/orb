@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/ai/providers/faux"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/ai/providers/faux"
 )
 
 func TestHandleDeliversTurnAndWritesLedger(t *testing.T) {

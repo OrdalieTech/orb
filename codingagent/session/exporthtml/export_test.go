@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	modetheme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
-	"github.com/OrdalieTech/pigo/codingagent/session"
+	modetheme "github.com/OrdalieTech/orb/codingagent/modes/theme"
+	"github.com/OrdalieTech/orb/codingagent/session"
 )
 
 func TestExportMatchesPinnedUpstreamHTML(t *testing.T) {

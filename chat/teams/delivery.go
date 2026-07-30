@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pigo/chat"
+	"github.com/OrdalieTech/orb/chat"
 )
 
 // NewDelivery implements [chat.Adapter]. replyTo is the inbound activity id

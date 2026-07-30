@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	agentharness "github.com/OrdalieTech/pigo/agent/harness"
-	"github.com/OrdalieTech/pigo/codingagent"
-	modetheme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
-	"github.com/OrdalieTech/pigo/conformance/runner"
+	agentharness "github.com/OrdalieTech/orb/agent/harness"
+	"github.com/OrdalieTech/orb/codingagent"
+	modetheme "github.com/OrdalieTech/orb/codingagent/modes/theme"
+	"github.com/OrdalieTech/orb/conformance/runner"
 )
 
 type f8Fixture struct {
@@ -375,7 +375,7 @@ func TestF8CommandSurfacesMatchUpstream(t *testing.T) {
 	t.Run("interactive-builtins", func(t *testing.T) {
 		for index := range fixture.Discovery.BuiltinCommands {
 			if fixture.Discovery.BuiltinCommands[index].Name == "quit" {
-				fixture.Discovery.BuiltinCommands[index].Description = "Quit pigo" // D30.
+				fixture.Discovery.BuiltinCommands[index].Description = "Quit orb" // D30.
 			}
 		}
 		gotBuiltins := make([]f8BuiltinCommand, len(codingagent.BuiltinSlashCommands))

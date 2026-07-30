@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth"
 )
 
 // KimiCoding ports upstream kimiCodingOAuth (ai/src/auth/oauth/kimi-coding.ts):

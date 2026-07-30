@@ -1,11 +1,11 @@
 package host
 
 import (
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
 )
 
-const wireThemeMarker = "\x00pigo-theme-text\x00"
+const wireThemeMarker = "\x00orb-theme-text\x00"
 
 var wireThemeForegrounds = []string{
 	"accent", "border", "borderAccent", "borderMuted", "success", "error", "warning", "muted", "dim", "text",

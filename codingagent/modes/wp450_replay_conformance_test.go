@@ -14,14 +14,14 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/agent/harness"
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/codingagent"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	modetheme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
-	"github.com/OrdalieTech/pigo/codingagent/tools"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/harness"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/codingagent"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
+	modetheme "github.com/OrdalieTech/orb/codingagent/modes/theme"
+	"github.com/OrdalieTech/orb/codingagent/tools"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 const (
@@ -119,7 +119,7 @@ func renderWP450ReplayWidth(width int) []ConformanceReplayFrame {
 	mode.editor.SetPaddingX(1)
 	mode.editorContainer.AddChild(mode.editor)
 	mode.status.AddChild(&IdleStatus{})
-	mode.header.AddChild(tui.NewText("pigo built-in header", 0, 0, nil))
+	mode.header.AddChild(tui.NewText("orb built-in header", 0, 0, nil))
 	interactiveUI := NewInteractiveUI(mode)
 	mode.interactiveUI = interactiveUI
 
@@ -276,7 +276,7 @@ func RenderWP450UIDemoArtifact() ConformanceUIDemoArtifact {
 		footerStatuses:  make(map[string]string),
 		cwd:             "/workspace",
 	}
-	mode.header.AddChild(tui.NewText("pigo built-in header", 0, 0, nil))
+	mode.header.AddChild(tui.NewText("orb built-in header", 0, 0, nil))
 	mode.editor = NewCustomEditor(ui, modetheme.EditorTheme(), bindings)
 	mode.editorContainer.AddChild(mode.editor)
 	interactiveUI := NewInteractiveUI(mode)

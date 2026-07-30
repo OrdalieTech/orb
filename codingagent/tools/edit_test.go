@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/orb/agent"
 )
 
 type editOperationsFunc struct {

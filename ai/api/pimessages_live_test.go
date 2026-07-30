@@ -7,19 +7,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/internal/jsonschema"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonschema"
 )
 
 func TestPiMessagesLiveToolCallRoundTrip(t *testing.T) {
-	if os.Getenv("PIGO_LIVE_TESTS") != "1" {
-		t.Skip("set PIGO_LIVE_TESTS=1 to run the pi-messages live smoke test")
+	if os.Getenv("ORB_LIVE_TESTS") != "1" {
+		t.Skip("set ORB_LIVE_TESTS=1 to run the pi-messages live smoke test")
 	}
-	baseURL := os.Getenv("PIGO_PI_MESSAGES_BASE_URL")
-	apiKey := os.Getenv("PIGO_PI_MESSAGES_API_KEY")
-	modelID := os.Getenv("PIGO_PI_MESSAGES_MODEL")
+	baseURL := os.Getenv("ORB_PI_MESSAGES_BASE_URL")
+	apiKey := os.Getenv("ORB_PI_MESSAGES_API_KEY")
+	modelID := os.Getenv("ORB_PI_MESSAGES_MODEL")
 	if baseURL == "" || apiKey == "" || modelID == "" {
-		t.Fatal("PIGO_LIVE_TESTS=1 requires PIGO_PI_MESSAGES_BASE_URL, PIGO_PI_MESSAGES_API_KEY, and PIGO_PI_MESSAGES_MODEL")
+		t.Fatal("ORB_LIVE_TESTS=1 requires ORB_PI_MESSAGES_BASE_URL, ORB_PI_MESSAGES_API_KEY, and ORB_PI_MESSAGES_MODEL")
 	}
 	model := &ai.Model{
 		ID: modelID, Name: modelID, API: ai.APIPiMessages, Provider: "pi-messages-gateway",
@@ -30,7 +30,7 @@ func TestPiMessagesLiveToolCallRoundTrip(t *testing.T) {
 		Parameters: jsonschema.Schema(`{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}`),
 	}}
 	messages := ai.MessageList{&ai.UserMessage{
-		Content:   ai.NewUserText("Call the echo tool exactly once with text pigo-live, then wait for its result."),
+		Content:   ai.NewUserText("Call the echo tool exactly once with text orb-live, then wait for its result."),
 		Timestamp: time.Now().UnixMilli(),
 	}}
 	maxTokens := float64(256)
@@ -57,12 +57,12 @@ func TestPiMessagesLiveToolCallRoundTrip(t *testing.T) {
 			break
 		}
 	}
-	if call == nil || call.Name != "echo" || call.Arguments["text"] != "pigo-live" {
-		t.Fatalf("tool call = %#v, want echo with pigo-live", call)
+	if call == nil || call.Name != "echo" || call.Arguments["text"] != "orb-live" {
+		t.Fatalf("tool call = %#v, want echo with orb-live", call)
 	}
 	messages = append(messages, toolRequest, &ai.ToolResultMessage{
 		ToolCallID: call.ID, ToolName: call.Name,
-		Content: ai.ToolResultContent{&ai.TextContent{Text: "pigo-live"}}, IsError: false,
+		Content: ai.ToolResultContent{&ai.TextContent{Text: "orb-live"}}, IsError: false,
 		Timestamp: time.Now().UnixMilli(),
 	})
 	second, err := StreamPiMessagesWithOptions(ctx, model, ai.Context{Messages: messages, Tools: &tools}, &PiMessagesOptions{

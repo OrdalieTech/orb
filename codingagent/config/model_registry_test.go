@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/ai"
-	aiauth "github.com/OrdalieTech/pigo/ai/auth"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	"github.com/OrdalieTech/pigo/conformance/runner"
+	"github.com/OrdalieTech/orb/ai"
+	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
+	"github.com/OrdalieTech/orb/conformance/runner"
 )
 
 func TestModelRegistryFiltersCopilotModelsFromOAuthCredential(t *testing.T) {

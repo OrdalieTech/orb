@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/conformance/runner"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/conformance/runner"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 type f12FullScreenFixture struct {

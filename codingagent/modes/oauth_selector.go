@@ -7,10 +7,10 @@ import (
 	"strings"
 	"sync"
 
-	aiauth "github.com/OrdalieTech/pigo/ai/auth"
-	"github.com/OrdalieTech/pigo/tui"
+	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/tui"
 
-	theme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
+	theme "github.com/OrdalieTech/orb/codingagent/modes/theme"
 )
 
 // Selector modes mirroring upstream oauth-selector.ts mode: "login" | "logout".
@@ -468,7 +468,7 @@ func (mode *InteractiveMode) showAmbientAuthDialog(ctx context.Context, provider
 	var once sync.Once
 	dialog := newAmbientAuthDialogComponent(
 		provider.Name+" setup",
-		method+" is configured outside pigo.",
+		method+" is configured outside orb.",
 		func() { once.Do(func() { close(closed) }) },
 	)
 

@@ -19,13 +19,13 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	aiapi "github.com/OrdalieTech/pigo/ai/api"
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/codingagent/tools"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	aiapi "github.com/OrdalieTech/orb/ai/api"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/codingagent/tools"
 )
 
 // AgentSession is the public embedding type. It wraps the internal

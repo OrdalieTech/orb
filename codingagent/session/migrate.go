@@ -9,8 +9,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/internal/jstrim"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jstrim"
 	textunicode "golang.org/x/text/encoding/unicode"
 )
 

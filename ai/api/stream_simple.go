@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 // StreamSimple dispatches a model to its provider wire-shape adapter. Provider

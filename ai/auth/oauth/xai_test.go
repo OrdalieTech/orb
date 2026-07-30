@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth"
 )
 
 type xAIInteraction struct{ events []auth.AuthEvent }

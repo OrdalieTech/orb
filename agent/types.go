@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 // AgentMessage is an LLM message or an application-defined message. Standard

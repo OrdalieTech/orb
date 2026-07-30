@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth"
 )
 
 type kimiInteraction struct{ events []auth.AuthEvent }

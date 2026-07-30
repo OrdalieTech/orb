@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/tui"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/tui"
 
-	theme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
+	theme "github.com/OrdalieTech/orb/codingagent/modes/theme"
 )
 
 type treeGutter struct {

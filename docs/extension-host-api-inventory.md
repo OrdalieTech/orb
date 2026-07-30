@@ -171,7 +171,7 @@ Upstream uses the platform `AbortSignal` type in these positions (`.upstream/pac
 
 Each row above cites the upstream declaration. These are the observed simplifications or divergences that affect Phase 2 behavior.
 
-| Surface | Current pigo behavior | Upstream behavior | Evidence |
+| Surface | Current orb behavior | Upstream behavior | Evidence |
 |---|---|---|---|
 | Tool rendering | The decoder never reads `renderCall` or `renderResult`, even though Go's native `ToolDefinition` has renderer fields. | `ToolDefinition` exposes both render callbacks. | Go decoder fields: `codingagent/extensions/jsbridge/registrations.go:74-102`; native fields: `codingagent/extensions/types.go:578-590`; upstream: `.upstream/packages/coding-agent/src/core/extensions/types.ts:477-486`. |
 | Tool execute/result looseness | Bridge accepts a synchronous `execute` return, permits missing `content`/`details`, and ignores returned `usage`; it does decode upstream `addedToolNames` and `terminate`. | Upstream declares `execute(...): Promise<AgentToolResult>` and requires `content` and `details`; `usage`, `addedToolNames`, and `terminate` are optional. | `codingagent/extensions/jsbridge/registrations.go:102-179`; `.upstream/packages/coding-agent/src/core/extensions/types.ts:468-475`; `.upstream/packages/agent/src/types.ts:354-369`. |
@@ -379,7 +379,7 @@ Credential shapes are exactly `{type:"api_key",key?:string,env?:Record<string,st
 | `auth.oauth.refresh` | `(credential:OAuthCredential,signal?:AbortSignal): OAuthCredential \| Promise<OAuthCredential>` | Called under the credential-store modify lock when request-time auth sees an expired credential. | `codingagent/extensions/jsbridge/provider.go:217-224,357-373`; request-time lock `ai/auth/resolve.go:131-164` | Upstream requires the Promise return (`.upstream/packages/ai/src/auth/types.ts:198-202`); the bridge accepts either form. | `callback` |
 | `auth.oauth.toAuth` | `(credential:OAuthCredential): ModelAuth \| Promise<ModelAuth>` | Called for every resolved OAuth request after any refresh. | `codingagent/extensions/jsbridge/provider.go:217-224,375-395`; `ai/auth/resolve.go:165-169` | Upstream requires the Promise return (`.upstream/packages/ai/src/auth/types.ts:204-209`); the bridge accepts either form. | `callback` |
 
-Current pigo does not read upstream's optional `auth.oauth.loginLabel` (`codingagent/extensions/jsbridge/provider.go:215-224`; upstream `.upstream/packages/ai/src/auth/types.ts:193-195`).
+Current orb does not read upstream's optional `auth.oauth.loginLabel` (`codingagent/extensions/jsbridge/provider.go:215-224`; upstream `.upstream/packages/ai/src/auth/types.ts:193-195`).
 
 ### Objects passed into auth and refresh callbacks
 

@@ -12,14 +12,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/ai/providers/faux"
-	"github.com/OrdalieTech/pigo/codingagent"
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	"github.com/OrdalieTech/pigo/codingagent/modes"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/conformance/runner"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/ai/providers/faux"
+	"github.com/OrdalieTech/orb/codingagent"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/modes"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/conformance/runner"
 )
 
 type f7Scenario struct {
@@ -132,12 +132,12 @@ func TestF7RPCTranscriptReplaysAgainstBinary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	binary := filepath.Join(t.TempDir(), "pigo")
-	build := exec.Command("go", "build", "-tags", "conformance", "-o", binary, "./cmd/pigo")
+	binary := filepath.Join(t.TempDir(), "orb")
+	build := exec.Command("go", "build", "-tags", "conformance", "-o", binary, "./cmd/orb")
 	build.Dir = repoRoot
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if output, buildErr := build.CombinedOutput(); buildErr != nil {
-		t.Fatalf("build pigo: %v\n%s", buildErr, output)
+		t.Fatalf("build orb: %v\n%s", buildErr, output)
 	}
 
 	if scenario.CWD == "" {
@@ -159,7 +159,7 @@ func TestF7RPCTranscriptReplaysAgainstBinary(t *testing.T) {
 	command.Dir = scenario.CWD
 	command.Env = append(os.Environ(),
 		config.EnvAgentDir+"="+agentDir,
-		"PIGO_F7_SCENARIO="+filepath.Join(repoRoot, "conformance", "fixtures", "F7", "scenario.json"),
+		"ORB_F7_SCENARIO="+filepath.Join(repoRoot, "conformance", "fixtures", "F7", "scenario.json"),
 	)
 	stdin, err := command.StdinPipe()
 	if err != nil {

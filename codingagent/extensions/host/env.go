@@ -8,19 +8,19 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/config"
 )
 
 const (
 	piSubagentBinaryEnv = "PI_SUBAGENT_PI_BINARY"
 	piAgentDirEnv       = "PI_CODING_AGENT_DIR"
 	piAgentMarkerEnv    = "PI_CODING_AGENT"
-	piSDKRootEnv        = "PIGO_PI_SDK_ROOT"
+	piSDKRootEnv        = "ORB_PI_SDK_ROOT"
 )
 
-// piSDKPackage is the package whose directory PIGO_PI_SDK_ROOT names: the SDK an
+// piSDKPackage is the package whose directory ORB_PI_SDK_ROOT names: the SDK an
 // extension imports when it treats the coding-agent family as provided by its
-// host rather than declaring it. Only a copy inside pigo's own npm roots counts.
+// host rather than declaring it. Only a copy inside orb's own npm roots counts.
 const piSDKPackage = "@earendil-works/pi-coding-agent"
 
 func prepareHostEnvironment(options Options, base []string, runtimePath string) ([]string, error) {
@@ -28,17 +28,17 @@ func prepareHostEnvironment(options Options, base []string, runtimePath string) 
 	if agentDir == "" {
 		return nil, errors.New("extension host: agent directory is empty")
 	}
-	executable := options.PigoExecutable
+	executable := options.OrbExecutable
 	if executable == "" {
 		var err error
 		executable, err = os.Executable()
 		if err != nil {
-			return nil, fmt.Errorf("extension host: resolve pigo executable: %w", err)
+			return nil, fmt.Errorf("extension host: resolve orb executable: %w", err)
 		}
 	}
 	executable, err := filepath.Abs(executable)
 	if err != nil {
-		return nil, fmt.Errorf("extension host: resolve pigo executable: %w", err)
+		return nil, fmt.Errorf("extension host: resolve orb executable: %w", err)
 	}
 	shimDir := filepath.Join(agentDir, "host", "bin")
 	if err := os.MkdirAll(shimDir, 0o700); err != nil {
@@ -64,9 +64,9 @@ func prepareHostEnvironment(options Options, base []string, runtimePath string) 
 	environment = setEnvironmentValue(environment, piSubagentBinaryEnv, shimPath)
 	environment = setEnvironmentValue(environment, piAgentDirEnv, agentDir)
 	environment = setEnvironmentValue(environment, piAgentMarkerEnv, "true")
-	// An explicitly set PIGO_PI_SDK_ROOT is an escape hatch — a checkout, a
-	// vendored copy, a tree pigo's own search cannot see — and is authoritative
-	// for that reason. It is not a fallback onto a third-party install: pigo
+	// An explicitly set ORB_PI_SDK_ROOT is an escape hatch — a checkout, a
+	// vendored copy, a tree orb's own search cannot see — and is authoritative
+	// for that reason. It is not a fallback onto a third-party install: orb
 	// never looks for an installed pi and never borrows its bundled SDK. Reading
 	// pi's config files is the D4 compatibility promise; executing its code is
 	// not, and the line stays clean.
@@ -78,7 +78,7 @@ func prepareHostEnvironment(options Options, base []string, runtimePath string) 
 	return environment, nil
 }
 
-// managedSDKRoot reports the pi SDK installed in pigo's own npm roots, project
+// managedSDKRoot reports the pi SDK installed in orb's own npm roots, project
 // scope before user scope — the precedence the package manager itself applies —
 // and only reaches the project root when the project is trusted, the same gate
 // every other project-scoped resource passes through (Discover,

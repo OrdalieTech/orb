@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/chat"
+	"github.com/OrdalieTech/orb/chat"
 )
 
 // recorder collects published messages.
@@ -296,7 +296,7 @@ func TestNormalizeGroupGating(t *testing.T) {
 	ctx := context.Background()
 	group := apiChat{ID: -100123, Type: "supergroup"}
 	from := &apiUser{ID: 111, FirstName: "Léa"}
-	botReply := &apiMessage{MessageID: 9, From: &apiUser{ID: 42, IsBot: true, Username: "pigobot"}}
+	botReply := &apiMessage{MessageID: 9, From: &apiUser{ID: 42, IsBot: true, Username: "orbbot"}}
 
 	tests := []struct {
 		name     string
@@ -311,20 +311,20 @@ func TestNormalizeGroupGating(t *testing.T) {
 		},
 		{
 			name: "mention triggers and is stripped",
-			msg: &apiMessage{MessageID: 2, From: from, Chat: group, Text: "@pigobot run the tests",
-				Entities: []apiEntity{{Type: "mention", Offset: 0, Length: 8}}},
+			msg: &apiMessage{MessageID: 2, From: from, Chat: group, Text: "@orbbot run the tests",
+				Entities: []apiEntity{{Type: "mention", Offset: 0, Length: 7}}},
 			wantOK: true, wantText: "run the tests",
 		},
 		{
 			name: "mention after emoji uses UTF-16 offsets",
-			msg: &apiMessage{MessageID: 3, From: from, Chat: group, Text: "😀 @pigobot hi",
-				Entities: []apiEntity{{Type: "mention", Offset: 3, Length: 8}}},
+			msg: &apiMessage{MessageID: 3, From: from, Chat: group, Text: "😀 @orbbot hi",
+				Entities: []apiEntity{{Type: "mention", Offset: 3, Length: 7}}},
 			wantOK: true, wantText: "😀 hi",
 		},
 		{
 			name: "command with bot suffix normalizes",
-			msg: &apiMessage{MessageID: 4, From: from, Chat: group, Text: "/status@pigobot",
-				Entities: []apiEntity{{Type: "bot_command", Offset: 0, Length: 15}}},
+			msg: &apiMessage{MessageID: 4, From: from, Chat: group, Text: "/status@orbbot",
+				Entities: []apiEntity{{Type: "bot_command", Offset: 0, Length: 14}}},
 			wantOK: true, wantText: "/status",
 		},
 		{
@@ -351,13 +351,13 @@ func TestNormalizeGroupGating(t *testing.T) {
 		},
 		{
 			name: "DM command with bot suffix normalizes",
-			msg: &apiMessage{MessageID: 9, From: from, Chat: apiChat{ID: 10, Type: "private"}, Text: "/status@pigobot",
-				Entities: []apiEntity{{Type: "bot_command", Offset: 0, Length: 15}}},
+			msg: &apiMessage{MessageID: 9, From: from, Chat: apiChat{ID: 10, Type: "private"}, Text: "/status@orbbot",
+				Entities: []apiEntity{{Type: "bot_command", Offset: 0, Length: 14}}},
 			wantOK: true, wantText: "/status",
 		},
 		{
 			name:   "bot senders are dropped",
-			msg:    &apiMessage{MessageID: 10, From: &apiUser{ID: 5, IsBot: true, Username: "spam"}, Chat: group, Text: "@pigobot hi"},
+			msg:    &apiMessage{MessageID: 10, From: &apiUser{ID: 5, IsBot: true, Username: "spam"}, Chat: group, Text: "@orbbot hi"},
 			wantOK: false,
 		},
 	}
@@ -387,8 +387,8 @@ func TestNormalizeThreadAndReplyFields(t *testing.T) {
 		IsTopicMessage: true,
 		From:           &apiUser{ID: 111, FirstName: "Léa", LastName: "B", Username: "lea"},
 		Chat:           apiChat{ID: -100123, Type: "supergroup"},
-		Text:           "answer me @pigobot",
-		Entities:       []apiEntity{{Type: "mention", Offset: 10, Length: 8}},
+		Text:           "answer me @orbbot",
+		Entities:       []apiEntity{{Type: "mention", Offset: 10, Length: 7}},
 		ReplyTo:        &apiMessage{MessageID: 44, From: &apiUser{ID: 7}},
 	}
 	m, ok, err := adapter.normalizeMessage(context.Background(), msg, nil)

@@ -15,10 +15,10 @@ import (
 	"unicode"
 	"unicode/utf16"
 
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	"github.com/OrdalieTech/pigo/codingagent/modes/theme"
-	"github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/modes/theme"
+	"github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 type SessionSelectorLoader func(session.SessionListProgress) []session.SessionInfo

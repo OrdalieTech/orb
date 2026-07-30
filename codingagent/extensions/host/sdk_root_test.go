@@ -23,7 +23,7 @@ func writeSDKPackage(t *testing.T, directory, name string) {
 	writeFixtureFile(t, filepath.Join(directory, "dist", "index.js"), "export const sdk = true;\n")
 }
 
-func TestManagedSDKRootResolvesOnlyPigosOwnNpmRoots(t *testing.T) {
+func TestManagedSDKRootResolvesOnlyOrbsOwnNpmRoots(t *testing.T) {
 	cases := []struct {
 		name    string
 		trusted bool
@@ -139,7 +139,7 @@ func TestManagedSDKRootResolvesOnlyPigosOwnNpmRoots(t *testing.T) {
 }
 
 // The rule this change exists to enforce: whatever `pi` is installed on the
-// machine, however complete it looks, pigo resolves the SDK from its own npm
+// machine, however complete it looks, orb resolves the SDK from its own npm
 // root or from nothing at all.
 func TestPrepareHostEnvironmentNeverConsultsInstalledPi(t *testing.T) {
 	installPi := func(t *testing.T) string {
@@ -166,11 +166,11 @@ func TestPrepareHostEnvironmentNeverConsultsInstalledPi(t *testing.T) {
 		install bool
 		want    func(agentDir string) string
 	}{
-		{name: "no SDK in pigo's root", want: func(string) string { return "" }},
-		{name: "SDK in pigo's root", install: true, want: userSDKPath},
+		{name: "no SDK in orb's root", want: func(string) string { return "" }},
+		{name: "SDK in orb's root", install: true, want: userSDKPath},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			agentDir, binary := t.TempDir(), filepath.Join(t.TempDir(), "pigo")
+			agentDir, binary := t.TempDir(), filepath.Join(t.TempDir(), "orb")
 			writeExecutable(t, binary, "#!/bin/sh\n")
 			if testCase.install {
 				writeSDKPackage(t, userSDKPath(agentDir), piSDKPackage)
@@ -180,7 +180,7 @@ func TestPrepareHostEnvironmentNeverConsultsInstalledPi(t *testing.T) {
 			piBin := installPi(t)
 			t.Setenv("PATH", piBin)
 			environment, err := prepareHostEnvironment(
-				Options{AgentDir: agentDir, PigoExecutable: binary},
+				Options{AgentDir: agentDir, OrbExecutable: binary},
 				[]string{"PATH=" + piBin},
 				"",
 			)
@@ -194,16 +194,16 @@ func TestPrepareHostEnvironmentNeverConsultsInstalledPi(t *testing.T) {
 	}
 }
 
-// An explicitly set PIGO_PI_SDK_ROOT is a deliberate escape hatch, so it
-// outranks pigo's own root instead of merely filling in for it.
+// An explicitly set ORB_PI_SDK_ROOT is a deliberate escape hatch, so it
+// outranks orb's own root instead of merely filling in for it.
 func TestPrepareHostEnvironmentHonoursExplicitSDKRootOverride(t *testing.T) {
-	agentDir, binary := t.TempDir(), filepath.Join(t.TempDir(), "pigo")
+	agentDir, binary := t.TempDir(), filepath.Join(t.TempDir(), "orb")
 	writeExecutable(t, binary, "#!/bin/sh\n")
 	writeSDKPackage(t, userSDKPath(agentDir), piSDKPackage)
 	override := t.TempDir()
 
 	environment, err := prepareHostEnvironment(
-		Options{AgentDir: agentDir, PigoExecutable: binary},
+		Options{AgentDir: agentDir, OrbExecutable: binary},
 		[]string{piSDKRootEnv + "=" + override},
 		"",
 	)
@@ -215,7 +215,7 @@ func TestPrepareHostEnvironmentHonoursExplicitSDKRootOverride(t *testing.T) {
 	}
 }
 
-// Both layouts pigo's own installs produce: dependencies nested under the SDK
+// Both layouts orb's own installs produce: dependencies nested under the SDK
 // package (native tarball extraction, then npm run inside that directory) and
 // dependencies hoisted beside it (npm run in the install root itself).
 func TestResolveRuntimeSDKCoversNestedAndHoistedInstalls(t *testing.T) {

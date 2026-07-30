@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"iter"
 
-	"github.com/OrdalieTech/pigo/internal/jsonwire"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 var ErrStreamIncomplete = errors.New("ai: stream ended without a terminal event")

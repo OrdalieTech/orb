@@ -31,7 +31,7 @@ func editInExternalEditor(command, content string) externalEditorResult {
 	if err := os.WriteFile(filePath, []byte(content), 0o600); err != nil {
 		return externalEditorResult{}
 	}
-	_, _ = fmt.Fprintf(os.Stdout, "Launching external editor: %s\npigo will resume when the editor exits.\n", command)
+	_, _ = fmt.Fprintf(os.Stdout, "Launching external editor: %s\norb will resume when the editor exits.\n", command)
 	// Split by space to support editor arguments (e.g., "code --wait").
 	parts := strings.Split(command, " ")
 	var process *exec.Cmd

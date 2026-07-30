@@ -1,14 +1,14 @@
 # Go SDK
 
-The `codingagent` package provides the public embedding API for pigo.
+The `codingagent` package provides the public embedding API for orb.
 
 ## Quick start
 
 ```go
 import (
     "context"
-    "github.com/OrdalieTech/pigo/ai/providers/faux"
-    "github.com/OrdalieTech/pigo/codingagent"
+    "github.com/OrdalieTech/orb/ai/providers/faux"
+    "github.com/OrdalieTech/orb/codingagent"
 )
 
 provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
@@ -279,7 +279,7 @@ inline-extension path and keeps extension lifecycle coupled to resource reloads.
 
 ### MemoryStore
 
-`memory.Store` from `github.com/OrdalieTech/pigo/memory` is the durable seam;
+`memory.Store` from `github.com/OrdalieTech/orb/memory` is the durable seam;
 `memory.NewFileStore(dir)` provides the append-only JSONL default. The bundled plugin is
 disabled by default. Local users enable `"plugins":{"memory":true}`; embedders register
 `plugins.MemoryWithStore(store)`, which rejects a nil store and otherwise requires no
@@ -292,7 +292,7 @@ entry, and `forget` removes one. Capacity errors expose the bounded current sect
 model can replace or remove entries. Replacement appends before deleting to avoid data loss;
 a failed delete can leave both copies because `memory.Store` has no transaction. All behavior
 uses the Store's bounded 100-item window. The plugin reserves and hides the tags
-`pigo:memory:user` and `pigo:memory:memory`; existing untagged items remain `MEMORY`, while
+`orb:memory:user` and `orb:memory:memory`; existing untagged items remain `MEMORY`, while
 items tagged `user` remain in `USER PROFILE`.
 
 ## Replaceable session runtime

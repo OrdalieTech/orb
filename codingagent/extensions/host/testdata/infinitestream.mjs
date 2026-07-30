@@ -29,7 +29,7 @@ export default function (pi) {
 		},
 		stream: async function* () {},
 		// Never ends on its own; the finally marker proves the host terminated
-		// the generator after pigo abandoned the stream.
+		// the generator after orb abandoned the stream.
 		streamSimple: async function* () {
 			try {
 				while (true) {

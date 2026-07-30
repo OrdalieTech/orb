@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 
-const PROTOCOL = "pigo-extension-host";
+const PROTOCOL = "orb-extension-host";
 const VERSION = 1;
 const MAX_FRAME_SIZE = 4 * 1024 * 1024;
 
@@ -16,7 +16,7 @@ const pending = new Map();
 const entries = new Map();
 const extensions = new Map();
 const hostSections = [];
-// Per-in-flight-request abort controllers: pigo emits cancel_request when the
+// Per-in-flight-request abort controllers: orb emits cancel_request when the
 // Go-side ctx for a pending request is cancelled, so the positional
 // AbortSignal handed to tool.execute and provider streams fires live.
 const requestAborts = new Map();
@@ -81,7 +81,7 @@ function emit(method, params) {
 	write({ kind: "event", method, params });
 }
 
-function registerWithPigo(state, method, params) {
+function registerWithOrb(state, method, params) {
 	const registration = { method, params };
 	if (!state.loaded) {
 		state.registrations.push(registration);
@@ -215,14 +215,14 @@ function createAPI(state) {
 				throw new TypeError("registerTool requires a named tool with an execute function");
 			}
 			state.tools.set(tool.name, tool);
-			registerWithPigo(state, "register_tool", { extensionId: state.id, definition: serializableTool(tool, state) });
+			registerWithOrb(state, "register_tool", { extensionId: state.id, definition: serializableTool(tool, state) });
 		},
 		registerCommand(name, options) {
 			if (typeof name !== "string" || !options || typeof options.handler !== "function") {
 				throw new TypeError("registerCommand requires a name and handler");
 			}
 			state.commands.set(name, options);
-			registerWithPigo(state, "register_command", {
+			registerWithOrb(state, "register_command", {
 				extensionId: state.id,
 				name,
 				options: { description: options.description ?? "" },
@@ -233,7 +233,7 @@ function createAPI(state) {
 				throw new TypeError("registerShortcut requires a key and handler");
 			}
 			state.shortcuts.set(shortcut.toLowerCase(), options);
-			registerWithPigo(state, "register_shortcut", {
+			registerWithOrb(state, "register_shortcut", {
 				extensionId: state.id,
 				shortcut,
 				options: { description: options.description ?? "" },
@@ -245,7 +245,7 @@ function createAPI(state) {
 			}
 			const subscriptionId = `${state.id}-sub-${state.nextSubscriptionId++}`;
 			state.subscriptions.set(subscriptionId, handler);
-			registerWithPigo(state, "subscribe_event", { extensionId: state.id, subscriptionId, event });
+			registerWithOrb(state, "subscribe_event", { extensionId: state.id, subscriptionId, event });
 		},
 	};
 	for (const section of hostSections) section.extendAPI?.(api, state);
@@ -271,7 +271,7 @@ async function loadExtension(params) {
 	};
 	try {
 		const moduleURL = pathToFileURL(entry.path);
-		moduleURL.searchParams.set("pigoHostGeneration", `${process.pid}`);
+		moduleURL.searchParams.set("orbHostGeneration", `${process.pid}`);
 		const imported = await import(moduleURL.href);
 		if (typeof imported.default !== "function") {
 			throw new Error(`Extension does not export a valid factory function: ${entry.path}`);
@@ -444,10 +444,10 @@ lines.on("line", (line) => {
 	}
 });
 lines.on("close", () => {
-	for (const waiter of pending.values()) waiter.reject(new Error("pigo closed the extension host transport"));
+	for (const waiter of pending.values()) waiter.reject(new Error("orb closed the extension host transport"));
 	pending.clear();
 	for (const section of hostSections) section.onClose?.();
-	// pigo owns this process: once the transport is gone (including a hard pigo
+	// orb owns this process: once the transport is gone (including a hard orb
 	// crash that never sends shutdown) an extension's live handles must not keep
 	// an orphan alive. Deferred a tick so queued writes flush first.
 	setTimeout(() => process.exit(process.exitCode ?? 0), 0);
@@ -589,7 +589,7 @@ registerHostSection((() => {
 		const provider = typeof providerOrID === "string"
 			? registerProviderConfig(state, providerOrID, config)
 			: registerNativeProvider(state, providerOrID);
-		registerWithPigo(state, "register_provider", { extensionId: state.id, provider });
+		registerWithOrb(state, "register_provider", { extensionId: state.id, provider });
 	}
 
 	async function collectProviderStream(frame, callback, owner, args) {
@@ -603,7 +603,7 @@ registerHostSection((() => {
 				const next = await iterator.next();
 				if (next.done) break;
 				if (controller.signal.aborted) {
-					// pigo abandoned the stream: terminate the extension
+					// orb abandoned the stream: terminate the extension
 					// generator like an upstream consumer's iterator.return().
 					await iterator.return?.();
 					break;
@@ -686,7 +686,7 @@ registerHostSection((() => {
 
 // ===== SECTION: ui (agent-d) =====
 registerHostSection((() => {
-	const themeMarker = "\u0000pigo-theme-text\u0000";
+	const themeMarker = "\u0000orb-theme-text\u0000";
 	const factories = new Map();
 	const components = new Map();
 	const handlers = new Map();
@@ -755,8 +755,8 @@ registerHostSection((() => {
 			getThinkingBorderColor: (level) => (text) => applyTheme(value.thinkingBorder?.[level], text),
 			getBashModeBorderColor: () => (text) => applyTheme(value.bashModeBorder, text),
 		};
-		Object.defineProperty(theme, "__pigoThemeName", { value: name, enumerable: false });
-		Object.defineProperty(theme, "__pigoHostTheme", { value: true, enumerable: false });
+		Object.defineProperty(theme, "__orbThemeName", { value: name, enumerable: false });
+		Object.defineProperty(theme, "__orbHostTheme", { value: true, enumerable: false });
 		return Object.freeze(theme);
 	}
 
@@ -765,7 +765,7 @@ registerHostSection((() => {
 			throw new TypeError(`register${kind === "message" ? "Message" : "Entry"}Renderer requires a custom type and renderer`);
 		}
 		state.renderers.set(`${kind}:${customType}`, renderer);
-		registerWithPigo(state, "register_renderer", { extensionId: state.id, kind, customType });
+		registerWithOrb(state, "register_renderer", { extensionId: state.id, kind, customType });
 	}
 
 	function createRegisteredRendererComponent(params) {
@@ -1170,8 +1170,8 @@ registerHostSection((() => {
 				return found?.theme ? createTheme(found.theme, found.name) : undefined;
 			},
 			setTheme(theme) {
-				const name = typeof theme === "string" ? theme : theme?.__pigoThemeName;
-				if (!name && theme?.__pigoHostTheme === true) return { success: true };
+				const name = typeof theme === "string" ? theme : theme?.__orbThemeName;
+				if (!name && theme?.__orbHostTheme === true) return { success: true };
 				if (!name || !themeByName.has(name)) return { success: false, error: `Theme not found: ${name ?? "unknown"}` };
 				snapshot.theme = themeByName.get(name).theme;
 				activateSDKTheme(createTheme(snapshot.theme, name));
@@ -1299,7 +1299,7 @@ registerHostSection((() => {
 				}
 				const subscriptionId = `${state.id}-bus-${state.nextStateBusID++}`;
 				state.stateBus.set(subscriptionId, { channel, handler });
-				const registration = registerWithPigo(state, "event_bus_subscribe", {
+				const registration = registerWithOrb(state, "event_bus_subscribe", {
 					extensionId: state.id, subscriptionId, channel,
 				});
 				let active = true;
@@ -1642,7 +1642,7 @@ registerHostSection((() => {
 			if (!Object.hasOwn(state.stateSnapshot.flags, name) && definition.default !== undefined) {
 				state.stateSnapshot.flags[name] = clone(definition.default);
 			}
-			registerWithPigo(state, "register_flag", { extensionId: state.id, definition: copied });
+			registerWithOrb(state, "register_flag", { extensionId: state.id, definition: copied });
 		};
 		api.getFlag = (name) => registeredFlagValue(state, String(name));
 		api.sendMessage = (message, options) => { void fireStateAction(state, "send_message", { message, options }); };

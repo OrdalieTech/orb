@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/chat"
+	"github.com/OrdalieTech/orb/chat"
 )
 
 // messageEvent is a representative SPACE mention event.

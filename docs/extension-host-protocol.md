@@ -1,7 +1,7 @@
-# pigo extension-host protocol
+# orb extension-host protocol
 
-The extension host is a local Node.js or Bun process owned by pigo. It interprets JavaScript and
-TypeScript extension modules, while pigo remains responsible for the agent loop, tools, sessions,
+The extension host is a local Node.js or Bun process owned by orb. It interprets JavaScript and
+TypeScript extension modules, while orb remains responsible for the agent loop, tools, sessions,
 authentication, UI, and the Go extension registry. The host has no direct relationship with the
 upstream `pi` executable.
 
@@ -9,7 +9,7 @@ upstream `pi` executable.
 
 The protocol is UTF-8 JSON Lines over the child process's standard streams:
 
-- pigo writes frames to the host's stdin.
+- orb writes frames to the host's stdin.
 - the host writes frames to stdout.
 - each frame is one JSON object followed by a single LF byte; embedded newlines are JSON escapes.
 - stderr is unstructured diagnostics and is never parsed as protocol data.
@@ -21,10 +21,10 @@ Every frame uses this envelope:
 
 ```json
 {
-  "protocol": "pigo-extension-host",
+  "protocol": "orb-extension-host",
   "version": 1,
   "kind": "request",
-  "id": "pigo-4",
+  "id": "orb-4",
   "method": "execute_tool",
   "params": {}
 }
@@ -33,16 +33,16 @@ Every frame uses this envelope:
 `kind` is `request`, `response`, or `event`. Requests require a non-empty `id`, `method`, and
 object-shaped `params`. Responses repeat the request id and contain exactly one of `result` or
 `error`. Events have a `method` and `params`, but no id and no response. Request ids are opaque;
-pigo currently prefixes its ids with `pigo-` and the host uses `host-` so logs remain readable.
+orb currently prefixes its ids with `orb-` and the host uses `host-` so logs remain readable.
 
 Errors have a stable machine-readable code and a human-readable message:
 
 ```json
 {
-  "protocol": "pigo-extension-host",
+  "protocol": "orb-extension-host",
   "version": 1,
   "kind": "response",
-  "id": "pigo-4",
+  "id": "orb-4",
   "error": {
     "code": "extension_error",
     "message": "tool failed",
@@ -57,11 +57,11 @@ without changing version 1. A peer must reject a different major `version` durin
 
 ## Handshake and loading
 
-The first stdout frame must be a host-to-pigo `handshake` request. Nothing else may be sent until
-pigo answers it.
+The first stdout frame must be a host-to-orb `handshake` request. Nothing else may be sent until
+orb answers it.
 
 ```json
-{"protocol":"pigo-extension-host","version":1,"kind":"request","id":"host-1","method":"handshake","params":{"runtime":{"name":"node","version":"24.15.0"},"capabilities":["tool_updates"]}}
+{"protocol":"orb-extension-host","version":1,"kind":"request","id":"host-1","method":"handshake","params":{"runtime":{"name":"node","version":"24.15.0"},"capabilities":["tool_updates"]}}
 ```
 
 The response supplies stable extension ids, entry paths, and agent information. Paths are absolute
@@ -71,19 +71,19 @@ directory because Node refuses native TypeScript stripping there. `agent` is del
 so later capabilities can extend the state snapshot without changing the envelope.
 
 ```json
-{"protocol":"pigo-extension-host","version":1,"kind":"response","id":"host-1","result":{"extensionEntries":[{"id":"ext-1","path":"/work/ext.mjs"}],"agent":{"name":"pigo","version":"dev","cwd":"/work","agentDir":"/home/me/.pi/agent"},"capabilities":["tool_updates"]}}
+{"protocol":"orb-extension-host","version":1,"kind":"response","id":"host-1","result":{"extensionEntries":[{"id":"ext-1","path":"/work/ext.mjs"}],"agent":{"name":"orb","version":"dev","cwd":"/work","agentDir":"/home/me/.pi/agent"},"capabilities":["tool_updates"]}}
 ```
 
-After the handshake, pigo sends one `load_extension` request per entry, in entry-list order. The
+After the handshake, orb sends one `load_extension` request per entry, in entry-list order. The
 host uses a real dynamic `import()` and awaits the module's default factory. Registrations made by
-that factory are host-to-pigo requests described below. A successful load response is:
+that factory are host-to-orb requests described below. A successful load response is:
 
 ```json
-{"protocol":"pigo-extension-host","version":1,"kind":"response","id":"pigo-1","result":{"extensionId":"ext-1","path":"/work/ext.mjs","loaded":true}}
+{"protocol":"orb-extension-host","version":1,"kind":"response","id":"orb-1","result":{"extensionId":"ext-1","path":"/work/ext.mjs","loaded":true}}
 ```
 
 A missing default factory, import failure, or factory failure returns an `extension_load_error`
-response for that entry. Pigo continues with later entries, so one bad extension cannot prevent
+response for that entry. Orb continues with later entries, so one bad extension cannot prevent
 the others from loading.
 
 Local `.ts` files and package entrypoints are imported without rewriting the source tree. Bun runs
@@ -96,12 +96,12 @@ package; the legacy `@sinclair/typebox` name binds to the current `typebox` SDK 
 compatibility.
 
 Runtime discovery prefers Node when it is at least 22.6 and otherwise tries Bun. If neither is
-available, pigo emits exactly `JS extensions require Node.js ≥22.6 or Bun; skills, prompt templates,
+available, orb emits exactly `JS extensions require Node.js ≥22.6 or Bun; skills, prompt templates,
 MCP servers and built-in tools work without it` and continues loading non-JavaScript resources.
 
-## Host-to-pigo registrations
+## Host-to-orb registrations
 
-Registrations are requests because pigo must validate them before the extension is reported as
+Registrations are requests because orb must validate them before the extension is reported as
 loaded. The synchronous `pi.registerTool()`, `pi.registerCommand()`, and `pi.on()` stubs collect
 registrations while the factory runs; after the awaited factory completes, the host flushes those
 requests in call order. Every registration includes the `extensionId` assigned during the
@@ -131,20 +131,20 @@ changes before processing the next agent action.
 }
 ```
 
-The host retains the JavaScript `execute` callback. Pigo installs a normal Go
+The host retains the JavaScript `execute` callback. Orb installs a normal Go
 `extensions.ToolDefinition` whose execution closure sends `execute_tool` back to the host.
 `constrainedSampling: false` is omitted as upstream's explicit-disable form; object configurations
 are forwarded to the provider. `prepareArguments` remains a separately inventoried compatibility surface.
 
 `register_command` carries `extensionId`, `name`, and an options object containing `description`.
-The host retains the handler; argument completion is outside Phase 1. Pigo installs a normal
+The host retains the handler; argument completion is outside Phase 1. Orb installs a normal
 `extensions.Command` whose handler sends `execute_command`.
 
 `subscribe_event` carries `extensionId`, a host-generated `subscriptionId`, and the upstream event
 name. Each call to `pi.on()` creates a distinct subscription, preserving handler registration
-order. Pigo installs an ordinary registry handler which sends `emit_event` to that subscription.
+order. Orb installs an ordinary registry handler which sends `emit_event` to that subscription.
 
-`register_renderer` carries `extensionId`, `kind` (`message` or `entry`), and `customType`. Pigo
+`register_renderer` carries `extensionId`, `kind` (`message` or `entry`), and `customType`. Orb
 registers a native renderer closure. Invoking it sends `create_registered_renderer_component` with
 the value, expanded state, and theme snapshot; the returned generation-scoped handle is used by
 `render_registered_renderer_component` and `dispose_registered_renderer_component`. Both the
@@ -153,7 +153,7 @@ renderer and its component's `render(width)` remain synchronous from the extensi
 Each accepted registration response is `{ "accepted": true }`. Invalid definitions return
 `invalid_registration`, which fails only the extension currently loading.
 
-## Pigo-to-host execution
+## Orb-to-host execution
 
 `execute_tool` is a request with `extensionId`, `toolName`, `toolCallId`, arbitrary JSON `params`,
 and an additive `context` object. The host calls the retained tool callback with an AbortSignal,
@@ -175,14 +175,14 @@ events may use the same method as an event frame when no result is required.
 
 ## Diagnostics, shutdown, and process generations
 
-`log` is a host-to-pigo event with `level` (`debug`, `info`, `warn`, or `error`), `message`, and an
+`log` is a host-to-orb event with `level` (`debug`, `info`, `warn`, or `error`), `message`, and an
 optional `extensionId`. Raw runtime diagnostics still go to stderr.
 
-For clean shutdown pigo sends a `shutdown` request. The host stops accepting new work, answers
-`{ "stopped": true }`, closes stdin processing, and exits. Pigo closes or kills the child if it
+For clean shutdown orb sends a `shutdown` request. The host stops accepting new work, answers
+`{ "stopped": true }`, closes stdin processing, and exits. Orb closes or kills the child if it
 does not exit within the shutdown timeout.
 
-An unexpected EOF or child exit fails every in-flight request for that process generation. Pigo
+An unexpected EOF or child exit fails every in-flight request for that process generation. Orb
 may start a fresh generation after backoff, repeat the handshake, and reload the complete entry
 list. Registrations are generation-scoped inside the host; the stable Go wrappers address an
 extension and registration by id/name, so callbacks automatically target the fresh process.
@@ -198,7 +198,7 @@ not use its methods. No Phase 1 field changes shape when these surfaces are adde
 
 ## Phase 2b: extension UI
 
-Phase 2b advertises the `ui` capability. Every pigo-to-host callback context adds an opaque
+Phase 2b advertises the `ui` capability. Every orb-to-host callback context adds an opaque
 `uiContextId` and a `ui` snapshot while retaining the Phase-1 `cwd`, `mode`, and `hasUI` fields.
 The id binds calls back to the exact native `extensions.Context`; it is valid only until the
 enclosing tool, command, or event callback settles. The snapshot makes the synchronous UI reads
@@ -249,7 +249,7 @@ their native behavior rather than acquiring a second mode-specific implementatio
 ### Component handles and pushed rendering
 
 Component factories are retained in the host under generation-scoped `factoryHandle` values.
-Custom takeover adds a `componentHandle` and `customOptions`; pigo invokes the retained factory by
+Custom takeover adds a `componentHandle` and `customOptions`; orb invokes the retained factory by
 sending a correlated `ui_component_event` request with `event: "mount"`, the live terminal size,
 theme snapshot, keybindings snapshot, and footer data when applicable. Before invoking a factory
 or renderer, the host also publishes that snapshot under both SDK-global theme symbols used by the
@@ -258,18 +258,18 @@ the same theme object passed to the extension factory. The same request method c
 focus, and editor operations (`input`, `focus`, `set_text`, terminal input, and editor autocomplete
 attachment). The mount response reports whether the component handles input,
 tracks `focused`, or requests key-release events so the proxy implements the matching native TUI
-interfaces. Render and dispose notifications use event frames, because pigo never waits
+interfaces. Render and dispose notifications use event frames, because orb never waits
 synchronously for JavaScript rendering.
 
 Rendering is push-based. Calling the Go component's `Render(width)` returns the latest cached line
-array and emits a debounced pigo-to-host `ui_component_event` with `event: "render"`. The host calls
+array and emits a debounced orb-to-host `ui_component_event` with `event: "render"`. The host calls
 the extension's synchronous `render(width)` and pushes the new lines back as:
 
 ```json
 {"kind":"event","method":"ui_component_render","params":{"componentHandle":"ext-1-ui-component-3","lines":["counter: 2"],"width":80}}
 ```
 
-Pigo replaces the cache and invalidates the native UI host. Input handlers schedule the same
+Orb replaces the cache and invalidates the native UI host. Input handlers schedule the same
 pushed render after they run. `dispose` is generation-scoped and idempotent. Overlay creation sends
 `event: "overlay_handle"`; the JavaScript proxy forwards hide/show/focus/unfocus as `overlay_action`
 mutations while retaining synchronous hidden/focused state locally.
@@ -298,7 +298,7 @@ headers, current model list, auth display metadata, and opaque generation-scoped
     "id": "example",
     "name": "Example",
     "baseUrl": "https://example.invalid/v1",
-    "headers": {"X-Client":"pigo"},
+    "headers": {"X-Client":"orb"},
     "models": [{"id":"example-1","name":"Example 1","api":"openai-responses","provider":"example","baseUrl":"https://example.invalid/v1","reasoning":false,"input":["text"],"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"contextWindow":8192,"maxTokens":2048}],
     "auth": {
       "apiKey": {"name":"Example API key","resolve":"ext-1-provider-1","login":"ext-1-provider-2","check":"ext-1-provider-3"},
@@ -313,10 +313,10 @@ headers, current model list, auth display metadata, and opaque generation-scoped
 For `kind:"config"`, `provider.config` contains only the fields defined by the extension:
 `name`, `baseUrl`, `apiKey`, `api`, `headers`, `authHeader`, `models`, and an optional retained
 `streamSimple` handle. Its `defined` object records presence separately from zero values so Go can
-apply the existing `ProviderConfig` merge semantics. Pigo validates either form and responds with
+apply the existing `ProviderConfig` merge semantics. Orb validates either form and responds with
 `{"accepted":true}` before the extension load completes.
 
-Pigo invokes a retained callable with `provider_invoke`. `handle` is opaque and valid only for the
+Orb invokes a retained callable with `provider_invoke`. `handle` is opaque and valid only for the
 current process generation; `extensionId`, `providerId`, and `method` prevent a handle from being
 used for another registration. `method` is one of `apiKey.resolve`, `apiKey.login`, `apiKey.check`,
 `oauth.login`, `oauth.refresh`, `oauth.toAuth`, `stream`, or `streamSimple`.
@@ -343,7 +343,7 @@ actions) carry no deadline — upstream awaits them untimed — and only host-in
 (handshake, `load_extension`, dependency install) stay bounded. Cancelling the Go-side context of
 a pending callback emits a `cancel_request` notification `{"requestId":..., "reason":...}`; the
 host aborts the per-request `AbortController` backing the positional `AbortSignal` upstream
-extensions receive. The host also exits when its stdin transport closes, so a hard pigo crash
+extensions receive. The host also exits when its stdin transport closes, so a hard orb crash
 cannot orphan it, and extensions see the full Node `console` surface (`trace`, `table`, `group`,
 `time`/`timeEnd`, `count`, `assert`, …) routed through the log bridge.
 
@@ -354,15 +354,15 @@ Auth callbacks can call back into Go while `provider_invoke` is pending. The hos
 - `prompt` carries an upstream `AuthPrompt` and waits for entered text or a selected option id.
 - `notify` carries an upstream `AuthEvent`, including `auth_url`, and has no response.
 
-Pigo answers the request-like event through the same event channel with
+Orb answers the request-like event through the same event channel with
 `provider_interaction_result`: `{callId,present,value}` on success, or `{callId,error}` on failure.
 This keeps paste/manual-code prompts bidirectional without blocking the JSONL reader, while auth
 URL and progress notifications remain fire-and-forget.
 
 Extension exceptions use the normal protocol error envelope. The host includes the JavaScript
-message and stack in `error.data.stack`; pigo reports both as an extension diagnostic and returns a
+message and stack in `error.data.stack`; orb reports both as an extension diagnostic and returns a
 non-retryable `ProviderInvokeError`. If the process exits or restarts while an invocation is in
-flight, pigo returns a retryable `ProviderInvokeError`. A replacement generation reloads all
+flight, orb returns a retryable `ProviderInvokeError`. A replacement generation reloads all
 extensions and re-sends `register_provider`; the Go wrapper resolves the fresh handle by stable
 extension/provider/method identity immediately before every later invocation, so re-registration
 is idempotent and callers do not retain stale generation handles.
@@ -375,7 +375,7 @@ registered flag values, session name, active and available tools, commands, thin
 context, readonly session data, and readonly model-registry data. Each loaded extension owns a
 local copy. Synchronous JavaScript getters read only that copy; they never issue a request.
 
-Pigo replaces an extension's copy before every tool, command, or event callback, and after a
+Orb replaces an extension's copy before every tool, command, or event callback, and after a
 successful runtime mutation, with this event:
 
 ```json
@@ -405,20 +405,20 @@ scoped operation id; `state_exec_cancel` cancels the corresponding Go process co
 response reports `killed:true`.
 
 The event bus uses `event_bus_subscribe`, `event_bus_unsubscribe`, and `event_bus_emit` host
-requests. Pigo delivers cross-extension values with a correlated `event_bus_dispatch` request.
+requests. Orb delivers cross-extension values with a correlated `event_bus_dispatch` request.
 The source extension invokes its own listeners immediately and is suppressed from the Go-bus
 echo, so each listener runs once. Subscription ids and retained callbacks are generation-scoped.
 
 Event callback responses now include the handler's post-callback `payload` alongside optional
-`value`. Pigo copies mutable `tool_call.input` and `before_provider_headers.headers` objects back
+`value`. Orb copies mutable `tool_call.input` and `before_provider_headers.headers` objects back
 before decoding the return value, then decodes every modifying or veto result into its typed Go
 form. A `user_bash` result containing JavaScript operations replaces the function with an opaque
 `hostOperationId`; later `execute_bash_operation` requests invoke it, `tool_update` events stream
 base64 data for that request id, and the terminal response carries `exitCode`.
 
-Before starting the child host, pigo atomically materializes `<agentDir>/host/bin/pi`, prepends its
+Before starting the child host, orb atomically materializes `<agentDir>/host/bin/pi`, prepends its
 directory to `PATH`, and exports `PI_SUBAGENT_PI_BINARY`, `PI_CODING_AGENT_DIR`, and
-`PI_CODING_AGENT=true`. The same environment is used by `pi.exec`. Pigo then locates each entry's
+`PI_CODING_AGENT=true`. The same environment is used by `pi.exec`. Orb then locates each entry's
 nearest owning `package.json`; declared production dependencies are left alone when resolvable from
 local or hoisted `node_modules`, otherwise npm runs with `--omit=dev --no-audit --no-fund`, or Bun
 runs with `--production`. Package staging exposes those declared dependencies and prioritizes the
@@ -428,11 +428,11 @@ that entry and later extensions continue. Node starts with native type stripping
 non-erasable TypeScript syntax when supported (Node ≥22.7), and preserved symlink resolution; Bun
 runs TypeScript directly. Node 22.6 supports the required erasable TypeScript baseline.
 
-If neither Node.js ≥22.6 nor Bun is available, pigo does not start a host and emits `JS extensions
+If neither Node.js ≥22.6 nor Bun is available, orb does not start a host and emits `JS extensions
 require Node.js ≥22.6 or Bun; skills, prompt templates, MCP servers and built-in tools work without
 it`. This is an extension-load diagnostic, not a process-start failure.
 
 Callback contexts carry a generation-scoped `signal` descriptor with `{id,aborted,reason}`. The
-host materializes it as a real JavaScript `AbortSignal`; pigo sends `state_signal_abort` while the
+host materializes it as a real JavaScript `AbortSignal`; orb sends `state_signal_abort` while the
 callback is running and `state_signal_release` when it returns. For `session_before_compact` and
 `session_before_tree`, the event payload's `signal` is the same live signal exposed on `ctx`.

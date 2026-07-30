@@ -3,7 +3,7 @@ package codingagent
 import (
 	"testing"
 
-	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/orb/agent"
 )
 
 func TestCodingAgentRegistersDefaultAgentStream(t *testing.T) {

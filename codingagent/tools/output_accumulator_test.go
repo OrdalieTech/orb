@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/internal/truncate"
+	"github.com/OrdalieTech/orb/internal/truncate"
 )
 
 func TestOutputAccumulatorDecodesStreamingUTF8AndInitialBOM(t *testing.T) {

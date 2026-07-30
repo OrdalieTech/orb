@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 func googleRawPresent(value json.RawMessage) bool {

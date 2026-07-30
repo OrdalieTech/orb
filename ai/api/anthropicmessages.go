@@ -12,9 +12,9 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/internal/jsonwire"
-	"github.com/OrdalieTech/pigo/internal/partialjson"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
+	"github.com/OrdalieTech/orb/internal/partialjson"
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 )

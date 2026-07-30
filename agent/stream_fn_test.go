@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 func TestDefaultStreamFnCompatibility(t *testing.T) {

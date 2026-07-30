@@ -45,7 +45,7 @@ const RESOURCE_PATTERNS = [
 // Ordered: the first rule that matches wins, so specific rules precede generic ones.
 const RULES = [
 	// Environment constraints are the package telling us it wants a different
-	// toolchain. They are not pigo incompatibilities and must never be counted as
+	// toolchain. They are not orb incompatibilities and must never be counted as
 	// one; the corpus pins Node 24 and npm by construction.
 	{
 		class: "environment_constraint",

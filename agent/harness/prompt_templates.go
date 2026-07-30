@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"github.com/OrdalieTech/pigo/internal/jstrim"
+	"github.com/OrdalieTech/orb/internal/jstrim"
 )
 
 type PromptTemplateDiagnosticCode string

@@ -3,7 +3,7 @@ package codingagent
 import (
 	"context"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 // DefaultModelIDForProvider reports the upstream defaultModelPerProvider entry

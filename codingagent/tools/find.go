@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/internal/jsonschema"
-	"github.com/OrdalieTech/pigo/internal/truncate"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/internal/jsonschema"
+	"github.com/OrdalieTech/orb/internal/truncate"
 )
 
 const defaultFindLimit = 1000

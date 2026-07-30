@@ -10,21 +10,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	"github.com/OrdalieTech/pigo/internal/filelock"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
+	"github.com/OrdalieTech/orb/internal/filelock"
 )
 
 // SDK auto-provisioning. Upstream pi bundles the SDK with itself, so a loose
 // extension file may import "@earendil-works/pi-ai" without declaring it
-// anywhere. pigo never borrows an installed pi's copy; instead, the first
-// launch that needs the SDK installs the pinned version into pigo's own user
+// anywhere. orb never borrows an installed pi's copy; instead, the first
+// launch that needs the SDK installs the pinned version into orb's own user
 // npm root, the same root managedSDKRoot resolves. Package-installed
 // extensions declare their dependencies and never trigger this.
 //
 // ponytail: provisioning targets the user root only — a project-trusted
 // install into the project root stays a manual step, because writing into a
-// project's tree unprompted is not pigo's call to make.
+// project's tree unprompted is not orb's call to make.
 
 const sdkInstallTimeout = 3 * time.Minute
 
@@ -92,7 +92,7 @@ func (manager *Manager) ensureSDKProvisioned(ctx context.Context, runtime Runtim
 		return
 	}
 	defer func() { _ = release() }()
-	// Another pigo may have provisioned while this one waited on the lock.
+	// Another orb may have provisioned while this one waited on the lock.
 	if managedSDKRoot(options) != "" {
 		return
 	}

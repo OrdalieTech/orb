@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/orb/codingagent/session"
 )
 
 func TestMarkdownExportMatchesActiveBranchGolden(t *testing.T) {

@@ -1,6 +1,6 @@
 package models
 
-import "github.com/OrdalieTech/pigo/ai"
+import "github.com/OrdalieTech/orb/ai"
 
 func openRouterImages() []ai.ImagesModel {
 	return []ai.ImagesModel{

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/tui"
 
-	theme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
+	theme "github.com/OrdalieTech/orb/codingagent/modes/theme"
 )
 
 type extensionDialogOptions struct {

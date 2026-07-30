@@ -1,4 +1,4 @@
-// Package telegram implements the Telegram Bot API adapter for the pigo
+// Package telegram implements the Telegram Bot API adapter for the orb
 // chat gateway: ingress (webhook and long poll), delivery (typing indicator,
 // streamed preview edits, HTML finalization with chunking), and media
 // download. It plugs into the chat processor via [chat.Adapter].

@@ -9,9 +9,9 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	agenttools "github.com/OrdalieTech/pigo/codingagent/tools"
-	"github.com/OrdalieTech/pigo/conformance/runner"
-	"github.com/OrdalieTech/pigo/internal/truncate"
+	agenttools "github.com/OrdalieTech/orb/codingagent/tools"
+	"github.com/OrdalieTech/orb/conformance/runner"
+	"github.com/OrdalieTech/orb/internal/truncate"
 )
 
 type f5Fixture struct {

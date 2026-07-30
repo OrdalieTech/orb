@@ -24,7 +24,7 @@ const REGISTRY = "https://registry.npmjs.org";
 const DOWNLOADS = "https://api.npmjs.org/downloads/point";
 const PI_PACKAGE = "@earendil-works/pi-coding-agent";
 const PI_VERSION = "0.81.1";
-const USER_AGENT = "pigo-conformance-corpus/1 (+https://github.com/earendil-works/pigo)";
+const USER_AGENT = "orb-conformance-corpus/1 (+https://github.com/OrdalieTech/orb)";
 const TIER1 = 50;
 const TIER2 = 50;
 
@@ -432,10 +432,10 @@ async function main() {
 	};
 
 	const manifest = {
-		name: "pigo-extension-matrix",
+		name: "orb-extension-matrix",
 		version: "0.0.0",
 		private: true,
-		description: "Pinned dependency tree for the Pigo ecosystem extension matrix",
+		description: "Pinned dependency tree for the Orb ecosystem extension matrix",
 		dependencies: Object.fromEntries(
 			[[PI_PACKAGE, PI_VERSION], ...extensions.map((entry) => [entry.package, entry.version])].sort(([left], [right]) =>
 				left.localeCompare(right),

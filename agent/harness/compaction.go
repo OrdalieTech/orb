@@ -11,8 +11,8 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 const estimatedImageChars int64 = 4800

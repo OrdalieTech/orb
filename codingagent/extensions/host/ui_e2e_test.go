@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 type uiNotification struct {
@@ -309,7 +309,7 @@ func (stubKeybindings) UserBindings() map[string][]string          { return nil 
 func (stubKeybindings) ResolvedBindings() map[string][]string      { return nil }
 
 func TestHostInitializesSDKGlobalThemeBeforeCustomFactory(t *testing.T) {
-	agentDir := t.TempDir()
+	agentDir := isolatedTempDir(t)
 	sdkRoot := filepath.Join(agentDir, "npm", "node_modules", "@earendil-works", "pi-coding-agent")
 	writeFile(t, filepath.Join(sdkRoot, "package.json"), `{"name":"@earendil-works/pi-coding-agent","type":"module","exports":"./dist/index.js"}`, 0o600)
 	writeFile(t, filepath.Join(sdkRoot, "dist", "index.js"), `
@@ -326,7 +326,7 @@ export class BorderedLoader {
   dispose() {}
 }
 `, 0o600)
-	entry := filepath.Join(t.TempDir(), "sdk-theme.mjs")
+	entry := filepath.Join(agentDir, "extensions", "sdk-theme.mjs")
 	writeFile(t, entry, `
 import { BorderedLoader } from "@earendil-works/pi-coding-agent";
 export default function (pi) {

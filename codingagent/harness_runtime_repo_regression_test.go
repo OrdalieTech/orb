@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/agent/harness"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/orb/agent/harness"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
 )
 
 func TestRepoBoundHarnessRuntimeSupportsAllReplacementOperations(t *testing.T) {

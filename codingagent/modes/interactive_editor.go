@@ -3,8 +3,8 @@ package modes
 import (
 	"strings"
 
-	"github.com/OrdalieTech/pigo/codingagent/modes/theme"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/codingagent/modes/theme"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 // CustomEditor wraps tui.Editor with app-level keybinding dispatch.

@@ -11,18 +11,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
 )
 
-const runtimeUnavailableMessage = "JS extensions require Node.js ≥22.6 or Bun; set PIGO_NODE to a Node executable if one is installed where pigo cannot find it. Skills, prompt templates, MCP servers and built-in tools work without it"
+const runtimeUnavailableMessage = "JS extensions require Node.js ≥22.6 or Bun; set ORB_NODE to a Node executable if one is installed where orb cannot find it. Skills, prompt templates, MCP servers and built-in tools work without it"
 
 // nodeOverrideEnv names the Node executable outright, for the setups no search
 // can reach: a build outside every conventional prefix, or two installs where
 // PATH picks the one the user does not want. It is authoritative — an override
 // that cannot run is reported rather than silently replaced, because a silently
 // ignored escape hatch is the failure it was meant to prevent. Set it to "none"
-// to keep pigo from running JavaScript extensions at all.
-const nodeOverrideEnv = "PIGO_NODE"
+// to keep orb from running JavaScript extensions at all.
+const nodeOverrideEnv = "ORB_NODE"
 
 const nodeOverrideDisabled = "none"
 
@@ -165,7 +165,7 @@ func nodeCandidates() []string {
 // Every pattern is POSIX and simply matches nothing on Windows, which lands with
 // D8; none of them is wrong there, only inert.
 // ponytail: the newest install wins within a version manager rather than the
-// version the user selected, which pigo cannot read without running the manager;
+// version the user selected, which orb cannot read without running the manager;
 // upgrade path is honouring `.nvmrc`/`.tool-versions` when one is present.
 func nodeSearchPatterns() []string {
 	home, _ := os.UserHomeDir()

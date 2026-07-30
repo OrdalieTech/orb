@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const detachedBrowserHelperEnv = "PIGO_TEST_DETACHED_BROWSER_HELPER"
+const detachedBrowserHelperEnv = "ORB_TEST_DETACHED_BROWSER_HELPER"
 
 // LOG-M1: the launcher returns while its child remains alive in a separate OS
 // session, the observable POSIX effect of spawn({ detached: true }).unref().

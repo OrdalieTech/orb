@@ -18,8 +18,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/OrdalieTech/pigo/ai/auth"
-	"github.com/OrdalieTech/pigo/internal/jsonwire"
+	"github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 const (

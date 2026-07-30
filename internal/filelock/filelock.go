@@ -4,7 +4,7 @@
 // the lock as a DIRECTORY via mkdir and refreshes its mtime while held. A POSIX
 // flock on the same path leaves a zero-byte regular file behind instead, and
 // proper-lockfile never treats a plain file as stale, so it then fails with
-// EEXIST forever. One pigo write is enough to wedge the TypeScript runtime
+// EEXIST forever. One orb write is enough to wedge the TypeScript runtime
 // permanently. Every path both runtimes touch must lock through here.
 package filelock
 
@@ -47,7 +47,7 @@ func Acquire(path string) (func() error, error) {
 			continue
 		case statErr != nil:
 			return nil, statErr
-		// A regular file is a lock an older pigo took with flock and never
+		// A regular file is a lock an older orb took with flock and never
 		// removed; reclaim it so the two runtimes stop deadlocking on it.
 		case !info.IsDir(), time.Since(info.ModTime()) > stale:
 			if removeErr := os.Remove(lockPath); removeErr == nil || errors.Is(removeErr, os.ErrNotExist) {

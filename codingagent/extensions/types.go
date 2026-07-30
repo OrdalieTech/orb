@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"slices"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/agent/harness"
-	"github.com/OrdalieTech/pigo/ai"
-	aiauth "github.com/OrdalieTech/pigo/ai/auth"
-	"github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/codingagent/tools"
-	"github.com/OrdalieTech/pigo/internal/jsonwire"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/harness"
+	"github.com/OrdalieTech/orb/ai"
+	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/codingagent/tools"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 type Mode string

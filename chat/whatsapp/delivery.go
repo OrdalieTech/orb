@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OrdalieTech/pigo/chat"
+	"github.com/OrdalieTech/orb/chat"
 )
 
 // delivery is one turn's output surface. chat.Delivery calls are serialized

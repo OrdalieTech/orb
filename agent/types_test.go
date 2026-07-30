@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/internal/jsonschema"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonschema"
 )
 
 func TestAgentToolFuncExposesSpecAndExecutes(t *testing.T) {

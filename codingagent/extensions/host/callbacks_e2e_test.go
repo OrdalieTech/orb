@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
 )
 
 // Regression: extension callbacks used to inherit the manager RequestTimeout
@@ -153,7 +153,7 @@ func TestRealHostCancelRequestCoalescedWithRequestStillAborts(t *testing.T) {
 	}
 }
 
-// Regression: the host stayed alive after pigo died without sending shutdown
+// Regression: the host stayed alive after orb died without sending shutdown
 // (hard crash) whenever an extension held a live handle; stdin close must end
 // the process.
 func TestRealHostExitsWhenTransportClosesWithLiveHandles(t *testing.T) {
@@ -179,7 +179,7 @@ func TestRealHostExitsWhenTransportClosesWithLiveHandles(t *testing.T) {
 }
 
 // Regression: console was frozen to five methods, so console.table/group/time
-// and friends threw TypeError under pigo while working upstream.
+// and friends threw TypeError under orb while working upstream.
 func TestRealHostProvidesFullConsoleSurface(t *testing.T) {
 	runtime := requireRuntime(t)
 	cwd := t.TempDir()

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth"
 )
 
 const googleVertexADCPath = "~/.config/gcloud/application_default_credentials.json"

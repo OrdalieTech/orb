@@ -10,15 +10,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/agent/harness"
-	"github.com/OrdalieTech/pigo/ai"
-	aiapi "github.com/OrdalieTech/pigo/ai/api"
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/codingagent/tools"
-	"github.com/OrdalieTech/pigo/internal/jsonwire"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/harness"
+	"github.com/OrdalieTech/orb/ai"
+	aiapi "github.com/OrdalieTech/orb/ai/api"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/codingagent/tools"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 type SessionRuntimeConfig struct {
@@ -298,7 +298,7 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 }
 
 // bindBashSessionEnvironment gives built-in bash tools access to the current
-// session metadata for PI_* variables. It is the pigo counterpart of upstream
+// session metadata for PI_* variables. It is the orb counterpart of upstream
 // wrapping built-in tool definitions with the extension runner's ctx factory.
 func (runtime *SessionRuntime) bindBashSessionEnvironment(baseTools []agent.AgentTool) {
 	for _, tool := range baseTools {

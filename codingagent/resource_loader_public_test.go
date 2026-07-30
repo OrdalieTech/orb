@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/codingagent"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/orb/codingagent"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
 )
 
 type publicResourceLoader struct{}

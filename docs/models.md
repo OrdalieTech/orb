@@ -1,11 +1,11 @@
 # Models
 
-pigo ships a built-in model catalog (mirrored from upstream pi's generated model registry) and
+orb ships a built-in model catalog (mirrored from upstream pi's generated model registry) and
 lets you add or override models through `models.json`. List what is available with:
 
 ```sh
-pigo --list-models            # all models
-pigo --list-models anthropic  # filter by provider or substring
+orb --list-models            # all models
+orb --list-models anthropic  # filter by provider or substring
 ```
 
 Select a model with `--model` on the command line or `/model` in the interactive TUI. Once a

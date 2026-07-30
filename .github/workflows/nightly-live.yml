@@ -28,12 +28,12 @@ jobs:
         shell: bash
         env:
           CGO_ENABLED: "0"
-          PIGO_NIGHTLY_LIVE: "1"
-          PIGO_NIGHTLY_MAX_USD: "0.25"
+          ORB_NIGHTLY_LIVE: "1"
+          ORB_NIGHTLY_MAX_USD: "0.25"
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          PIGO_OPENAI_MODEL: ${{ vars.PIGO_OPENAI_MODEL || 'gpt-5.4-nano' }}
-          PIGO_ANTHROPIC_MODEL: ${{ vars.PIGO_ANTHROPIC_MODEL || 'claude-haiku-4-5' }}
+          ORB_OPENAI_MODEL: ${{ vars.ORB_OPENAI_MODEL || 'gpt-5.4-nano' }}
+          ORB_ANTHROPIC_MODEL: ${{ vars.ORB_ANTHROPIC_MODEL || 'claude-haiku-4-5' }}
         run: |
           set -o pipefail
           go test -v -count=1 -timeout=20m ./codingagent -run '^TestNightlyLiveSuite$' 2>&1 | tee nightly-live.log

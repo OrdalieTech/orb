@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OrdalieTech/pigo/chat/internal/ctxsleep"
+	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
 )
 
 const maxResponseBytes = 4 << 20

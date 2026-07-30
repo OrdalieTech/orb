@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/internal/jsonschema"
-	"github.com/OrdalieTech/pigo/internal/truncate"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonschema"
+	"github.com/OrdalieTech/orb/internal/truncate"
 )
 
 const bashUpdateThrottle = 100 * time.Millisecond
@@ -71,7 +71,7 @@ type BashSessionEnvironment struct {
 // upstream `ctx === undefined` case).
 type BashSessionEnvironmentSource func() *BashSessionEnvironment
 
-// BashSessionEnvironmentBinder is the pigo counterpart of upstream tools
+// BashSessionEnvironmentBinder is the orb counterpart of upstream tools
 // receiving the ExtensionContext at execute time: built-ins implement
 // agent.AgentTool directly, so the session runtime binds a source instead.
 type BashSessionEnvironmentBinder interface {

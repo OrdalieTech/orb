@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	"github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/session"
 )
 
 // LOG-M1: the browser launcher mirrors upstream utils/open-browser.ts — the
@@ -41,7 +41,7 @@ func TestLOGM1OpenBrowserCommandPerPlatform(t *testing.T) {
 // LOG-M1: launcher failures stay best-effort (upstream swallows the spawn
 // error event), so a missing opener binary must not error or panic.
 func TestLOGM1OpenBrowserToleratesMissingLauncher(t *testing.T) {
-	launchDetached("pigo-test-missing-launcher-binary", []string{"https://example.test"})
+	launchDetached("orb-test-missing-launcher-binary", []string{"https://example.test"})
 }
 
 func newOpenBrowserSeamRuntime(t *testing.T, agentSettings string, runtimeConfig SessionRuntimeConfig) *SessionRuntime {

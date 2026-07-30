@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "auditedAt": "2026-07-22",
-  "method": "Static, line-grounded audit of each pinned corpus package after the current Pigo runtime shims. Each declared extension entrypoint and the code behind its primary workflow were inspected; current load/registration artifacts were used only to identify reached paths.",
-  "caveat": "These verdicts do not claim workflow execution. likely_compatible means no remaining Pigo-specific blocker was found statically and still requires the stated smoke; partial means a useful subset appears viable; main_feature_blocked means the package loads but its defining workflow cannot run; load_blocked means at least one declared entrypoint cannot load.",
+  "method": "Static, line-grounded audit of each pinned corpus package after the current Orb runtime shims. Each declared extension entrypoint and the code behind its primary workflow were inspected; current load/registration artifacts were used only to identify reached paths.",
+  "caveat": "These verdicts do not claim workflow execution. likely_compatible means no remaining Orb-specific blocker was found statically and still requires the stated smoke; partial means a useful subset appears viable; main_feature_blocked means the package loads but its defining workflow cannot run; load_blocked means at least one declared entrypoint cannot load.",
   "entries": [
     {
       "package": "@vigolium/piolium",
@@ -13,7 +13,7 @@
         "extensions/piolium/scheduler.ts:187-205"
       ],
       "blockerCategory": "none",
-      "explanation": "The inspected workflows use FileHandle, streaming TextDecoder, AbortSignal reasons, finite child processes, createAgentSession, and createWriteStream, all covered by current Pigo shims; no native addon, socket, worker, WASM, or DOM dependency was found.",
+      "explanation": "The inspected workflows use FileHandle, streaming TextDecoder, AbortSignal reasons, finite child processes, createAgentSession, and createWriteStream, all covered by current Orb shims; no native addon, socket, worker, WASM, or DOM dependency was found.",
       "remediation": "None statically.",
       "conditions": "Run real knowledge-base, web-tool, scheduler, and child-session smokes before claiming proven workflow compatibility."
     },
@@ -38,7 +38,7 @@
         "chrome-cookies.ts:95-153"
       ],
       "blockerCategory": "optional_crypto_cookie_import",
-      "explanation": "Search, fetch, extraction, and SSRF IP checks are statically viable, but optional Chrome-cookie import requires PBKDF2 and AES decipher APIs that Pigo does not provide.",
+      "explanation": "Search, fetch, extraction, and SSRF IP checks are statically viable, but optional Chrome-cookie import requires PBKDF2 and AES decipher APIs that Orb does not provide.",
       "remediation": "Add standards-faithful PBKDF2 and AES decipher support only if Chrome-cookie import is prioritized.",
       "conditions": "Smoke ordinary search/fetch/extraction separately from authenticated Chrome-cookie import."
     },
@@ -65,7 +65,7 @@
         "package.json:107"
       ],
       "blockerCategory": "native_sqlite_addon",
-      "explanation": "The mandatory persistence backend loads better-sqlite3 after createRequire setup, so the extension cannot initialize in Pigo's pure-Go runtime.",
+      "explanation": "The mandatory persistence backend loads better-sqlite3 after createRequire setup, so the extension cannot initialize in Orb's pure-Go runtime.",
       "remediation": "Use an extension-supported non-native backend or design an explicit Go or service-backed SQLite integration; do not stub better-sqlite3.",
       "conditions": "Load the extension, migrate its database, and exercise persistence and FTS."
     },
@@ -92,7 +92,7 @@
       ],
       "blockerCategory": "external_service_prerequisite",
       "explanation": "The inspected paths use ordinary fetch and command registration; the only expected prerequisite is the configured Remnic daemon and token.",
-      "remediation": "None in Pigo.",
+      "remediation": "None in Orb.",
       "conditions": "Run the commands against a real authenticated Remnic daemon."
     },
     {
@@ -116,7 +116,7 @@
         "index.ts:784"
       ],
       "blockerCategory": "eager_optional_dependency_resolution",
-      "explanation": "Pigo's CommonJS bundling resolves the deferred @anthropic-ai/claude-agent-sdk dynamic import at compile time even when that provider path is not selected.",
+      "explanation": "Orb's CommonJS bundling resolves the deferred @anthropic-ai/claude-agent-sdk dynamic import at compile time even when that provider path is not selected.",
       "remediation": "Correct dynamic-import externalization and package resolution, then install and test the real SDK rather than faking its exports.",
       "conditions": "Load the extension and run its AI-provider workflow."
     },
@@ -190,7 +190,7 @@
         "state/i18n-bridge.ts:41"
       ],
       "blockerCategory": "top_level_await_module_loading",
-      "explanation": "The declared entrypoint uses top-level await, which esbuild cannot emit into Pigo's synchronous CommonJS execution model.",
+      "explanation": "The declared entrypoint uses top-level await, which esbuild cannot emit into Orb's synchronous CommonJS execution model.",
       "remediation": "Design true ESM and asynchronous module execution or a proven semantics-preserving transform; changing only the JavaScript target is insufficient.",
       "conditions": "Load the extension and open the question UI after module support exists."
     },
@@ -204,7 +204,7 @@
       ],
       "blockerCategory": "external_service_prerequisite",
       "explanation": "This is intentionally an event-only extension with no commands or tools and it deliberately disables itself without a key or local daemon; no unsupported static API was found.",
-      "remediation": "None in Pigo.",
+      "remediation": "None in Orb.",
       "conditions": "Smoke credentialed event delivery and flush behavior, and verify deliberate no-key disablement."
     },
     {
@@ -228,7 +228,7 @@
         "state/i18n-bridge.ts:40"
       ],
       "blockerCategory": "top_level_await_module_loading",
-      "explanation": "The declared entrypoint and i18n bridge use top-level await, which Pigo's synchronous CommonJS execution model cannot compile.",
+      "explanation": "The declared entrypoint and i18n bridge use top-level await, which Orb's synchronous CommonJS execution model cannot compile.",
       "remediation": "Design true ESM and asynchronous module execution or a semantics-preserving transform, then reassess UI compatibility.",
       "conditions": "Load the extension and execute its todo UI and workflow."
     },
@@ -269,7 +269,7 @@
         "index.js:1323-1324"
       ],
       "blockerCategory": "session_listing_and_rich_tui",
-      "explanation": "Commands register, but their checkpoint and rewind selectors construct Input, Text, and TruncatedText and call SessionManager.list or listAll, which Pigo does not expose.",
+      "explanation": "Commands register, but their checkpoint and rewind selectors construct Input, Text, and TruncatedText and call SessionManager.list or listAll, which Orb does not expose.",
       "remediation": "Implement faithful session-list APIs and the required TUI components as an explicit compatibility surface.",
       "conditions": "Invoke checkpoint and rewind selectors over real sessions."
     },
@@ -295,7 +295,7 @@
         "dist/extensions/agent-browser/index.js:682"
       ],
       "blockerCategory": "external_executable_prerequisite",
-      "explanation": "The base tool delegates finite operations to a separate agent-browser executable on PATH, and those buffered-at-exit process calls fit current Pigo semantics.",
+      "explanation": "The base tool delegates finite operations to a separate agent-browser executable on PATH, and those buffered-at-exit process calls fit current Orb semantics.",
       "remediation": "None for the base path.",
       "conditions": "Install the matching agent-browser and smoke open, snapshot, and click; assess Electron or long-lived progress paths separately."
     },
@@ -308,8 +308,8 @@
         "index.ts:81-92"
       ],
       "blockerCategory": "external_service_prerequisite",
-      "explanation": "Both tools use ordinary fetch and JSON against Ollama's local experimental search endpoints, with no unsupported Pigo API in the inspected paths.",
-      "remediation": "None in Pigo.",
+      "explanation": "Both tools use ordinary fetch and JSON against Ollama's local experimental search endpoints, with no unsupported Orb API in the inspected paths.",
+      "remediation": "None in Orb.",
       "conditions": "Run both tools against a real Ollama endpoint that exposes the expected APIs."
     },
     {
@@ -334,7 +334,7 @@
         "index.ts:187-197"
       ],
       "blockerCategory": "external_credentials_prerequisite",
-      "explanation": "Dynamic registration waits for credentials at session_start, while the search path uses AbortSignal timeout and any plus streaming TextDecoder, all now implemented in Pigo.",
+      "explanation": "Dynamic registration waits for credentials at session_start, while the search path uses AbortSignal timeout and any plus streaming TextDecoder, all now implemented in Orb.",
       "remediation": "None statically.",
       "conditions": "With a DeepSeek key, verify session_start registration, streaming search, cancellation, and timeout."
     },
@@ -388,7 +388,7 @@
       ],
       "blockerCategory": "external_credentials_prerequisite",
       "explanation": "This event-only extension uses modelRegistry credential lookup and ordinary fetch, with no commands, tools, or unsupported static API.",
-      "remediation": "None in Pigo.",
+      "remediation": "None in Orb.",
       "conditions": "Select a DeepSeek model and verify footer refresh and error handling with real credentials."
     },
     {
@@ -413,7 +413,7 @@
         "broker/spawn.ts:215"
       ],
       "blockerCategory": "real_unix_and_tcp_sockets",
-      "explanation": "Registration succeeds with Pigo's IP-only net helpers, but the defining broker calls net.createServer and net.connect, which the runtime does not implement.",
+      "explanation": "Registration succeeds with Orb's IP-only net helpers, but the defining broker calls net.createServer and net.connect, which the runtime does not implement.",
       "remediation": "Implement real socket semantics or provide an intentional native Go intercom transport.",
       "conditions": "Start a broker and exchange messages between two live sessions."
     },
@@ -440,7 +440,7 @@
       ],
       "blockerCategory": "external_credentials_prerequisite",
       "explanation": "The inspected Jira and Confluence paths use supported authentication storage, fetch, text, and arrayBuffer surfaces; only real credentials and network access are expected.",
-      "remediation": "None in Pigo.",
+      "remediation": "None in Orb.",
       "conditions": "Run credentialed Jira and Confluence read and write smokes."
     },
     {
@@ -479,7 +479,7 @@
         "src/lsp-client.ts:288-299"
       ],
       "blockerCategory": "long_lived_bidirectional_child_stdio",
-      "explanation": "Registration succeeds, but LSP requires a persistent child process with writable stdin and streamed stdout, while Pigo currently buffers output until exit and exposes no writable pipe.",
+      "explanation": "Registration succeeds, but LSP requires a persistent child process with writable stdin and streamed stdout, while Orb currently buffers output until exit and exposes no writable pipe.",
       "remediation": "Implement real os/exec pipe streaming, lifecycle, cancellation, and shutdown semantics.",
       "conditions": "Initialize a real language server, send requests, receive diagnostics, and shut it down cleanly."
     },
@@ -504,7 +504,7 @@
         "@cursor/sdk/package.json:24-39"
       ],
       "blockerCategory": "bun_sqlite_and_sdk_packaging",
-      "explanation": "The Cursor SDK build resolves bun:sqlite and references declaration maps and package JavaScript artifacts that Pigo's bundler cannot load; ignoring the map artifacts would still leave the mandatory Bun backend.",
+      "explanation": "The Cursor SDK build resolves bun:sqlite and references declaration maps and package JavaScript artifacts that Orb's bundler cannot load; ignoring the map artifacts would still leave the mandatory Bun backend.",
       "remediation": "Use an upstream Node-compatible Cursor SDK build and exports or create a dedicated integration; do not stub bun:sqlite.",
       "conditions": "Load the extension and run a real Cursor SDK agent."
     },
@@ -518,7 +518,7 @@
       ],
       "blockerCategory": "private_settings_and_credential_sdk",
       "explanation": "Core configuration eagerly constructs SettingsManager and calls readStoredCredential, so model registration cannot initialize without faithful private settings and credential APIs.",
-      "remediation": "Implement SettingsManager and readStoredCredential against Pigo's existing stores.",
+      "remediation": "Implement SettingsManager and readStoredCredential against Orb's existing stores.",
       "conditions": "Load, resolve global and project settings, authenticate, and register and select a model."
     },
     {
@@ -545,7 +545,7 @@
         "index.ts:764-768"
       ],
       "blockerCategory": "detached_daemon_lifecycle",
-      "explanation": "A configured healthy Engram service is statically viable with the fixed AbortSignal timeout path, but cold auto-start expects truly detached child semantics that Pigo's tracked buffered execution does not provide.",
+      "explanation": "A configured healthy Engram service is statically viable with the fixed AbortSignal timeout path, but cold auto-start expects truly detached child semantics that Orb's tracked buffered execution does not provide.",
       "remediation": "Require a pre-running ENGRAM_URL for now, or implement faithful detached child lifecycle as a broader process change.",
       "conditions": "Test an already-running daemon separately from cold auto-start and shutdown."
     },

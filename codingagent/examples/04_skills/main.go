@@ -8,9 +8,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/ai/providers/faux"
-	"github.com/OrdalieTech/pigo/codingagent"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/orb/ai/providers/faux"
+	"github.com/OrdalieTech/orb/codingagent"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
 )
 
 func main() {

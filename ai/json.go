@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/OrdalieTech/pigo/internal/jsonwire"
-	"github.com/OrdalieTech/pigo/internal/partialjson"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
+	"github.com/OrdalieTech/orb/internal/partialjson"
 )
 
 var (

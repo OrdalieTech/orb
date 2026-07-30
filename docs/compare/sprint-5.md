@@ -37,7 +37,7 @@ attachment (`chat_attach`) — tools are off by default in v1.
 
 | Behavior | pi-go form |
 |---|---|
-| "Honest at-least-once": durable delivery ledger, crash-recovered sends visibly marked | Turn ledger (`pigo.chat.turn` markers) + `"♻ recovered reply"` prefix on any settled-but-not-delivered replay (`chat/processor.go` `recoveredReplyPrefix`) |
+| "Honest at-least-once": durable delivery ledger, crash-recovered sends visibly marked | Turn ledger (`orb.chat.turn` markers) + `"♻ recovered reply"` prefix on any settled-but-not-delivered replay (`chat/processor.go` `recoveredReplyPrefix`) |
 | Control-command bypass of the busy guard | `/stop` is intercepted in `Handle` before the keyed lock and aborts the active run via the active-turn registry; no ledger write |
 | Refuse unsigned webhooks outright (Hermes Cloud API: 503 without App Secret) | `whatsapp.New` returns an error without `AppSecret`; POSTs failing `X-Hub-Signature-256` verification get 403 before parsing |
 | WhatsApp Cloud is final-message-only (no edit streaming) | `Preview` is a no-op returning `""`; typing rides a mark-as-read of the inbound wamid; one final chunked send with `context.message_id` threading |

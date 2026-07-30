@@ -1,4 +1,4 @@
-# pigo — Architecture
+# Orb — Architecture
 
 Companion to [DECISIONS.md](DECISIONS.md) (the *why*). This document is the *what and how*: layout,
 per-package design, cross-cutting mechanics, conformance, sync, dependencies, build. The upstream
@@ -12,9 +12,9 @@ e.g. `packages/agent/src/agent-loop.ts`. The sync tool materializes that checkou
 ## 1. Repository layout
 
 ```
-pigo/
-├── go.mod                    module github.com/OrdalieTech/pigo   (go ≥ 1.26.5)
-├── cmd/pigo/                   CLI entry point (thin: arg parsing → codingagent)
+orb/
+├── go.mod                    module github.com/OrdalieTech/orb   (go ≥ 1.26.5)
+├── cmd/orb/                   CLI entry point (thin: arg parsing → codingagent)
 ├── ai/                       port of packages/ai        — importable alone
 │   ├── api/                  one file per API shape (openaresponses.go, anthropicmessages.go, …)
 │   ├── providers/            provider registry + per-provider metadata (generated + hand corrections)
@@ -243,10 +243,10 @@ The embedded `host.mjs` dynamically imports each entry and proxies the complete 
 versioned bidirectional JSONL. Registrations, events, tools, commands, providers and auth callbacks,
 state snapshots/deltas, and the full `ctx.ui` surface terminate in the normal Go registry and UI
 interfaces. Component rendering is push-based so Go's synchronous `Render(width)` reads the latest
-host-provided frame. A PATH-prepended `pi` symlink points subagent processes back to pigo. Hot
+host-provided frame. A PATH-prepended `pi` symlink points subagent processes back to orb. Hot
 `/reload` stops the current generation, starts a fresh child, imports every entry again, and rebinds
 stable Go wrappers. Unexpected exits use bounded restart/backoff; shutdown cancels pending UI and
-in-flight requests. If neither supported runtime exists, pigo emits the D31 diagnostic once and
+in-flight requests. If neither supported runtime exists, orb emits the D31 diagnostic once and
 continues without JavaScript extensions.
 
 **MCP** (`codingagent/mcp/`): bundled extension registering MCP servers from settings as tool
@@ -266,7 +266,7 @@ upstream's RPC tests run against our binary (F7).
 disclosure + trust gating (upstream `src/core/skills.ts`); prompt templates with bash-style arg
 expansion (`$1`, `$@`, `${1:-default}`, `${@:N:L}`); themes as data (registerable via resources).
 
-**pi packages:** `pigo install/remove/update/list/config` for `npm:`/`git:` extension/skill/theme
+**pi packages:** `orb install/remove/update/list/config` for `npm:`/`git:` extension/skill/theme
 packages — npm registry tarball fetch + extract (no node at runtime), git clone; storage
 `~/.pi/agent/npm/` + project `.pi/npm/` (upstream `docs/packages.md`). Package installation itself
 is native Go; executing package-provided JavaScript requires the D31 Node/Bun runtime.
@@ -296,7 +296,7 @@ Where upstream lacks a directly extractable test, the extractor drives upstream'
 (`packages/ai/src/providers/faux`) or public APIs to synthesize goldens. LLM-dependent behavior
 (compaction summaries) is fixture-tested at the boundary (prompts + structure), not on model output.
 
-**Black-box:** upstream RPC/CLI tests run unmodified against `pigo --mode rpc` via a thin adapter
+**Black-box:** upstream RPC/CLI tests run unmodified against `orb --mode rpc` via a thin adapter
 that swaps the spawned binary. Host behavior is covered by real Node/Bun end-to-end tests and the
 locked 44-package harness under `conformance/extensions/`; F11 remains the extracted Go-native
 runner and wiring surface.
@@ -356,7 +356,7 @@ sessions remain JSONL or memory-backed).
   binaries may enable CGo only for the Go race runtime (D7). Version checks use GitHub releases.
 - Budgets: cold start < 50 ms; release binary ≤ 55 MB decimal; `go vet` + golangci-lint clean;
   race detector on in CI tests. JavaScript startup belongs to the optional external host, while
-  > 10% pigo binary-size growth still triggers investigation.
+  > 10% orb binary-size growth still triggers investigation.
 
 ## 10. Risks & mitigations
 

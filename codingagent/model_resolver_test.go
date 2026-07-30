@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 type patternFixture struct {

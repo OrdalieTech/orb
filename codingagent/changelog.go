@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/internal/jstrim"
+	"github.com/OrdalieTech/orb/internal/jstrim"
 )
 
 type changelogEntry struct {

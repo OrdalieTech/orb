@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/config"
 	textunicode "golang.org/x/text/encoding/unicode"
 )
 

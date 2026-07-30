@@ -161,8 +161,8 @@ func TestResolveProviderAuthWrapsRefreshFailure(t *testing.T) {
 }
 
 func TestEnvironmentContextIgnoresWhitespaceValues(t *testing.T) {
-	t.Setenv("PIGO_AUTH_WHITESPACE", "  ")
-	value, ok := (EnvironmentContext{}).Env(context.Background(), "PIGO_AUTH_WHITESPACE")
+	t.Setenv("ORB_AUTH_WHITESPACE", "  ")
+	value, ok := (EnvironmentContext{}).Env(context.Background(), "ORB_AUTH_WHITESPACE")
 	if ok || value != "" {
 		t.Fatalf("environment value = %q, %t", value, ok)
 	}

@@ -3,7 +3,7 @@ package faux
 import (
 	"fmt"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 func estimateTokens(text string) int64 {

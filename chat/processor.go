@@ -13,10 +13,10 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/chat/internal/ctxsleep"
-	"github.com/OrdalieTech/pigo/codingagent"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
+	"github.com/OrdalieTech/orb/codingagent"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
 )
 
 // AllowAll is an explicit opt-out authorizer accepting every message.

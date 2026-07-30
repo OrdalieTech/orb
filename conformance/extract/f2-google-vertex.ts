@@ -480,7 +480,7 @@ async function runVertex(
 }
 
 async function extractVertexProvider(upstreamRoot: string): Promise<VertexProviderFixture> {
-  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "pigo-f2-google-vertex-provider-"));
+  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "orb-f2-google-vertex-provider-"));
   const packageRoot = path.join(temporaryRoot, "ai");
   try {
     await cp(path.join(upstreamRoot, "packages/ai"), packageRoot, { recursive: true });

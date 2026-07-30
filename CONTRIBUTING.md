@@ -1,6 +1,6 @@
-# Contributing to pigo
+# Contributing to orb
 
-pigo is a faithful Go port of [pi](https://pi.dev) (MIT, Mario Zechner). The port's contract:
+orb is a faithful Go port of [pi](https://pi.dev) (MIT, Mario Zechner). The port's contract:
 
 - **Upstream behavior is the spec.** The pinned commit in `UPSTREAM.lock` (materialize with
   `make upstream`) defines correct behavior, including quirks. Do not improve upstream; divergences

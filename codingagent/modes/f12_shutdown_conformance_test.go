@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/codingagent"
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/codingagent"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/tui"
 
-	modeTheme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
+	modeTheme "github.com/OrdalieTech/orb/codingagent/modes/theme"
 )
 
 type f12ShutdownFixture struct {
@@ -50,7 +50,7 @@ func TestF12ShutdownLifecycleMatchesUpstream(t *testing.T) {
 			}
 			gotOutput := strings.ReplaceAll(output.String(), temporary, "<tmp>")
 			// D30 changes only the executable token in this upstream fixture.
-			wantOutput := strings.Replace(test.want.Output, " pi --session", " pigo --session", 1)
+			wantOutput := strings.Replace(test.want.Output, " pi --session", " orb --session", 1)
 			if gotOutput != wantOutput {
 				t.Fatalf("shutdown output differs\nwant: %q\n got: %q", wantOutput, gotOutput)
 			}

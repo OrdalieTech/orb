@@ -3,8 +3,8 @@ package extensions
 import (
 	"testing"
 
-	"github.com/OrdalieTech/pigo/codingagent/tools"
-	"github.com/OrdalieTech/pigo/internal/truncate"
+	"github.com/OrdalieTech/orb/codingagent/tools"
+	"github.com/OrdalieTech/orb/internal/truncate"
 )
 
 func TestToolCallAccessorsDecodeMatchingEvents(t *testing.T) {
