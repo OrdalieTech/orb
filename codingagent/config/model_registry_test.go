@@ -93,6 +93,77 @@ func (method registryAPIKeyAuth) Resolve(
 	return method.resolve(ctx, authContext, credential)
 }
 
+type registryOAuth struct {
+	refresh func(context.Context, *aiauth.Credential) (*aiauth.Credential, error)
+}
+
+func (registryOAuth) Name() string { return "Registry test OAuth" }
+func (registryOAuth) Login(context.Context, aiauth.AuthInteraction) (*aiauth.Credential, error) {
+	return nil, errors.New("unused")
+}
+func (method registryOAuth) Refresh(ctx context.Context, credential *aiauth.Credential) (*aiauth.Credential, error) {
+	return method.refresh(ctx, credential)
+}
+func (registryOAuth) ToAuth(credential *aiauth.Credential) (aiauth.ModelAuth, error) {
+	access := credential.Access
+	return aiauth.ModelAuth{APIKey: &access}, nil
+}
+
+func TestModelRegistryOAuthRefreshUsesTheLiveCredentialStore(t *testing.T) {
+	directory := t.TempDir()
+	storage, err := NewAuthStorage(filepath.Join(directory, "auth.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := storage.Modify(context.Background(), "rotating", func(*aiauth.Credential) (*aiauth.Credential, error) {
+		return aiauth.OAuthCredential("refresh", "stale", time.Now().Add(time.Minute).UnixMilli()), nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := NewOfflineModelRegistry(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refreshes := 0
+	oauth := registryOAuth{refresh: func(_ context.Context, credential *aiauth.Credential) (*aiauth.Credential, error) {
+		refreshes++
+		return aiauth.OAuthCredential(credential.Refresh, "fresh", time.Now().Add(time.Hour).UnixMilli()), nil
+	}}
+	stream := func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+		return func(func(ai.AssistantMessageEvent, error) bool) {}, nil
+	}
+	if err := registry.RegisterProvider(extensions.Provider{
+		ID: "rotating", Name: "Rotating", Auth: aiauth.ProviderAuth{OAuth: oauth},
+		GetModels: func() ([]ai.Model, error) {
+			return []ai.Model{{
+				ID: "rotating", Name: "Rotating", Provider: "rotating", API: ai.APIOpenAIResponses,
+				Input: ai.InputModalities{ai.InputText}, ContextWindow: 1_000, MaxTokens: 100,
+			}}, nil
+		},
+		Stream: stream, StreamSimple: stream,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	minimum := 30 * time.Minute
+	resolved, err := registry.ResolveProviderAuthWithOverrides(
+		context.Background(),
+		"rotating",
+		nil,
+		&aiauth.ResolutionOverrides{MinOAuthValidity: &minimum},
+	)
+	if err != nil || resolved == nil || resolved.Auth.APIKey == nil || *resolved.Auth.APIKey != "fresh" {
+		t.Fatalf("resolved auth = %#v, err=%v", resolved, err)
+	}
+	reloaded, err := NewAuthStorage(filepath.Join(directory, "auth.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := reloaded.Read(context.Background(), "rotating")
+	if err != nil || persisted == nil || persisted.Access != "fresh" || refreshes != 1 {
+		t.Fatalf("persisted credential = %#v, refreshes=%d, err=%v", persisted, refreshes, err)
+	}
+}
+
 func TestModelRegistryHotReloadMatchesErrorSnapshotSemantics(t *testing.T) {
 	directory := t.TempDir()
 	path := filepath.Join(directory, "models.json")

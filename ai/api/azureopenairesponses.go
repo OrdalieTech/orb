@@ -153,6 +153,9 @@ func StreamAzureOpenAIResponsesWithOptions(
 		if err == nil && ctx.Err() != nil {
 			err = errors.New("Request was aborted") //nolint:staticcheck // Exact upstream error text is observable.
 		}
+		if err == nil && output.StopReason == ai.StopReasonPending {
+			err = errors.New("Azure OpenAI Responses stream ended without a stop reason") //nolint:staticcheck // Exact upstream text is observable.
+		}
 		if err == nil && (output.StopReason == ai.StopReasonAborted || output.StopReason == ai.StopReasonError) {
 			err = errors.New("An unknown error occurred") //nolint:staticcheck // Exact upstream error text is observable.
 		}
@@ -397,7 +400,11 @@ func postAzureOpenAIStream(
 	if err != nil {
 		return nil, err
 	}
-	httpClient, err := openAIHeaderTimeoutClient(azureOpenAIHTTPClient, streamTimeoutMS(options), headers)
+	baseClient := azureOpenAIHTTPClient
+	if options != nil && options.HTTPClient != nil {
+		baseClient = options.HTTPClient
+	}
+	httpClient, err := openAIHeaderTimeoutClient(baseClient, streamTimeoutMS(options), headers)
 	if err != nil {
 		return nil, err
 	}

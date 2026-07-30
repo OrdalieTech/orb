@@ -1172,21 +1172,7 @@ func (ui *InteractiveUI) GetToolsExpanded() bool {
 }
 
 func (ui *InteractiveUI) SetToolsExpanded(expanded bool) {
-	ui.mode.mu.Lock()
-	ui.mode.toolsExpanded = expanded
-	ui.mode.mu.Unlock()
-	for _, container := range []*tui.Container{ui.mode.header, ui.mode.chat} {
-		if container == nil {
-			continue
-		}
-		for _, component := range container.Children() {
-			setExpandedComponent(component, expanded)
-		}
-	}
-	if ui.mode.chat != nil {
-		ui.mode.chat.Invalidate()
-	}
-	ui.mode.ui.RequestRender()
+	ui.mode.setToolsExpanded(expanded)
 }
 
 func setExpandedComponent(component tui.Component, expanded bool) {

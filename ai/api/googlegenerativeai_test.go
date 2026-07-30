@@ -223,6 +223,42 @@ func TestGoogleStreamUnknownFinishReasonFailsStream_OTm1(t *testing.T) {
 	if message.StopReason != ai.StopReasonError || errorMessage != "Unhandled stop reason: BRAND_NEW_REASON" {
 		t.Fatalf("stop=%q error=%q", message.StopReason, errorMessage)
 	}
+	if message.RawStopReason == nil || *message.RawStopReason != "BRAND_NEW_REASON" {
+		t.Fatalf("raw stop reason = %v", message.RawStopReason)
+	}
+}
+
+func TestGoogleKnownErrorPreservesRawStopReason(t *testing.T) {
+	model := googleTestModel("gemini-2.5-flash")
+	apiKey := "key"
+	previousClient := googleHTTPClient
+	googleHTTPClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return googleTestResponse("data: {\"candidates\":[{\"content\":{\"parts\":[]},\"finishReason\":\"SAFETY\"}]}\n\n"), nil
+	})}
+	t.Cleanup(func() { googleHTTPClient = previousClient })
+	stream, err := StreamGoogleGenerativeAIWithOptions(context.Background(), model, ai.Context{
+		Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hello")}},
+	}, &GoogleOptions{
+		StreamOptions: ai.StreamOptions{APIKey: &apiKey},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := ai.Collect(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawStopReason, errorMessage := "", ""
+	if message.RawStopReason != nil {
+		rawStopReason = *message.RawStopReason
+	}
+	if message.ErrorMessage != nil {
+		errorMessage = *message.ErrorMessage
+	}
+	if message.RawStopReason == nil || *message.RawStopReason != "SAFETY" ||
+		message.ErrorMessage == nil || *message.ErrorMessage != "Provider stopped with: SAFETY" {
+		t.Fatalf("raw=%q error=%q message=%#v", rawStopReason, errorMessage, message)
+	}
 }
 
 func TestReadGoogleSSEPreservesPrettyMultilineEvent(t *testing.T) {

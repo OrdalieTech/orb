@@ -131,7 +131,15 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 		UnregisterProvider:     unregisterProvider,
 	}
 	contextActions := extensions.ContextActions{
-		GetModel:         func() *ai.Model { return runtime.agent.State().Model },
+		GetModel: func() *ai.Model { return runtime.agent.State().Model },
+		GetScopedModels: func() []extensions.ScopedModel {
+			scoped := runtime.ScopedModels()
+			result := make([]extensions.ScopedModel, len(scoped))
+			for index, model := range scoped {
+				result[index] = extensions.ScopedModel{Model: model.Model, ThinkingLevel: model.ThinkingLevel}
+			}
+			return result
+		},
 		IsIdle:           runtime.agent.IsIdle,
 		IsProjectTrusted: runtime.settings.IsProjectTrusted,
 		GetSignal:        runtime.agent.Signal,
@@ -1045,13 +1053,43 @@ func (runtime *SessionRuntime) ExecuteUserBash(
 	excludeFromContext bool,
 	onChunk func(string),
 ) (extensions.BashResult, error) {
+	return runtime.executeUserBash(ctx, command, &excludeFromContext, onChunk, nil)
+}
+
+func (runtime *SessionRuntime) ExecuteUserBashWithID(
+	ctx context.Context,
+	command string,
+	excludeFromContext *bool,
+	id *string,
+) (tools.BashResult, error) {
+	result, err := runtime.executeUserBash(ctx, command, excludeFromContext, nil, id)
+	if err != nil {
+		return tools.BashResult{}, err
+	}
+	converted := tools.BashResult{
+		Output: result.Output, ExitCode: result.ExitCode, Cancelled: result.Cancelled, Truncated: result.Truncated,
+	}
+	if result.FullOutput != nil {
+		converted.FullOutputPath = *result.FullOutput
+	}
+	return converted, nil
+}
+
+func (runtime *SessionRuntime) executeUserBash(
+	ctx context.Context,
+	command string,
+	excludeFromContext *bool,
+	onChunk func(string),
+	id *string,
+) (extensions.BashResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	exclude := excludeFromContext != nil && *excludeFromContext
 	var operations tools.BashOperations
 	state := runtime.extensionState
 	if state != nil && state.runner != nil && state.runner.HasHandlers(extensions.EventUserBash) {
-		result := state.runner.EmitUserBash(ctx, extensions.UserBashEvent{Command: command, ExcludeFromContext: excludeFromContext, CWD: runtime.manager.GetCWD()})
+		result := state.runner.EmitUserBash(ctx, extensions.UserBashEvent{Command: command, ExcludeFromContext: exclude, CWD: runtime.manager.GetCWD()})
 		if result != nil {
 			if result.Result != nil {
 				return *result.Result, runtime.recordBashResult(command, *result.Result, excludeFromContext)
@@ -1074,10 +1112,12 @@ func (runtime *SessionRuntime) ExecuteUserBash(
 	if err != nil {
 		return extensions.BashResult{}, err
 	}
+	bashContext, finish := runtime.startBash(ctx)
+	defer finish()
 	output := tools.NewOutputAccumulator()
 	var outputErr error
 	var outputErrMu sync.Mutex
-	result, executeErr := operations.Exec(ctx, resolvedCommand, runtime.manager.GetCWD(), tools.BashExecOptions{
+	result, executeErr := operations.Exec(bashContext, resolvedCommand, runtime.manager.GetCWD(), tools.BashExecOptions{
 		OnData: func(data []byte) {
 			if err := output.Append(data); err != nil {
 				outputErrMu.Lock()
@@ -1089,7 +1129,7 @@ func (runtime *SessionRuntime) ExecuteUserBash(
 			if onChunk != nil {
 				onChunk(string(data))
 			}
-			runtime.emit(BashExecutionUpdateEvent{Delta: string(data)})
+			runtime.emit(BashExecutionUpdateEvent{ID: id, Delta: string(data)})
 		},
 		Env: environment,
 	})
@@ -1109,7 +1149,7 @@ func (runtime *SessionRuntime) ExecuteUserBash(
 	if closeErr := output.CloseTempFile(); closeErr != nil && executeErr == nil {
 		executeErr = closeErr
 	}
-	cancelled := errors.Is(ctx.Err(), context.Canceled)
+	cancelled := errors.Is(bashContext.Err(), context.Canceled)
 	if executeErr != nil && !cancelled {
 		return extensions.BashResult{}, executeErr
 	}
@@ -1124,20 +1164,18 @@ func (runtime *SessionRuntime) ExecuteUserBash(
 	return bashResult, runtime.recordBashResult(command, bashResult, excludeFromContext)
 }
 
-func (runtime *SessionRuntime) recordBashResult(command string, result extensions.BashResult, exclude bool) error {
-	excludeFromContext := exclude
+func (runtime *SessionRuntime) recordBashResult(command string, result extensions.BashResult, excludeFromContext *bool) error {
+	var exclude *bool
+	if excludeFromContext != nil {
+		value := *excludeFromContext
+		exclude = &value
+	}
 	message := harness.BashExecutionMessage{
 		Role: "bashExecution", Command: command, Output: result.Output, ExitCode: result.ExitCode,
 		Cancelled: result.Cancelled, Truncated: result.Truncated, FullOutputPath: result.FullOutput,
-		ExcludeFromContext: &excludeFromContext, Timestamp: runtime.clock(),
+		ExcludeFromContext: exclude, Timestamp: runtime.clock(),
 	}
-	if runtime.agent.State().IsStreaming {
-		runtime.mu.Lock()
-		runtime.pendingBash = append(runtime.pendingBash, message)
-		runtime.mu.Unlock()
-		return nil
-	}
-	return runtime.appendBash(message)
+	return runtime.recordBashMessage(message)
 }
 
 func (runtime *SessionRuntime) clearExtensionTurnState() {

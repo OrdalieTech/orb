@@ -20,6 +20,11 @@ type ContextFile struct {
 	Content string
 }
 
+// PromptSource identifies a file-backed system prompt input.
+type PromptSource struct {
+	Path string
+}
+
 type ResourceDiagnostic struct {
 	Type      string
 	Message   string
@@ -50,14 +55,16 @@ type ResourceOptions struct {
 }
 
 type Resources struct {
-	ContextFiles       []ContextFile
-	SystemPrompt       *string
-	AppendSystemPrompt []string
-	Skills             []Skill
-	PromptTemplates    []PromptTemplate
-	Diagnostics        []ResourceDiagnostic
-	skillDiagnostics   []ResourceDiagnostic
-	promptDiagnostics  []ResourceDiagnostic
+	ContextFiles              []ContextFile
+	SystemPrompt              *string
+	SystemPromptSource        *PromptSource
+	AppendSystemPrompt        []string
+	AppendSystemPromptSources []PromptSource
+	Skills                    []Skill
+	PromptTemplates           []PromptTemplate
+	Diagnostics               []ResourceDiagnostic
+	skillDiagnostics          []ResourceDiagnostic
+	promptDiagnostics         []ResourceDiagnostic
 }
 
 // JoinedAppendSystemPrompt applies the separator used before prompt assembly.
@@ -117,6 +124,9 @@ func loadResources(options ResourceOptions, resolveMetadata bool) Resources {
 		if diagnostic != nil {
 			resources.Diagnostics = append(resources.Diagnostics, *diagnostic)
 		}
+		if pathExists(*systemSource) {
+			resources.SystemPromptSource = &PromptSource{Path: resolveResourcePath(*systemSource)}
+		}
 	}
 
 	appendSources := options.AppendSystemPrompt
@@ -135,6 +145,14 @@ func loadResources(options ResourceOptions, resolveMetadata bool) Resources {
 		}
 		if resolved != nil {
 			resources.AppendSystemPrompt = append(resources.AppendSystemPrompt, *resolved)
+		}
+	}
+	resources.AppendSystemPromptSources = make([]PromptSource, 0, len(appendSources))
+	for _, source := range appendSources {
+		if pathExists(source) {
+			resources.AppendSystemPromptSources = append(resources.AppendSystemPromptSources, PromptSource{
+				Path: resolveResourcePath(source),
+			})
 		}
 	}
 	metadata := commandResourceMetadata{skills: map[string]PathMetadata{}, prompts: map[string]PathMetadata{}}
@@ -499,6 +517,7 @@ func LoadProjectContextFiles(cwd, agentDir string) ([]ContextFile, []ResourceDia
 	contextFiles := make([]ContextFile, 0)
 	diagnostics := make([]ResourceDiagnostic, 0)
 	seen := make(map[string]struct{})
+	shadowed := findShadowedContextFile(cwd)
 
 	global, fileDiagnostics := loadContextFileFromDir(agentDir)
 	diagnostics = append(diagnostics, fileDiagnostics...)
@@ -512,7 +531,8 @@ func LoadProjectContextFiles(cwd, agentDir string) ([]ContextFile, []ResourceDia
 		contextFile, fileDiagnostics := loadContextFileFromDir(current)
 		diagnostics = append(diagnostics, fileDiagnostics...)
 		if contextFile != nil {
-			if _, duplicate := seen[contextFile.Path]; !duplicate {
+			isShadowed := shadowed != "" && canonicalResourcePath(contextFile.Path) == shadowed
+			if _, duplicate := seen[contextFile.Path]; !duplicate && !isShadowed {
 				ancestorFiles = append([]ContextFile{*contextFile}, ancestorFiles...)
 				seen[contextFile.Path] = struct{}{}
 			}
@@ -523,6 +543,66 @@ func LoadProjectContextFiles(cwd, agentDir string) ([]ContextFile, []ResourceDia
 		}
 	}
 	return append(contextFiles, ancestorFiles...), diagnostics
+}
+
+func findShadowedContextFile(cwd string) string {
+	repoDir, commonGitDir, ok := findContextGitPaths(cwd)
+	if !ok {
+		return ""
+	}
+	worktreeRoot := canonicalResourcePath(repoDir)
+	commonGitDir = canonicalResourcePath(commonGitDir)
+	mainRoot := filepath.Dir(commonGitDir)
+	relative, err := filepath.Rel(mainRoot, worktreeRoot)
+	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return ""
+	}
+	// A bare repository or submodule metadata directory is not a checked-out
+	// main worktree, so its ancestor context must remain inherited.
+	if canonicalResourcePath(filepath.Join(mainRoot, ".git")) != commonGitDir {
+		return ""
+	}
+	worktreeContext, _ := loadContextFileFromDir(worktreeRoot)
+	if worktreeContext == nil {
+		return ""
+	}
+	return canonicalResourcePath(filepath.Join(mainRoot, filepath.Base(worktreeContext.Path)))
+}
+
+func findContextGitPaths(cwd string) (string, string, bool) {
+	for dir := cwd; ; dir = filepath.Dir(dir) {
+		gitPath := filepath.Join(dir, ".git")
+		info, err := os.Stat(gitPath)
+		if err == nil {
+			if info.IsDir() {
+				if pathExists(filepath.Join(gitPath, "HEAD")) {
+					return dir, gitPath, true
+				}
+				return "", "", false
+			}
+			if info.Mode().IsRegular() {
+				content, readErr := os.ReadFile(gitPath)
+				target := strings.TrimSpace(string(content))
+				if readErr != nil || !strings.HasPrefix(target, "gitdir: ") {
+					return "", "", false
+				}
+				gitDir := resolveResourcePathFrom(strings.TrimSpace(strings.TrimPrefix(target, "gitdir: ")), dir)
+				if !pathExists(filepath.Join(gitDir, "HEAD")) {
+					return "", "", false
+				}
+				commonGitDir := gitDir
+				if content, readErr = os.ReadFile(filepath.Join(gitDir, "commondir")); readErr == nil {
+					commonGitDir = resolveResourcePathFrom(strings.TrimSpace(string(content)), gitDir)
+				}
+				return dir, commonGitDir, true
+			}
+			return "", "", false
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", "", false
+		}
+	}
 }
 
 func loadContextFileFromDir(dir string) (*ContextFile, []ResourceDiagnostic) {

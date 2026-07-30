@@ -329,6 +329,10 @@ func StreamBedrockConverseWithOptions(
 			fail(ctx.Err())
 			return
 		}
+		if output.StopReason == ai.StopReasonPending {
+			fail(errors.New("Bedrock stream ended without a stop reason")) //nolint:staticcheck // Exact upstream text is observable.
+			return
+		}
 		if output.StopReason == ai.StopReasonError || output.StopReason == ai.StopReasonAborted {
 			message := "An unknown error occurred"
 			if output.ErrorMessage != nil {
@@ -972,6 +976,10 @@ func (processor *bedrockStreamProcessor) handle(item bedrockStreamItem) error {
 	case bedrockItemContentStop:
 		processor.handleStop(item.ContentBlockIndex)
 	case bedrockItemMessageStop:
+		if item.StopReason != "" {
+			rawStopReason := item.StopReason
+			processor.output.RawStopReason = &rawStopReason
+		}
 		processor.output.StopReason, processor.output.ErrorMessage = mapBedrockStopReason(item.StopReason)
 	case bedrockItemMetadata:
 		processor.output.Usage.Input = item.InputTokens
@@ -1114,7 +1122,8 @@ func mapBedrockStopReason(reason string) (ai.StopReason, *string) {
 		if reason == "" {
 			return ai.StopReasonError, nil
 		}
-		return ai.StopReasonError, &reason
+		message := "Provider stopped with: " + reason
+		return ai.StopReasonError, &message
 	}
 }
 
@@ -1230,7 +1239,7 @@ func newAWSBedrockTransport(
 	skipAuth := providerEnvValue("AWS_BEDROCK_SKIP_AUTH", bedrockStreamOptions(options)) == "1"
 	if skipAuth {
 		loadOptions = append(loadOptions, awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("dummy-access-key", "dummy-secret-key", "")))
-	} else if accessKey, secretKey, sessionToken, ok := configuredBedrockCredentials(options); ok {
+	} else if accessKey, secretKey, sessionToken, ok := configuredBedrockCredentials(options); ok && !configuredBedrockProfile(options) {
 		loadOptions = append(loadOptions, awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, sessionToken)))
 	}
 	bearerToken := configuredBedrockBearerToken(options)
@@ -1332,6 +1341,10 @@ func configuredBedrockCredentials(options *BedrockConverseStreamOptions) (string
 		return "", "", "", false
 	}
 	return accessKey, secretKey, providerEnvValue("AWS_SESSION_TOKEN", streamOptions), true
+}
+
+func configuredBedrockProfile(options *BedrockConverseStreamOptions) bool {
+	return options != nil && (options.Profile != "" || options.Env["AWS_PROFILE"] != "")
 }
 
 func configuredBedrockBearerToken(options *BedrockConverseStreamOptions) string {

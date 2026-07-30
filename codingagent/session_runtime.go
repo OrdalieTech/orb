@@ -70,6 +70,7 @@ type SessionRuntime struct {
 	footerContextUsage  *harness.ContextUsage
 
 	mu                   sync.Mutex
+	bashRecordMu         sync.Mutex
 	listeners            []sessionListener
 	chanCancels          map[chan struct{}]func()
 	disposed             bool
@@ -83,7 +84,8 @@ type SessionRuntime struct {
 	compactionCancel     context.CancelFunc
 	autoCompactionCancel context.CancelFunc
 	branchCancel         context.CancelFunc
-	bashCancel           context.CancelFunc
+	bashCancels          map[uint64]context.CancelFunc
+	nextBashID           uint64
 	pendingBash          []harness.BashExecutionMessage
 	autoCompaction       bool
 	autoRetry            bool
@@ -102,6 +104,27 @@ type SessionRuntime struct {
 	beginReload          func() error
 	endReload            func()
 	reloadPrepared       func() error
+}
+
+func (runtime *SessionRuntime) startBash(ctx context.Context) (context.Context, func()) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	bashContext, cancel := context.WithCancel(ctx)
+	runtime.mu.Lock()
+	runtime.nextBashID++
+	id := runtime.nextBashID
+	if runtime.bashCancels == nil {
+		runtime.bashCancels = make(map[uint64]context.CancelFunc)
+	}
+	runtime.bashCancels[id] = cancel
+	runtime.mu.Unlock()
+	return bashContext, func() {
+		cancel()
+		runtime.mu.Lock()
+		delete(runtime.bashCancels, id)
+		runtime.mu.Unlock()
+	}
 }
 
 func (runtime *SessionRuntime) setReloadLifecycle(begin func() error, prepared func() error, end func()) {
@@ -558,7 +581,13 @@ func (runtime *SessionRuntime) QueueInteractive(ctx context.Context, text string
 }
 
 func (runtime *SessionRuntime) IsIdle() bool {
-	return runtime == nil || runtime.agent.IsIdle()
+	if runtime == nil {
+		return true
+	}
+	runtime.mu.Lock()
+	active := runtime.activeRuns != 0
+	runtime.mu.Unlock()
+	return !active && runtime.agent.IsIdle()
 }
 
 func (runtime *SessionRuntime) PromptAfterPreflight(ctx context.Context, input any, images ...*ai.ImageContent) error {
@@ -1310,6 +1339,9 @@ func (runtime *SessionRuntime) GetContextUsage() *harness.ContextUsage {
 
 //nolint:staticcheck // SessionError text matches upstream capitalization.
 func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string, options NavigateTreeOptions) (NavigateTreeResult, error) {
+	if !runtime.IsIdle() {
+		return NavigateTreeResult{}, errors.New("Wait for the current response to finish before navigating the session tree.")
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}

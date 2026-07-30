@@ -84,6 +84,43 @@ func TestInteractiveChatRenderInvalidatesChangedChild(t *testing.T) {
 	}
 }
 
+func TestInteractiveUIToolExpansionShowsStatus(t *testing.T) {
+	initTestTheme(t)
+	chat := &tui.Container{}
+	component := &countedExpandableComponent{}
+	chat.AddChild(component)
+	mode := &InteractiveMode{
+		ui:             tui.NewTUI(newFakeTerminal(80, 24)),
+		header:         &tui.Container{},
+		chat:           chat,
+		expandables:    []expandableComponent{component},
+		toolComponents: map[string]*ToolExecutionComponent{},
+	}
+	ui := NewInteractiveUI(mode)
+
+	ui.SetToolsExpanded(true)
+	if component.setExpandedCalls != 1 {
+		t.Fatalf("SetExpanded calls = %d, want one traversal", component.setExpandedCalls)
+	}
+	if rendered := strings.Join(chat.Render(80), "\n"); !strings.Contains(rendered, "Tool output: expanded") {
+		t.Fatalf("expanded status = %q", rendered)
+	}
+	ui.SetToolsExpanded(false)
+	if component.setExpandedCalls != 2 {
+		t.Fatalf("SetExpanded calls = %d, want one traversal per update", component.setExpandedCalls)
+	}
+	if rendered := strings.Join(chat.Render(80), "\n"); !strings.Contains(rendered, "Tool output: collapsed") {
+		t.Fatalf("collapsed status = %q", rendered)
+	}
+}
+
+type countedExpandableComponent struct{ setExpandedCalls int }
+
+func (*countedExpandableComponent) Render(int) []string { return []string{"tool"} }
+func (component *countedExpandableComponent) SetExpanded(bool) {
+	component.setExpandedCalls++
+}
+
 type countedInteractiveComponent struct{ renders int }
 
 func (component *countedInteractiveComponent) Render(int) []string {
@@ -1219,6 +1256,44 @@ func TestDoubleEscapeUsesActiveEditorAndResetsAfterOpeningTree(t *testing.T) {
 	}
 	if _, ok := children[0].(*TreeSelectorComponent); !ok {
 		t.Fatalf("double-Escape installed %T, want tree selector", children[0])
+	}
+}
+
+func TestTreeSelectionChecksCurrentLeafAtCommitTime(t *testing.T) {
+	initTestTheme(t)
+	manager, err := sessionstore.InMemory(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.AppendMessage(json.RawMessage(`{"role":"user","content":"first"}`)); err != nil {
+		t.Fatal(err)
+	}
+	runtime := newCacheStatsRuntime(t, manager)
+	t.Cleanup(runtime.Dispose)
+	modeUI := tui.NewTUI(newFakeTerminal(80, 24))
+	bindings := NewAppKeybindings(nil)
+	mode := &InteractiveMode{
+		session: runtime, ui: modeUI, keybindings: bindings,
+		editorContainer: &tui.Container{}, chat: &tui.Container{},
+	}
+	mode.editor = NewCustomEditor(modeUI, tui.EditorTheme{}, bindings)
+	mode.showTreeSelector()
+	children := mode.editorContainer.Children()
+	if len(children) != 1 {
+		t.Fatalf("tree selector children = %#v", children)
+	}
+	selector, ok := children[0].(*TreeSelectorComponent)
+	if !ok {
+		t.Fatalf("tree selector child = %T", children[0])
+	}
+
+	currentLeaf, err := manager.AppendMessage(json.RawMessage(`{"role":"user","content":"streamed later"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	selector.onSelect(currentLeaf)
+	if rendered := strings.Join(mode.chat.Render(80), "\n"); !strings.Contains(rendered, "Already at this point") {
+		t.Fatalf("status = %q, want current-leaf no-op", rendered)
 	}
 }
 

@@ -89,7 +89,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -124,7 +124,7 @@
               },
               "cacheWrite1h": 2
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_anthropic_fixture"
           }
@@ -161,7 +161,7 @@
               },
               "cacheWrite1h": 2
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_anthropic_fixture"
           }
@@ -197,7 +197,7 @@
               },
               "cacheWrite1h": 2
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_anthropic_fixture"
           }
@@ -237,7 +237,7 @@
               },
               "cacheWrite1h": 2
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_anthropic_fixture"
           }
@@ -278,7 +278,7 @@
               },
               "cacheWrite1h": 2
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_anthropic_fixture"
           }
@@ -318,7 +318,7 @@
               },
               "cacheWrite1h": 2
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_anthropic_fixture"
           }
@@ -365,7 +365,7 @@
               },
               "cacheWrite1h": 2
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_anthropic_fixture"
           }
@@ -415,7 +415,7 @@
               },
               "cacheWrite1h": 2
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_anthropic_fixture"
           }
@@ -466,7 +466,7 @@
               },
               "cacheWrite1h": 2
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_anthropic_fixture"
           }
@@ -523,7 +523,7 @@
               },
               "cacheWrite1h": 2
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_anthropic_fixture"
           }
@@ -574,7 +574,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "msg_anthropic_fixture"
+            "responseId": "msg_anthropic_fixture",
+            "rawStopReason": "tool_use"
           }
         }
       ]
@@ -668,7 +669,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -705,7 +706,7 @@
               },
               "cacheWrite1h": 0
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_malformed"
           }
@@ -747,7 +748,7 @@
               },
               "cacheWrite1h": 0
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_malformed"
           }
@@ -795,7 +796,7 @@
               },
               "cacheWrite1h": 0
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_malformed"
           }
@@ -836,7 +837,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "msg_malformed"
+            "responseId": "msg_malformed",
+            "rawStopReason": "tool_use"
           }
         }
       ]
@@ -907,7 +909,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -1007,7 +1009,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -1041,7 +1043,7 @@
               },
               "cacheWrite1h": 0
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_max_tokens"
           }
@@ -1077,7 +1079,7 @@
               },
               "cacheWrite1h": 0
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_max_tokens"
           }
@@ -1112,7 +1114,7 @@
               },
               "cacheWrite1h": 0
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_max_tokens"
           }
@@ -1148,7 +1150,8 @@
             },
             "stopReason": "length",
             "timestamp": 1700000000123,
-            "responseId": "msg_max_tokens"
+            "responseId": "msg_max_tokens",
+            "rawStopReason": "max_tokens"
           }
         }
       ]
@@ -1222,7 +1225,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -1258,7 +1261,7 @@
               },
               "cacheWrite1h": 0
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_refusal"
           }
@@ -1295,7 +1298,7 @@
               },
               "cacheWrite1h": 0
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_refusal"
           }
@@ -1334,6 +1337,7 @@
             "stopReason": "error",
             "timestamp": 1700000000123,
             "responseId": "msg_refusal",
+            "rawStopReason": "refusal",
             "errorMessage": "fixture refusal explanation"
           }
         }
@@ -1405,7 +1409,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -1439,7 +1443,7 @@
               },
               "cacheWrite1h": 0
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_text"
           }
@@ -1475,7 +1479,7 @@
               },
               "cacheWrite1h": 0
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_text"
           }
@@ -1510,7 +1514,7 @@
               },
               "cacheWrite1h": 0
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "msg_text"
           }
@@ -1546,7 +1550,8 @@
             },
             "stopReason": "stop",
             "timestamp": 1700000000123,
-            "responseId": "msg_text"
+            "responseId": "msg_text",
+            "rawStopReason": "end_turn"
           }
         }
       ]
@@ -1617,7 +1622,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },

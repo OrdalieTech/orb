@@ -1,6 +1,6 @@
 {
   "family": "WP440",
-  "upstreamCommit": "b4f293684bba718d59cc1157679bcf6157b3a7f5",
+  "upstreamCommit": "845d6ff1f6643aba440341cce877ce1c43ebbc39",
   "generator": "conformance/extract/wp440-images.ts",
   "source": "packages/coding-agent/src/utils/image-resize-core.ts, packages/coding-agent/src/utils/image-resize.ts, packages/coding-agent/src/utils/image-process.ts, packages/coding-agent/src/utils/mime.ts, packages/coding-agent/src/utils/image-convert.ts, packages/coding-agent/src/utils/exif-orientation.ts, packages/coding-agent/src/utils/photon.ts, node_modules/@silvia-odwyer/photon-node/photon_rs.js",
   "files": [

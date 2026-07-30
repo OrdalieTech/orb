@@ -169,6 +169,14 @@ func streamGoogleWithOptions(
 			yield(ai.ErrorEvent{Reason: reason, Error: output}, nil)
 		}
 		streamOptions := googleStreamOptions(options)
+		if streamOptions != nil && streamOptions.HTTPClient != nil && streamOptions.HTTPClient != http.DefaultClient {
+			message := "Custom HTTP client is not supported by the Google Generative AI adapter"
+			if model.API == ai.APIGoogleVertex {
+				message = "Custom HTTP client is not supported by the Google Vertex adapter"
+			}
+			fail(errors.New(message))
+			return
+		}
 		if checkAuth != nil {
 			if err := checkAuth(); err != nil {
 				fail(err)
@@ -240,8 +248,20 @@ func streamGoogleWithOptions(
 			fail(errors.New("Request was aborted")) //nolint:staticcheck // Exact upstream text.
 			return
 		}
+		if output.StopReason == ai.StopReasonPending {
+			message := "Google stream ended without a finish reason"
+			if model.API == ai.APIGoogleVertex {
+				message = "Google Vertex stream ended without a finish reason"
+			}
+			fail(errors.New(message))
+			return
+		}
 		if output.StopReason == ai.StopReasonAborted || output.StopReason == ai.StopReasonError {
-			fail(errors.New("An unknown error occurred")) //nolint:staticcheck // Exact upstream text.
+			message := "An unknown error occurred"
+			if output.RawStopReason != nil {
+				message = "Provider stopped with: " + *output.RawStopReason
+			}
+			fail(errors.New(message))
 			return
 		}
 		yield(ai.DoneEvent{Reason: output.StopReason, Message: output}, nil)
@@ -590,6 +610,8 @@ func (processor *googleStreamProcessor) process(chunk googleGenerateContentRespo
 			}
 		}
 		if candidate.FinishReason != "" {
+			rawStopReason := candidate.FinishReason
+			processor.output.RawStopReason = &rawStopReason
 			reason, err := mapGoogleStopReason(candidate.FinishReason)
 			if err != nil {
 				// Upstream throws before the toolUse override; events pushed so

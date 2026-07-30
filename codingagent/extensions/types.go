@@ -696,6 +696,11 @@ type ContextUsage struct {
 	Percent       *float64
 }
 
+type ScopedModel struct {
+	Model         ai.Model               `json:"model"`
+	ThinkingLevel *ai.ModelThinkingLevel `json:"thinkingLevel,omitempty"`
+}
+
 type CompactOptions struct {
 	CustomInstructions string
 	OnComplete         func(session.CompactionResult)
@@ -763,6 +768,7 @@ type Context interface {
 	SessionManager() ReadonlySessionManager
 	ModelRegistry() ModelRegistry
 	Model() *ai.Model
+	ScopedModels() []ScopedModel
 	// ThinkingLevel is the current thinking level, when provided by the
 	// session runtime; empty otherwise.
 	ThinkingLevel() agent.ThinkingLevel

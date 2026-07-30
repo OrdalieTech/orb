@@ -107,7 +107,7 @@ func (image *Image) Render(width int) []string {
 		if image.theme.FallbackColor != nil {
 			fallback = image.theme.FallbackColor(fallback)
 		}
-		lines = []string{fallback}
+		lines = []string{TruncateToWidth(fallback, width, "...", false)}
 	}
 	image.cached, image.cacheWidth = append([]string(nil), lines...), width
 	return lines

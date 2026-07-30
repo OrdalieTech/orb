@@ -11,8 +11,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -128,18 +130,56 @@ func (flow *OpenRouter) Login(ctx context.Context, interaction auth.AuthInteract
 		Message: "Listening for OpenRouter OAuth callback on " + callbackURL,
 	})
 	interaction.Notify(auth.AuthEvent{
-		Type: auth.EventAuthURL, URL: authorizeURL, Instructions: "Complete sign-in in your browser.",
+		Type: auth.EventAuthURL, URL: authorizeURL,
+		Instructions: "Complete sign-in in your browser. If the browser is on another machine, paste the final redirect URL here.",
 	})
+
+	manualCtx, cancelManual := context.WithCancel(ctx)
+	defer cancelManual()
+	manual := make(chan openRouterManualResult, 1)
+	go func() {
+		input, promptErr := interaction.Prompt(manualCtx, auth.AuthPrompt{
+			Type:        auth.PromptManualCode,
+			Message:     "Complete sign-in in your browser, or paste the authorization code / redirect URL here:",
+			Placeholder: callbackURL,
+		})
+		manual <- openRouterManualResult{input: input, err: promptErr}
+	}()
 
 	timer := time.NewTimer(flow.options.LoginTimeout)
 	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return nil, errors.New(deviceCodeCancelMessage)
-	case <-timer.C:
-		return nil, errors.New("OpenRouter OAuth login timed out")
-	case outcome := <-state.outcome:
-		return outcome.credential, outcome.err
+	var completedManual *openRouterManualResult
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, errors.New(deviceCodeCancelMessage)
+		case <-timer.C:
+			return nil, errors.New("OpenRouter OAuth login timed out")
+		case result := <-manual:
+			completedManual = &result
+			manual = nil
+			if !state.claimManual() {
+				continue
+			}
+			if result.err != nil {
+				return nil, result.err
+			}
+			code := parseOpenRouterAuthorizationInput(result.input)
+			if code == "" {
+				return nil, errors.New("Missing authorization code") //nolint:staticcheck // Exact upstream text is observable.
+			}
+			interaction.Notify(auth.AuthEvent{Type: auth.EventProgress, Message: "Exchanging authorization code for an API key..."})
+			return flow.exchangeAuthorizationCode(ctx, code, verifier)
+		case outcome := <-state.outcome:
+			cancelManual()
+			if outcome.err != nil {
+				return nil, outcome.err
+			}
+			if completedManual != nil && completedManual.err != nil {
+				return nil, completedManual.err
+			}
+			return outcome.credential, nil
+		}
 	}
 }
 
@@ -171,6 +211,11 @@ type openRouterOutcome struct {
 	err        error
 }
 
+type openRouterManualResult struct {
+	input string
+	err   error
+}
+
 type openRouterCallbackState struct {
 	mu      sync.Mutex
 	claimed bool
@@ -189,6 +234,32 @@ func (state *openRouterCallbackState) finish(credential *auth.Credential, err er
 	state.outcome <- openRouterOutcome{credential: credential, err: err}
 }
 
+func (state *openRouterCallbackState) claimManual() bool {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.claimed || state.settled {
+		return false
+	}
+	state.settled = true
+	return true
+}
+
+func parseOpenRouterAuthorizationInput(input string) string {
+	value := strings.TrimSpace(input)
+	if value == "" {
+		return ""
+	}
+	if parsed, err := url.Parse(value); err == nil && parsed.IsAbs() {
+		return parsed.Query().Get("code")
+	}
+	if strings.Contains(value, "code=") {
+		if query, err := url.ParseQuery(strings.TrimPrefix(value, "?")); err == nil {
+			return query.Get("code")
+		}
+	}
+	return value
+}
+
 func (flow *OpenRouter) callbackHandler(ctx context.Context, callbackPath, verifier string, state *openRouterCallbackState) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet || request.URL.Path != callbackPath {
@@ -203,6 +274,7 @@ func (flow *OpenRouter) callbackHandler(ctx context.Context, callbackPath, verif
 		}
 		query := request.URL.Query()
 		if oauthError := query.Get("error"); oauthError != "" {
+			state.claimed = true
 			state.mu.Unlock()
 			description := oauthError
 			if query.Has("error_description") {

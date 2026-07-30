@@ -113,7 +113,11 @@ func generateOpenRouterImages(
 	if options != nil {
 		timeoutMS = options.TimeoutMS
 	}
-	httpClient, err := openAIHeaderTimeoutClient(openAIHTTPClient, timeoutMS, headers)
+	baseClient := option.HTTPClient(openAIHTTPClient)
+	if options != nil && options.HTTPClient != nil {
+		baseClient = options.HTTPClient
+	}
+	httpClient, err := openAIHeaderTimeoutClient(baseClient, timeoutMS, headers)
 	if err != nil {
 		return err
 	}

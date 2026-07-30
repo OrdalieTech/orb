@@ -60,7 +60,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -92,7 +92,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "resp_f2_text_stop"
           }
@@ -126,7 +126,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "resp_f2_text_stop"
           }
@@ -160,7 +160,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "resp_f2_text_stop"
           }
@@ -232,7 +232,8 @@
             },
             "stopReason": "stop",
             "timestamp": 1700000000123,
-            "responseId": "resp_f2_text_stop"
+            "responseId": "resp_f2_text_stop",
+            "rawStopReason": "completed"
           }
         }
       ]
@@ -297,7 +298,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -329,7 +330,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "resp_f2_rich"
           }
@@ -363,7 +364,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "resp_f2_rich"
           }
@@ -398,7 +399,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "resp_f2_rich"
           }
@@ -436,7 +437,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "resp_f2_rich"
           }
@@ -475,7 +476,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "resp_f2_rich"
           }
@@ -514,7 +515,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "resp_f2_rich"
           }
@@ -820,7 +821,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "responseId": "resp_f2_rich"
+            "responseId": "resp_f2_rich",
+            "rawStopReason": "completed"
           }
         }
       ]
@@ -885,7 +887,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -915,7 +917,8 @@
             },
             "stopReason": "length",
             "timestamp": 1700000000123,
-            "responseId": "resp_f2_incomplete"
+            "responseId": "resp_f2_incomplete",
+            "rawStopReason": "incomplete"
           }
         }
       ]
@@ -1120,7 +1123,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -1152,7 +1155,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_text_stop"
           }
@@ -1186,7 +1189,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_text_stop"
           }
@@ -1223,7 +1226,8 @@
             },
             "stopReason": "stop",
             "timestamp": 1700000000123,
-            "responseId": "chatcmpl_f2_text_stop"
+            "responseId": "chatcmpl_f2_text_stop",
+            "rawStopReason": "stop"
           }
         },
         {
@@ -1258,7 +1262,8 @@
             },
             "stopReason": "stop",
             "timestamp": 1700000000123,
-            "responseId": "chatcmpl_f2_text_stop"
+            "responseId": "chatcmpl_f2_text_stop",
+            "rawStopReason": "stop"
           }
         },
         {
@@ -1292,7 +1297,8 @@
             },
             "stopReason": "stop",
             "timestamp": 1700000000123,
-            "responseId": "chatcmpl_f2_text_stop"
+            "responseId": "chatcmpl_f2_text_stop",
+            "rawStopReason": "stop"
           }
         }
       ]
@@ -1357,7 +1363,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -1390,7 +1396,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_rich",
             "responseModel": "routed-fixture-model"
@@ -1426,7 +1432,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_rich",
             "responseModel": "routed-fixture-model"
@@ -1465,7 +1471,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_rich",
             "responseModel": "routed-fixture-model"
@@ -1505,7 +1511,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_rich",
             "responseModel": "routed-fixture-model"
@@ -1556,7 +1562,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_rich",
             "responseModel": "routed-fixture-model"
@@ -1608,7 +1614,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_rich",
             "responseModel": "routed-fixture-model"
@@ -1663,7 +1669,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_rich",
             "responseModel": "routed-fixture-model"
@@ -1718,7 +1724,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_rich",
             "responseModel": "routed-fixture-model"
@@ -1775,7 +1781,8 @@
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_rich",
-            "responseModel": "routed-fixture-model"
+            "responseModel": "routed-fixture-model",
+            "rawStopReason": "tool_calls"
           }
         },
         {
@@ -1829,7 +1836,8 @@
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_rich",
-            "responseModel": "routed-fixture-model"
+            "responseModel": "routed-fixture-model",
+            "rawStopReason": "tool_calls"
           }
         },
         {
@@ -1895,7 +1903,8 @@
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_rich",
-            "responseModel": "routed-fixture-model"
+            "responseModel": "routed-fixture-model",
+            "rawStopReason": "tool_calls"
           }
         },
         {
@@ -1948,7 +1957,8 @@
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_rich",
-            "responseModel": "routed-fixture-model"
+            "responseModel": "routed-fixture-model",
+            "rawStopReason": "tool_calls"
           }
         }
       ]
@@ -2013,7 +2023,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -2048,7 +2058,8 @@
             },
             "stopReason": "length",
             "timestamp": 1700000000123,
-            "responseId": "chatcmpl_f2_length"
+            "responseId": "chatcmpl_f2_length",
+            "rawStopReason": "length"
           }
         },
         {
@@ -2083,7 +2094,8 @@
             },
             "stopReason": "length",
             "timestamp": 1700000000123,
-            "responseId": "chatcmpl_f2_length"
+            "responseId": "chatcmpl_f2_length",
+            "rawStopReason": "length"
           }
         },
         {
@@ -2118,7 +2130,8 @@
             },
             "stopReason": "length",
             "timestamp": 1700000000123,
-            "responseId": "chatcmpl_f2_length"
+            "responseId": "chatcmpl_f2_length",
+            "rawStopReason": "length"
           }
         },
         {
@@ -2152,7 +2165,8 @@
             },
             "stopReason": "length",
             "timestamp": 1700000000123,
-            "responseId": "chatcmpl_f2_length"
+            "responseId": "chatcmpl_f2_length",
+            "rawStopReason": "length"
           }
         }
       ]
@@ -2358,7 +2372,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -2388,7 +2402,8 @@
             },
             "stopReason": "stop",
             "timestamp": 1700000000123,
-            "responseId": "resp_f2_priority"
+            "responseId": "resp_f2_priority",
+            "rawStopReason": "completed"
           }
         }
       ]
@@ -2454,7 +2469,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -2489,6 +2504,7 @@
             "stopReason": "error",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_content_filter",
+            "rawStopReason": "content_filter",
             "errorMessage": "Provider finish_reason: content_filter"
           }
         },
@@ -2524,6 +2540,7 @@
             "stopReason": "error",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_content_filter",
+            "rawStopReason": "content_filter",
             "errorMessage": "Provider finish_reason: content_filter"
           }
         },
@@ -2559,6 +2576,7 @@
             "stopReason": "error",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_content_filter",
+            "rawStopReason": "content_filter",
             "errorMessage": "Provider finish_reason: content_filter"
           }
         },
@@ -2593,6 +2611,7 @@
             "stopReason": "error",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_content_filter",
+            "rawStopReason": "content_filter",
             "errorMessage": "Provider finish_reason: content_filter"
           }
         }

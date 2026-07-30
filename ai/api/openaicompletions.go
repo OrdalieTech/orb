@@ -229,7 +229,7 @@ func StreamOpenAICompletionsWithOptions(
 			yield(completionsStreamFailure(ctx, output, errors.New(message)), nil)
 			return
 		}
-		if !state.hasFinishReason {
+		if !state.hasFinishReason || output.StopReason == ai.StopReasonPending {
 			yield(completionsStreamFailure(ctx, output, errors.New("Stream ended without finish_reason")), nil) //nolint:staticcheck // Exact upstream error text is observable.
 			return
 		}
@@ -593,7 +593,7 @@ func detectOpenAICompletionsCompat(model *ai.Model) resolvedOpenAICompletionsCom
 		provider == "xai" || strings.Contains(baseURL, "api.x.ai") || isTogether || strings.Contains(baseURL, "chutes.ai") ||
 		strings.Contains(baseURL, "deepseek.com") || isZAI || isMoonshot || provider == "opencode" ||
 		strings.Contains(baseURL, "opencode.ai") || isCloudflareWorkers || isCloudflareGateway || isAntLing
-	useLegacyMax := strings.Contains(baseURL, "chutes.ai") || isMoonshot || isCloudflareGateway || isTogether || isNVIDIA || isAntLing
+	useLegacyMax := strings.Contains(baseURL, "chutes.ai") || isMoonshot || isCloudflareGateway || isTogether || isNVIDIA || isAntLing || isZAI
 	isGrok := provider == "xai" || strings.Contains(baseURL, "api.x.ai")
 	isDeepSeek := provider == "deepseek" || strings.Contains(baseURL, "deepseek.com")
 	isOpenRouterDeveloperModel := isOpenRouter && (strings.HasPrefix(model.ID, "anthropic/") || strings.HasPrefix(model.ID, "openai/"))
@@ -1298,6 +1298,9 @@ func applyOpenAICompletionsThinking(
 		}
 	case ai.ThinkingFormatQwen:
 		payload["enable_thinking"] = effort != ""
+		if effort != "" && compat.supportsReasoningEffort {
+			payload["reasoning_effort"] = mappedThinkingOr(model, ai.ModelThinkingLevel(effort), effort)
+		}
 	case ai.ThinkingFormatQwenChatTemplate:
 		payload["chat_template_kwargs"] = map[string]any{"enable_thinking": effort != "", "preserve_thinking": true}
 	case ai.ThinkingFormatChatTemplate:
@@ -1467,6 +1470,7 @@ func (state *completionsStreamState) consumeChunk(
 		state.output.Usage = parseOpenAICompletionsUsage(choice["usage"], model)
 	}
 	if reason, ok := rawJSONString(choice["finish_reason"]); ok && reason != "" {
+		state.output.RawStopReason = &reason
 		stopReason, errorMessage := mapOpenAICompletionsStopReason(reason)
 		state.output.StopReason = stopReason
 		if errorMessage != nil {
@@ -1565,7 +1569,7 @@ func (state *completionsStreamState) consumeToolCall(raw json.RawMessage, emit f
 	streamIndex, hasIndex := rawJSONInt(delta["index"])
 	id, _ := rawJSONString(delta["id"])
 	var function map[string]json.RawMessage
-	_ = json.Unmarshal(delta["function"], &function)
+	hasFunction := json.Unmarshal(delta["function"], &function) == nil && function != nil
 	name, _ := rawJSONString(function["name"])
 	arguments, _ := rawJSONString(function["arguments"])
 	var custom map[string]json.RawMessage
@@ -1585,7 +1589,7 @@ func (state *completionsStreamState) consumeToolCall(raw json.RawMessage, emit f
 	}
 	if stateForCall == nil {
 		inputProperty := ""
-		if hasCustom {
+		if hasCustom && !hasFunction {
 			inputProperty = state.grammarToolInputProperties[name]
 			if inputProperty == "" {
 				inputProperty = "input"
@@ -1636,7 +1640,7 @@ func (state *completionsStreamState) consumeToolCall(raw json.RawMessage, emit f
 	if stateForCall.block.Name == "" && name != "" {
 		stateForCall.block.Name = name
 	}
-	if hasCustom && stateForCall.customInput == nil {
+	if hasCustom && !hasFunction && stateForCall.customInput == nil {
 		inputProperty := state.grammarToolInputProperties[stateForCall.block.Name]
 		if inputProperty == "" {
 			inputProperty = "input"

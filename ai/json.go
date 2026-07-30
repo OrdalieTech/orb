@@ -148,6 +148,10 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	rawStopReason, err := marshalOptionalWireString(message.RawStopReason)
+	if err != nil {
+		return nil, err
+	}
 	responseID, err := marshalOptionalWireString(message.ResponseID)
 	if err != nil {
 		return nil, err
@@ -170,6 +174,7 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 			ResponseModel json.RawMessage               `json:"responseModel,omitempty"`
 			Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
 			Timestamp     int64                         `json:"timestamp"`
+			RawStopReason json.RawMessage               `json:"rawStopReason,omitempty"`
 		}{
 			Role:          "assistant",
 			Content:       message.Content,
@@ -183,6 +188,7 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 			ResponseModel: responseModel,
 			Diagnostics:   message.Diagnostics,
 			Timestamp:     message.Timestamp,
+			RawStopReason: rawStopReason,
 		})
 	}
 	if message.errorBeforeResponseID && message.ErrorMessage != nil {
@@ -195,6 +201,7 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 			Usage         Usage                         `json:"usage"`
 			StopReason    json.RawMessage               `json:"stopReason"`
 			Timestamp     int64                         `json:"timestamp"`
+			RawStopReason json.RawMessage               `json:"rawStopReason,omitempty"`
 			ErrorMessage  json.RawMessage               `json:"errorMessage"`
 			ResponseID    json.RawMessage               `json:"responseId,omitempty"`
 			ResponseModel json.RawMessage               `json:"responseModel,omitempty"`
@@ -202,7 +209,8 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 		}{
 			Role: "assistant", Content: message.Content, API: api, Provider: provider, Model: model,
 			Usage: message.Usage, StopReason: stopReason, Timestamp: message.Timestamp,
-			ErrorMessage: errorMessage, ResponseID: responseID, ResponseModel: responseModel, Diagnostics: message.Diagnostics,
+			RawStopReason: rawStopReason, ErrorMessage: errorMessage, ResponseID: responseID,
+			ResponseModel: responseModel, Diagnostics: message.Diagnostics,
 		})
 	}
 	return marshalJSON(struct {
@@ -217,6 +225,7 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 		ResponseID    json.RawMessage               `json:"responseId,omitempty"`
 		ResponseModel json.RawMessage               `json:"responseModel,omitempty"`
 		Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
+		RawStopReason json.RawMessage               `json:"rawStopReason,omitempty"`
 		ErrorMessage  json.RawMessage               `json:"errorMessage,omitempty"`
 	}{
 		Role:          "assistant",
@@ -230,6 +239,7 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 		ResponseID:    responseID,
 		ResponseModel: responseModel,
 		Diagnostics:   message.Diagnostics,
+		RawStopReason: rawStopReason,
 		ErrorMessage:  errorMessage,
 	})
 }
@@ -246,6 +256,7 @@ func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 		ResponseID    json.RawMessage               `json:"responseId"`
 		ResponseModel json.RawMessage               `json:"responseModel"`
 		Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics"`
+		RawStopReason json.RawMessage               `json:"rawStopReason"`
 		ErrorMessage  json.RawMessage               `json:"errorMessage"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -279,6 +290,10 @@ func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
+	rawStopReason, err := unmarshalOptionalWireString(raw.RawStopReason)
+	if err != nil {
+		return err
+	}
 	*message = AssistantMessage{
 		Content:       raw.Content,
 		API:           API(api),
@@ -291,6 +306,7 @@ func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 		ResponseModel: responseModel,
 		Diagnostics:   raw.Diagnostics,
 		ErrorMessage:  errorMessage,
+		RawStopReason: rawStopReason,
 	}
 	message.errorBeforeTimestamp = topLevelMemberBefore(data, "errorMessage", "timestamp")
 	message.errorBeforeResponseID = !message.errorBeforeTimestamp && topLevelMemberBefore(data, "errorMessage", "responseId")

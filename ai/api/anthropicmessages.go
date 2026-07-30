@@ -346,6 +346,9 @@ func StreamAnthropicMessagesWithOptions(
 		if err == nil && ctx.Err() != nil {
 			err = errors.New("Request was aborted") //nolint:staticcheck // Exact upstream error text is observable.
 		}
+		if err == nil && output.StopReason == ai.StopReasonPending {
+			err = errors.New("Anthropic stream ended without a stop reason") //nolint:staticcheck // Exact upstream text is observable.
+		}
 		if err == nil && (output.StopReason == ai.StopReasonAborted || output.StopReason == ai.StopReasonError) {
 			message := "An unknown error occurred"
 			if output.ErrorMessage != nil {
@@ -1125,7 +1128,11 @@ func postAnthropicStream(
 		}
 		// TimeoutMS deadlines only the header phase, like the pinned JS SDK's
 		// fetch timeout; the streamed body is never raced (OA-M1).
-		httpClient, err := openAIHeaderTimeoutClient(anthropicHTTPClient, streamTimeoutMS(options), headers)
+		baseClient := option.HTTPClient(anthropicHTTPClient)
+		if options != nil && options.HTTPClient != nil {
+			baseClient = options.HTTPClient
+		}
+		httpClient, err := openAIHeaderTimeoutClient(baseClient, streamTimeoutMS(options), headers)
 		if err != nil {
 			return nil, err
 		}
@@ -1370,6 +1377,8 @@ func (processor *anthropicStreamProcessor) handleSSE(eventName string, data []by
 		return processor.stopBlock(event.Index)
 	case "message_delta":
 		if event.Delta.StopReason != "" {
+			rawStopReason := event.Delta.StopReason
+			processor.output.RawStopReason = &rawStopReason
 			reason, message, err := mapAnthropicStopReason(event.Delta.StopReason, event.Delta.StopDetails)
 			if err != nil {
 				return err
@@ -1571,7 +1580,7 @@ func mapAnthropicStopReason(reason string, details *anthropicRawStopDetails) (ai
 		}
 		return ai.StopReasonError, message, nil
 	case "sensitive":
-		return ai.StopReasonError, "", nil
+		return ai.StopReasonError, "Provider stopped with: sensitive", nil
 	default:
 		return "", "", fmt.Errorf("Unhandled stop reason: %s", reason) //nolint:staticcheck // Exact upstream error text is observable.
 	}

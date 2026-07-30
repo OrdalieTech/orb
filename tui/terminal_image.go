@@ -7,8 +7,11 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -417,7 +420,20 @@ func Hyperlink(text, url string) string {
 func ImageFallback(mimeType string, dimensions *ImageDimensions, filename string) string {
 	parts := make([]string, 0, 3)
 	if filename != "" {
-		parts = append(parts, filename)
+		display := filename
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			if filename == home || strings.HasPrefix(filename, home+"/") || strings.HasPrefix(filename, home+"\\") {
+				display = "~" + filename[len(home):]
+			}
+		}
+		if GetCapabilities().Hyperlinks && filepath.IsAbs(filename) {
+			filePath := filepath.ToSlash(filename)
+			if runtime.GOOS == "windows" && !strings.HasPrefix(filePath, "/") {
+				filePath = "/" + filePath
+			}
+			display = Hyperlink(display, (&url.URL{Scheme: "file", Path: filePath}).String())
+		}
+		parts = append(parts, display)
 	}
 	parts = append(parts, "["+mimeType+"]")
 	if dimensions != nil {

@@ -3,18 +3,321 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/OrdalieTech/pigo/ai"
 	aiauth "github.com/OrdalieTech/pigo/ai/auth"
 	"github.com/OrdalieTech/pigo/ai/providers"
+	"github.com/OrdalieTech/pigo/codingagent"
 	"github.com/OrdalieTech/pigo/codingagent/config"
 )
+
+type credentialPrintKind string
+
+type credentialPrintError string
+
+func (err credentialPrintError) Error() string { return string(err) }
+
+const (
+	credentialPrintAPIKey credentialPrintKind = "api_key"
+	credentialPrintBearer credentialPrintKind = "bearer_token"
+
+	defaultBearerTokenMinExpiry = 30 * time.Minute
+)
+
+var (
+	credentialDurationPattern = regexp.MustCompile(`(?i)^(\d+)(ms|s|m|h)$`)
+	bearerTokenPattern        = regexp.MustCompile(`(?i)^Bearer\s+(.+)$`)
+)
+
+type credentialPrintCommand struct {
+	kind      credentialPrintKind
+	args      []string
+	minExpiry *time.Duration
+}
+
+const credentialPrintHelp = `Usage:
+  pigo auth print-api-key --model <model> [--provider <provider>]
+  pigo auth print-bearer-token --model <model> [--provider <provider>] [--min-expiry <duration>]
+
+Prints the configured credential alone on stdout. Provider inference uses configured credentials; specify --provider to select explicitly. Bearer tokens have a 30-minute minimum expiry by default. --min-expiry accepts ms, s, m, or h (for example, 30m).
+`
+
+func handleCredentialPrintCommand(ctx context.Context, argv []string, streams cliStreams) (bool, int) {
+	if len(argv) == 0 || argv[0] != "auth" {
+		return false, 0
+	}
+	if len(argv) == 1 || argv[1] == "help" || argv[1] == "--help" || argv[1] == "-h" {
+		_, _ = io.WriteString(streams.Stdout, credentialPrintHelp)
+		return true, 0
+	}
+	command, err := parseCredentialPrintCommand(argv)
+	if err != nil {
+		return true, reportCredentialPrintError(streams.Stderr, err, "Failed to parse auth command")
+	}
+	args := ParseArgs(command.args)
+	if len(args.Diagnostics) > 0 {
+		for _, diagnostic := range args.Diagnostics {
+			_, _ = fmt.Fprintln(streams.Stderr, "Error: "+diagnostic.Message)
+		}
+		return true, 1
+	}
+	if err := validateCredentialPrintArgs(args); err != nil {
+		return true, reportCredentialPrintError(streams.Stderr, err, "Failed to resolve credential")
+	}
+	agentDir, err := config.GetAgentDir()
+	if err != nil {
+		return true, reportCredentialPrintError(streams.Stderr, err, "Failed to resolve credential")
+	}
+	if _, err := config.MigrateAuthToAuthJSON(agentDir); err != nil {
+		return true, reportCredentialPrintError(streams.Stderr, err, "Failed to resolve credential")
+	}
+	storage, err := config.NewAuthStorage(filepath.Join(agentDir, "auth.json"))
+	if err != nil {
+		return true, reportCredentialPrintError(streams.Stderr, err, "Failed to resolve credential")
+	}
+	registry, err := config.NewOfflineModelRegistry(agentDir)
+	if err != nil {
+		return true, reportCredentialPrintError(streams.Stderr, err, "Failed to resolve credential")
+	}
+	value, err := resolveCredentialForPrint(ctx, args, registry, storage, command)
+	if err != nil {
+		return true, reportCredentialPrintError(streams.Stderr, err, "Failed to resolve credential")
+	}
+	_, _ = fmt.Fprintln(streams.Stdout, value)
+	return true, 0
+}
+
+func parseCredentialPrintCommand(argv []string) (credentialPrintCommand, error) {
+	command := credentialPrintCommand{}
+	switch argv[1] {
+	case "print-api-key":
+		command.kind = credentialPrintAPIKey
+	case "print-bearer-token":
+		command.kind = credentialPrintBearer
+	default:
+		return command, credentialPrintError(fmt.Sprintf(
+			`Unknown auth command %q. Use "pigo auth print-api-key" or "pigo auth print-bearer-token".`,
+			argv[1],
+		))
+	}
+	for index := 2; index < len(argv); index++ {
+		if argv[index] != "--min-expiry" {
+			command.args = append(command.args, argv[index])
+			continue
+		}
+		if command.kind != credentialPrintBearer {
+			return command, credentialPrintError("--min-expiry is only supported by print-bearer-token")
+		}
+		index++
+		if index == len(argv) {
+			return command, credentialPrintError("--min-expiry must use a duration such as 30m or 1h")
+		}
+		duration, err := parseCredentialDuration(argv[index])
+		if err != nil {
+			return command, err
+		}
+		command.minExpiry = &duration
+	}
+	return command, nil
+}
+
+func parseCredentialDuration(value string) (time.Duration, error) {
+	match := credentialDurationPattern.FindStringSubmatch(value)
+	if match == nil {
+		return 0, credentialPrintError("--min-expiry must use a duration such as 30m or 1h")
+	}
+	amount, err := strconv.ParseUint(match[1], 10, 63)
+	if err != nil {
+		return 0, credentialPrintError("--min-expiry must use a duration such as 30m or 1h")
+	}
+	unit := time.Millisecond
+	switch strings.ToLower(match[2]) {
+	case "s":
+		unit = time.Second
+	case "m":
+		unit = time.Minute
+	case "h":
+		unit = time.Hour
+	}
+	if amount > uint64((1<<63-1)/unit) {
+		return 0, credentialPrintError("--min-expiry must use a duration such as 30m or 1h")
+	}
+	return time.Duration(amount) * unit, nil
+}
+
+func validateCredentialPrintArgs(args CLIArgs) error {
+	if args.Model == nil || strings.TrimSpace(*args.Model) == "" {
+		return credentialPrintError("Credential printing requires --model <model>")
+	}
+	if args.APIKey != nil {
+		return credentialPrintError("Credential printing reads configured credentials; --api-key is not supported")
+	}
+	if len(args.Messages) > 0 || len(args.FileArgs) > 0 || len(args.UnknownFlags) > 0 {
+		return credentialPrintError("Credential printing only accepts --provider and --model")
+	}
+	return nil
+}
+
+func reportCredentialPrintError(writer io.Writer, err error, fallback string) int {
+	var expected credentialPrintError
+	if errors.As(err, &expected) {
+		return reportCLIError(writer, expected)
+	}
+	return reportCLIError(writer, errors.New(fallback))
+}
+
+func resolveCredentialForPrint(
+	ctx context.Context,
+	args CLIArgs,
+	registry *config.ModelRegistry,
+	storage *config.AuthStorage,
+	command credentialPrintCommand,
+) (string, error) {
+	stored, err := storage.List(ctx)
+	if err != nil {
+		return "", err
+	}
+	credentialTypes := make(map[string]aiauth.CredentialType, len(stored))
+	for _, credential := range stored {
+		credentialTypes[credential.ProviderID] = credential.Type
+	}
+	models, err := credentialPrintModels(args, registry.Models(), credentialTypes)
+	if err != nil {
+		return "", err
+	}
+	type resolvedCredential struct {
+		provider string
+		value    string
+	}
+	resolved := make([]resolvedCredential, 0, len(models))
+	for _, model := range models {
+		credentialType := credentialTypes[string(model.Provider)]
+		if command.kind == credentialPrintAPIKey && credentialType == aiauth.CredentialOAuth {
+			continue
+		}
+		if command.kind == credentialPrintBearer && credentialType != aiauth.CredentialOAuth {
+			continue
+		}
+		var overrides *aiauth.ResolutionOverrides
+		if command.kind == credentialPrintBearer {
+			minExpiry := defaultBearerTokenMinExpiry
+			if command.minExpiry != nil {
+				minExpiry = *command.minExpiry
+			}
+			overrides = &aiauth.ResolutionOverrides{MinOAuthValidity: &minExpiry}
+		}
+		authResult, authErr := registry.ResolveProviderAuthWithOverrides(
+			ctx,
+			string(model.Provider),
+			nil,
+			overrides,
+		)
+		if authErr != nil {
+			return "", authErr
+		}
+		value := credentialValue(command.kind, authResult)
+		if value != "" {
+			resolved = append(resolved, resolvedCredential{provider: string(model.Provider), value: value})
+		}
+	}
+	if len(resolved) == 1 {
+		return resolved[0].value, nil
+	}
+	provider := string(models[0].Provider)
+	if len(resolved) == 0 {
+		credentialType := credentialTypes[provider]
+		if args.Provider != nil && *args.Provider != "" && command.kind == credentialPrintAPIKey && credentialType == aiauth.CredentialOAuth {
+			return "", credentialPrintError(fmt.Sprintf("Provider %q is configured with OAuth, not an API key", provider))
+		}
+		if args.Provider != nil && *args.Provider != "" && command.kind == credentialPrintBearer && credentialType != aiauth.CredentialOAuth {
+			return "", credentialPrintError(fmt.Sprintf("Provider %q is not configured with an OAuth bearer token", provider))
+		}
+		if command.kind == credentialPrintAPIKey {
+			return "", credentialPrintError("No usable API key is configured")
+		}
+		return "", credentialPrintError("No usable OAuth bearer token is configured")
+	}
+	providers := make([]string, 0, len(resolved))
+	for _, credential := range resolved {
+		providers = append(providers, credential.provider)
+	}
+	return "", credentialPrintError(fmt.Sprintf(
+		"Model %q has multiple configured providers (%s). Specify --provider.",
+		*args.Model,
+		strings.Join(providers, ", "),
+	))
+}
+
+func credentialPrintModels(
+	args CLIArgs,
+	available []ai.Model,
+	credentialTypes map[string]aiauth.CredentialType,
+) ([]ai.Model, error) {
+	if args.Provider != nil && *args.Provider != "" {
+		resolution := codingagent.ResolveCLIModel(*args.Provider, *args.Model, nil, available)
+		if resolution.Error != "" || resolution.Model == nil {
+			if resolution.Error != "" {
+				return nil, credentialPrintError(resolution.Error)
+			}
+			return nil, credentialPrintError("Unable to resolve the requested provider/model")
+		}
+		return []ai.Model{*resolution.Model}, nil
+	}
+	seen := make(map[string]struct{})
+	models := make([]ai.Model, 0)
+	for _, candidate := range available {
+		provider := string(candidate.Provider)
+		if _, ok := seen[provider]; ok {
+			continue
+		}
+		seen[provider] = struct{}{}
+		if _, ok := credentialTypes[provider]; !ok {
+			continue
+		}
+		resolution := codingagent.ResolveCLIModel(provider, *args.Model, nil, available)
+		if resolution.Model == nil || resolution.Error != "" || strings.Contains(resolution.Warning, "Using custom model id") {
+			continue
+		}
+		models = append(models, *resolution.Model)
+	}
+	if len(models) == 0 {
+		return nil, credentialPrintError(fmt.Sprintf(
+			"Model %q not found. Use --list-models to see available models.",
+			*args.Model,
+		))
+	}
+	return models, nil
+}
+
+func credentialValue(kind credentialPrintKind, result *aiauth.AuthResult) string {
+	if result == nil {
+		return ""
+	}
+	if result.Auth.APIKey != nil {
+		return *result.Auth.APIKey
+	}
+	if kind != credentialPrintBearer {
+		return ""
+	}
+	for name, value := range result.Auth.Headers {
+		if !strings.EqualFold(name, "authorization") || value == nil {
+			continue
+		}
+		if match := bearerTokenPattern.FindStringSubmatch(*value); match != nil {
+			return match[1]
+		}
+	}
+	return ""
+}
 
 func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
 	if len(args.CommandArgs) > 1 || (args.Command != "logout" && len(args.CommandArgs) == 0) {

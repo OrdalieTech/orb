@@ -133,6 +133,7 @@
           "supportsStore": false,
           "supportsDeveloperRole": false,
           "supportsReasoningEffort": true,
+          "maxTokensField": "max_tokens",
           "thinkingFormat": "zai",
           "zaiToolStream": true
         }
@@ -186,6 +187,7 @@
       },
       "options": {
         "apiKey": "fixture-zai-key",
+        "maxTokens": 123,
         "reasoningEffort": "high",
         "cacheRetention": "short"
       },
@@ -196,7 +198,7 @@
           "authorization": "Bearer fixture-zai-key",
           "content-type": "application/json"
         },
-        "body": "{\"model\":\"glm-5.2\",\"messages\":[{\"role\":\"system\",\"content\":\"Use tools.\"},{\"role\":\"user\",\"content\":\"call echo\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false},\"strict\":false}}],\"tool_stream\":true,\"thinking\":{\"type\":\"enabled\",\"clear_thinking\":false},\"reasoning_effort\":\"high\"}"
+        "body": "{\"model\":\"glm-5.2\",\"messages\":[{\"role\":\"system\",\"content\":\"Use tools.\"},{\"role\":\"user\",\"content\":\"call echo\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"max_tokens\":123,\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false},\"strict\":false}}],\"tool_stream\":true,\"thinking\":{\"type\":\"enabled\",\"clear_thinking\":false},\"reasoning_effort\":\"high\"}"
       }
     },
     {

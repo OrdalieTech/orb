@@ -174,7 +174,8 @@ smokes remain post-release follow-up** (see the retired M5 checklist §Release c
       notify-only.
 - [x] Close the parity tail: six upstream regression tests ported, five MIRROR-verification gaps
       fixed, three real defects found and fixed (CLI stream SessionID, live custom messages,
-      select-list theme), startup loaded-resources listing deferred with a MIRROR note.
+      select-list theme). The broader startup skills/prompts/extensions/themes listing and its
+      diagnostics remain deferred; the v0.83 file-backed system-prompt context slice is covered.
 - [x] Close the alignment should-fix remainder: typed tool-event accessors, ai.ParseStreamingJSON,
       UI component exports (absentees documented), unit-test tails including the 28 missing
       app.* keybinding migrations found and fixed.

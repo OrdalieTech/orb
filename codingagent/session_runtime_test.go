@@ -49,6 +49,100 @@ func (operations *captureBashOperations) Exec(
 	return tools.BashExecResult{ExitCode: &code}, nil
 }
 
+type blockingBashStorage struct {
+	harness.SessionStorage
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (storage *blockingBashStorage) AppendEntry(entry harness.SessionTreeEntry) error {
+	var message harness.BashExecutionMessage
+	if entry.Type == "message" && json.Unmarshal(entry.Message, &message) == nil && message.Command == "recording" {
+		close(storage.entered)
+		<-storage.release
+	}
+	return storage.SessionStorage.AppendEntry(entry)
+}
+
+func TestSessionRuntimeFinalBashFlushWaitsForRecording(t *testing.T) {
+	cwd := t.TempDir()
+	base, err := harness.NewInMemorySessionStorage(nil, harness.SessionMetadata{
+		ID: "bash-flush-race", CreatedAt: "2026-07-30T00:00:00.000Z", CWD: cwd,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	storage := &blockingBashStorage{
+		SessionStorage: base,
+		entered:        make(chan struct{}),
+		release:        make(chan struct{}),
+	}
+	manager, err := sessionstore.FromHarnessStorage(storage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &SessionRuntime{agent: agent.NewAgent(nil), manager: manager}
+	released := false
+	release := func() {
+		if !released {
+			close(storage.release)
+			released = true
+		}
+	}
+	defer release()
+	if runtime.agent.State().IsStreaming {
+		t.Fatal("agent is streaming before final flush race")
+	}
+
+	exitCode := 0
+	recordDone := make(chan error, 1)
+	go func() {
+		recordDone <- runtime.recordBashMessage(harness.BashExecutionMessage{
+			Role: "bashExecution", Command: "recording", Output: "done", ExitCode: &exitCode, Timestamp: 1,
+		})
+	}()
+	select {
+	case <-storage.entered:
+	case <-time.After(time.Second):
+		t.Fatal("bash recording did not reach persistence")
+	}
+
+	flushDone := make(chan error, 1)
+	go func() { flushDone <- runtime.flushPendingBash() }()
+	select {
+	case err := <-flushDone:
+		release()
+		t.Fatalf("final flush overtook bash recording: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	release()
+	if err := <-recordDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-flushDone; err != nil {
+		t.Fatal(err)
+	}
+	runtime.mu.Lock()
+	pending := len(runtime.pendingBash)
+	runtime.mu.Unlock()
+	if pending != 0 {
+		t.Fatalf("pending bash messages = %d, want 0", pending)
+	}
+	state := runtime.State()
+	if len(state.Messages) == 0 {
+		t.Fatal("bash message was not recorded")
+	}
+	message, ok := state.Messages[len(state.Messages)-1].(harness.BashExecutionMessage)
+	if !ok || message.Command != "recording" {
+		t.Fatalf("recorded bash message = %#v", state.Messages[len(state.Messages)-1])
+	}
+	entries := storage.Entries()
+	if len(entries) != 1 || json.Unmarshal(entries[0].Message, &message) != nil || message.Command != "recording" {
+		t.Fatalf("persisted bash entries = %#v", entries)
+	}
+}
+
 func TestSessionRuntimeBindsBashSessionEnvironment(t *testing.T) {
 	cwd := t.TempDir()
 	manager, settings := extensionRuntimeDependencies(t, cwd)
@@ -1295,6 +1389,61 @@ func TestNavigateTreeCreatesBranchSummary(t *testing.T) {
 	}
 	if label := manager.GetLabel(result.SummaryEntry.ID); label == nil || *label != "return" {
 		t.Fatalf("label = %#v", label)
+	}
+}
+
+func TestNavigateTreeRejectsActiveResponse(t *testing.T) {
+	provider := testFaux(1000)
+	started := make(chan struct{})
+	provider.SetResponses([]faux.ResponseStep{faux.Factory(func(
+		ctx context.Context,
+		_ ai.Context,
+		_ *ai.StreamOptions,
+		_ faux.State,
+		_ *ai.Model,
+	) (*ai.AssistantMessage, error) {
+		close(started)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})})
+	runtime, manager := newTestRuntime(t, provider, map[string]any{
+		"compaction": map[string]any{"enabled": false},
+		"retry":      map[string]any{"enabled": false},
+	})
+	target, err := manager.AppendMessage(userMessage("seed"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.AppendMessage(runtimeAssistant(provider, "seed reply", 10)); err != nil {
+		t.Fatal(err)
+	}
+	runtime.syncAgentMessages()
+
+	promptDone := make(chan error, 1)
+	go func() { promptDone <- runtime.Prompt(context.Background(), "active") }()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("active response did not start")
+	}
+	leafBefore := manager.GetLeafID()
+	_, err = runtime.NavigateTree(context.Background(), target, NavigateTreeOptions{})
+	const want = "Wait for the current response to finish before navigating the session tree."
+	if err == nil || err.Error() != want {
+		t.Fatalf("navigation error = %v, want %q", err, want)
+	}
+	if got := manager.GetLeafID(); !reflect.DeepEqual(got, leafBefore) {
+		t.Fatalf("navigation changed leaf from %#v to %#v", leafBefore, got)
+	}
+
+	runtime.Abort()
+	select {
+	case err := <-promptDone:
+		if err != nil {
+			t.Fatalf("aborted prompt error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("aborted response did not settle")
 	}
 }
 

@@ -65,6 +65,7 @@ type InteractiveMode struct {
 
 	// TUI containers
 	header          *tui.Container
+	loadedResources *tui.Container
 	chat            *tui.Container
 	pendingMessages *tui.Container
 	status          *tui.Container
@@ -114,6 +115,8 @@ type InteractiveMode struct {
 	themeController            *theme.Controller
 	authContext                context.Context
 	authCancel                 context.CancelFunc
+	modelSelectorCancel        context.CancelFunc
+	modelSelectorDone          chan struct{}
 	// anthropicSubscriptionWarningShown gates the once-per-session Anthropic
 	// extra-usage warning (upstream anthropicSubscriptionWarningShown).
 	anthropicSubscriptionWarningShown bool
@@ -194,6 +197,34 @@ type inputEntry struct {
 }
 
 type expandableComponent interface{ SetExpanded(bool) }
+
+type loadedContextSection struct {
+	collapsed string
+	expanded  []string
+	mu        sync.RWMutex
+	showAll   bool
+}
+
+func (section *loadedContextSection) SetExpanded(expanded bool) {
+	section.mu.Lock()
+	section.showAll = expanded
+	section.mu.Unlock()
+}
+func (*loadedContextSection) Invalidate() {}
+func (section *loadedContextSection) Render(width int) []string {
+	section.mu.RLock()
+	showAll := section.showAll
+	section.mu.RUnlock()
+	lines := []string{theme.FG("mdHeading", "[Context]")}
+	if showAll {
+		for _, path := range section.expanded {
+			lines = append(lines, theme.FG("dim", "  "+path))
+		}
+	} else {
+		lines = append(lines, theme.FG("dim", "  "+section.collapsed))
+	}
+	return tui.NewText(strings.Join(lines, "\n"), 0, 0, nil).Render(width)
+}
 
 // RunInteractiveMode starts the full TUI interactive session.
 func RunInteractiveMode(ctx context.Context, session *codingagent.SessionRuntime, options InteractiveModeOptions) int {
@@ -356,6 +387,7 @@ func (mode *InteractiveMode) init() error {
 	}
 	mode.mdTheme = theme.MarkdownTheme()
 	mode.header = &tui.Container{}
+	mode.loadedResources = &tui.Container{}
 	mode.chat = tui.NewWindowedContainer()
 	mode.pendingMessages = &tui.Container{}
 	mode.status = &tui.Container{}
@@ -378,7 +410,7 @@ func (mode *InteractiveMode) init() error {
 	mode.editor.SetAutocompleteMaxVisible(settings.AutocompleteMaxVisible)
 
 	body, chrome := &tui.Container{}, &tui.Container{}
-	for _, component := range []tui.Component{mode.header, mode.chat, mode.pendingMessages} {
+	for _, component := range []tui.Component{mode.header, mode.loadedResources, mode.chat, mode.pendingMessages} {
 		body.AddChild(component)
 	}
 	for _, component := range []tui.Component{compactStatus{Component: mode.status, Inline: mode.statusInEditor}, mode.widgetAbove, mode.editorContainer, mode.widgetBelow, mode.footer, mode.overlay} {
@@ -391,6 +423,7 @@ func (mode *InteractiveMode) init() error {
 	mode.editorContainer.AddChild(mode.editor)
 
 	mode.addDefaultHeader()
+	mode.showLoadedResources()
 	mode.footer.AddChild(NewFooterComponent(mode.session, mode))
 
 	mode.interactiveUI = NewInteractiveUI(mode)
@@ -420,6 +453,7 @@ func (mode *InteractiveMode) init() error {
 }
 
 func (mode *InteractiveMode) detachSession() {
+	mode.cancelModelSelector()
 	if mode.interactiveUI != nil {
 		mode.interactiveUI.resetExtensionUI()
 	}
@@ -442,6 +476,7 @@ func (mode *InteractiveMode) rebindHostSession(replacement *codingagent.SessionR
 	mode.options.SessionHeader = replacement.Manager().GetHeader()
 	mode.mu.Unlock()
 	mode.header.Clear()
+	mode.loadedResources.Clear()
 	mode.chat.Clear()
 	mode.pendingMessages.Clear()
 	mode.status.Clear()
@@ -462,6 +497,7 @@ func (mode *InteractiveMode) rebindHostSession(replacement *codingagent.SessionR
 		return err
 	}
 	mode.mdTheme = theme.MarkdownTheme()
+	mode.showLoadedResources()
 	mode.setupAutocomplete()
 	settings := replacement.InteractiveSettings()
 	mode.editor.SetPaddingX(settings.EditorPaddingX)
@@ -553,6 +589,7 @@ func (mode *InteractiveMode) refreshResourcesAfterSessionStart(replacement *codi
 	}
 	mode.setupAutocomplete()
 	mode.setupExtensionShortcuts()
+	mode.showLoadedResources()
 	return nil
 }
 
@@ -590,6 +627,89 @@ func (mode *InteractiveMode) addDefaultHeader() {
 	if mode.options.SessionHeader != nil {
 		mode.header.AddChild(tui.NewText(theme.FG("muted", fmt.Sprintf("pi  %s", mode.options.SessionHeader.CWD)), 1, 0, nil))
 	}
+}
+
+func (mode *InteractiveMode) showLoadedResources() {
+	if mode.loadedResources == nil {
+		return
+	}
+	mode.loadedResources.Clear()
+	mode.mu.Lock()
+	session, toolsExpanded := mode.session, mode.toolsExpanded
+	mode.mu.Unlock()
+	if session == nil || (!mode.options.Verbose && session.InteractiveSettings().QuietStartup) {
+		return
+	}
+	loader := session.ResourceLoader()
+	if loader == nil {
+		return
+	}
+
+	paths := make([]string, 0)
+	if source := loader.GetSystemPromptSource(); source != nil {
+		paths = append(paths, source.Path)
+	}
+	for _, source := range loader.GetAppendSystemPromptSources() {
+		paths = append(paths, source.Path)
+	}
+	for _, contextFile := range loader.GetAgentsFiles().AgentsFiles {
+		paths = append(paths, contextFile.Path)
+	}
+	if len(paths) == 0 {
+		return
+	}
+
+	compact := make([]string, len(paths))
+	expanded := make([]string, len(paths))
+	for index, path := range paths {
+		compact[index] = mode.formatContextPath(path)
+		expanded[index] = mode.formatDisplayPath(path)
+	}
+	mode.loadedResources.AddChild(tui.NewSpacer(1))
+	mode.loadedResources.AddChild(&loadedContextSection{
+		collapsed: strings.Join(compact, ", "),
+		expanded:  expanded,
+		showAll:   mode.options.Verbose || toolsExpanded,
+	})
+	mode.loadedResources.AddChild(tui.NewSpacer(1))
+}
+
+func (mode *InteractiveMode) formatDisplayPath(path string) string {
+	home, err := os.UserHomeDir()
+	if err == nil && strings.HasPrefix(path, home) {
+		return "~" + strings.TrimPrefix(path, home)
+	}
+	return path
+}
+
+func (mode *InteractiveMode) formatContextPath(path string) string {
+	mode.mu.Lock()
+	cwd := mode.cwd
+	if mode.session != nil && mode.session.Manager() != nil {
+		cwd = mode.session.Manager().GetCWD()
+	}
+	mode.mu.Unlock()
+	cwd = resolveDisplayPath(cwd, ".")
+	absolute := resolveDisplayPath(path, cwd)
+	relative, err := filepath.Rel(cwd, absolute)
+	if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative) {
+		if relative == "" {
+			return "."
+		}
+		return relative
+	}
+	return mode.formatDisplayPath(absolute)
+}
+
+func resolveDisplayPath(path, base string) string {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(base, path)
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return filepath.Clean(path)
+	}
+	return filepath.Clean(absolute)
 }
 
 func (mode *InteractiveMode) Width() int {
@@ -1164,17 +1284,9 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 
 	mode.editor.OnAction("app.tools.expand", func() {
 		mode.mu.Lock()
-		mode.toolsExpanded = !mode.toolsExpanded
-		expanded := mode.toolsExpanded
+		expanded := !mode.toolsExpanded
 		mode.mu.Unlock()
-		mode.mu.Lock()
-		expandables := append([]expandableComponent(nil), mode.expandables...)
-		mode.mu.Unlock()
-		for _, component := range expandables {
-			component.SetExpanded(expanded)
-		}
-		mode.chat.Invalidate()
-		mode.ui.RequestRender()
+		mode.setToolsExpanded(expanded)
 	})
 
 	mode.editor.OnAction("app.message.followUp", func() {
@@ -1621,39 +1733,59 @@ func (mode *InteractiveMode) handleModelCommand(args string) {
 }
 
 func (mode *InteractiveMode) showModelSelector(initialSearch string) {
+	mode.cancelModelSelector()
 	// f8746813: opening the model picker re-reads models.json so external
 	// edits show up without a restart.
 	_ = mode.session.RefreshModels()
 	models := mode.session.AvailableModels()
-	options := make([]string, len(models))
-	for i, m := range models {
-		options[i] = fmt.Sprintf("%s/%s", m.Provider, m.ID)
-	}
-	if len(options) == 0 {
-		options = []string{"No models available"}
-	}
+	scoped := mode.session.ScopedModels()
+	current := mode.session.State().Model
+	ctx, cancel := context.WithCancel(mode.authenticationContext())
+	done := make(chan struct{})
+	mode.mu.Lock()
+	mode.modelSelectorCancel = cancel
+	mode.modelSelectorDone = done
+	mode.mu.Unlock()
 	go func() {
-		title := "Select model"
-		if initialSearch != "" {
-			title += ": " + initialSearch
-		}
-		selected, ok, _ := mode.interactiveUI.Select(context.Background(), title, options, nil)
+		defer func() {
+			close(done)
+			mode.mu.Lock()
+			if mode.modelSelectorDone == done {
+				mode.modelSelectorCancel = nil
+				mode.modelSelectorDone = nil
+			}
+			mode.mu.Unlock()
+		}()
+		selected, ok := mode.selectModelSearchable(ctx, current, models, scoped, initialSearch)
 		if !ok {
 			return
 		}
-		for _, model := range mode.session.AvailableModels() {
-			if fmt.Sprintf("%s/%s", model.Provider, model.ID) == selected {
-				if err := mode.session.SetModel(context.Background(), model); err != nil {
-					mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
-				} else {
-					mode.chat.AddChild(newStyledText("dim", "Model: "+selected))
-					mode.maybeWarnAboutAnthropicSubscriptionAuth(context.Background(), &model)
-				}
-				mode.ui.RequestRender()
+		if err := mode.session.SetModel(ctx, selected); err != nil {
+			if ctx.Err() != nil {
 				return
 			}
+			mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
+		} else {
+			mode.chat.AddChild(newStyledText("dim", fmt.Sprintf("Model: %s/%s", selected.Provider, selected.ID)))
+			mode.maybeWarnAboutAnthropicSubscriptionAuth(ctx, &selected)
 		}
+		mode.ui.RequestRender()
 	}()
+}
+
+func (mode *InteractiveMode) cancelModelSelector() {
+	mode.mu.Lock()
+	cancel := mode.modelSelectorCancel
+	done := mode.modelSelectorDone
+	mode.modelSelectorCancel = nil
+	mode.modelSelectorDone = nil
+	mode.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		<-done
+	}
 }
 
 func (mode *InteractiveMode) showSettingsSelector() {
@@ -1927,7 +2059,8 @@ func (mode *InteractiveMode) showTreeSelectorAt(initialSelectedID string) {
 			if !closeSelector() {
 				return
 			}
-			if selectedID == leafID {
+			currentLeaf := mode.session.Manager().GetLeafID()
+			if currentLeaf != nil && selectedID == *currentLeaf {
 				mode.showStatusMessage("Already at this point")
 				return
 			}
@@ -1986,6 +2119,15 @@ func (mode *InteractiveMode) navigateFromTree(selectedID string) {
 		}
 		if ok {
 			break
+		}
+	}
+	if !mode.session.IsIdle() {
+		queued := mode.session.DequeueMessages()
+		mode.restoreToEditor(nil, queued)
+		mode.session.Abort()
+		if err := mode.session.WaitForIdle(context.Background()); err != nil {
+			mode.showError(err)
+			return
 		}
 	}
 	result, err := mode.session.NavigateTree(context.Background(), selectedID, codingagent.NavigateTreeOptions{
@@ -2230,6 +2372,28 @@ func (mode *InteractiveMode) showStatusMessage(text string) {
 	mode.lastStatusSpacer = spacer
 	mode.lastStatusText = message
 	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) setToolsExpanded(expanded bool) {
+	mode.mu.Lock()
+	mode.toolsExpanded = expanded
+	mode.mu.Unlock()
+	for _, container := range []*tui.Container{mode.header, mode.loadedResources, mode.chat} {
+		if container == nil {
+			continue
+		}
+		for _, component := range container.Children() {
+			setExpandedComponent(component, expanded)
+		}
+	}
+	if mode.chat != nil {
+		mode.chat.Invalidate()
+	}
+	status := "collapsed"
+	if expanded {
+		status = "expanded"
+	}
+	mode.showStatusMessage("Tool output: " + status)
 }
 
 func (mode *InteractiveMode) sessionBusy() bool {
@@ -4046,6 +4210,7 @@ func (mode *InteractiveMode) shutdown(fromSignal ...bool) {
 	if authCancel != nil {
 		authCancel()
 	}
+	mode.cancelModelSelector()
 	mode.session.Abort()
 	mode.cleanupWithOrder(signalTriggered)
 	if !signalTriggered {

@@ -273,6 +273,18 @@ func StreamOpenAICodexResponsesWithOptions(
 						fail(errors.New("Request was aborted")) //nolint:staticcheck // Upstream capitalization is observable.
 						return
 					}
+					if output.StopReason == ai.StopReasonPending {
+						fail(errors.New("Codex stream ended without a stop reason")) //nolint:staticcheck // Exact upstream text is observable.
+						return
+					}
+					if output.StopReason == ai.StopReasonError || output.StopReason == ai.StopReasonAborted {
+						message := "An unknown error occurred"
+						if output.ErrorMessage != nil {
+							message = *output.ErrorMessage
+						}
+						fail(errors.New(message))
+						return
+					}
 					clearResponsesStreamingFields(output)
 					sink(ai.DoneEvent{Reason: output.StopReason, Message: output})
 					return
@@ -344,6 +356,16 @@ func StreamOpenAICodexResponsesWithOptions(
 		}
 		if err == nil && ctx.Err() != nil {
 			err = errors.New("Request was aborted") //nolint:staticcheck // Upstream capitalization is observable.
+		}
+		if err == nil && output.StopReason == ai.StopReasonPending {
+			err = errors.New("Codex stream ended without a stop reason") //nolint:staticcheck // Exact upstream text is observable.
+		}
+		if err == nil && (output.StopReason == ai.StopReasonError || output.StopReason == ai.StopReasonAborted) {
+			message := "An unknown error occurred"
+			if output.ErrorMessage != nil {
+				message = *output.ErrorMessage
+			}
+			err = errors.New(message)
 		}
 		if err != nil {
 			fail(err)
@@ -591,7 +613,11 @@ func postOpenAICodexStream(
 			return nil, err
 		}
 		request.Header = headers.Clone()
-		response, err, timedOut := doOpenAICodexRequest(ctx, request, codexHeaderTimeout(options))
+		client := openAIHTTPDoer(openAIHTTPClient)
+		if options != nil && options.HTTPClient != nil {
+			client = options.HTTPClient
+		}
+		response, err, timedOut := doOpenAICodexRequest(ctx, request, codexHeaderTimeout(options), client)
 		if err != nil {
 			if timedOut {
 				err = fmt.Errorf("Codex SSE response headers timed out after %dms", *options.TimeoutMS) //nolint:staticcheck // Upstream capitalization is observable.
@@ -700,9 +726,14 @@ type codexHTTPResult struct {
 	err      error
 }
 
-func doOpenAICodexRequest(ctx context.Context, request *http.Request, headerTimeout time.Duration) (*http.Response, error, bool) {
+func doOpenAICodexRequest(
+	ctx context.Context,
+	request *http.Request,
+	headerTimeout time.Duration,
+	client openAIHTTPDoer,
+) (*http.Response, error, bool) {
 	if headerTimeout <= 0 {
-		response, err := openAIHTTPClient.Do(request)
+		response, err := client.Do(request)
 		return response, err, false
 	}
 	requestContext, cancel := context.WithCancel(ctx)
@@ -710,7 +741,7 @@ func doOpenAICodexRequest(ctx context.Context, request *http.Request, headerTime
 	result := make(chan codexHTTPResult)
 	abandoned := make(chan struct{})
 	go func() {
-		response, err := openAIHTTPClient.Do(request)
+		response, err := client.Do(request)
 		select {
 		case result <- codexHTTPResult{response: response, err: err}:
 		case <-abandoned:

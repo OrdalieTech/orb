@@ -113,6 +113,20 @@ func TestValidateUsesFirstPassingUnionCoercion(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsNullForNullableArrayWithItems(t *testing.T) {
+	got, err := ValidateToolArguments(
+		"nullable-array",
+		Schema(`{"type":["array","null"],"items":{"type":"string"}}`),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ValidateToolArguments: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("got %#v, want nil", got)
+	}
+}
+
 func TestValidateEnforcesCommonToolSchemaKeywords(t *testing.T) {
 	schema := Schema(`{
 		"type":"object",

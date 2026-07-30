@@ -48,6 +48,10 @@ type f9ContextFile struct {
 	Content string `json:"content"`
 }
 
+type f9PromptSource struct {
+	Path string `json:"path"`
+}
+
 type f9DiscoveryCase struct {
 	Name                  string              `json:"name"`
 	CWD                   string              `json:"cwd"`
@@ -63,10 +67,12 @@ type f9DiscoveryCase struct {
 }
 
 type f9DiscoveryExpected struct {
-	ContextFiles       []f9ContextFile `json:"contextFiles"`
-	SystemPrompt       *string         `json:"systemPrompt"`
-	AppendSystemPrompt []string        `json:"appendSystemPrompt"`
-	AssembledPrompt    string          `json:"assembledPrompt"`
+	ContextFiles              []f9ContextFile  `json:"contextFiles"`
+	SystemPrompt              *string          `json:"systemPrompt"`
+	SystemPromptSource        *f9PromptSource  `json:"systemPromptSource"`
+	AppendSystemPrompt        []string         `json:"appendSystemPrompt"`
+	AppendSystemPromptSources []f9PromptSource `json:"appendSystemPromptSources"`
+	AssembledPrompt           string           `json:"assembledPrompt"`
 }
 
 func TestF9SystemPromptMatchesUpstream(t *testing.T) {
@@ -163,10 +169,12 @@ func TestF9ResourceDiscoveryMatchesUpstream(t *testing.T) {
 			})
 
 			got := f9DiscoveryExpected{
-				ContextFiles:       f9FixtureContextFiles(resources.ContextFiles, fixtureRoot),
-				SystemPrompt:       resources.SystemPrompt,
-				AppendSystemPrompt: resources.AppendSystemPrompt,
-				AssembledPrompt:    f9NormalizeFixturePath(assembled, fixtureRoot),
+				ContextFiles:              f9FixtureContextFiles(resources.ContextFiles, fixtureRoot),
+				SystemPrompt:              resources.SystemPrompt,
+				SystemPromptSource:        f9FixturePromptSource(resources.SystemPromptSource, fixtureRoot),
+				AppendSystemPrompt:        resources.AppendSystemPrompt,
+				AppendSystemPromptSources: f9FixturePromptSources(resources.AppendSystemPromptSources, fixtureRoot),
+				AssembledPrompt:           f9NormalizeFixturePath(assembled, fixtureRoot),
 			}
 			if diff := runner.ByteDiff([]byte(fixtureCase.Expected.AssembledPrompt), []byte(got.AssembledPrompt)); diff != "" {
 				t.Fatalf("assembled system prompt mismatch:\n%s", diff)
@@ -182,7 +190,7 @@ func loadF9Fixture(t testing.TB) f9Fixture {
 	t.Helper()
 	var fixture f9Fixture
 	runner.LoadJSON(t, "F9", "cases.json", &fixture)
-	if fixture.SchemaVersion != 1 || len(fixture.PromptCases) != 6 || len(fixture.DiscoveryCases) != 6 {
+	if fixture.SchemaVersion != 2 || len(fixture.PromptCases) != 6 || len(fixture.DiscoveryCases) != 6 {
 		t.Fatalf(
 			"F9 fixture header = version %d, prompt cases %d, discovery cases %d",
 			fixture.SchemaVersion,
@@ -241,6 +249,21 @@ func f9FixtureContextFiles(files []codingagent.ContextFile, fixtureRoot string) 
 			Path:    f9NormalizeFixturePath(file.Path, fixtureRoot),
 			Content: file.Content,
 		}
+	}
+	return converted
+}
+
+func f9FixturePromptSource(source *codingagent.PromptSource, fixtureRoot string) *f9PromptSource {
+	if source == nil {
+		return nil
+	}
+	return &f9PromptSource{Path: f9NormalizeFixturePath(source.Path, fixtureRoot)}
+}
+
+func f9FixturePromptSources(sources []codingagent.PromptSource, fixtureRoot string) []f9PromptSource {
+	converted := make([]f9PromptSource, len(sources))
+	for index, source := range sources {
+		converted[index] = f9PromptSource{Path: f9NormalizeFixturePath(source.Path, fixtureRoot)}
 	}
 	return converted
 }

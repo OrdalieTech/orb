@@ -323,6 +323,7 @@ const zaiCompatModel = model("openai-completions", {
     supportsStore: false,
     supportsDeveloperRole: false,
     supportsReasoningEffort: true,
+    maxTokensField: "max_tokens",
     thinkingFormat: "zai",
     zaiToolStream: true,
   },
@@ -391,6 +392,7 @@ const requestDefinitions: RequestDefinition[] = [
     },
     options: {
       apiKey: "fixture-zai-key",
+      maxTokens: 123,
       reasoningEffort: "high",
       cacheRetention: "short",
     },

@@ -15,6 +15,7 @@ func (provider *Provider) streamWithDeltas(
 ) error {
 	partial := *message
 	partial.Content = ai.AssistantContent{}
+	partial.StopReason = ai.StopReasonPending
 	if ctx.Err() != nil {
 		yield(ai.ErrorEvent{Reason: ai.StopReasonAborted, Error: provider.createAbortedMessage(&partial)}, nil)
 		return nil
@@ -108,6 +109,9 @@ func (provider *Provider) streamWithDeltas(
 		}
 	}
 
+	if message.StopReason == ai.StopReasonPending {
+		return errors.New("Faux response ended without a stop reason") //nolint:staticcheck // Exact upstream text is observable.
+	}
 	if message.StopReason == ai.StopReasonError || message.StopReason == ai.StopReasonAborted {
 		yield(ai.ErrorEvent{Reason: message.StopReason, Error: message}, nil)
 		return nil

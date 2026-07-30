@@ -65,7 +65,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -97,7 +97,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "resp_codex_rich"
           }
@@ -131,7 +131,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "resp_codex_rich"
           }
@@ -166,7 +166,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "resp_codex_rich"
           }
@@ -204,7 +204,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "resp_codex_rich"
           }
@@ -243,7 +243,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123,
             "responseId": "resp_codex_rich"
           }
@@ -325,7 +325,8 @@
             },
             "stopReason": "stop",
             "timestamp": 1700000000123,
-            "responseId": "resp_codex_rich"
+            "responseId": "resp_codex_rich",
+            "rawStopReason": "completed"
           }
         }
       ]
@@ -394,7 +395,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -424,7 +425,8 @@
             },
             "stopReason": "length",
             "timestamp": 1700000000123,
-            "responseId": "resp_codex_length"
+            "responseId": "resp_codex_length",
+            "rawStopReason": "incomplete"
           }
         }
       ]
@@ -487,7 +489,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },
@@ -579,7 +581,7 @@
                 "total": 0
               }
             },
-            "stopReason": "stop",
+            "stopReason": "pending",
             "timestamp": 1700000000123
           }
         },

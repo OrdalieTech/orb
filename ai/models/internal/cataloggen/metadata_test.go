@@ -3,6 +3,7 @@ package cataloggen
 import (
 	"bytes"
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/OrdalieTech/pigo/ai"
@@ -192,5 +193,114 @@ func TestFreshUpstreamThinkingMetadata(t *testing.T) {
 	}
 	if compat.SupportsStore == nil || *compat.SupportsStore || compat.SupportsDeveloperRole == nil || *compat.SupportsDeveloperRole || compat.ThinkingFormat == nil || *compat.ThinkingFormat != ai.ThinkingFormatQwen {
 		t.Fatalf("Qwen Token Plan compat = %s", qwen.Compat)
+	}
+}
+
+func TestGitHubCopilotClaudeOpus5Metadata(t *testing.T) {
+	model := ai.Model{
+		ID: "claude-opus-5", API: ai.APIAnthropicMessages, Provider: "github-copilot",
+		ContextWindow: 200000, Reasoning: true,
+	}
+	applyCatalogMetadata(&model)
+
+	if model.ContextWindow != 1000000 {
+		t.Fatalf("context window = %v, want 1000000", model.ContextWindow)
+	}
+	want := map[ai.ModelThinkingLevel]*string{
+		ai.ModelThinkingMinimal: ptr("low"),
+		ai.ModelThinkingXHigh:   ptr("xhigh"),
+		ai.ModelThinkingMax:     ptr("max"),
+	}
+	if model.ThinkingLevelMap == nil || !reflect.DeepEqual(*model.ThinkingLevelMap, want) {
+		t.Fatalf("thinking level map = %#v, want %#v", model.ThinkingLevelMap, want)
+	}
+}
+
+func TestQwenTokenPlanReasoningMetadata(t *testing.T) {
+	tests := []struct {
+		id     string
+		effort bool
+		levels map[ai.ModelThinkingLevel]*string
+	}{
+		{
+			id: "glm-5", effort: true,
+			levels: map[ai.ModelThinkingLevel]*string{
+				ai.ModelThinkingMinimal: nil,
+				ai.ModelThinkingLow:     nil,
+				ai.ModelThinkingMedium:  nil,
+				ai.ModelThinkingHigh:    ptr("high"),
+				ai.ModelThinkingXHigh:   nil,
+				ai.ModelThinkingMax:     ptr("max"),
+			},
+		},
+		{
+			id: "deepseek-v4-pro", effort: true,
+			levels: map[ai.ModelThinkingLevel]*string{
+				ai.ModelThinkingMinimal: nil,
+				ai.ModelThinkingLow:     nil,
+				ai.ModelThinkingMedium:  nil,
+				ai.ModelThinkingHigh:    ptr("high"),
+				ai.ModelThinkingXHigh:   nil,
+				ai.ModelThinkingMax:     ptr("max"),
+			},
+		},
+		{
+			id: "qwen3.8-max-preview", effort: true,
+			levels: map[ai.ModelThinkingLevel]*string{
+				ai.ModelThinkingMinimal: nil,
+				ai.ModelThinkingLow:     ptr("low"),
+				ai.ModelThinkingMedium:  ptr("medium"),
+				ai.ModelThinkingHigh:    nil,
+				ai.ModelThinkingXHigh:   ptr("xhigh"),
+				ai.ModelThinkingMax:     nil,
+			},
+		},
+		{id: "qwen3.7-max", effort: false},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.id, func(t *testing.T) {
+			model := ai.Model{
+				ID: testCase.id, API: ai.APIOpenAICompletions, Provider: "qwen-token-plan",
+				BaseURL:   "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+				Reasoning: true,
+			}
+			applyCatalogMetadata(&model)
+
+			var compat ai.OpenAICompletionsCompat
+			if err := json.Unmarshal(model.Compat, &compat); err != nil {
+				t.Fatal(err)
+			}
+			if compat.SupportsReasoningEffort == nil || *compat.SupportsReasoningEffort != testCase.effort {
+				t.Fatalf("supportsReasoningEffort = %s, want %t", model.Compat, testCase.effort)
+			}
+			if compat.ThinkingFormat == nil || *compat.ThinkingFormat != ai.ThinkingFormatQwen {
+				t.Fatalf("thinking format = %s, want qwen", model.Compat)
+			}
+			if testCase.levels == nil {
+				if model.ThinkingLevelMap != nil {
+					t.Fatalf("thinking level map = %#v, want nil", *model.ThinkingLevelMap)
+				}
+				return
+			}
+			if model.ThinkingLevelMap == nil || !reflect.DeepEqual(*model.ThinkingLevelMap, testCase.levels) {
+				t.Fatalf("thinking level map = %#v, want %#v", model.ThinkingLevelMap, testCase.levels)
+			}
+		})
+	}
+}
+
+func TestZAIUsesLegacyMaxTokensField(t *testing.T) {
+	model := ai.Model{
+		ID: "glm-5.1", API: ai.APIOpenAICompletions, Provider: "zai",
+		BaseURL: "https://api.z.ai/api/coding/paas/v4",
+	}
+	applyCatalogMetadata(&model)
+
+	var compat ai.OpenAICompletionsCompat
+	if err := json.Unmarshal(model.Compat, &compat); err != nil {
+		t.Fatal(err)
+	}
+	if compat.MaxTokensField == nil || *compat.MaxTokensField != ai.MaxTokensFieldLegacy {
+		t.Fatalf("maxTokensField = %s, want %q", model.Compat, ai.MaxTokensFieldLegacy)
 	}
 }

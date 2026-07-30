@@ -1244,6 +1244,7 @@ registerHostSection((() => {
 				mode: value.context?.mode ?? "print",
 				hasUI: value.context?.hasUI === true,
 				model: clone(value.context?.model),
+				scopedModels: clone(value.context?.scopedModels ?? []),
 				idle: value.context?.idle !== false,
 				projectTrusted: value.context?.projectTrusted !== false,
 				hasPendingMessages: value.context?.hasPendingMessages === true,
@@ -1550,6 +1551,7 @@ registerHostSection((() => {
 	function extendContext(context, value, state) {
 		const current = state.stateSnapshot.context;
 		context.model = clone(current.model);
+		context.scopedModels = clone(current.scopedModels ?? []);
 		const signalValue = value.signal;
 		if (signalValue?.id) {
 			const controller = new AbortController();

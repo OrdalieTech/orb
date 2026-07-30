@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrdalieTech/pigo/agent"
 	"github.com/OrdalieTech/pigo/agent/harness"
 	"github.com/OrdalieTech/pigo/ai"
 	"github.com/OrdalieTech/pigo/ai/providers/faux"
@@ -193,6 +194,137 @@ func TestAgentSessionRuntimeNewAndSwitchLifecycle(t *testing.T) {
 	}
 	if got := log.snapshot(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("resume lifecycle = %#v, want %#v", got, want)
+	}
+}
+
+func TestAgentSessionRuntimeSettlesActiveToolBeforeReplacementShutdown(t *testing.T) {
+	cwd := t.TempDir()
+	provider := testFaux(100000)
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage(
+			faux.ToolCall("wait", map[string]any{}, faux.ToolCallOptions{ID: "wait-1"}),
+			faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse},
+		),
+		faux.Factory(func(
+			ctx context.Context,
+			_ ai.Context,
+			_ *ai.StreamOptions,
+			_ faux.State,
+			_ *ai.Model,
+		) (*ai.AssistantMessage, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}),
+	})
+	toolStarted := make(chan struct{})
+	cancelObserved := make(chan struct{})
+	releaseTool := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseTool) }) }
+	defer release()
+
+	shutdown := make(chan struct{}, 2)
+	registry := extensions.NewRegistry(cwd)
+	if err := registry.Register("<runtime-settle-test>", func(api extensions.API) error {
+		api.On(extensions.EventSessionShutdown, func(
+			context.Context,
+			extensions.Event,
+			extensions.Context,
+		) (any, error) {
+			shutdown <- struct{}{}
+			return nil, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	waitTool := extensions.ToolDefinition{
+		Name: "wait", Parameters: ai.JSONSchema(`{"type":"object","properties":{}}`),
+		Execute: func(
+			ctx context.Context,
+			_ string,
+			_ any,
+			_ agent.AgentToolUpdateCallback,
+			_ extensions.Context,
+		) (agent.AgentToolResult, error) {
+			close(toolStarted)
+			<-ctx.Done()
+			close(cancelObserved)
+			<-releaseTool
+			return agent.AgentToolResult{}, ctx.Err()
+		},
+	}
+	host, err := NewAgentSessionRuntime(context.Background(), AgentSessionOptions{
+		CWD: cwd, AgentDir: t.TempDir(), StreamFn: provider.StreamSimple, Model: provider.GetModel(),
+		ExtensionRegistry: registry, NoTools: "builtin", Tools: []string{"wait"}, CustomTools: []extensions.ToolDefinition{waitTool},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { host.Dispose(context.Background()) })
+	if err := host.Session().BindExtensions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	oldManager := host.Session().Manager()
+	promptDone := make(chan error, 1)
+	go func() { promptDone <- host.Session().PromptSync(context.Background(), "run tool") }()
+	select {
+	case <-toolStarted:
+	case <-time.After(time.Second):
+		t.Fatal("tool did not start")
+	}
+
+	replaceDone := make(chan error, 1)
+	go func() {
+		_, replaceErr := host.NewSession(context.Background(), nil)
+		replaceDone <- replaceErr
+	}()
+	select {
+	case <-cancelObserved:
+	case <-shutdown:
+		t.Fatal("session_shutdown ran before the active tool was cancelled")
+	case <-time.After(time.Second):
+		t.Fatal("replacement did not cancel the active tool")
+	}
+	select {
+	case <-shutdown:
+		t.Fatal("session_shutdown ran before the cancelled tool settled")
+	case <-time.After(20 * time.Millisecond):
+	}
+	release()
+	select {
+	case err := <-promptDone:
+		if err != nil {
+			t.Fatalf("aborted prompt error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("aborted prompt did not settle")
+	}
+	select {
+	case <-shutdown:
+	case <-time.After(time.Second):
+		t.Fatal("session_shutdown did not run after the prompt settled")
+	}
+	select {
+	case err := <-replaceDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("replacement did not finish")
+	}
+
+	messages := oldManager.BuildSessionContext().Messages
+	roles := make([]string, 0, len(messages))
+	for _, message := range messages {
+		role, _ := jsonwire.MessageRoleAndText(message)
+		roles = append(roles, role)
+	}
+	if want := []string{"user", "assistant", "toolResult", "assistant"}; !reflect.DeepEqual(roles, want) {
+		t.Fatalf("settled message roles = %#v, want %#v", roles, want)
+	}
+	if assistant := asAssistant(decodeSessionMessage(messages[len(messages)-1])); assistant == nil {
+		t.Fatalf("final message = %#v, want assistant", decodeSessionMessage(messages[len(messages)-1]))
 	}
 }
 

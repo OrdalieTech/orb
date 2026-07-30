@@ -292,6 +292,9 @@ func StreamOpenAIResponsesWithOptions(
 		if err == nil && ctx.Err() != nil {
 			err = errors.New("Request was aborted") //nolint:staticcheck // Exact upstream error text is observable.
 		}
+		if err == nil && output.StopReason == ai.StopReasonPending {
+			err = errors.New("OpenAI Responses stream ended without a stop reason") //nolint:staticcheck // Exact upstream text is observable.
+		}
 		if err == nil && (output.StopReason == ai.StopReasonAborted || output.StopReason == ai.StopReasonError) {
 			err = errors.New("An unknown error occurred") //nolint:staticcheck // Exact upstream error text is observable.
 		}
@@ -1120,9 +1123,19 @@ func (processor *openAIResponsesProcessor) handle(raw json.RawMessage) error {
 		return fmt.Errorf("Error Code %s: %s", responsesEventTemplateValue(event.Code), responsesEventTemplateValue(event.Message))
 	case "response.failed":
 		processor.sawTerminalResponseEvent = true
+		processor.captureFailedRawStopReason(event.Response)
 		return responsesFailedError(event.Response)
 	}
 	return nil
+}
+
+func (processor *openAIResponsesProcessor) captureFailedRawStopReason(raw json.RawMessage) {
+	var response struct {
+		Status string `json:"status"`
+	}
+	if json.Unmarshal(raw, &response) == nil && response.Status != "" {
+		processor.output.RawStopReason = &response.Status
+	}
 }
 
 func (processor *openAIResponsesProcessor) slot(outputIndex int, kind string) *responsesOutputSlot {
@@ -1160,6 +1173,7 @@ func (processor *openAIResponsesProcessor) createSlot(outputIndex int, raw json.
 	if err := json.Unmarshal(raw, &item); err != nil {
 		return nil, err
 	}
+	processor.applyMessagePhaseStopReason(item)
 	var slot *responsesOutputSlot
 	switch item.Type {
 	case "reasoning":
@@ -1243,6 +1257,7 @@ func (processor *openAIResponsesProcessor) finishItem(outputIndex int, raw json.
 	if err := json.Unmarshal(raw, &item); err != nil {
 		return err
 	}
+	processor.applyMessagePhaseStopReason(item)
 	slot, err := processor.getOrCreateSlot(outputIndex, raw)
 	if err != nil || slot == nil {
 		return err
@@ -1348,6 +1363,12 @@ func (processor *openAIResponsesProcessor) finishItem(outputIndex int, raw json.
 	// Upstream deletes the slot only inside the matched branches above, so a
 	// done event for an unhandled item type leaves existing slots alone (OA-m7).
 	return nil
+}
+
+func (processor *openAIResponsesProcessor) applyMessagePhaseStopReason(item responsesOutputItemEnvelope) {
+	if item.Type == "message" && item.Phase != nil && *item.Phase == "final_answer" {
+		processor.output.StopReason = ai.StopReasonStop
+	}
 }
 
 func clearResponsesStreamingFields(output *ai.AssistantMessage) {
@@ -1467,6 +1488,10 @@ func (processor *openAIResponsesProcessor) finalizeResponse(raw json.RawMessage)
 		if serviceTier != nil {
 			applyResponsesServiceTierPricing(&processor.output.Usage, *serviceTier, processor.model)
 		}
+	}
+	if response.Status != "" {
+		rawStopReason := response.Status
+		processor.output.RawStopReason = &rawStopReason
 	}
 	stopReason, err := mapResponsesStopReason(response.Status)
 	if err != nil {

@@ -67,6 +67,7 @@
           "supportsStore": false,
           "supportsDeveloperRole": false,
           "supportsReasoningEffort": true,
+          "maxTokensField": "max_tokens",
           "thinkingFormat": "zai",
           "zaiToolStream": true
         },

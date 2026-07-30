@@ -42,8 +42,8 @@ import (
 var version = "dev"
 
 const (
-	upstreamVersion        = "0.82.1"
-	upstreamCommit         = "b4f293684bba718d59cc1157679bcf6157b3a7f5"
+	upstreamVersion        = "0.83.0"
+	upstreamCommit         = "845d6ff1f6643aba440341cce877ce1c43ebbc39"
 	latestReleaseURL       = "https://api.github.com/repos/OrdalieTech/pigo/releases/latest"
 	versionCheckTimeout    = 10 * time.Second
 	selfUpdateCheckTimeout = 3 * time.Second
@@ -131,6 +131,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	}
 	if len(argv) > 0 && argv[0] == "chat" {
 		return runChatCommand(ctx, argv[1:], streams)
+	}
+	if handled, code := handleCredentialPrintCommand(ctx, argv, streams); handled {
+		return code
 	}
 	if handled, code := handlePluginsCommand(ctx, argv, streams); handled {
 		return code
@@ -906,6 +909,7 @@ Usage: pigo [options] [@files...] [messages...]
 
        pigo login <provider>
        pigo logout [provider]
+       pigo auth <command>
        pigo chat <platform>
 
 OAuth providers: anthropic, openai-codex, github-copilot, kimi-coding, openrouter, xai
@@ -918,7 +922,8 @@ Commands:
   pigo update [target]         Show pigo update instructions or update packages/models
   pigo list                    List installed packages from settings
   pigo config [-l]             Open TUI to enable/disable package resources (Tab switches scope)
-  pigo <command> --help        Show help for chat/install/remove/uninstall/update/list/config
+  pigo auth <command>           Print credentials for external clients
+  pigo <command> --help        Show help for chat/install/remove/uninstall/update/list/config/auth
 
   --provider <name>              Provider name
   --model <id>                   Model ID

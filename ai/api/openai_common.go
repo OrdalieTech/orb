@@ -261,7 +261,7 @@ func newAssistantMessage(model *ai.Model) *ai.AssistantMessage {
 		Provider:   model.Provider,
 		Model:      model.ID,
 		Usage:      zeroUsage(),
-		StopReason: ai.StopReasonStop,
+		StopReason: ai.StopReasonPending,
 		Timestamp:  openAINowUnixMilli(),
 	}
 }
@@ -465,7 +465,11 @@ func postOpenAIStream(
 	if err != nil {
 		return nil, fmt.Errorf("encode OpenAI request: %w", err)
 	}
-	httpClient, err := openAIHeaderTimeoutClient(openAIHTTPClient, streamTimeoutMS(options), headers)
+	baseClient := option.HTTPClient(openAIHTTPClient)
+	if options != nil && options.HTTPClient != nil {
+		baseClient = options.HTTPClient
+	}
+	httpClient, err := openAIHeaderTimeoutClient(baseClient, streamTimeoutMS(options), headers)
 	if err != nil {
 		return nil, err
 	}

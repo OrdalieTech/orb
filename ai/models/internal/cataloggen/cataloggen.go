@@ -180,7 +180,6 @@ func Generate(sources Sources) (map[string]map[string]ai.Model, error) {
 	addCodex(result)
 	addAntLing(result)
 	addMissingOpenAI(result)
-	addQwenTokenPlanPreview(result)
 	addAzure(result)
 	addProviderAliases(result)
 	for _, models := range result {
@@ -724,29 +723,6 @@ func (number *flexibleNumber) UnmarshalJSON(data []byte) error {
 	}
 	*number = flexibleNumber(parsed)
 	return nil
-}
-
-// addQwenTokenPlanPreview mirrors the upstream hardcoded qwen3.8-max-preview
-// injection for both Qwen Token Plan providers until models.dev includes it
-// (generate-models.ts:2281-2303). Compat (thinkingFormat qwen,
-// supportsDeveloperRole false, supportsStore false) comes from the shared
-// qwen-token-plan metadata pass.
-func addQwenTokenPlanPreview(result map[string]map[string]ai.Model) {
-	baseURLs := map[string]string{
-		"qwen-token-plan":    "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
-		"qwen-token-plan-cn": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-	}
-	for _, provider := range []string{"qwen-token-plan", "qwen-token-plan-cn"} {
-		if _, exists := result[provider]["qwen3.8-max-preview"]; exists {
-			continue
-		}
-		upsert(result, ai.Model{
-			ID: "qwen3.8-max-preview", Name: "Qwen3.8 Max Preview", API: ai.APIOpenAICompletions,
-			Provider: ai.ProviderID(provider), BaseURL: baseURLs[provider], Reasoning: true,
-			Input: ai.InputModalities{ai.InputText, ai.InputImage},
-			Cost:  ai.ModelCost{}, ContextWindow: 1000000, MaxTokens: 65536,
-		})
-	}
 }
 
 func addCodex(result map[string]map[string]ai.Model) {

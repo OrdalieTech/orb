@@ -5,12 +5,181 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/OrdalieTech/pigo/ai/auth"
 	"github.com/OrdalieTech/pigo/codingagent/config"
 )
+
+func TestCredentialPrintCommandParsing(t *testing.T) {
+	command, err := parseCredentialPrintCommand([]string{
+		"auth", "print-bearer-token", "--provider", "kimi-coding", "--min-expiry", "30m", "--model", "kimi-for-coding",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command.kind != credentialPrintBearer || command.minExpiry == nil || *command.minExpiry != 30*time.Minute {
+		t.Fatalf("command = %#v", command)
+	}
+	if strings.Join(command.args, " ") != "--provider kimi-coding --model kimi-for-coding" {
+		t.Fatalf("command args = %q", command.args)
+	}
+	if _, err := parseCredentialPrintCommand([]string{"auth", "print-api-key", "--min-expiry", "30m"}); err == nil ||
+		!strings.Contains(err.Error(), "only supported by print-bearer-token") {
+		t.Fatalf("API-key min expiry error = %v", err)
+	}
+	for _, value := range []string{"", "30", "1d", "-1m", "1.5h"} {
+		if _, err := parseCredentialDuration(value); err == nil {
+			t.Fatalf("parseCredentialDuration(%q) succeeded", value)
+		}
+	}
+}
+
+func TestCredentialPrintAPIKeyWritesOnlyTheSecretToStdout(t *testing.T) {
+	agentDir := t.TempDir()
+	t.Setenv(config.EnvAgentDir, agentDir)
+	if err := os.WriteFile(
+		filepath.Join(agentDir, "auth.json"),
+		[]byte(`{"openai":{"type":"api_key","key":"test-api-key"}}`),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	handled, code := handleCredentialPrintCommand(context.Background(), []string{
+		"auth", "print-api-key", "--model", "gpt-5.5",
+	}, cliStreams{Stdout: &stdout, Stderr: &stderr})
+	if !handled || code != 0 || stdout.String() != "test-api-key\n" || stderr.Len() != 0 {
+		t.Fatalf("credential print = handled %t, code %d, stdout %q, stderr %q", handled, code, stdout.String(), stderr.String())
+	}
+}
+
+func TestCredentialPrintBearerReadsAuthorizationHeader(t *testing.T) {
+	agentDir := t.TempDir()
+	t.Setenv(config.EnvAgentDir, agentDir)
+	expires := time.Now().Add(2 * time.Hour).UnixMilli()
+	credential := []byte(`{"kimi-coding":{"type":"oauth","access":"test-bearer-token","refresh":"refresh-token","expires":` +
+		strconv.FormatInt(expires, 10) + `}}`)
+	if err := os.WriteFile(filepath.Join(agentDir, "auth.json"), credential, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	handled, code := handleCredentialPrintCommand(context.Background(), []string{
+		"auth", "print-bearer-token", "--provider", "kimi-coding", "--model", "kimi-for-coding",
+	}, cliStreams{Stdout: &stdout, Stderr: &stderr})
+	if !handled || code != 0 || stdout.String() != "test-bearer-token\n" || stderr.Len() != 0 {
+		t.Fatalf("credential print = handled %t, code %d, stdout %q, stderr %q", handled, code, stdout.String(), stderr.String())
+	}
+}
+
+func TestCredentialPrintRejectsOAuthAsAnAPIKey(t *testing.T) {
+	agentDir := t.TempDir()
+	t.Setenv(config.EnvAgentDir, agentDir)
+	expires := time.Now().Add(time.Hour).UnixMilli()
+	credential := []byte(`{"openai-codex":{"type":"oauth","access":"not-printed","refresh":"refresh-token","expires":` +
+		strconv.FormatInt(expires, 10) + `}}`)
+	if err := os.WriteFile(filepath.Join(agentDir, "auth.json"), credential, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	handled, code := handleCredentialPrintCommand(context.Background(), []string{
+		"auth", "print-api-key", "--provider", "openai-codex", "--model", "gpt-5.5",
+	}, cliStreams{Stdout: &stdout, Stderr: &stderr})
+	if !handled || code != 1 || stdout.Len() != 0 ||
+		stderr.String() != "Error: Provider \"openai-codex\" is configured with OAuth, not an API key\n" {
+		t.Fatalf("credential print = handled %t, code %d, stdout %q, stderr %q", handled, code, stdout.String(), stderr.String())
+	}
+}
+
+func TestCredentialPrintHelpAndValidation(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	handled, code := handleCredentialPrintCommand(context.Background(), []string{"auth", "--help"}, cliStreams{
+		Stdout: &stdout, Stderr: &stderr,
+	})
+	if !handled || code != 0 || !strings.Contains(stdout.String(), "pigo auth print-api-key") || stderr.Len() != 0 {
+		t.Fatalf("auth help = handled %t, code %d, stdout %q, stderr %q", handled, code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	handled, code = handleCredentialPrintCommand(context.Background(), []string{"auth", "print-api-key"}, cliStreams{
+		Stdout: &stdout, Stderr: &stderr,
+	})
+	if !handled || code != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "requires --model") {
+		t.Fatalf("missing model = handled %t, code %d, stdout %q, stderr %q", handled, code, stdout.String(), stderr.String())
+	}
+}
+
+func TestCredentialPrintErrorBoundary(t *testing.T) {
+	run := func(t *testing.T, argv []string, wantStderr string) {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		handled, code := handleCredentialPrintCommand(context.Background(), argv, cliStreams{
+			Stdout: &stdout,
+			Stderr: &stderr,
+		})
+		if !handled || code != 1 || stdout.Len() != 0 || stderr.String() != wantStderr {
+			t.Fatalf(
+				"credential print = handled %t, code %d, stdout %q, stderr %q; want code 1, empty stdout, stderr %q",
+				handled,
+				code,
+				stdout.String(),
+				stderr.String(),
+				wantStderr,
+			)
+		}
+	}
+
+	t.Run("parse error", func(t *testing.T) {
+		run(
+			t,
+			[]string{"auth", "unknown"},
+			"Error: Unknown auth command \"unknown\". Use \"pigo auth print-api-key\" or \"pigo auth print-bearer-token\".\n",
+		)
+	})
+
+	t.Run("validation error", func(t *testing.T) {
+		run(
+			t,
+			[]string{"auth", "print-api-key"},
+			"Error: Credential printing requires --model <model>\n",
+		)
+	})
+
+	t.Run("setup error", func(t *testing.T) {
+		agentDir := filepath.Join(t.TempDir(), "agent")
+		if err := os.WriteFile(agentDir, []byte("not a directory"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv(config.EnvAgentDir, agentDir)
+		run(
+			t,
+			[]string{"auth", "print-api-key", "--model", "gpt-5.5"},
+			"Error: Failed to resolve credential\n",
+		)
+	})
+
+	t.Run("resolution error", func(t *testing.T) {
+		agentDir := t.TempDir()
+		t.Setenv(config.EnvAgentDir, agentDir)
+		expires := time.Now().Add(10 * time.Minute).UnixMilli()
+		credential := []byte(`{"openrouter":{"type":"oauth","access":"not-printed","refresh":"","expires":` +
+			strconv.FormatInt(expires, 10) + `}}`)
+		if err := os.WriteFile(filepath.Join(agentDir, "auth.json"), credential, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		run(
+			t,
+			[]string{
+				"auth", "print-bearer-token",
+				"--provider", "openrouter",
+				"--model", "anthropic/claude-opus-5",
+			},
+			"Error: Failed to resolve credential\n",
+		)
+	})
+}
 
 // LOG-m5: bare `pigo logout` no longer silently defaults to anthropic; it
 // lists the stored credentials and requires an explicit provider argument.

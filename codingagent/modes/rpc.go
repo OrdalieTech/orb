@@ -517,7 +517,7 @@ func (mode *rpcMode) handleCommand(session *codingagent.SessionRuntime, command 
 		if command.HasID {
 			requestID = &command.ID
 		}
-		result, err := session.ExecuteBashWithID(mode.ctx, command.Command, command.ExcludeFromContext, requestID)
+		result, err := session.ExecuteUserBashWithID(mode.ctx, command.Command, command.ExcludeFromContext, requestID)
 		if err != nil {
 			return failure(err)
 		}

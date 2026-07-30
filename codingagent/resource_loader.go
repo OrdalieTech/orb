@@ -56,7 +56,9 @@ type ResourceLoader interface {
 	GetThemes() ResourceThemesResult
 	GetAgentsFiles() ResourceAgentsFilesResult
 	GetSystemPrompt() *string
+	GetSystemPromptSource() *PromptSource
 	GetAppendSystemPrompt() []string
+	GetAppendSystemPromptSources() []PromptSource
 	ExtendResources(ResourceExtensionPaths)
 	Reload(context.Context, *ResourceLoaderReloadOptions) error
 }
@@ -289,10 +291,26 @@ func (loader *DefaultResourceLoader) GetSystemPrompt() *string {
 	return cloneStringPointer(loader.resources.SystemPrompt)
 }
 
+func (loader *DefaultResourceLoader) GetSystemPromptSource() *PromptSource {
+	loader.mu.RLock()
+	defer loader.mu.RUnlock()
+	if loader.resources.SystemPromptSource == nil {
+		return nil
+	}
+	source := *loader.resources.SystemPromptSource
+	return &source
+}
+
 func (loader *DefaultResourceLoader) GetAppendSystemPrompt() []string {
 	loader.mu.RLock()
 	defer loader.mu.RUnlock()
 	return append([]string(nil), loader.resources.AppendSystemPrompt...)
+}
+
+func (loader *DefaultResourceLoader) GetAppendSystemPromptSources() []PromptSource {
+	loader.mu.RLock()
+	defer loader.mu.RUnlock()
+	return append([]PromptSource(nil), loader.resources.AppendSystemPromptSources...)
 }
 
 func (loader *DefaultResourceLoader) ExtendResources(paths ResourceExtensionPaths) {
@@ -582,9 +600,13 @@ func resourcesFromLoader(loader ResourceLoader) *Resources {
 	skills := loader.GetSkills()
 	prompts := loader.GetPrompts()
 	resources := &Resources{
-		ContextFiles: loader.GetAgentsFiles().AgentsFiles,
-		SystemPrompt: loader.GetSystemPrompt(), AppendSystemPrompt: loader.GetAppendSystemPrompt(),
-		Skills: skills.Skills, PromptTemplates: prompts.Prompts,
+		ContextFiles:              loader.GetAgentsFiles().AgentsFiles,
+		SystemPrompt:              loader.GetSystemPrompt(),
+		SystemPromptSource:        loader.GetSystemPromptSource(),
+		AppendSystemPrompt:        loader.GetAppendSystemPrompt(),
+		AppendSystemPromptSources: loader.GetAppendSystemPromptSources(),
+		Skills:                    skills.Skills,
+		PromptTemplates:           prompts.Prompts,
 	}
 	resources.Diagnostics = append(resources.Diagnostics, skills.Diagnostics...)
 	resources.Diagnostics = append(resources.Diagnostics, prompts.Diagnostics...)

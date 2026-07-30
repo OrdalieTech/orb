@@ -708,6 +708,9 @@ func (runtime *AgentSessionRuntime) replace(
 ) (*AgentSession, error) {
 	previousFile := current.Manager().GetSessionFile()
 	targetFile := replacement.GetSessionFile()
+	// Persist an active turn's aborted tool results before replacing its manager.
+	current.Abort()
+	_ = current.WaitForIdle(context.Background())
 	runtime.teardown(ctx, current, extensions.SessionShutdownEvent{
 		Reason: shutdownReason, TargetSessionFile: optionalRuntimeString(targetFile),
 	})

@@ -87,6 +87,21 @@ func TestAnthropicMalformedEventUsesPartialJSONRepair(t *testing.T) {
 	}
 }
 
+func TestAnthropicRawStopReasonAndSensitiveError(t *testing.T) {
+	model := anthropicTestModel()
+	output := newAssistantMessage(model)
+	processor := newAnthropicStreamProcessor(model, ai.Context{}, output, false, func(ai.AssistantMessageEvent) bool { return true })
+	if err := processor.handleSSE("message_delta", []byte(`{"type":"message_delta","delta":{"stop_reason":"sensitive"}}`), nil); err != nil {
+		t.Fatal(err)
+	}
+	if output.StopReason != ai.StopReasonError || output.RawStopReason == nil || *output.RawStopReason != "sensitive" {
+		t.Fatalf("output = %#v", output)
+	}
+	if output.ErrorMessage == nil || *output.ErrorMessage != "Provider stopped with: sensitive" {
+		t.Fatalf("error message = %v", output.ErrorMessage)
+	}
+}
+
 func TestAnthropicCacheRetentionEnvironmentAndExplicitOverride(t *testing.T) {
 	model := anthropicTestModel()
 	system := "system"

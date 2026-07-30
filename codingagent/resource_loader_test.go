@@ -132,6 +132,71 @@ func TestDefaultResourceLoaderOverridesAndSDKReuse(t *testing.T) {
 	}
 }
 
+func TestDefaultResourceLoaderPromptSources(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir), config.WithProjectTrusted(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	systemPath := filepath.Join(cwd, ".pi", "SYSTEM.md")
+	appendPath := filepath.Join(cwd, ".pi", "APPEND_SYSTEM.md")
+	writeResourceFixture(t, systemPath, "system")
+	writeResourceFixture(t, appendPath, "append")
+
+	t.Run("discovered files survive content overrides", func(t *testing.T) {
+		overriddenSystem := "overridden system"
+		loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+			CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
+			NoExtensions: true, NoSkills: true, NoPromptTemplates: true, NoThemes: true,
+			SystemPromptOverride: func(*string) *string { return &overriddenSystem },
+			AppendSystemPromptOverride: func([]string) []string {
+				return []string{"overridden append"}
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = loader.Reload(context.Background(), nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := loader.GetSystemPromptSource(); got == nil || got.Path != systemPath {
+			t.Fatalf("system prompt source = %#v, want %q", got, systemPath)
+		}
+		if got := loader.GetAppendSystemPromptSources(); !reflect.DeepEqual(got, []PromptSource{{Path: appendPath}}) {
+			t.Fatalf("append prompt sources = %#v", got)
+		}
+
+		loader.GetSystemPromptSource().Path = "mutated"
+		sources := loader.GetAppendSystemPromptSources()
+		sources[0].Path = "mutated"
+		if loader.GetSystemPromptSource().Path != systemPath ||
+			loader.GetAppendSystemPromptSources()[0].Path != appendPath {
+			t.Fatal("prompt source getters exposed loader state")
+		}
+	})
+
+	t.Run("literal inputs have no source", func(t *testing.T) {
+		literal := "literal system"
+		loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+			CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
+			NoExtensions: true, NoSkills: true, NoPromptTemplates: true, NoThemes: true,
+			SystemPrompt: &literal, AppendSystemPrompt: []string{appendPath, "literal append"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = loader.Reload(context.Background(), nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := loader.GetSystemPromptSource(); got != nil {
+			t.Fatalf("literal system source = %#v", got)
+		}
+		if got := loader.GetAppendSystemPromptSources(); !reflect.DeepEqual(got, []PromptSource{{Path: appendPath}}) {
+			t.Fatalf("mixed append prompt sources = %#v", got)
+		}
+	})
+}
+
 func TestDefaultResourceLoaderExtendResourcesLoadsImmediately(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	cwd, agentDir := t.TempDir(), t.TempDir()

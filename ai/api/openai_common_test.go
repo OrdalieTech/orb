@@ -65,6 +65,15 @@ func TestReadSSEPropagatesConsumerStop(t *testing.T) {
 	}
 }
 
+func TestNewAssistantMessageStartsPending(t *testing.T) {
+	message := newAssistantMessage(&ai.Model{
+		ID: "fixture", API: ai.APIOpenAIResponses, Provider: "openai",
+	})
+	if message.StopReason != ai.StopReasonPending {
+		t.Fatalf("stop reason = %q, want pending", message.StopReason)
+	}
+}
+
 func TestClampOpenAIPromptCacheKeyUsesCodePoints(t *testing.T) {
 	value := strings.Repeat("🙂", 65)
 	got, ok := clampOpenAIPromptCacheKey(&value).(string)

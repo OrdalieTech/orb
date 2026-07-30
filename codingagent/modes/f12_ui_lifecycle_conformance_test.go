@@ -15,9 +15,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrdalieTech/pigo/agent"
 	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/pigo/codingagent"
+	"github.com/OrdalieTech/pigo/codingagent/config"
 	"github.com/OrdalieTech/pigo/codingagent/extensions"
 	theme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
+	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
 	"github.com/OrdalieTech/pigo/tui"
 )
 
@@ -60,6 +64,13 @@ type f12UILifecycleFixture struct {
 			ChatExpanded     bool   `json:"chatExpanded"`
 		} `json:"final"`
 	} `json:"toolsExpanded"`
+	LoadedContext struct {
+		Collapsed []string `json:"collapsed"`
+		Expanded  []string `json:"expanded"`
+		Quiet     []string `json:"quiet"`
+		Verbose   []string `json:"verbose"`
+	} `json:"loadedContext"`
+	ModelSelector f12ModelSelectorFixture `json:"modelSelector"`
 	CustomOverlay struct {
 		Options struct {
 			DynamicCalls   int `json:"dynamicCalls"`
@@ -103,6 +114,18 @@ type f12UILifecycleFixture struct {
 			DisposeCount              int                   `json:"disposeCount"`
 		} `json:"handle"`
 	} `json:"customOverlay"`
+}
+
+type f12ModelSelectorFixture struct {
+	All struct {
+		BeforeQuery string `json:"beforeQuery"`
+		AfterQuery  string `json:"afterQuery"`
+		AfterClear  string `json:"afterClear"`
+	} `json:"all"`
+	Scoped struct {
+		BeforeQuery string `json:"beforeQuery"`
+		AfterQuery  string `json:"afterQuery"`
+	} `json:"scoped"`
 }
 
 type f12ThinkingSnapshot struct {
@@ -261,7 +284,7 @@ func TestF12UILifecycleManifestIsPinned(t *testing.T) {
 	if manifest.UpstreamCommit != lock.Commit {
 		t.Fatalf("UI lifecycle upstream commit = %q, lock = %q", manifest.UpstreamCommit, lock.Commit)
 	}
-	if !reflect.DeepEqual(manifest.Files, []string{"lifecycle.json"}) || len(manifest.Sources) != 8 {
+	if !reflect.DeepEqual(manifest.Files, []string{"lifecycle.json"}) || len(manifest.Sources) != 11 {
 		t.Fatalf("UI lifecycle manifest coverage = files %v sources %v", manifest.Files, manifest.Sources)
 	}
 }
@@ -605,9 +628,12 @@ func TestF12ToolsExpandedPropagationMatchesUpstream(t *testing.T) {
 		return &f12UILifecycleTraceComponent{label: label, events: &events}
 	}
 	builtIn, resource, chat := component("built-in-header"), component("resource"), component("chat")
-	mode := &InteractiveMode{ui: modeUI, header: &tui.Container{}, chat: &tui.Container{}, toolComponents: map[string]*ToolExecutionComponent{}}
+	mode := &InteractiveMode{
+		ui: modeUI, header: &tui.Container{}, loadedResources: &tui.Container{},
+		chat: &tui.Container{}, toolComponents: map[string]*ToolExecutionComponent{},
+	}
 	mode.header.AddChild(builtIn)
-	mode.chat.AddChild(resource)
+	mode.loadedResources.AddChild(resource)
 	mode.chat.AddChild(chat)
 	ui := NewInteractiveUI(mode)
 	ui.SetToolsExpanded(true)
@@ -635,6 +661,158 @@ func TestF12ToolsExpandedPropagationMatchesUpstream(t *testing.T) {
 	if custom == nil || custom.isExpanded() || resource.isExpanded() || chat.isExpanded() {
 		t.Errorf("tools-expanded final states = custom:%v resource:%t chat:%t, want all false", custom, resource.isExpanded(), chat.isExpanded())
 	}
+}
+
+func TestF12LoadedContextMatchesUpstream(t *testing.T) {
+	fixture := f12UILifecycleLoadFixture(t)
+	f12UILifecycleInitTheme(t)
+	root, err := os.MkdirTemp("", "pigo-f12-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	cwd, agentDir := filepath.Join(root, "project"), filepath.Join(root, "agent")
+	for path, content := range map[string]string{
+		filepath.Join(cwd, ".pi", "SYSTEM.md"):        "system",
+		filepath.Join(cwd, ".pi", "APPEND_SYSTEM.md"): "append",
+		filepath.Join(cwd, "AGENTS.md"):               "context",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	settings, err := config.NewSettingsManager(
+		cwd,
+		config.WithAgentDir(agentDir),
+		config.WithProjectTrusted(true),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loader, err := codingagent.NewDefaultResourceLoader(codingagent.DefaultResourceLoaderOptions{
+		CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
+		NoExtensions: true, NoSkills: true, NoPromptTemplates: true, NoThemes: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = loader.Reload(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionRuntime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings, ResourceLoader: loader,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sessionRuntime.Dispose)
+	mode := &InteractiveMode{
+		session: sessionRuntime, ui: tui.NewTUI(newFakeTerminal(80, 24)),
+		loadedResources: &tui.Container{}, cwd: cwd,
+	}
+	renderListing := func(quiet, verbose, expanded bool) []string {
+		sessionRuntime.SetQuietStartup(quiet)
+		mode.options.Verbose = verbose
+		mode.toolsExpanded = expanded
+		mode.showLoadedResources()
+		return f12UILifecyclePlainLines(mode.loadedResources.Render(80), root)
+	}
+
+	actual := struct {
+		Collapsed []string
+		Expanded  []string
+		Quiet     []string
+		Verbose   []string
+	}{
+		Collapsed: renderListing(false, false, false),
+		Expanded:  renderListing(false, false, true),
+		Quiet:     renderListing(true, false, false),
+		Verbose:   renderListing(true, true, false),
+	}
+	expected := struct {
+		Collapsed []string
+		Expanded  []string
+		Quiet     []string
+		Verbose   []string
+	}{
+		Collapsed: fixture.LoadedContext.Collapsed,
+		Expanded:  fixture.LoadedContext.Expanded,
+		Quiet:     fixture.LoadedContext.Quiet,
+		Verbose:   fixture.LoadedContext.Verbose,
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Fatalf("loaded context differs\nwant: %#v\n got: %#v", expected, actual)
+	}
+}
+
+func TestF12ModelSelectorFilteringMatchesUpstream(t *testing.T) {
+	fixture := f12UILifecycleLoadFixture(t)
+	f12UILifecycleInitTheme(t)
+	alpha1 := ai.Model{Provider: "fixture", ID: "alpha-1", Name: "Alpha One", Reasoning: true}
+	alpha2 := ai.Model{Provider: "fixture", ID: "alpha-2", Name: "Alpha Two", Reasoning: true}
+	alpha3 := ai.Model{Provider: "fixture", ID: "alpha-3", Name: "Alpha Three", Reasoning: true}
+	models := []ai.Model{
+		alpha1,
+		alpha2,
+		alpha3,
+		{Provider: "fixture", ID: "beta-1", Name: "Beta One", Reasoning: true},
+	}
+	selectedID := func(selector *ModelSelectorComponent) string {
+		t.Helper()
+		if selector.selectedIndex < 0 || selector.selectedIndex >= len(selector.filteredModels) {
+			t.Fatalf("model selector index %d outside %d filtered models", selector.selectedIndex, len(selector.filteredModels))
+		}
+		return selector.filteredModels[selector.selectedIndex].model.ID
+	}
+
+	var got f12ModelSelectorFixture
+	all := NewModelSelectorComponent(&alpha1, models, nil, nil, nil, "")
+	all.HandleInput(tui.KeyEvent{Raw: "\x1b[B"})
+	all.HandleInput(tui.KeyEvent{Raw: "\x1b[B"})
+	got.All.BeforeQuery = selectedID(all)
+	for _, char := range "alpha" {
+		all.HandleInput(tui.KeyEvent{Raw: string(char)})
+	}
+	got.All.AfterQuery = selectedID(all)
+	all.HandleInput(tui.KeyEvent{Raw: "\x1b[B"})
+	all.HandleInput(tui.KeyEvent{Raw: "\x1b[B"})
+	all.HandleInput(tui.KeyEvent{Raw: "\x15"})
+	got.All.AfterClear = selectedID(all)
+
+	scoped := NewModelSelectorComponent(
+		&alpha1,
+		models,
+		[]codingagent.ScopedModel{{Model: alpha2}, {Model: alpha3}, {Model: alpha1}},
+		nil,
+		nil,
+		"",
+	)
+	got.Scoped.BeforeQuery = selectedID(scoped)
+	for _, char := range "alpha" {
+		scoped.HandleInput(tui.KeyEvent{Raw: string(char)})
+	}
+	got.Scoped.AfterQuery = selectedID(scoped)
+
+	if !reflect.DeepEqual(got, fixture.ModelSelector) {
+		t.Fatalf("model selector lifecycle = %+v, want upstream %+v", got, fixture.ModelSelector)
+	}
+}
+
+func f12UILifecyclePlainLines(lines []string, root string) []string {
+	normalized := make([]string, len(lines))
+	for index, line := range lines {
+		line = selectorANSI.ReplaceAllString(line, "")
+		line = strings.ReplaceAll(filepath.ToSlash(line), filepath.ToSlash(root), "/fixture")
+		normalized[index] = strings.TrimRight(line, " ")
+	}
+	return normalized
 }
 
 func TestF12CustomOverlayOptionsMatchUpstream(t *testing.T) {
@@ -968,8 +1146,8 @@ func f12UILifecycleLoadFixture(t testing.TB) f12UILifecycleFixture {
 	t.Helper()
 	var fixture f12UILifecycleFixture
 	f12UILifecycleLoadJSON(t, "lifecycle.json", &fixture)
-	if fixture.SchemaVersion != 2 {
-		t.Fatalf("F12 UI lifecycle schema version = %d, want 2", fixture.SchemaVersion)
+	if fixture.SchemaVersion != 4 {
+		t.Fatalf("F12 UI lifecycle schema version = %d, want 4", fixture.SchemaVersion)
 	}
 	return fixture
 }
