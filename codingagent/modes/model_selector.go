@@ -7,11 +7,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/codingagent"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/codingagent"
+	"github.com/OrdalieTech/orb/tui"
 
-	theme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
+	theme "github.com/OrdalieTech/orb/codingagent/modes/theme"
 )
 
 const modelSelectorMaxVisible = 10

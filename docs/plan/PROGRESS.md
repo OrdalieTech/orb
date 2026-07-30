@@ -283,7 +283,7 @@ Status: **closed by the Sprint 6 commit containing this record**.
       deliberate-difference table, incl. the bridge/E2EE exclusions).
 - [x] Complete the S6 trim (retired): remove 1,068 net lines from the inherited candidate, record zero
       new dependencies and zero duplicate groups, and prove the SDK-only additions add zero
-      linked bytes to `cmd/pigo`.
+      linked bytes to `cmd/orb`.
 - [x] Commit the sprint arc as one green mainline chunk and close it per D25; exact `make check`,
       fixture regeneration, module verification, static analysis, and four CGO-disabled
       cross-builds are green.
@@ -334,7 +334,7 @@ Status: **complete for the locked offline surface; package-specific external-ser
 
 - [x] Lock the 44 most-downloaded valid Pi package manifests from the public gallery snapshot,
       including exact versions, top-level integrity hashes, and the complete npm dependency graph.
-- [x] Run every package under pinned Pi 0.81.1 and Pigo 0.1.2 with one cold attempt, two warm-ups,
+- [x] Run every package under pinned Pi 0.81.1 and Orb 0.1.2 with one cold attempt, two warm-ups,
       and eleven interleaved measured samples in a credential-free, network-isolated container.
 - [x] Compare canonical tools, parameter schemas, prompt guidance, and commands after subtracting
       each runtime's observer baseline; retain all attempts and diagnostics in the raw artifact.
@@ -353,9 +353,9 @@ Status: **complete for the locked offline surface; package-specific external-ser
 - **D7 versus the mandatory race gate (2026-07-20)** — D7 now governs shipped product/release
   binaries, which remain static `CGO_ENABLED=0`. Development-only `go test -race` binaries may
   enable CGo solely because the Go race runtime links ThreadSanitizer; the exception never ships.
-- **Canonical release repositories (2026-07-20)** — public `OrdalieTech/pigo` and
+- **Canonical release repositories (2026-07-20)** — public `OrdalieTech/orb` and
   `OrdalieTech/homebrew-tap` repositories now exist; this checkout's `origin` points to the
-  canonical source repository and preserves the former `netapy/pigo` remote as `legacy`.
+  canonical source repository and preserves the former personal remote as `legacy`.
 
 - **Review-fix round (2026-07-28)** — full live audit at 2a5af4a produced 33 confirmed findings;
   all fixed in one wave (ai timeouts/abort text, extension-host callback semantics + streaming

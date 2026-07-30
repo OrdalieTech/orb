@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 const piMessagesTestNow int64 = 1_700_000_000_123

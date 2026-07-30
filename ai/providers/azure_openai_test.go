@@ -4,9 +4,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/ai/auth"
-	"github.com/OrdalieTech/pigo/ai/providers"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/ai/providers"
 )
 
 func TestAzureOpenAIProviderMetadataAndCopies(t *testing.T) {

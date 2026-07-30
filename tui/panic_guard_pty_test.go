@@ -17,7 +17,7 @@ import (
 // TestGoroutinePanicRestoresTerminal: with a pty slave as stdio it enters raw
 // mode and panics inside the terminal input goroutine on the first input byte.
 func TestPanicGuardChildHelper(t *testing.T) {
-	if os.Getenv("PIGO_TUI_PANIC_CHILD") == "" {
+	if os.Getenv("ORB_TUI_PANIC_CHILD") == "" {
 		t.Skip("subprocess helper for TestGoroutinePanicRestoresTerminal")
 	}
 	terminal := NewProcessTerminal()
@@ -46,7 +46,7 @@ func TestGoroutinePanicRestoresTerminal(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(executable, "-test.run=TestPanicGuardChildHelper$", "-test.count=1")
-	cmd.Env = append(os.Environ(), "PIGO_TUI_PANIC_CHILD=1")
+	cmd.Env = append(os.Environ(), "ORB_TUI_PANIC_CHILD=1")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = slave, slave, slave
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -126,7 +126,7 @@ func TestGoroutinePanicRestoresTerminal(t *testing.T) {
 // simulating a panic escaping one of the non-deferred critical sections
 // (handleSequence holds terminal.mu, StdinBuffer.Process holds buffer.mu).
 func TestPanicGuardMutexChildHelper(t *testing.T) {
-	target := os.Getenv("PIGO_TUI_PANIC_MUTEX_CHILD")
+	target := os.Getenv("ORB_TUI_PANIC_MUTEX_CHILD")
 	if target == "" {
 		t.Skip("subprocess helper for TestPanicWhileHoldingMutexRestoresTerminal")
 	}
@@ -176,7 +176,7 @@ func TestPanicWhileHoldingMutexRestoresTerminal(t *testing.T) {
 				t.Fatal(err)
 			}
 			cmd := exec.Command(executable, "-test.run=TestPanicGuardMutexChildHelper$", "-test.count=1")
-			cmd.Env = append(os.Environ(), "PIGO_TUI_PANIC_MUTEX_CHILD="+target)
+			cmd.Env = append(os.Environ(), "ORB_TUI_PANIC_MUTEX_CHILD="+target)
 			cmd.Stdin, cmd.Stdout, cmd.Stderr = slave, slave, slave
 			if err := cmd.Start(); err != nil {
 				t.Fatal(err)

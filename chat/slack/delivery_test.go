@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/chat"
+	"github.com/OrdalieTech/orb/chat"
 )
 
 func testKey(chatID, threadID string) chat.ConversationKey {

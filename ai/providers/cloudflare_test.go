@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth"
 )
 
 type cloudflareAuthContext map[string]string

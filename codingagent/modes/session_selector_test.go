@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 type sessionSelectorFixture struct {

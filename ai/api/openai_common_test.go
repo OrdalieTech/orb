@@ -12,7 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 func constrainedSamplingTestTool(name string, sampling *ai.ConstrainedSamplingConfig) ai.Tool {

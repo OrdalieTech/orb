@@ -1,6 +1,6 @@
 # Phase 1 — Walking skeleton
 
-Goal: `pigo -p "fix the failing test"` works against OpenAI with read/bash/edit/write, records a
+Goal: `orb -p "fix the failing test"` works against OpenAI with read/bash/edit/write, records a
 session, and the port can start assisting its own development (WP-170 gate).
 
 ## WP-110 — ai: unified types, streaming, Schema
@@ -49,7 +49,7 @@ fake; Go builds byte-equal payloads. Streaming: recorded SSE transcripts → ide
 sequences (F3-style trace for the api layer).
 
 **Acceptance:** F2 green for both shapes; live smoke test behind env-var opt-in
-(`PIGO_LIVE_TESTS=1`) runs one real streamed tool-call round-trip.
+(`ORB_LIVE_TESTS=1`) runs one real streamed tool-call round-trip.
 
 ## WP-130 — agent: loop, Agent, faux provider
 
@@ -119,7 +119,7 @@ system-prompt}.ts`, `docs/{settings,session-format}.md`, `src/cli/args.ts` (subs
   (`--<cwd-dashed>--`), leaf tracking, flock locking.
 - System-prompt assembly: base prompt, AGENTS.md/CLAUDE.md discovery (home → ancestors → cwd),
   `.pi/SYSTEM.md`/`APPEND_SYSTEM.md`, `--system-prompt`/`--append-system-prompt`, `--no-context-files`.
-- `cmd/pigo` + print mode: `-p` (stdin merge), `@file` text attachments, core flags (`--provider
+- `cmd/orb` + print mode: `-p` (stdin merge), `@file` text attachments, core flags (`--provider
   --model --api-key --thinking -c/--continue --session-dir --no-session -t/--tools -xt`), session
   recording in print mode (upstream records in `-p` too).
 
@@ -127,15 +127,15 @@ system-prompt}.ts`, `docs/{settings,session-format}.md`, `src/cli/args.ts` (subs
 open in Go, Go-written in TS — extraction round-trips through upstream session-manager), **F9**
 (system-prompt assembly goldens over a fixture tree).
 
-**Acceptance:** F6 + F9 green; `pigo -c` resumes a session TS pi created in the same cwd and vice versa.
+**Acceptance:** F6 + F9 green; `orb -c` resumes a session TS pi created in the same cwd and vice versa.
 
 ## WP-170 — Skeleton gate (integration)
 
-**Scope:** wire 120+130+140+150+160 into a working `pigo -p`; fix integration fallout; write
+**Scope:** wire 120+130+140+150+160 into a working `orb -p`; fix integration fallout; write
 a gate report (retired; conclusions in PROGRESS.md — what works, deviations found, perf snapshot).
 
 **Acceptance (the gate)**
-- `pigo -p "read main.go and add a comment"` performs a real OpenAI round-trip with tool calls on a
+- `orb -p "read main.go and add a comment"` performs a real OpenAI round-trip with tool calls on a
   sample repo, recording a v3 session TS pi can open.
 - All fixture families landed so far green; CI matrix green; cold start < 50 ms; binary < 25 MB at this stage.
-- Dogfood: one pigo WP task executed using pigo itself in print mode, transcript attached to the report.
+- Dogfood: one orb WP task executed using orb itself in print mode, transcript attached to the report.

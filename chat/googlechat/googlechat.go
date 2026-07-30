@@ -1,4 +1,4 @@
-// Package googlechat implements the Google Chat adapter for the pigo chat
+// Package googlechat implements the Google Chat adapter for the orb chat
 // gateway: an HTTP-endpoint Chat app with bearer-JWT-verified ingress,
 // service-account authenticated delivery, and authenticated media download.
 //
@@ -33,8 +33,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pigo/chat"
-	"github.com/OrdalieTech/pigo/chat/internal/ctxsleep"
+	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
 )
 
 const platformName = "googlechat"

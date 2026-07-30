@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/codingagent/modes/theme"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/codingagent/modes/theme"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 func newRestoreMode(t *testing.T) *InteractiveMode {

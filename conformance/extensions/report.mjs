@@ -266,10 +266,10 @@ function validateMatrix(matrix, corpus) {
   expectObject(matrix.runtimes, "matrix.runtimes");
   expect(matrix.runtimes.pi?.version?.status === 0, "matrix Pi version probe failed");
   expect(matrix.runtimes.pi.version.stdout.trim() === UPSTREAM_VERSION, `matrix Pi version must be ${UPSTREAM_VERSION}`);
-  expect(matrix.runtimes.pigo?.version?.status === 0, "matrix Pigo version probe failed");
-  expect(matrix.runtimes.pigo.version.stdout.includes(`upstream pi ${UPSTREAM_VERSION}`), `matrix Pigo must target upstream ${UPSTREAM_VERSION}`);
+  expect(matrix.runtimes.orb?.version?.status === 0, "matrix Orb version probe failed");
+  expect(matrix.runtimes.orb.version.stdout.includes(`upstream pi ${UPSTREAM_VERSION}`), `matrix Orb must target upstream ${UPSTREAM_VERSION}`);
 
-  for (const runtime of ["pi", "pigo"]) {
+  for (const runtime of ["pi", "orb"]) {
     validateRuntimeProbe(matrix.baseline?.[runtime], matrix.method, `matrix.baseline.${runtime}`);
     expect(matrix.baseline[runtime].state === "stable" && matrix.baseline[runtime].ok, `matrix.baseline.${runtime} must be stable and successful`);
     expect(matrix.baseline[runtime].registrationStable, `matrix.baseline.${runtime} registration must be stable`);
@@ -295,13 +295,13 @@ function validateMatrix(matrix, corpus) {
     expectString(result.reason, `${label}.reason`);
     expect(result.upstreamSupported === true, `${label} must be supported by the upstream reference`);
     validateRuntimeProbe(result.pi, matrix.method, `${label}.pi`);
-    validateRuntimeProbe(result.pigo, matrix.method, `${label}.pigo`);
+    validateRuntimeProbe(result.orb, matrix.method, `${label}.orb`);
     expect(result.pi.state === "stable" && result.pi.ok && result.pi.registrationStable, `${label}.pi must load stably`);
     if (result.status === "unsupported") {
-      expect(!result.pigo.ok && result.reason === "pigo_load_failure", `${label} unsupported status must represent a Pigo load failure`);
+      expect(!result.orb.ok && result.reason === "orb_load_failure", `${label} unsupported status must represent a Orb load failure`);
       expect(result.performance?.available === false, `${label} cannot publish performance for a failed load`);
     } else {
-      expect(result.pigo.state === "stable" && result.pigo.ok && result.pigo.registrationStable, `${label}.pigo pass must be stable`);
+      expect(result.orb.state === "stable" && result.orb.ok && result.orb.registrationStable, `${label}.orb pass must be stable`);
       expect(result.reason === result.status, `${label}.reason must agree with its pass status`);
       expect(result.performance?.available === true, `${label} must publish performance for stable probes`);
     }
@@ -373,8 +373,8 @@ function validateSmoke(smoke, cases, corpus, hashes) {
   expect(smoke.inputs.corpus?.sha256 === hashes.corpus, "smoke raw result is not bound to the current corpus.json");
   expect(smoke.inputs.upstreamPi?.version?.status === 0, "smoke Pi version probe failed");
   expect(smoke.inputs.upstreamPi.version.stdout.trim() === UPSTREAM_VERSION, `smoke Pi version must be ${UPSTREAM_VERSION}`);
-  expect(smoke.inputs.pigo?.version?.status === 0, "smoke Pigo version probe failed");
-  expect(smoke.inputs.pigo.version.stdout.includes(`upstream pi ${UPSTREAM_VERSION}`), `smoke Pigo must target upstream ${UPSTREAM_VERSION}`);
+  expect(smoke.inputs.orb?.version?.status === 0, "smoke Orb version probe failed");
+  expect(smoke.inputs.orb.version.stdout.includes(`upstream pi ${UPSTREAM_VERSION}`), `smoke Orb must target upstream ${UPSTREAM_VERSION}`);
   expect(Number.isInteger(smoke.inputs.warmups) && smoke.inputs.warmups > 0, "smoke warmup count must be positive");
   expect(Number.isInteger(smoke.inputs.samples) && smoke.inputs.samples > 0, "smoke sample count must be positive");
   expect(smoke.inputs.packageLockSHA256 === hashes.packageLock, "smoke raw result is not bound to the current package-lock.json");
@@ -412,7 +412,7 @@ function validateSmoke(smoke, cases, corpus, hashes) {
         expect(result.module.endsWith(normalizeEntrypoint(definition.module)), `${label}.module is stale`);
       }
       validateSmokeRuntime(result.pi, smoke.inputs, `${label}.pi`);
-      validateSmokeRuntime(result.pigo, smoke.inputs, `${label}.pigo`);
+      validateSmokeRuntime(result.orb, smoke.inputs, `${label}.orb`);
       expectObject(result.comparison, `${label}.comparison`);
       expect(typeof result.comparison.parity === "boolean", `${label}.comparison.parity must be boolean`);
       expectObject(result.comparison.observableOutput, `${label}.comparison.observableOutput`);
@@ -422,7 +422,7 @@ function validateSmoke(smoke, cases, corpus, hashes) {
         `${label}.comparison.parity does not match observable output equality`,
       );
       expectEqual(result.comparison.handlerLatency.pi, result.pi.measuredHandlerLatency, `${label} Pi handler latency`);
-      expectEqual(result.comparison.handlerLatency.pigo, result.pigo.measuredHandlerLatency, `${label} Pigo handler latency`);
+      expectEqual(result.comparison.handlerLatency.orb, result.orb.measuredHandlerLatency, `${label} Orb handler latency`);
       if (kind === "workflow") {
         expect(result.comparison.workflowPayload?.stableWithinEachRuntime === true, `${label} workflow payload is unstable`);
         expect(
@@ -439,20 +439,20 @@ function validateSmoke(smoke, cases, corpus, hashes) {
   const commandPassCount = smoke.commandResults.filter((result) => result.comparison.parity).length;
   const workflowPassCount = smoke.workflowResults.filter((result) => result.comparison.parity).length;
   const piCommandPassCount = smoke.commandResults.filter((result) => runtimeSmokePassed(result.pi, "command_handler")).length;
-  const pigoCommandPassCount = smoke.commandResults.filter((result) => runtimeSmokePassed(result.pigo, "command_handler")).length;
+  const orbCommandPassCount = smoke.commandResults.filter((result) => runtimeSmokePassed(result.orb, "command_handler")).length;
   const piWorkflowPassCount = smoke.workflowResults.filter((result) => runtimeSmokePassed(result.pi, "workflow")).length;
-  const pigoWorkflowPassCount = smoke.workflowResults.filter((result) => runtimeSmokePassed(result.pigo, "workflow")).length;
+  const orbWorkflowPassCount = smoke.workflowResults.filter((result) => runtimeSmokePassed(result.orb, "workflow")).length;
   const expectedSummary = {
     commandCaseCount: smoke.commandResults.length,
     commandPassCount,
     allCommandsComparedPass: commandPassCount === smoke.commandResults.length,
     piCommandPassCount,
-    pigoCommandPassCount,
+    orbCommandPassCount,
     workflowCaseCount: smoke.workflowResults.length,
     workflowPassCount,
     allWorkflowsComparedPass: workflowPassCount === smoke.workflowResults.length,
     piWorkflowPassCount,
-    pigoWorkflowPassCount,
+    orbWorkflowPassCount,
     allComparedPass: commandPassCount === smoke.commandResults.length && workflowPassCount === smoke.workflowResults.length,
   };
   expectEqual(smoke.summary, expectedSummary, "smoke.summary");
@@ -509,10 +509,10 @@ function performanceSummary(entries, selector) {
     noisy: values.length - comparable.length,
     unavailable: entries.length - values.length,
     notDecisionGrade: entries.length - comparable.length,
-    pigoFaster: ratios.filter((ratio) => ratio < 1).length,
+    orbFaster: ratios.filter((ratio) => ratio < 1).length,
     equal: ratios.filter((ratio) => ratio === 1).length,
     piFaster: ratios.filter((ratio) => ratio > 1).length,
-    medianPigoVsPiRatio: median(ratios),
+    medianOrbVsPiRatio: median(ratios),
   };
 }
 
@@ -541,7 +541,7 @@ function compactMismatch(output) {
   if (output.equalAcrossRuntimes) return undefined;
   return {
     pi: output.piRepresentative,
-    pigo: output.pigoRepresentative,
+    orb: output.orbRepresentative,
   };
 }
 
@@ -557,13 +557,13 @@ function compactSmokeResult(result, kind) {
     parity: result.comparison.parity,
     runtimes: {
       pi: result.pi.status,
-      pigo: result.pigo.status,
+      orb: result.orb.status,
     },
     observableOutput: {
       stableWithinEachRuntime: result.comparison.observableOutput.stableWithinEachRuntime,
       equalAcrossRuntimes: result.comparison.observableOutput.equalAcrossRuntimes,
       piDistinctCount: result.comparison.observableOutput.piDistinctOutputCount,
-      pigoDistinctCount: result.comparison.observableOutput.pigoDistinctOutputCount,
+      orbDistinctCount: result.comparison.observableOutput.orbDistinctOutputCount,
     },
     handlerLatency: result.comparison.handlerLatency,
   };
@@ -618,10 +618,10 @@ function buildReport({ matrix, smoke, corpus, audit, raw, sources }) {
           startup: compactStats(result.pi.startup),
           observerCommandRPC: compactStats(result.pi.command),
         },
-        pigo: {
-          state: result.pigo.state,
-          startup: compactStats(result.pigo.startup),
-          observerCommandRPC: compactStats(result.pigo.command),
+        orb: {
+          state: result.orb.state,
+          startup: compactStats(result.orb.startup),
+          observerCommandRPC: compactStats(result.orb.command),
         },
         comparison: result.performance,
       },
@@ -636,7 +636,7 @@ function buildReport({ matrix, smoke, corpus, audit, raw, sources }) {
 
   return {
     schemaVersion: 1,
-    kind: "pigo-extension-compatibility-report",
+    kind: "orb-extension-compatibility-report",
     sourceAsOf,
     methodology: {
       population: {
@@ -687,9 +687,9 @@ function buildReport({ matrix, smoke, corpus, audit, raw, sources }) {
           version: matrix.runtimes.pi.version.stdout.trim(),
           smokeBinarySHA256: smoke.inputs.upstreamPi.sha256,
         },
-        pigo: {
-          version: matrix.runtimes.pigo.version.stdout.trim(),
-          smokeBinarySHA256: smoke.inputs.pigo.sha256,
+        orb: {
+          version: matrix.runtimes.orb.version.stdout.trim(),
+          smokeBinarySHA256: smoke.inputs.orb.sha256,
         },
         packageLockSHA256: smoke.inputs.packageLockSHA256,
       },
@@ -708,20 +708,20 @@ function buildReport({ matrix, smoke, corpus, audit, raw, sources }) {
             startup: compactStats(matrix.baseline.pi.startup),
             observerCommandRPC: compactStats(matrix.baseline.pi.command),
           },
-          pigo: {
-            startup: compactStats(matrix.baseline.pigo.startup),
-            observerCommandRPC: compactStats(matrix.baseline.pigo.command),
+          orb: {
+            startup: compactStats(matrix.baseline.orb.startup),
+            observerCommandRPC: compactStats(matrix.baseline.orb.command),
           },
         },
         extensionStartup: performanceSummary(matrix.extensions, (entry) => entry.performance?.available ? entry.performance.startup : null),
         baselineSubtractedLoad: performanceSummary(matrix.extensions, (entry) => entry.performance?.available ? entry.performance.baselineSubtractedLoad : null),
         commandHandlerSmoke: performanceSummary(smoke.commandResults, (entry) => ({
-          quality: entry.comparison.handlerLatency.pigoVsPiRatio === null ? "noisy" : "ok",
-          ratio: entry.comparison.handlerLatency.pigoVsPiRatio,
+          quality: entry.comparison.handlerLatency.orbVsPiRatio === null ? "noisy" : "ok",
+          ratio: entry.comparison.handlerLatency.orbVsPiRatio,
         })),
         workflowHandlerSmoke: performanceSummary(smoke.workflowResults, (entry) => ({
-          quality: entry.comparison.handlerLatency.pigoVsPiRatio === null ? "noisy" : "ok",
-          ratio: entry.comparison.handlerLatency.pigoVsPiRatio,
+          quality: entry.comparison.handlerLatency.orbVsPiRatio === null ? "noisy" : "ok",
+          ratio: entry.comparison.handlerLatency.orbVsPiRatio,
         })),
       },
       blockerCategories: groupedBlockers(audit, corpus),
@@ -800,7 +800,7 @@ async function main() {
   });
   expect(matrix.inputs.packageLock.sha256 === smoke.inputs.packageLockSHA256, "matrix and smoke used different package locks");
   expect(matrix.inputs.upstreamPi.sha256 === smoke.inputs.upstreamPi.sha256, "matrix and smoke used different Pi binaries");
-  expect(matrix.inputs.pigo.sha256 === smoke.inputs.pigo.sha256, "matrix and smoke used different Pigo binaries");
+  expect(matrix.inputs.orb.sha256 === smoke.inputs.orb.sha256, "matrix and smoke used different Orb binaries");
   validateAudit(audit, corpus, matrix);
   expect(Date.parse(smoke.generatedAt) >= Date.parse(matrix.generatedAt), "smoke results predate the load matrix");
 

@@ -1,8 +1,8 @@
 package providers
 
 import (
-	"github.com/OrdalieTech/pigo/ai/auth"
-	"github.com/OrdalieTech/pigo/ai/auth/oauth"
+	"github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth/oauth"
 )
 
 var githubCopilotProvider = Provider{

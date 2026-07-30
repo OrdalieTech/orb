@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/conformance/runner"
+	"github.com/OrdalieTech/orb/conformance/runner"
 )
 
 type schemaGoldenChild struct {

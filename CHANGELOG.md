@@ -1,6 +1,6 @@
 # Changelog
 
-pigo's own release history (independent 0.x semver; upstream parity target recorded per release).
+Orb's own release history (independent 0.x semver; upstream parity target recorded per release).
 The embedded upstream changelog under `codingagent/modes/assets/` is a product asset driving
 `/changelog` and is not this file.
 
@@ -8,13 +8,14 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Changed
 
+- The project’s public identity is now **Orb**: repository and module path `github.com/OrdalieTech/orb`, `orb` executable and release artifacts, `ORB_*` environment variables, and `orb.*` private namespaces. Upstream compatibility names such as `.pi`, `PI_*`, the JavaScript `pi` API, and session/RPC wire formats remain unchanged.
 - The upstream compatibility target is now pi v0.83.0. Stored OAuth credentials refresh with less than five minutes remaining, and tool-schema conformance follows TypeBox 1.3.7, including nullable arrays.
 - Sending a message snaps the transcript back to the live tail, so a view scrolled up for reading shows the message and its reply. Scrolling away still holds position against streaming frames.
 - When enabled, the memory plugin now has one Hermes-inspired behavior for local and SDK users: a frozen, character-bounded `USER PROFILE`/`MEMORY`, model-led consolidation through `replace`, and `remember`/`recall`/`forget` over the existing `memory.Store`. The former injection and shutdown-distillation options were removed.
 
 ### Added
 
-- `pigo auth print-api-key` and `pigo auth print-bearer-token` export configured credentials without mixing diagnostics into stdout; bearer export refreshes tokens to a configurable minimum validity.
+- `orb auth print-api-key` and `orb auth print-bearer-token` export configured credentials without mixing diagnostics into stdout; bearer export refreshes tokens to a configurable minimum validity.
 - Streaming messages expose the upstream `pending` and raw provider stop reasons, supported provider requests accept an injected HTTP client, OpenRouter login accepts a pasted redirect URL or code, and extensions receive live `ctx.scopedModels`.
 - Interactive startup lists file-backed `SYSTEM.md` and `APPEND_SYSTEM.md` inputs alongside project context files, and `ResourceLoader` exposes their source paths to embedders.
 
@@ -31,7 +32,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 - Anthropic streams are no longer hard-killed at `timeoutMs` (5 minutes by default): the timeout bounds only the header phase, matching the pinned `@anthropic-ai/sdk` (10-minute default when unset), so long streaming turns complete. Bedrock no longer applies `timeoutMs` as a whole-stream deadline at all (upstream applies none) and can no longer misreport an internal timeout as a user abort, and OpenRouter image generation no longer races the response body read.
 - Aborting a stream mid-flight records upstream's `Request was aborted` in every adapter (openai-responses, openai-completions, Azure, Google, Mistral) instead of raw Go error text such as `context canceled`; aborted provider-retry requests and aborted OpenRouter image body reads return upstream's `Request aborted`, and HTTP-error paths no longer leak the header-timeout wrapper's context.
-- JS extension callbacks (tools, commands, shortcuts, event handlers, providers, renderers, dialogs, state actions) are no longer capped at 30 seconds; only host startup RPCs stay bounded, matching upstream's untimed awaits. Extension tools and provider streams now receive a live positional `AbortSignal` that fires when the agent-side context is cancelled, extension-registered provider streams reach the agent incrementally instead of buffering the whole response, extensions get the full Node `console` surface, and the Node host exits when its transport closes so it cannot be orphaned by a hard pigo crash. A cancel arriving in the same stdin chunk as its request still aborts it, abandoning a provider stream mid-iteration terminates the host-side generator instead of buffering unboundedly, abort reasons arrive as Error values, undecodable streamed events fail the stream like the buffered path, and the console bridge adds profile/profileEnd/timeStamp/createTask and a constructible `console.Console`.
+- JS extension callbacks (tools, commands, shortcuts, event handlers, providers, renderers, dialogs, state actions) are no longer capped at 30 seconds; only host startup RPCs stay bounded, matching upstream's untimed awaits. Extension tools and provider streams now receive a live positional `AbortSignal` that fires when the agent-side context is cancelled, extension-registered provider streams reach the agent incrementally instead of buffering the whole response, extensions get the full Node `console` surface, and the Node host exits when its transport closes so it cannot be orphaned by a hard Orb crash. A cancel arriving in the same stdin chunk as its request still aborts it, abandoning a provider stream mid-iteration terminates the host-side generator instead of buffering unboundedly, abort reasons arrive as Error values, undecodable streamed events fail the stream like the buffered path, and the console bridge adds profile/profileEnd/timeStamp/createTask and a constructible `console.Console`.
 - `extensions.Exec` sends SIGTERM and only SIGKILLs after a 5-second grace on abort or timeout, letting children trap TERM and clean up, and a successful command that leaves a background grandchild holding the stdio pipes keeps its own exit code after the bounded wait instead of reporting 1.
 - The `project_trust` extension event fires during startup project-trust resolution — for sessions and package commands alike — consulted ahead of the trust store and the interactive prompt as upstream does.
 - A panic on any TUI-spawned goroutine (render timer, input reader, loader ticker, autocomplete, colour-scheme timers, stdin flush) restores the terminal — cooked mode, main screen, cursor, bracketed paste off, kitty keyboard protocol popped — before printing the panic and exiting 1, instead of leaving the terminal raw with a hidden cursor. A split escape sequence whose second chunk arrives exactly at the stdin flush deadline keeps its full completion window (the same stale-timer guard now covers the capability-negotiation fragment buffer), astral-plane characters echoed after their kitty CSI-u printable report are no longer suppressed, and the crash restore path can no longer deadlock on a mutex the panicking goroutine holds.
@@ -41,7 +42,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 - Session files with an explicit empty header id keep it on load, `trust.json` keys sort in JS UTF-16 code-unit order, `models-store.json` and the extension provider store are byte-identical to upstream `JSON.stringify(value, null, 2)` instead of HTML-escaping `<`, `>` and `&`, `harness.CompactionResult` wire JSON routes through jsonwire, extension-host OAuth credentials serialize in upstream member order, and `jsonwire.Marshal` emits `0` for negative zero.
 - Harness `PrepareCompaction`/`PrepareTreeCompaction` use upstream harness's own cut-point algorithm, while `FindCutPoint`/`PrepareLegacyCompaction` keep the coding-agent algorithm and treat empty-summary `branch_summary` entries as invisible metadata in cut-point selection — while branch summarization still projects them unconditionally — matching upstream on both sides.
 - RPC frames with a missing or non-string `type` answer upstream's untyped `Unknown command` response with the id and type echoed in upstream's `JSON.stringify` canonical form, the untyped path honors a pending extension shutdown like every command, and `--mode rpc` with `@file` arguments fails up front with upstream's error instead of silently dropping them.
-- Startup `Error:`/`Warning:` diagnostics are coloured red and yellow when stderr is a TTY (`NO_COLOR` and `TERM=dumb` respected), and unstamped dev builds report `pigo dev` instead of a stale version number.
+- Startup `Error:`/`Warning:` diagnostics are coloured red and yellow when stderr is a TTY (`NO_COLOR` and `TERM=dumb` respected), and unstamped dev builds report `orb dev` instead of a stale version number.
 - Interrupting a run restores queued messages to the editor instead of discarding them, and the dequeue binding keeps the current draft after them and reports what it restored, matching upstream.
 - chat: the Telegram webhook caps request bodies at 1 MB, and image attachments larger than 20 MB fall back to a textual attachment note instead of being base64-inlined into the prompt.
 
@@ -63,16 +64,16 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Added
 
-- Anthropic simple streams accept an optional upstream client, preserving Pigo's tool and reasoning mapping for hosts that use AnthropicVertex or another client-owned transport.
+- Anthropic simple streams accept an optional upstream client, preserving Orb's tool and reasoning mapping for hosts that use AnthropicVertex or another client-owned transport.
 - Embedders can collect `CompleteSimple` directly and use portable `auto`, `none`, or `required` tool choice through `SimpleStreamOptions`; forcing a named tool stays compositionally small by advertising only that tool with `required`.
 - Interactive sessions place transient working/retry/compaction status in the built-in editor’s top border when it fits, with a right-aligned, truncated session-name badge; dialogs, scrolled drafts, and extension-provided editors retain the standard status lane and all existing UI/keybinding contracts.
 - The optional tasks plugin now keeps its persistent widget and collapsed tool results to a one-row current/progress/queue summary, lets the widget expand or collapse on click with dimmed, inset details, and exposes the full branch-aware list through `/tasks` and Ctrl+O expansion; retry statuses count down, and queued messages use one-row truncation with their count and configured dequeue-key hint.
-- 0.82.1 port, first waves: `ANTHROPIC_AUTH_TOKEN` resolves to bearer headers ahead of the other anthropic credentials; `pigo login openrouter` (PKCE) and `pigo login kimi-coding` (device flow) mint credentials; bash commands see `PI_SESSION_ID`, `PI_SESSION_FILE`, `PI_PROVIDER`, `PI_MODEL` and `PI_REASONING_LEVEL`, and RPC clients receive streamed `bash_execution_update` events; `/models` lists configured-but-missing ids as `[unavailable]` and picks up `models.json` edits on open; custom renderers receive the live `outputPad`; the external editor works out of its own temp directory with the resolved `$VISUAL`/`$EDITOR`/nano chain; DNS failures retry; scroll borders survive narrow terminals; harness paths expand `~` and `file://` and children are reaped on cleanup.
+- 0.82.1 port, first waves: `ANTHROPIC_AUTH_TOKEN` resolves to bearer headers ahead of the other anthropic credentials; `orb login openrouter` (PKCE) and `orb login kimi-coding` (device flow) mint credentials; bash commands see `PI_SESSION_ID`, `PI_SESSION_FILE`, `PI_PROVIDER`, `PI_MODEL` and `PI_REASONING_LEVEL`, and RPC clients receive streamed `bash_execution_update` events; `/models` lists configured-but-missing ids as `[unavailable]` and picks up `models.json` edits on open; custom renderers receive the live `outputPad`; the external editor works out of its own temp directory with the resolved `$VISUAL`/`$EDITOR`/nano chain; DNS failures retry; scroll borders survive narrow terminals; harness paths expand `~` and `file://` and children are reaped on cleanup.
 
 - Embedders can parse and marshal individual harness session-tree entries without constructing a JSONL file.
 - Embedders can prepare compaction directly from canonical harness session-tree entries.
-- A loose extension that imports the pi SDK without declaring it — the shape upstream permits because pi bundles its SDK — now installs the pinned `@earendil-works/pi-coding-agent` into pigo's own npm root automatically on the launch that first needs it, from the npm registry, never from an installed pi. One line announces the install; `PIGO_PI_SDK_ROOT`, `PI_OFFLINE` and a missing npm all skip it, leaving the existing guidance message. Extensions that declare their dependencies are untouched.
-- `PIGO_NODE` names the Node executable to use, for installs no search reaches; `PIGO_NODE=none` disables JavaScript extensions.
+- A loose extension that imports the pi SDK without declaring it — the shape upstream permits because pi bundles its SDK — now installs the pinned `@earendil-works/pi-coding-agent` into orb's own npm root automatically on the launch that first needs it, from the npm registry, never from an installed pi. One line announces the install; `ORB_PI_SDK_ROOT`, `PI_OFFLINE` and a missing npm all skip it, leaving the existing guidance message. Extensions that declare their dependencies are untouched.
+- `ORB_NODE` names the Node executable to use, for installs no search reaches; `ORB_NODE=none` disables JavaScript extensions.
 - TypeScript published inside `node_modules` on Node 22.6-22.12 now reports the file, the running version and the fix instead of failing opaquely.
 
 ### Removed
@@ -85,7 +86,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 - `SessionRuntime.ExecuteBash` retains its exact three-argument Go signature while the new `ExecuteBashWithID` carries an RPC correlation id; OpenRouter’s callback server now drains its response before shutdown instead of intermittently resetting the browser connection.
 - Upstream fixture extraction validates and normalizes random summary session UUIDs, and the export/shutdown manifests now identify the 0.82.1 sources, restoring deterministic Linux CI.
 - SDK auto-provisioning now also covers package-installed extensions: the ecosystem declares the SDK as a peerDependency (pi's bundling satisfied it implicitly), npm does not materialize absent peers, and conflicting peer ranges across installed packages are tolerated with --legacy-peer-deps. Resolvability up the entry's tree is now the only criterion.
-- pigo no longer resolves the extension SDK from an installed upstream pi. It searched `PATH` for the `pi` executable and pointed extensions at the npm package that owns it, so a machine without pi got a different result from one with it. The SDK is now taken from pigo's own managed npm root, project scope first when the project is trusted, then the user scope. Reading pi's configuration files stays supported; borrowing its code does not. `PIGO_PI_SDK_ROOT` remains as an explicit override for a checkout or vendored copy.
+- orb no longer resolves the extension SDK from an installed upstream pi. It searched `PATH` for the `pi` executable and pointed extensions at the npm package that owns it, so a machine without pi got a different result from one with it. The SDK is now taken from orb's own managed npm root, project scope first when the project is trusted, then the user scope. Reading pi's configuration files stays supported; borrowing its code does not. `ORB_PI_SDK_ROOT` remains as an explicit override for a checkout or vendored copy.
 - JavaScript extensions now run on Node 22.6, where every TypeScript extension previously failed: the module loader returned a string source for a format that release requires a buffer for.
 - The extension host no longer dies on Node 26, which removed `--experimental-transform-types`; an unknown flag aborts Node outright rather than warning. The flag set and the TypeScript transpiler options are now taken from what the Node build in hand accepts.
 - pnpm-installed extensions resolve their dependencies: `--preserve-symlinks` made a package reached through the `.pnpm` store resolve from the link site instead of the store. The flag existed only for the staged-entry mechanism and is gone with it.
@@ -100,7 +101,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Changed
 
-- pigo now tracks upstream pi **0.82.1** (`b4f29368`); every item of the 0.81.1 → 0.82.1 delta is ported and the conformance goldens, embedded changelog, model catalog and version identity moved together. Second wave: `Tool.constrainedSampling` with OpenAI custom tool calls and strict/grammar flags across six providers; abortable provider retries owning the SDKs' backoff with an interruptible sleep; models-store ETag revalidation; compaction and branch summaries isolated with `cacheRetention: "none"` and fresh session ids; the Codex `previous_response_not_found` retry; OpenRouter cache breakpoints on tool results; and the catalog's reasoning-level derivation, at full ID-set parity with the published 0.82.1 package.
+- orb now tracks upstream pi **0.82.1** (`b4f29368`); every item of the 0.81.1 → 0.82.1 delta is ported and the conformance goldens, embedded changelog, model catalog and version identity moved together. Second wave: `Tool.constrainedSampling` with OpenAI custom tool calls and strict/grammar flags across six providers; abortable provider retries owning the SDKs' backoff with an interruptible sleep; models-store ETag revalidation; compaction and branch summaries isolated with `cacheRetention: "none"` and fresh session ids; the Codex `previous_response_not_found` retry; OpenRouter cache breakpoints on tool results; and the catalog's reasoning-level derivation, at full ID-set parity with the published 0.82.1 package.
 - Fixture extraction now scrubs the terminal-identity environment (`GHOSTTY_RESOURCES_DIR` alone flipped the theme to truecolor), fixing most of the documented macOS extraction irreproducibility.
 - Conformance extraction now runs against upstream 0.82.x: it synthesizes the generated
   `providers/data/.manifest.json` that `providers/all.ts` began importing, writes synthesized
@@ -125,10 +126,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 - Lone UTF-16 surrogates split across streaming chunks are preserved instead of being replaced with U+FFFD, so emoji in tool arguments survive chunk boundaries.
 - Editing a session label in a terminal narrower than the label no longer panics the renderer.
 - The session tree no longer rebuilds in quadratic time; large sessions stay responsive per keystroke.
-- `pigo -p` no longer exits 0 with empty output when a prompt fails before producing a reply, such as on context overflow.
+- `orb -p` no longer exits 0 with empty output when a prompt fails before producing a reply, such as on context overflow.
 - Extension host shutdown can no longer block indefinitely when a grandchild process inherited the host's stderr.
-- `pigo --help` no longer waits for configured MCP servers to connect.
-- `@file` completion now uses pigo's managed `fd`, so it works without a system `fd` on `PATH`.
+- `orb --help` no longer waits for configured MCP servers to connect.
+- `@file` completion now uses orb's managed `fd`, so it works without a system `fd` on `PATH`.
 - Subagent progress widgets are cleared when a run ends, and a failing parallel child is reported as an error rather than a successful result.
 - `recall` falls back to word overlap, so a query no longer has to be a literal substring of a stored memory.
 - Web search honours an explicit `provider` in `web-search.json`, decodes non-UTF-8 pages, rejects binary responses, and no longer echoes provider error bodies that can contain an API key.
@@ -146,10 +147,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 - Disposing a session or reloading plugins while subagents were running could terminate the host process; child work now fails that child instead.
 - Parallel subagent runs are capped at 32 children per call, so one tool call can no longer fan out as wide as the model asks.
 - A JavaScript extension host that dies with a fatal error no longer leaves the terminal staggered; its output is line-normalised while stderr is a terminal.
-- `pigo install` now declares the package it installed in the install root's `package.json`. Packages are still fetched natively, so npm remains optional, but an undeclared entry looked extraneous to npm and the next `pi install` deleted it while `settings.json` still listed it.
+- `orb install` now declares the package it installed in the install root's `package.json`. Packages are still fetched natively, so npm remains optional, but an undeclared entry looked extraneous to npm and the next `pi install` deleted it while `settings.json` still listed it.
 - `--list-models` now reports settings errors instead of silently listing against defaults when `settings.json` fails to parse.
 - Compacting a disposed session is refused instead of summarizing through the model and rewriting history.
-- Refreshing the model catalog left a zero-byte `models-store.json.lock` file behind, which permanently broke `pi update --models` for a coexisting upstream pi: upstream locks with `proper-lockfile`, which creates the lock as a directory and treats any existing path as held. pigo now uses the same directory protocol, removes the lock on release, and reclaims a leftover file from an older pigo. Delete a stale `~/.pi/agent/models-store.json.lock` once to recover.
+- Refreshing the model catalog left a zero-byte `models-store.json.lock` file behind, which permanently broke `pi update --models` for a coexisting upstream pi: upstream locks with `proper-lockfile`, which creates the lock as a directory and treats any existing path as held. Orb now uses the same directory protocol, removes the lock on release, and reclaims a leftover file from an older Orb release. Delete a stale `~/.pi/agent/models-store.json.lock` once to recover.
 - Token costs recorded in sessions could differ from upstream by one unit in the last place in release builds. The compiler fused a multiply and an add on arm64, which the race-instrumented test builds did not, so the shipped binary wrote values the test suite never saw. `make check` now also verifies the byte-compared surfaces in the shipped build shape.
 
 ### Changed
@@ -172,8 +173,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Fixed
 
-- Extension hosts shut down with Pigo instead of becoming orphaned and crashing later with `EPIPE`.
-- Large sessions remain available to extensions without duplicating the transcript across bridge snapshots, and stale asynchronous extension actions are isolated instead of panicking Pigo.
+- Extension hosts shut down with Orb instead of becoming orphaned and crashing later with `EPIPE`.
+- Large sessions remain available to extensions without duplicating the transcript across bridge snapshots, and stale asynchronous extension actions are isolated instead of panicking Orb.
 
 ## [0.4.3] - 2026-07-23
 
@@ -199,7 +200,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Changed
 
-- The memory SDK moved from `codingagent/memory` to root-level `memory` before external adoption, changing its import path to `github.com/OrdalieTech/pigo/memory`.
+- The memory SDK moved from `codingagent/memory` to root-level `memory` before external adoption, changing its import path to `github.com/OrdalieTech/orb/memory`.
 
 ### Fixed
 
@@ -210,7 +211,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Added
 
-- A pigo-original `codingagent/memory.Store` SDK seam ships with an append-only, locked JSONL file store and optional semantic-search interface.
+- An Orb-original `codingagent/memory.Store` SDK seam ships with an append-only, locked JSONL file store and optional semantic-search interface.
 - A fifth bundled-but-dormant memory plugin adds `remember`/`recall`, bounded startup index injection, opt-in session distillation, and custom-store injection.
 
 ### Changed
@@ -228,13 +229,13 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 ### Changed
 
 - Interactive mode collapses the idle/working spacer and adds a one-column clickable scroll thumb.
-- `pigo update` now reports installed package versions dynamically and `--extensions` names every package that changed.
+- `orb update` now reports installed package versions dynamically and `--extensions` names every package that changed.
 
 ## [0.3.1] - 2026-07-22
 
 ### Changed
 
-- `pigo update` now reports whether the running release is current before showing reinstall instructions.
+- `orb update` now reports whether the running release is current before showing reinstall instructions.
 
 ### Fixed
 
@@ -247,19 +248,19 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Added
 
-- A bundled-but-dormant tasks plugin adds the `todo` tool and live session checklist, enabled through settings, `pigo plugins`, or `/plugins`.
+- A bundled-but-dormant tasks plugin adds the `todo` tool and live session checklist, enabled through settings, `orb plugins`, or `/plugins`.
 - A bundled-but-dormant websearch plugin adds Exa, Brave, and Tavily search plus lightweight HTML/text fetching.
 - A bundled-but-dormant subagents plugin adds injectable in-process scout, worker, and reviewer child sessions with bounded parallel execution.
 - A bundled-but-dormant permissions plugin adds last-match-wins allow, deny, and ask rules with permissive audit-only defaults and inherited subagent policy.
-- `pigo chat <platform>` runs every built-in chat adapter through one durable CLI gateway system.
+- `orb chat <platform>` runs every built-in chat adapter through one durable CLI gateway system.
 - An out-of-process extension host runs the full JavaScript/TypeScript extension API through a
   local Node.js or Bun process, including providers, UI callbacks, state synchronization, package
-  dependency materialization, and the PATH-to-pigo compatibility shim.
+  dependency materialization, and the PATH-to-orb compatibility shim.
 
 ### Changed
 
 - JavaScript and TypeScript extensions now require local Node.js ≥22.6 or Bun. Without either
-  runtime, pigo reports one clear diagnostic while skills, prompt templates, MCP servers, and
+  runtime, orb reports one clear diagnostic while skills, prompt templates, MCP servers, and
   built-in tools continue to work.
 - Interactive mode now keeps the status, extension widgets, input, and footer fixed at the bottom
   while the transcript scrolls independently. Mouse-wheel or `Ctrl+PageUp` scrolling pauses live
@@ -289,9 +290,9 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Fixed
 
-- `pigo update --extensions` now reconciles installed Git packages pinned to abbreviated commit
+- `orb update --extensions` now reconciles installed Git packages pinned to abbreviated commit
   IDs from the existing clone instead of passing the abbreviation as an invalid remote fetch ref.
-- Live TUI redraws disable xterm-compatible scroll-on-output mode while Pigo is running, so
+- Live TUI redraws disable xterm-compatible scroll-on-output mode while Orb is running, so
   supporting terminals keep a user's scrollback position during loading and streamed responses.
 
 ## [0.1.2] - 2026-07-22
@@ -345,7 +346,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 - Current upstream SDK surface: image-model registry and OpenRouter catalog, typed RPC client,
   public retry/overflow and skill-block helpers, custom-theme HTML export, and notify-only update
-  checks with pigo and upstream version identity.
+  checks with orb and upstream version identity.
 - Release hardening: immutable CI action SHAs, fixture regeneration at tag time, strict changelog
   notes, clean-macOS checksum support, and a 754 KB amd64 linker-alignment reduction.
 - Upstream pi 0.80.10 sync to `3a40794e`: tool-result and summary usage accounting, Qwen Token
@@ -360,14 +361,14 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
   `atob`/`btoa`/`TextDecoder`/`structuredClone` globals; fs shim errors are Node-shaped
   (`code`/`errno`/`syscall`/`path`, so `err.code === "ENOENT"` idioms work); `import.meta.url`
   is defined per bundle as the entry's `file://` URL; `.node` native addons and WebAssembly
-  modules fail with explicit "not supported by the pigo extension runtime" diagnostics.
+  modules fail with explicit "not supported by the orb extension runtime" diagnostics.
 - jsbridge pi-* module surface: `@earendil-works/pi-ai` exports `EventStream`,
   `AssistantMessageEventStream`, `createAssistantMessageEventStream` (upstream
   `utils/event-stream.ts` port) and `calculateCost`; `pi-coding-agent` exports `getAgentDir`,
   `getMarkdownTheme`, `VERSION`, `parseFrontmatter`/`stripFrontmatter`; `pi-tui` exports the
   full `Key` builder and `isKeyRelease`. Unknown imports from the pi-* shims now fail at first
   touch with a clear "not exported" error instead of resolving `undefined` and breaking later.
-- Extensions from installed pi packages load in every session (`pigo install` now delivers its
+- Extensions from installed pi packages load in every session (`orb install` now delivers its
   main payload), and `-e npm:<pkg>` / `-e git:<repo>` performs upstream's temporary-install
   resolution instead of treating the spec as a literal path. npm/git package dependencies are
   installed through the settings `npmCommand` (default `npm install --omit=dev`), skipped when
@@ -393,8 +394,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
   runtime catalog freshness follows upstream's `checkedAt`/`lastModified` rules.
 - Interactive login now auto-opens OAuth URLs, uses the searchable fuzzy selector, reports exact
   completion/default-model outcomes, and warns once for Anthropic subscription extra usage.
-- Renamed the repository, Go module, release artifacts, and CLI from `pi-go`/`pi` to `pigo`, so it
-  installs beside upstream `pi`; `pigo update` now prints exact installer and Go routes.
+- Renamed the repository, Go module, release artifacts, and CLI from `pi-go`/`pi` to `orb`, so it
+  installs beside upstream `pi`; `orb update` now prints exact installer and Go routes.
 - Releases, CI, and `go install` now pin Go 1.26.5. On identical source, the in-memory 1,000-turn
   Processor core and F12 renderer are each 2.8% faster; no-prompt startup is 1.7% slower, minimal
   session creation is 4.8% slower, and the stripped Linux binary is 0.9% larger than Go 1.25.0.
@@ -431,7 +432,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
   Slack file tokens stay on Slack hosts, Google Chat JWKS refreshes and
   per-space writes are throttled, Discord reconnect/heartbeat state is
   bounded per connection, and Teams conversation state is bounded.
-- SECURITY: `pigo --help` and unknown-flag invocations no longer load untrusted project settings.
+- SECURITY: `orb --help` and unknown-flag invocations no longer load untrusted project settings.
   Previously those paths constructed settings without the project-trust gate, so an untrusted
   project's `mcpServers` could execute arbitrary commands and make network requests from the
   most innocuous invocations.

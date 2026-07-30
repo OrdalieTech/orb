@@ -9,11 +9,11 @@ import (
 	"io"
 	"sync"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 const (
-	ProtocolName    = "pigo-extension-host"
+	ProtocolName    = "orb-extension-host"
 	ProtocolVersion = 1
 	MaxFrameSize    = 4 << 20
 )

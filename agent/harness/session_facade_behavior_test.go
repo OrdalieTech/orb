@@ -3,7 +3,7 @@ package harness_test
 import (
 	"testing"
 
-	harness "github.com/OrdalieTech/pigo/agent/harness"
+	harness "github.com/OrdalieTech/orb/agent/harness"
 )
 
 func TestSessionFacadeSanitizesNameLineBreaksAndJavaScriptWhitespace(t *testing.T) {

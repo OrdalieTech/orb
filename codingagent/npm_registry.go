@@ -19,13 +19,13 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/internal/jsonwire"
-	"github.com/OrdalieTech/pigo/internal/semver"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
+	"github.com/OrdalieTech/orb/internal/semver"
 )
 
 // Native npm registry client: metadata fetch, version selection, tarball
 // download with integrity verification, and extraction — replacing upstream's
-// npm/bun/pnpm subprocess calls (pigo ships without a Node toolchain).
+// npm/bun/pnpm subprocess calls (orb ships without a Node toolchain).
 
 const defaultNpmRegistry = "https://registry.npmjs.org"
 
@@ -294,7 +294,7 @@ func updateNpmDependencies(installRoot string, apply func(map[string]any)) error
 	apply(dependencies)
 	pkg["dependencies"] = dependencies
 	// Marshal sorts keys, which is also how npm writes dependencies, so a pi run
-	// after a pigo install does not reorder the file.
+	// after an Orb install does not reorder the file.
 	encoded, err := jsonwire.MarshalIndent(pkg, "", "  ")
 	if err != nil {
 		return err

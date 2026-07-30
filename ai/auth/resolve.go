@@ -140,7 +140,7 @@ func ResolveProviderAuth(
 			// A stored credential owns its provider: an unusable one resolves to
 			// nothing rather than letting an ambient env key take over silently.
 			// TestResolveProviderAuthPrecedenceAndStoredOwnership pins this, so an
-			// OAuth login written by a newer upstream for a provider pigo knows
+			// OAuth login written by a newer upstream for a provider orb knows
 			// only an API key for needs that OAuth method ported, not a fallback.
 			return nil, nil
 		}

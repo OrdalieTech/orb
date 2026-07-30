@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 // SYNC-2: this digest is JSON.stringify(Object.values(IMAGE_MODELS.openrouter))

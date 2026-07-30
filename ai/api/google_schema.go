@@ -8,8 +8,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/internal/jsonwire"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 type googleJSONMember = jsonwire.OrderedMember

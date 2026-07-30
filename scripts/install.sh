@@ -1,9 +1,9 @@
 #!/bin/sh
-# pigo installer: downloads the latest release binary for this platform.
+# orb installer: downloads the latest release binary for this platform.
 set -eu
 
-REPO="OrdalieTech/pigo"
-INSTALL_DIR="${PIGO_INSTALL_DIR:-$HOME/.local/bin}"
+REPO="OrdalieTech/orb"
+INSTALL_DIR="${ORB_INSTALL_DIR:-$HOME/.local/bin}"
 
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 arch=$(uname -m)
@@ -28,14 +28,14 @@ resolve_tag_redirect() {
     "https://github.com/$REPO/releases/latest" 2>/dev/null |
     sed -n 's#.*/tag/\([^/?]*\).*#\1#p'
 }
-tag=${PIGO_VERSION:-$(resolve_tag_api)}
+tag=${ORB_VERSION:-$(resolve_tag_api)}
 [ -n "$tag" ] || tag=$(resolve_tag_redirect)
 [ -n "$tag" ] || { echo "could not resolve the latest release tag (github.com unreachable?)" >&2; exit 1; }
 version=${tag#v}
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-archive="pigo_${version}_${os}_${arch}.tar.gz"
+archive="orb_${version}_${os}_${arch}.tar.gz"
 base="https://github.com/$REPO/releases/download/$tag"
 
 curl -fsSL -o "$tmp/$archive" "$base/$archive"
@@ -52,8 +52,8 @@ fi
 tar -xzf "$tmp/$archive" -C "$tmp"
 
 mkdir -p "$INSTALL_DIR"
-install -m 0755 "$tmp/pigo" "$INSTALL_DIR/pigo"
-echo "pigo $tag is ready at $INSTALL_DIR/pigo"
+install -m 0755 "$tmp/orb" "$INSTALL_DIR/orb"
+echo "orb $tag is ready at $INSTALL_DIR/orb"
 case ":$PATH:" in
   *":$INSTALL_DIR:"*) ;;
   *)

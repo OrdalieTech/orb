@@ -15,8 +15,8 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/internal/jsonschema"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonschema"
 )
 
 func TestOpenAICodexRequestShapeAndDoneEvent(t *testing.T) {

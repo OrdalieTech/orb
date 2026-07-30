@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/OrdalieTech/pigo/ai/models/internal/cataloggen"
+	"github.com/OrdalieTech/orb/ai/models/internal/cataloggen"
 )
 
 func main() {

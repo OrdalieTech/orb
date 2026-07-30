@@ -3,7 +3,7 @@ package modes
 import (
 	"runtime"
 
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 // AppKeybindingDefinitions are the app-level keybindings that extend TUI defaults.

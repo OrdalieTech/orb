@@ -61,7 +61,7 @@ async function legacySurface(specifier, context, nextResolve) {
 	}
 }
 
-// PIGO_PI_SDK_ROOT is only ever pigo's own npm root — pigo never borrows the SDK
+// ORB_PI_SDK_ROOT is only ever orb's own npm root — orb never borrows the SDK
 // bundled inside an installed pi — so when it is empty the import cannot be
 // satisfied at all. Node's "Cannot find package" names neither the reason nor a
 // way forward, and this is the one place that knows both.
@@ -70,14 +70,14 @@ async function legacySurface(specifier, context, nextResolve) {
 function sdkUnavailableError(specifier, cause) {
 	const root = join(process.env.PI_CODING_AGENT_DIR || "~/.pi/agent", "npm");
 	return new Error(
-		`${specifier} is part of the pi SDK, which is not installed in pigo's own npm root (${root}); pigo never borrows it from an installed pi. Install it with \`npm i --prefix ${root} @earendil-works/pi-coding-agent\`, or set PIGO_PI_SDK_ROOT to the copy pigo should use. Extensions that declare their own SDK dependency are unaffected`,
+		`${specifier} is part of the pi SDK, which is not installed in orb's own npm root (${root}); orb never borrows it from an installed pi. Install it with \`npm i --prefix ${root} @earendil-works/pi-coding-agent\`, or set ORB_PI_SDK_ROOT to the copy orb should use. Extensions that declare their own SDK dependency are unaffected`,
 		{ cause },
 	);
 }
 
 async function installedSDK(specifier, context, nextResolve) {
 	const target = sdkAliases[specifier];
-	const root = process.env.PIGO_PI_SDK_ROOT;
+	const root = process.env.ORB_PI_SDK_ROOT;
 	if (!target || !root) return undefined;
 	try {
 		return await nextResolve(target, {
@@ -227,9 +227,9 @@ async function importedTypeNames(specifier, url) {
 	const name = specifier.match(/^(@[^/]+\/[^/]+|[^@.#/][^/:]*)(?:\/|$)/)?.[1];
 	if (!name) return undefined;
 	let directory = await packageDirectory(name, dirname(fileURLToPath(url)));
-	if (!directory && process.env.PIGO_PI_SDK_ROOT) {
+	if (!directory && process.env.ORB_PI_SDK_ROOT) {
 		const aliased = sdkAliases[specifier]?.match(/^(@[^/]+\/[^/]+|[^@./][^/]*)(?:\/|$)/)?.[1];
-		if (aliased) directory = await packageDirectory(aliased, process.env.PIGO_PI_SDK_ROOT);
+		if (aliased) directory = await packageDirectory(aliased, process.env.ORB_PI_SDK_ROOT);
 	}
 	return directory ? await packageTypeNames(directory) : undefined;
 }
@@ -264,7 +264,7 @@ export async function resolve(specifier, context, nextResolve) {
 		}
 		const sdk = await installedSDK(specifier, context, nextResolve);
 		if (sdk) return { ...sdk, shortCircuit: true };
-		if (sdkAliases[specifier] && !process.env.PIGO_PI_SDK_ROOT) throw sdkUnavailableError(specifier, error);
+		if (sdkAliases[specifier] && !process.env.ORB_PI_SDK_ROOT) throw sdkUnavailableError(specifier, error);
 		throw error;
 	}
 }

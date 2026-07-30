@@ -3,7 +3,7 @@ package modes
 import (
 	"encoding/json"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 // RPCResponse is the common response envelope emitted by RPC mode. Field

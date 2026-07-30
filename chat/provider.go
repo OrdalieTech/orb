@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pigo/codingagent"
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/orb/codingagent"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
 )
 
 // Conversation is exclusive ownership of one hydrated agent session.

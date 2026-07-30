@@ -11,7 +11,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 type ModelConfig struct {
@@ -227,7 +227,7 @@ func validateModelConfig(config *ModelConfig) error {
 			}
 		}
 		if provider.OAuth != nil {
-			return fmt.Errorf("providers.%s.oauth: Radius is not part of pigo", providerID)
+			return fmt.Errorf("providers.%s.oauth: Radius is not part of orb", providerID)
 		}
 		for index, model := range provider.Models {
 			path := fmt.Sprintf("providers.%s.models.%d", providerID, index)

@@ -8,8 +8,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/OrdalieTech/pigo/ai"
-	aiauth "github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/orb/ai"
+	aiauth "github.com/OrdalieTech/orb/ai/auth"
 )
 
 func MigrateAuthToAuthJSON(agentDir string) ([]string, error) {

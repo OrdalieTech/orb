@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/OrdalieTech/pigo/internal/filelock"
+	"github.com/OrdalieTech/orb/internal/filelock"
 )
 
 func withFileLock(path string, fn func() error) (err error) {

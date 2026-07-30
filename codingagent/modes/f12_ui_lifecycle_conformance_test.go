@@ -15,14 +15,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/codingagent"
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	theme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/codingagent"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
+	theme "github.com/OrdalieTech/orb/codingagent/modes/theme"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 type f12UILifecycleFixture struct {
@@ -666,7 +666,7 @@ func TestF12ToolsExpandedPropagationMatchesUpstream(t *testing.T) {
 func TestF12LoadedContextMatchesUpstream(t *testing.T) {
 	fixture := f12UILifecycleLoadFixture(t)
 	f12UILifecycleInitTheme(t)
-	root, err := os.MkdirTemp("", "pigo-f12-")
+	root, err := os.MkdirTemp("", "orb-f12-")
 	if err != nil {
 		t.Fatal(err)
 	}

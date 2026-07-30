@@ -7,19 +7,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/internal/jsonschema"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonschema"
 )
 
 func TestGoogleGenerativeAILiveToolCallRoundTrip(t *testing.T) {
-	if os.Getenv("PIGO_LIVE_TESTS") != "1" {
-		t.Skip("set PIGO_LIVE_TESTS=1 to run the Google live smoke test")
+	if os.Getenv("ORB_LIVE_TESTS") != "1" {
+		t.Skip("set ORB_LIVE_TESTS=1 to run the Google live smoke test")
 	}
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
-		t.Fatal("PIGO_LIVE_TESTS=1 requires GEMINI_API_KEY")
+		t.Fatal("ORB_LIVE_TESTS=1 requires GEMINI_API_KEY")
 	}
-	modelID := os.Getenv("PIGO_GOOGLE_MODEL")
+	modelID := os.Getenv("ORB_GOOGLE_MODEL")
 	if modelID == "" {
 		modelID = "gemini-2.5-flash"
 	}
@@ -29,7 +29,7 @@ func TestGoogleGenerativeAILiveToolCallRoundTrip(t *testing.T) {
 		Parameters: jsonschema.Schema(`{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}`),
 	}}
 	messages := ai.MessageList{&ai.UserMessage{
-		Content:   ai.NewUserText("Call the echo tool exactly once with text pigo-live, then wait for its result."),
+		Content:   ai.NewUserText("Call the echo tool exactly once with text orb-live, then wait for its result."),
 		Timestamp: time.Now().UnixMilli(),
 	}}
 	maxTokens := float64(256)
@@ -57,12 +57,12 @@ func TestGoogleGenerativeAILiveToolCallRoundTrip(t *testing.T) {
 			break
 		}
 	}
-	if call == nil || call.Name != "echo" || call.Arguments["text"] != "pigo-live" {
-		t.Fatalf("tool call = %#v, want echo with pigo-live", call)
+	if call == nil || call.Name != "echo" || call.Arguments["text"] != "orb-live" {
+		t.Fatalf("tool call = %#v, want echo with orb-live", call)
 	}
 	messages = append(messages, toolRequest, &ai.ToolResultMessage{
 		ToolCallID: call.ID, ToolName: call.Name,
-		Content:   ai.ToolResultContent{&ai.TextContent{Text: "pigo-live"}},
+		Content:   ai.ToolResultContent{&ai.TextContent{Text: "orb-live"}},
 		Timestamp: time.Now().UnixMilli(),
 	})
 	second, err := StreamGoogleGenerativeAIWithOptions(ctx, model, ai.Context{Messages: messages, Tools: &tools}, &GoogleOptions{

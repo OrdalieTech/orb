@@ -10,18 +10,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	aiauth "github.com/OrdalieTech/pigo/ai/auth"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	"github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/codingagent/tools"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
+	"github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/codingagent/tools"
 )
 
 func TestStateSnapshotActionsEventBusAndToolCallVeto(t *testing.T) {
-	pigoExecutable := filepath.Join(t.TempDir(), "pigo")
-	writeExecutable(t, pigoExecutable, "#!/bin/sh\nprintf '%s\\n' 'pigo fixture-version'\n")
-	manager, registry, result, cwd := startStateFixtureManager(t, pigoExecutable)
+	orbExecutable := filepath.Join(t.TempDir(), "orb")
+	writeExecutable(t, orbExecutable, "#!/bin/sh\nprintf '%s\\n' 'orb fixture-version'\n")
+	manager, registry, result, cwd := startStateFixtureManager(t, orbExecutable)
 	if len(result.Diagnostics) != 0 || len(result.Errors) != 0 {
 		t.Fatalf("load result = %#v", result)
 	}
@@ -153,7 +153,7 @@ func TestStateSnapshotActionsEventBusAndToolCallVeto(t *testing.T) {
 	if err := piVersion.Handler(context.Background(), "", runner.CreateCommandContext()); err != nil {
 		t.Fatal(err)
 	}
-	if got := waitStateMessage(t, messages, "pi-version:"); got != "pi-version:pigo fixture-version" {
+	if got := waitStateMessage(t, messages, "pi-version:"); got != "pi-version:orb fixture-version" {
 		t.Fatalf("pi shim version message = %q", got)
 	}
 	authCommand := runner.Command("state-auth")
@@ -322,9 +322,9 @@ func TestStateModelAuthPreservesExplicitEmptyMaps(t *testing.T) {
 }
 
 func TestStateSnapshotKeepsLargeSessionManagerUsable(t *testing.T) {
-	pigoExecutable := filepath.Join(t.TempDir(), "pigo")
-	writeExecutable(t, pigoExecutable, "#!/bin/sh\nprintf '%s\\n' 'pigo fixture-version'\n")
-	_, registry, result, cwd := startStateFixtureManager(t, pigoExecutable)
+	orbExecutable := filepath.Join(t.TempDir(), "orb")
+	writeExecutable(t, orbExecutable, "#!/bin/sh\nprintf '%s\\n' 'orb fixture-version'\n")
+	_, registry, result, cwd := startStateFixtureManager(t, orbExecutable)
 	if len(result.Diagnostics) != 0 || len(result.Errors) != 0 {
 		t.Fatalf("load result = %#v", result)
 	}
@@ -440,12 +440,12 @@ func TestStateActionFromStaleExtensionIsIsolated(t *testing.T) {
 	}
 }
 
-func startStateFixtureManager(t *testing.T, pigoExecutable string) (*Manager, *extensions.Registry, LoadResult, string) {
+func startStateFixtureManager(t *testing.T, orbExecutable string) (*Manager, *extensions.Registry, LoadResult, string) {
 	t.Helper()
 	runtime := requireRuntime(t)
 	cwd := t.TempDir()
 	manager := NewManager(Options{
-		AgentDir: t.TempDir(), CWD: cwd, Version: "test", Runtime: &runtime, PigoExecutable: pigoExecutable,
+		AgentDir: t.TempDir(), CWD: cwd, Version: "test", Runtime: &runtime, OrbExecutable: orbExecutable,
 		RequestTimeout: 30 * time.Second, ShutdownTimeout: time.Second,
 		BackoffBase: 10 * time.Millisecond, BackoffMax: 50 * time.Millisecond,
 	})

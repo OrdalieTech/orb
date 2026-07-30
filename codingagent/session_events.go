@@ -3,9 +3,9 @@ package codingagent
 import (
 	"errors"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
 )
 
 type SessionEventType string

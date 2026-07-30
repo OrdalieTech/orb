@@ -31,7 +31,7 @@ func TestAcquireUsesRemovableDirectory(t *testing.T) {
 	}
 }
 
-// A zero-byte regular file is what an older pigo left behind with flock. It
+// A zero-byte regular file is what an older orb left behind with flock. It
 // wedges upstream forever, so acquiring must reclaim it rather than honour it.
 func TestAcquireReclaimsLeftoverRegularFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "models-store.json")

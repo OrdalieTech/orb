@@ -1,6 +1,6 @@
 # Ecosystem extension matrix
 
-This harness measures whether the most-downloaded public Pi extension packages load and expose the same observable tool and command registrations in pinned upstream Pi 0.81.1 and Pigo. It never sends a model request: RPC starts with a dummy API key, `get_commands` proves session startup, and `observer.ts` emits canonical JSON for `pi.getActiveTools()`, full tool definitions from `pi.getAllTools()`, and `pi.getCommands()`.
+This harness measures whether the most-downloaded public Pi extension packages load and expose the same observable tool and command registrations in pinned upstream Pi 0.81.1 and Orb. It never sends a model request: RPC starts with a dummy API key, `get_commands` proves session startup, and `observer.ts` emits canonical JSON for `pi.getActiveTools()`, full tool definitions from `pi.getAllTools()`, and `pi.getCommands()`.
 
 The separate [live matrix](../../docs/sync/ecosystem-extension-live.md) installs packages through
 Pi and exercises representative model-driven workflows; do not infer workflow support from this
@@ -12,15 +12,15 @@ Package install is deliberately separate from package execution. The install con
 
 ## Runtime tiers
 
-pigo runs JavaScript extensions through a local Node or Bun host, so a single "does it work"
+orb runs JavaScript extensions through a local Node or Bun host, so a single "does it work"
 answer hides the runtime that produced it. Every package is therefore measured on each tier
 independently:
 
 | Tier | Role | Binary | JS engine |
 | --- | --- | --- | --- |
 | `pi` | reference | upstream `@earendil-works/pi-coding-agent` | Node 24 |
-| `pigo-node` | candidate | pigo | Node 24 |
-| `pigo-bun` | candidate | pigo | Bun 1.3.14 |
+| `orb-node` | candidate | orb | Node 24 |
+| `orb-bun` | candidate | orb | Bun 1.3.14 |
 
 The reference always stays on Node because Node ≥22.6 is upstream Pi's own documented requirement;
 running upstream on Bun would compare two unknowns. Each candidate is compared against the same
@@ -30,12 +30,12 @@ Node reference, so a Node-only regression and a Bun-only regression are separate
 
 ### How Bun is forced, and how you know it worked
 
-pigo's `DiscoverRuntime` (`codingagent/extensions/host/runtime.go:32`) resolves `node` from `PATH`
+orb's `DiscoverRuntime` (`codingagent/extensions/host/runtime.go:32`) resolves `node` from `PATH`
 first and only falls back to `bun` (`runtime.go:46`). There is no environment override in product
 source, and this harness deliberately does not add one. Forcing therefore happens entirely in the
 harness:
 
-1. Each probe gets a private `PATH`. For `pigo-bun` it is `<run>/enginebin:<packages>/node_modules/.bin`,
+1. Each probe gets a private `PATH`. For `orb-bun` it is `<run>/enginebin:<packages>/node_modules/.bin`,
    where `enginebin` contains a single symlink to the Bun binary.
 2. Before spawning, the harness resolves `node` against that exact `PATH`. If anything answers, the
    attempt fails immediately with `runtime_not_forced` instead of silently measuring Node again.
@@ -54,7 +54,7 @@ credentials and no repository code; the repository is bind-mounted read-only at 
 
 ```sh
 docker build -f conformance/extensions/Dockerfile \
-  -t pigo-extension-matrix:24-bun1.3.14 conformance/extensions
+  -t orb-extension-matrix:24-bun1.3.14 conformance/extensions
 ```
 
 ## Run the matrix
@@ -62,9 +62,9 @@ docker build -f conformance/extensions/Dockerfile \
 From the repository root:
 
 ```sh
-matrix_root="$(mktemp -d /tmp/pigo-extension-matrix.XXXXXX)"
+matrix_root="$(mktemp -d /tmp/orb-extension-matrix.XXXXXX)"
 mkdir -p "$matrix_root/packages" "$matrix_root/results" "$matrix_root/bin"
-CGO_ENABLED=0 go build -o "$matrix_root/bin/pigo" ./cmd/pigo
+CGO_ENABLED=0 go build -o "$matrix_root/bin/orb" ./cmd/orb
 
 docker run --rm \
   --cap-drop ALL \
@@ -78,7 +78,7 @@ docker run --rm \
   -v "$PWD:/repo:ro" \
   -v "$matrix_root/packages:/packages:rw" \
   -w /repo \
-  pigo-extension-matrix:24-bun1.3.14 \
+  orb-extension-matrix:24-bun1.3.14 \
   node /repo/conformance/extensions/prepare.mjs --output /packages
 
 docker run --rm --init \
@@ -93,14 +93,14 @@ docker run --rm --init \
   --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m,mode=1777 \
   -v "$PWD:/repo:ro" \
   -v "$matrix_root/packages:/packages:ro" \
-  -v "$matrix_root/bin:/opt/pigo:ro" \
+  -v "$matrix_root/bin:/opt/orb:ro" \
   -v "$matrix_root/results:/results:rw" \
   -w /work \
-  pigo-extension-matrix:24-bun1.3.14 \
+  orb-extension-matrix:24-bun1.3.14 \
   node /repo/conformance/extensions/matrix.mjs \
     --packages /packages \
-    --pigo /opt/pigo/pigo \
-    --runtimes pi,pigo-node,pigo-bun \
+    --orb /opt/orb/orb \
+    --runtimes pi,orb-node,orb-bun \
     --output /results/matrix.json
 ```
 
@@ -194,15 +194,15 @@ docker run --rm --init \
   --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m,mode=1777 \
   -v "$PWD:/repo:ro" \
   -v "$matrix_root/packages:/packages:ro" \
-  -v "$matrix_root/bin:/opt/pigo:ro" \
+  -v "$matrix_root/bin:/opt/orb:ro" \
   -v "$matrix_root/results:/results:rw" \
-  -w /work pigo-extension-matrix:24-bun1.3.14 \
+  -w /work orb-extension-matrix:24-bun1.3.14 \
   node /repo/conformance/extensions/smoke.mjs \
-    --packages /packages --pigo /opt/pigo/pigo \
+    --packages /packages --orb /opt/orb/orb \
     --output /results/smoke.json
 ```
 
-`smoke.mjs` exits non-zero when an observed Pi/Pigo difference is retained in the report. Generate
+`smoke.mjs` exits non-zero when an observed Pi/Orb difference is retained in the report. Generate
 the deterministic compact artifact after both raw runs:
 
 ```sh
@@ -213,8 +213,8 @@ node conformance/extensions/report.mjs \
 ```
 
 `report.mjs` publishes the compact Node-tier artifact and validates that shape; it reads the
-back-compatible `pi`/`pigo` keys, which always mirror the reference and the primary candidate
-(`pigo-node` when present). Its expected corpus size is derived from `corpus.json` itself, so a
+back-compatible `pi`/`orb` keys, which always mirror the reference and the primary candidate
+(`orb-node` when present). Its expected corpus size is derived from `corpus.json` itself, so a
 recapture does not invalidate the report; pass `--expect-corpus <n>` to pin it for a release.
 
 `smoke-cases.json` and `workflow-audit.json` are keyed by **package name only**. Gallery rank is a
@@ -227,7 +227,7 @@ a larger corpus, and every audited package must still exist in the corpus and ha
 
 `scale-check.mjs` proves the harness itself scales, using stub extensions this repository writes.
 It never touches a corpus package: it generates its own package tree, points both the reference
-and the candidate at the same pigo binary, and drives the real `matrix.mjs`. It must run in the
+and the candidate at the same orb binary, and drives the real `matrix.mjs`. It must run in the
 same hardened container, because `matrix.mjs` refuses to run outside a network-isolated namespace.
 
 ```sh
@@ -236,10 +236,10 @@ docker run --rm --init \
   --security-opt no-new-privileges --pids-limit 1024 --memory 4g --cpus 2 \
   --tmpfs /work:rw,noexec,nosuid,nodev,size=1g,mode=1777 \
   --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777 \
-  -v "$PWD:/repo:ro" -v "$matrix_root/bin:/opt/pigo:ro" -w /work \
-  pigo-extension-matrix:24-bun1.3.14 \
+  -v "$PWD:/repo:ro" -v "$matrix_root/bin:/opt/orb:ro" -w /work \
+  orb-extension-matrix:24-bun1.3.14 \
   node /repo/conformance/extensions/scale-check.mjs \
-    --pigo /opt/pigo/pigo --root /work/scale --count 220 --kill-at 150
+    --orb /opt/orb/orb --root /work/scale --count 220 --kill-at 150
 ```
 
 It asserts that per-package cost does not grow with corpus position, that resident memory stays
@@ -254,7 +254,7 @@ Every extension has one mutually exclusive status plus a more specific `reason`:
 - `load_register_pass`: every cold, warm-up, and measured probe succeeded, registrations were stable, and both runtimes produced the same non-empty baseline-subtracted tool or command changes.
 - `load_only_pass`: the same stable probes succeeded but produced no observed tool or command changes. This includes conditional or event-only packages whose useful behavior was not exercised.
 - `flaky`: a cold, warm-up, or measured attempt disagreed with another attempt, or registrations varied between attempts.
-- `unsupported`: every attempt failed under upstream Pi or Pigo, or stable registrations differed. The `reason` distinguishes those cases.
+- `unsupported`: every attempt failed under upstream Pi or Orb, or stable registrations differed. The `reason` distinguishes those cases.
 - `infra_error`: the observer-only baseline was not stable in every runtime, so every package conclusion and aggregate percentage is invalid.
 
 A flake is never averaged into a pass. A runtime is `stable` only when *every* attempt succeeded
@@ -263,7 +263,7 @@ the package `flaky`, and `flaky` is counted separately from `loadCompatible`. Pa
 only under resource pressure are reported as `flaky` with reason `resource_exhaustion` and force a
 non-zero exit, because that is a statement about the run, not about the package.
 
-The top-level `status`/`reason` describe the primary candidate (`pigo-node`). `candidates` carries
+The top-level `status`/`reason` describe the primary candidate (`orb-node`). `candidates` carries
 the same classification for every tier that ran, and `summary.byRuntime` reports per-tier counts.
 
 ### Failure taxonomy
@@ -300,7 +300,7 @@ and one of them must not be able to abort a 300-package run before the first pro
 entries escape, the survivors are still probed and the rejected ones are listed in
 `extension.entrypointProblems`. `environment_constraint` exists so that a package demanding Node ≥26
 or pnpm (`@patimweb/pi-email`, `pi-x-ide`, `@braintrust/pi-extension`) is reported as a harness
-environment limit rather than counted as a pigo incompatibility.
+environment limit rather than counted as an Orb incompatibility.
 
 `registration_mismatch` is explained further in `failure.findings`: the surface (`activeTools`,
 `allTools`, `commands`, `rpcCommands`), the side (`added`/`removed`), the names involved, and for a
@@ -312,10 +312,10 @@ stays in `<output>.jsonl`.
 
 ## Performance and other caveats
 
-The summary reports results over the whole corpus and separately reports Pigo parity over packages that loaded stably in pinned upstream Pi. A filtered run is marked incomplete and does not produce an all-corpus percentage. Cold, warm-up, and sample failures and registration variation are retained in each runtime summary.
+The summary reports results over the whole corpus and separately reports Orb parity over packages that loaded stably in pinned upstream Pi. A filtered run is marked incomplete and does not produce an all-corpus percentage. Cold, warm-up, and sample failures and registration variation are retained in each runtime summary.
 
 Startup measures process spawn through the `get_commands` response. The report includes median, p90, median absolute deviation, raw startup comparison, and observer-baseline-subtracted load. Ratios are omitted and labeled `noisy` when either MAD exceeds ten percent of its median, or `below_resolution` when either baseline-subtracted value is non-positive. `observerRPC` times only the common observer command round trip; it is not package-specific extension performance. The single global baseline does not remove machine drift, so small load deltas should not be treated as a benchmark guarantee. Bun and Node startup are not comparable to each other as a runtime benchmark here: each tier is compared only against the shared Node reference.
 
-The harness expands manifest-declared extension directories before invoking both runtimes. This keeps the JavaScript runtime comparison deterministic but does not test Pi versus Pigo package/directory discovery semantics. Packages also share `/work` and `/tmp` inside one runtime container; the container protects the host, but a hostile package could contaminate a later package. Use one fresh runtime container per package before treating results as adversarial security evidence.
+The harness expands manifest-declared extension directories before invoking both runtimes. This keeps the JavaScript runtime comparison deterministic but does not test Pi versus Orb package/directory discovery semantics. Packages also share `/work` and `/tmp` inside one runtime container; the container protects the host, but a hostile package could contaminate a later package. Use one fresh runtime container per package before treating results as adversarial security evidence.
 
 The download counts in `corpus.json` are a dated registry-traffic popularity proxy, not unique active users. The corpus includes the top gallery packages whose `pi.extensions` manifest field is a non-empty array; string-valued malformed manifests are excluded because upstream iterates them as characters and resolves no extension. Exact top-level versions and integrity hashes are checked against the corpus, while the committed lock pins the complete installed dependency graph.

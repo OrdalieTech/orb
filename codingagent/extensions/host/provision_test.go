@@ -5,11 +5,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
 )
 
 func TestEntryNeedsSDKOnlyForBareLooseImports(t *testing.T) {
-	root := t.TempDir()
+	root := isolatedTempDir(t)
 
 	bare := filepath.Join(root, "extensions", "probe.ts")
 	writeFile(t, bare, `import { getModel } from "@earendil-works/pi-ai";`, 0o644)
@@ -57,7 +57,7 @@ func TestEntryNeedsSDKOnlyForBareLooseImports(t *testing.T) {
 // the install root provisioning would target.
 func provisionFixture(t *testing.T) (*Manager, string) {
 	t.Helper()
-	agentDir := t.TempDir()
+	agentDir := isolatedTempDir(t)
 	entry := filepath.Join(agentDir, "extensions", "probe.ts")
 	writeFile(t, entry, `import "@earendil-works/pi-ai";`, 0o644)
 	manager := NewManager(Options{AgentDir: agentDir, SDKVersion: "0.81.1"})

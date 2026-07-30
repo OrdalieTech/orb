@@ -1,11 +1,11 @@
 # Live Pi extension compatibility — 2026-07-23
 
-Real Pi 0.81.1 installed 30 popular packages into three isolated projects. Pigo loaded 29; the one
+Real Pi 0.81.1 installed 30 popular packages into three isolated projects. Orb loaded 29; the one
 remaining incompatibility, `pi-llama-cpp`, produced a warning and left the session usable. Fifteen
 packages then completed real tool or hook workflows driven by `openai/gpt-4.1-mini` through an
 audited, rate-limited relay.
 
-`live` means the model called the extension and its result was checked. `registered` means Pigo and
+`live` means the model called the extension and its result was checked. `registered` means Orb and
 Pi exposed the same resource names in the tested profile, but the main workflow was not executed.
 `load-only` means the event extension started without exposing a command, skill, or tool.
 
@@ -16,7 +16,7 @@ Pi exposed the same resource names in the tested profile, but the main workflow 
 | 3 | `pi-web-access@0.13.0` | registered | three tools exposed; network workflow not claimed |
 | 4 | `pi-subagents@0.35.1` | registered | command/tool parity; alternate subagent package was exercised |
 | 5 | `context-mode@1.0.169` | live | lifecycle hooks persisted session state in its SQLite store |
-| 6 | `@tintinweb/pi-subagents@0.14.2` | live | child Pigo read `service.ts`; `SUBAGENT_PROOF:activeUserIds,summarizeUsers` |
+| 6 | `@tintinweb/pi-subagents@0.14.2` | live | child Orb read `service.ts`; `SUBAGENT_PROOF:activeUserIds,summarizeUsers` |
 | 8 | `pi-lens@3.8.71` | live | `module_report` found five Go symbols; `read_symbol` returned `Transfer` |
 | 10 | `@quintinshaw/pi-dynamic-workflows@3.3.0` | live | foreground child read `service.ts`; `WORKFLOW_PROOF:summarizeUsers` |
 | 11 | `@gotgenes/pi-permission-system@20.10.0` | live | blocked a headless MCP call through its real preflight hook |
@@ -48,7 +48,7 @@ upstream package collisions: Lens and LSP both register `lsp_diagnostics`, while
 Subagents both register `Agent`. Pi rejects those combinations too.
 
 Pi's own install of `gentle-pi@1.2.0` failed in the package postinstall tar extraction, so it is an
-installer baseline failure rather than a Pigo result.
+installer baseline failure rather than a Orb result.
 
 ## Dense-profile startup
 
@@ -58,9 +58,9 @@ runs with the same 17-extension profile:
 | Runtime | Mean | Range |
 | --- | ---: | ---: |
 | Pi 0.81.1 | 14.586 s ± 0.212 | 14.344–14.733 s |
-| Pigo candidate | 13.033 s ± 0.379 | 12.658–13.416 s |
+| Orb candidate | 13.033 s ± 0.379 | 12.658–13.416 s |
 
-Pigo used 89.3% of Pi's startup time; Pi took about 1.12× as long. Three samples support this
+Orb used 89.3% of Pi's startup time; Pi took about 1.12× as long. Three samples support this
 specific dense-startup comparison, not a general throughput guarantee.
 
 ## Test boundary
@@ -71,4 +71,4 @@ Test containers had no direct internet route. MCP, embeddings, and LSP used dete
 fixtures; the OpenRouter credential was never passed to extension processes.
 
 The machine-readable summary is
-[`conformance/extensions/results/pi-0.81.1-pigo-live.json`](../../conformance/extensions/results/pi-0.81.1-pigo-live.json).
+[`conformance/extensions/results/pi-0.81.1-orb-live.json`](../../conformance/extensions/results/pi-0.81.1-orb-live.json).

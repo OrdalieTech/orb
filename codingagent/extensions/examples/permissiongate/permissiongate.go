@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
 )
 
 var dangerousPatterns = []*regexp.Regexp{

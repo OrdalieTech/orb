@@ -1,6 +1,6 @@
 package tools
 
-import "github.com/OrdalieTech/pigo/agent"
+import "github.com/OrdalieTech/orb/agent"
 
 // ToolsOptions carries per-tool options for the bundle constructors
 // (upstream core/tools ToolsOptions).

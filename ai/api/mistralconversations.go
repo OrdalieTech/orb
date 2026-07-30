@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/internal/jsonschema"
-	"github.com/OrdalieTech/pigo/internal/partialjson"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonschema"
+	"github.com/OrdalieTech/orb/internal/partialjson"
 )
 
 const mistralToolCallIDLength = 9

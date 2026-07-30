@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/codingagent/tools"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/codingagent/tools"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 type toolOutputPreviewCase struct {

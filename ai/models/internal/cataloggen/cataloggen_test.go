@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/conformance/runner"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/conformance/runner"
 )
 
 // pinnedGeneratedAt matches the -generated-at value in the ai/models doc.go
@@ -157,7 +157,7 @@ func TestGenerateCommittedSnapshotIsDeterministic(t *testing.T) {
 		t.Fatalf("generated only %d providers", len(first))
 	}
 	if _, exists := first["radius"]; exists {
-		t.Fatal("Radius must not enter the pigo catalog")
+		t.Fatal("Radius must not enter the orb catalog")
 	}
 	model, exists := first["openai"]["gpt-5.4"]
 	if !exists {

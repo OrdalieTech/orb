@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/config"
 )
 
 type fakeNpmPackage struct {

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OrdalieTech/pigo/internal/uuidv7"
+	"github.com/OrdalieTech/orb/internal/uuidv7"
 	"github.com/gofrs/flock"
 )
 

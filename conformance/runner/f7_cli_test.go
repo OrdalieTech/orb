@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	"github.com/OrdalieTech/pigo/conformance/runner"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/conformance/runner"
 )
 
 type f7CLIFixture struct {
@@ -82,12 +82,12 @@ func buildF7CLIBinary(t testing.TB) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	binary := filepath.Join(t.TempDir(), "pigo")
-	command := exec.Command("go", "build", "-o", binary, "./cmd/pigo")
+	binary := filepath.Join(t.TempDir(), "orb")
+	command := exec.Command("go", "build", "-o", binary, "./cmd/orb")
 	command.Dir = repoRoot
 	command.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if output, buildErr := command.CombinedOutput(); buildErr != nil {
-		t.Fatalf("build pigo: %v\n%s", buildErr, output)
+		t.Fatalf("build orb: %v\n%s", buildErr, output)
 	}
 	return binary
 }

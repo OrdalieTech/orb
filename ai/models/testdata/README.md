@@ -4,7 +4,7 @@
 
 `v0.82.1-model-deltas.json` contains 12 representative normalized models extracted from the published `@earendil-works/pi-ai@0.82.1` package. The npm tarball SHA-256 is recorded inside the fixture; the fixture SHA-256 is `260ac7080813d9c0e6f2f9bba58dc1077f881717895bd49cd32416acbbc95ad6`.
 
-`fireworks-ai/accounts/fireworks/models/minimax-m3` is excluded from the parity sample because the upstream source tree at the v0.82.1 tag records input `["text"]`, which F2 pins, while the published npm package records `["text","image"]`; upstream regenerated between tag and publish, and pigo follows the extraction contract.
+`fireworks-ai/accounts/fireworks/models/minimax-m3` is excluded from the parity sample because the upstream source tree at the v0.82.1 tag records input `["text"]`, which F2 pins, while the published npm package records `["text","image"]`; upstream regenerated between tag and publish, and orb follows the extraction contract.
 
 The live provider listings back the NVIDIA intersection and the OpenRouter/Vercel catalogs (upstream generate-models.ts), all captured by 2026-07-26T13:35:01Z:
 

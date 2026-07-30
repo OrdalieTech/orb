@@ -1,4 +1,4 @@
-// Package discord implements the Discord adapter for the pigo chat
+// Package discord implements the Discord adapter for the orb chat
 // gateway: Gateway (WebSocket) ingress over the internal RFC 6455 client —
 // hello/heartbeat/identify, READY capture, resume-first reconnects — plus
 // REST delivery with a refreshed typing indicator, streamed preview edits,
@@ -20,8 +20,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pigo/chat"
-	"github.com/OrdalieTech/pigo/chat/internal/ctxsleep"
+	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
 )
 
 // DefaultBaseURL is the production REST API endpoint.

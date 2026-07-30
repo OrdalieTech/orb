@@ -1,8 +1,8 @@
 package providers
 
 import (
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/ai/auth"
 )
 
 type AuthKind string

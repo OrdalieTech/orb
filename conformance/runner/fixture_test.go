@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/conformance/runner"
+	"github.com/OrdalieTech/orb/conformance/runner"
 )
 
 func TestReplacePathAliases(t *testing.T) {

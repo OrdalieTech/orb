@@ -1,4 +1,4 @@
-module github.com/OrdalieTech/pigo
+module github.com/OrdalieTech/orb
 
 go 1.26.5
 

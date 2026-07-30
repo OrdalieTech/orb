@@ -4,7 +4,7 @@
 //
 // This never touches a corpus package. It synthesises a package tree of stub
 // extensions that this repository owns, points both the reference and the
-// candidate runtimes at the same pigo binary, and drives the real matrix.mjs
+// candidate runtimes at the same orb binary, and drives the real matrix.mjs
 // over 200+ entries. What it proves is harness behaviour, not compatibility:
 //
 //   * cost grows linearly with corpus size (no O(n^2) comparison)
@@ -27,11 +27,11 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MATRIX = path.join(HERE, "matrix.mjs");
 
 function usage() {
-	return `Usage: node scale-check.mjs --pigo <binary> --root <scratch-directory> [options]
+	return `Usage: node scale-check.mjs --orb <binary> --root <scratch-directory> [options]
 
   --count <n>          Synthetic packages to generate (default: 220)
   --kill-at <n>        Kill the run after this many packages, then resume (default: 150)
-  --runtimes <list>    Passed through to matrix.mjs (default: pi,pigo-node)
+  --runtimes <list>    Passed through to matrix.mjs (default: pi,orb-node)
   --bun <binary>       Passed through to matrix.mjs when a bun tier is requested
   --profile <name>     Passed through to matrix.mjs (default: quick)
   --skip-kill          Do not exercise the kill/resume path
@@ -40,11 +40,11 @@ function usage() {
 
 function parseArgs(argv) {
 	const options = {
-		pigo: "",
+		orb: "",
 		root: "",
 		count: 220,
 		killAt: 150,
-		runtimes: "pi,pigo-node",
+		runtimes: "pi,orb-node",
 		bun: "",
 		profile: "quick",
 		skipKill: false,
@@ -60,7 +60,7 @@ function parseArgs(argv) {
 		if (next === undefined) throw new Error(`missing value for ${argument}`);
 		index++;
 		switch (argument) {
-			case "--pigo":
+			case "--orb":
 			case "--root":
 			case "--bun":
 				options[argument.slice(2)] = path.resolve(next);
@@ -77,7 +77,7 @@ function parseArgs(argv) {
 				throw new Error(`unknown argument: ${argument}`);
 		}
 	}
-	if (!options.pigo || !options.root) throw new Error("--pigo and --root are required");
+	if (!options.orb || !options.root) throw new Error("--orb and --root are required");
 	return options;
 }
 
@@ -148,7 +148,7 @@ function generateTree(options) {
 
 	const extensions = [];
 	for (let index = 1; index <= options.count; index++) {
-		const name = `pigo-scale-stub-${String(index).padStart(4, "0")}`;
+		const name = `orb-scale-stub-${String(index).padStart(4, "0")}`;
 		const directory = path.join(modules, name);
 		mkdirSync(directory, { recursive: true });
 		const behaviour = behaviourFor(index, options.count);
@@ -170,12 +170,12 @@ function generateTree(options) {
 	}
 
 	// matrix.mjs hashes the lock file and resolves the reference through
-	// node_modules/.bin/pi. Both runtimes intentionally point at the same pigo
+	// node_modules/.bin/pi. Both runtimes intentionally point at the same orb
 	// binary: this measures the harness, not compatibility.
 	writeFileSync(path.join(packages, "package-lock.json"), `${JSON.stringify({ name: "scale", lockfileVersion: 3 }, null, 2)}\n`);
 	// A symlink rather than a shell shim: the scratch tree lives on a noexec
 	// tmpfs, and execution resolves to the binary on its own read-only mount.
-	symlinkSync(options.pigo, path.join(modules, ".bin", "pi"));
+	symlinkSync(options.orb, path.join(modules, ".bin", "pi"));
 	const corpus = {
 		schemaVersion: 1,
 		capturedAt: new Date().toISOString().slice(0, 10),
@@ -192,8 +192,8 @@ function matrixArgs(options, tree, output) {
 		MATRIX,
 		"--packages",
 		tree.packages,
-		"--pigo",
-		options.pigo,
+		"--orb",
+		options.orb,
 		"--corpus",
 		tree.corpusFile,
 		"--runtimes",

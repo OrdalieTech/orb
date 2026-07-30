@@ -13,11 +13,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/agent"
-	agentharness "github.com/OrdalieTech/pigo/agent/harness"
-	"github.com/OrdalieTech/pigo/ai"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/conformance/runner"
+	"github.com/OrdalieTech/orb/agent"
+	agentharness "github.com/OrdalieTech/orb/agent/harness"
+	"github.com/OrdalieTech/orb/ai"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/conformance/runner"
 )
 
 func TestF6HarnessPublicEntryCodecMatchesUpstreamJSONL(t *testing.T) {
@@ -605,9 +605,9 @@ func TestF6HarnessNodeExecutionEnvironmentMatchesUpstream(t *testing.T) {
 	preExists, preExistsErr := env.Exists(aborted, "target.txt")
 	preCreateDirErr := env.CreateDir(aborted, "abort/created", true)
 	preRemoveErr := env.Remove(aborted, "abort/remove.txt", false, false)
-	preTempDir, preTempDirErr := env.CreateTempDir(aborted, "pigo-aborted-")
+	preTempDir, preTempDirErr := env.CreateTempDir(aborted, "orb-aborted-")
 	preTempFile, preTempFileErr := env.CreateTempFile(aborted, "aborted-", ".tmp")
-	tempDir, tempDirErr := env.CreateTempDir(context.Background(), "pigo-harness-")
+	tempDir, tempDirErr := env.CreateTempDir(context.Background(), "orb-harness-")
 	tempFile, tempFileErr := env.CreateTempFile(context.Background(), "pre-", ".tmp")
 	for _, created := range []struct {
 		path string
@@ -665,14 +665,14 @@ func TestF6HarnessNodeExecutionEnvironmentMatchesUpstream(t *testing.T) {
 			"exists":         f6HarnessResult(preExists, preExistsErr, root),
 			"createDir":      f6HarnessVoidResult(preCreateDirErr, root),
 			"remove":         f6HarnessVoidResult(preRemoveErr, root),
-			"createTempDir":  f6HarnessTempResult(preTempDir, preTempDirErr, "pigo-aborted-", "", root),
+			"createTempDir":  f6HarnessTempResult(preTempDir, preTempDirErr, "orb-aborted-", "", root),
 			"createTempFile": f6HarnessTempResult(preTempFile, preTempFileErr, "aborted-", ".tmp", root),
 		},
 		"invalidTimeout": f6HarnessResult(nil, invalidTimeoutErr, root),
 		"timedOutExec":   f6HarnessResult(nil, timeoutErr, root),
 		"callbackError":  f6HarnessResult(nil, callbackErr, root),
 		"temp": map[string]any{
-			"dirPrefix":  tempDirErr == nil && strings.HasPrefix(filepath.Base(tempDir), "pigo-harness-"),
+			"dirPrefix":  tempDirErr == nil && strings.HasPrefix(filepath.Base(tempDir), "orb-harness-"),
 			"filePrefix": tempFileErr == nil && strings.HasPrefix(filepath.Base(tempFile), "pre-"),
 			"fileSuffix": tempFileErr == nil && strings.HasSuffix(tempFile, ".tmp"),
 			"fileExists": tempExistsErr == nil && tempExists,

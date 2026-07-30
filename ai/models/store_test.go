@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 type catalogRoundTripFunc func(*http.Request) (*http.Response, error)
@@ -410,7 +410,7 @@ func TestCATm1RefreshGatesOnCheckedAtAndSendsUserAgent(t *testing.T) {
 	source := []byte(`{"anthropic":{"models":{"fixture":{"name":"Fixture","tool_call":true,"modalities":{"input":["text"]},"limit":{"context":4096,"output":512},"cost":{"input":1,"output":2}}}}}`)
 	client := &http.Client{Transport: catalogRoundTripFunc(func(request *http.Request) (*http.Response, error) {
 		requests++
-		if got := request.Header.Get("User-Agent"); got != PiUserAgent("1.2.3") {
+		if got := request.Header.Get("User-Agent"); got != OrbUserAgent("1.2.3") {
 			t.Errorf("User-Agent = %q", got)
 		}
 		return &http.Response{
@@ -423,7 +423,7 @@ func TestCATm1RefreshGatesOnCheckedAtAndSendsUserAgent(t *testing.T) {
 
 	storePath := filepath.Join(t.TempDir(), "models-store.json")
 	options := RefreshOptions{
-		URL: "https://catalog.test", StorePath: storePath, Client: client, UserAgent: PiUserAgent("1.2.3"),
+		URL: "https://catalog.test", StorePath: storePath, Client: client, UserAgent: OrbUserAgent("1.2.3"),
 		Now: func() time.Time { return base },
 	}
 	if _, err := Refresh(context.Background(), options); err != nil {

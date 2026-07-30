@@ -23,7 +23,7 @@ const MAX_DIAGNOSTIC_BYTES = 128 * 1024;
 const MAX_CAPTURED_EVENTS = 100;
 
 function usage() {
-	return `Usage: node smoke.mjs --packages <directory> --pigo <binary> --output <file> [options]
+	return `Usage: node smoke.mjs --packages <directory> --orb <binary> --output <file> [options]
 
 Options:
   --pi <binary>         Upstream Pi executable (default: <packages>/node_modules/.bin/pi)
@@ -57,7 +57,7 @@ function parseArgs(argv) {
 		cases: DEFAULT_CASES,
 		corpus: DEFAULT_CORPUS,
 		packages: "",
-		pigo: "",
+		orb: "",
 		pi: "",
 		output: "",
 		only: [],
@@ -83,7 +83,7 @@ function parseArgs(argv) {
 			options.only.push(...argv[++index].split(",").filter(Boolean));
 			continue;
 		}
-		const pathOptions = new Set(["--cases", "--corpus", "--packages", "--pigo", "--pi", "--output"]);
+		const pathOptions = new Set(["--cases", "--corpus", "--packages", "--orb", "--pi", "--output"]);
 		if (pathOptions.has(argument) && index + 1 < argv.length) {
 			options[argument.slice(2)] = path.resolve(argv[++index]);
 			continue;
@@ -106,8 +106,8 @@ function parseArgs(argv) {
 		}
 		throw new Error(`unknown or incomplete argument: ${argument}`);
 	}
-	if (!options.validateOnly && (!options.packages || !options.pigo || !options.output)) {
-		throw new Error("--packages, --pigo, and --output are required");
+	if (!options.validateOnly && (!options.packages || !options.orb || !options.output)) {
+		throw new Error("--packages, --orb, and --output are required");
 	}
 	if (!options.pi && options.packages) {
 		options.pi = path.join(options.packages, "node_modules", ".bin", "pi");
@@ -409,7 +409,7 @@ function scrubDynamicText(value) {
 	return value
 		.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "<UUID>")
 		.replace(/\bsubagent-chat-[0-9a-f]{8}\b/gi, "subagent-chat-<ID>")
-		.replace(/pigo-extension-smoke-[A-Za-z0-9]+/g, "pigo-extension-smoke-<RANDOM>");
+		.replace(/orb-extension-smoke-[A-Za-z0-9]+/g, "orb-extension-smoke-<RANDOM>");
 }
 
 function scrubDynamicValues(value) {
@@ -557,7 +557,7 @@ function validateWorkflowPayload(smokeCase, payload) {
 }
 
 async function runAttempt(runtimeName, executable, entries, smokeCase, options) {
-	const runRoot = await mkdtemp(path.join(tmpdir(), "pigo-extension-smoke-"));
+	const runRoot = await mkdtemp(path.join(tmpdir(), "orb-extension-smoke-"));
 	const home = path.join(runRoot, "home");
 	const cwd = path.join(runRoot, "project");
 	const agentDir = path.join(runRoot, "agent");
@@ -860,53 +860,53 @@ function canonical(value) {
 	return value;
 }
 
-function compareWorkflowPayloads(piAttempts, pigoAttempts) {
+function compareWorkflowPayloads(piAttempts, orbAttempts) {
 	const pi = new Set(piAttempts.filter((attempt) => attempt.success).map((attempt) => JSON.stringify(canonical(attempt.workflowPayload))));
-	const pigo = new Set(
-		pigoAttempts.filter((attempt) => attempt.success).map((attempt) => JSON.stringify(canonical(attempt.workflowPayload))),
+	const orb = new Set(
+		orbAttempts.filter((attempt) => attempt.success).map((attempt) => JSON.stringify(canonical(attempt.workflowPayload))),
 	);
-	const stable = pi.size === 1 && pigo.size === 1;
+	const stable = pi.size === 1 && orb.size === 1;
 	return {
 		stableWithinEachRuntime: stable,
-		equalAcrossRuntimes: stable && [...pi][0] === [...pigo][0],
+		equalAcrossRuntimes: stable && [...pi][0] === [...orb][0],
 		piDistinctPayloadCount: pi.size,
-		pigoDistinctPayloadCount: pigo.size,
+		orbDistinctPayloadCount: orb.size,
 	};
 }
 
-function compareObservableOutputs(piAttempts, pigoAttempts) {
+function compareObservableOutputs(piAttempts, orbAttempts) {
 	const pi = new Set(
 		piAttempts.filter((attempt) => attempt.success).map((attempt) => JSON.stringify(canonical(attempt.observableOutput))),
 	);
-	const pigo = new Set(
-		pigoAttempts.filter((attempt) => attempt.success).map((attempt) => JSON.stringify(canonical(attempt.observableOutput))),
+	const orb = new Set(
+		orbAttempts.filter((attempt) => attempt.success).map((attempt) => JSON.stringify(canonical(attempt.observableOutput))),
 	);
-	const stableWithinEachRuntime = pi.size === 1 && pigo.size === 1;
+	const stableWithinEachRuntime = pi.size === 1 && orb.size === 1;
 	return {
 		stableWithinEachRuntime,
-		equalAcrossRuntimes: stableWithinEachRuntime && [...pi][0] === [...pigo][0],
+		equalAcrossRuntimes: stableWithinEachRuntime && [...pi][0] === [...orb][0],
 		piDistinctOutputCount: pi.size,
-		pigoDistinctOutputCount: pigo.size,
+		orbDistinctOutputCount: orb.size,
 		piRepresentative: pi.size > 0 ? JSON.parse([...pi][0]) : null,
-		pigoRepresentative: pigo.size > 0 ? JSON.parse([...pigo][0]) : null,
+		orbRepresentative: orb.size > 0 ? JSON.parse([...orb][0]) : null,
 	};
 }
 
-function compareLatency(pi, pigo) {
-	let pigoVsPiRatio = null;
+function compareLatency(pi, orb) {
+	let orbVsPiRatio = null;
 	let ratioSuppressedBecause = null;
-	if (pi.medianMs === null || pigo.medianMs === null || pi.medianMs <= 0 || pigo.medianMs <= 0) {
+	if (pi.medianMs === null || orb.medianMs === null || pi.medianMs <= 0 || orb.medianMs <= 0) {
 		ratioSuppressedBecause = "below_resolution";
-	} else if (pi.noisy || pigo.noisy) {
+	} else if (pi.noisy || orb.noisy) {
 		ratioSuppressedBecause = "noisy_mad_over_10_percent";
 	} else {
-		pigoVsPiRatio = Number((pigo.medianMs / pi.medianMs).toFixed(3));
+		orbVsPiRatio = Number((orb.medianMs / pi.medianMs).toFixed(3));
 	}
 	return {
 		metric: "rpc_prompt_write_to_success_response_including_command_handler",
 		pi,
-		pigo,
-		pigoVsPiRatio,
+		orb,
+		orbVsPiRatio,
 		ratioSuppressedBecause,
 	};
 }
@@ -924,16 +924,16 @@ async function runCaseGroup(cases, caseKind, options) {
 		const smokeCase = cases[caseIndex];
 		const entries =
 			caseKind === "workflow" ? [] : await extensionEntrypoints(options.packages, smokeCase.extension);
-		const attempts = { pi: [], pigo: [] };
+		const attempts = { pi: [], orb: [] };
 		const total = options.warmups + options.samples;
 		for (let attemptIndex = 0; attemptIndex < total; attemptIndex++) {
 			const warmup = attemptIndex < options.warmups;
-			const sequence = (caseIndex + attemptIndex) % 2 === 0 ? ["pi", "pigo"] : ["pigo", "pi"];
+			const sequence = (caseIndex + attemptIndex) % 2 === 0 ? ["pi", "orb"] : ["orb", "pi"];
 			for (const runtimeName of sequence) {
 				process.stderr.write(
 					`[${caseKind}-smoke] ${smokeCase.id} ${warmup ? "warmup" : "sample"} ${attemptIndex + 1}/${total} ${runtimeName}\n`,
 				);
-				const executable = runtimeName === "pi" ? options.pi : options.pigo;
+				const executable = runtimeName === "pi" ? options.pi : options.orb;
 				let attempt;
 				try {
 					attempt = await runAttempt(runtimeName, executable, entries, smokeCase, options);
@@ -953,12 +953,12 @@ async function runCaseGroup(cases, caseKind, options) {
 			}
 		}
 		const pi = summarizeRuntime(attempts.pi, caseKind);
-		const pigo = summarizeRuntime(attempts.pigo, caseKind);
-		const payload = caseKind === "workflow" ? compareWorkflowPayloads(attempts.pi, attempts.pigo) : null;
-		const output = compareObservableOutputs(attempts.pi, attempts.pigo);
+		const orb = summarizeRuntime(attempts.orb, caseKind);
+		const payload = caseKind === "workflow" ? compareWorkflowPayloads(attempts.pi, attempts.orb) : null;
+		const output = compareObservableOutputs(attempts.pi, attempts.orb);
 		const parity =
 			pi.status === passStatus(caseKind) &&
-			pigo.status === passStatus(caseKind) &&
+			orb.status === passStatus(caseKind) &&
 			output.equalAcrossRuntimes &&
 			(payload?.equalAcrossRuntimes ?? true);
 		results.push({
@@ -979,11 +979,11 @@ async function runCaseGroup(cases, caseKind, options) {
 			evidencePatterns: smokeCase.evidencePatterns,
 			rationale: smokeCase.rationale,
 			pi,
-			pigo,
+			orb,
 			comparison: {
 				parity,
 				observableOutput: output,
-				handlerLatency: compareLatency(pi.measuredHandlerLatency, pigo.measuredHandlerLatency),
+				handlerLatency: compareLatency(pi.measuredHandlerLatency, orb.measuredHandlerLatency),
 				...(payload ? { workflowPayload: payload } : {}),
 			},
 		});
@@ -1017,12 +1017,12 @@ async function main() {
 			`network isolation check failed via ${network.method}; run inside a networkless container or pass --allow-network for a non-proof diagnostic run`,
 		);
 	}
-	const [piVersion, pigoVersion] = [executableVersion(options.pi), executableVersion(options.pigo)];
+	const [piVersion, orbVersion] = [executableVersion(options.pi), executableVersion(options.orb)];
 	if (piVersion.status !== 0 || piVersion.stdout !== inputs.manifest.upstreamVersion) {
 		throw new Error(`upstream Pi must report exactly ${inputs.manifest.upstreamVersion}; got ${JSON.stringify(piVersion)}`);
 	}
-	if (pigoVersion.status !== 0 || !pigoVersion.stdout.includes(`upstream pi ${inputs.manifest.upstreamVersion}`)) {
-		throw new Error(`Pigo must report upstream pi ${inputs.manifest.upstreamVersion}; got ${JSON.stringify(pigoVersion)}`);
+	if (orbVersion.status !== 0 || !orbVersion.stdout.includes(`upstream pi ${inputs.manifest.upstreamVersion}`)) {
+		throw new Error(`Orb must report upstream pi ${inputs.manifest.upstreamVersion}; got ${JSON.stringify(orbVersion)}`);
 	}
 
 	const packageLock = path.join(options.packages, "package-lock.json");
@@ -1050,7 +1050,7 @@ async function main() {
 		inputs: {
 			harness: { path: fileURLToPath(import.meta.url), sha256: await fileDigest(fileURLToPath(import.meta.url)) },
 			upstreamPi: { path: options.pi, sha256: await fileDigest(options.pi), version: piVersion },
-			pigo: { path: options.pigo, sha256: await fileDigest(options.pigo), version: pigoVersion },
+			orb: { path: options.orb, sha256: await fileDigest(options.orb), version: orbVersion },
 			packages: options.packages,
 			packageLockSHA256,
 			cases: { path: options.cases, sha256: sha256(inputs.caseBytes) },
@@ -1066,12 +1066,12 @@ async function main() {
 			commandPassCount,
 			allCommandsComparedPass: commandPassCount === commandResults.length,
 			piCommandPassCount: commandResults.filter((result) => result.pi.status === passStatus("command")).length,
-			pigoCommandPassCount: commandResults.filter((result) => result.pigo.status === passStatus("command")).length,
+			orbCommandPassCount: commandResults.filter((result) => result.orb.status === passStatus("command")).length,
 			workflowCaseCount: workflowResults.length,
 			workflowPassCount,
 			allWorkflowsComparedPass: workflowPassCount === workflowResults.length,
 			piWorkflowPassCount: workflowResults.filter((result) => result.pi.status === passStatus("workflow")).length,
-			pigoWorkflowPassCount: workflowResults.filter((result) => result.pigo.status === passStatus("workflow")).length,
+			orbWorkflowPassCount: workflowResults.filter((result) => result.orb.status === passStatus("workflow")).length,
 			allComparedPass: commandPassCount === commandResults.length && workflowPassCount === workflowResults.length,
 		},
 		commandResults,

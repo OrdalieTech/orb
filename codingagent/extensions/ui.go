@@ -3,7 +3,7 @@ package extensions
 import (
 	"context"
 
-	"github.com/OrdalieTech/pigo/agent"
+	"github.com/OrdalieTech/orb/agent"
 )
 
 type DialogOptions struct {

@@ -1,9 +1,9 @@
 version: 2
-project_name: pigo
+project_name: orb
 builds:
-  - id: pigo
-    main: ./cmd/pigo
-    binary: pigo
+  - id: orb
+    main: ./cmd/orb
+    binary: orb
     env:
       - CGO_ENABLED=0
     goos: [linux, darwin]
@@ -14,19 +14,19 @@ builds:
       - -s -w -funcalign=4 -X main.version={{.Version}}
 archives:
   - formats: [tar.gz]
-    name_template: "pigo_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "orb_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 source:
   enabled: true
-  name_template: "pigo_{{ .Version }}_source"
+  name_template: "orb_{{ .Version }}_source"
   format: tar.gz
-  prefix_template: "pigo-{{ .Version }}/"
+  prefix_template: "orb-{{ .Version }}/"
 homebrew_casks:
-  - name: pigo
+  - name: orb
     repository:
       owner: OrdalieTech
       name: homebrew-tap
     skip_upload: true
-    homepage: https://github.com/OrdalieTech/pigo
+    homepage: https://github.com/OrdalieTech/orb
     description: Faithful, slim, pure-Go port of the pi coding agent
     license: MIT
 checksum:

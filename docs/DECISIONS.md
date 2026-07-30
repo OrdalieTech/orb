@@ -1,4 +1,4 @@
-# pigo — Decision Record
+# Orb — Decision Record
 
 Outcome of the planning interview (2026-07-17). Every architectural and product decision below is
 settled and confirmed by the project owner. Changes to this record require owner sign-off; everything
@@ -11,21 +11,21 @@ else (implementation detail) is decided by whoever executes the work package, wi
 | Upstream project | **pi** — https://pi.dev, repo `earendil-works/pi` (formerly `badlogic/pi-mono`) |
 | Pinned reference | commit `845d6ff1f6643aba440341cce877ce1c43ebbc39`, version **0.83.0** (2026-07-29) |
 | Upstream license | MIT, © 2025 Mario Zechner |
-| This project | `github.com/OrdalieTech/pigo`, MIT, © Ordalie — with attribution to upstream in LICENSE and README |
+| This project | `github.com/OrdalieTech/orb`, MIT, © Ordalie — with attribution to upstream in LICENSE and README |
 
-pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinned commit
+Orb is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinned commit
 (`docs/*.md` in each package) are the specification; where this record is silent, upstream behavior wins.
 
 ## Product decisions
 
-- **D1 — SDK-first.** pigo is a Go module first; the `pigo` CLI is one consumer of it. The `ai`
+- **D1 — SDK-first.** orb is a Go module first; the `orb` CLI is one consumer of it. The `ai`
   layer must be importable on its own (as `@earendil-works/pi-ai` is upstream).
 - **D2 — Full parity, no staged v1.** The whole of the pinned pi release (currently v0.83.0) is in scope: agent core, all tools,
   session tree + compaction, skills, prompt templates, themes, TUI, print/JSON/RPC modes, extension
   system, OAuth flows, HTML export, terminal images, pi packages, project trust. Exclusions are only
   those in the divergence ledger below. Sequencing exists (see plan phases); feature cuts do not.
 - **D3 — Audience.** Ordalie production embedding + personal daily-driver + public OSS, simultaneously.
-- **D4 — File-format compatibility.** pigo reads/writes pi's data formats and locations so both
+- **D4 — File-format compatibility.** orb reads/writes pi's data formats and locations so both
   agents coexist on one machine: `~/.pi/agent/` layout, session JSONL **v3** tree format (with v1/v2
   migration), `settings.json` (global + `.pi/settings.json` project merge), `models.json`,
   `auth.json` (0600), `trust.json`, `keybindings.json`. CLI-flag parity is pursued but not contractual.
@@ -39,7 +39,7 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
 - **D6 — Upstream tests must run against the port.** Strategy: **fixtures + black-box**.
   Language-neutral golden fixtures are generated from the upstream repo by extraction scripts and
   consumed by both vitest (upstream side) and `go test` (our side). Upstream's RPC/CLI-level tests
-  additionally run as-is against the pigo binary. Node/TS is permitted as *development tooling*
+  additionally run as-is against the orb binary. Node/TS is permitted as *development tooling*
   (fixture extraction); the shipped product is pure Go.
 
 ## Architecture decisions
@@ -48,11 +48,11 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
   `CGO_ENABLED=0` and remains a single static binary; dependencies requiring CGo are disqualified.
   Development-only test binaries may enable CGo when the Go toolchain requires it for `-race`
   (ThreadSanitizer). That exception never ships. D31's optional user-provided Node/Bun process is
-  not part of the shipped artifact and does not change the static pigo build.
+  not part of the shipped artifact and does not change the static orb build.
 - **D8 — Platforms.** linux + darwin, amd64 + arm64, from day one. Windows is a later parity wave
   (upstream supports it; we port its git-bash/console strategy then). Not dropped — deferred.
 - **D9 — Single module, mirrored layout.** One `go.mod`. Packages mirror upstream packages
-  (`ai/`, `agent/`, `tui/`, `codingagent/`, plus `cmd/pigo`, `internal/`); files track upstream files
+  (`ai/`, `agent/`, `tui/`, `codingagent/`, plus `cmd/orb`, `internal/`); files track upstream files
   where idiomatic (`agent-loop.ts` → `loop.go`). Mirroring is what makes agent-driven upstream
   syncing and diff-mapping mechanical. A `MIRROR.md` map records the correspondence.
 - **D10 — Provider layer: SDK-preferring hybrid.** Use official Go SDKs where they exist and are
@@ -80,7 +80,7 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
 - **D15 — TUI: faithful pi-tui port.** Hand-rolled differential line renderer mirroring pi-tui
   (Component contract: `Render(width) []string`), no TUI framework. The Component contract is what
   extension custom-UI rides on; preserving it is non-negotiable.
-- **Interactive mode owns its viewport.** Pigo uses the alternate screen with a scrollable
+- **Interactive mode owns its viewport.** Orb uses the alternate screen with a scrollable
   transcript and pins status, extension widgets, editor, and footer at the bottom. Mouse-wheel or
   `Ctrl+PageUp` scrolling detaches live follow; scrolling back down or `Ctrl+End` reattaches it, so
   loading and streaming frames cannot move the viewed history. Sending a message reattaches it too:
@@ -92,7 +92,7 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
   the visible range; steady frames are O(viewport + changed tail), while first render, resize, theme
   changes, and global expansion intentionally remain O(history).
 - **Reachable clear-on-shrink updates stay differential.** When shorter content can be reconciled
-  inside the renderer's active viewport, Pigo clears only the vacated rows and settles the tracked
+  inside the renderer's active viewport, Orb clears only the vacated rows and settles the tracked
   height instead of taking upstream's destructive full-transcript redraw. The inline renderer keeps
   the upstream fallback for true offscreen mutations; interactive mode avoids it by rendering only
   its owned viewport.
@@ -122,21 +122,21 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
 | `packages/server` (formerly `packages/orchestrator`) | removed | experimental upstream side product; the v0.81.0 rename does not change the D2 product boundary |
 | Telemetry/analytics (`enableInstallTelemetry`, `enableAnalytics`, `trackingId`) | removed | owner decision; unknown settings keys tolerated on parse, nothing sent, no plumbing |
 | Radius provider + Radius OAuth | removed | pi.dev-coupled service; the generic `pi-messages` SSE wire shape IS ported (usable by any backend, e.g. an Ordalie gateway) |
-| Version/update checks | neutralized | point at OrdalieTech/pigo GitHub releases, never pi.dev |
-| Public identity and executable | renamed | D30; `pigo` avoids colliding with an installed upstream `pi` |
+| Version/update checks | neutralized | point at OrdalieTech/orb GitHub releases, never pi.dev |
+| Public identity and executable | renamed | D30; `orb` avoids colliding with an installed upstream `pi` |
 | `/share` | neutralized | local HTML export instead of pi.dev upload |
 | Model catalog runtime refresh | neutralized | models.dev directly, not pi.dev overlay endpoints |
 | Windows support | deferred | later parity wave (D8) |
 | darwin modifier-key native addon | gap | kitty keyboard protocol where possible; documented small parity gap |
 | win32 console native addon | deferred | Windows wave |
 | Bundled llama.cpp extension | excluded | v0.81.1 still ships this optional native Node/llama.cpp integration; it cannot satisfy the pure-Go, single-static-binary rule in D7 |
-| `packages/storage/sqlite-node` | excluded | v0.81.1's optional Node SQLite storage package requires a native runtime; pigo retains the session repository interfaces and JSONL/memory implementations under D7 |
-| `pigo login` / `pigo logout` CLI subcommands | addition | headless Go deployments need auth lifecycle commands; bare `pigo logout` deliberately lists stored credential names and requires an explicit provider instead of silently choosing one |
-| NVIDIA `qwen/qwen3.5-122b-a10b` denylist | addition | the live NIM endpoint advertises it, but its current metadata cannot satisfy pigo's chat-model contract; keep the Go-only exclusion explicit until the live shape is usable |
+| `packages/storage/sqlite-node` | excluded | v0.81.1's optional Node SQLite storage package requires a native runtime; orb retains the session repository interfaces and JSONL/memory implementations under D7 |
+| `orb login` / `orb logout` CLI subcommands | addition | headless Go deployments need auth lifecycle commands; bare `orb logout` deliberately lists stored credential names and requires an explicit provider instead of silently choosing one |
+| NVIDIA `qwen/qwen3.5-122b-a10b` denylist | addition | the live NIM endpoint advertises it, but its current metadata cannot satisfy orb's chat-model contract; keep the Go-only exclusion explicit until the live shape is usable |
 | `CompleteSimple` and common simple tool choice | Go API adaptation | upstream `Models.completeSimple` only collects `streamSimple`, while TypeScript callers can smuggle provider-specific `toolChoice` fields through structural casts. Go exposes the same collection directly and the portable `auto`/`none`/`required` intersection; a named choice is one advertised tool plus `required`, so no provider shape leaks into embedders |
-| Missing default stream error timing | Go API adaptation | upstream throws in the JavaScript `Agent` constructor; Go's fixed `NewAgent` signature cannot return an error, so pigo reports the identical error on the first prompt or low-level loop call |
+| Missing default stream error timing | Go API adaptation | upstream throws in the JavaScript `Agent` constructor; Go's fixed `NewAgent` signature cannot return an error, so orb reports the identical error on the first prompt or low-level loop call |
 | Single Ctrl-C exit at an empty prompt | usability adaptation | owner requirement; a nonempty draft still clears without exiting, and focused selectors retain their cancel binding |
-| Interrupting an unanswered turn takes the prompt back | usability adaptation | owner requirement; upstream's escape restores only queued messages, which pigo now does too. When the interrupted turn has shown nothing yet, pigo additionally rewinds the branch to before its prompt (the existing tree-navigation path) and returns the text to the editor, so an edited resend replaces the prompt instead of stacking after it. Once any text, thinking, or tool call has appeared, escape aborts exactly as upstream does; the abandoned attempt stays reachable in the tree |
+| Interrupting an unanswered turn takes the prompt back | usability adaptation | owner requirement; upstream's escape restores only queued messages, which orb now does too. When the interrupted turn has shown nothing yet, orb additionally rewinds the branch to before its prompt (the existing tree-navigation path) and returns the text to the editor, so an edited resend replaces the prompt instead of stacking after it. Once any text, thinking, or tool call has appeared, escape aborts exactly as upstream does; the abandoned attempt stays reachable in the tree |
 | Compact built-in editor chrome | usability adaptation | while the built-in editor is mounted, a one-line transient status that fits moves into its top border and the explicit session name appears as a truncated themed badge at the right; dialogs, narrow statuses, scrolled drafts, and extension editors keep upstream's standard status lane, with keybindings and extension UI contracts unchanged |
 | Compact task and queue surfaces | usability adaptation | the bundled tasks plugin keeps its replacement schema and full branch-aware details but condenses persistent/collapsed rendering, makes the native TUI widget click-expandable with dimmed inset details, and adds an unbound `/tasks` full-list command; queued messages retain the configured dequeue binding and every queued item while adding a count to upstream's one-row truncation and edit hint |
 | Moonshot Kimi K3 compat metadata | resolved parity | `thinkingFormat: openai` and reasoning-effort support entered the pinned upstream in v0.81.1 and remain regression-tested |
@@ -151,28 +151,28 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
 | Print mode fails a prompted run that produced no assistant | usability adaptation | overflow recovery drops the failed assistant from agent state (upstream `agent-session.ts:2006`), so upstream's text mode exits 0 with empty stdout; scripts cannot distinguish that from success |
 | `exec.Cmd.WaitDelay` on the extension host | Go API adaptation | stderr is deliberately wrapped so extensions cannot put the parent terminal in cooked mode, which forces a pipe; without a delay `Wait` blocks until every grandchild that inherited it closes, which Node's `child_process` does not do |
 | Goroutine panic guard inside `tui` | Go API adaptation | upstream restores the terminal from a process-wide `uncaughtException` handler (`interactive-mode.ts` `uncaughtCrash`); Go cannot observe another goroutine's panic, so every goroutine the package spawns recovers, runs the registered restores, writes the panic and stack to stderr after restore, and exits 1. `ProcessTerminal.Run` stays the synchronous-body guard for embedders and shares the same `Stop` restore path |
-| Terminal widths from uniseg plus a three-class correction | measured divergence | upstream widths come from get-east-asian-width plus an RGI-emoji regex; pigo keeps `rivo/uniseg` and corrects the classes measured against upstream — keycap sequences, East-Asian-Wide text-presentation symbols, and halfwidth voiced sound marks U+FF9E/U+FF9F. Residual known divergences: standalone skin-tone modifiers, Yijing symbols, spacing combining marks, Hangul fillers, two/three-em dashes, emoji newer than x/text's Unicode tables, clusters mixing a Wide text-presentation base with a halfwidth voiced mark, and noncharacters x/text tables class as Wide |
-| Session-file locking | addition | upstream `session-manager.ts` writes JSONL with no locking at all; pigo keeps cross-process locking and takes it through `internal/filelock`'s proper-lockfile-compatible mkdir+heartbeat lock (self-cleaning, stale-steal), replacing a `gofrs/flock` sidecar that left permanent `.jsonl.lock` files a concurrent upstream pi could neither recognize nor reclaim |
-| Extension-host `cancel_request` and `provider_stream_event` frames | Go API adaptation | D31's host process boundary has no counterpart to upstream's in-process positional `AbortSignal` (`tool-definition-wrapper.ts`) or its live provider streaming (`loader.ts` `streamSimple`); these two pigo-internal frames plus a per-request `AbortController` registry reproduce both, and the host self-exits on stdin close so a pigo hard-crash cannot orphan it |
+| Terminal widths from uniseg plus a three-class correction | measured divergence | upstream widths come from get-east-asian-width plus an RGI-emoji regex; orb keeps `rivo/uniseg` and corrects the classes measured against upstream — keycap sequences, East-Asian-Wide text-presentation symbols, and halfwidth voiced sound marks U+FF9E/U+FF9F. Residual known divergences: standalone skin-tone modifiers, Yijing symbols, spacing combining marks, Hangul fillers, two/three-em dashes, emoji newer than x/text's Unicode tables, clusters mixing a Wide text-presentation base with a halfwidth voiced mark, and noncharacters x/text tables class as Wide |
+| Session-file locking | addition | upstream `session-manager.ts` writes JSONL with no locking at all; orb keeps cross-process locking and takes it through `internal/filelock`'s proper-lockfile-compatible mkdir+heartbeat lock (self-cleaning, stale-steal), replacing a `gofrs/flock` sidecar that left permanent `.jsonl.lock` files a concurrent upstream pi could neither recognize nor reclaim |
+| Extension-host `cancel_request` and `provider_stream_event` frames | Go API adaptation | D31's host process boundary has no counterpart to upstream's in-process positional `AbortSignal` (`tool-definition-wrapper.ts`) or its live provider streaming (`loader.ts` `streamSimple`); these two Orb-internal frames plus a per-request `AbortController` registry reproduce both, and the host self-exits on stdin close so an Orb hard-crash cannot orphan it |
 | `Request was aborted` for ctx-aborted stream failures | Go API adaptation | every adapter persists upstream's mid-stream abort text `Request was aborted` on a ctx-aborted stream failure (Google's and Mistral's stream paths now included); request-phase texts follow upstream per adapter — `retryProviderRequest` and aborted OpenRouter image body reads return `Request aborted` verbatim, Google's request phase keeps upstream's `Request aborted` — while the anthropic/openai-family stream entry points collapse pre-stream ctx errors into the mid-stream text so the TUI's exact-match "Operation aborted" rendering holds |
-| `extensions.Exec` bounded wait on inherited stdio | Go API adaptation | upstream's `waitForChildProcess` resolves the moment the child exits even when a detached grandchild holds the stdio pipes; Go's `os/exec` cannot observe that without `WaitDelay`, so pigo waits up to 5s for the pipes and then reports the child's own exit code (never a synthetic failure) |
+| `extensions.Exec` bounded wait on inherited stdio | Go API adaptation | upstream's `waitForChildProcess` resolves the moment the child exits even when a detached grandchild holds the stdio pipes; Go's `os/exec` cannot observe that without `WaitDelay`, so orb waits up to 5s for the pipes and then reports the child's own exit code (never a synthetic failure) |
 | RPC untyped-dispatch residual | gap | frames with a known command but a mistyped member (e.g. `{"type":"prompt","message":5}`) answer `success:false` with Go decoder text where upstream surfaces the JS `TypeError` of untyped dispatch; byte parity would mean emulating per-command V8 runtime errors. Frame shape and the missing/non-string/null `type` path are byte-exact |
-| `OAuthCredentials` extra members serialize sorted | Go API adaptation | upstream builds the credentials object in JS, so extra members keep insertion order; pigo carries extras in a Go map, which has none. Declared members match upstream's declaration order and extras follow, sorted for determinism |
+| `OAuthCredentials` extra members serialize sorted | Go API adaptation | upstream builds the credentials object in JS, so extra members keep insertion order; orb carries extras in a Go map, which has none. Declared members match upstream's declaration order and extras follow, sorted for determinism |
 | Markdown session export | addition | upstream `--export` emits HTML only; an output path ending in `.md` routes to the WP-320 markdown exporter, every other path keeps upstream's HTML behavior and the help text is unchanged |
-| Concurrent `AfterToolCall` hooks and `EventSink` in parallel tool mode | Go API adaptation | upstream's promises interleave at await points but never run simultaneously; pigo's parallel workers invoke both concurrently, so an embedder porting a hook that mutates shared state without locks must add its own synchronization (documented at `agent/types.go`) |
+| Concurrent `AfterToolCall` hooks and `EventSink` in parallel tool mode | Go API adaptation | upstream's promises interleave at await points but never run simultaneously; orb's parallel workers invoke both concurrently, so an embedder porting a hook that mutates shared state without locks must add its own synchronization (documented at `agent/types.go`) |
 | Parallel tool fan-out bounded at 16 | Go resource adaptation | upstream's `Promise.all` (`agent-loop.ts:539`) is unbounded because JS tool calls are cooperative; in Go each call is a goroutine that may spawn subprocesses, so a model-controlled fan-out is a resource risk. Result ordering is unchanged |
 | Tool-update sink driven by one bounded queue (256) | Go API adaptation | upstream's sink is an event-loop callback, so `emit` is a synchronous call that still never blocks the tool and is awaited per call at `agent-loop.ts:694`; Go's `EventSink` blocks, so a drain goroutine reproduces both ordering and non-blocking. A sink more than 256 updates behind backpressures rather than dropping an event |
-| Native mouse and click support in interactive mode | addition | owner requirement (2026-07-25). Upstream consumes mouse reports only for transcript selection and the scrollbar. pigo adds an optional `tui.MouseHandler` found by type assertion, so D15's `Render(width int) []string` contract is unchanged and every existing component and extension UI keeps working. SGR (1006) reports are offered to the component under the cursor before falling back to the existing scrollbar, wheel and selection behavior; an in-flight drag or any modifier skips dispatch, preserving native drag-select and shift-bypass. Wired: `/tree`, `/resume`, `SelectList`, `SettingsList`, the extension option dialog, and the editor. Excluded: the transcript body and inline TUIs, which have no known screen origin |
-| Extension SDK comes from pigo's own npm root | independence | pigo searched `PATH` for the `pi` executable and handed extensions the SDK bundled in the npm package owning it, so behaviour depended on a third-party install being present. Reading pi's config files is the D4 compatibility promise; executing its code is not. The SDK now resolves from pigo's managed roots only, and `PIGO_PI_SDK_ROOT` is a deliberate user override rather than a fallback |
+| Native mouse and click support in interactive mode | addition | owner requirement (2026-07-25). Upstream consumes mouse reports only for transcript selection and the scrollbar. orb adds an optional `tui.MouseHandler` found by type assertion, so D15's `Render(width int) []string` contract is unchanged and every existing component and extension UI keeps working. SGR (1006) reports are offered to the component under the cursor before falling back to the existing scrollbar, wheel and selection behavior; an in-flight drag or any modifier skips dispatch, preserving native drag-select and shift-bypass. Wired: `/tree`, `/resume`, `SelectList`, `SettingsList`, the extension option dialog, and the editor. Excluded: the transcript body and inline TUIs, which have no known screen origin |
+| Extension SDK comes from orb's own npm root | independence | orb searched `PATH` for the `pi` executable and handed extensions the SDK bundled in the npm package owning it, so behaviour depended on a third-party install being present. Reading pi's config files is the D4 compatibility promise; executing its code is not. The SDK now resolves from orb's managed roots only, and `ORB_PI_SDK_ROOT` is a deliberate user override rather than a fallback |
 | Node capability floor is 22.6, full capability is 22.13 | measured divergence | 22.6-22.12 runs plain JavaScript and erasable TypeScript but cannot compile TypeScript published inside `node_modules`, because `module.stripTypeScriptTypes` arrives in 22.13. Refusing to start on 22.12 would refuse extensions that do run, so the floor stays at 22.6 and the loader names the missing capability at the file that needs it. Node 26 removed TypeScript transformation entirely: enums, parameter properties and namespaces do not run there on any path |
 | Staged extension entries removed | simplification | the mechanism gave an entry under `node_modules` a `node_modules`-free path and required `--preserve-symlinks` to keep its links opaque, which broke pnpm store resolution on every Node version. Supplying transpiled source from the load hook covers entry and dependencies at any nesting depth, so the package manager's own layout governs. Cost: an npm-installed TypeScript extension on Node 22.7-22.12 now reports that it needs Node >= 22.13 rather than working |
 | Frontmatter YAML text keeps its terminating newline | dependency workaround | upstream slices it off too (`utils/frontmatter.ts:23`), but npm `yaml` treats end-of-input as a line break so clip chomping still yields the newline, while `gopkg.in/yaml.v3` synthesizes none; upstream pins the observable value in `test/frontmatter.test.ts:25-30`. Do not "restore" the exclusive slice on a future sync |
 | Bun SDK aliases via `NODE_PATH` | Bun adaptation | Bun's runtime `Bun.plugin` `onResolve` never observes a nested import, so Node's resolve hook has no counterpart. `NODE_PATH` is consulted after the `node_modules` walk, which enforces "alias only when absent" in the resolver itself; Node ignores it for ESM, so the primary path is unaffected. The root-to-`/compat` redirect remains Node-only |
-| Pinned SDK auto-provisioning into pigo's own npm root | addition | upstream never needs this because pi ships with its SDK; pigo is a static binary, so the first loose extension with a bare SDK import triggers one `npm install --ignore-scripts` of the version matching pigo's parity target into the user npm root, under the same mkdir lock discipline as settings writes. The SDK is public MIT code from the npm registry; no installed pi is consulted, keeping the independence rule intact |
+| Pinned SDK auto-provisioning into orb's own npm root | addition | upstream never needs this because pi ships with its SDK; orb is a static binary, so the first loose extension with a bare SDK import triggers one `npm install --ignore-scripts` of the version matching orb's parity target into the user npm root, under the same mkdir lock discipline as settings writes. The SDK is public MIT code from the npm registry; no installed pi is consulted, keeping the independence rule intact |
 | Bun runs with `--no-install` | safety adaptation | dependencies are materialized by an explicit audited install step; Bun's implicit auto-install otherwise fetches unresolved specifiers from npm mid-session, which Node never does |
 | Disposed sessions refuse work (`ErrSessionDisposed`) | SDK safety adaptation | upstream `agent-session.ts:835` `dispose()` sets no flag and no method refuses afterwards, so a post-dispose prompt still called the model and persisted the turn with its events silenced. An embedder that disposes on client disconnect spends money invisibly; the guard sits at `runPolicies` plus the queue-only entry points, so a doomed request still reports its specific reason |
 | Subagent parallel width capped at 32 | resource guard | `tasks` is model-controlled and each entry costs a goroutine, a temp dir, a child session, and a real provider call; uncapped, one tool call fanned out to 2,000 children in measurement. Enforced in the tool and declared as `maxItems` in the schema |
-| Unified-patch hunk headers derived locally | dependency workaround | `go-udiff` advances `ToLine` only in its new-hunk branch (`unified.go:143`), so the second and later `@@` headers report the wrong new-file start; pigo recomputes them and matches `Diff.createTwoFilesPatch` across a 2,998-case differential fuzz |
+| Unified-patch hunk headers derived locally | dependency workaround | `go-udiff` advances `ToLine` only in its new-hunk branch (`unified.go:143`), so the second and later `@@` headers report the wrong new-file start; orb recomputes them and matches `Diff.createTwoFilesPatch` across a 2,998-case differential fuzz |
 
 ## Execution decisions
 
@@ -220,7 +220,7 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
   same arc, built in sequence: processor first (faux provider, in-memory sessions), then Telegram
   (webhook + long-poll, streamed preview edits), then WhatsApp Business Cloud API (typing + one
   final answer). Delivery state is recorded as `type:"custom"` session entries via
-  `AppendCustomEntry` (a `pigo.chat.turn` started/settled/delivered ledger), keeping the session
+  `AppendCustomEntry` (a `orb.chat.turn` started/settled/delivered ledger), keeping the session
   JSONL the single durable history; turn finalization keys off `AgentSettledEvent`, not
   `agent_end`; crash recovery reads raw session entries, never the built context. Tools are
   disabled by default — a deployment enabling them must inject an isolated workspace through its
@@ -246,7 +246,7 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
 
 - **D29 — One high-level agent runtime (agent, 2026-07-20).** The pinned upstream exports a
   second `AgentHarness` orchestrator from `packages/agent`, but its own coding-agent still uses
-  `AgentSession`; upstream documents that migration as pi 2.0 work. pigo keeps the already-ported
+  `AgentSession`; upstream documents that migration as pi 2.0 work. orb keeps the already-ported
   session, repository, compaction, resource, and environment primitives in `agent/harness`, while
   `codingagent.AgentSession` remains the sole high-level embedding runtime. Reimplementing the
   1,029-line facade would duplicate queues, hooks, persistence ordering, and lifecycle state, and
@@ -255,38 +255,38 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
   behavior, and embedders already have `agent.WithStreamFn` plus `ai.ParseStreamingJSON`. Revisit
   either surface only when upstream's coding-agent adopts it or a real Go consumer requires it.
 
-- **D30 — Public identity is pigo (owner, 2026-07-21).** The repository, Go module, executable,
+- **D30 — Public identity is Orb (owner-amended, 2026-07-30).** The repository, Go module, executable,
   release artifacts, installer variables, terminal title, resume hints, and default RPC client
-  command use `pigo`; no legacy `pi` executable or alias is shipped, so upstream pi can coexist on
+  command use `orb`; no legacy `pi` executable or alias is shipped, so upstream pi can coexist on
   the same machine. Upstream compatibility names remain unchanged where they are the contract:
   `.pi`/`~/.pi`, upstream `PI_*` runtime variables, session and wire formats, pi package manifests,
   `pi-messages`, the JS extension `pi` API and `@earendil-works/pi-*` imports, embedded upstream
   assets, and extracted goldens. Conformance adapters may account only for exact public-name
-  substitutions while separately asserting the `pigo` spelling.
+  substitutions while separately asserting the `orb` spelling.
 
 - **D31 — Host-only JavaScript execution (owner, 2026-07-22).** All JavaScript and TypeScript
   extensions, including installed npm packages, project/global extension files, and explicit `-e`
-  entries, run out of process in the extension host. Pigo selects local Node.js ≥22.6 (native type
+  entries, run out of process in the extension host. Orb selects local Node.js ≥22.6 (native type
   stripping) or Bun, with no embedded JavaScript engine, transpiler, Node shims, or runtime feature
   flag. When neither runtime is available, extension loading names the missing runtime and points at
-  `PIGO_NODE`, and the rest of the product remains available. The 22.6 floor is a capability floor,
+  `ORB_NODE`, and the rest of the product remains available. The 22.6 floor is a capability floor,
   not a uniform one: see the version-capability rows in the divergence ledger, measured across
   22.6-26.5. The host owns real Node/Bun module, worker,
-  top-level-await, WebAssembly, and native-addon semantics; pigo remains a static `CGO_ENABLED=0`
+  top-level-await, WebAssembly, and native-addon semantics; orb remains a static `CGO_ENABLED=0`
   binary and ships neither runtime.
 
 - **D32 — First-party plugins: bundled-but-dormant (owner, 2026-07-22).** Tasks, websearch, and
   subagents ship in the binary but default off, preserving the upstream tool surface until a user
-  opts in through the `plugins` settings object, `pigo plugins`, or the `/plugins` selector. The
+  opts in through the `plugins` settings object, `orb plugins`, or the `/plugins` selector. The
   existing user/project settings overlay and runtime reload path own enablement; embedders bypass
   settings by selecting factories from `plugins.Catalog()`.
 
 - **D33 — Permissions plugin (owner, 2026-07-22).** The dormant first-party permissions plugin uses the standard allow/deny/ask, ordered last-match-wins model and defaults to permissive log mode.
 
 - **D34 — MemoryStore seam + memory plugin (owner, 2026-07-23; amended 2026-07-30).** This
-  pigo-original addition gives the dormant memory plugin one storage seam shared by per-profile
+  Orb-original addition gives the dormant memory plugin one storage seam shared by per-profile
   JSONL stores and per-tenant database implementations, because three ecosystem memory packages
-  otherwise reinvent storage. The seam lives at root-level `memory/`, following the pigo-original
+  otherwise reinvent storage. The seam lives at root-level `memory/`, following the Orb-original
   `chat/` precedent, so embedders can import it standalone. Enablement is the only mode: local and
   SDK users get the same frozen `USER PROFILE`/`MEMORY` prompt, fixed 1,375/2,200-character budgets,
   and `remember`/`recall`/`replace`/`forget`; capacity pressure drives model-led consolidation.
@@ -302,7 +302,7 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
   Upstream's strict TypeScript model-data validator has no runtime Go analogue, so generation-time
   validation plus full-catalog tests enforce the same accepted shape.
 - Remote-catalog freshness preserves upstream's `checkedAt`/`lastModified` semantics, while D12's
-  single direct models.dev endpoint replaces pi.dev's provider-scoped service. The pigo identity in
+  single direct models.dev endpoint replaces pi.dev's provider-scoped service. The orb identity in
   its User-Agent remains the D30 public-name substitution.
 
 ## 2026-07-22 v0.81.1 sync amendments
@@ -347,7 +347,7 @@ pigo is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinn
   modal-editor example runs unmodified. Remaining pi-tui component classes (Text/Container/Markdown
   construction from JS) are bridged on demand as the F11 matrix requires them.
 - **G4 (WP-661):** self-update mechanism — notify-only vs in-place binary self-update.
-  **Resolved (Sprint 4): notify-only.** The update check (already pointed at OrdalieTech/pigo
+  **Resolved (Sprint 4): notify-only.** The update check (already pointed at OrdalieTech/orb
   releases per the divergence ledger) surfaces new versions; installation goes through the install
   script or package manager. In-place binary self-replacement is a security and failure-mode
   liability a slim port does not need.
@@ -364,7 +364,7 @@ are not re-litigated:
   behavior loses to parity with the pinned upstream.
 - **Skills symlink-cycle guard stays.** Upstream has no visited-set and recurses cycles to
   ELOOP (~40 levels), leaking cycle-expanded paths into system-prompt `<location>` entries.
-  pigo keeps the canonical-path visit stack and returns each skill once under its clean path.
+  orb keeps the canonical-path visit stack and returns each skill once under its clean path.
   Deliberate hardening divergence.
 - **MCP `"disabled": true` is honored** as `"enabled": false` (portability with Cline/Roo/
   Claude Desktop configs). MCP config parsing is per-entry tolerant: invalid entries warn and
@@ -375,7 +375,7 @@ are not re-litigated:
   Supported `.npmrc` surface is deliberately minimal: `registry=` and nerf-darted `_authToken`
   (no `${VAR}` expansion, no per-scope registries, no `_auth`/username/password).
 - **pi-* shim modules throw on unknown imports at first touch** ("'X' is not exported by ...
-  (pigo shim)") with an honest `has()` so `in`-feature-detection still works. True Node-ESM
+  (orb shim)") with an honest `has()` so `in`-feature-detection still works. True Node-ESM
   link-time failure is unreachable without a build-time export manifest; first-touch is the slim
   faithful approximation (question.ts-style examples now fail loudly at load instead of
   registering broken tools).
@@ -392,7 +392,7 @@ are not re-litigated:
   a clear `unsupported external module "node:X"` diagnostic.
 - **pi-* shim unknown-import failure is access-time, not link-time (superseded by D31 on 2026-07-22).** Node ESM would fail an
   unknown named import at link time; over esbuild-CJS bundling that requires a build-time export
-  manifest, which pigo does not maintain. The shim instead throws on first *access* of an
+  manifest, which orb does not maintain. The shim instead throws on first *access* of an
   unexported name (with an honest `has()`), so `question.ts`/`questionnaire.ts`-style examples
   that touch the missing pi-tui `Editor`/`Key` surface only inside a TUI-only custom-UI factory
   still load silently in print mode (where that factory never runs, and the registered tool
@@ -403,7 +403,7 @@ are not re-litigated:
   git's stderr chatter.
 - **Installed abbreviated Git commit pins resolve locally before fetch.** Git servers reject a
   short object ID such as `f2433d1` as an unadvertised remote ref even when the normal clone
-  already contains that reachable commit. Pigo reconciles that detached object locally; branches,
+  already contains that reachable commit. Orb reconciles that detached object locally; branches,
   tags, missing commits, and fresh installs retain upstream's fetch/checkout behavior. This is a
   narrow usability divergence from upstream's failing `git fetch origin <short-sha>` path.
 - **Ecosystem compatibility claims stay layered.** A locked 44-package corpus separately records

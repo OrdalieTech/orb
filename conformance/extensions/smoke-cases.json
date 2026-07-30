@@ -93,7 +93,7 @@
       "fixtures": [
         {
           "path": "knowledge-base/overview.md",
-          "content": "# Compatibility fixture\n\nPigo must preserve UTF-8 text such as caf\u00e9.\n"
+          "content": "# Compatibility fixture\n\nOrb must preserve UTF-8 text such as caf\u00e9.\n"
         },
         {
           "path": "knowledge-base/nested/details.mdx",

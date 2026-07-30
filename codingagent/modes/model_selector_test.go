@@ -3,9 +3,9 @@ package modes
 import (
 	"testing"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/codingagent"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/codingagent"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 func TestModelSelectorSearchAndKeyboardParity(t *testing.T) {

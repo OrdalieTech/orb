@@ -13,16 +13,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/agent/harness"
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	modetheme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/codingagent/session/exporthtml"
-	"github.com/OrdalieTech/pigo/codingagent/tools"
-	"github.com/OrdalieTech/pigo/internal/jsonwire"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/harness"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
+	modetheme "github.com/OrdalieTech/orb/codingagent/modes/theme"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/codingagent/session/exporthtml"
+	"github.com/OrdalieTech/orb/codingagent/tools"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 type ModelCycleResult struct {
@@ -454,7 +454,7 @@ func (runtime *SessionRuntime) EnabledModels() []string {
 
 // RefreshModels mirrors upstream ModelRegistry.refresh() (model-registry.ts):
 // since f8746813 a picker refresh re-reads models.json before rebuilding the
-// provider snapshots, which pigo's Reload already combines.
+// provider snapshots, which orb's Reload already combines.
 func (runtime *SessionRuntime) RefreshModels() error {
 	if runtime == nil || runtime.modelRegistry == nil {
 		return nil
@@ -706,8 +706,8 @@ func authGuidanceDocPaths() (providersDoc, modelsDoc string) {
 	docsDir := filepath.Join(resolvePromptPackageDir(""), "docs")
 	providersDoc = filepath.Join(docsDir, "providers.md")
 	if _, err := os.Stat(providersDoc); err != nil && os.Getenv("PI_PACKAGE_DIR") == "" {
-		return "https://github.com/OrdalieTech/pigo/blob/main/docs/providers.md",
-			"https://github.com/OrdalieTech/pigo/blob/main/docs/models.md"
+		return "https://github.com/OrdalieTech/orb/blob/main/docs/providers.md",
+			"https://github.com/OrdalieTech/orb/blob/main/docs/models.md"
 	}
 	return providersDoc, filepath.Join(docsDir, "models.md")
 }

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 // Sources aggregates the generator inputs. ModelsDev is required. NvidiaNIM,
@@ -493,7 +493,7 @@ var nvidiaNIMUnsupportedModels = []string{
 	"microsoft/phi-4-mini-instruct", "minimaxai/minimax-m2.7", "mistralai/mistral-nemotron",
 	"nvidia/nemotron-mini-4b-instruct", "qwen/qwen3-next-80b-a3b-instruct",
 	"qwen/qwen3.5-397b-a17b", "sarvamai/sarvam-m", "upstage/solar-10.7b-instruct",
-	// pigo-only entry: not in the upstream denylist and currently absent from
+	// orb-only entry: not in the upstream denylist and currently absent from
 	// the live NIM listing; kept so a NIM rollout cannot resurrect it silently.
 	"qwen/qwen3.5-122b-a10b",
 }

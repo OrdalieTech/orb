@@ -8,7 +8,7 @@ import (
 )
 
 // Upstream preserves the header id verbatim on load ("header?.id ??
-// createSessionId()"), including an explicit empty string; pigo previously
+// createSessionId()"), including an explicit empty string; orb previously
 // regenerated a fresh UUID for "".
 func TestOpenPreservesEmptyHeaderID(t *testing.T) {
 	dir := t.TempDir()

@@ -37,7 +37,7 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	temp, err := os.CreateTemp(dir, ".pigo-sync-*")
+	temp, err := os.CreateTemp(dir, ".orb-sync-*")
 	if err != nil {
 		return err
 	}

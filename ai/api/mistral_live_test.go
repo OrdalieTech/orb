@@ -7,19 +7,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/internal/jsonschema"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonschema"
 )
 
 func TestMistralConversationsLiveToolCallRoundTrip(t *testing.T) {
-	if os.Getenv("PIGO_LIVE_TESTS") != "1" {
-		t.Skip("set PIGO_LIVE_TESTS=1 to run the Mistral live smoke test")
+	if os.Getenv("ORB_LIVE_TESTS") != "1" {
+		t.Skip("set ORB_LIVE_TESTS=1 to run the Mistral live smoke test")
 	}
 	apiKey := os.Getenv("MISTRAL_API_KEY")
 	if apiKey == "" {
-		t.Fatal("PIGO_LIVE_TESTS=1 requires MISTRAL_API_KEY")
+		t.Fatal("ORB_LIVE_TESTS=1 requires MISTRAL_API_KEY")
 	}
-	modelID := os.Getenv("PIGO_MISTRAL_MODEL")
+	modelID := os.Getenv("ORB_MISTRAL_MODEL")
 	if modelID == "" {
 		modelID = "mistral-small-latest"
 	}
@@ -33,7 +33,7 @@ func TestMistralConversationsLiveToolCallRoundTrip(t *testing.T) {
 		Parameters: jsonschema.Schema(`{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}`),
 	}}
 	messages := ai.MessageList{&ai.UserMessage{
-		Content: ai.NewUserText("Call the echo tool exactly once with text pigo-live, then wait for its result."), Timestamp: time.Now().UnixMilli(),
+		Content: ai.NewUserText("Call the echo tool exactly once with text orb-live, then wait for its result."), Timestamp: time.Now().UnixMilli(),
 	}}
 	maxTokens := float64(256)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -52,12 +52,12 @@ func TestMistralConversationsLiveToolCallRoundTrip(t *testing.T) {
 	if toolRequest.StopReason != ai.StopReasonToolUse || call == nil {
 		t.Fatalf("first response stop reason = %q, tool call = %#v: %s", toolRequest.StopReason, call, assistantError(toolRequest))
 	}
-	if call.Name != "echo" || call.Arguments["text"] != "pigo-live" {
-		t.Fatalf("tool call = %q %#v, want echo with pigo-live", call.Name, call.Arguments)
+	if call.Name != "echo" || call.Arguments["text"] != "orb-live" {
+		t.Fatalf("tool call = %q %#v, want echo with orb-live", call.Name, call.Arguments)
 	}
 	messages = append(messages, toolRequest, &ai.ToolResultMessage{
 		ToolCallID: call.ID, ToolName: call.Name,
-		Content: ai.ToolResultContent{&ai.TextContent{Text: "pigo-live"}}, Timestamp: time.Now().UnixMilli(),
+		Content: ai.ToolResultContent{&ai.TextContent{Text: "orb-live"}}, Timestamp: time.Now().UnixMilli(),
 	})
 	second, err := StreamMistralConversationsWithOptions(ctx, model, ai.Context{Messages: messages, Tools: &tools}, &MistralConversationsOptions{
 		StreamOptions: ai.StreamOptions{APIKey: &apiKey, MaxTokens: &maxTokens},

@@ -3,7 +3,7 @@ package providers
 import (
 	"context"
 
-	"github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth"
 )
 
 const (

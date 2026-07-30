@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	harness "github.com/OrdalieTech/pigo/agent/harness"
+	harness "github.com/OrdalieTech/orb/agent/harness"
 )
 
 func TestInMemorySessionRepoPreservesMapInsertionOrder(t *testing.T) {

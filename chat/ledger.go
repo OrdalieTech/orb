@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/OrdalieTech/pigo/ai"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/orb/ai"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
 )
 
 // turnCustomType is the session custom-entry type of turn ledger markers.
 // Markers are appended via AppendCustomEntry (never AppendCustomMessageEntry,
 // which would be injected into model context) and read from raw session
 // entries so compaction never hides them.
-const turnCustomType = "pigo.chat.turn"
+const turnCustomType = "orb.chat.turn"
 
 const (
 	phaseStarted   = "started"

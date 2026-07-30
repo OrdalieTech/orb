@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	aiauth "github.com/OrdalieTech/pigo/ai/auth"
+	aiauth "github.com/OrdalieTech/orb/ai/auth"
 )
 
 // Upstream parseStorageData treats empty content as an empty store

@@ -3,7 +3,7 @@
 .env
 .pi-agent/
 dist/
-/pigo
+/orb
 coverage.out
 
 # Transient per-agent git worktrees

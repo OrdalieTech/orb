@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OrdalieTech/pigo/chat"
+	"github.com/OrdalieTech/orb/chat"
 )
 
 const maxEventBody = 5 << 20

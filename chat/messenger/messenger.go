@@ -1,5 +1,5 @@
 // Package messenger implements the Facebook Messenger (Meta Messenger
-// Platform for Pages) adapter for the pigo chat gateway: webhook ingress
+// Platform for Pages) adapter for the orb chat gateway: webhook ingress
 // over the Graph "page" object (hub handshake + HMAC-signed
 // entry[].messaging[] events), final-message delivery via the Send API,
 // sender-action typing, and direct-URL attachment download.
@@ -25,7 +25,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/OrdalieTech/pigo/chat"
+	"github.com/OrdalieTech/orb/chat"
 )
 
 // GraphVersion is the pinned Graph API version used for every call.

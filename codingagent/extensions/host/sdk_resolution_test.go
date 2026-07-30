@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
 )
 
 func writeFixtureFile(t *testing.T, path, content string) {
@@ -94,7 +94,7 @@ func TestNodeLoaderResolvesTypeOnlyAndLegacySDKImports(t *testing.T) {
 	runtime := requireNamedRuntime(t, "node")
 	extensionDir := t.TempDir()
 	stubPiAI(t, filepath.Join(extensionDir, "node_modules", "@earendil-works", "pi-ai"))
-	writeFixtureFile(t, filepath.Join(extensionDir, "package.json"), `{"name":"pigo-sdk-fixture","version":"1.0.0","type":"module"}`)
+	writeFixtureFile(t, filepath.Join(extensionDir, "package.json"), `{"name":"orb-sdk-fixture","version":"1.0.0","type":"module"}`)
 	entry := filepath.Join(extensionDir, "extension.ts")
 	writeFixtureFile(t, entry, `import { ApiKeyCredential, complete, core } from "@earendil-works/pi-ai";
 
@@ -128,7 +128,7 @@ export default function (pi: any) {
 // through the caller's own context, so a copy the extension installed for
 // itself wins and resolves successfully — even when it is too old for the
 // import, which then fails on the missing export. Nothing throws during
-// resolution, so the PIGO_PI_SDK_ROOT fallback, reachable only from the catch
+// resolution, so the ORB_PI_SDK_ROOT fallback, reachable only from the catch
 // in resolve, never sees the specifier whatever that root holds. This is the
 // shape of the measured `unsupported_sdk_export isRetryableAssistantError`
 // regression, and it is unaffected by which copy the root names.
@@ -142,7 +142,7 @@ func TestNodeKeepsTheExtensionsOwnSDKCopyOverTheManagedRoot(t *testing.T) {
 	isolateSDKRoot(t, sdkRoot)
 
 	extensionDir := t.TempDir()
-	writeFixtureFile(t, filepath.Join(extensionDir, "package.json"), `{"name":"pigo-old-sdk-fixture","version":"1.0.0","type":"module"}`)
+	writeFixtureFile(t, filepath.Join(extensionDir, "package.json"), `{"name":"orb-old-sdk-fixture","version":"1.0.0","type":"module"}`)
 	stubPiAI(t, filepath.Join(extensionDir, "node_modules", "@earendil-works", "pi-ai"))
 	entry := filepath.Join(extensionDir, "extension.mjs")
 	writeFixtureFile(t, entry, `import { isRetryableAssistantError } from "@earendil-works/pi-ai";
@@ -157,15 +157,15 @@ export default function () {
 	}
 }
 
-// With no SDK in pigo's own npm root there is nothing to fall back to — pigo
+// With no SDK in orb's own npm root there is nothing to fall back to — orb
 // does not borrow the copy inside an installed pi — so the import has to name
 // what is missing and how to install it instead of failing with Node's bare
 // "Cannot find package".
 func TestNodeReportsMissingSDKWithInstallGuidance(t *testing.T) {
 	runtime := requireNamedRuntime(t, "node")
 	t.Setenv(piSDKRootEnv, "")
-	extensionDir := t.TempDir()
-	writeFixtureFile(t, filepath.Join(extensionDir, "package.json"), `{"name":"pigo-missing-sdk-fixture","version":"1.0.0","type":"module"}`)
+	extensionDir := isolatedTempDir(t)
+	writeFixtureFile(t, filepath.Join(extensionDir, "package.json"), `{"name":"orb-missing-sdk-fixture","version":"1.0.0","type":"module"}`)
 	entry := filepath.Join(extensionDir, "extension.mjs")
 	writeFixtureFile(t, entry, `import { complete } from "@earendil-works/pi-ai";
 
@@ -185,7 +185,7 @@ export default function (pi) {
 	if len(result.Errors) != 1 {
 		t.Fatalf("load errors = %#v", result.Errors)
 	}
-	for _, fragment := range []string{"@earendil-works/pi-ai", "pigo's own npm root", "npm i --prefix", piSDKRootEnv} {
+	for _, fragment := range []string{"@earendil-works/pi-ai", "orb's own npm root", "npm i --prefix", piSDKRootEnv} {
 		if !strings.Contains(result.Errors[0].Error, fragment) {
 			t.Fatalf("load error %q does not mention %q", result.Errors[0].Error, fragment)
 		}

@@ -1,5 +1,5 @@
-// Package plugins contains pigo's bundled, default-off first-party extensions.
-// They are pigo-original additions with no upstream mirror.
+// Package plugins contains orb's bundled, default-off first-party extensions.
+// They are orb-original additions with no upstream mirror.
 package plugins
 
 import (
@@ -15,9 +15,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
 )
 
 // Options supplies runtime seams used by bundled plugins. StreamFn keeps
@@ -510,7 +510,7 @@ func permissionsExtension(policy *Policy, settings *config.SettingsManager, pare
 		hidden := make(map[string]struct{})
 		record := func(ctx context.Context, decision Decision) {
 			policy.record(decision)
-			_ = api.AppendEntry(ctx, "pigo.permissions.decision", decision)
+			_ = api.AppendEntry(ctx, "orb.permissions.decision", decision)
 		}
 		applyMode := func(ctx context.Context, extensionContext extensions.Context) error {
 			mode, _, _, _ := policy.snapshot()

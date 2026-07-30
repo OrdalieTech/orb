@@ -31,7 +31,7 @@ func (reader *fragmentedReader) Read(target []byte) (int, error) {
 }
 
 func TestCodecReadsFragmentedLines(t *testing.T) {
-	encoded := []byte(`{"protocol":"pigo-extension-host","version":1,"kind":"event","method":"log","params":{"message":"ok"}}` + "\n")
+	encoded := []byte(`{"protocol":"orb-extension-host","version":1,"kind":"event","method":"log","params":{"message":"ok"}}` + "\n")
 	codec := newCodec(&fragmentedReader{data: encoded, step: 3}, io.Discard)
 	value, err := codec.read()
 	if err != nil {
@@ -46,11 +46,11 @@ func TestGenerationCorrelatesInterleavedResponses(t *testing.T) {
 	first := make(chan pendingResponse, 1)
 	second := make(chan pendingResponse, 1)
 	generation := &generation{
-		pending: map[string]chan pendingResponse{"pigo-1": first, "pigo-2": second},
+		pending: map[string]chan pendingResponse{"orb-1": first, "orb-2": second},
 		updates: make(map[string]func(json.RawMessage)),
 	}
-	generation.routeResponse(frame{ID: "pigo-2", Result: json.RawMessage(`{"order":2}`)})
-	generation.routeResponse(frame{ID: "pigo-1", Result: json.RawMessage(`{"order":1}`)})
+	generation.routeResponse(frame{ID: "orb-2", Result: json.RawMessage(`{"order":2}`)})
+	generation.routeResponse(frame{ID: "orb-1", Result: json.RawMessage(`{"order":1}`)})
 	if got := string((<-first).result); got != `{"order":1}` {
 		t.Fatalf("first response = %s", got)
 	}

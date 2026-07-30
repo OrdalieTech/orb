@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
 )
 
 const PromptSuffix = `

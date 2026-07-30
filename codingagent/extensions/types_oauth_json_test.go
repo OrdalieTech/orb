@@ -3,7 +3,7 @@ package extensions
 import (
 	"testing"
 
-	"github.com/OrdalieTech/pigo/internal/jsonwire"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 func TestOAuthCredentialsMarshalOrderAndEscaping(t *testing.T) {

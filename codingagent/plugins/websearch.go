@@ -21,10 +21,10 @@ import (
 	"golang.org/x/text/encoding/htmlindex"
 	"golang.org/x/text/transform"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	"github.com/OrdalieTech/pigo/internal/truncate"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
+	"github.com/OrdalieTech/orb/internal/truncate"
 )
 
 const (
@@ -267,7 +267,7 @@ func fetchContent(ctx context.Context, client *http.Client, rawURL string) (stri
 		if err != nil {
 			return "", err
 		}
-		request.Header.Set("User-Agent", "pigo/first-party-websearch")
+		request.Header.Set("User-Agent", "orb/first-party-websearch")
 		response, err := manual.Do(request)
 		if err != nil {
 			return "", fmt.Errorf("fetch_content: %w", err)

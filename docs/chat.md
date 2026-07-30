@@ -1,6 +1,6 @@
 # Chat gateway
 
-The `chat` package (D27) turns the pigo SDK into a multi-user messaging agent: a synchronous,
+The `chat` package (D27) turns the orb SDK into a multi-user messaging agent: a synchronous,
 at-least-once turn processor around `codingagent.AgentSession` with normalized platform messages,
 a `SessionProvider` ownership seam, and platform adapters in `chat/telegram`, `chat/whatsapp`,
 and — since wave 2 (D28) — `chat/slack`, `chat/teams`, `chat/discord`, `chat/messenger`, and
@@ -9,13 +9,13 @@ Dependency direction is strictly `chat → codingagent`; nothing in the SDK impo
 
 ## Quick start — local Telegram bot
 
-`pigo chat telegram` runs the complete local gateway: long-poll ingress, the durable local spool,
+`orb chat telegram` runs the complete local gateway: long-poll ingress, the durable local spool,
 and per-conversation sessions under `~/.pi/agent/chat/telegram` by default.
 
 ```bash
 TELEGRAM_BOT_TOKEN=<token from @BotFather> \
-PIGO_CHAT_ALLOWED_SENDERS=<your telegram user id> \
-pigo chat telegram
+ORB_CHAT_ALLOWED_SENDERS=<your telegram user id> \
+orb chat telegram
 ```
 
 The wiring, in full:
@@ -32,7 +32,7 @@ local, err := chat.NewLocal(processor, filepath.Join(dataDir, "spool.jsonl"))
 err = adapter.Poll(ctx, local.Publish)
 ```
 
-`PIGO_CHAT_ALLOWED_SENDERS` is required; this CLI path never exposes an allow-all bot.
+`ORB_CHAT_ALLOWED_SENDERS` is required; this CLI path never exposes an allow-all bot.
 `chat/examples/localbot` remains the embeddable example for custom authorization.
 
 ## Processor
@@ -120,7 +120,7 @@ survive tool rebuilds. `WithAgentDir` overrides the global agent config director
 ## Turn ledger and at-least-once semantics
 
 Delivery state lives in the session JSONL itself, as `type:"custom"` entries with custom type
-`pigo.chat.turn`, appended via `SessionManager.AppendCustomEntry` (never
+`orb.chat.turn`, appended via `SessionManager.AppendCustomEntry` (never
 `AppendCustomMessageEntry`, which would inject into model context). One marker per phase and
 event: `started` (before the user message enters the session), `preview` (with the platform
 preview message id), `settled` (outcome + assistant entry id), `delivered` (receipt). Recovery

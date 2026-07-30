@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pigo/chat"
-	"github.com/OrdalieTech/pigo/chat/internal/wsclient"
+	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/chat/internal/wsclient"
 )
 
 const (
@@ -265,7 +265,7 @@ func (a *Adapter) gatewayCycle(ctx context.Context, st *gatewayState, publish fu
 				OS      string `json:"os"`
 				Browser string `json:"browser"`
 				Device  string `json:"device"`
-			}{OS: runtime.GOOS, Browser: "pigo", Device: "pigo"},
+			}{OS: runtime.GOOS, Browser: "orb", Device: "orb"},
 		})
 	}
 	if err != nil {

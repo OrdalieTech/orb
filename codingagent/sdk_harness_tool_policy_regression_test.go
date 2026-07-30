@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/agent/harness"
-	"github.com/OrdalieTech/pigo/ai/providers/faux"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/orb/agent/harness"
+	"github.com/OrdalieTech/orb/ai/providers/faux"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
 )
 
 func TestCodingSessionResumeKeepsUpstreamDefaultTools(t *testing.T) {

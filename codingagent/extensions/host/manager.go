@@ -19,9 +19,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
 	"golang.org/x/term"
 )
 
@@ -87,7 +87,7 @@ type Options struct {
 	// resolves. Empty disables provisioning.
 	SDKVersion      string
 	Runtime         *Runtime
-	PigoExecutable  string
+	OrbExecutable   string
 	RequestTimeout  time.Duration
 	ShutdownTimeout time.Duration
 	MaxRestarts     int
@@ -930,7 +930,7 @@ func (manager *Manager) handleHostRequest(generation *generation, value frame) (
 			StateSnapshot    stateSnapshot    `json:"stateSnapshot"`
 		}{
 			ExtensionEntries: append([]extensionEntry(nil), manager.entries...),
-			Agent:            AgentInfo{Name: "pigo", Version: manager.options.Version, CWD: manager.options.CWD, AgentDir: manager.options.AgentDir},
+			Agent:            AgentInfo{Name: "orb", Version: manager.options.Version, CWD: manager.options.CWD, AgentDir: manager.options.AgentDir},
 			Capabilities:     []string{"tool_updates", "providers", "ui", "state_v1"},
 			StateSnapshot:    manager.stateHost.handshakeSnapshot(),
 		}, nil
@@ -1271,7 +1271,7 @@ func (generation *generation) request(
 		return nil, generation.failure()
 	}
 	generation.nextID++
-	id := fmt.Sprintf("pigo-%d", generation.nextID)
+	id := fmt.Sprintf("orb-%d", generation.nextID)
 	response := make(chan pendingResponse, 1)
 	generation.pending[id] = response
 	if update != nil {

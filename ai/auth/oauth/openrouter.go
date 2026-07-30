@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/pigo/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth"
 )
 
 // OpenRouter ports upstream openRouterOAuth (ai/src/auth/oauth/openrouter.ts):

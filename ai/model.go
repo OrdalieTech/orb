@@ -7,8 +7,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/OrdalieTech/pigo/internal/jsonschema"
-	"github.com/OrdalieTech/pigo/internal/jsonwire"
+	"github.com/OrdalieTech/orb/internal/jsonschema"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 type CacheRetention string

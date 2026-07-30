@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 func (provider *Provider) streamWithDeltas(

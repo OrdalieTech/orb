@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 func TestToolCallMatchesJSONStringifyNumberSemantics(t *testing.T) {

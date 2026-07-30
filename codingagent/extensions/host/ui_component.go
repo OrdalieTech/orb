@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 type wireCustomOptions struct {

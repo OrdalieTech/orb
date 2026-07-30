@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai/providers/faux"
-	"github.com/OrdalieTech/pigo/codingagent"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai/providers/faux"
+	"github.com/OrdalieTech/orb/codingagent"
 )
 
 func main() {

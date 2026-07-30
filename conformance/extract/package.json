@@ -1,5 +1,5 @@
 {
-  "name": "pigo-conformance-extract",
+  "name": "orb-conformance-extract",
   "private": true,
   "type": "module",
   "scripts": {

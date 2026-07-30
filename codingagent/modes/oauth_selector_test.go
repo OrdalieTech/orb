@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	aiauth "github.com/OrdalieTech/pigo/ai/auth"
-	"github.com/OrdalieTech/pigo/codingagent"
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/codingagent"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 func renderPlain(t *testing.T, component tui.Component, width int) string {
@@ -764,12 +764,12 @@ func TestLOGM1OAuthWaitingDialogPreservesURLAndCancels(t *testing.T) {
 // interactive-mode.ts:5086-5107).
 func TestLOGm4AmbientAuthDialogTitleMessageAndClose(t *testing.T) {
 	closedCount := 0
-	dialog := newAmbientAuthDialogComponent("Amazon Bedrock setup", "Bedrock credential chain is configured outside pigo.", func() { closedCount++ })
+	dialog := newAmbientAuthDialogComponent("Amazon Bedrock setup", "Bedrock credential chain is configured outside orb.", func() { closedCount++ })
 	rendered := selectorANSI.ReplaceAllString(strings.Join(dialog.Render(100), "\n"), "")
 	if !strings.Contains(rendered, "Amazon Bedrock setup") {
 		t.Fatalf("dialog title missing:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "Bedrock credential chain is configured outside pigo.") {
+	if !strings.Contains(rendered, "Bedrock credential chain is configured outside orb.") {
 		t.Fatalf("dialog message missing:\n%s", rendered)
 	}
 	if !strings.Contains(rendered, "to close") {

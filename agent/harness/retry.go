@@ -3,7 +3,7 @@ package harness
 import (
 	"context"
 
-	"github.com/OrdalieTech/pigo/ai"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 // CompleteSimpleWithRetries applies the shared assistant retry policy to one

@@ -1,6 +1,6 @@
 package ai
 
-import "github.com/OrdalieTech/pigo/internal/partialjson"
+import "github.com/OrdalieTech/orb/internal/partialjson"
 
 // ParseStreamingJSON parses potentially incomplete JSON captured while a tool
 // call streams. It never fails: complete input parses strictly (retrying with

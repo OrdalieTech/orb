@@ -18,20 +18,20 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/agent/harness"
-	"github.com/OrdalieTech/pigo/ai"
-	aiauth "github.com/OrdalieTech/pigo/ai/auth"
-	"github.com/OrdalieTech/pigo/codingagent"
-	"github.com/OrdalieTech/pigo/codingagent/clipboard"
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
-	"github.com/OrdalieTech/pigo/codingagent/tools"
-	"github.com/OrdalieTech/pigo/internal/localecompare"
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/harness"
+	"github.com/OrdalieTech/orb/ai"
+	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/codingagent"
+	"github.com/OrdalieTech/orb/codingagent/clipboard"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/codingagent/tools"
+	"github.com/OrdalieTech/orb/internal/localecompare"
+	"github.com/OrdalieTech/orb/tui"
 
-	theme "github.com/OrdalieTech/pigo/codingagent/modes/theme"
+	theme "github.com/OrdalieTech/orb/codingagent/modes/theme"
 )
 
 // InteractiveModeOptions configures the interactive TUI mode.
@@ -625,7 +625,7 @@ func (mode *InteractiveMode) addDefaultHeader() {
 		return
 	}
 	if mode.options.SessionHeader != nil {
-		mode.header.AddChild(tui.NewText(theme.FG("muted", fmt.Sprintf("pi  %s", mode.options.SessionHeader.CWD)), 1, 0, nil))
+		mode.header.AddChild(tui.NewText(theme.FG("muted", fmt.Sprintf("Orb  %s", mode.options.SessionHeader.CWD)), 1, 0, nil))
 	}
 }
 
@@ -945,7 +945,7 @@ func (mode *InteractiveMode) setupAutocomplete() {
 	}
 	commands = append(commands, skillCommands...)
 	// Prefer the managed fd: a bare PATH lookup left @file completion silently
-	// inert on machines without a system fd, which pigo otherwise downloads.
+	// inert on machines without a system fd, which orb otherwise downloads.
 	fdPath := tools.ManagedFDPath()
 	var provider tui.AutocompleteProvider = tui.NewCombinedAutocompleteProvider(commands, mode.cwd, fdPath)
 	if mode.interactiveUI != nil {
@@ -3486,9 +3486,9 @@ func (mode *InteractiveMode) updateTerminalTitle() {
 			name = *sessionName
 		}
 	}
-	title := "pigo - " + filepath.Base(cwd)
+	title := "orb - " + filepath.Base(cwd)
 	if name != "" {
-		title = "pigo - " + name + " - " + filepath.Base(cwd)
+		title = "orb - " + name + " - " + filepath.Base(cwd)
 	}
 	mode.ui.Terminal().SetTitle(title)
 }
@@ -4279,7 +4279,7 @@ func formatResumeCommand(manager *sessionstore.SessionManager, outputTTY bool) s
 	if _, err := os.Stat(sessionFile); err != nil {
 		return ""
 	}
-	arguments := []string{"pigo"}
+	arguments := []string{"orb"}
 	if !manager.UsesDefaultSessionDir() {
 		arguments = append(arguments, "--session-dir", quoteResumeArgument(manager.GetSessionDir()))
 	}

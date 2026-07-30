@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/conformance/runner"
-	"github.com/OrdalieTech/pigo/internal/partialjson"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/conformance/runner"
+	"github.com/OrdalieTech/orb/internal/partialjson"
 )
 
 func TestF1Serialization(t *testing.T) {

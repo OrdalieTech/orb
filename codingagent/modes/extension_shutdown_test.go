@@ -3,7 +3,7 @@ package modes
 import (
 	"testing"
 
-	"github.com/OrdalieTech/pigo/tui"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 func TestExtensionShutdownQuitsInteractiveWhenIdle(t *testing.T) {

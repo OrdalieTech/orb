@@ -63,7 +63,7 @@ func newTestAdapter(t *testing.T, f *fakeAPI, mutate ...func(*Options)) *Adapter
 	opts := Options{
 		Token:              testToken,
 		BaseURL:            f.server.URL,
-		BotUsername:        "pigobot",
+		BotUsername:        "orbbot",
 		PollTimeout:        time.Second,
 		PreviewMinInterval: time.Nanosecond,
 		TypingInterval:     time.Hour,
@@ -150,7 +150,7 @@ func (f *fakeAPI) handle(w http.ResponseWriter, r *http.Request) {
 
 	switch method {
 	case "getMe":
-		writeResult(w, apiUser{ID: 42, IsBot: true, Username: "pigobot", FirstName: "pigo"})
+		writeResult(w, apiUser{ID: 42, IsBot: true, Username: "orbbot", FirstName: "orb"})
 	case "deleteWebhook", "sendChatAction":
 		writeResult(w, true)
 	case "sendMessage", "editMessageText":

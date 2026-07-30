@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	harness "github.com/OrdalieTech/pigo/agent/harness"
+	harness "github.com/OrdalieTech/orb/agent/harness"
 )
 
 func TestSessionStorageLeafEdgeCases(t *testing.T) {

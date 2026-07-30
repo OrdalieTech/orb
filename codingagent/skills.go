@@ -10,8 +10,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/OrdalieTech/pigo/internal/ignorerules"
-	"github.com/OrdalieTech/pigo/internal/jstrim"
+	"github.com/OrdalieTech/orb/internal/ignorerules"
+	"github.com/OrdalieTech/orb/internal/jstrim"
 )
 
 const (

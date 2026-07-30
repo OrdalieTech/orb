@@ -11,7 +11,7 @@ import { writeProviderModelData } from "./upstream-model-data.ts";
 const upstreamRoot = process.cwd();
 const binaryArgument = process.argv[2];
 if (!binaryArgument) {
-  throw new Error("pigo binary path is required");
+  throw new Error("orb binary path is required");
 }
 const binary = path.resolve(upstreamRoot, binaryArgument);
 const adapterPath = path.join(upstreamRoot, "packages/coding-agent/dist/cli.js");
@@ -67,13 +67,13 @@ import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const binary = process.env.PIGO_RPC_BINARY;
+const binary = process.env.ORB_RPC_BINARY;
 if (!binary) {
-  console.error("PIGO_RPC_BINARY is required");
+  console.error("ORB_RPC_BINARY is required");
   process.exit(1);
 }
 const agentDir = process.env.PI_CODING_AGENT_DIR;
-const mockBaseURL = process.env.PIGO_RPC_ANTHROPIC_BASE_URL;
+const mockBaseURL = process.env.ORB_RPC_ANTHROPIC_BASE_URL;
 if (agentDir && mockBaseURL) {
   mkdirSync(agentDir, { recursive: true });
   writeFileSync(join(agentDir, "models.json"), JSON.stringify({ providers: { anthropic: { baseUrl: mockBaseURL } } }));
@@ -116,17 +116,17 @@ try {
       },
     );
     const rpcClientModule = await import(
-      `${pathToFileURL(path.join(upstreamRoot, "packages/coding-agent/src/modes/rpc/rpc-client.ts")).href}?pigo-adapter`
+      `${pathToFileURL(path.join(upstreamRoot, "packages/coding-agent/src/modes/rpc/rpc-client.ts")).href}?orb-adapter`
     );
-    const smokeDir = await mkdtemp(path.join(tmpdir(), "pigo-rpc-smoke-"));
+    const smokeDir = await mkdtemp(path.join(tmpdir(), "orb-rpc-smoke-"));
     const smokeClient = new rpcClientModule.RpcClient({
       cliPath: adapterPath,
       cwd: path.join(upstreamRoot, "packages/coding-agent"),
       env: {
-        PIGO_RPC_BINARY: binary,
+        ORB_RPC_BINARY: binary,
         PI_CODING_AGENT_DIR: smokeDir,
-        PIGO_RPC_ANTHROPIC_BASE_URL: mockBaseURL,
-        ANTHROPIC_API_KEY: "pigo-rpc-mock",
+        ORB_RPC_ANTHROPIC_BASE_URL: mockBaseURL,
+        ANTHROPIC_API_KEY: "orb-rpc-mock",
       },
       provider: "anthropic",
       model: "claude-sonnet-4-5",
@@ -141,7 +141,7 @@ try {
         state.isStreaming !== false ||
         !state.sessionId
       ) {
-        throw new Error(`unexpected pigo adapter state: ${JSON.stringify(state)}`);
+        throw new Error(`unexpected orb adapter state: ${JSON.stringify(state)}`);
       }
     } finally {
       await smokeClient.stop();
@@ -152,9 +152,9 @@ try {
         cwd: packageRoot,
         env: {
           ...process.env,
-          PIGO_RPC_BINARY: binary,
-          PIGO_RPC_ANTHROPIC_BASE_URL: mockBaseURL,
-          ANTHROPIC_API_KEY: "pigo-rpc-mock",
+          ORB_RPC_BINARY: binary,
+          ORB_RPC_ANTHROPIC_BASE_URL: mockBaseURL,
+          ANTHROPIC_API_KEY: "orb-rpc-mock",
           NO_COLOR: "1",
         },
         stdio: "inherit",

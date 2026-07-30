@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/chat"
-	"github.com/OrdalieTech/pigo/chat/internal/wsclient"
+	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/chat/internal/wsclient"
 )
 
 // --- fake gateway plumbing (scripted server over a hijacked connection) ---
@@ -248,8 +248,8 @@ func requireIdentify(t *testing.T, payload clientPayload) {
 	if d.Intents != 37377 {
 		t.Errorf("identify intents = %d, want 37377", d.Intents)
 	}
-	if d.Properties.Browser != "pigo" || d.Properties.Device != "pigo" || d.Properties.OS == "" {
-		t.Errorf("identify properties = %+v, want os set and browser/device pigo", d.Properties)
+	if d.Properties.Browser != "orb" || d.Properties.Device != "orb" || d.Properties.OS == "" {
+		t.Errorf("identify properties = %+v, want os set and browser/device orb", d.Properties)
 	}
 }
 

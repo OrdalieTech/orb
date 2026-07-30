@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/config"
 )
 
 func newTestPackageManager(t *testing.T) (*PackageManager, string, string, *config.SettingsManager) {

@@ -101,7 +101,7 @@ func TestNodeRuntimeArgs(t *testing.T) {
 	}
 }
 
-// PIGO_NODE=none is the way to keep pigo from running JavaScript extensions at
+// ORB_NODE=none is the way to keep orb from running JavaScript extensions at
 // all, and it must read as "no runtime" rather than as a broken override.
 func TestDiscoverRuntimeHonoursDisabledOverride(t *testing.T) {
 	directory := isolateRuntimeSearch(t)
@@ -273,9 +273,9 @@ func TestDiscoverRuntimeSkipsUnusableCandidates(t *testing.T) {
 func TestPrepareHostEnvironmentExposesRuntimeDirectory(t *testing.T) {
 	agentDir := t.TempDir()
 	runtimeDir := t.TempDir()
-	binary := filepath.Join(t.TempDir(), "pigo")
+	binary := filepath.Join(t.TempDir(), "orb")
 	writeExecutable(t, binary, "#!/bin/sh\n")
-	environment, err := prepareHostEnvironment(Options{AgentDir: agentDir, PigoExecutable: binary}, []string{"PATH=/usr/bin"}, filepath.Join(runtimeDir, "node"))
+	environment, err := prepareHostEnvironment(Options{AgentDir: agentDir, OrbExecutable: binary}, []string{"PATH=/usr/bin"}, filepath.Join(runtimeDir, "node"))
 	if err != nil {
 		t.Fatal(err)
 	}

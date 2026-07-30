@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -36,7 +36,7 @@ func TestManagerRegistersExecutesAndStreamsExampleTool(t *testing.T) {
 		serverSessionsMu.Lock()
 		serverSessions = append(serverSessions, serverSession)
 		serverSessionsMu.Unlock()
-		client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "pigo-test", Version: "0"}, options)
+		client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "orb-test", Version: "0"}, options)
 		return client.Connect(ctx, tracker.wrapTransport(clientTransport), nil)
 	}
 	runner, active := registerManager(t, manager)
@@ -116,7 +116,7 @@ func TestManagerDeliversWirePriorProgressBeforeAgentSettlesTool(t *testing.T) {
 		if _, err := server.Connect(ctx, serverTransport, nil); err != nil {
 			return nil, err
 		}
-		client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "pigo-test", Version: "0"}, &copied)
+		client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "orb-test", Version: "0"}, &copied)
 		return client.Connect(ctx, tracker.wrapTransport(clientTransport), nil)
 	}
 	runner, active := registerManager(t, manager)
@@ -363,7 +363,7 @@ func TestManagerDoesNotCrossWireLateProgressAfterSequentialIDReuse(t *testing.T)
 		if _, err := server.Connect(ctx, serverTransport, nil); err != nil {
 			return nil, err
 		}
-		client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "pigo-test", Version: "0"}, &copied)
+		client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "orb-test", Version: "0"}, &copied)
 		return client.Connect(ctx, tracker.wrapTransport(clientTransport), nil)
 	}
 	runner, active := registerManager(t, manager)
@@ -928,11 +928,11 @@ func TestManagerMalformedSSEDoesNotLeavePendingProgress(t *testing.T) {
 }
 
 func TestManagerUsesStdioTransport(t *testing.T) {
-	if os.Getenv("PIGO_MCP_HELPER") == "1" {
+	if os.Getenv("ORB_MCP_HELPER") == "1" {
 		return
 	}
 	manager := NewManager(t.TempDir(), []ServerConfig{{
-		Name: "stdio", Command: os.Args[0], Args: []string{"-test.run=^TestMCPStdioHelper$"}, Env: map[string]string{"PIGO_MCP_HELPER": "1"},
+		Name: "stdio", Command: os.Args[0], Args: []string{"-test.run=^TestMCPStdioHelper$"}, Env: map[string]string{"ORB_MCP_HELPER": "1"},
 	}})
 	runner, active := registerManager(t, manager)
 	defer closeManager(t, manager)
@@ -948,7 +948,7 @@ func TestManagerUsesStdioTransport(t *testing.T) {
 }
 
 func TestMCPStdioHelper(t *testing.T) {
-	if os.Getenv("PIGO_MCP_HELPER") != "1" {
+	if os.Getenv("ORB_MCP_HELPER") != "1" {
 		return
 	}
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "stdio-helper", Version: "1"}, nil)
@@ -1075,7 +1075,7 @@ func inMemoryConnector(server *mcpsdk.Server) connectFunc {
 		if _, err := server.Connect(ctx, serverTransport, nil); err != nil {
 			return nil, err
 		}
-		return mcpsdk.NewClient(&mcpsdk.Implementation{Name: "pigo-test", Version: "0"}, options).Connect(ctx, tracker.wrapTransport(clientTransport), nil)
+		return mcpsdk.NewClient(&mcpsdk.Implementation{Name: "orb-test", Version: "0"}, options).Connect(ctx, tracker.wrapTransport(clientTransport), nil)
 	}
 }
 
@@ -1091,7 +1091,7 @@ func gatedStandaloneConnector(endpoint string, release <-chan struct{}, handled 
 		base := standaloneReadGate{base: http.DefaultTransport, release: release}
 		httpClient := &http.Client{Transport: progressRoundTripper{base: base, manager: tracker.manager}}
 		transport := &mcpsdk.StreamableClientTransport{Endpoint: endpoint, HTTPClient: httpClient}
-		client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "pigo-test", Version: "0"}, &copied)
+		client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "orb-test", Version: "0"}, &copied)
 		return client.Connect(ctx, transport, nil)
 	}
 }

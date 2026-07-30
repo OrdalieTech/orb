@@ -8,9 +8,9 @@ Upstream extensions run in Sobek (pure-Go JS engine); these shims replace Node.j
 
 ## Loading and packages
 
-Load a file or package directory with `pigo --extension PATH`. pigo also discovers `.ts`/`.js`
+Load a file or package directory with `orb --extension PATH`. orb also discovers `.ts`/`.js`
 files and package `index.ts`/`index.js` entries under the global agent `extensions/` directory and,
-after trust approval, `.pi/extensions/`. Settings and `pigo install` may resolve additional local,
+after trust approval, `.pi/extensions/`. Settings and `orb install` may resolve additional local,
 `npm:`, or `git:` package entries; a package's `package.json` may list entries in `pi.extensions`.
 
 Embedded esbuild bundles TypeScript, local imports, and pure-JS dependencies from `node_modules`.

@@ -8,12 +8,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/codingagent"
-	"github.com/OrdalieTech/pigo/codingagent/config"
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
-	sessionstore "github.com/OrdalieTech/pigo/codingagent/session"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/codingagent"
+	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
+	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
 )
 
 const (
@@ -241,7 +241,7 @@ func runChild(ctx context.Context, parent extensions.Context, injected agent.Str
 	if model == nil {
 		return "", fmt.Errorf("subagent: parent has no model")
 	}
-	settingsDir, err := os.MkdirTemp("", "pigo-subagent-")
+	settingsDir, err := os.MkdirTemp("", "orb-subagent-")
 	if err != nil {
 		return "", err
 	}

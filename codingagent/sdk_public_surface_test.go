@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/OrdalieTech/pigo/agent"
-	"github.com/OrdalieTech/pigo/ai"
-	"github.com/OrdalieTech/pigo/codingagent"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/codingagent"
 )
 
 func TestSDKPublicSurfaceMatchesUpstreamSessionControls(t *testing.T) {

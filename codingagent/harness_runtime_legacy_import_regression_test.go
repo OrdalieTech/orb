@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/pigo/codingagent/extensions"
+	"github.com/OrdalieTech/orb/codingagent/extensions"
 )
 
 func TestRepoBoundHarnessRuntimeMigratesLegacyResumeAndImport(t *testing.T) {
