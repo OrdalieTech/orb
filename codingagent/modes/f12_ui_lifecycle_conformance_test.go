@@ -717,12 +717,14 @@ func TestF12LoadedContextMatchesUpstream(t *testing.T) {
 		session: sessionRuntime, ui: tui.NewTUI(newFakeTerminal(80, 24)),
 		loadedResources: &tui.Container{}, cwd: cwd,
 	}
+	// Keep the normalized /fixture paths at upstream's 80-column width.
+	renderWidth := 80 + max(0, len(filepath.ToSlash(root))-len("/fixture"))
 	renderListing := func(quiet, verbose, expanded bool) []string {
 		sessionRuntime.SetQuietStartup(quiet)
 		mode.options.Verbose = verbose
 		mode.toolsExpanded = expanded
 		mode.showLoadedResources()
-		return f12UILifecyclePlainLines(mode.loadedResources.Render(80), root)
+		return f12UILifecyclePlainLines(mode.loadedResources.Render(renderWidth), root)
 	}
 
 	actual := struct {
