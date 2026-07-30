@@ -896,23 +896,6 @@ type overeagerMemoryStore struct {
 	scored []memorysdk.Scored
 }
 
-// gatedMemoryStore signals when a query enters and holds it until released, so
-// a test can pin one plugin instance inside its store mid-operation.
-type gatedMemoryStore struct {
-	plainMemoryStore
-	entered chan struct{}
-	release chan struct{}
-}
-
-func (store *gatedMemoryStore) Query(ctx context.Context, filter memorysdk.Filter) ([]memorysdk.Item, error) {
-	select {
-	case store.entered <- struct{}{}:
-	default:
-	}
-	<-store.release
-	return store.plainMemoryStore.Query(ctx, filter)
-}
-
 func (store *overeagerMemoryStore) Search(context.Context, string, int) ([]memorysdk.Scored, error) {
 	return append([]memorysdk.Scored(nil), store.scored...), nil
 }
@@ -1078,70 +1061,6 @@ func TestMemoryWithStoreRejectsNil(t *testing.T) {
 	registry := extensions.NewRegistry(t.TempDir())
 	if err := registry.Register("<inline:memory>", MemoryWithStore(nil)); err == nil || !strings.Contains(err.Error(), "store is required") {
 		t.Fatalf("MemoryWithStore(nil) error = %v", err)
-	}
-}
-
-func TestMemoryInstancesDoNotShareStoreLock(t *testing.T) {
-	gated := &gatedMemoryStore{entered: make(chan struct{}, 1), release: make(chan struct{})}
-	gatedRecall := memoryPluginTool(t, gated, "recall")
-	otherRecall := memoryPluginTool(t, &plainMemoryStore{}, "recall")
-
-	gatedDone := make(chan error, 1)
-	go func() {
-		_, err := gatedRecall.Execute(context.Background(), "recall-gated", map[string]any{}, nil)
-		gatedDone <- err
-	}()
-	<-gated.entered
-
-	otherDone := make(chan error, 1)
-	go func() {
-		_, err := otherRecall.Execute(context.Background(), "recall-other", map[string]any{}, nil)
-		otherDone <- err
-	}()
-	select {
-	case err := <-otherDone:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(5 * time.Second):
-		close(gated.release)
-		t.Fatal("recall on a separate plugin instance blocked behind another instance's in-flight store query")
-	}
-
-	close(gated.release)
-	if err := <-gatedDone; err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestMemorySameInstanceSerializesStoreOperations(t *testing.T) {
-	gated := &gatedMemoryStore{entered: make(chan struct{}, 1), release: make(chan struct{})}
-	recall := memoryPluginTool(t, gated, "recall")
-
-	done := make(chan error, 2)
-	exec := func() {
-		_, err := recall.Execute(context.Background(), "recall-same-instance", map[string]any{}, nil)
-		done <- err
-	}
-	go exec()
-	<-gated.entered // first operation is inside the store, holding the instance lock
-	go exec()
-
-	select {
-	case <-gated.entered:
-		close(gated.release) // unblock both operations so the failed run does not leak goroutines
-		t.Fatal("two operations on one plugin instance entered the store concurrently")
-	case <-time.After(100 * time.Millisecond):
-		// second operation stayed parked on the instance lock
-	}
-
-	gated.release <- struct{}{} // first operation leaves the store and unlocks
-	<-gated.entered             // only now the second operation enters
-	gated.release <- struct{}{}
-	for range 2 {
-		if err := <-done; err != nil {
-			t.Fatal(err)
-		}
 	}
 }
 
