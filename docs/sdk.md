@@ -1,6 +1,6 @@
 # Go SDK
 
-The `codingagent` package provides the public embedding API for orb.
+The `agent` and `codingagent` packages provide Orb's public embedding APIs.
 
 ## Quick start
 
@@ -279,23 +279,42 @@ inline-extension path and keeps extension lifecycle coupled to resource reloads.
 
 ### MemoryStore
 
-`memory.Store` from `github.com/OrdalieTech/orb/memory` is the durable seam;
-`memory.NewFileStore(dir)` provides the append-only JSONL default. The bundled plugin is
-disabled by default. Local users enable `"plugins":{"memory":true}`; embedders register
-`plugins.MemoryWithStore(store)`, which rejects a nil store and otherwise requires no
-file-backed implementation or `AgentSessionOptions` field. Each plugin instance
-serializes its own Store calls, but concurrent instances sharing one Store call it
-concurrently, so a custom Store shared across instances must support concurrent calls.
+`memory.Store` from `github.com/OrdalieTech/orb/memory` is the tenant-scoped durable seam.
+`memory.NewFileStore(dir)` is the append-only JSONL default for one local profile. A plain
+`agent.Agent` attaches the shared behavior directly:
+
+```go
+import (
+    "github.com/OrdalieTech/orb/agent"
+    "github.com/OrdalieTech/orb/memory"
+    agentmemory "github.com/OrdalieTech/orb/memory/agent"
+)
+
+store, _ := memory.NewFileStore(dir)
+runtime := agent.NewAgent(stream, agent.WithInitialState(state))
+if err := agentmemory.Attach(ctx, runtime, store); err != nil { panic(err) }
+```
+
+The bundled coding-agent plugin remains disabled by default. Local users enable
+`"plugins":{"memory":true}`; `codingagent` embedders register
+`plugins.MemoryWithStore(store)`. Both paths use the same `memory/agent` runtime.
 
 Enablement is the only mode. At session start the plugin freezes a bounded `USER PROFILE`
 (1,375 Unicode characters) and `MEMORY` (2,200) into the system prompt. `remember` adds a
 declarative fact, `recall` searches all items, `replace` consolidates one uniquely matched
 entry, and `forget` removes one. Capacity errors expose the bounded current section so the
-model can replace or remove entries. Replacement appends before deleting to avoid data loss;
-a failed delete can leave both copies because `memory.Store` has no transaction. All behavior
-uses the Store's bounded 100-item window. The plugin reserves and hides the tags
+model can replace or remove entries. All behavior uses the Store's bounded 100-item window.
+The runtime reserves and hides the tags
 `orb:memory:user` and `orb:memory:memory`; existing untagged items remain `MEMORY`, while
 items tagged `user` remain in `USER PROFILE`.
+
+Service backends should pass one tenant-bound Store handle per user; the interface has no tenant
+field and sharing an unscoped Store leaks memories by construction. Stores must accept concurrent
+calls. Implement `memory.TransactionalStore` when several sessions or processes can mutate one
+tenant concurrently, so remember/replace/forget run as one transaction. Without that optional
+seam, one runtime remains coherent but separate runtimes can interleave compound mutations.
+`FileStore` implements transactions across processes, but its reads scan the append-only log, so
+use an indexed database Store rather than `FileStore` for service-scale history.
 
 ## Replaceable session runtime
 
