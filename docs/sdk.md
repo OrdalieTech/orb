@@ -283,7 +283,9 @@ inline-extension path and keeps extension lifecycle coupled to resource reloads.
 `memory.NewFileStore(dir)` provides the append-only JSONL default. The bundled plugin is
 disabled by default. Local users enable `"plugins":{"memory":true}`; embedders register
 `plugins.MemoryWithStore(store)`, which rejects a nil store and otherwise requires no
-file-backed implementation or `AgentSessionOptions` field.
+file-backed implementation or `AgentSessionOptions` field. Each plugin instance
+serializes its own Store calls, but concurrent instances sharing one Store call it
+concurrently, so a custom Store shared across instances must support concurrent calls.
 
 Enablement is the only mode. At session start the plugin freezes a bounded `USER PROFILE`
 (1,375 Unicode characters) and `MEMORY` (2,200) into the system prompt. `remember` adds a
