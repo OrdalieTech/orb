@@ -6,6 +6,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.4.10] - 2026-07-30
+
 ### Changed
 
 - The project’s public identity is now **Orb**: repository and module path `github.com/OrdalieTech/orb`, `orb` executable and release artifacts, `ORB_*` environment variables, and `orb.*` private namespaces. Upstream compatibility names such as `.pi`, `PI_*`, the JavaScript `pi` API, and session/RPC wire formats remain unchanged.
