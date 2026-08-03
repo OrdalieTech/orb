@@ -86,5 +86,9 @@ jobs:
           args: release --clean --release-notes /tmp/notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set published release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --notes-file /tmp/notes.md
       - name: Verify published source archive is deterministic
         run: sha256sum -c /tmp/orb-source.sha256
