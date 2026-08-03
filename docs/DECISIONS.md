@@ -118,6 +118,7 @@ Orb is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinne
 
 | Divergence | Kind | Rationale |
 |---|---|---|
+| Malformed and colliding provider tool-call recovery | reliability adaptation | owner-directed Hermes-inspired hardening: when a provider declares tool use without emitting a call, orb retries at most three times with non-persisted recovery context; duplicate call pairing IDs are deterministically suffixed before execution so every result remains unambiguous. Canonical pi session and event JSON shapes stay unchanged |
 | Bundled MCP extension | addition | owner requirement; kept out of core |
 | `packages/server` (formerly `packages/orchestrator`) | removed | experimental upstream side product; the v0.81.0 rename does not change the D2 product boundary |
 | Telemetry/analytics (`enableInstallTelemetry`, `enableAnalytics`, `trackingId`) | removed | owner decision; unknown settings keys tolerated on parse, nothing sent, no plumbing |

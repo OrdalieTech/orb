@@ -6,6 +6,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Fixed
+
+- Provider turns that declare tool use without emitting a call now receive up to three bounded internal retries without persisting the recovery scaffold, and duplicate tool-call IDs are made deterministic before execution so results remain unambiguous.
+
 ## [0.4.10] - 2026-07-30
 
 ### Changed

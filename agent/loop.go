@@ -20,6 +20,11 @@ var errNoModel = errors.New("agent: loop requires a model")
 // assistant message. Result order is unaffected.
 const maxParallelToolCalls = 16
 
+const (
+	maxDroppedToolCallRetries = 3
+	droppedToolCallNudge      = "Your previous turn indicated a tool call but none was included. Do not narrate a plan or restate intent; issue the actual tool call now to continue the task."
+)
+
 // RunLoop starts a loop with prompt messages and returns only messages created
 // by this invocation. The caller-owned context is copied before it is changed.
 func RunLoop(
@@ -110,6 +115,8 @@ func runLoop(
 	streamFn StreamFn,
 ) error {
 	firstTurn := true
+	droppedToolCallRetries := 0
+	recoveryScaffoldStart := -1
 	pendingMessages, err := queuedMessages(ctx, config.GetSteeringMessages)
 	if err != nil {
 		return err
@@ -136,10 +143,35 @@ func runLoop(
 				currentContext.Messages = append(currentContext.Messages, message)
 				*newMessages = append(*newMessages, message)
 			}
-			message, err := streamAssistantResponse(ctx, currentContext, config, emitter, streamFn)
+			mayRecoverDroppedToolCall := droppedToolCallRetries < maxDroppedToolCallRetries
+			message, err := streamAssistantResponse(ctx, currentContext, config, emitter, streamFn, mayRecoverDroppedToolCall)
 			if err != nil {
 				return err
 			}
+			toolCalls := assistantToolCalls(message)
+			if mayRecoverDroppedToolCall && isDroppedToolCallResponse(message, toolCalls) {
+				if recoveryScaffoldStart < 0 {
+					recoveryScaffoldStart = len(currentContext.Messages) - 1
+				}
+				currentContext.Messages = append(currentContext.Messages, &ai.UserMessage{
+					Content:   ai.NewUserText(droppedToolCallNudge),
+					Timestamp: loopNow(config),
+				})
+				droppedToolCallRetries++
+				hasMoreToolCalls = true
+				pendingMessages = nil
+				if err := emitter.emit(withEphemeralAgentEvent(ctx), TurnEndEvent{
+					Message: message, ToolResults: []*ai.ToolResultMessage{},
+				}); err != nil {
+					return err
+				}
+				continue
+			}
+			if recoveryScaffoldStart >= 0 {
+				currentContext.Messages = append(currentContext.Messages[:recoveryScaffoldStart], message)
+				recoveryScaffoldStart = -1
+			}
+			droppedToolCallRetries = 0
 			*newMessages = append(*newMessages, message)
 
 			if message.StopReason == ai.StopReasonError || message.StopReason == ai.StopReasonAborted {
@@ -149,7 +181,6 @@ func runLoop(
 				return emitter.emit(ctx, AgentEndEvent{Messages: *newMessages})
 			}
 
-			toolCalls := assistantToolCalls(message)
 			toolResults := []*ai.ToolResultMessage{}
 			hasMoreToolCalls = false
 			if len(toolCalls) > 0 {
@@ -234,6 +265,7 @@ func streamAssistantResponse(
 	config AgentLoopConfig,
 	emitter *eventEmitter,
 	streamFn StreamFn,
+	mayRecoverDroppedToolCall bool,
 ) (*ai.AssistantMessage, error) {
 	if config.Model == nil {
 		return nil, errNoModel
@@ -338,13 +370,13 @@ func streamAssistantResponse(
 				return nil, err
 			}
 		case ai.DoneEvent:
-			return finishAssistantResponse(ctx, loopContext, value.Message, addedPartial, emitter)
+			return finishAssistantResponse(ctx, loopContext, value.Message, addedPartial, emitter, mayRecoverDroppedToolCall)
 		case *ai.DoneEvent:
-			return finishAssistantResponse(ctx, loopContext, value.Message, addedPartial, emitter)
+			return finishAssistantResponse(ctx, loopContext, value.Message, addedPartial, emitter, mayRecoverDroppedToolCall)
 		case ai.ErrorEvent:
-			return finishAssistantResponse(ctx, loopContext, value.Error, addedPartial, emitter)
+			return finishAssistantResponse(ctx, loopContext, value.Error, addedPartial, emitter, false)
 		case *ai.ErrorEvent:
-			return finishAssistantResponse(ctx, loopContext, value.Error, addedPartial, emitter)
+			return finishAssistantResponse(ctx, loopContext, value.Error, addedPartial, emitter, false)
 		default:
 			eventPartial, ok := assistantEventPartial(event)
 			if ok && partial != nil && eventPartial != nil {
@@ -424,22 +456,66 @@ func finishAssistantResponse(
 	message *ai.AssistantMessage,
 	addedPartial bool,
 	emitter *eventEmitter,
+	mayRecoverDroppedToolCall bool,
 ) (*ai.AssistantMessage, error) {
 	if message == nil {
 		return nil, ai.ErrStreamIncomplete
+	}
+	uniquifyToolCallIDs(message)
+	eventContext := ctx
+	if mayRecoverDroppedToolCall && isDroppedToolCallResponse(message, assistantToolCalls(message)) {
+		eventContext = withEphemeralAgentEvent(ctx)
 	}
 	if addedPartial {
 		loopContext.Messages[len(loopContext.Messages)-1] = message
 	} else {
 		loopContext.Messages = append(loopContext.Messages, message)
-		if err := emitter.emit(ctx, MessageStartEvent{Message: shallowAssistantCopy(message)}); err != nil {
+		if err := emitter.emit(eventContext, MessageStartEvent{Message: shallowAssistantCopy(message)}); err != nil {
 			return nil, err
 		}
 	}
-	if err := emitter.emit(ctx, MessageEndEvent{Message: message}); err != nil {
+	if err := emitter.emit(eventContext, MessageEndEvent{Message: message}); err != nil {
 		return nil, err
 	}
 	return message, nil
+}
+
+func isDroppedToolCallResponse(message *ai.AssistantMessage, toolCalls []*ai.ToolCall) bool {
+	return message != nil && message.StopReason == ai.StopReasonToolUse && len(toolCalls) == 0
+}
+
+func uniquifyToolCallIDs(message *ai.AssistantMessage) {
+	seen := make(map[string]struct{})
+	for _, block := range message.Content {
+		toolCall, ok := block.(*ai.ToolCall)
+		if !ok {
+			continue
+		}
+		pairingID, itemID := splitToolCallID(toolCall.ID)
+		if pairingID == "" {
+			continue
+		}
+		if _, exists := seen[pairingID]; !exists {
+			seen[pairingID] = struct{}{}
+			continue
+		}
+		for suffix := 2; ; suffix++ {
+			candidate := fmt.Sprintf("%s_d%d", pairingID, suffix)
+			if _, exists := seen[candidate]; exists {
+				continue
+			}
+			seen[candidate] = struct{}{}
+			toolCall.ID = candidate + itemID
+			break
+		}
+	}
+}
+
+func splitToolCallID(id string) (string, string) {
+	if separator := strings.IndexByte(id, '|'); separator >= 0 {
+		return id[:separator], id[separator:]
+	}
+	return id, ""
 }
 
 func assistantEventPartial(event ai.AssistantMessageEvent) (*ai.AssistantMessage, bool) {

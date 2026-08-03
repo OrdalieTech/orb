@@ -39,6 +39,147 @@ func (queue *loopResponseQueue) stream(
 	}, nil
 }
 
+func TestRunLoopRecoversProviderDeclaredToolUseWithoutCalls(t *testing.T) {
+	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{
+		loopAssistant(ai.StopReasonToolUse, &ai.TextContent{Text: "Let me inspect that."}),
+		loopAssistant(ai.StopReasonToolUse, &ai.ToolCall{ID: "call-1", Name: "echo", Arguments: map[string]any{"value": "checked"}}),
+		loopAssistant(ai.StopReasonStop, &ai.TextContent{Text: "done"}),
+	}}
+	executions := 0
+	tool := AgentToolFunc{
+		AgentToolSpec: AgentToolSpec{
+			Name:       "echo",
+			Parameters: jsonschema.Schema(`{"type":"object","required":["value"],"properties":{"value":{"type":"string"}}}`),
+		},
+		Run: func(_ context.Context, _ string, params any, _ AgentToolUpdateCallback) (AgentToolResult, error) {
+			executions++
+			return textToolResult("echo:" + params.(map[string]any)["value"].(string)), nil
+		},
+	}
+
+	messages, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
+		Model: loopModel(),
+		Now:   func() int64 { return 1234 },
+	}, nil, responses.stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if executions != 1 {
+		t.Fatalf("tool executions = %d, want 1", executions)
+	}
+	if got := len(responses.contexts); got != 3 {
+		t.Fatalf("provider calls = %d, want 3", got)
+	}
+
+	retryContext := responses.contexts[1].Messages
+	if got := len(retryContext); got != 3 {
+		t.Fatalf("retry context messages = %d, want 3", got)
+	}
+	interim, ok := retryContext[1].(*ai.AssistantMessage)
+	if !ok || interim.StopReason != ai.StopReasonToolUse || len(assistantToolCalls(interim)) != 0 {
+		t.Fatalf("retry interim assistant = %#v", retryContext[1])
+	}
+	nudge, ok := retryContext[2].(*ai.UserMessage)
+	if !ok || nudge.Content.Text == nil || !strings.Contains(strings.ToLower(*nudge.Content.Text), "tool call") {
+		t.Fatalf("retry nudge = %#v", retryContext[2])
+	}
+
+	postToolContext := responses.contexts[2].Messages
+	if got := len(postToolContext); got != 3 {
+		t.Fatalf("post-tool context messages = %d, want 3; recovery scaffold leaked: %#v", got, postToolContext)
+	}
+	if got := len(messages); got != 4 {
+		t.Fatalf("returned messages = %d, want prompt + recovered tool turn + result + final", got)
+	}
+	for _, message := range messages {
+		if user, ok := message.(*ai.UserMessage); ok && user.Content.Text != nil && strings.Contains(*user.Content.Text, "previous turn indicated") {
+			t.Fatalf("recovery nudge leaked into returned messages: %#v", messages)
+		}
+		if assistant, ok := message.(*ai.AssistantMessage); ok && len(assistant.Content) == 1 {
+			if text, ok := assistant.Content[0].(*ai.TextContent); ok && text.Text == "Let me inspect that." {
+				t.Fatalf("interim assistant leaked into returned messages: %#v", messages)
+			}
+		}
+	}
+}
+
+func TestRunLoopBoundsProviderDeclaredToolUseWithoutCalls(t *testing.T) {
+	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{
+		loopAssistant(ai.StopReasonToolUse, &ai.TextContent{Text: "attempt 1"}),
+		loopAssistant(ai.StopReasonToolUse, &ai.TextContent{Text: "attempt 2"}),
+		loopAssistant(ai.StopReasonToolUse, &ai.TextContent{Text: "attempt 3"}),
+		loopAssistant(ai.StopReasonToolUse, &ai.TextContent{Text: "attempt 4"}),
+		loopAssistant(ai.StopReasonStop, &ai.TextContent{Text: "must not be consumed"}),
+	}}
+
+	messages, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{}, AgentLoopConfig{
+		Model: loopModel(),
+	}, nil, responses.stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(responses.contexts); got != 4 {
+		t.Fatalf("provider calls = %d, want initial + 3 bounded retries", got)
+	}
+	if got := len(messages); got != 2 {
+		t.Fatalf("returned messages = %d, want prompt + final bounded response", got)
+	}
+	assistant, ok := messages[1].(*ai.AssistantMessage)
+	if !ok || len(assistant.Content) != 1 || assistant.Content[0].(*ai.TextContent).Text != "attempt 4" {
+		t.Fatalf("final bounded response = %#v", messages[1])
+	}
+}
+
+func TestRunLoopUniquifiesDuplicateToolCallIDs(t *testing.T) {
+	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{
+		loopAssistant(ai.StopReasonToolUse,
+			&ai.ToolCall{ID: "call-1|fc-1", Name: "echo", Arguments: map[string]any{"value": "first"}},
+			&ai.ToolCall{ID: "call-1|fc-2", Name: "echo", Arguments: map[string]any{"value": "second"}},
+		),
+		loopAssistant(ai.StopReasonStop, &ai.TextContent{Text: "done"}),
+	}}
+	var executionIDs []string
+	tool := AgentToolFunc{
+		AgentToolSpec: AgentToolSpec{
+			Name:       "echo",
+			Parameters: jsonschema.Schema(`{"type":"object","required":["value"],"properties":{"value":{"type":"string"}}}`),
+		},
+		Run: func(_ context.Context, callID string, _ any, _ AgentToolUpdateCallback) (AgentToolResult, error) {
+			executionIDs = append(executionIDs, callID)
+			return textToolResult("ok"), nil
+		},
+	}
+
+	_, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{
+		Model:         loopModel(),
+		ToolExecution: ToolExecutionSequential,
+	}, nil, responses.stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(executionIDs, ","), "call-1|fc-1,call-1_d2|fc-2"; got != want {
+		t.Fatalf("execution IDs = %q, want %q", got, want)
+	}
+	postToolContext := responses.contexts[1].Messages
+	if got := len(postToolContext); got != 4 {
+		t.Fatalf("post-tool context messages = %d, want prompt + assistant + 2 results", got)
+	}
+	assistant, ok := postToolContext[1].(*ai.AssistantMessage)
+	if !ok {
+		t.Fatalf("tool assistant = %#v", postToolContext[1])
+	}
+	calls := assistantToolCalls(assistant)
+	if len(calls) != 2 || calls[0].ID != "call-1|fc-1" || calls[1].ID != "call-1_d2|fc-2" {
+		t.Fatalf("normalized calls = %#v", calls)
+	}
+	for index, want := range []string{"call-1|fc-1", "call-1_d2|fc-2"} {
+		result, ok := postToolContext[index+2].(*ai.ToolResultMessage)
+		if !ok || result.ToolCallID != want {
+			t.Fatalf("result %d = %#v, want id %q", index, postToolContext[index+2], want)
+		}
+	}
+}
+
 func TestRunLoopParallelCompletionAndSourceOrder(t *testing.T) {
 	firstCall := &ai.ToolCall{ID: "call-1", Name: "echo", Arguments: map[string]any{"value": "first"}}
 	secondCall := &ai.ToolCall{ID: "call-2", Name: "echo", Arguments: map[string]any{"value": "second"}}

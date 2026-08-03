@@ -1293,6 +1293,10 @@ func (runtime *SessionRuntime) extensionLifecycleEvent(ctx context.Context, even
 	case agent.MessageUpdateEvent:
 		runner.Emit(ctx, extensions.MessageUpdateEvent{Message: typed.Message, AssistantMessageEvent: typed.AssistantMessageEvent})
 	case agent.MessageEndEvent:
+		if agent.IsEphemeralAgentEvent(ctx) {
+			runner.Emit(ctx, extensions.MessageEndEvent{Message: typed.Message})
+			break
+		}
 		if replacement := runner.EmitMessageEnd(ctx, extensions.MessageEndEvent{Message: typed.Message}); replacement != nil {
 			replacement = normalizeExtensionMessage(replacement)
 			if replaceAgentMessageInPlace(typed.Message, replacement) {

@@ -215,6 +215,41 @@ func TestSessionEventWireShapes(t *testing.T) {
 	}
 }
 
+func TestSessionRuntimeDropsMalformedToolUseRecoveryScaffold(t *testing.T) {
+	provider := testFaux(1000)
+	dropped := runtimeAssistant(provider, "Let me inspect that.", 10)
+	dropped.StopReason = ai.StopReasonToolUse
+	provider.SetResponses([]faux.ResponseStep{
+		dropped,
+		runtimeAssistant(provider, "recovered", 10),
+	})
+	runtime, manager := newTestRuntime(t, provider, map[string]any{"compaction": map[string]any{"enabled": false}})
+
+	if err := runtime.Prompt(context.Background(), "check it"); err != nil {
+		t.Fatal(err)
+	}
+	if got := provider.State().CallCount; got != 2 {
+		t.Fatalf("provider calls = %d, want recovery retry", got)
+	}
+	state := runtime.State()
+	if got := len(state.Messages); got != 2 {
+		t.Fatalf("agent state messages = %d, want user + recovered assistant: %#v", got, state.Messages)
+	}
+	if assistant := asAssistant(state.Messages[1]); assistant == nil || assistantText(assistant) != "recovered" {
+		t.Fatalf("final agent message = %#v", state.Messages[1])
+	}
+
+	persisted := manager.BuildSessionContext().Messages
+	if got := len(persisted); got != 2 {
+		t.Fatalf("persisted messages = %d, want user + recovered assistant", got)
+	}
+	for _, message := range persisted {
+		if strings.Contains(string(message), "Let me inspect that") || strings.Contains(string(message), "previous turn indicated") {
+			t.Fatalf("recovery scaffold was persisted: %s", message)
+		}
+	}
+}
+
 func TestSessionRuntimeSettlesWhenInitialRunFails(t *testing.T) {
 	provider := testFaux(1000)
 	runtime, _ := newTestRuntime(t, provider, map[string]any{"compaction": map[string]any{"enabled": false}})
