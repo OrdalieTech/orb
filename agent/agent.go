@@ -706,7 +706,9 @@ func (agent *Agent) processEvent(ctx context.Context, event AgentEvent) error {
 		agent.state.StreamingMessage = cloneAgentMessage(value.Message)
 	case MessageEndEvent:
 		agent.state.StreamingMessage = nil
-		agent.state.Messages = append(agent.state.Messages, cloneAgentMessage(value.Message))
+		if !IsEphemeralAgentEvent(ctx) {
+			agent.state.Messages = append(agent.state.Messages, cloneAgentMessage(value.Message))
+		}
 	case ToolExecutionStartEvent:
 		pending := copyPendingToolCalls(agent.state.PendingToolCalls)
 		pending[value.ToolCallID] = struct{}{}

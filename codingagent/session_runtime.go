@@ -847,11 +847,15 @@ func (runtime *SessionRuntime) handleAgentEvent(ctx context.Context, event agent
 			}
 		}
 	}
+	ephemeral := agent.IsEphemeralAgentEvent(ctx)
 	event = runtime.extensionLifecycleEvent(ctx, event)
 	if ended, ok := event.(agent.AgentEndEvent); ok {
 		runtime.emit(SessionAgentEndEvent{Messages: ended.Messages, WillRetry: runtime.willRetry(ended.Messages)})
 	} else {
 		runtime.emit(event)
+	}
+	if ephemeral {
+		return nil
 	}
 	ended, ok := event.(agent.MessageEndEvent)
 	if !ok {

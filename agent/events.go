@@ -36,6 +36,27 @@ type AgentEvent interface {
 // rather than throttling it, up to toolUpdateQueueDepth pending updates.
 type EventSink func(ctx context.Context, event AgentEvent) error
 
+type ephemeralAgentEventKey struct{}
+
+// IsEphemeralAgentEvent reports whether a terminal event closes recovery
+// scaffolding rather than durable conversation history. A streamed response can
+// emit start/update events before its malformed finish reason is known, so
+// transcript stores must make their persistence decision on MessageEnd.
+func IsEphemeralAgentEvent(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	_, ok := ctx.Value(ephemeralAgentEventKey{}).(struct{})
+	return ok
+}
+
+func withEphemeralAgentEvent(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, ephemeralAgentEventKey{}, struct{}{})
+}
+
 type AgentStartEvent struct{}
 
 type AgentEndEvent struct {
