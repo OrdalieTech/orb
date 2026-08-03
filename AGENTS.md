@@ -74,5 +74,9 @@ means your change is wrong, not the fixture.
 
 ## Upstream sync
 
-`make sync` produces `docs/sync/reports/<date>.md`; turn red conformance into follow-up work items
-in the report; bump `UPSTREAM.lock` only when green.
+- **Released versions only.** Update Orb only against a published upstream release. Never port or
+  advance `UPSTREAM.lock` to an unreleased commit or a moving branch such as `main`; pin the exact
+  commit referenced by the release tag. Unreleased upstream work may be audited, but it must wait
+  for a release before implementation.
+- `make sync` produces `docs/sync/reports/<date>.md`; turn red conformance into follow-up work items
+  in the report; bump `UPSTREAM.lock` only when green.
