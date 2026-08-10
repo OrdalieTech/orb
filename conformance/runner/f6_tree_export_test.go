@@ -131,11 +131,11 @@ func TestF6CreateBranchedSessionMatchesUpstream(t *testing.T) {
 	}
 
 	labelTimes := f6WP320LabelTimes(manager.GetEntries())
-	f6CompareCanonical(t, fixture.Tree.Before, f6WP320TreeProjection(t, manager, "tree-source", labelTimes), "tree before extraction")
+	runner.AssertCanonicalJSONEqual(t, fixture.Tree.Before, f6WP320TreeProjection(t, manager, "tree-source", labelTimes), "tree before extraction")
 	if _, err := manager.CreateBranchedSession(alternate); err != nil {
 		t.Fatal(err)
 	}
-	f6CompareCanonical(t, fixture.Tree.Branched, f6WP320TreeProjection(t, manager, "tree-branched", labelTimes), "tree after extraction")
+	runner.AssertCanonicalJSONEqual(t, fixture.Tree.Branched, f6WP320TreeProjection(t, manager, "tree-branched", labelTimes), "tree after extraction")
 }
 
 func TestF6CreateBranchedSessionPersistenceMatchesUpstream(t *testing.T) {
@@ -143,8 +143,8 @@ func TestF6CreateBranchedSessionPersistenceMatchesUpstream(t *testing.T) {
 	root := t.TempDir()
 	userOnly := f6WP320BranchPersistence(t, filepath.Join(root, "user"), false)
 	assistantPresent := f6WP320BranchPersistence(t, filepath.Join(root, "assistant"), true)
-	f6CompareCanonical(t, fixture.Tree.Persistence.UserOnly, userOnly, "user-only branch persistence")
-	f6CompareCanonical(t, fixture.Tree.Persistence.AssistantPresent, assistantPresent, "assistant-present branch persistence")
+	runner.AssertCanonicalJSONEqual(t, fixture.Tree.Persistence.UserOnly, userOnly, "user-only branch persistence")
+	runner.AssertCanonicalJSONEqual(t, fixture.Tree.Persistence.AssistantPresent, assistantPresent, "assistant-present branch persistence")
 }
 
 func TestF6ForkFromMatchesUpstream(t *testing.T) {
@@ -245,10 +245,10 @@ func TestF6SessionListingMatchesUpstream(t *testing.T) {
 
 	currentProjection := f6WP320SessionInfoProjection(current, root)
 	allProjection := f6WP320SessionInfoProjection(all, root)
-	f6CompareCanonical(t, fixture.List.Current, currentProjection, "current-project session list")
-	f6CompareCanonical(t, fixture.List.All, allProjection, "all session list")
-	f6CompareCanonical(t, fixture.List.CurrentProgress, currentProgress, "current-project list progress")
-	f6CompareCanonical(t, fixture.List.AllProgress, allProgress, "all-list progress")
+	runner.AssertCanonicalJSONEqual(t, fixture.List.Current, currentProjection, "current-project session list")
+	runner.AssertCanonicalJSONEqual(t, fixture.List.All, allProjection, "all session list")
+	runner.AssertCanonicalJSONEqual(t, fixture.List.CurrentProgress, currentProgress, "current-project list progress")
+	runner.AssertCanonicalJSONEqual(t, fixture.List.AllProgress, allProgress, "all-list progress")
 	invalidPresent := false
 	for _, info := range all {
 		invalidPresent = invalidPresent || info.ID == "invalid-content"
@@ -290,21 +290,21 @@ func TestF6HTMLExportMatchesUpstreamBytesAndStructure(t *testing.T) {
 	}
 
 	actual := f6WP320HTMLProjection(t, html)
-	if !equalStringMap(actual.AssetHashes, fixture.Export.AssetHashes) {
+	if !equalJSONMap(actual.AssetHashes, fixture.Export.AssetHashes) {
 		t.Fatalf("asset hashes = %#v, want %#v", actual.AssetHashes, fixture.Export.AssetHashes)
 	}
-	if !equalIntMap(actual.PlaceholderCounts, fixture.Export.PlaceholderCounts) {
+	if !equalJSONMap(actual.PlaceholderCounts, fixture.Export.PlaceholderCounts) {
 		t.Fatalf("placeholder counts = %#v, want %#v", actual.PlaceholderCounts, fixture.Export.PlaceholderCounts)
 	}
 	if actual.SelfContained != fixture.Export.SelfContained || actual.RawPayloadExposed != fixture.Export.RawPayloadExposed {
 		t.Fatalf("self-contained/raw payload = %t/%t, want %t/%t", actual.SelfContained, actual.RawPayloadExposed, fixture.Export.SelfContained, fixture.Export.RawPayloadExposed)
 	}
-	if !equalBoolMap(actual.SecurityMarkers, fixture.Export.SecurityMarkers) ||
-		!equalBoolMap(actual.WhitespaceMarkers, fixture.Export.WhitespaceMarkers) ||
-		!equalBoolMap(actual.ThemeMarkers, fixture.Export.ThemeMarkers) {
+	if !equalJSONMap(actual.SecurityMarkers, fixture.Export.SecurityMarkers) ||
+		!equalJSONMap(actual.WhitespaceMarkers, fixture.Export.WhitespaceMarkers) ||
+		!equalJSONMap(actual.ThemeMarkers, fixture.Export.ThemeMarkers) {
 		t.Fatalf("HTML marker projection differs from upstream")
 	}
-	f6CompareCanonical(t, fixture.Export.DOMProjection, actual.DOMProjection, "HTML DOM projection")
+	runner.AssertCanonicalJSONEqual(t, fixture.Export.DOMProjection, actual.DOMProjection, "HTML DOM projection")
 	if len(fixture.Export.DOMTolerances) != 3 {
 		t.Fatalf("DOM tolerances are not documented: %#v", fixture.Export.DOMTolerances)
 	}
@@ -682,38 +682,7 @@ func f6SHA256(value []byte) string {
 	return hex.EncodeToString(digest[:])
 }
 
-func f6CompareCanonical(t testing.TB, want json.RawMessage, got any, label string) {
-	t.Helper()
-	gotJSON, err := json.Marshal(got)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantCanonical, err := runner.CanonicalJSON(want)
-	if err != nil {
-		t.Fatal(err)
-	}
-	gotCanonical, err := runner.CanonicalJSON(gotJSON)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if diff := runner.ByteDiff(wantCanonical, gotCanonical); diff != "" {
-		t.Fatalf("%s mismatch:\n%s", label, diff)
-	}
-}
-
-func equalStringMap(left, right map[string]string) bool {
-	leftJSON, _ := json.Marshal(left)
-	rightJSON, _ := json.Marshal(right)
-	return bytes.Equal(leftJSON, rightJSON)
-}
-
-func equalIntMap(left, right map[string]int) bool {
-	leftJSON, _ := json.Marshal(left)
-	rightJSON, _ := json.Marshal(right)
-	return bytes.Equal(leftJSON, rightJSON)
-}
-
-func equalBoolMap(left, right map[string]bool) bool {
+func equalJSONMap[V any](left, right map[string]V) bool {
 	leftJSON, _ := json.Marshal(left)
 	rightJSON, _ := json.Marshal(right)
 	return bytes.Equal(leftJSON, rightJSON)

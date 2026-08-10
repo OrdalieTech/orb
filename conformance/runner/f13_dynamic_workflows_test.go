@@ -1,33 +1,10 @@
 package runner
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
-
-// readF13 reads a (possibly nested) file from the F13 fixture family.
-func readF13(t *testing.T, rel string) []byte {
-	t.Helper()
-	if strings.Contains(rel, "..") || filepath.IsAbs(rel) {
-		t.Fatalf("invalid fixture path %q", rel)
-	}
-	data, err := os.ReadFile(filepath.Join(FixtureRoot(), f13Family, filepath.FromSlash(rel)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
-}
-
-func loadF13JSON(t *testing.T, rel string, target any) {
-	t.Helper()
-	if err := json.Unmarshal(readF13(t, rel), target); err != nil {
-		t.Fatalf("decode %s: %v", rel, err)
-	}
-}
 
 // F13-dynamic-workflows: hermetic reference behavior of
 // @quintinshaw/pi-dynamic-workflows@3.5.1 on the pinned upstream pi. This test
@@ -127,7 +104,7 @@ func TestF13ScenarioCasesAreWellFormed(t *testing.T) {
 			SchemaVersion int    `json:"schemaVersion"`
 			Scenario      string `json:"scenario"`
 		}
-		loadF13JSON(t, file, &scenario)
+		LoadJSON(t, f13Family, file, &scenario)
 		if scenario.SchemaVersion != 1 || scenario.Scenario != name {
 			t.Errorf("%s: schemaVersion=%d scenario=%q", file, scenario.SchemaVersion, scenario.Scenario)
 		}
@@ -150,7 +127,7 @@ func TestF13ReferenceTUIFilesAreMarkedReferenceOnly(t *testing.T) {
 			ReferenceOnly bool   `json:"referenceOnly"`
 			Note          string `json:"note"`
 		}
-		loadF13JSON(t, file, &payload)
+		LoadJSON(t, f13Family, file, &payload)
 		if !payload.ReferenceOnly {
 			t.Errorf("%s: referenceOnly marker missing", file)
 		}
@@ -174,7 +151,7 @@ func TestF13ExportSurfaceCoversSupportedSymbols(t *testing.T) {
 			Typeof  string `json:"typeof"`
 		} `json:"unsupportedProbes"`
 	}
-	loadF13JSON(t, "cases/export-surface.json", &surface)
+	LoadJSON(t, f13Family, "cases/export-surface.json", &surface)
 	for pkg, symbols := range f13SupportedExports {
 		names := map[string]bool{}
 		for _, name := range surface.Exports[pkg] {
@@ -207,7 +184,7 @@ func TestF13BehaviorGoldensCarryLoadBearingContracts(t *testing.T) {
 		} `json:"result"`
 		PendingFauxResponses int `json:"pendingFauxResponses"`
 	}
-	loadF13JSON(t, "cases/structured-output.json", &structured)
+	LoadJSON(t, f13Family, "cases/structured-output.json", &structured)
 	if structured.PendingFauxResponses != 0 {
 		t.Errorf("structured-output left %d faux responses pending", structured.PendingFauxResponses)
 	}
@@ -225,7 +202,7 @@ func TestF13BehaviorGoldensCarryLoadBearingContracts(t *testing.T) {
 		} `json:"pausedRuns"`
 		Resumed bool `json:"resumed"`
 	}
-	loadF13JSON(t, "cases/background-lifecycle.json", &background)
+	LoadJSON(t, f13Family, "cases/background-lifecycle.json", &background)
 	if len(background.PausedRuns) != 1 || background.PausedRuns[0].Status != "paused" ||
 		background.PausedRuns[0].PauseReason != "usage_limit" || background.PausedRuns[0].ResetHint == "" {
 		t.Errorf("background-lifecycle lost the provider-limit pause contract: %+v", background.PausedRuns)
@@ -245,7 +222,7 @@ func TestF13BehaviorGoldensCarryLoadBearingContracts(t *testing.T) {
 			} `json:"result"`
 		} `json:"result"`
 	}
-	loadF13JSON(t, "cases/model-routing.json", &routing)
+	LoadJSON(t, f13Family, "cases/model-routing.json", &routing)
 	if routing.Result.Result.ExplicitError.Code != "MODEL_NOT_FOUND" || routing.Result.Result.ExplicitError.Recoverable {
 		t.Errorf("model-routing lost the explicit MODEL_NOT_FOUND contract: %+v", routing.Result.Result.ExplicitError)
 	}
@@ -258,7 +235,7 @@ func TestF13BehaviorGoldensCarryLoadBearingContracts(t *testing.T) {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	loadF13JSON(t, "cases/cancellation.json", &cancel)
+	LoadJSON(t, f13Family, "cases/cancellation.json", &cancel)
 	if cancel.Error.Message != "Subagent was aborted" {
 		t.Errorf("cancellation error message = %q, want the upstream abort text", cancel.Error.Message)
 	}

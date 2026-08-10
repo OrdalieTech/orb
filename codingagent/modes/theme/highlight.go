@@ -4,7 +4,10 @@ import (
 	"strings"
 
 	chroma "github.com/alecthomas/chroma/v2"
-	"github.com/alecthomas/chroma/v2/lexers"
+
+	// chromalexers is upstream chroma/v2/lexers with a lazy registry: linking
+	// the upstream package costs ~6ms and ~2.7MB of init on every command.
+	lexers "github.com/OrdalieTech/orb/internal/chromalexers"
 )
 
 func Highlight(code, language string, theme *Theme) []string {

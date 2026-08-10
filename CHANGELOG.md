@@ -8,6 +8,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Changed
 
+- Faster startup and session resume, identical behavior: the syntax-highlighting lexer registry now builds on first highlight instead of at process start (`orb --version` wall time roughly halves, peak RSS drops ~5MB), the built-in model catalog is decoded once per process and merged without redundant deep clones (offline registry construction ~17ms → ~1.5ms, 29k → 4k allocations), and the session/harness JSONL loaders skip redundant validation scans, per-line UTF-8 transforms, and oversized read buffers (1000-turn v3 session load ~37ms → ~28ms, allocations -26%).
+
 - Extensions importing the pi SDK (`@earendil-works/pi-*` or the legacy `@mariozechner/pi-*` names) are now served entirely by Orb's embedded `orb-extension-sdk`: `pi-dynamic-workflows` runs unchanged — child agent sessions, model catalogs, shared-store/web tools, structured output, worktree isolation, background runs, pause/resume, and persisted transcripts included — with zero Pi-SDK code on the machine. The previous on-demand `npm install` of the real SDK is gone, and `ORB_PI_SDK_ROOT` with it.
 - An extension that imports a pi SDK surface Orb does not implement now gets a precise diagnostic — `OrbUnsupportedCapability: <package>#<export> is not implemented by orb-extension-sdk <version>; supported exports: …` — at the point of use, instead of a version-dependent resolution or missing-export failure; any import that would reach a real installed pi SDK is refused at load with the full import chain named.
 

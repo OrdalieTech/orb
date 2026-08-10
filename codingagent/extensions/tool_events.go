@@ -13,6 +13,11 @@ import (
 // tool-name check with typed input/details extraction. ok reports that the
 // event belongs to the tool AND the typed payload decoded; plain narrowing
 // stays event.ToolName == "bash".
+//
+// Deliberate public surface for compiled Go extensions, mirroring upstream's
+// exported guards (MIRROR.md, Sprint 4): no in-repo caller beyond its tests
+// is expected — do not prune as dead code without an upstream-parity
+// decision.
 
 func toolCallInput[T any](event ToolCallEvent, name string) (T, bool) {
 	var input T

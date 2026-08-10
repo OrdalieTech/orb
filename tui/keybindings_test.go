@@ -79,7 +79,7 @@ func TestKeybindingsManagerLoadsLegacyNamesInMemory(t *testing.T) {
 	definitions := append([]KeybindingDefinition{
 		{ID: "app.interrupt", DefaultKeys: []KeyID{"escape"}, Description: "Cancel or abort"},
 	}, TUIKeybindingDefinitions...)
-	manager := NewKeybindingsFromFile(definitions, path)
+	manager := NewKeybindingsManager(definitions, LoadKeybindingsFile(path))
 	user := manager.UserBindings()
 	if len(user) != 2 || !equalKeyIDs(user["tui.select.confirm"], []KeyID{"enter"}) || !equalKeyIDs(user["app.interrupt"], []KeyID{"ctrl+x"}) {
 		t.Fatalf("user bindings = %#v", user)

@@ -88,13 +88,46 @@ func isEastAsianWideRune(r rune) bool {
 	return kind == xwidth.EastAsianWide || kind == xwidth.EastAsianFullwidth
 }
 
+// forEachGrapheme iterates grapheme clusters with grapheme-only breaking
+// state. uniseg's Graphemes iterator computes word, sentence, and line
+// boundary state per rune as well, which dominated frame-render CPU.
 func forEachGrapheme(value string, visit func(string) bool) {
-	graphemes := uniseg.NewGraphemes(value)
-	for graphemes.Next() {
-		if !visit(graphemes.Str()) {
+	state := -1
+	var cluster string
+	for len(value) > 0 {
+		cluster, value, _, state = uniseg.FirstGraphemeClusterInString(value, state)
+		if !visit(cluster) {
 			return
 		}
 	}
+}
+
+// visibleWidthFast counts printable-ASCII text (plus tabs and the escape
+// sequences extractANSI recognizes) without the plain-string copy and
+// grapheme segmentation the general path needs. Printable ASCII cannot join
+// grapheme clusters, so each byte is one cell; ok=false on any other byte
+// falls back to the general path.
+func visibleWidthFast(text string) (int, bool) {
+	width := 0
+	for pos := 0; pos < len(text); {
+		switch value := text[pos]; {
+		case value >= 0x20 && value < 0x7f:
+			width++
+			pos++
+		case value == '\t':
+			width += 3
+			pos++
+		case value == '\x1b':
+			_, next, ok := extractANSI(text, pos)
+			if !ok {
+				return 0, false
+			}
+			pos = next
+		default:
+			return 0, false
+		}
+	}
+	return width, true
 }
 
 // VisibleWidth returns the number of terminal cells occupied by text. Tabs
@@ -103,6 +136,9 @@ func forEachGrapheme(value string, visit func(string) bool) {
 func VisibleWidth(text string) int {
 	if text == "" {
 		return 0
+	}
+	if width, ok := visibleWidthFast(text); ok {
+		return width
 	}
 	var plain strings.Builder
 	for pos := 0; pos < len(text); {

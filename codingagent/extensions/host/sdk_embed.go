@@ -18,6 +18,10 @@ import (
 // repoints the legacy SDK specifiers at the materialized tree via the
 // ORB_EXTENSION_SDK_ROOT environment variable set in startLocked.
 //
+// The sdk/*.d.ts files are load-bearing at runtime, not typegen leftovers:
+// loader.mjs (sdkTypeNames) parses them to classify type-only imports that
+// Node's type stripping would otherwise leave dangling.
+//
 //go:embed all:sdk
 var sdkFS embed.FS
 

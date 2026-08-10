@@ -115,8 +115,8 @@ func (services *servicesHost) asyncRequest(method string) bool {
 	switch method {
 	case "sdk_resource_reload",
 		"model_runtime_create", "model_runtime_get_available", "model_runtime_dispose",
-		"agent_session_create", "agent_session_prompt", "agent_session_messages",
-		"agent_session_abort", "agent_session_subscribe", "agent_session_stats",
+		"agent_session_create", "agent_session_prompt",
+		"agent_session_abort", "agent_session_subscribe",
 		"agent_session_set_active_tools", "agent_session_append_info", "agent_session_dispose":
 		return true
 	default:
@@ -203,20 +203,15 @@ func (services *servicesHost) dispatch(manager *Manager, generation *generation,
 		if err != nil {
 			return nil, err
 		}
-		models, err := registry.AvailableWithError(nil)
-		if err != nil {
+		if _, err := registry.AvailableWithError(nil); err != nil {
 			return nil, &ServiceError{Code: "model_runtime_error", Message: err.Error()}
 		}
-		if models == nil {
-			models = []ai.Model{}
-		}
-		// The full catalog snapshot rides along so one wire method serves both
-		// ModelRuntime.getAvailable() and the transport's modelRuntimeRefresh
-		// (which rebuilds the sync facade snapshot).
+		// One catalog snapshot serves both consumers: ModelRuntime.getAvailable()
+		// reads catalog.available, the transport's modelRuntimeRefresh rebuilds
+		// the sync facade snapshot from the rest.
 		return struct {
-			Models  []ai.Model                  `json:"models"`
 			Catalog *stateModelRegistrySnapshot `json:"catalog"`
-		}{models, captureModelRegistry(registry)}, nil
+		}{captureModelRegistry(registry)}, nil
 
 	case "model_runtime_dispose":
 		var params struct {
@@ -251,25 +246,6 @@ func (services *servicesHost) dispatch(manager *Manager, generation *generation,
 		}
 		return map[string]bool{"completed": true}, nil
 
-	case "agent_session_messages":
-		var params struct {
-			Handle string `json:"handle"`
-		}
-		handle, err := services.sessionParams(value.Params, &params, &params.Handle)
-		if err != nil {
-			return nil, err
-		}
-		raw, err := handle.session.Messages(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if len(raw) == 0 {
-			raw = json.RawMessage("[]")
-		}
-		return struct {
-			Messages json.RawMessage `json:"messages"`
-		}{raw}, nil
-
 	case "agent_session_abort":
 		var params struct {
 			Handle string `json:"handle"`
@@ -298,22 +274,6 @@ func (services *servicesHost) dispatch(manager *Manager, generation *generation,
 			Subscribed bool   `json:"subscribed"`
 			Seq        uint64 `json:"seq"`
 		}{true, seq}, nil
-
-	case "agent_session_stats":
-		var params struct {
-			Handle string `json:"handle"`
-		}
-		handle, err := services.sessionParams(value.Params, &params, &params.Handle)
-		if err != nil {
-			return nil, err
-		}
-		stats, err := handle.session.SessionStats(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return struct {
-			Stats AgentSessionStats `json:"stats"`
-		}{stats}, nil
 
 	case "agent_session_set_active_tools":
 		var params struct {

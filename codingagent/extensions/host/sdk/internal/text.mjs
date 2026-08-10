@@ -17,7 +17,7 @@ const terminalSpacingMarkRegex =
 	/^(?:[\p{Spacing_Mark}--[\u1734\u302E\u302F]]|[\u065F\u0F7F\u102B\u102C\u1031\u1033-\u1035\u1038\u103A-\u103E])+$/v;
 const rgiEmojiRegex = /^\p{RGI_Emoji}$/v;
 
-export const cjkBreakRegex =
+const cjkBreakRegex =
 	/[\p{Script_Extensions=Han}\p{Script_Extensions=Hiragana}\p{Script_Extensions=Katakana}\p{Script_Extensions=Hangul}\p{Script_Extensions=Bopomofo}]/u;
 
 // East Asian Wide + Fullwidth ranges (Unicode EastAsianWidth W/F), sorted.
@@ -64,7 +64,7 @@ function couldBeEmoji(segment) {
 	);
 }
 
-export function isPrintableAscii(str) {
+function isPrintableAscii(str) {
 	for (let i = 0; i < str.length; i++) {
 		const code = str.charCodeAt(i);
 		if (code < 0x20 || code > 0x7e) return false;
@@ -73,7 +73,7 @@ export function isPrintableAscii(str) {
 }
 
 /** Extract one ANSI CSI/OSC/APC escape sequence at pos, or null. */
-export function extractAnsiCode(str, pos) {
+function extractAnsiCode(str, pos) {
 	if (pos >= str.length || str[pos] !== "\x1b") return null;
 	const next = str[pos + 1];
 	if (next === "[") {
@@ -96,7 +96,7 @@ export function extractAnsiCode(str, pos) {
 	return null;
 }
 
-export function graphemeWidth(segment) {
+function graphemeWidth(segment) {
 	if (segment === "\t") return 3;
 	if (terminalSpacingMarkRegex.test(segment)) return [...segment].length;
 	if (zeroWidthRegex.test(segment)) return 0;
@@ -173,7 +173,7 @@ function parseOsc8Hyperlink(ansiCode) {
 	return { params, url, terminator };
 }
 
-export class AnsiCodeTracker {
+class AnsiCodeTracker {
 	constructor() {
 		this.clear();
 	}

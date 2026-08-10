@@ -167,7 +167,3 @@ export function parseFrontmatter(content) {
 	const parsed = parseYamlLite(yamlString);
 	return { frontmatter: parsed ?? {}, body };
 }
-
-export function stripFrontmatterBody(content) {
-	return parseFrontmatter(content).body;
-}

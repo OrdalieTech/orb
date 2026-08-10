@@ -54,18 +54,3 @@ func TestLoaderStaticIndicator(t *testing.T) {
 		t.Fatal("loader did not request a render")
 	}
 }
-
-func TestCancellableLoaderUsesSelectCancelBinding(t *testing.T) {
-	loader := NewCancellableLoader(nil, nil, nil, "Work", &LoaderIndicatorOptions{Frames: []string{}})
-	defer loader.Dispose()
-	aborts := 0
-	loader.OnAbort = func() { aborts++ }
-	loader.HandleInput(KeyEvent{Raw: "a"})
-	if loader.Aborted() {
-		t.Fatal("ordinary input aborted loader")
-	}
-	loader.HandleInput(KeyEvent{Raw: "\x1b"})
-	if !loader.Aborted() || loader.Context().Err() == nil || aborts != 1 {
-		t.Fatalf("aborted=%v err=%v callbacks=%d", loader.Aborted(), loader.Context().Err(), aborts)
-	}
-}

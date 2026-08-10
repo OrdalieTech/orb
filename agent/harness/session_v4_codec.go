@@ -225,35 +225,51 @@ func cloneHarnessMembers(members []harnessJSONMember) []harnessJSONMember {
 }
 
 // parseV4Object decodes a JSON object preserving top-level member order.
+// Well-formed object lines — the hot path — are validated by the decode walk
+// itself; the json.Valid scan runs only on failures so the original error
+// split ("is not valid JSON" vs "is not a JSON object") is preserved.
 func parseV4Object(data []byte) ([]harnessJSONMember, map[string]json.RawMessage, error) {
 	trimmed := bytes.TrimSpace(data)
-	if !json.Valid(trimmed) {
-		return nil, nil, fmt.Errorf("is not valid JSON")
+	malformed := func() ([]harnessJSONMember, map[string]json.RawMessage, error) {
+		if !json.Valid(trimmed) {
+			return nil, nil, fmt.Errorf("is not valid JSON")
+		}
+		return nil, nil, fmt.Errorf("is not a JSON object")
 	}
 	if len(trimmed) == 0 || trimmed[0] != '{' {
-		return nil, nil, fmt.Errorf("is not a JSON object")
+		return malformed()
 	}
 	decoder := json.NewDecoder(bytes.NewReader(trimmed))
 	if _, err := decoder.Token(); err != nil {
-		return nil, nil, fmt.Errorf("is not a JSON object")
+		return malformed()
 	}
 	members := make([]harnessJSONMember, 0, 8)
 	byName := make(map[string]json.RawMessage, 8)
 	for decoder.More() {
 		token, err := decoder.Token()
 		if err != nil {
-			return nil, nil, fmt.Errorf("is not a JSON object")
+			return malformed()
 		}
 		name, ok := token.(string)
 		if !ok {
-			return nil, nil, fmt.Errorf("is not a JSON object")
+			return malformed()
 		}
 		var value json.RawMessage
 		if err := decoder.Decode(&value); err != nil {
-			return nil, nil, fmt.Errorf("is not a JSON object")
+			return malformed()
 		}
 		members = append(members, harnessJSONMember{name: name, value: value})
 		byName[name] = value
+	}
+	// Consume the closing brace and require the input to end exactly there:
+	// this replaces the up-front json.Valid prescan's trailing-data rejection.
+	if token, err := decoder.Token(); err != nil {
+		return malformed()
+	} else if delimiter, ok := token.(json.Delim); !ok || delimiter != '}' {
+		return malformed()
+	}
+	if decoder.InputOffset() != int64(len(trimmed)) {
+		return malformed()
 	}
 	return members, byName, nil
 }

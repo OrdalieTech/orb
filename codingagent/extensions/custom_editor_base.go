@@ -6,6 +6,10 @@ import "sync"
 // packages/coding-agent/src/modes/interactive/components/custom-editor.ts)
 // must construct the real built-in editor, which lives above this package.
 // The interactive mode registers its constructor here at startup.
+// ponytail: write-only seam — the reader is the JS bridge's CustomEditor,
+// still an unimplemented stub in sdk/coding-agent.mjs. Delete this file and
+// the modes/interactive_ui.go registration together if that bridge is
+// abandoned.
 var (
 	customEditorBaseMu sync.RWMutex
 	customEditorBase   EditorFactory

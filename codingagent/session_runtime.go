@@ -347,26 +347,37 @@ func cloneSlashResolver(resolver *SlashResolver) *SlashResolver {
 	return &cloned
 }
 
+// mergeCaseInsensitive merges override into base with case-insensitive header
+// name replacement: an override entry removes any existing key that matches it
+// under Unicode case folding before inserting its own casing.
+func mergeCaseInsensitive[V any, M ~map[string]V](base, override M) M {
+	merged := make(M, len(base)+len(override))
+	for name, value := range base {
+		merged[name] = value
+	}
+	for name, value := range override {
+		for existing := range merged {
+			if strings.EqualFold(existing, name) {
+				delete(merged, existing)
+			}
+		}
+		merged[name] = value
+	}
+	return merged
+}
+
 func mergeSummaryHeaders(base, override *map[string]string) *map[string]string {
 	if base == nil && override == nil {
 		return nil
 	}
-	merged := make(map[string]string)
+	var baseMap, overrideMap map[string]string
 	if base != nil {
-		for name, value := range *base {
-			merged[name] = value
-		}
+		baseMap = *base
 	}
 	if override != nil {
-		for name, value := range *override {
-			for existing := range merged {
-				if strings.EqualFold(existing, name) {
-					delete(merged, existing)
-				}
-			}
-			merged[name] = value
-		}
+		overrideMap = *override
 	}
+	merged := mergeCaseInsensitive(baseMap, overrideMap)
 	return &merged
 }
 
@@ -388,19 +399,7 @@ func mergeSummaryAuthHeaders(resolved, overrides ai.ProviderHeaders) ai.Provider
 	if len(resolved) == 0 && len(overrides) == 0 {
 		return nil
 	}
-	merged := make(ai.ProviderHeaders, len(resolved)+len(overrides))
-	for name, value := range resolved {
-		merged[name] = value
-	}
-	for name, value := range overrides {
-		for existing := range merged {
-			if strings.EqualFold(existing, name) {
-				delete(merged, existing)
-			}
-		}
-		merged[name] = value
-	}
-	return merged
+	return mergeCaseInsensitive(resolved, overrides)
 }
 
 func (runtime *SessionRuntime) Dispose() {
@@ -1660,10 +1659,6 @@ func asAssistant(message agent.AgentMessage) *ai.AssistantMessage {
 		}
 	}
 	return nil
-}
-
-func userMessageWithImages(text string, images []*ai.ImageContent) *ai.UserMessage {
-	return userMessageWithImagesAt(text, images, time.Now().UnixMilli())
 }
 
 func userMessageWithImagesAt(text string, images []*ai.ImageContent, timestamp int64) *ai.UserMessage {

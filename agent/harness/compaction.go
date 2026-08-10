@@ -130,19 +130,6 @@ func CalculateContextTokens(usage ai.Usage) int64 {
 	return usage.Input + usage.Output + usage.CacheRead + usage.CacheWrite
 }
 
-func GetLastAssistantUsage(entries []SessionEntry) *ai.Usage {
-	for index := len(entries) - 1; index >= 0; index-- {
-		if entries[index].Type != "message" {
-			continue
-		}
-		if usage := assistantUsage(entries[index].Message); usage != nil {
-			copy := *usage
-			return &copy
-		}
-	}
-	return nil
-}
-
 func EstimateContextTokens(messages agent.AgentMessages) ContextUsageEstimate {
 	lastIndex := -1
 	var usage *ai.Usage

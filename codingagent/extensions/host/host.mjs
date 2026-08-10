@@ -114,6 +114,16 @@ function errorValue(error) {
 	return { message: String(error) };
 }
 
+// JSON clone that drops functions and undefined members, wire-shaping a live
+// extension value before it crosses to orb.
+function plainJSON(value) {
+	if (value === undefined) return undefined;
+	return JSON.parse(JSON.stringify(value, (_key, item) => {
+		if (typeof item === "function" || typeof item === "undefined") return undefined;
+		return item;
+	}));
+}
+
 function log(level, values, extensionId) {
 	const message = values
 		.map((value) => {
@@ -483,17 +493,10 @@ lines.on("close", () => {
 	setTimeout(() => process.exit(process.exitCode ?? 0), 0);
 });
 
-// ===== SECTION: providers (agent-c) =====
+// ===== SECTION: providers =====
 registerHostSection((() => {
 	let nextInteractionID = 1;
 	const interactionPending = new Map();
-
-	function staticValue(value) {
-		return JSON.parse(JSON.stringify(value, (_key, item) => {
-			if (typeof item === "function" || typeof item === "undefined") return undefined;
-			return item;
-		}));
-	}
 
 	function retainCallback(state, providerID, method, owner, callback) {
 		if (typeof callback !== "function") return undefined;
@@ -553,8 +556,8 @@ registerHostSection((() => {
 			id: provider.id,
 			name: provider.name,
 			...(provider.baseUrl === undefined ? {} : { baseUrl: provider.baseUrl }),
-			...(provider.headers === undefined ? {} : { headers: staticValue(provider.headers) }),
-			models: staticValue(Array.from(models ?? [])),
+			...(provider.headers === undefined ? {} : { headers: plainJSON(provider.headers) }),
+			models: plainJSON(Array.from(models ?? [])),
 			auth: {},
 		};
 		if (auth.apiKey !== undefined) {
@@ -604,9 +607,9 @@ registerHostSection((() => {
 			...(config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl }),
 			...(config.apiKey === undefined ? {} : { apiKey: config.apiKey }),
 			...(config.api === undefined ? {} : { api: config.api }),
-			...(config.headers === undefined ? {} : { headers: staticValue(config.headers) }),
+			...(config.headers === undefined ? {} : { headers: plainJSON(config.headers) }),
 			...(config.authHeader === undefined ? {} : { authHeader: config.authHeader }),
-			...(config.models === undefined ? {} : { models: staticValue(config.models) }),
+			...(config.models === undefined ? {} : { models: plainJSON(config.models) }),
 			defined,
 		};
 		if (typeof config.streamSimple === "function") {
@@ -714,7 +717,7 @@ registerHostSection((() => {
 })());
 // ===== END SECTION =====
 
-// ===== SECTION: ui (agent-d) =====
+// ===== SECTION: ui =====
 registerHostSection((() => {
 	const themeMarker = "\u0000orb-theme-text\u0000";
 	const factories = new Map();
@@ -1303,7 +1306,7 @@ registerHostSection((() => {
 })());
 // ===== END SECTION =====
 
-// ===== SECTION: state (agent-e) =====
+// ===== SECTION: state =====
 registerHostSection((() => {
 	let baseSnapshot = normalizeSnapshot();
 	const sessionTransfers = new Map();
@@ -1583,7 +1586,7 @@ registerHostSection((() => {
 				let available;
 				if (negotiatedCapabilities.has("model_runtime_v1")) {
 					const result = await request("model_runtime_get_available", { extensionId: state.id, handle: contextHandle });
-					available = result?.models ?? [];
+					available = result?.catalog?.available ?? [];
 				} else {
 					available = availableOf();
 				}
@@ -1893,7 +1896,7 @@ registerHostSection((() => {
 })());
 // ===== END SECTION =====
 
-// ===== SECTION: services (orb-extension-sdk transport, agent-f) =====
+// ===== SECTION: services (orb-extension-sdk transport) =====
 registerHostSection((() => {
 	// Per-session transport state: event sinks and the live customTools
 	// closures orb calls back into via execute_session_tool.
@@ -1901,14 +1904,6 @@ registerHostSection((() => {
 	const transfers = new Map(); // transferId -> { parts, received, total }
 	const managerSessions = new WeakMap(); // SDK SessionManager instance -> session handle
 	let helloValue = {};
-
-	function plainJSON(value) {
-		if (value === undefined) return undefined;
-		return JSON.parse(JSON.stringify(value, (_key, item) => {
-			if (typeof item === "function" || typeof item === "undefined") return undefined;
-			return item;
-		}));
-	}
 
 	// Like request(), but the id is retained so an AbortSignal mirrors into orb
 	// as service_cancel, cancelling the Go-side context of the in-flight

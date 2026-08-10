@@ -27,7 +27,10 @@ test:
 	$(GO_ENV) CGO_ENABLED=0 go test ./ai/... ./conformance/runner/...
 
 lint: $(GOLANGCI_LINT)
-	$(GO_ENV) go vet ./...
+	# internal/chromalexers is vendored chroma/v2/lexers kept byte-close to
+	# upstream; its unkeyed Rule literals trip vet's composites check. Same
+	# exclusion as .golangci.yml (which plain `go vet` cannot read).
+	$(GO_ENV) go vet $$($(GO_ENV) go list ./... | grep -v /internal/chromalexers)
 	$(LINT_ENV) $(GOLANGCI_LINT) run
 
 nightly-live:
