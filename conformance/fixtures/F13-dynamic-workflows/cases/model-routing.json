@@ -30,12 +30,12 @@
     "durationMs": 0,
     "runId": "run-fixed-model-routing",
     "tokenUsage": {
-      "input": 4162,
+      "input": 4071,
       "output": 17,
-      "total": 8353,
+      "total": 8171,
       "cost": 0,
       "cacheRead": 0,
-      "cacheWrite": 4162
+      "cacheWrite": 4071
     }
   },
   "error": null,
@@ -52,13 +52,13 @@
       "id": "run-fixed-model-routing:0",
       "label": "small",
       "result": "Small tier answer.",
-      "tokens": 2777,
+      "tokens": 2717,
       "tokenUsage": {
-        "input": 1386,
+        "input": 1356,
         "output": 5,
         "cacheRead": 0,
-        "cacheWrite": 1386,
-        "total": 2777,
+        "cacheWrite": 1356,
+        "total": 2717,
         "cost": 0
       },
       "model": "faux/faux-mini"
@@ -79,13 +79,13 @@
       "id": "run-fixed-model-routing:1",
       "label": "untagged",
       "result": "Untagged answer.",
-      "tokens": 2778,
+      "tokens": 2716,
       "tokenUsage": {
-        "input": 1387,
+        "input": 1356,
         "output": 4,
         "cacheRead": 0,
-        "cacheWrite": 1387,
-        "total": 2778,
+        "cacheWrite": 1356,
+        "total": 2716,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -102,13 +102,13 @@
       "id": "run-fixed-model-routing:2",
       "label": "synthesized",
       "result": "Synthesized custom-id answer.",
-      "tokens": 2786,
+      "tokens": 2726,
       "tokenUsage": {
-        "input": 1389,
+        "input": 1359,
         "output": 8,
         "cacheRead": 0,
-        "cacheWrite": 1389,
-        "total": 2786,
+        "cacheWrite": 1359,
+        "total": 2726,
         "cost": 0
       },
       "model": "faux/synth-id"
@@ -160,12 +160,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 4162,
+        "input": 4071,
         "output": 17,
-        "total": 8353,
+        "total": 8171,
         "cost": 0,
         "cacheRead": 0,
-        "cacheWrite": 4162
+        "cacheWrite": 4071
       }
     }
   ],

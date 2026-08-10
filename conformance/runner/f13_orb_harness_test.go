@@ -1,9 +1,12 @@
 // F13 Orb replay harness. One harness serves every scenario, in extractor
 // order, over a single extension-host process:
 //
-//   - A fixed-length temp root (/tmp/orb-f13-XXXXXX, matching the extractor's
-//     mkdtemp pattern — faux token accounting counts the cwd embedded in the
-//     child-session system prompt, so path LENGTH is part of the goldens).
+//   - A temp root shaped like the extractor's (/tmp/orb-f13-XXXXXX). Faux
+//     token accounting counts the serialized context, but both the extractor
+//     and this harness rewrite machine-specific path roots (temp root, cwd,
+//     PI_PACKAGE_DIR docs paths) to the same canonical placeholders BEFORE
+//     the provider estimates usage, so neither the root's length nor the
+//     checkout location is part of the goldens.
 //   - The plugin installed hermetically by the same integrity-pinned lockfile
 //     the extractor embeds (npm ci; typebox is linked from the pinned
 //     .upstream tree like the extractor does, acorn installs from the lock).
@@ -79,6 +82,12 @@ type f13Harness struct {
 	auxMarker string
 	calls     []f13ProviderCall
 
+	// tokenCanon rewrites machine-specific path roots to the extractor's
+	// canonical placeholders inside the context handed to the faux provider,
+	// so token accounting matches the goldens regardless of where the replay
+	// runs (mirrors the extractor's canonicalizeTokenContext).
+	tokenCanon *strings.Replacer
+
 	manager *extensionhost.Manager
 	runner  *extensions.Runner
 	driver  extensions.ToolDefinition
@@ -108,9 +117,9 @@ func startF13Harness(t *testing.T) *f13Harness {
 		t.Skip("F13 orb replay requires the pinned .upstream tree (make ensure-upstream-fixture-tools)")
 	}
 
-	// Fixed-length root: the extractor's mkdtemp(join(tmpdir(), "orb-f13-"))
-	// appends exactly six characters under /tmp; faux input-token counts embed
-	// the cwd's length via the system prompt, so the replay must match it.
+	// Root shaped like the extractor's mkdtemp(join(tmpdir(), "orb-f13-")).
+	// The shape is cosmetic: path roots are canonicalized out of the faux
+	// token-count input on both sides, so the length does not matter.
 	suffix := make([]byte, 3)
 	if _, err := rand.Read(suffix); err != nil {
 		t.Fatal(err)
@@ -137,6 +146,12 @@ func startF13Harness(t *testing.T) *f13Harness {
 		}
 	}
 
+	var tokenPairs []string
+	for _, pair := range harness.pathReplacements() {
+		tokenPairs = append(tokenPairs, pair[0], pair[1])
+	}
+	harness.tokenCanon = strings.NewReplacer(tokenPairs...)
+
 	harness.writeProjectFixture(t)
 	harness.writeAgentDir(t)
 	harness.writeCatalogs(t)
@@ -144,6 +159,30 @@ func startF13Harness(t *testing.T) *f13Harness {
 	harness.startProviders()
 	harness.startHost(t, runtime)
 	return harness
+}
+
+// pathReplacements is the ordered machine-specific-path replacement table
+// shared by output canonicalization and faux token-count canonicalization —
+// the harness-side mirror of the extractor's pathReplacements/
+// tokenCountReplacements. packageDir is a child of the .upstream root and
+// must be rewritten first.
+func (harness *f13Harness) pathReplacements() [][2]string {
+	replacements := [][2]string{}
+	roots := []string{harness.root}
+	if canonical, err := filepath.EvalSymlinks(harness.root); err == nil && canonical != harness.root {
+		roots = append(roots, canonical)
+	}
+	for _, root := range roots {
+		dashed := strings.NewReplacer("/", "-", ".", "-").Replace(root)
+		replacements = append(replacements, [2]string{root, "<fixture>"}, [2]string{dashed, "<fixture-dash>"})
+	}
+	upstream := filepath.Join(f13RepoRoot(), ".upstream")
+	replacements = append(replacements,
+		[2]string{harness.cwdHash, "<cwdhash>"},
+		[2]string{filepath.Join(upstream, "packages", "coding-agent"), "<pi-package>"},
+		[2]string{upstream, "<upstream>"},
+	)
+	return replacements
 }
 
 func (harness *f13Harness) writeProjectFixture(t *testing.T) {
@@ -368,7 +407,64 @@ func (harness *f13Harness) streamFn(ctx context.Context, model *ai.Model, reques
 		harness.calls = append(harness.calls, call)
 		harness.mu.Unlock()
 	}
-	return provider.StreamSimple(ctx, model, requestContext, options)
+	// Faux token accounting counts the serialized context; hand the provider a
+	// canonical copy (path roots rewritten to the extractor's placeholders) so
+	// usage matches the goldens regardless of where the replay runs.
+	canonical, err := harness.canonicalizeContextForTokens(requestContext)
+	if err != nil {
+		return nil, err
+	}
+	return provider.StreamSimple(ctx, model, canonical, options)
+}
+
+// canonicalizeContextForTokens mirrors the extractor's
+// canonicalizeTokenContext: machine-specific path roots in the system prompt,
+// message texts, and serialized tools are rewritten to the canonical
+// placeholders before the faux provider estimates usage. Replacing inside the
+// wire encoding is byte-equivalent to replacing inside faux's serialized
+// prompt text (POSIX paths and the placeholders contain no JSON-escaped
+// characters, and ai.Marshal is JSON.stringify-compatible).
+func (harness *f13Harness) canonicalizeContextForTokens(requestContext ai.Context) (ai.Context, error) {
+	canonical := requestContext
+	if canonical.SystemPrompt != nil {
+		replaced := harness.tokenCanon.Replace(*canonical.SystemPrompt)
+		canonical.SystemPrompt = &replaced
+	}
+	if len(requestContext.Messages) > 0 {
+		messages := make(ai.MessageList, len(requestContext.Messages))
+		for index, message := range requestContext.Messages {
+			encoded, err := ai.Marshal(message)
+			if err != nil {
+				return canonical, err
+			}
+			replaced := harness.tokenCanon.Replace(string(encoded))
+			if replaced == string(encoded) {
+				messages[index] = message
+				continue
+			}
+			decoded, err := ai.UnmarshalMessage([]byte(replaced))
+			if err != nil {
+				return canonical, err
+			}
+			messages[index] = decoded
+		}
+		canonical.Messages = messages
+	}
+	if requestContext.Tools != nil && len(*requestContext.Tools) > 0 {
+		encoded, err := ai.Marshal(*requestContext.Tools)
+		if err != nil {
+			return canonical, err
+		}
+		replaced := harness.tokenCanon.Replace(string(encoded))
+		if replaced != string(encoded) {
+			tools := make([]ai.Tool, 0, len(*requestContext.Tools))
+			if err := json.Unmarshal([]byte(replaced), &tools); err != nil {
+				return canonical, err
+			}
+			canonical.Tools = &tools
+		}
+	}
+	return canonical, nil
 }
 
 func f13LastUserText(requestContext ai.Context) string {
@@ -479,8 +575,9 @@ func (harness *f13Harness) startHost(t *testing.T, runtime extensionhost.Runtime
 		t.Cleanup(func() { _ = os.Setenv("XDG_CONFIG_HOME", value) })
 	}
 	// Upstream built its docs section from the pinned .upstream package dir;
-	// point Orb's prompt builder at the same directory so the docs paths — and
-	// with them the faux token accounting — carry identical byte lengths.
+	// point Orb's prompt builder at the same directory. Both sides rewrite it
+	// to <pi-package> before faux token accounting, so only the path's tail
+	// (README.md, docs, examples) must line up — not its absolute location.
 	t.Setenv("PI_PACKAGE_DIR", filepath.Join(f13RepoRoot(), ".upstream", "packages", "coding-agent"))
 	manager := extensionhost.NewManager(extensionhost.Options{
 		AgentDir: harness.agentDir, CWD: harness.project, Version: "test", Runtime: &runtime,
@@ -722,17 +819,7 @@ var f13UUIDPattern = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
 // order (equivalent to the extractor's depth-first value traversal).
 func (harness *f13Harness) canonicalize(document []byte) []byte {
 	value := string(document)
-	replacements := [][2]string{}
-	roots := []string{harness.root}
-	if canonical, err := filepath.EvalSymlinks(harness.root); err == nil && canonical != harness.root {
-		roots = append(roots, canonical)
-	}
-	for _, root := range roots {
-		dashed := strings.NewReplacer("/", "-", ".", "-").Replace(root)
-		replacements = append(replacements, [2]string{root, "<fixture>"}, [2]string{dashed, "<fixture-dash>"})
-	}
-	replacements = append(replacements, [2]string{harness.cwdHash, "<cwdhash>"})
-	for _, pair := range replacements {
+	for _, pair := range harness.pathReplacements() {
 		value = strings.ReplaceAll(value, pair[0], pair[1])
 	}
 	seen := map[string]string{}

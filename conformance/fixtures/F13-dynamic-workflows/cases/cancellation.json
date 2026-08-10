@@ -20,13 +20,13 @@
       "id": "run-fixed-cancellation:0",
       "label": "one",
       "result": "First result before the abort.",
-      "tokens": 2780,
+      "tokens": 2720,
       "tokenUsage": {
-        "input": 1386,
+        "input": 1356,
         "output": 8,
         "cacheRead": 0,
-        "cacheWrite": 1386,
-        "total": 2780,
+        "cacheWrite": 1356,
+        "total": 2720,
         "cost": 0
       },
       "model": "faux/faux-model"

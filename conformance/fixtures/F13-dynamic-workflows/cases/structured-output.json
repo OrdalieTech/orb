@@ -25,12 +25,12 @@
     "durationMs": 0,
     "runId": "run-fixed-structured-output",
     "tokenUsage": {
-      "input": 6102,
+      "input": 5951,
       "output": 52,
-      "total": 12961,
+      "total": 12628,
       "cost": 0,
-      "cacheRead": 703,
-      "cacheWrite": 6104
+      "cacheRead": 673,
+      "cacheWrite": 5952
     }
   },
   "error": null,
@@ -50,13 +50,13 @@
         "fruit": "apple",
         "count": 3
       },
-      "tokens": 3196,
+      "tokens": 3136,
       "tokenUsage": {
-        "input": 1592,
+        "input": 1562,
         "output": 12,
         "cacheRead": 0,
-        "cacheWrite": 1592,
-        "total": 3196,
+        "cacheWrite": 1562,
+        "total": 3136,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -75,13 +75,13 @@
       "result": {
         "veg": "leek"
       },
-      "tokens": 4462,
+      "tokens": 4340,
       "tokenUsage": {
-        "input": 2198,
+        "input": 2137,
         "output": 15,
         "cacheRead": 50,
-        "cacheWrite": 2199,
-        "total": 4462,
+        "cacheWrite": 2138,
+        "total": 4340,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -100,13 +100,13 @@
       "result": {
         "mineral": "quartz"
       },
-      "tokens": 5303,
+      "tokens": 5152,
       "tokenUsage": {
-        "input": 2312,
+        "input": 2252,
         "output": 25,
-        "cacheRead": 653,
-        "cacheWrite": 2313,
-        "total": 5303,
+        "cacheRead": 623,
+        "cacheWrite": 2252,
+        "total": 5152,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -114,12 +114,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 6102,
+        "input": 5951,
         "output": 52,
-        "total": 12961,
+        "total": 12628,
         "cost": 0,
-        "cacheRead": 703,
-        "cacheWrite": 6104
+        "cacheRead": 673,
+        "cacheWrite": 5952
       }
     }
   ],

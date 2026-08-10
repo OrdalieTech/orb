@@ -14,12 +14,12 @@
     "durationMs": 0,
     "runId": "run-fixed-persist-agent-sessions",
     "tokenUsage": {
-      "input": 2310,
+      "input": 2280,
       "output": 13,
-      "total": 5116,
+      "total": 5024,
       "cost": 0,
-      "cacheRead": 482,
-      "cacheWrite": 2311
+      "cacheRead": 451,
+      "cacheWrite": 2280
     }
   },
   "error": null,
@@ -36,13 +36,13 @@
       "id": "run-fixed-persist-agent-sessions:0",
       "label": "keeper",
       "result": "Kept the marker safe.",
-      "tokens": 5116,
+      "tokens": 5024,
       "tokenUsage": {
-        "input": 2310,
+        "input": 2280,
         "output": 13,
-        "cacheRead": 482,
-        "cacheWrite": 2311,
-        "total": 5116,
+        "cacheRead": 451,
+        "cacheWrite": 2280,
+        "total": 5024,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -50,12 +50,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 2310,
+        "input": 2280,
         "output": 13,
-        "total": 5116,
+        "total": 5024,
         "cost": 0,
-        "cacheRead": 482,
-        "cacheWrite": 2311
+        "cacheRead": 451,
+        "cacheWrite": 2280
       }
     }
   ],
@@ -235,11 +235,11 @@
             "provider": "faux",
             "model": "faux-model",
             "usage": {
-              "input": 1387,
+              "input": 1356,
               "output": 7,
               "cacheRead": 0,
-              "cacheWrite": 1387,
-              "totalTokens": 2781,
+              "cacheWrite": 1356,
+              "totalTokens": 2719,
               "cost": {
                 "input": 0,
                 "output": 0,
@@ -288,11 +288,11 @@
             "provider": "faux",
             "model": "faux-model",
             "usage": {
-              "input": 923,
+              "input": 924,
               "output": 6,
-              "cacheRead": 482,
+              "cacheRead": 451,
               "cacheWrite": 924,
-              "totalTokens": 2335,
+              "totalTokens": 2305,
               "cost": {
                 "input": 0,
                 "output": 0,

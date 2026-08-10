@@ -14,12 +14,12 @@
     "durationMs": 0,
     "runId": "run-fixed-web-toolset",
     "tokenUsage": {
-      "input": 3762,
+      "input": 3734,
       "output": 34,
-      "total": 8609,
+      "total": 8489,
       "cost": 0,
-      "cacheRead": 1049,
-      "cacheWrite": 3764
+      "cacheRead": 987,
+      "cacheWrite": 3734
     }
   },
   "error": null,
@@ -36,13 +36,13 @@
       "id": "run-fixed-web-toolset:0",
       "label": "researcher",
       "result": "Research done: example.test documents the topic.",
-      "tokens": 8609,
+      "tokens": 8489,
       "tokenUsage": {
-        "input": 3762,
+        "input": 3734,
         "output": 34,
-        "cacheRead": 1049,
-        "cacheWrite": 3764,
-        "total": 8609,
+        "cacheRead": 987,
+        "cacheWrite": 3734,
+        "total": 8489,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -50,12 +50,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 3762,
+        "input": 3734,
         "output": 34,
-        "total": 8609,
+        "total": 8489,
         "cost": 0,
-        "cacheRead": 1049,
-        "cacheWrite": 3764
+        "cacheRead": 987,
+        "cacheWrite": 3734
       }
     }
   ],
