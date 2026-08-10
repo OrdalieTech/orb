@@ -7,9 +7,13 @@
 //     PI_PACKAGE_DIR docs paths) to the same canonical placeholders BEFORE
 //     the provider estimates usage, so neither the root's length nor the
 //     checkout location is part of the goldens.
-//   - The plugin installed hermetically by the same integrity-pinned lockfile
-//     the extractor embeds (npm ci; typebox is linked from the pinned
-//     .upstream tree like the extractor does, acorn installs from the lock).
+//   - The plugin installed hermetically by an integrity-pinned lockfile
+//     extending the extractor's (npm ci; acorn installs from the lock, and
+//     typebox — the peer the product installer materializes natively at
+//     `orb install` time — is pinned to the same 1.3.7 the extractor resolves
+//     from the pinned .upstream tree, keeping goldens byte-stable). The
+//     product install path itself (native registry client + peer install +
+//     real host load) is exercised by TestF13UserShapedInstall.
 //   - A driver extension (testdata/f13-driver.mjs) loaded through the real
 //     host; it imports the plugin sources — whose @earendil-works/pi-*
 //     imports resolve to the materialized orb-extension-sdk via loader.mjs —
@@ -55,6 +59,11 @@ const (
 	f13PluginIntegrity = "sha512-YeIIJQpYpF5hPCQm2dlW6zsonZ82BTdelIh1J7TKmaoZkatiTKwM/yBSby7bZpatWQ2YbYdj+RfGEll+cXT8Hg=="
 	f13AcornVersion    = "8.16.0"
 	f13AcornIntegrity  = "sha512-UVJyE9MttOsBQIDKw1skb9nAwQuR5wuGD3+82K6JgJlm/Y+KI92oNsMNGZCYdDsVtRHSak0pcV5Dno5+4jh9sw=="
+	// The version the extractor's goldens were generated against: upstream pins
+	// typebox 1.3.7 (.upstream/package-lock.json), and typebox schema output
+	// reaches faux token accounting through the serialized tools JSON.
+	f13TypeboxVersion   = "1.3.7"
+	f13TypeboxIntegrity = "sha512-meKuifc33Pccx0O6PdIzYMq3Og8zvP4TIi/a+Bw3AEMZMxOD0+RHGQvpglEe6Zdy3wZ8nqn/j95h8LUZLk/6Hg=="
 )
 
 type f13ProviderCall struct {
@@ -110,8 +119,7 @@ func startF13Harness(t *testing.T) *f13Harness {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("F13 orb replay requires git on PATH")
 	}
-	typebox := filepath.Join(f13RepoRoot(), ".upstream", "node_modules", "typebox")
-	if _, err := os.Stat(filepath.Join(typebox, "package.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(f13RepoRoot(), ".upstream", "packages", "coding-agent", "package.json")); err != nil {
 		t.Skip("F13 orb replay requires the pinned .upstream tree (make ensure-upstream-fixture-tools)")
 	}
 
@@ -153,7 +161,7 @@ func startF13Harness(t *testing.T) *f13Harness {
 	harness.writeProjectFixture(t)
 	harness.writeAgentDir(t)
 	harness.writeCatalogs(t)
-	harness.installPlugin(t, typebox)
+	harness.installPlugin(t)
 	harness.startProviders()
 	harness.startHost(t, runtime)
 	return harness
@@ -260,21 +268,28 @@ func (harness *f13Harness) writeCatalogs(t *testing.T) {
 	}
 }
 
-func (harness *f13Harness) installPlugin(t *testing.T, typebox string) {
+func (harness *f13Harness) installPlugin(t *testing.T) {
 	t.Helper()
 	pluginFixture := filepath.Join(harness.root, "plugin")
 	if err := os.MkdirAll(pluginFixture, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// typebox is a peerDependency of the plugin; the product installer
+	// materializes it natively from the registry at `orb install` time. Here it
+	// is pinned as a root dependency so npm ci installs the exact
+	// integrity-checked version the extractor's goldens were generated against
+	// (--legacy-peer-deps keeps the @earendil-works/pi-* peers uninstalled,
+	// matching the product installer's pi-* skip).
 	packageJSON := fmt.Sprintf(`{
   "name": "orb-f13-plugin-fixture",
   "version": "1.0.0",
   "private": true,
   "dependencies": {
-    %q: %q
+    %q: %q,
+    "typebox": %q
   }
 }
-`, f13PluginName, f13PluginVersion)
+`, f13PluginName, f13PluginVersion, f13TypeboxVersion)
 	lock := fmt.Sprintf(`{
   "name": "orb-f13-plugin-fixture",
   "version": "1.0.0",
@@ -284,7 +299,7 @@ func (harness *f13Harness) installPlugin(t *testing.T, typebox string) {
     "": {
       "name": "orb-f13-plugin-fixture",
       "version": "1.0.0",
-      "dependencies": { %q: %q }
+      "dependencies": { %q: %q, "typebox": %q }
     },
     "node_modules/%s": {
       "version": %q,
@@ -305,11 +320,18 @@ func (harness *f13Harness) installPlugin(t *testing.T, typebox string) {
       "license": "MIT",
       "bin": { "acorn": "bin/acorn" },
       "engines": { "node": ">=0.4.0" }
+    },
+    "node_modules/typebox": {
+      "version": %q,
+      "resolved": "https://registry.npmjs.org/typebox/-/typebox-%s.tgz",
+      "integrity": %q,
+      "license": "MIT"
     }
   }
 }
-`, f13PluginName, f13PluginVersion, f13PluginName, f13PluginVersion, f13PluginName, f13PluginVersion,
-		f13PluginIntegrity, f13AcornVersion, f13AcornVersion, f13AcornIntegrity)
+`, f13PluginName, f13PluginVersion, f13TypeboxVersion, f13PluginName, f13PluginVersion, f13PluginName,
+		f13PluginVersion, f13PluginIntegrity, f13AcornVersion, f13AcornVersion, f13AcornIntegrity,
+		f13TypeboxVersion, f13TypeboxVersion, f13TypeboxIntegrity)
 	if err := os.WriteFile(filepath.Join(pluginFixture, "package.json"), []byte(packageJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -322,11 +344,6 @@ func (harness *f13Harness) installPlugin(t *testing.T, typebox string) {
 	command.Env = append(os.Environ(), "npm_config_update_notifier=false")
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Skipf("F13 orb replay: npm ci for the pinned plugin failed (registry unreachable and cache cold?): %v\n%s", err, output)
-	}
-	// The plugin value-imports typebox (a peer dependency the lock does not
-	// install); resolve it to the pinned .upstream copy like the extractor.
-	if err := os.Symlink(typebox, filepath.Join(pluginFixture, "node_modules", "typebox")); err != nil {
-		t.Fatal(err)
 	}
 	harness.pluginRoot = filepath.Join(pluginFixture, "node_modules", f13PluginName)
 }

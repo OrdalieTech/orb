@@ -6,6 +6,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.4.13] - 2026-08-10
+
 ### Changed
 
 - Faster startup and session resume, identical behavior: the syntax-highlighting lexer registry now builds on first highlight instead of at process start (`orb --version` wall time roughly halves, peak RSS drops ~5MB), the built-in model catalog is decoded once per process and merged without redundant deep clones (offline registry construction ~17ms → ~1.5ms, 29k → 4k allocations), and the session/harness JSONL loaders skip redundant validation scans, per-line UTF-8 transforms, and oversized read buffers (1000-turn v3 session load ~37ms → ~28ms, allocations -26%).
@@ -15,12 +17,13 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Fixed
 
+- `orb install npm:<package>` now materializes the package's required peer dependencies natively from the registry (respecting `peerDependenciesMeta.optional`), so extensions that peer-depend on ordinary packages — e.g. `pi-dynamic-workflows` on `typebox` — load instead of failing with "Cannot find package". Upstream pi serves such peers in-process, which Orb's out-of-process extension host cannot; the `@earendil-works/pi-*` / `@mariozechner/pi-*` SDK peers are deliberately never fetched (the embedded orb-extension-sdk serves that surface), and the dependency `npm install` for managed npm packages now passes upstream's peer-resolution opt-out flags (`--legacy-peer-deps` / bun `--omit=peer` / pnpm config) so no package manager materializes a real pi SDK either.
 - The bash tool's system-prompt guideline matches upstream v0.84.1's wording ("You can inspect PI_* environment variables…").
 
 ### Changed
 
 - Orb's default system prompt now presents it as a general-purpose problem-solving harness for work and software development, while retaining its coding capabilities and pi-compatible prompt assembly.
-- The upstream compatibility target is now pi v0.84.1. Sessions write the JSONL v4 tree format (v1–v3 still migrate), JSON/RPC `message_update` events carry only deltas, Gemini-3 tool-call ids and structured Bedrock failure diagnostics ride the provider wire, OpenAI Responses ending incomplete without a provider reason surface as errors, and `/scoped-models` opens its selector from cached models immediately.
+- The upstream compatibility target is now pi v0.84.1. Harness session repos write the JSONL v4 format (product session files remain v3, matching upstream), JSON/RPC `message_update` events carry only deltas, Gemini-3 tool-call ids and structured Bedrock failure diagnostics ride the provider wire, OpenAI Responses ending incomplete without a provider reason surface as errors, and `/scoped-models` opens its selector from cached models immediately.
 
 ### Added
 

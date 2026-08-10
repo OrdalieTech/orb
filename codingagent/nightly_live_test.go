@@ -54,14 +54,19 @@ func TestNightlyLiveSuite(t *testing.T) {
 	if os.Getenv("ORB_NIGHTLY_LIVE") != "1" {
 		t.Skip("set ORB_NIGHTLY_LIVE=1 to run the capped OpenAI and Anthropic nightly suite")
 	}
-	providers := []nightlyLiveProvider{
-		newNightlyLiveProvider(t, catalog, "openai", "OPENAI_API_KEY", "ORB_OPENAI_MODEL", nightlyLiveOpenAIModel),
-		newNightlyLiveProvider(t, catalog, "anthropic", "ANTHROPIC_API_KEY", "ORB_ANTHROPIC_MODEL", nightlyLiveAnthropicModel),
-	}
 	budget := &nightlyLiveBudget{max: loadNightlyLiveBudget(t)}
 
-	for _, provider := range providers {
-		t.Run(provider.name, func(t *testing.T) {
+	for _, leg := range []struct{ name, apiEnv, modelEnv, defaultModel string }{
+		{"openai", "OPENAI_API_KEY", "ORB_OPENAI_MODEL", nightlyLiveOpenAIModel},
+		{"anthropic", "ANTHROPIC_API_KEY", "ORB_ANTHROPIC_MODEL", nightlyLiveAnthropicModel},
+	} {
+		t.Run(leg.name, func(t *testing.T) {
+			// A missing key skips this leg only, so one absent credential
+			// cannot zero out the other provider's live coverage.
+			if strings.TrimSpace(os.Getenv(leg.apiEnv)) == "" {
+				t.Skipf("ORB_NIGHTLY_LIVE=1: %s unset, skipping the %s leg", leg.apiEnv, leg.name)
+			}
+			provider := newNightlyLiveProvider(t, catalog, leg.name, leg.apiEnv, leg.modelEnv, leg.defaultModel)
 			t.Run("multi-turn-read-edit-bash", func(t *testing.T) {
 				runNightlyReadEditBash(t, provider, budget)
 			})

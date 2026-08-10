@@ -188,6 +188,85 @@ func TestInstallNpmSelectsRangeAndLatest(t *testing.T) {
 	}
 }
 
+// The extension host serves only the @earendil-works/pi-* / @mariozechner/pi-*
+// SDK surface in-process; every other required peer must exist on disk. The
+// installer materializes them natively, skipping the pi-* scopes (never
+// fetched — the fake registry does not serve them, so an attempted fetch
+// fails the install) and peers marked optional in peerDependenciesMeta.
+func TestInstallNpmInstallsPeerDependencies(t *testing.T) {
+	manager, _, agentDir, _ := newTestPackageManager(t)
+	registry := newFakeNpmRegistry(t)
+	manager.registryBaseURL = registry.server.URL
+	registry.add(fakeNpmPackage{name: "@quintin/pi-plugin", version: "1.0.0", files: map[string]string{
+		"package.json": `{
+			"name": "@quintin/pi-plugin", "version": "1.0.0",
+			"peerDependencies": {
+				"@earendil-works/pi-coding-agent": ">=0.80.8",
+				"@mariozechner/pi-tui": "*",
+				"typebox": "^1.0.0",
+				"left-pad": "*"
+			},
+			"peerDependenciesMeta": {"left-pad": {"optional": true}}
+		}`,
+	}})
+	// typebox itself declares a required peer: transitive peers install too,
+	// flat in the plugin's node_modules.
+	registry.add(fakeNpmPackage{name: "typebox", version: "1.3.7", files: map[string]string{
+		"package.json": `{"name":"typebox","version":"1.3.7","peerDependencies":{"chained":"*"}}`,
+	}})
+	// A 2.x typebox exists; the ^1.0.0 peer range must win over "latest".
+	registry.add(fakeNpmPackage{name: "typebox", version: "2.0.0", files: map[string]string{
+		"package.json": `{"name":"typebox","version":"2.0.0"}`,
+	}})
+	registry.add(fakeNpmPackage{name: "chained", version: "3.1.0", files: map[string]string{
+		"package.json": `{"name":"chained","version":"3.1.0"}`,
+	}})
+
+	// Peers install natively: no npm subprocess may run for a package without
+	// regular dependencies.
+	manager.runCommand = func(spec execSpec) (string, error) {
+		t.Fatalf("unexpected subprocess: %+v", spec)
+		return "", nil
+	}
+	if err := manager.Install("npm:@quintin/pi-plugin@1.0.0", false); err != nil {
+		t.Fatal(err)
+	}
+	pluginDir := filepath.Join(agentDir, "npm", "node_modules", "@quintin/pi-plugin")
+	if version := getInstalledNpmVersion(filepath.Join(pluginDir, "node_modules", "typebox")); version != "1.3.7" {
+		t.Fatalf("typebox peer version = %q, want 1.3.7", version)
+	}
+	if version := getInstalledNpmVersion(filepath.Join(pluginDir, "node_modules", "chained")); version != "3.1.0" {
+		t.Fatalf("transitive peer version = %q, want 3.1.0", version)
+	}
+	if pathExists(filepath.Join(pluginDir, "node_modules", "left-pad")) {
+		t.Fatal("optional peer must not be installed")
+	}
+	for _, scope := range []string{"@earendil-works", "@mariozechner"} {
+		if pathExists(filepath.Join(pluginDir, "node_modules", scope)) {
+			t.Fatalf("%s pi SDK peer must never be materialized", scope)
+		}
+	}
+}
+
+func TestInstallNpmSkipsBundledPeerDependencies(t *testing.T) {
+	manager, _, agentDir, _ := newTestPackageManager(t)
+	registry := newFakeNpmRegistry(t)
+	manager.registryBaseURL = registry.server.URL
+	// typebox ships inside the tarball; the registry does not serve it, so a
+	// redundant fetch would fail the install.
+	registry.add(fakeNpmPackage{name: "pi-bundled-peer", version: "1.0.0", files: map[string]string{
+		"package.json":                      `{"name":"pi-bundled-peer","version":"1.0.0","peerDependencies":{"typebox":"*"}}`,
+		"node_modules/typebox/package.json": `{"name":"typebox","version":"1.3.7"}`,
+	}})
+
+	if err := manager.Install("npm:pi-bundled-peer@1.0.0", false); err != nil {
+		t.Fatal(err)
+	}
+	if getInstalledNpmVersion(filepath.Join(agentDir, "npm", "node_modules", "pi-bundled-peer", "node_modules", "typebox")) != "1.3.7" {
+		t.Fatal("bundled peer should remain in place")
+	}
+}
+
 func TestInstallNpmRejectsCorruptTarball(t *testing.T) {
 	manager, _, agentDir, _ := newTestPackageManager(t)
 	registry := newFakeNpmRegistry(t)

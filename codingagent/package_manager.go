@@ -907,6 +907,62 @@ func (manager *PackageManager) getDependencyInstallArgs() []string {
 	return []string{"install", "--omit=dev"}
 }
 
+// getPackageManagerName mirrors upstream getPackageManagerName: the entry
+// after the last "--" separator in the npmCommand argv (wrapper commands like
+// ["mise","exec","--","npm"]), else the first entry, basename'd with a
+// trailing .cmd/.exe stripped.
+func (manager *PackageManager) getPackageManagerName() string {
+	command, args, err := manager.getNpmCommand()
+	if err != nil {
+		return ""
+	}
+	parts := append([]string{command}, args...)
+	name := command
+	for index := len(parts) - 1; index >= 0; index-- {
+		if parts[index] != "--" {
+			continue
+		}
+		name = ""
+		if index+1 < len(parts) {
+			name = parts[index+1]
+		}
+		break
+	}
+	if name == "" {
+		return ""
+	}
+	base := filepath.Base(name)
+	for _, suffix := range [...]string{".cmd", ".exe", ".CMD", ".EXE"} {
+		if strings.HasSuffix(base, suffix) {
+			return base[:len(base)-len(suffix)]
+		}
+	}
+	return base
+}
+
+// getPeerInstallOptOutArgs mirrors the peer-resolution opt-outs of upstream
+// getNpmInstallArgs (npm --legacy-peer-deps, bun --omit=peer, pnpm config
+// flags): managed npm installs must never let the package manager solve
+// peerDependencies. Upstream disables them because the pi process serves the
+// @earendil-works/pi-* peers in-process; orb additionally must not fetch them
+// at all — the embedded orb-extension-sdk serves that surface and the
+// extension host refuses a real pi SDK install from node_modules. Non-pi
+// peers are materialized natively by installNpmPeerDependencies instead.
+func (manager *PackageManager) getPeerInstallOptOutArgs() []string {
+	switch manager.getPackageManagerName() {
+	case "bun":
+		return []string{"--omit=peer"}
+	case "pnpm":
+		return []string{
+			"--config.auto-install-peers=false",
+			"--config.strict-peer-dependencies=false",
+			"--config.strict-dep-builds=false",
+		}
+	default:
+		return []string{"--legacy-peer-deps"}
+	}
+}
+
 func declaredDependencies(packageJSONPath string) []string {
 	pkg, err := readPackageJSON(packageJSONPath)
 	if err != nil {
@@ -924,8 +980,11 @@ func declaredDependencies(packageJSONPath string) []string {
 // package dir (upstream runNpmCommand(getGitDependencyInstallArgs())).
 // Packages without declared dependencies — or shipping them bundled in
 // node_modules — need no Node toolchain; a missing npm binary is a warning,
-// not an install failure.
-func (manager *PackageManager) installPackageDependencies(packageDir string) error {
+// not an install failure. disablePeers appends the upstream getNpmInstallArgs
+// peer-resolution opt-outs: set on the managed npm install path (where peers
+// are materialized natively by installNpmPeerDependencies), unset on the git
+// path to keep upstream's plain-install behavior there.
+func (manager *PackageManager) installPackageDependencies(packageDir string, disablePeers bool) error {
 	dependencies := declaredDependencies(filepath.Join(packageDir, "package.json"))
 	if len(dependencies) == 0 {
 		return nil
@@ -945,6 +1004,9 @@ func (manager *PackageManager) installPackageDependencies(packageDir string) err
 		return err
 	}
 	args := append(append([]string(nil), baseArgs...), manager.getDependencyInstallArgs()...)
+	if disablePeers {
+		args = append(args, manager.getPeerInstallOptOutArgs()...)
+	}
 	if _, err := manager.runCommand(execSpec{name: command, args: args, dir: packageDir, stream: true}); err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
 			_, _ = fmt.Fprintf(manager.stderr, "Warning: %s not found; skipped installing dependencies for %s. Install npm or set the npmCommand setting.\n", command, packageDir)
@@ -1188,7 +1250,7 @@ func (manager *PackageManager) installGit(source *GitSource, scope string) (resu
 			return err
 		}
 	}
-	return manager.installPackageDependencies(targetDir)
+	return manager.installPackageDependencies(targetDir, false)
 }
 
 func (manager *PackageManager) updateGit(source *GitSource, scope string) error {
@@ -1263,7 +1325,7 @@ func (manager *PackageManager) reconcileGitRef(targetDir, ref string) error {
 	if err := manager.runGit(targetDir, "clean", "-fdx"); err != nil {
 		return err
 	}
-	return manager.installPackageDependencies(targetDir)
+	return manager.installPackageDependencies(targetDir, false)
 }
 
 func (manager *PackageManager) refreshTemporaryGitSource(source *GitSource, sourceStr string) {
