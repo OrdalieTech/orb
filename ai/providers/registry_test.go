@@ -103,8 +103,11 @@ func TestFreshUpstreamProviderRoutes(t *testing.T) {
 		if len(models) != 15 {
 			t.Fatalf("%s models = %d, want 15", test.id, len(models))
 		}
-		if _, ok := catalog.Find(string(test.id), "qwen3.8-max-preview"); !ok {
-			t.Fatalf("%s is missing qwen3.8-max-preview", test.id)
+		if _, ok := catalog.Find(string(test.id), "qwen3.8-max"); !ok {
+			t.Fatalf("%s is missing qwen3.8-max", test.id)
+		}
+		if _, ok := catalog.Find(string(test.id), "qwen3.8-max-preview"); ok {
+			t.Fatalf("%s still lists retired qwen3.8-max-preview", test.id)
 		}
 		for _, excluded := range []string{"qwen-image-2.0", "qwen-image-2.0-pro", "wan2.7-image", "wan2.7-image-pro"} {
 			if _, ok := catalog.Find(string(test.id), excluded); ok {

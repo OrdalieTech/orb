@@ -1,6 +1,6 @@
 {
   "family": "F3-session",
-  "upstreamCommit": "845d6ff1f6643aba440341cce877ce1c43ebbc39",
+  "upstreamCommit": "53fa77ccd8a279eb87e92294ef3687b03ff80112",
   "generator": "conformance/extract/f3-session.ts",
   "source": "packages/coding-agent/src/modes/print-mode.ts + packages/coding-agent/src/core/agent-session.ts + packages/ai/src/providers/faux.ts",
   "format": "agent-session-event-jsonl-v1",

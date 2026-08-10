@@ -32,8 +32,8 @@ func TestHarnessStorageBecomesAByteExactSessionManager(t *testing.T) {
 	if got := manager.GetCWD(); got != cwd {
 		t.Fatalf("cwd = %q, want %q", got, cwd)
 	}
-	if leaf := manager.GetLeafID(); leaf == nil || *leaf != "tools-empty" {
-		t.Fatalf("leaf = %v, want tools-empty", leaf)
+	if leaf := manager.GetLeafID(); leaf == nil || *leaf != "branch-summary" {
+		t.Fatalf("leaf = %v, want branch-summary", leaf)
 	}
 	got, err := manager.JSONL()
 	if err != nil {
@@ -73,16 +73,14 @@ func TestHarnessStorageAndSessionManagerShareLiveWrites(t *testing.T) {
 		t.Fatalf("manager did not observe storage append: last id = %q", got)
 	}
 
-	nameID, err := manager.AppendSessionInfo("  live\nname  ")
-	if err != nil {
+	if _, err := manager.AppendSessionInfo("  live\nname  "); err != nil {
 		t.Fatal(err)
 	}
-	nameEntry, ok := storage.Entry(nameID)
-	if !ok || nameEntry.Type != "session_info" || nameEntry.Name != "live name" {
-		t.Fatalf("storage did not observe manager append: %+v, exists=%v", nameEntry, ok)
+	if name, ok := storage.SessionName(); !ok || name != "live name" {
+		t.Fatalf("storage did not observe manager rename: %q, ok=%v", name, ok)
 	}
-	if nameEntry.ParentID == nil || *nameEntry.ParentID != "external-user" {
-		t.Fatalf("manager append parent = %v, want external-user", nameEntry.ParentID)
+	if name := manager.GetSessionName(); name == nil || *name != "live name" {
+		t.Fatalf("manager session name = %v, want live name", name)
 	}
 
 	if err := manager.Branch("root-user"); err != nil {

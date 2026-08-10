@@ -246,6 +246,10 @@ func StreamBedrockConverseWithOptions(
 		output := newAssistantMessage(model)
 		streamOptions := bedrockStreamOptions(options)
 
+		// Captured after Send so fail can still correlate a mid-stream failure:
+		// exceptions delivered as stream events carry no HTTP metadata of their own.
+		responseRequestID := ""
+
 		// Upstream bedrock-converse-stream.ts never applies timeoutMs; only the
 		// caller's abort signal (the parent ctx) can end the stream early.
 		fail := func(err error) {
@@ -258,6 +262,12 @@ func StreamBedrockConverseWithOptions(
 			output.StopReason = reason
 			message := formatBedrockError(err)
 			output.ErrorMessage = &message
+			if reason == ai.StopReasonError {
+				appendBedrockFailureDiagnostic(output, err, responseRequestID)
+				// Upstream sets errorMessage before appending diagnostics, so it
+				// serializes ahead of them (and of responseId, never set here).
+				ai.SetAssistantMessageErrorBeforeResponseID(output, true)
+			}
 			yield(ai.ErrorEvent{Reason: reason, Error: output}, nil)
 		}
 
@@ -294,6 +304,7 @@ func StreamBedrockConverseWithOptions(
 			return
 		}
 		defer func() { _ = response.Close() }()
+		responseRequestID = normalizeBedrockDiagnosticValue(response.RequestID())
 		if streamOptions.OnResponse != nil && response.Status() != 0 {
 			headers := map[string]string{}
 			if requestID := response.RequestID(); requestID != "" {
@@ -1188,6 +1199,65 @@ func formatBedrockError(err error) string {
 		return prefix + ": " + core
 	}
 	return core
+}
+
+// Over-long values are dropped rather than truncated: a truncated request id is not a request id.
+const maxBedrockDiagnosticValueChars = 200
+
+func normalizeBedrockDiagnosticValue(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) > maxBedrockDiagnosticValueChars {
+		return ""
+	}
+	return trimmed
+}
+
+// Modeled Bedrock errors all end in "Exception", unlike transport names such as "TimeoutError".
+func extractBedrockErrorCode(err error) string {
+	var apiError interface {
+		error
+		ErrorCode() string
+	}
+	if !errors.As(err, &apiError) || !strings.HasSuffix(apiError.ErrorCode(), "Exception") {
+		return ""
+	}
+	return normalizeBedrockDiagnosticValue(apiError.ErrorCode())
+}
+
+// appendBedrockFailureDiagnostic records structured metadata alongside ErrorMessage,
+// which stays byte-identical because isRetryableAssistantError matches against it.
+// Unknown fields are omitted, never guessed: a modeled mid-stream exception carries no
+// HTTP metadata of its own, leaving only fallbackRequestID.
+func appendBedrockFailureDiagnostic(output *ai.AssistantMessage, err error, fallbackRequestID string) {
+	details := struct {
+		Status    *int   `json:"status,omitempty"`
+		ErrorCode string `json:"errorCode,omitempty"`
+		RequestID string `json:"requestId,omitempty"`
+	}{ErrorCode: extractBedrockErrorCode(err)}
+	var responseError *awshttp.ResponseError
+	if errors.As(err, &responseError) {
+		status := responseError.HTTPStatusCode()
+		details.Status = &status
+		details.RequestID = normalizeBedrockDiagnosticValue(responseError.ServiceRequestID())
+	}
+	if details.RequestID == "" {
+		details.RequestID = fallbackRequestID
+	}
+	if details.Status == nil && details.ErrorCode == "" && details.RequestID == "" {
+		return
+	}
+	encoded, marshalErr := ai.Marshal(details)
+	if marshalErr != nil {
+		return
+	}
+	diagnostics := make([]ai.AssistantMessageDiagnostic, 0, 1)
+	if output.Diagnostics != nil {
+		diagnostics = append(diagnostics, (*output.Diagnostics)...)
+	}
+	diagnostics = append(diagnostics, ai.AssistantMessageDiagnostic{
+		Type: "bedrock_response_failure", Timestamp: openAINowUnixMilli(), Details: encoded,
+	})
+	output.Diagnostics = &diagnostics
 }
 
 func bedrockErrorCarriesBody(message, body string) bool {

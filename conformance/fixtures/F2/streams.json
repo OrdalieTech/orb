@@ -892,9 +892,9 @@
           }
         },
         {
-          "type": "done",
-          "reason": "length",
-          "message": {
+          "type": "error",
+          "reason": "error",
+          "error": {
             "role": "assistant",
             "content": [],
             "api": "openai-responses",
@@ -915,10 +915,11 @@
                 "total": 64
               }
             },
-            "stopReason": "length",
+            "stopReason": "error",
             "timestamp": 1700000000123,
             "responseId": "resp_f2_incomplete",
-            "rawStopReason": "incomplete"
+            "rawStopReason": "incomplete",
+            "errorMessage": "Response incomplete without a provider reason"
           }
         }
       ]

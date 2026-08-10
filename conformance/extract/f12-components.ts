@@ -741,7 +741,11 @@ export async function generateF12Components(upstreamRoot: string, outputRoot: st
   const fuzzyModule = await load("packages/tui/src/fuzzy.ts");
   const wordNavModule = await load("packages/tui/src/word-navigation.ts");
   const autocompleteModule = await load("packages/tui/src/autocomplete.ts");
-  const tuiModule = await load("packages/tui/src/tui.ts");
+  // Upstream >=0.84 split the TUI class into TuiMainScreen (tui-main-screen.ts).
+  const rawTuiModule = await load("packages/tui/src/tui.ts");
+  const tuiModule = rawTuiModule.TUI
+    ? rawTuiModule
+    : { ...rawTuiModule, TUI: (await load("packages/tui/src/tui-main-screen.ts")).TuiMainScreen };
 
   // Minimal Terminal stub: the editor only reads rows/columns and requests
   // renders (upstream tests use @xterm-backed VirtualTerminal, a dev dep the

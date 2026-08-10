@@ -116,6 +116,7 @@ const (
 	ThinkingFormatOpenRouter       ThinkingFormat = "openrouter"
 	ThinkingFormatDeepSeek         ThinkingFormat = "deepseek"
 	ThinkingFormatTogether         ThinkingFormat = "together"
+	ThinkingFormatBaseten          ThinkingFormat = "baseten"
 	ThinkingFormatZAI              ThinkingFormat = "zai"
 	ThinkingFormatQwen             ThinkingFormat = "qwen"
 	ThinkingFormatChatTemplate     ThinkingFormat = "chat-template"
@@ -129,6 +130,7 @@ type OpenAICompletionsCompat struct {
 	SupportsDeveloperRole                       *bool                  `json:"supportsDeveloperRole,omitempty"`
 	SupportsReasoningEffort                     *bool                  `json:"supportsReasoningEffort,omitempty"`
 	SupportsUsageInStreaming                    *bool                  `json:"supportsUsageInStreaming,omitempty"`
+	SupportsFinishReason                        *bool                  `json:"supportsFinishReason,omitempty"`
 	MaxTokensField                              *MaxTokensField        `json:"maxTokensField,omitempty"`
 	RequiresToolResultName                      *bool                  `json:"requiresToolResultName,omitempty"`
 	RequiresAssistantAfterToolResult            *bool                  `json:"requiresAssistantAfterToolResult,omitempty"`
@@ -136,6 +138,7 @@ type OpenAICompletionsCompat struct {
 	RequiresReasoningContentOnAssistantMessages *bool                  `json:"requiresReasoningContentOnAssistantMessages,omitempty"`
 	ThinkingFormat                              *ThinkingFormat        `json:"thinkingFormat,omitempty"`
 	ChatTemplateKwargs                          *map[string]any        `json:"chatTemplateKwargs,omitempty"`
+	ChatTemplateArgs                            *map[string]any        `json:"chatTemplateArgs,omitempty"`
 	OpenRouterRouting                           *OpenRouterRouting     `json:"openRouterRouting,omitempty"`
 	VercelGatewayRouting                        *VercelGatewayRouting  `json:"vercelGatewayRouting,omitempty"`
 	ZAIToolStream                               *bool                  `json:"zaiToolStream,omitempty"`

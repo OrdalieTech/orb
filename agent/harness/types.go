@@ -129,6 +129,7 @@ type FileSystem interface {
 	ReadBinaryFile(context.Context, string) ([]byte, error)
 	WriteFile(context.Context, string, []byte) error
 	AppendFile(context.Context, string, []byte) error
+	RenameFile(context.Context, string, string) error
 	FileInfo(context.Context, string) (FileInfo, error)
 	ListDir(context.Context, string) ([]FileInfo, error)
 	CanonicalPath(context.Context, string) (string, error)

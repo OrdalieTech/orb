@@ -29,6 +29,7 @@ type resolvedOpenAICompletionsCompat struct {
 	supportsDeveloperRole                       bool
 	supportsReasoningEffort                     bool
 	supportsUsageInStreaming                    bool
+	supportsFinishReason                        bool
 	maxTokensField                              ai.MaxTokensField
 	requiresToolResultName                      bool
 	requiresAssistantAfterToolResult            bool
@@ -37,6 +38,8 @@ type resolvedOpenAICompletionsCompat struct {
 	thinkingFormat                              ai.ThinkingFormat
 	chatTemplateKwargs                          map[string]any
 	chatTemplateKwargOrder                      []string
+	chatTemplateArgs                            map[string]any
+	chatTemplateArgOrder                        []string
 	openRouterRouting                           *ai.OpenRouterRouting
 	vercelGatewayRouting                        *ai.VercelGatewayRouting
 	zaiToolStream                               bool
@@ -165,7 +168,7 @@ func StreamOpenAICompletionsWithOptions(
 			yield(completionsStreamFailure(ctx, output, err), nil)
 			return
 		}
-		payloadValue = openAICompletionsWireValue(payloadValue, compat.chatTemplateKwargOrder)
+		payloadValue = openAICompletionsWireValue(payloadValue, compat)
 
 		headers := buildOpenAICompletionsHeaders(model, requestContext, &options.StreamOptions, compat, retention)
 		headers, err = applyHeadersHook(ctx, model, &options.StreamOptions, headers)
@@ -221,6 +224,15 @@ func StreamOpenAICompletionsWithOptions(
 			yield(completionsStreamFailure(ctx, output, errors.New("Request was aborted")), nil) //nolint:staticcheck // Exact upstream error text is observable.
 			return
 		}
+		if !state.hasFinishReason && !compat.supportsFinishReason {
+			output.StopReason = ai.StopReasonStop
+			for _, block := range output.Content {
+				if _, ok := block.(*ai.ToolCall); ok {
+					output.StopReason = ai.StopReasonToolUse
+					break
+				}
+			}
+		}
 		if output.StopReason == ai.StopReasonError {
 			message := "Provider returned an error stop reason"
 			if output.ErrorMessage != nil {
@@ -229,7 +241,7 @@ func StreamOpenAICompletionsWithOptions(
 			yield(completionsStreamFailure(ctx, output, errors.New(message)), nil)
 			return
 		}
-		if !state.hasFinishReason || output.StopReason == ai.StopReasonPending {
+		if (compat.supportsFinishReason && !state.hasFinishReason) || output.StopReason == ai.StopReasonPending {
 			yield(completionsStreamFailure(ctx, output, errors.New("Stream ended without finish_reason")), nil) //nolint:staticcheck // Exact upstream error text is observable.
 			return
 		}
@@ -250,22 +262,33 @@ type openAICompletionsWireObject struct {
 	preferred []string
 }
 
-func openAICompletionsWireValue(value any, chatTemplateKwargOrder []string) any {
-	if object, ok := value.(map[string]any); ok {
-		if kwargs, ok := object["chat_template_kwargs"].(map[string]any); ok && len(chatTemplateKwargOrder) > 0 {
-			wrapped := make(map[string]any, len(object))
-			for key, item := range object {
-				wrapped[key] = item
-			}
-			wrapped["chat_template_kwargs"] = openAICompletionsWireObject{
-				value:     kwargs,
-				preferred: chatTemplateKwargOrder,
-			}
-			object = wrapped
-		}
-		return openAICompletionsWirePayload{value: object}
+func openAICompletionsWireValue(value any, compat resolvedOpenAICompletionsCompat) any {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return value
 	}
-	return value
+	for _, field := range []struct {
+		key   string
+		order []string
+	}{
+		{"chat_template_kwargs", compat.chatTemplateKwargOrder},
+		{"chat_template_args", compat.chatTemplateArgOrder},
+	} {
+		values, ok := object[field.key].(map[string]any)
+		if !ok || len(field.order) == 0 {
+			continue
+		}
+		wrapped := make(map[string]any, len(object))
+		for key, item := range object {
+			wrapped[key] = item
+		}
+		wrapped[field.key] = openAICompletionsWireObject{
+			value:     values,
+			preferred: field.order,
+		}
+		object = wrapped
+	}
+	return openAICompletionsWirePayload{value: object}
 }
 
 func (payload openAICompletionsWirePayload) MarshalJSON() ([]byte, error) {
@@ -338,7 +361,7 @@ func openAICompletionsObjectKeys(object map[string]any, root bool) []string {
 			"model", "messages", "stream", "prompt_cache_key", "prompt_cache_retention",
 			"stream_options", "store", "max_tokens", "max_completion_tokens", "temperature",
 			"tools", "tool_stream", "tool_choice", "thinking", "enable_thinking",
-			"chat_template_kwargs", "reasoning", "reasoning_effort", "provider", "providerOptions",
+			"chat_template_kwargs", "chat_template_args", "reasoning", "reasoning_effort", "provider", "providerOptions",
 		})
 	}
 	if role, ok := object["role"].(string); ok {
@@ -455,6 +478,9 @@ func resolveOpenAICompletionsCompat(model *ai.Model) (resolvedOpenAICompletionsC
 	if overrides.SupportsUsageInStreaming != nil {
 		resolved.supportsUsageInStreaming = *overrides.SupportsUsageInStreaming
 	}
+	if overrides.SupportsFinishReason != nil {
+		resolved.supportsFinishReason = *overrides.SupportsFinishReason
+	}
 	if overrides.MaxTokensField != nil {
 		resolved.maxTokensField = *overrides.MaxTokensField
 	}
@@ -475,9 +501,16 @@ func resolveOpenAICompletionsCompat(model *ai.Model) (resolvedOpenAICompletionsC
 	}
 	if overrides.ChatTemplateKwargs != nil {
 		resolved.chatTemplateKwargs = *overrides.ChatTemplateKwargs
-		resolved.chatTemplateKwargOrder, err = openAICompletionsChatTemplateKwargOrder(model.Compat)
+		resolved.chatTemplateKwargOrder, err = openAICompletionsChatTemplateValueOrder(model.Compat, "chatTemplateKwargs")
 		if err != nil {
 			return resolved, fmt.Errorf("decode %s compat chatTemplateKwargs order: %w", model.Provider, err)
+		}
+	}
+	if overrides.ChatTemplateArgs != nil {
+		resolved.chatTemplateArgs = *overrides.ChatTemplateArgs
+		resolved.chatTemplateArgOrder, err = openAICompletionsChatTemplateValueOrder(model.Compat, "chatTemplateArgs")
+		if err != nil {
+			return resolved, fmt.Errorf("decode %s compat chatTemplateArgs order: %w", model.Provider, err)
 		}
 	}
 	resolved.openRouterRouting = overrides.OpenRouterRouting
@@ -509,24 +542,23 @@ func resolveOpenAICompletionsCompat(model *ai.Model) (resolvedOpenAICompletionsC
 	return resolved, nil
 }
 
-func openAICompletionsChatTemplateKwargOrder(compat json.RawMessage) ([]string, error) {
-	var raw struct {
-		ChatTemplateKwargs json.RawMessage `json:"chatTemplateKwargs"`
-	}
+func openAICompletionsChatTemplateValueOrder(compat json.RawMessage, field string) ([]string, error) {
+	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(compat, &raw); err != nil {
 		return nil, err
 	}
-	if len(raw.ChatTemplateKwargs) == 0 || string(raw.ChatTemplateKwargs) == "null" {
+	values := raw[field]
+	if len(values) == 0 || string(values) == "null" {
 		return nil, nil
 	}
 
-	decoder := json.NewDecoder(bytes.NewReader(raw.ChatTemplateKwargs))
+	decoder := json.NewDecoder(bytes.NewReader(values))
 	opening, err := decoder.Token()
 	if err != nil {
 		return nil, err
 	}
 	if delimiter, ok := opening.(json.Delim); !ok || delimiter != '{' {
-		return nil, errors.New("chatTemplateKwargs is not an object")
+		return nil, errors.New(field + " is not an object")
 	}
 
 	order := make([]string, 0)
@@ -538,7 +570,7 @@ func openAICompletionsChatTemplateKwargOrder(compat json.RawMessage) ([]string, 
 		}
 		name, ok := token.(string)
 		if !ok {
-			return nil, errors.New("chatTemplateKwargs key is not a string")
+			return nil, errors.New(field + " key is not a string")
 		}
 		var value json.RawMessage
 		if err := decoder.Decode(&value); err != nil {
@@ -629,9 +661,11 @@ func detectOpenAICompletionsCompat(model *ai.Model) resolvedOpenAICompletionsCom
 		supportsDeveloperRole:                       isOpenRouterDeveloperModel || (!isNonStandard && !isOpenRouter),
 		supportsReasoningEffort:                     !isGrok && !isZAI && !isMoonshot && !isTogether && !isCloudflareGateway && !isNVIDIA && !isAntLing,
 		supportsUsageInStreaming:                    true,
+		supportsFinishReason:                        true,
 		maxTokensField:                              maxTokensField,
 		thinkingFormat:                              thinkingFormat,
 		chatTemplateKwargs:                          map[string]any{},
+		chatTemplateArgs:                            map[string]any{},
 		supportsOpenAIGrammarTools:                  false,
 		supportsStrictMode:                          !isMoonshot && !isTogether && !isCloudflareGateway && !isNVIDIA,
 		cacheControlFormat:                          cacheControl,
@@ -1306,6 +1340,23 @@ func applyOpenAICompletionsThinking(
 	case ai.ThinkingFormatChatTemplate:
 		if kwargs := buildOpenAICompletionsChatTemplateKwargs(model, effort, compat.chatTemplateKwargs); len(kwargs) > 0 {
 			payload["chat_template_kwargs"] = kwargs
+		}
+	case ai.ThinkingFormatBaseten:
+		if args := buildOpenAICompletionsChatTemplateKwargs(model, effort, compat.chatTemplateArgs); len(args) > 0 {
+			payload["chat_template_args"] = args
+		}
+		if compat.supportsReasoningEffort {
+			level := ai.ModelThinkingOff
+			if effort != "" {
+				level = ai.ModelThinkingLevel(effort)
+			}
+			if value, exists, nonNull := thinkingMapValue(model, level); exists {
+				if nonNull {
+					payload["reasoning_effort"] = value
+				}
+			} else if effort != "" {
+				payload["reasoning_effort"] = effort
+			}
 		}
 	case ai.ThinkingFormatDeepSeek:
 		if effort != "" {

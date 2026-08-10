@@ -2516,7 +2516,6 @@
         "keepRecentTokens": 130
       },
       "expected": {
-        "firstKeptEntryId": "split-a2",
         "summaryRoles": [],
         "prefixRoles": [
           "user",
@@ -2604,7 +2603,8 @@
             "modifiedFiles": [
               "/changed.txt"
             ]
-          }
+          },
+          "retainedTail": []
         },
         {
           "type": "message",
@@ -2718,7 +2718,6 @@
         "keepRecentTokens": 90
       },
       "expected": {
-        "firstKeptEntryId": "new-u2",
         "summaryRoles": [
           "user",
           "assistant"
@@ -3429,7 +3428,6 @@
         ],
         "output": {
           "summary": "history summary\n\n---\n\n**Turn Context (split turn):**\n\nprefix summary",
-          "firstKeptEntryId": "keep",
           "tokensBefore": 1234,
           "usage": {
             "input": 20,

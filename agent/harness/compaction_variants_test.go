@@ -33,8 +33,8 @@ func TestHarnessCutPointDivergesFromCodingAgentOnBranchSummaryWeight(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared == nil || prepared.FirstKeptEntryID != "a1" || !prepared.IsSplitTurn {
-		t.Fatalf("harness preparation = %#v, want firstKept a1 split turn", prepared)
+	if prepared == nil || !prepared.IsSplitTurn {
+		t.Fatalf("harness preparation = %#v, want split turn", prepared)
 	}
 	if len(prepared.MessagesToSummarize) != 0 || len(prepared.TurnPrefixMessages) != 1 || len(prepared.RetainedTail) != 3 {
 		t.Fatalf("harness partitions = %d/%d/%d, want 0/1/3",

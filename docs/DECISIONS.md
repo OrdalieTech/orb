@@ -26,8 +26,8 @@ Orb is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinne
   those in the divergence ledger below. Sequencing exists (see plan phases); feature cuts do not.
 - **D3 — Audience.** Ordalie production embedding + personal daily-driver + public OSS, simultaneously.
 - **D4 — File-format compatibility.** orb reads/writes pi's data formats and locations so both
-  agents coexist on one machine: `~/.pi/agent/` layout, session JSONL **v3** tree format (with v1/v2
-  migration), `settings.json` (global + `.pi/settings.json` project merge), `models.json`,
+  agents coexist on one machine: `~/.pi/agent/` layout, session JSONL **v4** tree format (with
+  v1/v2/v3 migration), `settings.json` (global + `.pi/settings.json` project merge), `models.json`,
   `auth.json` (0600), `trust.json`, `keybindings.json`. CLI-flag parity is pursued but not contractual.
 
 ## Upstream relationship
@@ -121,6 +121,9 @@ Orb is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinne
 | Malformed and colliding provider tool-call recovery | reliability adaptation | owner-directed Hermes-inspired hardening: when a provider declares tool use without emitting a call, orb retries at most three times with non-persisted recovery context; duplicate call pairing IDs are deterministically suffixed before execution so every result remains unambiguous. Canonical pi session and event JSON shapes stay unchanged |
 | Bundled MCP extension | addition | owner requirement; kept out of core |
 | `packages/server` (formerly `packages/orchestrator`) | removed | experimental upstream side product; the v0.81.0 rename does not change the D2 product boundary |
+| `packages/{client,protocol}` (v0.84.0) | removed | experimental remote-session client and CBOR protocol for the excluded server product; same D2 boundary |
+| `packages/telemetry` (v0.84.0) | removed | vendor-neutral telemetry contracts; consistent with the existing telemetry-gated attribution removal |
+| `packages/session-backends` (renamed from `packages/storage` in v0.84.0) | removed | optional sqlite session backend for the excluded server product; orb's harness keeps the JSONL repo only |
 | Telemetry/analytics (`enableInstallTelemetry`, `enableAnalytics`, `trackingId`) | removed | owner decision; unknown settings keys tolerated on parse, nothing sent, no plumbing |
 | Radius provider + Radius OAuth | removed | pi.dev-coupled service; the generic `pi-messages` SSE wire shape IS ported (usable by any backend, e.g. an Ordalie gateway) |
 | Version/update checks | neutralized | point at OrdalieTech/orb GitHub releases, never pi.dev |

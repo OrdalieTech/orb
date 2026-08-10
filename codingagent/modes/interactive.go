@@ -3257,14 +3257,12 @@ func scopedModelsSelectorState(
 
 func (mode *InteractiveMode) showModelsSelector() {
 	// f8746813: opening the picker re-reads models.json before listing.
+	// 53fa77cc (0.84.1): the selector always opens — even with no models —
+	// instead of bailing out with a "No models available" status.
 	_ = mode.session.RefreshModels()
 	models := mode.session.AvailableModels()
 	configured := mode.session.EnabledModels()
 	sessionScoped := mode.session.ScopedModels()
-	if len(models) == 0 && len(configured) == 0 && len(sessionScoped) == 0 {
-		mode.showStatusMessage("No models available")
-		return
-	}
 	selected, unavailable := scopedModelsSelectorState(models, configured, sessionScoped)
 	go func() {
 		for {

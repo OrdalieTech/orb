@@ -245,7 +245,7 @@ func TestQwenTokenPlanReasoningMetadata(t *testing.T) {
 			},
 		},
 		{
-			id: "qwen3.8-max-preview", effort: true,
+			id: "qwen3.8-max", effort: true,
 			levels: map[ai.ModelThinkingLevel]*string{
 				ai.ModelThinkingMinimal: nil,
 				ai.ModelThinkingLow:     ptr("low"),

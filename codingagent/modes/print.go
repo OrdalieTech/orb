@@ -11,7 +11,6 @@ import (
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/ai"
-	"github.com/OrdalieTech/orb/codingagent"
 	"github.com/OrdalieTech/orb/codingagent/session"
 	"github.com/OrdalieTech/orb/codingagent/tools"
 )
@@ -266,7 +265,7 @@ func (output *serializedOutput) writeSessionEvent(event any) {
 	output.mu.Unlock()
 	defer output.callbacks.Done()
 
-	encoded, err := codingagent.MarshalSessionEvent(event)
+	encoded, err := marshalJSONEvent(event)
 	if err != nil {
 		output.fail(err)
 		return

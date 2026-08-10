@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -16,9 +15,30 @@ import (
 	"github.com/OrdalieTech/orb/agent"
 	agentharness "github.com/OrdalieTech/orb/agent/harness"
 	"github.com/OrdalieTech/orb/ai"
-	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
 	"github.com/OrdalieTech/orb/conformance/runner"
 )
+
+// f6FixedNowMS is the extract script's frozen clock ("2026-02-03T04:05:06.789Z").
+const f6FixedNowMS = int64(1770091506789)
+
+func f6V4Now() int64 { return f6FixedNowMS }
+
+func f6HarnessString(value string) *string { return &value }
+
+func f6HarnessInt(value int) *int { return &value }
+
+func f6V4User(text string, timestamp int) string {
+	return fmt.Sprintf(`{"role":"user","content":[{"type":"text","text":"%s"}],"timestamp":%d}`, text, timestamp)
+}
+
+func f6V4Assistant(text string, timestamp int, stopReason string) string {
+	return fmt.Sprintf(
+		`{"role":"assistant","content":[{"type":"text","text":"%s"}],"api":"openai-responses","provider":"openai","model":"gpt-test",`+
+			`"usage":{"input":1,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":3,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},`+
+			`"stopReason":"%s","timestamp":%d}`, text, stopReason, timestamp)
+}
+
+const f6V4Usage = `{"input":100,"output":20,"cacheRead":30,"cacheWrite":10,"totalTokens":160,"cost":{"input":0.1,"output":0.2,"cacheRead":0.01,"cacheWrite":0.02,"total":0.33}}`
 
 func TestF6HarnessPublicEntryCodecMatchesUpstreamJSONL(t *testing.T) {
 	input, err := runner.ReadFixture("F6Harness", "session.jsonl")
@@ -26,42 +46,55 @@ func TestF6HarnessPublicEntryCodecMatchesUpstreamJSONL(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := bytes.Split(bytes.TrimSpace(input), []byte{'\n'})
-	seen := map[string]bool{}
+	header, err := agentharness.ParseSessionV4Header(lines[0], "<header>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	encodedHeader, err := agentharness.MarshalSessionV4Header(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := runner.ByteDiff(lines[0], encodedHeader); diff != "" {
+		t.Fatalf("fixture header changed:\n%s", diff)
+	}
+	seenKinds, seenEntryTypes, seenRecordTypes := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for index, line := range lines[1:] {
-		entry, parseErr := agentharness.ParseSessionTreeEntry(line)
+		mutation, parseErr := agentharness.ParseSessionV4Mutation(line, "<entry>", index+2)
 		if parseErr != nil {
-			t.Fatalf("parse fixture entry %d: %v", index+2, parseErr)
+			t.Fatalf("parse fixture line %d: %v", index+2, parseErr)
 		}
-		seen[entry.Type] = true
-		encoded, marshalErr := agentharness.MarshalSessionTreeEntry(entry)
+		seenKinds[mutation.Kind] = true
+		if mutation.Entry != nil {
+			seenEntryTypes[mutation.Entry.Type] = true
+		}
+		if mutation.Record != nil {
+			seenRecordTypes[mutation.Record.Type] = true
+		}
+		encoded, marshalErr := agentharness.MarshalSessionV4Mutation(mutation)
 		if marshalErr != nil {
-			t.Fatalf("marshal fixture entry %d: %v", index+2, marshalErr)
+			t.Fatalf("marshal fixture line %d: %v", index+2, marshalErr)
 		}
 		if diff := runner.ByteDiff(line, encoded); diff != "" {
-			t.Fatalf("fixture entry %d changed:\n%s", index+2, diff)
+			t.Fatalf("fixture line %d changed:\n%s", index+2, diff)
+		}
+	}
+	for _, kind := range []string{"entry", "record", "lane", "fact"} {
+		if !seenKinds[kind] {
+			t.Errorf("fixture did not exercise mutation kind %q", kind)
 		}
 	}
 	for _, entryType := range []string{
 		"message", "thinking_level_change", "model_change", "active_tools_change",
-		"compaction", "branch_summary", "custom", "custom_message", "label",
-		"session_info", "leaf",
+		"custom", "compaction", "branch_summary",
 	} {
-		if !seen[entryType] {
-			t.Errorf("fixture did not exercise %q", entryType)
+		if !seenEntryTypes[entryType] {
+			t.Errorf("fixture did not exercise entry type %q", entryType)
 		}
 	}
-
-	unknown := []byte(`{"type":"future","id":"future","parentId":null,"timestamp":"2026-02-03T04:05:23.000Z","future":{"nested":true}}`)
-	entry, err := agentharness.ParseSessionTreeEntry(unknown)
-	if err != nil {
-		t.Fatal(err)
-	}
-	encoded, err := agentharness.MarshalSessionTreeEntry(entry)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if diff := runner.ByteDiff(unknown, encoded); diff != "" {
-		t.Fatalf("unknown entry changed:\n%s", diff)
+	for _, recordType := range []string{"operation_started", "step_attempt", "usage", "operation_finished"} {
+		if !seenRecordTypes[recordType] {
+			t.Errorf("fixture did not exercise record type %q", recordType)
+		}
 	}
 }
 
@@ -69,6 +102,210 @@ type f6HarnessFixture struct {
 	SchemaVersion int            `json:"schemaVersion"`
 	Session       map[string]any `json:"session"`
 	Env           map[string]any `json:"env"`
+}
+
+// f6RunV4SessionScript replays the extract script's mutation sequence and
+// returns its captured error observations.
+func f6RunV4SessionScript(t *testing.T, storage agentharness.SessionV4Storage, root string) map[string]any {
+	t.Helper()
+	appendEntry := func(payload string, lane string) error {
+		_, err := storage.AppendEntry(json.RawMessage(payload), lane)
+		return err
+	}
+	mustAppend := func(payload string, lane string) {
+		t.Helper()
+		if err := appendEntry(payload, lane); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustRecord := func(payload string) {
+		t.Helper()
+		if _, err := storage.AppendRecord(json.RawMessage(payload)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	mustAppend(`{"type":"message","id":"root-user","message":`+f6V4User("root <>&  ", 1)+`}`, "main")
+	mustAppend(`{"type":"message","id":"main-assistant","message":`+f6V4Assistant("answer", 2, "stop")+`}`, "main")
+	mustAppend(`{"type":"message","id":"second-user","message":`+f6V4User("continue", 3)+`}`, "main")
+	mustAppend(`{"type":"thinking_level_change","id":"thinking","thinkingLevel":"high"}`, "main")
+	mustAppend(`{"type":"model_change","id":"model","provider":"anthropic","modelId":"claude-test"}`, "main")
+	mustAppend(`{"type":"active_tools_change","id":"tools","activeToolNames":["read","bash"]}`, "main")
+	mustAppend(`{"type":"active_tools_change","id":"tools-empty","activeToolNames":[]}`, "main")
+	mustAppend(`{"type":"custom","id":"custom","customType":"state","data":{"nested":[1,"two"]}}`, "main")
+	mustAppend(`{"type":"compaction","id":"compaction","summary":"prior work","retainedTail":[`+f6V4User("retained tail", 4)+`],"tokensBefore":42.5,"details":{"readFiles":["a.go"]}}`, "main")
+	mustAppend(`{"type":"branch_summary","id":"branch-summary","fromId":"compaction","summary":"discarded branch work","details":{"modifiedFiles":["b.go"]}}`, "main")
+	must(storage.SetName("  fixture name  "))
+	must(storage.SetLabel("root-user", f6HarnessString("  checkpoint  ")))
+	must(storage.SetLabel("root-user", nil))
+	must(storage.SetLabel("second-user", f6HarnessString("  branch point  ")))
+	must(storage.CreateLane("branch", f6HarnessString("root-user")))
+	mustAppend(`{"type":"message","id":"branch-user","message":`+f6V4User("branch", 5)+`}`, "branch")
+	must(storage.CreateLane("idle", f6HarnessString("second-user")))
+	must(storage.MoveLane("idle", nil))
+	mustRecord(`{"type":"operation_started","id":"op-run","lane":"main","sourceLeafId":"branch-summary","intent":{"kind":"run","originalPrompt":[` +
+		f6V4User("run prompt", 6) + `],"initialMessages":[{"type":"message","id":"queued-1","message":` + f6V4User("queued", 7) + `}]}}`)
+	mustRecord(`{"type":"step_attempt","id":"step-1","lane":"main","runId":"op-run","step":"assistant","attempt":1,"resultEntryId":"main-assistant"}`)
+	mustRecord(`{"type":"usage","id":"usage-1","lane":"main","cause":"assistant","runId":"op-run","entryId":"main-assistant","attempt":1,"stopReason":"stop","usage":` + f6V4Usage + `}`)
+	_, conflictErr := storage.AppendRecord(json.RawMessage(
+		`{"type":"operation_started","id":"op-run-2","lane":"main","sourceLeafId":null,"intent":{"kind":"navigation","targetId":null,"summarize":false}}`,
+	))
+	openBeforeFinish, err := storage.FindOpenOperations("main", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustRecord(`{"type":"operation_finished","id":"finish-1","lane":"main","runId":"op-run","outcome":"completed"}`)
+
+	duplicateErr := appendEntry(`{"type":"custom","id":"root-user","customType":"dup"}`, "main")
+	missingLaneErr := appendEntry(`{"type":"custom","id":"orphan","customType":"x"}`, "missing-lane")
+	laneExistsErr := storage.CreateLane("branch", nil)
+	labelTargetErr := storage.SetLabel("ghost", f6HarnessString("x"))
+	_, invalidLimitErr := storage.FindEntries(agentharness.SessionV4EntryQuery{Limit: f6HarnessInt(0)})
+
+	return map[string]any{
+		"openOperationConflict": f6HarnessSessionError(conflictErr, root),
+		"openBeforeFinish":      f6V4RecordIDs(openBeforeFinish),
+		"duplicateEntryId":      f6HarnessSessionError(duplicateErr, root),
+		"missingLaneAppend":     f6HarnessSessionError(missingLaneErr, root),
+		"laneAlreadyExists":     f6HarnessSessionError(laneExistsErr, root),
+		"labelTargetMissing":    f6HarnessSessionError(labelTargetErr, root),
+		"invalidLimit":          f6HarnessSessionError(invalidLimitErr, root),
+	}
+}
+
+func f6V4EntryIDs(entries []agentharness.SessionV4Entry) []string {
+	ids := make([]string, len(entries))
+	for index := range entries {
+		ids[index] = entries[index].ID
+	}
+	return ids
+}
+
+func f6V4RecordIDs(records []agentharness.SessionV4Record) []string {
+	ids := make([]string, len(records))
+	for index := range records {
+		ids[index] = records[index].ID
+	}
+	return ids
+}
+
+func f6V4MainLeaf(storage agentharness.SessionV4Storage) *string {
+	for _, pointer := range storage.Lanes() {
+		if pointer.Lane == "main" {
+			return pointer.LeafID
+		}
+	}
+	return nil
+}
+
+func f6V4NameOrNil(storage agentharness.SessionV4Storage) any {
+	if name, ok := storage.Name(); ok {
+		return name
+	}
+	return nil
+}
+
+func f6V4LabelOrNil(storage agentharness.SessionV4Storage, id string) any {
+	if label, ok := storage.Label(id); ok {
+		return label
+	}
+	return nil
+}
+
+// f6V4Normalize mirrors the extract script's normalizeV4: filesystem mtimes
+// are the only nondeterministic v4 metadata.
+func f6V4Normalize(value any, root string) any {
+	switch typed := value.(type) {
+	case string:
+		return normalizeF6HarnessPath(typed, root)
+	case []any:
+		for index := range typed {
+			typed[index] = f6V4Normalize(typed[index], root)
+		}
+	case map[string]any:
+		for key := range typed {
+			if key == "modifiedAt" {
+				typed[key] = "<modifiedAt>"
+			} else {
+				typed[key] = f6V4Normalize(typed[key], root)
+			}
+		}
+	}
+	return value
+}
+
+func f6ObserveV4Storage(t *testing.T, storage agentharness.SessionV4Storage, metadata any, root string) map[string]any {
+	t.Helper()
+	fail := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	lanes := storage.Lanes()
+	mainLeaf := f6V4MainLeaf(storage)
+	entries, err := storage.FindEntries(agentharness.SessionV4EntryQuery{Order: "oldestFirst"})
+	fail(err)
+	branch := []agentharness.SessionV4Entry{}
+	branchToCompaction := []agentharness.SessionV4Entry{}
+	if mainLeaf != nil {
+		branch, err = storage.FindEntriesOnBranch(agentharness.SessionV4BranchQuery{
+			SessionV4EntryQuery: agentharness.SessionV4EntryQuery{Order: "oldestFirst"}, Start: *mainLeaf,
+		})
+		fail(err)
+		branchToCompaction, err = storage.FindEntriesOnBranch(agentharness.SessionV4BranchQuery{
+			Start: *mainLeaf, StopAtType: "compaction",
+		})
+		fail(err)
+	}
+	messages, err := storage.FindEntries(agentharness.SessionV4EntryQuery{Type: "message", Order: "oldestFirst"})
+	fail(err)
+	customState, err := storage.FindEntries(agentharness.SessionV4EntryQuery{Type: "custom", CustomType: "state"})
+	fail(err)
+	pagedNewest, err := storage.FindEntries(agentharness.SessionV4EntryQuery{Limit: f6HarnessInt(3)})
+	fail(err)
+	records, err := storage.FindRecords(agentharness.SessionV4RecordQuery{})
+	fail(err)
+	usageRecords, err := storage.FindRecords(agentharness.SessionV4RecordQuery{Lane: "main", Type: "usage"})
+	fail(err)
+	openOperations, err := storage.FindOpenOperations("main", nil)
+	fail(err)
+	log, err := storage.Log(agentharness.SessionV4LogOptions{})
+	fail(err)
+	logAfterSeq, err := storage.Log(agentharness.SessionV4LogOptions{AfterSeq: f6HarnessInt(10), Limit: f6HarnessInt(3)})
+	fail(err)
+	logAfterSeqIDs := make([]int, len(logAfterSeq))
+	for index := range logAfterSeq {
+		logAfterSeqIDs[index] = logAfterSeq[index].Seq
+	}
+	return f6V4Normalize(map[string]any{
+		"metadata":              f6HarnessJSONValue(metadata),
+		"lanes":                 f6HarnessJSONValue(lanes),
+		"entries":               f6HarnessJSONValue(entries),
+		"entryIds":              f6V4EntryIDs(entries),
+		"branchIds":             f6V4EntryIDs(branch),
+		"messageIds":            f6V4EntryIDs(messages),
+		"customStateIds":        f6V4EntryIDs(customState),
+		"pagedNewestIds":        f6V4EntryIDs(pagedNewest),
+		"branchToCompactionIds": f6V4EntryIDs(branchToCompaction),
+		"records":               f6HarnessJSONValue(records),
+		"usageRecordIds":        f6V4RecordIDs(usageRecords),
+		"openOperations":        f6V4RecordIDs(openOperations),
+		"log":                   f6HarnessJSONValue(log),
+		"logAfterSeqIds":        logAfterSeqIDs,
+		"stats":                 f6HarnessJSONValue(storage.Stats()),
+		"name":                  f6V4NameOrNil(storage),
+		"labels": map[string]any{
+			"root":   f6V4LabelOrNil(storage, "root-user"),
+			"second": f6V4LabelOrNil(storage, "second-user"),
+		},
+	}, root).(map[string]any)
 }
 
 func TestF6HarnessRehydratesUpstreamJSONLBytes(t *testing.T) {
@@ -81,32 +318,100 @@ func TestF6HarnessRehydratesUpstreamJSONLBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	ctx := context.Background()
 	root := t.TempDir()
+	env := agentharness.NodeExecutionEnv{CWD: root}
+	defer func() { _ = env.Cleanup() }()
 	path := filepath.Join(root, "session.jsonl")
-	storage, err := agentharness.RehydrateJSONLSession(input, path)
+	header := agentharness.SessionV4Header{
+		ID: "session-fixed", CreatedAt: f6FixedNowMS, CWD: "/fixture/project",
+		ParentSessionID: f6HarnessString("parent-session"),
+		Metadata:        json.RawMessage(`{"profile":"reviewer","nested":{"enabled":true}}`),
+	}
+	storage, err := agentharness.CreateJSONLSessionV4Storage(ctx, &env, path, header)
 	if err != nil {
 		t.Fatal(err)
 	}
-	gotBytes, err := storage.Bytes()
+	storage.Now = f6V4Now
+	scriptErrors := f6RunV4SessionScript(t, storage, root)
+	written, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if diff := runner.ByteDiff(input, gotBytes); diff != "" {
-		t.Fatalf("rehydrated bytes changed before mutation:\n%s", diff)
+	if diff := runner.ByteDiff(input, written); diff != "" {
+		t.Fatalf("replayed script bytes diverged from fixture:\n%s", diff)
 	}
+	assertF6HarnessJSONEqual(t, fixture.Session["scriptErrors"], scriptErrors)
 
-	got := observeF6HarnessStorage(t, storage, root)
-	assertF6HarnessMap(t, fixture.Session["jsonl"].(map[string]any), got)
-	baseEntries := storage.Entries()
-	parent := "tools"
-	if err := storage.AppendEntry(agentharness.SessionTreeEntry{
-		Type: "custom", ID: "appended-fixed", ParentID: &parent,
-		Timestamp: "2026-02-03T04:05:22.000Z", CustomType: "after-rehydrate",
-		Data: json.RawMessage(`{"text":"<>&  "}`),
-	}); err != nil {
+	reopened, err := agentharness.LoadJSONLSessionV4Storage(ctx, &env, path)
+	if err != nil {
 		t.Fatal(err)
 	}
-	mutated, err := storage.Bytes()
+	assertF6HarnessMap(
+		t,
+		fixture.Session["jsonl"].(map[string]any),
+		f6ObserveV4Storage(t, reopened, reopened.Metadata(), root),
+	)
+
+	memory := agentharness.NewInMemorySessionV4Storage(agentharness.SessionV4Metadata{
+		ID: "session-fixed", CreatedAt: f6FixedNowMS, ParentSessionID: f6HarnessString("parent-session"),
+	})
+	memory.Now = f6V4Now
+	memoryScriptErrors := f6RunV4SessionScript(t, memory, root)
+	assertF6HarnessJSONEqual(t, fixture.Session["memoryScriptErrors"], memoryScriptErrors)
+	assertF6HarnessMap(
+		t,
+		fixture.Session["memory"].(map[string]any),
+		f6ObserveV4Storage(t, memory, memory.Metadata(), root),
+	)
+
+	generated := 0
+	session := agentharness.NewSessionV4(memory, func() string {
+		generated++
+		return fmt.Sprintf("gen-%d", generated)
+	})
+	appendedMessageID, err := session.AppendMessage(json.RawMessage(f6V4User("appended via session", 8)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewCustomID, err := session.AppendCustomEntry("note", json.RawMessage(`{"via":"view"}`), "branch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newestMessage, err := session.FindEntryOnBranch(agentharness.SessionV4BranchQuery{
+		SessionV4EntryQuery: agentharness.SessionV4EntryQuery{Type: "message"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainLeaf, err := session.LeafID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	branchLeaf, err := session.LeafID("branch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var newestMessageID any
+	if newestMessage != nil {
+		newestMessageID = newestMessage.ID
+	}
+	assertF6HarnessJSONEqual(t, fixture.Session["sessionApi"], map[string]any{
+		"appendedMessageId": appendedMessageID,
+		"viewCustomId":      viewCustomID,
+		"mainLeaf":          mainLeaf,
+		"branchLeaf":        branchLeaf,
+		"newestMessageId":   newestMessageID,
+		"stats":             f6HarnessJSONValue(session.Stats()),
+	})
+
+	reopened.Now = f6V4Now
+	if _, err := reopened.AppendEntry(json.RawMessage(
+		`{"type":"custom","id":"appended-fixed","customType":"after-rehydrate","data":{"text":"<>&  "}}`,
+	), "main"); err != nil {
+		t.Fatal(err)
+	}
+	mutated, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,20 +421,8 @@ func TestF6HarnessRehydratesUpstreamJSONLBytes(t *testing.T) {
 	}
 	wantMutated := append(append([]byte(nil), input...), []byte(appendLine)...)
 	if diff := runner.ByteDiff(wantMutated, mutated); diff != "" {
-		t.Fatalf("rehydrated append diverged:\n%s", diff)
+		t.Fatalf("append diverged:\n%s", diff)
 	}
-
-	memory, err := agentharness.NewInMemorySessionStorage(baseEntries, agentharness.SessionMetadata{
-		ID: "session-fixed", CreatedAt: "2026-02-03T04:05:06.789Z",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertF6HarnessMap(
-		t,
-		fixture.Session["memory"].(map[string]any),
-		observeF6HarnessStorage(t, memory, root),
-	)
 }
 
 func TestF6HarnessForkContextAndErrorsMatchUpstream(t *testing.T) {
@@ -138,150 +431,187 @@ func TestF6HarnessForkContextAndErrorsMatchUpstream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	ctx := context.Background()
 	root := t.TempDir()
-	storage, err := agentharness.RehydrateJSONLSession(input, filepath.Join(root, "session.jsonl"))
+	env := agentharness.NodeExecutionEnv{CWD: root}
+	defer func() { _ = env.Cleanup() }()
+	path := filepath.Join(root, "session.jsonl")
+	if err := os.WriteFile(path, input, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := agentharness.LoadJSONLSessionV4Storage(ctx, &env, path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := agentharness.EntriesToFork(storage, "second-user", agentharness.ForkBefore)
-	if err != nil {
-		t.Fatal(err)
-	}
-	at, err := agentharness.EntriesToFork(storage, "model", agentharness.ForkAt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, invalidFork := agentharness.EntriesToFork(storage, "main-assistant", agentharness.ForkBefore)
-	gotForks := map[string]any{
-		"beforeSecondUser":     f6HarnessEntryIDs(before),
-		"atModel":              f6HarnessEntryIDs(at),
-		"beforeAssistantError": f6HarnessSessionError(invalidFork, root),
-	}
-	assertF6HarnessJSONEqual(t, fixture.Session["forks"], gotForks)
 
-	compaction := "compaction"
-	pathEntries, err := storage.PathToRootOrCompaction(&compaction)
-	if err != nil {
-		t.Fatal(err)
+	forkHeader := func(id string) agentharness.SessionV4Header {
+		return agentharness.SessionV4Header{
+			ID: id, CreatedAt: f6FixedNowMS, CWD: "/fixture/project", ParentSessionID: f6HarnessString("session-fixed"),
+		}
 	}
-	contextState := agentharness.BuildSessionContext(pathEntries)
-	gotContext := f6HarnessContextObservation(t, contextState)
-	assertF6HarnessMap(t, fixture.Session["compactedContext"].(map[string]any), gotContext)
-
-	t.Run("branchSummaryContext", func(t *testing.T) {
-		branchSummary := "branch-summary"
-		branchEntries, err := storage.PathToRootOrCompaction(&branchSummary)
+	observeFork := func(storage *agentharness.JSONLSessionV4Storage) map[string]any {
+		entries, err := storage.FindEntries(agentharness.SessionV4EntryQuery{Order: "oldestFirst"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		assertF6HarnessMap(
-			t,
-			fixture.Session["branchSummaryContext"].(map[string]any),
-			f6HarnessContextObservation(t, agentharness.BuildSessionContext(branchEntries)),
-		)
+		return f6V4Normalize(map[string]any{
+			"entryIds": f6V4EntryIDs(entries),
+			"lanes":    f6HarnessJSONValue(storage.Lanes()),
+			"name":     f6V4NameOrNil(storage),
+			"labels":   map[string]any{"second": f6V4LabelOrNil(storage, "second-user")},
+		}, root).(map[string]any)
+	}
+	before, err := reopened.Fork(ctx, filepath.Join(root, "fork-before.jsonl"), forkHeader("fork-before"), agentharness.SessionV4ForkOptions{
+		EntryID: f6HarnessString("second-user"), Position: agentharness.ForkBefore,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	at, err := reopened.Fork(ctx, filepath.Join(root, "fork-at.jsonl"), forkHeader("fork-at"), agentharness.SessionV4ForkOptions{
+		EntryID: f6HarnessString("main-assistant"), Position: agentharness.ForkAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := reopened.Fork(ctx, filepath.Join(root, "fork-tree.jsonl"), forkHeader("fork-tree"), agentharness.SessionV4ForkOptions{Scope: "tree"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	treeBytes, err := os.ReadFile(filepath.Join(root, "fork-tree.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, invalidForkErr := reopened.Fork(ctx, filepath.Join(root, "fork-invalid.jsonl"), forkHeader("fork-invalid"), agentharness.SessionV4ForkOptions{
+		EntryID: f6HarnessString("thinking"),
+	})
+	assertF6HarnessJSONEqual(t, fixture.Session["forks"], map[string]any{
+		"before":        observeFork(before),
+		"at":            observeFork(at),
+		"tree":          observeFork(tree),
+		"treeBytes":     f6V4Normalize(string(treeBytes), root),
+		"invalidTarget": f6HarnessSessionError(invalidForkErr, root),
 	})
 
-	t.Run("emptyParentPath", func(t *testing.T) {
-		emptyParent := "empty-parent"
-		emptyParentEntries, err := storage.PathToRootOrCompaction(&emptyParent)
-		if err != nil {
-			t.Fatal(err)
-		}
-		assertF6HarnessJSONEqual(t, fixture.Session["emptyParentPath"], f6HarnessEntryIDs(emptyParentEntries))
+	mainLeaf := f6V4MainLeaf(reopened)
+	branchPath, err := reopened.FindEntriesOnBranch(agentharness.SessionV4BranchQuery{
+		SessionV4EntryQuery: agentharness.SessionV4EntryQuery{Order: "oldestFirst"}, Start: *mainLeaf,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertF6HarnessMap(
+		t,
+		fixture.Session["compactedContext"].(map[string]any),
+		f6HarnessContextObservation(t, agentharness.BuildSessionV4Context(branchPath)),
+	)
 
+	const validHeader = `{"kind":"header","version":4,"id":"s","createdAt":0,"cwd":"/c"}`
 	invalidCases := []struct {
 		name    string
 		content string
-		leaf    bool
 	}{
-		{name: "missing-header"},
-		{name: "unsupported-version", content: "{\"type\":\"session\",\"version\":2,\"id\":\"s\",\"timestamp\":\"t\",\"cwd\":\"/c\"}\n"},
-		{name: "metadata-array", content: "{\"type\":\"session\",\"version\":3,\"id\":\"s\",\"timestamp\":\"t\",\"cwd\":\"/c\",\"metadata\":[]}\n"},
-		{name: "invalid-entry", content: "{\"type\":\"session\",\"version\":3,\"id\":\"s\",\"timestamp\":\"t\",\"cwd\":\"/c\"}\n{\"type\":\"message\",\"id\":\"e\",\"parentId\":3,\"timestamp\":\"t\"}\n"},
-		{name: "dangling-leaf", content: "{\"type\":\"session\",\"version\":3,\"id\":\"s\",\"timestamp\":\"t\",\"cwd\":\"/c\"}\n{\"type\":\"leaf\",\"id\":\"l\",\"parentId\":null,\"timestamp\":\"t\",\"targetId\":\"missing\"}\n", leaf: true},
+		{name: "missing-header", content: ""},
+		{name: "v3-header", content: "{\"type\":\"session\",\"version\":3,\"id\":\"s\",\"timestamp\":\"t\",\"cwd\":\"/c\"}\n"},
+		{name: "unsupported-version", content: "{\"kind\":\"header\",\"version\":5,\"id\":\"s\",\"createdAt\":0,\"cwd\":\"/c\"}\n"},
+		{name: "metadata-array", content: "{\"kind\":\"header\",\"version\":4,\"id\":\"s\",\"createdAt\":0,\"cwd\":\"/c\",\"metadata\":[]}\n"},
+		{name: "unknown-mutation", content: validHeader + "\n{\"kind\":\"bogus\",\"seq\":1}\n"},
+		{name: "non-consecutive-seq", content: validHeader + "\n{\"kind\":\"entry\",\"lane\":\"main\",\"type\":\"custom\",\"id\":\"e\",\"customType\":\"x\",\"parentId\":null,\"seq\":2,\"timestamp\":0}\n"},
+		{name: "missing-parent", content: validHeader + "\n{\"kind\":\"entry\",\"lane\":\"main\",\"type\":\"custom\",\"id\":\"e\",\"customType\":\"x\",\"parentId\":\"ghost\",\"seq\":1,\"timestamp\":0}\n"},
+		{name: "dangling-lane", content: validHeader + "\n{\"kind\":\"lane\",\"seq\":1,\"lane\":\"side\",\"leafId\":\"missing\"}\n"},
 	}
 	gotInvalid := make([]any, 0, len(invalidCases))
 	for _, test := range invalidCases {
-		path := filepath.Join(root, test.name+".jsonl")
-		loaded, openErr := agentharness.RehydrateJSONLSession([]byte(test.content), path)
-		if openErr == nil && test.leaf {
-			_, openErr = loaded.LeafID()
+		invalidPath := filepath.Join(root, test.name+".jsonl")
+		if err := os.WriteFile(invalidPath, []byte(test.content), 0o666); err != nil {
+			t.Fatal(err)
 		}
+		_, openErr := agentharness.LoadJSONLSessionV4Storage(ctx, &env, invalidPath)
 		gotInvalid = append(gotInvalid, map[string]any{
-			"name":  test.name,
-			"error": f6HarnessSessionError(openErr, root),
+			"name":    test.name,
+			"content": test.content,
+			"error":   f6HarnessSessionError(openErr, root),
 		})
 	}
 	assertF6HarnessJSONEqual(t, fixture.Session["invalid"], gotInvalid)
+
+	const keptEntryLine = `{"kind":"entry","lane":"main","type":"custom","id":"kept","customType":"x","parentId":null,"seq":1,"timestamp":0}`
+	repair := func(name, content string) map[string]any {
+		repairPath := filepath.Join(root, name+".jsonl")
+		if err := os.WriteFile(repairPath, []byte(content), 0o666); err != nil {
+			t.Fatal(err)
+		}
+		repaired, err := agentharness.LoadJSONLSessionV4Storage(ctx, &env, repairPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries, err := repaired.FindEntries(agentharness.SessionV4EntryQuery{Order: "oldestFirst"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		repairedContent, err := os.ReadFile(repairPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return map[string]any{
+			"content":         content,
+			"entryIds":        f6V4EntryIDs(entries),
+			"repairedContent": string(repairedContent),
+		}
+	}
+	assertF6HarnessJSONEqual(t, fixture.Session["repairs"], f6V4Normalize(map[string]any{
+		"tornTail":         repair("torn-tail", validHeader+"\n"+keptEntryLine+"\n{\"kind\":\"en"),
+		"unterminatedTail": repair("unterminated-tail", validHeader+"\n"+keptEntryLine),
+	}, root))
 }
 
 func TestF6HarnessContextTransformsAndProjectorsMatchUpstream(t *testing.T) {
 	fixture := loadF6HarnessFixture(t)
-	entries := []agentharness.SessionTreeEntry{
-		{Type: "message", ID: "transform-root", Timestamp: "2026-02-03T04:06:00.000Z", Message: json.RawMessage(`{"role":"user","content":[{"type":"text","text":"transform root"}],"timestamp":10}`)},
-		{Type: "custom", ID: "constructor-custom", ParentID: f6HarnessStringPointer("transform-root"), Timestamp: "2026-02-03T04:06:01.000Z", CustomType: "constructor_state", Data: json.RawMessage(`{"label":"constructor"}`)},
-		{Type: "message", ID: "constructor-drop", ParentID: f6HarnessStringPointer("constructor-custom"), Timestamp: "2026-02-03T04:06:02.000Z", Message: json.RawMessage(`{"role":"user","content":[{"type":"text","text":"constructor drop"}],"timestamp":11}`)},
-		{Type: "custom", ID: "override-custom", ParentID: f6HarnessStringPointer("constructor-drop"), Timestamp: "2026-02-03T04:06:03.000Z", CustomType: "override_state", Data: json.RawMessage(`{"label":"override"}`)},
-		{Type: "custom", ID: "call-custom", ParentID: f6HarnessStringPointer("override-custom"), Timestamp: "2026-02-03T04:06:04.000Z", CustomType: "call_state", Data: json.RawMessage(`{"label":"call"}`)},
-		{Type: "message", ID: "call-drop", ParentID: f6HarnessStringPointer("call-custom"), Timestamp: "2026-02-03T04:06:05.000Z", Message: json.RawMessage(`{"role":"user","content":[{"type":"text","text":"call drop"}],"timestamp":12}`)},
-		{Type: "message", ID: "transform-assistant", ParentID: f6HarnessStringPointer("call-drop"), Timestamp: "2026-02-03T04:06:06.000Z", Message: json.RawMessage(`{"role":"assistant","content":[{"type":"text","text":"transform answer"}],"api":"openai-responses","provider":"openai","model":"gpt-transform","usage":{"input":1,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":2,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":13}`)},
+	entryJSON := []string{
+		fmt.Sprintf(`{"type":"message","id":"p-root","parentId":null,"seq":1,"timestamp":%d,"message":%s}`, f6FixedNowMS, f6V4User("transform root", 10)),
+		fmt.Sprintf(`{"type":"custom","id":"p-constructor","parentId":"p-root","seq":2,"timestamp":%d,"customType":"constructor_state","data":{"label":"constructor"}}`, f6FixedNowMS),
+		fmt.Sprintf(`{"type":"custom","id":"p-call","parentId":"p-constructor","seq":3,"timestamp":%d,"customType":"call_state"}`, f6FixedNowMS),
+		fmt.Sprintf(`{"type":"custom","id":"p-drop","parentId":"p-call","seq":4,"timestamp":%d,"customType":"noise"}`, f6FixedNowMS),
+		fmt.Sprintf(`{"type":"message","id":"p-deferred","parentId":"p-drop","seq":5,"timestamp":%d,"message":%s}`, f6FixedNowMS, f6V4Assistant("deferred work", 11, "deferred")),
+		fmt.Sprintf(`{"type":"branch_summary","id":"p-empty-summary","parentId":"p-deferred","seq":6,"timestamp":%d,"fromId":"p-root","summary":""}`, f6FixedNowMS),
+		fmt.Sprintf(`{"type":"message","id":"p-tail","parentId":"p-empty-summary","seq":7,"timestamp":%d,"message":%s}`, f6FixedNowMS, f6V4User("tail", 12)),
 	}
-	storage, err := agentharness.NewInMemorySessionStorage(entries, agentharness.SessionMetadata{
-		ID: "transform-session", CreatedAt: "2026-02-03T04:05:06.789Z",
-	})
-	if err != nil {
-		t.Fatal(err)
+	projectorPath := make([]agentharness.SessionV4Entry, len(entryJSON))
+	for index, raw := range entryJSON {
+		entry, err := agentharness.ParseSessionV4Entry([]byte(raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		projectorPath[index] = entry
 	}
-	projectedUser := func(text string, timestamp int64) agent.AgentMessages {
-		return agent.AgentMessages{json.RawMessage(
-			fmt.Sprintf(`{"role":"user","content":[{"type":"text","text":%q}],"timestamp":%d}`, text, timestamp),
-		)}
-	}
-	constructorOptions := agentharness.SessionContextBuildOptions{
-		EntryTransforms: []agentharness.ContextEntryTransform{
-			func(input []agentharness.SessionTreeEntry) []agentharness.SessionTreeEntry {
-				return f6HarnessDropEntry(input, "constructor-drop")
-			},
-		},
-		EntryProjectors: map[string]agentharness.CustomEntryContextMessageProjector{
-			"constructor_state": func(agentharness.SessionTreeEntry, int, []agentharness.SessionTreeEntry) agent.AgentMessages {
-				return projectedUser("constructor projector", 20)
-			},
-			"override_state": func(agentharness.SessionTreeEntry, int, []agentharness.SessionTreeEntry) agent.AgentMessages {
-				return projectedUser("constructor override", 21)
-			},
-		},
-	}
-	session := agentharness.NewSession(storage, constructorOptions)
-	constructorContext, err := session.Context()
-	if err != nil {
-		t.Fatal(err)
-	}
-	perCallContext, err := session.Context(agentharness.SessionContextBuildOptions{
-		EntryTransforms: []agentharness.ContextEntryTransform{
-			func(input []agentharness.SessionTreeEntry) []agentharness.SessionTreeEntry {
-				return f6HarnessDropEntry(input, "call-drop")
-			},
-		},
-		EntryProjectors: map[string]agentharness.CustomEntryContextMessageProjector{
-			"override_state": func(agentharness.SessionTreeEntry, int, []agentharness.SessionTreeEntry) agent.AgentMessages {
-				return projectedUser("per-call override", 22)
-			},
-			"call_state": func(agentharness.SessionTreeEntry, int, []agentharness.SessionTreeEntry) agent.AgentMessages {
-				return projectedUser("per-call projector", 23)
-			},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
+	projectedUser := func(text string, timestamp int) agent.AgentMessages {
+		return agent.AgentMessages{json.RawMessage(f6V4User(text, timestamp))}
 	}
 	got := map[string]any{
-		"constructorOnly":       f6HarnessContextObservation(t, constructorContext),
-		"constructorAndPerCall": f6HarnessContextObservation(t, perCallContext),
+		"default": f6HarnessContextObservation(t, agentharness.BuildSessionV4Context(projectorPath)),
+		"projected": f6HarnessContextObservation(t, agentharness.BuildSessionV4Context(projectorPath, agentharness.SessionV4ContextOptions{
+			EntryTransforms: []agentharness.SessionV4ContextTransform{
+				func(entries []agentharness.SessionV4Entry) []agentharness.SessionV4Entry {
+					kept := make([]agentharness.SessionV4Entry, 0, len(entries))
+					for _, entry := range entries {
+						if entry.ID != "p-drop" {
+							kept = append(kept, entry)
+						}
+					}
+					return kept
+				},
+			},
+			EntryProjectors: map[string]agentharness.SessionV4ContextProjector{
+				"constructor_state": func(agentharness.SessionV4Entry, int, []agentharness.SessionV4Entry) agent.AgentMessages {
+					return projectedUser("constructor projector", 20)
+				},
+				"call_state": func(agentharness.SessionV4Entry, int, []agentharness.SessionV4Entry) agent.AgentMessages {
+					return projectedUser("call projector", 21)
+				},
+			},
+		})),
 	}
-	want := fixture.Session["transformsAndProjectors"].(map[string]any)
-	for _, name := range []string{"constructorOnly", "constructorAndPerCall"} {
+	want := fixture.Session["projectorContexts"].(map[string]any)
+	for _, name := range []string{"default", "projected"} {
 		t.Run(name, func(t *testing.T) {
 			assertF6HarnessMap(t, want[name].(map[string]any), got[name].(map[string]any))
 		})
@@ -290,140 +620,126 @@ func TestF6HarnessContextTransformsAndProjectorsMatchUpstream(t *testing.T) {
 
 func TestF6HarnessTypedEmptyActiveToolsMatchUpstream(t *testing.T) {
 	fixture := loadF6HarnessFixture(t)
-	want := fixture.Session["typedEmptyActiveTools"].(map[string]any)
-
-	t.Run("harness session", func(t *testing.T) {
-		storage, err := agentharness.NewInMemorySessionStorage(nil, agentharness.SessionMetadata{
-			ID: "typed-active-tools", CreatedAt: "2026-02-03T04:05:06.789Z",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		session := agentharness.NewSession(storage)
-		if _, err := session.AppendActiveToolsChange([]string{}); err != nil {
-			t.Fatal(err)
-		}
-		entries := storage.Entries()
-		contextState, err := session.Context()
-		if err != nil {
-			t.Fatal(err)
-		}
-		assertF6HarnessMap(t, want, f6HarnessTypedActiveToolsObservation(
-			entries[0].Type, entries[0].ActiveToolNames, contextState.ActiveToolNames,
-		))
-	})
-
-	t.Run("coding session manager", func(t *testing.T) {
-		storage, err := agentharness.NewInMemorySessionStorage(nil, agentharness.SessionMetadata{
-			ID: "typed-active-tools", CreatedAt: "2026-02-03T04:05:06.789Z",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		manager, err := sessionstore.FromHarnessStorage(storage, sessionstore.WithCwdOverride(t.TempDir()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := manager.AppendActiveToolsChange([]string{}); err != nil {
-			t.Fatal(err)
-		}
-		entries := manager.GetEntries()
-		contextState := manager.BuildSessionContext()
-		assertF6HarnessMap(t, want, f6HarnessTypedActiveToolsObservation(
-			entries[0].Type, entries[0].ActiveToolNames, contextState.ActiveToolNames,
-		))
-	})
-}
-
-func f6HarnessTypedActiveToolsObservation(entryType string, entryTools, contextTools []string) map[string]any {
-	return map[string]any{
-		"entry":   map[string]any{"type": entryType, "activeToolNames": entryTools},
-		"context": map[string]any{"activeToolNames": contextTools},
-	}
-}
-
-func f6HarnessDropEntry(entries []agentharness.SessionTreeEntry, id string) []agentharness.SessionTreeEntry {
-	result := make([]agentharness.SessionTreeEntry, 0, len(entries))
-	for _, entry := range entries {
-		if entry.ID != id {
-			result = append(result, entry)
-		}
-	}
-	return result
-}
-
-func TestF6HarnessSessionReposMatchUpstream(t *testing.T) {
-	fixture := loadF6HarnessFixture(t)
 	input, err := runner.ReadFixture("F6Harness", "session.jsonl")
 	if err != nil {
 		t.Fatal(err)
 	}
-	seed, err := agentharness.RehydrateJSONLSession(input, filepath.Join(t.TempDir(), "seed.jsonl"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	entries := seed.Entries()[:3]
 	ctx := context.Background()
 	root := t.TempDir()
-
-	memoryRepo := agentharness.NewInMemorySessionRepo()
-	memorySource, err := memoryRepo.Create(ctx, agentharness.SessionCreateOptions{ID: "memory-source"})
+	env := agentharness.NodeExecutionEnv{CWD: root}
+	defer func() { _ = env.Cleanup() }()
+	path := filepath.Join(root, "session.jsonl")
+	if err := os.WriteFile(path, input, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	storage, err := agentharness.LoadJSONLSessionV4Storage(ctx, &env, path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, entry := range entries {
-		if err := memorySource.Storage().AppendEntry(entry); err != nil {
+	entry, ok := storage.Entry("tools-empty")
+	if !ok || entry.ActiveToolNames == nil || len(entry.ActiveToolNames) != 0 {
+		t.Fatalf("tools-empty active tools = %#v, want explicit empty state", entry.ActiveToolNames)
+	}
+	var wantEntry any
+	for _, candidate := range fixture.Session["jsonl"].(map[string]any)["entries"].([]any) {
+		if candidate.(map[string]any)["id"] == "tools-empty" {
+			wantEntry = candidate
+		}
+	}
+	assertF6HarnessJSONEqual(t, wantEntry, f6HarnessJSONValue(entry))
+
+	mainLeaf := f6V4MainLeaf(storage)
+	branchPath, err := storage.FindEntriesOnBranch(agentharness.SessionV4BranchQuery{
+		SessionV4EntryQuery: agentharness.SessionV4EntryQuery{Order: "oldestFirst"}, Start: *mainLeaf,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	contextState := agentharness.BuildSessionV4Context(branchPath)
+	if contextState.ActiveToolNames == nil || len(contextState.ActiveToolNames) != 0 {
+		t.Fatalf("context active tools = %#v, want explicit empty state", contextState.ActiveToolNames)
+	}
+	assertF6HarnessJSONEqual(
+		t,
+		fixture.Session["compactedContext"].(map[string]any)["activeToolNames"],
+		contextState.ActiveToolNames,
+	)
+}
+
+func TestF6HarnessSessionReposMatchUpstream(t *testing.T) {
+	fixture := loadF6HarnessFixture(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	env := agentharness.NodeExecutionEnv{CWD: root}
+	defer func() { _ = env.Cleanup() }()
+	provisioned := []string{
+		`{"type":"message","id":"root-user","message":` + f6V4User("root", 1) + `}`,
+		`{"type":"message","id":"main-assistant","message":` + f6V4Assistant("answer", 2, "stop") + `}`,
+		`{"type":"message","id":"second-user","message":` + f6V4User("continue", 3) + `}`,
+	}
+	entriesOf := func(storage agentharness.SessionV4Storage) any {
+		entries, err := storage.FindEntries(agentharness.SessionV4EntryQuery{Order: "oldestFirst"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f6HarnessJSONValue(entries)
+	}
+
+	memoryRepo := agentharness.NewInMemorySessionV4Repo()
+	memoryRepo.Now = f6V4Now
+	memorySource, err := memoryRepo.Create(agentharness.SessionV4CreateOptions{ID: f6HarnessString("memory-source")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, payload := range provisioned {
+		if _, err := memorySource.AppendEntry(json.RawMessage(payload), "main"); err != nil {
 			t.Fatal(err)
 		}
 	}
 	memoryMetadata := memorySource.Metadata()
-	memoryOpened, err := memoryRepo.Open(ctx, memoryMetadata)
+	memoryOpened, err := memoryRepo.Open(memoryMetadata)
 	if err != nil {
 		t.Fatal(err)
 	}
-	memoryBefore, err := memoryRepo.Fork(ctx, memoryMetadata, agentharness.SessionForkOptions{
-		SessionCreateOptions: agentharness.SessionCreateOptions{ID: "memory-before"}, EntryID: "second-user",
-	})
-	if err != nil {
-		t.Fatal(err)
+	memoryFork := func(id string, options agentharness.SessionV4ForkOptions) *agentharness.InMemorySessionV4Storage {
+		forked, err := memoryRepo.Fork(memoryMetadata, agentharness.SessionV4RepoForkOptions{
+			SessionV4ForkOptions:   options,
+			SessionV4CreateOptions: agentharness.SessionV4CreateOptions{ID: f6HarnessString(id)},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return forked
 	}
-	memoryAt, err := memoryRepo.Fork(ctx, memoryMetadata, agentharness.SessionForkOptions{
-		SessionCreateOptions: agentharness.SessionCreateOptions{ID: "memory-at"}, EntryID: "main-assistant", Position: agentharness.ForkAt,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	memoryFull, err := memoryRepo.Fork(ctx, memoryMetadata, agentharness.SessionForkOptions{
-		SessionCreateOptions: agentharness.SessionCreateOptions{ID: "memory-full"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	memoryListed, err := memoryRepo.List(ctx, agentharness.SessionListOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := memoryRepo.Delete(ctx, memoryMetadata); err != nil {
-		t.Fatal(err)
-	}
-	_, memoryOpenAfterDelete := memoryRepo.Open(ctx, memoryMetadata)
+	memoryBefore := memoryFork("memory-before", agentharness.SessionV4ForkOptions{EntryID: f6HarnessString("second-user"), Position: agentharness.ForkBefore})
+	memoryAt := memoryFork("memory-at", agentharness.SessionV4ForkOptions{EntryID: f6HarnessString("main-assistant"), Position: agentharness.ForkAt})
+	memoryFull := memoryFork("memory-full", agentharness.SessionV4ForkOptions{})
+	memoryTree := memoryFork("memory-tree", agentharness.SessionV4ForkOptions{Scope: "tree"})
+	memoryListed := memoryRepo.List()
+	sort.Slice(memoryListed, func(left, right int) bool { return memoryListed[left].ID < memoryListed[right].ID })
+	_, memoryDuplicateErr := memoryRepo.Create(agentharness.SessionV4CreateOptions{ID: f6HarnessString("memory-source")})
+	memoryRepo.Delete(memoryMetadata)
+	_, memoryOpenAfterDeleteErr := memoryRepo.Open(memoryMetadata)
 
-	env := agentharness.NodeExecutionEnv{CWD: root}
-	defer func() { _ = env.Cleanup() }()
-	jsonlRepo := agentharness.NewJSONLSessionRepo(&env, filepath.Join(root, "repo-sessions"))
-	jsonlSource, err := jsonlRepo.Create(ctx, agentharness.SessionCreateOptions{
-		ID: "jsonl-source", CWD: "/tmp/my-project",
-		Metadata: json.RawMessage(`{ "10" : "ten", "2" : "two", "profile" : "reviewer", "nested" : { "z" : 1, "a" : 2 } }`),
+	jsonlRepo := agentharness.NewJSONLSessionV4Repo(&env, filepath.Join(root, "repo-sessions"))
+	jsonlRepo.Now = f6V4Now
+	jsonlSource, err := jsonlRepo.Create(ctx, agentharness.JSONLSessionV4CreateOptions{
+		SessionV4CreateOptions: agentharness.SessionV4CreateOptions{ID: f6HarnessString("jsonl-source")},
+		CWD:                    "/tmp/my-project",
+		Metadata:               json.RawMessage(`{ "10" : "ten", "2" : "two", "profile" : "reviewer", "nested" : { "z" : 1, "a" : 2 } }`),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, entry := range entries {
-		if err := jsonlSource.Storage().AppendEntry(entry); err != nil {
+	for _, payload := range provisioned {
+		if _, err := jsonlSource.AppendEntry(json.RawMessage(payload), "main"); err != nil {
 			t.Fatal(err)
 		}
 	}
-	jsonlOther, err := jsonlRepo.Create(ctx, agentharness.SessionCreateOptions{ID: "jsonl-other", CWD: "/tmp/other-project"})
+	jsonlOther, err := jsonlRepo.Create(ctx, agentharness.JSONLSessionV4CreateOptions{
+		SessionV4CreateOptions: agentharness.SessionV4CreateOptions{ID: f6HarnessString("jsonl-other")},
+		CWD:                    "/tmp/other-project",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,33 +748,53 @@ func TestF6HarnessSessionReposMatchUpstream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	jsonlListByCwd, err := jsonlRepo.List(ctx, agentharness.SessionListOptions{CWD: "/tmp/my-project"})
+	jsonlListByCwd, err := jsonlRepo.List(ctx, f6HarnessString("/tmp/my-project"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	jsonlListAll, err := jsonlRepo.List(ctx, agentharness.SessionListOptions{})
+	jsonlListAll, err := jsonlRepo.List(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	jsonlBefore, err := jsonlRepo.Fork(ctx, jsonlMetadata, agentharness.SessionForkOptions{
-		SessionCreateOptions: agentharness.SessionCreateOptions{ID: "jsonl-before", CWD: "/tmp/target"}, EntryID: "second-user",
+	sortJSONLByID := func(metadata []agentharness.JSONLSessionV4Metadata) []agentharness.JSONLSessionV4Metadata {
+		sorted := append([]agentharness.JSONLSessionV4Metadata(nil), metadata...)
+		sort.Slice(sorted, func(left, right int) bool { return sorted[left].ID < sorted[right].ID })
+		return sorted
+	}
+	jsonlFork := func(id string, options agentharness.SessionV4ForkOptions, metadata json.RawMessage, parentSessionID *string) *agentharness.JSONLSessionV4Storage {
+		forked, err := jsonlRepo.Fork(ctx, jsonlMetadata, agentharness.JSONLSessionV4ForkOptions{
+			SessionV4ForkOptions: options,
+			JSONLSessionV4CreateOptions: agentharness.JSONLSessionV4CreateOptions{
+				SessionV4CreateOptions: agentharness.SessionV4CreateOptions{ID: f6HarnessString(id), ParentSessionID: parentSessionID},
+				CWD:                    "/tmp/target",
+				Metadata:               metadata,
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return forked
+	}
+	jsonlBefore := jsonlFork("jsonl-before", agentharness.SessionV4ForkOptions{EntryID: f6HarnessString("second-user")}, nil, nil)
+	jsonlInherited := jsonlFork("jsonl-inherited", agentharness.SessionV4ForkOptions{}, nil, nil)
+	jsonlTree := jsonlFork(
+		"jsonl-tree", agentharness.SessionV4ForkOptions{Scope: "tree"},
+		json.RawMessage(`{"profile":"writer"}`), f6HarnessString("override-parent"),
+	)
+	_, invalidIDErr := jsonlRepo.Create(ctx, agentharness.JSONLSessionV4CreateOptions{
+		SessionV4CreateOptions: agentharness.SessionV4CreateOptions{ID: f6HarnessString("-bad-")},
+		CWD:                    "/tmp/target",
 	})
+	_, duplicateIDErr := jsonlRepo.Create(ctx, agentharness.JSONLSessionV4CreateOptions{
+		SessionV4CreateOptions: agentharness.SessionV4CreateOptions{ID: f6HarnessString("jsonl-source")},
+		CWD:                    "/tmp/my-project",
+	})
+	sourceBytes, err := env.ReadTextFile(ctx, jsonlMetadata.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	jsonlInherited, err := jsonlRepo.Fork(ctx, jsonlMetadata, agentharness.SessionForkOptions{
-		SessionCreateOptions: agentharness.SessionCreateOptions{ID: "jsonl-inherited", CWD: "/tmp/target"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	overrideParent := "/fixture/override-parent.jsonl"
-	jsonlOverridden, err := jsonlRepo.Fork(ctx, jsonlMetadata, agentharness.SessionForkOptions{
-		SessionCreateOptions: agentharness.SessionCreateOptions{
-			ID: "jsonl-overridden", CWD: "/tmp/target", ParentSessionPath: &overrideParent,
-			Metadata: json.RawMessage(`{"profile":"writer"}`),
-		},
-	})
+	treeMetadata := jsonlTree.Metadata()
+	treeBytes, err := env.ReadTextFile(ctx, treeMetadata.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -473,68 +809,55 @@ func TestF6HarnessSessionReposMatchUpstream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, jsonlOpenAfterDelete := jsonlRepo.Open(ctx, jsonlMetadata)
-
-	wantRepos := fixture.Session["repos"].(map[string]any)
-	wantJSONL := wantRepos["jsonl"].(map[string]any)
-	noncanonicalBytes := []byte(wantJSONL["noncanonicalSourceBytes"].(string))
-	noncanonicalPath := filepath.Join(root, "noncanonical-source.jsonl")
-	if err := env.WriteFile(ctx, noncanonicalPath, noncanonicalBytes); err != nil {
-		t.Fatal(err)
-	}
-	noncanonicalSession, err := jsonlRepo.Open(ctx, agentharness.SessionMetadata{Path: noncanonicalPath})
-	if err != nil {
-		t.Fatal(err)
-	}
-	noncanonicalMetadata := noncanonicalSession.Metadata()
-	reserialized, err := jsonlRepo.Fork(ctx, noncanonicalMetadata, agentharness.SessionForkOptions{
-		SessionCreateOptions: agentharness.SessionCreateOptions{ID: "jsonl-reserialized", CWD: "/tmp/reserialized"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	reserializedMetadata := reserialized.Metadata()
-	reserializedBytes, err := env.ReadTextFile(ctx, reserializedMetadata.Path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	_, jsonlOpenAfterDeleteErr := jsonlRepo.Open(ctx, jsonlMetadata)
 
 	got := map[string]any{
 		"memory": map[string]any{
-			"sourceMetadata":   f6HarnessRepoMetadata(memoryMetadata, root),
-			"openedSameObject": memoryOpened == memorySource,
-			"listed":           f6HarnessRepoMetadataList(memoryListed, root),
-			"beforeEntries":    f6HarnessEntries(memoryBefore.Entries()),
-			"atEntries":        f6HarnessEntries(memoryAt.Entries()),
-			"fullEntries":      f6HarnessEntries(memoryFull.Entries()),
-			"openAfterDelete":  f6HarnessRepoError(memoryOpenAfterDelete, root),
+			"sourceMetadata":  f6HarnessJSONValue(memoryMetadata),
+			"openedMetadata":  f6HarnessJSONValue(memoryOpened.Metadata()),
+			"listed":          f6HarnessJSONValue(memoryListed),
+			"beforeEntries":   entriesOf(memoryBefore),
+			"atEntries":       entriesOf(memoryAt),
+			"fullEntries":     entriesOf(memoryFull),
+			"treeEntries":     entriesOf(memoryTree),
+			"treeLanes":       f6HarnessJSONValue(memoryTree.Lanes()),
+			"duplicateCreate": f6HarnessSessionError(memoryDuplicateErr, root),
+			"openAfterDelete": f6HarnessSessionError(memoryOpenAfterDeleteErr, root),
 		},
 		"jsonl": map[string]any{
-			"sourceMetadata":           f6HarnessRepoMetadata(jsonlMetadata, root),
-			"otherMetadata":            f6HarnessRepoMetadata(jsonlOtherMetadata, root),
-			"openedMetadata":           f6HarnessRepoMetadata(jsonlOpened.Metadata(), root),
-			"openedEntries":            f6HarnessEntries(jsonlOpened.Entries()),
-			"listByCwd":                f6HarnessRepoMetadataList(jsonlListByCwd, root),
-			"listAll":                  f6HarnessRepoMetadataList(jsonlListAll, root),
-			"encodedCwdDirectory":      filepath.Base(filepath.Dir(jsonlMetadata.Path)),
-			"before":                   f6HarnessRepoFork(jsonlBefore, root),
-			"inherited":                f6HarnessRepoFork(jsonlInherited, root),
-			"overridden":               f6HarnessRepoFork(jsonlOverridden, root),
+			"sourceMetadata":      f6HarnessJSONValue(jsonlMetadata),
+			"otherMetadata":       f6HarnessJSONValue(jsonlOtherMetadata),
+			"openedMetadata":      f6HarnessJSONValue(jsonlOpened.Metadata()),
+			"openedEntries":       entriesOf(jsonlOpened),
+			"listByCwd":           f6HarnessJSONValue(sortJSONLByID(jsonlListByCwd)),
+			"listAll":             f6HarnessJSONValue(sortJSONLByID(jsonlListAll)),
+			"encodedCwdDirectory": filepath.Base(filepath.Dir(jsonlMetadata.Path)),
+			"before": map[string]any{
+				"metadata": f6HarnessJSONValue(jsonlBefore.Metadata()), "entries": entriesOf(jsonlBefore),
+			},
+			"inherited": map[string]any{
+				"metadata": f6HarnessJSONValue(jsonlInherited.Metadata()), "entries": entriesOf(jsonlInherited),
+			},
+			"tree": map[string]any{
+				"metadata": f6HarnessJSONValue(treeMetadata), "entries": entriesOf(jsonlTree),
+				"lanes": f6HarnessJSONValue(jsonlTree.Lanes()),
+			},
+			"sourceBytes":              sourceBytes,
+			"treeBytes":                treeBytes,
+			"invalidIdCreate":          f6HarnessSessionError(invalidIDErr, root),
+			"duplicateIdCreate":        f6HarnessSessionError(duplicateIDErr, root),
 			"sourceExistsBeforeDelete": sourceExistsBeforeDelete,
 			"sourceExistsAfterDelete":  sourceExistsAfterDelete,
-			"openAfterDelete":          f6HarnessRepoError(jsonlOpenAfterDelete, root),
-			"noncanonicalSourceBytes":  string(noncanonicalBytes),
-			"noncanonicalMetadata":     f6HarnessRepoMetadata(noncanonicalMetadata, root),
-			"reserializedMetadata":     f6HarnessRepoMetadata(reserializedMetadata, root),
-			"reserializedBytes":        f6HarnessRepoJSONL(reserializedBytes, reserializedMetadata, root),
+			"openAfterDelete":          f6HarnessSessionError(jsonlOpenAfterDeleteErr, root),
 		},
 	}
+	wantRepos := fixture.Session["repos"].(map[string]any)
 	for _, repoType := range []string{"memory", "jsonl"} {
 		t.Run(repoType, func(t *testing.T) {
 			assertF6HarnessMap(
 				t,
 				wantRepos[repoType].(map[string]any),
-				got[repoType].(map[string]any),
+				f6V4Normalize(got[repoType], root).(map[string]any),
 			)
 		})
 	}
@@ -691,60 +1014,6 @@ func loadF6HarnessFixture(t *testing.T) f6HarnessFixture {
 	return fixture
 }
 
-func observeF6HarnessStorage(t *testing.T, storage agentharness.SessionStorage, root string) map[string]any {
-	t.Helper()
-	leaf, err := storage.LeafID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	branch, err := storage.PathToRootOrCompaction(leaf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	session := agentharness.NewSession(storage)
-	contextState, err := session.Context()
-	if err != nil {
-		t.Fatal(err)
-	}
-	name, hasName, err := session.Name()
-	if err != nil {
-		t.Fatal(err)
-	}
-	rootLabel, hasRoot := storage.Label("root-user")
-	branchLabel, hasBranch := storage.Label("branch-user")
-	labels := map[string]any{"root": nil, "branch": nil}
-	if hasRoot {
-		labels["root"] = rootLabel
-	}
-	if hasBranch {
-		labels["branch"] = branchLabel
-	}
-	var leafValue any
-	if leaf != nil {
-		leafValue = *leaf
-	}
-	var nameValue any
-	if hasName {
-		nameValue = name
-	}
-	metadata := f6HarnessJSONValue(storage.Metadata())
-	metadataMap := metadata.(map[string]any)
-	if pathValue, ok := metadataMap["path"].(string); ok {
-		metadataMap["path"] = normalizeF6HarnessPath(pathValue, root)
-	}
-	return map[string]any{
-		"metadata":    metadataMap,
-		"leafId":      leafValue,
-		"entries":     f6HarnessEntries(storage.Entries()),
-		"entryIds":    f6HarnessEntryIDs(storage.Entries()),
-		"branchIds":   f6HarnessEntryIDs(branch),
-		"messageIds":  f6HarnessEntryIDs(storage.EntriesByType("message")),
-		"labels":      labels,
-		"sessionName": nameValue,
-		"context":     f6HarnessContextObservation(t, contextState),
-	}
-}
-
 func f6HarnessContextObservation(t *testing.T, contextState agentharness.SessionContext) map[string]any {
 	t.Helper()
 	return map[string]any{
@@ -769,158 +1038,6 @@ func f6HarnessMessages(t *testing.T, messages []any) []any {
 		}
 	}
 	return result
-}
-
-func f6HarnessEntries(entries []agentharness.SessionTreeEntry) []any {
-	result := make([]any, len(entries))
-	for index := range entries {
-		result[index] = f6HarnessEntry(entries[index])
-	}
-	return result
-}
-
-func f6HarnessEntry(entry agentharness.SessionTreeEntry) map[string]any {
-	value := map[string]any{
-		"type": entry.Type, "id": entry.ID, "parentId": entry.ParentID, "timestamp": entry.Timestamp,
-	}
-	switch entry.Type {
-	case "message":
-		value["message"] = f6HarnessRaw(entry.Message)
-	case "thinking_level_change":
-		value["thinkingLevel"] = entry.ThinkingLevel
-	case "model_change":
-		value["provider"], value["modelId"] = entry.Provider, entry.ModelID
-	case "active_tools_change":
-		value["activeToolNames"] = entry.ActiveToolNames
-	case "compaction":
-		value["summary"], value["firstKeptEntryId"], value["tokensBefore"] = entry.Summary, entry.FirstKeptEntryID, entry.TokensBefore
-		if len(entry.Details) != 0 {
-			value["details"] = f6HarnessRaw(entry.Details)
-		}
-		if entry.FromHook != nil {
-			value["fromHook"] = *entry.FromHook
-		}
-	case "branch_summary":
-		value["fromId"], value["summary"] = entry.FromID, entry.Summary
-		if len(entry.Details) != 0 {
-			value["details"] = f6HarnessRaw(entry.Details)
-		}
-		if entry.FromHook != nil {
-			value["fromHook"] = *entry.FromHook
-		}
-	case "custom":
-		value["customType"] = entry.CustomType
-		if len(entry.Data) != 0 {
-			value["data"] = f6HarnessRaw(entry.Data)
-		}
-	case "custom_message":
-		value["customType"], value["content"], value["display"] = entry.CustomType, f6HarnessRaw(entry.Content), entry.Display
-		if len(entry.Details) != 0 {
-			value["details"] = f6HarnessRaw(entry.Details)
-		}
-	case "label":
-		value["targetId"] = entry.TargetID
-		if entry.Label != nil {
-			value["label"] = *entry.Label
-		}
-	case "session_info":
-		value["name"] = entry.Name
-	case "leaf":
-		value["targetId"] = entry.TargetID
-	}
-	return value
-}
-
-func f6HarnessRaw(value json.RawMessage) any {
-	if len(value) == 0 {
-		return nil
-	}
-	var decoded any
-	if err := json.Unmarshal(value, &decoded); err != nil {
-		panic(err)
-	}
-	return decoded
-}
-
-func f6HarnessStringPointer(value string) *string {
-	return &value
-}
-
-var f6HarnessRepoTimestamp = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z_`)
-
-func f6HarnessRepoMetadata(metadata agentharness.SessionMetadata, root string) map[string]any {
-	value := map[string]any{
-		"id": metadata.ID, "createdAt": metadata.CreatedAt,
-	}
-	if metadata.CWD != "" {
-		value["cwd"] = metadata.CWD
-	}
-	if metadata.Path != "" {
-		value["path"] = metadata.Path
-	}
-	if metadata.ParentSessionPath != nil {
-		value["parentSessionPath"] = *metadata.ParentSessionPath
-	}
-	if len(metadata.Metadata) != 0 {
-		value["metadata"] = f6HarnessRaw(metadata.Metadata)
-	}
-	return f6HarnessNormalizeRepoValue(value, root).(map[string]any)
-}
-
-func f6HarnessRepoMetadataList(metadata []agentharness.SessionMetadata, root string) []any {
-	sorted := append([]agentharness.SessionMetadata(nil), metadata...)
-	sort.Slice(sorted, func(left, right int) bool { return sorted[left].ID < sorted[right].ID })
-	result := make([]any, len(sorted))
-	for index := range sorted {
-		result[index] = f6HarnessRepoMetadata(sorted[index], root)
-	}
-	return result
-}
-
-func f6HarnessRepoFork(session *agentharness.Session, root string) map[string]any {
-	return map[string]any{
-		"metadata": f6HarnessRepoMetadata(session.Metadata(), root),
-		"entries":  f6HarnessEntries(session.Entries()),
-	}
-}
-
-func f6HarnessRepoError(err error, root string) any {
-	return f6HarnessNormalizeRepoValue(f6HarnessSessionError(err, root), root)
-}
-
-func f6HarnessRepoJSONL(content string, metadata agentharness.SessionMetadata, root string) string {
-	content = strings.ReplaceAll(content, metadata.CreatedAt, "<createdAt>")
-	pathTimestamp := strings.NewReplacer(":", "-", ".", "-").Replace(metadata.CreatedAt)
-	content = strings.ReplaceAll(content, pathTimestamp, "<createdAt>")
-	return f6HarnessNormalizeRepoValue(content, root).(string)
-}
-
-func f6HarnessNormalizeRepoValue(value any, root string) any {
-	switch typed := value.(type) {
-	case string:
-		return normalizeF6HarnessPath(f6HarnessRepoTimestamp.ReplaceAllString(typed, "<createdAt>_"), root)
-	case []any:
-		for index := range typed {
-			typed[index] = f6HarnessNormalizeRepoValue(typed[index], root)
-		}
-	case map[string]any:
-		for key := range typed {
-			if key == "createdAt" {
-				typed[key] = "<createdAt>"
-			} else {
-				typed[key] = f6HarnessNormalizeRepoValue(typed[key], root)
-			}
-		}
-	}
-	return value
-}
-
-func f6HarnessEntryIDs(entries []agentharness.SessionTreeEntry) []string {
-	ids := make([]string, len(entries))
-	for index := range entries {
-		ids[index] = entries[index].ID
-	}
-	return ids
 }
 
 func f6HarnessMessageRoles(messages []any) []any {

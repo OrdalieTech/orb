@@ -52,23 +52,17 @@
         "action:showModelsSelector:[]"
       ],
       "finalEditorText": "",
-      "transition": null,
+      "transition": "scoped-models-selector",
       "trace": [],
       "chat": {
-        "lineCount": 2,
-        "sha256": "981d63532524d1f75c164354d4a6b3430ade51302d35af355fa471ee338023a6",
+        "lineCount": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "raw": {
-          "lineCount": 2,
-          "sha256": "817b6a6fb9f74c4484cae3040c143c3f595b2cf24dc3dd4eec82243893d3eccb",
-          "lines": [
-            "",
-            " \u001b[38;5;241mNo models available\u001b[39m                                                                                "
-          ]
+          "lineCount": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "lines": []
         },
-        "lines": [
-          "",
-          " No models available"
-        ]
+        "lines": []
       }
     },
     {
@@ -285,11 +279,11 @@
       "transition": null,
       "trace": [],
       "chat": {
-        "lineCount": 9100,
-        "sha256": "e8ae6c00f98cacb2cf642b79855f95076d053a5f780c7e6054cddc221c577f88",
+        "lineCount": 9579,
+        "sha256": "b8ceb1b68c2271d12f4f5a51737c0f07d2c34ff00412eeb4b55ad3908487f85a",
         "raw": {
-          "lineCount": 9100,
-          "sha256": "d85338b53facacf12d88b5d4e515a1e4d2c56cc3c0086427f512e4a62bf8ec38",
+          "lineCount": 9579,
+          "sha256": "d4298064d01f71ed33a623d09e96563f87e55df68d50be45dd4f9fe27cad1a15",
           "head": [
             "",
             "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
@@ -313,24 +307,24 @@
             " \u001b[38;5;109m- \u001b[39m\u001b[38;5;109m/model\u001b[39m command for runtime model switching                                                       "
           ],
           "tail": [
-            "   \u001b[38;5;241m(https://github.com/earendil-works/pi/issues/6951)\u001b[39m, \u001b[38;5;109m\u001b[4m#6998\u001b[24m\u001b[39m\u001b[38;5;241m                                        ",
-            "   \u001b[38;5;241m(https://github.com/earendil-works/pi/issues/6998)\u001b[39m).                                             ",
-            " \u001b[38;5;109m- \u001b[39mFixed inherited Z.AI output limits being sent through an unsupported parameter. See \u001b[38;5;109m\u001b[4mProviders\u001b[24m\u001b[39m\u001b[38;5;241m    ",
-            "   \u001b[38;5;241m(https://github.com/earendil-works/pi/blob/v0.83.0/packages/coding-agent/docs/providers.md)\u001b[39m      ",
-            "   (\u001b[38;5;109m\u001b[4m#7174\u001b[24m\u001b[39m\u001b[38;5;241m (https://github.com/earendil-works/pi/pull/7174)\u001b[39m by \u001b[38;5;109m\u001b[4m@HyeokjaeLee\u001b[24m\u001b[39m\u001b[38;5;241m                          ",
-            "   \u001b[38;5;241m(https://github.com/HyeokjaeLee)\u001b[39m).                                                               ",
-            " \u001b[38;5;109m- \u001b[39mFixed explicitly configured Amazon Bedrock profiles being overridden by ambient AWS access keys. ",
-            "   See \u001b[38;5;109m\u001b[4mAmazon Bedrock\u001b[24m\u001b[39m\u001b[38;5;241m                                                                               ",
-            "   \u001b[38;5;241m(https://github.com/earendil-works/pi/blob/v0.83.0/packages/coding-agent/docs/providers.md#amazo ",
-            "   \u001b[38;5;241mn-bedrock)\u001b[39m (\u001b[38;5;109m\u001b[4m#7176\u001b[24m\u001b[39m\u001b[38;5;241m (https://github.com/earendil-works/pi/pull/7176)\u001b[39m by \u001b[38;5;109m\u001b[4m@christianbasch\u001b[24m\u001b[39m\u001b[38;5;241m            ",
-            "   \u001b[38;5;241m(https://github.com/christianbasch)\u001b[39m).                                                            ",
-            " \u001b[38;5;109m- \u001b[39mFixed inherited image fallback paths overflowing narrow terminals, shortened home-directory      ",
-            "   paths, and made absolute paths clickable when terminal hyperlinks are available (\u001b[38;5;109m\u001b[4m#7262\u001b[24m\u001b[39m\u001b[38;5;241m           ",
-            "   \u001b[38;5;241m(https://github.com/earendil-works/pi/pull/7262)\u001b[39m).                                               ",
-            " \u001b[38;5;109m- \u001b[39mFixed inherited OpenAI-compatible tool calls losing their function arguments when malformed      ",
-            "   deltas also contain an empty \u001b[38;5;109mcustom\u001b[39m object (\u001b[38;5;109m\u001b[4m#7288\u001b[24m\u001b[39m\u001b[38;5;241m                                                ",
-            "   \u001b[38;5;241m(https://github.com/earendil-works/pi/pull/7288)\u001b[39m by \u001b[38;5;109m\u001b[4m@sunnyyoung\u001b[24m\u001b[39m\u001b[38;5;241m                                  ",
-            "   \u001b[38;5;241m(https://github.com/sunnyyoung)\u001b[39m).                                                                ",
+            " \u001b[38;5;109m- \u001b[39mReduced worst-case automatic terminal theme detection delay from 200 ms to 100 ms by probing     ",
+            "   color-scheme and background support concurrently.                                                ",
+            "                                                                                                    ",
+            " \u001b[38;5;222m\u001b[1m### \u001b[22m\u001b[39m\u001b[38;5;222m\u001b[1mFixed\u001b[22m\u001b[39m                                                                                          ",
+            "                                                                                                    ",
+            " \u001b[38;5;109m- \u001b[39mFixed Bun standalone binaries crashing on startup when the cwd contains a \u001b[38;5;109mbunfig.toml\u001b[39m with       ",
+            "   \u001b[38;5;109mpreload\u001b[39m by compiling with \u001b[38;5;109m--no-compile-autoload-bunfig\u001b[39m (\u001b[38;5;109m\u001b[4m#7685\u001b[24m\u001b[39m\u001b[38;5;241m                                    ",
+            "   \u001b[38;5;241m(https://github.com/earendil-works/pi/pull/7685)\u001b[39m by \u001b[38;5;109m\u001b[4m@geril07\u001b[24m\u001b[39m\u001b[38;5;241m (https://github.com/geril07)\u001b[39m).      ",
+            " \u001b[38;5;109m- \u001b[39mFixed extension TUI method wrappers recursing indefinitely when delegating to the original       ",
+            "   method (\u001b[38;5;109m\u001b[4m#7731\u001b[24m\u001b[39m\u001b[38;5;241m (https://github.com/earendil-works/pi/issues/7731)\u001b[39m).                               ",
+            " \u001b[38;5;109m- \u001b[39mFixed right-click not pasting clipboard text in fullscreen mode on Windows.                      ",
+            " \u001b[38;5;109m- \u001b[39mFixed inherited \u001b[38;5;109mAgent.reset()\u001b[39m clearing transcript and runtime state during active runs; it now   ",
+            "   rejects until the agent is idle (\u001b[38;5;109m\u001b[4m#7717\u001b[24m\u001b[39m\u001b[38;5;241m (https://github.com/earendil-works/pi/pull/7717)\u001b[39m by       ",
+            "   \u001b[38;5;109m\u001b[4m@wesleyzhangwq\u001b[24m\u001b[39m\u001b[38;5;241m (https://github.com/wesleyzhangwq)\u001b[39m).                                              ",
+            " \u001b[38;5;109m- \u001b[39mFixed inherited LaTeX relation, multiplication, and named-operator spacing, and matrix           ",
+            "   composition with stacked fractions, operator limits, and adjacent matrices.                      ",
+            " \u001b[38;5;109m- \u001b[39mReduced inherited fullscreen mouse event volume under tmux, Zellij, and GNU Screen by using      ",
+            "   button-motion tracking instead of all-motion tracking.                                           ",
             "                                                                                                    ",
             "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
           ]
@@ -358,24 +352,24 @@
           " - /model command for runtime model switching"
         ],
         "tail": [
-          "   (https://github.com/earendil-works/pi/issues/6951), #6998",
-          "   (https://github.com/earendil-works/pi/issues/6998)).",
-          " - Fixed inherited Z.AI output limits being sent through an unsupported parameter. See Providers",
-          "   (https://github.com/earendil-works/pi/blob/v0.83.0/packages/coding-agent/docs/providers.md)",
-          "   (#7174 (https://github.com/earendil-works/pi/pull/7174) by @HyeokjaeLee",
-          "   (https://github.com/HyeokjaeLee)).",
-          " - Fixed explicitly configured Amazon Bedrock profiles being overridden by ambient AWS access keys.",
-          "   See Amazon Bedrock",
-          "   (https://github.com/earendil-works/pi/blob/v0.83.0/packages/coding-agent/docs/providers.md#amazo",
-          "   n-bedrock) (#7176 (https://github.com/earendil-works/pi/pull/7176) by @christianbasch",
-          "   (https://github.com/christianbasch)).",
-          " - Fixed inherited image fallback paths overflowing narrow terminals, shortened home-directory",
-          "   paths, and made absolute paths clickable when terminal hyperlinks are available (#7262",
-          "   (https://github.com/earendil-works/pi/pull/7262)).",
-          " - Fixed inherited OpenAI-compatible tool calls losing their function arguments when malformed",
-          "   deltas also contain an empty custom object (#7288",
-          "   (https://github.com/earendil-works/pi/pull/7288) by @sunnyyoung",
-          "   (https://github.com/sunnyyoung)).",
+          " - Reduced worst-case automatic terminal theme detection delay from 200 ms to 100 ms by probing",
+          "   color-scheme and background support concurrently.",
+          "",
+          " ### Fixed",
+          "",
+          " - Fixed Bun standalone binaries crashing on startup when the cwd contains a bunfig.toml with",
+          "   preload by compiling with --no-compile-autoload-bunfig (#7685",
+          "   (https://github.com/earendil-works/pi/pull/7685) by @geril07 (https://github.com/geril07)).",
+          " - Fixed extension TUI method wrappers recursing indefinitely when delegating to the original",
+          "   method (#7731 (https://github.com/earendil-works/pi/issues/7731)).",
+          " - Fixed right-click not pasting clipboard text in fullscreen mode on Windows.",
+          " - Fixed inherited Agent.reset() clearing transcript and runtime state during active runs; it now",
+          "   rejects until the agent is idle (#7717 (https://github.com/earendil-works/pi/pull/7717) by",
+          "   @wesleyzhangwq (https://github.com/wesleyzhangwq)).",
+          " - Fixed inherited LaTeX relation, multiplication, and named-operator spacing, and matrix",
+          "   composition with stacked fractions, operator limits, and adjacent matrices.",
+          " - Reduced inherited fullscreen mouse event volume under tmux, Zellij, and GNU Screen by using",
+          "   button-motion tracking instead of all-motion tracking.",
           "",
           "────────────────────────────────────────────────────────────────────────────────────────────────────"
         ]
@@ -393,10 +387,10 @@
       "trace": [],
       "chat": {
         "lineCount": 92,
-        "sha256": "5e85246fa5208f7fb26de0bb392f7cf120472e9badd07ac65654e7f0d27b0662",
+        "sha256": "78fdf7c43f8e14c8294b5bd04d744b75495127bb5e477677c3dcb6a5a061b263",
         "raw": {
           "lineCount": 92,
-          "sha256": "b7d1505605cc8fc0c9d5dd2b40012c50b16bba7fd0ed0836b43be85f3c5551b2",
+          "sha256": "75db1b818a3e5085892ca0004aebcbf4f846ebb5fc9eaa71f26b37570f3fecef",
           "head": [
             "",
             "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
@@ -412,9 +406,9 @@
             " ├───────────────────────────────────────────────────────┼──────────────────────────────┤           ",
             " │ \u001b[38;5;109mAlt+Left/Ctrl+Left/Alt+B\u001b[39m / \u001b[38;5;109mAlt+Right/Ctrl+Right/Alt+F\u001b[39m │ Move by word                 │           ",
             " ├───────────────────────────────────────────────────────┼──────────────────────────────┤           ",
-            " │ \u001b[38;5;109mHome/Ctrl+A\u001b[39m                                           │ Start of line                │           ",
+            " │ \u001b[38;5;109mHome/Ctrl+Home/Ctrl+A\u001b[39m                                 │ Start of line                │           ",
             " ├───────────────────────────────────────────────────────┼──────────────────────────────┤           ",
-            " │ \u001b[38;5;109mEnd/Ctrl+E\u001b[39m                                            │ End of line                  │           ",
+            " │ \u001b[38;5;109mEnd/Ctrl+End/Ctrl+E\u001b[39m                                   │ End of line                  │           ",
             " ├───────────────────────────────────────────────────────┼──────────────────────────────┤           ",
             " │ \u001b[38;5;109mCtrl+]\u001b[39m                                                │ Jump forward to character    │           ",
             " ├───────────────────────────────────────────────────────┼──────────────────────────────┤           "
@@ -457,9 +451,9 @@
           " ├───────────────────────────────────────────────────────┼──────────────────────────────┤",
           " │ Alt+Left/Ctrl+Left/Alt+B / Alt+Right/Ctrl+Right/Alt+F │ Move by word                 │",
           " ├───────────────────────────────────────────────────────┼──────────────────────────────┤",
-          " │ Home/Ctrl+A                                           │ Start of line                │",
+          " │ Home/Ctrl+Home/Ctrl+A                                 │ Start of line                │",
           " ├───────────────────────────────────────────────────────┼──────────────────────────────┤",
-          " │ End/Ctrl+E                                            │ End of line                  │",
+          " │ End/Ctrl+End/Ctrl+E                                   │ End of line                  │",
           " ├───────────────────────────────────────────────────────┼──────────────────────────────┤",
           " │ Ctrl+]                                                │ Jump forward to character    │",
           " ├───────────────────────────────────────────────────────┼──────────────────────────────┤"

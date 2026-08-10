@@ -70,6 +70,22 @@
       }
     },
     {
+      "id": "baseten",
+      "name": "Baseten",
+      "baseUrl": "https://inference.baseten.co/v1",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Baseten API key",
+        "env": [
+          "BASETEN_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
       "id": "cerebras",
       "name": "Cerebras",
       "baseUrl": "https://api.cerebras.ai/v1",
@@ -398,7 +414,7 @@
     },
     {
       "id": "opencode-go",
-      "name": "OpenCode Zen Go",
+      "name": "OpenCode Go",
       "apis": [
         "anthropic-messages",
         "openai-completions",
@@ -457,6 +473,22 @@
         "name": "Qwen Token Plan CN API key",
         "env": [
           "QWEN_TOKEN_PLAN_CN_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "qwen-token-plan-individual",
+      "name": "Qwen Token Plan Individual",
+      "baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Qwen Token Plan Individual API key",
+        "env": [
+          "QWEN_TOKEN_PLAN_API_KEY"
         ],
         "oauth": false
       }

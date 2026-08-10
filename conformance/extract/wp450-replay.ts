@@ -219,7 +219,7 @@ async function generateUIDemoArtifact(modules: Awaited<ReturnType<typeof loadMod
 
 	if (!state.headerFactory || !state.footerFactory) throw new Error("header/footer demo factory was not retained");
 	const terminal = new modules.VirtualTerminal(72, 30);
-	const ui = new modules.tui.TUI(terminal);
+	const ui = new (modules.tui.TUI ?? modules.tui.TuiMainScreen)(terminal);
 	const footerData = {
 		getGitBranch: () => "main",
 		getExtensionStatuses: () => state.statuses,
@@ -256,7 +256,7 @@ async function generateUIDemoArtifact(modules: Awaited<ReturnType<typeof loadMod
 
 function renderToolOutputPreviewCases(modules: Awaited<ReturnType<typeof loadModules>>, width: number) {
 	const terminal = new modules.VirtualTerminal(width, ROWS);
-	const ui = new modules.tui.TUI(terminal);
+	const ui = new (modules.tui.TUI ?? modules.tui.TuiMainScreen)(terminal);
 	const output = longToolOutput();
 	const cases: ToolOutputPreviewCase[] = [];
 	const capture = (id: string, component: Component) => {
@@ -302,7 +302,7 @@ async function replayWidth(modules: Awaited<ReturnType<typeof loadModules>>, wid
 	const fixtureRoot = await mkdtemp(path.join(tmpdir(), "pi-wp450-replay-"));
 	await writeFile(path.join(fixtureRoot, "fixture.txt"), "alpha\nold value\nomega\n");
 	const terminal = new modules.VirtualTerminal(width, ROWS);
-	const ui = new modules.tui.TUI(terminal);
+	const ui = new (modules.tui.TUI ?? modules.tui.TuiMainScreen)(terminal);
 	const { host, state, context } = await registerDemoExtensions(modules, false);
 
 	const header = new modules.tui.Container();
@@ -338,7 +338,7 @@ async function replayWidth(modules: Awaited<ReturnType<typeof loadModules>>, wid
 			getSessionName: () => "fixture-session",
 		},
 		getContextUsage: () => ({ tokens: 1024, contextWindow: 8192, percent: 12.5 }),
-		modelRuntime: { isUsingOAuth: () => false },
+		modelRuntime: { isUsingOAuth: () => false, isUsingSubscription: () => false },
 	};
 	const footer = new modules.FooterComponent(footerSession, footerData);
 

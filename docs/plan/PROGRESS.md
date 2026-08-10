@@ -371,6 +371,16 @@ Status: **complete for the locked offline surface; package-specific external-ser
   paid for; the rest of ai/ sits at ~1.06x. Other mirrored packages are in budget (agent 0.85x,
   tui 1.01x, codingagent 1.13x; aggregate 1.15x).
 
+- **Upstream sync v0.84.1 (2026-08-10)** — lock and fixtures promoted to `53fa77c`; extraction
+  scripts made dual-revision safe; conformance-gated surfaces ported (session JSONL v4 write +
+  v1–v3 migration, delta-only JSON/RPC `message_update`, OpenAI incomplete-reason errors, Bedrock
+  failure diagnostics, Gemini-3 tool-call ids, Baseten + Qwen Token Plan Individual catalogs,
+  scoped-models selector, `scrollbarThumb`, iTerm image size). Deferred to follow-up ports, per
+  the 2026-08-10 sync report: fullscreen TUI mode + Mermaid/LaTeX rendering, the v4 lane-based
+  harness Session API surface beyond the storage codec, auth/models-store concurrency overhaul,
+  `AGENTS.override.md`, `pi auth check`, markdown transformers, `samplingParams`/vLLM
+  `thinking_token_budget`, and deferred-response provider contracts.
+
 ## Owner-blocked evidence
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.
 - ChatGPT/Codex, Copilot, and xAI OAuth end-to-end runs likewise require subscribed accounts.

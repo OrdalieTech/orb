@@ -713,6 +713,7 @@ async function buildCloudflareGatewayDefinition(): Promise<AnthropicDefinition> 
       env: async (name: string) => values[name],
       fileExists: async () => false,
     },
+    signal: new AbortController().signal,
   } as never);
   const auth = resolved as
     | { auth: { headers?: Record<string, string | null> }; env?: Record<string, string> }
@@ -840,6 +841,7 @@ async function extractAnthropicProvider(upstreamRoot: string): Promise<Anthropic
                 env(name: string): Promise<string | undefined>;
                 fileExists(path: string): Promise<boolean>;
               };
+              signal: AbortSignal;
             }): Promise<{ auth: Record<string, unknown>; source?: string } | undefined>;
           };
           oauth?: { name: string };
@@ -859,10 +861,12 @@ async function extractAnthropicProvider(upstreamRoot: string): Promise<Anthropic
         },
         fileExists: async () => false,
       },
+      signal: new AbortController().signal,
     });
     if (unresolved !== undefined) throw new Error("anthropicProvider() resolved without credentials");
     const resolved = await apiKeyAuth.resolve({
       ctx: { env: async () => "fixture-anthropic-api-key", fileExists: async () => false },
+      signal: new AbortController().signal,
     });
     if (!resolved) throw new Error("anthropicProvider() did not resolve an environment credential");
     return {

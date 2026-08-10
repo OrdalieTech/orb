@@ -67,7 +67,7 @@ func TestFindCutPointAndPrepareCompaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared == nil || prepared.FirstKeptEntryID != entries[2].ID || len(prepared.MessagesToSummarize) != 2 || len(prepared.RetainedTail) != 2 {
+	if prepared == nil || len(prepared.MessagesToSummarize) != 2 || len(prepared.RetainedTail) != 2 {
 		t.Fatalf("preparation = %#v", prepared)
 	}
 	if prepared.TokensBefore != 100 {
@@ -87,7 +87,7 @@ func TestPrepareTreeCompaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared == nil || prepared.FirstKeptEntryID != "recent-user" || len(prepared.MessagesToSummarize) != 2 || len(prepared.RetainedTail) != 2 {
+	if prepared == nil || len(prepared.MessagesToSummarize) != 2 || len(prepared.RetainedTail) != 2 {
 		t.Fatalf("preparation = %#v", prepared)
 	}
 }
@@ -144,10 +144,6 @@ func TestV081CompactPropagatesRetainedTail(t *testing.T) {
 	if messageRole(result.RetainedTail[0]) != "assistant" {
 		t.Fatal("result did not retain the upstream preparation slice")
 	}
-	preparation.FirstKeptEntryID = ""
-	if _, err := Compact(context.Background(), preparation, &ai.Model{MaxTokens: 100}, complete, "", ai.ModelThinkingOff); err == nil || !strings.Contains(err.Error(), "First kept entry") {
-		t.Fatalf("missing firstKeptEntryId error = %v", err)
-	}
 }
 
 func TestV081PublicCompactionResultWirePreservesEmptyRetainedTail(t *testing.T) {
@@ -197,8 +193,9 @@ func TestPrepareCompactionCarriesPreviousSummaryAndFileDetails(t *testing.T) {
 	fromHook := false
 	entries = append(entries, SessionEntry{
 		Type: "compaction", ID: "compact", ParentID: ptr(entries[len(entries)-1].ID), Timestamp: timestamp(3),
-		Summary: "old summary", FirstKeptEntryID: entries[0].ID, TokensBefore: 20,
-		Details: CompactionDetails{ReadFiles: []string{"old-read.go"}, ModifiedFiles: []string{"old-edit.go"}}, FromHook: fromHook,
+		Summary: "old summary", TokensBefore: 20,
+		RetainedTail: agent.AgentMessages{&ai.AssistantMessage{Content: ai.AssistantContent{call}, StopReason: ai.StopReasonStop, Usage: usage(20)}},
+		Details:      CompactionDetails{ReadFiles: []string{"old-read.go"}, ModifiedFiles: []string{"old-edit.go"}}, FromHook: fromHook,
 	})
 	entries = append(entries, SessionEntry{Type: "message", ID: "entry-3", ParentID: ptr("compact"), Timestamp: timestamp(4), Message: user("latest request")})
 	entries = append(entries, SessionEntry{Type: "message", ID: "entry-4", ParentID: ptr("entry-3"), Timestamp: timestamp(5), Message: assistant(strings.Repeat("answer ", 30), 80)})
@@ -237,8 +234,9 @@ func TestPrepareLegacyCompactionReportsNothingToCompactForUnmigratedEntry(t *tes
 	if err != nil || prepared != nil {
 		t.Fatalf("prepared = %#v, err = %v, want nil, nil", prepared, err)
 	}
-	if _, err := PrepareCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 1}); err == nil {
-		t.Fatal("harness preparation accepted an entry without a UUID")
+	// Harness >=0.84 no longer resolves entry ids and accepts unmigrated entries.
+	if harnessPrepared, err := PrepareCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 1}); err != nil || harnessPrepared == nil {
+		t.Fatalf("harness prepared = %#v, err = %v", harnessPrepared, err)
 	}
 }
 

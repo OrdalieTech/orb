@@ -28,6 +28,7 @@ interface UpstreamProvider {
           env(name: string): Promise<string | undefined>;
           fileExists(path: string): Promise<boolean>;
         };
+        signal: AbortSignal;
       }): Promise<
         | {
             auth: { apiKey?: string; headers?: Record<string, string | null> };
@@ -79,6 +80,7 @@ export async function extractProvidersF2(upstreamRoot: string) {
             },
             fileExists: async () => false,
           },
+          signal: new AbortController().signal,
         });
       }
       result.push({
@@ -112,6 +114,7 @@ export async function extractProvidersF2(upstreamRoot: string) {
           env: async (name) => cloudflareValues[name],
           fileExists: async () => false,
         },
+        signal: new AbortController().signal,
       });
       if (!resolved?.env) throw new Error(`${providerId} did not resolve provider environment`);
       return {

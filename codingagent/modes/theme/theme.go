@@ -14,7 +14,7 @@ import (
 )
 
 var backgroundTokens = map[string]bool{
-	"selectedBg": true, "userMessageBg": true, "customMessageBg": true,
+	"selectedBg": true, "scrollbarThumb": true, "userMessageBg": true, "customMessageBg": true,
 	"toolPendingBg": true, "toolSuccessBg": true, "toolErrorBg": true,
 }
 
@@ -76,6 +76,9 @@ func Parse(label string, data []byte, mode ColorMode) (*Theme, error) {
 	}
 	if _, ok := source.Colors["thinkingMax"]; !ok {
 		source.Colors["thinkingMax"] = source.Colors["thinkingXhigh"]
+	}
+	if _, ok := source.Colors["scrollbarThumb"]; !ok {
+		source.Colors["scrollbarThumb"] = source.Colors["selectedBg"]
 	}
 	if mode == "" {
 		mode = DetectColorMode(nil)

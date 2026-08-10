@@ -1016,7 +1016,7 @@
           "content-type": "application/json",
           "x-goog-api-key": "fixture-google-key"
         },
-        "body": "{\"contents\":[{\"parts\":[{\"text\":\"read the files\"}],\"role\":\"user\"},{\"parts\":[{\"functionCall\":{\"args\":{\"path\":\"a.txt\"},\"name\":\"read\"}},{\"functionCall\":{\"args\":{\"path\":\"image.png\"},\"name\":\"read\"}},{\"functionCall\":{\"args\":{\"path\":\"b.txt\"},\"name\":\"read\"}}],\"role\":\"model\"},{\"parts\":[{\"functionResponse\":{\"name\":\"read\",\"response\":{\"output\":\"alpha text\"}}},{\"functionResponse\":{\"name\":\"read\",\"response\":{\"output\":\"(see attached image)\"},\"parts\":[{\"inlineData\":{\"mimeType\":\"image/png\",\"data\":\"abc\"}}]}},{\"functionResponse\":{\"name\":\"read\",\"response\":{\"output\":\"beta text\"}}}],\"role\":\"user\"}],\"generationConfig\":{}}"
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"read the files\"}],\"role\":\"user\"},{\"parts\":[{\"functionCall\":{\"id\":\"call_a\",\"args\":{\"path\":\"a.txt\"},\"name\":\"read\"}},{\"functionCall\":{\"id\":\"call_img\",\"args\":{\"path\":\"image.png\"},\"name\":\"read\"}},{\"functionCall\":{\"id\":\"call_b\",\"args\":{\"path\":\"b.txt\"},\"name\":\"read\"}}],\"role\":\"model\"},{\"parts\":[{\"functionResponse\":{\"name\":\"read\",\"response\":{\"output\":\"alpha text\"},\"id\":\"call_a\"}},{\"functionResponse\":{\"name\":\"read\",\"response\":{\"output\":\"(see attached image)\"},\"parts\":[{\"inlineData\":{\"mimeType\":\"image/png\",\"data\":\"abc\"}}],\"id\":\"call_img\"}},{\"functionResponse\":{\"name\":\"read\",\"response\":{\"output\":\"beta text\"},\"id\":\"call_b\"}}],\"role\":\"user\"}],\"generationConfig\":{}}"
       }
     }
   ]

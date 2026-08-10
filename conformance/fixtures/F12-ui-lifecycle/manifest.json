@@ -1,6 +1,6 @@
 {
   "family": "F12-ui-lifecycle",
-  "upstreamCommit": "845d6ff1f6643aba440341cce877ce1c43ebbc39",
+  "upstreamCommit": "53fa77ccd8a279eb87e92294ef3687b03ff80112",
   "generator": "conformance/extract/f12-ui-lifecycle.ts",
   "sources": [
     "packages/coding-agent/src/modes/interactive/interactive-mode.ts",

@@ -472,7 +472,7 @@ func TestOpenAIResponsesProcessorRejectsFailedAndUnknownTerminal(t *testing.T) {
 	if output.RawStopReason == nil || *output.RawStopReason != "failed" {
 		t.Fatalf("raw stop reason = %v", output.RawStopReason)
 	}
-	if _, err := mapResponsesStopReason("future"); err == nil {
+	if _, _, err := mapResponsesStopReason("future", ""); err == nil {
 		t.Fatal("unknown status was accepted")
 	}
 }
@@ -489,7 +489,7 @@ func TestOpenAIResponsesTracksMessagePhaseAndTerminalStatus(t *testing.T) {
 		{name: "commentary stays pending", addedPhase: "commentary", donePhase: "commentary", status: "completed", wantBefore: ai.StopReasonPending, wantAfter: ai.StopReasonStop},
 		{name: "final answer is provisional stop", addedPhase: "final_answer", donePhase: "final_answer", status: "completed", wantBefore: ai.StopReasonStop, wantAfter: ai.StopReasonStop},
 		{name: "done phase can switch to final answer", addedPhase: "commentary", donePhase: "final_answer", status: "completed", wantBefore: ai.StopReasonPending, wantAfter: ai.StopReasonStop},
-		{name: "incomplete overrides provisional stop", addedPhase: "final_answer", donePhase: "final_answer", status: "incomplete", wantBefore: ai.StopReasonStop, wantAfter: ai.StopReasonLength},
+		{name: "incomplete overrides provisional stop", addedPhase: "final_answer", donePhase: "final_answer", status: "incomplete", wantBefore: ai.StopReasonStop, wantAfter: ai.StopReasonError},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			model := responsesTestModel()

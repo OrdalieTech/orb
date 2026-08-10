@@ -718,6 +718,7 @@ async function extractGoogleProvider(upstreamRoot: string): Promise<GoogleProvid
                 env(name: string): Promise<string | undefined>;
                 fileExists(path: string): Promise<boolean>;
               };
+              signal: AbortSignal;
             }): Promise<{ auth: { apiKey?: string }; source?: string } | undefined>;
           };
         };
@@ -736,10 +737,12 @@ async function extractGoogleProvider(upstreamRoot: string): Promise<GoogleProvid
         },
         fileExists: async () => false,
       },
+      signal: new AbortController().signal,
     });
     if (unresolved !== undefined) throw new Error("googleProvider() resolved without credentials");
     const resolved = await auth.resolve({
       ctx: { env: async () => "fixture-google-api-key", fileExists: async () => false },
+      signal: new AbortController().signal,
     });
     if (!resolved?.auth.apiKey) throw new Error("googleProvider() did not resolve its environment API key");
     return {

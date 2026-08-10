@@ -163,6 +163,8 @@ func Generate(sources Sources) (map[string]map[string]ai.Model, error) {
 	for _, item := range directRules {
 		addRule(result, source[item.source], item)
 	}
+	addBaseten(result, source["baseten"])
+	addQwenTokenPlanIndividual(result, source["alibaba-token-plan"])
 	addCloudflareGateway(result, source["cloudflare-ai-gateway"])
 	addOpenCode(result, source["opencode"], "opencode", "https://opencode.ai/zen")
 	addOpenCode(result, source["opencode-go"], "opencode-go", "https://opencode.ai/zen/go")
@@ -292,6 +294,14 @@ func addRule(result map[string]map[string]ai.Model, source sourceProvider, item 
 			}
 			id, name = "kimi-for-coding", "Kimi For Coding"
 		}
+		// Upstream QWEN_TOKEN_PLAN_EXCLUDED_MODEL_IDS (PR #7670) retires the
+		// preview id for the GA qwen3.8-max, which the pinned snapshot predates.
+		if isQwenTokenPlanProvider(item.provider) && id == "qwen3.8-max-preview" {
+			if _, exists := source.Models["qwen3.8-max"]; exists {
+				continue
+			}
+			id, name = "qwen3.8-max", "Qwen3.8 Max"
+		}
 		model := normalizedModel(id, name, raw, item.api, item.provider, item.baseURL)
 		if item.provider == "fireworks" && strings.Contains(id, "glm-5p2") {
 			model.API = ai.APIOpenAICompletions
@@ -360,6 +370,79 @@ func normalizedModel(id, name string, raw sourceModel, api ai.API, provider, bas
 	model := ai.Model{ID: id, Name: name, API: api, Provider: ai.ProviderID(provider), BaseURL: baseURL, Reasoning: raw.Reasoning, Input: input, Cost: cost, ContextWindow: contextWindow, MaxTokens: maxTokens}
 	applyModelsDevReasoningOptionMetadata(&model, raw.ReasoningOptions)
 	return model
+}
+
+// addBaseten mirrors upstream processBasetenModels (generate-models.ts): the
+// listing is taken as-is apart from deprecated entries (no tool_call filter),
+// and compat is authored here in full, so applyOpenAICompletionsCompat leaves
+// baseten models untouched.
+func addBaseten(result map[string]map[string]ai.Model, source sourceProvider) {
+	for _, key := range sortedKeys(source.Models) {
+		raw := source.Models[key]
+		if raw.Status == "deprecated" {
+			continue
+		}
+		isGLM52 := key == "zai-org/GLM-5.2" || key == "zai-org/GLM-5.2-Fast"
+		supportsToggle, supportsEffort := isGLM52, isGLM52
+		for _, option := range raw.ReasoningOptions {
+			supportsToggle = supportsToggle || option.Type == "toggle"
+			supportsEffort = supportsEffort || option.Type == "effort"
+		}
+		compat := ai.OpenAICompletionsCompat{
+			SupportsStore: ptr(false), SupportsDeveloperRole: ptr(false),
+			SupportsReasoningEffort: ptr(supportsEffort), SupportsUsageInStreaming: ptr(true),
+			MaxTokensField: ptr(ai.MaxTokensFieldLegacy), SupportsStrictMode: ptr(true),
+			SupportsLongCacheRetention: ptr(false),
+		}
+		if supportsToggle {
+			compat.ThinkingFormat = ptr(ai.ThinkingFormatBaseten)
+			compat.ChatTemplateArgs = ptr(map[string]any{"enable_thinking": map[string]any{"$var": "thinking.enabled"}})
+		} else if supportsEffort {
+			compat.ThinkingFormat = ptr(ai.ThinkingFormatOpenAI)
+		}
+		model := normalizedModel(key, raw.Name, raw, ai.APIOpenAICompletions, "baseten", "https://inference.baseten.co/v1")
+		switch {
+		case isGLM52:
+			values := thinkingValues(map[ai.ModelThinkingLevel]string{
+				ai.ModelThinkingOff: "none", ai.ModelThinkingHigh: "high", ai.ModelThinkingMax: "max",
+			})
+			values[ai.ModelThinkingMinimal], values[ai.ModelThinkingLow], values[ai.ModelThinkingMedium], values[ai.ModelThinkingXHigh] = nil, nil, nil, nil
+			model.ThinkingLevelMap = &values
+		case supportsToggle:
+			values := thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingOff: "off", ai.ModelThinkingHigh: "high"})
+			values[ai.ModelThinkingMinimal], values[ai.ModelThinkingLow], values[ai.ModelThinkingMedium], values[ai.ModelThinkingXHigh], values[ai.ModelThinkingMax] = nil, nil, nil, nil, nil
+			model.ThinkingLevelMap = &values
+		}
+		model.Compat = mustCompatJSON(compat)
+		upsert(result, model)
+	}
+}
+
+// qwenTokenPlanIndividualModelIDs mirrors upstream
+// QWEN_TOKEN_PLAN_INDIVIDUAL_MODEL_IDS: the Individual plan reuses the
+// international source and endpoint with a narrower catalog.
+var qwenTokenPlanIndividualModelIDs = []string{
+	"deepseek-v4-flash-0731", "deepseek-v4-pro", "glm-5.2",
+	"qwen3.6-flash", "qwen3.7-max", "qwen3.7-plus", "qwen3.8-max",
+}
+
+// addQwenTokenPlanIndividual filters the alibaba-token-plan source down to the
+// upstream Individual allowlist. IDs the pinned snapshot predates are
+// synthesized from qwen3.7-plus (the snapshot's first tool-capable entry),
+// matching the pinned F2 extraction shim.
+func addQwenTokenPlanIndividual(result map[string]map[string]ai.Model, source sourceProvider) {
+	for _, id := range qwenTokenPlanIndividualModelIDs {
+		raw, ok := source.Models[id]
+		name := raw.Name
+		if !ok {
+			raw, name = source.Models["qwen3.7-plus"], id
+		}
+		if !raw.ToolCall {
+			continue
+		}
+		upsert(result, normalizedModel(id, name, raw, ai.APIOpenAICompletions, "qwen-token-plan-individual",
+			"https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"))
+	}
 }
 
 func addCloudflareGateway(result map[string]map[string]ai.Model, source sourceProvider) {

@@ -316,37 +316,45 @@ func prepareCompaction(pathEntries []SessionEntry, settings CompactionSettings, 
 		}
 	}
 	boundaryStart := 0
+	entries := pathEntries
 	var previousSummary *string
 	if previousIndex >= 0 {
 		previous := pathEntries[previousIndex]
 		summary := previous.Summary
 		previousSummary = &summary
-		boundaryStart = previousIndex + 1
-		for index := range pathEntries {
-			if pathEntries[index].ID == previous.FirstKeptEntryID {
-				boundaryStart = index
-				break
+		if retainTail {
+			// Harness >=0.84 replays the previous compaction's retainedTail as
+			// virtual message entries instead of resolving firstKeptEntryId.
+			virtual := make([]SessionEntry, len(previous.RetainedTail))
+			for index, message := range previous.RetainedTail {
+				virtual[index] = SessionEntry{Type: "message", ID: fmt.Sprintf("%s:retained:%d", previous.ID, index), Message: message}
+			}
+			entries = append(virtual, pathEntries[previousIndex+1:]...)
+		} else {
+			boundaryStart = previousIndex + 1
+			for index := range pathEntries {
+				if pathEntries[index].ID == previous.FirstKeptEntryID {
+					boundaryStart = index
+					break
+				}
 			}
 		}
 	}
 	var cut CutPointResult
 	compactionMessage := entryMessage
 	if retainTail {
-		cut = harnessFindCutPoint(pathEntries, boundaryStart, len(pathEntries), settings.KeepRecentTokens)
+		cut = harnessFindCutPoint(entries, boundaryStart, len(entries), settings.KeepRecentTokens)
 		// Harness getMessageFromEntryForCompaction projects an empty-summary
 		// branch_summary; the coding-agent projection drops it.
 		compactionMessage = harnessEntryMessage
 	} else {
-		cut = FindCutPoint(pathEntries, boundaryStart, len(pathEntries), settings.KeepRecentTokens)
-	}
-	if cut.FirstKeptEntryIndex < 0 || cut.FirstKeptEntryIndex >= len(pathEntries) || pathEntries[cut.FirstKeptEntryIndex].ID == "" {
-		if !retainTail {
+		cut = FindCutPoint(entries, boundaryStart, len(entries), settings.KeepRecentTokens)
+		if cut.FirstKeptEntryIndex < 0 || cut.FirstKeptEntryIndex >= len(entries) || entries[cut.FirstKeptEntryIndex].ID == "" {
 			// coding-agent returns undefined here and lets the caller report
-			// "Nothing to compact"; only the harness variant reports
-			// invalid_session (compaction.ts:735 vs harness compaction.ts:661).
+			// "Nothing to compact" (compaction.ts:735); harness >=0.84 no
+			// longer resolves a first kept entry id at all.
 			return nil, nil
 		}
-		return nil, errors.New("First kept entry has no UUID - session may need migration")
 	}
 	historyEnd := cut.FirstKeptEntryIndex
 	if cut.IsSplitTurn {
@@ -354,23 +362,23 @@ func prepareCompaction(pathEntries []SessionEntry, settings CompactionSettings, 
 	}
 	messages := make(agent.AgentMessages, 0, historyEnd-boundaryStart)
 	for index := boundaryStart; index < historyEnd; index++ {
-		if message := compactionMessage(pathEntries[index], false); message != nil {
+		if message := compactionMessage(entries[index], false); message != nil {
 			messages = append(messages, message)
 		}
 	}
 	prefix := agent.AgentMessages{}
 	if cut.IsSplitTurn {
 		for index := cut.TurnStartIndex; index < cut.FirstKeptEntryIndex; index++ {
-			if message := compactionMessage(pathEntries[index], false); message != nil {
+			if message := compactionMessage(entries[index], false); message != nil {
 				prefix = append(prefix, message)
 			}
 		}
 	}
 	tail := agent.AgentMessages(nil)
 	if retainTail {
-		tail = make(agent.AgentMessages, 0, len(pathEntries)-cut.FirstKeptEntryIndex)
-		for index := cut.FirstKeptEntryIndex; index < len(pathEntries); index++ {
-			if message := harnessEntryMessage(pathEntries[index], false); message != nil {
+		tail = make(agent.AgentMessages, 0, len(entries)-cut.FirstKeptEntryIndex)
+		for index := cut.FirstKeptEntryIndex; index < len(entries); index++ {
+			if message := harnessEntryMessage(entries[index], false); message != nil {
 				tail = append(tail, message)
 			}
 		}
@@ -379,7 +387,7 @@ func prepareCompaction(pathEntries []SessionEntry, settings CompactionSettings, 
 		return nil, nil
 	}
 	fileOps := newFileOperations()
-	if previousIndex >= 0 && !pathEntries[previousIndex].FromHook {
+	if previousIndex >= 0 && (retainTail || !pathEntries[previousIndex].FromHook) {
 		mergeDetails(&fileOps, pathEntries[previousIndex].Details)
 	}
 	for _, message := range messages {
@@ -388,8 +396,7 @@ func prepareCompaction(pathEntries []SessionEntry, settings CompactionSettings, 
 	for _, message := range prefix {
 		extractFileOperations(message, &fileOps)
 	}
-	return &CompactionPreparation{
-		FirstKeptEntryID:    pathEntries[cut.FirstKeptEntryIndex].ID,
+	preparation := &CompactionPreparation{
 		MessagesToSummarize: messages,
 		TurnPrefixMessages:  prefix,
 		RetainedTail:        tail,
@@ -398,7 +405,12 @@ func prepareCompaction(pathEntries []SessionEntry, settings CompactionSettings, 
 		PreviousSummary:     previousSummary,
 		FileOps:             fileOps,
 		Settings:            settings,
-	}, nil
+	}
+	if !retainTail {
+		// The coding-agent variant still records the storage boundary id.
+		preparation.FirstKeptEntryID = entries[cut.FirstKeptEntryIndex].ID
+	}
+	return preparation, nil
 }
 
 func ContextMessages(entries []SessionEntry) agent.AgentMessages {
@@ -445,9 +457,6 @@ func Compact(
 	customInstructions string,
 	thinkingLevel ai.ModelThinkingLevel,
 ) (*CompactionResult, error) {
-	if preparation == nil || preparation.FirstKeptEntryID == "" {
-		return nil, errors.New("First kept entry has no UUID - session may need migration")
-	}
 	var summary string
 	var summaryUsage ai.Usage
 	if preparation.IsSplitTurn && len(preparation.TurnPrefixMessages) > 0 {

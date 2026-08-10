@@ -31,7 +31,7 @@
         "preserveAspectRatio": false,
         "inline": true
       },
-      "expected": "\u001b]1337;File=inline=1;width=12;height=auto;name=Y2F0LnBuZw==;preserveAspectRatio=0:QUJD\u0007"
+      "expected": "\u001b]1337;File=inline=1;size=3;width=12;height=auto;name=Y2F0LnBuZw==;preserveAspectRatio=0:QUJD\u0007"
     }
   ],
   "cellCases": [
@@ -153,7 +153,7 @@
         "",
         "",
         "",
-        "\u001b[4A\u001b]1337;File=inline=1;width=20;height=auto:QUJD\u0007"
+        "\u001b[4A\u001b]1337;File=inline=1;size=3;width=20;height=auto:QUJD\u0007"
       ]
     },
     {

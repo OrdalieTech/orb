@@ -256,7 +256,7 @@ func EncodeITerm2(base64Data string, width, height any, name string, preserveAsp
 	if inline {
 		inlineValue = 1
 	}
-	params := []string{"inline=" + strconv.Itoa(inlineValue)}
+	params := []string{"inline=" + strconv.Itoa(inlineValue), "size=" + strconv.Itoa(base64ByteLength(base64Data))}
 	if width != nil {
 		params = append(params, fmt.Sprintf("width=%v", width))
 	}
@@ -270,6 +270,19 @@ func EncodeITerm2(base64Data string, width, height any, name string, preserveAsp
 		params = append(params, "preserveAspectRatio=0")
 	}
 	return "\x1b]1337;File=" + strings.Join(params, ";") + ":" + base64Data + "\x07"
+}
+
+// base64ByteLength mirrors Node's Buffer.byteLength(data, "base64"): decoded
+// size from string length minus trailing padding.
+func base64ByteLength(data string) int {
+	n := len(data)
+	if n > 0 && data[n-1] == '=' {
+		n--
+	}
+	if n > 1 && data[n-1] == '=' {
+		n--
+	}
+	return n * 3 / 4
 }
 
 func CalculateImageCellSize(image ImageDimensions, maxWidthCells int, maxHeightCells *int, cell CellDimensions) ImageCellSize {

@@ -42,8 +42,8 @@ import (
 var version = "dev"
 
 const (
-	upstreamVersion        = "0.83.0"
-	upstreamCommit         = "845d6ff1f6643aba440341cce877ce1c43ebbc39"
+	upstreamVersion        = "0.84.1"
+	upstreamCommit         = "53fa77ccd8a279eb87e92294ef3687b03ff80112"
 	latestReleaseURL       = "https://api.github.com/repos/OrdalieTech/orb/releases/latest"
 	versionCheckTimeout    = 10 * time.Second
 	selfUpdateCheckTimeout = 3 * time.Second

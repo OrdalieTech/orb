@@ -416,6 +416,400 @@ async function generateSessionFixture(upstreamRoot: string, root: string): Promi
   };
 }
 
+// Upstream >=0.84 replaced the v3 session tree (jsonl-storage/memory-storage/
+// repo-utils) with a v4 header + mutation log model (session/jsonl{,.ts},
+// memory.ts, state.ts): entries carry seq and numeric timestamps, lanes replace
+// leaf entries, records capture operations, and contexts build via context.ts.
+const fixedNowMs = new Date(fixedNow).getTime();
+
+const v4User = (text: string, timestamp: number) => ({
+  role: "user", content: [{ type: "text", text }], timestamp,
+});
+const v4Assistant = (text: string, timestamp: number, stopReason = "stop") => ({
+  role: "assistant", content: [{ type: "text", text }], api: "openai-responses", provider: "openai", model: "gpt-test",
+  usage: {
+    input: 1, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 3,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  },
+  stopReason, timestamp,
+});
+const v4Usage = {
+  input: 100, output: 20, cacheRead: 30, cacheWrite: 10, totalTokens: 160,
+  cost: { input: 0.1, output: 0.2, cacheRead: 0.01, cacheWrite: 0.02, total: 0.33 },
+};
+
+// modifiedAt mirrors filesystem mtimes, the only nondeterministic v4 metadata.
+function normalizeV4(value: unknown, root: string): unknown {
+  if (Array.isArray(value)) return value.map((item) => normalizeV4(item, root));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+      key,
+      key === "modifiedAt" ? "<modifiedAt>" : normalizeV4(item, root),
+    ]));
+  }
+  return normalize(value, root);
+}
+
+async function upstreamHasV3SessionStorage(upstreamRoot: string): Promise<boolean> {
+  try {
+    await readFile(path.join(upstreamRoot, "packages/agent/src/harness/session/jsonl-storage.ts"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function runV4SessionScript(storage: any, root: string): Promise<unknown> {
+  const append = (entry: unknown, lane = "main") => storage.appendEntry(entry, lane);
+  await append({ type: "message", id: "root-user", message: v4User("root <>&\u2028\u2029", 1) });
+  await append({ type: "message", id: "main-assistant", message: v4Assistant("answer", 2) });
+  await append({ type: "message", id: "second-user", message: v4User("continue", 3) });
+  await append({ type: "thinking_level_change", id: "thinking", thinkingLevel: "high" });
+  await append({ type: "model_change", id: "model", provider: "anthropic", modelId: "claude-test" });
+  await append({ type: "active_tools_change", id: "tools", activeToolNames: ["read", "bash"] });
+  await append({ type: "active_tools_change", id: "tools-empty", activeToolNames: [] });
+  await append({ type: "custom", id: "custom", customType: "state", data: { nested: [1, "two"] } });
+  await append({
+    type: "compaction", id: "compaction", summary: "prior work",
+    retainedTail: [v4User("retained tail", 4)], tokensBefore: 42.5, details: { readFiles: ["a.go"] },
+  });
+  await append({
+    type: "branch_summary", id: "branch-summary", fromId: "compaction",
+    summary: "discarded branch work", details: { modifiedFiles: ["b.go"] },
+  });
+  await storage.setName("  fixture name  ");
+  await storage.setLabel("root-user", "  checkpoint  ");
+  await storage.setLabel("root-user", undefined);
+  await storage.setLabel("second-user", "  branch point  ");
+  await storage.createLane("branch", "root-user");
+  await append({ type: "message", id: "branch-user", message: v4User("branch", 5) }, "branch");
+  await storage.createLane("idle", "second-user");
+  await storage.moveLane("idle", null);
+  await storage.appendRecord({
+    type: "operation_started", id: "op-run", lane: "main", sourceLeafId: "branch-summary",
+    intent: {
+      kind: "run",
+      originalPrompt: [v4User("run prompt", 6)],
+      initialMessages: [{ type: "message", id: "queued-1", message: v4User("queued", 7) }],
+    },
+  });
+  await storage.appendRecord({
+    type: "step_attempt", id: "step-1", lane: "main", runId: "op-run",
+    step: "assistant", attempt: 1, resultEntryId: "main-assistant",
+  });
+  await storage.appendRecord({
+    type: "usage", id: "usage-1", lane: "main", cause: "assistant", runId: "op-run",
+    entryId: "main-assistant", attempt: 1, stopReason: "stop", usage: v4Usage,
+  });
+  const openOperationConflict = await captureError(() => storage.appendRecord({
+    type: "operation_started", id: "op-run-2", lane: "main", sourceLeafId: null,
+    intent: { kind: "navigation", targetId: null, summarize: false },
+  }), root);
+  const openBeforeFinish = (await storage.findOpenOperations("main")).map((record: any) => record.id);
+  await storage.appendRecord({
+    type: "operation_finished", id: "finish-1", lane: "main", runId: "op-run", outcome: "completed",
+  });
+  return {
+    openOperationConflict,
+    openBeforeFinish,
+    duplicateEntryId: await captureError(() => append({ type: "custom", id: "root-user", customType: "dup" }), root),
+    missingLaneAppend: await captureError(() => append({ type: "custom", id: "orphan", customType: "x" }, "missing-lane"), root),
+    laneAlreadyExists: await captureError(() => storage.createLane("branch", null), root),
+    labelTargetMissing: await captureError(() => storage.setLabel("ghost", "x"), root),
+    invalidLimit: await captureError(() => storage.findEntries({ limit: 0 }), root),
+  };
+}
+
+async function observeV4Storage(storage: any, root: string): Promise<unknown> {
+  const lanes = await storage.getLanes();
+  const mainLeaf = lanes.find((pointer: any) => pointer.lane === "main")?.leafId ?? null;
+  const entries = await storage.findEntries({ order: "oldestFirst" });
+  const branch = mainLeaf === null ? [] : await storage.findEntriesOnBranch({ start: mainLeaf, order: "oldestFirst" });
+  return normalizeV4({
+    metadata: await storage.getMetadata(),
+    lanes,
+    entries,
+    entryIds: entries.map((entry: any) => entry.id),
+    branchIds: branch.map((entry: any) => entry.id),
+    messageIds: (await storage.findEntries({ type: "message", order: "oldestFirst" })).map((entry: any) => entry.id),
+    customStateIds: (await storage.findEntries({ type: "custom", customType: "state" })).map((entry: any) => entry.id),
+    pagedNewestIds: (await storage.findEntries({ limit: 3 })).map((entry: any) => entry.id),
+    branchToCompactionIds: mainLeaf === null ? [] :
+      (await storage.findEntriesOnBranch({ start: mainLeaf, stopAtType: "compaction" })).map((entry: any) => entry.id),
+    records: await storage.findRecords(),
+    usageRecordIds: (await storage.findRecords({ lane: "main", type: "usage" })).map((record: any) => record.id),
+    openOperations: (await storage.findOpenOperations("main")).map((record: any) => record.id),
+    log: await storage.getLog(),
+    logAfterSeqIds: (await storage.getLog({ afterSeq: 10, limit: 3 })).map((item: any) => item.seq),
+    stats: await storage.getStats(),
+    name: (await storage.getName()) ?? null,
+    labels: {
+      root: (await storage.getLabel("root-user")) ?? null,
+      second: (await storage.getLabel("second-user")) ?? null,
+    },
+  }, root);
+}
+
+async function generateSessionFixtureV4(upstreamRoot: string, root: string): Promise<{ bytes: Uint8Array; observations: unknown }> {
+  const load = (rel: string) => import(pathToFileURL(path.join(upstreamRoot, rel)).href);
+  const storageModule = await load("packages/agent/src/harness/session/jsonl/storage.ts");
+  const memoryModule = await load("packages/agent/src/harness/session/memory.ts");
+  const sessionModule = await load("packages/agent/src/harness/session/session.ts");
+  const contextModule = await load("packages/agent/src/harness/session/context.ts");
+  const envModule = await load("packages/agent/src/harness/env/nodejs.ts");
+
+  const env = new envModule.NodeExecutionEnv({ cwd: root });
+  const filePath = path.join(root, "session.jsonl");
+  const header = {
+    kind: "header", version: 4, id: "session-fixed", createdAt: fixedNowMs, cwd: "/fixture/project",
+    parentSessionId: "parent-session", metadata: { profile: "reviewer", nested: { enabled: true } },
+  };
+  let scriptErrors: unknown;
+  await withFixedDate(async () => {
+    const storage = await storageModule.JsonlSessionStorage.create(env, filePath, header);
+    scriptErrors = await runV4SessionScript(storage, root);
+  });
+  const bytes = await readFile(filePath);
+  const reopened = await storageModule.JsonlSessionStorage.load(env, filePath);
+  const jsonlObservations = await observeV4Storage(reopened, root);
+
+  const memory = new memoryModule.InMemorySessionStorage({
+    id: "session-fixed", createdAt: fixedNowMs, parentSessionId: "parent-session",
+  });
+  let memoryScriptErrors: unknown;
+  await withFixedDate(async () => {
+    memoryScriptErrors = await runV4SessionScript(memory, root);
+  });
+  const memoryObservations = await observeV4Storage(memory, root);
+
+  const forkHeader = (id: string) => ({
+    kind: "header", version: 4, id, createdAt: fixedNowMs, cwd: "/fixture/project", parentSessionId: "session-fixed",
+  });
+  const observeFork = async (storage: any) => normalizeV4({
+    entryIds: (await storage.findEntries({ order: "oldestFirst" })).map((entry: any) => entry.id),
+    lanes: await storage.getLanes(),
+    name: (await storage.getName()) ?? null,
+    labels: { second: (await storage.getLabel("second-user")) ?? null },
+  }, root);
+  let forks: unknown;
+  await withFixedDate(async () => {
+    const before = await reopened.fork(path.join(root, "fork-before.jsonl"), forkHeader("fork-before"), {
+      entryId: "second-user", position: "before",
+    });
+    const at = await reopened.fork(path.join(root, "fork-at.jsonl"), forkHeader("fork-at"), {
+      entryId: "main-assistant", position: "at",
+    });
+    const tree = await reopened.fork(path.join(root, "fork-tree.jsonl"), forkHeader("fork-tree"), { scope: "tree" });
+    forks = {
+      before: await observeFork(before),
+      at: await observeFork(at),
+      tree: await observeFork(tree),
+      treeBytes: normalizeV4((await readFile(path.join(root, "fork-tree.jsonl"))).toString("utf8"), root),
+      invalidTarget: await captureError(() => reopened.fork(
+        path.join(root, "fork-invalid.jsonl"), forkHeader("fork-invalid"), { entryId: "thinking" },
+      ), root),
+    };
+  });
+
+  const lanes = await reopened.getLanes();
+  const mainLeaf = lanes.find((pointer: any) => pointer.lane === "main")!.leafId;
+  const branchPath = await reopened.findEntriesOnBranch({ start: mainLeaf, order: "oldestFirst" });
+  const compactedContext = contextModule.buildSessionContext(branchPath);
+  const projectorPath = [
+    { type: "message", id: "p-root", parentId: null, seq: 1, timestamp: fixedNowMs, message: v4User("transform root", 10) },
+    { type: "custom", id: "p-constructor", parentId: "p-root", seq: 2, timestamp: fixedNowMs, customType: "constructor_state", data: { label: "constructor" } },
+    { type: "custom", id: "p-call", parentId: "p-constructor", seq: 3, timestamp: fixedNowMs, customType: "call_state" },
+    { type: "custom", id: "p-drop", parentId: "p-call", seq: 4, timestamp: fixedNowMs, customType: "noise" },
+    { type: "message", id: "p-deferred", parentId: "p-drop", seq: 5, timestamp: fixedNowMs, message: v4Assistant("deferred work", 11, "deferred") },
+    { type: "branch_summary", id: "p-empty-summary", parentId: "p-deferred", seq: 6, timestamp: fixedNowMs, fromId: "p-root", summary: "" },
+    { type: "message", id: "p-tail", parentId: "p-empty-summary", seq: 7, timestamp: fixedNowMs, message: v4User("tail", 12) },
+  ];
+  const projectorContexts = {
+    default: observeContext(contextModule.buildSessionContext(projectorPath)),
+    projected: observeContext(contextModule.buildSessionContext(projectorPath, {
+      entryTransforms: [(entries: any[]) => entries.filter((entry: any) => entry.id !== "p-drop")],
+      entryProjectors: {
+        constructor_state: () => [v4User("constructor projector", 20)],
+        call_state: () => [v4User("call projector", 21)],
+      },
+    })),
+  };
+
+  const validHeader = '{"kind":"header","version":4,"id":"s","createdAt":0,"cwd":"/c"}';
+  const invalidCases = [
+    { name: "missing-header", content: "" },
+    { name: "v3-header", content: '{"type":"session","version":3,"id":"s","timestamp":"t","cwd":"/c"}\n' },
+    { name: "unsupported-version", content: '{"kind":"header","version":5,"id":"s","createdAt":0,"cwd":"/c"}\n' },
+    { name: "metadata-array", content: '{"kind":"header","version":4,"id":"s","createdAt":0,"cwd":"/c","metadata":[]}\n' },
+    { name: "unknown-mutation", content: `${validHeader}\n{"kind":"bogus","seq":1}\n` },
+    { name: "non-consecutive-seq", content: `${validHeader}\n{"kind":"entry","lane":"main","type":"custom","id":"e","customType":"x","parentId":null,"seq":2,"timestamp":0}\n` },
+    { name: "missing-parent", content: `${validHeader}\n{"kind":"entry","lane":"main","type":"custom","id":"e","customType":"x","parentId":"ghost","seq":1,"timestamp":0}\n` },
+    { name: "dangling-lane", content: `${validHeader}\n{"kind":"lane","seq":1,"lane":"side","leafId":"missing"}\n` },
+  ];
+  const invalid: unknown[] = [];
+  for (const fixtureCase of invalidCases) {
+    const invalidPath = path.join(root, `${fixtureCase.name}.jsonl`);
+    await writeFile(invalidPath, fixtureCase.content);
+    invalid.push({
+      name: fixtureCase.name,
+      content: fixtureCase.content,
+      error: await captureError(() => storageModule.JsonlSessionStorage.load(env, invalidPath), root),
+    });
+  }
+
+  const keptEntryLine = '{"kind":"entry","lane":"main","type":"custom","id":"kept","customType":"x","parentId":null,"seq":1,"timestamp":0}';
+  const repair = async (name: string, content: string) => {
+    const repairPath = path.join(root, `${name}.jsonl`);
+    await writeFile(repairPath, content);
+    const repaired = await storageModule.JsonlSessionStorage.load(env, repairPath);
+    return {
+      content,
+      entryIds: (await repaired.findEntries({ order: "oldestFirst" })).map((entry: any) => entry.id),
+      repairedContent: (await readFile(repairPath)).toString("utf8"),
+    };
+  };
+  const repairs = {
+    tornTail: await repair("torn-tail", `${validHeader}\n${keptEntryLine}\n{"kind":"en`),
+    unterminatedTail: await repair("unterminated-tail", `${validHeader}\n${keptEntryLine}`),
+  };
+
+  await withFixedDate(async () => {
+    await reopened.appendEntry({
+      type: "custom", id: "appended-fixed", customType: "after-rehydrate", data: { text: "<>&\u2028\u2029" },
+    }, "main");
+  });
+  const mutatedBytes = await readFile(filePath);
+
+  let sessionApi: unknown;
+  await withFixedDate(async () => {
+    let generated = 0;
+    const session = new sessionModule.Session(memory, { idGenerator: { next: () => `gen-${++generated}` } });
+    const appendedMessageId = await session.appendMessage(v4User("appended via session", 8));
+    const viewCustomId = await session.view("branch").appendCustomEntry("note", { via: "view" });
+    const newestMessage = await session.findEntryOnBranch({ type: "message" });
+    sessionApi = normalizeV4({
+      appendedMessageId,
+      viewCustomId,
+      mainLeaf: await session.getLeafId(),
+      branchLeaf: await session.view("branch").getLeafId(),
+      newestMessageId: newestMessage?.id ?? null,
+      stats: await session.getStats(),
+    }, root);
+  });
+
+  return {
+    bytes,
+    observations: {
+      jsonl: jsonlObservations,
+      memory: memoryObservations,
+      scriptErrors: normalizeV4(scriptErrors, root),
+      memoryScriptErrors: normalizeV4(memoryScriptErrors, root),
+      forks,
+      compactedContext: observeContext(compactedContext),
+      projectorContexts,
+      sessionApi,
+      appendLine: mutatedBytes.subarray(bytes.length).toString("utf8"),
+      invalid,
+      repairs: normalizeV4(repairs, root),
+    },
+  };
+}
+
+async function generateRepoFixtureV4(upstreamRoot: string, root: string): Promise<unknown> {
+  const load = (rel: string) => import(pathToFileURL(path.join(upstreamRoot, rel)).href);
+  const repoModule = await load("packages/agent/src/harness/session/jsonl.ts");
+  const memoryModule = await load("packages/agent/src/harness/session/memory.ts");
+  const envModule = await load("packages/agent/src/harness/env/nodejs.ts");
+  const env = new envModule.NodeExecutionEnv({ cwd: root });
+  const provisioned = [
+    { type: "message", id: "root-user", message: v4User("root", 1) },
+    { type: "message", id: "main-assistant", message: v4Assistant("answer", 2) },
+    { type: "message", id: "second-user", message: v4User("continue", 3) },
+  ];
+  const sortById = (metadata: any[]) => [...metadata].sort((left, right) => compareASCII(left.id, right.id));
+  const entriesOf = (session: any) => session.findEntries({ order: "oldestFirst" });
+
+  return await withFixedDate(async () => {
+    const memoryRepo = new memoryModule.InMemorySessionRepo();
+    const memorySource = await memoryRepo.create({ id: "memory-source" });
+    for (const entry of provisioned) await memorySource.appendEntry(entry, "main");
+    const memoryMetadata = await memorySource.getMetadata();
+    const memoryOpened = await memoryRepo.open(memoryMetadata);
+    const memoryBefore = await memoryRepo.fork(memoryMetadata, { entryId: "second-user", position: "before", id: "memory-before" });
+    const memoryAt = await memoryRepo.fork(memoryMetadata, { entryId: "main-assistant", position: "at", id: "memory-at" });
+    const memoryFull = await memoryRepo.fork(memoryMetadata, { id: "memory-full" });
+    const memoryTree = await memoryRepo.fork(memoryMetadata, { scope: "tree", id: "memory-tree" });
+    const memoryListed = await memoryRepo.list();
+    const memoryDuplicate = await captureError(() => memoryRepo.create({ id: "memory-source" }), root);
+    await memoryRepo.delete(memoryMetadata);
+    const memoryOpenAfterDelete = await captureError(() => memoryRepo.open(memoryMetadata), root);
+
+    const jsonlRepo = new repoModule.JsonlSessionRepo({ fs: env, sessionsRoot: path.join(root, "repo-sessions") });
+    const jsonlSource = await jsonlRepo.create({
+      cwd: "/tmp/my-project", id: "jsonl-source",
+      metadata: { "10": "ten", "2": "two", profile: "reviewer", nested: { z: 1, a: 2 } },
+    });
+    for (const entry of provisioned) await jsonlSource.appendEntry(entry, "main");
+    const jsonlOther = await jsonlRepo.create({ cwd: "/tmp/other-project", id: "jsonl-other" });
+    const jsonlMetadata = await jsonlSource.getMetadata();
+    const jsonlOtherMetadata = await jsonlOther.getMetadata();
+    const jsonlOpened = await jsonlRepo.open(jsonlMetadata);
+    const jsonlListByCwd = await jsonlRepo.list({ cwd: "/tmp/my-project" });
+    const jsonlListAll = await jsonlRepo.list();
+    const jsonlBefore = await jsonlRepo.fork(jsonlMetadata, { cwd: "/tmp/target", id: "jsonl-before", entryId: "second-user" });
+    const jsonlInherited = await jsonlRepo.fork(jsonlMetadata, { cwd: "/tmp/target", id: "jsonl-inherited" });
+    const jsonlTree = await jsonlRepo.fork(jsonlMetadata, {
+      cwd: "/tmp/target", id: "jsonl-tree", scope: "tree",
+      metadata: { profile: "writer" }, parentSessionId: "override-parent",
+    });
+    const invalidIdCreate = await captureError(() => jsonlRepo.create({ cwd: "/tmp/target", id: "-bad-" }), root);
+    const duplicateIdCreate = await captureError(() => jsonlRepo.create({ cwd: "/tmp/my-project", id: "jsonl-source" }), root);
+    const beforeMetadata = await jsonlBefore.getMetadata();
+    const inheritedMetadata = await jsonlInherited.getMetadata();
+    const treeMetadata = await jsonlTree.getMetadata();
+    const sourceBytes = (await readFile(jsonlMetadata.path)).toString("utf8");
+    const treeBytes = (await readFile(treeMetadata.path)).toString("utf8");
+    const sourceExistsBeforeDelete = get(await env.exists(jsonlMetadata.path));
+    await jsonlRepo.delete(jsonlMetadata);
+    const sourceExistsAfterDelete = get(await env.exists(jsonlMetadata.path));
+    const jsonlOpenAfterDelete = await captureError(() => jsonlRepo.open(jsonlMetadata), root);
+
+    return normalizeV4({
+      memory: {
+        sourceMetadata: memoryMetadata,
+        openedMetadata: await memoryOpened.getMetadata(),
+        listed: sortById(memoryListed),
+        beforeEntries: await entriesOf(memoryBefore),
+        atEntries: await entriesOf(memoryAt),
+        fullEntries: await entriesOf(memoryFull),
+        treeEntries: await entriesOf(memoryTree),
+        treeLanes: await memoryTree.getLanes(),
+        duplicateCreate: memoryDuplicate,
+        openAfterDelete: memoryOpenAfterDelete,
+      },
+      jsonl: {
+        sourceMetadata: jsonlMetadata,
+        otherMetadata: jsonlOtherMetadata,
+        openedMetadata: await jsonlOpened.getMetadata(),
+        openedEntries: await entriesOf(jsonlOpened),
+        listByCwd: sortById(jsonlListByCwd),
+        listAll: sortById(jsonlListAll),
+        encodedCwdDirectory: path.basename(path.dirname(jsonlMetadata.path)),
+        before: { metadata: beforeMetadata, entries: await entriesOf(jsonlBefore) },
+        inherited: { metadata: inheritedMetadata, entries: await entriesOf(jsonlInherited) },
+        tree: { metadata: treeMetadata, entries: await entriesOf(jsonlTree), lanes: await jsonlTree.getLanes() },
+        sourceBytes,
+        treeBytes,
+        invalidIdCreate,
+        duplicateIdCreate,
+        sourceExistsBeforeDelete,
+        sourceExistsAfterDelete,
+        openAfterDelete: jsonlOpenAfterDelete,
+      },
+    }, root);
+  });
+}
+
 function compareASCII(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -686,12 +1080,17 @@ async function generateEnvFixture(upstreamRoot: string, root: string): Promise<u
 export async function generateF6Harness(upstreamRoot: string, outputRoot: string, upstreamCommit: string): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "orb-f6-harness-"));
   try {
-    const sessionFixture = await generateSessionFixture(upstreamRoot, root);
+    const hasV3 = await upstreamHasV3SessionStorage(upstreamRoot);
+    const sessionFixture = hasV3
+      ? await generateSessionFixture(upstreamRoot, root)
+      : await generateSessionFixtureV4(upstreamRoot, root);
     const observations = {
       schemaVersion: 1,
       session: {
         ...(sessionFixture.observations as Record<string, unknown>),
-        repos: await generateRepoFixture(upstreamRoot, root),
+        repos: hasV3
+          ? await generateRepoFixture(upstreamRoot, root)
+          : await generateRepoFixtureV4(upstreamRoot, root),
       },
       env: await generateEnvFixture(upstreamRoot, root),
     };

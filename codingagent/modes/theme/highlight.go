@@ -52,6 +52,21 @@ func highlightECMAScript(iterator chroma.Iterator, theme *Theme) []string {
 				continue
 			}
 		}
+		// highlight.js scopes a no-parameter arrow head (`() =>`) as
+		// "function" in expression position; chroma coalesces the parens into
+		// the preceding punctuation, so match the "()" suffix directly.
+		if token.Type == chroma.Punctuation && strings.HasSuffix(token.Value, "()") && ecmaPreviousOnLine(tokens, index) >= 0 {
+			next := index + 1
+			for next < len(tokens) && tokens[next].Type == chroma.Text && !strings.Contains(tokens[next].Value, "\n") && strings.TrimSpace(tokens[next].Value) == "" {
+				next++
+			}
+			if next < len(tokens) && tokens[next].Type.InCategory(chroma.Operator) && tokens[next].Value == "=>" {
+				rendered.WriteString(token.Value[:len(token.Value)-2])
+				rendered.WriteString(theme.Foreground("syntaxFunction", "()"+ecmaTokenValues(tokens[index+1:next])+"=>"))
+				index = next
+				continue
+			}
+		}
 		if close, tail, ok := ecmaParameterList(tokens, index); ok {
 			rendered.WriteString(theme.Foreground("syntaxFunction", token.Value))
 			rendered.WriteString(theme.Foreground("syntaxVariable", ecmaTokenValues(tokens[index+1:close])))
@@ -74,7 +89,7 @@ func highlightECMAScript(iterator chroma.Iterator, theme *Theme) []string {
 			continue
 		}
 		if token.Type == chroma.KeywordType && !ecmaPrimitiveType(token.Value) {
-			rendered.WriteString(token.Value)
+			rendered.WriteString(ecmaColonValue(token.Value, theme))
 			continue
 		}
 		ecmaWriteToken(&rendered, token, theme)
@@ -138,6 +153,69 @@ func ecmaScriptLanguage(language string) bool {
 func ecmaPrimitiveType(value string) bool {
 	switch value {
 	case "any", "bigint", "boolean", "never", "number", "object", "string", "symbol", "unknown", "void":
+		return true
+	default:
+		return false
+	}
+}
+
+// chroma's `name: value` rule labels the value KeywordType even when it is a
+// plain expression. Re-color it the way upstream highlight.js scopes the
+// identifier: keywords, literals, numbers, and built-in globals keep their
+// colors, property tails (`Date.now`) and other identifiers stay plain.
+func ecmaColonValue(value string, theme *Theme) string {
+	head, tail, dotted := strings.Cut(value, ".")
+	switch {
+	case ecmaKeywordWord(value):
+		return theme.Foreground("syntaxKeyword", value)
+	case ecmaLiteralWord(value):
+		return theme.Foreground("syntaxNumber", value)
+	case value[0] >= '0' && value[0] <= '9':
+		return theme.Foreground("syntaxNumber", value)
+	case ecmaBuiltInWord(head):
+		if !dotted {
+			return theme.Foreground("syntaxType", value)
+		}
+		return theme.Foreground("syntaxType", head) + "." + tail
+	default:
+		return value
+	}
+}
+
+// hljs javascript KEYWORDS.
+func ecmaKeywordWord(value string) bool {
+	switch value {
+	case "as", "in", "of", "if", "for", "while", "finally", "var", "new", "function", "do", "return", "void",
+		"else", "break", "catch", "instanceof", "with", "throw", "case", "default", "try", "switch", "continue",
+		"typeof", "delete", "let", "yield", "const", "class", "debugger", "async", "await", "static", "import",
+		"from", "export", "extends":
+		return true
+	default:
+		return false
+	}
+}
+
+// hljs javascript LITERALS.
+func ecmaLiteralWord(value string) bool {
+	switch value {
+	case "true", "false", "null", "undefined", "NaN", "Infinity":
+		return true
+	default:
+		return false
+	}
+}
+
+// hljs javascript TYPES + ERROR_TYPES + BUILT_IN_GLOBALS ("built_in" scope).
+func ecmaBuiltInWord(value string) bool {
+	switch value {
+	case "Intl", "DataView", "Number", "Math", "Date", "String", "RegExp", "Object", "Function", "Boolean",
+		"Error", "Symbol", "Set", "Map", "WeakSet", "WeakMap", "Proxy", "Reflect", "JSON", "Promise",
+		"Float64Array", "Int16Array", "Int32Array", "Int8Array", "Uint16Array", "Uint32Array", "Float32Array",
+		"Array", "Uint8Array", "Uint8ClampedArray", "ArrayBuffer", "BigInt64Array", "BigUint64Array", "BigInt",
+		"EvalError", "InternalError", "RangeError", "ReferenceError", "SyntaxError", "TypeError", "URIError",
+		"setInterval", "setTimeout", "clearInterval", "clearTimeout", "require", "exports", "eval", "isFinite",
+		"isNaN", "parseFloat", "parseInt", "decodeURI", "decodeURIComponent", "encodeURI", "encodeURIComponent",
+		"escape", "unescape":
 		return true
 	default:
 		return false

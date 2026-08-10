@@ -284,6 +284,20 @@ func TestThemeValidationVariablesAndFallback(t *testing.T) {
 	if _, err := Parse("whitespace", append(valid, []byte("\n\t ")...), TrueColor); err != nil {
 		t.Fatalf("trailing JSON whitespace was rejected: %v", err)
 	}
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	delete(document["colors"].(map[string]any), "scrollbarThumb")
+	encoded, _ = json.Marshal(document)
+	parsed, err := Parse("no-thumb", encoded, TrueColor)
+	if err != nil {
+		t.Fatalf("theme without scrollbarThumb was rejected: %v", err)
+	}
+	thumb, err := parsed.BackgroundANSI("scrollbarThumb")
+	selected, selectedErr := parsed.BackgroundANSI("selectedBg")
+	if err != nil || selectedErr != nil || thumb != selected {
+		t.Fatalf("scrollbarThumb fallback = %q, %v; want selectedBg %q, %v", thumb, err, selected, selectedErr)
+	}
 }
 
 func TestControllerSettingsDetectionAndReload(t *testing.T) {

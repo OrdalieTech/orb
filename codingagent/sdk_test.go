@@ -731,8 +731,10 @@ func TestNewAgentSessionActivatesRehydratedHarnessStorage(t *testing.T) {
 	defer result.Session.Dispose()
 
 	state := result.Session.State()
-	if len(state.Messages) != 3 {
-		t.Fatalf("rehydrated message count = %d, want 3", len(state.Messages))
+	// The v4 fixture leaf sits on a compacted branch: the projected context is
+	// the compaction summary plus the branch summary.
+	if len(state.Messages) != 2 {
+		t.Fatalf("rehydrated message count = %d, want 2", len(state.Messages))
 	}
 	toolNames := make([]string, len(state.Tools))
 	for index := range state.Tools {

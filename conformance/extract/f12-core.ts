@@ -104,6 +104,8 @@ type CoreTui = {
 type CoreContainer = Component & { addChild(component: Component): void; clear(): void };
 type TuiModule = {
   TUI: new (terminal: CoreTerminal) => CoreTui;
+  // Upstream >=0.84 renames the concrete class; TUI above is aliased onto it.
+  TuiMainScreen?: new (terminal: CoreTerminal) => CoreTui;
   Container: new () => CoreContainer;
   setCapabilities(capabilities: { images: null; trueColor: boolean; hyperlinks: boolean }): void;
   resetCapabilitiesCache(): void;
@@ -483,7 +485,9 @@ async function generateOverlayCursorTrace(tui: TuiModule): Promise<string[]> {
 }
 
 function handleInput(ui: CoreTui, data: string): void {
-  (ui as unknown as { handleInput(data: string): void }).handleInput(data);
+  // Upstream >=0.84 renames the private input dispatcher to handleTerminalInput.
+  const dispatch = ui as unknown as { handleInput?(data: string): void; handleTerminalInput?(data: string): void };
+  (dispatch.handleInput ?? dispatch.handleTerminalInput)!.call(ui, data);
 }
 
 const show = (component: string, options?: FocusTraceOptions): FocusTraceOperation => ({
@@ -1049,7 +1053,8 @@ export async function generateF12Core(
     "packages/tui/test/tab-width.test.ts",
     "packages/tui/test/terminal-colors.test.ts",
   ];
-  const tui = (await import(pathToFileURL(path.join(upstreamRoot, tuiSource)).href)) as TuiModule;
+  const tuiExports = (await import(pathToFileURL(path.join(upstreamRoot, tuiSource)).href)) as TuiModule;
+  const tui: TuiModule = tuiExports.TUI ? tuiExports : { ...tuiExports, TUI: tuiExports.TuiMainScreen! };
   const colors = (await import(pathToFileURL(path.join(upstreamRoot, terminalColorsSource)).href)) as TerminalColorsModule;
   const upstreamFocusNames = namedTests(await readFile(path.join(upstreamRoot, focusTestSource), "utf8"));
   const upstreamOptionNames = namedTests(await readFile(path.join(upstreamRoot, optionsTestSource), "utf8"));
