@@ -6,6 +6,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Changed
+
+- Orb's default system prompt now presents it as a general-purpose problem-solving harness for work and software development, while retaining its coding capabilities and pi-compatible prompt assembly.
+
 ## [0.4.11] - 2026-08-03
 
 ### Fixed

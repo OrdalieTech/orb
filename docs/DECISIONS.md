@@ -125,6 +125,7 @@ Orb is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinne
 | Radius provider + Radius OAuth | removed | pi.dev-coupled service; the generic `pi-messages` SSE wire shape IS ported (usable by any backend, e.g. an Ordalie gateway) |
 | Version/update checks | neutralized | point at OrdalieTech/orb GitHub releases, never pi.dev |
 | Public identity and executable | renamed | D30; `orb` avoids colliding with an installed upstream `pi` |
+| Default system-prompt identity | product positioning adaptation | Orb presents as a general-purpose problem-solving harness for work and software development rather than using pi's coding-agent identity; tool lists, guidelines, context/skill injection, custom prompts, and assembly order remain upstream-compatible, with F9 applying only the exact ledgered text substitutions to generated upstream goldens |
 | `/share` | neutralized | local HTML export instead of pi.dev upload |
 | Model catalog runtime refresh | neutralized | models.dev directly, not pi.dev overlay endpoints |
 | Windows support | deferred | later parity wave (D8) |
@@ -256,14 +257,17 @@ Orb is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinne
   behavior, and embedders already have `agent.WithStreamFn` plus `ai.ParseStreamingJSON`. Revisit
   either surface only when upstream's coding-agent adopts it or a real Go consumer requires it.
 
-- **D30 — Public identity is Orb (owner-amended, 2026-07-30).** The repository, Go module, executable,
+- **D30 — Public identity is Orb (owner-amended, 2026-08-10).** The repository, Go module, executable,
   release artifacts, installer variables, terminal title, resume hints, and default RPC client
   command use `orb`; no legacy `pi` executable or alias is shipped, so upstream pi can coexist on
   the same machine. Upstream compatibility names remain unchanged where they are the contract:
   `.pi`/`~/.pi`, upstream `PI_*` runtime variables, session and wire formats, pi package manifests,
   `pi-messages`, the JS extension `pi` API and `@earendil-works/pi-*` imports, embedded upstream
-  assets, and extracted goldens. Conformance adapters may account only for exact public-name
-  substitutions while separately asserting the `orb` spelling.
+  assets, and extracted goldens. The default system prompt identifies Orb as a general-purpose
+  problem-solving harness for work and software development; coding remains a core capability rather
+  than the exclusive role. Conformance adapters may account only for exact public-name substitutions
+  and this ledgered default-prompt identity and documentation wording while separately asserting the
+  `orb`/`Orb` spelling.
 
 - **D31 — Host-only JavaScript execution (owner, 2026-07-22).** All JavaScript and TypeScript
   extensions, including installed npm packages, project/global extension files, and explicit `-e`
