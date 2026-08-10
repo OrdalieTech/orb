@@ -9,10 +9,10 @@ import (
 	"github.com/OrdalieTech/orb/conformance/runner"
 )
 
-// The F12-mermaid engine goldens are raw grok-mermaid 0.2.2 output captured
-// at the pin; byte parity of the canonical JSON is the gate. The full runner
-// test (conformance/runner/f12_mermaid_test.go) also covers the transformer,
-// which lands separately.
+// The engine goldens are raw grok-mermaid 0.2.2 output captured at pi
+// v0.84.1 and frozen as an Orb-owned snapshot (D35); byte parity of the
+// canonical JSON is the gate. conformance/runner/f12_mermaid_test.go also
+// covers the transformer against the same file.
 
 type conformanceFixture struct {
 	SchemaVersion int               `json:"schemaVersion"`
@@ -38,7 +38,7 @@ type conformanceSpan struct {
 }
 
 func TestUpstreamEngineConformance(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "conformance", "fixtures", "F12-mermaid", "cases.json"))
+	data, err := os.ReadFile(filepath.Join("testdata", "cases.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

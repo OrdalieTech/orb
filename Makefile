@@ -69,8 +69,7 @@ ensure-upstream-fixture-tools: upstream
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/cross-spawn/package.json").version' 2>/dev/null)" != "7.0.6" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/yaml/package.json").version' 2>/dev/null)" != "2.9.0" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@silvia-odwyer/photon-node/package.json").version' 2>/dev/null)" != "0.3.4" ] || \
-		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/undici/package.json").version' 2>/dev/null)" != "8.5.0" ] || \
-		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/grok-mermaid/package.json").version' 2>/dev/null)" != "0.2.2" ]; then \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/undici/package.json").version' 2>/dev/null)" != "8.5.0" ]; then \
 		if [ "$(UPSTREAM_READONLY)" = "1" ]; then \
 			echo "upstream fixture tools are missing from read-only $(UPSTREAM_DIR)" >&2; exit 1; \
 		fi; \
@@ -80,7 +79,7 @@ ensure-upstream-fixture-tools: upstream
 			@mistralai/mistralai@2.2.6 @google/genai@1.52.0 diff@8.0.4 cross-spawn@7.0.6 \
 			chalk@5.6.2 get-east-asian-width@1.6.0 glob@13.0.6 highlight.js@10.7.3 hosted-git-info@9.0.3 \
 			ignore@7.0.5 jiti@2.7.0 marked@18.0.5 minimatch@10.2.5 proper-lockfile@4.1.2 semver@7.8.0 \
-			@silvia-odwyer/photon-node@0.3.4 undici@8.5.0 yaml@2.9.0 grok-mermaid@0.2.2; \
+			@silvia-odwyer/photon-node@0.3.4 undici@8.5.0 yaml@2.9.0; \
 	fi
 
 fixtures: ensure-upstream-fixture-tools product-assets
