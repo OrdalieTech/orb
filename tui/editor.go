@@ -2114,7 +2114,13 @@ func (editor *Editor) createAutocompleteList(prefix string, items []Autocomplete
 	for index, item := range items {
 		selectItems[index] = SelectItem(item)
 	}
-	return NewSelectList(selectItems, editor.autocompleteMaxVisible, editor.theme.SelectList, layout)
+	list := NewSelectList(selectItems, editor.autocompleteMaxVisible, editor.theme.SelectList, layout)
+	if styler, ok := editor.autocompleteProvider.(AutocompleteItemStyler); ok {
+		list.stylePrimary = func(item SelectItem, text string, selected bool) string {
+			return styler.StyleAutocompleteItem(AutocompleteItem(item), text, selected)
+		}
+	}
+	return list
 }
 
 func (editor *Editor) tryTriggerAutocomplete() {

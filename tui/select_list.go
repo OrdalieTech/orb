@@ -67,6 +67,7 @@ type SelectList struct {
 	maxVisible    int
 	theme         SelectListTheme
 	layout        SelectListLayoutOptions
+	stylePrimary  func(SelectItem, string, bool) string
 	pending       []func()
 
 	OnSelect          func(SelectItem)
@@ -231,6 +232,7 @@ func (list *SelectList) renderItem(item SelectItem, isSelected bool, width int, 
 		effectivePrimaryColumnWidth := max(1, min(primaryColumnWidth, width-prefixWidth-4))
 		maxPrimaryWidth := max(1, effectivePrimaryColumnWidth-primaryColumnGap)
 		truncatedValue := list.truncatePrimary(item, isSelected, maxPrimaryWidth, effectivePrimaryColumnWidth)
+		styledValue := list.stylePrimaryText(item, truncatedValue, isSelected)
 		truncatedValueWidth := VisibleWidth(truncatedValue)
 		spacing := strings.Repeat(" ", max(1, effectivePrimaryColumnWidth-truncatedValueWidth))
 		descriptionStart := prefixWidth + truncatedValueWidth + len(spacing)
@@ -239,18 +241,19 @@ func (list *SelectList) renderItem(item SelectItem, isSelected bool, width int, 
 		if remainingWidth > minDescriptionWidth {
 			truncatedDescription := TruncateToWidth(description, remainingWidth, "", false)
 			if isSelected {
-				return list.style(list.theme.SelectedText, prefix+truncatedValue+spacing+truncatedDescription)
+				return list.style(list.theme.SelectedText, prefix+styledValue+spacing+truncatedDescription)
 			}
-			return prefix + truncatedValue + list.style(list.theme.Description, spacing+truncatedDescription)
+			return prefix + styledValue + list.style(list.theme.Description, spacing+truncatedDescription)
 		}
 	}
 
 	maxWidth := width - prefixWidth - 2
 	truncatedValue := list.truncatePrimary(item, isSelected, maxWidth, maxWidth)
+	styledValue := list.stylePrimaryText(item, truncatedValue, isSelected)
 	if isSelected {
-		return list.style(list.theme.SelectedText, prefix+truncatedValue)
+		return list.style(list.theme.SelectedText, prefix+styledValue)
 	}
-	return prefix + truncatedValue
+	return prefix + styledValue
 }
 
 func (list *SelectList) primaryColumnWidth() int {
@@ -322,6 +325,13 @@ func (list *SelectList) GetSelectedItem() (SelectItem, bool) {
 	list.mu.Lock()
 	defer list.mu.Unlock()
 	return list.selectedItem()
+}
+
+func (list *SelectList) stylePrimaryText(item SelectItem, text string, selected bool) string {
+	if list.stylePrimary == nil {
+		return text
+	}
+	return list.stylePrimary(item, text, selected)
 }
 
 func (list *SelectList) style(style StyleFunc, text string) string {

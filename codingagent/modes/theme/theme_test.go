@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	chroma "github.com/alecthomas/chroma/v2"
+
+	"github.com/OrdalieTech/orb/tui"
 )
 
 func TestBuiltinsAndColorModes(t *testing.T) {
@@ -29,6 +31,32 @@ func TestBuiltinsAndColorModes(t *testing.T) {
 	}
 	if got := indexed.Available(); !reflect.DeepEqual(got, []string{"dark", "light"}) {
 		t.Fatalf("available = %#v", got)
+	}
+}
+
+func TestEditorThemeStylesAutocomplete(t *testing.T) {
+	registry := Load(LoadOptions{AgentDir: t.TempDir(), CWD: t.TempDir(), Mode: Color256})
+	dark, ok := registry.Get("dark")
+	if !ok {
+		t.Fatal("dark theme missing")
+	}
+	SetCurrent(dark)
+	t.Cleanup(func() { SetCurrent(nil) })
+
+	selectTheme := EditorTheme().SelectList
+	if selectTheme.SelectedPrefix == nil || selectTheme.SelectedText == nil || selectTheme.Description == nil {
+		t.Fatalf("incomplete editor select-list theme: %#v", selectTheme)
+	}
+	if got, want := selectTheme.SelectedText("main.go"), BG("selectedBg", FG("accent", "main.go")); got != want {
+		t.Fatalf("selected style = %q, want %q", got, want)
+	}
+	list := tui.NewSelectList([]tui.SelectItem{
+		{Value: "@main.go", Label: "main.go", Description: "file"},
+		{Value: "@ponytail", Label: "[skill] ponytail", Description: "skill"},
+	}, 5, selectTheme, tui.SelectListLayoutOptions{})
+	rendered := list.Render(80)
+	if !strings.Contains(rendered[0], BGANSI("selectedBg")+FGANSI("accent")+"→ main.go") || !strings.Contains(rendered[1], FGANSI("muted")) {
+		t.Fatalf("themed autocomplete = %q", rendered)
 	}
 }
 

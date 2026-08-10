@@ -1074,7 +1074,7 @@ func TestF12ApplicationAutocompleteMatchesUpstream(t *testing.T) {
 	}
 }
 
-func newF12AutocompleteMode(t *testing.T, enableSkillCommands bool) *InteractiveMode {
+func newF12AutocompleteMode(t *testing.T, enableSkillCommands bool, extraCommands ...string) *InteractiveMode {
 	t.Helper()
 	cwd, agentDir := t.TempDir(), t.TempDir()
 	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
@@ -1103,6 +1103,9 @@ func newF12AutocompleteMode(t *testing.T, enableSkillCommands bool) *Interactive
 	registerCommand("extension-command", "extension-command", "Run extension command")
 	registerCommand("model-one", "model", "Conflicts with a built-in")
 	registerCommand("model-two", "model", "Conflicts with a built-in")
+	for _, name := range extraCommands {
+		registerCommand("extra-"+strings.ReplaceAll(name, ":", "-"), name, "Extra command")
+	}
 
 	prompts := []codingagent.PromptTemplate{{
 		Name: "review-prompt", Description: "Review a path", ArgumentHint: "<path>",

@@ -263,6 +263,13 @@ func MarkdownTheme() tui.MarkdownTheme {
 func EditorTheme() tui.EditorTheme {
 	return tui.EditorTheme{
 		BorderColor: func(s string) string { return FG("borderMuted", s) },
+		SelectList: tui.SelectListTheme{
+			SelectedPrefix: func(s string) string { return FG("accent", Bold(s)) },
+			SelectedText:   func(s string) string { return BG("selectedBg", FG("accent", s)) },
+			Description:    func(s string) string { return FG("muted", s) },
+			ScrollInfo:     func(s string) string { return FG("dim", s) },
+			NoMatch:        func(s string) string { return FG("warning", s) },
+		},
 	}
 }
 

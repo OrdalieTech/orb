@@ -39,6 +39,12 @@ type AutocompleteProvider interface {
 	ApplyCompletion(lines []string, cursorLine, cursorCol int, item AutocompleteItem, prefix string) CompletionResult
 }
 
+// AutocompleteItemStyler may style an item's already-truncated primary text.
+// Implementations must preserve its visible width.
+type AutocompleteItemStyler interface {
+	StyleAutocompleteItem(item AutocompleteItem, text string, selected bool) string
+}
+
 // FileCompletionGate optionally vetoes explicit-Tab file completion.
 type FileCompletionGate interface {
 	ShouldTriggerFileCompletion(lines []string, cursorLine, cursorCol int) bool
