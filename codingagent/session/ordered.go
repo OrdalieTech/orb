@@ -51,7 +51,9 @@ func parseOrderedObject(data []byte) (*orderedObject, error) {
 		if err := decoder.Decode(&value); err != nil {
 			return nil, err
 		}
-		object.set(name, value)
+		// Decode already produced a detached RawMessage; setOwned skips the
+		// defensive clone set() makes for caller-owned buffers.
+		object.setOwned(name, value)
 	}
 	if _, err := decoder.Token(); err != nil {
 		return nil, err
@@ -91,7 +93,11 @@ func (object *orderedObject) get(name string) (json.RawMessage, bool) {
 }
 
 func (object *orderedObject) set(name string, value json.RawMessage) {
-	value = cloneRaw(value)
+	object.setOwned(name, cloneRaw(value))
+}
+
+// setOwned stores value without cloning; the caller must hand over ownership.
+func (object *orderedObject) setOwned(name string, value json.RawMessage) {
 	for index := range object.members {
 		if object.members[index].name == name {
 			object.members[index].value = value

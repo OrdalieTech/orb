@@ -2,6 +2,13 @@ version: "2"
 
 linters:
   default: standard
+  exclusions:
+    rules:
+      # internal/chromalexers is vendored chroma/v2/lexers kept byte-close to
+      # upstream (lazy registry only); its upstream style trips govet composites.
+      - path: internal/chromalexers/
+        linters:
+          - govet
 
 formatters:
   enable:

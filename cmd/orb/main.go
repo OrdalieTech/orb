@@ -208,6 +208,11 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if args.Help {
 		text := helpText
 		if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+			// ponytail: this fully loads extensions (spawning the Node extension
+			// host, ~300ms + ~124MB child when any external extension exists)
+			// just to render their flags; help needs only flag metadata. A
+			// metadata-only discovery path would need upstream-faithfulness
+			// review, so the ceiling stays for now.
 			if registry, _, _, loadErr := loadStartupExtensions(cwd, args); loadErr == nil {
 				text = extensionHelpText(registry)
 			}

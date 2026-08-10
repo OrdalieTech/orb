@@ -249,8 +249,6 @@ func DeleteKittyImage(imageID uint32) string {
 	return fmt.Sprintf("\x1b_Ga=d,d=I,i=%d,q=2\x1b\\", imageID)
 }
 
-func DeleteAllKittyImages() string { return "\x1b_Ga=d,d=A,q=2\x1b\\" }
-
 func EncodeITerm2(base64Data string, width, height any, name string, preserveAspectRatio, inline bool) string {
 	inlineValue := 0
 	if inline {
@@ -307,10 +305,6 @@ func CalculateImageCellSize(image ImageDimensions, maxWidthCells int, maxHeightC
 		rows = min(*maxHeight, rows)
 	}
 	return ImageCellSize{Columns: columns, Rows: max(1, rows)}
-}
-
-func CalculateImageRows(image ImageDimensions, targetWidthCells int, cell CellDimensions) int {
-	return CalculateImageCellSize(image, targetWidthCells, nil, cell).Rows
 }
 
 func decodeImageBase64(data string) ([]byte, bool) {

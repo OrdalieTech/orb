@@ -42,12 +42,19 @@ func ReplacePathAliases(value, path, replacement string) string {
 	return strings.ReplaceAll(value, path, replacement)
 }
 
-// ReadFixture reads one file from a fixture family.
+// NormalizeFixturePath rewrites root (and its symlink alias) to "<fixture>",
+// with forward slashes, so observed paths are host-independent.
+func NormalizeFixturePath(value, root string) string {
+	return ReplacePathAliases(filepath.ToSlash(value), filepath.ToSlash(root), "<fixture>")
+}
+
+// ReadFixture reads one file from a fixture family. name may be a
+// slash-separated relative subpath (e.g. "cases/export-surface.json").
 func ReadFixture(family, name string) ([]byte, error) {
-	if !validPathElement(family) || !validPathElement(name) {
+	if !validPathElement(family) || !validSubpath(name) {
 		return nil, fmt.Errorf("conformance: invalid fixture path %q/%q", family, name)
 	}
-	data, err := os.ReadFile(filepath.Join(FixtureRoot(), family, name))
+	data, err := os.ReadFile(filepath.Join(FixtureRoot(), family, filepath.FromSlash(name)))
 	if err != nil {
 		return nil, fmt.Errorf("conformance: read %s/%s: %w", family, name, err)
 	}
@@ -246,6 +253,44 @@ func ByteDiff(want, got []byte) string {
 	)
 }
 
+// AssertCanonicalJSONEqual fails the test when want and got differ as
+// canonical JSON. Values marshal first, so raw JSON (json.RawMessage) and Go
+// values compare alike; label, when non-empty, prefixes the failure.
+func AssertCanonicalJSONEqual(t testing.TB, want, got any, label string) {
+	t.Helper()
+	wantJSON, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotJSON, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantJSON, err = CanonicalJSON(wantJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotJSON, err = CanonicalJSON(gotJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := ByteDiff(wantJSON, gotJSON); diff != "" {
+		if label != "" {
+			t.Fatalf("%s mismatch:\n%s", label, diff)
+		}
+		t.Fatal(diff)
+	}
+}
+
 func validPathElement(value string) bool {
 	return value != "" && value != "." && value != ".." && !strings.ContainsAny(value, `/\\`)
+}
+
+func validSubpath(value string) bool {
+	for _, element := range strings.Split(value, "/") {
+		if !validPathElement(element) {
+			return false
+		}
+	}
+	return true
 }

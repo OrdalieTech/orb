@@ -71,7 +71,7 @@ func TestF13OrbSDKManifestMirrorsUpstreamExportSurface(t *testing.T) {
 	var surface struct {
 		Exports map[string][]string `json:"exports"`
 	}
-	loadF13JSON(t, "cases/export-surface.json", &surface)
+	LoadJSON(t, f13Family, "cases/export-surface.json", &surface)
 	modulePackages := map[string]string{
 		"coding-agent": "@earendil-works/pi-coding-agent",
 		"ai":           "@earendil-works/pi-ai",
@@ -104,11 +104,13 @@ func TestF13OrbReplaysBehaviorGoldens(t *testing.T) {
 	harness := startF13Harness(t)
 	for _, scenario := range index.Scenarios {
 		t.Run(scenario, func(t *testing.T) {
-			golden := readF13(t, "cases/"+scenario+".json")
-			replayed := harness.replayScenario(t, scenario)
-			if diff := f13DiffCanonical(golden, replayed); diff != "" {
-				t.Errorf("scenario %s diverged from the upstream golden:\n%s", scenario, diff)
+			golden, err := ReadFixture(f13Family, "cases/"+scenario+".json")
+			if err != nil {
+				t.Fatal(err)
 			}
+			replayed := harness.replayScenario(t, scenario)
+			AssertCanonicalJSONEqual(t, json.RawMessage(golden), json.RawMessage(replayed),
+				"scenario "+scenario+" vs upstream golden")
 		})
 	}
 }

@@ -41,6 +41,10 @@ var runtimeSDKAIExports = map[string]string{
 	"./providers/all": "ai-providers-all.mjs",
 }
 
+// runtimeSDKPackages lists exactly the legacy specifiers the Node loader
+// serves (loader.mjs sdkModules): bare names like "pi" or "pi-ai" are
+// deliberately absent on both runtimes — upstream publishes scoped packages
+// only.
 var runtimeSDKPackages = map[string]map[string]string{
 	"@earendil-works/pi-coding-agent": {".": "coding-agent.mjs"},
 	"@earendil-works/pi-agent-core":   {".": "agent-core.mjs"},
@@ -50,10 +54,6 @@ var runtimeSDKPackages = map[string]map[string]string{
 	"@mariozechner/pi-agent-core":     {".": "agent-core.mjs"},
 	"@mariozechner/pi-ai":             runtimeSDKAIExports,
 	"@mariozechner/pi-tui":            {".": "tui.mjs"},
-	"pi":                              {".": "coding-agent.mjs"},
-	"pi-coding-agent":                 {".": "coding-agent.mjs"},
-	"pi-ai":                           runtimeSDKAIExports,
-	"pi-tui":                          {".": "tui.mjs"},
 }
 
 // writeRuntimeSDKWrapper lays down one wrapper package: a package.json exports

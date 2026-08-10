@@ -15,14 +15,6 @@ func WrapRegisteredTool(tool RegisteredTool, runner *Runner) agent.AgentTool {
 	return &registeredAgentTool{registered: tool, runner: runner}
 }
 
-func WrapRegisteredTools(tools []RegisteredTool, runner *Runner) []agent.AgentTool {
-	wrapped := make([]agent.AgentTool, len(tools))
-	for index, tool := range tools {
-		wrapped[index] = WrapRegisteredTool(tool, runner)
-	}
-	return wrapped
-}
-
 func (tool *registeredAgentTool) Spec() agent.AgentToolSpec {
 	definition := tool.registered.Definition
 	return agent.AgentToolSpec{

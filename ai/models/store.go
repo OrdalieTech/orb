@@ -99,12 +99,12 @@ func LoadStore(path string) (*Catalog, error) {
 }
 
 var builtinProviderIDs = sync.OnceValue(func() map[string]bool {
-	var providers map[string]json.RawMessage
 	result := make(map[string]bool)
-	if err := json.Unmarshal(generatedCatalogJSON, &providers); err != nil {
+	catalog, err := Builtin()
+	if err != nil {
 		return result
 	}
-	for providerID := range providers {
+	for providerID := range catalog.providers {
 		result[providerID] = true
 	}
 	return result

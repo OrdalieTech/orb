@@ -442,6 +442,9 @@ func defaultThemeSourceInfo(path string, options DefaultResourceLoaderOptions) *
 	}
 }
 
+// ponytail: discovery stat/symlink scans (~4.7ms/startup) run even when every
+// --no-* resource flag is set; skipping them when disabled needs a check
+// against pi's resource loader before it can land, so the ceiling stays.
 func resolveResourceLoaderPaths(options DefaultResourceLoaderOptions) (ResourceExtensionPaths, error) {
 	resolved, err := NewPackageManager(PackageManagerOptions{
 		CWD: options.CWD, AgentDir: options.AgentDir, Settings: options.SettingsManager,

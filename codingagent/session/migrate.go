@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jstrim"
@@ -42,14 +43,27 @@ func ParseSessionEntries(content string) []*FileEntry {
 }
 
 func parseSessionEntryLine(line string) *FileEntry {
-	decoded, _ := textunicode.UTF8.NewDecoder().Bytes([]byte(line))
-	line = string(decoded)
-	if strings.TrimFunc(line, jstrim.IsSpace) == "" || !json.Valid([]byte(line)) {
+	// The UTF-8 decoder only rewrites invalid sequences (to U+FFFD); valid
+	// lines — the hot path — skip the transformer and its per-line copies.
+	if !utf8.ValidString(line) {
+		decoded, _ := textunicode.UTF8.NewDecoder().Bytes([]byte(line))
+		line = string(decoded)
+	}
+	if strings.TrimFunc(line, jstrim.IsSpace) == "" {
 		return nil
 	}
+	// ponytail: decodeFileEntry still re-clones members via object.get and
+	// double-decodes typed fields; a single-pass ordered scan is the next
+	// ~2-4x on `--continue` resume but is wire-adjacent, so it waits.
 	raw := json.RawMessage(line)
 	object, err := parseOrderedObject(raw)
 	if err != nil {
+		// parseOrderedObject success implies valid JSON, so the validity scan
+		// only runs to keep the original split: invalid JSON is skipped, valid
+		// non-object JSON is kept as a raw entry.
+		if !json.Valid(raw) {
+			return nil
+		}
 		return decodeFileEntry(nil, raw)
 	}
 	return decodeFileEntry(object, raw)
@@ -73,7 +87,14 @@ func loadSessionFile(path string) (loadedSessionFile, error) {
 	}
 	defer func() { _ = file.Close() }()
 
-	reader := bufio.NewReaderSize(file, sessionReadBufferSize)
+	// The buffer is a read-chunk size, not a line limit (ReadString grows past
+	// it), so cap it at the file size instead of always paying 1MiB per open.
+	// The recorded size still comes from the post-read Stat below.
+	bufferSize := sessionReadBufferSize
+	if preInfo, statErr := file.Stat(); statErr == nil && preInfo.Size() < int64(bufferSize) {
+		bufferSize = int(preInfo.Size())
+	}
+	reader := bufio.NewReaderSize(file, bufferSize)
 	var entries []*FileEntry
 	for {
 		line, readErr := reader.ReadString('\n')

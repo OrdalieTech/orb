@@ -191,7 +191,7 @@ func TestF9ResourceDiscoveryMatchesUpstreamWithOrbIdentity(t *testing.T) {
 				SystemPromptSource:        f9FixturePromptSource(resources.SystemPromptSource, fixtureRoot),
 				AppendSystemPrompt:        resources.AppendSystemPrompt,
 				AppendSystemPromptSources: f9FixturePromptSources(resources.AppendSystemPromptSources, fixtureRoot),
-				AssembledPrompt:           f9NormalizeFixturePath(assembled, fixtureRoot),
+				AssembledPrompt:           runner.NormalizeFixturePath(assembled, fixtureRoot),
 			}
 			expected := fixtureCase.Expected
 			expected.AssembledPrompt = f9ExpectedOrbSystemPrompt(expected.AssembledPrompt)
@@ -283,7 +283,7 @@ func f9FixtureContextFiles(files []codingagent.ContextFile, fixtureRoot string) 
 	converted := make([]f9ContextFile, len(files))
 	for index, file := range files {
 		converted[index] = f9ContextFile{
-			Path:    f9NormalizeFixturePath(file.Path, fixtureRoot),
+			Path:    runner.NormalizeFixturePath(file.Path, fixtureRoot),
 			Content: file.Content,
 		}
 	}
@@ -294,21 +294,17 @@ func f9FixturePromptSource(source *codingagent.PromptSource, fixtureRoot string)
 	if source == nil {
 		return nil
 	}
-	return &f9PromptSource{Path: f9NormalizeFixturePath(source.Path, fixtureRoot)}
+	return &f9PromptSource{Path: runner.NormalizeFixturePath(source.Path, fixtureRoot)}
 }
 
 func f9FixturePromptSources(sources []codingagent.PromptSource, fixtureRoot string) []f9PromptSource {
 	converted := make([]f9PromptSource, len(sources))
 	for index, source := range sources {
-		converted[index] = f9PromptSource{Path: f9NormalizeFixturePath(source.Path, fixtureRoot)}
+		converted[index] = f9PromptSource{Path: runner.NormalizeFixturePath(source.Path, fixtureRoot)}
 	}
 	return converted
 }
 
 func f9MaterializePath(value, fixtureRoot string) string {
 	return strings.ReplaceAll(value, "<fixture>", fixtureRoot)
-}
-
-func f9NormalizeFixturePath(value, fixtureRoot string) string {
-	return runner.ReplacePathAliases(value, filepath.ToSlash(fixtureRoot), "<fixture>")
 }

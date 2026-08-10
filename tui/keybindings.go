@@ -105,12 +105,6 @@ func NewDefaultKeybindings(user KeybindingsConfig) *KeybindingsManager {
 	return NewKeybindingsManager(TUIKeybindingDefinitions, user)
 }
 
-func NewKeybindingsFromFile(definitions []KeybindingDefinition, path string) *KeybindingsManager {
-	manager := NewKeybindingsManager(definitions, LoadKeybindingsFile(path))
-	manager.configPath = path
-	return manager
-}
-
 func normalizeBinding(keys []KeyID) []KeyID {
 	seen := make(map[KeyID]bool, len(keys))
 	result := make([]KeyID, 0, len(keys))

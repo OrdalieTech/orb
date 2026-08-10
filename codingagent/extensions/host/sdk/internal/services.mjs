@@ -97,6 +97,8 @@ export function bindTransport(value) {
 	transport = value;
 }
 
+// e2e seam: the host's service-protocol fixture (testdata/services.mjs)
+// reaches the raw transport through this; no product path reads it.
 export function boundTransport() {
 	return transport;
 }

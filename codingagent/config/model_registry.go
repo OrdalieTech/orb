@@ -83,7 +83,7 @@ func (registry *ModelRegistry) Reload() error {
 	if err != nil {
 		return err
 	}
-	base := builtin.Merge(stored).Models()
+	base := builtin.MergedModels(stored)
 	authProviders := cloneCredentials(readStoredCredentials(filepath.Join(registry.agentDir, "auth.json")))
 	return registry.refreshSnapshot(base, config, authProviders)
 }

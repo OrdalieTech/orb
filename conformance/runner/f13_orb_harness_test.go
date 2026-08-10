@@ -34,9 +34,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"regexp"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -833,87 +831,4 @@ func (harness *f13Harness) canonicalize(document []byte) []byte {
 		return alias
 	})
 	return []byte(value)
-}
-
-// f13DiffCanonical structurally compares the canonicalized replay against the
-// committed golden and renders the divergences path by path.
-func f13DiffCanonical(golden, replayed []byte) string {
-	var want, got any
-	if err := json.Unmarshal(golden, &want); err != nil {
-		return fmt.Sprintf("golden is not valid JSON: %v", err)
-	}
-	if err := json.Unmarshal(replayed, &got); err != nil {
-		return fmt.Sprintf("replay is not valid JSON: %v", err)
-	}
-	var diffs []string
-	f13Compare("$", want, got, &diffs)
-	if len(diffs) == 0 {
-		return ""
-	}
-	const cap = 40
-	if len(diffs) > cap {
-		diffs = append(diffs[:cap], fmt.Sprintf("... and %d more", len(diffs)-cap))
-	}
-	return strings.Join(diffs, "\n")
-}
-
-func f13Compare(path string, want, got any, diffs *[]string) {
-	switch wantValue := want.(type) {
-	case map[string]any:
-		gotValue, ok := got.(map[string]any)
-		if !ok {
-			*diffs = append(*diffs, fmt.Sprintf("%s: want object, got %s", path, f13Render(got)))
-			return
-		}
-		keys := make([]string, 0, len(wantValue)+len(gotValue))
-		for key := range wantValue {
-			keys = append(keys, key)
-		}
-		for key := range gotValue {
-			if _, exists := wantValue[key]; !exists {
-				keys = append(keys, key)
-			}
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			wantChild, wantOK := wantValue[key]
-			gotChild, gotOK := gotValue[key]
-			childPath := path + "." + key
-			switch {
-			case !wantOK:
-				*diffs = append(*diffs, fmt.Sprintf("%s: unexpected key (got %s)", childPath, f13Render(gotChild)))
-			case !gotOK:
-				*diffs = append(*diffs, fmt.Sprintf("%s: missing (want %s)", childPath, f13Render(wantChild)))
-			default:
-				f13Compare(childPath, wantChild, gotChild, diffs)
-			}
-		}
-	case []any:
-		gotValue, ok := got.([]any)
-		if !ok {
-			*diffs = append(*diffs, fmt.Sprintf("%s: want array, got %s", path, f13Render(got)))
-			return
-		}
-		if len(wantValue) != len(gotValue) {
-			*diffs = append(*diffs, fmt.Sprintf("%s: want %d elements, got %d", path, len(wantValue), len(gotValue)))
-		}
-		for index := 0; index < len(wantValue) && index < len(gotValue); index++ {
-			f13Compare(fmt.Sprintf("%s[%d]", path, index), wantValue[index], gotValue[index], diffs)
-		}
-	default:
-		if !reflect.DeepEqual(want, got) {
-			*diffs = append(*diffs, fmt.Sprintf("%s: want %s, got %s", path, f13Render(want), f13Render(got)))
-		}
-	}
-}
-
-func f13Render(value any) string {
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		return fmt.Sprintf("%v", value)
-	}
-	if len(encoded) > 200 {
-		encoded = append(encoded[:200], []byte("...")...)
-	}
-	return string(encoded)
 }

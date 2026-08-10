@@ -55,7 +55,9 @@ type AgentSessionService interface {
 }
 
 // AgentSessionHandle is one live child session behind a Go-minted string
-// handle. Every method maps 1:1 to an agent_session_v1 request; ctx is
+// handle. Every method maps 1:1 to an agent_session_v1 request — except
+// Messages and SessionStats, which have no wire dispatch: the SDK reads both
+// from the event mirrors (messages_snapshot/appended/updated, stats). ctx is
 // cancelled when the SDK aborts that request (service_cancel).
 type AgentSessionHandle interface {
 	// Prompt resolves when the turn settles. Provider quota/limit failures

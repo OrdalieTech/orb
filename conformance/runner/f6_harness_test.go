@@ -218,28 +218,6 @@ func f6V4LabelOrNil(storage agentharness.SessionV4Storage, id string) any {
 	return nil
 }
 
-// f6V4Normalize mirrors the extract script's normalizeV4: filesystem mtimes
-// are the only nondeterministic v4 metadata.
-func f6V4Normalize(value any, root string) any {
-	switch typed := value.(type) {
-	case string:
-		return normalizeF6HarnessPath(typed, root)
-	case []any:
-		for index := range typed {
-			typed[index] = f6V4Normalize(typed[index], root)
-		}
-	case map[string]any:
-		for key := range typed {
-			if key == "modifiedAt" {
-				typed[key] = "<modifiedAt>"
-			} else {
-				typed[key] = f6V4Normalize(typed[key], root)
-			}
-		}
-	}
-	return value
-}
-
 func f6ObserveV4Storage(t *testing.T, storage agentharness.SessionV4Storage, metadata any, root string) map[string]any {
 	t.Helper()
 	fail := func(err error) {
@@ -284,7 +262,7 @@ func f6ObserveV4Storage(t *testing.T, storage agentharness.SessionV4Storage, met
 	for index := range logAfterSeq {
 		logAfterSeqIDs[index] = logAfterSeq[index].Seq
 	}
-	return f6V4Normalize(map[string]any{
+	return normalizeF6HarnessValue(map[string]any{
 		"metadata":              f6HarnessJSONValue(metadata),
 		"lanes":                 f6HarnessJSONValue(lanes),
 		"entries":               f6HarnessJSONValue(entries),
@@ -305,7 +283,7 @@ func f6ObserveV4Storage(t *testing.T, storage agentharness.SessionV4Storage, met
 			"root":   f6V4LabelOrNil(storage, "root-user"),
 			"second": f6V4LabelOrNil(storage, "second-user"),
 		},
-	}, root).(map[string]any)
+	}, root, "modifiedAt").(map[string]any)
 }
 
 func TestF6HarnessRehydratesUpstreamJSONLBytes(t *testing.T) {
@@ -341,7 +319,7 @@ func TestF6HarnessRehydratesUpstreamJSONLBytes(t *testing.T) {
 	if diff := runner.ByteDiff(input, written); diff != "" {
 		t.Fatalf("replayed script bytes diverged from fixture:\n%s", diff)
 	}
-	assertF6HarnessJSONEqual(t, fixture.Session["scriptErrors"], scriptErrors)
+	runner.AssertCanonicalJSONEqual(t, fixture.Session["scriptErrors"], scriptErrors, "")
 
 	reopened, err := agentharness.LoadJSONLSessionV4Storage(ctx, &env, path)
 	if err != nil {
@@ -358,7 +336,7 @@ func TestF6HarnessRehydratesUpstreamJSONLBytes(t *testing.T) {
 	})
 	memory.Now = f6V4Now
 	memoryScriptErrors := f6RunV4SessionScript(t, memory, root)
-	assertF6HarnessJSONEqual(t, fixture.Session["memoryScriptErrors"], memoryScriptErrors)
+	runner.AssertCanonicalJSONEqual(t, fixture.Session["memoryScriptErrors"], memoryScriptErrors, "")
 	assertF6HarnessMap(
 		t,
 		fixture.Session["memory"].(map[string]any),
@@ -396,14 +374,14 @@ func TestF6HarnessRehydratesUpstreamJSONLBytes(t *testing.T) {
 	if newestMessage != nil {
 		newestMessageID = newestMessage.ID
 	}
-	assertF6HarnessJSONEqual(t, fixture.Session["sessionApi"], map[string]any{
+	runner.AssertCanonicalJSONEqual(t, fixture.Session["sessionApi"], map[string]any{
 		"appendedMessageId": appendedMessageID,
 		"viewCustomId":      viewCustomID,
 		"mainLeaf":          mainLeaf,
 		"branchLeaf":        branchLeaf,
 		"newestMessageId":   newestMessageID,
 		"stats":             f6HarnessJSONValue(session.Stats()),
-	})
+	}, "")
 
 	reopened.Now = f6V4Now
 	if _, err := reopened.AppendEntry(json.RawMessage(
@@ -454,12 +432,12 @@ func TestF6HarnessForkContextAndErrorsMatchUpstream(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return f6V4Normalize(map[string]any{
+		return normalizeF6HarnessValue(map[string]any{
 			"entryIds": f6V4EntryIDs(entries),
 			"lanes":    f6HarnessJSONValue(storage.Lanes()),
 			"name":     f6V4NameOrNil(storage),
 			"labels":   map[string]any{"second": f6V4LabelOrNil(storage, "second-user")},
-		}, root).(map[string]any)
+		}, root, "modifiedAt").(map[string]any)
 	}
 	before, err := reopened.Fork(ctx, filepath.Join(root, "fork-before.jsonl"), forkHeader("fork-before"), agentharness.SessionV4ForkOptions{
 		EntryID: f6HarnessString("second-user"), Position: agentharness.ForkBefore,
@@ -484,13 +462,13 @@ func TestF6HarnessForkContextAndErrorsMatchUpstream(t *testing.T) {
 	_, invalidForkErr := reopened.Fork(ctx, filepath.Join(root, "fork-invalid.jsonl"), forkHeader("fork-invalid"), agentharness.SessionV4ForkOptions{
 		EntryID: f6HarnessString("thinking"),
 	})
-	assertF6HarnessJSONEqual(t, fixture.Session["forks"], map[string]any{
+	runner.AssertCanonicalJSONEqual(t, fixture.Session["forks"], map[string]any{
 		"before":        observeFork(before),
 		"at":            observeFork(at),
 		"tree":          observeFork(tree),
-		"treeBytes":     f6V4Normalize(string(treeBytes), root),
+		"treeBytes":     normalizeF6HarnessValue(string(treeBytes), root, "modifiedAt"),
 		"invalidTarget": f6HarnessSessionError(invalidForkErr, root),
-	})
+	}, "")
 
 	mainLeaf := f6V4MainLeaf(reopened)
 	branchPath, err := reopened.FindEntriesOnBranch(agentharness.SessionV4BranchQuery{
@@ -532,7 +510,7 @@ func TestF6HarnessForkContextAndErrorsMatchUpstream(t *testing.T) {
 			"error":   f6HarnessSessionError(openErr, root),
 		})
 	}
-	assertF6HarnessJSONEqual(t, fixture.Session["invalid"], gotInvalid)
+	runner.AssertCanonicalJSONEqual(t, fixture.Session["invalid"], gotInvalid, "")
 
 	const keptEntryLine = `{"kind":"entry","lane":"main","type":"custom","id":"kept","customType":"x","parentId":null,"seq":1,"timestamp":0}`
 	repair := func(name, content string) map[string]any {
@@ -558,10 +536,10 @@ func TestF6HarnessForkContextAndErrorsMatchUpstream(t *testing.T) {
 			"repairedContent": string(repairedContent),
 		}
 	}
-	assertF6HarnessJSONEqual(t, fixture.Session["repairs"], f6V4Normalize(map[string]any{
+	runner.AssertCanonicalJSONEqual(t, fixture.Session["repairs"], normalizeF6HarnessValue(map[string]any{
 		"tornTail":         repair("torn-tail", validHeader+"\n"+keptEntryLine+"\n{\"kind\":\"en"),
 		"unterminatedTail": repair("unterminated-tail", validHeader+"\n"+keptEntryLine),
-	}, root))
+	}, root, "modifiedAt"), "")
 }
 
 func TestF6HarnessContextTransformsAndProjectorsMatchUpstream(t *testing.T) {
@@ -646,7 +624,7 @@ func TestF6HarnessTypedEmptyActiveToolsMatchUpstream(t *testing.T) {
 			wantEntry = candidate
 		}
 	}
-	assertF6HarnessJSONEqual(t, wantEntry, f6HarnessJSONValue(entry))
+	runner.AssertCanonicalJSONEqual(t, wantEntry, f6HarnessJSONValue(entry), "")
 
 	mainLeaf := f6V4MainLeaf(storage)
 	branchPath, err := storage.FindEntriesOnBranch(agentharness.SessionV4BranchQuery{
@@ -659,10 +637,11 @@ func TestF6HarnessTypedEmptyActiveToolsMatchUpstream(t *testing.T) {
 	if contextState.ActiveToolNames == nil || len(contextState.ActiveToolNames) != 0 {
 		t.Fatalf("context active tools = %#v, want explicit empty state", contextState.ActiveToolNames)
 	}
-	assertF6HarnessJSONEqual(
+	runner.AssertCanonicalJSONEqual(
 		t,
 		fixture.Session["compactedContext"].(map[string]any)["activeToolNames"],
 		contextState.ActiveToolNames,
+		"",
 	)
 }
 
@@ -857,7 +836,7 @@ func TestF6HarnessSessionReposMatchUpstream(t *testing.T) {
 			assertF6HarnessMap(
 				t,
 				wantRepos[repoType].(map[string]any),
-				f6V4Normalize(got[repoType], root).(map[string]any),
+				normalizeF6HarnessValue(got[repoType], root, "modifiedAt").(map[string]any),
 			)
 		})
 	}
@@ -963,7 +942,7 @@ func TestF6HarnessNodeExecutionEnvironmentMatchesUpstream(t *testing.T) {
 		"readTextLines":               f6HarnessResult(lines, linesErr, root),
 		"negativeMaxLines":            f6HarnessResult(negativeLines, negativeLinesErr, root),
 		"readBinary":                  f6HarnessResult(f6HarnessBytes(binary), binaryErr, root),
-		"symlinkInfo":                 f6HarnessResult(map[string]any{"name": link.Name, "path": normalizeF6HarnessPath(link.Path, root), "kind": link.Kind, "size": link.Size}, linkErr, root),
+		"symlinkInfo":                 f6HarnessResult(map[string]any{"name": link.Name, "path": runner.NormalizeFixturePath(link.Path, root), "kind": link.Kind, "size": link.Size}, linkErr, root),
 		"symlinkCanonical":            f6HarnessResult(canonical, canonicalErr, root),
 		"missingExists":               f6HarnessResult(missing, existsErr, root),
 		"missingRead":                 f6HarnessResult(nil, missingErr, root),
@@ -1069,7 +1048,7 @@ func f6HarnessResult(value any, err error, root string) map[string]any {
 	if err != nil {
 		return map[string]any{"ok": false, "error": f6HarnessTypedError(err, root)}
 	}
-	return map[string]any{"ok": true, "value": normalizeF6HarnessValue(f6HarnessJSONValue(value), root)}
+	return map[string]any{"ok": true, "value": normalizeF6HarnessValue(f6HarnessJSONValue(value), root, "")}
 }
 
 func f6HarnessVoidResult(err error, root string) map[string]any {
@@ -1100,14 +1079,14 @@ func f6HarnessTempResult(pathValue string, err error, prefix, suffix, root strin
 }
 
 func f6HarnessTypedError(err error, root string) map[string]any {
-	result := map[string]any{"message": normalizeF6HarnessPath(err.Error(), root)}
+	result := map[string]any{"message": runner.NormalizeFixturePath(err.Error(), root)}
 	var fileError *agentharness.FileError
 	var executionError *agentharness.ExecutionError
 	switch {
 	case errors.As(err, &fileError):
 		result["code"] = fileError.Code
 		if fileError.Path != "" {
-			result["path"] = normalizeF6HarnessPath(fileError.Path, root)
+			result["path"] = runner.NormalizeFixturePath(fileError.Path, root)
 		}
 	case errors.As(err, &executionError):
 		result["code"] = executionError.Code
@@ -1119,7 +1098,7 @@ func f6HarnessSessionError(err error, root string) any {
 	if err == nil {
 		return nil
 	}
-	result := map[string]any{"message": normalizeF6HarnessPath(err.Error(), root)}
+	result := map[string]any{"message": runner.NormalizeFixturePath(err.Error(), root)}
 	var sessionError *agentharness.SessionError
 	if errors.As(err, &sessionError) {
 		result["code"] = sessionError.Code
@@ -1139,47 +1118,28 @@ func f6HarnessJSONValue(value any) any {
 	return decoded
 }
 
-func normalizeF6HarnessValue(value any, root string) any {
+// normalizeF6HarnessValue rewrites fixture roots recursively. redactKey
+// values are masked verbatim; v4 observations redact "modifiedAt", mirroring
+// the extract script's normalizeV4 (filesystem mtimes are the only
+// nondeterministic v4 metadata).
+func normalizeF6HarnessValue(value any, root, redactKey string) any {
 	switch typed := value.(type) {
 	case string:
-		return normalizeF6HarnessPath(typed, root)
+		return runner.NormalizeFixturePath(typed, root)
 	case []any:
 		for index := range typed {
-			typed[index] = normalizeF6HarnessValue(typed[index], root)
+			typed[index] = normalizeF6HarnessValue(typed[index], root, redactKey)
 		}
 	case map[string]any:
 		for key := range typed {
-			typed[key] = normalizeF6HarnessValue(typed[key], root)
+			if redactKey != "" && key == redactKey {
+				typed[key] = "<" + redactKey + ">"
+			} else {
+				typed[key] = normalizeF6HarnessValue(typed[key], root, redactKey)
+			}
 		}
 	}
 	return value
-}
-
-func normalizeF6HarnessPath(value, root string) string {
-	return runner.ReplacePathAliases(filepath.ToSlash(value), filepath.ToSlash(root), "<fixture>")
-}
-
-func assertF6HarnessJSONEqual(t *testing.T, want, got any) {
-	t.Helper()
-	wantJSON, err := json.Marshal(want)
-	if err != nil {
-		t.Fatal(err)
-	}
-	gotJSON, err := json.Marshal(got)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantJSON, err = runner.CanonicalJSON(wantJSON)
-	if err != nil {
-		t.Fatal(err)
-	}
-	gotJSON, err = runner.CanonicalJSON(gotJSON)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if diff := runner.ByteDiff(wantJSON, gotJSON); diff != "" {
-		t.Fatal(diff)
-	}
 }
 
 func assertF6HarnessMap(t *testing.T, want, got map[string]any) {
@@ -1207,7 +1167,7 @@ func assertF6HarnessMap(t *testing.T, want, got map[string]any) {
 				assertF6HarnessMap(t, wantMap, gotMap)
 				return
 			}
-			assertF6HarnessJSONEqual(t, want[key], value)
+			runner.AssertCanonicalJSONEqual(t, want[key], value, "")
 		})
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"sync"
 
 	"github.com/OrdalieTech/orb/ai"
 )
@@ -15,7 +16,14 @@ type Catalog struct {
 }
 
 // Builtin loads the catalog generated from the committed models.dev snapshot.
-func Builtin() (*Catalog, error) { return Decode(generatedCatalogJSON) }
+// The decoded catalog is cached for the process lifetime: the embedded JSON is
+// immutable and every accessor returns detached values, so callers share one
+// instance instead of re-decoding ~518KB per startup surface.
+func Builtin() (*Catalog, error) { return builtinCatalog() }
+
+var builtinCatalog = sync.OnceValues(func() (*Catalog, error) {
+	return Decode(generatedCatalogJSON)
+})
 
 // Decode loads the normalized provider-keyed catalog shape.
 func Decode(data []byte) (*Catalog, error) {
@@ -93,6 +101,55 @@ func (catalog *Catalog) Merge(overlay *Catalog) *Catalog {
 		}
 	}
 	return &Catalog{providers: merged}
+}
+
+// MergedModels returns what Merge(overlay).Models() returns without
+// materializing the intermediate merged catalog: each model is cloned exactly
+// once into the sorted result.
+func (catalog *Catalog) MergedModels(overlay *Catalog) []ai.Model {
+	if catalog == nil {
+		catalog = &Catalog{}
+	}
+	providerIDs := make(map[string]struct{}, len(catalog.providers))
+	for providerID := range catalog.providers {
+		providerIDs[providerID] = struct{}{}
+	}
+	if overlay != nil {
+		for providerID := range overlay.providers {
+			providerIDs[providerID] = struct{}{}
+		}
+	}
+	sortedProviders := make([]string, 0, len(providerIDs))
+	for providerID := range providerIDs {
+		sortedProviders = append(sortedProviders, providerID)
+	}
+	slices.Sort(sortedProviders)
+	result := make([]ai.Model, 0)
+	ids := make([]string, 0)
+	for _, providerID := range sortedProviders {
+		base, over := catalog.providers[providerID], map[string]ai.Model(nil)
+		if overlay != nil {
+			over = overlay.providers[providerID]
+		}
+		ids = ids[:0]
+		for id := range base {
+			ids = append(ids, id)
+		}
+		for id := range over {
+			if _, exists := base[id]; !exists {
+				ids = append(ids, id)
+			}
+		}
+		slices.Sort(ids)
+		for _, id := range ids {
+			model, ok := over[id]
+			if !ok {
+				model = base[id]
+			}
+			result = append(result, cloneModel(model))
+		}
+	}
+	return result
 }
 
 func (catalog *Catalog) MarshalJSON() ([]byte, error) {

@@ -21,6 +21,7 @@ files appends rows. Package-level baseline:
 | `packages/coding-agent/src/core/tools/truncate.ts` | `internal/truncate/` |
 | (npm `partial-json`) | `internal/partialjson/` |
 | (npm `grok-mermaid`) | `internal/mermaid/` |
+| (Go `github.com/alecthomas/chroma/v2/lexers` v2.27.0, vendored byte-close with a lazy registry; 4 files deviate) | `internal/chromalexers/` |
 | `packages/server/` (renamed from `packages/orchestrator/` in v0.81.0) | — excluded (DECISIONS ledger) |
 | `packages/client/`, `packages/protocol/` (added v0.84.0) | — excluded (DECISIONS ledger) |
 | `packages/telemetry/` (added v0.84.0) | — excluded (DECISIONS ledger) |
@@ -182,7 +183,7 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/coding-agent/src/package-manager-cli.ts`, `packages/coding-agent/src/cli/project-trust.ts`, `packages/coding-agent/test/package-command-paths.test.ts` | `cmd/orb/package_cli.go`, `cmd/orb/package_cli_test.go`, `cmd/orb/runtime.go` | WP-360 |
 | Package sources, resource resolution, trust store, and trust.json format | `conformance/extract/wp360-packages.ts`, `conformance/fixtures/WP360/`, `conformance/runner/wp360_packages_test.go` | WP-360 |
 | `packages/tui/src/{tui,terminal,keybindings,keys,stdin-buffer,utils}.ts` | `tui/component.go`, `tui/tui.go`, `tui/tui_test.go`, `tui/terminal.go`, `tui/terminal_unix.go`, `tui/terminal_test.go`, `tui/terminal_pty_linux_test.go`, `tui/keybindings.go`, `tui/keybindings_test.go`, `tui/keys.go`, `tui/keys_test.go`, `tui/stdin_buffer.go`, `tui/stdin_buffer_test.go`, `tui/width.go`, `tui/width_test.go` | WP-410 |
-| `packages/tui/src/tui.ts` (`Container`) and `packages/tui/src/components/{box,text,truncated-text,spacer,loader,cancellable-loader}.ts` | `tui/container.go`, `tui/box.go`, `tui/text.go`, `tui/truncated_text.go`, `tui/spacer.go`, `tui/loader.go`, `tui/cancellable_loader.go`, `tui/components_test.go` | WP-410 |
+| `packages/tui/src/tui.ts` (`Container`) and `packages/tui/src/components/{box,text,truncated-text,spacer,loader}.ts` (`cancellable-loader.ts` unported — its sole upstream consumer never was) | `tui/container.go`, `tui/box.go`, `tui/text.go`, `tui/truncated_text.go`, `tui/spacer.go`, `tui/loader.go`, `tui/components_test.go` | WP-410 |
 | TUI primitive rendering from the pinned upstream public API | `conformance/extract/f12-tui.ts`, `conformance/fixtures/F12/`, `conformance/runner/f12_tui_test.go` | WP-410 |
 | `packages/tui/src/components/markdown.ts`, `packages/tui/test/markdown.test.ts` | `tui/markdown.go`, `tui/markdown_blocks.go`, `tui/markdown_inline.go`, `tui/markdown_table.go`, `tui/markdown_test.go` | WP-430 |
 | `packages/coding-agent/src/modes/interactive/theme/{theme.ts,dark.json,light.json}`, `packages/coding-agent/src/utils/syntax-highlight.ts` | `codingagent/modes/theme/{colors.go,theme.go,highlight.go,dark.json,light.json,theme_test.go}` | WP-430 |
@@ -280,7 +281,7 @@ File-level rows are appended beneath this line as WPs land.
 | `packages/coding-agent/test/suite/regressions/4167-thinking-toggle-pending-tool-render.test.ts` | `codingagent/modes/pending_tool_render_regression_test.go` | Sprint 4 |
 | `packages/coding-agent/test/suite/regressions/5943-session-start-notify.test.ts` (file-backed context slice and session-rebind ordering; broader startup resource catalog/diagnostics still deferred) | `codingagent/modes/{interactive,session_start_render_regression_test}.go`, `conformance/extract/f12-ui-lifecycle.ts` | Sprint 4 / v0.83.0 sync |
 | `packages/coding-agent/test/suite/regressions/extension-factory-cache.test.ts` (fresh extension state on reload) | `codingagent/extensions/host/manager_e2e_test.go` (`TestRealHostReloadStartsFreshProcess`) | D31 host cutover |
-| `packages/coding-agent/src/core/extensions/types.ts` (per-tool `*ToolCallEvent`/`*ToolResultEvent` variants; `isXToolResult`/`isToolCallEventType` guards become typed accessors) | `codingagent/extensions/tool_events.go`, `codingagent/extensions/tool_events_test.go` | Sprint 4 |
+| `packages/coding-agent/src/core/extensions/types.ts` (per-tool `*ToolCallEvent`/`*ToolResultEvent` variants) | — removed (zero consumers; trim 2026-08-10) | Sprint 4 |
 | `packages/ai/src/utils/json-parse.ts` (`parseStreamingJson` public index export) | `ai/streaming_json.go`, `ai/streaming_json_test.go` | Sprint 4 |
 | `packages/ai/test/anthropic-tool-name-normalization.test.ts` | `ai/api/anthropicmessages_test.go` (`TestAnthropicClaudeCodeToolNameNormalizationRoundTrip`) | Sprint 4 |
 | `packages/ai/test/github-copilot-anthropic.test.ts` | `ai/api/anthropicmessages_test.go` (`TestAnthropicCopilotAdaptiveThinkingEffortOverrides`, `TestAnthropicCopilotAdaptiveThinkingOmitsInterleavedBeta`, `TestAnthropicCopilotDynamicHeaders`) | Sprint 4 |

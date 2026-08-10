@@ -2,7 +2,6 @@ package runner_test
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/OrdalieTech/orb/ai/providers/faux"
@@ -53,12 +52,12 @@ func TestWP370RuntimeLifecycleMatchesUpstream(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got := runWP370NewSession(t, test.cancel)
-			assertWP370JSONEqual(t, test.want, got)
+			runner.AssertCanonicalJSONEqual(t, test.want, got, "")
 		})
 	}
 
 	gotDispose := runWP370Dispose(t)
-	assertWP370JSONEqual(t, fixture.Cases.Dispose, gotDispose)
+	runner.AssertCanonicalJSONEqual(t, fixture.Cases.Dispose, gotDispose, "")
 }
 
 func runWP370NewSession(t *testing.T, cancel bool) wp370RuntimeCase {
@@ -197,27 +196,4 @@ func wp370StartEvent(event extensions.SessionStartEvent) map[string]any {
 		result["previousSessionFile"] = *event.PreviousSessionFile
 	}
 	return result
-}
-
-func assertWP370JSONEqual(t *testing.T, want, got any) {
-	t.Helper()
-	wantJSON, err := json.Marshal(want)
-	if err != nil {
-		t.Fatal(err)
-	}
-	gotJSON, err := json.Marshal(got)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantJSON, err = runner.CanonicalJSON(wantJSON)
-	if err != nil {
-		t.Fatal(err)
-	}
-	gotJSON, err = runner.CanonicalJSON(gotJSON)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if diff := runner.ByteDiff(wantJSON, gotJSON); diff != "" {
-		t.Fatal(diff)
-	}
 }

@@ -22,7 +22,7 @@ import (
 )
 
 func userMessage(text string) *ai.UserMessage {
-	return userMessageWithImages(text, nil)
+	return userMessageWithImagesAt(text, nil, time.Now().UnixMilli())
 }
 
 func requireThreeArgumentExecuteBash(func(*SessionRuntime, context.Context, string, *bool) (tools.BashResult, error)) {
