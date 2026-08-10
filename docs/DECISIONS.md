@@ -9,7 +9,7 @@ else (implementation detail) is decided by whoever executes the work package, wi
 | | |
 |---|---|
 | Upstream project | **pi** — https://pi.dev, repo `earendil-works/pi` (formerly `badlogic/pi-mono`) |
-| Pinned reference | commit `845d6ff1f6643aba440341cce877ce1c43ebbc39`, version **0.83.0** (2026-07-29) |
+| Pinned reference | commit `53fa77ccd8a279eb87e92294ef3687b03ff80112`, version **0.84.1** (2026-08-07) |
 | Upstream license | MIT, © 2025 Mario Zechner |
 | This project | `github.com/OrdalieTech/orb`, MIT, © Ordalie — with attribution to upstream in LICENSE and README |
 
