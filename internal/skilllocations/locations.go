@@ -30,7 +30,11 @@ func User(home string) []string {
 			path = filepath.Join(home, path[2:])
 		}
 		if path != "" && !filepath.IsAbs(path) {
-			path, _ = filepath.Abs(path)
+			abs, err := filepath.Abs(path)
+			if err != nil {
+				return ""
+			}
+			path = abs
 		}
 		return filepath.Clean(path)
 	}
