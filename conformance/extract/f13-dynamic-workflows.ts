@@ -18,6 +18,13 @@
  *  - Clocks are pinned (fixed Date, Math.random = 0); remaining ambient values
  *    (temp paths, UUIDs, PIDs) are canonicalized before goldens are written, so
  *    fixtures-check's regenerate-and-byte-diff passes.
+ *  - Faux token accounting counts the serialized context (system prompt with
+ *    cwd and PI_PACKAGE_DIR docs paths, message texts, tools JSON), so every
+ *    machine-specific path root is rewritten to the same canonical
+ *    placeholders BEFORE the provider estimates usage
+ *    (canonicalizeTokenContext). Token counts in goldens therefore never
+ *    encode where the extraction ran; the Orb replay harness mirrors the same
+ *    rewrite over its own roots (f13_orb_harness_test.go).
  *
  * Scenario coverage (behavior goldens; cases/<name>.json):
  *  - foreground-basic ........ foreground run: phases, logs, journal, usage +
@@ -154,6 +161,47 @@ function makeCanonicalizer(roots: string[], extraReplacements: Array<[string, st
 
 function prettyJSON(value: unknown): string {
   return JSON.stringify(value, null, 2);
+}
+
+/**
+ * Machine-specific path roots that can reach the faux provider's token
+ * accounting: the child-session system prompt (cwd, worktree cwds,
+ * PI_PACKAGE_DIR docs paths), message texts, and the serialized tools array.
+ * Upstream faux estimates usage over the serialized context, so these are
+ * rewritten to the family's canonical placeholders BEFORE the provider sees
+ * the context — the counts baked into goldens must not depend on the temp
+ * root or the checkout location. Set for the duration of a generate run; the
+ * Orb harness applies the identical table over its own roots.
+ */
+let tokenCountReplacements: Array<[string, string]> = [];
+
+function canonicalizeTokenText(input: string): string {
+  let out = input;
+  for (const [from, to] of tokenCountReplacements) out = out.split(from).join(to);
+  return out;
+}
+
+/**
+ * Canonical copy of a provider-call context for token counting only. The
+ * faux provider serializes systemPrompt + message texts + JSON.stringify of
+ * tools; replacing the path roots through a stringify/parse round trip is
+ * byte-equivalent to replacing them inside that serialization (POSIX paths
+ * and the placeholders contain no JSON-escaped characters).
+ */
+function canonicalizeTokenContext<T>(context: T): T {
+  if (tokenCountReplacements.length === 0 || !context || typeof context !== "object") return context;
+  const source = context as Record<string, unknown>;
+  const canonical: Record<string, unknown> = { ...source };
+  if (typeof source.systemPrompt === "string") {
+    canonical.systemPrompt = canonicalizeTokenText(source.systemPrompt);
+  }
+  if (source.messages !== undefined) {
+    canonical.messages = JSON.parse(canonicalizeTokenText(JSON.stringify(source.messages)));
+  }
+  if (source.tools !== undefined) {
+    canonical.tools = JSON.parse(canonicalizeTokenText(JSON.stringify(source.tools)));
+  }
+  return canonical as T;
 }
 
 // ---------------------------------------------------------------------------
@@ -440,7 +488,9 @@ async function createFauxWorld(loaded: Loaded, options: { models?: any[] } = {})
         toolNames: (context?.tools ?? []).map((tool: any) => tool.name),
         messages: (context?.messages ?? []).map(projectMessage),
       });
-      return innerStreamSimple(model, context, streamOptions);
+      // Faux token accounting counts the serialized context; hand it a
+      // canonical copy so usage never encodes machine-specific paths.
+      return innerStreamSimple(model, canonicalizeTokenContext(context), streamOptions);
     },
   };
   const credentials = authStorage.AuthStorage.inMemory();
@@ -657,6 +707,7 @@ export async function generateF13DynamicWorkflows(
     HOME: process.env.HOME,
     PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR,
     XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+    PI_PACKAGE_DIR: process.env.PI_PACKAGE_DIR,
   };
   try {
     await mkdir(agentDir, { recursive: true });
@@ -703,6 +754,11 @@ export async function generateF13DynamicWorkflows(
     process.env.HOME = home;
     process.env.PI_CODING_AGENT_DIR = agentDir;
     delete process.env.XDG_CONFIG_HOME;
+    // Pin the package dir explicitly (the F12 extractors happen to leave the
+    // same value behind, but F13's faux token accounting depends on it: the
+    // child-session system prompt embeds the docs paths derived from it).
+    const packageDir = path.join(upstreamRoot, "packages", "coding-agent");
+    process.env.PI_PACKAGE_DIR = packageDir;
     // Match the F12 extractors' explicit styling state so rendered frames are
     // identical whether this family runs standalone or after them in
     // generate.ts (they leave FORCE_COLOR=3 and an initialized theme behind).
@@ -711,7 +767,20 @@ export async function generateF13DynamicWorkflows(
     // Workflow project state is keyed by `<basename>-<sha256(cwd)[:12]>`
     // (workflow-paths.ts); the hash is temp-path-dependent, so alias it.
     const projectKeyHash = createHash("sha256").update(project).digest("hex").slice(0, 12);
-    const canon = makeCanonicalizer([tmpRoot], [[projectKeyHash, "<cwdhash>"]]);
+    // Path replacements shared by the golden canonicalizer and the faux
+    // token-count canonicalizer. Order matters: packageDir is a child of
+    // upstreamRoot and must be rewritten first.
+    const pathReplacements: Array<[string, string]> = [
+      [projectKeyHash, "<cwdhash>"],
+      [packageDir, "<pi-package>"],
+      [upstreamRoot, "<upstream>"],
+    ];
+    const canon = makeCanonicalizer([tmpRoot], pathReplacements);
+    tokenCountReplacements = [
+      [tmpRoot, "<fixture>"],
+      [tmpRoot.replace(/[/.]/g, "-"), "<fixture-dash>"],
+      ...pathReplacements,
+    ];
 
     await withOfflineGeneratedCatalog(upstreamRoot, async () => {
       const loaded = await loadModules(upstreamRoot, pluginPackageRoot);
@@ -779,7 +848,14 @@ export async function generateF13DynamicWorkflows(
             "packages/coding-agent/src/core/{sdk.ts,agent-session.ts,model-runtime.ts,model-registry.ts,session-manager.ts,settings-manager.ts,resource-loader.ts,tools/*} + packages/ai/src/providers/faux.ts + packages/tui/src + npm:@quintinshaw/pi-dynamic-workflows@3.5.1",
           plugin: { name: PLUGIN_NAME, version: PLUGIN_VERSION, integrity: PLUGIN_INTEGRITY },
           fixedNow: FIXED_NOW,
-          canonicalized: ["<fixture> temp roots", "<fixture-dash> dashed cwd encodings", "<uuid-N> UUIDs"],
+          canonicalized: [
+            "<fixture> temp roots",
+            "<fixture-dash> dashed cwd encodings",
+            "<uuid-N> UUIDs",
+            "<cwdhash> workflow project-key hash",
+            "<pi-package>/<upstream> package dirs",
+            "faux token counts estimated over the same canonical placeholders (machine-independent)",
+          ],
           referenceOnly: referenceFiles,
           files: ["cases.json", ...caseFiles, ...referenceFiles],
         })}\n`,
@@ -790,6 +866,7 @@ export async function generateF13DynamicWorkflows(
       );
     });
   } finally {
+    tokenCountReplacements = [];
     for (const [key, value] of Object.entries(savedEnv)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;

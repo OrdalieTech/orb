@@ -12,7 +12,10 @@
   "canonicalized": [
     "<fixture> temp roots",
     "<fixture-dash> dashed cwd encodings",
-    "<uuid-N> UUIDs"
+    "<uuid-N> UUIDs",
+    "<cwdhash> workflow project-key hash",
+    "<pi-package>/<upstream> package dirs",
+    "faux token counts estimated over the same canonical placeholders (machine-independent)"
   ],
   "referenceOnly": [
     "reference-tui/task-panel.json",
