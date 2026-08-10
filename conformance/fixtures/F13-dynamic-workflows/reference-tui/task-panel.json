@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "referenceOnly": true,
+  "note": "Reference-only upstream TUI observation (D35): Orb frame goldens are Orb-owned snapshots; do not gate byte parity on this file.",
+  "scenario": "task-panel",
+  "pausedCompact": {
+    "60": [
+      "\u001b[1mWorkflows running (1):\u001b[22m",
+      "  ⏸ limits  1/2 agents",
+      "\u001b[38;5;241m  /workflows — open navigator\u001b[39m"
+    ],
+    "100": [
+      "\u001b[1mWorkflows running (1):\u001b[22m",
+      "  ⏸ limits  1/2 agents",
+      "\u001b[38;5;241m  /workflows — open navigator\u001b[39m"
+    ]
+  },
+  "pausedDetailed": {
+    "100": [
+      "\u001b[1mWorkflows running (1):\u001b[22m",
+      "  ⏸ \u001b[1mlimits\u001b[22m  \u001b[38;5;241m1/2 agents · 5.5K tok\u001b[39m",
+      "\u001b[38;5;109m  ✓ (no phase)\u001b[39m\u001b[38;5;241m  1/2 agents · 1 errors · 5.5K tok\u001b[39m",
+      "    [1] ✓ first\u001b[38;5;241m 2.8K tok\u001b[39m\u001b[38;5;241m · faux-model\u001b[39m",
+      "    [2] ✗ second\u001b[38;5;241m 2.8K tok\u001b[39m\u001b[38;5;241m · faux-model\u001b[39m",
+      "\u001b[38;5;241m  /workflows — open navigator\u001b[39m"
+    ]
+  },
+  "idleAfterCompletion": {
+    "100": []
+  }
+}

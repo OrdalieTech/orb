@@ -105,7 +105,7 @@ func TestBuiltInToolPromptDataUsesActiveOrder(t *testing.T) {
 
 func TestBuiltInBashPromptGuidelineCoversSessionEnvironment(t *testing.T) {
 	_, guidelines := BuiltInToolPromptData([]string{"bash"})
-	want := "Inspect PI_* environment variables for current model and session details."
+	want := "You can inspect PI_* environment variables for current model and session details."
 	if len(guidelines) != 1 || guidelines[0] != want {
 		t.Fatalf("bash guidelines = %#v", guidelines)
 	}

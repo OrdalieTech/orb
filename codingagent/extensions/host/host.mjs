@@ -1,9 +1,23 @@
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 
 const PROTOCOL = "orb-extension-host";
 const VERSION = 1;
 const MAX_FRAME_SIZE = 4 * 1024 * 1024;
+const HOST_CAPABILITIES = [
+	"tool_updates",
+	"providers",
+	"ui",
+	"state_v1",
+	"sdk_v1",
+	"agent_session_v1",
+	"model_runtime_v1",
+];
+// Filled at handshake with the intersection of HOST_CAPABILITIES and what orb
+// advertised. The services section hands it to the orb-extension-sdk transport
+// and ctx.modelRegistry's `.runtime` facade degrades on it for older orbs.
+const negotiatedCapabilities = new Set();
 
 let nextRequestId = 1;
 let agent = {};
@@ -193,6 +207,11 @@ function makeContext(value = {}, state) {
 
 
 function serializableTool(tool, state) {
+	// A `get promptGuidelines()` accessor is upstream's lazy-guidelines
+	// contract: mark it so orb re-reads the live value per system-prompt build
+	// (get_tool_prompt_guidelines) instead of freezing this snapshot.
+	const lazyPromptGuidelines =
+		typeof Object.getOwnPropertyDescriptor(tool, "promptGuidelines")?.get === "function";
 	return {
 		name: tool.name,
 		label: tool.label ?? "",
@@ -205,6 +224,9 @@ function serializableTool(tool, state) {
 			: { constrainedSampling: tool.constrainedSampling }),
 		...(tool.renderShell === undefined ? {} : { renderShell: tool.renderShell }),
 		...(tool.executionMode === undefined ? {} : { executionMode: tool.executionMode }),
+		...(lazyPromptGuidelines ? { lazyPromptGuidelines: true } : {}),
+		...(typeof tool.renderCall === "function" ? { hasRenderCall: true } : {}),
+		...(typeof tool.renderResult === "function" ? { hasRenderResult: true } : {}),
 	};
 }
 
@@ -300,9 +322,17 @@ async function executeTool(frame) {
 	const controller = retainRequestAbort(frame.id);
 	const onUpdate = (partial) => emit("tool_update", { requestId: frame.id, partial: partial ?? { content: [] } });
 	try {
+		// The tool object retains upstream's sync prepareArguments; run it here
+		// so its normalization (and its throw-on-invalid contract) reaches
+		// execute. Orb has already schema-validated the raw params, so inputs
+		// that only validate AFTER preparation still fail Go-side — the
+		// residual ordering divergence stays inventoried in
+		// docs/extension-host-protocol.md.
+		let params = frame.params.params;
+		if (typeof tool.prepareArguments === "function") params = tool.prepareArguments(params);
 		const result = await tool.execute(
 			frame.params.toolCallId,
-			frame.params.params,
+			params,
 			controller.signal,
 			onUpdate,
 			makeContext(frame.params.context, state),
@@ -801,6 +831,57 @@ registerHostSection((() => {
 		return { disposed: component !== undefined };
 	}
 
+	// Tool-wire gap closures: registered tools keep their full object in this
+	// process, so lazy promptGuidelines getters and live renderCall/
+	// renderResult functions are served from here instead of being dropped by
+	// the registration snapshot.
+	function registeredTool(params) {
+		const state = extensions.get(params.extensionId);
+		const tool = state?.tools.get(params.toolName);
+		if (!tool) throw new Error(`unknown tool ${params.toolName}`);
+		return tool;
+	}
+
+	function getToolPromptGuidelines(params) {
+		const tool = registeredTool(params);
+		const guidelines = tool.promptGuidelines;
+		if (guidelines === undefined || guidelines === null) return { guidelines: [] };
+		return { guidelines: Array.from(guidelines, String) };
+	}
+
+	function createToolRenderComponent(params) {
+		const tool = registeredTool(params);
+		const renderer = params.kind === "result" ? tool.renderResult : tool.renderCall;
+		if (typeof renderer !== "function") return { present: false };
+		const theme = activateSDKTheme(createTheme(params.theme));
+		const wireContext = params.context ?? {};
+		const renderContext = Object.freeze({
+			toolCallId: wireContext.toolCallId ?? "",
+			cwd: wireContext.cwd ?? agent.cwd ?? process.cwd(),
+			executionStarted: wireContext.executionStarted === true,
+			argsComplete: wireContext.argsComplete === true,
+			isPartial: wireContext.isPartial === true,
+			expanded: wireContext.expanded === true,
+			showImages: wireContext.showImages === true,
+			isError: wireContext.isError === true,
+			args: params.kind === "result" ? wireContext.args : params.value,
+			// Live members stay Go-side; components get inert stand-ins.
+			invalidate: () => {},
+			state: {},
+			lastComponent: undefined,
+		});
+		const component = params.kind === "result"
+			? renderer(params.value, { expanded: params.expanded === true, isPartial: params.isPartial === true }, theme, renderContext)
+			: renderer(params.value, theme, renderContext);
+		if (component && typeof component.then === "function") throw new TypeError("tool renderer must return synchronously");
+		if (component == null) return { present: false };
+		if (typeof component.render !== "function") throw new TypeError("tool renderer component has no render function");
+		const state = extensions.get(params.extensionId);
+		const handle = `${state.id}-tool-renderer-${nextRendererComponentID++}`;
+		rendererComponents.set(handle, component);
+		return { present: true, handle };
+	}
+
 	function createKeybindings(snapshot) {
 		const resolved = snapshot?.resolved ?? {};
 		return Object.freeze({
@@ -1202,6 +1283,8 @@ registerHostSection((() => {
 			if (frame.method === "create_registered_renderer_component") return { handled: true, result: createRegisteredRendererComponent(frame.params) };
 			if (frame.method === "render_registered_renderer_component") return { handled: true, result: renderRegisteredRendererComponent(frame.params) };
 			if (frame.method === "dispose_registered_renderer_component") return { handled: true, result: disposeRegisteredRendererComponent(frame.params) };
+			if (frame.method === "get_tool_prompt_guidelines") return { handled: true, result: getToolPromptGuidelines(frame.params) };
+			if (frame.method === "create_tool_render_component") return { handled: true, result: createToolRenderComponent(frame.params) };
 			return { handled: false };
 		},
 		handleEvent(frame) {
@@ -1482,8 +1565,45 @@ registerHostSection((() => {
 			: message;
 	}
 
+	// The workflow plugin reads ModelRegistry's upstream-private `runtime` field
+	// through a cast (runtimeOf) and hands it back as
+	// CreateAgentSessionOptions.modelRuntime, so ctx.modelRegistry carries a
+	// ModelRuntime-shaped view over the same snapshot. Its runtimeId
+	// "context:<extensionId>" self-identifies; the model_runtime_v1 service
+	// resolves it to this extension's live registry, with a snapshot fallback
+	// when the capability was not negotiated (older orb).
+	function createContextModelRuntime(state) {
+		const contextHandle = `context:${state.id}`;
+		const snapshotOf = () => state.stateSnapshot.modelRegistry;
+		const availableOf = () => clone(snapshotOf()?.available ?? []);
+		return Object.freeze({
+			runtimeId: contextHandle,
+			extensionId: state.id,
+			async getAvailable(providerId) {
+				let available;
+				if (negotiatedCapabilities.has("model_runtime_v1")) {
+					const result = await request("model_runtime_get_available", { extensionId: state.id, handle: contextHandle });
+					available = result?.models ?? [];
+				} else {
+					available = availableOf();
+				}
+				return providerId ? available.filter((model) => model.provider === providerId) : available;
+			},
+			getAvailableSnapshot: availableOf,
+			getModels: () => clone(snapshotOf()?.all ?? []),
+			getModel(provider, id) {
+				return clone((snapshotOf()?.all ?? []).find((model) => model.provider === provider && model.id === id));
+			},
+			hasConfiguredAuth(provider) {
+				return snapshotOf()?.providers?.[providerName(provider)]?.authStatus?.configured === true;
+			},
+			async dispose() {},
+		});
+	}
+
 	function createModelRegistry(state) {
 		return Object.freeze({
+			runtime: createContextModelRuntime(state),
 			refresh: async () => {},
 			getError: () => state.stateSnapshot.modelRegistry?.error || undefined,
 			getAll: () => clone(state.stateSnapshot.modelRegistry?.all ?? []),
@@ -1773,11 +1893,400 @@ registerHostSection((() => {
 })());
 // ===== END SECTION =====
 
+// ===== SECTION: services (orb-extension-sdk transport, agent-f) =====
+registerHostSection((() => {
+	// Per-session transport state: event sinks and the live customTools
+	// closures orb calls back into via execute_session_tool.
+	const sessions = new Map(); // session handle -> { events, tools: Map<name, tool>, lastSeq }
+	const transfers = new Map(); // transferId -> { parts, received, total }
+	const managerSessions = new WeakMap(); // SDK SessionManager instance -> session handle
+	let helloValue = {};
+
+	function plainJSON(value) {
+		if (value === undefined) return undefined;
+		return JSON.parse(JSON.stringify(value, (_key, item) => {
+			if (typeof item === "function" || typeof item === "undefined") return undefined;
+			return item;
+		}));
+	}
+
+	// Like request(), but the id is retained so an AbortSignal mirrors into orb
+	// as service_cancel, cancelling the Go-side context of the in-flight
+	// request. Settlement still comes from orb's response (structured
+	// {code,message}) so cancellation stays deterministic rather than local.
+	function requestCancellable(method, params, signal) {
+		if (signal === undefined || signal === null) return request(method, params);
+		if (signal.aborted) return Promise.reject(signalAbortError(signal));
+		const id = `host-${nextRequestId++}`;
+		const requesting = new Promise((resolve, reject) => {
+			pending.set(id, { resolve, reject });
+			try {
+				write({ kind: "request", id, method, params });
+			} catch (error) {
+				pending.delete(id);
+				reject(error);
+			}
+		});
+		const cancel = () => {
+			try {
+				emit("service_cancel", { requestId: id, reason: signalReason(signal) });
+			} catch {
+				// Transport gone: the close handler rejects the pending waiter.
+			}
+		};
+		signal.addEventListener("abort", cancel, { once: true });
+		return requesting.finally(() => signal.removeEventListener("abort", cancel));
+	}
+
+	function signalReason(signal) {
+		const reason = signal.reason;
+		if (reason === undefined || reason === null) return "";
+		return reason instanceof Error ? reason.message : String(reason);
+	}
+
+	function signalAbortError(signal) {
+		if (signal.reason instanceof Error) return signal.reason;
+		const error = new Error(signal.reason ? String(signal.reason) : "This operation was aborted");
+		error.name = "AbortError";
+		return error;
+	}
+
+	function catalogFromSnapshot(snapshot) {
+		const providers = snapshot?.providers ?? {};
+		return {
+			models: snapshot?.all ?? [],
+			available: snapshot?.available ?? [],
+			authenticatedProviders: Object.keys(providers)
+				.filter((id) => providers[id]?.authStatus?.configured === true)
+				.sort(),
+		};
+	}
+
+	function modelRuntimeRef(runtimeValue) {
+		if (!runtimeValue || typeof runtimeValue !== "object" || typeof runtimeValue.runtimeId !== "string") {
+			return undefined;
+		}
+		return {
+			handle: runtimeValue.runtimeId,
+			...(typeof runtimeValue.extensionId === "string" ? { extensionId: runtimeValue.extensionId } : {}),
+		};
+	}
+
+	function serializableSessionTool(tool) {
+		if (tool && typeof tool === "object" && typeof tool.__orbBuiltinTool === "string") {
+			return {
+				builtin: tool.__orbBuiltinTool,
+				// Coding-tool markers carry upstream createCodingTools' prompt
+				// contribution (bash only); the Go bridge substitutes it for the
+				// interactive built-in metadata in the child's system prompt.
+				...(tool.promptSnippet === undefined ? {} : { promptSnippet: tool.promptSnippet }),
+				...(tool.promptGuidelines === undefined ? {} : { promptGuidelines: plainJSON(tool.promptGuidelines) }),
+			};
+		}
+		return {
+			name: tool.name,
+			...(tool.label === undefined ? {} : { label: tool.label }),
+			...(tool.description === undefined ? {} : { description: tool.description }),
+			...(tool.promptSnippet === undefined ? {} : { promptSnippet: tool.promptSnippet }),
+			// A lazy `get promptGuidelines()` is re-read here on every create, so
+			// children see current guidelines even though today's register_tool
+			// wire snapshots them once.
+			...(tool.promptGuidelines === undefined ? {} : { promptGuidelines: plainJSON(tool.promptGuidelines) }),
+			...(tool.parameters === undefined ? {} : { parameters: plainJSON(tool.parameters) }),
+			...(tool.executionMode === undefined ? {} : { executionMode: tool.executionMode }),
+		};
+	}
+
+	function serializeSessionOptions(options) {
+		const serialized = {};
+		if (typeof options.cwd === "string") serialized.cwd = options.cwd;
+		if (typeof options.agentDir === "string") serialized.agentDir = options.agentDir;
+		if (options.model != null) serialized.model = plainJSON(options.model);
+		if (options.thinkingLevel !== undefined) serialized.thinkingLevel = options.thinkingLevel;
+		if (options.scopedModels !== undefined) serialized.scopedModels = plainJSON(options.scopedModels);
+		if (options.noTools !== undefined) serialized.noTools = options.noTools;
+		if (options.tools !== undefined) serialized.tools = Array.from(options.tools, String);
+		if (options.excludeTools !== undefined) serialized.excludeTools = Array.from(options.excludeTools, String);
+		const runtimeRef = modelRuntimeRef(options.modelRuntime);
+		if (runtimeRef) serialized.modelRuntime = runtimeRef;
+		if (Array.isArray(options.customTools)) {
+			serialized.customTools = options.customTools.map(serializableSessionTool);
+		}
+		const sessionManager = options.sessionManager;
+		if (sessionManager && typeof sessionManager === "object") {
+			serialized.session = {
+				persisted: sessionManager.persist === true,
+				...(sessionManager.sessionDir ? { sessionDir: String(sessionManager.sessionDir) } : {}),
+				...(sessionManager.cwd ? { cwd: String(sessionManager.cwd) } : {}),
+				...(Array.isArray(sessionManager.sessionInfoNames) && sessionManager.sessionInfoNames.length > 0
+					? { sessionInfoNames: sessionManager.sessionInfoNames.map(String) }
+					: {}),
+			};
+		}
+		const settingsManager = options.settingsManager;
+		if (settingsManager && typeof settingsManager === "object") {
+			serialized.settings = {
+				...(settingsManager.cwd ? { cwd: String(settingsManager.cwd) } : {}),
+				...(settingsManager.agentDir ? { agentDir: String(settingsManager.agentDir) } : {}),
+			};
+		}
+		const resourceLoader = options.resourceLoader;
+		if (resourceLoader && typeof resourceLoader === "object") {
+			const loaderOptions = resourceLoader.options ?? {};
+			serialized.resourceLoader = {
+				...(loaderOptions.cwd ? { cwd: String(loaderOptions.cwd) } : {}),
+				...(loaderOptions.agentDir ? { agentDir: String(loaderOptions.agentDir) } : {}),
+				noExtensions: loaderOptions.noExtensions === true,
+			};
+		}
+		if (options.sessionStartEvent !== undefined) serialized.sessionStartEvent = plainJSON(options.sessionStartEvent);
+		return serialized;
+	}
+
+	function sessionExtensionId(options) {
+		const runtimeValue = options.modelRuntime;
+		return typeof runtimeValue?.extensionId === "string" ? runtimeValue.extensionId : "";
+	}
+
+	function releaseSession(sessionId) {
+		sessions.delete(sessionId);
+	}
+
+	// The transport bound into sdk/internal/services.mjs (bindTransport); see
+	// that module's header for the full contract. All handles are Go-minted
+	// strings, every handle has explicit dispose, rejections are structured
+	// Errors with a `.code`, and events arrive in per-handle seq order before
+	// the settle of the operation that produced them.
+	const transport = Object.freeze({
+		capabilities: negotiatedCapabilities,
+		hello: () => ({ ...helloValue }),
+		async agentSessionCreate(options = {}, events = {}) {
+			const created = await request("agent_session_create", {
+				extensionId: sessionExtensionId(options),
+				options: serializeSessionOptions(options),
+			});
+			const sessionId = created.handle;
+			const tools = new Map();
+			for (const tool of options.customTools ?? []) {
+				if (tool && typeof tool.name === "string" && typeof tool.execute === "function") {
+					tools.set(tool.name, tool);
+				}
+			}
+			const record = { events: events ?? {}, tools, lastSeq: 0 };
+			sessions.set(sessionId, record);
+			if (options.sessionManager && typeof options.sessionManager === "object") {
+				managerSessions.set(options.sessionManager, sessionId);
+			}
+			try {
+				const subscribed = await request("agent_session_subscribe", { handle: sessionId });
+				record.lastSeq = typeof subscribed?.seq === "number" ? subscribed.seq : 0;
+			} catch (error) {
+				log("warn", ["agent_session_subscribe failed:", errorValue(error).message]);
+			}
+			return {
+				sessionId,
+				...(created.modelFallbackMessage ? { modelFallbackMessage: created.modelFallbackMessage } : {}),
+			};
+		},
+		agentSessionPrompt(sessionId, text, options) {
+			// Upstream PromptOptions are opaque; an AbortSignal at options.signal
+			// propagates as service_cancel and never crosses the wire itself.
+			const { signal, ...rest } = options && typeof options === "object" ? options : {};
+			const params = { handle: sessionId, text: String(text ?? "") };
+			const serializedRest = plainJSON(rest);
+			if (serializedRest && Object.keys(serializedRest).length > 0) params.options = serializedRest;
+			return requestCancellable("agent_session_prompt", params, signal).then(() => undefined);
+		},
+		agentSessionAbort(sessionId) {
+			return request("agent_session_abort", { handle: sessionId }).then(() => undefined);
+		},
+		agentSessionSetActiveTools(sessionId, names) {
+			return request("agent_session_set_active_tools", {
+				handle: sessionId,
+				names: Array.from(names ?? [], String),
+			}).then(() => undefined);
+		},
+		async agentSessionDispose(sessionId) {
+			try {
+				await request("agent_session_dispose", { handle: sessionId });
+			} finally {
+				releaseSession(sessionId);
+			}
+		},
+		async modelRuntimeCreate(options = {}) {
+			const created = await request("model_runtime_create", {
+				...(options.authPath === undefined ? {} : { authPath: String(options.authPath) }),
+				...(options.modelsPath === undefined ? {} : { modelsPath: String(options.modelsPath) }),
+				...(options.allowModelNetwork === undefined ? {} : { allowModelNetwork: options.allowModelNetwork === true }),
+			});
+			return { runtimeId: created.handle, catalog: catalogFromSnapshot(created.catalog) };
+		},
+		async modelRuntimeRefresh(runtimeId, _providerId) {
+			// "context:<extensionId>" handles self-identify their extension.
+			const result = await request("model_runtime_get_available", { handle: String(runtimeId) });
+			return catalogFromSnapshot(result.catalog);
+		},
+		modelRuntimeDispose(runtimeId) {
+			return request("model_runtime_dispose", { handle: String(runtimeId) }).then(() => undefined);
+		},
+		resourceLoaderReload(loader, _options) {
+			const loaderOptions = loader?.options ?? {};
+			return request("sdk_resource_reload", {
+				...(loaderOptions.cwd ? { cwd: String(loaderOptions.cwd) } : {}),
+				...(loaderOptions.agentDir ? { agentDir: String(loaderOptions.agentDir) } : {}),
+				noExtensions: loaderOptions.noExtensions === true,
+			}).then(() => undefined);
+		},
+		sessionInfoAppend(sessionManager, name) {
+			const sessionId = managerSessions.get(sessionManager);
+			// Pre-create names stay queued on the handle (session.sessionInfoNames
+			// crosses inside agent_session_create); best-effort either way.
+			if (!sessionId) return;
+			request("agent_session_append_info", { handle: sessionId, name: String(name) })
+				.catch((error) => log("warn", ["appendSessionInfo failed:", errorValue(error).message]));
+		},
+	});
+
+	async function bindSDKTransport() {
+		const root = process.env.ORB_EXTENSION_SDK_ROOT;
+		if (!root) return;
+		try {
+			const services = await import(pathToFileURL(join(root, "internal", "services.mjs")).href);
+			services.bindTransport(transport);
+		} catch (error) {
+			log("error", ["failed to bind orb-extension-sdk transport:", errorValue(error).message]);
+		}
+	}
+
+	function assembleTransfer(transferId) {
+		const transfer = transfers.get(transferId);
+		transfers.delete(transferId);
+		if (!transfer || transfer.received !== transfer.total) {
+			throw new Error(`incomplete agent_session transfer ${transferId}`);
+		}
+		return JSON.parse(Buffer.concat(transfer.parts).toString());
+	}
+
+	function routeSessionEvent(params) {
+		const record = sessions.get(params.handle);
+		if (params.transferId && !record) {
+			transfers.delete(params.transferId);
+			return;
+		}
+		if (!record) return;
+		let payload = params.event;
+		if (params.transferId) {
+			try {
+				payload = assembleTransfer(params.transferId);
+			} catch (error) {
+				log("error", ["agent_session_event transfer failed:", errorValue(error).message]);
+				return;
+			}
+		}
+		const seq = typeof params.seq === "number" ? params.seq : 0;
+		if (seq > 0) {
+			if (seq <= record.lastSeq) return; // per-handle seq is monotonic; drop replays
+			record.lastSeq = seq;
+		}
+		const events = record.events;
+		const deliver = (sink, ...args) => {
+			if (typeof sink !== "function") return;
+			try {
+				sink(...args);
+			} catch (error) {
+				log("error", [`agent_session ${params.kind} sink failed:`, errorValue(error).message]);
+			}
+		};
+		switch (params.kind) {
+			case "messages_snapshot":
+				deliver(events.onMessagesSnapshot, payload?.messages ?? []);
+				break;
+			case "message_appended":
+				deliver(events.onMessageAppended, payload?.message);
+				break;
+			case "message_updated":
+				deliver(events.onMessageUpdated, payload?.index ?? -1, payload?.message);
+				break;
+			case "stats":
+				deliver(events.onStats, payload?.stats);
+				break;
+			default:
+				deliver(events.onEvent, payload);
+				break;
+		}
+	}
+
+	async function executeSessionTool(frame) {
+		const record = sessions.get(frame.params.handle);
+		const tool = record?.tools.get(frame.params.toolName);
+		if (!tool) {
+			throw Object.assign(
+				new Error(`unknown session tool ${frame.params.toolName} for handle ${frame.params.handle}`),
+				{ code: "unknown_session_tool" },
+			);
+		}
+		const controller = retainRequestAbort(frame.id);
+		const onUpdate = (partial) => emit("tool_update", { requestId: frame.id, partial: partial ?? { content: [] } });
+		try {
+			let params = frame.params.params;
+			if (typeof tool.prepareArguments === "function") params = tool.prepareArguments(params);
+			const result = await tool.execute(
+				frame.params.toolCallId,
+				params,
+				controller.signal,
+				onUpdate,
+				Object.freeze({
+					cwd: frame.params.context?.cwd ?? agent.cwd ?? process.cwd(),
+					sessionId: frame.params.handle,
+				}),
+			);
+			return result ?? { content: [] };
+		} finally {
+			requestAborts.delete(frame.id);
+			cancelledBeforeStart.delete(frame.id);
+		}
+	}
+
+	return {
+		async onHandshake(value) {
+			negotiatedCapabilities.clear();
+			const advertised = new Set(value.capabilities ?? []);
+			for (const capability of HOST_CAPABILITIES) {
+				if (advertised.has(capability)) negotiatedCapabilities.add(capability);
+			}
+			helloValue = { ...(value.services ?? {}) };
+			await bindSDKTransport();
+		},
+		async handleRequest(frame) {
+			if (frame.method !== "execute_session_tool") return { handled: false };
+			return { handled: true, result: await executeSessionTool(frame) };
+		},
+		handleEvent(frame) {
+			if (frame.method === "agent_session_chunk") {
+				const { transferId, index, total, data } = frame.params;
+				const transfer = transfers.get(transferId) ?? { parts: new Array(total), received: 0, total };
+				if (transfer.parts[index] === undefined) {
+					transfer.parts[index] = Buffer.from(data, "base64");
+					transfer.received++;
+				}
+				transfers.set(transferId, transfer);
+				return;
+			}
+			if (frame.method === "agent_session_event") routeSessionEvent(frame.params);
+		},
+		onClose() {
+			sessions.clear();
+			transfers.clear();
+		},
+	};
+})());
+// ===== END SECTION =====
+
 const runtime = typeof globalThis.Bun === "object"
 	? { name: "bun", version: globalThis.Bun.version }
 	: { name: "node", version: process.versions.node };
-const handshake = await request("handshake", { runtime, capabilities: ["tool_updates", "providers", "ui", "state_v1"] });
+const handshake = await request("handshake", { runtime, capabilities: HOST_CAPABILITIES });
 agent = handshake.agent ?? {};
-for (const section of hostSections) section.onHandshake?.(handshake);
+for (const section of hostSections) await section.onHandshake?.(handshake);
 for (const entry of handshake.extensionEntries ?? []) entries.set(entry.id, entry);
 finishHandshake();

@@ -49,6 +49,7 @@ type SessionRuntimeConfig struct {
 	ExcludedToolNames      []string
 	RebuildBaseTools       func() ([]agent.AgentTool, error)
 	SystemPromptOptions    *SystemPromptOptions
+	BuiltinToolPrompts     map[string]ToolPromptContribution
 	ResourceLoader         ResourceLoader
 	SessionStartEvent      *extensions.SessionStartEvent
 	DeferExtensionStart    bool
@@ -63,6 +64,9 @@ type SessionRuntime struct {
 	complete harness.CompleteFunc
 	sleep    func(context.Context, time.Duration) error
 	clock    func() int64
+	// builtinToolPrompts overrides built-in tools' system-prompt contribution
+	// (see AgentSessionOptions.BuiltinToolPrompts).
+	builtinToolPrompts map[string]ToolPromptContribution
 
 	footerMu            sync.Mutex
 	footerRevision      uint64
@@ -275,12 +279,13 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 		autoCompaction:  runtimeConfig.Settings.GetCompactionSettings().Enabled,
 		autoRetry:       runtimeConfig.Settings.GetRetrySettings().Enabled,
 		availableModels: runtimeConfig.AvailableModels, modelRegistry: runtimeConfig.ModelRegistry,
-		getAPIKey:         runtimeConfig.GetAPIKey,
-		getRequestAuth:    runtimeConfig.GetRequestAuth,
-		scopedModels:      append([]ScopedModel(nil), runtimeConfig.ScopedModels...),
-		slashResolver:     cloneSlashResolver(runtimeConfig.SlashResolver),
-		baseSlashResolver: cloneSlashResolver(runtimeConfig.SlashResolver),
-		resourceLoader:    runtimeConfig.ResourceLoader,
+		getAPIKey:          runtimeConfig.GetAPIKey,
+		getRequestAuth:     runtimeConfig.GetRequestAuth,
+		scopedModels:       append([]ScopedModel(nil), runtimeConfig.ScopedModels...),
+		slashResolver:      cloneSlashResolver(runtimeConfig.SlashResolver),
+		baseSlashResolver:  cloneSlashResolver(runtimeConfig.SlashResolver),
+		resourceLoader:     runtimeConfig.ResourceLoader,
+		builtinToolPrompts: runtimeConfig.BuiltinToolPrompts,
 	}
 	runtimeConfig.SlashResolver = runtime.slashResolver
 	runtime.agent.SetSteeringMode(agent.QueueMode(runtime.settings.GetSteeringMode()))

@@ -122,9 +122,13 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 				CWD:            cwd,
 				ProjectTrusted: settings.IsProjectTrusted(),
 				Version:        version,
-				SDKVersion:     upstreamVersion,
 				Stderr:         os.Stderr,
 			})
+			// Child agent sessions (agent_session_v1 / sdk_v1 resource reload)
+			// run on the real NewAgentSession-backed runtime.
+			manager.SetAgentSessionService(codingagent.NewExtensionAgentSessionService(
+				codingagent.ExtensionAgentSessionServiceOptions{CWD: cwd, AgentDir: agentDir},
+			))
 			result := manager.RegisterInto(context.Background(), registry, paths)
 			replaceActiveExtensionHost(manager)
 			for _, diagnostic := range result.Diagnostics {

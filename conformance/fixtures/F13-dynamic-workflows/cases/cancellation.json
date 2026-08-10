@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "scenario": "cancellation",
+  "script": "export const meta = { name: \"cancel\", description: \"mid-run abort\" };\nconst first = await agent(\"First does work\", { label: \"one\" });\nconst second = await agent(\"Second gets aborted\", { label: \"two\" });\nreturn { first, second };",
+  "result": null,
+  "error": {
+    "name": "Error",
+    "message": "Subagent was aborted"
+  },
+  "events": [
+    {
+      "event": "agentStart",
+      "id": "run-fixed-cancellation:0",
+      "label": "one",
+      "prompt": "First does work",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-cancellation:0",
+      "label": "one",
+      "result": "First result before the abort.",
+      "tokens": 2780,
+      "tokenUsage": {
+        "input": 1386,
+        "output": 8,
+        "cacheRead": 0,
+        "cacheWrite": 1386,
+        "total": 2780,
+        "cost": 0
+      },
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentStart",
+      "id": "run-fixed-cancellation:1",
+      "label": "two",
+      "prompt": "Second gets aborted",
+      "model": "faux/faux-model"
+    }
+  ],
+  "journal": [
+    {
+      "index": 0,
+      "runId": "run-fixed-cancellation",
+      "hash": "21eb1f70d2fb42c20e05ebedadbbf3b7940fe4f04c36b4a339b37dae757f7980",
+      "result": "First result before the abort.",
+      "storeDelta": {}
+    }
+  ],
+  "histories": {
+    "run-fixed-cancellation:0 one": [
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "Task label: one\n\nFirst does work",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "text": "First result before the abort.",
+        "timestamp": 1700000200321
+      }
+    ],
+    "run-fixed-cancellation:1 two": [
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "Task label: two\n\nSecond gets aborted",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "error",
+        "text": "Request was aborted",
+        "isError": true,
+        "timestamp": 1700000200321
+      }
+    ]
+  },
+  "providerCalls": [
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: one\n\nFirst does work"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: two\n\nSecond gets aborted"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pendingFauxResponses": 0
+}

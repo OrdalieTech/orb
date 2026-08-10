@@ -1,0 +1,212 @@
+{
+  "schemaVersion": 1,
+  "scenario": "foreground-basic",
+  "script": "export const meta = {\n  name: \"basic\",\n  description: \"two-phase basic run\",\n  phases: [{ title: \"Explore\" }, { title: \"Report\" }],\n};\nlog(\"starting\");\nconst found = await agent(\"Describe the project marker file.\", { label: \"explorer\" });\nphase(\"Report\");\nconst summary = await agent(\"Summarize: \" + found, { label: \"reporter\", phase: \"Report\" });\nreturn { found, summary };",
+  "result": {
+    "meta": {
+      "name": "basic",
+      "description": "two-phase basic run",
+      "phases": [
+        {
+          "title": "Explore"
+        },
+        {
+          "title": "Report"
+        }
+      ]
+    },
+    "result": {
+      "found": "The marker file says marker-from-repo.",
+      "summary": "Summary: the marker holds marker-from-repo."
+    },
+    "logs": [
+      "starting"
+    ],
+    "phases": [
+      "Explore",
+      "Report"
+    ],
+    "agentCount": 2,
+    "durationMs": 0,
+    "runId": "run-fixed-foreground-basic",
+    "tokenUsage": {
+      "input": 2800,
+      "output": 21,
+      "total": 5621,
+      "cost": 0,
+      "cacheRead": 0,
+      "cacheWrite": 2800
+    }
+  },
+  "error": null,
+  "events": [
+    {
+      "event": "log",
+      "message": "starting"
+    },
+    {
+      "event": "agentStart",
+      "id": "run-fixed-foreground-basic:0",
+      "label": "explorer",
+      "phase": "Explore",
+      "prompt": "Describe the project marker file.",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-foreground-basic:0",
+      "label": "explorer",
+      "phase": "Explore",
+      "result": "The marker file says marker-from-repo.",
+      "tokens": 2806,
+      "tokenUsage": {
+        "input": 1398,
+        "output": 10,
+        "cacheRead": 0,
+        "cacheWrite": 1398,
+        "total": 2806,
+        "cost": 0
+      },
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "phase",
+      "title": "Report"
+    },
+    {
+      "event": "runtime",
+      "type": "phase",
+      "title": "Report",
+      "budget": null
+    },
+    {
+      "event": "agentStart",
+      "id": "run-fixed-foreground-basic:1",
+      "label": "reporter",
+      "phase": "Report",
+      "prompt": "Summarize: The marker file says marker-from-repo.",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-foreground-basic:1",
+      "label": "reporter",
+      "phase": "Report",
+      "result": "Summary: the marker holds marker-from-repo.",
+      "tokens": 2815,
+      "tokenUsage": {
+        "input": 1402,
+        "output": 11,
+        "cacheRead": 0,
+        "cacheWrite": 1402,
+        "total": 2815,
+        "cost": 0
+      },
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "tokenUsage",
+      "usage": {
+        "input": 2800,
+        "output": 21,
+        "total": 5621,
+        "cost": 0,
+        "cacheRead": 0,
+        "cacheWrite": 2800
+      }
+    }
+  ],
+  "journal": [
+    {
+      "index": 0,
+      "runId": "run-fixed-foreground-basic",
+      "hash": "3a8de7f677e69e5a912c028904e16a8a183aae14bc568f72865655d3efbebfc1",
+      "result": "The marker file says marker-from-repo.",
+      "storeDelta": {}
+    },
+    {
+      "index": 1,
+      "runId": "run-fixed-foreground-basic",
+      "hash": "ce02fd5aa448b66f3611e73da89f98172fa40b242e71cfad74410e131038d5a5",
+      "result": "Summary: the marker holds marker-from-repo.",
+      "storeDelta": {}
+    }
+  ],
+  "histories": {
+    "run-fixed-foreground-basic:0 explorer": [
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "Workflow phase: Explore\n\nTask label: explorer\n\nDescribe the project marker file.",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "text": "The marker file says marker-from-repo.",
+        "timestamp": 1700000200321
+      }
+    ],
+    "run-fixed-foreground-basic:1 reporter": [
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "Workflow phase: Report\n\nTask label: reporter\n\nSummarize: The marker file says marker-from-repo.",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "text": "Summary: the marker holds marker-from-repo.",
+        "timestamp": 1700000200321
+      }
+    ]
+  },
+  "providerCalls": [
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Workflow phase: Explore\n\nTask label: explorer\n\nDescribe the project marker file."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Workflow phase: Report\n\nTask label: reporter\n\nSummarize: The marker file says marker-from-repo."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pendingFauxResponses": 0
+}

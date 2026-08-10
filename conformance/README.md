@@ -89,3 +89,35 @@ renderer retains the settled preview and suppresses a duplicate result diff when
 module directly. Its normalized frames cover loading progress, current/all scope,
 threaded/recent/fuzzy ordering, fuzzy/quoted/regex queries, named and path toggles,
 delete confirmation and cancellation, removal, and select/cancel callbacks.
+
+`F13-dynamic-workflows` is the hermetic reference surface for
+`@quintinshaw/pi-dynamic-workflows@3.5.1` on the pinned upstream: the extractor
+`npm ci`s the plugin from an embedded integrity-pinned lockfile into a temp
+dir, resolves its `@earendil-works/pi-*`/`typebox` imports to the `.upstream`
+sources through generated shims, points HOME and `PI_CODING_AGENT_DIR` into
+the temp tree, and drives thirteen scripted scenarios against real
+`createAgentSession` sessions backed by the faux provider (foreground and
+background runs, structured output with repair and prose recovery, shared-store
+tools, a hermetic web toolset, agentType tool policies with git-worktree cwd
+mapping, nested workflows, mid-run abort, tier routing with the #131
+MODEL_NOT_FOUND asymmetry and synthesized off-catalog models, provider-limit
+pause/resume/stop, persisted session transcripts, the full extension lifecycle
+across /new, /reload, and quit, and the upstream export-name inventory with
+unsupported-export probes). Temp paths, cwd-hash project keys, UUIDs, and
+random session-entry ids are canonicalized; `make fixtures-check`'s
+regenerate-and-diff holds byte-for-byte. Files under `reference-tui/` are
+reference-only upstream TUI observations (D35): Orb frame goldens are Orb-owned
+snapshots, and the Go consumer enforces the reference-only marking. The
+network-dependent step is the integrity-checked npm install of the plugin
+tarball itself (served from the npm cache when offline). The Orb replay
+(`conformance/runner/f13_dynamic_workflows_orb_test.go` +
+`f13_orb_harness_test.go`) runs in the default test suite: it boots the real
+extension host with the materialized orb-extension-sdk (`sdk_v1`,
+`agent_session_v1`, `model_runtime_v1`), installs the same integrity-pinned
+plugin, replays every scenario through a driver extension
+(`conformance/runner/testdata/f13-driver.mjs`) against the Go faux provider
+with pinned clocks, and diffs the canonicalized observations against these
+goldens. Orb's D30 identity substitutions are mapped back to the upstream
+bytes before faux token accounting (the inverse of the F9 replacer), and it
+skips — like the host e2e tests — when Node, npm, git, or the pinned
+`.upstream` tree are unavailable.

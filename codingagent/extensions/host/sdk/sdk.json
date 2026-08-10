@@ -1,0 +1,67 @@
+{
+	"name": "orb-extension-sdk",
+	"version": "1.0.0",
+	"description": "Orb's embedded implementation of the @earendil-works/pi-* extension SDK surface. Materialized from the orb binary; never installed from npm.",
+	"upstream": {
+		"package": "pi",
+		"version": "0.84.1",
+		"commit": "53fa77cc",
+		"license": "MIT"
+	},
+	"capabilities": {
+		"sdk_v1": {
+			"description": "Pure local symbols: no host protocol involved."
+		},
+		"agent_session_v1": {
+			"description": "Child agent sessions bridged to the Go runtime.",
+			"exports": ["coding-agent#createAgentSession"],
+			"seam": [
+				"agentSessionCreate",
+				"agentSessionPrompt",
+				"agentSessionAbort",
+				"agentSessionSetActiveTools",
+				"agentSessionDispose"
+			]
+		},
+		"model_runtime_v1": {
+			"description": "Model catalog and auth snapshot bridged to the Go runtime.",
+			"exports": ["coding-agent#ModelRuntime", "coding-agent#ModelRegistry"],
+			"seam": ["modelRuntimeCreate", "modelRuntimeRefresh", "modelRuntimeDispose"]
+		}
+	},
+	"modules": {
+		"coding-agent": {
+			"implemented": [
+				"DefaultResourceLoader",
+				"ModelRegistry",
+				"ModelRuntime",
+				"SessionManager",
+				"SettingsManager",
+				"createAgentSession",
+				"createCodingTools",
+				"defineTool",
+				"getAgentDir",
+				"getLanguageFromPath",
+				"getMarkdownTheme",
+				"parseFrontmatter",
+				"renderDiff"
+			]
+		},
+		"ai": {
+			"implemented": ["modelsAreEqual"]
+		},
+		"tui": {
+			"implemented": [
+				"Container",
+				"Markdown",
+				"SelectList",
+				"Spacer",
+				"Text",
+				"parseKey",
+				"truncateToWidth",
+				"visibleWidth",
+				"wrapTextWithAnsi"
+			]
+		}
+	}
+}

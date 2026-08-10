@@ -1,0 +1,249 @@
+{
+  "schemaVersion": 1,
+  "scenario": "web-toolset",
+  "script": "export const meta = { name: \"web\", description: \"hermetic web research\" };\nreturn await agent(\"Research the topic online.\", { label: \"researcher\" });",
+  "result": {
+    "meta": {
+      "name": "web",
+      "description": "hermetic web research"
+    },
+    "result": "Research done: example.test documents the topic.",
+    "logs": [],
+    "phases": [],
+    "agentCount": 1,
+    "durationMs": 0,
+    "runId": "run-fixed-web-toolset",
+    "tokenUsage": {
+      "input": 3762,
+      "output": 34,
+      "total": 8609,
+      "cost": 0,
+      "cacheRead": 1049,
+      "cacheWrite": 3764
+    }
+  },
+  "error": null,
+  "events": [
+    {
+      "event": "agentStart",
+      "id": "run-fixed-web-toolset:0",
+      "label": "researcher",
+      "prompt": "Research the topic online.",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-web-toolset:0",
+      "label": "researcher",
+      "result": "Research done: example.test documents the topic.",
+      "tokens": 8609,
+      "tokenUsage": {
+        "input": 3762,
+        "output": 34,
+        "cacheRead": 1049,
+        "cacheWrite": 3764,
+        "total": 8609,
+        "cost": 0
+      },
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "tokenUsage",
+      "usage": {
+        "input": 3762,
+        "output": 34,
+        "total": 8609,
+        "cost": 0,
+        "cacheRead": 1049,
+        "cacheWrite": 3764
+      }
+    }
+  ],
+  "journal": [
+    {
+      "index": 0,
+      "runId": "run-fixed-web-toolset",
+      "hash": "381343d054a4dbed2763a60a7f1ec971125bb228675aec47b0b1f272988c90fa",
+      "result": "Research done: example.test documents the topic.",
+      "storeDelta": {}
+    }
+  ],
+  "histories": {
+    "run-fixed-web-toolset:0 researcher": [
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "Task label: researcher\n\nResearch the topic online.",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "toolCall",
+        "toolName": "web_search",
+        "text": "{\"query\":\"orb conformance\"}",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "tool",
+        "kind": "toolResult",
+        "toolName": "web_search",
+        "text": "1. Example Result\n   https://example.test/page\n2. Second Result\n   https://second.test/doc",
+        "isError": false,
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "toolCall",
+        "toolName": "web_fetch",
+        "text": "{\"url\":\"https://example.test/page\"}",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "tool",
+        "kind": "toolResult",
+        "toolName": "web_fetch",
+        "text": "HTTP 200 https://example.test/page\n\nDoc & Title\nFirst paragraph.\nSecond paragraph.",
+        "isError": false,
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "text": "Research done: example.test documents the topic.",
+        "timestamp": 1700000200321
+      }
+    ]
+  },
+  "providerCalls": [
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "web_search",
+        "web_fetch",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: researcher\n\nResearch the topic online."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "web_search",
+        "web_fetch",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: researcher\n\nResearch the topic online."
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "toolCall",
+              "name": "web_search",
+              "arguments": {
+                "query": "orb conformance"
+              }
+            }
+          ],
+          "stopReason": "toolUse"
+        },
+        {
+          "role": "toolResult",
+          "toolName": "web_search",
+          "isError": false,
+          "text": "1. Example Result\n   https://example.test/page\n2. Second Result\n   https://second.test/doc"
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "web_search",
+        "web_fetch",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: researcher\n\nResearch the topic online."
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "toolCall",
+              "name": "web_search",
+              "arguments": {
+                "query": "orb conformance"
+              }
+            }
+          ],
+          "stopReason": "toolUse"
+        },
+        {
+          "role": "toolResult",
+          "toolName": "web_search",
+          "isError": false,
+          "text": "1. Example Result\n   https://example.test/page\n2. Second Result\n   https://second.test/doc"
+        },
+        {
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "toolCall",
+              "name": "web_fetch",
+              "arguments": {
+                "url": "https://example.test/page"
+              }
+            }
+          ],
+          "stopReason": "toolUse"
+        },
+        {
+          "role": "toolResult",
+          "toolName": "web_fetch",
+          "isError": false,
+          "text": "HTTP 200 https://example.test/page\n\nDoc & Title\nFirst paragraph.\nSecond paragraph."
+        }
+      ]
+    }
+  ],
+  "pendingFauxResponses": 0
+}

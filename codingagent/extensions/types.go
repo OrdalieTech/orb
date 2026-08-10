@@ -578,19 +578,27 @@ type ToolRenderContext struct {
 }
 
 type ToolDefinition struct {
-	Name                string
-	Label               string
-	Description         string
-	PromptSnippet       string
-	PromptGuidelines    []string
-	Parameters          ai.JSONSchema
-	ConstrainedSampling *ai.ConstrainedSamplingConfig
-	RenderShell         RenderShell
-	PrepareArguments    agent.PrepareArgumentsFunc
-	ExecutionMode       agent.ToolExecutionMode
-	Execute             func(context.Context, string, any, agent.AgentToolUpdateCallback, Context) (agent.AgentToolResult, error)
-	RenderCall          func(any, Theme, ToolRenderContext) Component
-	RenderResult        func(agent.AgentToolResult, ToolRenderResultOptions, Theme, ToolRenderContext) Component
+	Name          string
+	Label         string
+	Description   string
+	PromptSnippet string
+	// PromptGuidelines is the registration-time snapshot of the tool's prompt
+	// guidelines.
+	PromptGuidelines []string
+	// PromptGuidelinesFunc, when set, re-reads the tool's current prompt
+	// guidelines (upstream tools may declare a lazy `get promptGuidelines()`
+	// whose value changes between turns, e.g. an available-model list). The
+	// session runtime consults it before building each turn's system prompt
+	// and falls back to the PromptGuidelines snapshot on nil or error.
+	PromptGuidelinesFunc func(context.Context) ([]string, error)
+	Parameters           ai.JSONSchema
+	ConstrainedSampling  *ai.ConstrainedSamplingConfig
+	RenderShell          RenderShell
+	PrepareArguments     agent.PrepareArgumentsFunc
+	ExecutionMode        agent.ToolExecutionMode
+	Execute              func(context.Context, string, any, agent.AgentToolUpdateCallback, Context) (agent.AgentToolResult, error)
+	RenderCall           func(any, Theme, ToolRenderContext) Component
+	RenderResult         func(agent.AgentToolResult, ToolRenderResultOptions, Theme, ToolRenderContext) Component
 }
 
 type RenderShell string

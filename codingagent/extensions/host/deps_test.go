@@ -39,22 +39,43 @@ func TestDependenciesSatisfiedFindsHoistedNodeModules(t *testing.T) {
 	}
 }
 
-// The SDK copy pinned inside pi-coding-agent is the one it was built against, so
-// it must win over a hoisted sibling of a different version. Only Bun consumes
-// this now; Node reaches the same copy through the loader's resolve hook.
-func TestResolveRuntimeSDKPrefersCodingAgentPin(t *testing.T) {
-	root := t.TempDir()
-	nodeModules := filepath.Join(root, "node_modules")
-	hoisted := filepath.Join(nodeModules, "@earendil-works", "pi-ai")
-	writeFile(t, filepath.Join(hoisted, "package.json"), `{"name":"@earendil-works/pi-ai","version":"old"}`, 0o600)
-	pinned := filepath.Join(nodeModules, "@earendil-works", "pi-coding-agent", "node_modules", "@earendil-works", "pi-ai")
-	writeFile(t, filepath.Join(pinned, "package.json"), `{"name":"@earendil-works/pi-ai","version":"pinned"}`, 0o600)
-
-	if got := resolveRuntimeSDK(nodeModules, "@earendil-works/pi-ai"); got != pinned {
-		t.Fatalf("resolveRuntimeSDK = %q, want the pinned copy %q", got, pinned)
+// Bun reaches the embedded SDK through NODE_PATH wrapper packages: one
+// directory per legacy name, whose exports map mirrors the loader's alias
+// table and whose modules re-export the materialized SDK files by URL.
+func TestPrepareRuntimeAliasesWritesEmbeddedSDKWrappers(t *testing.T) {
+	agentDir, sdkRoot := t.TempDir(), t.TempDir()
+	environment, err := prepareRuntimeAliases(agentDir, []string{extensionSDKRootEnv + "=" + sdkRoot})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := resolveRuntimeSDK(nodeModules, "@earendil-works/pi-tui"); got != "" {
-		t.Fatalf("resolveRuntimeSDK for an absent package = %q, want empty", got)
+	aliasDir := filepath.Join(agentDir, "host", "aliases")
+	if got := environmentValue(environment, "NODE_PATH"); !strings.HasPrefix(got, aliasDir) {
+		t.Fatalf("NODE_PATH = %q, want prefix %q", got, aliasDir)
+	}
+	manifest, err := os.ReadFile(filepath.Join(aliasDir, "@earendil-works", "pi-ai", "package.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{`"name":"@earendil-works/pi-ai"`, `"./providers/all":"./providers-all.mjs"`, `"./compat":"./compat.mjs"`} {
+		if !strings.Contains(string(manifest), fragment) {
+			t.Fatalf("wrapper manifest %s does not contain %q", manifest, fragment)
+		}
+	}
+	wrapper, err := os.ReadFile(filepath.Join(aliasDir, "@mariozechner", "pi-tui", "index.mjs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(wrapper), "tui.mjs") || !strings.Contains(string(wrapper), "file://") {
+		t.Fatalf("wrapper module %q does not re-export the SDK by file URL", wrapper)
+	}
+
+	// Without a materialized SDK root there is nothing to link.
+	unchanged, err := prepareRuntimeAliases(t.TempDir(), []string{"PATH=/bin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value := environmentValue(unchanged, "NODE_PATH"); value != "" {
+		t.Fatalf("NODE_PATH = %q, want empty without an SDK root", value)
 	}
 }
 

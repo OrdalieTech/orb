@@ -308,34 +308,26 @@ func (stubKeybindings) Conflicts() []extensions.KeybindingConflict { return nil 
 func (stubKeybindings) UserBindings() map[string][]string          { return nil }
 func (stubKeybindings) ResolvedBindings() map[string][]string      { return nil }
 
+// The host must publish the SDK theme global — the one the embedded
+// orb-extension-sdk's theme-dependent symbols (getMarkdownTheme, renderDiff)
+// read — before any custom-component factory runs. The fixture reads the
+// global the way upstream SDK components did, throwing when it is absent.
 func TestHostInitializesSDKGlobalThemeBeforeCustomFactory(t *testing.T) {
 	agentDir := isolatedTempDir(t)
-	sdkRoot := filepath.Join(agentDir, "npm", "node_modules", "@earendil-works", "pi-coding-agent")
-	writeFile(t, filepath.Join(sdkRoot, "package.json"), `{"name":"@earendil-works/pi-coding-agent","type":"module","exports":"./dist/index.js"}`, 0o600)
-	writeFile(t, filepath.Join(sdkRoot, "dist", "index.js"), `
-const theme = new Proxy({}, {
-  get(_target, property) {
-    const value = globalThis[Symbol.for("@earendil-works/pi-coding-agent:theme")];
-    if (!value) throw new Error("Theme not initialized. Call initTheme() first.");
-    return value[property];
-  }
-});
-export class BorderedLoader {
-  constructor(_tui, _theme, label) { this.line = theme.fg("muted", label + " esc"); }
-  render() { return [this.line]; }
-  dispose() {}
-}
-`, 0o600)
 	entry := filepath.Join(agentDir, "extensions", "sdk-theme.mjs")
 	writeFile(t, entry, `
-import { BorderedLoader } from "@earendil-works/pi-coding-agent";
+function sdkTheme() {
+  const value = globalThis[Symbol.for("@earendil-works/pi-coding-agent:theme")];
+  if (!value) throw new Error("Theme not initialized. Call initTheme() first.");
+  return value;
+}
 export default function (pi) {
   pi.registerCommand("sdk-theme-loader", {
     async handler(_args, ctx) {
-      const value = await ctx.ui.custom((tui, theme, _keybindings, done) => {
-        const loader = new BorderedLoader(tui, theme, "Loading");
+      const value = await ctx.ui.custom((_tui, _theme, _keybindings, done) => {
+        const line = sdkTheme().fg("muted", "Loading esc");
         queueMicrotask(() => done("mounted"));
-        return loader;
+        return { render() { return [line]; }, invalidate() {}, dispose() {} };
       });
       if (value !== "mounted") throw new Error("custom loader did not complete");
     }

@@ -1,0 +1,311 @@
+{
+  "schemaVersion": 1,
+  "scenario": "persist-agent-sessions",
+  "script": "export const meta = { name: \"persist\", description: \"session transcript persistence\" };\nreturn await agent(\"Persisted agent\", { label: \"keeper\" });",
+  "result": {
+    "meta": {
+      "name": "persist",
+      "description": "session transcript persistence"
+    },
+    "result": "Kept the marker safe.",
+    "logs": [],
+    "phases": [],
+    "agentCount": 1,
+    "durationMs": 0,
+    "runId": "run-fixed-persist-agent-sessions",
+    "tokenUsage": {
+      "input": 2310,
+      "output": 13,
+      "total": 5116,
+      "cost": 0,
+      "cacheRead": 482,
+      "cacheWrite": 2311
+    }
+  },
+  "error": null,
+  "events": [
+    {
+      "event": "agentStart",
+      "id": "run-fixed-persist-agent-sessions:0",
+      "label": "keeper",
+      "prompt": "Persisted agent",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-persist-agent-sessions:0",
+      "label": "keeper",
+      "result": "Kept the marker safe.",
+      "tokens": 5116,
+      "tokenUsage": {
+        "input": 2310,
+        "output": 13,
+        "cacheRead": 482,
+        "cacheWrite": 2311,
+        "total": 5116,
+        "cost": 0
+      },
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "tokenUsage",
+      "usage": {
+        "input": 2310,
+        "output": 13,
+        "total": 5116,
+        "cost": 0,
+        "cacheRead": 482,
+        "cacheWrite": 2311
+      }
+    }
+  ],
+  "journal": [
+    {
+      "index": 0,
+      "runId": "run-fixed-persist-agent-sessions",
+      "hash": "86fcb9c417df98f0689945c98ac1c8481042db77fee2554b3abb819f28e7474f",
+      "result": "Kept the marker safe.",
+      "storeDelta": {}
+    }
+  ],
+  "histories": {
+    "run-fixed-persist-agent-sessions:0 keeper": [
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "Task label: keeper\n\nPersisted agent",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "toolCall",
+        "toolName": "read",
+        "text": "{\"path\":\"marker.txt\"}",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "tool",
+        "kind": "toolResult",
+        "toolName": "read",
+        "text": "marker-from-repo\n",
+        "isError": false,
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "text": "Kept the marker safe.",
+        "timestamp": 1700000200321
+      }
+    ]
+  },
+  "providerCalls": [
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: keeper\n\nPersisted agent"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: keeper\n\nPersisted agent"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "toolCall",
+              "name": "read",
+              "arguments": {
+                "path": "marker.txt"
+              }
+            }
+          ],
+          "stopReason": "toolUse"
+        },
+        {
+          "role": "toolResult",
+          "toolName": "read",
+          "isError": false,
+          "text": "marker-from-repo\n"
+        }
+      ]
+    }
+  ],
+  "pendingFauxResponses": 0,
+  "sessionArtifacts": [
+    {
+      "path": "-<fixture-dash>-project--/2023-11-14T22-16-40-321Z_<uuid-1>.jsonl",
+      "entries": [
+        {
+          "type": "session",
+          "version": 3,
+          "id": "<uuid-1>",
+          "timestamp": "2023-11-14T22:16:40.321Z",
+          "cwd": "<fixture>/project"
+        },
+        {
+          "type": "model_change",
+          "id": "<entry-1>",
+          "parentId": null,
+          "timestamp": "2023-11-14T22:16:40.321Z",
+          "provider": "faux",
+          "modelId": "faux-model"
+        },
+        {
+          "type": "thinking_level_change",
+          "id": "<entry-2>",
+          "parentId": "<entry-1>",
+          "timestamp": "2023-11-14T22:16:40.321Z",
+          "thinkingLevel": "off"
+        },
+        {
+          "type": "session_info",
+          "id": "<entry-3>",
+          "parentId": "<entry-2>",
+          "timestamp": "2023-11-14T22:16:40.321Z",
+          "name": "workflow:run-fixed-persist-agent-sessions keeper"
+        },
+        {
+          "type": "message",
+          "id": "<entry-4>",
+          "parentId": "<entry-3>",
+          "timestamp": "2023-11-14T22:16:40.321Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Task label: keeper\n\nPersisted agent"
+              }
+            ],
+            "timestamp": 1700000200321
+          }
+        },
+        {
+          "type": "message",
+          "id": "<entry-5>",
+          "parentId": "<entry-4>",
+          "timestamp": "2023-11-14T22:16:40.321Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "persist-1",
+                "name": "read",
+                "arguments": {
+                  "path": "marker.txt"
+                }
+              }
+            ],
+            "api": "faux",
+            "provider": "faux",
+            "model": "faux-model",
+            "usage": {
+              "input": 1387,
+              "output": 7,
+              "cacheRead": 0,
+              "cacheWrite": 1387,
+              "totalTokens": 2781,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1700000200321
+          }
+        },
+        {
+          "type": "message",
+          "id": "<entry-6>",
+          "parentId": "<entry-5>",
+          "timestamp": "2023-11-14T22:16:40.321Z",
+          "message": {
+            "role": "toolResult",
+            "toolCallId": "persist-1",
+            "toolName": "read",
+            "content": [
+              {
+                "type": "text",
+                "text": "marker-from-repo\n"
+              }
+            ],
+            "isError": false,
+            "timestamp": 1700000200321
+          }
+        },
+        {
+          "type": "message",
+          "id": "<entry-7>",
+          "parentId": "<entry-6>",
+          "timestamp": "2023-11-14T22:16:40.321Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Kept the marker safe."
+              }
+            ],
+            "api": "faux",
+            "provider": "faux",
+            "model": "faux-model",
+            "usage": {
+              "input": 923,
+              "output": 6,
+              "cacheRead": 482,
+              "cacheWrite": 924,
+              "totalTokens": 2335,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000200321
+          }
+        }
+      ]
+    }
+  ]
+}

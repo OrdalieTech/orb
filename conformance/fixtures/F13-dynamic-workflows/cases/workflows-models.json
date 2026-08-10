@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "scenario": "workflows-models",
+  "updatedTiers": {
+    "small": "faux/faux-mini",
+    "medium": "faux/faux-mini:high",
+    "big": "faux/faux-model"
+  },
+  "thinkingSelects": [
+    {
+      "title": "Thinking for \"medium\" tier (current: Default thinking (session setting))",
+      "options": [
+        "Default thinking (session setting)",
+        "off",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
+    }
+  ],
+  "notifications": [
+    {
+      "message": "\"medium\" tier → faux/faux-mini:high",
+      "level": "info"
+    }
+  ]
+}

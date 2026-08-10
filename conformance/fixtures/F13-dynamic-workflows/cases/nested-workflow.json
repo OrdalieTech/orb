@@ -1,0 +1,215 @@
+{
+  "schemaVersion": 1,
+  "scenario": "nested-workflow",
+  "script": "export const meta = { name: \"parent\", description: \"nested workflow\" };\nconst child = await workflow(\"child-flow\", { topic: \"seeds\" });\nconst after = await agent(\"Use child result: \" + JSON.stringify(child), { label: \"after\" });\nreturn { child, after };",
+  "result": {
+    "meta": {
+      "name": "parent",
+      "description": "nested workflow"
+    },
+    "result": {
+      "child": {
+        "one": "Child one reporting on seeds.",
+        "args": {
+          "topic": "seeds"
+        }
+      },
+      "after": "Parent used the child result."
+    },
+    "logs": [],
+    "phases": [],
+    "agentCount": 2,
+    "durationMs": 0,
+    "runId": "run-fixed-nested-workflow",
+    "tokenUsage": {
+      "input": 2796,
+      "output": 16,
+      "total": 5608,
+      "cost": 0,
+      "cacheRead": 0,
+      "cacheWrite": 2796
+    }
+  },
+  "error": null,
+  "events": [
+    {
+      "event": "runtime",
+      "type": "workflow",
+      "stage": "start",
+      "name": "child-flow",
+      "args": {
+        "topic": "seeds"
+      }
+    },
+    {
+      "event": "agentStart",
+      "id": "run-fixed-nested-workflow-nested1:0",
+      "label": "child-one",
+      "prompt": "Child agent one for {\"topic\":\"seeds\"}",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-nested-workflow-nested1:0",
+      "label": "child-one",
+      "result": "Child one reporting on seeds.",
+      "tokens": 2794,
+      "tokenUsage": {
+        "input": 1393,
+        "output": 8,
+        "cacheRead": 0,
+        "cacheWrite": 1393,
+        "total": 2794,
+        "cost": 0
+      },
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "tokenUsage",
+      "usage": {
+        "input": 2796,
+        "output": 16,
+        "total": 5608,
+        "cost": 0,
+        "cacheRead": 0,
+        "cacheWrite": 2796
+      }
+    },
+    {
+      "event": "runtime",
+      "type": "workflow",
+      "stage": "end",
+      "name": "child-flow",
+      "args": {
+        "topic": "seeds"
+      }
+    },
+    {
+      "event": "agentStart",
+      "id": "run-fixed-nested-workflow:0",
+      "label": "after",
+      "prompt": "Use child result: {\"one\":\"Child one reporting on seeds.\",\"args\":{\"topic\":\"seeds\"}}",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-nested-workflow:0",
+      "label": "after",
+      "result": "Parent used the child result.",
+      "tokens": 2814,
+      "tokenUsage": {
+        "input": 1403,
+        "output": 8,
+        "cacheRead": 0,
+        "cacheWrite": 1403,
+        "total": 2814,
+        "cost": 0
+      },
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "tokenUsage",
+      "usage": {
+        "input": 2796,
+        "output": 16,
+        "total": 5608,
+        "cost": 0,
+        "cacheRead": 0,
+        "cacheWrite": 2796
+      }
+    }
+  ],
+  "journal": [
+    {
+      "index": 0,
+      "runId": "run-fixed-nested-workflow-nested1",
+      "hash": "176a30d12384afb3b817fec67984e1c5eec05e0c3cc2564a898444ebc2d747b4",
+      "result": "Child one reporting on seeds.",
+      "storeDelta": {}
+    },
+    {
+      "index": 0,
+      "runId": "run-fixed-nested-workflow",
+      "hash": "9a0feb8d325779f19677b438a40f4833646805decd9413b02fca78d6abb4525d",
+      "result": "Parent used the child result.",
+      "storeDelta": {}
+    }
+  ],
+  "histories": {
+    "run-fixed-nested-workflow-nested1:0 child-one": [
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "Task label: child-one\n\nChild agent one for {\"topic\":\"seeds\"}",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "text": "Child one reporting on seeds.",
+        "timestamp": 1700000200321
+      }
+    ],
+    "run-fixed-nested-workflow:0 after": [
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "Task label: after\n\nUse child result: {\"one\":\"Child one reporting on seeds.\",\"args\":{\"topic\":\"seeds\"}}",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "text": "Parent used the child result.",
+        "timestamp": 1700000200321
+      }
+    ]
+  },
+  "providerCalls": [
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: child-one\n\nChild agent one for {\"topic\":\"seeds\"}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: after\n\nUse child result: {\"one\":\"Child one reporting on seeds.\",\"args\":{\"topic\":\"seeds\"}}"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pendingFauxResponses": 0
+}

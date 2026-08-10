@@ -51,7 +51,7 @@ orb/
 │   └── sync/                 upstream sync tool (delta report, fixture regen driver)
 ├── conformance/
 │   ├── extract/              TS scripts run inside .upstream/ to emit fixtures (dev-only Node)
-│   ├── fixtures/             committed golden fixtures (F1–F12, see §6)
+│   ├── fixtures/             committed golden fixtures (F1–F13, see §6)
 │   └── runner/               go test helpers consuming fixtures; RPC black-box adapter
 ├── docs/                     DECISIONS.md, ARCHITECTURE.md, MIRROR.md, plan/, sync/reports/
 ├── AGENTS.md                 execution contract for implementing agents
@@ -234,12 +234,17 @@ degradation (RPC bridges dialogs over the protocol; print/json = no-ops).
 extensions run in one owned local Node.js ≥22.6 or Bun child process. Discovery covers the
 trust-gated project directory, global directory, configured paths, resolved npm/git package paths,
 and explicit `-e` entries in upstream order. Node strips TypeScript natively and Bun executes it
-directly; Node package `.ts` entries are exposed through a stable symlink outside `node_modules`
-because Node deliberately refuses type stripping there, while package-relative files and hoisted
-dependencies remain reachable. The staged resolution layer preserves explicitly declared SDK
-versions and fills unresolved peer SDK imports from the pinned coding-agent family, including
-legacy package-name aliases; missing declared dependencies are materialized with npm or Bun before
-load.
+directly; where Node refuses type stripping under `node_modules`, the loader supplies transpiled
+source from its load hook so the package manager's own layout keeps governing resolution. Every
+`@earendil-works/pi-*` (and legacy `@mariozechner/pi-*`) specifier resolves to the embedded
+`orb-extension-sdk` (`host/sdk/`, versioned by `sdk.json`, go:embed-ed and materialized
+content-addressed beside `host.mjs`): pure ports of the exercised upstream symbols, thin
+session/settings/resource handles, and capability-negotiated services (`sdk_v1`,
+`agent_session_v1`, `model_runtime_v1`) that bridge `createAgentSession`, `ModelRuntime`, and
+`ModelRegistry` onto the Go runtime (`codingagent.ExtensionAgentSessionService`); every other
+upstream export throws a precise `OrbUnsupportedCapability` diagnostic. The loader refuses — as a
+per-extension resolve-time load failure — any resolution reaching a real installed pi SDK.
+Missing declared dependencies are materialized with npm or Bun before load.
 
 The embedded `host.mjs` dynamically imports each entry and proxies the complete ExtensionAPI over
 versioned bidirectional JSONL. Registrations, events, tools, commands, providers and auth callbacks,
@@ -296,6 +301,7 @@ Fixture families (each = extraction script in `conformance/extract/`, goldens in
 | F10 | compaction | summarization boundaries, firstKeptEntryId, token accounting |
 | F11 | extension behavior | Go-native extension runner and product-wiring effects |
 | F12 | TUI render goldens | Component.Render(width) line snapshots |
+| F13 | dynamic-workflows ecosystem replay | `@quintinshaw/pi-dynamic-workflows@3.5.1` behavior goldens from real pinned pi, replayed through the extension host + orb-extension-sdk bridges |
 
 Extraction runs Node/vitest **inside `.upstream/`** (dev-only), emitting JSON the Go tests consume.
 Where upstream lacks a directly extractable test, the extractor drives upstream's own faux provider

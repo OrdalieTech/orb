@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "scenarios": [
+    "foreground-basic",
+    "structured-output",
+    "store-tools",
+    "web-toolset",
+    "agent-types",
+    "nested-workflow",
+    "cancellation",
+    "model-routing",
+    "background-lifecycle",
+    "persist-agent-sessions",
+    "extension-lifecycle",
+    "workflows-models",
+    "export-surface"
+  ]
+}
