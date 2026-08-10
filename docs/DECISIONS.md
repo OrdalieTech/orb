@@ -20,7 +20,7 @@ Orb is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinne
 
 - **D1 — SDK-first.** orb is a Go module first; the `orb` CLI is one consumer of it. The `ai`
   layer must be importable on its own (as `@earendil-works/pi-ai` is upstream).
-- **D2 — Full parity, no staged v1.** The whole of the pinned pi release (currently v0.83.0) is in scope: agent core, all tools,
+- **D2 — Full parity, no staged v1.** The whole of the pinned pi release (see `UPSTREAM.lock`; amended by D35 for the TUI surface) is in scope: agent core, all tools,
   session tree + compaction, skills, prompt templates, themes, TUI, print/JSON/RPC modes, extension
   system, OAuth flows, HTML export, terminal images, pi packages, project trust. Exclusions are only
   those in the divergence ledger below. Sequencing exists (see plan phases); feature cuts do not.
@@ -304,6 +304,14 @@ Orb is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinne
   shared by multiple sessions or processes. There is no separate injection or shutdown-distillation
   configuration. The profile uses the Store's bounded 100-item query window and append-before-delete
   replacement. V1 has no per-turn RAG, session search, secret scanning, widget, or subagent inheritance.
+
+- **D35 — TUI presentation is Orb-owned (owner, 2026-08-10).** Byte-parity with pi is retained for
+  wire and data formats (D4), provider request shaping, and tool/session/RPC behavior — but not for
+  TUI rendering. The F12-family render goldens (themes, component frames, visible-command frames,
+  replay/UI demos) convert from upstream-extracted fixtures to Orb-owned snapshots regenerated from
+  Orb's own renderer; until that conversion lands they continue to regenerate from upstream.
+  Upstream TUI features (e.g. fullscreen mode) are cherry-picked on merit rather than ported
+  wholesale. This amends D2's full-parity scope for the TUI surface only.
 
 ## 2026-07-21 parity-sync amendments
 

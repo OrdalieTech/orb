@@ -41,8 +41,10 @@ fully before touching code. It applies to any coding agent (Claude Code, Codex, 
 - **Wire formats are byte-compatible with upstream.** Session JSONL, event JSON, RPC frames,
   settings/models/auth files: field names and shapes come from upstream, verified by fixtures.
   Never rename, "clean up", or reorder persisted/emitted JSON.
-- **Do not improve upstream behavior.** Quirks are spec. Note suspected upstream bugs in the commit
-  body; port them faithfully unless DECISIONS.md diverges explicitly.
+- **Do not improve upstream behavior — outside the TUI.** Quirks are spec for wire formats,
+  providers, tools, and session/RPC behavior: note suspected upstream bugs in the commit body and
+  port them faithfully unless DECISIONS.md diverges explicitly. The TUI presentation layer is
+  Orb-owned (D35): upstream TUI changes are cherry-picked on merit, not ported wholesale.
 - **Pure Go.** `CGO_ENABLED=0` must build. No cgo, no sidecar binaries except the upstream-sanctioned
   rg/fd auto-download.
 - **Slim.** Stdlib first; internal helper next; dependency last and only via the ARCHITECTURE §8
@@ -70,7 +72,11 @@ dev-only), fixtures, runner. Full tree: ARCHITECTURE §1.
 Fixture families F1–F12 are defined in ARCHITECTURE §6. Extraction scripts live in
 `conformance/extract/` and run with Node ≥22 inside `.upstream/` (Node is dev tooling only — the
 product is pure Go). Never hand-edit goldens; regenerate them. A failing fixture after your change
-means your change is wrong, not the fixture.
+means your change is wrong, not the fixture. Two tiers (D35): wire, provider, and algorithmic
+families are upstream-extracted pi-parity gates; the F12 render families are becoming Orb-owned
+snapshots of Orb's own TUI — deliberate TUI changes will regenerate them from Orb, and upstream TUI
+drift carries no port obligation. Until that extraction split lands, F12 still regenerates from
+upstream, so a deliberate TUI divergence requires converting the affected family first.
 
 ## Upstream sync
 
