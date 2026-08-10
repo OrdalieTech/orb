@@ -137,6 +137,52 @@ func TestHasTrustRequiringProjectResources(t *testing.T) {
 	}
 }
 
+func TestHasTrustRequiringExternalProjectSkillResources(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("OPENCODE_CONFIG_DIR", filepath.Join(home, "custom-opencode"))
+	t.Setenv("GEMINI_CLI_HOME", home)
+	t.Setenv("COPILOT_HOME", filepath.Join(home, ".copilot"))
+	cwd := filepath.Join(home, "work", "repo", "nested")
+	if err := os.MkdirAll(cwd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{
+		filepath.Join(home, ".claude", "skills"),
+		filepath.Join(home, ".codex", "skills"),
+		filepath.Join(home, ".config", "opencode", "skills"),
+		filepath.Join(home, "custom-opencode", "skills"),
+		filepath.Join(home, ".gemini", "skills"),
+		filepath.Join(home, ".cursor", "skills"),
+		filepath.Join(home, ".copilot", "skills"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if HasTrustRequiringProjectResources(cwd) {
+		t.Fatal("user-level external skill directories should not require project trust")
+	}
+
+	projectRoot := filepath.Join(home, "work", "repo")
+	for _, configDir := range []string{".claude", ".codex", ".opencode", ".gemini", ".cursor", ".github"} {
+		dir := filepath.Join(projectRoot, configDir, "skills")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if !HasTrustRequiringProjectResources(cwd) {
+			t.Fatalf("%s/skills should require project trust", configDir)
+		}
+		if err := os.RemoveAll(filepath.Join(projectRoot, configDir)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestGetProjectTrustOptions(t *testing.T) {
 	tempDir := t.TempDir()
 	parent := filepath.Join(tempDir, "parent")

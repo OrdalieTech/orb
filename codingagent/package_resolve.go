@@ -1073,15 +1073,11 @@ func (manager *PackageManager) addAutoDiscoveredResources(accumulator *resourceA
 		projectOverrides[resourceType] = manager.topLevelEntries(config.ProjectSettings, resourceType)
 	}
 
-	userAgentsSkillsDir := filepath.Join(pmHomeDir(), ".agents", "skills")
+	homeDir := pmHomeDir()
 	projectTrusted := manager.settings.IsProjectTrusted()
-	projectAgentsSkillDirs := make([]string, 0)
+	projectSkillDirs := []string{}
 	if projectTrusted {
-		for _, dir := range ancestorAgentsSkillDirs(manager.cwd) {
-			if resolveResourcePath(dir) != resolveResourcePath(userAgentsSkillsDir) {
-				projectAgentsSkillDirs = append(projectAgentsSkillDirs, dir)
-			}
-		}
+		projectSkillDirs = projectAutomaticSkillDirs(manager.cwd, homeDir)
 	}
 
 	addResources := func(resourceType string, paths []string, metadata PathMetadata, overrides []string, baseDir string) {
@@ -1098,12 +1094,12 @@ func (manager *PackageManager) addAutoDiscoveredResources(accumulator *resourceA
 			projectMetadata, projectOverrides["skills"], projectBaseDir)
 	}
 
-	for _, agentsSkillsDir := range projectAgentsSkillDirs {
-		agentsBaseDir := filepath.Dir(agentsSkillsDir)
-		agentsMetadata := projectMetadata
-		agentsMetadata.BaseDir = agentsBaseDir
-		addResources("skills", collectSkillEntries(agentsSkillsDir, "agents", nil, ""),
-			agentsMetadata, projectOverrides["skills"], agentsBaseDir)
+	for _, skillsDir := range projectSkillDirs {
+		baseDir := filepath.Dir(skillsDir)
+		metadata := projectMetadata
+		metadata.BaseDir = baseDir
+		addResources("skills", collectSkillEntries(skillsDir, "agents", nil, ""),
+			metadata, projectOverrides["skills"], baseDir)
 	}
 
 	if projectTrusted {
@@ -1118,11 +1114,13 @@ func (manager *PackageManager) addAutoDiscoveredResources(accumulator *resourceA
 	addResources("skills", collectSkillEntries(filepath.Join(globalBaseDir, "skills"), "pi", nil, ""),
 		userMetadata, userOverrides["skills"], globalBaseDir)
 
-	userAgentsBaseDir := filepath.Dir(userAgentsSkillsDir)
-	userAgentsMetadata := userMetadata
-	userAgentsMetadata.BaseDir = userAgentsBaseDir
-	addResources("skills", collectSkillEntries(userAgentsSkillsDir, "agents", nil, ""),
-		userAgentsMetadata, userOverrides["skills"], userAgentsBaseDir)
+	for _, skillsDir := range userAutomaticSkillDirs(homeDir) {
+		baseDir := filepath.Dir(skillsDir)
+		metadata := userMetadata
+		metadata.BaseDir = baseDir
+		addResources("skills", collectSkillEntries(skillsDir, "agents", nil, ""),
+			metadata, userOverrides["skills"], baseDir)
+	}
 
 	addResources("prompts", collectAutoFlatEntries(filepath.Join(globalBaseDir, "prompts"), ".md"),
 		userMetadata, userOverrides["prompts"], globalBaseDir)

@@ -449,6 +449,47 @@ func TestResolveAutoDiscoveryTrustGating(t *testing.T) {
 	assertResource(t, resolved.Prompts, filepath.Join(agentDir, "prompts", "user.md"), true)
 }
 
+func TestResolveAutoDiscoversExternalAgentSkills(t *testing.T) {
+	manager, cwd, _, settings := newTestPackageManager(t)
+	home := os.Getenv("HOME")
+	t.Setenv("CODEX_HOME", filepath.Join(home, "codex"))
+	projectSkill := filepath.Join(cwd, ".claude", "skills", "project", "SKILL.md")
+	userSkill := filepath.Join(os.Getenv("CODEX_HOME"), "skills", "user", "SKILL.md")
+	writeTestFile(t, projectSkill, "---\nname: project\ndescription: project skill\n---\nbody")
+	writeTestFile(t, userSkill, "---\nname: user\ndescription: user skill\n---\nbody")
+
+	resolved, err := manager.Resolve(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertResource(t, resolved.Skills, projectSkill, true)
+	assertResource(t, resolved.Skills, userSkill, true)
+	for _, resource := range resolved.Skills {
+		switch resource.Path {
+		case projectSkill:
+			if resource.Metadata.Scope != "project" {
+				t.Fatalf("project metadata = %+v", resource.Metadata)
+			}
+		case userSkill:
+			if resource.Metadata.Scope != "user" {
+				t.Fatalf("user metadata = %+v", resource.Metadata)
+			}
+		}
+	}
+
+	settings.SetProjectTrusted(false)
+	resolved, err = manager.Resolve(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, resource := range resolved.Skills {
+		if resource.Path == projectSkill {
+			t.Fatalf("untrusted external project skill resolved: %+v", resource)
+		}
+	}
+	assertResource(t, resolved.Skills, userSkill, true)
+}
+
 func TestResolveSymlinkedResourcesOnce(t *testing.T) {
 	manager, cwd, agentDir, _ := newTestPackageManager(t)
 	shared := filepath.Join(filepath.Dir(cwd), "shared-resources")

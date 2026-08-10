@@ -13,6 +13,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/OrdalieTech/orb/internal/jsonwire"
+	"github.com/OrdalieTech/orb/internal/skilllocations"
 )
 
 // Port of packages/coding-agent/src/core/trust-manager.ts.
@@ -213,9 +214,7 @@ func findNearestTrustEntry(data trustFile, cwd string) *ProjectTrustStoreEntry {
 }
 
 // HasTrustRequiringProjectResources reports whether cwd has project-local
-// resources gated by project trust: trust-requiring entries under cwd/.pi, or
-// .agents/skills in cwd or an ancestor. The user-global ~/.agents/skills is
-// always a trusted user resource and is ignored here, even when cwd is $HOME.
+// resources gated by project trust, including compatible Agent Skills roots.
 func HasTrustRequiringProjectResources(cwd string) bool {
 	homeDir := ""
 	if home := os.Getenv("HOME"); home != "" {
@@ -227,7 +226,14 @@ func HasTrustRequiringProjectResources(cwd string) bool {
 		homeDir = resolved
 	}
 	homeDir = canonicalizeTrustPath(homeDir)
-	userAgentsSkillsDir := filepath.Join(homeDir, ".agents", "skills")
+	userSkillDirs := skilllocations.User(homeDir)
+	if homeDir != "" {
+		userSkillDirs = append(userSkillDirs, filepath.Join(homeDir, ".agents", "skills"))
+	}
+	userSkillSet := make(map[string]struct{}, len(userSkillDirs))
+	for _, dir := range userSkillDirs {
+		userSkillSet[canonicalizeTrustPath(dir)] = struct{}{}
+	}
 	currentDir := normalizeTrustCwd(cwd)
 
 	configDir := filepath.Join(currentDir, ConfigDirName)
@@ -238,9 +244,12 @@ func HasTrustRequiringProjectResources(cwd string) bool {
 	}
 
 	for {
-		agentsSkillsDir := filepath.Join(currentDir, ".agents", "skills")
-		if agentsSkillsDir != userAgentsSkillsDir {
-			if _, err := os.Stat(agentsSkillsDir); err == nil {
+		projectSkillDirs := append([]string{filepath.Join(currentDir, ".agents", "skills")}, skilllocations.Project(currentDir)...)
+		for _, dir := range projectSkillDirs {
+			if _, userRoot := userSkillSet[canonicalizeTrustPath(dir)]; userRoot {
+				continue
+			}
+			if _, err := os.Stat(dir); err == nil {
 				return true
 			}
 		}

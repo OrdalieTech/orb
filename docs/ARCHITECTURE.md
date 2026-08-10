@@ -45,6 +45,7 @@ orb/
 │   ├── cjksegment/           CJK segmentation helper
 │   ├── ignorerules/          gitignore-style matching
 │   ├── localecompare/        JS localeCompare ordering
+│   ├── skilllocations/       external Agent Skills compatibility roots
 │   ├── semver/               semver range matching (packages)
 │   ├── uuidv7/               uuidv7 generation (upstream sequence scheme)
 │   └── sync/                 upstream sync tool (delta report, fixture regen driver)
@@ -261,7 +262,9 @@ mgmt, get_commands, extension-UI bridging; strict LF framing). RPC is a conforma
 upstream's RPC tests run against our binary (F7).
 
 **Slash commands / skills / templates / themes:** resolution order extension → input hook →
-`/skill:name` → template; built-in interactive commands (`/login /logout /model /resume /new /name
+`/skill:name` → template. Orb also discovers the standard project/user skill roots of Claude Code,
+Codex, OpenCode, Gemini CLI, Cursor, and GitHub Copilot; project roots are trust-gated, native roots
+win collisions, and external aliases deduplicate without scanning plugin caches. Built-in interactive commands (`/login /logout /model /resume /new /name
 /session /tree /trust /fork /clone /compact /copy /export /import /reload /hotkeys /settings
 /changelog /quit`; `/share` → local export per ledger); skills per agentskills.io with progressive
 disclosure + trust gating (upstream `src/core/skills.ts`); prompt templates with bash-style arg

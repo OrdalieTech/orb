@@ -13,6 +13,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Added
 
+- Orb automatically discovers Agent Skills installed for Claude Code, Codex, OpenCode, Gemini CLI, Cursor, and GitHub Copilot; project skills remain trust-gated and duplicate external copies collapse deterministically.
 - Built-in Baseten and Qwen Token Plan Individual providers, the `scrollbarThumb` theme color, and iTerm image size metadata, matching upstream v0.84.1.
 - Mermaid code blocks in assistant and user messages now render as Unicode terminal diagrams (flowchart, sequence, state, class, and ER), with a "Mermaid diagrams" `/settings` toggle (`markdown.mermaid`: off/final/streaming, default streaming).
 

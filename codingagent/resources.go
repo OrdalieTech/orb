@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/internal/skilllocations"
 	textunicode "golang.org/x/text/encoding/unicode"
 )
 
@@ -322,11 +323,11 @@ func findGitResourceRoot(start string) string {
 	}
 }
 
-func ancestorAgentsSkillDirs(cwd string) []string {
+func resourceAncestorDirs(cwd string) []string {
 	root := findGitResourceRoot(cwd)
 	directories := make([]string, 0)
 	for current := resolveResourcePath(cwd); ; current = filepath.Dir(current) {
-		directories = append(directories, filepath.Join(current, ".agents", "skills"))
+		directories = append(directories, current)
 		if root != "" && current == root {
 			break
 		}
@@ -336,6 +337,46 @@ func ancestorAgentsSkillDirs(cwd string) []string {
 		}
 	}
 	return directories
+}
+
+func ancestorAgentsSkillDirs(cwd string) []string {
+	ancestors := resourceAncestorDirs(cwd)
+	directories := make([]string, 0, len(ancestors))
+	for _, dir := range ancestors {
+		directories = append(directories, filepath.Join(dir, ".agents", "skills"))
+	}
+	return directories
+}
+
+func ancestorExternalSkillDirs(cwd string) []string {
+	directories := make([]string, 0)
+	for _, dir := range resourceAncestorDirs(cwd) {
+		directories = append(directories, skilllocations.Project(dir)...)
+	}
+	return directories
+}
+
+func userAutomaticSkillDirs(homeDir string) []string {
+	directories := skilllocations.User(homeDir)
+	if homeDir != "" {
+		directories = append([]string{filepath.Join(homeDir, ".agents", "skills")}, directories...)
+	}
+	return directories
+}
+
+func projectAutomaticSkillDirs(cwd, homeDir string) []string {
+	directories := append(ancestorAgentsSkillDirs(cwd), ancestorExternalSkillDirs(cwd)...)
+	userSet := make(map[string]struct{})
+	for _, dir := range userAutomaticSkillDirs(homeDir) {
+		userSet[canonicalResourcePath(dir)] = struct{}{}
+	}
+	filtered := directories[:0]
+	for _, dir := range directories {
+		if _, isUserRoot := userSet[canonicalResourcePath(dir)]; !isUserRoot {
+			filtered = append(filtered, dir)
+		}
+	}
+	return filtered
 }
 
 func loadAutomaticSkills(dir, source string, includeRootFiles bool) LoadSkillsResult {
@@ -355,6 +396,10 @@ func resolveConfiguredPaths(paths []string, baseDir string) []string {
 
 func loadCommandSkills(options commandResourceOptions) LoadSkillsResult {
 	inputs := make([]LoadSkillsResult, 0)
+	homeDir := ""
+	if home, err := os.UserHomeDir(); err == nil {
+		homeDir = resolveResourcePath(home)
+	}
 	projectBase := filepath.Join(options.cwd, ".pi")
 	if !options.noSkills && options.trusted {
 		configured := resolveConfiguredPaths(options.projectSkillPaths, projectBase)
@@ -367,7 +412,7 @@ func loadCommandSkills(options commandResourceOptions) LoadSkillsResult {
 			loadAutomaticSkills(filepath.Join(projectBase, "skills"), "project", true),
 			options.metadata.skills, "project", projectBase, "auto", "top-level",
 		))
-		for _, dir := range ancestorAgentsSkillDirs(options.cwd) {
+		for _, dir := range projectAutomaticSkillDirs(options.cwd, homeDir) {
 			inputs = append(inputs, retagSkills(
 				loadAutomaticSkills(dir, "project", false), options.metadata.skills,
 				"project", filepath.Dir(dir), "auto", "top-level",
@@ -385,11 +430,10 @@ func loadCommandSkills(options commandResourceOptions) LoadSkillsResult {
 			loadAutomaticSkills(filepath.Join(options.agentDir, "skills"), "user", true),
 			options.metadata.skills, "user", options.agentDir, "auto", "top-level",
 		))
-		if home, err := os.UserHomeDir(); err == nil {
-			userAgentsDir := filepath.Join(home, ".agents", "skills")
+		for _, dir := range userAutomaticSkillDirs(homeDir) {
 			inputs = append(inputs, retagSkills(
-				loadAutomaticSkills(userAgentsDir, "user", false), options.metadata.skills,
-				"user", filepath.Dir(userAgentsDir), "auto", "top-level",
+				loadAutomaticSkills(dir, "user", false), options.metadata.skills,
+				"user", filepath.Dir(dir), "auto", "top-level",
 			))
 		}
 		if len(options.packageSkillPaths) > 0 {

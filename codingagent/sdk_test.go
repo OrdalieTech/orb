@@ -227,6 +227,10 @@ func TestSDKDefaultModelSelectionIncludesResourceLoaderProviders(t *testing.T) {
 }
 
 func TestSDKServiceFactoryAppliesExtensionFlagsAndReportsInvalidValues(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, name := range []string{"CLAUDE_CONFIG_DIR", "CODEX_HOME", "XDG_CONFIG_HOME", "OPENCODE_CONFIG_DIR", "GEMINI_CLI_HOME", "COPILOT_HOME", "COPILOT_SKILLS_DIRS"} {
+		t.Setenv(name, "")
+	}
 	cwd, agentDir := t.TempDir(), t.TempDir()
 	services, err := CreateAgentSessionServices(CreateAgentSessionServicesOptions{
 		CWD: cwd, AgentDir: agentDir,
