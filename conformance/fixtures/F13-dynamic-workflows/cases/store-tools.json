@@ -1,0 +1,302 @@
+{
+  "schemaVersion": 1,
+  "scenario": "store-tools",
+  "script": "export const meta = { name: \"store\", description: \"shared store roundtrip\" };\nconst wrote = await agent(\"Write the finding to the shared store.\", { label: \"writer\" });\nconst read = await agent(\"Read the finding from the shared store.\", { label: \"reader\" });\nreturn { wrote, read };",
+  "result": {
+    "meta": {
+      "name": "store",
+      "description": "shared store roundtrip"
+    },
+    "result": {
+      "wrote": "Stored the finding.",
+      "read": "The finding was n=1 kind=seed."
+    },
+    "logs": [],
+    "phases": [],
+    "agentCount": 2,
+    "durationMs": 0,
+    "runId": "run-fixed-store-tools",
+    "tokenUsage": {
+      "input": 4654,
+      "output": 35,
+      "total": 10318,
+      "cost": 0,
+      "cacheRead": 975,
+      "cacheWrite": 4654
+    }
+  },
+  "error": null,
+  "events": [
+    {
+      "event": "agentStart",
+      "id": "run-fixed-store-tools:0",
+      "label": "writer",
+      "prompt": "Write the finding to the shared store.",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-store-tools:0",
+      "label": "writer",
+      "result": "Stored the finding.",
+      "tokens": 5165,
+      "tokenUsage": {
+        "input": 2329,
+        "output": 20,
+        "cacheRead": 487,
+        "cacheWrite": 2329,
+        "total": 5165,
+        "cost": 0
+      },
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentStart",
+      "id": "run-fixed-store-tools:1",
+      "label": "reader",
+      "prompt": "Read the finding from the shared store.",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-store-tools:1",
+      "label": "reader",
+      "result": "The finding was n=1 kind=seed.",
+      "tokens": 5153,
+      "tokenUsage": {
+        "input": 2325,
+        "output": 15,
+        "cacheRead": 488,
+        "cacheWrite": 2325,
+        "total": 5153,
+        "cost": 0
+      },
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "tokenUsage",
+      "usage": {
+        "input": 4654,
+        "output": 35,
+        "total": 10318,
+        "cost": 0,
+        "cacheRead": 975,
+        "cacheWrite": 4654
+      }
+    }
+  ],
+  "journal": [
+    {
+      "index": 0,
+      "runId": "run-fixed-store-tools",
+      "hash": "78de0c305bf70092be2075b24fba4d41f5ca213291372346c0b752b2df60ca08",
+      "result": "Stored the finding.",
+      "storeDelta": {
+        "finding": {
+          "n": 1,
+          "kind": "seed"
+        }
+      }
+    },
+    {
+      "index": 1,
+      "runId": "run-fixed-store-tools",
+      "hash": "2e890621e12bae9a21d700d3f59070a8a0e904774e29c27cc0f0d581060fc4d7",
+      "result": "The finding was n=1 kind=seed.",
+      "storeDelta": {}
+    }
+  ],
+  "histories": {
+    "run-fixed-store-tools:0 writer": [
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "Task label: writer\n\nWrite the finding to the shared store.",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "toolCall",
+        "toolName": "store_put",
+        "text": "{\"key\":\"finding\",\"value\":{\"n\":1,\"kind\":\"seed\"}}",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "tool",
+        "kind": "toolResult",
+        "toolName": "store_put",
+        "text": "Stored value under key \"finding\".",
+        "isError": false,
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "text": "Stored the finding.",
+        "timestamp": 1700000200321
+      }
+    ],
+    "run-fixed-store-tools:1 reader": [
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "Task label: reader\n\nRead the finding from the shared store.",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "toolCall",
+        "toolName": "store_get",
+        "text": "{\"key\":\"finding\"}",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "tool",
+        "kind": "toolResult",
+        "toolName": "store_get",
+        "text": "Value for key \"finding\": {\"n\":1,\"kind\":\"seed\"}",
+        "isError": false,
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "text": "The finding was n=1 kind=seed.",
+        "timestamp": 1700000200321
+      }
+    ]
+  },
+  "providerCalls": [
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: writer\n\nWrite the finding to the shared store."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: writer\n\nWrite the finding to the shared store."
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "toolCall",
+              "name": "store_put",
+              "arguments": {
+                "key": "finding",
+                "value": {
+                  "n": 1,
+                  "kind": "seed"
+                }
+              }
+            }
+          ],
+          "stopReason": "toolUse"
+        },
+        {
+          "role": "toolResult",
+          "toolName": "store_put",
+          "isError": false,
+          "text": "Stored value under key \"finding\"."
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: reader\n\nRead the finding from the shared store."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: reader\n\nRead the finding from the shared store."
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "toolCall",
+              "name": "store_get",
+              "arguments": {
+                "key": "finding"
+              }
+            }
+          ],
+          "stopReason": "toolUse"
+        },
+        {
+          "role": "toolResult",
+          "toolName": "store_get",
+          "isError": false,
+          "text": "Value for key \"finding\": {\"n\":1,\"kind\":\"seed\"}"
+        }
+      ]
+    }
+  ],
+  "pendingFauxResponses": 0
+}

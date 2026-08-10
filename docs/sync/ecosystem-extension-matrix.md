@@ -539,6 +539,16 @@ wins**, not a failure to resolve:
 
 Neither is a flake, and neither is on the known non-verdict list.
 
+> **Superseded by the embedded orb-extension-sdk (F13).** The resolution dynamics analyzed above —
+> `legacySurface` redirects through the caller's context, `installedSDK` fallback against
+> `ORB_PI_SDK_ROOT`, "which copy of a duplicated SDK wins" — no longer exist. Every
+> `@earendil-works/pi-*`/`@mariozechner/pi-*` specifier now resolves unconditionally to the
+> embedded `orb-extension-sdk` (`codingagent/extensions/host/sdk/`), `ORB_PI_SDK_ROOT` is dead,
+> and a resolution reaching an installed real pi SDK is refused at resolve time. An SDK export a
+> package needs but orb does not implement now fails with the precise `OrbUnsupportedCapability`
+> diagnostic instead of a version-dependent missing-export link error; `isRetryableAssistantError`
+> specifically is served (as a root-surface stub) at the upstream-0.84.1 export set.
+
 **`resolveFromSource` is not dead code — `77c4c33` deleted it.** At `f64f4f7` it sat at
 `loader.mjs:61` gated on `context.parentURL.includes("/host/entries/")`, called from `resolve` at
 `:263`. At `d620c01` the symbol does not appear in the file at all. The remaining SDK path is

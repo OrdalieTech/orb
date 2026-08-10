@@ -89,11 +89,19 @@ the others from loading.
 Local `.ts` files and package entrypoints are imported without rewriting the source tree. Bun runs
 TypeScript directly. Node 22.6 or newer uses native type stripping; the host's loader resolves
 extensionless TypeScript imports, `.js` specifiers backed by `.ts` files, package `#imports`, and
-TypeScript dependency exports. Package entries are staged through symlinks outside `node_modules`
-because Node refuses to strip TypeScript below that directory. An extension's declared SDK version
-wins, while unresolved peer SDK imports bind to the coding-agent SDK family installed with the
-package; the legacy `@sinclair/typebox` name binds to the current `typebox` SDK for upstream schema
-compatibility.
+TypeScript dependency exports (supplying transpiled source from the load hook where Node refuses
+type stripping under `node_modules`).
+
+Every legacy pi SDK specifier (`@earendil-works/pi-*` and the historical `@mariozechner/pi-*`
+names) resolves to the embedded orb-extension-sdk, materialized content-addressed under
+`<agentDir>/host/` beside `host.mjs` and named to the host by `ORB_EXTENSION_SDK_ROOT`. No
+resolver path reaches a real pi SDK: the loader records every resolved module's realpath, and one
+that lands inside an installed `@earendil-works/pi-*`/`@mariozechner/pi-*` package fails that
+resolution with a diagnostic naming the importer, the specifier, and the import chain. The refusal
+is an unswallowable resolve-time load failure by design — the affected extension fails to load
+(or its dynamic import rejects, with the diagnostic mirrored on stderr) while the host process and
+other extensions continue; it is never a process abort. A pi SDK specifier outside the served
+surface fails with the full list of modules the SDK does serve.
 
 Runtime discovery prefers Node when it is at least 22.6 and otherwise tries Bun. If neither is
 available, orb emits exactly `JS extensions require Node.js ≥22.6 or Bun; skills, prompt templates,
@@ -134,7 +142,13 @@ changes before processing the next agent action.
 The host retains the JavaScript `execute` callback. Orb installs a normal Go
 `extensions.ToolDefinition` whose execution closure sends `execute_tool` back to the host.
 `constrainedSampling: false` is omitted as upstream's explicit-disable form; object configurations
-are forwarded to the provider. `prepareArguments` remains a separately inventoried compatibility surface.
+are forwarded to the provider. The host runs the retained sync `prepareArguments` before `execute`
+(its throw-on-invalid contract reaches the tool result); the residual divergence is ordering —
+upstream prepares before schema validation, orb validates the raw arguments Go-side first, so an
+input that only conforms after preparation fails validation instead of being normalized. A lazy
+`get promptGuidelines()` is re-read over the wire per system-prompt build instead of freezing the
+registration snapshot, and live `renderCall`/`renderResult` functions are bridged through the
+renderer-component RPC.
 
 `register_command` carries `extensionId`, `name`, and an options object containing `description`.
 The host retains the handler; argument completion is outside Phase 1. Orb installs a normal
@@ -436,3 +450,65 @@ Callback contexts carry a generation-scoped `signal` descriptor with `{id,aborte
 host materializes it as a real JavaScript `AbortSignal`; orb sends `state_signal_abort` while the
 callback is running and `state_signal_release` when it returns. For `session_before_compact` and
 `session_before_tree`, the event payload's `signal` is the same live signal exposed on `ctx`.
+
+## Phase 3 — orb-extension-sdk services (`sdk_v1`, `agent_session_v1`, `model_runtime_v1`)
+
+The embedded orb-extension-sdk's three protocol-backed exports — `createAgentSession`,
+`ModelRuntime`, `ModelRegistry` — call through these capabilities. All three are advertised in
+`host_hello`; absence forbids every method they govern (the SDK then throws the precise
+`OrbUnsupportedCapability` diagnostic naming the missing capability — this is how future Orbs
+degrade older hosts deliberately). The handshake response's `services` object is the `sdk_v1`
+bootstrap payload: `sessionsRoot` is the absolute sessions root, from which the SDK's
+`SessionManager.create()` composes and eagerly creates `<root>/--<cwd-dashed>--` locally so
+`getSessionDir()` returns a real writable directory without a wire round trip.
+
+Handle convention (all services): string handle ids minted by orb; every handle has an explicit
+dispose (idempotent on the orb side); events carry a per-handle monotonically increasing `seq`;
+errors are structured `{code,message}` response envelopes and never tear the channel. Callbacks
+emitted while a service request runs are written before that request's terminal response.
+
+Host-to-orb requests:
+
+- `sdk_resource_reload` `{cwd?,agentDir?,noExtensions}` — backs `DefaultResourceLoader.reload()`;
+  reloads the resource set (skills, prompts, AGENTS.md context — never extensions when
+  `noExtensions`) the next session create for the same key observes.
+- `model_runtime_create` `{authPath?,modelsPath?,allowModelNetwork?}` →
+  `{handle,catalog}` — a catalog/auth registry rooted at the directory of `modelsPath` (else
+  `authPath`, else the agent dir); `allowModelNetwork` defaults false like upstream. The catalog
+  snapshot (`all`/`available`/provider auth) backs the SDK `ModelRegistry` facade's synchronous
+  `getAll`/`getAvailable`/`hasConfiguredAuth`.
+- `model_runtime_get_available` `{handle,extensionId?}` → `{models,catalog}` — serves both
+  `ModelRuntime.getAvailable()` and the facade's snapshot refresh. The reserved handle
+  `"context"` (self-identifying form `"context:<extensionId>"`) names the requesting extension's
+  own `ctx.modelRegistry` view; `ctx.modelRegistry.runtime` carries such a handle so the plugin's
+  private-field read (`runtimeOf`) survives.
+- `model_runtime_dispose` `{handle}`.
+- `agent_session_create` `{extensionId,options}` → `{handle,modelFallbackMessage?,model?}` —
+  `options` mirrors upstream `CreateAgentSessionOptions` field for field (cwd, agentDir, model —
+  off-catalog synthesized objects included — thinkingLevel, scopedModels, noTools, tools,
+  excludeTools, customTools, modelRuntime ref, session/settings/resourceLoader thin handles,
+  sessionStartEvent). Coding-tool markers cross as `{builtin,promptSnippet?,promptGuidelines?}`
+  and are served with Go-native tools; every other customTools entry is a live host-JS closure the
+  runtime calls back via `execute_session_tool`.
+- `agent_session_prompt` `{handle,text,options?}` — resolves when the turn settles; provider
+  quota/limit failures are not errors (they land in the message mirror as a final assistant
+  message with `stopReason:"error"` and the provider's verbatim `errorMessage`).
+- `agent_session_messages`, `agent_session_abort`, `agent_session_subscribe`,
+  `agent_session_stats`, `agent_session_set_active_tools`, `agent_session_append_info`,
+  `agent_session_dispose` — the rest of the child-session surface, 1:1 with the SDK proxy.
+
+Orb-to-host traffic:
+
+- `agent_session_event` (event) `{handle,seq,kind,event|transferId}` — mirrors session activity
+  into the SDK's local `messages`/stats/subscribe mirrors during the turn, not only at settle.
+  `kind` is one of `event`, `messages_snapshot`, `message_appended`, `message_updated`, `stats`.
+  A payload that would exceed the 4 MiB frame cap travels as base64 `agent_session_chunk` events
+  referenced by a chunkless terminal `agent_session_event` carrying `transferId`.
+- `execute_session_tool` (request) `{handle,toolName,toolCallId,params}` — runs a retained
+  customTools closure in the host process. The host runs `prepareArguments` there; orb has already
+  schema-validated (and coerced) `params` against the tool's JSON Schema (D14), preserves the
+  provider-emitted object member order when the validated value is unchanged, streams
+  `tool_update` partials, and honors `terminate: true` in the decoded result by ending the turn.
+- `service_cancel` (host-to-orb event) `{requestId,reason?}` — the JS `AbortSignal` mirror: it
+  cancels the Go-side context of the named in-flight service request, whose response then settles
+  with code `cancelled` (cancellation is deterministic, never local-only).

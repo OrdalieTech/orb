@@ -185,12 +185,12 @@
 			"rank": 12,
 			"tier": 1,
 			"package": "@quintinshaw/pi-dynamic-workflows",
-			"version": "3.4.1",
+			"version": "3.5.1",
 			"downloads": {
 				"monthly": 28554,
 				"weekly": 8605
 			},
-			"integrity": "sha512-oGvpEkqoG4MQ5HQsQ6zG+DuPmX3Z+AY+Fxx5qN7lqEQNl7Vvq3EU7jTRRJoeyTFPZNOsornqaqnUeGecpHEQoQ==",
+			"integrity": "sha512-YeIIJQpYpF5hPCQm2dlW6zsonZ82BTdelIh1J7TKmaoZkatiTKwM/yBSby7bZpatWQ2YbYdj+RfGEll+cXT8Hg==",
 			"extensions": [
 				"extensions/workflow.ts"
 			]

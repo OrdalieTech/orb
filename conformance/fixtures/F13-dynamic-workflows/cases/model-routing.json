@@ -1,0 +1,308 @@
+{
+  "schemaVersion": 1,
+  "scenario": "model-routing",
+  "script": "export const meta = { name: \"routing\", description: \"tier routing and fallbacks\" };\nconst small = await agent(\"Small tier work\", { label: \"small\", tier: \"small\" });\nconst untagged = await agent(\"Untagged work\", { label: \"untagged\" });\nconst synthesized = await agent(\"Custom off-catalog id\", { label: \"synthesized\", model: \"faux/synth-id\" });\nlet explicitError = null;\ntry {\n  await agent(\"Pinned to a ghost\", { label: \"pinned\", model: \"ghost/nope\" });\n} catch (error) {\n  explicitError = { code: error.code, message: error.message, recoverable: error.recoverable };\n}\nlet tierError = null;\ntry {\n  await agent(\"Big tier is broken\", { label: \"big\", tier: \"big\" });\n} catch (error) {\n  tierError = { code: error.code, message: error.message, recoverable: error.recoverable };\n}\nreturn { small, untagged, synthesized, explicitError, tierError };",
+  "result": {
+    "meta": {
+      "name": "routing",
+      "description": "tier routing and fallbacks"
+    },
+    "result": {
+      "small": "Small tier answer.",
+      "untagged": "Untagged answer.",
+      "synthesized": "Synthesized custom-id answer.",
+      "explicitError": {
+        "code": "MODEL_NOT_FOUND",
+        "message": "Model \"ghost/nope\" not found. Use /workflows-models to choose an available model.",
+        "recoverable": false
+      },
+      "tierError": {
+        "code": "MODEL_NOT_FOUND",
+        "message": "tier \"big\" from model-tiers.json resolves to \"ghost/nowhere\", which is not available. Use /workflows-models to choose an available model.",
+        "recoverable": false
+      }
+    },
+    "logs": [
+      "default \"medium\" tier model \"ghost/nowhere\" unavailable — using the session default"
+    ],
+    "phases": [],
+    "agentCount": 5,
+    "durationMs": 0,
+    "runId": "run-fixed-model-routing",
+    "tokenUsage": {
+      "input": 4162,
+      "output": 17,
+      "total": 8353,
+      "cost": 0,
+      "cacheRead": 0,
+      "cacheWrite": 4162
+    }
+  },
+  "error": null,
+  "events": [
+    {
+      "event": "agentStart",
+      "id": "run-fixed-model-routing:0",
+      "label": "small",
+      "prompt": "Small tier work",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-model-routing:0",
+      "label": "small",
+      "result": "Small tier answer.",
+      "tokens": 2777,
+      "tokenUsage": {
+        "input": 1386,
+        "output": 5,
+        "cacheRead": 0,
+        "cacheWrite": 1386,
+        "total": 2777,
+        "cost": 0
+      },
+      "model": "faux/faux-mini"
+    },
+    {
+      "event": "agentStart",
+      "id": "run-fixed-model-routing:1",
+      "label": "untagged",
+      "prompt": "Untagged work",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "log",
+      "message": "default \"medium\" tier model \"ghost/nowhere\" unavailable — using the session default"
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-model-routing:1",
+      "label": "untagged",
+      "result": "Untagged answer.",
+      "tokens": 2778,
+      "tokenUsage": {
+        "input": 1387,
+        "output": 4,
+        "cacheRead": 0,
+        "cacheWrite": 1387,
+        "total": 2778,
+        "cost": 0
+      },
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentStart",
+      "id": "run-fixed-model-routing:2",
+      "label": "synthesized",
+      "prompt": "Custom off-catalog id",
+      "model": "faux/synth-id"
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-model-routing:2",
+      "label": "synthesized",
+      "result": "Synthesized custom-id answer.",
+      "tokens": 2786,
+      "tokenUsage": {
+        "input": 1389,
+        "output": 8,
+        "cacheRead": 0,
+        "cacheWrite": 1389,
+        "total": 2786,
+        "cost": 0
+      },
+      "model": "faux/synth-id"
+    },
+    {
+      "event": "agentStart",
+      "id": "run-fixed-model-routing:3",
+      "label": "pinned",
+      "prompt": "Pinned to a ghost",
+      "model": "ghost/nope"
+    },
+    {
+      "event": "log",
+      "message": "agent pinned attempt 1/1 failed: Model \"ghost/nope\" not found. Use /workflows-models to choose an available model."
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-model-routing:3",
+      "label": "pinned",
+      "result": null,
+      "tokens": 6,
+      "model": "ghost/nope",
+      "error": "Model \"ghost/nope\" not found. Use /workflows-models to choose an available model.",
+      "errorCode": "MODEL_NOT_FOUND",
+      "recoverable": false
+    },
+    {
+      "event": "agentStart",
+      "id": "run-fixed-model-routing:4",
+      "label": "big",
+      "prompt": "Big tier is broken",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "log",
+      "message": "agent big attempt 1/1 failed: tier \"big\" from model-tiers.json resolves to \"ghost/nowhere\", which is not available. Use /workflows-models to choose an available model."
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-model-routing:4",
+      "label": "big",
+      "result": null,
+      "tokens": 6,
+      "model": "faux/faux-model",
+      "error": "tier \"big\" from model-tiers.json resolves to \"ghost/nowhere\", which is not available. Use /workflows-models to choose an available model.",
+      "errorCode": "MODEL_NOT_FOUND",
+      "recoverable": false
+    },
+    {
+      "event": "tokenUsage",
+      "usage": {
+        "input": 4162,
+        "output": 17,
+        "total": 8353,
+        "cost": 0,
+        "cacheRead": 0,
+        "cacheWrite": 4162
+      }
+    }
+  ],
+  "journal": [
+    {
+      "index": 0,
+      "runId": "run-fixed-model-routing",
+      "hash": "8dff16c723fc015bdd3d2b1c9647597a1aef683e75db4df2dcaac957283603da",
+      "result": "Small tier answer.",
+      "storeDelta": {}
+    },
+    {
+      "index": 1,
+      "runId": "run-fixed-model-routing",
+      "hash": "986b3fcd792fc1604fb8cab6680e273194129a6a945a874770da40e28c8d58bd",
+      "result": "Untagged answer.",
+      "storeDelta": {}
+    },
+    {
+      "index": 2,
+      "runId": "run-fixed-model-routing",
+      "hash": "40b94d26c9b1d700c5e67704944c7696e67582a6352d5cb3e4e1f6cf34a02ecb",
+      "result": "Synthesized custom-id answer.",
+      "storeDelta": {}
+    }
+  ],
+  "histories": {
+    "run-fixed-model-routing:0 small": [
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "Task label: small\n\nSmall tier work",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "text": "Small tier answer.",
+        "timestamp": 1700000200321
+      }
+    ],
+    "run-fixed-model-routing:1 untagged": [
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "Task label: untagged\n\nUntagged work",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "text": "Untagged answer.",
+        "timestamp": 1700000200321
+      }
+    ],
+    "run-fixed-model-routing:2 synthesized": [
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "Task label: synthesized\n\nCustom off-catalog id",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "text": "Synthesized custom-id answer.",
+        "timestamp": 1700000200321
+      }
+    ]
+  },
+  "providerCalls": [
+    {
+      "model": "faux/faux-mini",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: small\n\nSmall tier work"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: untagged\n\nUntagged work"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "faux/synth-id",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: synthesized\n\nCustom off-catalog id"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pendingFauxResponses": 0
+}

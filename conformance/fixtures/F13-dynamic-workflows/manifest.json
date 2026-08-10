@@ -1,0 +1,39 @@
+{
+  "family": "F13-dynamic-workflows",
+  "upstreamCommit": "53fa77ccd8a279eb87e92294ef3687b03ff80112",
+  "generator": "conformance/extract/f13-dynamic-workflows.ts",
+  "source": "packages/coding-agent/src/core/{sdk.ts,agent-session.ts,model-runtime.ts,model-registry.ts,session-manager.ts,settings-manager.ts,resource-loader.ts,tools/*} + packages/ai/src/providers/faux.ts + packages/tui/src + npm:@quintinshaw/pi-dynamic-workflows@3.5.1",
+  "plugin": {
+    "name": "@quintinshaw/pi-dynamic-workflows",
+    "version": "3.5.1",
+    "integrity": "sha512-YeIIJQpYpF5hPCQm2dlW6zsonZ82BTdelIh1J7TKmaoZkatiTKwM/yBSby7bZpatWQ2YbYdj+RfGEll+cXT8Hg=="
+  },
+  "fixedNow": 1700000200321,
+  "canonicalized": [
+    "<fixture> temp roots",
+    "<fixture-dash> dashed cwd encodings",
+    "<uuid-N> UUIDs"
+  ],
+  "referenceOnly": [
+    "reference-tui/task-panel.json",
+    "reference-tui/workflows-models-select.json"
+  ],
+  "files": [
+    "cases.json",
+    "cases/foreground-basic.json",
+    "cases/structured-output.json",
+    "cases/store-tools.json",
+    "cases/web-toolset.json",
+    "cases/agent-types.json",
+    "cases/nested-workflow.json",
+    "cases/cancellation.json",
+    "cases/model-routing.json",
+    "cases/background-lifecycle.json",
+    "cases/persist-agent-sessions.json",
+    "cases/extension-lifecycle.json",
+    "cases/workflows-models.json",
+    "cases/export-surface.json",
+    "reference-tui/task-panel.json",
+    "reference-tui/workflows-models-select.json"
+  ]
+}

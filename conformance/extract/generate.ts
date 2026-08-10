@@ -29,6 +29,7 @@ import { generateF12ExportJSONL } from "./f12-export-jsonl.ts";
 import { generateF12Shutdown } from "./f12-shutdown.ts";
 import { generateF12UILifecycle } from "./f12-ui-lifecycle.ts";
 import { generateF12VisibleCommands } from "./f12-visible-commands.ts";
+import { generateF13DynamicWorkflows } from "./f13-dynamic-workflows.ts";
 import { generateWP440 } from "./wp440-images.ts";
 import { generateWP440Read } from "./wp440-read.ts";
 import { generateWP370Runtime } from "./wp370-runtime.ts";
@@ -94,6 +95,7 @@ const generators = [
 	generateF12Shutdown,
 	generateF12UILifecycle,
 	generateF12VisibleCommands,
+	generateF13DynamicWorkflows,
 	generateWP440,
 	generateWP440Read,
 	generateWP370Runtime,

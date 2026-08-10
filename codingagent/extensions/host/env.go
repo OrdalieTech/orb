@@ -1,27 +1,18 @@
 package host
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/OrdalieTech/orb/codingagent/config"
 )
 
 const (
 	piSubagentBinaryEnv = "PI_SUBAGENT_PI_BINARY"
 	piAgentDirEnv       = "PI_CODING_AGENT_DIR"
 	piAgentMarkerEnv    = "PI_CODING_AGENT"
-	piSDKRootEnv        = "ORB_PI_SDK_ROOT"
 )
-
-// piSDKPackage is the package whose directory ORB_PI_SDK_ROOT names: the SDK an
-// extension imports when it treats the coding-agent family as provided by its
-// host rather than declaring it. Only a copy inside orb's own npm roots counts.
-const piSDKPackage = "@earendil-works/pi-coding-agent"
 
 func prepareHostEnvironment(options Options, base []string, runtimePath string) ([]string, error) {
 	agentDir := options.AgentDir
@@ -64,58 +55,12 @@ func prepareHostEnvironment(options Options, base []string, runtimePath string) 
 	environment = setEnvironmentValue(environment, piSubagentBinaryEnv, shimPath)
 	environment = setEnvironmentValue(environment, piAgentDirEnv, agentDir)
 	environment = setEnvironmentValue(environment, piAgentMarkerEnv, "true")
-	// An explicitly set ORB_PI_SDK_ROOT is an escape hatch — a checkout, a
-	// vendored copy, a tree orb's own search cannot see — and is authoritative
-	// for that reason. It is not a fallback onto a third-party install: orb
-	// never looks for an installed pi and never borrows its bundled SDK. Reading
-	// pi's config files is the D4 compatibility promise; executing its code is
-	// not, and the line stays clean.
-	sdkRoot := strings.TrimSpace(environmentValue(base, piSDKRootEnv))
-	if sdkRoot == "" {
-		sdkRoot = managedSDKRoot(options)
-	}
-	environment = setEnvironmentValue(environment, piSDKRootEnv, sdkRoot)
+	// The pi SDK surface is served exclusively by the embedded orb-extension-sdk
+	// (materialized in startLocked, named by ORB_EXTENSION_SDK_ROOT). orb never
+	// looks for an installed pi and never borrows its bundled SDK: reading pi's
+	// config files is the D4 compatibility promise; executing its code is not,
+	// and the line stays clean.
 	return environment, nil
-}
-
-// managedSDKRoot reports the pi SDK installed in orb's own npm roots, project
-// scope before user scope — the precedence the package manager itself applies —
-// and only reaches the project root when the project is trusted, the same gate
-// every other project-scoped resource passes through (Discover,
-// getNpmInstallRoot). A root that is absent, empty, unreadable or half-written
-// by an interrupted install yields nothing rather than an error: the SDK is a
-// fallback for imports an extension did not declare, so its absence is reported
-// by loader.mjs at the failing import, where it names the extension.
-func managedSDKRoot(options Options) string {
-	roots := make([]string, 0, 2)
-	if options.ProjectTrusted && options.CWD != "" {
-		roots = append(roots, config.ProjectNpmInstallRoot(options.CWD))
-	}
-	roots = append(roots, config.UserNpmInstallRoot(options.AgentDir))
-	for _, root := range roots {
-		candidate := filepath.Join(append([]string{root, "node_modules"}, strings.Split(piSDKPackage, "/")...)...)
-		if installedPackageName(candidate) == piSDKPackage {
-			return candidate
-		}
-	}
-	return ""
-}
-
-// installedPackageName reads the name a package directory declares, following a
-// symlinked package dir the way every Node resolver does. Anything unreadable
-// or unparsable is reported as no package at all.
-func installedPackageName(directory string) string {
-	encoded, err := os.ReadFile(filepath.Join(directory, "package.json"))
-	if err != nil {
-		return ""
-	}
-	var manifest struct {
-		Name string `json:"name"`
-	}
-	if json.Unmarshal(encoded, &manifest) != nil {
-		return ""
-	}
-	return manifest.Name
 }
 
 func replaceExecutableLink(path, target string) error {

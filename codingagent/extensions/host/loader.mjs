@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import nodeModule from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -24,69 +24,104 @@ const stripOptions = (() => {
 	return { mode: "strip" };
 })();
 
-const sdkAliases = {
-	"@earendil-works/pi-coding-agent": "@earendil-works/pi-coding-agent",
-	"@earendil-works/pi-agent-core": "@earendil-works/pi-agent-core",
-	"@earendil-works/pi-ai": "@earendil-works/pi-ai/compat",
-	"@earendil-works/pi-ai/compat": "@earendil-works/pi-ai/compat",
-	"@earendil-works/pi-ai/oauth": "@earendil-works/pi-ai/oauth",
-	"@earendil-works/pi-ai/providers/all": "@earendil-works/pi-ai/providers/all",
-	"@earendil-works/pi-tui": "@earendil-works/pi-tui",
-	"@mariozechner/pi-coding-agent": "@earendil-works/pi-coding-agent",
-	"@mariozechner/pi-agent-core": "@earendil-works/pi-agent-core",
-	"@mariozechner/pi-ai": "@earendil-works/pi-ai/compat",
-	"@mariozechner/pi-ai/compat": "@earendil-works/pi-ai/compat",
-	"@mariozechner/pi-ai/oauth": "@earendil-works/pi-ai/oauth",
-	"@mariozechner/pi-ai/providers/all": "@earendil-works/pi-ai/providers/all",
-	"@mariozechner/pi-tui": "@earendil-works/pi-tui",
-	"@sinclair/typebox": "typebox",
-	"@sinclair/typebox/compile": "typebox/compile",
-	"@sinclair/typebox/value": "typebox/value",
-	typebox: "typebox",
-	"typebox/compile": "typebox/compile",
-	"typebox/value": "typebox/value",
+// Every legacy pi SDK specifier resolves into the embedded orb-extension-sdk
+// that the manager materializes and names via ORB_EXTENSION_SDK_ROOT. This map
+// is the loader's entire knowledge of that surface: a specifier under the
+// legacy scopes that is absent here resolves nowhere — in particular never
+// from node_modules, whatever is installed there — and fails with a precise
+// error instead. The pi-ai root serves upstream's index surface and "/compat"
+// its superset with the legacy global API, matching the upstream exports map.
+// ponytail: Bun has no resolve hook, so these aliases have a weaker Bun
+// counterpart: NODE_PATH wrapper packages (runtime_entry.go), which a real
+// install in the extension's own tree would still outrank; upgrade path is a
+// Bun plugin that intercepts nested resolution.
+const sdkModules = {
+	"@earendil-works/pi-coding-agent": "coding-agent.mjs",
+	"@earendil-works/pi-agent-core": "agent-core.mjs",
+	"@earendil-works/pi-ai": "ai.mjs",
+	"@earendil-works/pi-ai/compat": "ai-compat.mjs",
+	"@earendil-works/pi-ai/oauth": "ai-oauth.mjs",
+	"@earendil-works/pi-ai/providers/all": "ai-providers-all.mjs",
+	"@earendil-works/pi-tui": "tui.mjs",
 };
+for (const [specifier, module] of Object.entries(sdkModules)) {
+	sdkModules[specifier.replace("@earendil-works/", "@mariozechner/")] = module;
+}
 
-// pi-ai's root entry keeps only the side-effect-free core; the global API that
-// published extensions import lives on the "/compat" subpath, which re-exports
-// the root. Redirecting through the same context keeps the copy the extension
-// resolved to, so a pinned or older install still wins.
-async function legacySurface(specifier, context, nextResolve) {
-	const target = sdkAliases[specifier];
-	if (!target || !target.startsWith(`${specifier}/`)) return undefined;
+const legacySDKScopes = /^@(?:earendil-works|mariozechner)\/pi-/;
+
+function importerPath(parentURL) {
+	if (!parentURL) return "<extension host>";
 	try {
-		return await nextResolve(target, context);
+		return parentURL.startsWith("file:") ? fileURLToPath(new URL(parentURL)) : parentURL;
 	} catch {
-		return undefined;
+		return parentURL;
 	}
 }
 
-// ORB_PI_SDK_ROOT is only ever orb's own npm root — orb never borrows the SDK
-// bundled inside an installed pi — so when it is empty the import cannot be
-// satisfied at all. Node's "Cannot find package" names neither the reason nor a
-// way forward, and this is the one place that knows both.
-// ponytail: Bun has no resolve hook, so there the same import fails with Bun's
-// own message; upgrade path is a Bun plugin that intercepts nested resolution.
-function sdkUnavailableError(specifier, cause) {
-	const root = join(process.env.PI_CODING_AGENT_DIR || "~/.pi/agent", "npm");
-	return new Error(
-		`${specifier} is part of the pi SDK, which is not installed in orb's own npm root (${root}); orb never borrows it from an installed pi. Install it with \`npm i --prefix ${root} @earendil-works/pi-coding-agent\`, or set ORB_PI_SDK_ROOT to the copy orb should use. Extensions that declare their own SDK dependency are unaffected`,
-		{ cause },
-	);
+function resolveSDKModule(specifier, context) {
+	if (!legacySDKScopes.test(specifier)) return undefined;
+	const module = sdkModules[specifier];
+	const importer = importerPath(context.parentURL);
+	if (!module) {
+		const surface = Object.keys(sdkModules)
+			.filter((name) => name.startsWith("@earendil-works/"))
+			.join(", ");
+		throw new Error(
+			`"${specifier}" (imported by ${importer}) is not part of the orb extension SDK surface. orb-extension-sdk serves ${surface} (and their @mariozechner/* historical names); no other pi SDK module exists, and a real pi SDK is never resolved from node_modules`,
+		);
+	}
+	const root = process.env.ORB_EXTENSION_SDK_ROOT;
+	if (!root) {
+		throw new Error(
+			`"${specifier}" (imported by ${importer}) needs the embedded orb-extension-sdk, but ORB_EXTENSION_SDK_ROOT is not set in the host environment; this is an orb bug`,
+		);
+	}
+	return { url: pathToFileURL(join(root, module)).href, shortCircuit: true };
 }
 
-async function installedSDK(specifier, context, nextResolve) {
-	const target = sdkAliases[specifier];
-	const root = process.env.ORB_PI_SDK_ROOT;
-	if (!target || !root) return undefined;
-	try {
-		return await nextResolve(target, {
-			...context,
-			parentURL: pathToFileURL(join(root, "package.json")).href,
-		});
-	} catch {
-		return undefined;
+// The guard behind the alias map: every resolved module realpath is recorded,
+// and one that lands inside an installed pi SDK package aborts the load with
+// the import chain. Resolution precedes evaluation, so a real SDK module trips
+// this before a line of it runs — catching the transitive routes the alias map
+// cannot see: relative paths into node_modules, symlinked package names, a
+// dependency resolving the package for itself.
+const realSDKPathPattern = /node_modules[/\\]@(?:earendil-works|mariozechner)[/\\]pi-/;
+const guardRefusalCode = "ORB_REAL_PI_SDK_REFUSED";
+const resolvedRealpaths = new Map(); // resolved URL -> realpath ("" when unreadable)
+const resolvedImporters = new Map(); // resolved URL -> importing module URL
+
+async function recordResolution(specifier, context, resolution) {
+	const url = resolution?.url;
+	if (typeof url !== "string" || !url.startsWith("file:")) return resolution;
+	if (!resolvedImporters.has(url) && context.parentURL) resolvedImporters.set(url, context.parentURL);
+	let real = resolvedRealpaths.get(url);
+	if (real === undefined) {
+		try {
+			real = await realpath(fileURLToPath(new URL(url)));
+		} catch {
+			real = "";
+		}
+		resolvedRealpaths.set(url, real);
 	}
+	if (realSDKPathPattern.test(real)) throw realSDKRefusal(specifier, context.parentURL, real);
+	return resolution;
+}
+
+function realSDKRefusal(specifier, parentURL, real) {
+	const chain = [];
+	for (let url = parentURL; url && chain.length < 32; url = resolvedImporters.get(url)) {
+		chain.unshift(importerPath(url));
+	}
+	const message =
+		`refusing to load "${specifier}": it resolves into a real pi SDK install at ${real} ` +
+		`(import chain: ${chain.join(" -> ") || "<extension host>"} -> "${specifier}"). ` +
+		`orb serves the pi SDK surface only from its embedded orb-extension-sdk and never executes ` +
+		`@earendil-works/pi-* or @mariozechner/pi-* code from node_modules; remove the installed copy or the import reaching it`;
+	// The diagnostic also goes to the host's stderr: an extension that catches
+	// its own failed dynamic import would otherwise swallow it silently.
+	console.error(`orb extension host: ${message}`);
+	return Object.assign(new Error(message), { code: guardRefusalCode });
 }
 
 function fallbackResolvedURL(resolved) {
@@ -216,21 +251,41 @@ async function packageDirectory(name, from) {
 	}
 }
 
+// The SDK ships one declaration file per module, mirroring the full upstream
+// export surface; names declared only as types are the ones Node's stripping
+// would leave dangling as imports.
+const sdkTypeNamesCache = new Map();
+
+async function sdkTypeNames(module) {
+	const root = process.env.ORB_EXTENSION_SDK_ROOT;
+	if (!module || !root) return undefined;
+	const cached = sdkTypeNamesCache.get(module);
+	if (cached) return cached;
+	let names = { types: new Set(), values: new Set() };
+	try {
+		names = declaredNames(await readFile(join(root, module.replace(/\.mjs$/, ".d.ts")), "utf8"), names);
+	} catch {
+		return undefined;
+	}
+	const types = new Set(Array.from(names.types).filter((name) => !names.values.has(name)));
+	sdkTypeNamesCache.set(module, types);
+	return types;
+}
+
 // Node's type stripping keeps every named import, so a type imported from a bare
-// specifier fails to link; upstream's jiti transform elides it.
+// specifier fails to link; upstream's jiti transform elides it. Legacy SDK
+// specifiers classify against the embedded SDK's declarations — the module they
+// actually resolve to — never against an installed package.
 async function importedTypeNames(specifier, url) {
 	const target = await sourceURL(specifier, url);
 	if (target) {
 		if (!/\.(?:ts|mts|cts)$/.test(target.pathname)) return undefined;
 		return declaredNames(await readFile(target, "utf8"), { types: new Set(), values: new Set() }).types;
 	}
+	if (legacySDKScopes.test(specifier)) return await sdkTypeNames(sdkModules[specifier]);
 	const name = specifier.match(/^(@[^/]+\/[^/]+|[^@.#/][^/:]*)(?:\/|$)/)?.[1];
 	if (!name) return undefined;
-	let directory = await packageDirectory(name, dirname(fileURLToPath(url)));
-	if (!directory && process.env.ORB_PI_SDK_ROOT) {
-		const aliased = sdkAliases[specifier]?.match(/^(@[^/]+\/[^/]+|[^@./][^/]*)(?:\/|$)/)?.[1];
-		if (aliased) directory = await packageDirectory(aliased, process.env.ORB_PI_SDK_ROOT);
-	}
+	const directory = await packageDirectory(name, dirname(fileURLToPath(url)));
 	return directory ? await packageTypeNames(directory) : undefined;
 }
 
@@ -255,16 +310,17 @@ async function markTypeOnlyImports(source, url) {
 }
 
 export async function resolve(specifier, context, nextResolve) {
+	const sdk = resolveSDKModule(specifier, context);
+	if (sdk) return sdk;
 	try {
-		const legacy = await legacySurface(specifier, context, nextResolve);
-		return legacy ?? (await nextResolve(specifier, context));
+		return await recordResolution(specifier, context, await nextResolve(specifier, context));
 	} catch (error) {
+		if (error?.code === guardRefusalCode) throw error;
 		for (const candidate of fallbackURLs(specifier, context.parentURL, error)) {
-			if (await isFile(candidate)) return await nextResolve(candidate.href, context);
+			if (await isFile(candidate)) {
+				return await recordResolution(specifier, context, await nextResolve(candidate.href, context));
+			}
 		}
-		const sdk = await installedSDK(specifier, context, nextResolve);
-		if (sdk) return { ...sdk, shortCircuit: true };
-		if (sdkAliases[specifier] && !process.env.ORB_PI_SDK_ROOT) throw sdkUnavailableError(specifier, error);
 		throw error;
 	}
 }

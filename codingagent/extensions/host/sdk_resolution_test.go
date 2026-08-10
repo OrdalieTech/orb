@@ -22,24 +22,26 @@ func writeFixtureFile(t *testing.T, path, content string) {
 	}
 }
 
-// stubPiAI mirrors the published layout: the root entry carries only the core
-// surface, the legacy global API lives on "/compat", and the type is declared
-// with no runtime counterpart.
-func stubPiAI(t *testing.T, packageDir string) {
+// plantRealPiPackage lays down a real-looking installed pi SDK package whose
+// module records evaluation in a sentinel file, so tests can assert not just
+// that the copy lost resolution but that not one line of it ever ran.
+func plantRealPiPackage(t *testing.T, packageDir string) {
 	t.Helper()
-	writeFixtureFile(t, filepath.Join(packageDir, "package.json"), `{"name":"@earendil-works/pi-ai","version":"0.81.1","type":"module",`+
-		`"exports":{".":{"types":"./index.d.ts","import":"./index.js"},"./compat":{"types":"./compat.d.ts","import":"./compat.js"}}}`)
-	writeFixtureFile(t, filepath.Join(packageDir, "index.js"), "export const core = \"core\";\n")
-	writeFixtureFile(t, filepath.Join(packageDir, "index.d.ts"), "export interface ApiKeyCredential { type: \"api_key\" }\nexport declare const core: string;\n")
-	writeFixtureFile(t, filepath.Join(packageDir, "compat.js"), "export * from \"./index.js\";\nexport function complete() { return \"compat\"; }\n")
-	writeFixtureFile(t, filepath.Join(packageDir, "compat.d.ts"), "export * from \"./index.js\";\nexport declare function complete(): string;\n")
+	writeFixtureFile(t, filepath.Join(packageDir, "package.json"),
+		`{"name":"@earendil-works/pi-coding-agent","version":"0.84.1","type":"module","exports":"./index.js"}`)
+	writeFixtureFile(t, filepath.Join(packageDir, "index.js"), `import { writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+writeFileSync(fileURLToPath(new URL("./evaluated", import.meta.url)), "x");
+export const real = true;
+`)
 }
 
-func startRuntimeManager(t *testing.T, runtime Runtime, entry string) (*extensions.Runner, LoadResult) {
+func startRuntimeManager(t *testing.T, runtime Runtime, entry string) (*extensions.Runner, LoadResult, string) {
 	t.Helper()
 	cwd := t.TempDir()
+	agentDir := t.TempDir()
 	manager := NewManager(Options{
-		AgentDir: t.TempDir(), CWD: cwd, Version: "test", Runtime: &runtime,
+		AgentDir: agentDir, CWD: cwd, Version: "test", Runtime: &runtime,
 		RequestTimeout: 60 * time.Second, ShutdownTimeout: time.Second,
 		BackoffBase: 10 * time.Millisecond, BackoffMax: 50 * time.Millisecond,
 	})
@@ -50,16 +52,7 @@ func startRuntimeManager(t *testing.T, runtime Runtime, entry string) (*extensio
 	})
 	registry := extensions.NewRegistry(cwd)
 	result := manager.RegisterInto(context.Background(), registry, []string{entry})
-	return extensions.NewRunner(registry, extensions.RunnerOptions{CWD: cwd}), result
-}
-
-// isolateSDKRoot points the host at a stub SDK through the explicit override,
-// and empties PATH so the test states plainly that no installed `pi` is part of
-// the setup.
-func isolateSDKRoot(t *testing.T, root string) {
-	t.Helper()
-	t.Setenv("PATH", t.TempDir())
-	t.Setenv(piSDKRootEnv, root)
+	return extensions.NewRunner(registry, extensions.RunnerOptions{CWD: cwd}), result, agentDir
 }
 
 func requireNamedRuntime(t *testing.T, name string) Runtime {
@@ -86,24 +79,36 @@ func requireNamedRuntime(t *testing.T, name string) Runtime {
 	return runtime
 }
 
-// Node's type stripping keeps every named import, so a type imported from a bare
-// specifier fails to link, and its root entry no longer carries the legacy API.
-// Upstream loads extensions through jiti, which elides the first and never sees
-// the second. Both are repaired in loader.mjs.
-func TestNodeLoaderResolvesTypeOnlyAndLegacySDKImports(t *testing.T) {
+// Every legacy pi SDK specifier — both scopes, root and subpaths — resolves by
+// realpath into the embedded orb-extension-sdk the manager materialized under
+// the agent directory, even when the extension carries its own real install:
+// the alias is unconditional, so the installed copy is never consulted (and,
+// never being resolved, never evaluated). Type-only names classify against the
+// SDK's declaration files, so mixed imports link under Node's type stripping.
+func TestNodeLegacySpecifiersResolveToEmbeddedSDKByRealpath(t *testing.T) {
 	runtime := requireNamedRuntime(t, "node")
 	extensionDir := t.TempDir()
-	stubPiAI(t, filepath.Join(extensionDir, "node_modules", "@earendil-works", "pi-ai"))
-	writeFixtureFile(t, filepath.Join(extensionDir, "package.json"), `{"name":"orb-sdk-fixture","version":"1.0.0","type":"module"}`)
+	writeFixtureFile(t, filepath.Join(extensionDir, "package.json"), `{"name":"orb-sdk-alias-fixture","version":"1.0.0","type":"module"}`)
+	planted := filepath.Join(extensionDir, "node_modules", "@earendil-works", "pi-coding-agent")
+	plantRealPiPackage(t, planted)
 	entry := filepath.Join(extensionDir, "extension.ts")
-	writeFixtureFile(t, entry, `import { ApiKeyCredential, complete, core } from "@earendil-works/pi-ai";
+	writeFixtureFile(t, entry, `import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { Model, modelsAreEqual } from "@earendil-works/pi-ai";
+import { visibleWidth } from "@mariozechner/pi-tui";
 
 export default function (pi: any) {
-	const credential: ApiKeyCredential = { type: "api_key" };
+	const model: Model = { id: "m", provider: "p" } as any;
+	const paths = [
+		"@earendil-works/pi-ai",
+		"@earendil-works/pi-ai/compat",
+		"@earendil-works/pi-coding-agent",
+		"@mariozechner/pi-tui",
+	].map((name) => realpathSync(fileURLToPath(import.meta.resolve(name))));
 	pi.registerTool({
-		name: "sdk_probe",
-		label: "SDK Probe",
-		description: `+"`${complete()}:${core}:${credential.type}`"+`,
+		name: "sdk_paths",
+		label: "SDK Paths",
+		description: [String(modelsAreEqual(model, { id: "m", provider: "p" } as any)), String(visibleWidth("abc")), ...paths].join("|"),
 		parameters: { type: "object", properties: {} },
 		async execute() {
 			return { content: [{ type: "text", text: "ok" }] };
@@ -111,108 +116,132 @@ export default function (pi: any) {
 	});
 }
 `)
-	runner, result := startRuntimeManager(t, runtime, entry)
+	runner, result, agentDir := startRuntimeManager(t, runtime, entry)
 	if len(result.Errors) != 0 || len(result.Diagnostics) != 0 {
 		t.Fatalf("load result = %#v", result)
 	}
-	definition := runner.ToolDefinition("sdk_probe")
+	definition := runner.ToolDefinition("sdk_paths")
 	if definition == nil {
-		t.Fatal("sdk_probe was not registered")
+		t.Fatal("sdk_paths was not registered")
 	}
-	if got := definition.Description; got != "compat:core:api_key" {
-		t.Fatalf("description = %q, want %q", got, "compat:core:api_key")
+	parts := strings.Split(definition.Description, "|")
+	if len(parts) != 6 {
+		t.Fatalf("description = %q, want 6 parts", definition.Description)
+	}
+	if parts[0] != "true" || parts[1] != "3" {
+		t.Fatalf("implemented symbols returned %q, %q; want \"true\", \"3\"", parts[0], parts[1])
+	}
+	realAgentDir, err := filepath.EvalSymlinks(agentDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sdkPrefix := filepath.Join(realAgentDir, "host", "sdk-")
+	for index, wantBase := range []string{"ai.mjs", "ai-compat.mjs", "coding-agent.mjs", "tui.mjs"} {
+		got := parts[2+index]
+		if !strings.HasPrefix(got, sdkPrefix) {
+			t.Fatalf("resolved path %q is not under the materialized SDK %q*", got, sdkPrefix)
+		}
+		if filepath.Base(got) != wantBase {
+			t.Fatalf("resolved path %q, want module %q", got, wantBase)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(planted, "evaluated")); !os.IsNotExist(err) {
+		t.Fatal("the extension's own real pi SDK install was evaluated")
 	}
 }
 
-// legacySurface redirects "@earendil-works/pi-ai" to its "/compat" subpath
-// through the caller's own context, so a copy the extension installed for
-// itself wins and resolves successfully — even when it is too old for the
-// import, which then fails on the missing export. Nothing throws during
-// resolution, so the ORB_PI_SDK_ROOT fallback, reachable only from the catch
-// in resolve, never sees the specifier whatever that root holds. This is the
-// shape of the measured `unsupported_sdk_export isRetryableAssistantError`
-// regression, and it is unaffected by which copy the root names.
-func TestNodeKeepsTheExtensionsOwnSDKCopyOverTheManagedRoot(t *testing.T) {
+// A legacy specifier the alias map does not serve resolves nowhere — never
+// from node_modules — and the failure names both the specifier and the
+// importing module.
+func TestNodeUnmappedLegacySubpathFailsPrecisely(t *testing.T) {
 	runtime := requireNamedRuntime(t, "node")
-	sdkRoot := t.TempDir()
-	writeFixtureFile(t, filepath.Join(sdkRoot, "package.json"), `{"name":"@earendil-works/pi-coding-agent","version":"0.81.1","type":"module"}`)
-	current := filepath.Join(sdkRoot, "node_modules", "@earendil-works", "pi-ai")
-	stubPiAI(t, current)
-	writeFixtureFile(t, filepath.Join(current, "compat.js"), "export * from \"./index.js\";\nexport function isRetryableAssistantError() { return true; }\n")
-	isolateSDKRoot(t, sdkRoot)
-
 	extensionDir := t.TempDir()
-	writeFixtureFile(t, filepath.Join(extensionDir, "package.json"), `{"name":"orb-old-sdk-fixture","version":"1.0.0","type":"module"}`)
-	stubPiAI(t, filepath.Join(extensionDir, "node_modules", "@earendil-works", "pi-ai"))
 	entry := filepath.Join(extensionDir, "extension.mjs")
-	writeFixtureFile(t, entry, `import { isRetryableAssistantError } from "@earendil-works/pi-ai";
+	writeFixtureFile(t, entry, `import "@earendil-works/pi-coding-agent/rpc-entry";
 
-export default function () {
-	isRetryableAssistantError();
-}
+export default function () {}
 `)
-	_, result := startRuntimeManager(t, runtime, entry)
-	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0].Error, "isRetryableAssistantError") {
-		t.Fatalf("load errors = %#v, want the extension's own older copy to lose the export", result.Errors)
-	}
-}
-
-// With no SDK in orb's own npm root there is nothing to fall back to — orb
-// does not borrow the copy inside an installed pi — so the import has to name
-// what is missing and how to install it instead of failing with Node's bare
-// "Cannot find package".
-func TestNodeReportsMissingSDKWithInstallGuidance(t *testing.T) {
-	runtime := requireNamedRuntime(t, "node")
-	t.Setenv(piSDKRootEnv, "")
-	extensionDir := isolatedTempDir(t)
-	writeFixtureFile(t, filepath.Join(extensionDir, "package.json"), `{"name":"orb-missing-sdk-fixture","version":"1.0.0","type":"module"}`)
-	entry := filepath.Join(extensionDir, "extension.mjs")
-	writeFixtureFile(t, entry, `import { complete } from "@earendil-works/pi-ai";
-
-export default function (pi) {
-	pi.registerTool({
-		name: "missing_probe",
-		label: "Missing Probe",
-		description: complete(),
-		parameters: { type: "object", properties: {} },
-		async execute() {
-			return { content: [{ type: "text", text: "ok" }] };
-		},
-	});
-}
-`)
-	_, result := startRuntimeManager(t, runtime, entry)
+	_, result, _ := startRuntimeManager(t, runtime, entry)
 	if len(result.Errors) != 1 {
 		t.Fatalf("load errors = %#v", result.Errors)
 	}
-	for _, fragment := range []string{"@earendil-works/pi-ai", "orb's own npm root", "npm i --prefix", piSDKRootEnv} {
+	for _, fragment := range []string{
+		`"@earendil-works/pi-coding-agent/rpc-entry"`,
+		"extension.mjs",
+		"not part of the orb extension SDK surface",
+	} {
 		if !strings.Contains(result.Errors[0].Error, fragment) {
 			t.Fatalf("load error %q does not mention %q", result.Errors[0].Error, fragment)
 		}
 	}
 }
 
-// Bun never staged an entry, so nothing aliased the SDK specifiers that
-// extensions import under their historical names. NODE_PATH is consulted after
-// the node_modules walk, so the links only fill gaps.
-func TestBunResolvesAliasedSDKSpecifier(t *testing.T) {
-	runtime := requireNamedRuntime(t, "bun")
-	sdkRoot := t.TempDir()
-	writeFixtureFile(t, filepath.Join(sdkRoot, "package.json"), `{"name":"@earendil-works/pi-coding-agent","version":"0.82.0","type":"module"}`)
-	tui := filepath.Join(sdkRoot, "node_modules", "@earendil-works", "pi-tui")
-	writeFixtureFile(t, filepath.Join(tui, "package.json"), `{"name":"@earendil-works/pi-tui","version":"0.82.0","type":"module","main":"./index.js"}`)
-	writeFixtureFile(t, filepath.Join(tui, "index.js"), "export const label = \"aliased-tui\";\n")
-	isolateSDKRoot(t, sdkRoot)
+// The realpath guard behind the alias map: a route the aliases cannot see — a
+// symlinked package name reaching an installed pi SDK, imported transitively —
+// is refused at resolution, before a line of the real SDK runs, with a
+// diagnostic naming the specifier and the import chain.
+func TestNodeGuardRefusesRealSDKRealpath(t *testing.T) {
+	runtime := requireNamedRuntime(t, "node")
+	extensionDir := t.TempDir()
+	writeFixtureFile(t, filepath.Join(extensionDir, "package.json"), `{"name":"orb-guard-fixture","version":"1.0.0","type":"module"}`)
+	planted := filepath.Join(extensionDir, "node_modules", "@earendil-works", "pi-coding-agent")
+	plantRealPiPackage(t, planted)
+	if err := os.Symlink(filepath.Join("@earendil-works", "pi-coding-agent"), filepath.Join(extensionDir, "node_modules", "innocent-shim")); err != nil {
+		t.Fatal(err)
+	}
+	writeFixtureFile(t, filepath.Join(extensionDir, "helper.mjs"), `import "innocent-shim";
+`)
+	entry := filepath.Join(extensionDir, "extension.mjs")
+	writeFixtureFile(t, entry, `import "./helper.mjs";
 
+export default function () {}
+`)
+	_, result, _ := startRuntimeManager(t, runtime, entry)
+	if len(result.Errors) != 1 {
+		t.Fatalf("load errors = %#v", result.Errors)
+	}
+	for _, fragment := range []string{
+		`refusing to load "innocent-shim"`,
+		"real pi SDK install",
+		filepath.Join("node_modules", "@earendil-works", "pi-coding-agent"),
+		"helper.mjs",
+		"extension.mjs",
+		"import chain",
+	} {
+		if !strings.Contains(result.Errors[0].Error, fragment) {
+			t.Fatalf("load error %q does not mention %q", result.Errors[0].Error, fragment)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(planted, "evaluated")); !os.IsNotExist(err) {
+		t.Fatal("the real pi SDK module was evaluated despite the guard")
+	}
+}
+
+// Legacy subpaths with no implemented Orb module — pi-agent-core, pi-ai/oauth,
+// pi-ai/providers/all — still link: every upstream export name exists as a
+// stub that throws the precise OrbUnsupportedCapability diagnostic on use.
+func TestNodeUnsupportedSubpathExportsLinkAndThrowOnUse(t *testing.T) {
+	runtime := requireNamedRuntime(t, "node")
 	extensionDir := t.TempDir()
 	entry := filepath.Join(extensionDir, "extension.mjs")
-	writeFixtureFile(t, entry, `import { label } from "@mariozechner/pi-tui";
+	writeFixtureFile(t, entry, `import { agentLoop } from "@earendil-works/pi-agent-core";
+import { OAuthCredentials } from "@earendil-works/pi-ai/oauth";
+import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
 
 export default function (pi) {
+	const messages = [];
+	for (const probe of [agentLoop, OAuthCredentials, getBuiltinModel]) {
+		try {
+			probe();
+			messages.push("no error");
+		} catch (error) {
+			messages.push(error.name + ": " + error.message);
+		}
+	}
 	pi.registerTool({
-		name: "alias_probe",
-		label: "Alias Probe",
-		description: label,
+		name: "unsupported_probe",
+		label: "Unsupported Probe",
+		description: messages.join(" // "),
 		parameters: { type: "object", properties: {} },
 		async execute() {
 			return { content: [{ type: "text", text: "ok" }] };
@@ -220,7 +249,50 @@ export default function (pi) {
 	});
 }
 `)
-	runner, result := startRuntimeManager(t, runtime, entry)
+	runner, result, _ := startRuntimeManager(t, runtime, entry)
+	if len(result.Errors) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("load result = %#v", result)
+	}
+	definition := runner.ToolDefinition("unsupported_probe")
+	if definition == nil {
+		t.Fatal("unsupported_probe was not registered — stub imports failed to link")
+	}
+	for _, fragment := range []string{
+		"OrbUnsupportedCapability: agent-core#agentLoop is not implemented by orb-extension-sdk",
+		"OrbUnsupportedCapability: ai/oauth#OAuthCredentials is not implemented by orb-extension-sdk",
+		"OrbUnsupportedCapability: ai/providers/all#getBuiltinModel is not implemented by orb-extension-sdk",
+		"supported exports: none",
+	} {
+		if !strings.Contains(definition.Description, fragment) {
+			t.Fatalf("description %q does not contain %q", definition.Description, fragment)
+		}
+	}
+	if strings.Contains(definition.Description, "no error") {
+		t.Fatalf("a stub export did not throw: %q", definition.Description)
+	}
+}
+
+// Bun has no resolve hook, so the legacy names reach the embedded SDK through
+// NODE_PATH wrapper packages written by prepareRuntimeAliases.
+func TestBunResolvesAliasedSDKSpecifier(t *testing.T) {
+	runtime := requireNamedRuntime(t, "bun")
+	extensionDir := t.TempDir()
+	entry := filepath.Join(extensionDir, "extension.mjs")
+	writeFixtureFile(t, entry, `import { visibleWidth } from "@mariozechner/pi-tui";
+
+export default function (pi) {
+	pi.registerTool({
+		name: "alias_probe",
+		label: "Alias Probe",
+		description: String(visibleWidth("abc")),
+		parameters: { type: "object", properties: {} },
+		async execute() {
+			return { content: [{ type: "text", text: "ok" }] };
+		},
+	});
+}
+`)
+	runner, result, _ := startRuntimeManager(t, runtime, entry)
 	if len(result.Errors) != 0 || len(result.Diagnostics) != 0 {
 		t.Fatalf("load result = %#v", result)
 	}
@@ -228,22 +300,17 @@ export default function (pi) {
 	if definition == nil {
 		t.Fatal("alias_probe was not registered")
 	}
-	if got := definition.Description; got != "aliased-tui" {
-		t.Fatalf("description = %q, want %q", got, "aliased-tui")
+	if got := definition.Description; got != "3" {
+		t.Fatalf("description = %q, want %q", got, "3")
 	}
 }
 
-// A copy the extension resolves itself outranks the alias, so pinned installs
-// keep their own module.
-func TestBunAliasDoesNotShadowInstalledPackage(t *testing.T) {
+// Bun consults NODE_PATH only after the node_modules walk, so an extension's
+// own installed copy still outranks the embedded SDK there. This is the
+// documented Bun gap in the no-real-SDK guarantee — the loader guard is
+// Node-only — pinned here so a change in Bun's resolution order is noticed.
+func TestBunOwnInstallStillOutranksEmbeddedSDK(t *testing.T) {
 	runtime := requireNamedRuntime(t, "bun")
-	sdkRoot := t.TempDir()
-	writeFixtureFile(t, filepath.Join(sdkRoot, "package.json"), `{"name":"@earendil-works/pi-coding-agent","version":"0.82.0","type":"module"}`)
-	tui := filepath.Join(sdkRoot, "node_modules", "@earendil-works", "pi-tui")
-	writeFixtureFile(t, filepath.Join(tui, "package.json"), `{"name":"@earendil-works/pi-tui","version":"0.82.0","type":"module","main":"./index.js"}`)
-	writeFixtureFile(t, filepath.Join(tui, "index.js"), "export const label = \"aliased-tui\";\n")
-	isolateSDKRoot(t, sdkRoot)
-
 	extensionDir := t.TempDir()
 	installed := filepath.Join(extensionDir, "node_modules", "@mariozechner", "pi-tui")
 	writeFixtureFile(t, filepath.Join(installed, "package.json"), `{"name":"@mariozechner/pi-tui","version":"0.1.0","type":"module","main":"./index.js"}`)
@@ -263,7 +330,7 @@ export default function (pi) {
 	});
 }
 `)
-	runner, result := startRuntimeManager(t, runtime, entry)
+	runner, result, _ := startRuntimeManager(t, runtime, entry)
 	if len(result.Errors) != 0 || len(result.Diagnostics) != 0 {
 		t.Fatalf("load result = %#v", result)
 	}

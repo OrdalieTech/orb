@@ -69,7 +69,7 @@ dev-only), fixtures, runner. Full tree: ARCHITECTURE §1.
 
 ## Conformance
 
-Fixture families F1–F12 are defined in ARCHITECTURE §6. Extraction scripts live in
+Fixture families F1–F13 are defined in ARCHITECTURE §6. Extraction scripts live in
 `conformance/extract/` and run with Node ≥22 inside `.upstream/` (Node is dev tooling only — the
 product is pure Go). Never hand-edit goldens; regenerate them. A failing fixture after your change
 means your change is wrong, not the fixture. Two tiers (D35): wire, provider, and algorithmic

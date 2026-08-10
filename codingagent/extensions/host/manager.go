@@ -78,14 +78,10 @@ type AgentInfo struct {
 type Options struct {
 	AgentDir string
 	CWD      string
-	// ProjectTrusted gates the project-scoped npm root the SDK is resolved from,
-	// exactly as DiscoveryOptions.ProjectTrusted gates project extensions.
-	ProjectTrusted bool
-	Version        string
-	// SDKVersion pins the @earendil-works/pi-coding-agent auto-provisioned into
-	// the user npm root when a loose extension imports the SDK and no copy
-	// resolves. Empty disables provisioning.
-	SDKVersion      string
+	// ProjectTrusted mirrors DiscoveryOptions.ProjectTrusted for consumers that
+	// gate project-scoped resources on the same trust decision.
+	ProjectTrusted  bool
+	Version         string
 	Runtime         *Runtime
 	OrbExecutable   string
 	RequestTimeout  time.Duration
@@ -130,6 +126,7 @@ type Manager struct {
 	restartCount atomic.Int64
 	providers    providerBridge
 	stateHost    *stateHost
+	services     *servicesHost
 }
 
 type extensionEntry struct {
@@ -157,6 +154,16 @@ type wireToolDefinition struct {
 	ConstrainedSampling *ai.ConstrainedSamplingConfig `json:"constrainedSampling,omitempty"`
 	RenderShell         extensions.RenderShell        `json:"renderShell,omitempty"`
 	ExecutionMode       agent.ToolExecutionMode       `json:"executionMode,omitempty"`
+	// LazyPromptGuidelines marks a JS-side `get promptGuidelines()` accessor:
+	// PromptGuidelines above is only the registration-time snapshot and the
+	// live value is re-read over get_tool_prompt_guidelines.
+	LazyPromptGuidelines bool `json:"lazyPromptGuidelines,omitempty"`
+	// HasRenderCall/HasRenderResult mark live renderCall/renderResult
+	// functions retained in the host process, bridged through
+	// create_tool_render_component (rendered and disposed via the registered
+	// renderer-component RPC).
+	HasRenderCall   bool `json:"hasRenderCall,omitempty"`
+	HasRenderResult bool `json:"hasRenderResult,omitempty"`
 }
 
 type wireCommand struct {
@@ -237,7 +244,7 @@ func NewManager(options Options) *Manager {
 	if options.Version == "" {
 		options.Version = "unknown"
 	}
-	return &Manager{options: options, states: make(map[string]*registrationState), stateHost: newStateHost(options)}
+	return &Manager{options: options, states: make(map[string]*registrationState), stateHost: newStateHost(options), services: newServicesHost(options)}
 }
 
 func (manager *Manager) RegisterInto(ctx context.Context, registry *extensions.Registry, paths []string) LoadResult {
@@ -281,7 +288,6 @@ func (manager *Manager) RegisterInto(ctx context.Context, registry *extensions.R
 		return result
 	}
 	result.Runtime = &runtime
-	manager.ensureSDKProvisioned(ctx, runtime)
 
 	loaded, err := manager.startLocked(ctx)
 	if err != nil {
@@ -351,6 +357,7 @@ func (manager *Manager) Close() error {
 		manager.stopGeneration(current)
 	}
 	manager.stateHost.close()
+	manager.services.reset()
 	return nil
 }
 
@@ -395,6 +402,11 @@ func (manager *Manager) startLocked(ctx context.Context) (generationLoadResult, 
 	if err != nil {
 		return result, err
 	}
+	sdkRoot, err := materializeSDK(manager.options.AgentDir)
+	if err != nil {
+		return result, fmt.Errorf("extension host: materialize sdk: %w", err)
+	}
+	hostEnvironment = setEnvironmentValue(hostEnvironment, extensionSDKRootEnv, sdkRoot)
 	if runtime.Name == "node" && environmentValue(hostEnvironment, "NODE_COMPILE_CACHE") == "" {
 		hostEnvironment = setEnvironmentValue(hostEnvironment, "NODE_COMPILE_CACHE", filepath.Join(manager.options.AgentDir, "host", "node-compile-cache"))
 	}
@@ -416,6 +428,7 @@ func (manager *Manager) startLocked(ctx context.Context) (generationLoadResult, 
 	}
 	manager.stateHost.setEnvironment(hostEnvironment)
 	manager.stateHost.reset(manager.entries)
+	manager.services.reset()
 	command := exec.CommandContext(context.Background(), runtime.Path, append(commandArgs, scriptPath)...)
 	command.Dir = manager.options.CWD
 	command.Env = hostEnvironment
@@ -719,7 +732,7 @@ func (manager *Manager) factory(extensionID string) extensions.Factory {
 }
 
 func (manager *Manager) tool(extensionID string, definition wireToolDefinition) extensions.ToolDefinition {
-	return extensions.ToolDefinition{
+	result := extensions.ToolDefinition{
 		Name:                definition.Name,
 		Label:               definition.Label,
 		Description:         definition.Description,
@@ -772,6 +785,24 @@ func (manager *Manager) tool(extensionID string, definition wireToolDefinition) 
 			return result, nil
 		},
 	}
+	// Tool-wire gap closures (DOSSIER §7 risks 4-5): a lazy JS
+	// `get promptGuidelines()` is re-read over the wire instead of freezing
+	// the registration snapshot, and live renderCall/renderResult functions
+	// are bridged through the renderer-component RPC instead of being
+	// dropped.
+	if definition.LazyPromptGuidelines {
+		toolName := definition.Name
+		result.PromptGuidelinesFunc = func(ctx context.Context) ([]string, error) {
+			return manager.toolPromptGuidelines(ctx, extensionID, toolName)
+		}
+	}
+	if definition.HasRenderCall {
+		result.RenderCall = manager.toolRenderCall(extensionID, definition.Name)
+	}
+	if definition.HasRenderResult {
+		result.RenderResult = manager.toolRenderResult(extensionID, definition.Name)
+	}
+	return result
 }
 
 type wireContext struct {
@@ -927,11 +958,13 @@ func (manager *Manager) handleHostRequest(generation *generation, value frame) (
 			ExtensionEntries []extensionEntry `json:"extensionEntries"`
 			Agent            AgentInfo        `json:"agent"`
 			Capabilities     []string         `json:"capabilities"`
+			Services         servicesHello    `json:"services"`
 			StateSnapshot    stateSnapshot    `json:"stateSnapshot"`
 		}{
 			ExtensionEntries: append([]extensionEntry(nil), manager.entries...),
 			Agent:            AgentInfo{Name: "orb", Version: manager.options.Version, CWD: manager.options.CWD, AgentDir: manager.options.AgentDir},
-			Capabilities:     []string{"tool_updates", "providers", "ui", "state_v1"},
+			Capabilities:     append([]string(nil), hostCapabilities...),
+			Services:         manager.services.helloValue(),
 			StateSnapshot:    manager.stateHost.handshakeSnapshot(),
 		}, nil
 	case "ui_request":
@@ -1088,6 +1121,9 @@ func (manager *Manager) handleHostRequest(generation *generation, value frame) (
 		if result, protocolErr, handled := manager.handleProviderHostRequest(generation, value); handled {
 			return result, protocolErr
 		}
+		if result, protocolErr, handled := manager.services.handleRequest(manager, generation, value); handled {
+			return result, protocolErr
+		}
 		return nil, &protocolError{Code: "method_not_found", Message: "unknown host request method " + value.Method}
 	}
 }
@@ -1126,6 +1162,9 @@ func (manager *Manager) handleHostEvent(generation *generation, value frame) {
 			generation.ui.routeRender(value.Params)
 		}
 	default:
+		if manager.services.handleEvent(generation, value) {
+			return
+		}
 		manager.handleProviderHostEvent(generation, value)
 	}
 }
@@ -1152,7 +1191,7 @@ func (generation *generation) readLoop() {
 		case frameResponse:
 			generation.routeResponse(value)
 		case frameRequest:
-			if value.Method == "ui_request" || generation.manager.stateHost.asyncRequest(value.Method) {
+			if value.Method == "ui_request" || generation.manager.stateHost.asyncRequest(value.Method) || generation.manager.services.asyncRequest(value.Method) {
 				go generation.respondHostRequest(value)
 				continue
 			}

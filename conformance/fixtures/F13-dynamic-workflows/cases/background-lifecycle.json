@@ -1,0 +1,621 @@
+{
+  "schemaVersion": 1,
+  "scenario": "background-lifecycle",
+  "script": "export const meta = { name: \"limits\", description: \"provider limit pause and resume\" };\nconst first = await agent(\"Succeeds\", { label: \"first\" });\nconst second = await agent(\"Hits the wall\", { label: \"second\" });\nreturn { first, second };",
+  "startedRunId": "limits-loyw85mp-",
+  "events": [
+    {
+      "event": "agentStart",
+      "runId": "limits-loyw85mp-",
+      "id": "limits-loyw85mp-:0",
+      "label": "first",
+      "prompt": "Succeeds",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentEnd",
+      "runId": "limits-loyw85mp-",
+      "id": "limits-loyw85mp-:0",
+      "label": "first",
+      "result": "First succeeded.",
+      "tokens": 2774,
+      "tokenUsage": {
+        "input": 1385,
+        "output": 4,
+        "cacheRead": 0,
+        "cacheWrite": 1385,
+        "total": 2774,
+        "cost": 0
+      },
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentStart",
+      "runId": "limits-loyw85mp-",
+      "id": "limits-loyw85mp-:1",
+      "label": "second",
+      "prompt": "Hits the wall",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "log",
+      "runId": "limits-loyw85mp-",
+      "message": "agent second attempt 1/1 failed: Codex usage limit reached (plus plan). Resets in ~3h."
+    },
+    {
+      "event": "agentEnd",
+      "runId": "limits-loyw85mp-",
+      "id": "limits-loyw85mp-:1",
+      "label": "second",
+      "result": null,
+      "tokens": 2772,
+      "tokenUsage": {
+        "input": 1386,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 1386,
+        "total": 2772,
+        "cost": 0
+      },
+      "model": "faux/faux-model",
+      "error": "Codex usage limit reached (plus plan). Resets in ~3h.",
+      "errorCode": "PROVIDER_USAGE_LIMIT",
+      "recoverable": false
+    },
+    {
+      "event": "paused",
+      "runId": "limits-loyw85mp-",
+      "reason": "usage_limit",
+      "error": {
+        "name": "WorkflowError",
+        "message": "Codex usage limit reached (plus plan). Resets in ~3h.",
+        "code": "PROVIDER_USAGE_LIMIT",
+        "recoverable": false,
+        "agentLabel": "second",
+        "resetHint": "Resets in ~3h"
+      },
+      "resetHint": "Resets in ~3h"
+    },
+    {
+      "event": "resumed",
+      "runId": "limits-loyw85mp-"
+    },
+    {
+      "event": "agentStart",
+      "runId": "limits-loyw85mp-",
+      "id": "limits-loyw85mp-:0",
+      "label": "first",
+      "prompt": "Succeeds",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentEnd",
+      "runId": "limits-loyw85mp-",
+      "id": "limits-loyw85mp-:0",
+      "label": "first",
+      "result": "First succeeded.",
+      "tokens": 0,
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentStart",
+      "runId": "limits-loyw85mp-",
+      "id": "limits-loyw85mp-:1",
+      "label": "second",
+      "prompt": "Hits the wall",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentEnd",
+      "runId": "limits-loyw85mp-",
+      "id": "limits-loyw85mp-:1",
+      "label": "second",
+      "result": "Second succeeded after the reset.",
+      "tokens": 2781,
+      "tokenUsage": {
+        "input": 1386,
+        "output": 9,
+        "cacheRead": 0,
+        "cacheWrite": 1386,
+        "total": 2781,
+        "cost": 0
+      },
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "log",
+      "runId": "limits-loyw85mp-",
+      "message": "Logs persisted to <fixture>/home/.pi/workflows/projects/project-<cwdhash>/runs/limits-loyw85mp-.log"
+    },
+    {
+      "event": "tokenUsage",
+      "runId": "limits-loyw85mp-",
+      "usage": {
+        "input": 4157,
+        "output": 13,
+        "total": 8327,
+        "cost": 0,
+        "cacheRead": 0,
+        "cacheWrite": 4157
+      }
+    },
+    {
+      "event": "complete",
+      "runId": "limits-loyw85mp-",
+      "result": {
+        "meta": {
+          "name": "limits",
+          "description": "provider limit pause and resume"
+        },
+        "result": {
+          "first": "First succeeded.",
+          "second": "Second succeeded after the reset."
+        },
+        "logs": [
+          "Logs persisted to <fixture>/home/.pi/workflows/projects/project-<cwdhash>/runs/limits-loyw85mp-.log"
+        ],
+        "phases": [],
+        "agentCount": 2,
+        "durationMs": 0,
+        "runId": "limits-loyw85mp-",
+        "tokenUsage": {
+          "input": 4157,
+          "output": 13,
+          "total": 8327,
+          "cost": 0,
+          "cacheRead": 0,
+          "cacheWrite": 4157
+        }
+      }
+    }
+  ],
+  "pausedRuns": [
+    {
+      "runId": "limits-loyw85mp-",
+      "workflowName": "limits",
+      "script": "export const meta = { name: \"limits\", description: \"provider limit pause and resume\" };\nconst first = await agent(\"Succeeds\", { label: \"first\" });\nconst second = await agent(\"Hits the wall\", { label: \"second\" });\nreturn { first, second };",
+      "sessionId": "session-fixed-1",
+      "journal": [
+        {
+          "index": 0,
+          "runId": "limits-loyw85mp-",
+          "hash": "57a311d16b6ee4a55289c7609109d4e190218db7f6b69f86973074ca2fa25bb3",
+          "result": "First succeeded.",
+          "storeDelta": {}
+        }
+      ],
+      "status": "paused",
+      "tokenBudget": null,
+      "agentTimeoutMs": null,
+      "concurrency": 1,
+      "agentRetries": 0,
+      "pauseReason": "usage_limit",
+      "resetHint": "Resets in ~3h",
+      "phases": [],
+      "agents": [
+        {
+          "id": 1,
+          "callId": "limits-loyw85mp-:0",
+          "label": "first",
+          "prompt": "Succeeds",
+          "status": "done",
+          "model": "faux/faux-model",
+          "history": [
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "Task label: first\n\nSucceeds",
+              "timestamp": 1700000200321
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "First succeeded.",
+              "timestamp": 1700000200321
+            }
+          ],
+          "resultPreview": "First succeeded.",
+          "tokens": 2774,
+          "tokenUsage": {
+            "input": 1385,
+            "output": 4,
+            "cacheRead": 0,
+            "cacheWrite": 1385,
+            "total": 2774,
+            "cost": 0
+          },
+          "startedAt": "2023-11-14T22:16:40.321Z",
+          "endedAt": "2023-11-14T22:16:40.321Z"
+        },
+        {
+          "id": 2,
+          "callId": "limits-loyw85mp-:1",
+          "label": "second",
+          "prompt": "Hits the wall",
+          "status": "error",
+          "model": "faux/faux-model",
+          "history": [
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "Task label: second\n\nHits the wall",
+              "timestamp": 1700000200321
+            },
+            {
+              "role": "assistant",
+              "kind": "error",
+              "text": "Codex usage limit reached (plus plan). Resets in ~3h.",
+              "isError": true,
+              "timestamp": 1700000200321
+            }
+          ],
+          "resultPreview": "null",
+          "error": "Codex usage limit reached (plus plan). Resets in ~3h.",
+          "errorCode": "PROVIDER_USAGE_LIMIT",
+          "recoverable": false,
+          "tokens": 2772,
+          "tokenUsage": {
+            "input": 1386,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 1386,
+            "total": 2772,
+            "cost": 0
+          },
+          "startedAt": "2023-11-14T22:16:40.321Z",
+          "endedAt": "2023-11-14T22:16:40.321Z"
+        }
+      ],
+      "logs": [
+        "agent second attempt 1/1 failed: Codex usage limit reached (plus plan). Resets in ~3h."
+      ],
+      "tokenUsage": {
+        "input": 2771,
+        "output": 4,
+        "total": 5546,
+        "cost": 0,
+        "cacheRead": 0,
+        "cacheWrite": 2771
+      },
+      "startedAt": "2023-11-14T22:16:40.321Z",
+      "updatedAt": "2023-11-14T22:16:40.321Z"
+    }
+  ],
+  "pausedArtifacts": {
+    "project-<cwdhash>/runs/limits-loyw85mp-.json": {
+      "runId": "limits-loyw85mp-",
+      "workflowName": "limits",
+      "script": "export const meta = { name: \"limits\", description: \"provider limit pause and resume\" };\nconst first = await agent(\"Succeeds\", { label: \"first\" });\nconst second = await agent(\"Hits the wall\", { label: \"second\" });\nreturn { first, second };",
+      "sessionId": "session-fixed-1",
+      "journal": [
+        {
+          "index": 0,
+          "runId": "limits-loyw85mp-",
+          "hash": "57a311d16b6ee4a55289c7609109d4e190218db7f6b69f86973074ca2fa25bb3",
+          "result": "First succeeded.",
+          "storeDelta": {}
+        }
+      ],
+      "status": "paused",
+      "tokenBudget": null,
+      "agentTimeoutMs": null,
+      "concurrency": 1,
+      "agentRetries": 0,
+      "pauseReason": "usage_limit",
+      "resetHint": "Resets in ~3h",
+      "phases": [],
+      "agents": [
+        {
+          "id": 1,
+          "callId": "limits-loyw85mp-:0",
+          "label": "first",
+          "prompt": "Succeeds",
+          "status": "done",
+          "model": "faux/faux-model",
+          "history": [
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "Task label: first\n\nSucceeds",
+              "timestamp": 1700000200321
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "First succeeded.",
+              "timestamp": 1700000200321
+            }
+          ],
+          "resultPreview": "First succeeded.",
+          "tokens": 2774,
+          "tokenUsage": {
+            "input": 1385,
+            "output": 4,
+            "cacheRead": 0,
+            "cacheWrite": 1385,
+            "total": 2774,
+            "cost": 0
+          },
+          "startedAt": "2023-11-14T22:16:40.321Z",
+          "endedAt": "2023-11-14T22:16:40.321Z"
+        },
+        {
+          "id": 2,
+          "callId": "limits-loyw85mp-:1",
+          "label": "second",
+          "prompt": "Hits the wall",
+          "status": "error",
+          "model": "faux/faux-model",
+          "history": [
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "Task label: second\n\nHits the wall",
+              "timestamp": 1700000200321
+            },
+            {
+              "role": "assistant",
+              "kind": "error",
+              "text": "Codex usage limit reached (plus plan). Resets in ~3h.",
+              "isError": true,
+              "timestamp": 1700000200321
+            }
+          ],
+          "resultPreview": "null",
+          "error": "Codex usage limit reached (plus plan). Resets in ~3h.",
+          "errorCode": "PROVIDER_USAGE_LIMIT",
+          "recoverable": false,
+          "tokens": 2772,
+          "tokenUsage": {
+            "input": 1386,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 1386,
+            "total": 2772,
+            "cost": 0
+          },
+          "startedAt": "2023-11-14T22:16:40.321Z",
+          "endedAt": "2023-11-14T22:16:40.321Z"
+        }
+      ],
+      "logs": [
+        "agent second attempt 1/1 failed: Codex usage limit reached (plus plan). Resets in ~3h."
+      ],
+      "tokenUsage": {
+        "input": 2771,
+        "output": 4,
+        "total": 5546,
+        "cost": 0,
+        "cacheRead": 0,
+        "cacheWrite": 2771
+      },
+      "startedAt": "2023-11-14T22:16:40.321Z",
+      "updatedAt": "2023-11-14T22:16:40.321Z"
+    }
+  },
+  "resumed": true,
+  "completedRuns": [
+    {
+      "runId": "limits-loyw85mp-",
+      "workflowName": "limits",
+      "script": "export const meta = { name: \"limits\", description: \"provider limit pause and resume\" };\nconst first = await agent(\"Succeeds\", { label: \"first\" });\nconst second = await agent(\"Hits the wall\", { label: \"second\" });\nreturn { first, second };",
+      "sessionId": "session-fixed-1",
+      "status": "completed",
+      "tokenBudget": null,
+      "agentTimeoutMs": null,
+      "concurrency": 1,
+      "agentRetries": 0,
+      "phases": [],
+      "agents": [
+        {
+          "id": 1,
+          "callId": "limits-loyw85mp-:0",
+          "label": "first",
+          "prompt": "Succeeds",
+          "status": "done",
+          "model": "faux/faux-model",
+          "resultPreview": "First succeeded.",
+          "tokens": 0,
+          "result": "First succeeded.",
+          "startedAt": "2023-11-14T22:16:40.321Z",
+          "endedAt": "2023-11-14T22:16:40.321Z"
+        },
+        {
+          "id": 2,
+          "callId": "limits-loyw85mp-:1",
+          "label": "second",
+          "prompt": "Hits the wall",
+          "status": "done",
+          "model": "faux/faux-model",
+          "history": [
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "Task label: second\n\nHits the wall",
+              "timestamp": 1700000200321
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Second succeeded after the reset.",
+              "timestamp": 1700000200321
+            }
+          ],
+          "resultPreview": "Second succeeded after the reset.",
+          "tokens": 2781,
+          "tokenUsage": {
+            "input": 1386,
+            "output": 9,
+            "cacheRead": 0,
+            "cacheWrite": 1386,
+            "total": 2781,
+            "cost": 0
+          },
+          "result": "Second succeeded after the reset.",
+          "startedAt": "2023-11-14T22:16:40.321Z",
+          "endedAt": "2023-11-14T22:16:40.321Z"
+        }
+      ],
+      "logs": [
+        "agent second attempt 1/1 failed: Codex usage limit reached (plus plan). Resets in ~3h.",
+        "Logs persisted to <fixture>/home/.pi/workflows/projects/project-<cwdhash>/runs/limits-loyw85mp-.log"
+      ],
+      "result": {
+        "first": "First succeeded.",
+        "second": "Second succeeded after the reset."
+      },
+      "tokenUsage": {
+        "input": 4157,
+        "output": 13,
+        "total": 8327,
+        "cost": 0,
+        "cacheRead": 0,
+        "cacheWrite": 4157
+      },
+      "startedAt": "2023-11-14T22:16:40.321Z",
+      "updatedAt": "2023-11-14T22:16:40.321Z",
+      "completedAt": "2023-11-14T22:16:40.321Z",
+      "durationMs": 0
+    }
+  ],
+  "stop": {
+    "runId": "stopper-loyw85mp-",
+    "stopped": true,
+    "events": [
+      {
+        "event": "agentStart",
+        "runId": "stopper-loyw85mp-",
+        "id": "stopper-loyw85mp-:0",
+        "label": "hanging",
+        "prompt": "Hangs until stopped",
+        "model": "faux/faux-model"
+      },
+      {
+        "event": "stopped",
+        "runId": "stopper-loyw85mp-"
+      },
+      {
+        "event": "error",
+        "runId": "stopper-loyw85mp-",
+        "error": {
+          "name": "WorkflowError",
+          "message": "Subagent was aborted",
+          "code": "WORKFLOW_ABORTED",
+          "recoverable": true
+        }
+      }
+    ],
+    "runs": [
+      {
+        "runId": "stopper-loyw85mp-",
+        "workflowName": "stopper",
+        "script": "export const meta = { name: \"stopper\", description: \"stopped mid-flight\" };\nreturn await agent(\"Hangs until stopped\", { label: \"hanging\" });",
+        "sessionId": "session-fixed-1",
+        "status": "aborted",
+        "tokenBudget": null,
+        "agentTimeoutMs": null,
+        "concurrency": 1,
+        "agentRetries": 0,
+        "phases": [],
+        "agents": [
+          {
+            "id": 1,
+            "callId": "stopper-loyw85mp-:0",
+            "label": "hanging",
+            "prompt": "Hangs until stopped",
+            "status": "running",
+            "model": "faux/faux-model",
+            "history": [
+              {
+                "role": "user",
+                "kind": "text",
+                "text": "Task label: hanging\n\nHangs until stopped",
+                "timestamp": 1700000200321
+              },
+              {
+                "role": "assistant",
+                "kind": "error",
+                "text": "Request was aborted",
+                "isError": true,
+                "timestamp": 1700000200321
+              }
+            ],
+            "startedAt": "2023-11-14T22:16:40.321Z"
+          }
+        ],
+        "logs": [],
+        "startedAt": "2023-11-14T22:16:40.321Z",
+        "updatedAt": "2023-11-14T22:16:40.321Z"
+      }
+    ]
+  },
+  "providerCalls": [
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: first\n\nSucceeds"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: second\n\nHits the wall"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: second\n\nHits the wall"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pendingFauxResponses": 0
+}

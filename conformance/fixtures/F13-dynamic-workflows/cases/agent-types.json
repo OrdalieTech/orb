@@ -1,0 +1,367 @@
+{
+  "schemaVersion": 1,
+  "scenario": "agent-types",
+  "script": "export const meta = { name: \"agents\", description: \"agentType policies and worktree cwd\" };\nconst scout = await agent(\"Read the marker file.\", { label: \"scout\", agentType: \"reader\" });\nconst isolated = await agent(\"Read the marker file from isolation.\", { label: \"isolated\", agentType: \"isolated\" });\nconst ghost = await agent(\"No such type.\", { label: \"ghost\", agentType: \"does-not-exist\" });\nreturn { scout, isolated, ghost };",
+  "result": {
+    "meta": {
+      "name": "agents",
+      "description": "agentType policies and worktree cwd"
+    },
+    "result": {
+      "scout": "The marker says marker-from-repo.",
+      "isolated": "Isolated read complete.",
+      "ghost": "Ghost type fell back to defaults."
+    },
+    "logs": [
+      "unknown agentType \"does-not-exist\"; using default tools/model"
+    ],
+    "phases": [],
+    "agentCount": 3,
+    "durationMs": 0,
+    "runId": "run-fixed-agent-types",
+    "tokenUsage": {
+      "input": 6415,
+      "output": 38,
+      "total": 14229,
+      "cost": 0,
+      "cacheRead": 1360,
+      "cacheWrite": 6416
+    }
+  },
+  "error": null,
+  "events": [
+    {
+      "event": "agentStart",
+      "id": "run-fixed-agent-types:0",
+      "label": "scout",
+      "prompt": "Read the marker file.",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-agent-types:0",
+      "label": "scout",
+      "result": "The marker says marker-from-repo.",
+      "tokens": 5677,
+      "tokenUsage": {
+        "input": 2496,
+        "output": 16,
+        "cacheRead": 668,
+        "cacheWrite": 2497,
+        "total": 5677,
+        "cost": 0
+      },
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentStart",
+      "id": "run-fixed-agent-types:1",
+      "label": "isolated",
+      "prompt": "Read the marker file from isolation.",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-agent-types:1",
+      "label": "isolated",
+      "result": "Isolated read complete.",
+      "tokens": 5747,
+      "tokenUsage": {
+        "input": 2521,
+        "output": 13,
+        "cacheRead": 692,
+        "cacheWrite": 2521,
+        "total": 5747,
+        "cost": 0
+      },
+      "worktree": "<fixture>/project/.pi/worktrees/run-fixed-agent-types-1-isolated",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "log",
+      "message": "unknown agentType \"does-not-exist\"; using default tools/model"
+    },
+    {
+      "event": "agentStart",
+      "id": "run-fixed-agent-types:2",
+      "label": "ghost",
+      "prompt": "No such type.",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-agent-types:2",
+      "label": "ghost",
+      "result": "Ghost type fell back to defaults.",
+      "tokens": 2805,
+      "tokenUsage": {
+        "input": 1398,
+        "output": 9,
+        "cacheRead": 0,
+        "cacheWrite": 1398,
+        "total": 2805,
+        "cost": 0
+      },
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "tokenUsage",
+      "usage": {
+        "input": 6415,
+        "output": 38,
+        "total": 14229,
+        "cost": 0,
+        "cacheRead": 1360,
+        "cacheWrite": 6416
+      }
+    }
+  ],
+  "journal": [
+    {
+      "index": 0,
+      "runId": "run-fixed-agent-types",
+      "hash": "e149695615dc9a6831da80be72586b6d801251e51463bb0b06bcb716f020cd92",
+      "result": "The marker says marker-from-repo.",
+      "storeDelta": {}
+    },
+    {
+      "index": 1,
+      "runId": "run-fixed-agent-types",
+      "hash": "487f82702473809cd117952817215bd4511002898a1d7a2ffd0bc2e57dbdfff2",
+      "result": "Isolated read complete.",
+      "storeDelta": {}
+    },
+    {
+      "index": 2,
+      "runId": "run-fixed-agent-types",
+      "hash": "e25d8805cd2b14446b4517c5932cf1d9c2168f17728c57ab92835d2b3d35be55",
+      "result": "Ghost type fell back to defaults.",
+      "storeDelta": {}
+    }
+  ],
+  "histories": {
+    "run-fixed-agent-types:0 scout": [
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "Only read files; never modify anything.\n\nTask label: scout\n\nRead the marker file.",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "toolCall",
+        "toolName": "read",
+        "text": "{\"path\":\"marker.txt\"}",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "tool",
+        "kind": "toolResult",
+        "toolName": "read",
+        "text": "marker-from-repo\n",
+        "isError": false,
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "text": "The marker says marker-from-repo.",
+        "timestamp": 1700000200321
+      }
+    ],
+    "run-fixed-agent-types:1 isolated": [
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "Work inside your isolated worktree only.\n\nRequested isolation: worktree\n\nTask label: isolated\n\nRead the marker file from isolation.",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "toolCall",
+        "toolName": "read",
+        "text": "{\"path\":\"marker.txt\"}",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "tool",
+        "kind": "toolResult",
+        "toolName": "read",
+        "text": "marker-from-repo\n",
+        "isError": false,
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "text": "Isolated read complete.",
+        "timestamp": 1700000200321
+      }
+    ],
+    "run-fixed-agent-types:2 ghost": [
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "Act as workflow subagent type: does-not-exist\n\nTask label: ghost\n\nNo such type.",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "text": "Ghost type fell back to defaults.",
+        "timestamp": 1700000200321
+      }
+    ]
+  },
+  "providerCalls": [
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Only read files; never modify anything.\n\nTask label: scout\n\nRead the marker file."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Only read files; never modify anything.\n\nTask label: scout\n\nRead the marker file."
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "toolCall",
+              "name": "read",
+              "arguments": {
+                "path": "marker.txt"
+              }
+            }
+          ],
+          "stopReason": "toolUse"
+        },
+        {
+          "role": "toolResult",
+          "toolName": "read",
+          "isError": false,
+          "text": "marker-from-repo\n"
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Work inside your isolated worktree only.\n\nRequested isolation: worktree\n\nTask label: isolated\n\nRead the marker file from isolation."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Work inside your isolated worktree only.\n\nRequested isolation: worktree\n\nTask label: isolated\n\nRead the marker file from isolation."
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "toolCall",
+              "name": "read",
+              "arguments": {
+                "path": "marker.txt"
+              }
+            }
+          ],
+          "stopReason": "toolUse"
+        },
+        {
+          "role": "toolResult",
+          "toolName": "read",
+          "isError": false,
+          "text": "marker-from-repo\n"
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Act as workflow subagent type: does-not-exist\n\nTask label: ghost\n\nNo such type."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pendingFauxResponses": 0
+}

@@ -1,0 +1,453 @@
+{
+  "schemaVersion": 1,
+  "scenario": "structured-output",
+  "script": "export const meta = { name: \"structured\", description: \"schema outputs\" };\nconst direct = await agent(\"Emit fruit\", {\n  label: \"direct\",\n  schema: { type: \"object\", properties: { fruit: { type: \"string\" }, count: { type: \"number\" } }, required: [\"fruit\", \"count\"] },\n});\nconst repaired = await agent(\"Emit veg after repair\", {\n  label: \"repaired\",\n  schema: { type: \"object\", properties: { veg: { type: \"string\" } }, required: [\"veg\"] },\n});\nconst prose = await agent(\"Emit mineral in prose\", {\n  label: \"prose\",\n  schema: { type: \"object\", properties: { mineral: { type: \"string\" } }, required: [\"mineral\"] },\n});\nreturn { direct, repaired, prose };",
+  "result": {
+    "meta": {
+      "name": "structured",
+      "description": "schema outputs"
+    },
+    "result": {
+      "direct": {
+        "fruit": "apple",
+        "count": 3
+      },
+      "repaired": {
+        "veg": "leek"
+      },
+      "prose": {
+        "mineral": "quartz"
+      }
+    },
+    "logs": [],
+    "phases": [],
+    "agentCount": 3,
+    "durationMs": 0,
+    "runId": "run-fixed-structured-output",
+    "tokenUsage": {
+      "input": 6102,
+      "output": 52,
+      "total": 12961,
+      "cost": 0,
+      "cacheRead": 703,
+      "cacheWrite": 6104
+    }
+  },
+  "error": null,
+  "events": [
+    {
+      "event": "agentStart",
+      "id": "run-fixed-structured-output:0",
+      "label": "direct",
+      "prompt": "Emit fruit",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-structured-output:0",
+      "label": "direct",
+      "result": {
+        "fruit": "apple",
+        "count": 3
+      },
+      "tokens": 3196,
+      "tokenUsage": {
+        "input": 1592,
+        "output": 12,
+        "cacheRead": 0,
+        "cacheWrite": 1592,
+        "total": 3196,
+        "cost": 0
+      },
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentStart",
+      "id": "run-fixed-structured-output:1",
+      "label": "repaired",
+      "prompt": "Emit veg after repair",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-structured-output:1",
+      "label": "repaired",
+      "result": {
+        "veg": "leek"
+      },
+      "tokens": 4462,
+      "tokenUsage": {
+        "input": 2198,
+        "output": 15,
+        "cacheRead": 50,
+        "cacheWrite": 2199,
+        "total": 4462,
+        "cost": 0
+      },
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentStart",
+      "id": "run-fixed-structured-output:2",
+      "label": "prose",
+      "prompt": "Emit mineral in prose",
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "agentEnd",
+      "id": "run-fixed-structured-output:2",
+      "label": "prose",
+      "result": {
+        "mineral": "quartz"
+      },
+      "tokens": 5303,
+      "tokenUsage": {
+        "input": 2312,
+        "output": 25,
+        "cacheRead": 653,
+        "cacheWrite": 2313,
+        "total": 5303,
+        "cost": 0
+      },
+      "model": "faux/faux-model"
+    },
+    {
+      "event": "tokenUsage",
+      "usage": {
+        "input": 6102,
+        "output": 52,
+        "total": 12961,
+        "cost": 0,
+        "cacheRead": 703,
+        "cacheWrite": 6104
+      }
+    }
+  ],
+  "journal": [
+    {
+      "index": 0,
+      "runId": "run-fixed-structured-output",
+      "hash": "9b353baf87ad29b3c5d9eb7e3432aa7fa876a86471f9ddbf96e916eb8773e5e7",
+      "result": {
+        "fruit": "apple",
+        "count": 3
+      },
+      "storeDelta": {}
+    },
+    {
+      "index": 1,
+      "runId": "run-fixed-structured-output",
+      "hash": "655d98bedcef8cc09c99103eaa5a8760b7ddb1978b37eaab1639611810fe06e7",
+      "result": {
+        "veg": "leek"
+      },
+      "storeDelta": {}
+    },
+    {
+      "index": 2,
+      "runId": "run-fixed-structured-output",
+      "hash": "94f3107b88320a05cd6d85401745c119d682658e60548e2cd18734e18e2ebe2b",
+      "result": {
+        "mineral": "quartz"
+      },
+      "storeDelta": {}
+    }
+  ],
+  "histories": {
+    "run-fixed-structured-output:0 direct": [
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "Task label: direct\n\nEmit fruit\n\nFinal output contract:\n- Your final action MUST be a structured_output tool call.\n- The structured_output arguments are the return value of this subagent.\n- Do not emit a prose final answer instead of structured_output.\n- If you need to inspect files or run commands first, do so, then call structured_output exactly once.",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "toolCall",
+        "toolName": "structured_output",
+        "text": "{\"fruit\":\"apple\",\"count\":3}",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "tool",
+        "kind": "toolResult",
+        "toolName": "structured_output",
+        "text": "Structured output received.",
+        "isError": false,
+        "timestamp": 1700000200321
+      }
+    ],
+    "run-fixed-structured-output:1 repaired": [
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "Task label: repaired\n\nEmit veg after repair\n\nFinal output contract:\n- Your final action MUST be a structured_output tool call.\n- The structured_output arguments are the return value of this subagent.\n- Do not emit a prose final answer instead of structured_output.\n- If you need to inspect files or run commands first, do so, then call structured_output exactly once.",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "text": "I will not call the tool.",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "You did not call the structured_output tool. Call structured_output now as your only action, with the required fields filled in. Do not write a prose answer.",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "toolCall",
+        "toolName": "structured_output",
+        "text": "{\"veg\":\"leek\"}",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "tool",
+        "kind": "toolResult",
+        "toolName": "structured_output",
+        "text": "Structured output received.",
+        "isError": false,
+        "timestamp": 1700000200321
+      }
+    ],
+    "run-fixed-structured-output:2 prose": [
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "Task label: prose\n\nEmit mineral in prose\n\nFinal output contract:\n- Your final action MUST be a structured_output tool call.\n- The structured_output arguments are the return value of this subagent.\n- Do not emit a prose final answer instead of structured_output.\n- If you need to inspect files or run commands first, do so, then call structured_output exactly once.",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "text": "Thinking about minerals...",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "You did not call the structured_output tool. Call structured_output now as your only action, with the required fields filled in. Do not write a prose answer.",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "text": "Still refusing the tool.",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "user",
+        "kind": "text",
+        "text": "You did not call the structured_output tool. Call structured_output now as your only action, with the required fields filled in. Do not write a prose answer.",
+        "timestamp": 1700000200321
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "text": "Here you go:\n```json\n{\"mineral\":\"quartz\"}\n```",
+        "timestamp": 1700000200321
+      }
+    ]
+  },
+  "providerCalls": [
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get",
+        "structured_output"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: direct\n\nEmit fruit\n\nFinal output contract:\n- Your final action MUST be a structured_output tool call.\n- The structured_output arguments are the return value of this subagent.\n- Do not emit a prose final answer instead of structured_output.\n- If you need to inspect files or run commands first, do so, then call structured_output exactly once."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get",
+        "structured_output"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: repaired\n\nEmit veg after repair\n\nFinal output contract:\n- Your final action MUST be a structured_output tool call.\n- The structured_output arguments are the return value of this subagent.\n- Do not emit a prose final answer instead of structured_output.\n- If you need to inspect files or run commands first, do so, then call structured_output exactly once."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "structured_output"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: repaired\n\nEmit veg after repair\n\nFinal output contract:\n- Your final action MUST be a structured_output tool call.\n- The structured_output arguments are the return value of this subagent.\n- Do not emit a prose final answer instead of structured_output.\n- If you need to inspect files or run commands first, do so, then call structured_output exactly once."
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "text",
+              "text": "I will not call the tool."
+            }
+          ],
+          "stopReason": "stop"
+        },
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "You did not call the structured_output tool. Call structured_output now as your only action, with the required fields filled in. Do not write a prose answer."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get",
+        "structured_output"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: prose\n\nEmit mineral in prose\n\nFinal output contract:\n- Your final action MUST be a structured_output tool call.\n- The structured_output arguments are the return value of this subagent.\n- Do not emit a prose final answer instead of structured_output.\n- If you need to inspect files or run commands first, do so, then call structured_output exactly once."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "structured_output"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: prose\n\nEmit mineral in prose\n\nFinal output contract:\n- Your final action MUST be a structured_output tool call.\n- The structured_output arguments are the return value of this subagent.\n- Do not emit a prose final answer instead of structured_output.\n- If you need to inspect files or run commands first, do so, then call structured_output exactly once."
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Thinking about minerals..."
+            }
+          ],
+          "stopReason": "stop"
+        },
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "You did not call the structured_output tool. Call structured_output now as your only action, with the required fields filled in. Do not write a prose answer."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "structured_output"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: prose\n\nEmit mineral in prose\n\nFinal output contract:\n- Your final action MUST be a structured_output tool call.\n- The structured_output arguments are the return value of this subagent.\n- Do not emit a prose final answer instead of structured_output.\n- If you need to inspect files or run commands first, do so, then call structured_output exactly once."
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Thinking about minerals..."
+            }
+          ],
+          "stopReason": "stop"
+        },
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "You did not call the structured_output tool. Call structured_output now as your only action, with the required fields filled in. Do not write a prose answer."
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Still refusing the tool."
+            }
+          ],
+          "stopReason": "stop"
+        },
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "You did not call the structured_output tool. Call structured_output now as your only action, with the required fields filled in. Do not write a prose answer."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pendingFauxResponses": 0
+}

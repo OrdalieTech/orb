@@ -1,0 +1,539 @@
+{
+  "schemaVersion": 1,
+  "scenario": "extension-lifecycle",
+  "registration": {
+    "log": [
+      {
+        "kind": "tool",
+        "name": "workflow"
+      },
+      {
+        "kind": "tool",
+        "name": "workflow_control"
+      },
+      {
+        "kind": "command",
+        "name": "workflows",
+        "description": "Manage workflow runs — no args (opens navigator) | run <prompt> | status/stop/pause/resume <id> | rm <id> | save <name> [runId]"
+      },
+      {
+        "kind": "command",
+        "name": "workflows-models",
+        "description": "View and edit model tiers used by workflows (small/medium/big)"
+      },
+      {
+        "kind": "command",
+        "name": "deep-research",
+        "description": "Research a question across the web with cross-checked sources"
+      },
+      {
+        "kind": "command",
+        "name": "adversarial-review",
+        "description": "Investigate a task, then cross-check each finding with skeptical reviewers"
+      },
+      {
+        "kind": "command",
+        "name": "code-review",
+        "description": "Multi-angle parallel code review: 7 specialized finders (correctness, reuse, simplification, efficiency, altitude) + verify pass → ranked findings"
+      },
+      {
+        "kind": "command",
+        "name": "multi-perspective",
+        "description": "Analyze a topic from several independent perspectives in parallel, then synthesize"
+      },
+      {
+        "kind": "command",
+        "name": "codebase-audit",
+        "description": "Run parallel checks against a codebase scope, then cross-validate and report"
+      },
+      {
+        "kind": "command",
+        "name": "effort",
+        "description": "Standing workflow effort: off | high | ultra — auto-arms a workflow for substantive messages"
+      },
+      {
+        "kind": "command",
+        "name": "ultracode",
+        "description": "Ultracode: standing maximal-effort mode (this session only, never persisted) — auto-arms an exhaustive workflow for substantive messages. /ultracode off to stop."
+      },
+      {
+        "kind": "setActiveTools",
+        "names": [
+          "read",
+          "bash",
+          "edit",
+          "write",
+          "workflow",
+          "workflow_control"
+        ]
+      },
+      {
+        "kind": "command",
+        "name": "workflows-trigger",
+        "description": "Keyword workflow trigger: on | off | set <word> | reset | status"
+      },
+      {
+        "kind": "command",
+        "name": "workflows-progress",
+        "description": "Bottom progress panel: compact | detailed | status | max <N>"
+      }
+    ],
+    "tools": [
+      {
+        "name": "workflow",
+        "label": "Workflow",
+        "description": "Run a JavaScript workflow that delegates work to subagents with agent(), optionally composing calls with parallel() and pipeline().",
+        "promptSnippet": "Delegate substantive independent or staged work to subagents with a JavaScript workflow, optionally composing agent calls with parallel(), pipeline(), or both",
+        "promptGuidelines": [
+          "The `workflow` tool runs multi-agent orchestration — it fans decomposable work out across subagents, and fits tasks shaped like: repo-wide inspection, independent parallel research/checks, multi-perspective review, or fan-out/fan-in synthesis. ONLY call it when the user explicitly opts in — via the workflow trigger word, `/workflows run`, or their own words (e.g. 'run a workflow', 'fan this out', '并行审一遍'). For any other task — even one that would clearly benefit — do not call it; you may briefly offer it (with a rough cost) as an option instead."
+        ],
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "script": {
+              "type": "string",
+              "description": "Raw JavaScript workflow script, with no Markdown fences. Required unless `name` is given. First statement: export const meta = { name: 'short_snake_case', description: 'non-empty description' }. Add phases: [{ title: 'Phase' }] only when the workflow has named phases, and declare only phases it will use. With multiple phases, call phase('Exact Title') before each phase's work or set `phase` in the agent options. Use `await workflow(savedName, childArgs)` to run a saved workflow inline; nesting is limited to one level and shares the parent run's concurrency, agent, and token limits. Optional quality helpers include verify(), judgePanel(), loopUntilDry(), and completenessCheck(). Optional control helpers include retry() and gate(); budget exposes total, spent(), and remaining(), and phase('Name', { budget: N }) sets a phase token limit. The optional `agentType` option selects a named user or project definition that can bind tools, a model, and role instructions; use it only when its name and purpose are provided in context. Its bound model overrides `tier`; an explicit `model` overrides both. Use plain JavaScript only; imports, require(), filesystem modules, Date.now(), Math.random(), and new Date() are unavailable. Use phase('Name'), agent(prompt, opts), parallel(arrayOfFunctions), pipeline(items, ...stages), log(message), args, cwd, process.cwd(), and budget. The workflow must call agent() at least once. parallel() requires functions, not promises, and returns results in input order: await parallel(items.map(item => () => agent(...))). pipeline(items, ...stages) runs stages sequentially for each item while items proceed concurrently; each stage receives (previousValue, originalItem, index)."
+            },
+            "name": {
+              "type": "string",
+              "description": "Run a saved or built-in workflow by name instead of `script`; its args go in `args`. Built-ins: deep-research, adversarial-review, code-review, multi-perspective, codebase-audit — see the workflow-patterns skill for each one's args. A same-named saved workflow wins. Not combinable with resumeFromRunId."
+            },
+            "args": {
+              "type": "object",
+              "description": "Optional JSON value exposed to the workflow script as global `args`."
+            },
+            "background": {
+              "type": "boolean",
+              "description": "Run the workflow in the background. Default: true — the tool returns immediately with a run ID, the turn ends so the user isn't blocked, and the result is delivered back into the conversation when it finishes. Set to false only when you need the result inline in this same turn (the call will block until the workflow completes)."
+            },
+            "maxAgents": {
+              "type": "number",
+              "description": "Maximum number of agents allowed in this run. Default: 1000; this is a safety ceiling, not a target. Set a lower limit for dynamic or exploratory fan-out, and reserve large fan-outs for explicit user intent."
+            },
+            "concurrency": {
+              "type": "number",
+              "description": "Maximum concurrent agents for this run. Clamped to the runtime maximum. Use when provider/transport stability matters."
+            },
+            "agentRetries": {
+              "type": "number",
+              "description": "Retry attempts for recoverable agent failures such as timeout, connection failure, or empty assistant output. Default 0 unless configured."
+            },
+            "agentTimeoutMs": {
+              "type": "number",
+              "description": "Timeout per agent in milliseconds. Omit to use configured `defaultAgentTimeoutMs`; without one, there is no hard timeout. Set only when the user asks to bound time."
+            },
+            "tokenBudget": {
+              "type": "number",
+              "description": "Optional user-requested soft spend gate, not a planning target. Do not set `tokenBudget` unless the user explicitly supplies a cap or asks you to choose one; never infer or invent one from task size. If omitted, the configured `defaultTokenBudget` applies; without one, the run is unlimited. Reaching the gate blocks later `agent()` calls; concurrent in-flight work can overshoot."
+            },
+            "resumeFromRunId": {
+              "type": "string",
+              "description": "Resume a prior run (this ID) with an edited `script` instead of starting a new run. Unchanged agent() calls replay from that run's cache; the first changed/new call onward re-runs. Calls match by position: keep earlier good calls identical and in order. Always background."
+            }
+          }
+        },
+        "hasPrepareArguments": true,
+        "hasRenderCall": true,
+        "hasRenderResult": true
+      },
+      {
+        "name": "workflow_control",
+        "label": "Workflow Control",
+        "description": "List and inspect workflow runs, or pause, resume, and stop them without asking the user to run slash commands.",
+        "promptSnippet": "Inspect and manage workflow runs directly by canonical run ID.",
+        "promptGuidelines": [
+          "Use workflow_control for workflow lifecycle management; do not ask the user to type /workflows when this tool can perform the action.",
+          "Use stop to terminate or quit a run. Closing the navigator does not stop a run."
+        ],
+        "parameters": {
+          "type": "object",
+          "required": [
+            "action"
+          ],
+          "properties": {
+            "action": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "list"
+                },
+                {
+                  "type": "string",
+                  "const": "status"
+                },
+                {
+                  "type": "string",
+                  "const": "pause"
+                },
+                {
+                  "type": "string",
+                  "const": "resume"
+                },
+                {
+                  "type": "string",
+                  "const": "stop"
+                }
+              ],
+              "description": "list = all runs (no runId); status/pause/resume/stop act on one run and require runId."
+            },
+            "runId": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Canonical workflow run ID. Required for status, pause, resume, and stop; omit for list."
+            }
+          },
+          "additionalProperties": false
+        },
+        "hasPrepareArguments": true,
+        "hasRenderCall": false,
+        "hasRenderResult": false
+      }
+    ],
+    "commands": [
+      "adversarial-review",
+      "code-review",
+      "codebase-audit",
+      "deep-research",
+      "effort",
+      "multi-perspective",
+      "ultracode",
+      "workflows",
+      "workflows-models",
+      "workflows-progress",
+      "workflows-trigger"
+    ],
+    "events": [
+      "input",
+      "session_shutdown",
+      "session_start",
+      "turn_end"
+    ]
+  },
+  "sessionStart": {
+    "notifications": [],
+    "activeToolsAfterStart": [
+      "read",
+      "bash",
+      "edit",
+      "write",
+      "workflow",
+      "workflow_control"
+    ],
+    "widgets": [
+      "workflow-tasks"
+    ],
+    "widgetMount": {
+      "placement": "belowEditor",
+      "idleFrame": []
+    }
+  },
+  "lazyPromptGuidelines": {
+    "stableAcrossReads": true,
+    "value": [
+      "The `workflow` tool runs multi-agent orchestration — it fans decomposable work out across subagents, and fits tasks shaped like: repo-wide inspection, independent parallel research/checks, multi-perspective review, or fan-out/fan-in synthesis. ONLY call it when the user explicitly opts in — via the workflow trigger word, `/workflows run`, or their own words (e.g. 'run a workflow', 'fan this out', '并行审一遍'). For any other task — even one that would clearly benefit — do not call it; you may briefly offer it (with a rough cost) as an option instead."
+    ]
+  },
+  "prepareArguments": {
+    "control-list": {
+      "ok": true,
+      "value": {
+        "action": "list"
+      }
+    },
+    "control-missing-run": {
+      "ok": false,
+      "error": "workflow_control action \"pause\" requires runId"
+    },
+    "control-extra-key": {
+      "ok": false,
+      "error": "workflow_control action \"list\" does not accept runId"
+    },
+    "control-bad-action": {
+      "ok": false,
+      "error": "workflow_control requires action: list|status|pause|resume|stop"
+    },
+    "workflow-script": {
+      "ok": true,
+      "value": {
+        "script": "export const meta = { name: \"ext-run\", description: \"background run via the workflow tool\" };\nreturn await agent(\"Extension-driven work\", { label: \"ext-agent\" });"
+      }
+    },
+    "workflow-bad": {
+      "ok": false,
+      "error": "workflow requires either `script` or `name` to be a string"
+    }
+  },
+  "backgroundRun": {
+    "startResult": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Workflow \"ext-run\" started in the background.\nRun ID: ext-run-loyw85mp-\nIt keeps running on its own. When it finishes, the result is delivered back\nhere and the conversation continues automatically — the user does not need to\ndo anything. Tell the user they can simply wait here for it to finish (it will\nresume the conversation by itself), or keep chatting / working on other things\nin the meantime; either way the result will come back to this conversation.\nThey can also track or cancel it with /workflows status ext-run-loyw85mp- or /workflows stop ext-run-loyw85mp-.\nTo revise without re-running everything: re-call workflow with resumeFromRunId=\"ext-run-loyw85mp-\" and an edited script — unchanged agent() calls replay from cache, only edited/new ones re-run."
+        }
+      ],
+      "details": {
+        "runId": "ext-run-loyw85mp-",
+        "background": true
+      }
+    },
+    "updates": [],
+    "deliveredMessages": [
+      {
+        "message": {
+          "customType": "workflow-result",
+          "content": "✓ Background workflow \"ext-run\" finished (1 agents · 2.8K tok).\n\nExtension agent result.\n\n↳ Full result: <fixture>/home/.pi/workflows/projects/project-<cwdhash>/runs/ext-run-loyw85mp-.json",
+          "display": true
+        },
+        "options": {
+          "triggerTurn": true,
+          "deliverAs": "followUp"
+        }
+      }
+    ],
+    "controlList": {
+      "content": [
+        {
+          "type": "text",
+          "text": "action=list result=ok runs=1\nrunId=ext-run-loyw85mp- name=\"ext-run\" status=completed phase=\"-\" total=1 done=1 running=0 queued=0 error=0 skipped=0 active=\"-\" tokens=2784"
+        }
+      ],
+      "details": {
+        "action": "list",
+        "result": "ok",
+        "runs": [
+          {
+            "runId": "ext-run-loyw85mp-",
+            "workflowName": "ext-run",
+            "status": "completed",
+            "phase": null,
+            "counts": {
+              "total": 1,
+              "done": 1,
+              "running": 0,
+              "queued": 0,
+              "error": 0,
+              "skipped": 0
+            },
+            "activeLabels": [],
+            "tokenTotal": 2784
+          }
+        ]
+      }
+    },
+    "controlStatus": {
+      "content": [
+        {
+          "type": "text",
+          "text": "action=status result=ok runId=ext-run-loyw85mp- name=\"ext-run\" status=completed phase=\"-\" total=1 done=1 running=0 queued=0 error=0 skipped=0 active=\"-\" tokens=2784"
+        }
+      ],
+      "details": {
+        "action": "status",
+        "result": "ok",
+        "run": {
+          "runId": "ext-run-loyw85mp-",
+          "workflowName": "ext-run",
+          "status": "completed",
+          "phase": null,
+          "counts": {
+            "total": 1,
+            "done": 1,
+            "running": 0,
+            "queued": 0,
+            "error": 0,
+            "skipped": 0
+          },
+          "activeLabels": [],
+          "tokenTotal": 2784
+        }
+      }
+    }
+  },
+  "renderFrames": {
+    "renderCall": [
+      "\u001b[38;5;188m\u001b[1mworkflow\u001b[22m\u001b[39m                                                    "
+    ],
+    "renderResult": [
+      "Workflow \"ext-run\" started in the background.                                   ",
+      "Run ID: ext-run-loyw85mp-                                                       ",
+      "It keeps running on its own. When it finishes, the result is delivered back     ",
+      "here and the conversation continues automatically — the user does not need to   ",
+      "do anything. Tell the user they can simply wait here for it to finish (it will  ",
+      "resume the conversation by itself), or keep chatting / working on other things  ",
+      "in the meantime; either way the result will come back to this conversation.     ",
+      "They can also track or cancel it with /workflows status ext-run-loyw85mp- or    ",
+      "/workflows stop ext-run-loyw85mp-.                                              ",
+      "To revise without re-running everything: re-call workflow with                  ",
+      "resumeFromRunId=\"ext-run-loyw85mp-\" and an edited script — unchanged agent()    ",
+      "calls replay from cache, only edited/new ones re-run.                           "
+    ]
+  },
+  "handoff": {
+    "generationTwoRegistrationLog": [
+      {
+        "kind": "tool",
+        "name": "workflow"
+      },
+      {
+        "kind": "tool",
+        "name": "workflow_control"
+      },
+      {
+        "kind": "command",
+        "name": "workflows",
+        "description": "Manage workflow runs — no args (opens navigator) | run <prompt> | status/stop/pause/resume <id> | rm <id> | save <name> [runId]"
+      },
+      {
+        "kind": "command",
+        "name": "workflows-models",
+        "description": "View and edit model tiers used by workflows (small/medium/big)"
+      },
+      {
+        "kind": "command",
+        "name": "deep-research",
+        "description": "Research a question across the web with cross-checked sources"
+      },
+      {
+        "kind": "command",
+        "name": "adversarial-review",
+        "description": "Investigate a task, then cross-check each finding with skeptical reviewers"
+      },
+      {
+        "kind": "command",
+        "name": "code-review",
+        "description": "Multi-angle parallel code review: 7 specialized finders (correctness, reuse, simplification, efficiency, altitude) + verify pass → ranked findings"
+      },
+      {
+        "kind": "command",
+        "name": "multi-perspective",
+        "description": "Analyze a topic from several independent perspectives in parallel, then synthesize"
+      },
+      {
+        "kind": "command",
+        "name": "codebase-audit",
+        "description": "Run parallel checks against a codebase scope, then cross-validate and report"
+      },
+      {
+        "kind": "command",
+        "name": "effort",
+        "description": "Standing workflow effort: off | high | ultra — auto-arms a workflow for substantive messages"
+      },
+      {
+        "kind": "command",
+        "name": "ultracode",
+        "description": "Ultracode: standing maximal-effort mode (this session only, never persisted) — auto-arms an exhaustive workflow for substantive messages. /ultracode off to stop."
+      },
+      {
+        "kind": "setActiveTools",
+        "names": [
+          "read",
+          "bash",
+          "edit",
+          "write",
+          "workflow",
+          "workflow_control"
+        ]
+      },
+      {
+        "kind": "command",
+        "name": "workflows-trigger",
+        "description": "Keyword workflow trigger: on | off | set <word> | reset | status"
+      },
+      {
+        "kind": "command",
+        "name": "workflows-progress",
+        "description": "Bottom progress panel: compact | detailed | status | max <N>"
+      }
+    ],
+    "controlAfterNew": {
+      "content": [
+        {
+          "type": "text",
+          "text": "action=status result=error runId=ext-run-loyw85mp- error=run not found allowed=list"
+        }
+      ],
+      "details": {
+        "action": "status",
+        "result": "error",
+        "runId": "ext-run-loyw85mp-",
+        "error": "run not found",
+        "allowedActions": [
+          "list"
+        ]
+      }
+    },
+    "generationTwoDelivered": [],
+    "generationThreeCommands": [
+      "adversarial-review",
+      "code-review",
+      "codebase-audit",
+      "deep-research",
+      "effort",
+      "multi-perspective",
+      "ultracode",
+      "workflows",
+      "workflows-models",
+      "workflows-progress",
+      "workflows-trigger"
+    ],
+    "quitWithLiveRun": [
+      {
+        "path": "project-<cwdhash>/runs/ext-hang-loyw85mp-.json",
+        "status": "paused",
+        "agents": [
+          {
+            "label": "ext-hanging",
+            "status": "running"
+          }
+        ]
+      }
+    ]
+  },
+  "providerCalls": [
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: ext-agent\n\nExtension-driven work"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "faux/faux-model",
+      "toolNames": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "store_put",
+        "store_get"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Task label: ext-hanging\n\nHangs across shutdown"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pendingFauxResponses": 0
+}

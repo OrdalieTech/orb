@@ -25,7 +25,7 @@ var builtInToolPromptMetadata = map[string]toolPromptMetadata{
 	},
 	"bash": {
 		snippet:    "Execute bash commands (ls, grep, find, etc.)",
-		guidelines: []string{"Inspect PI_* environment variables for current model and session details."},
+		guidelines: []string{"You can inspect PI_* environment variables for current model and session details."},
 	},
 	"edit": {
 		snippet: "Make precise file edits with exact text replacement, including multiple disjoint edits in one call",
@@ -66,12 +66,34 @@ type SystemPromptOptions struct {
 	PackageDir         string
 }
 
+// ToolPromptContribution replaces one built-in tool's system-prompt
+// contribution for a session. A present zero value suppresses the tool's
+// contribution entirely — upstream's SDK-created coding tools
+// (createCodingTools) drop every contribution except bash's, whose snippet
+// and guideline wording differ from the interactive defaults; the extension
+// session bridge mirrors that surface through these overrides.
+type ToolPromptContribution struct {
+	Snippet    string
+	Guidelines []string
+}
+
 // BuiltInToolPromptData returns the prompt snippets and guidelines contributed
 // by built-in tools, in active-tool order.
 func BuiltInToolPromptData(toolNames []string) (map[string]string, []string) {
+	return builtInToolPromptDataWithOverrides(toolNames, nil)
+}
+
+func builtInToolPromptDataWithOverrides(toolNames []string, overrides map[string]ToolPromptContribution) (map[string]string, []string) {
 	snippets := make(map[string]string)
 	var guidelines []string
 	for _, name := range toolNames {
+		if override, overridden := overrides[name]; overridden {
+			if override.Snippet != "" {
+				snippets[name] = override.Snippet
+			}
+			guidelines = append(guidelines, override.Guidelines...)
+			continue
+		}
 		metadata, ok := builtInToolPromptMetadata[name]
 		if !ok {
 			continue

@@ -23,6 +23,7 @@ type extensionRuntimeState struct {
 	toolRegistry         map[string]agent.AgentTool
 	toolInfo             map[string]extensions.ToolInfo
 	toolOrder            []string
+	lazyGuidelines       map[string][]string
 	previousRegistry     map[string]struct{}
 	allowed              map[string]struct{}
 	hasAllowlist         bool
@@ -793,10 +794,17 @@ func (runtime *SessionRuntime) setActiveToolsLocked(names []string, state *exten
 			if snippet := normalizePromptText(definition.PromptSnippet); snippet != "" {
 				snippets[name] = snippet
 			}
-			guidelines = append(guidelines, normalizeGuidelines(definition.PromptGuidelines)...)
+			// A lazily re-read guideline set (PromptGuidelinesFunc, refreshed
+			// per turn by refreshLazyToolGuidelines) supersedes the
+			// registration-time snapshot.
+			if lazy, tracked := state.lazyGuidelines[name]; tracked {
+				guidelines = append(guidelines, normalizeGuidelines(lazy)...)
+			} else {
+				guidelines = append(guidelines, normalizeGuidelines(definition.PromptGuidelines)...)
+			}
 			continue
 		}
-		builtInSnippets, builtInGuidelines := BuiltInToolPromptData([]string{name})
+		builtInSnippets, builtInGuidelines := builtInToolPromptDataWithOverrides([]string{name}, runtime.builtinToolPrompts)
 		if snippet := normalizePromptText(builtInSnippets[name]); snippet != "" {
 			snippets[name] = snippet
 		}
@@ -811,6 +819,82 @@ func (runtime *SessionRuntime) setActiveToolsLocked(names []string, state *exten
 	} else {
 		runtime.agent.SetSystemPrompt(state.baseSystemPrompt)
 	}
+}
+
+// refreshLazyToolGuidelines re-reads the current prompt guidelines of every
+// active tool that declares a PromptGuidelinesFunc (the upstream lazy
+// `get promptGuidelines()` contract, e.g. a workflow tool whose guidelines
+// list currently-available models) and rebuilds the system prompt when any
+// changed. Called before each turn so the model sees current guidelines
+// instead of the registration-time wire snapshot. Reads happen outside the
+// state lock: the funcs may round-trip to the extension host process.
+func (runtime *SessionRuntime) refreshLazyToolGuidelines(ctx context.Context) {
+	state := runtime.extensionState
+	if state == nil || state.runner == nil {
+		return
+	}
+	state.mu.Lock()
+	hasPromptOptions := state.promptOptions != nil
+	state.mu.Unlock()
+	if !hasPromptOptions {
+		return
+	}
+	activeNames, err := runtime.extensionActiveTools()
+	if err != nil {
+		return
+	}
+	type refreshedGuidelines struct {
+		name       string
+		guidelines []string
+	}
+	var refreshed []refreshedGuidelines
+	for _, name := range activeNames {
+		definition := state.runner.ToolDefinition(name)
+		if definition == nil || definition.PromptGuidelinesFunc == nil {
+			continue
+		}
+		guidelines, err := definition.PromptGuidelinesFunc(ctx)
+		if err != nil {
+			continue // best-effort: the snapshot (or last read) stays in place
+		}
+		refreshed = append(refreshed, refreshedGuidelines{name: name, guidelines: guidelines})
+	}
+	if len(refreshed) == 0 {
+		return
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.lazyGuidelines == nil {
+		state.lazyGuidelines = make(map[string][]string)
+	}
+	changed := false
+	for _, entry := range refreshed {
+		current, tracked := state.lazyGuidelines[entry.name]
+		if !tracked {
+			if definition := state.runner.ToolDefinition(entry.name); definition != nil {
+				current = definition.PromptGuidelines
+			}
+		}
+		if !stringSlicesEqual(current, entry.guidelines) {
+			changed = true
+		}
+		state.lazyGuidelines[entry.name] = entry.guidelines
+	}
+	if changed {
+		runtime.setActiveToolsLocked(activeNames, state)
+	}
+}
+
+func stringSlicesEqual(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func (runtime *SessionRuntime) extensionActiveTools() ([]string, error) {
@@ -1480,7 +1564,7 @@ func (runtime *SessionRuntime) promptExtensionInput(
 			}
 			return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.") //nolint:staticcheck // User-visible error matches upstream.
 		}
-		message := userMessageWithImages(text, images)
+		message := userMessageWithImagesAt(text, images, runtime.clock())
 		runtime.mu.Lock()
 		if *streamingBehavior == extensions.DeliverFollowUp {
 			runtime.followUps = append(runtime.followUps, text)
@@ -1508,6 +1592,10 @@ func (runtime *SessionRuntime) promptExtensionInput(
 			preflightResult(true)
 		}
 	}
+
+	// Lazy prompt guidelines re-read per turn (upstream `get promptGuidelines()`
+	// parity): must run before the base system prompt is captured below.
+	runtime.refreshLazyToolGuidelines(ctx)
 
 	state.mu.Lock()
 	basePrompt := state.baseSystemPrompt
@@ -1542,7 +1630,7 @@ func (runtime *SessionRuntime) promptExtensionInput(
 		}
 	}
 	messages := make(agent.AgentMessages, 0, 1+len(pending)+len(injected))
-	messages = append(messages, userMessageWithImages(text, images))
+	messages = append(messages, userMessageWithImagesAt(text, images, runtime.clock()))
 	messages = append(messages, pending...)
 	messages = append(messages, injected...)
 	return runtime.runPolicies(ctx, func() error { return runtime.agent.Prompt(ctx, messages) })

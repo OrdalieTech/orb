@@ -6,7 +6,14 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
-## [0.4.12] - 2026-08-10
+### Changed
+
+- Extensions importing the pi SDK (`@earendil-works/pi-*` or the legacy `@mariozechner/pi-*` names) are now served entirely by Orb's embedded `orb-extension-sdk`: `pi-dynamic-workflows` runs unchanged — child agent sessions, model catalogs, shared-store/web tools, structured output, worktree isolation, background runs, pause/resume, and persisted transcripts included — with zero Pi-SDK code on the machine. The previous on-demand `npm install` of the real SDK is gone, and `ORB_PI_SDK_ROOT` with it.
+- An extension that imports a pi SDK surface Orb does not implement now gets a precise diagnostic — `OrbUnsupportedCapability: <package>#<export> is not implemented by orb-extension-sdk <version>; supported exports: …` — at the point of use, instead of a version-dependent resolution or missing-export failure; any import that would reach a real installed pi SDK is refused at load with the full import chain named.
+
+### Fixed
+
+- The bash tool's system-prompt guideline matches upstream v0.84.1's wording ("You can inspect PI_* environment variables…").
 
 ### Changed
 

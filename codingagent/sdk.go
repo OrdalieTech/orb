@@ -143,6 +143,19 @@ type AgentSessionOptions struct {
 	// SlashResolver handles /command and /skill expansion. When nil it is
 	// derived from discovered skills and prompt templates.
 	SlashResolver *SlashResolver
+
+	// Clock supplies JavaScript Date.now-compatible milliseconds for message
+	// and runtime timestamps (agent loop and session runtime). Defaults to the
+	// wall clock; embedders and deterministic tests inject a fixed clock. It
+	// does not reach a SessionManager passed in by the caller — create that
+	// with session.WithClock to pin persisted entry timestamps too.
+	Clock func() int64
+
+	// BuiltinToolPrompts overrides the system-prompt contribution of named
+	// built-in tools for this session (a present zero value suppresses the
+	// contribution). The extension session bridge uses it to mirror upstream's
+	// createCodingTools surface, which carries bash's contribution only.
+	BuiltinToolPrompts map[string]ToolPromptContribution
 }
 
 // AgentSessionRuntimeDiagnostic is a non-fatal issue collected while creating
@@ -446,7 +459,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	}
 
 	// Build prompt options for system prompt assembly.
-	promptOptions := buildPromptOptions(cwd, resources, initialActiveToolNames)
+	promptOptions := buildPromptOptions(cwd, resources, initialActiveToolNames, opts.BuiltinToolPrompts)
 	assembledPrompt := systemPrompt
 	if promptOptions != nil {
 		assembledPrompt = BuildSystemPrompt(*promptOptions)
@@ -498,6 +511,9 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		agent.WithConvertToLLM(ConvertToLLMWithBlockImages(settings.GetBlockImages)),
 		agent.WithSteeringMode(agent.QueueMode(settings.GetSteeringMode())),
 		agent.WithFollowUpMode(agent.QueueMode(settings.GetFollowUpMode())),
+	}
+	if opts.Clock != nil {
+		agentOpts = append(agentOpts, agent.WithClock(opts.Clock))
 	}
 	var a *agent.Agent
 	agentOpts = append(agentOpts, agent.WithPrepareNextTurnContext(func(_ context.Context, turn agent.PrepareNextTurnContext) (*agent.AgentLoopTurnUpdate, error) {
@@ -587,6 +603,8 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		ResourceLoader:      resourceLoader,
 		SystemPromptOptions: promptOptions,
 		SessionStartEvent:   opts.SessionStartEvent,
+		Clock:               opts.Clock,
+		BuiltinToolPrompts:  opts.BuiltinToolPrompts,
 		DeferExtensionStart: opts.DeferExtensionStart,
 	}
 
@@ -638,11 +656,11 @@ func buildSystemPromptFromResources(res *Resources) string {
 	return *res.SystemPrompt
 }
 
-func buildPromptOptions(cwd string, res *Resources, activeTools []string) *SystemPromptOptions {
+func buildPromptOptions(cwd string, res *Resources, activeTools []string, builtinToolPrompts map[string]ToolPromptContribution) *SystemPromptOptions {
 	if res == nil {
 		return nil
 	}
-	snippets, guidelines := BuiltInToolPromptData(activeTools)
+	snippets, guidelines := builtInToolPromptDataWithOverrides(activeTools, builtinToolPrompts)
 	var appendPrompt *string
 	if joined := res.JoinedAppendSystemPrompt(); joined != nil {
 		appendPrompt = joined
