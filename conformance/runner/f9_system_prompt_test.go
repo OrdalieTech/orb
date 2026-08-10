@@ -11,6 +11,21 @@ import (
 	"github.com/OrdalieTech/orb/conformance/runner"
 )
 
+const (
+	f9UpstreamDefaultIdentity = "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files."
+	f9OrbDefaultIdentity      = "You are an expert problem-solving assistant operating inside Orb, a general-purpose agent harness for work and software development. You help users investigate, plan, create, and complete tasks using the available tools, including working with files, executing commands, and editing code or documents."
+	f9OrbDocsHeading          = "Orb documentation (read only when the user asks about Orb itself, its SDK, extensions, themes, skills, or TUI):"
+)
+
+// D30 permits only these product-identity substitutions over upstream-generated F9 goldens.
+var f9OrbPromptReplacer = strings.NewReplacer(
+	f9UpstreamDefaultIdentity, f9OrbDefaultIdentity,
+	"Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):", f9OrbDocsHeading,
+	"When reading pi docs or examples", "When reading Orb docs or examples",
+	"When working on pi topics", "When working on Orb topics",
+	"Always read pi .md files completely", "Always read Orb documentation files completely",
+)
+
 type f9Fixture struct {
 	SchemaVersion  int               `json:"schemaVersion"`
 	PackageDir     string            `json:"packageDir"`
@@ -75,7 +90,7 @@ type f9DiscoveryExpected struct {
 	AssembledPrompt           string           `json:"assembledPrompt"`
 }
 
-func TestF9SystemPromptMatchesUpstream(t *testing.T) {
+func TestF9SystemPromptMatchesUpstreamWithOrbIdentity(t *testing.T) {
 	manifest := runner.LoadManifest(t, "F9")
 	if manifest.Family != "F9" || manifest.Generator != "conformance/extract/f9-system-prompt.ts" {
 		t.Fatalf("unexpected F9 manifest: %+v", manifest)
@@ -96,14 +111,16 @@ func TestF9SystemPromptMatchesUpstream(t *testing.T) {
 				Skills:             f9CodingSkills(fixtureCase.Input.Skills),
 				PackageDir:         fixture.PackageDir,
 			})
-			if got != fixtureCase.Expected {
-				t.Fatalf("system prompt mismatch:\n%s", runner.ByteDiff([]byte(fixtureCase.Expected), []byte(got)))
+			expected := f9ExpectedOrbSystemPrompt(fixtureCase.Expected)
+			f9AssertOrbSystemPromptIdentity(t, fixtureCase.Expected, got)
+			if got != expected {
+				t.Fatalf("system prompt mismatch:\n%s", runner.ByteDiff([]byte(expected), []byte(got)))
 			}
 		})
 	}
 }
 
-func TestF9ResourceDiscoveryMatchesUpstream(t *testing.T) {
+func TestF9ResourceDiscoveryMatchesUpstreamWithOrbIdentity(t *testing.T) {
 	fixture := loadF9Fixture(t)
 	for _, fixtureCase := range fixture.DiscoveryCases {
 		fixtureCase := fixtureCase
@@ -176,13 +193,33 @@ func TestF9ResourceDiscoveryMatchesUpstream(t *testing.T) {
 				AppendSystemPromptSources: f9FixturePromptSources(resources.AppendSystemPromptSources, fixtureRoot),
 				AssembledPrompt:           f9NormalizeFixturePath(assembled, fixtureRoot),
 			}
-			if diff := runner.ByteDiff([]byte(fixtureCase.Expected.AssembledPrompt), []byte(got.AssembledPrompt)); diff != "" {
+			expected := fixtureCase.Expected
+			expected.AssembledPrompt = f9ExpectedOrbSystemPrompt(expected.AssembledPrompt)
+			f9AssertOrbSystemPromptIdentity(t, fixtureCase.Expected.AssembledPrompt, got.AssembledPrompt)
+			if diff := runner.ByteDiff([]byte(expected.AssembledPrompt), []byte(got.AssembledPrompt)); diff != "" {
 				t.Fatalf("assembled system prompt mismatch:\n%s", diff)
 			}
-			if !reflect.DeepEqual(got, fixtureCase.Expected) {
-				t.Fatalf("resource result mismatch\nwant: %+v\n got: %+v", fixtureCase.Expected, got)
+			if !reflect.DeepEqual(got, expected) {
+				t.Fatalf("resource result mismatch\nwant: %+v\n got: %+v", expected, got)
 			}
 		})
+	}
+}
+
+func f9ExpectedOrbSystemPrompt(upstream string) string {
+	return f9OrbPromptReplacer.Replace(upstream)
+}
+
+func f9AssertOrbSystemPromptIdentity(t testing.TB, upstream, got string) {
+	t.Helper()
+	if !strings.Contains(upstream, f9UpstreamDefaultIdentity) {
+		return
+	}
+	if !strings.HasPrefix(got, f9OrbDefaultIdentity) {
+		t.Fatalf("default system prompt does not use Orb's general-purpose identity: %q", got)
+	}
+	if !strings.Contains(got, f9OrbDocsHeading) {
+		t.Fatalf("default system prompt does not use Orb documentation identity: %q", got)
 	}
 }
 
