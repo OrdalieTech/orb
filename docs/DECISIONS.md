@@ -26,8 +26,9 @@ Orb is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinne
   those in the divergence ledger below. Sequencing exists (see plan phases); feature cuts do not.
 - **D3 — Audience.** Ordalie production embedding + personal daily-driver + public OSS, simultaneously.
 - **D4 — File-format compatibility.** orb reads/writes pi's data formats and locations so both
-  agents coexist on one machine: `~/.pi/agent/` layout, session JSONL **v4** tree format (with
-  v1/v2/v3 migration), `settings.json` (global + `.pi/settings.json` project merge), `models.json`,
+  agents coexist on one machine: `~/.pi/agent/` layout, product session JSONL **v3** tree format
+  (with v1/v2 migration; the harness session-repo format is **v4**, both matching upstream),
+  `settings.json` (global + `.pi/settings.json` project merge), `models.json`,
   `auth.json` (0600), `trust.json`, `keybindings.json`. CLI-flag parity is pursued but not contractual.
 
 ## Upstream relationship

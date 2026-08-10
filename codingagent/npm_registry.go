@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/OrdalieTech/orb/internal/jsonwire"
@@ -254,10 +255,140 @@ func (manager *PackageManager) installNpm(source *npmSource, scope string, tempo
 	if err := extractNpmTarball(tarball, destination); err != nil {
 		return err
 	}
-	if err := manager.installPackageDependencies(destination); err != nil {
+	// The npm subprocess runs before the native peer install: npm install
+	// prunes node_modules entries the package.json does not declare, so peers
+	// written first would be deleted again.
+	if err := manager.installPackageDependencies(destination, true); err != nil {
+		return err
+	}
+	if err := manager.installNpmPeerDependencies(destination); err != nil {
 		return err
 	}
 	return setNpmDependency(installRoot, source.name, info.Version)
+}
+
+// Peer-dependency materialization for managed npm installs. Upstream never
+// installs peers on this path (getNpmInstallArgs passes --legacy-peer-deps /
+// --omit=peer / auto-install-peers=false): upstream pi runs extensions
+// in-process, where its extension loader aliases both the
+// @earendil-works/pi-* SDK packages AND typebox to pi's own bundled copies
+// (upstream core/extensions/loader.ts), so no peer ever needs to exist on
+// disk. Orb's out-of-process extension host serves only the pi-* SDK surface
+// from the embedded orb-extension-sdk, so every other required peer must be
+// materialized at install time or the extension cannot resolve it. Installing
+// non-pi peers natively is therefore a deliberate Orb deviation; the pi-*
+// scope skip is Orb-specific by design — the embedded SDK serves those
+// specifiers and the host loader refuses to execute a real pi SDK install
+// from node_modules, so the installer must not fetch one at all.
+
+// isEmbeddedSDKPeer matches the loader's legacySDKScopes (loader.mjs).
+func isEmbeddedSDKPeer(name string) bool {
+	return strings.HasPrefix(name, "@earendil-works/pi-") || strings.HasPrefix(name, "@mariozechner/pi-")
+}
+
+// declaredPeerDependencies returns a package's peerDependencies ranges plus
+// the set marked optional in peerDependenciesMeta.
+func declaredPeerDependencies(packageJSONPath string) (peers map[string]string, optional map[string]bool) {
+	pkg, err := readPackageJSON(packageJSONPath)
+	if err != nil {
+		return nil, nil
+	}
+	declared, _ := pkg["peerDependencies"].(map[string]any)
+	peers = make(map[string]string, len(declared))
+	for name, rawRange := range declared {
+		versionRange, _ := rawRange.(string)
+		peers[name] = versionRange
+	}
+	optional = make(map[string]bool)
+	meta, _ := pkg["peerDependenciesMeta"].(map[string]any)
+	for name, rawMeta := range meta {
+		entry, _ := rawMeta.(map[string]any)
+		if isOptional, _ := entry["optional"].(bool); isOptional {
+			optional[name] = true
+		}
+	}
+	return peers, optional
+}
+
+// installNpmPeerDependencies natively installs a package's required peer
+// dependencies. Peers land flat in the package's own node_modules (transitive
+// peers included), where Node's walk-up resolution finds them from any depth
+// of the package tree; nesting them keeps npm runs at the install root from
+// pruning them as undeclared top-level entries. Optional peers
+// (peerDependenciesMeta[name].optional) are skipped, matching npm >=7
+// auto-install semantics.
+func (manager *PackageManager) installNpmPeerDependencies(packageDir string) error {
+	visited := map[string]bool{}
+	queue := []string{packageDir}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		peers, optionalPeers := declaredPeerDependencies(filepath.Join(current, "package.json"))
+		names := make([]string, 0, len(peers))
+		for name := range peers {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			if visited[name] {
+				continue
+			}
+			visited[name] = true
+			if isEmbeddedSDKPeer(name) || optionalPeers[name] {
+				continue
+			}
+			target, err := resolveManagedPath(packageDir, "node_modules", name)
+			if err != nil {
+				return err
+			}
+			// Bundled in the tarball or already materialized by the npm run.
+			if nested := filepath.Join(current, "node_modules", name); pathExists(nested) {
+				queue = append(queue, nested)
+				continue
+			}
+			if pathExists(target) {
+				queue = append(queue, target)
+				continue
+			}
+			if err := manager.installNpmPeer(name, peers[name], target); err != nil {
+				return err
+			}
+			if err := manager.installPackageDependencies(target, true); err != nil {
+				return err
+			}
+			queue = append(queue, target)
+		}
+	}
+	return nil
+}
+
+// installNpmPeer resolves a peer range like npm does (highest satisfying
+// version; bare names take the latest dist-tag) and extracts the tarball
+// natively into target.
+func (manager *PackageManager) installNpmPeer(name, versionRange, target string) error {
+	source := &npmSource{
+		spec:    name + "@" + versionRange,
+		name:    name,
+		version: versionRange,
+		rng:     npmVersionRange(versionRange),
+		pinned:  isExactNpmVersion(versionRange),
+	}
+	packument, err := manager.fetchPackument(name)
+	if err != nil {
+		return fmt.Errorf("failed to install peer dependency %s: %s", source.spec, err)
+	}
+	info, err := selectNpmVersion(packument, source)
+	if err != nil {
+		return fmt.Errorf("failed to install peer dependency %s: %s", source.spec, err)
+	}
+	if info.Dist.Tarball == "" {
+		return fmt.Errorf("npm version %s@%s has no tarball", name, info.Version)
+	}
+	tarball, err := manager.downloadNpmTarball(info)
+	if err != nil {
+		return fmt.Errorf("failed to download %s@%s: %s", name, info.Version, err)
+	}
+	return extractNpmTarball(tarball, target)
 }
 
 // setNpmDependency declares a natively installed package in the install root's

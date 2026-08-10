@@ -33,7 +33,9 @@ func TestInstallNpmRunsDependencyInstall(t *testing.T) {
 		t.Fatalf("expected one npm invocation, got %d: %+v", len(specs), specs)
 	}
 	wantDir := filepath.Join(agentDir, "npm", "node_modules", "pi-deps")
-	if specs[0].name != "npm" || strings.Join(specs[0].args, " ") != "install --omit=dev" || specs[0].dir != wantDir {
+	// Managed npm installs disable npm's peer auto-install (upstream
+	// getNpmInstallArgs): non-pi peers are materialized natively instead.
+	if specs[0].name != "npm" || strings.Join(specs[0].args, " ") != "install --omit=dev --legacy-peer-deps" || specs[0].dir != wantDir {
 		t.Fatalf("npm invocation = %+v", specs[0])
 	}
 }
@@ -84,9 +86,46 @@ func TestInstallNpmHonorsNpmCommandSetting(t *testing.T) {
 	if len(specs) != 1 {
 		t.Fatalf("expected one npmCommand invocation, got %d", len(specs))
 	}
-	// Custom npmCommand values skip the npm-specific --omit=dev flag.
-	if specs[0].name != "mise" || strings.Join(specs[0].args, " ") != "exec node@20 -- npm install" {
+	// Custom npmCommand values skip the npm-specific --omit=dev flag; the
+	// wrapped command after "--" still selects npm's peer opt-out flag.
+	if specs[0].name != "mise" || strings.Join(specs[0].args, " ") != "exec node@20 -- npm install --legacy-peer-deps" {
 		t.Fatalf("npmCommand invocation = %+v", specs[0])
+	}
+}
+
+func TestInstallNpmDisablesPeerResolutionPerPackageManager(t *testing.T) {
+	// Mirrors upstream getNpmInstallArgs: each supported package manager gets
+	// its own peer-resolution opt-out so a managed install never solves
+	// host-provided peers.
+	cases := []struct {
+		npmCommand string
+		wantName   string
+		wantArgs   string
+	}{
+		{`["bun"]`, "bun", "install --omit=peer"},
+		{`["pnpm"]`, "pnpm", "install --config.auto-install-peers=false --config.strict-peer-dependencies=false --config.strict-dep-builds=false"},
+	}
+	for _, testCase := range cases {
+		registry := newFakeNpmRegistry(t)
+		manager, _, agentDir, settings := newTestPackageManager(t)
+		manager.registryBaseURL = registry.server.URL
+		writeTestFile(t, filepath.Join(agentDir, "settings.json"), `{"npmCommand":`+testCase.npmCommand+`}`)
+		settings.Reload()
+		registry.add(fakeNpmPackage{name: "pi-deps", version: "1.0.0", files: map[string]string{
+			"package.json": `{"name":"pi-deps","version":"1.0.0","dependencies":{"ndjson":"^2.0.0"}}`,
+		}})
+
+		var specs []execSpec
+		manager.runCommand = func(spec execSpec) (string, error) {
+			specs = append(specs, spec)
+			return "", nil
+		}
+		if err := manager.Install("npm:pi-deps", false); err != nil {
+			t.Fatal(err)
+		}
+		if len(specs) != 1 || specs[0].name != testCase.wantName || strings.Join(specs[0].args, " ") != testCase.wantArgs {
+			t.Fatalf("npmCommand %s invocations = %+v", testCase.npmCommand, specs)
+		}
 	}
 }
 
