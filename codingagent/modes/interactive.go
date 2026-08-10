@@ -888,6 +888,11 @@ func (mode *InteractiveMode) setupAutocomplete() {
 
 	enableSkillCommands := mode.session.InteractiveModeSettings().EnableSkillCommands
 	skillCommands := make([]tui.SlashCommand, 0)
+	skillItems := make([]tui.AutocompleteItem, 0)
+	addSkill := func(name, description string) {
+		skillCommands = append(skillCommands, tui.SlashCommand{Name: "skill:" + name, Description: description})
+		skillItems = append(skillItems, tui.AutocompleteItem{Value: "@" + name, Label: "[skill] " + name, Description: description})
+	}
 	if loader := mode.session.ResourceLoader(); loader != nil {
 		for _, prompt := range loader.GetPrompts().Prompts {
 			commands = append(commands, tui.SlashCommand{
@@ -897,9 +902,7 @@ func (mode *InteractiveMode) setupAutocomplete() {
 		}
 		if enableSkillCommands {
 			for _, skill := range loader.GetSkills().Skills {
-				skillCommands = append(skillCommands, tui.SlashCommand{
-					Name: "skill:" + skill.Name, Description: autocompleteDescription(skill.Description, skill.SourceInfo.Source, skill.SourceInfo.Scope),
-				})
+				addSkill(skill.Name, autocompleteDescription(skill.Description, skill.SourceInfo.Source, skill.SourceInfo.Scope))
 			}
 		}
 	} else {
@@ -913,12 +916,14 @@ func (mode *InteractiveMode) setupAutocomplete() {
 		}
 	}
 
+	extensionNames := make(map[string]struct{})
 	if runner := mode.session.ExtensionRunner(); runner != nil {
 		for _, command := range runner.RegisteredCommands() {
 			if _, conflict := builtinNames[command.Name]; conflict {
 				continue
 			}
 			resolved := command
+			extensionNames[resolved.InvocationName] = struct{}{}
 			slashCommand := tui.SlashCommand{
 				Name:        resolved.InvocationName,
 				Description: autocompleteDescription(resolved.Description, resolved.SourceInfo.Source, string(resolved.SourceInfo.Scope)),
@@ -945,12 +950,14 @@ func (mode *InteractiveMode) setupAutocomplete() {
 			if command.Source != codingagent.SlashCommandSkill {
 				continue
 			}
-			skillCommands = append(skillCommands, tui.SlashCommand{
-				Name: command.Name, Description: autocompleteDescription(command.Description, command.SourceInfo.Source, command.SourceInfo.Scope),
-			})
+			addSkill(strings.TrimPrefix(command.Name, "skill:"), autocompleteDescription(command.Description, command.SourceInfo.Source, command.SourceInfo.Scope))
 		}
 	}
 	commands = append(commands, skillCommands...)
+	skillItems = slices.DeleteFunc(skillItems, func(item tui.AutocompleteItem) bool {
+		_, conflict := extensionNames["skill:"+strings.TrimPrefix(item.Value, "@")]
+		return conflict
+	})
 	// Prefer the managed fd: a bare PATH lookup left @file completion silently
 	// inert on machines without a system fd, which orb otherwise downloads.
 	fdPath := tools.ManagedFDPath()
@@ -967,11 +974,122 @@ func (mode *InteractiveMode) setupAutocomplete() {
 		}
 		provider = extensionAutocompleteAdapter{provider: wrapped}
 	}
+	provider = newSkillAutocompleteProvider(provider, skillItems)
 	mode.autocompleteProvider = provider
 	if mode.editor != nil {
 		mode.editor.SetAutocompleteProvider(provider)
 	}
 	mode.setExtensionEditorAutocompleteProvider(provider)
+}
+
+type skillAutocompleteProvider struct {
+	base   tui.AutocompleteProvider
+	skills []tui.AutocompleteItem
+}
+
+func newSkillAutocompleteProvider(base tui.AutocompleteProvider, skills []tui.AutocompleteItem) tui.AutocompleteProvider {
+	if len(skills) == 0 {
+		return base
+	}
+	return &skillAutocompleteProvider{base: base, skills: skills}
+}
+
+func (provider *skillAutocompleteProvider) GetSuggestions(ctx context.Context, lines []string, cursorLine, cursorCol int, force bool) *tui.AutocompleteSuggestions {
+	base := provider.base.GetSuggestions(ctx, lines, cursorLine, cursorCol, force)
+	prefix, query, ok := skillAutocompletePrefix(lines, cursorLine, cursorCol)
+	if !ok || ctx.Err() != nil {
+		return base
+	}
+	skills := tui.FuzzyFilter(provider.skills, query, func(item tui.AutocompleteItem) string {
+		return strings.TrimPrefix(item.Value, "@")
+	})
+	if len(skills) == 0 {
+		return base
+	}
+	items := append([]tui.AutocompleteItem(nil), skills...)
+	if base != nil {
+		items = append(items, base.Items...)
+	}
+	return &tui.AutocompleteSuggestions{Items: items, Prefix: prefix}
+}
+
+func skillAutocompletePrefix(lines []string, cursorLine, cursorCol int) (string, string, bool) {
+	if cursorLine < 0 || cursorLine >= len(lines) {
+		return "", "", false
+	}
+	for _, line := range lines[:cursorLine] {
+		if strings.TrimSpace(line) != "" {
+			return "", "", false
+		}
+	}
+	line := []rune(lines[cursorLine])
+	cursorCol = max(0, min(cursorCol, len(line)))
+	end := cursorCol
+	for end < len(line) && line[end] != ' ' && line[end] != '\t' {
+		end++
+	}
+	before := string(line[:cursorCol])
+	prefix := strings.TrimLeft(before, " \t")
+	start := cursorCol - len([]rune(prefix))
+	token := string(line[start:end])
+	if !strings.HasPrefix(prefix, "@") || strings.HasPrefix(prefix, `@"`) || strings.ContainsAny(token[1:], "/\\ \t") {
+		return "", "", false
+	}
+	return prefix, prefix[1:], true
+}
+
+func (provider *skillAutocompleteProvider) skillName(item tui.AutocompleteItem) (string, bool) {
+	for _, skill := range provider.skills {
+		if item == skill {
+			return strings.TrimPrefix(skill.Value, "@"), true
+		}
+	}
+	return "", false
+}
+
+func (provider *skillAutocompleteProvider) ApplyCompletion(lines []string, cursorLine, cursorCol int, item tui.AutocompleteItem, prefix string) tui.CompletionResult {
+	name, skill := provider.skillName(item)
+	if !skill || !strings.HasPrefix(prefix, "@") || cursorLine < 0 || cursorLine >= len(lines) {
+		return provider.base.ApplyCompletion(lines, cursorLine, cursorCol, item, prefix)
+	}
+	line := []rune(lines[cursorLine])
+	cursorCol = max(0, min(cursorCol, len(line)))
+	start := max(0, cursorCol-len([]rune(prefix)))
+	end := cursorCol
+	for end < len(line) && line[end] != ' ' && line[end] != '\t' {
+		end++
+	}
+	before, after := string(line[:start]), string(line[end:])
+	separator := " "
+	if strings.HasPrefix(after, " ") || strings.HasPrefix(after, "\t") {
+		separator = ""
+	}
+	replacement := "/skill:" + name
+	updated := append([]string(nil), lines...)
+	updated[cursorLine] = before + replacement + separator + after
+	return tui.CompletionResult{Lines: updated, CursorLine: cursorLine, CursorCol: len([]rune(before + replacement + separator))}
+}
+
+func (provider *skillAutocompleteProvider) StyleAutocompleteItem(item tui.AutocompleteItem, text string, selected bool) string {
+	if _, skill := provider.skillName(item); !skill || selected {
+		return text
+	}
+	end := min(len("[skill]"), len(text))
+	return theme.FG("accent", theme.Bold(text[:end])) + theme.FG("mdLink", text[end:])
+}
+
+func (provider *skillAutocompleteProvider) ShouldTriggerFileCompletion(lines []string, cursorLine, cursorCol int) bool {
+	if gate, ok := provider.base.(tui.FileCompletionGate); ok {
+		return gate.ShouldTriggerFileCompletion(lines, cursorLine, cursorCol)
+	}
+	return true
+}
+
+func (provider *skillAutocompleteProvider) TriggerCharacters() []string {
+	if trigger, ok := provider.base.(tui.TriggerCharacterProvider); ok {
+		return trigger.TriggerCharacters()
+	}
+	return nil
 }
 
 // setupExtensionShortcuts installs the extension shortcut dispatcher on the

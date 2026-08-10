@@ -815,6 +815,104 @@ func TestSkillInvocationMessageRender(t *testing.T) {
 	}
 }
 
+func TestSkillAtAutocompleteInvokesCanonicalCommand(t *testing.T) {
+	initTestTheme(t)
+	mode := newF12AutocompleteMode(t, true)
+	mode.interactiveUI = NewInteractiveUI(mode)
+	mode.setupAutocomplete()
+
+	result := mode.autocompleteProvider.GetSuggestions(t.Context(), []string{"@inspect"}, 0, 8, false)
+	if result == nil || result.Prefix != "@inspect" || len(result.Items) == 0 {
+		t.Fatalf("@ skill suggestions = %#v", result)
+	}
+	item := result.Items[0]
+	if item.Value != "@inspect-skill" || item.Label != "[skill] inspect-skill" || item.Description != "[t] Inspect the workspace" {
+		t.Fatalf("first @ suggestion = %#v", item)
+	}
+	styler, ok := mode.autocompleteProvider.(tui.AutocompleteItemStyler)
+	if !ok {
+		t.Fatal("skill autocomplete provider has no item styler")
+	}
+	styled := styler.StyleAutocompleteItem(item, item.Label, false)
+	if !strings.Contains(styled, theme.FG("accent", theme.Bold("[skill]"))) || !strings.Contains(styled, theme.FG("mdLink", " inspect-skill")) {
+		t.Fatalf("styled skill = %q", styled)
+	}
+	applied := mode.autocompleteProvider.ApplyCompletion([]string{"@inspect review this"}, 0, 8, item, result.Prefix)
+	if applied.Lines[0] != "/skill:inspect-skill review this" || applied.CursorCol != len([]rune("/skill:inspect-skill")) {
+		t.Fatalf("applied @ skill = %#v", applied)
+	}
+	midToken := mode.autocompleteProvider.GetSuggestions(t.Context(), []string{"@inspect"}, 0, 5, false)
+	if midToken == nil || len(midToken.Items) == 0 {
+		t.Fatalf("mid-token suggestions = %#v", midToken)
+	}
+	applied = mode.autocompleteProvider.ApplyCompletion([]string{"@inspect"}, 0, 5, midToken.Items[0], midToken.Prefix)
+	if applied.Lines[0] != "/skill:inspect-skill " {
+		t.Fatalf("mid-token completion = %#v", applied)
+	}
+
+	for _, test := range []struct {
+		name     string
+		line     string
+		col      int
+		disabled bool
+	}{
+		{name: "inline", line: "use @inspect", col: 12},
+		{name: "quoted", line: `@"inspect`, col: 9},
+		{name: "disabled", line: "@inspect", col: 8, disabled: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			provider := mode.autocompleteProvider
+			if test.disabled {
+				provider = newF12AutocompleteMode(t, false).autocompleteProvider
+			}
+			got := provider.GetSuggestions(t.Context(), []string{test.line}, 0, test.col, false)
+			if got == nil {
+				return
+			}
+			for _, suggestion := range got.Items {
+				if strings.HasPrefix(suggestion.Label, "[skill] ") {
+					t.Fatalf("unexpected skill suggestion: %#v", suggestion)
+				}
+			}
+		})
+	}
+}
+
+func TestSkillAtAutocompleteOmitsExtensionCollision(t *testing.T) {
+	mode := newF12AutocompleteMode(t, true, "skill:inspect-skill")
+	result := mode.autocompleteProvider.GetSuggestions(t.Context(), []string{"@inspect"}, 0, 8, false)
+	if result == nil {
+		return
+	}
+	for _, item := range result.Items {
+		if strings.HasPrefix(item.Label, "[skill] ") {
+			t.Fatalf("extension collision exposed skill alias: %#v", item)
+		}
+	}
+}
+
+func TestSkillAtAutocompleteKeepsSameNamedFile(t *testing.T) {
+	baseDir := t.TempDir()
+	fdPath := filepath.Join(t.TempDir(), "fd")
+	if err := os.WriteFile(fdPath, []byte("#!/bin/sh\nprintf 'inspect\\n'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	provider := newSkillAutocompleteProvider(
+		tui.NewCombinedAutocompleteProvider(nil, baseDir, fdPath),
+		[]tui.AutocompleteItem{{Value: "@inspect", Label: "[skill] inspect", Description: "Inspect things"}},
+	)
+	result := provider.GetSuggestions(t.Context(), []string{"@insp"}, 0, 5, false)
+	if result == nil || len(result.Items) != 2 || result.Items[0].Label != "[skill] inspect" || result.Items[1].Label != "inspect" {
+		t.Fatalf("mixed @ suggestions = %#v", result)
+	}
+	if applied := provider.ApplyCompletion([]string{"@insp"}, 0, 5, result.Items[0], result.Prefix); applied.Lines[0] != "/skill:inspect " {
+		t.Fatalf("skill completion = %#v", applied)
+	}
+	if applied := provider.ApplyCompletion([]string{"@insp"}, 0, 5, result.Items[1], result.Prefix); applied.Lines[0] != "@inspect " {
+		t.Fatalf("file completion = %#v", applied)
+	}
+}
+
 func TestSkillInvocationInvalidateRebuildsTheme(t *testing.T) {
 	theme.SetCurrent(nil)
 	comp := NewSkillInvocationMessage("test-skill", "Skill content", theme.MarkdownTheme())

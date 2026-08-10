@@ -6,6 +6,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Added
+
+- Interactive `@` autocomplete now presents loaded skills as clearly badged, themed entries alongside files; accepting one inserts the canonical `/skill:name` command, ready to submit.
+
 ## [0.4.12] - 2026-08-10
 
 ### Changed

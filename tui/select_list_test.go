@@ -91,6 +91,34 @@ func TestSelectListTruncatePrimaryOverride(t *testing.T) {
 	}
 }
 
+func TestSelectListBadgeAndSelectionStylingPreservesLayout(t *testing.T) {
+	list := NewSelectList([]SelectItem{
+		{Value: "@inspect.go", Label: "inspect.go", Description: "file description"},
+		{Value: "@inspect", Label: "[skill] inspect", Description: "skill description"},
+	}, 5, SelectListTheme{
+		SelectedPrefix: func(text string) string { return "\x1b[33m" + text + "\x1b[39m" },
+		SelectedText:   func(text string) string { return "\x1b[7m" + text + "\x1b[27m" },
+	}, SelectListLayoutOptions{})
+	list.stylePrimary = func(item SelectItem, text string, selected bool) string {
+		if selected || item.Value != "@inspect" {
+			return text
+		}
+		end := min(len("[skill]"), len(text))
+		return "\x1b[33m" + text[:end] + "\x1b[39m" + text[end:]
+	}
+
+	rendered := list.Render(80)
+	if !strings.HasPrefix(rendered[0], "\x1b[7m→ inspect.go") || !strings.Contains(rendered[1], "\x1b[33m[skill]") {
+		t.Fatalf("selection/badge styles missing: %q", rendered)
+	}
+	if visibleIndexOf(t, rendered[0], "file description") != visibleIndexOf(t, rendered[1], "skill description") {
+		t.Fatalf("styled descriptions misaligned:\n%q\n%q", rendered[0], rendered[1])
+	}
+	if narrow := list.Render(8); !strings.Contains(narrow[1], "\x1b[33m[ski") {
+		t.Fatalf("narrow badge lost styling: %q", narrow)
+	}
+}
+
 func TestSelectListNavigationAndCallbacks(t *testing.T) {
 	items := []SelectItem{{Value: "one"}, {Value: "two"}, {Value: "three"}}
 	list := NewSelectList(items, 5, testSelectTheme, SelectListLayoutOptions{})

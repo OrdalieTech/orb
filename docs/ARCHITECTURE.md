@@ -264,7 +264,9 @@ upstream's RPC tests run against our binary (F7).
 **Slash commands / skills / templates / themes:** resolution order extension → input hook →
 `/skill:name` → template. Orb also discovers the standard project/user skill roots of Claude Code,
 Codex, OpenCode, Gemini CLI, Cursor, and GitHub Copilot; project roots are trust-gated, native roots
-win collisions, and external aliases deduplicate without scanning plugin caches. Built-in interactive commands (`/login /logout /model /resume /new /name
+win collisions, and external aliases deduplicate without scanning plugin caches. At the first prompt
+token, `@` autocomplete mixes clearly badged skills with files and inserts the canonical
+`/skill:name` path when a skill is accepted. Built-in interactive commands (`/login /logout /model /resume /new /name
 /session /tree /trust /fork /clone /compact /copy /export /import /reload /hotkeys /settings
 /changelog /quit`; `/share` → local export per ledger); skills per agentskills.io with progressive
 disclosure + trust gating (upstream `src/core/skills.ts`); prompt templates with bash-style arg

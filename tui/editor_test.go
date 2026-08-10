@@ -881,6 +881,26 @@ func (provider *scriptedProvider) ApplyCompletion(lines []string, cursorLine, cu
 	return CompletionResult{Lines: newLines, CursorLine: cursorLine, CursorCol: cursorCol - runeLen(prefix) + runeLen(item.Value)}
 }
 
+func TestEditorSkillBadgeCompletionRequiresSubmit(t *testing.T) {
+	editor := newTestEditor()
+	editor.SetAutocompleteProvider(&scriptedProvider{suggest: func([]string, int, int, bool) *AutocompleteSuggestions {
+		return &AutocompleteSuggestions{Items: []AutocompleteItem{{Value: "/skill:inspect", Label: "[skill] inspect"}}, Prefix: "@i"}
+	}})
+	var submitted string
+	editor.OnSubmit = func(text string) { submitted = text }
+	editor.SetText("@i")
+	editor.tryTriggerAutocomplete()
+	editor.flushAutocomplete()
+	press(editor, "\r")
+	if submitted != "" || editor.GetText() != "/skill:inspect" {
+		t.Fatalf("completion submitted %q with editor text %q", submitted, editor.GetText())
+	}
+	press(editor, "\r")
+	if submitted != "/skill:inspect" {
+		t.Fatalf("submitted = %q", submitted)
+	}
+}
+
 // Ported from "Autocomplete" (force-file flows).
 func TestEditorAutocompleteForceFile(t *testing.T) {
 	editor := newTestEditor()
