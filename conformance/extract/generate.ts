@@ -24,7 +24,6 @@ import { generateF12 } from "./f12-tui.ts";
 import { generateF12App } from "./f12-app.ts";
 import { generateF12Commands } from "./f12-commands.ts";
 import { generateF12ExportJSONL } from "./f12-export-jsonl.ts";
-import { generateF12Mermaid } from "./f12-mermaid.ts";
 import { generateF12Shutdown } from "./f12-shutdown.ts";
 import { generateF12UILifecycle } from "./f12-ui-lifecycle.ts";
 import { generateF12VisibleCommands } from "./f12-visible-commands.ts";
@@ -88,7 +87,6 @@ const generators = [
 	generateF12App,
 	generateF12Commands,
 	generateF12ExportJSONL,
-	generateF12Mermaid,
 	generateF12Shutdown,
 	generateF12UILifecycle,
 	generateF12VisibleCommands,
