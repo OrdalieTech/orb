@@ -225,6 +225,19 @@ func MarshalSessionJSONL(storage SessionStorage, cwd string) ([]byte, error) {
 	return output.Bytes(), nil
 }
 
+// ParseSessionTreeEntry decodes one upstream session entry while retaining
+// unknown members for a later wire-compatible marshal. Exported for module
+// embedders with external session stores; not referenced inside this repo.
+func ParseSessionTreeEntry(data []byte) (SessionTreeEntry, error) {
+	return parseHarnessEntry(data, "<entry>", 1)
+}
+
+// MarshalSessionTreeEntry serializes one entry with upstream field order.
+// Exported for module embedders; not referenced inside this repo.
+func MarshalSessionTreeEntry(entry SessionTreeEntry) ([]byte, error) {
+	return marshalHarnessEntry(entry)
+}
+
 func marshalHarnessEntry(entry SessionTreeEntry) ([]byte, error) {
 	if len(entry.raw) != 0 {
 		if !json.Valid(entry.raw) {
