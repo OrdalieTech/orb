@@ -381,6 +381,12 @@ Status: **complete for the locked offline surface; package-specific external-ser
   `AGENTS.override.md`, `pi auth check`, markdown transformers, `samplingParams`/vLLM
   `thinking_token_budget`, and deferred-response provider contracts.
 
+- **agent/harness is supported SDK surface (owner, 2026-08-10)** — the 2026-08-10 trim audit
+  flagged the harness session stack as having zero callers; that measurement only sees this
+  repository. Orb is a Go module first (D1) and downstream embedders import `agent/harness`
+  directly. The stack and its F6/F8 conformance families are load-bearing SDK surface: do not
+  retire, and treat harness API changes as embedder-visible.
+
 ## Owner-blocked evidence
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.
 - ChatGPT/Codex, Copilot, and xAI OAuth end-to-end runs likewise require subscribed accounts.
