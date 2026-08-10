@@ -679,6 +679,32 @@ func TestMarkdownIndentDefaults(t *testing.T) {
 	}
 }
 
+func TestMermaidRenderingModeSetting(t *testing.T) {
+	agentDir, projectDir := t.TempDir(), t.TempDir()
+	writeSettings(t, filepath.Join(agentDir, "settings.json"), map[string]any{
+		"markdown": map[string]any{"mermaid": "sometimes"},
+	})
+	manager, err := NewSettingsManager(projectDir, WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Unknown values clamp to the "streaming" default (upstream getMermaidRenderingMode).
+	if manager.GetMermaidRenderingMode() != "streaming" {
+		t.Fatalf("clamped mode = %q", manager.GetMermaidRenderingMode())
+	}
+	manager.SetMermaidRenderingMode("final")
+	if manager.GetMermaidRenderingMode() != "final" {
+		t.Fatalf("mode after set = %q", manager.GetMermaidRenderingMode())
+	}
+	reloaded, err := NewSettingsManager(projectDir, WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.GetMermaidRenderingMode() != "final" {
+		t.Fatalf("persisted mode = %q", reloaded.GetMermaidRenderingMode())
+	}
+}
+
 func TestAgentDirectory(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv(EnvAgentDir, "file://"+filepath.ToSlash(root)+"/agent%20dir")

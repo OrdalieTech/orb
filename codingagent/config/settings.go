@@ -644,6 +644,16 @@ func (manager *SettingsManager) GetMarkdownCodeBlockIndent() string {
 	return value
 }
 
+// GetMermaidRenderingMode reads markdown.mermaid; unknown values clamp to the
+// "streaming" default (upstream settings-manager getMermaidRenderingMode).
+func (manager *SettingsManager) GetMermaidRenderingMode() string {
+	value, _ := manager.objectValue("markdown")["mermaid"].(string)
+	if value == "off" || value == "final" {
+		return value
+	}
+	return "streaming"
+}
+
 func (manager *SettingsManager) GetCompactionSettings() CompactionSettings {
 	object := manager.objectValue("compaction")
 	return CompactionSettings{

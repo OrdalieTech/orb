@@ -341,6 +341,10 @@ func (manager *SettingsManager) SetHideThinkingBlock(hidden bool) {
 	manager.setGlobalValues(settingMember("hideThinkingBlock", hidden))
 }
 
+func (manager *SettingsManager) SetMermaidRenderingMode(mode string) {
+	manager.setGlobalNested("markdown", "mermaid", mode)
+}
+
 func (manager *SettingsManager) SetShowCacheMissNotices(show bool) {
 	manager.setGlobalValues(settingMember("showCacheMissNotices", show))
 }

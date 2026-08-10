@@ -47,6 +47,9 @@ type MarkdownOptions struct {
 	PreserveOrderedListMarkers bool
 	PreserveBackslashEscapes   bool
 	Hyperlinks                 bool
+	// Transform rewrites the markdown before parsing, given the content width
+	// available after horizontal padding (upstream markdown.ts options.transform).
+	Transform func(markdown string, availableWidth int) string
 }
 
 type inlineStyleContext struct {
@@ -98,13 +101,19 @@ func (markdown *Markdown) Render(width int) []string {
 	if markdown.cached && markdown.cachedText == markdown.text && markdown.cachedWidth == width {
 		return markdown.cachedLines
 	}
-	if strings.TrimSpace(markdown.text) == "" {
+
+	// Transform runs before the empty check and tab normalization, matching
+	// upstream markdown.ts render ordering.
+	contentWidth := max(1, width-markdown.paddingX*2)
+	source := markdown.text
+	if markdown.options.Transform != nil {
+		source = markdown.options.Transform(source, contentWidth)
+	}
+	if strings.TrimSpace(source) == "" {
 		markdown.cache(width, []string{})
 		return markdown.cachedLines
 	}
-
-	contentWidth := max(1, width-markdown.paddingX*2)
-	source := strings.ReplaceAll(markdown.text, "\t", "   ")
+	source = strings.ReplaceAll(source, "\t", "   ")
 	if markdown.options.PreserveBackslashEscapes {
 		source = protectBackslashEscapes(source)
 	}

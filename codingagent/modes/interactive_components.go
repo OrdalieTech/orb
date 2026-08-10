@@ -25,6 +25,41 @@ const (
 )
 
 // ─────────────────────────────────────────────────────────────
+// Markdown transformers (upstream components/markdown-transform.ts)
+// ─────────────────────────────────────────────────────────────
+
+// newMarkdownTransform curries the message context over the transformer chain
+// for a tui.Markdown Transform option (upstream createMarkdownTransform).
+func newMarkdownTransform(messageType string, isStreaming bool, transformers []extensions.MarkdownTransformer) func(string, int) string {
+	if len(transformers) == 0 {
+		return nil
+	}
+	return func(markdown string, availableWidth int) string {
+		context := extensions.MarkdownTransformContext{
+			MessageType:    messageType,
+			IsStreaming:    isStreaming,
+			AvailableWidth: availableWidth,
+		}
+		transformed := markdown
+		for _, transformer := range transformers {
+			transformed = applyMarkdownTransformer(transformer, transformed, context)
+		}
+		return transformed
+	}
+}
+
+// applyMarkdownTransformer keeps the current markdown when a transformer
+// panics, mirroring upstream's per-transformer try/catch.
+func applyMarkdownTransformer(transformer extensions.MarkdownTransformer, markdown string, context extensions.MarkdownTransformContext) (result string) {
+	defer func() {
+		if recover() != nil {
+			result = markdown
+		}
+	}()
+	return transformer(markdown, context)
+}
+
+// ─────────────────────────────────────────────────────────────
 // UserMessageComponent
 // ─────────────────────────────────────────────────────────────
 
@@ -32,13 +67,14 @@ type UserMessageComponent struct {
 	box *tui.Box
 }
 
-func NewUserMessageComponent(text string, mdTheme tui.MarkdownTheme, outputPad int) *UserMessageComponent {
+func NewUserMessageComponent(text string, mdTheme tui.MarkdownTheme, outputPad int, transformers []extensions.MarkdownTransformer) *UserMessageComponent {
 	box := tui.NewBox(outputPad, 1, func(t string) string { return theme.BG("userMessageBg", t) })
 	md := tui.NewMarkdown(text, 0, 0, mdTheme, &tui.DefaultTextStyle{
 		Color: func(t string) string { return theme.FG("userMessageText", t) },
 	}, &tui.MarkdownOptions{
 		PreserveOrderedListMarkers: true,
 		PreserveBackslashEscapes:   true,
+		Transform:                  newMarkdownTransform("user", false, transformers),
 	})
 	box.AddChild(md)
 	return &UserMessageComponent{box: box}
@@ -66,6 +102,8 @@ type AssistantMessageComponent struct {
 	mdTheme          tui.MarkdownTheme
 	thinkingLabel    string
 	outputPad        int
+	transformers     []extensions.MarkdownTransformer
+	isStreaming      bool
 	message          *ai.AssistantMessage
 	hasToolCalls     bool
 }
@@ -76,6 +114,7 @@ func NewAssistantMessageComponent(
 	mdTheme tui.MarkdownTheme,
 	thinkingLabel string,
 	outputPad int,
+	transformers []extensions.MarkdownTransformer,
 ) *AssistantMessageComponent {
 	c := &AssistantMessageComponent{
 		container:        &tui.Container{},
@@ -84,6 +123,7 @@ func NewAssistantMessageComponent(
 		mdTheme:          mdTheme,
 		thinkingLabel:    thinkingLabel,
 		outputPad:        outputPad,
+		transformers:     transformers,
 	}
 	c.container.AddChild(c.contentContainer)
 	if message != nil {
@@ -95,6 +135,17 @@ func NewAssistantMessageComponent(
 func (c *AssistantMessageComponent) UpdateContent(message *ai.AssistantMessage) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	copy := *message
+	c.message = &copy
+	c.updateContentLocked(message)
+}
+
+// UpdateContentStreaming mirrors upstream updateContent(message, isStreaming):
+// the streaming flag feeds the markdown transformer context.
+func (c *AssistantMessageComponent) UpdateContentStreaming(message *ai.AssistantMessage, isStreaming bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.isStreaming = isStreaming
 	copy := *message
 	c.message = &copy
 	c.updateContentLocked(message)
@@ -142,7 +193,9 @@ func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMes
 		switch value := message.Content[index].(type) {
 		case *ai.TextContent:
 			if text := strings.TrimSpace(value.Text); text != "" {
-				c.contentContainer.AddChild(tui.NewMarkdown(text, c.outputPad, 0, c.mdTheme, nil, nil))
+				c.contentContainer.AddChild(tui.NewMarkdown(text, c.outputPad, 0, c.mdTheme, nil, &tui.MarkdownOptions{
+					Transform: newMarkdownTransform("assistant", c.isStreaming, c.transformers),
+				}))
 			}
 		case *ai.ThinkingContent:
 			thinkingBlocks := make([]string, 0, 1)
@@ -169,7 +222,9 @@ func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMes
 				c.contentContainer.AddChild(tui.NewMarkdown(strings.Join(thinkingBlocks, "\n\n"), c.outputPad, 0, c.mdTheme, &tui.DefaultTextStyle{
 					Color:  func(text string) string { return theme.FG("thinkingText", text) },
 					Italic: true,
-				}, nil))
+				}, &tui.MarkdownOptions{
+					Transform: newMarkdownTransform("assistant-thinking", c.isStreaming, c.transformers),
+				}))
 			}
 			for trailing := index + 1; trailing < len(message.Content); trailing++ {
 				switch next := message.Content[trailing].(type) {

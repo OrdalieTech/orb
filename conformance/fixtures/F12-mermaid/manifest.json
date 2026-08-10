@@ -1,0 +1,17 @@
+{
+  "family": "F12-mermaid",
+  "upstreamCommit": "53fa77ccd8a279eb87e92294ef3687b03ff80112",
+  "generator": "conformance/extract/f12-mermaid.ts",
+  "sources": [
+    "node_modules/grok-mermaid (v0.2.2)",
+    "packages/coding-agent/src/modes/interactive/components/mermaid.ts",
+    "packages/coding-agent/test/mermaid.test.ts"
+  ],
+  "files": [
+    "cases.json"
+  ],
+  "metadata": {
+    "engine": "raw render(src) output per corpus diagram; null means unsupported input",
+    "transformer": "createMermaidMarkdownTransformer over mode x isStreaming x messageType x width, marker theme fg -> <color>text</color>, bold -> <b>text</b>"
+  }
+}

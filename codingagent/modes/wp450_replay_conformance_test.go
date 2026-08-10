@@ -168,6 +168,7 @@ func renderWP450ReplayWidth(width int) []ConformanceReplayFrame {
 		"Please update `fixture.txt` and explain the change.",
 		modetheme.MarkdownTheme(),
 		1,
+		nil,
 	))
 	capture("user-message")
 
@@ -182,7 +183,7 @@ func renderWP450ReplayWidth(width int) []ConformanceReplayFrame {
 		StopReason: ai.StopReasonStop,
 		Timestamp:  wp450FixedTimestamp,
 	}
-	mode.chat.AddChild(NewAssistantMessageComponent(assistant, false, modetheme.MarkdownTheme(), "Thinking...", 1))
+	mode.chat.AddChild(NewAssistantMessageComponent(assistant, false, modetheme.MarkdownTheme(), "Thinking...", 1, nil))
 	capture("assistant-thinking-text")
 
 	edit := NewToolExecutionComponent(
