@@ -1,0 +1,184 @@
+package runner_test
+
+// F12 mermaid (#7624). Authored ahead of the port: it does not compile until
+// two surfaces land.
+//
+// Engine — github.com/OrdalieTech/orb/internal/mermaid, the pure-Go port of
+// grok-mermaid v0.2.2:
+//
+//	func Render(src string) *Art // nil for unsupported input
+//	type Art struct {
+//		Plain    []string
+//		Styled   [][]Span
+//		Width    int
+//		Warnings []string
+//	}
+//	type Span struct{ Cls, Text string } // Cls: border|text|edge|edgeLabel|title|none
+//
+// Transformer — the port of upstream createMermaidMarkdownTransformer
+// (packages/coding-agent/src/modes/interactive/components/mermaid.ts).
+// Mirroring upstream's split between the transformer types
+// (core/extensions/types.ts) and the component (modes/interactive/components),
+// the context type lives in codingagent/extensions and the constructor in
+// codingagent/modes:
+//
+//	// package extensions
+//	type MarkdownTransformContext struct {
+//		MessageType    string // "user" | "assistant" | "assistant-thinking"
+//		IsStreaming    bool
+//		AvailableWidth int
+//	}
+//	type MarkdownTransformer func(markdown string, context MarkdownTransformContext) string
+//
+//	// package modes
+//	type MermaidTheme interface { // production adapts the interactive theme
+//		Fg(color, text string) string
+//		Bold(text string) string
+//	}
+//	func NewMermaidMarkdownTransformer(getMode func() string, theme MermaidTheme) extensions.MarkdownTransformer
+//
+// getMode returns the settings-manager mermaid rendering mode
+// ("off" | "final" | "streaming"); a nil theme renders unstyled art.
+
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/OrdalieTech/orb/codingagent/extensions"
+	"github.com/OrdalieTech/orb/codingagent/modes"
+	"github.com/OrdalieTech/orb/conformance/runner"
+	internalmermaid "github.com/OrdalieTech/orb/internal/mermaid"
+)
+
+type f12MermaidFixture struct {
+	SchemaVersion int                       `json:"schemaVersion"`
+	Engine        []f12MermaidEngineCase    `json:"engine"`
+	Transformer   []f12MermaidTransformCase `json:"transformer"`
+}
+
+type f12MermaidEngineCase struct {
+	Name   string         `json:"name"`
+	Source string         `json:"source"`
+	Art    *f12MermaidArt `json:"art"`
+}
+
+type f12MermaidArt struct {
+	Plain    []string           `json:"plain"`
+	Styled   [][]f12MermaidSpan `json:"styled"`
+	Width    int                `json:"width"`
+	Warnings []string           `json:"warnings"`
+}
+
+type f12MermaidSpan struct {
+	Cls  string `json:"cls"`
+	Text string `json:"text"`
+}
+
+type f12MermaidTransformCase struct {
+	Name           string `json:"name"`
+	Markdown       string `json:"markdown"`
+	Mode           string `json:"mode"`
+	IsStreaming    bool   `json:"isStreaming"`
+	MessageType    string `json:"messageType"`
+	AvailableWidth int    `json:"availableWidth"`
+	Themed         bool   `json:"themed"`
+	Output         string `json:"output"`
+}
+
+func loadF12MermaidFixture(t *testing.T) f12MermaidFixture {
+	t.Helper()
+	var fixture f12MermaidFixture
+	runner.LoadJSON(t, "F12-mermaid", "cases.json", &fixture)
+	if fixture.SchemaVersion != 1 || len(fixture.Engine) != 50 || len(fixture.Transformer) != 108 {
+		t.Fatalf(
+			"F12-mermaid header = version %d, engine %d, transformer %d",
+			fixture.SchemaVersion, len(fixture.Engine), len(fixture.Transformer),
+		)
+	}
+	return fixture
+}
+
+func TestF12MermaidEngineMatchesUpstream(t *testing.T) {
+	fixture := loadF12MermaidFixture(t)
+	for _, engineCase := range fixture.Engine {
+		t.Run(engineCase.Name, func(t *testing.T) {
+			art := internalmermaid.Render(engineCase.Source)
+			if engineCase.Art == nil {
+				if art != nil {
+					t.Fatalf("Render returned art (width %d), want nil", art.Width)
+				}
+				return
+			}
+			if art == nil {
+				t.Fatal("Render returned nil, want art")
+			}
+			want, err := json.Marshal(engineCase.Art)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := json.Marshal(f12MermaidArtFromRender(art))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := runner.ByteDiff(want, got); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+// f12MermaidArtFromRender maps the engine output onto the fixture shape,
+// normalizing nil slices to empty so the comparison is byte-exact JSON.
+func f12MermaidArtFromRender(art *internalmermaid.Art) *f12MermaidArt {
+	styled := make([][]f12MermaidSpan, len(art.Styled))
+	for rowIndex, row := range art.Styled {
+		spans := make([]f12MermaidSpan, len(row))
+		for spanIndex, span := range row {
+			spans[spanIndex] = f12MermaidSpan{Cls: span.Cls, Text: span.Text}
+		}
+		styled[rowIndex] = spans
+	}
+	plain := art.Plain
+	if plain == nil {
+		plain = []string{}
+	}
+	warnings := art.Warnings
+	if warnings == nil {
+		warnings = []string{}
+	}
+	return &f12MermaidArt{Plain: plain, Styled: styled, Width: art.Width, Warnings: warnings}
+}
+
+// f12MermaidMarkerTheme is the extraction's deterministic marker theme:
+// fg -> <color>text</color>, bold -> <b>text</b>.
+type f12MermaidMarkerTheme struct{}
+
+func (f12MermaidMarkerTheme) Fg(color, text string) string {
+	return "<" + color + ">" + text + "</" + color + ">"
+}
+
+func (f12MermaidMarkerTheme) Bold(text string) string { return "<b>" + text + "</b>" }
+
+func TestF12MermaidTransformerMatchesUpstream(t *testing.T) {
+	fixture := loadF12MermaidFixture(t)
+	for _, transformCase := range fixture.Transformer {
+		t.Run(transformCase.Name, func(t *testing.T) {
+			var mermaidTheme modes.MermaidTheme
+			if transformCase.Themed {
+				mermaidTheme = f12MermaidMarkerTheme{}
+			}
+			transformer := modes.NewMermaidMarkdownTransformer(
+				func() string { return transformCase.Mode },
+				mermaidTheme,
+			)
+			got := transformer(transformCase.Markdown, extensions.MarkdownTransformContext{
+				MessageType:    transformCase.MessageType,
+				IsStreaming:    transformCase.IsStreaming,
+				AvailableWidth: transformCase.AvailableWidth,
+			})
+			if diff := runner.ByteDiff([]byte(transformCase.Output), []byte(got)); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}

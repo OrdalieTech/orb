@@ -62,6 +62,10 @@ type InteractiveMode struct {
 	editor      *CustomEditor
 	mdTheme     tui.MarkdownTheme
 	options     InteractiveModeOptions
+	// markdownTransformers is the transformer chain applied to interactive
+	// message markdown (upstream getMarkdownTransformers). Extension-registered
+	// transformers are deferred; only the built-in Mermaid transformer populates it.
+	markdownTransformers []extensions.MarkdownTransformer
 
 	// TUI containers
 	header          *tui.Container
@@ -237,6 +241,9 @@ func RunInteractiveMode(ctx context.Context, session *codingagent.SessionRuntime
 		footerStatuses: make(map[string]string),
 		cwd:            cwd,
 		outputPad:      1,
+	}
+	mode.markdownTransformers = []extensions.MarkdownTransformer{
+		NewMermaidMarkdownTransformer(session.MermaidRenderingMode, mermaidThemeAdapter{}),
 	}
 	return mode.run(ctx)
 }
@@ -1820,6 +1827,7 @@ func (mode *InteractiveMode) showSettingsSelector() {
 		tui.SettingItem{ID: "transport", Label: "Transport", Description: "Preferred transport for providers that support multiple transports", CurrentValue: string(settings.Transport), Values: []string{"sse", "websocket", "websocket-cached", "auto"}},
 		tui.SettingItem{ID: "http-idle-timeout", Label: "HTTP idle timeout", Description: "Maximum idle gap while waiting for HTTP headers or body chunks. Disable for local models that pause longer than five minutes.", CurrentValue: config.FormatHTTPIdleTimeoutMS(settings.HTTPIdleTimeoutMS), Values: httpIdleTimeoutLabels()},
 		tui.SettingItem{ID: "hide-thinking", Label: "Hide thinking", Description: "Hide thinking blocks in assistant responses", CurrentValue: boolText(settings.HideThinkingBlock), Values: []string{"true", "false"}},
+		tui.SettingItem{ID: "mermaid-rendering", Label: "Mermaid diagrams", Description: "Render Mermaid code blocks as Unicode diagrams", CurrentValue: settings.MermaidRenderingMode, Values: []string{"off", "final", "streaming"}},
 		tui.SettingItem{ID: "cache-miss-notices", Label: "Cache miss notices", Description: "Show transcript notices for significant prompt-cache misses", CurrentValue: boolText(settings.ShowCacheMissNotices), Values: []string{"true", "false"}},
 		tui.SettingItem{ID: "quiet-startup", Label: "Quiet startup", Description: "Disable verbose printing at startup", CurrentValue: boolText(settings.QuietStartup), Values: []string{"true", "false"}},
 		tui.SettingItem{ID: "default-project-trust", Label: "Default project trust", Description: "Fallback behavior when no extension or saved trust decision decides project trust", CurrentValue: settings.DefaultProjectTrust, Values: []string{"ask", "always", "never"}},
@@ -1921,6 +1929,9 @@ func (mode *InteractiveMode) applySetting(id, value string) {
 		mode.mu.Unlock()
 		mode.session.SetHideThinkingBlock(enabled)
 		mode.renderInitialMessages()
+	case "mermaid-rendering":
+		mode.session.SetMermaidRenderingMode(value)
+		mode.chat.Invalidate()
 	case "cache-miss-notices":
 		mode.session.SetShowCacheMissNotices(enabled)
 		mode.renderInitialMessages()
@@ -3595,11 +3606,12 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		hidden := mode.thinkingHidden
 		label := mode.thinkingLabel
 		mode.mu.Unlock()
-		comp := NewAssistantMessageComponent(assistant, hidden, mode.mdTheme, label, mode.currentOutputPad())
+		comp := NewAssistantMessageComponent(nil, hidden, mode.mdTheme, label, mode.currentOutputPad(), mode.markdownTransformers)
 		mode.mu.Lock()
 		mode.currentStreaming = comp
 		mode.mu.Unlock()
 		mode.chat.AddChild(comp)
+		comp.UpdateContentStreaming(assistant, true)
 		mode.ui.RequestRender()
 
 	case agent.MessageUpdateEvent:
@@ -3614,7 +3626,7 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		}
 		mode.mu.Unlock()
 		if comp != nil {
-			comp.UpdateContent(assistant)
+			comp.UpdateContentStreaming(assistant, true)
 			mode.requestChatRender(comp)
 		}
 
@@ -3627,7 +3639,7 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		comp := mode.currentStreaming
 		mode.mu.Unlock()
 		if comp != nil {
-			comp.UpdateContent(assistant)
+			comp.UpdateContentStreaming(assistant, false)
 			mode.chat.ChildChanged(comp)
 		}
 		mode.maybeShowCacheMiss(assistant)
@@ -3789,10 +3801,10 @@ func (mode *InteractiveMode) addUserMessageToChat(text string) {
 		mode.chat.AddChild(component)
 		if skill.UserMessage != "" {
 			mode.chat.AddChild(tui.NewSpacer(1))
-			mode.chat.AddChild(NewUserMessageComponent(skill.UserMessage, mode.mdTheme, mode.currentOutputPad()))
+			mode.chat.AddChild(NewUserMessageComponent(skill.UserMessage, mode.mdTheme, mode.currentOutputPad(), mode.markdownTransformers))
 		}
 	} else {
-		mode.chat.AddChild(NewUserMessageComponent(text, mode.mdTheme, mode.currentOutputPad()))
+		mode.chat.AddChild(NewUserMessageComponent(text, mode.mdTheme, mode.currentOutputPad(), mode.markdownTransformers))
 	}
 	mode.ui.RequestRender()
 }
@@ -3955,7 +3967,7 @@ func (mode *InteractiveMode) renderAgentMessage(message any) {
 		mode.mu.Lock()
 		hidden, label := mode.thinkingHidden, mode.thinkingLabel
 		mode.mu.Unlock()
-		component := NewAssistantMessageComponent(assistant, hidden, mode.mdTheme, label, mode.currentOutputPad())
+		component := NewAssistantMessageComponent(assistant, hidden, mode.mdTheme, label, mode.currentOutputPad(), mode.markdownTransformers)
 		mode.chat.AddChild(component)
 		for _, block := range assistant.Content {
 			call, ok := block.(*ai.ToolCall)

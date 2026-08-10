@@ -601,8 +601,8 @@ func TestF12HiddenThinkingLifecycleMatchesUpstream(t *testing.T) {
 	f12UILifecycleInitTheme(t)
 	modeUI := tui.NewTUI(newFakeTerminal(48, 24))
 	message := f12UILifecycleAssistantMessage()
-	historical := NewAssistantMessageComponent(message, true, theme.MarkdownTheme(), "Thinking...", 1)
-	streaming := NewAssistantMessageComponent(message, true, theme.MarkdownTheme(), "Thinking...", 1)
+	historical := NewAssistantMessageComponent(message, true, theme.MarkdownTheme(), "Thinking...", 1, nil)
+	streaming := NewAssistantMessageComponent(message, true, theme.MarkdownTheme(), "Thinking...", 1, nil)
 	mode := &InteractiveMode{ui: modeUI, chat: &tui.Container{}, currentStreaming: streaming, thinkingHidden: true, thinkingLabel: "Thinking..."}
 	mode.chat.AddChild(historical)
 	ui := NewInteractiveUI(mode)

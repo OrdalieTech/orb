@@ -283,6 +283,7 @@ type InteractiveModeSettings struct {
 	TreeFilterMode       string
 	DefaultProjectTrust  string
 	ShowTerminalProgress bool
+	MermaidRenderingMode string
 }
 
 func (runtime *SessionRuntime) InteractiveModeSettings() InteractiveModeSettings {
@@ -310,6 +311,7 @@ func (runtime *SessionRuntime) InteractiveModeSettings() InteractiveModeSettings
 		TreeFilterMode:       runtime.settings.GetTreeFilterMode(),
 		DefaultProjectTrust:  runtime.settings.GetDefaultProjectTrust(),
 		ShowTerminalProgress: runtime.settings.GetShowTerminalProgress(),
+		MermaidRenderingMode: runtime.settings.GetMermaidRenderingMode(),
 	}
 }
 
@@ -324,6 +326,21 @@ func (runtime *SessionRuntime) SetTheme(name string) error {
 func (runtime *SessionRuntime) SetHideThinkingBlock(hidden bool) {
 	if runtime != nil {
 		runtime.settings.SetHideThinkingBlock(hidden)
+	}
+}
+
+// MermaidRenderingMode returns the settings-manager mermaid rendering mode
+// ("off" | "final" | "streaming").
+func (runtime *SessionRuntime) MermaidRenderingMode() string {
+	if runtime == nil {
+		return "streaming"
+	}
+	return runtime.settings.GetMermaidRenderingMode()
+}
+
+func (runtime *SessionRuntime) SetMermaidRenderingMode(mode string) {
+	if runtime != nil {
+		runtime.settings.SetMermaidRenderingMode(mode)
 	}
 }
 

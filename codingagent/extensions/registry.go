@@ -26,6 +26,18 @@ type MessageRenderOptions struct {
 
 type EntryRenderOptions struct{ Expanded bool }
 
+// MarkdownTransformContext mirrors upstream MarkdownTransformContext (types.ts).
+type MarkdownTransformContext struct {
+	MessageType    string // "user" | "assistant" | "assistant-thinking"
+	IsStreaming    bool
+	AvailableWidth int
+}
+
+// MarkdownTransformer rewrites interactive message markdown before rendering
+// (upstream types.ts MarkdownTransformer). Extension registration is deferred;
+// interactive mode composes the built-in transformers as a list.
+type MarkdownTransformer func(markdown string, context MarkdownTransformContext) string
+
 type MessageRenderer func(CustomMessage, MessageRenderOptions, Theme) Component
 
 type EntryRenderer func(any, EntryRenderOptions, Theme) Component

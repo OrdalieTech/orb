@@ -470,7 +470,7 @@ func TestAsAssistantMessage(t *testing.T) {
 
 func TestUserMessageComponentRender(t *testing.T) {
 	initTestTheme(t)
-	comp := NewUserMessageComponent("hello", theme.MarkdownTheme(), 0)
+	comp := NewUserMessageComponent("hello", theme.MarkdownTheme(), 0, nil)
 	lines := comp.Render(40)
 	if len(lines) == 0 {
 		t.Fatal("expected non-empty render")
@@ -492,7 +492,7 @@ func TestAssistantMessageComponentRender(t *testing.T) {
 	msg := &ai.AssistantMessage{
 		Content: ai.AssistantContent{&ai.TextContent{Text: "response"}},
 	}
-	comp := NewAssistantMessageComponent(msg, false, theme.MarkdownTheme(), "", 0)
+	comp := NewAssistantMessageComponent(msg, false, theme.MarkdownTheme(), "", 0, nil)
 	lines := comp.Render(40)
 	found := false
 	for _, line := range lines {
@@ -513,7 +513,7 @@ func TestAssistantMessageComponentError(t *testing.T) {
 		StopReason:   ai.StopReasonError,
 		ErrorMessage: &errMsg,
 	}
-	comp := NewAssistantMessageComponent(msg, false, theme.MarkdownTheme(), "", 0)
+	comp := NewAssistantMessageComponent(msg, false, theme.MarkdownTheme(), "", 0, nil)
 	lines := comp.Render(60)
 	found := false
 	for _, line := range lines {

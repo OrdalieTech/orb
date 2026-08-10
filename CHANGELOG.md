@@ -14,6 +14,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 ### Added
 
 - Built-in Baseten and Qwen Token Plan Individual providers, the `scrollbarThumb` theme color, and iTerm image size metadata, matching upstream v0.84.1.
+- Mermaid code blocks in assistant and user messages now render as Unicode terminal diagrams (flowchart, sequence, state, class, and ER), with a "Mermaid diagrams" `/settings` toggle (`markdown.mermaid`: off/final/streaming, default streaming).
 
 ## [0.4.11] - 2026-08-03
 

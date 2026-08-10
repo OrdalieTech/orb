@@ -824,7 +824,7 @@ func TestF12ApplicationThemeObjectMatchesUpstream(t *testing.T) {
 	}
 	mode.chat = &tui.Container{}
 	streaming := NewAssistantMessageComponent(
-		f12UILifecycleAssistantMessage(), true, theme.MarkdownTheme(), "Thinking...", 1,
+		f12UILifecycleAssistantMessage(), true, theme.MarkdownTheme(), "Thinking...", 1, nil,
 	)
 	mode.currentStreaming = streaming
 	mode.chat.AddChild(streaming)
