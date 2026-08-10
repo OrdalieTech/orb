@@ -6,6 +6,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { withOfflineGeneratedCatalog } from "./f3-agent.ts";
+import { stubGrokMermaid } from "./stub-grok-mermaid.ts";
 import { writeProviderModelData } from "./upstream-model-data.ts";
 
 const upstreamRoot = process.cwd();
@@ -13,6 +14,7 @@ const binaryArgument = process.argv[2];
 if (!binaryArgument) {
   throw new Error("orb binary path is required");
 }
+await stubGrokMermaid(upstreamRoot);
 const binary = path.resolve(upstreamRoot, binaryArgument);
 const adapterPath = path.join(upstreamRoot, "packages/coding-agent/dist/cli.js");
 const vitestPath = path.join(upstreamRoot, "node_modules/.bin/vitest");
