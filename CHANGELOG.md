@@ -9,6 +9,11 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 ### Changed
 
 - Orb's default system prompt now presents it as a general-purpose problem-solving harness for work and software development, while retaining its coding capabilities and pi-compatible prompt assembly.
+- The upstream compatibility target is now pi v0.84.1. Sessions write the JSONL v4 tree format (v1–v3 still migrate), JSON/RPC `message_update` events carry only deltas, Gemini-3 tool-call ids and structured Bedrock failure diagnostics ride the provider wire, OpenAI Responses ending incomplete without a provider reason surface as errors, and `/scoped-models` opens its selector from cached models immediately.
+
+### Added
+
+- Built-in Baseten and Qwen Token Plan Individual providers, the `scrollbarThumb` theme color, and iTerm image size metadata, matching upstream v0.84.1.
 
 ## [0.4.11] - 2026-08-03
 

@@ -710,7 +710,7 @@
           "content-type": "application/json",
           "x-goog-api-key": "fixture-vertex-key"
         },
-        "body": "{\"contents\":[{\"parts\":[{\"text\":\"run tools\"}],\"role\":\"user\"},{\"parts\":[{\"functionCall\":{\"name\":\"bash\",\"args\":{\"command\":\"echo hi\"}}},{\"functionCall\":{\"name\":\"bash\",\"args\":{\"command\":\"ls -la\"}}}],\"role\":\"model\"},{\"parts\":[{\"functionResponse\":{\"name\":\"bash\",\"response\":{\"error\":\"No result provided\"}}},{\"functionResponse\":{\"name\":\"bash\",\"response\":{\"error\":\"No result provided\"}}}],\"role\":\"user\"}],\"generationConfig\":{\"thinkingConfig\":{\"thinkingLevel\":\"LOW\"}}}"
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"run tools\"}],\"role\":\"user\"},{\"parts\":[{\"functionCall\":{\"name\":\"bash\",\"args\":{\"command\":\"echo hi\"},\"id\":\"call_1\"}},{\"functionCall\":{\"name\":\"bash\",\"args\":{\"command\":\"ls -la\"},\"id\":\"call_2\"}}],\"role\":\"model\"},{\"parts\":[{\"functionResponse\":{\"name\":\"bash\",\"response\":{\"error\":\"No result provided\"},\"id\":\"call_1\"}},{\"functionResponse\":{\"name\":\"bash\",\"response\":{\"error\":\"No result provided\"},\"id\":\"call_2\"}}],\"role\":\"user\"}],\"generationConfig\":{\"thinkingConfig\":{\"thinkingLevel\":\"LOW\"}}}"
       }
     }
   ]

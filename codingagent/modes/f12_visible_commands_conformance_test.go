@@ -216,10 +216,11 @@ func f12VisibleTransition(mode *InteractiveMode, command string, width int) *str
 		return nil
 	}
 	value := map[string]string{
-		"settings": "settings-selector",
-		"model":    "model-selector:fixture/model",
-		"trust":    "trust-selector",
-		"resume":   "session-selector",
+		"settings":      "settings-selector",
+		"model":         "model-selector:fixture/model",
+		"scoped-models": "scoped-models-selector",
+		"trust":         "trust-selector",
+		"resume":        "session-selector",
 	}[command]
 	if value == "" {
 		return nil

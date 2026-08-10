@@ -20,6 +20,7 @@ var registry = []Provider{
 	// api-key lookup skips it because requests must pass it as Authorization: Bearer.
 	withProviderMetadata(anthropicProvider, "https://api.anthropic.com", []string{"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"}, []string{"ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"}, ai.APIAnthropicMessages),
 	withProviderMetadata(azureOpenAIResponsesProvider, "", []string{"AZURE_OPENAI_API_KEY"}, []string{"AZURE_OPENAI_API_KEY"}, ai.APIAzureOpenAIResponses),
+	envProvider("baseten", "Baseten", "https://inference.baseten.co/v1", "Baseten API key", []string{"BASETEN_API_KEY"}, ai.APIOpenAICompletions),
 	envProvider("cerebras", "Cerebras", "https://api.cerebras.ai/v1", "Cerebras API key", []string{"CEREBRAS_API_KEY"}, ai.APIOpenAICompletions),
 	withProviderMetadata(cloudflareAIGatewayProvider, "", []string{"CLOUDFLARE_API_KEY", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_GATEWAY_ID"}, []string{"CLOUDFLARE_API_KEY"}, ai.APIAnthropicMessages, ai.APIOpenAICompletions, ai.APIOpenAIResponses),
 	withProviderMetadata(cloudflareWorkersAIProvider, "", []string{"CLOUDFLARE_API_KEY", "CLOUDFLARE_ACCOUNT_ID"}, []string{"CLOUDFLARE_API_KEY"}, ai.APIOpenAICompletions),
@@ -40,10 +41,12 @@ var registry = []Provider{
 	withProviderMetadata(openAI, "https://api.openai.com/v1", []string{"OPENAI_API_KEY"}, []string{"OPENAI_API_KEY"}, ai.APIOpenAIResponses),
 	withProviderMetadata(openAICodexProvider, "https://chatgpt.com/backend-api", nil, nil, ai.APIOpenAICodexResponses),
 	envProvider("opencode", "OpenCode Zen", "", "OpenCode API key", []string{"OPENCODE_API_KEY"}, ai.APIAnthropicMessages, ai.APIGoogleGenerativeAI, ai.APIOpenAICompletions, ai.APIOpenAIResponses),
-	envProvider("opencode-go", "OpenCode Zen Go", "", "OpenCode API key", []string{"OPENCODE_API_KEY"}, ai.APIAnthropicMessages, ai.APIOpenAICompletions, ai.APIOpenAIResponses),
+	envProvider("opencode-go", "OpenCode Go", "", "OpenCode API key", []string{"OPENCODE_API_KEY"}, ai.APIAnthropicMessages, ai.APIOpenAICompletions, ai.APIOpenAIResponses),
 	withProviderMetadata(openRouterProvider, "https://openrouter.ai/api/v1", []string{"OPENROUTER_API_KEY"}, []string{"OPENROUTER_API_KEY"}, ai.APIOpenAICompletions),
 	envProvider("qwen-token-plan", "Qwen Token Plan", "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1", "Qwen Token Plan API key", []string{"QWEN_TOKEN_PLAN_API_KEY"}, ai.APIOpenAICompletions),
 	envProvider("qwen-token-plan-cn", "Qwen Token Plan CN", "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1", "Qwen Token Plan CN API key", []string{"QWEN_TOKEN_PLAN_CN_API_KEY"}, ai.APIOpenAICompletions),
+	// The Individual plan shares the international endpoint and API key.
+	envProvider("qwen-token-plan-individual", "Qwen Token Plan Individual", "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1", "Qwen Token Plan Individual API key", []string{"QWEN_TOKEN_PLAN_API_KEY"}, ai.APIOpenAICompletions),
 	envProvider("together", "Together", "https://api.together.ai/v1", "Together API key", []string{"TOGETHER_API_KEY"}, ai.APIOpenAICompletions),
 	envProvider("vercel-ai-gateway", "Vercel AI Gateway", "https://ai-gateway.vercel.sh", "Vercel AI Gateway API key", []string{"AI_GATEWAY_API_KEY"}, ai.APIAnthropicMessages),
 	withProviderMetadata(xAIProvider, "https://api.x.ai/v1", []string{"XAI_API_KEY"}, []string{"XAI_API_KEY"}, ai.APIOpenAICompletions, ai.APIOpenAIResponses),

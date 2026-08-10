@@ -511,6 +511,7 @@ async function extractVertexProvider(upstreamRoot: string): Promise<VertexProvid
             login?(interaction: {
               prompt(input: unknown): Promise<string>;
               notify(event: unknown): void;
+              signal: AbortSignal;
             }): Promise<unknown>;
             resolve(input: {
               ctx: {
@@ -518,6 +519,7 @@ async function extractVertexProvider(upstreamRoot: string): Promise<VertexProvid
                 fileExists(path: string): Promise<boolean>;
               };
               credential?: unknown;
+              signal: AbortSignal;
             }): Promise<unknown>;
           };
         };
@@ -538,6 +540,7 @@ async function extractVertexProvider(upstreamRoot: string): Promise<VertexProvid
           return answer;
         },
         notify: (event) => notifications.push(event),
+        signal: new AbortController().signal,
       });
     };
     const apiKeyLogin = await login(["api-key", "fixture-vertex-key"]);
@@ -632,6 +635,7 @@ async function extractVertexProvider(upstreamRoot: string): Promise<VertexProvid
             return definition.files.includes(file);
           },
         },
+        signal: new AbortController().signal,
       });
       resolutions.push({ name: definition.name, result: result ?? null, envLookups, fileLookups });
     }

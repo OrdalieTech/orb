@@ -21,6 +21,9 @@ files appends rows. Package-level baseline:
 | `packages/coding-agent/src/core/tools/truncate.ts` | `internal/truncate/` |
 | (npm `partial-json`) | `internal/partialjson/` |
 | `packages/server/` (renamed from `packages/orchestrator/` in v0.81.0) | — excluded (DECISIONS ledger) |
+| `packages/client/`, `packages/protocol/` (added v0.84.0) | — excluded (DECISIONS ledger) |
+| `packages/telemetry/` (added v0.84.0) | — excluded (DECISIONS ledger) |
+| `packages/session-backends/` (renamed from `packages/storage/` in v0.84.0) | — excluded (DECISIONS ledger) |
 
 File-level rows are appended beneath this line as WPs land.
 

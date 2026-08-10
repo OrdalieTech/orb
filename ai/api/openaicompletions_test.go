@@ -31,6 +31,40 @@ func TestOpenAICompletionsRejectsStreamWithoutFinishReason(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsInfersFinishReasonWhenUnsupported(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		chunk string
+		want  ai.StopReason
+	}{
+		{
+			name:  "text infers stop",
+			chunk: `{"id":"chatcmpl-nofinish","choices":[{"delta":{"content":"done"},"finish_reason":null}]}`,
+			want:  ai.StopReasonStop,
+		},
+		{
+			name:  "tool call infers toolUse",
+			chunk: `{"id":"chatcmpl-nofinish","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"read","arguments":"{}"}}]},"finish_reason":null}]}`,
+			want:  ai.StopReasonToolUse,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			model := &ai.Model{
+				ID: "fixture-model", API: ai.APIOpenAICompletions, Provider: "openai",
+				BaseURL: "https://fixture.invalid/v1/", Input: ai.InputModalities{ai.InputText},
+				Compat: json.RawMessage(`{"supportsFinishReason":false}`),
+			}
+			message, events := collectOpenAICompletionsFixture(t, openAICompletionsFixtureStreamForModel(t, model, test.chunk))
+			if message.StopReason != test.want || message.ErrorMessage != nil {
+				t.Fatalf("stop reason = %q, error = %v", message.StopReason, message.ErrorMessage)
+			}
+			if _, ok := events[len(events)-1].(ai.DoneEvent); !ok {
+				t.Fatalf("terminal event = %T, want ai.DoneEvent", events[len(events)-1])
+			}
+		})
+	}
+}
+
 func TestOpenAICompletionsPreservesRawFinishReason(t *testing.T) {
 	message, _ := collectOpenAICompletionsFixture(t, openAICompletionsFixtureStream(t,
 		`{"id":"chatcmpl-filtered","choices":[{"delta":{},"finish_reason":"content_filter"}]}`,
@@ -98,7 +132,7 @@ func TestOpenAICompletionsQwenTokenPlanGeneratedPayload(t *testing.T) {
 		want   string
 	}{
 		{id: "deepseek-v4-pro", effort: ai.ThinkingHigh, want: "high"},
-		{id: "qwen3.8-max-preview", effort: ai.ThinkingMedium, want: "medium"},
+		{id: "qwen3.8-max", effort: ai.ThinkingMedium, want: "medium"},
 	} {
 		t.Run(test.id, func(t *testing.T) {
 			model, ok := catalog.Find("qwen-token-plan", test.id)
@@ -126,6 +160,102 @@ func TestOpenAICompletionsQwenTokenPlanGeneratedPayload(t *testing.T) {
 				t.Fatalf("Qwen Token Plan emitted DeepSeek thinking payload: %#v", payload["thinking"])
 			}
 		})
+	}
+}
+
+func TestOpenAICompletionsBasetenGeneratedPayload(t *testing.T) {
+	catalog, err := models.Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, ok := catalog.Find("baseten", "zai-org/GLM-5.2")
+	if !ok {
+		t.Fatal("generated model baseten/zai-org/GLM-5.2 not found")
+	}
+	compat, err := resolveOpenAICompletionsCompat(&model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	high, low := ai.ThinkingHigh, ai.ThinkingLow
+	for _, test := range []struct {
+		name         string
+		effort       *ai.ThinkingLevel
+		wantThinking bool
+		wantEffort   any
+	}{
+		{name: "mapped effort", effort: &high, wantThinking: true, wantEffort: "high"},
+		{name: "mapped null omits effort", effort: &low, wantThinking: true, wantEffort: nil},
+		{name: "off maps to none", effort: nil, wantThinking: false, wantEffort: "none"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			payload, err := buildOpenAICompletionsPayload(
+				&model, ai.Context{}, &OpenAICompletionsOptions{ReasoningEffort: test.effort}, compat, ai.CacheRetentionNone,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			args, ok := payload["chat_template_args"].(map[string]any)
+			if !ok || args["enable_thinking"] != test.wantThinking {
+				t.Fatalf("chat_template_args = %#v", payload["chat_template_args"])
+			}
+			got, exists := payload["reasoning_effort"]
+			if test.wantEffort == nil {
+				if exists {
+					t.Fatalf("reasoning_effort = %#v, want omitted", got)
+				}
+			} else if got != test.wantEffort {
+				t.Fatalf("reasoning_effort = %#v, want %#v", got, test.wantEffort)
+			}
+		})
+	}
+}
+
+func TestOpenAICompletionsBasetenPassesUnmappedEffortThrough(t *testing.T) {
+	model := &ai.Model{Reasoning: true}
+	compat := resolvedOpenAICompletionsCompat{
+		thinkingFormat: ai.ThinkingFormatBaseten, supportsReasoningEffort: true,
+		chatTemplateArgs: map[string]any{"enable_thinking": map[string]any{"$var": "thinking.enabled"}},
+	}
+	effort := ai.ThinkingMedium
+	payload := map[string]any{}
+	applyOpenAICompletionsThinking(payload, model, &OpenAICompletionsOptions{ReasoningEffort: &effort}, compat)
+	args, ok := payload["chat_template_args"].(map[string]any)
+	if !ok || args["enable_thinking"] != true || payload["reasoning_effort"] != "medium" {
+		t.Fatalf("payload = %#v", payload)
+	}
+
+	payload = map[string]any{}
+	applyOpenAICompletionsThinking(payload, model, &OpenAICompletionsOptions{}, compat)
+	args, ok = payload["chat_template_args"].(map[string]any)
+	if !ok || args["enable_thinking"] != false {
+		t.Fatalf("off chat_template_args = %#v", payload["chat_template_args"])
+	}
+	if effort, exists := payload["reasoning_effort"]; exists {
+		t.Fatalf("off without map emitted reasoning_effort: %#v", effort)
+	}
+}
+
+func TestOpenAICompletionsPreservesChatTemplateArgOrderOnWire(t *testing.T) {
+	model := simpleOpenAICompletionsModel()
+	model.Reasoning = true
+	model.Compat = json.RawMessage(`{
+		"thinkingFormat":"baseten",
+		"supportsReasoningEffort":false,
+		"chatTemplateArgs":{
+			"z_static":true,
+			"enable_thinking":{"$var":"thinking.enabled"},
+			"a_static":7
+		}
+	}`)
+	apiKey := "simple-key"
+	reasoning := ai.ThinkingHigh
+	body, _ := captureSimpleOpenAICompletionsRequestBody(t, model, ai.Context{}, &ai.SimpleStreamOptions{
+		StreamOptions: ai.StreamOptions{APIKey: &apiKey},
+		Reasoning:     &reasoning,
+	})
+	want := `"chat_template_args":{"z_static":true,"enable_thinking":true,"a_static":7}`
+	if !strings.Contains(string(body), want) {
+		t.Fatalf("request body does not preserve compat order:\n%s\nwant substring:\n%s", body, want)
 	}
 }
 
@@ -668,6 +798,18 @@ func captureSimpleOpenAICompletionsRequestBody(
 
 func openAICompletionsFixtureStream(t *testing.T, chunks ...string) ai.AssistantMessageEventStream {
 	t.Helper()
+	return openAICompletionsFixtureStreamForModel(t, &ai.Model{
+		ID:       "fixture-model",
+		API:      ai.APIOpenAICompletions,
+		Provider: "openai",
+		BaseURL:  "https://fixture.invalid/v1/",
+		Input:    ai.InputModalities{ai.InputText},
+		Cost:     ai.ModelCost{},
+	}, chunks...)
+}
+
+func openAICompletionsFixtureStreamForModel(t *testing.T, model *ai.Model, chunks ...string) ai.AssistantMessageEventStream {
+	t.Helper()
 	previousClient := openAIHTTPClient
 	var body strings.Builder
 	for _, chunk := range chunks {
@@ -688,14 +830,6 @@ func openAICompletionsFixtureStream(t *testing.T, chunks ...string) ai.Assistant
 	t.Cleanup(func() { openAIHTTPClient = previousClient })
 
 	key := "fixture-key"
-	model := &ai.Model{
-		ID:       "fixture-model",
-		API:      ai.APIOpenAICompletions,
-		Provider: "openai",
-		BaseURL:  "https://fixture.invalid/v1/",
-		Input:    ai.InputModalities{ai.InputText},
-		Cost:     ai.ModelCost{},
-	}
 	stream, err := StreamOpenAICompletions(context.Background(), ai.Request{
 		Model: model,
 		Context: ai.Context{Messages: ai.MessageList{

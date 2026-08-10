@@ -58,7 +58,7 @@ func TestTerminalImageEncodingsMatchUpstream(t *testing.T) {
 	if got, want := DeleteKittyImage(7), "\x1b_Ga=d,d=I,i=7,q=2\x1b\\"; got != want {
 		t.Fatalf("delete = %q", got)
 	}
-	if got, want := EncodeITerm2("QUJD", 12, "auto", "cat.png", false, true), "\x1b]1337;File=inline=1;width=12;height=auto;name=Y2F0LnBuZw==;preserveAspectRatio=0:QUJD\x07"; got != want {
+	if got, want := EncodeITerm2("QUJD", 12, "auto", "cat.png", false, true), "\x1b]1337;File=inline=1;size=3;width=12;height=auto;name=Y2F0LnBuZw==;preserveAspectRatio=0:QUJD\x07"; got != want {
 		t.Fatalf("iterm = %q, want %q", got, want)
 	}
 }

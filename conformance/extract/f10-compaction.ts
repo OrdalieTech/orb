@@ -238,9 +238,19 @@ export async function generateF10(upstreamRoot: string, outputRoot: string, upst
     },
   ];
   const prepareCases = prepareInputs.map((fixtureCase) => {
-    const prepared = resultValue<any>(compaction.prepareCompaction(fixtureCase.entries, fixtureCase.settings));
+    let entries = fixtureCase.entries;
+    let prepared: any;
+    try {
+      prepared = resultValue<any>(compaction.prepareCompaction(entries, fixtureCase.settings));
+    } catch {
+      // Upstream >=0.84 compaction entries carry a required retainedTail
+      // instead of firstKeptEntryId; refit the v3-shaped inputs and retry.
+      entries = entries.map((entry: any) => entry.type === "compaction" ? { ...entry, retainedTail: [] } : entry);
+      prepared = resultValue<any>(compaction.prepareCompaction(entries, fixtureCase.settings));
+    }
     return {
       ...fixtureCase,
+      entries,
       expected: prepared === undefined ? null : {
         firstKeptEntryId: prepared.firstKeptEntryId,
         summaryRoles: entryRoles(prepared.messagesToSummarize),
@@ -276,6 +286,10 @@ export async function generateF10(upstreamRoot: string, outputRoot: string, upst
         current = entry.parentId;
       }
       return result.reverse();
+    },
+    // Upstream >=0.84 walks branches through findEntriesOnBranch (leaf -> root).
+    async findEntriesOnBranch({ start }: { start: string }) {
+      return [...(await this.getBranch(start))].reverse();
     },
   };
   const collected = await branch.collectEntriesForBranchSummary(session, "branch-leaf", "other-u");

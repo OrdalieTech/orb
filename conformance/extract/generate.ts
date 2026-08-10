@@ -40,6 +40,7 @@ import { generateWP450SessionSelector } from "./wp450-session-selector.ts";
 // to truecolor even with COLORTERM unset.
 for (const name of [
 	"COLORTERM",
+	"FORCE_COLOR",
 	"TERM_PROGRAM",
 	"GHOSTTY_RESOURCES_DIR",
 	"GHOSTTY_BIN_DIR",

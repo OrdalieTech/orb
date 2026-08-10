@@ -277,7 +277,7 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 	if isQwenTokenPlanProvider(provider) {
 		if !qwenTokenPlanSupportsReasoningEffort(id) {
 			model.ThinkingLevelMap = nil
-		} else if id == "qwen3.8-max-preview" {
+		} else if id == "qwen3.8-max" {
 			values := thinkingValues(map[ai.ModelThinkingLevel]string{
 				ai.ModelThinkingLow: "low", ai.ModelThinkingMedium: "medium", ai.ModelThinkingXHigh: "xhigh",
 			})
@@ -356,6 +356,10 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 
 func applyOpenAICompletionsCompat(model *ai.Model) {
 	provider, baseURL := string(model.Provider), model.BaseURL
+	// Baseten compat is authored in full by addBaseten.
+	if provider == "baseten" {
+		return
+	}
 	isZAI := provider == "zai" || provider == "zai-coding-cn" || strings.Contains(baseURL, "api.z.ai") || strings.Contains(baseURL, "open.bigmodel.cn")
 	isTogether := provider == "together" || strings.Contains(baseURL, "api.together.ai") || strings.Contains(baseURL, "api.together.xyz")
 	isMoonshot := provider == "moonshotai" || provider == "moonshotai-cn" || strings.Contains(baseURL, "api.moonshot.")
@@ -440,7 +444,7 @@ func applyExplicitCompletionsCompat(model *ai.Model, compat *ai.OpenAICompletion
 			compat.ThinkingFormat = ptr(ai.ThinkingFormatOpenAI)
 			compat.SupportsReasoningEffort = ptr(true)
 		}
-	case "qwen-token-plan", "qwen-token-plan-cn":
+	case "qwen-token-plan", "qwen-token-plan-cn", "qwen-token-plan-individual":
 		compat.SupportsStore, compat.SupportsDeveloperRole = ptr(false), ptr(false)
 		compat.SupportsReasoningEffort = ptr(qwenTokenPlanSupportsReasoningEffort(id))
 		compat.ThinkingFormat = ptr(ai.ThinkingFormatQwen)
@@ -607,6 +611,9 @@ func mergeCompletionsCompat(dst *ai.OpenAICompletionsCompat, src ai.OpenAIComple
 	if src.SupportsUsageInStreaming != nil {
 		dst.SupportsUsageInStreaming = src.SupportsUsageInStreaming
 	}
+	if src.SupportsFinishReason != nil {
+		dst.SupportsFinishReason = src.SupportsFinishReason
+	}
 	if src.MaxTokensField != nil {
 		dst.MaxTokensField = src.MaxTokensField
 	}
@@ -627,6 +634,9 @@ func mergeCompletionsCompat(dst *ai.OpenAICompletionsCompat, src ai.OpenAIComple
 	}
 	if src.ChatTemplateKwargs != nil {
 		dst.ChatTemplateKwargs = src.ChatTemplateKwargs
+	}
+	if src.ChatTemplateArgs != nil {
+		dst.ChatTemplateArgs = src.ChatTemplateArgs
 	}
 	if src.OpenRouterRouting != nil {
 		dst.OpenRouterRouting = src.OpenRouterRouting
@@ -687,7 +697,7 @@ func isAnthropicAdaptiveThinkingModel(id string) bool {
 }
 
 func isQwenTokenPlanProvider(provider string) bool {
-	return provider == "qwen-token-plan" || provider == "qwen-token-plan-cn"
+	return provider == "qwen-token-plan" || provider == "qwen-token-plan-cn" || provider == "qwen-token-plan-individual"
 }
 
 func qwenTokenPlanSupportsReasoningEffort(id string) bool {

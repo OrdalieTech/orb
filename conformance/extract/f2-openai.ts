@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -1372,6 +1372,7 @@ async function extractOpenAIProvider(upstreamRoot: string): Promise<ProviderFixt
                 env(name: string): Promise<string | undefined>;
                 fileExists(path: string): Promise<boolean>;
               };
+              signal: AbortSignal;
             }): Promise<
               | { auth: { apiKey?: string }; source?: string }
               | undefined
@@ -1394,6 +1395,7 @@ async function extractOpenAIProvider(upstreamRoot: string): Promise<ProviderFixt
         },
         fileExists: async () => false,
       },
+      signal: new AbortController().signal,
     });
     if (unresolved !== undefined) {
       throw new Error("openaiProvider() resolved auth without a credential or environment value");
@@ -1403,6 +1405,7 @@ async function extractOpenAIProvider(upstreamRoot: string): Promise<ProviderFixt
         env: async () => "fixture-openai-api-key",
         fileExists: async () => false,
       },
+      signal: new AbortController().signal,
     });
     if (!resolved?.auth.apiKey) throw new Error("openaiProvider() did not resolve its environment API key");
 
@@ -1460,9 +1463,19 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
       requests.push({ ...definition, expected: request });
     }
 
+    // Upstream >=0.84 maps a reasonless incomplete response to an error event
+    // instead of stopReason "length"; keep the pinned SSE and assert per revision.
+    const incompleteWithoutReasonErrors = (
+      await readFile(path.join(upstreamRoot, "packages/ai/src/api/openai-responses-shared.ts"), "utf8")
+    ).includes("Response incomplete without a provider reason");
     const streams = [];
     for (const definition of streamDefinitions) {
-      const { events } = await runUpstream(definition, streamFixtureResponse(definition));
+      const { events } = await runUpstream(
+        definition.name === "responses-incomplete-length" && incompleteWithoutReasonErrors
+          ? { ...definition, expectsErrorEvent: true }
+          : definition,
+        streamFixtureResponse(definition),
+      );
       streams.push({ ...definition, expectedEvents: events });
     }
 

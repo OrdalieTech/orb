@@ -1254,7 +1254,16 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "Throttling error: Rate exceeded"
+            "errorMessage": "Throttling error: Rate exceeded",
+            "diagnostics": [
+              {
+                "type": "bedrock_response_failure",
+                "timestamp": 1700000000123,
+                "details": {
+                  "errorCode": "ThrottlingException"
+                }
+              }
+            ]
           }
         }
       ]

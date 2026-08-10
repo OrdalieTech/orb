@@ -19,6 +19,10 @@ const (
 	SessionErrorInvalidFork    SessionErrorCode = "invalid_fork_target"
 	SessionErrorStorage        SessionErrorCode = "storage"
 	SessionErrorUnknown        SessionErrorCode = "unknown"
+	SessionErrorAlreadyExists  SessionErrorCode = "already_exists"
+	SessionErrorInvalidPayload SessionErrorCode = "invalid_payload"
+	SessionErrorInvalidLane    SessionErrorCode = "invalid_lane"
+	SessionErrorInvalidQuery   SessionErrorCode = "invalid_query"
 )
 
 // SessionError preserves upstream's machine-readable error code.

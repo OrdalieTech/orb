@@ -256,7 +256,9 @@ type TuiModule = {
     defaultStyle?: Record<string, unknown>,
     options?: Record<string, unknown>,
   ) => { render(width: number): string[] };
-  TUI: new (terminal: unknown) => { requestRender(): void };
+  // Upstream >=0.84 split the TUI class into TuiMainScreen/TuiAltScreen.
+  TUI?: new (terminal: unknown) => { requestRender(): void };
+  TuiMainScreen?: new (terminal: unknown) => { requestRender(): void };
   Editor: new (
     ui: { requestRender(): void },
     theme: {
@@ -332,7 +334,7 @@ function buildFullScreen(tui: TuiModule, fixtureCase: FullScreenFixtureCase): { 
     get rows() { return fixtureCase.rows; },
     get kittyProtocolActive() { return false; },
   };
-  const editor = new tui.Editor(new tui.TUI(terminal), fullScreenEditorTheme);
+  const editor = new tui.Editor(new (tui.TUI ?? tui.TuiMainScreen)!(terminal), fullScreenEditorTheme);
   editor.setText(fixtureCase.editor);
   root.addChild(editor);
   root.addChild(new tui.TruncatedText(fixtureCase.status, 1, 0));

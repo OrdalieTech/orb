@@ -22,8 +22,8 @@ func TestExportMatchesPinnedUpstreamHTML(t *testing.T) {
 		theme string
 		hash  string
 	}{
-		{"dark", "dark", "738870714620acd4fda1b41eba41de3f31187c826d35f5d5dc509aaeb1b5d363"},
-		{"light", "light", "06397f1a46c74fcfab93261e191e8636867c58bef1013ad7b7741965e09477cc"},
+		{"dark", "dark", "a1e29af462bb986bfa5c192a72407a4f1757d03ae9b4cf464332781f3522228a"},
+		{"light", "light", "b359bee4c795b57e232b63d2f52ec8d4b2c629aa4ecd41782d64cd5285681d70"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -100,7 +100,7 @@ func TestDefaultThemeUsesCOLORFGBG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := sha256Hex(contents); got != "06397f1a46c74fcfab93261e191e8636867c58bef1013ad7b7741965e09477cc" {
+	if got := sha256Hex(contents); got != "b359bee4c795b57e232b63d2f52ec8d4b2c629aa4ecd41782d64cd5285681d70" {
 		t.Fatalf("COLORFGBG light export sha256 = %s", got)
 	}
 }
@@ -131,7 +131,7 @@ func TestExportUsesPinnedUpstreamCustomTheme(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := sha256Hex(contents); got != "23a0dba3ddb7c5a584aadad888a2d1c2b466a534d5dfc1b4fa2ba7ad19e951ee" {
+	if got := sha256Hex(contents); got != "638ed2f873d99fd4f5a79681e266398e29da3c98bebed689ef95af997ea2398e" {
 		t.Fatalf("custom-theme HTML sha256 = %s, want pinned-upstream fixture", got)
 	}
 	for _, want := range []string{

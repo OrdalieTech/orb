@@ -165,11 +165,10 @@ type f10CompactPromptExpected struct {
 }
 
 type f10CompactionOutput struct {
-	Summary          string                    `json:"summary"`
-	FirstKeptEntryID string                    `json:"firstKeptEntryId"`
-	TokensBefore     int64                     `json:"tokensBefore"`
-	Usage            *ai.Usage                 `json:"usage"`
-	Details          harness.CompactionDetails `json:"details"`
+	Summary      string                    `json:"summary"`
+	TokensBefore int64                     `json:"tokensBefore"`
+	Usage        *ai.Usage                 `json:"usage"`
+	Details      harness.CompactionDetails `json:"details"`
 }
 
 type f10PromptExpected struct {
@@ -386,7 +385,7 @@ func TestF10BranchAndSplitTurnPromptsMatchUpstream(t *testing.T) {
 			if !ok {
 				t.Fatalf("compaction details = %T, want harness.CompactionDetails", got.Details)
 			}
-			output := f10CompactionOutput{Summary: got.Summary, FirstKeptEntryID: got.FirstKeptEntryID, TokensBefore: got.TokensBefore, Usage: got.Usage, Details: details}
+			output := f10CompactionOutput{Summary: got.Summary, TokensBefore: got.TokensBefore, Usage: got.Usage, Details: details}
 			if !reflect.DeepEqual(output, fixtureCase.Expected.Output) {
 				t.Fatalf("compaction output = %+v, want %+v", output, fixtureCase.Expected.Output)
 			}

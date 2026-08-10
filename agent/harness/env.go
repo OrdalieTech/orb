@@ -286,6 +286,14 @@ func (env *NodeExecutionEnv) writeFlags(ctx context.Context, path string, conten
 	return nil
 }
 
+func (env *NodeExecutionEnv) RenameFile(ctx context.Context, from, to string) error {
+	resolvedFrom, resolvedTo := env.resolve(from), env.resolve(to)
+	if err := os.Rename(resolvedFrom, resolvedTo); err != nil {
+		return nodeOperationError("rename", resolvedFrom, err)
+	}
+	return nil
+}
+
 func (env *NodeExecutionEnv) FileInfo(ctx context.Context, path string) (FileInfo, error) {
 	resolved := env.resolve(path)
 	info, err := os.Lstat(resolved)

@@ -400,9 +400,9 @@
           }
         },
         {
-          "type": "done",
-          "reason": "length",
-          "message": {
+          "type": "error",
+          "reason": "error",
+          "error": {
             "role": "assistant",
             "content": [],
             "api": "openai-codex-responses",
@@ -423,10 +423,11 @@
                 "total": 14
               }
             },
-            "stopReason": "length",
+            "stopReason": "error",
             "timestamp": 1700000000123,
             "responseId": "resp_codex_length",
-            "rawStopReason": "incomplete"
+            "rawStopReason": "incomplete",
+            "errorMessage": "Response incomplete without a provider reason"
           }
         }
       ]

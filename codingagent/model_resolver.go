@@ -775,9 +775,11 @@ var defaultModelPerProvider = map[string]string{
 	"cerebras": "zai-glm-4.7", "zai": "glm-5.1", "zai-coding-cn": "glm-5.1", "mistral": "devstral-medium-latest",
 	"minimax": "MiniMax-M2.7", "minimax-cn": "MiniMax-M2.7", "moonshotai": "kimi-k2.6", "moonshotai-cn": "kimi-k2.6",
 	"huggingface": "moonshotai/Kimi-K2.6", "fireworks": "accounts/fireworks/models/kimi-k2p6", "together": "moonshotai/Kimi-K2.6",
+	"baseten":  "zai-org/GLM-5.2",
 	"opencode": "kimi-k2.6", "opencode-go": "kimi-k2.6", "kimi-coding": "kimi-for-coding", "cloudflare-workers-ai": "@cf/moonshotai/kimi-k2.6",
 	"cloudflare-ai-gateway": "workers-ai/@cf/moonshotai/kimi-k2.6", "qwen-token-plan": "qwen3.7-max", "qwen-token-plan-cn": "qwen3.7-max",
-	"xiaomi": "mimo-v2.5-pro", "xiaomi-token-plan-cn": "mimo-v2.5-pro",
+	"qwen-token-plan-individual": "qwen3.8-max",
+	"xiaomi":                     "mimo-v2.5-pro", "xiaomi-token-plan-cn": "mimo-v2.5-pro",
 	"xiaomi-token-plan-ams": "mimo-v2.5-pro", "xiaomi-token-plan-sgp": "mimo-v2.5-pro",
 }
 
@@ -785,8 +787,8 @@ var defaultModelProviderOrder = []string{
 	"amazon-bedrock", "ant-ling", "anthropic", "openai", "azure-openai-responses", "openai-codex", "nvidia", "deepseek",
 	"google", "google-vertex", "github-copilot", "openrouter", "vercel-ai-gateway", "xai", "groq", "cerebras", "zai",
 	"zai-coding-cn", "mistral", "minimax", "minimax-cn", "moonshotai", "moonshotai-cn", "huggingface", "fireworks",
-	"together", "opencode", "opencode-go", "kimi-coding", "cloudflare-workers-ai", "cloudflare-ai-gateway", "qwen-token-plan", "qwen-token-plan-cn", "xiaomi",
-	"xiaomi-token-plan-cn", "xiaomi-token-plan-ams", "xiaomi-token-plan-sgp",
+	"together", "baseten", "opencode", "opencode-go", "kimi-coding", "cloudflare-workers-ai", "cloudflare-ai-gateway", "qwen-token-plan", "qwen-token-plan-cn",
+	"qwen-token-plan-individual", "xiaomi", "xiaomi-token-plan-cn", "xiaomi-token-plan-ams", "xiaomi-token-plan-sgp",
 }
 
 // DefaultAvailableModel returns the provider's pinned upstream default only

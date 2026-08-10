@@ -19,6 +19,19 @@ export async function extractCompatModelsF2(upstreamRoot: string) {
       preload,
       `import { readFileSync } from "node:fs";
 const snapshot = JSON.parse(readFileSync(process.env.ORB_MODEL_SNAPSHOT, "utf8"));
+// Upstream >=0.84 asserts an exact qwen-token-plan-individual catalog; the
+// pinned snapshot predates some of those IDs, so synthesize the missing ones
+// from a tool-capable sibling. At revisions without the constant this no-ops.
+const generator = readFileSync(process.env.ORB_GENERATE_MODELS_SOURCE, "utf8");
+const expected = generator.match(/QWEN_TOKEN_PLAN_INDIVIDUAL_MODEL_IDS\\s*=\\s*new Set[^([]*\\(\\[([^\\]]*)\\]/);
+if (expected) {
+  const models = snapshot["alibaba-token-plan"]?.models ?? {};
+  const template = Object.values(models).find((model) => model.tool_call === true);
+  for (const match of expected[1].matchAll(/"([^"]+)"/g)) {
+    const id = match[1];
+    if (!models[id]) models[id] = { ...template, id, name: id };
+  }
+}
 globalThis.fetch = async (input) => {
   const url = String(input instanceof Request ? input.url : input);
   if (url === "https://models.dev/api.json") return Response.json(snapshot);
@@ -46,7 +59,11 @@ globalThis.fetch = async (input) => {
       ],
       {
         cwd: packageRoot,
-        env: { ...process.env, ORB_MODEL_SNAPSHOT: snapshot },
+        env: {
+          ...process.env,
+          ORB_MODEL_SNAPSHOT: snapshot,
+          ORB_GENERATE_MODELS_SOURCE: path.join(packageRoot, "scripts/generate-models.ts"),
+        },
         maxBuffer: 16 * 1024 * 1024,
       },
     );

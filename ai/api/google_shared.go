@@ -699,7 +699,15 @@ func googleContentHasFunctionResponse(content GoogleContent) bool {
 }
 
 func googleRequiresToolCallID(modelID string) bool {
-	return strings.HasPrefix(modelID, "claude-") || strings.HasPrefix(modelID, "gpt-oss-")
+	if strings.HasPrefix(modelID, "claude-") || strings.HasPrefix(modelID, "gpt-oss-") {
+		return true
+	}
+	match := googleMajorVersionPattern.FindStringSubmatch(strings.ToLower(modelID))
+	if len(match) == 2 {
+		major, err := strconv.Atoi(match[1])
+		return err == nil && major >= 3
+	}
+	return false
 }
 
 func googleSupportsMultimodalFunctionResponse(modelID string) bool {

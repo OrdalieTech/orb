@@ -1020,12 +1020,8 @@ func (manager *SessionManager) GetHeader() *SessionHeader {
 
 func (manager *SessionManager) GetSessionName() *string {
 	if manager.harnessStorage != nil {
-		entries := manager.harnessStorage.EntriesByType("session_info")
-		if len(entries) == 0 {
-			return nil
-		}
-		name := trimJSSpace(entries[len(entries)-1].Name)
-		if name == "" {
+		name, ok := manager.harnessStorage.SessionName()
+		if !ok {
 			return nil
 		}
 		return &name

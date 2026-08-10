@@ -401,6 +401,20 @@ async function replayAutocomplete(
 								name: "GPT 5 via OpenRouter",
 							},
 						],
+						// Upstream >=0.84 reads the synchronous snapshot instead.
+						getAvailableSnapshot: () => [
+							{
+								id: "claude-sonnet-4-5",
+								provider: "anthropic",
+								name: "Claude Sonnet 4.5",
+							},
+							{ id: "gpt-5.1", provider: "openai", name: "GPT 5.1" },
+							{
+								id: "openai/gpt-5",
+								provider: "openrouter",
+								name: "GPT 5 via OpenRouter",
+							},
+						],
 						getProviders: () => [
 							{ id: "openai", name: "OpenAI", auth: { oauth: {} } },
 							{
@@ -412,6 +426,7 @@ async function replayAutocomplete(
 						],
 						getProviderAuthStatus: () => ({ configured: false }),
 						isUsingOAuth: () => false,
+						isUsingSubscription: () => false,
 					},
 					promptTemplates: [
 						{
@@ -722,6 +737,8 @@ function replayTerminalInputLifecycle(
 	>;
 	defineContextValues(context, {
 		extensionTerminalInputUnsubscribers: new Set<() => void>(),
+		// Upstream >=0.84 tracks {handler, unsubscribe} subscription objects.
+		extensionTerminalInputSubscriptions: new Set<unknown>(),
 		ui: {
 			addInputListener: (
 				handler: (data: string) => Record<string, unknown>,
@@ -902,6 +919,8 @@ async function replayCustomUILifecycle(
 				},
 			},
 			keybindings: {},
+			// Upstream >=0.84 disposes any active selector before installing.
+			disposeActiveSelector: () => {},
 			ui: {
 				setFocus: (child: unknown) =>
 					events.push(child === component ? "focus-custom" : "focus-editor"),
@@ -959,6 +978,8 @@ async function replayCustomUILifecycle(
 				},
 			},
 			keybindings: {},
+			// Upstream >=0.84 disposes any active selector before installing.
+			disposeActiveSelector: () => {},
 			ui: {
 				setFocus: (child: unknown) =>
 					events.push(child === component ? "focus-custom" : "focus-editor"),
@@ -1134,6 +1155,19 @@ function replayHeaderFooterLifecycle(
 		builtInHeader,
 		customHeader: undefined,
 		headerContainer: { children: headerChildren },
+		// Upstream >=0.84 swaps footers inside a dedicated footer container.
+		footerContainer: {
+			clear: () => {
+				while (uiChildren.length > 0) {
+					const child = uiChildren.pop();
+					events.push(`remove:${(child as { name: string }).name}`);
+				}
+			},
+			addChild: (child: unknown) => {
+				uiChildren.push(child);
+				events.push(`add:${(child as { name: string }).name}`);
+			},
+		},
 		toolOutputExpanded: false,
 		ui: {
 			removeChild: (child: unknown) => {

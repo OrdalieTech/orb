@@ -260,6 +260,8 @@ function customContext(
 			editor,
 			editorContainer,
 			keybindings: {},
+			// Upstream >=0.84 disposes any active selector before installing.
+			disposeActiveSelector: () => {},
 			ui,
 		},
 		editor,
@@ -419,7 +421,7 @@ async function replayCustomOverlay(
 	}
 
 	const terminal = new OverlayTerminal();
-	const realUI = new modules.tui.TUI(terminal);
+	const realUI = new (modules.tui.TUI ?? modules.tui.TuiMainScreen)(terminal);
 	const real = customContext(modules, realUI);
 	realUI.addChild(real.editorContainer);
 	realUI.setFocus(real.editor);

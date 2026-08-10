@@ -405,8 +405,9 @@ func TestCATM1NvidiaOmittedWithoutNIMListing(t *testing.T) {
 	}
 }
 
-// CAT-M2: models.dev supplies qwen3.8-max-preview for both Token Plan regions.
-func TestCATM2QwenTokenPlanMaxPreviewFromModelsDev(t *testing.T) {
+// CAT-M2: models.dev supplies qwen3.8-max for both Token Plan regions; the
+// retired qwen3.8-max-preview never survives (QWEN_TOKEN_PLAN_EXCLUDED_MODEL_IDS).
+func TestCATM2QwenTokenPlanMaxFromModelsDev(t *testing.T) {
 	catalog, err := Generate(pinnedSources(t))
 	if err != nil {
 		t.Fatal(err)
@@ -415,15 +416,18 @@ func TestCATM2QwenTokenPlanMaxPreviewFromModelsDev(t *testing.T) {
 		"qwen-token-plan":    "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
 		"qwen-token-plan-cn": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
 	} {
-		model, ok := catalog[provider]["qwen3.8-max-preview"]
+		if _, ok := catalog[provider]["qwen3.8-max-preview"]; ok {
+			t.Fatalf("%s still lists retired qwen3.8-max-preview", provider)
+		}
+		model, ok := catalog[provider]["qwen3.8-max"]
 		if !ok {
-			t.Fatalf("missing %s/qwen3.8-max-preview", provider)
+			t.Fatalf("missing %s/qwen3.8-max", provider)
 		}
 		if !model.Reasoning || model.ContextWindow != 1000000 || model.MaxTokens != 131072 || model.BaseURL != baseURL {
-			t.Fatalf("%s/qwen3.8-max-preview = %#v", provider, model)
+			t.Fatalf("%s/qwen3.8-max = %#v", provider, model)
 		}
 		if len(model.Input) != 2 || model.Input[0] != ai.InputText || model.Input[1] != ai.InputImage {
-			t.Fatalf("%s/qwen3.8-max-preview input = %#v", provider, model.Input)
+			t.Fatalf("%s/qwen3.8-max input = %#v", provider, model.Input)
 		}
 		var compat ai.OpenAICompletionsCompat
 		if err := json.Unmarshal(model.Compat, &compat); err != nil {
@@ -432,29 +436,34 @@ func TestCATM2QwenTokenPlanMaxPreviewFromModelsDev(t *testing.T) {
 		if compat.ThinkingFormat == nil || *compat.ThinkingFormat != ai.ThinkingFormatQwen ||
 			compat.SupportsDeveloperRole == nil || *compat.SupportsDeveloperRole ||
 			compat.SupportsStore == nil || *compat.SupportsStore {
-			t.Fatalf("%s/qwen3.8-max-preview compat = %s", provider, model.Compat)
+			t.Fatalf("%s/qwen3.8-max compat = %s", provider, model.Compat)
 		}
 	}
 }
 
 // CAT-M2: Qwen Token Plan entries come from models.dev without synthetic
-// cross-region catalog entries.
-func TestCATM2QwenTokenPlanMaxPreviewUsesModelsDev(t *testing.T) {
+// cross-region catalog entries, and the GA qwen3.8-max wins over the retired
+// preview id when both are listed.
+func TestCATM2QwenTokenPlanMaxUsesModelsDev(t *testing.T) {
 	data := []byte(`{
 		"alibaba-token-plan":{"models":{
-			"qwen3.8-max-preview":{"name":"From models.dev","tool_call":true,"reasoning":true,"modalities":{"input":["text"]},"limit":{"context":42,"output":7},"cost":{"input":1,"output":2}}
+			"qwen3.8-max":{"name":"From models.dev","tool_call":true,"reasoning":true,"modalities":{"input":["text"]},"limit":{"context":42,"output":7},"cost":{"input":1,"output":2}},
+			"qwen3.8-max-preview":{"name":"Retired preview","tool_call":true,"reasoning":true,"modalities":{"input":["text"]},"limit":{"context":9,"output":3},"cost":{"input":1,"output":2}}
 		}}
 	}`)
 	catalog, err := Generate(Sources{ModelsDev: data})
 	if err != nil {
 		t.Fatal(err)
 	}
-	model := catalog["qwen-token-plan"]["qwen3.8-max-preview"]
+	model := catalog["qwen-token-plan"]["qwen3.8-max"]
 	if model.Name != "From models.dev" || model.ContextWindow != 42 {
 		t.Fatalf("models.dev entry was overwritten: %#v", model)
 	}
-	if _, ok := catalog["qwen-token-plan-cn"]["qwen3.8-max-preview"]; ok {
-		t.Fatal("unexpected synthetic qwen-token-plan-cn/qwen3.8-max-preview")
+	if _, ok := catalog["qwen-token-plan"]["qwen3.8-max-preview"]; ok {
+		t.Fatal("retired qwen3.8-max-preview survived next to the GA id")
+	}
+	if _, ok := catalog["qwen-token-plan-cn"]["qwen3.8-max"]; ok {
+		t.Fatal("unexpected synthetic qwen-token-plan-cn/qwen3.8-max")
 	}
 }
 

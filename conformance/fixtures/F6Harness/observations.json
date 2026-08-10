@@ -4,10 +4,12 @@
     "jsonl": {
       "metadata": {
         "id": "session-fixed",
-        "createdAt": "2026-02-03T04:05:06.789Z",
+        "createdAt": 1770091506789,
         "cwd": "/fixture/project",
         "path": "<fixture>/session.jsonl",
-        "parentSessionPath": "/fixture/parent.jsonl",
+        "modifiedAt": "<modifiedAt>",
+        "sourceFormat": 4,
+        "parentSessionId": "parent-session",
         "metadata": {
           "profile": "reviewer",
           "nested": {
@@ -15,13 +17,24 @@
           }
         }
       },
-      "leafId": "tools-empty",
+      "lanes": [
+        {
+          "lane": "main",
+          "leafId": "branch-summary"
+        },
+        {
+          "lane": "branch",
+          "leafId": "branch-user"
+        },
+        {
+          "lane": "idle",
+          "leafId": null
+        }
+      ],
       "entries": [
         {
           "type": "message",
           "id": "root-user",
-          "parentId": null,
-          "timestamp": "2026-02-03T04:05:07.000Z",
           "message": {
             "role": "user",
             "content": [
@@ -31,13 +44,14 @@
               }
             ],
             "timestamp": 1
-          }
+          },
+          "parentId": null,
+          "seq": 1,
+          "timestamp": 1770091506789
         },
         {
           "type": "message",
           "id": "main-assistant",
-          "parentId": "root-user",
-          "timestamp": "2026-02-03T04:05:08.000Z",
           "message": {
             "role": "assistant",
             "content": [
@@ -65,13 +79,14 @@
             },
             "stopReason": "stop",
             "timestamp": 2
-          }
+          },
+          "parentId": "root-user",
+          "seq": 2,
+          "timestamp": 1770091506789
         },
         {
           "type": "message",
           "id": "second-user",
-          "parentId": "main-assistant",
-          "timestamp": "2026-02-03T04:05:09.000Z",
           "message": {
             "role": "user",
             "content": [
@@ -81,1108 +96,320 @@
               }
             ],
             "timestamp": 3
-          }
+          },
+          "parentId": "main-assistant",
+          "seq": 3,
+          "timestamp": 1770091506789
         },
         {
           "type": "thinking_level_change",
           "id": "thinking",
+          "thinkingLevel": "high",
           "parentId": "second-user",
-          "timestamp": "2026-02-03T04:05:10.000Z",
-          "thinkingLevel": "high"
+          "seq": 4,
+          "timestamp": 1770091506789
         },
         {
           "type": "model_change",
           "id": "model",
-          "parentId": "thinking",
-          "timestamp": "2026-02-03T04:05:11.000Z",
           "provider": "anthropic",
-          "modelId": "claude-test"
+          "modelId": "claude-test",
+          "parentId": "thinking",
+          "seq": 5,
+          "timestamp": 1770091506789
         },
         {
           "type": "active_tools_change",
           "id": "tools",
-          "parentId": "model",
-          "timestamp": "2026-02-03T04:05:12.000Z",
           "activeToolNames": [
             "read",
             "bash"
-          ]
+          ],
+          "parentId": "model",
+          "seq": 6,
+          "timestamp": 1770091506789
         },
         {
           "type": "active_tools_change",
           "id": "tools-empty",
+          "activeToolNames": [],
           "parentId": "tools",
-          "timestamp": "2026-02-03T04:05:12.500Z",
-          "activeToolNames": []
+          "seq": 7,
+          "timestamp": 1770091506789
         },
         {
           "type": "custom",
           "id": "custom",
-          "parentId": "tools-empty",
-          "timestamp": "2026-02-03T04:05:13.000Z",
           "customType": "state",
           "data": {
             "nested": [
               1,
               "two"
             ]
-          }
-        },
-        {
-          "type": "custom_message",
-          "id": "custom-message",
-          "parentId": "custom",
-          "timestamp": "2026-02-03T04:05:14.000Z",
-          "customType": "notice",
-          "content": "visible note",
-          "display": true,
-          "details": {
-            "source": "fixture"
-          }
-        },
-        {
-          "type": "session_info",
-          "id": "session-name",
-          "parentId": "custom-message",
-          "timestamp": "2026-02-03T04:05:15.000Z",
-          "name": "  fixture name  "
-        },
-        {
-          "type": "compaction",
-          "id": "compaction",
-          "parentId": "session-name",
-          "timestamp": "2026-02-03T04:05:16.000Z",
-          "summary": "prior work",
-          "firstKeptEntryId": "second-user",
-          "tokensBefore": 42.5,
-          "details": {
-            "readFiles": [
-              "a.go"
-            ]
           },
-          "fromHook": false
-        },
-        {
-          "type": "message",
-          "id": "branch-user",
-          "parentId": "root-user",
-          "timestamp": "2026-02-03T04:05:17.000Z",
-          "message": {
-            "role": "user",
-            "content": [
-              {
-                "type": "text",
-                "text": "branch"
-              }
-            ],
-            "timestamp": 4
-          }
-        },
-        {
-          "type": "branch_summary",
-          "id": "branch-summary",
-          "parentId": "branch-user",
-          "timestamp": "2026-02-03T04:05:17.500Z",
-          "fromId": "compaction",
-          "summary": "discarded branch work",
-          "details": {
-            "modifiedFiles": [
-              "b.go"
-            ]
-          },
-          "fromHook": true
-        },
-        {
-          "type": "message",
-          "id": "empty-parent",
-          "parentId": "",
-          "timestamp": "2026-02-03T04:05:17.750Z",
-          "message": {
-            "role": "user",
-            "content": [
-              {
-                "type": "text",
-                "text": "empty parent is root"
-              }
-            ],
-            "timestamp": 5
-          }
-        },
-        {
-          "type": "label",
-          "id": "label-root-set",
-          "parentId": "branch-user",
-          "timestamp": "2026-02-03T04:05:18.000Z",
-          "targetId": "root-user",
-          "label": "  checkpoint  "
-        },
-        {
-          "type": "label",
-          "id": "label-root-clear",
-          "parentId": "label-root-set",
-          "timestamp": "2026-02-03T04:05:19.000Z",
-          "targetId": "root-user",
-          "label": "   "
-        },
-        {
-          "type": "label",
-          "id": "label-branch",
-          "parentId": "label-root-clear",
-          "timestamp": "2026-02-03T04:05:20.000Z",
-          "targetId": "branch-user",
-          "label": "  branch point  "
-        },
-        {
-          "type": "leaf",
-          "id": "leaf-record",
-          "parentId": "label-branch",
-          "timestamp": "2026-02-03T04:05:21.000Z",
-          "targetId": "tools-empty"
-        }
-      ],
-      "entryIds": [
-        "root-user",
-        "main-assistant",
-        "second-user",
-        "thinking",
-        "model",
-        "tools",
-        "tools-empty",
-        "custom",
-        "custom-message",
-        "session-name",
-        "compaction",
-        "branch-user",
-        "branch-summary",
-        "empty-parent",
-        "label-root-set",
-        "label-root-clear",
-        "label-branch",
-        "leaf-record"
-      ],
-      "branchIds": [
-        "root-user",
-        "main-assistant",
-        "second-user",
-        "thinking",
-        "model",
-        "tools",
-        "tools-empty"
-      ],
-      "messageIds": [
-        "root-user",
-        "main-assistant",
-        "second-user",
-        "branch-user",
-        "empty-parent"
-      ],
-      "labels": {
-        "root": null,
-        "branch": "branch point"
-      },
-      "sessionName": "fixture name",
-      "context": {
-        "messages": [
-          {
-            "role": "user",
-            "content": [
-              {
-                "type": "text",
-                "text": "root <>&  "
-              }
-            ],
-            "timestamp": 1
-          },
-          {
-            "role": "assistant",
-            "content": [
-              {
-                "type": "text",
-                "text": "answer"
-              }
-            ],
-            "api": "openai-responses",
-            "provider": "openai",
-            "model": "gpt-test",
-            "usage": {
-              "input": 1,
-              "output": 2,
-              "cacheRead": 0,
-              "cacheWrite": 0,
-              "totalTokens": 3,
-              "cost": {
-                "input": 0,
-                "output": 0,
-                "cacheRead": 0,
-                "cacheWrite": 0,
-                "total": 0
-              }
-            },
-            "stopReason": "stop",
-            "timestamp": 2
-          },
-          {
-            "role": "user",
-            "content": [
-              {
-                "type": "text",
-                "text": "continue"
-              }
-            ],
-            "timestamp": 3
-          }
-        ],
-        "roles": [
-          "user",
-          "assistant",
-          "user"
-        ],
-        "thinkingLevel": "high",
-        "model": {
-          "provider": "anthropic",
-          "modelId": "claude-test"
-        },
-        "activeToolNames": []
-      }
-    },
-    "memory": {
-      "metadata": {
-        "id": "session-fixed",
-        "createdAt": "2026-02-03T04:05:06.789Z"
-      },
-      "leafId": "tools-empty",
-      "entries": [
-        {
-          "type": "message",
-          "id": "root-user",
-          "parentId": null,
-          "timestamp": "2026-02-03T04:05:07.000Z",
-          "message": {
-            "role": "user",
-            "content": [
-              {
-                "type": "text",
-                "text": "root <>&  "
-              }
-            ],
-            "timestamp": 1
-          }
-        },
-        {
-          "type": "message",
-          "id": "main-assistant",
-          "parentId": "root-user",
-          "timestamp": "2026-02-03T04:05:08.000Z",
-          "message": {
-            "role": "assistant",
-            "content": [
-              {
-                "type": "text",
-                "text": "answer"
-              }
-            ],
-            "api": "openai-responses",
-            "provider": "openai",
-            "model": "gpt-test",
-            "usage": {
-              "input": 1,
-              "output": 2,
-              "cacheRead": 0,
-              "cacheWrite": 0,
-              "totalTokens": 3,
-              "cost": {
-                "input": 0,
-                "output": 0,
-                "cacheRead": 0,
-                "cacheWrite": 0,
-                "total": 0
-              }
-            },
-            "stopReason": "stop",
-            "timestamp": 2
-          }
-        },
-        {
-          "type": "message",
-          "id": "second-user",
-          "parentId": "main-assistant",
-          "timestamp": "2026-02-03T04:05:09.000Z",
-          "message": {
-            "role": "user",
-            "content": [
-              {
-                "type": "text",
-                "text": "continue"
-              }
-            ],
-            "timestamp": 3
-          }
-        },
-        {
-          "type": "thinking_level_change",
-          "id": "thinking",
-          "parentId": "second-user",
-          "timestamp": "2026-02-03T04:05:10.000Z",
-          "thinkingLevel": "high"
-        },
-        {
-          "type": "model_change",
-          "id": "model",
-          "parentId": "thinking",
-          "timestamp": "2026-02-03T04:05:11.000Z",
-          "provider": "anthropic",
-          "modelId": "claude-test"
-        },
-        {
-          "type": "active_tools_change",
-          "id": "tools",
-          "parentId": "model",
-          "timestamp": "2026-02-03T04:05:12.000Z",
-          "activeToolNames": [
-            "read",
-            "bash"
-          ]
-        },
-        {
-          "type": "active_tools_change",
-          "id": "tools-empty",
-          "parentId": "tools",
-          "timestamp": "2026-02-03T04:05:12.500Z",
-          "activeToolNames": []
-        },
-        {
-          "type": "custom",
-          "id": "custom",
           "parentId": "tools-empty",
-          "timestamp": "2026-02-03T04:05:13.000Z",
-          "customType": "state",
-          "data": {
-            "nested": [
-              1,
-              "two"
-            ]
-          }
-        },
-        {
-          "type": "custom_message",
-          "id": "custom-message",
-          "parentId": "custom",
-          "timestamp": "2026-02-03T04:05:14.000Z",
-          "customType": "notice",
-          "content": "visible note",
-          "display": true,
-          "details": {
-            "source": "fixture"
-          }
-        },
-        {
-          "type": "session_info",
-          "id": "session-name",
-          "parentId": "custom-message",
-          "timestamp": "2026-02-03T04:05:15.000Z",
-          "name": "  fixture name  "
+          "seq": 8,
+          "timestamp": 1770091506789
         },
         {
           "type": "compaction",
           "id": "compaction",
-          "parentId": "session-name",
-          "timestamp": "2026-02-03T04:05:16.000Z",
           "summary": "prior work",
-          "firstKeptEntryId": "second-user",
-          "tokensBefore": 42.5,
-          "details": {
-            "readFiles": [
-              "a.go"
-            ]
-          },
-          "fromHook": false
-        },
-        {
-          "type": "message",
-          "id": "branch-user",
-          "parentId": "root-user",
-          "timestamp": "2026-02-03T04:05:17.000Z",
-          "message": {
-            "role": "user",
-            "content": [
-              {
-                "type": "text",
-                "text": "branch"
-              }
-            ],
-            "timestamp": 4
-          }
-        },
-        {
-          "type": "branch_summary",
-          "id": "branch-summary",
-          "parentId": "branch-user",
-          "timestamp": "2026-02-03T04:05:17.500Z",
-          "fromId": "compaction",
-          "summary": "discarded branch work",
-          "details": {
-            "modifiedFiles": [
-              "b.go"
-            ]
-          },
-          "fromHook": true
-        },
-        {
-          "type": "message",
-          "id": "empty-parent",
-          "parentId": "",
-          "timestamp": "2026-02-03T04:05:17.750Z",
-          "message": {
-            "role": "user",
-            "content": [
-              {
-                "type": "text",
-                "text": "empty parent is root"
-              }
-            ],
-            "timestamp": 5
-          }
-        },
-        {
-          "type": "label",
-          "id": "label-root-set",
-          "parentId": "branch-user",
-          "timestamp": "2026-02-03T04:05:18.000Z",
-          "targetId": "root-user",
-          "label": "  checkpoint  "
-        },
-        {
-          "type": "label",
-          "id": "label-root-clear",
-          "parentId": "label-root-set",
-          "timestamp": "2026-02-03T04:05:19.000Z",
-          "targetId": "root-user",
-          "label": "   "
-        },
-        {
-          "type": "label",
-          "id": "label-branch",
-          "parentId": "label-root-clear",
-          "timestamp": "2026-02-03T04:05:20.000Z",
-          "targetId": "branch-user",
-          "label": "  branch point  "
-        },
-        {
-          "type": "leaf",
-          "id": "leaf-record",
-          "parentId": "label-branch",
-          "timestamp": "2026-02-03T04:05:21.000Z",
-          "targetId": "tools-empty"
-        }
-      ],
-      "entryIds": [
-        "root-user",
-        "main-assistant",
-        "second-user",
-        "thinking",
-        "model",
-        "tools",
-        "tools-empty",
-        "custom",
-        "custom-message",
-        "session-name",
-        "compaction",
-        "branch-user",
-        "branch-summary",
-        "empty-parent",
-        "label-root-set",
-        "label-root-clear",
-        "label-branch",
-        "leaf-record"
-      ],
-      "branchIds": [
-        "root-user",
-        "main-assistant",
-        "second-user",
-        "thinking",
-        "model",
-        "tools",
-        "tools-empty"
-      ],
-      "messageIds": [
-        "root-user",
-        "main-assistant",
-        "second-user",
-        "branch-user",
-        "empty-parent"
-      ],
-      "labels": {
-        "root": null,
-        "branch": "branch point"
-      },
-      "sessionName": "fixture name",
-      "context": {
-        "messages": [
-          {
-            "role": "user",
-            "content": [
-              {
-                "type": "text",
-                "text": "root <>&  "
-              }
-            ],
-            "timestamp": 1
-          },
-          {
-            "role": "assistant",
-            "content": [
-              {
-                "type": "text",
-                "text": "answer"
-              }
-            ],
-            "api": "openai-responses",
-            "provider": "openai",
-            "model": "gpt-test",
-            "usage": {
-              "input": 1,
-              "output": 2,
-              "cacheRead": 0,
-              "cacheWrite": 0,
-              "totalTokens": 3,
-              "cost": {
-                "input": 0,
-                "output": 0,
-                "cacheRead": 0,
-                "cacheWrite": 0,
-                "total": 0
-              }
-            },
-            "stopReason": "stop",
-            "timestamp": 2
-          },
-          {
-            "role": "user",
-            "content": [
-              {
-                "type": "text",
-                "text": "continue"
-              }
-            ],
-            "timestamp": 3
-          }
-        ],
-        "roles": [
-          "user",
-          "assistant",
-          "user"
-        ],
-        "thinkingLevel": "high",
-        "model": {
-          "provider": "anthropic",
-          "modelId": "claude-test"
-        },
-        "activeToolNames": []
-      }
-    },
-    "forks": {
-      "beforeSecondUser": [
-        "root-user",
-        "main-assistant"
-      ],
-      "atModel": [
-        "root-user",
-        "main-assistant",
-        "second-user",
-        "thinking",
-        "model"
-      ],
-      "beforeAssistantError": {
-        "code": "invalid_fork_target",
-        "message": "Entry main-assistant is not a user message"
-      }
-    },
-    "compactedContext": {
-      "messages": [
-        {
-          "role": "compactionSummary",
-          "summary": "prior work",
-          "tokensBefore": 42.5,
-          "timestamp": 1770091516000
-        },
-        {
-          "role": "user",
-          "content": [
+          "retainedTail": [
             {
-              "type": "text",
-              "text": "continue"
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "retained tail"
+                }
+              ],
+              "timestamp": 4
             }
           ],
-          "timestamp": 3
+          "tokensBefore": 42.5,
+          "details": {
+            "readFiles": [
+              "a.go"
+            ]
+          },
+          "parentId": "custom",
+          "seq": 9,
+          "timestamp": 1770091506789
         },
         {
-          "role": "custom",
-          "customType": "notice",
-          "content": "visible note",
-          "display": true,
+          "type": "branch_summary",
+          "id": "branch-summary",
+          "fromId": "compaction",
+          "summary": "discarded branch work",
           "details": {
-            "source": "fixture"
+            "modifiedFiles": [
+              "b.go"
+            ]
           },
-          "timestamp": 1770091514000
+          "parentId": "compaction",
+          "seq": 10,
+          "timestamp": 1770091506789
+        },
+        {
+          "type": "message",
+          "id": "branch-user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "branch"
+              }
+            ],
+            "timestamp": 5
+          },
+          "parentId": "root-user",
+          "seq": 16,
+          "timestamp": 1770091506789
         }
       ],
-      "roles": [
-        "compactionSummary",
-        "user",
+      "entryIds": [
+        "root-user",
+        "main-assistant",
+        "second-user",
+        "thinking",
+        "model",
+        "tools",
+        "tools-empty",
+        "custom",
+        "compaction",
+        "branch-summary",
+        "branch-user"
+      ],
+      "branchIds": [
+        "root-user",
+        "main-assistant",
+        "second-user",
+        "thinking",
+        "model",
+        "tools",
+        "tools-empty",
+        "custom",
+        "compaction",
+        "branch-summary"
+      ],
+      "messageIds": [
+        "root-user",
+        "main-assistant",
+        "second-user",
+        "branch-user"
+      ],
+      "customStateIds": [
         "custom"
       ],
-      "thinkingLevel": "high",
-      "model": {
-        "provider": "anthropic",
-        "modelId": "claude-test"
-      },
-      "activeToolNames": []
-    },
-    "branchSummaryContext": {
-      "messages": [
+      "pagedNewestIds": [
+        "branch-user",
+        "branch-summary",
+        "compaction"
+      ],
+      "branchToCompactionIds": [
+        "branch-summary",
+        "compaction"
+      ],
+      "records": [
         {
-          "role": "user",
-          "content": [
-            {
-              "type": "text",
-              "text": "root <>&  "
-            }
-          ],
-          "timestamp": 1
+          "type": "operation_finished",
+          "id": "finish-1",
+          "lane": "main",
+          "runId": "op-run",
+          "outcome": "completed",
+          "seq": 22,
+          "timestamp": 1770091506789
         },
         {
-          "role": "user",
-          "content": [
-            {
-              "type": "text",
-              "text": "branch"
+          "type": "usage",
+          "id": "usage-1",
+          "lane": "main",
+          "cause": "assistant",
+          "runId": "op-run",
+          "entryId": "main-assistant",
+          "attempt": 1,
+          "stopReason": "stop",
+          "usage": {
+            "input": 100,
+            "output": 20,
+            "cacheRead": 30,
+            "cacheWrite": 10,
+            "totalTokens": 160,
+            "cost": {
+              "input": 0.1,
+              "output": 0.2,
+              "cacheRead": 0.01,
+              "cacheWrite": 0.02,
+              "total": 0.33
             }
-          ],
-          "timestamp": 4
+          },
+          "seq": 21,
+          "timestamp": 1770091506789
         },
         {
-          "role": "branchSummary",
-          "summary": "discarded branch work",
-          "fromId": "compaction",
-          "timestamp": 1770091517500
+          "type": "step_attempt",
+          "id": "step-1",
+          "lane": "main",
+          "runId": "op-run",
+          "step": "assistant",
+          "attempt": 1,
+          "resultEntryId": "main-assistant",
+          "seq": 20,
+          "timestamp": 1770091506789
+        },
+        {
+          "type": "operation_started",
+          "id": "op-run",
+          "lane": "main",
+          "sourceLeafId": "branch-summary",
+          "intent": {
+            "kind": "run",
+            "originalPrompt": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "run prompt"
+                  }
+                ],
+                "timestamp": 6
+              }
+            ],
+            "initialMessages": [
+              {
+                "type": "message",
+                "id": "queued-1",
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "queued"
+                    }
+                  ],
+                  "timestamp": 7
+                }
+              }
+            ]
+          },
+          "seq": 19,
+          "timestamp": 1770091506789
         }
       ],
-      "roles": [
-        "user",
-        "user",
-        "branchSummary"
+      "usageRecordIds": [
+        "usage-1"
       ],
-      "thinkingLevel": "off",
-      "model": null,
-      "activeToolNames": null
-    },
-    "emptyParentPath": [
-      "empty-parent"
-    ],
-    "transformsAndProjectors": {
-      "constructorOnly": {
-        "messages": [
-          {
-            "role": "user",
-            "content": [
-              {
-                "type": "text",
-                "text": "transform root"
-              }
-            ],
-            "timestamp": 10
-          },
-          {
-            "role": "user",
-            "content": [
-              {
-                "type": "text",
-                "text": "constructor projector"
-              }
-            ],
-            "timestamp": 20
-          },
-          {
-            "role": "user",
-            "content": [
-              {
-                "type": "text",
-                "text": "constructor override"
-              }
-            ],
-            "timestamp": 21
-          },
-          {
-            "role": "user",
-            "content": [
-              {
-                "type": "text",
-                "text": "call drop"
-              }
-            ],
-            "timestamp": 12
-          },
-          {
-            "role": "assistant",
-            "content": [
-              {
-                "type": "text",
-                "text": "transform answer"
-              }
-            ],
-            "api": "openai-responses",
-            "provider": "openai",
-            "model": "gpt-transform",
-            "usage": {
-              "input": 1,
-              "output": 1,
-              "cacheRead": 0,
-              "cacheWrite": 0,
-              "totalTokens": 2,
-              "cost": {
-                "input": 0,
-                "output": 0,
-                "cacheRead": 0,
-                "cacheWrite": 0,
-                "total": 0
-              }
+      "openOperations": [],
+      "log": [
+        {
+          "kind": "entry",
+          "seq": 1,
+          "entry": {
+            "type": "message",
+            "id": "root-user",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "root <>&  "
+                }
+              ],
+              "timestamp": 1
             },
-            "stopReason": "stop",
-            "timestamp": 13
+            "parentId": null,
+            "seq": 1,
+            "timestamp": 1770091506789
           }
-        ],
-        "roles": [
-          "user",
-          "user",
-          "user",
-          "user",
-          "assistant"
-        ],
-        "thinkingLevel": "off",
-        "model": {
-          "provider": "openai",
-          "modelId": "gpt-transform"
         },
-        "activeToolNames": null
-      },
-      "constructorAndPerCall": {
-        "messages": [
-          {
-            "role": "user",
-            "content": [
-              {
-                "type": "text",
-                "text": "transform root"
-              }
-            ],
-            "timestamp": 10
-          },
-          {
-            "role": "user",
-            "content": [
-              {
-                "type": "text",
-                "text": "constructor projector"
-              }
-            ],
-            "timestamp": 20
-          },
-          {
-            "role": "user",
-            "content": [
-              {
-                "type": "text",
-                "text": "per-call override"
-              }
-            ],
-            "timestamp": 22
-          },
-          {
-            "role": "user",
-            "content": [
-              {
-                "type": "text",
-                "text": "per-call projector"
-              }
-            ],
-            "timestamp": 23
-          },
-          {
-            "role": "assistant",
-            "content": [
-              {
-                "type": "text",
-                "text": "transform answer"
-              }
-            ],
-            "api": "openai-responses",
-            "provider": "openai",
-            "model": "gpt-transform",
-            "usage": {
-              "input": 1,
-              "output": 1,
-              "cacheRead": 0,
-              "cacheWrite": 0,
-              "totalTokens": 2,
-              "cost": {
-                "input": 0,
-                "output": 0,
+        {
+          "kind": "entry",
+          "seq": 2,
+          "entry": {
+            "type": "message",
+            "id": "main-assistant",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "openai",
+              "model": "gpt-test",
+              "usage": {
+                "input": 1,
+                "output": 2,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0
-              }
+                "totalTokens": 3,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 2
             },
-            "stopReason": "stop",
-            "timestamp": 13
+            "parentId": "root-user",
+            "seq": 2,
+            "timestamp": 1770091506789
           }
-        ],
-        "roles": [
-          "user",
-          "user",
-          "user",
-          "user",
-          "assistant"
-        ],
-        "thinkingLevel": "off",
-        "model": {
-          "provider": "openai",
-          "modelId": "gpt-transform"
         },
-        "activeToolNames": null
-      }
-    },
-    "typedEmptyActiveTools": {
-      "entry": {
-        "type": "active_tools_change",
-        "activeToolNames": []
-      },
-      "context": {
-        "activeToolNames": []
-      }
-    },
-    "appendLine": "{\"type\":\"custom\",\"id\":\"appended-fixed\",\"parentId\":\"tools\",\"timestamp\":\"2026-02-03T04:05:22.000Z\",\"customType\":\"after-rehydrate\",\"data\":{\"text\":\"<>&  \"}}\n",
-    "invalid": [
-      {
-        "name": "missing-header",
-        "error": {
-          "code": "invalid_session",
-          "message": "Invalid JSONL session file <fixture>/missing-header.jsonl: missing session header"
-        }
-      },
-      {
-        "name": "unsupported-version",
-        "error": {
-          "code": "invalid_session",
-          "message": "Invalid JSONL session file <fixture>/unsupported-version.jsonl: unsupported session version"
-        }
-      },
-      {
-        "name": "metadata-array",
-        "error": {
-          "code": "invalid_session",
-          "message": "Invalid JSONL session file <fixture>/metadata-array.jsonl: session header metadata must be an object"
-        }
-      },
-      {
-        "name": "invalid-entry",
-        "error": {
-          "code": "invalid_entry",
-          "message": "Invalid JSONL session file <fixture>/invalid-entry.jsonl: line 2 has invalid parentId"
-        }
-      },
-      {
-        "name": "dangling-leaf",
-        "error": {
-          "code": "invalid_session",
-          "message": "Entry missing not found"
-        }
-      }
-    ],
-    "repos": {
-      "memory": {
-        "sourceMetadata": {
-          "id": "memory-source",
-          "createdAt": "<createdAt>"
-        },
-        "openedSameObject": true,
-        "listed": [
-          {
-            "id": "memory-at",
-            "createdAt": "<createdAt>"
-          },
-          {
-            "id": "memory-before",
-            "createdAt": "<createdAt>"
-          },
-          {
-            "id": "memory-full",
-            "createdAt": "<createdAt>"
-          },
-          {
-            "id": "memory-source",
-            "createdAt": "<createdAt>"
-          }
-        ],
-        "beforeEntries": [
-          {
-            "type": "message",
-            "id": "root-user",
-            "parentId": null,
-            "timestamp": "2026-02-03T04:05:07.000Z",
-            "message": {
-              "role": "user",
-              "content": [
-                {
-                  "type": "text",
-                  "text": "root <>&  "
-                }
-              ],
-              "timestamp": 1
-            }
-          },
-          {
-            "type": "message",
-            "id": "main-assistant",
-            "parentId": "root-user",
-            "timestamp": "2026-02-03T04:05:08.000Z",
-            "message": {
-              "role": "assistant",
-              "content": [
-                {
-                  "type": "text",
-                  "text": "answer"
-                }
-              ],
-              "api": "openai-responses",
-              "provider": "openai",
-              "model": "gpt-test",
-              "usage": {
-                "input": 1,
-                "output": 2,
-                "cacheRead": 0,
-                "cacheWrite": 0,
-                "totalTokens": 3,
-                "cost": {
-                  "input": 0,
-                  "output": 0,
-                  "cacheRead": 0,
-                  "cacheWrite": 0,
-                  "total": 0
-                }
-              },
-              "stopReason": "stop",
-              "timestamp": 2
-            }
-          }
-        ],
-        "atEntries": [
-          {
-            "type": "message",
-            "id": "root-user",
-            "parentId": null,
-            "timestamp": "2026-02-03T04:05:07.000Z",
-            "message": {
-              "role": "user",
-              "content": [
-                {
-                  "type": "text",
-                  "text": "root <>&  "
-                }
-              ],
-              "timestamp": 1
-            }
-          },
-          {
-            "type": "message",
-            "id": "main-assistant",
-            "parentId": "root-user",
-            "timestamp": "2026-02-03T04:05:08.000Z",
-            "message": {
-              "role": "assistant",
-              "content": [
-                {
-                  "type": "text",
-                  "text": "answer"
-                }
-              ],
-              "api": "openai-responses",
-              "provider": "openai",
-              "model": "gpt-test",
-              "usage": {
-                "input": 1,
-                "output": 2,
-                "cacheRead": 0,
-                "cacheWrite": 0,
-                "totalTokens": 3,
-                "cost": {
-                  "input": 0,
-                  "output": 0,
-                  "cacheRead": 0,
-                  "cacheWrite": 0,
-                  "total": 0
-                }
-              },
-              "stopReason": "stop",
-              "timestamp": 2
-            }
-          }
-        ],
-        "fullEntries": [
-          {
-            "type": "message",
-            "id": "root-user",
-            "parentId": null,
-            "timestamp": "2026-02-03T04:05:07.000Z",
-            "message": {
-              "role": "user",
-              "content": [
-                {
-                  "type": "text",
-                  "text": "root <>&  "
-                }
-              ],
-              "timestamp": 1
-            }
-          },
-          {
-            "type": "message",
-            "id": "main-assistant",
-            "parentId": "root-user",
-            "timestamp": "2026-02-03T04:05:08.000Z",
-            "message": {
-              "role": "assistant",
-              "content": [
-                {
-                  "type": "text",
-                  "text": "answer"
-                }
-              ],
-              "api": "openai-responses",
-              "provider": "openai",
-              "model": "gpt-test",
-              "usage": {
-                "input": 1,
-                "output": 2,
-                "cacheRead": 0,
-                "cacheWrite": 0,
-                "totalTokens": 3,
-                "cost": {
-                  "input": 0,
-                  "output": 0,
-                  "cacheRead": 0,
-                  "cacheWrite": 0,
-                  "total": 0
-                }
-              },
-              "stopReason": "stop",
-              "timestamp": 2
-            }
-          },
-          {
+        {
+          "kind": "entry",
+          "seq": 3,
+          "entry": {
             "type": "message",
             "id": "second-user",
-            "parentId": "main-assistant",
-            "timestamp": "2026-02-03T04:05:09.000Z",
             "message": {
               "role": "user",
               "content": [
@@ -1192,9 +419,1684 @@
                 }
               ],
               "timestamp": 3
+            },
+            "parentId": "main-assistant",
+            "seq": 3,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "entry",
+          "seq": 4,
+          "entry": {
+            "type": "thinking_level_change",
+            "id": "thinking",
+            "thinkingLevel": "high",
+            "parentId": "second-user",
+            "seq": 4,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "entry",
+          "seq": 5,
+          "entry": {
+            "type": "model_change",
+            "id": "model",
+            "provider": "anthropic",
+            "modelId": "claude-test",
+            "parentId": "thinking",
+            "seq": 5,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "entry",
+          "seq": 6,
+          "entry": {
+            "type": "active_tools_change",
+            "id": "tools",
+            "activeToolNames": [
+              "read",
+              "bash"
+            ],
+            "parentId": "model",
+            "seq": 6,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "entry",
+          "seq": 7,
+          "entry": {
+            "type": "active_tools_change",
+            "id": "tools-empty",
+            "activeToolNames": [],
+            "parentId": "tools",
+            "seq": 7,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "entry",
+          "seq": 8,
+          "entry": {
+            "type": "custom",
+            "id": "custom",
+            "customType": "state",
+            "data": {
+              "nested": [
+                1,
+                "two"
+              ]
+            },
+            "parentId": "tools-empty",
+            "seq": 8,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "entry",
+          "seq": 9,
+          "entry": {
+            "type": "compaction",
+            "id": "compaction",
+            "summary": "prior work",
+            "retainedTail": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "retained tail"
+                  }
+                ],
+                "timestamp": 4
+              }
+            ],
+            "tokensBefore": 42.5,
+            "details": {
+              "readFiles": [
+                "a.go"
+              ]
+            },
+            "parentId": "custom",
+            "seq": 9,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "entry",
+          "seq": 10,
+          "entry": {
+            "type": "branch_summary",
+            "id": "branch-summary",
+            "fromId": "compaction",
+            "summary": "discarded branch work",
+            "details": {
+              "modifiedFiles": [
+                "b.go"
+              ]
+            },
+            "parentId": "compaction",
+            "seq": 10,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "fact",
+          "seq": 11,
+          "fact": "name",
+          "name": "  fixture name  "
+        },
+        {
+          "kind": "fact",
+          "seq": 12,
+          "fact": "label",
+          "targetId": "root-user",
+          "label": "  checkpoint  "
+        },
+        {
+          "kind": "fact",
+          "seq": 13,
+          "fact": "label",
+          "targetId": "root-user"
+        },
+        {
+          "kind": "fact",
+          "seq": 14,
+          "fact": "label",
+          "targetId": "second-user",
+          "label": "  branch point  "
+        },
+        {
+          "kind": "lane",
+          "seq": 15,
+          "lane": "branch",
+          "leafId": "root-user"
+        },
+        {
+          "kind": "entry",
+          "seq": 16,
+          "entry": {
+            "type": "message",
+            "id": "branch-user",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "branch"
+                }
+              ],
+              "timestamp": 5
+            },
+            "parentId": "root-user",
+            "seq": 16,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "lane",
+          "seq": 17,
+          "lane": "idle",
+          "leafId": "second-user"
+        },
+        {
+          "kind": "lane",
+          "seq": 18,
+          "lane": "idle",
+          "leafId": null
+        },
+        {
+          "kind": "record",
+          "seq": 19,
+          "record": {
+            "type": "operation_started",
+            "id": "op-run",
+            "lane": "main",
+            "sourceLeafId": "branch-summary",
+            "intent": {
+              "kind": "run",
+              "originalPrompt": [
+                {
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "run prompt"
+                    }
+                  ],
+                  "timestamp": 6
+                }
+              ],
+              "initialMessages": [
+                {
+                  "type": "message",
+                  "id": "queued-1",
+                  "message": {
+                    "role": "user",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "queued"
+                      }
+                    ],
+                    "timestamp": 7
+                  }
+                }
+              ]
+            },
+            "seq": 19,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "record",
+          "seq": 20,
+          "record": {
+            "type": "step_attempt",
+            "id": "step-1",
+            "lane": "main",
+            "runId": "op-run",
+            "step": "assistant",
+            "attempt": 1,
+            "resultEntryId": "main-assistant",
+            "seq": 20,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "record",
+          "seq": 21,
+          "record": {
+            "type": "usage",
+            "id": "usage-1",
+            "lane": "main",
+            "cause": "assistant",
+            "runId": "op-run",
+            "entryId": "main-assistant",
+            "attempt": 1,
+            "stopReason": "stop",
+            "usage": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 10,
+              "totalTokens": 160,
+              "cost": {
+                "input": 0.1,
+                "output": 0.2,
+                "cacheRead": 0.01,
+                "cacheWrite": 0.02,
+                "total": 0.33
+              }
+            },
+            "seq": 21,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "record",
+          "seq": 22,
+          "record": {
+            "type": "operation_finished",
+            "id": "finish-1",
+            "lane": "main",
+            "runId": "op-run",
+            "outcome": "completed",
+            "seq": 22,
+            "timestamp": 1770091506789
+          }
+        }
+      ],
+      "logAfterSeqIds": [
+        11,
+        12,
+        13
+      ],
+      "stats": {
+        "messageCount": 4,
+        "cachedTokens": 30,
+        "uncachedTokens": 110,
+        "totalTokens": 160,
+        "costTotal": 0.33
+      },
+      "name": "  fixture name  ",
+      "labels": {
+        "root": null,
+        "second": "  branch point  "
+      }
+    },
+    "memory": {
+      "metadata": {
+        "id": "session-fixed",
+        "createdAt": 1770091506789,
+        "parentSessionId": "parent-session"
+      },
+      "lanes": [
+        {
+          "lane": "main",
+          "leafId": "branch-summary"
+        },
+        {
+          "lane": "branch",
+          "leafId": "branch-user"
+        },
+        {
+          "lane": "idle",
+          "leafId": null
+        }
+      ],
+      "entries": [
+        {
+          "type": "message",
+          "id": "root-user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "root <>&  "
+              }
+            ],
+            "timestamp": 1
+          },
+          "parentId": null,
+          "seq": 1,
+          "timestamp": 1770091506789
+        },
+        {
+          "type": "message",
+          "id": "main-assistant",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-test",
+            "usage": {
+              "input": 1,
+              "output": 2,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 3,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 2
+          },
+          "parentId": "root-user",
+          "seq": 2,
+          "timestamp": 1770091506789
+        },
+        {
+          "type": "message",
+          "id": "second-user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "continue"
+              }
+            ],
+            "timestamp": 3
+          },
+          "parentId": "main-assistant",
+          "seq": 3,
+          "timestamp": 1770091506789
+        },
+        {
+          "type": "thinking_level_change",
+          "id": "thinking",
+          "thinkingLevel": "high",
+          "parentId": "second-user",
+          "seq": 4,
+          "timestamp": 1770091506789
+        },
+        {
+          "type": "model_change",
+          "id": "model",
+          "provider": "anthropic",
+          "modelId": "claude-test",
+          "parentId": "thinking",
+          "seq": 5,
+          "timestamp": 1770091506789
+        },
+        {
+          "type": "active_tools_change",
+          "id": "tools",
+          "activeToolNames": [
+            "read",
+            "bash"
+          ],
+          "parentId": "model",
+          "seq": 6,
+          "timestamp": 1770091506789
+        },
+        {
+          "type": "active_tools_change",
+          "id": "tools-empty",
+          "activeToolNames": [],
+          "parentId": "tools",
+          "seq": 7,
+          "timestamp": 1770091506789
+        },
+        {
+          "type": "custom",
+          "id": "custom",
+          "customType": "state",
+          "data": {
+            "nested": [
+              1,
+              "two"
+            ]
+          },
+          "parentId": "tools-empty",
+          "seq": 8,
+          "timestamp": 1770091506789
+        },
+        {
+          "type": "compaction",
+          "id": "compaction",
+          "summary": "prior work",
+          "retainedTail": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "retained tail"
+                }
+              ],
+              "timestamp": 4
             }
+          ],
+          "tokensBefore": 42.5,
+          "details": {
+            "readFiles": [
+              "a.go"
+            ]
+          },
+          "parentId": "custom",
+          "seq": 9,
+          "timestamp": 1770091506789
+        },
+        {
+          "type": "branch_summary",
+          "id": "branch-summary",
+          "fromId": "compaction",
+          "summary": "discarded branch work",
+          "details": {
+            "modifiedFiles": [
+              "b.go"
+            ]
+          },
+          "parentId": "compaction",
+          "seq": 10,
+          "timestamp": 1770091506789
+        },
+        {
+          "type": "message",
+          "id": "branch-user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "branch"
+              }
+            ],
+            "timestamp": 5
+          },
+          "parentId": "root-user",
+          "seq": 16,
+          "timestamp": 1770091506789
+        }
+      ],
+      "entryIds": [
+        "root-user",
+        "main-assistant",
+        "second-user",
+        "thinking",
+        "model",
+        "tools",
+        "tools-empty",
+        "custom",
+        "compaction",
+        "branch-summary",
+        "branch-user"
+      ],
+      "branchIds": [
+        "root-user",
+        "main-assistant",
+        "second-user",
+        "thinking",
+        "model",
+        "tools",
+        "tools-empty",
+        "custom",
+        "compaction",
+        "branch-summary"
+      ],
+      "messageIds": [
+        "root-user",
+        "main-assistant",
+        "second-user",
+        "branch-user"
+      ],
+      "customStateIds": [
+        "custom"
+      ],
+      "pagedNewestIds": [
+        "branch-user",
+        "branch-summary",
+        "compaction"
+      ],
+      "branchToCompactionIds": [
+        "branch-summary",
+        "compaction"
+      ],
+      "records": [
+        {
+          "type": "operation_finished",
+          "id": "finish-1",
+          "lane": "main",
+          "runId": "op-run",
+          "outcome": "completed",
+          "seq": 22,
+          "timestamp": 1770091506789
+        },
+        {
+          "type": "usage",
+          "id": "usage-1",
+          "lane": "main",
+          "cause": "assistant",
+          "runId": "op-run",
+          "entryId": "main-assistant",
+          "attempt": 1,
+          "stopReason": "stop",
+          "usage": {
+            "input": 100,
+            "output": 20,
+            "cacheRead": 30,
+            "cacheWrite": 10,
+            "totalTokens": 160,
+            "cost": {
+              "input": 0.1,
+              "output": 0.2,
+              "cacheRead": 0.01,
+              "cacheWrite": 0.02,
+              "total": 0.33
+            }
+          },
+          "seq": 21,
+          "timestamp": 1770091506789
+        },
+        {
+          "type": "step_attempt",
+          "id": "step-1",
+          "lane": "main",
+          "runId": "op-run",
+          "step": "assistant",
+          "attempt": 1,
+          "resultEntryId": "main-assistant",
+          "seq": 20,
+          "timestamp": 1770091506789
+        },
+        {
+          "type": "operation_started",
+          "id": "op-run",
+          "lane": "main",
+          "sourceLeafId": "branch-summary",
+          "intent": {
+            "kind": "run",
+            "originalPrompt": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "run prompt"
+                  }
+                ],
+                "timestamp": 6
+              }
+            ],
+            "initialMessages": [
+              {
+                "type": "message",
+                "id": "queued-1",
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "queued"
+                    }
+                  ],
+                  "timestamp": 7
+                }
+              }
+            ]
+          },
+          "seq": 19,
+          "timestamp": 1770091506789
+        }
+      ],
+      "usageRecordIds": [
+        "usage-1"
+      ],
+      "openOperations": [],
+      "log": [
+        {
+          "kind": "entry",
+          "seq": 1,
+          "entry": {
+            "type": "message",
+            "id": "root-user",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "root <>&  "
+                }
+              ],
+              "timestamp": 1
+            },
+            "parentId": null,
+            "seq": 1,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "entry",
+          "seq": 2,
+          "entry": {
+            "type": "message",
+            "id": "main-assistant",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "openai",
+              "model": "gpt-test",
+              "usage": {
+                "input": 1,
+                "output": 2,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 3,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 2
+            },
+            "parentId": "root-user",
+            "seq": 2,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "entry",
+          "seq": 3,
+          "entry": {
+            "type": "message",
+            "id": "second-user",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "continue"
+                }
+              ],
+              "timestamp": 3
+            },
+            "parentId": "main-assistant",
+            "seq": 3,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "entry",
+          "seq": 4,
+          "entry": {
+            "type": "thinking_level_change",
+            "id": "thinking",
+            "thinkingLevel": "high",
+            "parentId": "second-user",
+            "seq": 4,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "entry",
+          "seq": 5,
+          "entry": {
+            "type": "model_change",
+            "id": "model",
+            "provider": "anthropic",
+            "modelId": "claude-test",
+            "parentId": "thinking",
+            "seq": 5,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "entry",
+          "seq": 6,
+          "entry": {
+            "type": "active_tools_change",
+            "id": "tools",
+            "activeToolNames": [
+              "read",
+              "bash"
+            ],
+            "parentId": "model",
+            "seq": 6,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "entry",
+          "seq": 7,
+          "entry": {
+            "type": "active_tools_change",
+            "id": "tools-empty",
+            "activeToolNames": [],
+            "parentId": "tools",
+            "seq": 7,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "entry",
+          "seq": 8,
+          "entry": {
+            "type": "custom",
+            "id": "custom",
+            "customType": "state",
+            "data": {
+              "nested": [
+                1,
+                "two"
+              ]
+            },
+            "parentId": "tools-empty",
+            "seq": 8,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "entry",
+          "seq": 9,
+          "entry": {
+            "type": "compaction",
+            "id": "compaction",
+            "summary": "prior work",
+            "retainedTail": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "retained tail"
+                  }
+                ],
+                "timestamp": 4
+              }
+            ],
+            "tokensBefore": 42.5,
+            "details": {
+              "readFiles": [
+                "a.go"
+              ]
+            },
+            "parentId": "custom",
+            "seq": 9,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "entry",
+          "seq": 10,
+          "entry": {
+            "type": "branch_summary",
+            "id": "branch-summary",
+            "fromId": "compaction",
+            "summary": "discarded branch work",
+            "details": {
+              "modifiedFiles": [
+                "b.go"
+              ]
+            },
+            "parentId": "compaction",
+            "seq": 10,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "fact",
+          "seq": 11,
+          "fact": "name",
+          "name": "  fixture name  "
+        },
+        {
+          "kind": "fact",
+          "seq": 12,
+          "fact": "label",
+          "targetId": "root-user",
+          "label": "  checkpoint  "
+        },
+        {
+          "kind": "fact",
+          "seq": 13,
+          "fact": "label",
+          "targetId": "root-user"
+        },
+        {
+          "kind": "fact",
+          "seq": 14,
+          "fact": "label",
+          "targetId": "second-user",
+          "label": "  branch point  "
+        },
+        {
+          "kind": "lane",
+          "seq": 15,
+          "lane": "branch",
+          "leafId": "root-user"
+        },
+        {
+          "kind": "entry",
+          "seq": 16,
+          "entry": {
+            "type": "message",
+            "id": "branch-user",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "branch"
+                }
+              ],
+              "timestamp": 5
+            },
+            "parentId": "root-user",
+            "seq": 16,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "lane",
+          "seq": 17,
+          "lane": "idle",
+          "leafId": "second-user"
+        },
+        {
+          "kind": "lane",
+          "seq": 18,
+          "lane": "idle",
+          "leafId": null
+        },
+        {
+          "kind": "record",
+          "seq": 19,
+          "record": {
+            "type": "operation_started",
+            "id": "op-run",
+            "lane": "main",
+            "sourceLeafId": "branch-summary",
+            "intent": {
+              "kind": "run",
+              "originalPrompt": [
+                {
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "run prompt"
+                    }
+                  ],
+                  "timestamp": 6
+                }
+              ],
+              "initialMessages": [
+                {
+                  "type": "message",
+                  "id": "queued-1",
+                  "message": {
+                    "role": "user",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "queued"
+                      }
+                    ],
+                    "timestamp": 7
+                  }
+                }
+              ]
+            },
+            "seq": 19,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "record",
+          "seq": 20,
+          "record": {
+            "type": "step_attempt",
+            "id": "step-1",
+            "lane": "main",
+            "runId": "op-run",
+            "step": "assistant",
+            "attempt": 1,
+            "resultEntryId": "main-assistant",
+            "seq": 20,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "record",
+          "seq": 21,
+          "record": {
+            "type": "usage",
+            "id": "usage-1",
+            "lane": "main",
+            "cause": "assistant",
+            "runId": "op-run",
+            "entryId": "main-assistant",
+            "attempt": 1,
+            "stopReason": "stop",
+            "usage": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 10,
+              "totalTokens": 160,
+              "cost": {
+                "input": 0.1,
+                "output": 0.2,
+                "cacheRead": 0.01,
+                "cacheWrite": 0.02,
+                "total": 0.33
+              }
+            },
+            "seq": 21,
+            "timestamp": 1770091506789
+          }
+        },
+        {
+          "kind": "record",
+          "seq": 22,
+          "record": {
+            "type": "operation_finished",
+            "id": "finish-1",
+            "lane": "main",
+            "runId": "op-run",
+            "outcome": "completed",
+            "seq": 22,
+            "timestamp": 1770091506789
+          }
+        }
+      ],
+      "logAfterSeqIds": [
+        11,
+        12,
+        13
+      ],
+      "stats": {
+        "messageCount": 4,
+        "cachedTokens": 30,
+        "uncachedTokens": 110,
+        "totalTokens": 160,
+        "costTotal": 0.33
+      },
+      "name": "  fixture name  ",
+      "labels": {
+        "root": null,
+        "second": "  branch point  "
+      }
+    },
+    "scriptErrors": {
+      "openOperationConflict": {
+        "code": "storage",
+        "message": "Lane main already has an open operation op-run"
+      },
+      "openBeforeFinish": [
+        "op-run"
+      ],
+      "duplicateEntryId": {
+        "code": "already_exists",
+        "message": "Session id already exists: root-user"
+      },
+      "missingLaneAppend": {
+        "code": "invalid_lane",
+        "message": "Lane not found: missing-lane"
+      },
+      "laneAlreadyExists": {
+        "code": "already_exists",
+        "message": "Lane already exists: branch"
+      },
+      "labelTargetMissing": {
+        "code": "not_found",
+        "message": "Entry not found: ghost"
+      },
+      "invalidLimit": {
+        "code": "invalid_query",
+        "message": "limit must be a positive integer"
+      }
+    },
+    "memoryScriptErrors": {
+      "openOperationConflict": {
+        "code": "storage",
+        "message": "Lane main already has an open operation op-run"
+      },
+      "openBeforeFinish": [
+        "op-run"
+      ],
+      "duplicateEntryId": {
+        "code": "already_exists",
+        "message": "Session id already exists: root-user"
+      },
+      "missingLaneAppend": {
+        "code": "invalid_lane",
+        "message": "Lane not found: missing-lane"
+      },
+      "laneAlreadyExists": {
+        "code": "already_exists",
+        "message": "Lane already exists: branch"
+      },
+      "labelTargetMissing": {
+        "code": "not_found",
+        "message": "Entry not found: ghost"
+      },
+      "invalidLimit": {
+        "code": "invalid_query",
+        "message": "limit must be a positive integer"
+      }
+    },
+    "forks": {
+      "before": {
+        "entryIds": [
+          "root-user",
+          "main-assistant"
+        ],
+        "lanes": [
+          {
+            "lane": "main",
+            "leafId": "main-assistant"
           }
         ],
+        "name": "  fixture name  ",
+        "labels": {
+          "second": null
+        }
+      },
+      "at": {
+        "entryIds": [
+          "root-user",
+          "main-assistant"
+        ],
+        "lanes": [
+          {
+            "lane": "main",
+            "leafId": "main-assistant"
+          }
+        ],
+        "name": "  fixture name  ",
+        "labels": {
+          "second": null
+        }
+      },
+      "tree": {
+        "entryIds": [
+          "root-user",
+          "main-assistant",
+          "second-user",
+          "thinking",
+          "model",
+          "tools",
+          "tools-empty",
+          "custom",
+          "compaction",
+          "branch-summary",
+          "branch-user"
+        ],
+        "lanes": [
+          {
+            "lane": "main",
+            "leafId": "branch-summary"
+          },
+          {
+            "lane": "branch",
+            "leafId": "branch-user"
+          },
+          {
+            "lane": "idle",
+            "leafId": null
+          }
+        ],
+        "name": "  fixture name  ",
+        "labels": {
+          "second": "  branch point  "
+        }
+      },
+      "treeBytes": "{\"kind\":\"header\",\"version\":4,\"id\":\"fork-tree\",\"createdAt\":1770091506789,\"cwd\":\"/fixture/project\",\"parentSessionId\":\"session-fixed\"}\n{\"kind\":\"entry\",\"type\":\"message\",\"id\":\"root-user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"root <>&  \"}],\"timestamp\":1},\"parentId\":null,\"seq\":1,\"timestamp\":1770091506789}\n{\"kind\":\"entry\",\"type\":\"message\",\"id\":\"main-assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"answer\"}],\"api\":\"openai-responses\",\"provider\":\"openai\",\"model\":\"gpt-test\",\"usage\":{\"input\":1,\"output\":2,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":3,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":2},\"parentId\":\"root-user\",\"seq\":2,\"timestamp\":1770091506789}\n{\"kind\":\"entry\",\"type\":\"message\",\"id\":\"second-user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"continue\"}],\"timestamp\":3},\"parentId\":\"main-assistant\",\"seq\":3,\"timestamp\":1770091506789}\n{\"kind\":\"entry\",\"type\":\"thinking_level_change\",\"id\":\"thinking\",\"thinkingLevel\":\"high\",\"parentId\":\"second-user\",\"seq\":4,\"timestamp\":1770091506789}\n{\"kind\":\"entry\",\"type\":\"model_change\",\"id\":\"model\",\"provider\":\"anthropic\",\"modelId\":\"claude-test\",\"parentId\":\"thinking\",\"seq\":5,\"timestamp\":1770091506789}\n{\"kind\":\"entry\",\"type\":\"active_tools_change\",\"id\":\"tools\",\"activeToolNames\":[\"read\",\"bash\"],\"parentId\":\"model\",\"seq\":6,\"timestamp\":1770091506789}\n{\"kind\":\"entry\",\"type\":\"active_tools_change\",\"id\":\"tools-empty\",\"activeToolNames\":[],\"parentId\":\"tools\",\"seq\":7,\"timestamp\":1770091506789}\n{\"kind\":\"entry\",\"type\":\"custom\",\"id\":\"custom\",\"customType\":\"state\",\"data\":{\"nested\":[1,\"two\"]},\"parentId\":\"tools-empty\",\"seq\":8,\"timestamp\":1770091506789}\n{\"kind\":\"entry\",\"type\":\"compaction\",\"id\":\"compaction\",\"summary\":\"prior work\",\"retainedTail\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"retained tail\"}],\"timestamp\":4}],\"tokensBefore\":42.5,\"details\":{\"readFiles\":[\"a.go\"]},\"parentId\":\"custom\",\"seq\":9,\"timestamp\":1770091506789}\n{\"kind\":\"entry\",\"type\":\"branch_summary\",\"id\":\"branch-summary\",\"fromId\":\"compaction\",\"summary\":\"discarded branch work\",\"details\":{\"modifiedFiles\":[\"b.go\"]},\"parentId\":\"compaction\",\"seq\":10,\"timestamp\":1770091506789}\n{\"kind\":\"entry\",\"type\":\"message\",\"id\":\"branch-user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"branch\"}],\"timestamp\":5},\"parentId\":\"root-user\",\"seq\":11,\"timestamp\":1770091506789}\n{\"kind\":\"lane\",\"seq\":12,\"lane\":\"main\",\"leafId\":\"branch-summary\"}\n{\"kind\":\"lane\",\"seq\":13,\"lane\":\"branch\",\"leafId\":\"branch-user\"}\n{\"kind\":\"lane\",\"seq\":14,\"lane\":\"idle\",\"leafId\":null}\n{\"kind\":\"fact\",\"seq\":15,\"fact\":\"name\",\"name\":\"  fixture name  \"}\n{\"kind\":\"fact\",\"seq\":16,\"fact\":\"label\",\"targetId\":\"second-user\",\"label\":\"  branch point  \"}\n",
+      "invalidTarget": {
+        "code": "invalid_fork_target",
+        "message": "Fork target is not a message entry: thinking"
+      }
+    },
+    "compactedContext": {
+      "messages": [
+        {
+          "role": "compactionSummary",
+          "summary": "prior work",
+          "tokensBefore": 42.5,
+          "timestamp": 1770091506789
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "retained tail"
+            }
+          ],
+          "timestamp": 4
+        },
+        {
+          "role": "branchSummary",
+          "summary": "discarded branch work",
+          "fromId": "compaction",
+          "timestamp": 1770091506789
+        }
+      ],
+      "roles": [
+        "compactionSummary",
+        "user",
+        "branchSummary"
+      ],
+      "thinkingLevel": "high",
+      "model": {
+        "provider": "anthropic",
+        "modelId": "claude-test"
+      },
+      "activeToolNames": []
+    },
+    "projectorContexts": {
+      "default": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "transform root"
+              }
+            ],
+            "timestamp": 10
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "tail"
+              }
+            ],
+            "timestamp": 12
+          }
+        ],
+        "roles": [
+          "user",
+          "user"
+        ],
+        "thinkingLevel": "off",
+        "model": {
+          "provider": "openai",
+          "modelId": "gpt-test"
+        },
+        "activeToolNames": null
+      },
+      "projected": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "transform root"
+              }
+            ],
+            "timestamp": 10
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "constructor projector"
+              }
+            ],
+            "timestamp": 20
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "call projector"
+              }
+            ],
+            "timestamp": 21
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "tail"
+              }
+            ],
+            "timestamp": 12
+          }
+        ],
+        "roles": [
+          "user",
+          "user",
+          "user",
+          "user"
+        ],
+        "thinkingLevel": "off",
+        "model": {
+          "provider": "openai",
+          "modelId": "gpt-test"
+        },
+        "activeToolNames": null
+      }
+    },
+    "sessionApi": {
+      "appendedMessageId": "gen-1",
+      "viewCustomId": "gen-2",
+      "mainLeaf": "gen-1",
+      "branchLeaf": "gen-2",
+      "newestMessageId": "gen-1",
+      "stats": {
+        "messageCount": 5,
+        "cachedTokens": 30,
+        "uncachedTokens": 110,
+        "totalTokens": 160,
+        "costTotal": 0.33
+      }
+    },
+    "appendLine": "{\"kind\":\"entry\",\"lane\":\"main\",\"type\":\"custom\",\"id\":\"appended-fixed\",\"customType\":\"after-rehydrate\",\"data\":{\"text\":\"<>&  \"},\"parentId\":\"branch-summary\",\"seq\":23,\"timestamp\":1770091506789}\n",
+    "invalid": [
+      {
+        "name": "missing-header",
+        "content": "",
+        "error": {
+          "code": "invalid_entry",
+          "message": "Invalid JSONL v4 session <fixture>/missing-header.jsonl: line 1 is missing a header"
+        }
+      },
+      {
+        "name": "v3-header",
+        "content": "{\"type\":\"session\",\"version\":3,\"id\":\"s\",\"timestamp\":\"t\",\"cwd\":\"/c\"}\n",
+        "error": {
+          "code": "invalid_entry",
+          "message": "Invalid JSONL v4 session <fixture>/v3-header.jsonl: line 1 is not a header"
+        }
+      },
+      {
+        "name": "unsupported-version",
+        "content": "{\"kind\":\"header\",\"version\":5,\"id\":\"s\",\"createdAt\":0,\"cwd\":\"/c\"}\n",
+        "error": {
+          "code": "invalid_entry",
+          "message": "Invalid JSONL v4 session <fixture>/unsupported-version.jsonl: line 1 has unsupported session version"
+        }
+      },
+      {
+        "name": "metadata-array",
+        "content": "{\"kind\":\"header\",\"version\":4,\"id\":\"s\",\"createdAt\":0,\"cwd\":\"/c\",\"metadata\":[]}\n",
+        "error": {
+          "code": "invalid_entry",
+          "message": "Invalid JSONL v4 session <fixture>/metadata-array.jsonl: line 1 has invalid metadata"
+        }
+      },
+      {
+        "name": "unknown-mutation",
+        "content": "{\"kind\":\"header\",\"version\":4,\"id\":\"s\",\"createdAt\":0,\"cwd\":\"/c\"}\n{\"kind\":\"bogus\",\"seq\":1}\n",
+        "error": {
+          "code": "invalid_entry",
+          "message": "Invalid JSONL v4 session <fixture>/unknown-mutation.jsonl: line 2 has unknown mutation kind"
+        }
+      },
+      {
+        "name": "non-consecutive-seq",
+        "content": "{\"kind\":\"header\",\"version\":4,\"id\":\"s\",\"createdAt\":0,\"cwd\":\"/c\"}\n{\"kind\":\"entry\",\"lane\":\"main\",\"type\":\"custom\",\"id\":\"e\",\"customType\":\"x\",\"parentId\":null,\"seq\":2,\"timestamp\":0}\n",
+        "error": {
+          "code": "invalid_entry",
+          "message": "Invalid JSONL v4 session <fixture>/non-consecutive-seq.jsonl: line 2 has non-consecutive seq 2"
+        }
+      },
+      {
+        "name": "missing-parent",
+        "content": "{\"kind\":\"header\",\"version\":4,\"id\":\"s\",\"createdAt\":0,\"cwd\":\"/c\"}\n{\"kind\":\"entry\",\"lane\":\"main\",\"type\":\"custom\",\"id\":\"e\",\"customType\":\"x\",\"parentId\":\"ghost\",\"seq\":1,\"timestamp\":0}\n",
+        "error": {
+          "code": "invalid_entry",
+          "message": "Invalid JSONL v4 session <fixture>/missing-parent.jsonl: line 2 does not chain to the lane leaf"
+        }
+      },
+      {
+        "name": "dangling-lane",
+        "content": "{\"kind\":\"header\",\"version\":4,\"id\":\"s\",\"createdAt\":0,\"cwd\":\"/c\"}\n{\"kind\":\"lane\",\"seq\":1,\"lane\":\"side\",\"leafId\":\"missing\"}\n",
+        "error": {
+          "code": "invalid_entry",
+          "message": "Invalid JSONL v4 session <fixture>/dangling-lane.jsonl: line 2 references missing lane target missing"
+        }
+      }
+    ],
+    "repairs": {
+      "tornTail": {
+        "content": "{\"kind\":\"header\",\"version\":4,\"id\":\"s\",\"createdAt\":0,\"cwd\":\"/c\"}\n{\"kind\":\"entry\",\"lane\":\"main\",\"type\":\"custom\",\"id\":\"kept\",\"customType\":\"x\",\"parentId\":null,\"seq\":1,\"timestamp\":0}\n{\"kind\":\"en",
+        "entryIds": [
+          "kept"
+        ],
+        "repairedContent": "{\"kind\":\"header\",\"version\":4,\"id\":\"s\",\"createdAt\":0,\"cwd\":\"/c\"}\n{\"kind\":\"entry\",\"lane\":\"main\",\"type\":\"custom\",\"id\":\"kept\",\"customType\":\"x\",\"parentId\":null,\"seq\":1,\"timestamp\":0}\n"
+      },
+      "unterminatedTail": {
+        "content": "{\"kind\":\"header\",\"version\":4,\"id\":\"s\",\"createdAt\":0,\"cwd\":\"/c\"}\n{\"kind\":\"entry\",\"lane\":\"main\",\"type\":\"custom\",\"id\":\"kept\",\"customType\":\"x\",\"parentId\":null,\"seq\":1,\"timestamp\":0}",
+        "entryIds": [
+          "kept"
+        ],
+        "repairedContent": "{\"kind\":\"header\",\"version\":4,\"id\":\"s\",\"createdAt\":0,\"cwd\":\"/c\"}\n{\"kind\":\"entry\",\"lane\":\"main\",\"type\":\"custom\",\"id\":\"kept\",\"customType\":\"x\",\"parentId\":null,\"seq\":1,\"timestamp\":0}\n"
+      }
+    },
+    "repos": {
+      "memory": {
+        "sourceMetadata": {
+          "id": "memory-source",
+          "createdAt": 1770091506789
+        },
+        "openedMetadata": {
+          "id": "memory-source",
+          "createdAt": 1770091506789
+        },
+        "listed": [
+          {
+            "id": "memory-at",
+            "createdAt": 1770091506789,
+            "parentSessionId": "memory-source"
+          },
+          {
+            "id": "memory-before",
+            "createdAt": 1770091506789,
+            "parentSessionId": "memory-source"
+          },
+          {
+            "id": "memory-full",
+            "createdAt": 1770091506789,
+            "parentSessionId": "memory-source"
+          },
+          {
+            "id": "memory-source",
+            "createdAt": 1770091506789
+          },
+          {
+            "id": "memory-tree",
+            "createdAt": 1770091506789,
+            "parentSessionId": "memory-source"
+          }
+        ],
+        "beforeEntries": [
+          {
+            "type": "message",
+            "id": "root-user",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "root"
+                }
+              ],
+              "timestamp": 1
+            },
+            "parentId": null,
+            "seq": 1,
+            "timestamp": 1770091506789
+          },
+          {
+            "type": "message",
+            "id": "main-assistant",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "openai",
+              "model": "gpt-test",
+              "usage": {
+                "input": 1,
+                "output": 2,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 3,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 2
+            },
+            "parentId": "root-user",
+            "seq": 2,
+            "timestamp": 1770091506789
+          }
+        ],
+        "atEntries": [
+          {
+            "type": "message",
+            "id": "root-user",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "root"
+                }
+              ],
+              "timestamp": 1
+            },
+            "parentId": null,
+            "seq": 1,
+            "timestamp": 1770091506789
+          },
+          {
+            "type": "message",
+            "id": "main-assistant",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "openai",
+              "model": "gpt-test",
+              "usage": {
+                "input": 1,
+                "output": 2,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 3,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 2
+            },
+            "parentId": "root-user",
+            "seq": 2,
+            "timestamp": 1770091506789
+          }
+        ],
+        "fullEntries": [
+          {
+            "type": "message",
+            "id": "root-user",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "root"
+                }
+              ],
+              "timestamp": 1
+            },
+            "parentId": null,
+            "seq": 1,
+            "timestamp": 1770091506789
+          },
+          {
+            "type": "message",
+            "id": "main-assistant",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "openai",
+              "model": "gpt-test",
+              "usage": {
+                "input": 1,
+                "output": 2,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 3,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 2
+            },
+            "parentId": "root-user",
+            "seq": 2,
+            "timestamp": 1770091506789
+          },
+          {
+            "type": "message",
+            "id": "second-user",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "continue"
+                }
+              ],
+              "timestamp": 3
+            },
+            "parentId": "main-assistant",
+            "seq": 3,
+            "timestamp": 1770091506789
+          }
+        ],
+        "treeEntries": [
+          {
+            "type": "message",
+            "id": "root-user",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "root"
+                }
+              ],
+              "timestamp": 1
+            },
+            "parentId": null,
+            "seq": 1,
+            "timestamp": 1770091506789
+          },
+          {
+            "type": "message",
+            "id": "main-assistant",
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "openai",
+              "model": "gpt-test",
+              "usage": {
+                "input": 1,
+                "output": 2,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 3,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 2
+            },
+            "parentId": "root-user",
+            "seq": 2,
+            "timestamp": 1770091506789
+          },
+          {
+            "type": "message",
+            "id": "second-user",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "continue"
+                }
+              ],
+              "timestamp": 3
+            },
+            "parentId": "main-assistant",
+            "seq": 3,
+            "timestamp": 1770091506789
+          }
+        ],
+        "treeLanes": [
+          {
+            "lane": "main",
+            "leafId": "second-user"
+          }
+        ],
+        "duplicateCreate": {
+          "code": "already_exists",
+          "message": "Session already exists: memory-source"
+        },
         "openAfterDelete": {
           "code": "not_found",
           "message": "Session not found: memory-source"
@@ -1203,9 +2105,11 @@
       "jsonl": {
         "sourceMetadata": {
           "id": "jsonl-source",
-          "createdAt": "<createdAt>",
+          "createdAt": 1770091506789,
           "cwd": "/tmp/my-project",
-          "path": "<fixture>/repo-sessions/--tmp-my-project--/<createdAt>_jsonl-source.jsonl",
+          "path": "<fixture>/repo-sessions/--tmp-my-project--/2026-02-03T04-05-06-789Z_jsonl-source.jsonl",
+          "modifiedAt": "<modifiedAt>",
+          "sourceFormat": 4,
           "metadata": {
             "2": "two",
             "10": "ten",
@@ -1218,15 +2122,19 @@
         },
         "otherMetadata": {
           "id": "jsonl-other",
-          "createdAt": "<createdAt>",
+          "createdAt": 1770091506789,
           "cwd": "/tmp/other-project",
-          "path": "<fixture>/repo-sessions/--tmp-other-project--/<createdAt>_jsonl-other.jsonl"
+          "path": "<fixture>/repo-sessions/--tmp-other-project--/2026-02-03T04-05-06-789Z_jsonl-other.jsonl",
+          "modifiedAt": "<modifiedAt>",
+          "sourceFormat": 4
         },
         "openedMetadata": {
           "id": "jsonl-source",
-          "createdAt": "<createdAt>",
+          "createdAt": 1770091506789,
           "cwd": "/tmp/my-project",
-          "path": "<fixture>/repo-sessions/--tmp-my-project--/<createdAt>_jsonl-source.jsonl",
+          "path": "<fixture>/repo-sessions/--tmp-my-project--/2026-02-03T04-05-06-789Z_jsonl-source.jsonl",
+          "modifiedAt": "<modifiedAt>",
+          "sourceFormat": 4,
           "metadata": {
             "2": "two",
             "10": "ten",
@@ -1241,24 +2149,23 @@
           {
             "type": "message",
             "id": "root-user",
-            "parentId": null,
-            "timestamp": "2026-02-03T04:05:07.000Z",
             "message": {
               "role": "user",
               "content": [
                 {
                   "type": "text",
-                  "text": "root <>&  "
+                  "text": "root"
                 }
               ],
               "timestamp": 1
-            }
+            },
+            "parentId": null,
+            "seq": 1,
+            "timestamp": 1770091506789
           },
           {
             "type": "message",
             "id": "main-assistant",
-            "parentId": "root-user",
-            "timestamp": "2026-02-03T04:05:08.000Z",
             "message": {
               "role": "assistant",
               "content": [
@@ -1286,13 +2193,14 @@
               },
               "stopReason": "stop",
               "timestamp": 2
-            }
+            },
+            "parentId": "root-user",
+            "seq": 2,
+            "timestamp": 1770091506789
           },
           {
             "type": "message",
             "id": "second-user",
-            "parentId": "main-assistant",
-            "timestamp": "2026-02-03T04:05:09.000Z",
             "message": {
               "role": "user",
               "content": [
@@ -1302,15 +2210,20 @@
                 }
               ],
               "timestamp": 3
-            }
+            },
+            "parentId": "main-assistant",
+            "seq": 3,
+            "timestamp": 1770091506789
           }
         ],
         "listByCwd": [
           {
             "id": "jsonl-source",
-            "createdAt": "<createdAt>",
+            "createdAt": 1770091506789,
             "cwd": "/tmp/my-project",
-            "path": "<fixture>/repo-sessions/--tmp-my-project--/<createdAt>_jsonl-source.jsonl",
+            "path": "<fixture>/repo-sessions/--tmp-my-project--/2026-02-03T04-05-06-789Z_jsonl-source.jsonl",
+            "modifiedAt": "<modifiedAt>",
+            "sourceFormat": 4,
             "metadata": {
               "2": "two",
               "10": "ten",
@@ -1325,15 +2238,19 @@
         "listAll": [
           {
             "id": "jsonl-other",
-            "createdAt": "<createdAt>",
+            "createdAt": 1770091506789,
             "cwd": "/tmp/other-project",
-            "path": "<fixture>/repo-sessions/--tmp-other-project--/<createdAt>_jsonl-other.jsonl"
+            "path": "<fixture>/repo-sessions/--tmp-other-project--/2026-02-03T04-05-06-789Z_jsonl-other.jsonl",
+            "modifiedAt": "<modifiedAt>",
+            "sourceFormat": 4
           },
           {
             "id": "jsonl-source",
-            "createdAt": "<createdAt>",
+            "createdAt": 1770091506789,
             "cwd": "/tmp/my-project",
-            "path": "<fixture>/repo-sessions/--tmp-my-project--/<createdAt>_jsonl-source.jsonl",
+            "path": "<fixture>/repo-sessions/--tmp-my-project--/2026-02-03T04-05-06-789Z_jsonl-source.jsonl",
+            "modifiedAt": "<modifiedAt>",
+            "sourceFormat": 4,
             "metadata": {
               "2": "two",
               "10": "ten",
@@ -1349,42 +2266,34 @@
         "before": {
           "metadata": {
             "id": "jsonl-before",
-            "createdAt": "<createdAt>",
+            "createdAt": 1770091506789,
             "cwd": "/tmp/target",
-            "path": "<fixture>/repo-sessions/--tmp-target--/<createdAt>_jsonl-before.jsonl",
-            "parentSessionPath": "<fixture>/repo-sessions/--tmp-my-project--/<createdAt>_jsonl-source.jsonl",
-            "metadata": {
-              "2": "two",
-              "10": "ten",
-              "profile": "reviewer",
-              "nested": {
-                "z": 1,
-                "a": 2
-              }
-            }
+            "path": "<fixture>/repo-sessions/--tmp-target--/2026-02-03T04-05-06-789Z_jsonl-before.jsonl",
+            "modifiedAt": "<modifiedAt>",
+            "sourceFormat": 4,
+            "parentSessionId": "jsonl-source"
           },
           "entries": [
             {
               "type": "message",
               "id": "root-user",
-              "parentId": null,
-              "timestamp": "2026-02-03T04:05:07.000Z",
               "message": {
                 "role": "user",
                 "content": [
                   {
                     "type": "text",
-                    "text": "root <>&  "
+                    "text": "root"
                   }
                 ],
                 "timestamp": 1
-              }
+              },
+              "parentId": null,
+              "seq": 1,
+              "timestamp": 1770091506789
             },
             {
               "type": "message",
               "id": "main-assistant",
-              "parentId": "root-user",
-              "timestamp": "2026-02-03T04:05:08.000Z",
               "message": {
                 "role": "assistant",
                 "content": [
@@ -1412,49 +2321,44 @@
                 },
                 "stopReason": "stop",
                 "timestamp": 2
-              }
+              },
+              "parentId": "root-user",
+              "seq": 2,
+              "timestamp": 1770091506789
             }
           ]
         },
         "inherited": {
           "metadata": {
             "id": "jsonl-inherited",
-            "createdAt": "<createdAt>",
+            "createdAt": 1770091506789,
             "cwd": "/tmp/target",
-            "path": "<fixture>/repo-sessions/--tmp-target--/<createdAt>_jsonl-inherited.jsonl",
-            "parentSessionPath": "<fixture>/repo-sessions/--tmp-my-project--/<createdAt>_jsonl-source.jsonl",
-            "metadata": {
-              "2": "two",
-              "10": "ten",
-              "profile": "reviewer",
-              "nested": {
-                "z": 1,
-                "a": 2
-              }
-            }
+            "path": "<fixture>/repo-sessions/--tmp-target--/2026-02-03T04-05-06-789Z_jsonl-inherited.jsonl",
+            "modifiedAt": "<modifiedAt>",
+            "sourceFormat": 4,
+            "parentSessionId": "jsonl-source"
           },
           "entries": [
             {
               "type": "message",
               "id": "root-user",
-              "parentId": null,
-              "timestamp": "2026-02-03T04:05:07.000Z",
               "message": {
                 "role": "user",
                 "content": [
                   {
                     "type": "text",
-                    "text": "root <>&  "
+                    "text": "root"
                   }
                 ],
                 "timestamp": 1
-              }
+              },
+              "parentId": null,
+              "seq": 1,
+              "timestamp": 1770091506789
             },
             {
               "type": "message",
               "id": "main-assistant",
-              "parentId": "root-user",
-              "timestamp": "2026-02-03T04:05:08.000Z",
               "message": {
                 "role": "assistant",
                 "content": [
@@ -1482,13 +2386,14 @@
                 },
                 "stopReason": "stop",
                 "timestamp": 2
-              }
+              },
+              "parentId": "root-user",
+              "seq": 2,
+              "timestamp": 1770091506789
             },
             {
               "type": "message",
               "id": "second-user",
-              "parentId": "main-assistant",
-              "timestamp": "2026-02-03T04:05:09.000Z",
               "message": {
                 "role": "user",
                 "content": [
@@ -1498,17 +2403,22 @@
                   }
                 ],
                 "timestamp": 3
-              }
+              },
+              "parentId": "main-assistant",
+              "seq": 3,
+              "timestamp": 1770091506789
             }
           ]
         },
-        "overridden": {
+        "tree": {
           "metadata": {
-            "id": "jsonl-overridden",
-            "createdAt": "<createdAt>",
+            "id": "jsonl-tree",
+            "createdAt": 1770091506789,
             "cwd": "/tmp/target",
-            "path": "<fixture>/repo-sessions/--tmp-target--/<createdAt>_jsonl-overridden.jsonl",
-            "parentSessionPath": "/fixture/override-parent.jsonl",
+            "path": "<fixture>/repo-sessions/--tmp-target--/2026-02-03T04-05-06-789Z_jsonl-tree.jsonl",
+            "modifiedAt": "<modifiedAt>",
+            "sourceFormat": 4,
+            "parentSessionId": "override-parent",
             "metadata": {
               "profile": "writer"
             }
@@ -1517,24 +2427,23 @@
             {
               "type": "message",
               "id": "root-user",
-              "parentId": null,
-              "timestamp": "2026-02-03T04:05:07.000Z",
               "message": {
                 "role": "user",
                 "content": [
                   {
                     "type": "text",
-                    "text": "root <>&  "
+                    "text": "root"
                   }
                 ],
                 "timestamp": 1
-              }
+              },
+              "parentId": null,
+              "seq": 1,
+              "timestamp": 1770091506789
             },
             {
               "type": "message",
               "id": "main-assistant",
-              "parentId": "root-user",
-              "timestamp": "2026-02-03T04:05:08.000Z",
               "message": {
                 "role": "assistant",
                 "content": [
@@ -1562,13 +2471,14 @@
                 },
                 "stopReason": "stop",
                 "timestamp": 2
-              }
+              },
+              "parentId": "root-user",
+              "seq": 2,
+              "timestamp": 1770091506789
             },
             {
               "type": "message",
               "id": "second-user",
-              "parentId": "main-assistant",
-              "timestamp": "2026-02-03T04:05:09.000Z",
               "message": {
                 "role": "user",
                 "content": [
@@ -1578,49 +2488,35 @@
                   }
                 ],
                 "timestamp": 3
-              }
+              },
+              "parentId": "main-assistant",
+              "seq": 3,
+              "timestamp": 1770091506789
+            }
+          ],
+          "lanes": [
+            {
+              "lane": "main",
+              "leafId": "second-user"
             }
           ]
+        },
+        "sourceBytes": "{\"kind\":\"header\",\"version\":4,\"id\":\"jsonl-source\",\"createdAt\":1770091506789,\"cwd\":\"/tmp/my-project\",\"metadata\":{\"2\":\"two\",\"10\":\"ten\",\"profile\":\"reviewer\",\"nested\":{\"z\":1,\"a\":2}}}\n{\"kind\":\"entry\",\"lane\":\"main\",\"type\":\"message\",\"id\":\"root-user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"root\"}],\"timestamp\":1},\"parentId\":null,\"seq\":1,\"timestamp\":1770091506789}\n{\"kind\":\"entry\",\"lane\":\"main\",\"type\":\"message\",\"id\":\"main-assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"answer\"}],\"api\":\"openai-responses\",\"provider\":\"openai\",\"model\":\"gpt-test\",\"usage\":{\"input\":1,\"output\":2,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":3,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":2},\"parentId\":\"root-user\",\"seq\":2,\"timestamp\":1770091506789}\n{\"kind\":\"entry\",\"lane\":\"main\",\"type\":\"message\",\"id\":\"second-user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"continue\"}],\"timestamp\":3},\"parentId\":\"main-assistant\",\"seq\":3,\"timestamp\":1770091506789}\n",
+        "treeBytes": "{\"kind\":\"header\",\"version\":4,\"id\":\"jsonl-tree\",\"createdAt\":1770091506789,\"cwd\":\"/tmp/target\",\"parentSessionId\":\"override-parent\",\"metadata\":{\"profile\":\"writer\"}}\n{\"kind\":\"entry\",\"type\":\"message\",\"id\":\"root-user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"root\"}],\"timestamp\":1},\"parentId\":null,\"seq\":1,\"timestamp\":1770091506789}\n{\"kind\":\"entry\",\"type\":\"message\",\"id\":\"main-assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"answer\"}],\"api\":\"openai-responses\",\"provider\":\"openai\",\"model\":\"gpt-test\",\"usage\":{\"input\":1,\"output\":2,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":3,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":2},\"parentId\":\"root-user\",\"seq\":2,\"timestamp\":1770091506789}\n{\"kind\":\"entry\",\"type\":\"message\",\"id\":\"second-user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"continue\"}],\"timestamp\":3},\"parentId\":\"main-assistant\",\"seq\":3,\"timestamp\":1770091506789}\n{\"kind\":\"lane\",\"seq\":4,\"lane\":\"main\",\"leafId\":\"second-user\"}\n",
+        "invalidIdCreate": {
+          "code": "invalid_payload",
+          "message": "Session id must be non-empty, contain only alphanumeric characters, '-', '_', and '.', and start and end with an alphanumeric character"
+        },
+        "duplicateIdCreate": {
+          "code": "already_exists",
+          "message": "Session already exists: jsonl-source"
         },
         "sourceExistsBeforeDelete": true,
         "sourceExistsAfterDelete": false,
         "openAfterDelete": {
           "code": "not_found",
-          "message": "Session not found: <fixture>/repo-sessions/--tmp-my-project--/<createdAt>_jsonl-source.jsonl"
-        },
-        "noncanonicalSourceBytes": "{ \"type\" : \"session\", \"version\" : 3, \"id\" : \"noncanonical\", \"timestamp\" : \"2026-02-03T04:05:06.789Z\", \"cwd\" : \"/tmp/noncanonical\", \"metadata\" : { \"10\" : \"ten\", \"2\" : \"two\", \"profile\" : \"reviewer\", \"nested\" : { \"z\" : 1, \"a\" : 2 } } }\n{ \"type\" : \"message\", \"id\" : \"noncanonical-user\", \"parentId\" : null, \"timestamp\" : \"2026-02-03T04:07:00.000Z\", \"message\" : { \"role\" : \"user\", \"content\" : [ { \"type\" : \"text\", \"text\" : \"noncanonical\" } ], \"timestamp\" : 30 } }\n",
-        "noncanonicalMetadata": {
-          "id": "noncanonical",
-          "createdAt": "<createdAt>",
-          "cwd": "/tmp/noncanonical",
-          "path": "<fixture>/noncanonical-source.jsonl",
-          "metadata": {
-            "2": "two",
-            "10": "ten",
-            "profile": "reviewer",
-            "nested": {
-              "z": 1,
-              "a": 2
-            }
-          }
-        },
-        "reserializedMetadata": {
-          "id": "jsonl-reserialized",
-          "createdAt": "<createdAt>",
-          "cwd": "/tmp/reserialized",
-          "path": "<fixture>/repo-sessions/--tmp-reserialized--/<createdAt>_jsonl-reserialized.jsonl",
-          "parentSessionPath": "<fixture>/noncanonical-source.jsonl",
-          "metadata": {
-            "2": "two",
-            "10": "ten",
-            "profile": "reviewer",
-            "nested": {
-              "z": 1,
-              "a": 2
-            }
-          }
-        },
-        "reserializedBytes": "{\"type\":\"session\",\"version\":3,\"id\":\"jsonl-reserialized\",\"timestamp\":\"<createdAt>\",\"cwd\":\"/tmp/reserialized\",\"parentSession\":\"<fixture>/noncanonical-source.jsonl\",\"metadata\":{\"2\":\"two\",\"10\":\"ten\",\"profile\":\"reviewer\",\"nested\":{\"z\":1,\"a\":2}}}\n{\"type\":\"message\",\"id\":\"noncanonical-user\",\"parentId\":null,\"timestamp\":\"2026-02-03T04:07:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"noncanonical\"}],\"timestamp\":30}}\n"
+          "message": "Session not found: jsonl-source"
+        }
       }
     }
   },

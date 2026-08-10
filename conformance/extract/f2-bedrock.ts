@@ -492,12 +492,14 @@ async function extractBedrockProvider(upstreamRoot: string): Promise<BedrockProv
             login?(interaction: {
               prompt(input: unknown): Promise<string>;
               notify(event: unknown): void;
+              signal: AbortSignal;
             }): Promise<{ type: "api_key"; key?: string; env?: Record<string, string> }>;
             resolve(input: {
               ctx: {
                 env(name: string): Promise<string | undefined>;
                 fileExists(path: string): Promise<boolean>;
               };
+              signal: AbortSignal;
             }): Promise<{ auth: { apiKey?: string }; source?: string } | undefined>;
           };
         };
@@ -524,6 +526,7 @@ async function extractBedrockProvider(upstreamRoot: string): Promise<BedrockProv
           return definition.responses[responseIndex++] ?? "";
         },
         notify: (event) => notifications.push(event),
+        signal: new AbortController().signal,
       });
       login.push({ ...definition, credential, prompts, notifications });
     }
@@ -543,6 +546,7 @@ async function extractBedrockProvider(upstreamRoot: string): Promise<BedrockProv
           env: async (name) => definition.env[name as keyof typeof definition.env],
           fileExists: async () => false,
         },
+        signal: new AbortController().signal,
       });
       cases.push({
         ...definition,

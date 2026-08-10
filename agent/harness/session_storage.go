@@ -373,6 +373,9 @@ type JSONLSessionStorage struct {
 	header  []byte
 	content []byte
 	append  func([]byte) error
+	// v4 carries the live mutation-log state for v4-format sessions; the v3
+	// fields above then hold its projection.
+	v4 *sessionV4State
 }
 
 // RehydrateJSONLSession opens an upstream v3 JSONL session directly from
@@ -399,6 +402,9 @@ func rehydrateJSONLSessionWithHeader(
 	lines := nonBlankHarnessLines(content)
 	if len(lines) == 0 {
 		return nil, invalidHarnessSession(filePath, "missing session header")
+	}
+	if isV4HarnessHeaderLine(lines[0]) {
+		return rehydrateV4JSONLSession(content, filePath, appendLine)
 	}
 	header, err := parseHeader(lines[0], filePath)
 	if err != nil {
@@ -518,6 +524,9 @@ func (storage *JSONLSessionStorage) SetLeafID(leafID *string) error {
 			return newSessionError(SessionErrorNotFound, "Entry %s not found", *leafID)
 		}
 	}
+	if storage.v4 != nil {
+		return storage.setV4LeafLocked(leafID)
+	}
 	id, err := storage.state.createEntryID()
 	if err != nil {
 		return err
@@ -545,6 +554,9 @@ func (storage *JSONLSessionStorage) appendLocked(entry SessionTreeEntry) error {
 }
 
 func (storage *JSONLSessionStorage) appendLockedWithLabel(entry SessionTreeEntry, label string) error {
+	if storage.v4 != nil {
+		return storage.appendV4EntryLocked(entry)
+	}
 	encoded, err := marshalHarnessEntry(entry)
 	if err != nil {
 		return err
@@ -582,12 +594,22 @@ func (storage *JSONLSessionStorage) Label(id string) (string, bool) {
 func (storage *JSONLSessionStorage) SessionName() (string, bool) {
 	storage.mu.RLock()
 	defer storage.mu.RUnlock()
+	if storage.v4 != nil {
+		if storage.v4.name == nil {
+			return "", false
+		}
+		name := trimHarnessJSSpace(*storage.v4.name)
+		return name, name != ""
+	}
 	return storage.state.sessionName()
 }
 
 func (storage *JSONLSessionStorage) SessionStats() SessionStats {
 	storage.mu.RLock()
 	defer storage.mu.RUnlock()
+	if storage.v4 != nil {
+		return storage.v4.stats
+	}
 	return storage.state.sessionStats()
 }
 

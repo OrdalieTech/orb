@@ -296,7 +296,11 @@ func StreamOpenAIResponsesWithOptions(
 			err = errors.New("OpenAI Responses stream ended without a stop reason") //nolint:staticcheck // Exact upstream text is observable.
 		}
 		if err == nil && (output.StopReason == ai.StopReasonAborted || output.StopReason == ai.StopReasonError) {
-			err = errors.New("An unknown error occurred") //nolint:staticcheck // Exact upstream error text is observable.
+			message := "An unknown error occurred"
+			if output.ErrorMessage != nil {
+				message = *output.ErrorMessage
+			}
+			err = errors.New(message)
 		}
 		if err != nil {
 			fail(err)
@@ -1489,15 +1493,25 @@ func (processor *openAIResponsesProcessor) finalizeResponse(raw json.RawMessage)
 			applyResponsesServiceTierPricing(&processor.output.Usage, *serviceTier, processor.model)
 		}
 	}
+	// For incomplete responses, retain the provider's specific reason so
+	// max-output truncation and content filtering stay distinct.
+	incompleteReason := ""
+	if response.IncompleteDetails != nil {
+		incompleteReason = response.IncompleteDetails.Reason
+	}
 	if response.Status != "" {
 		rawStopReason := response.Status
+		if incompleteReason != "" {
+			rawStopReason = response.Status + "." + incompleteReason
+		}
 		processor.output.RawStopReason = &rawStopReason
 	}
-	stopReason, err := mapResponsesStopReason(response.Status)
+	stopReason, errorMessage, err := mapResponsesStopReason(response.Status, incompleteReason)
 	if err != nil {
 		return err
 	}
 	processor.output.StopReason = stopReason
+	processor.output.ErrorMessage = errorMessage
 	if stopReason == ai.StopReasonStop {
 		for _, content := range processor.output.Content {
 			if _, ok := content.(*ai.ToolCall); ok {
@@ -1509,16 +1523,23 @@ func (processor *openAIResponsesProcessor) finalizeResponse(raw json.RawMessage)
 	return nil
 }
 
-func mapResponsesStopReason(status string) (ai.StopReason, error) {
+func mapResponsesStopReason(status, incompleteReason string) (ai.StopReason, *string, error) {
 	switch status {
 	case "", "completed", "in_progress", "queued":
-		return ai.StopReasonStop, nil
+		return ai.StopReasonStop, nil, nil
 	case "incomplete":
-		return ai.StopReasonLength, nil
+		if incompleteReason == "max_output_tokens" {
+			return ai.StopReasonLength, nil, nil
+		}
+		message := "Response incomplete without a provider reason"
+		if incompleteReason != "" {
+			message = "Response incomplete: " + incompleteReason
+		}
+		return ai.StopReasonError, &message, nil
 	case "failed", "cancelled":
-		return ai.StopReasonError, nil
+		return ai.StopReasonError, nil, nil
 	default:
-		return "", fmt.Errorf("Unhandled stop reason: %s", status) //nolint:staticcheck // Exact upstream error text is observable.
+		return "", nil, fmt.Errorf("Unhandled stop reason: %s", status) //nolint:staticcheck // Exact upstream error text is observable.
 	}
 }
 

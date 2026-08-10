@@ -245,6 +245,10 @@ async function captureBehavior(
 		}
 		case "scoped-models": {
 			context = baseContext(modules);
+			// Upstream >=0.84 always opens the selector, even with no models.
+			context.showSelector = () => {
+				context.__transition = "scoped-models-selector";
+			};
 			// Upstream >=0.82.0 reads the configured scope before the
 			// "no models available" early return; both are empty here.
 			context.runtimeHost = {
@@ -254,6 +258,7 @@ async function captureBehavior(
 					modelRuntime: {
 						refresh: async () => {},
 						getAvailable: async () => [],
+						getAvailableSnapshot: () => [],
 					},
 				},
 			};
