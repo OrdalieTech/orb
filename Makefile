@@ -11,7 +11,7 @@ GO_ENV := GOCACHE=$(CURDIR)/.tools/cache/go-build GOMODCACHE=$(CURDIR)/.tools/ca
 endif
 LINT_ENV := $(GO_ENV) GOLANGCI_LINT_CACHE=$(CURDIR)/.tools/cache/golangci-lint
 
-.PHONY: check build test lint nightly-live upstream product-assets product-assets-check fixtures fixtures-check ensure-upstream-fixture-tools upstream-rpc-tests sync sync-bump
+.PHONY: check build test lint nightly-live upstream product-assets product-assets-check fixtures fixtures-tui fixtures-check ensure-upstream-fixture-tools upstream-rpc-tests sync sync-bump
 
 # The canonical gate (upstream's `npm run check` norm): run after any code change.
 check: build lint test
@@ -89,17 +89,32 @@ ensure-upstream-fixture-tools: upstream
 fixtures: ensure-upstream-fixture-tools product-assets
 	@cd "$(UPSTREAM_DIR)" && node --import tsx "$(CURDIR)/conformance/extract/generate.ts" "$(CURDIR)/conformance/fixtures" $(UPSTREAM_COMMIT)
 
+# Regenerate the Orb-owned TUI render snapshots (D35): the F12* families and
+# the WP450 replay/UI-demo render files rewrite from Orb's own renderer, then
+# a comparison pass proves the tree is self-consistent. Behavior-shaped values
+# in those files are frozen upstream captures and are never rewritten.
+fixtures-tui:
+	@ORB_UPDATE_F12=1 $(GO_ENV) CGO_ENABLED=0 go test -count=1 ./conformance/runner -run 'TestF12'
+	@ORB_UPDATE_F12=1 $(GO_ENV) CGO_ENABLED=0 go test -count=1 ./codingagent/modes -run 'TestF12|TestWP450'
+	@$(GO_ENV) CGO_ENABLED=0 go test -count=1 ./conformance/runner ./codingagent/modes ./codingagent -run 'TestF12|TestWP450|TestSnapshotCodec'
+
 # The reciprocal TS-reads-Go gates run first: as the last command of its recipe
 # line, a fixture diff aborts the target, which previously skipped them silently.
 # Linux-only in practice (as in CI): F9 writes AGENTS.md and AGENTS.MD as
 # distinct files, which a case-insensitive macOS volume collapses.
+# The Orb-owned render snapshots (D35) are excluded from the upstream
+# extraction diff and guarded by their Go comparison tests instead: snapshot
+# drift fails here, regeneration is the explicit `make fixtures-tui`.
 fixtures-check: ensure-upstream-fixture-tools product-assets-check
 	@ORB_F6_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./conformance/runner -run TestF6SessionWriteAndProjectionMatchUpstream
 	@ORB_AUTH_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./codingagent/config -run TestAuthStorageConformance
+	@$(GO_ENV) CGO_ENABLED=0 go test -count=1 ./conformance/runner -run 'TestF12|TestSnapshotCodec'
+	@$(GO_ENV) CGO_ENABLED=0 go test -count=1 ./codingagent/modes -run 'TestF12|TestWP450'
+	@$(GO_ENV) CGO_ENABLED=0 go test -count=1 ./codingagent -run 'TestF12'
 	@fixture_tmp=$$(mktemp -d); \
 		trap 'rm -rf "$$fixture_tmp"' EXIT; \
 		cd "$(UPSTREAM_DIR)" && node --import tsx "$(CURDIR)/conformance/extract/generate.ts" "$$fixture_tmp" $(UPSTREAM_COMMIT); \
-		diff -ru "$(CURDIR)/conformance/fixtures" "$$fixture_tmp"
+		diff -ru -x 'F12*' -x 'WP450' "$(CURDIR)/conformance/fixtures" "$$fixture_tmp"
 
 upstream-rpc-tests: ensure-upstream-fixture-tools
 	@mkdir -p .tools/bin

@@ -19,6 +19,7 @@ import (
 	"github.com/OrdalieTech/orb/codingagent"
 	"github.com/OrdalieTech/orb/codingagent/config"
 	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/conformance/runner"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -180,6 +181,7 @@ func TestF12UnexpectedCommandArgumentsFallThrough(t *testing.T) {
 func TestF12HiddenCommandBehaviorMatchesUpstream(t *testing.T) {
 	fixture := loadF12CommandFixture(t)
 	assertF12HiddenBehaviorFixture(t, fixture)
+	snap := runner.OpenSnapshot(t, "F12-commands", "commands.json")
 
 	t.Run("debug", func(t *testing.T) {
 		initF12RawTheme(t)
@@ -214,8 +216,12 @@ func TestF12HiddenCommandBehaviorMatchesUpstream(t *testing.T) {
 			t.Fatalf("debug log differs\nwant: %q\n got: %q", fixture.Behavior.Debug.Content, content)
 		}
 		rawFrame := replaceF12FramePaths(mode.chat.Render(52), agentDir, "<agent-dir>")
-		assertF12RawFrame(t, fixture.Behavior.Debug.RawChatFrame, rawFrame)
 		gotFrame := normalizeF12Lines(rawFrame)
+		if updateF12RawFrame(t, snap, rawFrame, "behavior", "debug", "rawChatFrame") {
+			snap.Set(gotFrame, "behavior", "debug", "chatFrame")
+			return
+		}
+		assertF12RawFrame(t, fixture.Behavior.Debug.RawChatFrame, rawFrame)
 		if !reflect.DeepEqual(gotFrame, fixture.Behavior.Debug.ChatFrame) {
 			t.Fatalf("debug chat frame differs\nwant: %#v\n got: %#v", fixture.Behavior.Debug.ChatFrame, gotFrame)
 		}
@@ -229,10 +235,14 @@ func TestF12HiddenCommandBehaviorMatchesUpstream(t *testing.T) {
 			t.Fatal(`hidden command "arminsayshi" was not handled`)
 		}
 		raw := mode.chat.Render(behavior.Frames[0].Width)
-		assertF12RawFrame(t, behavior.Frames[0].Raw, raw)
 		got := normalizeF12Lines(raw)
-		if !reflect.DeepEqual(got, behavior.Frames[0].Lines) {
-			t.Fatalf("Armin initial frame differs\nwant: %#v\n got: %#v", behavior.Frames[0].Lines, got)
+		if updateF12RawFrame(t, snap, raw, "behavior", "arminSaysHi", "frames", 0, "raw") {
+			snap.Set(got, "behavior", "arminSaysHi", "frames", 0, "lines")
+		} else {
+			assertF12RawFrame(t, behavior.Frames[0].Raw, raw)
+			if !reflect.DeepEqual(got, behavior.Frames[0].Lines) {
+				t.Fatalf("Armin initial frame differs\nwant: %#v\n got: %#v", behavior.Frames[0].Lines, got)
+			}
 		}
 
 		requester := &f12RenderRequester{}
@@ -255,8 +265,12 @@ func TestF12HiddenCommandBehaviorMatchesUpstream(t *testing.T) {
 			t.Helper()
 			frame := behavior.Frames[index]
 			raw := append([]string{""}, component.Render(frame.Width)...)
-			assertF12RawFrame(t, frame.Raw, raw)
 			got := normalizeF12Lines(raw[1:])
+			if updateF12RawFrame(t, snap, raw, "behavior", "arminSaysHi", "frames", index, "raw") {
+				snap.Set(append([]string{frame.Lines[0]}, got...), "behavior", "arminSaysHi", "frames", index, "lines")
+				return
+			}
+			assertF12RawFrame(t, frame.Raw, raw)
 			if !reflect.DeepEqual(got, frame.Lines[1:]) {
 				t.Fatalf("Armin %s frame differs\nwant: %#v\n got: %#v", frame.ID, frame.Lines[1:], got)
 			}
@@ -294,10 +308,14 @@ func TestF12HiddenCommandBehaviorMatchesUpstream(t *testing.T) {
 		if !mode.handleSlashCommand("dementedelves", "") {
 			t.Fatal(`hidden command "dementedelves" was not handled`)
 		}
-		for _, frame := range behavior.Frames {
+		for frameIndex, frame := range behavior.Frames {
 			raw := mode.chat.Render(frame.Width)
-			assertF12RawFrame(t, frame.Raw, raw)
 			got := normalizeF12Lines(raw)
+			if updateF12RawFrame(t, snap, raw, "behavior", "dementedElves", "frames", frameIndex, "raw") {
+				snap.Set(got, "behavior", "dementedElves", "frames", frameIndex, "lines")
+				continue
+			}
+			assertF12RawFrame(t, frame.Raw, raw)
 			if !reflect.DeepEqual(got, frame.Lines) {
 				t.Fatalf("Earendil frame at width %d differs\nwant: %#v\n got: %#v", frame.Width, frame.Lines, got)
 			}

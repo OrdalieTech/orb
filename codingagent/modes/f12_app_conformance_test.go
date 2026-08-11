@@ -22,6 +22,7 @@ import (
 	"github.com/OrdalieTech/orb/codingagent/extensions"
 	"github.com/OrdalieTech/orb/codingagent/modes/theme"
 	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/conformance/runner"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -650,6 +651,7 @@ func TestF12ApplicationTerminalInputLifecycleMatchesUpstream(t *testing.T) {
 func TestF12ApplicationWorkingLifecycleMatchesUpstream(t *testing.T) {
 	initF12ApplicationTheme(t)
 	want := loadF12ApplicationFixture(t).Lifecycle.Working
+	snap := runner.OpenSnapshot(t, "F12-app", "status-frames.json")
 	modeUI := tui.NewTUI(newFakeTerminal(48, 24))
 	mode := &InteractiveMode{ui: modeUI, status: &tui.Container{}}
 	interactiveUI := NewInteractiveUI(mode)
@@ -668,31 +670,41 @@ func TestF12ApplicationWorkingLifecycleMatchesUpstream(t *testing.T) {
 			indicator.Dispose()
 		}
 	})
-	if got := mode.status.Render(48); !reflect.DeepEqual(got, want.InitialLines) {
+	initial := mode.status.Render(48)
+	if !snap.Set(initial, "lifecycle", "working", "initialLines") && !reflect.DeepEqual(initial, want.InitialLines) {
 		wantJSON, _ := json.Marshal(want.InitialLines)
-		gotJSON, _ := json.Marshal(got)
+		gotJSON, _ := json.Marshal(initial)
 		t.Errorf("working state was not retained before streaming\nwant: %s\n got: %s", wantJSON, gotJSON)
 	}
 	deadline := time.Now().Add(time.Second)
-	for !reflect.DeepEqual(mode.status.Render(48), want.NextLines) && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	if got := mode.status.Render(48); !reflect.DeepEqual(got, want.NextLines) {
-		t.Errorf("working indicator animation = %#v, want %#v", got, want.NextLines)
+	if runner.UpdateTUISnapshots() {
+		// The next stored frame is the first animation tick after the initial
+		// render; wait for the ticker instead of the frozen expectation.
+		for reflect.DeepEqual(mode.status.Render(48), initial) && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
+		snap.Set(mode.status.Render(48), "lifecycle", "working", "nextLines")
+	} else {
+		for !reflect.DeepEqual(mode.status.Render(48), want.NextLines) && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
+		if got := mode.status.Render(48); !reflect.DeepEqual(got, want.NextLines) {
+			t.Errorf("working indicator animation = %#v, want %#v", got, want.NextLines)
+		}
 	}
 	interactiveUI.SetWorkingMessage(nil)
-	if got := mode.status.Render(48); !reflect.DeepEqual(got, want.DefaultMessageLines) {
+	if got := mode.status.Render(48); !snap.Set(got, "lifecycle", "working", "defaultMessageLines") && !reflect.DeepEqual(got, want.DefaultMessageLines) {
 		t.Errorf("working default message = %#v, want %#v", got, want.DefaultMessageLines)
 	}
 	interactiveUI.SetWorkingIndicator(&extensions.WorkingIndicatorOptions{Frames: []string{}})
-	if got := mode.status.Render(48); !reflect.DeepEqual(got, want.HiddenIndicatorLines) {
+	if got := mode.status.Render(48); !snap.Set(got, "lifecycle", "working", "hiddenIndicatorLines") && !reflect.DeepEqual(got, want.HiddenIndicatorLines) {
 		t.Errorf("working hidden indicator = %#v, want %#v", got, want.HiddenIndicatorLines)
 	}
 	interactiveUI.SetWorkingVisible(false)
 	empty := ""
 	interactiveUI.SetWorkingMessage(&empty)
 	interactiveUI.SetWorkingVisible(true)
-	if got := mode.status.Render(48); !reflect.DeepEqual(got, want.EmptyMessageLines) {
+	if got := mode.status.Render(48); !snap.Set(got, "lifecycle", "working", "emptyMessageLines") && !reflect.DeepEqual(got, want.EmptyMessageLines) {
 		t.Errorf("working explicit empty message = %#v, want %#v", got, want.EmptyMessageLines)
 	}
 	interactiveUI.SetWorkingVisible(false)
@@ -840,10 +852,14 @@ func TestF12ApplicationThemeObjectMatchesUpstream(t *testing.T) {
 func TestF12ApplicationOrdinaryErrorSpacingMatchesUpstream(t *testing.T) {
 	initF12ApplicationTheme(t)
 	want := loadF12ApplicationFixture(t).Lifecycle.OrdinaryError
+	snap := runner.OpenSnapshot(t, "F12-app", "status-frames.json")
 	mode := &InteractiveMode{ui: tui.NewTUI(newFakeTerminal(want.Width, 24)), chat: &tui.Container{}}
 	mode.chat.AddChild(tui.NewText("BEFORE", 1, 0, nil))
 	mode.showError(errors.New("ORDINARY"))
 	got := f12ApplicationFrame{Width: want.Width, Lines: mode.chat.Render(want.Width)}
+	if snap.Set(got.Lines, "lifecycle", "ordinaryError", "lines") {
+		return
+	}
 	if !reflect.DeepEqual(got, want) {
 		wantJSON, _ := json.Marshal(want)
 		gotJSON, _ := json.Marshal(got)
@@ -854,6 +870,7 @@ func TestF12ApplicationOrdinaryErrorSpacingMatchesUpstream(t *testing.T) {
 func TestF12ApplicationDialogAndPrimitiveLifecycleMatchesUpstream(t *testing.T) {
 	initF12ApplicationTheme(t)
 	want := loadF12ApplicationFixture(t).Lifecycle.DialogsAndPrimitives
+	snap := runner.OpenSnapshot(t, "F12-app", "status-frames.json")
 	bindings := NewAppKeybindings(nil)
 	tui.SetKeybindings(bindings)
 	modeUI := tui.NewTUI(newFakeTerminal(32, 24))
@@ -871,6 +888,24 @@ func TestF12ApplicationDialogAndPrimitiveLifecycleMatchesUpstream(t *testing.T) 
 		_, _, _ = interactiveUI.Select(ctx, "Empty selector", []string{}, nil)
 	}()
 	deadline := time.Now().Add(100 * time.Millisecond)
+	if runner.UpdateTUISnapshots() {
+		// The stored frame is whatever the installed empty selector renders;
+		// wait for the dialog itself rather than the frozen expectation.
+		for {
+			children := mode.editorContainer.Children()
+			if len(children) == 1 {
+				if _, ok := children[0].(*ExtensionSelectorComponent); ok {
+					snap.Set(mode.editorContainer.Render(32), "lifecycle", "dialogsAndPrimitives", "emptySelector", "lines")
+					goto emptyDone
+				}
+			}
+			if time.Now().After(deadline) {
+				t.Error("empty selector was not installed for snapshot update")
+				goto emptyDone
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
 	for {
 		lines := mode.editorContainer.Render(32)
 		if reflect.DeepEqual(lines, want.EmptySelector.Lines) {
@@ -899,14 +934,14 @@ emptyDone:
 	timedInput := NewExtensionInputComponent("Timed input", "ignored", func(string) {}, func() {}, &extensionDialogOptions{
 		ui: renderCounter, timeout: &timeout,
 	})
-	if got := timedInput.Render(32); !reflect.DeepEqual(got, want.TimedInput.InitialLines) {
+	if got := timedInput.Render(32); !snap.Set(got, "lifecycle", "dialogsAndPrimitives", "timedInput", "initialLines") && !reflect.DeepEqual(got, want.TimedInput.InitialLines) {
 		wantJSON, _ := json.Marshal(want.TimedInput.InitialLines)
 		gotJSON, _ := json.Marshal(got)
 		t.Errorf("timed input initial frame differs\nwant: %s\n got: %s", wantJSON, gotJSON)
 	}
 	timedInput.Dispose()
 
-	if got := NewDynamicBorderWithColor(func(value string) string { return "<" + value + ">" }).Render(0); !reflect.DeepEqual(got, want.DynamicBorderWidthZero) {
+	if got := NewDynamicBorderWithColor(func(value string) string { return "<" + value + ">" }).Render(0); !snap.Set(got, "lifecycle", "dialogsAndPrimitives", "dynamicBorderWidthZero") && !reflect.DeepEqual(got, want.DynamicBorderWidthZero) {
 		t.Errorf("DynamicBorder width zero = %#v, want %#v", got, want.DynamicBorderWidthZero)
 	}
 }
@@ -949,6 +984,30 @@ func TestF12ApplicationCountdownTicksMatchUpstream(t *testing.T) {
 	}
 }
 
+// updateF12ApplicationFrames rewrites the width-filtered frame lines back
+// into the flat fixture list, keeping IDs and widths as stored inputs.
+func updateF12ApplicationFrames(t testing.TB, snap *runner.Snapshot, member string, all, got []f12ApplicationFrame, width int) bool {
+	if snap == nil {
+		return false
+	}
+	t.Helper()
+	gotIndex := 0
+	for fixtureIndex, frame := range all {
+		if frame.Width != width {
+			continue
+		}
+		if gotIndex >= len(got) || got[gotIndex].ID != frame.ID {
+			t.Fatalf("frame sequence diverged at %s[%d] (%s)", member, fixtureIndex, frame.ID)
+		}
+		snap.Set(got[gotIndex].Lines, member, fixtureIndex, "lines")
+		gotIndex++
+	}
+	if gotIndex != len(got) {
+		t.Fatalf("%d %s frames not stored for width %d", len(got)-gotIndex, member, width)
+	}
+	return true
+}
+
 func TestF12ApplicationStatusFramesMatchUpstream(t *testing.T) {
 	initF12ApplicationTheme(t)
 	fixture := loadF12ApplicationFixture(t)
@@ -956,6 +1015,7 @@ func TestF12ApplicationStatusFramesMatchUpstream(t *testing.T) {
 		t.Fatalf("F12 application fixture = version %d, frames %d", fixture.SchemaVersion, len(fixture.Frames))
 	}
 
+	snap := runner.OpenSnapshot(t, "F12-app", "status-frames.json")
 	for _, width := range []int{48, 88} {
 		width := width
 		t.Run(strconv.Itoa(width), func(t *testing.T) {
@@ -978,6 +1038,9 @@ func TestF12ApplicationStatusFramesMatchUpstream(t *testing.T) {
 			mode.showStatusMessage("STATUS_FOUR")
 			got = append(got, capture("status-after-content-replaced"))
 
+			if updateF12ApplicationFrames(t, snap, "frames", fixture.Frames, got, width) {
+				return
+			}
 			want := make([]f12ApplicationFrame, 0, 4)
 			for _, frame := range fixture.Frames {
 				if frame.Width == width {
@@ -1283,6 +1346,7 @@ func TestF12ExtensionDialogFramesMatchUpstream(t *testing.T) {
 	bindings := NewAppKeybindings(nil)
 	tui.SetKeybindings(bindings)
 
+	snap := runner.OpenSnapshot(t, "F12-app", "status-frames.json")
 	for _, expectedResult := range fixture.DialogResults {
 		expectedResult := expectedResult
 		t.Run(strconv.Itoa(expectedResult.Width), func(t *testing.T) {
@@ -1320,16 +1384,18 @@ func TestF12ExtensionDialogFramesMatchUpstream(t *testing.T) {
 			editor := NewExtensionEditorComponent(modeUI, bindings, "Edit value", "alpha\nbeta", func(string) {}, func() {}, "false")
 			got = append(got, f12ApplicationFrame{ID: "editor-prefill", Width: width, Lines: editor.Render(width)})
 
-			var want []f12ApplicationFrame
-			for _, frame := range fixture.DialogFrames {
-				if frame.Width == width {
-					want = append(want, frame)
+			if !updateF12ApplicationFrames(t, snap, "dialogFrames", fixture.DialogFrames, got, width) {
+				var want []f12ApplicationFrame
+				for _, frame := range fixture.DialogFrames {
+					if frame.Width == width {
+						want = append(want, frame)
+					}
 				}
-			}
-			if !reflect.DeepEqual(got, want) {
-				wantJSON, _ := json.MarshalIndent(want, "", "  ")
-				gotJSON, _ := json.MarshalIndent(got, "", "  ")
-				t.Fatalf("extension dialog frames differ\nwant: %s\n got: %s", wantJSON, gotJSON)
+				if !reflect.DeepEqual(got, want) {
+					wantJSON, _ := json.MarshalIndent(want, "", "  ")
+					gotJSON, _ := json.MarshalIndent(got, "", "  ")
+					t.Fatalf("extension dialog frames differ\nwant: %s\n got: %s", wantJSON, gotJSON)
+				}
 			}
 			actualResult := f12DialogResult{
 				Width: width, Selected: selected, SelectorCancelled: selectorCancelled,
@@ -1425,6 +1491,7 @@ func TestInteractiveUISelectItemsPreservesDisplayLabels(t *testing.T) {
 func TestF12ApplicationNotificationsMatchUpstream(t *testing.T) {
 	initF12ApplicationTheme(t)
 	fixture := loadF12ApplicationFixture(t)
+	snap := runner.OpenSnapshot(t, "F12-app", "status-frames.json")
 	for _, width := range []int{48, 88} {
 		width := width
 		t.Run(strconv.Itoa(width), func(t *testing.T) {
@@ -1445,6 +1512,9 @@ func TestF12ApplicationNotificationsMatchUpstream(t *testing.T) {
 			interactiveUI.Notify("BROKEN", extensions.NotifyError)
 			capture("notify-error")
 
+			if updateF12ApplicationFrames(t, snap, "notificationFrames", fixture.NotificationFrames, got, width) {
+				return
+			}
 			want := make([]f12ApplicationFrame, 0, 3)
 			for _, frame := range fixture.NotificationFrames {
 				if frame.Width == width {

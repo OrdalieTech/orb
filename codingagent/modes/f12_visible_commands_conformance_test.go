@@ -23,6 +23,7 @@ import (
 	"github.com/OrdalieTech/orb/codingagent/config"
 	"github.com/OrdalieTech/orb/codingagent/extensions"
 	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/conformance/runner"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/tui"
 
@@ -59,8 +60,9 @@ func TestF12VisibleCommandBehaviorMatchesUpstream(t *testing.T) {
 	if fixture.SchemaVersion != 2 || fixture.Width != 100 || len(fixture.Commands) != 22 {
 		t.Fatalf("F12 visible fixture = version %d, width %d, commands %d", fixture.SchemaVersion, fixture.Width, len(fixture.Commands))
 	}
-	for _, command := range fixture.Commands {
-		command := command
+	snap := runner.OpenSnapshot(t, "F12-visible-commands", "cases.json")
+	for commandIndex, command := range fixture.Commands {
+		command, commandIndex := command, commandIndex
 		t.Run(command.Name, func(t *testing.T) {
 			mode, host, terminal, temporary := newF12VisibleMode(t, command.Name)
 			input := strings.ReplaceAll(command.Input, "<tmp>", temporary)
@@ -116,8 +118,12 @@ func TestF12VisibleCommandBehaviorMatchesUpstream(t *testing.T) {
 				t.Errorf("transition = %v, want %v", stringPointerValue(got), stringPointerValue(command.Transition))
 			}
 			rawLines := replaceF12FramePaths(mode.chat.Render(fixture.Width), temporary, "<tmp>")
-			assertF12RawFrame(t, command.Chat.Raw, rawLines)
 			lines := normalizeF12Lines(rawLines)
+			if updateF12RawFrame(t, snap, rawLines, "commands", commandIndex, "chat", "raw") {
+				updateF12VisibleChat(t, snap, lines, "commands", commandIndex, "chat")
+				return
+			}
+			assertF12RawFrame(t, command.Chat.Raw, rawLines)
 			assertF12VisibleChat(t, command.Chat, lines)
 		})
 	}

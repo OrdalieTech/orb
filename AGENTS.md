@@ -72,11 +72,12 @@ dev-only), fixtures, runner. Full tree: ARCHITECTURE §1.
 Fixture families F1–F13 are defined in ARCHITECTURE §6. Extraction scripts live in
 `conformance/extract/` and run with Node ≥22 inside `.upstream/` (Node is dev tooling only — the
 product is pure Go). Never hand-edit goldens; regenerate them. A failing fixture after your change
-means your change is wrong, not the fixture. Two tiers (D35): wire, provider, and algorithmic
-families are upstream-extracted pi-parity gates; the F12 render families are becoming Orb-owned
-snapshots of Orb's own TUI — deliberate TUI changes will regenerate them from Orb, and upstream TUI
-drift carries no port obligation. Until that extraction split lands, F12 still regenerates from
-upstream, so a deliberate TUI divergence requires converting the affected family first.
+means your change is wrong, not the fixture. Two tiers (D35, split landed 2026-08-11): wire,
+provider, and algorithmic families are upstream-extracted pi-parity gates; the render families
+(`F12*` plus the `WP450` replay/preview/UI-demo files) are Orb-owned snapshots of Orb's own TUI —
+a deliberate TUI change regenerates them with `make fixtures-tui` (`ORB_UPDATE_F12=1`), and
+upstream TUI drift carries no port obligation. Regeneration rewrites only presentation values;
+behavior-shaped values in those files remain frozen upstream captures.
 
 ## Upstream sync
 

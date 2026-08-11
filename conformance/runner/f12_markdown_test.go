@@ -31,7 +31,8 @@ func TestF12MarkdownRendersMatchUpstream(t *testing.T) {
 	if fixture.SchemaVersion != 1 || len(fixture.Cases) != 71 {
 		t.Fatalf("F12 markdown header = version %d, cases %d", fixture.SchemaVersion, len(fixture.Cases))
 	}
-	for _, fixtureCase := range fixture.Cases {
+	snap := runner.OpenSnapshot(t, "F12", "markdown.json")
+	for caseIndex, fixtureCase := range fixture.Cases {
 		t.Run(fixtureCase.Name, func(t *testing.T) {
 			options := &tui.MarkdownOptions{
 				PreserveOrderedListMarkers: fixtureCase.PreserveOrderedListMarkers,
@@ -46,7 +47,11 @@ func TestF12MarkdownRendersMatchUpstream(t *testing.T) {
 				f12MarkdownDefaultStyle(fixtureCase.DefaultStyle),
 				options,
 			)
-			if diff := linesDiff(fixtureCase.Expected, component.Render(fixtureCase.Width)); diff != "" {
+			got := component.Render(fixtureCase.Width)
+			if snap.Set(got, "cases", caseIndex, "expected") {
+				return
+			}
+			if diff := linesDiff(fixtureCase.Expected, got); diff != "" {
 				t.Fatal(diff)
 			}
 		})

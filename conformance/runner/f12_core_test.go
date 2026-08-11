@@ -296,7 +296,8 @@ func TestF12OverlayFramesMatchUpstream(t *testing.T) {
 	}
 	tui.SetCapabilities(tui.TerminalCapabilities{})
 	t.Cleanup(tui.ResetCapabilitiesCache)
-	for _, fixtureCase := range fixture.RenderCases {
+	snap := runner.OpenSnapshot(t, "F12", "overlays.json")
+	for caseIndex, fixtureCase := range fixture.RenderCases {
 		t.Run(fixtureCase.Name, func(t *testing.T) {
 			terminal := &f12CoreTerminal{columns: fixtureCase.Width, rows: fixtureCase.Rows}
 			ui := tui.NewTUI(terminal)
@@ -341,6 +342,10 @@ func TestF12OverlayFramesMatchUpstream(t *testing.T) {
 			}
 			if err := ui.Stop(); err != nil {
 				t.Fatal(err)
+			}
+			if snap.Set(got, "renderCases", caseIndex, "expected") {
+				snap.Set(gotWidths, "renderCases", caseIndex, "expectedRequestedWidths")
+				return
 			}
 			if got != fixtureCase.Expected {
 				t.Fatalf("overlay frame differs\n got: %q\nwant: %q", got, fixtureCase.Expected)
