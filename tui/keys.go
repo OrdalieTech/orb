@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"unicode/utf8"
 )
@@ -66,11 +67,21 @@ type parsedKitty struct {
 }
 
 var (
-	kittyCSIU       = regexp.MustCompile(`^\x1b\[([0-9]+)(:([0-9]*))?(:([0-9]+))?(;([0-9]+))?(:([0-9]+))?u$`)
-	kittyArrow      = regexp.MustCompile(`^\x1b\[1;([0-9]+)(:([0-9]+))?([ABCD])$`)
-	kittyFunction   = regexp.MustCompile(`^\x1b\[([0-9]+)(;([0-9]+))?(:([0-9]+))?~$`)
-	kittyHomeEnd    = regexp.MustCompile(`^\x1b\[1;([0-9]+)(:([0-9]+))?([HF])$`)
-	modifyOtherKeys = regexp.MustCompile(`^\x1b\[27;([0-9]+);([0-9]+)~$`)
+	kittyCSIU = sync.OnceValue(func() *regexp.Regexp {
+		return regexp.MustCompile(`^\x1b\[([0-9]+)(:([0-9]*))?(:([0-9]+))?(;([0-9]+))?(:([0-9]+))?u$`)
+	})
+	kittyArrow = sync.OnceValue(func() *regexp.Regexp {
+		return regexp.MustCompile(`^\x1b\[1;([0-9]+)(:([0-9]+))?([ABCD])$`)
+	})
+	kittyFunction = sync.OnceValue(func() *regexp.Regexp {
+		return regexp.MustCompile(`^\x1b\[([0-9]+)(;([0-9]+))?(:([0-9]+))?~$`)
+	})
+	kittyHomeEnd = sync.OnceValue(func() *regexp.Regexp {
+		return regexp.MustCompile(`^\x1b\[1;([0-9]+)(:([0-9]+))?([HF])$`)
+	})
+	modifyOtherKeys = sync.OnceValue(func() *regexp.Regexp {
+		return regexp.MustCompile(`^\x1b\[27;([0-9]+);([0-9]+)~$`)
+	})
 )
 
 func number(value string, fallback int) int {
@@ -96,7 +107,7 @@ func eventType(value string) KeyEventType {
 }
 
 func parseKitty(data string) (parsedKitty, bool) {
-	if match := kittyCSIU.FindStringSubmatch(data); match != nil {
+	if match := kittyCSIU().FindStringSubmatch(data); match != nil {
 		parsed := parsedKitty{codepoint: number(match[1], 0), modifier: number(match[7], 1) - 1, event: eventType(match[9])}
 		if match[3] != "" {
 			parsed.shifted, parsed.hasShifted = number(match[3], 0), true
@@ -106,17 +117,17 @@ func parseKitty(data string) (parsedKitty, bool) {
 		}
 		return parsed, true
 	}
-	if match := kittyArrow.FindStringSubmatch(data); match != nil {
+	if match := kittyArrow().FindStringSubmatch(data); match != nil {
 		codes := map[string]int{"A": -1, "B": -2, "C": -3, "D": -4}
 		return parsedKitty{codepoint: codes[match[4]], modifier: number(match[1], 1) - 1, event: eventType(match[3])}, true
 	}
-	if match := kittyFunction.FindStringSubmatch(data); match != nil {
+	if match := kittyFunction().FindStringSubmatch(data); match != nil {
 		codes := map[int]int{2: -11, 3: -10, 5: -12, 6: -13, 7: -14, 8: -15}
 		if codepoint, ok := codes[number(match[1], 0)]; ok {
 			return parsedKitty{codepoint: codepoint, modifier: number(match[3], 1) - 1, event: eventType(match[5])}, true
 		}
 	}
-	if match := kittyHomeEnd.FindStringSubmatch(data); match != nil {
+	if match := kittyHomeEnd().FindStringSubmatch(data); match != nil {
 		codepoint := -14
 		if match[4] == "F" {
 			codepoint = -15
@@ -127,7 +138,7 @@ func parseKitty(data string) (parsedKitty, bool) {
 }
 
 func parseModifyOtherKeys(data string) (codepoint, modifier int, ok bool) {
-	match := modifyOtherKeys.FindStringSubmatch(data)
+	match := modifyOtherKeys().FindStringSubmatch(data)
 	if match == nil {
 		return 0, 0, false
 	}
@@ -452,7 +463,7 @@ func formatKey(codepoint, modifier int, base *int) string {
 	return strings.Join(parts, "+")
 }
 
-var legacyParsed = func() map[string]string {
+var legacyParsed = sync.OnceValue(func() map[string]string {
 	result := map[string]string{
 		"\x1bOA": "up", "\x1bOB": "down", "\x1bOC": "right", "\x1bOD": "left", "\x1bOH": "home", "\x1bOF": "end",
 		"\x1b[E": "clear", "\x1bOE": "clear", "\x1bOe": "ctrl+clear", "\x1b[e": "shift+clear",
@@ -479,7 +490,7 @@ var legacyParsed = func() map[string]string {
 		}
 	}
 	return result
-}()
+})
 
 // ParseKey returns the canonical identifier for a recognized terminal sequence.
 func ParseKey(data string) string {
@@ -497,7 +508,7 @@ func ParseKey(data string) string {
 	if IsKittyProtocolActive() && (data == "\x1b\r" || data == "\n") {
 		return "shift+enter"
 	}
-	if key := legacyParsed[data]; key != "" {
+	if key := legacyParsed()[data]; key != "" {
 		return key
 	}
 	switch data {

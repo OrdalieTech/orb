@@ -695,7 +695,7 @@ func taggedPaste(tag string) string {
 func TestEditorPasteMarkers(t *testing.T) {
 	editor := newTestEditor()
 	text := pasteWithMarker(t, editor)
-	if !pasteMarkerRegex.MatchString(text) {
+	if !pasteMarkerRegex().MatchString(text) {
 		t.Fatalf("no marker in %q", text)
 	}
 
@@ -703,7 +703,7 @@ func TestEditorPasteMarkers(t *testing.T) {
 	press(editor, "A")
 	pasteWithMarker(t, editor)
 	press(editor, "B")
-	marker := pasteMarkerRegex.FindString(editor.GetText())
+	marker := pasteMarkerRegex().FindString(editor.GetText())
 
 	press(editor, "\x01")
 	wantCursor(t, editor, 0, 0)
