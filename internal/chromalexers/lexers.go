@@ -1,28 +1,70 @@
 // Package chromalexers is github.com/alecthomas/chroma/v2/lexers at v2.27.0
-// with one deliberate change: the lexer registry is built lazily on first use
-// instead of at package init. Upstream's init decodes 279 embedded XML lexer
-// configs (~6ms, ~2.7MB of allocations) on every process start, including
-// `orb --version`; here that cost moves to the first highlight. Keep every
-// other file byte-identical to upstream apart from the package clause and the
-// three init() funcs converted to registration hooks below.
+// with two deliberate changes: the lexer registry is built lazily on first
+// use instead of at package init, and the 279 embedded XML lexer configs ship
+// as one gzip-compressed tar archive decoded on first use. Upstream's init
+// decodes the XML configs (~6ms, ~2.7MB of allocations) on every process
+// start, including `orb --version`, and the raw XML adds ~1.9MB to the
+// binary; here the decode cost moves to the first highlight and the configs
+// ship compressed. Keep every other file byte-identical to upstream apart
+// from the package clause, the init() funcs converted to registration hooks,
+// and the XML-backed package vars converted to lazy constructors (Register
+// vs. registerLazy below).
 package chromalexers
 
 import (
-	"embed"
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	_ "embed"
+	"io"
 	"io/fs"
 	"sync"
+	"testing/fstest"
 
 	"github.com/alecthomas/chroma/v2"
 )
 
-//go:embed embedded
-var embedded embed.FS
+//go:generate go run ./gen
 
-// pendingLexers collects the programmatic lexers registered by package-level
-// Register calls, in upstream's var-initialization order. They are added to
-// the registry after the embedded XML lexers, matching upstream's sequence
-// (GlobalLexerRegistry XML glob first, then per-file Register vars).
-var pendingLexers []chroma.Lexer
+//go:embed embedded.tar.gz
+var embeddedArchive []byte
+
+// embeddedLexers decompresses the bundled lexer configs. The XML sources stay
+// on disk under embedded/ for provenance; the archive is rebuilt from them by
+// `go generate` and TestEmbeddedArchiveMatchesSource fails if the two drift.
+var embeddedLexers = sync.OnceValue(func() fs.FS {
+	compressed, err := gzip.NewReader(bytes.NewReader(embeddedArchive))
+	if err != nil {
+		panic(err)
+	}
+	files := fstest.MapFS{}
+	archive := tar.NewReader(compressed)
+	for {
+		header, err := archive.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			panic(err)
+		}
+		data := make([]byte, header.Size)
+		if _, err := io.ReadFull(archive, data); err != nil {
+			panic(err)
+		}
+		files[header.Name] = &fstest.MapFile{Data: data}
+	}
+	if err := compressed.Close(); err != nil {
+		panic(err)
+	}
+	return files
+})
+
+// pendingLexers collects constructors for the lexers registered by
+// package-level Register and registerLazy calls, in upstream's
+// var-initialization order. They are added to the registry after the embedded
+// XML lexers, matching upstream's sequence (GlobalLexerRegistry XML glob
+// first, then per-file Register vars).
+var pendingLexers []func() chroma.Lexer
 
 // pendingSetup holds the bodies of upstream's init() funcs (analyser wiring
 // on XML-registered lexers). They run inside the lazy build and must use the
@@ -32,6 +74,7 @@ var pendingSetup []func(*chroma.LexerRegistry)
 
 var globalLexerRegistry = sync.OnceValue(func() *chroma.LexerRegistry {
 	reg := chroma.NewLexerRegistry()
+	embedded := embeddedLexers()
 	paths, err := fs.Glob(embedded, "embedded/*.xml")
 	if err != nil {
 		panic(err)
@@ -39,8 +82,8 @@ var globalLexerRegistry = sync.OnceValue(func() *chroma.LexerRegistry {
 	for _, path := range paths {
 		reg.Register(chroma.MustNewXMLLexer(embedded, path))
 	}
-	for _, lexer := range pendingLexers {
-		reg.Register(lexer)
+	for _, build := range pendingLexers {
+		reg.Register(build())
 	}
 	for _, setup := range pendingSetup {
 		setup(reg)
@@ -82,8 +125,18 @@ func Match(filename string) chroma.Lexer {
 
 // Register queues a Lexer for the global registry.
 func Register(lexer chroma.Lexer) chroma.Lexer {
-	pendingLexers = append(pendingLexers, lexer)
+	pendingLexers = append(pendingLexers, func() chroma.Lexer { return lexer })
 	return lexer
+}
+
+// registerLazy queues a lexer constructor whose XML config must not decode at
+// package init; the registry build invokes it once. Returning the memoized
+// constructor keeps the var-declaration form, so registration order still
+// follows upstream's var-initialization order.
+func registerLazy(build func() chroma.Lexer) func() chroma.Lexer {
+	once := sync.OnceValue(build)
+	pendingLexers = append(pendingLexers, once)
+	return once
 }
 
 // registerSetup queues an upstream init() body to run once the registry is

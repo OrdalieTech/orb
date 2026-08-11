@@ -521,13 +521,15 @@ var (
 )
 
 // EmacsLisp lexer.
-var EmacsLisp = Register(TypeRemappingLexer(MustNewXMLLexer(
-	embedded,
-	"embedded/emacslisp.xml",
-), TypeMapping{
-	{NameVariable, NameFunction, emacsBuiltinFunction},
-	{NameVariable, NameBuiltin, emacsSpecialForms},
-	{NameVariable, NameException, emacsErrorKeywords},
-	{NameVariable, NameBuiltin, append(emacsBuiltinFunctionHighlighted, emacsMacros...)},
-	{NameVariable, KeywordPseudo, emacsLambdaListKeywords},
-}))
+var EmacsLisp = registerLazy(func() Lexer {
+	return TypeRemappingLexer(MustNewXMLLexer(
+		embeddedLexers(),
+		"embedded/emacslisp.xml",
+	), TypeMapping{
+		{NameVariable, NameFunction, emacsBuiltinFunction},
+		{NameVariable, NameBuiltin, emacsSpecialForms},
+		{NameVariable, NameException, emacsErrorKeywords},
+		{NameVariable, NameBuiltin, append(emacsBuiltinFunctionHighlighted, emacsMacros...)},
+		{NameVariable, KeywordPseudo, emacsLambdaListKeywords},
+	})
+})

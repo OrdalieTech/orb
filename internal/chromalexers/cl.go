@@ -229,15 +229,17 @@ var (
 )
 
 // Common Lisp lexer.
-var CommonLisp = Register(TypeRemappingLexer(MustNewXMLLexer(
-	embedded,
-	"embedded/common_lisp.xml",
-), TypeMapping{
-	{NameVariable, NameFunction, clBuiltinFunctions},
-	{NameVariable, Keyword, clSpecialForms},
-	{NameVariable, NameBuiltin, clMacros},
-	{NameVariable, Keyword, clLambdaListKeywords},
-	{NameVariable, Keyword, clDeclarations},
-	{NameVariable, KeywordType, clBuiltinTypes},
-	{NameVariable, NameClass, clBuiltinClasses},
-}))
+var CommonLisp = registerLazy(func() Lexer {
+	return TypeRemappingLexer(MustNewXMLLexer(
+		embeddedLexers(),
+		"embedded/common_lisp.xml",
+	), TypeMapping{
+		{NameVariable, NameFunction, clBuiltinFunctions},
+		{NameVariable, Keyword, clSpecialForms},
+		{NameVariable, NameBuiltin, clMacros},
+		{NameVariable, Keyword, clLambdaListKeywords},
+		{NameVariable, Keyword, clDeclarations},
+		{NameVariable, KeywordType, clBuiltinTypes},
+		{NameVariable, NameClass, clBuiltinClasses},
+	})
+})

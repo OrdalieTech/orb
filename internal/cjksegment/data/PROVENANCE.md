@@ -11,6 +11,9 @@
 - size: `2,007,296` bytes
 - SHA-256: `5b96312a434f4ca3df1f5fa906e88d52fe2e28e3b87c68b9e62d0d77e1995edc`
 
+The adjacent `cjdict.dict.gz` (`gzip -9 -n` of `cjdict.dict`) is the form actually embedded in the
+binary; the tests assert it decompresses byte-for-byte to `cjdict.dict` and to the SHA-256 above.
+
 The adjacent `LICENSE` is the unmodified 27,718-byte ICU 78.2 root license file. Its SHA-256 is
 `e55522d81edc687a341a4411e0776e54ca654e90147f354a90458aaced4116af`. Its Unicode-3.0 notice
 covers ICU code and data, and its “Chinese/Japanese Word Break Dictionary Data” section carries

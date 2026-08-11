@@ -1,10 +1,14 @@
 package cjksegment
 
 import (
+	"bytes"
+	"compress/gzip"
 	_ "embed"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
+	"sync"
 )
 
 const (
@@ -12,14 +16,37 @@ const (
 	dictionaryTrieHasValues = 8
 )
 
-//go:embed data/cjdict.dict
-var embeddedDictionary []byte
+// Only the gzip form is embedded; data/cjdict.dict stays on disk for
+// provenance (see data/PROVENANCE.md) and TestEmbeddedDictionaryMatchesSource
+// fails if the two drift. Regenerate with `gzip -9 -n`.
+//
+//go:embed data/cjdict.dict.gz
+var embeddedCompressedDictionary []byte
 
 type dictionary struct {
 	trie []byte
 }
 
-var cjkDictionary = mustDictionary(embeddedDictionary)
+// embeddedDictionary gunzips the bundled ICU dictionary on first use instead
+// of at package init.
+var embeddedDictionary = sync.OnceValue(func() []byte {
+	reader, err := gzip.NewReader(bytes.NewReader(embeddedCompressedDictionary))
+	if err != nil {
+		panic(err)
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		panic(err)
+	}
+	if err := reader.Close(); err != nil {
+		panic(err)
+	}
+	return data
+})
+
+var cjkDictionary = sync.OnceValue(func() dictionary {
+	return mustDictionary(embeddedDictionary())
+})
 
 func mustDictionary(data []byte) dictionary {
 	dictionary, err := parseDictionary(data)
