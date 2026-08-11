@@ -56,8 +56,8 @@
         "selectedBg": "\u001b[48;2;58;58;74m",
         "userMessageBg": "\u001b[48;2;52;53;65m",
         "customMessageBg": "\u001b[48;2;45;40;56m",
-        "toolPendingBg": "\u001b[48;2;40;40;50m",
-        "toolSuccessBg": "\u001b[48;2;40;40;50m",
+        "toolPendingBg": "\u001b[48;2;31;31;34m",
+        "toolSuccessBg": "\u001b[48;2;31;31;34m",
         "toolErrorBg": "\u001b[48;2;60;40;40m"
       },
       "sample": [
@@ -112,8 +112,8 @@
         "customMessageBg": "#2d2838",
         "customMessageText": "#d4d4d4",
         "customMessageLabel": "#9575cd",
-        "toolPendingBg": "#282832",
-        "toolSuccessBg": "#282832",
+        "toolPendingBg": "#1f1f22",
+        "toolSuccessBg": "#1f1f22",
         "toolErrorBg": "#3c2828",
         "toolTitle": "#d4d4d4",
         "toolOutput": "#808080",
@@ -148,7 +148,7 @@
         "thinkingMax": "#ff5fff",
         "bashMode": "#b5bd68",
         "diffAddedBg": "#1a3122",
-        "diffGutterBg": "#1f1f27",
+        "diffGutterBg": "#26262a",
         "diffRemovedBg": "#382123"
       },
       "export": {
@@ -212,8 +212,8 @@
         "selectedBg": "\u001b[48;2;208;208;224m",
         "userMessageBg": "\u001b[48;2;232;232;232m",
         "customMessageBg": "\u001b[48;2;237;231;246m",
-        "toolPendingBg": "\u001b[48;2;232;232;240m",
-        "toolSuccessBg": "\u001b[48;2;232;232;240m",
+        "toolPendingBg": "\u001b[48;2;241;241;241m",
+        "toolSuccessBg": "\u001b[48;2;241;241;241m",
         "toolErrorBg": "\u001b[48;2;240;232;232m"
       },
       "sample": [
@@ -268,8 +268,8 @@
         "customMessageBg": "#ede7f6",
         "customMessageText": "#1f2328",
         "customMessageLabel": "#7e57c2",
-        "toolPendingBg": "#e8e8f0",
-        "toolSuccessBg": "#e8e8f0",
+        "toolPendingBg": "#f1f1f1",
+        "toolSuccessBg": "#f1f1f1",
         "toolErrorBg": "#f0e8e8",
         "toolTitle": "#1f2328",
         "toolOutput": "#6c6c6c",
@@ -304,7 +304,7 @@
         "thinkingMax": "#af005f",
         "bashMode": "#588458",
         "diffAddedBg": "#ddf0da",
-        "diffGutterBg": "#dfdfe8",
+        "diffGutterBg": "#e2e2e2",
         "diffRemovedBg": "#f4dcda"
       },
       "export": {
