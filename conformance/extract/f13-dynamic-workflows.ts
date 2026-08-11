@@ -759,10 +759,17 @@ export async function generateF13DynamicWorkflows(
     // child-session system prompt embeds the docs paths derived from it).
     const packageDir = path.join(upstreamRoot, "packages", "coding-agent");
     process.env.PI_PACKAGE_DIR = packageDir;
-    // Match the F12 extractors' explicit styling state so rendered frames are
-    // identical whether this family runs standalone or after them in
-    // generate.ts (they leave FORCE_COLOR=3 and an initialized theme behind).
+    // Match the historical styling state so rendered frames are identical
+    // regardless of generator order or invoking environment. FORCE_COLOR only
+    // matters if chalk has not been imported yet; chalk freezes its level from
+    // the ambient env at first import (non-TTY without FORCE_COLOR -> level 0,
+    // which silently drops bold), so pin level 3 on the very instance upstream
+    // code uses.
     process.env.FORCE_COLOR = "3";
+    const upstreamChalk = await import(
+      pathToFileURL(path.join(upstreamRoot, "node_modules/chalk/source/index.js")).href
+    );
+    (upstreamChalk.default as { level: number }).level = 3;
 
     // Workflow project state is keyed by `<basename>-<sha256(cwd)[:12]>`
     // (workflow-paths.ts); the hash is temp-path-dependent, so alias it.
