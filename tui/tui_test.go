@@ -320,7 +320,7 @@ func TestTUIViewportPinsChromeAndKeepsDetachedBodyStable(t *testing.T) {
 		t.Fatalf("initial viewport = %q", initial)
 	}
 
-	ui.handleViewportInput("\x1b[<64;10;3M") // SGR wheel up
+	ui.handleMouse("\x1b[<64;10;3M") // SGR wheel up
 	ui.RenderNow()
 	detached := append([]string(nil), ui.previousLines...)
 	if joined := strings.Join(detached, "\n"); !strings.Contains(joined, "body 0") || strings.Contains(joined, "body 5") || !strings.HasSuffix(joined, "editor"+segmentReset+"\nfooter"+segmentReset) {
@@ -381,10 +381,10 @@ func TestTUIViewportScrollbarClick(t *testing.T) {
 	if strings.HasSuffix(frame[0], "┃") || !strings.HasSuffix(frame[4], "┃") {
 		t.Fatalf("scrollbar = %#v", frame[:5])
 	}
-	if !ui.handleViewportInput("\x1b[<0;10;1M") || ui.viewportEnd != 5 || ui.viewportFollow {
+	if !ui.handleMouse("\x1b[<0;10;1M") || ui.viewportEnd != 5 || ui.viewportFollow {
 		t.Fatalf("top click = end %d follow %v", ui.viewportEnd, ui.viewportFollow)
 	}
-	if !ui.handleViewportInput("\x1b[<0;10;5M") || ui.viewportEnd != 100 || !ui.viewportFollow {
+	if !ui.handleMouse("\x1b[<0;10;5M") || ui.viewportEnd != 100 || !ui.viewportFollow {
 		t.Fatalf("bottom click = end %d follow %v", ui.viewportEnd, ui.viewportFollow)
 	}
 }
@@ -399,12 +399,12 @@ func TestTUIViewportScrollbarDragDoesNotSelectText(t *testing.T) {
 	ui.previousLines = ui.renderViewport(10, 6)
 	ui.SetSelectionHandler(func(string) { t.Fatal("scrollbar drag selected text") })
 
-	ui.handleViewportInput("\x1b[<0;10;1M")
-	ui.handleViewportInput("\x1b[<32;3;4M")
+	ui.handleMouse("\x1b[<0;10;1M")
+	ui.handleMouse("\x1b[<32;3;4M")
 	if !ui.selection.scrollbar || ui.selection.active || ui.viewportEnd <= 5 {
 		t.Fatalf("drag = %#v, end = %d", ui.selection, ui.viewportEnd)
 	}
-	ui.handleViewportInput("\x1b[<0;3;4m")
+	ui.handleMouse("\x1b[<0;3;4m")
 	if ui.selection.scrollbar || ui.selection.active {
 		t.Fatalf("released drag = %#v", ui.selection)
 	}
@@ -425,14 +425,14 @@ func TestTUIViewportDragCopiesVisibleText(t *testing.T) {
 	}
 	defer func() { _ = ui.Stop() }()
 
-	ui.handleViewportInput("\x1b[<0;1;1M")
-	ui.handleViewportInput("\x1b[<32;5;2M")
+	ui.handleMouse("\x1b[<0;1;1M")
+	ui.handleMouse("\x1b[<32;5;2M")
 	body.lines = append(body.lines, "streamed")
 	ui.RenderNow()
 	if frame := strings.Join(ui.previousLines, "\n"); !strings.Contains(frame, "\x1b[7m") || strings.Contains(frame, "streamed") {
 		t.Fatalf("selection did not remain highlighted over a stable viewport: %q", frame)
 	}
-	ui.handleViewportInput("\x1b[<0;5;2m")
+	ui.handleMouse("\x1b[<0;5;2m")
 	ui.RenderNow()
 	if frame := strings.Join(ui.previousLines, "\n"); strings.Contains(frame, "\x1b[7m") {
 		t.Fatalf("selection highlight remained after release: %q", frame)
@@ -459,13 +459,13 @@ func TestTUIViewportDoubleClickCopiesVisibleSentence(t *testing.T) {
 	copied := make(chan string, 1)
 	ui.SetSelectionHandler(func(text string) { copied <- text })
 
-	ui.handleViewportInput("\x1b[<0;8;1M")
-	ui.handleViewportInput("\x1b[<0;8;1m")
-	ui.handleViewportInput("\x1b[<0;8;1M")
+	ui.handleMouse("\x1b[<0;8;1M")
+	ui.handleMouse("\x1b[<0;8;1m")
+	ui.handleMouse("\x1b[<0;8;1M")
 	if got := ui.selectedTextLocked(); got != "Second\nsentence!" {
 		t.Fatalf("double-click selection = %q", got)
 	}
-	ui.handleViewportInput("\x1b[<0;8;1m")
+	ui.handleMouse("\x1b[<0;8;1m")
 	if got := <-copied; got != "Second\nsentence!" {
 		t.Fatalf("copied sentence = %q", got)
 	}

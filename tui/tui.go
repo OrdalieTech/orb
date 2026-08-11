@@ -70,12 +70,12 @@ type mouseSelection struct {
 // drag holds the pointer at (or past) the viewport's top or bottom edge, a
 // single owned timer scrolls the viewport and extends the selection until
 // the pointer re-enters the body or the drag ends. All fields are guarded by
-// renderMu; generation invalidates in-flight timer callbacks.
+// renderMu; generation identifies the live timer so in-flight callbacks of a
+// stopped one are no-ops.
 type selectionAutoScroll struct {
 	timer      *time.Timer
 	generation uint64
-	direction  int           // -1 scroll up, +1 scroll down, 0 idle
-	overshoot  int           // rows the pointer sits past the edge (0 = at the edge)
+	rows       int           // signed rows per tick: negative up, positive down, 0 idle
 	column     int           // content column the extending focus keeps while scrolling
 	interval   time.Duration // test seam; zero means selectionScrollInterval
 }
@@ -403,6 +403,15 @@ func (ui *TUI) ForceRender() {
 }
 
 func (ui *TUI) handleInput(data string) {
+	// Any-motion tracking delivers mouse reports at pointer speed, and none of
+	// the terminal-response parsers below can match one. Only the listener
+	// chain legitimately observes raw mouse bytes (extensions register
+	// listeners through OnTerminalInput), so the fast path yields when one is
+	// registered.
+	if IsMouseReport(data) && !ui.hasInputListeners() {
+		ui.routeMouseInput(data)
+		return
+	}
 	if ui.consumeOsc11BackgroundResponse(data) {
 		return
 	}
@@ -433,6 +442,10 @@ func (ui *TUI) handleInput(data string) {
 	}
 	if MatchesKey(data, "shift+ctrl+d") && ui.OnDebug != nil {
 		ui.OnDebug()
+		return
+	}
+	if IsMouseReport(data) {
+		ui.routeMouseInput(data)
 		return
 	}
 	if ui.handleViewportInput(data) {
@@ -475,11 +488,21 @@ func (ui *TUI) handleInput(data string) {
 	ui.RequestRender()
 }
 
-func (ui *TUI) handleViewportInput(data string) bool {
-	if IsMouseReport(data) {
-		ui.handleMouse(data)
-		return true
+func (ui *TUI) hasInputListeners() bool {
+	ui.focusMu.RLock()
+	defer ui.focusMu.RUnlock()
+	return len(ui.listeners) > 0
+}
+
+// routeMouseInput dispatches one mouse report and schedules a frame only when
+// the report could have changed one.
+func (ui *TUI) routeMouseInput(data string) {
+	if ui.handleMouse(data) {
+		ui.RequestRender()
 	}
+}
+
+func (ui *TUI) handleViewportInput(data string) bool {
 	ui.renderMu.Lock()
 	if ui.viewportBody == nil {
 		ui.renderMu.Unlock()
@@ -554,11 +577,13 @@ func (ui *TUI) SyncMouseMotion() {
 // scrolls the transcript no matter what holds focus, and a wheel over a
 // selector steps that selector. Dispatch runs outside renderMu because
 // handlers re-enter the TUI to change focus or swap the component they live
-// in.
-func (ui *TUI) handleMouse(data string) {
+// in. The return reports whether the frame may have changed.
+func (ui *TUI) handleMouse(data string) bool {
 	event, ok := parseMouse(data)
 	if !ok {
-		return
+		// Reports parseMouse rejects (legacy X10, horizontal wheel) are
+		// swallowed rather than leaked to the key path, and render as before.
+		return true
 	}
 	ui.renderMu.Lock()
 	// A modified click is the escape hatch for terminals that report shift
@@ -579,9 +604,13 @@ func (ui *TUI) handleMouse(data string) {
 	}
 	ui.renderMu.Unlock()
 	if dispatch && handler.HandleMouse(local) {
-		return
+		return true
 	}
 	ui.handleViewportMouse(event)
+	// The viewport fallback has no MouseMove case, so hover motion no
+	// component consumed left the frame exactly as it was — and with ?1003 on
+	// those reports arrive at pointer speed.
+	return event.Type != MouseMove
 }
 
 // mouseTargetLocked resolves the component under the cursor. Transcript rows
@@ -735,31 +764,39 @@ func (ui *TUI) updateSelectionScrollLocked(event MouseEvent) {
 		ui.stopSelectionScrollLocked()
 		return
 	}
-	direction, overshoot := 0, 0
+	rows := 0
 	bottom := ui.viewportBodyHeight - 1
 	switch {
 	case event.Row <= 0:
-		direction, overshoot = -1, -event.Row
+		rows = -selectionScrollRate(-event.Row)
 	case event.Row >= bottom:
-		direction, overshoot = 1, event.Row-bottom
+		rows = selectionScrollRate(event.Row - bottom)
 	default:
 		ui.stopSelectionScrollLocked()
 		return
 	}
-	ui.selectionScroll.direction, ui.selectionScroll.overshoot = direction, overshoot
+	ui.selectionScroll.rows = rows
 	ui.selectionScroll.column = max(0, min(event.Column, max(0, ui.viewportBodyWidth-1)))
 	if ui.selectionScroll.timer == nil {
 		ui.armSelectionScrollLocked()
 	}
 }
 
+// armSelectionScrollLocked schedules the next tick. One timer serves a whole
+// drag — it is re-armed from the tick every 50ms — so subsequent arms Reset
+// the timer the drag already owns instead of allocating a timer and a closure
+// per tick. The generation therefore identifies the timer, not the tick.
 func (ui *TUI) armSelectionScrollLocked() {
-	ui.selectionScroll.generation++
-	generation := ui.selectionScroll.generation
 	interval := ui.selectionScroll.interval
 	if interval <= 0 {
 		interval = selectionScrollInterval
 	}
+	if ui.selectionScroll.timer != nil {
+		ui.selectionScroll.timer.Reset(interval)
+		return
+	}
+	ui.selectionScroll.generation++
+	generation := ui.selectionScroll.generation
 	ui.selectionScroll.timer = time.AfterFunc(interval, guarded(func() { ui.selectionScrollTick(generation) }))
 }
 
@@ -769,7 +806,7 @@ func (ui *TUI) stopSelectionScrollLocked() {
 		ui.selectionScroll.timer.Stop()
 		ui.selectionScroll.timer = nil
 	}
-	ui.selectionScroll.direction, ui.selectionScroll.overshoot = 0, 0
+	ui.selectionScroll.rows = 0
 }
 
 // selectionScrollRate is the auto-scroll rate curve: one row per tick with
@@ -789,16 +826,16 @@ func (ui *TUI) selectionScrollTick(generation uint64) {
 		ui.renderMu.Unlock()
 		return
 	}
-	if scroll.direction == 0 || !ui.selection.active || ui.selection.sentence {
-		scroll.timer, scroll.direction, scroll.overshoot = nil, 0, 0
+	if scroll.rows == 0 || !ui.selection.active || ui.selection.sentence {
+		scroll.timer, scroll.rows = nil, 0
 		ui.renderMu.Unlock()
 		return
 	}
-	ui.scrollViewportLocked(scroll.direction * selectionScrollRate(scroll.overshoot))
+	ui.scrollViewportLocked(scroll.rows)
 	start, end := ui.viewportRangeLocked()
 	if end > start {
 		row := start
-		if scroll.direction > 0 {
+		if scroll.rows > 0 {
 			row = end - 1
 		}
 		point := mousePoint{row: row, column: scroll.column}

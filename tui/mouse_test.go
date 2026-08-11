@@ -79,8 +79,12 @@ func TestTUIDispatchesMouseToComponentUnderCursor(t *testing.T) {
 	ui, _ := viewportWithTarget(t, target)
 	ui.SetSelectionHandler(func(string) { t.Fatal("consumed click started a text selection") })
 
-	if !ui.handleViewportInput("\x1b[<0;4;5M") {
+	if !ui.handleMouse("\x1b[<0;4;5M") {
 		t.Fatal("mouse report was not consumed by the TUI")
+	}
+	// Motion nothing consumes changes nothing, so it schedules no frame.
+	if ui.handleMouse("\x1b[<35;4;1M") {
+		t.Fatal("unconsumed motion over the transcript asked for a render")
 	}
 	if len(target.events) != 1 {
 		t.Fatalf("events = %+v", target.events)
@@ -92,8 +96,8 @@ func TestTUIDispatchesMouseToComponentUnderCursor(t *testing.T) {
 		t.Fatal("selection started under a component that consumed the press")
 	}
 
-	ui.handleViewportInput("\x1b[<0;4;5m")
-	ui.handleViewportInput("\x1b[<0;4;5M")
+	ui.handleMouse("\x1b[<0;4;5m")
+	ui.handleMouse("\x1b[<0;4;5M")
 	if got := target.events[len(target.events)-1]; got.Clicks != 2 {
 		t.Fatalf("second press = %+v, want Clicks 2", got)
 	}
@@ -106,13 +110,13 @@ func TestTUIMouseFallsThroughWhenComponentDeclines(t *testing.T) {
 
 	// A declined press still falls through to the viewport, but selection is
 	// constrained to the transcript: a chrome press starts nothing.
-	ui.handleViewportInput("\x1b[<0;4;5M")
+	ui.handleMouse("\x1b[<0;4;5M")
 	if len(target.events) != 1 || ui.selection.active {
 		t.Fatalf("declined chrome press = events %d selection %+v, want fall-through without selection", len(target.events), ui.selection)
 	}
 	// The fall-through path itself stays alive: a declined wheel scrolls the
 	// transcript.
-	ui.handleViewportInput("\x1b[<64;4;5M")
+	ui.handleMouse("\x1b[<64;4;5M")
 	if ui.viewportFollow {
 		t.Fatal("declined wheel did not fall through to the transcript")
 	}
@@ -123,15 +127,15 @@ func TestTUIModifiedMouseSkipsComponentDispatch(t *testing.T) {
 	ui, _ := viewportWithTarget(t, target)
 	ui.SetSelectionHandler(func(string) {})
 
-	ui.handleViewportInput("\x1b[<4;4;1M") // shift+left press on the transcript
+	ui.handleMouse("\x1b[<4;4;1M") // shift+left press on the transcript
 	if len(target.events) != 0 || !ui.selection.active {
 		t.Fatalf("shift-modified press was captured: events=%d selection=%+v", len(target.events), ui.selection)
 	}
-	ui.handleViewportInput("\x1b[<4;4;1m")
+	ui.handleMouse("\x1b[<4;4;1m")
 
 	// Over the chrome the modifier still skips dispatch, and the constrained
 	// selection starts nothing either.
-	ui.handleViewportInput("\x1b[<4;4;5M")
+	ui.handleMouse("\x1b[<4;4;5M")
 	if len(target.events) != 0 || ui.selection.active {
 		t.Fatalf("shift-modified chrome press = events %d selection %+v, want neither dispatch nor selection", len(target.events), ui.selection)
 	}
@@ -141,7 +145,7 @@ func TestTUIWheelPrefersComponentThenViewport(t *testing.T) {
 	target := &clickTarget{lines: []string{"one", "two", "three"}, accept: true}
 	ui, _ := viewportWithTarget(t, target)
 
-	ui.handleViewportInput("\x1b[<64;4;5M") // wheel up over the component
+	ui.handleMouse("\x1b[<64;4;5M") // wheel up over the component
 	if len(target.events) != 1 || target.events[0].Type != MouseWheelUp {
 		t.Fatalf("wheel did not reach the component: %+v", target.events)
 	}
@@ -149,7 +153,7 @@ func TestTUIWheelPrefersComponentThenViewport(t *testing.T) {
 		t.Fatal("component wheel scrolled the transcript")
 	}
 
-	ui.handleViewportInput("\x1b[<64;4;1M") // wheel up over the transcript
+	ui.handleMouse("\x1b[<64;4;1M") // wheel up over the transcript
 	if ui.viewportFollow || len(target.events) != 1 {
 		t.Fatalf("transcript wheel = follow %v events %+v", ui.viewportFollow, target.events)
 	}
@@ -161,9 +165,9 @@ func TestTUIDragSelectionKeepsPriorityOverComponents(t *testing.T) {
 	copied := make(chan string, 1)
 	ui.SetSelectionHandler(func(text string) { copied <- text })
 
-	ui.handleViewportInput("\x1b[<0;1;1M")  // press on the transcript
-	ui.handleViewportInput("\x1b[<32;4;2M") // drag down into the chrome
-	ui.handleViewportInput("\x1b[<0;4;2m")  // release over the component
+	ui.handleMouse("\x1b[<0;1;1M")  // press on the transcript
+	ui.handleMouse("\x1b[<32;4;2M") // drag down into the chrome
+	ui.handleMouse("\x1b[<0;4;2m")  // release over the component
 	if len(target.events) != 0 {
 		t.Fatalf("an in-flight selection leaked into the component: %+v", target.events)
 	}
@@ -187,7 +191,7 @@ func TestTUIDispatchesMouseToOverlay(t *testing.T) {
 	ui.ShowOverlay(target, OverlayOptions{Width: AbsoluteSize(10), Anchor: OverlayTopLeft})
 	ui.RenderNow()
 
-	ui.handleViewportInput("\x1b[<0;3;2M") // second overlay row, third column
+	ui.handleMouse("\x1b[<0;3;2M") // second overlay row, third column
 	if len(target.events) != 1 || target.events[0].Row != 1 || target.events[0].Column != 2 {
 		t.Fatalf("overlay event = %+v", target.events)
 	}
@@ -203,7 +207,7 @@ func TestTUIScrollbarClickStillBeatsComponents(t *testing.T) {
 	ui.SetViewport(body, target)
 	ui.previousLines = ui.renderViewport(10, 6)
 
-	ui.handleViewportInput("\x1b[<0;10;1M")
+	ui.handleMouse("\x1b[<0;10;1M")
 	if !ui.selection.scrollbar || len(target.events) != 0 {
 		t.Fatalf("scrollbar click = %+v, component events %+v", ui.selection, target.events)
 	}
@@ -377,7 +381,7 @@ func TestTUIFocusScopesMouseMotionTracking(t *testing.T) {
 	// rebased onto its own rows.
 	ui.SetFocus(selector)
 	ui.RenderNow()
-	ui.handleViewportInput("\x1b[<35;3;6M")
+	ui.handleMouse("\x1b[<35;3;6M")
 	if len(selector.events) != 1 || selector.events[0].Type != MouseMove || selector.events[0].Row != 1 {
 		t.Fatalf("motion events = %+v", selector.events)
 	}

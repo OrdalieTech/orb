@@ -177,8 +177,12 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 				AgentDir:       agentDir,
 				CWD:            cwd,
 				ProjectTrusted: settings.IsProjectTrusted(),
-				Version:        version,
-				Stderr:         os.Stderr,
+				// The pre-trust probe load registers a provisional set the real
+				// load overwrites moments later: it neither reads nor writes the
+				// metadata snapshot.
+				SkipMetadataCacheWrite: args.skipMetadataCache,
+				Version:                version,
+				Stderr:                 os.Stderr,
 			})
 			// Child agent sessions (agent_session_v1 / sdk_v1 resource reload)
 			// run on the real NewAgentSession-backed runtime.

@@ -35,9 +35,9 @@ func TestHelpTextDocumentsExtensionFlagAndCommands(t *testing.T) {
 
 func TestRunCLIClosesExtensionHostBeforeReturning(t *testing.T) {
 	requireExtensionHostRuntime(t)
-	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
 	cwd := t.TempDir()
 	agentDir := filepath.Join(t.TempDir(), "agent")
+	closeExtensionHostOnCleanup(t)
 	t.Setenv(config.EnvAgentDir, agentDir)
 	t.Setenv("HOME", t.TempDir())
 	t.Chdir(cwd)

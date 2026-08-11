@@ -103,7 +103,7 @@ func TestSelectionE2EEdgeDragAutoScrollsAndSpansScroll(t *testing.T) {
 
 	fixture.terminal.deliver(sgr(0, 30, height+1, true)) // release
 	selection, scroll := fixture.selectionState()
-	if scroll.timer != nil || scroll.direction != 0 {
+	if scroll.timer != nil || scroll.rows != 0 {
 		t.Fatalf("release left the auto-scroll timer armed: %+v", scroll)
 	}
 	restingEnd := fixture.viewportEndNow()
@@ -170,7 +170,7 @@ func TestSelectionE2EScrollRateScalesWithOvershoot(t *testing.T) {
 	// Dragging back inside the thread stops the timer without ending the drag.
 	fixture.terminal.deliver(sgr(32, 3, 2, false))
 	selection, scroll := fixture.selectionState()
-	if !selection.active || scroll.timer != nil || scroll.direction != 0 {
+	if !selection.active || scroll.timer != nil || scroll.rows != 0 {
 		t.Fatalf("re-entering the thread did not idle auto-scroll: selection=%+v scroll=%+v", selection, scroll)
 	}
 	fixture.terminal.deliver(sgr(0, 3, 2, true))

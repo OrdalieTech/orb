@@ -517,7 +517,6 @@ func ansiTokens(text string) []string {
 			if !space && isCJK(segment) {
 				if mark > start {
 					tokens = append(tokens, text[start:mark])
-					kind = 0
 				}
 				tokens = append(tokens, text[mark:segEnd])
 				start, mark = segEnd, segEnd

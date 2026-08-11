@@ -80,17 +80,22 @@ type Options struct {
 	CWD      string
 	// ProjectTrusted mirrors DiscoveryOptions.ProjectTrusted for consumers that
 	// gate project-scoped resources on the same trust decision.
-	ProjectTrusted  bool
-	Version         string
-	Runtime         *Runtime
-	OrbExecutable   string
-	RequestTimeout  time.Duration
-	ShutdownTimeout time.Duration
-	MaxRestarts     int
-	BackoffBase     time.Duration
-	BackoffMax      time.Duration
-	Stderr          io.Writer
-	OnDiagnostic    func(extensions.Diagnostic)
+	ProjectTrusted bool
+	// SkipMetadataCacheWrite suppresses the write-through metadata snapshot for
+	// loads whose registrations are provisional — the pre-trust probe load,
+	// whose snapshot the post-trust load overwrites moments later — so they do
+	// not pay the fingerprint walk twice.
+	SkipMetadataCacheWrite bool
+	Version                string
+	Runtime                *Runtime
+	OrbExecutable          string
+	RequestTimeout         time.Duration
+	ShutdownTimeout        time.Duration
+	MaxRestarts            int
+	BackoffBase            time.Duration
+	BackoffMax             time.Duration
+	Stderr                 io.Writer
+	OnDiagnostic           func(extensions.Diagnostic)
 }
 
 type LoadError struct {
@@ -127,6 +132,9 @@ type Manager struct {
 	providers    providerBridge
 	stateHost    *stateHost
 	services     *servicesHost
+	// cacheWrites tracks the background metadata-snapshot writes so Close can
+	// wait for them instead of racing the file.
+	cacheWrites sync.WaitGroup
 }
 
 type extensionEntry struct {
@@ -361,6 +369,7 @@ func (manager *Manager) Close() error {
 	}
 	manager.stateHost.close()
 	manager.services.reset()
+	manager.cacheWrites.Wait()
 	return nil
 }
 
@@ -1502,34 +1511,39 @@ func materializeSource(agentDir, name string, source []byte) (string, error) {
 	}
 	hash := fmt.Sprintf("%x", sha256.Sum256(source))
 	directory := filepath.Join(agentDir, "host")
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return "", err
-	}
-	path := filepath.Join(directory, name+"-"+hash+".mjs")
+	fileName := name + "-" + hash + ".mjs"
+	path := filepath.Join(directory, fileName)
 	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(existing, source) {
 		return path, nil
 	}
-	temporary, err := os.CreateTemp(directory, "."+name+"-*.mjs")
-	if err != nil {
-		return "", err
-	}
-	temporaryPath := temporary.Name()
-	defer func() { _ = os.Remove(temporaryPath) }()
-	if err := temporary.Chmod(0o600); err != nil {
-		_ = temporary.Close()
-		return "", err
-	}
-	if _, err := temporary.Write(source); err != nil {
-		_ = temporary.Close()
-		return "", err
-	}
-	if err := temporary.Close(); err != nil {
-		return "", err
-	}
-	if err := os.Rename(temporaryPath, path); err != nil {
+	if err := writeHostFile(directory, fileName, source); err != nil {
 		return "", err
 	}
 	return path, nil
+}
+
+// writeHostFile publishes data as directory/name atomically: readers (a spawned
+// runtime loading a script, a metadata command reading the snapshot) either see
+// the previous file or the complete new one. os.CreateTemp already creates the
+// temporary file 0600, which is the mode both host artifacts keep.
+func writeHostFile(directory, name string, data []byte) error {
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(directory, "."+name+"-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer func() { _ = os.Remove(temporaryPath) }()
+	if _, err := temporary.Write(data); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryPath, filepath.Join(directory, name))
 }
 
 func wireValue(value any) (any, error) {

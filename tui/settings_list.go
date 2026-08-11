@@ -213,11 +213,12 @@ func (list *SettingsList) HandleInput(event KeyEvent) {
 
 // HandleMouse drives the shared list pointer semantic for click and wheel;
 // a double click cycles the value, matching Enter/Space. An open submenu
-// keeps the mouse, as it keeps keyboard input. Hover stays off: the settings
-// dialog lives in the bottom-anchored chrome and the selected item's
-// description panel below the rows varies in height, so a hover-driven
-// selection change would shift the rows under the stationary cursor and feed
-// back into hit-testing.
+// keeps the mouse, as it keeps keyboard input. Hover stays off — the type
+// says so: SettingsList deliberately does not implement MouseMotionHandler,
+// because the settings dialog lives in the bottom-anchored chrome and the
+// selected item's description panel below the rows varies in height, so a
+// hover-driven selection change would shift the rows under the stationary
+// cursor and feed back into hit-testing.
 func (list *SettingsList) HandleMouse(event MouseEvent) bool {
 	list.mu.Lock()
 	if list.submenuComponent != nil {
@@ -227,7 +228,7 @@ func (list *SettingsList) HandleMouse(event MouseEvent) bool {
 	}
 	empty := len(list.displayItems()) == 0
 	list.mu.Unlock()
-	if empty || event.Type == MouseMove {
+	if empty {
 		return false
 	}
 	return HandleListMouse(list, event)

@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // trackingTerminal emulates the xterm mouse-tracking state machine on top of
@@ -307,5 +309,90 @@ func TestMouseE2EHoverMovesSelectionWithoutWindowShift(t *testing.T) {
 	}
 	if got := fixture.terminal.trackingMode(); got != "drag" {
 		t.Fatalf("tracking after the selector closed = %q, want drag", got)
+	}
+}
+
+// countingBody is a transcript that counts the frames it is composed into.
+// It is rendered exactly once per frame and never by hit-testing (transcript
+// rows have no mouse targets), so its count is the frame count.
+type countingBody struct {
+	mu     sync.Mutex
+	lines  []string
+	frames int
+}
+
+func (body *countingBody) Render(int) []string {
+	body.mu.Lock()
+	defer body.mu.Unlock()
+	body.frames++
+	return body.lines
+}
+
+func (body *countingBody) frameCount() int {
+	body.mu.Lock()
+	defer body.mu.Unlock()
+	return body.frames
+}
+
+// TestMouseE2ENoOpMotionSchedulesNoFrame pins the hover render gate. With
+// ?1003 on, motion reports arrive at pointer speed; the ones no component
+// consumes change nothing, so they must not schedule a frame that would
+// repaint an identical screen. Motion that actually moves the hover selection
+// — and every non-motion gesture — still renders.
+func TestMouseE2ENoOpMotionSchedulesNoFrame(t *testing.T) {
+	terminal := newTrackingTerminal(40, 12)
+	ui := NewTUI(terminal)
+	body := &countingBody{}
+	for index := range 100 {
+		body.lines = append(body.lines, fmt.Sprintf("line %d", index))
+	}
+	list := e2eSelector(6, 3)
+	chrome := &Container{}
+	chrome.AddChild(list)
+	ui.SetViewport(body, chrome)
+	if err := ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ui.Stop() })
+	ui.SetFocus(list)
+	ui.RenderNow()
+	if got := terminal.trackingMode(); got != "any" {
+		t.Fatalf("tracking while the selector holds focus = %q, want any", got)
+	}
+
+	settle := func() { time.Sleep(4 * minRenderInterval) }
+	settle()
+	before := body.frameCount()
+
+	// A pointer sweep across the transcript: nothing there handles the mouse.
+	for column := range 30 {
+		if !terminal.deliver(sgr(35, column, 1, false)) {
+			t.Fatal("terminal did not report motion while the selector holds focus")
+		}
+	}
+	settle()
+	if got := body.frameCount(); got != before {
+		t.Fatalf("30 unconsumed motion reports rendered %d frames, want 0", got-before)
+	}
+
+	// The same pointer position as a wheel still renders.
+	terminal.deliver(sgr(65, 5, 1, false))
+	settle()
+	if got := body.frameCount(); got == before {
+		t.Fatal("a wheel over the transcript rendered no frame")
+	}
+	before = body.frameCount()
+
+	// Hover that lands on a different selector row renders too.
+	row := terminal.Rows() - len(list.Render(terminal.Columns())) + 1
+	if !terminal.deliver(sgr(35, 4, row, false)) {
+		t.Fatal("terminal did not report the hover over the selector")
+	}
+	if item, _ := list.GetSelectedItem(); item.Value != "item-01" {
+		t.Fatalf("hover selected %q, want item-01", item.Value)
+	}
+	settle()
+	if got := body.frameCount(); got == before {
+		t.Fatal("a hover that moved the selection rendered no frame")
 	}
 }
