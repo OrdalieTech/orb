@@ -61,14 +61,23 @@ func requireExtensionHostRuntime(t *testing.T) {
 	}
 }
 
+// closeExtensionHostOnCleanup closes the process-scoped host when the test ends.
+// Call it AFTER creating the temp dirs the host writes into: cleanups run last
+// in, first out, and Close is what waits for the background metadata-snapshot
+// write that would otherwise land in a directory being removed.
+func closeExtensionHostOnCleanup(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
+}
+
 // Finding 2: extensions provided by installed pi packages must load. cmd/orb now
 // forwards resolvedPaths.Extensions into the host's package-path fields; a
 // user-scope package extension therefore reaches the loaded tool set.
 func TestLoadCompiledExtensionsLoadsPackageProvidedExtensions(t *testing.T) {
 	requireExtensionHostRuntime(t)
-	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
 	cwd := t.TempDir()
 	agentDir := t.TempDir()
+	closeExtensionHostOnCleanup(t)
 	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
 	if err != nil {
 		t.Fatal(err)
@@ -91,9 +100,9 @@ func TestLoadCompiledExtensionsLoadsPackageProvidedExtensions(t *testing.T) {
 
 func TestLoadCompiledExtensionsUsesExtensionHost(t *testing.T) {
 	requireExtensionHostRuntime(t)
-	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
 	cwd := t.TempDir()
 	agentDir := t.TempDir()
+	closeExtensionHostOnCleanup(t)
 	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
 	if err != nil {
 		t.Fatal(err)
@@ -121,9 +130,9 @@ func TestLoadCompiledExtensionsUsesExtensionHost(t *testing.T) {
 }
 
 func TestLoadCompiledExtensionsKeepsNativeExtensionsWithoutJSRuntime(t *testing.T) {
-	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
 	cwd := t.TempDir()
 	agentDir := t.TempDir()
+	closeExtensionHostOnCleanup(t)
 	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
 	if err != nil {
 		t.Fatal(err)
@@ -149,9 +158,9 @@ func TestLoadCompiledExtensionsKeepsNativeExtensionsWithoutJSRuntime(t *testing.
 // ProjectTrusted).
 func TestLoadCompiledExtensionsHidesProjectPackageExtensionsUntilTrusted(t *testing.T) {
 	requireExtensionHostRuntime(t)
-	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
 	cwd := t.TempDir()
 	agentDir := t.TempDir()
+	closeExtensionHostOnCleanup(t)
 	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir), config.WithProjectTrusted(false))
 	if err != nil {
 		t.Fatal(err)
@@ -196,7 +205,6 @@ func TestIsPackageSourceSpecClassification(t *testing.T) {
 // path. A fake registry (via npm_config_registry) keeps the test offline.
 func TestExtensionFlagResolvesNpmSourceInsteadOfLiteralPath(t *testing.T) {
 	requireExtensionHostRuntime(t)
-	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
 	registry := newInlineNpmRegistry(t)
 	registry.add("pi-fixture-ext", "1.0.0", map[string]string{
 		"package.json": `{"name":"pi-fixture-ext","version":"1.0.0","pi":{"extensions":["index.ts"]}}`,
@@ -206,6 +214,7 @@ func TestExtensionFlagResolvesNpmSourceInsteadOfLiteralPath(t *testing.T) {
 
 	cwd := t.TempDir()
 	agentDir := t.TempDir()
+	closeExtensionHostOnCleanup(t)
 	t.Setenv(config.EnvAgentDir, agentDir)
 	t.Setenv("HOME", t.TempDir())
 	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))

@@ -25,9 +25,9 @@ func metadataCachePath(agentDir string) string {
 func setupMetadataCacheFixture(t *testing.T) (cwd, agentDir, extension string) {
 	t.Helper()
 	requireExtensionHostRuntime(t)
-	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
 	cwd = t.TempDir()
 	agentDir = filepath.Join(t.TempDir(), "agent")
+	closeExtensionHostOnCleanup(t)
 	t.Setenv(config.EnvAgentDir, agentDir)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("FAKE_KEY", "dummy")
@@ -58,10 +58,13 @@ func TestListModelsMetadataCacheWarmMatchesCold(t *testing.T) {
 	if !strings.Contains(cold, "fakeprov") || !strings.Contains(cold, "fake-1") {
 		t.Fatalf("cold run missing extension provider:\n%s", cold)
 	}
+	// The snapshot is written in the background; closing the host is the
+	// documented wait point (runCLI closes it on the way out, this test drives
+	// runCLIWithDependencies directly).
+	replaceActiveExtensionHost(nil)
 	if _, err := os.Stat(metadataCachePath(agentDir)); err != nil {
 		t.Fatalf("cold run did not write the metadata cache: %v", err)
 	}
-	replaceActiveExtensionHost(nil)
 
 	t.Setenv("ORB_NODE", "none")
 	code, warm, warmErr := runListModelsCLI(t, extension)
@@ -87,11 +90,13 @@ func TestListModelsMetadataCacheInvalidatedByEntryChange(t *testing.T) {
 	if !strings.Contains(cold, "fake-1") {
 		t.Fatalf("cold run missing extension provider:\n%s", cold)
 	}
+	replaceActiveExtensionHost(nil)
 	if _, err := os.Stat(metadataCachePath(agentDir)); err != nil {
 		t.Fatalf("cold run did not write the metadata cache: %v", err)
 	}
-	replaceActiveExtensionHost(nil)
 
+	// The rewrite changes the entry's size and bumps its mtime: the fingerprint
+	// stamps entries (size, mtime) rather than hashing them.
 	if err := os.WriteFile(extension, []byte(metadataCacheModifiedExtension), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -88,6 +88,12 @@ type ListRowClicker interface {
 func HandleListMouse(target ListMouseTarget, event MouseEvent) bool {
 	switch {
 	case event.Type == MouseMove:
+		// Hover is opt-in: a list that does not advertise motion tracking
+		// never gets any-motion reports enabled for it, so a stray one (the
+		// mode lingering from another component) must not move its selection.
+		if motion, ok := target.(MouseMotionHandler); !ok || !motion.WantsMouseMotion() {
+			return false
+		}
 		index, ok := target.ListRowAt(event.Row)
 		if !ok {
 			return false

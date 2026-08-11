@@ -102,18 +102,42 @@ func parseMouse(data string) (MouseEvent, bool) {
 	return event, true
 }
 
+// childCount and childAt read the child slice in place: hit-testing walks
+// every container level per report — at pointer speed once any-motion
+// tracking is on — and Children's defensive copy would allocate per level.
+// The child is fetched under the lock and measured outside it, so a
+// component's Render can still re-enter its own container.
+func (container *Container) childCount() int {
+	container.mu.RLock()
+	defer container.mu.RUnlock()
+	return len(container.children)
+}
+
+func (container *Container) childAt(index int) Component {
+	container.mu.RLock()
+	defer container.mu.RUnlock()
+	if index < 0 || index >= len(container.children) {
+		return nil
+	}
+	return container.children[index]
+}
+
 // mouseTargetAt walks a component in the order Render composes it and returns
 // the mouse-aware component covering row, with row rebased onto that
 // component's own render.
 func mouseTargetAt(component Component, width, row int) (MouseHandler, int, bool) {
 	if container, ok := component.(*Container); ok {
 		offset := 0
-		for _, child := range container.Children() {
-			count := componentLineCount(child, width)
-			if row < offset+count {
+		for index, count := 0, container.childCount(); index < count; index++ {
+			child := container.childAt(index)
+			if child == nil {
+				continue
+			}
+			lines := componentLineCount(child, width)
+			if row < offset+lines {
 				return mouseTargetAt(child, width, row-offset)
 			}
-			offset += count
+			offset += lines
 		}
 		return nil, 0, false
 	}

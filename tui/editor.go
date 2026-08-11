@@ -721,7 +721,7 @@ func (editor *Editor) Render(width int) []string {
 		result = append(result, strings.Repeat(horizontal, width))
 	}
 
-	if editor.autocompleteState != "" && editor.autocompleteList != nil {
+	if editor.popupOpenLocked() {
 		for _, line := range editor.autocompleteList.Render(contentWidth) {
 			linePadding := strings.Repeat(" ", max(0, contentWidth-VisibleWidth(line)))
 			result = append(result, leftPadding+line+linePadding+rightPadding)
@@ -731,6 +731,14 @@ func (editor *Editor) Render(width int) []string {
 	return result
 }
 
+// popupOpenLocked reports whether the autocomplete popup is on screen. The
+// state and the list are written together under editor.mu — the list is built
+// before the state is set and both are cleared at once — so the two spellings
+// of this check are one condition. Callers hold editor.mu.
+func (editor *Editor) popupOpenLocked() bool {
+	return editor.autocompleteState != "" && editor.autocompleteList != nil
+}
+
 // WantsMouseMotion turns on hover reports only while the autocomplete popup
 // is open: any-motion tracking during normal typing would flood the input
 // stream, so it stays off for the rest of the editor's focused life. The
@@ -738,7 +746,7 @@ func (editor *Editor) Render(width int) []string {
 func (editor *Editor) WantsMouseMotion() bool {
 	editor.mu.Lock()
 	defer editor.mu.Unlock()
-	return editor.autocompleteState != "" && editor.autocompleteList != nil
+	return editor.popupOpenLocked()
 }
 
 // HandleMouse places the cursor on a clicked character and accepts a clicked
@@ -747,7 +755,7 @@ func (editor *Editor) WantsMouseMotion() bool {
 func (editor *Editor) HandleMouse(event MouseEvent) bool {
 	editor.mu.Lock()
 	autocompleteTop := editor.renderVisible + 2
-	if editor.autocompleteState != "" && editor.autocompleteList != nil && event.Row >= autocompleteTop {
+	if editor.popupOpenLocked() && event.Row >= autocompleteTop {
 		local := event
 		local.Row, local.Column = event.Row-autocompleteTop, max(0, event.Column-editor.renderPaddingX)
 		if !editor.autocompleteList.HandleMouse(local) {
@@ -866,7 +874,7 @@ func (editor *Editor) handleData(data string) {
 	}
 
 	// Autocomplete mode.
-	if editor.autocompleteState != "" && editor.autocompleteList != nil {
+	if editor.popupOpenLocked() {
 		if kb.Matches(data, "tui.select.cancel") {
 			editor.cancelAutocomplete()
 			return
@@ -906,7 +914,7 @@ func (editor *Editor) handleData(data string) {
 	}
 
 	// Tab: trigger completion.
-	if kb.Matches(data, "tui.input.tab") && editor.autocompleteState == "" {
+	if kb.Matches(data, "tui.input.tab") && !editor.popupOpenLocked() {
 		editor.handleTabCompletion()
 		return
 	}
@@ -1266,7 +1274,7 @@ func (editor *Editor) insertCharacter(char string, skipUndoCoalescing bool) {
 
 	editor.emitChange()
 
-	if editor.autocompleteState != "" {
+	if editor.popupOpenLocked() {
 		editor.updateAutocomplete()
 		return
 	}
@@ -1519,7 +1527,7 @@ func (editor *Editor) handleBackspace() {
 
 	editor.emitChange()
 
-	if editor.autocompleteState != "" {
+	if editor.popupOpenLocked() {
 		editor.updateAutocomplete()
 	} else {
 		textBeforeCursor := runeSlice(editor.currentLine(), 0, editor.state.cursorCol)
@@ -1782,7 +1790,7 @@ func (editor *Editor) handleForwardDelete() {
 
 	editor.emitChange()
 
-	if editor.autocompleteState != "" {
+	if editor.popupOpenLocked() {
 		editor.updateAutocomplete()
 	} else {
 		textBeforeCursor := runeSlice(editor.currentLine(), 0, editor.state.cursorCol)
@@ -1882,7 +1890,7 @@ func (editor *Editor) moveCursor(deltaLine, deltaCol int) {
 
 	// Keep an open autocomplete picker in sync with the moved cursor;
 	// re-query so it refreshes or closes.
-	if editor.autocompleteState != "" {
+	if editor.popupOpenLocked() {
 		editor.updateAutocomplete()
 	}
 }
@@ -2292,7 +2300,7 @@ func (editor *Editor) startAutocompleteRequest(startToken int, force, explicitTa
 }
 
 func (editor *Editor) applyAutocompleteSuggestions(suggestions *AutocompleteSuggestions, state string) {
-	wasShowing := editor.autocompleteState != ""
+	wasShowing := editor.popupOpenLocked()
 	editor.autocompletePrefix = suggestions.Prefix
 	editor.autocompleteList = editor.createAutocompleteList(suggestions.Prefix, suggestions.Items)
 	if bestMatchIndex := getBestAutocompleteMatchIndex(suggestions.Items, suggestions.Prefix); bestMatchIndex >= 0 {
@@ -2327,7 +2335,7 @@ func (editor *Editor) cancelAutocompleteRequest() {
 }
 
 func (editor *Editor) clearAutocompleteUI() {
-	wasShowing := editor.autocompleteState != ""
+	wasShowing := editor.popupOpenLocked()
 	editor.autocompleteState = ""
 	editor.autocompleteList = nil
 	editor.autocompletePrefix = ""
@@ -2341,8 +2349,7 @@ func (editor *Editor) clearAutocompleteUI() {
 // focus machinery locks the editor while holding the TUI's focus mutex, so
 // calling in with editor.mu held would invert that order.
 func (editor *Editor) syncMouseMotionSoon() {
-	ui := editor.ui
-	editor.pending = append(editor.pending, ui.SyncMouseMotion)
+	editor.pending = append(editor.pending, editor.ui.SyncMouseMotion)
 }
 
 func (editor *Editor) cancelAutocomplete() {
@@ -2353,11 +2360,11 @@ func (editor *Editor) cancelAutocomplete() {
 func (editor *Editor) IsShowingAutocomplete() bool {
 	editor.mu.Lock()
 	defer editor.mu.Unlock()
-	return editor.autocompleteState != ""
+	return editor.popupOpenLocked()
 }
 
 func (editor *Editor) updateAutocomplete() {
-	if editor.autocompleteState == "" || editor.autocompleteProvider == nil {
+	if !editor.popupOpenLocked() || editor.autocompleteProvider == nil {
 		return
 	}
 	editor.requestAutocomplete(editor.autocompleteState == "force", false)
