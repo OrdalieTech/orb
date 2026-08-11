@@ -71,41 +71,37 @@ func applyMarkdownTransformer(transformer extensions.MarkdownTransformer, markdo
 // indent ladder.
 const chatBandPad = 2
 
-// chatBand reserves one gutter cell left of a band box so all chat bands
-// share a left edge: the user-message band paints its gutter as an accent
-// bar, tool and custom bands leave it blank. Render never returns the child's
+// renderBand reserves one gutter cell left of a band box so all chat bands
+// share a left edge: the user-message band passes an accent bar, tool and
+// custom bands pass "" for a blank cell. Callers resolve the gutter at render
+// time so it follows theme changes. The returned slice is never the child's
 // cached slice, so callers may prefix zone markers safely.
-type chatBand struct {
-	inner  tui.Component
-	gutter func() string
-}
-
-func (band *chatBand) Invalidate() {
-	if invalidator, ok := band.inner.(interface{ Invalidate() }); ok {
-		invalidator.Invalidate()
-	}
-}
-
-func (band *chatBand) Render(width int) []string {
+func renderBand(inner tui.Component, width int, gutter string) []string {
 	if width <= 1 {
-		return append([]string(nil), band.inner.Render(width)...)
+		return append([]string(nil), inner.Render(width)...)
 	}
-	inner := band.inner.Render(width - 1)
-	gutter := ""
-	if band.gutter != nil {
-		gutter = band.gutter()
-	}
+	rendered := inner.Render(width - 1)
 	if gutter == "" {
 		gutter = " "
 	}
-	lines := make([]string, len(inner))
-	for index, line := range inner {
+	lines := make([]string, len(rendered))
+	for index, line := range rendered {
 		lines[index] = gutter + line
 	}
 	return lines
 }
 
-func userMessageBar() string { return theme.FG("accent", string(tui.BandGutterBar)) }
+// chatBand is renderBand as a Component, for the bands that are added as a
+// child rather than rendered by their owner.
+type chatBand struct{ inner tui.Component }
+
+func (band *chatBand) Invalidate() {
+	if invalidator, ok := band.inner.(tui.Invalidatable); ok {
+		invalidator.Invalidate()
+	}
+}
+
+func (band *chatBand) Render(width int) []string { return renderBand(band.inner, width, "") }
 
 // startupWarnings renders startup diagnostics as one compact warning band:
 // one line per warning truncated to the viewport width (never wrapped),
@@ -160,7 +156,7 @@ func (warnings *startupWarnings) Render(width int) []string {
 // ─────────────────────────────────────────────────────────────
 
 type UserMessageComponent struct {
-	band *chatBand
+	box *tui.Box
 }
 
 func NewUserMessageComponent(text string, mdTheme tui.MarkdownTheme, outputPad int, transformers []extensions.MarkdownTransformer) *UserMessageComponent {
@@ -173,12 +169,12 @@ func NewUserMessageComponent(text string, mdTheme tui.MarkdownTheme, outputPad i
 		Transform:                  newMarkdownTransform("user", false, transformers),
 	})
 	box.AddChild(md)
-	return &UserMessageComponent{band: &chatBand{inner: box, gutter: userMessageBar}}
+	return &UserMessageComponent{box: box}
 }
 
-func (c *UserMessageComponent) Invalidate() { c.band.Invalidate() }
+func (c *UserMessageComponent) Invalidate() { c.box.Invalidate() }
 func (c *UserMessageComponent) Render(width int) []string {
-	lines := c.band.Render(width)
+	lines := renderBand(c.box, width, theme.FG("accent", string(tui.BandGutterBar)))
 	if len(lines) > 0 {
 		lines[0] = osc133ZoneStart + lines[0]
 		lines[len(lines)-1] = osc133ZoneEnd + osc133ZoneFinal + lines[len(lines)-1]
@@ -985,7 +981,7 @@ func (f *FooterComponent) metadata() (string, int) {
 		f.branchAt, f.branchRefreshing = time.Now(), false
 		f.branchMu.Unlock()
 	}
-	if invalidator, ok := f.provider.(interface{ Invalidate() }); ok {
+	if invalidator, ok := f.provider.(tui.Invalidatable); ok {
 		go func() {
 			store(load())
 			invalidator.Invalidate()
@@ -1165,7 +1161,6 @@ func (f *FooterComponent) Render(width int) []string {
 
 type CompactionSummaryMessageComponent struct {
 	box      *tui.Box
-	band     *chatBand
 	expanded bool
 	summary  string
 	tokens   int64
@@ -1179,7 +1174,6 @@ func NewCompactionSummaryMessage(summary string, tokensBefore int64, mdTheme tui
 		tokens:  tokensBefore,
 		mdTheme: mdTheme,
 	}
-	c.band = &chatBand{inner: c.box}
 	c.updateDisplay()
 	return c
 }
@@ -1212,7 +1206,7 @@ func (c *CompactionSummaryMessageComponent) updateDisplay() {
 
 func (c *CompactionSummaryMessageComponent) Invalidate() { c.box.Invalidate() }
 func (c *CompactionSummaryMessageComponent) Render(width int) []string {
-	return c.band.Render(width)
+	return renderBand(c.box, width, "")
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1221,7 +1215,6 @@ func (c *CompactionSummaryMessageComponent) Render(width int) []string {
 
 type BranchSummaryMessageComponent struct {
 	box      *tui.Box
-	band     *chatBand
 	expanded bool
 	summary  string
 	mdTheme  tui.MarkdownTheme
@@ -1233,7 +1226,6 @@ func NewBranchSummaryMessage(summary string, mdTheme tui.MarkdownTheme) *BranchS
 		summary: summary,
 		mdTheme: mdTheme,
 	}
-	c.band = &chatBand{inner: c.box}
 	c.updateDisplay()
 	return c
 }
@@ -1263,8 +1255,10 @@ func (c *BranchSummaryMessageComponent) updateDisplay() {
 	}
 }
 
-func (c *BranchSummaryMessageComponent) Invalidate()               { c.box.Invalidate() }
-func (c *BranchSummaryMessageComponent) Render(width int) []string { return c.band.Render(width) }
+func (c *BranchSummaryMessageComponent) Invalidate() { c.box.Invalidate() }
+func (c *BranchSummaryMessageComponent) Render(width int) []string {
+	return renderBand(c.box, width, "")
+}
 
 // ─────────────────────────────────────────────────────────────
 // SkillInvocationMessageComponent
@@ -1272,7 +1266,6 @@ func (c *BranchSummaryMessageComponent) Render(width int) []string { return c.ba
 
 type SkillInvocationMessageComponent struct {
 	box      *tui.Box
-	band     *chatBand
 	expanded bool
 	name     string
 	content  string
@@ -1286,7 +1279,6 @@ func NewSkillInvocationMessage(name, content string, mdTheme tui.MarkdownTheme) 
 		content: content,
 		mdTheme: mdTheme,
 	}
-	c.band = &chatBand{inner: c.box}
 	c.updateDisplay()
 	return c
 }
@@ -1316,7 +1308,9 @@ func (c *SkillInvocationMessageComponent) Invalidate() {
 	c.box.Invalidate()
 	c.updateDisplay()
 }
-func (c *SkillInvocationMessageComponent) Render(width int) []string { return c.band.Render(width) }
+func (c *SkillInvocationMessageComponent) Render(width int) []string {
+	return renderBand(c.box, width, "")
+}
 
 // ─────────────────────────────────────────────────────────────
 // CustomMessageComponent

@@ -316,19 +316,18 @@ func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 // single top-level scan; the pair must match two topLevelMemberBefore calls
 // against "timestamp" and "responseId".
 func assistantErrorMemberOrder(data []byte) (beforeTimestamp, beforeResponseID bool) {
-	beforeTimestamp = topLevelMemberBeforeMulti(data, "errorMessage", "timestamp", "responseId", &beforeResponseID)
-	beforeResponseID = !beforeTimestamp && beforeResponseID
-	return beforeTimestamp, beforeResponseID
+	beforeTimestamp, beforeResponseID = topLevelMemberBeforeMulti(data, "errorMessage", "timestamp", "responseId")
+	return beforeTimestamp, !beforeTimestamp && beforeResponseID
 }
 
-func topLevelMemberBeforeMulti(data []byte, first, second, alternate string, alternateResult *bool) bool {
-	result, alternateBefore, ok := topLevelMemberBeforeScan(data, first, second, alternate)
+// topLevelMemberBeforeMulti reports first-before-second and first-before-alternate
+// from a single scan; each result matches its topLevelMemberBefore call exactly.
+func topLevelMemberBeforeMulti(data []byte, first, second, alternate string) (beforeSecond, beforeAlternate bool) {
+	beforeSecond, beforeAlternate, ok := topLevelMemberBeforeScan(data, first, second, alternate)
 	if !ok {
-		*alternateResult = topLevelMemberBeforeDecoder(data, first, alternate)
-		return topLevelMemberBeforeDecoder(data, first, second)
+		return topLevelMemberBeforeDecoder(data, first, second), topLevelMemberBeforeDecoder(data, first, alternate)
 	}
-	*alternateResult = alternateBefore
-	return result
+	return beforeSecond, beforeAlternate
 }
 
 func topLevelMemberBefore(data []byte, first, second string) bool {
