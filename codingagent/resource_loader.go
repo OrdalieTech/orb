@@ -362,7 +362,7 @@ func (loader *DefaultResourceLoader) ExtendResources(paths ResourceExtensionPath
 }
 
 func loadResourceThemes(options DefaultResourceLoaderOptions, resolved, extended ResourceExtensionPaths) ResourceThemesResult {
-	paths, _ := resourceLoaderPaths(options.CWD, resolved.ThemePaths, options.AdditionalThemePaths, extended.ThemePaths, true, canonicalPathMemo{})
+	paths, _ := resourceLoaderPaths(options.CWD, resolved.ThemePaths, options.AdditionalThemePaths, extended.ThemePaths, true)
 	registry := modetheme.Load(modetheme.LoadOptions{
 		CWD: options.CWD, AgentDir: options.AgentDir, NoThemes: true, AdditionalPaths: paths,
 	})
@@ -452,27 +452,26 @@ func resolveResourceLoaderPaths(options DefaultResourceLoaderOptions) (ResourceE
 	if err != nil {
 		return ResourceExtensionPaths{}, err
 	}
-	memo := canonicalPathMemo{}
 	paths := ResourceExtensionPaths{
-		SkillPaths:  enabledResourcePaths(resolved.Skills, true, memo),
-		PromptPaths: enabledResourcePaths(resolved.Prompts, false, memo),
+		SkillPaths:  enabledResourcePaths(resolved.Skills, true),
+		PromptPaths: enabledResourcePaths(resolved.Prompts, false),
 	}
 	if !options.NoSkills {
 		packageMetadata := PathMetadata{Source: "package", Scope: "temporary", Origin: "package", BaseDir: options.CWD}
 		for _, path := range options.PackageSkillPaths {
-			paths.SkillPaths = appendUniqueResourcePath(paths.SkillPaths, mapSkillResourcePath(ResourcePath{Path: path, Metadata: packageMetadata}), memo)
+			paths.SkillPaths = appendUniqueResourcePath(paths.SkillPaths, mapSkillResourcePath(ResourcePath{Path: path, Metadata: packageMetadata}))
 		}
 	}
 	if !options.NoPromptTemplates {
 		packageMetadata := PathMetadata{Source: "package", Scope: "temporary", Origin: "package", BaseDir: options.CWD}
 		for _, path := range options.PackagePromptTemplatePaths {
-			paths.PromptPaths = appendUniqueResourcePath(paths.PromptPaths, ResourcePath{Path: path, Metadata: packageMetadata}, memo)
+			paths.PromptPaths = appendUniqueResourcePath(paths.PromptPaths, ResourcePath{Path: path, Metadata: packageMetadata})
 		}
 	}
 	if !options.NoThemes {
-		paths.ThemePaths = enabledResourcePaths(resolved.Themes, false, memo)
+		paths.ThemePaths = enabledResourcePaths(resolved.Themes, false)
 		for _, entry := range options.PackageThemePaths {
-			paths.ThemePaths = appendUniqueResourcePath(paths.ThemePaths, entry, memo)
+			paths.ThemePaths = appendUniqueResourcePath(paths.ThemePaths, entry)
 		}
 	}
 	paths.SkillPaths = normalizeResourcePathEntries(paths.SkillPaths, options.CWD)
@@ -481,20 +480,7 @@ func resolveResourceLoaderPaths(options DefaultResourceLoaderOptions) (ResourceE
 	return paths, nil
 }
 
-// canonicalPathMemo caches canonicalResourcePath results for one resource-load
-// pass only: symlink changes must be observed by the next pass.
-type canonicalPathMemo map[string]string
-
-func (memo canonicalPathMemo) canonical(path string) string {
-	if canonical, cached := memo[path]; cached {
-		return canonical
-	}
-	canonical := canonicalResourcePath(path)
-	memo[path] = canonical
-	return canonical
-}
-
-func enabledResourcePaths(resources []ResolvedResource, skills bool, memo canonicalPathMemo) []ResourcePath {
+func enabledResourcePaths(resources []ResolvedResource, skills bool) []ResourcePath {
 	paths := make([]ResourcePath, 0, len(resources))
 	seen := make(map[string]struct{}, len(resources))
 	for _, resource := range resources {
@@ -505,7 +491,7 @@ func enabledResourcePaths(resources []ResolvedResource, skills bool, memo canoni
 		if skills {
 			entry = mapSkillResourcePath(entry)
 		}
-		canonical := memo.canonical(entry.Path)
+		canonical := canonicalResourcePath(entry.Path)
 		if _, exists := seen[canonical]; exists {
 			continue
 		}
@@ -530,23 +516,23 @@ func mapSkillResourcePath(resource ResourcePath) ResourcePath {
 	return resource
 }
 
-func appendUniqueResourcePath(paths []ResourcePath, entry ResourcePath, memo canonicalPathMemo) []ResourcePath {
-	canonical := memo.canonical(entry.Path)
+func appendUniqueResourcePath(paths []ResourcePath, entry ResourcePath) []ResourcePath {
+	canonical := canonicalResourcePath(entry.Path)
 	for _, existing := range paths {
-		if memo.canonical(existing.Path) == canonical {
+		if canonicalResourcePath(existing.Path) == canonical {
 			return paths
 		}
 	}
 	return append(paths, entry)
 }
 
-func resourceLoaderPaths(cwd string, resolved []ResourcePath, additional []string, extended []ResourcePath, loadResolved bool, memo canonicalPathMemo) ([]string, map[string]PathMetadata) {
+func resourceLoaderPaths(cwd string, resolved []ResourcePath, additional []string, extended []ResourcePath, loadResolved bool) ([]string, map[string]PathMetadata) {
 	paths := make([]string, 0, len(resolved)+len(additional)+len(extended))
 	metadata := make(map[string]PathMetadata, len(resolved)+len(extended))
 	seen := make(map[string]struct{}, cap(paths))
 	appendPath := func(path string) {
 		path = resolveResourcePathFrom(path, cwd)
-		canonical := memo.canonical(path)
+		canonical := canonicalResourcePath(path)
 		if _, exists := seen[canonical]; exists {
 			return
 		}
@@ -557,22 +543,21 @@ func resourceLoaderPaths(cwd string, resolved []ResourcePath, additional []strin
 		if loadResolved {
 			appendPath(entry.Path)
 		}
-		metadata[memo.canonical(entry.Path)] = entry.Metadata
+		metadata[canonicalResourcePath(entry.Path)] = entry.Metadata
 	}
 	for _, path := range additional {
 		appendPath(path)
 	}
 	for _, entry := range extended {
 		appendPath(entry.Path)
-		metadata[memo.canonical(entry.Path)] = entry.Metadata
+		metadata[canonicalResourcePath(entry.Path)] = entry.Metadata
 	}
 	return paths, metadata
 }
 
 func resourceLoaderCommandOptions(options DefaultResourceLoaderOptions, resolved, extended ResourceExtensionPaths, projectTrusted bool) commandResourceOptions {
-	memo := canonicalPathMemo{}
-	skillPaths, skillMetadata := resourceLoaderPaths(options.CWD, resolved.SkillPaths, options.AdditionalSkillPaths, extended.SkillPaths, !options.NoSkills, memo)
-	promptPaths, promptMetadata := resourceLoaderPaths(options.CWD, resolved.PromptPaths, options.AdditionalPromptTemplatePaths, extended.PromptPaths, !options.NoPromptTemplates, memo)
+	skillPaths, skillMetadata := resourceLoaderPaths(options.CWD, resolved.SkillPaths, options.AdditionalSkillPaths, extended.SkillPaths, !options.NoSkills)
+	promptPaths, promptMetadata := resourceLoaderPaths(options.CWD, resolved.PromptPaths, options.AdditionalPromptTemplatePaths, extended.PromptPaths, !options.NoPromptTemplates)
 	return commandResourceOptions{
 		cwd: options.CWD, agentDir: options.AgentDir, trusted: projectTrusted,
 		noSkills: true, noPrompts: true,
@@ -594,14 +579,13 @@ func normalizeResourcePathEntries(entries []ResourcePath, cwd string) []Resource
 }
 
 func mergeResourcePathEntries(primary, additional []ResourcePath) []ResourcePath {
-	memo := canonicalPathMemo{}
 	merged := append([]ResourcePath(nil), primary...)
 	indices := make(map[string]int, len(merged)+len(additional))
 	for index, entry := range merged {
-		indices[memo.canonical(entry.Path)] = index
+		indices[canonicalResourcePath(entry.Path)] = index
 	}
 	for _, entry := range additional {
-		canonical := memo.canonical(entry.Path)
+		canonical := canonicalResourcePath(entry.Path)
 		if index, exists := indices[canonical]; exists {
 			merged[index] = entry
 			continue

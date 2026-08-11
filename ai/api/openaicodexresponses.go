@@ -12,7 +12,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
@@ -32,9 +31,7 @@ var (
 	errCodexTerminal = errors.New("ai/api: Codex terminal response")
 	openAICodexSleep = sleepWithContext
 	// Mirrors upstream /rate.?limit|overloaded|service.?unavailable|upstream.?connect|connection.?refused/i.
-	codexRetryableTextPattern = sync.OnceValue(func() *regexp.Regexp {
-		return regexp.MustCompile(`(?i)rate.?limit|overloaded|service.?unavailable|upstream.?connect|connection.?refused`)
-	})
+	codexRetryableTextPattern = regexp.MustCompile(`(?i)rate.?limit|overloaded|service.?unavailable|upstream.?connect|connection.?refused`)
 )
 
 type codexAPIError struct {
@@ -960,7 +957,7 @@ func retryableCodexError(status int, text string) bool {
 	if status == 429 || status == 500 || status == 502 || status == 503 || status == 504 {
 		return true
 	}
-	return codexRetryableTextPattern().MatchString(text)
+	return codexRetryableTextPattern.MatchString(text)
 }
 
 func regexpMatchFold(text string, markers ...string) bool {

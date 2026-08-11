@@ -72,21 +72,6 @@ func (container *Container) addWindowIndexLocked(component Component, index int)
 	container.windowDuplicates[component] = append(duplicates, index)
 }
 
-// buildWindowIndexesLocked materializes the child index map on first use; a
-// rebuild leaves it nil because most rebuilds are never followed by a dirty
-// mark. Deterministic child order keeps windowDuplicates identical to the
-// eager build.
-func (container *Container) buildWindowIndexesLocked() {
-	if container.windowIndexes != nil {
-		return
-	}
-	container.windowIndexes = make(map[Component]int, len(container.children))
-	container.windowDuplicates = nil
-	for index, child := range container.children {
-		container.addWindowIndexLocked(child, index)
-	}
-}
-
 func (container *Container) markWindowIndexDirtyLocked(index int) {
 	if _, exists := container.windowDirty[index]; exists {
 		return
@@ -114,7 +99,6 @@ func (container *Container) markWindowDirtyLocked(component Component) {
 		}
 	} else {
 		if container.windowValid {
-			container.buildWindowIndexesLocked()
 			if duplicates := container.windowDuplicates[component]; len(duplicates) > 0 {
 				indices = duplicates
 			} else if index, exists := container.windowIndexes[component]; exists {
@@ -156,23 +140,8 @@ func (container *Container) AddChild(component Component) {
 	container.windowChildLines = append(container.windowChildLines, nil)
 	container.windowChildCount = append(container.windowChildCount, 0)
 	container.windowTree = fenwickAppend(container.windowTree, 0)
-	if container.windowIndexes != nil {
-		container.addWindowIndexLocked(component, index)
-	}
+	container.addWindowIndexLocked(component, index)
 	container.markWindowIndexDirtyLocked(index)
-}
-
-// GrowChildren reserves capacity for n upcoming AddChild calls so bulk
-// history replay avoids repeated append growth.
-func (container *Container) GrowChildren(n int) {
-	container.mu.Lock()
-	defer container.mu.Unlock()
-	if n <= 0 || cap(container.children)-len(container.children) >= n {
-		return
-	}
-	grown := make([]Component, len(container.children), len(container.children)+n)
-	copy(grown, container.children)
-	container.children = grown
 }
 
 func (container *Container) RemoveChild(component Component) {
@@ -364,7 +333,7 @@ func (layout lineLayout) appendRange(lines []string, width, start, end int) []st
 	}
 	if layout.cached != nil {
 		layout.cached.mu.RLock()
-		lines = layout.cached.appendCachedLinesLocked(lines, start, end)
+		lines = append(lines, layout.cached.renderCachedLinesLocked(start, end)...)
 		layout.cached.mu.RUnlock()
 		return lines
 	}
@@ -447,7 +416,12 @@ func (container *Container) refreshWindow(width, rangeStart, rangeEnd int, allDi
 	}
 	rebuild := !container.windowValid || container.windowWidth != width
 	var indices []int
-	if !rebuild {
+	if rebuild {
+		indices = make([]int, len(container.children))
+		for index := range indices {
+			indices[index] = index
+		}
+	} else {
 		total := fenwickSum(container.windowTree, len(container.windowChildCount))
 		requestedEnd := rangeEnd
 		if rangeStart >= 0 {
@@ -484,16 +458,9 @@ func (container *Container) refreshWindow(width, rangeStart, rangeEnd int, allDi
 		sort.Ints(indices)
 	}
 	generation := container.windowGeneration
-	var children []Component
-	if rebuild {
-		// A rebuild renders every child in order; materializing identity
-		// indices would cost len(children) ints per rebuild.
-		children = append([]Component(nil), container.children...)
-	} else {
-		children = make([]Component, len(indices))
-		for offset, index := range indices {
-			children[offset] = container.children[index]
-		}
+	children := make([]Component, len(indices))
+	for offset, index := range indices {
+		children[offset] = container.children[index]
 	}
 	container.mu.Unlock()
 
@@ -515,10 +482,11 @@ func (container *Container) refreshWindow(width, rangeStart, rangeEnd int, allDi
 		container.windowDirty = make(map[int]struct{})
 		container.windowDirtyMin = -1
 		container.windowDirtyMax = -1
-		container.windowIndexes = nil
+		container.windowIndexes = make(map[Component]int, len(children))
 		container.windowDuplicates = nil
-		for index := range lines {
+		for index, child := range children {
 			container.windowChildCount[index] = len(lines[index])
+			container.addWindowIndexLocked(child, index)
 		}
 		container.windowTree = fenwickBuild(container.windowChildCount)
 		return true
@@ -574,26 +542,16 @@ func (container *Container) renderCachedLinesLocked(start, end int) []string {
 	if start >= end {
 		return nil
 	}
-	return container.appendCachedLinesLocked(make([]string, 0, end-start), start, end)
-}
-
-// appendCachedLinesLocked appends into the caller's slice so per-frame render
-// paths avoid the intermediate slice renderCachedLinesLocked allocates.
-func (container *Container) appendCachedLinesLocked(dst []string, start, end int) []string {
-	total := fenwickSum(container.windowTree, len(container.windowChildCount))
-	start, end = max(0, min(start, total)), max(0, min(end, total))
-	if start >= end {
-		return dst
-	}
+	lines := make([]string, 0, end-start)
 	first := fenwickFind(container.windowTree, start)
 	childStart := fenwickSum(container.windowTree, first)
 	for index := first; index < len(container.windowChildLines) && childStart < end; index++ {
 		from := max(0, start-childStart)
 		to := min(len(container.windowChildLines[index]), end-childStart)
-		dst = append(dst, container.windowChildLines[index][from:to]...)
+		lines = append(lines, container.windowChildLines[index][from:to]...)
 		childStart += container.windowChildCount[index]
 	}
-	return dst
+	return lines
 }
 
 // RenderLines renders the half-open line range [start, end).

@@ -50,3 +50,18 @@ func TestSnapshotCodecRoundTripsOrbOwnedFixtures(t *testing.T) {
 		}
 	}
 }
+
+func TestSnapshotCodecPreservesWireDetails(t *testing.T) {
+	data := []byte("{\n  \"later\": 1e+09,\n  \"earlier\": \"\\ud800\"\n}")
+	root, err := decodeOrderedJSON(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := appendOrderedJSON(nil, root, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, encoded) {
+		t.Fatal(ByteDiff(data, encoded))
+	}
+}

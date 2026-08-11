@@ -182,17 +182,10 @@ func assistantText(message *ai.AssistantMessage) string {
 // decodeAssistantEntry decodes a session message entry into an assistant
 // message, returning nil when the entry is missing or not an assistant turn.
 func decodeAssistantEntry(entry *sessionstore.SessionEntry) *ai.AssistantMessage {
-	if entry == nil {
+	if entry == nil || entry.Type != "message" || len(entry.Message) == 0 {
 		return nil
 	}
-	return decodeAssistantMessage(entry.Type, entry.Message)
-}
-
-func decodeAssistantMessage(entryType string, message json.RawMessage) *ai.AssistantMessage {
-	if entryType != "message" || len(message) == 0 {
-		return nil
-	}
-	decoded, err := ai.UnmarshalMessage(message)
+	decoded, err := ai.UnmarshalMessage(entry.Message)
 	if err != nil {
 		return nil
 	}
@@ -206,9 +199,20 @@ func decodeAssistantMessage(entryType string, message json.RawMessage) *ai.Assis
 // assistantEntryAfter walks the current branch and returns the last assistant
 // message entry appended after the entry afterID, or nil when none exists.
 func assistantEntryAfter(manager *sessionstore.SessionManager, afterID string) *sessionstore.SessionEntry {
-	return manager.FindBranchEntry(afterID, func(entryType string, message json.RawMessage) bool {
-		return decodeAssistantMessage(entryType, message) != nil
-	})
+	branch := manager.GetBranch()
+	start := 0
+	for index := range branch {
+		if branch[index].ID == afterID {
+			start = index + 1
+			break
+		}
+	}
+	for index := len(branch) - 1; index >= start; index-- {
+		if decodeAssistantEntry(&branch[index]) != nil {
+			return &branch[index]
+		}
+	}
+	return nil
 }
 
 // recoveredAssistant loads the assistant message for a settled marker: by

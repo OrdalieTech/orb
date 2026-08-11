@@ -139,19 +139,8 @@ func (catalog *Catalog) MergedModels(overlay *Catalog) []ai.Model {
 		sortedProviders = append(sortedProviders, providerID)
 	}
 	slices.Sort(sortedProviders)
-	// Upper bound only: shadowed overlay IDs are counted twice rather than
-	// restating the merge rule here just to size the slices exactly.
-	total, maxIDs := 0, 0
-	for _, providerID := range sortedProviders {
-		count := len(catalog.providers[providerID])
-		if overlay != nil {
-			count += len(overlay.providers[providerID])
-		}
-		total += count
-		maxIDs = max(maxIDs, count)
-	}
-	result := make([]ai.Model, 0, total)
-	ids := make([]string, 0, maxIDs)
+	result := make([]ai.Model, 0)
+	ids := make([]string, 0)
 	for _, providerID := range sortedProviders {
 		base, over := catalog.providers[providerID], map[string]ai.Model(nil)
 		if overlay != nil {

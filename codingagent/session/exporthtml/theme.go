@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/OrdalieTech/orb/codingagent/config"
 	modetheme "github.com/OrdalieTech/orb/codingagent/modes/theme"
@@ -102,7 +101,7 @@ func exportThemeFrom(selected *modetheme.Theme) exportTheme {
 	return backgrounds
 }
 
-var rgbColorPattern = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$`) })
+var rgbColorPattern = regexp.MustCompile(`^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$`)
 
 func deriveExportColors(color string) exportTheme {
 	r, g, b, ok := parseCSSColor(color)
@@ -128,7 +127,7 @@ func parseCSSColor(color string) (int, int, int, bool) {
 			return int(value >> 16), int(value>>8) & 255, int(value) & 255, true
 		}
 	}
-	match := rgbColorPattern().FindStringSubmatch(color)
+	match := rgbColorPattern.FindStringSubmatch(color)
 	if len(match) == 4 {
 		r, errR := strconv.Atoi(match[1])
 		g, errG := strconv.Atoi(match[2])

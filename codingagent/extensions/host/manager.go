@@ -76,26 +76,18 @@ type AgentInfo struct {
 }
 
 type Options struct {
-	AgentDir string
-	CWD      string
-	// ProjectTrusted mirrors DiscoveryOptions.ProjectTrusted for consumers that
-	// gate project-scoped resources on the same trust decision.
-	ProjectTrusted bool
-	// SkipMetadataCacheWrite suppresses the write-through metadata snapshot for
-	// loads whose registrations are provisional — the pre-trust probe load,
-	// whose snapshot the post-trust load overwrites moments later — so they do
-	// not pay the fingerprint walk twice.
-	SkipMetadataCacheWrite bool
-	Version                string
-	Runtime                *Runtime
-	OrbExecutable          string
-	RequestTimeout         time.Duration
-	ShutdownTimeout        time.Duration
-	MaxRestarts            int
-	BackoffBase            time.Duration
-	BackoffMax             time.Duration
-	Stderr                 io.Writer
-	OnDiagnostic           func(extensions.Diagnostic)
+	AgentDir        string
+	CWD             string
+	Version         string
+	Runtime         *Runtime
+	OrbExecutable   string
+	RequestTimeout  time.Duration
+	ShutdownTimeout time.Duration
+	MaxRestarts     int
+	BackoffBase     time.Duration
+	BackoffMax      time.Duration
+	Stderr          io.Writer
+	OnDiagnostic    func(extensions.Diagnostic)
 }
 
 type LoadError struct {
@@ -132,9 +124,6 @@ type Manager struct {
 	providers    providerBridge
 	stateHost    *stateHost
 	services     *servicesHost
-	// cacheWrites tracks the background metadata-snapshot writes so Close can
-	// wait for them instead of racing the file.
-	cacheWrites sync.WaitGroup
 }
 
 type extensionEntry struct {
@@ -320,9 +309,6 @@ func (manager *Manager) RegisterInto(ctx context.Context, registry *extensions.R
 			result.Errors = append(result.Errors, LoadError{Path: entry.Path, Error: stripRegistryPrefix(entry.Path, err)})
 		}
 	}
-	// Write-through metadata snapshot: every successful full load (any mode)
-	// refreshes what --help/--list-models may serve without spawning.
-	manager.writeMetadataCache(loaded.success, result)
 	return result
 }
 
@@ -369,7 +355,6 @@ func (manager *Manager) Close() error {
 	}
 	manager.stateHost.close()
 	manager.services.reset()
-	manager.cacheWrites.Wait()
 	return nil
 }
 

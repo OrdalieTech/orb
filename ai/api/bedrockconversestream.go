@@ -38,12 +38,10 @@ const (
 )
 
 var (
-	bedrockStandardEndpoint = sync.OnceValue(func() *regexp.Regexp {
-		return regexp.MustCompile(`^bedrock-runtime(?:-fips)?\.([a-z0-9-]+)\.amazonaws\.com(?:\.cn)?$`)
-	})
+	bedrockStandardEndpoint = regexp.MustCompile(`^bedrock-runtime(?:-fips)?\.([a-z0-9-]+)\.amazonaws\.com(?:\.cn)?$`)
 	// bedrockARNRegionPattern matches upstream bedrock-converse-stream.ts:166
 	// exactly; laxer prefix checks accepted malformed ARNs. (OT-m6)
-	bedrockARNRegionPattern   = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^arn:aws(?:-[a-z0-9-]+)?:bedrock:([a-z0-9-]+):`) })
+	bedrockARNRegionPattern   = regexp.MustCompile(`^arn:aws(?:-[a-z0-9-]+)?:bedrock:([a-z0-9-]+):`)
 	newBedrockTransport       = newAWSBedrockTransport
 	bedrockHTTPClientOverride aws.HTTPClient
 )
@@ -1436,7 +1434,7 @@ func standardBedrockEndpointRegion(baseURL string) string {
 	if err != nil {
 		return ""
 	}
-	match := bedrockStandardEndpoint().FindStringSubmatch(strings.ToLower(parsed.Hostname()))
+	match := bedrockStandardEndpoint.FindStringSubmatch(strings.ToLower(parsed.Hostname()))
 	if len(match) != 2 {
 		return ""
 	}
@@ -1451,7 +1449,7 @@ func shouldUseExplicitBedrockEndpoint(baseURL, configuredRegion string, hasAmbie
 }
 
 func bedrockARNRegion(modelID string) string {
-	match := bedrockARNRegionPattern().FindStringSubmatch(modelID)
+	match := bedrockARNRegionPattern.FindStringSubmatch(modelID)
 	if len(match) == 2 {
 		return match[1]
 	}

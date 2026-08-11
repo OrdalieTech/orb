@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 
 	"github.com/OrdalieTech/orb/codingagent/session"
 )
@@ -227,13 +226,11 @@ type ParsedSkillBlock struct {
 	UserMessage string
 }
 
-var skillBlockPattern = sync.OnceValue(func() *regexp.Regexp {
-	return regexp.MustCompile(`(?s)^<skill name="([^"]+)" location="([^"]+)">\n(.*?)\n</skill>(?:\n\n(.+))?$`)
-})
+var skillBlockPattern = regexp.MustCompile(`(?s)^<skill name="([^"]+)" location="([^"]+)">\n(.*?)\n</skill>(?:\n\n(.+))?$`)
 
 // ParseSkillBlock parses the exact upstream skill-message envelope.
 func ParseSkillBlock(text string) (ParsedSkillBlock, bool) {
-	match := skillBlockPattern().FindStringSubmatch(text)
+	match := skillBlockPattern.FindStringSubmatch(text)
 	if match == nil {
 		return ParsedSkillBlock{}, false
 	}

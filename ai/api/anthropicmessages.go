@@ -1559,11 +1559,8 @@ func (processor *anthropicStreamProcessor) stopBlock(index int) error {
 }
 
 func setAnthropicStreamingArguments(call *ai.ToolCall, partial string) {
-	// StringifyStreamingJSON output is a NormalizeJSONStringifyJSON fixed
-	// point (gated by TestStreamingStringifyIsNormalizeFixedPoint), so the
-	// re-normalization pass is skipped.
 	encoded, err := partialjson.StringifyStreamingJSON(partial)
-	if err != nil || ai.SetToolCallArgumentsNormalizedJSON(call, encoded) != nil {
+	if err != nil || ai.SetToolCallArgumentsJSON(call, encoded) != nil {
 		_ = ai.SetToolCallArgumentsJSON(call, []byte(`{}`))
 	}
 }

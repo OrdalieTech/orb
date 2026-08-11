@@ -9,7 +9,6 @@ package teams
 import (
 	"regexp"
 	"strings"
-	"sync"
 )
 
 // Bot Framework text is capped conservatively in UTF-16 code units.
@@ -18,11 +17,9 @@ const chunkLimit = 28000
 const minChunkLimit = 1024
 
 var (
-	reHeading = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t#]*$`) })
-	reHRule   = sync.OnceValue(func() *regexp.Regexp {
-		return regexp.MustCompile(`^[ \t]{0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$`)
-	})
-	reImage = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`!\[([^\]]*)\]\(`) })
+	reHeading = regexp.MustCompile(`^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t#]*$`)
+	reHRule   = regexp.MustCompile(`^[ \t]{0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$`)
+	reImage   = regexp.MustCompile(`!\[([^\]]*)\]\(`)
 )
 
 func formatText(markdown string) string {
@@ -66,13 +63,13 @@ func formatText(markdown string) string {
 }
 
 func formatLine(line string) string {
-	if match := reHeading().FindStringSubmatch(line); match != nil {
+	if match := reHeading.FindStringSubmatch(line); match != nil {
 		return "**" + match[1] + "**"
 	}
-	if reHRule().MatchString(line) {
+	if reHRule.MatchString(line) {
 		return "———"
 	}
-	return reImage().ReplaceAllString(line, "[$1](")
+	return reImage.ReplaceAllString(line, "[$1](")
 }
 
 func isFenceMarker(trimmed string, inFence bool) bool {

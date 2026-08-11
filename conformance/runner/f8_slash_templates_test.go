@@ -398,6 +398,7 @@ func TestF8ResourceLoaderPrecedenceMatchesUpstream(t *testing.T) {
 	fixtureRoot := t.TempDir()
 	writeF8Tree(t, fixtureRoot, fixture.ResourceLoader.Files)
 	t.Setenv("HOME", filepath.Join(fixtureRoot, "home"))
+	t.Setenv("CODEX_HOME", filepath.Join(fixtureRoot, "home", ".codex"))
 	trusted := true
 	resources := codingagent.LoadResources(codingagent.ResourceOptions{
 		CWD:                        f8MaterializePath(fixture.ResourceLoader.CWD, fixtureRoot),
@@ -440,6 +441,7 @@ func TestF8DefaultResourceLoaderAppliesGlobalResourceFilters(t *testing.T) {
 	fixtureRoot := t.TempDir()
 	writeF8Tree(t, fixtureRoot, fixture.ResourceFiltering.Files)
 	t.Setenv("HOME", filepath.Join(fixtureRoot, "resource-filtering", "home"))
+	t.Setenv("CODEX_HOME", filepath.Join(fixtureRoot, "resource-filtering", "home", ".codex"))
 	t.Setenv("COLORTERM", "")
 	loader, err := codingagent.NewDefaultResourceLoader(codingagent.DefaultResourceLoaderOptions{
 		CWD:          f8MaterializePath(fixture.ResourceFiltering.CWD, fixtureRoot),
@@ -485,6 +487,7 @@ func TestF8ResourceLoaderExtensionsMatchUpstreamImmediately(t *testing.T) {
 	fixtureRoot := t.TempDir()
 	writeF8Tree(t, fixtureRoot, fixture.ResourceExtension.Files)
 	t.Setenv("HOME", filepath.Join(fixtureRoot, "loader-extension", "home"))
+	t.Setenv("CODEX_HOME", filepath.Join(fixtureRoot, "loader-extension", "home", ".codex"))
 	t.Setenv("COLORTERM", "")
 	loader, err := codingagent.NewDefaultResourceLoader(codingagent.DefaultResourceLoaderOptions{
 		CWD:          f8MaterializePath(fixture.ResourceExtension.CWD, fixtureRoot),

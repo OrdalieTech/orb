@@ -141,12 +141,10 @@ func extractCompleteSequences(buffer string) ([]string, string) {
 	return sequences, ""
 }
 
-var unmodifiedKittyPrintable = sync.OnceValue(func() *regexp.Regexp {
-	return regexp.MustCompile(`^\x1b\[([0-9]+)(:[0-9]*)?(:[0-9]+)?u$`)
-})
+var unmodifiedKittyPrintable = regexp.MustCompile(`^\x1b\[([0-9]+)(:[0-9]*)?(:[0-9]+)?u$`)
 
 func kittyPrintableCodepoint(sequence string) (rune, bool) {
-	match := unmodifiedKittyPrintable().FindStringSubmatch(sequence)
+	match := unmodifiedKittyPrintable.FindStringSubmatch(sequence)
 	if match == nil {
 		return 0, false
 	}

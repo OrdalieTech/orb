@@ -3,7 +3,6 @@ package whatsapp
 import (
 	"regexp"
 	"strings"
-	"sync"
 
 	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 )
@@ -12,11 +11,11 @@ import (
 const maxMessageLen = 4096
 
 var (
-	reBold      = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`\*\*(.+?)\*\*`) })
-	reBoldUnder = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`__(.+?)__`) })
-	reStrike    = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`~~(.+?)~~`) })
-	reLink      = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`\[([^\]]+)\]\(([^)\s]+)\)`) })
-	reHeading   = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^#{1,6}[ \t]+(.+)$`) })
+	reBold      = regexp.MustCompile(`\*\*(.+?)\*\*`)
+	reBoldUnder = regexp.MustCompile(`__(.+?)__`)
+	reStrike    = regexp.MustCompile(`~~(.+?)~~`)
+	reLink      = regexp.MustCompile(`\[([^\]]+)\]\(([^)\s]+)\)`)
+	reHeading   = regexp.MustCompile(`^#{1,6}[ \t]+(.+)$`)
 )
 
 // FormatText converts common markdown to WhatsApp markup: **b**/__b__ → *b*,
@@ -67,11 +66,11 @@ func isFenceMarker(trimmed string, inFence bool) bool {
 }
 
 func formatInline(line string) string {
-	line = reBold().ReplaceAllString(line, "*$1*")
-	line = reBoldUnder().ReplaceAllString(line, "*$1*")
-	line = reStrike().ReplaceAllString(line, "~$1~")
-	line = reLink().ReplaceAllString(line, "$1 ($2)")
-	if match := reHeading().FindStringSubmatch(line); match != nil {
+	line = reBold.ReplaceAllString(line, "*$1*")
+	line = reBoldUnder.ReplaceAllString(line, "*$1*")
+	line = reStrike.ReplaceAllString(line, "~$1~")
+	line = reLink.ReplaceAllString(line, "$1 ($2)")
+	if match := reHeading.FindStringSubmatch(line); match != nil {
 		line = "*" + match[1] + "*"
 	}
 	return line

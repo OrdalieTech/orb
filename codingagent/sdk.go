@@ -358,7 +358,13 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 
 	existing := sm.BuildSessionContext()
 	hasExisting := len(existing.Messages) > 0
-	hasThinkingEntry := sm.BranchHasEntryType("thinking_level_change")
+	hasThinkingEntry := false
+	for _, entry := range sm.GetBranch() {
+		if entry.Type == "thinking_level_change" {
+			hasThinkingEntry = true
+			break
+		}
+	}
 
 	model := opts.Model
 	var fallback string

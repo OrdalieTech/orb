@@ -6,7 +6,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"unicode/utf16"
 
 	"github.com/OrdalieTech/orb/internal/jstrim"
@@ -171,9 +170,7 @@ func ParseCommandArgs(argsString string) []string {
 	return args
 }
 
-var promptArgumentPattern = sync.OnceValue(func() *regexp.Regexp {
-	return regexp.MustCompile(`\$\{([0-9]+|ARGUMENTS|@):-([^}]*)\}|\$\{@:([0-9]+)(:([0-9]+))?\}|\$(ARGUMENTS|@|[0-9]+)`)
-})
+var promptArgumentPattern = regexp.MustCompile(`\$\{([0-9]+|ARGUMENTS|@):-([^}]*)\}|\$\{@:([0-9]+)(:([0-9]+))?\}|\$(ARGUMENTS|@|[0-9]+)`)
 
 func captureString(source string, indexes []int, group int) (string, bool) {
 	startIndex := group * 2
@@ -194,7 +191,7 @@ func parseArgumentIndex(value string) int {
 // SubstituteArgs replaces all placeholders in one pass, so inserted values are never re-expanded.
 func SubstituteArgs(content string, args []string) string {
 	allArgs := strings.Join(args, " ")
-	matches := promptArgumentPattern().FindAllStringSubmatchIndex(content, -1)
+	matches := promptArgumentPattern.FindAllStringSubmatchIndex(content, -1)
 	if len(matches) == 0 {
 		return content
 	}

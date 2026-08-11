@@ -7,7 +7,6 @@ package googlechat
 import (
 	"regexp"
 	"strings"
-	"sync"
 )
 
 const maxMessageLen = 4096
@@ -18,12 +17,12 @@ const chunkLimit = 4000
 const fenceMarker = "```"
 
 var (
-	reBold      = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`\*\*(.+?)\*\*`) })
-	reBoldUnder = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`__(.+?)__`) })
-	reItalic    = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`\*([^*\s](?:[^*]*[^*\s])?)\*`) })
-	reStrike    = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`~~(.+?)~~`) })
-	reLink      = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`\[([^\]]+)\]\(([^)\s]+)\)`) })
-	reHeading   = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^#{1,6}[ \t]+(.+)$`) })
+	reBold      = regexp.MustCompile(`\*\*(.+?)\*\*`)
+	reBoldUnder = regexp.MustCompile(`__(.+?)__`)
+	reItalic    = regexp.MustCompile(`\*([^*\s](?:[^*]*[^*\s])?)\*`)
+	reStrike    = regexp.MustCompile(`~~(.+?)~~`)
+	reLink      = regexp.MustCompile(`\[([^\]]+)\]\(([^)\s]+)\)`)
+	reHeading   = regexp.MustCompile(`^#{1,6}[ \t]+(.+)$`)
 )
 
 const boldSentinel = "\x00"
@@ -72,13 +71,13 @@ func isFenceMarker(trimmed string, inFence bool) bool {
 }
 
 func formatInline(line string) string {
-	line = reLink().ReplaceAllString(line, "<$2|$1>")
-	line = reBold().ReplaceAllString(line, boldSentinel+"$1"+boldSentinel)
-	line = reBoldUnder().ReplaceAllString(line, boldSentinel+"$1"+boldSentinel)
-	line = reItalic().ReplaceAllString(line, "_${1}_") // ${1}: a bare $1_ would parse as group "1_"
+	line = reLink.ReplaceAllString(line, "<$2|$1>")
+	line = reBold.ReplaceAllString(line, boldSentinel+"$1"+boldSentinel)
+	line = reBoldUnder.ReplaceAllString(line, boldSentinel+"$1"+boldSentinel)
+	line = reItalic.ReplaceAllString(line, "_${1}_") // ${1}: a bare $1_ would parse as group "1_"
 	line = strings.ReplaceAll(line, boldSentinel, "*")
-	line = reStrike().ReplaceAllString(line, "~$1~")
-	if match := reHeading().FindStringSubmatch(line); match != nil {
+	line = reStrike.ReplaceAllString(line, "~$1~")
+	if match := reHeading.FindStringSubmatch(line); match != nil {
 		line = "*" + match[1] + "*"
 	}
 	return line

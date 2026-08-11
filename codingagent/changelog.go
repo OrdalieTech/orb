@@ -6,7 +6,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/OrdalieTech/orb/internal/jstrim"
 )
@@ -29,13 +28,9 @@ const (
 )
 
 var (
-	changelogVersionHeader = sync.OnceValue(func() *regexp.Regexp {
-		return regexp.MustCompile(`##[` + changelogJSWhitespace + `]+\[?(\d+)\.(\d+)\.(\d+)\]?`)
-	})
-	changelogURLScheme  = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`(?i)^[a-z][a-z0-9+.-]*:`) })
-	changelogInlineLink = sync.OnceValue(func() *regexp.Regexp {
-		return regexp.MustCompile(`(!?\[[^\]\n]+\]\()([^` + changelogJSWhitespace + `)]+)((?:[` + changelogJSWhitespace + `]+[^)]*)?\))`)
-	})
+	changelogVersionHeader = regexp.MustCompile(`##[` + changelogJSWhitespace + `]+\[?(\d+)\.(\d+)\.(\d+)\]?`)
+	changelogURLScheme     = regexp.MustCompile(`(?i)^[a-z][a-z0-9+.-]*:`)
+	changelogInlineLink    = regexp.MustCompile(`(!?\[[^\]\n]+\]\()([^` + changelogJSWhitespace + `)]+)((?:[` + changelogJSWhitespace + `]+[^)]*)?\))`)
 )
 
 // FormatChangelog parses, oldest-first reverses, and tag-pins links exactly as
@@ -73,7 +68,7 @@ func parseChangelog(content string) []changelogEntry {
 			continue
 		}
 		flush()
-		match := changelogVersionHeader().FindStringSubmatch(line)
+		match := changelogVersionHeader.FindStringSubmatch(line)
 		if match == nil {
 			current, lines = nil, nil
 			continue
@@ -93,8 +88,8 @@ func normalizeChangelogLinks(markdown, version string) string {
 	if !strings.HasPrefix(tag, "v") {
 		tag = "v" + tag
 	}
-	return changelogInlineLink().ReplaceAllStringFunc(markdown, func(match string) string {
-		groups := changelogInlineLink().FindStringSubmatch(match)
+	return changelogInlineLink.ReplaceAllStringFunc(markdown, func(match string) string {
+		groups := changelogInlineLink.FindStringSubmatch(match)
 		return groups[1] + normalizeChangelogLinkTarget(groups[2], tag) + groups[3]
 	})
 }
@@ -115,7 +110,7 @@ func normalizeChangelogLinkTarget(target, tag string) string {
 			}
 		}
 	}
-	if strings.HasPrefix(canonical, "#") || strings.HasPrefix(canonical, "//") || changelogURLScheme().MatchString(canonical) {
+	if strings.HasPrefix(canonical, "#") || strings.HasPrefix(canonical, "//") || changelogURLScheme.MatchString(canonical) {
 		return canonical
 	}
 	fragment, localPath, query := splitChangelogTarget(canonical)

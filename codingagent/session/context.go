@@ -51,10 +51,7 @@ func buildSessionPath(entries []SessionEntry, leafID *string) []SessionEntry {
 }
 
 func BuildContextEntries(entries []SessionEntry, leafID *string) []SessionEntry {
-	return buildContextEntriesFromPath(buildSessionPath(entries, leafID))
-}
-
-func buildContextEntriesFromPath(path []SessionEntry) []SessionEntry {
+	path := buildSessionPath(entries, leafID)
 	var compaction *SessionEntry
 	for index := range path {
 		if path[index].Type == "compaction" {
@@ -111,7 +108,7 @@ func BuildSessionContext(entries []SessionEntry, leafID *string) SessionContext 
 			}
 		}
 	}
-	for _, entry := range buildContextEntriesFromPath(path) {
+	for _, entry := range BuildContextEntries(entries, leafID) {
 		context.Messages = append(context.Messages, entryContextMessages(entry)...)
 	}
 	return context
@@ -201,7 +198,7 @@ func (manager *SessionManager) BuildContextEntries() []SessionEntry {
 	}
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
-	return BuildContextEntries(manager.entriesShallowLocked(), manager.leafID)
+	return BuildContextEntries(manager.entriesLocked(), manager.leafID)
 }
 
 func (manager *SessionManager) BuildSessionContext() SessionContext {
@@ -212,17 +209,14 @@ func (manager *SessionManager) BuildSessionContext() SessionContext {
 	}
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
-	return BuildSessionContext(manager.entriesShallowLocked(), manager.leafID)
+	return BuildSessionContext(manager.entriesLocked(), manager.leafID)
 }
 
-// entriesShallowLocked returns shallow struct copies whose pointer and slice
-// fields alias manager state: only for lock-held builds whose results are
-// deep-cloned before the RLock is released (buildSessionPath's cloneEntry).
-func (manager *SessionManager) entriesShallowLocked() []SessionEntry {
+func (manager *SessionManager) entriesLocked() []SessionEntry {
 	entries := make([]SessionEntry, 0, len(manager.fileEntries)-1)
 	for _, fileEntry := range manager.fileEntries {
 		if fileEntry != nil && fileEntry.Entry != nil && fileEntry.Type != "session" {
-			entries = append(entries, *fileEntry.Entry)
+			entries = append(entries, *cloneEntry(fileEntry.Entry))
 		}
 	}
 	return entries
