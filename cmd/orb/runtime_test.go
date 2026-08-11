@@ -22,6 +22,7 @@ import (
 	"github.com/OrdalieTech/orb/ai/providers"
 	"github.com/OrdalieTech/orb/codingagent/config"
 	"github.com/OrdalieTech/orb/codingagent/extensions"
+	"github.com/OrdalieTech/orb/codingagent/modes"
 	"github.com/OrdalieTech/orb/codingagent/session"
 )
 
@@ -569,7 +570,9 @@ func TestCreateRuntimeInputsAllowsMissingModelOnlyForInteractiveBootstrap(t *tes
 		t.Fatalf("interactive bootstrap thinking = %q, want off without a model", thinking)
 	}
 	want := strings.TrimSuffix(formatModelList(nil, ""), "\n")
-	if !slices.Contains(runtime.Diagnostics, want) {
+	if !slices.ContainsFunc(runtime.Diagnostics, func(diagnostic modes.StartupDiagnostic) bool {
+		return startupDiagnosticText(diagnostic) == want
+	}) {
 		t.Fatalf("interactive diagnostics = %#v, want %q", runtime.Diagnostics, want)
 	}
 

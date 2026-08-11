@@ -33,9 +33,30 @@ func (window *ListWindow) Start(selected, count, maxVisible int) int {
 	if window.frozen {
 		window.start = max(0, min(window.start, count-maxVisible))
 	} else {
-		window.start = max(0, min(selected-maxVisible/2, count-maxVisible))
+		window.start = ListWindowStart(selected, count, maxVisible)
 	}
 	return window.start
+}
+
+// ListWindowStart is the center-anchor formula for a selection-windowed list:
+// the window centers on the selection and clamps to the item count. ListWindow
+// applies it when unfrozen; window-less lists call it directly.
+func ListWindowStart(selected, count, maxVisible int) int {
+	return max(0, min(selected-maxVisible/2, count-maxVisible))
+}
+
+// ListRowIndex maps a component-local row to its item index for a windowed
+// list whose first row rendered at line top and which shows the items
+// [start, start+count); rows outside the window or past the item count miss.
+func ListRowIndex(row, top, start, count, itemCount int) (int, bool) {
+	if row < top || row >= top+count {
+		return 0, false
+	}
+	index := start + row - top
+	if index >= itemCount {
+		return 0, false
+	}
+	return index, true
 }
 
 // ListMouseTarget is the contract HandleListMouse drives. Implementations

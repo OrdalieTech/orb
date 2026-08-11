@@ -129,8 +129,8 @@ func TestF12BuiltInThemesMatchUpstream(t *testing.T) {
 				t.Fatalf("resolved colors differ\ngot:  %#v\nwant: %#v", actual, fixtureCase.Resolved)
 			}
 			if actual := selected.ExportColors(); runner.UpdateTUISnapshots() {
-				for name, value := range actual {
-					snap.Set(value, "themes", themeIndex, "export", name)
+				for _, name := range slices.Sorted(maps.Keys(actual)) {
+					snap.Add(actual[name], "themes", themeIndex, "export", name)
 				}
 			} else if !reflect.DeepEqual(actual, fixtureCase.Export) {
 				t.Fatalf("export colors differ\ngot:  %#v\nwant: %#v", actual, fixtureCase.Export)

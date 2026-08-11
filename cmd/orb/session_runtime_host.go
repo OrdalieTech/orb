@@ -184,7 +184,8 @@ func newCLISessionRuntimeHost(
 			return nil, err
 		}
 		diagnostics := make([]codingagent.AgentSessionRuntimeDiagnostic, 0, len(inputs.Diagnostics))
-		for _, message := range inputs.Diagnostics {
+		for _, diagnostic := range inputs.Diagnostics {
+			message := startupDiagnosticText(diagnostic)
 			diagnostics = append(diagnostics, codingagent.AgentSessionRuntimeDiagnostic{Type: "warning", Message: message})
 			_, _ = fmt.Fprintln(stderr, "Warning: "+message)
 		}

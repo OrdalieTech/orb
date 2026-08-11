@@ -237,14 +237,7 @@ func (list *SettingsList) HandleMouse(event MouseEvent) bool {
 func (list *SettingsList) ListRowAt(row int) (int, bool) {
 	list.mu.Lock()
 	defer list.mu.Unlock()
-	if row < list.rowTop || row >= list.rowTop+list.rowCount {
-		return 0, false
-	}
-	index := list.rowStart + row - list.rowTop
-	if index >= len(list.displayItems()) {
-		return 0, false
-	}
-	return index, true
+	return ListRowIndex(row, list.rowTop, list.rowStart, list.rowCount, len(list.displayItems()))
 }
 
 // ListSelectRow moves the highlight without re-anchoring the window.

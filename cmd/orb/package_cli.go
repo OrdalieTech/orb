@@ -400,7 +400,11 @@ func createCommandSettingsManager(ctx context.Context, cwd, agentDir string, pro
 	if err != nil {
 		return nil, nil, err
 	}
-	return settings, trust.Diagnostics, nil
+	warnings := make([]string, 0, len(trust.Diagnostics))
+	for _, diagnostic := range trust.Diagnostics {
+		warnings = append(warnings, startupDiagnosticText(diagnostic))
+	}
+	return settings, warnings, nil
 }
 
 func handleConfigCommand(ctx context.Context, argv []string, streams cliStreams, dependencies cliDependencies) (bool, int) {

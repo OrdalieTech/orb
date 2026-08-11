@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/codingagent"
@@ -42,11 +41,7 @@ type ModelSelectorComponent struct {
 	scope          modelSelectorScope
 	onSelect       func(ai.Model)
 	onCancel       func()
-
-	rowsMu       sync.Mutex
-	rowOffsets   []int
-	visibleStart int
-	visibleCount int
+	rows           listRowOffsets
 }
 
 func NewModelSelectorComponent(
@@ -203,9 +198,7 @@ func (component *ModelSelectorComponent) updateList() {
 	component.listContainer.Clear()
 	start := component.window.Start(component.selectedIndex, len(component.filteredModels), modelSelectorMaxVisible)
 	end := min(start+modelSelectorMaxVisible, len(component.filteredModels))
-	component.rowsMu.Lock()
-	component.visibleStart, component.visibleCount = start, end-start
-	component.rowsMu.Unlock()
+	component.rows.setWindow(start, end-start)
 	for index := start; index < end; index++ {
 		item := component.filteredModels[index]
 		prefix, modelStyle := "  ", "text"
@@ -288,32 +281,10 @@ func (component *ModelSelectorComponent) SetFocused(focused bool) {
 
 func (component *ModelSelectorComponent) Invalidate() { component.container.Invalidate() }
 
-// Render inlines the container walk so it can record where each visible row
-// landed for mouse hit-testing; the emitted lines are the container's own.
+// Render records where each visible row landed for mouse hit-testing; the
+// emitted lines are the container's own.
 func (component *ModelSelectorComponent) Render(width int) []string {
-	component.rowsMu.Lock()
-	count := component.visibleCount
-	component.rowsMu.Unlock()
-	lines, rows := make([]string, 0), make([]int, 0, count+1)
-	for _, child := range component.container.Children() {
-		if child != component.listContainer {
-			lines = append(lines, child.Render(width)...)
-			continue
-		}
-		for index, row := range component.listContainer.Children() {
-			if index <= count {
-				rows = append(rows, len(lines))
-			}
-			lines = append(lines, row.Render(width)...)
-		}
-	}
-	if len(rows) == count {
-		rows = append(rows, len(lines))
-	}
-	component.rowsMu.Lock()
-	component.rowOffsets = rows
-	component.rowsMu.Unlock()
-	return lines
+	return component.rows.renderRecordingRows(component.container, component.listContainer, width)
 }
 
 // WantsMouseMotion turns on hover reports while the selector holds focus.
@@ -329,7 +300,7 @@ func (component *ModelSelectorComponent) HandleMouse(event tui.MouseEvent) bool 
 
 // ListRowAt maps a component-local row to the filtered-model index it renders.
 func (component *ModelSelectorComponent) ListRowAt(row int) (int, bool) {
-	index, ok := component.rowAt(row)
+	index, ok := component.rows.rowAt(row)
 	if !ok || index >= len(component.filteredModels) {
 		return 0, false
 	}
@@ -339,37 +310,17 @@ func (component *ModelSelectorComponent) ListRowAt(row int) (int, bool) {
 // ListSelectRow moves the highlight without re-anchoring the window, so
 // hover can never shift rows under the cursor.
 func (component *ModelSelectorComponent) ListSelectRow(index int) {
-	if index == component.selectedIndex {
-		return
-	}
-	component.window.Freeze()
-	component.selectedIndex = index
-	component.updateList()
+	listSelectRow(&component.window, &component.selectedIndex, index, component.updateList)
 }
 
 // ListScroll moves the selection one row per tick, recentring like keyboard
 // navigation does.
 func (component *ModelSelectorComponent) ListScroll(direction int) {
-	component.window.Recenter()
-	component.selectedIndex = max(0, min(component.selectedIndex+direction, len(component.filteredModels)-1))
-	component.updateList()
+	listScroll(&component.window, &component.selectedIndex, direction, len(component.filteredModels), component.updateList)
 }
 
 // ListConfirm confirms the current selection.
 func (component *ModelSelectorComponent) ListConfirm() { component.confirmSelection() }
-
-// rowAt maps a component-local row to the filtered-model index it renders.
-func (component *ModelSelectorComponent) rowAt(row int) (int, bool) {
-	component.rowsMu.Lock()
-	rows, start := component.rowOffsets, component.visibleStart
-	component.rowsMu.Unlock()
-	for index := range max(0, len(rows)-1) {
-		if row >= rows[index] && row < rows[index+1] {
-			return start + index, true
-		}
-	}
-	return 0, false
-}
 
 func (mode *InteractiveMode) selectModelSearchable(
 	ctx context.Context,

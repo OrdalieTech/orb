@@ -139,7 +139,7 @@ func TestLoadCompiledExtensionsKeepsNativeExtensionsWithoutJSRuntime(t *testing.
 		t.Fatal("native extension registry was lost without a JavaScript runtime")
 	}
 	want := (&extensionhost.RuntimeUnavailableError{}).Error()
-	if len(diagnostics) != 1 || diagnostics[0] != want {
+	if len(diagnostics) != 1 || startupDiagnosticText(diagnostics[0]) != want {
 		t.Fatalf("diagnostics = %#v, want only %q", diagnostics, want)
 	}
 }
@@ -214,8 +214,9 @@ func TestExtensionFlagResolvesNpmSourceInsteadOfLiteralPath(t *testing.T) {
 	}
 	reg, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{Extensions: []string{"npm:pi-fixture-ext"}}, settings, nil)
 	for _, diagnostic := range diagnostics {
-		if strings.Contains(diagnostic, "npm:pi-fixture-ext") && strings.Contains(diagnostic, "resolve") {
-			t.Fatalf("npm spec was treated as a literal path: %q", diagnostic)
+		text := startupDiagnosticText(diagnostic)
+		if strings.Contains(text, "npm:pi-fixture-ext") && strings.Contains(text, "resolve") {
+			t.Fatalf("npm spec was treated as a literal path: %q", text)
 		}
 	}
 	if reg == nil || !containsString(loadedToolNames(t, reg), "parse_duration") {

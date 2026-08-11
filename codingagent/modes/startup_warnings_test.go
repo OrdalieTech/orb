@@ -8,11 +8,15 @@ import (
 )
 
 func TestStartupWarningsCompaction(t *testing.T) {
-	warnings := newStartupWarnings([]string{
-		`Extension error (/home/user/.pi/agent/npm/node_modules/@quintinshaw/pi-dynamic-workflows/extensions/workflow.ts): Failed to load extension: Cannot find package 'typebox' imported from /home/user/.pi/agent/npm/node_modules/@quintinshaw/pi-dynamic-workflows/src/agent.ts`,
-		`name "but" collision`,
-		`name "ponytail" collision`,
-		`some other diagnostic`,
+	warnings := newStartupWarnings([]StartupDiagnostic{
+		{
+			Kind:    StartupDiagnosticExtension,
+			Path:    "/home/user/.pi/agent/npm/node_modules/@quintinshaw/pi-dynamic-workflows/extensions/workflow.ts",
+			Message: "Failed to load extension: Cannot find package 'typebox' imported from /home/user/.pi/agent/npm/node_modules/@quintinshaw/pi-dynamic-workflows/src/agent.ts",
+		},
+		{Kind: StartupDiagnosticCollision, Path: "/home/user/skills/but.md", Message: `"but"`},
+		{Kind: StartupDiagnosticCollision, Path: "/home/user/skills/ponytail.md", Message: `"ponytail"`},
+		{Kind: StartupDiagnosticOther, Message: `some other diagnostic`},
 	})
 	want := []string{
 		`extension workflow.ts: Cannot find package 'typebox'`,
@@ -30,9 +34,13 @@ func TestStartupWarningsCompaction(t *testing.T) {
 }
 
 func TestStartupWarningsRenderTruncatesInsteadOfWrapping(t *testing.T) {
-	warnings := newStartupWarnings([]string{
-		`Extension error (/very/long/path/to/some/extension.ts): Failed to load extension: Cannot find package 'typebox' imported from /another/very/long/path`,
-		`name "but" collision`,
+	warnings := newStartupWarnings([]StartupDiagnostic{
+		{
+			Kind:    StartupDiagnosticExtension,
+			Path:    "/very/long/path/to/some/extension.ts",
+			Message: "Failed to load extension: Cannot find package 'typebox' imported from /another/very/long/path",
+		},
+		{Kind: StartupDiagnosticCollision, Message: `"but"`},
 	})
 	const width = 40
 	lines := warnings.Render(width)

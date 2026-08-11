@@ -428,7 +428,7 @@ func (list *configResourceList) Render(width int) []string {
 	if len(list.filteredItems) == 0 {
 		return append(lines, theme.FG("muted", "  No resources found"))
 	}
-	startIndex := max(0, min(list.selectedIndex-list.maxVisible/2, len(list.filteredItems)-list.maxVisible))
+	startIndex := tui.ListWindowStart(list.selectedIndex, len(list.filteredItems), list.maxVisible)
 	endIndex := min(startIndex+list.maxVisible, len(list.filteredItems))
 	for index := startIndex; index < endIndex; index++ {
 		entry := list.filteredItems[index]
