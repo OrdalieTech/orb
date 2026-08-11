@@ -68,10 +68,10 @@ func (terminal *trackingTerminal) deliver(report string) bool {
 	}
 	mode := terminal.trackingMode()
 	sends := false
-	switch {
-	case event.Type == MouseMove:
+	switch event.Type {
+	case MouseMove:
 		sends = mode == "any"
-	case event.Type == MouseDrag:
+	case MouseDrag:
 		sends = mode == "drag" || mode == "any"
 	default: // press, release, wheel: any active tracking mode reports them
 		sends = mode != "off"
