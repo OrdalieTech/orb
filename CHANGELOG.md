@@ -4,6 +4,12 @@ Orb's own release history (independent 0.x semver; upstream parity target record
 The embedded upstream changelog under `codingagent/modes/assets/` is a product asset driving
 `/changelog` and is not this file.
 
+## [Unreleased]
+
+### Changed
+
+- The default dark and light themes trade their warm heading/warning tones for a colder palette (D35): markdown headings and the `[Context]` header render steel blue (`#89b4fa` dark, `#35689e` light) instead of amber, the warning role drops from pure yellow to a restrained sand (`#d7ba7d` dark) and a deeper amber that now meets 4.5:1 contrast (`#8a6420` light), and the HTML-export info background swaps its warm olive/cream for cold slate/ice (`#28323c` dark, `#e6f0fa` light). Error red, success green, and diff colors are untouched, and the existing cold accents (teal accent bar and highlights, blue/cyan borders) are unchanged.
+
 ## [0.4.14] - 2026-08-11
 
 ### Added

@@ -11,7 +11,7 @@
         "borderMuted": "\u001b[38;2;80;80;80m",
         "success": "\u001b[38;2;181;189;104m",
         "error": "\u001b[38;2;204;102;102m",
-        "warning": "\u001b[38;2;255;255;0m",
+        "warning": "\u001b[38;2;215;186;125m",
         "muted": "\u001b[38;2;128;128;128m",
         "dim": "\u001b[38;2;102;102;102m",
         "text": "\u001b[38;2;212;212;212m",
@@ -21,7 +21,7 @@
         "customMessageLabel": "\u001b[38;2;149;117;205m",
         "toolTitle": "\u001b[38;2;212;212;212m",
         "toolOutput": "\u001b[38;2;128;128;128m",
-        "mdHeading": "\u001b[38;2;240;198;116m",
+        "mdHeading": "\u001b[38;2;137;180;250m",
         "mdLink": "\u001b[38;2;129;162;190m",
         "mdLinkUrl": "\u001b[38;2;102;102;102m",
         "mdCode": "\u001b[38;2;138;190;183m",
@@ -61,7 +61,7 @@
         "toolErrorBg": "\u001b[48;2;60;40;40m"
       },
       "sample": [
-        "\u001b[38;2;240;198;116m\u001b[1m\u001b[4mTheme sample\u001b[24m\u001b[22m\u001b[39m                                                            ",
+        "\u001b[38;2;137;180;250m\u001b[1m\u001b[4mTheme sample\u001b[24m\u001b[22m\u001b[39m                                                            ",
         "                                                                        ",
         "\u001b[38;2;128;128;128m│ \u001b[39m\u001b[38;2;128;128;128m\u001b[3mquote with \u001b[1mbold\u001b[22m\u001b[38;2;128;128;128m\u001b[3m and \u001b[38;2;138;190;183mcode\u001b[39m\u001b[23m\u001b[39m                                              ",
         "                                                                        ",
@@ -100,7 +100,7 @@
         "borderMuted": "#505050",
         "success": "#b5bd68",
         "error": "#cc6666",
-        "warning": "#ffff00",
+        "warning": "#d7ba7d",
         "muted": "#808080",
         "dim": "#666666",
         "text": "#d4d4d4",
@@ -117,7 +117,7 @@
         "toolErrorBg": "#3c2828",
         "toolTitle": "#d4d4d4",
         "toolOutput": "#808080",
-        "mdHeading": "#f0c674",
+        "mdHeading": "#89b4fa",
         "mdLink": "#81a2be",
         "mdLinkUrl": "#666666",
         "mdCode": "#8abeb7",
@@ -151,7 +151,7 @@
       "export": {
         "pageBg": "#18181e",
         "cardBg": "#1e1e24",
-        "infoBg": "#3c3728"
+        "infoBg": "#28323c"
       }
     },
     {
@@ -164,7 +164,7 @@
         "borderMuted": "\u001b[38;2;176;176;176m",
         "success": "\u001b[38;2;88;132;88m",
         "error": "\u001b[38;2;170;85;85m",
-        "warning": "\u001b[38;2;154;115;38m",
+        "warning": "\u001b[38;2;138;100;32m",
         "muted": "\u001b[38;2;108;108;108m",
         "dim": "\u001b[38;2;118;118;118m",
         "text": "\u001b[38;2;31;35;40m",
@@ -174,7 +174,7 @@
         "customMessageLabel": "\u001b[38;2;126;87;194m",
         "toolTitle": "\u001b[38;2;31;35;40m",
         "toolOutput": "\u001b[38;2;108;108;108m",
-        "mdHeading": "\u001b[38;2;154;115;38m",
+        "mdHeading": "\u001b[38;2;53;104;158m",
         "mdLink": "\u001b[38;2;84;125;167m",
         "mdLinkUrl": "\u001b[38;2;118;118;118m",
         "mdCode": "\u001b[38;2;90;128;128m",
@@ -214,7 +214,7 @@
         "toolErrorBg": "\u001b[48;2;240;232;232m"
       },
       "sample": [
-        "\u001b[38;2;154;115;38m\u001b[1m\u001b[4mTheme sample\u001b[24m\u001b[22m\u001b[39m                                                            ",
+        "\u001b[38;2;53;104;158m\u001b[1m\u001b[4mTheme sample\u001b[24m\u001b[22m\u001b[39m                                                            ",
         "                                                                        ",
         "\u001b[38;2;108;108;108m│ \u001b[39m\u001b[38;2;108;108;108m\u001b[3mquote with \u001b[1mbold\u001b[22m\u001b[38;2;108;108;108m\u001b[3m and \u001b[38;2;90;128;128mcode\u001b[39m\u001b[23m\u001b[39m                                              ",
         "                                                                        ",
@@ -253,7 +253,7 @@
         "borderMuted": "#b0b0b0",
         "success": "#588458",
         "error": "#aa5555",
-        "warning": "#9a7326",
+        "warning": "#8a6420",
         "muted": "#6c6c6c",
         "dim": "#767676",
         "text": "#1f2328",
@@ -270,7 +270,7 @@
         "toolErrorBg": "#f0e8e8",
         "toolTitle": "#1f2328",
         "toolOutput": "#6c6c6c",
-        "mdHeading": "#9a7326",
+        "mdHeading": "#35689e",
         "mdLink": "#547da7",
         "mdLinkUrl": "#767676",
         "mdCode": "#5a8080",
@@ -304,7 +304,7 @@
       "export": {
         "pageBg": "#f8f8f8",
         "cardBg": "#ffffff",
-        "infoBg": "#fffae6"
+        "infoBg": "#e6f0fa"
       }
     }
   ],

@@ -117,7 +117,7 @@ func TestExportUsesPinnedUpstreamCustomTheme(t *testing.T) {
 	}
 	custom := strings.Replace(string(source), `"name": "dark"`, `"name": "custom-export"`, 1)
 	custom = strings.Replace(custom, `"userMsgBg": "#343541"`, `"userMsgBg": "#204060", "pageDeep": "#112233", "pageAlias": "pageDeep", "cardIndex": 24`, 1)
-	custom = strings.Replace(custom, `"export": { "pageBg": "#18181e", "cardBg": "#1e1e24", "infoBg": "#3c3728" }`, `"export": { "pageBg": "pageAlias", "cardBg": "cardIndex", "infoBg": "" }`, 1)
+	custom = strings.Replace(custom, `"export": { "pageBg": "#18181e", "cardBg": "#1e1e24", "infoBg": "#28323c" }`, `"export": { "pageBg": "pageAlias", "cardBg": "cardIndex", "infoBg": "" }`, 1)
 	if err := os.WriteFile(filepath.Join(themeDir, "custom-export.json"), []byte(custom), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestExportUsesPinnedUpstreamCustomTheme(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := sha256Hex(contents); got != "638ed2f873d99fd4f5a79681e266398e29da3c98bebed689ef95af997ea2398e" {
+	if got := sha256Hex(contents); got != "f6f6b2dd7aaf89da4ecaee0cf585fd998ae201cc9e2d8602e6adeeca60c0a795" {
 		t.Fatalf("custom-theme HTML sha256 = %s, want pinned-upstream fixture", got)
 	}
 	for _, want := range []string{
