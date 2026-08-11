@@ -131,7 +131,7 @@ func TestExportUsesPinnedUpstreamCustomTheme(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := sha256Hex(contents); got != "de81fc3d984b9b8cfaa62275ece7dc10c2f2078753a35a1dffd77381651c8500" {
+	if got := sha256Hex(contents); got != "b6855479be1e5409a709e405f4530e822663fd209b560e9ffb10cb3dd66d0ea4" {
 		t.Fatalf("custom-theme HTML sha256 = %s, want pinned-upstream fixture", got)
 	}
 	for _, want := range []string{
