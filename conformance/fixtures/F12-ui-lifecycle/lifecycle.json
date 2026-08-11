@@ -122,30 +122,30 @@
     "custom": {
       "historical": [
         "\u001b]133;A\u0007",
-        " \u001b[3m\u001b[38;5;244mExtension thought\u001b[39m\u001b[23m                              ",
+        "   \u001b[3m\u001b[38;5;244mExtension thought\u001b[39m\u001b[23m                            ",
         "",
-        "\u001b]133;B\u0007\u001b]133;C\u0007 visible answer                                 "
+        "\u001b]133;B\u0007\u001b]133;C\u0007   visible answer                               "
       ],
       "streaming": [
         "\u001b]133;A\u0007",
-        " \u001b[3m\u001b[38;5;244mExtension thought\u001b[39m\u001b[23m                              ",
+        "   \u001b[3m\u001b[38;5;244mExtension thought\u001b[39m\u001b[23m                            ",
         "",
-        "\u001b]133;B\u0007\u001b]133;C\u0007 visible answer                                 "
+        "\u001b]133;B\u0007\u001b]133;C\u0007   visible answer                               "
       ],
       "storedLabel": "Extension thought"
     },
     "reset": {
       "historical": [
         "\u001b]133;A\u0007",
-        " \u001b[3m\u001b[38;5;244mThinking...\u001b[39m\u001b[23m                                    ",
+        "   \u001b[3m\u001b[38;5;244mThinking...\u001b[39m\u001b[23m                                  ",
         "",
-        "\u001b]133;B\u0007\u001b]133;C\u0007 visible answer                                 "
+        "\u001b]133;B\u0007\u001b]133;C\u0007   visible answer                               "
       ],
       "streaming": [
         "\u001b]133;A\u0007",
-        " \u001b[3m\u001b[38;5;244mThinking...\u001b[39m\u001b[23m                                    ",
+        "   \u001b[3m\u001b[38;5;244mThinking...\u001b[39m\u001b[23m                                  ",
         "",
-        "\u001b]133;B\u0007\u001b]133;C\u0007 visible answer                                 "
+        "\u001b]133;B\u0007\u001b]133;C\u0007   visible answer                               "
       ],
       "storedLabel": "Thinking..."
     },

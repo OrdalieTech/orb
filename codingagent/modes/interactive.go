@@ -3975,7 +3975,7 @@ func nativeToolDefinition(name string, registered agent.AgentTool) *extensions.T
 				return container
 			}
 			context.State["editPreviewDiff"] = preview.Diff
-			container.AddChild(tui.NewText(strings.Join(theme.Highlight(preview.Diff, "diff", theme.Current()), "\n"), 0, 0, nil))
+			container.AddChild(NewEditDiffView(preview.Diff))
 			return container
 		},
 		RenderResult: func(result agent.AgentToolResult, options extensions.ToolRenderResultOptions, palette extensions.Theme, context extensions.ToolRenderContext) extensions.Component {
@@ -3984,7 +3984,7 @@ func nativeToolDefinition(name string, registered agent.AgentTool) *extensions.T
 					if preview, _ := context.State["editPreviewDiff"].(string); preview == diff {
 						return &tui.Container{}
 					}
-					return tui.NewText(strings.Join(theme.Highlight(diff, "diff", theme.Current()), "\n"), 0, 0, nil)
+					return NewEditDiffView(diff)
 				}
 				if previewError, _ := context.State["editPreviewError"].(string); previewError == renderer.RenderResult(result) {
 					return &tui.Container{}
