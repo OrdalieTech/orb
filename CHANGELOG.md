@@ -6,6 +6,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Added
+
+- The model selector (`/model`) and auth-provider selector (`/login`, `/logout`) are now fully mouse-aware: click selects a row, double-click confirms, and the wheel moves the selection — the same paths the keyboard drives. Hovering a row moves the selection highlight in every selector whose list fits its window (model, auth, session, tree, startup, and extension dialogs); hover reports (any-motion tracking, `1003`) are enabled only while such a selector holds focus and are reverted the moment focus returns to the editor, so normal typing never pays for a motion-event flood and Shift+drag native text selection keeps working everywhere.
+
 ## [0.4.13] - 2026-08-10
 
 ### Changed

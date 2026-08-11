@@ -175,6 +175,9 @@ func (list *SelectList) visibleStartLocked() int {
 	return max(0, min(list.selectedIndex-list.maxVisible/2, len(list.filteredItems)-list.maxVisible))
 }
 
+// WantsMouseMotion turns on hover reports while the list holds focus.
+func (list *SelectList) WantsMouseMotion() bool { return true }
+
 // HandleMouse selects the clicked row and confirms on a double click. The
 // scroll-info line below the items is not clickable.
 func (list *SelectList) HandleMouse(event MouseEvent) bool {
@@ -184,6 +187,18 @@ func (list *SelectList) HandleMouse(event MouseEvent) bool {
 		return false
 	}
 	switch {
+	case event.Type == MouseMove:
+		// Hover moves the highlight only while the list cannot scroll: a
+		// recentring window would shift rows under the cursor and feed back.
+		if len(list.filteredItems) > list.maxVisible ||
+			event.Row < 0 || event.Row >= len(list.filteredItems) {
+			list.mu.Unlock()
+			return false
+		}
+		if list.selectedIndex != event.Row {
+			list.selectedIndex = event.Row
+			list.notifySelectionChange()
+		}
 	case event.Type == MouseWheelUp || event.Type == MouseWheelDown:
 		delta := -1
 		if event.Type == MouseWheelDown {

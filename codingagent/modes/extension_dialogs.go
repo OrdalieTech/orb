@@ -165,6 +165,9 @@ func (component *ExtensionSelectorComponent) Render(width int) []string {
 	return lines
 }
 
+// WantsMouseMotion turns on hover reports while the dialog holds focus.
+func (component *ExtensionSelectorComponent) WantsMouseMotion() bool { return true }
+
 // HandleMouse highlights the clicked option and requires a double click to
 // confirm, so a stray click cannot approve a tool call.
 func (component *ExtensionSelectorComponent) HandleMouse(event tui.MouseEvent) bool {
@@ -172,6 +175,22 @@ func (component *ExtensionSelectorComponent) HandleMouse(event tui.MouseEvent) b
 		return false
 	}
 	switch {
+	case event.Type == tui.MouseMove:
+		// Every option is always rendered, so hover can never scroll the list.
+		component.rowsMu.Lock()
+		rows := component.optionRows
+		component.rowsMu.Unlock()
+		for index := range min(len(component.options), len(rows)-1) {
+			if event.Row < rows[index] || event.Row >= rows[index+1] {
+				continue
+			}
+			if component.selected != index {
+				component.selected = index
+				component.updateList()
+			}
+			return true
+		}
+		return false
 	case event.Type == tui.MouseWheelUp || event.Type == tui.MouseWheelDown:
 		delta := -1
 		if event.Type == tui.MouseWheelDown {

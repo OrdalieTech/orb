@@ -18,7 +18,11 @@ const (
 	scrollOnOutputOff   = "\x1b[?1010l"
 	scrollOnOutputOn    = "\x1b[?1010h"
 	alternateScreenOn   = "\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1006h"
-	alternateScreenOff  = "\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1049l"
+	// 1003 is focus-scoped (syncMouseMotionLocked); the off sequence always
+	// clears it so a crash cannot leave the terminal streaming motion.
+	alternateScreenOff = "\x1b[?1003l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1049l"
+	mouseMotionOn      = "\x1b[?1003h"
+	mouseMotionOff     = "\x1b[?1003l"
 )
 
 type InputListenerResult struct {
@@ -76,10 +80,12 @@ type TUI struct {
 	lifecycleMu        sync.RWMutex
 	stopped            bool
 	hasStarted         bool
+	mouseViewport      bool
 	crashRestoreCancel func()
 
 	focusMu      sync.RWMutex
 	focused      Component
+	mouseMotion  bool
 	listeners    []inputListenerEntry
 	nextListener uint64
 	OnDebug      func()
@@ -200,6 +206,7 @@ func (ui *TUI) Start() error {
 	}
 	ui.lifecycleMu.Lock()
 	ui.hasStarted = true
+	ui.mouseViewport = viewport
 	ui.crashRestoreCancel = registerCrashRestore(func() {
 		ui.setStopped(true)
 		// stopTerminal ends in ProcessTerminal.Stop, which blocks on
@@ -219,6 +226,14 @@ func (ui *TUI) Start() error {
 		}
 	})
 	ui.lifecycleMu.Unlock()
+	// A restart (external editor, crash recovery) re-enters with a motion
+	// component still focused; the off sequence cleared 1003, so re-assert it.
+	ui.focusMu.RLock()
+	motion := ui.mouseMotion
+	ui.focusMu.RUnlock()
+	if viewport && motion {
+		ui.terminal.Write(mouseMotionOn)
+	}
 	// Keep terminal scrollback stationary while live output updates the active cursor.
 	ui.terminal.Write(scrollOnOutputOff)
 	ui.terminal.HideCursor()
@@ -449,6 +464,32 @@ func (ui *TUI) handleViewportInput(data string) bool {
 	}
 	ui.renderMu.Unlock()
 	return consumed
+}
+
+// syncMouseMotionLocked keeps any-motion tracking scoped to the focused
+// component: 1003 floods reports, so it is on only while a selector that can
+// use hover holds focus. Callers hold focusMu; the terminal write is safe
+// there because Write takes only the terminal's own leaf mutex.
+func (ui *TUI) syncMouseMotionLocked() {
+	wants := false
+	if handler, ok := ui.focused.(MouseMotionHandler); ok {
+		wants = handler.WantsMouseMotion()
+	}
+	if wants == ui.mouseMotion {
+		return
+	}
+	ui.mouseMotion = wants
+	ui.lifecycleMu.RLock()
+	live := !ui.stopped && ui.mouseViewport
+	ui.lifecycleMu.RUnlock()
+	if !live {
+		return
+	}
+	if wants {
+		ui.terminal.Write(mouseMotionOn)
+	} else {
+		ui.terminal.Write(mouseMotionOff)
+	}
 }
 
 // handleMouse offers the event to the component under the cursor first and

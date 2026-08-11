@@ -14,6 +14,7 @@ const (
 	MouseDrag
 	MouseWheelUp
 	MouseWheelDown
+	MouseMove
 )
 
 // MouseEvent is one decoded SGR mouse report. Row and Column are zero-based
@@ -38,6 +39,15 @@ type MouseEvent struct {
 type MouseHandler interface {
 	// HandleMouse reports whether the event was consumed.
 	HandleMouse(MouseEvent) bool
+}
+
+// MouseMotionHandler additionally receives hover (MouseMove) reports.
+// Any-motion tracking floods the input stream, so the TUI enables it only
+// while a component advertising this holds focus and reverts to button-event
+// tracking when focus moves on.
+type MouseMotionHandler interface {
+	MouseHandler
+	WantsMouseMotion() bool
 }
 
 // IsMouseReport matches every SGR mouse report, including the ones parseMouse
@@ -81,7 +91,11 @@ func parseMouse(data string) (MouseEvent, bool) {
 	case strings.HasSuffix(data, "m"):
 		event.Type = MouseRelease
 	case code&32 != 0:
+		// Button bits 3 mean no button is held: an any-motion (1003) hover.
 		event.Type = MouseDrag
+		if code&3 == 3 {
+			event.Type = MouseMove
+		}
 	default:
 		event.Type = MousePress
 	}

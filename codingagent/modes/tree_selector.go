@@ -468,6 +468,9 @@ func treeFoldSpan(row treeRow) (int, int) {
 	return start, start + tui.VisibleWidth(prefix[index:index+len("⊞")])
 }
 
+// WantsMouseMotion turns on hover reports while the selector holds focus.
+func (component *TreeSelectorComponent) WantsMouseMotion() bool { return true }
+
 // HandleMouse selects the clicked row, toggles the fold marker when the click
 // lands on it, confirms on a double click, and scrolls on the wheel. The two
 // leading cells are the selection cursor, and rowScroll undoes the horizontal
@@ -477,6 +480,18 @@ func (component *TreeSelectorComponent) HandleMouse(event tui.MouseEvent) bool {
 		return false
 	}
 	switch {
+	case event.Type == tui.MouseMove:
+		// Hover moves the highlight only while the tree cannot scroll: a
+		// recentring viewport would shift rows under the cursor and feed back.
+		top, first, count, _ := component.rowLayout()
+		if len(component.view.rows) > component.maxVisible ||
+			event.Row < top || event.Row >= top+count {
+			return false
+		}
+		if index := first + event.Row - top; index < len(component.view.rows) {
+			component.selected = index
+		}
+		return true
 	case event.Type == tui.MouseWheelUp || event.Type == tui.MouseWheelDown:
 		delta := -3
 		if event.Type == tui.MouseWheelDown {
