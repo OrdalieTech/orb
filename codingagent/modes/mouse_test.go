@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrdalieTech/orb/ai"
 	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
 	"github.com/OrdalieTech/orb/tui"
 )
@@ -233,6 +234,175 @@ func TestSessionSelectorClickSelectsAndDoubleClickResumes(t *testing.T) {
 	}
 	if selector.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: 0, Clicks: 1}) {
 		t.Fatal("click on the session selector header was consumed")
+	}
+}
+
+func modelSelectorMouseFixture(t *testing.T, count int, onSelect func(ai.Model)) *ModelSelectorComponent {
+	t.Helper()
+	initTestTheme(t)
+	models := make([]ai.Model, count)
+	for index := range count {
+		models[index] = ai.Model{
+			ID:       fmt.Sprintf("model-%02d", index),
+			Name:     fmt.Sprintf("Model %02d", index),
+			Provider: "prov",
+		}
+	}
+	return NewModelSelectorComponent(nil, models, nil, onSelect, nil, "")
+}
+
+func TestModelSelectorClickWheelHoverAndDoubleClick(t *testing.T) {
+	confirmed := ""
+	component := modelSelectorMouseFixture(t, 5, func(model ai.Model) { confirmed = model.ID })
+	row := lineIndexContaining(t, component.Render(80), "model-02")
+
+	if !component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 1}) {
+		t.Fatal("model click was not consumed")
+	}
+	if confirmed != "" {
+		t.Fatalf("single click confirmed %q, want a selection only", confirmed)
+	}
+	if index := lineIndexContaining(t, component.Render(80), "→ model-02"); index != row {
+		t.Fatalf("cursor moved to row %d, want %d", index, row)
+	}
+	component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 2})
+	if confirmed != "model-02" {
+		t.Fatalf("double click confirmed %q", confirmed)
+	}
+	if component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: 0, Clicks: 1}) {
+		t.Fatal("click on the dialog border was consumed")
+	}
+
+	if !component.HandleMouse(tui.MouseEvent{Type: tui.MouseWheelDown}) {
+		t.Fatal("wheel was not consumed")
+	}
+	lineIndexContaining(t, component.Render(80), "→ model-03")
+
+	hoverRow := lineIndexContaining(t, component.Render(80), "model-01")
+	if !component.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: hoverRow}) {
+		t.Fatal("hover was not consumed")
+	}
+	if index := lineIndexContaining(t, component.Render(80), "→ model-01"); index != hoverRow {
+		t.Fatalf("hover highlight on row %d, want %d", index, hoverRow)
+	}
+	if confirmed != "model-02" {
+		t.Fatalf("hover confirmed %q", confirmed)
+	}
+}
+
+func TestModelSelectorHoverIgnoredWhileListScrolls(t *testing.T) {
+	// A recentring window would shift rows under the cursor and feed back.
+	component := modelSelectorMouseFixture(t, 12, nil)
+	row := lineIndexContaining(t, component.Render(80), "model-03")
+	if component.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: row}) {
+		t.Fatal("hover on a scrollable list was consumed")
+	}
+	lineIndexContaining(t, component.Render(80), "→ model-00")
+}
+
+func TestOAuthSelectorClickSelectsHoverHighlightsAndDoubleClickConfirms(t *testing.T) {
+	initTestTheme(t)
+	chosen := ""
+	providers := []InteractiveAuthProvider{
+		{ID: "alpha", Name: "Alpha"},
+		{ID: "beta", Name: "Beta"},
+		{ID: "gamma", Name: "Gamma"},
+	}
+	component := NewOAuthSelectorComponent(oauthSelectorLogin, providers,
+		func(provider InteractiveAuthProvider) { chosen = provider.ID }, nil, "")
+
+	row := lineIndexContaining(t, component.Render(80), "Beta")
+	if !component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 1}) {
+		t.Fatal("provider click was not consumed")
+	}
+	if chosen != "" {
+		t.Fatalf("single click confirmed %q, want a selection only", chosen)
+	}
+	if index := lineIndexContaining(t, component.Render(80), "→ Beta"); index != row {
+		t.Fatalf("cursor moved to row %d, want %d", index, row)
+	}
+	component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 2})
+	if chosen != "beta" {
+		t.Fatalf("double click confirmed %q", chosen)
+	}
+
+	hoverRow := lineIndexContaining(t, component.Render(80), "Gamma")
+	if !component.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: hoverRow}) {
+		t.Fatal("hover was not consumed")
+	}
+	lineIndexContaining(t, component.Render(80), "→ Gamma")
+	if component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: 0, Clicks: 1}) {
+		t.Fatal("click on the dialog border was consumed")
+	}
+}
+
+func TestSessionSelectorHoverMovesSelection(t *testing.T) {
+	initTestTheme(t)
+	now := time.Date(2026, 7, 18, 22, 0, 0, 0, time.UTC)
+	sessions := []sessionstore.SessionInfo{
+		{Path: "/tmp/one.jsonl", ID: "one", FirstMessage: "first session", Modified: now},
+		{Path: "/tmp/two.jsonl", ID: "two", FirstMessage: "second session", Modified: now},
+		{Path: "/tmp/three.jsonl", ID: "three", FirstMessage: "third session", Modified: now},
+	}
+	selector := NewSessionSelectorComponent(SessionSelectorOptions{
+		CurrentSessions: func(sessionstore.SessionListProgress) []sessionstore.SessionInfo { return sessions },
+		Now:             func() time.Time { return now },
+	}, func(string) {}, nil)
+	waitForSelector(t, selector, "third session")
+
+	row := lineIndexContaining(t, selector.Render(100), "second session")
+	if !selector.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: row}) {
+		t.Fatal("hover was not consumed")
+	}
+	if index := lineIndexContaining(t, selector.Render(100), "› second session"); index != row {
+		t.Fatalf("hover highlight on row %d, want %d", index, row)
+	}
+}
+
+func TestTreeSelectorHoverMovesSelectionWhenTreeFits(t *testing.T) {
+	selector := newTreeFixtureSelector(t, 2, 40, nil)
+	row := lineIndexContaining(t, selector.Render(60), "user: 側1 side")
+	if !selector.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: row, Column: 10}) {
+		t.Fatal("hover was not consumed")
+	}
+	if got := selector.selectedID(); got != "s1" {
+		t.Fatalf("hover selected %q, want s1", got)
+	}
+
+	// A window smaller than the tree recentres on selection, which would shift
+	// rows under the cursor, so hover must leave it alone.
+	scrolled := newTreeFixtureSelector(t, 6, 10, nil)
+	scrolledRow := lineIndexContaining(t, scrolled.Render(60), "assistant: 主3 main")
+	before := scrolled.selectedID()
+	if scrolled.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: scrolledRow, Column: 10}) {
+		t.Fatal("hover on a scrolling tree was consumed")
+	}
+	if scrolled.selectedID() != before {
+		t.Fatalf("hover moved a scrolling tree to %q", scrolled.selectedID())
+	}
+}
+
+func TestExtensionSelectorHoverMovesHighlight(t *testing.T) {
+	initTestTheme(t)
+	useTreeTestKeybindings(t)
+	chosen := ""
+	component := NewExtensionSelectorItemsComponent("Permission", []tui.SelectItem{
+		{Value: "y approve once"},
+		{Value: "n reject"},
+	}, func(value string) { chosen = value }, nil, nil)
+
+	row := lineIndexContaining(t, component.Render(60), "n reject")
+	if !component.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: row}) {
+		t.Fatal("hover was not consumed")
+	}
+	if index := lineIndexContaining(t, component.Render(60), "→ n reject"); index != row {
+		t.Fatalf("hover highlight on row %d, want %d", index, row)
+	}
+	if chosen != "" {
+		t.Fatalf("hover confirmed %q", chosen)
+	}
+	if component.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: 0}) {
+		t.Fatal("hover on the dialog border was consumed")
 	}
 }
 

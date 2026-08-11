@@ -205,6 +205,7 @@ func (ui *TUI) setFocusLocked(component Component, policy overlayFocusRestorePol
 	if focusedOverlay := ui.visibleOverlayForComponentLocked(nextFocus); focusedOverlay != nil {
 		ui.overlayFocusRestore = overlayFocusRestoreState{status: overlayFocusRestoreEligible, overlay: focusedOverlay}
 	}
+	ui.syncMouseMotionLocked()
 }
 
 func (ui *TUI) clearOverlayFocusRestoreLocked() {

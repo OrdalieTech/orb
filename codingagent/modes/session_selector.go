@@ -562,6 +562,9 @@ func (selector *SessionSelectorComponent) Render(width int) []string {
 	return lines
 }
 
+// WantsMouseMotion turns on hover reports while the selector holds focus.
+func (selector *SessionSelectorComponent) WantsMouseMotion() bool { return true }
+
 // HandleMouse selects the clicked session and resumes it on a double click.
 func (selector *SessionSelectorComponent) HandleMouse(event tui.MouseEvent) bool {
 	selector.mu.Lock()
@@ -572,6 +575,15 @@ func (selector *SessionSelectorComponent) HandleMouse(event tui.MouseEvent) bool
 	var callback func(string)
 	path := ""
 	switch {
+	case event.Type == tui.MouseMove:
+		// Hover moves the highlight only while the list cannot scroll: a
+		// recentring window would shift rows under the cursor and feed back.
+		if len(selector.filtered) > selector.maxVisible ||
+			event.Row < selector.rowTop || event.Row >= selector.rowTop+selector.rowCount {
+			selector.mu.Unlock()
+			return false
+		}
+		selector.selected = selector.rowStart + event.Row - selector.rowTop
 	case event.Type == tui.MouseWheelUp || event.Type == tui.MouseWheelDown:
 		delta := -3
 		if event.Type == tui.MouseWheelDown {

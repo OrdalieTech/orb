@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/codingagent"
@@ -40,6 +41,11 @@ type ModelSelectorComponent struct {
 	scope          modelSelectorScope
 	onSelect       func(ai.Model)
 	onCancel       func()
+
+	rowsMu       sync.Mutex
+	rowOffsets   []int
+	visibleStart int
+	visibleCount int
 }
 
 func NewModelSelectorComponent(
@@ -199,6 +205,9 @@ func (component *ModelSelectorComponent) updateList() {
 		len(component.filteredModels)-modelSelectorMaxVisible,
 	))
 	end := min(start+modelSelectorMaxVisible, len(component.filteredModels))
+	component.rowsMu.Lock()
+	component.visibleStart, component.visibleCount = start, end-start
+	component.rowsMu.Unlock()
 	for index := start; index < end; index++ {
 		item := component.filteredModels[index]
 		prefix, modelStyle := "  ", "text"
@@ -277,8 +286,94 @@ func (component *ModelSelectorComponent) SetFocused(focused bool) {
 }
 
 func (component *ModelSelectorComponent) Invalidate() { component.container.Invalidate() }
+
+// Render inlines the container walk so it can record where each visible row
+// landed for mouse hit-testing; the emitted lines are the container's own.
 func (component *ModelSelectorComponent) Render(width int) []string {
-	return component.container.Render(width)
+	component.rowsMu.Lock()
+	count := component.visibleCount
+	component.rowsMu.Unlock()
+	lines, rows := make([]string, 0), make([]int, 0, count+1)
+	for _, child := range component.container.Children() {
+		if child != component.listContainer {
+			lines = append(lines, child.Render(width)...)
+			continue
+		}
+		for index, row := range component.listContainer.Children() {
+			if index <= count {
+				rows = append(rows, len(lines))
+			}
+			lines = append(lines, row.Render(width)...)
+		}
+	}
+	if len(rows) == count {
+		rows = append(rows, len(lines))
+	}
+	component.rowsMu.Lock()
+	component.rowOffsets = rows
+	component.rowsMu.Unlock()
+	return lines
+}
+
+// WantsMouseMotion turns on hover reports while the selector holds focus.
+func (component *ModelSelectorComponent) WantsMouseMotion() bool { return true }
+
+// HandleMouse selects the hovered or clicked row and confirms on a double
+// click; the wheel moves the selection one row at a time.
+func (component *ModelSelectorComponent) HandleMouse(event tui.MouseEvent) bool {
+	if len(component.filteredModels) == 0 {
+		return false
+	}
+	switch {
+	case event.Type == tui.MouseWheelUp || event.Type == tui.MouseWheelDown:
+		delta := -1
+		if event.Type == tui.MouseWheelDown {
+			delta = 1
+		}
+		component.selectedIndex = max(0, min(component.selectedIndex+delta, len(component.filteredModels)-1))
+		component.updateList()
+		return true
+	case event.Type == tui.MouseMove:
+		// Hover moves the highlight only while the list cannot scroll: a
+		// recentring window would shift rows under the cursor and feed back.
+		if len(component.filteredModels) > modelSelectorMaxVisible {
+			return false
+		}
+		index, ok := component.rowAt(event.Row)
+		if ok && index != component.selectedIndex {
+			component.selectedIndex = index
+			component.updateList()
+		}
+		return ok
+	case event.Type == tui.MousePress && event.Button == 0:
+		index, ok := component.rowAt(event.Row)
+		if !ok {
+			return false
+		}
+		// The first press of a double click already selected this cell.
+		// Re-resolving would confirm whatever the recentred list moved under it.
+		if event.Clicks >= 2 {
+			component.confirmSelection()
+			return true
+		}
+		component.selectedIndex = index
+		component.updateList()
+		return true
+	}
+	return false
+}
+
+// rowAt maps a component-local row to the filtered-model index it renders.
+func (component *ModelSelectorComponent) rowAt(row int) (int, bool) {
+	component.rowsMu.Lock()
+	rows, start := component.rowOffsets, component.visibleStart
+	component.rowsMu.Unlock()
+	for index := range max(0, len(rows)-1) {
+		if row >= rows[index] && row < rows[index+1] {
+			return start + index, true
+		}
+	}
+	return 0, false
 }
 
 func (mode *InteractiveMode) selectModelSearchable(

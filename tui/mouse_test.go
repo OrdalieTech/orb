@@ -32,11 +32,16 @@ func TestParseMouseDecodesSGRReports(t *testing.T) {
 		{"\x1b[<65;1;1M", MouseEvent{Type: MouseWheelDown, Button: 1}, true},
 		{"\x1b[<16;3;2M", MouseEvent{Type: MousePress, Ctrl: true, Row: 1, Column: 2}, true},
 		{"\x1b[<12;3;2M", MouseEvent{Type: MousePress, Shift: true, Alt: true, Row: 1, Column: 2}, true},
+		// Button bits 3 on a motion report mean no button is held: a hover.
+		{"\x1b[<35;12;5M", MouseEvent{Type: MouseMove, Button: 3, Row: 4, Column: 11}, true},
+		{"\x1b[<39;3;2M", MouseEvent{Type: MouseMove, Button: 3, Shift: true, Row: 1, Column: 2}, true},
+		{"\x1b[<33;12;5M", MouseEvent{Type: MouseDrag, Button: 1, Row: 4, Column: 11}, true},
 		// Horizontal wheel, legacy X10, and malformed reports are swallowed.
 		{"\x1b[<66;1;1M", MouseEvent{}, false},
 		{"\x1b[M !!", MouseEvent{}, false},
 		{"\x1b[<0;0;0M", MouseEvent{}, false},
 		{"\x1b[<a;1;1M", MouseEvent{}, false},
+		{"\x1b[<35;1M", MouseEvent{}, false},
 	}
 	for _, test := range tests {
 		got, ok := parseMouse(test.data)
@@ -218,6 +223,92 @@ func TestSelectListClickSelectsAndDoubleClickConfirms(t *testing.T) {
 	scrolled.HandleMouse(MouseEvent{Type: MousePress, Row: 0, Clicks: 2})
 	if confirmed != "two" {
 		t.Fatalf("double click on a recentred list confirmed %q, want two", confirmed)
+	}
+}
+
+func TestSelectListHoverMovesHighlightOnlyWhenListFits(t *testing.T) {
+	items := []SelectItem{{Value: "one"}, {Value: "two"}, {Value: "three"}}
+	confirmed := ""
+	list := NewSelectList(items, 4, SelectListTheme{}, SelectListLayoutOptions{})
+	list.OnSelect = func(item SelectItem) { confirmed = item.Value }
+
+	if !list.HandleMouse(MouseEvent{Type: MouseMove, Row: 2}) {
+		t.Fatal("hover was not consumed")
+	}
+	if item, _ := list.GetSelectedItem(); item.Value != "three" || confirmed != "" {
+		t.Fatalf("hover = %q confirmed %q", item.Value, confirmed)
+	}
+	if list.HandleMouse(MouseEvent{Type: MouseMove, Row: 3}) {
+		t.Fatal("hover below the items was consumed")
+	}
+
+	// A list taller than its window recentres on selection, which would shift
+	// rows under the cursor, so hover must leave it alone.
+	scrolling := NewSelectList(items, 2, SelectListTheme{}, SelectListLayoutOptions{})
+	if scrolling.HandleMouse(MouseEvent{Type: MouseMove, Row: 1}) {
+		t.Fatal("hover on a scrollable list was consumed")
+	}
+	if item, _ := scrolling.GetSelectedItem(); item.Value != "one" {
+		t.Fatalf("hover moved a scrollable list to %q", item.Value)
+	}
+}
+
+type motionTarget struct{ clickTarget }
+
+func (target *motionTarget) WantsMouseMotion() bool { return true }
+
+func TestTUIFocusScopesMouseMotionTracking(t *testing.T) {
+	terminal := newFakeTerminal(20, 6)
+	ui := NewTUI(terminal)
+	selector := &motionTarget{clickTarget{lines: []string{"one", "two"}, accept: true}}
+	editor := &clickTarget{lines: []string{"editor"}}
+	chrome := &Container{}
+	chrome.AddChild(editor)
+	chrome.AddChild(selector)
+	ui.SetViewport(&mutableLines{lines: []string{"body"}}, chrome)
+	if err := ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+	terminal.resetOutput()
+
+	ui.SetFocus(selector)
+	if !strings.Contains(terminal.output(), mouseMotionOn) {
+		t.Fatal("focusing a hover-capable component did not enable any-motion tracking")
+	}
+	terminal.resetOutput()
+	ui.SetFocus(selector)
+	if terminal.output() != "" {
+		t.Fatalf("re-focusing rewrote the tracking state: %q", terminal.output())
+	}
+	ui.SetFocus(editor)
+	if !strings.Contains(terminal.output(), mouseMotionOff) {
+		t.Fatal("moving focus away did not disable any-motion tracking")
+	}
+
+	// A motion report reaches the component under the cursor as a MouseMove
+	// rebased onto its own rows.
+	ui.SetFocus(selector)
+	ui.RenderNow()
+	ui.handleViewportInput("\x1b[<35;3;6M")
+	if len(selector.events) != 1 || selector.events[0].Type != MouseMove || selector.events[0].Row != 1 {
+		t.Fatalf("motion events = %+v", selector.events)
+	}
+
+	// Stopping always clears motion tracking alongside the alternate screen,
+	// and a restart with the selector still focused re-asserts it.
+	if err := ui.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(terminal.output(), alternateScreenOff) {
+		t.Fatal("stop did not restore the terminal")
+	}
+	terminal.resetOutput()
+	if err := ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ui.Stop() }()
+	if !strings.Contains(terminal.output(), mouseMotionOn) {
+		t.Fatal("restart did not re-assert any-motion tracking for the focused selector")
 	}
 }
 
