@@ -111,6 +111,21 @@ type observationRecorder struct {
 	caseName string
 	expected []f12Observation
 	next     int
+	snap     *runner.Snapshot
+	casePath []any
+}
+
+// observeRender records a rendered frame: comparison in normal runs, snapshot
+// rewrite under ORB_UPDATE_F12 (render observations are Orb-owned
+// presentation; every other observation kind stays a frozen behavior gate).
+func (recorder *observationRecorder) observeRender(got []string) {
+	recorder.t.Helper()
+	index := recorder.next
+	observation := recorder.expect("render")
+	if recorder.snap.Set(got, append(append([]any{}, recorder.casePath...), "observations", index, "value")...) {
+		return
+	}
+	wantObservation(recorder.t, recorder.caseName, index, observation, got)
 }
 
 func (recorder *observationRecorder) expect(kind string) f12Observation {
@@ -160,10 +175,11 @@ func TestF12EditorSessions(t *testing.T) {
 		t.Fatalf("bad fixture header: version %d, %d cases", fixture.SchemaVersion, len(fixture.Cases))
 	}
 
-	for _, fixtureCase := range fixture.Cases {
+	snap := runner.OpenSnapshot(t, "F12", "editor.json")
+	for caseIndex, fixtureCase := range fixture.Cases {
 		t.Run(fixtureCase.Name, func(t *testing.T) {
 			editor := tui.NewEditor(tui.NewTUI(&f12Terminal{columns: 80, rows: fixtureCase.Rows}), f12EditorTheme)
-			recorder := &observationRecorder{t: t, caseName: fixtureCase.Name, expected: fixtureCase.Observations}
+			recorder := &observationRecorder{t: t, caseName: fixtureCase.Name, expected: fixtureCase.Observations, snap: snap, casePath: []any{"cases", caseIndex}}
 			editor.OnSubmit = func(text string) {
 				wantObservation(t, fixtureCase.Name, recorder.next, recorder.expect("submit"), text)
 			}
@@ -222,7 +238,7 @@ func TestF12EditorSessions(t *testing.T) {
 					line, col := editor.GetCursor()
 					wantObservation(t, fixtureCase.Name, recorder.next, recorder.expect("cursor"), map[string]int{"line": line, "col": col})
 				case "render":
-					wantObservation(t, fixtureCase.Name, recorder.next, recorder.expect("render"), editor.Render(op.Width))
+					recorder.observeRender(editor.Render(op.Width))
 				default:
 					t.Fatalf("unknown editor op %q", op.Do)
 				}
@@ -248,10 +264,11 @@ func TestF12InputSessions(t *testing.T) {
 	if len(fixture.Cases) == 0 {
 		t.Fatal("no input cases")
 	}
-	for _, fixtureCase := range fixture.Cases {
+	snap := runner.OpenSnapshot(t, "F12", "input.json")
+	for caseIndex, fixtureCase := range fixture.Cases {
 		t.Run(fixtureCase.Name, func(t *testing.T) {
 			input := tui.NewInput()
-			recorder := &observationRecorder{t: t, caseName: fixtureCase.Name, expected: fixtureCase.Observations}
+			recorder := &observationRecorder{t: t, caseName: fixtureCase.Name, expected: fixtureCase.Observations, snap: snap, casePath: []any{"cases", caseIndex}}
 			input.OnSubmit = func(value string) {
 				wantObservation(t, fixtureCase.Name, recorder.next, recorder.expect("submit"), value)
 			}
@@ -268,7 +285,7 @@ func TestF12InputSessions(t *testing.T) {
 				case "cursor":
 					wantObservation(t, fixtureCase.Name, recorder.next, recorder.expect("cursor"), input.GetCursor())
 				case "render":
-					wantObservation(t, fixtureCase.Name, recorder.next, recorder.expect("render"), input.Render(op.Width))
+					recorder.observeRender(input.Render(op.Width))
 				default:
 					t.Fatalf("unknown input op %q", op.Do)
 				}
@@ -301,7 +318,8 @@ func TestF12SelectListSessions(t *testing.T) {
 	if len(fixture.Cases) == 0 {
 		t.Fatal("no select-list cases")
 	}
-	for _, fixtureCase := range fixture.Cases {
+	snap := runner.OpenSnapshot(t, "F12", "select-list.json")
+	for caseIndex, fixtureCase := range fixture.Cases {
 		t.Run(fixtureCase.Name, func(t *testing.T) {
 			items := make([]tui.SelectItem, len(fixtureCase.Items))
 			for index, item := range fixtureCase.Items {
@@ -313,7 +331,7 @@ func TestF12SelectListSessions(t *testing.T) {
 				layout.MaxPrimaryColumnWidth = fixtureCase.Layout.MaxPrimaryColumnWidth
 			}
 			list := tui.NewSelectList(items, fixtureCase.MaxVisible, f12SelectListTheme, layout)
-			recorder := &observationRecorder{t: t, caseName: fixtureCase.Name, expected: fixtureCase.Observations}
+			recorder := &observationRecorder{t: t, caseName: fixtureCase.Name, expected: fixtureCase.Observations, snap: snap, casePath: []any{"cases", caseIndex}}
 			list.OnSelect = func(item tui.SelectItem) {
 				wantObservation(t, fixtureCase.Name, recorder.next, recorder.expect("select"), item.Value)
 			}
@@ -335,7 +353,7 @@ func TestF12SelectListSessions(t *testing.T) {
 					}
 					wantObservation(t, fixtureCase.Name, recorder.next, recorder.expect("selected"), value)
 				case "render":
-					wantObservation(t, fixtureCase.Name, recorder.next, recorder.expect("render"), list.Render(op.Width))
+					recorder.observeRender(list.Render(op.Width))
 				default:
 					t.Fatalf("unknown select op %q", op.Do)
 				}
@@ -367,13 +385,14 @@ func TestF12SettingsListSessions(t *testing.T) {
 	if len(fixture.Cases) == 0 {
 		t.Fatal("no settings-list cases")
 	}
-	for _, fixtureCase := range fixture.Cases {
+	snap := runner.OpenSnapshot(t, "F12", "settings-list.json")
+	for caseIndex, fixtureCase := range fixture.Cases {
 		t.Run(fixtureCase.Name, func(t *testing.T) {
 			items := make([]tui.SettingItem, len(fixtureCase.Items))
 			for index, item := range fixtureCase.Items {
 				items[index] = tui.SettingItem{ID: item.ID, Label: item.Label, Description: item.Description, CurrentValue: item.CurrentValue, Values: item.Values}
 			}
-			recorder := &observationRecorder{t: t, caseName: fixtureCase.Name, expected: fixtureCase.Observations}
+			recorder := &observationRecorder{t: t, caseName: fixtureCase.Name, expected: fixtureCase.Observations, snap: snap, casePath: []any{"cases", caseIndex}}
 			list := tui.NewSettingsList(items, fixtureCase.MaxVisible, f12SettingsTheme,
 				func(id, value string) {
 					wantObservation(t, fixtureCase.Name, recorder.next, recorder.expect("change"), id+"="+value)
@@ -389,7 +408,7 @@ func TestF12SettingsListSessions(t *testing.T) {
 				case "updateValue":
 					list.UpdateValue(op.ID, op.Value)
 				case "render":
-					wantObservation(t, fixtureCase.Name, recorder.next, recorder.expect("render"), list.Render(op.Width))
+					recorder.observeRender(list.Render(op.Width))
 				default:
 					t.Fatalf("unknown settings op %q", op.Do)
 				}
@@ -416,8 +435,21 @@ func TestF12WordWrapChunks(t *testing.T) {
 	if len(fixture.Cases) == 0 {
 		t.Fatal("no word-wrap cases")
 	}
-	for _, fixtureCase := range fixture.Cases {
+	snap := runner.OpenSnapshot(t, "F12", "word-wrap.json")
+	for caseIndex, fixtureCase := range fixture.Cases {
 		chunks := tui.WordWrapLine(fixtureCase.Line, fixtureCase.Width)
+		if runner.UpdateTUISnapshots() {
+			got := make([]struct {
+				Text       string `json:"text"`
+				StartIndex int    `json:"startIndex"`
+				EndIndex   int    `json:"endIndex"`
+			}, len(chunks))
+			for index, chunk := range chunks {
+				got[index].Text, got[index].StartIndex, got[index].EndIndex = chunk.Text, chunk.StartIndex, chunk.EndIndex
+			}
+			snap.Set(got, "cases", caseIndex, "chunks")
+			continue
+		}
 		if len(chunks) != len(fixtureCase.Chunks) {
 			t.Errorf("wordWrapLine(%q, %d): %d chunks, want %d", fixtureCase.Line, fixtureCase.Width, len(chunks), len(fixtureCase.Chunks))
 			continue

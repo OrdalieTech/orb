@@ -66,7 +66,8 @@ func TestF12TerminalImagesMatchUpstream(t *testing.T) {
 	if fixture.SchemaVersion != 2 || len(fixture.EncodingCases) != 3 || len(fixture.CellCases) != 3 || len(fixture.RenderCases) != 4 {
 		t.Fatalf("terminal-image fixture header = %#v", fixture)
 	}
-	for _, fixtureCase := range fixture.EncodingCases {
+	snap := runner.OpenSnapshot(t, "F12", "terminal-images.json")
+	for encodingIndex, fixtureCase := range fixture.EncodingCases {
 		t.Run(fixtureCase.Name, func(t *testing.T) {
 			var got string
 			switch fixtureCase.Kind {
@@ -77,15 +78,22 @@ func TestF12TerminalImagesMatchUpstream(t *testing.T) {
 			default:
 				t.Fatalf("unknown encoding kind %q", fixtureCase.Kind)
 			}
+			if snap.Set(got, "encodingCases", encodingIndex, "expected") {
+				return
+			}
 			if got != fixtureCase.Expected {
 				t.Fatalf("encoding differs\nwant: %q\ngot:  %q", fixtureCase.Expected, got)
 			}
 		})
 	}
-	for _, fixtureCase := range fixture.CellCases {
+	for cellIndex, fixtureCase := range fixture.CellCases {
 		t.Run(fixtureCase.Name, func(t *testing.T) {
 			maxHeight := int(fixtureCase.MaxHeight)
 			got := tui.CalculateImageCellSize(fixtureCase.Dimensions, int(fixtureCase.MaxWidth), &maxHeight, tui.CellDimensions{WidthPx: fixtureCase.Cell.WidthPx, HeightPx: fixtureCase.Cell.HeightPx})
+			if snap.Set(got.Columns, "cellCases", cellIndex, "expected", "columns") {
+				snap.Set(got.Rows, "cellCases", cellIndex, "expected", "rows")
+				return
+			}
 			if got.Columns != fixtureCase.Expected.Columns || got.Rows != fixtureCase.Expected.Rows {
 				t.Fatalf("cell size = %#v, want %#v", got, fixtureCase.Expected)
 			}
@@ -96,7 +104,7 @@ func TestF12TerminalImagesMatchUpstream(t *testing.T) {
 		tui.SetCellDimensions(tui.CellDimensions{WidthPx: 9, HeightPx: 18})
 	})
 	tui.SetCellDimensions(tui.CellDimensions{WidthPx: 10, HeightPx: 20})
-	for _, fixtureCase := range fixture.RenderCases {
+	for renderIndex, fixtureCase := range fixture.RenderCases {
 		t.Run(fixtureCase.Name, func(t *testing.T) {
 			protocol := tui.ImageProtocol("")
 			if fixtureCase.Protocol != nil {
@@ -106,7 +114,11 @@ func TestF12TerminalImagesMatchUpstream(t *testing.T) {
 			component := tui.NewImage(fixtureCase.Data, fixtureCase.MimeType, tui.ImageTheme{FallbackColor: func(value string) string { return "<" + value + ">" }}, &tui.ImageOptions{
 				MaxWidthCells: fixtureCase.Options.MaxWidthCells, MaxHeightCells: fixtureCase.Options.MaxHeightCells, Filename: fixtureCase.Options.Filename, ImageID: fixtureCase.Options.ImageID,
 			}, &fixtureCase.Dimensions)
-			if diff := linesDiff(fixtureCase.Expected, component.Render(fixtureCase.Width)); diff != "" {
+			got := component.Render(fixtureCase.Width)
+			if snap.Set(got, "renderCases", renderIndex, "expected") {
+				return
+			}
+			if diff := linesDiff(fixtureCase.Expected, got); diff != "" {
 				t.Fatal(diff)
 			}
 		})
@@ -166,11 +178,15 @@ func TestF12PrimitiveRendersMatchUpstream(t *testing.T) {
 	if fixture.SchemaVersion != 1 || len(fixture.Cases) != 14 {
 		t.Fatalf("F12 header = version %d, cases %d", fixture.SchemaVersion, len(fixture.Cases))
 	}
-	for _, fixtureCase := range fixture.Cases {
+	snap := runner.OpenSnapshot(t, "F12", "primitives.json")
+	for caseIndex, fixtureCase := range fixture.Cases {
 		t.Run(fixtureCase.Name, func(t *testing.T) {
 			component, cleanup := buildF12Node(t, fixtureCase.Node)
 			defer cleanup()
 			got := component.Render(fixtureCase.Width)
+			if snap.Set(got, "cases", caseIndex, "expected") {
+				return
+			}
 			if diff := linesDiff(fixtureCase.Expected, got); diff != "" {
 				t.Fatal(diff)
 			}

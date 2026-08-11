@@ -8,6 +8,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/codingagent/tools"
+	"github.com/OrdalieTech/orb/conformance/runner"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -39,11 +40,15 @@ func TestWP450ToolOutputPreviewsMatchUpstream(t *testing.T) {
 			got[wp450FrameKey(ConformanceReplayFrame{ID: preview.ID, Width: preview.Width})] = preview
 		}
 	}
-	for _, expected := range fixture.Cases {
+	snap := runner.OpenSnapshot(t, "WP450", "tool-output-previews.json")
+	for caseIndex, expected := range fixture.Cases {
 		key := wp450FrameKey(ConformanceReplayFrame{ID: expected.ID, Width: expected.Width})
 		actual, ok := got[key]
 		if !ok {
 			t.Errorf("Go preview omitted case %s", key)
+			continue
+		}
+		if snap.Set(actual.Lines, "cases", caseIndex, "lines") {
 			continue
 		}
 		if diff := wp450LinesDiff(expected.Lines, actual.Lines); diff != "" {

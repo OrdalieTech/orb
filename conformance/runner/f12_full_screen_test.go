@@ -54,14 +54,16 @@ func renderF12FullScreen(fixtureCase f12FullScreenFixtureCase) []string {
 
 func TestF12FullScreenCompositesMatchUpstream(t *testing.T) {
 	fixture := loadF12FullScreenFixture(t)
+	snap := runner.OpenSnapshot(t, "F12", "full-screen.json")
 	wantWidths := []int{100, 72, 48, 32}
 	for index, fixtureCase := range fixture.Cases {
 		if fixtureCase.Width != wantWidths[index] {
 			t.Fatalf("case %d width = %d, want %d", index, fixtureCase.Width, wantWidths[index])
 		}
+		index := index
 		t.Run(fixtureCase.Name, func(t *testing.T) {
 			got := renderF12FullScreen(fixtureCase)
-			if diff := linesDiff(fixtureCase.Expected, got); diff != "" {
+			if diff := linesDiff(fixtureCase.Expected, got); !snap.Set(got, "cases", index, "expected") && diff != "" {
 				t.Fatal(diff)
 			}
 			for lineIndex, line := range got {

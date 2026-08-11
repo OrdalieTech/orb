@@ -22,19 +22,15 @@ import { generateF10 } from "./f10-compaction.ts";
 import { generateF11ExtensionRunner } from "./f11-extension-runner.ts";
 import { generateF11ExtensionWiring } from "./f11-extension-wiring.ts";
 import { generateWP360 } from "./wp360-packages.ts";
-import { generateF12 } from "./f12-tui.ts";
-import { generateF12App } from "./f12-app.ts";
-import { generateF12Commands } from "./f12-commands.ts";
-import { generateF12ExportJSONL } from "./f12-export-jsonl.ts";
-import { generateF12Shutdown } from "./f12-shutdown.ts";
-import { generateF12UILifecycle } from "./f12-ui-lifecycle.ts";
-import { generateF12VisibleCommands } from "./f12-visible-commands.ts";
 import { generateF13DynamicWorkflows } from "./f13-dynamic-workflows.ts";
 import { generateWP440 } from "./wp440-images.ts";
 import { generateWP440Read } from "./wp440-read.ts";
 import { generateWP370Runtime } from "./wp370-runtime.ts";
-import { generateWP450Replay } from "./wp450-replay.ts";
 import { generateWP450SessionSelector } from "./wp450-session-selector.ts";
+
+// The D35 render-golden families (F12* and the WP450 replay/UI demos) are
+// Orb-owned snapshots: they regenerate from Orb's own renderer via
+// `make fixtures-tui` (ORB_UPDATE_F12=1), never from upstream extraction.
 
 // Goldens are pinned in 256-color mode; upstream capability detection reads
 // COLORTERM and the terminal-identity variables below (packages/tui/src/
@@ -88,18 +84,10 @@ const generators = [
 	generateF11ExtensionRunner,
 	generateF11ExtensionWiring,
 	generateWP360,
-	generateF12,
-	generateF12App,
-	generateF12Commands,
-	generateF12ExportJSONL,
-	generateF12Shutdown,
-	generateF12UILifecycle,
-	generateF12VisibleCommands,
 	generateF13DynamicWorkflows,
 	generateWP440,
 	generateWP440Read,
 	generateWP370Runtime,
-	generateWP450Replay,
 	generateWP450SessionSelector,
 ];
 for (const generate of generators) {

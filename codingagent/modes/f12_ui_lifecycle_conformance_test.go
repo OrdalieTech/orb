@@ -22,6 +22,7 @@ import (
 	"github.com/OrdalieTech/orb/codingagent/extensions"
 	theme "github.com/OrdalieTech/orb/codingagent/modes/theme"
 	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/conformance/runner"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -577,7 +578,18 @@ func TestF12WidgetLifecycleMatchesUpstream(t *testing.T) {
 
 	select {
 	case actual := <-completed:
-		if !reflect.DeepEqual(actual.snapshots, f12WidgetSnapshots(fixture)) {
+		if snap := runner.OpenSnapshot(t, "F12-ui-lifecycle", "lifecycle.json"); snap != nil {
+			if len(actual.snapshots) != len(fixture.Widgets.Snapshots) {
+				t.Fatalf("widget snapshot count = %d, want %d", len(actual.snapshots), len(fixture.Widgets.Snapshots))
+			}
+			for index, snapshot := range actual.snapshots {
+				if snapshot.Step != fixture.Widgets.Snapshots[index].Step {
+					t.Fatalf("widget snapshot %d step = %q, want %q", index, snapshot.Step, fixture.Widgets.Snapshots[index].Step)
+				}
+				snap.Set(snapshot.Above, "widgets", "snapshots", index, "above")
+				snap.Set(snapshot.Below, "widgets", "snapshots", index, "below")
+			}
+		} else if !reflect.DeepEqual(actual.snapshots, f12WidgetSnapshots(fixture)) {
 			wantJSON, _ := json.MarshalIndent(f12WidgetSnapshots(fixture), "", "  ")
 			gotJSON, _ := json.MarshalIndent(actual.snapshots, "", "  ")
 			t.Errorf("widget lifecycle frames differ\nwant: %s\n got: %s", wantJSON, gotJSON)
@@ -606,11 +618,23 @@ func TestF12HiddenThinkingLifecycleMatchesUpstream(t *testing.T) {
 	mode := &InteractiveMode{ui: modeUI, chat: &tui.Container{}, currentStreaming: streaming, thinkingHidden: true, thinkingLabel: "Thinking..."}
 	mode.chat.AddChild(historical)
 	ui := NewInteractiveUI(mode)
+	snap := runner.OpenSnapshot(t, "F12-ui-lifecycle", "lifecycle.json")
 	custom := "Extension thought"
 	ui.SetHiddenThinkingLabel(&custom)
 	actualCustom := f12ThinkingSnapshot{Historical: historical.Render(48), Streaming: streaming.Render(48), StoredLabel: mode.thinkingLabel}
 	ui.SetHiddenThinkingLabel(nil)
 	actualReset := f12ThinkingSnapshot{Historical: historical.Render(48), Streaming: streaming.Render(48), StoredLabel: mode.thinkingLabel}
+	if snap.Set(actualCustom.Historical, "hiddenThinking", "custom", "historical") {
+		snap.Set(actualCustom.Streaming, "hiddenThinking", "custom", "streaming")
+		snap.Set(actualReset.Historical, "hiddenThinking", "reset", "historical")
+		snap.Set(actualReset.Streaming, "hiddenThinking", "reset", "streaming")
+		// Stored labels stay frozen behavior gates even while updating frames.
+		if actualCustom.StoredLabel != fixture.HiddenThinking.Custom.StoredLabel || actualReset.StoredLabel != fixture.HiddenThinking.Reset.StoredLabel {
+			t.Errorf("hidden-thinking labels = %q/%q, want %q/%q", actualCustom.StoredLabel, actualReset.StoredLabel,
+				fixture.HiddenThinking.Custom.StoredLabel, fixture.HiddenThinking.Reset.StoredLabel)
+		}
+		return
+	}
 	if !reflect.DeepEqual(actualCustom, fixture.HiddenThinking.Custom) {
 		t.Errorf("custom hidden-thinking label differs\nwant: %#v\n got: %#v", fixture.HiddenThinking.Custom, actualCustom)
 	}
@@ -737,6 +761,12 @@ func TestF12LoadedContextMatchesUpstream(t *testing.T) {
 		Expanded:  renderListing(false, false, true),
 		Quiet:     renderListing(true, false, false),
 		Verbose:   renderListing(true, true, false),
+	}
+	if snap := runner.OpenSnapshot(t, "F12-ui-lifecycle", "lifecycle.json"); snap.Set(actual.Collapsed, "loadedContext", "collapsed") {
+		snap.Set(actual.Expanded, "loadedContext", "expanded")
+		snap.Set(actual.Quiet, "loadedContext", "quiet")
+		snap.Set(actual.Verbose, "loadedContext", "verbose")
+		return
 	}
 	expected := struct {
 		Collapsed []string

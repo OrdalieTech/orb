@@ -21,6 +21,7 @@ import (
 	"github.com/OrdalieTech/orb/codingagent/extensions"
 	modetheme "github.com/OrdalieTech/orb/codingagent/modes/theme"
 	"github.com/OrdalieTech/orb/codingagent/tools"
+	"github.com/OrdalieTech/orb/conformance/runner"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -554,6 +555,22 @@ func TestWP450SideBySideReplayMatchesUpstream(t *testing.T) {
 		}
 		got[key] = frame
 	}
+	if snap := runner.OpenSnapshot(t, "WP450", "replay.json"); snap != nil {
+		for frameIndex, expected := range fixture.Frames {
+			key := wp450FrameKey(expected)
+			actual, ok := got[key]
+			if !ok {
+				t.Fatalf("Go replay omitted frame %s", key)
+			}
+			snap.Set(actual.Lines, "frames", frameIndex, "lines")
+		}
+		for key := range got {
+			if _, ok := want[key]; !ok {
+				t.Errorf("Go replay emitted unexpected frame %s", key)
+			}
+		}
+		return
+	}
 	for _, expected := range fixture.Frames {
 		key := wp450FrameKey(expected)
 		t.Run(key, func(t *testing.T) {
@@ -580,6 +597,17 @@ func TestWP450CtxUIDemosRetainInitializationState(t *testing.T) {
 		t.Fatalf("unexpected WP450 ctx.ui fixture header: %+v", expected)
 	}
 	actual := RenderWP450UIDemoArtifact()
+	if snap := runner.OpenSnapshot(t, "WP450", "ui-demos.json"); snap != nil {
+		snap.Set(actual.HeaderFooterInitialization.Header, "headerFooterInitialization", "header")
+		snap.Set(actual.HeaderFooterInitialization.Footer, "headerFooterInitialization", "footer")
+		for index, widget := range actual.WidgetPlacement.Above {
+			snap.Set(widget.Lines, "widgetPlacement", "above", index, "lines")
+		}
+		for index, widget := range actual.WidgetPlacement.Below {
+			snap.Set(widget.Lines, "widgetPlacement", "below", index, "lines")
+		}
+		return
+	}
 	if reflect.DeepEqual(actual, expected) {
 		return
 	}

@@ -307,13 +307,17 @@ Orb is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinne
   configuration. The profile uses the Store's bounded 100-item query window and append-before-delete
   replacement. V1 has no per-turn RAG, session search, secret scanning, widget, or subagent inheritance.
 
-- **D35 — TUI presentation is Orb-owned (owner, 2026-08-10).** Byte-parity with pi is retained for
-  wire and data formats (D4), provider request shaping, and tool/session/RPC behavior — but not for
-  TUI rendering. The F12-family render goldens (themes, component frames, visible-command frames,
-  replay/UI demos) convert from upstream-extracted fixtures to Orb-owned snapshots regenerated from
-  Orb's own renderer; until that conversion lands they continue to regenerate from upstream.
-  Upstream TUI features (e.g. fullscreen mode) are cherry-picked on merit rather than ported
-  wholesale. This amends D2's full-parity scope for the TUI surface only.
+- **D35 — TUI presentation is Orb-owned (owner, 2026-08-10; conversion landed, owner, 2026-08-11).**
+  Byte-parity with pi is retained for wire and data formats (D4), provider request shaping, and
+  tool/session/RPC behavior — but not for TUI rendering. The F12-family render goldens (themes,
+  component frames, visible-command frames, replay/UI demos — the `F12*` fixture families plus the
+  `WP450` replay/preview/UI-demo files) are Orb-owned snapshots: they regenerate from Orb's own
+  renderer via `make fixtures-tui` (`ORB_UPDATE_F12=1`), never from upstream extraction. Only
+  presentation values (rendered frames, highlight output, theme colors, layout) rewrite on
+  regeneration; behavior-shaped values inside those files (focus/dispatch traces, protocol writes,
+  JSONL export) stay frozen upstream captures, and their manifests keep the provenance of the
+  original capture. Upstream TUI features (e.g. fullscreen mode) are cherry-picked on merit rather
+  than ported wholesale. This amends D2's full-parity scope for the TUI surface only.
 
 ## 2026-07-21 parity-sync amendments
 

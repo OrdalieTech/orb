@@ -71,7 +71,8 @@ func TestF12BuiltInThemesMatchUpstream(t *testing.T) {
 		t.Fatalf("F12 themes header = version %d, themes %d", fixture.SchemaVersion, len(fixture.Themes))
 	}
 	registry := theme.Load(theme.LoadOptions{AgentDir: t.TempDir(), CWD: t.TempDir(), Mode: theme.TrueColor})
-	for _, fixtureCase := range fixture.Themes {
+	snap := runner.OpenSnapshot(t, "F12", "themes.json")
+	for themeIndex, fixtureCase := range fixture.Themes {
 		t.Run(fixtureCase.Name, func(t *testing.T) {
 			selected, ok := registry.Get(fixtureCase.Name)
 			if !ok {
@@ -82,37 +83,52 @@ func TestF12BuiltInThemesMatchUpstream(t *testing.T) {
 			}
 			for name, expected := range fixtureCase.Foreground {
 				actual, err := selected.ForegroundANSI(name)
-				if err != nil || actual != expected {
-					t.Fatalf("foreground %s = %q, %v; want %q", name, actual, err, expected)
+				if err != nil {
+					t.Fatalf("foreground %s: %v", name, err)
+				}
+				if !snap.Set(actual, "themes", themeIndex, "foreground", name) && actual != expected {
+					t.Fatalf("foreground %s = %q, want %q", name, actual, expected)
 				}
 			}
 			for name, expected := range fixtureCase.Background {
 				actual, err := selected.BackgroundANSI(name)
-				if err != nil || actual != expected {
-					t.Fatalf("background %s = %q, %v; want %q", name, actual, err, expected)
+				if err != nil {
+					t.Fatalf("background %s: %v", name, err)
+				}
+				if !snap.Set(actual, "themes", themeIndex, "background", name) && actual != expected {
+					t.Fatalf("background %s = %q, want %q", name, actual, expected)
 				}
 			}
 
 			const sample = "# Theme sample\n\n> quote with **bold** and `code`\n\n```typescript\nconst answer: number = 42; // value\n```"
 			component := tui.NewMarkdown(sample, 0, 0, selected.Markdown(">>"), nil, nil)
-			if diff := linesDiff(fixtureCase.Sample, component.Render(72)); diff != "" {
+			sampleLines := component.Render(72)
+			if diff := linesDiff(fixtureCase.Sample, sampleLines); !snap.Set(sampleLines, "themes", themeIndex, "sample") && diff != "" {
 				t.Fatal(diff)
 			}
-			if actual := theme.Highlight("const answer: number = 42; // value", "typescript", selected); !reflect.DeepEqual(actual, fixtureCase.Highlighted) {
+			if actual := theme.Highlight("const answer: number = 42; // value", "typescript", selected); !snap.Set(actual, "themes", themeIndex, "highlighted") && !reflect.DeepEqual(actual, fixtureCase.Highlighted) {
 				t.Fatalf("highlighted = %#v\nwant %#v", actual, fixtureCase.Highlighted)
 			}
-			for _, highlightCase := range fixtureCase.Highlights {
-				if actual := theme.Highlight(highlightCase.Code, highlightCase.Language, selected); !reflect.DeepEqual(actual, highlightCase.Expected) {
+			for highlightIndex, highlightCase := range fixtureCase.Highlights {
+				if actual := theme.Highlight(highlightCase.Code, highlightCase.Language, selected); !snap.Set(actual, "themes", themeIndex, "highlights", highlightIndex, "expected") && !reflect.DeepEqual(actual, highlightCase.Expected) {
 					t.Fatalf("highlight %s = %#v\nwant %#v", highlightCase.Name, actual, highlightCase.Expected)
 				}
 			}
-			if actual := theme.Highlight("plain text", "definitely-not-a-language", selected); !reflect.DeepEqual(actual, fixtureCase.Fallback) {
+			if actual := theme.Highlight("plain text", "definitely-not-a-language", selected); !snap.Set(actual, "themes", themeIndex, "fallback") && !reflect.DeepEqual(actual, fixtureCase.Fallback) {
 				t.Fatalf("fallback = %#v\nwant %#v", actual, fixtureCase.Fallback)
 			}
-			if actual := selected.ResolvedColors(fixtureCase.Name == "light"); !reflect.DeepEqual(actual, fixtureCase.Resolved) {
+			if actual := selected.ResolvedColors(fixtureCase.Name == "light"); runner.UpdateTUISnapshots() {
+				for name, value := range actual {
+					snap.Set(value, "themes", themeIndex, "resolved", name)
+				}
+			} else if !reflect.DeepEqual(actual, fixtureCase.Resolved) {
 				t.Fatalf("resolved colors differ\ngot:  %#v\nwant: %#v", actual, fixtureCase.Resolved)
 			}
-			if actual := selected.ExportColors(); !reflect.DeepEqual(actual, fixtureCase.Export) {
+			if actual := selected.ExportColors(); runner.UpdateTUISnapshots() {
+				for name, value := range actual {
+					snap.Set(value, "themes", themeIndex, "export", name)
+				}
+			} else if !reflect.DeepEqual(actual, fixtureCase.Export) {
 				t.Fatalf("export colors differ\ngot:  %#v\nwant: %#v", actual, fixtureCase.Export)
 			}
 		})
