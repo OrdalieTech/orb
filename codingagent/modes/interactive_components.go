@@ -2,6 +2,8 @@ package modes
 
 import (
 	"fmt"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -105,6 +107,60 @@ func (band *chatBand) Render(width int) []string {
 }
 
 func userMessageBar() string { return theme.FG("accent", "┃") }
+
+// startupWarnings renders startup diagnostics as one compact warning band:
+// one line per warning truncated to the viewport width (never wrapped),
+// extension paths reduced to their basename, and same-name collisions merged
+// onto a single line. Full texts stay available where they originate
+// (/reload output and stderr in print modes).
+type startupWarnings struct{ lines []string }
+
+var (
+	nameCollisionPattern  = regexp.MustCompile(`^name ("[^"]+") collision$`)
+	extensionErrorPattern = regexp.MustCompile(`^Extension error \(([^)]+)\): (?:Failed to load extension: )?(.*)$`)
+)
+
+func newStartupWarnings(diagnostics []string) *startupWarnings {
+	lines := make([]string, 0, len(diagnostics))
+	collisions := make([]string, 0, len(diagnostics))
+	for _, diagnostic := range diagnostics {
+		if match := nameCollisionPattern.FindStringSubmatch(diagnostic); match != nil {
+			collisions = append(collisions, match[1])
+			continue
+		}
+		if match := extensionErrorPattern.FindStringSubmatch(diagnostic); match != nil {
+			message := match[2]
+			if cut := strings.Index(message, " imported from "); cut > 0 {
+				message = message[:cut]
+			}
+			lines = append(lines, "extension "+filepath.Base(match[1])+": "+message)
+			continue
+		}
+		lines = append(lines, diagnostic)
+	}
+	if len(collisions) > 0 {
+		label := "name collision: "
+		if len(collisions) > 1 {
+			label = "name collisions: "
+		}
+		lines = append(lines, label+strings.Join(collisions, ", "))
+	}
+	return &startupWarnings{lines: lines}
+}
+
+func (*startupWarnings) Invalidate() {}
+
+func (warnings *startupWarnings) Render(width int) []string {
+	if width <= 2 {
+		return append([]string(nil), warnings.lines...)
+	}
+	bar := theme.FG("warning", "┃") + " "
+	lines := make([]string, len(warnings.lines))
+	for index, line := range warnings.lines {
+		lines[index] = bar + theme.FG("warning", tui.TruncateToWidth(line, width-2, "…", false))
+	}
+	return lines
+}
 
 // ─────────────────────────────────────────────────────────────
 // UserMessageComponent

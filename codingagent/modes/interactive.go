@@ -322,9 +322,10 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 	// Render initial session entries
 	mode.renderInitialMessages()
 
-	// Show startup diagnostics
-	for _, diagnostic := range mode.options.Diagnostics {
-		mode.chat.AddChild(tui.NewText(theme.FG("warning", "Warning: "+diagnostic), 1, 0, nil))
+	// Show startup diagnostics as one compact band: one truncated line per
+	// warning instead of a full-width wrapped wall.
+	if len(mode.options.Diagnostics) > 0 {
+		mode.chat.AddChild(newStartupWarnings(mode.options.Diagnostics))
 	}
 	mode.maybeWarnAboutAnthropicSubscriptionAuth(ctx, mode.session.State().Model)
 
