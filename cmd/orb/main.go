@@ -208,12 +208,12 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if args.Help {
 		text := helpText
 		if cwd, cwdErr := os.Getwd(); cwdErr == nil {
-			// ponytail: this fully loads extensions (spawning the Node extension
-			// host, ~300ms + ~124MB child when any external extension exists)
-			// just to render their flags; help needs only flag metadata. A
-			// metadata-only discovery path would need upstream-faithfulness
-			// review, so the ceiling stays for now.
-			if registry, _, _, loadErr := loadStartupExtensions(cwd, args); loadErr == nil {
+			// Help needs only registration-static flag metadata: metadataOnly
+			// keeps configured MCP servers from spawning and lets the host
+			// metadata snapshot cache satisfy the load without a JS runtime.
+			helpArgs := args
+			helpArgs.metadataOnly = true
+			if registry, _, _, loadErr := loadStartupExtensions(cwd, helpArgs); loadErr == nil {
 				text = extensionHelpText(registry)
 			}
 		}

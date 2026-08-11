@@ -251,11 +251,21 @@ func (manager *Manager) nativeProvider(extensionID, providerID string) extension
 
 func (manager *Manager) providerConfig(extensionID, providerID string) extensions.ProviderConfig {
 	registration, _ := manager.providerRegistration(extensionID, providerID)
-	definition := registration.Config
+	config := providerConfigFromWire(registration.Config)
+	if registration.Config != nil && registration.Config.StreamSimple != "" {
+		config.Stream = manager.providerStream(extensionID, providerID, "streamSimple")
+	}
+	return config
+}
+
+// providerConfigFromWire converts the data half of a config-kind registration;
+// the Stream callback, when present, is bound by the caller because only a live
+// host generation can service it.
+func providerConfigFromWire(definition *wireProviderConfigDefinition) extensions.ProviderConfig {
 	if definition == nil {
 		return extensions.ProviderConfig{}
 	}
-	config := extensions.ProviderConfig{
+	return extensions.ProviderConfig{
 		Name:       definition.Name,
 		BaseURL:    definition.BaseURL,
 		APIKey:     definition.APIKey,
@@ -265,10 +275,6 @@ func (manager *Manager) providerConfig(extensionID, providerID string) extension
 		Models:     append([]extensions.ProviderModelConfig(nil), definition.Models...),
 		Defined:    cloneProviderBoolMap(definition.Defined),
 	}
-	if definition.StreamSimple != "" {
-		config.Stream = manager.providerStream(extensionID, providerID, "streamSimple")
-	}
-	return config
 }
 
 func (manager *Manager) providerRegistration(extensionID, providerID string) (wireProviderRegistration, bool) {

@@ -312,6 +312,9 @@ func (manager *Manager) RegisterInto(ctx context.Context, registry *extensions.R
 			result.Errors = append(result.Errors, LoadError{Path: entry.Path, Error: stripRegistryPrefix(entry.Path, err)})
 		}
 	}
+	// Write-through metadata snapshot: every successful full load (any mode)
+	// refreshes what --help/--list-models may serve without spawning.
+	manager.writeMetadataCache(loaded.success, result)
 	return result
 }
 

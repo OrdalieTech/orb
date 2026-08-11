@@ -117,6 +117,24 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 			if registry == nil {
 				registry = extensions.NewRegistry(cwd)
 			}
+			// Metadata commands consume the write-through snapshot of the last
+			// full load when its fingerprint matches; any miss falls through to
+			// spawning the host exactly as before.
+			if args.metadataOnly && !args.skipMetadataCache {
+				if cached := extensionhost.LoadMetadataCache(extensionhost.MetadataCacheParams{
+					AgentDir: agentDir, CWD: cwd, ProjectTrusted: settings.IsProjectTrusted(), Paths: paths,
+				}); cached != nil {
+					replaceActiveExtensionHost(nil)
+					for _, diagnostic := range cached.Diagnostics {
+						diagnostics = append(diagnostics, diagnostic.Message)
+					}
+					loadErrors := append(append([]extensionhost.LoadError(nil), cached.Errors...), cached.Register(registry)...)
+					for _, loadError := range loadErrors {
+						diagnostics = append(diagnostics, fmt.Sprintf("Extension error (%s): %s", loadError.Path, loadError.Error))
+					}
+					return registry, diagnostics
+				}
+			}
 			manager := extensionhost.NewManager(extensionhost.Options{
 				AgentDir:       agentDir,
 				CWD:            cwd,
@@ -241,7 +259,9 @@ func resolveStartupProjectTrust(ctx context.Context, cwd, agentDir string, args 
 		if err != nil {
 			return projectTrustResolution{}, err
 		}
-		resolution.PreTrustRegistry, preTrustDiagnostics = loadCompiledExtensions(cwd, agentDir, args, settings, untrustedPaths)
+		preTrustArgs := args
+		preTrustArgs.skipMetadataCache = true
+		resolution.PreTrustRegistry, preTrustDiagnostics = loadCompiledExtensions(cwd, agentDir, preTrustArgs, settings, untrustedPaths)
 		trustRunner = extensions.NewRunner(resolution.PreTrustRegistry, extensions.RunnerOptions{CWD: cwd})
 	}
 	trusted, err := codingagent.ResolveProjectTrusted(ctx, codingagent.ResolveProjectTrustedOptions{
