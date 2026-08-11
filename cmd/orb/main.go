@@ -208,9 +208,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if args.Help {
 		text := helpText
 		if cwd, cwdErr := os.Getwd(); cwdErr == nil {
-			// Help needs only registration-static flag metadata: metadataOnly
-			// keeps configured MCP servers from spawning and lets the host
-			// metadata snapshot cache satisfy the load without a JS runtime.
+			// Help needs extension flags, but no MCP or resource startup.
 			helpArgs := args
 			helpArgs.metadataOnly = true
 			if registry, _, _, loadErr := loadStartupExtensions(cwd, helpArgs); loadErr == nil {

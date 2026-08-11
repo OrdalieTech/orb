@@ -4125,7 +4125,6 @@ func (mode *InteractiveMode) renderInitialMessages() {
 	mode.expandables = nil
 	mode.mu.Unlock()
 	entries := mode.session.Manager().BuildContextEntries()
-	mode.chat.GrowChildren(len(entries))
 	for _, entry := range entries {
 		switch entry.Type {
 		case "message":

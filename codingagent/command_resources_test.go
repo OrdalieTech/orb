@@ -11,6 +11,7 @@ func TestCommandResourceDiscoveryLocationsPrecedenceAndTrust(t *testing.T) {
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
 	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
 	agentDir := filepath.Join(home, ".pi", "agent")
 	repo := filepath.Join(root, "repo")
 	cwd := filepath.Join(repo, "packages", "app")
@@ -169,7 +170,9 @@ func TestExplicitCommandResourcesRemainAdditiveWhenDiscoveryDisabled(t *testing.
 
 func TestPackageCommandResourcesCarryPackageProvenance(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("HOME", filepath.Join(root, "home"))
+	home := filepath.Join(root, "home")
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
 	skillPath := filepath.Join(root, "package", "skills", "packaged", "SKILL.md")
 	mustWriteResource(t, skillPath, "---\nname: packaged\ndescription: Package skill\n---\nBody")
 	promptPath := filepath.Join(root, "package", "prompts", "package.md")

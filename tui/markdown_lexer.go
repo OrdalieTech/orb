@@ -23,7 +23,7 @@ type MarkdownCodeToken struct {
 // a language).
 func LexTopLevelCodeTokens(source string) []MarkdownCodeToken {
 	contents := []byte(source)
-	document := markdownParser().Parser().Parse(text.NewReader(contents))
+	document := markdownParser.Parser().Parse(text.NewReader(contents))
 	var tokens []MarkdownCodeToken
 	for node := document.FirstChild(); node != nil; node = node.NextSibling() {
 		block, ok := node.(*ast.FencedCodeBlock)

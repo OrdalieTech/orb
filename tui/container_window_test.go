@@ -253,6 +253,39 @@ func TestWindowedContainerAcceptsNonComparableComponents(t *testing.T) {
 	}
 }
 
+func TestWindowedContainerDuplicateDirty(t *testing.T) {
+	container := NewWindowedContainer()
+	shared := &countedLines{lines: []string{"shared"}}
+	container.AddChild(shared)
+	container.AddChild(&countedLines{lines: []string{"other"}})
+	container.AddChild(shared)
+
+	if got := container.LineCount(10); got != 3 {
+		t.Fatalf("initial LineCount = %d, want 3", got)
+	}
+
+	shared.lines = []string{"changed", "changed too"}
+	container.ChildChanged(shared)
+	if got := container.LineCount(10); got != 5 {
+		t.Fatalf("LineCount after duplicate dirty = %d, want 5", got)
+	}
+	want := []string{"changed", "changed too", "other", "changed", "changed too"}
+	if got := container.RenderLines(10, 0, 5); !equalLines(got, want) {
+		t.Fatalf("RenderLines = %q, want %q", got, want)
+	}
+
+	container.AddChild(shared)
+	shared.lines = []string{"again"}
+	container.ChildChanged(shared)
+	if got := container.LineCount(10); got != 4 {
+		t.Fatalf("LineCount after re-dirty = %d, want 4", got)
+	}
+	want = []string{"again", "other", "again", "again"}
+	if got := container.RenderLines(10, 0, 4); !equalLines(got, want) {
+		t.Fatalf("RenderLines after re-dirty = %q, want %q", got, want)
+	}
+}
+
 func TestWindowedContainerIgnoresStaleChildChangesDuringRebuild(t *testing.T) {
 	container := NewWindowedContainer()
 	stale := &countedLines{lines: []string{"stale"}}

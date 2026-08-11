@@ -345,6 +345,30 @@ Status: **complete for the locked offline surface; package-specific external-ser
 - [x] Publish `docs/sync/ecosystem-extension-matrix.md` and the machine-readable compact report
       with the complete result, performance limits, blocker families, remediation, and hashes.
 
+## Ponytail trim — 2026-08-11
+
+Status: **green; net shrink with no fixture drift**.
+
+- [x] Delete 1,349 net implementation lines before this report (441 added, 1,790 removed):
+      production Go is down 951 lines and Go tests are down 400. Tracked non-test Go now totals
+      155,085 lines.
+- [x] Remove the persistent extension metadata cache and its fingerprint/write-through plumbing,
+      collapse the snapshot and message-order parsers onto `encoding/json`, restore `x/text`'s
+      charset index, and retire one-caller/allocation-only helpers without changing wire or TUI
+      output.
+- [x] Keep the dependency graph unchanged; `go mod tidy -diff` is empty and `go mod verify` passes.
+      Raw deadcode/staticcheck findings remain supported public SDK/test-only roots and existing
+      parity/vendored-style diagnostics; the configured vet plus golangci-lint gate reports zero
+      issues.
+- [x] Pass `make fixtures-check` and `make check`, including the complete race suite, CGO-disabled
+      byte-checked provider/conformance suites, live Node-backed F13 replay, and hermetic F8/WP360
+      resource discovery. No golden was edited.
+- [x] Measure the CGO-disabled `cmd/orb` binary at 50,579,863 bytes, up 406,989 bytes (0.81%) from
+      restoring the full HTML charset tables. `orb --version` moves from 6.8 ms to 9.4 ms over 30
+      runs after restoring eager direct regexp variables; both remain inside the 55 MB and 50 ms
+      release limits. Metadata commands now pay live extension-host startup instead of owning a
+      stale-prone cache.
+
 ## Resolved owner decisions
 
 - **M5 binary-size cap (2026-07-20)** — the owner adopted the expansion study's recommended 55 MB

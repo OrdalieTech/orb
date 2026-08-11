@@ -1,8 +1,10 @@
 package runner
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -249,170 +251,67 @@ func normalizeSnapshotValue(value any) (any, error) {
 // (as json.Number), and WTF-8 lone surrogates in strings, so that an
 // unmodified document re-encodes byte-identically.
 func decodeOrderedJSON(data []byte) (any, error) {
-	decoder := &orderedJSONDecoder{data: data}
-	decoder.skipSpace()
-	value, err := decoder.parseValue()
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	value, err := decodeOrderedValue(decoder, data)
 	if err != nil {
 		return nil, err
 	}
-	decoder.skipSpace()
-	if decoder.pos != len(decoder.data) {
-		return nil, fmt.Errorf("trailing data at byte %d", decoder.pos)
+	if _, err := decoder.Token(); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("trailing data at byte %d", decoder.InputOffset())
+		}
+		return nil, err
 	}
 	return value, nil
 }
 
-type orderedJSONDecoder struct {
-	data []byte
-	pos  int
-}
-
-func (decoder *orderedJSONDecoder) skipSpace() {
-	for decoder.pos < len(decoder.data) {
-		switch decoder.data[decoder.pos] {
-		case ' ', '\t', '\n', '\r':
-			decoder.pos++
-		default:
-			return
+func decodeOrderedValue(decoder *json.Decoder, data []byte) (any, error) {
+	start := decoder.InputOffset()
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	switch token := token.(type) {
+	case json.Delim:
+		if token == '{' {
+			object := jsonwire.OrderedObject{}
+			for decoder.More() {
+				start = decoder.InputOffset()
+				if _, err := decoder.Token(); err != nil {
+					return nil, err
+				}
+				name, err := jsonwire.UnmarshalStringToken(data[start:decoder.InputOffset()])
+				if err != nil {
+					return nil, err
+				}
+				value, err := decodeOrderedValue(decoder, data)
+				if err != nil {
+					return nil, err
+				}
+				object = append(object, jsonwire.OrderedMember{Name: name, Value: value})
+			}
+			_, err = decoder.Token()
+			return object, err
 		}
-	}
-}
-
-func (decoder *orderedJSONDecoder) parseValue() (any, error) {
-	if decoder.pos >= len(decoder.data) {
-		return nil, fmt.Errorf("unexpected end of document")
-	}
-	switch char := decoder.data[decoder.pos]; {
-	case char == '{':
-		return decoder.parseObject()
-	case char == '[':
-		return decoder.parseArray()
-	case char == '"':
-		return decoder.parseString()
-	case char == 't':
-		return decoder.parseLiteral("true", true)
-	case char == 'f':
-		return decoder.parseLiteral("false", false)
-	case char == 'n':
-		return decoder.parseLiteral("null", nil)
-	case char == '-' || (char >= '0' && char <= '9'):
-		return decoder.parseNumber()
+		if token == '[' {
+			items := []any{}
+			for decoder.More() {
+				value, err := decodeOrderedValue(decoder, data)
+				if err != nil {
+					return nil, err
+				}
+				items = append(items, value)
+			}
+			_, err = decoder.Token()
+			return items, err
+		}
+		return nil, fmt.Errorf("unexpected delimiter %q", token)
+	case string:
+		return jsonwire.UnmarshalStringToken(data[start:decoder.InputOffset()])
 	default:
-		return nil, fmt.Errorf("unexpected byte %q at %d", char, decoder.pos)
+		return token, nil
 	}
-}
-
-func (decoder *orderedJSONDecoder) parseObject() (any, error) {
-	decoder.pos++
-	object := jsonwire.OrderedObject{}
-	decoder.skipSpace()
-	if decoder.pos < len(decoder.data) && decoder.data[decoder.pos] == '}' {
-		decoder.pos++
-		return object, nil
-	}
-	for {
-		decoder.skipSpace()
-		name, err := decoder.parseString()
-		if err != nil {
-			return nil, err
-		}
-		decoder.skipSpace()
-		if decoder.pos >= len(decoder.data) || decoder.data[decoder.pos] != ':' {
-			return nil, fmt.Errorf("missing ':' at byte %d", decoder.pos)
-		}
-		decoder.pos++
-		decoder.skipSpace()
-		value, err := decoder.parseValue()
-		if err != nil {
-			return nil, err
-		}
-		object = append(object, jsonwire.OrderedMember{Name: name.(string), Value: value})
-		decoder.skipSpace()
-		if decoder.pos >= len(decoder.data) {
-			return nil, fmt.Errorf("unterminated object")
-		}
-		switch decoder.data[decoder.pos] {
-		case ',':
-			decoder.pos++
-		case '}':
-			decoder.pos++
-			return object, nil
-		default:
-			return nil, fmt.Errorf("unexpected byte %q at %d", decoder.data[decoder.pos], decoder.pos)
-		}
-	}
-}
-
-func (decoder *orderedJSONDecoder) parseArray() (any, error) {
-	decoder.pos++
-	items := []any{}
-	decoder.skipSpace()
-	if decoder.pos < len(decoder.data) && decoder.data[decoder.pos] == ']' {
-		decoder.pos++
-		return items, nil
-	}
-	for {
-		decoder.skipSpace()
-		value, err := decoder.parseValue()
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, value)
-		decoder.skipSpace()
-		if decoder.pos >= len(decoder.data) {
-			return nil, fmt.Errorf("unterminated array")
-		}
-		switch decoder.data[decoder.pos] {
-		case ',':
-			decoder.pos++
-		case ']':
-			decoder.pos++
-			return items, nil
-		default:
-			return nil, fmt.Errorf("unexpected byte %q at %d", decoder.data[decoder.pos], decoder.pos)
-		}
-	}
-}
-
-func (decoder *orderedJSONDecoder) parseString() (any, error) {
-	start := decoder.pos
-	if decoder.data[start] != '"' {
-		return nil, fmt.Errorf("expected string at byte %d", start)
-	}
-	escaped := false
-	for index := start + 1; index < len(decoder.data); index++ {
-		switch {
-		case escaped:
-			escaped = false
-		case decoder.data[index] == '\\':
-			escaped = true
-		case decoder.data[index] == '"':
-			decoder.pos = index + 1
-			return jsonwire.UnmarshalString(decoder.data[start : index+1])
-		}
-	}
-	return nil, fmt.Errorf("unterminated string at byte %d", start)
-}
-
-func (decoder *orderedJSONDecoder) parseLiteral(literal string, value any) (any, error) {
-	if decoder.pos+len(literal) > len(decoder.data) || string(decoder.data[decoder.pos:decoder.pos+len(literal)]) != literal {
-		return nil, fmt.Errorf("invalid literal at byte %d", decoder.pos)
-	}
-	decoder.pos += len(literal)
-	return value, nil
-}
-
-func (decoder *orderedJSONDecoder) parseNumber() (any, error) {
-	start := decoder.pos
-	for decoder.pos < len(decoder.data) {
-		switch char := decoder.data[decoder.pos]; {
-		case char >= '0' && char <= '9', char == '-', char == '+', char == '.', char == 'e', char == 'E':
-			decoder.pos++
-		default:
-			return json.Number(decoder.data[start:decoder.pos]), nil
-		}
-	}
-	return json.Number(decoder.data[start:decoder.pos]), nil
 }
 
 // appendOrderedJSON writes the ordered representation in

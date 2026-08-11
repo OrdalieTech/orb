@@ -196,6 +196,7 @@ func TestWP360Resolve(t *testing.T) {
 	var fixture wp360Fixture
 	runner.LoadJSON(t, "WP360", "cases.json", &fixture)
 	t.Setenv("PI_OFFLINE", "1")
+	t.Setenv("CODEX_HOME", t.TempDir())
 	for _, testCase := range fixture.ResolveCases {
 		t.Run(testCase.Name, func(t *testing.T) {
 			root := wp360CaseRoot(t)

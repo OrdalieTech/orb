@@ -430,20 +430,6 @@ func decodeJSON(input string) (any, error) {
 // does; encoding/json would replace them with U+FFFD and corrupt any emoji
 // split across two streamed deltas.
 func decodeJSONString(input string) (string, error) {
-	if len(input) >= 2 && input[0] == '"' && input[len(input)-1] == '"' {
-		plain := true
-		for index := 1; index < len(input)-1; index++ {
-			char := input[index]
-			// Escape-free printable ASCII decodes to itself.
-			if char < 0x20 || char == '"' || char == '\\' || char >= 0x80 {
-				plain = false
-				break
-			}
-		}
-		if plain {
-			return input[1 : len(input)-1], nil
-		}
-	}
 	return jsonwire.UnmarshalString([]byte(input))
 }
 

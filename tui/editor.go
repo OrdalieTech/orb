@@ -16,17 +16,13 @@ import (
 
 // Paste markers like "[paste #1 +123 lines]" or "[paste #2 1234 chars]".
 var (
-	pasteMarkerRegex = sync.OnceValue(func() *regexp.Regexp {
-		return regexp.MustCompile(`\[paste #(\d+)( (\+\d+ lines|\d+ chars))?\]`)
-	})
-	pasteMarkerSingle = sync.OnceValue(func() *regexp.Regexp {
-		return regexp.MustCompile(`^\[paste #(\d+)( (\+\d+ lines|\d+ chars))?\]$`)
-	})
+	pasteMarkerRegex  = regexp.MustCompile(`\[paste #(\d+)( (\+\d+ lines|\d+ chars))?\]`)
+	pasteMarkerSingle = regexp.MustCompile(`^\[paste #(\d+)( (\+\d+ lines|\d+ chars))?\]$`)
 )
 
 // isPasteMarker reports whether a segment was merged by segmentWithMarkers.
 func isPasteMarker(value string) bool {
-	return len(value) >= 10 && pasteMarkerSingle().MatchString(value)
+	return len(value) >= 10 && pasteMarkerSingle.MatchString(value)
 }
 
 // segmentWithMarkers merges base segments falling inside paste markers into
@@ -38,7 +34,7 @@ func segmentWithMarkers(text string, base func(string) []segment, validIDs map[i
 	}
 	type span struct{ start, end int }
 	var markers []span
-	for _, match := range pasteMarkerRegex().FindAllStringSubmatchIndex(text, -1) {
+	for _, match := range pasteMarkerRegex.FindAllStringSubmatchIndex(text, -1) {
 		id, _ := strconv.Atoi(text[match[2]:match[3]])
 		if !validIDs[id] {
 			continue
@@ -1320,7 +1316,7 @@ func containsString(values []string, value string) bool {
 	return false
 }
 
-var csiUCtrlInPaste = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`\x1b\[(\d+);5u`) })
+var csiUCtrlInPaste = regexp.MustCompile(`\x1b\[(\d+);5u`)
 
 func (editor *Editor) handlePaste(pastedText string) {
 	editor.cancelAutocomplete()
@@ -1330,8 +1326,8 @@ func (editor *Editor) handlePaste(pastedText string) {
 
 	// Some terminals re-encode control bytes inside bracketed paste as CSI-u
 	// Ctrl+<letter> sequences; decode them back so newlines survive.
-	decodedText := csiUCtrlInPaste().ReplaceAllStringFunc(pastedText, func(match string) string {
-		sub := csiUCtrlInPaste().FindStringSubmatch(match)
+	decodedText := csiUCtrlInPaste.ReplaceAllStringFunc(pastedText, func(match string) string {
+		sub := csiUCtrlInPaste.FindStringSubmatch(match)
 		code, _ := strconv.Atoi(sub[1])
 		if code >= 97 && code <= 122 {
 			return string(rune(code - 96))
@@ -1475,7 +1471,7 @@ func (editor *Editor) handleBackspace() {
 			graphemeLength = runeLen(lastGrapheme)
 		}
 
-		if match := pasteMarkerSingle().FindStringSubmatch(lastGrapheme); match != nil {
+		if match := pasteMarkerSingle.FindStringSubmatch(lastGrapheme); match != nil {
 			targetID, _ := strconv.Atoi(match[1])
 			delete(editor.pastes, targetID)
 			editor.pasteCounter--
@@ -1493,8 +1489,8 @@ func (editor *Editor) handleBackspace() {
 
 			// Renumber markers with IDs greater than the removed one.
 			for index, mapLine := range editor.state.lines {
-				editor.state.lines[index] = pasteMarkerRegex().ReplaceAllStringFunc(mapLine, func(fullMatch string) string {
-					sub := pasteMarkerRegex().FindStringSubmatchIndex(fullMatch)
+				editor.state.lines[index] = pasteMarkerRegex.ReplaceAllStringFunc(mapLine, func(fullMatch string) string {
+					sub := pasteMarkerRegex.FindStringSubmatchIndex(fullMatch)
 					id, _ := strconv.Atoi(fullMatch[sub[2]:sub[3]])
 					if id <= targetID {
 						return fullMatch

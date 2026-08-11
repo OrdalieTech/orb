@@ -308,128 +308,12 @@ func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 		ErrorMessage:  errorMessage,
 		RawStopReason: rawStopReason,
 	}
-	message.errorBeforeTimestamp, message.errorBeforeResponseID = assistantErrorMemberOrder(data)
+	message.errorBeforeTimestamp = topLevelMemberBefore(data, "errorMessage", "timestamp")
+	message.errorBeforeResponseID = !message.errorBeforeTimestamp && topLevelMemberBefore(data, "errorMessage", "responseId")
 	return nil
 }
 
-// assistantErrorMemberOrder resolves both errorMessage order flags from a
-// single top-level scan; the pair must match two topLevelMemberBefore calls
-// against "timestamp" and "responseId".
-func assistantErrorMemberOrder(data []byte) (beforeTimestamp, beforeResponseID bool) {
-	beforeTimestamp, beforeResponseID = topLevelMemberBeforeMulti(data, "errorMessage", "timestamp", "responseId")
-	return beforeTimestamp, !beforeTimestamp && beforeResponseID
-}
-
-// topLevelMemberBeforeMulti reports first-before-second and first-before-alternate
-// from a single scan; each result matches its topLevelMemberBefore call exactly.
-func topLevelMemberBeforeMulti(data []byte, first, second, alternate string) (beforeSecond, beforeAlternate bool) {
-	beforeSecond, beforeAlternate, ok := topLevelMemberBeforeScan(data, first, second, alternate)
-	if !ok {
-		return topLevelMemberBeforeDecoder(data, first, second), topLevelMemberBeforeDecoder(data, first, alternate)
-	}
-	return beforeSecond, beforeAlternate
-}
-
 func topLevelMemberBefore(data []byte, first, second string) bool {
-	result, _, ok := topLevelMemberBeforeScan(data, first, second, "")
-	if !ok {
-		return topLevelMemberBeforeDecoder(data, first, second)
-	}
-	return result
-}
-
-// topLevelMemberBeforeScan is a byte-level scan of the object's top-level
-// member names; ok=false on any anomaly (escaped keys, invalid JSON) so the
-// caller falls back to topLevelMemberBeforeDecoder for bit-identical results.
-// The optional alternate key resolves first-before-alternate in the same pass.
-func topLevelMemberBeforeScan(data []byte, first, second, alternate string) (result, alternateResult, ok bool) {
-	if !json.Valid(data) {
-		return false, false, false
-	}
-	index := 0
-	for index < len(data) && isJSONSpace(data[index]) {
-		index++
-	}
-	if index >= len(data) || data[index] != '{' {
-		return false, false, true
-	}
-	index++
-	depth := 1
-	seenFirst := false
-	seenSecond := false
-	seenAlternate := alternate == ""
-	expectKey := true
-	inString := false
-	keyStart := -1
-	for index < len(data) {
-		char := data[index]
-		if inString {
-			switch char {
-			case '\\':
-				if keyStart >= 0 {
-					return false, false, false
-				}
-				index += 2
-				continue
-			case '"':
-				if keyStart >= 0 {
-					key := data[keyStart:index]
-					if !seenSecond && string(key) == second {
-						seenSecond = true
-						result = seenFirst
-						if seenAlternate {
-							return result, alternateResult, true
-						}
-					}
-					if !seenAlternate && string(key) == alternate {
-						seenAlternate = true
-						alternateResult = seenFirst
-						if seenSecond {
-							return result, alternateResult, true
-						}
-					}
-					if string(key) == first {
-						seenFirst = true
-					}
-					keyStart = -1
-				}
-				inString = false
-			}
-			index++
-			continue
-		}
-		switch char {
-		case '"':
-			inString = true
-			if depth == 1 && expectKey {
-				keyStart = index + 1
-			}
-		case '{', '[':
-			depth++
-		case '}', ']':
-			depth--
-			if depth == 0 {
-				return result, alternateResult, true
-			}
-		case ':':
-			if depth == 1 {
-				expectKey = false
-			}
-		case ',':
-			if depth == 1 {
-				expectKey = true
-			}
-		}
-		index++
-	}
-	return result, alternateResult, true
-}
-
-func isJSONSpace(char byte) bool {
-	return char == ' ' || char == '\t' || char == '\n' || char == '\r'
-}
-
-func topLevelMemberBeforeDecoder(data []byte, first, second string) bool {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	opening, err := decoder.Token()
 	if err != nil || opening != json.Delim('{') {
@@ -911,28 +795,6 @@ func SetToolCallArgumentsJSON(content *ToolCall, data []byte) error {
 	}
 	content.Arguments = arguments
 	content.rawArguments = normalizedArguments
-	return nil
-}
-
-// SetToolCallArgumentsNormalizedJSON records an argument value that is
-// already in JSON.stringify canonical form — a fixed point of
-// NormalizeJSONStringifyJSON — skipping the re-normalization pass. Only for
-// output of partialjson.StringifyStreamingJSON; the streaming fixed-point
-// conformance test gates that invariant.
-func SetToolCallArgumentsNormalizedJSON(content *ToolCall, data []byte) error {
-	if content == nil {
-		return errors.New("ai: nil tool call")
-	}
-	value, err := decodeJSONValue(data)
-	if err != nil {
-		return err
-	}
-	arguments, ok := value.(map[string]any)
-	if !ok {
-		arguments = map[string]any{}
-	}
-	content.Arguments = arguments
-	content.rawArguments = bytes.Clone(data)
 	return nil
 }
 

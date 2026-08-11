@@ -22,7 +22,7 @@ func (markdown *Markdown) renderInlineChildren(parent ast.Node, source []byte, c
 		case *ast.Text:
 			value := string(typed.Value(source))
 			if !markdown.options.PreserveBackslashEscapes {
-				value = escapablePunctuation().ReplaceAllString(value, `$1`)
+				value = escapablePunctuation.ReplaceAllString(value, `$1`)
 			}
 			plain.WriteString(value)
 			if typed.SoftLineBreak() || typed.HardLineBreak() {
@@ -64,7 +64,7 @@ func (markdown *Markdown) renderInline(node ast.Node, source []byte, context inl
 	case *ast.Text:
 		value := string(typed.Value(source))
 		if !markdown.options.PreserveBackslashEscapes {
-			value = escapablePunctuation().ReplaceAllString(value, `$1`)
+			value = escapablePunctuation.ReplaceAllString(value, `$1`)
 		}
 		if typed.SoftLineBreak() || typed.HardLineBreak() {
 			value += "\n"

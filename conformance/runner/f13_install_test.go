@@ -63,6 +63,7 @@ func TestF13UserShapedInstall(t *testing.T) {
 		}
 	}
 	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
 	t.Setenv(config.EnvAgentDir, agentDir)
 
 	settings, err := config.NewSettingsManager(project, config.WithAgentDir(agentDir))

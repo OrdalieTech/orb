@@ -489,16 +489,19 @@ func isCJK(segment string) bool {
 	return unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul, unicode.Bopomofo)
 }
 
-// ansiTokens emits subslices of text: every token is text[start:end) because
-// pending ANSI codes always sit adjacent to the graphemes they precede, so no
-// token ever needs a copy. The current token is text[start:mark) and the
-// pending ANSI run is text[mark:cursor).
 func ansiTokens(text string) []string {
 	tokens := make([]string, 0)
-	start, mark := 0, 0
+	current, pending := "", ""
 	kind := byte(0)
+	flush := func() {
+		if current != "" {
+			tokens = append(tokens, current)
+			current, kind = "", 0
+		}
+	}
 	for pos := 0; pos < len(text); {
-		if _, next, ok := extractANSI(text, pos); ok {
+		if code, next, ok := extractANSI(text, pos); ok {
+			pending += code
 			pos = next
 			continue
 		}
@@ -510,49 +513,38 @@ func ansiTokens(text string) []string {
 			_, size := utf8.DecodeRuneInString(text[end:])
 			end += size
 		}
-		segStart := pos
 		forEachGrapheme(text[pos:end], func(segment string) bool {
-			segEnd := segStart + len(segment)
 			space := segment == " "
 			if !space && isCJK(segment) {
-				if mark > start {
-					tokens = append(tokens, text[start:mark])
-				}
-				tokens = append(tokens, text[mark:segEnd])
-				start, mark = segEnd, segEnd
-				segStart = segEnd
+				flush()
+				tokens = append(tokens, pending+segment)
+				pending = ""
 				return true
 			}
 			nextKind := byte('w')
 			if space {
 				nextKind = 's'
 			}
-			if mark > start && kind != nextKind {
-				tokens = append(tokens, text[start:mark])
-				start = mark
+			if current != "" && kind != nextKind {
+				flush()
 			}
-			mark = segEnd
+			current += pending + segment
+			pending = ""
 			kind = nextKind
-			segStart = segEnd
 			return true
 		})
 		pos = end
 	}
-	if mark < len(text) {
-		// Trailing ANSI codes extend the current token, else the last emitted
-		// token (which always ends at mark), else stand alone.
-		if mark > start {
-			mark = len(text)
+	if pending != "" {
+		if current != "" {
+			current += pending
 		} else if len(tokens) > 0 {
-			last := tokens[len(tokens)-1]
-			tokens[len(tokens)-1] = text[mark-len(last):]
+			tokens[len(tokens)-1] += pending
 		} else {
-			start, mark = 0, len(text)
+			current = pending
 		}
 	}
-	if mark > start {
-		tokens = append(tokens, text[start:mark])
-	}
+	flush()
 	return tokens
 }
 
@@ -595,59 +587,51 @@ func breakLongWord(word string, width int, tracker *ansiTracker) []string {
 	return lines
 }
 
-// appendWrappedLine wraps one logical line into dst; the fast path for a line
-// that already fits appends it without any intermediate slice.
-func appendWrappedLine(dst []string, line string, width int) []string {
+func wrapSingleLine(line string, width int) []string {
 	if line == "" {
-		return append(dst, "")
+		return []string{""}
 	}
 	if VisibleWidth(line) <= width {
-		return append(dst, line)
+		return []string{line}
 	}
-	base := len(dst)
+	wrapped := make([]string, 0)
 	tracker := &ansiTracker{}
-	var current strings.Builder
-	currentWidth := 0
+	current, currentWidth := "", 0
 	for _, token := range ansiTokens(line) {
 		tokenWidth := VisibleWidth(token)
 		whitespace := strings.TrimSpace(token) == ""
 		if tokenWidth > width && !whitespace {
-			if current.Len() > 0 {
-				dst = append(dst, current.String()+tracker.lineEndReset())
+			if current != "" {
+				wrapped = append(wrapped, current+tracker.lineEndReset())
 			}
 			broken := breakLongWord(token, width, tracker)
-			dst = append(dst, broken[:len(broken)-1]...)
-			current.Reset()
-			current.WriteString(broken[len(broken)-1])
-			currentWidth = VisibleWidth(broken[len(broken)-1])
+			wrapped = append(wrapped, broken[:len(broken)-1]...)
+			current, currentWidth = broken[len(broken)-1], VisibleWidth(broken[len(broken)-1])
 			continue
 		}
 		if currentWidth+tokenWidth > width && currentWidth > 0 {
-			dst = append(dst, strings.TrimRightFunc(current.String(), unicode.IsSpace)+tracker.lineEndReset())
-			current.Reset()
-			current.WriteString(tracker.active())
+			wrapped = append(wrapped, strings.TrimRightFunc(current, unicode.IsSpace)+tracker.lineEndReset())
 			if whitespace {
-				currentWidth = 0
+				current, currentWidth = tracker.active(), 0
 			} else {
-				current.WriteString(token)
-				currentWidth = tokenWidth
+				current, currentWidth = tracker.active()+token, tokenWidth
 			}
 		} else {
-			current.WriteString(token)
+			current += token
 			currentWidth += tokenWidth
 		}
 		updateTracker(token, tracker)
 	}
-	if current.Len() > 0 {
-		dst = append(dst, current.String())
+	if current != "" {
+		wrapped = append(wrapped, current)
 	}
-	if len(dst) == base {
-		return append(dst, "")
+	if len(wrapped) == 0 {
+		return []string{""}
 	}
-	for index := base; index < len(dst); index++ {
-		dst[index] = strings.TrimRightFunc(dst[index], unicode.IsSpace)
+	for index := range wrapped {
+		wrapped[index] = strings.TrimRightFunc(wrapped[index], unicode.IsSpace)
 	}
-	return dst
+	return wrapped
 }
 
 // WrapTextWithANSI word-wraps while reopening active SGR and OSC-8 state on
@@ -659,23 +643,15 @@ func WrapTextWithANSI(text string, width int) []string {
 	if width < 1 {
 		width = 1
 	}
-	text = strings.ReplaceAll(text, "\r\n", "\n")
-	text = strings.ReplaceAll(text, "\r", "\n")
 	tracker := &ansiTracker{}
-	result := make([]string, 0, strings.Count(text, "\n")+1)
-	remaining := text
-	for index := 0; ; index++ {
-		input, rest, more := strings.Cut(remaining, "\n")
+	result := make([]string, 0)
+	for index, input := range splitLines(text) {
 		prefix := ""
 		if index > 0 {
 			prefix = tracker.active()
 		}
-		result = appendWrappedLine(result, prefix+input, width)
+		result = append(result, wrapSingleLine(prefix+input, width)...)
 		updateTracker(input, tracker)
-		if !more {
-			break
-		}
-		remaining = rest
 	}
 	if len(result) == 0 {
 		return []string{""}
@@ -734,4 +710,10 @@ func sliceWithWidth(line string, startCol, length int, strict bool) (string, int
 		pos = end
 	}
 	return result.String(), resultWidth
+}
+
+func splitLines(text string) []string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	return strings.Split(text, "\n")
 }

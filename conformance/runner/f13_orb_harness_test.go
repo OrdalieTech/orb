@@ -582,6 +582,7 @@ func (harness *f13Harness) startHost(t *testing.T, runtime extensionhost.Runtime
 	// The host process and every Go-side path resolution live inside the
 	// harness home: the plugin reads ~/.pi/workflows/* through homedir().
 	t.Setenv("HOME", harness.home)
+	t.Setenv("CODEX_HOME", filepath.Join(harness.home, ".codex"))
 	t.Setenv(config.EnvAgentDir, harness.agentDir)
 	// The extractor cleared XDG_CONFIG_HOME so no machine-level config leaks
 	// into resource discovery.

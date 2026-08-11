@@ -638,8 +638,6 @@ func TestFetchContentDecodesCharsetAndRejectsBinary(t *testing.T) {
 			return response(http.StatusOK, "image/png", "\x89PNG\r\n\x1a\n\xff\xfe"), nil
 		}
 		if request.URL.Path == "/sjis" {
-			// Shift_JIS "こんにちは"; CJK charsets have no decoder, so these
-			// bytes must hit the invalid-UTF-8 scrub floor, not error out.
 			return response(http.StatusOK, "text/html; charset=shift_jis", "<p>hello \x82\xb1\x82\xf1\x82\xc9\x82\xbf\x82\xcd</p>"), nil
 		}
 		// 0x92 is a right single quote in windows-1252 and invalid UTF-8.
@@ -657,8 +655,8 @@ func TestFetchContentDecodesCharsetAndRejectsBinary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ai.ContentText(result.Content); !strings.HasPrefix(got, "hello ") || !utf8.ValidString(got) {
-		t.Fatalf("scrubbed = %q", got)
+	if got := ai.ContentText(result.Content); got != "hello こんにちは" || !utf8.ValidString(got) {
+		t.Fatalf("decoded = %q", got)
 	}
 	if _, err := tool.Execute(context.Background(), "fetch", map[string]any{"url": "https://public.test/binary"}, nil); err == nil ||
 		!strings.Contains(err.Error(), "unsupported content type") {

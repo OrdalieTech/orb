@@ -118,7 +118,7 @@ func (markdown *Markdown) Render(width int) []string {
 		source = protectBackslashEscapes(source)
 	}
 	contents := []byte(source)
-	root := markdownParser().Parser().Parse(text.NewReader(contents))
+	root := markdownParser.Parser().Parse(text.NewReader(contents))
 	rendered := markdown.renderBlocks(root, contents, contentWidth, nil)
 
 	wrapped := make([]string, 0, len(rendered))
@@ -158,14 +158,10 @@ func (markdown *Markdown) background() StyleFunc {
 	return markdown.defaultStyle.Background
 }
 
-// Safe to share across goroutines: goldmark's parser lazy-init is sync.Once
-// guarded (parser.go:666,865 in v1.8.4) and per-parse state lives in the
-// parser.Context, so concurrent Parse calls do not race.
-var markdownParser = sync.OnceValue(func() goldmark.Markdown {
-	return goldmark.New(goldmark.WithExtensions(extension.Table, extension.Linkify, extension.TaskList), goldmark.WithParserOptions(
-		parser.WithInlineParsers(util.Prioritized(strictStrikethroughParser{}, 500)),
-	))
-})
+// ponytail: goldmark keeps parse state per call, so one parser is safe to share.
+var markdownParser = goldmark.New(goldmark.WithExtensions(extension.Table, extension.Linkify, extension.TaskList), goldmark.WithParserOptions(
+	parser.WithInlineParsers(util.Prioritized(strictStrikethroughParser{}, 500)),
+))
 
 type strictStrikethroughProcessor struct{}
 
@@ -194,12 +190,10 @@ func (strictStrikethroughParser) CloseBlock(ast.Node, parser.Context) {}
 
 const escapeSentinel = "\ue000"
 
-var escapablePunctuation = sync.OnceValue(func() *regexp.Regexp {
-	return regexp.MustCompile(`\\([!"#$%&'()*+,\-./:;<=>?@\[\\\]^_` + "`" + `{|}~])`)
-})
+var escapablePunctuation = regexp.MustCompile(`\\([!"#$%&'()*+,\-./:;<=>?@\[\\\]^_` + "`" + `{|}~])`)
 
 func protectBackslashEscapes(value string) string {
-	return escapablePunctuation().ReplaceAllString(value, escapeSentinel+`$1`)
+	return escapablePunctuation.ReplaceAllString(value, escapeSentinel+`$1`)
 }
 
 func restoreBackslashEscapes(value string) string {
@@ -318,7 +312,7 @@ func (markdown *Markdown) renderBlock(node ast.Node, source []byte, width int, n
 	}
 }
 
-var blankLinePattern = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`\n[ \t>]*\n`) })
+var blankLinePattern = regexp.MustCompile(`\n[ \t>]*\n`)
 
 func blankLineBetween(previous, next ast.Node, source []byte) bool {
 	if previous == nil || next == nil {
@@ -328,7 +322,7 @@ func blankLineBetween(previous, next ast.Node, source []byte) bool {
 	if end < 0 || start < end || start > len(source) {
 		return false
 	}
-	return blankLinePattern().Match(source[end:start])
+	return blankLinePattern.Match(source[end:start])
 }
 
 func blockBoundary(node ast.Node, start bool) int {

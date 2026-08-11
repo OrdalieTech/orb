@@ -7,7 +7,6 @@ package slack
 import (
 	"regexp"
 	"strings"
-	"sync"
 	"unicode/utf8"
 )
 
@@ -15,13 +14,13 @@ import (
 const textLimit = 4000
 
 var (
-	reBoldStars = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`\*\*(.+?)\*\*`) })
-	reBoldUnder = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`__(.+?)__`) })
-	reStrike    = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`~~(.+?)~~`) })
-	reItalic    = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`\*([^*\n]+)\*`) })
-	reLink      = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`\[([^\]]+)\]\(([^)\s]+)\)`) })
-	reHeading   = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^#{1,6}[ \t]+(.+)$`) })
-	reBullet    = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^([ \t]*)[-*][ \t]+`) })
+	reBoldStars = regexp.MustCompile(`\*\*(.+?)\*\*`)
+	reBoldUnder = regexp.MustCompile(`__(.+?)__`)
+	reStrike    = regexp.MustCompile(`~~(.+?)~~`)
+	reItalic    = regexp.MustCompile(`\*([^*\n]+)\*`)
+	reLink      = regexp.MustCompile(`\[([^\]]+)\]\(([^)\s]+)\)`)
+	reHeading   = regexp.MustCompile(`^#{1,6}[ \t]+(.+)$`)
+	reBullet    = regexp.MustCompile(`^([ \t]*)[-*][ \t]+`)
 )
 
 const boldMark = "\x00"
@@ -92,16 +91,16 @@ func formatLine(line string) string {
 	}
 	rest = escapeText(rest)
 	heading := false
-	if match := reHeading().FindStringSubmatch(rest); match != nil {
+	if match := reHeading.FindStringSubmatch(rest); match != nil {
 		rest = match[1]
 		heading = true
 	}
-	rest = reBullet().ReplaceAllString(rest, "$1• ")
-	rest = reBoldStars().ReplaceAllString(rest, boldMark+"$1"+boldMark)
-	rest = reBoldUnder().ReplaceAllString(rest, boldMark+"$1"+boldMark)
-	rest = reStrike().ReplaceAllString(rest, "~$1~")
-	rest = reItalic().ReplaceAllString(rest, "_${1}_") // ${1}: a bare $1_ would parse as group "1_"
-	rest = reLink().ReplaceAllString(rest, "<$2|$1>")
+	rest = reBullet.ReplaceAllString(rest, "$1• ")
+	rest = reBoldStars.ReplaceAllString(rest, boldMark+"$1"+boldMark)
+	rest = reBoldUnder.ReplaceAllString(rest, boldMark+"$1"+boldMark)
+	rest = reStrike.ReplaceAllString(rest, "~$1~")
+	rest = reItalic.ReplaceAllString(rest, "_${1}_") // ${1}: a bare $1_ would parse as group "1_"
+	rest = reLink.ReplaceAllString(rest, "<$2|$1>")
 	if heading {
 		rest = boldMark + rest + boldMark
 	}

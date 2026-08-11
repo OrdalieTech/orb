@@ -3,15 +3,12 @@ package tui
 import (
 	"regexp"
 	"strings"
-	"sync"
 
 	"github.com/yuin/goldmark/ast"
 	extast "github.com/yuin/goldmark/extension/ast"
 )
 
-var sourceListMarker = sync.OnceValue(func() *regexp.Regexp {
-	return regexp.MustCompile(`^(?: {0,3})(\d{1,9}[.)]|[-+*])(?:[ \t]+|$)`)
-})
+var sourceListMarker = regexp.MustCompile(`^(?: {0,3})(\d{1,9}[.)]|[-+*])(?:[ \t]+|$)`)
 
 func (markdown *Markdown) renderList(list *ast.List, source []byte, depth, width int, style *inlineStyleContext) []string {
 	lines := make([]string, 0)
@@ -107,7 +104,7 @@ func rawListMarker(item *ast.ListItem, source []byte) string {
 	for lineStart > 0 && source[lineStart-1] != '\n' {
 		lineStart--
 	}
-	match := sourceListMarker().FindSubmatch(source[lineStart:first])
+	match := sourceListMarker.FindSubmatch(source[lineStart:first])
 	if len(match) != 2 {
 		return ""
 	}

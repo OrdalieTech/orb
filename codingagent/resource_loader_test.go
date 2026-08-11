@@ -199,6 +199,7 @@ func TestDefaultResourceLoaderPromptSources(t *testing.T) {
 
 func TestDefaultResourceLoaderExtendResourcesLoadsImmediately(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", t.TempDir())
 	cwd, agentDir := t.TempDir(), t.TempDir()
 	skillDir := filepath.Join(t.TempDir(), "extended")
 	promptPath := filepath.Join(t.TempDir(), "review.md")
@@ -231,6 +232,7 @@ func TestDefaultResourceLoaderExtendResourcesLoadsImmediately(t *testing.T) {
 
 func TestDefaultResourceLoaderExtendResourcesNormalizesMergesAndRetags(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", t.TempDir())
 	cwd, agentDir := t.TempDir(), t.TempDir()
 	skillDir := filepath.Join(cwd, "extension resources", "skill")
 	promptPath := filepath.Join(cwd, "extension resources", "review.md")
@@ -416,6 +418,7 @@ func TestAgentSessionInstallsExtensionDiscoveredThemesIntoResourceLoader(t *test
 
 func TestSessionRuntimeReloadReplacesExtensionDiscoveredResourcesAndSharesLoaderRegistry(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", t.TempDir())
 	cwd, agentDir := t.TempDir(), t.TempDir()
 	builtin, err := os.ReadFile(filepath.Join("modes", "theme", "dark.json"))
 	if err != nil {
