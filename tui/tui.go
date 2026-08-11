@@ -48,6 +48,7 @@ type TUI struct {
 
 	renderMu            sync.Mutex
 	previousLines       []string
+	frameScratch        []string
 	previousWidth       int
 	previousHeight      int
 	cursorRow           int
@@ -922,6 +923,7 @@ func (ui *TUI) RenderNow() {
 		}
 		ui.previousViewportTop = max(0, max(height, len(newLines))-height)
 		ui.positionCursor(cursorRow, cursorColumn, hasCursor, len(newLines))
+		ui.frameScratch = ui.previousLines[:0]
 		ui.previousLines, ui.previousWidth, ui.previousHeight = newLines, width, height
 		ui.previousImageIDs = collectKittyImageIDs(newLines)
 	}
@@ -1016,6 +1018,7 @@ func (ui *TUI) RenderNow() {
 			ui.cursorRow, ui.hardwareCursorRow = target, target
 		}
 		ui.positionCursor(cursorRow, cursorColumn, hasCursor, len(newLines))
+		ui.frameScratch = ui.previousLines[:0]
 		ui.previousLines, ui.previousWidth, ui.previousHeight, ui.previousViewportTop = newLines, width, height, previousViewportTop
 		ui.previousImageIDs = collectKittyImageIDs(newLines)
 		settleRenderedHeight()
@@ -1108,14 +1111,18 @@ func (ui *TUI) RenderNow() {
 	settleRenderedHeight()
 	ui.previousViewportTop = max(previousViewportTop, finalCursorRow-height+1)
 	ui.positionCursor(cursorRow, cursorColumn, hasCursor, len(newLines))
+	ui.frameScratch = ui.previousLines[:0]
 	ui.previousLines, ui.previousWidth, ui.previousHeight = newLines, width, height
 	ui.previousImageIDs = collectKittyImageIDs(newLines)
 }
 
+// renderViewport builds the frame in ui.frameScratch, which double-buffers
+// against previousLines: the swap sites in RenderNow recycle the retired
+// frame, so the buffer being written never aliases previousLines.
 func (ui *TUI) renderViewport(width, height int) []string {
 	ui.mouseOverlays = nil
 	if ui.viewportBody == nil {
-		return append([]string(nil), ui.Render(width)...)
+		return append(ui.frameScratch[:0], ui.Render(width)...)
 	}
 	chrome := ui.viewportChrome.Render(width)
 	// Where the chrome landed on screen, so mouse events can be rebased onto
@@ -1144,7 +1151,10 @@ func (ui *TUI) renderViewport(width, height int) []string {
 		ui.viewportEnd = end
 	}
 	start = max(0, end-bodyHeight)
-	lines := make([]string, 0, height)
+	lines := ui.frameScratch[:0]
+	if cap(lines) == 0 {
+		lines = make([]string, 0, height)
+	}
 	lines = body.appendRange(lines, bodyWidth, start, end)
 	lines = append(lines, make([]string, bodyHeight-len(lines))...)
 	if top, size := scrollbar(bodyLines, bodyHeight, end); width > 1 && size > 0 {

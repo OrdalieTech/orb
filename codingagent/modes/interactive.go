@@ -4037,7 +4037,9 @@ func (mode *InteractiveMode) renderInitialMessages() {
 	mode.toolComponents = make(map[string]*ToolExecutionComponent)
 	mode.expandables = nil
 	mode.mu.Unlock()
-	for _, entry := range mode.session.Manager().BuildContextEntries() {
+	entries := mode.session.Manager().BuildContextEntries()
+	mode.chat.GrowChildren(len(entries))
+	for _, entry := range entries {
 		switch entry.Type {
 		case "message":
 			message, err := ai.UnmarshalMessage(entry.Message)
