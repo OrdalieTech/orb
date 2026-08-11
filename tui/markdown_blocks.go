@@ -151,10 +151,7 @@ func (markdown *Markdown) renderBlockquote(quote *ast.Blockquote, source []byte,
 	}
 	lines := make([]string, 0, len(inner))
 	for _, line := range inner {
-		if prefix != "" {
-			line = strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m"+prefix)
-		}
-		line = quoteStyle(line)
+		line = quoteStyle(ReopenAfterReset(prefix, line))
 		for _, wrapped := range WrapTextWithANSI(line, contentWidth) {
 			lines = append(lines, markdown.theme.QuoteBorder("│ ")+wrapped)
 		}

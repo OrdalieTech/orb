@@ -1233,18 +1233,8 @@ func (manager *SessionManager) getBranchLocked(fromID ...string) []SessionEntry 
 	} else if manager.leafID != nil {
 		start = *manager.leafID
 	}
-	length := 0
-	for current := manager.byID[start]; current != nil; {
-		length++
-		if current.ParentID == nil {
-			break
-		}
-		current = manager.byID[*current.ParentID]
-	}
-	var branch []SessionEntry
-	if length > 0 {
-		branch = make([]SessionEntry, 0, length)
-	}
+	// Any single branch is at most every entry in the index.
+	branch := make([]SessionEntry, 0, len(manager.byID))
 	current := manager.byID[start]
 	for current != nil {
 		branch = append(branch, *cloneEntry(current))

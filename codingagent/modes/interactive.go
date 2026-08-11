@@ -4008,7 +4008,7 @@ func nativeToolDefinition(name string, registered agent.AgentTool) *extensions.T
 					// The pre-execution preview is still on screen; only render
 					// a partial diff the preview does not already show.
 					if diff := editResultDiff(result.Details); diff != "" {
-						if preview, _ := context.State["editPreviewDiff"].(string); preview == diff {
+						if loadEditPreview(context.State).diff == diff {
 							return &tui.Container{}
 						}
 						return NewEditDiffView(diff, editArgsPath(context.Args), "toolPendingBg")
@@ -4057,6 +4057,23 @@ func editPreviewInput(args any) (string, []tools.Edit, bool) {
 	return input.Path, input.Edits, true
 }
 
+// editPreviewStateKey names the single renderer-state slot holding the
+// pre-execution preview: one typed value, so "RenderCall ran first and left
+// exactly this" is a checked assertion rather than three loose string keys.
+const editPreviewStateKey = "editPreview"
+
+type editPreviewCapture struct {
+	// key is the JSON of the argument set the capture was computed from.
+	key          string
+	diff         string
+	previewError string
+}
+
+func loadEditPreview(state map[string]any) editPreviewCapture {
+	capture, _ := state[editPreviewStateKey].(editPreviewCapture)
+	return capture
+}
+
 // editPreview computes the pending-edit preview at most once per argument set
 // (upstream edit.ts keys the preview by its JSON args and never recomputes),
 // so re-renders during and after execution reuse the pre-execution capture
@@ -4066,22 +4083,18 @@ func editPreview(state map[string]any, path string, edits []tools.Edit, cwd stri
 		Path  string       `json:"path"`
 		Edits []tools.Edit `json:"edits"`
 	}{path, edits})
-	key := string(encoded)
-	if cached, ok := state["editPreviewKey"].(string); ok && err == nil && cached == key {
-		diff, _ = state["editPreviewDiff"].(string)
-		previewError, _ = state["editPreviewError"].(string)
-		return diff, previewError
+	capture := editPreviewCapture{key: string(encoded)}
+	if cached := loadEditPreview(state); err == nil && cached.key == capture.key {
+		return cached.diff, cached.previewError
 	}
 	preview, computeErr := tools.ComputeEditsDiff(path, edits, cwd)
 	if computeErr != nil {
-		previewError = computeErr.Error()
+		capture.previewError = computeErr.Error()
 	} else {
-		diff = preview.Diff
+		capture.diff = preview.Diff
 	}
-	state["editPreviewKey"] = key
-	state["editPreviewDiff"] = diff
-	state["editPreviewError"] = previewError
-	return diff, previewError
+	state[editPreviewStateKey] = capture
+	return capture.diff, capture.previewError
 }
 
 func editResultDiff(details any) string {

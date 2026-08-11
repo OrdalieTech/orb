@@ -109,9 +109,7 @@ func NewEditDiffView(diff, path, bandRole string) *editDiffView {
 	// One highlight pass over the joined rows keeps lexer state across lines
 	// (multi-line strings, block comments) and costs one tokenization.
 	if language := theme.LanguageFromPath(path); language != "" && theme.Current() != nil {
-		texts := make([]string, len(view.rows))
-		copy(texts, view.styled)
-		if styled := theme.Highlight(strings.Join(texts, "\n"), language, theme.Current()); len(styled) == len(view.rows) {
+		if styled := theme.Highlight(strings.Join(view.styled, "\n"), language, theme.Current()); len(styled) == len(view.rows) {
 			view.styled = styled
 		}
 	}
@@ -161,18 +159,14 @@ func (view *editDiffView) bandTrail() string {
 	return "\x1b[49m"
 }
 
-// tintSpan opens a background under already fg-styled content and re-opens it
-// after every full SGR reset the styling may contain (TruncateToWidth
-// brackets its ellipsis with \x1b[0m), so the tint survives to the end of the
-// span including padding cells.
+// tintSpan opens a background under already fg-styled content and keeps it
+// open across the full SGR resets that styling may contain, so the tint
+// survives to the end of the span including padding cells.
 func tintSpan(background, content string) string {
 	if background == "" {
 		return content
 	}
-	if strings.Contains(content, "\x1b[0m") {
-		content = strings.ReplaceAll(content, "\x1b[0m", "\x1b[0m"+background)
-	}
-	return background + content
+	return background + tui.ReopenAfterReset(background, content)
 }
 
 // gutterCell renders the line-number column (numberPad plus one pad cell) on
@@ -242,8 +236,10 @@ func (view *editDiffView) renderUnified(width int) []string {
 			if part == 0 {
 				gutter, sign = view.gutterCell(row.number), rowSign(row.kind)
 			}
-			pad := strings.Repeat(" ", max(0, textWidth-tui.VisibleWidth(wrapped)))
-			lines = append(lines, gutter+tintSpan(background, sign+" "+wrapped+pad)+trail)
+			// Pads to the row width, and clamps the over-width line the wrapper
+			// can emit for an unbreakable wide grapheme.
+			cell := tui.TruncateToWidth(wrapped, textWidth, "", true)
+			lines = append(lines, gutter+tintSpan(background, sign+" "+cell)+trail)
 		}
 	}
 	return lines
