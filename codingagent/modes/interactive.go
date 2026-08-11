@@ -3964,31 +3964,53 @@ func nativeToolDefinition(name string, registered agent.AgentTool) *extensions.T
 			if name != "edit" || !context.ArgsComplete {
 				return container
 			}
+			// A final result makes the preview stale by construction: the edit
+			// has been applied, so re-matching oldText against the file would
+			// report a mismatch error over a successful edit. RenderResult owns
+			// the display from that point (upstream edit.ts renderResult
+			// overwrites the preview with the recorded result diff).
+			if !context.IsPartial {
+				return container
+			}
 			path, edits, ok := editPreviewInput(args)
 			if !ok {
 				return container
 			}
-			preview, err := tools.ComputeEditsDiff(path, edits, context.CWD)
+			diff, previewError := editPreview(context.State, path, edits, context.CWD)
 			container.AddChild(tui.NewSpacer(1))
-			if err != nil {
-				context.State["editPreviewError"] = err.Error()
-				container.AddChild(tui.NewText(palette.FG("error", err.Error()), 0, 0, nil))
+			if previewError != "" {
+				container.AddChild(tui.NewText(palette.FG("error", previewError), 0, 0, nil))
 				return container
 			}
-			context.State["editPreviewDiff"] = preview.Diff
-			container.AddChild(NewEditDiffView(preview.Diff))
+			container.AddChild(NewEditDiffView(diff, path, "toolPendingBg"))
 			return container
 		},
 		RenderResult: func(result agent.AgentToolResult, options extensions.ToolRenderResultOptions, palette extensions.Theme, context extensions.ToolRenderContext) extensions.Component {
 			if name == "edit" {
-				if diff := editResultDiff(result.Details); diff != "" {
-					if preview, _ := context.State["editPreviewDiff"].(string); preview == diff {
-						return &tui.Container{}
+				if options.IsPartial {
+					// The pre-execution preview is still on screen; only render
+					// a partial diff the preview does not already show.
+					if diff := editResultDiff(result.Details); diff != "" {
+						if preview, _ := context.State["editPreviewDiff"].(string); preview == diff {
+							return &tui.Container{}
+						}
+						return NewEditDiffView(diff, editArgsPath(context.Args), "toolPendingBg")
 					}
-					return NewEditDiffView(diff)
-				}
-				if previewError, _ := context.State["editPreviewError"].(string); previewError == renderer.RenderResult(result) {
+				} else if context.IsError {
+					if message := renderer.RenderResult(result); message != "" {
+						container := &tui.Container{}
+						container.AddChild(tui.NewSpacer(1))
+						container.AddChild(tui.NewText(palette.FG("error", message), 0, 0, nil))
+						return container
+					}
 					return &tui.Container{}
+				} else if diff := editResultDiff(result.Details); diff != "" {
+					// Final success renders the recorded diff from the result
+					// details, never from re-reading the edited file.
+					container := &tui.Container{}
+					container.AddChild(tui.NewSpacer(1))
+					container.AddChild(NewEditDiffView(diff, editArgsPath(context.Args), "toolSuccessBg"))
+					return container
 				}
 			}
 			if name == "bash" {
@@ -3997,6 +4019,13 @@ func nativeToolDefinition(name string, registered agent.AgentTool) *extensions.T
 			return tui.NewText(palette.FG("toolOutput", renderer.RenderResult(result)), 0, 0, nil)
 		},
 	}
+}
+
+// editArgsPath extracts the file path from edit-tool args for highlight
+// language detection; an empty result just renders the diff unhighlighted.
+func editArgsPath(args any) string {
+	path, _, _ := editPreviewInput(args)
+	return path
 }
 
 func editPreviewInput(args any) (string, []tools.Edit, bool) {
@@ -4009,6 +4038,33 @@ func editPreviewInput(args any) (string, []tools.Edit, bool) {
 		return "", nil, false
 	}
 	return input.Path, input.Edits, true
+}
+
+// editPreview computes the pending-edit preview at most once per argument set
+// (upstream edit.ts keys the preview by its JSON args and never recomputes),
+// so re-renders during and after execution reuse the pre-execution capture
+// instead of re-reading a file the edit may since have modified.
+func editPreview(state map[string]any, path string, edits []tools.Edit, cwd string) (diff, previewError string) {
+	encoded, err := json.Marshal(struct {
+		Path  string       `json:"path"`
+		Edits []tools.Edit `json:"edits"`
+	}{path, edits})
+	key := string(encoded)
+	if cached, ok := state["editPreviewKey"].(string); ok && err == nil && cached == key {
+		diff, _ = state["editPreviewDiff"].(string)
+		previewError, _ = state["editPreviewError"].(string)
+		return diff, previewError
+	}
+	preview, computeErr := tools.ComputeEditsDiff(path, edits, cwd)
+	if computeErr != nil {
+		previewError = computeErr.Error()
+	} else {
+		diff = preview.Diff
+	}
+	state["editPreviewKey"] = key
+	state["editPreviewDiff"] = diff
+	state["editPreviewError"] = previewError
+	return diff, previewError
 }
 
 func editResultDiff(details any) string {

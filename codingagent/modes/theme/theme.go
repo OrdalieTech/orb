@@ -16,6 +16,7 @@ import (
 var backgroundTokens = map[string]bool{
 	"selectedBg": true, "scrollbarThumb": true, "userMessageBg": true, "customMessageBg": true,
 	"toolPendingBg": true, "toolSuccessBg": true, "toolErrorBg": true,
+	"diffAddedBg": true, "diffRemovedBg": true, "diffGutterBg": true,
 }
 
 var requiredColors = []string{
@@ -79,6 +80,17 @@ func Parse(label string, data []byte, mode ColorMode) (*Theme, error) {
 	}
 	if _, ok := source.Colors["scrollbarThumb"]; !ok {
 		source.Colors["scrollbarThumb"] = source.Colors["selectedBg"]
+	}
+	// Diff tint roles are optional so pre-existing user themes keep parsing;
+	// the tool-band backgrounds are the closest semantic stand-ins.
+	if _, ok := source.Colors["diffAddedBg"]; !ok {
+		source.Colors["diffAddedBg"] = source.Colors["toolSuccessBg"]
+	}
+	if _, ok := source.Colors["diffRemovedBg"]; !ok {
+		source.Colors["diffRemovedBg"] = source.Colors["toolErrorBg"]
+	}
+	if _, ok := source.Colors["diffGutterBg"]; !ok {
+		source.Colors["diffGutterBg"] = source.Colors["toolPendingBg"]
 	}
 	if mode == "" {
 		mode = DetectColorMode(nil)

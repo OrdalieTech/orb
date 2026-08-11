@@ -2,9 +2,11 @@ package runner_test
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/OrdalieTech/orb/codingagent/modes/theme"
@@ -118,8 +120,10 @@ func TestF12BuiltInThemesMatchUpstream(t *testing.T) {
 				t.Fatalf("fallback = %#v\nwant %#v", actual, fixtureCase.Fallback)
 			}
 			if actual := selected.ResolvedColors(fixtureCase.Name == "light"); runner.UpdateTUISnapshots() {
-				for name, value := range actual {
-					snap.Set(value, "themes", themeIndex, "resolved", name)
+				// Sorted so that roles new to the presentation vocabulary
+				// append in a deterministic order.
+				for _, name := range slices.Sorted(maps.Keys(actual)) {
+					snap.Add(actual[name], "themes", themeIndex, "resolved", name)
 				}
 			} else if !reflect.DeepEqual(actual, fixtureCase.Resolved) {
 				t.Fatalf("resolved colors differ\ngot:  %#v\nwant: %#v", actual, fixtureCase.Resolved)
