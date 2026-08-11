@@ -480,7 +480,10 @@ func FormatSkillsForPrompt(skills []Skill) string {
 	return strings.Join(lines, "\n")
 }
 
+// Replacer builds its lookup tables lazily on first Replace and is safe for
+// concurrent use.
+var skillXMLReplacer = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&apos;")
+
 func escapeSkillXML(value string) string {
-	replacer := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&apos;")
-	return replacer.Replace(value)
+	return skillXMLReplacer.Replace(value)
 }

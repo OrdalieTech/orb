@@ -100,6 +100,7 @@ func UnmarshalString(data []byte) (string, error) {
 		return "", fmt.Errorf("jsonwire: invalid JSON string")
 	}
 	var output bytes.Buffer
+	output.Grow(len(data) - 2)
 	for index := 1; index < len(data)-1; {
 		character := data[index]
 		if character != '\\' {
@@ -292,6 +293,9 @@ func numberContinues(char byte) bool {
 }
 
 func restoreLineSeparators(data []byte) []byte {
+	if !bytes.Contains(data, []byte(`\u202`)) {
+		return data
+	}
 	var output bytes.Buffer
 	output.Grow(len(data))
 	inString := false
