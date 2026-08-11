@@ -283,18 +283,18 @@
         "sha256": "b8ceb1b68c2271d12f4f5a51737c0f07d2c34ff00412eeb4b55ad3908487f85a",
         "raw": {
           "lineCount": 9579,
-          "sha256": "d4298064d01f71ed33a623d09e96563f87e55df68d50be45dd4f9fe27cad1a15",
+          "sha256": "89cda64b1ee192702499387326044682edee2fd05ab2777826d280a2055ec7ab",
           "head": [
             "",
             "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
             " \u001b[1m\u001b[38;5;109mWhat's New\u001b[39m\u001b[22m                                                                                         ",
             "",
             "                                                                                                    ",
-            " \u001b[38;5;222m\u001b[1m[0.10.0] - 2025-11-25\u001b[22m\u001b[39m                                                                              ",
+            " \u001b[38;5;111m\u001b[1m[0.10.0] - 2025-11-25\u001b[22m\u001b[39m                                                                              ",
             "                                                                                                    ",
             " Initial public release.                                                                            ",
             "                                                                                                    ",
-            " \u001b[38;5;222m\u001b[1m### \u001b[22m\u001b[39m\u001b[38;5;222m\u001b[1mAdded\u001b[22m\u001b[39m                                                                                          ",
+            " \u001b[38;5;111m\u001b[1m### \u001b[22m\u001b[39m\u001b[38;5;111m\u001b[1mAdded\u001b[22m\u001b[39m                                                                                          ",
             "                                                                                                    ",
             " \u001b[38;5;109m- \u001b[39mInteractive TUI with streaming responses                                                         ",
             " \u001b[38;5;109m- \u001b[39mConversation session management with \u001b[38;5;109m--continue\u001b[39m, \u001b[38;5;109m--resume\u001b[39m, and \u001b[38;5;109m--session\u001b[39m flags                   ",
@@ -310,7 +310,7 @@
             " \u001b[38;5;109m- \u001b[39mReduced worst-case automatic terminal theme detection delay from 200 ms to 100 ms by probing     ",
             "   color-scheme and background support concurrently.                                                ",
             "                                                                                                    ",
-            " \u001b[38;5;222m\u001b[1m### \u001b[22m\u001b[39m\u001b[38;5;222m\u001b[1mFixed\u001b[22m\u001b[39m                                                                                          ",
+            " \u001b[38;5;111m\u001b[1m### \u001b[22m\u001b[39m\u001b[38;5;111m\u001b[1mFixed\u001b[22m\u001b[39m                                                                                          ",
             "                                                                                                    ",
             " \u001b[38;5;109m- \u001b[39mFixed Bun standalone binaries crashing on startup when the cwd contains a \u001b[38;5;109mbunfig.toml\u001b[39m with       ",
             "   \u001b[38;5;109mpreload\u001b[39m by compiling with \u001b[38;5;109m--no-compile-autoload-bunfig\u001b[39m (\u001b[38;5;109m\u001b[4m#7685\u001b[24m\u001b[39m\u001b[38;5;241m                                    ",
@@ -733,10 +733,10 @@
         "sha256": "c42ba6605c6c133cd41a31bb3bc3617fc892f26e7bf299d1afcba1dc427d7ee2",
         "raw": {
           "lineCount": 2,
-          "sha256": "eca02df254d7c23a5301251f3bad85846b868ed7104ea4b0d36f91f5229a6d19",
+          "sha256": "790a7570047a0eba4badc44a74d3ce4cffe37b2598050e9120d8f4f3a24f9892",
           "lines": [
             "",
-            " \u001b[38;5;226mWarning: Wait for the current response to finish before reloading.\u001b[39m                                 "
+            " \u001b[38;5;180mWarning: Wait for the current response to finish before reloading.\u001b[39m                                 "
           ]
         },
         "lines": [

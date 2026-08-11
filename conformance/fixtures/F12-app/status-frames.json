@@ -94,7 +94,7 @@
         "",
         " \u001b[38;5;241mNOTICE\u001b[39m                                         ",
         "",
-        " \u001b[38;5;226mWarning: CAUTION\u001b[39m                               "
+        " \u001b[38;5;180mWarning: CAUTION\u001b[39m                               "
       ]
     },
     {
@@ -104,7 +104,7 @@
         "",
         " \u001b[38;5;241mNOTICE\u001b[39m                                         ",
         "",
-        " \u001b[38;5;226mWarning: CAUTION\u001b[39m                               ",
+        " \u001b[38;5;180mWarning: CAUTION\u001b[39m                               ",
         "",
         " \u001b[38;5;167mError: BROKEN\u001b[39m                                  "
       ]
@@ -124,7 +124,7 @@
         "",
         " \u001b[38;5;241mNOTICE\u001b[39m                                                                                 ",
         "",
-        " \u001b[38;5;226mWarning: CAUTION\u001b[39m                                                                       "
+        " \u001b[38;5;180mWarning: CAUTION\u001b[39m                                                                       "
       ]
     },
     {
@@ -134,7 +134,7 @@
         "",
         " \u001b[38;5;241mNOTICE\u001b[39m                                                                                 ",
         "",
-        " \u001b[38;5;226mWarning: CAUTION\u001b[39m                                                                       ",
+        " \u001b[38;5;180mWarning: CAUTION\u001b[39m                                                                       ",
         "",
         " \u001b[38;5;167mError: BROKEN\u001b[39m                                                                          "
       ]
