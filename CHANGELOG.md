@@ -4,6 +4,16 @@ Orb's own release history (independent 0.x semver; upstream parity target record
 The embedded upstream changelog under `codingagent/modes/assets/` is a product asset driving
 `/changelog` and is not this file.
 
+## [Unreleased]
+
+### Changed
+
+- Edit-tool diffs now carry opencode's signature look in both layouts (D35): added and removed rows render on restrained dark-green/dark-red background tints spanning the full row width (`diffAddedBg`/`diffRemovedBg` theme roles, with `diffGutterBg` for the line-number gutter band; user themes missing them inherit the tool-band backgrounds), line numbers sit in that darker gutter with muted foreground, the `+`/`-` signs render bright, and content is syntax-highlighted by the edited file's language with token colors layered over the tints — context rows stay untinted on the tool band. The unified (narrow) layout adopts the same gutter/sign/tint language as the split view plus the `+N -N` header, and wraps long rows onto tinted continuation lines. Tint spans re-open the surrounding band background instead of resetting, so interior highlighter resets can't drop the tint mid-line and nothing bleeds past the row.
+
+### Fixed
+
+- A successful edit no longer renders the tool's "Could not find the exact text" mismatch error: the live preview was recomputed against the current file on every re-render, so once the edit had been applied (or when history was replayed after the fact) the stale recompute replaced or stacked above the recorded diff. The preview now computes once per argument set before execution (matching upstream `edit.ts`), and a final result renders exclusively from the recorded result details — success shows only the diff, failure only the real error.
+
 ## [0.4.14] - 2026-08-11
 
 ### Added

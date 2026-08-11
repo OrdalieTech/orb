@@ -11,22 +11,29 @@ import (
 
 // editDiffSplitWidth is the content-width breakpoint above which an edit diff
 // renders side by side (opencode's chat diffs split past 120 columns). At or
-// below it the unified view stays byte-identical to the pre-split renderer.
+// below it the rows lay out as a single unified column.
 const editDiffSplitWidth = 120
 
 // editDiffView renders one edit-tool display diff. The wire-format diff
-// string (tools.GenerateDiffString) is the input and is never altered: narrow
-// widths reuse the existing unified highlighting; wide widths re-lay the same
-// rows into old|new panes with line numbers and red/green marks. Parsing and
-// unified styling happen once at construction, and split frames cache per
-// width, so the per-frame path is a lookup.
+// string (tools.GenerateDiffString) is the input and is never altered: the
+// rows are re-laid opencode-fashion in both layouts — line numbers in a
+// darker gutter band, bright +/- signs, and syntax-highlighted content over
+// red/green background tints spanning the full row width; context rows stay
+// on the surrounding tool-band background. Parsing and highlighting happen
+// once at construction, and frames cache per width, so the per-frame path is
+// a lookup.
 type editDiffView struct {
 	mu         sync.Mutex
-	unified    *tui.Text
+	fallback   *tui.Text // unparsable diffs keep the legacy unified rendering
 	rows       []editDiffRow
+	styled     []string // highlighted row text, aligned with rows
 	numberPad  int
 	added      int
 	removed    int
+	bandBG     string // ANSI backgrounds captured at construction
+	gutterBG   string
+	addedBG    string
+	removedBG  string
 	cacheWidth int
 	cacheLines []string
 }
@@ -40,11 +47,18 @@ type editDiffRow struct {
 // NewEditDiffView parses the display diff produced by the edit tool. The
 // row format is fixed upstream: marker byte, right-aligned line number
 // (space-padded), one separator space, then the line text; elided context is
-// a numberless "..." row.
-func NewEditDiffView(diff string) *editDiffView {
-	// The unified view is the exact pre-split component (highlight + wrapping
-	// text), so frames at or below the breakpoint cannot drift.
-	view := &editDiffView{unified: tui.NewText(strings.Join(theme.Highlight(diff, "diff", theme.Current()), "\n"), 0, 0, nil)}
+// a numberless "..." row. path picks the syntax-highlight language; bandRole
+// names the tool-band background the view sits on — tinted spans re-open it
+// instead of emitting \x1b[49m, because the band wrap only paints from column
+// zero and a bare background reset would hole-punch it (the frame's final
+// reset comes from that outer wrap).
+func NewEditDiffView(diff, path, bandRole string) *editDiffView {
+	view := &editDiffView{
+		bandBG:    theme.BGANSI(bandRole),
+		gutterBG:  theme.BGANSI("diffGutterBg"),
+		addedBG:   theme.BGANSI("diffAddedBg"),
+		removedBG: theme.BGANSI("diffRemovedBg"),
+	}
 	for _, line := range strings.Split(diff, "\n") {
 		if line == "" {
 			continue
@@ -84,64 +98,197 @@ func NewEditDiffView(diff string) *editDiffView {
 		}
 		view.rows = append(view.rows, row)
 	}
+	if len(view.rows) == 0 {
+		view.fallback = tui.NewText(strings.Join(theme.Highlight(diff, "diff", theme.Current()), "\n"), 0, 0, nil)
+		return view
+	}
+	view.styled = make([]string, len(view.rows))
+	for index, row := range view.rows {
+		view.styled[index] = row.text
+	}
+	// One highlight pass over the joined rows keeps lexer state across lines
+	// (multi-line strings, block comments) and costs one tokenization.
+	if language := theme.LanguageFromPath(path); language != "" && theme.Current() != nil {
+		texts := make([]string, len(view.rows))
+		copy(texts, view.styled)
+		if styled := theme.Highlight(strings.Join(texts, "\n"), language, theme.Current()); len(styled) == len(view.rows) {
+			view.styled = styled
+		}
+	}
 	return view
 }
 
-func (view *editDiffView) Invalidate() { view.unified.Invalidate() }
+func (view *editDiffView) Invalidate() {
+	if view.fallback != nil {
+		view.fallback.Invalidate()
+	}
+	view.mu.Lock()
+	view.cacheWidth, view.cacheLines = 0, nil
+	view.mu.Unlock()
+}
 
 func (view *editDiffView) Render(width int) []string {
-	if width <= editDiffSplitWidth || len(view.rows) == 0 {
-		return view.unified.Render(width)
+	if view.fallback != nil {
+		return view.fallback.Render(width)
 	}
 	view.mu.Lock()
 	defer view.mu.Unlock()
 	if view.cacheWidth == width {
 		return view.cacheLines
 	}
-	view.cacheWidth, view.cacheLines = width, view.renderSplit(width)
+	lines := []string(nil)
+	if width > editDiffSplitWidth {
+		lines = view.renderSplit(width)
+	}
+	if lines == nil {
+		lines = view.renderUnified(width)
+	}
+	view.cacheWidth, view.cacheLines = width, lines
 	return view.cacheLines
 }
 
+func (view *editDiffView) header() string {
+	return theme.FG("toolDiffAdded", "+"+strconv.Itoa(view.added)) + " " +
+		theme.FG("toolDiffRemoved", "-"+strconv.Itoa(view.removed))
+}
+
+// bandTrail keeps the surrounding band alive to the frame edge; without a
+// band it must close the tint itself so nothing bleeds into the next line.
+func (view *editDiffView) bandTrail() string {
+	if view.bandBG != "" {
+		return view.bandBG
+	}
+	return "\x1b[49m"
+}
+
+// tintSpan opens a background under already fg-styled content and re-opens it
+// after every full SGR reset the styling may contain (TruncateToWidth
+// brackets its ellipsis with \x1b[0m), so the tint survives to the end of the
+// span including padding cells.
+func tintSpan(background, content string) string {
+	if background == "" {
+		return content
+	}
+	if strings.Contains(content, "\x1b[0m") {
+		content = strings.ReplaceAll(content, "\x1b[0m", "\x1b[0m"+background)
+	}
+	return background + content
+}
+
+// gutterCell renders the line-number column (numberPad plus one pad cell) on
+// the gutter band; number <= 0 leaves the band blank.
+func (view *editDiffView) gutterCell(number int) string {
+	if number <= 0 {
+		return tintSpan(view.gutterBG, strings.Repeat(" ", view.numberPad+1))
+	}
+	digits := strconv.Itoa(number)
+	label := strings.Repeat(" ", view.numberPad-len(digits)) + digits + " "
+	return tintSpan(view.gutterBG, theme.FG("muted", label))
+}
+
+func (view *editDiffView) rowBackground(kind byte) string {
+	switch kind {
+	case '+':
+		return view.addedBG
+	case '-':
+		return view.removedBG
+	default:
+		return view.bandBG
+	}
+}
+
+func rowSign(kind byte) string {
+	switch kind {
+	case '+':
+		return theme.FG("toolDiffAdded", "+")
+	case '-':
+		return theme.FG("toolDiffRemoved", "-")
+	default:
+		return " "
+	}
+}
+
+// paneCell lays out one row cell: gutter number, bright sign, then the
+// truncated, padded content over the row background. Both layouts and the
+// blank split filler share it so narrow and wide frames read identically.
+func (view *editDiffView) paneCell(row editDiffRow, styled string, textWidth int) string {
+	if row.kind == '.' {
+		content := "  " + theme.FG("muted", tui.TruncateToWidth(row.text, textWidth, "...", true))
+		return view.gutterCell(0) + tintSpan(view.bandBG, content)
+	}
+	content := rowSign(row.kind) + " " + tui.TruncateToWidth(styled, textWidth, "...", true)
+	return view.gutterCell(row.number) + tintSpan(view.rowBackground(row.kind), content)
+}
+
+func (view *editDiffView) blankCell(textWidth int) string {
+	return view.gutterCell(0) + tintSpan(view.bandBG, strings.Repeat(" ", textWidth+2))
+}
+
+// renderUnified lays the rows out as one full-width column; long content
+// wraps onto continuation lines that keep the gutter band and the row tint.
+func (view *editDiffView) renderUnified(width int) []string {
+	textWidth := max(1, width-view.numberPad-3)
+	trail := view.bandTrail()
+	lines := make([]string, 0, len(view.rows)+1)
+	lines = append(lines, view.header())
+	for index, row := range view.rows {
+		if row.kind == '.' {
+			lines = append(lines, view.paneCell(row, "", textWidth)+trail)
+			continue
+		}
+		background := view.rowBackground(row.kind)
+		for part, wrapped := range tui.WrapTextWithANSI(view.styled[index], textWidth) {
+			gutter, sign := view.gutterCell(0), " "
+			if part == 0 {
+				gutter, sign = view.gutterCell(row.number), rowSign(row.kind)
+			}
+			pad := strings.Repeat(" ", max(0, textWidth-tui.VisibleWidth(wrapped)))
+			lines = append(lines, gutter+tintSpan(background, sign+" "+wrapped+pad)+trail)
+		}
+	}
+	return lines
+}
+
+// renderSplit pairs consecutive removals with the additions that follow them
+// into old|new panes; context and elided rows flush the pending block and
+// span both panes. It returns nil when the panes would be too narrow.
 func (view *editDiffView) renderSplit(width int) []string {
 	paneWidth := (width - 1) / 2
 	textWidth := paneWidth - view.numberPad - 3
 	if textWidth < 8 {
-		return view.unified.Render(width)
+		return nil
 	}
-	divider := theme.FG("borderMuted", "│")
+	divider := tintSpan(view.bandBG, theme.FG("borderMuted", "│"))
+	trail := view.bandTrail()
 	lines := make([]string, 0, len(view.rows)+1)
-	lines = append(lines,
-		theme.FG("toolDiffAdded", "+"+strconv.Itoa(view.added))+" "+
-			theme.FG("toolDiffRemoved", "-"+strconv.Itoa(view.removed)))
+	lines = append(lines, view.header())
 
-	// Change blocks pair consecutive removals with the additions that follow
-	// them; context and elided rows flush the pending block and span both panes.
-	var removedRows, addedRows []editDiffRow
+	var removedRows, addedRows []int
 	flush := func() {
 		for index := 0; index < len(removedRows) || index < len(addedRows); index++ {
 			left, right := "", ""
 			if index < len(removedRows) {
-				left = view.paneCell(removedRows[index], textWidth)
+				left = view.paneCell(view.rows[removedRows[index]], view.styled[removedRows[index]], textWidth)
 			} else {
 				left = view.blankCell(textWidth)
 			}
 			if index < len(addedRows) {
-				right = view.paneCell(addedRows[index], textWidth)
+				right = view.paneCell(view.rows[addedRows[index]], view.styled[addedRows[index]], textWidth)
 			} else {
 				right = view.blankCell(textWidth)
 			}
-			lines = append(lines, left+divider+right)
+			lines = append(lines, left+divider+right+trail)
 		}
 		removedRows, addedRows = removedRows[:0], addedRows[:0]
 	}
 	delta := 0
-	for _, row := range view.rows {
+	for index, row := range view.rows {
 		switch row.kind {
 		case '-':
-			removedRows = append(removedRows, row)
+			removedRows = append(removedRows, index)
 			delta--
 		case '+':
-			addedRows = append(addedRows, row)
+			addedRows = append(addedRows, index)
 			delta++
 		default:
 			flush()
@@ -151,46 +298,9 @@ func (view *editDiffView) renderSplit(width int) []string {
 				// offset by the additions minus removals seen so far.
 				right.number = row.number + delta
 			}
-			lines = append(lines, view.paneCell(row, textWidth)+divider+view.paneCell(right, textWidth))
+			lines = append(lines, view.paneCell(row, view.styled[index], textWidth)+divider+view.paneCell(right, view.styled[index], textWidth)+trail)
 		}
 	}
 	flush()
 	return lines
-}
-
-// paneCell lays out one pane row: right-aligned line number, red/green mark,
-// then the (truncated, padded) line text, styled by row kind.
-func (view *editDiffView) paneCell(row editDiffRow, textWidth int) string {
-	var number, mark string
-	switch row.kind {
-	case '.':
-		number = strings.Repeat(" ", view.numberPad)
-		mark = " "
-	default:
-		digits := strconv.Itoa(row.number)
-		number = strings.Repeat(" ", view.numberPad-len(digits)) + digits
-		switch row.kind {
-		case '+':
-			mark = "+"
-		case '-':
-			mark = "-"
-		default:
-			mark = " "
-		}
-	}
-	text := tui.TruncateToWidth(row.text, textWidth, "...", true)
-	switch row.kind {
-	case '+':
-		return theme.FG("muted", number) + " " + theme.FG("toolDiffAdded", mark+" "+text)
-	case '-':
-		return theme.FG("muted", number) + " " + theme.FG("toolDiffRemoved", mark+" "+text)
-	case '.':
-		return theme.FG("muted", number+" "+mark+" "+tui.TruncateToWidth(row.text, textWidth, "...", true))
-	default:
-		return theme.FG("muted", number) + " " + mark + " " + text
-	}
-}
-
-func (view *editDiffView) blankCell(textWidth int) string {
-	return strings.Repeat(" ", view.numberPad+3+textWidth)
 }

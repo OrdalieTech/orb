@@ -146,7 +146,10 @@
         "thinkingHigh": "#b294bb",
         "thinkingXhigh": "#d183e8",
         "thinkingMax": "#ff5fff",
-        "bashMode": "#b5bd68"
+        "bashMode": "#b5bd68",
+        "diffAddedBg": "#1a3122",
+        "diffGutterBg": "#1f1f27",
+        "diffRemovedBg": "#382123"
       },
       "export": {
         "pageBg": "#18181e",
@@ -299,7 +302,10 @@
         "thinkingHigh": "#875f87",
         "thinkingXhigh": "#8b008b",
         "thinkingMax": "#af005f",
-        "bashMode": "#588458"
+        "bashMode": "#588458",
+        "diffAddedBg": "#ddf0da",
+        "diffGutterBg": "#dfdfe8",
+        "diffRemovedBg": "#f4dcda"
       },
       "export": {
         "pageBg": "#f8f8f8",
