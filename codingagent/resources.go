@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/OrdalieTech/orb/codingagent/config"
 	"github.com/OrdalieTech/orb/internal/skilllocations"
@@ -739,6 +740,10 @@ func normalizeResourcePath(path string) string {
 }
 
 func decodeResourceUTF8(data []byte) string {
+	// The decoder only replaces invalid sequences, so valid input is identity.
+	if utf8.Valid(data) {
+		return string(data)
+	}
 	decoded, _ := textunicode.UTF8.NewDecoder().Bytes(data)
 	return string(decoded)
 }

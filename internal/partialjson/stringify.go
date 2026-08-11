@@ -16,6 +16,7 @@ import (
 func StringifyStreamingJSON(input string) ([]byte, error) {
 	value := parseStreamingJSONOrdered(input)
 	var output bytes.Buffer
+	output.Grow(len(input))
 	if err := writeStreamingJSON(&output, value); err != nil {
 		return nil, err
 	}
