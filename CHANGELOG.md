@@ -10,6 +10,16 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 - The model selector (`/model`) and auth-provider selector (`/login`, `/logout`) are now fully mouse-aware: click selects a row, double-click confirms, and the wheel moves the selection — the same paths the keyboard drives. Hovering a row moves the selection highlight in every selector whose list fits its window (model, auth, session, tree, startup, and extension dialogs); hover reports (any-motion tracking, `1003`) are enabled only while such a selector holds focus and are reverted the moment focus returns to the editor, so normal typing never pays for a motion-event flood and Shift+drag native text selection keeps working everywhere.
 
+### Changed
+
+- `--help` and `--list-models` now answer from a metadata snapshot cache written on every successful extension-host load (sha256-fingerprinted over the SDK, entry files, package trees, lock file, and trust state) instead of spawning a Node child per invocation: `--help` ~284ms → ~12ms and `--list-models` ~290ms → ~27ms on a machine with installed extensions, with byte-identical output. Any fingerprint mismatch, corruption, or native-provider registration falls back to the full spawn, and real sessions always spawn, so staleness self-heals on the next run. An extension whose load-time registrations depend on env or network may show stale flags/models in these two commands until that next run.
+- The binary is ~3.2MB smaller and startup leaner: the syntax-highlighting lexer XML corpus, CJK segmentation dictionary, bundled upstream changelog, and generated model catalog now embed gzip-compressed and decode lazily on first use (each keeps its uncompressed source in-repo behind a byte-compare staleness test), websearch's charset decoding drops the CJK legacy-encoding tables (unknown charsets fall through to the existing UTF-8 scrub floor), and ~40 package-level regexp tables defer compilation behind `sync.OnceValue`. `orb --version` 9.2ms → 7.6ms, peak RSS 21.2MB → 19.3MB, init-phase allocations -35%.
+- Hot paths allocate far less, identical bytes throughout: streamed Anthropic tool-call turns -67% wall time and -53% memory (streaming JSON is trusted as already normalized, with a fixed-point property test as the permanent gate), a prompt on a 1000-turn session -46% time and -59% memory (the session path is built and deep-cloned once instead of five times, and branch scans no longer clone every entry), session creation -41% memory, TUI steady frames 1,368B/3 allocs → 728B/2, and a cold 1M-line render -50% time.
+
+### Fixed
+
+- `orb --help` no longer connects to configured MCP servers before printing (a slow server could stall help for its full connect timeout); it now takes the same metadata-only path as `--list-models`, and new guard tests pin that `--version` spawns nothing at all.
+
 ## [0.4.13] - 2026-08-10
 
 ### Changed
