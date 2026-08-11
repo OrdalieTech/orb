@@ -8,6 +8,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Changed
 
+- Successful tool results sit on the same neutral slate panel as running ones instead of a green-tinted band (opencode's one-panel language — status lives in the glyph, not the band color); genuine errors keep their faint red band. `toolSuccessBg` is now `#282832` dark / `#e8e8f0` light.
 - Edit-tool diffs now carry opencode's signature look in both layouts (D35): added and removed rows render on restrained dark-green/dark-red background tints spanning the full row width (`diffAddedBg`/`diffRemovedBg` theme roles, with `diffGutterBg` for the line-number gutter band; user themes missing them inherit the tool-band backgrounds), line numbers sit in that darker gutter with muted foreground, the `+`/`-` signs render bright, and content is syntax-highlighted by the edited file's language with token colors layered over the tints — context rows stay untinted on the tool band. The unified (narrow) layout adopts the same gutter/sign/tint language as the split view plus the `+N -N` header, and wraps long rows onto tinted continuation lines. Tint spans re-open the surrounding band background instead of resetting, so interior highlighter resets can't drop the tint mid-line and nothing bleeds past the row.
 
 ### Fixed

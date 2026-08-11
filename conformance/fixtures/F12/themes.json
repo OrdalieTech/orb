@@ -57,7 +57,7 @@
         "userMessageBg": "\u001b[48;2;52;53;65m",
         "customMessageBg": "\u001b[48;2;45;40;56m",
         "toolPendingBg": "\u001b[48;2;40;40;50m",
-        "toolSuccessBg": "\u001b[48;2;40;50;40m",
+        "toolSuccessBg": "\u001b[48;2;40;40;50m",
         "toolErrorBg": "\u001b[48;2;60;40;40m"
       },
       "sample": [
@@ -113,7 +113,7 @@
         "customMessageText": "#d4d4d4",
         "customMessageLabel": "#9575cd",
         "toolPendingBg": "#282832",
-        "toolSuccessBg": "#283228",
+        "toolSuccessBg": "#282832",
         "toolErrorBg": "#3c2828",
         "toolTitle": "#d4d4d4",
         "toolOutput": "#808080",
@@ -213,7 +213,7 @@
         "userMessageBg": "\u001b[48;2;232;232;232m",
         "customMessageBg": "\u001b[48;2;237;231;246m",
         "toolPendingBg": "\u001b[48;2;232;232;240m",
-        "toolSuccessBg": "\u001b[48;2;232;240;232m",
+        "toolSuccessBg": "\u001b[48;2;232;232;240m",
         "toolErrorBg": "\u001b[48;2;240;232;232m"
       },
       "sample": [
@@ -269,7 +269,7 @@
         "customMessageText": "#1f2328",
         "customMessageLabel": "#7e57c2",
         "toolPendingBg": "#e8e8f0",
-        "toolSuccessBg": "#e8f0e8",
+        "toolSuccessBg": "#e8e8f0",
         "toolErrorBg": "#f0e8e8",
         "toolTitle": "#1f2328",
         "toolOutput": "#6c6c6c",
