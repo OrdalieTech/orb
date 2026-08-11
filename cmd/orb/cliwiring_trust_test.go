@@ -53,9 +53,11 @@ func TestHelpAndUnknownFlagsDoNotSpawnUntrustedProjectMCPServers(t *testing.T) {
 }
 
 // Control for the trust regression above: user-scope mcpServers still load on
-// --help (upstream loads the full extension set for help), which proves the
-// marker mechanism would catch a project-scope spawn.
-func TestHelpStillLoadsUserScopeMCPServers(t *testing.T) {
+// an unknown-flag invocation, which performs a full startup extension load
+// (--help is metadata-only and no longer connects MCP servers, per the
+// CHANGELOG). This proves the marker mechanism would catch a project-scope
+// spawn.
+func TestUnknownFlagStillLoadsUserScopeMCPServers(t *testing.T) {
 	agentDir := t.TempDir()
 	marker := filepath.Join(t.TempDir(), "spawned")
 	settings := `{"mcpServers":{"probe":{"command":"/bin/sh","args":["-c","touch ` + marker + `"],"timeoutMs":300}}}`
@@ -65,13 +67,13 @@ func TestHelpStillLoadsUserScopeMCPServers(t *testing.T) {
 	t.Setenv(config.EnvAgentDir, agentDir)
 	t.Setenv("HOME", t.TempDir())
 	t.Chdir(t.TempDir())
-	code := runCLIWithDependencies(context.Background(), []string{"--help"}, cliStreams{
+	code := runCLIWithDependencies(context.Background(), []string{"--bogusflag"}, cliStreams{
 		Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard,
 	}, cliDependencies{})
-	if code != 0 {
+	if code != 1 {
 		t.Fatalf("exit = %d", code)
 	}
 	if _, err := os.Stat(marker); err != nil {
-		t.Fatalf("user-scope MCP server did not spawn on --help: %v", err)
+		t.Fatalf("user-scope MCP server did not spawn on the unknown-flag startup load: %v", err)
 	}
 }

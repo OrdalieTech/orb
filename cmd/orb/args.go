@@ -69,9 +69,13 @@ type CLIArgs struct {
 	allowNoModel       bool
 	useUnknownModel    bool
 	metadataOnly       bool
-	extensionsLoaded   bool
-	extensionRegistry  *extensions.Registry
-	extensionWarnings  []string
+	// skipMetadataCache forces a live extension host even on metadataOnly runs;
+	// the pre-trust load must consult live project_trust handlers, which a
+	// metadata snapshot cannot run.
+	skipMetadataCache bool
+	extensionsLoaded  bool
+	extensionRegistry *extensions.Registry
+	extensionWarnings []string
 	// resolvedProjectTrust carries the trust decision loadStartupExtensions
 	// already made in this process, so the runtime neither re-fires the
 	// project_trust event nor replaces the live extension host.

@@ -189,82 +189,95 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	}
 	hasExtensions := hasNonControlExtensions(extensionRegistry)
 	diagnostics = append(diagnostics, extensionDiagnostics...)
-	resourceLoader, err := codingagent.NewDefaultResourceLoader(codingagent.DefaultResourceLoaderOptions{
-		CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
-		AdditionalSkillPaths: args.Skills, AdditionalPromptTemplatePaths: args.PromptTemplates, AdditionalThemePaths: args.Themes,
-		PackageSkillPaths: enabledPackageResourcePaths(resolvedPaths.Skills), PackagePromptTemplatePaths: enabledPackageResourcePaths(resolvedPaths.Prompts),
-		PackageThemePaths: enabledPackageThemePaths(resolvedPaths.Themes),
-		ExtensionRegistry: extensionRegistry, NoExtensions: args.NoExtensions,
-		NoContextFiles: args.NoContextFiles, NoSkills: args.NoSkills, NoPromptTemplates: args.NoPromptTemplates, NoThemes: args.NoThemes,
-		SystemPrompt: args.SystemPrompt, AppendSystemPrompt: args.AppendSystemPrompt,
-	})
-	if err != nil {
-		return runtimeInputs{}, err
-	}
-	if err := resourceLoader.Reload(context.Background(), nil); err != nil {
-		return runtimeInputs{}, err
-	}
-	extensionRegistry = resourceLoader.GetExtensions()
-	skills := resourceLoader.GetSkills()
-	prompts := resourceLoader.GetPrompts()
-	resources := codingagent.Resources{
-		ContextFiles: resourceLoader.GetAgentsFiles().AgentsFiles, SystemPrompt: resourceLoader.GetSystemPrompt(),
-		AppendSystemPrompt: resourceLoader.GetAppendSystemPrompt(), Skills: skills.Skills, PromptTemplates: prompts.Prompts,
-	}
-	resources.Diagnostics = append(resources.Diagnostics, skills.Diagnostics...)
-	resources.Diagnostics = append(resources.Diagnostics, prompts.Diagnostics...)
-	resourceDiagnostics := make([]string, 0, len(resources.Diagnostics))
-	for _, diagnostic := range resources.Diagnostics {
-		resourceDiagnostics = append(resourceDiagnostics, diagnostic.Message)
-	}
-
-	selection := ResolveBuiltInToolSelection(args)
-	activeTools, err := createBuiltInTools(cwd, selection, settings)
-	if err != nil {
-		return runtimeInputs{}, err
-	}
-	activeNames := make([]string, 0, len(activeTools))
-	for _, tool := range activeTools {
-		activeNames = append(activeNames, tool.Spec().Name)
-	}
-	baseTools := activeTools
-	initialNames := append([]string(nil), activeNames...)
+	var resourceLoader codingagent.ResourceLoader
+	var resources codingagent.Resources
+	var resourceDiagnostics []string
+	var activeTools, baseTools []agent.AgentTool
+	var activeNames, initialNames, baseToolNames []string
 	var allowedTools *[]string
 	var excludedTools []string
-	if hasExtensions {
-		baseTools, err = createBuiltInTools(cwd, defaultBuiltInTools, settings)
+	var promptOptions codingagent.SystemPromptOptions
+	systemPrompt := ""
+	// metadataOnly runs (--help, --list-models) need only extension flag and
+	// provider metadata: skill/prompt/theme discovery, tool construction and the
+	// system prompt are skipped, and ResourceDiagnostics stays empty.
+	if !args.metadataOnly {
+		defaultLoader, err := codingagent.NewDefaultResourceLoader(codingagent.DefaultResourceLoaderOptions{
+			CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
+			AdditionalSkillPaths: args.Skills, AdditionalPromptTemplatePaths: args.PromptTemplates, AdditionalThemePaths: args.Themes,
+			PackageSkillPaths: enabledPackageResourcePaths(resolvedPaths.Skills), PackagePromptTemplatePaths: enabledPackageResourcePaths(resolvedPaths.Prompts),
+			PackageThemePaths: enabledPackageThemePaths(resolvedPaths.Themes),
+			ExtensionRegistry: extensionRegistry, NoExtensions: args.NoExtensions,
+			NoContextFiles: args.NoContextFiles, NoSkills: args.NoSkills, NoPromptTemplates: args.NoPromptTemplates, NoThemes: args.NoThemes,
+			SystemPrompt: args.SystemPrompt, AppendSystemPrompt: args.AppendSystemPrompt,
+		})
 		if err != nil {
 			return runtimeInputs{}, err
 		}
-		if args.Tools != nil {
-			initialNames = filterExcludedTools(args.Tools, args.ExcludeTools)
-			allowed := append([]string(nil), args.Tools...)
-			allowedTools = &allowed
-		} else if args.NoTools {
-			empty := []string{}
-			allowedTools = &empty
+		if err := defaultLoader.Reload(context.Background(), nil); err != nil {
+			return runtimeInputs{}, err
 		}
-		excludedTools = append([]string(nil), args.ExcludeTools...)
-	}
-	baseToolNames := make([]string, 0, len(baseTools))
-	for _, tool := range baseTools {
-		baseToolNames = append(baseToolNames, tool.Spec().Name)
+		resourceLoader = defaultLoader
+		extensionRegistry = defaultLoader.GetExtensions()
+		skills := defaultLoader.GetSkills()
+		prompts := defaultLoader.GetPrompts()
+		resources = codingagent.Resources{
+			ContextFiles: defaultLoader.GetAgentsFiles().AgentsFiles, SystemPrompt: defaultLoader.GetSystemPrompt(),
+			AppendSystemPrompt: defaultLoader.GetAppendSystemPrompt(), Skills: skills.Skills, PromptTemplates: prompts.Prompts,
+		}
+		resources.Diagnostics = append(resources.Diagnostics, skills.Diagnostics...)
+		resources.Diagnostics = append(resources.Diagnostics, prompts.Diagnostics...)
+		resourceDiagnostics = make([]string, 0, len(resources.Diagnostics))
+		for _, diagnostic := range resources.Diagnostics {
+			resourceDiagnostics = append(resourceDiagnostics, diagnostic.Message)
+		}
+
+		selection := ResolveBuiltInToolSelection(args)
+		activeTools, err = createBuiltInTools(cwd, selection, settings)
+		if err != nil {
+			return runtimeInputs{}, err
+		}
+		activeNames = make([]string, 0, len(activeTools))
+		for _, tool := range activeTools {
+			activeNames = append(activeNames, tool.Spec().Name)
+		}
+		baseTools = activeTools
+		initialNames = append([]string(nil), activeNames...)
+		if hasExtensions {
+			baseTools, err = createBuiltInTools(cwd, defaultBuiltInTools, settings)
+			if err != nil {
+				return runtimeInputs{}, err
+			}
+			if args.Tools != nil {
+				initialNames = filterExcludedTools(args.Tools, args.ExcludeTools)
+				allowed := append([]string(nil), args.Tools...)
+				allowedTools = &allowed
+			} else if args.NoTools {
+				empty := []string{}
+				allowedTools = &empty
+			}
+			excludedTools = append([]string(nil), args.ExcludeTools...)
+		}
+		baseToolNames = make([]string, 0, len(baseTools))
+		for _, tool := range baseTools {
+			baseToolNames = append(baseToolNames, tool.Spec().Name)
+		}
+		snippets, guidelines := codingagent.BuiltInToolPromptData(activeNames)
+		promptOptions = codingagent.SystemPromptOptions{
+			CustomPrompt:       resources.SystemPrompt,
+			SelectedTools:      activeNames,
+			ToolSnippets:       snippets,
+			PromptGuidelines:   guidelines,
+			AppendSystemPrompt: resources.JoinedAppendSystemPrompt(),
+			CWD:                cwd,
+			ContextFiles:       resources.ContextFiles,
+			Skills:             resources.Skills,
+		}
+		systemPrompt = codingagent.BuildSystemPrompt(promptOptions)
 	}
 	if extensionRegistry == nil {
 		extensionRegistry = extensions.NewRegistry(cwd)
 	}
-	snippets, guidelines := codingagent.BuiltInToolPromptData(activeNames)
-	promptOptions := codingagent.SystemPromptOptions{
-		CustomPrompt:       resources.SystemPrompt,
-		SelectedTools:      activeNames,
-		ToolSnippets:       snippets,
-		PromptGuidelines:   guidelines,
-		AppendSystemPrompt: resources.JoinedAppendSystemPrompt(),
-		CWD:                cwd,
-		ContextFiles:       resources.ContextFiles,
-		Skills:             resources.Skills,
-	}
-	systemPrompt := codingagent.BuildSystemPrompt(promptOptions)
 
 	registry, err := config.NewModelRegistry(agentDir)
 	if err != nil {
