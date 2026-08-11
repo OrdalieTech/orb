@@ -2,8 +2,13 @@ package cataloggen
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
+	"io"
 	"reflect"
+	"regexp"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/orb/ai"
@@ -98,9 +103,36 @@ func TestGenerateAppliesPinnedCatalogQuirksWithoutLosingFloatMetadata(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(rendered, []byte("100.5")) || !bytes.Contains(rendered, []byte("200000.5")) {
-		t.Fatalf("Render lost fractional metadata: %s", rendered)
+	renderedJSON := decompressRenderedCatalog(t, rendered)
+	if !bytes.Contains(renderedJSON, []byte("100.5")) || !bytes.Contains(renderedJSON, []byte("200000.5")) {
+		t.Fatalf("Render lost fractional metadata: %s", renderedJSON)
 	}
+}
+
+// decompressRenderedCatalog extracts the gzip catalog literal from rendered
+// generated.go source and returns the decompressed JSON.
+func decompressRenderedCatalog(t *testing.T, rendered []byte) []byte {
+	t.Helper()
+	literal := regexp.MustCompile(`(?s)var generatedCatalogGzipJSON = \[\]byte\((".*")\)`).FindSubmatch(rendered)
+	if len(literal) != 2 {
+		t.Fatalf("rendered source has no generatedCatalogGzipJSON literal: %s", rendered)
+	}
+	compressed, err := strconv.Unquote(string(literal[1]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := gzip.NewReader(strings.NewReader(compressed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decompressed, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return decompressed
 }
 
 func TestApplyCatalogMetadataMatchesRepresentativePinnedCompat(t *testing.T) {

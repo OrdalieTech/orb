@@ -6,15 +6,17 @@ import (
 
 // YAML+Jinja is YAML with Jinja templating embedded. Used by Ansible playbooks
 // and Salt SLS files.
-var YAMLJinja = Register(DelegatingLexer(
-	MustNewXMLLexer(embedded, "embedded/yaml.xml"),
-	MustNewXMLLexer(embedded, "embedded/django_jinja.xml").SetConfig(
-		&Config{
-			Name:      "YAML+Jinja",
-			Aliases:   []string{"yaml+jinja", "salt", "sls", "ansible"},
-			Filenames: []string{"*.sls"},
-			MimeTypes: []string{"text/x-yaml+jinja", "text/x-sls"},
-			DotAll:    true,
-		},
-	),
-))
+var YAMLJinja = registerLazy(func() Lexer {
+	return DelegatingLexer(
+		MustNewXMLLexer(embeddedLexers(), "embedded/yaml.xml"),
+		MustNewXMLLexer(embeddedLexers(), "embedded/django_jinja.xml").SetConfig(
+			&Config{
+				Name:      "YAML+Jinja",
+				Aliases:   []string{"yaml+jinja", "salt", "sls", "ansible"},
+				Filenames: []string{"*.sls"},
+				MimeTypes: []string{"text/x-yaml+jinja", "text/x-sls"},
+				DotAll:    true,
+			},
+		),
+	)
+})

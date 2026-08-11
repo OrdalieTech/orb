@@ -5,16 +5,18 @@ import (
 )
 
 // Svelte lexer.
-var Svelte = Register(DelegatingLexer(HTML, MustNewLexer(
-	&Config{
-		Name:      "Svelte",
-		Aliases:   []string{"svelte"},
-		Filenames: []string{"*.svelte"},
-		MimeTypes: []string{"application/x-svelte"},
-		DotAll:    true,
-	},
-	svelteRules,
-)))
+var Svelte = registerLazy(func() Lexer {
+	return DelegatingLexer(HTML(), MustNewLexer(
+		&Config{
+			Name:      "Svelte",
+			Aliases:   []string{"svelte"},
+			Filenames: []string{"*.svelte"},
+			MimeTypes: []string{"application/x-svelte"},
+			DotAll:    true,
+		},
+		svelteRules,
+	))
+})
 
 func svelteRules() Rules {
 	return Rules{

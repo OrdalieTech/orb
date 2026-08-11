@@ -93,11 +93,12 @@ func Split(text string) []string {
 	previous[0] = -1
 
 	previousWasKatakana := false
+	trie := cjkDictionary()
 	for index, value := range input {
 		if best[index] == math.MaxUint32 {
 			continue
 		}
-		candidates := cjkDictionary.candidates(input, index)
+		candidates := trie.candidates(input, index)
 		if len(candidates) == 0 || candidates[0].length != 1 {
 			candidates = append(candidates, candidate{length: 1, cost: maxFallbackCost})
 		}

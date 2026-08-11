@@ -2,8 +2,11 @@
 package models
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"slices"
 	"sync"
 
@@ -18,11 +21,23 @@ type Catalog struct {
 // Builtin loads the catalog generated from the committed models.dev snapshot.
 // The decoded catalog is cached for the process lifetime: the embedded JSON is
 // immutable and every accessor returns detached values, so callers share one
-// instance instead of re-decoding ~518KB per startup surface.
+// instance instead of re-decoding ~518KB per startup surface. The JSON ships
+// gzip-compressed in generated.go and gunzips here on first use.
 func Builtin() (*Catalog, error) { return builtinCatalog() }
 
 var builtinCatalog = sync.OnceValues(func() (*Catalog, error) {
-	return Decode(generatedCatalogJSON)
+	reader, err := gzip.NewReader(bytes.NewReader(generatedCatalogGzipJSON))
+	if err != nil {
+		return nil, fmt.Errorf("decompress model catalog: %w", err)
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("decompress model catalog: %w", err)
+	}
+	if err := reader.Close(); err != nil {
+		return nil, fmt.Errorf("decompress model catalog: %w", err)
+	}
+	return Decode(data)
 })
 
 // Decode loads the normalized provider-keyed catalog shape.

@@ -1,23 +1,38 @@
 package cjksegment
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"os"
 	"reflect"
 	"testing"
 )
 
 func TestEmbeddedDictionaryProvenance(t *testing.T) {
-	if got := len(embeddedDictionary); got != 2_007_296 {
+	if got := len(embeddedDictionary()); got != 2_007_296 {
 		t.Fatalf("dictionary size = %d, want 2007296", got)
 	}
-	sum := sha256.Sum256(embeddedDictionary)
+	sum := sha256.Sum256(embeddedDictionary())
 	if got, want := hex.EncodeToString(sum[:]), "5b96312a434f4ca3df1f5fa906e88d52fe2e28e3b87c68b9e62d0d77e1995edc"; got != want {
 		t.Fatalf("dictionary SHA-256 = %s, want %s", got, want)
 	}
-	if _, err := parseDictionary(embeddedDictionary); err != nil {
+	if _, err := parseDictionary(embeddedDictionary()); err != nil {
 		t.Fatalf("parse dictionary: %v", err)
+	}
+}
+
+// TestEmbeddedDictionaryMatchesSource guards data/cjdict.dict.gz against
+// drift from the on-disk provenance copy: the decompressed embed must equal
+// data/cjdict.dict byte-for-byte. Regenerate with `gzip -9 -n`.
+func TestEmbeddedDictionaryMatchesSource(t *testing.T) {
+	want, err := os.ReadFile("data/cjdict.dict")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(embeddedDictionary(), want) {
+		t.Fatal("data/cjdict.dict.gz does not decompress to data/cjdict.dict; regenerate with gzip -9 -n")
 	}
 }
 
@@ -28,7 +43,7 @@ func TestParseDictionaryRejectsInvalidData(t *testing.T) {
 		"type":   func(data []byte) { data[163] = 1 },
 	} {
 		t.Run(name, func(t *testing.T) {
-			data := append([]byte(nil), embeddedDictionary...)
+			data := append([]byte(nil), embeddedDictionary()...)
 			mutate(data)
 			if _, err := parseDictionary(data); err == nil {
 				t.Fatal("parseDictionary accepted invalid data")

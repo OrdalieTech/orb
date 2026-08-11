@@ -50,6 +50,7 @@ upstream:
 
 product-assets: upstream
 	@node conformance/extract/materialize-product-assets.ts "$(UPSTREAM_DIR)" "$(CURDIR)"
+	@gzip -9 -n -c codingagent/modes/assets/CHANGELOG.md > codingagent/modes/assets/CHANGELOG.md.gz
 
 product-assets-check: upstream
 	@cmp "$(UPSTREAM_DIR)/packages/coding-agent/CHANGELOG.md" codingagent/modes/assets/CHANGELOG.md
