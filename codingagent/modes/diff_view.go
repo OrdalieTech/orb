@@ -169,11 +169,13 @@ func (view *editDiffView) paneCell(row editDiffRow, textWidth int) string {
 	default:
 		digits := strconv.Itoa(row.number)
 		number = strings.Repeat(" ", view.numberPad-len(digits)) + digits
-		mark = " "
-		if row.kind == '+' {
+		switch row.kind {
+		case '+':
 			mark = "+"
-		} else if row.kind == '-' {
+		case '-':
 			mark = "-"
+		default:
+			mark = " "
 		}
 	}
 	text := tui.TruncateToWidth(row.text, textWidth, "...", true)
