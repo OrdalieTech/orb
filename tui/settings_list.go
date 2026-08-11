@@ -45,6 +45,7 @@ type SettingsList struct {
 	filteredItems []*SettingItem
 	theme         SettingsListTheme
 	selectedIndex int
+	window        ListWindow
 	maxVisible    int
 	onChange      func(id, newValue string)
 	onCancel      func()
@@ -136,7 +137,7 @@ func (list *SettingsList) renderMainList(width int) []string {
 		return list.addHintLine(lines, width)
 	}
 
-	startIndex := max(0, min(list.selectedIndex-list.maxVisible/2, len(displayItems)-list.maxVisible))
+	startIndex := list.window.Start(list.selectedIndex, len(displayItems), list.maxVisible)
 	endIndex := min(startIndex+list.maxVisible, len(displayItems))
 	list.rowTop, list.rowStart, list.rowCount = len(lines), startIndex, endIndex-startIndex
 
@@ -210,9 +211,13 @@ func (list *SettingsList) HandleInput(event KeyEvent) {
 	}
 }
 
-// HandleMouse selects the clicked setting and cycles its value on a double
-// click, matching Enter/Space. An open submenu keeps the mouse, as it keeps
-// keyboard input.
+// HandleMouse drives the shared list pointer semantic for click and wheel;
+// a double click cycles the value, matching Enter/Space. An open submenu
+// keeps the mouse, as it keeps keyboard input. Hover stays off: the settings
+// dialog lives in the bottom-anchored chrome and the selected item's
+// description panel below the rows varies in height, so a hover-driven
+// selection change would shift the rows under the stationary cursor and feed
+// back into hit-testing.
 func (list *SettingsList) HandleMouse(event MouseEvent) bool {
 	list.mu.Lock()
 	if list.submenuComponent != nil {
@@ -220,45 +225,55 @@ func (list *SettingsList) HandleMouse(event MouseEvent) bool {
 		list.mu.Unlock()
 		return ok && submenu.HandleMouse(event)
 	}
-	displayItems := list.displayItems()
-	switch {
-	case len(displayItems) == 0:
-		list.mu.Unlock()
-		return false
-	case event.Type == MouseWheelUp || event.Type == MouseWheelDown:
-		delta := -1
-		if event.Type == MouseWheelDown {
-			delta = 1
-		}
-		list.selectedIndex = max(0, min(list.selectedIndex+delta, len(displayItems)-1))
-	case event.Type == MousePress && event.Button == 0:
-		if event.Row < list.rowTop || event.Row >= list.rowTop+list.rowCount {
-			list.mu.Unlock()
-			return false
-		}
-		// The first press of a double click already selected this cell.
-		// Re-resolving would change whatever the recentred list moved under it.
-		if event.Clicks >= 2 {
-			list.activateItem()
-			break
-		}
-		index := list.rowStart + event.Row - list.rowTop
-		if index >= len(displayItems) {
-			list.mu.Unlock()
-			return false
-		}
-		list.selectedIndex = index
-	default:
-		list.mu.Unlock()
+	empty := len(list.displayItems()) == 0
+	list.mu.Unlock()
+	if empty || event.Type == MouseMove {
 		return false
 	}
+	return HandleListMouse(list, event)
+}
+
+// ListRowAt maps a rendered row to its display-item index.
+func (list *SettingsList) ListRowAt(row int) (int, bool) {
+	list.mu.Lock()
+	defer list.mu.Unlock()
+	if row < list.rowTop || row >= list.rowTop+list.rowCount {
+		return 0, false
+	}
+	index := list.rowStart + row - list.rowTop
+	if index >= len(list.displayItems()) {
+		return 0, false
+	}
+	return index, true
+}
+
+// ListSelectRow moves the highlight without re-anchoring the window.
+func (list *SettingsList) ListSelectRow(index int) {
+	list.mu.Lock()
+	list.window.Freeze()
+	list.selectedIndex = index
+	list.mu.Unlock()
+}
+
+// ListScroll moves the selection one row per tick, recentring like keyboard
+// navigation does.
+func (list *SettingsList) ListScroll(direction int) {
+	list.mu.Lock()
+	list.window.Recenter()
+	list.selectedIndex = max(0, min(list.selectedIndex+direction, len(list.displayItems())-1))
+	list.mu.Unlock()
+}
+
+// ListConfirm activates the selected item, matching Enter/Space.
+func (list *SettingsList) ListConfirm() {
+	list.mu.Lock()
+	list.activateItem()
 	pending := list.pending
 	list.pending = nil
 	list.mu.Unlock()
 	for _, callback := range pending {
 		callback()
 	}
-	return true
 }
 
 func (list *SettingsList) handleData(data string) {
@@ -269,6 +284,7 @@ func (list *SettingsList) handleData(data string) {
 		if len(displayItems) == 0 {
 			return
 		}
+		list.window.Recenter()
 		if list.selectedIndex == 0 {
 			list.selectedIndex = len(displayItems) - 1
 		} else {
@@ -278,6 +294,7 @@ func (list *SettingsList) handleData(data string) {
 		if len(displayItems) == 0 {
 			return
 		}
+		list.window.Recenter()
 		if list.selectedIndex == len(displayItems)-1 {
 			list.selectedIndex = 0
 		} else {
@@ -369,6 +386,7 @@ func (list *SettingsList) closeSubmenu() {
 	list.submenuComponent = nil
 	if list.submenuOpen {
 		list.selectedIndex = list.submenuItemIndex
+		list.window.Recenter()
 		list.submenuOpen = false
 	}
 }
@@ -376,6 +394,7 @@ func (list *SettingsList) closeSubmenu() {
 func (list *SettingsList) applyFilter(query string) {
 	list.filteredItems = FuzzyFilter(list.items, query, func(item *SettingItem) string { return item.Label })
 	list.selectedIndex = 0
+	list.window.Recenter()
 }
 
 func (list *SettingsList) displayItems() []*SettingItem {

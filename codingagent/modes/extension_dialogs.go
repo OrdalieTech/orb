@@ -168,58 +168,49 @@ func (component *ExtensionSelectorComponent) Render(width int) []string {
 // WantsMouseMotion turns on hover reports while the dialog holds focus.
 func (component *ExtensionSelectorComponent) WantsMouseMotion() bool { return true }
 
-// HandleMouse highlights the clicked option and requires a double click to
-// confirm, so a stray click cannot approve a tool call.
+// HandleMouse drives the shared list pointer semantic; a single click only
+// highlights, so a stray click cannot approve a tool call.
 func (component *ExtensionSelectorComponent) HandleMouse(event tui.MouseEvent) bool {
 	if len(component.options) == 0 {
 		return false
 	}
-	switch {
-	case event.Type == tui.MouseMove:
-		// Every option is always rendered, so hover can never scroll the list.
-		component.rowsMu.Lock()
-		rows := component.optionRows
-		component.rowsMu.Unlock()
-		for index := range min(len(component.options), len(rows)-1) {
-			if event.Row < rows[index] || event.Row >= rows[index+1] {
-				continue
-			}
-			if component.selected != index {
-				component.selected = index
-				component.updateList()
-			}
-			return true
-		}
-		return false
-	case event.Type == tui.MouseWheelUp || event.Type == tui.MouseWheelDown:
-		delta := -1
-		if event.Type == tui.MouseWheelDown {
-			delta = 1
-		}
-		component.selected = max(0, min(component.selected+delta, len(component.options)-1))
-		component.updateList()
-		return true
-	case event.Type == tui.MousePress && event.Button == 0:
-		component.rowsMu.Lock()
-		rows := component.optionRows
-		component.rowsMu.Unlock()
-		for index := range min(len(component.options), len(rows)-1) {
-			if event.Row < rows[index] || event.Row >= rows[index+1] {
-				continue
-			}
-			// The first press of a double click already selected this cell.
-			if event.Clicks >= 2 {
-				if component.selected < len(component.options) && component.onSelect != nil {
-					component.onSelect(component.options[component.selected].Value)
-				}
-				return true
-			}
-			component.selected = index
-			component.updateList()
-			return true
+	return tui.HandleListMouse(component, event)
+}
+
+// ListRowAt maps a rendered row to its option index; options wrap at narrow
+// widths, so their heights come from the recorded render.
+func (component *ExtensionSelectorComponent) ListRowAt(row int) (int, bool) {
+	component.rowsMu.Lock()
+	rows := component.optionRows
+	component.rowsMu.Unlock()
+	for index := range min(len(component.options), max(0, len(rows)-1)) {
+		if row >= rows[index] && row < rows[index+1] {
+			return index, true
 		}
 	}
-	return false
+	return 0, false
+}
+
+// ListSelectRow moves the highlight; every option is always rendered, so
+// there is no window to preserve.
+func (component *ExtensionSelectorComponent) ListSelectRow(index int) {
+	if component.selected != index {
+		component.selected = index
+		component.updateList()
+	}
+}
+
+// ListScroll moves the selection one row per tick, like keyboard navigation.
+func (component *ExtensionSelectorComponent) ListScroll(direction int) {
+	component.selected = max(0, min(component.selected+direction, len(component.options)-1))
+	component.updateList()
+}
+
+// ListConfirm confirms the current selection.
+func (component *ExtensionSelectorComponent) ListConfirm() {
+	if component.selected >= 0 && component.selected < len(component.options) && component.onSelect != nil {
+		component.onSelect(component.options[component.selected].Value)
+	}
 }
 
 // ExtensionInputComponent is the bordered single-line input dialog behind

@@ -64,6 +64,7 @@ type SelectList struct {
 	items         []SelectItem
 	filteredItems []SelectItem
 	selectedIndex int
+	window        ListWindow
 	maxVisible    int
 	theme         SelectListTheme
 	layout        SelectListLayoutOptions
@@ -93,12 +94,14 @@ func (list *SelectList) SetFilter(filter string) {
 	}
 	list.filteredItems = filtered
 	list.selectedIndex = 0
+	list.window.Recenter()
 }
 
 func (list *SelectList) SetSelectedIndex(index int) {
 	list.mu.Lock()
 	defer list.mu.Unlock()
 	list.selectedIndex = max(0, min(index, len(list.filteredItems)-1))
+	list.window.Recenter()
 }
 
 func (list *SelectList) Invalidate() {}
@@ -138,6 +141,7 @@ func (list *SelectList) HandleInput(event KeyEvent) {
 	kb := GetKeybindings()
 	switch {
 	case kb.Matches(data, "tui.select.up"):
+		list.window.Recenter()
 		if list.selectedIndex == 0 {
 			list.selectedIndex = len(list.filteredItems) - 1
 		} else {
@@ -145,6 +149,7 @@ func (list *SelectList) HandleInput(event KeyEvent) {
 		}
 		list.notifySelectionChange()
 	case kb.Matches(data, "tui.select.down"):
+		list.window.Recenter()
 		if list.selectedIndex == len(list.filteredItems)-1 {
 			list.selectedIndex = 0
 		} else {
@@ -161,79 +166,82 @@ func (list *SelectList) HandleInput(event KeyEvent) {
 			list.pending = append(list.pending, list.OnCancel)
 		}
 	}
-	pending := list.pending
-	list.pending = nil
-	list.mu.Unlock()
-	for _, callback := range pending {
-		callback()
-	}
+	list.drainPendingAndUnlock()
 }
 
 // visibleStartLocked is the first item Render shows; hit-testing has to agree
 // with it exactly.
 func (list *SelectList) visibleStartLocked() int {
-	return max(0, min(list.selectedIndex-list.maxVisible/2, len(list.filteredItems)-list.maxVisible))
+	return list.window.Start(list.selectedIndex, len(list.filteredItems), list.maxVisible)
 }
 
 // WantsMouseMotion turns on hover reports while the list holds focus.
 func (list *SelectList) WantsMouseMotion() bool { return true }
 
-// HandleMouse selects the clicked row and confirms on a double click. The
-// scroll-info line below the items is not clickable.
+// HandleMouse drives the shared list pointer semantic. The scroll-info line
+// below the items is not clickable.
 func (list *SelectList) HandleMouse(event MouseEvent) bool {
 	list.mu.Lock()
-	if len(list.filteredItems) == 0 {
-		list.mu.Unlock()
+	empty := len(list.filteredItems) == 0
+	list.mu.Unlock()
+	if empty {
 		return false
 	}
-	switch {
-	case event.Type == MouseMove:
-		// Hover moves the highlight only while the list cannot scroll: a
-		// recentring window would shift rows under the cursor and feed back.
-		if len(list.filteredItems) > list.maxVisible ||
-			event.Row < 0 || event.Row >= len(list.filteredItems) {
-			list.mu.Unlock()
-			return false
-		}
-		if list.selectedIndex != event.Row {
-			list.selectedIndex = event.Row
-			list.notifySelectionChange()
-		}
-	case event.Type == MouseWheelUp || event.Type == MouseWheelDown:
-		delta := -1
-		if event.Type == MouseWheelDown {
-			delta = 1
-		}
-		list.selectedIndex = max(0, min(list.selectedIndex+delta, len(list.filteredItems)-1))
-		list.notifySelectionChange()
-	case event.Type == MousePress && event.Button == 0:
-		start := list.visibleStartLocked()
-		if event.Row < 0 || start+event.Row >= min(start+list.maxVisible, len(list.filteredItems)) {
-			list.mu.Unlock()
-			return false
-		}
-		// The first press of a double click already selected this cell.
-		// Re-resolving would confirm whatever the recentred list moved under it.
-		if event.Clicks >= 2 {
-			if item, ok := list.selectedItem(); ok && list.OnSelect != nil {
-				callback := list.OnSelect
-				list.pending = append(list.pending, func() { callback(item) })
-			}
-			break
-		}
-		list.selectedIndex = start + event.Row
-		list.notifySelectionChange()
-	default:
-		list.mu.Unlock()
-		return false
+	return HandleListMouse(list, event)
+}
+
+// ListRowAt maps a visible row to its filtered-item index.
+func (list *SelectList) ListRowAt(row int) (int, bool) {
+	list.mu.Lock()
+	defer list.mu.Unlock()
+	start := list.visibleStartLocked()
+	if row < 0 || start+row >= min(start+list.maxVisible, len(list.filteredItems)) {
+		return 0, false
 	}
+	return start + row, true
+}
+
+// ListSelectRow moves the highlight without re-anchoring the window, so
+// hover can never shift rows under the cursor.
+func (list *SelectList) ListSelectRow(index int) {
+	list.mu.Lock()
+	list.window.Freeze()
+	if index != list.selectedIndex {
+		list.selectedIndex = index
+		list.notifySelectionChange()
+	}
+	list.drainPendingAndUnlock()
+}
+
+// ListScroll moves the selection one row per tick, recentring like keyboard
+// navigation does.
+func (list *SelectList) ListScroll(direction int) {
+	list.mu.Lock()
+	list.window.Recenter()
+	list.selectedIndex = max(0, min(list.selectedIndex+direction, len(list.filteredItems)-1))
+	list.notifySelectionChange()
+	list.drainPendingAndUnlock()
+}
+
+// ListConfirm confirms the current selection.
+func (list *SelectList) ListConfirm() {
+	list.mu.Lock()
+	if item, ok := list.selectedItem(); ok && list.OnSelect != nil {
+		callback := list.OnSelect
+		list.pending = append(list.pending, func() { callback(item) })
+	}
+	list.drainPendingAndUnlock()
+}
+
+// drainPendingAndUnlock releases the lock and fires the callbacks queued
+// while it was held; callbacks may re-enter the list.
+func (list *SelectList) drainPendingAndUnlock() {
 	pending := list.pending
 	list.pending = nil
 	list.mu.Unlock()
 	for _, callback := range pending {
 		callback()
 	}
-	return true
 }
 
 func (list *SelectList) renderItem(item SelectItem, isSelected bool, width int, description string, primaryColumnWidth int) string {

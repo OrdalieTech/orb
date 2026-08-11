@@ -41,6 +41,7 @@ type OAuthSelectorComponent struct {
 	allProviders       []InteractiveAuthProvider
 	filteredProviders  []InteractiveAuthProvider
 	selectedIndex      int
+	window             tui.ListWindow
 	mode               string
 	onSelect           func(InteractiveAuthProvider)
 	onCancel           func()
@@ -119,10 +120,7 @@ func (component *OAuthSelectorComponent) filterProviders(query string) {
 func (component *OAuthSelectorComponent) updateList() {
 	component.listContainer.Clear()
 
-	startIndex := max(0, min(
-		component.selectedIndex-authSelectorMaxVisible/2,
-		len(component.filteredProviders)-authSelectorMaxVisible,
-	))
+	startIndex := component.window.Start(component.selectedIndex, len(component.filteredProviders), authSelectorMaxVisible)
 	endIndex := min(startIndex+authSelectorMaxVisible, len(component.filteredProviders))
 	component.rowsMu.Lock()
 	component.visibleStart, component.visibleCount = startIndex, endIndex-startIndex
@@ -193,6 +191,9 @@ func (component *OAuthSelectorComponent) confirmSelection() {
 }
 
 func (component *OAuthSelectorComponent) HandleInput(event tui.KeyEvent) {
+	// Any keyboard interaction re-anchors the window on the selection; only
+	// pointer selection keeps it frozen.
+	component.window.Recenter()
 	bindings := tui.GetKeybindings()
 	switch {
 	case bindings.Matches(event.Raw, "tui.select.up"):
@@ -256,50 +257,45 @@ func (component *OAuthSelectorComponent) Render(width int) []string {
 // WantsMouseMotion turns on hover reports while the selector holds focus.
 func (component *OAuthSelectorComponent) WantsMouseMotion() bool { return true }
 
-// HandleMouse selects the hovered or clicked provider and confirms on a
-// double click; the wheel moves the selection one row at a time.
+// HandleMouse drives the shared list pointer semantic.
 func (component *OAuthSelectorComponent) HandleMouse(event tui.MouseEvent) bool {
 	if len(component.filteredProviders) == 0 {
 		return false
 	}
-	switch {
-	case event.Type == tui.MouseWheelUp || event.Type == tui.MouseWheelDown:
-		delta := -1
-		if event.Type == tui.MouseWheelDown {
-			delta = 1
-		}
-		component.selectedIndex = max(0, min(component.selectedIndex+delta, len(component.filteredProviders)-1))
-		component.updateList()
-		return true
-	case event.Type == tui.MouseMove:
-		// Hover moves the highlight only while the list cannot scroll: a
-		// recentring window would shift rows under the cursor and feed back.
-		if len(component.filteredProviders) > authSelectorMaxVisible {
-			return false
-		}
-		index, ok := component.rowAt(event.Row)
-		if ok && index != component.selectedIndex {
-			component.selectedIndex = index
-			component.updateList()
-		}
-		return ok
-	case event.Type == tui.MousePress && event.Button == 0:
-		index, ok := component.rowAt(event.Row)
-		if !ok {
-			return false
-		}
-		// The first press of a double click already selected this cell.
-		// Re-resolving would confirm whatever the recentred list moved under it.
-		if event.Clicks >= 2 {
-			component.confirmSelection()
-			return true
-		}
-		component.selectedIndex = index
-		component.updateList()
-		return true
-	}
-	return false
+	return tui.HandleListMouse(component, event)
 }
+
+// ListRowAt maps a component-local row to the filtered-provider index it
+// renders.
+func (component *OAuthSelectorComponent) ListRowAt(row int) (int, bool) {
+	index, ok := component.rowAt(row)
+	if !ok || index >= len(component.filteredProviders) {
+		return 0, false
+	}
+	return index, true
+}
+
+// ListSelectRow moves the highlight without re-anchoring the window, so
+// hover can never shift rows under the cursor.
+func (component *OAuthSelectorComponent) ListSelectRow(index int) {
+	if index == component.selectedIndex {
+		return
+	}
+	component.window.Freeze()
+	component.selectedIndex = index
+	component.updateList()
+}
+
+// ListScroll moves the selection one row per tick, recentring like keyboard
+// navigation does.
+func (component *OAuthSelectorComponent) ListScroll(direction int) {
+	component.window.Recenter()
+	component.selectedIndex = max(0, min(component.selectedIndex+direction, len(component.filteredProviders)-1))
+	component.updateList()
+}
+
+// ListConfirm confirms the current selection.
+func (component *OAuthSelectorComponent) ListConfirm() { component.confirmSelection() }
 
 // rowAt maps a component-local row to the filtered-provider index it renders.
 func (component *OAuthSelectorComponent) rowAt(row int) (int, bool) {

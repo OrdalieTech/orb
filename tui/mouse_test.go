@@ -1,9 +1,18 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
+)
+
+// Every list-like component drives the one shared pointer semantic.
+var (
+	_ ListMouseTarget    = (*SelectList)(nil)
+	_ MouseMotionHandler = (*SelectList)(nil)
+	_ ListMouseTarget    = (*SettingsList)(nil)
+	_ MouseMotionHandler = (*Editor)(nil)
 )
 
 type clickTarget struct {
@@ -226,7 +235,22 @@ func TestSelectListClickSelectsAndDoubleClickConfirms(t *testing.T) {
 	}
 }
 
-func TestSelectListHoverMovesHighlightOnlyWhenListFits(t *testing.T) {
+// selectListRows strips the cursor prefix off every rendered item row and
+// drops the scroll counter, so window-content comparisons see only which
+// items are visible, not which one is highlighted.
+func selectListRows(list *SelectList, width int) []string {
+	rows := []string{}
+	for _, line := range list.Render(width) {
+		trimmed := strings.TrimPrefix(strings.TrimPrefix(line, "→ "), "  ")
+		if strings.HasPrefix(trimmed, "(") {
+			continue
+		}
+		rows = append(rows, trimmed)
+	}
+	return rows
+}
+
+func TestSelectListHoverMovesHighlightInPlace(t *testing.T) {
 	items := []SelectItem{{Value: "one"}, {Value: "two"}, {Value: "three"}}
 	confirmed := ""
 	list := NewSelectList(items, 4, SelectListTheme{}, SelectListLayoutOptions{})
@@ -241,15 +265,63 @@ func TestSelectListHoverMovesHighlightOnlyWhenListFits(t *testing.T) {
 	if list.HandleMouse(MouseEvent{Type: MouseMove, Row: 3}) {
 		t.Fatal("hover below the items was consumed")
 	}
+}
 
-	// A list taller than its window recentres on selection, which would shift
-	// rows under the cursor, so hover must leave it alone.
-	scrolling := NewSelectList(items, 2, SelectListTheme{}, SelectListLayoutOptions{})
-	if scrolling.HandleMouse(MouseEvent{Type: MouseMove, Row: 1}) {
-		t.Fatal("hover on a scrollable list was consumed")
+func TestSelectListHoverOnScrollableListPreservesWindow(t *testing.T) {
+	items := []SelectItem{{Value: "one"}, {Value: "two"}, {Value: "three"}, {Value: "four"}, {Value: "five"}, {Value: "six"}}
+	confirmed := ""
+	list := NewSelectList(items, 3, SelectListTheme{}, SelectListLayoutOptions{})
+	list.OnSelect = func(item SelectItem) { confirmed = item.Value }
+	list.SetSelectedIndex(4)
+
+	// Window is anchored on "five": rows four, five, six.
+	before := selectListRows(list, 40)
+
+	// Hovering the first visible row selects it without scrolling: the
+	// visible row set is identical before and after.
+	if !list.HandleMouse(MouseEvent{Type: MouseMove, Row: 0}) {
+		t.Fatal("hover on a scrollable list was not consumed")
 	}
-	if item, _ := scrolling.GetSelectedItem(); item.Value != "one" {
-		t.Fatalf("hover moved a scrollable list to %q", item.Value)
+	if item, _ := list.GetSelectedItem(); item.Value != "four" {
+		t.Fatalf("hover selected %q, want four", item.Value)
+	}
+	if after := selectListRows(list, 40); !slices.Equal(before, after) {
+		t.Fatalf("hover re-anchored the window:\nbefore %q\nafter  %q", before, after)
+	}
+
+	// The last visible row behaves the same at the other edge.
+	if !list.HandleMouse(MouseEvent{Type: MouseMove, Row: 2}) {
+		t.Fatal("hover on the last visible row was not consumed")
+	}
+	if item, _ := list.GetSelectedItem(); item.Value != "six" {
+		t.Fatalf("hover selected %q, want six", item.Value)
+	}
+	if after := selectListRows(list, 40); !slices.Equal(before, after) {
+		t.Fatalf("edge hover re-anchored the window:\nbefore %q\nafter  %q", before, after)
+	}
+	// The scroll-info line below the rows is not hoverable.
+	if list.HandleMouse(MouseEvent{Type: MouseMove, Row: 3}) {
+		t.Fatal("hover on the scroll-info line was consumed")
+	}
+
+	// The wheel keeps its keyboard-like recentring, and hover keeps tracking
+	// the rows the recentred window actually shows.
+	list.HandleMouse(MouseEvent{Type: MouseWheelUp})
+	if item, _ := list.GetSelectedItem(); item.Value != "five" {
+		t.Fatalf("wheel selected %q, want five", item.Value)
+	}
+	list.Render(40)
+	if !list.HandleMouse(MouseEvent{Type: MouseMove, Row: 0}) {
+		t.Fatal("hover after wheel was not consumed")
+	}
+	if item, _ := list.GetSelectedItem(); item.Value != "four" {
+		t.Fatalf("hover after wheel selected %q, want four", item.Value)
+	}
+
+	// Enter confirms the hover selection exactly like a keyboard one.
+	press(list, "\r")
+	if confirmed != "four" {
+		t.Fatalf("enter confirmed %q, want four", confirmed)
 	}
 }
 
@@ -326,6 +398,104 @@ func TestSettingsListClickSelectsAndDoubleClickCycles(t *testing.T) {
 	}
 	if changed != "b=off" {
 		t.Fatalf("changed = %q", changed)
+	}
+}
+
+func TestSettingsListWheelAndClickShareUnifiedPath(t *testing.T) {
+	changed := ""
+	list := NewSettingsList([]SettingItem{
+		{ID: "a", Label: "A", CurrentValue: "on", Values: []string{"on", "off"}},
+		{ID: "b", Label: "B", CurrentValue: "on", Values: []string{"on", "off"}},
+		{ID: "c", Label: "C", CurrentValue: "on", Values: []string{"on", "off"}},
+	}, 10, SettingsListTheme{Cursor: "> "}, func(id, value string) { changed = id + "=" + value }, nil, SettingsListOptions{})
+	list.Render(40)
+
+	// The unified handler drives wheel, click, and double click; hover is
+	// deliberately not consumed (the description panel below the rows varies
+	// in height inside the bottom-anchored chrome, see HandleMouse).
+	if !HandleListMouse(list, MouseEvent{Type: MouseWheelDown}) {
+		t.Fatal("wheel was not consumed")
+	}
+	if list.selectedIndex != 1 {
+		t.Fatalf("wheel selected %d, want 1", list.selectedIndex)
+	}
+	if list.HandleMouse(MouseEvent{Type: MouseMove, Row: 2}) {
+		t.Fatal("settings hover was consumed")
+	}
+	if !list.HandleMouse(MouseEvent{Type: MousePress, Row: 2, Clicks: 1}) {
+		t.Fatal("click was not consumed")
+	}
+	if !list.HandleMouse(MouseEvent{Type: MousePress, Row: 2, Clicks: 2}) {
+		t.Fatal("double click was not consumed")
+	}
+	if changed != "c=off" {
+		t.Fatalf("changed = %q", changed)
+	}
+}
+
+func TestEditorAutocompletePopupScopesMouseMotion(t *testing.T) {
+	terminal := newFakeTerminal(40, 10)
+	ui := NewTUI(terminal)
+	editor := NewEditor(ui, EditorTheme{})
+	editor.SetAutocompleteProvider(&scriptedProvider{suggest: func(lines []string, _, cursorCol int, _ bool) *AutocompleteSuggestions {
+		return &AutocompleteSuggestions{
+			Items:  []AutocompleteItem{{Value: "alpha"}, {Value: "beta"}},
+			Prefix: runeSlice(lines[0], 0, cursorCol),
+		}
+	}})
+	chrome := &Container{}
+	chrome.AddChild(editor)
+	ui.SetViewport(&mutableLines{lines: []string{"body"}}, chrome)
+	if err := ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ui.Stop() }()
+
+	// A focused editor with no popup must not enable any-motion tracking.
+	terminal.resetOutput()
+	ui.SetFocus(editor)
+	if strings.Contains(terminal.output(), mouseMotionOn) {
+		t.Fatal("focusing the bare editor enabled any-motion tracking")
+	}
+	if editor.WantsMouseMotion() {
+		t.Fatal("bare editor advertises mouse motion")
+	}
+
+	// Opening the popup resyncs and turns 1003 on. The open path is
+	// asynchronous, so poll for the escape bytes.
+	press(editor, "#", "x")
+	editor.flushAutocomplete()
+	deadline := time.Now().Add(2 * time.Second)
+	for !strings.Contains(terminal.output(), mouseMotionOn) {
+		if time.Now().After(deadline) {
+			t.Fatal("opening the autocomplete popup did not enable any-motion tracking")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if !editor.WantsMouseMotion() {
+		t.Fatal("editor with an open popup does not advertise mouse motion")
+	}
+
+	// Hover over a popup row moves the highlight through the shared path.
+	editor.Render(40)
+	if !editor.HandleMouse(MouseEvent{Type: MouseMove, Row: 4}) {
+		t.Fatal("popup hover was not consumed")
+	}
+	if item, _ := editor.autocompleteList.GetSelectedItem(); item.Value != "beta" {
+		t.Fatalf("popup hover selected %q, want beta", item.Value)
+	}
+
+	// Closing the popup resyncs synchronously through the input path.
+	terminal.resetOutput()
+	press(editor, "\x1b")
+	if editor.IsShowingAutocomplete() {
+		t.Fatal("escape did not close the popup")
+	}
+	if !strings.Contains(terminal.output(), mouseMotionOff) {
+		t.Fatal("closing the autocomplete popup did not disable any-motion tracking")
+	}
+	if editor.WantsMouseMotion() {
+		t.Fatal("editor still advertises mouse motion after the popup closed")
 	}
 }
 

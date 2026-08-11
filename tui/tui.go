@@ -22,7 +22,12 @@ const (
 	// clears it so a crash cannot leave the terminal streaming motion.
 	alternateScreenOff = "\x1b[?1003l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1049l"
 	mouseMotionOn      = "\x1b[?1003h"
-	mouseMotionOff     = "\x1b[?1003l"
+	// Turning any-motion off must re-assert button-event tracking in the
+	// same write: xterm-family terminals implement 1000/1002/1003 as ONE
+	// mutually exclusive tracking mode, so a bare 1003l switches mouse
+	// reporting off entirely — killing wheel, clicks, and the scrollbar for
+	// the rest of the session — instead of falling back to 1002.
+	mouseMotionOff = "\x1b[?1003l\x1b[?1002h"
 )
 
 type InputListenerResult struct {
@@ -492,10 +497,26 @@ func (ui *TUI) syncMouseMotionLocked() {
 	}
 }
 
-// handleMouse offers the event to the component under the cursor first and
-// falls back to the TUI-owned scrollbar, wheel, and text selection. Dispatch
-// runs outside renderMu because handlers re-enter the TUI to change focus or
-// swap the component they live in.
+// SyncMouseMotion re-evaluates the focused component's WantsMouseMotion
+// answer. Components whose answer changes while they keep focus — the
+// editor's autocomplete popup — call it on every transition; focus changes
+// resync on their own.
+func (ui *TUI) SyncMouseMotion() {
+	ui.focusMu.Lock()
+	ui.syncMouseMotionLocked()
+	ui.focusMu.Unlock()
+}
+
+// handleMouse is the single mouse routing path, strictly position-based:
+// the event goes to the component under the cursor (topmost overlay first,
+// then chrome; transcript rows have no component target), and only if that
+// component declines does it fall back to the TUI-owned viewport — wheel
+// scroll, scrollbar, and text selection. Focus never receives mouse events;
+// it only gates any-motion (?1003) tracking. So a wheel over the transcript
+// scrolls the transcript no matter what holds focus, and a wheel over a
+// selector steps that selector. Dispatch runs outside renderMu because
+// handlers re-enter the TUI to change focus or swap the component they live
+// in.
 func (ui *TUI) handleMouse(data string) {
 	event, ok := parseMouse(data)
 	if !ok {
