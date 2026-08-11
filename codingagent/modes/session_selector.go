@@ -105,6 +105,7 @@ type SessionSelectorComponent struct {
 	nameFilter sessionSelectorNameFilter
 	showPath   bool
 	selected   int
+	window     tui.ListWindow
 	maxVisible int
 	filtered   []flatSessionNode
 	search     *tui.Input
@@ -242,6 +243,7 @@ func (selector *SessionSelectorComponent) filterLocked(query string) {
 		}
 	}
 	selector.selected = max(0, min(selector.selected, max(0, len(selector.filtered)-1)))
+	selector.window.Recenter()
 }
 
 func canonicalSessionPath(path string) string {
@@ -565,59 +567,64 @@ func (selector *SessionSelectorComponent) Render(width int) []string {
 // WantsMouseMotion turns on hover reports while the selector holds focus.
 func (selector *SessionSelectorComponent) WantsMouseMotion() bool { return true }
 
-// HandleMouse selects the clicked session and resumes it on a double click.
+// HandleMouse drives the shared list pointer semantic; a double click
+// resumes the selected session.
 func (selector *SessionSelectorComponent) HandleMouse(event tui.MouseEvent) bool {
 	selector.mu.Lock()
-	if selector.confirmingDelete != "" || len(selector.filtered) == 0 {
-		selector.mu.Unlock()
+	blocked := selector.confirmingDelete != "" || len(selector.filtered) == 0
+	selector.mu.Unlock()
+	if blocked || !tui.HandleListMouse(selector, event) {
 		return false
 	}
+	selector.requestRender()
+	return true
+}
+
+// ListRowAt maps a rendered row to its filtered-session index.
+func (selector *SessionSelectorComponent) ListRowAt(row int) (int, bool) {
+	selector.mu.Lock()
+	defer selector.mu.Unlock()
+	if row < selector.rowTop || row >= selector.rowTop+selector.rowCount {
+		return 0, false
+	}
+	index := selector.rowStart + row - selector.rowTop
+	if index >= len(selector.filtered) {
+		return 0, false
+	}
+	return index, true
+}
+
+// ListSelectRow moves the highlight without re-anchoring the window, so
+// hover can never shift rows under the cursor.
+func (selector *SessionSelectorComponent) ListSelectRow(index int) {
+	selector.mu.Lock()
+	selector.window.Freeze()
+	selector.selected = index
+	selector.mu.Unlock()
+}
+
+// ListScroll moves the selection three rows per tick, recentring like
+// keyboard paging does.
+func (selector *SessionSelectorComponent) ListScroll(direction int) {
+	selector.mu.Lock()
+	selector.window.Recenter()
+	selector.selected = max(0, min(selector.selected+direction*3, len(selector.filtered)-1))
+	selector.mu.Unlock()
+}
+
+// ListConfirm resumes the selected session.
+func (selector *SessionSelectorComponent) ListConfirm() {
+	selector.mu.Lock()
 	var callback func(string)
 	path := ""
-	switch {
-	case event.Type == tui.MouseMove:
-		// Hover moves the highlight only while the list cannot scroll: a
-		// recentring window would shift rows under the cursor and feed back.
-		if len(selector.filtered) > selector.maxVisible ||
-			event.Row < selector.rowTop || event.Row >= selector.rowTop+selector.rowCount {
-			selector.mu.Unlock()
-			return false
-		}
-		selector.selected = selector.rowStart + event.Row - selector.rowTop
-	case event.Type == tui.MouseWheelUp || event.Type == tui.MouseWheelDown:
-		delta := -3
-		if event.Type == tui.MouseWheelDown {
-			delta = 3
-		}
-		selector.selected = max(0, min(selector.selected+delta, len(selector.filtered)-1))
-	case event.Type == tui.MousePress && event.Button == 0:
-		if event.Row < selector.rowTop || event.Row >= selector.rowTop+selector.rowCount {
-			selector.mu.Unlock()
-			return false
-		}
-		// The first press of a double click already selected this cell.
-		// Re-resolving would resume whatever the recentred list moved under it.
-		if event.Clicks >= 2 {
-			callback, path = selector.onSelect, selector.filtered[selector.selected].session.Path
-			selector.clearStatusLocked()
-			break
-		}
-		index := selector.rowStart + event.Row - selector.rowTop
-		if index >= len(selector.filtered) {
-			selector.mu.Unlock()
-			return false
-		}
-		selector.selected = index
-	default:
-		selector.mu.Unlock()
-		return false
+	if selector.selected >= 0 && selector.selected < len(selector.filtered) {
+		callback, path = selector.onSelect, selector.filtered[selector.selected].session.Path
+		selector.clearStatusLocked()
 	}
 	selector.mu.Unlock()
-	selector.requestRender()
 	if callback != nil && path != "" {
 		callback(path)
 	}
-	return true
 }
 
 func (selector *SessionSelectorComponent) listLinesLocked(width int) []string {
@@ -634,7 +641,7 @@ func (selector *SessionSelectorComponent) listLinesLocked(width int) []string {
 		}
 		return []string{tui.TruncateToWidth(message, width, "…", false)}
 	}
-	start := max(0, min(selector.selected-selector.maxVisible/2, len(selector.filtered)-selector.maxVisible))
+	start := selector.window.Start(selector.selected, len(selector.filtered), selector.maxVisible)
 	end := min(start+selector.maxVisible, len(selector.filtered))
 	selector.rowStart, selector.rowCount = start, end-start
 	lines := make([]string, 0, end-start+1)
@@ -750,6 +757,9 @@ func formatSessionAge(now, modified time.Time) string {
 func (selector *SessionSelectorComponent) HandleInput(event tui.KeyEvent) {
 	data := event.Raw
 	selector.mu.Lock()
+	// Any keyboard interaction re-anchors the window on the selection; only
+	// pointer selection keeps it frozen.
+	selector.window.Recenter()
 	if selector.confirmingDelete != "" {
 		switch {
 		case tui.GetKeybindings().Matches(data, "tui.select.confirm"):

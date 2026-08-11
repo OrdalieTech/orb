@@ -491,10 +491,15 @@ func (editor *Editor) SetAutocompleteProvider(provider AutocompleteProvider) {
 		extra = triggers.TriggerCharacters()
 	}
 	editor.mu.Lock()
-	defer editor.mu.Unlock()
 	editor.cancelAutocomplete()
 	editor.autocompleteProvider = provider
 	editor.setAutocompleteTriggerCharacters(extra)
+	pending := editor.pending
+	editor.pending = nil
+	editor.mu.Unlock()
+	for _, callback := range pending {
+		callback()
+	}
 }
 
 // AddToHistory records a prompt for up/down navigation, skipping empties and
@@ -724,6 +729,16 @@ func (editor *Editor) Render(width int) []string {
 	}
 
 	return result
+}
+
+// WantsMouseMotion turns on hover reports only while the autocomplete popup
+// is open: any-motion tracking during normal typing would flood the input
+// stream, so it stays off for the rest of the editor's focused life. The
+// popup open/close transitions call TUI.SyncMouseMotion to re-evaluate this.
+func (editor *Editor) WantsMouseMotion() bool {
+	editor.mu.Lock()
+	defer editor.mu.Unlock()
+	return editor.autocompleteState != "" && editor.autocompleteList != nil
 }
 
 // HandleMouse places the cursor on a clicked character and accepts a clicked
@@ -2277,12 +2292,16 @@ func (editor *Editor) startAutocompleteRequest(startToken int, force, explicitTa
 }
 
 func (editor *Editor) applyAutocompleteSuggestions(suggestions *AutocompleteSuggestions, state string) {
+	wasShowing := editor.autocompleteState != ""
 	editor.autocompletePrefix = suggestions.Prefix
 	editor.autocompleteList = editor.createAutocompleteList(suggestions.Prefix, suggestions.Items)
 	if bestMatchIndex := getBestAutocompleteMatchIndex(suggestions.Items, suggestions.Prefix); bestMatchIndex >= 0 {
 		editor.autocompleteList.SetSelectedIndex(bestMatchIndex)
 	}
 	editor.autocompleteState = state
+	if !wasShowing {
+		editor.syncMouseMotionSoon()
+	}
 }
 
 // autocompleteDone decrements the busy counter; caller holds editor.mu.
@@ -2308,9 +2327,22 @@ func (editor *Editor) cancelAutocompleteRequest() {
 }
 
 func (editor *Editor) clearAutocompleteUI() {
+	wasShowing := editor.autocompleteState != ""
 	editor.autocompleteState = ""
 	editor.autocompleteList = nil
 	editor.autocompletePrefix = ""
+	if wasShowing {
+		editor.syncMouseMotionSoon()
+	}
+}
+
+// syncMouseMotionSoon queues the TUI's motion-tracking resync for the popup
+// open/close transition. It must run via pending, outside editor.mu: the
+// focus machinery locks the editor while holding the TUI's focus mutex, so
+// calling in with editor.mu held would invert that order.
+func (editor *Editor) syncMouseMotionSoon() {
+	ui := editor.ui
+	editor.pending = append(editor.pending, ui.SyncMouseMotion)
 }
 
 func (editor *Editor) cancelAutocomplete() {

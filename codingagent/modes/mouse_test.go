@@ -12,6 +12,16 @@ import (
 	"github.com/OrdalieTech/orb/tui"
 )
 
+// Every selector drives the one shared pointer semantic in tui.HandleListMouse.
+var (
+	_ tui.ListMouseTarget = (*ModelSelectorComponent)(nil)
+	_ tui.ListMouseTarget = (*OAuthSelectorComponent)(nil)
+	_ tui.ListMouseTarget = (*SessionSelectorComponent)(nil)
+	_ tui.ListMouseTarget = (*TreeSelectorComponent)(nil)
+	_ tui.ListRowClicker  = (*TreeSelectorComponent)(nil)
+	_ tui.ListMouseTarget = (*ExtensionSelectorComponent)(nil)
+)
+
 // mouseTerminal keeps the TUI input callback so tests can push real SGR bytes.
 type mouseTerminal struct {
 	*fakeTerminalImpl
@@ -290,14 +300,149 @@ func TestModelSelectorClickWheelHoverAndDoubleClick(t *testing.T) {
 	}
 }
 
-func TestModelSelectorHoverIgnoredWhileListScrolls(t *testing.T) {
-	// A recentring window would shift rows under the cursor and feed back.
-	component := modelSelectorMouseFixture(t, 12, nil)
-	row := lineIndexContaining(t, component.Render(80), "model-03")
-	if component.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: row}) {
-		t.Fatal("hover on a scrollable list was consumed")
+// visibleRowTokens is the ordered set of rows the render showed whose text
+// contains prefix, reduced to the fixed-width token starting at prefix, with
+// styling and the selection cursor stripped. Scroll counters, footers, and
+// search lines carry no such token, so comparisons see only the window.
+func visibleRowTokens(lines []string, prefix string, tokenLen int) []string {
+	tokens := []string{}
+	for _, line := range lines {
+		plain := selectorANSI.ReplaceAllString(line, "")
+		if index := strings.Index(plain, prefix); index >= 0 && index+tokenLen <= len(plain) {
+			tokens = append(tokens, plain[index:index+tokenLen])
+		}
 	}
-	lineIndexContaining(t, component.Render(80), "→ model-00")
+	return tokens
+}
+
+// visibleModelIDs is the ordered set of model rows the last render showed.
+func visibleModelIDs(component *ModelSelectorComponent, width int) []string {
+	return visibleRowTokens(component.Render(width), "model-", len("model-00"))
+}
+
+func TestModelSelectorHoverPreservesWindowOnScrollableList(t *testing.T) {
+	// The /model list is scrollable (30 models, 10 visible). Hover must move
+	// the selection IN PLACE: same window offset, same visible row set.
+	confirmed := ""
+	component := modelSelectorMouseFixture(t, 30, func(model ai.Model) { confirmed = model.ID })
+	before := visibleModelIDs(component, 80)
+	if len(before) != modelSelectorMaxVisible {
+		t.Fatalf("fixture window = %d rows, want %d", len(before), modelSelectorMaxVisible)
+	}
+
+	// Hovering the last visible row must not scroll the window.
+	lastRow := lineIndexContaining(t, component.Render(80), "model-09")
+	if !component.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: lastRow}) {
+		t.Fatal("hover on a scrollable list was not consumed")
+	}
+	if index := lineIndexContaining(t, component.Render(80), "→ model-09"); index != lastRow {
+		t.Fatalf("hover highlight on row %d, want %d", index, lastRow)
+	}
+	if after := visibleModelIDs(component, 80); !slices.Equal(before, after) {
+		t.Fatalf("hover re-anchored the window:\nbefore %q\nafter  %q", before, after)
+	}
+
+	// The first visible row behaves the same at the other edge.
+	firstRow := lineIndexContaining(t, component.Render(80), "model-00")
+	if !component.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: firstRow}) {
+		t.Fatal("hover on the first visible row was not consumed")
+	}
+	if after := visibleModelIDs(component, 80); !slices.Equal(before, after) {
+		t.Fatalf("edge hover re-anchored the window:\nbefore %q\nafter  %q", before, after)
+	}
+
+	// The wheel scrolls exactly as before — selection moves, window
+	// recenters — and hover then tracks the rows the new window shows.
+	for range 7 {
+		component.HandleMouse(tui.MouseEvent{Type: tui.MouseWheelDown})
+	}
+	scrolled := visibleModelIDs(component, 80)
+	if slices.Equal(before, scrolled) {
+		t.Fatal("wheel did not scroll the window")
+	}
+	hoverRow := lineIndexContaining(t, component.Render(80), "model-04")
+	if !component.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: hoverRow}) {
+		t.Fatal("hover after wheel was not consumed")
+	}
+	if index := lineIndexContaining(t, component.Render(80), "→ model-04"); index != hoverRow {
+		t.Fatalf("hover after wheel highlighted row %d, want %d", index, hoverRow)
+	}
+	if after := visibleModelIDs(component, 80); !slices.Equal(scrolled, after) {
+		t.Fatalf("hover after wheel re-anchored the window:\nbefore %q\nafter  %q", scrolled, after)
+	}
+
+	// Enter confirms the hover selection exactly like a keyboard one.
+	component.HandleInput(tui.KeyEvent{Raw: "\n"})
+	if confirmed != "model-04" {
+		t.Fatalf("enter confirmed %q, want model-04", confirmed)
+	}
+
+	// A hover-selected row scrolled away by the wheel: the wheel moves the
+	// selection itself, so the selection stays valid and visible.
+	component.HandleMouse(tui.MouseEvent{Type: tui.MouseWheelDown})
+	lineIndexContaining(t, component.Render(80), "→ model-05")
+}
+
+func TestOAuthSelectorHoverPreservesWindowOnScrollableList(t *testing.T) {
+	initTestTheme(t)
+	providers := make([]InteractiveAuthProvider, 12)
+	for index := range providers {
+		providers[index] = InteractiveAuthProvider{ID: fmt.Sprintf("p%02d", index), Name: fmt.Sprintf("Provider%02d", index)}
+	}
+	component := NewOAuthSelectorComponent(oauthSelectorLogin, providers, nil, nil, "")
+	before := visibleRowTokens(component.Render(80), "Provider", len("Provider00"))
+	if len(before) != authSelectorMaxVisible {
+		t.Fatalf("fixture window = %d rows, want %d", len(before), authSelectorMaxVisible)
+	}
+
+	row := lineIndexContaining(t, component.Render(80), "Provider07")
+	if !component.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: row}) {
+		t.Fatal("hover on a scrollable provider list was not consumed")
+	}
+	if index := lineIndexContaining(t, component.Render(80), "→ Provider07"); index != row {
+		t.Fatalf("hover highlight on row %d, want %d", index, row)
+	}
+	if after := visibleRowTokens(component.Render(80), "Provider", len("Provider00")); !slices.Equal(before, after) {
+		t.Fatalf("hover re-anchored the window:\nbefore %q\nafter  %q", before, after)
+	}
+}
+
+func TestSessionSelectorHoverPreservesWindowOnScrollableList(t *testing.T) {
+	initTestTheme(t)
+	now := time.Date(2026, 7, 18, 22, 0, 0, 0, time.UTC)
+	sessions := make([]sessionstore.SessionInfo, 14)
+	for index := range sessions {
+		sessions[index] = sessionstore.SessionInfo{
+			Path:         fmt.Sprintf("/tmp/s%02d.jsonl", index),
+			ID:           fmt.Sprintf("s%02d", index),
+			FirstMessage: fmt.Sprintf("session %02d", index),
+			Modified:     now.Add(-time.Duration(index) * time.Minute),
+		}
+	}
+	selector := NewSessionSelectorComponent(SessionSelectorOptions{
+		CurrentSessions: func(sessionstore.SessionListProgress) []sessionstore.SessionInfo { return sessions },
+		Now:             func() time.Time { return now },
+	}, func(string) {}, nil)
+	waitForSelector(t, selector, "session 00")
+
+	before := visibleRowTokens(selector.Render(100), "session ", len("session 00"))
+	if len(before) != selector.maxVisible {
+		t.Fatalf("fixture window = %d rows, want %d", len(before), selector.maxVisible)
+	}
+	row := lineIndexContaining(t, selector.Render(100), "session 06")
+	if !selector.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: row}) {
+		t.Fatal("hover on a scrollable session list was not consumed")
+	}
+	if index := lineIndexContaining(t, selector.Render(100), "session 06"); index != row {
+		t.Fatalf("hovered row moved to %d, want %d", index, row)
+	}
+	if selector.selected < 0 || selector.selected >= len(selector.filtered) ||
+		selector.filtered[selector.selected].session.ID != "s06" {
+		t.Fatalf("hover selected index %d, want the s06 row", selector.selected)
+	}
+	if after := visibleRowTokens(selector.Render(100), "session ", len("session 00")); !slices.Equal(before, after) {
+		t.Fatalf("hover re-anchored the window:\nbefore %q\nafter  %q", before, after)
+	}
 }
 
 func TestOAuthSelectorClickSelectsHoverHighlightsAndDoubleClickConfirms(t *testing.T) {
@@ -359,7 +504,7 @@ func TestSessionSelectorHoverMovesSelection(t *testing.T) {
 	}
 }
 
-func TestTreeSelectorHoverMovesSelectionWhenTreeFits(t *testing.T) {
+func TestTreeSelectorHoverMovesSelectionInPlace(t *testing.T) {
 	selector := newTreeFixtureSelector(t, 2, 40, nil)
 	row := lineIndexContaining(t, selector.Render(60), "user: 側1 side")
 	if !selector.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: row, Column: 10}) {
@@ -369,16 +514,22 @@ func TestTreeSelectorHoverMovesSelectionWhenTreeFits(t *testing.T) {
 		t.Fatalf("hover selected %q, want s1", got)
 	}
 
-	// A window smaller than the tree recentres on selection, which would shift
-	// rows under the cursor, so hover must leave it alone.
+	// A window smaller than the tree must not recentre on a hover-driven
+	// selection change: the visible rows stay put under the cursor.
 	scrolled := newTreeFixtureSelector(t, 6, 10, nil)
 	scrolledRow := lineIndexContaining(t, scrolled.Render(60), "assistant: 主3 main")
-	before := scrolled.selectedID()
-	if scrolled.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: scrolledRow, Column: 10}) {
-		t.Fatal("hover on a scrolling tree was consumed")
+	_, beforeStart, _, _ := scrolled.rowLayout()
+	if !scrolled.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: scrolledRow, Column: 10}) {
+		t.Fatal("hover on a scrolling tree was not consumed")
 	}
-	if scrolled.selectedID() != before {
-		t.Fatalf("hover moved a scrolling tree to %q", scrolled.selectedID())
+	if got := scrolled.selectedID(); got != "m3" {
+		t.Fatalf("hover selected %q, want m3", got)
+	}
+	if index := lineIndexContaining(t, scrolled.Render(60), "assistant: 主3 main"); index != scrolledRow {
+		t.Fatalf("hovered row moved to %d, want %d", index, scrolledRow)
+	}
+	if _, afterStart, _, _ := scrolled.rowLayout(); afterStart != beforeStart {
+		t.Fatalf("hover re-anchored the window: start %d, want %d", afterStart, beforeStart)
 	}
 }
 
