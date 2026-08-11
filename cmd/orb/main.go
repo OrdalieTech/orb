@@ -254,7 +254,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		flagErrors := applyExtensionFlags(args.extensionRegistry, args.UnknownFlags)
 		if len(flagErrors) > 0 {
 			for _, warning := range args.extensionWarnings {
-				_, _ = fmt.Fprintln(streams.Stderr, colorizeDiagnostic(streams, colorWarning, "Warning: "+warning))
+				_, _ = fmt.Fprintln(streams.Stderr, colorizeDiagnostic(streams, colorWarning, "Warning: "+startupDiagnosticText(warning)))
 			}
 			for _, message := range flagErrors {
 				_, _ = fmt.Fprintln(streams.Stderr, colorizeDiagnostic(streams, colorError, "Error: "+message))
@@ -279,7 +279,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		// createRuntime drains settings errors into Diagnostics; without this the
 		// listing silently ran on defaults when settings.json failed to parse.
 		for _, diagnostic := range inputs.Diagnostics {
-			_, _ = fmt.Fprintln(streams.Stderr, colorizeDiagnostic(streams, colorWarning, "Warning: "+diagnostic))
+			_, _ = fmt.Fprintln(streams.Stderr, colorizeDiagnostic(streams, colorWarning, "Warning: "+startupDiagnosticText(diagnostic)))
 		}
 		if inputs.ModelRegistry != nil {
 			if loadError := inputs.ModelRegistry.Error(); loadError != "" {
@@ -397,7 +397,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			StartupModelRefresh: startupModelRefresh,
 			// Skill/prompt resource diagnostics stay interactive-only; upstream
 			// print/RPC modes emit no resource diagnostics (main.ts:87-91).
-			Diagnostics: append(append([]string(nil), inputs.Diagnostics...), inputs.ResourceDiagnostics...),
+			Diagnostics: append(append([]modes.StartupDiagnostic(nil), inputs.Diagnostics...), inputs.ResourceDiagnostics...),
 			Host:        host,
 			Changelog:   "",
 			Output:      streams.Stdout,

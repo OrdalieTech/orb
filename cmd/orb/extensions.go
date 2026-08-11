@@ -15,8 +15,46 @@ import (
 	"github.com/OrdalieTech/orb/codingagent/extensions/examples/statusline"
 	extensionhost "github.com/OrdalieTech/orb/codingagent/extensions/host"
 	"github.com/OrdalieTech/orb/codingagent/mcp"
+	"github.com/OrdalieTech/orb/codingagent/modes"
 	firstpartyplugins "github.com/OrdalieTech/orb/codingagent/plugins"
 )
+
+// otherDiagnostic wraps a plain warning string for the startup diagnostics
+// stream; startupDiagnosticText flattens it back unchanged.
+func otherDiagnostic(message string) modes.StartupDiagnostic {
+	return modes.StartupDiagnostic{Kind: modes.StartupDiagnosticOther, Message: message}
+}
+
+func otherDiagnostics(messages []string) []modes.StartupDiagnostic {
+	diagnostics := make([]modes.StartupDiagnostic, 0, len(messages))
+	for _, message := range messages {
+		diagnostics = append(diagnostics, otherDiagnostic(message))
+	}
+	return diagnostics
+}
+
+func hostLoadErrorDiagnostic(loadError extensionhost.LoadError) modes.StartupDiagnostic {
+	return modes.StartupDiagnostic{Kind: modes.StartupDiagnosticExtension, Path: loadError.Path, Message: loadError.Error}
+}
+
+// hostDiagnostic keeps the host-reported message and path; the message alone is
+// what print modes historically emitted for these.
+func hostDiagnostic(diagnostic extensions.Diagnostic) modes.StartupDiagnostic {
+	return modes.StartupDiagnostic{Kind: modes.StartupDiagnosticOther, Path: diagnostic.Path, Message: diagnostic.Message}
+}
+
+// startupDiagnosticText flattens a startup diagnostic to the string stderr and
+// print modes have always emitted.
+func startupDiagnosticText(diagnostic modes.StartupDiagnostic) string {
+	switch diagnostic.Kind {
+	case modes.StartupDiagnosticExtension:
+		return "Extension error (" + diagnostic.Path + "): " + diagnostic.Message
+	case modes.StartupDiagnosticCollision:
+		return "name " + diagnostic.Message + " collision"
+	default:
+		return diagnostic.Message
+	}
+}
 
 // Each runtime (re)load builds a fresh extension host; the previous child must
 // be closed before it becomes unreachable.
@@ -33,7 +71,7 @@ var compiledExtensions = []extensions.CompiledExtension{
 	{Name: "status-line", Factory: statusline.Extension},
 }
 
-func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config.SettingsManager, packages *codingagent.ResolvedPaths) (*extensions.Registry, []string) {
+func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config.SettingsManager, packages *codingagent.ResolvedPaths) (*extensions.Registry, []modes.StartupDiagnostic) {
 	catalog := append([]extensions.CompiledExtension(nil), compiledExtensions...)
 	catalog = append(catalog, extensions.CompiledExtension{
 		Name: "plugin-control", Factory: firstpartyplugins.Control(settings), Hidden: true, DefaultEnabled: true,
@@ -42,15 +80,15 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 	for _, name := range firstpartyplugins.Names() {
 		catalog = append(catalog, extensions.CompiledExtension{Name: name, Factory: pluginCatalog[name]})
 	}
-	var diagnostics []string
+	var diagnostics []modes.StartupDiagnostic
 	// metadataOnly runs (e.g. --list-models) build the runtime purely to
 	// enumerate models/providers; MCP servers contribute tools, not models, so
 	// skip them rather than eagerly spawn and connect every configured server.
 	if !args.NoExtensions && !args.metadataOnly {
 		servers, warnings, err := mcp.ParseSettingsWithWarnings(map[string]any(settings.GetSettings()))
-		diagnostics = append(diagnostics, warnings...)
+		diagnostics = append(diagnostics, otherDiagnostics(warnings)...)
 		if err != nil {
-			diagnostics = append(diagnostics, err.Error())
+			diagnostics = append(diagnostics, otherDiagnostic(err.Error()))
 		}
 		if len(servers) > 0 {
 			manager := mcp.NewManager(cwd, servers)
@@ -72,7 +110,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 	}
 	registry, loadErrors := extensions.LoadCompiled(cwd, catalog, overrides, args.NoExtensions)
 	for _, loadError := range loadErrors {
-		diagnostics = append(diagnostics, loadError.Error())
+		diagnostics = append(diagnostics, otherDiagnostic(loadError.Error()))
 	}
 	if len(args.Extensions) > 0 || !args.NoExtensions {
 		explicitPaths := make([]string, 0, len(args.Extensions))
@@ -92,7 +130,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 			})
 			resolved, err := manager.ResolveExtensionSources(sourceSpecs, false, true)
 			if err != nil {
-				diagnostics = append(diagnostics, err.Error())
+				diagnostics = append(diagnostics, otherDiagnostic(err.Error()))
 			} else {
 				for _, resource := range resolved.Extensions {
 					if resource.Enabled {
@@ -126,11 +164,11 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 				}); cached != nil {
 					replaceActiveExtensionHost(nil)
 					for _, diagnostic := range cached.Diagnostics {
-						diagnostics = append(diagnostics, diagnostic.Message)
+						diagnostics = append(diagnostics, hostDiagnostic(diagnostic))
 					}
 					loadErrors := append(append([]extensionhost.LoadError(nil), cached.Errors...), cached.Register(registry)...)
 					for _, loadError := range loadErrors {
-						diagnostics = append(diagnostics, fmt.Sprintf("Extension error (%s): %s", loadError.Path, loadError.Error))
+						diagnostics = append(diagnostics, hostLoadErrorDiagnostic(loadError))
 					}
 					return registry, diagnostics
 				}
@@ -150,10 +188,10 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 			result := manager.RegisterInto(context.Background(), registry, paths)
 			replaceActiveExtensionHost(manager)
 			for _, diagnostic := range result.Diagnostics {
-				diagnostics = append(diagnostics, diagnostic.Message)
+				diagnostics = append(diagnostics, hostDiagnostic(diagnostic))
 			}
 			for _, loadError := range result.Errors {
-				diagnostics = append(diagnostics, fmt.Sprintf("Extension error (%s): %s", loadError.Path, loadError.Error))
+				diagnostics = append(diagnostics, hostLoadErrorDiagnostic(loadError))
 			}
 		} else {
 			replaceActiveExtensionHost(nil)
@@ -205,7 +243,7 @@ func packageExtensionPaths(resources []codingagent.ResolvedResource) (user, proj
 // paths (--help, unknown-flag validation) with the same project-trust gating as
 // createRuntimeInputs: untrusted project settings contribute nothing, so no
 // project-configured MCP server or extension can run before trust is granted.
-func loadStartupExtensions(cwd string, args CLIArgs) (*extensions.Registry, []string, *bool, error) {
+func loadStartupExtensions(cwd string, args CLIArgs) (*extensions.Registry, []modes.StartupDiagnostic, *bool, error) {
 	agentDir, err := config.GetAgentDir()
 	if err != nil {
 		return nil, nil, nil, err
@@ -240,7 +278,7 @@ type projectTrustResolution struct {
 	Trusted          bool
 	Undecided        bool
 	PreTrustRegistry *extensions.Registry
-	Diagnostics      []string
+	Diagnostics      []modes.StartupDiagnostic
 }
 
 // resolveStartupProjectTrust decides project trust the way upstream does: when
@@ -250,7 +288,7 @@ type projectTrustResolution struct {
 // emitProjectTrustEvent). It leaves settings carrying the decision.
 func resolveStartupProjectTrust(ctx context.Context, cwd, agentDir string, args CLIArgs, settings *config.SettingsManager) (projectTrustResolution, error) {
 	resolution := projectTrustResolution{Undecided: args.ProjectTrusted == nil && config.HasTrustRequiringProjectResources(cwd)}
-	var preTrustDiagnostics []string
+	var preTrustDiagnostics []modes.StartupDiagnostic
 	var trustRunner *extensions.Runner
 	if resolution.Undecided {
 		untrustedPaths, err := codingagent.NewPackageManager(codingagent.PackageManagerOptions{
@@ -271,7 +309,7 @@ func resolveStartupProjectTrust(ctx context.Context, cwd, agentDir string, args 
 		DefaultProjectTrust: settings.GetDefaultProjectTrust(),
 		Runner:              trustRunner,
 		OnExtensionError: func(message string) {
-			resolution.Diagnostics = append(resolution.Diagnostics, message)
+			resolution.Diagnostics = append(resolution.Diagnostics, otherDiagnostic(message))
 		},
 	})
 	if err != nil {

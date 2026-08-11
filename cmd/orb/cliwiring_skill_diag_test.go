@@ -10,6 +10,7 @@ import (
 
 	"github.com/OrdalieTech/orb/codingagent/config"
 	"github.com/OrdalieTech/orb/codingagent/extensions"
+	"github.com/OrdalieTech/orb/codingagent/modes"
 	"github.com/OrdalieTech/orb/codingagent/session"
 )
 
@@ -65,9 +66,9 @@ func TestSkillDiagnosticsAreSeparatedFromPrintedDiagnostics(t *testing.T) {
 	}
 }
 
-func anyContains(values []string, want string) bool {
-	for _, value := range values {
-		if strings.Contains(value, want) {
+func anyContains(diagnostics []modes.StartupDiagnostic, want string) bool {
+	for _, diagnostic := range diagnostics {
+		if strings.Contains(startupDiagnosticText(diagnostic), want) {
 			return true
 		}
 	}

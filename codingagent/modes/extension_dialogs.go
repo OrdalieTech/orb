@@ -5,7 +5,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"sync"
 
 	"github.com/OrdalieTech/orb/tui"
 
@@ -31,11 +30,9 @@ type ExtensionSelectorComponent struct {
 	onCancel              func()
 	onToggleToolsExpanded func()
 	countdown             *CountdownTimer
-	// optionRows holds the first row of every option plus a trailing end row;
-	// options wrap at narrow widths, so their heights cannot be assumed. It is
-	// guarded because renders can overlap.
-	rowsMu     sync.Mutex
-	optionRows []int
+	// rows holds the first row of every option plus a trailing end row;
+	// options wrap at narrow widths, so their heights cannot be assumed.
+	rows listRowOffsets
 }
 
 // NewExtensionSelectorItemsComponent builds the selector dialog from
@@ -145,7 +142,9 @@ func (component *ExtensionSelectorComponent) Dispose() {
 func (component *ExtensionSelectorComponent) Invalidate() { component.container.Invalidate() }
 
 // Render inlines the container walk so it can record where each option landed
-// for mouse hit-testing; the emitted lines are the container's own.
+// for mouse hit-testing; unlike the windowed selectors, the end boundary is
+// recorded right after the last option so the trailing hint lines never
+// hit-test as the last option. The emitted lines are the container's own.
 func (component *ExtensionSelectorComponent) Render(width int) []string {
 	lines, rows := make([]string, 0), make([]int, 0, len(component.options)+1)
 	for _, child := range component.container.Children() {
@@ -159,9 +158,7 @@ func (component *ExtensionSelectorComponent) Render(width int) []string {
 		}
 		rows = append(rows, len(lines))
 	}
-	component.rowsMu.Lock()
-	component.optionRows = rows
-	component.rowsMu.Unlock()
+	component.rows.setOffsets(rows)
 	return lines
 }
 
@@ -180,15 +177,11 @@ func (component *ExtensionSelectorComponent) HandleMouse(event tui.MouseEvent) b
 // ListRowAt maps a rendered row to its option index; options wrap at narrow
 // widths, so their heights come from the recorded render.
 func (component *ExtensionSelectorComponent) ListRowAt(row int) (int, bool) {
-	component.rowsMu.Lock()
-	rows := component.optionRows
-	component.rowsMu.Unlock()
-	for index := range min(len(component.options), max(0, len(rows)-1)) {
-		if row >= rows[index] && row < rows[index+1] {
-			return index, true
-		}
+	index, ok := component.rows.rowAt(row)
+	if !ok || index >= len(component.options) {
+		return 0, false
 	}
-	return 0, false
+	return index, true
 }
 
 // ListSelectRow moves the highlight; every option is always rendered, so

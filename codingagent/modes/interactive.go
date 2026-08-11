@@ -34,6 +34,23 @@ import (
 	theme "github.com/OrdalieTech/orb/codingagent/modes/theme"
 )
 
+// StartupDiagnostic kinds; anything else renders as a plain message.
+const (
+	StartupDiagnosticCollision = "collision"
+	StartupDiagnosticExtension = "extension"
+	StartupDiagnosticOther     = "other"
+)
+
+// StartupDiagnostic carries one startup warning into interactive mode with the
+// structure it was born with, so the warning band formats from fields instead
+// of re-parsing flattened strings. Collision entries hold the quoted resource
+// name in Message; extension entries hold the origin file in Path.
+type StartupDiagnostic struct {
+	Kind    string
+	Path    string
+	Message string
+}
+
 // InteractiveModeOptions configures the interactive TUI mode.
 type InteractiveModeOptions struct {
 	InitialMessage string
@@ -43,7 +60,7 @@ type InteractiveModeOptions struct {
 	// Verbose forces verbose startup, overriding the quietStartup setting
 	// (upstream interactive-mode.ts:319-320).
 	Verbose     bool
-	Diagnostics []string
+	Diagnostics []StartupDiagnostic
 	Terminal    tui.Terminal
 	Host        InteractiveSessionHost
 	// StartupVersionCheck is the non-blocking startup seam used by WP-661. The

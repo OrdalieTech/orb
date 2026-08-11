@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/orb/codingagent/extensions"
+	"github.com/OrdalieTech/orb/codingagent/modes"
 	"github.com/OrdalieTech/orb/internal/jstrim"
 )
 
@@ -75,7 +76,7 @@ type CLIArgs struct {
 	skipMetadataCache bool
 	extensionsLoaded  bool
 	extensionRegistry *extensions.Registry
-	extensionWarnings []string
+	extensionWarnings []modes.StartupDiagnostic
 	// resolvedProjectTrust carries the trust decision loadStartupExtensions
 	// already made in this process, so the runtime neither re-fires the
 	// project_trust event nor replaces the live extension host.

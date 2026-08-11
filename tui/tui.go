@@ -21,10 +21,14 @@ const (
 	// the viewport edge the pointer travels.
 	selectionScrollMaxRows = 8
 	segmentReset           = "\x1b[0m\x1b]8;;\x07"
-	scrollbarThumb         = segmentReset + "\x1b[999C┃"
-	scrollOnOutputOff      = "\x1b[?1010l"
-	scrollOnOutputOn       = "\x1b[?1010h"
-	alternateScreenOn      = "\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1006h"
+	scrollbarThumb         = segmentReset + "\x1b[999C" + string(BandGutterBar)
+	// BandGutterBar is the glyph chat bands paint in their gutter column and
+	// the scrollbar paints as its thumb. Selection copies strip it as
+	// presentation, so the renderers and selectionMarginWidth must agree on it.
+	BandGutterBar     = '┃'
+	scrollOnOutputOff = "\x1b[?1010l"
+	scrollOnOutputOn  = "\x1b[?1010h"
+	alternateScreenOn = "\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1006h"
 	// 1003 is focus-scoped (syncMouseMotionLocked); the off sequence always
 	// clears it so a crash cannot leave the terminal streaming motion.
 	alternateScreenOff = "\x1b[?1003l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1049l"
@@ -905,7 +909,7 @@ func (ui *TUI) selectedTextLocked() string {
 func selectionMarginWidth(line string) int {
 	margin := 0
 	for _, r := range line {
-		if r != ' ' && r != '┃' {
+		if r != ' ' && r != BandGutterBar {
 			break
 		}
 		margin++

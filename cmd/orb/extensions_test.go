@@ -69,7 +69,11 @@ func TestLoadCompiledExtensionsAddsMCPOnlyForEnabledConfiguration(t *testing.T) 
 			if paths != test.wantPath {
 				t.Fatalf("extension paths = %q, want %q", paths, test.wantPath)
 			}
-			warnings := strings.Join(diagnostics, "\n")
+			texts := make([]string, 0, len(diagnostics))
+			for _, diagnostic := range diagnostics {
+				texts = append(texts, startupDiagnosticText(diagnostic))
+			}
+			warnings := strings.Join(texts, "\n")
 			if test.wantWarning == "" && warnings != "" || test.wantWarning != "" && !strings.Contains(warnings, test.wantWarning) {
 				t.Fatalf("diagnostics = %q, want substring %q", warnings, test.wantWarning)
 			}

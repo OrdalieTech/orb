@@ -488,14 +488,7 @@ func (component *TreeSelectorComponent) HandleMouse(event tui.MouseEvent) bool {
 // ListRowAt maps a rendered row to its tree-view row index.
 func (component *TreeSelectorComponent) ListRowAt(row int) (int, bool) {
 	top, first, count, _ := component.rowLayout()
-	if row < top || row >= top+count {
-		return 0, false
-	}
-	index := first + row - top
-	if index >= len(component.view.rows) {
-		return 0, false
-	}
-	return index, true
+	return tui.ListRowIndex(row, top, first, count, len(component.view.rows))
 }
 
 // ListSelectRow moves the highlight without re-anchoring the window, so

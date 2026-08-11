@@ -14,6 +14,7 @@ import (
 	"github.com/OrdalieTech/orb/codingagent"
 	"github.com/OrdalieTech/orb/codingagent/config"
 	"github.com/OrdalieTech/orb/codingagent/extensions"
+	"github.com/OrdalieTech/orb/codingagent/modes"
 	"github.com/OrdalieTech/orb/codingagent/tools"
 )
 
@@ -37,10 +38,10 @@ type runtimeInputs struct {
 	PromptOptions    codingagent.SystemPromptOptions
 	Auth             *config.AuthStorage
 	RuntimeAuth      *runtimeCredentials
-	Diagnostics      []string
+	Diagnostics      []modes.StartupDiagnostic
 	// ResourceDiagnostics carries skill/prompt resource warnings, shown in
 	// interactive mode only; upstream print/RPC modes print none of them.
-	ResourceDiagnostics []string
+	ResourceDiagnostics []modes.StartupDiagnostic
 	ResourceLoader      codingagent.ResourceLoader
 }
 
@@ -177,10 +178,10 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	if err != nil {
 		return runtimeInputs{}, err
 	}
-	diagnostics := make([]string, 0)
+	diagnostics := make([]modes.StartupDiagnostic, 0)
 	diagnostics = append(diagnostics, trust.Diagnostics...)
 	for _, diagnostic := range settings.DrainErrors() {
-		diagnostics = append(diagnostics, diagnostic.Error())
+		diagnostics = append(diagnostics, otherDiagnostic(diagnostic.Error()))
 	}
 	extensionRegistry := args.extensionRegistry
 	extensionDiagnostics := args.extensionWarnings
@@ -191,7 +192,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	diagnostics = append(diagnostics, extensionDiagnostics...)
 	var resourceLoader codingagent.ResourceLoader
 	var resources codingagent.Resources
-	var resourceDiagnostics []string
+	var resourceDiagnostics []modes.StartupDiagnostic
 	var activeTools, baseTools []agent.AgentTool
 	var activeNames, initialNames, baseToolNames []string
 	var allowedTools *[]string
@@ -227,9 +228,9 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		}
 		resources.Diagnostics = append(resources.Diagnostics, skills.Diagnostics...)
 		resources.Diagnostics = append(resources.Diagnostics, prompts.Diagnostics...)
-		resourceDiagnostics = make([]string, 0, len(resources.Diagnostics))
+		resourceDiagnostics = make([]modes.StartupDiagnostic, 0, len(resources.Diagnostics))
 		for _, diagnostic := range resources.Diagnostics {
-			resourceDiagnostics = append(resourceDiagnostics, diagnostic.Message)
+			resourceDiagnostics = append(resourceDiagnostics, startupResourceDiagnostic(diagnostic))
 		}
 
 		selection := ResolveBuiltInToolSelection(args)
@@ -285,14 +286,18 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	}
 	if extensionRegistry != nil {
 		extensionRegistry.BindModelRegistry(registry, func(extensionError extensions.ExtensionError) {
-			diagnostics = append(diagnostics, fmt.Sprintf("Extension error (%s, %s): %s", extensionError.ExtensionPath, extensionError.Event, extensionError.Error))
+			diagnostics = append(diagnostics, modes.StartupDiagnostic{
+				Kind:    modes.StartupDiagnosticExtension,
+				Path:    extensionError.ExtensionPath,
+				Message: fmt.Sprintf("%s: %s", extensionError.Event, extensionError.Error),
+			})
 		})
 	}
 	model, scopedThinking, scopedModels, modelDiagnostics, err := resolveRuntimeModel(args, settings, registry)
 	if err != nil {
 		return runtimeInputs{}, err
 	}
-	diagnostics = append(diagnostics, modelDiagnostics...)
+	diagnostics = append(diagnostics, otherDiagnostics(modelDiagnostics)...)
 	thinking := settings.GetDefaultThinkingLevel()
 	if thinking == "" {
 		thinking = ai.ModelThinkingMedium
@@ -418,6 +423,19 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		ResourceDiagnostics: resourceDiagnostics,
 		ResourceLoader:      resourceLoader,
 	}, nil
+}
+
+// startupResourceDiagnostic keeps the structure a resource diagnostic is born
+// with; prompt collisions display under their slash-command spelling.
+func startupResourceDiagnostic(diagnostic codingagent.ResourceDiagnostic) modes.StartupDiagnostic {
+	if diagnostic.Type == "collision" && diagnostic.Collision != nil {
+		name := diagnostic.Collision.Name
+		if diagnostic.Collision.ResourceType == "prompt" {
+			name = "/" + name
+		}
+		return modes.StartupDiagnostic{Kind: modes.StartupDiagnosticCollision, Path: diagnostic.Path, Message: fmt.Sprintf("%q", name)}
+	}
+	return modes.StartupDiagnostic{Kind: modes.StartupDiagnosticOther, Path: diagnostic.Path, Message: diagnostic.Message}
 }
 
 func hasNonControlExtensions(registry *extensions.Registry) bool {

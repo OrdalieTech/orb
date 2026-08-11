@@ -584,14 +584,7 @@ func (selector *SessionSelectorComponent) HandleMouse(event tui.MouseEvent) bool
 func (selector *SessionSelectorComponent) ListRowAt(row int) (int, bool) {
 	selector.mu.Lock()
 	defer selector.mu.Unlock()
-	if row < selector.rowTop || row >= selector.rowTop+selector.rowCount {
-		return 0, false
-	}
-	index := selector.rowStart + row - selector.rowTop
-	if index >= len(selector.filtered) {
-		return 0, false
-	}
-	return index, true
+	return tui.ListRowIndex(row, selector.rowTop, selector.rowStart, selector.rowCount, len(selector.filtered))
 }
 
 // ListSelectRow moves the highlight without re-anchoring the window, so

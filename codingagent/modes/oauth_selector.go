@@ -46,11 +46,7 @@ type OAuthSelectorComponent struct {
 	onSelect           func(InteractiveAuthProvider)
 	onCancel           func()
 	showAuthTypeLabels bool
-
-	rowsMu       sync.Mutex
-	rowOffsets   []int
-	visibleStart int
-	visibleCount int
+	rows               listRowOffsets
 }
 
 // NewOAuthSelectorComponent builds the selector; initialSearchInput pre-fills
@@ -122,9 +118,7 @@ func (component *OAuthSelectorComponent) updateList() {
 
 	startIndex := component.window.Start(component.selectedIndex, len(component.filteredProviders), authSelectorMaxVisible)
 	endIndex := min(startIndex+authSelectorMaxVisible, len(component.filteredProviders))
-	component.rowsMu.Lock()
-	component.visibleStart, component.visibleCount = startIndex, endIndex-startIndex
-	component.rowsMu.Unlock()
+	component.rows.setWindow(startIndex, endIndex-startIndex)
 
 	for index := startIndex; index < endIndex; index++ {
 		provider := component.filteredProviders[index]
@@ -226,32 +220,10 @@ func (component *OAuthSelectorComponent) SetFocused(focused bool) {
 
 func (component *OAuthSelectorComponent) Invalidate() { component.container.Invalidate() }
 
-// Render inlines the container walk so it can record where each visible row
-// landed for mouse hit-testing; the emitted lines are the container's own.
+// Render records where each visible row landed for mouse hit-testing; the
+// emitted lines are the container's own.
 func (component *OAuthSelectorComponent) Render(width int) []string {
-	component.rowsMu.Lock()
-	count := component.visibleCount
-	component.rowsMu.Unlock()
-	lines, rows := make([]string, 0), make([]int, 0, count+1)
-	for _, child := range component.container.Children() {
-		if child != component.listContainer {
-			lines = append(lines, child.Render(width)...)
-			continue
-		}
-		for index, row := range component.listContainer.Children() {
-			if index <= count {
-				rows = append(rows, len(lines))
-			}
-			lines = append(lines, row.Render(width)...)
-		}
-	}
-	if len(rows) == count {
-		rows = append(rows, len(lines))
-	}
-	component.rowsMu.Lock()
-	component.rowOffsets = rows
-	component.rowsMu.Unlock()
-	return lines
+	return component.rows.renderRecordingRows(component.container, component.listContainer, width)
 }
 
 // WantsMouseMotion turns on hover reports while the selector holds focus.
@@ -268,7 +240,7 @@ func (component *OAuthSelectorComponent) HandleMouse(event tui.MouseEvent) bool 
 // ListRowAt maps a component-local row to the filtered-provider index it
 // renders.
 func (component *OAuthSelectorComponent) ListRowAt(row int) (int, bool) {
-	index, ok := component.rowAt(row)
+	index, ok := component.rows.rowAt(row)
 	if !ok || index >= len(component.filteredProviders) {
 		return 0, false
 	}
@@ -278,37 +250,17 @@ func (component *OAuthSelectorComponent) ListRowAt(row int) (int, bool) {
 // ListSelectRow moves the highlight without re-anchoring the window, so
 // hover can never shift rows under the cursor.
 func (component *OAuthSelectorComponent) ListSelectRow(index int) {
-	if index == component.selectedIndex {
-		return
-	}
-	component.window.Freeze()
-	component.selectedIndex = index
-	component.updateList()
+	listSelectRow(&component.window, &component.selectedIndex, index, component.updateList)
 }
 
 // ListScroll moves the selection one row per tick, recentring like keyboard
 // navigation does.
 func (component *OAuthSelectorComponent) ListScroll(direction int) {
-	component.window.Recenter()
-	component.selectedIndex = max(0, min(component.selectedIndex+direction, len(component.filteredProviders)-1))
-	component.updateList()
+	listScroll(&component.window, &component.selectedIndex, direction, len(component.filteredProviders), component.updateList)
 }
 
 // ListConfirm confirms the current selection.
 func (component *OAuthSelectorComponent) ListConfirm() { component.confirmSelection() }
-
-// rowAt maps a component-local row to the filtered-provider index it renders.
-func (component *OAuthSelectorComponent) rowAt(row int) (int, bool) {
-	component.rowsMu.Lock()
-	rows, start := component.rowOffsets, component.visibleStart
-	component.rowsMu.Unlock()
-	for index := range max(0, len(rows)-1) {
-		if row >= rows[index] && row < rows[index+1] {
-			return start + index, true
-		}
-	}
-	return 0, false
-}
 
 type authDialogLine struct {
 	text  string

@@ -84,22 +84,29 @@ func (snapshot *Snapshot) Set(value any, path ...any) bool {
 // Orb-owned presentation vocabulary can grow (a new theme role) without
 // hand-editing fixture shape. Intermediate path steps must already exist, and
 // behavior-shaped values keep no Add call sites, exactly like Set.
+//
+// Add is grow-only: a member whose source disappeared (a deleted theme role)
+// stays in the fixture, and comparison mode fails on the stale value until it
+// is removed by hand — the deliberate trade for preserving member order.
 func (snapshot *Snapshot) Add(value any, path ...any) bool {
 	if snapshot == nil {
 		return false
 	}
 	snapshot.tb.Helper()
-	normalized, err := normalizeSnapshotValue(value)
-	if err != nil {
-		snapshot.tb.Fatalf("conformance: normalize %s/%s %v: %v", snapshot.family, snapshot.name, path, err)
+	if name, named := lastPathMember(path); named {
+		if parent, ok := nodeAt(snapshot.root, path[:len(path)-1]); ok {
+			if object, isObject := parent.(jsonwire.OrderedObject); isObject {
+				if _, exists := object.Value(name); !exists {
+					root, err := setSnapshotPath(snapshot.root, path[:len(path)-1], append(object, jsonwire.OrderedMember{Name: name, Value: nil}))
+					if err != nil {
+						snapshot.tb.Fatalf("conformance: add %s/%s %v: %v", snapshot.family, snapshot.name, path, err)
+					}
+					snapshot.root = root
+				}
+			}
+		}
 	}
-	root, err := addSnapshotPath(snapshot.root, path, normalized)
-	if err != nil {
-		snapshot.tb.Fatalf("conformance: add %s/%s %v: %v", snapshot.family, snapshot.name, path, err)
-	}
-	snapshot.root = root
-	snapshot.dirty = true
-	return true
+	return snapshot.Set(value, path...)
 }
 
 // Has reports whether path exists in the snapshot. It is false in comparison
@@ -110,30 +117,8 @@ func (snapshot *Snapshot) Has(path ...any) bool {
 	if snapshot == nil {
 		return false
 	}
-	node := snapshot.root
-	for _, step := range path {
-		switch typed := step.(type) {
-		case string:
-			object, ok := node.(jsonwire.OrderedObject)
-			if !ok {
-				return false
-			}
-			value, ok := object.Value(typed)
-			if !ok {
-				return false
-			}
-			node = value
-		case int:
-			items, ok := node.([]any)
-			if !ok || typed < 0 || typed >= len(items) {
-				return false
-			}
-			node = items[typed]
-		default:
-			return false
-		}
-	}
-	return true
+	_, ok := nodeAt(snapshot.root, path)
+	return ok
 }
 
 func (snapshot *Snapshot) save() {
@@ -155,43 +140,42 @@ func (snapshot *Snapshot) save() {
 
 // addSnapshotPath is setSnapshotPath except that a missing member named by
 // the final path step is appended instead of rejected.
-func addSnapshotPath(node any, path []any, value any) (any, error) {
-	name, named := "", false
-	if len(path) > 0 {
-		name, named = path[len(path)-1].(string)
-	}
-	if !named {
-		return setSnapshotPath(node, path, value)
-	}
-	parent := node
-	for _, step := range path[:len(path)-1] {
+// nodeAt walks path (object member names and array indexes) and returns the
+// node it names; it is the one path walker behind Has and Add.
+func nodeAt(node any, path []any) (any, bool) {
+	for _, step := range path {
 		switch typed := step.(type) {
 		case string:
-			object, ok := parent.(jsonwire.OrderedObject)
-			if !ok {
-				return nil, fmt.Errorf("member %q of non-object %T", typed, parent)
+			object, isObject := node.(jsonwire.OrderedObject)
+			if !isObject {
+				return nil, false
 			}
-			child, ok := object.Value(typed)
-			if !ok {
-				return nil, fmt.Errorf("member %q is missing", typed)
+			child, exists := object.Value(typed)
+			if !exists {
+				return nil, false
 			}
-			parent = child
+			node = child
 		case int:
-			items, ok := parent.([]any)
-			if !ok || typed < 0 || typed >= len(items) {
-				return nil, fmt.Errorf("index %d out of range", typed)
+			items, isArray := node.([]any)
+			if !isArray || typed < 0 || typed >= len(items) {
+				return nil, false
 			}
-			parent = items[typed]
+			node = items[typed]
 		default:
-			return nil, fmt.Errorf("path element %T is neither member name nor index", step)
+			return nil, false
 		}
 	}
-	if object, ok := parent.(jsonwire.OrderedObject); ok {
-		if _, exists := object.Value(name); !exists {
-			return setSnapshotPath(node, path[:len(path)-1], append(object, jsonwire.OrderedMember{Name: name, Value: value}))
-		}
+	return node, true
+}
+
+// lastPathMember reports the member name a path ends with, false when it ends
+// with an array index instead.
+func lastPathMember(path []any) (string, bool) {
+	if len(path) == 0 {
+		return "", false
 	}
-	return setSnapshotPath(node, path, value)
+	name, named := path[len(path)-1].(string)
+	return name, named
 }
 
 func setSnapshotPath(node any, path []any, value any) (any, error) {
