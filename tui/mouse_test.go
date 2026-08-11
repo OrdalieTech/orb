@@ -104,9 +104,17 @@ func TestTUIMouseFallsThroughWhenComponentDeclines(t *testing.T) {
 	ui, _ := viewportWithTarget(t, target)
 	ui.SetSelectionHandler(func(string) {})
 
+	// A declined press still falls through to the viewport, but selection is
+	// constrained to the transcript: a chrome press starts nothing.
 	ui.handleViewportInput("\x1b[<0;4;5M")
-	if len(target.events) != 1 || !ui.selection.active {
-		t.Fatalf("declined press did not reach text selection: events=%d selection=%+v", len(target.events), ui.selection)
+	if len(target.events) != 1 || ui.selection.active {
+		t.Fatalf("declined chrome press = events %d selection %+v, want fall-through without selection", len(target.events), ui.selection)
+	}
+	// The fall-through path itself stays alive: a declined wheel scrolls the
+	// transcript.
+	ui.handleViewportInput("\x1b[<64;4;5M")
+	if ui.viewportFollow {
+		t.Fatal("declined wheel did not fall through to the transcript")
 	}
 }
 
@@ -115,9 +123,17 @@ func TestTUIModifiedMouseSkipsComponentDispatch(t *testing.T) {
 	ui, _ := viewportWithTarget(t, target)
 	ui.SetSelectionHandler(func(string) {})
 
-	ui.handleViewportInput("\x1b[<4;4;5M") // shift+left press
+	ui.handleViewportInput("\x1b[<4;4;1M") // shift+left press on the transcript
 	if len(target.events) != 0 || !ui.selection.active {
 		t.Fatalf("shift-modified press was captured: events=%d selection=%+v", len(target.events), ui.selection)
+	}
+	ui.handleViewportInput("\x1b[<4;4;1m")
+
+	// Over the chrome the modifier still skips dispatch, and the constrained
+	// selection starts nothing either.
+	ui.handleViewportInput("\x1b[<4;4;5M")
+	if len(target.events) != 0 || ui.selection.active {
+		t.Fatalf("shift-modified chrome press = events %d selection %+v, want neither dispatch nor selection", len(target.events), ui.selection)
 	}
 }
 
