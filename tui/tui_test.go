@@ -453,9 +453,9 @@ func TestTUIViewportDragCopiesVisibleText(t *testing.T) {
 
 func TestTUIViewportDoubleClickCopiesVisibleSentence(t *testing.T) {
 	ui := NewTUI(newFakeTerminal(30, 3))
-	ui.SetViewport(&mutableLines{}, &mutableLines{})
-	ui.viewportBodyHeight = 2
-	ui.previousLines = []string{"First. Second", "sentence! Third.", ""}
+	body := &mutableLines{lines: []string{"First. Second", "sentence! Third."}}
+	ui.SetViewport(body, &mutableLines{lines: []string{"chrome"}})
+	ui.previousLines = ui.renderViewport(30, 3)
 	copied := make(chan string, 1)
 	ui.SetSelectionHandler(func(text string) { copied <- text })
 
@@ -473,7 +473,8 @@ func TestTUIViewportDoubleClickCopiesVisibleSentence(t *testing.T) {
 
 func TestTUISelectionPreservesWideStyledText(t *testing.T) {
 	ui := NewTUI(newFakeTerminal(10, 2))
-	ui.previousLines = []string{"\x1b[31mA界B\x1b[0m" + scrollbarThumb}
+	ui.SetViewport(&mutableLines{lines: []string{"\x1b[31mA界B\x1b[0m"}}, &mutableLines{})
+	ui.previousLines = ui.renderViewport(10, 2)
 	ui.selection = mouseSelection{
 		anchor: mousePoint{row: 0, column: 3},
 		focus:  mousePoint{row: 0, column: 2},
