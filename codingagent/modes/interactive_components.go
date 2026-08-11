@@ -60,15 +60,62 @@ func applyMarkdownTransformer(transformer extensions.MarkdownTransformer, markdo
 }
 
 // ─────────────────────────────────────────────────────────────
+// Chat bands
+// ─────────────────────────────────────────────────────────────
+
+// chatBandPad is the interior horizontal padding of tool and custom band
+// boxes; the user band scales as outputPad+1 instead so the padding setting
+// keeps meaning. With the one-cell gutter every band's text starts at column
+// 3 by default, aligned with assistant prose (outputPad+2) — opencode's
+// indent ladder.
+const chatBandPad = 2
+
+// chatBand reserves one gutter cell left of a band box so all chat bands
+// share a left edge: the user-message band paints its gutter as an accent
+// bar, tool and custom bands leave it blank. Render never returns the child's
+// cached slice, so callers may prefix zone markers safely.
+type chatBand struct {
+	inner  tui.Component
+	gutter func() string
+}
+
+func (band *chatBand) Invalidate() {
+	if invalidator, ok := band.inner.(interface{ Invalidate() }); ok {
+		invalidator.Invalidate()
+	}
+}
+
+func (band *chatBand) Render(width int) []string {
+	if width <= 1 {
+		return append([]string(nil), band.inner.Render(width)...)
+	}
+	inner := band.inner.Render(width - 1)
+	gutter := ""
+	if band.gutter != nil {
+		gutter = band.gutter()
+	}
+	if gutter == "" {
+		gutter = " "
+	}
+	lines := make([]string, len(inner))
+	for index, line := range inner {
+		lines[index] = gutter + line
+	}
+	return lines
+}
+
+func userMessageBar() string { return theme.FG("accent", "┃") }
+
+// ─────────────────────────────────────────────────────────────
 // UserMessageComponent
 // ─────────────────────────────────────────────────────────────
 
 type UserMessageComponent struct {
-	box *tui.Box
+	band *chatBand
 }
 
 func NewUserMessageComponent(text string, mdTheme tui.MarkdownTheme, outputPad int, transformers []extensions.MarkdownTransformer) *UserMessageComponent {
-	box := tui.NewBox(outputPad, 1, func(t string) string { return theme.BG("userMessageBg", t) })
+	box := tui.NewBox(outputPad+1, 1, func(t string) string { return theme.BG("userMessageBg", t) })
 	md := tui.NewMarkdown(text, 0, 0, mdTheme, &tui.DefaultTextStyle{
 		Color: func(t string) string { return theme.FG("userMessageText", t) },
 	}, &tui.MarkdownOptions{
@@ -77,12 +124,12 @@ func NewUserMessageComponent(text string, mdTheme tui.MarkdownTheme, outputPad i
 		Transform:                  newMarkdownTransform("user", false, transformers),
 	})
 	box.AddChild(md)
-	return &UserMessageComponent{box: box}
+	return &UserMessageComponent{band: &chatBand{inner: box, gutter: userMessageBar}}
 }
 
-func (c *UserMessageComponent) Invalidate() { c.box.Invalidate() }
+func (c *UserMessageComponent) Invalidate() { c.band.Invalidate() }
 func (c *UserMessageComponent) Render(width int) []string {
-	lines := c.box.Render(width)
+	lines := c.band.Render(width)
 	if len(lines) > 0 {
 		lines[0] = osc133ZoneStart + lines[0]
 		lines[len(lines)-1] = osc133ZoneEnd + osc133ZoneFinal + lines[len(lines)-1]
@@ -193,7 +240,7 @@ func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMes
 		switch value := message.Content[index].(type) {
 		case *ai.TextContent:
 			if text := strings.TrimSpace(value.Text); text != "" {
-				c.contentContainer.AddChild(tui.NewMarkdown(text, c.outputPad, 0, c.mdTheme, nil, &tui.MarkdownOptions{
+				c.contentContainer.AddChild(tui.NewMarkdown(text, c.outputPad+2, 0, c.mdTheme, nil, &tui.MarkdownOptions{
 					Transform: newMarkdownTransform("assistant", c.isStreaming, c.transformers),
 				}))
 			}
@@ -217,9 +264,9 @@ func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMes
 				if label == "" {
 					label = "Thinking..."
 				}
-				c.contentContainer.AddChild(tui.NewText(theme.Italic(theme.FG("thinkingText", label)), c.outputPad, 0, nil))
+				c.contentContainer.AddChild(tui.NewText(theme.Italic(theme.FG("thinkingText", label)), c.outputPad+2, 0, nil))
 			} else {
-				c.contentContainer.AddChild(tui.NewMarkdown(strings.Join(thinkingBlocks, "\n\n"), c.outputPad, 0, c.mdTheme, &tui.DefaultTextStyle{
+				c.contentContainer.AddChild(tui.NewMarkdown(strings.Join(thinkingBlocks, "\n\n"), c.outputPad+2, 0, c.mdTheme, &tui.DefaultTextStyle{
 					Color:  func(text string) string { return theme.FG("thinkingText", text) },
 					Italic: true,
 				}, &tui.MarkdownOptions{
@@ -245,21 +292,21 @@ func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMes
 
 	if message.StopReason == ai.StopReasonLength {
 		c.contentContainer.AddChild(tui.NewSpacer(1))
-		c.contentContainer.AddChild(tui.NewText(theme.FG("error", "Error: Model stopped because it reached the maximum output token limit. The response may be incomplete."), c.outputPad, 0, nil))
+		c.contentContainer.AddChild(tui.NewText(theme.FG("error", "Error: Model stopped because it reached the maximum output token limit. The response may be incomplete."), c.outputPad+2, 0, nil))
 	} else if !hasToolCalls && message.StopReason == ai.StopReasonAborted {
 		abortMessage := "Operation aborted"
 		if message.ErrorMessage != nil && *message.ErrorMessage != "" && *message.ErrorMessage != "Request was aborted" {
 			abortMessage = *message.ErrorMessage
 		}
 		c.contentContainer.AddChild(tui.NewSpacer(1))
-		c.contentContainer.AddChild(tui.NewText(theme.FG("error", abortMessage), c.outputPad, 0, nil))
+		c.contentContainer.AddChild(tui.NewText(theme.FG("error", abortMessage), c.outputPad+2, 0, nil))
 	} else if !hasToolCalls && message.StopReason == ai.StopReasonError {
 		errorMessage := "Unknown error"
 		if message.ErrorMessage != nil && *message.ErrorMessage != "" {
 			errorMessage = *message.ErrorMessage
 		}
 		c.contentContainer.AddChild(tui.NewSpacer(1))
-		c.contentContainer.AddChild(tui.NewText(theme.FG("error", "Error: "+errorMessage), c.outputPad, 0, nil))
+		c.contentContainer.AddChild(tui.NewText(theme.FG("error", "Error: "+errorMessage), c.outputPad+2, 0, nil))
 	}
 }
 
@@ -316,7 +363,7 @@ func NewToolExecutionComponent(
 	cwd string,
 ) *ToolExecutionComponent {
 	bgFn := func(t string) string { return theme.BG("toolPendingBg", t) }
-	box := tui.NewBox(1, 1, bgFn)
+	box := tui.NewBox(chatBandPad, 1, bgFn)
 	box.AddChild(tui.NewText(theme.FG("toolTitle", theme.Bold(toolName)), 0, 0, nil))
 
 	c := &ToolExecutionComponent{
@@ -333,7 +380,7 @@ func NewToolExecutionComponent(
 		rendererState: make(map[string]any),
 	}
 	c.container.AddChild(tui.NewSpacer(1))
-	c.container.AddChild(box)
+	c.container.AddChild(&chatBand{inner: box})
 	c.updateDisplay()
 	return c
 }
@@ -1069,6 +1116,7 @@ func (f *FooterComponent) Render(width int) []string {
 
 type CompactionSummaryMessageComponent struct {
 	box      *tui.Box
+	band     *chatBand
 	expanded bool
 	summary  string
 	tokens   int64
@@ -1077,11 +1125,12 @@ type CompactionSummaryMessageComponent struct {
 
 func NewCompactionSummaryMessage(summary string, tokensBefore int64, mdTheme tui.MarkdownTheme) *CompactionSummaryMessageComponent {
 	c := &CompactionSummaryMessageComponent{
-		box:     tui.NewBox(1, 1, func(t string) string { return theme.BG("customMessageBg", t) }),
+		box:     tui.NewBox(chatBandPad, 1, func(t string) string { return theme.BG("customMessageBg", t) }),
 		summary: summary,
 		tokens:  tokensBefore,
 		mdTheme: mdTheme,
 	}
+	c.band = &chatBand{inner: c.box}
 	c.updateDisplay()
 	return c
 }
@@ -1112,8 +1161,10 @@ func (c *CompactionSummaryMessageComponent) updateDisplay() {
 	}
 }
 
-func (c *CompactionSummaryMessageComponent) Invalidate()               { c.box.Invalidate() }
-func (c *CompactionSummaryMessageComponent) Render(width int) []string { return c.box.Render(width) }
+func (c *CompactionSummaryMessageComponent) Invalidate() { c.box.Invalidate() }
+func (c *CompactionSummaryMessageComponent) Render(width int) []string {
+	return c.band.Render(width)
+}
 
 // ─────────────────────────────────────────────────────────────
 // BranchSummaryMessageComponent
@@ -1121,6 +1172,7 @@ func (c *CompactionSummaryMessageComponent) Render(width int) []string { return 
 
 type BranchSummaryMessageComponent struct {
 	box      *tui.Box
+	band     *chatBand
 	expanded bool
 	summary  string
 	mdTheme  tui.MarkdownTheme
@@ -1128,10 +1180,11 @@ type BranchSummaryMessageComponent struct {
 
 func NewBranchSummaryMessage(summary string, mdTheme tui.MarkdownTheme) *BranchSummaryMessageComponent {
 	c := &BranchSummaryMessageComponent{
-		box:     tui.NewBox(1, 1, func(t string) string { return theme.BG("customMessageBg", t) }),
+		box:     tui.NewBox(chatBandPad, 1, func(t string) string { return theme.BG("customMessageBg", t) }),
 		summary: summary,
 		mdTheme: mdTheme,
 	}
+	c.band = &chatBand{inner: c.box}
 	c.updateDisplay()
 	return c
 }
@@ -1162,7 +1215,7 @@ func (c *BranchSummaryMessageComponent) updateDisplay() {
 }
 
 func (c *BranchSummaryMessageComponent) Invalidate()               { c.box.Invalidate() }
-func (c *BranchSummaryMessageComponent) Render(width int) []string { return c.box.Render(width) }
+func (c *BranchSummaryMessageComponent) Render(width int) []string { return c.band.Render(width) }
 
 // ─────────────────────────────────────────────────────────────
 // SkillInvocationMessageComponent
@@ -1170,6 +1223,7 @@ func (c *BranchSummaryMessageComponent) Render(width int) []string { return c.bo
 
 type SkillInvocationMessageComponent struct {
 	box      *tui.Box
+	band     *chatBand
 	expanded bool
 	name     string
 	content  string
@@ -1178,11 +1232,12 @@ type SkillInvocationMessageComponent struct {
 
 func NewSkillInvocationMessage(name, content string, mdTheme tui.MarkdownTheme) *SkillInvocationMessageComponent {
 	c := &SkillInvocationMessageComponent{
-		box:     tui.NewBox(1, 1, func(t string) string { return theme.BG("customMessageBg", t) }),
+		box:     tui.NewBox(chatBandPad, 1, func(t string) string { return theme.BG("customMessageBg", t) }),
 		name:    name,
 		content: content,
 		mdTheme: mdTheme,
 	}
+	c.band = &chatBand{inner: c.box}
 	c.updateDisplay()
 	return c
 }
@@ -1212,7 +1267,7 @@ func (c *SkillInvocationMessageComponent) Invalidate() {
 	c.box.Invalidate()
 	c.updateDisplay()
 }
-func (c *SkillInvocationMessageComponent) Render(width int) []string { return c.box.Render(width) }
+func (c *SkillInvocationMessageComponent) Render(width int) []string { return c.band.Render(width) }
 
 // ─────────────────────────────────────────────────────────────
 // CustomMessageComponent
@@ -1227,8 +1282,8 @@ type CustomMessageComponent struct {
 func NewCustomMessageComponent(customType string, content any, mdTheme tui.MarkdownTheme) *CustomMessageComponent {
 	container := &tui.Container{}
 	container.AddChild(tui.NewSpacer(1))
-	box := tui.NewBox(1, 1, func(t string) string { return theme.BG("customMessageBg", t) })
-	container.AddChild(box)
+	box := tui.NewBox(chatBandPad, 1, func(t string) string { return theme.BG("customMessageBg", t) })
+	container.AddChild(&chatBand{inner: box})
 	label := theme.FG("customMessageLabel", theme.Bold(fmt.Sprintf("[%s]", customType)))
 	box.AddChild(tui.NewText(label, 0, 0, nil))
 	box.AddChild(tui.NewSpacer(1))
