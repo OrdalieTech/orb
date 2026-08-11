@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html"
 	"strings"
+	"sync"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -20,7 +21,9 @@ import (
 const textLimit = 4096
 
 // markdownParser is the shared goldmark instance (safe for concurrent use).
-var markdownParser = goldmark.New(goldmark.WithExtensions(extension.Strikethrough))
+var markdownParser = sync.OnceValue(func() goldmark.Markdown {
+	return goldmark.New(goldmark.WithExtensions(extension.Strikethrough))
+})
 
 // htmlBlock is one renderable block. Pre blocks keep their code and language
 // separate so chunking can close and reopen the <pre> tags across splits.
@@ -40,7 +43,7 @@ func formatHTML(markdown string, limit int) []string {
 // renderBlocks parses markdown and renders every top-level block.
 func renderBlocks(markdown string) []htmlBlock {
 	source := []byte(markdown)
-	document := markdownParser.Parser().Parse(gtext.NewReader(source))
+	document := markdownParser().Parser().Parse(gtext.NewReader(source))
 	var blocks []htmlBlock
 	for node := document.FirstChild(); node != nil; node = node.NextSibling() {
 		switch fence := node.(type) {

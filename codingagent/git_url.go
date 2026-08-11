@@ -4,6 +4,7 @@ import (
 	neturl "net/url"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // Port of packages/coding-agent/src/utils/git.ts. The upstream hosted-git-info
@@ -20,10 +21,10 @@ type GitSource struct {
 	Pinned bool   `json:"pinned"`
 }
 
-var scpLikeRe = regexp.MustCompile(`^git@([^:]+):(.+)$`)
+var scpLikeRe = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^git@([^:]+):(.+)$`) })
 
 func splitGitRef(url string) (repo, ref string) {
-	if match := scpLikeRe.FindStringSubmatch(url); match != nil {
+	if match := scpLikeRe().FindStringSubmatch(url); match != nil {
 		pathWithMaybeRef := match[2]
 		refSeparator := strings.Index(pathWithMaybeRef, "@")
 		if refSeparator < 0 {
@@ -96,13 +97,13 @@ func hasUnsafeGitInstallPart(value string, allowSlash bool) bool {
 	return false
 }
 
-var gitSuffixRe = regexp.MustCompile(`\.git$`)
+var gitSuffixRe = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`\.git$`) })
 
 func buildGitSource(repo, host, path, ref string) *GitSource {
 	if strings.HasPrefix(path, "/") {
 		return nil
 	}
-	normalizedPath := strings.TrimLeft(gitSuffixRe.ReplaceAllString(path, ""), "/")
+	normalizedPath := strings.TrimLeft(gitSuffixRe().ReplaceAllString(path, ""), "/")
 	if host == "" || normalizedPath == "" || len(strings.Split(normalizedPath, "/")) < 2 {
 		return nil
 	}
@@ -112,9 +113,9 @@ func buildGitSource(repo, host, path, ref string) *GitSource {
 	return &GitSource{Repo: repo, Host: host, Path: normalizedPath, Ref: ref, Pinned: ref != ""}
 }
 
-var protocolRe = regexp.MustCompile(`(?i)^(https?|ssh|git):\/\/`)
+var protocolRe = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`(?i)^(https?|ssh|git):\/\/`) })
 
-var schemeSlashRunRe = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9+.-]*):/+`)
+var schemeSlashRunRe = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9+.-]*):/+`) })
 
 func parseGenericGitURL(url string) *GitSource {
 	repoWithoutRef, ref := splitGitRef(url)
@@ -122,7 +123,7 @@ func parseGenericGitURL(url string) *GitSource {
 	host := ""
 	path := ""
 
-	if match := scpLikeRe.FindStringSubmatch(repoWithoutRef); match != nil {
+	if match := scpLikeRe().FindStringSubmatch(repoWithoutRef); match != nil {
 		host = match[1]
 		path = match[2]
 	} else if strings.HasPrefix(repoWithoutRef, "https://") || strings.HasPrefix(repoWithoutRef, "http://") ||
@@ -165,7 +166,9 @@ var knownGitHosts = map[string]struct{}{
 }
 
 // Shortcut form "user/repo" (hosted-git-info's github default shortcut).
-var gitShortcutRe = regexp.MustCompile(`^([^:@%/\s.-][^:@%/\s]*)/([^:@\s/%]+?)(?:\.git)?(#.*)?$`)
+var gitShortcutRe = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^([^:@%/\s.-][^:@%/\s]*)/([^:@\s/%]+?)(?:\.git)?(#.*)?$`)
+})
 
 func knownGitHostParse(candidate string) *knownGitHostInfo {
 	committish := ""
@@ -177,8 +180,8 @@ func knownGitHostParse(candidate string) *knownGitHostInfo {
 	host := ""
 	pathPart := ""
 	switch {
-	case scpLikeRe.MatchString(candidate):
-		match := scpLikeRe.FindStringSubmatch(candidate)
+	case scpLikeRe().MatchString(candidate):
+		match := scpLikeRe().FindStringSubmatch(candidate)
 		host = match[1]
 		pathPart = match[2]
 	case strings.Contains(candidate, "://"):
@@ -186,8 +189,8 @@ func knownGitHostParse(candidate string) *knownGitHostInfo {
 		// WHATWG URL collapses any run of slashes after a special scheme
 		// ("https:////host" parses like "https://host"), which upstream's
 		// hosted-git-info relies on for the git:-prefix-eaten git:// form.
-		normalized = schemeSlashRunRe.ReplaceAllString(normalized, "$1://")
-		if !protocolRe.MatchString(normalized) {
+		normalized = schemeSlashRunRe().ReplaceAllString(normalized, "$1://")
+		if !protocolRe().MatchString(normalized) {
 			return nil
 		}
 		parsed, err := neturl.Parse(normalized)
@@ -197,7 +200,7 @@ func knownGitHostParse(candidate string) *knownGitHostInfo {
 		host = parsed.Hostname()
 		pathPart = strings.Trim(parsed.EscapedPath(), "/")
 	default:
-		match := gitShortcutRe.FindStringSubmatch(candidate + committishSuffix(committish))
+		match := gitShortcutRe().FindStringSubmatch(candidate + committishSuffix(committish))
 		if match == nil {
 			return nil
 		}
@@ -219,7 +222,7 @@ func knownGitHostParse(candidate string) *knownGitHostInfo {
 	if len(segments) < 2 {
 		return nil
 	}
-	project := gitSuffixRe.ReplaceAllString(segments[len(segments)-1], "")
+	project := gitSuffixRe().ReplaceAllString(segments[len(segments)-1], "")
 	switch host {
 	case "github.com":
 		if len(segments) > 2 {
@@ -231,7 +234,7 @@ func knownGitHostParse(candidate string) *knownGitHostInfo {
 			if committish == "" {
 				committish = strings.Join(segments[3:], "/")
 			}
-			project = gitSuffixRe.ReplaceAllString(segments[1], "")
+			project = gitSuffixRe().ReplaceAllString(segments[1], "")
 			return &knownGitHostInfo{domain: host, user: segments[0], project: project, committish: committish}
 		}
 		return &knownGitHostInfo{domain: host, user: segments[0], project: project, committish: committish}
@@ -270,7 +273,7 @@ func ParseGitURL(source string) *GitSource {
 		url = strings.TrimSpace(trimmed[4:])
 	}
 
-	if !hasGitPrefix && !protocolRe.MatchString(url) {
+	if !hasGitPrefix && !protocolRe().MatchString(url) {
 		return nil
 	}
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sync"
 	"time"
 
 	"github.com/OrdalieTech/orb/ai"
@@ -15,7 +16,7 @@ import (
 
 const googleVertexDefaultUniverseDomain = "googleapis.com"
 
-var googleVertexImpersonatedPrincipalPattern = regexp.MustCompile(`([^/]+):(generateAccessToken|generateIdToken)$`)
+var googleVertexImpersonatedPrincipalPattern = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`([^/]+):(generateAccessToken|generateIdToken)$`) })
 
 type googleVertexImpersonatedADCFile struct {
 	SourceCredentials              json.RawMessage `json:"source_credentials"`
@@ -55,7 +56,7 @@ func (adc *googleVertexADC) impersonatedServiceAccountToken(ctx context.Context,
 	if googleVertexJavaScriptStringLength(credential.ServiceAccountImpersonationURL) > 256 {
 		return googleVertexTokenResponse{}, fmt.Errorf("Target principal is too long: %s", credential.ServiceAccountImpersonationURL) //nolint:staticcheck // Exact upstream prefix.
 	}
-	match := googleVertexImpersonatedPrincipalPattern.FindStringSubmatch(credential.ServiceAccountImpersonationURL)
+	match := googleVertexImpersonatedPrincipalPattern().FindStringSubmatch(credential.ServiceAccountImpersonationURL)
 	if len(match) == 0 {
 		return googleVertexTokenResponse{}, fmt.Errorf("Cannot extract target principal from %s", credential.ServiceAccountImpersonationURL) //nolint:staticcheck // Exact upstream prefix.
 	}

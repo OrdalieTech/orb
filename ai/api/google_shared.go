@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf16"
 
 	"github.com/OrdalieTech/orb/ai"
@@ -14,8 +15,8 @@ import (
 )
 
 var (
-	googleMajorVersionPattern    = regexp.MustCompile(`^gemini(?:-live)?-(\d+)`)
-	googleBase64SignaturePattern = regexp.MustCompile(`^[A-Za-z0-9+/]+={0,2}$`)
+	googleMajorVersionPattern    = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^gemini(?:-live)?-(\d+)`) })
+	googleBase64SignaturePattern = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^[A-Za-z0-9+/]+={0,2}$`) })
 )
 
 type GoogleContent struct {
@@ -489,7 +490,7 @@ func mapGoogleToolChoice(choice GoogleToolChoice) string {
 }
 
 func supportsGoogleStrictToolSampling(modelID string) bool {
-	match := googleMajorVersionPattern.FindStringSubmatch(strings.ToLower(modelID))
+	match := googleMajorVersionPattern().FindStringSubmatch(strings.ToLower(modelID))
 	if len(match) != 2 {
 		return false
 	}
@@ -549,7 +550,7 @@ func retainGoogleThoughtSignature(existing, incoming *string) *string {
 }
 
 func resolveGoogleThoughtSignature(sameProviderAndModel bool, signature *string) *string {
-	if !sameProviderAndModel || signature == nil || len(*signature)%4 != 0 || !googleBase64SignaturePattern.MatchString(*signature) {
+	if !sameProviderAndModel || signature == nil || len(*signature)%4 != 0 || !googleBase64SignaturePattern().MatchString(*signature) {
 		return nil
 	}
 	value := *signature
@@ -702,7 +703,7 @@ func googleRequiresToolCallID(modelID string) bool {
 	if strings.HasPrefix(modelID, "claude-") || strings.HasPrefix(modelID, "gpt-oss-") {
 		return true
 	}
-	match := googleMajorVersionPattern.FindStringSubmatch(strings.ToLower(modelID))
+	match := googleMajorVersionPattern().FindStringSubmatch(strings.ToLower(modelID))
 	if len(match) == 2 {
 		major, err := strconv.Atoi(match[1])
 		return err == nil && major >= 3
@@ -711,7 +712,7 @@ func googleRequiresToolCallID(modelID string) bool {
 }
 
 func googleSupportsMultimodalFunctionResponse(modelID string) bool {
-	match := googleMajorVersionPattern.FindStringSubmatch(strings.ToLower(modelID))
+	match := googleMajorVersionPattern().FindStringSubmatch(strings.ToLower(modelID))
 	if len(match) == 2 {
 		major, err := strconv.Atoi(match[1])
 		return err == nil && major >= 3
