@@ -4,7 +4,7 @@ Orb's own release history (independent 0.x semver; upstream parity target record
 The embedded upstream changelog under `codingagent/modes/assets/` is a product asset driving
 `/changelog` and is not this file.
 
-## [Unreleased]
+## [0.4.14] - 2026-08-11
 
 ### Added
 
