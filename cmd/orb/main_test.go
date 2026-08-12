@@ -29,6 +29,23 @@ import (
 	"github.com/OrdalieTech/orb/codingagent/session"
 )
 
+func TestScrubDisabledMallocStackLogging(t *testing.T) {
+	t.Setenv("MallocStackLogging", "1")
+	t.Setenv("MallocStackLoggingNoCompact", "0")
+	t.Setenv("MallocStackLoggingDirectory", "")
+
+	scrubDisabledMallocStackLogging()
+
+	if value := os.Getenv("MallocStackLogging"); value != "1" {
+		t.Fatalf("MallocStackLogging = %q, want 1", value)
+	}
+	for _, name := range []string{"MallocStackLoggingNoCompact", "MallocStackLoggingDirectory"} {
+		if _, exists := os.LookupEnv(name); exists {
+			t.Fatalf("%s remains set", name)
+		}
+	}
+}
+
 func TestApplySessionDefaultsRestoresOnlyRecordedThinkingLevel(t *testing.T) {
 	message := json.RawMessage(`{"role":"user","content":[{"type":"text","text":"hello"}]}`)
 
