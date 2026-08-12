@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -69,6 +70,22 @@ type cliDependencies struct {
 	selectSession           SessionSelector
 	selectMissingSessionCWD func(context.Context, *MissingSessionCWDError) (string, bool, error)
 	runRPCFixture           func(context.Context, CLIArgs, cliStreams, string) (handled bool, code int)
+}
+
+func init() {
+	if runtime.GOOS == "darwin" {
+		scrubDisabledMallocStackLogging()
+	}
+}
+
+func scrubDisabledMallocStackLogging() {
+	// ponytail: one early scrub covers every child without changing deliberate logging.
+	for _, entry := range os.Environ() {
+		name, value, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(name, "MallocStackLogging") && (value == "" || value == "0") {
+			_ = os.Unsetenv(name)
+		}
+	}
 }
 
 func main() {
