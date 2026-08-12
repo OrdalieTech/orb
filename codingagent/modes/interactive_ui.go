@@ -1197,7 +1197,7 @@ type styledTextComponent struct {
 
 func (c *styledTextComponent) Invalidate() {}
 func (c *styledTextComponent) Render(width int) []string {
-	return []string{theme.FG(c.color, c.text)}
+	return tui.WrapTextWithANSI(theme.FG(c.color, c.text), width)
 }
 
 // selectListTheme mirrors upstream getSelectListTheme's color mapping.

@@ -1560,13 +1560,19 @@ func TestSelectListTheme(t *testing.T) {
 
 func TestNewStyledText(t *testing.T) {
 	initTestTheme(t)
-	comp := newStyledText("dim", "test message")
-	lines := comp.Render(40)
-	if len(lines) != 1 {
-		t.Errorf("expected 1 line, got %d", len(lines))
+	message := "Model: kimi-coding/" + strings.Repeat("k", 120)
+	if got := tui.VisibleWidth(message); got != 139 {
+		t.Fatalf("fixture message width = %d, want 139", got)
 	}
-	if !strings.Contains(lines[0], "test message") {
-		t.Error("expected text content in render")
+	const width = 86
+	lines := newStyledText("dim", message).Render(width)
+	if len(lines) < 2 {
+		t.Fatalf("rendered lines = %d, want wrapped output", len(lines))
+	}
+	for index, line := range lines {
+		if got := tui.VisibleWidth(line); got > width {
+			t.Fatalf("rendered line %d width = %d, want <= %d", index, got, width)
+		}
 	}
 }
 
