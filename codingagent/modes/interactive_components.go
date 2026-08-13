@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/harness"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/codingagent"
 	"github.com/OrdalieTech/orb/codingagent/extensions"
@@ -140,13 +141,15 @@ func newStartupWarnings(diagnostics []StartupDiagnostic) *startupWarnings {
 func (*startupWarnings) Invalidate() {}
 
 func (warnings *startupWarnings) Render(width int) []string {
-	if width <= 2 {
+	if width <= 3 {
 		return append([]string(nil), warnings.lines...)
 	}
-	bar := theme.FG("warning", string(tui.BandGutterBar)) + " "
+	// Two cells after the bar, so the text lands on the same column as every
+	// other band's body (gutter + chatBandPad).
+	bar := theme.FG("warning", string(tui.BandGutterBar)) + "  "
 	lines := make([]string, len(warnings.lines))
 	for index, line := range warnings.lines {
-		lines[index] = bar + theme.FG("warning", tui.TruncateToWidth(line, width-2, "…", false))
+		lines[index] = bar + theme.FG("warning", tui.TruncateToWidth(line, width-3, "…", false))
 	}
 	return lines
 }
@@ -160,7 +163,7 @@ type UserMessageComponent struct {
 }
 
 func NewUserMessageComponent(text string, mdTheme tui.MarkdownTheme, outputPad int, transformers []extensions.MarkdownTransformer) *UserMessageComponent {
-	box := tui.NewBox(outputPad+1, 1, func(t string) string { return theme.BG("userMessageBg", t) })
+	box := tui.NewBox(outputPad+1, 0, func(t string) string { return theme.BG("userMessageBg", t) })
 	md := tui.NewMarkdown(text, 0, 0, mdTheme, &tui.DefaultTextStyle{
 		Color: func(t string) string { return theme.FG("userMessageText", t) },
 	}, &tui.MarkdownOptions{
@@ -175,11 +178,14 @@ func NewUserMessageComponent(text string, mdTheme tui.MarkdownTheme, outputPad i
 func (c *UserMessageComponent) Invalidate() { c.box.Invalidate() }
 func (c *UserMessageComponent) Render(width int) []string {
 	lines := renderBand(c.box, width, theme.FG("accent", string(tui.BandGutterBar)))
-	if len(lines) > 0 {
-		lines[0] = osc133ZoneStart + lines[0]
-		lines[len(lines)-1] = osc133ZoneEnd + osc133ZoneFinal + lines[len(lines)-1]
+	if len(lines) == 0 {
+		return nil
 	}
-	return lines
+	lines[0] = osc133ZoneStart + lines[0]
+	lines[len(lines)-1] = osc133ZoneEnd + osc133ZoneFinal + lines[len(lines)-1]
+	// Leading blank only: every block that can follow opens with its own, so
+	// closing with one too would double the gap below the message.
+	return append([]string{""}, lines...)
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -408,7 +414,7 @@ func NewToolExecutionComponent(
 	cwd string,
 ) *ToolExecutionComponent {
 	bgFn := func(t string) string { return theme.BG("toolPendingBg", t) }
-	box := tui.NewBox(chatBandPad, 1, bgFn)
+	box := tui.NewBox(chatBandPad, 0, bgFn)
 	box.AddChild(tui.NewText(theme.FG("toolTitle", theme.Bold(toolName)), 0, 0, nil))
 
 	c := &ToolExecutionComponent{
@@ -739,12 +745,7 @@ func (c *BashExecutionComponent) rebuild() {
 	if c.excludeCtx {
 		colorKey = "dim"
 	}
-	borderColor := func(value string) string { return theme.FG(colorKey, value) }
-
 	c.container.AddChild(tui.NewSpacer(1))
-
-	// Top border
-	c.container.AddChild(NewDynamicBorderWithColor(borderColor))
 
 	// Command header
 	prefix := "$ "
@@ -808,8 +809,6 @@ func (c *BashExecutionComponent) rebuild() {
 		}
 	}
 
-	// Bottom border
-	c.container.AddChild(NewDynamicBorderWithColor(borderColor))
 }
 
 func (c *BashExecutionComponent) Invalidate() { c.container.Invalidate() }
@@ -934,6 +933,7 @@ func (IdleStatus) Render(width int) []string {
 type FooterComponent struct {
 	session            footerSession
 	provider           footerDataProvider
+	verbose            bool
 	autoCompactEnabled bool
 	branchMu           sync.Mutex
 	branch             string
@@ -951,8 +951,8 @@ type footerDataProvider interface {
 	Statuses() map[string]string
 }
 
-func NewFooterComponent(session footerSession, provider footerDataProvider) *FooterComponent {
-	return &FooterComponent{session: session, provider: provider, autoCompactEnabled: true}
+func NewFooterComponent(session footerSession, provider footerDataProvider, verbose bool) *FooterComponent {
+	return &FooterComponent{session: session, provider: provider, verbose: verbose, autoCompactEnabled: true}
 }
 
 func (f *FooterComponent) Invalidate() {}
@@ -993,77 +993,180 @@ func (f *FooterComponent) metadata() (string, int) {
 	return branch, providerCount
 }
 
-func (f *FooterComponent) Render(width int) []string {
-	pwd := ""
+func (f *FooterComponent) cwd() string {
 	if provider, ok := f.provider.(interface{ CurrentCWD() string }); ok {
-		pwd = provider.CurrentCWD()
+		return provider.CurrentCWD()
 	}
-	branch, providerCount := f.metadata()
+	return ""
+}
+
+func footerLocation(cwd, branch string) string {
+	location := ""
+	if cwd != "" {
+		location = filepath.Base(filepath.Clean(cwd))
+	}
 	if branch != "" {
-		pwd += " (" + branch + ")"
+		if location != "" {
+			location += " "
+		}
+		location += "(" + branch + ")"
 	}
-	if provider, ok := f.provider.(interface{ SessionName() string }); ok {
-		if name := provider.SessionName(); name != "" {
-			shownInEditor := false
-			if placement, supported := f.provider.(interface{ SessionNameInEditor(int) bool }); supported {
-				shownInEditor = placement.SessionNameInEditor(width)
-			}
-			if !shownInEditor {
-				pwd += " • " + name
+	return location
+}
+
+func footerContextSummary(display agent.AgentDisplayState, usage *harness.ContextUsage) string {
+	contextWindow := int64(display.ContextWindow)
+	percent := "?"
+	if usage != nil {
+		if usage.ContextWindow > 0 {
+			contextWindow = int64(usage.ContextWindow)
+		}
+		if usage.Percent != nil {
+			percent = fmt.Sprintf("%.1f", *usage.Percent)
+		}
+	}
+	if percent == "?" {
+		return "?/" + formatTokens(contextWindow)
+	}
+	return percent + "%/" + formatTokens(contextWindow)
+}
+
+// modelFooterForms keeps the model readable while the footer narrows. The
+// thinking meter is deliberately paired with its word label: the shape scans
+// quickly, while the text keeps it unambiguous in unfamiliar fonts.
+func modelFooterForms(display agent.AgentDisplayState, providerCount int) []string {
+	if !display.HasModel {
+		return []string{"no-model"}
+	}
+	thinking := ""
+	if display.Reasoning {
+		level := string(display.ThinkingLevel)
+		if level == "" {
+			level = "off"
+		}
+		thinking = " · " + thinkingMeter(level) + " " + level + strings.Repeat(" ", max(0, 7-tui.VisibleWidth(level)))
+	}
+	forms := make([]string, 0, 3)
+	if providerCount > 1 {
+		forms = append(forms, "("+string(display.Provider)+") "+display.ModelID+thinking)
+	}
+	if thinking != "" {
+		forms = append(forms, display.ModelID+thinking)
+	}
+	return append(forms, display.ModelID)
+}
+
+func thinkingMeter(level string) string {
+	meter := ""
+	switch level {
+	case "minimal":
+		meter = "▁"
+	case "low":
+		meter = "▁▂"
+	case "medium":
+		meter = "▁▂▃"
+	case "high":
+		meter = "▁▃▅"
+	case "xhigh":
+		meter = "▁▃▅▇"
+	case "max":
+		meter = "▂▄▆█"
+	default:
+		meter = "·"
+	}
+	return meter + strings.Repeat("·", 4-tui.VisibleWidth(meter))
+}
+
+func compactFooterRight(forms []string, context string, cost float64, width int) string {
+	costText := ""
+	if cost > 0 {
+		costText = fmt.Sprintf(" · $%.3f", cost)
+	}
+	candidates := make([]string, 0, len(forms)*3)
+	for _, form := range forms {
+		candidates = append(candidates, form+" · "+context+costText)
+		if costText != "" {
+			candidates = append(candidates, form+" · "+context)
+		}
+		candidates = append(candidates, form)
+	}
+	for _, candidate := range candidates {
+		if tui.VisibleWidth(candidate) <= width {
+			return candidate
+		}
+	}
+	return tui.TruncateToWidth(candidates[len(candidates)-1], width, "…", false)
+}
+
+func compactFooterLeft(location string, statuses []string, width int) string {
+	status := strings.Join(statuses, " ")
+	forms := []string{}
+	if location != "" && status != "" {
+		forms = append(forms, location+" · "+status)
+	}
+	forms = append(forms, status, location)
+	for _, form := range forms {
+		if form != "" && tui.VisibleWidth(form) <= width {
+			return form
+		}
+	}
+	if status != "" {
+		return tui.TruncateToWidth(status, width, "…", false)
+	}
+	return tui.TruncateToWidth(location, width, "…", false)
+}
+
+func (f *FooterComponent) render(width int) []string {
+	cwd := f.cwd()
+	branch, providerCount := f.metadata()
+	location := footerLocation(cwd, branch)
+	pwd := ""
+	if f.verbose {
+		pwd = cwd
+		if branch != "" {
+			pwd += " (" + branch + ")"
+		}
+		if provider, ok := f.provider.(interface{ SessionName() string }); ok {
+			if name := provider.SessionName(); name != "" {
+				shownInEditor := false
+				if placement, supported := f.provider.(interface{ SessionNameInEditor(int) bool }); supported {
+					shownInEditor = placement.SessionNameInEditor(width)
+				}
+				if !shownInEditor {
+					pwd += " • " + name
+				}
 			}
 		}
 	}
 
-	display := agent.AgentDisplayState{}
-	stats := codingagent.SessionStats{}
-	var latestCacheHitRate *float64
-	autoCompactEnabled := f.autoCompactEnabled
-	if session, ok := f.session.(interface {
-		FooterSnapshot() codingagent.FooterSnapshot
-	}); ok {
-		snapshot := session.FooterSnapshot()
-		display = snapshot.Display
-		stats.Tokens = snapshot.Tokens
-		stats.Cost = snapshot.Cost
-		stats.ContextUsage = snapshot.ContextUsage
-		autoCompactEnabled = snapshot.AutoCompactEnabled
-		if snapshot.HasLatestCacheHitRate {
-			rate := snapshot.LatestCacheHitRate
-			latestCacheHitRate = &rate
+	display, stats, latestCacheHitRate, autoCompactEnabled := f.collect()
+	contextSummary := footerContextSummary(display, stats.ContextUsage)
+	modelForms := modelFooterForms(display, providerCount)
+	modelName := modelForms[0]
+	statuses := f.provider.Statuses()
+	keys := make([]string, 0, len(statuses))
+	for key := range statuses {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	values := make([]string, 0, len(keys))
+	for _, key := range keys {
+		values = append(values, strings.Join(strings.Fields(statuses[key]), " "))
+	}
+	if !f.verbose {
+		leftText := compactFooterLeft(location, values, width)
+		rightBudget := width
+		if leftText != "" {
+			rightBudget = max(1, width*2/3)
 		}
-	} else {
-		state := f.session.State()
-		display.ThinkingLevel = state.ThinkingLevel
-		if state.Model != nil {
-			display.HasModel = true
-			display.ModelID = state.Model.ID
-			display.Provider = state.Model.Provider
-			display.ContextWindow = state.Model.ContextWindow
-			display.Reasoning = state.Model.Reasoning
+		right := compactFooterRight(modelForms, contextSummary, stats.Cost, rightBudget)
+		leftWidth := max(0, width-tui.VisibleWidth(right)-1)
+		left := compactFooterLeft(location, values, leftWidth)
+		if left == "" {
+			right = compactFooterRight(modelForms, contextSummary, stats.Cost, width)
 		}
-		if session, ok := f.session.(interface {
-			GetSessionStats() codingagent.SessionStats
-		}); ok {
-			stats = session.GetSessionStats()
-		}
-		if session, ok := f.session.(interface {
-			Manager() *sessionstore.SessionManager
-		}); ok && session.Manager() != nil {
-			aggregate, _ := session.Manager().AggregateStats()
-			stats.Tokens = codingagent.SessionTokenTotals{
-				Input: aggregate.InputTokens, Output: aggregate.OutputTokens,
-				CacheRead: aggregate.CacheReadTokens, CacheWrite: aggregate.CacheWriteTokens,
-			}
-			stats.Tokens.Total = stats.Tokens.Input + stats.Tokens.Output + stats.Tokens.CacheRead + stats.Tokens.CacheWrite
-			stats.Cost = aggregate.Cost
-			if aggregate.HasLatestCacheHitRate {
-				rate := aggregate.LatestCacheHitRate
-				latestCacheHitRate = &rate
-			}
-		}
-		if session, ok := f.session.(interface{ AutoCompactionEnabled() bool }); ok {
-			autoCompactEnabled = session.AutoCompactionEnabled()
-		}
+		gap := width - tui.VisibleWidth(left) - tui.VisibleWidth(right)
+		return []string{theme.FG("dim", left+strings.Repeat(" ", max(0, gap))+right)}
 	}
 	statsParts := make([]string, 0, 7)
 	if stats.Tokens.Input > 0 {
@@ -1084,47 +1187,14 @@ func (f *FooterComponent) Render(width int) []string {
 	if stats.Cost > 0 {
 		statsParts = append(statsParts, fmt.Sprintf("$%.3f", stats.Cost))
 	}
-	contextWindow := int64(display.ContextWindow)
-	percent := "?"
-	if stats.ContextUsage != nil {
-		if stats.ContextUsage.ContextWindow > 0 {
-			contextWindow = int64(stats.ContextUsage.ContextWindow)
-		}
-		if stats.ContextUsage.Percent != nil {
-			percent = fmt.Sprintf("%.1f", *stats.ContextUsage.Percent)
-		}
-	}
 	auto := ""
 	if autoCompactEnabled {
 		auto = " (auto)"
 	}
-	contextDisplay := percent + "%/"
-	if percent == "?" {
-		contextDisplay = "?/"
-	}
-	statsParts = append(statsParts, contextDisplay+formatTokens(contextWindow)+auto)
+	statsParts = append(statsParts, contextSummary+auto)
 	statsLeft := strings.Join(statsParts, " ")
 	if tui.VisibleWidth(statsLeft) > width {
 		statsLeft = tui.TruncateToWidth(statsLeft, width, "...", false)
-	}
-
-	modelName := "no-model"
-	if display.HasModel {
-		modelName = display.ModelID
-		if providerCount > 1 {
-			modelName = "(" + string(display.Provider) + ") " + modelName
-		}
-		if display.Reasoning {
-			level := string(display.ThinkingLevel)
-			if level == "" {
-				level = "off"
-			}
-			if level == "off" {
-				modelName += " • thinking off"
-			} else {
-				modelName += " • " + level
-			}
-		}
 	}
 	availableRight := width - tui.VisibleWidth(statsLeft) - 2
 	if availableRight < tui.VisibleWidth(modelName) && display.HasModel && strings.HasPrefix(modelName, "(") {
@@ -1139,20 +1209,93 @@ func (f *FooterComponent) Render(width int) []string {
 		theme.FG("dim", statsLeft) + theme.FG("dim", padding+modelName),
 	}
 
-	statuses := f.provider.Statuses()
-	keys := make([]string, 0, len(statuses))
-	for key := range statuses {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
 	if len(keys) > 0 {
-		values := make([]string, 0, len(keys))
-		for _, key := range keys {
-			values = append(values, strings.Join(strings.Fields(statuses[key]), " "))
-		}
 		lines = append(lines, tui.TruncateToWidth(strings.Join(values, " "), width, theme.FG("dim", "..."), false))
 	}
 	return lines
+}
+
+func (f *FooterComponent) Render(width int) []string {
+	const padding = 1
+	if width <= padding*2 {
+		return f.render(width)
+	}
+	lines := f.render(width - padding*2)
+	for index, line := range lines {
+		lines[index] = " " + line + strings.Repeat(" ", max(1, width-1-tui.VisibleWidth(line)))
+	}
+	return lines
+}
+
+// collect uses SessionRuntime's revision-gated snapshot, while narrower test
+// and host seams provide only the values needed by compact or verbose mode.
+func (f *FooterComponent) collect() (agent.AgentDisplayState, codingagent.SessionStats, *float64, bool) {
+	display := agent.AgentDisplayState{}
+	stats := codingagent.SessionStats{}
+	var latestCacheHitRate *float64
+	autoCompactEnabled := f.autoCompactEnabled
+	if session, ok := f.session.(interface {
+		FooterSnapshot() codingagent.FooterSnapshot
+	}); ok {
+		snapshot := session.FooterSnapshot()
+		display = snapshot.Display
+		stats.ContextUsage = snapshot.ContextUsage
+		stats.Cost = snapshot.Cost
+		if f.verbose {
+			stats.Tokens = snapshot.Tokens
+			autoCompactEnabled = snapshot.AutoCompactEnabled
+			if snapshot.HasLatestCacheHitRate {
+				rate := snapshot.LatestCacheHitRate
+				latestCacheHitRate = &rate
+			}
+		}
+	} else {
+		state := f.session.State()
+		display.ThinkingLevel = state.ThinkingLevel
+		if state.Model != nil {
+			display.HasModel = true
+			display.ModelID = state.Model.ID
+			display.Provider = state.Model.Provider
+			display.ContextWindow = state.Model.ContextWindow
+			display.Reasoning = state.Model.Reasoning
+		}
+		if f.verbose {
+			if session, ok := f.session.(interface {
+				GetSessionStats() codingagent.SessionStats
+			}); ok {
+				stats = session.GetSessionStats()
+			}
+			if session, ok := f.session.(interface {
+				Manager() *sessionstore.SessionManager
+			}); ok && session.Manager() != nil {
+				aggregate, _ := session.Manager().AggregateStats()
+				stats.Tokens = codingagent.SessionTokenTotals{
+					Input: aggregate.InputTokens, Output: aggregate.OutputTokens,
+					CacheRead: aggregate.CacheReadTokens, CacheWrite: aggregate.CacheWriteTokens,
+				}
+				stats.Tokens.Total = stats.Tokens.Input + stats.Tokens.Output + stats.Tokens.CacheRead + stats.Tokens.CacheWrite
+				stats.Cost = aggregate.Cost
+				if aggregate.HasLatestCacheHitRate {
+					rate := aggregate.LatestCacheHitRate
+					latestCacheHitRate = &rate
+				}
+			}
+			if session, ok := f.session.(interface{ AutoCompactionEnabled() bool }); ok {
+				autoCompactEnabled = session.AutoCompactionEnabled()
+			}
+		} else {
+			if session, ok := f.session.(interface {
+				GetContextUsage() *harness.ContextUsage
+			}); ok {
+				stats.ContextUsage = session.GetContextUsage()
+			} else if session, ok := f.session.(interface {
+				GetSessionStats() codingagent.SessionStats
+			}); ok {
+				stats.ContextUsage = session.GetSessionStats().ContextUsage
+			}
+		}
+	}
+	return display, stats, latestCacheHitRate, autoCompactEnabled
 }
 
 // ─────────────────────────────────────────────────────────────

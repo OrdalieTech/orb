@@ -750,6 +750,20 @@ func TestF12LoadedContextMatchesUpstream(t *testing.T) {
 		mode.showLoadedResources()
 		return f12UILifecyclePlainLines(mode.loadedResources.Render(renderWidth), root)
 	}
+	// The built-in band is --verbose only; inside verbose, ctrl-o still collapses
+	// the listing in place through the tools-expanded propagation.
+	renderCollapsed := func() []string {
+		renderListing(false, true, false)
+		for _, child := range mode.loadedResources.Children() {
+			if section, ok := child.(*loadedContextSection); ok {
+				section.SetExpanded(false)
+			}
+		}
+		return f12UILifecyclePlainLines(mode.loadedResources.Render(renderWidth), root)
+	}
+	if listing := renderListing(false, false, false); len(listing) != 0 {
+		t.Fatalf("the default panel carries a built-in context band: %#v", listing)
+	}
 
 	actual := struct {
 		Collapsed []string
@@ -757,8 +771,8 @@ func TestF12LoadedContextMatchesUpstream(t *testing.T) {
 		Quiet     []string
 		Verbose   []string
 	}{
-		Collapsed: renderListing(false, false, false),
-		Expanded:  renderListing(false, false, true),
+		Collapsed: renderCollapsed(),
+		Expanded:  renderListing(false, true, false),
 		Quiet:     renderListing(true, false, false),
 		Verbose:   renderListing(true, true, false),
 	}

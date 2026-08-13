@@ -278,7 +278,7 @@ func TestUsageUIIncludesAuxiliaryUsageAndLatestAssistantCacheHit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	footer := NewFooterComponent(newCacheStatsRuntime(t, manager), &fakeFooterDataProvider{})
+	footer := NewFooterComponent(newCacheStatsRuntime(t, manager), &fakeFooterDataProvider{}, true)
 	footerLine := normalizeWP450Lines(footer.Render(120))[1]
 	for _, want := range []string{"↑290", "↓60", "R25", "W25", "CH25.0%", "$6.500"} {
 		if !strings.Contains(footerLine, want) {
@@ -308,7 +308,7 @@ func TestFooterRenderCostDoesNotScaleWithSessionHistory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	footer := NewFooterComponent(newCacheStatsRuntime(t, manager), &fakeFooterDataProvider{})
+	footer := NewFooterComponent(newCacheStatsRuntime(t, manager), &fakeFooterDataProvider{}, true)
 	allocations := testing.AllocsPerRun(1, func() { _ = footer.Render(120) })
 	if allocations > 100 {
 		t.Fatalf("footer render allocated %.0f objects for unchanged history, want at most 100", allocations)

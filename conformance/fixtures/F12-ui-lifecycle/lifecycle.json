@@ -40,9 +40,7 @@
     "snapshots": [
       {
         "step": "empty",
-        "above": [
-          ""
-        ],
+        "above": [],
         "below": []
       },
       {
@@ -65,9 +63,7 @@
       },
       {
         "step": "replacement-moved-below",
-        "above": [
-          ""
-        ],
+        "above": [],
         "below": [
           "replacement"
         ]
@@ -95,9 +91,7 @@
       },
       {
         "step": "cleared",
-        "above": [
-          ""
-        ],
+        "above": [],
         "below": []
       }
     ],

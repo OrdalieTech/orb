@@ -201,6 +201,10 @@ func (ui *TUI) SetViewport(body, chrome Component) {
 	ui.renderMu.Unlock()
 }
 
+// ViewportBodyHeight is the body height computed for the frame currently being
+// rendered. Components may read it from Render after SetViewport.
+func (ui *TUI) ViewportBodyHeight() int { return ui.viewportBodyHeight }
+
 func (ui *TUI) SetSelectionHandler(handler func(string)) {
 	ui.renderMu.Lock()
 	ui.selectionHandler = handler
@@ -1464,6 +1468,7 @@ func (ui *TUI) renderViewport(width, height int) []string {
 	ui.chromeTrim = max(0, len(chrome)-height)
 	chrome = chrome[ui.chromeTrim:]
 	bodyHeight := height - len(chrome)
+	ui.viewportBodyHeight = bodyHeight
 	ui.chromeTop = bodyHeight
 	bodyWidth := width
 	if width > 1 {

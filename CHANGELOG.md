@@ -6,6 +6,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Changed
+
+- The interactive UI now has a rounded composer, quieter conversation spacing, an inset telemetry footer, and a persistent top-left Orb lockup with a subtle unfold.
+
 ### Fixed
 
 - Runtime catalog refreshes now expose new models when models.dev supplies an ETag without a Last-Modified header.

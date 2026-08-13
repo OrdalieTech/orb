@@ -79,18 +79,18 @@
       ],
       "chat": {
         "lineCount": 2,
-        "sha256": "b3c187b0e30e2bd343330f879ef2a9570366d3deff0e01c0fa512585619a0fd7",
+        "sha256": "13a72a2976c7d5eab55cf522e0c5fa278b7a7f1a5692978a613ad12b7077f6e3",
         "raw": {
           "lineCount": 2,
-          "sha256": "47a1062259f307c0944a8d2a22534ca848a1092ef5b011f2caad409bb6b50f48",
+          "sha256": "afa37bf12625e5d930589d9906dff46c330d13a735f69cdeef377906d396f799",
           "lines": [
             "",
-            " \u001b[38;5;241mSession exported to: <tmp>/session.jsonl\u001b[39m                                                           "
+            "  \u001b[38;5;241mSession exported to: <tmp>/session.jsonl\u001b[39m                                                          "
           ]
         },
         "lines": [
           "",
-          " Session exported to: <tmp>/session.jsonl"
+          "  Session exported to: <tmp>/session.jsonl"
         ]
       }
     },
@@ -110,18 +110,18 @@
       ],
       "chat": {
         "lineCount": 2,
-        "sha256": "777eb28e34aa23c41aa395a88b791a2f6d9d72a885d82fff54aef70c607facc2",
+        "sha256": "a75409fa7f17156b260e64cfc3640cb38816f0bfd9e39a7d152b5c357928e547",
         "raw": {
           "lineCount": 2,
-          "sha256": "caaa762a2d5a41a72e2fa626696741873803c69705c13788a3a376814aaba788",
+          "sha256": "973c3e651c5b1a2647246264b31599cef5a62a2e648e076d711b6c5db33cf579",
           "lines": [
             "",
-            " \u001b[38;5;241mSession imported from: fixture path/session.jsonl\u001b[39m                                                  "
+            "  \u001b[38;5;241mSession imported from: fixture path/session.jsonl\u001b[39m                                                 "
           ]
         },
         "lines": [
           "",
-          " Session imported from: fixture path/session.jsonl"
+          "  Session imported from: fixture path/session.jsonl"
         ]
       }
     },
@@ -139,18 +139,18 @@
       ],
       "chat": {
         "lineCount": 2,
-        "sha256": "d9f969b6a593297b544bec9e73f922eb16724abfeefa71c948eb6c7c73d17a2a",
+        "sha256": "9d8d00b0ef78fa093416a2d9dc7b9cf59d2436287ab1adfb084fbc7b774f49f7",
         "raw": {
           "lineCount": 2,
-          "sha256": "df4fce9c2b07b34b0a914db61c1f3d99fe01ac13b69042dcbbfae3ffa4f99a0e",
+          "sha256": "d58a52a783a2790152684a490656f329f0d3bc8bcf4e78166acde6156c3f5eca",
           "lines": [
             "",
-            " \u001b[38;5;241mSession exported to: <tmp>/session.html\u001b[39m                                                            "
+            "  \u001b[38;5;241mSession exported to: <tmp>/session.html\u001b[39m                                                           "
           ]
         },
         "lines": [
           "",
-          " Session exported to: <tmp>/session.html"
+          "  Session exported to: <tmp>/session.html"
         ]
       }
     },
@@ -494,18 +494,18 @@
       "trace": [],
       "chat": {
         "lineCount": 2,
-        "sha256": "3721fca1dcbcd8de9718e62a02d8e580934f7e0c2354c73f23a52f880266965a",
+        "sha256": "24a3d3e7026186ebb7b8746e59b933740470371380132a1038bce9e9f0556eb5",
         "raw": {
           "lineCount": 2,
-          "sha256": "af75a208d36b226e54991af3ef96f93e30db62a86a0fe32c77008d96a21546ea",
+          "sha256": "d773fe898cdb094aa1ec1e86e774b5e5f728e503317d3e0efbca3eabce1d6671",
           "lines": [
             "",
-            " \u001b[38;5;241mNo messages to fork from\u001b[39m                                                                           "
+            "  \u001b[38;5;241mNo messages to fork from\u001b[39m                                                                          "
           ]
         },
         "lines": [
           "",
-          " No messages to fork from"
+          "  No messages to fork from"
         ]
       }
     },
@@ -521,18 +521,18 @@
       "trace": [],
       "chat": {
         "lineCount": 2,
-        "sha256": "326f389e3521ab6af741bea24e8b42cc59a024ed8f4eeaea222fb252eedc85b2",
+        "sha256": "92f5386da987b2399d9f56822f78c8eca86cde06fcdef21baa5a05af05d0ac18",
         "raw": {
           "lineCount": 2,
-          "sha256": "6ac3899d80dddd826742a49c71b160b36ca3e91252939ff1f039fb989f0629f7",
+          "sha256": "874be133a9594941c265cf7b27abf0587968368f1a6c46f6b36d60e51b69ae7b",
           "lines": [
             "",
-            " \u001b[38;5;241mNothing to clone yet\u001b[39m                                                                               "
+            "  \u001b[38;5;241mNothing to clone yet\u001b[39m                                                                              "
           ]
         },
         "lines": [
           "",
-          " Nothing to clone yet"
+          "  Nothing to clone yet"
         ]
       }
     },
@@ -548,18 +548,18 @@
       "trace": [],
       "chat": {
         "lineCount": 2,
-        "sha256": "4d11213b5aea785a42016b1fe587c296b1b47af814a90a6c5997cce530f9b9eb",
+        "sha256": "7d4446e2668eebeb9ef419623be6eda118d03df76b076a6163438895727efb07",
         "raw": {
           "lineCount": 2,
-          "sha256": "d0a98865006f6af0e2cc053778536ab1f3556b083de6d63008cac395968d9fb1",
+          "sha256": "d359740f08d781be6b767bb1524e9ec4cccba474666131078b6c0782cda8e770",
           "lines": [
             "",
-            " \u001b[38;5;241mNo entries in session\u001b[39m                                                                              "
+            "  \u001b[38;5;241mNo entries in session\u001b[39m                                                                             "
           ]
         },
         "lines": [
           "",
-          " No entries in session"
+          "  No entries in session"
         ]
       }
     },
@@ -596,18 +596,18 @@
       "trace": [],
       "chat": {
         "lineCount": 2,
-        "sha256": "840f4bb2853326b8461636c8e502efed8518eda769becc91ac6af0910d98bfa6",
+        "sha256": "de3e5b4cf4cc30d7676e440019e8c6ead8126fa0705ef042b9754d2ec9c43450",
         "raw": {
           "lineCount": 2,
-          "sha256": "6451a7d968e253bbdd592f9b06698490dddb2888d87d5a3e62c129fec24380ab",
+          "sha256": "a10b97f483432f307675e4088296ab55f244d64ed58600cfcc6ba862bbae3880",
           "lines": [
             "",
-            " \u001b[38;5;241mNo login providers available.\u001b[39m                                                                      "
+            "  \u001b[38;5;241mNo login providers available.\u001b[39m                                                                     "
           ]
         },
         "lines": [
           "",
-          " No login providers available."
+          "  No login providers available."
         ]
       }
     },
@@ -623,20 +623,20 @@
       "trace": [],
       "chat": {
         "lineCount": 3,
-        "sha256": "b45bd5f3afc54db09b425dfdc19874a9f8d8b3bca3782d4db492a34cff00afbd",
+        "sha256": "0c0bfd71d56096f49028544c0f548bd8de87a249dc4750f2558a13490e36aca0",
         "raw": {
           "lineCount": 3,
-          "sha256": "a07521ce3417affdb31d8eb7c13e70abfe2ecb3be6301cf2bac7db830c84b365",
+          "sha256": "7501aa4a820a11052ea013150f6f614c53db990e8c5510ff08a8dcffea872e4b",
           "lines": [
             "",
-            " \u001b[38;5;241mNo stored credentials to remove. /logout only removes credentials saved by /login; environment     ",
-            " \u001b[38;5;241mvariables and models.json config are unchanged.\u001b[39m                                                    "
+            "  \u001b[38;5;241mNo stored credentials to remove. /logout only removes credentials saved by /login; environment    ",
+            "  \u001b[38;5;241mvariables and models.json config are unchanged.\u001b[39m                                                   "
           ]
         },
         "lines": [
           "",
-          " No stored credentials to remove. /logout only removes credentials saved by /login; environment",
-          " variables and models.json config are unchanged."
+          "  No stored credentials to remove. /logout only removes credentials saved by /login; environment",
+          "  variables and models.json config are unchanged."
         ]
       }
     },
@@ -654,23 +654,14 @@
         "new-session"
       ],
       "chat": {
-        "lineCount": 3,
-        "sha256": "a8b31d5995aee48bdfcaeef66c09429bbb766d351c29df5b856dc0f3290f3b07",
+        "lineCount": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "raw": {
-          "lineCount": 4,
-          "sha256": "90baa22f93537a9a71d1e0fbb3c6eb5be926637c991fd56b3739d7bf521efd92",
-          "lines": [
-            "",
-            "                                                                                                    ",
-            " \u001b[38;5;109m✓ New session started\u001b[39m                                                                              ",
-            "                                                                                                    "
-          ]
+          "lineCount": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "lines": []
         },
-        "lines": [
-          "",
-          "",
-          " ✓ New session started"
-        ]
+        "lines": []
       }
     },
     {
@@ -730,18 +721,18 @@
       "trace": [],
       "chat": {
         "lineCount": 2,
-        "sha256": "c42ba6605c6c133cd41a31bb3bc3617fc892f26e7bf299d1afcba1dc427d7ee2",
+        "sha256": "77b92bd812e96f10bcd87011180261074bbd1febe1925d80b9e6e6e214308761",
         "raw": {
           "lineCount": 2,
-          "sha256": "790a7570047a0eba4badc44a74d3ce4cffe37b2598050e9120d8f4f3a24f9892",
+          "sha256": "c03dac69275d215a0fa07cca774727bd61a06d65a19ec889bb7fa48cc4cec21f",
           "lines": [
             "",
-            " \u001b[38;5;180mWarning: Wait for the current response to finish before reloading.\u001b[39m                                 "
+            "  \u001b[38;5;180mWarning: Wait for the current response to finish before reloading.\u001b[39m                                "
           ]
         },
         "lines": [
           "",
-          " Warning: Wait for the current response to finish before reloading."
+          "  Warning: Wait for the current response to finish before reloading."
         ]
       }
     },

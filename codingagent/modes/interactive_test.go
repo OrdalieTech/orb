@@ -7,18 +7,21 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/harness"
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/codingagent"
 	"github.com/OrdalieTech/orb/codingagent/config"
 	"github.com/OrdalieTech/orb/codingagent/extensions"
 	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/internal/orbalogo"
 	"github.com/OrdalieTech/orb/tui"
 
 	theme "github.com/OrdalieTech/orb/codingagent/modes/theme"
@@ -312,6 +315,65 @@ func TestInteractiveModeRebindPropagatesInvalidResourceThemeName(t *testing.T) {
 	}
 	if err := mode.rebindHostSession(newRuntime(loader)); err == nil || !strings.Contains(err.Error(), "invalid theme name") {
 		t.Fatalf("invalid loader theme rebind error = %v", err)
+	}
+}
+
+// The default panel mounts the mark ahead of conversation content and keeps it
+// in the transcript when messages arrive or a new session clears them.
+func TestInteractivePanelKeepsTheMark(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeSession, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
+		Agent: agent.NewAgent(nil), SessionManager: manager, Settings: settings,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(runtimeSession.Dispose)
+	mode := &InteractiveMode{
+		session: runtimeSession, ui: tui.NewTUI(newFakeTerminal(80, 40)), cwd: cwd,
+		keybindings: NewAppKeybindings(nil), inputCh: make(chan inputEntry, 1),
+		toolComponents: make(map[string]*ToolExecutionComponent), footerStatuses: make(map[string]string),
+		options: InteractiveModeOptions{SessionHeader: manager.GetHeader()},
+	}
+	if err := mode.init(); err != nil {
+		t.Fatal(err)
+	}
+	if err := mode.ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mode.ui.Stop() })
+	t.Cleanup(func() { theme.SetCurrent(nil) })
+
+	if mode.emptyState == nil {
+		t.Fatal("empty state was not mounted")
+	}
+	if len(mode.header.Children()) != 0 || len(mode.loadedResources.Children()) != 0 {
+		t.Fatalf("the default panel carries built-in bands: header=%d resources=%d",
+			len(mode.header.Children()), len(mode.loadedResources.Children()))
+	}
+
+	mode.emptyState.frame.Store(orbalogo.FrameCount - 1)
+	mark := orbalogo.Frame(orbalogo.FrameCount - 1)[4]
+	bodyComponent := mode.ui.Children()[0]
+	body := func() string { return strings.Join(bodyComponent.Render(79), "\n") }
+	if count := strings.Count(body(), mark); count != 1 {
+		t.Fatalf("the fresh panel drew the mark %d times, want one: %q", count, body())
+	}
+	mode.chat.AddChild(lifecycleText("assistant answer"))
+	if count := strings.Count(body(), mark); count != 1 {
+		t.Fatalf("visible chat removed or duplicated the mark: %q", body())
+	}
+	mode.chat.Clear()
+	if count := strings.Count(body(), mark); count != 1 {
+		t.Fatalf("clearing the chat drew the mark %d times, want it back once: %q", count, body())
 	}
 }
 
@@ -621,6 +683,10 @@ func TestComposeEditorTopBorderStatusAndSessionName(t *testing.T) {
 	if !strings.Contains(projection.Line, "Working...") || !strings.Contains(projection.Line, "A deliberately") || !strings.Contains(projection.Line, "\x1b[48;2;") {
 		t.Fatalf("editor chrome omitted status or themed title: %q", projection.Line)
 	}
+	plain := selectorANSI.ReplaceAllString(projection.Line, "")
+	if !strings.HasPrefix(plain, "╭") || !strings.HasSuffix(plain, "╮") {
+		t.Fatalf("editor chrome lost rounded corners: %q", plain)
+	}
 	for testWidth := 0; testWidth <= 32; testWidth++ {
 		projection := composeEditorTopBorder(border(strings.Repeat("─", testWidth)), testWidth, "⠋ Working...", "会話 🙂 title", border)
 		if got := tui.VisibleWidth(projection.Line); got != testWidth {
@@ -648,7 +714,8 @@ func TestEditorChromePreservesScrollHintAndUsesStatusLane(t *testing.T) {
 		t.Fatalf("scrolled editor did not retain status lane: %#v", lines)
 	}
 	lines := mode.editor.Render(20)
-	if len(lines) == 0 || !strings.Contains(lines[0], "↑") || strings.Contains(lines[0], "Working...") {
+	if len(lines) == 0 || !strings.Contains(lines[0], "↑") || strings.Contains(lines[0], "Working...") ||
+		!strings.Contains(selectorANSI.ReplaceAllString(lines[0], ""), "╭") {
 		t.Fatalf("scrolled editor chrome replaced its scroll hint: %#v", lines)
 	}
 }
@@ -1137,24 +1204,143 @@ func TestBashExecutionComponentExcludeContext(t *testing.T) {
 	}
 }
 
-func TestFooterComponentRender(t *testing.T) {
+func TestRestrainedToolComponentHeights(t *testing.T) {
 	initTestTheme(t)
-	session := &fakeFooterSession{}
-	provider := &fakeFooterDataProvider{branch: "main"}
-	footer := NewFooterComponent(session, provider)
-	lines := footer.Render(80)
-	if len(lines) == 0 {
-		t.Fatal("expected non-empty footer render")
+	for _, width := range []int{28, 88} {
+		t.Run(strconv.Itoa(width), func(t *testing.T) {
+			tool := NewToolExecutionComponent("read", "call", nil, false, nil, &fakeRenderRequester{}, "/")
+			if lines := tool.Render(width); len(lines) != 2 {
+				t.Fatalf("pending tool lines = %d, want one separator and one title: %#v", len(lines), lines)
+			}
+			tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "ok"}}, false, nil, false)
+			if lines := tool.Render(width); len(lines) != 4 {
+				t.Fatalf("finished tool lines = %d, want 4: %#v", len(lines), lines)
+			}
+
+			bash := NewBashExecutionComponent("printf ok", &fakeRenderRequester{}, false)
+			bash.AppendOutput("ok")
+			exitCode := 0
+			bash.SetComplete(&exitCode, false)
+			if lines := bash.Render(width); len(lines) != 4 {
+				t.Fatalf("finished bash lines = %d, want 4: %#v", len(lines), lines)
+			}
+		})
 	}
-	found := false
-	for _, line := range lines {
-		if strings.Contains(line, "main") {
-			found = true
-			break
+}
+
+type layoutFooterSession struct{}
+
+func (layoutFooterSession) State() agent.AgentState {
+	return agent.AgentState{Model: &ai.Model{ID: "fixture-model", Provider: "fixture", ContextWindow: 8192}}
+}
+
+func TestFooterComponentCompactAndVerboseLayouts(t *testing.T) {
+	initTestTheme(t)
+	provider := &fakeFooterDataProvider{cwd: "/workspace", branch: "main"}
+	for _, width := range []int{28, 88} {
+		lines := NewFooterComponent(layoutFooterSession{}, provider, false).Render(width)
+		if len(lines) != 1 || tui.VisibleWidth(lines[0]) != width {
+			t.Fatalf("compact footer at %d = %#v", width, lines)
+		}
+		if width == 88 {
+			plain := normalizeWP450Lines(lines)[0]
+			want := " workspace (main)                                                fixture-model · ?/8.2k"
+			if plain != want {
+				t.Fatalf("compact footer = %q, want %q", plain, want)
+			}
 		}
 	}
-	if !found {
-		t.Error("expected git branch in footer")
+
+	verbose := normalizeWP450Lines(NewFooterComponent(layoutFooterSession{}, provider, true).Render(88))
+	if len(verbose) != 2 || verbose[0] != " /workspace (main)" ||
+		verbose[1] != " ?/8.2k (auto)                                                            fixture-model" {
+		t.Fatalf("verbose footer = %#v", verbose)
+	}
+}
+
+func TestCompactFooterKeepsStatusAndLocation(t *testing.T) {
+	initTestTheme(t)
+	for _, cwd := range []string{"", "/workspace"} {
+		lines := normalizeWP450Lines(NewFooterComponent(
+			layoutFooterSession{}, &fakeFooterDataProvider{cwd: cwd, statuses: map[string]string{"extension": "active"}}, false,
+		).Render(80))
+		if len(lines) != 1 || !strings.Contains(lines[0], "active") {
+			t.Fatalf("compact status footer for cwd %q = %#v", cwd, lines)
+		}
+		if cwd != "" && !strings.Contains(lines[0], "workspace · active") {
+			t.Fatalf("compact status dropped location for cwd %q: %#v", cwd, lines)
+		}
+	}
+	narrow := normalizeWP450Lines(NewFooterComponent(
+		layoutFooterSession{}, &fakeFooterDataProvider{cwd: "/workspace", statuses: map[string]string{"extension": "active"}}, false,
+	).Render(40))
+	if len(narrow) != 1 || !strings.Contains(narrow[0], "active") {
+		t.Fatalf("narrow footer dropped the higher-priority status: %#v", narrow)
+	}
+}
+
+func TestThinkingFooterSlotHasFixedWidth(t *testing.T) {
+	want := map[ai.ModelThinkingLevel]string{
+		ai.ModelThinkingOff: "····", ai.ModelThinkingMinimal: "▁···", ai.ModelThinkingLow: "▁▂··",
+		ai.ModelThinkingMedium: "▁▂▃·", ai.ModelThinkingHigh: "▁▃▅·",
+		ai.ModelThinkingXHigh: "▁▃▅▇", ai.ModelThinkingMax: "▂▄▆█",
+	}
+	width := 0
+	for level, meter := range want {
+		if got := thinkingMeter(string(level)); got != meter || tui.VisibleWidth(got) != 4 {
+			t.Errorf("thinking meter %q = %q, want %q", level, got, meter)
+		}
+		forms := modelFooterForms(agent.AgentDisplayState{
+			HasModel: true, ModelID: "model", Reasoning: true, ThinkingLevel: level,
+		}, 1)
+		got := tui.VisibleWidth(forms[0])
+		if width == 0 {
+			width = got
+		} else if got != width {
+			t.Fatalf("thinking footer width at %s = %d, want fixed %d: %q", level, got, width, forms[0])
+		}
+	}
+}
+
+type footerTelemetryProbe struct {
+	statsCalls, contextCalls, autoCalls int
+}
+
+func (probe *footerTelemetryProbe) State() agent.AgentState {
+	return agent.AgentState{Model: &ai.Model{ID: "probe", ContextWindow: 8192}}
+}
+
+func (probe *footerTelemetryProbe) GetContextUsage() *harness.ContextUsage {
+	probe.contextCalls++
+	percent := 25.0
+	return &harness.ContextUsage{ContextWindow: 8192, Percent: &percent}
+}
+
+func (probe *footerTelemetryProbe) GetSessionStats() codingagent.SessionStats {
+	probe.statsCalls++
+	return codingagent.SessionStats{ContextUsage: probe.GetContextUsage()}
+}
+
+func (probe *footerTelemetryProbe) AutoCompactionEnabled() bool {
+	probe.autoCalls++
+	return true
+}
+
+func TestCompactFooterSkipsTelemetryCollection(t *testing.T) {
+	initTestTheme(t)
+	probe := &footerTelemetryProbe{}
+	provider := &fakeFooterDataProvider{}
+	compact := normalizeWP450Lines(NewFooterComponent(probe, provider, false).Render(40))
+	if probe.statsCalls != 0 || probe.autoCalls != 0 || probe.contextCalls != 1 {
+		t.Fatalf("compact calls = stats %d, context %d, auto %d", probe.statsCalls, probe.contextCalls, probe.autoCalls)
+	}
+	if len(compact) != 1 || !strings.Contains(compact[0], "25.0%/8.2k") {
+		t.Fatalf("compact footer = %#v", compact)
+	}
+
+	_ = NewFooterComponent(probe, provider, true).Render(40)
+	if probe.statsCalls != 1 || probe.autoCalls != 1 {
+		t.Fatalf("verbose calls = stats %d, context %d, auto %d", probe.statsCalls, probe.contextCalls, probe.autoCalls)
 	}
 }
 
@@ -1163,7 +1349,7 @@ func TestFooterMetadataDoesNotBlockRender(t *testing.T) {
 	provider := &blockingFooterDataProvider{
 		started: make(chan struct{}), release: make(chan struct{}), invalidated: make(chan struct{}, 1),
 	}
-	footer := NewFooterComponent(&fakeFooterSession{}, provider)
+	footer := NewFooterComponent(&fakeFooterSession{}, provider, false)
 	rendered := make(chan []string, 1)
 	go func() { rendered <- footer.Render(80) }()
 	select {
@@ -1453,7 +1639,7 @@ func TestFooterComponentStatuses(t *testing.T) {
 		branch:   "dev",
 		statuses: map[string]string{"ext": "active"},
 	}
-	footer := NewFooterComponent(session, provider)
+	footer := NewFooterComponent(session, provider, false)
 	lines := footer.Render(80)
 	found := false
 	for _, line := range lines {
@@ -1587,6 +1773,7 @@ func (f *fakeFooterSession) State() agent.AgentState {
 }
 
 type fakeFooterDataProvider struct {
+	cwd      string
 	branch   string
 	statuses map[string]string
 }
@@ -1611,7 +1798,8 @@ func (provider *blockingFooterDataProvider) Invalidate() {
 	}
 }
 
-func (f *fakeFooterDataProvider) GitBranch() string { return f.branch }
+func (f *fakeFooterDataProvider) GitBranch() string  { return f.branch }
+func (f *fakeFooterDataProvider) CurrentCWD() string { return f.cwd }
 func (f *fakeFooterDataProvider) Statuses() map[string]string {
 	if f.statuses == nil {
 		return map[string]string{}

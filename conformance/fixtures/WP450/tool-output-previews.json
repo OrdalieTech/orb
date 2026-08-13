@@ -6,7 +6,6 @@
       "width": 52,
       "lines": [
         "",
-        "",
         "   $ printf streaming-output",
         "",
         "   ... (43 earlier lines, ctrl+o to expand)",
@@ -21,7 +20,6 @@
       "id": "tool-partial-expanded",
       "width": 52,
       "lines": [
-        "",
         "",
         "   $ printf streaming-output",
         "",
@@ -80,7 +78,6 @@
       "width": 52,
       "lines": [
         "",
-        "",
         "   $ printf streaming-output",
         "",
         "   stream line 01: abcdefghijklmnopqrstuvwxyz",
@@ -138,7 +135,6 @@
       "width": 52,
       "lines": [
         "",
-        "",
         "   $ printf streaming-output",
         "",
         "   ... (43 earlier lines, ctrl+o to expand)",
@@ -154,7 +150,6 @@
       "width": 52,
       "lines": [
         "",
-        "────────────────────────────────────────────────────",
         " $ printf streaming-output",
         " stream line 15: abcdefghijklmnopqrstuvwxyz",
         " 0123456789",
@@ -176,8 +171,7 @@
         " 0123456789",
         " stream line 24: abcdefghijklmnopqrstuvwxyz",
         " 0123456789",
-        "",
-        "────────────────────────────────────────────────────"
+        ""
       ]
     },
     {
@@ -185,7 +179,6 @@
       "width": 52,
       "lines": [
         "",
-        "────────────────────────────────────────────────────",
         " $ printf streaming-output",
         "",
         " stream line 01: abcdefghijklmnopqrstuvwxyz",
@@ -236,8 +229,7 @@
         " 0123456789",
         " stream line 24: abcdefghijklmnopqrstuvwxyz",
         " 0123456789",
-        "",
-        "────────────────────────────────────────────────────"
+        ""
       ]
     },
     {
@@ -245,7 +237,6 @@
       "width": 52,
       "lines": [
         "",
-        "────────────────────────────────────────────────────",
         " $ printf streaming-output",
         "",
         " stream line 01: abcdefghijklmnopqrstuvwxyz",
@@ -297,8 +288,7 @@
         " stream line 24: abcdefghijklmnopqrstuvwxyz",
         " 0123456789",
         "",
-        " (ctrl+o to collapse)",
-        "────────────────────────────────────────────────────"
+        " (ctrl+o to collapse)"
       ]
     },
     {
@@ -306,7 +296,6 @@
       "width": 52,
       "lines": [
         "",
-        "────────────────────────────────────────────────────",
         " $ printf streaming-output",
         " stream line 15: abcdefghijklmnopqrstuvwxyz",
         " 0123456789",
@@ -329,8 +318,7 @@
         " stream line 24: abcdefghijklmnopqrstuvwxyz",
         " 0123456789",
         "",
-        " ... 4 more lines (ctrl+o to expand)",
-        "────────────────────────────────────────────────────"
+        " ... 4 more lines (ctrl+o to expand)"
       ]
     },
     {
@@ -338,7 +326,6 @@
       "width": 88,
       "lines": [
         "",
-        "",
         "   $ printf streaming-output",
         "",
         "   ... (19 earlier lines, ctrl+o to expand)",
@@ -353,7 +340,6 @@
       "id": "tool-partial-expanded",
       "width": 88,
       "lines": [
-        "",
         "",
         "   $ printf streaming-output",
         "",
@@ -388,7 +374,6 @@
       "width": 88,
       "lines": [
         "",
-        "",
         "   $ printf streaming-output",
         "",
         "   stream line 01: abcdefghijklmnopqrstuvwxyz 0123456789",
@@ -422,7 +407,6 @@
       "width": 88,
       "lines": [
         "",
-        "",
         "   $ printf streaming-output",
         "",
         "   ... (19 earlier lines, ctrl+o to expand)",
@@ -438,7 +422,6 @@
       "width": 88,
       "lines": [
         "",
-        "────────────────────────────────────────────────────────────────────────────────────────",
         " $ printf streaming-output",
         " stream line 05: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 06: abcdefghijklmnopqrstuvwxyz 0123456789",
@@ -460,8 +443,7 @@
         " stream line 22: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 23: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 24: abcdefghijklmnopqrstuvwxyz 0123456789",
-        "",
-        "────────────────────────────────────────────────────────────────────────────────────────"
+        ""
       ]
     },
     {
@@ -469,7 +451,6 @@
       "width": 88,
       "lines": [
         "",
-        "────────────────────────────────────────────────────────────────────────────────────────",
         " $ printf streaming-output",
         "",
         " stream line 01: abcdefghijklmnopqrstuvwxyz 0123456789",
@@ -496,8 +477,7 @@
         " stream line 22: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 23: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 24: abcdefghijklmnopqrstuvwxyz 0123456789",
-        "",
-        "────────────────────────────────────────────────────────────────────────────────────────"
+        ""
       ]
     },
     {
@@ -505,7 +485,6 @@
       "width": 88,
       "lines": [
         "",
-        "────────────────────────────────────────────────────────────────────────────────────────",
         " $ printf streaming-output",
         "",
         " stream line 01: abcdefghijklmnopqrstuvwxyz 0123456789",
@@ -533,8 +512,7 @@
         " stream line 23: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 24: abcdefghijklmnopqrstuvwxyz 0123456789",
         "",
-        " (ctrl+o to collapse)",
-        "────────────────────────────────────────────────────────────────────────────────────────"
+        " (ctrl+o to collapse)"
       ]
     },
     {
@@ -542,7 +520,6 @@
       "width": 88,
       "lines": [
         "",
-        "────────────────────────────────────────────────────────────────────────────────────────",
         " $ printf streaming-output",
         " stream line 05: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 06: abcdefghijklmnopqrstuvwxyz 0123456789",
@@ -565,8 +542,7 @@
         " stream line 23: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 24: abcdefghijklmnopqrstuvwxyz 0123456789",
         "",
-        " ... 4 more lines (ctrl+o to expand)",
-        "────────────────────────────────────────────────────────────────────────────────────────"
+        " ... 4 more lines (ctrl+o to expand)"
       ]
     }
   ]
