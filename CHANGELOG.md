@@ -6,6 +6,8 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+## [0.4.16] - 2026-08-13
+
 ### Changed
 
 - `orb update` now installs verified releases directly; package-manager installs remain package-manager-owned.
