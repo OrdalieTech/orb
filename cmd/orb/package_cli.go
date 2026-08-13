@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/OrdalieTech/orb/codingagent"
 	"github.com/OrdalieTech/orb/codingagent/config"
@@ -16,7 +14,8 @@ import (
 )
 
 // Port of packages/coding-agent/src/package-manager-cli.ts (pi
-// install/remove/update/list/config). D4 keeps binary updates notify-only.
+// install/remove/update/list/config). The self route is orb's own direct
+// upgrade (G4, amended); see self_update.go.
 
 type updateTarget struct {
 	kind   string // "all" | "self" | "extensions" | "models"
@@ -24,18 +23,17 @@ type updateTarget struct {
 }
 
 type packageCommandOptions struct {
-	command                 string
-	source                  string
-	updateTarget            *updateTarget
-	showPackagesSkippedNote bool
-	offline                 bool
-	local                   bool
-	projectTrustOverride    *bool
-	help                    bool
-	invalidOption           string
-	invalidArgument         string
-	missingOptionValue      string
-	conflictingOptions      string
+	command              string
+	source               string
+	updateTarget         *updateTarget
+	offline              bool
+	local                bool
+	projectTrustOverride *bool
+	help                 bool
+	invalidOption        string
+	invalidArgument      string
+	missingOptionValue   string
+	conflictingOptions   string
 }
 
 func getPackageCommandUsage(command string) string {
@@ -165,27 +163,30 @@ Examples:
 		_, _ = fmt.Fprintf(writer, `Usage:
   %s
 
-Show how to update orb, or update installed packages and model catalogs.
+Update orb itself, or update installed packages and model catalogs.
 
-orb never replaces its running binary. The default and --self routes print the
-exact command for each supported installation method.
+The default and --self routes replace the orb binary this process runs from with
+the latest GitHub release for this platform, after verifying its sha256 checksum.
+A Homebrew, Nix, or Snap install is left to its package manager; orb never
+elevates.
 
 Options:
-  --self                  Show orb binary update commands (default)
+  --self                  Update the orb binary (default)
   --extensions            Update installed packages only
   --models                Refresh model catalogs only
-  --all                   Update packages, then show orb binary update commands
+  --all                   Update packages, then the orb binary
   --extension <source>    Update one package only
+  --offline               Skip the update instead of reaching GitHub
   -a, --approve           Trust project-local files for this command
   -na, --no-approve       Ignore project-local files for this command
 
 Routes:
-  orb update              Show orb binary update commands
-  orb update --all        Update packages and show binary update commands
+  orb update              Update the orb binary
+  orb update --all        Update packages, then the orb binary
   orb update --extensions Update all installed packages
   orb update --models     Refresh model catalogs only
   orb update <source>     Update one package
-  orb update orb         Alias for orb update (self works too)
+  orb update orb          Alias for orb update (self works too)
 `, getPackageCommandUsage("update"))
 	default:
 		_, _ = fmt.Fprintf(writer, `Usage:
@@ -350,10 +351,10 @@ func parsePackageCommand(args []string) *packageCommandOptions {
 			options.updateTarget = &updateTarget{kind: "extensions"}
 		default:
 			options.updateTarget = &updateTarget{kind: "self"}
-			options.showPackagesSkippedNote = true
 		}
+		// --offline only means anything to the release check the self route makes.
 		if offlineFlag {
-			if options.showPackagesSkippedNote {
+			if options.updateTarget.kind == "self" {
 				options.offline = true
 			} else {
 				setInvalidOption("--offline")
@@ -553,11 +554,10 @@ func handlePackageCommand(ctx context.Context, argv []string, streams cliStreams
 		_, _ = fmt.Fprintln(streams.Stdout, "Model catalogs refreshed")
 		return true, 0
 	}
+	// A self-only update touches neither settings nor packages, so it skips the
+	// project-trust and package-manager setup below entirely.
 	if options.command == "update" && options.updateTarget != nil && options.updateTarget.kind == "self" {
-		if !options.showPackagesSkippedNote {
-			printSelfUpdateInstructions(streams.Stdout)
-			return true, 0
-		}
+		return true, dependencies.selfUpdate(ctx, streams.Stdout, packageUpdateOffline(options.offline), streams.StdoutTTY)
 	}
 
 	cwd, agentDir, err := packageCommandDirs()
@@ -650,26 +650,6 @@ func handlePackageCommand(ctx context.Context, argv []string, streams cliStreams
 
 	default: // update
 		target := options.updateTarget
-		if target == nil {
-			target = &updateTarget{kind: "self"}
-		}
-		if target.kind == "self" && options.showPackagesSkippedNote {
-			offline := packageUpdateOffline(options.offline)
-			latestVersion := ""
-			var selfCheckErr error
-			if !offline && !isDevelopmentVersion(version) {
-				latestVersion, selfCheckErr = fetchLatestReleaseVersion(ctx, version, http.DefaultClient, latestReleaseURL, selfUpdateCheckTimeout)
-			}
-			checkCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-			if offline {
-				cancel()
-			}
-			packageCheck, packageCheckErr := packageManager.CheckForPackageUpdates(checkCtx)
-			cancel()
-			printSelfUpdateStatus(streams.Stdout, version, latestVersion, selfCheckErr, offline)
-			printPackageUpdateStatus(streams.Stdout, packageCheck, offline || packageCheckErr != nil)
-			return true, 0
-		}
 		if target.kind == "all" || target.kind == "extensions" {
 			updateSource := ""
 			if target.kind == "extensions" {
@@ -681,42 +661,11 @@ func handlePackageCommand(ctx context.Context, argv []string, streams cliStreams
 			}
 			printUpdatedPackages(streams.Stdout, updates)
 		}
-		if target.kind == "all" || target.kind == "self" {
-			printSelfUpdateInstructions(streams.Stdout)
+		if target.kind == "all" {
+			return true, dependencies.selfUpdate(ctx, streams.Stdout, packageUpdateOffline(options.offline), streams.StdoutTTY)
 		}
 		return true, 0
 	}
-}
-
-func printSelfUpdateInstructions(writer io.Writer) {
-	_, _ = fmt.Fprint(writer, `orb does not replace its running binary.
-Re-run the method used to install it:
-
-  Installer: curl -fsSL https://raw.githubusercontent.com/OrdalieTech/orb/main/scripts/install.sh | sh
-  Go:        go install github.com/OrdalieTech/orb/cmd/orb@latest
-`)
-}
-
-func printSelfUpdateStatus(writer io.Writer, currentVersion, latestVersion string, checkErr error, offline bool) {
-	current := displayVersion(currentVersion)
-	switch {
-	case isDevelopmentVersion(currentVersion):
-		_, _ = fmt.Fprintln(writer, "orb dev build — update check skipped.")
-	case offline:
-		_, _ = fmt.Fprintf(writer, "orb %s — offline mode — update check skipped.\n", current)
-	case checkErr != nil:
-		_, _ = fmt.Fprintf(writer, "orb %s — could not check for updates (%s).\n", current, checkErr)
-	case isNewerPackageVersion(latestVersion, currentVersion):
-		latest := displayVersion(latestVersion)
-		_, _ = fmt.Fprintf(writer, "Update available: %s -> %s\n", current, latest)
-		_, _ = fmt.Fprintf(writer, "Release: https://github.com/OrdalieTech/orb/releases/tag/%s\n", strings.TrimSpace(latestVersion))
-		printSelfUpdateInstructions(writer)
-		return
-	default:
-		_, _ = fmt.Fprintf(writer, "orb %s — already the latest version.\n", current)
-		return
-	}
-	printSelfUpdateInstructions(writer)
 }
 
 func packageUpdateOffline(explicit bool) bool {
@@ -725,25 +674,6 @@ func packageUpdateOffline(explicit bool) bool {
 	}
 	value := strings.ToLower(strings.TrimSpace(os.Getenv("PI_OFFLINE")))
 	return value == "1" || value == "true" || value == "yes"
-}
-
-func printPackageUpdateStatus(writer io.Writer, check codingagent.PackageUpdateCheck, skipped bool) {
-	if check.Installed == 0 {
-		return
-	}
-	if skipped {
-		_, _ = fmt.Fprintf(writer, "Packages: %d installed (update check skipped) — run orb update --extensions\n", check.Installed)
-		return
-	}
-	if len(check.Updates) == 0 {
-		_, _ = fmt.Fprintf(writer, "Packages: all %d up to date.\n", check.Installed)
-		return
-	}
-	formatted := make([]string, len(check.Updates))
-	for index, update := range check.Updates {
-		formatted[index] = formatPackageUpdate(update)
-	}
-	_, _ = fmt.Fprintf(writer, "Package updates available: %s — run orb update --extensions\n", strings.Join(formatted, ", "))
 }
 
 func printUpdatedPackages(writer io.Writer, updates []codingagent.PackageVersionUpdate) {

@@ -51,6 +51,7 @@ func runPackageCLI(t *testing.T, argv []string) (code int, stdout, stderr string
 		Stdin: strings.NewReader(""), Stdout: &outBuffer, Stderr: &errBuffer,
 	}, cliDependencies{
 		refreshModels: func(context.Context, string) error { return nil },
+		selfUpdate:    runSelfUpdate,
 	})
 	return code, outBuffer.String(), errBuffer.String()
 }
@@ -288,14 +289,10 @@ func TestPackageCLIHelpAndErrors(t *testing.T) {
 	}
 }
 
+// Route selection lives in TestUpdateCommandRouting; this covers the arguments
+// that never reach a route.
 func TestPackageCLIUpdateTargets(t *testing.T) {
 	setupPackageCLI(t)
-
-	// --models refreshes catalogs through the injected dependency.
-	code, stdout, _ := runPackageCLI(t, []string{"update", "--models"})
-	if code != 0 || stdout != "Model catalogs refreshed\n" {
-		t.Fatalf("code=%d stdout=%q", code, stdout)
-	}
 
 	// --models conflicts with other targets.
 	code, _, stderr := runPackageCLI(t, []string{"update", "--models", "--self"})
@@ -303,48 +300,7 @@ func TestPackageCLIUpdateTargets(t *testing.T) {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
 	}
 
-	// --extensions with nothing configured succeeds.
-	code, stdout, _ = runPackageCLI(t, []string{"update", "--extensions"})
-	if code != 0 || stdout != "All packages up to date.\n" {
-		t.Fatalf("code=%d stdout=%q", code, stdout)
-	}
-
-	// The unstamped test binary takes the dev-build route without a network call.
-	code, stdout, stderr = runPackageCLI(t, []string{"update"})
-	if code != 0 || stderr != "" || !strings.HasPrefix(stdout, "orb dev build — update check skipped.\n") {
-		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
-	}
-	if strings.Contains(stdout, "Packages:") || strings.Contains(stdout, "extensions") {
-		t.Fatalf("zero-package update output = %q", stdout)
-	}
-	for _, want := range []string{
-		"orb does not replace its running binary",
-		"curl -fsSL https://raw.githubusercontent.com/OrdalieTech/orb/main/scripts/install.sh | sh",
-		"go install github.com/OrdalieTech/orb/cmd/orb@latest",
-	} {
-		if !strings.Contains(stdout, want) {
-			t.Fatalf("update output missing %q: %q", want, stdout)
-		}
-	}
-
-	// --offline is handled by the bare self-update route and never fetches.
-	previousVersion := version
-	version = "0.2.1"
-	code, stdout, stderr = runPackageCLI(t, []string{"update", "--offline"})
-	version = previousVersion
-	if code != 0 || stderr != "" || !strings.HasPrefix(stdout, "orb v0.2.1 — offline mode — update check skipped.\n") {
-		t.Fatalf("offline: code=%d stdout=%q stderr=%q", code, stdout, stderr)
-	}
-
-	// The explicit self aliases use the same instruction-only route.
-	for _, args := range [][]string{{"update", "--self"}, {"update", "self"}, {"update", "orb"}} {
-		code, stdout, stderr = runPackageCLI(t, args)
-		if code != 0 || stderr != "" || !strings.Contains(stdout, "Re-run the method used to install it:") {
-			t.Fatalf("%v: code=%d stdout=%q stderr=%q", args, code, stdout, stderr)
-		}
-	}
-
-	// --force belonged to in-place self-update and must not imply support.
+	// --force is not a supported option; the updater has no forced route.
 	code, _, stderr = runPackageCLI(t, []string{"update", "--force"})
 	if code != 1 || !strings.Contains(stderr, `Unknown option --force for "update".`) {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
@@ -389,95 +345,8 @@ func TestPackageCLIExplicitUpdateBypassesSkipVersionCheck(t *testing.T) {
 	if requests != 1 {
 		t.Fatalf("release requests = %d, want the explicit check to bypass PI_SKIP_VERSION_CHECK", requests)
 	}
-	if !strings.HasPrefix(stdout, "orb v0.2.1 — already the latest version.\n") {
+	if !strings.HasSuffix(stdout, "  0.2.1\n     │\n     └─ already current ✓\n") {
 		t.Fatalf("stdout = %q", stdout)
-	}
-}
-
-func TestSelfUpdateMessageSelection(t *testing.T) {
-	instructions := `orb does not replace its running binary.
-Re-run the method used to install it:
-
-  Installer: curl -fsSL https://raw.githubusercontent.com/OrdalieTech/orb/main/scripts/install.sh | sh
-  Go:        go install github.com/OrdalieTech/orb/cmd/orb@latest
-`
-	tests := []struct {
-		name           string
-		currentVersion string
-		latestVersion  string
-		checkErr       error
-		offline        bool
-		want           string
-	}{
-		{
-			name:           "up to date",
-			currentVersion: "0.3.0",
-			latestVersion:  "v0.3.0",
-			want:           "orb v0.3.0 — already the latest version.\n",
-		},
-		{
-			name:           "update available",
-			currentVersion: "0.2.1",
-			latestVersion:  "v0.3.0",
-			want: "Update available: v0.2.1 -> v0.3.0\n" +
-				"Release: https://github.com/OrdalieTech/orb/releases/tag/v0.3.0\n" + instructions,
-		},
-		{
-			name:           "check failed",
-			currentVersion: "0.2.1",
-			checkErr:       errors.New("network error"),
-			want:           "orb v0.2.1 — could not check for updates (network error).\n" + instructions,
-		},
-		{
-			name:           "dev build",
-			currentVersion: "0.1.0-dev",
-			latestVersion:  "v0.3.0",
-			want:           "orb dev build — update check skipped.\n" + instructions,
-		},
-		{
-			name:           "offline",
-			currentVersion: "0.2.1",
-			latestVersion:  "v0.3.0",
-			offline:        true,
-			want:           "orb v0.2.1 — offline mode — update check skipped.\n" + instructions,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			var output bytes.Buffer
-			printSelfUpdateStatus(&output, test.currentVersion, test.latestVersion, test.checkErr, test.offline)
-			if got := output.String(); got != test.want {
-				t.Fatalf("output = %q, want %q", got, test.want)
-			}
-		})
-	}
-}
-
-func TestPackageUpdateMessageSelection(t *testing.T) {
-	updates := []codingagent.PackageVersionUpdate{
-		{PackageUpdate: codingagent.PackageUpdate{DisplayName: "alpha", Type: "npm"}, CurrentVersion: "1.0.0", LatestVersion: "1.1.0"},
-		{PackageUpdate: codingagent.PackageUpdate{DisplayName: "beta", Type: "npm"}, CurrentVersion: "2.0.0", LatestVersion: "2.2.0"},
-	}
-	tests := []struct {
-		name    string
-		check   codingagent.PackageUpdateCheck
-		skipped bool
-		want    string
-	}{
-		{name: "none installed", check: codingagent.PackageUpdateCheck{}, want: ""},
-		{name: "all current", check: codingagent.PackageUpdateCheck{Installed: 2}, want: "Packages: all 2 up to date.\n"},
-		{name: "updates available", check: codingagent.PackageUpdateCheck{Installed: 2, Updates: updates}, want: "Package updates available: alpha v1.0.0 -> v1.1.0, beta v2.0.0 -> v2.2.0 — run orb update --extensions\n"},
-		{name: "check skipped", check: codingagent.PackageUpdateCheck{Installed: 2}, skipped: true, want: "Packages: 2 installed (update check skipped) — run orb update --extensions\n"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			var output bytes.Buffer
-			printPackageUpdateStatus(&output, test.check, test.skipped)
-			if got := output.String(); got != test.want {
-				t.Fatalf("output = %q, want %q", got, test.want)
-			}
-		})
 	}
 }
 

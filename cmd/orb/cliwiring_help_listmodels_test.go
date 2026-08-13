@@ -22,7 +22,7 @@ func TestHelpTextDocumentsExtensionFlagAndCommands(t *testing.T) {
 		"orb install <source>",
 		"orb remove <source>",
 		"orb uninstall <source>",
-		"orb update [target]         Show orb update instructions or update packages/models",
+		"orb update [target]         Update orb itself, installed packages, or model catalogs",
 		"orb list",
 		"orb config",
 		"--offline",

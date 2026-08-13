@@ -47,7 +47,6 @@ const (
 	upstreamCommit         = "53fa77ccd8a279eb87e92294ef3687b03ff80112"
 	latestReleaseURL       = "https://api.github.com/repos/OrdalieTech/orb/releases/latest"
 	versionCheckTimeout    = 10 * time.Second
-	selfUpdateCheckTimeout = 3 * time.Second
 	versionResponseMaxSize = 64 << 10
 )
 
@@ -70,6 +69,7 @@ type cliDependencies struct {
 	selectSession           SessionSelector
 	selectMissingSessionCWD func(context.Context, *MissingSessionCWDError) (string, bool, error)
 	runRPCFixture           func(context.Context, CLIArgs, cliStreams, string) (handled bool, code int)
+	selfUpdate              func(context.Context, io.Writer, bool, bool) int
 }
 
 func init() {
@@ -131,6 +131,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	}
 	if dependencies.runInteractive == nil {
 		dependencies.runInteractive = modes.RunInteractiveMode
+	}
+	if dependencies.selfUpdate == nil {
+		dependencies.selfUpdate = runSelfUpdate
 	}
 	if dependencies.selectSession == nil {
 		dependencies.selectSession = startupTUISessionSelector(ctx)
@@ -939,7 +942,7 @@ Commands:
   orb install <source> [-l]   Install a package source and save it to settings
   orb remove <source> [-l]    Remove a package source from settings
   orb uninstall <source> [-l] Alias for remove
-  orb update [target]         Show orb update instructions or update packages/models
+  orb update [target]         Update orb itself, installed packages, or model catalogs
   orb list                    List installed packages from settings
   orb config [-l]             Open TUI to enable/disable package resources (Tab switches scope)
   orb auth <command>           Print credentials for external clients
