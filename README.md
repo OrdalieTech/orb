@@ -22,8 +22,8 @@ go install github.com/OrdalieTech/orb/cmd/orb@latest
 
 ## Update
 
-Run `orb update`. It never replaces its running binary; it prints the exact installer or Go command
-for your installation, while `orb update --extensions` updates installed pi packages.
+Run `orb update` to install the latest verified release. Homebrew, Nix, and Snap installs stay
+package-manager-owned. Use `--extensions`, `--models`, or `--all` for the other update targets.
 
 ## First session
 
