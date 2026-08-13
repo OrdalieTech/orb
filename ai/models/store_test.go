@@ -373,6 +373,12 @@ func TestSYNC4NewerBuiltinBeatsStaleStoreOverlay(t *testing.T) {
 			Models:    []ai.Model{{ID: "legacy-model", Provider: "mistral"}},
 			CheckedAt: generatedCatalogLastModified + 1,
 		},
+		"xai": {
+			Models:       []ai.Model{{ID: "grok-4.6", Provider: "xai"}},
+			CheckedAt:    generatedCatalogLastModified + 1,
+			LastModified: storeTimestamp(0),
+			ETag:         `"catalog"`,
+		},
 		"extension": {
 			Models: []ai.Model{{ID: "extension-model", Provider: "extension"}},
 		},
@@ -396,6 +402,9 @@ func TestSYNC4NewerBuiltinBeatsStaleStoreOverlay(t *testing.T) {
 	}
 	if _, ok := loaded.Find("openai", "fresh-model"); !ok {
 		t.Fatal("overlay newer than the builtin catalog was dropped")
+	}
+	if _, ok := loaded.Find("xai", "grok-4.6"); !ok {
+		t.Fatal("models.dev overlay with an ETag and no Last-Modified was dropped")
 	}
 	if _, ok := loaded.Find("extension", "extension-model"); !ok {
 		t.Fatal("overlay for a non-bundled provider was dropped")

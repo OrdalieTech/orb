@@ -84,6 +84,10 @@ func LoadStore(path string) (*Catalog, error) {
 	}
 	providers := make(map[string]map[string]ai.Model, len(stored))
 	for providerID, entry := range stored {
+		// ponytail: models.dev omits Last-Modified; its ETag distinguishes a successful catalog response from 404/501.
+		if entry.LastModified != nil && *entry.LastModified == 0 && entry.ETag != "" {
+			entry.LastModified = &entry.CheckedAt
+		}
 		if builtinProviderIDs()[providerID] && (entry.LastModified == nil || *entry.LastModified <= generatedCatalogLastModified) {
 			continue
 		}

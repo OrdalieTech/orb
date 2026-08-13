@@ -8,6 +8,7 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ### Fixed
 
+- Runtime catalog refreshes now expose new models when models.dev supplies an ETag without a Last-Modified header.
 - Long model-selection confirmations now wrap to the terminal width instead of crashing the TUI after selection.
 - On macOS, inherited empty or `0` `MallocStackLogging*` settings are removed before Orb starts children, preventing Apple's allocator warning from leaking into the TUI while preserving deliberately enabled logging.
 
