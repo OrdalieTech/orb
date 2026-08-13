@@ -233,11 +233,12 @@ func TestSelfUpdateReplacesCanonicalBinary(t *testing.T) {
 	}
 	// The mode is the target's, not the archive's, and the PATH symlink still resolves to the file
 	// that was replaced in place.
-	if info, err := os.Stat(canonical); err != nil || info.Mode().Perm() != 0o700 {
+	info, err := os.Stat(canonical)
+	if err != nil || info.Mode().Perm() != 0o700 {
 		t.Fatalf("mode = %v, %v", info.Mode(), err)
 	}
-	if resolved, err := filepath.EvalSymlinks(link); err != nil || resolved != canonical {
-		t.Fatalf("link resolves to %q, %v", resolved, err)
+	if resolved, err := os.Stat(link); err != nil || !os.SameFile(info, resolved) {
+		t.Fatalf("link resolves to %v, %v", resolved, err)
 	}
 	assertOnlyOrb(t, dir)
 }
