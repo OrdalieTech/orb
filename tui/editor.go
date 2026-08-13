@@ -645,6 +645,15 @@ func (editor *Editor) HasHiddenLinesAboveLastRender(width int) bool {
 	return editor.lastWidth == layoutWidth && editor.scrollOffset > 0
 }
 
+// RenderedContentRows is the number of text rows the last Render put between
+// the two rails. Render emits [top rail, content…, bottom rail, autocomplete…],
+// so a decorator that draws a frame needs this to find the bottom rail.
+func (editor *Editor) RenderedContentRows() int {
+	editor.mu.Lock()
+	defer editor.mu.Unlock()
+	return editor.renderVisible
+}
+
 func (editor *Editor) Render(width int) []string {
 	editor.mu.Lock()
 	defer editor.mu.Unlock()

@@ -40,15 +40,22 @@ func TestExtensionShutdownDeferredUntilAgentSettled(t *testing.T) {
 	}
 }
 
-func TestVerboseOverridesQuietStartupHeader(t *testing.T) {
+// The built-in cwd band is --verbose only: the default panel is the empty mark,
+// and verbose still overrides quiet startup.
+func TestBuiltInHeaderIsVerboseOnly(t *testing.T) {
 	for _, test := range []struct {
-		name       string
-		verbose    bool
-		wantHeader bool
-	}{{"quiet", false, false}, {"verbose", true, true}} {
+		name           string
+		quiet, verbose bool
+		wantHeader     bool
+	}{
+		{name: "default", quiet: false, verbose: false, wantHeader: false},
+		{name: "quiet", quiet: true, verbose: false, wantHeader: false},
+		{name: "verbose", quiet: false, verbose: true, wantHeader: true},
+		{name: "quiet overridden by verbose", quiet: true, verbose: true, wantHeader: true},
+	} {
 		t.Run(test.name, func(t *testing.T) {
 			mode, _, _, _ := newF12ShutdownMode(t)
-			mode.session.SetQuietStartup(true)
+			mode.session.SetQuietStartup(test.quiet)
 			mode.header = &tui.Container{}
 			mode.options.Verbose = test.verbose
 			mode.options.SessionHeader = mode.session.Manager().GetHeader()

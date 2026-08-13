@@ -95,6 +95,7 @@ type InteractiveMode struct {
 	widgetBelow     *tui.Container
 	footer          *tui.Container
 	overlay         *tui.Container
+	emptyState      *emptyChatState
 
 	// Extension UI backing
 	interactiveUI *InteractiveUI
@@ -138,6 +139,8 @@ type InteractiveMode struct {
 	authCancel                 context.CancelFunc
 	modelSelectorCancel        context.CancelFunc
 	modelSelectorDone          chan struct{}
+	logoCancel                 context.CancelFunc
+	logoDone                   chan struct{}
 	// anthropicSubscriptionWarningShown gates the once-per-session Anthropic
 	// extra-usage warning (upstream anthropicSubscriptionWarningShown).
 	anthropicSubscriptionWarningShown bool
@@ -302,7 +305,6 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 	defer func() {
 		mode.cleanup()
 	}()
-
 	mode.mu.Lock()
 	mode.unsubscribe = mode.session.Subscribe(mode.handleEvent)
 	mode.mu.Unlock()
@@ -345,6 +347,7 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 		mode.chat.AddChild(newStartupWarnings(mode.options.Diagnostics))
 	}
 	mode.maybeWarnAboutAnthropicSubscriptionAuth(ctx, mode.session.State().Model)
+	mode.startLogoUnfold(ctx, logoUnfoldDelay)
 
 	// Preserve positional startup message order. The first turn carries decoded
 	// startup images; remaining positional messages become subsequent steers.
@@ -435,7 +438,14 @@ func (mode *InteractiveMode) init() error {
 	mode.editor.SetAutocompleteMaxVisible(settings.AutocompleteMaxVisible)
 
 	body, chrome := &tui.Container{}, &tui.Container{}
-	for _, component := range []tui.Component{mode.header, mode.loadedResources, mode.chat, mode.pendingMessages} {
+	// The mark is the first transcript component, so conversation content moves
+	// it off-screen only through normal viewport scrolling.
+	mode.emptyState = &emptyChatState{
+		bodyHeight: mode.ui.ViewportBodyHeight, left: mode.outputPad + 2,
+	}
+	mode.emptyState.frame.Store(0)
+	body.AddChild(mode.emptyState)
+	for _, component := range []*tui.Container{mode.header, mode.loadedResources, mode.chat, mode.pendingMessages} {
 		body.AddChild(component)
 	}
 	for _, component := range []tui.Component{compactStatus{Component: mode.status, Inline: mode.statusInEditor}, mode.widgetAbove, mode.editorContainer, mode.widgetBelow, mode.footer, mode.overlay} {
@@ -449,7 +459,7 @@ func (mode *InteractiveMode) init() error {
 
 	mode.addDefaultHeader()
 	mode.showLoadedResources()
-	mode.footer.AddChild(NewFooterComponent(mode.session, mode))
+	mode.footer.AddChild(NewFooterComponent(mode.session, mode, mode.options.Verbose))
 
 	mode.interactiveUI = NewInteractiveUI(mode)
 	mode.ui.SetSelectionHandler(func(text string) {
@@ -513,7 +523,7 @@ func (mode *InteractiveMode) rebindHostSession(replacement *codingagent.SessionR
 	mode.setExtensionEditor(nil)
 	mode.addDefaultHeader()
 	mode.restoreEditorComponent()
-	mode.footer.AddChild(NewFooterComponent(mode.session, mode))
+	mode.footer.AddChild(NewFooterComponent(mode.session, mode, mode.options.Verbose))
 	mode.interactiveUI = NewInteractiveUI(mode)
 	if runner := replacement.ExtensionRunner(); runner != nil {
 		runner.SetUI(mode.interactiveUI, extensions.ModeTUI)
@@ -643,10 +653,7 @@ func (mode *InteractiveMode) updateEditorBorderColor() {
 }
 
 func (mode *InteractiveMode) addDefaultHeader() {
-	if mode.session == nil {
-		return
-	}
-	if !mode.options.Verbose && mode.session.InteractiveSettings().QuietStartup {
+	if mode.session == nil || !mode.options.Verbose {
 		return
 	}
 	if mode.options.SessionHeader != nil {
@@ -662,7 +669,7 @@ func (mode *InteractiveMode) showLoadedResources() {
 	mode.mu.Lock()
 	session, toolsExpanded := mode.session, mode.toolsExpanded
 	mode.mu.Unlock()
-	if session == nil || (!mode.options.Verbose && session.InteractiveSettings().QuietStartup) {
+	if session == nil || !mode.options.Verbose {
 		return
 	}
 	loader := session.ResourceLoader()
@@ -1402,11 +1409,9 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 	})
 
 	mode.editor.OnAction("app.thinking.cycle", func() {
-		level, err := mode.session.CycleThinkingLevel()
+		_, err := mode.session.CycleThinkingLevel()
 		if err != nil {
 			mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
-		} else if level != nil {
-			mode.chat.AddChild(newStyledText("dim", "Thinking: "+string(*level)))
 		}
 		mode.ui.RequestRender()
 	})
@@ -2513,7 +2518,7 @@ func (mode *InteractiveMode) showStatusMessage(text string) {
 		return
 	}
 	spacer := tui.NewSpacer(1)
-	message := tui.NewText(theme.FG("dim", text), 1, 0, nil)
+	message := tui.NewText(theme.FG("dim", text), mode.outputPad+2, 0, nil)
 	mode.chat.AddChild(spacer)
 	mode.chat.AddChild(message)
 	mode.lastStatusSpacer = spacer
@@ -2569,8 +2574,6 @@ func (mode *InteractiveMode) handleClearCommand() {
 		if result.Cancelled {
 			return
 		}
-		mode.chat.AddChild(tui.NewSpacer(1))
-		mode.chat.AddChild(tui.NewText(theme.FG("accent", "✓ New session started"), 1, 1, nil))
 		mode.ui.RequestRender()
 	}()
 }
@@ -3571,7 +3574,7 @@ func (mode *InteractiveMode) editorTopBorder(width int, base string, border tui.
 	if !mode.builtInEditorMounted() {
 		return editorTopBorderProjection{Line: base}
 	}
-	if mode.editor.HasHiddenLinesAboveLastRender(width) {
+	if mode.editor.HasHiddenLinesAboveLastRender(editorContentWidth(width)) {
 		mode.mu.Lock()
 		mode.editorChromeWidth = width
 		mode.editorChromeStatus = ""
@@ -3595,7 +3598,7 @@ func (mode *InteractiveMode) editorTopBorder(width int, base string, border tui.
 
 func (mode *InteractiveMode) statusInEditor(width int, status string) bool {
 	inline := false
-	if mode.builtInEditorMounted() && mode.editor != nil && status != "" && !mode.editor.HasHiddenLinesAbove(width) {
+	if mode.builtInEditorMounted() && mode.editor != nil && status != "" && !mode.editor.HasHiddenLinesAbove(editorContentWidth(width)) {
 		border := mode.editor.GetBorderColor()
 		base := border(strings.Repeat("─", max(0, width)))
 		inline = composeEditorTopBorder(base, width, status, mode.SessionName(), border).StatusInline
@@ -4458,6 +4461,8 @@ func (mode *InteractiveMode) cleanupWithOrder(fromSignal bool) {
 		mode.mu.Lock()
 		mode.themeController = nil
 		mode.mu.Unlock()
+		// No settling frame may be written after ui.Stop hands the terminal back.
+		mode.stopLogoUnfold()
 		if mode.ui != nil {
 			mode.ui.Terminal().DrainInput(time.Second, 50*time.Millisecond)
 			_ = mode.ui.Stop()

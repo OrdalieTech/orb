@@ -140,7 +140,7 @@ func renderWP450ReplayWidth(width int) []ConformanceReplayFrame {
 		ThinkingLevel: agent.ThinkingLevel("medium"),
 	}}
 	footerProvider := &wp450FooterProvider{mode: mode}
-	footer := NewFooterComponent(footerSession, footerProvider)
+	footer := NewFooterComponent(footerSession, footerProvider, false)
 
 	root := &tui.Container{}
 	for _, component := range []tui.Component{

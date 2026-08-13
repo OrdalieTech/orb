@@ -60,9 +60,6 @@ func NewInteractiveUI(mode *InteractiveMode) *InteractiveUI {
 	if mode.header != nil {
 		ui.builtInHeader = mode.header.Children()
 	}
-	if mode.widgetAbove != nil && len(mode.widgetAbove.Children()) == 0 {
-		mode.widgetAbove.AddChild(tui.NewSpacer(1))
-	}
 	return ui
 }
 
@@ -237,10 +234,10 @@ func (ui *InteractiveUI) Notify(message string, notifyType extensions.Notificati
 	switch notifyType {
 	case extensions.NotifyWarning:
 		ui.mode.chat.AddChild(tui.NewSpacer(1))
-		ui.mode.chat.AddChild(tui.NewText(theme.FG("warning", "Warning: "+message), 1, 0, nil))
+		ui.mode.chat.AddChild(tui.NewText(theme.FG("warning", "Warning: "+message), ui.mode.outputPad+2, 0, nil))
 	case extensions.NotifyError:
 		ui.mode.chat.AddChild(tui.NewSpacer(1))
-		ui.mode.chat.AddChild(tui.NewText(theme.FG("error", "Error: "+message), 1, 0, nil))
+		ui.mode.chat.AddChild(tui.NewText(theme.FG("error", "Error: "+message), ui.mode.outputPad+2, 0, nil))
 	default:
 		ui.mode.showStatusMessage(message)
 		return
@@ -505,8 +502,8 @@ func (ui *InteractiveUI) renderWidgets() {
 				break
 			}
 		}
-		ui.mode.widgetAbove.AddChild(tui.NewSpacer(1))
 		if hasAbove {
+			ui.mode.widgetAbove.AddChild(tui.NewSpacer(1))
 			for _, entry := range components {
 				if entry.placement != extensions.WidgetBelowEditor {
 					ui.mode.widgetAbove.AddChild(entry.component)
@@ -624,7 +621,7 @@ func (ui *InteractiveUI) SetFooter(factory extensions.FooterFactory) {
 				ui.mode.footer.AddChild(component)
 			}
 		} else if ui.mode.session != nil {
-			ui.mode.footer.AddChild(NewFooterComponent(ui.mode.session, ui.mode))
+			ui.mode.footer.AddChild(NewFooterComponent(ui.mode.session, ui.mode, ui.mode.options.Verbose))
 		}
 	} else if component := factory(ui.mode, ui.Theme(), ui.mode); component != nil {
 		ui.mu.Lock()
