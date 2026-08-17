@@ -1,12 +1,17 @@
 package plugins
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"slices"
 	"strings"
 	"sync"
+	"time"
+	"unicode"
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
@@ -29,7 +34,7 @@ const (
 // ponytail: `mode` is the only unconditionally required field — task/tasks are
 // required per branch, which plain JSON Schema cannot say without a oneOf that
 // several providers reject. Execute rejects the wrong pairing with a clear error.
-var subagentSchema = ai.JSONSchema(`{"type":"object","required":["mode"],"properties":{"mode":{"type":"string","enum":["single","parallel"],"description":"single runs one child from task/agent; parallel runs every entry of tasks concurrently."},"task":{"type":"string","description":"Self-contained instruction for the child, including any context it needs. Required when mode is single."},"agent":{"type":"string","enum":["scout","worker","reviewer"],"description":"Child role: scout and reviewer are read-only, worker may edit and run commands. Defaults to worker."},"context":{"type":"string","enum":["fresh","fork"],"description":"fresh starts with an empty conversation; fork prepends a transcript of the recent parent conversation. Defaults to fresh."},"tools":{"type":"array","items":{"type":"string"},"description":"Optional subset of the role's tools; names outside the role are dropped, and an empty array leaves the child with no tools."},"tasks":{"type":"array","maxItems":32,"description":"Children to run concurrently, at most 32 per call. Required when mode is parallel; ignored otherwise.","items":{"type":"object","required":["task"],"properties":{"task":{"type":"string","description":"Self-contained instruction for this child."},"agent":{"type":"string","enum":["scout","worker","reviewer"],"description":"Child role for this task. Defaults to worker."},"context":{"type":"string","enum":["fresh","fork"],"description":"fresh or fork for this task. Defaults to fresh."},"tools":{"type":"array","items":{"type":"string"},"description":"Optional subset of this role's tools."}}}}}}`)
+var subagentSchema = ai.JSONSchema(`{"type":"object","required":["mode"],"properties":{"mode":{"type":"string","enum":["single","parallel"],"description":"single runs one child from task/agent; parallel runs every entry of tasks concurrently."},"task":{"type":"string","description":"Self-contained instruction for the child, including any context it needs. Required when mode is single."},"agent":{"type":"string","enum":["scout","worker","reviewer"],"description":"Built-in role or configured external CLI. Defaults to worker."},"context":{"type":"string","enum":["fresh","fork"],"description":"fresh starts with an empty conversation; fork prepends a transcript of the recent parent conversation. Defaults to fresh."},"tools":{"type":"array","items":{"type":"string"},"description":"Optional subset of the role's tools; names outside the role are dropped, and an empty array leaves the child with no tools."},"tasks":{"type":"array","maxItems":32,"description":"Children to run concurrently, at most 32 per call. Required when mode is parallel; ignored otherwise.","items":{"type":"object","required":["task"],"properties":{"task":{"type":"string","description":"Self-contained instruction for this child."},"agent":{"type":"string","enum":["scout","worker","reviewer"],"description":"Built-in role or configured external CLI. Defaults to worker."},"context":{"type":"string","enum":["fresh","fork"],"description":"fresh or fork for this task. Defaults to fresh."},"tools":{"type":"array","items":{"type":"string"},"description":"Optional subset of this role's tools."}}}}}}`)
 
 type archetype struct {
 	prompt string
@@ -62,11 +67,65 @@ type subagentTask struct {
 
 type childProgress struct{ name, status string }
 
-func subagentsExtension(injected engine.StreamFn, policy *Policy) extensions.Factory {
+func externalSubagents(settings *config.SettingsManager) (map[string]string, error) {
+	if settings == nil {
+		return nil, nil
+	}
+	configured := settings.GetPluginSettings("subagents")
+	encoded, err := json.Marshal(configured)
+	parsed := struct {
+		Enabled  *bool             `json:"enabled"`
+		External map[string]string `json:"external"`
+	}{}
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.DisallowUnknownFields()
+	if err == nil {
+		err = decoder.Decode(&parsed)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("plugins: invalid subagents settings: %w", err)
+	}
+	if value, exists := configured["enabled"]; exists && value == nil {
+		return nil, fmt.Errorf("plugins: subagents.enabled must be true or false")
+	}
+	if value, exists := configured["external"]; !exists {
+		return nil, nil
+	} else if value == nil {
+		return nil, fmt.Errorf("plugins: subagents.external must map names to commands")
+	}
+	for name, command := range parsed.External {
+		if strings.TrimSpace(name) == "" || strings.IndexFunc(name, unicode.IsControl) >= 0 || strings.IndexFunc(name, unicode.IsSpace) >= 0 {
+			return nil, fmt.Errorf("plugins: subagents.external names must be non-empty without whitespace or control characters")
+		}
+		if _, exists := archetypes[name]; exists {
+			return nil, fmt.Errorf("plugins: subagents.external cannot replace built-in agent %q", name)
+		}
+		if strings.TrimSpace(command) == "" {
+			return nil, fmt.Errorf("plugins: subagents.external.%s command must not be empty", name)
+		}
+	}
+	return parsed.External, nil
+}
+
+func schemaWithExternal(external map[string]string) ai.JSONSchema {
+	names := []string{"scout", "worker", "reviewer"}
+	for name := range external {
+		names = append(names, name)
+	}
+	slices.Sort(names[3:])
+	encoded, _ := json.Marshal(names)
+	return ai.JSONSchema(strings.ReplaceAll(string(subagentSchema), `["scout","worker","reviewer"]`, string(encoded)))
+}
+
+func subagentsExtension(injected engine.StreamFn, policy *Policy, settings *config.SettingsManager) extensions.Factory {
 	return func(api extensions.API) error {
+		external, err := externalSubagents(settings)
+		if err != nil {
+			return err
+		}
 		var progressMu sync.Mutex
 		api.RegisterTool(extensions.ToolDefinition{
-			Name: "subagent", Label: "Subagent", Description: "Run an in-process child agent", Parameters: subagentSchema,
+			Name: "subagent", Label: "Subagent", Description: "Run a child agent", Parameters: schemaWithExternal(external),
 			Execute: func(ctx context.Context, _ string, raw any, _ engine.AgentToolUpdateCallback, extensionContext extensions.Context) (engine.AgentToolResult, error) {
 				var input subagentInput
 				if err := decode(raw, &input); err != nil {
@@ -103,7 +162,8 @@ func subagentsExtension(injected engine.StreamFn, policy *Policy) extensions.Fac
 					if tasks[index].Context == "" {
 						tasks[index].Context = "fresh"
 					}
-					if _, ok := archetypes[tasks[index].Agent]; !ok {
+					_, builtIn := archetypes[tasks[index].Agent]
+					if _, configured := external[tasks[index].Agent]; !builtIn && !configured {
 						return engine.AgentToolResult{}, fmt.Errorf("subagent: unknown agent %q", tasks[index].Agent)
 					}
 					if tasks[index].Context != "fresh" && tasks[index].Context != "fork" {
@@ -159,7 +219,7 @@ func subagentsExtension(injected engine.StreamFn, policy *Policy) extensions.Fac
 						}
 						defer func() { <-semaphore }()
 						updateProgress(index, "running")
-						results[index], errorsByChild[index] = runChildGuarded(ctx, extensionContext, injected, policy, task)
+						results[index], errorsByChild[index] = runChildGuarded(ctx, extensionContext, injected, policy, external, task)
 						if errorsByChild[index] != nil {
 							updateProgress(index, "error")
 						} else {
@@ -221,14 +281,34 @@ func childOptions(parentRegistry extensions.ModelRegistry, injected engine.Strea
 // ponytail: recover because extensions.Context exposes no way to ask whether it
 // is still live; drop it once the interface can be checked before the call.
 func runChildGuarded(
-	ctx context.Context, parent extensions.Context, injected engine.StreamFn, policy *Policy, task subagentTask,
+	ctx context.Context, parent extensions.Context, injected engine.StreamFn, policy *Policy, external map[string]string, task subagentTask,
 ) (result string, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			result, err = "", fmt.Errorf("subagent: child stopped: %v", recovered)
 		}
 	}()
+	if command, ok := external[task.Agent]; ok {
+		return runExternalChild(ctx, parent.CWD(), task.Agent, command, task.Task)
+	}
 	return runChild(ctx, parent, injected, policy, task)
+}
+
+func runExternalChild(ctx context.Context, cwd, name, command, task string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	process := exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	process.Dir, process.Stdin, process.WaitDelay = cwd, strings.NewReader(task), time.Second
+	var stderr strings.Builder
+	process.Stderr = &stderr
+	output, err := process.Output()
+	if ctx.Err() != nil {
+		return "", fmt.Errorf("subagent: external agent %q stopped: %w", name, ctx.Err())
+	}
+	if err != nil {
+		return "", fmt.Errorf("subagent: external agent %q failed: %w: %s", name, err, strings.TrimSpace(stderr.String()))
+	}
+	return string(output), nil
 }
 
 func runChild(ctx context.Context, parent extensions.Context, injected engine.StreamFn, policy *Policy, task subagentTask) (string, error) {
