@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -22,8 +24,9 @@ import (
 )
 
 const (
-	childConcurrency = 4
-	forkMessageLimit = 20
+	childConcurrency    = 4
+	forkMessageLimit    = 20
+	externalOutputLimit = 1 << 20
 	// ponytail: one flat width cap, because `tasks` is model-controlled and each
 	// entry costs a goroutine, a temp dir, a session, and a real provider call.
 	// Uncapped, one tool call fans out as wide as the model asks. A per-session
@@ -66,6 +69,28 @@ type subagentTask struct {
 }
 
 type childProgress struct{ name, status string }
+
+type cappedOutput struct {
+	data     []byte
+	used     int
+	exceeded atomic.Bool
+	cancel   context.CancelFunc
+}
+
+func newCappedOutput(cancel context.CancelFunc) *cappedOutput {
+	return &cappedOutput{data: make([]byte, externalOutputLimit), cancel: cancel}
+}
+
+func (output *cappedOutput) Write(data []byte) (int, error) {
+	written := copy(output.data[output.used:], data)
+	output.used += written
+	if written < len(data) && output.exceeded.CompareAndSwap(false, true) {
+		output.cancel()
+	}
+	return len(data), nil
+}
+
+func (output *cappedOutput) String() string { return string(output.data[:output.used]) }
 
 func externalSubagents(settings *config.SettingsManager) (map[string]string, error) {
 	if settings == nil {
@@ -289,26 +314,60 @@ func runChildGuarded(
 		}
 	}()
 	if command, ok := external[task.Agent]; ok {
+		// Configured external CLIs are trusted host executables. Unlike integrated
+		// children, they do not inherit tool filtering or the permissions policy.
 		return runExternalChild(ctx, parent.CWD(), task.Agent, command, task.Task)
 	}
 	return runChild(ctx, parent, injected, policy, task)
 }
 
 func runExternalChild(ctx context.Context, cwd, name, command, task string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-	defer cancel()
-	process := exec.CommandContext(ctx, "/bin/sh", "-c", command)
-	process.Dir, process.Stdin, process.WaitDelay = cwd, strings.NewReader(task), time.Second
-	var stderr strings.Builder
-	process.Stderr = &stderr
-	output, err := process.Output()
-	if ctx.Err() != nil {
-		return "", fmt.Errorf("subagent: external agent %q stopped: %w", name, ctx.Err())
-	}
+	timeoutCtx, cancelTimeout := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancelTimeout()
+	processCtx, cancelProcess := context.WithCancel(timeoutCtx)
+	defer cancelProcess()
+	process := exec.CommandContext(processCtx, "/bin/sh", "-c", `/bin/sh -c "$1" 3>&-; status=$?; printf '%d\n' "$status" >&3; while :; do sleep 3600; done`, "orb-subagent", command)
+	process.Dir, process.Stdin, process.WaitDelay = cwd, strings.NewReader(task), 50*time.Millisecond
+	killGroup, err := isolateExternalProcess(process)
 	if err != nil {
-		return "", fmt.Errorf("subagent: external agent %q failed: %w: %s", name, err, strings.TrimSpace(stderr.String()))
+		return "", fmt.Errorf("subagent: external agent %q unavailable: %w", name, err)
 	}
-	return string(output), nil
+	stdout, stderr := newCappedOutput(cancelProcess), newCappedOutput(cancelProcess)
+	process.Stdout, process.Stderr = stdout, stderr
+	statusReader, statusWriter, err := os.Pipe()
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = statusReader.Close() }()
+	process.ExtraFiles = []*os.File{statusWriter}
+	if err = process.Start(); err != nil {
+		_ = statusWriter.Close()
+		return "", err
+	}
+	_ = statusWriter.Close()
+	var status int
+	_, statusErr := fmt.Fscan(statusReader, &status)
+	cleanupErr := killGroup()
+	waitErr := process.Wait()
+	if cleanupErr != nil && !errors.Is(cleanupErr, os.ErrProcessDone) {
+		return "", fmt.Errorf("subagent: external agent %q cleanup failed: %w", name, cleanupErr)
+	}
+	if stdout.exceeded.Load() {
+		return "", fmt.Errorf("subagent: external agent %q stdout exceeded the %d-byte limit", name, externalOutputLimit)
+	}
+	if stderr.exceeded.Load() {
+		return "", fmt.Errorf("subagent: external agent %q stderr exceeded the %d-byte limit", name, externalOutputLimit)
+	}
+	if timeoutCtx.Err() != nil {
+		return "", fmt.Errorf("subagent: external agent %q stopped: %w", name, timeoutCtx.Err())
+	}
+	if statusErr != nil {
+		return "", fmt.Errorf("subagent: external agent %q lost its exit status: %w", name, errors.Join(statusErr, waitErr))
+	}
+	if status != 0 {
+		return "", fmt.Errorf("subagent: external agent %q failed with status %d: %s", name, status, strings.TrimSpace(stderr.String()))
+	}
+	return stdout.String(), nil
 }
 
 func runChild(ctx context.Context, parent extensions.Context, injected engine.StreamFn, policy *Policy, task subagentTask) (string, error) {

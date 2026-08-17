@@ -93,6 +93,18 @@ func mustOK(err error) {
 	}
 }
 
+func require(t *testing.T, condition bool, format string, args ...any) {
+	t.Helper()
+	if !condition {
+		t.Fatalf(format, args...)
+	}
+}
+
+func requireError(t *testing.T, err error, want string) {
+	t.Helper()
+	require(t, err != nil && strings.Contains(err.Error(), want), "error = %v, want %q", err, want)
+}
+
 func TestPluginControlPersistsAndReloads(t *testing.T) {
 	root := t.TempDir()
 	settings := must(config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent"))))
@@ -105,21 +117,15 @@ func TestPluginControlPersistsAndReloads(t *testing.T) {
 		CommandActions: &extensions.CommandActions{Reload: func(context.Context) error { reloads++; return nil }},
 	})
 	command := runner.Command("plugins")
-	if command == nil {
-		t.Fatal("/plugins missing")
-	}
+	require(t, command != nil, "/plugins missing")
 	mustOK(command.Handler(context.Background(), "", runner.CreateCommandContext()))
-	if !settings.GetPlugins()["tasks"] || reloads != 1 {
-		t.Fatalf("tasks=%t reloads=%d", settings.GetPlugins()["tasks"], reloads)
-	}
+	require(t, settings.GetPlugins()["tasks"] && reloads == 1, "tasks=%t reloads=%d", settings.GetPlugins()["tasks"], reloads)
 }
 
 func TestPermissionsPresetsAndSandboxMode(t *testing.T) {
 	checkPolicy := func(settings map[string]any, mode string, sandboxMode sandbox.Mode) {
 		policy := must(policyFromSettings(settings))
-		if policy.Mode != mode || policy.Sandbox != sandboxMode {
-			t.Fatalf("policy = %#v", policy)
-		}
+		require(t, policy.Mode == mode && policy.Sandbox == sandboxMode, "policy = %#v", policy)
 	}
 	checkPolicy(map[string]any{"preset": "workspace-write"}, "enforce", sandbox.ModeWorkspaceWrite)
 	checkPolicy(map[string]any{"preset": "danger-full-access"}, "log", sandbox.ModeDangerFullAccess)
@@ -127,9 +133,8 @@ func TestPermissionsPresetsAndSandboxMode(t *testing.T) {
 	root := t.TempDir()
 	settings := must(config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent"))))
 	checkMode := func(want sandbox.Mode) {
-		if got, err := SandboxMode(settings); err != nil || got != want {
-			t.Fatalf("sandbox mode = %q, %v", got, err)
-		}
+		got, err := SandboxMode(settings)
+		require(t, err == nil && got == want, "sandbox mode = %q, %v", got, err)
 	}
 	checkMode(sandbox.ModeDangerFullAccess)
 	settings.SetPluginSetting("permissions", "preset", "workspace-write")
@@ -137,25 +142,22 @@ func TestPermissionsPresetsAndSandboxMode(t *testing.T) {
 	settings.SetPluginSetting("permissions", "sandbox", "read-only")
 	checkMode(sandbox.ModeReadOnly)
 	for _, invalid := range []map[string]any{{"preset": true}, {"preset": "unknown"}, {"sandbox": nil}, {"sandbox": true}, {"sandbox": "unknown"}, {"mode": ""}, {"mode": "audit"}, {"askFallback": "ask"}, {"rules": nil}, {"rules": []Rule{{Action: "audit"}}}, {"rules": []Rule{{Tool: "[", Action: Deny}}}, {"rules": []Rule{{Command: "[", Action: Deny}}}, {"rules": []Rule{{Path: "[", Action: Deny}}}, {"rules": []any{map[string]any{"tool": nil, "action": "allow"}}}, {"rules": []any{map[string]any{"command": nil, "action": "allow"}}}, {"rules": []any{map[string]any{"path": nil, "action": "allow"}}}, {"rules": []any{map[string]any{"commnad": "git *", "action": "allow"}}}, {"mdoe": "enforce"}} {
-		if _, err := policyFromSettings(invalid); err == nil {
-			t.Fatalf("settings %#v accepted", invalid)
-		}
+		_, err := policyFromSettings(invalid)
+		require(t, err != nil, "settings %#v accepted", invalid)
 	}
 	for _, invalid := range [][4]any{{"sandbox", "unknown", "read-only", "permissions.sandbox"}, {"mode", "", "log", "permissions.mode"}, {"mode", "audit", "log", "permissions.mode"}, {"askFallback", "ask", "allow", "permissions.askFallback"}, {"rules", []Rule{{Action: "audit"}}, []Rule{}, "permissions.rules[0].action"}, {"rules", []Rule{{Tool: "[", Action: Deny}}, []Rule{}, "permissions.rules[0]"}, {"rules", []Rule{{Command: "[", Action: Deny}}, []Rule{}, "permissions.rules[0]"}, {"rules", []Rule{{Path: "[", Action: Deny}}, []Rule{}, "permissions.rules[0]"}, {"rules", []any{map[string]any{"tool": nil, "action": "allow"}}, []Rule{}, "rules[0].tool"}, {"rules", []any{map[string]any{"command": nil, "action": "allow"}}, []Rule{}, "rules[0].command"}, {"rules", []any{map[string]any{"path": nil, "action": "allow"}}, []Rule{}, "rules[0].path"}, {"rules", []any{map[string]any{"commnad": "git *", "action": "allow"}}, []Rule{}, "rules[0].commnad"}} {
 		key := invalid[0].(string)
 		settings.SetPluginSetting("permissions", key, invalid[1])
 		registry := extensions.NewRegistry(root)
 		mustOK(registry.Register("<inline:permissions>", Catalog(Options{Settings: settings})["permissions"]))
-		if blocked := extensions.NewRunner(registry, extensions.RunnerOptions{}).EmitToolCall(context.Background(), extensions.ToolCallEvent{ToolName: "read"}); blocked == nil || !blocked.Block || !strings.Contains(blocked.Reason, invalid[3].(string)) {
-			t.Fatalf("invalid SDK policy for %s = %#v", key, blocked)
-		}
+		blocked := extensions.NewRunner(registry, extensions.RunnerOptions{}).EmitToolCall(context.Background(), extensions.ToolCallEvent{ToolName: "read"})
+		require(t, blocked != nil && blocked.Block && strings.Contains(blocked.Reason, invalid[3].(string)), "invalid SDK policy for %s = %#v", key, blocked)
 		settings.SetPluginSetting("permissions", key, invalid[2])
 	}
 	settings.SetPluginEnabled("permissions", false)
 	for _, settings := range []*config.SettingsManager{settings, nil} {
-		if got, err := SandboxMode(settings); err != nil || got != sandbox.ModeDangerFullAccess {
-			t.Fatalf("disabled sandbox mode = %q, %v", got, err)
-		}
+		got, err := SandboxMode(settings)
+		require(t, err == nil && got == sandbox.ModeDangerFullAccess, "disabled sandbox mode = %q, %v", got, err)
 	}
 }
 
@@ -188,9 +190,8 @@ func TestPermissionsPolicyRules(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := test.policy.Evaluate(context.Background(), test.info).Action; got != test.want {
-				t.Fatalf("action = %q, want %q", got, test.want)
-			}
+			got := test.policy.Evaluate(context.Background(), test.info).Action
+			require(t, got == test.want, "action = %q, want %q", got, test.want)
 		})
 	}
 	order := []string{}
@@ -206,24 +207,17 @@ func TestPermissionsPolicyRules(t *testing.T) {
 		Rules:  []Rule{{Tool: "*", Action: Allow}},
 	}
 	decision := policy.Evaluate(context.Background(), ToolCallInfo{Tool: "todo"})
-	if decision.Action != Deny || decision.Resolution != "extension denied" || strings.Join(order, ",") != "authorizer,guard 1,guard 2" {
-		t.Fatalf("guard decision = %#v, order = %v", decision, order)
-	}
+	require(t, decision.Action == Deny && decision.Resolution == "extension denied" && strings.Join(order, ",") == "authorizer,guard 1,guard 2", "guard decision = %#v, order = %v", decision, order)
 	policy.Guards, policy.Rules = nil, []Rule{{Tool: "*", Action: Deny}}
-	if got := policy.Evaluate(context.Background(), ToolCallInfo{Tool: "todo"}).Action; got != Allow {
-		t.Fatalf("authorizer allow was not final: %q", got)
-	}
+	got := policy.Evaluate(context.Background(), ToolCallInfo{Tool: "todo"}).Action
+	require(t, got == Allow, "authorizer allow was not final: %q", got)
 }
 
 func TestPermissionsEnforceHidesAndBlocksStaticDeny(t *testing.T) {
 	logSession := newPermissionsSession(t, faux.New(), &Policy{Rules: []Rule{{Tool: "bash", Action: Deny}}})
-	if !containsName(logSession.GetActiveToolNames(), "bash") {
-		t.Fatal("log mode hid bash")
-	}
+	require(t, containsName(logSession.GetActiveToolNames(), "bash"), "log mode hid bash")
 	conditionalSession := newPermissionsSession(t, faux.New(), &Policy{Mode: "enforce", Rules: []Rule{{Tool: "bash", Command: "rm -rf *", Action: Deny}}})
-	if !containsName(conditionalSession.GetActiveToolNames(), "bash") {
-		t.Fatal("command-scoped deny hid the whole tool")
-	}
+	require(t, containsName(conditionalSession.GetActiveToolNames(), "bash"), "command-scoped deny hid the whole tool")
 
 	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
 	var returned string
@@ -237,15 +231,11 @@ func TestPermissionsEnforceHidesAndBlocksStaticDeny(t *testing.T) {
 	})
 	policy := &Policy{Mode: "enforce", Rules: []Rule{{Tool: "bash", Action: Deny}}}
 	session := newPermissionsSession(t, provider, policy)
-	if containsName(session.GetActiveToolNames(), "bash") {
-		t.Fatal("bash remained visible after session_start")
-	}
+	require(t, !containsName(session.GetActiveToolNames(), "bash"), "bash remained visible after session_start")
 	active := append(session.GetActiveToolNames(), "bash")
 	mustOK(session.SetActiveToolsByName(active))
 	mustOK(session.PromptSync(context.Background(), "try it"))
-	if !strings.Contains(returned, `permissions: denied by rule 1 (tool="bash")`) {
-		t.Fatalf("tool result = %q", returned)
-	}
+	require(t, strings.Contains(returned, `permissions: denied by rule 1 (tool="bash")`), "tool result = %q", returned)
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Fatalf("denied command changed the filesystem: %v", err)
 	}
@@ -264,9 +254,7 @@ func TestPermissionsAskFallbackDeniesHeadless(t *testing.T) {
 	policy := &Policy{Mode: "enforce", AskFallback: Deny, Rules: []Rule{{Tool: "todo", Action: Ask}}}
 	session := newPermissionsSession(t, provider, policy, "tasks")
 	mustOK(session.PromptSync(context.Background(), "update tasks"))
-	if !strings.Contains(returned, "ask resolved by askFallback") {
-		t.Fatalf("tool result = %q", returned)
-	}
+	require(t, strings.Contains(returned, "ask resolved by askFallback"), "tool result = %q", returned)
 }
 
 type approvalUI struct {
@@ -306,9 +294,7 @@ func TestPermissionsSessionApprovalAvoidsSecondPrompt(t *testing.T) {
 			logged++
 		}
 	}
-	if logged != 2 {
-		t.Fatalf("decision log entries = %d, want 2", logged)
-	}
+	require(t, logged == 2, "decision log entries = %d, want 2", logged)
 }
 
 func (ui *widgetUI) SetWidget(_ string, widget *extensions.Widget, _ *extensions.WidgetOptions) {
@@ -344,26 +330,18 @@ func TestTasksToolReplacesTheLiveWidget(t *testing.T) {
 		map[string]any{"text": "implement", "status": "in_progress"},
 	}}, nil))
 	text := ai.ContentText(result.Content)
-	if text != "[x] inspect\n→ [ ] implement" {
-		t.Fatalf("tool result = %q", text)
-	}
+	require(t, text == "[x] inspect\n→ [ ] implement", "tool result = %q", text)
 	if got, want := strings.Join(ui.snapshot(), "\n"), "✓ 1/2  → implement"; got != want {
 		t.Fatalf("widget = %q, want %q", got, want)
 	}
 	factory := ui.widgetFactory()
-	if factory == nil {
-		t.Fatal("TUI task widget has no click renderer")
-	}
+	require(t, factory != nil, "TUI task widget has no click renderer")
 	host := &taskWidgetHost{}
 	component := factory(host, nil)
 	mouse, ok := component.(tui.MouseHandler)
-	if !ok || !mouse.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Button: 0, Clicks: 1}) {
-		t.Fatal("task widget did not accept a left click")
-	}
+	require(t, ok && mouse.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Button: 0, Clicks: 1}), "task widget did not accept a left click")
 	expanded := strings.Join(component.Render(80), "\n")
-	if !strings.Contains(expanded, "[x] inspect") || !strings.Contains(expanded, "→ [ ] implement") || host.invalidations != 1 {
-		t.Fatalf("expanded task widget = %q, invalidations = %d", expanded, host.invalidations)
-	}
+	require(t, strings.Contains(expanded, "[x] inspect") && strings.Contains(expanded, "→ [ ] implement") && host.invalidations == 1, "expanded task widget = %q, invalidations = %d", expanded, host.invalidations)
 	for width := 1; width <= 4; width++ {
 		for _, line := range component.Render(width) {
 			if got := tui.VisibleWidth(line); got > width {
@@ -374,20 +352,15 @@ func TestTasksToolReplacesTheLiveWidget(t *testing.T) {
 	styled := newTaskWidget([]todoItem{{Text: "inspect", Status: "done"}, {Text: "implement", Status: "in_progress"}}, host, dimTaskTheme{})
 	styled.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Button: 0, Clicks: 1})
 	styledLines := styled.Render(80)
-	if len(styledLines) < 3 || !strings.Contains(strings.Join(styledLines, "\n"), "\x1b[2m") || !strings.HasPrefix(styledLines[1], "    ") {
-		t.Fatalf("styled expanded task widget = %#v", styledLines)
-	}
+	require(t, len(styledLines) >= 3 && strings.Contains(strings.Join(styledLines, "\n"), "\x1b[2m") && strings.HasPrefix(styledLines[1], "    "), "styled expanded task widget = %#v", styledLines)
 
 	result = must(tool.Execute(context.Background(), "todo-2", map[string]any{"items": []any{
 		map[string]any{"text": "ship", "status": "pending"},
 	}}, nil))
-	if got := ai.ContentText(result.Content); got != "[ ] ship" || strings.Join(ui.snapshot(), "\n") != "✓ 0/1  ·  +1 queued" {
-		t.Fatalf("replacement result = %q widget = %q", got, strings.Join(ui.snapshot(), "\n"))
-	}
+	got := ai.ContentText(result.Content)
+	require(t, got == "[ ] ship" && strings.Join(ui.snapshot(), "\n") == "✓ 0/1  ·  +1 queued", "replacement result = %q widget = %q", got, strings.Join(ui.snapshot(), "\n"))
 	details, ok := result.Details.(todoInput)
-	if !ok || len(details.Items) != 1 || details.Items[0].Text != "ship" {
-		t.Fatalf("result details = %#v", result.Details)
-	}
+	require(t, ok && len(details.Items) == 1 && details.Items[0].Text == "ship", "result details = %#v", result.Details)
 }
 
 func TestTaskWidgetCachesStableRenders(t *testing.T) {
@@ -397,22 +370,14 @@ func TestTaskWidgetCachesStableRenders(t *testing.T) {
 	first := widget.Render(80)
 	calls := theme.calls
 	second := widget.Render(80)
-	if strings.Join(first, "\n") != strings.Join(second, "\n") {
-		t.Fatalf("cached render changed: %#v != %#v", first, second)
-	}
-	if theme.calls != calls {
-		t.Fatalf("stable render restyled tasks: calls %d -> %d", calls, theme.calls)
-	}
+	require(t, strings.Join(first, "\n") == strings.Join(second, "\n"), "cached render changed: %#v != %#v", first, second)
+	require(t, theme.calls == calls, "stable render restyled tasks: calls %d -> %d", calls, theme.calls)
 	widget.Render(40)
-	if theme.calls == calls {
-		t.Fatal("width change reused a stale task render")
-	}
+	require(t, theme.calls != calls, "width change reused a stale task render")
 	calls = theme.calls
 	widget.Invalidate()
 	widget.Render(40)
-	if theme.calls == calls {
-		t.Fatal("invalidation reused stale themed task lines")
-	}
+	require(t, theme.calls != calls, "invalidation reused stale themed task lines")
 }
 
 func TestTaskWidgetInvalidationWinsConcurrentRender(t *testing.T) {
@@ -430,9 +395,7 @@ func TestTaskWidgetInvalidationWinsConcurrentRender(t *testing.T) {
 	<-done
 	calls := theme.calls
 	widget.Render(80)
-	if theme.calls == calls {
-		t.Fatal("concurrent invalidation allowed stale task lines back into the cache")
-	}
+	require(t, theme.calls != calls, "concurrent invalidation allowed stale task lines back into the cache")
 }
 
 func TestTasksRebuildFromBranchDetails(t *testing.T) {
@@ -444,12 +407,8 @@ func TestTasksRebuildFromBranchDetails(t *testing.T) {
 		}))
 	}
 	restored := todosFromBranch(manager)
-	if len(restored) != 1 || restored[0].Text != "second" || restored[0].Status != "pending" {
-		t.Fatalf("restored = %#v", restored)
-	}
-	if items := todosFromBranch(nil); items != nil {
-		t.Fatalf("nil manager returned %#v", items)
-	}
+	require(t, len(restored) == 1 && restored[0].Text == "second" && restored[0].Status == "pending", "restored = %#v", restored)
+	require(t, todosFromBranch(nil) == nil, "nil manager returned %#v", todosFromBranch(nil))
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -472,25 +431,17 @@ func TestWebSearchBackendsAndFetchContent(t *testing.T) {
 			}
 			t.Setenv(test.env, "secret")
 			client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-				if request.Method != test.method || !strings.Contains(request.URL.String(), test.endpoint) {
-					t.Fatalf("request = %s %s", request.Method, request.URL)
-				}
-				if request.Header.Get(test.header) == "" {
-					t.Fatalf("missing %s header", test.header)
-				}
+				require(t, request.Method == test.method && strings.Contains(request.URL.String(), test.endpoint), "request = %s %s", request.Method, request.URL)
+				require(t, request.Header.Get(test.header) != "", "missing %s header", test.header)
 				if test.body != "" {
 					body, _ := io.ReadAll(request.Body)
-					if !strings.Contains(string(body), test.body) {
-						t.Fatalf("body = %s", body)
-					}
+					require(t, strings.Contains(string(body), test.body), "body = %s", body)
 				}
 				return response(http.StatusOK, "application/json", test.response), nil
 			})}
 			tool := pluginTool(t, "websearch", "web_search", Options{HTTPClient: client}, extensions.RunnerOptions{})
 			result := must(tool.Execute(context.Background(), "search", map[string]any{"query": "orb"}, nil))
-			if got := ai.ContentText(result.Content); got != test.want {
-				t.Fatalf("result = %q, want %q", got, test.want)
-			}
+			require(t, ai.ContentText(result.Content) == test.want, "result = %q, want %q", ai.ContentText(result.Content), test.want)
 		})
 	}
 
@@ -504,9 +455,7 @@ func TestWebSearchBackendsAndFetchContent(t *testing.T) {
 	fetch := pluginTool(t, "websearch", "fetch_content", Options{HTTPClient: client}, extensions.RunnerOptions{})
 	result := must(fetch.Execute(context.Background(), "fetch", map[string]any{"url": "https://example.test/page"}, nil))
 	// Block tags keep their line breaks so oversized pages stay truncatable.
-	if got := ai.ContentText(result.Content); got != "Hello & hi\nReadable text." {
-		t.Fatalf("content = %q", got)
-	}
+	require(t, ai.ContentText(result.Content) == "Hello & hi\nReadable text.", "content = %q", ai.ContentText(result.Content))
 }
 
 // stubDNS pins hostname resolution so the SSRF guard is exercised without
@@ -532,28 +481,19 @@ func TestFetchContentKeepsLargePagesReadable(t *testing.T) {
 		fmt.Fprintf(&page, "<p>Paragraph %d carries enough prose to push this page past the fifty kilobyte cap.</p>", index)
 	}
 	page.WriteString("</body></html>")
-	if page.Len() <= 50<<10 {
-		t.Fatalf("fixture is only %d bytes", page.Len())
-	}
+	require(t, page.Len() > 50<<10, "fixture is only %d bytes", page.Len())
 	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return response(http.StatusOK, "text/html", page.String()), nil
 	})}
 	tool := pluginTool(t, "websearch", "fetch_content", Options{HTTPClient: client}, extensions.RunnerOptions{})
 	result := must(tool.Execute(context.Background(), "fetch", map[string]any{"url": "https://example.test/big"}, nil))
 	got := ai.ContentText(result.Content)
-	if !strings.Contains(got, "Paragraph 0 carries") || len(got) < 40<<10 {
-		t.Fatalf("large page returned %d bytes: %.120q", len(got), got)
-	}
-	if strings.Count(got, "\n") < 100 {
-		t.Fatalf("page collapsed onto %d lines", strings.Count(got, "\n")+1)
-	}
-	if !strings.HasSuffix(got, "[output truncated]") {
-		t.Fatalf("missing truncation marker: %.120q", got[max(0, len(got)-120):])
-	}
+	require(t, strings.Contains(got, "Paragraph 0 carries") && len(got) >= 40<<10, "large page returned %d bytes: %.120q", len(got), got)
+	require(t, strings.Count(got, "\n") >= 100, "page collapsed onto %d lines", strings.Count(got, "\n")+1)
+	require(t, strings.HasSuffix(got, "[output truncated]"), "missing truncation marker: %.120q", got[max(0, len(got)-120):])
 	// A page with no break at all still has to yield its head, not just the marker.
-	if head := truncateWeb(strings.Repeat("x", 60<<10)); len(head) < 40<<10 {
-		t.Fatalf("unbreakable line truncated to %d bytes", len(head))
-	}
+	head := truncateWeb(strings.Repeat("x", 60<<10))
+	require(t, len(head) >= 40<<10, "unbreakable line truncated to %d bytes", len(head))
 }
 
 func TestFetchContentRejectsNonPublicDestinations(t *testing.T) {
@@ -591,12 +531,8 @@ func TestFetchContentRejectsNonPublicDestinations(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			requests = 0
 			_, err := tool.Execute(context.Background(), "fetch", map[string]any{"url": test.url}, nil)
-			if err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("error = %v, want %q", err, test.want)
-			}
-			if requests != test.wantRequests {
-				t.Fatalf("issued %d requests, want %d", requests, test.wantRequests)
-			}
+			require(t, err != nil && strings.Contains(err.Error(), test.want), "error = %v, want %q", err, test.want)
+			require(t, requests == test.wantRequests, "issued %d requests, want %d", requests, test.wantRequests)
 		})
 	}
 	_ = must(tool.Execute(context.Background(), "fetch", map[string]any{"url": "https://public.test/ok"}, nil))
@@ -616,17 +552,13 @@ func TestFetchContentDecodesCharsetAndRejectsBinary(t *testing.T) {
 	})}
 	tool := pluginTool(t, "websearch", "fetch_content", Options{HTTPClient: client}, extensions.RunnerOptions{})
 	result := must(tool.Execute(context.Background(), "fetch", map[string]any{"url": "https://public.test/legacy"}, nil))
-	if got := ai.ContentText(result.Content); got != "café owner’s" || !utf8.ValidString(got) {
-		t.Fatalf("decoded = %q", got)
-	}
+	got := ai.ContentText(result.Content)
+	require(t, got == "café owner’s" && utf8.ValidString(got), "decoded = %q", got)
 	result = must(tool.Execute(context.Background(), "fetch", map[string]any{"url": "https://public.test/sjis"}, nil))
-	if got := ai.ContentText(result.Content); got != "hello こんにちは" || !utf8.ValidString(got) {
-		t.Fatalf("decoded = %q", got)
-	}
-	if _, err := tool.Execute(context.Background(), "fetch", map[string]any{"url": "https://public.test/binary"}, nil); err == nil ||
-		!strings.Contains(err.Error(), "unsupported content type") {
-		t.Fatalf("binary error = %v", err)
-	}
+	got = ai.ContentText(result.Content)
+	require(t, got == "hello こんにちは" && utf8.ValidString(got), "decoded = %q", got)
+	_, err := tool.Execute(context.Background(), "fetch", map[string]any{"url": "https://public.test/binary"}, nil)
+	require(t, err != nil && strings.Contains(err.Error(), "unsupported content type"), "binary error = %v", err)
 }
 
 func TestWebSearchDropsProviderErrorBody(t *testing.T) {
@@ -640,9 +572,7 @@ func TestWebSearchDropsProviderErrorBody(t *testing.T) {
 	})}
 	tool := pluginTool(t, "websearch", "web_search", Options{HTTPClient: client}, extensions.RunnerOptions{})
 	_, err := tool.Execute(context.Background(), "search", map[string]any{"query": "orb"}, nil)
-	if err == nil || strings.Contains(err.Error(), "sk-SECRET") {
-		t.Fatalf("error leaked the provider body: %v", err)
-	}
+	require(t, err != nil && !strings.Contains(err.Error(), "sk-SECRET"), "error leaked the provider body: %v", err)
 }
 
 func TestWebSearchHonoursConfiguredProvider(t *testing.T) {
@@ -655,9 +585,7 @@ func TestWebSearchHonoursConfiguredProvider(t *testing.T) {
 	config := `{"provider":"brave","exaApiKey":"exa-key","braveApiKey":"brave-key"}`
 	mustOK(os.WriteFile(filepath.Join(home, ".pi", "web-search.json"), []byte(config), 0o600))
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		if !strings.Contains(request.URL.Host, "brave") {
-			t.Fatalf("provider ignored: %s", request.URL)
-		}
+		require(t, strings.Contains(request.URL.Host, "brave"), "provider ignored: %s", request.URL)
 		return response(http.StatusOK, "application/json", `{"web":{"results":[]}}`), nil
 	})}
 	tool := pluginTool(t, "websearch", "web_search", Options{HTTPClient: client}, extensions.RunnerOptions{})
@@ -671,9 +599,7 @@ func TestWebSearchWithoutKeyReturnsActionableError(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	tool := pluginTool(t, "websearch", "web_search", Options{}, extensions.RunnerOptions{})
 	_, err := tool.Execute(context.Background(), "search", map[string]any{"query": "orb"}, nil)
-	if err == nil || !strings.Contains(err.Error(), "EXA_API_KEY") || !strings.Contains(err.Error(), "~/.pi/web-search.json") {
-		t.Fatalf("error = %v", err)
-	}
+	require(t, err != nil && strings.Contains(err.Error(), "EXA_API_KEY") && strings.Contains(err.Error(), "~/.pi/web-search.json"), "error = %v", err)
 }
 
 func TestWebSearchReadsPiWebSearchConfig(t *testing.T) {
@@ -685,9 +611,7 @@ func TestWebSearchReadsPiWebSearchConfig(t *testing.T) {
 	mustOK(os.MkdirAll(filepath.Join(home, ".pi"), 0o755))
 	mustOK(os.WriteFile(filepath.Join(home, ".pi", "web-search.json"), []byte(`{"exaApiKey":"stored"}`), 0o600))
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		if request.Header.Get("x-api-key") != "stored" {
-			t.Fatalf("api key = %q", request.Header.Get("x-api-key"))
-		}
+		require(t, request.Header.Get("x-api-key") == "stored", "api key = %q", request.Header.Get("x-api-key"))
 		return response(http.StatusOK, "application/json", `{"results":[]}`), nil
 	})}
 	tool := pluginTool(t, "websearch", "web_search", Options{HTTPClient: client}, extensions.RunnerOptions{})
@@ -711,53 +635,78 @@ func TestSubagentCompletesInProcessWithForkedContext(t *testing.T) {
 	})
 	session := newSubagentParent(t, provider)
 	mustOK(session.PromptSync(context.Background(), "parent seed"))
-	if !childSawParent || returned != "child answer" {
-		t.Fatalf("childSawParent=%t tool result=%q", childSawParent, returned)
-	}
+	require(t, childSawParent && returned == "child answer", "childSawParent=%t tool result=%q", childSawParent, returned)
 }
 
 func TestSubagentChildOptionsUseParentRegistryForDefaultStream(t *testing.T) {
 	registry := must(config.NewModelRegistry(t.TempDir()))
 	options := must(childOptions(registry, nil, agent.AgentSessionOptions{}))
-	if options.ModelRegistry != registry || options.StreamFn != nil {
-		t.Fatalf("model registry=%p want=%p stream set=%t", options.ModelRegistry, registry, options.StreamFn != nil)
-	}
-	if _, err := childOptions(nil, nil, agent.AgentSessionOptions{}); err == nil || !strings.Contains(err.Error(), "parent has no model registry") {
-		t.Fatalf("missing registry error = %v", err)
-	}
+	require(t, options.ModelRegistry == registry && options.StreamFn == nil, "model registry=%p want=%p stream set=%t", options.ModelRegistry, registry, options.StreamFn != nil)
+	_, err := childOptions(nil, nil, agent.AgentSessionOptions{})
+	requireError(t, err, "parent has no model registry")
 }
 
 func TestSubagentExternalCLIConfigSchemaAndExecution(t *testing.T) {
-	root := t.TempDir()
-	settings := must(config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent"))))
-	settings.SetPluginSetting("subagents", "external", map[string]any{"zeta": "/bin/cat", "alpha": "/bin/cat"})
-	registry := extensions.NewRegistry(root)
-	mustOK(registry.Register("<inline:subagents>", Catalog(Options{Settings: settings})["subagents"]))
-	runner := extensions.NewRunner(registry, extensions.RunnerOptions{})
-	definition := runner.ToolDefinition("subagent")
-	if definition == nil {
-		t.Fatal("subagent tool missing")
-	}
+	tool := externalSubagentTool(t, map[string]any{"zeta": "/bin/cat", "alpha": "/bin/cat"})
 	wantEnum := `"enum":["scout","worker","reviewer","alpha","zeta"]`
-	if count := strings.Count(string(definition.Parameters), wantEnum); count != 2 {
-		t.Fatalf("external agent enum count = %d in %s", count, definition.Parameters)
-	}
-	result := must(definition.Execute(t.Context(), "call", map[string]any{"mode": "single", "agent": "alpha", "task": "task over stdin"}, nil, runner.CreateContext()))
-	if ai.ContentText(result.Content) != "task over stdin" {
-		t.Fatalf("external result = %q", ai.ContentText(result.Content))
-	}
+	schema := string(tool.Spec().Parameters)
+	require(t, strings.Count(schema, wantEnum) == 2, "external agent enum = %s", schema)
+	result := must(tool.Execute(t.Context(), "call", map[string]any{"mode": "single", "agent": "alpha", "task": "task over stdin"}, nil))
+	require(t, ai.ContentText(result.Content) == "task over stdin", "external result = %q", ai.ContentText(result.Content))
 
 	for _, invalid := range []struct {
-		key   string
-		value any
-	}{{"enabled", nil}, {"external", nil}, {"external", map[string]any{"worker": "/bin/cat"}}, {"external", map[string]any{"bad": true}}, {"external", map[string]any{"bad\nname": "/bin/cat"}}, {"external", map[string]any{"bad": " "}}, {"externl", map[string]any{"bad": "/bin/cat"}}} {
-		settings.SetPluginSetting("subagents", "external", map[string]any{"valid": "/bin/cat"})
-		settings.SetPluginSetting("subagents", invalid.key, invalid.value)
-		registry := extensions.NewRegistry(root)
-		if err := registry.Register("<inline:subagents>", Catalog(Options{Settings: settings})["subagents"]); err == nil {
-			t.Fatalf("invalid subagent setting %s=%#v registered", invalid.key, invalid.value)
-		}
+		name, key, want string
+		value           any
+	}{{"nullable enabled", "enabled", "subagents.enabled must be true or false", nil}, {"nullable external", "external", "subagents.external must map names to commands", nil}, {"built-in collision", "external", `cannot replace built-in agent "worker"`, map[string]any{"worker": "/bin/cat"}}, {"non-string command", "external", "invalid subagents settings", map[string]any{"bad": true}}, {"control in name", "external", "names must be non-empty without whitespace or control characters", map[string]any{"bad\nname": "/bin/cat"}}, {"empty command", "external", "subagents.external.bad command must not be empty", map[string]any{"bad": " "}}, {"unknown key", "externl", `unknown field "externl"`, map[string]any{"bad": "/bin/cat"}}} {
+		t.Run(invalid.name, func(t *testing.T) {
+			root := t.TempDir()
+			settings := must(config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent"))))
+			settings.SetPluginSetting("subagents", invalid.key, invalid.value)
+			err := extensions.NewRegistry(root).Register("<inline:subagents>", Catalog(Options{Settings: settings})["subagents"])
+			require(t, err != nil && strings.Contains(err.Error(), invalid.want), "setting %s=%#v error = %v, want %q", invalid.key, invalid.value, err, invalid.want)
+		})
 	}
+}
+
+func TestSubagentExternalCLIStopsDescendantsAndBoundsOutput(t *testing.T) {
+	root := t.TempDir()
+	marker := filepath.Join(root, "cancel-marker")
+	successMarker := filepath.Join(root, "success-marker")
+	t.Setenv("ORB_SUBAGENT_MARKER", marker)
+	t.Setenv("ORB_SUBAGENT_SUCCESS_MARKER", successMarker)
+	tool := externalSubagentTool(t, map[string]any{"cancel": `(sleep 1; touch "$ORB_SUBAGENT_MARKER") & sleep 5`})
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	_, err := tool.Execute(ctx, "cancel", map[string]any{"mode": "single", "agent": "cancel", "task": "stop"}, nil)
+	requireError(t, err, "deadline exceeded")
+	tool = externalSubagentTool(t, map[string]any{"success": `(sleep 1; touch "$ORB_SUBAGENT_SUCCESS_MARKER") & exit 0`})
+	_, err = tool.Execute(t.Context(), "success", map[string]any{"mode": "single", "agent": "success", "task": "stop"}, nil)
+	require(t, err == nil, "successful background command = %v", err)
+	time.Sleep(1200 * time.Millisecond)
+	for _, path := range []string{marker, successMarker} {
+		_, err := os.Stat(path)
+		require(t, os.IsNotExist(err), "external descendant created %s: %v", path, err)
+	}
+
+	for _, stream := range []string{"stdout", "stderr"} {
+		t.Run(stream, func(t *testing.T) {
+			redirect := ""
+			if stream == "stderr" {
+				redirect = " >&2"
+			}
+			tool := externalSubagentTool(t, map[string]any{"noisy": `while :; do printf 0123456789abcdef0123456789abcdef` + redirect + `; done`})
+			_, err := tool.Execute(t.Context(), "noisy", map[string]any{"mode": "single", "agent": "noisy", "task": "overflow"}, nil)
+			requireError(t, err, stream+" exceeded the 1048576-byte limit")
+		})
+	}
+}
+
+func externalSubagentTool(t *testing.T, commands map[string]any) engine.AgentTool {
+	t.Helper()
+	root := t.TempDir()
+	settings := must(config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent"))))
+	settings.SetPluginSetting("subagents", "external", commands)
+	return pluginTool(t, "subagents", "subagent", Options{Settings: settings}, extensions.RunnerOptions{})
 }
 
 func TestSubagentParallelReturnsTwoChildResults(t *testing.T) {
@@ -780,9 +729,7 @@ func TestSubagentParallelReturnsTwoChildResults(t *testing.T) {
 	})
 	session := newSubagentParent(t, provider)
 	mustOK(session.PromptSync(context.Background(), "delegate"))
-	if !strings.Contains(returned, "child:alpha") || !strings.Contains(returned, "child:beta") {
-		t.Fatalf("parallel result = %q", returned)
-	}
+	require(t, strings.Contains(returned, "child:alpha") && strings.Contains(returned, "child:beta"), "parallel result = %q", returned)
 }
 
 func TestSubagentSurfacesChildStreamError(t *testing.T) {
@@ -805,9 +752,7 @@ func TestSubagentSurfacesChildStreamError(t *testing.T) {
 	})
 	session := newSubagentParent(t, provider)
 	mustOK(session.PromptSync(context.Background(), "delegate"))
-	if !isError || !strings.Contains(returned, "subagent: child failed: "+providerError) {
-		t.Fatalf("tool error=%t result=%q", isError, returned)
-	}
+	require(t, isError && strings.Contains(returned, "subagent: child failed: "+providerError), "tool error=%t result=%q", isError, returned)
 }
 
 func TestSubagentInheritsPermissionsPolicy(t *testing.T) {
@@ -831,34 +776,23 @@ func TestSubagentInheritsPermissionsPolicy(t *testing.T) {
 	policy := &Policy{Mode: "enforce", Rules: []Rule{{Tool: "read", Action: Deny}}}
 	session := newPermissionsSession(t, provider, policy, "subagents")
 	mustOK(session.PromptSync(context.Background(), "delegate"))
-	if !childReadAbsent {
-		t.Fatal("read was advertised to the child despite the inherited deny rule")
-	}
+	require(t, childReadAbsent, "read was advertised to the child despite the inherited deny rule")
 }
 
 func TestSubagentClearsProgressWidgetAndFailsParallelRuns(t *testing.T) {
 	ui := &widgetUI{}
 	tool := pluginTool(t, "subagents", "subagent", Options{}, extensions.RunnerOptions{UI: ui, Mode: extensions.ModeTUI})
 	// No parent model registry, so every child fails: the widget must still go.
-	if _, err := tool.Execute(context.Background(), "sub-1", map[string]any{"mode": "single", "task": "work"}, nil); err == nil {
-		t.Fatal("child without a model registry succeeded")
-	}
-	if ui.showCount() == 0 {
-		t.Fatal("progress widget was never shown")
-	}
-	if lines := ui.snapshot(); len(lines) != 0 {
-		t.Fatalf("progress widget left on screen: %v", lines)
-	}
+	_, err := tool.Execute(context.Background(), "sub-1", map[string]any{"mode": "single", "task": "work"}, nil)
+	require(t, err != nil, "child without a model registry succeeded")
+	require(t, ui.showCount() > 0, "progress widget was never shown")
+	require(t, len(ui.snapshot()) == 0, "progress widget left on screen: %v", ui.snapshot())
 
-	_, err := tool.Execute(context.Background(), "sub-2", map[string]any{"mode": "parallel", "tasks": []any{
+	_, err = tool.Execute(context.Background(), "sub-2", map[string]any{"mode": "parallel", "tasks": []any{
 		map[string]any{"task": "alpha"}, map[string]any{"task": "beta"},
 	}}, nil)
-	if err == nil || !strings.Contains(err.Error(), "2 of 2 children failed") || !strings.Contains(err.Error(), "[2] worker") {
-		t.Fatalf("parallel failure = %v", err)
-	}
-	if lines := ui.snapshot(); len(lines) != 0 {
-		t.Fatalf("progress widget left on screen: %v", lines)
-	}
+	require(t, err != nil && strings.Contains(err.Error(), "2 of 2 children failed") && strings.Contains(err.Error(), "[2] worker"), "parallel failure = %v", err)
+	require(t, len(ui.snapshot()) == 0, "progress widget left on screen: %v", ui.snapshot())
 }
 
 type memoryTestStore struct {
@@ -1118,15 +1052,9 @@ func TestMemoryWithStoreRememberRecallForgetThroughRegistry(t *testing.T) {
 	session := newMemoryPluginSession(t, provider, MemoryWithStore(store), nil)
 	mustOK(session.PromptSync(context.Background(), "remember, recall, and forget"))
 	items, searched := store.snapshot()
-	if len(items) != 0 || !rememberedTargeted || !searched {
-		t.Fatalf("custom store items = %#v, targeted = %t, semantic searched = %t", items, rememberedTargeted, searched)
-	}
-	if recalled != "2026-07-23T10:00:00Z [project] The durable marker is cobalt." {
-		t.Fatalf("recall result = %q", recalled)
-	}
-	if recalledAfterForget != "No memories found." {
-		t.Fatalf("recall after forget = %q", recalledAfterForget)
-	}
+	require(t, len(items) == 0 && rememberedTargeted && searched, "custom store items = %#v, targeted = %t, semantic searched = %t", items, rememberedTargeted, searched)
+	require(t, recalled == "2026-07-23T10:00:00Z [project] The durable marker is cobalt.", "recall result = %q", recalled)
+	require(t, recalledAfterForget == "No memories found.", "recall after forget = %q", recalledAfterForget)
 }
 
 func TestMemoryRememberDoesNotDuplicateRecentExactContent(t *testing.T) {
@@ -1139,9 +1067,7 @@ func TestMemoryRememberDoesNotDuplicateRecentExactContent(t *testing.T) {
 		"target": "memory", "content": "Stable project fact.", "tags": []any{"project", "duplicate-attempt"},
 	}, nil))
 	items, _ := store.snapshot()
-	if len(items) != 1 || !strings.HasPrefix(ai.ContentText(first.Content), "Remembered custom-1") || ai.ContentText(second.Content) != "Already remembered custom-1." {
-		t.Fatalf("items = %#v, first = %q, second = %q", items, ai.ContentText(first.Content), ai.ContentText(second.Content))
-	}
+	require(t, len(items) == 1 && strings.HasPrefix(ai.ContentText(first.Content), "Remembered custom-1") && ai.ContentText(second.Content) == "Already remembered custom-1.", "items = %#v, first = %q, second = %q", items, ai.ContentText(first.Content), ai.ContentText(second.Content))
 }
 
 func TestMemoryForgetRequiresUniqueSubstring(t *testing.T) {
@@ -1158,18 +1084,15 @@ func TestMemoryForgetRequiresUniqueSubstring(t *testing.T) {
 		{name: "ambiguous", query: "User prefers", want: "matches multiple memories"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := tool.Execute(context.Background(), "forget-test", map[string]any{"query": test.query}, nil); err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("forget(%q) error = %v, want %q", test.query, err, test.want)
-			}
+			_, err := tool.Execute(context.Background(), "forget-test", map[string]any{"query": test.query}, nil)
+			requireError(t, err, test.want)
 		})
 	}
 	_ = must(tool.Execute(context.Background(), "forget-tabs", map[string]any{
 		"target": "user", "query": "code", "tags": []any{" GO ", "go"},
 	}, nil))
 	items, _ := store.snapshot()
-	if len(items) != 1 || items[0].ID != "spaces" {
-		t.Fatalf("items after forget = %#v", items)
-	}
+	require(t, len(items) == 1 && items[0].ID == "spaces", "items after forget = %#v", items)
 }
 
 func TestMemoryToolGuidanceKeepsDurableFactsDeclarative(t *testing.T) {
@@ -1184,14 +1107,10 @@ func TestMemoryToolGuidanceKeepsDurableFactsDeclarative(t *testing.T) {
 		{name: "forget", want: []string{"obsolete", "unique content substring"}},
 	} {
 		spec := memoryPluginTool(t, store, test.name).Spec()
-		if test.name != "recall" && spec.ExecutionMode != engine.ToolExecutionSequential {
-			t.Fatalf("%s execution mode = %q, want sequential", test.name, spec.ExecutionMode)
-		}
+		require(t, test.name == "recall" || spec.ExecutionMode == engine.ToolExecutionSequential, "%s execution mode = %q, want sequential", test.name, spec.ExecutionMode)
 		text := spec.Description + " " + string(spec.Parameters)
 		for _, want := range test.want {
-			if !strings.Contains(text, want) {
-				t.Fatalf("%s guidance %q does not contain %q", test.name, text, want)
-			}
+			require(t, strings.Contains(text, want), "%s guidance %q does not contain %q", test.name, text, want)
 		}
 	}
 }
@@ -1202,11 +1121,10 @@ func TestMemoryProfileMemoryCapacity(t *testing.T) {
 	_ = must(tool.Execute(context.Background(), "remember-memory-full", map[string]any{
 		"target": "memory", "content": strings.Repeat("m", memoryChars),
 	}, nil))
-	if _, err := tool.Execute(context.Background(), "remember-memory-overflow", map[string]any{
+	_, err := tool.Execute(context.Background(), "remember-memory-overflow", map[string]any{
 		"target": "memory", "content": "x",
-	}, nil); err == nil || !strings.Contains(err.Error(), "2200/2200") {
-		t.Fatalf("memory overflow error = %v", err)
-	}
+	}, nil)
+	requireError(t, err, "2200/2200")
 }
 
 func TestMemoryProfileCapacityAndReplacement(t *testing.T) {
@@ -1216,27 +1134,19 @@ func TestMemoryProfileCapacityAndReplacement(t *testing.T) {
 	_ = must(remember.Execute(context.Background(), "remember-full", map[string]any{
 		"target": "user", "content": full,
 	}, nil))
-	if _, err := remember.Execute(context.Background(), "remember-overflow", map[string]any{
+	_, err := remember.Execute(context.Background(), "remember-overflow", map[string]any{
 		"target": "user", "content": "x",
-	}, nil); err == nil || !strings.Contains(err.Error(), "1375/1375") || !strings.Contains(err.Error(), "replace or forget") {
-		t.Fatalf("overflow error = %v", err)
-	}
+	}, nil)
+	require(t, err != nil && strings.Contains(err.Error(), "1375/1375") && strings.Contains(err.Error(), "replace or forget"), "overflow error = %v", err)
 	replace := memoryPluginTool(t, store, "replace")
 	result := must(replace.Execute(context.Background(), "replace-full", map[string]any{
 		"target": "user", "old_text": strings.Repeat("é", 20),
 		"content": "User prefers concise replies.", "tags": []any{"style"},
 	}, nil))
 	items, _ := store.snapshot()
-	if len(items) != 1 || items[0].Content != "User prefers concise replies." ||
-		!hasMemoryTags(items[0].Tags, []string{"user", userTargetTag, "style"}) {
-		t.Fatalf("items after replace = %#v", items)
-	}
-	if got := store.operationSnapshot(); !slices.Equal(got, []string{"append:custom-1", "append:custom-2", "delete:custom-1"}) {
-		t.Fatalf("store operations = %v", got)
-	}
-	if !strings.HasPrefix(ai.ContentText(result.Content), "Replaced custom-1 with custom-2") {
-		t.Fatalf("replace result = %q", ai.ContentText(result.Content))
-	}
+	require(t, len(items) == 1 && items[0].Content == "User prefers concise replies." && hasMemoryTags(items[0].Tags, []string{"user", userTargetTag, "style"}), "items after replace = %#v", items)
+	require(t, slices.Equal(store.operationSnapshot(), []string{"append:custom-1", "append:custom-2", "delete:custom-1"}), "store operations = %v", store.operationSnapshot())
+	require(t, strings.HasPrefix(ai.ContentText(result.Content), "Replaced custom-1 with custom-2"), "replace result = %q", ai.ContentText(result.Content))
 }
 
 func TestMemoryProfileIsFrozenInSystemPrompt(t *testing.T) {
@@ -1261,21 +1171,15 @@ func TestMemoryProfileIsFrozenInSystemPrompt(t *testing.T) {
 	mustOK(session.PromptSync(context.Background(), "first prompt"))
 	_ = must(store.Append(context.Background(), memorysdk.Item{Content: "late marker", Tags: []string{memoryTargetTag}}))
 	mustOK(session.PromptSync(context.Background(), "second prompt"))
-	if len(prompts) != 2 || prompts[0] != prompts[1] {
-		t.Fatalf("system prompts changed: %#v", prompts)
-	}
+	require(t, len(prompts) == 2 && prompts[0] == prompts[1], "system prompts changed: %#v", prompts)
 	for _, want := range []string{
 		"Persistent curated memory", "USER PROFILE [", "User prefers terse replies.",
 		"MEMORY [", "Project uses Go 1.26.", "Legacy untagged facts remain memory.",
 	} {
-		if !strings.Contains(prompts[0], want) {
-			t.Fatalf("system prompt does not contain %q:\n%s", want, prompts[0])
-		}
+		require(t, strings.Contains(prompts[0], want), "system prompt does not contain %q:\n%s", want, prompts[0])
 	}
 	for _, unwanted := range []string{"late marker", userTargetTag, memoryTargetTag, "2026-07-23"} {
-		if strings.Contains(prompts[0], unwanted) {
-			t.Fatalf("system prompt contains %q:\n%s", unwanted, prompts[0])
-		}
+		require(t, !strings.Contains(prompts[0], unwanted), "system prompt contains %q:\n%s", unwanted, prompts[0])
 	}
 }
 
@@ -1476,9 +1380,7 @@ func TestSubagentParallelWidthIsCapped(t *testing.T) {
 	mustOK(registry.Register("<inline:subagents>", Catalog(Options{StreamFn: provider.StreamSimple})["subagents"]))
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{Mode: extensions.ModeTUI})
 	definition := runner.ToolDefinition("subagent")
-	if definition == nil {
-		t.Fatal("subagent tool missing")
-	}
+	require(t, definition != nil, "subagent tool missing")
 	tasks := make([]any, maxParallelTasks+1)
 	for index := range tasks {
 		tasks[index] = map[string]any{"task": "t"}
@@ -1487,12 +1389,8 @@ func TestSubagentParallelWidthIsCapped(t *testing.T) {
 		context.Background(), "call", map[string]any{"mode": "parallel", "tasks": tasks},
 		nil, runner.CreateContext(),
 	)
-	if err == nil || !strings.Contains(err.Error(), "at most") {
-		t.Fatalf("expected a width-cap refusal, got %v", err)
-	}
-	if provider.State().CallCount != 0 {
-		t.Fatalf("an over-wide fan-out reached the provider %d times", provider.State().CallCount)
-	}
+	requireError(t, err, "at most")
+	require(t, provider.State().CallCount == 0, "an over-wide fan-out reached the provider %d times", provider.State().CallCount)
 }
 
 // Command words widen the path candidate set, and rules are last-match-wins, so
@@ -1503,7 +1401,6 @@ func TestPermissionsCommandPathsDoNotWidenAllowRules(t *testing.T) {
 		{Path: "src/**", Action: Allow},
 	}}
 	info := ToolCallInfo{Tool: "bash", Args: map[string]any{"command": "cat src/a.go && cat secrets.txt"}}
-	if decision := policy.Evaluate(context.Background(), info); decision.Action != Deny {
-		t.Fatalf("action = %q, want deny: an allow widened by command words outranked the deny", decision.Action)
-	}
+	decision := policy.Evaluate(context.Background(), info)
+	require(t, decision.Action == Deny, "action = %q, want deny: an allow widened by command words outranked the deny", decision.Action)
 }
