@@ -85,12 +85,16 @@ func (ui *selectorUI) Select(_ context.Context, _ string, _ []string, _ *extensi
 	return choice, true, nil
 }
 
+func must[T any](value T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return value
+}
+
 func TestPluginControlPersistsAndReloads(t *testing.T) {
 	root := t.TempDir()
-	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
-	if err != nil {
-		t.Fatal(err)
-	}
+	settings := must(config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent"))))
 	registry := extensions.NewRegistry(root)
 	if err := registry.Register("<inline:plugin-control>", Control(settings)); err != nil {
 		t.Fatal(err)
@@ -124,10 +128,7 @@ func TestPermissionsPresetsAndSandboxMode(t *testing.T) {
 	checkPolicy(map[string]any{"preset": "danger-full-access"}, "log", sandbox.ModeDangerFullAccess)
 	checkPolicy(map[string]any{"preset": "workspace-write", "mode": "log", "sandbox": "read-only"}, "log", sandbox.ModeReadOnly)
 	root := t.TempDir()
-	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
-	if err != nil {
-		t.Fatal(err)
-	}
+	settings := must(config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent"))))
 	checkMode := func(want sandbox.Mode) {
 		if got, err := SandboxMode(settings); err != nil || got != want {
 			t.Fatalf("sandbox mode = %q, %v", got, err)
@@ -138,18 +139,22 @@ func TestPermissionsPresetsAndSandboxMode(t *testing.T) {
 	checkMode(sandbox.ModeWorkspaceWrite)
 	settings.SetPluginSetting("permissions", "sandbox", "read-only")
 	checkMode(sandbox.ModeReadOnly)
-	for _, invalid := range []map[string]any{{"preset": true}, {"preset": "unknown"}, {"sandbox": nil}, {"sandbox": true}, {"sandbox": "unknown"}} {
+	for _, invalid := range []map[string]any{{"preset": true}, {"preset": "unknown"}, {"sandbox": nil}, {"sandbox": true}, {"sandbox": "unknown"}, {"mode": ""}, {"mode": "audit"}, {"askFallback": "ask"}, {"rules": nil}, {"rules": []Rule{{Action: "audit"}}}, {"rules": []Rule{{Tool: "[", Action: Deny}}}, {"rules": []Rule{{Command: "[", Action: Deny}}}, {"rules": []Rule{{Path: "[", Action: Deny}}}} {
 		if _, err := policyFromSettings(invalid); err == nil {
 			t.Fatalf("settings %#v accepted", invalid)
 		}
 	}
-	settings.SetPluginSetting("permissions", "sandbox", "unknown")
-	registry := extensions.NewRegistry(root)
-	if err := registry.Register("<inline:permissions>", Catalog(Options{Settings: settings})["permissions"]); err != nil {
-		t.Fatal(err)
-	}
-	if blocked := extensions.NewRunner(registry, extensions.RunnerOptions{}).EmitToolCall(context.Background(), extensions.ToolCallEvent{ToolName: "read"}); blocked == nil || !blocked.Block || !strings.Contains(blocked.Reason, "permissions.sandbox") {
-		t.Fatalf("invalid SDK policy result = %#v", blocked)
+	for _, invalid := range [][4]any{{"sandbox", "unknown", "read-only", "permissions.sandbox"}, {"mode", "", "log", "permissions.mode"}, {"mode", "audit", "log", "permissions.mode"}, {"askFallback", "ask", "allow", "permissions.askFallback"}, {"rules", []Rule{{Action: "audit"}}, []Rule{}, "permissions.rules[0].action"}, {"rules", []Rule{{Tool: "[", Action: Deny}}, []Rule{}, "permissions.rules[0]"}, {"rules", []Rule{{Command: "[", Action: Deny}}, []Rule{}, "permissions.rules[0]"}, {"rules", []Rule{{Path: "[", Action: Deny}}, []Rule{}, "permissions.rules[0]"}} {
+		key := invalid[0].(string)
+		settings.SetPluginSetting("permissions", key, invalid[1])
+		registry := extensions.NewRegistry(root)
+		if err := registry.Register("<inline:permissions>", Catalog(Options{Settings: settings})["permissions"]); err != nil {
+			t.Fatal(err)
+		}
+		if blocked := extensions.NewRunner(registry, extensions.RunnerOptions{}).EmitToolCall(context.Background(), extensions.ToolCallEvent{ToolName: "read"}); blocked == nil || !blocked.Block || !strings.Contains(blocked.Reason, invalid[3].(string)) {
+			t.Fatalf("invalid SDK policy for %s = %#v", key, blocked)
+		}
+		settings.SetPluginSetting("permissions", key, invalid[2])
 	}
 	settings.SetPluginEnabled("permissions", false)
 	for _, settings := range []*config.SettingsManager{settings, nil} {
@@ -460,10 +465,7 @@ func TestTaskWidgetInvalidationWinsConcurrentRender(t *testing.T) {
 }
 
 func TestTasksRebuildFromBranchDetails(t *testing.T) {
-	manager, err := sessionstore.InMemory(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	manager := must(sessionstore.InMemory(t.TempDir()))
 	for _, items := range []string{`[{"text":"first","status":"done"}]`, `[{"text":"second","status":"pending"}]`} {
 		if _, err := manager.AppendMessage(&ai.ToolResultMessage{
 			ToolName: "todo", Content: ai.ToolResultContent{&ai.TextContent{Text: "ok"}},
@@ -1356,10 +1358,7 @@ func memoryPluginTool(t *testing.T, store memorysdk.Store, name string) engine.A
 	if err := registry.Register("<inline:memory>", MemoryWithStore(store)); err != nil {
 		t.Fatal(err)
 	}
-	manager, err := sessionstore.InMemory(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	manager := must(sessionstore.InMemory(t.TempDir()))
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{
 		SessionManager: manager,
 		Actions: extensions.Actions{
@@ -1385,10 +1384,7 @@ func pluginTool(t *testing.T, plugin, tool string, options Options, runnerOption
 	if err := registry.Register("<inline:"+plugin+">", factory); err != nil {
 		t.Fatal(err)
 	}
-	manager, err := sessionstore.InMemory(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	manager := must(sessionstore.InMemory(t.TempDir()))
 	runnerOptions.SessionManager = manager
 	runnerOptions.Actions.GetActiveTools = func() ([]string, error) { return []string{tool}, nil }
 	runner := extensions.NewRunner(registry, runnerOptions)
@@ -1409,10 +1405,7 @@ func newMemoryPluginSession(
 ) *agent.AgentSession {
 	t.Helper()
 	root := t.TempDir()
-	manager, err := sessionstore.InMemory(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	manager := must(sessionstore.InMemory(root))
 	return newMemoryPluginSessionWithManager(t, provider, factory, settings, manager)
 }
 
@@ -1427,11 +1420,7 @@ func newMemoryPluginSessionWithManager(
 	root := manager.GetCWD()
 	agentDir := filepath.Join(root, "agent")
 	if settings == nil {
-		var err error
-		settings, err = config.NewSettingsManager(root, config.WithAgentDir(agentDir))
-		if err != nil {
-			t.Fatal(err)
-		}
+		settings = must(config.NewSettingsManager(root, config.WithAgentDir(agentDir)))
 	}
 	registry := extensions.NewRegistry(root)
 	if err := registry.Register("<inline:memory>", factory); err != nil {
@@ -1453,14 +1442,8 @@ func newMemoryPluginSessionWithManager(
 func newPermissionsSession(t *testing.T, provider *faux.Provider, policy *Policy, enabled ...string) *agent.AgentSession {
 	t.Helper()
 	root := t.TempDir()
-	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager, err := sessionstore.InMemory(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	settings := must(config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent"))))
+	manager := must(sessionstore.InMemory(root))
 	registry := extensions.NewRegistry(root)
 	catalog := Catalog(Options{StreamFn: provider.StreamSimple, Policy: policy})
 	for _, name := range append([]string{"permissions"}, enabled...) {
@@ -1504,14 +1487,8 @@ func redirect(location string) *http.Response {
 func newSubagentParent(t *testing.T, provider *faux.Provider) *agent.AgentSession {
 	t.Helper()
 	root := t.TempDir()
-	settings, err := config.NewSettingsManager(root, config.WithAgentDir(root+"/agent"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager, err := sessionstore.InMemory(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	settings := must(config.NewSettingsManager(root, config.WithAgentDir(root+"/agent")))
+	manager := must(sessionstore.InMemory(root))
 	registry := extensions.NewRegistry(root)
 	if err := registry.Register("<inline:subagents>", Catalog(Options{StreamFn: provider.StreamSimple})["subagents"]); err != nil {
 		t.Fatal(err)
