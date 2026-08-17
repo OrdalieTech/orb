@@ -403,3 +403,35 @@ Each program uses the faux provider, so it performs no network requests. To run
 the full matrix without reading or writing a real pi configuration, point both
 the home directory and agent directory at temporary paths while preserving the
 Go module cache used by your toolchain.
+
+## Serving Orb at scale
+
+The layers below the CLI are built for many differently-configured instances in
+one process (P1/P3): `engine/` and `ai/` hold no mutable package state beyond
+what is listed here, read no environment implicitly in the embedding path, and
+are transitively TUI-free (enforced by `internal/layering`). The contract for a
+server embedder:
+
+- **Stream function per instance.** Pass the stream function explicitly to
+  every `engine.NewAgent`/loop call. `engine.SetDefaultStreamFn` is a
+  process-wide fallback (a faithful port of upstream `setDefaultStreamFn`):
+  never call it from multi-tenant code — one tenant's default would become
+  every tenant's default.
+- **Credentials per instance.** Inject provider credentials through the
+  explicit resolution paths (request auth resolvers, `ai/auth` overrides).
+  The environment-variable fallbacks in `ai/` exist for CLI parity; on a
+  shared server they are a cross-tenant leak vector — a tenant request must
+  never fall through to the process environment.
+- **Sessions per instance.** Give each instance its own session directory or
+  an in-memory session; never share the process working directory or the
+  default `~/.pi/agent/sessions` layout between tenants.
+- **Shared vs per-instance.** Safe to share process-wide (immutable or
+  deliberately global): the builtin model catalog (`ai/models.Builtin`,
+  `sync.OnceValue`), provider constructors, HTTP transports, terminal
+  capability detection (`internal/termcaps` — one process, one terminal).
+  Per-instance, always: the agent and its options, attachments (memory,
+  tools), session storage, credentials, settings, permission policy.
+- **Composition is code.** A server assembles by constructing Go values —
+  the dsh-style "profile" is a `main` package. The `agent/assembly` package
+  is the CLI's composition surface; embedders do not need it and must not
+  gate tenant behavior on the CLI's settings files.
