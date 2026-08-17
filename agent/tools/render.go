@@ -6,7 +6,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
-	"github.com/OrdalieTech/orb/tui"
+	"github.com/OrdalieTech/orb/internal/termcaps"
 )
 
 // PlainTextRenderer is the tool-rendering seam used until the Phase 4 TUI
@@ -32,7 +32,7 @@ func ShortenPath(path string) string {
 // linkPath wraps the display text in an OSC 8 file:// hyperlink when the
 // terminal supports hyperlinks, matching upstream render-utils linkPath.
 func linkPath(displayText, rawPath, cwd string) string {
-	if !tui.GetCapabilities().Hyperlinks {
+	if !termcaps.Get().Hyperlinks {
 		return displayText
 	}
 	absolutePath := rawPath
@@ -42,7 +42,7 @@ func linkPath(displayText, rawPath, cwd string) string {
 	if !filepath.IsAbs(absolutePath) {
 		absolutePath = filepath.Join(cwd, absolutePath)
 	}
-	return tui.Hyperlink(displayText, pathToFileURL(filepath.Clean(absolutePath)))
+	return termcaps.Hyperlink(displayText, pathToFileURL(filepath.Clean(absolutePath)))
 }
 
 // pathToFileURL percent-encodes an absolute path as a file:// URL the way
