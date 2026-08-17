@@ -1,5 +1,4 @@
-// Package plugins contains orb's bundled, default-off first-party extensions.
-// They are orb-original additions with no upstream mirror.
+// Package plugins contains orb's default-off first-party extensions.
 package plugins
 
 import (
@@ -55,10 +54,13 @@ func Catalog(option ...Options) map[string]extensions.Factory {
 	if len(option) == 1 {
 		options = option[0]
 	}
-	policy := options.Policy
-	inheritPolicy := policy
+	policy, inheritPolicy := options.Policy, options.Policy
 	if policy == nil && options.Settings != nil && options.Settings.GetPlugins()["permissions"] {
-		policy = policyFromSettings(options.Settings.GetPluginSettings("permissions"))
+		var err error
+		policy, err = policyFromSettings(options.Settings.GetPluginSettings("permissions"))
+		if err != nil {
+			policy = &Policy{Mode: "enforce", Guards: []func(context.Context, ToolCallInfo) string{func(context.Context, ToolCallInfo) string { return err.Error() }}}
+		}
 		inheritPolicy = policy
 	}
 	if policy == nil {
@@ -126,8 +128,7 @@ func Control(settings *config.SettingsManager) extensions.Factory {
 	}
 }
 
-// bashCaveat is shown wherever rules are presented: users must not read a
-// tool-scoped deny as a guarantee, because bash can do the same work.
+// bashCaveat prevents presenting a tool deny as protection against equivalent shell commands.
 const bashCaveat = "Bash is matched by its command text only: a tool-scoped rule does not stop an equivalent shell command."
 
 // Action is the ecosystem-standard three-state permission result.
@@ -190,39 +191,43 @@ func SandboxMode(settings *config.SettingsManager) (sandbox.Mode, error) {
 	if settings == nil || !settings.GetPlugins()["permissions"] {
 		return sandbox.ModeDangerFullAccess, nil
 	}
-	configured := settings.GetPluginSettings("permissions")
-	if value, exists := configured["preset"]; exists {
-		preset, ok := value.(string)
-		if !ok || preset != "workspace-write" && preset != "danger-full-access" {
-			return "", fmt.Errorf("plugins: permissions.preset must be workspace-write or danger-full-access")
-		}
+	policy, err := policyFromSettings(settings.GetPluginSettings("permissions"))
+	if err != nil {
+		return "", err
 	}
-	if value, exists := configured["sandbox"]; exists {
-		mode, ok := value.(string)
-		if !ok || mode != string(sandbox.ModeReadOnly) && mode != string(sandbox.ModeWorkspaceWrite) && mode != string(sandbox.ModeDangerFullAccess) {
-			return "", fmt.Errorf("plugins: permissions.sandbox must be read-only, workspace-write, or danger-full-access")
-		}
+	if policy.Sandbox == "" {
+		return sandbox.ModeDangerFullAccess, nil
 	}
-	mode := policyFromSettings(configured).Sandbox
-	if mode == "" {
-		mode = sandbox.ModeDangerFullAccess
-	}
-	return mode, nil
+	return policy.Sandbox, nil
 }
 
-func policyFromSettings(value map[string]any) *Policy {
+func policyFromSettings(value map[string]any) (*Policy, error) {
 	policy := &Policy{}
-	switch value["preset"] {
-	case "workspace-write":
-		policy.Sandbox, policy.Mode = sandbox.ModeWorkspaceWrite, "enforce"
-	case "danger-full-access":
-		policy.Sandbox, policy.Mode = sandbox.ModeDangerFullAccess, "log"
+	if preset, exists := value["preset"]; exists {
+		switch preset {
+		case "workspace-write":
+			policy.Sandbox, policy.Mode = sandbox.ModeWorkspaceWrite, "enforce"
+		case "danger-full-access":
+			policy.Sandbox, policy.Mode = sandbox.ModeDangerFullAccess, "log"
+		default:
+			return nil, fmt.Errorf("plugins: permissions.preset must be workspace-write or danger-full-access")
+		}
+	}
+	configured, exists := value["sandbox"]
+	if _, ok := configured.(string); exists && !ok {
+		return nil, fmt.Errorf("plugins: permissions.sandbox must be read-only, workspace-write, or danger-full-access")
 	}
 	encoded, err := json.Marshal(value)
 	if err == nil {
-		_ = json.Unmarshal(encoded, policy)
+		err = json.Unmarshal(encoded, policy)
 	}
-	return policy
+	if err != nil {
+		return nil, fmt.Errorf("plugins: invalid permissions settings: %w", err)
+	}
+	if policy.Sandbox != "" && policy.Sandbox != sandbox.ModeReadOnly && policy.Sandbox != sandbox.ModeWorkspaceWrite && policy.Sandbox != sandbox.ModeDangerFullAccess {
+		return nil, fmt.Errorf("plugins: permissions.sandbox must be read-only, workspace-write, or danger-full-access")
+	}
+	return policy, nil
 }
 
 func validAction(action Action) bool { return action == Allow || action == Deny || action == Ask }
@@ -311,9 +316,7 @@ func ruleTool(rule Rule) string {
 	return rule.Tool
 }
 
-// ponytail: bash rules match command text, not shell effects. Path denies also
-// scan words, but tool-scoped denies cannot cover equivalent shell commands;
-// use command rules or the sandbox when that distinction matters.
+// ponytail: bash rules match text, so only command rules or the sandbox cover shell effects.
 func ruleMatches(rule Rule, info ToolCallInfo) bool {
 	if !matchGlob(ruleTool(rule), info.Tool, false) {
 		return false
@@ -326,9 +329,7 @@ func ruleMatches(rule Rule, info ToolCallInfo) bool {
 	}
 	if rule.Path != "" {
 		candidates := pathArguments(info.Args)
-		// Only restrictive rules scan command words: widening a last-match-wins
-		// allow could override an earlier deny when one command names both paths.
-		// Over-matching is safe only when it restricts.
+		// Only restrictions scan words; widening a last-match-wins allow could override a deny.
 		if info.Tool == "bash" && hasCommand && rule.Action != Allow {
 			candidates = append(candidates, commandPaths(command)...)
 		}
@@ -342,9 +343,7 @@ func ruleMatches(rule Rule, info ToolCallInfo) bool {
 	return true
 }
 
-// commandPaths splits words only, so quoted paths, variables, and substitutions
-// stay invisible while unrelated words become candidates; callers must use its
-// over-matching only to restrict.
+// commandPaths sees bare words, not quoted paths, variables, or substitutions; use only to restrict.
 func commandPaths(command string) []string {
 	fields := strings.FieldsFunc(command, func(letter rune) bool {
 		return unicode.IsSpace(letter) || strings.ContainsRune("|&;<>()", letter)
@@ -471,8 +470,7 @@ func formatRule(rule Rule) string {
 	return strings.Join(parts, ", ")
 }
 
-// ponytail: static denies hide tools to avoid teaching models to reroute through
-// bash; the tool_call hook still blocks a tool re-added later.
+// ponytail: static denies hide tools; the tool_call hook still blocks tools re-added later.
 func (policy *Policy) staticDeny(info ToolCallInfo) (Decision, bool) {
 	mode, _, rules, authorizer, _ := policy.snapshot()
 	if mode != "enforce" || authorizer != nil {
@@ -605,7 +603,7 @@ func permissionsExtension(policy *Policy, settings *config.SettingsManager, pare
 			case Deny:
 				decision.Resolved = Deny
 				record(ctx, decision)
-				return extensions.ToolCallResult{Block: true, Reason: permissionDenied(decision, "")}, nil
+				return extensions.ToolCallResult{Block: true, Reason: permissionDenied(decision, decision.Resolution)}, nil
 			}
 			if policy.approvedForSession(info, decision) {
 				decision.Resolved, decision.Resolution = Allow, "session approval"
