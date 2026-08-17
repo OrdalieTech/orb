@@ -202,12 +202,19 @@ func SandboxMode(settings *config.SettingsManager) (sandbox.Mode, error) {
 
 func policyFromSettings(value map[string]any) (*Policy, error) {
 	policy := &Policy{}
-	for _, key := range []string{"preset", "sandbox", "mode", "askFallback", "rules"} {
-		if configured, exists := value[key]; exists {
+	for key, configured := range value {
+		switch key {
+		case "enabled":
+			if _, ok := configured.(bool); !ok {
+				return nil, fmt.Errorf("plugins: permissions.enabled must be true or false")
+			}
+		case "preset", "sandbox", "mode", "askFallback", "rules":
 			text, stringValue := configured.(string)
 			if configured == nil || stringValue && text == "" {
 				return nil, fmt.Errorf("plugins: permissions.%s must not be empty", key)
 			}
+		default:
+			return nil, fmt.Errorf("plugins: permissions.%s is unknown", key)
 		}
 	}
 	switch value["preset"] {
@@ -220,14 +227,30 @@ func policyFromSettings(value map[string]any) (*Policy, error) {
 		return nil, fmt.Errorf("plugins: permissions.preset must be workspace-write or danger-full-access")
 	}
 	encoded, err := json.Marshal(value)
+	var rawPolicy struct {
+		Rules []map[string]json.RawMessage `json:"rules"`
+	}
 	if err == nil {
 		err = json.Unmarshal(encoded, policy)
+	}
+	if err == nil {
+		err = json.Unmarshal(encoded, &rawPolicy)
 	}
 	if err != nil {
 		if field, ok := err.(*json.UnmarshalTypeError); ok {
 			return nil, fmt.Errorf("plugins: permissions.%s has invalid type", field.Field)
 		}
 		return nil, fmt.Errorf("plugins: invalid permissions settings: %w", err)
+	}
+	for index, rule := range rawPolicy.Rules {
+		for key, configured := range rule {
+			if key != "action" && key != "tool" && key != "command" && key != "path" {
+				return nil, fmt.Errorf("plugins: permissions.rules[%d].%s is unknown", index, key)
+			}
+			if key != "action" && string(configured) == "null" {
+				return nil, fmt.Errorf("plugins: permissions.rules[%d].%s must not be null", index, key)
+			}
+		}
 	}
 	for _, setting := range []struct {
 		name  string
