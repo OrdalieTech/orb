@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/conformance/runner"
 )
 

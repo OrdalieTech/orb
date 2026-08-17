@@ -9,7 +9,7 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	agenttools "github.com/OrdalieTech/orb/codingagent/tools"
+	agenttools "github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/conformance/runner"
 	"github.com/OrdalieTech/orb/internal/truncate"
 )

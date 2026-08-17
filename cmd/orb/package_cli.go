@@ -7,10 +7,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/modes"
-	firstpartyplugins "github.com/OrdalieTech/orb/codingagent/plugins"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/modes"
+	firstpartyplugins "github.com/OrdalieTech/orb/agent/plugins"
 )
 
 // Port of packages/coding-agent/src/package-manager-cli.ts (pi
@@ -465,7 +465,7 @@ func handleConfigCommand(ctx context.Context, argv []string, streams cliStreams,
 	if err != nil {
 		return true, reportCLIError(streams.Stderr, err)
 	}
-	globalResolved, err := codingagent.NewPackageManager(codingagent.PackageManagerOptions{
+	globalResolved, err := agent.NewPackageManager(agent.PackageManagerOptions{
 		CWD: cwd, AgentDir: agentDir, Settings: globalSettings,
 	}).Resolve(nil)
 	if err != nil {
@@ -473,7 +473,7 @@ func handleConfigCommand(ctx context.Context, argv []string, streams cliStreams,
 	}
 	projectResolved := globalResolved
 	if settings.IsProjectTrusted() {
-		projectResolved, err = codingagent.NewPackageManager(codingagent.PackageManagerOptions{
+		projectResolved, err = agent.NewPackageManager(agent.PackageManagerOptions{
 			CWD: cwd, AgentDir: agentDir, Settings: settings,
 		}).Resolve(nil)
 		if err != nil {
@@ -578,8 +578,8 @@ func handlePackageCommand(ctx context.Context, argv []string, streams cliStreams
 	}
 	reportPackageSettingsErrors(streams.Stderr, settings, "package command")
 
-	packageManager := codingagent.NewPackageManager(codingagent.PackageManagerOptions{CWD: cwd, AgentDir: agentDir, Settings: settings})
-	packageManager.SetProgressCallback(func(event codingagent.ProgressEvent) {
+	packageManager := agent.NewPackageManager(agent.PackageManagerOptions{CWD: cwd, AgentDir: agentDir, Settings: settings})
+	packageManager.SetProgressCallback(func(event agent.ProgressEvent) {
 		if event.Type == "start" {
 			_, _ = fmt.Fprintln(streams.Stdout, event.Message)
 		}
@@ -611,7 +611,7 @@ func handlePackageCommand(ctx context.Context, argv []string, streams cliStreams
 			_, _ = fmt.Fprintln(streams.Stdout, "No packages installed.")
 			return true, 0
 		}
-		printPackage := func(pkg codingagent.ConfiguredPackage) {
+		printPackage := func(pkg agent.ConfiguredPackage) {
 			display := pkg.Source
 			if pkg.Filtered {
 				display += " (filtered)"
@@ -676,7 +676,7 @@ func packageUpdateOffline(explicit bool) bool {
 	return value == "1" || value == "true" || value == "yes"
 }
 
-func printUpdatedPackages(writer io.Writer, updates []codingagent.PackageVersionUpdate) {
+func printUpdatedPackages(writer io.Writer, updates []agent.PackageVersionUpdate) {
 	if len(updates) == 0 {
 		_, _ = fmt.Fprintln(writer, "All packages up to date.")
 		return
@@ -686,7 +686,7 @@ func printUpdatedPackages(writer io.Writer, updates []codingagent.PackageVersion
 	}
 }
 
-func formatPackageUpdate(update codingagent.PackageVersionUpdate) string {
+func formatPackageUpdate(update agent.PackageVersionUpdate) string {
 	return fmt.Sprintf("%s %s -> %s", update.DisplayName, displayPackageRevision(update.Type, update.CurrentVersion), displayPackageRevision(update.Type, update.LatestVersion))
 }
 

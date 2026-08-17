@@ -36,7 +36,7 @@ jobs:
           ORB_ANTHROPIC_MODEL: ${{ vars.ORB_ANTHROPIC_MODEL || 'claude-haiku-4-5' }}
         run: |
           set -o pipefail
-          go test -v -count=1 -timeout=20m ./codingagent -run '^TestNightlyLiveSuite$' 2>&1 | tee nightly-live.log
+          go test -v -count=1 -timeout=20m ./agent -run '^TestNightlyLiveSuite$' 2>&1 | tee nightly-live.log
       - name: Upload diagnostic log
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

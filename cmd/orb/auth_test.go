@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/ai/auth"
-	"github.com/OrdalieTech/orb/codingagent/config"
 )
 
 func TestCredentialPrintCommandParsing(t *testing.T) {

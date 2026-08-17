@@ -1,0 +1,603 @@
+package agent
+
+import (
+	"archive/tar"
+	"compress/gzip"
+	"context"
+	"crypto/sha1" //nolint:gosec // npm legacy shasum verification
+	"crypto/sha512"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"runtime"
+	"sort"
+	"strings"
+
+	"github.com/OrdalieTech/orb/internal/jsonwire"
+	"github.com/OrdalieTech/orb/internal/semver"
+)
+
+// Native npm registry client: metadata fetch, version selection, tarball
+// download with integrity verification, and extraction — replacing upstream's
+// npm/bun/pnpm subprocess calls (orb ships without a Node toolchain).
+
+const defaultNpmRegistry = "https://registry.npmjs.org"
+
+type npmRegistryConfig struct {
+	baseURL   string
+	authToken string
+}
+
+// npmRegistry resolves the registry once per manager: the registryBaseURL
+// test seam wins, then npm_config_registry, the project .npmrc, and ~/.npmrc
+// (registry= lines), defaulting to registry.npmjs.org. A //host/:_authToken=
+// line matching the registry is passed through as a bearer token.
+func (manager *PackageManager) npmRegistry() npmRegistryConfig {
+	manager.registryOnce.Do(func() {
+		if manager.registryBaseURL != "" {
+			manager.registryConfig = npmRegistryConfig{baseURL: strings.TrimSuffix(manager.registryBaseURL, "/")}
+			return
+		}
+		manager.registryConfig = resolveNpmRegistry(manager.cwd)
+	})
+	return manager.registryConfig
+}
+
+func resolveNpmRegistry(cwd string) npmRegistryConfig {
+	registry := ""
+	for _, key := range [...]string{"npm_config_registry", "NPM_CONFIG_REGISTRY"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			registry = value
+			break
+		}
+	}
+	projectRC := parseNpmrc(filepath.Join(cwd, ".npmrc"))
+	userRC := parseNpmrc(filepath.Join(pmHomeDir(), ".npmrc"))
+	if registry == "" {
+		registry = projectRC["registry"]
+	}
+	if registry == "" {
+		registry = userRC["registry"]
+	}
+	if registry == "" {
+		registry = defaultNpmRegistry
+	}
+	registry = strings.TrimSuffix(registry, "/")
+	tokenKey := npmNerfDart(registry) + ":_authToken"
+	token := projectRC[tokenKey]
+	if token == "" {
+		token = userRC[tokenKey]
+	}
+	return npmRegistryConfig{baseURL: registry, authToken: token}
+}
+
+// parseNpmrc is a minimal key=value parse: comments (#, ;) and blank lines
+// skipped, values unquoted; no ini sections, no ${VAR} expansion.
+func parseNpmrc(path string) map[string]string {
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	values := map[string]string{}
+	for line := range strings.SplitSeq(string(contents), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			continue
+		}
+		key, value, found := strings.Cut(line, "=")
+		if !found {
+			continue
+		}
+		values[strings.TrimSpace(key)] = strings.Trim(strings.TrimSpace(value), `"`)
+	}
+	return values
+}
+
+// npmNerfDart approximates npm's nerf-dart credential key for a registry URL:
+// protocol stripped, trailing slash ensured (e.g. //registry.npmjs.org/).
+func npmNerfDart(registry string) string {
+	parsed, err := url.Parse(registry)
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+	path := parsed.Path
+	if !strings.HasSuffix(path, "/") {
+		path += "/"
+	}
+	return "//" + parsed.Host + path
+}
+
+func isDarwin() bool { return runtime.GOOS == "darwin" }
+func isLinux() bool  { return runtime.GOOS == "linux" }
+
+func readPackageJSON(path string) (map[string]any, error) {
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(contents, &parsed); err != nil {
+		return nil, err
+	}
+	return parsed, nil
+}
+
+type npmPackument struct {
+	DistTags map[string]string         `json:"dist-tags"`
+	Versions map[string]npmVersionInfo `json:"versions"`
+}
+
+type npmVersionInfo struct {
+	Version string  `json:"version"`
+	Dist    npmDist `json:"dist"`
+}
+
+type npmDist struct {
+	Tarball   string `json:"tarball"`
+	Shasum    string `json:"shasum"`
+	Integrity string `json:"integrity"`
+}
+
+func (manager *PackageManager) httpClient() *http.Client {
+	return &http.Client{Timeout: packageNetworkTimeout}
+}
+
+func (manager *PackageManager) fetchPackument(name string) (*npmPackument, error) {
+	return manager.fetchPackumentContext(context.Background(), name)
+}
+
+func (manager *PackageManager) fetchPackumentContext(ctx context.Context, name string) (*npmPackument, error) {
+	registry := manager.npmRegistry()
+	endpoint := registry.baseURL + "/" + url.PathEscape(name)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Accept", "application/vnd.npm.install-v1+json")
+	if registry.authToken != "" {
+		request.Header.Set("Authorization", "Bearer "+registry.authToken)
+	}
+	response, err := manager.httpClient().Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("npm package not found: %s", name)
+	}
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("npm registry request for %s failed with status %d", name, response.StatusCode)
+	}
+	var packument npmPackument
+	if err := json.NewDecoder(response.Body).Decode(&packument); err != nil {
+		return nil, fmt.Errorf("npm registry response for %s is invalid: %s", name, err)
+	}
+	return &packument, nil
+}
+
+// selectNpmVersion mirrors upstream `npm view` semantics: exact version,
+// highest matching a range, else the latest dist-tag.
+func selectNpmVersion(packument *npmPackument, source *npmSource) (npmVersionInfo, error) {
+	if source.pinned {
+		if info, exists := packument.Versions[source.version]; exists {
+			return info, nil
+		}
+		return npmVersionInfo{}, fmt.Errorf("npm version %s@%s not found in registry", source.name, source.version)
+	}
+	if source.rng != "" {
+		versions := make([]string, 0, len(packument.Versions))
+		for version := range packument.Versions {
+			versions = append(versions, version)
+		}
+		best := semver.MaxSatisfying(versions, source.rng)
+		if best == "" {
+			return npmVersionInfo{}, fmt.Errorf("no npm version of %s satisfies %s", source.name, source.rng)
+		}
+		return packument.Versions[best], nil
+	}
+	latest := packument.DistTags["latest"]
+	if latest == "" {
+		return npmVersionInfo{}, fmt.Errorf("npm package %s has no latest dist-tag", source.name)
+	}
+	if info, exists := packument.Versions[latest]; exists {
+		return info, nil
+	}
+	return npmVersionInfo{}, fmt.Errorf("npm version %s@%s not found in registry", source.name, latest)
+}
+
+func (manager *PackageManager) getLatestNpmVersion(source *npmSource) (string, error) {
+	return manager.getLatestNpmVersionContext(context.Background(), source)
+}
+
+func (manager *PackageManager) getLatestNpmVersionContext(ctx context.Context, source *npmSource) (string, error) {
+	packument, err := manager.fetchPackumentContext(ctx, source.name)
+	if err != nil {
+		return "", err
+	}
+	info, err := selectNpmVersion(packument, source)
+	if err != nil {
+		return "", err
+	}
+	return info.Version, nil
+}
+
+func (manager *PackageManager) installNpm(source *npmSource, scope string, temporary bool) error {
+	installRoot, err := manager.getNpmInstallRoot(scope, temporary)
+	if err != nil {
+		return err
+	}
+	if err := manager.ensureNpmProject(installRoot); err != nil {
+		return err
+	}
+	packument, err := manager.fetchPackument(source.name)
+	if err != nil {
+		return err
+	}
+	info, err := selectNpmVersion(packument, source)
+	if err != nil {
+		return err
+	}
+	if info.Dist.Tarball == "" {
+		return fmt.Errorf("npm version %s@%s has no tarball", source.name, info.Version)
+	}
+	tarball, err := manager.downloadNpmTarball(info)
+	if err != nil {
+		return fmt.Errorf("failed to download %s@%s: %s", source.name, info.Version, err)
+	}
+	destination := filepath.Join(installRoot, "node_modules", source.name)
+	if err := extractNpmTarball(tarball, destination); err != nil {
+		return err
+	}
+	// The npm subprocess runs before the native peer install: npm install
+	// prunes node_modules entries the package.json does not declare, so peers
+	// written first would be deleted again.
+	if err := manager.installPackageDependencies(destination, true); err != nil {
+		return err
+	}
+	if err := manager.installNpmPeerDependencies(destination); err != nil {
+		return err
+	}
+	return setNpmDependency(installRoot, source.name, info.Version)
+}
+
+// Peer-dependency materialization for managed npm installs. Upstream never
+// installs peers on this path (getNpmInstallArgs passes --legacy-peer-deps /
+// --omit=peer / auto-install-peers=false): upstream pi runs extensions
+// in-process, where its extension loader aliases both the
+// @earendil-works/pi-* SDK packages AND typebox to pi's own bundled copies
+// (upstream core/extensions/loader.ts), so no peer ever needs to exist on
+// disk. Orb's out-of-process extension host serves only the pi-* SDK surface
+// from the embedded orb-extension-sdk, so every other required peer must be
+// materialized at install time or the extension cannot resolve it. Installing
+// non-pi peers natively is therefore a deliberate Orb deviation; the pi-*
+// scope skip is Orb-specific by design — the embedded SDK serves those
+// specifiers and the host loader refuses to execute a real pi SDK install
+// from node_modules, so the installer must not fetch one at all.
+
+// isEmbeddedSDKPeer matches the loader's legacySDKScopes (loader.mjs).
+func isEmbeddedSDKPeer(name string) bool {
+	return strings.HasPrefix(name, "@earendil-works/pi-") || strings.HasPrefix(name, "@mariozechner/pi-")
+}
+
+// declaredPeerDependencies returns a package's peerDependencies ranges plus
+// the set marked optional in peerDependenciesMeta.
+func declaredPeerDependencies(packageJSONPath string) (peers map[string]string, optional map[string]bool) {
+	pkg, err := readPackageJSON(packageJSONPath)
+	if err != nil {
+		return nil, nil
+	}
+	declared, _ := pkg["peerDependencies"].(map[string]any)
+	peers = make(map[string]string, len(declared))
+	for name, rawRange := range declared {
+		versionRange, _ := rawRange.(string)
+		peers[name] = versionRange
+	}
+	optional = make(map[string]bool)
+	meta, _ := pkg["peerDependenciesMeta"].(map[string]any)
+	for name, rawMeta := range meta {
+		entry, _ := rawMeta.(map[string]any)
+		if isOptional, _ := entry["optional"].(bool); isOptional {
+			optional[name] = true
+		}
+	}
+	return peers, optional
+}
+
+// installNpmPeerDependencies natively installs a package's required peer
+// dependencies. Peers land flat in the package's own node_modules (transitive
+// peers included), where Node's walk-up resolution finds them from any depth
+// of the package tree; nesting them keeps npm runs at the install root from
+// pruning them as undeclared top-level entries. Optional peers
+// (peerDependenciesMeta[name].optional) are skipped, matching npm >=7
+// auto-install semantics.
+func (manager *PackageManager) installNpmPeerDependencies(packageDir string) error {
+	visited := map[string]bool{}
+	queue := []string{packageDir}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		peers, optionalPeers := declaredPeerDependencies(filepath.Join(current, "package.json"))
+		names := make([]string, 0, len(peers))
+		for name := range peers {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			if visited[name] {
+				continue
+			}
+			visited[name] = true
+			if isEmbeddedSDKPeer(name) || optionalPeers[name] {
+				continue
+			}
+			target, err := resolveManagedPath(packageDir, "node_modules", name)
+			if err != nil {
+				return err
+			}
+			// Bundled in the tarball or already materialized by the npm run.
+			if nested := filepath.Join(current, "node_modules", name); pathExists(nested) {
+				queue = append(queue, nested)
+				continue
+			}
+			if pathExists(target) {
+				queue = append(queue, target)
+				continue
+			}
+			if err := manager.installNpmPeer(name, peers[name], target); err != nil {
+				return err
+			}
+			if err := manager.installPackageDependencies(target, true); err != nil {
+				return err
+			}
+			queue = append(queue, target)
+		}
+	}
+	return nil
+}
+
+// installNpmPeer resolves a peer range like npm does (highest satisfying
+// version; bare names take the latest dist-tag) and extracts the tarball
+// natively into target.
+func (manager *PackageManager) installNpmPeer(name, versionRange, target string) error {
+	source := &npmSource{
+		spec:    name + "@" + versionRange,
+		name:    name,
+		version: versionRange,
+		rng:     npmVersionRange(versionRange),
+		pinned:  isExactNpmVersion(versionRange),
+	}
+	packument, err := manager.fetchPackument(name)
+	if err != nil {
+		return fmt.Errorf("failed to install peer dependency %s: %s", source.spec, err)
+	}
+	info, err := selectNpmVersion(packument, source)
+	if err != nil {
+		return fmt.Errorf("failed to install peer dependency %s: %s", source.spec, err)
+	}
+	if info.Dist.Tarball == "" {
+		return fmt.Errorf("npm version %s@%s has no tarball", name, info.Version)
+	}
+	tarball, err := manager.downloadNpmTarball(info)
+	if err != nil {
+		return fmt.Errorf("failed to download %s@%s: %s", name, info.Version, err)
+	}
+	return extractNpmTarball(tarball, target)
+}
+
+// setNpmDependency declares a natively installed package in the install root's
+// package.json. Extracting the tarball ourselves keeps installs working without
+// npm (DECISIONS: "a missing npm binary degrades to a warning"), but npm treats
+// an undeclared node_modules entry as extraneous, so the next `npm install` an
+// upstream pi runs prunes it while settings.json still lists it. Declaring the
+// resolved version is what makes the two installers coexist.
+func setNpmDependency(installRoot, name, version string) error {
+	if version == "" {
+		return nil
+	}
+	return updateNpmDependencies(installRoot, func(dependencies map[string]any) {
+		dependencies[name] = version
+	})
+}
+
+func removeNpmDependency(installRoot, name string) error {
+	return updateNpmDependencies(installRoot, func(dependencies map[string]any) {
+		delete(dependencies, name)
+	})
+}
+
+func updateNpmDependencies(installRoot string, apply func(map[string]any)) error {
+	path := filepath.Join(installRoot, "package.json")
+	pkg, err := readPackageJSON(path)
+	if err != nil {
+		return err
+	}
+	dependencies, _ := pkg["dependencies"].(map[string]any)
+	if dependencies == nil {
+		dependencies = make(map[string]any)
+	}
+	apply(dependencies)
+	pkg["dependencies"] = dependencies
+	// Marshal sorts keys, which is also how npm writes dependencies, so a pi run
+	// after an Orb install does not reorder the file.
+	encoded, err := jsonwire.MarshalIndent(pkg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, encoded, 0o644)
+}
+
+func (manager *PackageManager) uninstallNpm(source *npmSource, scope string) error {
+	installRoot, err := manager.getNpmInstallRoot(scope, false)
+	if err != nil {
+		return err
+	}
+	if !pathExists(installRoot) {
+		return nil
+	}
+	installed, err := resolveManagedPath(installRoot, "node_modules", source.name)
+	if err != nil {
+		return err
+	}
+	if err := os.RemoveAll(installed); err != nil {
+		return err
+	}
+	// Leaving the declaration behind would make the next npm install reinstall
+	// what was just removed.
+	return removeNpmDependency(installRoot, source.name)
+}
+
+func (manager *PackageManager) downloadNpmTarball(info npmVersionInfo) ([]byte, error) {
+	request, err := http.NewRequest(http.MethodGet, info.Dist.Tarball, nil)
+	if err != nil {
+		return nil, err
+	}
+	registry := manager.npmRegistry()
+	if registry.authToken != "" {
+		// Send the token only to the registry's own host.
+		if base, baseErr := url.Parse(registry.baseURL); baseErr == nil {
+			if target, targetErr := url.Parse(info.Dist.Tarball); targetErr == nil && target.Host == base.Host {
+				request.Header.Set("Authorization", "Bearer "+registry.authToken)
+			}
+		}
+	}
+	response, err := manager.httpClient().Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("tarball request failed with status %d", response.StatusCode)
+	}
+	contents, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err := verifyNpmIntegrity(contents, info.Dist.Integrity, info.Dist.Shasum); err != nil {
+		return nil, err
+	}
+	return contents, nil
+}
+
+// verifyNpmIntegrity checks the SRI integrity string when present (sha512 or
+// sha1), falling back to the legacy hex shasum. Unverifiable data is rejected.
+func verifyNpmIntegrity(contents []byte, integrity, shasum string) error {
+	if integrity != "" {
+		for entry := range strings.SplitSeq(integrity, " ") {
+			algorithm, expected, found := strings.Cut(entry, "-")
+			if !found {
+				continue
+			}
+			var digest []byte
+			switch algorithm {
+			case "sha512":
+				sum := sha512.Sum512(contents)
+				digest = sum[:]
+			case "sha1":
+				sum := sha1.Sum(contents) //nolint:gosec // registry-provided legacy digest
+				digest = sum[:]
+			default:
+				continue
+			}
+			if base64.StdEncoding.EncodeToString(digest) == expected {
+				return nil
+			}
+			return errors.New("tarball integrity check failed")
+		}
+	}
+	if shasum != "" {
+		sum := sha1.Sum(contents) //nolint:gosec // registry-provided legacy digest
+		if hex.EncodeToString(sum[:]) == strings.ToLower(shasum) {
+			return nil
+		}
+		return errors.New("tarball integrity check failed")
+	}
+	return errors.New("tarball has no integrity metadata")
+}
+
+// extractNpmTarball unpacks an npm .tgz into destination, stripping the
+// leading path component ("package/") as npm does. Only regular files and
+// directories are materialized; entries escaping the destination are rejected.
+func extractNpmTarball(tarball []byte, destination string) error {
+	staging := destination + ".tmp-install"
+	if err := os.RemoveAll(staging); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(staging, 0o755); err != nil {
+		return err
+	}
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.RemoveAll(staging)
+		}
+	}()
+
+	gzipReader, err := gzip.NewReader(strings.NewReader(string(tarball)))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = gzipReader.Close() }()
+	tarReader := tar.NewReader(gzipReader)
+	for {
+		header, err := tarReader.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		name := strings.TrimPrefix(filepath.ToSlash(header.Name), "./")
+		_, stripped, found := strings.Cut(name, "/")
+		if !found || stripped == "" {
+			continue
+		}
+		target, err := resolveManagedPath(staging, filepath.FromSlash(stripped))
+		if err != nil {
+			return err
+		}
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				return err
+			}
+			mode := os.FileMode(0o644)
+			if header.FileInfo().Mode()&0o111 != 0 {
+				mode = 0o755
+			}
+			file, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+			if err != nil {
+				return err
+			}
+			_, copyErr := io.Copy(file, tarReader) //nolint:gosec // size bounded by verified tarball
+			if err := errors.Join(copyErr, file.Close()); err != nil {
+				return err
+			}
+		default:
+			// Symlinks and special files are not part of npm publish output.
+			continue
+		}
+	}
+
+	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(destination); err != nil {
+		return err
+	}
+	if err := os.Rename(staging, destination); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
+}

@@ -28,7 +28,7 @@ probe at all (see *Install and harness exclusions*). Against the 282 packages up
 supports, parity is **231/282 = 81.9 %** on Node (was 74.8 %) and **222/282 = 78.7 %** on Bun.
 
 Bun is unchanged by construction: `loader.mjs` is installed only when the resolved engine is Node
-(`codingagent/extensions/host/manager.go:381-387`) and Bun has no equivalent hook
+(`agent/extensions/host/manager.go:381-387`) and Bun has no equivalent hook
 (`runtime_entry.go:51-57`). Node has now overtaken Bun on the full corpus.
 
 Tier 1 — the top 50 by monthly downloads, and the number that describes what most users install — is
@@ -91,7 +91,7 @@ denominator either way.
 * **`@firstpick/pi-extension-todo-progress` — `unsupported_sdk_export @firstpick/pi-utils export
   extractChecklist`.** This one is a real limit of the new load path and is worth acting on.
   `loadRefusedTypeScript` returns `format: await typeScriptFormat(url)`
-  (`codingagent/extensions/host/loader.mjs`), which mirrors Node's rule that a bare `.ts` follows the
+  (`agent/extensions/host/loader.mjs`), which mirrors Node's rule that a bare `.ts` follows the
   nearest `package.json` `type` and defaults to `commonjs` — but the source it returns alongside that
   format is still ES module syntax. `@firstpick/pi-utils` publishes `"exports": {".": "./index.ts"}`
   with **no `"type": "module"`**, so Node is handed ESM source declared CommonJS. Reproduced directly
@@ -281,7 +281,7 @@ A flake is a finding, not an average. Named individually, never averaged into a 
 * **`pi-cursor-sdk` — flaky on `orb-node` *and* `orb-bun`, in both the 300 run and the dedicated
   tier-1 run.** Two distinct registration snapshots across attempts;
   `activeTools:cursor_ask_question` appears in some and not others. This is the known
-  late-registration race: `codingagent/extensions/host/manager.go:518-528` clones every extension's
+  late-registration race: `agent/extensions/host/manager.go:518-528` clones every extension's
   registration state and freezes it into `manager.states`, while the `register_tool` handler at
   `:933-954` appends to the live per-generation map (`:948`) and answers `{"accepted": true}`
   (`:954`). A registration that lands after the freeze is acknowledged but never reaches the snapshot
@@ -524,7 +524,7 @@ wins**, not a failure to resolve:
 * **`@narumitw/pi-goal`.** `isRetryableAssistantError` exists only in `@earendil-works/pi-ai`
   ≥ 0.80.6. The hoisted `node_modules/@earendil-works/pi-ai` in the corpus is **0.80.2** and does
   not export it; the copy Orb ships under `ORB_PI_SDK_ROOT` is **0.81.1** and does. `legacySurface`
-  in `codingagent/extensions/host/loader.mjs` redirects `@earendil-works/pi-ai` →
+  in `agent/extensions/host/loader.mjs` redirects `@earendil-works/pi-ai` →
   `@earendil-works/pi-ai/compat` *through the caller's own context*, by design, "so a pinned or
   older install still wins". `installedSDK`, the fallback that resolves against `ORB_PI_SDK_ROOT`,
   is only reached from the `catch` in `resolve`. Resolving 0.80.2 does not throw — it succeeds and
@@ -543,7 +543,7 @@ Neither is a flake, and neither is on the known non-verdict list.
 > `legacySurface` redirects through the caller's context, `installedSDK` fallback against
 > `ORB_PI_SDK_ROOT`, "which copy of a duplicated SDK wins" — no longer exist. Every
 > `@earendil-works/pi-*`/`@mariozechner/pi-*` specifier now resolves unconditionally to the
-> embedded `orb-extension-sdk` (`codingagent/extensions/host/sdk/`), `ORB_PI_SDK_ROOT` is dead,
+> embedded `orb-extension-sdk` (`agent/extensions/host/sdk/`), `ORB_PI_SDK_ROOT` is dead,
 > and a resolution reaching an installed real pi SDK is refused at resolve time. An SDK export a
 > package needs but orb does not implement now fails with the precise `OrbUnsupportedCapability`
 > diagnostic instead of a version-dependent missing-export link error; `isRetryableAssistantError`

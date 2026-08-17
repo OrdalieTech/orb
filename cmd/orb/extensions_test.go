@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/extensions"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
 )
 
 func TestLoadCompiledExtensionsUsesSettingsAndCatalogOrder(t *testing.T) {

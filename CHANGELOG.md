@@ -1,17 +1,23 @@
 # Changelog
 
 Orb's own release history (independent 0.x semver; upstream parity target recorded per release).
-The embedded upstream changelog under `codingagent/modes/assets/` is a product asset driving
+The embedded upstream changelog under `agent/modes/assets/` is a product asset driving
 `/changelog` and is not this file.
 
 ## [Unreleased]
+
+### Changed
+
+- SDK import paths renamed: `codingagent` is now `agent` (the full-featured agent runtime) and the
+  former `agent` package is now `engine` (loop + Agent + harness). Types and behavior are
+  unchanged; on-disk `~/.pi/agent/` locations, wire formats, and `PI_*` variables are untouched.
 
 ### Added
 
 - Upstream parity moves to pi v0.84.2.
 - `--use-theme <name>` sets the interactive theme for a single run without persisting it, and `/export` now follows the active theme. Themes may define `searchMatchBg`/`searchMatchText` (optional, falling back to `selectedBg`/`text`).
 - A `defaultTools` setting chooses the initial built-in tool selection; extension and SDK custom tools stay enabled alongside it.
-- Harness sessions expose a run-lifecycle event bus (direct per-type listeners plus buffered watches pairing a consistent snapshot with every later event), can durably clear their name, and session search ships as a standalone `agent/search` service with filters, limits, cursor paging, and cancellation.
+- Harness sessions expose a run-lifecycle event bus (direct per-type listeners plus buffered watches pairing a consistent snapshot with every later event), can durably clear their name, and session search ships as a standalone `engine/search` service with filters, limits, cursor paging, and cancellation.
 - Tools that ask for JSON-schema constrained sampling now send a strict provider schema, falling back when a schema cannot be expressed strictly; under `PI_EXPERIMENTAL=1` the read, bash, edit, and write tools request strict schemas too.
 - OpenAI Responses tool-call namespaces survive replay, and models declaring support receive deferred tools through `additional_tools`.
 - The OpenRouter image catalog resyncs to upstream's 45 models (adds Seedream 5.0 Lite/Pro, Grok Imagine Image 2.0, MAI-Image-2.5 Pro, Qwen Image 3/3 Pro).

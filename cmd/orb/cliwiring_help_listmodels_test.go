@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/agent/config"
 )
 
 // Finding 8: pi --help must document the --extension/-e flag and the package

@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/orb/agent"
-	"github.com/OrdalieTech/orb/agent/harness"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/conformance/runner"
+	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/engine/harness"
 )
 
 type f10Fixture struct {
@@ -407,7 +407,7 @@ func loadF10Fixture(t testing.TB) f10Fixture {
 	return fixture
 }
 
-func f10Message(t testing.TB, raw json.RawMessage) agent.AgentMessage {
+func f10Message(t testing.TB, raw json.RawMessage) engine.AgentMessage {
 	t.Helper()
 	if message, err := ai.UnmarshalMessage(raw); err == nil {
 		return message
@@ -443,9 +443,9 @@ func f10Message(t testing.TB, raw json.RawMessage) agent.AgentMessage {
 	}
 }
 
-func f10Messages(t testing.TB, raw []json.RawMessage) agent.AgentMessages {
+func f10Messages(t testing.TB, raw []json.RawMessage) engine.AgentMessages {
 	t.Helper()
-	messages := make(agent.AgentMessages, len(raw))
+	messages := make(engine.AgentMessages, len(raw))
 	for index, message := range raw {
 		messages[index] = f10Message(t, message)
 	}
@@ -456,7 +456,7 @@ func f10Entries(t testing.TB, entries []f10Entry) []harness.SessionEntry {
 	t.Helper()
 	converted := make([]harness.SessionEntry, len(entries))
 	for index, entry := range entries {
-		var message agent.AgentMessage
+		var message engine.AgentMessage
 		if len(entry.Message) > 0 {
 			message = f10Message(t, entry.Message)
 		}
@@ -482,7 +482,7 @@ func f10Entries(t testing.TB, entries []f10Entry) []harness.SessionEntry {
 	return converted
 }
 
-func f10Roles(t testing.TB, messages agent.AgentMessages) []string {
+func f10Roles(t testing.TB, messages engine.AgentMessages) []string {
 	t.Helper()
 	roles := make([]string, len(messages))
 	for index, message := range messages {

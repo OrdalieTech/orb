@@ -1,6 +1,6 @@
 # Go SDK
 
-The `agent` and `codingagent` packages provide Orb's public embedding APIs.
+The `agent` and `agent` packages provide Orb's public embedding APIs.
 
 ## Quick start
 
@@ -8,13 +8,13 @@ The `agent` and `codingagent` packages provide Orb's public embedding APIs.
 import (
     "context"
     "github.com/OrdalieTech/orb/ai/providers/faux"
-    "github.com/OrdalieTech/orb/codingagent"
+    "github.com/OrdalieTech/orb/agent"
 )
 
 provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
 provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("Hello!")})
 
-result, err := codingagent.NewAgentSession(codingagent.AgentSessionOptions{
+result, err := agent.NewAgentSession(agent.AgentSessionOptions{
     StreamFn: provider.StreamSimple,
     Model:    provider.GetModel(),
 })
@@ -117,7 +117,7 @@ rejects it before acceptance.
 
 ```go
 expand := true
-err := session.PromptWithOptions(ctx, "/review staged", &codingagent.PromptOptions{
+err := session.PromptWithOptions(ctx, "/review staged", &agent.PromptOptions{
     ExpandPromptTemplates: &expand,
     Source:                extensions.InputInteractive,
     PreflightResult:       func(accepted bool) { fmt.Println("accepted:", accepted) },
@@ -137,17 +137,17 @@ grep, find, ls. Control which are active via `Tools`, `NoTools`, and
 
 ```go
 // Read-only mode
-result, _ := codingagent.NewAgentSession(codingagent.AgentSessionOptions{
+result, _ := agent.NewAgentSession(agent.AgentSessionOptions{
     Tools: []string{"read", "grep", "find", "ls"},
 })
 
 // No tools at all
-result, _ := codingagent.NewAgentSession(codingagent.AgentSessionOptions{
+result, _ := agent.NewAgentSession(agent.AgentSessionOptions{
     NoTools: "all",
 })
 
 // Exclude write operations
-result, _ := codingagent.NewAgentSession(codingagent.AgentSessionOptions{
+result, _ := agent.NewAgentSession(agent.AgentSessionOptions{
     ExcludeTools: []string{"write", "edit"},
 })
 ```
@@ -179,7 +179,7 @@ defer cancel()
 
 for event := range ch {
     switch event.(type) {
-    case codingagent.AgentSettledEvent:
+    case agent.AgentSettledEvent:
         fmt.Println("settled")
     }
 }
@@ -197,14 +197,14 @@ native extension factories, discovers skills, prompt templates, and context file
 and exposes the theme seam, then applies SDK overrides to one reloadable snapshot.
 
 ```go
-loader, err := codingagent.NewDefaultResourceLoader(codingagent.DefaultResourceLoaderOptions{
+loader, err := agent.NewDefaultResourceLoader(agent.DefaultResourceLoaderOptions{
     CWD:      cwd,
     AgentDir: agentDir,
     SystemPromptOverride: func(_ *string) *string {
         prompt := "You are a concise assistant."
         return &prompt
     },
-    SkillsOverride: func(current codingagent.ResourceSkillsResult) codingagent.ResourceSkillsResult {
+    SkillsOverride: func(current agent.ResourceSkillsResult) agent.ResourceSkillsResult {
         current.Skills = append(current.Skills, customSkill)
         return current
     },
@@ -212,7 +212,7 @@ loader, err := codingagent.NewDefaultResourceLoader(codingagent.DefaultResourceL
 if err != nil { panic(err) }
 if err := loader.Reload(ctx, nil); err != nil { panic(err) }
 
-result, err := codingagent.NewAgentSession(codingagent.AgentSessionOptions{
+result, err := agent.NewAgentSession(agent.AgentSessionOptions{
     ResourceLoader: loader,
 })
 ```
@@ -258,7 +258,7 @@ settings.SetDefaultThinkingLevel(ai.ModelThinkingLow)
 ## Extensions
 
 ```go
-loader, _ := codingagent.NewDefaultResourceLoader(codingagent.DefaultResourceLoaderOptions{
+loader, _ := agent.NewDefaultResourceLoader(agent.DefaultResourceLoaderOptions{
     CWD: cwd,
     ExtensionFactories: []extensions.Factory{func(api extensions.API) error {
         api.On(extensions.EventAgentStart, handler)
@@ -268,7 +268,7 @@ loader, _ := codingagent.NewDefaultResourceLoader(codingagent.DefaultResourceLoa
 })
 if err := loader.Reload(ctx, nil); err != nil { panic(err) }
 
-result, _ := codingagent.NewAgentSession(codingagent.AgentSessionOptions{
+result, _ := agent.NewAgentSession(agent.AgentSessionOptions{
     ResourceLoader: loader,
 })
 ```
@@ -296,7 +296,7 @@ if err := agentmemory.Attach(ctx, runtime, store); err != nil { panic(err) }
 ```
 
 The bundled coding-agent plugin remains disabled by default. Local users enable
-`"plugins":{"memory":true}`; `codingagent` embedders register
+`"plugins":{"memory":true}`; `agent` embedders register
 `plugins.MemoryWithStore(store)`. Both paths use the same `memory/agent` runtime.
 
 Enablement is the only mode. At session start the plugin freezes a bounded `USER PROFILE`
@@ -323,13 +323,13 @@ services and extension instances on replacement. A host binds session-local
 state once, then installs the same callback for every replacement:
 
 ```go
-createRuntime := codingagent.CreateAgentSessionRuntimeFactory(
-    func(_ context.Context, options codingagent.AgentSessionOptions) (*codingagent.AgentSessionResult, error) {
-        services, err := codingagent.CreateAgentSessionServices(codingagent.CreateAgentSessionServicesOptions{
+createRuntime := agent.CreateAgentSessionRuntimeFactory(
+    func(_ context.Context, options agent.AgentSessionOptions) (*agent.AgentSessionResult, error) {
+        services, err := agent.CreateAgentSessionServices(agent.CreateAgentSessionServicesOptions{
             CWD: options.CWD, AgentDir: options.AgentDir,
         })
         if err != nil { return nil, err }
-        return codingagent.CreateAgentSessionFromServices(codingagent.CreateAgentSessionFromServicesOptions{
+        return agent.CreateAgentSessionFromServices(agent.CreateAgentSessionFromServicesOptions{
             Services: services, SessionManager: options.SessionManager,
             SessionStartEvent: options.SessionStartEvent,
             Model: options.Model, ThinkingLevel: options.ThinkingLevel,
@@ -340,11 +340,11 @@ createRuntime := codingagent.CreateAgentSessionRuntimeFactory(
     },
 )
 
-host, err := codingagent.NewAgentSessionRuntime(ctx, options, createRuntime)
+host, err := agent.NewAgentSessionRuntime(ctx, options, createRuntime)
 if err != nil { panic(err) }
 defer host.Dispose(ctx)
 
-bind := func(session *codingagent.AgentSession) error {
+bind := func(session *agent.AgentSession) error {
     return session.BindExtensions(ctx)
 }
 host.SetRebindSession(bind)
@@ -375,7 +375,7 @@ For hosts that already assembled an agent, session manager, settings, and resour
 
 ## Examples
 
-All examples live in `codingagent/examples/` and run against the faux provider:
+All examples live in `agent/examples/` and run against the faux provider:
 
 | # | Name | Pattern |
 |---|------|---------|
@@ -396,7 +396,7 @@ All examples live in `codingagent/examples/` and run against the faux provider:
 Run any example:
 
 ```sh
-go run ./codingagent/examples/01_minimal/
+go run ./agent/examples/01_minimal/
 ```
 
 Each program uses the faux provider, so it performs no network requests. To run

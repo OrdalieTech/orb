@@ -9,8 +9,8 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/ai"
-	"github.com/OrdalieTech/orb/codingagent"
 	"github.com/OrdalieTech/orb/internal/localecompare"
 )
 
@@ -27,7 +27,7 @@ func formatModelList(models []ai.Model, search string) string {
 		if search != "" {
 			return fmt.Sprintf("No models matching %q\n", search)
 		}
-		return codingagent.FormatNoModelsAvailableMessage() + "\n"
+		return agent.FormatNoModelsAvailableMessage() + "\n"
 	}
 	collator := localecompare.New()
 	slices.SortFunc(models, func(left, right ai.Model) int {

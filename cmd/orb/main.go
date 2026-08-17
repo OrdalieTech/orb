@@ -16,6 +16,11 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/agent/modes"
+	"github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/agent/session/exporthtml"
 	"github.com/OrdalieTech/orb/ai"
 	aimodels "github.com/OrdalieTech/orb/ai/models"
 	"github.com/OrdalieTech/orb/chat"
@@ -26,12 +31,7 @@ import (
 	"github.com/OrdalieTech/orb/chat/teams"
 	"github.com/OrdalieTech/orb/chat/telegram"
 	"github.com/OrdalieTech/orb/chat/whatsapp"
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/extensions"
-	"github.com/OrdalieTech/orb/codingagent/modes"
-	"github.com/OrdalieTech/orb/codingagent/session"
-	"github.com/OrdalieTech/orb/codingagent/session/exporthtml"
+	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/internal/jstrim"
 	"github.com/OrdalieTech/orb/internal/semver"
 	"golang.org/x/term"
@@ -60,12 +60,12 @@ type cliStreams struct {
 }
 
 type cliDependencies struct {
-	createRuntime           func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error)
+	createRuntime           func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error)
 	runAuth                 func(context.Context, CLIArgs, cliStreams) int
 	runConfig               func(context.Context, modes.ConfigSelectorOptions) error
 	loadModels              func(string) (*config.ModelRegistry, error)
 	refreshModels           func(context.Context, string) error
-	runInteractive          func(context.Context, *codingagent.SessionRuntime, modes.InteractiveModeOptions) int
+	runInteractive          func(context.Context, *agent.SessionRuntime, modes.InteractiveModeOptions) int
 	selectSession           SessionSelector
 	selectMissingSessionCWD func(context.Context, *MissingSessionCWDError) (string, bool, error)
 	runRPCFixture           func(context.Context, CLIArgs, cliStreams, string) (handled bool, code int)
@@ -657,8 +657,8 @@ func applySessionDefaults(args *CLIArgs, context session.SessionContext, branch 
 	}
 }
 
-func decodeSessionMessages(rawMessages []json.RawMessage) agent.AgentMessages {
-	messages := make(agent.AgentMessages, 0, len(rawMessages))
+func decodeSessionMessages(rawMessages []json.RawMessage) engine.AgentMessages {
+	messages := make(engine.AgentMessages, 0, len(rawMessages))
 	for _, raw := range rawMessages {
 		message, err := ai.UnmarshalMessage(raw)
 		if err == nil {
@@ -670,7 +670,7 @@ func decodeSessionMessages(rawMessages []json.RawMessage) agent.AgentMessages {
 	return messages
 }
 
-func appendInitialRuntimeState(manager *session.SessionManager, state agent.AgentState, prior session.SessionContext) error {
+func appendInitialRuntimeState(manager *session.SessionManager, state engine.AgentState, prior session.SessionContext) error {
 	hasExistingSession := len(prior.Messages) > 0
 	hasThinkingEntry := false
 	for _, entry := range manager.GetBranch() {
@@ -686,7 +686,7 @@ func appendInitialRuntimeState(manager *session.SessionManager, state agent.Agen
 		_, err := manager.AppendThinkingLevelChange(string(state.ThinkingLevel))
 		return err
 	}
-	if state.Model != nil && !codingagent.IsUnknownModel(state.Model) {
+	if state.Model != nil && !agent.IsUnknownModel(state.Model) {
 		if _, err := manager.AppendModelChange(string(state.Model.Provider), state.Model.ID); err != nil {
 			return err
 		}

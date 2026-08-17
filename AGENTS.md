@@ -67,8 +67,8 @@ agent (Claude Code, Codex, or other).
 
 ## Layout quick reference
 
-`ai/` unified LLM layer · `agent/` loop+Agent+harness · `tui/` renderer/components ·
-`codingagent/` tools, session, config, extensions (+`host/`, `mcp/`), modes · `cmd/orb` CLI ·
+`ai/` unified LLM layer · `engine/` loop+Agent+harness · `tui/` renderer/components ·
+`agent/` tools, session, config, extensions (+`host/`, `mcp/`), modes · `cmd/orb` CLI ·
 `internal/` jsonschema, jsonwire, partialjson, truncate, sync · `conformance/` extract (TS,
 dev-only), fixtures, runner. Full tree: ARCHITECTURE §1.
 

@@ -11,10 +11,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/conformance/runner"
+	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
 )
 
@@ -163,20 +163,20 @@ func runF3Case(t *testing.T, fixedNow int64, fixtureCase f3Case) {
 	var releaseSecondTerminateOnce sync.Once
 	var steeringReady atomic.Bool
 	var steeringDelivered atomic.Bool
-	tools := make([]agent.AgentTool, len(fixtureCase.Tools))
+	tools := make([]engine.AgentTool, len(fixtureCase.Tools))
 	for index, fixtureTool := range fixtureCase.Tools {
 		fixtureTool := fixtureTool
-		tools[index] = agent.AgentToolFunc{
-			AgentToolSpec: agent.AgentToolSpec{
+		tools[index] = engine.AgentToolFunc{
+			AgentToolSpec: engine.AgentToolSpec{
 				Name:        fixtureTool.Name,
 				Label:       fixtureTool.Label,
 				Description: fixtureTool.Description,
 				Parameters:  jsonschema.Schema(bytes.Clone(fixtureTool.Parameters)),
 			},
-			Run: func(ctx context.Context, _ string, params any, _ agent.AgentToolUpdateCallback) (agent.AgentToolResult, error) {
+			Run: func(ctx context.Context, _ string, params any, _ engine.AgentToolUpdateCallback) (engine.AgentToolResult, error) {
 				value, err := f3StringArgument(params, "value")
 				if err != nil {
-					return agent.AgentToolResult{}, err
+					return engine.AgentToolResult{}, err
 				}
 				switch fixtureCase.ToolBehavior {
 				case "parallel-second-finishes-first":
@@ -184,7 +184,7 @@ func runF3Case(t *testing.T, fixedNow int64, fixtureCase f3Case) {
 						select {
 						case <-releaseFirst:
 						case <-ctx.Done():
-							return agent.AgentToolResult{}, ctx.Err()
+							return engine.AgentToolResult{}, ctx.Err()
 						}
 					}
 					return f3ToolResult("echo", value, false), nil
@@ -192,28 +192,28 @@ func runF3Case(t *testing.T, fixedNow int64, fixtureCase f3Case) {
 					steeringReady.Store(true)
 					return f3ToolResult("echo", value, false), nil
 				case "throw":
-					return agent.AgentToolResult{}, errors.New("fixture tool exploded")
+					return engine.AgentToolResult{}, errors.New("fixture tool exploded")
 				case "terminate-all":
 					if value == "second" {
 						select {
 						case <-releaseSecondTerminate:
 						case <-ctx.Done():
-							return agent.AgentToolResult{}, ctx.Err()
+							return engine.AgentToolResult{}, ctx.Err()
 						}
 					}
 					return f3ToolResult("finished", value, true), nil
 				case "echo":
 					return f3ToolResult("echo", value, false), nil
 				case "none":
-					return agent.AgentToolResult{}, errors.New("scenario configured a tool with no behavior")
+					return engine.AgentToolResult{}, errors.New("scenario configured a tool with no behavior")
 				default:
-					return agent.AgentToolResult{}, fmt.Errorf("unknown F3 tool behavior %q", fixtureCase.ToolBehavior)
+					return engine.AgentToolResult{}, fmt.Errorf("unknown F3 tool behavior %q", fixtureCase.ToolBehavior)
 				}
 			},
 		}
 	}
 
-	steeringMessages := make(agent.AgentMessages, 0)
+	steeringMessages := make(engine.AgentMessages, 0)
 	if fixtureCase.Steering != nil {
 		for _, raw := range fixtureCase.Steering.Messages {
 			steeringMessages = append(steeringMessages, mustF3Message(t, raw))
@@ -228,10 +228,10 @@ func runF3Case(t *testing.T, fixedNow int64, fixtureCase f3Case) {
 	toolResultOrder := make([]string, 0)
 	eventCount := 0
 	aborted := false
-	sink := func(_ context.Context, event agent.AgentEvent) error {
+	sink := func(_ context.Context, event engine.AgentEvent) error {
 		sinkMu.Lock()
 		defer sinkMu.Unlock()
-		encoded, err := agent.MarshalAgentEvent(event)
+		encoded, err := engine.MarshalAgentEvent(event)
 		if err != nil {
 			return err
 		}
@@ -240,7 +240,7 @@ func runF3Case(t *testing.T, fixedNow int64, fixtureCase f3Case) {
 		eventCount++
 
 		switch typed := event.(type) {
-		case agent.ToolExecutionEndEvent:
+		case engine.ToolExecutionEndEvent:
 			toolEndOrder = append(toolEndOrder, typed.ToolCallID)
 			if typed.ToolCallID == "parallel-2" {
 				releaseFirstOnce.Do(func() { close(releaseFirst) })
@@ -248,11 +248,11 @@ func runF3Case(t *testing.T, fixedNow int64, fixtureCase f3Case) {
 			if typed.ToolCallID == "terminate-1" {
 				releaseSecondTerminateOnce.Do(func() { close(releaseSecondTerminate) })
 			}
-		case agent.MessageEndEvent:
+		case engine.MessageEndEvent:
 			if result, ok := typed.Message.(*ai.ToolResultMessage); ok {
 				toolResultOrder = append(toolResultOrder, result.ToolCallID)
 			}
-		case agent.MessageUpdateEvent:
+		case engine.MessageUpdateEvent:
 			if fixtureCase.Abort != nil && !aborted && isF3TextDelta(typed.AssistantMessageEvent) {
 				aborted = true
 				cancel()
@@ -261,21 +261,21 @@ func runF3Case(t *testing.T, fixedNow int64, fixtureCase f3Case) {
 		return nil
 	}
 
-	config := agent.AgentLoopConfig{
+	config := engine.AgentLoopConfig{
 		Model:         provider.GetModel(),
-		ToolExecution: agent.ToolExecutionMode(fixtureCase.ToolExecution),
+		ToolExecution: engine.ToolExecutionMode(fixtureCase.ToolExecution),
 		Now:           func() int64 { return fixedNow },
 	}
 	if fixtureCase.Steering != nil {
-		config.GetSteeringMessages = func(context.Context) (agent.AgentMessages, error) {
+		config.GetSteeringMessages = func(context.Context) (engine.AgentMessages, error) {
 			if !steeringReady.Load() || !steeringDelivered.CompareAndSwap(false, true) {
-				return agent.AgentMessages{}, nil
+				return engine.AgentMessages{}, nil
 			}
-			return append(agent.AgentMessages(nil), steeringMessages...), nil
+			return append(engine.AgentMessages(nil), steeringMessages...), nil
 		}
 	}
 
-	_, err := agent.RunLoop(ctx, agent.AgentMessages{prompt}, agent.AgentContext{
+	_, err := engine.RunLoop(ctx, engine.AgentMessages{prompt}, engine.AgentContext{
 		SystemPrompt: fixtureCase.SystemPrompt,
 		Tools:        tools,
 	}, config, sink, provider.StreamSimple)
@@ -346,8 +346,8 @@ func f3StringArgument(params any, name string) (string, error) {
 	return value, nil
 }
 
-func f3ToolResult(prefix, value string, terminate bool) agent.AgentToolResult {
-	result := agent.AgentToolResult{
+func f3ToolResult(prefix, value string, terminate bool) engine.AgentToolResult {
+	result := engine.AgentToolResult{
 		Content: ai.ToolResultContent{&ai.TextContent{Text: prefix + ":" + value}},
 		Details: map[string]any{"value": value},
 	}

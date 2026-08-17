@@ -1,0 +1,521 @@
+package agent
+
+import (
+	"context"
+	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"sync/atomic"
+	"testing"
+
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	modetheme "github.com/OrdalieTech/orb/agent/modes/theme"
+	sessionstore "github.com/OrdalieTech/orb/agent/session"
+)
+
+func writeSkillFixture(t *testing.T, directory, name, description string) {
+	t.Helper()
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := fmt.Sprintf("---\nname: %s\ndescription: %s\n---\nbody\n", name, description)
+	if err := os.WriteFile(filepath.Join(directory, "SKILL.md"), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeResourceFixture(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDefaultResourceLoaderOverridesAndSDKReuse(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.SetProjectTrusted(true)
+	customPrompt := "custom SDK prompt"
+	loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+		CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
+		NoSkills: true, NoPromptTemplates: true, NoContextFiles: true,
+		AppendSystemPrompt: []string{},
+		ExtensionFactories: []extensions.Factory{func(extensions.API) error { return nil }},
+		SkillsOverride: func(ResourceSkillsResult) ResourceSkillsResult {
+			return ResourceSkillsResult{Skills: []Skill{{Name: "inspect", Description: "Inspect", Content: "inspect carefully", FilePath: "/virtual/SKILL.md"}}}
+		},
+		PromptsOverride: func(ResourcePromptsResult) ResourcePromptsResult {
+			return ResourcePromptsResult{Prompts: []PromptTemplate{{Name: "deploy", Content: "deploy now", FilePath: "/virtual/deploy.md"}}}
+		},
+		ThemesOverride: func(ResourceThemesResult) ResourceThemesResult {
+			return ResourceThemesResult{Themes: []*modetheme.Theme{{Name: "sdk"}}}
+		},
+		AgentsFilesOverride: func(ResourceAgentsFilesResult) ResourceAgentsFilesResult {
+			return ResourceAgentsFilesResult{AgentsFiles: []ContextFile{{Path: "/virtual/AGENTS.md", Content: "SDK context"}}}
+		},
+		SystemPromptOverride: func(*string) *string { return &customPrompt },
+		AppendSystemPromptOverride: func(base []string) []string {
+			return append(base, "SDK append")
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trustCalls := 0
+	if err := loader.Reload(context.Background(), &ResourceLoaderReloadOptions{
+		ResolveProjectTrust: func(_ context.Context, registry *extensions.Registry) (bool, error) {
+			trustCalls++
+			if !registry.HasPath("<inline:sdk-1>") {
+				t.Fatal("project trust ran before extension discovery")
+			}
+			return false, nil
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if trustCalls != 1 || settings.IsProjectTrusted() {
+		t.Fatalf("trust calls=%d trusted=%t", trustCalls, settings.IsProjectTrusted())
+	}
+	if got := loader.GetSystemPrompt(); got == nil || *got != customPrompt {
+		t.Fatalf("system prompt = %#v", got)
+	}
+	if got := loader.GetAppendSystemPrompt(); !reflect.DeepEqual(got, []string{"SDK append"}) {
+		t.Fatalf("append prompt = %#v", got)
+	}
+	if got := loader.GetSkills().Skills; len(got) != 1 || got[0].Name != "inspect" {
+		t.Fatalf("skills = %#v", got)
+	}
+	if got := loader.GetPrompts().Prompts; len(got) != 1 || got[0].Name != "deploy" {
+		t.Fatalf("prompts = %#v", got)
+	}
+	if got := loader.GetThemes().Themes; len(got) != 1 || got[0].Name != "sdk" {
+		t.Fatalf("themes = %#v", got)
+	}
+	if got := loader.GetAgentsFiles().AgentsFiles; len(got) != 1 || got[0].Content != "SDK context" {
+		t.Fatalf("agents files = %#v", got)
+	}
+
+	manager, err := sessionstore.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := testFaux(100_000)
+	ignored := "legacy resources must not override the loader"
+	result, err := NewAgentSession(AgentSessionOptions{
+		CWD: cwd, AgentDir: agentDir, SessionManager: manager,
+		Model: provider.GetModel(), StreamFn: provider.StreamSimple,
+		Resources: &Resources{SystemPrompt: &ignored}, ResourceLoader: loader,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Session.Dispose()
+	if result.Services.ResourceLoader != loader || result.ExtensionRegistry != loader.GetExtensions() {
+		t.Fatal("SDK did not retain the supplied resource loader services")
+	}
+	prompt := result.Session.Agent().State().SystemPrompt
+	if !strings.Contains(prompt, customPrompt) || strings.Contains(prompt, ignored) || !strings.Contains(prompt, "SDK context") {
+		t.Fatalf("assembled prompt = %q", prompt)
+	}
+	if expanded, handled := result.Session.slashResolver.ResolvePrompt("/deploy"); handled || expanded != "deploy now" {
+		t.Fatalf("prompt expansion handled=%t value=%q", handled, expanded)
+	}
+}
+
+func TestDefaultResourceLoaderPromptSources(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir), config.WithProjectTrusted(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	systemPath := filepath.Join(cwd, ".pi", "SYSTEM.md")
+	appendPath := filepath.Join(cwd, ".pi", "APPEND_SYSTEM.md")
+	writeResourceFixture(t, systemPath, "system")
+	writeResourceFixture(t, appendPath, "append")
+
+	t.Run("discovered files survive content overrides", func(t *testing.T) {
+		overriddenSystem := "overridden system"
+		loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+			CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
+			NoExtensions: true, NoSkills: true, NoPromptTemplates: true, NoThemes: true,
+			SystemPromptOverride: func(*string) *string { return &overriddenSystem },
+			AppendSystemPromptOverride: func([]string) []string {
+				return []string{"overridden append"}
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = loader.Reload(context.Background(), nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := loader.GetSystemPromptSource(); got == nil || got.Path != systemPath {
+			t.Fatalf("system prompt source = %#v, want %q", got, systemPath)
+		}
+		if got := loader.GetAppendSystemPromptSources(); !reflect.DeepEqual(got, []PromptSource{{Path: appendPath}}) {
+			t.Fatalf("append prompt sources = %#v", got)
+		}
+
+		loader.GetSystemPromptSource().Path = "mutated"
+		sources := loader.GetAppendSystemPromptSources()
+		sources[0].Path = "mutated"
+		if loader.GetSystemPromptSource().Path != systemPath ||
+			loader.GetAppendSystemPromptSources()[0].Path != appendPath {
+			t.Fatal("prompt source getters exposed loader state")
+		}
+	})
+
+	t.Run("literal inputs have no source", func(t *testing.T) {
+		literal := "literal system"
+		loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+			CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
+			NoExtensions: true, NoSkills: true, NoPromptTemplates: true, NoThemes: true,
+			SystemPrompt: &literal, AppendSystemPrompt: []string{appendPath, "literal append"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = loader.Reload(context.Background(), nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := loader.GetSystemPromptSource(); got != nil {
+			t.Fatalf("literal system source = %#v", got)
+		}
+		if got := loader.GetAppendSystemPromptSources(); !reflect.DeepEqual(got, []PromptSource{{Path: appendPath}}) {
+			t.Fatalf("mixed append prompt sources = %#v", got)
+		}
+	})
+}
+
+func TestDefaultResourceLoaderExtendResourcesLoadsImmediately(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", t.TempDir())
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	skillDir := filepath.Join(t.TempDir(), "extended")
+	promptPath := filepath.Join(t.TempDir(), "review.md")
+	writeSkillFixture(t, skillDir, "extended", "Extended skill")
+	writeResourceFixture(t, promptPath, "review now")
+	loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+		CWD: cwd, AgentDir: agentDir, NoContextFiles: true, AppendSystemPrompt: []string{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loader.Reload(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	loader.ExtendResources(ResourceExtensionPaths{
+		SkillPaths: []ResourcePath{{Path: skillDir, Metadata: PathMetadata{
+			Source: "sdk", Scope: "temporary", Origin: "extension", BaseDir: filepath.Dir(skillDir),
+		}}},
+		PromptPaths: []ResourcePath{{Path: promptPath, Metadata: PathMetadata{
+			Source: "sdk", Scope: "temporary", Origin: "extension", BaseDir: filepath.Dir(promptPath),
+		}}},
+	})
+	if got := loader.GetSkills().Skills; len(got) != 1 || got[0].Name != "extended" || got[0].SourceInfo.Source != "sdk" || got[0].SourceInfo.Origin != "extension" {
+		t.Fatalf("extended skills = %#v", got)
+	}
+	if got := loader.GetPrompts().Prompts; len(got) != 1 || got[0].Name != "review" || got[0].SourceInfo.Source != "sdk" || got[0].SourceInfo.Origin != "extension" {
+		t.Fatalf("extended prompts = %#v", got)
+	}
+}
+
+func TestDefaultResourceLoaderExtendResourcesNormalizesMergesAndRetags(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", t.TempDir())
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	skillDir := filepath.Join(cwd, "extension resources", "skill")
+	promptPath := filepath.Join(cwd, "extension resources", "review.md")
+	writeSkillFixture(t, skillDir, "extension-skill", "Extension skill")
+	writeResourceFixture(t, promptPath, "review now")
+	loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+		CWD: cwd, AgentDir: agentDir, NoContextFiles: true, AppendSystemPrompt: []string{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loader.Reload(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	secondBase := filepath.Join(cwd, "second base")
+	loader.ExtendResources(ResourceExtensionPaths{
+		SkillPaths: []ResourcePath{
+			{Path: filepath.Join("extension resources", "skill"), Metadata: PathMetadata{Source: "first", Scope: "temporary", Origin: "extension", BaseDir: "first base"}},
+			{Path: (&url.URL{Scheme: "file", Path: skillDir}).String(), Metadata: PathMetadata{Source: "second", Scope: "temporary", Origin: "extension", BaseDir: "second base"}},
+		},
+		PromptPaths: []ResourcePath{
+			{Path: filepath.Join("extension resources", "review.md"), Metadata: PathMetadata{Source: "first", Scope: "temporary", Origin: "extension", BaseDir: "first base"}},
+			{Path: (&url.URL{Scheme: "file", Path: promptPath}).String(), Metadata: PathMetadata{Source: "second", Scope: "temporary", Origin: "extension", BaseDir: "second base"}},
+		},
+	})
+
+	skills := loader.GetSkills()
+	if len(skills.Skills) != 1 || len(skills.Diagnostics) != 0 {
+		t.Fatalf("skills = %#v diagnostics = %#v", skills.Skills, skills.Diagnostics)
+	}
+	skill := skills.Skills[0]
+	if skill.FilePath != filepath.Join(skillDir, "SKILL.md") || skill.SourceInfo.Source != "second" || skill.SourceInfo.BaseDir != secondBase {
+		t.Fatalf("skill source info = %#v", skill.SourceInfo)
+	}
+	prompts := loader.GetPrompts()
+	if len(prompts.Prompts) != 1 || len(prompts.Diagnostics) != 0 {
+		t.Fatalf("prompts = %#v diagnostics = %#v", prompts.Prompts, prompts.Diagnostics)
+	}
+	prompt := prompts.Prompts[0]
+	if prompt.FilePath != promptPath || prompt.SourceInfo.Source != "second" || prompt.SourceInfo.BaseDir != secondBase {
+		t.Fatalf("prompt source info = %#v", prompt.SourceInfo)
+	}
+}
+
+func TestDefaultResourceLoaderKeepsSkillAndPromptDiagnosticsIndependent(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	missingSkill := filepath.Join(cwd, "missing-skill")
+	missingPrompt := filepath.Join(cwd, "missing-prompt.md")
+	loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+		CWD: cwd, AgentDir: agentDir, NoContextFiles: true, AppendSystemPrompt: []string{},
+		AdditionalSkillPaths: []string{missingSkill}, AdditionalPromptTemplatePaths: []string{missingPrompt},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loader.Reload(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	skillDiagnostics := loader.GetSkills().Diagnostics
+	if len(skillDiagnostics) != 1 || skillDiagnostics[0].Path != missingSkill || strings.Contains(skillDiagnostics[0].Message, "Prompt") {
+		t.Fatalf("skill diagnostics = %#v", skillDiagnostics)
+	}
+	promptDiagnostics := loader.GetPrompts().Diagnostics
+	if len(promptDiagnostics) != 1 || promptDiagnostics[0].Path != missingPrompt || !strings.Contains(promptDiagnostics[0].Message, "Prompt") {
+		t.Fatalf("prompt diagnostics = %#v", promptDiagnostics)
+	}
+}
+
+func TestDefaultResourceLoaderKeepsDisabledDiscoveryMetadataForExplicitPaths(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	skillDir := filepath.Join(agentDir, "skills", "explicit")
+	promptPath := filepath.Join(agentDir, "prompts", "explicit.md")
+	writeSkillFixture(t, skillDir, "explicit", "Explicit skill")
+	writeResourceFixture(t, promptPath, "explicit prompt")
+	loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+		CWD: cwd, AgentDir: agentDir, NoSkills: true, NoPromptTemplates: true, NoContextFiles: true,
+		AdditionalSkillPaths: []string{skillDir}, AdditionalPromptTemplatePaths: []string{promptPath},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loader.Reload(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	for name, source := range map[string]SourceInfo{
+		"skill":  loader.GetSkills().Skills[0].SourceInfo,
+		"prompt": loader.GetPrompts().Prompts[0].SourceInfo,
+	} {
+		if source.Source != "auto" || source.Scope != "user" || source.Origin != "top-level" || source.BaseDir != agentDir {
+			t.Errorf("%s source = %#v", name, source)
+		}
+	}
+}
+
+func TestDefaultResourceLoaderExtendResourcesLoadsThemesImmediately(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	themePath := filepath.Join(cwd, "extension-theme.json")
+	builtin, err := os.ReadFile(filepath.Join("modes", "theme", "dark.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeResourceFixture(t, themePath, strings.Replace(string(builtin), `"name": "dark"`, `"name": "extension-theme"`, 1))
+	loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+		CWD: cwd, AgentDir: agentDir, NoContextFiles: true, NoThemes: true, AppendSystemPrompt: []string{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loader.Reload(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	loader.ExtendResources(ResourceExtensionPaths{
+		ThemePaths: []ResourcePath{{Path: "extension-theme.json", Metadata: PathMetadata{
+			Source: "extension:theme", Scope: "temporary", Origin: "extension", BaseDir: ".",
+		}}},
+	})
+
+	themes := loader.GetThemes()
+	if len(themes.Diagnostics) != 0 || len(themes.Themes) != 1 || themes.Themes[0].Name != "extension-theme" || themes.Themes[0].SourcePath != themePath {
+		t.Fatalf("themes = %#v diagnostics = %#v", themes.Themes, themes.Diagnostics)
+	}
+	loaded := themes.Themes[0]
+	if loaded.SourceInfo == nil || loaded.SourceInfo.Path != themePath || loaded.SourceInfo.Source != "extension:theme" || loaded.SourceInfo.BaseDir == nil || *loaded.SourceInfo.BaseDir != cwd {
+		t.Fatalf("theme source info = %#v", loaded.SourceInfo)
+	}
+	if again := loader.GetThemes().Themes[0]; again != loaded {
+		t.Fatal("GetThemes replaced the parsed theme object")
+	}
+}
+
+func TestAgentSessionInstallsExtensionDiscoveredThemesIntoResourceLoader(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	themePath := filepath.Join(cwd, "extension-theme.json")
+	builtin, err := os.ReadFile(filepath.Join("modes", "theme", "dark.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeResourceFixture(t, themePath, strings.Replace(string(builtin), `"name": "dark"`, `"name": "extension-theme"`, 1))
+	loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+		CWD: cwd, AgentDir: agentDir, NoContextFiles: true, NoThemes: true, AppendSystemPrompt: []string{},
+		ExtensionFactories: []extensions.Factory{func(api extensions.API) error {
+			api.On(extensions.EventResourcesDiscover, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+				return extensions.ResourcesDiscoverResult{ThemePaths: []string{themePath}}, nil
+			})
+			return nil
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loader.Reload(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := testFaux(100_000)
+	result, err := NewAgentSession(AgentSessionOptions{
+		CWD: cwd, AgentDir: agentDir, SessionManager: manager, Model: provider.GetModel(),
+		StreamFn: provider.StreamSimple, ResourceLoader: loader, NoTools: "all",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Session.Dispose()
+
+	themes := loader.GetThemes().Themes
+	if len(themes) != 1 || themes[0].Name != "extension-theme" || themes[0].SourceInfo == nil {
+		t.Fatalf("extension-discovered themes = %#v", themes)
+	}
+	if got := themes[0].SourceInfo.Source; got != "extension:inline:sdk-1" {
+		t.Fatalf("extension-discovered source = %q", got)
+	}
+	if result.Session.ResourceLoader() != loader {
+		t.Fatal("session did not retain its resource loader")
+	}
+}
+
+func TestSessionRuntimeReloadReplacesExtensionDiscoveredResourcesAndSharesLoaderRegistry(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", t.TempDir())
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	builtin, err := os.ReadFile(filepath.Join("modes", "theme", "dark.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	themePaths := []string{filepath.Join(cwd, "theme-a.json"), filepath.Join(cwd, "theme-b.json")}
+	skillPaths := []string{filepath.Join(cwd, "skill-a"), filepath.Join(cwd, "skill-b")}
+	promptPaths := []string{filepath.Join(cwd, "prompt-a.md"), filepath.Join(cwd, "prompt-b.md")}
+	for index, suffix := range []string{"a", "b"} {
+		writeResourceFixture(t, themePaths[index], strings.Replace(string(builtin), `"name": "dark"`, `"name": "theme-`+suffix+`"`, 1))
+		writeSkillFixture(t, skillPaths[index], "skill-"+suffix, "Skill "+strings.ToUpper(suffix))
+		writeResourceFixture(t, promptPaths[index], "prompt "+suffix)
+	}
+
+	var generation atomic.Int32
+	loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+		CWD: cwd, AgentDir: agentDir, NoContextFiles: true, NoThemes: true, AppendSystemPrompt: []string{},
+		ExtensionFactories: []extensions.Factory{func(api extensions.API) error {
+			api.RegisterFlag("reload-registry", extensions.Flag{Type: extensions.FlagString, Default: "initial"})
+			api.On(extensions.EventResourcesDiscover, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+				index := int(generation.Load())
+				return extensions.ResourcesDiscoverResult{
+					SkillPaths: []string{skillPaths[index]}, PromptPaths: []string{promptPaths[index]}, ThemePaths: []string{themePaths[index]},
+				}, nil
+			})
+			return nil
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loader.Reload(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := testFaux(100_000)
+	result, err := NewAgentSession(AgentSessionOptions{
+		CWD: cwd, AgentDir: agentDir, SessionManager: manager, Model: provider.GetModel(),
+		StreamFn: provider.StreamSimple, ResourceLoader: loader, NoTools: "all",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Session.Dispose()
+
+	oldRegistry := loader.GetExtensions()
+	generation.Store(1)
+	if err := result.Session.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := loader.GetSkills().Skills; len(got) != 1 || got[0].Name != "skill-b" {
+		t.Errorf("reloaded skills = %#v, want only skill-b", got)
+	}
+	if got := loader.GetPrompts().Prompts; len(got) != 1 || got[0].Name != "prompt-b" {
+		t.Errorf("reloaded prompts = %#v, want only prompt-b", got)
+	}
+	if got := loader.GetThemes().Themes; len(got) != 1 || got[0].Name != "theme-b" {
+		t.Errorf("reloaded themes = %#v, want only theme-b", got)
+	}
+	newRegistry := loader.GetExtensions()
+	if newRegistry == oldRegistry {
+		t.Error("resource loader retained its pre-reload extension registry")
+	} else {
+		newRegistry.SetFlagValue("reload-registry", "owned-by-loader")
+		if got := result.Session.ExtensionRunner().FlagValues()["reload-registry"]; got != "owned-by-loader" {
+			t.Errorf("session runner flag = %#v, want loader registry value", got)
+		}
+	}
+}
+
+func TestResourcesFromLoaderPreservesPerTypeDiagnosticLists(t *testing.T) {
+	cwd, agentDir := t.TempDir(), t.TempDir()
+	diagnostic := ResourceDiagnostic{Type: "warning", Message: "same diagnostic", Path: "/shared/path"}
+	loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+		CWD: cwd, AgentDir: agentDir, NoSkills: true, NoPromptTemplates: true, NoThemes: true, NoContextFiles: true,
+		AppendSystemPrompt: []string{},
+		SkillsOverride: func(result ResourceSkillsResult) ResourceSkillsResult {
+			result.Diagnostics = []ResourceDiagnostic{diagnostic}
+			return result
+		},
+		PromptsOverride: func(result ResourcePromptsResult) ResourcePromptsResult {
+			result.Diagnostics = []ResourceDiagnostic{diagnostic}
+			return result
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loader.Reload(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	resources := resourcesFromLoader(loader)
+	if !reflect.DeepEqual(resources.Diagnostics, []ResourceDiagnostic{diagnostic, diagnostic}) {
+		t.Fatalf("combined diagnostics = %#v", resources.Diagnostics)
+	}
+}

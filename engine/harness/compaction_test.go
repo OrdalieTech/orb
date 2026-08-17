@@ -1,0 +1,402 @@
+package harness
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/engine"
+)
+
+func TestCompactionTokenAccountingAndThreshold(t *testing.T) {
+	usage := ai.Usage{Input: 1000, Output: 500, CacheRead: 200, CacheWrite: 100, TotalTokens: 1800}
+	if got := CalculateContextTokens(usage); got != 1800 {
+		t.Fatalf("context tokens = %d", got)
+	}
+	usage.TotalTokens = 0
+	if got := CalculateContextTokens(usage); got != 1800 {
+		t.Fatalf("fallback context tokens = %d", got)
+	}
+	settings := CompactionSettings{Enabled: true, ReserveTokens: 10000, KeepRecentTokens: 20000}
+	if !ShouldCompact(90001, 100000, settings) {
+		t.Fatal("strictly over threshold did not compact")
+	}
+	if ShouldCompact(90000, 100000, settings) {
+		t.Fatal("threshold equality compacted")
+	}
+	settings.Enabled = false
+	if ShouldCompact(95000, 100000, settings) {
+		t.Fatal("disabled settings compacted")
+	}
+}
+
+func TestEstimateContextTokensUsesLastValidUsageAndTrailingEstimate(t *testing.T) {
+	errorText := "overloaded"
+	messages := engine.AgentMessages{
+		user("hello"),
+		assistant("first", 120),
+		user("😀tail"),
+		&ai.AssistantMessage{StopReason: ai.StopReasonError, ErrorMessage: &errorText, Usage: ai.Usage{}, Content: ai.AssistantContent{}},
+	}
+	estimate := EstimateContextTokens(messages)
+	if estimate.LastUsageIndex == nil || *estimate.LastUsageIndex != 1 || estimate.UsageTokens != 120 {
+		t.Fatalf("estimate anchor = %#v", estimate)
+	}
+	wantTrailing := EstimateTokens(messages[2]) + EstimateTokens(messages[3])
+	if estimate.TrailingTokens != wantTrailing || estimate.Tokens != 120+wantTrailing {
+		t.Fatalf("estimate = %#v, trailing want %d", estimate, wantTrailing)
+	}
+	image := &ai.ToolResultMessage{Content: ai.ToolResultContent{&ai.TextContent{Text: "text"}, &ai.ImageContent{MimeType: "image/png"}}}
+	if got := EstimateTokens(image); got <= 1000 {
+		t.Fatalf("image estimate = %d", got)
+	}
+}
+
+func TestFindCutPointAndPrepareCompaction(t *testing.T) {
+	entries := linearEntries(
+		user("old request that is long enough to summarize"), assistant("old answer that is long enough to summarize", 60),
+		user("recent request"), assistant("recent answer", 100),
+	)
+	cut := FindCutPoint(entries, 0, len(entries), 5)
+	if cut.FirstKeptEntryIndex != 2 || cut.TurnStartIndex != -1 || cut.IsSplitTurn {
+		t.Fatalf("cut = %#v", cut)
+	}
+	prepared, err := PrepareCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared == nil || len(prepared.MessagesToSummarize) != 2 || len(prepared.RetainedTail) != 2 {
+		t.Fatalf("preparation = %#v", prepared)
+	}
+	if prepared.TokensBefore != 100 {
+		t.Fatalf("tokens before = %d", prepared.TokensBefore)
+	}
+}
+
+func TestPrepareTreeCompaction(t *testing.T) {
+	entries := []SessionTreeEntry{
+		{Type: "message", ID: "old-user", Timestamp: timestamp(1), Message: json.RawMessage(`{"role":"user","content":"old request that is long enough to summarize","timestamp":1}`)},
+		{Type: "message", ID: "old-assistant", ParentID: ptr("old-user"), Timestamp: timestamp(2), Message: json.RawMessage(`{"role":"assistant","content":[{"type":"text","text":"old answer that is long enough to summarize"}],"api":"x","provider":"x","model":"x","usage":{"input":30,"output":30,"cacheRead":0,"cacheWrite":0,"totalTokens":60,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":2}`)},
+		{Type: "message", ID: "recent-user", ParentID: ptr("old-assistant"), Timestamp: timestamp(3), Message: json.RawMessage(`{"role":"user","content":"recent request","timestamp":3}`)},
+		{Type: "message", ID: "recent-assistant", ParentID: ptr("recent-user"), Timestamp: timestamp(4), Message: json.RawMessage(`{"role":"assistant","content":[{"type":"text","text":"recent answer"}],"api":"x","provider":"x","model":"x","usage":{"input":50,"output":50,"cacheRead":0,"cacheWrite":0,"totalTokens":100,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":4}`)},
+	}
+
+	prepared, err := PrepareTreeCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared == nil || len(prepared.MessagesToSummarize) != 2 || len(prepared.RetainedTail) != 2 {
+		t.Fatalf("preparation = %#v", prepared)
+	}
+}
+
+// On a second compaction the previous compaction entry sits inside the scanned
+// range (firstKeptEntryId points before it), and upstream weighs it through
+// sessionEntryToContextMessages. Expectations come from running upstream
+// findCutPoint (coding-agent compaction.ts:403) on the same entries.
+func TestFindCutPointWeighsPreviousCompactionEntry(t *testing.T) {
+	entries := linearEntries(
+		user("old request "+strings.Repeat("o", 60)),
+		assistant("old answer "+strings.Repeat("p", 60), 0),
+		user("kept request "+strings.Repeat("k", 60)),
+		assistant("kept answer "+strings.Repeat("q", 60), 0),
+	)
+	entries = append(entries,
+		SessionEntry{
+			Type: "compaction", ID: "compact-1", ParentID: ptr("entry-3"), Timestamp: timestamp(5),
+			Summary: strings.Repeat("S", 400), FirstKeptEntryID: "entry-2", TokensBefore: 900,
+		},
+		SessionEntry{Type: "message", ID: "entry-5", ParentID: ptr("compact-1"), Timestamp: timestamp(6), Message: user("new request " + strings.Repeat("n", 60))},
+		SessionEntry{Type: "message", ID: "entry-6", ParentID: ptr("entry-5"), Timestamp: timestamp(7), Message: assistant("new answer "+strings.Repeat("m", 60), 0)},
+	)
+	for _, testCase := range []struct {
+		keepRecentTokens int64
+		want             CutPointResult
+	}{
+		{keepRecentTokens: 40, want: CutPointResult{FirstKeptEntryIndex: 5, TurnStartIndex: -1}},
+		{keepRecentTokens: 140, want: CutPointResult{FirstKeptEntryIndex: 3, TurnStartIndex: 2, IsSplitTurn: true}},
+	} {
+		if got := FindCutPoint(entries, 2, len(entries), testCase.keepRecentTokens); got != testCase.want {
+			t.Fatalf("keepRecentTokens=%d cut = %#v, want %#v", testCase.keepRecentTokens, got, testCase.want)
+		}
+	}
+}
+
+func TestV081CompactPropagatesRetainedTail(t *testing.T) {
+	tail := engine.AgentMessages{user("retained")}
+	preparation := &CompactionPreparation{
+		FirstKeptEntryID: "kept", MessagesToSummarize: engine.AgentMessages{user("old")}, RetainedTail: tail,
+		TokensBefore: 20, FileOps: newFileOperations(), Settings: CompactionSettings{ReserveTokens: 100},
+	}
+	complete := func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
+		return assistant("summary", 3), nil
+	}
+	result, err := Compact(context.Background(), preparation, &ai.Model{MaxTokens: 100}, complete, "", ai.ModelThinkingOff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.FirstKeptEntryID != "kept" || len(result.RetainedTail) != 1 || messageRole(result.RetainedTail[0]) != "user" {
+		t.Fatalf("compaction result = %#v", result)
+	}
+	tail[0] = assistant("mutated", 1)
+	if messageRole(result.RetainedTail[0]) != "assistant" {
+		t.Fatal("result did not retain the upstream preparation slice")
+	}
+}
+
+func TestV081PublicCompactionResultWirePreservesEmptyRetainedTail(t *testing.T) {
+	withTail, err := json.Marshal(CompactionResult{
+		Summary: "summary", TokensBefore: 12, RetainedTail: engine.AgentMessages{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(withTail), `{"summary":"summary","tokensBefore":12,"retainedTail":[]}`; got != want {
+		t.Fatalf("public compaction result = %s, want %s", got, want)
+	}
+	withoutTail, err := json.Marshal(CompactionResult{Summary: "summary", TokensBefore: 12})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(withoutTail), `{"summary":"summary","tokensBefore":12}`; got != want {
+		t.Fatalf("legacy public compaction result = %s, want %s", got, want)
+	}
+}
+
+func TestPrepareLegacyCompactionRejectsSessionWithNoDiscardableMessages(t *testing.T) {
+	entries := linearEntries(user("short request"), assistant("short answer", 10))
+	prepared, err := PrepareLegacyCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 16384, KeepRecentTokens: 20000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared != nil {
+		t.Fatalf("preparation = %#v, want nil", prepared)
+	}
+}
+
+func TestPrepareLegacyCompactionRejectsSingleUserMessage(t *testing.T) {
+	entries := linearEntries(user("only request"))
+	prepared, err := PrepareLegacyCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 20_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared != nil {
+		t.Fatalf("preparation = %#v, want nil", prepared)
+	}
+}
+
+func TestPrepareCompactionCarriesPreviousSummaryAndFileDetails(t *testing.T) {
+	call := &ai.ToolCall{ID: "call", Name: "write", Arguments: map[string]any{"path": "new.go"}}
+	entries := linearEntries(user("old"), &ai.AssistantMessage{Content: ai.AssistantContent{call}, StopReason: ai.StopReasonStop, Usage: usage(20)})
+	fromHook := false
+	entries = append(entries, SessionEntry{
+		Type: "compaction", ID: "compact", ParentID: ptr(entries[len(entries)-1].ID), Timestamp: timestamp(3),
+		Summary: "old summary", TokensBefore: 20,
+		RetainedTail: engine.AgentMessages{&ai.AssistantMessage{Content: ai.AssistantContent{call}, StopReason: ai.StopReasonStop, Usage: usage(20)}},
+		Details:      CompactionDetails{ReadFiles: []string{"old-read.go"}, ModifiedFiles: []string{"old-edit.go"}}, FromHook: fromHook,
+	})
+	entries = append(entries, SessionEntry{Type: "message", ID: "entry-3", ParentID: ptr("compact"), Timestamp: timestamp(4), Message: user("latest request")})
+	entries = append(entries, SessionEntry{Type: "message", ID: "entry-4", ParentID: ptr("entry-3"), Timestamp: timestamp(5), Message: assistant(strings.Repeat("answer ", 30), 80)})
+	prepared, err := PrepareCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared == nil || prepared.PreviousSummary == nil || *prepared.PreviousSummary != "old summary" {
+		t.Fatalf("preparation = %#v", prepared)
+	}
+	if _, ok := prepared.FileOps.Read["old-read.go"]; !ok {
+		t.Fatal("previous read details missing")
+	}
+	if _, ok := prepared.FileOps.Edited["old-edit.go"]; !ok {
+		t.Fatal("previous edit details missing")
+	}
+	if _, ok := prepared.FileOps.Written["new.go"]; !ok {
+		t.Fatal("tool operation missing")
+	}
+}
+
+func TestSerializeConversationSkipsUnprojectableCustomMessage(t *testing.T) {
+	messages := engine.AgentMessages{
+		&CustomMessage{Role: "custom", CustomType: "broken", Content: 42},
+		user("kept"),
+	}
+	if got := SerializeConversation(messages); got != "[User]: kept" {
+		t.Fatalf("serialized = %q", got)
+	}
+}
+
+func TestPrepareLegacyCompactionReportsNothingToCompactForUnmigratedEntry(t *testing.T) {
+	entries := linearEntries(user("old request"), assistant(strings.Repeat("old answer ", 30), 80), user("recent"))
+	entries[2].ID = ""
+	prepared, err := PrepareLegacyCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 1})
+	if err != nil || prepared != nil {
+		t.Fatalf("prepared = %#v, err = %v, want nil, nil", prepared, err)
+	}
+	// Harness >=0.84 no longer resolves entry ids and accepts unmigrated entries.
+	if harnessPrepared, err := PrepareCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 1}); err != nil || harnessPrepared == nil {
+		t.Fatalf("harness prepared = %#v, err = %v", harnessPrepared, err)
+	}
+}
+
+func TestSummaryPromptStructureAndReasoning(t *testing.T) {
+	model := &ai.Model{Reasoning: true, MaxTokens: 128, ContextWindow: 1000}
+	previous := "old summary"
+	var seen ai.Context
+	var seenOptions ai.SimpleStreamOptions
+	complete := func(_ context.Context, _ *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
+		seen = request
+		seenOptions = *options
+		return assistant("## Goal\nDone", 10), nil
+	}
+	summary, err := GenerateSummary(context.Background(), engine.AgentMessages{user("work")}, model, complete, 1000, "focus", &previous, ai.ModelThinkingMedium)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary != "## Goal\nDone" || seen.SystemPrompt == nil || *seen.SystemPrompt != SummarizationSystemPrompt {
+		t.Fatalf("summary=%q context=%#v", summary, seen)
+	}
+	prompt := userMessageTextForTest(seen.Messages[0])
+	for _, required := range []string{"<conversation>", "<previous-summary>\nold summary", UpdateSummarizationPrompt, "Additional focus: focus"} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("prompt missing %q", required)
+		}
+	}
+	if seenOptions.MaxTokens == nil || *seenOptions.MaxTokens != 128 || seenOptions.Reasoning == nil || *seenOptions.Reasoning != ai.ThinkingMedium {
+		t.Fatalf("options = %#v", seenOptions)
+	}
+}
+
+func TestSummaryRequestsUseFreshSessionsWithoutCacheRetention(t *testing.T) {
+	model := &ai.Model{MaxTokens: 128, ContextWindow: 1000}
+	var seen []ai.SimpleStreamOptions
+	complete := func(_ context.Context, _ *ai.Model, _ ai.Context, options *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
+		seen = append(seen, *options)
+		return assistant("summary", 10), nil
+	}
+	for range 2 {
+		if _, err := GenerateSummary(context.Background(), engine.AgentMessages{user("work")}, model, complete, 1000, "", nil, ai.ModelThinkingOff); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reserveTokens := int64(100)
+	if _, err := GenerateBranchSummary(context.Background(), linearEntries(user("branch")), GenerateBranchSummaryOptions{
+		Model: model, Complete: complete, ReserveTokens: &reserveTokens,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 3 {
+		t.Fatalf("summary requests = %d, want 3", len(seen))
+	}
+	sessionIDs := make(map[string]struct{}, len(seen))
+	for _, options := range seen {
+		if options.CacheRetention == nil || *options.CacheRetention != ai.CacheRetentionNone {
+			t.Fatalf("cache retention = %#v", options.CacheRetention)
+		}
+		if options.SessionID == nil || len(*options.SessionID) != 36 || (*options.SessionID)[14] != '7' {
+			t.Fatalf("session ID = %#v, want UUIDv7", options.SessionID)
+		}
+		sessionIDs[*options.SessionID] = struct{}{}
+	}
+	if len(sessionIDs) != len(seen) {
+		t.Fatalf("summary session IDs were reused: %#v", seen)
+	}
+}
+
+func TestBranchPreparationAndPrompt(t *testing.T) {
+	read := &ai.ToolCall{ID: "read", Name: "read", Arguments: map[string]any{"path": "a.go"}}
+	entries := linearEntries(user("branch request"), &ai.AssistantMessage{Content: ai.AssistantContent{read}, StopReason: ai.StopReasonStop, Usage: usage(20)})
+	prepared := PrepareBranchEntries(entries, 1000)
+	if len(prepared.Messages) != 2 || prepared.TotalTokens == 0 {
+		t.Fatalf("prepared = %#v", prepared)
+	}
+	model := &ai.Model{ContextWindow: 1000, MaxTokens: 100}
+	var prompt string
+	complete := func(_ context.Context, _ *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
+		prompt = userMessageTextForTest(request.Messages[0])
+		if options.MaxTokens == nil || *options.MaxTokens != 2048 {
+			t.Fatalf("max tokens = %#v", options.MaxTokens)
+		}
+		return assistant("## Goal\nBranch", 10), nil
+	}
+	reserveTokens := int64(100)
+	result, err := GenerateBranchSummary(context.Background(), entries, GenerateBranchSummaryOptions{Model: model, Complete: complete, ReserveTokens: &reserveTokens})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(result.Summary, BranchSummaryPreamble) || !strings.Contains(prompt, BranchSummaryPrompt) {
+		t.Fatalf("result=%#v prompt=%q", result, prompt)
+	}
+	if len(result.ReadFiles) != 1 || result.ReadFiles[0] != "a.go" {
+		t.Fatalf("read files = %#v", result.ReadFiles)
+	}
+}
+
+// Regression: both upstream branch-summarization getMessageFromEntry variants
+// project a branch_summary unconditionally, so an empty summary still renders
+// its wrapper text instead of being dropped from the summarization prompt.
+func TestPrepareBranchEntriesProjectsEmptySummaryBranchSummary(t *testing.T) {
+	entries := linearEntries(user("branch request"))
+	entries = append(entries, SessionEntry{
+		Type: "branch_summary", ID: "entry-branch", ParentID: ptr(entries[0].ID),
+		Timestamp: timestamp(2), Summary: "", FromID: "entry-0",
+	})
+	prepared := PrepareBranchEntries(entries, 0)
+	if len(prepared.Messages) != 2 {
+		t.Fatalf("messages = %d, want 2 (empty-summary branch_summary must be projected)", len(prepared.Messages))
+	}
+	serialized := SerializeConversation(prepared.Messages)
+	want := "[User]: branch request\n\n[User]: " + branchSummaryPrefix + branchSummarySuffix
+	if serialized != want {
+		t.Fatalf("serialized = %q, want %q", serialized, want)
+	}
+}
+
+func user(text string) *ai.UserMessage {
+	return &ai.UserMessage{Content: ai.NewUserContent(&ai.TextContent{Text: text}), Timestamp: 1}
+}
+
+func assistant(text string, tokens int64) *ai.AssistantMessage {
+	return &ai.AssistantMessage{
+		Content: ai.AssistantContent{&ai.TextContent{Text: text}}, API: "faux", Provider: "faux", Model: "faux-1",
+		Usage: usage(tokens), StopReason: ai.StopReasonStop, Timestamp: 2,
+	}
+}
+
+func usage(tokens int64) ai.Usage {
+	return ai.Usage{Input: tokens, TotalTokens: tokens, Cost: ai.Cost{}}
+}
+
+func linearEntries(messages ...engine.AgentMessage) []SessionEntry {
+	entries := make([]SessionEntry, 0, len(messages))
+	var parent *string
+	for index, message := range messages {
+		id := "entry-" + string(rune('0'+index))
+		entries = append(entries, SessionEntry{Type: "message", ID: id, ParentID: parent, Timestamp: timestamp(index + 1), Message: message})
+		parent = ptr(id)
+	}
+	return entries
+}
+
+func timestamp(second int) string { return "2025-01-01T00:00:" + fmtTwoDigits(second) + ".000Z" }
+func fmtTwoDigits(value int) string {
+	return string([]byte{'0' + byte(value/10), '0' + byte(value%10)})
+}
+func ptr(value string) *string { return &value }
+
+func userMessageTextForTest(message ai.Message) string {
+	userMessage, _ := message.(*ai.UserMessage)
+	if userMessage == nil {
+		return ""
+	}
+	if userMessage.Content.Text != nil {
+		return *userMessage.Content.Text
+	}
+	for _, block := range userMessage.Content.Blocks {
+		if text, ok := block.(*ai.TextContent); ok {
+			return text.Text
+		}
+	}
+	return ""
+}

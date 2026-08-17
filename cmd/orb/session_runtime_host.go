@@ -7,11 +7,11 @@ import (
 	"sync"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/extensions"
-	"github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 type cliSessionRuntimeHostOptions struct {
@@ -28,21 +28,21 @@ type cliSessionRuntimeHostOptions struct {
 
 type cliPrintSession struct {
 	ctx  context.Context
-	host *codingagent.AgentSessionRuntime
+	host *agent.AgentSessionRuntime
 
 	mu          sync.Mutex
 	listener    func(any)
 	unsubscribe func()
 }
 
-func newCLIPrintSession(ctx context.Context, host *codingagent.AgentSessionRuntime) *cliPrintSession {
+func newCLIPrintSession(ctx context.Context, host *agent.AgentSessionRuntime) *cliPrintSession {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	return &cliPrintSession{ctx: ctx, host: host}
 }
 
-func (session *cliPrintSession) Bind(replacement *codingagent.AgentSession) error {
+func (session *cliPrintSession) Bind(replacement *agent.AgentSession) error {
 	if replacement == nil {
 		return fmt.Errorf("orb: print mode replacement returned no session")
 	}
@@ -75,11 +75,11 @@ func (session *cliPrintSession) Abort() {
 	}
 }
 
-func (session *cliPrintSession) State() agent.AgentState {
+func (session *cliPrintSession) State() engine.AgentState {
 	if current := session.host.Session(); current != nil {
 		return current.State()
 	}
-	return agent.AgentState{}
+	return engine.AgentState{}
 }
 
 func (session *cliPrintSession) Subscribe(listener func(any)) func() {
@@ -107,7 +107,7 @@ func (session *cliPrintSession) Subscribe(listener func(any)) func() {
 func newCLISessionRuntimeHost(
 	ctx context.Context,
 	options cliSessionRuntimeHostOptions,
-) (*codingagent.AgentSessionRuntime, error) {
+) (*agent.AgentSessionRuntime, error) {
 	if options.Manager == nil {
 		return nil, fmt.Errorf("orb: session runtime host requires a session manager")
 	}
@@ -115,7 +115,7 @@ func newCLISessionRuntimeHost(
 	if stderr == nil {
 		stderr = io.Discard
 	}
-	factory := func(_ context.Context, runtimeOptions codingagent.AgentSessionOptions) (*codingagent.AgentSessionResult, error) {
+	factory := func(_ context.Context, runtimeOptions agent.AgentSessionOptions) (*agent.AgentSessionResult, error) {
 		manager := runtimeOptions.SessionManager
 		if manager == nil {
 			return nil, fmt.Errorf("orb: replacement runtime requires a session manager")
@@ -154,7 +154,7 @@ func newCLISessionRuntimeHost(
 				return nil, settingsErr
 			}
 		}
-		sessionConfig := codingagent.SessionRuntimeConfig{
+		sessionConfig := agent.SessionRuntimeConfig{
 			Agent: inputs.Agent, SessionManager: manager, Settings: settings, StreamFn: inputs.StreamFn,
 			GetAPIKey: inputs.GetAPIKey, GetRequestAuth: inputs.GetRequestAuth, GetModelHeaders: inputs.GetModelHeaders,
 			AvailableModels:   inputs.AvailableModels,
@@ -179,14 +179,14 @@ func newCLISessionRuntimeHost(
 		// Providers key affinity and prompt caches on the session id; upstream
 		// createAgentSession passes sessionId into the Agent at construction.
 		inputs.Agent.SetStreamSessionID(manager.GetSessionID())
-		created, err := codingagent.NewSessionRuntime(sessionConfig)
+		created, err := agent.NewSessionRuntime(sessionConfig)
 		if err != nil {
 			return nil, err
 		}
-		diagnostics := make([]codingagent.AgentSessionRuntimeDiagnostic, 0, len(inputs.Diagnostics))
+		diagnostics := make([]agent.AgentSessionRuntimeDiagnostic, 0, len(inputs.Diagnostics))
 		for _, diagnostic := range inputs.Diagnostics {
 			message := startupDiagnosticText(diagnostic)
-			diagnostics = append(diagnostics, codingagent.AgentSessionRuntimeDiagnostic{Type: "warning", Message: message})
+			diagnostics = append(diagnostics, agent.AgentSessionRuntimeDiagnostic{Type: "warning", Message: message})
 			_, _ = fmt.Fprintln(stderr, "Warning: "+message)
 		}
 		agentDir, err := config.GetAgentDir()
@@ -194,9 +194,9 @@ func newCLISessionRuntimeHost(
 			created.Dispose()
 			return nil, err
 		}
-		return &codingagent.AgentSessionResult{
+		return &agent.AgentSessionResult{
 			Session: created, ExtensionRegistry: inputs.Extensions,
-			Services: &codingagent.AgentSessionServices{
+			Services: &agent.AgentSessionServices{
 				CWD: manager.GetCWD(), AgentDir: agentDir, SettingsManager: settings,
 				ModelRegistry: inputs.ModelRegistry, ExtensionRegistry: inputs.Extensions,
 			},
@@ -204,7 +204,7 @@ func newCLISessionRuntimeHost(
 		}, nil
 	}
 
-	return codingagent.NewAgentSessionRuntime(ctx, codingagent.AgentSessionOptions{
+	return agent.NewAgentSessionRuntime(ctx, agent.AgentSessionOptions{
 		CWD: options.Manager.GetCWD(), SessionManager: options.Manager,
 	}, factory)
 }

@@ -56,7 +56,7 @@ jobs:
           source_root="${build_root}/orb-${version}"
           test -f "${source_root}/go.mod"
           test -f "${source_root}/cmd/orb/main.go"
-          test -f "${source_root}/codingagent/modes/assets/CHANGELOG.md"
+          test -f "${source_root}/agent/modes/assets/CHANGELOG.md"
           if tar -tzf "${source_archive}" | grep -Eq '(^|/)(\.git|\.upstream|dist|node_modules)(/|$)'; then
             echo "source archive contains generated or private state" >&2
             exit 1

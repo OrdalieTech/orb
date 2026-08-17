@@ -19,8 +19,8 @@ package runner_test
 // (packages/coding-agent/src/modes/interactive/components/mermaid.ts).
 // Mirroring upstream's split between the transformer types
 // (core/extensions/types.ts) and the component (modes/interactive/components),
-// the context type lives in codingagent/extensions and the constructor in
-// codingagent/modes:
+// the context type lives in agent/extensions and the constructor in
+// agent/modes:
 //
 //	// package extensions
 //	type MarkdownTransformContext struct {
@@ -46,8 +46,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/OrdalieTech/orb/codingagent/extensions"
-	"github.com/OrdalieTech/orb/codingagent/modes"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/conformance/runner"
 	internalmermaid "github.com/OrdalieTech/orb/internal/mermaid"
 )

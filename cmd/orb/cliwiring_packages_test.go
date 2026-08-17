@@ -15,10 +15,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/extensions"
-	extensionhost "github.com/OrdalieTech/orb/codingagent/extensions/host"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
 )
 
 const packageToolExtension = `export default function (pi) {
@@ -83,10 +83,10 @@ func TestLoadCompiledExtensionsLoadsPackageProvidedExtensions(t *testing.T) {
 		t.Fatal(err)
 	}
 	extPath := writeJSExtension(t, filepath.Join(t.TempDir(), "pkg"), packageToolExtension)
-	packages := &codingagent.ResolvedPaths{
-		Extensions: []codingagent.ResolvedResource{{
+	packages := &agent.ResolvedPaths{
+		Extensions: []agent.ResolvedResource{{
 			Path: extPath, Enabled: true,
-			Metadata: codingagent.PathMetadata{Source: "npm:pkg", Scope: "user", Origin: "package"},
+			Metadata: agent.PathMetadata{Source: "npm:pkg", Scope: "user", Origin: "package"},
 		}},
 	}
 	registry, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{}, settings, packages)
@@ -108,10 +108,10 @@ func TestLoadCompiledExtensionsUsesExtensionHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	extPath := writeJSExtension(t, filepath.Join(t.TempDir(), "pkg"), packageToolExtension)
-	packages := &codingagent.ResolvedPaths{
-		Extensions: []codingagent.ResolvedResource{{
+	packages := &agent.ResolvedPaths{
+		Extensions: []agent.ResolvedResource{{
 			Path: extPath, Enabled: true,
-			Metadata: codingagent.PathMetadata{Source: "npm:pkg", Scope: "user", Origin: "package"},
+			Metadata: agent.PathMetadata{Source: "npm:pkg", Scope: "user", Origin: "package"},
 		}},
 	}
 	registry, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{}, settings, packages)
@@ -166,10 +166,10 @@ func TestLoadCompiledExtensionsHidesProjectPackageExtensionsUntilTrusted(t *test
 		t.Fatal(err)
 	}
 	extPath := writeJSExtension(t, filepath.Join(t.TempDir(), "proj-pkg"), packageToolExtension)
-	packages := &codingagent.ResolvedPaths{
-		Extensions: []codingagent.ResolvedResource{{
+	packages := &agent.ResolvedPaths{
+		Extensions: []agent.ResolvedResource{{
 			Path: extPath, Enabled: true,
-			Metadata: codingagent.PathMetadata{Source: "npm:pkg", Scope: "project", Origin: "package"},
+			Metadata: agent.PathMetadata{Source: "npm:pkg", Scope: "project", Origin: "package"},
 		}},
 	}
 	registry, _ := loadCompiledExtensions(cwd, agentDir, CLIArgs{}, settings, packages)

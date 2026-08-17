@@ -27,7 +27,7 @@ specification.
 Nine paradigms. Everything else in this record is operational memory.
 
 - **P1 — SDK-first, layered** *(formerly D1, D3)*. Orb is a Go module first; the `orb` CLI is one
-  consumer. Layers compose upward — `ai/` → `agent/` → `codingagent/` → assemblies (`cmd/orb`,
+  consumer. Layers compose upward — `ai/` → `engine/` → `agent/` → assemblies (`cmd/orb`,
   `chat/`, embedder mains) — and a capability's core lives at the lowest layer that can express it.
   Audience: Ordalie production embedding (including servers running many differently-configured
   instances in one process), personal daily-driver, and public OSS, simultaneously. Interfaces are
@@ -188,7 +188,7 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 | Compact built-in editor chrome | usability adaptation | while the built-in editor is mounted, a one-line transient status that fits moves into its top border and the explicit session name appears as a truncated themed badge at the right; dialogs, narrow statuses, scrolled drafts, and extension editors keep upstream's standard status lane, with keybindings and extension UI contracts unchanged |
 | Compact task and queue surfaces | usability adaptation | the bundled tasks plugin keeps its replacement schema and full branch-aware details but condenses persistent/collapsed rendering, makes the native TUI widget click-expandable with dimmed inset details, and adds an unbound `/tasks` full-list command; queued messages retain the configured dequeue binding and every queued item while adding a count to upstream's one-row truncation and edit hint |
 | Moonshot Kimi K3 compat metadata | resolved parity | `thinkingFormat: openai` and reasoning-effort support entered the pinned upstream in v0.81.1 and remain regression-tested |
-| `AgentHarness` orchestration facade | dissolved | D29; harness primitives remain in `agent/harness`, while the high-level embedding lifecycle stays in `codingagent.AgentSession` |
+| `AgentHarness` orchestration facade | dissolved | D29; harness primitives remain in `engine/harness`, while the high-level embedding lifecycle stays in `agent.AgentSession` |
 | `streamProxy` `/api/stream` client | excluded | D29; application-specific proxy protocols use `agent.WithStreamFn` and the public streaming-JSON helper |
 | `chat/` gateway package (+ `chat/telegram`, `chat/whatsapp`) | addition | owner requirement (D27); kept out of core, strictly one-way dependency on the SDK |
 | `AgentSessionOptions` tool-operations injection hook | addition | D27; ergonomic seam over the existing `NewSessionRuntime`/`BaseTools` path for VFS/sandboxed tool operations |
@@ -207,7 +207,7 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 | RPC untyped-dispatch residual | gap | frames with a known command but a mistyped member (e.g. `{"type":"prompt","message":5}`) answer `success:false` with Go decoder text where upstream surfaces the JS `TypeError` of untyped dispatch; byte parity would mean emulating per-command V8 runtime errors. Frame shape and the missing/non-string/null `type` path are byte-exact |
 | `OAuthCredentials` extra members serialize sorted | Go API adaptation | upstream builds the credentials object in JS, so extra members keep insertion order; orb carries extras in a Go map, which has none. Declared members match upstream's declaration order and extras follow, sorted for determinism |
 | Markdown session export | addition | upstream `--export` emits HTML only; an output path ending in `.md` routes to the WP-320 markdown exporter, every other path keeps upstream's HTML behavior and the help text is unchanged |
-| Concurrent `AfterToolCall` hooks and `EventSink` in parallel tool mode | Go API adaptation | upstream's promises interleave at await points but never run simultaneously; orb's parallel workers invoke both concurrently, so an embedder porting a hook that mutates shared state without locks must add its own synchronization (documented at `agent/types.go`) |
+| Concurrent `AfterToolCall` hooks and `EventSink` in parallel tool mode | Go API adaptation | upstream's promises interleave at await points but never run simultaneously; orb's parallel workers invoke both concurrently, so an embedder porting a hook that mutates shared state without locks must add its own synchronization (documented at `engine/types.go`) |
 | Parallel tool fan-out bounded at 16 | Go resource adaptation | upstream's `Promise.all` (`agent-loop.ts:539`) is unbounded because JS tool calls are cooperative; in Go each call is a goroutine that may spawn subprocesses, so a model-controlled fan-out is a resource risk. Result ordering is unchanged |
 | Tool-update sink driven by one bounded queue (256) | Go API adaptation | upstream's sink is an event-loop callback, so `emit` is a synchronous call that still never blocks the tool and is awaited per call at `agent-loop.ts:694`; Go's `EventSink` blocks, so a drain goroutine reproduces both ordering and non-blocking. A sink more than 256 updates behind backpressures rather than dropping an event |
 | Native mouse and click support in interactive mode | addition | owner requirement (2026-07-25). Upstream consumes mouse reports only for transcript selection and the scrollbar. orb adds an optional `tui.MouseHandler` found by type assertion, so D15's `Render(width int) []string` contract is unchanged and every existing component and extension UI keeps working. SGR (1006) reports are offered to the component under the cursor before falling back to the existing scrollbar, wheel and selection behavior; an in-flight drag or any modifier skips dispatch, preserving native drag-select and shift-bypass. Wired: `/tree`, `/resume`, `SelectList`, `SettingsList`, the extension option dialog, and the editor. Excluded: the transcript body and inline TUIs, which have no known screen origin |
@@ -234,7 +234,7 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 
 - **D27 — Chat gateway `chat/` (owner, 2026-07-19), durable constraints.** An at-least-once
   processor around `AgentSession` with a `SessionProvider` lease/hydration seam and platform
-  adapters. Dependency direction is strictly `chat → codingagent`. Delivery state lives in
+  adapters. Dependency direction is strictly `chat → agent`. Delivery state lives in
   `orb.chat.turn` custom session entries — the session JSONL is the single durable history; turn
   finalization keys off `AgentSettledEvent`, and crash recovery reads raw entries, never the built
   context. Tools are off by default; enabling them requires an injected isolated workspace. The
@@ -249,8 +249,8 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 - **D29 — One high-level agent runtime (agent, 2026-07-20).** The pinned upstream exports a
   second `AgentHarness` orchestrator from `packages/agent`, but its own coding-agent still uses
   `AgentSession`; upstream documents that migration as pi 2.0 work. orb keeps the already-ported
-  session, repository, compaction, resource, and environment primitives in `agent/harness`, while
-  `codingagent.AgentSession` remains the sole high-level embedding runtime. Reimplementing the
+  session, repository, compaction, resource, and environment primitives in `engine/harness`, while
+  `agent.AgentSession` remains the sole high-level embedding runtime. Reimplementing the
   1,029-line facade would duplicate queues, hooks, persistence ordering, and lifecycle state, and
   placing a wrapper in `agent` would invert the package dependency. The adjacent `streamProxy`
   client is also excluded: its `/api/stream` endpoint is an application protocol rather than agent
@@ -259,7 +259,7 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 
 - **D36 — Session search is a slim Go service, not a transliterated generic API (agent, 2026-08-17).**
   Upstream v0.84.2 dissolved `harness/session/search.ts` into standalone `packages/agent/src/search/`;
-  orb never ported the predecessor, so only the new surface exists here, as `agent/search`. Scanning
+  orb never ported the predecessor, so only the new surface exists here, as `engine/search`. Scanning
   behavior is ported exactly (trimmed case-insensitive match, source order, oldest-first entries,
   cursor paging, single-type storage pushdown, limits, cancellation, duplicate-session-id guard); the
   shape is not: the metadata type parameter collapses to `Session{ID, Readable}`, `AsyncIterable`

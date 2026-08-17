@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 // coalescer collapses streamed assistant partials into a latest-full-snapshot.
@@ -31,7 +31,7 @@ func (c *coalescer) observe(event any) {
 			c.panics.Add(1)
 		}
 	}()
-	update, ok := event.(agent.MessageUpdateEvent)
+	update, ok := event.(engine.MessageUpdateEvent)
 	if !ok {
 		return
 	}

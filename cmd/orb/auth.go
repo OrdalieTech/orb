@@ -13,11 +13,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/providers"
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
 )
 
 type credentialPrintKind string
@@ -263,7 +263,7 @@ func credentialPrintModels(
 	credentialTypes map[string]aiauth.CredentialType,
 ) ([]ai.Model, error) {
 	if args.Provider != nil && *args.Provider != "" {
-		resolution := codingagent.ResolveCLIModel(*args.Provider, *args.Model, nil, available)
+		resolution := agent.ResolveCLIModel(*args.Provider, *args.Model, nil, available)
 		if resolution.Error != "" || resolution.Model == nil {
 			if resolution.Error != "" {
 				return nil, credentialPrintError(resolution.Error)
@@ -283,7 +283,7 @@ func credentialPrintModels(
 		if _, ok := credentialTypes[provider]; !ok {
 			continue
 		}
-		resolution := codingagent.ResolveCLIModel(provider, *args.Model, nil, available)
+		resolution := agent.ResolveCLIModel(provider, *args.Model, nil, available)
 		if resolution.Model == nil || resolution.Error != "" || strings.Contains(resolution.Warning, "Using custom model id") {
 			continue
 		}

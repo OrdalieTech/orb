@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/OrdalieTech/orb/codingagent/tools"
+	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/conformance/runner"
 )
 

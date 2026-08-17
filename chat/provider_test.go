@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
-	"github.com/OrdalieTech/orb/codingagent"
 )
 
 func newTestLocalProvider(t testing.TB, opts ...LocalProviderOption) (*LocalProvider, string) {
@@ -210,7 +210,7 @@ func TestLocalProviderDisablesToolsUnlessHookOverrides(t *testing.T) {
 
 	var hookKey ConversationKey
 	var defaultNoTools string
-	hooked, _ := newTestLocalProvider(t, WithSessionOptions(func(k ConversationKey, o *codingagent.AgentSessionOptions) {
+	hooked, _ := newTestLocalProvider(t, WithSessionOptions(func(k ConversationKey, o *agent.AgentSessionOptions) {
 		hookKey = k
 		defaultNoTools = o.NoTools
 		o.NoTools = ""
@@ -271,7 +271,7 @@ func BenchmarkDurableTurn(b *testing.B) {
 				b.Fatal(err)
 			}
 			llm := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
-			provider, root := newTestLocalProvider(b, WithAgentDir(agentDir), WithSessionOptions(func(_ ConversationKey, o *codingagent.AgentSessionOptions) {
+			provider, root := newTestLocalProvider(b, WithAgentDir(agentDir), WithSessionOptions(func(_ ConversationKey, o *agent.AgentSessionOptions) {
 				o.Model, o.StreamFn = llm.GetModel(), llm.StreamSimple
 			}))
 			key := ConversationKey{Platform: "faux", Account: "bot", ChatID: test.chatID}

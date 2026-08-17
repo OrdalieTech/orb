@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
-	"github.com/OrdalieTech/orb/codingagent/tools"
 	"github.com/OrdalieTech/orb/conformance/runner"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 type wp440ReadFixture struct {
@@ -77,7 +77,7 @@ func TestWP440ReadImageResultMatchesUpstream(t *testing.T) {
 			for index, modality := range fixtureCase.ModelInput {
 				modalities[index] = ai.InputModality(modality)
 			}
-			ctx := agent.WithToolExecutionModel(context.Background(), &ai.Model{Input: modalities})
+			ctx := engine.WithToolExecutionModel(context.Background(), &ai.Model{Input: modalities})
 			got, err := tool.Execute(ctx, "fixture-call", map[string]any{"path": "fixture.png"}, nil)
 			if err != nil {
 				t.Fatal(err)

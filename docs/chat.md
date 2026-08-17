@@ -1,11 +1,11 @@
 # Chat gateway
 
 The `chat` package (D27) turns the orb SDK into a multi-user messaging agent: a synchronous,
-at-least-once turn processor around `codingagent.AgentSession` with normalized platform messages,
+at-least-once turn processor around `agent.AgentSession` with normalized platform messages,
 a `SessionProvider` ownership seam, and platform adapters in `chat/telegram`, `chat/whatsapp`,
 and — since wave 2 (D28) — `chat/slack`, `chat/teams`, `chat/discord`, `chat/messenger`, and
 `chat/googlechat` (see [Platforms](#platforms-wave-2)).
-Dependency direction is strictly `chat → codingagent`; nothing in the SDK imports `chat`.
+Dependency direction is strictly `chat → agent`; nothing in the SDK imports `chat`.
 
 ## Quick start — local Telegram bot
 
@@ -75,7 +75,7 @@ type SessionProvider interface {
 }
 
 type Conversation struct {
-    Session *codingagent.AgentSession
+    Session *agent.AgentSession
     Manager *sessionstore.SessionManager // ledger writes + raw entry reads
     Close   func(ctx context.Context) error // exactly once
 }
@@ -100,7 +100,7 @@ must be an explicit, isolated decision:
 
 ```go
 provider, err := chat.NewLocalProvider(root,
-    chat.WithSessionOptions(func(key chat.ConversationKey, o *codingagent.AgentSessionOptions) {
+    chat.WithSessionOptions(func(key chat.ConversationKey, o *agent.AgentSessionOptions) {
         o.NoTools = ""
         o.CWD = workspaceFor(key)          // never a shared host directory
         o.ToolOptions = &tools.ToolsOptions{ // optional: inject sandboxed operations

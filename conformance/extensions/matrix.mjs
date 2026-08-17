@@ -557,7 +557,7 @@ async function runProbe(runtime, extensionPaths, options) {
 	await symlink(path.join(options.packages, "node_modules"), path.join(runRoot, "node_modules"));
 	extensionPaths = extensionPaths.map((extensionPath) => (extensionPath === options.observer ? observerPath : extensionPath));
 
-	// Engine forcing. orb's DiscoverRuntime (codingagent/extensions/host/runtime.go:32)
+	// Engine forcing. orb's DiscoverRuntime (agent/extensions/host/runtime.go:32)
 	// resolves `node` from PATH first and only falls back to `bun`, and there is no
 	// product env override. The bun tier therefore gets a PATH whose only engine is
 	// a bun symlink; `node` must not be resolvable at all, and the observer proves

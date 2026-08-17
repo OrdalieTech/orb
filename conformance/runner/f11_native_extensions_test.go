@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
-	"github.com/OrdalieTech/orb/codingagent/extensions"
 	"github.com/OrdalieTech/orb/conformance/runner"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 func TestF11NativeExtensionDispatchMatchesUpstream(t *testing.T) {
@@ -96,7 +96,7 @@ func runF11NativeCases(t *testing.T) map[string]any {
 			return extensions.ContextResult(event), nil
 		})
 	})
-	originalContext := agent.AgentMessages{map[string]any{"role": "custom", "nested": map[string]any{"value": "original"}}}
+	originalContext := engine.AgentMessages{map[string]any{"role": "custom", "nested": map[string]any{"value": "original"}}}
 	contextResult := extensions.NewRunner(contextRegistry, extensions.RunnerOptions{CWD: "/fixture"}).EmitContext(ctx, originalContext)
 
 	toolResultRegistry := extensions.NewRegistry("/fixture")

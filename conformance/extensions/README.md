@@ -30,7 +30,7 @@ Node reference, so a Node-only regression and a Bun-only regression are separate
 
 ### How Bun is forced, and how you know it worked
 
-orb's `DiscoverRuntime` (`codingagent/extensions/host/runtime.go:32`) resolves `node` from `PATH`
+orb's `DiscoverRuntime` (`agent/extensions/host/runtime.go:32`) resolves `node` from `PATH`
 first and only falls back to `bun` (`runtime.go:46`). There is no environment override in product
 source, and this harness deliberately does not add one. Forcing therefore happens entirely in the
 harness:

@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
-	"github.com/OrdalieTech/orb/codingagent/tools"
 	"github.com/OrdalieTech/orb/internal/jstrim"
 	textunicode "golang.org/x/text/encoding/unicode"
 )

@@ -14,16 +14,16 @@ e.g. `packages/agent/src/agent-loop.ts`. The sync tool materializes that checkou
 ```
 orb/
 ├── go.mod                    module github.com/OrdalieTech/orb   (go ≥ 1.26.5)
-├── cmd/orb/                   CLI entry point (thin: arg parsing → codingagent)
+├── cmd/orb/                   CLI entry point (thin: arg parsing → agent)
 ├── ai/                       port of packages/ai        — importable alone
 │   ├── api/                  one file per API shape (openaresponses.go, anthropicmessages.go, …)
 │   ├── providers/            provider registry + per-provider metadata (generated + hand corrections)
 │   ├── auth/                 credential store, OAuth flows (PKCE, device-code)
 │   └── models/               catalog: generated data, models.dev refresh, models.json overlay
-├── agent/                    port of packages/agent     — loop, Agent, harness
+├── engine/                    port of packages/agent     — loop, Agent, harness
 │   └── harness/              session repo, compaction, skills, system-prompt, env abstraction
 ├── tui/                      port of packages/tui       — renderer + components, zero framework
-├── codingagent/              port of packages/coding-agent — the product wiring
+├── agent/              port of packages/coding-agent — the product wiring
 │   ├── tools/                read, bash, edit, write, grep, find, ls (+ operations interfaces)
 │   ├── extensions/           Go-native extension API: types, registry, runner (event dispatch)
 │   │   └── host/             Node/Bun child host, protocol, JS ExtensionAPI bindings
@@ -32,9 +32,9 @@ orb/
 │   ├── modes/                tui, print, json, rpc
 │   ├── mcp/                  bundled MCP extension (official go-sdk), built on extensions API
 │   └── plugins/              first-party bundled-but-dormant plugins (D32–D34)
-├── chat/                     chat gateway + platform adapters (D27/D28 additions; chat → codingagent only)
+├── chat/                     chat gateway + platform adapters (D27/D28 additions; chat → agent only)
 ├── memory/                   MemoryStore seam + JSONL store (D34 addition)
-│   └── agent/                generic Agent attachment + bounded memory tools
+│   └── engine/                generic Agent attachment + bounded memory tools
 ├── internal/
 │   ├── jsonschema/           Schema type + reflection helper (gate G1)
 │   ├── jsonwire/             JSON.stringify-compatible wire encoder
@@ -60,10 +60,10 @@ orb/
 
 ### Mirroring rules (normative)
 
-1. Package ↔ package: `packages/ai` ↔ `ai/`, `packages/agent` ↔ `agent/`, `packages/tui` ↔ `tui/`,
-   `packages/coding-agent` ↔ `codingagent/`.
-2. File ↔ file where idiomatic: `agent-loop.ts` → `agent/loop.go`, `edit-diff.ts` →
-   `codingagent/tools/editdiff.go`. Split only when Go conventions demand (e.g. `_test.go`,
+1. Package ↔ package: `packages/ai` ↔ `ai/`, `packages/agent` ↔ `engine/`, `packages/tui` ↔ `tui/`,
+   `packages/coding-agent` ↔ `agent/`.
+2. File ↔ file where idiomatic: `agent-loop.ts` → `engine/loop.go`, `edit-diff.ts` →
+   `agent/tools/editdiff.go`. Split only when Go conventions demand (e.g. `_test.go`,
    platform suffixes `bash_unix.go`/`bash_windows.go`).
 3. Exported identifiers keep upstream names Go-cased: `AgentEvent`, `ToolResultMessage`,
    `runAgentLoop` → `RunLoop` (receiver-free), event name strings **unchanged** (`"message_update"`).
@@ -116,12 +116,12 @@ compat flags (`supportsDeveloperRole`, `supportsCacheControlOnTools`, `supportsT
 `PI_CACHE_RETENTION`; OpenAI `prompt_cache_key` + session-affinity header formats
 (`packages/ai/src/api/openai-prompt-cache.ts`).
 
-**Auth.** `ai/auth`: credential store interface (file impl lives in `codingagent/config`), API-key
+**Auth.** `ai/auth`: credential store interface (file impl lives in `agent/config`), API-key
 env resolution, OAuth: anthropic PKCE (localhost :53692 callback + manual paste fallback),
 openai-codex, github-copilot device flow, xai. Port from `packages/ai/src/auth/oauth/*`. Radius
 excluded (ledger).
 
-## 3. `agent/` — loop, Agent, harness
+## 3. `engine/` — loop, Agent, harness
 
 Upstream spec: `packages/agent/src/agent-loop.ts`, `agent.ts`, `types.ts`, `harness/`.
 
@@ -153,11 +153,11 @@ result fields, per-tool execution-mode override.
 **Harness.** Port of `packages/agent/src/harness/`: session repositories (JSONL + in-memory),
 compaction + branch summarization, skills loading, prompt-template plumbing, system-prompt assembly,
 execution-env abstraction (`env` interface — the seam later used by SSH/sandbox extensions). The
-`codingagent` layer's `AgentSession` (upstream `packages/coding-agent/src/core/agent-session.ts`,
+`agent` layer's `AgentSession` (upstream `packages/coding-agent/src/core/agent-session.ts`,
 spec `packages/coding-agent/docs/sdk.md`) is the high-level embedding API and the thing the SDK
-advertises; its 13 upstream SDK examples get Go ports under `codingagent/examples/`. D29 deliberately
+advertises; its 13 upstream SDK examples get Go ports under `agent/examples/`. D29 deliberately
 dissolves upstream's parallel `AgentHarness` facade into this runtime; the underlying harness
-primitives remain public without duplicating orchestration or making `agent` depend on `codingagent`.
+primitives remain public without duplicating orchestration or making `agent` depend on `agent`.
 
 ## 4. `tui/` — terminal UI
 
@@ -180,12 +180,12 @@ kitty keyboard protocol covers modifier reporting where the terminal supports it
 
 `Render(width) []string` is pure → TUI components are golden-testable (F12) and host-proxyable.
 
-## 5. `codingagent/` — the product
+## 5. `agent/` — the product
 
 Upstream spec: `packages/coding-agent/src/`, `docs/` (usage, settings, extensions, sdk, rpc, json,
 session-format, skills, prompt-templates, models, packages, themes).
 
-**Tools** (`codingagent/tools/`, upstream `src/core/tools/`): read (text + images: decode via
+**Tools** (`agent/tools/`, upstream `src/core/tools/`): read (text + images: decode via
 stdlib/x/image, resize ≤2000×2000, EXIF orientation; retain the image block on successful reads,
 including upstream's contradictory non-vision note claiming omission), bash (fresh
 `bash` spawn per call, command via stdin, streaming through the output accumulator, 50KB/2000-line
@@ -197,18 +197,18 @@ else auto-download upstream-style into `~/.pi/agent/bin` (`src/utils/tools-manag
 Operations interface (delegation seam), TUI `RenderCall`/`RenderResult`, file-mutation queue
 serializing writes per realpath (parallel execution default).
 
-**Sessions** (`codingagent/session/`): JSONL v3 in-file tree (header line, 8-hex ids, parentId,
+**Sessions** (`agent/session/`): JSONL v3 in-file tree (header line, 8-hex ids, parentId,
 leaf = position; entry types `message`, `model_change`, `thinking_level_change`, `compaction`,
 `branch_summary`, `custom`, `custom_message`, `label`, `session_info`), v1→v2→v3 auto-migration,
 location `~/.pi/agent/sessions/--<cwd-dashed>--/<ts>_<uuid>.jsonl`, overrides
 (`--session-dir` > `PI_CODING_AGENT_SESSION_DIR` > setting). Export to HTML (upstream
 `src/core/export-html/`) and markdown. Byte-compatible with TS pi — cross-read fixtures (F6) prove it.
 
-**Config** (`codingagent/config/`): settings manager (global deep-merged with project
+**Config** (`agent/config/`): settings manager (global deep-merged with project
 `.pi/settings.json`; unknown keys tolerated), auth storage (0600, legacy `oauth.json` migration),
 trust flow, keybindings, `PI_CODING_AGENT_DIR` override, models.json hot reload.
 
-**Extensions — Go-native core** (`codingagent/extensions/`): the full ExtensionAPI as Go interfaces,
+**Extensions — Go-native core** (`agent/extensions/`): the full ExtensionAPI as Go interfaces,
 mirroring `docs/extensions.md` and `src/core/extensions/types.ts`:
 - Event hooks: `project_trust`; `session_start/shutdown/before_switch/before_fork/before_compact/
   compact/before_tree/tree/info_changed`; `resources_discover`; `input`; `before_agent_start`;
@@ -230,7 +230,7 @@ Dispatch semantics ported from `runner.ts`: ordered middleware chains, error iso
 errors logged, agent continues; `tool_call` handler error blocks the call fail-safe), per-mode UI
 degradation (RPC bridges dialogs over the protocol; print/json = no-ops).
 
-**Extensions — JavaScript host** (`codingagent/extensions/host/`): all JavaScript and TypeScript
+**Extensions — JavaScript host** (`agent/extensions/host/`): all JavaScript and TypeScript
 extensions run in one owned local Node.js ≥22.6 or Bun child process. Discovery covers the
 trust-gated project directory, global directory, configured paths, resolved npm/git package paths,
 and explicit `-e` entries in upstream order. Node strips TypeScript natively and Bun executes it
@@ -241,7 +241,7 @@ source from its load hook so the package manager's own layout keeps governing re
 content-addressed beside `host.mjs`): pure ports of the exercised upstream symbols, thin
 session/settings/resource handles, and capability-negotiated services (`sdk_v1`,
 `agent_session_v1`, `model_runtime_v1`) that bridge `createAgentSession`, `ModelRuntime`, and
-`ModelRegistry` onto the Go runtime (`codingagent.ExtensionAgentSessionService`); every other
+`ModelRegistry` onto the Go runtime (`agent.ExtensionAgentSessionService`); every other
 upstream export throws a precise `OrbUnsupportedCapability` diagnostic. The loader refuses — as a
 per-extension resolve-time load failure — any resolution reaching a real installed pi SDK.
 Missing declared dependencies are materialized with npm or Bun before load.
@@ -256,11 +256,11 @@ stable Go wrappers. Unexpected exits use bounded restart/backoff; shutdown cance
 in-flight requests. If neither supported runtime exists, orb emits the D31 diagnostic once and
 continues without JavaScript extensions.
 
-**MCP** (`codingagent/mcp/`): bundled extension registering MCP servers from settings as tool
+**MCP** (`agent/mcp/`): bundled extension registering MCP servers from settings as tool
 sources via `modelcontextprotocol/go-sdk` (stdio + streamable HTTP), tools surfaced through the
 normal registration API with dynamic tool loading. Off unless configured.
 
-**Modes** (`codingagent/modes/`): TUI (default), print `-p` (stdin merge), json (AgentSessionEvent
+**Modes** (`agent/modes/`): TUI (default), print `-p` (stdin merge), json (AgentSessionEvent
 JSONL out — adds `queue_update`, `compaction_start/end`, `auto_retry_start/end` per `docs/json.md`),
 rpc (bidirectional JSONL stdin/stdout per `docs/rpc.md`: prompt/steer/follow-up/abort, session
 mgmt, get_commands, extension-UI bridging; strict LF framing). RPC is a conformance surface —

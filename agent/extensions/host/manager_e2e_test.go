@@ -1,0 +1,431 @@
+package host
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/engine"
+)
+
+func requireRuntime(t *testing.T) Runtime {
+	t.Helper()
+	runtime, err := DiscoverRuntime(context.Background())
+	if err != nil {
+		t.Skip("extension-host e2e requires Node.js >=22.6 or Bun on PATH")
+	}
+	return runtime
+}
+
+func fixturePath(t *testing.T, name string) string {
+	t.Helper()
+	path, err := filepath.Abs(filepath.Join("testdata", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// isolatedTempDir keeps Node's ancestor node_modules lookup inside the test
+// tree rather than inheriting packages installed under the system temp root.
+func isolatedTempDir(t *testing.T) string {
+	t.Helper()
+	path, err := os.MkdirTemp(".", ".orb-host-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err = filepath.Abs(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(path) })
+	return path
+}
+
+func startFixtureManager(t *testing.T, paths ...string) (*Manager, *extensions.Registry, *extensions.Runner, LoadResult, string) {
+	t.Helper()
+	return startFixtureManagerIn(t, t.TempDir(), paths...)
+}
+
+func startFixtureManagerIn(t *testing.T, agentDir string, paths ...string) (*Manager, *extensions.Registry, *extensions.Runner, LoadResult, string) {
+	t.Helper()
+	runtime := requireRuntime(t)
+	cwd := t.TempDir()
+	manager := NewManager(Options{
+		AgentDir: agentDir, CWD: cwd, Version: "test", Runtime: &runtime,
+		RequestTimeout: 30 * time.Second, ShutdownTimeout: time.Second,
+		BackoffBase: 10 * time.Millisecond, BackoffMax: 50 * time.Millisecond,
+	})
+	t.Cleanup(func() {
+		if err := manager.Close(); err != nil {
+			t.Errorf("close manager: %v", err)
+		}
+	})
+	registry := extensions.NewRegistry(cwd)
+	result := manager.RegisterInto(context.Background(), registry, paths)
+	runner := extensions.NewRunner(registry, extensions.RunnerOptions{CWD: cwd})
+	return manager, registry, runner, result, cwd
+}
+
+func TestRealHostRegistersAndExecutesToolCommandAndEvent(t *testing.T) {
+	_, _, runner, result, cwd := startFixtureManager(t, fixturePath(t, "working.mjs"))
+	if len(result.Diagnostics) != 0 || len(result.Errors) != 0 {
+		t.Fatalf("load result = %#v", result)
+	}
+	definition := runner.ToolDefinition("host_echo")
+	if definition == nil {
+		t.Fatal("host_echo was not registered")
+	}
+	var updates []engine.AgentToolResult
+	final, err := definition.Execute(context.Background(), "call-1", map[string]any{"text": "hello"}, func(update engine.AgentToolResult) {
+		updates = append(updates, update)
+	}, runner.CreateContext())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updates) != 1 || toolText(updates[0]) != "partial:hello" {
+		t.Fatalf("updates = %#v", updates)
+	}
+	if got := toolText(final); got != "final:hello" {
+		t.Fatalf("final text = %q", got)
+	}
+
+	command := runner.Command("host-command")
+	if command == nil {
+		t.Fatal("host-command was not registered")
+	}
+	if err := command.Handler(context.Background(), "command-value", runner.CreateCommandContext()); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(filepath.Join(cwd, "host-command.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "command-value" {
+		t.Fatalf("command output = %q", content)
+	}
+
+	eventResult := runner.EmitBeforeAgentStart(context.Background(), "prompt", nil, "system", extensions.SystemPromptOptions{})
+	if eventResult == nil || eventResult.SystemPrompt == nil || *eventResult.SystemPrompt != "system host-event" {
+		t.Fatalf("event result = %#v", eventResult)
+	}
+	if runner.ToolDefinition("host_dynamic") == nil {
+		t.Fatal("tool registered after factory completion was not bound")
+	}
+}
+
+func TestRealHostLoadsLocalTypeScriptEntryUnchanged(t *testing.T) {
+	entry := filepath.Join(t.TempDir(), "typed.ts")
+	writeFile(t, entry, `
+export default function (pi: any) {
+  const name: string = "typed_local";
+  pi.registerTool({
+    name,
+    label: "Typed local",
+    description: "Native TypeScript strip probe",
+    parameters: { type: "object", properties: {} },
+    constrainedSampling: { type: "json_schema", strict: "prefer" },
+    async execute() { return { content: [{ type: "text", text: "ok" }] }; }
+  });
+}
+`, 0o600)
+	_, _, runner, result, _ := startFixtureManager(t, entry)
+	if len(result.Diagnostics) != 0 || len(result.Errors) != 0 {
+		t.Fatalf("load result = %#v", result)
+	}
+	definition := runner.ToolDefinition("typed_local")
+	if definition == nil {
+		t.Fatal("typed local extension was not registered")
+	}
+	if sampling := definition.ConstrainedSampling; sampling == nil || sampling.Type != ai.ConstrainedSamplingJSONSchema || sampling.Strict != ai.ConstrainedSamplingPrefer {
+		t.Fatalf("constrained sampling = %#v", sampling)
+	}
+}
+
+func TestRealHostResolvesTypeScriptPackageImports(t *testing.T) {
+	root := t.TempDir()
+	packageDir := filepath.Join(root, "node_modules", "typed-package")
+	dependencyDir := filepath.Join(root, "node_modules", "typed-dependency")
+	transitiveDir := filepath.Join(root, "node_modules", "typed-transitive")
+	commonJSDir := filepath.Join(root, "node_modules", "commonjs-dependency")
+	commonJSTransitiveDir := filepath.Join(root, "node_modules", "commonjs-transitive")
+	entry := filepath.Join(packageDir, "index.ts")
+	writeFile(t, filepath.Join(packageDir, "package.json"), `{"name":"typed-package","type":"module","dependencies":{"commonjs-dependency":"1.0.0","typed-dependency":"1.0.0"}}`, 0o600)
+	writeFile(t, filepath.Join(packageDir, "extensionless.ts"), `export const first: string = "typed";`, 0o600)
+	writeFile(t, filepath.Join(packageDir, "js-target.ts"), `export const second: string = "package";`, 0o600)
+	writeFile(t, filepath.Join(dependencyDir, "package.json"), `{"name":"typed-dependency","type":"module","exports":"./index.ts","dependencies":{"typed-transitive":"1.0.0"}}`, 0o600)
+	writeFile(t, filepath.Join(dependencyDir, "index.ts"), `import { suffix } from "typed-transitive"; export const dependency: string = "dependency-" + suffix;`, 0o600)
+	writeFile(t, filepath.Join(transitiveDir, "package.json"), `{"name":"typed-transitive","type":"module","exports":"./index.js"}`, 0o600)
+	writeFile(t, filepath.Join(transitiveDir, "index.js"), `export const suffix = "transitive";`, 0o600)
+	writeFile(t, filepath.Join(commonJSDir, "package.json"), `{"name":"commonjs-dependency","main":"index.cjs","dependencies":{"commonjs-transitive":"1.0.0"}}`, 0o600)
+	writeFile(t, filepath.Join(commonJSDir, "index.cjs"), `const path = require("node:path"); module.exports = path.basename(path.dirname(require.resolve("commonjs-transitive/package.json", { paths: [__dirname] })));`, 0o600)
+	writeFile(t, filepath.Join(commonJSTransitiveDir, "package.json"), `{"name":"commonjs-transitive","main":"index.cjs"}`, 0o600)
+	writeFile(t, filepath.Join(commonJSTransitiveDir, "index.cjs"), `module.exports = "commonjs";`, 0o600)
+	writeFile(t, entry, `
+import { first } from "./extensionless";
+import { second } from "./js-target.js";
+import { dependency } from "typed-dependency";
+import commonjs from "commonjs-dependency";
+export default function (pi: any) {
+  pi.registerTool({
+    name: first + "_" + second + "_" + dependency + "_" + commonjs,
+    label: "Typed package",
+    description: import.meta.dirname,
+    parameters: { type: "object", properties: {} },
+    async execute() { return { content: [{ type: "text", text: "ok" }] }; }
+  });
+}
+`, 0o600)
+	_, _, runner, result, _ := startFixtureManager(t, entry)
+	if len(result.Diagnostics) != 0 || len(result.Errors) != 0 {
+		t.Fatalf("load result = %#v", result)
+	}
+	if runner.ToolDefinition("typed_package_dependency-transitive_commonjs-transitive") == nil {
+		t.Fatal("TypeScript package imports were not resolved")
+	}
+	// Node resolves module paths through symlinks unless told otherwise, so an
+	// extension sees where its code really lives — the same path upstream reports,
+	// since it imports extensions in-process with no flags of its own. On macOS
+	// even a temporary directory is reached through the /var symlink.
+	wantDir, err := filepath.EvalSymlinks(packageDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := runner.ToolDefinition("typed_package_dependency-transitive_commonjs-transitive").Description; got != wantDir {
+		t.Fatalf("tool source path = %q, want %q", got, wantDir)
+	}
+}
+
+// An extension that imports the coding-agent family without declaring it is
+// served by the embedded orb-extension-sdk alone. Neither the installed pi on
+// PATH — a complete one, whose own pi-tui says something else — nor a leftover
+// SDK copy in the npm root the deleted auto-provisioning used to target is
+// ever consulted.
+func TestRealHostServesPeerSDKFromEmbeddedTree(t *testing.T) {
+	runtime := requireRuntime(t)
+	if runtime.Name != "node" {
+		t.Skip("the SDK alias map is a Node loader feature")
+	}
+	agentDir := t.TempDir()
+	leftover := filepath.Join(agentDir, "npm", "node_modules", "@earendil-works", "pi-coding-agent")
+	writeFile(t, filepath.Join(leftover, "package.json"), `{"name":"@earendil-works/pi-coding-agent","type":"module","exports":"./dist/index.js"}`, 0o600)
+	writeFile(t, filepath.Join(leftover, "dist", "index.js"), "export const sdk = true;\n", 0o600)
+	writeFile(t, filepath.Join(leftover, "node_modules", "@earendil-works", "pi-tui", "package.json"), `{"name":"@earendil-works/pi-tui","type":"module","exports":"./index.js"}`, 0o600)
+	writeFile(t, filepath.Join(leftover, "node_modules", "@earendil-works", "pi-tui", "index.js"), `export const visibleWidth = () => "leftover-root";`, 0o600)
+
+	installedPi := filepath.Join(t.TempDir(), "lib", "node_modules", "@earendil-works", "pi-coding-agent")
+	writeFile(t, filepath.Join(installedPi, "package.json"), `{"name":"@earendil-works/pi-coding-agent","type":"module","exports":"./dist/index.js"}`, 0o600)
+	cli := filepath.Join(installedPi, "dist", "cli.js")
+	writeFile(t, cli, "#!/usr/bin/env node\n", 0o700)
+	writeFile(t, filepath.Join(installedPi, "node_modules", "@earendil-works", "pi-tui", "package.json"), `{"name":"@earendil-works/pi-tui","type":"module","exports":"./index.js"}`, 0o600)
+	writeFile(t, filepath.Join(installedPi, "node_modules", "@earendil-works", "pi-tui", "index.js"), `export const visibleWidth = () => "installed-pi";`, 0o600)
+	bin := filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(installedPi))), "bin")
+	if err := os.MkdirAll(bin, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(cli, filepath.Join(bin, "pi")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", prependPath(bin, os.Getenv("PATH")))
+
+	extensionDir := filepath.Join(t.TempDir(), "node_modules", "peer-extension")
+	writeFile(t, filepath.Join(extensionDir, "package.json"), `{"name":"peer-extension","type":"module","peerDependencies":{"@mariozechner/pi-tui":"^0.74.0"}}`, 0o600)
+	entry := filepath.Join(extensionDir, "index.ts")
+	writeFile(t, entry, `
+import { visibleWidth } from "@mariozechner/pi-tui";
+export default function (pi: any) {
+  pi.registerTool({
+    name: "peer_sdk",
+    label: "Peer SDK",
+    description: "Embedded SDK surface",
+    parameters: { type: "object", properties: {} },
+    async execute() { return { content: [{ type: "text", text: "sdk-" + visibleWidth("ok") }], details: {} }; }
+  });
+}
+`, 0o600)
+
+	manager, _, runner, result, _ := startFixtureManagerIn(t, agentDir,
+		entry,
+		fixturePath(t, "import-error.mjs"),
+		fixturePath(t, "working.mjs"),
+	)
+	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0].Error, "fixture import failed") {
+		t.Fatalf("load errors = %#v", result.Errors)
+	}
+	if runner.ToolDefinition("host_echo") == nil {
+		t.Fatal("working extension did not survive the incompatible extension")
+	}
+	execute := func() {
+		t.Helper()
+		peer := runner.ToolDefinition("peer_sdk")
+		if peer == nil {
+			t.Fatal("peer SDK extension did not load")
+		}
+		value, err := peer.Execute(context.Background(), "peer-call", map[string]any{}, nil, runner.CreateContext())
+		if err != nil {
+			t.Fatal(err)
+		}
+		// visibleWidth("ok") is 2 in the embedded SDK; the planted copies
+		// return "leftover-root" / "installed-pi" instead, so anything but
+		// "sdk-2" names the tree that was wrongly consulted.
+		if got := toolText(value); got != "sdk-2" {
+			t.Fatalf("peer SDK result = %q", got)
+		}
+	}
+	execute()
+	if err := manager.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	execute()
+}
+
+func TestRealHostIsolatesExtensionLoadErrors(t *testing.T) {
+	_, _, runner, result, _ := startFixtureManager(t,
+		fixturePath(t, "import-error.mjs"),
+		fixturePath(t, "working.mjs"),
+	)
+	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0].Error, "fixture import failed") {
+		t.Fatalf("load errors = %#v", result.Errors)
+	}
+	if runner.ToolDefinition("host_echo") == nil {
+		t.Fatal("working extension did not load after import error")
+	}
+}
+
+func TestRealHostRegistersAndExecutesMessageAndEntryRenderers(t *testing.T) {
+	_, _, runner, result, _ := startFixtureManager(t, fixturePath(t, "renderers.mjs"))
+	if len(result.Diagnostics) != 0 || len(result.Errors) != 0 {
+		t.Fatalf("load result = %#v", result)
+	}
+	shortcut := runner.Shortcuts(nil)["ctrl+alt+h"]
+	if shortcut.Handler == nil {
+		t.Fatal("shortcut was not registered")
+	}
+	if err := shortcut.Handler(context.Background(), runner.CreateContext()); err != nil {
+		t.Fatal(err)
+	}
+	messageRenderer := runner.MessageRenderer("host-message")
+	if messageRenderer == nil {
+		t.Fatal("message renderer was not registered")
+	}
+	messageComponent := messageRenderer(extensions.CustomMessage{Content: "hello"}, extensions.MessageRenderOptions{Expanded: true, OutputPad: 2}, nil)
+	if messageComponent == nil {
+		t.Fatal("message renderer returned no component")
+	}
+	if got := messageComponent.Render(72); len(got) != 1 || got[0] != "message:hello:true:2::72" {
+		t.Fatalf("message render = %#v", got)
+	}
+	if disposable, ok := messageComponent.(extensions.DisposableComponent); ok {
+		disposable.Dispose()
+	}
+
+	entryRenderer := runner.EntryRenderer("host-entry")
+	if entryRenderer == nil {
+		t.Fatal("entry renderer was not registered")
+	}
+	entryComponent := entryRenderer(map[string]any{"value": "world"}, extensions.EntryRenderOptions{}, nil)
+	if entryComponent == nil {
+		t.Fatal("entry renderer returned no component")
+	}
+	if got := entryComponent.Render(80); len(got) != 1 || got[0] != "entry:world:false:80" {
+		t.Fatalf("entry render = %#v", got)
+	}
+}
+
+func TestRealHostRestartsAfterCrashAndReregisters(t *testing.T) {
+	manager, _, runner, result, _ := startFixtureManager(t, fixturePath(t, "working.mjs"))
+	if len(result.Errors) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("load result = %#v", result)
+	}
+	crash := runner.ToolDefinition("host_crash")
+	if crash == nil {
+		t.Fatal("host_crash was not registered")
+	}
+	_, err := crash.Execute(context.Background(), "crash-1", map[string]any{}, nil, runner.CreateContext())
+	if err == nil {
+		t.Fatal("crash tool unexpectedly returned without error")
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for manager.RestartCount() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if manager.RestartCount() == 0 {
+		t.Fatal("manager did not restart the crashed host")
+	}
+	echo := runner.ToolDefinition("host_echo")
+	final, err := echo.Execute(context.Background(), "call-after-restart", map[string]any{"text": "again"}, nil, runner.CreateContext())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := toolText(final); got != "final:again" {
+		t.Fatalf("final text after restart = %q", got)
+	}
+}
+
+func TestRealHostReloadStartsFreshProcess(t *testing.T) {
+	_, registry, runner, result, cwd := startFixtureManager(t, fixturePath(t, "working.mjs"))
+	if len(result.Errors) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("load result = %#v", result)
+	}
+	echo := runner.ToolDefinition("host_echo")
+	first, err := echo.Execute(context.Background(), "call-1", map[string]any{"text": "one"}, nil, runner.CreateContext())
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := echo.Execute(context.Background(), "call-2", map[string]any{"text": "two"}, nil, runner.CreateContext())
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstDetails := first.Details.(map[string]any)
+	secondDetails := second.Details.(map[string]any)
+	if firstDetails["executions"] != float64(1) || secondDetails["executions"] != float64(2) {
+		t.Fatalf("execution counts before reload = %#v, %#v", firstDetails, secondDetails)
+	}
+	oldPID := secondDetails["pid"]
+	fresh, err := registry.Fresh(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	freshRunner := extensions.NewRunner(fresh, extensions.RunnerOptions{CWD: cwd})
+	freshEcho := freshRunner.ToolDefinition("host_echo")
+	if freshEcho == nil {
+		t.Fatal("host_echo was not re-registered on fresh registry")
+	}
+	after, err := freshEcho.Execute(context.Background(), "call-3", map[string]any{"text": "three"}, nil, freshRunner.CreateContext())
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterDetails := after.Details.(map[string]any)
+	if afterDetails["executions"] != float64(1) {
+		t.Fatalf("execution count after reload = %#v", afterDetails)
+	}
+	if afterDetails["pid"] == oldPID {
+		t.Fatalf("reload reused process pid %v", oldPID)
+	}
+}
+
+func TestManagerWithoutRuntimeReturnsTypedDiagnostic(t *testing.T) {
+	errorValue := &RuntimeUnavailableError{}
+	var typed *RuntimeUnavailableError
+	if !errors.As(errorValue, &typed) || typed.Diagnostic().Message != runtimeUnavailableMessage {
+		t.Fatalf("runtime error = %#v", errorValue)
+	}
+}
+
+func toolText(result engine.AgentToolResult) string {
+	if len(result.Content) == 0 {
+		return ""
+	}
+	text, _ := result.Content[0].(*ai.TextContent)
+	if text == nil {
+		return ""
+	}
+	return text.Text
+}

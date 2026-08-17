@@ -8,14 +8,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	sessionstore "github.com/OrdalieTech/orb/agent/session"
 )
 
 // Conversation is exclusive ownership of one hydrated agent session.
 type Conversation struct {
-	Session *codingagent.AgentSession
+	Session *agent.AgentSession
 	// Manager receives ledger writes and serves raw entry reads.
 	Manager *sessionstore.SessionManager
 	// Close persists and releases the conversation; it must be called
@@ -36,7 +36,7 @@ type LocalProviderOption func(*LocalProvider)
 // options per conversation before construction — the sanctioned way to wire
 // tools, models, or stream backends. Without it, sessions are created with
 // all tools disabled (NoTools "all").
-func WithSessionOptions(hook func(key ConversationKey, o *codingagent.AgentSessionOptions)) LocalProviderOption {
+func WithSessionOptions(hook func(key ConversationKey, o *agent.AgentSessionOptions)) LocalProviderOption {
 	return func(p *LocalProvider) { p.hook = hook }
 }
 
@@ -53,7 +53,7 @@ func WithAgentDir(dir string) LocalProviderOption {
 type LocalProvider struct {
 	root     string
 	agentDir string
-	hook     func(ConversationKey, *codingagent.AgentSessionOptions)
+	hook     func(ConversationKey, *agent.AgentSessionOptions)
 
 	registry *config.ModelRegistry
 	settings *config.SettingsManager
@@ -114,7 +114,7 @@ func NewLocalProvider(root string, opts ...LocalProviderOption) (*LocalProvider,
 	}
 	provider := &LocalProvider{
 		root:     absRoot,
-		agentDir: codingagent.DefaultAgentDir(),
+		agentDir: agent.DefaultAgentDir(),
 		inUse:    map[string]bool{},
 		cached:   map[string]*cachedSession{},
 	}
@@ -185,7 +185,7 @@ func (p *LocalProvider) Acquire(_ context.Context, key ConversationKey) (*Conver
 		}
 	}
 
-	options := codingagent.AgentSessionOptions{
+	options := agent.AgentSessionOptions{
 		CWD:            p.root,
 		AgentDir:       p.agentDir,
 		SessionManager: manager,
@@ -196,7 +196,7 @@ func (p *LocalProvider) Acquire(_ context.Context, key ConversationKey) (*Conver
 	if p.hook != nil {
 		p.hook(key, &options)
 	}
-	result, err := codingagent.NewAgentSession(options)
+	result, err := agent.NewAgentSession(options)
 	if err != nil {
 		release(nil)
 		return nil, fmt.Errorf("chat: create agent session: %w", err)
