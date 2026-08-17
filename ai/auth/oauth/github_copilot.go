@@ -282,10 +282,14 @@ func selectableCopilotModel(item map[string]any) bool {
 
 func (flow *GitHubCopilot) enableAllModels(ctx context.Context, token, enterpriseDomain string) {
 	var wait sync.WaitGroup
+	// Upstream caps policy updates at four in flight (COPILOT_POLICY_CONCURRENCY).
+	slots := make(chan struct{}, 4)
 	for _, modelID := range flow.knownModelIDs() {
 		wait.Add(1)
+		slots <- struct{}{}
 		go func() {
 			defer wait.Done()
+			defer func() { <-slots }()
 			headers := githubCopilotStaticHeaders()
 			headers.Set("Content-Type", "application/json")
 			headers.Set("Authorization", "Bearer "+token)

@@ -143,15 +143,21 @@ type refreshCallGroup struct {
 	calls map[string]*refreshCall
 }
 
-func (group *refreshCallGroup) do(key string, refresh func() (*Catalog, error)) (*Catalog, error) {
+// do shares one in-flight refresh per key while keeping each caller's
+// cancellation independent (upstream model-catalog-refresh.ts).
+func (group *refreshCallGroup) do(ctx context.Context, key string, refresh func() (*Catalog, error)) (*Catalog, error) {
 	group.mu.Lock()
 	if group.calls == nil {
 		group.calls = make(map[string]*refreshCall)
 	}
 	if call := group.calls[key]; call != nil {
 		group.mu.Unlock()
-		<-call.done
-		return call.catalog, call.err
+		select {
+		case <-call.done:
+			return call.catalog, call.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 	call := &refreshCall{done: make(chan struct{})}
 	group.calls[key] = call
@@ -180,7 +186,7 @@ func Refresh(ctx context.Context, options RefreshOptions) (*Catalog, error) {
 	if options.StorePath != "" {
 		key = "store:" + options.StorePath
 	}
-	return catalogRefreshCalls.do(key, func() (*Catalog, error) {
+	return catalogRefreshCalls.do(ctx, key, func() (*Catalog, error) {
 		return refresh(ctx, options, endpoint)
 	})
 }

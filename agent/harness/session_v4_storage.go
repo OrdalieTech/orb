@@ -53,6 +53,13 @@ type SessionV4Storage interface {
 	Stats() SessionStats
 }
 
+// SessionV4NameClearer is upstream's `setName(undefined)` half of the storage
+// contract. It stays a separate interface so SessionV4Storage keeps its
+// published method set for existing implementations.
+type SessionV4NameClearer interface {
+	ClearName() error
+}
+
 func sessionV4NowMS(now func() int64) int64 {
 	if now != nil {
 		return now()
@@ -67,9 +74,9 @@ func buildV4EntryMutation(
 	parentID *string,
 	timestamp int64,
 ) (SessionV4Mutation, error) {
-	members, byName, err := parseV4Object(payload)
-	if err != nil {
-		return SessionV4Mutation{}, newSessionError(SessionErrorInvalidPayload, "Durable payload %s", err.Error())
+	members, byName, decodeErr := parseV4Object(payload)
+	if decodeErr != nil {
+		return SessionV4Mutation{}, newSessionError(SessionErrorInvalidPayload, "Durable payload %s", decodeErr.Error())
 	}
 	seq := state.nextSequence()
 	members = append(members,
@@ -80,17 +87,17 @@ func buildV4EntryMutation(
 	byName["parentId"] = members[len(members)-3].value
 	byName["seq"] = members[len(members)-2].value
 	byName["timestamp"] = members[len(members)-1].value
-	entry, err := decodeV4EntryPayload(members, byName, "<payload>", 1)
-	if err != nil {
-		return SessionV4Mutation{}, err
+	entry, decodeErr := decodeV4EntryPayload(members, byName)
+	if decodeErr != nil {
+		return SessionV4Mutation{}, invalidV4FileCause("<payload>", 1, decodeErr)
 	}
 	return SessionV4Mutation{Kind: "entry", Seq: seq, EntryLane: lane, Entry: &entry}, nil
 }
 
 func buildV4RecordMutation(state *sessionV4State, payload json.RawMessage, timestamp int64) (SessionV4Mutation, error) {
-	members, byName, err := parseV4Object(payload)
-	if err != nil {
-		return SessionV4Mutation{}, newSessionError(SessionErrorInvalidPayload, "Durable payload %s", err.Error())
+	members, byName, decodeErr := parseV4Object(payload)
+	if decodeErr != nil {
+		return SessionV4Mutation{}, newSessionError(SessionErrorInvalidPayload, "Durable payload %s", decodeErr.Error())
 	}
 	seq := state.nextSequence()
 	members = append(members,
@@ -99,9 +106,9 @@ func buildV4RecordMutation(state *sessionV4State, payload json.RawMessage, times
 	)
 	byName["seq"] = members[len(members)-2].value
 	byName["timestamp"] = members[len(members)-1].value
-	record, err := decodeV4RecordPayload(members, byName, "<payload>", 1)
-	if err != nil {
-		return SessionV4Mutation{}, err
+	record, decodeErr := decodeV4RecordPayload(members, byName)
+	if decodeErr != nil {
+		return SessionV4Mutation{}, invalidV4FileCause("<payload>", 1, decodeErr)
 	}
 	return SessionV4Mutation{Kind: "record", Seq: seq, Record: &record}, nil
 }
@@ -321,6 +328,16 @@ func (storage *InMemorySessionV4Storage) SetName(name string) error {
 	}, nil)
 }
 
+// ClearName records upstream's `setName(undefined)`: the session name is
+// dropped durably, and forks of this session start unnamed.
+func (storage *InMemorySessionV4Storage) ClearName() error {
+	storage.mu.Lock()
+	defer storage.mu.Unlock()
+	return storage.state.applyMutation(SessionV4Mutation{
+		Kind: "fact", Seq: storage.state.nextSequence(), Fact: "name", NameCleared: true,
+	}, nil)
+}
+
 func (storage *InMemorySessionV4Storage) Label(id string) (string, bool) {
 	storage.mu.Lock()
 	defer storage.mu.Unlock()
@@ -420,7 +437,7 @@ func LoadJSONLSessionV4Storage(ctx context.Context, fs FileSystem, path string) 
 		lines = lines[:len(lines)-1]
 	}
 	if len(lines) == 0 || lines[0] == "" {
-		return nil, invalidV4File(path, 1, "is missing a header")
+		return nil, invalidV4FileCause(path, 1, decodeV4Error(SessionV4DecodeSchema, "is missing a header"))
 	}
 	header, err := ParseSessionV4Header([]byte(lines[0]), path)
 	if err != nil {
@@ -433,10 +450,12 @@ func LoadJSONLSessionV4Storage(ctx context.Context, fs FileSystem, path string) 
 	storage := &JSONLSessionV4Storage{fs: fs, metadata: jsonlV4Metadata(header, path, info.MTimeMS), state: newSessionV4State()}
 	for index := 1; index < len(lines); index++ {
 		line := lines[index]
-		mutation, parseErr := ParseSessionV4Mutation([]byte(line), path, index+1)
-		if parseErr != nil {
-			if index != len(lines)-1 || json.Valid([]byte(line)) {
-				return nil, parseErr
+		mutation, decodeErr := DecodeSessionV4Mutation([]byte(line))
+		if decodeErr != nil {
+			// Only an unparseable final line is an unacknowledged partial append;
+			// a schema-valid-JSON failure is corruption and must not be repaired.
+			if index != len(lines)-1 || decodeErr.Kind != SessionV4DecodeSyntax {
+				return nil, invalidV4FileCause(path, index+1, decodeErr)
 			}
 			validPrefix := strings.Join(lines[:index], "\n") + "\n"
 			if err := publishV4FileAtomically(ctx, fs, path, func(tempPath string) error {
@@ -446,10 +465,11 @@ func LoadJSONLSessionV4Storage(ctx context.Context, fs FileSystem, path string) 
 			}
 			return storage, nil
 		}
-		lineNumber := index + 1
-		if err := storage.state.applyMutation(mutation, func(message string) error {
-			return invalidV4File(path, lineNumber, "%s", message)
-		}); err != nil {
+		if err := storage.state.applyMutation(mutation, nil); err != nil {
+			var mutationErr *SessionError
+			if errors.As(err, &mutationErr) && mutationErr.Code == SessionErrorInvalidEntry {
+				return nil, invalidV4FileCause(path, index+1, mutationErr)
+			}
 			return nil, err
 		}
 	}
@@ -617,6 +637,16 @@ func (storage *JSONLSessionV4Storage) SetName(name string) error {
 	defer storage.mu.Unlock()
 	return storage.commit(SessionV4Mutation{
 		Kind: "fact", Seq: storage.state.nextSequence(), Fact: "name", Name: name,
+	})
+}
+
+// ClearName records upstream's `setName(undefined)`: the session name is
+// dropped durably, and forks of this session start unnamed.
+func (storage *JSONLSessionV4Storage) ClearName() error {
+	storage.mu.Lock()
+	defer storage.mu.Unlock()
+	return storage.commit(SessionV4Mutation{
+		Kind: "fact", Seq: storage.state.nextSequence(), Fact: "name", NameCleared: true,
 	})
 }
 

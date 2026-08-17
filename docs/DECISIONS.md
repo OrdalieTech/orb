@@ -319,6 +319,24 @@ Orb is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinne
   original capture. Upstream TUI features (e.g. fullscreen mode) are cherry-picked on merit rather
   than ported wholesale. This amends D2's full-parity scope for the TUI surface only.
 
+- **D36 — Session search is a slim Go service, not a transliterated generic API (agent, 2026-08-17).**
+  Upstream v0.84.2 dissolved `harness/session/search.ts` into standalone `packages/agent/src/search/`;
+  orb never ported the predecessor, so only the new surface exists here, as `agent/search`. Scanning
+  behavior is ported exactly (trimmed case-insensitive match, source order, oldest-first entries,
+  cursor paging, single-type storage pushdown, limits, cancellation, duplicate-session-id guard); the
+  shape is not: the metadata type parameter collapses to `Session{ID, Readable}`, `AsyncIterable`
+  becomes `iter.Seq2[Hit, error]`, and the `match`/`createHit`/`sourceOptions` hooks are dropped —
+  callers express all three with `ProjectText`, by mapping the iterator, and by closing over their
+  source. Upstream's only interface consumer is the excluded `packages/session-backends`; revisit
+  only when a real Go consumer needs to swap in an indexed backend.
+
+- **D37 — v4 storage additions land beside published interfaces, never inside them (agent, 2026-08-17).**
+  Upstream widened `SessionStorage.setName` to `string | undefined`. Downstream embedders may
+  implement orb's `SessionV4Storage`, so the clearing half ships as the one-method
+  `SessionV4NameClearer` companion plus `ClearName()` on both concrete storages. The same rule
+  governs every future upstream signature widening on a published harness interface: add a companion
+  interface, keep the existing method set source-compatible.
+
 ## 2026-07-21 parity-sync amendments
 
 - Codex request compression uses `github.com/klauspost/compress/zstd` as a direct dependency. The
@@ -342,6 +360,30 @@ Orb is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinne
   archive is checksummed, excludes checkout/build state, and must rebuild with `CGO_ENABLED=0`
   and `-buildvcs=false` before the release is published; source archives intentionally omit the Git
   metadata Go would otherwise inspect for VCS stamping.
+
+## 2026-08-17 v0.84.2 sync amendments
+
+- `packages/ai/src/api/cloudflare-gateway-binding.ts` is excluded: an AI Gateway transport over the
+  Cloudflare Workers `env.AI` runtime binding. It needs a Workers environment object a static
+  `CGO_ENABLED=0` CLI cannot have, is not exported from the package's public surface, and leaves the
+  provider registry (`F2/providers.json`) unchanged.
+- `SendMessageOptions.TriggerTurn` is `*bool`, not `bool`: upstream's `triggerTurn` is tri-state
+  (`undefined ≠ false`) — unset still steers a streaming turn, an explicit `false` suppresses it.
+- `/export` resolves the active theme before the configured one (upstream 9795d602), reversing the
+  prior "configured wins" rule so a per-run `--use-theme` selection reaches the export.
+- orb has no fullscreen/alt-screen TUI mode: `tuiMode`, `fullscreenExitOutput`,
+  `fullscreenScrollbar`, the `tui.altScreen.*` keybinding namespace, transcript search, and the
+  alt-screen painter/LaTeX work are deliberately unported (D35). The `searchMatchBg`/`searchMatchText`
+  theme roles ARE carried because the HTML export's theme variables are an upstream-pinned wire
+  surface (F6).
+- Kimi For Coding's `pi (…)` User-Agent follows D30: provider-facing compatibility names stay `pi`
+  where they are the provider contract, exactly like the Codex `originator`/UA headers.
+- The OpenRouter image catalog resynced to the full v0.84.2 set (45 models) rather than a
+  three-model delta: the committed catalog had drifted at v0.81.0 and a partial bump would match no
+  upstream version. Digests recomputed from upstream `image-models.generated.ts`, not from orb output.
+- Entry-point process markers are ported with orb identity: `AI_AGENT=orb` (generic launching-agent
+  marker; identity substitution per D30) and `PI_CODING_AGENT=true` (pi-compat marker, same value the
+  extension host already sets for its children). Set only at CLI/RPC entry, never when embedded.
 
 ## Standing assumptions (owner-confirmed)
 

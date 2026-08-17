@@ -13,7 +13,10 @@ func TestConvertGoogleToolsPreservesStringEnumSchema(t *testing.T) {
 		Name: "calculate", Description: "calculate",
 		Parameters: jsonschema.Schema(`{"type":"object","properties":{"operation":{"type":"string","enum":["add","subtract"]}},"required":["operation"]}`),
 	}
-	converted := convertGoogleTools([]ai.Tool{tool})
+	converted, err := convertGoogleTools([]ai.Tool{tool}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(converted) != 1 || len(converted[0].FunctionDeclarations) != 1 {
 		t.Fatalf("converted tools = %#v", converted)
 	}

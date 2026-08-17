@@ -268,22 +268,12 @@ func TestF12UILifecycleManifestIsPinned(t *testing.T) {
 	if manifest.Family != "F12-ui-lifecycle" || manifest.Generator != "conformance/extract/f12-ui-lifecycle.ts" {
 		t.Fatalf("unexpected UI lifecycle manifest: %+v", manifest)
 	}
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("resolve UPSTREAM.lock path")
-	}
-	var lock struct {
-		Commit string `json:"commit"`
-	}
-	encoded, err := os.ReadFile(filepath.Join(filepath.Dir(file), "..", "..", "UPSTREAM.lock"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(encoded, &lock); err != nil {
-		t.Fatal(err)
-	}
-	if manifest.UpstreamCommit != lock.Commit {
-		t.Fatalf("UI lifecycle upstream commit = %q, lock = %q", manifest.UpstreamCommit, lock.Commit)
+	// D35: an Orb-owned snapshot family keeps the provenance of its original
+	// capture rather than tracking UPSTREAM.lock. A deliberate recapture
+	// updates this constant explicitly.
+	const captureCommit = "53fa77ccd8a279eb87e92294ef3687b03ff80112"
+	if manifest.UpstreamCommit != captureCommit {
+		t.Fatalf("UI lifecycle upstream commit = %q, capture provenance = %q", manifest.UpstreamCommit, captureCommit)
 	}
 	if !reflect.DeepEqual(manifest.Files, []string{"lifecycle.json"}) || len(manifest.Sources) != 11 {
 		t.Fatalf("UI lifecycle manifest coverage = files %v sources %v", manifest.Files, manifest.Sources)

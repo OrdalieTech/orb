@@ -1,6 +1,10 @@
 package tools
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/OrdalieTech/orb/ai"
+)
 
 func TestToolBundlesMatchUpstreamOrder(t *testing.T) {
 	coding := NewCodingTools(t.TempDir(), nil)
@@ -23,6 +27,22 @@ func TestToolBundlesMatchUpstreamOrder(t *testing.T) {
 	for index, name := range wantReadOnly {
 		if readOnlyNames[index] != name {
 			t.Fatalf("read-only tools = %v, want %v", readOnlyNames, wantReadOnly)
+		}
+	}
+}
+
+func TestExperimentalToolSamplingGate(t *testing.T) {
+	if experimentalToolSampling() != nil {
+		t.Fatal("constrained sampling must be off without PI_EXPERIMENTAL")
+	}
+	t.Setenv("PI_EXPERIMENTAL", "1")
+	sampling := experimentalToolSampling()
+	if sampling == nil || sampling.Type != ai.ConstrainedSamplingJSONSchema || sampling.Strict != ai.ConstrainedSamplingPrefer {
+		t.Fatalf("constrained sampling = %#v", sampling)
+	}
+	for _, tool := range NewCodingTools(t.TempDir(), nil) {
+		if tool.Spec().ConstrainedSampling == nil {
+			t.Fatalf("%s does not carry constrained sampling", tool.Spec().Name)
 		}
 	}
 }

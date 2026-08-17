@@ -96,7 +96,7 @@ func TestOpenHandlesEmptyInvalidAndMissingFiles(t *testing.T) {
 	if err := os.WriteFile(invalid, original, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Open(invalid, "", options...); err == nil || !strings.Contains(err.Error(), "Session file is not a valid pi session") {
+	if _, err := Open(invalid, "", options...); err == nil || !strings.Contains(err.Error(), "Session file is not a valid orb session") {
 		t.Fatalf("invalid file error = %v", err)
 	}
 	unchanged, err := os.ReadFile(invalid)

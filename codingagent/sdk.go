@@ -419,7 +419,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 
 	// Resolve tool allowlist.
 	var allowedToolNames *[]string
-	initialActiveToolNames := resolveInitialTools(opts.Tools, opts.NoTools, opts.ExcludeTools)
+	initialActiveToolNames := resolveInitialTools(opts.Tools, opts.NoTools, opts.ExcludeTools, settings.GetDefaultTools())
 	if sm.IsHarnessBacked() && opts.Tools == nil && opts.NoTools == "" && existing.ActiveToolNames != nil {
 		initialActiveToolNames = filterExcluded(existing.ActiveToolNames, opts.ExcludeTools)
 	}
@@ -717,12 +717,17 @@ func buildBuiltInTools(cwd string, settings *config.SettingsManager, overrides *
 	}, nil
 }
 
-func resolveInitialTools(toolsList []string, noTools string, excludeTools []string) []string {
-	if toolsList != nil {
+// configuredDefaults is the `defaultTools` setting: it seeds the built-in
+// selection only, never the allowlist, so extension and custom tools stay
+// enabled alongside it.
+func resolveInitialTools(toolsList []string, noTools string, excludeTools []string, configuredDefaults []string) []string {
+	switch {
+	case toolsList != nil:
 		return filterExcluded(toolsList, excludeTools)
-	}
-	if noTools == "all" || noTools == "builtin" {
+	case noTools == "all" || noTools == "builtin":
 		return []string{}
+	case configuredDefaults != nil:
+		return filterExcluded(configuredDefaults, excludeTools)
 	}
 	return filterExcluded(DefaultActiveToolNames, excludeTools)
 }

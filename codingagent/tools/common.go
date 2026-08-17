@@ -11,11 +11,22 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 	textunicode "golang.org/x/text/encoding/unicode"
 )
 
 var errOperationAborted = upstreamToolError("Operation aborted")
+
+// experimentalToolSampling asks providers for strict tool schemas under
+// PI_EXPERIMENTAL=1 (upstream getExperimentalToolSampling). Nil otherwise, so
+// the default request shape is unchanged.
+func experimentalToolSampling() *ai.ConstrainedSamplingConfig {
+	if os.Getenv("PI_EXPERIMENTAL") != "1" {
+		return nil
+	}
+	return &ai.ConstrainedSamplingConfig{Type: ai.ConstrainedSamplingJSONSchema, Strict: ai.ConstrainedSamplingPrefer}
+}
 
 const (
 	accessWrite = 2

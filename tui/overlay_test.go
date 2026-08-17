@@ -343,3 +343,37 @@ func TestFocusedOverlayPositionsHardwareCursorAndRestoresBaseFocus(t *testing.T)
 		t.Fatalf("restored focus editor=%v overlay=%v", editor.focused, overlay.focused)
 	}
 }
+
+// The viewport claims ctrl+PageUp, ctrl+PageDown and ctrl+End ahead of focus
+// dispatch, so a focused overlay — extension custom UI, in practice — never
+// saw them and the history it covers scrolled invisibly instead.
+func TestViewportKeysDeferToFocusedOverlay(t *testing.T) {
+	const ctrlPageUp = "\x1b[5;5~"
+	body := &mutableLines{lines: make([]string, 12)}
+	ui := NewTUI(newFakeTerminal(20, 6))
+	ui.SetViewport(body, &mutableLines{lines: []string{"editor"}})
+	ui.previousLines = ui.renderViewport(20, 6)
+
+	editor := &overlayFocusRecorder{lines: []string{"EDITOR"}}
+	ui.SetFocus(editor)
+	ui.handleInput(ctrlPageUp)
+	scrolledEnd := ui.viewportEnd
+	if ui.viewportFollow || scrolledEnd >= len(body.lines) || len(editor.inputs) != 0 {
+		t.Fatalf("plain focus: end=%d follow=%v editor=%q", scrolledEnd, ui.viewportFollow, editor.inputs)
+	}
+
+	overlay := &overlayFocusRecorder{lines: []string{"OVERLAY"}}
+	handle := ui.ShowOverlay(overlay)
+	ui.handleInput(ctrlPageUp)
+	if !equalLines(overlay.inputs, []string{ctrlPageUp}) || ui.viewportEnd != scrolledEnd {
+		t.Fatalf("focused overlay: inputs=%q end=%d, want the overlay to keep the key", overlay.inputs, ui.viewportEnd)
+	}
+
+	// A hidden overlay is not covering anything, so the viewport takes the key
+	// back even before focus restoration runs.
+	handle.SetHidden(true)
+	ui.handleInput(ctrlPageUp)
+	if ui.viewportEnd >= scrolledEnd || len(overlay.inputs) != 1 {
+		t.Fatalf("hidden overlay: end=%d (was %d) inputs=%q", ui.viewportEnd, scrolledEnd, overlay.inputs)
+	}
+}

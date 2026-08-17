@@ -64,7 +64,7 @@ func TestBuildSystemPromptCustomAppendContextAndEmptyTools(t *testing.T) {
 		"<project_instructions path=\"/one/AGENTS\"&.md\">\nfirst<&\n</project_instructions>\n\n" +
 		"<project_instructions path=\"/two/CLAUDE.md\">\nsecond\n</project_instructions>\n\n" +
 		"</project_context>\n" +
-		"\nCurrent working directory: C:/repo/work"
+		"\nCurrent working directory: C:/repo/work\n"
 	if prompt != want {
 		t.Fatalf("custom prompt mismatch\n--- got ---\n%s\n--- want ---\n%s", prompt, want)
 	}

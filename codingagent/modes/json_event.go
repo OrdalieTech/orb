@@ -14,11 +14,16 @@ import (
 // stdout JSON and RPC protocols emit message_update delta-only, dropping the
 // cumulative partial snapshot and the top-level message echo. message_start
 // provides the initial message, deltas build it, and message_end provides the
-// final authoritative message.
+// final authoritative message. Cumulative usage remains available because its
+// size is constant.
 func marshalJSONEvent(event any) ([]byte, error) {
 	update, ok := event.(agent.MessageUpdateEvent)
 	if !ok {
 		return codingagent.MarshalSessionEvent(event)
+	}
+	message, ok := update.Message.(*ai.AssistantMessage)
+	if !ok || message == nil {
+		return nil, errors.New("message_update message is not an assistant message")
 	}
 	encoded, err := ai.MarshalAssistantMessageEvent(update.AssistantMessageEvent)
 	if err != nil {
@@ -28,10 +33,12 @@ func marshalJSONEvent(event any) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Member order matches upstream's object literal: type, usage, assistantMessageEvent.
 	return ai.Marshal(struct {
 		Type                  agent.AgentEventType `json:"type"`
+		Usage                 ai.Usage             `json:"usage"`
 		AssistantMessageEvent json.RawMessage      `json:"assistantMessageEvent"`
-	}{agent.EventMessageUpdate, delta})
+	}{agent.EventMessageUpdate, message.Usage, delta})
 }
 
 // deleteObjectMember removes one member from an encoded JSON object while

@@ -8,7 +8,41 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
+
+// orbOwnedFixture reports whether a fixture path belongs to an Orb-owned D35
+// render family (`F12*` plus `WP450`, mirroring the Makefile fixtures-check
+// exclusions). These are never upstream-extracted: the committed snapshots ride
+// along through comparison, conformance, and promotion.
+func orbOwnedFixture(relative string) bool {
+	top, _, _ := strings.Cut(filepath.ToSlash(relative), "/")
+	return strings.HasPrefix(top, "F12") || top == "WP450"
+}
+
+// carryOrbOwnedFixtures copies the committed Orb-owned families into a
+// generated fixture tree that lacks them.
+func carryOrbOwnedFixtures(committed, destination string) error {
+	entries, err := os.ReadDir(committed)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !orbOwnedFixture(entry.Name()) {
+			continue
+		}
+		target := filepath.Join(destination, entry.Name())
+		if _, err := os.Stat(target); err == nil {
+			continue
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		if err := copyTree(filepath.Join(committed, entry.Name()), target); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 type fixtureSnapshot struct {
 	size int64
@@ -38,6 +72,9 @@ func compareFixtures(committed, generated string) ([]FixtureChange, error) {
 	sort.Strings(paths)
 	changes := make([]FixtureChange, 0)
 	for _, filename := range paths {
+		if orbOwnedFixture(filename) {
+			continue
+		}
 		old, oldExists := oldFiles[filename]
 		current, currentExists := newFiles[filename]
 		if oldExists && currentExists && old.hash == current.hash {
@@ -120,11 +157,15 @@ func prepareConformanceCopy(root, fixtures string, lock Lock) (string, func(), e
 		cleanup()
 		return "", nil, err
 	}
+	if err := carryOrbOwnedFixtures(filepath.Join(root, "conformance", "fixtures"), destination); err != nil {
+		cleanup()
+		return "", nil, err
+	}
 	return copyRoot, cleanup, nil
 }
 
 func copyProject(source, destination string) error {
-	skip := map[string]struct{}{`.git`: {}, `.tools`: {}, `.upstream`: {}}
+	skip := map[string]struct{}{`.git`: {}, `.tools`: {}, `.upstream`: {}, `.claude`: {}}
 	return copyTreeWithFilter(source, destination, func(relative string, entry fs.DirEntry) bool {
 		if filepath.Dir(relative) != "." {
 			return false
@@ -238,6 +279,9 @@ func promote(root, candidate string, lock Lock, green, descendant bool) error {
 	}()
 	if err := copyTreeContents(candidate, staged); err != nil {
 		return fmt.Errorf("stage generated fixtures: %w", err)
+	}
+	if err := carryOrbOwnedFixtures(fixtures, staged); err != nil {
+		return fmt.Errorf("carry Orb-owned fixtures: %w", err)
 	}
 	backup, err := os.MkdirTemp(parent, ".fixtures-backup-*")
 	if err != nil {

@@ -1075,3 +1075,75 @@ func TestOpenAIResponsesDegenerateEdgesOAm7(t *testing.T) {
 		}
 	})
 }
+
+// Namespaces round-trip only where the target can also replay the item that
+// loaded the namespaced tool (upstream openai-responses-namespace.test.ts).
+func TestResponsesToolCallNamespaceRoundTrip(t *testing.T) {
+	model := responsesTestModel()
+	model.ID = "gpt-5.4"
+	output := newAssistantMessage(model)
+	processor := newOpenAIResponsesProcessor(model, output, nil, func(ai.AssistantMessageEvent) bool { return true })
+	for _, event := range []string{
+		`{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_test","call_id":"call_test","name":"lookup","arguments":""}}`,
+		`{"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_test","call_id":"call_test","name":"lookup","arguments":"{\"value\":\"hello\"}","namespace":"dynamic_tools"}}`,
+	} {
+		if err := processor.handle(json.RawMessage(event)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	call, ok := output.Content[0].(*ai.ToolCall)
+	if !ok || call.Namespace == nil || *call.Namespace != "dynamic_tools" {
+		t.Fatalf("tool call = %#v", output.Content[0])
+	}
+
+	replay := func(target *ai.Model, deferred map[string]ai.Tool) responsesFunctionCall {
+		t.Helper()
+		messages, err := convertResponsesMessagesWithOptions(
+			target, ai.Context{Messages: ai.MessageList{output}}, deferred, responsesMessageOptions{},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		call, ok := messages[0].(responsesFunctionCall)
+		if !ok {
+			t.Fatalf("replayed item = %#v", messages[0])
+		}
+		return call
+	}
+	if got := replay(model, nil); got.Namespace == nil || *got.Namespace != "dynamic_tools" {
+		t.Fatalf("same-model replay dropped the namespace: %#v", got)
+	}
+	other := responsesTestModel()
+	other.ID = "gpt-5.2"
+	if got := replay(other, nil); got.Namespace != nil {
+		t.Fatalf("other-model replay kept the namespace: %#v", got)
+	}
+	if got := replay(other, map[string]ai.Tool{"lookup": {Name: "lookup"}}); got.Namespace == nil {
+		t.Fatalf("deferred-tool replay dropped the namespace: %#v", got)
+	}
+}
+
+// supportsAdditionalTools routes deferred tools onto an additional_tools input
+// item instead of the tool-search pair.
+func TestResponsesDeferredToolsUseAdditionalTools(t *testing.T) {
+	model := responsesTestModel()
+	tool := ai.Tool{Name: "late_tool", Description: "loaded later"}
+	added := []string{"late_tool"}
+	requestContext := ai.Context{Messages: ai.MessageList{&ai.ToolResultMessage{
+		ToolCallID: "call_1", ToolName: "search",
+		Content: ai.ToolResultContent{&ai.TextContent{Text: "done"}}, AddedToolNames: &added,
+	}}}
+	messages, err := convertResponsesMessagesWithOptions(
+		model, requestContext, map[string]ai.Tool{"late_tool": tool},
+		responsesMessageOptions{deferredToolsMode: "additional-tools"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	additional, ok := messages[1].(responsesAdditionalTools)
+	if !ok || additional.Type != "additional_tools" || additional.Role != "developer" ||
+		len(additional.Tools) != 1 || additional.Tools[0].Name != "late_tool" ||
+		additional.Tools[0].DeferLoading != nil {
+		t.Fatalf("additional tools item = %#v", messages[1])
+	}
+}

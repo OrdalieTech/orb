@@ -32,13 +32,15 @@ type MistralConversationsOptions struct {
 }
 
 // MistralConversationsPayload is the mutable request value passed to PayloadHook.
+// Member order matches upstream's native wire payload: the literal keys first,
+// then the camelCase-to-snake_case remaps in their remap-table order.
 type MistralConversationsPayload struct {
 	Model           string                    `json:"model"`
-	Temperature     *float64                  `json:"temperature,omitempty"`
-	MaxTokens       *float64                  `json:"max_tokens,omitempty"`
 	Stream          bool                      `json:"stream"`
 	Messages        []any                     `json:"messages"`
 	Tools           []MistralConversationTool `json:"tools,omitempty"`
+	Temperature     *float64                  `json:"temperature,omitempty"`
+	MaxTokens       *float64                  `json:"max_tokens,omitempty"`
 	ToolChoice      any                       `json:"tool_choice,omitempty"`
 	ReasoningEffort *string                   `json:"reasoning_effort,omitempty"`
 	PromptMode      *string                   `json:"prompt_mode,omitempty"`
@@ -55,8 +57,8 @@ type MistralConversationTool struct {
 type MistralConversationFunction struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
-	Strict      bool              `json:"strict"`
 	Parameters  jsonschema.Schema `json:"parameters"`
+	Strict      bool              `json:"strict"`
 }
 
 type mistralNamedToolChoice struct {
@@ -68,13 +70,16 @@ type mistralNamedToolChoiceName struct {
 	Name string `json:"name"`
 }
 
+// mistralInputMessage member order reproduces upstream's per-role literals:
+// assistant is {role, prefix, content, tool_calls} and tool is
+// {role, name, content, tool_call_id} once the camelCase keys are remapped.
 type mistralInputMessage struct {
 	Role       string            `json:"role"`
+	Prefix     *bool             `json:"prefix,omitempty"`
+	Name       string            `json:"name,omitempty"`
 	Content    any               `json:"content,omitempty"`
 	ToolCalls  []mistralToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string            `json:"tool_call_id,omitempty"`
-	Name       string            `json:"name,omitempty"`
-	Prefix     *bool             `json:"prefix,omitempty"`
 }
 
 type mistralContentChunk struct {
@@ -273,10 +278,14 @@ func buildMistralPayload(
 			if err != nil {
 				return nil, err
 			}
+			parameters, err := getJSONSchemaToolParameters(tool.Parameters, strict != nil && *strict)
+			if err != nil {
+				return nil, err
+			}
 			payload.Tools = append(payload.Tools, MistralConversationTool{
 				Type: "function",
 				Function: MistralConversationFunction{
-					Name: tool.Name, Description: tool.Description, Parameters: tool.Parameters,
+					Name: tool.Name, Description: tool.Description, Parameters: parameters,
 					Strict: strict != nil && *strict,
 				},
 			})
@@ -529,33 +538,37 @@ func postMistralStream(
 			return response, readErr
 		}
 		return response, &mistralStatusError{
-			status: response.StatusCode, body: strings.TrimSpace(string(contents)), contentType: response.Header.Get("Content-Type"),
+			status: response.StatusCode, body: strings.TrimSpace(string(contents)),
+			message: mistralStatusMessage(response),
 		}
 	}
 	return response, nil
 }
 
+// mistralStatusMessage mirrors upstream's `statusText || "Request failed with
+// status N"` fallback; Go carries the reason phrase inside Response.Status.
+func mistralStatusMessage(response *http.Response) string {
+	statusText := strings.TrimPrefix(response.Status, strconv.Itoa(response.StatusCode)+" ")
+	if statusText == response.Status {
+		statusText = ""
+	}
+	if statusText != "" {
+		return statusText
+	}
+	return fmt.Sprintf("Request failed with status %d", response.StatusCode)
+}
+
 type mistralStatusError struct {
-	status      int
-	body        string
-	contentType string
+	status  int
+	body    string
+	message string
 }
 
 func (err *mistralStatusError) Error() string {
 	if err.body != "" {
 		return fmt.Sprintf("Mistral API error (%d): %s", err.status, truncateOpenAIErrorText(err.body))
 	}
-	contentType := err.contentType
-	if contentType == "" {
-		contentType = `""`
-	} else if strings.Contains(contentType, " ") {
-		contentType = strconv.Quote(contentType)
-	}
-	contentTypeMessage := ""
-	if contentType != "application/json" {
-		contentTypeMessage = " Content-Type " + contentType
-	}
-	return fmt.Sprintf(`Mistral API error (%d): API error occurred: Status %d%s. Body: ""`, err.status, err.status, contentTypeMessage)
+	return fmt.Sprintf("Mistral API error (%d): %s", err.status, err.message)
 }
 
 func formatMistralError(err error) string {
@@ -567,7 +580,7 @@ func formatMistralError(err error) string {
 
 type mistralCompletionChunk struct {
 	ID      string                     `json:"id"`
-	Choices []mistralStreamChoice      `json:"choices"`
+	Choices json.RawMessage            `json:"choices"`
 	Usage   map[string]json.RawMessage `json:"usage"`
 }
 
@@ -641,16 +654,22 @@ func (processor *mistralStreamProcessor) handleChunk(raw json.RawMessage) error 
 	if err := json.Unmarshal(raw, &chunk); err != nil {
 		return err
 	}
+	// Upstream's native transport rejects an event without a choices array.
+	var choices []mistralStreamChoice
+	if !bytes.HasPrefix(bytes.TrimSpace(chunk.Choices), []byte("[")) ||
+		json.Unmarshal(chunk.Choices, &choices) != nil {
+		return errors.New("Invalid Mistral streaming event") //nolint:staticcheck // Exact upstream text is observable.
+	}
 	if processor.output.ResponseID == nil && chunk.ID != "" {
 		processor.output.ResponseID = &chunk.ID
 	}
 	if chunk.Usage != nil {
 		processor.applyUsage(chunk.Usage)
 	}
-	if len(chunk.Choices) == 0 {
+	if len(choices) == 0 {
 		return nil
 	}
-	choice := chunk.Choices[0]
+	choice := choices[0]
 	if choice.FinishReason != nil && *choice.FinishReason != "" {
 		rawStopReason := *choice.FinishReason
 		processor.output.RawStopReason = &rawStopReason

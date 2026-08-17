@@ -396,15 +396,15 @@ func googleVertexFunctionDeclarations(value json.RawMessage) (json.RawMessage, e
 	if !googleRawPresent(value) {
 		return nil, nil
 	}
-	decoded, err := decodeGoogleOrderedJSON(value)
+	decoded, err := decodeOrderedJSON(value)
 	if err != nil {
 		return nil, err
 	}
-	declarations, ok := decoded.(googleJSONArray)
+	declarations, ok := decoded.(orderedJSONArray)
 	if !ok {
 		return nil, errors.New("functionDeclarations must be an array")
 	}
-	result := make(googleJSONArray, 0, len(declarations))
+	result := make(orderedJSONArray, 0, len(declarations))
 	for _, value := range declarations {
 		declaration, ok := value.(googleJSONObject)
 		if !ok {
@@ -475,7 +475,7 @@ func googleVertexImageConfig(value json.RawMessage) (json.RawMessage, error) {
 	if !googleRawPresent(value) {
 		return nil, nil
 	}
-	decoded, err := decodeGoogleOrderedJSON(value)
+	decoded, err := decodeOrderedJSON(value)
 	if err != nil {
 		return nil, err
 	}

@@ -43,8 +43,8 @@ import (
 var version = "dev"
 
 const (
-	upstreamVersion        = "0.84.1"
-	upstreamCommit         = "53fa77ccd8a279eb87e92294ef3687b03ff80112"
+	upstreamVersion        = "0.84.2"
+	upstreamCommit         = "914cf1472e715297caa30db4b9535d534a9eb718"
 	latestReleaseURL       = "https://api.github.com/repos/OrdalieTech/orb/releases/latest"
 	versionCheckTimeout    = 10 * time.Second
 	versionResponseMaxSize = 64 << 10
@@ -89,6 +89,10 @@ func scrubDisabledMallocStackLogging() {
 }
 
 func main() {
+	// Process markers, entry points only — not set when embedded through the SDK
+	// (upstream cli.ts/rpc-entry.ts; AI_AGENT carries orb's identity per D30).
+	_ = os.Setenv("AI_AGENT", "orb")
+	_ = os.Setenv("PI_CODING_AGENT", "true")
 	os.Exit(runCLI(context.Background(), os.Args[1:], cliStreams{
 		Stdin:     os.Stdin,
 		Stdout:    os.Stdout,
@@ -415,11 +419,12 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			StartupModelRefresh: startupModelRefresh,
 			// Skill/prompt resource diagnostics stay interactive-only; upstream
 			// print/RPC modes emit no resource diagnostics (main.ts:87-91).
-			Diagnostics: append(append([]modes.StartupDiagnostic(nil), inputs.Diagnostics...), inputs.ResourceDiagnostics...),
-			Host:        host,
-			Changelog:   "",
-			Output:      streams.Stdout,
-			OutputTTY:   streams.StdoutTTY,
+			Diagnostics:         append(append([]modes.StartupDiagnostic(nil), inputs.Diagnostics...), inputs.ResourceDiagnostics...),
+			Host:                host,
+			Changelog:           "",
+			Output:              streams.Stdout,
+			OutputTTY:           streams.StdoutTTY,
+			InitialThemeSetting: args.UseTheme,
 		})
 	}
 	extensionMode := extensions.ModePrint
@@ -976,6 +981,7 @@ Commands:
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
   --theme <path>                 Load a theme file or directory; repeatable
+  --use-theme <name[/name]>      Set the initial interactive theme for this run
   --no-themes                    Disable theme discovery
   --no-context-files, -nc        Disable AGENTS.md/CLAUDE.md discovery
   --verbose                      Force verbose startup (overrides quietStartup setting)

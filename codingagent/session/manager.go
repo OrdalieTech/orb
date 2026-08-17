@@ -337,7 +337,7 @@ func (manager *SessionManager) setLoadedSessionFileLocked(resolved string, loade
 	entries := loaded.entries
 	if len(entries) == 0 {
 		if loaded.size > 0 {
-			return fmt.Errorf("Session file is not a valid pi session: %s", resolved) //nolint:staticcheck // Upstream error capitalization is observable.
+			return fmt.Errorf("Session file is not a valid orb session: %s", resolved) //nolint:staticcheck // Upstream error capitalization is observable; upstream interpolates APP_NAME here.
 		}
 		if _, err := manager.newSessionLocked(nil); err != nil {
 			return err

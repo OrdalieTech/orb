@@ -1765,7 +1765,7 @@
         "content": "{\"kind\":\"header\",\"version\":4,\"id\":\"s\",\"createdAt\":0,\"cwd\":\"/c\"}\n{\"kind\":\"entry\",\"lane\":\"main\",\"type\":\"custom\",\"id\":\"e\",\"customType\":\"x\",\"parentId\":null,\"seq\":2,\"timestamp\":0}\n",
         "error": {
           "code": "invalid_entry",
-          "message": "Invalid JSONL v4 session <fixture>/non-consecutive-seq.jsonl: line 2 has non-consecutive seq 2"
+          "message": "Invalid JSONL v4 session <fixture>/non-consecutive-seq.jsonl: line 2 Invalid session mutation: has non-consecutive seq 2"
         }
       },
       {
@@ -1773,7 +1773,7 @@
         "content": "{\"kind\":\"header\",\"version\":4,\"id\":\"s\",\"createdAt\":0,\"cwd\":\"/c\"}\n{\"kind\":\"entry\",\"lane\":\"main\",\"type\":\"custom\",\"id\":\"e\",\"customType\":\"x\",\"parentId\":\"ghost\",\"seq\":1,\"timestamp\":0}\n",
         "error": {
           "code": "invalid_entry",
-          "message": "Invalid JSONL v4 session <fixture>/missing-parent.jsonl: line 2 does not chain to the lane leaf"
+          "message": "Invalid JSONL v4 session <fixture>/missing-parent.jsonl: line 2 Invalid session mutation: does not chain to the lane leaf"
         }
       },
       {
@@ -1781,7 +1781,7 @@
         "content": "{\"kind\":\"header\",\"version\":4,\"id\":\"s\",\"createdAt\":0,\"cwd\":\"/c\"}\n{\"kind\":\"lane\",\"seq\":1,\"lane\":\"side\",\"leafId\":\"missing\"}\n",
         "error": {
           "code": "invalid_entry",
-          "message": "Invalid JSONL v4 session <fixture>/dangling-lane.jsonl: line 2 references missing lane target missing"
+          "message": "Invalid JSONL v4 session <fixture>/dangling-lane.jsonl: line 2 Invalid session mutation: references missing lane target missing"
         }
       }
     ],

@@ -6,9 +6,32 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Added
+
+- Upstream parity moves to pi v0.84.2.
+- `--use-theme <name>` sets the interactive theme for a single run without persisting it, and `/export` now follows the active theme. Themes may define `searchMatchBg`/`searchMatchText` (optional, falling back to `selectedBg`/`text`).
+- A `defaultTools` setting chooses the initial built-in tool selection; extension and SDK custom tools stay enabled alongside it.
+- Harness sessions expose a run-lifecycle event bus (direct per-type listeners plus buffered watches pairing a consistent snapshot with every later event), can durably clear their name, and session search ships as a standalone `agent/search` service with filters, limits, cursor paging, and cancellation.
+- Tools that ask for JSON-schema constrained sampling now send a strict provider schema, falling back when a schema cannot be expressed strictly; under `PI_EXPERIMENTAL=1` the read, bash, edit, and write tools request strict schemas too.
+- OpenAI Responses tool-call namespaces survive replay, and models declaring support receive deferred tools through `additional_tools`.
+- The OpenRouter image catalog resyncs to upstream's 45 models (adds Seedream 5.0 Lite/Pro, Grok Imagine Image 2.0, MAI-Image-2.5 Pro, Qwen Image 3/3 Pro).
+- Orb sets `AI_AGENT=orb` and `PI_CODING_AGENT=true` at CLI and RPC entry so child processes can detect the launching agent.
+
 ### Changed
 
 - `orb update` now opens with a smaller mark, then Orb, then update, and runs one full-width process line under it — steps linked by faint rules that recede behind the text, with extra space below. The reveal is eased rather than metronomic: the wordmark fades in, the rule sweeps early and glides into the edge behind a normal-weight tip, and the outcome docks bold.
+
+### Fixed
+
+- Streaming `message_update` events carry cumulative token usage again in JSON and RPC output.
+- Mistral requests go out in the native Chat Completions wire shape, and an empty error body reports the HTTP status text instead of an SDK placeholder.
+- Google no longer reports a truncated response as a tool-use stop; Bedrock replays tool arguments without the empty property names its encoder rejects; DeepSeek endpoints are detected regardless of URL casing and receive `max_tokens`.
+- A tool argument sent as `null` for an optional non-nullable property is treated as omitted instead of failing validation.
+- Corrupt session files no longer fail the whole session listing; a schema-valid but invalid final line is reported as corruption instead of silently truncated; concurrent same-id session creations can no longer both succeed.
+- Split `Alt+Enter` over SSH is no longer misread as Escape: the lone-Escape wait is separate from the incomplete-sequence wait, defaults to 100 ms over SSH, and is overridable with `PI_TUI_ESC_TIMEOUT`.
+- Focused overlays receive `Ctrl+PageUp`, `Ctrl+PageDown`, and `Ctrl+End`; the transcript viewport no longer claims them.
+- Extension `sendMessage` with `triggerTurn: false` no longer starts a turn mid-stream, and `sendUserMessage` accepts `expandPromptTemplates`.
+- Concurrent model catalog refreshes share one fetch while each caller keeps its own cancellation, and custom system prompts end with a newline after the working-directory line.
 
 ## [0.4.16] - 2026-08-13
 

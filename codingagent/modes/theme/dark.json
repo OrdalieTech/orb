@@ -10,7 +10,7 @@
   },
   "colors": {
     "accent": "accent", "border": "blue", "borderAccent": "cyan", "borderMuted": "darkGray", "success": "green", "error": "red", "warning": "yellow", "muted": "gray", "dim": "dimGray", "text": "text", "thinkingText": "gray",
-    "selectedBg": "selectedBg", "scrollbarThumb": "selectedBg", "userMessageBg": "userMsgBg", "userMessageText": "text", "customMessageBg": "customMsgBg", "customMessageText": "text", "customMessageLabel": "#9575cd", "toolPendingBg": "toolPendingBg", "toolSuccessBg": "toolSuccessBg", "toolErrorBg": "toolErrorBg", "toolTitle": "text", "toolOutput": "gray",
+    "selectedBg": "selectedBg", "scrollbarThumb": "selectedBg", "searchMatchBg": "selectedBg", "searchMatchText": "text", "userMessageBg": "userMsgBg", "userMessageText": "text", "customMessageBg": "customMsgBg", "customMessageText": "text", "customMessageLabel": "#9575cd", "toolPendingBg": "toolPendingBg", "toolSuccessBg": "toolSuccessBg", "toolErrorBg": "toolErrorBg", "toolTitle": "text", "toolOutput": "gray",
     "mdHeading": "#89b4fa", "mdLink": "#81a2be", "mdLinkUrl": "dimGray", "mdCode": "accent", "mdCodeBlock": "green", "mdCodeBlockBorder": "gray", "mdQuote": "gray", "mdQuoteBorder": "gray", "mdHr": "gray", "mdListBullet": "accent",
     "toolDiffAdded": "green", "toolDiffRemoved": "red", "toolDiffContext": "gray",
     "diffAddedBg": "diffAddedBg", "diffRemovedBg": "diffRemovedBg", "diffGutterBg": "diffGutterBg",

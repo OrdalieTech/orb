@@ -1012,21 +1012,27 @@ func (runtime *SessionRuntime) sendExtensionMessage(ctx context.Context, message
 	}
 	appMessage := &harness.CustomMessage{Role: "custom", CustomType: message.CustomType, Content: content, Display: message.Display, Details: message.Details, Timestamp: time.Now().UnixMilli()}
 	state := runtime.extensionState
-	if options != nil && options.DeliverAs == extensions.DeliverNextTurn {
+	var deliverAs extensions.DeliveryMode
+	var triggerTurn *bool
+	if options != nil {
+		deliverAs, triggerTurn = options.DeliverAs, options.TriggerTurn
+	}
+	if deliverAs == extensions.DeliverNextTurn {
 		state.mu.Lock()
 		state.pendingNextTurn = append(state.pendingNextTurn, appMessage)
 		state.mu.Unlock()
 		return nil
 	}
-	if !runtime.agent.IsIdle() {
-		if options != nil && options.DeliverAs == extensions.DeliverFollowUp {
+	// An unset triggerTurn still steers a live turn; only an explicit false opts out.
+	if !runtime.agent.IsIdle() && (triggerTurn == nil || *triggerTurn) {
+		if deliverAs == extensions.DeliverFollowUp {
 			runtime.agent.FollowUp(appMessage)
 		} else {
 			runtime.agent.Steer(appMessage)
 		}
 		return nil
 	}
-	if options != nil && options.TriggerTurn {
+	if triggerTurn != nil && *triggerTurn {
 		return runtime.runPolicies(ctx, func() error { return runtime.agent.Prompt(ctx, appMessage) })
 	}
 	runtime.agent.AppendMessage(appMessage)
@@ -1063,11 +1069,15 @@ func (runtime *SessionRuntime) sendExtensionUserMessage(ctx context.Context, con
 		text = strings.Join(textParts, "\n")
 	}
 	var streamingBehavior *extensions.DeliveryMode
-	if options != nil && options.DeliverAs != "" {
-		behavior := options.DeliverAs
-		streamingBehavior = &behavior
+	expand := false
+	if options != nil {
+		if options.DeliverAs != "" {
+			behavior := options.DeliverAs
+			streamingBehavior = &behavior
+		}
+		expand = options.ExpandPromptTemplates
 	}
-	return runtime.promptExtensionInput(ctx, text, images, extensions.InputExtension, false, streamingBehavior, true, nil)
+	return runtime.promptExtensionInput(ctx, text, images, extensions.InputExtension, expand, streamingBehavior, true, nil)
 }
 
 func (runtime *SessionRuntime) appendExtensionEntry(_ context.Context, customType string, data any) error {

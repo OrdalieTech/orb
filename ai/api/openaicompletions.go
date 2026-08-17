@@ -621,13 +621,14 @@ func detectOpenAICompletionsCompat(model *ai.Model) resolvedOpenAICompletionsCom
 	isCloudflareGateway := provider == "cloudflare-ai-gateway" || strings.Contains(baseURL, "gateway.ai.cloudflare.com")
 	isNVIDIA := provider == "nvidia" || strings.Contains(baseURL, "integrate.api.nvidia.com")
 	isAntLing := provider == "ant-ling" || strings.Contains(baseURL, "api.ant-ling.com")
+	isDeepSeek := provider == "deepseek" || strings.Contains(strings.ToLower(baseURL), "deepseek.com")
 	isNonStandard := isNVIDIA || provider == "cerebras" || strings.Contains(baseURL, "cerebras.ai") ||
 		provider == "xai" || strings.Contains(baseURL, "api.x.ai") || isTogether || strings.Contains(baseURL, "chutes.ai") ||
-		strings.Contains(baseURL, "deepseek.com") || isZAI || isMoonshot || provider == "opencode" ||
+		isDeepSeek || isZAI || isMoonshot || provider == "opencode" ||
 		strings.Contains(baseURL, "opencode.ai") || isCloudflareWorkers || isCloudflareGateway || isAntLing
-	useLegacyMax := strings.Contains(baseURL, "chutes.ai") || isMoonshot || isCloudflareGateway || isTogether || isNVIDIA || isAntLing || isZAI
+	useLegacyMax := strings.Contains(baseURL, "chutes.ai") || isDeepSeek || isMoonshot || isCloudflareGateway ||
+		isTogether || isNVIDIA || isAntLing || isZAI
 	isGrok := provider == "xai" || strings.Contains(baseURL, "api.x.ai")
-	isDeepSeek := provider == "deepseek" || strings.Contains(baseURL, "deepseek.com")
 	isOpenRouterDeveloperModel := isOpenRouter && (strings.HasPrefix(model.ID, "anthropic/") || strings.HasPrefix(model.ID, "openai/"))
 
 	thinkingFormat := ai.ThinkingFormatOpenAI
@@ -1211,10 +1212,14 @@ func convertOpenAICompletionsTools(tools []ai.Tool, compat resolvedOpenAIComplet
 		if err != nil {
 			return nil, err
 		}
+		parameters, err := getJSONSchemaToolParameters(tool.Parameters, strict != nil && *strict)
+		if err != nil {
+			return nil, err
+		}
 		function := map[string]any{
 			"name":        tool.Name,
 			"description": tool.Description,
-			"parameters":  tool.Parameters,
+			"parameters":  parameters,
 		}
 		if compat.supportsStrictMode {
 			if strict == nil {

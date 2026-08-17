@@ -60,6 +60,10 @@ type f2HTTPResponse struct {
 	StatusText  string
 	Body        string
 	ContentType string
+	// FixtureStatus marks a status supplied by the fixture. The extraction
+	// stub builds `new Response(body, { status })`, whose statusText is empty
+	// unless the fixture names one, so no reason phrase is synthesized.
+	FixtureStatus bool
 }
 
 type bedrockFixtureItem struct {
@@ -521,7 +525,7 @@ func f2StreamHTTPResponse(fixtureCase f2Case) f2HTTPResponse {
 		}
 		return f2HTTPResponse{
 			Status: fixtureCase.HTTPStatus, StatusText: fixtureCase.HTTPStatusText,
-			Body: fixtureCase.HTTPBody, ContentType: contentType,
+			Body: fixtureCase.HTTPBody, ContentType: contentType, FixtureStatus: true,
 		}
 	}
 	return f2HTTPResponse{Status: http.StatusOK, Body: fixtureCase.SSE, ContentType: "text/event-stream"}
@@ -550,7 +554,7 @@ func runF2Case(t *testing.T, fixtureCase f2Case, fixtureResponse f2HTTPResponse)
 			Body:    body,
 		}
 		statusText := fixtureResponse.StatusText
-		if statusText == "" {
+		if statusText == "" && !fixtureResponse.FixtureStatus {
 			statusText = http.StatusText(fixtureResponse.Status)
 		}
 		return &http.Response{

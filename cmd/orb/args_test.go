@@ -237,3 +237,15 @@ func nonNil(values []string) []string {
 	}
 	return values
 }
+
+func TestParseArgsUseTheme(t *testing.T) {
+	if args := ParseArgs([]string{"--use-theme", "light/dark"}); args.UseTheme != "light/dark" || len(args.Diagnostics) != 0 {
+		t.Fatalf("use-theme = %q, diagnostics = %#v", args.UseTheme, args.Diagnostics)
+	}
+	for _, argv := range [][]string{{"--use-theme"}, {"--use-theme", "--verbose"}} {
+		args := ParseArgs(argv)
+		if args.UseTheme != "" || len(args.Diagnostics) != 1 || args.Diagnostics[0].Message != "--use-theme requires a theme name" {
+			t.Fatalf("%v diagnostics = %#v", argv, args.Diagnostics)
+		}
+	}
+}

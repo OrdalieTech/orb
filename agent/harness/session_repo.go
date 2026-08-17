@@ -287,7 +287,7 @@ func (repo *JSONLSessionRepo) OpenRuntimePath(ctx context.Context, path, cwd str
 		return repo.FS.AppendFile(context.Background(), resolved, line)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("Session file is not a valid pi session: %s", resolved) //nolint:staticcheck // Upstream text.
+		return nil, fmt.Errorf("Session file is not a valid orb session: %s", resolved) //nolint:staticcheck // Upstream text, with APP_NAME interpolated.
 	}
 	return NewSession(storage), nil
 }

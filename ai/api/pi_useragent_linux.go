@@ -6,7 +6,7 @@ import (
 	"syscall"
 )
 
-func openAICodexUserAgent() string {
+func piUserAgent() string {
 	release := "unknown"
 	var name syscall.Utsname
 	if syscall.Uname(&name) == nil {
@@ -19,5 +19,5 @@ func openAICodexUserAgent() string {
 		}
 		release = string(bytes)
 	}
-	return "pi (linux " + release + "; " + codexArchitecture() + ")"
+	return "pi (linux " + release + "; " + piArchitecture() + ")"
 }

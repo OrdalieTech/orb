@@ -4,10 +4,10 @@ package api
 
 import "syscall"
 
-func openAICodexUserAgent() string {
+func piUserAgent() string {
 	release, err := syscall.Sysctl("kern.osrelease")
 	if err != nil {
 		release = "unknown"
 	}
-	return "pi (darwin " + release + "; " + codexArchitecture() + ")"
+	return "pi (darwin " + release + "; " + piArchitecture() + ")"
 }

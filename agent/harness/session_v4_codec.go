@@ -26,9 +26,34 @@ var sessionV4RecordTypes = map[string]bool{
 
 var sessionV4OperationKinds = map[string]bool{"run": true, "compaction": true, "navigation": true}
 
-func invalidV4File(path string, line int, format string, arguments ...any) *SessionError {
-	message := fmt.Sprintf(format, arguments...)
-	return newSessionError(SessionErrorInvalidEntry, "Invalid JSONL v4 session %s: line %d %s", path, line, message)
+// invalidV4FileCause mirrors upstream invalidFile(path, line, cause): file
+// context prefixed to the cause's own message, cause kept for errors.As.
+func invalidV4FileCause(path string, line int, cause error) *SessionError {
+	return &SessionError{Code: SessionErrorInvalidEntry,
+		Err: fmt.Errorf("Invalid JSONL v4 session %s: line %d %w", path, line, cause)} //nolint:staticcheck // Upstream error text is observable (F6Harness).
+}
+
+// SessionV4DecodeErrorKind separates malformed JSON from well-formed JSON that
+// violates the v4 schema. Only a syntax failure on the final line is a torn
+// append and gets repaired.
+type SessionV4DecodeErrorKind string
+
+const (
+	SessionV4DecodeSyntax SessionV4DecodeErrorKind = "syntax"
+	SessionV4DecodeSchema SessionV4DecodeErrorKind = "schema"
+)
+
+// SessionV4DecodeError is a line-local decode failure carrying no file or line
+// context of its own, mirroring upstream JsonlDecodeError.
+type SessionV4DecodeError struct {
+	Kind    SessionV4DecodeErrorKind
+	Message string
+}
+
+func (failure *SessionV4DecodeError) Error() string { return failure.Message }
+
+func decodeV4Error(kind SessionV4DecodeErrorKind, format string, arguments ...any) *SessionV4DecodeError {
+	return &SessionV4DecodeError{Kind: kind, Message: fmt.Sprintf(format, arguments...)}
 }
 
 // SessionV4Header mirrors upstream JsonlV4Header.
@@ -42,7 +67,9 @@ type SessionV4Header struct {
 }
 
 // SessionV4Entry is one immutable tree entry of a v4 session. Its serialized
-// member order is retained for wire-compatible re-encoding.
+// member order is retained for wire-compatible re-encoding. ParentID (the
+// appending lane's leaf), Seq (the session-wide sequence), and Timestamp (Unix
+// ms) are storage-assigned.
 type SessionV4Entry struct {
 	Type      string
 	ID        string
@@ -154,6 +181,10 @@ type SessionV4LogItem struct {
 	Name     string
 	TargetID string
 	Label    *string
+
+	// NameCleared marks a `fact:"name"` item that cleared the session name
+	// (upstream `name: undefined`); the `name` member is then omitted.
+	NameCleared bool
 }
 
 func (item SessionV4LogItem) MarshalJSON() ([]byte, error) {
@@ -179,7 +210,9 @@ func (item SessionV4LogItem) MarshalJSON() ([]byte, error) {
 	case "fact":
 		members = append(members, harnessStringMember("fact", item.Fact))
 		if item.Fact == "name" {
-			members = append(members, harnessStringMember("name", item.Name))
+			if !item.NameCleared {
+				members = append(members, harnessStringMember("name", item.Name))
+			}
 		} else {
 			members = append(members, harnessStringMember("targetId", item.TargetID))
 			if item.Label != nil {
@@ -207,6 +240,10 @@ type SessionV4Mutation struct {
 	Name     string
 	TargetID string
 	Label    *string
+
+	// NameCleared marks a `fact:"name"` mutation that clears the session name
+	// (upstream `name: undefined`); the `name` member is then omitted on the wire.
+	NameCleared bool
 }
 
 func harnessNullableStringMember(name string, value *string) harnessJSONMember {
@@ -228,13 +265,13 @@ func cloneHarnessMembers(members []harnessJSONMember) []harnessJSONMember {
 // Well-formed object lines — the hot path — are validated by the decode walk
 // itself; the json.Valid scan runs only on failures so the original error
 // split ("is not valid JSON" vs "is not a JSON object") is preserved.
-func parseV4Object(data []byte) ([]harnessJSONMember, map[string]json.RawMessage, error) {
+func parseV4Object(data []byte) ([]harnessJSONMember, map[string]json.RawMessage, *SessionV4DecodeError) {
 	trimmed := bytes.TrimSpace(data)
-	malformed := func() ([]harnessJSONMember, map[string]json.RawMessage, error) {
+	malformed := func() ([]harnessJSONMember, map[string]json.RawMessage, *SessionV4DecodeError) {
 		if !json.Valid(trimmed) {
-			return nil, nil, fmt.Errorf("is not valid JSON")
+			return nil, nil, decodeV4Error(SessionV4DecodeSyntax, "is not valid JSON")
 		}
-		return nil, nil, fmt.Errorf("is not a JSON object")
+		return nil, nil, decodeV4Error(SessionV4DecodeSchema, "is not a JSON object")
 	}
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		return malformed()
@@ -297,88 +334,99 @@ func v4SafeInteger(raw json.RawMessage) (int64, bool) {
 	return int64(value), true
 }
 
-func v4NullableID(raw json.RawMessage, path string, line int, field string) (*string, error) {
+func v4NullableID(raw json.RawMessage, field string) (*string, *SessionV4DecodeError) {
 	if len(raw) == 0 || string(bytes.TrimSpace(raw)) == "null" {
 		if len(raw) == 0 {
-			return nil, invalidV4File(path, line, "has invalid %s", field)
+			return nil, decodeV4Error(SessionV4DecodeSchema, "has invalid %s", field)
 		}
 		return nil, nil
 	}
 	value, ok := v4String(raw)
 	if !ok {
-		return nil, invalidV4File(path, line, "has invalid %s", field)
+		return nil, decodeV4Error(SessionV4DecodeSchema, "has invalid %s", field)
 	}
 	return &value, nil
 }
 
-func requireV4String(raw json.RawMessage, path string, line int, field string) (string, error) {
+func requireV4String(raw json.RawMessage, field string) (string, *SessionV4DecodeError) {
 	value, ok := v4String(raw)
 	if !ok {
-		return "", invalidV4File(path, line, "has invalid %s", field)
+		return "", decodeV4Error(SessionV4DecodeSchema, "has invalid %s", field)
 	}
 	return value, nil
 }
 
-func requireV4Sequence(raw json.RawMessage, path string, line int) (int, error) {
+func requireV4Sequence(raw json.RawMessage) (int, *SessionV4DecodeError) {
 	value, ok := v4SafeInteger(raw)
 	if !ok || value <= 0 {
-		return 0, invalidV4File(path, line, "has invalid seq")
+		return 0, decodeV4Error(SessionV4DecodeSchema, "has invalid seq")
 	}
 	return int(value), nil
 }
 
-func requireV4Timestamp(raw json.RawMessage, path string, line int) (int64, error) {
+func requireV4Timestamp(raw json.RawMessage) (int64, *SessionV4DecodeError) {
 	value, ok := v4SafeInteger(raw)
 	if !ok || value < 0 {
-		return 0, invalidV4File(path, line, "has invalid timestamp")
+		return 0, decodeV4Error(SessionV4DecodeSchema, "has invalid timestamp")
 	}
 	return value, nil
 }
 
-// ParseSessionV4Header decodes and validates the first line of a v4 session.
-func ParseSessionV4Header(line []byte, path string) (SessionV4Header, error) {
-	_, byName, err := parseV4Object(line)
-	if err != nil {
-		return SessionV4Header{}, invalidV4File(path, 1, "%s", err.Error())
+// DecodeSessionV4Header decodes and validates a v4 header line, mirroring
+// upstream parseHeader: failures carry no file or line context.
+func DecodeSessionV4Header(line []byte) (SessionV4Header, *SessionV4DecodeError) {
+	_, byName, decodeErr := parseV4Object(line)
+	if decodeErr != nil {
+		return SessionV4Header{}, decodeErr
 	}
 	if kind, _ := v4String(byName["kind"]); kind != "header" {
-		return SessionV4Header{}, invalidV4File(path, 1, "is not a header")
+		return SessionV4Header{}, decodeV4Error(SessionV4DecodeSchema, "is not a header")
 	}
 	if version, ok := v4SafeInteger(byName["version"]); !ok || version != 4 {
-		return SessionV4Header{}, invalidV4File(path, 1, "has unsupported session version")
+		return SessionV4Header{}, decodeV4Error(SessionV4DecodeSchema, "has unsupported session version")
 	}
 	header := SessionV4Header{}
 	if raw, ok := byName["parentSessionId"]; ok {
 		value, isString := v4String(raw)
 		if !isString {
-			return SessionV4Header{}, invalidV4File(path, 1, "has invalid parentSessionId")
+			return SessionV4Header{}, decodeV4Error(SessionV4DecodeSchema, "has invalid parentSessionId")
 		}
 		header.ParentSessionID = &value
 	}
 	if raw, ok := byName["legacyParentSessionPath"]; ok {
 		value, isString := v4String(raw)
 		if !isString {
-			return SessionV4Header{}, invalidV4File(path, 1, "has invalid legacyParentSessionPath")
+			return SessionV4Header{}, decodeV4Error(SessionV4DecodeSchema, "has invalid legacyParentSessionPath")
 		}
 		header.LegacyParentSessionPath = &value
 	}
 	if header.ParentSessionID != nil && header.LegacyParentSessionPath != nil {
-		return SessionV4Header{}, invalidV4File(path, 1, "has both parentSessionId and legacyParentSessionPath")
+		return SessionV4Header{}, decodeV4Error(SessionV4DecodeSchema, "has both parentSessionId and legacyParentSessionPath")
 	}
 	if raw, ok := byName["metadata"]; ok {
 		if !isHarnessJSONObject(raw) {
-			return SessionV4Header{}, invalidV4File(path, 1, "has invalid metadata")
+			return SessionV4Header{}, decodeV4Error(SessionV4DecodeSchema, "has invalid metadata")
 		}
 		header.Metadata = cloneHarnessRaw(raw)
 	}
-	if header.ID, err = requireV4String(byName["id"], path, 1, "id"); err != nil {
-		return SessionV4Header{}, err
+	if header.ID, decodeErr = requireV4String(byName["id"], "id"); decodeErr != nil {
+		return SessionV4Header{}, decodeErr
 	}
-	if header.CreatedAt, err = requireV4Timestamp(byName["createdAt"], path, 1); err != nil {
-		return SessionV4Header{}, err
+	if header.CreatedAt, decodeErr = requireV4Timestamp(byName["createdAt"]); decodeErr != nil {
+		return SessionV4Header{}, decodeErr
 	}
-	if header.CWD, err = requireV4String(byName["cwd"], path, 1, "cwd"); err != nil {
-		return SessionV4Header{}, err
+	if header.CWD, decodeErr = requireV4String(byName["cwd"], "cwd"); decodeErr != nil {
+		return SessionV4Header{}, decodeErr
+	}
+	return header, nil
+}
+
+// ParseSessionV4Header decodes and validates the first line of a v4 session,
+// reporting failures with the session file context upstream's invalidFile adds.
+func ParseSessionV4Header(line []byte, path string) (SessionV4Header, error) {
+	header, decodeErr := DecodeSessionV4Header(line)
+	if decodeErr != nil {
+		return SessionV4Header{}, invalidV4FileCause(path, 1, decodeErr)
 	}
 	return header, nil
 }
@@ -408,29 +456,29 @@ func MarshalSessionV4Header(header SessionV4Header) ([]byte, error) {
 	return marshalHarnessMembers(members)
 }
 
-func decodeV4EntryPayload(members []harnessJSONMember, byName map[string]json.RawMessage, path string, line int) (SessionV4Entry, error) {
+func decodeV4EntryPayload(members []harnessJSONMember, byName map[string]json.RawMessage) (SessionV4Entry, *SessionV4DecodeError) {
 	entry := SessionV4Entry{members: members}
-	var err error
-	if entry.ID, err = requireV4String(byName["id"], path, line, "id"); err != nil {
+	var err *SessionV4DecodeError
+	if entry.ID, err = requireV4String(byName["id"], "id"); err != nil {
 		return SessionV4Entry{}, err
 	}
-	if entry.Type, err = requireV4String(byName["type"], path, line, "entry type"); err != nil {
+	if entry.Type, err = requireV4String(byName["type"], "entry type"); err != nil {
 		return SessionV4Entry{}, err
 	}
 	if !sessionV4EntryTypes[entry.Type] {
-		return SessionV4Entry{}, invalidV4File(path, line, "has unknown entry type %s", entry.Type)
+		return SessionV4Entry{}, decodeV4Error(SessionV4DecodeSchema, "has unknown entry type %s", entry.Type)
 	}
-	if entry.ParentID, err = v4NullableID(byName["parentId"], path, line, "parentId"); err != nil {
+	if entry.ParentID, err = v4NullableID(byName["parentId"], "parentId"); err != nil {
 		return SessionV4Entry{}, err
 	}
-	if entry.Seq, err = requireV4Sequence(byName["seq"], path, line); err != nil {
+	if entry.Seq, err = requireV4Sequence(byName["seq"]); err != nil {
 		return SessionV4Entry{}, err
 	}
-	if entry.Timestamp, err = requireV4Timestamp(byName["timestamp"], path, line); err != nil {
+	if entry.Timestamp, err = requireV4Timestamp(byName["timestamp"]); err != nil {
 		return SessionV4Entry{}, err
 	}
 	if entry.Type == "custom" {
-		if entry.CustomType, err = requireV4String(byName["customType"], path, line, "customType"); err != nil {
+		if entry.CustomType, err = requireV4String(byName["customType"], "customType"); err != nil {
 			return SessionV4Entry{}, err
 		}
 	}
@@ -454,44 +502,44 @@ func decodeV4EntryPayload(members []harnessJSONMember, byName map[string]json.Ra
 	return entry, nil
 }
 
-func decodeV4RecordPayload(members []harnessJSONMember, byName map[string]json.RawMessage, path string, line int) (SessionV4Record, error) {
+func decodeV4RecordPayload(members []harnessJSONMember, byName map[string]json.RawMessage) (SessionV4Record, *SessionV4DecodeError) {
 	record := SessionV4Record{members: members}
-	var err error
-	if record.ID, err = requireV4String(byName["id"], path, line, "id"); err != nil {
+	var err *SessionV4DecodeError
+	if record.ID, err = requireV4String(byName["id"], "id"); err != nil {
 		return SessionV4Record{}, err
 	}
-	if record.Lane, err = requireV4String(byName["lane"], path, line, "lane"); err != nil {
+	if record.Lane, err = requireV4String(byName["lane"], "lane"); err != nil {
 		return SessionV4Record{}, err
 	}
-	if record.Type, err = requireV4String(byName["type"], path, line, "record type"); err != nil {
+	if record.Type, err = requireV4String(byName["type"], "record type"); err != nil {
 		return SessionV4Record{}, err
 	}
 	if !sessionV4RecordTypes[record.Type] {
-		return SessionV4Record{}, invalidV4File(path, line, "has unknown record type %s", record.Type)
+		return SessionV4Record{}, decodeV4Error(SessionV4DecodeSchema, "has unknown record type %s", record.Type)
 	}
-	if record.Seq, err = requireV4Sequence(byName["seq"], path, line); err != nil {
+	if record.Seq, err = requireV4Sequence(byName["seq"]); err != nil {
 		return SessionV4Record{}, err
 	}
-	if record.Timestamp, err = requireV4Timestamp(byName["timestamp"], path, line); err != nil {
+	if record.Timestamp, err = requireV4Timestamp(byName["timestamp"]); err != nil {
 		return SessionV4Record{}, err
 	}
 	if record.Type == "operation_started" {
 		if !isHarnessJSONObject(byName["intent"]) {
-			return SessionV4Record{}, invalidV4File(path, line, "has invalid intent")
+			return SessionV4Record{}, decodeV4Error(SessionV4DecodeSchema, "has invalid intent")
 		}
 		var intent struct {
 			Kind json.RawMessage `json:"kind"`
 		}
 		_ = json.Unmarshal(byName["intent"], &intent)
-		if record.IntentKind, err = requireV4String(intent.Kind, path, line, "operation kind"); err != nil {
+		if record.IntentKind, err = requireV4String(intent.Kind, "operation kind"); err != nil {
 			return SessionV4Record{}, err
 		}
 		if !sessionV4OperationKinds[record.IntentKind] {
-			return SessionV4Record{}, invalidV4File(path, line, "has unknown operation kind %s", record.IntentKind)
+			return SessionV4Record{}, decodeV4Error(SessionV4DecodeSchema, "has unknown operation kind %s", record.IntentKind)
 		}
 	}
 	if record.Type == "operation_finished" {
-		if _, err = requireV4String(byName["runId"], path, line, "runId"); err != nil {
+		if _, err = requireV4String(byName["runId"], "runId"); err != nil {
 			return SessionV4Record{}, err
 		}
 	}
@@ -537,52 +585,57 @@ func membersWithout(members []harnessJSONMember, names ...string) []harnessJSONM
 // ParseSessionV4Entry decodes one bare entry object (no kind/lane wrapper),
 // as used for context-building inputs.
 func ParseSessionV4Entry(data []byte) (SessionV4Entry, error) {
-	members, byName, err := parseV4Object(data)
-	if err != nil {
-		return SessionV4Entry{}, invalidV4File("<entry>", 1, "%s", err.Error())
+	members, byName, decodeErr := parseV4Object(data)
+	if decodeErr != nil {
+		return SessionV4Entry{}, invalidV4FileCause("<entry>", 1, decodeErr)
 	}
-	return decodeV4EntryPayload(members, byName, "<entry>", 1)
+	entry, decodeErr := decodeV4EntryPayload(members, byName)
+	if decodeErr != nil {
+		return SessionV4Entry{}, invalidV4FileCause("<entry>", 1, decodeErr)
+	}
+	return entry, nil
 }
 
-// ParseSessionV4Mutation decodes one v4 mutation line.
-func ParseSessionV4Mutation(line []byte, path string, lineNumber int) (SessionV4Mutation, error) {
-	members, byName, err := parseV4Object(line)
-	if err != nil {
-		return SessionV4Mutation{}, invalidV4File(path, lineNumber, "%s", err.Error())
+// DecodeSessionV4Mutation decodes one v4 mutation line, mirroring upstream
+// parseMutation: failures carry no file or line context.
+func DecodeSessionV4Mutation(line []byte) (SessionV4Mutation, *SessionV4DecodeError) {
+	members, byName, decodeErr := parseV4Object(line)
+	if decodeErr != nil {
+		return SessionV4Mutation{}, decodeErr
 	}
-	seq, err := requireV4Sequence(byName["seq"], path, lineNumber)
-	if err != nil {
-		return SessionV4Mutation{}, err
+	seq, decodeErr := requireV4Sequence(byName["seq"])
+	if decodeErr != nil {
+		return SessionV4Mutation{}, decodeErr
 	}
 	kind, _ := v4String(byName["kind"])
 	switch kind {
 	case "entry":
 		mutation := SessionV4Mutation{Kind: "entry", Seq: seq}
 		if raw, ok := byName["lane"]; ok {
-			lane, err := requireV4String(raw, path, lineNumber, "lane")
+			lane, err := requireV4String(raw, "lane")
 			if err != nil {
 				return SessionV4Mutation{}, err
 			}
 			mutation.EntryLane = &lane
 		}
-		entry, err := decodeV4EntryPayload(membersWithout(members, "kind", "lane"), byName, path, lineNumber)
+		entry, err := decodeV4EntryPayload(membersWithout(members, "kind", "lane"), byName)
 		if err != nil {
 			return SessionV4Mutation{}, err
 		}
 		mutation.Entry = &entry
 		return mutation, nil
 	case "record":
-		record, err := decodeV4RecordPayload(membersWithout(members, "kind"), byName, path, lineNumber)
+		record, err := decodeV4RecordPayload(membersWithout(members, "kind"), byName)
 		if err != nil {
 			return SessionV4Mutation{}, err
 		}
 		return SessionV4Mutation{Kind: "record", Seq: seq, Record: &record}, nil
 	case "lane":
-		lane, err := requireV4String(byName["lane"], path, lineNumber, "lane")
+		lane, err := requireV4String(byName["lane"], "lane")
 		if err != nil {
 			return SessionV4Mutation{}, err
 		}
-		leafID, err := v4NullableID(byName["leafId"], path, lineNumber, "leafId")
+		leafID, err := v4NullableID(byName["leafId"], "leafId")
 		if err != nil {
 			return SessionV4Mutation{}, err
 		}
@@ -590,9 +643,14 @@ func ParseSessionV4Mutation(line []byte, path string, lineNumber int) (SessionV4
 	case "fact":
 		fact, _ := v4String(byName["fact"])
 		if fact == "name" {
-			name, err := requireV4String(byName["name"], path, lineNumber, "name")
-			if err != nil {
-				return SessionV4Mutation{}, err
+			// An omitted name clears the session name (upstream `name: undefined`).
+			raw, present := byName["name"]
+			if !present {
+				return SessionV4Mutation{Kind: "fact", Seq: seq, Fact: "name", NameCleared: true}, nil
+			}
+			name, isString := v4String(raw)
+			if !isString {
+				return SessionV4Mutation{}, decodeV4Error(SessionV4DecodeSchema, "has invalid name")
 			}
 			return SessionV4Mutation{Kind: "fact", Seq: seq, Fact: "name", Name: name}, nil
 		}
@@ -601,19 +659,29 @@ func ParseSessionV4Mutation(line []byte, path string, lineNumber int) (SessionV4
 			if raw, ok := byName["label"]; ok {
 				label, isString := v4String(raw)
 				if !isString {
-					return SessionV4Mutation{}, invalidV4File(path, lineNumber, "has invalid label")
+					return SessionV4Mutation{}, decodeV4Error(SessionV4DecodeSchema, "has invalid label")
 				}
 				mutation.Label = &label
 			}
-			if mutation.TargetID, err = requireV4String(byName["targetId"], path, lineNumber, "targetId"); err != nil {
-				return SessionV4Mutation{}, err
+			if mutation.TargetID, decodeErr = requireV4String(byName["targetId"], "targetId"); decodeErr != nil {
+				return SessionV4Mutation{}, decodeErr
 			}
 			return mutation, nil
 		}
-		return SessionV4Mutation{}, invalidV4File(path, lineNumber, "has unknown fact type")
+		return SessionV4Mutation{}, decodeV4Error(SessionV4DecodeSchema, "has unknown fact type")
 	default:
-		return SessionV4Mutation{}, invalidV4File(path, lineNumber, "has unknown mutation kind")
+		return SessionV4Mutation{}, decodeV4Error(SessionV4DecodeSchema, "has unknown mutation kind")
 	}
+}
+
+// ParseSessionV4Mutation decodes one v4 mutation line, reporting failures with
+// the session file context upstream's invalidFile adds.
+func ParseSessionV4Mutation(line []byte, path string, lineNumber int) (SessionV4Mutation, error) {
+	mutation, decodeErr := DecodeSessionV4Mutation(line)
+	if decodeErr != nil {
+		return SessionV4Mutation{}, invalidV4FileCause(path, lineNumber, decodeErr)
+	}
+	return mutation, nil
 }
 
 // MarshalSessionV4Mutation serializes one mutation with upstream member order.
@@ -642,7 +710,9 @@ func MarshalSessionV4Mutation(mutation SessionV4Mutation) ([]byte, error) {
 			harnessStringMember("fact", mutation.Fact),
 		}
 		if mutation.Fact == "name" {
-			members = append(members, harnessStringMember("name", mutation.Name))
+			if !mutation.NameCleared {
+				members = append(members, harnessStringMember("name", mutation.Name))
+			}
 		} else {
 			members = append(members, harnessStringMember("targetId", mutation.TargetID))
 			if mutation.Label != nil {

@@ -536,11 +536,11 @@ func googleFunctionDeclarations(value json.RawMessage) (json.RawMessage, error) 
 	if !googleRawPresent(value) {
 		return nil, nil
 	}
-	decoded, err := decodeGoogleOrderedJSON(value)
+	decoded, err := decodeOrderedJSON(value)
 	if err != nil {
 		return nil, err
 	}
-	declarations, ok := decoded.(googleJSONArray)
+	declarations, ok := decoded.(orderedJSONArray)
 	if !ok {
 		return nil, errors.New("functionDeclarations must be an array")
 	}

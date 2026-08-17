@@ -46,6 +46,7 @@ func Validate(schema Schema, value any) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("jsonschema: clone value: %w", err)
 	}
+	normalizeOptionalNulls(cloned, decodedSchema)
 	coerced := coerceValue(cloned, decodedSchema)
 	issues := validateValue(coerced, decodedSchema, "")
 	if len(issues) > 0 {
@@ -97,6 +98,59 @@ func formatToolValidationError(toolName string, err error, received string) erro
 	message.WriteString("\nReceived arguments:\n")
 	message.WriteString(received)
 	return errors.New(message.String())
+}
+
+// normalizeOptionalNulls drops nulls sent for optional properties whose schema
+// rejects null, so a provider's explicit null reads as an omission. Properties
+// behind a $ref keep their null because the reference cannot be checked here.
+func normalizeOptionalNulls(value, schema any) {
+	object, _ := schema.(*schemaObject)
+	if object == nil {
+		return
+	}
+	if items, ok := value.([]any); ok {
+		switch itemSchema := object.values["items"].(type) {
+		case []any:
+			for index := range items {
+				if index < len(itemSchema) {
+					normalizeOptionalNulls(items[index], itemSchema[index])
+				}
+			}
+		case *schemaObject:
+			for _, item := range items {
+				normalizeOptionalNulls(item, itemSchema)
+			}
+		}
+		return
+	}
+	values, ok := value.(map[string]any)
+	properties, _ := object.values["properties"].(*schemaObject)
+	if !ok || properties == nil {
+		return
+	}
+	required := stringList(object.values["required"])
+	for _, name := range properties.order {
+		propertySchema := properties.values[name]
+		current, present := values[name]
+		if !present {
+			continue
+		}
+		if current == nil && !slices.Contains(required, name) && !hasSchemaRef(propertySchema) &&
+			len(validateValue(nil, propertySchema, "")) > 0 {
+			delete(values, name)
+			continue
+		}
+		normalizeOptionalNulls(current, propertySchema)
+	}
+}
+
+func hasSchemaRef(schema any) bool {
+	object, _ := schema.(*schemaObject)
+	if object == nil {
+		return false
+	}
+	_, isString := object.values["$ref"].(string)
+	return isString
 }
 
 func decodeSchema(schema Schema) (any, error) {
@@ -272,6 +326,13 @@ func coerceValue(value, schema any) any {
 }
 
 func coerceUnion(value any, schemas []any) any {
+	// A value that already satisfies one arm is returned untouched, so an
+	// explicit null keeps its shape against a nullable union.
+	for _, schema := range schemas {
+		if len(validateValue(value, schema, "")) == 0 {
+			return value
+		}
+	}
 	for _, schema := range schemas {
 		candidate, err := cloneJSONValue(value)
 		if err != nil {

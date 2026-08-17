@@ -253,3 +253,36 @@ func TestValidateMatchesTypeBoxCompositeAndConstraintErrors(t *testing.T) {
 		t.Fatalf("unexpected uniqueItems error: %v", err)
 	}
 }
+
+// A null sent for an optional property whose schema rejects null reads as an
+// omission; nullable arms and $ref properties keep theirs.
+func TestValidateTreatsOptionalNullAsOmission(t *testing.T) {
+	schema := Schema(`{"type":"object","properties":{` +
+		`"path":{"type":"string"},"offset":{"type":"number"},` +
+		`"nullable":{"anyOf":[{"type":"string"},{"type":"null"}]},` +
+		`"metadata":{"type":"object","properties":{"enabled":{"type":"boolean"}}}},` +
+		`"required":["path","metadata"]}`)
+	validated, err := Validate(schema, map[string]any{
+		"path": "file.txt", "offset": nil, "nullable": nil,
+		"metadata": map[string]any{"enabled": nil},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{
+		"path": "file.txt", "nullable": nil, "metadata": map[string]any{},
+	}
+	if !reflect.DeepEqual(validated, want) {
+		t.Fatalf("validated = %#v, want %#v", validated, want)
+	}
+
+	referenced := Schema(`{"type":"object","properties":{"value":{"$ref":"#/$defs/value"}},` +
+		`"$defs":{"value":{"anyOf":[{"type":"number"},{"type":"null"}]}}}`)
+	validated, err = Validate(referenced, map[string]any{"value": nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(validated, map[string]any{"value": nil}) {
+		t.Fatalf("referenced null = %#v", validated)
+	}
+}

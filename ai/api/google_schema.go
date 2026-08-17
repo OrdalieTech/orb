@@ -15,14 +15,14 @@ import (
 type googleJSONMember = jsonwire.OrderedMember
 
 type googleJSONObject = jsonwire.OrderedObject
-type googleJSONArray []any
+type orderedJSONArray []any
 
 func normalizeGoogleResponseSchema(raw json.RawMessage) (json.RawMessage, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
 		return nil, nil
 	}
-	value, err := decodeGoogleOrderedJSON(trimmed)
+	value, err := decodeOrderedJSON(trimmed)
 	if err != nil {
 		return nil, err
 	}
@@ -33,10 +33,10 @@ func normalizeGoogleResponseSchema(raw json.RawMessage) (json.RawMessage, error)
 	return ai.Marshal(normalized)
 }
 
-func decodeGoogleOrderedJSON(raw []byte) (any, error) {
+func decodeOrderedJSON(raw []byte) (any, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
-	value, err := decodeGoogleJSONValue(decoder)
+	value, err := decodeOrderedJSONValue(decoder)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func decodeGoogleOrderedJSON(raw []byte) (any, error) {
 	return value, nil
 }
 
-func decodeGoogleJSONValue(decoder *json.Decoder) (any, error) {
+func decodeOrderedJSONValue(decoder *json.Decoder) (any, error) {
 	token, err := decoder.Token()
 	if err != nil {
 		return nil, err
@@ -66,7 +66,7 @@ func decodeGoogleJSONValue(decoder *json.Decoder) (any, error) {
 			if err != nil {
 				return nil, err
 			}
-			value, err := decodeGoogleJSONValue(decoder)
+			value, err := decodeOrderedJSONValue(decoder)
 			if err != nil {
 				return nil, err
 			}
@@ -75,9 +75,9 @@ func decodeGoogleJSONValue(decoder *json.Decoder) (any, error) {
 		_, err := decoder.Token()
 		return object, err
 	case '[':
-		array := googleJSONArray{}
+		array := orderedJSONArray{}
 		for decoder.More() {
-			value, err := decodeGoogleJSONValue(decoder)
+			value, err := decodeOrderedJSONValue(decoder)
 			if err != nil {
 				return nil, err
 			}
@@ -108,7 +108,7 @@ func normalizeGoogleSchema(value any) (googleJSONObject, error) {
 		object = replacement
 	}
 	if types, ok := object.Value("type"); ok {
-		if list, isList := types.(googleJSONArray); isList {
+		if list, isList := types.(orderedJSONArray); isList {
 			if err := flattenGoogleSchemaTypes(&output, list); err != nil {
 				return nil, err
 			}
@@ -120,7 +120,7 @@ func normalizeGoogleSchema(value any) (googleJSONObject, error) {
 		}
 		switch field.Name {
 		case "type":
-			if _, isList := field.Value.(googleJSONArray); isList {
+			if _, isList := field.Value.(orderedJSONArray); isList {
 				continue
 			}
 			typeName, ok := field.Value.(string)
@@ -138,11 +138,11 @@ func normalizeGoogleSchema(value any) (googleJSONObject, error) {
 			}
 			output.Set(field.Name, item)
 		case "anyOf":
-			list, ok := field.Value.(googleJSONArray)
+			list, ok := field.Value.(orderedJSONArray)
 			if !ok {
 				return nil, errors.New("google response schema anyOf must be an array")
 			}
-			normalized := googleJSONArray{}
+			normalized := orderedJSONArray{}
 			for _, item := range list {
 				if googleSchemaIsNull(item) {
 					output.Set("nullable", true)
@@ -183,7 +183,7 @@ func googleNullableAnyOf(object googleJSONObject) (bool, googleJSONObject) {
 	if !ok {
 		return false, nil
 	}
-	list, ok := value.(googleJSONArray)
+	list, ok := value.(orderedJSONArray)
 	if !ok || len(list) != 2 {
 		return false, nil
 	}
@@ -207,7 +207,7 @@ func googleSchemaIsNull(value any) bool {
 	return ok && typeName == "null"
 }
 
-func flattenGoogleSchemaTypes(output *googleJSONObject, values googleJSONArray) error {
+func flattenGoogleSchemaTypes(output *googleJSONObject, values orderedJSONArray) error {
 	types := make([]string, 0, len(values))
 	for _, value := range values {
 		typeName, ok := value.(string)
@@ -224,7 +224,7 @@ func flattenGoogleSchemaTypes(output *googleJSONObject, values googleJSONArray) 
 		output.Set("type", types[0])
 		return nil
 	}
-	anyOf := make(googleJSONArray, 0, len(types))
+	anyOf := make(orderedJSONArray, 0, len(types))
 	for _, typeName := range types {
 		anyOf = append(anyOf, googleJSONObject{{Name: "type", Value: typeName}})
 	}

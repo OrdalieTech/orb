@@ -599,6 +599,29 @@ func convertBedrockUserContent(content ai.UserContent) ([]BedrockContentBlock, e
 	return result, nil
 }
 
+// sanitizeBedrockDocument copies a tool-argument document without empty
+// object keys, which the Bedrock document encoder rejects. The source value is
+// left untouched so the session keeps the model's original arguments.
+func sanitizeBedrockDocument(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		sanitized := make(map[string]any, len(typed))
+		for key, nested := range typed {
+			if key != "" {
+				sanitized[key] = sanitizeBedrockDocument(nested)
+			}
+		}
+		return sanitized
+	case []any:
+		sanitized := make([]any, len(typed))
+		for index, item := range typed {
+			sanitized[index] = sanitizeBedrockDocument(item)
+		}
+		return sanitized
+	}
+	return value
+}
+
 func convertBedrockAssistantContent(content ai.AssistantContent, model *ai.Model) ([]BedrockContentBlock, error) {
 	result := make([]BedrockContentBlock, 0, len(content))
 	for _, raw := range content {
@@ -609,7 +632,7 @@ func convertBedrockAssistantContent(content ai.AssistantContent, model *ai.Model
 			}
 		case *ai.ToolCall:
 			result = append(result, BedrockContentBlock{ToolUse: &BedrockToolUseBlock{
-				ToolUseID: block.ID, Name: block.Name, Input: block.Arguments,
+				ToolUseID: block.ID, Name: block.Name, Input: sanitizeBedrockDocument(block.Arguments),
 			}})
 		case *ai.ThinkingContent:
 			thinking, ok := bedrockNonBlankText(block.Thinking)
@@ -701,8 +724,12 @@ func convertBedrockToolConfig(
 		if err != nil {
 			return nil, err
 		}
+		parameters, err := getJSONSchemaToolParameters(tool.Parameters, strict != nil && *strict)
+		if err != nil {
+			return nil, err
+		}
 		result.Tools = append(result.Tools, BedrockTool{ToolSpec: BedrockToolSpecification{
-			Name: tool.Name, Description: tool.Description, InputSchema: BedrockToolInputSchema{JSON: tool.Parameters},
+			Name: tool.Name, Description: tool.Description, InputSchema: BedrockToolInputSchema{JSON: parameters},
 			Strict: strict,
 		}})
 	}

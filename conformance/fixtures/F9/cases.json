@@ -75,7 +75,7 @@
           }
         ]
       },
-      "expected": "Custom base.\n\nFirst append.\n\nSecond append.\n\n<project_context>\n\nProject-specific instructions and guidelines:\n\n<project_instructions path=\"C:\\work\\repo\\AGENTS.md\">\nDo <x> & y.\n</project_instructions>\n\n</project_context>\n\nCurrent working directory: C:/work/repo"
+      "expected": "Custom base.\n\nFirst append.\n\nSecond append.\n\n<project_context>\n\nProject-specific instructions and guidelines:\n\n<project_instructions path=\"C:\\work\\repo\\AGENTS.md\">\nDo <x> & y.\n</project_instructions>\n\n</project_context>\n\nCurrent working directory: C:/work/repo\n"
     },
     {
       "name": "empty-custom-falls-back-to-default",
@@ -223,7 +223,7 @@
             "path": "<fixture>/project/.pi/APPEND_SYSTEM.md"
           }
         ],
-        "assembledPrompt": "project system\n\nproject append\n\n<project_context>\n\nProject-specific instructions and guidelines:\n\n<project_instructions path=\"<fixture>/project/AGENTS.md\">\nproject context\n</project_instructions>\n\n</project_context>\n\nCurrent working directory: <fixture>/project"
+        "assembledPrompt": "project system\n\nproject append\n\n<project_context>\n\nProject-specific instructions and guidelines:\n\n<project_instructions path=\"<fixture>/project/AGENTS.md\">\nproject context\n</project_instructions>\n\n</project_context>\n\nCurrent working directory: <fixture>/project\n"
       }
     },
     {
@@ -260,7 +260,7 @@
             "path": "<fixture>/project/.pi/APPEND_SYSTEM.md"
           }
         ],
-        "assembledPrompt": "project system\n\nproject append\nCurrent working directory: <fixture>/project"
+        "assembledPrompt": "project system\n\nproject append\nCurrent working directory: <fixture>/project\n"
       }
     },
     {
@@ -300,7 +300,7 @@
             "path": "<fixture>/agent/APPEND_SYSTEM.md"
           }
         ],
-        "assembledPrompt": "global system\n\nglobal append\nCurrent working directory: <fixture>/project"
+        "assembledPrompt": "global system\n\nglobal append\nCurrent working directory: <fixture>/project\n"
       }
     },
     {
@@ -348,7 +348,7 @@
             "path": "<fixture>/prompts/append.txt"
           }
         ],
-        "assembledPrompt": "cli system file\n\ncli append file\n\nliteral append\nCurrent working directory: <fixture>/project"
+        "assembledPrompt": "cli system file\n\ncli append file\n\nliteral append\nCurrent working directory: <fixture>/project\n"
       }
     },
     {

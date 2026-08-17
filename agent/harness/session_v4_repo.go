@@ -158,22 +158,75 @@ func sessionV4FileName(createdAt int64, id string) string {
 	return timestamp + "_" + id + ".jsonl"
 }
 
+// ListJSONLSessionV4Metadata lists v4 sessions below a sessions root without
+// opening them: only each file's header line is read, and a file whose header
+// is missing or undecodable is skipped instead of failing the listing.
+func ListJSONLSessionV4Metadata(ctx context.Context, fs FileSystem, sessionsRoot string, cwd *string) ([]JSONLSessionV4Metadata, error) {
+	return NewJSONLSessionV4Repo(fs, sessionsRoot).List(ctx, cwd)
+}
+
+// OpenJSONLSessionV4Storage loads one listed v4 session, rejecting metadata
+// whose id no longer matches the file header.
+func OpenJSONLSessionV4Storage(ctx context.Context, fs FileSystem, sessionsRoot string, metadata JSONLSessionV4Metadata) (*JSONLSessionV4Storage, error) {
+	return NewJSONLSessionV4Repo(fs, sessionsRoot).loadStorage(ctx, metadata)
+}
+
 // JSONLSessionV4Repo stores v4 sessions in coding-agent-compatible cwd-encoded
 // directories below one sessions root.
 type JSONLSessionV4Repo struct {
 	fs               FileSystem
 	sessionsRootPath string
 
+	// claimed reserves in-flight create/fork destinations: the durable filename
+	// carries a timestamp, so the existence check alone lets two concurrent
+	// calls both decide the same {cwd, id} is free and publish duplicates.
+	claimMu sync.Mutex
+	claimed map[string]bool
+
 	// Now overrides the created-at clock (epoch milliseconds).
 	Now func() int64
 }
 
 func NewJSONLSessionV4Repo(fs FileSystem, sessionsRoot string) *JSONLSessionV4Repo {
-	return &JSONLSessionV4Repo{fs: fs, sessionsRootPath: sessionsRoot}
+	return &JSONLSessionV4Repo{fs: fs, sessionsRootPath: sessionsRoot, claimed: map[string]bool{}}
+}
+
+// claimDestination resolves and reserves the {cwd, id} a create or fork
+// publishes to, returning the release for the caller to defer.
+func (repo *JSONLSessionV4Repo) claimDestination(ctx context.Context, options JSONLSessionV4CreateOptions) (id, cwd string, release func(), err error) {
+	if id, err = sessionV4CreateID(options.ID); err != nil {
+		return "", "", nil, err
+	}
+	if err = validateSessionV4ID(id); err != nil {
+		return "", "", nil, err
+	}
+	if cwd, err = repo.fs.AbsolutePath(ctx, options.CWD); err != nil {
+		return "", "", nil, fileV4Result(err, "Failed to resolve session cwd %s", options.CWD)
+	}
+	key := cwd + "\x00" + id
+	repo.claimMu.Lock()
+	defer repo.claimMu.Unlock()
+	if repo.claimed[key] {
+		return "", "", nil, newSessionError(SessionErrorAlreadyExists, "Session already exists: %s", id)
+	}
+	if repo.claimed == nil {
+		repo.claimed = map[string]bool{}
+	}
+	repo.claimed[key] = true
+	return id, cwd, func() {
+		repo.claimMu.Lock()
+		delete(repo.claimed, key)
+		repo.claimMu.Unlock()
+	}, nil
 }
 
 func (repo *JSONLSessionV4Repo) Create(ctx context.Context, options JSONLSessionV4CreateOptions) (*JSONLSessionV4Storage, error) {
-	header, path, err := repo.prepareCreate(ctx, options)
+	id, cwd, release, err := repo.claimDestination(ctx, options)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	header, path, err := repo.prepareCreate(ctx, id, cwd, options)
 	if err != nil {
 		return nil, err
 	}
@@ -204,17 +257,19 @@ func (repo *JSONLSessionV4Repo) List(ctx context.Context, cwd *string) ([]JSONLS
 			if file.Kind == FileKindDirectory || !strings.HasSuffix(file.Name, ".jsonl") {
 				continue
 			}
-			content, err := repo.fs.ReadTextFile(ctx, file.Path)
+			// Listing reads only the header line, and a session whose header is
+			// missing or undecodable is skipped: one corrupt file must not fail
+			// the whole listing. Opening it still reports invalid_entry.
+			lines, err := repo.fs.ReadTextLines(ctx, file.Path, 1)
 			if err != nil {
 				return nil, fileV4Result(err, "Failed to read session header %s", file.Path)
 			}
-			firstLine, _, _ := strings.Cut(content, "\n")
-			if firstLine == "" {
-				return nil, invalidV4File(file.Path, 1, "is missing a header")
+			if len(lines) == 0 || lines[0] == "" {
+				continue
 			}
-			header, err := ParseSessionV4Header([]byte(firstLine), file.Path)
-			if err != nil {
-				return nil, err
+			header, decodeErr := DecodeSessionV4Header([]byte(lines[0]))
+			if decodeErr != nil {
+				continue
 			}
 			metadata = append(metadata, jsonlV4Metadata(header, file.Path, file.MTimeMS))
 		}
@@ -237,7 +292,12 @@ func (repo *JSONLSessionV4Repo) Fork(ctx context.Context, source JSONLSessionV4M
 	if options.ParentSessionID == nil {
 		options.ParentSessionID = &source.ID
 	}
-	header, path, err := repo.prepareCreate(ctx, options.JSONLSessionV4CreateOptions)
+	id, cwd, release, err := repo.claimDestination(ctx, options.JSONLSessionV4CreateOptions)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	header, path, err := repo.prepareCreate(ctx, id, cwd, options.JSONLSessionV4CreateOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -268,18 +328,7 @@ func (repo *JSONLSessionV4Repo) loadStorage(ctx context.Context, metadata JSONLS
 	return storage, nil
 }
 
-func (repo *JSONLSessionV4Repo) prepareCreate(ctx context.Context, options JSONLSessionV4CreateOptions) (SessionV4Header, string, error) {
-	id, err := sessionV4CreateID(options.ID)
-	if err != nil {
-		return SessionV4Header{}, "", err
-	}
-	if err := validateSessionV4ID(id); err != nil {
-		return SessionV4Header{}, "", err
-	}
-	cwd, err := repo.fs.AbsolutePath(ctx, options.CWD)
-	if err != nil {
-		return SessionV4Header{}, "", fileV4Result(err, "Failed to resolve session cwd %s", options.CWD)
-	}
+func (repo *JSONLSessionV4Repo) prepareCreate(ctx context.Context, id, cwd string, options JSONLSessionV4CreateOptions) (SessionV4Header, string, error) {
 	exists, err := repo.sessionIDExists(ctx, id, cwd)
 	if err != nil {
 		return SessionV4Header{}, "", err

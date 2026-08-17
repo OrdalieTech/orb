@@ -149,7 +149,9 @@
         "bashMode": "#b5bd68",
         "diffAddedBg": "#1a3122",
         "diffGutterBg": "#26262a",
-        "diffRemovedBg": "#382123"
+        "diffRemovedBg": "#382123",
+        "searchMatchBg": "#3a3a4a",
+        "searchMatchText": "#d4d4d4"
       },
       "export": {
         "pageBg": "#18181e",
@@ -305,7 +307,9 @@
         "bashMode": "#588458",
         "diffAddedBg": "#ddf0da",
         "diffGutterBg": "#e2e2e2",
-        "diffRemovedBg": "#f4dcda"
+        "diffRemovedBg": "#f4dcda",
+        "searchMatchBg": "#d0d0e0",
+        "searchMatchText": "#1f2328"
       },
       "export": {
         "pageBg": "#f8f8f8",

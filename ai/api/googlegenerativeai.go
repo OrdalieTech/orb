@@ -619,7 +619,7 @@ func (processor *googleStreamProcessor) process(chunk googleGenerateContentRespo
 				return compactGoogleEvents(events), err
 			}
 			processor.output.StopReason = reason
-			if googleOutputHasToolCall(processor.output) {
+			if reason == ai.StopReasonStop && googleOutputHasToolCall(processor.output) {
 				processor.output.StopReason = ai.StopReasonToolUse
 			}
 		}

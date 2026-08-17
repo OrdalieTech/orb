@@ -12,6 +12,12 @@ import (
 const (
 	bracketedPasteStart = "\x1b[200~"
 	bracketedPasteEnd   = "\x1b[201~"
+
+	// A lone ESC waits separately from a partial CSI, OSC or mouse report:
+	// legacy Alt+key is ESC plus one more byte, so one shared wait trades
+	// Escape latency against reassembling that pair on a slow transport.
+	defaultSequenceTimeout = 50 * time.Millisecond
+	defaultEscapeTimeout   = 10 * time.Millisecond
 )
 
 type sequenceStatus uint8
@@ -160,6 +166,7 @@ func kittyPrintableCodepoint(sequence string) (rune, bool) {
 type StdinBuffer struct {
 	mu              sync.Mutex
 	timeout         time.Duration
+	escapeTimeout   time.Duration
 	buffer          string
 	timer           *time.Timer
 	timerGeneration uint64
@@ -170,11 +177,16 @@ type StdinBuffer struct {
 	onPaste         func(string)
 }
 
-func NewStdinBuffer(timeout time.Duration, onData, onPaste func(string)) *StdinBuffer {
-	if timeout <= 0 {
-		timeout = 10 * time.Millisecond
+// NewStdinBuffer takes the incomplete-sequence wait and the lone-ESC wait
+// separately; non-positive values fall back to the defaults.
+func NewStdinBuffer(sequenceTimeout, escapeTimeout time.Duration, onData, onPaste func(string)) *StdinBuffer {
+	if sequenceTimeout <= 0 {
+		sequenceTimeout = defaultSequenceTimeout
 	}
-	return &StdinBuffer{timeout: timeout, onData: onData, onPaste: onPaste}
+	if escapeTimeout <= 0 {
+		escapeTimeout = defaultEscapeTimeout
+	}
+	return &StdinBuffer{timeout: sequenceTimeout, escapeTimeout: escapeTimeout, onData: onData, onPaste: onPaste}
 }
 
 // ProcessBytes preserves upstream's Buffer input compatibility: a single
@@ -208,8 +220,12 @@ func (buffer *StdinBuffer) Process(data string) {
 	buffer.buffer += data
 	events := buffer.processLocked()
 	if buffer.buffer != "" {
+		delay := buffer.timeout
+		if buffer.buffer == "\x1b" {
+			delay = buffer.escapeTimeout
+		}
 		generation := buffer.timerGeneration
-		buffer.timer = time.AfterFunc(buffer.timeout, guarded(func() {
+		buffer.timer = time.AfterFunc(delay, guarded(func() {
 			for _, sequence := range buffer.flushExpired(generation) {
 				buffer.emitData(sequence)
 			}

@@ -1,6 +1,6 @@
 {
   "family": "WP440Read",
-  "upstreamCommit": "53fa77ccd8a279eb87e92294ef3687b03ff80112",
+  "upstreamCommit": "914cf1472e715297caa30db4b9535d534a9eb718",
   "generator": "conformance/extract/wp440-read.ts",
   "source": "packages/coding-agent/src/core/tools/read.ts",
   "files": [

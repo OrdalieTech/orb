@@ -14,6 +14,8 @@ func TestRetryAndOverflowClassification(t *testing.T) {
 		"EAI_AGAIN api.example.com",
 		"getaddrinfo failed for api.example.com",
 		"dial tcp: lookup api.example.com: no such host",
+		// Upstream gateway buffer exhaustion while retrying (fe10558eb).
+		"Exceeded request buffer limit while retrying upstream",
 	} {
 		if !IsRetryableAssistantError(failed(text)) {
 			t.Fatalf("not retryable: %q", text)
