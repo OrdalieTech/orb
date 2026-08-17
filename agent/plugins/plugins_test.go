@@ -113,22 +113,39 @@ func TestPluginControlPersistsAndReloads(t *testing.T) {
 	}
 }
 
-func TestSandboxModeValidatesEnabledSetting(t *testing.T) {
+func TestPermissionsPresetsAndSandboxMode(t *testing.T) {
+	checkPolicy := func(settings map[string]any, mode string, sandboxMode sandbox.Mode) {
+		policy := policyFromSettings(settings)
+		if policy.Mode != mode || policy.Sandbox != sandboxMode {
+			t.Fatalf("policy = %#v", policy)
+		}
+	}
+	checkPolicy(map[string]any{"preset": "workspace-write"}, "enforce", sandbox.ModeWorkspaceWrite)
+	checkPolicy(map[string]any{"preset": "danger-full-access"}, "log", sandbox.ModeDangerFullAccess)
+	checkPolicy(map[string]any{"preset": "workspace-write", "mode": "log", "sandbox": "read-only"}, "log", sandbox.ModeReadOnly)
 	root := t.TempDir()
 	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, value := range []any{"workspace-write", "danger-full-access"} {
-		settings.SetPluginSetting("permissions", "sandbox", value)
-		if got, err := SandboxMode(settings); err != nil || got != sandbox.Mode(value.(string)) {
-			t.Fatalf("sandbox mode = %q, %v", got, err)
-		}
+	if got, err := SandboxMode(settings); err != nil || got != sandbox.ModeDangerFullAccess {
+		t.Fatalf("missing sandbox mode = %q, %v", got, err)
 	}
-	for _, value := range []any{true, "unknown"} {
-		settings.SetPluginSetting("permissions", "sandbox", value)
+	settings.SetPluginSetting("permissions", "preset", "workspace-write")
+	if got, err := SandboxMode(settings); err != nil || got != sandbox.ModeWorkspaceWrite {
+		t.Fatalf("preset sandbox mode = %q, %v", got, err)
+	}
+	settings.SetPluginSetting("permissions", "sandbox", "read-only")
+	if got, err := SandboxMode(settings); err != nil || got != sandbox.ModeReadOnly {
+		t.Fatalf("explicit sandbox mode = %q, %v", got, err)
+	}
+	for _, invalid := range [][2]any{{"preset", true}, {"preset", "unknown"}, {"sandbox", true}, {"sandbox", "unknown"}} {
+		settings.SetPluginSetting("permissions", "preset", "workspace-write")
+		settings.SetPluginSetting("permissions", "sandbox", "read-only")
+		key := invalid[0].(string)
+		settings.SetPluginSetting("permissions", key, invalid[1])
 		if _, err := SandboxMode(settings); err == nil {
-			t.Fatalf("sandbox value %#v accepted", value)
+			t.Fatalf("%s value %#v accepted", key, invalid[1])
 		}
 	}
 	settings.SetPluginEnabled("permissions", false)
@@ -155,65 +172,17 @@ func TestPermissionsPolicyRules(t *testing.T) {
 		info   ToolCallInfo
 		want   Action
 	}{
-		{
-			name: "last match wins",
-			policy: &Policy{Rules: []Rule{
-				{Tool: "*", Action: Allow},
-				{Tool: "bash", Action: Deny},
-				{Tool: "bash", Command: "git status*", Action: Allow},
-			}},
-			info: ToolCallInfo{Tool: "bash", Args: map[string]any{"command": "git status --short"}, CWD: root}, want: Allow,
-		},
-		{
-			name:   "tool glob",
-			policy: &Policy{Rules: []Rule{{Tool: "mcp_*", Action: Deny}}},
-			info:   ToolCallInfo{Tool: "mcp_delete", Args: map[string]any{}, CWD: root}, want: Deny,
-		},
-		{
-			name:   "command glob treats slash as command text",
-			policy: &Policy{Rules: []Rule{{Tool: "bash", Command: "rm -rf *", Action: Deny}}},
-			info:   ToolCallInfo{Tool: "bash", Args: map[string]any{"command": "rm -rf /tmp/example"}, CWD: root}, want: Deny,
-		},
-		{
-			name:   "raw path",
-			policy: &Policy{Rules: []Rule{{Path: "link/*", Action: Deny}}},
-			info:   ToolCallInfo{Tool: "custom", Args: map[string]any{"path": "link/file"}, CWD: root}, want: Deny,
-		},
-		{
-			name:   "canonical path",
-			policy: &Policy{Rules: []Rule{{Path: filepath.Join(realDir, "*"), Action: Deny}}},
-			info:   ToolCallInfo{Tool: "custom", Args: map[string]any{"path": filepath.Join(link, "file")}, CWD: root}, want: Deny,
-		},
-		{
-			name:   "canonical rule path",
-			policy: &Policy{Rules: []Rule{{Path: filepath.Join(link, "*"), Action: Deny}}},
-			info:   ToolCallInfo{Tool: "custom", Args: map[string]any{"path": filepath.Join(realDir, "file")}, CWD: root}, want: Deny,
-		},
-		{
-			name:   "path rule matches a path inside a bash command",
-			policy: &Policy{Rules: []Rule{{Path: "secrets.txt", Action: Deny}}},
-			info:   ToolCallInfo{Tool: "bash", Args: map[string]any{"command": "cat secrets.txt"}, CWD: root}, want: Deny,
-		},
-		{
-			name:   "path rule ignores unrelated bash commands",
-			policy: &Policy{Rules: []Rule{{Path: "secrets.txt", Action: Deny}}},
-			info:   ToolCallInfo{Tool: "bash", Args: map[string]any{"command": "ls -la"}, CWD: root}, want: Allow,
-		},
-		{
-			name:   "path rule matches a redirect target",
-			policy: &Policy{Rules: []Rule{{Path: "*.env", Action: Deny}}},
-			info:   ToolCallInfo{Tool: "bash", Args: map[string]any{"command": "echo TOKEN=1 > prod.env"}, CWD: root}, want: Deny,
-		},
-		{
-			name:   "unparseable bash is ask with restrictive rule",
-			policy: &Policy{Rules: []Rule{{Tool: "bash", Command: "git push*", Action: Deny}}},
-			info:   ToolCallInfo{Tool: "bash", Args: map[string]any{}, CWD: root}, want: Ask,
-		},
-		{
-			name:   "unparseable bash is allow without restrictive rule",
-			policy: &Policy{Rules: []Rule{{Tool: "bash", Action: Allow}}},
-			info:   ToolCallInfo{Tool: "bash", Args: map[string]any{}, CWD: root}, want: Allow,
-		},
+		{"last match wins", &Policy{Rules: []Rule{{Tool: "*", Action: Allow}, {Tool: "bash", Action: Deny}, {Tool: "bash", Command: "git status*", Action: Allow}}}, ToolCallInfo{Tool: "bash", Args: map[string]any{"command": "git status --short"}, CWD: root}, Allow},
+		{"tool glob", &Policy{Rules: []Rule{{Tool: "mcp_*", Action: Deny}}}, ToolCallInfo{Tool: "mcp_delete", Args: map[string]any{}, CWD: root}, Deny},
+		{"command glob treats slash as command text", &Policy{Rules: []Rule{{Tool: "bash", Command: "rm -rf *", Action: Deny}}}, ToolCallInfo{Tool: "bash", Args: map[string]any{"command": "rm -rf /tmp/example"}, CWD: root}, Deny},
+		{"raw path", &Policy{Rules: []Rule{{Path: "link/*", Action: Deny}}}, ToolCallInfo{Tool: "custom", Args: map[string]any{"path": "link/file"}, CWD: root}, Deny},
+		{"canonical path", &Policy{Rules: []Rule{{Path: filepath.Join(realDir, "*"), Action: Deny}}}, ToolCallInfo{Tool: "custom", Args: map[string]any{"path": filepath.Join(link, "file")}, CWD: root}, Deny},
+		{"canonical rule path", &Policy{Rules: []Rule{{Path: filepath.Join(link, "*"), Action: Deny}}}, ToolCallInfo{Tool: "custom", Args: map[string]any{"path": filepath.Join(realDir, "file")}, CWD: root}, Deny},
+		{"path rule matches a path inside a bash command", &Policy{Rules: []Rule{{Path: "secrets.txt", Action: Deny}}}, ToolCallInfo{Tool: "bash", Args: map[string]any{"command": "cat secrets.txt"}, CWD: root}, Deny},
+		{"path rule ignores unrelated bash commands", &Policy{Rules: []Rule{{Path: "secrets.txt", Action: Deny}}}, ToolCallInfo{Tool: "bash", Args: map[string]any{"command": "ls -la"}, CWD: root}, Allow},
+		{"path rule matches a redirect target", &Policy{Rules: []Rule{{Path: "*.env", Action: Deny}}}, ToolCallInfo{Tool: "bash", Args: map[string]any{"command": "echo TOKEN=1 > prod.env"}, CWD: root}, Deny},
+		{"unparseable bash is ask with restrictive rule", &Policy{Rules: []Rule{{Tool: "bash", Command: "git push*", Action: Deny}}}, ToolCallInfo{Tool: "bash", Args: map[string]any{}, CWD: root}, Ask},
+		{"unparseable bash is allow without restrictive rule", &Policy{Rules: []Rule{{Tool: "bash", Action: Allow}}}, ToolCallInfo{Tool: "bash", Args: map[string]any{}, CWD: root}, Allow},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -223,13 +192,25 @@ func TestPermissionsPolicyRules(t *testing.T) {
 		})
 	}
 
-	called := false
-	policy := &Policy{
-		Authorizer: func(context.Context, ToolCallInfo) (Action, error) { called = true; return Deny, nil },
-		Rules:      []Rule{{Tool: "*", Action: Allow}},
+	order := []string{}
+	guard := func(label, reason string) func(context.Context, ToolCallInfo) string {
+		return func(context.Context, ToolCallInfo) string { order = append(order, label); return reason }
 	}
-	if got := policy.Evaluate(context.Background(), ToolCallInfo{Tool: "todo"}).Action; !called || got != Deny {
-		t.Fatalf("authorizer called=%t action=%q", called, got)
+	policy := &Policy{
+		Authorizer: func(context.Context, ToolCallInfo) (Action, error) {
+			order = append(order, "authorizer")
+			return Allow, nil
+		},
+		Guards: []func(context.Context, ToolCallInfo) string{guard("guard 1", ""), guard("guard 2", "extension denied"), guard("guard 3", "")},
+		Rules:  []Rule{{Tool: "*", Action: Allow}},
+	}
+	decision := policy.Evaluate(context.Background(), ToolCallInfo{Tool: "todo"})
+	if decision.Action != Deny || decision.Resolution != "extension denied" || strings.Join(order, ",") != "authorizer,guard 1,guard 2" {
+		t.Fatalf("guard decision = %#v, order = %v", decision, order)
+	}
+	policy.Guards, policy.Rules = nil, []Rule{{Tool: "*", Action: Deny}}
+	if got := policy.Evaluate(context.Background(), ToolCallInfo{Tool: "todo"}).Action; got != Allow {
+		t.Fatalf("authorizer allow was not final: %q", got)
 	}
 }
 
