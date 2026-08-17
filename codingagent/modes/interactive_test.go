@@ -349,8 +349,13 @@ func TestInteractivePanelKeepsTheMark(t *testing.T) {
 	if err := mode.ui.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = mode.ui.Stop() })
 	t.Cleanup(func() { theme.SetCurrent(nil) })
+	// One synchronous render seeds ViewportBodyHeight; stopping the TUI then
+	// keeps background debounce renders from racing the direct Render calls.
+	mode.ui.ForceRender()
+	if err := mode.ui.Stop(); err != nil {
+		t.Fatal(err)
+	}
 
 	if mode.emptyState == nil {
 		t.Fatal("empty state was not mounted")
