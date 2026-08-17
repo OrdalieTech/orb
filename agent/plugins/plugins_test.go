@@ -92,13 +92,17 @@ func must[T any](value T, err error) T {
 	return value
 }
 
+func mustOK(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
 func TestPluginControlPersistsAndReloads(t *testing.T) {
 	root := t.TempDir()
 	settings := must(config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent"))))
 	registry := extensions.NewRegistry(root)
-	if err := registry.Register("<inline:plugin-control>", Control(settings)); err != nil {
-		t.Fatal(err)
-	}
+	mustOK(registry.Register("<inline:plugin-control>", Control(settings)))
 	ui := &selectorUI{choices: []string{"[ ] tasks — " + Description("tasks"), "Done"}}
 	reloads := 0
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{
@@ -139,18 +143,16 @@ func TestPermissionsPresetsAndSandboxMode(t *testing.T) {
 	checkMode(sandbox.ModeWorkspaceWrite)
 	settings.SetPluginSetting("permissions", "sandbox", "read-only")
 	checkMode(sandbox.ModeReadOnly)
-	for _, invalid := range []map[string]any{{"preset": true}, {"preset": "unknown"}, {"sandbox": nil}, {"sandbox": true}, {"sandbox": "unknown"}, {"mode": ""}, {"mode": "audit"}, {"askFallback": "ask"}, {"rules": nil}, {"rules": []Rule{{Action: "audit"}}}, {"rules": []Rule{{Tool: "[", Action: Deny}}}, {"rules": []Rule{{Command: "[", Action: Deny}}}, {"rules": []Rule{{Path: "[", Action: Deny}}}} {
+	for _, invalid := range []map[string]any{{"preset": true}, {"preset": "unknown"}, {"sandbox": nil}, {"sandbox": true}, {"sandbox": "unknown"}, {"mode": ""}, {"mode": "audit"}, {"askFallback": "ask"}, {"rules": nil}, {"rules": []Rule{{Action: "audit"}}}, {"rules": []Rule{{Tool: "[", Action: Deny}}}, {"rules": []Rule{{Command: "[", Action: Deny}}}, {"rules": []Rule{{Path: "[", Action: Deny}}}, {"rules": []any{map[string]any{"tool": nil, "action": "allow"}}}, {"rules": []any{map[string]any{"command": nil, "action": "allow"}}}, {"rules": []any{map[string]any{"path": nil, "action": "allow"}}}, {"rules": []any{map[string]any{"commnad": "git *", "action": "allow"}}}, {"mdoe": "enforce"}} {
 		if _, err := policyFromSettings(invalid); err == nil {
 			t.Fatalf("settings %#v accepted", invalid)
 		}
 	}
-	for _, invalid := range [][4]any{{"sandbox", "unknown", "read-only", "permissions.sandbox"}, {"mode", "", "log", "permissions.mode"}, {"mode", "audit", "log", "permissions.mode"}, {"askFallback", "ask", "allow", "permissions.askFallback"}, {"rules", []Rule{{Action: "audit"}}, []Rule{}, "permissions.rules[0].action"}, {"rules", []Rule{{Tool: "[", Action: Deny}}, []Rule{}, "permissions.rules[0]"}, {"rules", []Rule{{Command: "[", Action: Deny}}, []Rule{}, "permissions.rules[0]"}, {"rules", []Rule{{Path: "[", Action: Deny}}, []Rule{}, "permissions.rules[0]"}} {
+	for _, invalid := range [][4]any{{"sandbox", "unknown", "read-only", "permissions.sandbox"}, {"mode", "", "log", "permissions.mode"}, {"mode", "audit", "log", "permissions.mode"}, {"askFallback", "ask", "allow", "permissions.askFallback"}, {"rules", []Rule{{Action: "audit"}}, []Rule{}, "permissions.rules[0].action"}, {"rules", []Rule{{Tool: "[", Action: Deny}}, []Rule{}, "permissions.rules[0]"}, {"rules", []Rule{{Command: "[", Action: Deny}}, []Rule{}, "permissions.rules[0]"}, {"rules", []Rule{{Path: "[", Action: Deny}}, []Rule{}, "permissions.rules[0]"}, {"rules", []any{map[string]any{"tool": nil, "action": "allow"}}, []Rule{}, "rules[0].tool"}, {"rules", []any{map[string]any{"command": nil, "action": "allow"}}, []Rule{}, "rules[0].command"}, {"rules", []any{map[string]any{"path": nil, "action": "allow"}}, []Rule{}, "rules[0].path"}, {"rules", []any{map[string]any{"commnad": "git *", "action": "allow"}}, []Rule{}, "rules[0].commnad"}} {
 		key := invalid[0].(string)
 		settings.SetPluginSetting("permissions", key, invalid[1])
 		registry := extensions.NewRegistry(root)
-		if err := registry.Register("<inline:permissions>", Catalog(Options{Settings: settings})["permissions"]); err != nil {
-			t.Fatal(err)
-		}
+		mustOK(registry.Register("<inline:permissions>", Catalog(Options{Settings: settings})["permissions"]))
 		if blocked := extensions.NewRunner(registry, extensions.RunnerOptions{}).EmitToolCall(context.Background(), extensions.ToolCallEvent{ToolName: "read"}); blocked == nil || !blocked.Block || !strings.Contains(blocked.Reason, invalid[3].(string)) {
 			t.Fatalf("invalid SDK policy for %s = %#v", key, blocked)
 		}
@@ -251,9 +253,7 @@ func TestPermissionsEnforceHidesAndBlocksStaticDeny(t *testing.T) {
 	if err := session.SetActiveToolsByName(active); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.PromptSync(context.Background(), "try it"); err != nil {
-		t.Fatal(err)
-	}
+	mustOK(session.PromptSync(context.Background(), "try it"))
 	if !strings.Contains(returned, `permissions: denied by rule 1 (tool="bash")`) {
 		t.Fatalf("tool result = %q", returned)
 	}
@@ -274,9 +274,7 @@ func TestPermissionsAskFallbackDeniesHeadless(t *testing.T) {
 	})
 	policy := &Policy{Mode: "enforce", AskFallback: Deny, Rules: []Rule{{Tool: "todo", Action: Ask}}}
 	session := newPermissionsSession(t, provider, policy, "tasks")
-	if err := session.PromptSync(context.Background(), "update tasks"); err != nil {
-		t.Fatal(err)
-	}
+	mustOK(session.PromptSync(context.Background(), "update tasks"))
 	if !strings.Contains(returned, "ask resolved by askFallback") {
 		t.Fatalf("tool result = %q", returned)
 	}
@@ -1355,9 +1353,7 @@ func TestMemoryProfileIsFrozenInSystemPrompt(t *testing.T) {
 func memoryPluginTool(t *testing.T, store memorysdk.Store, name string) engine.AgentTool {
 	t.Helper()
 	registry := extensions.NewRegistry(t.TempDir())
-	if err := registry.Register("<inline:memory>", MemoryWithStore(store)); err != nil {
-		t.Fatal(err)
-	}
+	mustOK(registry.Register("<inline:memory>", MemoryWithStore(store)))
 	manager := must(sessionstore.InMemory(t.TempDir()))
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{
 		SessionManager: manager,
@@ -1381,9 +1377,7 @@ func pluginTool(t *testing.T, plugin, tool string, options Options, runnerOption
 	if factory == nil {
 		t.Fatalf("plugin %q missing", plugin)
 	}
-	if err := registry.Register("<inline:"+plugin+">", factory); err != nil {
-		t.Fatal(err)
-	}
+	mustOK(registry.Register("<inline:"+plugin+">", factory))
 	manager := must(sessionstore.InMemory(t.TempDir()))
 	runnerOptions.SessionManager = manager
 	runnerOptions.Actions.GetActiveTools = func() ([]string, error) { return []string{tool}, nil }
@@ -1423,18 +1417,13 @@ func newMemoryPluginSessionWithManager(
 		settings = must(config.NewSettingsManager(root, config.WithAgentDir(agentDir)))
 	}
 	registry := extensions.NewRegistry(root)
-	if err := registry.Register("<inline:memory>", factory); err != nil {
-		t.Fatal(err)
-	}
+	mustOK(registry.Register("<inline:memory>", factory))
 	prompt := "memory test"
-	result, err := agent.NewAgentSession(agent.AgentSessionOptions{
+	result := must(agent.NewAgentSession(agent.AgentSessionOptions{
 		CWD: root, AgentDir: agentDir, Settings: settings, SessionManager: manager,
 		Model: provider.GetModel(), StreamFn: provider.StreamSimple, Resources: &agent.Resources{SystemPrompt: &prompt},
 		ExtensionRegistry: registry,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	}))
 	t.Cleanup(result.Session.Dispose)
 	return result.Session
 }
@@ -1447,19 +1436,14 @@ func newPermissionsSession(t *testing.T, provider *faux.Provider, policy *Policy
 	registry := extensions.NewRegistry(root)
 	catalog := Catalog(Options{StreamFn: provider.StreamSimple, Policy: policy})
 	for _, name := range append([]string{"permissions"}, enabled...) {
-		if err := registry.Register("<inline:"+name+">", catalog[name]); err != nil {
-			t.Fatal(err)
-		}
+		mustOK(registry.Register("<inline:"+name+">", catalog[name]))
 	}
 	prompt := "permissions test"
-	result, err := agent.NewAgentSession(agent.AgentSessionOptions{
+	result := must(agent.NewAgentSession(agent.AgentSessionOptions{
 		CWD: root, AgentDir: filepath.Join(root, "agent"), Settings: settings, SessionManager: manager,
 		Model: provider.GetModel(), StreamFn: provider.StreamSimple, Resources: &agent.Resources{SystemPrompt: &prompt},
 		ExtensionRegistry: registry,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	}))
 	t.Cleanup(result.Session.Dispose)
 	return result.Session
 }
@@ -1490,18 +1474,13 @@ func newSubagentParent(t *testing.T, provider *faux.Provider) *agent.AgentSessio
 	settings := must(config.NewSettingsManager(root, config.WithAgentDir(root+"/agent")))
 	manager := must(sessionstore.InMemory(root))
 	registry := extensions.NewRegistry(root)
-	if err := registry.Register("<inline:subagents>", Catalog(Options{StreamFn: provider.StreamSimple})["subagents"]); err != nil {
-		t.Fatal(err)
-	}
+	mustOK(registry.Register("<inline:subagents>", Catalog(Options{StreamFn: provider.StreamSimple})["subagents"]))
 	prompt := "parent"
-	result, err := agent.NewAgentSession(agent.AgentSessionOptions{
+	result := must(agent.NewAgentSession(agent.AgentSessionOptions{
 		CWD: root, AgentDir: root + "/agent", Settings: settings, SessionManager: manager,
 		Model: provider.GetModel(), StreamFn: provider.StreamSimple, Resources: &agent.Resources{SystemPrompt: &prompt},
 		ExtensionRegistry: registry,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	}))
 	t.Cleanup(result.Session.Dispose)
 	return result.Session
 }
@@ -1575,9 +1554,7 @@ func TestSubagentParallelWidthIsCapped(t *testing.T) {
 	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(10)})
 	root := t.TempDir()
 	registry := extensions.NewRegistry(root)
-	if err := registry.Register("<inline:subagents>", Catalog(Options{StreamFn: provider.StreamSimple})["subagents"]); err != nil {
-		t.Fatal(err)
-	}
+	mustOK(registry.Register("<inline:subagents>", Catalog(Options{StreamFn: provider.StreamSimple})["subagents"]))
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{Mode: extensions.ModeTUI})
 	definition := runner.ToolDefinition("subagent")
 	if definition == nil {
