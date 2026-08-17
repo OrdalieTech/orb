@@ -128,7 +128,6 @@ func Control(settings *config.SettingsManager) extensions.Factory {
 	}
 }
 
-// bashCaveat prevents presenting a tool deny as protection against equivalent shell commands.
 const bashCaveat = "Bash is matched by its command text only: a tool-scoped rule does not stop an equivalent shell command."
 
 // Action is the ecosystem-standard three-state permission result.
@@ -203,29 +202,53 @@ func SandboxMode(settings *config.SettingsManager) (sandbox.Mode, error) {
 
 func policyFromSettings(value map[string]any) (*Policy, error) {
 	policy := &Policy{}
-	if preset, exists := value["preset"]; exists {
-		switch preset {
-		case "workspace-write":
-			policy.Sandbox, policy.Mode = sandbox.ModeWorkspaceWrite, "enforce"
-		case "danger-full-access":
-			policy.Sandbox, policy.Mode = sandbox.ModeDangerFullAccess, "log"
-		default:
-			return nil, fmt.Errorf("plugins: permissions.preset must be workspace-write or danger-full-access")
+	for _, key := range []string{"preset", "sandbox", "mode", "askFallback", "rules"} {
+		if configured, exists := value[key]; exists {
+			text, stringValue := configured.(string)
+			if configured == nil || stringValue && text == "" {
+				return nil, fmt.Errorf("plugins: permissions.%s must not be empty", key)
+			}
 		}
 	}
-	configured, exists := value["sandbox"]
-	if _, ok := configured.(string); exists && !ok {
-		return nil, fmt.Errorf("plugins: permissions.sandbox must be read-only, workspace-write, or danger-full-access")
+	switch value["preset"] {
+	case nil:
+	case "workspace-write":
+		policy.Sandbox, policy.Mode = sandbox.ModeWorkspaceWrite, "enforce"
+	case "danger-full-access":
+		policy.Sandbox, policy.Mode = sandbox.ModeDangerFullAccess, "log"
+	default:
+		return nil, fmt.Errorf("plugins: permissions.preset must be workspace-write or danger-full-access")
 	}
 	encoded, err := json.Marshal(value)
 	if err == nil {
 		err = json.Unmarshal(encoded, policy)
 	}
 	if err != nil {
+		if field, ok := err.(*json.UnmarshalTypeError); ok {
+			return nil, fmt.Errorf("plugins: permissions.%s has invalid type", field.Field)
+		}
 		return nil, fmt.Errorf("plugins: invalid permissions settings: %w", err)
 	}
-	if policy.Sandbox != "" && policy.Sandbox != sandbox.ModeReadOnly && policy.Sandbox != sandbox.ModeWorkspaceWrite && policy.Sandbox != sandbox.ModeDangerFullAccess {
-		return nil, fmt.Errorf("plugins: permissions.sandbox must be read-only, workspace-write, or danger-full-access")
+	for _, setting := range []struct {
+		name  string
+		valid bool
+	}{{"sandbox", policy.Sandbox == "" || policy.Sandbox == sandbox.ModeReadOnly || policy.Sandbox == sandbox.ModeWorkspaceWrite || policy.Sandbox == sandbox.ModeDangerFullAccess}, {"mode", policy.Mode == "" || policy.Mode == "log" || policy.Mode == "enforce"}, {"askFallback", policy.AskFallback == "" || policy.AskFallback == Allow || policy.AskFallback == Deny}} {
+		if !setting.valid {
+			return nil, fmt.Errorf("plugins: permissions.%s is invalid", setting.name)
+		}
+	}
+	for index, rule := range policy.Rules {
+		if !validAction(rule.Action) {
+			return nil, fmt.Errorf("plugins: permissions.rules[%d].action must be allow, deny, or ask", index)
+		}
+		for _, pattern := range []string{ruleTool(rule), strings.ReplaceAll(rule.Command, "/", "\ue000"), filepath.ToSlash(rule.Path)} {
+			if pattern == "" {
+				continue
+			}
+			if _, err := path.Match(pattern, ""); err != nil {
+				return nil, fmt.Errorf("plugins: permissions.rules[%d] contains an invalid glob", index)
+			}
+		}
 	}
 	return policy, nil
 }
