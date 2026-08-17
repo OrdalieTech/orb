@@ -1,8 +1,11 @@
 # Orb — Decision Record
 
-Outcome of the planning interview (2026-07-17). Every architectural and product decision below is
-settled and confirmed by the project owner. Changes to this record require owner sign-off; everything
-else (implementation detail) is decided by whoever executes the work package, within these bounds.
+Rewritten 2026-08-17 at the owner's direction. The founding WP-era ledger recorded every port-time
+decision as permanent law, which made the project read as unable to evolve past its origin. This
+record now separates a small constitution of durable paradigms from operational memory. Retired
+decisions are tombstoned below; their full text lives in git history (`git log -- docs/DECISIONS.md`).
+Changes to this record require owner sign-off; everything else is decided by whoever executes the
+work, within these bounds.
 
 ## Provenance
 
@@ -13,74 +16,107 @@ else (implementation detail) is decided by whoever executes the work package, wi
 | Upstream license | MIT, © 2025 Mario Zechner |
 | This project | `github.com/OrdalieTech/orb`, MIT, © Ordalie — with attribution to upstream in LICENSE and README |
 
-Orb is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinned commit
-(`docs/*.md` in each package) are the specification; where this record is silent, upstream behavior wins.
+Orb began as a faithful Go port of pi and keeps a tested pi-compatibility **kernel** (below).
+Beyond that kernel, Orb is its own product: features, layout, internal APIs, and UI evolve on Orb's
+judgment, and upstream changes outside the kernel are cherry-picked on merit, never ported by
+obligation. Inside the kernel, upstream's docs and behavior at the pinned commit remain the
+specification.
 
-## Product decisions
+## Constitution — durable paradigms
 
-- **D1 — SDK-first.** orb is a Go module first; the `orb` CLI is one consumer of it. The `ai`
-  layer must be importable on its own (as `@earendil-works/pi-ai` is upstream).
-- **D2 — Full parity, no staged v1.** The whole of the pinned pi release (see `UPSTREAM.lock`; amended by D35 for the TUI surface) is in scope: agent core, all tools,
-  session tree + compaction, skills, prompt templates, themes, TUI, print/JSON/RPC modes, extension
-  system, OAuth flows, HTML export, terminal images, pi packages, project trust. Exclusions are only
-  those in the divergence ledger below. Sequencing exists (see plan phases); feature cuts do not.
-- **D3 — Audience.** Ordalie production embedding + personal daily-driver + public OSS, simultaneously.
-- **D4 — File-format compatibility.** orb reads/writes pi's data formats and locations so both
-  agents coexist on one machine: `~/.pi/agent/` layout, product session JSONL **v3** tree format
-  (with v1/v2 migration; the harness session-repo format is **v4**, both matching upstream),
-  `settings.json` (global + `.pi/settings.json` project merge), `models.json`,
-  `auth.json` (0600), `trust.json`, `keybindings.json`. CLI-flag parity is pursued but not contractual.
+Nine paradigms. Everything else in this record is operational memory.
 
-## Upstream relationship
+- **P1 — SDK-first, layered** *(formerly D1, D3)*. Orb is a Go module first; the `orb` CLI is one
+  consumer. Layers compose upward — `ai/` → `agent/` → `codingagent/` → assemblies (`cmd/orb`,
+  `chat/`, embedder mains) — and a capability's core lives at the lowest layer that can express it.
+  Audience: Ordalie production embedding (including servers running many differently-configured
+  instances in one process), personal daily-driver, and public OSS, simultaneously. Interfaces are
+  assemblies, never obligations: the TUI, chat platforms, RPC, a web app, or an embedder's own
+  surface are peer drivers of the same runtime, and no layer below an assembly imports one — a
+  binary that skips an interface must contain none of its code.
+- **P2 — Pure Go, static, slim** *(formerly D7, D8; evidence in G1/G2)*. `CGO_ENABLED=0`, single
+  static binary, linux + darwin (Windows deferred, not dropped). Stdlib first, internal helper
+  next, dependency last and only via the ARCHITECTURE §8 table. Dev-only exceptions: `-race` test
+  builds, and Node as fixture-extraction tooling.
+- **P3 — Everything Orb-original is a capability module** *(promotes D16; D32–D34 are instances)*.
+  A capability ships as: a seam package (interfaces, no upward imports), an instance-scoped
+  attachment at the lowest applicable layer (the `memory/` + `memory/agent/` shape), and a
+  default-off assembly row adapting it into the CLI through the public extension API. Capability
+  packages hold no package-level mutable state and read no environment or home directory
+  implicitly; N instances with N configurations must coexist in one process. The core is never
+  widened ad hoc: if the extension API cannot express a capability, the API is extended by recorded
+  decision. Seams are cut when a second implementation is real, never speculatively.
+- **P4 — Minimal by default.** New capabilities default off. Stock `orb` stays lean; power is
+  opt-in per user (settings, `/plugins`) or per assembly (embedder wiring).
+- **P5 — Pi compatibility is a kernel, not an identity** *(recasts D2, D4, D5, D6, D13)*. Orb
+  maintains byte-compatibility on the kernel surfaces listed below, verified by conformance
+  fixtures; inside the kernel, upstream quirks are spec. Outside it, Orb evolves freely and
+  upstream work carries no port obligation.
+- **P6 — Orb-owned presentation and identity** *(formerly D30, D35; substance unchanged)*. Public
+  identity is `orb`; upstream compatibility names remain wherever they are the contract (`~/.pi`,
+  `PI_*`, `pi-messages`, provider-facing UA/originator strings, the JS `pi` API). The TUI is
+  Orb-owned: `F12*`/WP450 render goldens are Orb snapshots regenerated by `make fixtures-tui`;
+  behavior-shaped values inside those files stay frozen upstream captures; upstream TUI work is
+  cherry-picked on merit.
+- **P7 — Host-only JavaScript** *(formerly D31; substance unchanged)*. JS/TS extensions run out of
+  process on user-provided Node ≥22.6 or Bun; no embedded engine, no shims; the static binary
+  ships neither runtime, and their absence disables extensions only, never the product.
+- **P8 — Trunk-based, every commit green; kernel changes fixtures-first.** One branch, `make check`
+  before every commit. Changes to kernel surfaces land their conformance fixtures first (red), then
+  the implementation (green).
+- **P9 — Never weaken a criterion or a golden to pass it.** A failing fixture means the code is
+  wrong. A genuinely impossible criterion stops the work and surfaces to the owner.
 
-- **D5 — Pin + agent-driven sync.** Port from the pinned commit. Afterward, coding agents run a
-  manual-first `sync` workflow (fetch upstream delta → regenerate conformance fixtures → run suite →
-  emit report + work items). Promote to scheduled automation only once conformance is stably green.
-  Formats/behaviors we promised compat on are tracked; features diverge freely.
-- **D6 — Upstream tests must run against the port.** Strategy: **fixtures + black-box**.
-  Language-neutral golden fixtures are generated from the upstream repo by extraction scripts and
-  consumed by both vitest (upstream side) and `go test` (our side). Upstream's RPC/CLI-level tests
-  additionally run as-is against the orb binary. Node/TS is permitted as *development tooling*
-  (fixture extraction); the shipped product is pure Go.
+## The compat kernel
 
-## Architecture decisions
+The kernel is every surface an external artifact can observe: files on disk, bytes on the wire,
+and the extension and RPC protocols. Internal Go APIs, package layout, feature set, and UI are not
+kernel. Kernel surfaces:
 
-- **D7 — Strict pure-Go product (owner-amended 2026-07-20).** Every product and release build uses
-  `CGO_ENABLED=0` and remains a single static binary; dependencies requiring CGo are disqualified.
-  Development-only test binaries may enable CGo when the Go toolchain requires it for `-race`
-  (ThreadSanitizer). That exception never ships. D31's optional user-provided Node/Bun process is
-  not part of the shipped artifact and does not change the static orb build.
-- **D8 — Platforms.** linux + darwin, amd64 + arm64, from day one. Windows is a later parity wave
-  (upstream supports it; we port its git-bash/console strategy then). Not dropped — deferred.
-- **D9 — Single module, mirrored layout.** One `go.mod`. Packages mirror upstream packages
-  (`ai/`, `agent/`, `tui/`, `codingagent/`, plus `cmd/orb`, `internal/`); files track upstream files
-  where idiomatic (`agent-loop.ts` → `loop.go`). Mirroring is what makes agent-driven upstream
-  syncing and diff-mapping mechanical. A `MIRROR.md` map records the correspondence.
+- `~/.pi/agent/` layout and files: `settings.json` (global + project merge semantics),
+  `models.json`, `auth.json` (0600), `trust.json`, `keybindings.json`.
+- Product session JSONL v3 (+ v1/v2 migration) and harness session v4.
+- Agent event JSON taxonomy and payloads (load-bearing for trace conformance).
+- RPC-mode frames and print/JSON output shapes.
+- Provider request/stream wire shapes, including `pi-messages`.
+- The JS extension surface: host protocol, `orb-extension-sdk` (`@earendil-works/pi-*` API),
+  pi package manifests, skills and prompt-template formats.
+- HTML-export theme variables (F6).
+
+CLI-flag parity is pursued but not contractual. Sync policy: released upstream versions only;
+`make sync` classifies the delta by upstream path patterns; **only kernel paths carry port
+obligation** — feature-only upstream changes become optional cherry-picks recorded in the sync
+report. The kernel is operationally defined by the conformance suite: a coverage gap is closed
+by a fixture, never by a mapping table. Conformance families F1–F13 gate the kernel; the render
+families are Orb-owned (P6). Growing or shrinking the kernel is an owner decision recorded here. Fixture
+strategy stays fixtures + black-box: language-neutral goldens extracted from upstream, consumed by
+both sides, plus upstream's RPC/CLI tests run as-is against the orb binary.
+
+## Live operational decisions
+
+Revisable records of how things currently work; each holds until changed by owner-signed decision.
+
 - **D10 — Provider layer: SDK-preferring hybrid.** Use official Go SDKs where they exist and are
   sound (`openai-go/v3`, `anthropic-sdk-go`, `aws-sdk-go-v2` bedrockruntime). G2 rejected
   `google.golang.org/genai` on measured weight, so Gemini and Vertex use hand-rolled JSON/SSE shapes.
   Hand-roll where no sound SDK exists (mistral-conversations, pi-messages wire shape, OAuth
   device/PKCE flows). Do not import kitchen sinks.
-- **D11 — Provider order: OpenAI first.** openai-responses + openai-completions shapes first (this
-  also unlocks Azure and the compat family — Groq, Cerebras, xAI, OpenRouter, DeepSeek, Fireworks,
-  Together, etc. via baseURL + compat flags). Then Anthropic (+ prompt caching + Claude Pro/Max OAuth),
-  then Gemini, Mistral, Bedrock/Vertex, Codex/Copilot, remainder of the ~34-provider catalog.
 - **D12 — Model catalog: direct authoritative sources.** Build-time generation uses
   `models.dev/api.json` for the baseline, intersects NVIDIA's manifest with the live NIM listing,
   and uses the live OpenRouter and Vercel AI Gateway APIs for those two catalogs. Runtime refresh
   remains a direct models.dev fetch into the `~/.pi` cache, never a pi.dev endpoint. `models.json`
   user overrides behave exactly as upstream (`docs/models.md`).
-- **D13 — SDK style: mirror + Go idioms.** Same conceptual API and event taxonomy as upstream
-  (`Agent`, `prompt/steer/followUp/abort/waitForIdle/subscribe/reset`; `AgentEvent` union as typed
-  structs with upstream names) with Go-native mechanics: `context.Context`, error returns, functional
-  options, and a channel/iterator adapter over subscribe. Event-shape parity is load-bearing for
-  conformance trace comparison — do not "improve" event names or payloads.
 - **D14 — Tool schemas.** JSON Schema is a first-class value on tools (raw schema type) — required
   anyway for extension/MCP-registered tools — plus a reflection helper deriving schemas from Go
   structs for ergonomic typed tools. JavaScript schema objects cross the extension-host protocol as JSON Schema.
-- **D15 — TUI: faithful pi-tui port.** Hand-rolled differential line renderer mirroring pi-tui
-  (Component contract: `Render(width) []string`), no TUI framework. The Component contract is what
-  extension custom-UI rides on; preserving it is non-negotiable.
+- **D15 — Component contract.** The TUI is a hand-rolled differential line renderer with the
+  `Render(width int) []string` component contract — no TUI framework. The contract is
+  kernel-adjacent: JS extension custom-UI rides on it, so it changes only with the extension-host
+  surface. The event taxonomy guidance formerly in D13 (upstream names, Go-native mechanics —
+  `context.Context`, error returns, functional options, channel/iterator over subscribe) remains
+  the API style; event shapes are kernel (P5).
+- **D18 — MCP ships as a bundled first-party Go extension** (`modelcontextprotocol/go-sdk`),
+  compiled into the binary, off unless configured in settings.
 - **Interactive mode owns its viewport.** Orb uses the alternate screen with a scrollable
   transcript and pins status, extension widgets, editor, and footer at the bottom. Mouse-wheel or
   `Ctrl+PageUp` scrolling detaches live follow; scrolling back down or `Ctrl+End` reattaches it, so
@@ -98,22 +134,27 @@ Orb is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinne
   the upstream fallback for true offscreen mutations; interactive mode avoids it by rendering only
   its owned viewport.
 
-## Extensibility decisions
+## Retired decisions (2026-08-17)
 
-- **D16 — Go-native extension API is the foundation.** The full ExtensionAPI surface (hooks,
-  registrations, ctx.ui, session access — upstream `docs/extensions.md`) exists as Go interfaces
-  first; internal features (built-in tools, MCP, slash commands) wire through it.
-- **D17 — JS bridge: API-complete subset on sobek + esbuild.** TS extensions execute via
-  grafana/sobek with embedded esbuild transpiling/bundling (k6's proven architecture). Fidelity
-  target: full ExtensionAPI + typebox (in-engine) + pi-tui Component bridge + hand-built shims for
-  common node builtins (`fs`, `path`, `os`, `process`, `url`, `util`; `child_process` routed through
-  the exec bridge; `fetch` via Go http) + pure-JS npm deps via esbuild bundling. Native addons and
-  exotic Node APIs are out of scope; the example-extension compatibility matrix documents reality.
-  **Superseded by D31 (2026-07-22): the embedded engine and shim ceiling were deleted.**
-- **D18 — MCP: bundled first-party Go extension.** Built on `modelcontextprotocol/go-sdk`, compiled
-  into the binary, enabled via settings. The core stays faithful to pi's no-MCP philosophy; this was
-  our first philosophical addition (the second is the chat gateway, D27), and it doubles as the
-  proof the Go extension API is real.
+The obligation is retired, not the code: shipped behavior stands until changed by later work. Full
+text in git history of this file. Cross-references to these numbers elsewhere resolve here.
+
+- **D1, D3** → P1. **D7, D8** → P2. **D16** → P3. **D2, D4, D5, D6** → P5 and "The compat kernel".
+  **D30, D31, D35** → P6/P7 (substance unchanged).
+- **D2 — Full parity, no cuts** → retired in substance: Orb no longer owes a port of everything
+  upstream ships. The divergence ledger records what differs; "excluded" stops being an exception
+  that needs defending.
+- **D9 — Mirrored layout** → retired. Layout is Orb-owned and follows capability modules;
+  `docs/MIRROR.md` is deleted — the conformance fixtures are the sync ground truth.
+- **D11 — Provider order** → completed; historical.
+- **D13 — SDK style** → event shapes are kernel (P5); style guidance folded into D15's note.
+- **D17 — Embedded JS engine** → was already superseded by P7 (D31); text deleted.
+- **D19–D23, D25, D26 — WP/sprint machinery, milestones, walking skeleton, expansion study** →
+  execution history. The durable parts (trunk-based, green commits, fixtures-first, trim passes)
+  live in AGENTS.md and RELEASE-CRITERIA.md.
+- **D32, D33, D34 — bundled-but-dormant plugins, permissions, memory** → instances of P3/P4.
+  Shipped behavior unchanged; `memory/` (+ `memory/agent/`) remains the reference
+  capability-module shape.
 
 ## Divergence ledger
 
@@ -181,75 +222,29 @@ Orb is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinne
 | Subagent parallel width capped at 32 | resource guard | `tasks` is model-controlled and each entry costs a goroutine, a temp dir, a child session, and a real provider call; uncapped, one tool call fanned out to 2,000 children in measurement. Enforced in the tool and declared as `maxItems` in the schema |
 | Unified-patch hunk headers derived locally | dependency workaround | `go-udiff` advances `ToLine` only in its new-hunk branch (`unified.go:143`), so the second and later `@@` headers report the wrong new-file start; orb recomputes them and matches `Diff.createTwoFilesPatch` across a 2,998-case differential fuzz |
 
-## Execution decisions
+## Execution rules and capability records
 
-- **D19 — Implemented by coding agents** (Claude Code or Codex). Work packages are therefore
-  tool-agnostic, self-contained, sized for one agent session, with explicit acceptance checks.
-  `AGENTS.md` at repo root is the execution contract.
-- **D20 — Planning artifact.** This decision record + `ARCHITECTURE.md` + phased work packages under
-  `docs/plan/`.
-- **D21 — Sequencing: walking skeleton.** Thin end-to-end slice first (OpenAI + agent loop +
-  read/bash/edit/write + print mode = a usable agent early, which then dogfoods its own development),
-  then widen. Every package lands together with its conformance fixtures.
-- **D22 — No hard deadline.** Quality and conformance gates govern pace.
-- **D23 — Milestones + trim passes.** Success criteria are consolidated in
-  `docs/RELEASE-CRITERIA.md` (M1–M5); agents work until every criterion checks. Each milestone ends
-  with a mandatory trim pass (WP-180/390/470/560/650): dead code, dep audit, abstraction inlining,
-  LOC-vs-upstream report — behavior-neutral, fixtures stay green. Slimness is a product goal.
+- **Implemented by coding agents.** `AGENTS.md` at repo root is the execution contract: trunk-based
+  `main`, every commit green (`make check`), kernel changes fixtures-first, trim passes per
+  RELEASE-CRITERIA. Quality gates govern pace; no schedule estimates — progress is red-to-green
+  movement. (Absorbs D19–D23, D25, D26; the WP/sprint/milestone machinery is history.)
 - **D24 — Live-test policy.** Three tiers (RELEASE-CRITERIA): merges are fixture-only/no-network;
-  provider WPs run opt-in live smoke; a nightly capped live suite (OpenAI + Anthropic, 3-task
-  corpus) runs from M2 — failures file work items, and only the M5 7-day window blocks a release.
+  provider work runs opt-in live smoke; a nightly capped live suite (OpenAI + Anthropic, 3-task
+  corpus) files work items on failure.
 
-- **D25 — Sprint restructure (owner, 2026-07-18).** The WP system is retired as sequencing;
-  `docs/plan/SPRINTS.md` is the active plan: four large sprints (Sprint 1 = M2 … Sprint 4 = M5),
-  each opened fixtures-FIRST (red before port) and closed with a TS-pi comparison report
-  (`docs/compare/sprint-N.md`), the trim checklist, and milestone verification. Trunk-based:
-  single branch `main`, no GitButler lanes/worktrees/feature branches; commits are large coherent
-  green chunks; every mainline commit builds and passes. Phase files demoted to spec sheets.
-  M5 live burn-in shortened 7 days → 72 hours (owner-directed). Ambition: a working session aims
-  to close a sprint.
-- **D26 — Core first, expansion studied (owner, 2026-07-18).** Compatibility breadth is not pursued
-  until the core is byte-right with all tests green vs TS pi. Core = engine + tools + sessions +
-  modes + skills/templates + extension seams + SDK + TUI on the ALREADY-LANDED providers (openai,
-  anthropic, google/vertex, mistral, azure, bedrock, pi-messages) with Anthropic OAuth. Expansion
-  ring = codex shape + ChatGPT/Codex/Copilot/xAI OAuth, the compat provider family, MCP,
-  pi-packages, and the JS extension bridge — all Sprint 3, which OPENS with an owner-reviewed
-  expansion study (`docs/plan/expansion-study.md`); full parity remains the default v1.0 target
-  unless the study amends this record. Work already landed for expansion surfaces is kept, not
-  extended. No schedule estimates in plans, reports, or trackers — progress is stated as
-  red-to-green movement only.
-
-- **D27 — Chat gateway package (owner, 2026-07-19).** A top-level `chat/` package (with
-  `chat/telegram/` and `chat/whatsapp/`) turns the SDK into a multi-user messaging agent: an
-  at-least-once processor around `AgentSession` with normalized messages, a `SessionProvider`
-  lease/hydration seam, and platform adapters. Dependency direction is strictly
-  `chat → codingagent`; `codingagent` never imports `chat`. Both adapters are committed in the
-  same arc, built in sequence: processor first (faux provider, in-memory sessions), then Telegram
-  (webhook + long-poll, streamed preview edits), then WhatsApp Business Cloud API (typing + one
-  final answer). Delivery state is recorded as `type:"custom"` session entries via
-  `AppendCustomEntry` (a `orb.chat.turn` started/settled/delivered ledger), keeping the session
-  JSONL the single durable history; turn finalization keys off `AgentSettledEvent`, not
-  `agent_end`; crash recovery reads raw session entries, never the built context. Tools are
-  disabled by default — a deployment enabling them must inject an isolated workspace through its
-  `SessionProvider`. The local JSONL provider is single-process; cluster deployments must supply
-  partitioned or fenced conversation ownership (per-write flock cannot coordinate writers).
-  Stdlib-only: both platform clients are hand-rolled HTTP/JSON per D10. Chat tests are plain
-  `go test` goldens under `chat/` — never `conformance/`, whose F-families are
-  upstream-extraction-only by contract. Includes one small SDK divergence, landed with this work:
-  a tool-operations injection hook on `AgentSessionOptions` (previously reachable only via
-  `NewSessionRuntime`/`BaseTools`). Second product-layer addition after the bundled MCP extension
-  (D18's "one philosophical addition" phrasing is retired).
-
-- **D28 — Chat platform wave 2 (owner, 2026-07-19).** Five adapters join the gateway: Slack
-  (Events API, streamed previews via chat.update), Microsoft Teams (Bot Framework, final-only),
-  Discord (Gateway over a hand-rolled RFC 6455 websocket client — zero new dependencies, the
-  G1/G2 tradition), Facebook Messenger (Graph, shares the WhatsApp webhook idiom), and Google
-  Chat (service-account JWT). Shared webhook-signature and websocket helpers are extracted to
-  `chat/internal/` now that the third adapter triggers the extraction rule. Bridge-based
-  platforms (Signal, iMessage, personal WhatsApp) and E2EE Matrix remain excluded per D27's
-  official-API stance. Later waves ride the same seams and transport: Instagram DM, Line,
-  Twilio SMS/RCS, Mattermost, Rocket.Chat, Zulip, IRC; KakaoTalk/WeChat noted as
-  access-restricted. Zero new go.mod dependencies remains the rule for every wave.
+- **D27 — Chat gateway `chat/` (owner, 2026-07-19), durable constraints.** An at-least-once
+  processor around `AgentSession` with a `SessionProvider` lease/hydration seam and platform
+  adapters. Dependency direction is strictly `chat → codingagent`. Delivery state lives in
+  `orb.chat.turn` custom session entries — the session JSONL is the single durable history; turn
+  finalization keys off `AgentSettledEvent`, and crash recovery reads raw entries, never the built
+  context. Tools are off by default; enabling them requires an injected isolated workspace. The
+  local JSONL provider is single-process; clusters must supply fenced conversation ownership.
+  Official platform APIs only; stdlib-only clients. Chat tests are plain `go test` goldens under
+  `chat/`, never `conformance/`.
+- **D28 — Chat platform wave 2 (owner, 2026-07-19).** Slack, Teams, Discord (hand-rolled RFC 6455
+  websocket), Messenger, Google Chat; shared webhook/ws helpers in `chat/internal/`. Bridge-based
+  platforms and E2EE Matrix stay excluded per D27's official-API stance. Zero new go.mod
+  dependencies remains the rule for every wave.
 
 - **D29 — One high-level agent runtime (agent, 2026-07-20).** The pinned upstream exports a
   second `AgentHarness` orchestrator from `packages/agent`, but its own coding-agent still uses
@@ -261,63 +256,6 @@ Orb is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinne
   client is also excluded: its `/api/stream` endpoint is an application protocol rather than agent
   behavior, and embedders already have `agent.WithStreamFn` plus `ai.ParseStreamingJSON`. Revisit
   either surface only when upstream's coding-agent adopts it or a real Go consumer requires it.
-
-- **D30 — Public identity is Orb (owner-amended, 2026-08-10).** The repository, Go module, executable,
-  release artifacts, installer variables, terminal title, resume hints, and default RPC client
-  command use `orb`; no legacy `pi` executable or alias is shipped, so upstream pi can coexist on
-  the same machine. Upstream compatibility names remain unchanged where they are the contract:
-  `.pi`/`~/.pi`, upstream `PI_*` runtime variables, session and wire formats, pi package manifests,
-  `pi-messages`, the JS extension `pi` API and `@earendil-works/pi-*` imports, embedded upstream
-  assets, and extracted goldens. The default system prompt identifies Orb as a general-purpose
-  problem-solving harness for work and software development; coding remains a core capability rather
-  than the exclusive role. Conformance adapters may account only for exact public-name substitutions
-  and this ledgered default-prompt identity and documentation wording while separately asserting the
-  `orb`/`Orb` spelling.
-
-- **D31 — Host-only JavaScript execution (owner, 2026-07-22).** All JavaScript and TypeScript
-  extensions, including installed npm packages, project/global extension files, and explicit `-e`
-  entries, run out of process in the extension host. Orb selects local Node.js ≥22.6 (native type
-  stripping) or Bun, with no embedded JavaScript engine, transpiler, Node shims, or runtime feature
-  flag. When neither runtime is available, extension loading names the missing runtime and points at
-  `ORB_NODE`, and the rest of the product remains available. The 22.6 floor is a capability floor,
-  not a uniform one: see the version-capability rows in the divergence ledger, measured across
-  22.6-26.5. The host owns real Node/Bun module, worker,
-  top-level-await, WebAssembly, and native-addon semantics; orb remains a static `CGO_ENABLED=0`
-  binary and ships neither runtime.
-
-- **D32 — First-party plugins: bundled-but-dormant (owner, 2026-07-22).** Tasks, websearch, and
-  subagents ship in the binary but default off, preserving the upstream tool surface until a user
-  opts in through the `plugins` settings object, `orb plugins`, or the `/plugins` selector. The
-  existing user/project settings overlay and runtime reload path own enablement; embedders bypass
-  settings by selecting factories from `plugins.Catalog()`.
-
-- **D33 — Permissions plugin (owner, 2026-07-22).** The dormant first-party permissions plugin uses the standard allow/deny/ask, ordered last-match-wins model and defaults to permissive log mode.
-
-- **D34 — MemoryStore seam + memory plugin (owner, 2026-07-23; amended 2026-07-30).** This
-  Orb-original addition gives the dormant memory plugin one storage seam shared by per-profile
-  JSONL stores and per-tenant database implementations, because three ecosystem memory packages
-  otherwise reinvent storage. The seam lives at root-level `memory/`, following the Orb-original
-  `chat/` precedent, so embedders can import it standalone. `memory/agent` owns the shared agent
-  behavior: plain `agent.Agent` SDK users attach it directly, while the coding-agent plugin is a
-  thin adapter over the same runtime. Enablement is the only mode: local and SDK users get the same
-  frozen `USER PROFILE`/`MEMORY` prompt, fixed 1,375/2,200-character budgets, and
-  `remember`/`recall`/`replace`/`forget`; capacity pressure drives model-led consolidation. Stores
-  are tenant-scoped and concurrent, with an optional transaction seam for compound mutations
-  shared by multiple sessions or processes. There is no separate injection or shutdown-distillation
-  configuration. The profile uses the Store's bounded 100-item query window and append-before-delete
-  replacement. V1 has no per-turn RAG, session search, secret scanning, widget, or subagent inheritance.
-
-- **D35 — TUI presentation is Orb-owned (owner, 2026-08-10; conversion landed, owner, 2026-08-11).**
-  Byte-parity with pi is retained for wire and data formats (D4), provider request shaping, and
-  tool/session/RPC behavior — but not for TUI rendering. The F12-family render goldens (themes,
-  component frames, visible-command frames, replay/UI demos — the `F12*` fixture families plus the
-  `WP450` replay/preview/UI-demo files) are Orb-owned snapshots: they regenerate from Orb's own
-  renderer via `make fixtures-tui` (`ORB_UPDATE_F12=1`), never from upstream extraction. Only
-  presentation values (rendered frames, highlight output, theme colors, layout) rewrite on
-  regeneration; behavior-shaped values inside those files (focus/dispatch traces, protocol writes,
-  JSONL export) stay frozen upstream captures, and their manifests keep the provenance of the
-  original capture. Upstream TUI features (e.g. fullscreen mode) are cherry-picked on merit rather
-  than ported wholesale. This amends D2's full-parity scope for the TUI surface only.
 
 - **D36 — Session search is a slim Go service, not a transliterated generic API (agent, 2026-08-17).**
   Upstream v0.84.2 dissolved `harness/session/search.ts` into standalone `packages/agent/src/search/`;
@@ -384,6 +322,14 @@ Orb is a faithful Go port of pi, not a reimagining. Upstream's docs at the pinne
 - Entry-point process markers are ported with orb identity: `AI_AGENT=orb` (generic launching-agent
   marker; identity substitution per D30) and `PI_CODING_AGENT=true` (pi-compat marker, same value the
   extension host already sets for its children). Set only at CLI/RPC entry, never when embedded.
+- Shared catalog refreshes port only the joiner half of upstream's interactive coordinator
+  (`model-catalog-refresh.ts`): a caller joining an in-flight refresh honors its own cancellation,
+  but the fetch itself keeps the initiating caller's context instead of upstream's detached
+  refcounted controller. Orb merged the coordinator into `ai/models.Refresh`, whose cancellation
+  contract (a canceled refresh returns the stored overlay and never mutates the store) requires the
+  refresh to observe cancellation synchronously at its commit points — a detached context only
+  learns of it a goroutine hop later. Consequence: an initiator's cancellation settles the shared
+  call for concurrent joiners too; revisit only if a real surface hits that window.
 
 ## Standing assumptions (owner-confirmed)
 
@@ -445,25 +391,6 @@ are not re-litigated:
   link-time failure is unreachable without a build-time export manifest; first-touch is the slim
   faithful approximation (question.ts-style examples now fail loudly at load instead of
   registering broken tools).
-- **jsbridge runtime ceilings (superseded by D31 on 2026-07-22).** Native `.node` addons and WebAssembly are unsupported by
-  design (sobek); both fail with explicit one-line diagnostics. `node:net` raw sockets,
-  `node:vm`, and `node:worker_threads` are not shimmed. `node:vm` is a rabbit hole with no slim
-  faithful mapping onto sobek, and `worker_threads` (real threads sharing a JS heap) is
-  fundamentally incompatible with sobek's single-threaded model. Consequences: the upstream
-  `sandbox` example stays unsupported (needs `node:net` plus the unexported `createBashTool`
-  factory surface), and the real npm package `pi-subagentura` stays unsupported (its
-  `workflow-script`/`workflow-worker-thread` modules import `node:vm` and worker threads). The
-  original sweep finding — `node:crypto`/`node:http`/`node:module`/`atob`/`btoa` — is fixed and
-  verified; these three modules are a separate, deliberately-declined ceiling, each failing with
-  a clear `unsupported external module "node:X"` diagnostic.
-- **pi-* shim unknown-import failure is access-time, not link-time (superseded by D31 on 2026-07-22).** Node ESM would fail an
-  unknown named import at link time; over esbuild-CJS bundling that requires a build-time export
-  manifest, which orb does not maintain. The shim instead throws on first *access* of an
-  unexported name (with an honest `has()`), so `question.ts`/`questionnaire.ts`-style examples
-  that touch the missing pi-tui `Editor`/`Key` surface only inside a TUI-only custom-UI factory
-  still load silently in print mode (where that factory never runs, and the registered tool
-  behaves upstream-identically) and throw clearly the moment the factory runs in interactive
-  mode. Forcing load-time failure is not worth a build-time export manifest.
 - **Package git subprocesses are quiet** (`clone -q`, `checkout -q` with
   `advice.detachedHead=false`, `fetch -q`) — a cosmetic deviation from upstream, which inherits
   git's stderr chatter.

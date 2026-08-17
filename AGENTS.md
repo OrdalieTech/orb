@@ -1,19 +1,22 @@
 # Orb — Agent execution contract
 
-You are implementing Orb, a faithful Go port of the pi coding agent (pi.dev). Read this file
-fully before touching code. It applies to any coding agent (Claude Code, Codex, or other).
+You are building Orb: a modular Go agent platform that keeps a tested pi-compatibility **kernel**
+(DECISIONS.md "The compat kernel"). Inside the kernel, pi's behavior is spec; outside it, Orb
+evolves on its own judgment. Read this file fully before touching code. It applies to any coding
+agent (Claude Code, Codex, or other).
 
 ## Ground truth, in order
 
-1. `docs/DECISIONS.md` — settled decisions. Never contradict them; never re-litigate them.
+1. `docs/DECISIONS.md` — the constitution (P1–P9), the compat kernel, and operational memory.
+   Never contradict it silently; a change goes through the owner, not through code that ignores it.
 2. `docs/ARCHITECTURE.md` — layout, contracts, dependency policy.
 3. `docs/RELEASE-CRITERIA.md` — milestone success criteria (M1–M5), live-test policy, trim checklist.
 4. `docs/plan/SPRINTS.md` — the ACTIVE plan: four large test-defined sprints. The old
    `docs/plan/phase-*.md` files are spec sheets (upstream refs, per-surface detail), not sequencing.
-5. Upstream source at the pinned commit — the behavioral spec. Materialize it with `make upstream`
-   (clones `earendil-works/pi` at the commit in `UPSTREAM.lock` into `.upstream/`). When the spec
-   sheet and upstream disagree on behavior, upstream wins; when either is ambiguous, read the
-   upstream tests for that area.
+5. Upstream source at the pinned commit — the behavioral spec **for kernel surfaces**. Materialize
+   it with `make upstream` (clones `earendil-works/pi` at the commit in `UPSTREAM.lock` into
+   `.upstream/`). On a kernel surface, when the spec sheet and upstream disagree on behavior,
+   upstream wins; when either is ambiguous, read the upstream tests for that area.
 
 ## Working mode (trunk-based, fixtures-first — replaces the old per-WP protocol)
 
@@ -33,18 +36,20 @@ fully before touching code. It applies to any coding agent (Claude Code, Codex, 
 5. **Close the sprint**: trim checklist (RELEASE-CRITERIA), milestone boxes checked with evidence,
    comparison report committed, `docs/plan/PROGRESS.md` updated. Commit messages: `Sprint N: <what>`
    with verified checks in the body.
-6. Read the relevant spec sheet AND every upstream file it cites before porting a surface — port
-   what pi actually does, not what agents usually do. Update `docs/MIRROR.md` for every new file.
+6. When porting a kernel surface, read the relevant spec sheet AND every upstream file it cites —
+   port what pi actually does, not what agents usually do.
 
 ## Hard rules
 
-- **Wire formats are byte-compatible with upstream.** Session JSONL, event JSON, RPC frames,
-  settings/models/auth files: field names and shapes come from upstream, verified by fixtures.
-  Never rename, "clean up", or reorder persisted/emitted JSON.
-- **Do not improve upstream behavior — outside the TUI.** Quirks are spec for wire formats,
-  providers, tools, and session/RPC behavior: note suspected upstream bugs in the commit body and
-  port them faithfully unless DECISIONS.md diverges explicitly. The TUI presentation layer is
-  Orb-owned (D35): upstream TUI changes are cherry-picked on merit, not ported wholesale.
+- **Kernel surfaces are byte-compatible with upstream.** Session JSONL, event JSON, RPC frames,
+  settings/models/auth files, provider wire shapes, the JS extension surface: field names and
+  shapes come from upstream, verified by fixtures. Never rename, "clean up", or reorder
+  persisted/emitted JSON on a kernel surface.
+- **Inside the kernel, do not improve upstream.** Quirks are spec there: note suspected upstream
+  bugs in the commit body and port them faithfully unless DECISIONS.md diverges explicitly.
+  Outside the kernel — features, layout, internal APIs, TUI — Orb evolves on its own judgment;
+  upstream work is cherry-picked on merit, never ported by obligation. New Orb capabilities follow
+  P3: capability modules (seam + attachment + default-off assembly row), never ad-hoc core widening.
 - **Pure Go.** `CGO_ENABLED=0` must build. No cgo, no sidecar binaries except the upstream-sanctioned
   rg/fd auto-download.
 - **Slim.** Stdlib first; internal helper next; dependency last and only via the ARCHITECTURE §8
@@ -52,8 +57,8 @@ fully before touching code. It applies to any coding agent (Claude Code, Codex, 
 - **Never weaken a criterion or a golden to pass it.** No softened fixtures, no skipped checks, no
   lowered budgets, no hand-edited goldens. A failing fixture means the code is wrong. If a criterion
   is genuinely impossible, stop and surface it.
-- **Scope.** Surprises the plan didn't anticipate: decide the way pi's own author would (faithful,
-  slim, boring), note the decision and rationale in the commit body, keep moving. Only genuine
+- **Scope.** Surprises the plan didn't anticipate: decide slim and boring — and, inside the
+  kernel, faithful — note the decision and rationale in the commit body, keep moving. Only genuine
   DECISIONS.md contradictions warrant stopping.
 - **Comments** state constraints the code can't (e.g. "field order matches upstream serialization"),
   never narration.
@@ -87,3 +92,6 @@ behavior-shaped values in those files remain frozen upstream captures.
   for a release before implementation.
 - `make sync` produces `docs/sync/reports/<date>.md`; turn red conformance into follow-up work items
   in the report; bump `UPSTREAM.lock` only when green.
+- **Only kernel paths carry port obligation.** Feature-only upstream changes are optional
+  cherry-picks recorded in the sync report. The conformance fixtures are the ground truth: red
+  after a pin bump is the work list.
