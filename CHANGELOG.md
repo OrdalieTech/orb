@@ -14,6 +14,7 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ### Added
 
+- The dormant subagents plugin can expose explicitly configured external CLIs as child roles, feeding each task on stdin and returning stdout under the existing parallel limits and a bounded runtime.
 - The permissions plugin adds deny-only SDK guards and named `workspace-write`/`danger-full-access` presets, and can wrap only the built-in bash tool in an opt-in filesystem sandbox: Linux Landlock enforcement is partial because it cannot mediate metadata mutations, macOS uses `sandbox-exec`, and Linux failures refuse the command instead of running it unsandboxed.
 - `orb plugins list --all` prints the resolved composition — every compiled extension, bundled
   plugin, and MCP row with its id, source, on/off state, and the settings layer that decided it,

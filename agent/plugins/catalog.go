@@ -34,7 +34,7 @@ var names = []string{"tasks", "websearch", "subagents", "permissions", "memory"}
 var descriptions = map[string]string{
 	"tasks":       "Live session task list and todo tool",
 	"websearch":   "Web search and readable page fetching",
-	"subagents":   "In-process single or parallel child agents",
+	"subagents":   "Single or parallel child agents, including configured external CLIs",
 	"permissions": "Permissive audit and tool-call permission rules (bash is matched by command text only)",
 	"memory":      "Bounded persistent remember, recall, replace, and forget tools",
 }
@@ -69,7 +69,7 @@ func Catalog(option ...Options) map[string]extensions.Factory {
 	return map[string]extensions.Factory{
 		"tasks":       tasksExtension(),
 		"websearch":   websearchExtension(options.HTTPClient),
-		"subagents":   subagentsExtension(options.StreamFn, inheritPolicy),
+		"subagents":   subagentsExtension(options.StreamFn, inheritPolicy, options.Settings),
 		"permissions": permissionsExtension(policy, options.Settings, nil),
 		"memory":      memoryExtension(nil, options.AgentDir),
 	}
