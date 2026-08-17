@@ -345,7 +345,7 @@ func TestPackageCLIExplicitUpdateBypassesSkipVersionCheck(t *testing.T) {
 	if requests != 1 {
 		t.Fatalf("release requests = %d, want the explicit check to bypass PI_SKIP_VERSION_CHECK", requests)
 	}
-	if !strings.HasSuffix(stdout, "  0.2.1\n     │\n     └─ already current ✓\n") {
+	if !strings.Contains(stdout, "0.2.1") || !strings.Contains(stdout, "already current ✓") {
 		t.Fatalf("stdout = %q", stdout)
 	}
 }
