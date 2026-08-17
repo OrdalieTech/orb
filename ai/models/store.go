@@ -143,8 +143,13 @@ type refreshCallGroup struct {
 	calls map[string]*refreshCall
 }
 
-// do shares one in-flight refresh per key while keeping each caller's
-// cancellation independent (upstream model-catalog-refresh.ts).
+// do shares one in-flight refresh per key; a joining caller's wait honors its
+// own cancellation (upstream model-catalog-refresh.ts raceWithAbortSignal).
+// The fetch itself runs on the initiating caller's context: the store's
+// cancellation contract (a canceled refresh returns the stored overlay and
+// never mutates the store) needs the refresh to observe that cancellation
+// synchronously at its commit points, which upstream's detached refcounted
+// controller cannot provide — see the 2026-08-17 sync amendments.
 func (group *refreshCallGroup) do(ctx context.Context, key string, refresh func() (*Catalog, error)) (*Catalog, error) {
 	group.mu.Lock()
 	if group.calls == nil {

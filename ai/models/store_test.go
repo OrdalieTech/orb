@@ -850,6 +850,48 @@ func TestCATm1ConcurrentForcedRefreshesShareInflightResult(t *testing.T) {
 	}
 }
 
+func TestSharedRefreshJoinerHonorsItsOwnCancellation(t *testing.T) {
+	source := []byte(`{"anthropic":{"models":{"fixture":{"name":"Fixture","tool_call":true,"modalities":{"input":["text"]},"limit":{"context":4096,"output":512},"cost":{"input":1,"output":2}}}}}`)
+	var requests atomic.Int32
+	started := make(chan struct{})
+	release := make(chan struct{})
+	lastModified := time.UnixMilli(generatedCatalogLastModified).Add(time.Hour).UTC()
+	client := &http.Client{Transport: catalogRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		if requests.Add(1) == 1 {
+			close(started)
+		}
+		<-release
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     http.Header{"Last-Modified": []string{lastModified.Format(http.TimeFormat)}},
+			Body:       io.NopCloser(bytes.NewReader(source)),
+		}, nil
+	})}
+	options := RefreshOptions{
+		URL: "https://catalog.test/joiner-cancel", Client: client,
+		Now: func() time.Time { return lastModified }, Force: true,
+	}
+	leaderResult := make(chan error, 1)
+	go func() {
+		_, err := Refresh(context.Background(), options)
+		leaderResult <- err
+	}()
+	<-started
+	joinerCtx, cancelJoiner := context.WithCancel(context.Background())
+	cancelJoiner()
+	if _, err := Refresh(joinerCtx, options); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled joiner error = %v, want context.Canceled", err)
+	}
+	close(release)
+	if err := <-leaderResult; err != nil {
+		t.Fatalf("leader refresh after joiner cancellation: %v", err)
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("joiner cancellation disturbed the shared fetch: %d requests, want one", got)
+	}
+}
+
 func TestCATm1CancellationAfterResponseDoesNotMutateStore(t *testing.T) {
 	source := []byte(`{"anthropic":{"models":{"replacement":{"name":"Replacement","tool_call":true,"modalities":{"input":["text"]},"limit":{"context":4096,"output":512},"cost":{"input":1,"output":2}}}}}`)
 	for _, test := range []struct {
