@@ -8,15 +8,14 @@ import (
 	"sync"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/assembly"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/extensions/examples/permissiongate"
 	"github.com/OrdalieTech/orb/agent/extensions/examples/pirate"
 	"github.com/OrdalieTech/orb/agent/extensions/examples/statusline"
 	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
-	"github.com/OrdalieTech/orb/agent/mcp"
 	"github.com/OrdalieTech/orb/agent/modes"
-	firstpartyplugins "github.com/OrdalieTech/orb/agent/plugins"
 )
 
 // otherDiagnostic wraps a plain warning string for the startup diagnostics
@@ -72,43 +71,16 @@ var compiledExtensions = []extensions.CompiledExtension{
 }
 
 func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config.SettingsManager, packages *agent.ResolvedPaths) (*extensions.Registry, []modes.StartupDiagnostic) {
-	catalog := append([]extensions.CompiledExtension(nil), compiledExtensions...)
-	catalog = append(catalog, extensions.CompiledExtension{
-		Name: "plugin-control", Factory: firstpartyplugins.Control(settings), Hidden: true, DefaultEnabled: true,
-	})
-	pluginCatalog := firstpartyplugins.Catalog(firstpartyplugins.Options{Settings: settings, AgentDir: agentDir})
-	for _, name := range firstpartyplugins.Names() {
-		catalog = append(catalog, extensions.CompiledExtension{Name: name, Factory: pluginCatalog[name]})
-	}
-	var diagnostics []modes.StartupDiagnostic
 	// metadataOnly runs (e.g. --list-models) build the runtime purely to
 	// enumerate models/providers; MCP servers contribute tools, not models, so
 	// skip them rather than eagerly spawn and connect every configured server.
-	if !args.NoExtensions && !args.metadataOnly {
-		servers, warnings, err := mcp.ParseSettingsWithWarnings(map[string]any(settings.GetSettings()))
-		diagnostics = append(diagnostics, otherDiagnostics(warnings)...)
-		if err != nil {
-			diagnostics = append(diagnostics, otherDiagnostic(err.Error()))
-		}
-		if len(servers) > 0 {
-			manager := mcp.NewManager(cwd, servers)
-			catalog = append(catalog, extensions.CompiledExtension{
-				Name: "mcp", Factory: manager.Extension(), Hidden: true, DefaultEnabled: true,
-			})
-		}
-	}
-	overrides := settings.GetGoExtensions()
-	if overrides == nil {
-		overrides = make(map[string]bool)
-	}
-	// Built-in plugin gates are separate from goExtensions: control is always
-	// available, while every actual plugin is off unless settings.plugins says on.
-	overrides["plugin-control"] = true
-	pluginSettings := settings.GetPlugins()
-	for _, name := range firstpartyplugins.Names() {
-		overrides[name] = pluginSettings[name]
-	}
-	registry, loadErrors := extensions.LoadCompiled(cwd, catalog, overrides, args.NoExtensions)
+	rows, warnings := assembly.Rows(assembly.Options{
+		CWD: cwd, AgentDir: agentDir, Settings: settings,
+		Compiled: compiledExtensions,
+		MCP:      !args.NoExtensions && !args.metadataOnly,
+	})
+	diagnostics := otherDiagnostics(warnings)
+	registry, loadErrors := assembly.Load(cwd, assembly.Resolve(rows, settings, args.NoExtensions))
 	for _, loadError := range loadErrors {
 		diagnostics = append(diagnostics, otherDiagnostic(loadError.Error()))
 	}
