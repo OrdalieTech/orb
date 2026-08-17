@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/assembly"
 	"github.com/OrdalieTech/orb/agent/config"
+	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
 	"github.com/OrdalieTech/orb/agent/modes"
 	firstpartyplugins "github.com/OrdalieTech/orb/agent/plugins"
 )
@@ -51,7 +53,7 @@ func getPackageCommandUsage(command string) string {
 
 const configCommandUsage = "orb config [-l] [--approve|--no-approve]"
 
-const pluginsCommandUsage = "orb plugins list|enable|disable [name]"
+const pluginsCommandUsage = "orb plugins list [--all]|enable|disable [name]"
 
 func handlePluginsCommand(ctx context.Context, argv []string, streams cliStreams) (bool, int) {
 	if len(argv) == 0 || argv[0] != "plugins" {
@@ -66,7 +68,8 @@ func handlePluginsCommand(ctx context.Context, argv []string, streams cliStreams
 		return true, 1
 	}
 	action := argv[1]
-	if action == "list" && len(argv) != 2 || action != "list" && len(argv) != 3 {
+	listAll := action == "list" && len(argv) == 3 && argv[2] == "--all"
+	if action == "list" && len(argv) != 2 && !listAll || action != "list" && len(argv) != 3 {
 		_, _ = fmt.Fprintln(streams.Stderr, "Usage: "+pluginsCommandUsage)
 		return true, 1
 	}
@@ -82,6 +85,9 @@ func handlePluginsCommand(ctx context.Context, argv []string, streams cliStreams
 		_, _ = fmt.Fprintln(streams.Stderr, "Warning: "+warning)
 	}
 	reportPackageSettingsErrors(streams.Stderr, settings, "plugins command")
+	if listAll {
+		return true, listFullComposition(cwd, agentDir, settings, streams)
+	}
 	if action == "list" {
 		enabled := settings.GetPlugins()
 		for _, name := range firstpartyplugins.Names() {
@@ -105,6 +111,35 @@ func handlePluginsCommand(ctx context.Context, argv []string, streams cliStreams
 	}
 	_, _ = fmt.Fprintf(streams.Stdout, "%s %s\n", strings.ToUpper(action[:1])+action[1:], name)
 	return true, 0
+}
+
+// listFullComposition prints every assembly row plus the discovered JS
+// extensions through the same Rows/Resolve and DiscoveryOptions construction
+// that boot uses, so the dump cannot drift from what boots.
+func listFullComposition(cwd, agentDir string, settings *config.SettingsManager, streams cliStreams) int {
+	rows, warnings := assembly.Rows(assembly.Options{
+		CWD: cwd, AgentDir: agentDir, Settings: settings,
+		Compiled: compiledExtensions, MCP: true,
+	})
+	for _, warning := range warnings {
+		_, _ = fmt.Fprintln(streams.Stderr, "Warning: "+warning)
+	}
+	for _, row := range assembly.Resolve(rows, settings, false) {
+		state := "off"
+		if row.Enabled {
+			state = "on"
+		}
+		_, _ = fmt.Fprintf(streams.Stdout, "%s\t%s\t%s\t%s\t%s\n", row.ID, row.Source, state, row.DecidedBy, row.Description)
+	}
+	packageManager := agent.NewPackageManager(agent.PackageManagerOptions{CWD: cwd, AgentDir: agentDir, Settings: settings})
+	packages, err := packageManager.Resolve(nil)
+	if err != nil {
+		_, _ = fmt.Fprintln(streams.Stderr, "Warning: "+err.Error())
+	}
+	for _, path := range extensionhost.Discover(extensionDiscoveryOptions(cwd, agentDir, false, settings, packages, nil)) {
+		_, _ = fmt.Fprintf(streams.Stdout, "%s\tjs-host\ton\tdiscovered\t\n", path)
+	}
+	return 0
 }
 
 func printConfigCommandHelp(writer io.Writer) {

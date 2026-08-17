@@ -96,6 +96,34 @@ func TestPluginsCLIListsAndTogglesUserSettings(t *testing.T) {
 	}
 }
 
+func TestPluginsCLIListAllPrintsResolvedComposition(t *testing.T) {
+	env := setupPackageCLI(t)
+	code, stdout, stderr := runPackageCLI(t, []string{"plugins", "list", "--all"})
+	if code != 0 || stderr != "" {
+		t.Fatalf("list --all: code=%d stderr=%q", code, stderr)
+	}
+	for _, fragment := range []string{
+		"permission-gate\tcompiled\toff\tdefault\t",
+		"pirate\tcompiled\toff\tdefault\t",
+		"status-line\tcompiled\toff\tdefault\t",
+		"plugin-control\tplugin\ton\talways\t",
+		"tasks\tplugin\toff\tplugins\t",
+		"memory\tplugin\toff\tplugins\t",
+	} {
+		if !strings.Contains(stdout, fragment) {
+			t.Errorf("list --all output lacks %q:\n%s", fragment, stdout)
+		}
+	}
+	if code, _, stderr := runPackageCLI(t, []string{"plugins", "enable", "tasks"}); code != 0 || stderr != "" {
+		t.Fatalf("enable: code=%d stderr=%q", code, stderr)
+	}
+	code, stdout, stderr = runPackageCLI(t, []string{"plugins", "list", "--all"})
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "tasks\tplugin\ton\tplugins\t") {
+		t.Fatalf("enabled list --all: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	_ = env
+}
+
 func TestPackageCLIInstallPersistsRelativeLocalPath(t *testing.T) {
 	env := setupPackageCLI(t)
 	relativePkgDir := filepath.Join(env.projectDir, "packages", "local-package")

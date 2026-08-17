@@ -111,18 +111,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 				}
 			}
 		}
-		options := extensionhost.DiscoveryOptions{
-			CWD:                    cwd,
-			AgentDir:               agentDir,
-			ProjectTrusted:         settings.IsProjectTrusted(),
-			NoDiscovery:            args.NoExtensions,
-			ConfiguredPaths:        settings.GetGlobalExtensionPaths(),
-			ProjectConfiguredPaths: settings.GetProjectExtensionPaths(),
-			ExplicitPaths:          explicitPaths,
-		}
-		if packages != nil {
-			options.ResolvedPackagePaths, options.ProjectResolvedPackagePaths = packageExtensionPaths(packages.Extensions)
-		}
+		options := extensionDiscoveryOptions(cwd, agentDir, args.NoExtensions, settings, packages, explicitPaths)
 		if paths := extensionhost.Discover(options); len(paths) > 0 {
 			if registry == nil {
 				registry = extensions.NewRegistry(cwd)
@@ -161,6 +150,25 @@ func replaceActiveExtensionHost(manager *extensionhost.Manager) {
 	if previousManager != nil && previousManager != manager {
 		_ = previousManager.Close()
 	}
+}
+
+// extensionDiscoveryOptions is the one construction of the JS-extension
+// discovery inputs; boot and `orb plugins list --all` share it so the dump
+// cannot drift from what boots.
+func extensionDiscoveryOptions(cwd, agentDir string, noDiscovery bool, settings *config.SettingsManager, packages *agent.ResolvedPaths, explicitPaths []string) extensionhost.DiscoveryOptions {
+	options := extensionhost.DiscoveryOptions{
+		CWD:                    cwd,
+		AgentDir:               agentDir,
+		ProjectTrusted:         settings.IsProjectTrusted(),
+		NoDiscovery:            noDiscovery,
+		ConfiguredPaths:        settings.GetGlobalExtensionPaths(),
+		ProjectConfiguredPaths: settings.GetProjectExtensionPaths(),
+		ExplicitPaths:          explicitPaths,
+	}
+	if packages != nil {
+		options.ResolvedPackagePaths, options.ProjectResolvedPackagePaths = packageExtensionPaths(packages.Extensions)
+	}
+	return options
 }
 
 // isPackageSourceSpec mirrors upstream isLocalPath: known package/URL prefixes
