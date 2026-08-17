@@ -1,6 +1,8 @@
 // Package sandbox limits filesystem effects of child commands.
 package sandbox
 
+import "path/filepath"
+
 type Mode string
 
 const (
@@ -25,8 +27,7 @@ const (
 	EnvShell   = "ORB_SANDBOX_SHELL"
 )
 
-// Wrap replaces command with the platform sandbox launcher. The original
-// command travels through env so shell quoting cannot change it.
+// Wrap replaces command without requoting it through the platform launcher.
 func Wrap(mode Mode, root, self, shell, command string, env map[string]string) (string, map[string]string, Enforcement) {
 	if env == nil {
 		env = make(map[string]string)
@@ -42,3 +43,4 @@ func Wrap(mode Mode, root, self, shell, command string, env map[string]string) (
 	}
 	return wrap(mode, root, self, shell, command, env)
 }
+func canonicalPath(path string) (string, error) { return filepath.EvalSymlinks(path) }

@@ -17,15 +17,16 @@ func Probe() (int, Enforcement, error) {
 	if errno != 0 {
 		return 0, EnforcementNone, fmt.Errorf("sandbox: probe Landlock: %w", errno)
 	}
-	enforcement := EnforcementPartial
-	if abi >= 3 {
-		enforcement = EnforcementFull
-	}
-	return int(abi), enforcement, nil
+	// Landlock does not mediate chmod, chown, xattr, utime, or fcntl metadata mutations.
+	return int(abi), EnforcementPartial, nil
 }
 
-func wrap(mode Mode, root, self, shell, command string, env map[string]string) (string, map[string]string, Enforcement) {
-	env[EnvMode], env[EnvRoot], env[EnvSelf] = string(mode), root, self
+func wrap(mode Mode, root, _ string, shell, command string, env map[string]string) (string, map[string]string, Enforcement) {
+	launcher := fmt.Sprintf("/proc/%d/exe", os.Getpid())
+	if _, err := os.Stat(launcher); err != nil {
+		return `exit 126`, env, EnforcementNone
+	}
+	env[EnvMode], env[EnvRoot], env[EnvSelf] = string(mode), root, launcher
 	env[EnvShell], env[EnvCommand] = shell, command
 	_, enforcement, _ := Probe()
 	return `exec "$ORB_SANDBOX_SELF" __sandbox`, env, enforcement

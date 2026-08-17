@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -201,11 +200,17 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 	var allowedTools *[]string
 	var excludedTools []string
 	var promptOptions agent.SystemPromptOptions
+	toolSandboxMode := sandbox.ModeDangerFullAccess
 	systemPrompt := ""
 	// metadataOnly runs (--help, --list-models) need only extension flag and
 	// provider metadata: skill/prompt/theme discovery, tool construction and the
 	// system prompt are skipped, and ResourceDiagnostics stays empty.
 	if !args.metadataOnly {
+		if !args.NoExtensions {
+			if toolSandboxMode, err = plugins.SandboxMode(settings); err != nil {
+				return runtimeInputs{}, err
+			}
+		}
 		defaultLoader, err := agent.NewDefaultResourceLoader(agent.DefaultResourceLoaderOptions{
 			CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
 			AdditionalSkillPaths: args.Skills, AdditionalPromptTemplatePaths: args.PromptTemplates, AdditionalThemePaths: args.Themes,
@@ -237,7 +242,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 		}
 
 		selection := ResolveBuiltInToolSelection(args)
-		activeTools, err = createBuiltInTools(cwd, selection, settings)
+		activeTools, err = createBuiltInTools(cwd, selection, settings, toolSandboxMode)
 		if err != nil {
 			return runtimeInputs{}, err
 		}
@@ -248,7 +253,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 		baseTools = activeTools
 		initialNames = append([]string(nil), activeNames...)
 		if hasExtensions {
-			baseTools, err = createBuiltInTools(cwd, defaultBuiltInTools, settings)
+			baseTools, err = createBuiltInTools(cwd, defaultBuiltInTools, settings, toolSandboxMode)
 			if err != nil {
 				return runtimeInputs{}, err
 			}
@@ -418,7 +423,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 		Extensions:      extensionRegistry, BaseTools: baseTools, ActiveToolNames: initialNames,
 		AllowedTools: allowedTools, ExcludedTools: excludedTools, PromptOptions: promptOptions,
 		RebuildBaseTools: func() ([]engine.AgentTool, error) {
-			return createBuiltInTools(cwd, baseToolNames, settings)
+			return createBuiltInTools(cwd, baseToolNames, settings, toolSandboxMode)
 		},
 		Auth:                authStorage,
 		RuntimeAuth:         runtimeAuth,
@@ -614,7 +619,7 @@ func requestAuthResolverWithCredentials(
 	}
 }
 
-func createBuiltInTools(cwd string, names []string, settings *config.SettingsManager) ([]engine.AgentTool, error) {
+func createBuiltInTools(cwd string, names []string, settings *config.SettingsManager, sandboxMode sandbox.Mode) ([]engine.AgentTool, error) {
 	result := make([]engine.AgentTool, 0, len(names))
 	for _, name := range names {
 		switch name {
@@ -627,13 +632,9 @@ func createBuiltInTools(cwd string, names []string, settings *config.SettingsMan
 				return nil, err
 			}
 			var spawnHook tools.BashSpawnHook
-			if mode := plugins.SandboxMode(settings); mode != sandbox.ModeDangerFullAccess {
-				self, err := os.Executable()
-				if err != nil {
-					return nil, err
-				}
+			if sandboxMode != sandbox.ModeDangerFullAccess {
 				spawnHook = func(spawn tools.BashSpawnContext) tools.BashSpawnContext {
-					spawn.Command, spawn.Env, _ = sandbox.Wrap(mode, spawn.Cwd, self, shellPath, spawn.Command, spawn.Env)
+					spawn.Command, spawn.Env, _ = sandbox.Wrap(sandboxMode, spawn.Cwd, "", shellPath, spawn.Command, spawn.Env)
 					return spawn
 				}
 			}

@@ -113,19 +113,29 @@ func TestPluginControlPersistsAndReloads(t *testing.T) {
 	}
 }
 
-func TestSandboxModeRequiresEnabledValidSetting(t *testing.T) {
+func TestSandboxModeValidatesEnabledSetting(t *testing.T) {
 	root := t.TempDir()
 	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings.SetPluginSetting("permissions", "sandbox", "workspace-write")
-	if got := SandboxMode(settings); got != sandbox.ModeWorkspaceWrite {
-		t.Fatalf("sandbox mode = %q", got)
+	for _, value := range []any{"workspace-write", "danger-full-access"} {
+		settings.SetPluginSetting("permissions", "sandbox", value)
+		if got, err := SandboxMode(settings); err != nil || got != sandbox.Mode(value.(string)) {
+			t.Fatalf("sandbox mode = %q, %v", got, err)
+		}
+	}
+	for _, value := range []any{true, "unknown"} {
+		settings.SetPluginSetting("permissions", "sandbox", value)
+		if _, err := SandboxMode(settings); err == nil {
+			t.Fatalf("sandbox value %#v accepted", value)
+		}
 	}
 	settings.SetPluginEnabled("permissions", false)
-	if got := SandboxMode(settings); got != sandbox.ModeDangerFullAccess || SandboxMode(nil) != sandbox.ModeDangerFullAccess {
-		t.Fatalf("disabled sandbox mode = %q", got)
+	for _, settings := range []*config.SettingsManager{settings, nil} {
+		if got, err := SandboxMode(settings); err != nil || got != sandbox.ModeDangerFullAccess {
+			t.Fatalf("disabled sandbox mode = %q, %v", got, err)
+		}
 	}
 }
 

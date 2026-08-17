@@ -12,16 +12,21 @@ import (
 
 func TestWrapUsesEnvironmentTransport(t *testing.T) {
 	command := `printf '%s' "$HOME"; echo $(date)`
-	wrapper, env, enforcement := Wrap(ModeReadOnly, "/workspace", "/bin/orb", "", command, nil)
-	if wrapper != `exec "$ORB_SANDBOX_SELF" __sandbox` || env[EnvCommand] != command || env[EnvShell] != "/bin/sh" || env[EnvRoot] != "/workspace" {
+	wrapper, env, _ := Wrap(ModeReadOnly, "/workspace", "/writable/orb", "", command, nil)
+	if wrapper != `exec "$ORB_SANDBOX_SELF" __sandbox` || env[EnvCommand] != command || env[EnvShell] != "/bin/sh" || env[EnvRoot] != "/workspace" ||
+		env[EnvSelf] != fmt.Sprintf("/proc/%d/exe", os.Getpid()) {
 		t.Fatalf("wrapper=%q env=%v", wrapper, env)
 	}
-	_, want, err := Probe()
-	if err != nil {
-		want = EnforcementNone
+	if got, err := canonicalPath("/proc/self"); err != nil || got == "/proc/self" {
+		t.Fatalf("canonical path = %q, %v", got, err)
 	}
-	if enforcement != want {
-		t.Fatalf("enforcement = %q, want %q", enforcement, want)
+}
+
+func TestProbeReportsMetadataCoverageAsPartial(t *testing.T) {
+	if _, enforcement, err := Probe(); err != nil {
+		t.Skip(err)
+	} else if enforcement != EnforcementPartial {
+		t.Fatalf("Landlock cannot mediate chmod/chown/xattr/utime/fcntl: %q", enforcement)
 	}
 }
 
@@ -48,7 +53,7 @@ func TestSelfRestrictReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("restricted child: %v: %s", err, output)
 	}
-	if string(output) != string(EnforcementFull) && string(output) != string(EnforcementPartial) {
+	if string(output) != string(EnforcementPartial) {
 		t.Fatalf("enforcement = %q", output)
 	}
 }
