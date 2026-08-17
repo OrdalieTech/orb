@@ -115,9 +115,9 @@ func TestPluginControlPersistsAndReloads(t *testing.T) {
 
 func TestPermissionsPresetsAndSandboxMode(t *testing.T) {
 	checkPolicy := func(settings map[string]any, mode string, sandboxMode sandbox.Mode) {
-		policy := policyFromSettings(settings)
-		if policy.Mode != mode || policy.Sandbox != sandboxMode {
-			t.Fatalf("policy = %#v", policy)
+		policy, err := policyFromSettings(settings)
+		if err != nil || policy.Mode != mode || policy.Sandbox != sandboxMode {
+			t.Fatalf("policy = %#v, %v", policy, err)
 		}
 	}
 	checkPolicy(map[string]any{"preset": "workspace-write"}, "enforce", sandbox.ModeWorkspaceWrite)
@@ -128,25 +128,28 @@ func TestPermissionsPresetsAndSandboxMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, err := SandboxMode(settings); err != nil || got != sandbox.ModeDangerFullAccess {
-		t.Fatalf("missing sandbox mode = %q, %v", got, err)
-	}
-	settings.SetPluginSetting("permissions", "preset", "workspace-write")
-	if got, err := SandboxMode(settings); err != nil || got != sandbox.ModeWorkspaceWrite {
-		t.Fatalf("preset sandbox mode = %q, %v", got, err)
-	}
-	settings.SetPluginSetting("permissions", "sandbox", "read-only")
-	if got, err := SandboxMode(settings); err != nil || got != sandbox.ModeReadOnly {
-		t.Fatalf("explicit sandbox mode = %q, %v", got, err)
-	}
-	for _, invalid := range [][2]any{{"preset", true}, {"preset", "unknown"}, {"sandbox", true}, {"sandbox", "unknown"}} {
-		settings.SetPluginSetting("permissions", "preset", "workspace-write")
-		settings.SetPluginSetting("permissions", "sandbox", "read-only")
-		key := invalid[0].(string)
-		settings.SetPluginSetting("permissions", key, invalid[1])
-		if _, err := SandboxMode(settings); err == nil {
-			t.Fatalf("%s value %#v accepted", key, invalid[1])
+	checkMode := func(want sandbox.Mode) {
+		if got, err := SandboxMode(settings); err != nil || got != want {
+			t.Fatalf("sandbox mode = %q, %v", got, err)
 		}
+	}
+	checkMode(sandbox.ModeDangerFullAccess)
+	settings.SetPluginSetting("permissions", "preset", "workspace-write")
+	checkMode(sandbox.ModeWorkspaceWrite)
+	settings.SetPluginSetting("permissions", "sandbox", "read-only")
+	checkMode(sandbox.ModeReadOnly)
+	for _, invalid := range []map[string]any{{"preset": true}, {"preset": "unknown"}, {"sandbox": nil}, {"sandbox": true}, {"sandbox": "unknown"}} {
+		if _, err := policyFromSettings(invalid); err == nil {
+			t.Fatalf("settings %#v accepted", invalid)
+		}
+	}
+	settings.SetPluginSetting("permissions", "sandbox", "unknown")
+	registry := extensions.NewRegistry(root)
+	if err := registry.Register("<inline:permissions>", Catalog(Options{Settings: settings})["permissions"]); err != nil {
+		t.Fatal(err)
+	}
+	if blocked := extensions.NewRunner(registry, extensions.RunnerOptions{}).EmitToolCall(context.Background(), extensions.ToolCallEvent{ToolName: "read"}); blocked == nil || !blocked.Block || !strings.Contains(blocked.Reason, "permissions.sandbox") {
+		t.Fatalf("invalid SDK policy result = %#v", blocked)
 	}
 	settings.SetPluginEnabled("permissions", false)
 	for _, settings := range []*config.SettingsManager{settings, nil} {
@@ -183,6 +186,7 @@ func TestPermissionsPolicyRules(t *testing.T) {
 		{"path rule matches a redirect target", &Policy{Rules: []Rule{{Path: "*.env", Action: Deny}}}, ToolCallInfo{Tool: "bash", Args: map[string]any{"command": "echo TOKEN=1 > prod.env"}, CWD: root}, Deny},
 		{"unparseable bash is ask with restrictive rule", &Policy{Rules: []Rule{{Tool: "bash", Command: "git push*", Action: Deny}}}, ToolCallInfo{Tool: "bash", Args: map[string]any{}, CWD: root}, Ask},
 		{"unparseable bash is allow without restrictive rule", &Policy{Rules: []Rule{{Tool: "bash", Action: Allow}}}, ToolCallInfo{Tool: "bash", Args: map[string]any{}, CWD: root}, Allow},
+		{"authorizer deny is final", &Policy{Authorizer: func(context.Context, ToolCallInfo) (Action, error) { return Deny, nil }, Guards: []func(context.Context, ToolCallInfo) string{func(context.Context, ToolCallInfo) string { panic("guard ran") }}, Rules: []Rule{{Tool: "*", Action: Allow}}}, ToolCallInfo{Tool: "todo"}, Deny},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -191,7 +195,6 @@ func TestPermissionsPolicyRules(t *testing.T) {
 			}
 		})
 	}
-
 	order := []string{}
 	guard := func(label, reason string) func(context.Context, ToolCallInfo) string {
 		return func(context.Context, ToolCallInfo) string { order = append(order, label); return reason }
