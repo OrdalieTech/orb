@@ -429,8 +429,11 @@ func ApplyHTTPProxySettings(proxy string) {
 	}
 }
 
-func (manager *SettingsManager) GetEnabledModels() []string {
-	value, exists := manager.value("enabledModels")
+// stringList reads a string-array setting. Absent, or not an array, yields
+// nil; an explicit [] yields an empty non-nil slice, so callers can tell "not
+// configured" from "configured empty" the way upstream's `?? undefined` does.
+func (manager *SettingsManager) stringList(key string) []string {
+	value, exists := manager.value(key)
 	if !exists {
 		return nil
 	}
@@ -438,14 +441,21 @@ func (manager *SettingsManager) GetEnabledModels() []string {
 	if !ok {
 		return nil
 	}
-	models := make([]string, 0, len(raw))
+	list := make([]string, 0, len(raw))
 	for _, item := range raw {
-		if model, ok := item.(string); ok {
-			models = append(models, model)
+		if text, ok := item.(string); ok {
+			list = append(list, text)
 		}
 	}
-	return models
+	return list
 }
+
+func (manager *SettingsManager) GetEnabledModels() []string {
+	return manager.stringList("enabledModels")
+}
+
+// GetDefaultTools returns the configured initial built-in tool selection.
+func (manager *SettingsManager) GetDefaultTools() []string { return manager.stringList("defaultTools") }
 
 func (manager *SettingsManager) AgentDir() string { return filepath.Dir(manager.globalPath) }
 func (manager *SettingsManager) CWD() string      { return filepath.Dir(filepath.Dir(manager.projectPath)) }

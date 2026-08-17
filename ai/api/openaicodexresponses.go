@@ -459,12 +459,14 @@ func buildOpenAICodexResponsesPayload(
 	toolOptions := responsesToolOptions{
 		supportsStrictMode: supportsStrictMode, supportsOpenAIGrammarTools: supportsGrammar, strictNull: true,
 	}
-	placement := splitResponsesTools(requestContext, compat.supportsToolSearch)
+	deferredToolsMode := responsesDeferredToolsMode(compat.supportsAdditionalTools, compat.supportsToolSearch)
+	placement := splitResponsesTools(requestContext, deferredToolsMode != "")
 	withoutSystem := requestContext
 	withoutSystem.SystemPrompt = nil
 	input, err := convertResponsesMessagesWithOptions(model, withoutSystem, placement.deferred, responsesMessageOptions{
 		supportsDeveloperRole:      false,
 		grammarToolInputProperties: grammarToolInputProperties,
+		deferredToolsMode:          deferredToolsMode,
 		toolOptions:                toolOptions,
 	})
 	if err != nil {
@@ -551,7 +553,7 @@ func buildOpenAICodexHeaders(model *ai.Model, options *ai.StreamOptions, token, 
 	headers.Set("Authorization", "Bearer "+token)
 	headers.Set("chatgpt-account-id", accountID)
 	headers.Set("originator", "pi")
-	headers.Set("User-Agent", openAICodexUserAgent())
+	headers.Set("User-Agent", piUserAgent())
 	headers.Set("OpenAI-Beta", "responses=experimental")
 	headers.Set("Accept", "text/event-stream")
 	headers.Set("Content-Type", "application/json")
@@ -826,6 +828,13 @@ func handleOpenAICodexEvent(processor *openAIResponsesProcessor, raw json.RawMes
 		}
 		return &codexAPIError{message: message, code: code}
 	case "response.done", "response.completed", "response.incomplete":
+		// Codex reports whether the model ended its turn; kept for debugging.
+		var terminal struct {
+			EndTurn *bool `json:"end_turn"`
+		}
+		if json.Unmarshal(envelope["response"], &terminal) == nil && terminal.EndTurn != nil {
+			processor.output.EndTurn = terminal.EndTurn
+		}
 		var requestedServiceTier *string
 		if processor.options != nil {
 			requestedServiceTier = processor.options.ServiceTier

@@ -76,6 +76,32 @@ func TestNormalizeAppleTerminalInput(t *testing.T) {
 	}
 }
 
+func TestResolveEscapeTimeout(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want time.Duration
+	}{
+		{"local", nil, 10 * time.Millisecond},
+		{"ssh connection", map[string]string{"SSH_CONNECTION": "10.0.0.1 22 10.0.0.2 22"}, 100 * time.Millisecond},
+		{"ssh tty", map[string]string{"SSH_TTY": "/dev/pts/3"}, 100 * time.Millisecond},
+		{"override", map[string]string{"PI_TUI_ESC_TIMEOUT": "250"}, 250 * time.Millisecond},
+		{"override beats ssh", map[string]string{"PI_TUI_ESC_TIMEOUT": " 40 ", "SSH_TTY": "/dev/pts/3"}, 40 * time.Millisecond},
+		{"unparsable override", map[string]string{"PI_TUI_ESC_TIMEOUT": "soon"}, 10 * time.Millisecond},
+		{"non-positive override", map[string]string{"PI_TUI_ESC_TIMEOUT": "0"}, 10 * time.Millisecond},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, name := range []string{"PI_TUI_ESC_TIMEOUT", "SSH_CONNECTION", "SSH_TTY"} {
+				t.Setenv(name, test.env[name])
+			}
+			if got := resolveEscapeTimeout(); got != test.want {
+				t.Fatalf("escape timeout = %s, want %s", got, test.want)
+			}
+		})
+	}
+}
+
 func TestProcessTerminalReassemblesAndReplaysNegotiationFragments(t *testing.T) {
 	input := make(chan string, 3)
 	terminal := &ProcessTerminal{started: true, inputHandler: func(value string) { input <- value }}

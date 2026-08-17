@@ -316,15 +316,9 @@ func TestV0821CatalogDeltasMatchPublishedPackage(t *testing.T) {
 		case "github-copilot/claude-opus-5":
 			(*want.ThinkingLevelMap)[ai.ModelThinkingMinimal] = ptr("low")
 		case "qwen-token-plan/MiniMax-M2.5":
-			var compat map[string]any
-			if err := json.Unmarshal(want.Compat, &compat); err != nil {
-				t.Fatal(err)
-			}
-			compat["supportsReasoningEffort"] = false
-			want.Compat, err = json.Marshal(compat)
-			if err != nil {
-				t.Fatal(err)
-			}
+			want.Compat = overlayCompat(t, want.Compat, "supportsReasoningEffort", false)
+		case "openai/gpt-5.4":
+			want.Compat = overlayCompat(t, want.Compat, "supportsAdditionalTools", true)
 		}
 		gotJSON, err := json.Marshal(got)
 		if err != nil {
@@ -654,4 +648,19 @@ func withModelProvider(model ai.Model, provider ai.ProviderID) ai.Model {
 func withModelAPI(model ai.Model, api ai.API) ai.Model {
 	model.API = api
 	return model
+}
+
+// overlayCompat applies one metadata key added after the v0.82.1 baseline.
+func overlayCompat(t *testing.T, raw json.RawMessage, name string, value any) json.RawMessage {
+	t.Helper()
+	var compat map[string]any
+	if err := json.Unmarshal(raw, &compat); err != nil {
+		t.Fatal(err)
+	}
+	compat[name] = value
+	encoded, err := json.Marshal(compat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
 }

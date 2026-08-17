@@ -233,15 +233,16 @@ func buildGoogleParameters(model *ai.Model, requestContext ai.Context, options *
 		config.SystemInstruction = encoded
 	}
 	if requestContext.Tools != nil && len(*requestContext.Tools) > 0 {
-		config.Tools = convertGoogleTools(*requestContext.Tools)
+		supportsStrictMode := supportsGoogleStrictToolSampling(model.ID)
 		toolChoice := GoogleToolChoice("")
 		if options != nil {
 			toolChoice = options.ToolChoice
 		}
-		mode, includeMode, err := resolveGoogleFunctionCallingMode(
-			*requestContext.Tools, toolChoice, supportsGoogleStrictToolSampling(model.ID),
-		)
+		mode, includeMode, err := resolveGoogleFunctionCallingMode(*requestContext.Tools, toolChoice, supportsStrictMode)
 		if err != nil {
+			return GoogleGenerateContentParameters{}, err
+		}
+		if config.Tools, err = convertGoogleTools(*requestContext.Tools, supportsStrictMode); err != nil {
 			return GoogleGenerateContentParameters{}, err
 		}
 		if includeMode {
@@ -464,17 +465,25 @@ func googleSpeechConfig(value json.RawMessage) (json.RawMessage, error) {
 	return encoded, nil
 }
 
-func convertGoogleTools(tools []ai.Tool) []GoogleTool {
+func convertGoogleTools(tools []ai.Tool, supportsStrictMode bool) ([]GoogleTool, error) {
 	if len(tools) == 0 {
-		return nil
+		return nil, nil
 	}
 	declarations := make([]GoogleFunctionDeclaration, 0, len(tools))
 	for _, tool := range tools {
+		strict, err := resolveJSONSchemaStrictSampling(tool, supportsStrictMode)
+		if err != nil {
+			return nil, err
+		}
+		parameters, err := getJSONSchemaToolParameters(tool.Parameters, strict != nil && *strict)
+		if err != nil {
+			return nil, err
+		}
 		declarations = append(declarations, GoogleFunctionDeclaration{
-			Name: tool.Name, Description: tool.Description, ParametersJSONSchema: tool.Parameters,
+			Name: tool.Name, Description: tool.Description, ParametersJSONSchema: parameters,
 		})
 	}
-	return []GoogleTool{{FunctionDeclarations: declarations}}
+	return []GoogleTool{{FunctionDeclarations: declarations}}, nil
 }
 
 func mapGoogleToolChoice(choice GoogleToolChoice) string {

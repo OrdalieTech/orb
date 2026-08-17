@@ -157,6 +157,7 @@ type OpenAIResponsesCompat struct {
 	SupportsLongCacheRetention      *bool                  `json:"supportsLongCacheRetention,omitempty"`
 	SupportsStrictMode              *bool                  `json:"supportsStrictMode,omitempty"`
 	SupportsOpenAIGrammarTools      *bool                  `json:"supportsOpenAIGrammarTools,omitempty"`
+	SupportsAdditionalTools         *bool                  `json:"supportsAdditionalTools,omitempty"`
 	SupportsToolSearch              *bool                  `json:"supportsToolSearch,omitempty"`
 	SupportsExplicitPromptCacheMode *bool                  `json:"supportsExplicitPromptCacheMode,omitempty"`
 }

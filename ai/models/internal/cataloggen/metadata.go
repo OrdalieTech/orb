@@ -123,11 +123,8 @@ func applyProviderHeaders(model *ai.Model) {
 	if headers == nil {
 		headers = make(map[string]string)
 	}
-	switch model.Provider {
-	case "nvidia":
+	if model.Provider == "nvidia" {
 		headers["NVCF-POLL-SECONDS"] = "3600"
-	case "kimi-coding":
-		headers["User-Agent"] = "KimiCLI/1.5"
 	}
 	if len(headers) != 0 {
 		model.Headers = &headers
@@ -271,6 +268,8 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 		values[ai.ModelThinkingMinimal], values[ai.ModelThinkingLow], values[ai.ModelThinkingMedium] = nil, nil, nil
 		if provider == "openrouter" {
 			values[ai.ModelThinkingXHigh], values[ai.ModelThinkingMax] = ptr("xhigh"), nil
+		} else if provider == "deepseek" && id == "deepseek-v4-flash" {
+			values[ai.ModelThinkingLow] = ptr("low")
 		}
 		mergeThinking(model, values)
 	}
@@ -368,9 +367,9 @@ func applyOpenAICompletionsCompat(model *ai.Model) {
 	isGateway := provider == "cloudflare-ai-gateway" || strings.Contains(baseURL, "gateway.ai.cloudflare.com")
 	isNVIDIA := provider == "nvidia" || strings.Contains(baseURL, "integrate.api.nvidia.com")
 	isAntLing := provider == "ant-ling" || strings.Contains(baseURL, "api.ant-ling.com")
-	isNonStandard := isNVIDIA || provider == "cerebras" || strings.Contains(baseURL, "cerebras.ai") || provider == "xai" || strings.Contains(baseURL, "api.x.ai") || isTogether || strings.Contains(baseURL, "chutes.ai") || strings.Contains(baseURL, "deepseek.com") || isZAI || isMoonshot || provider == "opencode" || strings.Contains(baseURL, "opencode.ai") || isWorkers || isGateway || isAntLing
+	isDeepSeek := provider == "deepseek" || strings.Contains(strings.ToLower(baseURL), "deepseek.com")
+	isNonStandard := isNVIDIA || provider == "cerebras" || strings.Contains(baseURL, "cerebras.ai") || provider == "xai" || strings.Contains(baseURL, "api.x.ai") || isTogether || strings.Contains(baseURL, "chutes.ai") || isDeepSeek || isZAI || isMoonshot || provider == "opencode" || strings.Contains(baseURL, "opencode.ai") || isWorkers || isGateway || isAntLing
 	isGrok := provider == "xai" || strings.Contains(baseURL, "api.x.ai")
-	isDeepSeek := provider == "deepseek" || strings.Contains(baseURL, "deepseek.com")
 	isOpenRouterDeveloperModel := isOpenRouter && (strings.HasPrefix(model.ID, "anthropic/") || strings.HasPrefix(model.ID, "openai/"))
 
 	var compat ai.OpenAICompletionsCompat
@@ -383,7 +382,7 @@ func applyOpenAICompletionsCompat(model *ai.Model) {
 	if isGrok || isZAI || isMoonshot || isTogether || isGateway || isNVIDIA || isAntLing {
 		compat.SupportsReasoningEffort = ptr(false)
 	}
-	if strings.Contains(baseURL, "chutes.ai") || isMoonshot || isGateway || isTogether || isNVIDIA || isAntLing || isZAI {
+	if strings.Contains(baseURL, "chutes.ai") || isDeepSeek || isMoonshot || isGateway || isTogether || isNVIDIA || isAntLing || isZAI {
 		compat.MaxTokensField = ptr(ai.MaxTokensFieldLegacy)
 	}
 	if isDeepSeek {
@@ -561,6 +560,7 @@ func applyOpenAIResponsesCompat(model *ai.Model) {
 		SupportsLongCacheRetention      *bool                     `json:"supportsLongCacheRetention,omitempty"`
 		SupportsStrictMode              *bool                     `json:"supportsStrictMode,omitempty"`
 		SupportsOpenAIGrammarTools      *bool                     `json:"supportsOpenAIGrammarTools,omitempty"`
+		SupportsAdditionalTools         *bool                     `json:"supportsAdditionalTools,omitempty"`
 		SupportsToolSearch              *bool                     `json:"supportsToolSearch,omitempty"`
 		SupportsExplicitPromptCacheMode *bool                     `json:"supportsExplicitPromptCacheMode,omitempty"`
 	}
@@ -574,7 +574,7 @@ func applyOpenAIResponsesCompat(model *ai.Model) {
 	if provider == "opencode" || provider == "opencode-go" {
 		compat.SessionAffinityFormat = ptr(ai.SessionAffinityOpenAINoSession)
 	}
-	if provider == "openai" && model.API == ai.APIOpenAIResponses {
+	if (provider == "openai" || provider == "cloudflare-ai-gateway") && model.API == ai.APIOpenAIResponses {
 		compat.SupportsStrictMode = ptr(true)
 	}
 	if slices.Contains([]string{"openai", "openai-codex", "azure-openai-responses", "github-copilot", "opencode", "cloudflare-ai-gateway"}, provider) &&
@@ -587,9 +587,16 @@ func applyOpenAIResponsesCompat(model *ai.Model) {
 			}
 		}
 	}
-	if (provider == "openai" && model.API == ai.APIOpenAIResponses || provider == "openai-codex" && model.API == ai.APIOpenAICodexResponses) && slices.Contains([]string{
+	isOpenAIResponses := provider == "openai" && model.API == ai.APIOpenAIResponses
+	isOpenAICodex := provider == "openai-codex" && model.API == ai.APIOpenAICodexResponses
+	if (isOpenAIResponses || isOpenAICodex) && slices.Contains([]string{
 		"gpt-5.4", "gpt-5.4-mini", "gpt-5.4-pro", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
 	}, id) {
+		// Codex only reads additional_tools on its Responses Lite GPT-5.6 models.
+		codexAdditional := slices.Contains([]string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}, id)
+		if isOpenAIResponses || codexAdditional {
+			compat.SupportsAdditionalTools = ptr(true)
+		}
 		compat.SupportsToolSearch = ptr(true)
 	}
 	if provider == "openai" && model.API == ai.APIOpenAIResponses && model.Cost.CacheWrite > 0 {

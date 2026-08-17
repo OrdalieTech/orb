@@ -39,20 +39,21 @@ func TestPromptPreflightRejectsUnknownModelSentinel(t *testing.T) {
 	}
 }
 
-func TestExportHTMLPrefersConfiguredCustomThemeOverCurrent(t *testing.T) {
+// Upstream 9795d6023 flipped the precedence so a per-run theme reaches /export.
+func TestExportHTMLPrefersActiveThemeOverConfigured(t *testing.T) {
 	root, agentDir := t.TempDir(), t.TempDir()
 	settings, err := config.NewSettingsManager(root, config.WithAgentDir(agentDir))
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings.SetTheme("configured-custom")
+	settings.SetTheme("dark")
 	source, err := os.ReadFile(filepath.Join("modes", "theme", "dark.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	custom := strings.Replace(string(source), `"name": "dark"`, `"name": "configured-custom"`, 1)
+	custom := strings.Replace(string(source), `"name": "dark"`, `"name": "active-custom"`, 1)
 	custom = strings.Replace(custom, `"pageBg": "#18181e"`, `"pageBg": "#123456"`, 1)
-	themePath := filepath.Join(root, "configured-custom.json")
+	themePath := filepath.Join(root, "active-custom.json")
 	if err := os.WriteFile(themePath, []byte(custom), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -67,13 +68,13 @@ func TestExportHTMLPrefersConfiguredCustomThemeOverCurrent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	registry := modetheme.Load(modetheme.LoadOptions{CWD: root, AgentDir: agentDir, NoThemes: true, Mode: modetheme.TrueColor})
-	dark, found := registry.Get("dark")
-	if !found {
-		t.Fatal("dark theme is missing")
+	active, err := modetheme.Parse(themePath, []byte(custom), modetheme.TrueColor)
+	if err != nil {
+		t.Fatal(err)
 	}
+	active.SourcePath = themePath
 	previous := modetheme.Current()
-	modetheme.SetCurrent(dark)
+	modetheme.SetCurrent(active)
 	t.Cleanup(func() { modetheme.SetCurrent(previous) })
 
 	provider := testFaux(100_000)
@@ -106,7 +107,7 @@ func TestExportHTMLPrefersConfiguredCustomThemeOverCurrent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(contents), "--exportPageBg: #123456;") {
-		t.Fatalf("configured custom theme did not win over current dark theme")
+		t.Fatalf("active custom theme did not win over the configured dark theme")
 	}
 }
 

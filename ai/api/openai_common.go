@@ -109,6 +109,16 @@ func resolveJSONSchemaStrictSampling(tool ai.Tool, supportsStrictMode bool) (*bo
 		return nil, nil
 	}
 	if supportsStrictMode {
+		if _, err := makeStrictJSONSchema(tool.Parameters); err != nil {
+			var unsupported *unsupportedStrictSchemaError
+			if !errors.As(err, &unsupported) {
+				return nil, err
+			}
+			if config.Strict != ai.ConstrainedSamplingRequire {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("Tool %q requires JSON-schema constrained sampling, but %s.", tool.Name, unsupported.reason) //nolint:staticcheck // Exact upstream text.
+		}
 		value := true
 		return &value, nil
 	}

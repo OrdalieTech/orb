@@ -120,7 +120,8 @@ func BuildSystemPrompt(options SystemPromptOptions) string {
 		if options.SelectedTools == nil || slices.Contains(options.SelectedTools, "read") {
 			prompt += FormatSkillsForPrompt(options.Skills)
 		}
-		return prompt + "\nCurrent working directory: " + promptCWD
+		// Only this branch ends with a newline upstream; the built-in one below does not.
+		return prompt + "\nCurrent working directory: " + promptCWD + "\n"
 	}
 
 	tools := options.SelectedTools

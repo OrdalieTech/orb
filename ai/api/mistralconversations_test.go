@@ -91,7 +91,7 @@ func TestMistralReplayWireShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"model":"m","stream":true,"messages":[{"role":"assistant","tool_calls":[{"id":"Abc123XYZ","type":"function","function":{"name":"echo","arguments":"{\"text\":\"first\"}"},"index":0}],"prefix":false},{"role":"tool","content":[{"type":"text","text":"done"}],"tool_call_id":"Abc123XYZ","name":"echo"}]}`
+	want := `{"model":"m","stream":true,"messages":[{"role":"assistant","prefix":false,"tool_calls":[{"id":"Abc123XYZ","type":"function","function":{"name":"echo","arguments":"{\"text\":\"first\"}"},"index":0}]},{"role":"tool","name":"echo","content":[{"type":"text","text":"done"}],"tool_call_id":"Abc123XYZ"}]}`
 	if string(body) != want {
 		t.Fatalf("wire body = %s\nwant      = %s", body, want)
 	}

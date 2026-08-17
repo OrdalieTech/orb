@@ -721,3 +721,31 @@ func runBedrockHTTPFailure(t *testing.T, options *BedrockConverseStreamOptions) 
 }
 
 func bedrockStringPointer(value string) *string { return &value }
+
+// Bedrock's document encoder rejects empty object keys, so replayed tool
+// arguments drop them without touching the stored session values (#7882).
+func TestBedrockReplayDropsEmptyArgumentKeys(t *testing.T) {
+	arguments := map[string]any{
+		"path": "/workspace/file.js",
+		"edits": []any{
+			map[string]any{"oldText": "second", "newText": "updated second", "": ""},
+		},
+	}
+	blocks, err := convertBedrockAssistantContent(ai.AssistantContent{
+		&ai.ToolCall{ID: "tool-1", Name: "edit", Arguments: arguments},
+	}, &ai.Model{ID: "amazon.nova-lite-v1:0", API: ai.APIBedrockConverse, Provider: "amazon-bedrock"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, ok := blocks[0].ToolUse.Input.(map[string]any)
+	if !ok {
+		t.Fatalf("tool use input = %#v", blocks[0].ToolUse.Input)
+	}
+	edit, ok := input["edits"].([]any)[0].(map[string]any)
+	if !ok || len(edit) != 2 {
+		t.Fatalf("sanitized edit = %#v", input["edits"])
+	}
+	if _, kept := arguments["edits"].([]any)[0].(map[string]any)[""]; !kept {
+		t.Fatal("source arguments were mutated")
+	}
+}

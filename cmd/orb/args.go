@@ -58,6 +58,7 @@ type CLIArgs struct {
 	PromptTemplates    []string
 	NoPromptTemplates  bool
 	Themes             []string
+	UseTheme           string
 	NoThemes           bool
 	ProjectTrusted     *bool
 	Offline            bool
@@ -211,6 +212,13 @@ func ParseArgs(argv []string) CLIArgs {
 		case argument == "--theme" && index+1 < len(argv):
 			index++
 			result.Themes = append(result.Themes, argv[index])
+		case argument == "--use-theme":
+			if index+1 < len(argv) && !strings.HasPrefix(argv[index+1], "-") {
+				index++
+				result.UseTheme = argv[index]
+			} else {
+				result.Diagnostics = append(result.Diagnostics, CLIDiagnostic{Type: "error", Message: "--use-theme requires a theme name"})
+			}
 		case argument == "--no-themes":
 			result.NoThemes = true
 		case argument == "--verbose":

@@ -8,7 +8,7 @@ import (
 
 func TestStdinBufferSequencesPasteAndKittyDuplicates(t *testing.T) {
 	var data, paste []string
-	buffer := NewStdinBuffer(5*time.Millisecond, func(value string) { data = append(data, value) }, func(value string) { paste = append(paste, value) })
+	buffer := NewStdinBuffer(5*time.Millisecond, 5*time.Millisecond, func(value string) { data = append(data, value) }, func(value string) { paste = append(paste, value) })
 	defer buffer.Close()
 	buffer.Process("abc\x1b[")
 	buffer.Process("A")
@@ -25,7 +25,7 @@ func TestStdinBufferSequencesPasteAndKittyDuplicates(t *testing.T) {
 
 func TestStdinBufferPreservesPasteAndKeyOrderWithinOneRead(t *testing.T) {
 	var events []string
-	buffer := NewStdinBuffer(time.Second,
+	buffer := NewStdinBuffer(time.Second, time.Second,
 		func(value string) { events = append(events, "data:"+value) },
 		func(value string) { events = append(events, "paste:"+value) },
 	)
@@ -49,7 +49,7 @@ func TestStdinBufferPreservesPasteAndKeyOrderWithinOneRead(t *testing.T) {
 
 func TestStdinBufferPreservesMixedEventsAndKittyResetAcrossPaste(t *testing.T) {
 	var events []string
-	buffer := NewStdinBuffer(time.Second,
+	buffer := NewStdinBuffer(time.Second, time.Second,
 		func(value string) { events = append(events, "data:"+value) },
 		func(value string) { events = append(events, "paste:"+value) },
 	)
@@ -65,7 +65,7 @@ func TestStdinBufferPreservesMixedEventsAndKittyResetAcrossPaste(t *testing.T) {
 
 func TestStdinBufferTimeoutAndWezTermEscape(t *testing.T) {
 	data := make(chan string, 3)
-	buffer := NewStdinBuffer(5*time.Millisecond, func(value string) { data <- value }, nil)
+	buffer := NewStdinBuffer(5*time.Millisecond, 5*time.Millisecond, func(value string) { data <- value }, nil)
 	defer buffer.Close()
 	buffer.Process("\x1b[")
 	select {
@@ -87,7 +87,7 @@ func TestStdinBufferTimeoutAndWezTermEscape(t *testing.T) {
 
 func TestStdinBufferLegacyHighByte(t *testing.T) {
 	data := make(chan string, 1)
-	buffer := NewStdinBuffer(time.Second, func(value string) { data <- value }, nil)
+	buffer := NewStdinBuffer(time.Second, time.Second, func(value string) { data <- value }, nil)
 	defer buffer.Close()
 	buffer.ProcessBytes([]byte{0xe1})
 	if got := <-data; got != "\x1ba" {
@@ -97,7 +97,7 @@ func TestStdinBufferLegacyHighByte(t *testing.T) {
 
 func TestStdinBufferReassemblesSplitUTF8(t *testing.T) {
 	var data []string
-	buffer := NewStdinBuffer(time.Second, func(value string) { data = append(data, value) }, nil)
+	buffer := NewStdinBuffer(time.Second, time.Second, func(value string) { data = append(data, value) }, nil)
 	defer buffer.Close()
 	buffer.Process("\xc3")
 	buffer.Process("\xa9")
@@ -110,7 +110,7 @@ func TestStdinBufferReassemblesSplitUTF8(t *testing.T) {
 
 func TestStdinBufferKittyDedupeSkipsAstralCodepoints(t *testing.T) {
 	var data []string
-	buffer := NewStdinBuffer(5*time.Millisecond, func(value string) { data = append(data, value) }, nil)
+	buffer := NewStdinBuffer(5*time.Millisecond, 5*time.Millisecond, func(value string) { data = append(data, value) }, nil)
 	defer buffer.Close()
 	// Upstream compares sequence.length === 1 in UTF-16 code units, so an
 	// astral printable echoed after its kitty CSI-u report is never deduped.
@@ -130,7 +130,7 @@ func TestStdinBufferKittyDedupeSkipsAstralCodepoints(t *testing.T) {
 
 func TestStdinBufferStaleTimerCannotFlushFreshSequence(t *testing.T) {
 	var data []string
-	buffer := NewStdinBuffer(time.Hour, func(value string) { data = append(data, value) }, nil)
+	buffer := NewStdinBuffer(time.Hour, time.Hour, func(value string) { data = append(data, value) }, nil)
 	defer buffer.Close()
 
 	buffer.Process("\x1b[<35")
@@ -169,7 +169,7 @@ func TestStdinBufferSplitSequenceKeepsCompletionWindow(t *testing.T) {
 	for trial := 0; trial < 50; trial++ {
 		var mu sync.Mutex
 		var emitted []stamped
-		buffer := NewStdinBuffer(timeout, func(value string) {
+		buffer := NewStdinBuffer(timeout, timeout, func(value string) {
 			now := time.Now()
 			mu.Lock()
 			emitted = append(emitted, stamped{value: value, at: now})
@@ -192,4 +192,51 @@ func TestStdinBufferSplitSequenceKeepsCompletionWindow(t *testing.T) {
 		mu.Unlock()
 		buffer.Close()
 	}
+}
+
+// Legacy Alt+Enter is ESC + CR: a lone ESC dispatches as Escape on its own
+// short wait, while a partial report keeps the longer sequence wait.
+func TestStdinBufferSplitsEscapeWaitFromSequenceWait(t *testing.T) {
+	kitty := IsKittyProtocolActive()
+	SetKittyProtocolActive(false)
+	t.Cleanup(func() { SetKittyProtocolActive(kitty) })
+
+	t.Run("lone escape flushes on its own wait", func(t *testing.T) {
+		data := make(chan string, 2)
+		buffer := NewStdinBuffer(time.Second, 5*time.Millisecond, func(value string) { data <- value }, nil)
+		defer buffer.Close()
+		buffer.Process("\x1b")
+		select {
+		case got := <-data:
+			if got != "\x1b" {
+				t.Fatalf("flushed %q", got)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("lone escape did not flush")
+		}
+	})
+
+	t.Run("a longer escape wait reassembles split alt+enter", func(t *testing.T) {
+		var data []string
+		buffer := NewStdinBuffer(5*time.Millisecond, time.Minute, func(value string) { data = append(data, value) }, nil)
+		defer buffer.Close()
+		buffer.Process("\x1b")
+		time.Sleep(25 * time.Millisecond)
+		buffer.Process("\r")
+		if !equalLines(data, []string{"\x1b\r"}) || ParseKey(data[0]) != "alt+enter" {
+			t.Fatalf("split alt+enter = %#v", data)
+		}
+	})
+
+	t.Run("the escape wait never truncates a partial report", func(t *testing.T) {
+		var data []string
+		buffer := NewStdinBuffer(time.Minute, 5*time.Millisecond, func(value string) { data = append(data, value) }, nil)
+		defer buffer.Close()
+		buffer.Process("\x1b[")
+		time.Sleep(25 * time.Millisecond)
+		buffer.Process("<65;48;39M")
+		if !equalLines(data, []string{"\x1b[<65;48;39M"}) {
+			t.Fatalf("fragmented mouse report = %#v", data)
+		}
+	})
 }

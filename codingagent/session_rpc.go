@@ -1030,27 +1030,19 @@ func (runtime *SessionRuntime) SetSessionName(name string) error {
 func (runtime *SessionRuntime) ExportHTML(outputPath string) (string, error) {
 	state := runtime.agent.State()
 	systemPrompt := state.SystemPrompt
-	themeName := runtime.settings.GetTheme()
+	// Upstream takes the first candidate naming a known theme, active before
+	// configured, so a per-run --use-theme selection reaches /export.
+	var themeName string
 	var exportTheme *modetheme.Theme
-	configured := themeName == "dark" || themeName == "light"
-	if themeName != "" && !configured {
-		exportTheme = modetheme.GetTheme(themeName)
-		if exportTheme == nil && runtime.resourceLoader != nil {
-			for _, candidate := range runtime.resourceLoader.GetThemes().Themes {
-				if candidate.Name == themeName {
-					exportTheme = candidate
-					break
-				}
-			}
-		}
-		configured = exportTheme != nil
-	}
-	if !configured {
-		if current := modetheme.Current(); current != nil {
-			themeName = current.Name
-			exportTheme = current
-		} else {
-			themeName = ""
+	switch configured := runtime.settings.GetTheme(); {
+	case modetheme.Current() != nil:
+		exportTheme = modetheme.Current()
+		themeName = exportTheme.Name
+	case configured == "dark" || configured == "light":
+		themeName = configured
+	case configured != "":
+		if exportTheme = runtime.findTheme(configured); exportTheme != nil {
+			themeName = configured
 		}
 	}
 	// Custom extension tools are pre-rendered through their TUI renderers
@@ -1072,6 +1064,23 @@ func (runtime *SessionRuntime) ExportHTML(outputPath string) (string, error) {
 		ThemeName:    themeName,
 		Theme:        exportTheme,
 	})
+}
+
+// findTheme looks a named theme up in the global registry, then in the
+// session's loaded resources.
+func (runtime *SessionRuntime) findTheme(name string) *modetheme.Theme {
+	if found := modetheme.GetTheme(name); found != nil {
+		return found
+	}
+	if runtime.resourceLoader == nil {
+		return nil
+	}
+	for _, candidate := range runtime.resourceLoader.GetThemes().Themes {
+		if candidate.Name == name {
+			return candidate
+		}
+	}
+	return nil
 }
 
 // exportToolList mirrors upstream exportToHtml's tools mapping: name,

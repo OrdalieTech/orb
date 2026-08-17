@@ -11,19 +11,19 @@ import (
 )
 
 // SYNC-2: this digest is JSON.stringify(Object.values(IMAGE_MODELS.openrouter))
-// from upstream v0.81.0's generated image catalog. It catches additions,
+// from upstream v0.84.2's generated image catalog. It catches additions,
 // removals, ordering changes, and field-level drift that spot checks miss.
 func TestSYNC2ImageCatalogMatchesUpstream(t *testing.T) {
 	models := BuiltinImages(ai.ImagesProviderOpenRouter)
-	if len(models) != 39 {
-		t.Fatalf("image catalog has %d models, want 39", len(models))
+	if len(models) != 45 {
+		t.Fatalf("image catalog has %d models, want 45", len(models))
 	}
 	b, err := json.Marshal(models)
 	if err != nil {
 		t.Fatal(err)
 	}
 	digest := sha256.Sum256(b)
-	const want = "40c176ec0df9d315d0f5920a3ed4550e084daa9e07533a838f5464e1135a3106"
+	const want = "24cba4f1ead2debd8e91f847f22aa882410c4c1e6cccd03a22d853174bfe0123"
 	if got := hex.EncodeToString(digest[:]); got != want {
 		t.Fatalf("image catalog digest = %s, want %s", got, want)
 	}

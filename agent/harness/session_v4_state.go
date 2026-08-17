@@ -177,9 +177,15 @@ func (state *sessionV4State) applyMutation(mutation SessionV4Mutation, invalid f
 		}
 		state.sequence = seq
 		if mutation.Fact == "name" {
-			name := mutation.Name
-			state.name = &name
-			state.log = append(state.log, SessionV4LogItem{Kind: "fact", Seq: seq, Fact: "name", Name: mutation.Name})
+			if mutation.NameCleared {
+				state.name = nil
+			} else {
+				name := mutation.Name
+				state.name = &name
+			}
+			state.log = append(state.log, SessionV4LogItem{
+				Kind: "fact", Seq: seq, Fact: "name", Name: mutation.Name, NameCleared: mutation.NameCleared,
+			})
 		} else {
 			if mutation.Label == nil {
 				delete(state.labels, mutation.TargetID)
@@ -214,29 +220,37 @@ func (state *sessionV4State) entry(id string) (SessionV4Entry, bool) {
 // unlimited; zero and negative limits are invalid.
 type SessionV4EntryQuery struct {
 	Type       string
-	CustomType string
-	Order      string
+	CustomType string // for Type "custom"
+	Order      string // "" is newestFirst
 	Limit      *int
 	AfterSeq   *int
 }
 
 // SessionV4BranchQuery bounds a branch walk from Start toward the root.
+// Unbounded, it covers the whole path from leaf to root.
 type SessionV4BranchQuery struct {
 	SessionV4EntryQuery
-	Start      string
+	Start string
+	// StopAtType and StopAtID end the scan after the first match, inclusive.
 	StopAtType string
 	StopAtID   string
 }
 
-// SessionV4RecordQuery mirrors upstream RecordQuery.
+// SessionV4RecordQuery mirrors upstream RecordQuery. Empty string fields match
+// every value.
 type SessionV4RecordQuery struct {
-	Lane          string
-	Type          string
-	RunID         string
+	Lane string
+	Type string
+	// RunID is operation identity: it matches an operation_started record's own
+	// id and the RunID of operation-owned records. Records without an operation
+	// identity never match.
+	RunID string
+	// OperationKind is valid only with Type "operation_started".
 	OperationKind string
-	AfterSeq      *int
-	Order         string
-	Limit         *int
+	// AfterSeq is an exclusive chronological lower bound regardless of Order.
+	AfterSeq *int
+	Order    string // "" is newestFirst
+	Limit    *int
 }
 
 // SessionV4LogOptions pages the replayed mutation log.

@@ -72,10 +72,11 @@ func NewEditTool(cwd string, options *EditToolOptions) agent.AgentTool {
 
 func (tool *editTool) Spec() agent.AgentToolSpec {
 	return agent.AgentToolSpec{
-		Name:        "edit",
-		Label:       "edit",
-		Description: "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
-		Parameters:  editSchema,
+		Name:                "edit",
+		Label:               "edit",
+		Description:         "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+		Parameters:          editSchema,
+		ConstrainedSampling: experimentalToolSampling(),
 		PrepareArguments: func(input any) (any, error) {
 			return prepareEditArguments(input), nil
 		},

@@ -678,11 +678,18 @@ type SlashCommandInfo struct {
 }
 
 type SendMessageOptions struct {
-	TriggerTurn bool
+	// Tri-state as upstream: unset still steers a streaming turn, an explicit
+	// false suppresses it, true prompts when idle.
+	TriggerTurn *bool
 	DeliverAs   DeliveryMode
 }
 
-type SendUserMessageOptions struct{ DeliverAs DeliveryMode }
+type SendUserMessageOptions struct {
+	DeliverAs DeliveryMode
+	// ExpandPromptTemplates dispatches extension commands and expands skill
+	// commands and prompt templates. Defaults to off, as upstream.
+	ExpandPromptTemplates bool
+}
 
 type ExecOptions struct {
 	Context context.Context

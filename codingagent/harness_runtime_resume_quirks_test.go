@@ -113,7 +113,7 @@ func TestRepoBoundHarnessRuntimeInvalidResumePathStaysUnmodified(t *testing.T) {
 	}
 
 	result, err := runtime.SwitchSession(ctx, exactPath, nil)
-	if err == nil || !strings.Contains(err.Error(), "Session file is not a valid pi session: "+exactPath) {
+	if err == nil || !strings.Contains(err.Error(), "Session file is not a valid orb session: "+exactPath) {
 		t.Fatalf("invalid-path resume = %#v, %v", result, err)
 	}
 	if result.Cancelled {

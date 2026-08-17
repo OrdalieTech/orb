@@ -174,6 +174,7 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 			ResponseModel json.RawMessage               `json:"responseModel,omitempty"`
 			Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
 			Timestamp     int64                         `json:"timestamp"`
+			EndTurn       *bool                         `json:"endTurn,omitempty"`
 			RawStopReason json.RawMessage               `json:"rawStopReason,omitempty"`
 		}{
 			Role:          "assistant",
@@ -188,6 +189,7 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 			ResponseModel: responseModel,
 			Diagnostics:   message.Diagnostics,
 			Timestamp:     message.Timestamp,
+			EndTurn:       message.EndTurn,
 			RawStopReason: rawStopReason,
 		})
 	}
@@ -201,6 +203,7 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 			Usage         Usage                         `json:"usage"`
 			StopReason    json.RawMessage               `json:"stopReason"`
 			Timestamp     int64                         `json:"timestamp"`
+			EndTurn       *bool                         `json:"endTurn,omitempty"`
 			RawStopReason json.RawMessage               `json:"rawStopReason,omitempty"`
 			ErrorMessage  json.RawMessage               `json:"errorMessage"`
 			ResponseID    json.RawMessage               `json:"responseId,omitempty"`
@@ -209,6 +212,7 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 		}{
 			Role: "assistant", Content: message.Content, API: api, Provider: provider, Model: model,
 			Usage: message.Usage, StopReason: stopReason, Timestamp: message.Timestamp,
+			EndTurn:       message.EndTurn,
 			RawStopReason: rawStopReason, ErrorMessage: errorMessage, ResponseID: responseID,
 			ResponseModel: responseModel, Diagnostics: message.Diagnostics,
 		})
@@ -225,6 +229,7 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 		ResponseID    json.RawMessage               `json:"responseId,omitempty"`
 		ResponseModel json.RawMessage               `json:"responseModel,omitempty"`
 		Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
+		EndTurn       *bool                         `json:"endTurn,omitempty"`
 		RawStopReason json.RawMessage               `json:"rawStopReason,omitempty"`
 		ErrorMessage  json.RawMessage               `json:"errorMessage,omitempty"`
 	}{
@@ -239,6 +244,7 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 		ResponseID:    responseID,
 		ResponseModel: responseModel,
 		Diagnostics:   message.Diagnostics,
+		EndTurn:       message.EndTurn,
 		RawStopReason: rawStopReason,
 		ErrorMessage:  errorMessage,
 	})
@@ -256,6 +262,7 @@ func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 		ResponseID    json.RawMessage               `json:"responseId"`
 		ResponseModel json.RawMessage               `json:"responseModel"`
 		Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics"`
+		EndTurn       *bool                         `json:"endTurn"`
 		RawStopReason json.RawMessage               `json:"rawStopReason"`
 		ErrorMessage  json.RawMessage               `json:"errorMessage"`
 	}
@@ -307,6 +314,7 @@ func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 		Diagnostics:   raw.Diagnostics,
 		ErrorMessage:  errorMessage,
 		RawStopReason: rawStopReason,
+		EndTurn:       raw.EndTurn,
 	}
 	message.errorBeforeTimestamp = topLevelMemberBefore(data, "errorMessage", "timestamp")
 	message.errorBeforeResponseID = !message.errorBeforeTimestamp && topLevelMemberBefore(data, "errorMessage", "responseId")
@@ -685,12 +693,17 @@ func (content ToolCall) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	namespace, err := marshalOptionalWireString(content.Namespace)
+	if err != nil {
+		return nil, err
+	}
 	if content.PartialJSON != nil || content.PartialArgs != nil || content.StreamIndex != nil || content.Index != nil {
 		return marshalJSON(struct {
 			Type             string          `json:"type"`
 			ID               json.RawMessage `json:"id"`
 			Name             json.RawMessage `json:"name"`
 			Arguments        json.RawMessage `json:"arguments"`
+			Namespace        json.RawMessage `json:"namespace,omitempty"`
 			PartialJSON      json.RawMessage `json:"partialJson,omitempty"`
 			PartialArgs      json.RawMessage `json:"partialArgs,omitempty"`
 			StreamIndex      *int            `json:"streamIndex,omitempty"`
@@ -701,6 +714,7 @@ func (content ToolCall) MarshalJSON() ([]byte, error) {
 			ID:               id,
 			Name:             name,
 			Arguments:        arguments,
+			Namespace:        namespace,
 			PartialJSON:      partialJSON,
 			PartialArgs:      partialArgs,
 			StreamIndex:      content.StreamIndex,
@@ -713,12 +727,14 @@ func (content ToolCall) MarshalJSON() ([]byte, error) {
 		ID               json.RawMessage `json:"id"`
 		Name             json.RawMessage `json:"name"`
 		Arguments        json.RawMessage `json:"arguments"`
+		Namespace        json.RawMessage `json:"namespace,omitempty"`
 		ThoughtSignature json.RawMessage `json:"thoughtSignature,omitempty"`
 	}{
 		Type:             "toolCall",
 		ID:               id,
 		Name:             name,
 		Arguments:        arguments,
+		Namespace:        namespace,
 		ThoughtSignature: thoughtSignature,
 	})
 }
@@ -728,6 +744,7 @@ func (content *ToolCall) UnmarshalJSON(data []byte) error {
 		ID               json.RawMessage `json:"id"`
 		Name             json.RawMessage `json:"name"`
 		Arguments        json.RawMessage `json:"arguments"`
+		Namespace        json.RawMessage `json:"namespace"`
 		ThoughtSignature json.RawMessage `json:"thoughtSignature"`
 		PartialJSON      json.RawMessage `json:"partialJson"`
 		PartialArgs      json.RawMessage `json:"partialArgs"`
@@ -757,10 +774,15 @@ func (content *ToolCall) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
+	namespace, err := unmarshalOptionalWireString(raw.Namespace)
+	if err != nil {
+		return err
+	}
 	*content = ToolCall{
 		ID:               id,
 		Name:             name,
 		ThoughtSignature: thoughtSignature,
+		Namespace:        namespace,
 		PartialJSON:      partialJSON,
 		PartialArgs:      partialArgs,
 		StreamIndex:      raw.StreamIndex,

@@ -91,7 +91,10 @@ type ToolCall struct {
 	Name             string         `json:"name"`
 	Arguments        map[string]any `json:"arguments"`
 	ThoughtSignature *string        `json:"thoughtSignature,omitempty"`
-	rawArguments     []byte
+	// Namespace is the OpenAI Responses namespace for calls to dynamically
+	// loaded or namespaced tools.
+	Namespace    *string `json:"namespace,omitempty"`
+	rawArguments []byte
 	// Provider adapters clear streaming scratch fields before a terminal message is persisted.
 	PartialJSON *string `json:"partialJson,omitempty"`
 	PartialArgs *string `json:"partialArgs,omitempty"`
@@ -188,18 +191,21 @@ type UserMessage struct {
 }
 
 type AssistantMessage struct {
-	Content               AssistantContent              `json:"content"`
-	API                   API                           `json:"api"`
-	Provider              ProviderID                    `json:"provider"`
-	Model                 string                        `json:"model"`
-	Usage                 Usage                         `json:"usage"`
-	StopReason            StopReason                    `json:"stopReason"`
-	Timestamp             int64                         `json:"timestamp"`
-	ResponseID            *string                       `json:"responseId,omitempty"`
-	ResponseModel         *string                       `json:"responseModel,omitempty"`
-	Diagnostics           *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
-	ErrorMessage          *string                       `json:"errorMessage,omitempty"`
-	RawStopReason         *string                       `json:"rawStopReason,omitempty"`
+	Content       AssistantContent              `json:"content"`
+	API           API                           `json:"api"`
+	Provider      ProviderID                    `json:"provider"`
+	Model         string                        `json:"model"`
+	Usage         Usage                         `json:"usage"`
+	StopReason    StopReason                    `json:"stopReason"`
+	Timestamp     int64                         `json:"timestamp"`
+	ResponseID    *string                       `json:"responseId,omitempty"`
+	ResponseModel *string                       `json:"responseModel,omitempty"`
+	Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
+	ErrorMessage  *string                       `json:"errorMessage,omitempty"`
+	RawStopReason *string                       `json:"rawStopReason,omitempty"`
+	// EndTurn records the provider's indication that the model explicitly ended
+	// its turn. Preserved for debugging; it does not affect agent control flow.
+	EndTurn               *bool `json:"endTurn,omitempty"`
 	errorBeforeTimestamp  bool
 	errorBeforeResponseID bool
 }

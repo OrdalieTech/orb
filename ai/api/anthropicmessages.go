@@ -13,6 +13,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonschema"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/partialjson"
 	anthropic "github.com/anthropics/anthropic-sdk-go"
@@ -728,15 +729,19 @@ func convertAnthropicTools(
 		if oauth {
 			name = toClaudeCodeToolName(name)
 		}
-		properties, required, err := anthropicSchemaParts(tool)
-		if err != nil {
-			return nil, err
-		}
 		strict, err := resolveJSONSchemaStrictSampling(tool, supportsStrictTools)
 		if err != nil {
 			return nil, err
 		}
-		inputSchema, err := buildAnthropicInputSchema(tool, properties, required, strict != nil && *strict)
+		parameters, err := getJSONSchemaToolParameters(tool.Parameters, strict != nil && *strict)
+		if err != nil {
+			return nil, err
+		}
+		properties, required, err := anthropicSchemaParts(tool.Name, parameters)
+		if err != nil {
+			return nil, err
+		}
+		inputSchema, err := buildAnthropicInputSchema(tool.Name, parameters, properties, required, strict != nil && *strict)
 		if err != nil {
 			return nil, err
 		}
@@ -763,7 +768,8 @@ func convertAnthropicTools(
 }
 
 func buildAnthropicInputSchema(
-	tool ai.Tool,
+	toolName string,
+	parameters jsonschema.Schema,
 	properties json.RawMessage,
 	required []string,
 	strict bool,
@@ -777,36 +783,36 @@ func buildAnthropicInputSchema(
 		encoded, err := ai.Marshal(legacy)
 		return json.RawMessage(encoded), err
 	}
-	data, err := ai.Marshal(tool.Parameters)
+	data, err := ai.Marshal(parameters)
 	if err != nil {
-		return nil, fmt.Errorf("marshal Anthropic tool %q schema: %w", tool.Name, err)
+		return nil, fmt.Errorf("marshal Anthropic tool %q schema: %w", toolName, err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	token, err := decoder.Token()
 	if err != nil {
-		return nil, fmt.Errorf("decode Anthropic tool %q schema: %w", tool.Name, err)
+		return nil, fmt.Errorf("decode Anthropic tool %q schema: %w", toolName, err)
 	}
 	if delimiter, ok := token.(json.Delim); !ok || delimiter != '{' {
-		return nil, fmt.Errorf("decode Anthropic tool %q schema: expected object", tool.Name)
+		return nil, fmt.Errorf("decode Anthropic tool %q schema: expected object", toolName)
 	}
 	schema := make(jsonwire.OrderedObject, 0)
 	for decoder.More() {
 		token, err := decoder.Token()
 		if err != nil {
-			return nil, fmt.Errorf("decode Anthropic tool %q schema: %w", tool.Name, err)
+			return nil, fmt.Errorf("decode Anthropic tool %q schema: %w", toolName, err)
 		}
-		name, ok := token.(string)
+		key, ok := token.(string)
 		if !ok {
-			return nil, fmt.Errorf("decode Anthropic tool %q schema: expected object key", tool.Name)
+			return nil, fmt.Errorf("decode Anthropic tool %q schema: expected object key", toolName)
 		}
 		var value json.RawMessage
 		if err := decoder.Decode(&value); err != nil {
-			return nil, fmt.Errorf("decode Anthropic tool %q schema: %w", tool.Name, err)
+			return nil, fmt.Errorf("decode Anthropic tool %q schema: %w", toolName, err)
 		}
-		schema.Set(name, value)
+		schema.Set(key, value)
 	}
 	if _, err := decoder.Token(); err != nil {
-		return nil, fmt.Errorf("decode Anthropic tool %q schema: %w", tool.Name, err)
+		return nil, fmt.Errorf("decode Anthropic tool %q schema: %w", toolName, err)
 	}
 	for _, member := range legacy {
 		schema.Set(member.Name, member.Value)
@@ -815,17 +821,17 @@ func buildAnthropicInputSchema(
 	return json.RawMessage(encoded), err
 }
 
-func anthropicSchemaParts(tool ai.Tool) (json.RawMessage, []string, error) {
+func anthropicSchemaParts(name string, parameters jsonschema.Schema) (json.RawMessage, []string, error) {
 	var fields struct {
 		Properties json.RawMessage `json:"properties"`
 		Required   []string        `json:"required"`
 	}
-	data, err := json.Marshal(tool.Parameters)
+	data, err := json.Marshal(parameters)
 	if err != nil {
-		return nil, nil, fmt.Errorf("marshal Anthropic tool %q schema: %w", tool.Name, err)
+		return nil, nil, fmt.Errorf("marshal Anthropic tool %q schema: %w", name, err)
 	}
 	if err := json.Unmarshal(data, &fields); err != nil {
-		return nil, nil, fmt.Errorf("decode Anthropic tool %q schema: %w", tool.Name, err)
+		return nil, nil, fmt.Errorf("decode Anthropic tool %q schema: %w", name, err)
 	}
 	if len(fields.Properties) == 0 || string(fields.Properties) == "null" {
 		fields.Properties = json.RawMessage(`{}`)
@@ -1261,6 +1267,11 @@ func anthropicHeaders(
 				headers.Set(name, *value)
 			}
 		}
+	}
+	// Kimi For Coding gates on the pi client identity, so it wins over every
+	// model- or caller-supplied User-Agent.
+	if model.Provider == "kimi-coding" {
+		headers.Set("User-Agent", piUserAgent())
 	}
 	return headers
 }

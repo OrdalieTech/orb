@@ -506,6 +506,11 @@ func (ui *TUI) routeMouseInput(data string) {
 }
 
 func (ui *TUI) handleViewportInput(data string) bool {
+	// A visible overlay that holds focus keeps these keys: they would scroll
+	// history it covers, and extension custom UI never sees them otherwise.
+	ui.focusMu.RLock()
+	deferToOverlay := ui.visibleOverlayForComponentLocked(ui.focused) != nil
+	ui.focusMu.RUnlock()
 	ui.renderMu.Lock()
 	if ui.viewportBody == nil {
 		ui.renderMu.Unlock()
@@ -514,6 +519,14 @@ func (ui *TUI) handleViewportInput(data string) bool {
 	consumed := true
 	step := max(1, ui.viewportBodyHeight)
 	switch {
+	// Escape cancels only a live selection drag (and its auto-scroll timer);
+	// with no selection active it falls through to the focused component, so
+	// keyboard flows are otherwise unchanged. It stays ahead of the overlay
+	// check: a drag behind an overlay would leave its ticker running.
+	case MatchesKey(data, "escape") && ui.selection.active:
+		ui.clearSelectionLocked()
+	case deferToOverlay:
+		consumed = false
 	case MatchesKey(data, "ctrl+pageup"):
 		ui.clearSelectionLocked()
 		ui.scrollViewportLocked(-step)
@@ -523,11 +536,6 @@ func (ui *TUI) handleViewportInput(data string) bool {
 	case MatchesKey(data, "ctrl+end"):
 		ui.clearSelectionLocked()
 		ui.viewportFollow = true
-	// Escape cancels only a live selection drag (and its auto-scroll timer);
-	// with no selection active it falls through to the focused component, so
-	// keyboard flows are otherwise unchanged.
-	case MatchesKey(data, "escape") && ui.selection.active:
-		ui.clearSelectionLocked()
 	default:
 		consumed = false
 	}

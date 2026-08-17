@@ -35,6 +35,9 @@ func TestParseMouseDecodesSGRReports(t *testing.T) {
 	}{
 		{"\x1b[<0;12;5M", MouseEvent{Type: MousePress, Row: 4, Column: 11}, true},
 		{"\x1b[<0;12;5m", MouseEvent{Type: MouseRelease, Row: 4, Column: 11}, true},
+		// Some terminals report a generic release (button bits 3) rather than
+		// repeating the pressed button; it still ends the gesture.
+		{"\x1b[<3;12;5m", MouseEvent{Type: MouseRelease, Button: 3, Row: 4, Column: 11}, true},
 		{"\x1b[<32;12;5M", MouseEvent{Type: MouseDrag, Row: 4, Column: 11}, true},
 		{"\x1b[<2;1;1M", MouseEvent{Type: MousePress, Button: 2}, true},
 		{"\x1b[<64;1;1M", MouseEvent{Type: MouseWheelUp}, true},
@@ -167,7 +170,9 @@ func TestTUIDragSelectionKeepsPriorityOverComponents(t *testing.T) {
 
 	ui.handleMouse("\x1b[<0;1;1M")  // press on the transcript
 	ui.handleMouse("\x1b[<32;4;2M") // drag down into the chrome
-	ui.handleMouse("\x1b[<0;4;2m")  // release over the component
+	// Generic release: terminals that drop the button number on release must
+	// still terminate the drag and copy.
+	ui.handleMouse("\x1b[<3;4;2m")
 	if len(target.events) != 0 {
 		t.Fatalf("an in-flight selection leaked into the component: %+v", target.events)
 	}

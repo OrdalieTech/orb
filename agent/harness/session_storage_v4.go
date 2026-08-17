@@ -3,6 +3,7 @@ package harness
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"time"
 )
 
@@ -33,10 +34,11 @@ func rehydrateV4JSONLSession(content []byte, filePath string, appendLine func([]
 		if parseErr != nil {
 			return nil, parseErr
 		}
-		lineNumber := index + 1
-		if err := v4state.applyMutation(mutation, func(message string) error {
-			return invalidV4File(filePath, lineNumber, "%s", message)
-		}); err != nil {
+		if err := v4state.applyMutation(mutation, nil); err != nil {
+			var mutationErr *SessionError
+			if errors.As(err, &mutationErr) && mutationErr.Code == SessionErrorInvalidEntry {
+				return nil, invalidV4FileCause(filePath, index+1, mutationErr)
+			}
 			return nil, err
 		}
 	}

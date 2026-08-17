@@ -70,6 +70,9 @@ type InteractiveModeOptions struct {
 	Changelog           string
 	Output              io.Writer
 	OutputTTY           bool
+	// InitialThemeSetting is --use-theme: it overrides the persisted theme for
+	// this run only, until the user picks a theme (which persists).
+	InitialThemeSetting string
 }
 
 type InteractiveMode struct {
@@ -135,6 +138,7 @@ type InteractiveMode struct {
 	extensionEditor            extensions.EditorComponent
 	themeRegistry              *theme.Registry
 	themeController            *theme.Controller
+	themeSetting               string // --use-theme override; "" defers to settings
 	authContext                context.Context
 	authCancel                 context.CancelFunc
 	modelSelectorCancel        context.CancelFunc
@@ -261,6 +265,7 @@ func RunInteractiveMode(ctx context.Context, session *codingagent.SessionRuntime
 		footerStatuses: make(map[string]string),
 		cwd:            cwd,
 		outputPad:      1,
+		themeSetting:   options.InitialThemeSetting,
 	}
 	mode.markdownTransformers = []extensions.MarkdownTransformer{
 		NewMermaidMarkdownTransformer(session.MermaidRenderingMode, mermaidThemeAdapter{}),
@@ -569,12 +574,20 @@ func (mode *InteractiveMode) initializeTheme() error {
 	if _, err := mode.installResourceThemes(); err != nil {
 		return err
 	}
-	mode.themeController = theme.Initialize(mode.themeRegistry, settings.ThemeSetting, theme.DetectBackground(nil).Theme, func() {
+	mode.themeController = theme.Initialize(mode.themeRegistry, mode.themeSettingOr(settings.ThemeSetting), theme.DetectBackground(nil).Theme, func() {
 		if mode.ui != nil {
 			mode.ui.Invalidate()
 		}
 	})
 	return nil
+}
+
+// themeSettingOr prefers the per-run --use-theme override over the persisted setting.
+func (mode *InteractiveMode) themeSettingOr(persisted string) string {
+	if mode.themeSetting != "" {
+		return mode.themeSetting
+	}
+	return persisted
 }
 
 func (mode *InteractiveMode) extendExtensionThemes() error {
@@ -587,7 +600,7 @@ func (mode *InteractiveMode) extendExtensionThemes() error {
 	}
 	if installed {
 		settings := mode.session.InteractiveModeSettings()
-		mode.themeController = theme.Initialize(mode.themeRegistry, settings.ThemeSetting, theme.DetectBackground(nil).Theme, func() {
+		mode.themeController = theme.Initialize(mode.themeRegistry, mode.themeSettingOr(settings.ThemeSetting), theme.DetectBackground(nil).Theme, func() {
 			if mode.ui != nil {
 				mode.ui.Invalidate()
 			}
@@ -1982,7 +1995,7 @@ func (mode *InteractiveMode) showSettingsSelector() {
 	items = append(items, tui.SettingItem{ID: "thinking", Label: "Thinking level", Description: "Reasoning depth for thinking-capable models", CurrentValue: string(mode.session.State().ThinkingLevel), Values: thinkingValues})
 	if mode.themeRegistry != nil {
 		themes := mode.themeRegistry.Available()
-		items = append(items, tui.SettingItem{ID: "theme", Label: "Theme", Description: "Color theme for the interface", CurrentValue: settings.ThemeSetting, Values: themes})
+		items = append(items, tui.SettingItem{ID: "theme", Label: "Theme", Description: "Color theme for the interface", CurrentValue: mode.themeSettingOr(settings.ThemeSetting), Values: themes})
 	}
 
 	closeSelector := func() {

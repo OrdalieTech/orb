@@ -521,7 +521,7 @@ func TestCXm3CodexUserAgentUsesNodeOsNaming(t *testing.T) {
 		"darwin":  "darwin",
 	}
 	for goos, want := range platforms {
-		if got := codexNodePlatform(goos); got != want {
+		if got := piNodePlatform(goos); got != want {
 			t.Fatalf("platform mapping %s = %q, want %q", goos, got, want)
 		}
 	}
@@ -533,7 +533,7 @@ func TestCXm3CodexUserAgentUsesNodeOsNaming(t *testing.T) {
 		"arm64":   "arm64",
 	}
 	for goarch, want := range architectures {
-		if got := codexNodeArchitecture(goarch); got != want {
+		if got := piNodeArchitecture(goarch); got != want {
 			t.Fatalf("architecture mapping %s = %q, want %q", goarch, got, want)
 		}
 	}

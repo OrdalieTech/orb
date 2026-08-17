@@ -393,3 +393,31 @@ func googleTestResponse(sse string) *http.Response {
 }
 
 func stringPointer(value string) *string { return &value }
+
+// A non-stop finish reason survives an accompanying tool call; only STOP is
+// upgraded to toolUse.
+func TestGoogleStopReasonKeepsLengthWithToolCalls(t *testing.T) {
+	for _, test := range []struct {
+		finishReason string
+		want         ai.StopReason
+	}{
+		{"STOP", ai.StopReasonToolUse},
+		{"MAX_TOKENS", ai.StopReasonLength},
+		{"MALFORMED_FUNCTION_CALL", ai.StopReasonError},
+	} {
+		model := &ai.Model{ID: "gemini-3-pro", API: ai.APIGoogleGenerativeAI, Provider: "google"}
+		output := newAssistantMessage(model)
+		processor := googleStreamProcessor{model: model, output: output}
+		if _, err := processor.process(googleGenerateContentResponse{Candidates: []googleCandidate{{
+			FinishReason: test.finishReason,
+			Content: &GoogleContent{Parts: []GooglePart{{
+				FunctionCall: &GoogleFunctionCall{ID: "call-1", Name: "echo", Args: json.RawMessage(`{"value":"x"}`)},
+			}}},
+		}}}); err != nil {
+			t.Fatal(err)
+		}
+		if output.StopReason != test.want {
+			t.Fatalf("%s stop reason = %q, want %q", test.finishReason, output.StopReason, test.want)
+		}
+	}
+}

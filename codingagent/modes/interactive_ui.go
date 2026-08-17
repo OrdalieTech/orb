@@ -1037,6 +1037,8 @@ func (ui *InteractiveUI) SetTheme(value any) extensions.ThemeSetResult {
 		if err := ui.mode.session.SetTheme(typed); err != nil {
 			return extensions.ThemeSetResult{Error: err.Error()}
 		}
+		// The choice is now persisted, so the --use-theme override is spent.
+		ui.mode.themeSetting = ""
 		ui.mode.applyTheme()
 		return extensions.ThemeSetResult{Success: true}
 	default:

@@ -1570,7 +1570,7 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "Mistral API error (403): API error occurred: Status 403 Content-Type text/plain. Body: \"\""
+            "errorMessage": "Mistral API error (403): Request failed with status 403"
           }
         }
       ]

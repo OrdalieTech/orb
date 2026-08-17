@@ -91,7 +91,7 @@ func (terminal *ProcessTerminal) Start(onInput func(string), onResize func()) er
 	terminal.started, terminal.inputHandler, terminal.resizeHandler = true, onInput, onResize
 	terminal.lastInput = time.Now()
 	terminal.readerDone = make(chan struct{})
-	terminal.buffer = NewStdinBuffer(10*time.Millisecond, terminal.handleSequence, func(content string) {
+	terminal.buffer = NewStdinBuffer(defaultSequenceTimeout, resolveEscapeTimeout(), terminal.handleSequence, func(content string) {
 		terminal.dispatchInput(bracketedPasteStart + content + bracketedPasteEnd)
 	})
 	terminal.resizeSignals = make(chan os.Signal, 1)

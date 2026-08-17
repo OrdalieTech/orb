@@ -14,7 +14,7 @@ import (
 )
 
 var backgroundTokens = map[string]bool{
-	"selectedBg": true, "scrollbarThumb": true, "userMessageBg": true, "customMessageBg": true,
+	"selectedBg": true, "scrollbarThumb": true, "searchMatchBg": true, "userMessageBg": true, "customMessageBg": true,
 	"toolPendingBg": true, "toolSuccessBg": true, "toolErrorBg": true,
 	"diffAddedBg": true, "diffRemovedBg": true, "diffGutterBg": true,
 }
@@ -80,6 +80,12 @@ func Parse(label string, data []byte, mode ColorMode) (*Theme, error) {
 	}
 	if _, ok := source.Colors["scrollbarThumb"]; !ok {
 		source.Colors["scrollbarThumb"] = source.Colors["selectedBg"]
+	}
+	if _, ok := source.Colors["searchMatchBg"]; !ok {
+		source.Colors["searchMatchBg"] = source.Colors["selectedBg"]
+	}
+	if _, ok := source.Colors["searchMatchText"]; !ok {
+		source.Colors["searchMatchText"] = source.Colors["text"]
 	}
 	// Diff tint roles are optional so pre-existing user themes keep parsing;
 	// the tool-band backgrounds are the closest semantic stand-ins.

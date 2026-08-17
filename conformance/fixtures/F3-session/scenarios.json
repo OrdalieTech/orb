@@ -113,7 +113,7 @@
         "agent_end",
         "agent_settled"
       ],
-      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project"
+      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project\n"
     },
     {
       "name": "queue",
@@ -203,7 +203,7 @@
         "agent_end",
         "agent_settled"
       ],
-      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project"
+      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project\n"
     },
     {
       "name": "retry",
@@ -283,7 +283,7 @@
         "agent_end",
         "agent_settled"
       ],
-      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project"
+      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project\n"
     },
     {
       "name": "compaction",
@@ -339,7 +339,7 @@
         "compaction_end",
         "agent_settled"
       ],
-      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project"
+      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project\n"
     },
     {
       "name": "assistant-error",
@@ -387,7 +387,7 @@
         "agent_end",
         "agent_settled"
       ],
-      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project"
+      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project\n"
     },
     {
       "name": "assistant-aborted",
@@ -435,7 +435,7 @@
         "agent_end",
         "agent_settled"
       ],
-      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project"
+      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project\n"
     }
   ]
 }

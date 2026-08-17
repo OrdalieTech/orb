@@ -85,10 +85,11 @@ func NewWriteTool(cwd string, options *WriteToolOptions) agent.AgentTool {
 
 func (tool *writeTool) Spec() agent.AgentToolSpec {
 	return agent.AgentToolSpec{
-		Name:        "write",
-		Label:       "write",
-		Description: "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
-		Parameters:  writeSchema,
+		Name:                "write",
+		Label:               "write",
+		Description:         "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+		Parameters:          writeSchema,
+		ConstrainedSampling: experimentalToolSampling(),
 	}
 }
 

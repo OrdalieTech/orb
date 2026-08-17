@@ -170,7 +170,7 @@ func TestStdinBufferPasteFloodArbitraryChunking(t *testing.T) {
 	}
 
 	var got []string
-	buffer := NewStdinBuffer(time.Second, func(value string) {
+	buffer := NewStdinBuffer(time.Second, time.Second, func(value string) {
 		t.Errorf("unexpected non-paste input %q", value)
 	}, func(value string) {
 		got = append(got, value)
@@ -308,7 +308,7 @@ func FuzzStdinBufferChunkedPaste(f *testing.F) {
 		stream := bracketedPasteStart + input + bracketedPasteEnd
 
 		var got []string
-		buffer := NewStdinBuffer(time.Second, func(value string) {
+		buffer := NewStdinBuffer(time.Second, time.Second, func(value string) {
 			t.Fatalf("unexpected non-paste input %q", value)
 		}, func(value string) {
 			got = append(got, value)
