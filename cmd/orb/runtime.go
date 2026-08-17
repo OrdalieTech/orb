@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -12,10 +13,12 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/modes"
+	"github.com/OrdalieTech/orb/agent/plugins"
 	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/sandbox"
 )
 
 type runtimeInputs struct {
@@ -623,9 +626,21 @@ func createBuiltInTools(cwd string, names []string, settings *config.SettingsMan
 			if err != nil {
 				return nil, err
 			}
+			var spawnHook tools.BashSpawnHook
+			if mode := plugins.SandboxMode(settings); mode != sandbox.ModeDangerFullAccess {
+				self, err := os.Executable()
+				if err != nil {
+					return nil, err
+				}
+				spawnHook = func(spawn tools.BashSpawnContext) tools.BashSpawnContext {
+					spawn.Command, spawn.Env, _ = sandbox.Wrap(mode, spawn.Cwd, self, shellPath, spawn.Command, spawn.Env)
+					return spawn
+				}
+			}
 			result = append(result, tools.NewBashTool(cwd, &tools.BashToolOptions{
 				ShellPath:     shellPath,
 				CommandPrefix: settings.GetShellCommandPrefix(),
+				SpawnHook:     spawnHook,
 			}))
 		case "edit":
 			result = append(result, tools.NewEditTool(cwd, nil))

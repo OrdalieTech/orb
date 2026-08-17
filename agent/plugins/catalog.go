@@ -18,6 +18,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/sandbox"
 )
 
 // Options supplies runtime seams used by bundled plugins. StreamFn keeps
@@ -171,9 +172,10 @@ type Decision struct {
 
 // Policy is constructible by SDK embedders and shared with in-process children.
 type Policy struct {
-	Mode        string `json:"mode,omitempty"`
-	AskFallback Action `json:"askFallback,omitempty"`
-	Rules       []Rule `json:"rules,omitempty"`
+	Mode        string       `json:"mode,omitempty"`
+	AskFallback Action       `json:"askFallback,omitempty"`
+	Rules       []Rule       `json:"rules,omitempty"`
+	Sandbox     sandbox.Mode `json:"sandbox,omitempty"`
 
 	// ponytail: single hook, chain when demanded.
 	Authorizer func(context.Context, ToolCallInfo) (Action, error) `json:"-"`
@@ -182,6 +184,19 @@ type Policy struct {
 	askMu     sync.Mutex
 	approved  map[string]struct{}
 	decisions []Decision
+}
+
+// SandboxMode returns the filesystem sandbox selected by the enabled
+// permissions plugin. Missing, disabled, and invalid settings stay unrestricted.
+func SandboxMode(settings *config.SettingsManager) sandbox.Mode {
+	if settings == nil || !settings.GetPlugins()["permissions"] {
+		return sandbox.ModeDangerFullAccess
+	}
+	mode := policyFromSettings(settings.GetPluginSettings("permissions")).Sandbox
+	if mode != sandbox.ModeReadOnly && mode != sandbox.ModeWorkspaceWrite {
+		return sandbox.ModeDangerFullAccess
+	}
+	return mode
 }
 
 func policyFromSettings(value map[string]any) *Policy {

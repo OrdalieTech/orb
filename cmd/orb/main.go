@@ -34,6 +34,8 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/internal/jstrim"
 	"github.com/OrdalieTech/orb/internal/semver"
+	"github.com/OrdalieTech/orb/sandbox"
+	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 )
 
@@ -89,6 +91,9 @@ func scrubDisabledMallocStackLogging() {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "__sandbox" {
+		os.Exit(runSandboxChild())
+	}
 	// Process markers, entry points only — not set when embedded through the SDK
 	// (upstream cli.ts/rpc-entry.ts; AI_AGENT carries orb's identity per D30).
 	_ = os.Setenv("AI_AGENT", "orb")
@@ -101,6 +106,21 @@ func main() {
 		StdoutTTY: isTerminalFile(os.Stdout),
 		StderrTTY: isTerminalFile(os.Stderr),
 	}))
+}
+
+func runSandboxChild() int {
+	if _, err := sandbox.SelfRestrict(sandbox.Mode(os.Getenv(sandbox.EnvMode)), os.Getenv(sandbox.EnvRoot)); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, err)
+		return 126
+	}
+	shell := os.Getenv(sandbox.EnvShell)
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+	if err := unix.Exec(shell, []string{shell, "-c", os.Getenv(sandbox.EnvCommand)}, os.Environ()); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "sandbox: exec:", err)
+	}
+	return 126
 }
 
 func runCLI(ctx context.Context, argv []string, streams cliStreams) int {

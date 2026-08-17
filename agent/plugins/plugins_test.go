@@ -24,6 +24,7 @@ import (
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/engine"
 	memorysdk "github.com/OrdalieTech/orb/memory"
+	"github.com/OrdalieTech/orb/sandbox"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -109,6 +110,22 @@ func TestPluginControlPersistsAndReloads(t *testing.T) {
 	}
 	if !settings.GetPlugins()["tasks"] || reloads != 1 {
 		t.Fatalf("tasks=%t reloads=%d", settings.GetPlugins()["tasks"], reloads)
+	}
+}
+
+func TestSandboxModeRequiresEnabledValidSetting(t *testing.T) {
+	root := t.TempDir()
+	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.SetPluginSetting("permissions", "sandbox", "workspace-write")
+	if got := SandboxMode(settings); got != sandbox.ModeWorkspaceWrite {
+		t.Fatalf("sandbox mode = %q", got)
+	}
+	settings.SetPluginEnabled("permissions", false)
+	if got := SandboxMode(settings); got != sandbox.ModeDangerFullAccess || SandboxMode(nil) != sandbox.ModeDangerFullAccess {
+		t.Fatalf("disabled sandbox mode = %q", got)
 	}
 }
 
