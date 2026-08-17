@@ -21,6 +21,10 @@ func wrap(mode Mode, root, _ string, shell, command string, env map[string]strin
 	profile := "(version 1)\n(allow default)\n(deny file-write*)"
 	if mode == ModeWorkspaceWrite {
 		for _, allowed := range []string{root, os.TempDir(), "/dev"} {
+			allowed, err := canonicalPath(allowed)
+			if err != nil {
+				return `exit 126`, env, EnforcementNone
+			}
 			profile += "\n(allow file-write* (subpath " + strconv.Quote(allowed) + "))"
 		}
 	}
@@ -30,5 +34,5 @@ func wrap(mode Mode, root, _ string, shell, command string, env map[string]strin
 }
 
 func SelfRestrict(Mode, string) (Enforcement, error) {
-	return EnforcementNone, fmt.Errorf("sandbox: SelfRestrict is only available on Linux")
+	return EnforcementNone, fmt.Errorf("sandbox: SelfRestrict requires Linux")
 }

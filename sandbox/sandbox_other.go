@@ -9,5 +9,5 @@ func wrap(_ Mode, _ string, _ string, _ string, command string, env map[string]s
 	return command, env, EnforcementNone
 }
 func SelfRestrict(Mode, string) (Enforcement, error) {
-	return EnforcementNone, fmt.Errorf("sandbox: SelfRestrict is only available on Linux")
+	return EnforcementNone, fmt.Errorf("sandbox: SelfRestrict requires Linux")
 }

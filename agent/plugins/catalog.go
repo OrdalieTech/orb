@@ -172,10 +172,9 @@ type Decision struct {
 
 // Policy is constructible by SDK embedders and shared with in-process children.
 type Policy struct {
-	Mode        string       `json:"mode,omitempty"`
-	AskFallback Action       `json:"askFallback,omitempty"`
-	Rules       []Rule       `json:"rules,omitempty"`
-	Sandbox     sandbox.Mode `json:"sandbox,omitempty"`
+	Mode        string `json:"mode,omitempty"`
+	AskFallback Action `json:"askFallback,omitempty"`
+	Rules       []Rule `json:"rules,omitempty"`
 
 	// ponytail: single hook, chain when demanded.
 	Authorizer func(context.Context, ToolCallInfo) (Action, error) `json:"-"`
@@ -186,17 +185,21 @@ type Policy struct {
 	decisions []Decision
 }
 
-// SandboxMode returns the filesystem sandbox selected by the enabled
-// permissions plugin. Missing, disabled, and invalid settings stay unrestricted.
-func SandboxMode(settings *config.SettingsManager) sandbox.Mode {
+// SandboxMode returns the filesystem sandbox selected by the enabled permissions plugin.
+func SandboxMode(settings *config.SettingsManager) (sandbox.Mode, error) {
 	if settings == nil || !settings.GetPlugins()["permissions"] {
-		return sandbox.ModeDangerFullAccess
+		return sandbox.ModeDangerFullAccess, nil
 	}
-	mode := policyFromSettings(settings.GetPluginSettings("permissions")).Sandbox
-	if mode != sandbox.ModeReadOnly && mode != sandbox.ModeWorkspaceWrite {
-		return sandbox.ModeDangerFullAccess
+	value, exists := settings.GetPluginSettings("permissions")["sandbox"]
+	if !exists {
+		return sandbox.ModeDangerFullAccess, nil
 	}
-	return mode
+	configured, ok := value.(string)
+	mode := sandbox.Mode(configured)
+	if !ok || mode != sandbox.ModeReadOnly && mode != sandbox.ModeWorkspaceWrite && mode != sandbox.ModeDangerFullAccess {
+		return "", fmt.Errorf("plugins: permissions.sandbox must be read-only, workspace-write, or danger-full-access")
+	}
+	return mode, nil
 }
 
 func policyFromSettings(value map[string]any) *Policy {

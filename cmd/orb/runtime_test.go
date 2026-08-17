@@ -72,7 +72,7 @@ func TestCreateBuiltInToolsHonorsImageAutoResizeSetting(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cwd, "fixture.png"), imageBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	builtIns, err := createBuiltInTools(cwd, []string{"read"}, settings)
+	builtIns, err := createBuiltInTools(cwd, []string{"read"}, settings, "danger-full-access")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -607,14 +607,20 @@ func TestCreateRuntimeInputsAllowsMissingModelOnlyForInteractiveBootstrap(t *tes
 	}
 }
 
-func TestCreateRuntimeInputsSharesResourceLoaderWithSession(t *testing.T) {
+func TestCreateRuntimeInputsNoExtensionsSkipsPluginSandboxAndSharesLoader(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("HOME", filepath.Join(root, "home"))
-	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	if err := os.WriteFile(filepath.Join(root, "settings.json"), []byte(`{"plugins":{"permissions":{"sandbox":true}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(config.EnvAgentDir, root)
 	for _, provider := range providers.List() {
 		for _, name := range provider.Env {
 			t.Setenv(name, "")
 		}
+	}
+	if _, err := createRuntimeInputs(root, CLIArgs{allowNoModel: true}, nil); err == nil || !strings.Contains(err.Error(), "permissions.sandbox") {
+		t.Fatalf("invalid sandbox error = %v", err)
 	}
 
 	inputs, err := createRuntimeInputs(root, CLIArgs{allowNoModel: true, NoExtensions: true}, nil)
