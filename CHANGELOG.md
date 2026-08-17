@@ -14,7 +14,7 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ### Added
 
-- The permissions plugin can wrap only the built-in bash tool in an opt-in `read-only` or `workspace-write` filesystem sandbox: Linux Landlock enforcement is partial because it cannot mediate metadata mutations, macOS uses `sandbox-exec`, and Linux enforcement failures refuse the command instead of running it unsandboxed.
+- The permissions plugin adds deny-only SDK guards and named `workspace-write`/`danger-full-access` presets, and can wrap only the built-in bash tool in an opt-in filesystem sandbox: Linux Landlock enforcement is partial because it cannot mediate metadata mutations, macOS uses `sandbox-exec`, and Linux failures refuse the command instead of running it unsandboxed.
 - `orb plugins list --all` prints the resolved composition — every compiled extension, bundled
   plugin, and MCP row with its id, source, on/off state, and the settings layer that decided it,
   plus the discovered JS extensions — through the same code path the real boot uses.

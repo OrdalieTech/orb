@@ -21,8 +21,7 @@ import (
 	"github.com/OrdalieTech/orb/sandbox"
 )
 
-// Options supplies runtime seams used by bundled plugins. StreamFn keeps
-// subagent tests and embedders independent from real providers.
+// Options supplies explicit runtime seams so bundled plugins remain instance-scoped.
 type Options struct {
 	StreamFn   engine.StreamFn
 	HTTPClient *http.Client
@@ -47,8 +46,7 @@ func Names() []string { return append([]string(nil), names...) }
 // Description returns the one-line description used by the CLI and TUI.
 func Description(name string) string { return descriptions[name] }
 
-// Catalog returns fresh extension factories. Embedders can register any
-// chosen subset in an extensions.Registry and pass it through AgentSessionOptions.
+// Catalog returns fresh extension factories for embedders to select per instance.
 func Catalog(option ...Options) map[string]extensions.Factory {
 	if len(option) > 1 {
 		panic("plugins: Catalog accepts at most one Options value")
@@ -172,12 +170,14 @@ type Decision struct {
 
 // Policy is constructible by SDK embedders and shared with in-process children.
 type Policy struct {
-	Mode        string `json:"mode,omitempty"`
-	AskFallback Action `json:"askFallback,omitempty"`
-	Rules       []Rule `json:"rules,omitempty"`
+	Preset      string       `json:"preset,omitempty"`
+	Sandbox     sandbox.Mode `json:"sandbox,omitempty"`
+	Mode        string       `json:"mode,omitempty"`
+	AskFallback Action       `json:"askFallback,omitempty"`
+	Rules       []Rule       `json:"rules,omitempty"`
 
-	// ponytail: single hook, chain when demanded.
 	Authorizer func(context.Context, ToolCallInfo) (Action, error) `json:"-"`
+	Guards     []func(context.Context, ToolCallInfo) string        `json:"-"`
 
 	mu        sync.Mutex
 	askMu     sync.Mutex
@@ -190,20 +190,34 @@ func SandboxMode(settings *config.SettingsManager) (sandbox.Mode, error) {
 	if settings == nil || !settings.GetPlugins()["permissions"] {
 		return sandbox.ModeDangerFullAccess, nil
 	}
-	value, exists := settings.GetPluginSettings("permissions")["sandbox"]
-	if !exists {
-		return sandbox.ModeDangerFullAccess, nil
+	configured := settings.GetPluginSettings("permissions")
+	if value, exists := configured["preset"]; exists {
+		preset, ok := value.(string)
+		if !ok || preset != "workspace-write" && preset != "danger-full-access" {
+			return "", fmt.Errorf("plugins: permissions.preset must be workspace-write or danger-full-access")
+		}
 	}
-	configured, ok := value.(string)
-	mode := sandbox.Mode(configured)
-	if !ok || mode != sandbox.ModeReadOnly && mode != sandbox.ModeWorkspaceWrite && mode != sandbox.ModeDangerFullAccess {
-		return "", fmt.Errorf("plugins: permissions.sandbox must be read-only, workspace-write, or danger-full-access")
+	if value, exists := configured["sandbox"]; exists {
+		mode, ok := value.(string)
+		if !ok || mode != string(sandbox.ModeReadOnly) && mode != string(sandbox.ModeWorkspaceWrite) && mode != string(sandbox.ModeDangerFullAccess) {
+			return "", fmt.Errorf("plugins: permissions.sandbox must be read-only, workspace-write, or danger-full-access")
+		}
+	}
+	mode := policyFromSettings(configured).Sandbox
+	if mode == "" {
+		mode = sandbox.ModeDangerFullAccess
 	}
 	return mode, nil
 }
 
 func policyFromSettings(value map[string]any) *Policy {
 	policy := &Policy{}
+	switch value["preset"] {
+	case "workspace-write":
+		policy.Sandbox, policy.Mode = sandbox.ModeWorkspaceWrite, "enforce"
+	case "danger-full-access":
+		policy.Sandbox, policy.Mode = sandbox.ModeDangerFullAccess, "log"
+	}
 	encoded, err := json.Marshal(value)
 	if err == nil {
 		_ = json.Unmarshal(encoded, policy)
@@ -213,9 +227,9 @@ func policyFromSettings(value map[string]any) *Policy {
 
 func validAction(action Action) bool { return action == Allow || action == Deny || action == Ask }
 
-func (policy *Policy) snapshot() (string, Action, []Rule, func(context.Context, ToolCallInfo) (Action, error)) {
+func (policy *Policy) snapshot() (string, Action, []Rule, func(context.Context, ToolCallInfo) (Action, error), []func(context.Context, ToolCallInfo) string) {
 	if policy == nil {
-		return "log", Allow, nil, nil
+		return "log", Allow, nil, nil, nil
 	}
 	policy.mu.Lock()
 	defer policy.mu.Unlock()
@@ -227,7 +241,7 @@ func (policy *Policy) snapshot() (string, Action, []Rule, func(context.Context, 
 	if fallback != Deny {
 		fallback = Allow
 	}
-	return mode, fallback, append([]Rule(nil), policy.Rules...), policy.Authorizer
+	return mode, fallback, append([]Rule(nil), policy.Rules...), policy.Authorizer, append([]func(context.Context, ToolCallInfo) string(nil), policy.Guards...)
 }
 
 func (policy *Policy) SetMode(mode string) {
@@ -239,9 +253,9 @@ func (policy *Policy) SetMode(mode string) {
 	policy.mu.Unlock()
 }
 
-// Evaluate applies the authorizer first, then ordered last-match-wins rules.
+// Evaluate applies the authorizer, deny-only guards, then last-match-wins rules.
 func (policy *Policy) Evaluate(ctx context.Context, info ToolCallInfo) Decision {
-	mode, _, rules, authorizer := policy.snapshot()
+	mode, _, rules, authorizer, guards := policy.snapshot()
 	input, _ := json.Marshal(info.Args)
 	decision := Decision{Time: time.Now().UnixMilli(), Tool: info.Tool, Action: Allow, Resolved: Allow, Mode: mode, Input: string(input)}
 	if authorizer != nil {
@@ -252,8 +266,22 @@ func (policy *Policy) Evaluate(ctx context.Context, info ToolCallInfo) Decision 
 		}
 		if validAction(action) {
 			decision.Action, decision.Matcher = action, "authorizer"
+			if action != Allow {
+				return decision
+			}
+		}
+	}
+	for _, guard := range guards {
+		if guard == nil {
+			continue
+		}
+		if reason := strings.TrimSpace(guard(ctx, info)); reason != "" {
+			decision.Action, decision.Matcher, decision.Resolution = Deny, "guard", reason
 			return decision
 		}
+	}
+	if decision.Matcher == "authorizer" {
+		return decision
 	}
 	if info.Tool == "bash" {
 		if command, ok := commandArgument(info.Args); !ok || strings.TrimSpace(command) == "" {
@@ -283,12 +311,9 @@ func ruleTool(rule Rule) string {
 	return rule.Tool
 }
 
-// ponytail: bash is judged by its command text, never by what the shell would
-// actually do. Path rules also scan the command's words (so a `path` deny stops
-// `cat secrets.txt`), but a `tool:"write"` deny cannot stop `echo > file`:
-// that needs a shell grammar this plugin deliberately does not have. Write
-// Command rules for the shell, or sandbox bash — permissionSummary and the
-// plugin description say the same thing to users.
+// ponytail: bash rules match command text, not shell effects. Path denies also
+// scan words, but tool-scoped denies cannot cover equivalent shell commands;
+// use command rules or the sandbox when that distinction matters.
 func ruleMatches(rule Rule, info ToolCallInfo) bool {
 	if !matchGlob(ruleTool(rule), info.Tool, false) {
 		return false
@@ -301,10 +326,9 @@ func ruleMatches(rule Rule, info ToolCallInfo) bool {
 	}
 	if rule.Path != "" {
 		candidates := pathArguments(info.Args)
-		// Command words widen the candidate set, and rules are last-match-wins, so
-		// widening an allow would let it override an earlier deny: `cat src/a.go &&
-		// cat secrets.txt` matches an allow on src/** and outranks a deny on
-		// secrets.txt. Over-matching is only the safe direction when it restricts.
+		// Only restrictive rules scan command words: widening a last-match-wins
+		// allow could override an earlier deny when one command names both paths.
+		// Over-matching is safe only when it restricts.
 		if info.Tool == "bash" && hasCommand && rule.Action != Allow {
 			candidates = append(candidates, commandPaths(command)...)
 		}
@@ -318,11 +342,9 @@ func ruleMatches(rule Rule, info ToolCallInfo) bool {
 	return true
 }
 
-// commandPaths returns the bare words of a shell command as path candidates.
-// Word splitting only: quoted paths containing spaces, $VARS, and command
-// substitution stay invisible, and unrelated words (`cat`, `--color`) become
-// candidates. Over-matching only restricts, so ruleMatches applies these to
-// deny and ask rules alone.
+// commandPaths splits words only, so quoted paths, variables, and substitutions
+// stay invisible while unrelated words become candidates; callers must use its
+// over-matching only to restrict.
 func commandPaths(command string) []string {
 	fields := strings.FieldsFunc(command, func(letter rune) bool {
 		return unicode.IsSpace(letter) || strings.ContainsRune("|&;<>()", letter)
@@ -449,12 +471,10 @@ func formatRule(rule Rule) string {
 	return strings.Join(parts, ", ")
 }
 
-// ponytail: an unconditional deny hides the tool instead of refusing its calls,
-// so a model that wanted it goes looking for another route (usually bash) with
-// no refusal to learn from. The tool_call hook still blocks it if the tool is
-// re-added. Refuse visibly instead once models are seen substituting bash.
+// ponytail: static denies hide tools to avoid teaching models to reroute through
+// bash; the tool_call hook still blocks a tool re-added later.
 func (policy *Policy) staticDeny(info ToolCallInfo) (Decision, bool) {
-	mode, _, rules, authorizer := policy.snapshot()
+	mode, _, rules, authorizer, _ := policy.snapshot()
 	if mode != "enforce" || authorizer != nil {
 		return Decision{}, false
 	}
@@ -531,7 +551,7 @@ func permissionsExtension(policy *Policy, settings *config.SettingsManager, pare
 			_ = api.AppendEntry(ctx, "orb.permissions.decision", decision)
 		}
 		applyMode := func(ctx context.Context, extensionContext extensions.Context) error {
-			mode, _, _, _ := policy.snapshot()
+			mode, _, _, _, _ := policy.snapshot()
 			hiddenMu.Lock()
 			if mode == "log" && len(hidden) == 0 {
 				hiddenMu.Unlock()
@@ -571,7 +591,7 @@ func permissionsExtension(policy *Policy, settings *config.SettingsManager, pare
 			call := event.(extensions.ToolCallEvent)
 			info := ToolCallInfo{Tool: call.ToolName, Args: call.Input, CWD: extensionContext.CWD(), SessionID: permissionScope(extensionContext, parent)}
 			decision := policy.Evaluate(ctx, info)
-			mode, fallback, _, _ := policy.snapshot()
+			mode, fallback, _, _, _ := policy.snapshot()
 			if mode == "log" {
 				decision.Resolved, decision.Resolution = Allow, "would-"+string(decision.Action)
 				record(ctx, decision)
@@ -647,7 +667,7 @@ func permissionsExtension(policy *Policy, settings *config.SettingsManager, pare
 				if command.Mode() != extensions.ModeTUI || !command.HasUI() {
 					return fmt.Errorf("/permissions requires interactive mode")
 				}
-				mode, _, rules, _ := policy.snapshot()
+				mode, _, rules, _, _ := policy.snapshot()
 				next := "enforce"
 				if mode == "enforce" {
 					next = "log"
