@@ -7,16 +7,16 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/extensions"
-	"github.com/OrdalieTech/orb/codingagent/extensions/examples/permissiongate"
-	"github.com/OrdalieTech/orb/codingagent/extensions/examples/pirate"
-	"github.com/OrdalieTech/orb/codingagent/extensions/examples/statusline"
-	extensionhost "github.com/OrdalieTech/orb/codingagent/extensions/host"
-	"github.com/OrdalieTech/orb/codingagent/mcp"
-	"github.com/OrdalieTech/orb/codingagent/modes"
-	firstpartyplugins "github.com/OrdalieTech/orb/codingagent/plugins"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/agent/extensions/examples/permissiongate"
+	"github.com/OrdalieTech/orb/agent/extensions/examples/pirate"
+	"github.com/OrdalieTech/orb/agent/extensions/examples/statusline"
+	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
+	"github.com/OrdalieTech/orb/agent/mcp"
+	"github.com/OrdalieTech/orb/agent/modes"
+	firstpartyplugins "github.com/OrdalieTech/orb/agent/plugins"
 )
 
 // otherDiagnostic wraps a plain warning string for the startup diagnostics
@@ -71,7 +71,7 @@ var compiledExtensions = []extensions.CompiledExtension{
 	{Name: "status-line", Factory: statusline.Extension},
 }
 
-func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config.SettingsManager, packages *codingagent.ResolvedPaths) (*extensions.Registry, []modes.StartupDiagnostic) {
+func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config.SettingsManager, packages *agent.ResolvedPaths) (*extensions.Registry, []modes.StartupDiagnostic) {
 	catalog := append([]extensions.CompiledExtension(nil), compiledExtensions...)
 	catalog = append(catalog, extensions.CompiledExtension{
 		Name: "plugin-control", Factory: firstpartyplugins.Control(settings), Hidden: true, DefaultEnabled: true,
@@ -125,7 +125,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 		if len(sourceSpecs) > 0 {
 			// Upstream resource-loader.ts:355 resolves -e package specs through
 			// packageManager.resolveExtensionSources with temporary install semantics.
-			manager := codingagent.NewPackageManager(codingagent.PackageManagerOptions{
+			manager := agent.NewPackageManager(agent.PackageManagerOptions{
 				CWD: cwd, AgentDir: agentDir, Settings: settings,
 			})
 			resolved, err := manager.ResolveExtensionSources(sourceSpecs, false, true)
@@ -163,8 +163,8 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 			})
 			// Child agent sessions (agent_session_v1 / sdk_v1 resource reload)
 			// run on the real NewAgentSession-backed runtime.
-			manager.SetAgentSessionService(codingagent.NewExtensionAgentSessionService(
-				codingagent.ExtensionAgentSessionServiceOptions{CWD: cwd, AgentDir: agentDir},
+			manager.SetAgentSessionService(agent.NewExtensionAgentSessionService(
+				agent.ExtensionAgentSessionServiceOptions{CWD: cwd, AgentDir: agentDir},
 			))
 			result := manager.RegisterInto(context.Background(), registry, paths)
 			replaceActiveExtensionHost(manager)
@@ -206,7 +206,7 @@ func isPackageSourceSpec(value string) bool {
 // packageExtensionPaths splits enabled package-provided extension entry points
 // by scope; project-scope entries stay invisible until the project is trusted
 // (host.Discover gates ProjectResolvedPackagePaths on ProjectTrusted).
-func packageExtensionPaths(resources []codingagent.ResolvedResource) (user, project []string) {
+func packageExtensionPaths(resources []agent.ResolvedResource) (user, project []string) {
 	for _, resource := range resources {
 		if !resource.Enabled || resource.Metadata.Origin != "package" {
 			continue
@@ -241,7 +241,7 @@ func loadStartupExtensions(cwd string, args CLIArgs) (*extensions.Registry, []mo
 		return trust.PreTrustRegistry, trust.Diagnostics, &trust.Trusted, nil
 	}
 	trustDiagnostics := trust.Diagnostics
-	packageManager := codingagent.NewPackageManager(codingagent.PackageManagerOptions{
+	packageManager := agent.NewPackageManager(agent.PackageManagerOptions{
 		CWD: cwd, AgentDir: agentDir, Settings: settings,
 	})
 	resolvedPaths, err := packageManager.Resolve(nil)
@@ -272,7 +272,7 @@ func resolveStartupProjectTrust(ctx context.Context, cwd, agentDir string, args 
 	var preTrustDiagnostics []modes.StartupDiagnostic
 	var trustRunner *extensions.Runner
 	if resolution.Undecided {
-		untrustedPaths, err := codingagent.NewPackageManager(codingagent.PackageManagerOptions{
+		untrustedPaths, err := agent.NewPackageManager(agent.PackageManagerOptions{
 			CWD: cwd, AgentDir: agentDir, Settings: settings,
 		}).Resolve(nil)
 		if err != nil {
@@ -281,7 +281,7 @@ func resolveStartupProjectTrust(ctx context.Context, cwd, agentDir string, args 
 		resolution.PreTrustRegistry, preTrustDiagnostics = loadCompiledExtensions(cwd, agentDir, args, settings, untrustedPaths)
 		trustRunner = extensions.NewRunner(resolution.PreTrustRegistry, extensions.RunnerOptions{CWD: cwd})
 	}
-	trusted, err := codingagent.ResolveProjectTrusted(ctx, codingagent.ResolveProjectTrustedOptions{
+	trusted, err := agent.ResolveProjectTrusted(ctx, agent.ResolveProjectTrustedOptions{
 		CWD:                 cwd,
 		TrustStore:          config.NewProjectTrustStore(agentDir),
 		TrustOverride:       args.ProjectTrusted,

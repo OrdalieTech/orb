@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/modes"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/modes"
 )
 
 type packageCLIEnv struct {
@@ -353,11 +353,11 @@ func TestPackageCLIExplicitUpdateBypassesSkipVersionCheck(t *testing.T) {
 func TestUpdatedPackagesMessageSelection(t *testing.T) {
 	tests := []struct {
 		name    string
-		updates []codingagent.PackageVersionUpdate
+		updates []agent.PackageVersionUpdate
 		want    string
 	}{
 		{name: "unchanged", want: "All packages up to date.\n"},
-		{name: "updated", updates: []codingagent.PackageVersionUpdate{{PackageUpdate: codingagent.PackageUpdate{DisplayName: "pi-hypa", Type: "npm"}, CurrentVersion: "0.4.0", LatestVersion: "0.5.0"}}, want: "pi-hypa v0.4.0 -> v0.5.0\n"},
+		{name: "updated", updates: []agent.PackageVersionUpdate{{PackageUpdate: agent.PackageUpdate{DisplayName: "pi-hypa", Type: "npm"}, CurrentVersion: "0.4.0", LatestVersion: "0.5.0"}}, want: "pi-hypa v0.4.0 -> v0.5.0\n"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -461,7 +461,7 @@ func TestConfigCLIResolvesScopedResourcesAndRunsSelector(t *testing.T) {
 	}
 }
 
-func hasResolvedPath(resources []codingagent.ResolvedResource, path string) bool {
+func hasResolvedPath(resources []agent.ResolvedResource, path string) bool {
 	for _, resource := range resources {
 		if resource.Path == path {
 			return true

@@ -14,13 +14,13 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/modes"
+	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/modes"
-	"github.com/OrdalieTech/orb/codingagent/session"
 	"github.com/OrdalieTech/orb/conformance/runner"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 type f3SessionFixtures struct {
@@ -51,7 +51,7 @@ type f3SessionQueue struct {
 }
 
 type fixturePrintSession struct {
-	runtime  *codingagent.SessionRuntime
+	runtime  *agent.SessionRuntime
 	scenario f3SessionScenario
 	prompts  int
 }
@@ -82,7 +82,7 @@ func (fixture *fixturePrintSession) Prompt(ctx context.Context, input any, image
 
 func (fixture *fixturePrintSession) Abort() { fixture.runtime.Abort() }
 
-func (fixture *fixturePrintSession) State() agent.AgentState { return fixture.runtime.State() }
+func (fixture *fixturePrintSession) State() engine.AgentState { return fixture.runtime.State() }
 
 func (fixture *fixturePrintSession) Subscribe(listener func(any)) func() {
 	return fixture.runtime.Subscribe(listener)
@@ -132,7 +132,7 @@ func loadF3SessionFixtures(t testing.TB) f3SessionFixtures {
 	return fixtures
 }
 
-func newF3SessionRuntime(t testing.TB, scenario f3SessionScenario, headerTime time.Time) (*codingagent.SessionRuntime, *session.SessionManager) {
+func newF3SessionRuntime(t testing.TB, scenario f3SessionScenario, headerTime time.Time) (*agent.SessionRuntime, *session.SessionManager) {
 	t.Helper()
 	agentDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), scenario.Settings, 0o600); err != nil {
@@ -151,14 +151,14 @@ func newF3SessionRuntime(t testing.TB, scenario f3SessionScenario, headerTime ti
 	}
 	now := func() int64 { return scenario.FixedNow }
 	provider := f3ScenarioProvider(t, scenario)
-	created := agent.NewAgent(
-		provider.StreamSimple, agent.WithInitialState(agent.AgentState{
-			Model: provider.GetModel(), SystemPrompt: scenario.SystemPrompt, Messages: agent.AgentMessages{}, Tools: []agent.AgentTool{},
+	created := engine.NewAgent(
+		provider.StreamSimple, engine.WithInitialState(engine.AgentState{
+			Model: provider.GetModel(), SystemPrompt: scenario.SystemPrompt, Messages: engine.AgentMessages{}, Tools: []engine.AgentTool{},
 		}),
-		agent.WithConvertToLLM(codingagent.ConvertToLLM),
-		agent.WithClock(now),
+		engine.WithConvertToLLM(agent.ConvertToLLM),
+		engine.WithClock(now),
 	)
-	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
+	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings, StreamFn: provider.StreamSimple,
 		Sleep: func(context.Context, time.Duration) error { return nil }, Clock: now,
 	})
@@ -352,14 +352,14 @@ func TestCLIJSONModeResumeAndForkHeaders(t *testing.T) {
 			provider := faux.New(faux.Options{API: "faux", Provider: "faux"})
 			provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage(test.name + " complete")})
 			base := fauxRuntimeFactory(provider)
-			var prior agent.AgentMessages
+			var prior engine.AgentMessages
 			var stdout, stderr bytes.Buffer
 			exitCode := runCLIWithDependencies(context.Background(), test.argv, cliStreams{
 				Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr, StdinTTY: true, StdoutTTY: false,
 			}, cliDependencies{
 				selectSession: test.selector,
-				createRuntime: func(cwd string, args CLIArgs, messages agent.AgentMessages) (runtimeInputs, error) {
-					prior = append(agent.AgentMessages(nil), messages...)
+				createRuntime: func(cwd string, args CLIArgs, messages engine.AgentMessages) (runtimeInputs, error) {
+					prior = append(engine.AgentMessages(nil), messages...)
 					return base(cwd, args, messages)
 				},
 			})
@@ -414,7 +414,7 @@ func TestCLIJSONModeKeepsMetadataOffStdout(t *testing.T) {
 				Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr, StdinTTY: true, StdoutTTY: true,
 			}, cliDependencies{
 				loadModels: func(string) (*config.ModelRegistry, error) { return registry, nil },
-				createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+				createRuntime: func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error) {
 					createdRuntime = true
 					return runtimeInputs{}, nil
 				},
@@ -470,21 +470,21 @@ func f3ScenarioSettings(t testing.TB, cwd, agentDir string, raw json.RawMessage)
 	return settings
 }
 
-func f3RuntimeFactory(scenario f3SessionScenario, provider *faux.Provider, settings *config.SettingsManager) func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
-	return func(_ string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
+func f3RuntimeFactory(scenario f3SessionScenario, provider *faux.Provider, settings *config.SettingsManager) func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error) {
+	return func(_ string, _ CLIArgs, prior engine.AgentMessages) (runtimeInputs, error) {
 		now := func() int64 { return scenario.FixedNow }
 		// The F3 goldens were extracted from upstream's runPrintMode harness,
 		// whose raw Agent carries no session id; disable faux's session-keyed
 		// prompt-cache emulation so the CLI path (which sets the stream
 		// session id like upstream createAgentSession) matches them.
 		noCache := ai.CacheRetentionNone
-		created := agent.NewAgent(
-			provider.StreamSimple, agent.WithInitialState(agent.AgentState{
-				Model: provider.GetModel(), SystemPrompt: scenario.SystemPrompt, Messages: prior, Tools: []agent.AgentTool{},
+		created := engine.NewAgent(
+			provider.StreamSimple, engine.WithInitialState(engine.AgentState{
+				Model: provider.GetModel(), SystemPrompt: scenario.SystemPrompt, Messages: prior, Tools: []engine.AgentTool{},
 			}),
-			agent.WithConvertToLLM(codingagent.ConvertToLLM),
-			agent.WithClock(now),
-			agent.WithSimpleStreamOptions(ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{CacheRetention: &noCache}}),
+			engine.WithConvertToLLM(agent.ConvertToLLM),
+			engine.WithClock(now),
+			engine.WithSimpleStreamOptions(ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{CacheRetention: &noCache}}),
 		)
 		return runtimeInputs{Agent: created, Settings: settings}, nil
 	}

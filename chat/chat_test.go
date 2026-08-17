@@ -17,10 +17,10 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 // fauxDelivery records every Delivery call.
@@ -255,11 +255,11 @@ func (s *fauxSessions) Acquire(_ context.Context, key ConversationKey) (*Convers
 	}
 	s.mu.Unlock()
 
-	created := agent.NewAgent(
-		s.provider.StreamSimple, agent.WithInitialState(agent.AgentState{SystemPrompt: "test", Model: s.provider.GetModel()}),
-		agent.WithConvertToLLM(codingagent.ConvertToLLM),
+	created := engine.NewAgent(
+		s.provider.StreamSimple, engine.WithInitialState(engine.AgentState{SystemPrompt: "test", Model: s.provider.GetModel()}),
+		engine.WithConvertToLLM(agent.ConvertToLLM),
 	)
-	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
+	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
 		Agent:          created,
 		SessionManager: manager,
 		Settings:       s.settings,

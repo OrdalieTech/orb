@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	agentharness "github.com/OrdalieTech/orb/agent/harness"
-	"github.com/OrdalieTech/orb/codingagent"
-	modetheme "github.com/OrdalieTech/orb/codingagent/modes/theme"
+	"github.com/OrdalieTech/orb/agent"
+	modetheme "github.com/OrdalieTech/orb/agent/modes/theme"
 	"github.com/OrdalieTech/orb/conformance/runner"
+	agentharness "github.com/OrdalieTech/orb/engine/harness"
 )
 
 type f8Fixture struct {
@@ -242,7 +242,7 @@ func TestF8PromptExpansionMatchesUpstream(t *testing.T) {
 	for _, fixtureCase := range fixture.ArgumentCases {
 		fixtureCase := fixtureCase
 		t.Run("args/"+fixtureCase.Name, func(t *testing.T) {
-			if got := codingagent.ParseCommandArgs(fixtureCase.Input); !reflect.DeepEqual(got, fixtureCase.Expected) {
+			if got := agent.ParseCommandArgs(fixtureCase.Input); !reflect.DeepEqual(got, fixtureCase.Expected) {
 				t.Fatalf("arguments mismatch\nwant: %#v\n got: %#v", fixtureCase.Expected, got)
 			}
 		})
@@ -250,7 +250,7 @@ func TestF8PromptExpansionMatchesUpstream(t *testing.T) {
 	for _, fixtureCase := range fixture.SubstitutionCases {
 		fixtureCase := fixtureCase
 		t.Run("substitution/"+fixtureCase.Name, func(t *testing.T) {
-			if got := codingagent.SubstituteArgs(fixtureCase.Content, fixtureCase.Args); got != fixtureCase.Expected {
+			if got := agent.SubstituteArgs(fixtureCase.Content, fixtureCase.Args); got != fixtureCase.Expected {
 				t.Fatalf("substitution mismatch:\n%s", runner.ByteDiff([]byte(fixtureCase.Expected), []byte(got)))
 			}
 		})
@@ -258,11 +258,11 @@ func TestF8PromptExpansionMatchesUpstream(t *testing.T) {
 	for _, fixtureCase := range fixture.TemplateCases {
 		fixtureCase := fixtureCase
 		t.Run("template/"+fixtureCase.Name, func(t *testing.T) {
-			templates := make([]codingagent.PromptTemplate, len(fixtureCase.Templates))
+			templates := make([]agent.PromptTemplate, len(fixtureCase.Templates))
 			for index, template := range fixtureCase.Templates {
-				templates[index] = codingagent.PromptTemplate{Name: template.Name, Description: template.Description, Content: template.Content}
+				templates[index] = agent.PromptTemplate{Name: template.Name, Description: template.Description, Content: template.Content}
 			}
-			if got := codingagent.ExpandPromptTemplate(fixtureCase.Text, templates); got != fixtureCase.Expected {
+			if got := agent.ExpandPromptTemplate(fixtureCase.Text, templates); got != fixtureCase.Expected {
 				t.Fatalf("template mismatch:\n%s", runner.ByteDiff([]byte(fixtureCase.Expected), []byte(got)))
 			}
 		})
@@ -276,7 +276,7 @@ func TestF8ResourceDiscoveryMatchesUpstream(t *testing.T) {
 	skillsDir := filepath.Join(fixtureRoot, "skills")
 	promptsDir := filepath.Join(fixtureRoot, "prompts")
 
-	skillResult := codingagent.LoadSkills(codingagent.LoadSkillsOptions{
+	skillResult := agent.LoadSkills(agent.LoadSkillsOptions{
 		CWD: fixtureRoot, AgentDir: filepath.Join(fixtureRoot, "agent"), SkillPaths: []string{skillsDir},
 	})
 	gotDiagnostics := f8FixtureDiagnostics(skillResult.Diagnostics, fixtureRoot)
@@ -291,7 +291,7 @@ func TestF8ResourceDiscoveryMatchesUpstream(t *testing.T) {
 		t.Fatalf("skills mismatch\nwant: %+v\n got: %+v", fixture.Discovery.Skills, gotSkills)
 	}
 
-	templates := codingagent.LoadPromptTemplates(codingagent.LoadPromptTemplatesOptions{
+	templates := agent.LoadPromptTemplates(agent.LoadPromptTemplatesOptions{
 		CWD: fixtureRoot, AgentDir: filepath.Join(fixtureRoot, "agent"), PromptPaths: []string{promptsDir},
 	})
 	gotTemplates := make([]f8PromptTemplate, len(templates))
@@ -302,7 +302,7 @@ func TestF8ResourceDiscoveryMatchesUpstream(t *testing.T) {
 		t.Fatalf("templates mismatch\nwant: %+v\n got: %+v", fixture.Discovery.Templates, gotTemplates)
 	}
 
-	resolver := codingagent.SlashResolver{Skills: skillResult.Skills, PromptTemplates: templates}
+	resolver := agent.SlashResolver{Skills: skillResult.Skills, PromptTemplates: templates}
 	commands := resolver.Commands(true)
 	gotCommands := make([]f8Command, len(commands))
 	for index, command := range commands {
@@ -357,15 +357,15 @@ func TestF8CommandSurfacesMatchUpstream(t *testing.T) {
 	fixture := loadF8Fixture(t)
 	fixtureRoot := t.TempDir()
 	writeF8Tree(t, fixtureRoot, fixture.Discovery.Files)
-	skills := codingagent.LoadSkills(codingagent.LoadSkillsOptions{
+	skills := agent.LoadSkills(agent.LoadSkillsOptions{
 		CWD: fixtureRoot, AgentDir: filepath.Join(fixtureRoot, "agent"),
 		SkillPaths: []string{filepath.Join(fixtureRoot, "skills")},
 	}).Skills
-	templates := codingagent.LoadPromptTemplates(codingagent.LoadPromptTemplatesOptions{
+	templates := agent.LoadPromptTemplates(agent.LoadPromptTemplatesOptions{
 		CWD: fixtureRoot, AgentDir: filepath.Join(fixtureRoot, "agent"),
 		PromptPaths: []string{filepath.Join(fixtureRoot, "prompts")},
 	})
-	resolver := codingagent.SlashResolver{Skills: skills, PromptTemplates: templates}
+	resolver := agent.SlashResolver{Skills: skills, PromptTemplates: templates}
 	t.Run("rpc-ignores-interactive-skill-command-setting", func(t *testing.T) {
 		gotRPC := f8FixtureCommands(resolver.Commands(false), fixtureRoot)
 		if !reflect.DeepEqual(gotRPC, fixture.Discovery.RPCCommandsWhenSkillCommandsDisabled) {
@@ -378,8 +378,8 @@ func TestF8CommandSurfacesMatchUpstream(t *testing.T) {
 				fixture.Discovery.BuiltinCommands[index].Description = "Quit orb" // D30.
 			}
 		}
-		gotBuiltins := make([]f8BuiltinCommand, len(codingagent.BuiltinSlashCommands))
-		for index, command := range codingagent.BuiltinSlashCommands {
+		gotBuiltins := make([]f8BuiltinCommand, len(agent.BuiltinSlashCommands))
+		for index, command := range agent.BuiltinSlashCommands {
 			var hint *string
 			if command.ArgumentHint != "" {
 				value := command.ArgumentHint
@@ -400,7 +400,7 @@ func TestF8ResourceLoaderPrecedenceMatchesUpstream(t *testing.T) {
 	t.Setenv("HOME", filepath.Join(fixtureRoot, "home"))
 	t.Setenv("CODEX_HOME", filepath.Join(fixtureRoot, "home", ".codex"))
 	trusted := true
-	resources := codingagent.LoadResources(codingagent.ResourceOptions{
+	resources := agent.LoadResources(agent.ResourceOptions{
 		CWD:                        f8MaterializePath(fixture.ResourceLoader.CWD, fixtureRoot),
 		AgentDir:                   f8MaterializePath(fixture.ResourceLoader.AgentDir, fixtureRoot),
 		ProjectTrusted:             &trusted,
@@ -443,7 +443,7 @@ func TestF8DefaultResourceLoaderAppliesGlobalResourceFilters(t *testing.T) {
 	t.Setenv("HOME", filepath.Join(fixtureRoot, "resource-filtering", "home"))
 	t.Setenv("CODEX_HOME", filepath.Join(fixtureRoot, "resource-filtering", "home", ".codex"))
 	t.Setenv("COLORTERM", "")
-	loader, err := codingagent.NewDefaultResourceLoader(codingagent.DefaultResourceLoaderOptions{
+	loader, err := agent.NewDefaultResourceLoader(agent.DefaultResourceLoaderOptions{
 		CWD:          f8MaterializePath(fixture.ResourceFiltering.CWD, fixtureRoot),
 		AgentDir:     f8MaterializePath(fixture.ResourceFiltering.AgentDir, fixtureRoot),
 		NoExtensions: true, NoContextFiles: true,
@@ -489,7 +489,7 @@ func TestF8ResourceLoaderExtensionsMatchUpstreamImmediately(t *testing.T) {
 	t.Setenv("HOME", filepath.Join(fixtureRoot, "loader-extension", "home"))
 	t.Setenv("CODEX_HOME", filepath.Join(fixtureRoot, "loader-extension", "home", ".codex"))
 	t.Setenv("COLORTERM", "")
-	loader, err := codingagent.NewDefaultResourceLoader(codingagent.DefaultResourceLoaderOptions{
+	loader, err := agent.NewDefaultResourceLoader(agent.DefaultResourceLoaderOptions{
 		CWD:          f8MaterializePath(fixture.ResourceExtension.CWD, fixtureRoot),
 		AgentDir:     f8MaterializePath(fixture.ResourceExtension.AgentDir, fixtureRoot),
 		NoExtensions: true, NoSkills: true, NoPromptTemplates: true, NoThemes: true, NoContextFiles: true,
@@ -502,7 +502,7 @@ func TestF8ResourceLoaderExtensionsMatchUpstreamImmediately(t *testing.T) {
 		t.Fatal(err)
 	}
 	themesBeforeExtension := loader.GetThemes()
-	loader.ExtendResources(codingagent.ResourceExtensionPaths{
+	loader.ExtendResources(agent.ResourceExtensionPaths{
 		SkillPaths:  f8MaterializeResourcePaths(fixture.ResourceExtension.SkillPaths, fixtureRoot),
 		PromptPaths: f8MaterializeResourcePaths(fixture.ResourceExtension.PromptPaths, fixtureRoot),
 		ThemePaths:  f8MaterializeResourcePaths(fixture.ResourceExtension.ThemePaths, fixtureRoot),
@@ -620,12 +620,12 @@ func TestF8SlashResolutionMatchesUpstream(t *testing.T) {
 	fixture := loadF8Fixture(t)
 	fixtureRoot := t.TempDir()
 	writeF8Tree(t, fixtureRoot, fixture.Discovery.Files)
-	skills := codingagent.LoadSkills(codingagent.LoadSkillsOptions{
+	skills := agent.LoadSkills(agent.LoadSkillsOptions{
 		CWD: fixtureRoot, AgentDir: filepath.Join(fixtureRoot, "agent"), SkillPaths: []string{filepath.Join(fixtureRoot, "skills")},
 	}).Skills
-	templates := make([]codingagent.PromptTemplate, len(fixture.ResolutionTemplates))
+	templates := make([]agent.PromptTemplate, len(fixture.ResolutionTemplates))
 	for index, template := range fixture.ResolutionTemplates {
-		templates[index] = codingagent.PromptTemplate{
+		templates[index] = agent.PromptTemplate{
 			Name: template.Name, Description: template.Description, Content: template.Content,
 			FilePath: f8MaterializePath(template.FilePath, fixtureRoot),
 		}
@@ -635,7 +635,7 @@ func TestF8SlashResolutionMatchesUpstream(t *testing.T) {
 		fixtureCase := fixtureCase
 		t.Run(fixtureCase.Name, func(t *testing.T) {
 			trace := []string{}
-			resolver := codingagent.SlashResolver{
+			resolver := agent.SlashResolver{
 				Skills: skills, PromptTemplates: templates,
 				ExecuteExtension: func(name, args string) (bool, error) {
 					if name != "ext" {
@@ -644,17 +644,17 @@ func TestF8SlashResolutionMatchesUpstream(t *testing.T) {
 					trace = append(trace, "extension:"+args)
 					return true, nil
 				},
-				InterceptInput: func(text string) (codingagent.InputResult, error) {
+				InterceptInput: func(text string) (agent.InputResult, error) {
 					trace = append(trace, "input:"+text)
 					switch {
 					case strings.HasPrefix(text, "/alias "):
-						return codingagent.InputResult{Action: codingagent.InputTransform, Text: "/review " + text[7:]}, nil
+						return agent.InputResult{Action: agent.InputTransform, Text: "/review " + text[7:]}, nil
 					case strings.HasPrefix(text, "/choose "):
-						return codingagent.InputResult{Action: codingagent.InputTransform, Text: "/skill:inspect " + text[8:]}, nil
+						return agent.InputResult{Action: agent.InputTransform, Text: "/skill:inspect " + text[8:]}, nil
 					case text == "/consume":
-						return codingagent.InputResult{Action: codingagent.InputHandled}, nil
+						return agent.InputResult{Action: agent.InputHandled}, nil
 					default:
-						return codingagent.InputResult{Action: codingagent.InputPass}, nil
+						return agent.InputResult{Action: agent.InputPass}, nil
 					}
 				},
 			}
@@ -707,7 +707,7 @@ func writeF8Tree(t testing.TB, root string, files []f8FixtureFile) {
 	}
 }
 
-func f8FixtureSkill(skill codingagent.Skill, fixtureRoot string) f8Skill {
+func f8FixtureSkill(skill agent.Skill, fixtureRoot string) f8Skill {
 	return f8Skill{
 		Name: skill.Name, Description: skill.Description,
 		FilePath: runner.NormalizeFixturePath(skill.FilePath, fixtureRoot), BaseDir: runner.NormalizeFixturePath(skill.BaseDir, fixtureRoot),
@@ -716,7 +716,7 @@ func f8FixtureSkill(skill codingagent.Skill, fixtureRoot string) f8Skill {
 	}
 }
 
-func f8FixtureTemplate(template codingagent.PromptTemplate, fixtureRoot string) f8PromptTemplate {
+func f8FixtureTemplate(template agent.PromptTemplate, fixtureRoot string) f8PromptTemplate {
 	var hint *string
 	if template.ArgumentHint != "" {
 		value := template.ArgumentHint
@@ -729,7 +729,7 @@ func f8FixtureTemplate(template codingagent.PromptTemplate, fixtureRoot string) 
 	}
 }
 
-func f8FixtureCommands(commands []codingagent.SlashCommandInfo, fixtureRoot string) []f8Command {
+func f8FixtureCommands(commands []agent.SlashCommandInfo, fixtureRoot string) []f8Command {
 	result := make([]f8Command, len(commands))
 	for index, command := range commands {
 		result[index] = f8Command{
@@ -740,7 +740,7 @@ func f8FixtureCommands(commands []codingagent.SlashCommandInfo, fixtureRoot stri
 	return result
 }
 
-func f8FixtureDiagnostics(diagnostics []codingagent.ResourceDiagnostic, fixtureRoot string) []f8ResourceDiagnostic {
+func f8FixtureDiagnostics(diagnostics []agent.ResourceDiagnostic, fixtureRoot string) []f8ResourceDiagnostic {
 	result := make([]f8ResourceDiagnostic, len(diagnostics))
 	for index, diagnostic := range diagnostics {
 		result[index] = f8ResourceDiagnostic{
@@ -759,7 +759,7 @@ func f8FixtureDiagnostics(diagnostics []codingagent.ResourceDiagnostic, fixtureR
 	return result
 }
 
-func f8FixtureSourceInfo(source codingagent.SourceInfo, fixtureRoot string) f8SourceInfo {
+func f8FixtureSourceInfo(source agent.SourceInfo, fixtureRoot string) f8SourceInfo {
 	return f8SourceInfo{
 		Path: runner.NormalizeFixturePath(source.Path, fixtureRoot), Source: source.Source, Scope: source.Scope,
 		Origin: source.Origin, BaseDir: runner.NormalizeFixturePath(source.BaseDir, fixtureRoot),
@@ -866,12 +866,12 @@ func f8MaterializePaths(values []string, fixtureRoot string) []string {
 	return result
 }
 
-func f8MaterializeResourcePaths(values []f8ResourcePath, fixtureRoot string) []codingagent.ResourcePath {
-	result := make([]codingagent.ResourcePath, len(values))
+func f8MaterializeResourcePaths(values []f8ResourcePath, fixtureRoot string) []agent.ResourcePath {
+	result := make([]agent.ResourcePath, len(values))
 	for index, value := range values {
-		result[index] = codingagent.ResourcePath{
+		result[index] = agent.ResourcePath{
 			Path: f8MaterializePath(value.Path, fixtureRoot),
-			Metadata: codingagent.PathMetadata{
+			Metadata: agent.PathMetadata{
 				Source: value.Metadata.Source, Scope: value.Metadata.Scope, Origin: value.Metadata.Origin,
 				BaseDir: f8MaterializePath(value.Metadata.BaseDir, fixtureRoot),
 			},

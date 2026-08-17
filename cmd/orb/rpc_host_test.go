@@ -7,12 +7,12 @@ import (
 	"testing"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/extensions"
-	"github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 func TestRPCSessionHostRebindsNewSessionAndForksUserEntry(t *testing.T) {
@@ -27,8 +27,8 @@ func TestRPCSessionHostRebindsNewSessionAndForksUserEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 	provider := faux.New(faux.Options{API: "faux", Provider: "faux"})
-	newAgent := func(messages agent.AgentMessages) *agent.Agent {
-		return agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{
+	newAgent := func(messages engine.AgentMessages) *engine.Agent {
+		return engine.NewAgent(nil, engine.WithInitialState(engine.AgentState{
 			Model: provider.GetModel(), Messages: messages,
 		}))
 	}
@@ -37,7 +37,7 @@ func TestRPCSessionHostRebindsNewSessionAndForksUserEntry(t *testing.T) {
 	runtimeHost, err := newCLISessionRuntimeHost(context.Background(), cliSessionRuntimeHostOptions{
 		Manager: manager, ExtensionMode: extensions.ModeRPC,
 		Dependencies: cliDependencies{
-			createRuntime: func(cwd string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
+			createRuntime: func(cwd string, _ CLIArgs, prior engine.AgentMessages) (runtimeInputs, error) {
 				createCalls++
 				if cwd != root {
 					t.Fatalf("runtime cwd = %q, want %q", cwd, root)
@@ -127,15 +127,15 @@ func TestRPCSessionHostPreservesExtensionLifecycleAcrossNewSession(t *testing.T)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	newAgent := func(messages agent.AgentMessages) *agent.Agent {
-		return agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{
+	newAgent := func(messages engine.AgentMessages) *engine.Agent {
+		return engine.NewAgent(nil, engine.WithInitialState(engine.AgentState{
 			Model: provider.GetModel(), Messages: messages,
 		}))
 	}
 	runtimeHost, err := newCLISessionRuntimeHost(context.Background(), cliSessionRuntimeHostOptions{
 		Manager: manager, ExtensionMode: extensions.ModeRPC,
 		Dependencies: cliDependencies{
-			createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+			createRuntime: func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error) {
 				return runtimeInputs{Agent: newAgent(nil), Settings: settings, Extensions: registry}, nil
 			},
 		},
@@ -199,14 +199,14 @@ func TestRPCSessionHostRestoresEachTargetModelFromImmutableCLIArgs(t *testing.T)
 	runtimeHost, err := newCLISessionRuntimeHost(context.Background(), cliSessionRuntimeHostOptions{
 		Manager: initialManager, ExtensionMode: extensions.ModeRPC,
 		Dependencies: cliDependencies{
-			createRuntime: func(_ string, args CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
+			createRuntime: func(_ string, args CLIArgs, prior engine.AgentMessages) (runtimeInputs, error) {
 				if args.Provider == nil || args.Model == nil || args.Thinking == nil {
-					created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Messages: prior}))
+					created := engine.NewAgent(nil, engine.WithInitialState(engine.AgentState{Messages: prior}))
 					return runtimeInputs{Agent: created, Settings: settings, Extensions: registry}, nil
 				}
 				selections = append(selections, *args.Provider+"/"+*args.Model+":"+*args.Thinking)
 				model := ai.Model{ID: *args.Model, Provider: ai.ProviderID(*args.Provider), API: "faux", Reasoning: true, ContextWindow: 100, MaxTokens: 10}
-				created := agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{
+				created := engine.NewAgent(nil, engine.WithInitialState(engine.AgentState{
 					Model: &model, ThinkingLevel: ai.ModelThinkingLevel(*args.Thinking), Messages: prior,
 				}))
 				return runtimeInputs{Agent: created, Settings: settings, Extensions: registry}, nil
@@ -250,20 +250,20 @@ func TestRPCSlashCommandsPreserveOptionalWireFields(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
-		Agent:             agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Messages: agent.AgentMessages{}})),
+	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
+		Agent:             engine.NewAgent(nil, engine.WithInitialState(engine.AgentState{Messages: engine.AgentMessages{}})),
 		SessionManager:    manager,
 		Settings:          settings,
 		ExtensionRegistry: registry,
 		ExtensionMode:     extensions.ModeRPC,
-		SlashResolver: &codingagent.SlashResolver{
-			PromptTemplates: []codingagent.PromptTemplate{{
-				Name: "review", SourceInfo: codingagent.SourceInfo{
+		SlashResolver: &agent.SlashResolver{
+			PromptTemplates: []agent.PromptTemplate{{
+				Name: "review", SourceInfo: agent.SourceInfo{
 					Path: "review.md", Source: "local", Scope: "project", Origin: "top-level",
 				},
 			}},
-			Skills: []codingagent.Skill{{
-				Name: "inspect", Description: "Inspect files.", SourceInfo: codingagent.SourceInfo{
+			Skills: []agent.Skill{{
+				Name: "inspect", Description: "Inspect files.", SourceInfo: agent.SourceInfo{
 					Path: "inspect/SKILL.md", Source: "local", Scope: "project", Origin: "top-level", BaseDir: "inspect",
 				},
 			}},

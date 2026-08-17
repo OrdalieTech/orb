@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/extensions"
-	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
 	"github.com/OrdalieTech/orb/conformance/runner"
 )
 
@@ -71,7 +71,7 @@ func runWP370NewSession(t *testing.T, cancel bool) wp370RuntimeCase {
 	provider := faux.New()
 	records := make([]wp370RuntimeRecord, 0, 8)
 	registry := wp370RuntimeRegistry(t, cwd, cancel, &records)
-	factory := func(ctx context.Context, options codingagent.AgentSessionOptions) (*codingagent.AgentSessionResult, error) {
+	factory := func(ctx context.Context, options agent.AgentSessionOptions) (*agent.AgentSessionResult, error) {
 		if options.SessionStartEvent != nil {
 			records = append(records, wp370RuntimeRecord{
 				Phase: "create",
@@ -79,9 +79,9 @@ func runWP370NewSession(t *testing.T, cancel bool) wp370RuntimeCase {
 				CWD:   "/fixture",
 			})
 		}
-		return codingagent.NewAgentSession(options)
+		return agent.NewAgentSession(options)
 	}
-	host, err := codingagent.NewAgentSessionRuntime(context.Background(), codingagent.AgentSessionOptions{
+	host, err := agent.NewAgentSessionRuntime(context.Background(), agent.AgentSessionOptions{
 		CWD: cwd, AgentDir: agentDir, SessionManager: manager,
 		StreamFn: provider.StreamSimple, Model: provider.GetModel(), ExtensionRegistry: registry,
 	}, factory)
@@ -96,7 +96,7 @@ func runWP370NewSession(t *testing.T, cancel bool) wp370RuntimeCase {
 	host.SetBeforeSessionInvalidate(func() {
 		records = append(records, wp370RuntimeRecord{Phase: "beforeSessionInvalidate"})
 	})
-	host.SetRebindSession(func(session *codingagent.AgentSession) error {
+	host.SetRebindSession(func(session *agent.AgentSession) error {
 		records = append(records, wp370RuntimeRecord{Phase: "rebindSession"})
 		return session.BindExtensions(context.Background())
 	})
@@ -129,7 +129,7 @@ func runWP370Dispose(t *testing.T) []wp370RuntimeRecord {
 	provider := faux.New()
 	records := make([]wp370RuntimeRecord, 0, 2)
 	registry := wp370RuntimeRegistry(t, cwd, false, &records)
-	host, err := codingagent.NewAgentSessionRuntime(context.Background(), codingagent.AgentSessionOptions{
+	host, err := agent.NewAgentSessionRuntime(context.Background(), agent.AgentSessionOptions{
 		CWD: cwd, AgentDir: t.TempDir(), SessionManager: manager,
 		StreamFn: provider.StreamSimple, Model: provider.GetModel(), ExtensionRegistry: registry,
 	})

@@ -6,12 +6,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/extensions"
-	"github.com/OrdalieTech/orb/codingagent/modes"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 type fixedInteractiveAPIKeyAuth struct{ key string }
@@ -291,7 +291,7 @@ func TestLOGm3InteractiveHostRuntimeAPIKeyStatusAndLogout(t *testing.T) {
 	}
 	originalCreateRuntime := fixture.host.dependencies.createRuntime
 	replacementCalled := false
-	fixture.host.dependencies.createRuntime = func(cwd string, args CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
+	fixture.host.dependencies.createRuntime = func(cwd string, args CLIArgs, prior engine.AgentMessages) (runtimeInputs, error) {
 		replacementCalled = true
 		if args.APIKey != nil {
 			t.Fatalf("replacement runtime received logged-out --api-key: %q", *args.APIKey)

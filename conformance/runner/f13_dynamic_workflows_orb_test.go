@@ -3,7 +3,7 @@
 // integrity-pinned lockfile) through the real extension host: loader.mjs
 // aliases the @earendil-works/pi-* specifiers to the materialized
 // orb-extension-sdk, model catalogs resolve over model_runtime_v1, and child
-// sessions bridge over agent_session_v1 onto codingagent.NewAgentSession with
+// sessions bridge over agent_session_v1 onto agent.NewAgentSession with
 // the Go faux provider streaming the same scripted responses the extractor
 // fed upstream. Behavior goldens (events, journals, tool calls/results,
 // structured outputs, usage, persistence artifacts) must match after the same
@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	host "github.com/OrdalieTech/orb/codingagent/extensions/host"
+	host "github.com/OrdalieTech/orb/agent/extensions/host"
 )
 
 // Capability identifiers the host_hello frame must advertise (design brief:
@@ -49,7 +49,7 @@ func TestF13OrbHostAdvertisesSDKCapabilities(t *testing.T) {
 // in TestF13OrbReplaysBehaviorGoldens.
 func TestF13OrbSDKManifestMirrorsUpstreamExportSurface(t *testing.T) {
 	encoded, err := os.ReadFile(filepath.Join(FixtureRoot(), "..", "..",
-		"codingagent", "extensions", "host", "sdk", "sdk.json"))
+		"agent", "extensions", "host", "sdk", "sdk.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

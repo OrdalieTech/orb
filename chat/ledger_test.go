@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
+	sessionstore "github.com/OrdalieTech/orb/agent/session"
 )
 
 func TestTurnLedgerRoundTrip(t *testing.T) {

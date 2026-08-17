@@ -18,15 +18,15 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/agent/modes"
+	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/chat"
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/extensions"
-	"github.com/OrdalieTech/orb/codingagent/modes"
-	"github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 func TestScrubDisabledMallocStackLogging(t *testing.T) {
@@ -166,7 +166,7 @@ func TestAppendInitialRuntimeStateChecksCurrentBranchForThinking(t *testing.T) {
 	}
 
 	prior := manager.BuildSessionContext()
-	if err := appendInitialRuntimeState(manager, agent.AgentState{ThinkingLevel: "medium"}, prior); err != nil {
+	if err := appendInitialRuntimeState(manager, engine.AgentState{ThinkingLevel: "medium"}, prior); err != nil {
 		t.Fatal(err)
 	}
 	branch := manager.GetBranch()
@@ -184,7 +184,7 @@ func TestRunCLIRejectsAPIKeyWithoutExplicitModel(t *testing.T) {
 		Stderr:    &stderr,
 		StdinTTY:  true,
 		StdoutTTY: false,
-	}, cliDependencies{createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+	}, cliDependencies{createRuntime: func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error) {
 		called = true
 		return runtimeInputs{}, nil
 	}})
@@ -201,7 +201,7 @@ func TestRunCLIOfflineFlagSetsEnvironmentBeforeRuntimeCreation(t *testing.T) {
 	called := false
 	code := runCLIWithDependencies(context.Background(), []string{"--offline"}, cliStreams{
 		Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard, StdinTTY: true, StdoutTTY: true,
-	}, cliDependencies{createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+	}, cliDependencies{createRuntime: func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error) {
 		called = true
 		if value := os.Getenv("PI_OFFLINE"); value != "1" {
 			t.Fatalf("PI_OFFLINE = %q, want 1", value)
@@ -299,7 +299,7 @@ func TestRunCLIProvidesStartupVersionCheckToInteractiveMode(t *testing.T) {
 	code := runCLIWithDependencies(context.Background(), []string{"--no-session"}, cliStreams{
 		Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard, StdinTTY: true, StdoutTTY: true,
 	}, cliDependencies{
-		createRuntime: func(cwd string, args CLIArgs, messages agent.AgentMessages) (runtimeInputs, error) {
+		createRuntime: func(cwd string, args CLIArgs, messages engine.AgentMessages) (runtimeInputs, error) {
 			inputs, err := baseFactory(cwd, args, messages)
 			if err != nil {
 				return runtimeInputs{}, err
@@ -311,7 +311,7 @@ func TestRunCLIProvidesStartupVersionCheckToInteractiveMode(t *testing.T) {
 			refreshCalls++
 			return nil
 		},
-		runInteractive: func(ctx context.Context, runtime *codingagent.SessionRuntime, options modes.InteractiveModeOptions) int {
+		runInteractive: func(ctx context.Context, runtime *agent.SessionRuntime, options modes.InteractiveModeOptions) int {
 			defer runtime.Dispose()
 			if options.StartupVersionCheck == nil {
 				t.Fatal("StartupVersionCheck is nil")
@@ -498,7 +498,7 @@ func TestRunCLIDispatchesAuthSubcommandsBeforeSessionSetup(t *testing.T) {
 	code := runCLIWithDependencies(context.Background(), []string{"logout", "anthropic"}, cliStreams{
 		Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard,
 	}, cliDependencies{
-		createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+		createRuntime: func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error) {
 			t.Fatal("auth command created an agent runtime")
 			return runtimeInputs{}, nil
 		},
@@ -602,7 +602,7 @@ func TestRunCLIListModelsIsReadOnly(t *testing.T) {
 	code := runCLIWithDependencies(context.Background(), []string{"--list-models"}, cliStreams{
 		Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: io.Discard, StdinTTY: true, StdoutTTY: true,
 	}, cliDependencies{
-		createRuntime: func(cwd string, args CLIArgs, messages agent.AgentMessages) (runtimeInputs, error) {
+		createRuntime: func(cwd string, args CLIArgs, messages engine.AgentMessages) (runtimeInputs, error) {
 			createdRuntime = true
 			return createRuntimeInputs(cwd, args, messages)
 		},
@@ -695,7 +695,7 @@ func TestRunCLIParserErrorVersionAndHelpPrecedence(t *testing.T) {
 				Stderr:    &stderr,
 				StdinTTY:  true,
 				StdoutTTY: true,
-			}, cliDependencies{createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+			}, cliDependencies{createRuntime: func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error) {
 				called = true
 				return runtimeInputs{}, nil
 			}})
@@ -721,7 +721,7 @@ func TestRunCLIReportsUnknownLongFlagsInMapOrder(t *testing.T) {
 		Stderr:    &stderr,
 		StdinTTY:  true,
 		StdoutTTY: false,
-	}, cliDependencies{createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+	}, cliDependencies{createRuntime: func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error) {
 		called = true
 		return runtimeInputs{}, nil
 	}})
@@ -740,7 +740,7 @@ func TestRunCLIRejectsUnknownExtensionFlagBeforeRuntime(t *testing.T) {
 	called := false
 	code := runCLIWithDependencies(context.Background(), []string{"-p", "--unknown"}, cliStreams{
 		Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: &stderr, StdinTTY: true,
-	}, cliDependencies{createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+	}, cliDependencies{createRuntime: func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error) {
 		called = true
 		return runtimeInputs{}, nil
 	}})
@@ -909,7 +909,7 @@ func TestRunCLIContinuesUpstreamTypeScriptSessionWithFullContext(t *testing.T) {
 	if got := userMessageText(t, requestContext.Messages[0]); got != "hello <>&\u2028\u2029" {
 		t.Fatalf("restored root message = %q", got)
 	}
-	if got := userMessageText(t, requestContext.Messages[1]); got != codingagent.BranchSummaryPrefix+"alternate branch"+codingagent.BranchSummarySuffix {
+	if got := userMessageText(t, requestContext.Messages[1]); got != agent.BranchSummaryPrefix+"alternate branch"+agent.BranchSummarySuffix {
 		t.Fatalf("restored branch summary = %q", got)
 	}
 	if got := userMessageText(t, requestContext.Messages[2]); got != "new prompt" {
@@ -980,7 +980,7 @@ func TestRunCLIAllowsMissingModelOnlyForInteractiveRuntime(t *testing.T) {
 			code := runCLIWithDependencies(context.Background(), test.argv, cliStreams{
 				Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard,
 				StdinTTY: true, StdoutTTY: test.stdoutTTY,
-			}, cliDependencies{createRuntime: func(_ string, args CLIArgs, _ agent.AgentMessages) (runtimeInputs, error) {
+			}, cliDependencies{createRuntime: func(_ string, args CLIArgs, _ engine.AgentMessages) (runtimeInputs, error) {
 				called = true
 				allowed = args.allowNoModel
 				return runtimeInputs{}, errors.New("stop after runtime arguments")
@@ -1219,12 +1219,12 @@ func TestRunCLIHeadlessModesBindSessionReplacementLifecycle(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-			createRuntime := func(_ string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
-				created := agent.NewAgent(
-					provider.StreamSimple, agent.WithInitialState(agent.AgentState{
+			createRuntime := func(_ string, _ CLIArgs, prior engine.AgentMessages) (runtimeInputs, error) {
+				created := engine.NewAgent(
+					provider.StreamSimple, engine.WithInitialState(engine.AgentState{
 						SystemPrompt: "test", Model: provider.GetModel(), Messages: prior,
 					}),
-					agent.WithConvertToLLM(codingagent.ConvertToLLM),
+					engine.WithConvertToLLM(agent.ConvertToLLM),
 				)
 				return runtimeInputs{Agent: created, Extensions: registry}, nil
 			}
@@ -1286,12 +1286,12 @@ func TestRunCLIHeadlessModesContinuePromptingReplacementSession(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-			createRuntime := func(_ string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
-				created := agent.NewAgent(
-					provider.StreamSimple, agent.WithInitialState(agent.AgentState{
+			createRuntime := func(_ string, _ CLIArgs, prior engine.AgentMessages) (runtimeInputs, error) {
+				created := engine.NewAgent(
+					provider.StreamSimple, engine.WithInitialState(engine.AgentState{
 						SystemPrompt: "test", Model: provider.GetModel(), Messages: prior,
 					}),
-					agent.WithConvertToLLM(codingagent.ConvertToLLM),
+					engine.WithConvertToLLM(agent.ConvertToLLM),
 				)
 				return runtimeInputs{Agent: created, Extensions: registry}, nil
 			}
@@ -1340,12 +1340,12 @@ func TestRunCLIJSONMovesEventSubscriptionBeforeReplacementWithSession(t *testing
 	}); err != nil {
 		t.Fatal(err)
 	}
-	createRuntime := func(_ string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
-		created := agent.NewAgent(
-			provider.StreamSimple, agent.WithInitialState(agent.AgentState{
+	createRuntime := func(_ string, _ CLIArgs, prior engine.AgentMessages) (runtimeInputs, error) {
+		created := engine.NewAgent(
+			provider.StreamSimple, engine.WithInitialState(engine.AgentState{
 				SystemPrompt: "test", Model: provider.GetModel(), Messages: prior,
 			}),
-			agent.WithConvertToLLM(codingagent.ConvertToLLM),
+			engine.WithConvertToLLM(agent.ConvertToLLM),
 		)
 		return runtimeInputs{Agent: created, Extensions: registry}, nil
 	}
@@ -1392,12 +1392,12 @@ func TestRunCLIRPCMovesEventSubscriptionForExtensionInitiatedReplacement(t *test
 	}); err != nil {
 		t.Fatal(err)
 	}
-	createRuntime := func(_ string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
-		created := agent.NewAgent(
-			provider.StreamSimple, agent.WithInitialState(agent.AgentState{
+	createRuntime := func(_ string, _ CLIArgs, prior engine.AgentMessages) (runtimeInputs, error) {
+		created := engine.NewAgent(
+			provider.StreamSimple, engine.WithInitialState(engine.AgentState{
 				SystemPrompt: "test", Model: provider.GetModel(), Messages: prior,
 			}),
-			agent.WithConvertToLLM(codingagent.ConvertToLLM),
+			engine.WithConvertToLLM(agent.ConvertToLLM),
 		)
 		return runtimeInputs{Agent: created, Extensions: registry}, nil
 	}
@@ -1482,15 +1482,15 @@ streamComplete:
 	}
 }
 
-func fauxRuntimeFactory(provider *faux.Provider) func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
-	return func(_ string, _ CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
-		created := agent.NewAgent(
-			provider.StreamSimple, agent.WithInitialState(agent.AgentState{
+func fauxRuntimeFactory(provider *faux.Provider) func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error) {
+	return func(_ string, _ CLIArgs, prior engine.AgentMessages) (runtimeInputs, error) {
+		created := engine.NewAgent(
+			provider.StreamSimple, engine.WithInitialState(engine.AgentState{
 				SystemPrompt: "test",
 				Model:        provider.GetModel(),
 				Messages:     prior,
 			}),
-			agent.WithConvertToLLM(codingagent.ConvertToLLM),
+			engine.WithConvertToLLM(agent.ConvertToLLM),
 		)
 		return runtimeInputs{Agent: created}, nil
 	}

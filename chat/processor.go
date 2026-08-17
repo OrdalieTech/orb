@@ -13,10 +13,10 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/OrdalieTech/orb/agent"
+	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
-	"github.com/OrdalieTech/orb/codingagent"
-	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
 )
 
 // AllowAll is an explicit opt-out authorizer accepting every message.
@@ -364,7 +364,7 @@ func (p *Processor) runPromptTurn(ctx context.Context, adapter Adapter, conv *Co
 	// model as plain text, never operator-installed extension commands,
 	// skills, or prompt templates from the shared agent dir.
 	expand := false
-	promptErr := conv.Session.PromptWithOptions(promptCtx, text, &codingagent.PromptOptions{
+	promptErr := conv.Session.PromptWithOptions(promptCtx, text, &agent.PromptOptions{
 		ExpandPromptTemplates: &expand,
 		Images:                images,
 	})

@@ -13,13 +13,13 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/modes"
+	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/modes"
-	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
 	"github.com/OrdalieTech/orb/conformance/runner"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 type f7Scenario struct {
@@ -41,14 +41,14 @@ type f7Step struct {
 }
 
 type f7Host struct {
-	session *codingagent.SessionRuntime
+	session *agent.SessionRuntime
 }
 
-func (host *f7Host) Session() *codingagent.SessionRuntime { return host.session }
-func (*f7Host) NewSession(string) (bool, error)           { return true, nil }
-func (*f7Host) SwitchSession(string) (bool, error)        { return true, nil }
-func (*f7Host) Fork(string, bool) (string, bool, error)   { return "", true, nil }
-func (host *f7Host) Dispose()                             { host.session.Dispose() }
+func (host *f7Host) Session() *agent.SessionRuntime     { return host.session }
+func (*f7Host) NewSession(string) (bool, error)         { return true, nil }
+func (*f7Host) SwitchSession(string) (bool, error)      { return true, nil }
+func (*f7Host) Fork(string, bool) (string, bool, error) { return "", true, nil }
+func (host *f7Host) Dispose()                           { host.session.Dispose() }
 
 func TestF7RPCTranscriptMatchesUpstream(t *testing.T) {
 	manifest := runner.LoadManifest(t, "F7")
@@ -229,7 +229,7 @@ func f7ExpectedLines(t testing.TB, scenario f7Scenario, trace [][]byte) map[stri
 	return result
 }
 
-func newF7Runtime(t testing.TB, scenario f7Scenario) *codingagent.SessionRuntime {
+func newF7Runtime(t testing.TB, scenario f7Scenario) *agent.SessionRuntime {
 	t.Helper()
 	provider := faux.New(faux.Options{
 		API: "faux", Provider: "faux", TokenSize: faux.FixedTokenSize(scenario.TokenSize),
@@ -275,14 +275,14 @@ func newF7Runtime(t testing.TB, scenario f7Scenario) *codingagent.SessionRuntime
 		t.Fatal(err)
 	}
 	model := provider.GetModel()
-	created := agent.NewAgent(
-		provider.StreamSimple, agent.WithInitialState(agent.AgentState{
-			Model: model, SystemPrompt: scenario.SystemPrompt, Messages: agent.AgentMessages{}, Tools: []agent.AgentTool{},
+	created := engine.NewAgent(
+		provider.StreamSimple, engine.WithInitialState(engine.AgentState{
+			Model: model, SystemPrompt: scenario.SystemPrompt, Messages: engine.AgentMessages{}, Tools: []engine.AgentTool{},
 		}),
-		agent.WithConvertToLLM(codingagent.ConvertToLLM),
-		agent.WithClock(func() int64 { return scenario.FixedNow }),
+		engine.WithConvertToLLM(agent.ConvertToLLM),
+		engine.WithClock(func() int64 { return scenario.FixedNow }),
 	)
-	runtime, err := codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
+	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings, StreamFn: provider.StreamSimple,
 		Clock: func() int64 { return scenario.FixedNow },
 		GetAPIKey: func(context.Context, ai.ProviderID) (*string, error) {

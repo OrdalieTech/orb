@@ -9,40 +9,40 @@ import (
 	"sync"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/agent/modes"
+	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/extensions"
-	"github.com/OrdalieTech/orb/codingagent/modes"
-	"github.com/OrdalieTech/orb/codingagent/tools"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 type runtimeInputs struct {
-	Agent            *agent.Agent
+	Agent            *engine.Agent
 	Settings         *config.SettingsManager
-	StreamFn         agent.StreamFn
+	StreamFn         engine.StreamFn
 	AvailableModels  func() []ai.Model
-	ScopedModels     []codingagent.ScopedModel
-	GetAPIKey        agent.GetAPIKeyFunc
-	GetRequestAuth   agent.GetRequestAuthFunc
-	GetModelHeaders  agent.GetModelHeadersFunc
-	SlashResolver    *codingagent.SlashResolver
+	ScopedModels     []agent.ScopedModel
+	GetAPIKey        engine.GetAPIKeyFunc
+	GetRequestAuth   engine.GetRequestAuthFunc
+	GetModelHeaders  engine.GetModelHeadersFunc
+	SlashResolver    *agent.SlashResolver
 	ModelRegistry    *config.ModelRegistry
 	Extensions       *extensions.Registry
-	BaseTools        []agent.AgentTool
+	BaseTools        []engine.AgentTool
 	ActiveToolNames  []string
 	AllowedTools     *[]string
 	ExcludedTools    []string
-	RebuildBaseTools func() ([]agent.AgentTool, error)
-	PromptOptions    codingagent.SystemPromptOptions
+	RebuildBaseTools func() ([]engine.AgentTool, error)
+	PromptOptions    agent.SystemPromptOptions
 	Auth             *config.AuthStorage
 	RuntimeAuth      *runtimeCredentials
 	Diagnostics      []modes.StartupDiagnostic
 	// ResourceDiagnostics carries skill/prompt resource warnings, shown in
 	// interactive mode only; upstream print/RPC modes print none of them.
 	ResourceDiagnostics []modes.StartupDiagnostic
-	ResourceLoader      codingagent.ResourceLoader
+	ResourceLoader      agent.ResourceLoader
 }
 
 // runtimeCredentials is the Go port of upstream RuntimeCredentials: CLI API
@@ -139,7 +139,7 @@ func (credentials *runtimeCredentials) Delete(ctx context.Context, providerID st
 	return credentials.store.Delete(ctx, providerID)
 }
 
-func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMessages) (runtimeInputs, error) {
+func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMessages) (runtimeInputs, error) {
 	args = normalizeRuntimeCLIArgs(args)
 	agentDir, err := config.GetAgentDir()
 	if err != nil {
@@ -171,7 +171,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		}
 		trust = resolved
 	}
-	packageManager := codingagent.NewPackageManager(codingagent.PackageManagerOptions{
+	packageManager := agent.NewPackageManager(agent.PackageManagerOptions{
 		CWD: cwd, AgentDir: agentDir, Settings: settings,
 	})
 	resolvedPaths, err := packageManager.Resolve(nil)
@@ -190,20 +190,20 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 	}
 	hasExtensions := hasNonControlExtensions(extensionRegistry)
 	diagnostics = append(diagnostics, extensionDiagnostics...)
-	var resourceLoader codingagent.ResourceLoader
-	var resources codingagent.Resources
+	var resourceLoader agent.ResourceLoader
+	var resources agent.Resources
 	var resourceDiagnostics []modes.StartupDiagnostic
-	var activeTools, baseTools []agent.AgentTool
+	var activeTools, baseTools []engine.AgentTool
 	var activeNames, initialNames, baseToolNames []string
 	var allowedTools *[]string
 	var excludedTools []string
-	var promptOptions codingagent.SystemPromptOptions
+	var promptOptions agent.SystemPromptOptions
 	systemPrompt := ""
 	// metadataOnly runs (--help, --list-models) need only extension flag and
 	// provider metadata: skill/prompt/theme discovery, tool construction and the
 	// system prompt are skipped, and ResourceDiagnostics stays empty.
 	if !args.metadataOnly {
-		defaultLoader, err := codingagent.NewDefaultResourceLoader(codingagent.DefaultResourceLoaderOptions{
+		defaultLoader, err := agent.NewDefaultResourceLoader(agent.DefaultResourceLoaderOptions{
 			CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
 			AdditionalSkillPaths: args.Skills, AdditionalPromptTemplatePaths: args.PromptTemplates, AdditionalThemePaths: args.Themes,
 			PackageSkillPaths: enabledPackageResourcePaths(resolvedPaths.Skills), PackagePromptTemplatePaths: enabledPackageResourcePaths(resolvedPaths.Prompts),
@@ -222,7 +222,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		extensionRegistry = defaultLoader.GetExtensions()
 		skills := defaultLoader.GetSkills()
 		prompts := defaultLoader.GetPrompts()
-		resources = codingagent.Resources{
+		resources = agent.Resources{
 			ContextFiles: defaultLoader.GetAgentsFiles().AgentsFiles, SystemPrompt: defaultLoader.GetSystemPrompt(),
 			AppendSystemPrompt: defaultLoader.GetAppendSystemPrompt(), Skills: skills.Skills, PromptTemplates: prompts.Prompts,
 		}
@@ -263,8 +263,8 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		for _, tool := range baseTools {
 			baseToolNames = append(baseToolNames, tool.Spec().Name)
 		}
-		snippets, guidelines := codingagent.BuiltInToolPromptData(activeNames)
-		promptOptions = codingagent.SystemPromptOptions{
+		snippets, guidelines := agent.BuiltInToolPromptData(activeNames)
+		promptOptions = agent.SystemPromptOptions{
 			CustomPrompt:       resources.SystemPrompt,
 			SelectedTools:      activeNames,
 			ToolSnippets:       snippets,
@@ -274,7 +274,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 			ContextFiles:       resources.ContextFiles,
 			Skills:             resources.Skills,
 		}
-		systemPrompt = codingagent.BuildSystemPrompt(promptOptions)
+		systemPrompt = agent.BuildSystemPrompt(promptOptions)
 	}
 	if extensionRegistry == nil {
 		extensionRegistry = extensions.NewRegistry(cwd)
@@ -349,7 +349,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		}
 		return registry.StreamSimple(ctx, model, request, &merged)
 	}
-	state := agent.AgentState{
+	state := engine.AgentState{
 		SystemPrompt:  systemPrompt,
 		Model:         model,
 		ThinkingLevel: thinking,
@@ -390,31 +390,31 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 		}
 		return result
 	}
-	created := agent.NewAgent(
-		streamFn, agent.WithInitialState(state),
-		agent.WithConvertToLLM(codingagent.ConvertToLLMWithBlockImages(settings.GetBlockImages)),
-		agent.WithSteeringMode(agent.QueueMode(settings.GetSteeringMode())),
-		agent.WithFollowUpMode(agent.QueueMode(settings.GetFollowUpMode())),
-		agent.WithSimpleStreamOptions(ai.SimpleStreamOptions{
+	created := engine.NewAgent(
+		streamFn, engine.WithInitialState(state),
+		engine.WithConvertToLLM(agent.ConvertToLLMWithBlockImages(settings.GetBlockImages)),
+		engine.WithSteeringMode(engine.QueueMode(settings.GetSteeringMode())),
+		engine.WithFollowUpMode(engine.QueueMode(settings.GetFollowUpMode())),
+		engine.WithSimpleStreamOptions(ai.SimpleStreamOptions{
 			StreamOptions: ai.StreamOptions{
 				Transport: &transport, TimeoutMS: providerRetry.TimeoutMS, MaxRetries: providerRetry.MaxRetries,
 				MaxRetryDelayMS: &maxRetryDelay,
 			},
 			ThinkingBudgets: settings.GetThinkingBudgets(),
 		}),
-		agent.WithAPIKeyResolver(resolveAPIKey),
-		agent.WithRequestAuthResolver(resolveRequestAuth),
-		agent.WithModelHeadersResolver(resolveModelHeaders),
+		engine.WithAPIKeyResolver(resolveAPIKey),
+		engine.WithRequestAuthResolver(resolveRequestAuth),
+		engine.WithModelHeadersResolver(resolveModelHeaders),
 	)
 	return runtimeInputs{
 		Agent: created, Settings: settings, StreamFn: streamFn, AvailableModels: availableModels, ScopedModels: scopedModels, GetAPIKey: resolveAPIKey,
 		GetRequestAuth:  resolveRequestAuth,
 		GetModelHeaders: resolveModelHeaders,
-		SlashResolver:   &codingagent.SlashResolver{Skills: resources.Skills, PromptTemplates: resources.PromptTemplates},
+		SlashResolver:   &agent.SlashResolver{Skills: resources.Skills, PromptTemplates: resources.PromptTemplates},
 		ModelRegistry:   registry,
 		Extensions:      extensionRegistry, BaseTools: baseTools, ActiveToolNames: initialNames,
 		AllowedTools: allowedTools, ExcludedTools: excludedTools, PromptOptions: promptOptions,
-		RebuildBaseTools: func() ([]agent.AgentTool, error) {
+		RebuildBaseTools: func() ([]engine.AgentTool, error) {
 			return createBuiltInTools(cwd, baseToolNames, settings)
 		},
 		Auth:                authStorage,
@@ -427,7 +427,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages agent.AgentMess
 
 // startupResourceDiagnostic keeps the structure a resource diagnostic is born
 // with; prompt collisions display under their slash-command spelling.
-func startupResourceDiagnostic(diagnostic codingagent.ResourceDiagnostic) modes.StartupDiagnostic {
+func startupResourceDiagnostic(diagnostic agent.ResourceDiagnostic) modes.StartupDiagnostic {
 	if diagnostic.Type == "collision" && diagnostic.Collision != nil {
 		name := diagnostic.Collision.Name
 		if diagnostic.Collision.ResourceType == "prompt" {
@@ -466,7 +466,7 @@ func filterExcludedTools(names, excluded []string) []string {
 
 // enabledPackageResourcePaths keeps enabled package-contributed resources;
 // local and auto-discovered entries stay with the existing resource loaders.
-func enabledPackageResourcePaths(resources []codingagent.ResolvedResource) []string {
+func enabledPackageResourcePaths(resources []agent.ResolvedResource) []string {
 	paths := make([]string, 0, len(resources))
 	for _, resource := range resources {
 		if resource.Enabled && resource.Metadata.Origin == "package" {
@@ -476,11 +476,11 @@ func enabledPackageResourcePaths(resources []codingagent.ResolvedResource) []str
 	return paths
 }
 
-func enabledPackageThemePaths(resources []codingagent.ResolvedResource) []codingagent.ResourcePath {
-	paths := make([]codingagent.ResourcePath, 0, len(resources))
+func enabledPackageThemePaths(resources []agent.ResolvedResource) []agent.ResourcePath {
+	paths := make([]agent.ResourcePath, 0, len(resources))
 	for _, resource := range resources {
 		if resource.Enabled && resource.Metadata.Origin == "package" {
-			paths = append(paths, codingagent.ResourcePath{Path: resource.Path, Metadata: resource.Metadata})
+			paths = append(paths, agent.ResourcePath{Path: resource.Path, Metadata: resource.Metadata})
 		}
 	}
 	return paths
@@ -490,7 +490,7 @@ func resolveRuntimeModel(
 	args CLIArgs,
 	settings *config.SettingsManager,
 	registry *config.ModelRegistry,
-) (*ai.Model, *ai.ModelThinkingLevel, []codingagent.ScopedModel, []string, error) {
+) (*ai.Model, *ai.ModelThinkingLevel, []agent.ScopedModel, []string, error) {
 	args = normalizeRuntimeCLIArgs(args)
 	all := registry.Models()
 	available, err := registry.AvailableWithError(nil)
@@ -502,10 +502,10 @@ func resolveRuntimeModel(
 	if patterns == nil {
 		patterns = settings.GetEnabledModels()
 	}
-	var scoped []codingagent.ScopedModel
+	var scoped []agent.ScopedModel
 	if len(patterns) > 0 {
-		var warnings []codingagent.ModelDiagnostic
-		scoped, warnings = codingagent.ResolveModelScope(patterns, available)
+		var warnings []agent.ModelDiagnostic
+		scoped, warnings = agent.ResolveModelScope(patterns, available)
 		for _, warning := range warnings {
 			diagnostics = append(diagnostics, warning.Message)
 		}
@@ -514,7 +514,7 @@ func resolveRuntimeModel(
 		selected := 0
 		defaultProvider, defaultID := settings.GetDefaultProvider(), settings.GetDefaultModel()
 		if defaultProvider != "" && defaultID != "" {
-			if index := slices.IndexFunc(scoped, func(candidate codingagent.ScopedModel) bool {
+			if index := slices.IndexFunc(scoped, func(candidate agent.ScopedModel) bool {
 				return string(candidate.Model.Provider) == defaultProvider && candidate.Model.ID == defaultID
 			}); index >= 0 {
 				selected = index
@@ -542,7 +542,7 @@ func resolveRuntimeModel(
 				level := ai.ModelThinkingLevel(*args.Thinking)
 				cliThinking = &level
 			}
-			resolved := codingagent.ResolveCLIModel(provider, pattern, cliThinking, all, func(provider string) bool {
+			resolved := agent.ResolveCLIModel(provider, pattern, cliThinking, all, func(provider string) bool {
 				return registry.HasConfiguredAuth(provider, nil)
 			})
 			if resolved.Error != "" {
@@ -563,7 +563,7 @@ func resolveRuntimeModel(
 			return &model, nil, scoped, diagnostics, nil
 		}
 	}
-	model := codingagent.PreferredAvailableModel(available)
+	model := agent.PreferredAvailableModel(available)
 	if model == nil {
 		if args.allowNoModel || args.useUnknownModel {
 			if args.allowNoModel {
@@ -592,27 +592,27 @@ func normalizeRuntimeCLIArgs(args CLIArgs) CLIArgs {
 func requestAuthResolverWithCredentials(
 	registry *config.ModelRegistry,
 	credentials aiauth.CredentialStore,
-) agent.GetRequestAuthFunc {
+) engine.GetRequestAuthFunc {
 	var baseResolver func(context.Context, ai.ProviderID) (*config.RequestAuth, error)
 	if registry != nil {
 		baseResolver = registry.DefaultRequestAuthResolver(credentials)
 	} else {
 		baseResolver = config.FallbackRequestAuthResolver(credentials)
 	}
-	return func(ctx context.Context, providerID ai.ProviderID) (*agent.RequestAuth, error) {
+	return func(ctx context.Context, providerID ai.ProviderID) (*engine.RequestAuth, error) {
 		resolved, err := baseResolver(ctx, providerID)
 		if err != nil || resolved == nil {
 			return nil, err
 		}
-		return &agent.RequestAuth{
+		return &engine.RequestAuth{
 			APIKey: resolved.APIKey, Headers: resolved.Headers,
 			Env: resolved.Env, BaseURL: resolved.BaseURL,
 		}, nil
 	}
 }
 
-func createBuiltInTools(cwd string, names []string, settings *config.SettingsManager) ([]agent.AgentTool, error) {
-	result := make([]agent.AgentTool, 0, len(names))
+func createBuiltInTools(cwd string, names []string, settings *config.SettingsManager) ([]engine.AgentTool, error) {
+	result := make([]engine.AgentTool, 0, len(names))
 	for _, name := range names {
 		switch name {
 		case "read":

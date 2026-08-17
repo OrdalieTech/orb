@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 func TestResolveSessionArgumentPrefersLocalExactThenPrefix(t *testing.T) {
@@ -232,7 +232,7 @@ func TestRunCLIExportRoutesBeforeRuntime(t *testing.T) {
 	root := t.TempDir()
 	manager := createCLIStoredSession(t, root, filepath.Join(root, "sessions"), "export-route")
 	createdRuntime := false
-	dependencies := cliDependencies{createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+	dependencies := cliDependencies{createRuntime: func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error) {
 		createdRuntime = true
 		return runtimeInputs{}, nil
 	}}
@@ -317,7 +317,7 @@ func TestRunCLIResumeRoutesBeforeInteractiveDispatch(t *testing.T) {
 			Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: &stderr, StdinTTY: true, StdoutTTY: true,
 		}, cliDependencies{
 			selectSession: selector,
-			createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+			createRuntime: func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error) {
 				createdRuntime = true
 				return runtimeInputs{}, errors.New("interactive fixture stop")
 			},
@@ -516,7 +516,7 @@ func TestRunCLIMissingSessionCWDModeSplit(t *testing.T) {
 		var stderr bytes.Buffer
 		code := runCLIWithDependencies(context.Background(), []string{"-p", "--session", path, "prompt"}, cliStreams{
 			Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: &stderr, StdinTTY: true,
-		}, cliDependencies{createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+		}, cliDependencies{createRuntime: func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error) {
 			created = true
 			return runtimeInputs{}, nil
 		}})
@@ -539,7 +539,7 @@ func TestRunCLIMissingSessionCWDModeSplit(t *testing.T) {
 				}
 				return current, true, nil
 			},
-			createRuntime: func(cwd string, _ CLIArgs, _ agent.AgentMessages) (runtimeInputs, error) {
+			createRuntime: func(cwd string, _ CLIArgs, _ engine.AgentMessages) (runtimeInputs, error) {
 				createdCWD = cwd
 				return runtimeInputs{}, errors.New("interactive fixture stop")
 			},
@@ -557,7 +557,7 @@ func TestRunCLIMissingSessionCWDModeSplit(t *testing.T) {
 			selectMissingSessionCWD: func(context.Context, *MissingSessionCWDError) (string, bool, error) {
 				return "", false, nil
 			},
-			createRuntime: func(string, CLIArgs, agent.AgentMessages) (runtimeInputs, error) {
+			createRuntime: func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error) {
 				created = true
 				return runtimeInputs{}, nil
 			},
@@ -596,7 +596,7 @@ func runCLIFauxSessionCommand(t *testing.T, argv []string) string {
 	var stdout, stderr bytes.Buffer
 	code := runCLIWithDependencies(context.Background(), argv, cliStreams{
 		Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr, StdinTTY: true,
-	}, cliDependencies{createRuntime: func(cwd string, args CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
+	}, cliDependencies{createRuntime: func(cwd string, args CLIArgs, prior engine.AgentMessages) (runtimeInputs, error) {
 		gotCWD = cwd
 		return baseFactory(cwd, args, prior)
 	}})

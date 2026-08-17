@@ -16,14 +16,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/agent/modes"
+	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/providers"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/extensions"
-	"github.com/OrdalieTech/orb/codingagent/modes"
-	"github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 // requestAuthResolverForProvider is a test-only helper mirroring the CLI's
@@ -34,7 +34,7 @@ func requestAuthResolverForProvider(
 	cliProvider *ai.ProviderID,
 	registry *config.ModelRegistry,
 	credentials aiauth.CredentialStore,
-) agent.GetRequestAuthFunc {
+) engine.GetRequestAuthFunc {
 	runtimeAuth := newRuntimeCredentials(credentials)
 	if args.APIKey != nil && *args.APIKey != "" {
 		providerID := ""
@@ -49,8 +49,8 @@ func requestAuthResolverForProvider(
 	if args.APIKey == nil || *args.APIKey == "" || cliProvider != nil {
 		return base
 	}
-	return func(ctx context.Context, providerID ai.ProviderID) (*agent.RequestAuth, error) {
-		return &agent.RequestAuth{APIKey: args.APIKey}, nil
+	return func(ctx context.Context, providerID ai.ProviderID) (*engine.RequestAuth, error) {
+		return &engine.RequestAuth{APIKey: args.APIKey}, nil
 	}
 }
 
@@ -127,7 +127,7 @@ func TestCreateRuntimeInputsUsesResolvedResourcesAndToolSelection(t *testing.T) 
 		ExcludeTools:   []string{"grep"},
 		ProjectTrusted: boolPointer(true),
 	}
-	runtime, err := createRuntimeInputs(cwd, args, agent.AgentMessages{})
+	runtime, err := createRuntimeInputs(cwd, args, engine.AgentMessages{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestCreateRuntimeInputsLoadsEnabledPackageThemesWithResolvedSourceInfo(t *t
 	if !ok {
 		t.Fatal("resolve runtime test path")
 	}
-	builtin, err := os.ReadFile(filepath.Join(filepath.Dir(testFile), "..", "..", "codingagent", "modes", "theme", "dark.json"))
+	builtin, err := os.ReadFile(filepath.Join(filepath.Dir(testFile), "..", "..", "agent", "modes", "theme", "dark.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestCreateRuntimeInputsLoadsEnabledPackageThemesWithResolvedSourceInfo(t *t
 	}
 	t.Setenv(config.EnvAgentDir, agentDir)
 
-	inputs, err := createRuntimeInputs(cwd, CLIArgs{allowNoModel: true}, agent.AgentMessages{})
+	inputs, err := createRuntimeInputs(cwd, CLIArgs{allowNoModel: true}, engine.AgentMessages{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestCreateRuntimeInputsKeepsExplicitResourcesWhenDiscoveryIsDisabled(t *tes
 	if !ok {
 		t.Fatal("resolve runtime test path")
 	}
-	builtin, err := os.ReadFile(filepath.Join(filepath.Dir(testFile), "..", "..", "codingagent", "modes", "theme", "dark.json"))
+	builtin, err := os.ReadFile(filepath.Join(filepath.Dir(testFile), "..", "..", "agent", "modes", "theme", "dark.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestCreateRuntimeInputsKeepsExplicitResourcesWhenDiscoveryIsDisabled(t *tes
 		Extensions:   []string{explicitExtension},
 		NoThemes:     true,
 		Themes:       []string{themePath},
-	}, agent.AgentMessages{})
+	}, engine.AgentMessages{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +326,7 @@ func TestCreateRuntimeInputsScopesCLIAPIKeyToSelectedProvider(t *testing.T) {
 	}
 	t.Setenv(config.EnvAgentDir, agentDir)
 	provider, modelID, key := "local", "one", "runtime-key"
-	inputs, err := createRuntimeInputs(root, CLIArgs{Provider: &provider, Model: &modelID, APIKey: &key}, agent.AgentMessages{})
+	inputs, err := createRuntimeInputs(root, CLIArgs{Provider: &provider, Model: &modelID, APIKey: &key}, engine.AgentMessages{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,7 +365,7 @@ func TestNoBuiltinToolsKeepsBuiltinsDiscoverableForExtensions(t *testing.T) {
 	t.Setenv(config.EnvAgentDir, agentDir)
 	provider := "openai"
 	model := "gpt-test"
-	inputs, err := createRuntimeInputs(root, CLIArgs{Provider: &provider, Model: &model, NoBuiltinTools: true}, agent.AgentMessages{})
+	inputs, err := createRuntimeInputs(root, CLIArgs{Provider: &provider, Model: &model, NoBuiltinTools: true}, engine.AgentMessages{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,7 +503,7 @@ func TestCreateRuntimeInputsResolvesConfiguredHeadersAgainstStoredAuthEnvironmen
 	providerID, modelID := "google-vertex", "fixture-vertex"
 	runtime, err := createRuntimeInputs(root, CLIArgs{
 		Provider: &providerID, Model: &modelID, Tools: []string{"read"},
-	}, agent.AgentMessages{})
+	}, engine.AgentMessages{})
 	if err != nil {
 		t.Fatal(err)
 	}

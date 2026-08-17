@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/conformance/runner"
 )
 
@@ -160,7 +160,7 @@ func TestWP360GitURLParsing(t *testing.T) {
 		t.Fatal("no git URL cases")
 	}
 	for _, testCase := range fixture.GitURLCases {
-		parsed := codingagent.ParseGitURL(testCase.Input)
+		parsed := agent.ParseGitURL(testCase.Input)
 		if testCase.Expected == nil {
 			if parsed != nil {
 				t.Errorf("ParseGitURL(%q) = %+v, want nil", testCase.Input, parsed)
@@ -221,11 +221,11 @@ func TestWP360Resolve(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			manager := codingagent.NewPackageManager(codingagent.PackageManagerOptions{
+			manager := agent.NewPackageManager(agent.PackageManagerOptions{
 				CWD: cwd, AgentDir: agentDir, Settings: settings,
 			})
-			resolved, err := manager.Resolve(func(string) (codingagent.MissingSourceAction, error) {
-				return codingagent.MissingSourceSkip, nil
+			resolved, err := manager.Resolve(func(string) (agent.MissingSourceAction, error) {
+				return agent.MissingSourceSkip, nil
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -251,7 +251,7 @@ func TestWP360Resolve(t *testing.T) {
 	}
 }
 
-func wp360NormalizeResources(resources []codingagent.ResolvedResource, root string) []wp360Resource {
+func wp360NormalizeResources(resources []agent.ResolvedResource, root string) []wp360Resource {
 	normalized := make([]wp360Resource, 0, len(resources))
 	for _, resource := range resources {
 		entry := wp360Resource{Path: wp360Relativize(resource.Path, root), Enabled: resource.Enabled}
@@ -295,7 +295,7 @@ func TestWP360SettingsMutations(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			manager := codingagent.NewPackageManager(codingagent.PackageManagerOptions{
+			manager := agent.NewPackageManager(agent.PackageManagerOptions{
 				CWD: cwd, AgentDir: agentDir, Settings: settings,
 			})
 

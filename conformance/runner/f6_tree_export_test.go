@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/orb/codingagent/session"
-	"github.com/OrdalieTech/orb/codingagent/session/exporthtml"
+	"github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/agent/session/exporthtml"
 	"github.com/OrdalieTech/orb/conformance/runner"
 )
 
@@ -605,7 +605,7 @@ var (
 func f6WP320HTMLProjection(t testing.TB, html string) f6HTMLProjection {
 	t.Helper()
 	repoRoot := filepath.Clean(filepath.Join(runner.FixtureRoot(), "..", ".."))
-	assetRoot := filepath.Join(repoRoot, "codingagent", "session", "exporthtml", "assets")
+	assetRoot := filepath.Join(repoRoot, "agent", "session", "exporthtml", "assets")
 	assetFiles := map[string]string{
 		"templateHTML": "template.html", "templateCSS": "template.css", "templateJS": "template.js",
 		"markedJS": filepath.Join("vendor", "marked.min.js"), "highlightJS": filepath.Join("vendor", "highlight.min.js"),

@@ -34,7 +34,7 @@ lint: $(GOLANGCI_LINT)
 	$(LINT_ENV) $(GOLANGCI_LINT) run
 
 nightly-live:
-	$(GO_ENV) CGO_ENABLED=0 ORB_NIGHTLY_LIVE=1 go test -v -count=1 -timeout=20m ./codingagent -run '^TestNightlyLiveSuite$$'
+	$(GO_ENV) CGO_ENABLED=0 ORB_NIGHTLY_LIVE=1 go test -v -count=1 -timeout=20m ./agent -run '^TestNightlyLiveSuite$$'
 
 $(GOLANGCI_LINT):
 	mkdir -p $(dir $@)
@@ -50,10 +50,10 @@ upstream:
 
 product-assets: upstream
 	@node conformance/extract/materialize-product-assets.ts "$(UPSTREAM_DIR)" "$(CURDIR)"
-	@gzip -9 -n -c codingagent/modes/assets/CHANGELOG.md > codingagent/modes/assets/CHANGELOG.md.gz
+	@gzip -9 -n -c agent/modes/assets/CHANGELOG.md > agent/modes/assets/CHANGELOG.md.gz
 
 product-assets-check: upstream
-	@cmp "$(UPSTREAM_DIR)/packages/coding-agent/CHANGELOG.md" codingagent/modes/assets/CHANGELOG.md
+	@cmp "$(UPSTREAM_DIR)/packages/coding-agent/CHANGELOG.md" agent/modes/assets/CHANGELOG.md
 
 ensure-upstream-fixture-tools: upstream
 	@if [ ! -x "$(UPSTREAM_DIR)/node_modules/.bin/tsx" ] || \
@@ -95,8 +95,8 @@ fixtures: ensure-upstream-fixture-tools product-assets
 # in those files are frozen upstream captures and are never rewritten.
 fixtures-tui:
 	@ORB_UPDATE_F12=1 $(GO_ENV) CGO_ENABLED=0 go test -count=1 ./conformance/runner -run 'TestF12'
-	@ORB_UPDATE_F12=1 $(GO_ENV) CGO_ENABLED=0 go test -count=1 ./codingagent/modes -run 'TestF12|TestWP450'
-	@$(GO_ENV) CGO_ENABLED=0 go test -count=1 ./conformance/runner ./codingagent/modes ./codingagent -run 'TestF12|TestWP450|TestSnapshotCodec'
+	@ORB_UPDATE_F12=1 $(GO_ENV) CGO_ENABLED=0 go test -count=1 ./agent/modes -run 'TestF12|TestWP450'
+	@$(GO_ENV) CGO_ENABLED=0 go test -count=1 ./conformance/runner ./agent/modes ./agent -run 'TestF12|TestWP450|TestSnapshotCodec'
 
 # The reciprocal TS-reads-Go gates run first: as the last command of its recipe
 # line, a fixture diff aborts the target, which previously skipped them silently.
@@ -107,10 +107,10 @@ fixtures-tui:
 # drift fails here, regeneration is the explicit `make fixtures-tui`.
 fixtures-check: ensure-upstream-fixture-tools product-assets-check
 	@ORB_F6_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./conformance/runner -run TestF6SessionWriteAndProjectionMatchUpstream
-	@ORB_AUTH_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./codingagent/config -run TestAuthStorageConformance
+	@ORB_AUTH_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./agent/config -run TestAuthStorageConformance
 	@$(GO_ENV) CGO_ENABLED=0 go test -count=1 ./conformance/runner -run 'TestF12|TestSnapshotCodec'
-	@$(GO_ENV) CGO_ENABLED=0 go test -count=1 ./codingagent/modes -run 'TestF12|TestWP450'
-	@$(GO_ENV) CGO_ENABLED=0 go test -count=1 ./codingagent -run 'TestF12'
+	@$(GO_ENV) CGO_ENABLED=0 go test -count=1 ./agent/modes -run 'TestF12|TestWP450'
+	@$(GO_ENV) CGO_ENABLED=0 go test -count=1 ./agent -run 'TestF12'
 	@fixture_tmp=$$(mktemp -d); \
 		trap 'rm -rf "$$fixture_tmp"' EXIT; \
 		cd "$(UPSTREAM_DIR)" && node --import tsx "$(CURDIR)/conformance/extract/generate.ts" "$$fixture_tmp" $(UPSTREAM_COMMIT); \

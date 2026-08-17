@@ -12,10 +12,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/orb/agent"
-	agentharness "github.com/OrdalieTech/orb/agent/harness"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/conformance/runner"
+	"github.com/OrdalieTech/orb/engine"
+	agentharness "github.com/OrdalieTech/orb/engine/harness"
 )
 
 // f6FixedNowMS is the extract script's frozen clock ("2026-02-03T04:05:06.789Z").
@@ -561,8 +561,8 @@ func TestF6HarnessContextTransformsAndProjectorsMatchUpstream(t *testing.T) {
 		}
 		projectorPath[index] = entry
 	}
-	projectedUser := func(text string, timestamp int) agent.AgentMessages {
-		return agent.AgentMessages{json.RawMessage(f6V4User(text, timestamp))}
+	projectedUser := func(text string, timestamp int) engine.AgentMessages {
+		return engine.AgentMessages{json.RawMessage(f6V4User(text, timestamp))}
 	}
 	got := map[string]any{
 		"default": f6HarnessContextObservation(t, agentharness.BuildSessionV4Context(projectorPath)),
@@ -579,10 +579,10 @@ func TestF6HarnessContextTransformsAndProjectorsMatchUpstream(t *testing.T) {
 				},
 			},
 			EntryProjectors: map[string]agentharness.SessionV4ContextProjector{
-				"constructor_state": func(agentharness.SessionV4Entry, int, []agentharness.SessionV4Entry) agent.AgentMessages {
+				"constructor_state": func(agentharness.SessionV4Entry, int, []agentharness.SessionV4Entry) engine.AgentMessages {
 					return projectedUser("constructor projector", 20)
 				},
-				"call_state": func(agentharness.SessionV4Entry, int, []agentharness.SessionV4Entry) agent.AgentMessages {
+				"call_state": func(agentharness.SessionV4Entry, int, []agentharness.SessionV4Entry) engine.AgentMessages {
 					return projectedUser("call projector", 21)
 				},
 			},

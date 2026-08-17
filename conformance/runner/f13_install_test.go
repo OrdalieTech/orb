@@ -25,10 +25,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/extensions"
-	extensionhost "github.com/OrdalieTech/orb/codingagent/extensions/host"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
 )
 
 func TestF13UserShapedInstall(t *testing.T) {
@@ -70,7 +70,7 @@ func TestF13UserShapedInstall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager := codingagent.NewPackageManager(codingagent.PackageManagerOptions{
+	manager := agent.NewPackageManager(agent.PackageManagerOptions{
 		CWD: project, AgentDir: agentDir, Settings: settings,
 	})
 	source := "npm:" + f13PluginName + "@" + f13PluginVersion

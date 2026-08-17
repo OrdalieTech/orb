@@ -8,14 +8,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/orb/codingagent/config"
+	"github.com/OrdalieTech/orb/agent/config"
 )
 
 // Regression for the project-trust bypass: untrusted project mcpServers must
 // not spawn on `pi --help` or on unknown-flag invocations. Upstream gates
 // every runtime-creation path behind resolveProjectTrusted, and the MCP
 // contract keeps project entries invisible until the project-trust flow
-// accepts the project (codingagent/mcp/README.md).
+// accepts the project (agent/mcp/README.md).
 func TestHelpAndUnknownFlagsDoNotSpawnUntrustedProjectMCPServers(t *testing.T) {
 	for _, test := range []struct {
 		name     string

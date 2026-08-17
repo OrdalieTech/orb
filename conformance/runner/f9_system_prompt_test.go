@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/orb/codingagent"
+	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/conformance/runner"
 )
 
@@ -100,7 +100,7 @@ func TestF9SystemPromptMatchesUpstreamWithOrbIdentity(t *testing.T) {
 	for _, fixtureCase := range fixture.PromptCases {
 		fixtureCase := fixtureCase
 		t.Run(fixtureCase.Name, func(t *testing.T) {
-			got := codingagent.BuildSystemPrompt(codingagent.SystemPromptOptions{
+			got := agent.BuildSystemPrompt(agent.SystemPromptOptions{
 				CustomPrompt:       fixtureCase.Input.CustomPrompt,
 				SelectedTools:      fixtureCase.Input.SelectedTools,
 				ToolSnippets:       fixtureCase.Input.ToolSnippets,
@@ -142,7 +142,7 @@ func TestF9ResourceDiscoveryMatchesUpstreamWithOrbIdentity(t *testing.T) {
 				t.Fatalf("create agent dir: %v", err)
 			}
 
-			options := codingagent.ResourceOptions{
+			options := agent.ResourceOptions{
 				CWD:               cwd,
 				AgentDir:          agentDir,
 				ProjectTrusted:    &fixtureCase.ProjectTrusted,
@@ -161,7 +161,7 @@ func TestF9ResourceDiscoveryMatchesUpstreamWithOrbIdentity(t *testing.T) {
 				}
 			}
 
-			resources := codingagent.LoadResources(options)
+			resources := agent.LoadResources(options)
 			if len(resources.Diagnostics) != 0 {
 				t.Fatalf("resource diagnostics: %+v", resources.Diagnostics)
 			}
@@ -170,7 +170,7 @@ func TestF9ResourceDiscoveryMatchesUpstreamWithOrbIdentity(t *testing.T) {
 			if appendPrompt != "" {
 				appendPromptPointer = &appendPrompt
 			}
-			assembled := codingagent.BuildSystemPrompt(codingagent.SystemPromptOptions{
+			assembled := agent.BuildSystemPrompt(agent.SystemPromptOptions{
 				CustomPrompt:  resources.SystemPrompt,
 				SelectedTools: []string{"read", "bash", "edit", "write"},
 				ToolSnippets: map[string]string{
@@ -238,13 +238,13 @@ func loadF9Fixture(t testing.TB) f9Fixture {
 	return fixture
 }
 
-func f9CodingSkills(skills []f9Skill) []codingagent.Skill {
+func f9CodingSkills(skills []f9Skill) []agent.Skill {
 	if skills == nil {
 		return nil
 	}
-	converted := make([]codingagent.Skill, len(skills))
+	converted := make([]agent.Skill, len(skills))
 	for index, skill := range skills {
-		converted[index] = codingagent.Skill{
+		converted[index] = agent.Skill{
 			Name:                   skill.Name,
 			Description:            skill.Description,
 			FilePath:               skill.FilePath,
@@ -268,18 +268,18 @@ func writeF9Tree(t testing.TB, root string, files []f9ContextFile) {
 	}
 }
 
-func f9CodingContextFiles(files []f9ContextFile) []codingagent.ContextFile {
+func f9CodingContextFiles(files []f9ContextFile) []agent.ContextFile {
 	if files == nil {
 		return nil
 	}
-	converted := make([]codingagent.ContextFile, len(files))
+	converted := make([]agent.ContextFile, len(files))
 	for index, file := range files {
-		converted[index] = codingagent.ContextFile{Path: file.Path, Content: file.Content}
+		converted[index] = agent.ContextFile{Path: file.Path, Content: file.Content}
 	}
 	return converted
 }
 
-func f9FixtureContextFiles(files []codingagent.ContextFile, fixtureRoot string) []f9ContextFile {
+func f9FixtureContextFiles(files []agent.ContextFile, fixtureRoot string) []f9ContextFile {
 	converted := make([]f9ContextFile, len(files))
 	for index, file := range files {
 		converted[index] = f9ContextFile{
@@ -290,14 +290,14 @@ func f9FixtureContextFiles(files []codingagent.ContextFile, fixtureRoot string) 
 	return converted
 }
 
-func f9FixturePromptSource(source *codingagent.PromptSource, fixtureRoot string) *f9PromptSource {
+func f9FixturePromptSource(source *agent.PromptSource, fixtureRoot string) *f9PromptSource {
 	if source == nil {
 		return nil
 	}
 	return &f9PromptSource{Path: runner.NormalizeFixturePath(source.Path, fixtureRoot)}
 }
 
-func f9FixturePromptSources(sources []codingagent.PromptSource, fixtureRoot string) []f9PromptSource {
+func f9FixturePromptSources(sources []agent.PromptSource, fixtureRoot string) []f9PromptSource {
 	converted := make([]f9PromptSource, len(sources))
 	for index, source := range sources {
 		converted[index] = f9PromptSource{Path: runner.NormalizeFixturePath(source.Path, fixtureRoot)}

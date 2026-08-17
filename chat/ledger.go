@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
-	sessionstore "github.com/OrdalieTech/orb/codingagent/session"
 )
 
 // turnCustomType is the session custom-entry type of turn ledger markers.

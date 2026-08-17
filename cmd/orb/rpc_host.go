@@ -6,19 +6,19 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/extensions"
-	"github.com/OrdalieTech/orb/codingagent/modes"
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 type rpcSessionHost struct {
 	ctx     context.Context
 	mu      sync.RWMutex
-	runtime *codingagent.AgentSessionRuntime
+	runtime *agent.AgentSessionRuntime
 }
 
-func rpcSlashCommands(runtime *codingagent.SessionRuntime) []modes.RPCSlashCommand {
+func rpcSlashCommands(runtime *agent.SessionRuntime) []modes.RPCSlashCommand {
 	if runtime == nil {
 		return []modes.RPCSlashCommand{}
 	}
@@ -49,7 +49,7 @@ func rpcSlashCommands(runtime *codingagent.SessionRuntime) []modes.RPCSlashComma
 // the RPC extension UI, so session_start fires once, with a live ctx.ui rather
 // than the headless noop (the session must also be created with
 // DeferSessionStart so construction does not fire session_start first).
-func newRPCSessionHost(ctx context.Context, runtime *codingagent.AgentSessionRuntime, deferInitialBind ...bool) (*rpcSessionHost, error) {
+func newRPCSessionHost(ctx context.Context, runtime *agent.AgentSessionRuntime, deferInitialBind ...bool) (*rpcSessionHost, error) {
 	if runtime == nil || runtime.Session() == nil {
 		return nil, errors.New("RPC session host requires an agent session runtime")
 	}
@@ -57,7 +57,7 @@ func newRPCSessionHost(ctx context.Context, runtime *codingagent.AgentSessionRun
 		ctx = context.Background()
 	}
 	host := &rpcSessionHost{ctx: ctx, runtime: runtime}
-	runtime.SetRebindSession(func(replacement *codingagent.AgentSession) error {
+	runtime.SetRebindSession(func(replacement *agent.AgentSession) error {
 		return replacement.BindExtensions(ctx)
 	})
 	if len(deferInitialBind) > 0 && deferInitialBind[0] {
@@ -69,7 +69,7 @@ func newRPCSessionHost(ctx context.Context, runtime *codingagent.AgentSessionRun
 	return host, nil
 }
 
-func (host *rpcSessionHost) Session() *codingagent.SessionRuntime {
+func (host *rpcSessionHost) Session() *agent.SessionRuntime {
 	runtime := host.current()
 	if runtime == nil {
 		return nil
@@ -77,12 +77,12 @@ func (host *rpcSessionHost) Session() *codingagent.SessionRuntime {
 	return runtime.Session()
 }
 
-func (host *rpcSessionHost) SetRebindSession(rebind func(*codingagent.SessionRuntime) error) {
+func (host *rpcSessionHost) SetRebindSession(rebind func(*agent.SessionRuntime) error) {
 	runtime := host.current()
 	if runtime == nil {
 		return
 	}
-	runtime.SetRebindSession(func(replacement *codingagent.AgentSession) error {
+	runtime.SetRebindSession(func(replacement *agent.AgentSession) error {
 		if rebind == nil {
 			return replacement.BindExtensions(host.ctx)
 		}
@@ -138,7 +138,7 @@ func (host *rpcSessionHost) Dispose() {
 	}
 }
 
-func (host *rpcSessionHost) current() *codingagent.AgentSessionRuntime {
+func (host *rpcSessionHost) current() *agent.AgentSessionRuntime {
 	if host == nil {
 		return nil
 	}

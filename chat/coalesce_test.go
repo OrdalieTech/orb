@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/engine"
 )
 
-func partialUpdate(text string) agent.MessageUpdateEvent {
-	return agent.MessageUpdateEvent{
+func partialUpdate(text string) engine.MessageUpdateEvent {
+	return engine.MessageUpdateEvent{
 		Message: &ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: text}}},
 	}
 }
@@ -41,9 +41,9 @@ func TestCoalescerObserveNeverPanicsOrBlocks(t *testing.T) {
 	events := []any{
 		nil,
 		"garbage",
-		agent.MessageUpdateEvent{}, // nil message
-		agent.MessageUpdateEvent{Message: "not assistant"},             // wrong type
-		agent.MessageUpdateEvent{Message: (*ai.AssistantMessage)(nil)}, // typed nil
+		engine.MessageUpdateEvent{},
+		engine.MessageUpdateEvent{Message: "not assistant"},             // wrong type
+		engine.MessageUpdateEvent{Message: (*ai.AssistantMessage)(nil)}, // typed nil
 		partialUpdate(""),
 	}
 	done := make(chan struct{})
@@ -74,7 +74,7 @@ func TestCoalescerCountsSwallowedPanics(t *testing.T) {
 	// observe must recover (session Subscribe callbacks have none), but a
 	// blanket unreported recover hid every bug in the hot event path.
 	c := new(coalescer)
-	c.observe(agent.MessageUpdateEvent{
+	c.observe(engine.MessageUpdateEvent{
 		Message: &ai.AssistantMessage{Content: ai.AssistantContent{(*ai.TextContent)(nil)}},
 	})
 	if panics := c.panics.Load(); panics != 1 {

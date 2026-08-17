@@ -44,12 +44,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/extensions"
-	extensionhost "github.com/OrdalieTech/orb/codingagent/extensions/host"
 )
 
 const (
@@ -605,7 +605,7 @@ func (harness *f13Harness) startHost(t *testing.T, runtime extensionhost.Runtime
 			t.Errorf("close manager: %v", err)
 		}
 	})
-	manager.SetAgentSessionService(codingagent.NewExtensionAgentSessionService(codingagent.ExtensionAgentSessionServiceOptions{
+	manager.SetAgentSessionService(agent.NewExtensionAgentSessionService(agent.ExtensionAgentSessionServiceOptions{
 		CWD:      harness.project,
 		AgentDir: harness.agentDir,
 		StreamFn: harness.streamFn,

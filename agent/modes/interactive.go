@@ -1,0 +1,4589 @@
+package modes
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/clipboard"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	sessionstore "github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/agent/tools"
+	"github.com/OrdalieTech/orb/ai"
+	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/localecompare"
+	"github.com/OrdalieTech/orb/tui"
+
+	theme "github.com/OrdalieTech/orb/agent/modes/theme"
+)
+
+// StartupDiagnostic kinds; anything else renders as a plain message.
+const (
+	StartupDiagnosticCollision = "collision"
+	StartupDiagnosticExtension = "extension"
+	StartupDiagnosticOther     = "other"
+)
+
+// StartupDiagnostic carries one startup warning into interactive mode with the
+// structure it was born with, so the warning band formats from fields instead
+// of re-parsing flattened strings. Collision entries hold the quoted resource
+// name in Message; extension entries hold the origin file in Path.
+type StartupDiagnostic struct {
+	Kind    string
+	Path    string
+	Message string
+}
+
+// InteractiveModeOptions configures the interactive TUI mode.
+type InteractiveModeOptions struct {
+	InitialMessage string
+	InitialImages  []*ai.ImageContent
+	Messages       []string
+	SessionHeader  *sessionstore.SessionHeader
+	// Verbose forces verbose startup, overriding the quietStartup setting
+	// (upstream interactive-mode.ts:319-320).
+	Verbose     bool
+	Diagnostics []StartupDiagnostic
+	Terminal    tui.Terminal
+	Host        InteractiveSessionHost
+	// StartupVersionCheck is the non-blocking startup seam used by WP-661. The
+	// interactive package owns no update transport or policy.
+	StartupVersionCheck func(context.Context, extensions.UI)
+	StartupModelRefresh func(context.Context) error
+	Changelog           string
+	Output              io.Writer
+	OutputTTY           bool
+	// InitialThemeSetting is --use-theme: it overrides the persisted theme for
+	// this run only, until the user picks a theme (which persists).
+	InitialThemeSetting string
+}
+
+type InteractiveMode struct {
+	session     *agent.SessionRuntime
+	ui          *tui.TUI
+	keybindings *tui.KeybindingsManager
+	editor      *CustomEditor
+	mdTheme     tui.MarkdownTheme
+	options     InteractiveModeOptions
+	// markdownTransformers is the transformer chain applied to interactive
+	// message markdown (upstream getMarkdownTransformers). Extension-registered
+	// transformers are deferred; only the built-in Mermaid transformer populates it.
+	markdownTransformers []extensions.MarkdownTransformer
+
+	// TUI containers
+	header          *tui.Container
+	loadedResources *tui.Container
+	chat            *tui.Container
+	pendingMessages *tui.Container
+	status          *tui.Container
+	widgetAbove     *tui.Container
+	editorContainer *tui.Container
+	widgetBelow     *tui.Container
+	footer          *tui.Container
+	overlay         *tui.Container
+	emptyState      *emptyChatState
+
+	// Extension UI backing
+	interactiveUI *InteractiveUI
+
+	// State
+	mu              sync.Mutex
+	statusMessageMu sync.Mutex
+	streaming       bool
+	// turnAnswered reports whether the running turn has shown anything yet;
+	// until it does, interrupting takes the prompt back (see abortAndRestore).
+	turnAnswered      bool
+	toolsExpanded     bool
+	thinkingHidden    bool
+	thinkingLabel     string
+	bashMode          bool
+	shutdownRequested bool
+	// extensionShutdownRequested tracks extension ctx.shutdown() requests
+	// separately from shutdownRequested, which doubles as the "already shut
+	// down" latch (upstream keeps them distinct: interactive-mode.ts:404).
+	extensionShutdownRequested bool
+	inputCh                    chan inputEntry
+	pendingImages              []*ai.ImageContent
+	currentStreaming           *AssistantMessageComponent
+	toolComponents             map[string]*ToolExecutionComponent
+	expandables                []expandableComponent
+	statusIndicator            tui.Component
+	editorChromeWidth          int
+	editorChromeStatus         string
+	editorChromeTitleShown     bool
+	lastStatusSpacer           *tui.Spacer
+	lastStatusText             *tui.Text
+	footerStatuses             map[string]string
+	autocompleteProvider       tui.AutocompleteProvider
+	cwd                        string
+	outputPad                  int
+	lastEscape                 time.Time
+	extensionEditor            extensions.EditorComponent
+	themeRegistry              *theme.Registry
+	themeController            *theme.Controller
+	themeSetting               string // --use-theme override; "" defers to settings
+	authContext                context.Context
+	authCancel                 context.CancelFunc
+	modelSelectorCancel        context.CancelFunc
+	modelSelectorDone          chan struct{}
+	logoCancel                 context.CancelFunc
+	logoDone                   chan struct{}
+	// anthropicSubscriptionWarningShown gates the once-per-session Anthropic
+	// extra-usage warning (upstream anthropicSubscriptionWarningShown).
+	anthropicSubscriptionWarningShown bool
+	keyDisplayOS                      string
+	arminRandom                       func() float64
+	arminScheduler                    arminScheduler
+	exportHTML                        func(string) (string, error)
+
+	unsubscribe func()
+	cleanupOnce sync.Once
+}
+
+type compactStatus struct {
+	tui.Component
+	Inline func(width int, status string) bool
+}
+
+func (status compactStatus) Render(width int) []string {
+	lines := status.Component.Render(width)
+	for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
+		lines = lines[1:]
+	}
+	inlineText := ""
+	if len(lines) == 1 {
+		inlineText = strings.TrimSpace(lines[0])
+	}
+	if status.Inline != nil && status.Inline(width, inlineText) {
+		return nil
+	}
+	return lines
+}
+
+type chatRenderRequester struct {
+	mu        sync.RWMutex
+	mode      *InteractiveMode
+	component tui.Component
+}
+
+func (requester *chatRenderRequester) Bind(component tui.Component) {
+	requester.mu.Lock()
+	requester.component = component
+	requester.mu.Unlock()
+}
+
+func (requester *chatRenderRequester) RequestRender() {
+	requester.mu.RLock()
+	component := requester.component
+	requester.mu.RUnlock()
+	requester.mode.requestChatRender(component)
+}
+
+func (mode *InteractiveMode) requestChatRender(component tui.Component) {
+	if mode.chat != nil && component != nil {
+		mode.chat.ChildChanged(component)
+	}
+	if mode.ui != nil {
+		mode.ui.RequestRender()
+	}
+}
+
+func (mode *InteractiveMode) newToolExecutionComponent(name, id string, args any) *ToolExecutionComponent {
+	requester := &chatRenderRequester{mode: mode}
+	component := NewToolExecutionComponent(name, id, args, mode.showImages(), mode.toolDefinition(name), requester, mode.cwd)
+	requester.Bind(component)
+	return component
+}
+
+func (mode *InteractiveMode) newBashExecutionComponent(command string, excludeFromContext bool) *BashExecutionComponent {
+	requester := &chatRenderRequester{mode: mode}
+	component := NewBashExecutionComponent(command, requester, excludeFromContext)
+	requester.Bind(component)
+	return component
+}
+
+type inputEntry struct {
+	text   string
+	images []*ai.ImageContent
+}
+
+type expandableComponent interface{ SetExpanded(bool) }
+
+type loadedContextSection struct {
+	collapsed string
+	expanded  []string
+	mu        sync.RWMutex
+	showAll   bool
+}
+
+func (section *loadedContextSection) SetExpanded(expanded bool) {
+	section.mu.Lock()
+	section.showAll = expanded
+	section.mu.Unlock()
+}
+func (*loadedContextSection) Invalidate() {}
+func (section *loadedContextSection) Render(width int) []string {
+	section.mu.RLock()
+	showAll := section.showAll
+	section.mu.RUnlock()
+	lines := []string{theme.FG("mdHeading", "[Context]")}
+	if showAll {
+		for _, path := range section.expanded {
+			lines = append(lines, theme.FG("dim", "  "+path))
+		}
+	} else {
+		lines = append(lines, theme.FG("dim", "  "+section.collapsed))
+	}
+	return tui.NewText(strings.Join(lines, "\n"), 0, 0, nil).Render(width)
+}
+
+// RunInteractiveMode starts the full TUI interactive session.
+func RunInteractiveMode(ctx context.Context, session *agent.SessionRuntime, options InteractiveModeOptions) int {
+	cwd, _ := os.Getwd()
+	mode := &InteractiveMode{
+		session:        session,
+		options:        options,
+		inputCh:        make(chan inputEntry, 64),
+		toolComponents: make(map[string]*ToolExecutionComponent),
+		footerStatuses: make(map[string]string),
+		cwd:            cwd,
+		outputPad:      1,
+		themeSetting:   options.InitialThemeSetting,
+	}
+	mode.markdownTransformers = []extensions.MarkdownTransformer{
+		NewMermaidMarkdownTransformer(session.MermaidRenderingMode, mermaidThemeAdapter{}),
+	}
+	return mode.run(ctx)
+}
+
+func (mode *InteractiveMode) run(ctx context.Context) int {
+	authContext, authCancel := context.WithCancel(ctx)
+	mode.mu.Lock()
+	mode.authContext = authContext
+	mode.authCancel = authCancel
+	mode.mu.Unlock()
+	defer authCancel()
+
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	defer func() {
+		signal.Stop(signals)
+		tools.KillTrackedDetachedChildren()
+	}()
+
+	terminal := mode.options.Terminal
+	if terminal == nil {
+		terminal = tui.NewProcessTerminal()
+	}
+	mode.ui = tui.NewTUI(terminal)
+	settings := mode.session.InteractiveModeSettings()
+	userBindings := tui.LoadKeybindingsFile(filepath.Join(settings.AgentDir, "keybindings.json"))
+	mode.keybindings = NewAppKeybindings(userBindings)
+	tui.SetKeybindings(mode.keybindings)
+
+	if err := mode.init(); err != nil {
+		fmt.Fprintln(os.Stderr, "Error initializing interactive mode:", err)
+		return 1
+	}
+
+	if err := mode.ui.Start(); err != nil {
+		fmt.Fprintln(os.Stderr, "Error starting TUI:", err)
+		return 1
+	}
+	defer func() {
+		mode.cleanup()
+	}()
+	mode.mu.Lock()
+	mode.unsubscribe = mode.session.Subscribe(mode.handleEvent)
+	mode.mu.Unlock()
+	defer mode.detachSession()
+	mode.bindExtensionShutdownHandler(mode.session)
+	mode.session.StartExtensions()
+	if err := mode.extendExtensionThemes(); err != nil {
+		fmt.Fprintln(os.Stderr, "Error loading themes:", err)
+		return 1
+	}
+	mode.setupAutocomplete()
+	mode.setupExtensionShortcuts()
+	if mode.options.StartupModelRefresh != nil {
+		go func() {
+			if mode.options.StartupModelRefresh(ctx) == nil {
+				mode.ui.RequestRender()
+			}
+		}()
+	}
+	versionContext, stopVersionCheck := context.WithCancel(ctx)
+	var versionCheck sync.WaitGroup
+	if mode.options.StartupVersionCheck != nil {
+		versionCheck.Add(1)
+		go func() {
+			defer versionCheck.Done()
+			mode.options.StartupVersionCheck(versionContext, mode.interactiveUI)
+		}()
+	}
+	defer func() {
+		stopVersionCheck()
+		versionCheck.Wait()
+	}()
+
+	// Render initial session entries
+	mode.renderInitialMessages()
+
+	// Show startup diagnostics as one compact band: one truncated line per
+	// warning instead of a full-width wrapped wall.
+	if len(mode.options.Diagnostics) > 0 {
+		mode.chat.AddChild(newStartupWarnings(mode.options.Diagnostics))
+	}
+	mode.maybeWarnAboutAnthropicSubscriptionAuth(ctx, mode.session.State().Model)
+	mode.startLogoUnfold(ctx, logoUnfoldDelay)
+
+	// Preserve positional startup message order. The first turn carries decoded
+	// startup images; remaining positional messages become subsequent steers.
+	go func() {
+		if mode.options.InitialMessage != "" {
+			mode.inputCh <- inputEntry{text: mode.options.InitialMessage, images: mode.options.InitialImages}
+		}
+		for _, message := range mode.options.Messages {
+			mode.inputCh <- inputEntry{text: message}
+		}
+	}()
+
+	promptDone := make(chan error, 1)
+	prompting := false
+	for {
+		select {
+		case input := <-mode.inputCh:
+			mode.mu.Lock()
+			shutdown := mode.shutdownRequested
+			mode.mu.Unlock()
+			if shutdown {
+				return 0
+			}
+			if strings.TrimSpace(input.text) == "" && len(input.images) == 0 {
+				continue
+			}
+			if prompting {
+				if err := mode.session.QueueInteractive(ctx, input.text, input.images, extensions.DeliverSteer); err != nil {
+					mode.showError(err)
+				}
+				continue
+			}
+			prompting = true
+			mode.mu.Lock()
+			mode.streaming = true
+			mode.turnAnswered = false
+			mode.mu.Unlock()
+			mode.interactiveUI.showWorkingIndicator()
+			go func(entry inputEntry) {
+				promptDone <- mode.session.SubmitInteractive(ctx, entry.text, entry.images, extensions.DeliverSteer)
+			}(input)
+		case err := <-promptDone:
+			prompting = false
+			mode.mu.Lock()
+			mode.streaming = false
+			mode.currentStreaming = nil
+			mode.mu.Unlock()
+			mode.clearStatusIndicatorKind(StatusWorking)
+			if err != nil && ctx.Err() == nil {
+				mode.showError(err)
+			}
+		case <-signals:
+			mode.shutdown(true)
+			return 0
+		case <-ctx.Done():
+			mode.session.Abort()
+			return 0
+		}
+	}
+}
+
+func (mode *InteractiveMode) init() error {
+	if err := mode.initializeTheme(); err != nil {
+		return err
+	}
+	mode.mdTheme = theme.MarkdownTheme()
+	mode.header = &tui.Container{}
+	mode.loadedResources = &tui.Container{}
+	mode.chat = tui.NewWindowedContainer()
+	mode.pendingMessages = &tui.Container{}
+	mode.status = &tui.Container{}
+	mode.widgetAbove = &tui.Container{}
+	mode.editorContainer = &tui.Container{}
+	mode.widgetBelow = &tui.Container{}
+	mode.footer = &tui.Container{}
+	mode.overlay = &tui.Container{}
+
+	mode.statusIndicator = &IdleStatus{}
+	mode.status.AddChild(mode.statusIndicator)
+
+	editorTheme := theme.EditorTheme()
+	mode.editor = NewCustomEditor(mode.ui, editorTheme, mode.keybindings)
+	mode.editor.setTopBorderDecorator(func(width int, base string, border tui.StyleFunc) string {
+		return mode.editorTopBorder(width, base, border).Line
+	})
+	settings := mode.session.InteractiveSettings()
+	mode.editor.SetPaddingX(settings.EditorPaddingX)
+	mode.editor.SetAutocompleteMaxVisible(settings.AutocompleteMaxVisible)
+
+	body, chrome := &tui.Container{}, &tui.Container{}
+	// The mark is the first transcript component, so conversation content moves
+	// it off-screen only through normal viewport scrolling.
+	mode.emptyState = &emptyChatState{
+		bodyHeight: mode.ui.ViewportBodyHeight, left: mode.outputPad + 2,
+	}
+	mode.emptyState.frame.Store(0)
+	body.AddChild(mode.emptyState)
+	for _, component := range []*tui.Container{mode.header, mode.loadedResources, mode.chat, mode.pendingMessages} {
+		body.AddChild(component)
+	}
+	for _, component := range []tui.Component{compactStatus{Component: mode.status, Inline: mode.statusInEditor}, mode.widgetAbove, mode.editorContainer, mode.widgetBelow, mode.footer, mode.overlay} {
+		chrome.AddChild(component)
+	}
+	mode.ui.AddChild(body)
+	mode.ui.AddChild(chrome)
+	mode.ui.SetViewport(body, chrome)
+
+	mode.editorContainer.AddChild(mode.editor)
+
+	mode.addDefaultHeader()
+	mode.showLoadedResources()
+	mode.footer.AddChild(NewFooterComponent(mode.session, mode, mode.options.Verbose))
+
+	mode.interactiveUI = NewInteractiveUI(mode)
+	mode.ui.SetSelectionHandler(func(text string) {
+		go func() {
+			if err := clipboard.CopyToClipboard(text); err != nil {
+				mode.interactiveUI.Notify("Copy failed: "+err.Error(), extensions.NotifyError)
+			}
+		}()
+	})
+	if runner := mode.session.ExtensionRunner(); runner != nil {
+		runner.SetUI(mode.interactiveUI, extensions.ModeTUI)
+	}
+	if mode.options.Host != nil {
+		mode.options.Host.SetBeforeSessionInvalidate(mode.detachSession)
+		mode.options.Host.SetRebindSession(mode.rebindHostSession)
+		mode.options.Host.SetAfterSessionStart(mode.refreshResourcesAfterSessionStart)
+	}
+
+	mode.setupAutocomplete()
+	mode.setupKeyHandlers()
+	mode.setupEditorSubmitHandler()
+
+	mode.ui.SetFocus(mode.editor)
+	mode.updateTerminalTitle()
+	return nil
+}
+
+func (mode *InteractiveMode) detachSession() {
+	mode.cancelModelSelector()
+	if mode.interactiveUI != nil {
+		mode.interactiveUI.resetExtensionUI()
+	}
+	mode.mu.Lock()
+	unsubscribe := mode.unsubscribe
+	mode.unsubscribe = nil
+	mode.mu.Unlock()
+	if unsubscribe != nil {
+		unsubscribe()
+	}
+}
+
+func (mode *InteractiveMode) rebindHostSession(replacement *agent.SessionRuntime) error {
+	if replacement == nil {
+		return errors.New("session host returned a nil replacement runtime")
+	}
+	mode.mu.Lock()
+	mode.session = replacement
+	mode.cwd = replacement.Manager().GetCWD()
+	mode.options.SessionHeader = replacement.Manager().GetHeader()
+	mode.mu.Unlock()
+	mode.header.Clear()
+	mode.loadedResources.Clear()
+	mode.chat.Clear()
+	mode.pendingMessages.Clear()
+	mode.status.Clear()
+	mode.widgetAbove.Clear()
+	mode.editorContainer.Clear()
+	mode.widgetBelow.Clear()
+	mode.footer.Clear()
+	mode.overlay.Clear()
+	mode.setExtensionEditor(nil)
+	mode.addDefaultHeader()
+	mode.restoreEditorComponent()
+	mode.footer.AddChild(NewFooterComponent(mode.session, mode, mode.options.Verbose))
+	mode.interactiveUI = NewInteractiveUI(mode)
+	if runner := replacement.ExtensionRunner(); runner != nil {
+		runner.SetUI(mode.interactiveUI, extensions.ModeTUI)
+	}
+	if err := mode.initializeTheme(); err != nil {
+		return err
+	}
+	mode.mdTheme = theme.MarkdownTheme()
+	mode.showLoadedResources()
+	mode.setupAutocomplete()
+	settings := replacement.InteractiveSettings()
+	mode.editor.SetPaddingX(settings.EditorPaddingX)
+	mode.editor.SetAutocompleteMaxVisible(settings.AutocompleteMaxVisible)
+	mode.mu.Lock()
+	mode.unsubscribe = replacement.Subscribe(mode.handleEvent)
+	mode.mu.Unlock()
+	mode.bindExtensionShutdownHandler(replacement)
+	mode.renderInitialMessages()
+	mode.ui.SetFocus(mode.activeEditorFocus())
+	mode.updateTerminalTitle()
+	mode.ui.RequestRender()
+	return nil
+}
+
+func (mode *InteractiveMode) initializeTheme() error {
+	settings := mode.session.InteractiveModeSettings()
+	options := theme.LoadOptions{
+		CWD: mode.cwd, AgentDir: settings.AgentDir,
+		ProjectTrusted: settings.ProjectTrusted,
+		GlobalPaths:    settings.GlobalThemePaths,
+		ProjectPaths:   settings.ProjectThemePaths,
+	}
+	mode.mu.Lock()
+	mode.outputPad = settings.OutputPad
+	mode.thinkingHidden = settings.HideThinkingBlock
+	mode.mu.Unlock()
+	mode.ui.SetClearOnShrink(settings.ClearOnShrink)
+	mode.ui.SetShowHardwareCursor(settings.ShowHardwareCursor)
+	if mode.session.ResourceLoader() != nil {
+		options.NoThemes = true
+	}
+	mode.themeRegistry = theme.Load(options)
+	if _, err := mode.installResourceThemes(); err != nil {
+		return err
+	}
+	mode.themeController = theme.Initialize(mode.themeRegistry, mode.themeSettingOr(settings.ThemeSetting), theme.DetectBackground(nil).Theme, func() {
+		if mode.ui != nil {
+			mode.ui.Invalidate()
+		}
+	})
+	return nil
+}
+
+// themeSettingOr prefers the per-run --use-theme override over the persisted setting.
+func (mode *InteractiveMode) themeSettingOr(persisted string) string {
+	if mode.themeSetting != "" {
+		return mode.themeSetting
+	}
+	return persisted
+}
+
+func (mode *InteractiveMode) extendExtensionThemes() error {
+	if mode.themeRegistry == nil {
+		return nil
+	}
+	installed, err := mode.installResourceThemes()
+	if err != nil {
+		return err
+	}
+	if installed {
+		settings := mode.session.InteractiveModeSettings()
+		mode.themeController = theme.Initialize(mode.themeRegistry, mode.themeSettingOr(settings.ThemeSetting), theme.DetectBackground(nil).Theme, func() {
+			if mode.ui != nil {
+				mode.ui.Invalidate()
+			}
+		})
+		mode.mdTheme = theme.MarkdownTheme()
+		return nil
+	}
+	resources := mode.session.ExtensionResources()
+	paths := make([]string, 0, len(resources.ThemePaths))
+	for _, entry := range resources.ThemePaths {
+		paths = append(paths, entry.Path)
+	}
+	mode.themeRegistry.Extend(paths)
+	return nil
+}
+
+func (mode *InteractiveMode) installResourceThemes() (bool, error) {
+	loader := mode.session.ResourceLoader()
+	if loader == nil || mode.themeRegistry == nil {
+		return false, nil
+	}
+	if err := mode.themeRegistry.ReplaceLoaded(loader.GetThemes().Themes); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+func (mode *InteractiveMode) refreshResourcesAfterSessionStart(replacement *agent.SessionRuntime) error {
+	if replacement != mode.session {
+		return errors.New("session host refreshed resources for a stale replacement runtime")
+	}
+	if err := mode.extendExtensionThemes(); err != nil {
+		return err
+	}
+	mode.setupAutocomplete()
+	mode.setupExtensionShortcuts()
+	mode.showLoadedResources()
+	return nil
+}
+
+func (mode *InteractiveMode) applyTheme() {
+	mode.mdTheme = theme.MarkdownTheme()
+	mode.updateEditorBorderColor()
+	if mode.ui != nil {
+		mode.ui.Invalidate()
+	}
+}
+
+func (mode *InteractiveMode) updateEditorBorderColor() {
+	if mode.editor == nil {
+		return
+	}
+	color := theme.ThinkingBorderColor(engine.ThinkingOff)
+	if mode.bashMode {
+		color = theme.BashModeBorderColor()
+	} else if mode.session != nil {
+		color = theme.ThinkingBorderColor(mode.session.State().ThinkingLevel)
+	}
+	mode.editor.SetBorderColor(color)
+	if appearance, ok := mode.currentExtensionEditor().(interface{ SetBorderColor(tui.StyleFunc) }); ok {
+		appearance.SetBorderColor(color)
+	}
+}
+
+func (mode *InteractiveMode) addDefaultHeader() {
+	if mode.session == nil || !mode.options.Verbose {
+		return
+	}
+	if mode.options.SessionHeader != nil {
+		mode.header.AddChild(tui.NewText(theme.FG("muted", fmt.Sprintf("Orb  %s", mode.options.SessionHeader.CWD)), 1, 0, nil))
+	}
+}
+
+func (mode *InteractiveMode) showLoadedResources() {
+	if mode.loadedResources == nil {
+		return
+	}
+	mode.loadedResources.Clear()
+	mode.mu.Lock()
+	session, toolsExpanded := mode.session, mode.toolsExpanded
+	mode.mu.Unlock()
+	if session == nil || !mode.options.Verbose {
+		return
+	}
+	loader := session.ResourceLoader()
+	if loader == nil {
+		return
+	}
+
+	paths := make([]string, 0)
+	if source := loader.GetSystemPromptSource(); source != nil {
+		paths = append(paths, source.Path)
+	}
+	for _, source := range loader.GetAppendSystemPromptSources() {
+		paths = append(paths, source.Path)
+	}
+	for _, contextFile := range loader.GetAgentsFiles().AgentsFiles {
+		paths = append(paths, contextFile.Path)
+	}
+	if len(paths) == 0 {
+		return
+	}
+
+	compact := make([]string, len(paths))
+	expanded := make([]string, len(paths))
+	for index, path := range paths {
+		compact[index] = mode.formatContextPath(path)
+		expanded[index] = mode.formatDisplayPath(path)
+	}
+	mode.loadedResources.AddChild(tui.NewSpacer(1))
+	mode.loadedResources.AddChild(&loadedContextSection{
+		collapsed: strings.Join(compact, ", "),
+		expanded:  expanded,
+		showAll:   mode.options.Verbose || toolsExpanded,
+	})
+	mode.loadedResources.AddChild(tui.NewSpacer(1))
+}
+
+func (mode *InteractiveMode) formatDisplayPath(path string) string {
+	home, err := os.UserHomeDir()
+	if err == nil && strings.HasPrefix(path, home) {
+		return "~" + strings.TrimPrefix(path, home)
+	}
+	return path
+}
+
+func (mode *InteractiveMode) formatContextPath(path string) string {
+	mode.mu.Lock()
+	cwd := mode.cwd
+	if mode.session != nil && mode.session.Manager() != nil {
+		cwd = mode.session.Manager().GetCWD()
+	}
+	mode.mu.Unlock()
+	cwd = resolveDisplayPath(cwd, ".")
+	absolute := resolveDisplayPath(path, cwd)
+	relative, err := filepath.Rel(cwd, absolute)
+	if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative) {
+		if relative == "" {
+			return "."
+		}
+		return relative
+	}
+	return mode.formatDisplayPath(absolute)
+}
+
+func resolveDisplayPath(path, base string) string {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(base, path)
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return filepath.Clean(path)
+	}
+	return filepath.Clean(absolute)
+}
+
+func (mode *InteractiveMode) Width() int {
+	if mode.ui == nil {
+		return 0
+	}
+	return mode.ui.Terminal().Columns()
+}
+func (mode *InteractiveMode) Height() int {
+	if mode.ui == nil {
+		return 0
+	}
+	return mode.ui.Terminal().Rows()
+}
+func (mode *InteractiveMode) Invalidate() {
+	if mode.ui != nil {
+		mode.ui.RequestRender()
+	}
+}
+
+func (mode *InteractiveMode) installEditorFactory(factory extensions.EditorFactory) {
+	currentText := mode.activeEditorText(false)
+	if factory != nil {
+		replacement := factory(mode, themeAdapter{value: theme.Current()}, extensionKeybindings{mode.keybindings})
+		replacement.SetText(currentText)
+		if callbacks, ok := replacement.(interface{ SetOnSubmit(func(string)) }); ok {
+			callbacks.SetOnSubmit(mode.editor.OnSubmit)
+		}
+		if callbacks, ok := replacement.(interface{ SetOnChange(func(string)) }); ok {
+			callbacks.SetOnChange(mode.editor.OnChange)
+		}
+		if callbacks, ok := replacement.(interface {
+			GetOnEscape() func()
+			SetOnEscape(func())
+		}); ok && callbacks.GetOnEscape() == nil {
+			callbacks.SetOnEscape(mode.editor.OnEscape)
+		}
+		if callbacks, ok := replacement.(interface {
+			GetOnCtrlD() func()
+			SetOnCtrlD(func())
+		}); ok && callbacks.GetOnCtrlD() == nil {
+			callbacks.SetOnCtrlD(mode.editor.OnCtrlD)
+		}
+		if callbacks, ok := replacement.(interface {
+			GetOnPasteImage() func()
+			SetOnPasteImage(func())
+		}); ok && callbacks.GetOnPasteImage() == nil {
+			callbacks.SetOnPasteImage(mode.editor.OnPasteImage)
+		}
+		if callbacks, ok := replacement.(interface {
+			GetOnExtensionShortcut() func(string) bool
+			SetOnExtensionShortcut(func(string) bool)
+		}); ok && callbacks.GetOnExtensionShortcut() == nil {
+			callbacks.SetOnExtensionShortcut(mode.editor.OnExtensionShortcut)
+		}
+		if actions, ok := replacement.(interface{ OnAction(string, func()) }); ok {
+			for action, handler := range mode.editor.actionHandlers {
+				actions.OnAction(action, handler)
+			}
+		} else if actions, ok := replacement.(interface {
+			GetActionHandlers() map[string]func()
+			SetActionHandlers(map[string]func())
+		}); ok {
+			merged := make(map[string]func(), len(actions.GetActionHandlers())+len(mode.editor.actionHandlers))
+			for action, handler := range actions.GetActionHandlers() {
+				merged[action] = handler
+			}
+			for action, handler := range mode.editor.actionHandlers {
+				merged[action] = handler
+			}
+			actions.SetActionHandlers(merged)
+		}
+		if appearance, ok := replacement.(interface{ SetBorderColor(tui.StyleFunc) }); ok {
+			appearance.SetBorderColor(mode.editor.GetBorderColor())
+		}
+		if appearance, ok := replacement.(interface{ SetPaddingX(int) }); ok {
+			appearance.SetPaddingX(mode.editor.GetPaddingX())
+		}
+		mode.setExtensionEditor(replacement)
+		mode.setExtensionEditorAutocompleteProvider(mode.autocompleteProvider)
+	} else {
+		mode.editor.SetText(currentText)
+		mode.setExtensionEditor(nil)
+	}
+	mode.restoreEditorComponent()
+	mode.ui.SetFocus(mode.activeEditorFocus())
+	mode.ui.RequestRender()
+}
+
+// extensionEditor is swapped by editor factories while extension dialog
+// goroutines read it concurrently; every access goes through these two.
+func (mode *InteractiveMode) currentExtensionEditor() extensions.EditorComponent {
+	mode.mu.Lock()
+	defer mode.mu.Unlock()
+	return mode.extensionEditor
+}
+
+func (mode *InteractiveMode) setExtensionEditor(editor extensions.EditorComponent) {
+	mode.mu.Lock()
+	mode.extensionEditor = editor
+	mode.mu.Unlock()
+}
+
+func (mode *InteractiveMode) activeEditorText(expanded bool) string {
+	if extensionEditor := mode.currentExtensionEditor(); extensionEditor != nil {
+		if expanded {
+			if editor, ok := extensionEditor.(interface{ GetExpandedText() string }); ok {
+				return editor.GetExpandedText()
+			}
+		}
+		return extensionEditor.GetText()
+	}
+	if expanded {
+		return mode.editor.GetExpandedText()
+	}
+	return mode.editor.GetText()
+}
+
+func (mode *InteractiveMode) setActiveEditorText(text string) {
+	if extensionEditor := mode.currentExtensionEditor(); extensionEditor != nil {
+		extensionEditor.SetText(text)
+		return
+	}
+	mode.editor.SetText(text)
+}
+
+func (mode *InteractiveMode) sendActiveEditorInput(data string) {
+	if extensionEditor := mode.currentExtensionEditor(); extensionEditor != nil {
+		extensionEditor.HandleInput(data)
+		return
+	}
+	mode.editor.HandleInput(tui.KeyEvent{Raw: data})
+}
+
+func (mode *InteractiveMode) restoreEditorComponent() {
+	mode.editorContainer.Clear()
+	if extensionEditor := mode.currentExtensionEditor(); extensionEditor != nil {
+		mode.editorContainer.AddChild(extensionEditor)
+	} else {
+		mode.editorContainer.AddChild(mode.editor)
+	}
+}
+
+func (mode *InteractiveMode) activeEditorFocus() tui.Component {
+	if extensionEditor := mode.currentExtensionEditor(); extensionEditor != nil {
+		return extensionEditorAdapter{EditorComponent: extensionEditor}
+	}
+	return mode.editor
+}
+
+func (mode *InteractiveMode) setupAutocomplete() {
+	commands := make([]tui.SlashCommand, 0, len(agent.BuiltinSlashCommands))
+	builtinNames := make(map[string]struct{}, len(agent.BuiltinSlashCommands))
+	for _, cmd := range agent.BuiltinSlashCommands {
+		builtinNames[cmd.Name] = struct{}{}
+		command := tui.SlashCommand{
+			Name:         cmd.Name,
+			Description:  cmd.Description,
+			ArgumentHint: cmd.ArgumentHint,
+		}
+		switch cmd.Name {
+		case "model":
+			command.GetArgumentCompletions = mode.modelArgumentCompletions
+		case "login":
+			command.GetArgumentCompletions = mode.loginArgumentCompletions
+		}
+		commands = append(commands, command)
+	}
+
+	enableSkillCommands := mode.session.InteractiveModeSettings().EnableSkillCommands
+	skillCommands := make([]tui.SlashCommand, 0)
+	skillItems := make([]tui.AutocompleteItem, 0)
+	addSkill := func(name, description string) {
+		skillCommands = append(skillCommands, tui.SlashCommand{Name: "skill:" + name, Description: description})
+		skillItems = append(skillItems, tui.AutocompleteItem{Value: "@" + name, Label: "[skill] " + name, Description: description})
+	}
+	if loader := mode.session.ResourceLoader(); loader != nil {
+		for _, prompt := range loader.GetPrompts().Prompts {
+			commands = append(commands, tui.SlashCommand{
+				Name: prompt.Name, Description: autocompleteDescription(prompt.Description, prompt.SourceInfo.Source, prompt.SourceInfo.Scope),
+				ArgumentHint: prompt.ArgumentHint,
+			})
+		}
+		if enableSkillCommands {
+			for _, skill := range loader.GetSkills().Skills {
+				addSkill(skill.Name, autocompleteDescription(skill.Description, skill.SourceInfo.Source, skill.SourceInfo.Scope))
+			}
+		}
+	} else {
+		for _, command := range mode.session.Commands() {
+			if command.Source == agent.SlashCommandExtension || command.Source == agent.SlashCommandSkill {
+				continue
+			}
+			commands = append(commands, tui.SlashCommand{
+				Name: command.Name, Description: autocompleteDescription(command.Description, command.SourceInfo.Source, command.SourceInfo.Scope),
+			})
+		}
+	}
+
+	extensionNames := make(map[string]struct{})
+	if runner := mode.session.ExtensionRunner(); runner != nil {
+		for _, command := range runner.RegisteredCommands() {
+			if _, conflict := builtinNames[command.Name]; conflict {
+				continue
+			}
+			resolved := command
+			extensionNames[resolved.InvocationName] = struct{}{}
+			slashCommand := tui.SlashCommand{
+				Name:        resolved.InvocationName,
+				Description: autocompleteDescription(resolved.Description, resolved.SourceInfo.Source, string(resolved.SourceInfo.Scope)),
+			}
+			if resolved.GetArgumentCompletions != nil {
+				slashCommand.GetArgumentCompletions = func(prefix string) []tui.AutocompleteItem {
+					items, err := resolved.GetArgumentCompletions(context.Background(), prefix)
+					if err != nil {
+						return nil
+					}
+					result := make([]tui.AutocompleteItem, len(items))
+					for index, item := range items {
+						result[index] = tui.AutocompleteItem{Value: item.Value, Label: item.Label, Description: item.Description}
+					}
+					return result
+				}
+			}
+			commands = append(commands, slashCommand)
+		}
+	}
+
+	if mode.session.ResourceLoader() == nil && enableSkillCommands {
+		for _, command := range mode.session.Commands() {
+			if command.Source != agent.SlashCommandSkill {
+				continue
+			}
+			addSkill(strings.TrimPrefix(command.Name, "skill:"), autocompleteDescription(command.Description, command.SourceInfo.Source, command.SourceInfo.Scope))
+		}
+	}
+	commands = append(commands, skillCommands...)
+	skillItems = slices.DeleteFunc(skillItems, func(item tui.AutocompleteItem) bool {
+		_, conflict := extensionNames["skill:"+strings.TrimPrefix(item.Value, "@")]
+		return conflict
+	})
+	// Prefer the managed fd: a bare PATH lookup left @file completion silently
+	// inert on machines without a system fd, which orb otherwise downloads.
+	fdPath := tools.ManagedFDPath()
+	var provider tui.AutocompleteProvider = tui.NewCombinedAutocompleteProvider(commands, mode.cwd, fdPath)
+	if mode.interactiveUI != nil {
+		mode.interactiveUI.mu.Lock()
+		factories := append([]extensions.AutocompleteProviderFactory(nil), mode.interactiveUI.acProviders...)
+		mode.interactiveUI.mu.Unlock()
+		wrapped := extensions.AutocompleteProvider(tuiAutocompleteAdapter{provider: provider})
+		for _, factory := range factories {
+			if factory != nil {
+				wrapped = factory(wrapped)
+			}
+		}
+		provider = extensionAutocompleteAdapter{provider: wrapped}
+	}
+	provider = newSkillAutocompleteProvider(provider, skillItems)
+	mode.autocompleteProvider = provider
+	if mode.editor != nil {
+		mode.editor.SetAutocompleteProvider(provider)
+	}
+	mode.setExtensionEditorAutocompleteProvider(provider)
+}
+
+type skillAutocompleteProvider struct {
+	base   tui.AutocompleteProvider
+	skills []tui.AutocompleteItem
+}
+
+func newSkillAutocompleteProvider(base tui.AutocompleteProvider, skills []tui.AutocompleteItem) tui.AutocompleteProvider {
+	if len(skills) == 0 {
+		return base
+	}
+	return &skillAutocompleteProvider{base: base, skills: skills}
+}
+
+func (provider *skillAutocompleteProvider) GetSuggestions(ctx context.Context, lines []string, cursorLine, cursorCol int, force bool) *tui.AutocompleteSuggestions {
+	base := provider.base.GetSuggestions(ctx, lines, cursorLine, cursorCol, force)
+	prefix, query, ok := skillAutocompletePrefix(lines, cursorLine, cursorCol)
+	if !ok || ctx.Err() != nil {
+		return base
+	}
+	skills := tui.FuzzyFilter(provider.skills, query, func(item tui.AutocompleteItem) string {
+		return strings.TrimPrefix(item.Value, "@")
+	})
+	if len(skills) == 0 {
+		return base
+	}
+	items := append([]tui.AutocompleteItem(nil), skills...)
+	if base != nil {
+		items = append(items, base.Items...)
+	}
+	return &tui.AutocompleteSuggestions{Items: items, Prefix: prefix}
+}
+
+func skillAutocompletePrefix(lines []string, cursorLine, cursorCol int) (string, string, bool) {
+	if cursorLine < 0 || cursorLine >= len(lines) {
+		return "", "", false
+	}
+	for _, line := range lines[:cursorLine] {
+		if strings.TrimSpace(line) != "" {
+			return "", "", false
+		}
+	}
+	line := []rune(lines[cursorLine])
+	cursorCol = max(0, min(cursorCol, len(line)))
+	end := cursorCol
+	for end < len(line) && line[end] != ' ' && line[end] != '\t' {
+		end++
+	}
+	before := string(line[:cursorCol])
+	prefix := strings.TrimLeft(before, " \t")
+	start := cursorCol - len([]rune(prefix))
+	token := string(line[start:end])
+	if !strings.HasPrefix(prefix, "@") || strings.HasPrefix(prefix, `@"`) || strings.ContainsAny(token[1:], "/\\ \t") {
+		return "", "", false
+	}
+	return prefix, prefix[1:], true
+}
+
+func (provider *skillAutocompleteProvider) skillName(item tui.AutocompleteItem) (string, bool) {
+	for _, skill := range provider.skills {
+		if item == skill {
+			return strings.TrimPrefix(skill.Value, "@"), true
+		}
+	}
+	return "", false
+}
+
+func (provider *skillAutocompleteProvider) ApplyCompletion(lines []string, cursorLine, cursorCol int, item tui.AutocompleteItem, prefix string) tui.CompletionResult {
+	name, skill := provider.skillName(item)
+	if !skill || !strings.HasPrefix(prefix, "@") || cursorLine < 0 || cursorLine >= len(lines) {
+		return provider.base.ApplyCompletion(lines, cursorLine, cursorCol, item, prefix)
+	}
+	line := []rune(lines[cursorLine])
+	cursorCol = max(0, min(cursorCol, len(line)))
+	start := max(0, cursorCol-len([]rune(prefix)))
+	end := cursorCol
+	for end < len(line) && line[end] != ' ' && line[end] != '\t' {
+		end++
+	}
+	before, after := string(line[:start]), string(line[end:])
+	separator := " "
+	if strings.HasPrefix(after, " ") || strings.HasPrefix(after, "\t") {
+		separator = ""
+	}
+	replacement := "/skill:" + name
+	updated := append([]string(nil), lines...)
+	updated[cursorLine] = before + replacement + separator + after
+	return tui.CompletionResult{Lines: updated, CursorLine: cursorLine, CursorCol: len([]rune(before + replacement + separator))}
+}
+
+func (provider *skillAutocompleteProvider) StyleAutocompleteItem(item tui.AutocompleteItem, text string, selected bool) string {
+	if _, skill := provider.skillName(item); !skill || selected {
+		return text
+	}
+	end := min(len("[skill]"), len(text))
+	return theme.FG("accent", theme.Bold(text[:end])) + theme.FG("mdLink", text[end:])
+}
+
+func (provider *skillAutocompleteProvider) ShouldTriggerFileCompletion(lines []string, cursorLine, cursorCol int) bool {
+	if gate, ok := provider.base.(tui.FileCompletionGate); ok {
+		return gate.ShouldTriggerFileCompletion(lines, cursorLine, cursorCol)
+	}
+	return true
+}
+
+func (provider *skillAutocompleteProvider) TriggerCharacters() []string {
+	if trigger, ok := provider.base.(tui.TriggerCharacterProvider); ok {
+		return trigger.TriggerCharacters()
+	}
+	return nil
+}
+
+// setupExtensionShortcuts installs the extension shortcut dispatcher on the
+// default editor (upstream interactive-mode.ts setupExtensionShortcuts): the
+// resolved shortcuts are matched against raw key input ahead of built-in
+// keybindings and each hit runs its handler asynchronously.
+func (mode *InteractiveMode) setupExtensionShortcuts() {
+	runner := mode.session.ExtensionRunner()
+	if runner == nil || mode.editor == nil {
+		return
+	}
+	shortcuts := runner.Shortcuts(keybindingStrings(mode.keybindings.ResolvedBindings()))
+	if len(shortcuts) == 0 {
+		return
+	}
+	order := make([]string, 0, len(shortcuts))
+	for _, key := range runner.ShortcutOrder() {
+		if _, exists := shortcuts[key]; exists {
+			order = append(order, key)
+		}
+	}
+	mode.editor.OnExtensionShortcut = func(data string) bool {
+		for _, key := range order {
+			if !tui.MatchesKey(data, tui.KeyID(key)) {
+				continue
+			}
+			shortcut := shortcuts[key]
+			// Run handler async, don't block input (upstream interactive-mode.ts:1800).
+			go func() {
+				if err := callShortcutHandler(shortcut.Handler, runner.CreateContext()); err != nil {
+					mode.showError(errors.New("Shortcut handler error: " + err.Error()))
+				}
+			}()
+			return true
+		}
+		return false
+	}
+}
+
+func callShortcutHandler(handler func(context.Context, extensions.Context) error, extensionContext extensions.Context) (err error) {
+	if handler == nil {
+		return nil
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("%v", recovered)
+		}
+	}()
+	return handler(context.Background(), extensionContext)
+}
+
+type autocompleteModel struct {
+	id       string
+	provider string
+	name     string
+}
+
+func (mode *InteractiveMode) modelArgumentCompletions(prefix string) []tui.AutocompleteItem {
+	var models []ai.Model
+	if scoped := mode.session.ScopedModels(); len(scoped) > 0 {
+		models = make([]ai.Model, len(scoped))
+		for index, model := range scoped {
+			models[index] = model.Model
+		}
+	} else {
+		models = mode.session.AvailableModels()
+	}
+	items := make([]autocompleteModel, len(models))
+	for index, model := range models {
+		items[index] = autocompleteModel{id: model.ID, provider: string(model.Provider), name: model.Name}
+	}
+	filtered := tui.FuzzyFilter(items, prefix, func(item autocompleteModel) string {
+		name := ""
+		if item.name != "" {
+			name = " " + item.name
+		}
+		return fmt.Sprintf("%s %s %s/%s %s %s%s", item.id, item.provider, item.provider, item.id, item.provider, item.id, name)
+	})
+	if len(filtered) == 0 {
+		return nil
+	}
+	result := make([]tui.AutocompleteItem, len(filtered))
+	for index, item := range filtered {
+		result[index] = tui.AutocompleteItem{
+			Value: item.provider + "/" + item.id, Label: item.id, Description: item.provider,
+		}
+	}
+	return result
+}
+
+type autocompleteLoginProvider struct {
+	id        string
+	name      string
+	authTypes []aiauth.AuthType
+}
+
+func (mode *InteractiveMode) loginArgumentCompletions(prefix string) []tui.AutocompleteItem {
+	if mode.options.Host == nil {
+		return nil
+	}
+	options, err := mode.options.Host.AuthOptions(context.Background())
+	if err != nil {
+		return nil
+	}
+	providers := make([]autocompleteLoginProvider, 0, len(options.Login))
+	byID := make(map[string]int, len(options.Login))
+	for _, option := range options.Login {
+		if index, exists := byID[option.ID]; exists {
+			if !slices.Contains(providers[index].authTypes, option.AuthType) {
+				providers[index].authTypes = append(providers[index].authTypes, option.AuthType)
+				slices.SortStableFunc(providers[index].authTypes, compareAutocompleteAuthTypes)
+			}
+			continue
+		}
+		byID[option.ID] = len(providers)
+		providers = append(providers, autocompleteLoginProvider{
+			id: option.ID, name: option.Name, authTypes: []aiauth.AuthType{option.AuthType},
+		})
+	}
+	collator := localecompare.New()
+	slices.SortStableFunc(providers, func(left, right autocompleteLoginProvider) int {
+		return collator.CompareString(left.name, right.name)
+	})
+	filtered := tui.FuzzyFilter(providers, prefix, func(provider autocompleteLoginProvider) string {
+		authTypes := make([]string, len(provider.authTypes))
+		for index, authType := range provider.authTypes {
+			authTypes[index] = string(authType) + " " + formatAutocompleteAuthType(authType)
+		}
+		return provider.id + " " + provider.name + " " + strings.Join(authTypes, " ")
+	})
+	if len(filtered) == 0 {
+		return nil
+	}
+	result := make([]tui.AutocompleteItem, len(filtered))
+	for index, provider := range filtered {
+		authTypes := make([]string, len(provider.authTypes))
+		for authIndex, authType := range provider.authTypes {
+			authTypes[authIndex] = formatAutocompleteAuthType(authType)
+		}
+		description := strings.Join(authTypes, "/")
+		if provider.name != provider.id {
+			description = provider.name + " · " + description
+		}
+		result[index] = tui.AutocompleteItem{Value: provider.id, Label: provider.id, Description: description}
+	}
+	return result
+}
+
+func compareAutocompleteAuthTypes(left, right aiauth.AuthType) int {
+	order := func(value aiauth.AuthType) int {
+		if value == aiauth.AuthTypeOAuth {
+			return 0
+		}
+		return 1
+	}
+	return order(left) - order(right)
+}
+
+func formatAutocompleteAuthType(authType aiauth.AuthType) string {
+	if authType == aiauth.AuthTypeOAuth {
+		return "subscription"
+	}
+	return "API key"
+}
+
+func (mode *InteractiveMode) setExtensionEditorAutocompleteProvider(provider tui.AutocompleteProvider) {
+	if provider == nil {
+		return
+	}
+	editor, ok := mode.currentExtensionEditor().(extensions.AutocompleteEditorComponent)
+	if !ok {
+		return
+	}
+	editor.SetAutocompleteProvider(tuiAutocompleteAdapter{provider: provider})
+}
+
+func autocompleteDescription(description, source, scope string) string {
+	if source == "" && scope == "" {
+		return description
+	}
+	scopePrefix := "t"
+	switch scope {
+	case "user":
+		scopePrefix = "u"
+	case "project":
+		scopePrefix = "p"
+	}
+	source = strings.TrimSpace(source)
+	tag := scopePrefix
+	switch {
+	case source == "auto" || source == "local" || source == "cli":
+	case strings.HasPrefix(source, "npm:"):
+		tag += ":" + source
+	default:
+		gitSource := agent.ParseGitURL(source)
+		if gitSource == nil {
+			break
+		}
+		ref := ""
+		if gitSource.Ref != "" {
+			ref = "@" + gitSource.Ref
+		}
+		tag += ":git:" + gitSource.Host + "/" + gitSource.Path + ref
+	}
+	if description == "" {
+		return "[" + tag + "]"
+	}
+	return "[" + tag + "] " + description
+}
+
+func (mode *InteractiveMode) setupKeyHandlers() {
+	mode.ui.OnDebug = mode.handleDebugCommand
+
+	mode.editor.OnEscape = func() {
+		mode.mu.Lock()
+		streaming := mode.streaming
+		answered := mode.turnAnswered
+		mode.mu.Unlock()
+		if streaming {
+			mode.abortAndRestore(answered)
+			return
+		}
+		if mode.bashMode {
+			mode.setActiveEditorText("")
+			mode.bashMode = false
+			mode.editor.SetBorderColor(nil)
+			return
+		}
+		if strings.TrimSpace(mode.activeEditorText(false)) != "" {
+			return
+		}
+		action := mode.session.InteractiveSettings().DoubleEscapeAction
+		if action == "" {
+			action = "tree"
+		}
+		if action == "none" {
+			return
+		}
+		now := time.Now()
+		mode.mu.Lock()
+		double := !mode.lastEscape.IsZero() && now.Sub(mode.lastEscape) <= 500*time.Millisecond
+		if double {
+			mode.lastEscape = time.Time{}
+		} else {
+			mode.lastEscape = now
+		}
+		mode.mu.Unlock()
+		if !double {
+			return
+		}
+		switch action {
+		case "tree":
+			mode.showTreeSelector()
+		case "fork":
+			mode.showUserMessageSelector()
+		}
+	}
+
+	mode.editor.OnCtrlD = func() {
+		go mode.shutdown()
+	}
+
+	mode.editor.OnPasteImage = func() {
+		go func() {
+			image := clipboard.ReadImage()
+			if image == nil {
+				mode.showStatusMessage("No image found on clipboard")
+				return
+			}
+			processed := tools.ProcessImage(image.Bytes, image.MimeType, nil)
+			if !processed.OK {
+				mode.showStatusMessage(processed.Message)
+				return
+			}
+			content := &ai.ImageContent{Data: processed.Data, MimeType: processed.MimeType}
+			mode.mu.Lock()
+			mode.pendingImages = append(mode.pendingImages, content)
+			index := len(mode.pendingImages)
+			mode.mu.Unlock()
+			mode.editor.InsertTextAtCursor(fmt.Sprintf("[image #%d]", index))
+			mode.ui.RequestRender()
+		}()
+	}
+
+	// App action handlers
+	mode.editor.OnAction("app.clear", func() {
+		if mode.editor.GetText() == "" {
+			go mode.shutdown()
+			return
+		}
+		mode.editor.SetText("")
+	})
+
+	mode.editor.OnAction("app.thinking.cycle", func() {
+		_, err := mode.session.CycleThinkingLevel()
+		if err != nil {
+			mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
+		}
+		mode.ui.RequestRender()
+	})
+
+	mode.editor.OnAction("app.thinking.toggle", func() {
+		mode.mu.Lock()
+		mode.thinkingHidden = !mode.thinkingHidden
+		hidden := mode.thinkingHidden
+		streamingComponent := mode.currentStreaming
+		label := mode.thinkingLabel
+		mode.mu.Unlock()
+		mode.session.SetHideThinkingBlock(hidden)
+		if streamingComponent != nil {
+			streamingComponent.SetHideThinkingBlock(hidden, label)
+		}
+		mode.renderInitialMessages()
+	})
+
+	mode.editor.OnAction("app.tools.expand", func() {
+		mode.mu.Lock()
+		expanded := !mode.toolsExpanded
+		mode.mu.Unlock()
+		mode.setToolsExpanded(expanded)
+	})
+
+	mode.editor.OnAction("app.message.followUp", func() {
+		text := mode.editor.GetText()
+		if text == "" {
+			return
+		}
+		mode.editor.SetText("")
+		_ = mode.session.FollowUp(text)
+	})
+
+	mode.editor.OnAction("app.message.dequeue", func() {
+		messages := mode.session.DequeueMessages()
+		if len(messages) == 0 {
+			mode.showStatusMessage("No queued messages to restore")
+			return
+		}
+		mode.restoreToEditor(nil, messages)
+	})
+
+	mode.editor.OnAction("app.model.select", func() { mode.handleModelCommand("") })
+	mode.editor.OnAction("app.session.new", mode.handleClearCommand)
+	mode.editor.OnAction("app.session.tree", mode.showTreeSelector)
+	mode.editor.OnAction("app.session.fork", mode.showUserMessageSelector)
+	mode.editor.OnAction("app.session.resume", mode.showSessionSelector)
+	mode.editor.OnAction("app.editor.external", mode.handleOpenExternalEditor)
+
+	mode.editor.OnAction("app.message.copy", func() {
+		mode.handleCopyCommand()
+	})
+
+	mode.editor.OnAction("app.model.cycleForward", func() {
+		result, err := mode.session.CycleModel(context.Background())
+		if err != nil {
+			mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
+		} else if result != nil {
+			mode.chat.AddChild(newStyledText("dim", fmt.Sprintf("Model: %s/%s (thinking: %s)", result.Model.Provider, result.Model.ID, result.ThinkingLevel)))
+			mode.maybeWarnAboutAnthropicSubscriptionAuth(context.Background(), &result.Model)
+		}
+		mode.ui.RequestRender()
+	})
+
+	mode.editor.OnAction("app.model.cycleBackward", func() {
+		result, err := mode.session.CycleModelBackward(context.Background())
+		if err != nil {
+			mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
+		} else if result != nil {
+			mode.chat.AddChild(newStyledText("dim", fmt.Sprintf("Model: %s/%s (thinking: %s)", result.Model.Provider, result.Model.ID, result.ThinkingLevel)))
+			mode.maybeWarnAboutAnthropicSubscriptionAuth(context.Background(), &result.Model)
+		}
+		mode.ui.RequestRender()
+	})
+
+	mode.editor.OnAction("app.suspend", func() {
+		_ = mode.ui.Stop()
+		p, _ := os.FindProcess(os.Getpid())
+		_ = p.Signal(syscall.SIGTSTP)
+		_ = mode.ui.Start()
+	})
+}
+
+func (mode *InteractiveMode) setupEditorSubmitHandler() {
+	mode.editor.OnSubmit = func(text string) {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return
+		}
+		// Sending is an explicit request to watch what happens next, so a
+		// transcript scrolled up for reading snaps back to the live tail.
+		mode.ui.ScrollToBottom()
+
+		// Bash mode: !command
+		if strings.HasPrefix(text, "!") {
+			cmd := strings.TrimPrefix(text, "!")
+			excludeContext := false
+			if strings.HasPrefix(cmd, "!") {
+				cmd = strings.TrimPrefix(cmd, "!")
+				excludeContext = true
+			}
+			cmd = strings.TrimSpace(cmd)
+			if cmd != "" {
+				mode.bashMode = false
+				mode.editor.SetBorderColor(nil)
+				mode.editor.SetText("")
+				mode.editor.AddToHistory(text)
+				mode.executeUserBash(cmd, excludeContext)
+				return
+			}
+		}
+
+		// Slash commands
+		if strings.HasPrefix(text, "/") {
+			name, args := parseSlashCommand(text)
+			if mode.dispatchSlashCommand(name, args) {
+				return
+			}
+		}
+
+		// Detect bash mode toggle
+		if text == "!" {
+			mode.bashMode = !mode.bashMode
+			if mode.bashMode {
+				mode.editor.SetBorderColor(theme.BashModeBorderColor())
+			} else {
+				mode.editor.SetBorderColor(nil)
+			}
+			mode.editor.SetText("")
+			return
+		}
+
+		// Normal message submission
+		mode.mu.Lock()
+		images := mode.pendingImages
+		mode.pendingImages = nil
+		mode.mu.Unlock()
+
+		mode.inputCh <- inputEntry{text: text, images: images}
+		mode.editor.AddToHistory(text)
+	}
+}
+
+func (mode *InteractiveMode) dispatchSlashCommand(name, args string) bool {
+	if args != "" && !slashCommandAllowsArguments(name) {
+		return false
+	}
+	action, ok := mode.resolveSlashCommand(name, args)
+	if !ok {
+		return false
+	}
+	clearFirst := slashCommandClearsEditorFirst(name)
+	if clearFirst {
+		mode.editor.SetText("")
+	}
+	action.run()
+	if !clearFirst {
+		mode.editor.SetText("")
+	}
+	return true
+}
+
+func slashCommandAllowsArguments(name string) bool {
+	switch name {
+	case "model", "export", "import", "name", "login", "compact":
+		return true
+	default:
+		return false
+	}
+}
+
+var hiddenInteractiveCommandNames = []string{"debug", "arminsayshi", "dementedelves"}
+
+func interactiveCommandNames() []string {
+	names := make([]string, 0, len(agent.BuiltinSlashCommands)+len(hiddenInteractiveCommandNames))
+	for _, command := range agent.BuiltinSlashCommands {
+		names = append(names, command.Name)
+	}
+	return append(names, hiddenInteractiveCommandNames...)
+}
+
+func isInteractiveCommandName(name string) bool {
+	for _, candidate := range interactiveCommandNames() {
+		if candidate == name {
+			return true
+		}
+	}
+	return false
+}
+
+func slashCommandClearsEditorFirst(name string) bool {
+	switch name {
+	case "model", "scoped-models", "clone", "login", "new", "compact", "reload", "quit":
+		return true
+	default:
+		return false
+	}
+}
+
+type slashCommandAction struct {
+	name      string
+	arguments []string
+	run       func()
+}
+
+func (mode *InteractiveMode) resolveSlashCommand(name, args string) (slashCommandAction, bool) {
+	if !isInteractiveCommandName(name) {
+		return slashCommandAction{}, false
+	}
+	noArguments := []string{}
+	switch name {
+	case "quit":
+		return slashCommandAction{name: "shutdown", arguments: noArguments, run: func() { mode.shutdown() }}, true
+	case "new":
+		return slashCommandAction{name: "handleClearCommand", arguments: noArguments, run: mode.handleClearCommand}, true
+	case "compact":
+		return slashCommandAction{name: "handleCompactCommand", arguments: []string{args}, run: func() { mode.handleCompactCommand(args) }}, true
+	case "copy":
+		return slashCommandAction{name: "handleCopyCommand", arguments: noArguments, run: mode.handleCopyCommand}, true
+	case "name":
+		command := commandText("name", args)
+		return slashCommandAction{name: "handleNameCommand", arguments: []string{command}, run: func() { mode.handleNameCommand(command) }}, true
+	case "hotkeys":
+		return slashCommandAction{name: "handleHotkeysCommand", arguments: noArguments, run: mode.handleHotkeysCommand}, true
+	case "settings":
+		return slashCommandAction{name: "showSettingsSelector", arguments: noArguments, run: mode.showSettingsSelector}, true
+	case "model":
+		return slashCommandAction{name: "handleModelCommand", arguments: []string{args}, run: func() { mode.handleModelCommand(args) }}, true
+	case "scoped-models":
+		return slashCommandAction{name: "showModelsSelector", arguments: noArguments, run: mode.showModelsSelector}, true
+	case "export":
+		command := commandText("export", args)
+		return slashCommandAction{name: "handleExportCommand", arguments: []string{command}, run: func() { mode.handleExportCommand(command) }}, true
+	case "import":
+		command := commandText("import", args)
+		return slashCommandAction{name: "handleImportCommand", arguments: []string{command}, run: func() { mode.handleImportCommand(command) }}, true
+	case "share":
+		return slashCommandAction{name: "handleShareCommand", arguments: noArguments, run: mode.handleShareCommand}, true
+	case "session":
+		return slashCommandAction{name: "handleSessionCommand", arguments: noArguments, run: mode.handleSessionCommand}, true
+	case "changelog":
+		return slashCommandAction{name: "handleChangelogCommand", arguments: noArguments, run: mode.handleChangelogCommand}, true
+	case "fork":
+		return slashCommandAction{name: "showUserMessageSelector", arguments: noArguments, run: mode.showUserMessageSelector}, true
+	case "clone":
+		return slashCommandAction{name: "handleCloneCommand", arguments: noArguments, run: mode.handleCloneCommand}, true
+	case "tree":
+		return slashCommandAction{name: "showTreeSelector", arguments: noArguments, run: mode.showTreeSelector}, true
+	case "trust":
+		return slashCommandAction{name: "showTrustSelector", arguments: noArguments, run: mode.showTrustSelector}, true
+	case "login":
+		return slashCommandAction{name: "handleLoginCommand", arguments: []string{args}, run: func() { mode.handleLoginCommand(args) }}, true
+	case "logout":
+		return slashCommandAction{name: "showOAuthSelector", arguments: []string{"logout"}, run: func() { mode.showOAuthSelector("logout") }}, true
+	case "resume":
+		return slashCommandAction{name: "showSessionSelector", arguments: noArguments, run: mode.showSessionSelector}, true
+	case "reload":
+		return slashCommandAction{name: "handleReloadCommand", arguments: noArguments, run: mode.handleReloadCommand}, true
+	case "debug":
+		return slashCommandAction{name: "handleDebugCommand", arguments: noArguments, run: mode.handleDebugCommand}, true
+	case "arminsayshi":
+		return slashCommandAction{name: "handleArminSaysHi", arguments: noArguments, run: mode.handleArminSaysHi}, true
+	case "dementedelves":
+		return slashCommandAction{name: "handleDementedDelves", arguments: noArguments, run: mode.handleDementedDelves}, true
+	}
+	return slashCommandAction{}, false
+}
+
+func commandText(name, args string) string {
+	if args == "" {
+		return "/" + name
+	}
+	return "/" + name + " " + args
+}
+
+func (mode *InteractiveMode) handleHotkeysCommand() {
+	goos := mode.keyDisplayOS
+	if goos == "" {
+		goos = runtime.GOOS
+	}
+	display := func(binding string) string {
+		keys := mode.keybindings.Keys(binding)
+		formatted := make([]string, len(keys))
+		for index, key := range keys {
+			formatted[index] = formatKeyDisplayTextForOS(string(key), goos)
+		}
+		return strings.Join(formatted, "/")
+	}
+	hotkeys := fmt.Sprintf(`**Navigation**
+| Key | Action |
+|-----|--------|
+| %s / %s / %s / %s | Move cursor / browse history |
+| %s / %s | Move by word |
+| %s | Start of line |
+| %s | End of line |
+| %s | Jump forward to character |
+| %s | Jump backward to character |
+| %s / %s | Scroll by page |
+
+**Editing**
+| Key | Action |
+|-----|--------|
+| %s | Send message |
+| %s | New line |
+| %s | Delete word backwards |
+| %s | Delete word forwards |
+| %s | Delete to start of line |
+| %s | Delete to end of line |
+| %s | Paste the most-recently-deleted text |
+| %s | Cycle through the deleted text after pasting |
+| %s | Undo |
+
+**Other**
+| Key | Action |
+|-----|--------|
+| %s | Path completion / accept autocomplete |
+| %s | Cancel autocomplete / abort streaming |
+| %s | Clear editor (first) / exit (second) |
+| %s | Exit (when editor is empty) |
+| %s | Suspend to background |
+| %s | Cycle thinking level |
+| %s / %s | Cycle models |
+| %s | Open model selector |
+| %s | Toggle tool output expansion |
+| %s | Toggle thinking block visibility |
+| %s | Edit message in external editor |
+| %s | Copy last assistant message |
+| %s | Queue follow-up message |
+| %s | Restore queued messages |
+| %s | Paste image or text from clipboard |
+| %s | Slash commands |
+| %s | Run bash command |
+| %s | Run bash command (excluded from context) |`,
+		markdownKey(display("tui.editor.cursorUp")), markdownKey(display("tui.editor.cursorDown")), markdownKey(display("tui.editor.cursorLeft")), markdownKey(display("tui.editor.cursorRight")),
+		markdownKey(display("tui.editor.cursorWordLeft")), markdownKey(display("tui.editor.cursorWordRight")), markdownKey(display("tui.editor.cursorLineStart")), markdownKey(display("tui.editor.cursorLineEnd")),
+		markdownKey(display("tui.editor.jumpForward")), markdownKey(display("tui.editor.jumpBackward")), markdownKey(display("tui.editor.pageUp")), markdownKey(display("tui.editor.pageDown")),
+		markdownKey(display("tui.input.submit")), markdownKey(display("tui.input.newLine")), markdownKey(display("tui.editor.deleteWordBackward")), markdownKey(display("tui.editor.deleteWordForward")),
+		markdownKey(display("tui.editor.deleteToLineStart")), markdownKey(display("tui.editor.deleteToLineEnd")), markdownKey(display("tui.editor.yank")), markdownKey(display("tui.editor.yankPop")), markdownKey(display("tui.editor.undo")),
+		markdownKey(display("tui.input.tab")), markdownKey(display("app.interrupt")), markdownKey(display("app.clear")), markdownKey(display("app.exit")), markdownKey(display("app.suspend")),
+		markdownKey(display("app.thinking.cycle")), markdownKey(display("app.model.cycleForward")), markdownKey(display("app.model.cycleBackward")), markdownKey(display("app.model.select")),
+		markdownKey(display("app.tools.expand")), markdownKey(display("app.thinking.toggle")), markdownKey(display("app.editor.external")), markdownKey(display("app.message.copy")),
+		markdownKey(display("app.message.followUp")), markdownKey(display("app.message.dequeue")), markdownKey(display("app.clipboard.pasteImage")), markdownKey("/"), markdownKey("!"), markdownKey("!!"),
+	)
+	mode.chat.AddChild(tui.NewSpacer(1))
+	mode.chat.AddChild(NewDynamicBorder())
+	mode.chat.AddChild(tui.NewText(theme.Bold(theme.FG("accent", "Keyboard Shortcuts")), 1, 0, nil))
+	mode.chat.AddChild(tui.NewSpacer(1))
+	mode.chat.AddChild(tui.NewMarkdown(hotkeys, 1, 1, mode.mdTheme, nil, nil))
+	mode.chat.AddChild(NewDynamicBorder())
+	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) handleChangelogCommand() {
+	changelog := mode.options.Changelog
+	if changelog == "" {
+		changelog = bundledChangelog()
+	}
+	mode.chat.AddChild(tui.NewSpacer(1))
+	mode.chat.AddChild(NewDynamicBorder())
+	mode.chat.AddChild(tui.NewText(theme.Bold(theme.FG("accent", "What's New")), 1, 0, nil))
+	mode.chat.AddChild(tui.NewSpacer(1))
+	mode.chat.AddChild(tui.NewMarkdown(changelog, 1, 1, mode.mdTheme, nil, nil))
+	mode.chat.AddChild(NewDynamicBorder())
+	mode.ui.RequestRender()
+}
+
+func markdownKey(value string) string { return "`" + value + "`" }
+
+func formatKeyDisplayTextForOS(key, goos string) string {
+	parts := strings.Split(key, "/")
+	for index, binding := range parts {
+		modifiers := strings.Split(formatKeyTextForOS(binding, goos), "+")
+		for modifier := range modifiers {
+			if modifiers[modifier] != "" {
+				modifiers[modifier] = strings.ToUpper(modifiers[modifier][:1]) + modifiers[modifier][1:]
+			}
+		}
+		parts[index] = strings.Join(modifiers, "+")
+	}
+	return strings.Join(parts, "/")
+}
+
+func (mode *InteractiveMode) executeUserBash(command string, excludeFromContext bool) {
+	comp := mode.newBashExecutionComponent(command, excludeFromContext)
+	mode.chat.AddChild(comp)
+	mode.ui.RequestRender()
+
+	go func() {
+		result, err := mode.session.ExecuteUserBash(
+			context.Background(),
+			command,
+			excludeFromContext,
+			func(chunk string) {
+				comp.AppendOutput(chunk)
+				mode.requestChatRender(comp)
+			},
+		)
+		if err != nil {
+			exitCode := 1
+			comp.SetComplete(&exitCode, false)
+		} else {
+			comp.SetComplete(result.ExitCode, result.Cancelled)
+		}
+		mode.requestChatRender(comp)
+	}()
+}
+
+func (mode *InteractiveMode) handleCopyCommand() {
+	text := mode.session.GetLastAssistantText()
+	if text == nil || *text == "" {
+		mode.showError(errors.New("No agent messages to copy yet.")) //nolint:staticcheck // Upstream command text is observable.
+		return
+	}
+	if err := clipboard.CopyToClipboard(*text); err != nil {
+		mode.chat.AddChild(newStyledText("error", "Copy failed: "+err.Error()))
+	} else {
+		mode.chat.AddChild(newStyledText("dim", "Copied to clipboard"))
+	}
+	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) handleNameCommand(text string) {
+	name := strings.TrimSpace(strings.TrimPrefix(text, "/name"))
+	if name == "" {
+		mode.chat.AddChild(newStyledText("dim", "Usage: /name <session name>"))
+		mode.ui.RequestRender()
+		return
+	}
+	if err := mode.session.SetSessionName(name); err != nil {
+		mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
+	} else {
+		sessionName := mode.session.Manager().GetSessionName()
+		resolved := name
+		if sessionName != nil {
+			resolved = *sessionName
+		}
+		if resolved != name {
+			mode.interactiveUI.Notify(fmt.Sprintf("Session name was normalized from %q to %q", name, resolved), extensions.NotifyWarning)
+		}
+		mode.chat.AddChild(tui.NewSpacer(1))
+		mode.chat.AddChild(tui.NewText(theme.FG("dim", "Session name set: "+resolved), 1, 0, nil))
+	}
+	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) handleModelCommand(args string) {
+	args = strings.TrimSpace(args)
+	if args != "" {
+		for _, model := range mode.session.AvailableModels() {
+			if fmt.Sprintf("%s/%s", model.Provider, model.ID) == args {
+				if err := mode.session.SetModel(context.Background(), model); err != nil {
+					mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
+				} else {
+					mode.chat.AddChild(newStyledText("dim", fmt.Sprintf("Model set to %s/%s", model.Provider, model.ID)))
+					mode.maybeWarnAboutAnthropicSubscriptionAuth(context.Background(), &model)
+				}
+				mode.ui.RequestRender()
+				return
+			}
+		}
+		mode.showModelSelector(args)
+		return
+	}
+
+	mode.showModelSelector("")
+}
+
+func (mode *InteractiveMode) showModelSelector(initialSearch string) {
+	mode.cancelModelSelector()
+	// f8746813: opening the model picker re-reads models.json so external
+	// edits show up without a restart.
+	_ = mode.session.RefreshModels()
+	models := mode.session.AvailableModels()
+	scoped := mode.session.ScopedModels()
+	current := mode.session.State().Model
+	ctx, cancel := context.WithCancel(mode.authenticationContext())
+	done := make(chan struct{})
+	mode.mu.Lock()
+	mode.modelSelectorCancel = cancel
+	mode.modelSelectorDone = done
+	mode.mu.Unlock()
+	go func() {
+		defer func() {
+			close(done)
+			mode.mu.Lock()
+			if mode.modelSelectorDone == done {
+				mode.modelSelectorCancel = nil
+				mode.modelSelectorDone = nil
+			}
+			mode.mu.Unlock()
+		}()
+		selected, ok := mode.selectModelSearchable(ctx, current, models, scoped, initialSearch)
+		if !ok {
+			return
+		}
+		if err := mode.session.SetModel(ctx, selected); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
+		} else {
+			mode.chat.AddChild(newStyledText("dim", fmt.Sprintf("Model: %s/%s", selected.Provider, selected.ID)))
+			mode.maybeWarnAboutAnthropicSubscriptionAuth(ctx, &selected)
+		}
+		mode.ui.RequestRender()
+	}()
+}
+
+func (mode *InteractiveMode) cancelModelSelector() {
+	mode.mu.Lock()
+	cancel := mode.modelSelectorCancel
+	done := mode.modelSelectorDone
+	mode.modelSelectorCancel = nil
+	mode.modelSelectorDone = nil
+	mode.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		<-done
+	}
+}
+
+func (mode *InteractiveMode) showSettingsSelector() {
+	settings := mode.session.InteractiveModeSettings()
+	boolText := func(value bool) string {
+		if value {
+			return "true"
+		}
+		return "false"
+	}
+	items := []tui.SettingItem{
+		{ID: "autocompact", Label: "Auto-compact", Description: "Automatically compact context when it gets too large", CurrentValue: boolText(mode.session.AutoCompactionEnabled()), Values: []string{"true", "false"}},
+	}
+	if tui.GetCapabilities().Images != "" {
+		items = append(items,
+			tui.SettingItem{ID: "show-images", Label: "Show images", Description: "Render images inline in terminal", CurrentValue: boolText(settings.ShowImages), Values: []string{"true", "false"}},
+			tui.SettingItem{ID: "image-width-cells", Label: "Image width", Description: "Preferred inline image width in terminal cells", CurrentValue: strconv.Itoa(settings.ImageWidthCells), Values: []string{"60", "80", "120"}},
+		)
+	}
+	items = append(items,
+		tui.SettingItem{ID: "auto-resize-images", Label: "Auto-resize images", Description: "Resize large images to 2000x2000 max for better model compatibility", CurrentValue: boolText(settings.ImageAutoResize), Values: []string{"true", "false"}},
+		tui.SettingItem{ID: "block-images", Label: "Block images", Description: "Prevent images from being sent to LLM providers", CurrentValue: boolText(settings.BlockImages), Values: []string{"true", "false"}},
+		tui.SettingItem{ID: "skill-commands", Label: "Skill commands", Description: "Register skills as /skill:name commands", CurrentValue: boolText(settings.EnableSkillCommands), Values: []string{"true", "false"}},
+		tui.SettingItem{ID: "show-hardware-cursor", Label: "Show hardware cursor", Description: "Show the terminal cursor while still positioning it for IME support", CurrentValue: boolText(settings.ShowHardwareCursor), Values: []string{"true", "false"}},
+		tui.SettingItem{ID: "editor-padding", Label: "Editor padding", Description: "Horizontal padding for input editor (0-3)", CurrentValue: strconv.Itoa(settings.EditorPaddingX), Values: []string{"0", "1", "2", "3"}},
+		tui.SettingItem{ID: "output-padding", Label: "Output padding", Description: "Horizontal padding for user messages, assistant messages, and thinking", CurrentValue: strconv.Itoa(settings.OutputPad), Values: []string{"0", "1"}},
+		tui.SettingItem{ID: "autocomplete-max-visible", Label: "Autocomplete max items", Description: "Max visible items in autocomplete dropdown (3-20)", CurrentValue: strconv.Itoa(settings.AutocompleteMaxVisible), Values: []string{"3", "5", "7", "10", "15", "20"}},
+		tui.SettingItem{ID: "clear-on-shrink", Label: "Clear on shrink", Description: "Clear empty rows when content shrinks (may cause flicker)", CurrentValue: boolText(settings.ClearOnShrink), Values: []string{"true", "false"}},
+		tui.SettingItem{ID: "terminal-progress", Label: "Terminal progress", Description: "Show OSC 9;4 progress indicators in the terminal tab bar", CurrentValue: boolText(settings.ShowTerminalProgress), Values: []string{"true", "false"}},
+		tui.SettingItem{ID: "steering-mode", Label: "Steering mode", Description: "Enter while streaming queues steering messages. 'one-at-a-time': deliver one, wait for response. 'all': deliver all at once.", CurrentValue: string(settings.SteeringMode), Values: []string{"one-at-a-time", "all"}},
+		tui.SettingItem{ID: "follow-up-mode", Label: "Follow-up mode", Description: "Queue follow-up messages until the agent stops", CurrentValue: string(settings.FollowUpMode), Values: []string{"one-at-a-time", "all"}},
+		tui.SettingItem{ID: "transport", Label: "Transport", Description: "Preferred transport for providers that support multiple transports", CurrentValue: string(settings.Transport), Values: []string{"sse", "websocket", "websocket-cached", "auto"}},
+		tui.SettingItem{ID: "http-idle-timeout", Label: "HTTP idle timeout", Description: "Maximum idle gap while waiting for HTTP headers or body chunks. Disable for local models that pause longer than five minutes.", CurrentValue: config.FormatHTTPIdleTimeoutMS(settings.HTTPIdleTimeoutMS), Values: httpIdleTimeoutLabels()},
+		tui.SettingItem{ID: "hide-thinking", Label: "Hide thinking", Description: "Hide thinking blocks in assistant responses", CurrentValue: boolText(settings.HideThinkingBlock), Values: []string{"true", "false"}},
+		tui.SettingItem{ID: "mermaid-rendering", Label: "Mermaid diagrams", Description: "Render Mermaid code blocks as Unicode diagrams", CurrentValue: settings.MermaidRenderingMode, Values: []string{"off", "final", "streaming"}},
+		tui.SettingItem{ID: "cache-miss-notices", Label: "Cache miss notices", Description: "Show transcript notices for significant prompt-cache misses", CurrentValue: boolText(settings.ShowCacheMissNotices), Values: []string{"true", "false"}},
+		tui.SettingItem{ID: "quiet-startup", Label: "Quiet startup", Description: "Disable verbose printing at startup", CurrentValue: boolText(settings.QuietStartup), Values: []string{"true", "false"}},
+		tui.SettingItem{ID: "default-project-trust", Label: "Default project trust", Description: "Fallback behavior when no extension or saved trust decision decides project trust", CurrentValue: settings.DefaultProjectTrust, Values: []string{"ask", "always", "never"}},
+		tui.SettingItem{ID: "double-escape-action", Label: "Double-escape action", Description: "Action when pressing Escape twice with empty editor", CurrentValue: settings.DoubleEscapeAction, Values: []string{"tree", "fork", "none"}},
+		tui.SettingItem{ID: "tree-filter-mode", Label: "Tree filter mode", Description: "Default filter when opening /tree", CurrentValue: settings.TreeFilterMode, Values: []string{"default", "no-tools", "user-only", "labeled-only", "all"}},
+	)
+	thinkingValues := make([]string, 0)
+	for _, level := range mode.session.AvailableThinkingLevels() {
+		thinkingValues = append(thinkingValues, string(level))
+	}
+	items = append(items, tui.SettingItem{ID: "thinking", Label: "Thinking level", Description: "Reasoning depth for thinking-capable models", CurrentValue: string(mode.session.State().ThinkingLevel), Values: thinkingValues})
+	if mode.themeRegistry != nil {
+		themes := mode.themeRegistry.Available()
+		items = append(items, tui.SettingItem{ID: "theme", Label: "Theme", Description: "Color theme for the interface", CurrentValue: mode.themeSettingOr(settings.ThemeSetting), Values: themes})
+	}
+
+	closeSelector := func() {
+		mode.restoreEditorComponent()
+		mode.ui.SetFocus(mode.activeEditorFocus())
+		mode.ui.RequestRender()
+	}
+	list := tui.NewSettingsList(items, 10, settingsListTheme(), func(id, value string) {
+		mode.applySetting(id, value)
+	}, closeSelector, tui.SettingsListOptions{EnableSearch: true})
+	selector := &tui.Container{}
+	selector.AddChild(NewDynamicBorder())
+	selector.AddChild(list)
+	selector.AddChild(NewDynamicBorder())
+	mode.editorContainer.Clear()
+	mode.editorContainer.AddChild(selector)
+	mode.ui.SetFocus(list)
+	mode.ui.RequestRender()
+}
+
+func httpIdleTimeoutLabels() []string {
+	labels := make([]string, len(config.HTTPIdleTimeoutChoices))
+	for index, choice := range config.HTTPIdleTimeoutChoices {
+		labels[index] = choice.Label
+	}
+	return labels
+}
+
+func (mode *InteractiveMode) applySetting(id, value string) {
+	enabled := value == "true"
+	integer, _ := strconv.Atoi(value)
+	switch id {
+	case "autocompact":
+		mode.session.SetAutoCompactionEnabled(enabled)
+	case "show-images":
+		mode.session.SetShowImages(enabled)
+		mode.renderInitialMessages()
+	case "image-width-cells":
+		mode.session.SetImageWidthCells(integer)
+		mode.renderInitialMessages()
+	case "auto-resize-images":
+		mode.session.SetImageAutoResize(enabled)
+	case "block-images":
+		mode.session.SetBlockImages(enabled)
+	case "skill-commands":
+		mode.session.SetEnableSkillCommands(enabled)
+		mode.setupAutocomplete()
+	case "show-hardware-cursor":
+		mode.session.SetShowHardwareCursor(enabled)
+		mode.ui.SetShowHardwareCursor(enabled)
+	case "editor-padding":
+		mode.session.SetEditorPaddingX(integer)
+		mode.editor.SetPaddingX(integer)
+	case "output-padding":
+		mode.session.SetOutputPad(integer)
+		mode.mu.Lock()
+		mode.outputPad = integer
+		mode.mu.Unlock()
+		mode.renderInitialMessages()
+	case "autocomplete-max-visible":
+		mode.session.SetAutocompleteMaxVisible(integer)
+		mode.editor.SetAutocompleteMaxVisible(integer)
+	case "clear-on-shrink":
+		mode.session.SetClearOnShrink(enabled)
+		mode.ui.SetClearOnShrink(enabled)
+	case "terminal-progress":
+		mode.session.SetShowTerminalProgress(enabled)
+	case "steering-mode":
+		mode.session.SetSteeringMode(engine.QueueMode(value))
+	case "follow-up-mode":
+		mode.session.SetFollowUpMode(engine.QueueMode(value))
+	case "transport":
+		mode.session.SetTransport(ai.Transport(value))
+	case "http-idle-timeout":
+		for _, choice := range config.HTTPIdleTimeoutChoices {
+			if choice.Label == value {
+				mode.session.SetHTTPIdleTimeoutMS(choice.TimeoutMS)
+				mode.showStatusMessage("HTTP idle timeout: " + config.FormatHTTPIdleTimeoutMS(choice.TimeoutMS))
+				break
+			}
+		}
+	case "hide-thinking":
+		mode.mu.Lock()
+		mode.thinkingHidden = enabled
+		mode.mu.Unlock()
+		mode.session.SetHideThinkingBlock(enabled)
+		mode.renderInitialMessages()
+	case "mermaid-rendering":
+		mode.session.SetMermaidRenderingMode(value)
+		mode.chat.Invalidate()
+	case "cache-miss-notices":
+		mode.session.SetShowCacheMissNotices(enabled)
+		mode.renderInitialMessages()
+	case "quiet-startup":
+		mode.session.SetQuietStartup(enabled)
+	case "default-project-trust":
+		mode.session.SetDefaultProjectTrust(value)
+	case "double-escape-action":
+		mode.session.SetDoubleEscapeAction(value)
+	case "tree-filter-mode":
+		mode.session.SetTreeFilterMode(value)
+	case "thinking":
+		if err := mode.session.SetThinkingLevel(ai.ModelThinkingLevel(value)); err != nil {
+			mode.showError(err)
+		}
+	case "theme":
+		if result := mode.interactiveUI.SetTheme(value); result.Error != "" {
+			mode.showError(errors.New(result.Error))
+		}
+	}
+	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) handleExportCommand(text string) {
+	outputPath := pathCommandArgument(text, "/export")
+	var path string
+	var err error
+	if strings.HasSuffix(outputPath, ".jsonl") {
+		path, err = mode.session.ExportJSONL(outputPath)
+	} else if mode.exportHTML != nil {
+		path, err = mode.exportHTML(outputPath)
+	} else {
+		path, err = mode.session.ExportHTML(outputPath)
+	}
+	if err != nil {
+		mode.showError(errors.New("Failed to export session: " + err.Error()))
+	} else {
+		mode.showStatusMessage("Session exported to: " + path)
+	}
+}
+
+func (mode *InteractiveMode) handleShareCommand() {
+	mode.handleExportCommand("/export")
+}
+
+func pathCommandArgument(text, command string) string {
+	if text == command || !strings.HasPrefix(text, command+" ") {
+		return ""
+	}
+	arguments := strings.TrimLeft(text[len(command)+1:], " \t\n\r")
+	if arguments == "" {
+		return ""
+	}
+	if arguments[0] == '"' || arguments[0] == '\'' {
+		if closing := strings.IndexByte(arguments[1:], arguments[0]); closing >= 0 {
+			return arguments[1 : closing+1]
+		}
+		return ""
+	}
+	if whitespace := strings.IndexAny(arguments, " \t\n\r"); whitespace >= 0 {
+		return arguments[:whitespace]
+	}
+	return arguments
+}
+
+func (mode *InteractiveMode) showUserMessageSelector() {
+	messages := mode.session.GetUserMessagesForForking()
+	options := make([]string, 0, len(messages))
+	ids := make(map[string]string, len(messages))
+	for _, message := range messages {
+		preview := strings.ReplaceAll(message.Text, "\n", " ")
+		if len(preview) > 60 {
+			preview = preview[:57] + "..."
+		}
+		label := preview + "  [" + message.EntryID[:min(8, len(message.EntryID))] + "]"
+		options = append(options, label)
+		ids[label] = message.EntryID
+	}
+	if len(options) == 0 {
+		mode.showStatusMessage("No messages to fork from")
+		return
+	}
+	go func() {
+		selected, ok, _ := mode.interactiveUI.Select(context.Background(), "Fork from message", options, nil)
+		if !ok {
+			return
+		}
+		if mode.options.Host == nil {
+			mode.showError(errors.New("session host is unavailable"))
+			return
+		}
+		result, err := mode.options.Host.Fork(context.Background(), ids[selected], &extensions.ForkOptions{Position: extensions.ForkBefore})
+		if err != nil {
+			mode.showError(err)
+			return
+		}
+		if result.Cancelled {
+			return
+		}
+		mode.editor.SetText(result.SelectedText)
+		mode.showStatusMessage("Forked to new session")
+	}()
+}
+
+func (mode *InteractiveMode) showTreeSelector() {
+	mode.showTreeSelectorAt("")
+}
+
+func (mode *InteractiveMode) showTreeSelectorAt(initialSelectedID string) {
+	tree := mode.session.Manager().GetTree()
+	if len(tree) == 0 {
+		mode.showStatusMessage("No entries in session")
+		return
+	}
+	filterMode := mode.session.InteractiveModeSettings().TreeFilterMode
+	leaf := mode.session.Manager().GetLeafID()
+	leafID := ""
+	if leaf != nil {
+		leafID = *leaf
+	}
+	var selector *TreeSelectorComponent
+	closeSelector := func() bool {
+		children := mode.editorContainer.Children()
+		if len(children) != 1 || children[0] != selector {
+			return false
+		}
+		mode.editorContainer.Clear()
+		mode.restoreEditorComponent()
+		mode.ui.SetFocus(mode.activeEditorFocus())
+		mode.ui.RequestRender()
+		return true
+	}
+	selector = NewTreeSelectorComponent(
+		tree, leafID, mode.ui.Terminal().Rows(),
+		func(selectedID string) {
+			if !closeSelector() {
+				return
+			}
+			currentLeaf := mode.session.Manager().GetLeafID()
+			if currentLeaf != nil && selectedID == *currentLeaf {
+				mode.showStatusMessage("Already at this point")
+				return
+			}
+			go mode.navigateFromTree(selectedID)
+		},
+		func() { closeSelector() },
+		func(entryID string, label *string) {
+			if _, err := mode.session.Manager().AppendLabelChange(entryID, label); err != nil {
+				mode.showError(err)
+			}
+		},
+		initialSelectedID, filterMode,
+	)
+	selector.OnCopy = func(text string) {
+		if text == "" {
+			mode.showError(errors.New("selected entry has no text to copy"))
+			return
+		}
+		go func() {
+			if err := clipboard.CopyToClipboard(text); err != nil {
+				mode.showError(err)
+				return
+			}
+			mode.showStatusMessage("Copied selected message to clipboard")
+		}()
+	}
+	mode.editorContainer.Clear()
+	mode.editorContainer.AddChild(selector)
+	mode.ui.SetFocus(selector)
+	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) navigateFromTree(selectedID string) {
+	var summarize bool
+	var customInstructions string
+	for {
+		choice, ok, err := mode.interactiveUI.Select(context.Background(), "Summarize branch?", []string{
+			"No summary", "Summarize", "Summarize with custom prompt",
+		}, nil)
+		if err != nil {
+			mode.showError(err)
+			return
+		}
+		if !ok {
+			mode.showTreeSelectorAt(selectedID)
+			return
+		}
+		summarize = choice != "No summary"
+		if choice != "Summarize with custom prompt" {
+			break
+		}
+		customInstructions, ok, err = mode.interactiveUI.Editor(context.Background(), "Custom summarization instructions", nil)
+		if err != nil {
+			mode.showError(err)
+			return
+		}
+		if ok {
+			break
+		}
+	}
+	if !mode.session.IsIdle() {
+		queued := mode.session.DequeueMessages()
+		mode.restoreToEditor(nil, queued)
+		mode.session.Abort()
+		if err := mode.session.WaitForIdle(context.Background()); err != nil {
+			mode.showError(err)
+			return
+		}
+	}
+	result, err := mode.session.NavigateTree(context.Background(), selectedID, agent.NavigateTreeOptions{
+		Summarize: summarize, CustomInstructions: customInstructions,
+	})
+	if err != nil {
+		mode.showError(err)
+		return
+	}
+	if result.Aborted {
+		mode.showStatusMessage("Branch summarization cancelled")
+		mode.showTreeSelectorAt(selectedID)
+		return
+	}
+	if result.Cancelled {
+		mode.showStatusMessage("Navigation cancelled")
+		return
+	}
+	if result.EditorText != "" && strings.TrimSpace(mode.activeEditorText(false)) == "" {
+		mode.setActiveEditorText(result.EditorText)
+	}
+	mode.renderInitialMessages()
+	mode.showStatusMessage("Navigated to selected point")
+}
+
+func treeEntryVisible(node *sessionstore.SessionTreeNode, current bool, filterMode string) bool {
+	entry := node.Entry
+	if entry.Type == "message" {
+		role, text := sessionMessageRoleText(entry.Message)
+		if role == "assistant" && text == "" && !current {
+			var message struct {
+				StopReason string `json:"stopReason"`
+			}
+			_ = json.Unmarshal(entry.Message, &message)
+			if message.StopReason == "" || message.StopReason == "stop" || message.StopReason == "toolUse" {
+				return false
+			}
+		}
+		if filterMode == "user-only" {
+			return role == "user"
+		}
+		if filterMode == "no-tools" && role == "toolResult" {
+			return false
+		}
+	}
+	if filterMode == "labeled-only" {
+		return node.Label != nil
+	}
+	if filterMode == "all" {
+		return true
+	}
+	if filterMode == "user-only" {
+		return false
+	}
+	switch entry.Type {
+	case "label", "custom", "model_change", "thinking_level_change", "session_info":
+		return false
+	default:
+		return true
+	}
+}
+
+func (mode *InteractiveMode) showTrustSelector() {
+	if mode.options.Host == nil {
+		mode.showError(errors.New("session host is unavailable"))
+		return
+	}
+	state, err := mode.options.Host.TrustState()
+	if err != nil {
+		mode.showError(err)
+		return
+	}
+	trustOptions := state.Options
+	options := make([]string, len(trustOptions))
+	byLabel := make(map[string]config.ProjectTrustOption, len(trustOptions))
+	for index, option := range trustOptions {
+		options[index] = option.Label
+		byLabel[option.Label] = option
+	}
+	go func() {
+		selected, ok, _ := mode.interactiveUI.Select(context.Background(), "Project trust", options, nil)
+		if !ok {
+			return
+		}
+		option := byLabel[selected]
+		if err := mode.options.Host.SetProjectTrust(context.Background(), option.Updates); err != nil {
+			mode.showError(err)
+			return
+		}
+		mode.showStatusMessage(selected)
+	}()
+}
+
+func sessionEntryLabel(entry sessionstore.SessionEntry) string {
+	switch entry.Type {
+	case "message":
+		role, text := sessionMessageRoleText(entry.Message)
+		text = strings.ReplaceAll(text, "\n", " ")
+		if len(text) > 50 {
+			text = text[:47] + "..."
+		}
+		if text != "" {
+			return role + ": " + text
+		}
+	case "compaction":
+		return "compaction: " + entry.Summary
+	case "branch_summary":
+		return "branch summary: " + entry.Summary
+	case "custom_message":
+		return "custom: " + entry.CustomType
+	case "custom":
+		return "entry: " + entry.CustomType
+	}
+	return entry.Type
+}
+
+func sessionMessageRoleText(raw json.RawMessage) (string, string) {
+	var message struct {
+		Role    string          `json:"role"`
+		Content json.RawMessage `json:"content"`
+	}
+	if json.Unmarshal(raw, &message) != nil {
+		return "", ""
+	}
+	var text string
+	if json.Unmarshal(message.Content, &text) == nil {
+		return message.Role, text
+	}
+	var blocks []struct{ Type, Text string }
+	_ = json.Unmarshal(message.Content, &blocks)
+	var result strings.Builder
+	for _, block := range blocks {
+		if block.Type == "text" {
+			result.WriteString(block.Text)
+		}
+	}
+	return message.Role, result.String()
+}
+
+// abortAndRestore interrupts the running turn and hands back everything the
+// user typed that never got answered. Queued messages return to the editor as
+// upstream does (interactive-mode.ts restoreQueuedMessagesToEditor); a turn
+// that has shown nothing yet additionally gives its prompt back and rewinds the
+// branch to before it, so an edited resend replaces the prompt instead of
+// stacking after it.
+func (mode *InteractiveMode) abortAndRestore(answered bool) {
+	queued := mode.session.DequeueMessages()
+	unsentID := ""
+	if !answered {
+		unsentID = mode.pendingPromptEntryID()
+	}
+	mode.session.Abort()
+	if unsentID == "" {
+		mode.restoreToEditor(nil, queued)
+		return
+	}
+	// The rewind has to wait for the aborted run to settle: NavigateTree
+	// re-syncs the agent's messages from the branch.
+	go func() {
+		if err := mode.session.WaitForIdle(context.Background()); err != nil {
+			mode.restoreToEditor(nil, queued)
+			return
+		}
+		result, err := mode.session.NavigateTree(context.Background(), unsentID, agent.NavigateTreeOptions{})
+		if err != nil || result.Cancelled {
+			mode.restoreToEditor(nil, queued)
+			return
+		}
+		mode.renderInitialMessages()
+		mode.restoreToEditor(&result.EditorText, queued)
+	}()
+}
+
+// pendingPromptEntryID returns the branch's trailing user message — the prompt
+// whose answer never arrived — or "" when the assistant already committed one.
+func (mode *InteractiveMode) pendingPromptEntryID() string {
+	branch := mode.session.Manager().GetBranch()
+	for index := len(branch) - 1; index >= 0; index-- {
+		entry := branch[index]
+		if entry.Type != "message" {
+			continue
+		}
+		role, _ := sessionMessageRoleText(entry.Message)
+		if role != "user" {
+			return ""
+		}
+		return entry.ID
+	}
+	return ""
+}
+
+// restoreToEditor puts the un-sent prompt, then any queued messages, then the
+// current draft back in the editor, in the order they were written.
+func (mode *InteractiveMode) restoreToEditor(unsent *string, queued []string) {
+	parts := make([]string, 0, len(queued)+2)
+	if unsent != nil && strings.TrimSpace(*unsent) != "" {
+		parts = append(parts, *unsent)
+	}
+	for _, message := range queued {
+		if strings.TrimSpace(message) != "" {
+			parts = append(parts, message)
+		}
+	}
+	if current := mode.activeEditorText(false); strings.TrimSpace(current) != "" {
+		parts = append(parts, current)
+	}
+	if len(parts) == 0 {
+		return
+	}
+	mode.setActiveEditorText(strings.Join(parts, "\n\n"))
+	switch {
+	case unsent != nil && len(queued) > 0:
+		mode.showStatusMessage(fmt.Sprintf("Restored the prompt and %s to editor", pluralMessages(len(queued))))
+	case unsent != nil:
+		mode.showStatusMessage("Restored the prompt to editor")
+	default:
+		mode.showStatusMessage(fmt.Sprintf("Restored %s to editor", pluralMessages(len(queued))))
+	}
+	mode.ui.RequestRender()
+}
+
+func pluralMessages(count int) string {
+	if count == 1 {
+		return "1 queued message"
+	}
+	return fmt.Sprintf("%d queued messages", count)
+}
+
+func (mode *InteractiveMode) showStatusMessage(text string) {
+	mode.statusMessageMu.Lock()
+	defer mode.statusMessageMu.Unlock()
+	if mode.lastStatusSpacer != nil && mode.lastStatusText != nil &&
+		mode.chat.EndsWith(mode.lastStatusSpacer, mode.lastStatusText) {
+		mode.lastStatusText.SetText(theme.FG("dim", text))
+		mode.requestChatRender(mode.lastStatusText)
+		return
+	}
+	spacer := tui.NewSpacer(1)
+	message := tui.NewText(theme.FG("dim", text), mode.outputPad+2, 0, nil)
+	mode.chat.AddChild(spacer)
+	mode.chat.AddChild(message)
+	mode.lastStatusSpacer = spacer
+	mode.lastStatusText = message
+	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) setToolsExpanded(expanded bool) {
+	mode.mu.Lock()
+	mode.toolsExpanded = expanded
+	mode.mu.Unlock()
+	for _, container := range []*tui.Container{mode.header, mode.loadedResources, mode.chat} {
+		if container == nil {
+			continue
+		}
+		for _, component := range container.Children() {
+			setExpandedComponent(component, expanded)
+		}
+	}
+	if mode.chat != nil {
+		mode.chat.Invalidate()
+	}
+	status := "collapsed"
+	if expanded {
+		status = "expanded"
+	}
+	mode.showStatusMessage("Tool output: " + status)
+}
+
+func (mode *InteractiveMode) sessionBusy() bool {
+	mode.mu.Lock()
+	streaming := mode.streaming
+	mode.mu.Unlock()
+	return streaming || mode.session.IsCompacting()
+}
+
+func (mode *InteractiveMode) handleClearCommand() {
+	if mode.options.Host == nil {
+		mode.showError(errors.New("session host is unavailable"))
+		return
+	}
+	if mode.sessionBusy() {
+		mode.showStatusMessage("Wait for the current operation to finish before starting a new session.")
+		return
+	}
+	go func() {
+		mode.clearStatusIndicator()
+		result, err := mode.options.Host.NewSession(context.Background(), nil)
+		if err != nil {
+			mode.showError(err)
+			return
+		}
+		if result.Cancelled {
+			return
+		}
+		mode.ui.RequestRender()
+	}()
+}
+
+func (mode *InteractiveMode) handleCompactCommand(instructions string) {
+	mode.clearStatusIndicator()
+	go func() {
+		_, _ = mode.session.Compact(context.Background(), instructions)
+	}()
+}
+
+func (mode *InteractiveMode) clearStatusIndicator() {
+	mode.clearStatusIndicatorKind("")
+}
+
+func (mode *InteractiveMode) clearStatusIndicatorKind(kind StatusIndicatorKind) {
+	mode.mu.Lock()
+	indicator, ok := mode.statusIndicator.(*StatusIndicator)
+	if kind != "" && (!ok || indicator.Kind != kind) {
+		mode.mu.Unlock()
+		return
+	}
+	if ok {
+		indicator.Dispose()
+	}
+	mode.statusIndicator = nil
+	mode.mu.Unlock()
+	if mode.status != nil {
+		mode.status.Clear()
+		if mode.ui != nil && mode.ui.ClearOnShrink() {
+			mode.status.AddChild(&IdleStatus{})
+		}
+	}
+	if mode.ui != nil {
+		mode.ui.RequestRender()
+	}
+}
+
+func (mode *InteractiveMode) handleCloneCommand() {
+	if mode.options.Host == nil {
+		mode.showError(errors.New("session host is unavailable"))
+		return
+	}
+	leaf := mode.session.Manager().GetLeafID()
+	if leaf == nil {
+		mode.showStatusMessage("Nothing to clone yet")
+		return
+	}
+	if mode.sessionBusy() {
+		mode.showStatusMessage("Wait for the current operation to finish before cloning.")
+		return
+	}
+	go func(entryID string) {
+		result, err := mode.options.Host.Fork(context.Background(), entryID, &extensions.ForkOptions{Position: extensions.ForkAt})
+		if err != nil {
+			mode.showError(err)
+			return
+		}
+		if result.Cancelled {
+			return
+		}
+		mode.editor.SetText("")
+		mode.showStatusMessage("Cloned to new session")
+	}(*leaf)
+}
+
+func (mode *InteractiveMode) showSessionSelector() {
+	if mode.options.Host == nil {
+		mode.showError(errors.New("session host is unavailable"))
+		return
+	}
+	if mode.sessionBusy() {
+		mode.showStatusMessage("Wait for the current operation to finish before resuming.")
+		return
+	}
+	closeSelector := func() {
+		mode.restoreEditorComponent()
+		mode.ui.SetFocus(mode.activeEditorFocus())
+		mode.ui.RequestRender()
+	}
+	selector := NewSessionSelectorComponent(SessionSelectorOptions{
+		CurrentSessions: func(progress sessionstore.SessionListProgress) []sessionstore.SessionInfo {
+			return mode.options.Host.ListProjectSessions(progress)
+		},
+		AllSessions: func(progress sessionstore.SessionListProgress) []sessionstore.SessionInfo {
+			return mode.options.Host.ListAllSessions(progress)
+		},
+		CurrentSessionPath: mode.session.Manager().GetSessionFile(),
+		Keybindings:        mode.keybindings,
+		RequestRender:      mode.ui.RequestRender,
+	}, func(path string) {
+		closeSelector()
+		go mode.resumeSelectedSession(path)
+	}, closeSelector)
+	mode.editorContainer.Clear()
+	mode.editorContainer.AddChild(selector)
+	mode.ui.SetFocus(selector)
+	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) resumeSelectedSession(path string) {
+	ctx := context.Background()
+	result, err := mode.options.Host.SwitchSession(ctx, path, "", nil)
+	if err != nil {
+		var missingCWD *MissingSessionCwdError
+		if !errors.As(err, &missingCWD) {
+			mode.showError(err)
+			return
+		}
+		selectedCWD, confirmed, confirmErr := mode.promptForMissingSessionCwd(ctx, missingCWD)
+		if confirmErr != nil {
+			mode.showError(confirmErr)
+			return
+		}
+		if !confirmed {
+			mode.showStatusMessage("Resume cancelled")
+			return
+		}
+		result, err = mode.options.Host.SwitchSession(ctx, path, selectedCWD, nil)
+		if err != nil {
+			mode.showError(err)
+			return
+		}
+		if !result.Cancelled {
+			mode.showStatusMessage("Resumed session in current cwd")
+		}
+		return
+	}
+	if result.Cancelled {
+		return
+	}
+	mode.showStatusMessage("Resumed session")
+}
+
+func (mode *InteractiveMode) handleImportCommand(text string) {
+	path := pathCommandArgument(text, "/import")
+	if path == "" {
+		mode.showError(errors.New("Usage: /import <path.jsonl>")) //nolint:staticcheck // Upstream command text is observable.
+		return
+	}
+	if mode.options.Host == nil {
+		mode.showError(errors.New("session host is unavailable"))
+		return
+	}
+	if mode.sessionBusy() {
+		mode.showStatusMessage("Wait for the current operation to finish before importing.")
+		return
+	}
+	go func() {
+		confirmed, err := mode.interactiveUI.Confirm(context.Background(), "Import session", "Replace current session with "+path+"?", nil)
+		if err != nil || !confirmed {
+			mode.showStatusMessage("Import cancelled")
+			return
+		}
+		mode.clearStatusIndicator()
+		ctx := context.Background()
+		result, err := mode.options.Host.ImportSession(ctx, path, "")
+		if err != nil {
+			var missingCWD *MissingSessionCwdError
+			if !errors.As(err, &missingCWD) {
+				mode.showError(err)
+				return
+			}
+			selectedCWD, confirmed, confirmErr := mode.promptForMissingSessionCwd(ctx, missingCWD)
+			if confirmErr != nil {
+				mode.showError(confirmErr)
+				return
+			}
+			if !confirmed {
+				mode.showStatusMessage("Import cancelled")
+				return
+			}
+			result, err = mode.options.Host.ImportSession(ctx, path, selectedCWD)
+			if err != nil {
+				mode.showError(err)
+				return
+			}
+		}
+		if result.Cancelled {
+			mode.showStatusMessage("Import cancelled")
+			return
+		}
+		mode.showStatusMessage("Session imported from: " + path)
+	}()
+}
+
+func (mode *InteractiveMode) promptForMissingSessionCwd(ctx context.Context, err *MissingSessionCwdError) (string, bool, error) {
+	confirmed, confirmErr := mode.interactiveUI.Confirm(ctx, "Session cwd not found", formatMissingSessionCwdPrompt(err), nil)
+	if confirmErr != nil || !confirmed {
+		return "", confirmed, confirmErr
+	}
+	return err.FallbackCWD, true, nil
+}
+
+func (mode *InteractiveMode) handleReloadCommand() {
+	if mode.options.Host == nil {
+		mode.showError(errors.New("session host is unavailable"))
+		return
+	}
+	if mode.sessionBusy() {
+		mode.interactiveUI.Notify("Wait for the current response to finish before reloading.", extensions.NotifyWarning)
+		return
+	}
+	go func() {
+		mode.showStatusMessage("Reloading keybindings, extensions, skills, prompts, themes, and context files...")
+		if err := mode.options.Host.Reload(context.Background()); err != nil {
+			mode.showError(err)
+			return
+		}
+		mode.showStatusMessage("Reload complete")
+	}()
+}
+
+func (mode *InteractiveMode) authenticateProvider(argument string, logout bool) {
+	verb := "login"
+	if logout {
+		verb = "logout"
+	}
+	if mode.options.Host == nil {
+		mode.showError(fmt.Errorf("%s is unavailable without a session host", verb))
+		return
+	}
+	provider := strings.TrimSpace(argument)
+	go func() {
+		ctx := mode.authenticationContext()
+		options, err := mode.options.Host.AuthOptions(ctx)
+		if err != nil {
+			mode.showError(err)
+			return
+		}
+		if logout {
+			candidates := options.Logout
+			if len(candidates) == 0 {
+				mode.showStatusMessage("No stored credentials to remove. /logout only removes credentials saved by /login; environment variables and models.json config are unchanged.")
+				return
+			}
+			if provider != "" {
+				// Go-only CLI-style ref; the upstream /logout command is
+				// always selector-driven.
+				for _, candidate := range candidates {
+					if strings.EqualFold(candidate.ID, provider) || strings.EqualFold(candidate.Name, provider) {
+						mode.runLogout(candidate)
+						return
+					}
+				}
+				mode.showError(fmt.Errorf("provider %q has no stored credential", provider))
+				return
+			}
+			selected, ok := mode.selectAuthProviderSearchable(ctx, oauthSelectorLogout, candidates, "")
+			if ok {
+				mode.runLogout(selected)
+			}
+			return
+		}
+
+		candidates := options.Login
+		if len(candidates) == 0 {
+			mode.showStatusMessage("No login providers available.")
+			return
+		}
+		if provider != "" {
+			// Upstream handleLoginCommand (interactive-mode.ts:4849-4873):
+			// an exact id/name match starts the login, one provider with
+			// several methods asks for the method, and anything else opens
+			// the provider selector pre-filtered with the ref.
+			matched := matchingAuthProviders(candidates, provider)
+			if len(matched) == 1 {
+				mode.startProviderLogin(ctx, matched[0])
+				return
+			}
+			if len(matched) > 1 && allAuthOptionsForSameProvider(matched) {
+				mode.showLoginAuthTypeSelector(ctx, candidates, matched)
+				return
+			}
+			mode.showLoginProviderSelector(ctx, candidates, nil, provider)
+			return
+		}
+		mode.showLoginAuthTypeSelector(ctx, candidates, nil)
+	}()
+}
+
+// showLoginAuthTypeSelector ports upstream showLoginAuthTypeSelector
+// (interactive-mode.ts:4885-4940): subscription vs API key first, then the
+// provider selector; with providerOptions it selects among one provider's
+// methods instead.
+func (mode *InteractiveMode) showLoginAuthTypeSelector(ctx context.Context, candidates, providerOptions []InteractiveAuthProvider) {
+	subscriptionLabel := "Sign in with an account"
+	for _, option := range providerOptions {
+		if option.AuthType == aiauth.AuthTypeOAuth {
+			subscriptionLabel = authMethodLabel(option)
+			break
+		}
+	}
+	apiKeyLabel := "Sign in with an API key"
+	availableTypes := map[aiauth.AuthType]bool{aiauth.AuthTypeOAuth: true, aiauth.AuthTypeAPIKey: true}
+	if providerOptions != nil {
+		availableTypes = make(map[aiauth.AuthType]bool, 2)
+		for _, option := range providerOptions {
+			availableTypes[option.AuthType] = true
+		}
+	}
+	labels := make([]string, 0, 2)
+	if availableTypes[aiauth.AuthTypeOAuth] {
+		labels = append(labels, subscriptionLabel)
+	}
+	if availableTypes[aiauth.AuthTypeAPIKey] {
+		labels = append(labels, apiKeyLabel)
+	}
+	if len(labels) == 0 {
+		mode.showStatusMessage("No login methods available.")
+		return
+	}
+	if providerOptions != nil && len(labels) == 1 {
+		mode.startProviderLogin(ctx, providerOptions[0])
+		return
+	}
+	title := "Select authentication method:"
+	if len(providerOptions) > 0 {
+		title = "Select authentication method for " + providerOptions[0].Name + ":"
+	}
+	selected, ok, err := mode.interactiveUI.Select(ctx, title, labels, nil)
+	if err != nil || !ok {
+		return
+	}
+	authType := aiauth.AuthTypeAPIKey
+	if selected == subscriptionLabel {
+		authType = aiauth.AuthTypeOAuth
+	}
+	if providerOptions != nil {
+		for _, option := range providerOptions {
+			if option.AuthType == authType {
+				mode.startProviderLogin(ctx, option)
+				return
+			}
+		}
+		return
+	}
+	mode.showLoginProviderSelector(ctx, candidates, &authType, "")
+}
+
+// showLoginProviderSelector ports upstream showLoginProviderSelector
+// (interactive-mode.ts:4942-4984); cancelling a type-scoped list returns to
+// the auth-type selector.
+func (mode *InteractiveMode) showLoginProviderSelector(ctx context.Context, candidates []InteractiveAuthProvider, authType *aiauth.AuthType, initialSearchInput string) {
+	providerOptions := candidates
+	if authType != nil {
+		providerOptions = make([]InteractiveAuthProvider, 0, len(candidates))
+		for _, candidate := range candidates {
+			if candidate.AuthType == *authType {
+				providerOptions = append(providerOptions, candidate)
+			}
+		}
+	}
+	if len(providerOptions) == 0 {
+		message := "No login providers available."
+		if authType != nil && *authType == aiauth.AuthTypeOAuth {
+			message = "No subscription providers available."
+		} else if authType != nil {
+			message = "No API key providers available."
+		}
+		mode.showStatusMessage(message)
+		return
+	}
+	selected, ok := mode.selectAuthProviderSearchable(ctx, oauthSelectorLogin, providerOptions, initialSearchInput)
+	if !ok {
+		if authType != nil {
+			mode.showLoginAuthTypeSelector(ctx, candidates, nil)
+		}
+		return
+	}
+	mode.startProviderLogin(ctx, selected)
+}
+
+func (mode *InteractiveMode) handleLoginCommand(provider string) {
+	mode.authenticateProvider(provider, false)
+}
+
+func (mode *InteractiveMode) showOAuthSelector(action string) {
+	mode.authenticateProvider("", action == "logout")
+}
+
+func matchingAuthProviders(options []InteractiveAuthProvider, provider string) []InteractiveAuthProvider {
+	matched := make([]InteractiveAuthProvider, 0)
+	for _, option := range options {
+		if strings.EqualFold(option.ID, provider) || strings.EqualFold(option.Name, provider) {
+			matched = append(matched, option)
+		}
+	}
+	return matched
+}
+
+func allAuthOptionsForSameProvider(options []InteractiveAuthProvider) bool {
+	if len(options) == 0 {
+		return false
+	}
+	id := options[0].ID
+	for _, option := range options[1:] {
+		if option.ID != id {
+			return false
+		}
+	}
+	return true
+}
+
+func authMethodLabel(option InteractiveAuthProvider) string {
+	if option.AuthType == aiauth.AuthTypeOAuth {
+		if option.LoginLabel != "" {
+			return option.LoginLabel
+		}
+		return "Sign in with an account"
+	}
+	return "Sign in with an API key"
+}
+
+func isAuthEnvironmentSource(source string) bool {
+	for _, name := range strings.Split(source, ", ") {
+		if name == "" || name[0] < 'A' || name[0] > 'Z' {
+			return false
+		}
+		for index := 1; index < len(name); index++ {
+			character := name[index]
+			if (character < 'A' || character > 'Z') && (character < '0' || character > '9') && character != '_' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// startProviderLogin ports upstream startProviderLogin
+// (interactive-mode.ts:4875-4883): OAuth and login-capable API-key methods run
+// the login flow, everything else gets the ambient-configuration dialog.
+func (mode *InteractiveMode) startProviderLogin(ctx context.Context, provider InteractiveAuthProvider) {
+	if provider.AuthType != aiauth.AuthTypeOAuth && !provider.LoginAvailable {
+		mode.showAmbientAuthDialog(ctx, provider)
+		return
+	}
+	mode.runLogin(provider)
+}
+
+func (mode *InteractiveMode) runLogin(provider InteractiveAuthProvider) {
+	ctx, cancel := context.WithCancel(mode.authenticationContext())
+	defer cancel()
+	var previousModel *ai.Model
+	if mode.session != nil {
+		previousModel = mode.session.State().Model
+	}
+	dialog := newLoginAuthDialogComponent("Login to "+provider.Name, cancel)
+	dialogMounted := mode.mountLoginAuthDialog(dialog)
+	restoreDialog := func() {
+		if !dialogMounted {
+			return
+		}
+		dialogMounted = false
+		mode.editorContainer.Clear()
+		mode.restoreEditorComponent()
+		mode.ui.SetFocus(mode.activeEditorFocus())
+		mode.ui.RequestRender()
+	}
+	defer restoreDialog()
+	interaction := tuiAuthInteraction{mode: mode, dialog: dialog, ctx: ctx, mounted: dialogMounted}
+	if provider.ID == "amazon-bedrock" && provider.AuthType == aiauth.AuthTypeAPIKey {
+		providersDoc, _ := agent.AuthGuidanceDocPaths()
+		interaction.details = "You can also use an AWS profile, IAM keys, or role-based credentials.\nSee:\n  " + providersDoc
+		dialog.showDetails("You can also use an AWS profile, IAM keys, or role-based credentials.", "See:", "  "+providersDoc)
+	}
+	if err := mode.options.Host.Login(ctx, provider.ID, provider.AuthType, interaction); err != nil {
+		restoreDialog()
+		if errors.Is(err, context.Canceled) {
+			// Upstream stays silent for "Login cancelled".
+			return
+		}
+		if provider.AuthType == aiauth.AuthTypeOAuth {
+			mode.showError(errors.New("Failed to login to " + provider.Name + ": " + err.Error())) //nolint:staticcheck // Upstream error text.
+		} else {
+			mode.showError(errors.New("Failed to save API key for " + provider.Name + ": " + err.Error())) //nolint:staticcheck // Upstream error text.
+		}
+		return
+	}
+	restoreDialog()
+	mode.completeProviderAuthentication(ctx, provider, previousModel)
+}
+
+func (mode *InteractiveMode) mountLoginAuthDialog(dialog *loginAuthDialogComponent) bool {
+	if dialog == nil || mode.editorContainer == nil || mode.ui == nil {
+		return false
+	}
+	mode.editorContainer.Clear()
+	mode.editorContainer.AddChild(dialog)
+	mode.ui.SetFocus(dialog)
+	mode.ui.RequestRender()
+	return true
+}
+
+func (mode *InteractiveMode) runLogout(provider InteractiveAuthProvider) {
+	ctx := mode.authenticationContext()
+	if err := mode.options.Host.Logout(ctx, provider.ID); err != nil {
+		mode.showError(errors.New("Logout failed: " + err.Error())) //nolint:staticcheck // Upstream error text.
+		return
+	}
+	if provider.AuthType == aiauth.AuthTypeOAuth {
+		mode.showStatusMessage("Logged out of " + provider.Name)
+	} else {
+		mode.showStatusMessage("Removed stored API key for " + provider.Name + ". Environment variables and models.json config are unchanged.")
+	}
+}
+
+// resolveDefaultModelSelection ports the default-model block of upstream
+// completeProviderAuthentication (interactive-mode.ts:5040-5069): pick the
+// provider's pinned default from the now-available models or explain exactly
+// why no model was selected.
+func resolveDefaultModelSelection(actionLabel, providerID string, available []ai.Model) (*ai.Model, string) {
+	providerModels := make([]ai.Model, 0, len(available))
+	for _, model := range available {
+		if string(model.Provider) == providerID {
+			providerModels = append(providerModels, model)
+		}
+	}
+	defaultModelID, hasDefault := agent.DefaultModelIDForProvider(providerID)
+	if !hasDefault {
+		return nil, actionLabel + `, but no default model is configured for provider "` + providerID + `". Use /model to select a model.`
+	}
+	if len(providerModels) == 0 {
+		return nil, actionLabel + ", but no models are available for that provider. Use /model to select a model."
+	}
+	for _, model := range providerModels {
+		if model.ID == defaultModelID {
+			selected := model
+			return &selected, ""
+		}
+	}
+	return nil, actionLabel + `, but its default model "` + defaultModelID + `" is not available. Use /model to select a model.`
+}
+
+// completeProviderAuthentication ports upstream completeProviderAuthentication
+// (interactive-mode.ts:5033-5084).
+func (mode *InteractiveMode) completeProviderAuthentication(ctx context.Context, provider InteractiveAuthProvider, previousModel *ai.Model) {
+	actionLabel := "Saved API key for " + provider.Name
+	if provider.AuthType == aiauth.AuthTypeOAuth {
+		actionLabel = "Logged in to " + provider.Name
+	}
+	var selectedModel *ai.Model
+	selectionError := ""
+	if agent.IsUnknownModel(previousModel) && mode.session != nil {
+		selectedModel, selectionError = resolveDefaultModelSelection(actionLabel, provider.ID, mode.session.AvailableModels())
+		if selectedModel != nil {
+			if err := mode.session.SetModel(ctx, *selectedModel); err != nil {
+				selectedModel = nil
+				selectionError = actionLabel + ", but selecting its default model failed: " + err.Error() + ". Use /model to select a model."
+			}
+		}
+	}
+	authPath := filepath.Join(mode.session.InteractiveModeSettings().AgentDir, "auth.json")
+	if selectedModel != nil {
+		mode.showStatusMessage(actionLabel + ". Selected " + selectedModel.ID + ". Credentials saved to " + authPath)
+		mode.maybeWarnAboutAnthropicSubscriptionAuth(ctx, selectedModel)
+		return
+	}
+	mode.showStatusMessage(actionLabel + ". Credentials saved to " + authPath)
+	if selectionError != "" {
+		mode.showError(errors.New(selectionError))
+		return
+	}
+	var currentModel *ai.Model
+	if mode.session != nil {
+		currentModel = mode.session.State().Model
+	}
+	mode.maybeWarnAboutAnthropicSubscriptionAuth(ctx, currentModel)
+}
+
+// anthropicSubscriptionAuthWarning is ANTHROPIC_SUBSCRIPTION_AUTH_WARNING
+// (interactive-mode.ts:207).
+const anthropicSubscriptionAuthWarning = "Anthropic subscription auth is active. Third-party harness usage draws from extra usage and is billed per token, not your Claude plan limits. Manage extra usage at https://claude.ai/settings/usage. Disable this warning in /settings."
+
+// isAnthropicSubscriptionAuthKey mirrors interactive-mode.ts:210-212.
+func isAnthropicSubscriptionAuthKey(apiKey string) bool {
+	return strings.HasPrefix(apiKey, "sk-ant-oat")
+}
+
+// maybeWarnAboutAnthropicSubscriptionAuth ports upstream
+// maybeWarnAboutAnthropicSubscriptionAuth (interactive-mode.ts:4336-4364):
+// warn once per TUI session when the anthropic model runs on subscription
+// auth, gated by settings warnings.anthropicExtraUsage.
+func (mode *InteractiveMode) maybeWarnAboutAnthropicSubscriptionAuth(ctx context.Context, model *ai.Model) {
+	if mode.session == nil || !mode.session.WarnAnthropicExtraUsage() {
+		return
+	}
+	mode.mu.Lock()
+	shown := mode.anthropicSubscriptionWarningShown
+	mode.mu.Unlock()
+	if shown || model == nil || model.Provider != "anthropic" {
+		return
+	}
+	key, err := mode.session.ProviderAPIKey(ctx, model.Provider)
+	if err == nil && key != "" {
+		if !isAnthropicSubscriptionAuthKey(key) {
+			return
+		}
+		mode.showAnthropicSubscriptionWarningOnce()
+		return
+	}
+
+	oauthStored := false
+	if mode.options.Host != nil {
+		if options, err := mode.options.Host.AuthOptions(ctx); err == nil {
+			for _, credential := range options.Logout {
+				// Upstream checkAuth("anthropic")?.type === "oauth".
+				if credential.ID == "anthropic" && credential.AuthType == aiauth.AuthTypeOAuth {
+					oauthStored = true
+				}
+			}
+		}
+	}
+	if !oauthStored {
+		return
+	}
+	mode.showAnthropicSubscriptionWarningOnce()
+}
+
+func (mode *InteractiveMode) showAnthropicSubscriptionWarningOnce() {
+	mode.mu.Lock()
+	if mode.anthropicSubscriptionWarningShown {
+		mode.mu.Unlock()
+		return
+	}
+	mode.anthropicSubscriptionWarningShown = true
+	mode.mu.Unlock()
+	mode.showWarning(anthropicSubscriptionAuthWarning)
+}
+
+// showWarning mirrors upstream showWarning (interactive-mode.ts:3849-3853).
+func (mode *InteractiveMode) showWarning(message string) {
+	mode.chat.AddChild(tui.NewSpacer(1))
+	mode.chat.AddChild(tui.NewText(theme.FG("warning", "Warning: "+message), 1, 0, nil))
+	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) authenticationContext() context.Context {
+	mode.mu.Lock()
+	defer mode.mu.Unlock()
+	if mode.authContext != nil {
+		return mode.authContext
+	}
+	return context.Background()
+}
+
+type tuiAuthInteraction struct {
+	mode    *InteractiveMode
+	details string
+	dialog  *loginAuthDialogComponent
+	ctx     context.Context
+	mounted bool
+}
+
+func (interaction tuiAuthInteraction) Prompt(ctx context.Context, prompt aiauth.AuthPrompt) (string, error) {
+	title := prompt.Message
+	if interaction.dialog != nil && interaction.mounted {
+		title = interaction.dialog.promptTitle(prompt.Message)
+	} else if interaction.details != "" {
+		title = interaction.details + "\n\n" + title
+	}
+	defer interaction.restoreDialog()
+	if prompt.Type == aiauth.PromptSelect {
+		labels := make([]string, 0, len(prompt.Options))
+		ids := make(map[string]string, len(prompt.Options))
+		for _, option := range prompt.Options {
+			label := option.Label
+			if option.Description != "" {
+				label += " — " + option.Description
+			}
+			labels = append(labels, label)
+			ids[label] = option.ID
+		}
+		selected, ok, err := interaction.mode.interactiveUI.Select(ctx, title, labels, nil)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "", context.Canceled
+		}
+		return ids[selected], nil
+	}
+	placeholder := prompt.Placeholder
+	value, ok, err := interaction.mode.interactiveUI.Input(ctx, title, &placeholder, nil)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", context.Canceled
+	}
+	return value, nil
+}
+
+func (interaction tuiAuthInteraction) restoreDialog() {
+	if interaction.dialog == nil || !interaction.mounted || interaction.mode == nil || interaction.mode.editorContainer == nil || interaction.mode.ui == nil {
+		return
+	}
+	if interaction.ctx != nil {
+		select {
+		case <-interaction.ctx.Done():
+			return
+		default:
+		}
+	}
+	interaction.mode.mountLoginAuthDialog(interaction.dialog)
+}
+
+// openAuthURLInBrowser is swappable for tests; production uses the platform
+// launcher port (agent/open_browser.go).
+var openAuthURLInBrowser = agent.OpenBrowser
+
+func (interaction tuiAuthInteraction) Notify(event aiauth.AuthEvent) {
+	if interaction.dialog != nil && interaction.mounted {
+		switch event.Type {
+		case aiauth.EventAuthURL:
+			interaction.dialog.showAuth(event.URL, event.Instructions)
+			if event.URL != "" {
+				openAuthURLInBrowser(event.URL)
+			}
+		case aiauth.EventDeviceCode:
+			interaction.dialog.showDeviceCode(event.VerificationURI, event.UserCode)
+		case aiauth.EventInfo:
+			interaction.dialog.showInfo(event.Message, event.Links)
+		default:
+			interaction.dialog.showProgress(event.Message)
+		}
+		interaction.mode.ui.RequestRender()
+		return
+	}
+	message := event.Message
+	switch event.Type {
+	case aiauth.EventAuthURL:
+		message = strings.TrimSpace(event.Instructions + "\n" + event.URL)
+		// Upstream auto-opens the browser when the login dialog receives the
+		// auth URL (login-dialog.ts:111); launch is best-effort and the URL
+		// stays visible either way.
+		if event.URL != "" {
+			openAuthURLInBrowser(event.URL)
+		}
+	case aiauth.EventDeviceCode:
+		message = strings.TrimSpace(event.VerificationURI + "\nCode: " + event.UserCode)
+	}
+	if message != "" {
+		interaction.mode.showStatusMessage(message)
+	}
+}
+
+// handleOpenExternalEditor mirrors upstream 75e6123a: the editor command is
+// always resolved (settings -> $VISUAL -> $EDITOR -> platform default), so
+// there is no "no editor configured" warning, and the edit itself runs in the
+// shared editInExternalEditor helper.
+func (mode *InteractiveMode) handleOpenExternalEditor() {
+	command := mode.session.InteractiveModeSettings().ExternalEditor
+	content := mode.editor.GetText()
+	if err := mode.ui.Stop(); err != nil {
+		mode.showError(err)
+		return
+	}
+	go func() {
+		result := editInExternalEditor(command, content)
+		if result.complete {
+			mode.editor.SetText(result.content)
+		}
+		if err := mode.ui.Start(); err != nil {
+			mode.showError(err)
+			return
+		}
+		// Force full re-render since the external editor uses the alternate screen.
+		mode.ui.ForceRender()
+	}()
+}
+
+// scopedModelsSelectorState mirrors upstream showModelsSelector (a3ee1d28):
+// the enabled set comes from the session scope or the persisted patterns, and
+// configured patterns with a "no-match" diagnostic surface as unavailable
+// entries so they stay removable without editing settings manually.
+func scopedModelsSelectorState(
+	models []ai.Model,
+	configured []string,
+	sessionScoped []agent.ScopedModel,
+) (selected map[string]bool, unavailable []string) {
+	selected = map[string]bool{}
+	available := make(map[string]bool, len(models))
+	for _, model := range models {
+		available[fmt.Sprintf("%s/%s", model.Provider, model.ID)] = true
+	}
+	// enabled == nil means every model is enabled (no filter).
+	var enabled []string
+	var diagnostics []agent.ModelDiagnostic
+	if len(configured) > 0 {
+		var configuredScope []agent.ScopedModel
+		configuredScope, diagnostics = agent.ResolveModelScope(configured, models)
+		if len(sessionScoped) == 0 {
+			enabled = make([]string, 0, len(configuredScope))
+			for _, scoped := range configuredScope {
+				enabled = append(enabled, fmt.Sprintf("%s/%s", scoped.Model.Provider, scoped.Model.ID))
+			}
+		}
+	}
+	if len(sessionScoped) > 0 {
+		enabled = make([]string, 0, len(sessionScoped))
+		for _, scoped := range sessionScoped {
+			enabled = append(enabled, fmt.Sprintf("%s/%s", scoped.Model.Provider, scoped.Model.ID))
+		}
+	}
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Code != "no-match" {
+			continue
+		}
+		if enabled == nil {
+			enabled = []string{}
+		}
+		if !slices.Contains(enabled, diagnostic.Pattern) {
+			enabled = append(enabled, diagnostic.Pattern)
+		}
+	}
+	if enabled == nil {
+		for id := range available {
+			selected[id] = true
+		}
+		return selected, nil
+	}
+	for _, id := range enabled {
+		selected[id] = true
+		if !available[id] {
+			unavailable = append(unavailable, id)
+		}
+	}
+	return selected, unavailable
+}
+
+func (mode *InteractiveMode) showModelsSelector() {
+	// f8746813: opening the picker re-reads models.json before listing.
+	// 53fa77cc (0.84.1): the selector always opens — even with no models —
+	// instead of bailing out with a "No models available" status.
+	_ = mode.session.RefreshModels()
+	models := mode.session.AvailableModels()
+	configured := mode.session.EnabledModels()
+	sessionScoped := mode.session.ScopedModels()
+	selected, unavailable := scopedModelsSelectorState(models, configured, sessionScoped)
+	go func() {
+		for {
+			options := []string{"Save and close", "Enable all", "Clear all"}
+			ids := map[string]string{}
+			appendOption := func(id, suffix string) {
+				mark := "[ ] "
+				if selected[id] {
+					mark = "[x] "
+				}
+				label := mark + id + suffix
+				options = append(options, label)
+				ids[label] = id
+			}
+			for _, model := range models {
+				appendOption(fmt.Sprintf("%s/%s", model.Provider, model.ID), "")
+			}
+			for _, id := range unavailable {
+				appendOption(id, " [unavailable]")
+			}
+			choice, ok, err := mode.interactiveUI.Select(context.Background(), "Scoped models", options, nil)
+			if err != nil || !ok {
+				return
+			}
+			switch choice {
+			case "Enable all":
+				for _, model := range models {
+					selected[fmt.Sprintf("%s/%s", model.Provider, model.ID)] = true
+				}
+			case "Clear all":
+				clear(selected)
+			case "Save and close":
+				mode.applyScopedModelSelection(models, unavailable, selected, true)
+				mode.showStatusMessage("Model selection saved to settings")
+				return
+			default:
+				id := ids[choice]
+				selected[id] = !selected[id]
+				mode.applyScopedModelSelection(models, unavailable, selected, false)
+			}
+		}
+	}()
+}
+
+func (mode *InteractiveMode) applyScopedModelSelection(models []ai.Model, unavailable []string, selected map[string]bool, persist bool) {
+	patterns := make([]string, 0, len(selected))
+	scoped := make([]agent.ScopedModel, 0, len(selected))
+	for _, model := range models {
+		id := fmt.Sprintf("%s/%s", model.Provider, model.ID)
+		if selected[id] {
+			patterns = append(patterns, id)
+			scoped = append(scoped, agent.ScopedModel{Model: model})
+		}
+	}
+	unavailableEnabled := 0
+	for _, id := range unavailable {
+		if selected[id] {
+			patterns = append(patterns, id)
+			unavailableEnabled++
+		}
+	}
+	// Upstream updateSessionModels (a3ee1d28): the session scope forms only
+	// when at least one available model is enabled and not all of them are;
+	// enabled unavailable ids never clear a partial scope.
+	if len(scoped) == 0 || len(scoped) == len(models) {
+		mode.session.SetScopedModels(nil)
+	} else {
+		mode.session.SetScopedModels(scoped)
+	}
+	if persist {
+		// Upstream onPersist: the filter clears only when every enabled id is
+		// an available model and all available models are enabled.
+		if unavailableEnabled == 0 && len(patterns) == len(models) {
+			patterns = nil
+		}
+		mode.session.SetEnabledModels(patterns)
+	}
+	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) GitBranch() string {
+	_, cwd := mode.sessionSnapshot()
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "--no-optional-locks", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd.Dir = cwd
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	branch := strings.TrimSpace(string(out))
+	// rev-parse prints the literal "HEAD" on detached HEAD; upstream's
+	// footer-data-provider shows "detached" for that state.
+	if branch == "HEAD" {
+		return "detached"
+	}
+	return branch
+}
+
+func (mode *InteractiveMode) AvailableProviderCount() int {
+	session, _ := mode.sessionSnapshot()
+	if session == nil {
+		return 0
+	}
+	seen := make(map[ai.ProviderID]struct{})
+	if scoped := session.ScopedModels(); len(scoped) > 0 {
+		for _, model := range scoped {
+			seen[model.Model.Provider] = struct{}{}
+		}
+		return len(seen)
+	}
+	for _, model := range session.AvailableModels() {
+		seen[model.Provider] = struct{}{}
+	}
+	return len(seen)
+}
+
+func (mode *InteractiveMode) Statuses() map[string]string {
+	mode.mu.Lock()
+	defer mode.mu.Unlock()
+	result := make(map[string]string, len(mode.footerStatuses))
+	for k, v := range mode.footerStatuses {
+		result[k] = v
+	}
+	return result
+}
+
+func (mode *InteractiveMode) sessionSnapshot() (*agent.SessionRuntime, string) {
+	mode.mu.Lock()
+	defer mode.mu.Unlock()
+	return mode.session, mode.cwd
+}
+
+func (mode *InteractiveMode) CurrentCWD() string {
+	_, cwd := mode.sessionSnapshot()
+	return cwd
+}
+func (mode *InteractiveMode) SessionName() string {
+	session, _ := mode.sessionSnapshot()
+	if session == nil || session.Manager() == nil {
+		return ""
+	}
+	name := session.Manager().GetSessionName()
+	if name == nil {
+		return ""
+	}
+	return *name
+}
+
+func (mode *InteractiveMode) builtInEditorMounted() bool {
+	if mode == nil || mode.editor == nil || mode.editorContainer == nil {
+		return false
+	}
+	children := mode.editorContainer.Children()
+	return len(children) == 1 && children[0] == mode.editor
+}
+
+func (mode *InteractiveMode) editorTopBorder(width int, base string, border tui.StyleFunc) editorTopBorderProjection {
+	if !mode.builtInEditorMounted() {
+		return editorTopBorderProjection{Line: base}
+	}
+	if mode.editor.HasHiddenLinesAboveLastRender(editorContentWidth(width)) {
+		mode.mu.Lock()
+		mode.editorChromeWidth = width
+		mode.editorChromeStatus = ""
+		mode.editorChromeTitleShown = false
+		mode.mu.Unlock()
+		return editorTopBorderProjection{Line: base}
+	}
+	mode.mu.Lock()
+	status := ""
+	if mode.editorChromeWidth == width {
+		status = mode.editorChromeStatus
+	}
+	mode.mu.Unlock()
+	projection := composeEditorTopBorder(base, width, status, mode.SessionName(), border)
+	mode.mu.Lock()
+	mode.editorChromeWidth = width
+	mode.editorChromeTitleShown = projection.TitleShown
+	mode.mu.Unlock()
+	return projection
+}
+
+func (mode *InteractiveMode) statusInEditor(width int, status string) bool {
+	inline := false
+	if mode.builtInEditorMounted() && mode.editor != nil && status != "" && !mode.editor.HasHiddenLinesAbove(editorContentWidth(width)) {
+		border := mode.editor.GetBorderColor()
+		base := border(strings.Repeat("─", max(0, width)))
+		inline = composeEditorTopBorder(base, width, status, mode.SessionName(), border).StatusInline
+	}
+	mode.mu.Lock()
+	mode.editorChromeWidth = width
+	mode.editorChromeStatus = ""
+	if inline {
+		mode.editorChromeStatus = status
+	}
+	mode.mu.Unlock()
+	return inline
+}
+
+func (mode *InteractiveMode) SessionNameInEditor(width int) bool {
+	if !mode.builtInEditorMounted() {
+		return false
+	}
+	mode.mu.Lock()
+	defer mode.mu.Unlock()
+	return mode.editorChromeWidth == width && mode.editorChromeTitleShown
+}
+
+func (mode *InteractiveMode) updateTerminalTitle() {
+	if mode.ui == nil {
+		return
+	}
+	session, cwd := mode.sessionSnapshot()
+	name := ""
+	if session != nil && session.Manager() != nil {
+		cwd = session.Manager().GetCWD()
+		if sessionName := session.Manager().GetSessionName(); sessionName != nil {
+			name = *sessionName
+		}
+	}
+	title := "orb - " + filepath.Base(cwd)
+	if name != "" {
+		title = "orb - " + name + " - " + filepath.Base(cwd)
+	}
+	mode.ui.Terminal().SetTitle(title)
+}
+
+func (mode *InteractiveMode) handleSessionCommand() {
+	stats := mode.session.GetSessionStats()
+	entries := mode.session.Manager().GetEntries()
+	cacheWaste := computeCacheWaste(entries, mode.session.AvailableModels())
+	usageBreakdown := agent.GetUsageCostBreakdown(entries)
+
+	var info strings.Builder
+	info.WriteString(theme.Bold("Session Info"))
+	info.WriteString("\n\n")
+	if name := mode.session.Manager().GetSessionName(); name != nil {
+		fmt.Fprintf(&info, "%s %s\n", theme.FG("dim", "Name:"), *name)
+	}
+	file := stats.SessionFile
+	if file == "" {
+		file = "In-memory"
+	}
+	fmt.Fprintf(&info, "%s %s\n", theme.FG("dim", "File:"), file)
+	fmt.Fprintf(&info, "%s %s\n\n", theme.FG("dim", "ID:"), stats.SessionID)
+	info.WriteString(theme.Bold("Messages"))
+	info.WriteByte('\n')
+	fmt.Fprintf(&info, "%s %d\n", theme.FG("dim", "Total:"), stats.TotalMessages)
+	fmt.Fprintf(&info, "%s %d\n", theme.FG("dim", "User:"), stats.UserMessages)
+	fmt.Fprintf(&info, "%s %d\n", theme.FG("dim", "Assistant:"), stats.AssistantMessages)
+	fmt.Fprintf(&info, "%s %d calls, %d results\n\n", theme.FG("dim", "Tools:"), stats.ToolCalls, stats.ToolResults)
+	info.WriteString(theme.Bold("Tokens"))
+	info.WriteByte('\n')
+	// "Input" is the full prompt volume. With cache activity, split it into
+	// cached (served from cache) vs uncached (everything else) - the only
+	// provider-independent split. Cache writes, where reported, are a detail
+	// of the uncached portion.
+	input, cacheRead, cacheWrite := stats.Tokens.Input, stats.Tokens.CacheRead, stats.Tokens.CacheWrite
+	promptTokens := input + cacheRead + cacheWrite
+	fmt.Fprintf(&info, "%s %s\n", theme.FG("dim", "Input:"), formatInteger(promptTokens))
+	if promptTokens > 0 && (cacheRead > 0 || cacheWrite > 0) {
+		hitRate := theme.FG("dim", fmt.Sprintf("(%.1f%%)", float64(cacheRead)/float64(promptTokens)*100))
+		fmt.Fprintf(&info, "  %s %s %s\n", theme.FG("dim", "Cached:"), formatInteger(cacheRead), hitRate)
+		written := ""
+		if cacheWrite > 0 {
+			written = " " + theme.FG("dim", fmt.Sprintf("(%s written to cache)", formatInteger(cacheWrite)))
+		}
+		fmt.Fprintf(&info, "  %s %s%s\n", theme.FG("dim", "Uncached:"), formatInteger(input+cacheWrite), written)
+	}
+	fmt.Fprintf(&info, "%s %s\n", theme.FG("dim", "Output:"), formatInteger(stats.Tokens.Output))
+	fmt.Fprintf(&info, "%s %s\n", theme.FG("dim", "Total:"), formatInteger(stats.Tokens.Total))
+	if stats.Cost > 0 || cacheWaste.missedTokens > 0 {
+		info.WriteByte('\n')
+		info.WriteString(theme.Bold("Cost"))
+		info.WriteByte('\n')
+		fmt.Fprintf(&info, "%s $%.3f", theme.FG("dim", "Total:"), stats.Cost)
+		if len(usageBreakdown) > 1 {
+			for _, entry := range usageBreakdown {
+				fmt.Fprintf(&info, "\n  %s $%.3f %s",
+					theme.FG("dim", entry.Key+":"), entry.Cost,
+					theme.FG("dim", fmt.Sprintf("(%s tokens)", formatTokens(entry.Tokens))))
+			}
+		}
+		if cacheWaste.missedTokens > 0 {
+			missLabel := fmt.Sprintf("%d misses", cacheWaste.missCount)
+			if cacheWaste.missCount == 1 {
+				missLabel = "1 miss"
+			}
+			detail := fmt.Sprintf("%s tokens, %s", formatInteger(cacheWaste.missedTokens), missLabel)
+			if cacheWaste.missedCost >= 0.0001 {
+				fmt.Fprintf(&info, "\n%s $%.3f %s", theme.FG("dim", "Cache Re-billed:"), cacheWaste.missedCost, theme.FG("dim", "("+detail+")"))
+			} else {
+				fmt.Fprintf(&info, "\n%s %s", theme.FG("dim", "Cache Re-billed:"), detail)
+			}
+		}
+	}
+	mode.chat.AddChild(tui.NewSpacer(1))
+	mode.chat.AddChild(tui.NewText(info.String(), 1, 0, nil))
+	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) handleEvent(event any) {
+	switch ev := event.(type) {
+	case engine.AgentStartEvent:
+		mode.mu.Lock()
+		mode.streaming = true
+		mode.turnAnswered = false
+		mode.mu.Unlock()
+		if mode.interactiveUI != nil {
+			mode.interactiveUI.showWorkingIndicator()
+		} else {
+			mode.setStatus(NewWorkingStatusIndicator(mode.ui, "Working..."))
+		}
+		if mode.session.InteractiveModeSettings().ShowTerminalProgress {
+			mode.ui.Terminal().SetProgress(true)
+		}
+
+	case engine.MessageStartEvent:
+		if !isAssistantMessage(ev.Message) {
+			mode.renderAgentMessage(ev.Message)
+			mode.ui.RequestRender()
+			return
+		}
+		assistant := asAssistantMessage(ev.Message)
+		if assistant == nil {
+			return
+		}
+		mode.mu.Lock()
+		hidden := mode.thinkingHidden
+		label := mode.thinkingLabel
+		mode.mu.Unlock()
+		comp := NewAssistantMessageComponent(nil, hidden, mode.mdTheme, label, mode.currentOutputPad(), mode.markdownTransformers)
+		mode.mu.Lock()
+		mode.currentStreaming = comp
+		mode.mu.Unlock()
+		mode.chat.AddChild(comp)
+		comp.UpdateContentStreaming(assistant, true)
+		mode.ui.RequestRender()
+
+	case engine.MessageUpdateEvent:
+		assistant := asAssistantMessage(ev.Message)
+		if assistant == nil {
+			return
+		}
+		mode.mu.Lock()
+		comp := mode.currentStreaming
+		if len(assistant.Content) > 0 {
+			mode.turnAnswered = true
+		}
+		mode.mu.Unlock()
+		if comp != nil {
+			comp.UpdateContentStreaming(assistant, true)
+			mode.requestChatRender(comp)
+		}
+
+	case engine.MessageEndEvent:
+		assistant := asAssistantMessage(ev.Message)
+		if assistant == nil {
+			return
+		}
+		mode.mu.Lock()
+		comp := mode.currentStreaming
+		mode.mu.Unlock()
+		if comp != nil {
+			comp.UpdateContentStreaming(assistant, false)
+			mode.chat.ChildChanged(comp)
+		}
+		mode.maybeShowCacheMiss(assistant)
+		mode.ui.RequestRender()
+
+	case engine.ToolExecutionStartEvent:
+		mode.mu.Lock()
+		mode.turnAnswered = true
+		mode.mu.Unlock()
+		tc := mode.newToolExecutionComponent(ev.ToolName, ev.ToolCallID, ev.Args)
+		tc.SetArgsComplete()
+		mode.mu.Lock()
+		mode.toolComponents[ev.ToolCallID] = tc
+		tc.SetExpanded(mode.toolsExpanded)
+		mode.expandables = append(mode.expandables, tc)
+		mode.mu.Unlock()
+		mode.chat.AddChild(tc)
+		mode.ui.RequestRender()
+
+	case engine.ToolExecutionUpdateEvent:
+		mode.mu.Lock()
+		tc := mode.toolComponents[ev.ToolCallID]
+		mode.mu.Unlock()
+		if tc != nil {
+			tc.MarkExecutionStarted()
+			if ev.PartialResult.Content != nil {
+				tc.UpdateResult(ev.PartialResult.Content, false, ev.PartialResult.Details, true)
+			}
+			mode.requestChatRender(tc)
+		}
+
+	case engine.ToolExecutionEndEvent:
+		mode.mu.Lock()
+		tc := mode.toolComponents[ev.ToolCallID]
+		mode.mu.Unlock()
+		if tc != nil {
+			tc.UpdateResult(ev.Result.Content, ev.IsError, ev.Result.Details, false)
+			mode.requestChatRender(tc)
+		}
+
+	case agent.AgentSettledEvent:
+		mode.mu.Lock()
+		mode.streaming = false
+		mode.mu.Unlock()
+		mode.clearStatusIndicatorKind(StatusWorking)
+		mode.ui.Terminal().SetProgress(false)
+		// Upstream checks pending extension shutdown requests on
+		// agent_settled (interactive-mode.ts:3055-3057).
+		mode.checkExtensionShutdownRequested()
+
+	case agent.QueueUpdateEvent:
+		mode.updatePendingMessagesDisplay(ev.Steering, ev.FollowUp)
+
+	case agent.CompactionStartEvent:
+		mode.setStatus(NewCompactionStatusIndicator(mode.ui, ev.Reason))
+
+	case agent.CompactionEndEvent:
+		mode.renderInitialMessages()
+		mode.setStatus(&IdleStatus{})
+
+	case agent.AutoRetryStartEvent:
+		mode.setStatus(NewRetryStatusIndicator(mode.ui, ev.Attempt, ev.MaxAttempts, ev.DelayMS))
+
+	case agent.AutoRetryEndEvent:
+		mode.setStatus(&IdleStatus{})
+
+	case agent.SummarizationRetryScheduledEvent:
+		mode.showError(errors.New(ev.ErrorMessage))
+		mode.setStatus(NewRetryStatusIndicator(mode.ui, ev.Attempt, ev.MaxAttempts, ev.DelayMS))
+
+	case agent.SummarizationRetryAttemptStartEvent:
+		mode.clearStatusIndicatorKind(StatusRetry)
+		if ev.Source == "branchSummary" {
+			mode.setStatus(NewBranchSummaryStatusIndicator(mode.ui))
+		} else {
+			mode.setStatus(NewCompactionStatusIndicator(mode.ui, ev.Reason))
+		}
+
+	case agent.SummarizationRetryFinishedEvent:
+		mode.clearStatusIndicatorKind(StatusRetry)
+
+	case agent.BashExecutionUpdateEvent:
+		// The bash execution callback handles TUI output rendering.
+
+	case agent.ThinkingLevelChangedEvent:
+		mode.updateEditorBorderColor()
+		mode.ui.RequestRender()
+
+	case agent.SessionInfoChangedEvent:
+		mode.updateTerminalTitle()
+		mode.ui.RequestRender()
+	}
+}
+
+func (mode *InteractiveMode) updatePendingMessagesDisplay(steering, followUp []string) {
+	mode.pendingMessages.Clear()
+	count := len(steering) + len(followUp)
+	if count == 0 {
+		mode.ui.RequestRender()
+		return
+	}
+	mode.pendingMessages.AddChild(tui.NewSpacer(1))
+	for _, text := range steering {
+		mode.pendingMessages.AddChild(tui.NewTruncatedText(theme.FG("dim", "Steering: "+text), 1, 0))
+	}
+	for _, text := range followUp {
+		mode.pendingMessages.AddChild(tui.NewTruncatedText(theme.FG("dim", "Follow-up: "+text), 1, 0))
+	}
+	hint := fmt.Sprintf("↳ %d queued", count)
+	if dequeue := mode.appKeyDisplay("app.message.dequeue"); dequeue != "" {
+		hint += " · " + dequeue + " to edit all"
+	}
+	mode.pendingMessages.AddChild(tui.NewTruncatedText(theme.FG("dim", hint), 1, 0))
+	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) appKeyDisplay(binding string) string {
+	goos := mode.keyDisplayOS
+	if goos == "" {
+		goos = runtime.GOOS
+	}
+	if mode.keybindings != nil {
+		keys := mode.keybindings.Keys(binding)
+		formatted := make([]string, len(keys))
+		for index, key := range keys {
+			formatted[index] = formatKeyDisplayTextForOS(string(key), goos)
+		}
+		return strings.Join(formatted, "/")
+	}
+	return formatKeyDisplayTextForOS(KeyText(binding), goos)
+}
+
+func (mode *InteractiveMode) setStatus(indicator tui.Component) {
+	mode.mu.Lock()
+	if prev, ok := mode.statusIndicator.(*StatusIndicator); ok {
+		prev.Dispose()
+	}
+	mode.statusIndicator = indicator
+	mode.mu.Unlock()
+
+	mode.status.Clear()
+	mode.status.AddChild(indicator)
+	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) showError(err error) {
+	if err == nil {
+		return
+	}
+	mode.chat.AddChild(tui.NewSpacer(1))
+	mode.chat.AddChild(tui.NewText(theme.FG("error", "Error: "+err.Error()), 1, 0, nil))
+	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) addUserMessageToChat(text string) {
+	if skill, ok := agent.ParseSkillBlock(text); ok {
+		component := NewSkillInvocationMessage(skill.Name, skill.Content, mode.mdTheme)
+		mode.addExpandable(component)
+		mode.chat.AddChild(component)
+		if skill.UserMessage != "" {
+			mode.chat.AddChild(tui.NewSpacer(1))
+			mode.chat.AddChild(NewUserMessageComponent(skill.UserMessage, mode.mdTheme, mode.currentOutputPad(), mode.markdownTransformers))
+		}
+	} else {
+		mode.chat.AddChild(NewUserMessageComponent(text, mode.mdTheme, mode.currentOutputPad(), mode.markdownTransformers))
+	}
+	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) showImages() bool {
+	return mode.session.InteractiveSettings().ShowImages
+}
+
+func (mode *InteractiveMode) toolDefinition(name string) *extensions.ToolDefinition {
+	builtIn := nativeToolDefinition(name, mode.session.RegisteredTool(name))
+	definition := mode.session.GetToolDefinition(name)
+	if definition == nil {
+		return builtIn
+	}
+	if builtIn == nil {
+		return definition
+	}
+	merged := *definition
+	if merged.RenderCall == nil {
+		merged.RenderCall = builtIn.RenderCall
+	}
+	if merged.RenderResult == nil {
+		merged.RenderResult = builtIn.RenderResult
+	}
+	return &merged
+}
+
+func nativeToolDefinition(name string, registered engine.AgentTool) *extensions.ToolDefinition {
+	renderer, ok := registered.(tools.PlainTextRenderer)
+	if !ok {
+		return nil
+	}
+	return &extensions.ToolDefinition{
+		Name: name,
+		RenderCall: func(args any, palette extensions.Theme, context extensions.ToolRenderContext) extensions.Component {
+			container := &tui.Container{}
+			container.AddChild(tui.NewText(palette.FG("toolTitle", renderer.RenderCall(args)), 0, 0, nil))
+			if name != "edit" || !context.ArgsComplete {
+				return container
+			}
+			// A final result makes the preview stale by construction: the edit
+			// has been applied, so re-matching oldText against the file would
+			// report a mismatch error over a successful edit. RenderResult owns
+			// the display from that point (upstream edit.ts renderResult
+			// overwrites the preview with the recorded result diff).
+			if !context.IsPartial {
+				return container
+			}
+			path, edits, ok := editPreviewInput(args)
+			if !ok {
+				return container
+			}
+			diff, previewError := editPreview(context.State, path, edits, context.CWD)
+			container.AddChild(tui.NewSpacer(1))
+			if previewError != "" {
+				container.AddChild(tui.NewText(palette.FG("error", previewError), 0, 0, nil))
+				return container
+			}
+			container.AddChild(NewEditDiffView(diff, path, "toolPendingBg"))
+			return container
+		},
+		RenderResult: func(result engine.AgentToolResult, options extensions.ToolRenderResultOptions, palette extensions.Theme, context extensions.ToolRenderContext) extensions.Component {
+			if name == "edit" {
+				if options.IsPartial {
+					// The pre-execution preview is still on screen; only render
+					// a partial diff the preview does not already show.
+					if diff := editResultDiff(result.Details); diff != "" {
+						if loadEditPreview(context.State).diff == diff {
+							return &tui.Container{}
+						}
+						return NewEditDiffView(diff, editArgsPath(context.Args), "toolPendingBg")
+					}
+				} else if context.IsError {
+					if message := renderer.RenderResult(result); message != "" {
+						container := &tui.Container{}
+						container.AddChild(tui.NewSpacer(1))
+						container.AddChild(tui.NewText(palette.FG("error", message), 0, 0, nil))
+						return container
+					}
+					return &tui.Container{}
+				} else if diff := editResultDiff(result.Details); diff != "" {
+					// Final success renders the recorded diff from the result
+					// details, never from re-reading the edited file.
+					container := &tui.Container{}
+					container.AddChild(tui.NewSpacer(1))
+					container.AddChild(NewEditDiffView(diff, editArgsPath(context.Args), "toolSuccessBg"))
+					return container
+				}
+			}
+			if name == "bash" {
+				return newToolOutputPreview(strings.TrimSpace(renderer.RenderResult(result)), options, palette)
+			}
+			return tui.NewText(palette.FG("toolOutput", renderer.RenderResult(result)), 0, 0, nil)
+		},
+	}
+}
+
+// editArgsPath extracts the file path from edit-tool args for highlight
+// language detection; an empty result just renders the diff unhighlighted.
+func editArgsPath(args any) string {
+	path, _, _ := editPreviewInput(args)
+	return path
+}
+
+func editPreviewInput(args any) (string, []tools.Edit, bool) {
+	encoded, err := json.Marshal(args)
+	if err != nil {
+		return "", nil, false
+	}
+	var input tools.EditToolInput
+	if json.Unmarshal(encoded, &input) != nil || input.Path == "" || len(input.Edits) == 0 {
+		return "", nil, false
+	}
+	return input.Path, input.Edits, true
+}
+
+// editPreviewStateKey names the single renderer-state slot holding the
+// pre-execution preview: one typed value, so "RenderCall ran first and left
+// exactly this" is a checked assertion rather than three loose string keys.
+const editPreviewStateKey = "editPreview"
+
+type editPreviewCapture struct {
+	// key is the JSON of the argument set the capture was computed from.
+	key          string
+	diff         string
+	previewError string
+}
+
+func loadEditPreview(state map[string]any) editPreviewCapture {
+	capture, _ := state[editPreviewStateKey].(editPreviewCapture)
+	return capture
+}
+
+// editPreview computes the pending-edit preview at most once per argument set
+// (upstream edit.ts keys the preview by its JSON args and never recomputes),
+// so re-renders during and after execution reuse the pre-execution capture
+// instead of re-reading a file the edit may since have modified.
+func editPreview(state map[string]any, path string, edits []tools.Edit, cwd string) (diff, previewError string) {
+	encoded, err := json.Marshal(struct {
+		Path  string       `json:"path"`
+		Edits []tools.Edit `json:"edits"`
+	}{path, edits})
+	capture := editPreviewCapture{key: string(encoded)}
+	if cached := loadEditPreview(state); err == nil && cached.key == capture.key {
+		return cached.diff, cached.previewError
+	}
+	preview, computeErr := tools.ComputeEditsDiff(path, edits, cwd)
+	if computeErr != nil {
+		capture.previewError = computeErr.Error()
+	} else {
+		capture.diff = preview.Diff
+	}
+	state[editPreviewStateKey] = capture
+	return capture.diff, capture.previewError
+}
+
+func editResultDiff(details any) string {
+	switch value := details.(type) {
+	case tools.EditToolDetails:
+		return value.Diff
+	case *tools.EditToolDetails:
+		if value != nil {
+			return value.Diff
+		}
+	case json.RawMessage:
+		var decoded tools.EditToolDetails
+		if json.Unmarshal(value, &decoded) == nil {
+			return decoded.Diff
+		}
+	case map[string]any:
+		if diff, ok := value["diff"].(string); ok {
+			return diff
+		}
+	}
+	return ""
+}
+
+func (mode *InteractiveMode) renderInitialMessages() {
+	mode.chat.Clear()
+	mode.mu.Lock()
+	mode.toolComponents = make(map[string]*ToolExecutionComponent)
+	mode.expandables = nil
+	mode.mu.Unlock()
+	entries := mode.session.Manager().BuildContextEntries()
+	for _, entry := range entries {
+		switch entry.Type {
+		case "message":
+			message, err := ai.UnmarshalMessage(entry.Message)
+			if err == nil {
+				mode.renderAgentMessage(message)
+			} else {
+				mode.renderRawAgentMessage(entry.Message)
+			}
+		case "custom_message":
+			if entry.Display {
+				mode.renderCustomMessage(entry.CustomType, entry.Content, entry.Details)
+			}
+		case "custom":
+			mode.renderCustomEntry(entry)
+		case "compaction":
+			component := NewCompactionSummaryMessage(entry.Summary, int64(entry.TokensBefore), mode.mdTheme)
+			mode.addExpandable(component)
+			mode.chat.AddChild(component)
+		case "branch_summary":
+			component := NewBranchSummaryMessage(entry.Summary, mode.mdTheme)
+			mode.addExpandable(component)
+			mode.chat.AddChild(component)
+		}
+	}
+	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) currentOutputPad() int {
+	mode.mu.Lock()
+	defer mode.mu.Unlock()
+	return mode.outputPad
+}
+
+func isAssistantMessage(message any) bool { return asAssistantMessage(message) != nil }
+
+func (mode *InteractiveMode) addExpandable(component expandableComponent) {
+	mode.mu.Lock()
+	component.SetExpanded(mode.toolsExpanded)
+	mode.expandables = append(mode.expandables, component)
+	mode.mu.Unlock()
+}
+
+func (mode *InteractiveMode) renderAgentMessage(message any) {
+	if assistant := asAssistantMessage(message); assistant != nil {
+		mode.mu.Lock()
+		hidden, label := mode.thinkingHidden, mode.thinkingLabel
+		mode.mu.Unlock()
+		component := NewAssistantMessageComponent(assistant, hidden, mode.mdTheme, label, mode.currentOutputPad(), mode.markdownTransformers)
+		mode.chat.AddChild(component)
+		for _, block := range assistant.Content {
+			call, ok := block.(*ai.ToolCall)
+			if !ok || call == nil {
+				continue
+			}
+			toolComponent := mode.newToolExecutionComponent(call.Name, call.ID, call.Arguments)
+			toolComponent.SetArgsComplete()
+			mode.mu.Lock()
+			toolComponent.SetExpanded(mode.toolsExpanded)
+			mode.toolComponents[call.ID] = toolComponent
+			mode.expandables = append(mode.expandables, toolComponent)
+			mode.mu.Unlock()
+			mode.chat.AddChild(toolComponent)
+		}
+		mode.maybeShowCacheMiss(assistant)
+		return
+	}
+	switch value := message.(type) {
+	case *ai.UserMessage:
+		mode.renderUserMessage(value)
+	case ai.UserMessage:
+		copy := value
+		mode.renderUserMessage(&copy)
+	case *ai.ToolResultMessage:
+		mode.renderToolResult(value)
+	case ai.ToolResultMessage:
+		copy := value
+		mode.renderToolResult(&copy)
+	case harness.BashExecutionMessage:
+		mode.renderBashMessage(value)
+	case *harness.BashExecutionMessage:
+		if value != nil {
+			mode.renderBashMessage(*value)
+		}
+	case harness.CustomMessage:
+		if value.Display {
+			mode.renderCustomMessage(value.CustomType, value.Content, value.Details)
+		}
+	case *harness.CustomMessage:
+		if value != nil && value.Display {
+			mode.renderCustomMessage(value.CustomType, value.Content, value.Details)
+		}
+	}
+}
+
+func (mode *InteractiveMode) maybeShowCacheMiss(message *ai.AssistantMessage) {
+	if !mode.session.InteractiveSettings().ShowCacheMissNotices || message == nil {
+		return
+	}
+	miss := mode.detectCacheMiss(message)
+	if miss == nil || miss.tokens < 20_000 && miss.cost < .1 {
+		return
+	}
+	label := "Cache miss"
+	if miss.modelChanged {
+		label = "Cache miss after model switch"
+	} else if miss.idle >= int64(5*time.Minute/time.Millisecond) {
+		label = fmt.Sprintf("Cache miss after %dm idle", (miss.idle+30_000)/60_000)
+	}
+	cost := ""
+	if miss.cost >= .01 {
+		cost = fmt.Sprintf(" (~$%.2f)", miss.cost)
+	}
+	mode.chat.AddChild(tui.NewText(theme.FG("warning", fmt.Sprintf("%s: %s tokens re-billed%s", label, formatTokens(miss.tokens), cost)), 1, 0, nil))
+}
+
+func (mode *InteractiveMode) renderRawAgentMessage(raw json.RawMessage) {
+	var envelope struct {
+		Role string `json:"role"`
+	}
+	if json.Unmarshal(raw, &envelope) != nil {
+		return
+	}
+	switch envelope.Role {
+	case "bashExecution":
+		var message harness.BashExecutionMessage
+		if json.Unmarshal(raw, &message) == nil {
+			mode.renderBashMessage(message)
+		}
+	case "custom":
+		var message harness.CustomMessage
+		if json.Unmarshal(raw, &message) == nil && message.Display {
+			mode.renderCustomMessage(message.CustomType, message.Content, message.Details)
+		}
+	}
+}
+
+func (mode *InteractiveMode) renderUserMessage(message *ai.UserMessage) {
+	if message == nil {
+		return
+	}
+	if text := userMessageText(message); text != "" {
+		mode.addUserMessageToChat(text)
+	}
+	if !mode.showImages() || message.Content.Text != nil {
+		return
+	}
+	maxWidth := mode.session.InteractiveSettings().ImageWidthCells
+	if maxWidth <= 0 {
+		maxWidth = 60
+	}
+	for _, block := range message.Content.Blocks {
+		image, ok := block.(*ai.ImageContent)
+		if !ok || image == nil {
+			continue
+		}
+		mode.chat.AddChild(tui.NewImage(image.Data, image.MimeType, tui.ImageTheme{}, &tui.ImageOptions{MaxWidthCells: &maxWidth}, tui.GetImageDimensions(image.Data, image.MimeType)))
+	}
+}
+
+func (mode *InteractiveMode) renderToolResult(message *ai.ToolResultMessage) {
+	if message == nil {
+		return
+	}
+	mode.mu.Lock()
+	component := mode.toolComponents[message.ToolCallID]
+	mode.mu.Unlock()
+	if component == nil {
+		component = mode.newToolExecutionComponent(message.ToolName, message.ToolCallID, nil)
+		mode.mu.Lock()
+		mode.toolComponents[message.ToolCallID] = component
+		mode.expandables = append(mode.expandables, component)
+		mode.mu.Unlock()
+		mode.chat.AddChild(component)
+	}
+	component.UpdateResult(message.Content, message.IsError, message.Details, false)
+	mode.chat.ChildChanged(component)
+}
+
+func (mode *InteractiveMode) renderBashMessage(message harness.BashExecutionMessage) {
+	component := mode.newBashExecutionComponent(message.Command, message.ExcludeFromContext != nil && *message.ExcludeFromContext)
+	if message.Output != "" {
+		component.AppendOutput(message.Output)
+	}
+	component.SetComplete(message.ExitCode, message.Cancelled)
+	mode.addExpandable(component)
+	mode.chat.AddChild(component)
+}
+
+func decodeJSONValue(raw json.RawMessage) any {
+	if len(raw) == 0 {
+		return nil
+	}
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
+		return string(raw)
+	}
+	return value
+}
+
+func decodeMaybeJSON(value any) any {
+	if raw, ok := value.(json.RawMessage); ok {
+		return decodeJSONValue(raw)
+	}
+	return value
+}
+
+func (mode *InteractiveMode) renderCustomMessage(customType string, content, details any) {
+	value := decodeMaybeJSON(content)
+	if runner := mode.session.ExtensionRunner(); runner != nil {
+		if renderer := runner.MessageRenderer(customType); renderer != nil {
+			component := renderer(extensions.CustomMessage{CustomType: customType, Content: value, Display: true, Details: decodeMaybeJSON(details)}, extensions.MessageRenderOptions{Expanded: mode.toolsExpanded, OutputPad: mode.currentOutputPad()}, themeAdapter{value: theme.Current()})
+			if component != nil {
+				mode.chat.AddChild(component)
+				return
+			}
+		}
+	}
+	component := NewCustomMessageComponent(customType, value, mode.mdTheme)
+	mode.addExpandable(component)
+	mode.chat.AddChild(component)
+}
+
+func (mode *InteractiveMode) renderCustomEntry(entry sessionstore.SessionEntry) {
+	runner := mode.session.ExtensionRunner()
+	if runner == nil {
+		return
+	}
+	renderer := runner.EntryRenderer(entry.CustomType)
+	if renderer == nil {
+		return
+	}
+	// Upstream passes the whole session entry to the renderer, not just its
+	// data payload (interactive-mode.ts addCustomEntryToChat -> CustomEntryComponent).
+	entryValue := map[string]any{
+		"type":       "custom",
+		"customType": entry.CustomType,
+		"id":         entry.ID,
+		"timestamp":  entry.Timestamp,
+	}
+	if entry.ParentID != nil {
+		entryValue["parentId"] = *entry.ParentID
+	}
+	if len(entry.Data) > 0 {
+		entryValue["data"] = decodeJSONValue(entry.Data)
+	}
+	component := renderer(entryValue, extensions.EntryRenderOptions{Expanded: mode.toolsExpanded}, themeAdapter{value: theme.Current()})
+	if component != nil {
+		mode.chat.AddChild(component)
+	}
+}
+
+// requestExtensionShutdown is the interactive shutdownHandler for extension
+// ctx.shutdown() (upstream interactive-mode.ts:1689-1694): remember the
+// request and quit immediately only when the session is idle; otherwise the
+// agent_settled check completes it.
+func (mode *InteractiveMode) requestExtensionShutdown() {
+	mode.mu.Lock()
+	mode.extensionShutdownRequested = true
+	session := mode.session
+	mode.mu.Unlock()
+	if session != nil && session.IsIdle() {
+		mode.shutdown()
+	}
+}
+
+// checkExtensionShutdownRequested mirrors checkShutdownRequested
+// (interactive-mode.ts:3626-3631).
+func (mode *InteractiveMode) checkExtensionShutdownRequested() {
+	mode.mu.Lock()
+	requested := mode.extensionShutdownRequested
+	mode.mu.Unlock()
+	if requested {
+		mode.shutdown()
+	}
+}
+
+// bindExtensionShutdownHandler installs the per-mode behavior for extension
+// ctx.shutdown() (upstream binds a shutdownHandler through
+// session.bindExtensions, runner.ts:343). The runtime setter is asserted
+// optionally so the modes-side wiring stands alone until SessionRuntime
+// exposes the seam.
+func (mode *InteractiveMode) bindExtensionShutdownHandler(session *agent.SessionRuntime) {
+	if binder, ok := any(session).(interface{ SetExtensionShutdownHandler(func()) }); ok {
+		binder.SetExtensionShutdownHandler(mode.requestExtensionShutdown)
+	}
+}
+
+func (mode *InteractiveMode) shutdown(fromSignal ...bool) {
+	signalTriggered := len(fromSignal) > 0 && fromSignal[0]
+	mode.mu.Lock()
+	if mode.shutdownRequested {
+		mode.mu.Unlock()
+		return
+	}
+	mode.shutdownRequested = true
+	authCancel := mode.authCancel
+	mode.mu.Unlock()
+	if authCancel != nil {
+		authCancel()
+	}
+	mode.cancelModelSelector()
+	mode.session.Abort()
+	mode.cleanupWithOrder(signalTriggered)
+	if !signalTriggered {
+		mode.writeResumeHint()
+	}
+	// Unblock getUserInput
+	select {
+	case mode.inputCh <- inputEntry{}:
+	default:
+	}
+}
+
+func (mode *InteractiveMode) cleanup() {
+	mode.cleanupWithOrder(false)
+}
+
+func (mode *InteractiveMode) cleanupWithOrder(fromSignal bool) {
+	mode.cleanupOnce.Do(func() {
+		dispose := func() {
+			if mode.options.Host != nil {
+				mode.options.Host.Dispose()
+			} else if mode.session != nil {
+				mode.session.Dispose()
+			}
+		}
+		if fromSignal {
+			dispose()
+		}
+		mode.mu.Lock()
+		mode.themeController = nil
+		mode.mu.Unlock()
+		// No settling frame may be written after ui.Stop hands the terminal back.
+		mode.stopLogoUnfold()
+		if mode.ui != nil {
+			mode.ui.Terminal().DrainInput(time.Second, 50*time.Millisecond)
+			_ = mode.ui.Stop()
+		}
+		if !fromSignal {
+			dispose()
+		}
+	})
+}
+
+func (mode *InteractiveMode) writeResumeHint() {
+	output := mode.options.Output
+	outputTTY := mode.options.OutputTTY
+	if output == nil {
+		output = os.Stdout
+		if info, err := os.Stdout.Stat(); err == nil {
+			outputTTY = info.Mode()&os.ModeCharDevice != 0
+		}
+	}
+	command := formatResumeCommand(mode.session.Manager(), outputTTY)
+	if command == "" {
+		return
+	}
+	_, _ = fmt.Fprintf(output, "\x1b[2mTo resume this session:\x1b[22m %s\n", command)
+}
+
+func formatResumeCommand(manager *sessionstore.SessionManager, outputTTY bool) string {
+	if !outputTTY || manager == nil || !manager.IsPersisted() {
+		return ""
+	}
+	sessionFile := manager.GetSessionFile()
+	if sessionFile == "" {
+		return ""
+	}
+	if _, err := os.Stat(sessionFile); err != nil {
+		return ""
+	}
+	arguments := []string{"orb"}
+	if !manager.UsesDefaultSessionDir() {
+		arguments = append(arguments, "--session-dir", quoteResumeArgument(manager.GetSessionDir()))
+	}
+	arguments = append(arguments, "--session", manager.GetSessionID())
+	return strings.Join(arguments, " ")
+}
+
+func quoteResumeArgument(value string) string {
+	if value != "" {
+		safe := true
+		for _, character := range value {
+			if !resumeArgumentCharacter(character) {
+				safe = false
+				break
+			}
+		}
+		if safe {
+			return value
+		}
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
+func resumeArgumentCharacter(character rune) bool {
+	return character >= 'a' && character <= 'z' ||
+		character >= 'A' && character <= 'Z' ||
+		character >= '0' && character <= '9' ||
+		strings.ContainsRune("_-./~:@", character)
+}
+
+// parseSlashCommand splits "/name arg1 arg2" into (name, "arg1 arg2").
+func parseSlashCommand(text string) (string, string) {
+	text = strings.TrimPrefix(text, "/")
+	parts := strings.SplitN(text, " ", 2)
+	name := parts[0]
+	args := ""
+	if len(parts) > 1 {
+		args = strings.TrimSpace(parts[1])
+	}
+	return name, args
+}
+
+func asAssistantMessage(message any) *ai.AssistantMessage {
+	switch m := message.(type) {
+	case *ai.AssistantMessage:
+		return m
+	case ai.AssistantMessage:
+		return &m
+	}
+	return nil
+}
+
+func userMessageText(message any) string {
+	var content ai.UserContent
+	switch m := message.(type) {
+	case *ai.UserMessage:
+		content = m.Content
+	case ai.UserMessage:
+		content = m.Content
+	default:
+		return ""
+	}
+	if content.Text != nil {
+		return *content.Text
+	}
+	var parts []string
+	for _, block := range content.Blocks {
+		if tb, ok := block.(*ai.TextContent); ok {
+			parts = append(parts, tb.Text)
+		}
+	}
+	return strings.Join(parts, "\n")
+}

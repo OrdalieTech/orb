@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/agent/extensions/examples/permissiongate"
+	"github.com/OrdalieTech/orb/agent/extensions/examples/pirate"
+	"github.com/OrdalieTech/orb/agent/extensions/examples/statusline"
 	"github.com/OrdalieTech/orb/ai"
-	"github.com/OrdalieTech/orb/codingagent/extensions"
-	"github.com/OrdalieTech/orb/codingagent/extensions/examples/permissiongate"
-	"github.com/OrdalieTech/orb/codingagent/extensions/examples/pirate"
-	"github.com/OrdalieTech/orb/codingagent/extensions/examples/statusline"
 	"github.com/OrdalieTech/orb/conformance/runner"
+	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
 )
 
@@ -102,9 +102,9 @@ func f11WrappedToolResult(t *testing.T, before, after, added []string) map[strin
 	if err := registry.Register("<inline:tool>", func(api extensions.API) error {
 		api.RegisterTool(extensions.ToolDefinition{
 			Name: "loader", Label: "loader", Description: "loader", Parameters: jsonschema.Schema(`{}`),
-			Execute: func(context.Context, string, any, agent.AgentToolUpdateCallback, extensions.Context) (agent.AgentToolResult, error) {
+			Execute: func(context.Context, string, any, engine.AgentToolUpdateCallback, extensions.Context) (engine.AgentToolResult, error) {
 				names := append([]string(nil), added...)
-				return agent.AgentToolResult{Content: ai.ToolResultContent{}, AddedToolNames: &names}, nil
+				return engine.AgentToolResult{Content: ai.ToolResultContent{}, AddedToolNames: &names}, nil
 			},
 		})
 		return nil

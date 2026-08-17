@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
-	"github.com/OrdalieTech/orb/codingagent/session"
 	"github.com/OrdalieTech/orb/conformance/runner"
 )
 

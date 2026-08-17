@@ -1,5 +1,5 @@
 // Package ignorerules holds the shared gitignore-rule matching loop that both
-// skill loaders (agent/harness and codingagent) port from the npm `ignore`
+// skill loaders (agent/harness and agent) port from the npm `ignore`
 // dependency. Rule parsing stays in each caller; only the match loop is shared.
 package ignorerules
 

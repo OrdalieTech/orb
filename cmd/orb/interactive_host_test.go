@@ -10,13 +10,13 @@ import (
 	"testing"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/agent/modes"
+	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/extensions"
-	"github.com/OrdalieTech/orb/codingagent/modes"
-	"github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 type recordedLifecycleEvent struct {
@@ -92,8 +92,8 @@ func fauxHostModel(id string) *ai.Model {
 	return &ai.Model{ID: id, Provider: "faux", API: "faux", Reasoning: true, ContextWindow: 100_000, MaxTokens: 1000}
 }
 
-func newHostAgent(messages agent.AgentMessages) *agent.Agent {
-	return agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Model: fauxHostModel("host-model"), Messages: messages}))
+func newHostAgent(messages engine.AgentMessages) *engine.Agent {
+	return engine.NewAgent(nil, engine.WithInitialState(engine.AgentState{Model: fauxHostModel("host-model"), Messages: messages}))
 }
 
 // The CLI runtime paths give the agent its per-request session id at
@@ -126,9 +126,9 @@ func TestBuildSessionRuntimeSetsStreamSessionID(t *testing.T) {
 			yield(ai.DoneEvent{Reason: ai.StopReasonStop, Message: message}, nil)
 		}, nil
 	}
-	created := agent.NewAgent(
-		stream, agent.WithInitialState(agent.AgentState{Model: fauxHostModel("host-model")}),
-		agent.WithConvertToLLM(codingagent.ConvertToLLM),
+	created := engine.NewAgent(
+		stream, engine.WithInitialState(engine.AgentState{Model: fauxHostModel("host-model")}),
+		engine.WithConvertToLLM(agent.ConvertToLLM),
 	)
 	runtime, err := buildSessionRuntime(runtimeInputs{Agent: created, Settings: settings, StreamFn: stream},
 		manager, sessionRuntimeOptions{mode: extensions.ModeTUI})
@@ -168,7 +168,7 @@ func newHostFixture(t *testing.T) *hostFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	inputs, err := fixture.createRuntime(root, CLIArgs{}, agent.AgentMessages{})
+	inputs, err := fixture.createRuntime(root, CLIArgs{}, engine.AgentMessages{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func newHostFixture(t *testing.T) *hostFixture {
 	return fixture
 }
 
-func (fixture *hostFixture) createRuntime(cwd string, args CLIArgs, prior agent.AgentMessages) (runtimeInputs, error) {
+func (fixture *hostFixture) createRuntime(cwd string, args CLIArgs, prior engine.AgentMessages) (runtimeInputs, error) {
 	fixture.createCalls++
 	fixture.recorder.trace = append(fixture.recorder.trace, "create")
 	if fixture.failCreate {
@@ -200,13 +200,13 @@ func (fixture *hostFixture) createRuntime(cwd string, args CLIArgs, prior agent.
 		if args.Thinking != nil {
 			thinking = ai.ModelThinkingLevel(*args.Thinking)
 		}
-		created = agent.NewAgent(nil, agent.WithInitialState(agent.AgentState{Model: &model, ThinkingLevel: thinking, Messages: prior}))
+		created = engine.NewAgent(nil, engine.WithInitialState(engine.AgentState{Model: &model, ThinkingLevel: thinking, Messages: prior}))
 	}
 	return runtimeInputs{
 		Agent:           created,
 		Settings:        fixture.settings,
 		Extensions:      fixture.recorder.registry(cwd),
-		SlashResolver:   &codingagent.SlashResolver{},
+		SlashResolver:   &agent.SlashResolver{},
 		ActiveToolNames: []string{"host-tool"},
 	}, nil
 }
@@ -268,17 +268,17 @@ func TestSessionRuntimeConfigPreservesRuntimeInputs(t *testing.T) {
 		ModelRegistry:   modelRegistry,
 		AvailableModels: func() []ai.Model { return nil },
 		GetAPIKey:       func(context.Context, ai.ProviderID) (*string, error) { return &apiKey, nil },
-		GetRequestAuth: func(context.Context, ai.ProviderID) (*agent.RequestAuth, error) {
-			return &agent.RequestAuth{APIKey: &apiKey}, nil
+		GetRequestAuth: func(context.Context, ai.ProviderID) (*engine.RequestAuth, error) {
+			return &engine.RequestAuth{APIKey: &apiKey}, nil
 		},
 		GetModelHeaders: func(context.Context, *ai.Model, *string, ai.ProviderEnv) (*map[string]string, error) { return nil, nil },
-		SlashResolver:   &codingagent.SlashResolver{},
+		SlashResolver:   &agent.SlashResolver{},
 		Extensions:      extensions.NewRegistry(root),
-		BaseTools:       []agent.AgentTool{},
+		BaseTools:       []engine.AgentTool{},
 		ActiveToolNames: []string{"read"},
 		AllowedTools:    &allowed,
 		ExcludedTools:   []string{"bash"},
-		PromptOptions:   codingagent.SystemPromptOptions{CWD: root},
+		PromptOptions:   agent.SystemPromptOptions{CWD: root},
 	}
 	start := &extensions.SessionStartEvent{Reason: extensions.SessionStartResume}
 	runtimeConfig, err := sessionRuntimeConfig(inputs, manager, sessionRuntimeOptions{
@@ -316,7 +316,7 @@ func TestSessionRuntimeConfigPreservesRuntimeInputs(t *testing.T) {
 	if runtimeConfig.ExtensionMode != extensions.ModeTUI {
 		t.Fatalf("extension mode = %q", runtimeConfig.ExtensionMode)
 	}
-	runtime, err := codingagent.NewSessionRuntime(runtimeConfig)
+	runtime, err := agent.NewSessionRuntime(runtimeConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,8 +334,8 @@ func TestInteractiveHostNewSessionRebindsBeforeSessionStart(t *testing.T) {
 	host := fixture.host
 	original := host.Session()
 
-	var rebound []*codingagent.SessionRuntime
-	host.SetRebindSession(func(replacement *codingagent.SessionRuntime) error {
+	var rebound []*agent.SessionRuntime
+	host.SetRebindSession(func(replacement *agent.SessionRuntime) error {
 		fixture.recorder.trace = append(fixture.recorder.trace, "rebind")
 		rebound = append(rebound, replacement)
 		replacement.ExtensionRunner().SetUI(attachedTestUI{extensions.NewNoopUI()}, extensions.ModeTUI)
@@ -407,11 +407,11 @@ func TestInteractiveHostNewSessionRebindsBeforeSessionStart(t *testing.T) {
 func TestInteractiveHostRunsAfterSessionStartHookAfterResourceDiscovery(t *testing.T) {
 	fixture := newHostFixture(t)
 	fixture.recorder.discoveredTheme = filepath.Join(fixture.root, "replacement-theme.json")
-	fixture.host.SetRebindSession(func(*codingagent.SessionRuntime) error {
+	fixture.host.SetRebindSession(func(*agent.SessionRuntime) error {
 		fixture.recorder.trace = append(fixture.recorder.trace, "rebind")
 		return nil
 	})
-	fixture.host.SetAfterSessionStart(func(replacement *codingagent.SessionRuntime) error {
+	fixture.host.SetAfterSessionStart(func(replacement *agent.SessionRuntime) error {
 		fixture.recorder.trace = append(fixture.recorder.trace, "after-start")
 		resources := replacement.ExtensionResources()
 		if len(resources.ThemePaths) != 1 || resources.ThemePaths[0].Path != fixture.recorder.discoveredTheme {
@@ -463,14 +463,14 @@ func TestInteractiveHostRebindFailureLeavesReplacementCurrent(t *testing.T) {
 	fixture := newHostFixture(t)
 	host := fixture.host
 	original := host.Session()
-	var replacement *codingagent.SessionRuntime
+	var replacement *agent.SessionRuntime
 	rebindCalls := 0
 	invalidated := 0
 	host.SetBeforeSessionInvalidate(func() {
 		fixture.recorder.trace = append(fixture.recorder.trace, "invalidate")
 		invalidated++
 	})
-	host.SetRebindSession(func(runtime *codingagent.SessionRuntime) error {
+	host.SetRebindSession(func(runtime *agent.SessionRuntime) error {
 		fixture.recorder.trace = append(fixture.recorder.trace, "rebind")
 		rebindCalls++
 		if runtime != original {

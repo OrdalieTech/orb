@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
+	"github.com/OrdalieTech/orb/engine"
 	memorysdk "github.com/OrdalieTech/orb/memory"
 )
 
@@ -96,7 +96,7 @@ func TestAttachMakesMemoryAvailableToPlainAgent(t *testing.T) {
 		}
 		return faux.AssistantMessage("done"), nil
 	})})
-	target := agent.NewAgent(provider.StreamSimple, agent.WithInitialState(agent.AgentState{
+	target := engine.NewAgent(provider.StreamSimple, engine.WithInitialState(engine.AgentState{
 		Model: provider.GetModel(), SystemPrompt: "base",
 	}))
 	if err := Attach(context.Background(), target, store); err != nil {

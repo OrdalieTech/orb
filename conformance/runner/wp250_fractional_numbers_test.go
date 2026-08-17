@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/api"
-	"github.com/OrdalieTech/orb/codingagent/config"
 	"github.com/OrdalieTech/orb/conformance/runner"
 )
 

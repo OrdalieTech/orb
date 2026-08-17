@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/ai"
-	"github.com/OrdalieTech/orb/codingagent"
 )
 
 func TestFormatModelListMatchesUpstreamFixture(t *testing.T) {
@@ -44,7 +44,7 @@ func TestFormatModelListMatchesUpstreamFixture(t *testing.T) {
 	// LOG-m6: the empty-list guidance resolves doc pointers through
 	// authGuidanceDocPaths like formatNoAPIKeyFoundMessage, so the fixture's
 	// literal upstream paths are substituted with the resolved ones.
-	providersDoc, modelsDoc := codingagent.AuthGuidanceDocPaths()
+	providersDoc, modelsDoc := agent.AuthGuidanceDocPaths()
 	for _, test := range cases {
 		t.Run(test.Name, func(t *testing.T) {
 			models := fixture.Models
@@ -65,7 +65,7 @@ func TestFormatModelListMatchesUpstreamFixture(t *testing.T) {
 // LOG-m6: --list-models empty output shares upstream
 // formatNoModelsAvailableMessage via the same doc-path resolution.
 func TestLOGm6FormatModelListUsesAuthGuidance(t *testing.T) {
-	if got, want := formatModelList(nil, ""), codingagent.FormatNoModelsAvailableMessage()+"\n"; got != want {
+	if got, want := formatModelList(nil, ""), agent.FormatNoModelsAvailableMessage()+"\n"; got != want {
 		t.Fatalf("empty model list = %q, want %q", got, want)
 	}
 }
@@ -78,8 +78,8 @@ func TestFormatModelListFilteringAndEmptyResults(t *testing.T) {
 	if got := formatModelList(models, "claude"); got != "No models matching \"claude\"\n" {
 		t.Fatalf("no-match output = %q", got)
 	}
-	// LOG-m6: empty output flows through codingagent.FormatNoModelsAvailableMessage.
-	if got := formatModelList(nil, ""); got != codingagent.FormatNoModelsAvailableMessage()+"\n" {
+	// LOG-m6: empty output flows through agent.FormatNoModelsAvailableMessage.
+	if got := formatModelList(nil, ""); got != agent.FormatNoModelsAvailableMessage()+"\n" {
 		t.Fatalf("empty output = %q", got)
 	}
 }

@@ -12,12 +12,12 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/modes"
+	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/modes"
-	"github.com/OrdalieTech/orb/codingagent/session"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 const f7ScenarioEnv = "ORB_F7_SCENARIO"
@@ -32,14 +32,14 @@ type f7Scenario struct {
 }
 
 type f7SessionHost struct {
-	session *codingagent.SessionRuntime
+	session *agent.SessionRuntime
 }
 
-func (host *f7SessionHost) Session() *codingagent.SessionRuntime { return host.session }
-func (*f7SessionHost) NewSession(string) (bool, error)           { return true, nil }
-func (*f7SessionHost) SwitchSession(string) (bool, error)        { return true, nil }
-func (*f7SessionHost) Fork(string, bool) (string, bool, error)   { return "", true, nil }
-func (host *f7SessionHost) Dispose()                             { host.session.Dispose() }
+func (host *f7SessionHost) Session() *agent.SessionRuntime     { return host.session }
+func (*f7SessionHost) NewSession(string) (bool, error)         { return true, nil }
+func (*f7SessionHost) SwitchSession(string) (bool, error)      { return true, nil }
+func (*f7SessionHost) Fork(string, bool) (string, bool, error) { return "", true, nil }
+func (host *f7SessionHost) Dispose()                           { host.session.Dispose() }
 
 func platformCLIDependencies() cliDependencies {
 	return cliDependencies{createRuntime: createRuntimeInputs, runRPCFixture: runF7RPCFixture}
@@ -69,7 +69,7 @@ func runF7RPCFixture(ctx context.Context, _ CLIArgs, streams cliStreams, _ strin
 	})
 }
 
-func newF7SessionRuntime(scenario f7Scenario) (*codingagent.SessionRuntime, error) {
+func newF7SessionRuntime(scenario f7Scenario) (*agent.SessionRuntime, error) {
 	if scenario.CWD == "" || scenario.SessionID == "" || scenario.TokenSize < 1 {
 		return nil, errors.New("invalid F7 conformance scenario")
 	}
@@ -113,14 +113,14 @@ func newF7SessionRuntime(scenario f7Scenario) (*codingagent.SessionRuntime, erro
 		return nil, err
 	}
 	model := provider.GetModel()
-	created := agent.NewAgent(
-		provider.StreamSimple, agent.WithInitialState(agent.AgentState{
-			Model: model, SystemPrompt: scenario.SystemPrompt, Messages: agent.AgentMessages{}, Tools: []agent.AgentTool{},
+	created := engine.NewAgent(
+		provider.StreamSimple, engine.WithInitialState(engine.AgentState{
+			Model: model, SystemPrompt: scenario.SystemPrompt, Messages: engine.AgentMessages{}, Tools: []engine.AgentTool{},
 		}),
-		agent.WithConvertToLLM(codingagent.ConvertToLLM),
-		agent.WithClock(func() int64 { return scenario.FixedNow }),
+		engine.WithConvertToLLM(agent.ConvertToLLM),
+		engine.WithClock(func() int64 { return scenario.FixedNow }),
 	)
-	return codingagent.NewSessionRuntime(codingagent.SessionRuntimeConfig{
+	return agent.NewSessionRuntime(agent.SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings, StreamFn: provider.StreamSimple,
 		Clock: func() int64 { return scenario.FixedNow },
 		GetAPIKey: func(context.Context, ai.ProviderID) (*string, error) {

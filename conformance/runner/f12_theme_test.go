@@ -9,7 +9,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/OrdalieTech/orb/codingagent/modes/theme"
+	"github.com/OrdalieTech/orb/agent/modes/theme"
 	"github.com/OrdalieTech/orb/conformance/runner"
 	"github.com/OrdalieTech/orb/tui"
 )

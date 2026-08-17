@@ -40,15 +40,15 @@ suite runs unmodified against it.
 ## Embed the SDK
 
 ```go
-import "github.com/OrdalieTech/orb/codingagent"
+import "github.com/OrdalieTech/orb/agent"
 
-result, err := codingagent.NewAgentSession(codingagent.AgentSessionOptions{})
+result, err := agent.NewAgentSession(agent.AgentSessionOptions{})
 if err != nil { log.Fatal(err) }
 defer result.Session.Dispose()
 result.Session.Prompt(context.Background(), "list the files here")
 ```
 
-Thirteen runnable examples live in [codingagent/examples](codingagent/examples), from a minimal
+Thirteen runnable examples live in [agent/examples](agent/examples), from a minimal
 session to custom tools, providers, and session runtimes — `01_minimal` runs offline against the
 bundled faux provider.
 

@@ -11,14 +11,14 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/agent/modes"
+	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/providers"
-	"github.com/OrdalieTech/orb/codingagent"
-	"github.com/OrdalieTech/orb/codingagent/config"
-	"github.com/OrdalieTech/orb/codingagent/extensions"
-	"github.com/OrdalieTech/orb/codingagent/modes"
-	"github.com/OrdalieTech/orb/codingagent/session"
 )
 
 // sessionRuntimeOptions selects the mode-specific parts of the otherwise
@@ -33,16 +33,16 @@ type sessionRuntimeOptions struct {
 // sessionRuntimeConfig wires runtimeInputs into the full SessionRuntime
 // configuration. Startup and every session replacement go through it so a
 // replacement keeps auth, model headers, extensions, tools, and prompt state.
-func sessionRuntimeConfig(inputs runtimeInputs, manager *session.SessionManager, options sessionRuntimeOptions) (codingagent.SessionRuntimeConfig, error) {
+func sessionRuntimeConfig(inputs runtimeInputs, manager *session.SessionManager, options sessionRuntimeOptions) (agent.SessionRuntimeConfig, error) {
 	settings := inputs.Settings
 	if settings == nil {
 		agentDir, err := config.GetAgentDir()
 		if err != nil {
-			return codingagent.SessionRuntimeConfig{}, err
+			return agent.SessionRuntimeConfig{}, err
 		}
 		settings, err = config.NewSettingsManager(manager.GetCWD(), config.WithAgentDir(agentDir))
 		if err != nil {
-			return codingagent.SessionRuntimeConfig{}, err
+			return agent.SessionRuntimeConfig{}, err
 		}
 	}
 	var errorHandler func(extensions.ExtensionError)
@@ -52,7 +52,7 @@ func sessionRuntimeConfig(inputs runtimeInputs, manager *session.SessionManager,
 			_, _ = fmt.Fprintf(writer, "Extension error (%s, %s): %s\n", extensionError.ExtensionPath, extensionError.Event, extensionError.Error)
 		}
 	}
-	runtimeConfig := codingagent.SessionRuntimeConfig{
+	runtimeConfig := agent.SessionRuntimeConfig{
 		Agent: inputs.Agent, SessionManager: manager, Settings: settings, StreamFn: inputs.StreamFn,
 		GetAPIKey: inputs.GetAPIKey, GetRequestAuth: inputs.GetRequestAuth, GetModelHeaders: inputs.GetModelHeaders,
 		AvailableModels:       inputs.AvailableModels,
@@ -74,7 +74,7 @@ func sessionRuntimeConfig(inputs runtimeInputs, manager *session.SessionManager,
 	return runtimeConfig, nil
 }
 
-func buildSessionRuntime(inputs runtimeInputs, manager *session.SessionManager, options sessionRuntimeOptions) (*codingagent.SessionRuntime, error) {
+func buildSessionRuntime(inputs runtimeInputs, manager *session.SessionManager, options sessionRuntimeOptions) (*agent.SessionRuntime, error) {
 	runtimeConfig, err := sessionRuntimeConfig(inputs, manager, options)
 	if err != nil {
 		return nil, err
@@ -82,7 +82,7 @@ func buildSessionRuntime(inputs runtimeInputs, manager *session.SessionManager, 
 	// Providers key affinity and prompt caches on the session id; upstream
 	// createAgentSession passes sessionId into the Agent at construction.
 	inputs.Agent.SetStreamSessionID(manager.GetSessionID())
-	return codingagent.NewSessionRuntime(runtimeConfig)
+	return agent.NewSessionRuntime(runtimeConfig)
 }
 
 // createReplacementRuntime rebuilds the complete runtime for manager from the
@@ -93,7 +93,7 @@ func createReplacementRuntime(
 	args CLIArgs,
 	manager *session.SessionManager,
 	options sessionRuntimeOptions,
-) (*codingagent.SessionRuntime, runtimeInputs, error) {
+) (*agent.SessionRuntime, runtimeInputs, error) {
 	contextState := manager.BuildSessionContext()
 	if len(manager.GetEntries()) > 0 {
 		applySessionDefaults(&args, contextState, manager.GetBranch())
@@ -222,11 +222,11 @@ type interactiveSessionHost struct {
 	dependencies      cliDependencies
 	agentDir          string
 	errorWriter       io.Writer
-	session           *codingagent.SessionRuntime
+	session           *agent.SessionRuntime
 	inputs            runtimeInputs
-	rebind            func(*codingagent.SessionRuntime) error
+	rebind            func(*agent.SessionRuntime) error
 	beforeInvalidate  func()
-	afterSessionStart func(*codingagent.SessionRuntime) error
+	afterSessionStart func(*agent.SessionRuntime) error
 	replacing         bool
 	disposed          bool
 }
@@ -234,7 +234,7 @@ type interactiveSessionHost struct {
 func newInteractiveSessionHost(
 	args CLIArgs,
 	dependencies cliDependencies,
-	runtime *codingagent.SessionRuntime,
+	runtime *agent.SessionRuntime,
 	inputs runtimeInputs,
 	agentDir string,
 	errorWriter io.Writer,
@@ -249,13 +249,13 @@ func newInteractiveSessionHost(
 
 var _ modes.InteractiveSessionHost = (*interactiveSessionHost)(nil)
 
-func (host *interactiveSessionHost) Session() *codingagent.SessionRuntime {
+func (host *interactiveSessionHost) Session() *agent.SessionRuntime {
 	host.mu.Lock()
 	defer host.mu.Unlock()
 	return host.session
 }
 
-func (host *interactiveSessionHost) SetRebindSession(rebind func(*codingagent.SessionRuntime) error) {
+func (host *interactiveSessionHost) SetRebindSession(rebind func(*agent.SessionRuntime) error) {
 	host.mu.Lock()
 	defer host.mu.Unlock()
 	host.rebind = rebind
@@ -267,7 +267,7 @@ func (host *interactiveSessionHost) SetBeforeSessionInvalidate(beforeInvalidate 
 	host.beforeInvalidate = beforeInvalidate
 }
 
-func (host *interactiveSessionHost) SetAfterSessionStart(afterSessionStart func(*codingagent.SessionRuntime) error) {
+func (host *interactiveSessionHost) SetAfterSessionStart(afterSessionStart func(*agent.SessionRuntime) error) {
 	host.mu.Lock()
 	defer host.mu.Unlock()
 	host.afterSessionStart = afterSessionStart
@@ -275,7 +275,7 @@ func (host *interactiveSessionHost) SetAfterSessionStart(afterSessionStart func(
 
 // bindCommandActions makes extension command-context session operations run
 // through the host replacement path.
-func (host *interactiveSessionHost) bindCommandActions(runtime *codingagent.SessionRuntime) {
+func (host *interactiveSessionHost) bindCommandActions(runtime *agent.SessionRuntime) {
 	runtime.BindHostCommandActions(extensions.CommandActions{
 		NewSession: host.NewSession,
 		Fork: func(ctx context.Context, entryID string, options *extensions.ForkOptions) (extensions.SessionReplacementResult, error) {
@@ -289,7 +289,7 @@ func (host *interactiveSessionHost) bindCommandActions(runtime *codingagent.Sess
 	})
 }
 
-func (host *interactiveSessionHost) beginReplacement() (*codingagent.SessionRuntime, error) {
+func (host *interactiveSessionHost) beginReplacement() (*agent.SessionRuntime, error) {
 	host.mu.Lock()
 	defer host.mu.Unlock()
 	if host.disposed || host.session == nil {
@@ -308,7 +308,7 @@ func (host *interactiveSessionHost) endReplacement() {
 	host.mu.Unlock()
 }
 
-func (host *interactiveSessionHost) currentSession() (*codingagent.SessionRuntime, error) {
+func (host *interactiveSessionHost) currentSession() (*agent.SessionRuntime, error) {
 	host.mu.Lock()
 	defer host.mu.Unlock()
 	if host.disposed || host.session == nil {
@@ -318,7 +318,7 @@ func (host *interactiveSessionHost) currentSession() (*codingagent.SessionRuntim
 }
 
 // emitSessionBeforeSwitch reports whether an extension cancelled the switch.
-func emitSessionBeforeSwitch(ctx context.Context, runtime *codingagent.SessionRuntime, reason extensions.SessionSwitchReason, targetSessionFile *string) bool {
+func emitSessionBeforeSwitch(ctx context.Context, runtime *agent.SessionRuntime, reason extensions.SessionSwitchReason, targetSessionFile *string) bool {
 	runner := runtime.ExtensionRunner()
 	if runner == nil || !runner.HasHandlers(extensions.EventSessionBeforeSwitch) {
 		return false
@@ -334,7 +334,7 @@ func emitSessionBeforeSwitch(ctx context.Context, runtime *codingagent.SessionRu
 }
 
 // emitSessionBeforeFork reports whether an extension cancelled the fork.
-func emitSessionBeforeFork(ctx context.Context, runtime *codingagent.SessionRuntime, entryID string, position extensions.ForkPosition) bool {
+func emitSessionBeforeFork(ctx context.Context, runtime *agent.SessionRuntime, entryID string, position extensions.ForkPosition) bool {
 	runner := runtime.ExtensionRunner()
 	if runner == nil || !runner.HasHandlers(extensions.EventSessionBeforeFork) {
 		return false
@@ -352,11 +352,11 @@ func emitSessionBeforeFork(ctx context.Context, runtime *codingagent.SessionRunt
 // replace mirrors AgentSessionRuntime's teardown-first replacement. Factory,
 // setup, and rebind failures propagate without restoring the disposed runtime.
 func (host *interactiveSessionHost) replace(
-	current *codingagent.SessionRuntime,
+	current *agent.SessionRuntime,
 	reason extensions.SessionShutdownReason,
 	manager *session.SessionManager,
 	setup func(*session.SessionManager) error,
-) (*codingagent.SessionRuntime, error) {
+) (*agent.SessionRuntime, error) {
 	var previousSessionFile *string
 	// Upstream reload emits session_start without previousSessionFile.
 	if file := current.Manager().GetSessionFile(); file != "" && reason != extensions.SessionShutdownReload {
@@ -418,7 +418,7 @@ func (host *interactiveSessionHost) replace(
 // finishReplacement fires deferred session_start only after the host has
 // committed and released its replacement guard, so extension handlers and
 // withSession callbacks can safely call back into the host.
-func (host *interactiveSessionHost) finishReplacement(ctx context.Context, replacement *codingagent.SessionRuntime, withSession func(context.Context, extensions.ReplacedSessionContext) error) error {
+func (host *interactiveSessionHost) finishReplacement(ctx context.Context, replacement *agent.SessionRuntime, withSession func(context.Context, extensions.ReplacedSessionContext) error) error {
 	replacement.StartExtensions()
 	host.mu.Lock()
 	afterSessionStart := host.afterSessionStart
@@ -437,7 +437,7 @@ func (host *interactiveSessionHost) finishReplacement(ctx context.Context, repla
 }
 
 func (host *interactiveSessionHost) NewSession(ctx context.Context, options *extensions.NewSessionOptions) (extensions.SessionReplacementResult, error) {
-	replacement, cancelled, err := func() (*codingagent.SessionRuntime, bool, error) {
+	replacement, cancelled, err := func() (*agent.SessionRuntime, bool, error) {
 		current, err := host.beginReplacement()
 		if err != nil {
 			return nil, false, err
@@ -469,7 +469,7 @@ func (host *interactiveSessionHost) NewSession(ctx context.Context, options *ext
 }
 
 func (host *interactiveSessionHost) SwitchSession(ctx context.Context, sessionPath, cwdOverride string, options *extensions.SwitchSessionOptions) (extensions.SessionReplacementResult, error) {
-	replacement, cancelled, err := func() (*codingagent.SessionRuntime, bool, error) {
+	replacement, cancelled, err := func() (*agent.SessionRuntime, bool, error) {
 		current, err := host.beginReplacement()
 		if err != nil {
 			return nil, false, err
@@ -507,7 +507,7 @@ func (host *interactiveSessionHost) Fork(ctx context.Context, entryID string, op
 	if options != nil && options.Position != "" {
 		position = options.Position
 	}
-	replacement, selectedText, cancelled, err := func() (*codingagent.SessionRuntime, string, bool, error) {
+	replacement, selectedText, cancelled, err := func() (*agent.SessionRuntime, string, bool, error) {
 		current, err := host.beginReplacement()
 		if err != nil {
 			return nil, "", false, err
@@ -534,7 +534,7 @@ func (host *interactiveSessionHost) Fork(ctx context.Context, entryID string, op
 }
 
 func (host *interactiveSessionHost) ImportSession(ctx context.Context, inputPath, cwdOverride string) (extensions.SessionReplacementResult, error) {
-	runtime, cancelled, err := func() (*codingagent.SessionRuntime, bool, error) {
+	runtime, cancelled, err := func() (*agent.SessionRuntime, bool, error) {
 		current, err := host.beginReplacement()
 		if err != nil {
 			return nil, false, err
@@ -595,7 +595,7 @@ func (host *interactiveSessionHost) ImportSession(ctx context.Context, inputPath
 // creation path so settings, extensions, tools, resources, auth, and the
 // model catalog are re-read (upstream AgentSession.reload).
 func (host *interactiveSessionHost) Reload(ctx context.Context) error {
-	replacement, err := func() (*codingagent.SessionRuntime, error) {
+	replacement, err := func() (*agent.SessionRuntime, error) {
 		current, err := host.beginReplacement()
 		if err != nil {
 			return nil, err
