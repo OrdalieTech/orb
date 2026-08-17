@@ -6,6 +6,10 @@ The embedded upstream changelog under `codingagent/modes/assets/` is a product a
 
 ## [Unreleased]
 
+### Changed
+
+- `orb update` now opens with a smaller mark, then Orb, then update, and runs one full-width process line under it — steps linked by faint rules that recede behind the text, with extra space below. The reveal is eased rather than metronomic: the wordmark fades in, the rule sweeps early and glides into the edge behind a normal-weight tip, and the outcome docks bold.
+
 ## [0.4.16] - 2026-08-13
 
 ### Changed

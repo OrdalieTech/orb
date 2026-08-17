@@ -18,6 +18,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/OrdalieTech/orb/internal/orbalogo"
 )
@@ -157,7 +158,7 @@ func TestSelfUpdateSkipsWithoutTouchingDisk(t *testing.T) {
 			if code := updater.run(context.Background(), &output); code != 0 {
 				t.Fatalf("code = %d, output = %q", code, output.String())
 			}
-			want := fmt.Sprintf("Orb update\n\n  %s\n     │\n     └─ %s\n", plainVersion(test.version), test.want)
+			want := wantUpdateOutput(plainVersion(test.version), test.want)
 			if output.String() != want {
 				t.Fatalf("output = %q, want %q", output.String(), want)
 			}
@@ -169,18 +170,80 @@ func TestSelfUpdateSkipsWithoutTouchingDisk(t *testing.T) {
 	}
 }
 
+func TestUpdateCardKeepsTheProcessOnTheBar(t *testing.T) {
+	got := wantUpdateOutput("0.4.15", "archive verified", "binary replaced", "0.5.0 ✓")
+	if strings.ContainsAny(got, "┌┬┐└┴┘│") {
+		t.Fatalf("card drew a box:\n%s", got)
+	}
+	if strings.Contains(got, "ORB") || strings.Contains(got, "UPDATE") || strings.Contains(got, "FROM") {
+		t.Fatalf("card shouted:\n%s", got)
+	}
+	lockup := strings.Join(lockupRows(orbalogo.FrameCount-1, 2, false), "\n")
+	if !strings.Contains(lockup, "Orb") || !strings.Contains(lockup, "update") {
+		t.Fatalf("lockup omitted the wordmark:\n%s", lockup)
+	}
+	if strings.Contains(lockup, "0.4.15") || strings.Contains(lockup, "dev") {
+		t.Fatalf("version leaked onto the lockup:\n%s", lockup)
+	}
+	bar := joinBar(updateBarCap, []string{"0.4.15", "archive verified", "binary replaced", "0.5.0 ✓"})
+	if !strings.Contains(got, bar) || !strings.Contains(bar, "─") || strings.Contains(got, "→") {
+		t.Fatalf("process bar missing or carried an arrow:\n%s", got)
+	}
+	if width := utf8.RuneCountInString(bar); width != updateBarCap {
+		t.Fatalf("bar is %d columns, want the full %d", width, updateBarCap)
+	}
+	styled := joinBarStyled(updateBarCap, []string{"a", "b"}, true)
+	wantRule := faintOn + strings.Repeat("─", updateBarCap-len(updateIndent)-2-2) + styleOff
+	if !strings.Contains(styled, wantRule) {
+		t.Fatalf("styled links are not faint: %q", styled)
+	}
+	if plain := joinBarStyled(updateBarCap, []string{"a", "b"}, false); strings.Contains(plain, "\x1b") {
+		t.Fatalf("unstyled bar carries escape bytes: %q", plain)
+	}
+	if !strings.HasSuffix(got, "\n\n") {
+		t.Fatalf("card has no bottom padding: %q", got)
+	}
+}
+
 func TestUpdateAnimationIsTTYOnly(t *testing.T) {
 	var output bytes.Buffer
-	stop := startUpdateAnimation(&output, false, "checking release")
+	stop := startUpdateAnimation(&output, false, updateBarCap, "checking release")
 	stop()
 	if output.Len() != 0 {
 		t.Fatalf("non-TTY animation = %q", output.String())
 	}
 
-	stop = startUpdateAnimation(&output, true, "checking release")
+	stop = startUpdateAnimation(&output, true, updateBarCap, "checking release")
 	stop()
-	if want := "     ·   checking release\r\x1b[2K"; output.String() != want {
+	if want := "\r\x1b[2K" + joinBar(updateBarCap, []string{"·   checking release"}) + "\r\x1b[2K"; output.String() != want {
 		t.Fatalf("TTY animation = %q, want %q", output.String(), want)
+	}
+}
+
+func TestUpdateMicroWeights(t *testing.T) {
+	landing := strings.Join(lockupRows(updateRevealStages[0], 1, true), "\n")
+	if !strings.Contains(landing, faintOn+"Orb"+styleOff) {
+		t.Fatalf("Orb did not land faint: %q", landing)
+	}
+	settled := strings.Join(lockupRows(updateRevealStages[0], 2, true), "\n")
+	if !strings.Contains(settled, boldOn+"Orb"+styleOff) {
+		t.Fatalf("Orb did not turn bold when update joined: %q", settled)
+	}
+	if grow := barProgress(updateBarCap, "0.4.15", 0.5, true); !strings.HasSuffix(grow, styleOff+"─") {
+		t.Fatalf("growing rule has no tip: %q", grow)
+	}
+	if full := barProgress(updateBarCap, "0.4.15", 1, true); !strings.HasSuffix(full, styleOff) {
+		t.Fatalf("landed rule kept the tip: %q", full)
+	}
+	var output bytes.Buffer
+	screen := updateScreen{out: &output, animate: true, styled: true, width: updateBarCap}
+	screen.done(0, "0.4.15", "already current ✓")
+	if !strings.Contains(output.String(), boldOn+"already current ✓"+styleOff) {
+		t.Fatalf("outcome did not dock bold: %q", output.String())
+	}
+	bar := joinBarStyled(updateBarCap, []string{"a", boldOn + "b" + styleOff}, true)
+	if width := visibleWidth(bar); width != updateBarCap {
+		t.Fatalf("styled bar is %d columns, want %d", width, updateBarCap)
 	}
 }
 
@@ -198,18 +261,48 @@ func TestSelfUpdateWritesNoEscapesOnADumbTerminal(t *testing.T) {
 
 func TestLogoRevealDrawsSampledStagesInPlace(t *testing.T) {
 	var output bytes.Buffer
-	revealLogo(&output, true, 0)
+	revealLockup(&output, true, 0, false, updateBarCap, "0.4.15")
 	got := output.String()
-	if rows := strings.Count(got, "\r\x1b[2K"); rows != len(updateRevealStages)*orbalogo.Height {
-		t.Fatalf("cleared rows = %d, want %d", rows, len(updateRevealStages)*orbalogo.Height)
+	canvas := len(lockupRows(orbalogo.FrameCount-1, 2, false))
+	// One folded frame, two wordmark frames, then one per unfold stage — and
+	// every frame is the canvas rows plus the bar row.
+	frames := 3 + len(updateRevealStages) - 1
+	if rows := strings.Count(got, "\r\x1b[2K"); rows != frames*(canvas+1) {
+		t.Fatalf("cleared rows = %d, want %d", rows, frames*(canvas+1))
 	}
-	if up := strings.Count(got, fmt.Sprintf("\x1b[%dA", orbalogo.Height)); up != len(updateRevealStages)-1 {
-		t.Fatalf("canvas-height cursor-up redraws = %d, want %d", up, len(updateRevealStages)-1)
+	if up := strings.Count(got, fmt.Sprintf("\x1b[%dA", canvas)); up != frames-1 {
+		t.Fatalf("canvas-height cursor-up redraws = %d, want %d", up, frames-1)
 	}
-	last := orbalogo.Frame(orbalogo.FrameCount - 1)[orbalogo.Height-1]
-	if want := "\r\x1b[2K" + last + "\r\n\r\n"; !strings.HasSuffix(got, want) {
-		t.Fatalf("reveal ends with %q, want the completed mark and a blank line", got)
+	// The logo arrives first, the wordmark lands on it, and only then does the
+	// rule appear — its first growth tick rides the first unfold stage.
+	firstMark := strings.Join(lockupRows(updateRevealStages[0], 0, false), "\n")
+	if strings.Contains(firstMark, "Orb") || strings.Contains(firstMark, "update") {
+		t.Fatalf("folded stage already carried the wordmark: %q", firstMark)
 	}
+	updateAt := strings.Index(got, "update")
+	if ruleAt := strings.Index(got, "─"); ruleAt < updateAt {
+		t.Fatalf("rule appeared before the wordmark landed: %q", got)
+	}
+	// The growth is proportional: the last unfold tick draws the full-width
+	// rule anchored at the from cell, and nothing after it moves the canvas.
+	full := barProgress(updateBarCap, "0.4.15", 1, false)
+	if strings.Count(got, "\r\x1b[2K"+full) != 1 {
+		t.Fatalf("reveal did not land the fully grown rule exactly once: %q", got)
+	}
+	if want := "\r\x1b[2K" + full; !strings.HasSuffix(got, want) {
+		t.Fatalf("reveal ends with %q, want the fully grown rule", got)
+	}
+}
+
+func wantUpdateOutput(cells ...string) string {
+	var body strings.Builder
+	for _, row := range lockupRows(orbalogo.FrameCount-1, 2, false) {
+		body.WriteString(row)
+		body.WriteByte('\n')
+	}
+	body.WriteString(joinBar(updateBarCap, cells))
+	body.WriteString("\n\n\n")
+	return body.String()
 }
 
 func TestSelfUpdateReplacesCanonicalBinary(t *testing.T) {
@@ -221,7 +314,7 @@ func TestSelfUpdateReplacesCanonicalBinary(t *testing.T) {
 	if code := updater.run(context.Background(), &output); code != 0 {
 		t.Fatalf("code = %d, output = %q", code, output.String())
 	}
-	want := "Orb update\n\n  0.4.15\n     │\n     ● archive verified\n     │\n     ● binary replaced\n     │\n  0.5.0 ✓\n"
+	want := wantUpdateOutput("0.4.15", "archive verified", "binary replaced", "0.5.0 ✓")
 	if output.String() != want {
 		t.Fatalf("output = %q, want %q", output.String(), want)
 	}
@@ -278,10 +371,10 @@ func TestSelfUpdateRejectsBadReleasesAndRollsBack(t *testing.T) {
 			if code := updater.run(context.Background(), &output); code != 1 {
 				t.Fatalf("code = %d, output = %q", code, output.String())
 			}
-			if !strings.Contains(output.String(), "     × ") || !strings.Contains(output.String(), test.wantErr) {
+			if !strings.Contains(output.String(), test.wantErr) {
 				t.Fatalf("output = %q, want a failure mentioning %q", output.String(), test.wantErr)
 			}
-			if !strings.HasSuffix(output.String(), "     │\n  unchanged\n") {
+			if !strings.HasSuffix(output.String(), "unchanged\n\n\n") {
 				t.Fatalf("output = %q, want an unchanged terminal state", output.String())
 			}
 			contents, err := os.ReadFile(canonical)
@@ -315,7 +408,7 @@ func TestSelfUpdateRefusesAMetadataRedirectOffHTTPS(t *testing.T) {
 	if code := updater.run(context.Background(), &output); code != 1 {
 		t.Fatalf("code = %d, output = %q", code, output.String())
 	}
-	if !strings.Contains(output.String(), "     × ") || !strings.HasSuffix(output.String(), "     │\n  unchanged\n") {
+	if !strings.HasSuffix(output.String(), "unchanged\n\n\n") {
 		t.Fatalf("output = %q, want a failure", output.String())
 	}
 }
