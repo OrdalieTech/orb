@@ -14,6 +14,9 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ### Added
 
+- `orb plugins list --all` prints the resolved composition — every compiled extension, bundled
+  plugin, and MCP row with its id, source, on/off state, and the settings layer that decided it,
+  plus the discovered JS extensions — through the same code path the real boot uses.
 - Upstream parity moves to pi v0.84.2.
 - `--use-theme <name>` sets the interactive theme for a single run without persisting it, and `/export` now follows the active theme. Themes may define `searchMatchBg`/`searchMatchText` (optional, falling back to `selectedBg`/`text`).
 - A `defaultTools` setting chooses the initial built-in tool selection; extension and SDK custom tools stay enabled alongside it.

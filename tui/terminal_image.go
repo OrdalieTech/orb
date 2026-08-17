@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
@@ -9,27 +8,26 @@ import (
 	"math"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/OrdalieTech/orb/internal/termcaps"
 )
 
-type ImageProtocol string
+// Capability detection lives in the internal/termcaps leaf so tool renderers
+// can consult it without linking the TUI; these aliases keep tui's surface.
+type ImageProtocol = termcaps.ImageProtocol
 
 const (
-	ImageProtocolKitty  ImageProtocol = "kitty"
-	ImageProtocolITerm2 ImageProtocol = "iterm2"
+	ImageProtocolKitty  = termcaps.ImageProtocolKitty
+	ImageProtocolITerm2 = termcaps.ImageProtocolITerm2
 )
 
-type TerminalCapabilities struct {
-	Images     ImageProtocol
-	TrueColor  bool
-	Hyperlinks bool
-}
+type TerminalCapabilities = termcaps.TerminalCapabilities
 
 type CellDimensions struct {
 	WidthPx  int
@@ -62,95 +60,18 @@ type ImageRenderResult struct {
 
 var terminalImageState = struct {
 	sync.RWMutex
-	capabilities *TerminalCapabilities
-	cell         CellDimensions
+	cell CellDimensions
 }{cell: CellDimensions{WidthPx: 9, HeightPx: 18}}
 
-func probeTmuxHyperlinks() bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
-	defer cancel()
-	output, err := exec.CommandContext(ctx, "tmux", "display-message", "-p", "#{client_termfeatures}").Output()
-	if err != nil {
-		return false
-	}
-	for _, feature := range strings.Split(string(output), ",") {
-		if strings.TrimSpace(feature) == "hyperlinks" {
-			return true
-		}
-	}
-	return false
-}
-
 func DetectCapabilities(tmuxForwardsHyperlink func() bool) TerminalCapabilities {
-	termProgram := strings.ToLower(os.Getenv("TERM_PROGRAM"))
-	terminalEmulator := strings.ToLower(os.Getenv("TERMINAL_EMULATOR"))
-	term := strings.ToLower(os.Getenv("TERM"))
-	colorTerm := strings.ToLower(os.Getenv("COLORTERM"))
-	trueColorHint := colorTerm == "truecolor" || colorTerm == "24bit"
-	if os.Getenv("TMUX") != "" || strings.HasPrefix(term, "tmux") {
-		forwarded := false
-		if tmuxForwardsHyperlink != nil {
-			forwarded = tmuxForwardsHyperlink()
-		}
-		return TerminalCapabilities{TrueColor: trueColorHint, Hyperlinks: forwarded}
-	}
-	if strings.HasPrefix(term, "screen") {
-		return TerminalCapabilities{TrueColor: trueColorHint}
-	}
-	if os.Getenv("KITTY_WINDOW_ID") != "" || termProgram == "kitty" {
-		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true}
-	}
-	if termProgram == "ghostty" || strings.Contains(term, "ghostty") || os.Getenv("GHOSTTY_RESOURCES_DIR") != "" {
-		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true}
-	}
-	if os.Getenv("WEZTERM_PANE") != "" || termProgram == "wezterm" {
-		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true}
-	}
-	if termProgram == "warpterminal" || os.Getenv("WARP_SESSION_ID") != "" || os.Getenv("WARP_TERMINAL_SESSION_UUID") != "" {
-		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true}
-	}
-	if os.Getenv("ITERM_SESSION_ID") != "" || termProgram == "iterm.app" {
-		return TerminalCapabilities{Images: ImageProtocolITerm2, TrueColor: true, Hyperlinks: true}
-	}
-	if os.Getenv("WT_SESSION") != "" || termProgram == "vscode" || termProgram == "alacritty" {
-		return TerminalCapabilities{TrueColor: true, Hyperlinks: true}
-	}
-	if terminalEmulator == "jetbrains-jediterm" {
-		return TerminalCapabilities{TrueColor: true}
-	}
-	return TerminalCapabilities{TrueColor: trueColorHint}
+	return termcaps.Detect(tmuxForwardsHyperlink)
 }
 
-func GetCapabilities() TerminalCapabilities {
-	terminalImageState.RLock()
-	if terminalImageState.capabilities != nil {
-		capabilities := *terminalImageState.capabilities
-		terminalImageState.RUnlock()
-		return capabilities
-	}
-	terminalImageState.RUnlock()
-	capabilities := DetectCapabilities(probeTmuxHyperlinks)
-	terminalImageState.Lock()
-	if terminalImageState.capabilities == nil {
-		terminalImageState.capabilities = &capabilities
-	} else {
-		capabilities = *terminalImageState.capabilities
-	}
-	terminalImageState.Unlock()
-	return capabilities
-}
+func GetCapabilities() TerminalCapabilities { return termcaps.Get() }
 
-func SetCapabilities(capabilities TerminalCapabilities) {
-	terminalImageState.Lock()
-	terminalImageState.capabilities = &capabilities
-	terminalImageState.Unlock()
-}
+func SetCapabilities(capabilities TerminalCapabilities) { termcaps.Set(capabilities) }
 
-func ResetCapabilitiesCache() {
-	terminalImageState.Lock()
-	terminalImageState.capabilities = nil
-	terminalImageState.Unlock()
-}
+func ResetCapabilitiesCache() { termcaps.ResetCache() }
 
 func GetCellDimensions() CellDimensions {
 	terminalImageState.RLock()
