@@ -47,8 +47,6 @@ type Change struct {
 	OldPath        string
 	Path           string
 	Classification string
-	Targets        []string
-	WPs            []string
 }
 
 type FixtureChange struct {
@@ -66,22 +64,21 @@ type Check struct {
 }
 
 type Result struct {
-	Base              Lock
-	TargetCommit      string
-	TargetRef         string
-	TargetVersion     string
-	TargetDate        string
-	TargetSubject     string
-	Descendant        bool
-	Changes           []Change
-	FixtureChanges    []FixtureChange
-	Extraction        Check
-	Conformance       Check
-	Green             bool
-	Promotion         string
-	Report            string
-	ReportPath        string
-	UnmappedPathCount int
+	Base           Lock
+	TargetCommit   string
+	TargetRef      string
+	TargetVersion  string
+	TargetDate     string
+	TargetSubject  string
+	Descendant     bool
+	Changes        []Change
+	FixtureChanges []FixtureChange
+	Extraction     Check
+	Conformance    Check
+	Green          bool
+	Promotion      string
+	Report         string
+	ReportPath     string
 }
 
 type generateFunc func(context.Context, string, string, string, string) (string, error)

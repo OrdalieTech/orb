@@ -35,21 +35,18 @@ func renderReport(result Result, date string) string {
 		counts[change.Classification]++
 	}
 	report.WriteString("\n## Delta summary\n\n")
-	fmt.Fprintf(&report, "%d upstream paths changed: %d wire-format, %d API-surface, %d feature-only, and %d docs. %d paths have no MIRROR.md mapping.\n",
-		len(result.Changes), counts[ClassWire], counts[ClassAPI], counts[ClassFeature], counts[ClassDocs], result.UnmappedPathCount)
+	fmt.Fprintf(&report, "%d upstream paths changed: %d kernel obligations (%d wire-format, %d API-surface) and %d optional (%d feature-only, %d docs).\n",
+		len(result.Changes), counts[ClassWire]+counts[ClassAPI], counts[ClassWire], counts[ClassAPI],
+		counts[ClassFeature]+counts[ClassDocs], counts[ClassFeature], counts[ClassDocs])
 	if len(result.Changes) == 0 {
 		report.WriteString("\nNo upstream source paths differ from the pinned commit.\n")
 	} else {
-		report.WriteString("\n| Git | Classification | Upstream path | Mirrored Go targets | WPs |\n")
-		report.WriteString("|---|---|---|---|---|\n")
-		for _, change := range result.Changes {
-			filename := change.Path
-			if change.OldPath != "" && change.OldPath != change.Path {
-				filename = change.OldPath + " → " + change.Path
-			}
-			fmt.Fprintf(&report, "| %s | %s | %s | %s | %s |\n",
-				markdownText(change.Status), markdownText(change.Classification), markdownCode(filename), markdownCodes(change.Targets), markdownText(strings.Join(change.WPs, ", ")))
-		}
+		writeChangeTable(&report, "Kernel obligations (wire-format, API-surface)", result.Changes, func(class string) bool {
+			return class == ClassWire || class == ClassAPI
+		})
+		writeChangeTable(&report, "Optional — cherry-picks on merit (feature-only, docs)", result.Changes, func(class string) bool {
+			return class == ClassFeature || class == ClassDocs
+		})
 	}
 
 	report.WriteString("\n## Fixture regeneration\n\n")
@@ -86,38 +83,49 @@ func renderReport(result Result, date string) string {
 	return report.String()
 }
 
+func writeChangeTable(report *strings.Builder, title string, changes []Change, include func(string) bool) {
+	fmt.Fprintf(report, "\n### %s\n\n", title)
+	wroteHeader := false
+	for _, change := range changes {
+		if !include(change.Classification) {
+			continue
+		}
+		if !wroteHeader {
+			report.WriteString("| Git | Classification | Upstream path |\n|---|---|---|\n")
+			wroteHeader = true
+		}
+		filename := change.Path
+		if change.OldPath != "" && change.OldPath != change.Path {
+			filename = change.OldPath + " → " + change.Path
+		}
+		fmt.Fprintf(report, "| %s | %s | %s |\n",
+			markdownText(change.Status), markdownText(change.Classification), markdownCode(filename))
+	}
+	if !wroteHeader {
+		report.WriteString("None.\n")
+	}
+}
+
 func proposedItems(result Result) []string {
-	classes := make(map[string][]string)
-	var targets, wps []string
+	classes := make(map[string]int)
 	for _, change := range result.Changes {
-		classes[change.Classification] = append(classes[change.Classification], change.Path)
-		targets = append(targets, change.Targets...)
-		wps = append(wps, change.WPs...)
+		classes[change.Classification]++
 	}
 	var items []string
-	if len(classes[ClassWire]) > 0 {
-		items = append(items, fmt.Sprintf("Audit %d wire-format path(s), port exact field and ordering changes, and regenerate every affected conformance family.", len(classes[ClassWire])))
+	if classes[ClassWire] > 0 {
+		items = append(items, fmt.Sprintf("Audit %d wire-format path(s), port exact field and ordering changes, and regenerate every affected conformance family.", classes[ClassWire]))
 	}
-	if len(classes[ClassAPI]) > 0 {
-		items = append(items, fmt.Sprintf("Review %d public API path(s) for Go surface changes and add conformance coverage before promotion.", len(classes[ClassAPI])))
+	if classes[ClassAPI] > 0 {
+		items = append(items, fmt.Sprintf("Review %d public API path(s) for Go surface changes and add conformance coverage before promotion.", classes[ClassAPI]))
 	}
-	if len(classes[ClassFeature]) > 0 {
-		items = append(items, fmt.Sprintf("Triage %d feature path(s) for faithful port work or an explicit divergence-ledger entry.", len(classes[ClassFeature])))
+	if classes[ClassFeature] > 0 {
+		items = append(items, fmt.Sprintf("Optionally cherry-pick %d feature-only path(s) on merit; they carry no port obligation (P5).", classes[ClassFeature]))
 	}
-	if len(classes[ClassDocs]) > 0 {
-		items = append(items, fmt.Sprintf("Review %d documentation path(s) for newly specified behavior that is not visible in source mappings.", len(classes[ClassDocs])))
-	}
-	if result.UnmappedPathCount > 0 {
-		items = append(items, fmt.Sprintf("Add MIRROR.md coverage for %d unmapped path(s) before lock promotion.", result.UnmappedPathCount))
+	if classes[ClassDocs] > 0 {
+		items = append(items, fmt.Sprintf("Review %d documentation path(s) for newly specified kernel behavior.", classes[ClassDocs]))
 	}
 	if result.Extraction.Status == "red" {
 		items = append(items, "Fix fixture extraction at the target revision before assessing Go conformance.")
-	}
-	if unique := uniqueSorted(wps); len(unique) > 0 {
-		items = append(items, "Re-check affected work packages "+strings.Join(unique, ", ")+".")
-	}
-	if unique := uniqueSorted(targets); len(unique) > 0 {
-		items = append(items, fmt.Sprintf("Review the %d unique mirrored Go targets listed in the delta table.", len(unique)))
 	}
 	if result.Conformance.Status == "red" {
 		items = append(items, "Fix the reported conformance failures in Go; keep the generated upstream fixtures unchanged.")
@@ -166,18 +174,6 @@ func markdownCode(value string) string {
 	}
 	value = strings.ReplaceAll(value, "|", "\\|")
 	return "`" + strings.ReplaceAll(value, "`", "\\`") + "`"
-}
-
-func markdownCodes(values []string) string {
-	if len(values) == 0 {
-		return "—"
-	}
-	values = uniqueSorted(values)
-	encoded := make([]string, len(values))
-	for index, value := range values {
-		encoded[index] = markdownCode(value)
-	}
-	return strings.Join(encoded, ", ")
 }
 
 func markdownText(value string) string {

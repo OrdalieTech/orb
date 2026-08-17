@@ -19,8 +19,8 @@ them for *what to port*, ignore their sequencing.
    scripted scenarios through TS pi (`.upstream/`) and orb, every difference fixed or ledgered.
 4. **Close = trim + criteria.** Sprint close: trim checklist (RELEASE-CRITERIA), milestone boxes
    checked, comparison report committed. No separate trim WPs.
-5. Hard rules from AGENTS.md unchanged: byte-compat wire formats, dependency table, never weaken a
-   golden, pure Go, MIRROR.md updated.
+5. Hard rules from AGENTS.md unchanged: byte-compat kernel formats, dependency table, never weaken
+   a golden, pure Go.
 
 ## Sprint 0 — Consolidate (first, before anything else)
 
