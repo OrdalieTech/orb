@@ -12,38 +12,6 @@ import (
 	"time"
 )
 
-func TestMirrorMappingPrefersFileRowsAndExpandsBraces(t *testing.T) {
-	mirror, err := parseMirror([]byte(`# MIRROR
-
-| Upstream | orb |
-|---|---|
-| ` + "`packages/ai/src/`" + ` | ` + "`ai/`" + ` |
-
-| Upstream file | orb file | WP |
-|---|---|---|
-| ` + "`packages/ai/src/types.ts`" + ` | ` + "`ai/types.go`, `codingagent/messages.go`" + ` | WP-110 |
-| ` + "`packages/agent/src/harness/compaction/{compaction,branch-summarization,utils}.ts`" + ` | ` + "`agent/harness/compaction.go`" + ` | WP-310 |
-`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	targets, wps := mirror.lookup("packages/ai/src/types.ts")
-	if want := []string{"ai/types.go", "codingagent/messages.go"}; !reflect.DeepEqual(targets, want) {
-		t.Fatalf("specific targets = %v, want %v", targets, want)
-	}
-	if !reflect.DeepEqual(wps, []string{"WP-110"}) {
-		t.Fatalf("specific WPs = %v", wps)
-	}
-	targets, wps = mirror.lookup("packages/ai/src/new-feature.ts")
-	if !reflect.DeepEqual(targets, []string{"ai/"}) || len(wps) != 0 {
-		t.Fatalf("baseline mapping = %v %v", targets, wps)
-	}
-	targets, wps = mirror.lookup("packages/agent/src/harness/compaction/branch-summarization.ts")
-	if !reflect.DeepEqual(targets, []string{"agent/harness/compaction.go"}) || !reflect.DeepEqual(wps, []string{"WP-310"}) {
-		t.Fatalf("brace mapping = %v %v", targets, wps)
-	}
-}
-
 func TestClassificationFlagsWireAndPublicSurfaces(t *testing.T) {
 	tests := []struct {
 		filename string
@@ -101,7 +69,7 @@ func TestDryRunAgainstKnownNewerCommitProducesReadableReport(t *testing.T) {
 	if len(result.Changes) != 1 || result.Changes[0].Classification != ClassWire {
 		t.Fatalf("changes = %+v", result.Changes)
 	}
-	for _, fragment := range []string{"Status: **GREEN**", "wire-format", "WP-110", "Fixture regeneration", "Proposed work items", "Not attempted (dry run)"} {
+	for _, fragment := range []string{"Status: **GREEN**", "wire-format", "Kernel obligations", "Fixture regeneration", "Proposed work items", "Not attempted (dry run)"} {
 		if !strings.Contains(result.Report, fragment) {
 			t.Errorf("report does not contain %q", fragment)
 		}
@@ -209,7 +177,6 @@ func newSyncFixture(t *testing.T) syncFixture {
 
 	writeTestFile(t, filepath.Join(root, ".gitignore"), ".upstream/\n")
 	writeTestFile(t, filepath.Join(root, "UPSTREAM.lock"), "{\n  \"repo\": \""+upstream+"\",\n  \"commit\": \""+base+"\",\n  \"version\": \"1.0.0\",\n  \"syncedAt\": \"2026-07-17\"\n}\n")
-	writeTestFile(t, filepath.Join(root, "docs", "MIRROR.md"), "| Upstream file | orb file | WP |\n|---|---|---|\n| `packages/ai/src/types.ts` | `ai/types.go` | WP-110 |\n")
 	writeTestFile(t, filepath.Join(root, "conformance", "fixtures", "F1", "cases.json"), "old fixture\n")
 	gitTest(t, root, "init", "-b", "main")
 	gitTest(t, root, "config", "user.name", "Sync Test")

@@ -44,14 +44,6 @@ func Run(ctx context.Context, config Config) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	mirrorData, err := os.ReadFile(filepath.Join(root, "docs", "MIRROR.md"))
-	if err != nil {
-		return Result{}, fmt.Errorf("read MIRROR.md: %w", err)
-	}
-	mirror, err := parseMirror(mirrorData)
-	if err != nil {
-		return Result{}, err
-	}
 	if config.Bump {
 		if err := requireCleanPromotionPaths(ctx, root); err != nil {
 			return Result{}, err
@@ -82,14 +74,9 @@ func Run(ctx context.Context, config Config) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	result.Changes, err = changedPaths(ctx, config.UpstreamDir, lock.Commit, target, mirror)
+	result.Changes, err = changedPaths(ctx, config.UpstreamDir, lock.Commit, target)
 	if err != nil {
 		return Result{}, err
-	}
-	for _, change := range result.Changes {
-		if len(change.Targets) == 0 {
-			result.UnmappedPathCount++
-		}
 	}
 
 	temporary, err := os.MkdirTemp("", "orb-sync-fixtures-*")
@@ -178,9 +165,7 @@ func resolveRoot(configured string) (string, error) {
 	}
 	for {
 		if _, err := os.Stat(filepath.Join(directory, "UPSTREAM.lock")); err == nil {
-			if _, err := os.Stat(filepath.Join(directory, "docs", "MIRROR.md")); err == nil {
-				return directory, nil
-			}
+			return directory, nil
 		}
 		parent := filepath.Dir(directory)
 		if parent == directory {
@@ -266,7 +251,7 @@ func isAncestor(ctx context.Context, upstream, base, target string) (bool, error
 	return false, fmt.Errorf("check target ancestry: %w", err)
 }
 
-func changedPaths(ctx context.Context, upstream, base, target string, mirror mirrorMap) ([]Change, error) {
+func changedPaths(ctx context.Context, upstream, base, target string) ([]Change, error) {
 	output, err := git(ctx, upstream, "diff", "--name-status", "-z", "--find-renames", base, target, "--")
 	if err != nil {
 		return nil, err
@@ -295,7 +280,6 @@ func changedPaths(ctx context.Context, upstream, base, target string, mirror mir
 			index++
 		}
 		change.Classification = classifyChange(change.Path, change.OldPath)
-		change.Targets, change.WPs = mirror.lookup(change.Path, change.OldPath)
 		changes = append(changes, change)
 	}
 	sort.Slice(changes, func(left, right int) bool { return changes[left].Path < changes[right].Path })

@@ -8,8 +8,8 @@ golden to get green. (Deferred *decision* gates G1–G4 live in DECISIONS.md —
 ## Standing criteria (every merge, no exceptions)
 
 - [x] AGENTS.md definition of done: `CGO_ENABLED=0` cross-build (linux+darwin × amd64+arm64),
-      `go vet` + golangci-lint clean, `go test -race ./...` green including fixtures, MIRROR.md
-      updated. Per D7, CGo is permitted only inside development race-test binaries.
+      `go vet` + golangci-lint clean, `go test -race ./...` green including fixtures.
+      Per P2 (formerly D7), CGo is permitted only inside development race-test binaries.
 - [x] No dependency outside ARCHITECTURE §8's table.
 - [x] No fixture golden weakened, regenerated-away, or hand-edited to pass.
 - [x] No single-implementation interface unless it's an upstream seam (Operations, env, credential store).

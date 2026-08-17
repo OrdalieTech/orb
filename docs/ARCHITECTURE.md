@@ -53,7 +53,7 @@ orb/
 │   ├── extract/              TS scripts run inside .upstream/ to emit fixtures (dev-only Node)
 │   ├── fixtures/             committed golden fixtures (F1–F13, see §6)
 │   └── runner/               go test helpers consuming fixtures; RPC black-box adapter
-├── docs/                     DECISIONS.md, ARCHITECTURE.md, MIRROR.md, plan/, sync/reports/
+├── docs/                     DECISIONS.md, ARCHITECTURE.md, plan/, sync/reports/
 ├── AGENTS.md                 execution contract for implementing agents
 └── UPSTREAM.lock             pinned upstream commit + sync state
 ```
@@ -69,8 +69,8 @@ orb/
    `runAgentLoop` → `RunLoop` (receiver-free), event name strings **unchanged** (`"message_update"`).
 4. Wire/persisted JSON field names are **byte-identical** to upstream (session entries, events, RPC).
    Struct tags carry the exact upstream field names; fixtures enforce this.
-5. `docs/MIRROR.md` maintains the table upstream-path → go-path; the sync tool consumes it to map
-   upstream diffs to affected Go files. Every WP that creates files updates MIRROR.md.
+5. The conformance fixtures are the upstream-sync ground truth: red after a pin bump is the work
+   list. There is no upstream-path → go-path mapping table to maintain.
 
 ## 2. `ai/` — unified LLM layer
 
@@ -316,11 +316,12 @@ runner and wiring surface.
 ## 7. Upstream sync
 
 `UPSTREAM.lock` records `{repo, commit, syncedAt}`. `make sync` (also runnable by an agent as a
-work package): clone/fetch upstream → diff `lock..HEAD` → map changed files through `docs/MIRROR.md`
-→ classify (format-relevant? API-relevant? feature-only) → regenerate fixtures at the new commit →
-run conformance → write `docs/sync/reports/<date>.md` (delta summary, fixture diffs, failing
-conformance, proposed work items). Owner/agent triages; lock bumps when green. Cron automation is
-deliberately deferred until conformance is stably green (D5).
+work package): clone/fetch upstream → diff `lock..HEAD` → classify each path by pattern
+(kernel: wire-format / API-surface → obligations; feature-only / docs → optional cherry-picks) →
+regenerate fixtures at the new commit → run conformance → write `docs/sync/reports/<date>.md`
+(delta summary, fixture diffs, failing conformance, proposed work items). Only kernel paths carry
+port obligation (P5). Owner/agent triages; lock bumps when green. Cron automation is deliberately
+deferred until conformance is stably green.
 
 ## 8. Dependency policy
 
