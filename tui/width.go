@@ -717,3 +717,51 @@ func splitLines(text string) []string {
 	text = strings.ReplaceAll(text, "\r", "\n")
 	return strings.Split(text, "\n")
 }
+
+// StripANSI removes ANSI escape sequences (CSI, OSC, DCS, PM, APC, and other
+// ESC-introduced sequences), leaving only the visible text. Overlay backdrops
+// use it to restyle a base line uniformly.
+func StripANSI(text string) string {
+	if !strings.Contains(text, "\x1b") {
+		return text
+	}
+	var builder strings.Builder
+	builder.Grow(len(text))
+	for index := 0; index < len(text); {
+		if text[index] != 0x1b {
+			builder.WriteByte(text[index])
+			index++
+			continue
+		}
+		index++
+		if index >= len(text) {
+			break
+		}
+		switch text[index] {
+		case '[': // CSI: parameter bytes until a final byte in @-~
+			index++
+			for index < len(text) && (text[index] < '@' || text[index] > '~') {
+				index++
+			}
+			if index < len(text) {
+				index++
+			}
+		case ']', '_', 'P', '^': // OSC, APC, DCS, PM: until BEL or ESC backslash
+			index++
+			for index < len(text) {
+				if text[index] == 0x07 {
+					index++
+					break
+				}
+				if text[index] == 0x1b && index+1 < len(text) && text[index+1] == '\\' {
+					index += 2
+					break
+				}
+				index++
+			}
+		default: // two-byte escape
+			index++
+		}
+	}
+	return builder.String()
+}

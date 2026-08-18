@@ -10,7 +10,9 @@ import (
 
 func TestStatusWindowRendersConfiguredServers(t *testing.T) {
 	manager := NewManager(t.TempDir(), []ServerConfig{{Name: "files", Command: "mcp-files", Args: []string{"--root"}}})
-	panel := &mcpPanel{manager: manager, theme: extensions.NewNoopUI().Theme(), list: tui.NewGridList(nil, 8, tui.GridListTheme{})}
+	list := tui.NewGridList(nil, 8, tui.GridListTheme{})
+	list.DetailHeight = 3
+	panel := &mcpPanel{manager: manager, theme: extensions.NewNoopUI().Theme(), list: list}
 	panel.frame = tui.NewFrame("MCP servers", "", nil, nil, panelChild{panel})
 	joined := strings.Join(panel.Render(70), "\n")
 	for _, fragment := range []string{"MCP servers", "files", "stopped", "mcp-files --root"} {

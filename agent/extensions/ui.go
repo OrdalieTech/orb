@@ -167,6 +167,8 @@ type OverlayOptions struct {
 	Margin       any
 	Visible      func(width, height int) bool
 	NonCapturing bool
+	// Backdrop dims the page behind the overlay so the window visibly floats.
+	Backdrop bool
 }
 
 type OverlayUnfocusOptions struct {

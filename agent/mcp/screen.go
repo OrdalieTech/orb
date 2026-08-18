@@ -21,6 +21,7 @@ func (manager *Manager) statusWindow(ctx context.Context, command extensions.Com
 			ScrollInfo: func(text string) string { return th.FG("muted", text) },
 			Cursor:     th.FG("accent", "› "),
 		})
+		list.DetailHeight = 3
 		list.OnCancel = func() { done(nil) }
 		reconnect := func(name string) {
 			go func() {
@@ -44,13 +45,16 @@ func (manager *Manager) statusWindow(ctx context.Context, command extensions.Com
 		}
 		panel := &mcpPanel{manager: manager, theme: th, list: list}
 		panel.frame = tui.NewFrame("MCP servers", "r reconnect · R reconnect all · esc close · orb mcp --help",
-			func(text string) string { return th.FG("borderMuted", text) },
+			func(text string) string { return th.FG("border", text) },
 			func(text string) string { return th.FG("dim", text) },
 			panelChild{panel})
+		panel.frame.TitleStyle = func(text string) string { return th.Bold(th.FG("accent", text)) }
 		return panel, nil
 	}, &extensions.CustomOptions{
-		Overlay:              true,
-		StaticOverlayOptions: &extensions.OverlayOptions{Width: "75%", MinWidth: 64, MaxHeight: "75%"},
+		Overlay: true,
+		StaticOverlayOptions: &extensions.OverlayOptions{
+			Width: "88%", MinWidth: 70, MaxHeight: "85%", Backdrop: true,
+		},
 	})
 	return err
 }

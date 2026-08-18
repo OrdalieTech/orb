@@ -31,6 +31,12 @@ type GridList struct {
 	focused    bool
 	rowLines   []int // screen line of each row in the last render, for mouse mapping
 
+	// DetailHeight reserves a fixed detail area under the rows (separated by
+	// a rule) showing the selection's Detail lines. Fixed means the component
+	// height never changes with the selection, so an overlay window neither
+	// grows nor moves while hovering. Zero disables the area.
+	DetailHeight int
+
 	// OnConfirm fires on enter/space/double-click with the selected Value.
 	OnConfirm func(value string)
 	// OnCancel fires on escape.
@@ -192,7 +198,7 @@ func (list *GridList) Render(width int) []string {
 	}
 	start := list.window.Start(list.selected, len(list.rows), list.maxVisible)
 	end := min(start+list.maxVisible, len(list.rows))
-	lines := make([]string, 0, end-start+3)
+	lines := make([]string, 0, end-start+1+list.DetailHeight)
 	list.rowLines = make([]int, len(list.rows))
 	for index := range list.rowLines {
 		list.rowLines[index] = -1
@@ -234,29 +240,49 @@ func (list *GridList) Render(width int) []string {
 			line = ApplyBackgroundToLine(line, width, list.theme.SelectedBg)
 		}
 		lines = append(lines, line)
-		if index == list.selected {
-			for _, detail := range row.Detail {
-				text := "  " + strings.Repeat(" ", cursorWidth) + style(list.theme.Detail, detail)
-				lines = append(lines, TruncateToWidth(text, width, "…", false))
-			}
-		}
 	}
-	if len(list.rows) > list.maxVisible {
-		position := 0
-		for index := 0; index <= list.selected && index < len(list.rows); index++ {
-			if !list.rows[index].Header {
-				position++
-			}
+	if list.DetailHeight > 0 {
+		lines = append(lines, list.separator(width, style))
+		var detail []string
+		if list.selected >= 0 && list.selected < len(list.rows) {
+			detail = list.rows[list.selected].Detail
 		}
-		total := 0
-		for _, row := range list.rows {
-			if !row.Header {
-				total++
+		for index := range list.DetailHeight {
+			text := ""
+			if index < len(detail) {
+				text = style(list.theme.Detail, detail[index])
 			}
+			lines = append(lines, TruncateToWidth("  "+text, width, "…", false))
 		}
-		lines = append(lines, style(list.theme.ScrollInfo, strings.Repeat(" ", cursorWidth)+"("+itoa(position)+"/"+itoa(total)+")"))
+	} else if len(list.rows) > list.maxVisible {
+		lines = append(lines, style(list.theme.ScrollInfo, strings.Repeat(" ", cursorWidth)+"("+list.counter()+")"))
 	}
 	return lines
+}
+
+// separator draws the rule between rows and the detail area, carrying the
+// scroll counter near its right edge when the list overflows.
+func (list *GridList) separator(width int, style func(StyleFunc, string) string) string {
+	if len(list.rows) <= list.maxVisible {
+		return style(list.theme.ScrollInfo, strings.Repeat("─", width))
+	}
+	counter := " " + list.counter() + " "
+	ruleWidth := max(0, width-VisibleWidth(counter)-2)
+	return style(list.theme.ScrollInfo, strings.Repeat("─", ruleWidth)+counter+"──")
+}
+
+func (list *GridList) counter() string {
+	position, total := 0, 0
+	for index, row := range list.rows {
+		if row.Header {
+			continue
+		}
+		total++
+		if index <= list.selected {
+			position++
+		}
+	}
+	return itoa(position) + "/" + itoa(total)
 }
 
 func itoa(value int) string {
@@ -276,12 +302,13 @@ func itoa(value int) string {
 // bottom edge. Overlays need every cell painted, so interior lines are padded
 // to the full width.
 type Frame struct {
-	Title  string
-	Footer string
-	Border StyleFunc
-	Hint   StyleFunc
-	Child  Component
-	width  int
+	Title      string
+	TitleStyle StyleFunc // defaults to Border
+	Footer     string
+	Border     StyleFunc
+	Hint       StyleFunc
+	Child      Component
+	width      int
 }
 
 func NewFrame(title, footer string, border, hint StyleFunc, child Component) *Frame {
@@ -320,7 +347,11 @@ func (frame *Frame) Render(width int) []string {
 		return nil
 	}
 	interior := width - 4 // border + one padding cell each side
-	lines := []string{frame.buildEdge("╭", "─", "╮", frame.Title, frame.Border, width)}
+	titleStyle := frame.TitleStyle
+	if titleStyle == nil {
+		titleStyle = frame.Border
+	}
+	lines := []string{frame.buildEdge("╭", "─", "╮", frame.Title, titleStyle, width)}
 	if frame.Child != nil {
 		for _, line := range frame.Child.Render(interior) {
 			padded := TruncateToWidth(line, interior, "…", true)

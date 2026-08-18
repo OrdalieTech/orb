@@ -74,6 +74,10 @@ type OverlayOptions struct {
 	Margin       *OverlayMargin
 	Visible      func(termWidth, termHeight int) bool
 	NonCapturing bool
+	// Backdrop, when set, veils the base frame behind the overlay: every
+	// non-image base line is stripped of its styling and restyled through it,
+	// so the window visibly floats above a dimmed page.
+	Backdrop StyleFunc
 }
 
 // OverlayLayout preserves the existing Go extension adapter while the public
@@ -720,6 +724,20 @@ func (ui *TUI) compositeOverlays(lines []string, termWidth, termHeight int) []st
 	workingHeight := max(len(result), termHeight, minimumLines)
 	for len(result) < workingHeight {
 		result = append(result, "")
+	}
+	var backdrop StyleFunc
+	for _, entry := range entries {
+		if entry.options != nil && entry.options.Backdrop != nil {
+			backdrop = entry.options.Backdrop
+		}
+	}
+	if backdrop != nil {
+		for index, line := range result {
+			if line == "" || IsImageLine(line) {
+				continue
+			}
+			result[index] = backdrop(StripANSI(line))
+		}
 	}
 	viewportStart := max(0, workingHeight-termHeight)
 	ui.mouseOverlays = make([]mouseOverlayBox, len(rendered))

@@ -810,7 +810,12 @@ func resolveCustomOverlayOptions(opts *extensions.CustomOptions, component exten
 }
 
 func toTUIOverlayOptions(value extensions.OverlayOptions) tui.OverlayOptions {
+	var backdrop tui.StyleFunc
+	if value.Backdrop {
+		backdrop = func(text string) string { return theme.FG("dim", text) }
+	}
 	return tui.OverlayOptions{
+		Backdrop:     backdrop,
 		Width:        overlaySizeValue(value.Width),
 		MinWidth:     value.MinWidth,
 		MaxHeight:    overlaySizeValue(value.MaxHeight),
