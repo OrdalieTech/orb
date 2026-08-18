@@ -15,7 +15,10 @@ func isolateExternalProcess(process *exec.Cmd) (func() error, error) {
 			return os.ErrProcessDone
 		}
 		err := syscall.Kill(-process.Process.Pid, syscall.SIGKILL)
-		if err == syscall.ESRCH {
+		// ESRCH: the group is gone. EPERM: on darwin, signalling a group whose
+		// leader is already a zombie (the exec watchdog killed it first)
+		// reports EPERM — there is nothing left to clean up either way.
+		if err == syscall.ESRCH || err == syscall.EPERM {
 			return os.ErrProcessDone
 		}
 		return err

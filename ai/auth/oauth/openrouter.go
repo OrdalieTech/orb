@@ -162,6 +162,12 @@ func (flow *OpenRouter) Login(ctx context.Context, interaction auth.AuthInteract
 				continue
 			}
 			if result.err != nil {
+				// A cancelled login can surface through the prompt goroutine
+				// before this select observes ctx.Done(); report the same
+				// message either way.
+				if ctx.Err() != nil {
+					return nil, errors.New(deviceCodeCancelMessage)
+				}
 				return nil, result.err
 			}
 			code := parseOpenRouterAuthorizationInput(result.input)
@@ -173,6 +179,9 @@ func (flow *OpenRouter) Login(ctx context.Context, interaction auth.AuthInteract
 		case outcome := <-state.outcome:
 			cancelManual()
 			if outcome.err != nil {
+				if ctx.Err() != nil {
+					return nil, errors.New(deviceCodeCancelMessage)
+				}
 				return nil, outcome.err
 			}
 			if completedManual != nil && completedManual.err != nil {

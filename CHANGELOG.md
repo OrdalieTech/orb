@@ -61,6 +61,9 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ### Fixed
 
+- A cancelled OpenRouter login reports "Login cancelled" consistently instead of sometimes
+  surfacing a raw context error, and external-subagent cleanup on macOS no longer reports a
+  spurious failure when the process group is already gone.
 - Streaming `message_update` events carry cumulative token usage again in JSON and RPC output.
 - Mistral requests go out in the native Chat Completions wire shape, and an empty error body reports the HTTP status text instead of an SDK placeholder.
 - Google no longer reports a truncated response as a tool-use stop; Bedrock replays tool arguments without the empty property names its encoder rejects; DeepSeek endpoints are detected regardless of URL casing and receive `max_tokens`.
