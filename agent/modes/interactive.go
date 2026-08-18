@@ -390,7 +390,13 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 			mode.streaming = true
 			mode.turnAnswered = false
 			mode.mu.Unlock()
-			mode.interactiveUI.showWorkingIndicator()
+			// Slash commands may only open a dialog and never start a turn;
+			// an eager indicator would claim a generation while a window is
+			// open. A command that does start one re-triggers it through
+			// AgentStartEvent.
+			if !strings.HasPrefix(strings.TrimSpace(input.text), "/") {
+				mode.interactiveUI.showWorkingIndicator()
+			}
 			go func(entry inputEntry) {
 				promptDone <- mode.session.SubmitInteractive(ctx, entry.text, entry.images, extensions.DeliverSteer)
 			}(input)

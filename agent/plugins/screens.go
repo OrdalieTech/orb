@@ -26,24 +26,28 @@ func gridListTheme(th extensions.Theme) tui.GridListTheme {
 }
 
 func configFrame(th extensions.Theme, title, footer string, child tui.Component) *tui.Frame {
-	return tui.NewFrame(title, footer,
-		func(text string) string { return th.FG("borderMuted", text) },
+	frame := tui.NewFrame(title, footer,
+		func(text string) string { return th.FG("border", text) },
 		func(text string) string { return th.FG("dim", text) },
 		child)
+	frame.TitleStyle = func(text string) string { return th.Bold(th.FG("accent", text)) }
+	return frame
 }
 
 func configWindowOptions() *extensions.CustomOptions {
 	return &extensions.CustomOptions{
-		Overlay:              true,
-		StaticOverlayOptions: &extensions.OverlayOptions{Width: "75%", MinWidth: 64, MaxHeight: "75%"},
+		Overlay: true,
+		StaticOverlayOptions: &extensions.OverlayOptions{
+			Width: "88%", MinWidth: 70, MaxHeight: "85%", Backdrop: true,
+		},
 	}
 }
 
 func statePill(th extensions.Theme, on bool) string {
 	if on {
-		return th.FG("success", "on ")
+		return th.FG("success", "● on ")
 	}
-	return th.FG("dim", "off")
+	return th.FG("dim", "○ off")
 }
 
 // pluginGridRows builds one row per bundled plugin with a structured-config
@@ -53,9 +57,14 @@ func pluginGridRows(settings *config.SettingsManager, th extensions.Theme) []tui
 	enabled := settings.GetPlugins()
 	rows := make([]tui.GridRow, 0, len(names))
 	for _, name := range names {
+		// Disabled plugins recede: the whole row goes dim, not just the pill.
+		nameStyle, descriptionStyle := "text", "muted"
+		if !enabled[name] {
+			nameStyle, descriptionStyle = "dim", "dim"
+		}
 		rows = append(rows, tui.GridRow{
 			Value:  name,
-			Cells:  []string{statePill(th, enabled[name]), th.FG("text", name), th.FG("muted", descriptions[name])},
+			Cells:  []string{statePill(th, enabled[name]), th.FG(nameStyle, name), th.FG(descriptionStyle, descriptions[name])},
 			Detail: pluginDetail(name, settings),
 		})
 	}
@@ -125,6 +134,7 @@ func pluginsWindow(ctx context.Context, command extensions.CommandContext, setti
 	dirty := false
 	_, _, err := command.UI().Custom(ctx, func(host extensions.UIHost, th extensions.Theme, _ extensions.Keybindings, done extensions.CustomDone) (extensions.Component, error) {
 		list := tui.NewGridList(pluginGridRows(settings, th), 12, gridListTheme(th))
+		list.DetailHeight = 3
 		list.OnConfirm = func(name string) {
 			if name == "" {
 				return
@@ -244,6 +254,7 @@ func permissionRows(policy *Policy, th extensions.Theme) []tui.GridRow {
 func permissionsWindow(ctx context.Context, command extensions.CommandContext, policy *Policy, settings *config.SettingsManager) error {
 	_, _, err := command.UI().Custom(ctx, func(host extensions.UIHost, th extensions.Theme, _ extensions.Keybindings, done extensions.CustomDone) (extensions.Component, error) {
 		list := tui.NewGridList(permissionRows(policy, th), 14, gridListTheme(th))
+		list.DetailHeight = 2
 		toggle := func() {
 			mode, _, _, _, _ := policy.snapshot()
 			next := "enforce"

@@ -26,8 +26,9 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 - The dormant subagents plugin can expose explicitly configured external CLIs as child roles, feeding each task on stdin and returning stdout under the existing parallel limits and a bounded runtime.
 - The permissions plugin adds deny-only SDK guards and named `workspace-write`/`danger-full-access` presets, and can wrap only the built-in bash tool in an opt-in filesystem sandbox: Linux Landlock enforcement is partial because it cannot mediate metadata mutations, macOS uses `sandbox-exec`, and an unavailable sandbox refuses the command with an actionable message instead of running it unsandboxed. Both restrictive modes keep `/dev` and the temp directory writable so ordinary shell idioms (`2>/dev/null`, `mktemp`) keep working, and a `/plugins` reload re-resolves the sandbox mode without a restart.
-- Configuration windows in the TUI: `/plugins`, `/permissions`, and `/mcp` open framed overlay
-  screens on an aligned invisible grid — plugins show their structured settings (external CLIs,
+- Configuration windows in the TUI: `/plugins`, `/permissions`, and `/mcp` open fixed-size framed
+  windows floating over a dimmed page, on an aligned invisible grid with a reserved detail area
+  (hovering never resizes or moves the window) — plugins show their structured settings (external CLIs,
   preset/sandbox/mode) inline, the permissions window lays out policy, rules, and recent decisions
   with the sandbox mode visible, and the MCP window shows live server state, targets, and
   registered tools with in-place reconnection. The `/model` picker gains aligned context,
