@@ -1,36 +1,47 @@
 package tui
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+)
 
-// GridList is the shared list-with-columns primitive behind the configuration
-// screens (/plugins, /permissions, /mcp): rows of pre-styled cells aligned on
-// an invisible grid, unselectable section headers, and detail lines expanded
-// inline under the selection. Styling is injected (GridListTheme) like every
-// other tui component; cells arrive already styled and are measured
-// ANSI-aware.
+// GridList is the shared list-with-columns primitive behind every floating
+// menu: rows of pre-styled cells aligned on an invisible grid, unselectable
+// section headers, a fixed detail area, and optional type-to-filter search.
+// Styling is injected (GridListTheme) like every other tui component; cells
+// arrive already styled and are measured ANSI-aware.
 type GridRow struct {
 	Cells  []string // pre-styled cells; the last column truncates to fit
-	Detail []string // rendered indented under the row while it is selected
+	Detail []string // shown in the fixed detail area while selected
 	Header bool     // unselectable section header; Cells[0] spans the width
 	Value  string   // identity handed to callbacks
+	Search string   // filter text; defaults to the cells' visible text
 }
 
 type GridListTheme struct {
 	SelectedBg StyleFunc // background for the selected row
 	Detail     StyleFunc // detail lines (applied on top of any cell styling)
-	ScrollInfo StyleFunc // the (i/n) overflow counter
+	ScrollInfo StyleFunc // the (i/n) counter, rules, and search placeholder
+	Query      StyleFunc // the typed filter text
 	Cursor     string    // selection prefix, e.g. "› "
 }
 
 type GridList struct {
-	rows       []GridRow
-	selected   int
+	rows       []GridRow // master rows
+	view       []GridRow // filtered view (== rows while the query is empty)
+	selected   int       // index into view
 	maxVisible int
+	fixedRows  int // stable row-region height, so filtering never resizes
 	theme      GridListTheme
 	window     ListWindow
 	focused    bool
-	rowLines   []int // screen line of each row in the last render, for mouse mapping
+	query      string
+	rowLines   []int // screen line of each view row in the last render (mouse)
+	widths     []int // column widths, measured once per SetRows
 
+	// Searchable enables type-to-filter: printable keys build a fuzzy query,
+	// backspace edits it, and escape clears it before it closes the menu.
+	Searchable bool
 	// DetailHeight reserves a fixed detail area under the rows (separated by
 	// a rule) showing the selection's Detail lines. Fixed means the component
 	// height never changes with the selection, so an overlay window neither
@@ -41,8 +52,10 @@ type GridList struct {
 	OnConfirm func(value string)
 	// OnCancel fires on escape.
 	OnCancel func()
+	// OnChange fires whenever the selection moves to a new Value.
+	OnChange func(value string)
 	// OnKey sees unhandled keys first; return true to consume (screen-specific
-	// action keys like m or r).
+	// action keys like m or r — avoid plain letters on Searchable lists).
 	OnKey func(event KeyEvent, value string) bool
 }
 
@@ -53,20 +66,51 @@ func NewGridList(rows []GridRow, maxVisible int, theme GridListTheme) *GridList 
 	if maxVisible < 3 {
 		maxVisible = 3
 	}
-	list := &GridList{rows: rows, maxVisible: maxVisible, theme: theme}
-	list.selected = list.nearestSelectable(0, 1)
+	list := &GridList{maxVisible: maxVisible, theme: theme}
+	list.SetRows(rows)
 	return list
 }
 
-// SetRows replaces the rows, keeping the selection on the same Value when it
-// still exists.
+// SetRows replaces the master rows, keeping the selection on the same Value
+// when it still exists.
 func (list *GridList) SetRows(rows []GridRow) {
 	value := list.SelectedValue()
 	list.rows = rows
+	list.widths = list.columnWidths()
+	list.fixedRows = min(list.maxVisible, len(rows))
+	list.rebuildView(value)
+}
+
+// SetQuery programmatically seeds the filter (menus opened with an initial
+// search string).
+func (list *GridList) SetQuery(query string) {
+	list.query = query
+	list.rebuildView("")
+}
+
+func (list *GridList) rebuildView(keepValue string) {
+	if list.query == "" {
+		list.view = list.rows
+	} else {
+		// Headers disappear while filtering: matches read as one flat result
+		// list. Columns keep the master measurement, so nothing jitters.
+		candidates := make([]GridRow, 0, len(list.rows))
+		for _, row := range list.rows {
+			if !row.Header {
+				candidates = append(candidates, row)
+			}
+		}
+		list.view = FuzzyFilter(candidates, list.query, func(row GridRow) string {
+			if row.Search != "" {
+				return row.Search
+			}
+			return StripANSI(strings.Join(row.Cells, " "))
+		})
+	}
 	list.selected = list.nearestSelectable(0, 1)
-	if value != "" {
-		for index, row := range rows {
-			if !row.Header && row.Value == value {
+	if keepValue != "" {
+		for index, row := range list.view {
+			if !row.Header && row.Value == keepValue {
 				list.selected = index
 				break
 			}
@@ -76,8 +120,8 @@ func (list *GridList) SetRows(rows []GridRow) {
 }
 
 func (list *GridList) SelectedValue() string {
-	if list.selected >= 0 && list.selected < len(list.rows) {
-		return list.rows[list.selected].Value
+	if list.selected >= 0 && list.selected < len(list.view) {
+		return list.view[list.selected].Value
 	}
 	return ""
 }
@@ -85,8 +129,8 @@ func (list *GridList) SelectedValue() string {
 func (list *GridList) SetFocused(focused bool) { list.focused = focused }
 
 func (list *GridList) nearestSelectable(from, direction int) int {
-	for index := from; index >= 0 && index < len(list.rows); index += direction {
-		if !list.rows[index].Header {
+	for index := from; index >= 0 && index < len(list.view); index += direction {
+		if !list.view[index].Header {
 			return index
 		}
 	}
@@ -94,10 +138,14 @@ func (list *GridList) nearestSelectable(from, direction int) int {
 }
 
 func (list *GridList) move(direction int) {
+	before := list.SelectedValue()
 	if next := list.nearestSelectable(list.selected+direction, direction); next >= 0 {
 		list.selected = next
 	}
 	list.window.Recenter()
+	if after := list.SelectedValue(); after != before && list.OnChange != nil {
+		list.OnChange(after)
+	}
 }
 
 func (list *GridList) HandleInput(event KeyEvent) {
@@ -115,17 +163,41 @@ func (list *GridList) HandleInput(event KeyEvent) {
 		for range list.maxVisible {
 			list.move(1)
 		}
-	case bindings.Matches(event.Raw, "tui.select.confirm") || event.Raw == " ":
+	case bindings.Matches(event.Raw, "tui.select.confirm"):
 		if list.OnConfirm != nil {
 			list.OnConfirm(list.SelectedValue())
 		}
 	case bindings.Matches(event.Raw, "tui.select.cancel"):
+		if list.Searchable && list.query != "" {
+			list.query = ""
+			list.rebuildView("")
+			return
+		}
 		if list.OnCancel != nil {
 			list.OnCancel()
 		}
+	case list.Searchable && (event.Raw == "\x7f" || event.Raw == "\b"):
+		if list.query != "" {
+			runes := []rune(list.query)
+			list.query = string(runes[:len(runes)-1])
+			list.rebuildView("")
+		}
 	default:
-		if list.OnKey != nil {
-			list.OnKey(event, list.SelectedValue())
+		if list.OnKey != nil && list.OnKey(event, list.SelectedValue()) {
+			return
+		}
+		if event.Raw == " " && (!list.Searchable || list.query == "") {
+			if list.OnConfirm != nil {
+				list.OnConfirm(list.SelectedValue())
+			}
+			return
+		}
+		if list.Searchable {
+			runes := []rune(event.Raw)
+			if len(runes) == 1 && unicode.IsPrint(runes[0]) {
+				list.query += event.Raw
+				list.rebuildView("")
+			}
 		}
 	}
 }
@@ -140,7 +212,7 @@ func (list *GridList) HandleMouse(event MouseEvent) bool {
 func (list *GridList) ListRowAt(row int) (int, bool) {
 	for index, line := range list.rowLines {
 		if line == row {
-			if list.rows[index].Header {
+			if list.view[index].Header {
 				return 0, false
 			}
 			return index, true
@@ -150,9 +222,13 @@ func (list *GridList) ListRowAt(row int) (int, bool) {
 }
 
 func (list *GridList) ListSelectRow(index int) {
-	if index >= 0 && index < len(list.rows) && !list.rows[index].Header {
+	if index >= 0 && index < len(list.view) && !list.view[index].Header {
+		before := list.SelectedValue()
 		list.selected = index
 		list.window.Freeze()
+		if after := list.SelectedValue(); after != before && list.OnChange != nil {
+			list.OnChange(after)
+		}
 	}
 }
 
@@ -166,8 +242,9 @@ func (list *GridList) ListConfirm() {
 
 const gridColumnGap = 2
 
-// columnWidths measures every non-header row; the last column is not measured
-// because it flexes into the remaining width.
+// columnWidths measures every non-header row; each row's last cell is not
+// measured because it flexes into the remaining width, so rows with fewer
+// cells never inflate the shared columns.
 func (list *GridList) columnWidths() []int {
 	var widths []int
 	for _, row := range list.rows {
@@ -175,6 +252,9 @@ func (list *GridList) columnWidths() []int {
 			continue
 		}
 		for index, cell := range row.Cells {
+			if index == len(row.Cells)-1 {
+				continue
+			}
 			if index >= len(widths) {
 				widths = append(widths, 0)
 			}
@@ -188,7 +268,7 @@ func (list *GridList) Render(width int) []string {
 	if width < 8 || len(list.rows) == 0 {
 		return nil
 	}
-	widths := list.columnWidths()
+	widths := list.widths
 	cursorWidth := VisibleWidth(list.theme.Cursor)
 	style := func(fn StyleFunc, text string) string {
 		if fn == nil {
@@ -196,15 +276,22 @@ func (list *GridList) Render(width int) []string {
 		}
 		return fn(text)
 	}
-	start := list.window.Start(list.selected, len(list.rows), list.maxVisible)
-	end := min(start+list.maxVisible, len(list.rows))
-	lines := make([]string, 0, end-start+1+list.DetailHeight)
-	list.rowLines = make([]int, len(list.rows))
+	lines := make([]string, 0, list.fixedRows+3+list.DetailHeight)
+	if list.Searchable {
+		search := style(list.theme.ScrollInfo, "⌕ ") + style(list.theme.Query, list.query)
+		if list.query == "" {
+			search += style(list.theme.ScrollInfo, "type to filter")
+		}
+		lines = append(lines, TruncateToWidth(search, width, "…", false), "")
+	}
+	start := list.window.Start(list.selected, len(list.view), list.maxVisible)
+	end := min(start+list.maxVisible, len(list.view))
+	list.rowLines = make([]int, len(list.view))
 	for index := range list.rowLines {
 		list.rowLines[index] = -1
 	}
 	for index := start; index < end; index++ {
-		row := list.rows[index]
+		row := list.view[index]
 		list.rowLines[index] = len(lines)
 		if row.Header {
 			header := ""
@@ -241,11 +328,21 @@ func (list *GridList) Render(width int) []string {
 		}
 		lines = append(lines, line)
 	}
+	if list.Searchable {
+		// Stable geometry while typing: the row region always occupies
+		// fixedRows lines, matches or not.
+		if end-start == 0 {
+			lines = append(lines, style(list.theme.ScrollInfo, strings.Repeat(" ", cursorWidth)+"no matches"))
+		}
+		for len(lines) < list.searchChromeLines()+list.fixedRows {
+			lines = append(lines, "")
+		}
+	}
 	if list.DetailHeight > 0 {
 		lines = append(lines, list.separator(width, style))
 		var detail []string
-		if list.selected >= 0 && list.selected < len(list.rows) {
-			detail = list.rows[list.selected].Detail
+		if list.selected >= 0 && list.selected < len(list.view) {
+			detail = list.view[list.selected].Detail
 		}
 		for index := range list.DetailHeight {
 			text := ""
@@ -254,16 +351,27 @@ func (list *GridList) Render(width int) []string {
 			}
 			lines = append(lines, TruncateToWidth("  "+text, width, "…", false))
 		}
-	} else if len(list.rows) > list.maxVisible {
+	} else if len(list.view) > list.maxVisible {
 		lines = append(lines, style(list.theme.ScrollInfo, strings.Repeat(" ", cursorWidth)+"("+list.counter()+")"))
+	} else if list.Searchable && len(list.rows) > list.maxVisible {
+		// Keep the counter slot while a filter shrinks the list under the
+		// window, so the component height never changes while typing.
+		lines = append(lines, "")
 	}
 	return lines
+}
+
+func (list *GridList) searchChromeLines() int {
+	if list.Searchable {
+		return 2 // the filter line and its spacer
+	}
+	return 0
 }
 
 // separator draws the rule between rows and the detail area, carrying the
 // scroll counter near its right edge when the list overflows.
 func (list *GridList) separator(width int, style func(StyleFunc, string) string) string {
-	if len(list.rows) <= list.maxVisible {
+	if len(list.view) <= list.maxVisible {
 		return style(list.theme.ScrollInfo, strings.Repeat("─", width))
 	}
 	counter := " " + list.counter() + " "
@@ -273,7 +381,7 @@ func (list *GridList) separator(width int, style func(StyleFunc, string) string)
 
 func (list *GridList) counter() string {
 	position, total := 0, 0
-	for index, row := range list.rows {
+	for index, row := range list.view {
 		if row.Header {
 			continue
 		}
@@ -297,10 +405,10 @@ func itoa(value int) string {
 	return string(digits)
 }
 
-// Frame wraps a component in the shared configuration-window chrome: a
-// rounded border with the title in the top edge and dim key hints in the
-// bottom edge. Overlays need every cell painted, so interior lines are padded
-// to the full width.
+// Frame wraps a component in the shared configuration-window chrome: an
+// unbroken rounded border containing a title heading, the content, and a
+// quiet hint line — everything inside the box. Interior lines are padded to
+// the full width so an overlay fully covers what is beneath it.
 type Frame struct {
 	Title      string
 	TitleStyle StyleFunc // defaults to Border
@@ -308,7 +416,7 @@ type Frame struct {
 	Border     StyleFunc
 	Hint       StyleFunc
 	Child      Component
-	width      int
+	childTop   int // first interior line of the child, for mouse mapping
 }
 
 func NewFrame(title, footer string, border, hint StyleFunc, child Component) *Frame {
@@ -322,43 +430,33 @@ func (frame *Frame) style(fn StyleFunc, text string) string {
 	return fn(text)
 }
 
-func (frame *Frame) buildEdge(left, fill, right, label string, labelStyle StyleFunc, width int) string {
-	interior := width - 2
-	var builder strings.Builder
-	builder.WriteString(frame.style(frame.Border, left))
-	if label != "" {
-		text := " " + label + " "
-		text = TruncateToWidth(text, max(0, interior-2), "…", false)
-		builder.WriteString(frame.style(frame.Border, fill))
-		builder.WriteString(frame.style(labelStyle, text))
-		used := 1 + VisibleWidth(text)
-		builder.WriteString(frame.style(frame.Border, strings.Repeat(fill, max(0, interior-used))))
-	} else {
-		builder.WriteString(frame.style(frame.Border, strings.Repeat(fill, max(0, interior))))
-	}
-	builder.WriteString(frame.style(frame.Border, right))
-	return builder.String()
-}
-
-// width is captured during Render so edge helpers agree with the body.
 func (frame *Frame) Render(width int) []string {
-	frame.width = width
 	if width < 8 {
 		return nil
 	}
 	interior := width - 4 // border + one padding cell each side
-	titleStyle := frame.TitleStyle
-	if titleStyle == nil {
-		titleStyle = frame.Border
+	side := frame.style(frame.Border, "│")
+	wrap := func(content string) string {
+		return side + " " + TruncateToWidth(content, interior, "…", true) + " " + side
 	}
-	lines := []string{frame.buildEdge("╭", "─", "╮", frame.Title, titleStyle, width)}
+	lines := []string{frame.style(frame.Border, "╭"+strings.Repeat("─", width-2)+"╮")}
+	if frame.Title != "" {
+		titleStyle := frame.TitleStyle
+		if titleStyle == nil {
+			titleStyle = frame.Border
+		}
+		lines = append(lines, wrap(frame.style(titleStyle, frame.Title)), wrap(""))
+	}
+	frame.childTop = len(lines)
 	if frame.Child != nil {
 		for _, line := range frame.Child.Render(interior) {
-			padded := TruncateToWidth(line, interior, "…", true)
-			lines = append(lines, frame.style(frame.Border, "│")+" "+padded+" "+frame.style(frame.Border, "│"))
+			lines = append(lines, wrap(line))
 		}
 	}
-	lines = append(lines, frame.buildEdge("╰", "─", "╯", frame.Footer, frame.Hint, width))
+	if frame.Footer != "" {
+		lines = append(lines, wrap(""), wrap(frame.style(frame.Hint, frame.Footer)))
+	}
+	lines = append(lines, frame.style(frame.Border, "╰"+strings.Repeat("─", width-2)+"╯"))
 	return lines
 }
 
@@ -383,14 +481,14 @@ func (frame *Frame) WantsMouseMotion() bool {
 	return false
 }
 
-// HandleMouse translates to the child's coordinate space (border + padding
-// offset) before forwarding.
+// HandleMouse translates to the child's coordinate space (chrome rows above
+// the child, border + padding columns) before forwarding.
 func (frame *Frame) HandleMouse(event MouseEvent) bool {
 	handler, ok := frame.Child.(MouseHandler)
 	if !ok {
 		return false
 	}
-	event.Row--
+	event.Row -= frame.childTop
 	event.Column -= 2
 	return handler.HandleMouse(event)
 }
