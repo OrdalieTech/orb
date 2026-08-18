@@ -234,12 +234,22 @@ func writeGlobalSettings(path string, values settingsObject, nestedField, nested
 					nested = decoded
 				}
 			}
-			nested = nested.set(nestedKey, nestedValue)
-			raw, err = nested.marshalIndented()
-			if err != nil {
-				return err
+			// A nil nestedValue deletes the key; an emptied object drops the
+			// whole field rather than leaving "{}" behind.
+			if nestedValue == nil {
+				nested = nested.delete(nestedKey)
+			} else {
+				nested = nested.set(nestedKey, nestedValue)
 			}
-			object = object.set(nestedField, raw)
+			if len(nested) == 0 {
+				object = object.delete(nestedField)
+			} else {
+				raw, err = nested.marshalIndented()
+				if err != nil {
+					return err
+				}
+				object = object.set(nestedField, raw)
+			}
 		}
 		encoded, err := object.marshalIndented()
 		if err != nil {
@@ -302,6 +312,27 @@ func (manager *SettingsManager) setGlobalNested(field, key string, value any) {
 	}
 	object[key] = cloneValue(value)
 	manager.global[field] = object
+	manager.effective = mergeSettings(manager.global, manager.project)
+}
+
+func (manager *SettingsManager) removeGlobalNested(field, key string) {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if !manager.globalLoadError {
+		if err := writeGlobalSettings(manager.globalPath, nil, field, key, nil); err != nil {
+			manager.errors = append(manager.errors, SettingsError{Scope: GlobalSettings, Err: err})
+			return
+		}
+	}
+	if object := nestedObject(manager.global, field); object != nil {
+		object = cloneMap(object)
+		delete(object, key)
+		if len(object) == 0 {
+			delete(manager.global, field)
+		} else {
+			manager.global[field] = object
+		}
+	}
 	manager.effective = mergeSettings(manager.global, manager.project)
 }
 
