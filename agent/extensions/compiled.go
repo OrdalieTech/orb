@@ -18,23 +18,13 @@ func (loadError CompiledLoadError) Error() string {
 	return fmt.Sprintf("load compiled extension %q: %v", loadError.Name, loadError.Err)
 }
 
-func LoadCompiled(
-	cwd string,
-	catalog []CompiledExtension,
-	overrides map[string]bool,
-	disableAll bool,
-) (*Registry, []CompiledLoadError) {
-	if disableAll || len(catalog) == 0 {
-		return nil, nil
-	}
+// LoadCompiled registers the enabled catalog entries; enablement decisions
+// belong to the caller (agent/assembly resolves settings into DefaultEnabled).
+func LoadCompiled(cwd string, catalog []CompiledExtension) (*Registry, []CompiledLoadError) {
 	var registry *Registry
 	var loadErrors []CompiledLoadError
 	for _, entry := range catalog {
-		enabled := entry.DefaultEnabled
-		if override, exists := overrides[entry.Name]; exists {
-			enabled = override
-		}
-		if !enabled {
+		if !entry.DefaultEnabled {
 			continue
 		}
 		if registry == nil {

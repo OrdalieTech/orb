@@ -20,13 +20,15 @@ const module = "github.com/OrdalieTech/orb/"
 
 // allowedImports maps a top-level layer to the layers it may import from this
 // module. Layers absent from the map (agent, chat, cmd, conformance) are
-// assemblies or the product runtime and may import anything below them.
+// assemblies or the product runtime and may import anything below them; a new
+// top-level capability package should get an entry here (sandbox is the model).
 var allowedImports = map[string][]string{
 	"internal": {"internal"},
 	"ai":       {"ai", "internal"},
 	"engine":   {"engine", "ai", "internal"},
 	"tui":      {"tui", "internal"},
 	"memory":   {"memory", "engine", "ai", "internal"},
+	"sandbox":  {"sandbox", "internal"},
 }
 
 // tuiImporters are the only places allowed to link the TUI: assemblies, the
@@ -39,7 +41,7 @@ var tuiImporters = []string{
 
 var skipDirs = map[string]bool{
 	".git": true, ".upstream": true, ".tools": true, ".claude": true,
-	"node_modules": true, "conformance": true, "testdata": true,
+	"node_modules": true, "testdata": true,
 }
 
 func TestLayerEdges(t *testing.T) {
@@ -51,7 +53,7 @@ func TestLayerEdges(t *testing.T) {
 			return err
 		}
 		if entry.IsDir() {
-			if skipDirs[entry.Name()] || path == filepath.Join(root, "internal", "chromalexers") {
+			if skipDirs[entry.Name()] {
 				return filepath.SkipDir
 			}
 			return nil
@@ -94,22 +96,20 @@ func TestLayerEdges(t *testing.T) {
 }
 
 // TestEngineIsHeadless proves the P1 linkage promise at the layer served at
-// scale: a binary embedding engine (or ai) contains no TUI code, transitively.
+// scale: no package under engine/ or ai/ links TUI code, transitively.
 // ponytail: agent (the product root) still links tui through modes/theme's
 // MarkdownTheme/EditorTheme StyleFunc fields; split theme's tui binding when
 // a headless agent-root consumer is real.
 func TestEngineIsHeadless(t *testing.T) {
 	root := moduleRoot(t)
-	for _, target := range []string{module + "engine", module + "ai"} {
-		command := exec.Command("go", "list", "-deps", target)
-		command.Dir = root
-		output, err := command.CombinedOutput()
-		if err != nil {
-			t.Fatalf("go list -deps %s: %v\n%s", target, err, output)
-		}
-		if strings.Contains(string(output), module+"tui") {
-			t.Errorf("%s transitively links %stui", target, module)
-		}
+	command := exec.Command("go", "list", "-deps", "./engine/...", "./ai/...")
+	command.Dir = root
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("go list -deps ./engine/... ./ai/...: %v\n%s", err, output)
+	}
+	if strings.Contains(string(output), module+"tui") {
+		t.Errorf("engine or ai transitively links %stui", module)
 	}
 }
 

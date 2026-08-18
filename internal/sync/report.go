@@ -172,8 +172,11 @@ func markdownCode(value string) string {
 	if value == "" {
 		return "—"
 	}
+	value = strings.ReplaceAll(value, "\n", " ")
 	value = strings.ReplaceAll(value, "|", "\\|")
-	return "`" + strings.ReplaceAll(value, "`", "\\`") + "`"
+	// Backslash escapes do not work inside code spans; drop backticks rather
+	// than let one terminate the span and break the table.
+	return "`" + strings.ReplaceAll(value, "`", "'") + "`"
 }
 
 func markdownText(value string) string {

@@ -170,14 +170,17 @@ type Decision struct {
 
 // Policy is constructible by SDK embedders and shared with in-process children.
 type Policy struct {
-	Preset      string       `json:"preset,omitempty"`
+	// Sandbox is consumed by cmd/orb through SandboxMode (settings-driven);
+	// embedders wire sandbox.Wrap into their own bash tool themselves.
 	Sandbox     sandbox.Mode `json:"sandbox,omitempty"`
 	Mode        string       `json:"mode,omitempty"`
 	AskFallback Action       `json:"askFallback,omitempty"`
 	Rules       []Rule       `json:"rules,omitempty"`
 
 	Authorizer func(context.Context, ToolCallInfo) (Action, error) `json:"-"`
-	Guards     []func(context.Context, ToolCallInfo) string        `json:"-"`
+	// Guards are hard deny-only constraints: any non-empty reason denies,
+	// even in log mode.
+	Guards []func(context.Context, ToolCallInfo) string `json:"-"`
 
 	mu        sync.Mutex
 	askMu     sync.Mutex
@@ -326,7 +329,10 @@ func (policy *Policy) Evaluate(ctx context.Context, info ToolCallInfo) Decision 
 		if guard == nil {
 			continue
 		}
-		if reason := strings.TrimSpace(guard(ctx, info)); reason != "" {
+		if reason := guard(ctx, info); reason != "" {
+			if reason = strings.TrimSpace(reason); reason == "" {
+				reason = "denied by guard"
+			}
 			decision.Action, decision.Matcher, decision.Resolution = Deny, "guard", reason
 			return decision
 		}
@@ -636,7 +642,10 @@ func permissionsExtension(policy *Policy, settings *config.SettingsManager, pare
 			info := ToolCallInfo{Tool: call.ToolName, Args: call.Input, CWD: extensionContext.CWD(), SessionID: permissionScope(extensionContext, parent)}
 			decision := policy.Evaluate(ctx, info)
 			mode, fallback, _, _, _ := policy.snapshot()
-			if mode == "log" {
+			// Guard denials are invariants, not approval-policy outcomes:
+			// log mode never downgrades them (this also keeps the deny-all
+			// guard for invalid settings unescapable via /permissions).
+			if mode == "log" && decision.Matcher != "guard" {
 				decision.Resolved, decision.Resolution = Allow, "would-"+string(decision.Action)
 				record(ctx, decision)
 				return nil, nil

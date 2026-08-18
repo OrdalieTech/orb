@@ -112,8 +112,12 @@ func Resolve(rows []Row, settings *config.SettingsManager, disableAll bool) []Re
 		if row.Source == SourcePlugin {
 			if row.ID == "plugin-control" {
 				entry.Enabled, entry.DecidedBy = true, "always"
+			} else if gate, exists := pluginGates[row.ID]; exists {
+				entry.Enabled, entry.DecidedBy = gate, "plugins"
 			} else {
-				entry.Enabled, entry.DecidedBy = pluginGates[row.ID], "plugins"
+				// Off because plugins default off, not because settings said so
+				// (a stray goExtensions override is clobbered here, as at boot).
+				entry.Enabled, entry.DecidedBy = false, "default"
 			}
 		}
 		if disableAll {
@@ -134,5 +138,5 @@ func Load(cwd string, resolved []Resolved) (*extensions.Registry, []extensions.C
 			Name: row.ID, Factory: row.Factory, Hidden: row.Hidden, DefaultEnabled: row.Enabled,
 		}
 	}
-	return extensions.LoadCompiled(cwd, catalog, nil, false)
+	return extensions.LoadCompiled(cwd, catalog)
 }

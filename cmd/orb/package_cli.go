@@ -134,7 +134,9 @@ func listFullComposition(cwd, agentDir string, settings *config.SettingsManager,
 	packageManager := agent.NewPackageManager(agent.PackageManagerOptions{CWD: cwd, AgentDir: agentDir, Settings: settings})
 	packages, err := packageManager.Resolve(nil)
 	if err != nil {
-		_, _ = fmt.Fprintln(streams.Stderr, "Warning: "+err.Error())
+		// Boot treats this as fatal; an incomplete dump claiming completeness
+		// would be worse than no dump.
+		return reportCLIError(streams.Stderr, err)
 	}
 	for _, path := range extensionhost.Discover(extensionDiscoveryOptions(cwd, agentDir, false, settings, packages, nil)) {
 		_, _ = fmt.Fprintf(streams.Stdout, "%s\tjs-host\ton\tdiscovered\t\n", path)

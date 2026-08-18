@@ -7,12 +7,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
 func TestWrapUsesEnvironmentTransport(t *testing.T) {
 	command := `printf '%s' "$HOME"; echo $(date)`
-	wrapper, env, _ := Wrap(ModeReadOnly, "/workspace", "/writable/orb", "", command, nil)
+	wrapper, env := Wrap(ModeReadOnly, "/workspace", "", command, nil)
 	if wrapper != `exec "$ORB_SANDBOX_SELF" __sandbox` || env[EnvCommand] != command || env[EnvShell] != "/bin/sh" || env[EnvRoot] != "/workspace" ||
 		env[EnvSelf] != fmt.Sprintf("/proc/%d/exe", os.Getpid()) {
 		t.Fatalf("wrapper=%q env=%v", wrapper, env)
@@ -22,38 +23,42 @@ func TestWrapUsesEnvironmentTransport(t *testing.T) {
 	}
 }
 
-func TestProbeReportsMetadataCoverageAsPartial(t *testing.T) {
-	if _, enforcement, err := Probe(); err != nil {
-		t.Skip(err)
-	} else if enforcement != EnforcementPartial {
-		t.Fatalf("Landlock cannot mediate chmod/chown/xattr/utime/fcntl: %q", enforcement)
-	}
-}
-
+// The child half runs restricted: read-only must deny the DAC-writable test
+// directory while keeping /dev/null and os.TempDir() usable.
 func TestSelfRestrictReadOnly(t *testing.T) {
 	if os.Getenv("ORB_LANDLOCK_TEST") == "1" {
-		enforcement, err := SelfRestrict(ModeReadOnly, os.Getenv("ORB_LANDLOCK_ROOT"))
-		if err != nil {
+		runtime.LockOSThread()
+		if err := SelfRestrict(ModeReadOnly, ""); err != nil {
 			fmt.Fprint(os.Stderr, err)
 			os.Exit(2)
 		}
-		if err := os.WriteFile(filepath.Join(os.Getenv("ORB_LANDLOCK_ROOT"), "denied"), []byte("x"), 0o600); err == nil {
+		if err := os.WriteFile(filepath.Join(os.Getenv("ORB_LANDLOCK_DENIED"), "denied"), []byte("x"), 0o600); err == nil {
 			os.Exit(3)
 		}
-		fmt.Print(enforcement)
+		if err := os.WriteFile("/dev/null", []byte("x"), 0o600); err != nil {
+			os.Exit(4)
+		}
+		scratch, err := os.CreateTemp("", "orb-sandbox-*")
+		if err != nil {
+			os.Exit(5)
+		}
+		_ = scratch.Close()
+		_ = os.Remove(scratch.Name())
 		os.Exit(0)
 	}
-	if _, _, err := Probe(); err != nil {
-		t.Skip(err)
+	// The denied probe must sit outside os.TempDir() (writable by design), so
+	// use the package directory, which plain DAC would let us write.
+	denied, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
 	}
-	root := t.TempDir()
 	command := exec.Command(os.Args[0], "-test.run=^TestSelfRestrictReadOnly$")
-	command.Env = append(os.Environ(), "ORB_LANDLOCK_TEST=1", "ORB_LANDLOCK_ROOT="+root)
+	command.Env = append(os.Environ(), "ORB_LANDLOCK_TEST=1", "ORB_LANDLOCK_DENIED="+denied)
 	output, err := command.CombinedOutput()
+	if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 2 {
+		t.Skipf("landlock unavailable: %s", output)
+	}
 	if err != nil {
 		t.Fatalf("restricted child: %v: %s", err, output)
-	}
-	if string(output) != string(EnforcementPartial) {
-		t.Fatalf("enforcement = %q", output)
 	}
 }

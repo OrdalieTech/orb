@@ -27,6 +27,7 @@ const (
 	childConcurrency    = 4
 	forkMessageLimit    = 20
 	externalOutputLimit = 1 << 20
+	externalTimeout     = 10 * time.Minute
 	// ponytail: one flat width cap, because `tasks` is model-controlled and each
 	// entry costs a goroutine, a temp dir, a session, and a real provider call.
 	// Uncapped, one tool call fans out as wide as the model asks. A per-session
@@ -37,7 +38,7 @@ const (
 // ponytail: `mode` is the only unconditionally required field — task/tasks are
 // required per branch, which plain JSON Schema cannot say without a oneOf that
 // several providers reject. Execute rejects the wrong pairing with a clear error.
-var subagentSchema = ai.JSONSchema(`{"type":"object","required":["mode"],"properties":{"mode":{"type":"string","enum":["single","parallel"],"description":"single runs one child from task/agent; parallel runs every entry of tasks concurrently."},"task":{"type":"string","description":"Self-contained instruction for the child, including any context it needs. Required when mode is single."},"agent":{"type":"string","enum":["scout","worker","reviewer"],"description":"Built-in role or configured external CLI. Defaults to worker."},"context":{"type":"string","enum":["fresh","fork"],"description":"fresh starts with an empty conversation; fork prepends a transcript of the recent parent conversation. Defaults to fresh."},"tools":{"type":"array","items":{"type":"string"},"description":"Optional subset of the role's tools; names outside the role are dropped, and an empty array leaves the child with no tools."},"tasks":{"type":"array","maxItems":32,"description":"Children to run concurrently, at most 32 per call. Required when mode is parallel; ignored otherwise.","items":{"type":"object","required":["task"],"properties":{"task":{"type":"string","description":"Self-contained instruction for this child."},"agent":{"type":"string","enum":["scout","worker","reviewer"],"description":"Built-in role or configured external CLI. Defaults to worker."},"context":{"type":"string","enum":["fresh","fork"],"description":"fresh or fork for this task. Defaults to fresh."},"tools":{"type":"array","items":{"type":"string"},"description":"Optional subset of this role's tools."}}}}}}`)
+var subagentSchema = ai.JSONSchema(`{"type":"object","required":["mode"],"properties":{"mode":{"type":"string","enum":["single","parallel"],"description":"single runs one child from task/agent; parallel runs every entry of tasks concurrently."},"task":{"type":"string","description":"Self-contained instruction for the child, including any context it needs. Required when mode is single."},"agent":{"type":"string","enum":["scout","worker","reviewer"],"description":"Built-in role or configured external CLI. An external CLI receives only the task text on stdin (context and tools do not apply) and must finish within 10 minutes. Defaults to worker."},"context":{"type":"string","enum":["fresh","fork"],"description":"fresh starts with an empty conversation; fork prepends a transcript of the recent parent conversation. Defaults to fresh."},"tools":{"type":"array","items":{"type":"string"},"description":"Optional subset of the role's tools; names outside the role are dropped, and an empty array leaves the child with no tools."},"tasks":{"type":"array","maxItems":32,"description":"Children to run concurrently, at most 32 per call. Required when mode is parallel; ignored otherwise.","items":{"type":"object","required":["task"],"properties":{"task":{"type":"string","description":"Self-contained instruction for this child."},"agent":{"type":"string","enum":["scout","worker","reviewer"],"description":"Built-in role or configured external CLI. An external CLI receives only the task text on stdin (context and tools do not apply) and must finish within 10 minutes. Defaults to worker."},"context":{"type":"string","enum":["fresh","fork"],"description":"fresh or fork for this task. Defaults to fresh."},"tools":{"type":"array","items":{"type":"string"},"description":"Optional subset of this role's tools."}}}}}}`)
 
 type archetype struct {
 	prompt string
@@ -70,27 +71,30 @@ type subagentTask struct {
 
 type childProgress struct{ name, status string }
 
+// cappedOutput grows on demand up to externalOutputLimit; each stream has a
+// single writer (the exec copier goroutine), so no lock is needed.
 type cappedOutput struct {
-	data     []byte
-	used     int
+	buffer   bytes.Buffer
 	exceeded atomic.Bool
 	cancel   context.CancelFunc
 }
 
 func newCappedOutput(cancel context.CancelFunc) *cappedOutput {
-	return &cappedOutput{data: make([]byte, externalOutputLimit), cancel: cancel}
+	return &cappedOutput{cancel: cancel}
 }
 
 func (output *cappedOutput) Write(data []byte) (int, error) {
-	written := copy(output.data[output.used:], data)
-	output.used += written
-	if written < len(data) && output.exceeded.CompareAndSwap(false, true) {
+	room := min(externalOutputLimit-output.buffer.Len(), len(data))
+	if room > 0 {
+		output.buffer.Write(data[:room])
+	}
+	if room < len(data) && output.exceeded.CompareAndSwap(false, true) {
 		output.cancel()
 	}
 	return len(data), nil
 }
 
-func (output *cappedOutput) String() string { return string(output.data[:output.used]) }
+func (output *cappedOutput) String() string { return output.buffer.String() }
 
 func externalSubagents(settings *config.SettingsManager) (map[string]string, error) {
 	if settings == nil {
@@ -322,12 +326,15 @@ func runChildGuarded(
 }
 
 func runExternalChild(ctx context.Context, cwd, name, command, task string) (string, error) {
-	timeoutCtx, cancelTimeout := context.WithTimeout(ctx, 10*time.Minute)
+	timeoutCtx, cancelTimeout := context.WithTimeout(ctx, externalTimeout)
 	defer cancelTimeout()
 	processCtx, cancelProcess := context.WithCancel(timeoutCtx)
 	defer cancelProcess()
 	process := exec.CommandContext(processCtx, "/bin/sh", "-c", `/bin/sh -c "$1" 3>&-; status=$?; printf '%d\n' "$status" >&3; while :; do sleep 3600; done`, "orb-subagent", command)
-	process.Dir, process.Stdin, process.WaitDelay = cwd, strings.NewReader(task), 50*time.Millisecond
+	// WaitDelay only fires when an escaped descendant still holds the pipes
+	// after the group kill; keep it generous so a loaded host never truncates
+	// a successful child's final output burst.
+	process.Dir, process.Stdin, process.WaitDelay = cwd, strings.NewReader(task), 5*time.Second
 	killGroup, err := isolateExternalProcess(process)
 	if err != nil {
 		return "", fmt.Errorf("subagent: external agent %q unavailable: %w", name, err)
@@ -358,16 +365,29 @@ func runExternalChild(ctx context.Context, cwd, name, command, task string) (str
 	if stderr.exceeded.Load() {
 		return "", fmt.Errorf("subagent: external agent %q stderr exceeded the %d-byte limit", name, externalOutputLimit)
 	}
-	if timeoutCtx.Err() != nil {
-		return "", fmt.Errorf("subagent: external agent %q stopped: %w", name, timeoutCtx.Err())
-	}
 	if statusErr != nil {
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("subagent: external agent %q stopped: %w", name, ctx.Err())
+		}
+		if errors.Is(timeoutCtx.Err(), context.DeadlineExceeded) {
+			return "", fmt.Errorf("subagent: external agent %q did not finish within %s", name, externalTimeout)
+		}
 		return "", fmt.Errorf("subagent: external agent %q lost its exit status: %w", name, errors.Join(statusErr, waitErr))
 	}
 	if status != 0 {
-		return "", fmt.Errorf("subagent: external agent %q failed with status %d: %s", name, status, strings.TrimSpace(stderr.String()))
+		return "", fmt.Errorf("subagent: external agent %q failed with status %d: %s", name, status, excerpt(stderr.String()))
 	}
 	return stdout.String(), nil
+}
+
+// excerpt bounds a child's stderr so a crashing CLI cannot flood the model
+// context with a megabyte-scale traceback.
+func excerpt(text string) string {
+	text = strings.TrimSpace(text)
+	if len(text) > 4096 {
+		text = strings.ToValidUTF8(text[:4096], "") + " [truncated]"
+	}
+	return text
 }
 
 func runChild(ctx context.Context, parent extensions.Context, injected engine.StreamFn, policy *Policy, task subagentTask) (string, error) {
