@@ -375,7 +375,12 @@ func runExternalChild(ctx context.Context, cwd, name, command, task string) (str
 		return "", fmt.Errorf("subagent: external agent %q lost its exit status: %w", name, errors.Join(statusErr, waitErr))
 	}
 	if status != 0 {
-		return "", fmt.Errorf("subagent: external agent %q failed with status %d: %s", name, status, excerpt(stderr.String()))
+		// CLIs like claude -p print their failure explanation on stdout.
+		detail := excerpt(stderr.String())
+		if detail == "" {
+			detail = excerpt(stdout.String())
+		}
+		return "", fmt.Errorf("subagent: external agent %q failed with status %d: %s", name, status, detail)
 	}
 	return stdout.String(), nil
 }
