@@ -136,7 +136,7 @@ func TestPluginControlPersistsAndReloads(t *testing.T) {
 	root := t.TempDir()
 	settings := must(config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent"))))
 	registry := extensions.NewRegistry(root)
-	mustOK(registry.Register("<inline:plugin-control>", Control(settings)))
+	mustOK(registry.Register("<inline:plugin-control>", Control("", "", settings)))
 	ui := &selectorUI{keys: []string{" ", "\x1b"}} // toggle the first row (tasks), close
 	reloads := 0
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{
@@ -1430,4 +1430,41 @@ func TestPermissionsCommandPathsDoNotWidenAllowRules(t *testing.T) {
 	info := ToolCallInfo{Tool: "bash", Args: map[string]any{"command": "cat src/a.go && cat secrets.txt"}}
 	decision := policy.Evaluate(context.Background(), info)
 	require(t, decision.Action == Deny, "action = %q, want deny: an allow widened by command words outranked the deny", decision.Action)
+}
+
+func TestSubagentExternalObjectFormTogglesWithoutLosingCommands(t *testing.T) {
+	root := t.TempDir()
+	settings := must(config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent"))))
+	settings.SetPluginSetting("subagents", "external", map[string]any{
+		"claude": map[string]any{"command": "/bin/cat", "enabled": false},
+		"codex":  "/bin/cat",
+	})
+	entries, err := externalSubagentEntries(settings)
+	require(t, err == nil && len(entries) == 2, "entries = %#v, %v", entries, err)
+	require(t, !entries["claude"].Enabled && entries["claude"].Command == "/bin/cat", "claude = %#v", entries["claude"])
+	require(t, entries["codex"].Enabled, "codex = %#v", entries["codex"])
+	enabled, err := externalSubagents(settings)
+	require(t, err == nil && len(enabled) == 1 && enabled["codex"] == "/bin/cat", "enabled = %#v, %v", enabled, err)
+	settings.SetPluginSetting("subagents", "external", map[string]any{
+		"bad": map[string]any{"command": "x", "typo": true},
+	})
+	_, err = externalSubagentEntries(settings)
+	require(t, err != nil && strings.Contains(err.Error(), "must be a command or {command, enabled}"), "error = %v", err)
+}
+
+func TestToggleExternalCLIPreservesCommandsAndAddsKnownCLIs(t *testing.T) {
+	root := t.TempDir()
+	settings := must(config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent"))))
+	settings.SetPluginSetting("subagents", "external", map[string]any{"claude": "/bin/cat"})
+	mustOK(toggleExternalCLI(settings, "claude"))
+	entries := must(externalSubagentEntries(settings))
+	require(t, !entries["claude"].Enabled && entries["claude"].Command == "/bin/cat", "after off: %#v", entries)
+	mustOK(toggleExternalCLI(settings, "claude"))
+	raw := settingsObjectValue(settings.GetPluginSettings("subagents")["external"])
+	require(t, raw["claude"] == "/bin/cat", "re-enabled entry should collapse to the string form: %#v", raw)
+	mustOK(toggleExternalCLI(settings, "codex"))
+	entries = must(externalSubagentEntries(settings))
+	require(t, entries["codex"].Enabled && strings.HasPrefix(entries["codex"].Command, "codex exec"), "detected add: %#v", entries)
+	require(t, toggleExternalCLI(settings, "nope") != nil, "unknown CLI must be rejected")
+	require(t, len(settings.DrainErrors()) == 0, "settings errors")
 }

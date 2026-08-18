@@ -451,16 +451,47 @@ func (manager *SettingsManager) SetPluginEnabled(name string, enabled bool) {
 // SetPluginSetting persists one value without discarding the plugin's rules.
 func (manager *SettingsManager) SetPluginSetting(name, key string, value any) {
 	manager.mu.RLock()
+	raw := nestedObject(manager.global, "plugins")[name]
 	configured := nestedObject(nestedObject(manager.global, "plugins"), name)
 	if configured != nil {
 		configured = cloneMap(configured)
 	}
 	manager.mu.RUnlock()
 	if configured == nil {
-		configured = map[string]any{"enabled": true}
+		// Preserve an explicit boolean gate when promoting it to the object
+		// form: writing a setting must never flip the plugin on as a side
+		// effect.
+		enabled := true
+		if gate, isBool := raw.(bool); isBool {
+			enabled = gate
+		}
+		configured = map[string]any{"enabled": enabled}
 	}
 	configured[key] = cloneValue(value)
 	manager.setGlobalNested("plugins", name, configured)
+}
+
+// GlobalPluginSettings returns one plugin's structured configuration from the
+// global scope only — the scope the plugin setters write. Read-modify-write
+// flows must use it instead of the merged view, which project settings can
+// shadow.
+func (manager *SettingsManager) GlobalPluginSettings(name string) map[string]any {
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
+	configured := nestedObject(nestedObject(manager.global, "plugins"), name)
+	if configured == nil {
+		return nil
+	}
+	return cloneMap(configured)
+}
+
+// ProjectDefinesPlugin reports whether the project settings define the plugin
+// at all; the one-level merge then shadows the whole global object.
+func (manager *SettingsManager) ProjectDefinesPlugin(name string) bool {
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
+	_, exists := nestedObject(manager.project, "plugins")[name]
+	return exists
 }
 
 func (manager *SettingsManager) SetTransport(transport ai.Transport) {

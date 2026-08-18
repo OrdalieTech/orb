@@ -96,15 +96,49 @@ func (output *cappedOutput) Write(data []byte) (int, error) {
 
 func (output *cappedOutput) String() string { return output.buffer.String() }
 
+// externalEntry is one configured external CLI: its command and whether it is
+// currently offered to the model.
+type externalEntry struct {
+	Command string
+	Enabled bool
+}
+
+// externalSubagents returns the enabled name→command map the subagent tool
+// exposes. Disabled entries keep their configuration but disappear from the
+// tool surface.
 func externalSubagents(settings *config.SettingsManager) (map[string]string, error) {
+	entries, err := externalSubagentEntries(settings)
+	if err != nil || len(entries) == 0 {
+		return nil, err
+	}
+	enabled := make(map[string]string, len(entries))
+	for name, entry := range entries {
+		if entry.Enabled {
+			enabled[name] = entry.Command
+		}
+	}
+	if len(enabled) == 0 {
+		return nil, nil
+	}
+	return enabled, nil
+}
+
+// externalSubagentEntries parses plugins.subagents.external, where each value
+// is either a command string or {"command": string, "enabled": bool} — the
+// object form is how a CLI is switched off without losing its command.
+func externalSubagentEntries(settings *config.SettingsManager) (map[string]externalEntry, error) {
 	if settings == nil {
 		return nil, nil
 	}
-	configured := settings.GetPluginSettings("subagents")
+	return parseExternalEntries(settings.GetPluginSettings("subagents"))
+}
+
+// parseExternalEntries parses one scope's raw subagents configuration.
+func parseExternalEntries(configured map[string]any) (map[string]externalEntry, error) {
 	encoded, err := json.Marshal(configured)
 	parsed := struct {
-		Enabled  *bool             `json:"enabled"`
-		External map[string]string `json:"external"`
+		Enabled  *bool                      `json:"enabled"`
+		External map[string]json.RawMessage `json:"external"`
 	}{}
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.DisallowUnknownFields()
@@ -122,18 +156,36 @@ func externalSubagents(settings *config.SettingsManager) (map[string]string, err
 	} else if value == nil {
 		return nil, fmt.Errorf("plugins: subagents.external must map names to commands")
 	}
-	for name, command := range parsed.External {
+	entries := make(map[string]externalEntry, len(parsed.External))
+	for name, raw := range parsed.External {
 		if strings.TrimSpace(name) == "" || strings.IndexFunc(name, unicode.IsControl) >= 0 || strings.IndexFunc(name, unicode.IsSpace) >= 0 {
 			return nil, fmt.Errorf("plugins: subagents.external names must be non-empty without whitespace or control characters")
 		}
 		if _, exists := archetypes[name]; exists {
 			return nil, fmt.Errorf("plugins: subagents.external cannot replace built-in agent %q", name)
 		}
-		if strings.TrimSpace(command) == "" {
+		entry := externalEntry{Enabled: true}
+		if stringErr := json.Unmarshal(raw, &entry.Command); stringErr != nil {
+			object := struct {
+				Command string `json:"command"`
+				Enabled *bool  `json:"enabled"`
+			}{}
+			objectDecoder := json.NewDecoder(bytes.NewReader(raw))
+			objectDecoder.DisallowUnknownFields()
+			if objectErr := objectDecoder.Decode(&object); objectErr != nil {
+				return nil, fmt.Errorf("plugins: invalid subagents settings: subagents.external.%s must be a command or {command, enabled}", name)
+			}
+			entry.Command = object.Command
+			if object.Enabled != nil {
+				entry.Enabled = *object.Enabled
+			}
+		}
+		if strings.TrimSpace(entry.Command) == "" {
 			return nil, fmt.Errorf("plugins: subagents.external.%s command must not be empty", name)
 		}
+		entries[name] = entry
 	}
-	return parsed.External, nil
+	return entries, nil
 }
 
 func schemaWithExternal(external map[string]string) ai.JSONSchema {
