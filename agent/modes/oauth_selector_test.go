@@ -55,7 +55,7 @@ func TestLOGM2OAuthSelectorFuzzySearchAndWindowing(t *testing.T) {
 	component := NewOAuthSelectorComponent(oauthSelectorLogin, providers, nil, nil, "")
 
 	rendered := renderPlain(t, component, 60)
-	if !strings.Contains(rendered, "→ alpha-01") || !strings.Contains(rendered, "alpha-08") {
+	if !strings.Contains(rendered, "› alpha-01") || !strings.Contains(rendered, "alpha-08") {
 		t.Fatalf("initial window rows missing:\n%s", rendered)
 	}
 	if strings.Contains(rendered, "alpha-09") {
@@ -69,7 +69,7 @@ func TestLOGM2OAuthSelectorFuzzySearchAndWindowing(t *testing.T) {
 		component.HandleInput(tui.KeyEvent{Raw: "\x1b[B"})
 	}
 	rendered = renderPlain(t, component, 60)
-	if !strings.Contains(rendered, "→ alpha-10") || !strings.Contains(rendered, "alpha-12") {
+	if !strings.Contains(rendered, "› alpha-10") || !strings.Contains(rendered, "alpha-12") {
 		t.Fatalf("window did not follow selection:\n%s", rendered)
 	}
 	if strings.Contains(rendered, "alpha-01") || !strings.Contains(rendered, "(10/12)") {
@@ -80,7 +80,7 @@ func TestLOGM2OAuthSelectorFuzzySearchAndWindowing(t *testing.T) {
 	if len(component.filteredProviders) != 1 || component.filteredProviders[0].ID != "alpha-12" {
 		t.Fatalf("fuzzy filter = %#v", component.filteredProviders)
 	}
-	if rendered = renderPlain(t, component, 60); !strings.Contains(rendered, "→ alpha-12") {
+	if rendered = renderPlain(t, component, 60); !strings.Contains(rendered, "› alpha-12") {
 		t.Fatalf("filtered selection not rendered:\n%s", rendered)
 	}
 }
@@ -356,10 +356,7 @@ func TestLOGM4ModelSelectorWarnsForAnthropicSubscriptionAuth(t *testing.T) {
 	var selector *ModelSelectorComponent
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		children := mode.editorContainer.Children()
-		if len(children) == 1 {
-			selector, _ = children[0].(*ModelSelectorComponent)
-		}
+		selector, _ = floatingWindowChild[*ModelSelectorComponent](mode)
 		if selector != nil {
 			break
 		}
@@ -386,12 +383,9 @@ func TestModelSelectorIsCancelledBeforeSessionDetach(t *testing.T) {
 	deadline := time.Now().Add(time.Second)
 	opened := false
 	for time.Now().Before(deadline) {
-		children := mode.editorContainer.Children()
-		if len(children) == 1 {
-			if _, ok := children[0].(*ModelSelectorComponent); ok {
-				opened = true
-				break
-			}
+		if _, ok := floatingWindowChild[*ModelSelectorComponent](mode); ok {
+			opened = true
+			break
 		}
 		time.Sleep(time.Millisecond)
 	}
@@ -400,6 +394,15 @@ func TestModelSelectorIsCancelledBeforeSessionDetach(t *testing.T) {
 	}
 	mode.detachSession()
 
+	for time.Now().Before(deadline) {
+		if _, ok := floatingWindowChild[*ModelSelectorComponent](mode); !ok {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if _, ok := floatingWindowChild[*ModelSelectorComponent](mode); ok {
+		t.Fatal("detached model selector window is still visible")
+	}
 	children := mode.editorContainer.Children()
 	if len(children) != 1 || children[0] != mode.editor {
 		t.Fatalf("detached model selector left editor children %#v", children)
@@ -431,10 +434,7 @@ func TestModelSelectorSelectionIsCancelledBeforeShutdown(t *testing.T) {
 	var selector *ModelSelectorComponent
 	deadline := time.Now().Add(time.Second)
 	for selector == nil && time.Now().Before(deadline) {
-		children := mode.editorContainer.Children()
-		if len(children) == 1 {
-			selector, _ = children[0].(*ModelSelectorComponent)
-		}
+		selector, _ = floatingWindowChild[*ModelSelectorComponent](mode)
 		time.Sleep(time.Millisecond)
 	}
 	if selector == nil {
@@ -510,18 +510,16 @@ func TestLOGM4LoginCompletionWarnsForAnthropicSubscriptionAuth(t *testing.T) {
 	}
 }
 
-func waitForAuthSelector(t *testing.T, container *tui.Container) *OAuthSelectorComponent {
+func waitForAuthSelector(t *testing.T, mode *InteractiveMode) *OAuthSelectorComponent {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		for _, child := range container.Children() {
-			if component, ok := child.(*OAuthSelectorComponent); ok {
-				return component
-			}
+		if component, ok := floatingWindowChild[*OAuthSelectorComponent](mode); ok {
+			return component
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatal("provider selector never appeared")
+	t.Fatal("provider selector window never appeared")
 	return nil
 }
 
@@ -539,7 +537,7 @@ func TestLOGM3LoginUnknownRefOpensPrefilteredSelector(t *testing.T) {
 	mode := newAuthFlowTestMode(host)
 
 	mode.handleLoginCommand("gro")
-	component := waitForAuthSelector(t, mode.editorContainer)
+	component := waitForAuthSelector(t, mode)
 	if got := component.searchInput.GetValue(); got != "gro" {
 		t.Fatalf("selector search = %q, want pre-filled ref", got)
 	}
@@ -602,12 +600,9 @@ func TestLOGm4BedrockGuidanceUsesTemporaryLoginUI(t *testing.T) {
 	var input *ExtensionInputComponent
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		children := mode.editorContainer.Children()
-		if len(children) == 1 {
-			input, _ = children[0].(*ExtensionInputComponent)
-			if input != nil {
-				break
-			}
+		input, _ = floatingWindowChild[*ExtensionInputComponent](mode)
+		if input != nil {
+			break
 		}
 		time.Sleep(time.Millisecond)
 	}

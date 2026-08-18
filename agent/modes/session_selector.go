@@ -154,7 +154,7 @@ func NewSessionSelectorComponent(options SessionSelectorOptions, onSelect func(s
 		sortMode:      sessionSortThreaded,
 		nameFilter:    sessionNamesAll,
 		maxVisible:    10,
-		search:        tui.NewInput(),
+		search:        newSearchInput(),
 		currentPath:   canonicalSessionPath(options.CurrentSessionPath),
 		onSelect:      onSelect,
 		onCancel:      onCancel,
@@ -485,11 +485,8 @@ func (selector *SessionSelectorComponent) loadingLocked() bool {
 }
 
 func (selector *SessionSelectorComponent) headerLinesLocked(width int) []string {
-	title := "Resume Session (Current Folder)"
-	if selector.scope == sessionScopeAll {
-		title = "Resume Session (All)"
-	}
-	left := theme.Bold(title)
+	// The floating frame carries the "Sessions" title; this header holds the
+	// live controls only.
 	sortLabel := "Threaded"
 	switch selector.sortMode {
 	case sessionSortRecent:
@@ -513,13 +510,8 @@ func (selector *SessionSelectorComponent) headerLinesLocked(width int) []string 
 	} else {
 		scopeText = theme.FG("muted", "○ Current Folder | ") + theme.FG("accent", "◉ All")
 	}
-	right := scopeText + "  " + theme.FG("muted", "Name: ") + theme.FG("accent", nameLabel) +
-		"  " + theme.FG("muted", "Sort: ") + theme.FG("accent", sortLabel)
-	right = tui.TruncateToWidth(right, width, "", false)
-	availableLeft := max(0, width-tui.VisibleWidth(right)-1)
-	left = tui.TruncateToWidth(left, availableLeft, "", false)
-	spacing := max(0, width-tui.VisibleWidth(left)-tui.VisibleWidth(right))
-	first := left + strings.Repeat(" ", spacing) + right
+	first := tui.TruncateToWidth(scopeText+"  "+theme.FG("muted", "Name: ")+theme.FG("accent", nameLabel)+
+		"  "+theme.FG("muted", "Sort: ")+theme.FG("accent", sortLabel), width, "", false)
 	if selector.confirmingDelete != "" {
 		hint := "Delete session? " + selectorKeyHint("tui.select.confirm", "confirm") + " · " + selectorKeyHint("tui.select.cancel", "cancel")
 		return []string{first, theme.FG("error", tui.TruncateToWidth(hint, width, "…", false)), ""}
@@ -552,15 +544,14 @@ func selectorKeyHint(binding, label string) string {
 func (selector *SessionSelectorComponent) Render(width int) []string {
 	selector.mu.Lock()
 	defer selector.mu.Unlock()
-	border := theme.FG("accent", strings.Repeat("─", max(0, width)))
-	lines := []string{"", border, ""}
-	lines = append(lines, selector.headerLinesLocked(width)...)
+	// The floating frame provides the chrome; the component renders content
+	// only, at a fixed height so the centered window never moves.
+	lines := append([]string(nil), selector.headerLinesLocked(width)...)
 	lines = append(lines, "")
 	lines = append(lines, selector.search.Render(width)...)
 	lines = append(lines, "")
 	selector.rowTop = len(lines)
 	lines = append(lines, selector.listLinesLocked(width)...)
-	lines = append(lines, "", border)
 	return lines
 }
 
@@ -621,6 +612,7 @@ func (selector *SessionSelectorComponent) ListConfirm() {
 }
 
 func (selector *SessionSelectorComponent) listLinesLocked(width int) []string {
+	lines := make([]string, 0, selector.maxVisible+1)
 	if len(selector.filtered) == 0 {
 		message := "  No sessions in current folder. Press Tab to view all."
 		if selector.nameFilter == sessionNamesNamed {
@@ -632,18 +624,27 @@ func (selector *SessionSelectorComponent) listLinesLocked(width int) []string {
 		} else if selector.scope == sessionScopeAll {
 			message = "  No sessions found"
 		}
-		return []string{tui.TruncateToWidth(message, width, "…", false)}
+		selector.rowStart, selector.rowCount = 0, 0
+		lines = append(lines, tui.TruncateToWidth(message, width, "…", false))
+	} else {
+		start := selector.window.Start(selector.selected, len(selector.filtered), selector.maxVisible)
+		end := min(start+selector.maxVisible, len(selector.filtered))
+		selector.rowStart, selector.rowCount = start, end-start
+		for index := start; index < end; index++ {
+			lines = append(lines, selector.renderSessionLineLocked(selector.filtered[index], index == selector.selected, width))
+		}
 	}
-	start := selector.window.Start(selector.selected, len(selector.filtered), selector.maxVisible)
-	end := min(start+selector.maxVisible, len(selector.filtered))
-	selector.rowStart, selector.rowCount = start, end-start
-	lines := make([]string, 0, end-start+1)
-	for index := start; index < end; index++ {
-		lines = append(lines, selector.renderSessionLineLocked(selector.filtered[index], index == selector.selected, width))
+	// Fixed geometry: the row region always spans maxVisible lines and the
+	// counter keeps its slot, so loading, filtering, and scope switches never
+	// resize the window.
+	for len(lines) < selector.maxVisible {
+		lines = append(lines, "")
 	}
-	if start > 0 || end < len(selector.filtered) {
-		lines = append(lines, fmt.Sprintf("  (%d/%d)", selector.selected+1, len(selector.filtered)))
+	counter := " "
+	if selector.rowStart > 0 || selector.rowStart+selector.rowCount < len(selector.filtered) {
+		counter = fmt.Sprintf("  (%d/%d)", selector.selected+1, len(selector.filtered))
 	}
+	lines = append(lines, counter)
 	return lines
 }
 
@@ -699,9 +700,6 @@ func (selector *SessionSelectorComponent) renderSessionLineLocked(node flatSessi
 		styledDisplay = theme.FG("accent", styledDisplay)
 	case info.Name != nil && *info.Name != "":
 		styledDisplay = theme.FG("warning", styledDisplay)
-	}
-	if selected {
-		styledDisplay = theme.Bold(styledDisplay)
 	}
 	left := cursor + theme.FG("dim", prefix) + styledDisplay
 	spacing := max(1, width-tui.VisibleWidth(left)-tui.VisibleWidth(right))

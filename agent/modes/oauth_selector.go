@@ -61,7 +61,7 @@ func NewOAuthSelectorComponent(
 ) *OAuthSelectorComponent {
 	component := &OAuthSelectorComponent{
 		container:         &tui.Container{},
-		searchInput:       tui.NewInput(),
+		searchInput:       newSearchInput(),
 		listContainer:     &tui.Container{},
 		allProviders:      append([]InteractiveAuthProvider(nil), providers...),
 		filteredProviders: providers,
@@ -75,8 +75,6 @@ func NewOAuthSelectorComponent(
 	}
 	component.showAuthTypeLabels = len(types) > 1
 
-	component.container.AddChild(extensionDialogBorder())
-	component.container.AddChild(tui.NewSpacer(1))
 	title := "Select provider to configure:"
 	if selectorMode == oauthSelectorLogout {
 		title = "Select provider to logout:"
@@ -94,8 +92,6 @@ func NewOAuthSelectorComponent(
 	component.container.AddChild(tui.NewSpacer(1))
 
 	component.container.AddChild(component.listContainer)
-	component.container.AddChild(tui.NewSpacer(1))
-	component.container.AddChild(extensionDialogBorder())
 
 	component.filterProviders(initialSearchInput)
 	return component
@@ -129,7 +125,7 @@ func (component *OAuthSelectorComponent) updateList() {
 		}
 		var line string
 		if index == component.selectedIndex {
-			line = theme.FG("accent", "→ ") + theme.FG("accent", provider.Name) + authTypeLabel + statusIndicator
+			line = theme.FG("accent", "› ") + theme.FG("text", provider.Name) + authTypeLabel + statusIndicator
 		} else {
 			line = "  " + theme.FG("text", provider.Name) + authTypeLabel + statusIndicator
 		}
@@ -445,15 +441,14 @@ func (mode *InteractiveMode) selectAuthProviderSearchable(
 		initialSearchInput,
 	)
 
-	mode.editorContainer.Clear()
-	mode.editorContainer.AddChild(component)
-	mode.ui.SetFocus(component)
+	title := "Login"
+	if selectorMode == oauthSelectorLogout {
+		title = "Logout"
+	}
+	handle := mode.ui.ShowOverlay(menuFrame(title, component), configOverlayOptions())
 	mode.ui.RequestRender()
-
 	defer func() {
-		mode.editorContainer.Clear()
-		mode.restoreEditorComponent()
-		mode.ui.SetFocus(mode.activeEditorFocus())
+		handle.Hide()
 		mode.ui.RequestRender()
 	}()
 

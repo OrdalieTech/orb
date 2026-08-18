@@ -217,7 +217,7 @@
         {
           "kind": "render",
           "value": [
-            "> \u001b[7m \u001b[27m                                                         ",
+            "⌕ \u001b[7m \u001b[27m                                                         ",
             "",
             "→ \u001b[1mTheme\u001b[22m  \u001b[1mdark\u001b[22m",
             "  Model  \u001b[2mgpt\u001b[22m",
@@ -228,7 +228,7 @@
         {
           "kind": "render",
           "value": [
-            "> mo\u001b[7m \u001b[27m                                                       ",
+            "⌕ mo\u001b[7m \u001b[27m                                                       ",
             "",
             "→ \u001b[1mModel\u001b[22m  \u001b[1mgpt\u001b[22m",
             "",
@@ -238,7 +238,7 @@
         {
           "kind": "render",
           "value": [
-            "> moz\u001b[7m \u001b[27m                                                      ",
+            "⌕ moz\u001b[7m \u001b[27m                                                      ",
             "",
             "\u001b[2m  No matching settings\u001b[22m",
             "",

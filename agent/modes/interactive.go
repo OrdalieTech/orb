@@ -2004,21 +2004,17 @@ func (mode *InteractiveMode) showSettingsSelector() {
 		items = append(items, tui.SettingItem{ID: "theme", Label: "Theme", Description: "Color theme for the interface", CurrentValue: mode.themeSettingOr(settings.ThemeSetting), Values: themes})
 	}
 
+	var handle tui.OverlayHandle
 	closeSelector := func() {
-		mode.restoreEditorComponent()
-		mode.ui.SetFocus(mode.activeEditorFocus())
+		if handle != nil {
+			handle.Hide()
+		}
 		mode.ui.RequestRender()
 	}
 	list := tui.NewSettingsList(items, 10, settingsListTheme(), func(id, value string) {
 		mode.applySetting(id, value)
-	}, closeSelector, tui.SettingsListOptions{EnableSearch: true})
-	selector := &tui.Container{}
-	selector.AddChild(NewDynamicBorder())
-	selector.AddChild(list)
-	selector.AddChild(NewDynamicBorder())
-	mode.editorContainer.Clear()
-	mode.editorContainer.AddChild(selector)
-	mode.ui.SetFocus(list)
+	}, closeSelector, tui.SettingsListOptions{EnableSearch: true, FixedGeometry: true})
+	handle = mode.ui.ShowOverlay(menuFrame("Settings", list), configOverlayOptions())
 	mode.ui.RequestRender()
 }
 
@@ -2668,9 +2664,11 @@ func (mode *InteractiveMode) showSessionSelector() {
 		mode.showStatusMessage("Wait for the current operation to finish before resuming.")
 		return
 	}
+	var handle tui.OverlayHandle
 	closeSelector := func() {
-		mode.restoreEditorComponent()
-		mode.ui.SetFocus(mode.activeEditorFocus())
+		if handle != nil {
+			handle.Hide()
+		}
 		mode.ui.RequestRender()
 	}
 	selector := NewSessionSelectorComponent(SessionSelectorOptions{
@@ -2687,9 +2685,7 @@ func (mode *InteractiveMode) showSessionSelector() {
 		closeSelector()
 		go mode.resumeSelectedSession(path)
 	}, closeSelector)
-	mode.editorContainer.Clear()
-	mode.editorContainer.AddChild(selector)
-	mode.ui.SetFocus(selector)
+	handle = mode.ui.ShowOverlay(menuFrame("Sessions", selector), configOverlayOptions())
 	mode.ui.RequestRender()
 }
 

@@ -55,8 +55,6 @@ func NewExtensionSelectorItemsComponent(
 	if config != nil {
 		component.onToggleToolsExpanded = config.onToggleToolsExpanded
 	}
-	component.container.AddChild(extensionDialogBorder())
-	component.container.AddChild(tui.NewSpacer(1))
 	component.title = tui.NewText(theme.FG("accent", theme.Bold(title)), 1, 0, nil)
 	component.container.AddChild(component.title)
 	component.container.AddChild(tui.NewSpacer(1))
@@ -75,8 +73,6 @@ func NewExtensionSelectorItemsComponent(
 		0,
 		nil,
 	))
-	component.container.AddChild(tui.NewSpacer(1))
-	component.container.AddChild(extensionDialogBorder())
 	component.updateList()
 	return component
 }
@@ -88,11 +84,14 @@ func (component *ExtensionSelectorComponent) updateList() {
 		if label == "" {
 			label = option.Value
 		}
+		// The shared selection language: › cursor plus a full-row background.
 		value := "  " + theme.FG("text", label)
+		background := tui.StyleFunc(nil)
 		if index == component.selected {
-			value = theme.FG("accent", "→ ") + theme.FG("accent", label)
+			value = theme.FG("accent", "› ") + theme.FG("text", label)
+			background = func(text string) string { return theme.BG("selectedBg", text) }
 		}
-		component.list.AddChild(tui.NewText(value, 1, 0, nil))
+		component.list.AddChild(tui.NewText(value, 1, 0, background))
 	}
 }
 
@@ -233,8 +232,6 @@ func NewExtensionInputComponent(
 		onSubmit:  onSubmit,
 		onCancel:  onCancel,
 	}
-	component.container.AddChild(extensionDialogBorder())
-	component.container.AddChild(tui.NewSpacer(1))
 	component.title = tui.NewText(theme.FG("accent", title), 1, 0, nil)
 	component.container.AddChild(component.title)
 	component.container.AddChild(tui.NewSpacer(1))
@@ -251,8 +248,6 @@ func NewExtensionInputComponent(
 		0,
 		nil,
 	))
-	component.container.AddChild(tui.NewSpacer(1))
-	component.container.AddChild(extensionDialogBorder())
 	return component
 }
 
@@ -335,8 +330,6 @@ func NewExtensionEditorComponent(
 		externalEditorCommand: externalEditorCommand,
 		onCancel:              onCancel,
 	}
-	component.container.AddChild(extensionDialogBorder())
-	component.container.AddChild(tui.NewSpacer(1))
 	component.container.AddChild(tui.NewText(theme.FG("accent", title), 1, 0, nil))
 	component.container.AddChild(tui.NewSpacer(1))
 	component.editor = tui.NewEditor(uiInstance, theme.EditorTheme())
@@ -354,8 +347,6 @@ func NewExtensionEditorComponent(
 			KeyHint("tui.select.cancel", "cancel") + "  " +
 			KeyHint("app.editor.external", "external editor")
 	component.container.AddChild(tui.NewText(hint, 1, 0, nil))
-	component.container.AddChild(tui.NewSpacer(1))
-	component.container.AddChild(extensionDialogBorder())
 	return component
 }
 

@@ -50,9 +50,29 @@ func settingsListTheme() tui.SettingsListTheme {
 			return theme.FG("muted", text)
 		},
 		Description: func(text string) string { return theme.FG("dim", text) },
-		Cursor:      theme.FG("accent", "→ "),
+		Cursor:      theme.FG("accent", "› "),
 		Hint:        func(text string) string { return theme.FG("dim", text) },
+		SelectedBg:  func(text string) string { return theme.BG("selectedBg", text) },
 	}
+}
+
+// newSearchInput builds the shared search field of the floating menus.
+func newSearchInput() *tui.Input {
+	input := tui.NewInput()
+	input.Prompt = "⌕ "
+	return input
+}
+
+// menuFrame is the one window chrome every floating menu shares: full border,
+// bold accent title, dim hints. Building it here keeps the menus consistent
+// by construction.
+func menuFrame(title string, child tui.Component) *tui.Frame {
+	frame := tui.NewFrame(title, "",
+		func(text string) string { return theme.FG("border", text) },
+		func(text string) string { return theme.FG("dim", text) },
+		child)
+	frame.TitleStyle = func(text string) string { return theme.Bold(theme.FG("accent", text)) }
+	return frame
 }
 
 // CountdownTimer ticks each second and fires a callback on expiry.

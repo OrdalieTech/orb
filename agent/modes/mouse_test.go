@@ -272,7 +272,7 @@ func TestModelSelectorClickWheelHoverAndDoubleClick(t *testing.T) {
 	if confirmed != "" {
 		t.Fatalf("single click confirmed %q, want a selection only", confirmed)
 	}
-	if index := lineIndexContaining(t, component.Render(80), "→ model-02"); index != row {
+	if index := lineIndexContaining(t, component.Render(80), "› model-02"); index != row {
 		t.Fatalf("cursor moved to row %d, want %d", index, row)
 	}
 	component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 2})
@@ -286,13 +286,13 @@ func TestModelSelectorClickWheelHoverAndDoubleClick(t *testing.T) {
 	if !component.HandleMouse(tui.MouseEvent{Type: tui.MouseWheelDown}) {
 		t.Fatal("wheel was not consumed")
 	}
-	lineIndexContaining(t, component.Render(80), "→ model-03")
+	lineIndexContaining(t, component.Render(80), "› model-03")
 
 	hoverRow := lineIndexContaining(t, component.Render(80), "model-01")
 	if !component.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: hoverRow}) {
 		t.Fatal("hover was not consumed")
 	}
-	if index := lineIndexContaining(t, component.Render(80), "→ model-01"); index != hoverRow {
+	if index := lineIndexContaining(t, component.Render(80), "› model-01"); index != hoverRow {
 		t.Fatalf("hover highlight on row %d, want %d", index, hoverRow)
 	}
 	if confirmed != "model-02" {
@@ -335,7 +335,7 @@ func TestModelSelectorHoverPreservesWindowOnScrollableList(t *testing.T) {
 	if !component.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: lastRow}) {
 		t.Fatal("hover on a scrollable list was not consumed")
 	}
-	if index := lineIndexContaining(t, component.Render(80), "→ model-09"); index != lastRow {
+	if index := lineIndexContaining(t, component.Render(80), "› model-09"); index != lastRow {
 		t.Fatalf("hover highlight on row %d, want %d", index, lastRow)
 	}
 	if after := visibleModelIDs(component, 80); !slices.Equal(before, after) {
@@ -364,7 +364,7 @@ func TestModelSelectorHoverPreservesWindowOnScrollableList(t *testing.T) {
 	if !component.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: hoverRow}) {
 		t.Fatal("hover after wheel was not consumed")
 	}
-	if index := lineIndexContaining(t, component.Render(80), "→ model-04"); index != hoverRow {
+	if index := lineIndexContaining(t, component.Render(80), "› model-04"); index != hoverRow {
 		t.Fatalf("hover after wheel highlighted row %d, want %d", index, hoverRow)
 	}
 	if after := visibleModelIDs(component, 80); !slices.Equal(scrolled, after) {
@@ -380,7 +380,7 @@ func TestModelSelectorHoverPreservesWindowOnScrollableList(t *testing.T) {
 	// A hover-selected row scrolled away by the wheel: the wheel moves the
 	// selection itself, so the selection stays valid and visible.
 	component.HandleMouse(tui.MouseEvent{Type: tui.MouseWheelDown})
-	lineIndexContaining(t, component.Render(80), "→ model-05")
+	lineIndexContaining(t, component.Render(80), "› model-05")
 }
 
 func TestOAuthSelectorHoverPreservesWindowOnScrollableList(t *testing.T) {
@@ -399,7 +399,7 @@ func TestOAuthSelectorHoverPreservesWindowOnScrollableList(t *testing.T) {
 	if !component.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: row}) {
 		t.Fatal("hover on a scrollable provider list was not consumed")
 	}
-	if index := lineIndexContaining(t, component.Render(80), "→ Provider07"); index != row {
+	if index := lineIndexContaining(t, component.Render(80), "› Provider07"); index != row {
 		t.Fatalf("hover highlight on row %d, want %d", index, row)
 	}
 	if after := visibleRowTokens(component.Render(80), "Provider", len("Provider00")); !slices.Equal(before, after) {
@@ -463,7 +463,7 @@ func TestOAuthSelectorClickSelectsHoverHighlightsAndDoubleClickConfirms(t *testi
 	if chosen != "" {
 		t.Fatalf("single click confirmed %q, want a selection only", chosen)
 	}
-	if index := lineIndexContaining(t, component.Render(80), "→ Beta"); index != row {
+	if index := lineIndexContaining(t, component.Render(80), "› Beta"); index != row {
 		t.Fatalf("cursor moved to row %d, want %d", index, row)
 	}
 	component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 2})
@@ -475,7 +475,7 @@ func TestOAuthSelectorClickSelectsHoverHighlightsAndDoubleClickConfirms(t *testi
 	if !component.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: hoverRow}) {
 		t.Fatal("hover was not consumed")
 	}
-	lineIndexContaining(t, component.Render(80), "→ Gamma")
+	lineIndexContaining(t, component.Render(80), "› Gamma")
 	if component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: 0, Clicks: 1}) {
 		t.Fatal("click on the dialog border was consumed")
 	}
@@ -546,7 +546,7 @@ func TestExtensionSelectorHoverMovesHighlight(t *testing.T) {
 	if !component.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: row}) {
 		t.Fatal("hover was not consumed")
 	}
-	if index := lineIndexContaining(t, component.Render(60), "→ n reject"); index != row {
+	if index := lineIndexContaining(t, component.Render(60), "› n reject"); index != row {
 		t.Fatalf("hover highlight on row %d, want %d", index, row)
 	}
 	if chosen != "" {
@@ -574,7 +574,7 @@ func TestExtensionSelectorClickSelectsAndDoubleClickConfirms(t *testing.T) {
 	if chosen != "" {
 		t.Fatalf("single click confirmed %q, want a selection only", chosen)
 	}
-	if index := lineIndexContaining(t, component.Render(60), "→ s approve for this session"); index != row {
+	if index := lineIndexContaining(t, component.Render(60), "› s approve for this session"); index != row {
 		t.Fatalf("cursor moved to row %d, want %d", index, row)
 	}
 	component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 2})
