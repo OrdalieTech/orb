@@ -76,7 +76,9 @@ func Catalog(option ...Options) map[string]extensions.Factory {
 }
 
 // Control registers /plugins independently of the default-off plugin catalog.
-func Control(settings *config.SettingsManager) extensions.Factory {
+// cwd and agentDir feed the in-window package installer; empty values disable
+// it (SDK embedders composing their own assemblies).
+func Control(cwd, agentDir string, settings *config.SettingsManager) extensions.Factory {
 	return func(api extensions.API) error {
 		api.RegisterCommand("plugins", extensions.Command{
 			Description: "Enable or disable bundled plugins",
@@ -85,7 +87,7 @@ func Control(settings *config.SettingsManager) extensions.Factory {
 					return fmt.Errorf("/plugins requires interactive mode")
 				}
 				if command.Mode() == extensions.ModeTUI {
-					return pluginsWindow(ctx, command, settings)
+					return pluginsWindow(ctx, command, cwd, agentDir, settings)
 				}
 				return legacyPluginsSelect(ctx, command, settings)
 			},
@@ -93,8 +95,6 @@ func Control(settings *config.SettingsManager) extensions.Factory {
 		return nil
 	}
 }
-
-const bashCaveat = "Bash is matched by its command text only: a tool-scoped rule does not stop an equivalent shell command."
 
 // Action is the ecosystem-standard three-state permission result.
 type Action string

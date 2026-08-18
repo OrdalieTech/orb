@@ -44,7 +44,7 @@ func (manager *Manager) statusWindow(ctx context.Context, command extensions.Com
 			return false
 		}
 		panel := &mcpPanel{manager: manager, theme: th, list: list}
-		panel.frame = tui.NewFrame("MCP servers", "r reconnect · R reconnect all · esc close · orb mcp --help",
+		panel.frame = tui.NewFrame("MCP servers", "r reconnect · R all · esc",
 			func(text string) string { return th.FG("border", text) },
 			func(text string) string { return th.FG("dim", text) },
 			panelChild{panel})
@@ -69,10 +69,18 @@ type mcpPanel struct {
 	fingerprint string
 }
 
-// panelChild lets the frame render the list after the panel has refreshed it.
+// panelChild forwards the full component contract to the list so the frame's
+// input/focus/mouse plumbing reaches it (a Render-only child would silently
+// swallow every key).
 type panelChild struct{ panel *mcpPanel }
 
-func (child panelChild) Render(width int) []string { return child.panel.list.Render(width) }
+func (child panelChild) Render(width int) []string      { return child.panel.list.Render(width) }
+func (child panelChild) HandleInput(event tui.KeyEvent) { child.panel.list.HandleInput(event) }
+func (child panelChild) SetFocused(focused bool)        { child.panel.list.SetFocused(focused) }
+func (child panelChild) WantsMouseMotion() bool         { return child.panel.list.WantsMouseMotion() }
+func (child panelChild) HandleMouse(event tui.MouseEvent) bool {
+	return child.panel.list.HandleMouse(event)
+}
 
 func (panel *mcpPanel) Render(width int) []string {
 	status := panel.manager.Status()

@@ -62,7 +62,7 @@ func Rows(options Options) ([]Row, []string) {
 	rows = append(rows, Row{
 		ID: "plugin-control", Description: "Enable or disable bundled plugins (/plugins)",
 		Source: SourcePlugin, Hidden: true, DefaultEnabled: true,
-		Factory: plugins.Control(options.Settings),
+		Factory: plugins.Control(options.CWD, options.AgentDir, options.Settings),
 	})
 	catalog := plugins.Catalog(plugins.Options{Settings: options.Settings, AgentDir: options.AgentDir})
 	for _, name := range names {
