@@ -36,7 +36,7 @@ var allowedImports = map[string][]string{
 // contract is exactly for them). Everything else must stay headless so a
 // binary that skips the interface contains none of its code (P1).
 var tuiImporters = []string{
-	"tui/", "cmd/", "agent/modes/", "agent/plugins/", "agent/extensions/", "agent/examples/",
+	"tui/", "cmd/", "agent/modes/", "agent/plugins/", "agent/mcp/", "agent/extensions/", "agent/examples/",
 }
 
 var skipDirs = map[string]bool{
