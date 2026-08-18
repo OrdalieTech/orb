@@ -26,6 +26,15 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 - The dormant subagents plugin can expose explicitly configured external CLIs as child roles, feeding each task on stdin and returning stdout under the existing parallel limits and a bounded runtime.
 - The permissions plugin adds deny-only SDK guards and named `workspace-write`/`danger-full-access` presets, and can wrap only the built-in bash tool in an opt-in filesystem sandbox: Linux Landlock enforcement is partial because it cannot mediate metadata mutations, macOS uses `sandbox-exec`, and an unavailable sandbox refuses the command with an actionable message instead of running it unsandboxed. Both restrictive modes keep `/dev` and the temp directory writable so ordinary shell idioms (`2>/dev/null`, `mktemp`) keep working, and a `/plugins` reload re-resolves the sandbox mode without a restart.
+- Every menu now floats: extension dialogs (selects, confirms, inputs, editors, permission asks),
+  `/model`, and `/settings` open as centered framed windows over the veiled page — the same
+  window language as `/plugins`, `/permissions`, and `/mcp` — instead of replacing the editor at
+  the bottom. Keyboard shortcuts, mnemonics, mouse semantics, and dialog timeouts are unchanged.
+- The `/plugins` window becomes the configuration hub: an External CLIs section lists the
+  configured sub-agent CLIs and auto-detects known ones on PATH (claude, codex, gemini) — one
+  keypress configures or toggles them without losing their command (`plugins.subagents.external`
+  accepts `"command"` or `{"command", "enabled"}`) — plus an install-package action
+  (npm:/git:/path) that downloads, persists, and applies on close. Type to filter the window.
 - Configuration windows in the TUI: `/plugins`, `/permissions`, and `/mcp` open fixed-size framed
   windows floating over a dimmed page, on an aligned invisible grid with a reserved detail area
   (hovering never resizes or moves the window) — plugins show their structured settings (external CLIs,
