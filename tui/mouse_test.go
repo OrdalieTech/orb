@@ -435,17 +435,19 @@ func TestSettingsListWheelAndClickShareUnifiedPath(t *testing.T) {
 	}, 10, SettingsListTheme{Cursor: "> "}, func(id, value string) { changed = id + "=" + value }, nil, SettingsListOptions{})
 	list.Render(40)
 
-	// The unified handler drives wheel, click, and double click; hover is
-	// deliberately not consumed (the description panel below the rows varies
-	// in height inside the bottom-anchored chrome, see HandleMouse).
+	// The unified handler drives hover, wheel, click, and double click —
+	// hover became safe once FixedGeometry pinned the description area.
 	if !HandleListMouse(list, MouseEvent{Type: MouseWheelDown}) {
 		t.Fatal("wheel was not consumed")
 	}
 	if list.selectedIndex != 1 {
 		t.Fatalf("wheel selected %d, want 1", list.selectedIndex)
 	}
-	if list.HandleMouse(MouseEvent{Type: MouseMove, Row: 2}) {
-		t.Fatal("settings hover was consumed")
+	if !list.HandleMouse(MouseEvent{Type: MouseMove, Row: 2}) {
+		t.Fatal("settings hover was not consumed")
+	}
+	if list.selectedIndex != 2 {
+		t.Fatalf("hover selected %d, want 2", list.selectedIndex)
 	}
 	if !list.HandleMouse(MouseEvent{Type: MousePress, Row: 2, Clicks: 1}) {
 		t.Fatal("click was not consumed")

@@ -141,3 +141,33 @@ func TestSettingsListUpdateValue(t *testing.T) {
 		t.Fatalf("value not updated: %q", rendered)
 	}
 }
+
+func TestSettingsListFixedGeometryNeverChangesHeight(t *testing.T) {
+	items := []SettingItem{
+		{ID: "a", Label: "Alpha", Values: []string{"on", "off"}, Description: "short"},
+		{ID: "b", Label: "Bravo", Values: []string{"on", "off"}, Description: strings.Repeat("a very long description that wraps across many lines ", 6)},
+		{ID: "c", Label: "Charlie", Values: []string{"on", "off"}},
+	}
+	list := NewSettingsList(items, 10, SettingsListTheme{}, func(string, string) {}, func() {}, SettingsListOptions{EnableSearch: true, FixedGeometry: true})
+	base := len(list.Render(60))
+	// Moving across short, long-wrapping, and absent descriptions must not
+	// change the height, nor must filtering down to fewer rows.
+	for _, key := range []string{"\x1b[B", "\x1b[B", "\x1b[B"} {
+		list.HandleInput(KeyEvent{Raw: key})
+		if got := len(list.Render(60)); got != base {
+			t.Fatalf("height changed with selection: %d != %d", got, base)
+		}
+	}
+	for _, key := range []string{"b", "r", "a"} {
+		list.HandleInput(KeyEvent{Raw: key})
+		if got := len(list.Render(60)); got != base {
+			t.Fatalf("height changed while filtering: %d != %d", got, base)
+		}
+	}
+	for _, key := range []string{"z", "z"} { // no matches
+		list.HandleInput(KeyEvent{Raw: key})
+	}
+	if got := len(list.Render(60)); got != base {
+		t.Fatalf("height changed on no matches: %d != %d", got, base)
+	}
+}

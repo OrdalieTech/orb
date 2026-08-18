@@ -71,14 +71,16 @@ func TestGridListSetRowsKeepsSelectionByValue(t *testing.T) {
 func TestFrameChromeAndPadding(t *testing.T) {
 	frame := NewFrame("Plugins", "esc close", nil, nil, NewText("body", 0, 0, nil))
 	lines := frame.Render(24)
-	if len(lines) != 3 {
-		t.Fatalf("lines = %q", lines)
+	// Contained layout, tight vertical padding: unbroken borders with
+	// everything inside — top, title, blank, body, blank, footer, bottom.
+	if len(lines) != 7 {
+		t.Fatalf("lines = %d: %q", len(lines), lines)
 	}
-	if !strings.HasPrefix(lines[0], "╭") || !strings.Contains(lines[0], " Plugins ") {
-		t.Fatalf("top edge = %q", lines[0])
+	if strings.Trim(lines[0], "╭─╮") != "" || strings.Trim(lines[6], "╰─╯") != "" {
+		t.Fatalf("borders are broken: %q / %q", lines[0], lines[6])
 	}
-	if !strings.Contains(lines[2], " esc close ") {
-		t.Fatalf("bottom edge = %q", lines[2])
+	if !strings.Contains(lines[1], "Plugins") || !strings.Contains(lines[3], "body") || !strings.Contains(lines[5], "esc close") {
+		t.Fatalf("interior wrong: %q", lines)
 	}
 	for _, line := range lines {
 		if VisibleWidth(line) != 24 {
@@ -94,5 +96,38 @@ func TestStripANSIRemovesStylingAndLinks(t *testing.T) {
 	}
 	if got := StripANSI("plain"); got != "plain" {
 		t.Fatalf("plain text changed: %q", got)
+	}
+}
+
+func TestGridListSearchFiltersWithStableGeometry(t *testing.T) {
+	list := NewGridList(gridRows(), 10, GridListTheme{Cursor: "> "})
+	list.Searchable = true
+	cancelled := false
+	list.OnCancel = func() { cancelled = true }
+	base := list.Render(60)
+	list.HandleInput(KeyEvent{Raw: "b"})
+	list.HandleInput(KeyEvent{Raw: "r"})
+	filtered := list.Render(60)
+	if len(filtered) != len(base) {
+		t.Fatalf("filtering changed the height: %d != %d", len(filtered), len(base))
+	}
+	if list.SelectedValue() != "bravo" {
+		t.Fatalf("selection = %q, want bravo", list.SelectedValue())
+	}
+	joined := strings.Join(filtered, "\n")
+	if strings.Contains(joined, "Section") || strings.Contains(joined, "alpha") {
+		t.Fatalf("filtered view leaks non-matches:\n%s", joined)
+	}
+	// First escape clears the query; only the second closes.
+	list.HandleInput(KeyEvent{Raw: "\x1b"})
+	if cancelled || list.SelectedValue() == "" {
+		t.Fatalf("escape closed instead of clearing the query")
+	}
+	if !strings.Contains(strings.Join(list.Render(60), "\n"), "alpha") {
+		t.Fatal("clearing the query did not restore the rows")
+	}
+	list.HandleInput(KeyEvent{Raw: "\x1b"})
+	if !cancelled {
+		t.Fatal("second escape did not close")
 	}
 }

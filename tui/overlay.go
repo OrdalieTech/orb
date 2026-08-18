@@ -4,6 +4,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -306,6 +307,9 @@ func (ui *TUI) ShowOverlay(component Component, options ...OverlayOptions) Overl
 }
 
 func (ui *TUI) showOverlay(component Component, options *OverlayOptions, resolveOptions func(width, height int) *OverlayOptions, autoFocus bool) *overlayHandle {
+	// A press made before the overlay appeared must not arm a double-click on
+	// it: a stray second click could confirm a dialog the user never aimed at.
+	ui.mouseClickAt = time.Time{}
 	ui.focusMu.Lock()
 	ui.focusOrderCounter++
 	entry := &overlayStackEntry{
@@ -725,6 +729,7 @@ func (ui *TUI) compositeOverlays(lines []string, termWidth, termHeight int) []st
 	for len(result) < workingHeight {
 		result = append(result, "")
 	}
+	viewportStart := max(0, workingHeight-termHeight)
 	var backdrop StyleFunc
 	for _, entry := range entries {
 		if entry.options != nil && entry.options.Backdrop != nil {
@@ -732,14 +737,17 @@ func (ui *TUI) compositeOverlays(lines []string, termWidth, termHeight int) []st
 		}
 	}
 	if backdrop != nil {
-		for index, line := range result {
+		// Veil only the on-screen lines: the scrollback above the viewport is
+		// invisible, and restyling a long transcript every frame is what a
+		// hover-driven render loop cannot afford.
+		for index := viewportStart; index < len(result); index++ {
+			line := result[index]
 			if line == "" || IsImageLine(line) {
 				continue
 			}
 			result[index] = backdrop(StripANSI(line))
 		}
 	}
-	viewportStart := max(0, workingHeight-termHeight)
 	ui.mouseOverlays = make([]mouseOverlayBox, len(rendered))
 	for index, overlay := range rendered {
 		ui.mouseOverlays[index] = mouseOverlayBox{
@@ -852,4 +860,19 @@ func compositeLineAt(baseLine, overlayLine string, startColumn, overlayWidth, to
 		return result
 	}
 	return SliceByColumn(result, 0, totalWidth, true)
+}
+
+// VisibleOverlayComponents returns the components of the currently visible
+// overlays in stacking order. Tests and status probes use it; production
+// code holds OverlayHandles instead.
+func (ui *TUI) VisibleOverlayComponents() []Component {
+	ui.focusMu.RLock()
+	defer ui.focusMu.RUnlock()
+	components := make([]Component, 0, len(ui.overlayStack))
+	for _, entry := range ui.overlayStack {
+		if ui.isOverlayVisibleWithOptionsLocked(entry, ui.overlayOptionsLocked(entry)) {
+			components = append(components, entry.component)
+		}
+	}
+	return components
 }

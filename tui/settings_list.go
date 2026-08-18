@@ -31,11 +31,21 @@ type SettingsListTheme struct {
 	Description StyleFunc
 	Cursor      string
 	Hint        StyleFunc
+	SelectedBg  StyleFunc // full-row background for the selection
 }
 
 type SettingsListOptions struct {
 	EnableSearch bool
+	// FixedGeometry keeps the rendered height constant across selection and
+	// filtering: the row region pads to its full size, the scroll counter
+	// keeps its slot, and the description area always occupies
+	// settingsDescriptionLines lines (truncated with an ellipsis). Floating
+	// windows need it so they never grow, shrink, or re-center.
+	FixedGeometry bool
 }
+
+// settingsDescriptionLines is the fixed description area height.
+const settingsDescriptionLines = 2
 
 // SettingsList renders label/value rows with cycling values, submenus, and
 // optional fuzzy search.
@@ -51,6 +61,7 @@ type SettingsList struct {
 	onCancel      func()
 	searchInput   *Input
 	searchEnabled bool
+	fixedGeometry bool
 	pending       []func()
 
 	submenuComponent Component
@@ -75,9 +86,11 @@ func NewSettingsList(items []SettingItem, maxVisible int, theme SettingsListThem
 		onChange:      onChange,
 		onCancel:      onCancel,
 		searchEnabled: options.EnableSearch,
+		fixedGeometry: options.FixedGeometry,
 	}
 	if list.searchEnabled {
 		list.searchInput = NewInput()
+		list.searchInput.Prompt = "⌕ "
 	}
 	return list
 }
@@ -134,6 +147,15 @@ func (list *SettingsList) renderMainList(width int) []string {
 	displayItems := list.displayItems()
 	if len(displayItems) == 0 {
 		lines = append(lines, TruncateToWidth(list.hint("  No matching settings"), width, "...", false))
+		if list.fixedGeometry {
+			for rendered := 1; rendered < min(list.maxVisible, len(list.items)); rendered++ {
+				lines = append(lines, "")
+			}
+			if len(list.items) > list.maxVisible {
+				lines = append(lines, "")
+			}
+			lines = append(lines, list.fixedDescriptionArea(displayItems, width)...)
+		}
 		return list.addHintLine(lines, width)
 	}
 
@@ -164,15 +186,29 @@ func (list *SettingsList) renderMainList(width int) []string {
 		valueMaxWidth := width - usedWidth - 2
 
 		valueText := list.styleSelected(list.theme.Value, TruncateToWidth(item.CurrentValue, valueMaxWidth, "", false), isSelected)
-		lines = append(lines, TruncateToWidth(prefix+labelText+separator+valueText, width, "...", false))
+		line := TruncateToWidth(prefix+labelText+separator+valueText, width, "...", false)
+		if isSelected && list.theme.SelectedBg != nil {
+			line = ApplyBackgroundToLine(TruncateToWidth(line, width, "", true), width, list.theme.SelectedBg)
+		}
+		lines = append(lines, line)
+	}
+
+	if list.fixedGeometry {
+		for rendered := endIndex - startIndex; rendered < min(list.maxVisible, len(list.items)); rendered++ {
+			lines = append(lines, "")
+		}
 	}
 
 	if startIndex > 0 || endIndex < len(displayItems) {
 		scrollText := fmt.Sprintf("  (%d/%d)", list.selectedIndex+1, len(displayItems))
 		lines = append(lines, list.hint(TruncateToWidth(scrollText, width-2, "", false)))
+	} else if list.fixedGeometry && len(list.items) > list.maxVisible {
+		lines = append(lines, "")
 	}
 
-	if list.selectedIndex < len(displayItems) {
+	if list.fixedGeometry {
+		lines = append(lines, list.fixedDescriptionArea(displayItems, width)...)
+	} else if list.selectedIndex < len(displayItems) {
 		if description := displayItems[list.selectedIndex].Description; description != "" {
 			lines = append(lines, "")
 			for _, line := range WrapTextWithANSI(description, width-4) {
@@ -186,6 +222,37 @@ func (list *SettingsList) renderMainList(width int) []string {
 	}
 
 	return list.addHintLine(lines, width)
+}
+
+// fixedDescriptionArea renders the constant-height description block: one
+// separator line plus exactly settingsDescriptionLines lines, blank when the
+// selection has no description and ellipsized when it wraps longer.
+func (list *SettingsList) fixedDescriptionArea(displayItems []*SettingItem, width int) []string {
+	description := ""
+	if list.selectedIndex >= 0 && list.selectedIndex < len(displayItems) {
+		description = displayItems[list.selectedIndex].Description
+	}
+	var wrapped []string
+	if description != "" {
+		wrapped = WrapTextWithANSI(description, width-4)
+	}
+	area := make([]string, 0, settingsDescriptionLines+1)
+	area = append(area, "")
+	for index := range settingsDescriptionLines {
+		line := ""
+		if index < len(wrapped) {
+			line = wrapped[index]
+			if index == settingsDescriptionLines-1 && len(wrapped) > settingsDescriptionLines {
+				line = TruncateToWidth(line, max(1, width-6), "", false) + "…"
+			}
+			line = "  " + line
+			if list.theme.Description != nil {
+				line = list.theme.Description(line)
+			}
+		}
+		area = append(area, line)
+	}
+	return area
 }
 
 func (list *SettingsList) HandleInput(event KeyEvent) {
@@ -211,14 +278,11 @@ func (list *SettingsList) HandleInput(event KeyEvent) {
 	}
 }
 
-// HandleMouse drives the shared list pointer semantic for click and wheel;
-// a double click cycles the value, matching Enter/Space. An open submenu
-// keeps the mouse, as it keeps keyboard input. Hover stays off — the type
-// says so: SettingsList deliberately does not implement MouseMotionHandler,
-// because the settings dialog lives in the bottom-anchored chrome and the
-// selected item's description panel below the rows varies in height, so a
-// hover-driven selection change would shift the rows under the stationary
-// cursor and feed back into hit-testing.
+// HandleMouse drives the shared list pointer semantic: hover moves the
+// highlight in place, wheel scrolls, a double click cycles the value like
+// Enter/Space. Hover became safe when FixedGeometry pinned the description
+// area: rows can no longer shift under a stationary cursor. An open submenu
+// keeps the mouse, as it keeps keyboard input.
 func (list *SettingsList) HandleMouse(event MouseEvent) bool {
 	list.mu.Lock()
 	if list.submenuComponent != nil {
@@ -233,6 +297,9 @@ func (list *SettingsList) HandleMouse(event MouseEvent) bool {
 	}
 	return HandleListMouse(list, event)
 }
+
+// WantsMouseMotion turns on hover reports while the list holds focus.
+func (list *SettingsList) WantsMouseMotion() bool { return true }
 
 // ListRowAt maps a rendered row to its display-item index.
 func (list *SettingsList) ListRowAt(row int) (int, bool) {

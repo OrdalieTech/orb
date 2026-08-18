@@ -13,6 +13,10 @@ type inputState struct {
 // Input is a single-line text input with horizontal scrolling. The cursor is
 // a rune index into the value.
 type Input struct {
+	// Prompt is rendered before the text; defaults to "> ". Search fields use
+	// the shared "⌕ " glyph.
+	Prompt string
+
 	mu      sync.Mutex
 	value   string
 	cursor  int
@@ -355,8 +359,11 @@ func (input *Input) Render(width int) []string {
 	input.mu.Lock()
 	defer input.mu.Unlock()
 
-	prompt := "> "
-	availableWidth := width - len(prompt)
+	prompt := input.Prompt
+	if prompt == "" {
+		prompt = "> "
+	}
+	availableWidth := width - VisibleWidth(prompt)
 	if availableWidth <= 0 {
 		return []string{prompt}
 	}
