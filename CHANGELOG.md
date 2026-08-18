@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-18
+
 ### Changed
 
 - SDK import paths renamed: `codingagent` is now `agent` (the full-featured agent runtime) and the
