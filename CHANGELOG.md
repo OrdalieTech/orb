@@ -11,11 +11,21 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 - SDK import paths renamed: `codingagent` is now `agent` (the full-featured agent runtime) and the
   former `agent` package is now `engine` (loop + Agent + harness). Types and behavior are
   unchanged; on-disk `~/.pi/agent/` locations, wire formats, and `PI_*` variables are untouched.
+- Invalid `plugins.permissions` settings now fail closed instead of being silently tolerated:
+  the CLI refuses to start with the validation error, and SDK embedders get a deny-all policy
+  whose guard denials hold even in log mode. `--no-extensions` disables the permissions plugin
+  and with it the sandbox.
+- `orb update` now opens with a smaller mark, then Orb, then update, and runs one full-width process line under it — steps linked by faint rules that recede behind the text, with extra space below. The reveal is eased rather than metronomic: the wordmark fades in, the rule sweeps early and glides into the edge behind a normal-weight tip, and the outcome docks bold.
+
+### Removed
+
+- The unused SDK bundle constructors `tools.NewCodingTools` and `tools.NewReadOnlyTools`;
+  construct the tool slice directly (see `docs/sdk.md`).
 
 ### Added
 
 - The dormant subagents plugin can expose explicitly configured external CLIs as child roles, feeding each task on stdin and returning stdout under the existing parallel limits and a bounded runtime.
-- The permissions plugin adds deny-only SDK guards and named `workspace-write`/`danger-full-access` presets, and can wrap only the built-in bash tool in an opt-in filesystem sandbox: Linux Landlock enforcement is partial because it cannot mediate metadata mutations, macOS uses `sandbox-exec`, and Linux failures refuse the command instead of running it unsandboxed.
+- The permissions plugin adds deny-only SDK guards and named `workspace-write`/`danger-full-access` presets, and can wrap only the built-in bash tool in an opt-in filesystem sandbox: Linux Landlock enforcement is partial because it cannot mediate metadata mutations, macOS uses `sandbox-exec`, and an unavailable sandbox refuses the command with an actionable message instead of running it unsandboxed. Both restrictive modes keep `/dev` and the temp directory writable so ordinary shell idioms (`2>/dev/null`, `mktemp`) keep working, and a `/plugins` reload re-resolves the sandbox mode without a restart.
 - `orb plugins list --all` prints the resolved composition — every compiled extension, bundled
   plugin, and MCP row with its id, source, on/off state, and the settings layer that decided it,
   plus the discovered JS extensions — through the same code path the real boot uses.
@@ -27,10 +37,6 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 - OpenAI Responses tool-call namespaces survive replay, and models declaring support receive deferred tools through `additional_tools`.
 - The OpenRouter image catalog resyncs to upstream's 45 models (adds Seedream 5.0 Lite/Pro, Grok Imagine Image 2.0, MAI-Image-2.5 Pro, Qwen Image 3/3 Pro).
 - Orb sets `AI_AGENT=orb` and `PI_CODING_AGENT=true` at CLI and RPC entry so child processes can detect the launching agent.
-
-### Changed
-
-- `orb update` now opens with a smaller mark, then Orb, then update, and runs one full-width process line under it — steps linked by faint rules that recede behind the text, with extra space below. The reveal is eased rather than metronomic: the wordmark fades in, the rule sweeps early and glides into the edge behind a normal-weight tip, and the outcome docks bold.
 
 ### Fixed
 
