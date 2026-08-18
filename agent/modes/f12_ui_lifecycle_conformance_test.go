@@ -418,23 +418,26 @@ func TestF12ResetExtensionUICancelsLiveDialogsInUpstreamOrder(t *testing.T) {
 		t.Helper()
 		deadline := time.Now().Add(time.Second)
 		for {
-			children := mode.editorContainer.Children()
-			if len(children) == 1 {
-				matched := false
-				switch kind {
-				case "selector":
-					_, matched = children[0].(*ExtensionSelectorComponent)
-				case "input":
-					_, matched = children[0].(*ExtensionInputComponent)
-				case "editor":
-					_, matched = children[0].(*ExtensionEditorComponent)
+			var found tui.Component
+			switch kind {
+			case "selector":
+				if dialog, ok := floatingWindowChild[*ExtensionSelectorComponent](mode); ok {
+					found = dialog
 				}
-				if matched {
-					return children[0]
+			case "input":
+				if dialog, ok := floatingWindowChild[*ExtensionInputComponent](mode); ok {
+					found = dialog
+				}
+			case "editor":
+				if dialog, ok := floatingWindowChild[*ExtensionEditorComponent](mode); ok {
+					found = dialog
 				}
 			}
+			if found != nil {
+				return found
+			}
 			if time.Now().After(deadline) {
-				t.Fatalf("%s dialog was not installed in the editor slot", kind)
+				t.Fatalf("%s dialog window did not appear", kind)
 			}
 			time.Sleep(time.Millisecond)
 		}

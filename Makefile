@@ -114,7 +114,7 @@ fixtures-check: ensure-upstream-fixture-tools product-assets-check
 	@fixture_tmp=$$(mktemp -d); \
 		trap 'rm -rf "$$fixture_tmp"' EXIT; \
 		cd "$(UPSTREAM_DIR)" && node --import tsx "$(CURDIR)/conformance/extract/generate.ts" "$$fixture_tmp" $(UPSTREAM_COMMIT); \
-		diff -ru -x 'F12*' -x 'WP450' "$(CURDIR)/conformance/fixtures" "$$fixture_tmp"
+		diff -ru -x 'F12*' -x 'WP450*' "$(CURDIR)/conformance/fixtures" "$$fixture_tmp"
 
 upstream-rpc-tests: ensure-upstream-fixture-tools
 	@mkdir -p .tools/bin

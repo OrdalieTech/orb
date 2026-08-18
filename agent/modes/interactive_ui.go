@@ -35,6 +35,10 @@ type InteractiveUI struct {
 	activeSelector            *ExtensionSelectorComponent
 	activeInput               *ExtensionInputComponent
 	activeEditorDialog        *ExtensionEditorComponent
+	activeSelectorHandle      tui.OverlayHandle
+	activeInputHandle         tui.OverlayHandle
+	activeEditorDialogHandle  tui.OverlayHandle
+	customOverlays            map[tui.OverlayHandle]struct{}
 }
 
 type widgetEntry struct {
@@ -95,33 +99,26 @@ func (ui *InteractiveUI) selectItems(ctx context.Context, title string, items []
 			ui.SetToolsExpanded(!ui.GetToolsExpanded())
 		}},
 	)
+	// Show the new window before cancelling the superseded one: the overlay
+	// stack retargets preFocus when the older entry hides.
+	handle := ui.floatDialog(dialog)
 	ui.mu.Lock()
 	previous := ui.activeSelector
-	ui.activeSelector = dialog
+	ui.activeSelector, ui.activeSelectorHandle = dialog, handle
 	ui.mu.Unlock()
 	if previous != nil {
 		previous.cancel()
 	}
-
-	ui.mode.editorContainer.Clear()
-	ui.mode.editorContainer.AddChild(dialog)
-	ui.mode.ui.SetFocus(dialog)
 	ui.mode.ui.RequestRender()
 
 	defer func() {
 		ui.mu.Lock()
-		ownsEditor := ui.activeSelector == dialog
-		if ownsEditor {
-			ui.activeSelector = nil
+		if ui.activeSelector == dialog {
+			ui.activeSelector, ui.activeSelectorHandle = nil, nil
 		}
 		ui.mu.Unlock()
 		dialog.Dispose()
-		if !ownsEditor {
-			return
-		}
-		ui.mode.editorContainer.Clear()
-		ui.mode.restoreEditorComponent()
-		ui.mode.ui.SetFocus(ui.mode.activeEditorFocus())
+		handle.Hide()
 		ui.mode.ui.RequestRender()
 	}()
 
@@ -178,33 +175,24 @@ func (ui *InteractiveUI) Input(ctx context.Context, title string, placeholder *s
 		func() { resolve(inputDialogResult{cancelled: true}) },
 		&extensionDialogOptions{ui: ui.mode.ui, timeout: dialogTimeout(opts)},
 	)
+	handle := ui.floatDialog(dialog)
 	ui.mu.Lock()
 	previous := ui.activeInput
-	ui.activeInput = dialog
+	ui.activeInput, ui.activeInputHandle = dialog, handle
 	ui.mu.Unlock()
 	if previous != nil {
 		previous.cancel()
 	}
-
-	ui.mode.editorContainer.Clear()
-	ui.mode.editorContainer.AddChild(dialog)
-	ui.mode.ui.SetFocus(dialog)
 	ui.mode.ui.RequestRender()
 
 	defer func() {
 		ui.mu.Lock()
-		ownsEditor := ui.activeInput == dialog
-		if ownsEditor {
-			ui.activeInput = nil
+		if ui.activeInput == dialog {
+			ui.activeInput, ui.activeInputHandle = nil, nil
 		}
 		ui.mu.Unlock()
 		dialog.Dispose()
-		if !ownsEditor {
-			return
-		}
-		ui.mode.editorContainer.Clear()
-		ui.mode.restoreEditorComponent()
-		ui.mode.ui.SetFocus(ui.mode.activeEditorFocus())
+		handle.Hide()
 		ui.mode.ui.RequestRender()
 	}()
 
@@ -550,9 +538,13 @@ func (ui *InteractiveUI) resetExtensionUI() {
 	selector := ui.activeSelector
 	input := ui.activeInput
 	editorDialog := ui.activeEditorDialog
+	handles := []tui.OverlayHandle{ui.activeSelectorHandle, ui.activeInputHandle, ui.activeEditorDialogHandle}
 	ui.activeSelector = nil
 	ui.activeInput = nil
 	ui.activeEditorDialog = nil
+	ui.activeSelectorHandle = nil
+	ui.activeInputHandle = nil
+	ui.activeEditorDialogHandle = nil
 	ui.mu.Unlock()
 	if selector != nil {
 		selector.cancel()
@@ -563,8 +555,24 @@ func (ui *InteractiveUI) resetExtensionUI() {
 	if editorDialog != nil {
 		editorDialog.cancel()
 	}
-	if ui.mode.ui != nil {
-		ui.mode.ui.HideOverlay()
+	// Hide the dialog windows deterministically (their goroutines' deferred
+	// hides are async and idempotent), then the tracked Custom overlays —
+	// never a blind top-of-stack pop, which could hit a built-in menu window
+	// the reset does not own.
+	ui.mu.Lock()
+	customs := make([]tui.OverlayHandle, 0, len(ui.customOverlays))
+	for handle := range ui.customOverlays {
+		customs = append(customs, handle)
+	}
+	clear(ui.customOverlays)
+	ui.mu.Unlock()
+	for _, handle := range handles {
+		if handle != nil {
+			handle.Hide()
+		}
+	}
+	for _, handle := range customs {
+		handle.Hide()
 	}
 	ui.clearTerminalInputListeners()
 	ui.SetFooter(nil)
@@ -701,6 +709,7 @@ func (ui *InteractiveUI) Custom(ctx context.Context, factory extensions.CustomFa
 		transactionMu.Unlock()
 		if overlay {
 			if installedOverlay != nil {
+				ui.untrackCustomOverlay(installedOverlay)
 				installedOverlay.Hide()
 			} else {
 				ui.mode.ui.HideOverlay()
@@ -739,6 +748,7 @@ func (ui *InteractiveUI) Custom(ctx context.Context, factory extensions.CustomFa
 		} else {
 			tuiOverlay = ui.mode.ui.ShowOverlay(component, toTUIOverlayOptions(*resolved))
 		}
+		ui.trackCustomOverlay(tuiOverlay)
 		overlayHandle = &interactiveOverlayHandle{overlay: tuiOverlay}
 	} else {
 		ui.mode.editorContainer.Clear()
@@ -762,6 +772,7 @@ func (ui *InteractiveUI) Custom(ctx context.Context, factory extensions.CustomFa
 			transactionMu.Unlock()
 			if overlay {
 				if installedOverlay != nil {
+					ui.untrackCustomOverlay(installedOverlay)
 					installedOverlay.Hide()
 				}
 			} else {
@@ -812,7 +823,7 @@ func resolveCustomOverlayOptions(opts *extensions.CustomOptions, component exten
 func toTUIOverlayOptions(value extensions.OverlayOptions) tui.OverlayOptions {
 	var backdrop tui.StyleFunc
 	if value.Backdrop {
-		backdrop = func(text string) string { return theme.FG("dim", text) }
+		backdrop = backdropStyle()
 	}
 	return tui.OverlayOptions{
 		Backdrop:     backdrop,
@@ -945,30 +956,22 @@ func (ui *InteractiveUI) Editor(ctx context.Context, title string, prefill *stri
 		func() { resolve(inputDialogResult{cancelled: true}) },
 		externalEditorCommand,
 	)
+	handle := ui.floatDialog(editor)
 	ui.mu.Lock()
 	previous := ui.activeEditorDialog
-	ui.activeEditorDialog = editor
+	ui.activeEditorDialog, ui.activeEditorDialogHandle = editor, handle
 	ui.mu.Unlock()
 	if previous != nil {
 		previous.cancel()
 	}
-	ui.mode.editorContainer.Clear()
-	ui.mode.editorContainer.AddChild(editor)
-	ui.mode.ui.SetFocus(editor)
 	ui.mode.ui.RequestRender()
 	defer func() {
 		ui.mu.Lock()
-		ownsEditor := ui.activeEditorDialog == editor
-		if ownsEditor {
-			ui.activeEditorDialog = nil
+		if ui.activeEditorDialog == editor {
+			ui.activeEditorDialog, ui.activeEditorDialogHandle = nil, nil
 		}
 		ui.mu.Unlock()
-		if !ownsEditor {
-			return
-		}
-		ui.mode.editorContainer.Clear()
-		ui.mode.restoreEditorComponent()
-		ui.mode.ui.SetFocus(ui.mode.activeEditorFocus())
+		handle.Hide()
 		ui.mode.ui.RequestRender()
 	}()
 	select {
@@ -977,6 +980,62 @@ func (ui *InteractiveUI) Editor(ctx context.Context, title string, prefill *stri
 	case <-ctx.Done():
 		return "", false, ctx.Err()
 	}
+}
+
+func (ui *InteractiveUI) trackCustomOverlay(handle tui.OverlayHandle) {
+	if handle == nil {
+		return
+	}
+	ui.mu.Lock()
+	if ui.customOverlays == nil {
+		ui.customOverlays = make(map[tui.OverlayHandle]struct{})
+	}
+	ui.customOverlays[handle] = struct{}{}
+	ui.mu.Unlock()
+}
+
+func (ui *InteractiveUI) untrackCustomOverlay(handle tui.OverlayHandle) {
+	ui.mu.Lock()
+	delete(ui.customOverlays, handle)
+	ui.mu.Unlock()
+}
+
+// backdropStyle is the shared veil behind every floating window: faint + the
+// theme's dim, so the page visibly recedes in both light and dark modes.
+func backdropStyle() tui.StyleFunc {
+	return func(text string) string { return "\x1b[2m" + theme.FGANSI("dim") + text + "\x1b[0m" }
+}
+
+// dialogOverlayOptions is the shared geometry of floating dialog windows:
+// centered, veiled, narrower than the configuration windows.
+func dialogOverlayOptions() tui.OverlayOptions {
+	return tui.OverlayOptions{
+		Width:     tui.PercentSize(70),
+		MinWidth:  56,
+		MaxHeight: tui.PercentSize(85),
+		Backdrop:  backdropStyle(),
+	}
+}
+
+// configOverlayOptions matches the /plugins-family window geometry for the
+// built-in menus (/model, /settings) so every menu floats identically.
+func configOverlayOptions() tui.OverlayOptions {
+	return tui.OverlayOptions{
+		Width:     tui.PercentSize(88),
+		MinWidth:  70,
+		MaxHeight: tui.PercentSize(85),
+		Backdrop:  backdropStyle(),
+	}
+}
+
+// floatDialog wraps a dialog component in the shared window chrome and shows
+// it as a centered floating overlay over the veiled page.
+func (ui *InteractiveUI) floatDialog(component tui.Component) tui.OverlayHandle {
+	frame := tui.NewFrame("", "",
+		func(text string) string { return theme.FG("border", text) },
+		func(text string) string { return theme.FG("dim", text) },
+		component)
+	return ui.mode.ui.ShowOverlay(frame, dialogOverlayOptions())
 }
 
 func dialogTimeout(opts *extensions.DialogOptions) *int64 {

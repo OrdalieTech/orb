@@ -86,10 +86,17 @@ func TestF12VisibleCommandBehaviorMatchesUpstream(t *testing.T) {
 			mode.editor.OnSubmit(input)
 
 			if command.Name == "import" {
+				// The confirm dialog floats as a window now.
+				confirmLines := func() []string {
+					if lines := renderTopFloatingWindow(mode, fixture.Width); len(lines) > 0 {
+						return lines
+					}
+					return mode.editorContainer.Render(fixture.Width)
+				}
 				waitF12Visible(t, func() bool {
-					return strings.Contains(strings.Join(normalizeF12Lines(mode.editorContainer.Render(fixture.Width)), "\n"), "Import session")
+					return strings.Contains(strings.Join(normalizeF12Lines(confirmLines()), "\n"), "Import session")
 				})
-				host.addTrace(f12VisibleConfirmTrace(t, mode.editorContainer.Render(fixture.Width)))
+				host.addTrace(f12VisibleConfirmTrace(t, confirmLines()))
 				terminal.Send("\r")
 			}
 			if command.Name == "login" || command.Name == "logout" || command.Name == "new" || command.Name == "import" {
@@ -235,6 +242,9 @@ func f12VisibleTransition(mode *InteractiveMode, command string, width int) *str
 }
 
 func f12VisibleSelectorActive(mode *InteractiveMode, width int) bool {
+	if mode.ui != nil && len(mode.ui.VisibleOverlayComponents()) > 0 {
+		return true
+	}
 	return !reflect.DeepEqual(normalizeF12Lines(mode.editorContainer.Render(width)), normalizeF12Lines(mode.editor.Render(width)))
 }
 
@@ -251,13 +261,18 @@ func waitF12Visible(t testing.TB, condition func() bool) {
 
 func f12VisibleConfirmTrace(t testing.TB, rendered []string) string {
 	t.Helper()
+	// The confirm dialog floats in a framed window; strip the border cells
+	// before matching content.
+	unframe := func(line string) string {
+		return strings.TrimSpace(strings.Trim(strings.TrimSpace(line), "│"))
+	}
 	lines := normalizeF12Lines(rendered)
 	for index, line := range lines {
-		if strings.TrimSpace(line) != "Import session" {
+		if unframe(line) != "Import session" {
 			continue
 		}
 		for message := index + 1; message < len(lines); message++ {
-			value := strings.TrimSpace(lines[message])
+			value := unframe(lines[message])
 			if value != "" {
 				return "confirm:Import session:" + value
 			}

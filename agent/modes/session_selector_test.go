@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	conformancerunner "github.com/OrdalieTech/orb/conformance/runner"
+
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/tui"
 )
@@ -194,13 +196,66 @@ func TestSessionSelectorMatchesUpstreamFixture(t *testing.T) {
 	for _, frame := range fixture.Frames {
 		expected[frame.ID] = frame.Lines
 	}
+	updating := conformancerunner.UpdateTUISnapshots()
+	captured := make(map[string][]string, len(fixture.Frames))
 	assertFrame := func(id string) {
 		t.Helper()
 		got := normalizeSelectorFrame(selector.Render(fixture.Width), root)
+		if updating {
+			captured[id] = got
+			return
+		}
 		if !reflect.DeepEqual(got, expected[id]) {
 			t.Fatalf("frame %s mismatch\n got: %#v\nwant: %#v", id, got, expected[id])
 		}
 	}
+	defer func() {
+		if !updating || t.Failed() {
+			return
+		}
+		// Rewrite only the frames, preserving the rest of the fixture.
+		fixturePath := filepath.Join("..", "..", "conformance", "fixtures", "WP450-session-selector", "selector.json")
+		encoded, err := os.ReadFile(fixturePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(encoded, &raw); err != nil {
+			t.Fatal(err)
+		}
+		type frameEntry struct {
+			ID    string   `json:"id"`
+			Lines []string `json:"lines"`
+		}
+		frames := make([]frameEntry, 0, len(fixture.Frames))
+		for _, frame := range fixture.Frames {
+			lines, ok := captured[frame.ID]
+			if !ok {
+				lines = frame.Lines
+			}
+			frames = append(frames, frameEntry{ID: frame.ID, Lines: lines})
+		}
+		raw["frames"], err = json.Marshal(frames)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Preserve the file's canonical key order.
+		ordered := struct {
+			SchemaVersion json.RawMessage `json:"schemaVersion"`
+			Width         json.RawMessage `json:"width"`
+			Searches      json.RawMessage `json:"searches"`
+			Frames        json.RawMessage `json:"frames"`
+			Callbacks     json.RawMessage `json:"callbacks"`
+			Lifetime      json.RawMessage `json:"lifetime"`
+		}{raw["schemaVersion"], raw["width"], raw["searches"], raw["frames"], raw["callbacks"], raw["lifetime"]}
+		rewritten, err := json.MarshalIndent(ordered, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fixturePath, append(rewritten, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}()
 
 	waitForSelector(t, selector, "Loading 1/3")
 	assertFrame("loading-progress")

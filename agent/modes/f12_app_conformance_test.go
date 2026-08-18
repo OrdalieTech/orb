@@ -892,12 +892,9 @@ func TestF12ApplicationDialogAndPrimitiveLifecycleMatchesUpstream(t *testing.T) 
 		// The stored frame is whatever the installed empty selector renders;
 		// wait for the dialog itself rather than the frozen expectation.
 		for {
-			children := mode.editorContainer.Children()
-			if len(children) == 1 {
-				if _, ok := children[0].(*ExtensionSelectorComponent); ok {
-					snap.Set(mode.editorContainer.Render(32), "lifecycle", "dialogsAndPrimitives", "emptySelector", "lines")
-					goto emptyDone
-				}
+			if _, ok := floatingWindowChild[*ExtensionSelectorComponent](mode); ok {
+				snap.Set(renderTopFloatingWindow(mode, 32), "lifecycle", "dialogsAndPrimitives", "emptySelector", "lines")
+				goto emptyDone
 			}
 			if time.Now().After(deadline) {
 				t.Error("empty selector was not installed for snapshot update")
@@ -907,7 +904,7 @@ func TestF12ApplicationDialogAndPrimitiveLifecycleMatchesUpstream(t *testing.T) 
 		}
 	}
 	for {
-		lines := mode.editorContainer.Render(32)
+		lines := renderTopFloatingWindow(mode, 32)
 		if reflect.DeepEqual(lines, want.EmptySelector.Lines) {
 			break
 		}
@@ -1408,7 +1405,7 @@ func TestF12ExtensionDialogFramesMatchUpstream(t *testing.T) {
 	}
 }
 
-func TestF12InteractiveUISelectUsesEditorSlot(t *testing.T) {
+func TestF12InteractiveUISelectFloatsWindow(t *testing.T) {
 	initF12ApplicationTheme(t)
 	bindings := NewAppKeybindings(nil)
 	tui.SetKeybindings(bindings)
@@ -1432,16 +1429,18 @@ func TestF12InteractiveUISelectUsesEditorSlot(t *testing.T) {
 
 	deadline := time.Now().Add(time.Second)
 	for {
-		lines := mode.editorContainer.Render(48)
-		if len(lines) > 0 && strings.Contains(lines[0], "─") {
+		if _, ok := floatingWindowChild[*ExtensionSelectorComponent](mode); ok {
 			break
 		}
 		if time.Now().After(deadline) {
 			cancel()
 			<-done
-			t.Fatalf("extension selector was not installed in the editor slot; editor=%#v widget=%#v", lines, mode.widgetAbove.Render(48))
+			t.Fatalf("extension selector window did not appear; editor=%#v", mode.editorContainer.Render(48))
 		}
 		time.Sleep(time.Millisecond)
+	}
+	if lines := renderTopFloatingWindow(mode, 48); len(lines) == 0 || !strings.HasPrefix(tui.StripANSI(lines[0]), "╭") {
+		t.Fatalf("selector window has no frame: %q", lines)
 	}
 	cancel()
 	<-done
@@ -1473,7 +1472,7 @@ func TestInteractiveUISelectItemsPreservesDisplayLabels(t *testing.T) {
 
 	deadline := time.Now().Add(time.Second)
 	for {
-		lines := strings.Join(mode.editorContainer.Render(48), "\n")
+		lines := strings.Join(renderTopFloatingWindow(mode, 48), "\n")
 		if strings.Contains(lines, "✓ configured") {
 			break
 		}

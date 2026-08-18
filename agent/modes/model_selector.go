@@ -63,6 +63,7 @@ func NewModelSelectorComponent(
 		onCancel:      onCancel,
 		scope:         modelScopeAll,
 	}
+	component.searchInput.Prompt = "⌕ "
 	component.loadModels(models, scoped)
 	if len(component.scopedModels) > 0 {
 		component.scope = modelScopeScoped
@@ -70,8 +71,6 @@ func NewModelSelectorComponent(
 	component.activeModels = component.modelsForScope()
 	component.selectCurrentModel()
 
-	component.container.AddChild(extensionDialogBorder())
-	component.container.AddChild(tui.NewSpacer(1))
 	if len(component.scopedModels) > 0 {
 		component.scopeText = tui.NewText(component.scopeLabel(), 0, 0, nil)
 		component.container.AddChild(component.scopeText)
@@ -95,8 +94,6 @@ func NewModelSelectorComponent(
 	component.headerText = tui.NewText("", 0, 0, nil)
 	component.container.AddChild(component.headerText)
 	component.container.AddChild(component.listContainer)
-	component.container.AddChild(tui.NewSpacer(1))
-	component.container.AddChild(extensionDialogBorder())
 	component.filterModels(component.searchInput.GetValue())
 	return component
 }
@@ -269,37 +266,46 @@ func (component *ModelSelectorComponent) updateList() {
 	}
 	for index := start; index < end; index++ {
 		item := component.filteredModels[index]
-		prefix, modelStyle := "  ", "text"
+		// The shared selection language: › cursor plus a full-row background.
+		prefix, selectedBg := "  ", tui.StyleFunc(nil)
 		if index == component.selectedIndex {
-			prefix, modelStyle = "→ ", "accent"
+			prefix = theme.FG("accent", "› ")
+			selectedBg = func(text string) string { return theme.BG("selectedBg", text) }
 		}
 		current := ""
 		if modelSelectorModelsEqual(component.currentModel, &item.model) {
 			current = theme.FG("success", " ✓")
 		}
 		component.listContainer.AddChild(tui.NewText(
-			row(func(text string) string { return theme.FG(modelStyle, text) },
+			row(func(text string) string { return theme.FG("text", text) },
 				prefix, item.model.ID, "["+string(item.model.Provider)+"]",
 				modelSelectorTokens(item.model.ContextWindow), modelSelectorCost(item.model.Cost),
 				modelSelectorFlags(item.model), current),
-			0, 0, nil,
+			0, 0, selectedBg,
 		))
 	}
-	if start > 0 || end < len(component.filteredModels) {
-		component.listContainer.AddChild(tui.NewText(
-			theme.FG("muted", "  ("+strconv.Itoa(component.selectedIndex+1)+"/"+strconv.Itoa(len(component.filteredModels))+")"),
-			0, 0, nil,
-		))
-	}
+	// Fixed geometry: the floating window must not grow, shrink, or
+	// re-center while filtering, so the row region, the counter slot, and the
+	// name footer always occupy the same lines.
+	rendered := end - start
 	if len(component.filteredModels) == 0 {
 		component.listContainer.AddChild(tui.NewText(theme.FG("muted", "  No matching models"), 0, 0, nil))
-		return
+		rendered = 1
 	}
+	for ; rendered < modelSelectorMaxVisible; rendered++ {
+		component.listContainer.AddChild(tui.NewText(" ", 0, 0, nil))
+	}
+	counter := " "
+	if start > 0 || end < len(component.filteredModels) {
+		counter = theme.FG("muted", "  ("+strconv.Itoa(component.selectedIndex+1)+"/"+strconv.Itoa(len(component.filteredModels))+")")
+	}
+	component.listContainer.AddChild(tui.NewText(counter, 0, 0, nil))
 	component.listContainer.AddChild(tui.NewSpacer(1))
-	component.listContainer.AddChild(tui.NewText(
-		theme.FG("muted", fmt.Sprintf("  Model Name: %s", component.filteredModels[component.selectedIndex].model.Name)),
-		0, 0, nil,
-	))
+	name := " "
+	if len(component.filteredModels) > 0 {
+		name = theme.FG("muted", fmt.Sprintf("  Model Name: %s", component.filteredModels[component.selectedIndex].model.Name))
+	}
+	component.listContainer.AddChild(tui.NewText(name, 0, 0, nil))
 }
 
 func (component *ModelSelectorComponent) confirmSelection() {
@@ -417,17 +423,10 @@ func (mode *InteractiveMode) selectModelSearchable(
 		func() { resolve(selection{}) },
 		initialSearch,
 	)
-	mode.editorContainer.Clear()
-	mode.editorContainer.AddChild(component)
-	mode.ui.SetFocus(component)
+	handle := mode.ui.ShowOverlay(menuFrame("Model", component), configOverlayOptions())
 	mode.ui.RequestRender()
 	defer func() {
-		children := mode.editorContainer.Children()
-		if len(children) != 1 || children[0] != component {
-			return
-		}
-		mode.restoreEditorComponent()
-		mode.ui.SetFocus(mode.activeEditorFocus())
+		handle.Hide()
 		mode.ui.RequestRender()
 	}()
 	if ctx == nil {
