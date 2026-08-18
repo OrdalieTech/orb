@@ -74,6 +74,14 @@ See the [ecosystem matrix](docs/sync/ecosystem-extension-matrix.md), the
 the exact package-by-package result and remaining runtime ceilings.
 `.pi/extensions/` in a trusted project and the global agent directory are discovered like upstream.
 
+## Plugins, permissions, and MCP
+
+Orb's bundled plugins (tasks, websearch, subagents, permissions, memory) are off by default and
+configured through `settings.json` — including external CLIs as sub-agents, a fail-closed bash
+filesystem sandbox, and MCP servers. `/plugins`, `/permissions`, and `/mcp` open configuration
+windows in the TUI; `orb plugins …` and `orb mcp …` configure everything from the shell without a
+session. See [docs/plugins.md](docs/plugins.md) for the full reference.
+
 ## Provenance
 
 Upstream pi is © Mario Zechner, MIT — this port tracks the exact commit in `UPSTREAM.lock` and

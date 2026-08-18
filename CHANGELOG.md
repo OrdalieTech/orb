@@ -26,6 +26,15 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 - The dormant subagents plugin can expose explicitly configured external CLIs as child roles, feeding each task on stdin and returning stdout under the existing parallel limits and a bounded runtime.
 - The permissions plugin adds deny-only SDK guards and named `workspace-write`/`danger-full-access` presets, and can wrap only the built-in bash tool in an opt-in filesystem sandbox: Linux Landlock enforcement is partial because it cannot mediate metadata mutations, macOS uses `sandbox-exec`, and an unavailable sandbox refuses the command with an actionable message instead of running it unsandboxed. Both restrictive modes keep `/dev` and the temp directory writable so ordinary shell idioms (`2>/dev/null`, `mktemp`) keep working, and a `/plugins` reload re-resolves the sandbox mode without a restart.
+- Configuration windows in the TUI: `/plugins`, `/permissions`, and `/mcp` open framed overlay
+  screens on an aligned invisible grid — plugins show their structured settings (external CLIs,
+  preset/sandbox/mode) inline, the permissions window lays out policy, rules, and recent decisions
+  with the sandbox mode visible, and the MCP window shows live server state, targets, and
+  registered tools with in-place reconnection. The `/model` picker gains aligned context,
+  $/Mtok cost, and think/img capability columns.
+- `orb mcp <list|get|add|remove|enable|disable>` configures MCP servers from the shell without a
+  session and without spawning any server; `add` validates through the exact parser the session
+  uses. New reference: `docs/plugins.md`.
 - `orb plugins list --all` prints the resolved composition — every compiled extension, bundled
   plugin, and MCP row with its id, source, on/off state, and the settings layer that decided it,
   plus the discovered JS extensions — through the same code path the real boot uses.
