@@ -185,6 +185,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if handled, code := handlePluginsCommand(ctx, argv, streams); handled {
 		return code
 	}
+	if handled, code := handleMCPCommand(ctx, argv, streams); handled {
+		return code
+	}
 	if handled, code := handlePackageCommand(ctx, argv, streams, dependencies); handled {
 		return code
 	}
@@ -973,6 +976,8 @@ Commands:
   orb update [target]         Update orb itself, installed packages, or model catalogs
   orb list                    List installed packages from settings
   orb config [-l]             Open TUI to enable/disable package resources (Tab switches scope)
+  orb plugins <command>       List, enable, or disable bundled plugins (list --all shows the full composition)
+  orb mcp <command>           List, add, remove, or toggle MCP servers (see orb mcp --help)
   orb auth <command>           Print credentials for external clients
   orb <command> --help        Show help for chat/install/remove/uninstall/update/list/config/auth
 
