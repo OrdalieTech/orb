@@ -3,6 +3,7 @@ package modes
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -29,6 +30,7 @@ type modelSelectorItem struct{ model ai.Model }
 type ModelSelectorComponent struct {
 	container      *tui.Container
 	searchInput    *tui.Input
+	headerText     *tui.Text
 	listContainer  *tui.Container
 	scopeText      *tui.Text
 	allModels      []modelSelectorItem
@@ -90,6 +92,8 @@ func NewModelSelectorComponent(
 	}
 	component.container.AddChild(component.searchInput)
 	component.container.AddChild(tui.NewSpacer(1))
+	component.headerText = tui.NewText("", 0, 0, nil)
+	component.container.AddChild(component.headerText)
 	component.container.AddChild(component.listContainer)
 	component.container.AddChild(tui.NewSpacer(1))
 	component.container.AddChild(extensionDialogBorder())
@@ -194,11 +198,75 @@ func (component *ModelSelectorComponent) filterModels(query string) {
 	component.updateList()
 }
 
+func modelSelectorTokens(count float64) string {
+	trim := func(value float64) string {
+		if math.Trunc(value) == value {
+			return strconv.FormatFloat(value, 'f', 0, 64)
+		}
+		return strconv.FormatFloat(value, 'f', 1, 64)
+	}
+	switch {
+	case count <= 0:
+		return "—"
+	case count >= 1_000_000:
+		return trim(count/1_000_000) + "M"
+	case count >= 1_000:
+		return trim(count/1_000) + "K"
+	}
+	return strconv.Itoa(int(count))
+}
+
+func modelSelectorCost(cost ai.ModelCost) string {
+	if cost.Input == 0 && cost.Output == 0 {
+		return "—"
+	}
+	format := func(value float64) string { return strconv.FormatFloat(value, 'f', -1, 64) }
+	return "$" + format(cost.Input) + "/" + format(cost.Output)
+}
+
+func modelSelectorFlags(model ai.Model) string {
+	flags := make([]string, 0, 2)
+	if model.Reasoning {
+		flags = append(flags, "think")
+	}
+	if slices.Contains(model.Input, ai.InputImage) {
+		flags = append(flags, "img")
+	}
+	if len(flags) == 0 {
+		return "—"
+	}
+	return strings.Join(flags, "+")
+}
+
 func (component *ModelSelectorComponent) updateList() {
 	component.listContainer.Clear()
+	// Invisible grid: measure the metadata columns over the whole filtered
+	// set so rows stay aligned while scrolling.
+	idWidth, providerWidth, contextWidth, costWidth := 0, 0, len("ctx"), 0
+	for _, item := range component.filteredModels {
+		idWidth = max(idWidth, len(item.model.ID))
+		providerWidth = max(providerWidth, len(item.model.Provider)+2)
+		contextWidth = max(contextWidth, len(modelSelectorTokens(item.model.ContextWindow)))
+		costWidth = max(costWidth, len(modelSelectorCost(item.model.Cost)))
+	}
+	idWidth = min(idWidth, 44)
+	row := func(style func(string) string, prefix, id, provider, contextTokens, cost, flags, current string) string {
+		return style(prefix+fmt.Sprintf("%-*s", idWidth, id)) +
+			"  " + theme.FG("muted", fmt.Sprintf("%-*s", providerWidth, provider)) +
+			"  " + theme.FG("muted", fmt.Sprintf("%*s", contextWidth, contextTokens)) +
+			"  " + theme.FG("dim", fmt.Sprintf("%*s", costWidth, cost)) +
+			"  " + theme.FG("dim", flags) + current
+	}
 	start := component.window.Start(component.selectedIndex, len(component.filteredModels), modelSelectorMaxVisible)
 	end := min(start+modelSelectorMaxVisible, len(component.filteredModels))
 	component.rows.setWindow(start, end-start)
+	if component.headerText != nil {
+		header := ""
+		if len(component.filteredModels) > 0 {
+			header = row(func(text string) string { return theme.FG("dim", text) }, "  ", "model", "provider", "ctx", "$/Mtok", " ", "")
+		}
+		component.headerText.SetText(header)
+	}
 	for index := start; index < end; index++ {
 		item := component.filteredModels[index]
 		prefix, modelStyle := "  ", "text"
@@ -210,7 +278,10 @@ func (component *ModelSelectorComponent) updateList() {
 			current = theme.FG("success", " ✓")
 		}
 		component.listContainer.AddChild(tui.NewText(
-			theme.FG(modelStyle, prefix+item.model.ID)+" "+theme.FG("muted", "["+string(item.model.Provider)+"]")+current,
+			row(func(text string) string { return theme.FG(modelStyle, text) },
+				prefix, item.model.ID, "["+string(item.model.Provider)+"]",
+				modelSelectorTokens(item.model.ContextWindow), modelSelectorCost(item.model.Cost),
+				modelSelectorFlags(item.model), current),
 			0, 0, nil,
 		))
 	}
