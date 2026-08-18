@@ -784,7 +784,7 @@ func filterExcluded(names []string, excluded []string) []string {
 
 // SubscribeChan returns a buffered channel of session events and a cancel
 // function. Events are the same types delivered to [AgentSession.Subscribe]
-// callbacks: [agent.AgentEvent] variants and session-level event structs
+// callbacks: [engine.AgentEvent] variants and session-level event structs
 // ([AgentSettledEvent], [QueueUpdateEvent], etc.).
 //
 // Delivery is ordered and lossless while the subscription is active. The

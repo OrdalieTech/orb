@@ -13,10 +13,10 @@ e.g. `packages/agent/src/agent-loop.ts`. The sync tool materializes that checkou
 
 ```
 orb/
-├── go.mod                    module github.com/OrdalieTech/orb   (go ≥ 1.26.5)
+├── go.mod                    module github.com/OrdalieTech/orb   (go ≥ 1.26.6)
 ├── cmd/orb/                   CLI entry point (thin: arg parsing → agent)
 ├── ai/                       port of packages/ai        — importable alone
-│   ├── api/                  one file per API shape (openaresponses.go, anthropicmessages.go, …)
+│   ├── api/                  one file per API shape (openairesponses.go, anthropicmessages.go, …)
 │   ├── providers/            provider registry + per-provider metadata (generated + hand corrections)
 │   ├── auth/                 credential store, OAuth flows (PKCE, device-code)
 │   └── models/               catalog: generated data, models.dev refresh, models.json overlay
@@ -34,7 +34,7 @@ orb/
 │   └── plugins/              first-party bundled-but-dormant plugins (D32–D34)
 ├── chat/                     chat gateway + platform adapters (D27/D28 additions; chat → agent only)
 ├── memory/                   MemoryStore seam + JSONL store (D34 addition)
-│   └── engine/                generic Agent attachment + bounded memory tools
+│   └── agent/                 generic Agent attachment + bounded memory tools
 ├── internal/
 │   ├── jsonschema/           Schema type + reflection helper (gate G1)
 │   ├── jsonwire/             JSON.stringify-compatible wire encoder
@@ -58,7 +58,7 @@ orb/
 └── UPSTREAM.lock             pinned upstream commit + sync state
 ```
 
-### Mirroring rules (normative)
+### Upstream package correspondence
 
 1. Package ↔ package: `packages/ai` ↔ `ai/`, `packages/agent` ↔ `engine/`, `packages/tui` ↔ `tui/`,
    `packages/coding-agent` ↔ `agent/`.
@@ -157,7 +157,7 @@ execution-env abstraction (`env` interface — the seam later used by SSH/sandbo
 spec `packages/coding-agent/docs/sdk.md`) is the high-level embedding API and the thing the SDK
 advertises; its 13 upstream SDK examples get Go ports under `agent/examples/`. D29 deliberately
 dissolves upstream's parallel `AgentHarness` facade into this runtime; the underlying harness
-primitives remain public without duplicating orchestration or making `agent` depend on `agent`.
+primitives remain public without duplicating orchestration or making `engine` depend on `agent`.
 
 ## 4. `tui/` — terminal UI
 
@@ -379,7 +379,7 @@ sessions remain JSONL or memory-backed).
 | Extension API breadth (2,943-line spec) | Go-native API proves semantics; protocol/API inventory and host end-to-end tests cover callbacks and snapshots |
 | TUI fidelity drift | F12 render goldens + side-by-side session comparison protocol in phase 4 |
 | Provider SDK churn (openai v1→v3 history) | SDK usage confined to `ai/api/*` adapter files; unified types are ours; F2 pins request shapes |
-| Upstream velocity (multi-release weeks) | pin + sync reports; formats-first tracking (D5); mirror layout keeps diffs mappable |
+| Upstream velocity (multi-release weeks) | pin + sync reports; formats-first tracking (D5); path-classified sync reports keep kernel obligations triaged |
 | Event/serialization drift breaking conformance | F1/F3/F6/F7 fixtures regenerate on every sync; wire-format struct tags reviewed against goldens |
 | Parallel tool execution races | file-mutation queue per realpath (upstream semantics); race detector in CI |
 | Host lifecycle and request races | generation-scoped correlation, bounded restart/backoff, typed UI cancellation, and race tests |

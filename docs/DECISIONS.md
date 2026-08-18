@@ -12,7 +12,7 @@ work, within these bounds.
 | | |
 |---|---|
 | Upstream project | **pi** — https://pi.dev, repo `earendil-works/pi` (formerly `badlogic/pi-mono`) |
-| Pinned reference | commit `53fa77ccd8a279eb87e92294ef3687b03ff80112`, version **0.84.1** (2026-08-07) |
+| Pinned reference | commit `914cf1472e715297caa30db4b9535d534a9eb718`, version **0.84.2** (2026-08-17) |
 | Upstream license | MIT, © 2025 Mario Zechner |
 | This project | `github.com/OrdalieTech/orb`, MIT, © Ordalie — with attribution to upstream in LICENSE and README |
 
@@ -189,7 +189,7 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 | Compact task and queue surfaces | usability adaptation | the bundled tasks plugin keeps its replacement schema and full branch-aware details but condenses persistent/collapsed rendering, makes the native TUI widget click-expandable with dimmed inset details, and adds an unbound `/tasks` full-list command; queued messages retain the configured dequeue binding and every queued item while adding a count to upstream's one-row truncation and edit hint |
 | Moonshot Kimi K3 compat metadata | resolved parity | `thinkingFormat: openai` and reasoning-effort support entered the pinned upstream in v0.81.1 and remain regression-tested |
 | `AgentHarness` orchestration facade | dissolved | D29; harness primitives remain in `engine/harness`, while the high-level embedding lifecycle stays in `agent.AgentSession` |
-| `streamProxy` `/api/stream` client | excluded | D29; application-specific proxy protocols use `agent.WithStreamFn` and the public streaming-JSON helper |
+| `streamProxy` `/api/stream` client | excluded | D29; application-specific proxy protocols use the `AgentSessionOptions.StreamFn` seam and the public streaming-JSON helper |
 | `chat/` gateway package (+ `chat/telegram`, `chat/whatsapp`) | addition | owner requirement (D27); kept out of core, strictly one-way dependency on the SDK |
 | `AgentSessionOptions` tool-operations injection hook | addition | D27; ergonomic seam over the existing `NewSessionRuntime`/`BaseTools` path for VFS/sandboxed tool operations |
 | `chat/` platform wave 2 (`slack`, `teams`, `discord`, `messenger`, `googlechat` + `chat/internal/` ws/webhook helpers) | addition | owner requirement (D28); official APIs only, stdlib-only clients incl. hand-rolled RFC 6455 |
@@ -254,7 +254,7 @@ text in git history of this file. Cross-references to these numbers elsewhere re
   1,029-line facade would duplicate queues, hooks, persistence ordering, and lifecycle state, and
   placing a wrapper in `agent` would invert the package dependency. The adjacent `streamProxy`
   client is also excluded: its `/api/stream` endpoint is an application protocol rather than agent
-  behavior, and embedders already have `agent.WithStreamFn` plus `ai.ParseStreamingJSON`. Revisit
+  behavior, and embedders already have `AgentSessionOptions.StreamFn` plus `ai.ParseStreamingJSON`. Revisit
   either surface only when upstream's coding-agent adopts it or a real Go consumer requires it.
 
 - **D36 — Session search is a slim Go service, not a transliterated generic API (agent, 2026-08-17).**

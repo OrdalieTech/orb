@@ -118,7 +118,7 @@ every sprint close. The deliverable is a **shrink diff** plus a trim report fold
    removed; new transitive bloat flagged.
 3. **Duplication sweep** — near-duplicate helpers merged.
 4. **Abstraction audit** — interfaces/indirection not on the upstream-seam list inlined.
-5. **LOC report** — per mirrored package vs upstream TS src (budget ≤ 1.3×); overshoot shrunk or
+5. **LOC report** — per ported package vs upstream TS src (budget ≤ 1.3×); overshoot shrunk or
    justified in the report.
 6. **Size/speed trend** — binary size and cold start recorded; > 10% regression investigated.
 7. **Milestone verification** — every criterion of the current milestone checked and reported.

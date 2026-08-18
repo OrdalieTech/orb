@@ -100,10 +100,10 @@ lifecycle:
 - `SetThinkingLevel(level) error` — change thinking budget
 - `CycleThinkingLevel() (*ai.ModelThinkingLevel, error)` — cycle thinking levels
 - `NavigateTree(ctx, targetID, options) (NavigateTreeResult, error)` — session tree navigation
-- `Agent() *agent.Agent` — direct access to agent state and idle waiting
+- `Agent() *engine.Agent` — direct access to agent state and idle waiting
 - `GetActiveToolNames() []string` / `SetActiveToolsByName([]string) error` — inspect or replace active tools
 - `SendUserMessage(ctx, content, options) error` / `SendCustomMessage(ctx, message, options) error` — extension-compatible message injection
-- `State() agent.AgentState` — current agent state
+- `State() engine.AgentState` — current agent state
 - `WaitForIdle(ctx) error` — block until settled
 - `BindExtensions(ctx) error` — emit the configured session_start once after host bindings are ready
 - `Reload(ctx) error` — recreate native extension instances and emit reload lifecycle events
@@ -156,7 +156,7 @@ Custom tools are registered via `CustomTools` or through an `ExtensionRegistry`.
 
 ## Events
 
-Subscribe receives `agent.AgentEvent` variants plus these session-level event types:
+Subscribe receives `engine.AgentEvent` variants plus these session-level event types:
 
 | Type | Description |
 |------|-------------|
@@ -281,17 +281,17 @@ inline-extension path and keeps extension lifecycle coupled to resource reloads.
 
 `memory.Store` from `github.com/OrdalieTech/orb/memory` is the tenant-scoped durable seam.
 `memory.NewFileStore(dir)` is the append-only JSONL default for one local profile. A plain
-`agent.Agent` attaches the shared behavior directly:
+`engine.Agent` attaches the shared behavior directly:
 
 ```go
 import (
-    "github.com/OrdalieTech/orb/agent"
+    "github.com/OrdalieTech/orb/engine"
     "github.com/OrdalieTech/orb/memory"
     agentmemory "github.com/OrdalieTech/orb/memory/agent"
 )
 
 store, _ := memory.NewFileStore(dir)
-runtime := agent.NewAgent(stream, agent.WithInitialState(state))
+runtime := engine.NewAgent(stream, engine.WithInitialState(state))
 if err := agentmemory.Attach(ctx, runtime, store); err != nil { panic(err) }
 ```
 

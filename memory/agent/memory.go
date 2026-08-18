@@ -1,5 +1,5 @@
 // Package agentmemory attaches Orb's bounded persistent memory to a plain
-// agent.Agent. The coding-agent plugin delegates to the same runtime.
+// engine.Agent. The bundled memory plugin delegates to the same runtime.
 package agentmemory
 
 import (
