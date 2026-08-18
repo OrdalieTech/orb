@@ -84,44 +84,10 @@ func Control(settings *config.SettingsManager) extensions.Factory {
 				if !command.HasUI() {
 					return fmt.Errorf("/plugins requires interactive mode")
 				}
-				dirty := false
-				for {
-					enabled := settings.GetPlugins()
-					choices := make([]string, 0, len(names)+1)
-					choiceNames := make(map[string]string, len(names))
-					for _, name := range names {
-						mark := " "
-						if enabled[name] {
-							mark = "x"
-						}
-						label := fmt.Sprintf("[%s] %s — %s", mark, name, descriptions[name])
-						choices = append(choices, label)
-						choiceNames[label] = name
-					}
-					choices = append(choices, "Done")
-					selected, ok, err := command.UI().Select(ctx, "Bundled plugins", choices, nil)
-					if err != nil {
-						return err
-					}
-					if !ok || selected == "Done" {
-						break
-					}
-					name := choiceNames[selected]
-					if name == "" {
-						continue
-					}
-					settings.SetPluginEnabled(name, !enabled[name])
-					dirty = true
+				if command.Mode() == extensions.ModeTUI {
+					return pluginsWindow(ctx, command, settings)
 				}
-				if !dirty {
-					return nil
-				}
-				for _, settingsError := range settings.DrainErrors() {
-					if strings.TrimSpace(settingsError.Error()) != "" {
-						return settingsError
-					}
-				}
-				return command.Reload(ctx)
+				return legacyPluginsSelect(ctx, command, settings)
 			},
 		})
 		return nil
@@ -720,23 +686,14 @@ func permissionsExtension(policy *Policy, settings *config.SettingsManager, pare
 				if command.Mode() != extensions.ModeTUI || !command.HasUI() {
 					return fmt.Errorf("/permissions requires interactive mode")
 				}
-				mode, _, rules, _, _ := policy.snapshot()
-				next := "enforce"
-				if mode == "enforce" {
-					next = "log"
-				}
-				selected, ok, err := command.UI().Select(ctx, permissionSummary(mode, rules, policy.recent(10)), []string{"Keep " + mode, "Switch to " + next}, nil)
-				if err != nil || !ok || selected != "Switch to "+next {
+				before, _, _, _, _ := policy.snapshot()
+				if err := permissionsWindow(ctx, command, policy, settings); err != nil {
 					return err
 				}
-				policy.SetMode(next)
-				if settings != nil {
-					settings.SetPluginSetting("permissions", "mode", next)
-					if errors := settings.DrainErrors(); len(errors) > 0 {
-						return errors[0]
-					}
+				if after, _, _, _, _ := policy.snapshot(); after != before {
+					return applyMode(ctx, command)
 				}
-				return applyMode(ctx, command)
+				return nil
 			},
 		})
 		return nil
@@ -782,24 +739,6 @@ func permissionDenied(decision Decision, reason string) string {
 		return fmt.Sprintf("permissions: denied by %s: %s", matched, strings.TrimSpace(reason))
 	}
 	return "permissions: denied by " + matched
-}
-
-func permissionSummary(mode string, rules []Rule, decisions []Decision) string {
-	lines := []string{"Permissions mode: " + mode, bashCaveat, "Rules:"}
-	if len(rules) == 0 {
-		lines = append(lines, "  (default allow)")
-	}
-	for index, rule := range rules {
-		lines = append(lines, fmt.Sprintf("  %d. %s -> %s", index+1, formatRule(rule), rule.Action))
-	}
-	lines = append(lines, "Recent decisions:")
-	if len(decisions) == 0 {
-		lines = append(lines, "  (none)")
-	}
-	for _, decision := range decisions {
-		lines = append(lines, fmt.Sprintf("  %s: %s -> %s (%s)", decision.Tool, decision.Action, decision.Resolved, decision.Resolution))
-	}
-	return strings.Join(lines, "\n")
 }
 
 func uniquePluginNames(names []string) []string {

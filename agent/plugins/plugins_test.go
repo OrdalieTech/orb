@@ -72,12 +72,39 @@ type selectorUI struct {
 	extensions.NoopUI
 	choices []string
 	index   int
+	keys    []string // raw key events fed to the /plugins window component
 }
 
 func (ui *selectorUI) Select(_ context.Context, _ string, _ []string, _ *extensions.DialogOptions) (string, bool, error) {
 	choice := ui.choices[ui.index]
 	ui.index++
 	return choice, true, nil
+}
+
+type noopHost struct{}
+
+func (noopHost) Width() int  { return 100 }
+func (noopHost) Height() int { return 40 }
+func (noopHost) Invalidate() {}
+
+// Custom runs the window factory headlessly and replays the scripted keys.
+func (ui *selectorUI) Custom(_ context.Context, factory extensions.CustomFactory, _ *extensions.CustomOptions) (any, bool, error) {
+	var result any
+	component, err := factory(noopHost{}, extensions.NewNoopUI().Theme(), nil, func(value any) { result = value })
+	if err != nil {
+		return nil, false, err
+	}
+	handler, ok := component.(interface{ HandleInput(tui.KeyEvent) })
+	if !ok {
+		return nil, false, fmt.Errorf("window component does not handle input")
+	}
+	if len(component.Render(80)) == 0 {
+		return nil, false, fmt.Errorf("window component renders nothing")
+	}
+	for _, key := range ui.keys {
+		handler.HandleInput(tui.KeyEvent{Raw: key})
+	}
+	return result, true, nil
 }
 
 func must[T any](value T, err error) T {
@@ -110,7 +137,7 @@ func TestPluginControlPersistsAndReloads(t *testing.T) {
 	settings := must(config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent"))))
 	registry := extensions.NewRegistry(root)
 	mustOK(registry.Register("<inline:plugin-control>", Control(settings)))
-	ui := &selectorUI{choices: []string{"[ ] tasks — " + Description("tasks"), "Done"}}
+	ui := &selectorUI{keys: []string{" ", "\x1b"}} // toggle the first row (tasks), close
 	reloads := 0
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{
 		UI: ui, Mode: extensions.ModeTUI,

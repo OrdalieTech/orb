@@ -39,6 +39,7 @@ const (
 type ServerStatus struct {
 	Name      string
 	Transport string
+	Target    string // the command line or URL the server was configured with
 	State     ServerState
 	Tools     []string
 	Error     string
@@ -911,11 +912,11 @@ func (manager *Manager) Status() []ServerStatus {
 			tools = append(tools, registered)
 		}
 		sort.Strings(tools)
-		transport := "stdio"
+		transport, target := "stdio", strings.TrimSpace(connection.config.Command+" "+strings.Join(connection.config.Args, " "))
 		if connection.config.URL != "" {
-			transport = "http"
+			transport, target = "http", connection.config.URL
 		}
-		status = append(status, ServerStatus{Name: name, Transport: transport, State: connection.state, Tools: tools, Error: connection.err})
+		status = append(status, ServerStatus{Name: name, Transport: transport, Target: target, State: connection.state, Tools: tools, Error: connection.err})
 	}
 	return status
 }
@@ -959,6 +960,9 @@ func (manager *Manager) handleCommand(ctx context.Context, args string, commandC
 	if len(fields) > 0 {
 		commandContext.UI().Notify("Usage: /mcp [reconnect [server]]", extensions.NotifyError)
 		return nil
+	}
+	if commandContext.Mode() == extensions.ModeTUI && commandContext.HasUI() {
+		return manager.statusWindow(ctx, commandContext)
 	}
 	commandContext.UI().Notify(formatStatus(manager.Status()), extensions.NotifyInfo)
 	return nil
