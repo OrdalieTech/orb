@@ -8,6 +8,9 @@ Three surfaces expose the same configuration:
 
 - **In the app**: `/plugins`, `/permissions`, and `/mcp` open configuration
   windows; `/model` picks models with context, cost, and capability columns.
+  The `/plugins` window is the hub: type to filter, toggle plugins and
+  external sub-agent CLIs (known CLIs found on PATH appear ready to enable),
+  and install packages without leaving the session.
 - **From the shell**: `orb plugins …` and `orb mcp …` work without a session.
 - **By hand**: edit `settings.json` directly; invalid values fail closed at
   startup with the exact key named.
@@ -44,7 +47,10 @@ boot uses.
 }
 ```
 
-The subagent tool gains the configured names as child roles next to the
+Each `external` value is either the command string or
+`{"command": "…", "enabled": false}` — the object form switches a CLI off
+without losing its configuration (the `/plugins` window toggles between the
+two). The subagent tool gains the enabled names as child roles next to the
 built-in `scout` / `worker` / `reviewer`, in single or parallel mode (up to 32
 children, 4 concurrent). An external CLI receives the task text on stdin, must
 answer on stdout, runs in the session's working directory under the operator's
