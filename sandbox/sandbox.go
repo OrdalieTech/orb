@@ -1,4 +1,10 @@
 // Package sandbox limits filesystem effects of child commands.
+//
+// Coverage is honest but partial by nature: Landlock does not mediate chmod,
+// chown, xattr, utime, or fcntl metadata mutations, and old ABIs miss
+// truncate. Enforcement is fail-closed: when the platform cannot sandbox,
+// the wrapped command refuses to run (exit 126) with an actionable message
+// instead of running unrestricted.
 package sandbox
 
 import "path/filepath"
@@ -11,14 +17,6 @@ const (
 	ModeDangerFullAccess Mode = "danger-full-access"
 )
 
-type Enforcement string
-
-const (
-	EnforcementNone    Enforcement = "none"
-	EnforcementPartial Enforcement = "partial"
-	EnforcementFull    Enforcement = "full"
-)
-
 const (
 	EnvMode    = "ORB_SANDBOX_MODE"
 	EnvRoot    = "ORB_SANDBOX_ROOT"
@@ -28,12 +26,15 @@ const (
 )
 
 // Wrap replaces command without requoting it through the platform launcher.
-func Wrap(mode Mode, root, self, shell, command string, env map[string]string) (string, map[string]string, Enforcement) {
+// Both restrictive modes keep /dev and os.TempDir() writable so ordinary
+// shell idioms (2>/dev/null, mktemp) work; workspace-write additionally
+// opens root.
+func Wrap(mode Mode, root, shell, command string, env map[string]string) (string, map[string]string) {
 	if env == nil {
 		env = make(map[string]string)
 	}
 	if mode == ModeDangerFullAccess {
-		return command, env, EnforcementNone
+		return command, env
 	}
 	if mode != ModeReadOnly && mode != ModeWorkspaceWrite {
 		mode = ModeReadOnly
@@ -41,6 +42,12 @@ func Wrap(mode Mode, root, self, shell, command string, env map[string]string) (
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	return wrap(mode, root, self, shell, command, env)
+	return wrap(mode, root, shell, command, env)
 }
+
+// refuse is the fail-closed wrapper: explain, then exit 126.
+func refuse(reason string) string {
+	return "echo 'orb: sandbox: " + reason + "; set plugins.permissions.sandbox to danger-full-access to run unsandboxed' >&2; exit 126"
+}
+
 func canonicalPath(path string) (string, error) { return filepath.EvalSymlinks(path) }

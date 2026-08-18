@@ -109,7 +109,10 @@ func main() {
 }
 
 func runSandboxChild() int {
-	if _, err := sandbox.SelfRestrict(sandbox.Mode(os.Getenv(sandbox.EnvMode)), os.Getenv(sandbox.EnvRoot)); err != nil {
+	// Landlock and no_new_privs bind to the calling OS thread; without this
+	// pin the goroutine could migrate and exec from an unrestricted thread.
+	runtime.LockOSThread()
+	if err := sandbox.SelfRestrict(sandbox.Mode(os.Getenv(sandbox.EnvMode)), os.Getenv(sandbox.EnvRoot)); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		return 126
 	}

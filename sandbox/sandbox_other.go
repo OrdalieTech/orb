@@ -4,10 +4,10 @@ package sandbox
 
 import "fmt"
 
-func Probe() (int, Enforcement, error) { return 0, EnforcementNone, nil }
-func wrap(_ Mode, _ string, _ string, _ string, command string, env map[string]string) (string, map[string]string, Enforcement) {
-	return command, env, EnforcementNone
+func wrap(Mode, string, string, string, env map[string]string) (string, map[string]string) {
+	return refuse("unsupported platform"), env
 }
-func SelfRestrict(Mode, string) (Enforcement, error) {
-	return EnforcementNone, fmt.Errorf("sandbox: SelfRestrict requires Linux")
+
+func SelfRestrict(Mode, string) error {
+	return fmt.Errorf("sandbox: SelfRestrict requires Linux")
 }

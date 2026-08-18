@@ -108,7 +108,7 @@ func TestResolvePrecedence(t *testing.T) {
 		"alpha":          {false, "goExtensions"},
 		"plugin-control": {true, "always"},
 		"tasks":          {true, "plugins"},
-		"websearch":      {false, "plugins"},
+		"websearch":      {false, "default"},
 		"mcp":            {true, "default"},
 	}
 	for _, entry := range resolved {

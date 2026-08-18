@@ -341,9 +341,7 @@ func RenderImage(data string, dimensions ImageDimensions, options ImageRenderOpt
 // Hyperlink wraps text in an OSC 8 hyperlink escape sequence. In terminals
 // without hyperlink support the escape codes are ignored and only the plain
 // text is displayed.
-func Hyperlink(text, url string) string {
-	return "\x1b]8;;" + url + "\x1b\\" + text + "\x1b]8;;\x1b\\"
-}
+func Hyperlink(text, url string) string { return termcaps.Hyperlink(text, url) }
 
 func ImageFallback(mimeType string, dimensions *ImageDimensions, filename string) string {
 	parts := make([]string, 0, 3)

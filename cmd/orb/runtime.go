@@ -423,7 +423,16 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 		Extensions:      extensionRegistry, BaseTools: baseTools, ActiveToolNames: initialNames,
 		AllowedTools: allowedTools, ExcludedTools: excludedTools, PromptOptions: promptOptions,
 		RebuildBaseTools: func() ([]engine.AgentTool, error) {
-			return createBuiltInTools(cwd, baseToolNames, settings, toolSandboxMode)
+			// Re-resolve the sandbox mode so a /plugins reload takes effect
+			// without a restart.
+			rebuildSandboxMode := sandbox.ModeDangerFullAccess
+			if !args.NoExtensions {
+				var err error
+				if rebuildSandboxMode, err = plugins.SandboxMode(settings); err != nil {
+					return nil, err
+				}
+			}
+			return createBuiltInTools(cwd, baseToolNames, settings, rebuildSandboxMode)
 		},
 		Auth:                authStorage,
 		RuntimeAuth:         runtimeAuth,
@@ -634,7 +643,7 @@ func createBuiltInTools(cwd string, names []string, settings *config.SettingsMan
 			var spawnHook tools.BashSpawnHook
 			if sandboxMode != sandbox.ModeDangerFullAccess {
 				spawnHook = func(spawn tools.BashSpawnContext) tools.BashSpawnContext {
-					spawn.Command, spawn.Env, _ = sandbox.Wrap(sandboxMode, spawn.Cwd, "", shellPath, spawn.Command, spawn.Env)
+					spawn.Command, spawn.Env = sandbox.Wrap(sandboxMode, spawn.Cwd, shellPath, spawn.Command, spawn.Env)
 					return spawn
 				}
 			}

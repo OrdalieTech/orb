@@ -5,14 +5,14 @@ import (
 	"testing"
 )
 
-func TestLoadCompiledPreservesCatalogOrderAndAppliesSettings(t *testing.T) {
+func TestLoadCompiledPreservesCatalogOrderAndSkipsDisabled(t *testing.T) {
 	var loaded []string
 	catalog := []CompiledExtension{
-		{Name: "first", DefaultEnabled: true, Factory: func(API) error { loaded = append(loaded, "first"); return nil }},
-		{Name: "second", Factory: func(API) error { loaded = append(loaded, "second"); return nil }},
+		{Name: "first", Factory: func(API) error { loaded = append(loaded, "first"); return nil }},
+		{Name: "second", DefaultEnabled: true, Factory: func(API) error { loaded = append(loaded, "second"); return nil }},
 		{Name: "third", DefaultEnabled: true, Factory: func(API) error { loaded = append(loaded, "third"); return nil }},
 	}
-	registry, diagnostics := LoadCompiled(t.TempDir(), catalog, map[string]bool{"first": false, "second": true}, false)
+	registry, diagnostics := LoadCompiled(t.TempDir(), catalog)
 	if len(diagnostics) != 0 {
 		t.Fatalf("diagnostics = %#v", diagnostics)
 	}
@@ -24,11 +24,11 @@ func TestLoadCompiledPreservesCatalogOrderAndAppliesSettings(t *testing.T) {
 	}
 }
 
-func TestLoadCompiledDisableAllAvoidsFactoriesAndRegistry(t *testing.T) {
+func TestLoadCompiledAllDisabledAvoidsFactoriesAndRegistry(t *testing.T) {
 	called := false
 	registry, diagnostics := LoadCompiled(t.TempDir(), []CompiledExtension{{
-		Name: "enabled", DefaultEnabled: true, Factory: func(API) error { called = true; return nil },
-	}}, nil, true)
+		Name: "dormant", Factory: func(API) error { called = true; return nil },
+	}})
 	if registry != nil || len(diagnostics) != 0 || called {
 		t.Fatalf("registry=%v diagnostics=%v called=%t", registry, diagnostics, called)
 	}

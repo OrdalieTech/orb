@@ -107,8 +107,8 @@ func TestPluginsCLIListAllPrintsResolvedComposition(t *testing.T) {
 		"pirate\tcompiled\toff\tdefault\t",
 		"status-line\tcompiled\toff\tdefault\t",
 		"plugin-control\tplugin\ton\talways\t",
-		"tasks\tplugin\toff\tplugins\t",
-		"memory\tplugin\toff\tplugins\t",
+		"tasks\tplugin\toff\tdefault\t",
+		"memory\tplugin\toff\tdefault\t",
 	} {
 		if !strings.Contains(stdout, fragment) {
 			t.Errorf("list --all output lacks %q:\n%s", fragment, stdout)

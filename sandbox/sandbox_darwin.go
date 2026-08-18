@@ -10,29 +10,26 @@ import (
 
 const sandboxExec = "/usr/bin/sandbox-exec"
 
-func Probe() (int, Enforcement, error) {
+func wrap(mode Mode, root, shell, command string, env map[string]string) (string, map[string]string) {
 	if _, err := os.Stat(sandboxExec); err != nil {
-		return 0, EnforcementNone, fmt.Errorf("sandbox: sandbox-exec: %w", err)
+		return refuse("sandbox-exec is missing"), env
 	}
-	return 1, EnforcementFull, nil
-}
-
-func wrap(mode Mode, root, _ string, shell, command string, env map[string]string) (string, map[string]string, Enforcement) {
-	profile := "(version 1)\n(allow default)\n(deny file-write*)"
+	writable := []string{os.TempDir(), "/dev"}
 	if mode == ModeWorkspaceWrite {
-		for _, allowed := range []string{root, os.TempDir(), "/dev"} {
-			allowed, err := canonicalPath(allowed)
-			if err != nil {
-				return `exit 126`, env, EnforcementNone
-			}
-			profile += "\n(allow file-write* (subpath " + strconv.Quote(allowed) + "))"
+		writable = append(writable, root)
+	}
+	profile := "(version 1)\n(allow default)\n(deny file-write*)"
+	for _, allowed := range writable {
+		allowed, err := canonicalPath(allowed)
+		if err != nil {
+			return refuse("cannot resolve a writable path"), env
 		}
+		profile += "\n(allow file-write* (subpath " + strconv.Quote(allowed) + "))"
 	}
 	env[EnvShell], env[EnvCommand], env["ORB_SANDBOX_PROFILE"] = shell, command, profile
-	_, enforcement, _ := Probe()
-	return `exec /usr/bin/sandbox-exec -p "$ORB_SANDBOX_PROFILE" "$ORB_SANDBOX_SHELL" -c "$ORB_SANDBOX_CMD"`, env, enforcement
+	return `exec /usr/bin/sandbox-exec -p "$ORB_SANDBOX_PROFILE" "$ORB_SANDBOX_SHELL" -c "$ORB_SANDBOX_CMD"`, env
 }
 
-func SelfRestrict(Mode, string) (Enforcement, error) {
-	return EnforcementNone, fmt.Errorf("sandbox: SelfRestrict requires Linux")
+func SelfRestrict(Mode, string) error {
+	return fmt.Errorf("sandbox: SelfRestrict requires Linux")
 }
