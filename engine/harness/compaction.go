@@ -242,11 +242,26 @@ func FindCutPoint(entries []SessionEntry, startIndex, endIndex int, keepRecentTo
 		}
 		accumulated += messageTokens
 		if accumulated >= keepRecentTokens {
+			chosen := -1
 			for _, candidate := range cutPoints {
 				if candidate >= index {
-					cutIndex = candidate
+					chosen = candidate
 					break
 				}
+			}
+			if chosen < 0 {
+				// The newest messages alone exceed the recent budget (typically one large
+				// tool result). Cut at the latest boundary before them so the turn still
+				// folds instead of retaining the whole path and compacting nothing.
+				for _, candidate := range cutPoints {
+					if candidate > index {
+						break
+					}
+					chosen = candidate
+				}
+			}
+			if chosen >= 0 {
+				cutIndex = chosen
 			}
 			break
 		}
@@ -370,7 +385,9 @@ func prepareCompaction(pathEntries []SessionEntry, settings CompactionSettings, 
 			}
 		}
 	}
-	if !retainTail && len(messages) == 0 && len(prefix) == 0 {
+	if len(messages) == 0 && len(prefix) == 0 {
+		// Nothing folds: a compaction here would only re-emit the previous summary and
+		// duplicate the whole path as its retained tail.
 		return nil, nil
 	}
 	fileOps := newFileOperations()
@@ -746,11 +763,26 @@ func harnessFindCutPoint(entries []SessionEntry, startIndex, endIndex int, keepR
 		}
 		accumulated += EstimateTokens(harnessEntryMessage(entries[index], false))
 		if accumulated >= keepRecentTokens {
+			chosen := -1
 			for _, candidate := range cutPoints {
 				if candidate >= index {
-					cutIndex = candidate
+					chosen = candidate
 					break
 				}
+			}
+			if chosen < 0 {
+				// The newest messages alone exceed the recent budget (typically one large
+				// tool result). Cut at the latest boundary before them so the turn still
+				// folds instead of retaining the whole path and compacting nothing.
+				for _, candidate := range cutPoints {
+					if candidate > index {
+						break
+					}
+					chosen = candidate
+				}
+			}
+			if chosen >= 0 {
+				cutIndex = chosen
 			}
 			break
 		}

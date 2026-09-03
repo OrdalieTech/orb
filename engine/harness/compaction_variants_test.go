@@ -81,3 +81,43 @@ func TestCompactionResultMarshalDoesNotHTMLEscape(t *testing.T) {
 		t.Fatalf("nested ai.Marshal = %s, %v", wrapped, err)
 	}
 }
+
+func hugeToolResult(chars int) *ai.ToolResultMessage {
+	return &ai.ToolResultMessage{
+		ToolCallID: "call", ToolName: "exec_code",
+		Content: ai.ToolResultContent{&ai.TextContent{Text: strings.Repeat("x", chars)}}, Timestamp: 3,
+	}
+}
+
+// A tool result larger than the recent budget used to push the cut back to the
+// first boundary of the path: the compaction then summarized nothing and retained
+// everything, and the caller re-ran it on every step. The cut now lands on the
+// latest boundary before the oversized tail so the turn actually folds.
+func TestHarnessCutPointFoldsTurnWhenNewestToolResultExceedsBudget(t *testing.T) {
+	entries := linearEntries(
+		user("request"), assistant("first step", 10), hugeToolResult(40_000),
+		assistant("second step", 10), hugeToolResult(40_000),
+	)
+	cut := harnessFindCutPoint(entries, 0, len(entries), 5_000)
+	if cut.FirstKeptEntryIndex != 3 || !cut.IsSplitTurn || cut.TurnStartIndex != 0 {
+		t.Fatalf("cut = %#v", cut)
+	}
+	prepared, err := prepareCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 5_000}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared == nil || len(prepared.TurnPrefixMessages) != 3 || len(prepared.RetainedTail) != 2 {
+		t.Fatalf("preparation = %#v", prepared)
+	}
+}
+
+func TestPrepareCompactionSkipsWhenNothingFolds(t *testing.T) {
+	entries := linearEntries(user("request"), hugeToolResult(40_000))
+	prepared, err := prepareCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 5_000}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared != nil {
+		t.Fatalf("expected no preparation, got %#v", prepared)
+	}
+}
