@@ -717,21 +717,56 @@ func validCutPoints(entries []SessionEntry, startIndex, endIndex int) []int {
 // stops at any message entry, only a user-role message cut avoids the
 // split-turn classification, and branch_summary entries count regardless of
 // an empty summary.
+// harnessValidCutPoints lists the entries a compaction may keep from. Boundaries that fall
+// between an assistant tool call and its results are skipped: cutting there would retain a
+// tool result whose call was summarized away, which providers reject as an orphan output.
 func harnessValidCutPoints(entries []SessionEntry, startIndex, endIndex int) []int {
 	result := make([]int, 0)
+	pendingResults := 0
 	for index := startIndex; index < endIndex; index++ {
 		entry := entries[index]
 		if entry.Type == "message" {
-			switch messageRole(harnessEntryMessage(entry, false)) {
-			case "bashExecution", "custom", "branchSummary", "compactionSummary", "user", "assistant":
+			message := harnessEntryMessage(entry, false)
+			switch messageRole(message) {
+			case "assistant":
+				pendingResults = harnessToolCallCount(message)
 				result = append(result, index)
+			case "toolResult":
+				if pendingResults > 0 {
+					pendingResults--
+				}
+			case "user":
+				pendingResults = 0
+				result = append(result, index)
+			case "bashExecution", "custom", "branchSummary", "compactionSummary":
+				if pendingResults == 0 {
+					result = append(result, index)
+				}
 			}
+			continue
 		}
-		if entry.Type == "branch_summary" || entry.Type == "custom_message" {
+		if (entry.Type == "branch_summary" || entry.Type == "custom_message") && pendingResults == 0 {
 			result = append(result, index)
 		}
 	}
 	return result
+}
+
+func harnessToolCallCount(message engine.AgentMessage) int {
+	var content ai.AssistantContent
+	switch typed := message.(type) {
+	case *ai.AssistantMessage:
+		content = typed.Content
+	case ai.AssistantMessage:
+		content = typed.Content
+	}
+	count := 0
+	for _, block := range content {
+		if _, ok := block.(*ai.ToolCall); ok {
+			count++
+		}
+	}
+	return count
 }
 
 func harnessFindTurnStartIndex(entries []SessionEntry, entryIndex, startIndex int) int {

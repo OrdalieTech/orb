@@ -121,3 +121,27 @@ func TestPrepareCompactionSkipsWhenNothingFolds(t *testing.T) {
 		t.Fatalf("expected no preparation, got %#v", prepared)
 	}
 }
+
+// A custom status entry written between a tool call and its result is not a place to cut:
+// the retained tail would start with a tool result whose call was summarized away.
+func TestHarnessCutPointNeverSplitsToolCallFromResult(t *testing.T) {
+	call := assistant("reading", 10)
+	call.Content = append(call.Content, &ai.ToolCall{ID: "call", Name: "exec_code", Arguments: map[string]any{}})
+	call.StopReason = ai.StopReasonToolUse
+	entries := linearEntries(user("request"), call)
+	entries = append(entries,
+		SessionEntry{Type: "custom_message", ID: "status", ParentID: ptr("entry-1"), Timestamp: timestamp(3), CustomType: "status", Content: "reading the file", Display: true},
+		SessionEntry{Type: "message", ID: "entry-3", ParentID: ptr("status"), Timestamp: timestamp(4), Message: hugeToolResult(40_000)},
+	)
+	cut := harnessFindCutPoint(entries, 0, len(entries), 5_000)
+	if cut.FirstKeptEntryIndex != 1 {
+		t.Fatalf("cut = %#v, want the assistant tool call kept with its result", cut)
+	}
+	prepared, err := prepareCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 5_000}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared == nil || len(prepared.RetainedTail) != 3 || messageRole(prepared.RetainedTail[0]) != "assistant" {
+		t.Fatalf("preparation = %#v", prepared)
+	}
+}
