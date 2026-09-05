@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -144,26 +145,24 @@ func TestSessionV4ClearsSessionNamesDurably(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const wantLog = `[{"kind":"fact","seq":1,"fact":"name","name":"Temporary"},{"kind":"fact","seq":2,"fact":"name"}]`
 	assert := func(label string, storage *JSONLSessionV4Storage) {
 		t.Helper()
 		if name, ok := storage.Name(); ok {
-			t.Fatalf("%s Name() = %q, %v", label, name, ok)
+			t.Fatalf("%s Name() = %q", label, name)
 		}
-		items, err := storage.Log(SessionV4LogOptions{})
-		if err != nil {
-			t.Fatal(err)
+		if _, err := storage.Log(SessionV4LogOptions{}); err == nil || !strings.Contains(err.Error(), "no longer supported") {
+			t.Fatalf("removed log API: %v", err)
 		}
-		encoded, err := json.Marshal(items)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if string(encoded) != wantLog {
-			t.Fatalf("%s log = %s, want %s", label, encoded, wantLog)
+		values, err := storage.ScanValues(SessionV4Address{Namespace: "pi.session.name"})
+		if err != nil || len(values) != 0 {
+			t.Fatalf("name values: %#v, %v", values, err)
 		}
 	}
 	assert("live", storage)
 
+	if err := storage.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
 	reopened, err := repo.Open(ctx, storage.Metadata())
 	if err != nil {
 		t.Fatal(err)
@@ -171,6 +170,7 @@ func TestSessionV4ClearsSessionNamesDurably(t *testing.T) {
 	assert("reopened", reopened)
 
 	forked, err := repo.Fork(ctx, storage.Metadata(), JSONLSessionV4ForkOptions{
+		SessionV4ForkOptions: SessionV4ForkOptions{Scope: "tree"},
 		JSONLSessionV4CreateOptions: JSONLSessionV4CreateOptions{
 			SessionV4CreateOptions: SessionV4CreateOptions{ID: v4Str("fork")}, CWD: root,
 		},
@@ -196,14 +196,14 @@ func TestSessionV4ClearsSessionNamesDurably(t *testing.T) {
 
 func TestSessionV4LoadRejectsCorruptionWithoutRepair(t *testing.T) {
 	ctx := context.Background()
-	const header = `{"kind":"header","version":4,"id":"s","createdAt":0,"cwd":"/c"}` + "\n"
+	const header = `{"v":4,"kind":"header","id":"s","storageVersion":1,"createdAt":0,"cwd":"/c"}` + "\n"
 	for _, test := range []struct{ name, tail, want string }{
 		// A well-formed final line is corruption, never a torn append.
-		{name: "invalid-final-mutation", tail: `{"kind":"unknown","seq":1}` + "\n", want: "has unknown mutation kind"},
+		{name: "invalid-final-mutation", tail: `{"kind":"unknown","seq":1}` + "\n", want: "Invalid JSONL write kind: unknown"},
 		{
 			name: "missing-parent",
 			tail: `{"kind":"entry","type":"custom","id":"e","customType":"x","parentId":"missing","seq":1,"timestamp":0}` + "\n",
-			want: "Invalid session mutation: references missing parent missing",
+			want: "Missing parent entry: missing",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -216,8 +216,8 @@ func TestSessionV4LoadRejectsCorruptionWithoutRepair(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, err := LoadJSONLSessionV4Storage(ctx, env, path)
-			want := fmt.Sprintf("Invalid JSONL v4 session %s: line 2 %s", path, test.want)
-			if v4Code(t, err) != SessionErrorInvalidEntry || err.Error() != want {
+			want := fmt.Sprintf("Invalid JSONL storage %s: line 2", path)
+			if err == nil || err.Error() != want || errors.Unwrap(err) == nil || errors.Unwrap(err).Error() != test.want {
 				t.Fatalf("open error = %q, want %q", err, want)
 			}
 			if written, readErr := os.ReadFile(path); readErr != nil || string(written) != content {
@@ -235,11 +235,15 @@ func TestSessionV4ListSkipsUndecodableHeaders(t *testing.T) {
 		{id: "malformed-header", content: "not json\n"},
 		{id: "invalid-header-metadata", content: `{"kind":"header","version":4,"id":"x","createdAt":0,"cwd":"/c","metadata":"invalid"}` + "\n"},
 	} {
-		metadata := v4Create(t, repo, test.id, root).Metadata()
+		created := v4Create(t, repo, test.id, root)
+		metadata := created.Metadata()
+		if err := created.Close(ctx); err != nil {
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(metadata.Path, []byte(test.content), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := repo.Open(ctx, metadata); v4Code(t, err) != SessionErrorInvalidEntry {
+		if _, err := repo.Open(ctx, metadata); err == nil || !strings.Contains(err.Error(), "invalid header") {
 			t.Fatalf("%s open error = %v", test.id, err)
 		}
 		listed, err := ListJSONLSessionV4Metadata(ctx, env, root, &root)
@@ -262,7 +266,7 @@ func TestOpenJSONLSessionV4StorageLoadsListedMetadata(t *testing.T) {
 	ctx := context.Background()
 	repo, env, root := v4Repo(t)
 	created := v4Create(t, repo, "listed", root)
-	if _, err := created.AppendEntry(json.RawMessage(`{"type":"custom","id":"e1","customType":"note"}`), "main"); err != nil {
+	if _, err := created.AppendEntry(json.RawMessage(`{"type":"custom","id":"e1","parentId":null,"customType":"note"}`), "main"); err != nil {
 		t.Fatal(err)
 	}
 	listed, err := ListJSONLSessionV4Metadata(ctx, env, root, nil)
@@ -301,6 +305,7 @@ func TestJSONLSessionV4RepoRejectsConflictingCreation(t *testing.T) {
 					return err
 				}
 				_, err := repo.Fork(ctx, source, JSONLSessionV4ForkOptions{
+					SessionV4ForkOptions: SessionV4ForkOptions{Scope: "tree"},
 					JSONLSessionV4CreateOptions: JSONLSessionV4CreateOptions{
 						SessionV4CreateOptions: SessionV4CreateOptions{ID: v4Str("same")}, CWD: cwd,
 					},
@@ -393,6 +398,7 @@ func TestJSONLSessionV4RepoReleasesDestinationAfterFailure(t *testing.T) {
 					return err
 				}
 				_, err := repo.Fork(ctx, source, JSONLSessionV4ForkOptions{
+					SessionV4ForkOptions: SessionV4ForkOptions{Scope: "tree"},
 					JSONLSessionV4CreateOptions: JSONLSessionV4CreateOptions{
 						SessionV4CreateOptions: SessionV4CreateOptions{ID: v4Str("retry")}, CWD: cwd,
 					},
@@ -403,7 +409,7 @@ func TestJSONLSessionV4RepoReleasesDestinationAfterFailure(t *testing.T) {
 			failing.mu.Lock()
 			failing.write, failing.rename = kind == "create", kind == "fork"
 			failing.mu.Unlock()
-			if err := run(); v4Code(t, err) != SessionErrorStorage {
+			if err := run(); err == nil || !strings.Contains(err.Error(), "injected") {
 				t.Fatalf("injected failure error = %v", err)
 			}
 			if err := run(); err != nil {

@@ -84,6 +84,8 @@ function capturedRequest(context: any, options: any, hasSignal = false) {
   const capturedContext = JSON.parse(JSON.stringify(context));
   for (const message of capturedContext.messages ?? []) delete message.timestamp;
   const capturedOptions = { ...options };
+  // Telemetry is excluded by DECISIONS.md; this is an in-process context, not provider wire.
+  delete capturedOptions.telemetryContext;
   if (capturedOptions.sessionId !== undefined) {
     if (typeof capturedOptions.sessionId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(capturedOptions.sessionId)) {
       throw new Error(`captured sessionId is not UUIDv7: ${String(capturedOptions.sessionId)}`);
@@ -101,9 +103,10 @@ export async function generateF10(upstreamRoot: string, outputRoot: string, upst
   const branchSource = "packages/agent/src/harness/compaction/branch-summarization.ts";
   const messagesSource = "packages/agent/src/harness/messages.ts";
   const utilsSource = "packages/agent/src/harness/compaction/utils.ts";
-  const { compaction, codingCompaction, branch, messages, utils } = await withUpstreamModelData(upstreamRoot, async () => ({
+  const { compaction, codingCompaction, codingBranch, branch, messages, utils } = await withUpstreamModelData(upstreamRoot, async () => ({
     compaction: await import(pathToFileURL(path.join(upstreamRoot, compactionSource)).href) as any,
     codingCompaction: await import(pathToFileURL(path.join(upstreamRoot, codingCompactionSource)).href) as any,
+    codingBranch: await import(pathToFileURL(path.join(upstreamRoot,"packages/coding-agent/src/core/compaction/branch-summarization.ts")).href) as any,
     branch: await import(pathToFileURL(path.join(upstreamRoot, branchSource)).href) as any,
     messages: await import(pathToFileURL(path.join(upstreamRoot, messagesSource)).href) as any,
     utils: await import(pathToFileURL(path.join(upstreamRoot, utilsSource)).href) as any,
@@ -288,11 +291,12 @@ export async function generateF10(upstreamRoot: string, outputRoot: string, upst
       return result.reverse();
     },
     // Upstream >=0.84 walks branches through findEntriesOnBranch (leaf -> root).
-    async findEntriesOnBranch({ start }: { start: string }) {
+    async findEntries({ start }: { start: string }) {
       return [...(await this.getBranch(start))].reverse();
     },
   };
-  const collected = await branch.collectEntriesForBranchSummary(session, "branch-leaf", "other-u");
+  const { BACKGROUND_CONTEXT } = await import(pathToFileURL(path.join(upstreamRoot, "packages/agent/src/harness/context.ts")).href);
+  const collected = await branch.collectEntriesForBranchSummary(session, session, "branch-leaf", "other-u", BACKGROUND_CONTEXT);
   const branchPrepared = branch.prepareBranchEntries(collected.entries, 70);
   const branchCases = [{
     name: "abandoned-branch-common-ancestor-and-budget",
@@ -336,10 +340,11 @@ export async function generateF10(upstreamRoot: string, outputRoot: string, upst
         return completionResponse("summary output");
       },
     };
-    const args = [input.messages, models, model, input.reserveTokens, undefined, input.customInstructions] as any[];
+    const args = [input.messages, models, model, input.reserveTokens, input.customInstructions] as any[];
     if (input.previousSummarySet) args.push(input.previousSummary);
     else args.push(undefined);
     args.push(input.thinkingLevel);
+    args.push(undefined, undefined, BACKGROUND_CONTEXT);
     const output = resultValue<string>(await compaction.generateSummary(...args));
     summaryPromptCases.push({ input, expected: { captured, output } });
   }
@@ -364,7 +369,7 @@ export async function generateF10(upstreamRoot: string, outputRoot: string, upst
     reserveTokens: branchPromptInput.reserveTokens,
     customInstructions: branchPromptInput.customInstructions,
     replaceInstructions: branchPromptInput.replaceInstructions,
-  }));
+  }, BACKGROUND_CONTEXT));
   const branchPromptCases = [{ name: "append-custom-instructions", input: branchPromptInput, expected: { captured: branchCaptured, output: branchOutput } }];
 
   const compactPromptInput = {
@@ -387,8 +392,38 @@ export async function generateF10(upstreamRoot: string, outputRoot: string, upst
     ...compactPromptInput,
     previousSummary: undefined,
     fileOps: { read: new Set<string>(), written: new Set<string>(), edited: new Set<string>() },
-  }, compactModels, model, undefined, undefined, "high"));
+  }, compactModels, model, undefined, "high", undefined, undefined, BACKGROUND_CONTEXT));
   const compactPromptCases = [{ name: "split-turn-two-stage-prompts", input: compactPromptInput, expected: { captured: compactCaptures, output: compactOutput } }];
+
+  const productSummaryCases = [];
+  for (const mode of ["summary", "prefix", "branch"]) {
+    for (const stop of ["stop", "length", "error", "tool"]) {
+      const captures: any[] = [];
+      const response = { ...completionResponse("summary output"), stopReason: stop === "tool" ? "toolUse" : stop, ...(stop === "error" ? {errorMessage:"provider failed"} : {}), ...(stop === "tool" ? {content:[{type:"toolCall",id:"call",name:"read",arguments:{}}]} : {}) };
+      const sessionId = "11111111-1111-7111-8111-111111111111";
+      const streamFn = (_model:any, context:any, options:any) => {
+        captures.push({...capturedRequest(context, options), routingPreserved: options.sessionId === sessionId});
+        return {result:async()=>response};
+      };
+      let error: string | undefined;
+      let output: any;
+      try {
+        if (mode === "branch") {
+          const result = await codingBranch.generateBranchSummary([messageEntry("user",null,user("work",1),1)], {model,streamFn});
+          error=result.error;output=result.summary;
+        } else {
+          const prep = {...compactPromptInput, firstKeptEntryId:"keep", messagesToSummarize:mode === "prefix" ? [] : [user("work",1)],turnPrefixMessages:mode === "prefix" ? [user("work",1)] : [],isSplitTurn:mode === "prefix",previousSummary:"previous summary",fileOps:{read:new Set(),written:new Set(),edited:new Set()}};
+          output=(await codingCompaction.compact(prep,model,undefined,undefined,undefined,undefined,"off",streamFn,undefined,undefined,undefined,sessionId)).summary;
+        }
+      } catch(thrown) {error=(thrown as Error).message}
+      productSummaryCases.push({mode,stop,modelMaxTokens:model.maxTokens,expected:{captures,...(error===undefined?{output}:{error})}});
+    }
+  }
+  for(const modelMaxTokens of [0,9000]) {
+    let captured:any;
+    await codingBranch.generateBranchSummary([messageEntry("user",null,user("work",1),1)],{model:{...model,maxTokens:modelMaxTokens},streamFn:(_model:any,context:any,options:any)=>{captured=capturedRequest(context,options);return {result:async()=>completionResponse("summary output")}}});
+    productSummaryCases.push({mode:"branch-limit",stop:"stop",modelMaxTokens,expected:{maxTokens:captured.options.maxTokens}});
+  }
 
   const familyDir = path.join(outputRoot, "F10");
   await mkdir(familyDir, { recursive: true });
@@ -412,5 +447,6 @@ export async function generateF10(upstreamRoot: string, outputRoot: string, upst
     summaryPromptCases,
     branchPromptCases,
     compactPromptCases,
+    productSummaryCases,
   }, null, 2)}\n`);
 }

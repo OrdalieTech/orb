@@ -9,7 +9,7 @@
 const normalizeNewlines = (value) => value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
 function extractRaw(content) {
-	const normalized = normalizeNewlines(content);
+	const normalized = normalizeNewlines(content.replace(/^\uFEFF/, ""));
 	if (!normalized.startsWith("---")) return { yamlString: null, body: normalized };
 	const endIndex = normalized.indexOf("\n---", 3);
 	if (endIndex === -1) return { yamlString: null, body: normalized };

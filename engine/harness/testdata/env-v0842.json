@@ -1,0 +1,228 @@
+{
+  "schemaVersion": 1,
+  "provenance": {
+    "upstreamCommit": "914cf1472e715297caa30db4b9535d534a9eb718",
+    "source": "conformance/fixtures/F6Harness/observations.json env; unchanged v0.84.2 execution-environment observations"
+  },
+  "env": {
+    "absolutePath": {
+      "ok": true,
+      "value": "<fixture>/target.txt"
+    },
+    "absolutePathAlreadyAbsolute": {
+      "ok": true,
+      "value": "/b"
+    },
+    "joinPath": {
+      "ok": true,
+      "value": "<fixture>/target.txt"
+    },
+    "readTextLines": {
+      "ok": true,
+      "value": [
+        "one",
+        "two"
+      ]
+    },
+    "negativeMaxLines": {
+      "ok": true,
+      "value": []
+    },
+    "readBinary": {
+      "ok": true,
+      "value": [
+        0,
+        1,
+        2,
+        255
+      ]
+    },
+    "symlinkInfo": {
+      "ok": true,
+      "value": {
+        "name": "target-link",
+        "path": "<fixture>/target-link",
+        "kind": "symlink",
+        "size": 10
+      }
+    },
+    "symlinkCanonical": {
+      "ok": true,
+      "value": "<fixture>/target.txt"
+    },
+    "missingExists": {
+      "ok": true,
+      "value": false
+    },
+    "missingRead": {
+      "ok": false,
+      "error": {
+        "code": "not_found",
+        "message": "ENOENT: no such file or directory, open '<fixture>/missing'",
+        "path": "<fixture>/missing"
+      }
+    },
+    "directoryRead": {
+      "ok": false,
+      "error": {
+        "code": "is_directory",
+        "message": "EISDIR: illegal operation on a directory, read",
+        "path": "<fixture>/nested"
+      }
+    },
+    "listFile": {
+      "ok": false,
+      "error": {
+        "code": "not_directory",
+        "message": "ENOTDIR: not a directory, scandir '<fixture>/target.txt'",
+        "path": "<fixture>/target.txt"
+      }
+    },
+    "emptyDirectoryRemove": {
+      "ok": false,
+      "error": {
+        "code": "unknown",
+        "message": "Path is a directory: rm returned EISDIR (is a directory) <fixture>/empty-remove",
+        "path": "<fixture>/empty-remove"
+      }
+    },
+    "exec": {
+      "ok": true,
+      "value": {
+        "stdout": "out:base:extra",
+        "stderr": "err",
+        "exitCode": 7
+      }
+    },
+    "signaledExec": {
+      "ok": true,
+      "value": {
+        "stdout": "",
+        "stderr": "",
+        "exitCode": 0
+      }
+    },
+    "callbackChunks": [
+      "stderr:err",
+      "stdout:out:base:extra"
+    ],
+    "preAbortedExec": {
+      "ok": false,
+      "error": {
+        "code": "aborted",
+        "message": "aborted"
+      }
+    },
+    "preAborted": {
+      "absolutePath": {
+        "ok": true,
+        "value": "/b"
+      },
+      "joinPath": {
+        "ok": true,
+        "value": "<fixture>/target.txt"
+      },
+      "readTextFile": {
+        "ok": false,
+        "error": {
+          "code": "aborted",
+          "message": "aborted",
+          "path": "<fixture>/target.txt"
+        }
+      },
+      "readTextLines": {
+        "ok": false,
+        "error": {
+          "code": "aborted",
+          "message": "aborted",
+          "path": "<fixture>/nested/lines.txt"
+        }
+      },
+      "readBinaryFile": {
+        "ok": false,
+        "error": {
+          "code": "aborted",
+          "message": "aborted",
+          "path": "<fixture>/target.txt"
+        }
+      },
+      "writeFile": {
+        "ok": false,
+        "error": {
+          "code": "aborted",
+          "message": "aborted",
+          "path": "<fixture>/abort/blocked.txt"
+        }
+      },
+      "appendFile": {
+        "ok": true
+      },
+      "fileInfo": {
+        "ok": true,
+        "value": {
+          "name": "target.txt",
+          "path": "<fixture>/target.txt",
+          "kind": "file",
+          "size": 4
+        }
+      },
+      "listDir": {
+        "ok": false,
+        "error": {
+          "code": "aborted",
+          "message": "aborted",
+          "path": "<fixture>"
+        }
+      },
+      "canonicalPath": {
+        "ok": true,
+        "value": "<fixture>/target.txt"
+      },
+      "exists": {
+        "ok": true,
+        "value": true
+      },
+      "createDir": {
+        "ok": true
+      },
+      "remove": {
+        "ok": true
+      },
+      "createTempDir": {
+        "ok": true,
+        "value": true
+      },
+      "createTempFile": {
+        "ok": true,
+        "value": true
+      }
+    },
+    "invalidTimeout": {
+      "ok": false,
+      "error": {
+        "code": "timeout",
+        "message": "Invalid timeout: must be a finite number of seconds"
+      }
+    },
+    "timedOutExec": {
+      "ok": false,
+      "error": {
+        "code": "timeout",
+        "message": "timeout:0.01"
+      }
+    },
+    "callbackError": {
+      "ok": false,
+      "error": {
+        "code": "callback_error",
+        "message": "callback boom"
+      }
+    },
+    "temp": {
+      "dirPrefix": true,
+      "filePrefix": true,
+      "fileSuffix": true,
+      "fileExists": true
+    }
+  }
+}

@@ -22,6 +22,7 @@ type settingsMember struct {
 type settingsObject []settingsMember
 
 func parseSettingsObject(data []byte) (settingsObject, error) {
+	data = bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf})
 	if len(bytes.TrimSpace(data)) == 0 {
 		return settingsObject{}, nil
 	}
@@ -350,6 +351,14 @@ func (manager *SettingsManager) SetDefaultModelAndProvider(provider, modelID str
 
 func (manager *SettingsManager) SetDefaultThinkingLevel(level ai.ModelThinkingLevel) {
 	manager.setGlobalValues(settingMember("defaultThinkingLevel", level))
+}
+
+func (manager *SettingsManager) SetModelThinkingLevel(provider, modelID string, level ai.ModelThinkingLevel) {
+	manager.setGlobalNested("modelThinkingLevels", provider+"/"+modelID, string(level))
+}
+
+func (manager *SettingsManager) RemoveModelThinkingLevel(provider, modelID string) {
+	manager.removeGlobalNested("modelThinkingLevels", provider+"/"+modelID)
 }
 
 func (manager *SettingsManager) SetSteeringMode(mode string) {

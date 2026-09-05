@@ -1,7 +1,7 @@
 // Unit tests for the pure symbols of the embedded orb-extension-sdk.
 // Run by TestSDKJavaScriptUnitTests (sdk_script_test.go) via `node --test`.
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -34,10 +34,10 @@ function clearTheme() {
 // ── Export surface ───────────────────────────────────────────────────────────
 
 test("modules expose every upstream runtime export name", () => {
-	assert.equal(Object.keys(codingAgent).length, 145);
-	assert.equal(Object.keys(ai).length, 46);
-	assert.equal(Object.keys(aiCompat).length, 100);
-	assert.equal(Object.keys(tui).length, 69);
+	assert.equal(Object.keys(codingAgent).length, 151);
+	assert.equal(Object.keys(ai).length, 48);
+	assert.equal(Object.keys(aiCompat).length, 102);
+	assert.equal(Object.keys(tui).length, 71);
 	for (const name of manifest.modules["coding-agent"].implemented) {
 		assert.ok(name in codingAgent, `coding-agent missing ${name}`);
 	}
@@ -472,4 +472,17 @@ test("service exports round-trip through a bound transport", async () => {
 	} finally {
 		bindTransport(null);
 	}
+});
+
+
+test("image MIME file sniffing matches upstream format fixtures", async () => {
+ const fixtures = JSON.parse(readFileSync(new URL("../../../../conformance/fixtures/WP440/images.json", import.meta.url), "utf8"));
+ const root = mkdtempSync(join(tmpdir(), "orb-sdk-mime-"));
+ try {
+  for (const fixture of fixtures.formatCases) {
+   const file = join(root, fixture.name);
+   writeFileSync(file, Buffer.from(fixture.inputBase64, "base64"));
+   assert.equal(await codingAgent.detectSupportedImageMimeTypeFromFile(file), fixture.detectedMimeType, fixture.name);
+  }
+ } finally { rmSync(root, {recursive:true, force:true}); }
 });

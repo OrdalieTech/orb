@@ -1,0 +1,16 @@
+{
+  "family": "F6HarnessTransactions",
+  "upstreamCommit": "107d79f11072bbc8a3a757ed7fd69596bee7d68c",
+  "generator": "conformance/extract/f6-harness.ts",
+  "source": "packages/agent/src/harness/session/{commit,in-memory-storage-state,fork,jsonl/storage,jsonl/legacy-v3}.ts",
+  "files": [
+    "transactions.json",
+    "state.json",
+    "files.json",
+    "migration.json",
+    "forks.json",
+    "repos.json",
+    "v3-projection.jsonl",
+    "v3-projection.json"
+  ]
+}

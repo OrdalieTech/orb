@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -16,6 +17,33 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 )
 
+func TestWriteToolReleasedMessages(t *testing.T) {
+	data, err := os.ReadFile("../../conformance/fixtures/F5/write.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		Input    json.RawMessage
+		Expected struct{ Content []struct{ Text string } }
+	}
+	if err := json.Unmarshal(data, &cases); err != nil {
+		t.Fatal(err)
+	}
+	for _, fixture := range cases {
+		var args map[string]any
+		if err := json.Unmarshal(fixture.Input, &args); err != nil {
+			t.Fatal(err)
+		}
+		result, err := NewWriteTool(t.TempDir(), nil).Execute(context.Background(), "fixture", args, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := toolResultText(t, result); got != fixture.Expected.Content[0].Text {
+			t.Fatalf("write message = %q", got)
+		}
+	}
+}
+
 func TestWriteToolCreatesParentsAndWritesContent(t *testing.T) {
 	dir := t.TempDir()
 	tool := NewWriteTool(dir, nil)
@@ -25,7 +53,7 @@ func TestWriteToolCreatesParentsAndWritesContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := toolResultText(t, result); got != "Successfully wrote 6 bytes to nested/dir/file.txt" {
+	if got := toolResultText(t, result); got != "Successfully wrote to nested/dir/file.txt" {
 		t.Fatalf("result = %q", got)
 	}
 	content, err := os.ReadFile(filepath.Join(dir, "nested", "dir", "file.txt"))
@@ -44,7 +72,7 @@ func TestWriteToolReportsJavaScriptStringLength(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := toolResultText(t, result); got != "Successfully wrote 3 bytes to emoji.txt" {
+	if got := toolResultText(t, result); got != "Successfully wrote to emoji.txt" {
 		t.Fatalf("result = %q", got)
 	}
 }
@@ -58,7 +86,7 @@ func TestWriteToolEncodesWTF8SurrogatesLikeNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := toolResultText(t, result); got != "Successfully wrote 3 bytes to surrogate.txt" {
+	if got := toolResultText(t, result); got != "Successfully wrote to surrogate.txt" {
 		t.Fatalf("result = %q", got)
 	}
 	written, err := os.ReadFile(filepath.Join(dir, "surrogate.txt"))

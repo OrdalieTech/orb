@@ -20,12 +20,12 @@
     "durationMs": 0,
     "runId": "run-fixed-agent-types",
     "tokenUsage": {
-      "input": 6323,
+      "input": 6325,
       "output": 38,
-      "total": 13986,
+      "total": 13989,
       "cost": 0,
       "cacheRead": 1300,
-      "cacheWrite": 6325
+      "cacheWrite": 6326
     }
   },
   "error": null,
@@ -65,13 +65,13 @@
       "id": "run-fixed-agent-types:1",
       "label": "isolated",
       "result": "Isolated read complete.",
-      "tokens": 5656,
+      "tokens": 5657,
       "tokenUsage": {
-        "input": 2490,
+        "input": 2491,
         "output": 13,
         "cacheRead": 662,
         "cacheWrite": 2491,
-        "total": 5656,
+        "total": 5657,
         "cost": 0
       },
       "worktree": "<fixture>/project/.pi/worktrees/run-fixed-agent-types-1-isolated",
@@ -93,13 +93,13 @@
       "id": "run-fixed-agent-types:2",
       "label": "ghost",
       "result": "Ghost type fell back to defaults.",
-      "tokens": 2743,
+      "tokens": 2745,
       "tokenUsage": {
-        "input": 1367,
+        "input": 1368,
         "output": 9,
         "cacheRead": 0,
-        "cacheWrite": 1367,
-        "total": 2743,
+        "cacheWrite": 1368,
+        "total": 2745,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -107,12 +107,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 6323,
+        "input": 6325,
         "output": 38,
-        "total": 13986,
+        "total": 13989,
         "cost": 0,
         "cacheRead": 1300,
-        "cacheWrite": 6325
+        "cacheWrite": 6326
       }
     }
   ],

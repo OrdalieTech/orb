@@ -316,9 +316,10 @@ const zaiCompatModel = model("openai-completions", {
   baseUrl: "https://api.z.ai/api/coding/paas/v4",
   reasoning: true,
   input: ["text"],
+  cost: { input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 0 },
   contextWindow: 1_000_000,
   maxTokens: 131_072,
-  thinkingLevelMap: { minimal: null, low: "high", medium: "high", high: "high", max: "max" },
+  thinkingLevelMap: { off: "none", minimal: null, low: null, medium: null, high: "high", xhigh: null, max: "max" },
   compat: {
     supportsStore: false,
     supportsDeveloperRole: false,
@@ -365,6 +366,27 @@ const completionsKimiModel = model("openai-completions", {
 });
 
 const requestDefinitions: RequestDefinition[] = [
+  ...[
+    JSON.stringify([{ type: "reasoning.text", text: "plan", signature: "sig", id: null, format: "provider", index: 0 }, { type: "reasoning.encrypted", data: "" }]),
+    "unrecognized_provider_key",
+    JSON.stringify([{ type: "reasoning.encrypted", data: 1 }]),
+  ].map((signature, index): RequestDefinition => ({
+    name: `completions-reasoning-replay-${index}`, api: "openai-completions", model: model("openai-completions"),
+    context: { messages: [assistant("openai-completions", "gpt-fixture-completions", [{ type: "thinking", thinking: "plan", thinkingSignature: signature }, { type: "text", text: "answer" }]), { role: "user", content: "continue", timestamp: FIXED_NOW }] },
+    options: { apiKey: "fixture-key" },
+  })),
+
+  ...["thinking_token_budget", "thinking_budget", "thinking_budget_tokens"].map((field): RequestDefinition => ({
+    name: `completions-budget-${field}`, api: "openai-completions",
+    model: { ...model("openai-completions"), reasoning: true, compat: { thinkingTokenBudgetField: field as any, vllmPriority: -2, thinkingFormat: "chat-template", chatTemplateKwargs: { budget: { $var: "thinking.budget" } } } },
+    context: { messages: [{ role: "user", content: "solve", timestamp: FIXED_NOW }] },
+    options: { apiKey: "fixture-key", reasoningEffort: "high", maxTokens: 4096, thinkingBudgets: { high: 8192 } },
+  })),
+  { name: "responses-omit-max-output-tokens", api: "openai-responses",
+    model: { ...model("openai-responses"), compat: { supportsMaxOutputTokens: false } },
+    context: { messages: [{ role: "user", content: "hello", timestamp: FIXED_NOW }] },
+    options: { apiKey: "fixture-key", maxTokens: 4096 } },
+
   {
     name: "completions-together-reasoning-compat",
     api: "openai-completions",
@@ -1091,6 +1113,13 @@ const completionsTextStopSSE = encodeSSE([
 ]);
 
 const streamDefinitions: StreamDefinition[] = [
+  { name: "completions-reasoning-details-replay", api: "openai-completions", model: completionsStreamModel,
+    context: { messages: [{ role: "user", content: "hi", timestamp: FIXED_NOW }] }, options: { apiKey: "fixture-key" },
+    sse: encodeSSE([
+      { id: "reasoning_details", choices: [{ index: 0, delta: { reasoning_details: [{ type: "reasoning.text", text: "one", index: 0 }, { type: "reasoning.text", text: "two", signature: "sig" }, { type: "reasoning.encrypted", data: "opaque" }] }, finish_reason: null }] },
+      { id: "reasoning_details", choices: [{ index: 0, delta: { content: "answer" }, finish_reason: "stop" }], usage: { prompt_tokens: 12, completion_tokens: 2, cached_tokens: 4 } },
+    ]) },
+
   {
     name: "responses-text-stop",
     api: "openai-responses",

@@ -95,7 +95,12 @@ function emit(method, params) {
 	write({ kind: "event", method, params });
 }
 
+function assertExtensionActive(state) {
+ if (state.failed) throw new Error(`Extension "${state.path}" failed to load and its API is no longer active.`);
+}
+
 function registerWithOrb(state, method, params) {
+ assertExtensionActive(state);
 	const registration = { method, params };
 	if (!state.loaded) {
 		state.registrations.push(registration);
@@ -281,7 +286,10 @@ function createAPI(state) {
 		},
 	};
 	for (const section of hostSections) section.extendAPI?.(api, state);
-	return Object.freeze(api);
+ for (const [name, method] of Object.entries(api)) {
+  if (typeof method === "function") api[name] = (...args) => { assertExtensionActive(state); return method(...args); };
+ }
+ return Object.freeze(api);
 }
 
 async function loadExtension(params) {
@@ -316,7 +324,12 @@ async function loadExtension(params) {
 		state.loaded = true;
 		return { extensionId: entry.id, path: entry.path, loaded: true };
 	} catch (error) {
-		extensions.delete(state.id);
+  state.failed = true;
+  state.registrations.length = 0;
+  state.stateBus?.clear();
+  state.stateFlags?.clear();
+  state.subscriptions.clear();
+  extensions.delete(state.id);
 		const detail = errorValue(error);
 		throw Object.assign(new Error(`Failed to load extension: ${detail.message}`), {
 			code: "extension_load_error",
@@ -1379,8 +1392,9 @@ registerHostSection((() => {
 
 	function createEventBus(state) {
 		return Object.freeze({
-			on(channel, handler) {
-				if (typeof channel !== "string" || channel === "" || typeof handler !== "function") {
+on(channel, handler) {
+    assertExtensionActive(state);
+    if (typeof channel !== "string" || channel === "" || typeof handler !== "function") {
 					throw new TypeError("events.on requires a channel and handler");
 				}
 				const subscriptionId = `${state.id}-bus-${state.nextStateBusID++}`;
@@ -1399,8 +1413,9 @@ registerHostSection((() => {
 						.catch((error) => reportAsyncError(state, "events.unsubscribe", error));
 				};
 			},
-			emit(channel, data) {
-				if (typeof channel !== "string" || channel === "") throw new TypeError("events.emit requires a channel");
+emit(channel, data) {
+    assertExtensionActive(state);
+    if (typeof channel !== "string" || channel === "") throw new TypeError("events.emit requires a channel");
 				for (const subscription of state.stateBus.values()) {
 					if (subscription.channel === channel) invokeBusHandler(state, subscription.handler, data);
 				}
@@ -1755,9 +1770,12 @@ registerHostSection((() => {
 			if (typeof name !== "string" || name === "" || !definition || !["boolean", "string"].includes(definition.type)) {
 				throw new TypeError("registerFlag requires a name and boolean or string definition");
 			}
-			const copied = {
-				name,
-				description: definition.description ?? "",
+if (definition.default !== undefined && typeof definition.default !== definition.type) {
+    throw new Error(`Invalid default for flag "${name}": expected ${definition.type}, got ${typeof definition.default}`);
+   }
+   const copied = {
+    name,
+    description: definition.description ?? "",
 				type: definition.type,
 				...(definition.default === undefined ? {} : { default: clone(definition.default) }),
 			};

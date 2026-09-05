@@ -1,0 +1,146 @@
+{
+  "repairs": [
+    {
+      "input": "{\"type\":\"session\",\"version\":3,\"id\":\"fixture\",\"timestamp\":\"2026-09-01T00:00:00.000Z\",\"cwd\":\"/fixture\"}",
+      "expected": "{\"type\":\"session\",\"version\":3,\"id\":\"fixture\",\"timestamp\":\"2026-09-01T00:00:00.000Z\",\"cwd\":\"/fixture\"}\n"
+    },
+    {
+      "input": "{\"type\":\"session\",\"version\":3,\"id\":\"fixture\"}\nmalformed",
+      "expected": "{\"type\":\"session\",\"version\":3,\"id\":\"fixture\"}\nmalformed\n"
+    },
+    {
+      "input": "{\"type\":\"message\",\"id\":\"invalid\"}",
+      "expected": "{\"type\":\"message\",\"id\":\"invalid\"}"
+    },
+    {
+      "input": "{\"type\":\"session\",\"version\":3,\"id\":\"fixture\"}\n",
+      "expected": "{\"type\":\"session\",\"version\":3,\"id\":\"fixture\"}\n"
+    }
+  ],
+  "entries": [
+    {
+      "type": "session",
+      "version": 3,
+      "id": "restored",
+      "timestamp": "2026-09-01T00:00:00.000Z",
+      "cwd": "/fixture"
+    },
+    {
+      "type": "message",
+      "id": "user",
+      "parentId": null,
+      "timestamp": "2026-09-01T00:00:00.000Z",
+      "message": {
+        "role": "user",
+        "content": "hello",
+        "timestamp": 1
+      }
+    },
+    {
+      "type": "label",
+      "id": "label",
+      "parentId": "user",
+      "timestamp": "2026-09-01T00:00:00.000Z",
+      "targetId": "user",
+      "label": "checkpoint"
+    },
+    {
+      "type": "message",
+      "id": "next",
+      "parentId": "label",
+      "timestamp": "2026-09-01T00:00:00.000Z",
+      "message": {
+        "role": "user",
+        "content": "next",
+        "timestamp": 2
+      }
+    },
+    {
+      "type": "compaction",
+      "id": "compact",
+      "parentId": "next",
+      "timestamp": "2026-09-01T00:00:00.000Z",
+      "summary": "prior",
+      "firstKeptEntryId": "label",
+      "tokensBefore": 10
+    }
+  ],
+  "restored": {
+    "sessionId": "restored",
+    "leafId": "compact",
+    "entries": [
+      {
+        "type": "message",
+        "id": "user",
+        "parentId": null,
+        "timestamp": "2026-09-01T00:00:00.000Z",
+        "message": {
+          "role": "user",
+          "content": "hello",
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "label",
+        "id": "label",
+        "parentId": "user",
+        "timestamp": "2026-09-01T00:00:00.000Z",
+        "targetId": "user",
+        "label": "checkpoint"
+      },
+      {
+        "type": "message",
+        "id": "next",
+        "parentId": "label",
+        "timestamp": "2026-09-01T00:00:00.000Z",
+        "message": {
+          "role": "user",
+          "content": "next",
+          "timestamp": 2
+        }
+      },
+      {
+        "type": "compaction",
+        "id": "compact",
+        "parentId": "next",
+        "timestamp": "2026-09-01T00:00:00.000Z",
+        "summary": "prior",
+        "firstKeptEntryId": "label",
+        "tokensBefore": 10
+      }
+    ]
+  },
+  "fork": [
+    {
+      "type": "message",
+      "id": "user",
+      "parentId": null,
+      "timestamp": "2026-09-01T00:00:00.000Z",
+      "message": {
+        "role": "user",
+        "content": "hello",
+        "timestamp": 1
+      }
+    },
+    {
+      "type": "message",
+      "id": "next",
+      "parentId": "user",
+      "timestamp": "2026-09-01T00:00:00.000Z",
+      "message": {
+        "role": "user",
+        "content": "next",
+        "timestamp": 2
+      }
+    },
+    {
+      "type": "compaction",
+      "id": "compact",
+      "parentId": "next",
+      "timestamp": "2026-09-01T00:00:00.000Z",
+      "summary": "prior",
+      "firstKeptEntryId": "next",
+      "tokensBefore": 10
+    }
+  ]
+}

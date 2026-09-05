@@ -376,7 +376,7 @@ func buildOpenAIResponsesPayload(
 		payload.PromptCacheOptions = &OpenAIPromptCacheOptions{Mode: "explicit"}
 	}
 	if streamOptions != nil {
-		if streamOptions.MaxTokens != nil && *streamOptions.MaxTokens != 0 {
+		if streamOptions.MaxTokens != nil && *streamOptions.MaxTokens != 0 && compat.supportsMaxOutputTokens {
 			value := max(*streamOptions.MaxTokens, openAIResponsesMinOutputTokens)
 			payload.MaxOutputTokens = &value
 		}
@@ -449,6 +449,7 @@ type openAIResponsesCompat struct {
 	supportsAdditionalTools         bool
 	supportsToolSearch              bool
 	supportsExplicitPromptCacheMode bool
+	supportsMaxOutputTokens         bool
 }
 
 func getOpenAIResponsesCompat(model *ai.Model) (openAIResponsesCompat, error) {
@@ -458,8 +459,12 @@ func getOpenAIResponsesCompat(model *ai.Model) (openAIResponsesCompat, error) {
 	}
 	compat := openAIResponsesCompat{
 		supportsDeveloperRole:      true,
+		supportsMaxOutputTokens:    true,
 		sessionAffinityFormat:      detectResponsesSessionAffinity(model),
 		supportsLongCacheRetention: true,
+	}
+	if raw.SupportsMaxOutputTokens != nil {
+		compat.supportsMaxOutputTokens = *raw.SupportsMaxOutputTokens
 	}
 	if raw.SupportsDeveloperRole != nil {
 		compat.supportsDeveloperRole = *raw.SupportsDeveloperRole
@@ -502,6 +507,9 @@ func buildOpenAIResponsesHeaders(
 	compat openAIResponsesCompat,
 ) http.Header {
 	headers := copyModelHeaders(model)
+	if _, exists := headers["User-Agent"]; !exists {
+		headers.Set("User-Agent", piUserAgent())
+	}
 	addCopilotHeaders(headers, model, requestContext)
 	if resolveCacheRetention(options) != ai.CacheRetentionNone && options != nil && options.SessionID != nil && *options.SessionID != "" {
 		sessionID := *options.SessionID

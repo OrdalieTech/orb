@@ -36,7 +36,7 @@ interface EditDiffModule {
   restoreLineEndings(text: string, ending: "\r\n" | "\n"): string;
   normalizeForFuzzyMatch(text: string): string;
   fuzzyFindText(content: string, oldText: string): unknown;
-  stripBom(content: string): { bom: string; text: string };
+  splitBom(content: string): { bom: string; text: string };
   applyEditsToNormalizedContent(
     normalizedContent: string,
     edits: Edit[],
@@ -113,7 +113,7 @@ const basicCases: FixtureCase[] = [
   {
     name: "strip-bom-absent",
     operation: "strip-bom",
-    upstreamCase: `${editDiffSource}:stripBom`,
+    upstreamCase: `packages/coding-agent/src/utils/text.ts:splitBom`,
     content: "hello\n",
   },
   {
@@ -625,7 +625,7 @@ function executeCase(editDiff: EditDiffModule, fixtureCase: FixtureCase): unknow
         fixtureCase.ending ?? "\n",
       );
     case "strip-bom":
-      return editDiff.stripBom(requireString(fixtureCase.content, "content", fixtureCase));
+      return editDiff.splitBom(requireString(fixtureCase.content, "content", fixtureCase));
     case "normalize-fuzzy":
       return editDiff.normalizeForFuzzyMatch(requireString(fixtureCase.content, "content", fixtureCase));
     case "fuzzy-find":
@@ -642,7 +642,7 @@ function executeCase(editDiff: EditDiffModule, fixtureCase: FixtureCase): unknow
     case "edit-pipeline": {
       const rawContent = requireString(fixtureCase.content, "content", fixtureCase);
       const pathValue = requireString(fixtureCase.path, "path", fixtureCase);
-      const { bom, text } = editDiff.stripBom(rawContent);
+      const { bom, text } = editDiff.splitBom(rawContent);
       const ending = editDiff.detectLineEnding(text);
       const normalizedContent = editDiff.normalizeToLF(text);
       const applied = editDiff.applyEditsToNormalizedContent(normalizedContent, requireEdits(fixtureCase), pathValue);
@@ -674,7 +674,8 @@ function executeCase(editDiff: EditDiffModule, fixtureCase: FixtureCase): unknow
 
 export async function generateF4(upstreamRoot: string, outputRoot: string, upstreamCommit: string): Promise<void> {
   const moduleURL = pathToFileURL(path.join(upstreamRoot, editDiffSource)).href;
-  const editDiff = (await import(moduleURL)) as EditDiffModule;
+  const text = await import(pathToFileURL(path.join(upstreamRoot, "packages/coding-agent/src/utils/text.ts")).href);
+  const editDiff = { ...(await import(moduleURL)), splitBom: text.splitBom } as EditDiffModule;
   const generated = cases.map((fixtureCase) => {
     try {
       return { ...fixtureCase, expected: executeCase(editDiff, fixtureCase) };

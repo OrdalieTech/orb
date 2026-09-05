@@ -19,6 +19,7 @@ const binary = path.resolve(upstreamRoot, binaryArgument);
 const adapterPath = path.join(upstreamRoot, "packages/coding-agent/dist/cli.js");
 const vitestPath = path.join(upstreamRoot, "node_modules/.bin/vitest");
 const packageRoot = path.join(upstreamRoot, "packages/coding-agent");
+const adapterConfigPath = path.join(packageRoot, "vitest.orb-rpc.config.ts");
 const tests = [
   "test/rpc-jsonl.test.ts",
   "test/rpc-client-clone.test.ts",
@@ -29,7 +30,7 @@ const tests = [
 ];
 
 const mockServer = createServer(async (request, response) => {
-  if (request.method !== "POST" || request.url !== "/v1/messages") {
+  if (request.method !== "POST" || new URL(request.url ?? "/", "http://localhost").pathname !== "/v1/messages") {
     response.writeHead(404).end();
     return;
   }
@@ -38,7 +39,7 @@ const mockServer = createServer(async (request, response) => {
   const unique = body.match(/unique-\d+/)?.[0];
   const text = unique ?? (body.includes("test123") ? "test123" : "ok");
   const events = [
-    ["message_start", { type: "message_start", message: { id: "msg_mock", usage: { input_tokens: 1, output_tokens: 0 } } }],
+    ["message_start", { type: "message_start", message: { id: "msg_mock", model: JSON.parse(body).model, usage: { input_tokens: 1, output_tokens: 0 } } }],
     ["content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }],
     ["content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } }],
     ["content_block_stop", { type: "content_block_stop", index: 0 }],
@@ -97,6 +98,12 @@ child.on("exit", (code, signal) => {
 
 await mkdir(path.dirname(adapterPath), { recursive: true });
 await writeFile(adapterPath, adapter, { mode: 0o755 });
+await writeFile(adapterConfigPath, `import {mergeConfig} from "vitest/config";
+import upstream from "./vitest.config.ts";
+export default mergeConfig(upstream, {resolve: {alias: [
+ {find: "@earendil-works/pi-ai/utils/uuid", replacement: ${JSON.stringify(path.join(upstreamRoot, "packages/ai/src/utils/uuid.ts"))}}
+]}});
+`);
 try {
   await withOfflineGeneratedCatalog(upstreamRoot, async () => {
     await writeProviderModelData(
@@ -150,7 +157,7 @@ try {
       await rm(smokeDir, { recursive: true, force: true });
     }
     const exitCode = await new Promise<number | null>((resolve, reject) => {
-      const child = spawn(vitestPath, ["run", "--config", "vitest.config.ts", ...tests], {
+      const child = spawn(vitestPath, ["run", "--config", adapterConfigPath, ...tests], {
         cwd: packageRoot,
         env: {
           ...process.env,
@@ -169,6 +176,7 @@ try {
     }
   });
 } finally {
+  await rm(adapterConfigPath, {force: true});
   if (previousAdapter) {
     await writeFile(adapterPath, previousAdapter);
   } else {

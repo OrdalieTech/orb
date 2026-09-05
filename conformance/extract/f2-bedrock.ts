@@ -445,6 +445,8 @@ async function runBedrockStream(
         }),
       };
     }
+    const delta = (item as any).contentBlockDelta?.delta?.reasoningContent;
+    if (delta?.redactedContent && !(delta.redactedContent instanceof Uint8Array)) delta.redactedContent = Uint8Array.from(Object.values(delta.redactedContent));
     return item;
   };
   const originalSend = sdk.BedrockRuntimeClient.prototype.send;
@@ -470,6 +472,9 @@ async function runBedrockStream(
     sdk.BedrockRuntimeClient.prototype.send = originalSend;
   }
 }
+
+requestDefinitions.push({name:"bedrock-redacted-replay",api:"bedrock-converse-stream",model:replayModel,context:{messages:[{role:"assistant",api:"bedrock-converse-stream",provider:replayModel.provider,model:replayModel.id,content:[{type:"thinking",thinking:"[Reasoning redacted]",redacted:true,thinkingSignature:"AQIDBAU="}],usage:{input:0,output:0,cacheRead:0,cacheWrite:0,totalTokens:0,cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}},stopReason:"stop",timestamp:FIXED_NOW},{role:"user",content:"continue",timestamp:FIXED_NOW}]},options:{cacheRetention:"none",region:"us-east-1",env:{AWS_BEDROCK_SKIP_AUTH:"1",AWS_BEDROCK_FORCE_HTTP1:"1",AWS_REGION:"us-east-1",HTTP_PROXY:"",HTTPS_PROXY:"",ALL_PROXY:""}}});
+for (const stopped of [true,false]) streamDefinitions.push({name:`bedrock-redacted-chunks-${stopped?"stopped":"terminal"}`,api:"bedrock-converse-stream",model:replayModel,context:{messages:[{role:"user",content:"reason",timestamp:FIXED_NOW}]},options:{cacheRetention:"none",region:"us-east-1"},items:[{messageStart:{role:"assistant"}},{contentBlockDelta:{contentBlockIndex:0,delta:{reasoningContent:{redactedContent:new Uint8Array([1,2,3])}}}},{contentBlockDelta:{contentBlockIndex:0,delta:{reasoningContent:{redactedContent:new Uint8Array([4,5])}}}},...(stopped?[{contentBlockStop:{contentBlockIndex:0}}]:[]),{messageStop:{stopReason:"end_turn"}}]});
 
 async function extractBedrockProvider(upstreamRoot: string): Promise<BedrockProviderFixture> {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "orb-f2-bedrock-provider-"));

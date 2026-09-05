@@ -410,6 +410,12 @@ func (mode *rpcMode) handleCommand(session *agent.SessionRuntime, command RPCCom
 		session.Abort()
 		_ = session.WaitForIdle(mode.ctx)
 		return success()
+	case "clear_queue":
+		cleared := session.ClearQueue()
+		return success(struct {
+			Steering []string `json:"steering"`
+			FollowUp []string `json:"followUp"`
+		}{cleared.Steering, cleared.FollowUp})
 	case "new_session":
 		cancelled, err := mode.host.NewSession(command.ParentSession)
 		if err != nil {

@@ -96,6 +96,7 @@ func loadSessionFile(path string) (loadedSessionFile, error) {
 	}
 	reader := bufio.NewReaderSize(file, bufferSize)
 	var entries []*FileEntry
+	unterminated := false
 	for {
 		line, readErr := reader.ReadString('\n')
 		if entry := parseSessionEntryLine(line); entry != nil {
@@ -105,6 +106,7 @@ func loadSessionFile(path string) (loadedSessionFile, error) {
 			if !errors.Is(readErr, io.EOF) {
 				return loadedSessionFile{}, readErr
 			}
+			unterminated = len(line) > 0
 			break
 		}
 	}
@@ -114,6 +116,15 @@ func loadSessionFile(path string) (loadedSessionFile, error) {
 	}
 	if !validSessionHeader(entries) {
 		entries = nil
+	} else if unterminated {
+		appendFile, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+		if err != nil {
+			return loadedSessionFile{}, err
+		}
+		_, writeErr := appendFile.WriteString("\n")
+		if err := errors.Join(writeErr, appendFile.Close()); err != nil {
+			return loadedSessionFile{}, err
+		}
 	}
 	return loadedSessionFile{entries: entries, exists: true, size: info.Size()}, nil
 }

@@ -3,7 +3,7 @@
 // upstream export name is declared so Node type-stripping and the loader's
 // type-only-import classifier see the same surface as the real package.
 
-// Value exports (145; 13 implemented, the rest are unsupported stubs at runtime):
+// Value exports (146; 14 implemented, the rest are unsupported stubs at runtime):
 export declare const AgentSession: any;
 export declare const AgentSessionRuntime: any;
 export declare const ArminComponent: any;
@@ -213,7 +213,10 @@ export type EventBusController = any;
 export type ExecOptions = any;
 export type ExecResult = any;
 export type Extension = any;
-export type ExtensionAPI = any;
+export interface ExtensionAPI {
+ [name: string]: any;
+ registerFlag(name: string, options: { description?: string; type: "boolean"; default?: boolean } | { description?: string; type: "string"; default?: string }): void;
+}
 export type ExtensionActions = any;
 export type ExtensionCommandContext = any;
 export type ExtensionCommandContextActions = any;
@@ -373,3 +376,17 @@ export type WriteOperations = any;
 export type WriteToolCallEvent = any;
 export type WriteToolInput = any;
 export type WriteToolOptions = any;
+
+export declare function isPowerShellToolResult(event: ToolResultEvent): boolean;
+export type UIPromptKind = "select" | "confirm" | "input" | "editor" | "custom";
+export interface UIPromptStartEvent {type:"ui_prompt_start";reason:"ui_prompt";kind:UIPromptKind;title?:string}
+export interface UIPromptEndEvent {type:"ui_prompt_end";reason:"ui_prompt";kind:UIPromptKind;title?:string}
+export interface SessionCompactFailedEvent {type:"session_compact_failed";reason:"manual"|"threshold"|"overflow";errorMessage?:string;aborted:boolean;willRetry:boolean;fromExtension:boolean}
+export type PowerShellToolCallEvent = any;
+export type PowerShellToolResultEvent = any;
+
+export declare const createLocalPowerShellOperations: any;
+export declare const createPowerShellTool: any;
+export declare const createPowerShellToolDefinition: any;
+export declare function detectSupportedImageMimeTypeFromFile(filePath: string): Promise<string | null>;
+export declare const getPowerShellConfig: any;

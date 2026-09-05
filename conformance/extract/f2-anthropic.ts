@@ -375,6 +375,13 @@ const requestDefinitions: AnthropicDefinition[] = [
   },
 ];
 
+requestDefinitions.push({
+  name: "anthropic-managed-effort-and-fallback", api: "anthropic-messages",
+  model: anthropicModel({compat: {supportsMidConvoEffort: true, allowedFallbackModels: [{provider: "anthropic", model: "claude-fallback", cost: zeroCost}]}}),
+  context: {messages: [{role: "user", content: "continue", timestamp: FIXED_NOW}, {role: "assistant", api: "anthropic-messages", provider: "anthropic", model: "claude-old", providerThinkingLevel: "low", content: [{type:"text",text:"previous"}], usage: {input:0,output:0,cacheRead:0,cacheWrite:0,totalTokens:0,cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}}, stopReason:"stop", timestamp: FIXED_NOW}]},
+  options: {apiKey: "fixture-anthropic-key", cacheRetention: "none", effort: "max", temperature: 0.5},
+});
+
 function encodeAnthropicSSE(events: Array<{ event: string; data: unknown }>): string {
   return events
     .map(({ event, data }) => `event: ${event}\ndata: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`)
@@ -777,7 +784,7 @@ async function runAnthropic(
   sse: string,
   status = 200,
   contentType = "text/event-stream",
-): Promise<{ request: CapturedRequest; events: AssistantMessageEvent[] }> {
+): Promise<{ request?: CapturedRequest; events: AssistantMessageEvent[] }> {
   let request: CapturedRequest | undefined;
   const events: AssistantMessageEvent[] = [];
   const originalFetch = globalThis.fetch;
@@ -803,7 +810,7 @@ async function runAnthropic(
   } finally {
     globalThis.fetch = originalFetch;
   }
-  if (!request) throw new Error(`${definition.name}: Anthropic request was not captured`);
+  if (!request && (events.length !== 1 || events[0].type !== "error")) throw new Error(`${definition.name}: Anthropic request was not captured`);
   return { request, events };
 }
 
@@ -888,6 +895,19 @@ async function extractAnthropicProvider(upstreamRoot: string): Promise<Anthropic
   }
 }
 
+for (const midOutput of [false,true]) streamDefinitions.push({
+ name: `anthropic-fallback-${midOutput?"mid-output-error":"managed-effort"}`,api:"anthropic-messages",
+ model:anthropicModel({compat:{supportsMidConvoEffort:true,allowedFallbackModels:[{provider:"anthropic",model:"claude-fallback",cost:{input:1,output:2,cacheRead:0.1,cacheWrite:1.25}}]}}),
+ context:{messages:[{role:"user",content:"fallback",timestamp:FIXED_NOW}]},options:{apiKey:"fixture-anthropic-key",effort:"max",cacheRetention:"none"},
+ sse:encodeAnthropicSSE([
+ {event:"message_start",data:{type:"message_start",message:{id:"msg_fallback",model:"claude-fallback",usage:{input_tokens:20,output_tokens:0},input_transformations:[{type:"thinking_dropped",path:"messages[0]",reason:"prefix_mismatch"}]}}},
+ ...(midOutput?[{event:"content_block_start",data:{type:"content_block_start",index:0,content_block:{type:"text",text:""}}}]:[]),
+ {event:"content_block_start",data:{type:"content_block_start",index:1,content_block:{type:"fallback"}}},
+ {event:"message_delta",data:{type:"message_delta",delta:{stop_reason:"end_turn"},usage:{output_tokens:3}}},
+ {event:"message_stop",data:{type:"message_stop"}},
+ ])
+});
+
 export async function extractAnthropicF2(upstreamRoot: string): Promise<{
   provider: AnthropicProviderFixture;
   requests: unknown[];
@@ -896,8 +916,8 @@ export async function extractAnthropicF2(upstreamRoot: string): Promise<{
   const provider = await extractAnthropicProvider(upstreamRoot);
   const requests = [];
   for (const definition of [...requestDefinitions, await buildCloudflareGatewayDefinition()]) {
-    const { request } = await runAnthropic(definition, "");
-    requests.push({ ...definition, expected: request });
+    const { request, events } = await runAnthropic(definition, "");
+    requests.push({ ...definition, expected: request ?? null, ...(!request ? { expectedEvents: events } : {}) });
   }
   const streams = [];
   for (const definition of streamDefinitions) {

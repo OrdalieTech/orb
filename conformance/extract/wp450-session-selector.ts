@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -442,7 +442,8 @@ export async function generateWP450SessionSelector(
 					schemaVersion: 2,
 					width: WIDTH,
 					searches,
-					frames,
+					// D35: frame pixels belong to Orb; searches and callbacks remain upstream captures.
+					frames: JSON.parse(await readFile(new URL("../fixtures/WP450-session-selector/selector.json", import.meta.url), "utf8")).frames,
 					callbacks: {
 						selected: selections.map((value) =>
 							value.replaceAll(fixtureRoot, "<fixture>"),

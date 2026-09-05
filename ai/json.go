@@ -127,7 +127,54 @@ func (message UserMessage) MarshalJSON() ([]byte, error) {
 	}{Role: "user", payload: payload(message)})
 }
 
-func (message AssistantMessage) MarshalJSON() ([]byte, error) {
+func (message AssistantMessage) MarshalJSON() (encoded []byte, err error) {
+	defer func() {
+		if err != nil || (!message.providerThinkingLevelBeforeUsage && !message.rawStopBeforeDiagnostics) {
+			return
+		}
+		members, parseErr := openRouterRoutingMembers(encoded)
+		if parseErr != nil {
+			err = parseErr
+			return
+		}
+		moveBefore := func(name, before string) {
+			index, target := -1, -1
+			for i, m := range members {
+				if m.name == name {
+					index = i
+				}
+				if m.name == before {
+					target = i
+				}
+			}
+			if index < 0 || target < 0 || index < target {
+				return
+			}
+			field := members[index]
+			copy(members[target+1:index+1], members[target:index])
+			members[target] = field
+		}
+		if message.providerThinkingLevelBeforeUsage {
+			moveBefore("providerThinkingLevel", "usage")
+		}
+		if message.rawStopBeforeDiagnostics {
+			moveBefore("rawStopReason", "diagnostics")
+		}
+		var output bytes.Buffer
+		output.WriteByte('{')
+		for i, m := range members {
+			if i > 0 {
+				output.WriteByte(',')
+			}
+			name, _ := jsonwire.MarshalString(m.name)
+			output.Write(name)
+			output.WriteByte(':')
+			output.Write(m.value)
+		}
+		output.WriteByte('}')
+		encoded = output.Bytes()
+	}()
+
 	api, err := jsonwire.MarshalString(string(message.API))
 	if err != nil {
 		return nil, err
@@ -139,6 +186,9 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 	model, err := jsonwire.MarshalString(message.Model)
 	if err != nil {
 		return nil, err
+	}
+	if message.modelOmitted {
+		model = nil
 	}
 	stopReason, err := jsonwire.MarshalString(string(message.StopReason))
 	if err != nil {
@@ -152,6 +202,10 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	providerThinkingLevel, err := marshalOptionalWireString(message.ProviderThinkingLevel)
+	if err != nil {
+		return nil, err
+	}
 	responseID, err := marshalOptionalWireString(message.ResponseID)
 	if err != nil {
 		return nil, err
@@ -162,31 +216,32 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 	}
 	if message.errorBeforeTimestamp && message.ErrorMessage != nil {
 		return marshalJSON(struct {
-			Role          string                        `json:"role"`
-			Content       AssistantContent              `json:"content"`
-			API           json.RawMessage               `json:"api"`
-			Provider      json.RawMessage               `json:"provider"`
-			Model         json.RawMessage               `json:"model"`
-			Usage         Usage                         `json:"usage"`
-			StopReason    json.RawMessage               `json:"stopReason"`
-			ErrorMessage  json.RawMessage               `json:"errorMessage"`
-			ResponseID    json.RawMessage               `json:"responseId,omitempty"`
-			ResponseModel json.RawMessage               `json:"responseModel,omitempty"`
-			Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
-			Timestamp     int64                         `json:"timestamp"`
-			EndTurn       *bool                         `json:"endTurn,omitempty"`
-			RawStopReason json.RawMessage               `json:"rawStopReason,omitempty"`
+			Role                  string                        `json:"role"`
+			Content               AssistantContent              `json:"content"`
+			API                   json.RawMessage               `json:"api"`
+			Provider              json.RawMessage               `json:"provider"`
+			Model                 json.RawMessage               `json:"model,omitempty"`
+			Usage                 Usage                         `json:"usage"`
+			StopReason            json.RawMessage               `json:"stopReason"`
+			ErrorMessage          json.RawMessage               `json:"errorMessage"`
+			ResponseID            json.RawMessage               `json:"responseId,omitempty"`
+			ProviderThinkingLevel json.RawMessage               `json:"providerThinkingLevel,omitempty"`
+			ResponseModel         json.RawMessage               `json:"responseModel,omitempty"`
+			Diagnostics           *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
+			Timestamp             int64                         `json:"timestamp"`
+			EndTurn               *bool                         `json:"endTurn,omitempty"`
+			RawStopReason         json.RawMessage               `json:"rawStopReason,omitempty"`
 		}{
-			Role:          "assistant",
-			Content:       message.Content,
-			API:           api,
-			Provider:      provider,
-			Model:         model,
-			Usage:         message.Usage,
-			StopReason:    stopReason,
-			ErrorMessage:  errorMessage,
-			ResponseID:    responseID,
-			ResponseModel: responseModel,
+			Role:                  "assistant",
+			Content:               message.Content,
+			API:                   api,
+			Provider:              provider,
+			Model:                 model,
+			Usage:                 message.Usage,
+			StopReason:            stopReason,
+			ErrorMessage:          errorMessage,
+			ResponseID:            responseID,
+			ProviderThinkingLevel: providerThinkingLevel, ResponseModel: responseModel,
 			Diagnostics:   message.Diagnostics,
 			Timestamp:     message.Timestamp,
 			EndTurn:       message.EndTurn,
@@ -195,54 +250,56 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 	}
 	if message.errorBeforeResponseID && message.ErrorMessage != nil {
 		return marshalJSON(struct {
-			Role          string                        `json:"role"`
-			Content       AssistantContent              `json:"content"`
-			API           json.RawMessage               `json:"api"`
-			Provider      json.RawMessage               `json:"provider"`
-			Model         json.RawMessage               `json:"model"`
-			Usage         Usage                         `json:"usage"`
-			StopReason    json.RawMessage               `json:"stopReason"`
-			Timestamp     int64                         `json:"timestamp"`
-			EndTurn       *bool                         `json:"endTurn,omitempty"`
-			RawStopReason json.RawMessage               `json:"rawStopReason,omitempty"`
-			ErrorMessage  json.RawMessage               `json:"errorMessage"`
-			ResponseID    json.RawMessage               `json:"responseId,omitempty"`
-			ResponseModel json.RawMessage               `json:"responseModel,omitempty"`
-			Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
+			Role                  string                        `json:"role"`
+			Content               AssistantContent              `json:"content"`
+			API                   json.RawMessage               `json:"api"`
+			Provider              json.RawMessage               `json:"provider"`
+			Model                 json.RawMessage               `json:"model,omitempty"`
+			Usage                 Usage                         `json:"usage"`
+			StopReason            json.RawMessage               `json:"stopReason"`
+			Timestamp             int64                         `json:"timestamp"`
+			EndTurn               *bool                         `json:"endTurn,omitempty"`
+			RawStopReason         json.RawMessage               `json:"rawStopReason,omitempty"`
+			ErrorMessage          json.RawMessage               `json:"errorMessage"`
+			ResponseID            json.RawMessage               `json:"responseId,omitempty"`
+			ProviderThinkingLevel json.RawMessage               `json:"providerThinkingLevel,omitempty"`
+			ResponseModel         json.RawMessage               `json:"responseModel,omitempty"`
+			Diagnostics           *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
 		}{
 			Role: "assistant", Content: message.Content, API: api, Provider: provider, Model: model,
 			Usage: message.Usage, StopReason: stopReason, Timestamp: message.Timestamp,
 			EndTurn:       message.EndTurn,
 			RawStopReason: rawStopReason, ErrorMessage: errorMessage, ResponseID: responseID,
-			ResponseModel: responseModel, Diagnostics: message.Diagnostics,
+			ProviderThinkingLevel: providerThinkingLevel, ResponseModel: responseModel, Diagnostics: message.Diagnostics,
 		})
 	}
 	return marshalJSON(struct {
-		Role          string                        `json:"role"`
-		Content       AssistantContent              `json:"content"`
-		API           json.RawMessage               `json:"api"`
-		Provider      json.RawMessage               `json:"provider"`
-		Model         json.RawMessage               `json:"model"`
-		Usage         Usage                         `json:"usage"`
-		StopReason    json.RawMessage               `json:"stopReason"`
-		Timestamp     int64                         `json:"timestamp"`
-		ResponseID    json.RawMessage               `json:"responseId,omitempty"`
-		ResponseModel json.RawMessage               `json:"responseModel,omitempty"`
-		Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
-		EndTurn       *bool                         `json:"endTurn,omitempty"`
-		RawStopReason json.RawMessage               `json:"rawStopReason,omitempty"`
-		ErrorMessage  json.RawMessage               `json:"errorMessage,omitempty"`
+		Role                  string                        `json:"role"`
+		Content               AssistantContent              `json:"content"`
+		API                   json.RawMessage               `json:"api"`
+		Provider              json.RawMessage               `json:"provider"`
+		Model                 json.RawMessage               `json:"model,omitempty"`
+		Usage                 Usage                         `json:"usage"`
+		StopReason            json.RawMessage               `json:"stopReason"`
+		Timestamp             int64                         `json:"timestamp"`
+		ResponseID            json.RawMessage               `json:"responseId,omitempty"`
+		ProviderThinkingLevel json.RawMessage               `json:"providerThinkingLevel,omitempty"`
+		ResponseModel         json.RawMessage               `json:"responseModel,omitempty"`
+		Diagnostics           *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
+		EndTurn               *bool                         `json:"endTurn,omitempty"`
+		RawStopReason         json.RawMessage               `json:"rawStopReason,omitempty"`
+		ErrorMessage          json.RawMessage               `json:"errorMessage,omitempty"`
 	}{
-		Role:          "assistant",
-		Content:       message.Content,
-		API:           api,
-		Provider:      provider,
-		Model:         model,
-		Usage:         message.Usage,
-		StopReason:    stopReason,
-		Timestamp:     message.Timestamp,
-		ResponseID:    responseID,
-		ResponseModel: responseModel,
+		Role:                  "assistant",
+		Content:               message.Content,
+		API:                   api,
+		Provider:              provider,
+		Model:                 model,
+		Usage:                 message.Usage,
+		StopReason:            stopReason,
+		Timestamp:             message.Timestamp,
+		ResponseID:            responseID,
+		ProviderThinkingLevel: providerThinkingLevel, ResponseModel: responseModel,
 		Diagnostics:   message.Diagnostics,
 		EndTurn:       message.EndTurn,
 		RawStopReason: rawStopReason,
@@ -252,19 +309,20 @@ func (message AssistantMessage) MarshalJSON() ([]byte, error) {
 
 func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 	var raw struct {
-		Content       AssistantContent              `json:"content"`
-		API           json.RawMessage               `json:"api"`
-		Provider      json.RawMessage               `json:"provider"`
-		Model         json.RawMessage               `json:"model"`
-		Usage         Usage                         `json:"usage"`
-		StopReason    json.RawMessage               `json:"stopReason"`
-		Timestamp     int64                         `json:"timestamp"`
-		ResponseID    json.RawMessage               `json:"responseId"`
-		ResponseModel json.RawMessage               `json:"responseModel"`
-		Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics"`
-		EndTurn       *bool                         `json:"endTurn"`
-		RawStopReason json.RawMessage               `json:"rawStopReason"`
-		ErrorMessage  json.RawMessage               `json:"errorMessage"`
+		Content               AssistantContent              `json:"content"`
+		API                   json.RawMessage               `json:"api"`
+		Provider              json.RawMessage               `json:"provider"`
+		Model                 json.RawMessage               `json:"model"`
+		Usage                 Usage                         `json:"usage"`
+		StopReason            json.RawMessage               `json:"stopReason"`
+		Timestamp             int64                         `json:"timestamp"`
+		ResponseID            json.RawMessage               `json:"responseId"`
+		ProviderThinkingLevel json.RawMessage               `json:"providerThinkingLevel"`
+		ResponseModel         json.RawMessage               `json:"responseModel"`
+		Diagnostics           *[]AssistantMessageDiagnostic `json:"diagnostics"`
+		EndTurn               *bool                         `json:"endTurn"`
+		RawStopReason         json.RawMessage               `json:"rawStopReason"`
+		ErrorMessage          json.RawMessage               `json:"errorMessage"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -285,6 +343,10 @@ func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
+	providerThinkingLevel, err := unmarshalOptionalWireString(raw.ProviderThinkingLevel)
+	if err != nil {
+		return err
+	}
 	responseID, err := unmarshalOptionalWireString(raw.ResponseID)
 	if err != nil {
 		return err
@@ -302,20 +364,23 @@ func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*message = AssistantMessage{
-		Content:       raw.Content,
-		API:           API(api),
-		Provider:      ProviderID(provider),
-		Model:         model,
-		Usage:         raw.Usage,
-		StopReason:    StopReason(stopReason),
-		Timestamp:     raw.Timestamp,
-		ResponseID:    responseID,
-		ResponseModel: responseModel,
+		Content:               raw.Content,
+		API:                   API(api),
+		Provider:              ProviderID(provider),
+		Model:                 model,
+		Usage:                 raw.Usage,
+		StopReason:            StopReason(stopReason),
+		Timestamp:             raw.Timestamp,
+		ResponseID:            responseID,
+		ProviderThinkingLevel: providerThinkingLevel, ResponseModel: responseModel,
 		Diagnostics:   raw.Diagnostics,
 		ErrorMessage:  errorMessage,
 		RawStopReason: rawStopReason,
 		EndTurn:       raw.EndTurn,
 	}
+	message.rawStopBeforeDiagnostics = topLevelMemberBefore(data, "rawStopReason", "diagnostics")
+	message.modelOmitted = len(raw.Model) == 0
+	message.providerThinkingLevelBeforeUsage = topLevelMemberBefore(data, "providerThinkingLevel", "usage")
 	message.errorBeforeTimestamp = topLevelMemberBefore(data, "errorMessage", "timestamp")
 	message.errorBeforeResponseID = !message.errorBeforeTimestamp && topLevelMemberBefore(data, "errorMessage", "responseId")
 	return nil
@@ -588,6 +653,16 @@ func (content ThinkingContent) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(content.RedactedChunks) > 0 {
+		return marshalJSON(struct {
+			Type              string            `json:"type"`
+			Thinking          json.RawMessage   `json:"thinking"`
+			ThinkingSignature json.RawMessage   `json:"thinkingSignature,omitempty"`
+			Index             *int              `json:"index,omitempty"`
+			Redacted          *bool             `json:"redacted,omitempty"`
+			RedactedChunks    []json.RawMessage `json:"redactedChunks,omitempty"`
+		}{"thinking", thinking, signature, content.Index, content.Redacted, content.RedactedChunks})
+	}
 	return marshalJSON(struct {
 		Type              string          `json:"type"`
 		Thinking          json.RawMessage `json:"thinking"`
@@ -605,10 +680,11 @@ func (content ThinkingContent) MarshalJSON() ([]byte, error) {
 
 func (content *ThinkingContent) UnmarshalJSON(data []byte) error {
 	var raw struct {
-		Thinking          json.RawMessage `json:"thinking"`
-		ThinkingSignature json.RawMessage `json:"thinkingSignature"`
-		Redacted          *bool           `json:"redacted"`
-		Index             *int            `json:"index"`
+		RedactedChunks    []json.RawMessage `json:"redactedChunks"`
+		Thinking          json.RawMessage   `json:"thinking"`
+		ThinkingSignature json.RawMessage   `json:"thinkingSignature"`
+		Redacted          *bool             `json:"redacted"`
+		Index             *int              `json:"index"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -621,7 +697,7 @@ func (content *ThinkingContent) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	*content = ThinkingContent{Thinking: thinking, ThinkingSignature: signature, Redacted: raw.Redacted, Index: raw.Index}
+	*content = ThinkingContent{RedactedChunks: raw.RedactedChunks, Thinking: thinking, ThinkingSignature: signature, Redacted: raw.Redacted, Index: raw.Index}
 	return nil
 }
 
@@ -1366,4 +1442,19 @@ func stringifyJSONValue(value any) any {
 	default:
 		return value
 	}
+}
+
+// SetAssistantMessageModelOmitted preserves an upstream response with no model member.
+func SetAssistantMessageModelOmitted(message *AssistantMessage, omitted bool) {
+	message.modelOmitted = omitted
+}
+
+// SetAssistantMessageProviderThinkingLevelBeforeUsage preserves constructor field order for managed Anthropic responses.
+func SetAssistantMessageProviderThinkingLevelBeforeUsage(message *AssistantMessage, before bool) {
+	message.providerThinkingLevelBeforeUsage = before
+}
+
+// SetAssistantMessageRawStopBeforeDiagnostics preserves diagnostics appended after stream termination.
+func SetAssistantMessageRawStopBeforeDiagnostics(message *AssistantMessage, before bool) {
+	message.rawStopBeforeDiagnostics = before
 }

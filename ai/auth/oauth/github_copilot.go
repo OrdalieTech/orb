@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -96,12 +98,27 @@ func (flow *GitHubCopilot) Login(ctx context.Context, interaction auth.AuthInter
 	if err != nil {
 		return nil, err
 	}
-	interaction.Notify(auth.AuthEvent{Type: auth.EventProgress, Message: "Enabling models..."})
-	flow.enableAllModels(ctx, credential.Access, enterpriseDomain)
-	available, err := flow.fetchAvailableModels(ctx, credential.Access, enterpriseDomain)
+	available, policies, err := flow.fetchModels(ctx, credential.Access, enterpriseDomain, 2)
 	if err != nil {
 		return nil, err
 	}
+	if len(policies) > 0 {
+		interaction.Notify(auth.AuthEvent{Type: auth.EventProgress, Message: "Enabling models..."})
+		enabled, err := flow.enableModels(ctx, credential.Access, enterpriseDomain, policies)
+		if err != nil {
+			return nil, err
+		}
+		available = append(available, enabled...)
+	}
+	seen := map[string]bool{}
+	unique := make([]string, 0, len(available))
+	for _, id := range available {
+		if !seen[id] {
+			unique = append(unique, id)
+			seen[id] = true
+		}
+	}
+	available = unique
 	setCredentialJSON(credential, "availableModelIds", available)
 	return credential, nil
 }
@@ -242,71 +259,161 @@ func (flow *GitHubCopilot) exchangeCopilotToken(ctx context.Context, refreshToke
 }
 
 func (flow *GitHubCopilot) fetchAvailableModels(ctx context.Context, token, enterpriseDomain string) ([]string, error) {
-	modelCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	available, _, err := flow.fetchModels(ctx, token, enterpriseDomain, 0)
+	return available, err
+}
+
+func (flow *GitHubCopilot) fetchModels(ctx context.Context, token, enterpriseDomain string, retries int) ([]string, []string, error) {
 	headers := githubCopilotStaticHeaders()
 	headers.Set("Accept", "application/json")
 	headers.Set("Authorization", "Bearer "+token)
 	headers.Set("X-GitHub-Api-Version", githubCopilotAPIVersion)
-	response, err := flow.fetchJSON(modelCtx, http.MethodGet, flow.copilotBaseURL(token, enterpriseDomain)+"/models", nil, false, headers)
+	baseURL := flow.copilotBaseURL(token, enterpriseDomain)
+	status, statusText, body, err := flow.fetchWithRateLimitRetry(ctx, http.MethodGet, baseURL+"/models", nil, headers, retries)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	if status < 200 || status >= 300 {
+		return nil, nil, fmt.Errorf("%s: %s", statusText, body)
+	}
+	var response map[string]any
+	if json.Unmarshal(body, &response) != nil {
+		return nil, nil, errors.New("Invalid JSON response") //nolint:staticcheck // Upstream diagnostic text is observable.
 	}
 	raw, ok := response["data"].([]any)
 	if !ok {
-		return nil, errors.New("Invalid Copilot models response") //nolint:staticcheck // Upstream capitalization is observable.
+		return nil, nil, errors.New("Invalid Copilot models response") //nolint:staticcheck // Upstream diagnostic text is observable.
 	}
-	result := make([]string, 0)
+	type accountModel struct {
+		id     string
+		picker bool
+		state  any
+	}
+	var models []accountModel
+	available := []string{}
 	for _, value := range raw {
 		item, ok := value.(map[string]any)
-		if !ok || !selectableCopilotModel(item) {
+		if !ok {
 			continue
 		}
-		if id, ok := item["id"].(string); ok {
-			result = append(result, id)
+		id, ok := item["id"].(string)
+		if !ok {
+			continue
+		}
+		capabilities, _ := item["capabilities"].(map[string]any)
+		supports, _ := capabilities["supports"].(map[string]any)
+		if supports["tool_calls"] == false {
+			continue
+		}
+		policy, _ := item["policy"].(map[string]any)
+		picker, _ := item["model_picker_enabled"].(bool)
+		models = append(models, accountModel{id, picker, policy["state"]})
+		if picker && policy["state"] != "disabled" {
+			available = append(available, id)
 		}
 	}
-	return result, nil
+	fallback := baseURL == "https://api.individual.githubcopilot.com" && len(available) == 0
+	if fallback {
+		for _, model := range models {
+			if model.state == "enabled" {
+				available = append(available, model.id)
+			}
+		}
+	}
+	known := map[string]bool{}
+	for _, id := range flow.knownModelIDs() {
+		known[id] = true
+	}
+	policies := []string{}
+	for _, model := range models {
+		if model.state == "unconfigured" && known[model.id] && (model.picker || fallback) {
+			policies = append(policies, model.id)
+		}
+	}
+	return available, policies, nil
 }
 
-func selectableCopilotModel(item map[string]any) bool {
-	enabled, _ := item["model_picker_enabled"].(bool)
-	policy, _ := item["policy"].(map[string]any)
-	capabilities, _ := item["capabilities"].(map[string]any)
-	supports, _ := capabilities["supports"].(map[string]any)
-	if policy["state"] == "disabled" || supports["tool_calls"] == false {
-		return false
+func (flow *GitHubCopilot) enableModels(ctx context.Context, token, enterpriseDomain string, ids []string) ([]string, error) {
+	enabled := []string{}
+	for _, id := range ids {
+		headers := githubCopilotStaticHeaders()
+		headers.Set("Content-Type", "application/json")
+		headers.Set("Authorization", "Bearer "+token)
+		headers.Set("openai-intent", "chat-policy")
+		headers.Set("x-interaction-type", "chat-policy")
+		status, _, _, err := flow.fetchWithRateLimitRetry(ctx, http.MethodPost, flow.copilotBaseURL(token, enterpriseDomain)+"/models/"+url.PathEscape(id)+"/policy", []byte(`{"state":"enabled"}`), headers, 2)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if err != nil {
+			continue
+		}
+		if status == 429 {
+			break
+		}
+		if status >= 200 && status < 300 {
+			enabled = append(enabled, id)
+		}
 	}
-	return enabled
+	return enabled, nil
 }
 
-func (flow *GitHubCopilot) enableAllModels(ctx context.Context, token, enterpriseDomain string) {
-	var wait sync.WaitGroup
-	// Upstream caps policy updates at four in flight (COPILOT_POLICY_CONCURRENCY).
-	slots := make(chan struct{}, 4)
-	for _, modelID := range flow.knownModelIDs() {
-		wait.Add(1)
-		slots <- struct{}{}
-		go func() {
-			defer wait.Done()
-			defer func() { <-slots }()
-			headers := githubCopilotStaticHeaders()
-			headers.Set("Content-Type", "application/json")
-			headers.Set("Authorization", "Bearer "+token)
-			headers.Set("openai-intent", "chat-policy")
-			headers.Set("x-interaction-type", "chat-policy")
-			request, err := http.NewRequestWithContext(ctx, http.MethodPost, flow.copilotBaseURL(token, enterpriseDomain)+"/models/"+url.PathEscape(modelID)+"/policy", strings.NewReader(`{"state":"enabled"}`))
-			if err != nil {
-				return
-			}
-			request.Header = headers
-			response, err := flow.options.HTTPClient.Do(request)
-			if err == nil {
-				_ = response.Body.Close()
-			}
-		}()
+func (flow *GitHubCopilot) fetchWithRateLimitRetry(ctx context.Context, method, endpoint string, body []byte, headers http.Header, retries int) (int, string, []byte, error) {
+	requestCtx := ctx
+	if retries > 0 {
+		var cancel context.CancelFunc
+		requestCtx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
 	}
-	wait.Wait()
+	for attempt := 0; ; attempt++ {
+		attemptCtx, cancel := context.WithTimeout(requestCtx, 5*time.Second)
+		request, err := http.NewRequestWithContext(attemptCtx, method, endpoint, bytes.NewReader(body))
+		if err != nil {
+			cancel()
+			return 0, "", nil, err
+		}
+		request.Header = headers.Clone()
+		response, err := flow.options.HTTPClient.Do(request)
+		if err != nil {
+			cancel()
+			return 0, "", nil, err
+		}
+		contents, err := io.ReadAll(response.Body)
+		_ = response.Body.Close()
+		cancel()
+		if err != nil {
+			return 0, "", nil, err
+		}
+		if response.StatusCode != 429 || attempt == retries {
+			return response.StatusCode, response.Status, contents, nil
+		}
+		delay := time.Duration(500*(1<<attempt)) * time.Millisecond
+		if value := response.Header.Get("Retry-After"); value != "" {
+			if seconds, err := strconv.ParseFloat(value, 64); err == nil {
+				if math.IsNaN(seconds) || math.IsInf(seconds, 0) {
+					return response.StatusCode, response.Status, contents, nil
+				}
+				delay = time.Duration(seconds * float64(time.Second))
+			} else if date, err := http.ParseTime(value); err == nil {
+				delay = time.Until(date)
+			} else {
+				return response.StatusCode, response.Status, contents, nil
+			}
+		}
+		if delay < 0 {
+			delay = 0
+		}
+		if deadline, ok := requestCtx.Deadline(); ok && delay >= time.Until(deadline) {
+			return response.StatusCode, response.Status, contents, nil
+		}
+		sleep := flow.options.Sleep
+		if sleep == nil {
+			sleep = sleepDeviceCode
+		}
+		if err := sleep(requestCtx, delay); err != nil {
+			return 0, "", nil, err
+		}
+	}
 }
 
 func (flow *GitHubCopilot) knownModelIDs() []string {

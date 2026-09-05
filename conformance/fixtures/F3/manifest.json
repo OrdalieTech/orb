@@ -1,6 +1,6 @@
 {
   "family": "F3",
-  "upstreamCommit": "914cf1472e715297caa30db4b9535d534a9eb718",
+  "upstreamCommit": "107d79f11072bbc8a3a757ed7fd69596bee7d68c",
   "generator": "conformance/extract/f3-agent.ts",
   "source": "packages/agent/src/agent-loop.ts + packages/agent/src/agent.ts + packages/agent/src/types.ts + packages/ai/src/providers/faux.ts",
   "format": "agent-event-jsonl-v1",

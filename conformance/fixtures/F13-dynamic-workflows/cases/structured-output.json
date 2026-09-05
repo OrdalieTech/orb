@@ -25,12 +25,12 @@
     "durationMs": 0,
     "runId": "run-fixed-structured-output",
     "tokenUsage": {
-      "input": 5951,
+      "input": 5952,
       "output": 52,
-      "total": 12628,
+      "total": 12630,
       "cost": 0,
       "cacheRead": 673,
-      "cacheWrite": 5952
+      "cacheWrite": 5953
     }
   },
   "error": null,
@@ -75,13 +75,13 @@
       "result": {
         "veg": "leek"
       },
-      "tokens": 4340,
+      "tokens": 4342,
       "tokenUsage": {
-        "input": 2137,
+        "input": 2138,
         "output": 15,
         "cacheRead": 50,
-        "cacheWrite": 2138,
-        "total": 4340,
+        "cacheWrite": 2139,
+        "total": 4342,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -114,12 +114,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 5951,
+        "input": 5952,
         "output": 52,
-        "total": 12628,
+        "total": 12630,
         "cost": 0,
         "cacheRead": 673,
-        "cacheWrite": 5952
+        "cacheWrite": 5953
       }
     }
   ],

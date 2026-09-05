@@ -504,6 +504,7 @@ func postMistralStream(
 		return nil, err
 	}
 	request.Header = make(http.Header)
+	request.Header.Set("User-Agent", piUserAgent())
 	request.Header.Set("Accept", "text/event-stream")
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer "+apiKey)
@@ -815,7 +816,10 @@ func (processor *mistralStreamProcessor) consumeToolCall(raw mistralStreamToolCa
 	if callID == "" || callID == "null" {
 		callID = deriveMistralToolCallID(fmt.Sprintf("toolcall:%d", index), 0)
 	}
-	key := fmt.Sprintf("%s:%d", callID, index)
+	key := "id:" + callID
+	if raw.Index != nil {
+		key = fmt.Sprintf("index:%d", index)
+	}
 	contentIndex, ok := processor.toolIndices[key]
 	if !ok {
 		partial := ""

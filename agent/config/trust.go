@@ -117,7 +117,7 @@ func readTrustFile(path string) (trustFile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Failed to read trust store %s: %s", path, err) //nolint:staticcheck // Upstream error text is observable.
 	}
-	decoder := json.NewDecoder(bytes.NewReader(contents))
+	decoder := json.NewDecoder(bytes.NewReader(bytes.TrimPrefix(contents, []byte{0xef, 0xbb, 0xbf})))
 	var parsed any
 	if err := decoder.Decode(&parsed); err != nil {
 		return nil, fmt.Errorf("Failed to read trust store %s: %s", path, err) //nolint:staticcheck // Upstream error text is observable.

@@ -706,7 +706,7 @@ func TestNewAgentSessionWithExplicitSessionManager(t *testing.T) {
 }
 
 func TestNewAgentSessionActivatesRehydratedHarnessStorage(t *testing.T) {
-	input, err := os.ReadFile(filepath.Join("..", "conformance", "fixtures", "F6Harness", "session.jsonl"))
+	input, err := os.ReadFile(filepath.Join("..", "conformance", "fixtures", "F6HarnessTransactions", "v3-projection.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -735,7 +735,7 @@ func TestNewAgentSessionActivatesRehydratedHarnessStorage(t *testing.T) {
 	defer result.Session.Dispose()
 
 	state := result.Session.State()
-	// The v4 fixture leaf sits on a compacted branch: the projected context is
+	// The v3 fixture leaf sits on a compacted branch: the projected context is
 	// the compaction summary plus the branch summary.
 	if len(state.Messages) != 2 {
 		t.Fatalf("rehydrated message count = %d, want 2", len(state.Messages))

@@ -442,3 +442,6 @@ export const setKeybindings = stub("setKeybindings");
 export const setKittyProtocolActive = stub("setKittyProtocolActive");
 export const sliceByColumn = stub("sliceByColumn");
 export const stripTerminalSequences = stub("stripTerminalSequences");
+
+export const MouseRegion = stub("MouseRegion");
+export const setCapabilityOverrides = stub("setCapabilityOverrides");

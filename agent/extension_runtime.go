@@ -141,7 +141,7 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 			}
 			return result
 		},
-		IsIdle:           runtime.agent.IsIdle,
+		IsIdle:           runtime.IsIdle,
 		IsProjectTrusted: runtime.settings.IsProjectTrusted,
 		GetSignal:        runtime.agent.Signal,
 		Abort:            runtime.Abort,
@@ -313,7 +313,7 @@ func (runtime *SessionRuntime) BindExtensionUI(ui extensions.UI, mode extensions
 
 func (runtime *SessionRuntime) runtimeCommandActions() extensions.CommandActions {
 	return extensions.CommandActions{
-		WaitForIdle: runtime.agent.WaitForIdle,
+		WaitForIdle: runtime.WaitForIdle,
 		NavigateTree: func(ctx context.Context, targetID string, options *extensions.NavigateTreeOptions) (extensions.SessionReplacementResult, error) {
 			resolved := NavigateTreeOptions{}
 			if options != nil {
@@ -1010,7 +1010,7 @@ func (runtime *SessionRuntime) sendExtensionMessage(ctx context.Context, message
 	if content == nil {
 		content = []any{}
 	}
-	appMessage := &harness.CustomMessage{Role: "custom", CustomType: message.CustomType, Content: content, Display: message.Display, Details: message.Details, Timestamp: time.Now().UnixMilli()}
+	appMessage := &harness.CustomMessage{Role: "custom", CustomType: message.CustomType, Content: content, Display: message.Display, Details: message.Details, Timestamp: runtime.clock()}
 	state := runtime.extensionState
 	var deliverAs extensions.DeliveryMode
 	var triggerTurn *bool
@@ -1023,8 +1023,16 @@ func (runtime *SessionRuntime) sendExtensionMessage(ctx context.Context, message
 		state.mu.Unlock()
 		return nil
 	}
+	runtime.mu.Lock()
+	streaming := runtime.activeRuns != 0
+	if streaming && triggerTurn != nil && !*triggerTurn {
+		runtime.pendingCustom = append(runtime.pendingCustom, appMessage)
+		runtime.mu.Unlock()
+		return nil
+	}
+	runtime.mu.Unlock()
 	// An unset triggerTurn still steers a live turn; only an explicit false opts out.
-	if !runtime.agent.IsIdle() && (triggerTurn == nil || *triggerTurn) {
+	if streaming && (triggerTurn == nil || *triggerTurn) {
 		if deliverAs == extensions.DeliverFollowUp {
 			runtime.agent.FollowUp(appMessage)
 		} else {
@@ -1035,19 +1043,38 @@ func (runtime *SessionRuntime) sendExtensionMessage(ctx context.Context, message
 	if triggerTurn != nil && *triggerTurn {
 		return runtime.runPolicies(ctx, func() error { return runtime.agent.Prompt(ctx, appMessage) })
 	}
+	return runtime.appendCustomMessage(appMessage)
+}
+
+func (runtime *SessionRuntime) appendCustomMessage(appMessage *harness.CustomMessage) error {
 	runtime.agent.AppendMessage(appMessage)
-	// Upstream persists the untyped input value even though its in-memory message is normalized.
 	var err error
-	if message.Details != nil {
-		_, err = runtime.manager.AppendCustomMessageEntry(message.CustomType, message.Content, message.Display, message.Details)
+	if appMessage.Details != nil {
+		_, err = runtime.manager.AppendCustomMessageEntry(appMessage.CustomType, appMessage.Content, appMessage.Display, appMessage.Details)
 	} else {
-		_, err = runtime.manager.AppendCustomMessageEntry(message.CustomType, message.Content, message.Display)
+		_, err = runtime.manager.AppendCustomMessageEntry(appMessage.CustomType, appMessage.Content, appMessage.Display)
 	}
 	if err != nil {
 		return err
 	}
 	runtime.emit(engine.MessageStartEvent{Message: appMessage})
 	runtime.emit(engine.MessageEndEvent{Message: appMessage})
+	return nil
+}
+
+func (runtime *SessionRuntime) flushPendingCustom() error {
+	runtime.mu.Lock()
+	pending := runtime.pendingCustom
+	runtime.pendingCustom = nil
+	if len(pending) > 0 {
+		runtime.customContextDirty = true
+	}
+	runtime.mu.Unlock()
+	for _, message := range pending {
+		if err := runtime.appendCustomMessage(message); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

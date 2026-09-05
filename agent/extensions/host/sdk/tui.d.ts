@@ -138,3 +138,6 @@ export type TuiMainScreenRenderState = any;
 export type TuiMode = any;
 export type TuiStopOptions = any;
 export type ViewportTUI = any;
+
+export declare const MouseRegion: any;
+export declare const setCapabilityOverrides: any;

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
@@ -12,7 +13,7 @@ import (
 )
 
 func TestHarnessStorageBecomesAByteExactSessionManager(t *testing.T) {
-	input, err := os.ReadFile(filepath.Join("..", "..", "conformance", "fixtures", "F6Harness", "session.jsonl"))
+	input, err := os.ReadFile(filepath.Join("..", "..", "conformance", "fixtures", "F6HarnessTransactions", "v3-projection.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +46,7 @@ func TestHarnessStorageBecomesAByteExactSessionManager(t *testing.T) {
 }
 
 func TestHarnessStorageAndSessionManagerShareLiveWrites(t *testing.T) {
-	input, err := os.ReadFile(filepath.Join("..", "..", "conformance", "fixtures", "F6Harness", "session.jsonl"))
+	input, err := os.ReadFile(filepath.Join("..", "..", "conformance", "fixtures", "F6HarnessTransactions", "v3-projection.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +108,7 @@ func TestHarnessStorageAndSessionManagerShareLiveWrites(t *testing.T) {
 }
 
 func TestHarnessStorageRestoresActiveToolsIntoSessionContext(t *testing.T) {
-	input, err := os.ReadFile(filepath.Join("..", "..", "conformance", "fixtures", "F6Harness", "session.jsonl"))
+	input, err := os.ReadFile(filepath.Join("..", "..", "conformance", "fixtures", "F6HarnessTransactions", "v3-projection.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,5 +148,19 @@ func TestV081CodingManagerKeepsItsFullBranchWithoutLegacyStorageAPI(t *testing.T
 	branch := manager.GetBranch("checkpoint")
 	if len(branch) != 3 || branch[0].ID != rootID || branch[1].ID != keptID || branch[2].ID != "checkpoint" {
 		t.Fatalf("coding branch = %#v", branch)
+	}
+}
+
+func TestHarnessTransactionStorageRejectsRemovedV3Projection(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "conformance", "fixtures", "F6HarnessTransactions", "files.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct{ Content string }
+	if err = json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = harness.RehydrateJSONLSession([]byte(fixture.Content), filepath.Join(t.TempDir(), "session.jsonl")); err == nil || !strings.Contains(err.Error(), "SessionV4TransactionStorage API") {
+		t.Fatalf("removed projection: %v", err)
 	}
 }

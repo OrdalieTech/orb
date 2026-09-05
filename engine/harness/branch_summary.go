@@ -131,6 +131,16 @@ func PrepareBranchEntries(entries []SessionEntry, tokenBudget float64) BranchPre
 
 //nolint:staticcheck // BranchSummaryError messages match upstream capitalization.
 func GenerateBranchSummary(ctx context.Context, entries []SessionEntry, options GenerateBranchSummaryOptions) (*BranchSummaryResult, error) {
+	return generateBranchSummary(ctx, entries, options, nil)
+}
+
+// GenerateProductBranchSummary follows coding-agent response limits and rejects incomplete summaries.
+func GenerateProductBranchSummary(ctx context.Context, entries []SessionEntry, options GenerateBranchSummaryOptions) (*BranchSummaryResult, error) {
+	return generateBranchSummary(ctx, entries, options, &productSummaryOptions{})
+}
+
+//nolint:staticcheck // BranchSummaryError messages match upstream capitalization.
+func generateBranchSummary(ctx context.Context, entries []SessionEntry, options GenerateBranchSummaryOptions, product *productSummaryOptions) (*BranchSummaryResult, error) {
 	reserve := int64(16384)
 	if options.ReserveTokens != nil {
 		reserve = *options.ReserveTokens
@@ -154,12 +164,15 @@ func GenerateBranchSummary(ctx context.Context, entries []SessionEntry, options 
 	if options.Model == nil || options.Complete == nil {
 		return nil, errors.New("Branch summary failed: no model or completion function")
 	}
+	if product != nil {
+		maxTokens = minTokenLimit(4096, options.Model)
+	}
 	system := SummarizationSystemPrompt
 	request := ai.Context{
 		SystemPrompt: &system,
 		Messages:     ai.MessageList{&ai.UserMessage{Content: ai.NewUserContent(&ai.TextContent{Text: prompt})}},
 	}
-	response, err := CompleteSimpleWithRetries(
+	response, err := completeSummary(
 		ctx,
 		options.Complete,
 		options.Model,
@@ -167,6 +180,7 @@ func GenerateBranchSummary(ctx context.Context, entries []SessionEntry, options 
 		&ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{MaxTokens: &maxTokens}},
 		options.Retry,
 		options.Callbacks,
+		product,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("Branch summary failed: %w", err)
@@ -182,7 +196,20 @@ func GenerateBranchSummary(ctx context.Context, entries []SessionEntry, options 
 		if response.ErrorMessage != nil && *response.ErrorMessage != "" {
 			message = *response.ErrorMessage
 		}
+		if product != nil {
+			return nil, errors.New("Branch summarization failed: " + message)
+		}
 		return nil, errors.New("Branch summary failed: " + message)
+	}
+	if product != nil {
+		if response.StopReason == ai.StopReasonLength {
+			return nil, errors.New("Branch summarization failed: generation hit the token cap and the summary is incomplete")
+		}
+		for _, block := range response.Content {
+			if _, ok := block.(*ai.ToolCall); ok {
+				return nil, errors.New("Branch summarization attempted to call a tool")
+			}
+		}
 	}
 	texts := make([]string, 0, len(response.Content))
 	for _, block := range response.Content {

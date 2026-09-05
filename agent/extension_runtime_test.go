@@ -772,7 +772,7 @@ func TestNormalizeExtensionMessageFillsMissingCoreContent(t *testing.T) {
 	}
 }
 
-func TestExtensionCustomMessageMatchesUpstreamNullPersistenceQuirk(t *testing.T) {
+func TestExtensionCustomMessageNormalizesNullBeforePersistence(t *testing.T) {
 	cwd := t.TempDir()
 	manager, settings := extensionRuntimeDependencies(t, cwd)
 	registry := extensions.NewRegistry(cwd)
@@ -798,7 +798,7 @@ func TestExtensionCustomMessageMatchesUpstreamNullPersistenceQuirk(t *testing.T)
 		t.Fatal("runtime custom message content was not normalized")
 	}
 	entries := manager.GetEntries()
-	if len(entries) != 1 || string(entries[0].Content) != "null" {
+	if len(entries) != 1 || string(entries[0].Content) != "[]" {
 		t.Fatalf("persisted custom content = %s", entries[0].Content)
 	}
 }
@@ -957,7 +957,7 @@ func TestExtensionThinkingLevelClampsAndSkipsDuplicatePersistence(t *testing.T) 
 	}
 }
 
-func TestModelAndThinkingMutationsSharePersistenceAndExtensionEvents(t *testing.T) {
+func TestModelAndThinkingMutationsAreTransientAndEmitExtensionEvents(t *testing.T) {
 	cwd, agentDir := t.TempDir(), t.TempDir()
 	if err := os.WriteFile(filepath.Join(agentDir, "auth.json"), []byte(`{"openai":{"type":"api_key","key":"test"}}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -974,6 +974,7 @@ func TestModelAndThinkingMutationsSharePersistenceAndExtensionEvents(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
+	defaults := [3]string{settings.GetDefaultProvider(), settings.GetDefaultModel(), string(settings.GetDefaultThinkingLevel())}
 	modelA := ai.Model{Provider: "openai", ID: "a", Reasoning: true}
 	modelB := ai.Model{Provider: "openai", ID: "b", Reasoning: true}
 	registry := extensions.NewRegistry(cwd)
@@ -1016,7 +1017,7 @@ func TestModelAndThinkingMutationsSharePersistenceAndExtensionEvents(t *testing.
 	if got, want := selected, []string{"model:b", "thinking:high", "model:a", "thinking:medium"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("selection events = %#v, want %#v", got, want)
 	}
-	if settings.GetDefaultProvider() != "openai" || settings.GetDefaultModel() != "a" || settings.GetDefaultThinkingLevel() != ai.ModelThinkingMedium {
+	if [3]string{settings.GetDefaultProvider(), settings.GetDefaultModel(), string(settings.GetDefaultThinkingLevel())} != defaults {
 		t.Fatalf("selection settings = %q/%q/%q", settings.GetDefaultProvider(), settings.GetDefaultModel(), settings.GetDefaultThinkingLevel())
 	}
 }

@@ -65,3 +65,6 @@ export const retryAssistantCall = stub("retryAssistantCall");
 export const uuidv7 = stub("uuidv7");
 export const validateToolArguments = stub("validateToolArguments");
 export const validateToolCall = stub("validateToolCall");
+
+export const AssistantMessageFrameEncoder = stub("AssistantMessageFrameEncoder");
+export const reduceAssistantMessageFrames = stub("reduceAssistantMessageFrames");

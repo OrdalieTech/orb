@@ -1,6 +1,7 @@
 package cataloggen
 
 import (
+	"bytes"
 	"encoding/json"
 	"regexp"
 	"slices"
@@ -219,13 +220,7 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 		}
 		mergeThinking(model, values)
 	}
-	if (provider == "zai" || provider == "zai-coding-cn") && id == "glm-5.2" {
-		values := thinkingValues(map[ai.ModelThinkingLevel]string{
-			ai.ModelThinkingLow: "high", ai.ModelThinkingMedium: "high", ai.ModelThinkingHigh: "high", ai.ModelThinkingMax: "max",
-		})
-		values[ai.ModelThinkingMinimal] = nil
-		mergeThinking(model, values)
-	}
+
 	if (model.API == ai.APIOpenAIResponses || model.API == ai.APIAzureOpenAIResponses) && strings.HasPrefix(id, "gpt-5") {
 		mergeThinking(model, map[ai.ModelThinkingLevel]*string{ai.ModelThinkingOff: nil})
 	}
@@ -237,7 +232,7 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 	}, id) {
 		mergeThinking(model, thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingOff: "none"}))
 	}
-	if provider == "xai" && model.API == ai.APIOpenAIResponses && id == "grok-4.5" {
+	if provider == "xai" && model.API == ai.APIOpenAIResponses && model.ThinkingLevelMap == nil {
 		mergeThinking(model, map[ai.ModelThinkingLevel]*string{ai.ModelThinkingOff: nil, ai.ModelThinkingMinimal: nil})
 	}
 	if supportsOpenAIXHigh(id) {
@@ -258,7 +253,7 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 	if containsAny(id, "opus-4-7", "opus-4.7", "opus-4-8", "opus-4.8", "opus-5", "opus.5", "sonnet-5", "sonnet.5") {
 		mergeThinking(model, thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingXHigh: "xhigh", ai.ModelThinkingMax: "max"}))
 	}
-	if strings.Contains(id, "fable-5") {
+	if containsAny(id, "fable-5", "mythos-5") {
 		values := thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingXHigh: "xhigh", ai.ModelThinkingMax: "max"})
 		values[ai.ModelThinkingOff] = nil
 		mergeThinking(model, values)
@@ -268,28 +263,12 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 		values[ai.ModelThinkingMinimal], values[ai.ModelThinkingLow], values[ai.ModelThinkingMedium] = nil, nil, nil
 		if provider == "openrouter" {
 			values[ai.ModelThinkingXHigh], values[ai.ModelThinkingMax] = ptr("xhigh"), nil
-		} else if provider == "deepseek" && id == "deepseek-v4-flash" {
+		} else if slices.Contains([]string{"deepseek", "opencode", "opencode-go"}, provider) && strings.Contains(id, "deepseek-v4-flash") {
 			values[ai.ModelThinkingLow] = ptr("low")
 		}
 		mergeThinking(model, values)
 	}
-	if isQwenTokenPlanProvider(provider) {
-		if !qwenTokenPlanSupportsReasoningEffort(id) {
-			model.ThinkingLevelMap = nil
-		} else if id == "qwen3.8-max" {
-			values := thinkingValues(map[ai.ModelThinkingLevel]string{
-				ai.ModelThinkingLow: "low", ai.ModelThinkingMedium: "medium", ai.ModelThinkingXHigh: "xhigh",
-			})
-			values[ai.ModelThinkingMinimal], values[ai.ModelThinkingHigh], values[ai.ModelThinkingMax] = nil, nil, nil
-			model.ThinkingLevelMap = &values
-		} else {
-			values := thinkingValues(map[ai.ModelThinkingLevel]string{
-				ai.ModelThinkingHigh: "high", ai.ModelThinkingMax: "max",
-			})
-			values[ai.ModelThinkingMinimal], values[ai.ModelThinkingLow], values[ai.ModelThinkingMedium], values[ai.ModelThinkingXHigh] = nil, nil, nil, nil
-			model.ThinkingLevelMap = &values
-		}
-	}
+
 	if model.API == ai.APIGoogleGenerativeAI || model.API == ai.APIGoogleVertex {
 		lower := strings.ToLower(id)
 		switch {
@@ -414,6 +393,9 @@ func applyOpenAICompletionsCompat(model *ai.Model) {
 	}
 	applyExplicitCompletionsCompat(model, &compat)
 	model.Compat = mustCompatJSON(compat)
+	if isQwenTokenPlanProvider(string(model.Provider)) {
+		model.Compat = orderCompat(model.Compat, []string{"thinkingFormat", "supportsDeveloperRole", "supportsStore", "supportsReasoningEffort"})
+	}
 }
 
 func applyExplicitCompletionsCompat(model *ai.Model, compat *ai.OpenAICompletionsCompat) {
@@ -445,7 +427,7 @@ func applyExplicitCompletionsCompat(model *ai.Model, compat *ai.OpenAICompletion
 		}
 	case "qwen-token-plan", "qwen-token-plan-cn", "qwen-token-plan-individual":
 		compat.SupportsStore, compat.SupportsDeveloperRole = ptr(false), ptr(false)
-		compat.SupportsReasoningEffort = ptr(qwenTokenPlanSupportsReasoningEffort(id))
+		compat.SupportsReasoningEffort = ptr(model.ThinkingLevelMap != nil)
 		compat.ThinkingFormat = ptr(ai.ThinkingFormatQwen)
 	case "xiaomi", "xiaomi-token-plan-ams", "xiaomi-token-plan-cn", "xiaomi-token-plan-sgp":
 		compat.RequiresReasoningContentOnAssistantMessages = ptr(true)
@@ -453,7 +435,7 @@ func applyExplicitCompletionsCompat(model *ai.Model, compat *ai.OpenAICompletion
 	case "zai", "zai-coding-cn":
 		compat.SupportsDeveloperRole = ptr(false)
 		compat.ThinkingFormat = ptr(ai.ThinkingFormatZAI)
-		if id == "glm-5.2" {
+		if model.ThinkingLevelMap != nil {
 			compat.SupportsReasoningEffort = ptr(true)
 		}
 		if !slices.Contains([]string{"glm-4.5", "glm-4.5-air", "glm-4.5-flash", "glm-4.5v"}, id) {
@@ -483,7 +465,7 @@ func applyExplicitCompletionsCompat(model *ai.Model, compat *ai.OpenAICompletion
 			compat.SupportsReasoningEffort, compat.ThinkingFormat = ptr(true), ptr(ai.ThinkingFormatTogether)
 		}
 	case "fireworks":
-		if strings.Contains(id, "glm-5p2") {
+		if strings.Contains(id, "glm-") {
 			compat.SupportsStore, compat.SupportsDeveloperRole = ptr(false), ptr(false)
 		}
 	case "openrouter":
@@ -500,6 +482,10 @@ func applyAnthropicCompat(model *ai.Model) {
 		_ = json.Unmarshal(model.Compat, &compat)
 	}
 	provider, id := string(model.Provider), model.ID
+	if (provider == "anthropic" || provider == "openrouter") && supportsAnthropicMidConvoEffort(id) {
+		compat.SupportsMidConvoEffort = ptr(true)
+		mergeThinking(model, map[ai.ModelThinkingLevel]*string{ai.ModelThinkingOff: nil})
+	}
 	if provider == "fireworks" {
 		compat.SendSessionAffinityHeaders = ptr(true)
 		compat.SupportsEagerToolInputStreaming = ptr(false)
@@ -544,13 +530,14 @@ func applyAnthropicCompat(model *ai.Model) {
 		return
 	}
 	if provider == "anthropic" {
-		model.Compat = mustCompatJSON(struct {
-			ai.AnthropicMessagesCompat
-			SupportsStrictTools *bool `json:"supportsStrictTools,omitempty"`
-		}{compat, ptr(true)})
+		compat.SupportsStrictTools = ptr(true)
+		model.Compat = anthropicCatalogCompat(compat)
 		return
 	}
 	model.Compat = mustCompatJSON(compat)
+	if provider == "openrouter" {
+		model.Compat = anthropicCatalogCompat(compat)
+	}
 }
 
 func applyOpenAIResponsesCompat(model *ai.Model) {
@@ -568,7 +555,7 @@ func applyOpenAIResponsesCompat(model *ai.Model) {
 		_ = json.Unmarshal(model.Compat, &compat)
 	}
 	provider, id := string(model.Provider), model.ID
-	if provider == "xai" && id == "grok-4.5" {
+	if provider == "xai" {
 		compat.SupportsLongCacheRetention = ptr(false)
 	}
 	if provider == "opencode" || provider == "opencode-go" {
@@ -700,18 +687,11 @@ func supportsOpenAIXHigh(id string) bool {
 }
 
 func isAnthropicAdaptiveThinkingModel(id string) bool {
-	return containsAny(id, "opus-4-6", "opus-4.6", "opus-4-7", "opus-4.7", "opus-4-8", "opus-4.8", "opus-5", "opus.5", "sonnet-4-6", "sonnet-4.6", "sonnet-5", "sonnet.5", "fable-5")
+	return containsAny(id, "opus-4-6", "opus-4.6", "opus-4-7", "opus-4.7", "opus-4-8", "opus-4.8", "opus-5", "opus.5", "sonnet-4-6", "sonnet-4.6", "sonnet-5", "sonnet.5", "fable-5", "mythos-5")
 }
 
 func isQwenTokenPlanProvider(provider string) bool {
 	return provider == "qwen-token-plan" || provider == "qwen-token-plan-cn" || provider == "qwen-token-plan-individual"
-}
-
-func qwenTokenPlanSupportsReasoningEffort(id string) bool {
-	return !slices.Contains([]string{
-		"MiniMax-M2.5", "deepseek-v3.2", "kimi-k2.5", "kimi-k2.6", "kimi-k2.7-code",
-		"qwen3.6-flash", "qwen3.6-plus", "qwen3.7-max", "qwen3.7-plus",
-	}, id)
 }
 
 func containsAny(value string, needles ...string) bool {
@@ -729,4 +709,83 @@ func mustCompatJSON[T any](value T) json.RawMessage {
 		return nil
 	}
 	return data
+}
+
+func effortThinkingLevelMap(options []sourceReasoningOption) *map[ai.ModelThinkingLevel]*string {
+	model := ai.Model{API: ai.APIOpenAIResponses}
+	applyModelsDevReasoningOptionMetadata(&model, options)
+	return model.ThinkingLevelMap
+}
+
+var anthropicMidConvoPattern = regexp.MustCompile(`^(?:claude-opus-5|claude-(?:fable|mythos)-5[.-]1)(?:-\d{8})?$`)
+
+func supportsAnthropicMidConvoEffort(id string) bool {
+	id = strings.TrimPrefix(strings.TrimPrefix(strings.ToLower(id), "~"), "anthropic/")
+	return anthropicMidConvoPattern.MatchString(id)
+}
+func applyAnthropicFallbackMetadata(models map[string]ai.Model) {
+	for id, targets := range map[string][]string{"claude-fable-5": {"claude-opus-4-8", "claude-opus-5"}, "claude-opus-5": {"claude-opus-4-8"}} {
+		model, ok := models[id]
+		if !ok {
+			continue
+		}
+		var compat ai.AnthropicMessagesCompat
+		_ = json.Unmarshal(model.Compat, &compat)
+		var allowed []ai.AnthropicAllowedFallbackModel
+		for _, target := range targets {
+			if compat.SupportsMidConvoEffort != nil && *compat.SupportsMidConvoEffort && !supportsAnthropicMidConvoEffort(target) {
+				continue
+			}
+			if fallback, ok := models[target]; ok {
+				allowed = append(allowed, ai.AnthropicAllowedFallbackModel{Provider: fallback.Provider, Model: fallback.ID, Cost: fallback.Cost})
+			}
+		}
+		if len(allowed) > 0 {
+			compat.AllowedFallbackModels = &allowed
+			model.Compat = anthropicCatalogCompat(compat)
+			models[id] = model
+		}
+	}
+}
+
+func anthropicCatalogCompat(compat ai.AnthropicMessagesCompat) json.RawMessage {
+	return mustCompatJSON(struct {
+		SupportsMidConvoEffort          *bool                               `json:"supportsMidConvoEffort,omitempty"`
+		SupportsEagerToolInputStreaming *bool                               `json:"supportsEagerToolInputStreaming,omitempty"`
+		ForceAdaptiveThinking           *bool                               `json:"forceAdaptiveThinking,omitempty"`
+		SupportsTemperature             *bool                               `json:"supportsTemperature,omitempty"`
+		SupportsStrictTools             *bool                               `json:"supportsStrictTools,omitempty"`
+		AllowedFallbackModels           *[]ai.AnthropicAllowedFallbackModel `json:"allowedFallbackModels,omitempty"`
+	}{compat.SupportsMidConvoEffort, compat.SupportsEagerToolInputStreaming, compat.ForceAdaptiveThinking, compat.SupportsTemperature, compat.SupportsStrictTools, compat.AllowedFallbackModels})
+}
+
+func orderCompat(raw json.RawMessage, keys []string) json.RawMessage {
+	var values map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &values)
+	var out bytes.Buffer
+	out.WriteByte('{')
+	first := true
+	write := func(key string) {
+		value, ok := values[key]
+		if !ok {
+			return
+		}
+		if !first {
+			out.WriteByte(',')
+		}
+		first = false
+		name, _ := json.Marshal(key)
+		out.Write(name)
+		out.WriteByte(':')
+		out.Write(value)
+		delete(values, key)
+	}
+	for _, key := range keys {
+		write(key)
+	}
+	for _, key := range sortedKeys(values) {
+		write(key)
+	}
+	out.WriteByte('}')
+	return out.Bytes()
 }

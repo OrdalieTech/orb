@@ -6,6 +6,9 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Update pi compatibility to released v0.85.0: provider wire fixes, refreshed models, safer compaction, session-scoped model controls, queue clearing, and transactional v4 session storage. The product remains pure Go with no new dependencies.
+- The released v4 harness format uses transactional entries rather than the previous lane format; use the transaction storage API for v4. Coding-agent sessions continue to use v3.
+
 ## [0.5.0] - 2026-08-18
 
 ### Changed

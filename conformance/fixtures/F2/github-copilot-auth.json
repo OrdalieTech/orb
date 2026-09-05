@@ -1,0 +1,367 @@
+{
+  "cases": [
+    {
+      "name": "selective-policy",
+      "knownModelIds": [
+        "fixture-enabled",
+        "fixture-unconfigured",
+        "fixture-no-tools"
+      ],
+      "models": [
+        {
+          "id": "fixture-enabled",
+          "model_picker_enabled": true,
+          "policy": {
+            "state": "enabled"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": true
+            }
+          }
+        },
+        {
+          "id": "fixture-unconfigured",
+          "model_picker_enabled": true,
+          "policy": {
+            "state": "unconfigured"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": true
+            }
+          }
+        },
+        {
+          "id": "fixture-no-tools",
+          "model_picker_enabled": true,
+          "policy": {
+            "state": "unconfigured"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": false
+            }
+          }
+        },
+        {
+          "id": "remote-only-model",
+          "model_picker_enabled": true,
+          "policy": {
+            "state": "unconfigured"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": true
+            }
+          }
+        },
+        {
+          "id": "disabled-model",
+          "model_picker_enabled": true,
+          "policy": {
+            "state": "disabled"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": true
+            }
+          }
+        }
+      ],
+      "host": "individual",
+      "requests": [
+        "POST /login/device/code",
+        "POST /login/oauth/access_token",
+        "GET /copilot_internal/v2/token",
+        "GET /models",
+        "POST /models/fixture-unconfigured/policy"
+      ],
+      "progress": [
+        "Enabling models..."
+      ],
+      "credential": {
+        "type": "oauth",
+        "refresh": "refresh",
+        "access": "tid=fixture;proxy-ep=proxy.individual.githubcopilot.com",
+        "expires": 1799999700000,
+        "availableModelIds": [
+          "fixture-enabled",
+          "fixture-unconfigured",
+          "remote-only-model"
+        ]
+      }
+    },
+    {
+      "name": "individual-policy-fallback",
+      "knownModelIds": [
+        "fixture-enabled",
+        "fixture-unconfigured",
+        "fixture-no-tools"
+      ],
+      "models": [
+        {
+          "id": "fixture-enabled",
+          "model_picker_enabled": false,
+          "policy": {
+            "state": "enabled"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": true
+            }
+          }
+        },
+        {
+          "id": "fixture-unconfigured",
+          "model_picker_enabled": false,
+          "policy": {
+            "state": "unconfigured"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": true
+            }
+          }
+        },
+        {
+          "id": "fixture-no-tools",
+          "model_picker_enabled": true,
+          "policy": {
+            "state": "unconfigured"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": false
+            }
+          }
+        },
+        {
+          "id": "remote-only-model",
+          "model_picker_enabled": false,
+          "policy": {
+            "state": "unconfigured"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": true
+            }
+          }
+        },
+        {
+          "id": "disabled-model",
+          "model_picker_enabled": true,
+          "policy": {
+            "state": "disabled"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": true
+            }
+          }
+        }
+      ],
+      "host": "individual",
+      "requests": [
+        "POST /login/device/code",
+        "POST /login/oauth/access_token",
+        "GET /copilot_internal/v2/token",
+        "GET /models",
+        "POST /models/fixture-unconfigured/policy"
+      ],
+      "progress": [
+        "Enabling models..."
+      ],
+      "credential": {
+        "type": "oauth",
+        "refresh": "refresh",
+        "access": "tid=fixture;proxy-ep=proxy.individual.githubcopilot.com",
+        "expires": 1799999700000,
+        "availableModelIds": [
+          "fixture-enabled",
+          "fixture-unconfigured"
+        ]
+      }
+    },
+    {
+      "name": "business-no-fallback",
+      "knownModelIds": [
+        "fixture-enabled",
+        "fixture-unconfigured",
+        "fixture-no-tools"
+      ],
+      "models": [
+        {
+          "id": "fixture-enabled",
+          "model_picker_enabled": false,
+          "policy": {
+            "state": "enabled"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": true
+            }
+          }
+        },
+        {
+          "id": "fixture-unconfigured",
+          "model_picker_enabled": false,
+          "policy": {
+            "state": "unconfigured"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": true
+            }
+          }
+        },
+        {
+          "id": "fixture-no-tools",
+          "model_picker_enabled": true,
+          "policy": {
+            "state": "unconfigured"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": false
+            }
+          }
+        },
+        {
+          "id": "remote-only-model",
+          "model_picker_enabled": false,
+          "policy": {
+            "state": "unconfigured"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": true
+            }
+          }
+        },
+        {
+          "id": "disabled-model",
+          "model_picker_enabled": true,
+          "policy": {
+            "state": "disabled"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": true
+            }
+          }
+        }
+      ],
+      "host": "business",
+      "requests": [
+        "POST /login/device/code",
+        "POST /login/oauth/access_token",
+        "GET /copilot_internal/v2/token",
+        "GET /models"
+      ],
+      "progress": [],
+      "credential": {
+        "type": "oauth",
+        "refresh": "refresh",
+        "access": "tid=fixture;proxy-ep=proxy.business.githubcopilot.com",
+        "expires": 1799999700000,
+        "availableModelIds": []
+      }
+    },
+    {
+      "name": "rate-limited-policy",
+      "knownModelIds": [
+        "fixture-enabled",
+        "fixture-unconfigured",
+        "fixture-no-tools"
+      ],
+      "models": [
+        {
+          "id": "fixture-enabled",
+          "model_picker_enabled": true,
+          "policy": {
+            "state": "enabled"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": true
+            }
+          }
+        },
+        {
+          "id": "fixture-unconfigured",
+          "model_picker_enabled": true,
+          "policy": {
+            "state": "unconfigured"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": true
+            }
+          }
+        },
+        {
+          "id": "fixture-no-tools",
+          "model_picker_enabled": true,
+          "policy": {
+            "state": "unconfigured"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": false
+            }
+          }
+        },
+        {
+          "id": "remote-only-model",
+          "model_picker_enabled": true,
+          "policy": {
+            "state": "unconfigured"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": true
+            }
+          }
+        },
+        {
+          "id": "disabled-model",
+          "model_picker_enabled": true,
+          "policy": {
+            "state": "disabled"
+          },
+          "capabilities": {
+            "supports": {
+              "tool_calls": true
+            }
+          }
+        }
+      ],
+      "host": "individual",
+      "requests": [
+        "POST /login/device/code",
+        "POST /login/oauth/access_token",
+        "GET /copilot_internal/v2/token",
+        "GET /models",
+        "GET /models",
+        "POST /models/fixture-unconfigured/policy",
+        "POST /models/fixture-unconfigured/policy",
+        "POST /models/fixture-unconfigured/policy"
+      ],
+      "progress": [
+        "Enabling models..."
+      ],
+      "credential": {
+        "type": "oauth",
+        "refresh": "refresh",
+        "access": "tid=fixture;proxy-ep=proxy.individual.githubcopilot.com",
+        "expires": 1799999700000,
+        "availableModelIds": [
+          "fixture-enabled",
+          "fixture-unconfigured",
+          "remote-only-model"
+        ]
+      }
+    }
+  ]
+}

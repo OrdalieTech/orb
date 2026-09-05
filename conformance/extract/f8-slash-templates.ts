@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { generateCommandMetadata } from "./f8-command-metadata.ts";
+
 import { withOfflineGeneratedCatalog } from "./f3-agent.ts";
 
 type ArgumentCase = { name: string; input: string; expected?: string[] };
@@ -28,6 +30,10 @@ type HarnessSubstitutionCase = {
 type FixtureFile = { path: string; content: string };
 
 const discoveryFiles: FixtureFile[] = [
+	{
+		path: "skills/bom/SKILL.md",
+		content: "\uFEFF---\nname: bom\ndescription: BOM frontmatter.\n---\nBOM body.",
+	},
 	{
 		path: "skills/inspect/SKILL.md",
 		content:
@@ -1096,17 +1102,21 @@ export async function generateF8(
 			).href
 		);
 		const harnessEnv = new envModule.NodeExecutionEnv({ cwd: fixtureRoot });
+		const { BACKGROUND_CONTEXT } = await import(pathToFileURL(path.join(upstreamRoot, "packages/agent/src/harness/context.ts")).href);
 		const harnessSkills = await harnessSkillModule.loadSkills(
 			harnessEnv,
 			skillsDir,
+			BACKGROUND_CONTEXT,
 		);
 		const harnessPrompts = await harnessPromptModule.loadPromptTemplates(
 			harnessEnv,
 			promptsDir,
+			BACKGROUND_CONTEXT,
 		);
 		const harnessDirectPrompt = await harnessPromptModule.loadPromptTemplates(
 			harnessEnv,
 			path.join(promptsDir, "empty.md"),
+			BACKGROUND_CONTEXT,
 		);
 		const inspect = harnessSkills.skills.find(
 			(skill) => skill.name === "inspect",
@@ -1237,6 +1247,7 @@ export async function generateF8(
 			path.join(familyDir, "cases.json"),
 			`${JSON.stringify(fixture, null, 2)}\n`,
 		);
+		await generateCommandMetadata(upstreamRoot, outputRoot);
 	} finally {
 		await rm(fixtureRoot, { recursive: true, force: true });
 	}

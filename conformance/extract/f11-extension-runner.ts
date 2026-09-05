@@ -438,6 +438,27 @@ export async function generateF11ExtensionRunner(
     providerPostBindError = error instanceof Error ? error.message : String(error);
   }
 
+  const failedRuntime = loaderModule.createExtensionRuntime();
+  const listeners = new Set<() => void>();
+  const failedBus = { on(_channel: string, listener: () => void) { listeners.add(listener); return () => listeners.delete(listener); }, emit() {} };
+  let failedAPI: any;
+  let failedLoadError = "";
+  try {
+    await loaderModule.loadExtensionFromFactory((api: any) => {
+      failedAPI = api;
+      api.registerFlag("failed", { type: "string", default: "leaked" });
+      api.events.on("probe", () => {});
+      throw new Error("factory failed");
+    }, "/fixture", failedBus, failedRuntime, "failed-load");
+  } catch(error) { failedLoadError = (error as Error).message; }
+  let staleAPIError = "";
+  try { failedAPI.getFlag("failed"); } catch(error) { staleAPIError = (error as Error).message; }
+  let invalidFlagError = "";
+  try {
+    await loaderModule.loadExtensionFromFactory((api: any) => api.registerFlag("bad", { type: "boolean", default: "invalid" }), "/fixture", failedBus, failedRuntime, "invalid-flag");
+  } catch(error) { invalidFlagError = (error as Error).message; }
+  const failedLoad = { error: failedLoadError, flagLeaked: failedRuntime.flagValues.has("failed"), listeners: listeners.size, staleAPIError, invalidFlagError };
+
   const registrationRuntime = loaderModule.createExtensionRuntime();
   const registrationBus = {} as any;
   const registrationFirst = await loaderModule.loadExtensionFromFactory(
@@ -508,7 +529,26 @@ export async function generateF11ExtensionRunner(
     { type: "session_shutdown", reason: "quit" },
   );
 
+  const uiPrompts: any[] = [];
+  const uiPromptRunner = createRunner([extension("ui-observer", {
+    ui_prompt_start: (event) => {uiPrompts.push({...event});},
+    ui_prompt_end: (event) => {uiPrompts.push({...event});},
+    session_compact_failed: (event) => {uiPrompts.push({...event});},
+  })]);
+  uiPromptRunner.setUIContext({
+    select: async () => "choice", confirm: async () => true,
+    input: () => {throw new Error("input failed")}, editor: async () => "edited",
+    custom: async () => {await uiPromptRunner.getUIContext().select("nested", []);return "custom"},
+  }, "tui");
+  const promptUI = uiPromptRunner.getUIContext();
+  await promptUI.select("Select title",[]); await promptUI.confirm("Confirm title","");
+  try {await promptUI.input("Input title")}catch{}
+  await promptUI.editor(""); await promptUI.custom(()=>{});
+  await uiPromptRunner.emit({type:"session_compact_failed",reason:"overflow",aborted:true,willRetry:true,fromExtension:false});
+  await new Promise(resolve=>setImmediate(resolve));
+
   const cases = {
+    uiPrompts,
     orderedErrorIsolation: { calls: orderedCalls, errors: orderedErrors },
     contextMiddleware: { original: originalContext, result: contextResult },
     toolResultMiddleware: { result: toolResult, errors: toolResultErrors },
@@ -539,6 +579,7 @@ export async function generateF11ExtensionRunner(
       errors: providerErrors,
       postBindError: providerPostBindError,
     },
+    failedLoad,
     registrationConflicts: {
       toolDescriptions: registrationRunner.getAllRegisteredTools().map((tool: any) => tool.definition.description),
       commands: registrationRunner.getRegisteredCommands().map((command: any) => ({

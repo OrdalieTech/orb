@@ -439,10 +439,12 @@ func findJPEGExif(input []byte) int {
 		}
 		if marker == 0xe1 {
 			start := offset + 4
-			if start+6 > len(input) || !hasExifHeader(input, start) {
+			if start+6 > len(input) {
 				return -1
 			}
-			return start + 6
+			if hasExifHeader(input, start) {
+				return start + 6
+			}
 		}
 		length := int(binary.BigEndian.Uint16(input[offset+2 : offset+4]))
 		if length < 2 {

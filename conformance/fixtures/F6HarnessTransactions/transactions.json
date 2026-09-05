@@ -1,0 +1,430 @@
+{
+  "observations": [
+    {
+      "name": "empty",
+      "firstSeq": 1,
+      "writes": [],
+      "timestamp": 1770091506789,
+      "prepared": {
+        "writes": [],
+        "result": {
+          "firstSeq": 1,
+          "seqs": [],
+          "timestamp": 1770091506789
+        }
+      },
+      "error": null
+    },
+    {
+      "name": "entries",
+      "firstSeq": 1,
+      "writes": [
+        {
+          "kind": "entry",
+          "entry": {
+            "id": "a",
+            "parentId": null,
+            "type": "message",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "<>&"
+                }
+              ],
+              "timestamp": 1
+            }
+          }
+        },
+        {
+          "kind": "entry",
+          "entry": {
+            "id": "b",
+            "parentId": "a",
+            "type": "custom",
+            "customType": "test",
+            "data": null
+          }
+        }
+      ],
+      "timestamp": 1770091506789,
+      "prepared": {
+        "writes": [
+          {
+            "kind": "entry",
+            "id": "a",
+            "parentId": null,
+            "type": "message",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "<>&"
+                }
+              ],
+              "timestamp": 1
+            },
+            "seq": 1,
+            "timestamp": 1770091506789
+          },
+          {
+            "kind": "entry",
+            "id": "b",
+            "parentId": "a",
+            "type": "custom",
+            "customType": "test",
+            "data": null,
+            "seq": 2,
+            "timestamp": 1770091506789
+          }
+        ],
+        "result": {
+          "firstSeq": 1,
+          "seqs": [
+            1,
+            2
+          ],
+          "timestamp": 1770091506789
+        }
+      },
+      "error": null
+    },
+    {
+      "name": "values",
+      "firstSeq": 9,
+      "writes": [
+        {
+          "kind": "value",
+          "op": "set",
+          "namespace": "session",
+          "key": "name",
+          "value": "sample"
+        },
+        {
+          "kind": "list",
+          "op": "append",
+          "namespace": "lane",
+          "key": "inbox",
+          "value": {
+            "entryId": "a",
+            "kind": "steer"
+          }
+        },
+        {
+          "kind": "value",
+          "op": "delete",
+          "namespace": "session",
+          "key": "name"
+        },
+        {
+          "kind": "list",
+          "op": "delete",
+          "namespace": "lane",
+          "key": "inbox"
+        }
+      ],
+      "timestamp": 1770091506789,
+      "prepared": {
+        "writes": [
+          {
+            "kind": "value",
+            "op": "set",
+            "seq": 9,
+            "namespace": "session",
+            "key": "name",
+            "value": "sample"
+          },
+          {
+            "kind": "list",
+            "op": "append",
+            "seq": 10,
+            "namespace": "lane",
+            "key": "inbox",
+            "value": {
+              "entryId": "a",
+              "kind": "steer"
+            }
+          },
+          {
+            "kind": "value",
+            "op": "delete",
+            "seq": 11,
+            "namespace": "session",
+            "key": "name"
+          },
+          {
+            "kind": "list",
+            "op": "delete",
+            "seq": 12,
+            "namespace": "lane",
+            "key": "inbox"
+          }
+        ],
+        "result": {
+          "firstSeq": 9,
+          "seqs": [
+            9,
+            10,
+            11,
+            12
+          ],
+          "timestamp": 1770091506789
+        }
+      },
+      "error": null
+    },
+    {
+      "name": "usage",
+      "firstSeq": 20,
+      "writes": [
+        {
+          "kind": "usage",
+          "row": {
+            "id": "usage",
+            "usage": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 10,
+              "totalTokens": 160,
+              "cost": {
+                "input": 0.1,
+                "output": 0.2,
+                "cacheRead": 0.01,
+                "cacheWrite": 0.02,
+                "total": 0.33
+              }
+            },
+            "adjustment": true,
+            "details": {
+              "source": "v3-import"
+            }
+          }
+        }
+      ],
+      "timestamp": 1770091506789,
+      "prepared": {
+        "writes": [
+          {
+            "kind": "usage",
+            "id": "usage",
+            "usage": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 10,
+              "totalTokens": 160,
+              "cost": {
+                "input": 0.1,
+                "output": 0.2,
+                "cacheRead": 0.01,
+                "cacheWrite": 0.02,
+                "total": 0.33
+              }
+            },
+            "adjustment": true,
+            "details": {
+              "source": "v3-import"
+            },
+            "seq": 20
+          }
+        ],
+        "result": {
+          "firstSeq": 20,
+          "seqs": [
+            20
+          ],
+          "timestamp": 1770091506789
+        }
+      },
+      "error": null
+    },
+    {
+      "name": "duplicate",
+      "firstSeq": 1,
+      "writes": [
+        {
+          "kind": "entry",
+          "entry": {
+            "id": "a",
+            "parentId": null,
+            "type": "custom",
+            "customType": "test"
+          }
+        },
+        {
+          "kind": "usage",
+          "row": {
+            "id": "a",
+            "usage": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 10,
+              "totalTokens": 160,
+              "cost": {
+                "input": 0.1,
+                "output": 0.2,
+                "cacheRead": 0.01,
+                "cacheWrite": 0.02,
+                "total": 0.33
+              }
+            }
+          }
+        }
+      ],
+      "timestamp": 1770091506789,
+      "prepared": {
+        "writes": [
+          {
+            "kind": "entry",
+            "id": "a",
+            "parentId": null,
+            "type": "custom",
+            "customType": "test",
+            "seq": 1,
+            "timestamp": 1770091506789
+          },
+          {
+            "kind": "usage",
+            "id": "a",
+            "usage": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 10,
+              "totalTokens": 160,
+              "cost": {
+                "input": 0.1,
+                "output": 0.2,
+                "cacheRead": 0.01,
+                "cacheWrite": 0.02,
+                "total": 0.33
+              }
+            },
+            "seq": 2
+          }
+        ],
+        "result": {
+          "firstSeq": 1,
+          "seqs": [
+            1,
+            2
+          ],
+          "timestamp": 1770091506789
+        }
+      },
+      "error": "Duplicate entry or usage id: a"
+    },
+    {
+      "name": "missing-parent",
+      "firstSeq": 1,
+      "writes": [
+        {
+          "kind": "entry",
+          "entry": {
+            "id": "a",
+            "parentId": "missing",
+            "type": "custom",
+            "customType": "test"
+          }
+        }
+      ],
+      "timestamp": 1770091506789,
+      "prepared": {
+        "writes": [
+          {
+            "kind": "entry",
+            "id": "a",
+            "parentId": "missing",
+            "type": "custom",
+            "customType": "test",
+            "seq": 1,
+            "timestamp": 1770091506789
+          }
+        ],
+        "result": {
+          "firstSeq": 1,
+          "seqs": [
+            1
+          ],
+          "timestamp": 1770091506789
+        }
+      },
+      "error": "Missing parent entry: missing"
+    }
+  ],
+  "headers": [
+    {
+      "header": {
+        "v": 4,
+        "kind": "header",
+        "id": "session",
+        "storageVersion": 1,
+        "createdAt": 1770091506789,
+        "cwd": "/fixture"
+      },
+      "valid": true
+    },
+    {
+      "header": {
+        "v": 4,
+        "kind": "header",
+        "id": "session",
+        "storageVersion": 2,
+        "createdAt": 0,
+        "cwd": "",
+        "nextSeq": 4
+      },
+      "valid": true
+    },
+    {
+      "header": {
+        "v": 4,
+        "kind": "header",
+        "id": "session",
+        "storageVersion": 1,
+        "createdAt": 0,
+        "cwd": "",
+        "parentSessionId": "a",
+        "legacyParentSessionPath": "b"
+      },
+      "valid": true
+    },
+    {
+      "header": {
+        "kind": "header",
+        "version": 4,
+        "id": "old",
+        "createdAt": 0,
+        "cwd": ""
+      },
+      "valid": false
+    },
+    {
+      "header": {
+        "v": 4,
+        "kind": "header",
+        "id": "bad",
+        "storageVersion": 0,
+        "createdAt": 0,
+        "cwd": ""
+      },
+      "valid": false
+    },
+    {
+      "header": {
+        "v": 4,
+        "kind": "header",
+        "id": "bad",
+        "storageVersion": 1,
+        "createdAt": 0,
+        "cwd": "",
+        "nextSeq": 0
+      },
+      "valid": false
+    }
+  ]
+}

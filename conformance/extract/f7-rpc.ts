@@ -111,6 +111,7 @@ async function generateF7WithCatalog(
     await runStep("truncated-object-parse-error", "{", (line) => line.value.command === "parse");
     await runStep("initial-state-crlf", { id: "state-1", type: "get_state" }, response("state-1"), "crlf");
     await runStep("initial-messages", { id: "messages-1", type: "get_messages" }, response("messages-1"));
+    await runStep("clear-empty-queue", { id: "clear-1", type: "clear_queue" }, response("clear-1"));
     await runStep("empty-entries", { id: "entries-1", type: "get_entries" }, response("entries-1"));
     await runStep("empty-tree", { id: "tree-1", type: "get_tree" }, response("tree-1"));
     await runStep("empty-fork-messages", { id: "fork-messages-1", type: "get_fork_messages" }, response("fork-messages-1"));

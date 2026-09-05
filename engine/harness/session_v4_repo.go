@@ -3,7 +3,7 @@ package harness
 import (
 	"context"
 	"encoding/json"
-	"regexp"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -133,18 +133,6 @@ type JSONLSessionV4ForkOptions struct {
 	JSONLSessionV4CreateOptions
 }
 
-var sessionV4IDPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$`)
-
-func validateSessionV4ID(id string) error {
-	if !sessionV4IDPattern.MatchString(id) {
-		return newSessionError(
-			SessionErrorInvalidPayload,
-			"Session id must be non-empty, contain only alphanumeric characters, '-', '_', and '.', and start and end with an alphanumeric character",
-		)
-	}
-	return nil
-}
-
 func sessionV4DirectoryName(cwd string) string {
 	if len(cwd) > 0 && (cwd[0] == '/' || cwd[0] == '\\') {
 		cwd = cwd[1:]
@@ -155,7 +143,7 @@ func sessionV4DirectoryName(cwd string) string {
 func sessionV4FileName(createdAt int64, id string) string {
 	timestamp := time.UnixMilli(createdAt).UTC().Format("2006-01-02T15:04:05.000Z")
 	timestamp = strings.NewReplacer(":", "-", ".", "-").Replace(timestamp)
-	return timestamp + "_" + id + ".jsonl"
+	return timestamp + "_" + transactionEncodeID(id) + ".jsonl"
 }
 
 // ListJSONLSessionV4Metadata lists v4 sessions below a sessions root without
@@ -180,15 +168,17 @@ type JSONLSessionV4Repo struct {
 	// claimed reserves in-flight create/fork destinations: the durable filename
 	// carries a timestamp, so the existence check alone lets two concurrent
 	// calls both decide the same {cwd, id} is free and publish duplicates.
-	claimMu sync.Mutex
-	claimed map[string]bool
+	claimMu      sync.Mutex
+	claimed      map[string]bool
+	openSessions map[string]*JSONLSessionV4Storage
+	closed       bool
 
 	// Now overrides the created-at clock (epoch milliseconds).
 	Now func() int64
 }
 
 func NewJSONLSessionV4Repo(fs FileSystem, sessionsRoot string) *JSONLSessionV4Repo {
-	return &JSONLSessionV4Repo{fs: fs, sessionsRootPath: sessionsRoot, claimed: map[string]bool{}}
+	return &JSONLSessionV4Repo{fs: fs, sessionsRootPath: sessionsRoot, claimed: map[string]bool{}, openSessions: map[string]*JSONLSessionV4Storage{}}
 }
 
 // claimDestination resolves and reserves the {cwd, id} a create or fork
@@ -197,16 +187,17 @@ func (repo *JSONLSessionV4Repo) claimDestination(ctx context.Context, options JS
 	if id, err = sessionV4CreateID(options.ID); err != nil {
 		return "", "", nil, err
 	}
-	if err = validateSessionV4ID(id); err != nil {
-		return "", "", nil, err
-	}
+
 	if cwd, err = repo.fs.AbsolutePath(ctx, options.CWD); err != nil {
 		return "", "", nil, fileV4Result(err, "Failed to resolve session cwd %s", options.CWD)
 	}
 	key := cwd + "\x00" + id
 	repo.claimMu.Lock()
 	defer repo.claimMu.Unlock()
-	if repo.claimed[key] {
+	if repo.closed {
+		return "", "", nil, fmt.Errorf("JsonlSessionRepo is closed")
+	}
+	if repo.claimed[key] || repo.openSessions[key] != nil {
 		return "", "", nil, newSessionError(SessionErrorAlreadyExists, "Session already exists: %s", id)
 	}
 	if repo.claimed == nil {
@@ -235,14 +226,38 @@ func (repo *JSONLSessionV4Repo) Create(ctx context.Context, options JSONLSession
 		return nil, err
 	}
 	storage.Now = repo.Now
-	return storage, nil
+	return storage, repo.publishTransactionStorage(storage)
 }
 
 func (repo *JSONLSessionV4Repo) Open(ctx context.Context, metadata JSONLSessionV4Metadata) (*JSONLSessionV4Storage, error) {
-	return repo.loadStorage(ctx, metadata)
+	repo.claimMu.Lock()
+	if repo.closed {
+		repo.claimMu.Unlock()
+		return nil, fmt.Errorf("JsonlSessionRepo is closed")
+	}
+	active := repo.openSessions[metadata.CWD+"\x00"+metadata.ID] != nil
+	repo.claimMu.Unlock()
+	if active {
+		return nil, fmt.Errorf("Session is already open: %s", metadata.ID)
+	}
+	storage, err := repo.loadStorage(ctx, metadata)
+	if err != nil {
+		return nil, err
+	}
+	if err = repo.publishTransactionStorage(storage); err != nil {
+		_ = storage.Close(ctx)
+		return nil, err
+	}
+	return storage, nil
 }
 
 func (repo *JSONLSessionV4Repo) List(ctx context.Context, cwd *string) ([]JSONLSessionV4Metadata, error) {
+	repo.claimMu.Lock()
+	closed := repo.closed
+	repo.claimMu.Unlock()
+	if closed {
+		return nil, fmt.Errorf("JsonlSessionRepo is closed")
+	}
 	directories, err := repo.sessionDirectories(ctx, cwd)
 	if err != nil {
 		return nil, err
@@ -267,31 +282,93 @@ func (repo *JSONLSessionV4Repo) List(ctx context.Context, cwd *string) ([]JSONLS
 			if len(lines) == 0 || lines[0] == "" {
 				continue
 			}
-			header, decodeErr := DecodeSessionV4Header([]byte(lines[0]))
+			releasedHeader, decodeErr := DecodeSessionV4TransactionHeader([]byte(lines[0]))
+			header := SessionV4Header{ID: releasedHeader.ID, CreatedAt: releasedHeader.CreatedAt, CWD: releasedHeader.CWD, ParentSessionID: releasedHeader.ParentSessionID, LegacyParentSessionPath: releasedHeader.LegacyParentSessionPath}
 			if decodeErr != nil {
-				continue
+				legacy, valid := parseTransactionLegacyHeader([]byte(lines[0]))
+				if !valid {
+					continue
+				}
+				stamp, _ := time.Parse(time.RFC3339Nano, legacy.Timestamp)
+				header = SessionV4Header{ID: legacy.ID, CreatedAt: stamp.UnixMilli(), CWD: legacy.CWD}
+				releasedHeader.StorageVersion = 1
+				if legacy.ParentSession != nil {
+					parentLines, readErr := repo.fs.ReadTextLines(ctx, *legacy.ParentSession, 1)
+					if readErr == nil && len(parentLines) > 0 {
+						if parent, err := DecodeSessionV4TransactionHeader([]byte(parentLines[0])); err == nil {
+							header.ParentSessionID = &parent.ID
+						} else if parent, ok := parseTransactionLegacyHeader([]byte(parentLines[0])); ok {
+							header.ParentSessionID = &parent.ID
+						}
+					}
+					if header.ParentSessionID == nil {
+						header.LegacyParentSessionPath = legacy.ParentSession
+					}
+				}
 			}
-			metadata = append(metadata, jsonlV4Metadata(header, file.Path, file.MTimeMS))
+			if cwd != nil {
+				resolved, resolveErr := repo.fs.AbsolutePath(ctx, *cwd)
+				if resolveErr != nil {
+					return nil, resolveErr
+				}
+				if header.CWD != resolved {
+					continue
+				}
+			}
+			discovered := jsonlV4Metadata(header, file.Path, file.MTimeMS)
+			discovered.StorageVersion = releasedHeader.StorageVersion
+			metadata = append(metadata, discovered)
 		}
 	}
 	sort.SliceStable(metadata, func(left, right int) bool {
-		return metadata[left].ModifiedAt > metadata[right].ModifiedAt
+		if metadata[left].CreatedAt != metadata[right].CreatedAt {
+			return metadata[left].CreatedAt > metadata[right].CreatedAt
+		}
+		if metadata[left].ID != metadata[right].ID {
+			return metadata[left].ID < metadata[right].ID
+		}
+		return metadata[left].CWD < metadata[right].CWD
 	})
 	return metadata, nil
 }
 
 func (repo *JSONLSessionV4Repo) Delete(ctx context.Context, metadata JSONLSessionV4Metadata) error {
-	return fileV4Result(repo.fs.Remove(ctx, metadata.Path, false, true), "Failed to delete session %s", metadata.Path)
+	repo.claimMu.Lock()
+	closed := repo.closed
+	active := repo.openSessions[metadata.CWD+"\x00"+metadata.ID] != nil
+	repo.claimMu.Unlock()
+	if closed {
+		return fmt.Errorf("JsonlSessionRepo is closed")
+	}
+	if active {
+		return fmt.Errorf("Session is open: %s", metadata.ID)
+	}
+	exists, err := repo.fs.Exists(ctx, metadata.Path)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("Session file does not exist: %s", metadata.Path)
+	}
+	return fileV4Result(repo.fs.Remove(ctx, metadata.Path, false, false), "Failed to delete session %s", metadata.Path)
 }
 
 func (repo *JSONLSessionV4Repo) Fork(ctx context.Context, source JSONLSessionV4Metadata, options JSONLSessionV4ForkOptions) (*JSONLSessionV4Storage, error) {
-	sourceStorage, err := repo.loadStorage(ctx, source)
+	repo.claimMu.Lock()
+	sourceStorage := repo.openSessions[source.CWD+"\x00"+source.ID]
+	repo.claimMu.Unlock()
+	var err error
+	if sourceStorage == nil {
+		sourceStorage, err = repo.loadStorage(ctx, source)
+		if err == nil {
+			defer func() { _ = sourceStorage.Close(ctx) }()
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
-	if options.ParentSessionID == nil {
-		options.ParentSessionID = &source.ID
-	}
+	options.ParentSessionID = &source.ID
+	options.CWD = source.CWD
 	id, cwd, release, err := repo.claimDestination(ctx, options.JSONLSessionV4CreateOptions)
 	if err != nil {
 		return nil, err
@@ -306,7 +383,7 @@ func (repo *JSONLSessionV4Repo) Fork(ctx context.Context, source JSONLSessionV4M
 		return nil, err
 	}
 	forked.Now = repo.Now
-	return forked, nil
+	return forked, repo.publishTransactionStorage(forked)
 }
 
 func (repo *JSONLSessionV4Repo) loadStorage(ctx context.Context, metadata JSONLSessionV4Metadata) (*JSONLSessionV4Storage, error) {
@@ -321,8 +398,8 @@ func (repo *JSONLSessionV4Repo) loadStorage(ctx context.Context, metadata JSONLS
 	if err != nil {
 		return nil, err
 	}
-	if storage.Metadata().ID != metadata.ID {
-		return nil, newSessionError(SessionErrorInvalidEntry, "Session id does not match header: %s", metadata.ID)
+	if storage.Metadata().ID != metadata.ID || storage.Metadata().CWD != metadata.CWD {
+		return nil, newSessionError(SessionErrorInvalidEntry, "Session identity does not match header: %s", metadata.ID)
 	}
 	storage.Now = repo.Now
 	return storage, nil
@@ -345,9 +422,7 @@ func (repo *JSONLSessionV4Repo) prepareCreate(ctx context.Context, id, cwd strin
 	if err != nil {
 		return SessionV4Header{}, "", fileV4Result(err, "Failed to resolve path for session %s", id)
 	}
-	if len(options.Metadata) != 0 && !isHarnessJSONObject(options.Metadata) {
-		return SessionV4Header{}, "", newSessionError(SessionErrorInvalidPayload, "Durable payload is not a JSON object")
-	}
+
 	if err := repo.fs.CreateDir(ctx, directory, true); err != nil {
 		return SessionV4Header{}, "", fileV4Result(err, "Failed to create sessions directory")
 	}
@@ -373,7 +448,7 @@ func (repo *JSONLSessionV4Repo) sessionIDExists(ctx context.Context, id, cwd str
 	if err != nil {
 		return false, fileV4Result(err, "Failed to list sessions directory %s", directory)
 	}
-	suffix := "_" + id + ".jsonl"
+	suffix := "_" + transactionEncodeID(id) + ".jsonl"
 	for _, file := range files {
 		if file.Kind != FileKindDirectory && strings.HasSuffix(file.Name, suffix) {
 			return true, nil
@@ -418,7 +493,7 @@ func (repo *JSONLSessionV4Repo) sessionDirectories(ctx context.Context, cwd *str
 	}
 	directories := make([]string, 0, len(listed))
 	for _, entry := range listed {
-		if entry.Kind == FileKindDirectory || entry.Kind == FileKindSymlink {
+		if entry.Kind == FileKindDirectory {
 			directories = append(directories, entry.Path)
 		}
 	}
@@ -443,4 +518,47 @@ func (repo *JSONLSessionV4Repo) root(ctx context.Context) (string, error) {
 		return "", fileV4Result(err, "Failed to resolve sessions root %s", repo.sessionsRootPath)
 	}
 	return root, nil
+}
+
+func transactionEncodeID(id string) string {
+	const hex = "0123456789ABCDEF"
+	var encoded strings.Builder
+	for i := 0; i < len(id); i++ {
+		c := id[i]
+		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.ContainsRune("-_.!~*'()", rune(c)) {
+			encoded.WriteByte(c)
+		} else {
+			encoded.WriteByte('%')
+			encoded.WriteByte(hex[c>>4])
+			encoded.WriteByte(hex[c&15])
+		}
+	}
+	return encoded.String()
+}
+
+func (repo *JSONLSessionV4Repo) publishTransactionStorage(storage *JSONLSessionV4Storage) error {
+	repo.claimMu.Lock()
+	defer repo.claimMu.Unlock()
+	key := storage.metadata.CWD + "\x00" + storage.metadata.ID
+	if repo.openSessions == nil {
+		repo.openSessions = map[string]*JSONLSessionV4Storage{}
+	}
+	if repo.openSessions[key] != nil {
+		return fmt.Errorf("Session is already open: %s", storage.metadata.ID)
+	}
+	repo.openSessions[key] = storage
+	storage.onClose = func() {
+		repo.claimMu.Lock()
+		defer repo.claimMu.Unlock()
+		if repo.openSessions[key] == storage {
+			delete(repo.openSessions, key)
+		}
+	}
+	return nil
+}
+func (repo *JSONLSessionV4Repo) Close(_ context.Context) error {
+	repo.claimMu.Lock()
+	defer repo.claimMu.Unlock()
+	repo.closed = true
+	return nil
 }

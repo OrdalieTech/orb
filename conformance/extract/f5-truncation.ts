@@ -390,11 +390,19 @@ export async function generateF5(upstreamRoot: string, outputRoot: string, upstr
     generator: "conformance/extract/f5-truncation.ts",
     source,
     additionalSources: [accumulatorSource],
-    files: ["cases.json", "accumulator.json"],
+    files: ["cases.json", "accumulator.json", "write.json"],
   };
 
   await writeFile(path.join(familyDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   await writeFile(path.join(familyDir, "cases.json"), `${JSON.stringify({ cases: generated }, null, 2)}\n`);
+  const { createWriteTool } = await import(pathToFileURL(path.join(upstreamRoot, "packages/coding-agent/src/core/tools/write.ts")).href);
+  const tool = createWriteTool("/fixture", { operations: { mkdir: async () => {}, writeFile: async () => {} } });
+  const writes = [];
+  for (const content of ["hello\n", "🙂!", "\ud800x"]) {
+    const input = { path: "output.txt", content };
+    writes.push({ input, expected: await tool.execute("fixture", input) });
+  }
+  await writeFile(path.join(familyDir, "write.json"), JSON.stringify(writes, null, 2) + "\n");
   await writeFile(
     path.join(familyDir, "accumulator.json"),
     `${JSON.stringify({ cases: generatedAccumulatorCases }, null, 2)}\n`,

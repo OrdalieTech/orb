@@ -30,12 +30,12 @@
     "durationMs": 0,
     "runId": "run-fixed-model-routing",
     "tokenUsage": {
-      "input": 4071,
+      "input": 4072,
       "output": 17,
-      "total": 8171,
+      "total": 8173,
       "cost": 0,
       "cacheRead": 0,
-      "cacheWrite": 4071
+      "cacheWrite": 4072
     }
   },
   "error": null,
@@ -79,13 +79,13 @@
       "id": "run-fixed-model-routing:1",
       "label": "untagged",
       "result": "Untagged answer.",
-      "tokens": 2716,
+      "tokens": 2718,
       "tokenUsage": {
-        "input": 1356,
+        "input": 1357,
         "output": 4,
         "cacheRead": 0,
-        "cacheWrite": 1356,
-        "total": 2716,
+        "cacheWrite": 1357,
+        "total": 2718,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -160,12 +160,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 4071,
+        "input": 4072,
         "output": 17,
-        "total": 8171,
+        "total": 8173,
         "cost": 0,
         "cacheRead": 0,
-        "cacheWrite": 4071
+        "cacheWrite": 4072
       }
     }
   ],

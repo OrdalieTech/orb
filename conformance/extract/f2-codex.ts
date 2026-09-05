@@ -1,3 +1,4 @@
+import { extractGitHubCopilotAuthF2 } from "./f2-github-copilot.ts";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -177,6 +178,11 @@ const richSSE = encodeSSE([
 ]);
 
 const streamDefinitions: Definition[] = [
+  { name: "codex-terminal-eof-frame", api: "openai-codex-responses", model: model(),
+    context: { messages: [{ role: "user", content: "EOF", timestamp: FIXED_NOW }] },
+    options: { apiKey: ACCESS_TOKEN, transport: "sse" },
+    sse: minimalTerminalSSE().trimEnd() },
+
   {
     name: "codex-rich-done-priority",
     api: "openai-codex-responses",
@@ -260,6 +266,7 @@ export async function generateF2Codex(
     }
     const providers = await extractSubscriptionProviders(upstreamRoot);
     const websocket = await extractCodexWebSocketTrace();
+ const copilotAuth = await extractGitHubCopilotAuthF2(upstreamRoot);
     const familyDir = path.join(outputRoot, "F2");
     await mkdir(familyDir, { recursive: true });
     await writeFile(path.join(familyDir, "codex-requests.json"), `${JSON.stringify({ cases: requests }, null, 2)}\n`);
@@ -267,12 +274,13 @@ export async function generateF2Codex(
     await writeFile(path.join(familyDir, "codex-websocket.json"), `${JSON.stringify(websocket, null, 2)}\n`);
     await writeFile(path.join(familyDir, "subscription-providers.json"), `${JSON.stringify({ providers }, null, 2)}\n`);
 
-    const manifestPath = path.join(familyDir, "manifest.json");
+    await writeFile(path.join(familyDir,"github-copilot-auth.json"), `${JSON.stringify(copilotAuth,null,2)}\n`);
+ const manifestPath = path.join(familyDir, "manifest.json");
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { source: string; generator: string; files: string[]; upstreamCommit: string };
     manifest.upstreamCommit = upstreamCommit;
     manifest.generator = "conformance/extract/f2-openai.ts + conformance/extract/f2-codex.ts";
     manifest.source += " + packages/ai/src/api/openai-codex-responses.ts + packages/ai/src/auth/oauth/{openai-codex,github-copilot,xai,device-code}.ts + packages/ai/src/providers/{openai-codex,github-copilot,xai}.ts";
-    manifest.files.push("codex-requests.json", "codex-streams.json", "codex-websocket.json", "subscription-providers.json");
+    manifest.files.push("github-copilot-auth.json", "codex-requests.json", "codex-streams.json", "codex-websocket.json", "subscription-providers.json");
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   } finally {
     Date.now = originalNow;

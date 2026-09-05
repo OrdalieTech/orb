@@ -213,8 +213,10 @@ export async function generateWP440(upstreamRoot: string, outputRoot: string, up
 		});
 	}
 	const orientationCases = [];
-	for (let orientation = 1; orientation <= 8; orientation++) {
-		const bytes = withExifOrientation(orientationJpeg, orientation);
+	for (const variant of [...Array.from({ length: 8 }, (_, index) => ({ orientation: index + 1, extraAPP1: false })), { orientation: 6, extraAPP1: true }]) {
+		const { orientation } = variant;
+		let bytes = withExifOrientation(orientationJpeg, orientation);
+		if (variant.extraAPP1) bytes = Buffer.concat([bytes.subarray(0, 2), Buffer.from([0xff, 0xe1, 0, 8, 88, 77, 80, 0, 0, 0]), bytes.subarray(2)]);
 		const options = { maxWidth: 15, maxHeight: 15, maxBytes: 1024 * 1024 };
 		const result = await resizeModule.resizeImageInProcess(bytes, "image/jpeg", options);
 		if (!result) throw new Error(`upstream failed EXIF orientation ${orientation}`);

@@ -439,14 +439,15 @@ func TestOpenAICompletionsJSONStringifiesNonFiniteReplayArguments(t *testing.T) 
 func TestOpenAICompletionsNormalizesReasoningDetailJSON(t *testing.T) {
 	output := &ai.AssistantMessage{}
 	state := newCompletionsStreamState(output)
-	call := &ai.ToolCall{ID: "call"}
-	tool := &completionsToolState{block: call}
-	state.toolsByID[call.ID] = tool
-	state.consumeReasoningDetail([]byte(`{"type":"reasoning.encrypted","id":"call","data":"\u003c","extra":1e2}`))
-	want := `{"type":"reasoning.encrypted","id":"call","data":"<","extra":100}`
-	if call.ThoughtSignature == nil || *call.ThoughtSignature != want {
-		t.Fatalf("thought signature = %v, want %s", call.ThoughtSignature, want)
+	if err := state.consumeReasoningDetail([]byte(`{"type":"reasoning.encrypted","id":"call","data":"\u003c","extra":1e2}`), func(ai.AssistantMessageEvent) error { return nil }); err != nil {
+		t.Fatal(err)
 	}
+	state.applyReasoningDetails()
+	want := `[{"type":"reasoning.encrypted","id":"call","data":"<","extra":100}]`
+	if state.thinking.ThinkingSignature == nil || *state.thinking.ThinkingSignature != want {
+		t.Fatalf("thinking signature = %v, want %s", state.thinking.ThinkingSignature, want)
+	}
+
 }
 
 func TestOpenAICompletionsValidatesAuthBeforePayloadHook(t *testing.T) {

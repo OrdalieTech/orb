@@ -105,7 +105,7 @@ type f12RawFrame struct {
 
 func TestF12InteractiveCommandRegistryMatchesUpstream(t *testing.T) {
 	fixture := loadF12CommandFixture(t)
-	if fixture.SchemaVersion != 4 || len(fixture.Visible) != 22 || len(fixture.Hidden) != 3 || len(fixture.UnexpectedArguments) != 19 {
+	if fixture.SchemaVersion != 4 || len(fixture.Visible) != 23 || len(fixture.Hidden) != 3 || len(fixture.UnexpectedArguments) != 19 {
 		t.Fatalf("F12 command fixture = version %d, visible %d, hidden %d",
 			fixture.SchemaVersion, len(fixture.Visible), len(fixture.Hidden))
 	}

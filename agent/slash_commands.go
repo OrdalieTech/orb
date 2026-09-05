@@ -32,6 +32,8 @@ type BuiltinSlashCommand struct {
 var BuiltinSlashCommands = []BuiltinSlashCommand{
 	{Name: "settings", Description: "Open settings menu"},
 	{Name: "model", Description: "Select model (opens selector UI)", ArgumentHint: "<provider/model>"},
+	{Name: "tree", Description: "Navigate session tree (switch branches)"},
+	{Name: "thinking", Description: "Set thinking level", ArgumentHint: "<level>"},
 	{Name: "scoped-models", Description: "Enable/disable models for Ctrl+P cycling"},
 	{Name: "export", Description: "Export session (HTML default, or specify path: .html/.jsonl)"},
 	{Name: "import", Description: "Import and resume a session from a JSONL file"},
@@ -43,7 +45,6 @@ var BuiltinSlashCommands = []BuiltinSlashCommand{
 	{Name: "hotkeys", Description: "Show all keyboard shortcuts"},
 	{Name: "fork", Description: "Create a new fork from a previous user message"},
 	{Name: "clone", Description: "Duplicate the current session at the current position"},
-	{Name: "tree", Description: "Navigate session tree (switch branches)"},
 	{Name: "trust", Description: "Save project trust decision for future sessions"},
 	{Name: "login", Description: "Configure provider authentication", ArgumentHint: "<provider>"},
 	{Name: "logout", Description: "Remove provider authentication"},

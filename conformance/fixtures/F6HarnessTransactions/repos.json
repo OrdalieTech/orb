@@ -1,0 +1,26 @@
+{
+  "metadata": {
+    "id": "id / +?",
+    "createdAt": 1770091506789,
+    "storageVersion": 1,
+    "cwd": "/fixture/project",
+    "path": "<fixture>/sessions/--fixture-project--/2026-02-03T04-05-06-789Z_id%20%2F%20%2B%3F.jsonl",
+    "modifiedAt": "<modifiedAt>"
+  },
+  "content": "{\"v\":4,\"kind\":\"header\",\"id\":\"id / +?\",\"storageVersion\":1,\"createdAt\":1770091506789,\"cwd\":\"/fixture/project\"}\n",
+  "list": [
+    {
+      "id": "id / +?",
+      "createdAt": 1770091506789,
+      "storageVersion": 1,
+      "cwd": "/fixture/project",
+      "path": "<fixture>/sessions/--fixture-project--/2026-02-03T04-05-06-789Z_id%20%2F%20%2B%3F.jsonl",
+      "modifiedAt": "<modifiedAt>"
+    }
+  ],
+  "duplicateOpen": "Session is already open: id / +?",
+  "deleteOpen": "Session is open: id / +?",
+  "duplicateCreate": "Session already exists: id / +?",
+  "missingDelete": "Session file does not exist: <fixture>/sessions/--fixture-project--/2026-02-03T04-05-06-789Z_id%20%2F%20%2B%3F.jsonl",
+  "closedList": "JsonlSessionRepo is closed"
+}

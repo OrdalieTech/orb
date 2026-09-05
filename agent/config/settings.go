@@ -178,7 +178,7 @@ func loadSettingsFile(path string) (Settings, error) {
 		return Settings{}, nil
 	}
 
-	decoder := json.NewDecoder(bytes.NewReader(contents))
+	decoder := json.NewDecoder(bytes.NewReader(bytes.TrimPrefix(contents, []byte{0xef, 0xbb, 0xbf})))
 	decoder.UseNumber()
 	var decoded any
 	if err := decoder.Decode(&decoded); err != nil {
@@ -563,6 +563,25 @@ func (manager *SettingsManager) GetPluginSettings(name string) map[string]any {
 
 func (manager *SettingsManager) GetDefaultThinkingLevel() ai.ModelThinkingLevel {
 	return ai.ModelThinkingLevel(manager.stringValue("defaultThinkingLevel"))
+}
+
+func (manager *SettingsManager) GetModelThinkingLevel(provider, modelID string) ai.ModelThinkingLevel {
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
+	value, _ := nestedObject(manager.effective, "modelThinkingLevels")[provider+"/"+modelID].(string)
+	return ai.ModelThinkingLevel(value)
+}
+
+func (manager *SettingsManager) GetAllModelThinkingLevels() map[string]ai.ModelThinkingLevel {
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
+	result := map[string]ai.ModelThinkingLevel{}
+	for key, value := range nestedObject(manager.effective, "modelThinkingLevels") {
+		if level, ok := value.(string); ok {
+			result[key] = ai.ModelThinkingLevel(level)
+		}
+	}
+	return result
 }
 
 func (manager *SettingsManager) GetTransport() ai.Transport {

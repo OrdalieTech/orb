@@ -1,4 +1,69 @@
 {
+  "uiPrompts": [
+    {
+      "type": "ui_prompt_start",
+      "reason": "ui_prompt",
+      "kind": "select",
+      "title": "Select title"
+    },
+    {
+      "type": "ui_prompt_end",
+      "reason": "ui_prompt",
+      "kind": "select",
+      "title": "Select title"
+    },
+    {
+      "type": "ui_prompt_start",
+      "reason": "ui_prompt",
+      "kind": "confirm",
+      "title": "Confirm title"
+    },
+    {
+      "type": "ui_prompt_end",
+      "reason": "ui_prompt",
+      "kind": "confirm",
+      "title": "Confirm title"
+    },
+    {
+      "type": "ui_prompt_start",
+      "reason": "ui_prompt",
+      "kind": "input",
+      "title": "Input title"
+    },
+    {
+      "type": "ui_prompt_end",
+      "reason": "ui_prompt",
+      "kind": "input",
+      "title": "Input title"
+    },
+    {
+      "type": "ui_prompt_start",
+      "reason": "ui_prompt",
+      "kind": "editor"
+    },
+    {
+      "type": "ui_prompt_end",
+      "reason": "ui_prompt",
+      "kind": "editor"
+    },
+    {
+      "type": "ui_prompt_start",
+      "reason": "ui_prompt",
+      "kind": "custom"
+    },
+    {
+      "type": "ui_prompt_end",
+      "reason": "ui_prompt",
+      "kind": "custom"
+    },
+    {
+      "type": "session_compact_failed",
+      "reason": "overflow",
+      "aborted": true,
+      "willRetry": true,
+      "fromExtension": false
+    }
+  ],
   "orderedErrorIsolation": {
     "calls": [
       "first",
@@ -266,6 +331,13 @@
       }
     ],
     "postBindError": null
+  },
+  "failedLoad": {
+    "error": "factory failed",
+    "flagLeaked": false,
+    "listeners": 0,
+    "staleAPIError": "Extension \"failed-load\" failed to load and its API is no longer active.",
+    "invalidFlagError": "Invalid default for flag \"bad\": expected boolean, got string"
   },
   "registrationConflicts": {
     "toolDescriptions": [

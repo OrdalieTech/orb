@@ -138,6 +138,7 @@ const streamDefinitions: PiMessagesStreamDefinition[] = [
         reason: "toolUse",
         usage,
         responseId: "response-1",
+        providerThinkingLevel: "high",
         rewrite: {
           policyId: "policy-1",
           policyVersion: 3,
@@ -164,6 +165,7 @@ const streamDefinitions: PiMessagesStreamDefinition[] = [
           usage,
           errorMessage: "upstream failed",
           responseId: "response-error",
+          providerThinkingLevel: "",
         },
       ],
       false,

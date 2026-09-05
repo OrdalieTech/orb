@@ -1018,6 +1018,56 @@
         },
         "body": "{\"contents\":[{\"parts\":[{\"text\":\"read the files\"}],\"role\":\"user\"},{\"parts\":[{\"functionCall\":{\"id\":\"call_a\",\"args\":{\"path\":\"a.txt\"},\"name\":\"read\"}},{\"functionCall\":{\"id\":\"call_img\",\"args\":{\"path\":\"image.png\"},\"name\":\"read\"}},{\"functionCall\":{\"id\":\"call_b\",\"args\":{\"path\":\"b.txt\"},\"name\":\"read\"}}],\"role\":\"model\"},{\"parts\":[{\"functionResponse\":{\"name\":\"read\",\"response\":{\"output\":\"alpha text\"},\"id\":\"call_a\"}},{\"functionResponse\":{\"name\":\"read\",\"response\":{\"output\":\"(see attached image)\"},\"parts\":[{\"inlineData\":{\"mimeType\":\"image/png\",\"data\":\"abc\"}}],\"id\":\"call_img\"}},{\"functionResponse\":{\"name\":\"read\",\"response\":{\"output\":\"beta text\"},\"id\":\"call_b\"}}],\"role\":\"user\"}],\"generationConfig\":{}}"
       }
+    },
+    {
+      "name": "google-simple-mapped-thinking",
+      "api": "google-generative-ai",
+      "simple": true,
+      "model": {
+        "id": "gemini-3-flash",
+        "name": "Google Fixture Model",
+        "api": "google-generative-ai",
+        "provider": "google",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 4,
+          "cacheRead": 0.25,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 65536,
+        "thinkingLevelMap": {
+          "xhigh": "MEDIUM"
+        }
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "reason",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-google-key",
+        "reasoning": "xhigh"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:streamGenerateContent?alt=sse",
+        "headers": {
+          "content-type": "application/json",
+          "x-goog-api-key": "fixture-google-key"
+        },
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"reason\"}],\"role\":\"user\"}],\"generationConfig\":{\"maxOutputTokens\":65536,\"thinkingConfig\":{\"includeThoughts\":true,\"thinkingLevel\":\"MEDIUM\"}}}"
+      }
     }
   ]
 }

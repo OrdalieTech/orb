@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +21,7 @@ type SessionV4Metadata struct {
 
 // JSONLSessionV4Metadata identifies a JSONL-backed v4 session.
 type JSONLSessionV4Metadata struct {
+	StorageVersion          int64           `json:"storageVersion"`
 	ID                      string          `json:"id"`
 	CreatedAt               int64           `json:"createdAt"`
 	CWD                     string          `json:"cwd"`
@@ -375,7 +375,7 @@ func fileV4Result(err error, format string, arguments ...any) error {
 
 func jsonlV4Metadata(header SessionV4Header, path string, modifiedAt float64) JSONLSessionV4Metadata {
 	return JSONLSessionV4Metadata{
-		ID: header.ID, CreatedAt: header.CreatedAt, CWD: header.CWD, Path: path,
+		StorageVersion: 1, ID: header.ID, CreatedAt: header.CreatedAt, CWD: header.CWD, Path: path,
 		ModifiedAt: modifiedAt, SourceFormat: 4,
 		ParentSessionID:         cloneHarnessString(header.ParentSessionID),
 		LegacyParentSessionPath: cloneHarnessString(header.LegacyParentSessionPath),
@@ -383,27 +383,13 @@ func jsonlV4Metadata(header SessionV4Header, path string, modifiedAt float64) JS
 	}
 }
 
-// publishV4FileAtomically stages a complete sibling temp file and renames it
-// over the destination so crashes never leave a torn session behind.
-func publishV4FileAtomically(ctx context.Context, fs FileSystem, destination string, populate func(tempPath string) error) error {
-	tempPath := destination + ".tmp"
-	if err := populate(tempPath); err != nil {
-		_ = fs.Remove(ctx, tempPath, false, true)
-		return err
-	}
-	if err := fileV4Result(fs.RenameFile(ctx, tempPath, destination), "Failed to publish staged file %s", destination); err != nil {
-		_ = fs.Remove(ctx, tempPath, false, true)
-		return err
-	}
-	return nil
-}
-
 // JSONLSessionV4Storage appends every mutation to one v4 JSONL file.
 type JSONLSessionV4Storage struct {
+	*TransactionSessionV4Storage
+	onClose  func()
 	mu       sync.Mutex
 	fs       FileSystem
 	metadata JSONLSessionV4Metadata
-	state    *sessionV4State
 
 	// Now overrides the append timestamp clock (epoch milliseconds).
 	Now func() int64
@@ -411,99 +397,40 @@ type JSONLSessionV4Storage struct {
 
 // CreateJSONLSessionV4Storage initializes a new session file holding only the header.
 func CreateJSONLSessionV4Storage(ctx context.Context, fs FileSystem, path string, header SessionV4Header) (*JSONLSessionV4Storage, error) {
-	encoded, err := MarshalSessionV4Header(header)
+	releasedHeader := SessionV4TransactionHeader{V: 4, Kind: "header", ID: header.ID, CreatedAt: header.CreatedAt, StorageVersion: 1, CWD: header.CWD, ParentSessionID: header.ParentSessionID, LegacyParentSessionPath: header.LegacyParentSessionPath}
+	released, err := CreateJSONLSessionV4TransactionStorage(ctx, fs, path, releasedHeader, nil, nil)
 	if err != nil {
-		return nil, err
-	}
-	if err := fileV4Result(fs.WriteFile(ctx, path, append(encoded, '\n')), "Failed to initialize session %s", path); err != nil {
 		return nil, err
 	}
 	info, err := fs.FileInfo(ctx, path)
 	if err != nil {
-		return nil, fileV4Result(err, "Failed to read session metadata %s", path)
+		_ = released.Close(ctx)
+		_ = fs.Remove(ctx, path, false, true)
+		return nil, err
 	}
-	return &JSONLSessionV4Storage{fs: fs, metadata: jsonlV4Metadata(header, path, info.MTimeMS), state: newSessionV4State()}, nil
+	return &JSONLSessionV4Storage{TransactionSessionV4Storage: released, fs: fs, metadata: jsonlV4Metadata(header, path, info.MTimeMS)}, nil
 }
 
 // LoadJSONLSessionV4Storage replays an existing session file, repairing a torn
 // or unterminated trailing line in place.
 func LoadJSONLSessionV4Storage(ctx context.Context, fs FileSystem, path string) (*JSONLSessionV4Storage, error) {
-	content, err := fs.ReadTextFile(ctx, path)
-	if err != nil {
-		return nil, fileV4Result(err, "Failed to read session %s", path)
-	}
-	lines := strings.Split(content, "\n")
-	if len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
-	if len(lines) == 0 || lines[0] == "" {
-		return nil, invalidV4FileCause(path, 1, decodeV4Error(SessionV4DecodeSchema, "is missing a header"))
-	}
-	header, err := ParseSessionV4Header([]byte(lines[0]), path)
+	released, err := OpenJSONLSessionV4TransactionStorage(ctx, fs, path, nil)
 	if err != nil {
 		return nil, err
 	}
 	info, err := fs.FileInfo(ctx, path)
 	if err != nil {
-		return nil, fileV4Result(err, "Failed to read session metadata %s", path)
+		return nil, err
 	}
-	storage := &JSONLSessionV4Storage{fs: fs, metadata: jsonlV4Metadata(header, path, info.MTimeMS), state: newSessionV4State()}
-	for index := 1; index < len(lines); index++ {
-		line := lines[index]
-		mutation, decodeErr := DecodeSessionV4Mutation([]byte(line))
-		if decodeErr != nil {
-			// Only an unparseable final line is an unacknowledged partial append;
-			// a schema-valid-JSON failure is corruption and must not be repaired.
-			if index != len(lines)-1 || decodeErr.Kind != SessionV4DecodeSyntax {
-				return nil, invalidV4FileCause(path, index+1, decodeErr)
-			}
-			validPrefix := strings.Join(lines[:index], "\n") + "\n"
-			if err := publishV4FileAtomically(ctx, fs, path, func(tempPath string) error {
-				return fileV4Result(fs.WriteFile(ctx, tempPath, []byte(validPrefix)), "Failed to stage torn-tail repair %s", path)
-			}); err != nil {
-				return nil, err
-			}
-			return storage, nil
-		}
-		if err := storage.state.applyMutation(mutation, nil); err != nil {
-			var mutationErr *SessionError
-			if errors.As(err, &mutationErr) && mutationErr.Code == SessionErrorInvalidEntry {
-				return nil, invalidV4FileCause(path, index+1, mutationErr)
-			}
-			return nil, err
-		}
-	}
-	if !strings.HasSuffix(content, "\n") {
-		if err := fileV4Result(fs.AppendFile(ctx, path, []byte("\n")), "Failed to repair unterminated session tail %s", path); err != nil {
-			return nil, err
-		}
-	}
-	return storage, nil
+	header := SessionV4Header{ID: released.header.ID, CreatedAt: released.header.CreatedAt, CWD: released.header.CWD, ParentSessionID: released.header.ParentSessionID, LegacyParentSessionPath: released.header.LegacyParentSessionPath}
+	return &JSONLSessionV4Storage{TransactionSessionV4Storage: released, fs: fs, metadata: jsonlV4Metadata(header, path, info.MTimeMS)}, nil
 }
 
 // Fork copies the selected slice of this session into a new session file.
 func (storage *JSONLSessionV4Storage) Fork(ctx context.Context, path string, header SessionV4Header, options SessionV4ForkOptions) (*JSONLSessionV4Storage, error) {
-	storage.mu.Lock()
-	mutations, err := storage.state.createForkMutations(options)
-	storage.mu.Unlock()
+	releasedHeader := SessionV4TransactionHeader{V: 4, Kind: "header", ID: header.ID, CreatedAt: header.CreatedAt, StorageVersion: 1, CWD: header.CWD, ParentSessionID: header.ParentSessionID, LegacyParentSessionPath: header.LegacyParentSessionPath}
+	_, err := storage.TransactionSessionV4Storage.Fork(ctx, storage.fs, path, releasedHeader, SessionV4TransactionForkOptions{Scope: options.Scope, Branch: "main", EntryID: options.EntryID, Position: string(options.Position)})
 	if err != nil {
-		return nil, err
-	}
-	if err := publishV4FileAtomically(ctx, storage.fs, path, func(tempPath string) error {
-		target, err := CreateJSONLSessionV4Storage(ctx, storage.fs, tempPath, header)
-		if err != nil {
-			return err
-		}
-		for _, mutation := range mutations {
-			if err := target.appendMutation(ctx, mutation); err != nil {
-				return err
-			}
-			if err := target.state.applyMutation(mutation, nil); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
 		return nil, err
 	}
 	return LoadJSONLSessionV4Storage(ctx, storage.fs, path)
@@ -517,160 +444,153 @@ func (storage *JSONLSessionV4Storage) Metadata() JSONLSessionV4Metadata {
 	return metadata
 }
 
-func (storage *JSONLSessionV4Storage) appendMutation(ctx context.Context, mutation SessionV4Mutation) error {
-	encoded, err := MarshalSessionV4Mutation(mutation)
-	if err != nil {
-		return err
-	}
-	return fileV4Result(
-		storage.fs.AppendFile(ctx, storage.metadata.Path, append(encoded, '\n')),
-		"Failed to append session %s", storage.metadata.Path,
-	)
-}
-
-func (storage *JSONLSessionV4Storage) commit(mutation SessionV4Mutation) error {
-	if err := storage.appendMutation(context.Background(), mutation); err != nil {
-		return err
-	}
-	return storage.state.applyMutation(mutation, nil)
-}
-
 func (storage *JSONLSessionV4Storage) Lanes() []SessionV4LanePointer {
-	storage.mu.Lock()
-	defer storage.mu.Unlock()
-	return storage.state.lanePointers()
+	values, err := storage.ScanValues(SessionV4Address{Namespace: "pi.branch.tip"})
+	if err != nil {
+		return nil
+	}
+	lanes := []SessionV4LanePointer{}
+	for _, value := range values {
+		var tip *string
+		_ = json.Unmarshal(value.Value, &tip)
+		lanes = append(lanes, SessionV4LanePointer{Lane: value.Address.Key, LeafID: tip})
+	}
+	return lanes
 }
 
 func (storage *JSONLSessionV4Storage) CreateLane(lane string, at *string) error {
-	storage.mu.Lock()
-	defer storage.mu.Unlock()
-	mutation, err := stageV4CreateLane(storage.state, lane, at)
-	if err != nil {
-		return err
-	}
-	return storage.commit(mutation)
+	return fmt.Errorf("CreateLane is no longer supported; configure a branch through transaction values")
 }
 
 func (storage *JSONLSessionV4Storage) MoveLane(lane string, to *string) error {
-	storage.mu.Lock()
-	defer storage.mu.Unlock()
-	mutation, err := stageV4MoveLane(storage.state, lane, to)
-	if err != nil {
-		return err
-	}
-	return storage.commit(mutation)
+	return fmt.Errorf("MoveLane is no longer supported; move a branch through transaction values")
 }
 
 func (storage *JSONLSessionV4Storage) AppendEntry(payload json.RawMessage, lane string) (SessionV4Entry, error) {
-	storage.mu.Lock()
-	defer storage.mu.Unlock()
-	mutation, err := stageV4EntryAppend(storage.state, payload, lane, sessionV4NowMS(storage.Now))
+	fields := transactionFields(payload)
+	if _, ok := fields["parentId"]; !ok {
+		return SessionV4Entry{}, fmt.Errorf("AppendEntry requires an explicit parentId in transaction storage")
+	}
+	kind := transactionString(fields, "type")
+	switch kind {
+	case "message", "custom", "compaction", "branch_summary":
+	default:
+		return SessionV4Entry{}, fmt.Errorf("Entry type %s is not a v4 session entry", kind)
+	}
+	_, err := storage.Commit(context.Background(), []json.RawMessage{transactionObject("kind", "entry", "entry", payload)})
 	if err != nil {
 		return SessionV4Entry{}, err
 	}
-	if err := storage.commit(mutation); err != nil {
-		return SessionV4Entry{}, err
+	entry, ok := storage.Entry(transactionString(fields, "id"))
+	if !ok {
+		return SessionV4Entry{}, fmt.Errorf("committed entry unavailable")
 	}
-	return mutation.Entry.clone(), nil
+	return entry, nil
 }
 
 func (storage *JSONLSessionV4Storage) AppendRecord(payload json.RawMessage) (SessionV4Record, error) {
-	storage.mu.Lock()
-	defer storage.mu.Unlock()
-	mutation, err := stageV4RecordAppend(storage.state, payload, sessionV4NowMS(storage.Now))
-	if err != nil {
-		return SessionV4Record{}, err
-	}
-	if err := storage.commit(mutation); err != nil {
-		return SessionV4Record{}, err
-	}
-	return mutation.Record.clone(), nil
+	return SessionV4Record{}, fmt.Errorf("AppendRecord is no longer supported by transaction storage")
 }
 
 func (storage *JSONLSessionV4Storage) Entry(id string) (SessionV4Entry, bool) {
-	storage.mu.Lock()
-	defer storage.mu.Unlock()
-	return storage.state.entry(id)
+	entries, err := storage.GetEntries([]string{id})
+	if err != nil {
+		return SessionV4Entry{}, false
+	}
+	raw, ok := entries[id]
+	if !ok {
+		return SessionV4Entry{}, false
+	}
+	entry, err := decodeTransactionEntry(raw)
+	return entry, err == nil
 }
 
 func (storage *JSONLSessionV4Storage) FindEntries(query SessionV4EntryQuery) ([]SessionV4Entry, error) {
-	storage.mu.Lock()
-	defer storage.mu.Unlock()
-	return storage.state.findEntries(query)
+	scan := SessionV4Scan{Type: query.Type, CustomType: query.CustomType, Limit: query.Limit}
+	if query.Order != "oldestFirst" {
+		scan.Order = "desc"
+	}
+	if query.AfterSeq != nil {
+		seq := int64(*query.AfterSeq + 1)
+		scan.FromSeq = &seq
+	}
+	entries, err := storage.ScanEntries(scan)
+	if err != nil {
+		return nil, err
+	}
+	return decodeTransactionEntries(entries)
 }
 
 func (storage *JSONLSessionV4Storage) FindEntriesOnBranch(query SessionV4BranchQuery) ([]SessionV4Entry, error) {
-	storage.mu.Lock()
-	defer storage.mu.Unlock()
-	return storage.state.findEntriesOnBranch(query)
+	scan := SessionV4BranchScan{Start: query.Start, Order: query.Order, StopAtID: query.StopAtID, StopAtType: query.StopAtType, Type: query.Type, CustomType: query.CustomType, Limit: query.Limit}
+	if query.AfterSeq != nil {
+		cursor := int64(*query.AfterSeq)
+		scan.Cursor = &cursor
+	}
+	entries, err := storage.ScanBranch(scan)
+	if err != nil {
+		return nil, err
+	}
+	return decodeTransactionEntries(entries)
 }
 
 func (storage *JSONLSessionV4Storage) FindRecords(query SessionV4RecordQuery) ([]SessionV4Record, error) {
-	storage.mu.Lock()
-	defer storage.mu.Unlock()
-	return storage.state.findRecords(query)
+	return nil, fmt.Errorf("FindRecords is no longer supported by transaction storage")
 }
 
 func (storage *JSONLSessionV4Storage) FindOpenOperations(lane string, limit *int) ([]SessionV4Record, error) {
-	storage.mu.Lock()
-	defer storage.mu.Unlock()
-	return storage.state.findOpenOperations(lane, limit)
+	return nil, fmt.Errorf("FindOpenOperations is no longer supported by transaction storage")
 }
 
 func (storage *JSONLSessionV4Storage) Log(options SessionV4LogOptions) ([]SessionV4LogItem, error) {
-	storage.mu.Lock()
-	defer storage.mu.Unlock()
-	return storage.state.logItems(options)
+	return nil, fmt.Errorf("Log is no longer supported by transaction storage")
 }
 
 func (storage *JSONLSessionV4Storage) Name() (string, bool) {
-	storage.mu.Lock()
-	defer storage.mu.Unlock()
-	if storage.state.name == nil {
+	value, ok, err := storage.GetValue(SessionV4Address{Namespace: "pi.session.name"})
+	if err != nil || !ok {
 		return "", false
 	}
-	return *storage.state.name, true
+	name, ok := v4String(value.Value)
+	return name, ok
 }
 
 func (storage *JSONLSessionV4Storage) SetName(name string) error {
-	storage.mu.Lock()
-	defer storage.mu.Unlock()
-	return storage.commit(SessionV4Mutation{
-		Kind: "fact", Seq: storage.state.nextSequence(), Fact: "name", Name: name,
-	})
+	_, err := storage.Commit(context.Background(), []json.RawMessage{transactionObject("kind", "value", "op", "set", "namespace", "pi.session.name", "key", "", "value", name)})
+	return err
 }
 
 // ClearName records upstream's `setName(undefined)`: the session name is
 // dropped durably, and forks of this session start unnamed.
 func (storage *JSONLSessionV4Storage) ClearName() error {
-	storage.mu.Lock()
-	defer storage.mu.Unlock()
-	return storage.commit(SessionV4Mutation{
-		Kind: "fact", Seq: storage.state.nextSequence(), Fact: "name", NameCleared: true,
-	})
+	_, err := storage.Commit(context.Background(), []json.RawMessage{transactionObject("kind", "value", "op", "delete", "namespace", "pi.session.name", "key", "")})
+	return err
 }
 
 func (storage *JSONLSessionV4Storage) Label(id string) (string, bool) {
-	storage.mu.Lock()
-	defer storage.mu.Unlock()
-	label, ok := storage.state.labels[id]
+	value, ok, err := storage.GetValue(SessionV4Address{Namespace: "pi.entry.label", Key: id})
+	if err != nil || !ok {
+		return "", false
+	}
+	label, ok := v4String(value.Value)
 	return label, ok
 }
 
 func (storage *JSONLSessionV4Storage) SetLabel(id string, label *string) error {
-	storage.mu.Lock()
-	defer storage.mu.Unlock()
-	mutation, err := stageV4SetLabel(storage.state, id, label)
-	if err != nil {
-		return err
+	write := transactionObject("kind", "value", "op", "delete", "namespace", "pi.entry.label", "key", id)
+	if label != nil {
+		write = transactionObject("kind", "value", "op", "set", "namespace", "pi.entry.label", "key", id, "value", *label)
 	}
-	return storage.commit(mutation)
+	_, err := storage.Commit(context.Background(), []json.RawMessage{write})
+	return err
 }
 
 func (storage *JSONLSessionV4Storage) Stats() SessionStats {
-	storage.mu.Lock()
-	defer storage.mu.Unlock()
-	return storage.state.stats
+	stats, err := storage.TransactionStats()
+	if err != nil {
+		return SessionStats{}
+	}
+	return SessionStats{MessageCount: stats.MessageCount, CachedTokens: float64(stats.Usage.CacheRead), UncachedTokens: float64(stats.Usage.Input + stats.Usage.Output + stats.Usage.CacheWrite), TotalTokens: float64(stats.Usage.TotalTokens), CostTotal: stats.Usage.Cost.Total}
 }
 
 // SessionV4 is the thin tree facade over a v4 storage, mirroring upstream's
@@ -781,4 +701,33 @@ func (session *SessionV4) FindEntryOnBranch(query SessionV4BranchQuery, lane ...
 
 func (session *SessionV4) Stats() SessionStats {
 	return session.storage.Stats()
+}
+
+func (storage *JSONLSessionV4Storage) Commit(ctx context.Context, writes []json.RawMessage) (SessionV4CommitResult, error) {
+	storage.mu.Lock()
+	defer storage.mu.Unlock()
+	storage.TransactionSessionV4Storage.Now = storage.Now
+	return storage.TransactionSessionV4Storage.Commit(ctx, writes)
+}
+
+func (storage *JSONLSessionV4Storage) Close(ctx context.Context) error {
+	storage.mu.Lock()
+	defer storage.mu.Unlock()
+	err := storage.TransactionSessionV4Storage.Close(ctx)
+	if storage.onClose != nil {
+		storage.onClose()
+		storage.onClose = nil
+	}
+	return err
+}
+
+func (metadata JSONLSessionV4Metadata) MarshalJSON() ([]byte, error) {
+	fields := []any{"id", metadata.ID, "createdAt", metadata.CreatedAt, "storageVersion", metadata.StorageVersion, "cwd", metadata.CWD, "path", metadata.Path, "modifiedAt", metadata.ModifiedAt}
+	if metadata.ParentSessionID != nil {
+		fields = append(fields, "parentSessionId", metadata.ParentSessionID)
+	}
+	if metadata.LegacyParentSessionPath != nil {
+		fields = append(fields, "legacyParentSessionPath", metadata.LegacyParentSessionPath)
+	}
+	return transactionObject(fields...), nil
 }

@@ -1,0 +1,229 @@
+{
+  "records": [
+    "{\"type\":\"message\",\"id\":\"root-user\",\"parentId\":null,\"timestamp\":\"2026-02-03T04:05:07.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"root <>&  \"}],\"timestamp\":1}}",
+    "{\"type\":\"message\",\"id\":\"main-assistant\",\"parentId\":\"root-user\",\"timestamp\":\"2026-02-03T04:05:08.000Z\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"answer\"}],\"api\":\"openai-responses\",\"provider\":\"openai\",\"model\":\"gpt-test\",\"usage\":{\"input\":1,\"output\":2,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":3,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":2}}",
+    "{\"type\":\"message\",\"id\":\"second-user\",\"parentId\":\"main-assistant\",\"timestamp\":\"2026-02-03T04:05:09.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"continue\"}],\"timestamp\":3}}",
+    "{\"type\":\"thinking_level_change\",\"id\":\"thinking\",\"parentId\":\"second-user\",\"timestamp\":\"2026-02-03T04:05:10.000Z\",\"thinkingLevel\":\"high\"}",
+    "{\"type\":\"model_change\",\"id\":\"model\",\"parentId\":\"thinking\",\"timestamp\":\"2026-02-03T04:05:11.000Z\",\"provider\":\"anthropic\",\"modelId\":\"claude-test\"}",
+    "{\"type\":\"active_tools_change\",\"id\":\"tools\",\"parentId\":\"model\",\"timestamp\":\"2026-02-03T04:05:12.000Z\",\"activeToolNames\":[\"read\",\"bash\"]}",
+    "{\"type\":\"active_tools_change\",\"id\":\"tools-empty\",\"parentId\":\"tools\",\"timestamp\":\"2026-02-03T04:05:12.500Z\",\"activeToolNames\":[]}",
+    "{\"type\":\"custom\",\"id\":\"custom\",\"parentId\":\"tools-empty\",\"timestamp\":\"2026-02-03T04:05:13.000Z\",\"customType\":\"state\",\"data\":{\"nested\":[1,\"two\"]}}",
+    "{\"type\":\"custom_message\",\"id\":\"custom-message\",\"parentId\":\"custom\",\"timestamp\":\"2026-02-03T04:05:14.000Z\",\"customType\":\"notice\",\"content\":\"visible note\",\"display\":true,\"details\":{\"source\":\"fixture\"}}",
+    "{\"type\":\"session_info\",\"id\":\"session-name\",\"parentId\":\"custom-message\",\"timestamp\":\"2026-02-03T04:05:15.000Z\",\"name\":\"  fixture name  \"}",
+    "{\"type\":\"compaction\",\"id\":\"compaction\",\"parentId\":\"session-name\",\"timestamp\":\"2026-02-03T04:05:16.000Z\",\"summary\":\"prior work\",\"firstKeptEntryId\":\"second-user\",\"tokensBefore\":42.5,\"details\":{\"readFiles\":[\"a.go\"]},\"fromHook\":false}",
+    "{\"type\":\"message\",\"id\":\"branch-user\",\"parentId\":\"root-user\",\"timestamp\":\"2026-02-03T04:05:17.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"branch\"}],\"timestamp\":4}}",
+    "{\"type\":\"branch_summary\",\"id\":\"branch-summary\",\"parentId\":\"branch-user\",\"timestamp\":\"2026-02-03T04:05:17.500Z\",\"fromId\":\"compaction\",\"summary\":\"discarded branch work\",\"details\":{\"modifiedFiles\":[\"b.go\"]},\"fromHook\":true}"
+  ],
+  "normalized": {
+    "writes": [
+      {
+        "kind": "entry",
+        "id": "root-user",
+        "parentId": null,
+        "seq": 1,
+        "timestamp": 1770091507000,
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "root <>&  "
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "kind": "entry",
+        "id": "main-assistant",
+        "parentId": "root-user",
+        "seq": 2,
+        "timestamp": 1770091508000,
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "answer"
+            }
+          ],
+          "api": "openai-responses",
+          "provider": "openai",
+          "model": "gpt-test",
+          "usage": {
+            "input": 1,
+            "output": 2,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 3,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 2
+        }
+      },
+      {
+        "kind": "entry",
+        "id": "second-user",
+        "parentId": "main-assistant",
+        "seq": 3,
+        "timestamp": 1770091509000,
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "continue"
+            }
+          ],
+          "timestamp": 3
+        }
+      },
+      {
+        "kind": "entry",
+        "id": "custom",
+        "parentId": "second-user",
+        "seq": 4,
+        "timestamp": 1770091513000,
+        "type": "custom",
+        "customType": "state",
+        "data": {
+          "nested": [
+            1,
+            "two"
+          ]
+        }
+      },
+      {
+        "kind": "entry",
+        "id": "custom-message",
+        "parentId": "custom",
+        "seq": 5,
+        "timestamp": 1770091514000,
+        "type": "message",
+        "message": {
+          "role": "custom",
+          "customType": "notice",
+          "content": "visible note",
+          "details": {
+            "source": "fixture"
+          },
+          "display": true,
+          "timestamp": 1770091514000
+        }
+      },
+      {
+        "kind": "entry",
+        "id": "compaction",
+        "parentId": "custom-message",
+        "seq": 6,
+        "timestamp": 1770091516000,
+        "type": "compaction",
+        "summary": "prior work",
+        "retainedTail": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "continue"
+              }
+            ],
+            "timestamp": 3
+          },
+          {
+            "role": "custom",
+            "customType": "notice",
+            "content": "visible note",
+            "details": {
+              "source": "fixture"
+            },
+            "display": true,
+            "timestamp": 1770091514000
+          }
+        ],
+        "tokensBefore": 42.5,
+        "details": {
+          "readFiles": [
+            "a.go"
+          ]
+        },
+        "fromHook": false
+      },
+      {
+        "kind": "entry",
+        "id": "branch-user",
+        "parentId": "root-user",
+        "seq": 7,
+        "timestamp": 1770091517000,
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "branch"
+            }
+          ],
+          "timestamp": 4
+        }
+      },
+      {
+        "kind": "entry",
+        "id": "branch-summary",
+        "parentId": "branch-user",
+        "seq": 8,
+        "timestamp": 1770091517500,
+        "type": "branch_summary",
+        "fromId": "compaction",
+        "summary": "discarded branch work",
+        "details": {
+          "modifiedFiles": [
+            "b.go"
+          ]
+        },
+        "fromHook": true
+      },
+      {
+        "kind": "value",
+        "op": "set",
+        "seq": 9,
+        "namespace": "pi.session.name",
+        "key": "",
+        "value": "  fixture name  "
+      },
+      {
+        "kind": "value",
+        "op": "set",
+        "seq": 10,
+        "namespace": "pi.branch.tip",
+        "key": "main",
+        "value": "branch-summary"
+      }
+    ],
+    "importedUsage": {
+      "input": 1,
+      "output": 2,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 3,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "nextSeq": 11
+  }
+}

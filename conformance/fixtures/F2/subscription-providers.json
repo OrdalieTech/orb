@@ -30,7 +30,6 @@
       "name": "xAI",
       "baseUrl": "https://api.x.ai/v1",
       "apis": [
-        "openai-completions",
         "openai-responses"
       ],
       "auth": {

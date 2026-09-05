@@ -60,9 +60,9 @@ func StreamSimpleGoogleVertex(
 			Thinking:      &GoogleThinkingOptions{Enabled: false},
 		})
 	}
-	effort := clampGoogleReasoning(model, *options.Reasoning)
-	if effort == ai.ThinkingLevel(ai.ModelThinkingOff) {
-		effort = ai.ThinkingHigh
+	effort, err := resolveGoogleThinkingLevel(model, clampGoogleReasoning(model, *options.Reasoning))
+	if err != nil {
+		return nil, err
 	}
 	thinking := &GoogleThinkingOptions{Enabled: true}
 	if isGemini3Pro(model) || isGemini3Flash(model) {

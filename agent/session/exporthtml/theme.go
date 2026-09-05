@@ -67,7 +67,7 @@ func resolveExportTheme(name string, selected *modetheme.Theme) (exportTheme, er
 
 var exportColorOrder = []string{
 	"accent", "border", "borderAccent", "borderMuted", "success", "error", "warning", "muted", "dim", "text", "thinkingText",
-	"selectedBg", "scrollbarThumb", "searchMatchBg", "searchMatchText", "userMessageBg", "userMessageText", "customMessageBg", "customMessageText", "customMessageLabel", "toolPendingBg", "toolSuccessBg", "toolErrorBg", "toolTitle", "toolOutput",
+	"selectedBg", "scrollbarTrack", "scrollbarThumb", "searchMatchBg", "searchMatchText", "userMessageBg", "userMessageText", "customMessageBg", "customMessageText", "customMessageLabel", "toolPendingBg", "toolSuccessBg", "toolErrorBg", "toolTitle", "toolOutput",
 	"mdHeading", "mdLink", "mdLinkUrl", "mdCode", "mdCodeBlock", "mdCodeBlockBorder", "mdQuote", "mdQuoteBorder", "mdHr", "mdListBullet",
 	"toolDiffAdded", "toolDiffRemoved", "toolDiffContext", "syntaxComment", "syntaxKeyword", "syntaxFunction", "syntaxVariable", "syntaxString", "syntaxNumber", "syntaxType", "syntaxOperator", "syntaxPunctuation",
 	"thinkingOff", "thinkingMinimal", "thinkingLow", "thinkingMedium", "thinkingHigh", "thinkingXhigh", "thinkingMax", "bashMode",
@@ -242,7 +242,8 @@ const darkThemeVariables = `--accent: #8abeb7;
       --text: #d4d4d4;
       --thinkingText: #808080;
       --selectedBg: #3a3a4a;
-      --scrollbarThumb: #3a3a4a;
+      --scrollbarTrack: #505050;
+      --scrollbarThumb: #d4d4d4;
       --searchMatchBg: #3a3a4a;
       --searchMatchText: #d4d4d4;
       --userMessageBg: #343541;
@@ -301,7 +302,8 @@ const lightThemeVariables = `--accent: #5a8080;
       --text: #1f2328;
       --thinkingText: #6c6c6c;
       --selectedBg: #d0d0e0;
-      --scrollbarThumb: #d0d0e0;
+      --scrollbarTrack: #b0b0b0;
+      --scrollbarThumb: #1f2328;
       --searchMatchBg: #d0d0e0;
       --searchMatchText: #1f2328;
       --userMessageBg: #e8e8e8;

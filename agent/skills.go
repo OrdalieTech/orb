@@ -72,6 +72,7 @@ type parsedFrontmatter struct {
 }
 
 func parseResourceFrontmatter(content string) (parsedFrontmatter, error) {
+	content = strings.TrimPrefix(content, "\ufeff")
 	normalized := strings.ReplaceAll(strings.ReplaceAll(content, "\r\n", "\n"), "\r", "\n")
 	if !strings.HasPrefix(normalized, "---") {
 		return parsedFrontmatter{Values: map[string]any{}, Body: normalized}, nil

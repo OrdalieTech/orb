@@ -699,6 +699,9 @@ function fixtureResponse(definition: StreamDefinition): FixtureResponse {
   return { status: 200, body: definition.sse, contentType: "text/event-stream" };
 }
 
+let toolIdOccurrences = 0;
+streamDefinitions.push({...streamDefinitions[0], name:"mistral-tool-continuation-omits-id", sse:mistralRichSSE.replace(/"id":"tool12345",/g,(value)=>++toolIdOccurrences===1?value:"")});
+
 export async function extractMistralAzureF2(): Promise<{
   mistralRequests: Array<Definition & { expected: CapturedRequest }>;
   mistralStreams: Array<StreamDefinition & { expectedEvents: AssistantMessageEvent[] }>;

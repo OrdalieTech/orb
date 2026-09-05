@@ -1,0 +1,610 @@
+{
+  "commits": [
+    {
+      "writes": [],
+      "prepared": {
+        "writes": [],
+        "result": {
+          "firstSeq": 1,
+          "seqs": [],
+          "timestamp": 1770091506789
+        }
+      },
+      "stats": {
+        "messageCount": 0,
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        }
+      }
+    },
+    {
+      "writes": [
+        {
+          "kind": "entry",
+          "entry": {
+            "id": "a",
+            "parentId": null,
+            "type": "message",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "<>&"
+                }
+              ],
+              "timestamp": 1
+            }
+          }
+        },
+        {
+          "kind": "entry",
+          "entry": {
+            "id": "b",
+            "parentId": "a",
+            "type": "custom",
+            "customType": "test",
+            "data": null
+          }
+        }
+      ],
+      "prepared": {
+        "writes": [
+          {
+            "kind": "entry",
+            "id": "a",
+            "parentId": null,
+            "type": "message",
+            "message": {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "<>&"
+                }
+              ],
+              "timestamp": 1
+            },
+            "seq": 1,
+            "timestamp": 1770091506789
+          },
+          {
+            "kind": "entry",
+            "id": "b",
+            "parentId": "a",
+            "type": "custom",
+            "customType": "test",
+            "data": null,
+            "seq": 2,
+            "timestamp": 1770091506789
+          }
+        ],
+        "result": {
+          "firstSeq": 1,
+          "seqs": [
+            1,
+            2
+          ],
+          "timestamp": 1770091506789
+        }
+      },
+      "stats": {
+        "messageCount": 1,
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        }
+      }
+    },
+    {
+      "writes": [
+        {
+          "kind": "value",
+          "op": "set",
+          "namespace": "session",
+          "key": "name",
+          "value": "sample"
+        },
+        {
+          "kind": "list",
+          "op": "append",
+          "namespace": "lane",
+          "key": "inbox",
+          "value": {
+            "entryId": "a",
+            "kind": "steer"
+          }
+        },
+        {
+          "kind": "value",
+          "op": "delete",
+          "namespace": "session",
+          "key": "name"
+        },
+        {
+          "kind": "list",
+          "op": "delete",
+          "namespace": "lane",
+          "key": "inbox"
+        }
+      ],
+      "prepared": {
+        "writes": [
+          {
+            "kind": "value",
+            "op": "set",
+            "seq": 3,
+            "namespace": "session",
+            "key": "name",
+            "value": "sample"
+          },
+          {
+            "kind": "list",
+            "op": "append",
+            "seq": 4,
+            "namespace": "lane",
+            "key": "inbox",
+            "value": {
+              "entryId": "a",
+              "kind": "steer"
+            }
+          },
+          {
+            "kind": "value",
+            "op": "delete",
+            "seq": 5,
+            "namespace": "session",
+            "key": "name"
+          },
+          {
+            "kind": "list",
+            "op": "delete",
+            "seq": 6,
+            "namespace": "lane",
+            "key": "inbox"
+          }
+        ],
+        "result": {
+          "firstSeq": 3,
+          "seqs": [
+            3,
+            4,
+            5,
+            6
+          ],
+          "timestamp": 1770091506789
+        }
+      },
+      "stats": {
+        "messageCount": 1,
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        }
+      }
+    },
+    {
+      "writes": [
+        {
+          "kind": "usage",
+          "row": {
+            "id": "usage",
+            "usage": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 10,
+              "totalTokens": 160,
+              "cost": {
+                "input": 0.1,
+                "output": 0.2,
+                "cacheRead": 0.01,
+                "cacheWrite": 0.02,
+                "total": 0.33
+              }
+            },
+            "adjustment": true,
+            "details": {
+              "source": "v3-import"
+            }
+          }
+        }
+      ],
+      "prepared": {
+        "writes": [
+          {
+            "kind": "usage",
+            "id": "usage",
+            "usage": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 10,
+              "totalTokens": 160,
+              "cost": {
+                "input": 0.1,
+                "output": 0.2,
+                "cacheRead": 0.01,
+                "cacheWrite": 0.02,
+                "total": 0.33
+              }
+            },
+            "adjustment": true,
+            "details": {
+              "source": "v3-import"
+            },
+            "seq": 7
+          }
+        ],
+        "result": {
+          "firstSeq": 7,
+          "seqs": [
+            7
+          ],
+          "timestamp": 1770091506789
+        }
+      },
+      "stats": {
+        "messageCount": 1,
+        "usage": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 30,
+          "cacheWrite": 10,
+          "totalTokens": 160,
+          "cost": {
+            "input": 0.1,
+            "output": 0.2,
+            "cacheRead": 0.01,
+            "cacheWrite": 0.02,
+            "total": 0.33
+          }
+        }
+      }
+    },
+    {
+      "writes": [
+        {
+          "kind": "value",
+          "op": "set",
+          "namespace": "test",
+          "key": "z",
+          "value": 1
+        },
+        {
+          "kind": "value",
+          "op": "set",
+          "namespace": "test",
+          "key": "a",
+          "value": 2
+        },
+        {
+          "kind": "value",
+          "op": "set",
+          "namespace": "test",
+          "key": "😀",
+          "value": 3
+        },
+        {
+          "kind": "value",
+          "op": "set",
+          "namespace": "test",
+          "key": "",
+          "value": 4
+        },
+        {
+          "kind": "list",
+          "op": "append",
+          "namespace": "test",
+          "key": "list",
+          "value": 1
+        },
+        {
+          "kind": "list",
+          "op": "append",
+          "namespace": "test",
+          "key": "list",
+          "value": 2
+        },
+        {
+          "kind": "list",
+          "op": "append",
+          "namespace": "test",
+          "key": "list",
+          "value": 3
+        }
+      ],
+      "prepared": {
+        "writes": [
+          {
+            "kind": "value",
+            "op": "set",
+            "seq": 8,
+            "namespace": "test",
+            "key": "z",
+            "value": 1
+          },
+          {
+            "kind": "value",
+            "op": "set",
+            "seq": 9,
+            "namespace": "test",
+            "key": "a",
+            "value": 2
+          },
+          {
+            "kind": "value",
+            "op": "set",
+            "seq": 10,
+            "namespace": "test",
+            "key": "😀",
+            "value": 3
+          },
+          {
+            "kind": "value",
+            "op": "set",
+            "seq": 11,
+            "namespace": "test",
+            "key": "",
+            "value": 4
+          },
+          {
+            "kind": "list",
+            "op": "append",
+            "seq": 12,
+            "namespace": "test",
+            "key": "list",
+            "value": 1
+          },
+          {
+            "kind": "list",
+            "op": "append",
+            "seq": 13,
+            "namespace": "test",
+            "key": "list",
+            "value": 2
+          },
+          {
+            "kind": "list",
+            "op": "append",
+            "seq": 14,
+            "namespace": "test",
+            "key": "list",
+            "value": 3
+          }
+        ],
+        "result": {
+          "firstSeq": 8,
+          "seqs": [
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14
+          ],
+          "timestamp": 1770091506789
+        }
+      },
+      "stats": {
+        "messageCount": 1,
+        "usage": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 30,
+          "cacheWrite": 10,
+          "totalTokens": 160,
+          "cost": {
+            "input": 0.1,
+            "output": 0.2,
+            "cacheRead": 0.01,
+            "cacheWrite": 0.02,
+            "total": 0.33
+          }
+        }
+      }
+    }
+  ],
+  "entries": [
+    {
+      "id": "a",
+      "parentId": null,
+      "type": "message",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "<>&"
+          }
+        ],
+        "timestamp": 1
+      },
+      "seq": 1,
+      "timestamp": 1770091506789
+    },
+    {
+      "id": "b",
+      "parentId": "a",
+      "type": "custom",
+      "customType": "test",
+      "data": null,
+      "seq": 2,
+      "timestamp": 1770091506789
+    }
+  ],
+  "entriesDesc": [
+    {
+      "id": "b",
+      "parentId": "a",
+      "type": "custom",
+      "customType": "test",
+      "data": null,
+      "seq": 2,
+      "timestamp": 1770091506789
+    }
+  ],
+  "usage": [
+    {
+      "id": "usage",
+      "usage": {
+        "input": 100,
+        "output": 20,
+        "cacheRead": 30,
+        "cacheWrite": 10,
+        "totalTokens": 160,
+        "cost": {
+          "input": 0.1,
+          "output": 0.2,
+          "cacheRead": 0.01,
+          "cacheWrite": 0.02,
+          "total": 0.33
+        }
+      },
+      "adjustment": true,
+      "details": {
+        "source": "v3-import"
+      },
+      "seq": 7
+    }
+  ],
+  "branch": [
+    {
+      "id": "a",
+      "parentId": null,
+      "type": "message",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "<>&"
+          }
+        ],
+        "timestamp": 1
+      },
+      "seq": 1,
+      "timestamp": 1770091506789
+    },
+    {
+      "id": "b",
+      "parentId": "a",
+      "type": "custom",
+      "customType": "test",
+      "data": null,
+      "seq": 2,
+      "timestamp": 1770091506789
+    }
+  ],
+  "values": [
+    {
+      "address": {
+        "namespace": "test",
+        "key": "a",
+        "kind": "value"
+      },
+      "value": 2,
+      "seq": 9
+    },
+    {
+      "address": {
+        "namespace": "test",
+        "key": "z",
+        "kind": "value"
+      },
+      "value": 1,
+      "seq": 8
+    },
+    {
+      "address": {
+        "namespace": "test",
+        "key": "",
+        "kind": "value"
+      },
+      "value": 4,
+      "seq": 11
+    },
+    {
+      "address": {
+        "namespace": "test",
+        "key": "😀",
+        "kind": "value"
+      },
+      "value": 3,
+      "seq": 10
+    }
+  ],
+  "list": [
+    {
+      "seq": 12,
+      "value": 1
+    },
+    {
+      "seq": 13,
+      "value": 2
+    },
+    {
+      "seq": 14,
+      "value": 3
+    }
+  ],
+  "listDesc": [
+    {
+      "seq": 14,
+      "value": 3
+    },
+    {
+      "seq": 13,
+      "value": 2
+    }
+  ],
+  "stats": {
+    "messageCount": 1,
+    "usage": {
+      "input": 100,
+      "output": 20,
+      "cacheRead": 30,
+      "cacheWrite": 10,
+      "totalTokens": 160,
+      "cost": {
+        "input": 0.1,
+        "output": 0.2,
+        "cacheRead": 0.01,
+        "cacheWrite": 0.02,
+        "total": 0.33
+      }
+    }
+  }
+}

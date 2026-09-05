@@ -507,6 +507,27 @@ func (runtime *SessionRuntime) SetModel(ctx context.Context, model ai.Model) err
 	return runtime.setModel(ctx, model, nil, true, extensions.ModelSelectSet)
 }
 
+type ModelMutationOptions struct{ Persist bool }
+
+func (runtime *SessionRuntime) SetModelWithOptions(ctx context.Context, model ai.Model, options ModelMutationOptions) error {
+	if err := runtime.SetModel(ctx, model); err != nil {
+		return err
+	}
+	if options.Persist {
+		runtime.settings.SetDefaultModelAndProvider(string(model.Provider), model.ID)
+		scoped := runtime.ScopedModels()
+		if len(scoped) > 0 && !slices.ContainsFunc(scoped, func(item ScopedModel) bool { return item.Model.Provider == model.Provider && item.Model.ID == model.ID }) {
+			runtime.SetScopedModels(append(scoped, ScopedModel{Model: model}))
+			enabled := runtime.settings.GetEnabledModels()
+			ref := string(model.Provider) + "/" + model.ID
+			if len(enabled) > 0 && !slices.ContainsFunc(enabled, func(item string) bool { return strings.EqualFold(item, ref) }) {
+				runtime.settings.SetEnabledModels(append(enabled, ref))
+			}
+		}
+	}
+	return nil
+}
+
 func (runtime *SessionRuntime) setModel(
 	ctx context.Context,
 	model ai.Model,
@@ -531,12 +552,11 @@ func (runtime *SessionRuntime) setModel(
 	}
 	state := runtime.agent.State()
 	previous := state.Model
-	thinkingLevel := runtime.thinkingLevelForModelSwitch(state, explicitThinking)
+	thinkingLevel := runtime.thinkingLevelForModelSwitch(state, &model, explicitThinking)
 	runtime.agent.SetModel(&model)
 	if _, err := runtime.manager.AppendModelChange(string(model.Provider), model.ID); err != nil {
 		return err
 	}
-	runtime.settings.SetDefaultModelAndProvider(string(model.Provider), model.ID)
 	if err := runtime.SetThinkingLevel(thinkingLevel); err != nil {
 		return err
 	}
@@ -630,36 +650,46 @@ func (runtime *SessionRuntime) SetScopedModels(models []ScopedModel) {
 
 func (runtime *SessionRuntime) thinkingLevelForModelSwitch(
 	state engine.AgentState,
+	model *ai.Model,
 	explicit *ai.ModelThinkingLevel,
 ) ai.ModelThinkingLevel {
 	if explicit != nil {
 		return *explicit
 	}
-	if state.Model != nil && state.Model.Reasoning {
-		return state.ThinkingLevel
+	if model != nil {
+		if level := runtime.settings.GetModelThinkingLevel(string(model.Provider), model.ID); level != "" {
+			return level
+		}
 	}
 	level := runtime.settings.GetDefaultThinkingLevel()
 	if level == "" {
-		level = ai.ModelThinkingMedium
+		level = state.ThinkingLevel
+		if level == "" {
+			level = ai.ModelThinkingMedium
+		}
 	}
 	return level
 }
 
 func (runtime *SessionRuntime) SetThinkingLevel(level ai.ModelThinkingLevel) error {
+	return runtime.SetThinkingLevelWithOptions(level, ModelMutationOptions{})
+}
+
+func (runtime *SessionRuntime) SetThinkingLevelWithOptions(level ai.ModelThinkingLevel, options ModelMutationOptions) error {
 	if runtime == nil {
 		return errors.New("agent: nil session runtime")
 	}
 	state := runtime.agent.State()
 	effective := ai.ClampThinkingLevel(state.Model, level)
+	if options.Persist {
+		runtime.settings.SetDefaultThinkingLevel(level)
+	}
 	if effective == state.ThinkingLevel {
 		return nil
 	}
 	runtime.agent.SetThinkingLevel(effective)
 	if _, err := runtime.manager.AppendThinkingLevelChange(string(effective)); err != nil {
 		return err
-	}
-	if effective != ai.ModelThinkingOff || state.Model != nil && state.Model.Reasoning {
-		runtime.settings.SetDefaultThinkingLevel(effective)
 	}
 	runtime.emit(ThinkingLevelChangedEvent{Level: effective})
 	if extensionState := runtime.extensionState; extensionState != nil && extensionState.runner.HasHandlers(extensions.EventThinkingLevelSelect) {

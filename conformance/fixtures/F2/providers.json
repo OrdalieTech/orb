@@ -434,6 +434,7 @@
       "name": "OpenRouter",
       "baseUrl": "https://openrouter.ai/api/v1",
       "apis": [
+        "anthropic-messages",
         "openai-completions"
       ],
       "auth": {
@@ -530,7 +531,6 @@
       "name": "xAI",
       "baseUrl": "https://api.x.ai/v1",
       "apis": [
-        "openai-completions",
         "openai-responses"
       ],
       "auth": {

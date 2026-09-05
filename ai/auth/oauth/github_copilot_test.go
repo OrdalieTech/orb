@@ -45,10 +45,10 @@ func TestGitHubCopilotDeviceLoginRefreshAndHeaders(t *testing.T) {
 			_, _ = io.WriteString(writer, `{"access_token":"github-access"}`)
 		case "/copilot-token":
 			_, _ = io.WriteString(writer, `{"token":"tid=1;proxy-ep=proxy.enterprise.githubcopilot.example;exp=1800000000","expires_at":1800000000}`)
-		case "/api/models/fixture-model/policy":
+		case "/api/models/gpt-4.1/policy":
 			_, _ = io.WriteString(writer, `{}`)
 		case "/api/models":
-			_, _ = io.WriteString(writer, `{"data":[{"id":"gpt-4.1","model_picker_enabled":true,"policy":{"state":"enabled"},"capabilities":{"supports":{"tool_calls":true}}},{"id":"disabled","model_picker_enabled":true,"policy":{"state":"disabled"}},{"id":"no-tools","model_picker_enabled":true,"capabilities":{"supports":{"tool_calls":false}}},{"id":"hidden","model_picker_enabled":false}]}`)
+			_, _ = io.WriteString(writer, `{"data":[{"id":"gpt-4.1","model_picker_enabled":true,"policy":{"state":"unconfigured"},"capabilities":{"supports":{"tool_calls":true}}},{"id":"disabled","model_picker_enabled":true,"policy":{"state":"disabled"}},{"id":"no-tools","model_picker_enabled":true,"capabilities":{"supports":{"tool_calls":false}}},{"id":"hidden","model_picker_enabled":false}]}`)
 		default:
 			writer.WriteHeader(http.StatusNotFound)
 		}
@@ -58,7 +58,7 @@ func TestGitHubCopilotDeviceLoginRefreshAndHeaders(t *testing.T) {
 	flow := NewGitHubCopilot(&GitHubCopilotOptions{
 		DeviceCodeURL: server.URL + "/device", AccessTokenURL: server.URL + "/access",
 		CopilotTokenURL: server.URL + "/copilot-token", CopilotBaseURL: server.URL + "/api",
-		KnownModelIDs: []string{"fixture-model"},
+		KnownModelIDs: []string{"gpt-4.1"},
 		Sleep:         func(context.Context, time.Duration) error { return nil },
 	})
 	interaction := &copilotInteraction{input: "https://company.ghe.test/enterprise"}
@@ -83,7 +83,7 @@ func TestGitHubCopilotDeviceLoginRefreshAndHeaders(t *testing.T) {
 	if got := requests["/copilot-token"][0]; !strings.HasSuffix(got, "|Bearer github-access") {
 		t.Fatalf("Copilot token request = %q", got)
 	}
-	if got := requests["/api/models/fixture-model/policy"][0]; !strings.HasSuffix(got, "|Bearer tid=1;proxy-ep=proxy.enterprise.githubcopilot.example;exp=1800000000") {
+	if got := requests["/api/models/gpt-4.1/policy"][0]; !strings.HasSuffix(got, "|Bearer tid=1;proxy-ep=proxy.enterprise.githubcopilot.example;exp=1800000000") {
 		t.Fatalf("policy request = %q", got)
 	}
 

@@ -7,6 +7,7 @@ import { writeProviderModelData } from "./upstream-model-data.ts";
 
 import {
   stream as streamGoogle,
+  streamSimple as streamSimpleGoogle,
   type GoogleOptions,
 } from "../../.upstream/packages/ai/src/api/google-generative-ai.ts";
 import type {
@@ -15,6 +16,7 @@ import type {
   Context,
   Model,
   Tool,
+ SimpleStreamOptions,
 } from "../../.upstream/packages/ai/src/types.ts";
 
 const FIXED_NOW = 1_700_000_000_123;
@@ -24,7 +26,8 @@ interface GoogleDefinition {
   api: "google-generative-ai";
   model: Model<"google-generative-ai">;
   context: Context;
-  options: GoogleOptions;
+  options: GoogleOptions | SimpleStreamOptions;
+ simple?: boolean;
   payloadConfigPatch?: Record<string, unknown>;
   payloadContents?: unknown;
 }
@@ -431,6 +434,8 @@ const minimalSSE = encodeSSE([
   },
 ]);
 
+requestDefinitions.push({name:"google-simple-mapped-thinking",api:"google-generative-ai",simple:true,model:googleModel({id:"gemini-3-flash",thinkingLevelMap:{xhigh:"MEDIUM"}}),context:{messages:[{role:"user",content:"reason",timestamp:FIXED_NOW}]},options:{apiKey:"fixture-google-key",reasoning:"xhigh"}});
+
 const streamDefinitions: GoogleStreamDefinition[] = [
   {
     name: "google-thinking-text-tool-use",
@@ -657,7 +662,7 @@ async function runGoogle(
         headers: { "content-type": response.contentType },
       });
     };
-    const options: GoogleOptions = { ...definition.options };
+    const options: GoogleOptions & SimpleStreamOptions = { ...definition.options };
     if (definition.payloadConfigPatch || definition.payloadContents !== undefined) {
       const patch = definition.payloadConfigPatch;
       options.onPayload = (params) => ({
@@ -666,7 +671,7 @@ async function runGoogle(
         ...(patch ? { config: { ...params.config, ...patch } } : {}),
       });
     }
-    for await (const event of streamGoogle(definition.model, definition.context, options)) {
+    for await (const event of (definition.simple ? streamSimpleGoogle : streamGoogle)(definition.model, definition.context, options)) {
       events.push(cloneEvent(event));
     }
   } finally {

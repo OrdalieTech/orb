@@ -15,6 +15,7 @@ import (
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
@@ -39,6 +40,7 @@ type f3SessionScenario struct {
 	TokenSize               int               `json:"tokenSize"`
 	Settings                json.RawMessage   `json:"settings"`
 	Queue                   *f3SessionQueue   `json:"queue"`
+	CustomDuringTool        bool              `json:"customDuringTool"`
 	CompactAfterFirstPrompt bool              `json:"compactAfterFirstPrompt"`
 	Responses               []json.RawMessage `json:"responses"`
 	ExpectedExitCode        int               `json:"expectedExitCode"`
@@ -151,19 +153,39 @@ func newF3SessionRuntime(t testing.TB, scenario f3SessionScenario, headerTime ti
 	}
 	now := func() int64 { return scenario.FixedNow }
 	provider := f3ScenarioProvider(t, scenario)
+	// The upstream fixture constructs a raw Agent with its default message projection.
 	created := engine.NewAgent(
 		provider.StreamSimple, engine.WithInitialState(engine.AgentState{
 			Model: provider.GetModel(), SystemPrompt: scenario.SystemPrompt, Messages: engine.AgentMessages{}, Tools: []engine.AgentTool{},
 		}),
-		engine.WithConvertToLLM(agent.ConvertToLLM),
 		engine.WithClock(now),
 	)
+	var registry *extensions.Registry
+	var extensionAPI extensions.API
+	if scenario.CustomDuringTool {
+		registry = extensions.NewRegistry("/fixture/project")
+		if err := registry.Register("<fixture-custom-message>", func(api extensions.API) error { extensionAPI = api; return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
 	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
-		Agent: created, SessionManager: manager, Settings: settings, StreamFn: provider.StreamSimple,
+		Agent: created, SessionManager: manager, Settings: settings, StreamFn: provider.StreamSimple, ExtensionRegistry: registry,
 		Sleep: func(context.Context, time.Duration) error { return nil }, Clock: now,
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if scenario.CustomDuringTool {
+		created.SetTools([]engine.AgentTool{engine.AgentToolFunc{
+			AgentToolSpec: engine.AgentToolSpec{Name: "fixture", Label: "fixture", Description: "fixture", Parameters: ai.JSONSchema(`{"type":"object","properties":{}}`)},
+			Run: func(ctx context.Context, _ string, _ any, _ engine.AgentToolUpdateCallback) (engine.AgentToolResult, error) {
+				trigger := false
+				if err := extensionAPI.SendMessage(ctx, extensions.CustomMessage{CustomType: "note", Content: "queued", Display: true}, &extensions.SendMessageOptions{TriggerTurn: &trigger}); err != nil {
+					return engine.AgentToolResult{}, err
+				}
+				return engine.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: "result"}}}, nil
+			},
+		}})
 	}
 	t.Cleanup(runtime.Dispose)
 	return runtime, manager
