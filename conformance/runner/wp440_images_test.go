@@ -92,7 +92,7 @@ func TestWP440ImageProcessingMatchesUpstream(t *testing.T) {
 	}
 	var fixture wp440Fixture
 	runner.LoadJSON(t, "WP440", "images.json", &fixture)
-	if fixture.SchemaVersion != 3 || len(fixture.FormatCases) != 4 || len(fixture.ResampleCases) != 3 || len(fixture.OrientationCases) != 8 || len(fixture.PipelineCases) != 2 {
+	if fixture.SchemaVersion != 3 || len(fixture.FormatCases) != 4 || len(fixture.ResampleCases) != 3 || len(fixture.OrientationCases) != 9 || len(fixture.PipelineCases) != 2 {
 		t.Fatalf("WP440 fixture header = version %d, formats %d, resamples %d, orientations %d, pipelines %d", fixture.SchemaVersion, len(fixture.FormatCases), len(fixture.ResampleCases), len(fixture.OrientationCases), len(fixture.PipelineCases))
 	}
 	for _, fixtureCase := range fixture.FormatCases {

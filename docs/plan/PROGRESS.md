@@ -411,6 +411,51 @@ Status: **green; net shrink with no fixture drift**.
   directly. The stack and its F6/F8 conformance families are load-bearing SDK surface: do not
   retire, and treat harness API changes as embedder-visible.
 
+## Upstream sync — 2026-09-05, pi v0.85.0
+
+Pinned: published release `107d79f11072bbc8a3a757ed7fd69596bee7d68c` (2026-09-04).
+Provider payloads and streams, catalog metadata, extension lifecycle, session controls, transactional
+v4 storage, and product compaction are covered by regenerated upstream fixtures. No Go dependencies
+were added. The removed v4 lane writer and v4-to-v3 bridge were deleted; published method sets remain
+source-compatible, with explicit errors for operations the released format no longer supports.
+The standalone Go ExecutionEnv retains its existing regression corpus outside the wire fixture family.
+Orb-owned selector frames are preserved while their search/callback behavior stays upstream-extracted.
+
+Candidate sync and its complete race suite are GREEN, reciprocal fixture regeneration is byte-clean,
+and the unmodified released upstream RPC suite passes 29/29 tests. The pin was promoted only after
+these gates passed. Final `make check` is GREEN: CGO-disabled build, vet, lint (zero issues), complete race suite,
+and the shipped-build provider/conformance rerun. `go mod verify` also passes. Existing account/host
+blockers below remain unchanged.
+
+
+Trim and measurements: the obsolete v4 JSONL bridge/writer and unused truthiness helper were
+removed; no new module dependency or speculative default-on capability was introduced.
+All four `CGO_ENABLED=0` builds pass:
+
+| Target | Bytes |
+|---|---:|
+| linux-amd64 | 51,888,132 |
+| linux-arm64 | 48,739,807 |
+| darwin-amd64 | 53,359,552 |
+| darwin-arm64 | 50,606,514 |
+
+The largest build remains under 55 MB. Linux/amd64 grows 2.59% from the last recorded
+50,579,863-byte baseline. Final `--version` over 30 runs: mean 22.1 ms,
+median 21.97 ms, maximum 36.91 ms (50 ms cap). Concurrent build load
+made wall time variable: an alternating 30-run comparison against the existing August 18 binary
+measured 14.45 ms old / 14.69 ms candidate; the larger historical timing delta is consistent with this host's
+load, so those cross-date timings are not a controlled regression measurement. This comparison artifact predates the
+last small serializer/render fixes; the final absolute measurements above use the final sources.
+
+Raw source-line comparison (non-test Go, excluding assets/testdata; upstream src TypeScript):
+
+| Package | Go lines | Upstream TS lines | Ratio |
+|---|---:|---:|---:|
+| ai | 31,321 | 24,268 | 1.29 |
+| engine | 13,391 | 24,295 | 0.55 |
+| agent | 69,214 | 70,065 | 0.99 |
+| tui | 13,865 | 18,108 | 0.77 |
+
 ## Owner-blocked evidence
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.
 - ChatGPT/Codex, Copilot, and xAI OAuth end-to-end runs likewise require subscribed accounts.

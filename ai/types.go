@@ -68,9 +68,10 @@ type TextContent struct {
 }
 
 type ThinkingContent struct {
-	Thinking          string  `json:"thinking"`
-	ThinkingSignature *string `json:"thinkingSignature,omitempty"`
-	Redacted          *bool   `json:"redacted,omitempty"`
+	RedactedChunks    []json.RawMessage `json:"redactedChunks,omitempty"`
+	Thinking          string            `json:"thinking"`
+	ThinkingSignature *string           `json:"thinkingSignature,omitempty"`
+	Redacted          *bool             `json:"redacted,omitempty"`
 	// Index exists only while Anthropic content blocks are streaming and is cleared at block end.
 	Index *int `json:"index,omitempty"`
 }
@@ -191,18 +192,22 @@ type UserMessage struct {
 }
 
 type AssistantMessage struct {
-	Content       AssistantContent              `json:"content"`
-	API           API                           `json:"api"`
-	Provider      ProviderID                    `json:"provider"`
-	Model         string                        `json:"model"`
-	Usage         Usage                         `json:"usage"`
-	StopReason    StopReason                    `json:"stopReason"`
-	Timestamp     int64                         `json:"timestamp"`
-	ResponseID    *string                       `json:"responseId,omitempty"`
-	ResponseModel *string                       `json:"responseModel,omitempty"`
-	Diagnostics   *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
-	ErrorMessage  *string                       `json:"errorMessage,omitempty"`
-	RawStopReason *string                       `json:"rawStopReason,omitempty"`
+	rawStopBeforeDiagnostics         bool
+	modelOmitted                     bool
+	providerThinkingLevelBeforeUsage bool
+	ProviderThinkingLevel            *string                       `json:"providerThinkingLevel,omitempty"`
+	Content                          AssistantContent              `json:"content"`
+	API                              API                           `json:"api"`
+	Provider                         ProviderID                    `json:"provider"`
+	Model                            string                        `json:"model"`
+	Usage                            Usage                         `json:"usage"`
+	StopReason                       StopReason                    `json:"stopReason"`
+	Timestamp                        int64                         `json:"timestamp"`
+	ResponseID                       *string                       `json:"responseId,omitempty"`
+	ResponseModel                    *string                       `json:"responseModel,omitempty"`
+	Diagnostics                      *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
+	ErrorMessage                     *string                       `json:"errorMessage,omitempty"`
+	RawStopReason                    *string                       `json:"rawStopReason,omitempty"`
 	// EndTurn records the provider's indication that the model explicitly ended
 	// its turn. Preserved for debugging; it does not affect agent control flow.
 	EndTurn               *bool `json:"endTurn,omitempty"`

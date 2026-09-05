@@ -3,6 +3,89 @@
   "fixedNow": 1700000100321,
   "scenarios": [
     {
+      "name": "custom-during-tool",
+      "trace": "custom-during-tool.jsonl",
+      "fixedNow": 1700000100321,
+      "initialMessage": "run fixture",
+      "messages": [],
+      "tokenSize": 64,
+      "settings": {
+        "compaction": {
+          "enabled": false
+        },
+        "retry": {
+          "enabled": false
+        }
+      },
+      "customDuringTool": true,
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "toolCall",
+              "id": "fixture-call",
+              "name": "fixture",
+              "arguments": {}
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1700000100321
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "done"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1700000100321
+        }
+      ],
+      "expectedExitCode": 0,
+      "requiredEventTypes": [
+        "turn_end",
+        "agent_settled"
+      ],
+      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project\n"
+    },
+    {
       "name": "multiple-prompts",
       "trace": "multiple-prompts.jsonl",
       "fixedNow": 1700000100321,

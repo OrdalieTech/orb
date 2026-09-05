@@ -208,6 +208,7 @@ func TestModelsJSONValidationMatchesUpstreamFixture(t *testing.T) {
 	}
 	var fixtures []struct {
 		Name     string          `json:"name"`
+		Source   *string         `json:"source"`
 		Config   json.RawMessage `json:"config"`
 		Accepted bool            `json:"accepted"`
 	}
@@ -217,7 +218,11 @@ func TestModelsJSONValidationMatchesUpstreamFixture(t *testing.T) {
 	for _, fixture := range fixtures {
 		t.Run(fixture.Name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "models.json")
-			if err := os.WriteFile(path, fixture.Config, 0o600); err != nil {
+			source := fixture.Config
+			if fixture.Source != nil {
+				source = []byte(*fixture.Source)
+			}
+			if err := os.WriteFile(path, source, 0o600); err != nil {
 				t.Fatal(err)
 			}
 			config, err := LoadModelConfig(path)

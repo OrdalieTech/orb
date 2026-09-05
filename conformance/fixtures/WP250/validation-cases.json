@@ -1,5 +1,29 @@
 [
   {
+    "name": "BOM model config",
+    "config": {
+      "providers": {}
+    },
+    "source": "﻿{\"providers\":{}}",
+    "accepted": true
+  },
+  {
+    "name": "release compat controls",
+    "config": {
+      "providers": {
+        "p": {
+          "compat": {
+            "supportsFinishReason": false,
+            "vllmPriority": -2,
+            "supportsMaxOutputTokens": false,
+            "supportsMidConvoEffort": true
+          }
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
     "name": "incomplete cost",
     "config": {
       "providers": {

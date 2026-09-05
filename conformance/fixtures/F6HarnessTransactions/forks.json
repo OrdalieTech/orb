@@ -1,0 +1,385 @@
+{
+  "source": {
+    "entries": [
+      {
+        "id": "a",
+        "parentId": null,
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "<>&"
+            }
+          ],
+          "timestamp": 1
+        },
+        "seq": 1,
+        "timestamp": 1770091506789
+      },
+      {
+        "id": "b",
+        "parentId": "a",
+        "type": "custom",
+        "customType": "test",
+        "data": null,
+        "seq": 2,
+        "timestamp": 1770091506789
+      }
+    ],
+    "scalarValues": [
+      {
+        "address": {
+          "namespace": "pi.branch.tip",
+          "key": "main",
+          "kind": "value"
+        },
+        "value": "b",
+        "seq": 3
+      },
+      {
+        "address": {
+          "namespace": "pi.lane.config",
+          "key": "main",
+          "kind": "value"
+        },
+        "value": {
+          "model": {
+            "provider": "openai",
+            "modelId": "test"
+          },
+          "thinkingLevel": "off",
+          "activeToolNames": []
+        },
+        "seq": 4
+      },
+      {
+        "address": {
+          "namespace": "pi.lane.state",
+          "key": "main",
+          "kind": "value"
+        },
+        "value": {
+          "currentOperationId": "running",
+          "lastOperationId": null,
+          "inbox": []
+        },
+        "seq": 5
+      },
+      {
+        "address": {
+          "namespace": "pi.session.name",
+          "key": "",
+          "kind": "value"
+        },
+        "value": "name",
+        "seq": 6
+      },
+      {
+        "address": {
+          "namespace": "custom",
+          "key": "data",
+          "kind": "value"
+        },
+        "value": {
+          "x": 1
+        },
+        "seq": 7
+      },
+      {
+        "address": {
+          "namespace": "pi.entry.label",
+          "key": "b",
+          "kind": "value"
+        },
+        "value": "tip",
+        "seq": 8
+      },
+      {
+        "address": {
+          "namespace": "pi.result",
+          "key": "operation",
+          "kind": "value"
+        },
+        "value": {},
+        "seq": 9
+      }
+    ]
+  },
+  "cases": [
+    {
+      "options": {
+        "scope": "tree"
+      },
+      "writes": [
+        {
+          "kind": "entry",
+          "id": "a",
+          "parentId": null,
+          "type": "message",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "<>&"
+              }
+            ],
+            "timestamp": 1
+          },
+          "seq": 1,
+          "timestamp": 1770091506789
+        },
+        {
+          "kind": "entry",
+          "id": "b",
+          "parentId": "a",
+          "type": "custom",
+          "customType": "test",
+          "data": null,
+          "seq": 2,
+          "timestamp": 1770091506789
+        },
+        {
+          "kind": "value",
+          "op": "set",
+          "seq": 3,
+          "namespace": "pi.branch.tip",
+          "key": "main",
+          "value": "b"
+        },
+        {
+          "kind": "value",
+          "op": "set",
+          "seq": 4,
+          "namespace": "pi.lane.config",
+          "key": "main",
+          "value": {
+            "model": {
+              "provider": "openai",
+              "modelId": "test"
+            },
+            "thinkingLevel": "off",
+            "activeToolNames": []
+          }
+        },
+        {
+          "kind": "value",
+          "op": "set",
+          "seq": 5,
+          "namespace": "pi.lane.state",
+          "key": "main",
+          "value": {
+            "currentOperationId": null,
+            "lastOperationId": null,
+            "inbox": []
+          }
+        },
+        {
+          "kind": "value",
+          "op": "set",
+          "seq": 6,
+          "namespace": "pi.session.name",
+          "key": "",
+          "value": "name"
+        },
+        {
+          "kind": "value",
+          "op": "set",
+          "seq": 7,
+          "namespace": "custom",
+          "key": "data",
+          "value": {
+            "x": 1
+          }
+        },
+        {
+          "kind": "value",
+          "op": "set",
+          "seq": 8,
+          "namespace": "pi.entry.label",
+          "key": "b",
+          "value": "tip"
+        }
+      ],
+      "nextSeq": 9
+    },
+    {
+      "options": {
+        "scope": "branch",
+        "branch": "main"
+      },
+      "writes": [
+        {
+          "kind": "entry",
+          "id": "a",
+          "parentId": null,
+          "type": "message",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "<>&"
+              }
+            ],
+            "timestamp": 1
+          },
+          "seq": 1,
+          "timestamp": 1770091506789
+        },
+        {
+          "kind": "entry",
+          "id": "b",
+          "parentId": "a",
+          "type": "custom",
+          "customType": "test",
+          "data": null,
+          "seq": 2,
+          "timestamp": 1770091506789
+        },
+        {
+          "kind": "value",
+          "op": "set",
+          "seq": 3,
+          "namespace": "pi.branch.tip",
+          "key": "main",
+          "value": "b"
+        },
+        {
+          "kind": "value",
+          "op": "set",
+          "seq": 4,
+          "namespace": "pi.lane.config",
+          "key": "main",
+          "value": {
+            "model": {
+              "provider": "openai",
+              "modelId": "test"
+            },
+            "thinkingLevel": "off",
+            "activeToolNames": []
+          }
+        },
+        {
+          "kind": "value",
+          "op": "set",
+          "seq": 5,
+          "namespace": "pi.lane.state",
+          "key": "main",
+          "value": {
+            "currentOperationId": null,
+            "lastOperationId": null,
+            "inbox": []
+          }
+        },
+        {
+          "kind": "value",
+          "op": "set",
+          "seq": 6,
+          "namespace": "pi.session.name",
+          "key": "",
+          "value": "name"
+        },
+        {
+          "kind": "value",
+          "op": "set",
+          "seq": 7,
+          "namespace": "pi.entry.label",
+          "key": "b",
+          "value": "tip"
+        }
+      ],
+      "nextSeq": 8
+    },
+    {
+      "options": {
+        "scope": "branch",
+        "branch": "main",
+        "entryId": "b",
+        "position": "before"
+      },
+      "writes": [
+        {
+          "kind": "entry",
+          "id": "a",
+          "parentId": null,
+          "type": "message",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "<>&"
+              }
+            ],
+            "timestamp": 1
+          },
+          "seq": 1,
+          "timestamp": 1770091506789
+        },
+        {
+          "kind": "value",
+          "op": "set",
+          "seq": 2,
+          "namespace": "pi.branch.tip",
+          "key": "main",
+          "value": "a"
+        },
+        {
+          "kind": "value",
+          "op": "set",
+          "seq": 3,
+          "namespace": "pi.lane.config",
+          "key": "main",
+          "value": {
+            "model": {
+              "provider": "openai",
+              "modelId": "test"
+            },
+            "thinkingLevel": "off",
+            "activeToolNames": []
+          }
+        },
+        {
+          "kind": "value",
+          "op": "set",
+          "seq": 4,
+          "namespace": "pi.lane.state",
+          "key": "main",
+          "value": {
+            "currentOperationId": null,
+            "lastOperationId": null,
+            "inbox": []
+          }
+        },
+        {
+          "kind": "value",
+          "op": "set",
+          "seq": 5,
+          "namespace": "pi.session.name",
+          "key": "",
+          "value": "name"
+        }
+      ],
+      "nextSeq": 6
+    },
+    {
+      "options": {
+        "scope": "branch",
+        "branch": "main",
+        "entryId": "missing",
+        "position": "at"
+      },
+      "error": "Fork entry missing is not on source branch \"main\""
+    },
+    {
+      "options": {
+        "scope": "branch",
+        "branch": "missing"
+      },
+      "error": "Unknown source branch: missing"
+    }
+  ]
+}

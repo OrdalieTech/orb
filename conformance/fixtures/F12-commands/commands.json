@@ -14,6 +14,18 @@
       "visible": true
     },
     {
+      "name": "tree",
+      "description": "Navigate session tree (switch branches)",
+      "argumentHint": null,
+      "visible": true
+    },
+    {
+      "name": "thinking",
+      "description": "Set thinking level",
+      "argumentHint": "<level>",
+      "visible": true
+    },
+    {
       "name": "scoped-models",
       "description": "Enable/disable models for Ctrl+P cycling",
       "argumentHint": null,
@@ -76,12 +88,6 @@
     {
       "name": "clone",
       "description": "Duplicate the current session at the current position",
-      "argumentHint": null,
-      "visible": true
-    },
-    {
-      "name": "tree",
-      "description": "Navigate session tree (switch branches)",
       "argumentHint": null,
       "visible": true
     },
@@ -158,6 +164,7 @@
     "settings",
     "scoped-models",
     "model",
+    "thinking",
     "export",
     "import",
     "share",
@@ -680,5 +687,32 @@
         }
       ]
     }
-  }
+  },
+  "thinkingCommands": [
+    {
+      "input": "",
+      "trace": [
+        {
+          "selector": true
+        }
+      ]
+    },
+    {
+      "input": "HiGh",
+      "trace": [
+        {
+          "level": "high",
+          "persist": false
+        }
+      ]
+    },
+    {
+      "input": "invalid",
+      "trace": [
+        {
+          "error": "Unknown thinking level \"invalid\". Available levels: off, low, medium, high."
+        }
+      ]
+    }
+  ]
 }

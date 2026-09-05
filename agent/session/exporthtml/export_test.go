@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -15,15 +16,39 @@ import (
 	"github.com/OrdalieTech/orb/agent/session"
 )
 
+func upstreamExportHashes(t *testing.T) map[string]string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "conformance", "fixtures", "F6", "export-themes.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		InputSHA256 string            `json:"inputSHA256"`
+		Hashes      map[string]string `json:"hashes"`
+	}
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	input, err := os.ReadFile(fixturePath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sha256Hex(input) != fixture.InputSHA256 {
+		t.Fatal("export input differs from upstream extraction input")
+	}
+	return fixture.Hashes
+}
+
 func TestExportMatchesPinnedUpstreamHTML(t *testing.T) {
 	fixture := fixturePath(t)
+	hashes := upstreamExportHashes(t)
 	tests := []struct {
 		name  string
 		theme string
 		hash  string
 	}{
-		{"dark", "dark", "fbae2ee9d119606a40973d8e29f0fc4750fb63f716718aff0ea521d109527883"},
-		{"light", "light", "e3d58d732cd668345e298cfd80342cf1ab7253f9f12a0ffba6165504622c1e98"},
+		{"dark", "dark", hashes["dark"]},
+		{"light", "light", hashes["light"]},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -100,7 +125,7 @@ func TestDefaultThemeUsesCOLORFGBG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := sha256Hex(contents); got != "e3d58d732cd668345e298cfd80342cf1ab7253f9f12a0ffba6165504622c1e98" {
+	if got := sha256Hex(contents); got != upstreamExportHashes(t)["light"] {
 		t.Fatalf("COLORFGBG light export sha256 = %s", got)
 	}
 }

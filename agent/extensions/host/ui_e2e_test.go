@@ -565,3 +565,65 @@ func cloneString(value *string) *string {
 	copy := *value
 	return &copy
 }
+
+type promptObserverUI struct {
+	extensions.NoopUI
+	events chan string
+}
+
+func (ui *promptObserverUI) Confirm(context.Context, string, string, *extensions.DialogOptions) (bool, error) {
+	return true, nil
+}
+func (ui *promptObserverUI) Notify(message string, _ extensions.NotificationType) {
+	ui.events <- message
+}
+
+func TestRealHostReceivesPromptLifecycleAndCompactionFailure(t *testing.T) {
+	agentDir := isolatedTempDir(t)
+	entry := filepath.Join(agentDir, "extensions", "prompt-observer.mjs")
+	writeFile(t, entry, `export default function(pi) {
+ for (const type of ["ui_prompt_start","ui_prompt_end","session_compact_failed"]) pi.on(type,(event,ctx)=>ctx.ui.notify(JSON.stringify(event)));
+ pi.registerCommand("prompt",{handler:async(_,ctx)=>{await ctx.ui.confirm("Review","Continue?")}});
+ }`, 0o600)
+	_, registry, _, result, cwd := startFixtureManagerIn(t, agentDir, entry)
+	if len(result.Errors) != 0 {
+		t.Fatal(result.Errors)
+	}
+	ui := &promptObserverUI{events: make(chan string, 3)}
+	runner := extensions.NewRunner(registry, extensions.RunnerOptions{CWD: cwd, Mode: extensions.ModeTUI, UI: ui})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := runner.Command("prompt").Handler(ctx, "", runner.CreateCommandContext()); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"ui_prompt_start", "ui_prompt_end"} {
+		select {
+		case raw := <-ui.events:
+			var event map[string]any
+			if err := json.Unmarshal([]byte(raw), &event); err != nil {
+				t.Fatal(err)
+			}
+			if event["type"] != kind || event["kind"] != "confirm" || event["reason"] != "ui_prompt" || event["title"] != "Review" {
+				t.Fatal(raw)
+			}
+		case <-ctx.Done():
+			t.Fatal("missing host prompt event")
+		}
+	}
+	runner.Emit(ctx, extensions.SessionCompactFailedEvent{Reason: extensions.CompactionManual, Aborted: true})
+	select {
+	case raw := <-ui.events:
+		var event map[string]any
+		if err := json.Unmarshal([]byte(raw), &event); err != nil {
+			t.Fatal(err)
+		}
+		if event["type"] != "session_compact_failed" || event["aborted"] != true {
+			t.Fatal(raw)
+		}
+		if _, exists := event["errorMessage"]; exists {
+			t.Fatal("aborted event must omit absent errorMessage")
+		}
+	case <-ctx.Done():
+		t.Fatal("missing compact-failed event")
+	}
+}

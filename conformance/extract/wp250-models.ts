@@ -308,6 +308,8 @@ export async function generateWP250(
         });
       }
       for (const [name, config] of Object.entries({
+        "BOM model config": { providers: {} },
+        "release compat controls": { providers: { p: { compat: { supportsFinishReason: false, vllmPriority: -2, supportsMaxOutputTokens: false, supportsMidConvoEffort: true } } } },
         "incomplete cost": { providers: { p: { models: [{ id: "m", cost: { input: 1 } }] } } },
         "invalid input": { providers: { p: { models: [{ id: "m", input: ["audio"] }] } } },
         "invalid thinking value": { providers: { p: { models: [{ id: "m", thinkingLevelMap: { off: 3 } }] } } },
@@ -331,14 +333,15 @@ export async function generateWP250(
         },
       })) {
         const modelsPath = path.join(tempRoot, `validation-${name.replaceAll(" ", "-")}.json`);
-        await writeFile(modelsPath, JSON.stringify(config));
+        const source = (name === "BOM model config" ? "\uFEFF" : "") + JSON.stringify(config);
+        await writeFile(modelsPath, source);
         const runtime = await ModelRuntime.create({
           authPath: path.join(tempRoot, "auth.json"),
           modelsPath,
           modelsStorePath: path.join(tempRoot, "models-store.json"),
           allowModelNetwork: false,
         });
-        validationCases.push({ name, config, accepted: runtime.getError() === undefined });
+        validationCases.push({ name, config, ...(name === "BOM model config" ? { source } : {}), accepted: runtime.getError() === undefined });
       }
       const compositionConfig = {
         providers: {

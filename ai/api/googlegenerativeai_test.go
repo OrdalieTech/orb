@@ -361,8 +361,8 @@ func TestGoogleProviderHeadersMatchSDKCaseSensitivePatchThenFetchNormalization(t
 func TestGoogleProviderHeadersCarrySDKTelemetry_OTm2(t *testing.T) {
 	headers := googleProviderHeaders(googleTestModel("gemini-2.5-flash"), nil)
 	want := "google-genai-sdk/1.52.0 gl-go/" + runtime.Version()
-	if got := headers["User-Agent"]; len(got) != 1 || got[0] != want {
-		t.Fatalf("User-Agent = %#v, want %q", got, want)
+	if got := headers["User-Agent"]; len(got) != 1 || got[0] != piUserAgent() {
+		t.Fatalf("User-Agent = %#v, want %q", got, piUserAgent())
 	}
 	var got []string
 	for name, values := range headers {

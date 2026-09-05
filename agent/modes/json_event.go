@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/ai"
@@ -32,6 +33,31 @@ func marshalJSONEvent(event any) ([]byte, error) {
 	delta, err := deleteObjectMember(encoded, "partial")
 	if err != nil {
 		return nil, err
+	}
+	var toolStart *ai.ToolCallStartEvent
+	switch event := update.AssistantMessageEvent.(type) {
+	case ai.ToolCallStartEvent:
+		toolStart = &event
+	case *ai.ToolCallStartEvent:
+		toolStart = event
+	}
+	if toolStart != nil {
+		var toolCall *ai.ToolCall
+		if toolStart.Partial != nil && toolStart.ContentIndex >= 0 && toolStart.ContentIndex < len(toolStart.Partial.Content) {
+			toolCall, _ = toolStart.Partial.Content[toolStart.ContentIndex].(*ai.ToolCall)
+		}
+		if toolCall == nil {
+			return nil, fmt.Errorf("toolcall_start content at index %d is not a tool call", toolStart.ContentIndex)
+		}
+		delta, err = ai.Marshal(struct {
+			Type         string `json:"type"`
+			ContentIndex int    `json:"contentIndex"`
+			ID           string `json:"id"`
+			ToolName     string `json:"toolName"`
+		}{"toolcall_start", toolStart.ContentIndex, toolCall.ID, toolCall.Name})
+		if err != nil {
+			return nil, err
+		}
 	}
 	// Member order matches upstream's object literal: type, usage, assistantMessageEvent.
 	return ai.Marshal(struct {

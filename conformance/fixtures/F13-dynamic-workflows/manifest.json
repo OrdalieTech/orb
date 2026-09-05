@@ -1,6 +1,6 @@
 {
   "family": "F13-dynamic-workflows",
-  "upstreamCommit": "914cf1472e715297caa30db4b9535d534a9eb718",
+  "upstreamCommit": "107d79f11072bbc8a3a757ed7fd69596bee7d68c",
   "generator": "conformance/extract/f13-dynamic-workflows.ts",
   "source": "packages/coding-agent/src/core/{sdk.ts,agent-session.ts,model-runtime.ts,model-registry.ts,session-manager.ts,settings-manager.ts,resource-loader.ts,tools/*} + packages/ai/src/providers/faux.ts + packages/tui/src + npm:@quintinshaw/pi-dynamic-workflows@3.5.1",
   "plugin": {

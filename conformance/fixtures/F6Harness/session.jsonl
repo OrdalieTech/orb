@@ -1,23 +1,3 @@
-{"kind":"header","version":4,"id":"session-fixed","createdAt":1770091506789,"cwd":"/fixture/project","parentSessionId":"parent-session","metadata":{"profile":"reviewer","nested":{"enabled":true}}}
-{"kind":"entry","lane":"main","type":"message","id":"root-user","message":{"role":"user","content":[{"type":"text","text":"root <>&  "}],"timestamp":1},"parentId":null,"seq":1,"timestamp":1770091506789}
-{"kind":"entry","lane":"main","type":"message","id":"main-assistant","message":{"role":"assistant","content":[{"type":"text","text":"answer"}],"api":"openai-responses","provider":"openai","model":"gpt-test","usage":{"input":1,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":3,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":2},"parentId":"root-user","seq":2,"timestamp":1770091506789}
-{"kind":"entry","lane":"main","type":"message","id":"second-user","message":{"role":"user","content":[{"type":"text","text":"continue"}],"timestamp":3},"parentId":"main-assistant","seq":3,"timestamp":1770091506789}
-{"kind":"entry","lane":"main","type":"thinking_level_change","id":"thinking","thinkingLevel":"high","parentId":"second-user","seq":4,"timestamp":1770091506789}
-{"kind":"entry","lane":"main","type":"model_change","id":"model","provider":"anthropic","modelId":"claude-test","parentId":"thinking","seq":5,"timestamp":1770091506789}
-{"kind":"entry","lane":"main","type":"active_tools_change","id":"tools","activeToolNames":["read","bash"],"parentId":"model","seq":6,"timestamp":1770091506789}
-{"kind":"entry","lane":"main","type":"active_tools_change","id":"tools-empty","activeToolNames":[],"parentId":"tools","seq":7,"timestamp":1770091506789}
-{"kind":"entry","lane":"main","type":"custom","id":"custom","customType":"state","data":{"nested":[1,"two"]},"parentId":"tools-empty","seq":8,"timestamp":1770091506789}
-{"kind":"entry","lane":"main","type":"compaction","id":"compaction","summary":"prior work","retainedTail":[{"role":"user","content":[{"type":"text","text":"retained tail"}],"timestamp":4}],"tokensBefore":42.5,"details":{"readFiles":["a.go"]},"parentId":"custom","seq":9,"timestamp":1770091506789}
-{"kind":"entry","lane":"main","type":"branch_summary","id":"branch-summary","fromId":"compaction","summary":"discarded branch work","details":{"modifiedFiles":["b.go"]},"parentId":"compaction","seq":10,"timestamp":1770091506789}
-{"kind":"fact","seq":11,"fact":"name","name":"  fixture name  "}
-{"kind":"fact","seq":12,"fact":"label","targetId":"root-user","label":"  checkpoint  "}
-{"kind":"fact","seq":13,"fact":"label","targetId":"root-user"}
-{"kind":"fact","seq":14,"fact":"label","targetId":"second-user","label":"  branch point  "}
-{"kind":"lane","seq":15,"lane":"branch","leafId":"root-user"}
-{"kind":"entry","lane":"branch","type":"message","id":"branch-user","message":{"role":"user","content":[{"type":"text","text":"branch"}],"timestamp":5},"parentId":"root-user","seq":16,"timestamp":1770091506789}
-{"kind":"lane","seq":17,"lane":"idle","leafId":"second-user"}
-{"kind":"lane","seq":18,"lane":"idle","leafId":null}
-{"kind":"record","type":"operation_started","id":"op-run","lane":"main","sourceLeafId":"branch-summary","intent":{"kind":"run","originalPrompt":[{"role":"user","content":[{"type":"text","text":"run prompt"}],"timestamp":6}],"initialMessages":[{"type":"message","id":"queued-1","message":{"role":"user","content":[{"type":"text","text":"queued"}],"timestamp":7}}]},"seq":19,"timestamp":1770091506789}
-{"kind":"record","type":"step_attempt","id":"step-1","lane":"main","runId":"op-run","step":"assistant","attempt":1,"resultEntryId":"main-assistant","seq":20,"timestamp":1770091506789}
-{"kind":"record","type":"usage","id":"usage-1","lane":"main","cause":"assistant","runId":"op-run","entryId":"main-assistant","attempt":1,"stopReason":"stop","usage":{"input":100,"output":20,"cacheRead":30,"cacheWrite":10,"totalTokens":160,"cost":{"input":0.1,"output":0.2,"cacheRead":0.01,"cacheWrite":0.02,"total":0.33}},"seq":21,"timestamp":1770091506789}
-{"kind":"record","type":"operation_finished","id":"finish-1","lane":"main","runId":"op-run","outcome":"completed","seq":22,"timestamp":1770091506789}
+{"v":4,"kind":"header","id":"session","storageVersion":1,"createdAt":1770091506789,"cwd":"/fixture"}
+[{"kind":"entry","id":"a","parentId":null,"type":"message","message":{"role":"user","content":[{"type":"text","text":"<>&"}],"timestamp":1},"seq":1,"timestamp":1770091506789},{"kind":"entry","id":"b","parentId":"a","type":"custom","customType":"test","data":null,"seq":2,"timestamp":1770091506789}]
+[{"kind":"value","op":"set","seq":3,"namespace":"session","key":"name","value":"sample"},{"kind":"list","op":"append","seq":4,"namespace":"lane","key":"inbox","value":{"entryId":"a","kind":"steer"}},{"kind":"value","op":"delete","seq":5,"namespace":"session","key":"name"},{"kind":"list","op":"delete","seq":6,"namespace":"lane","key":"inbox"}]

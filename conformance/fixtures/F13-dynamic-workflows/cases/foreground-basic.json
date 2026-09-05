@@ -30,12 +30,12 @@
     "durationMs": 0,
     "runId": "run-fixed-foreground-basic",
     "tokenUsage": {
-      "input": 2739,
+      "input": 2740,
       "output": 21,
-      "total": 5499,
+      "total": 5501,
       "cost": 0,
       "cacheRead": 0,
-      "cacheWrite": 2739
+      "cacheWrite": 2740
     }
   },
   "error": null,
@@ -93,13 +93,13 @@
       "label": "reporter",
       "phase": "Report",
       "result": "Summary: the marker holds marker-from-repo.",
-      "tokens": 2753,
+      "tokens": 2755,
       "tokenUsage": {
-        "input": 1371,
+        "input": 1372,
         "output": 11,
         "cacheRead": 0,
-        "cacheWrite": 1371,
-        "total": 2753,
+        "cacheWrite": 1372,
+        "total": 2755,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -107,12 +107,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 2739,
+        "input": 2740,
         "output": 21,
-        "total": 5499,
+        "total": 5501,
         "cost": 0,
         "cacheRead": 0,
-        "cacheWrite": 2739
+        "cacheWrite": 2740
       }
     }
   ],

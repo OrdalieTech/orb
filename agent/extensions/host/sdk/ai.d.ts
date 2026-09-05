@@ -4,7 +4,7 @@
 // upstream export name is declared so Node type-stripping and the loader's
 // type-only-import classifier see the same surface as the real package.
 
-// Value exports (46; 1 implemented, the rest are unsupported stubs at runtime):
+// Value exports (48; 1 implemented, the rest are unsupported stubs at runtime):
 export declare const AssistantMessageEventStream: any;
 export declare const EventStream: any;
 export declare const InMemoryCredentialStore: any;
@@ -209,3 +209,6 @@ export type Transport = any;
 export type Usage = any;
 export type UserMessage = any;
 export type VercelGatewayRouting = any;
+
+export declare const AssistantMessageFrameEncoder: any;
+export declare const reduceAssistantMessageFrames: any;

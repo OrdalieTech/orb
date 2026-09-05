@@ -91,6 +91,8 @@ type SessionRuntime struct {
 	bashCancels          map[uint64]context.CancelFunc
 	nextBashID           uint64
 	pendingBash          []harness.BashExecutionMessage
+	pendingCustom        []*harness.CustomMessage
+	customContextDirty   bool
 	autoCompaction       bool
 	autoRetry            bool
 	availableModels      func() []ai.Model
@@ -288,6 +290,50 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 		builtinToolPrompts: runtimeConfig.BuiltinToolPrompts,
 	}
 	runtimeConfig.SlashResolver = runtime.slashResolver
+	var previousPrepare engine.PrepareNextTurnFunc
+	previousPrepare = runtime.agent.SwapPrepareNextTurnContext(func(ctx context.Context, turn engine.PrepareNextTurnContext) (*engine.AgentLoopTurnUpdate, error) {
+		snapshot := runtime.agent.State()
+		runtime.mu.Lock()
+		customContextDirty := runtime.customContextDirty
+		runtime.customContextDirty = false
+		runtime.mu.Unlock()
+		if customContextDirty && turn.Context != nil {
+			next := *turn.Context
+			next.Messages = snapshot.Messages
+			turn.Context = &next
+		}
+		model := snapshot.Model
+		settings := runtime.settings.GetCompactionSettings()
+		if turn.Context != nil && model != nil && model.ContextWindow > 0 && harness.ShouldCompact(harness.EstimateContextTokens(turn.Context.Messages).Tokens, model.ContextWindow, harness.CompactionSettings{Enabled: runtime.autoCompactionEnabled(), ReserveTokens: settings.ReserveTokens, KeepRecentTokens: settings.KeepRecentTokens}) {
+			if _, err := runtime.runAutoCompaction(ctx, "threshold", false); err != nil {
+				return nil, err
+			}
+			next := *turn.Context
+			next.Messages = runtime.agent.State().Messages
+			turn.Context = &next
+		}
+		update := &engine.AgentLoopTurnUpdate{Context: turn.Context}
+		if previousPrepare != nil {
+			previous, err := previousPrepare(ctx, turn)
+			if err != nil {
+				return nil, err
+			}
+			if previous != nil {
+				update = previous
+			}
+		}
+		if update.Context == nil {
+			update.Context = turn.Context
+		}
+		current := runtime.agent.State()
+		if update.Context != nil {
+			next := *update.Context
+			next.SystemPrompt, next.Tools = current.SystemPrompt, current.Tools
+			update.Context = &next
+		}
+		update.Model, update.ThinkingLevel = current.Model, &current.ThinkingLevel
+		return update, nil
+	})
 	runtime.agent.SetSteeringMode(engine.QueueMode(runtime.settings.GetSteeringMode()))
 	runtime.agent.SetFollowUpMode(engine.QueueMode(runtime.settings.GetFollowUpMode()))
 	sessionEnvTools := runtimeConfig.BaseTools
@@ -589,7 +635,7 @@ func (runtime *SessionRuntime) IsIdle() bool {
 		return true
 	}
 	runtime.mu.Lock()
-	active := runtime.activeRuns != 0
+	active := runtime.activeRuns != 0 || runtime.compactionCancel != nil || runtime.autoCompactionCancel != nil || runtime.branchCancel != nil || runtime.retryCancel != nil
 	runtime.mu.Unlock()
 	return !active && runtime.agent.IsIdle()
 }
@@ -688,9 +734,12 @@ func (runtime *SessionRuntime) Abort() {
 	if runtime == nil {
 		return
 	}
+	runtime.AbortCompaction()
+	runtime.AbortBranchSummary()
 	runtime.mu.Lock()
 	retryCancel := runtime.retryCancel
 	runtime.retryCancel = nil
+	runtime.refreshIdleWaitLocked()
 	runtime.mu.Unlock()
 	if retryCancel != nil {
 		retryCancel()
@@ -779,6 +828,15 @@ func (runtime *SessionRuntime) runPolicies(ctx context.Context, start func() err
 	defer func() {
 		runtime.clearExtensionTurnState()
 		flushErr := runtime.flushPendingBash()
+		runtime.mu.Lock()
+		pending := runtime.pendingCustom
+		runtime.pendingCustom = nil
+		runtime.customContextDirty = false
+		runtime.activeRuns = 0
+		runtime.mu.Unlock()
+		for _, message := range pending {
+			flushErr = errors.Join(flushErr, runtime.appendCustomMessage(message))
+		}
 		runtime.emitExtensionSettled(ctx)
 		runtime.emit(AgentSettledEvent{})
 		runtime.endRun()
@@ -860,6 +918,9 @@ func (runtime *SessionRuntime) handleAgentEvent(ctx context.Context, event engin
 	}
 	if ephemeral {
 		return nil
+	}
+	if _, ok := event.(engine.TurnEndEvent); ok {
+		return runtime.flushPendingCustom()
 	}
 	ended, ok := event.(engine.MessageEndEvent)
 	if !ok {
@@ -946,6 +1007,7 @@ func (runtime *SessionRuntime) prepareRetry(ctx context.Context, message *ai.Ass
 	delay := settings.BaseDelayMS * int64(1<<(attempt-1))
 	retryContext, cancel := context.WithCancel(ctx)
 	runtime.retryCancel = cancel
+	runtime.refreshIdleWaitLocked()
 	runtime.mu.Unlock()
 	errorMessage := "Unknown error"
 	if message.ErrorMessage != nil {
@@ -957,6 +1019,7 @@ func (runtime *SessionRuntime) prepareRetry(ctx context.Context, message *ai.Ass
 	cancel()
 	runtime.mu.Lock()
 	runtime.retryCancel = nil
+	runtime.refreshIdleWaitLocked()
 	runtime.mu.Unlock()
 	if err != nil {
 		finalError := "Retry cancelled"
@@ -1047,7 +1110,7 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 			runtime.mu.Unlock()
 			if alreadyAttempted {
 				errorMessage := "Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model."
-				runtime.emit(CompactionEndEvent{Reason: "overflow", ErrorMessage: &errorMessage})
+				runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: "overflow", ErrorMessage: &errorMessage}, false)
 				return false, nil
 			}
 			runtime.dropLastAssistant()
@@ -1078,6 +1141,7 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 }
 
 func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason string, willRetry bool) (bool, error) {
+	var fromExtension bool
 	settings := runtime.settings.GetCompactionSettings()
 	branch := runtime.manager.GetBranch()
 	preparation, err := harness.PrepareLegacyCompaction(projectSessionEntries(branch), harness.CompactionSettings{
@@ -1090,11 +1154,13 @@ func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason str
 	compactionContext, cancel := context.WithCancel(ctx)
 	runtime.mu.Lock()
 	runtime.autoCompactionCancel = cancel
+	runtime.refreshIdleWaitLocked()
 	runtime.mu.Unlock()
 	defer func() {
 		cancel()
 		runtime.mu.Lock()
 		runtime.autoCompactionCancel = nil
+		runtime.refreshIdleWaitLocked()
 		runtime.mu.Unlock()
 	}()
 	result, fromExtension, extensionCancelled := runtime.beforeExtensionCompaction(
@@ -1105,7 +1171,7 @@ func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason str
 		compactErr = context.Canceled
 	} else if result == nil {
 		var harnessResult *harness.CompactionResult
-		harnessResult, compactErr = harness.Compact(compactionContext, preparation, runtime.agent.State().Model, runtime.summarizationComplete("compaction", reason), "", runtime.agent.State().ThinkingLevel)
+		harnessResult, compactErr = harness.CompactProduct(compactionContext, preparation, runtime.agent.State().Model, runtime.summarizationComplete("compaction", reason), "", runtime.agent.State().ThinkingLevel, nil)
 		result = codingCompactionResult(harnessResult)
 	}
 	wasCancelled := compactionContext.Err() != nil
@@ -1114,14 +1180,14 @@ func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason str
 	}
 	if compactErr != nil {
 		if extensionCancelled || errors.Is(compactErr, context.Canceled) || wasCancelled {
-			runtime.emit(CompactionEndEvent{Reason: reason, Aborted: true})
+			runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: reason, Aborted: true}, fromExtension)
 			return false, nil
 		}
 		message := "Auto-compaction failed: " + compactErr.Error()
 		if reason == "overflow" {
 			message = "Context overflow recovery failed: " + compactErr.Error()
 		}
-		runtime.emit(CompactionEndEvent{Reason: reason, ErrorMessage: &message})
+		runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: reason, ErrorMessage: &message}, fromExtension)
 		return false, nil
 	}
 	fields := sessionstore.OptionalEntryFields{Details: result.Details, HasDetails: true, Usage: result.Usage}
@@ -1131,13 +1197,13 @@ func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason str
 	entryID, err := runtime.manager.AppendCompaction(result.Summary, result.FirstKeptEntryID, result.TokensBefore, fields)
 	if err != nil {
 		message := "Auto-compaction failed: " + err.Error()
-		runtime.emit(CompactionEndEvent{Reason: reason, ErrorMessage: &message})
+		runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: reason, ErrorMessage: &message}, fromExtension)
 		return false, err
 	}
 	runtime.syncAgentMessages()
 	runtime.emitExtensionCompaction(compactionContext, entryID, fromExtension, extensions.CompactionReason(reason), willRetry)
 	result.EstimatedTokensAfter = estimateAllTokens(runtime.agent.State().Messages)
-	runtime.emit(CompactionEndEvent{Reason: reason, Result: result, WillRetry: willRetry})
+	runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: reason, Result: result, WillRetry: willRetry}, fromExtension)
 	if willRetry {
 		state := runtime.agent.State()
 		if len(state.Messages) > 0 {
@@ -1153,6 +1219,7 @@ func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason str
 
 //nolint:staticcheck // User-visible compaction errors match upstream capitalization.
 func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions string) (*sessionstore.CompactionResult, error) {
+	var fromExtension bool
 	// Compaction summarizes through the model and rewrites session history, which
 	// is exactly the "call the model and persist" that disposal exists to stop.
 	if err := runtime.checkLive(); err != nil {
@@ -1170,18 +1237,20 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 	compactionContext, cancel := context.WithCancel(ctx)
 	runtime.mu.Lock()
 	runtime.compactionCancel = cancel
+	runtime.refreshIdleWaitLocked()
 	runtime.mu.Unlock()
 	defer func() {
 		cancel()
 		runtime.mu.Lock()
 		runtime.compactionCancel = nil
+		runtime.refreshIdleWaitLocked()
 		runtime.mu.Unlock()
 	}()
 	runtime.emit(CompactionStartEvent{Reason: "manual"})
 	if model := runtime.agent.State().Model; model == nil || IsUnknownModel(model) {
 		err := noModelSelectedError()
 		message := "Compaction failed: " + err.Error()
-		runtime.emit(CompactionEndEvent{Reason: "manual", ErrorMessage: &message})
+		runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: "manual", ErrorMessage: &message}, fromExtension)
 		return nil, err
 	}
 	settings := runtime.settings.GetCompactionSettings()
@@ -1198,7 +1267,7 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 			}
 		}
 		message := "Compaction failed: " + err.Error()
-		runtime.emit(CompactionEndEvent{Reason: "manual", ErrorMessage: &message})
+		runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: "manual", ErrorMessage: &message}, fromExtension)
 		return nil, err
 	}
 	var customInstructionsValue *string
@@ -1212,20 +1281,20 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 		err = errors.New("Compaction cancelled")
 	} else if result == nil {
 		var harnessResult *harness.CompactionResult
-		harnessResult, err = harness.Compact(compactionContext, preparation, runtime.agent.State().Model, runtime.summarizationComplete("compaction", "manual"), customInstructions, runtime.agent.State().ThinkingLevel)
+		harnessResult, err = harness.CompactProduct(compactionContext, preparation, runtime.agent.State().Model, runtime.summarizationComplete("compaction", "manual"), customInstructions, runtime.agent.State().ThinkingLevel, nil)
 		result = codingCompactionResult(harnessResult)
 	}
 	if err == nil && compactionContext.Err() != nil {
-		runtime.emit(CompactionEndEvent{Reason: "manual", Aborted: true})
+		runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: "manual", Aborted: true}, fromExtension)
 		return nil, errors.New("Compaction cancelled")
 	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) || compactionContext.Err() != nil || err.Error() == "Compaction cancelled" {
-			runtime.emit(CompactionEndEvent{Reason: "manual", Aborted: true})
+			runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: "manual", Aborted: true}, fromExtension)
 			return nil, err
 		}
 		message := "Compaction failed: " + err.Error()
-		runtime.emit(CompactionEndEvent{Reason: "manual", ErrorMessage: &message})
+		runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: "manual", ErrorMessage: &message}, fromExtension)
 		return nil, err
 	}
 	fields := sessionstore.OptionalEntryFields{Details: result.Details, HasDetails: true, Usage: result.Usage}
@@ -1235,13 +1304,13 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 	entryID, err := runtime.manager.AppendCompaction(result.Summary, result.FirstKeptEntryID, result.TokensBefore, fields)
 	if err != nil {
 		message := "Compaction failed: " + err.Error()
-		runtime.emit(CompactionEndEvent{Reason: "manual", ErrorMessage: &message})
+		runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: "manual", ErrorMessage: &message}, fromExtension)
 		return nil, err
 	}
 	runtime.syncAgentMessages()
 	runtime.emitExtensionCompaction(compactionContext, entryID, fromExtension, extensions.CompactionManual, false)
 	result.EstimatedTokensAfter = estimateAllTokens(runtime.agent.State().Messages)
-	runtime.emit(CompactionEndEvent{Reason: "manual", Result: result})
+	runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: "manual", Result: result}, fromExtension)
 	return result, nil
 }
 
@@ -1369,11 +1438,13 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 	branchContext, cancel := context.WithCancel(ctx)
 	runtime.mu.Lock()
 	runtime.branchCancel = cancel
+	runtime.refreshIdleWaitLocked()
 	runtime.mu.Unlock()
 	defer func() {
 		cancel()
 		runtime.mu.Lock()
 		runtime.branchCancel = nil
+		runtime.refreshIdleWaitLocked()
 		runtime.mu.Unlock()
 	}()
 
@@ -1439,7 +1510,7 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 	}
 	if options.Summarize && len(collected.Entries) > 0 && !fromExtension {
 		settings := runtime.settings.GetBranchSummarySettings()
-		result, summaryErr := harness.GenerateBranchSummary(branchContext, collected.Entries, harness.GenerateBranchSummaryOptions{
+		result, summaryErr := harness.GenerateProductBranchSummary(branchContext, collected.Entries, harness.GenerateBranchSummaryOptions{
 			Model: runtime.agent.State().Model, Complete: runtime.summarizationComplete("branchSummary", ""),
 			CustomInstructions: customInstructions, ReplaceInstructions: replaceInstructions,
 			ReserveTokens: &settings.ReserveTokens,
@@ -1553,20 +1624,14 @@ func (runtime *SessionRuntime) beginRun() bool {
 	if runtime.activeRuns != 0 {
 		return false
 	}
-	runtime.idleWait = make(chan struct{})
 	runtime.activeRuns = 1
+	runtime.refreshIdleWaitLocked()
 	return true
 }
 
 func (runtime *SessionRuntime) endRun() {
 	runtime.mu.Lock()
-	if runtime.activeRuns > 0 {
-		runtime.activeRuns--
-	}
-	if runtime.activeRuns == 0 && runtime.idleWait != nil {
-		close(runtime.idleWait)
-		runtime.idleWait = nil
-	}
+	runtime.refreshIdleWaitLocked()
 	runtime.mu.Unlock()
 }
 
@@ -1752,4 +1817,24 @@ func parseSessionTimestamp(value string) int64 {
 
 func (runtime *SessionRuntime) String() string {
 	return fmt.Sprintf("SessionRuntime(%s)", runtime.manager.GetSessionID())
+}
+
+func (runtime *SessionRuntime) refreshIdleWaitLocked() {
+	active := runtime.activeRuns != 0 || runtime.compactionCancel != nil || runtime.autoCompactionCancel != nil || runtime.branchCancel != nil || runtime.retryCancel != nil
+	if active && runtime.idleWait == nil {
+		runtime.idleWait = make(chan struct{})
+	}
+	if !active && runtime.idleWait != nil {
+		close(runtime.idleWait)
+		runtime.idleWait = nil
+	}
+}
+
+func (runtime *SessionRuntime) emitCompactionEnd(ctx context.Context, event CompactionEndEvent, fromExtension bool) {
+	runtime.emit(event)
+	if event.Aborted || event.ErrorMessage != nil {
+		if state := runtime.extensionState; state != nil && state.runner.HasHandlers(extensions.EventSessionCompactFailed) {
+			state.runner.Emit(ctx, extensions.SessionCompactFailedEvent{Reason: extensions.CompactionReason(event.Reason), ErrorMessage: event.ErrorMessage, Aborted: event.Aborted, WillRetry: event.WillRetry, FromExtension: fromExtension})
+		}
+	}
 }

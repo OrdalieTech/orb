@@ -38,9 +38,8 @@ globalThis.fetch = async (input) => {
   if (url === "https://integrate.api.nvidia.com/v1/models") {
     return Response.json({ data: Object.keys(snapshot.nvidia?.models ?? {}).map((id) => ({ id })) });
   }
-  if (url === "https://openrouter.ai/api/v1/models" || url === "https://ai-gateway.vercel.sh/v1/models") {
-    return Response.json({ data: [] });
-  }
+  if (url === "https://openrouter.ai/api/v1/models") return Response.json(JSON.parse(readFileSync(process.env.ORB_OPENROUTER_SNAPSHOT, "utf8")));
+  if (url === "https://ai-gateway.vercel.sh/v1/models") return Response.json({ data: [] });
   throw new Error(\`unexpected F2 compat model fetch: \${url}\`);
 };
 `,
@@ -62,6 +61,7 @@ globalThis.fetch = async (input) => {
         env: {
           ...process.env,
           ORB_MODEL_SNAPSHOT: snapshot,
+          ORB_OPENROUTER_SNAPSHOT: path.resolve(upstreamRoot, "../ai/models/testdata/openrouter.json"),
           ORB_GENERATE_MODELS_SOURCE: path.join(packageRoot, "scripts/generate-models.ts"),
         },
         maxBuffer: 16 * 1024 * 1024,
@@ -83,6 +83,16 @@ globalThis.fetch = async (input) => {
           name: "fireworks-session-cache",
           model: await readModel("fireworks", "accounts/fireworks/models/minimax-m3"),
         },
+        ...await Promise.all([
+          ["openrouter", "anthropic/claude-opus-5"], ["openrouter", "anthropic/claude-sonnet-4.5"],
+          ["xai", "grok-4.3"], ["xai", "grok-4.5"],
+          ["anthropic", "claude-opus-5"], ["anthropic", "claude-fable-5"],
+          ["zai-coding-cn", "glm-4.6v"], ["zai-coding-cn", "glm-5.2"],
+          ["qwen-token-plan", "glm-5.2"], ["qwen-token-plan", "glm-5"],
+          ["qwen-token-plan-individual", "qwen3.8-flash"],
+          ["deepseek", "deepseek-v4-flash-vision-exp"],
+          ["github-copilot", "claude-fable-5"],
+        ].map(async ([provider, id]) => ({ name: `${provider}-${id}`, model: await readModel(provider, id) }))),
       ],
     };
   } finally {

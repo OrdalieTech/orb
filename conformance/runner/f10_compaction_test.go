@@ -3,6 +3,7 @@ package runner_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"sort"
 	"strings"
@@ -15,6 +16,20 @@ import (
 )
 
 type f10Fixture struct {
+	ProductSummaryCases []struct {
+		Mode           string  `json:"mode"`
+		Stop           string  `json:"stop"`
+		ModelMaxTokens float64 `json:"modelMaxTokens"`
+		Expected       struct {
+			Captures []struct {
+				f10CapturedRequest
+				RoutingPreserved bool `json:"routingPreserved"`
+			} `json:"captures"`
+			Output    string  `json:"output"`
+			Error     string  `json:"error"`
+			MaxTokens float64 `json:"maxTokens"`
+		} `json:"expected"`
+	} `json:"productSummaryCases"`
 	SchemaVersion      int                    `json:"schemaVersion"`
 	TokenCases         []f10TokenCase         `json:"tokenCases"`
 	ConversationCases  []f10ConversationCase  `json:"conversationCases"`
@@ -618,5 +633,79 @@ func f10Response(text string) *ai.AssistantMessage {
 		Content:    ai.AssistantContent{&ai.TextContent{Text: text}},
 		Usage:      ai.Usage{Input: 10, Output: 5, TotalTokens: 15, Cost: ai.Cost{}},
 		StopReason: ai.StopReasonStop,
+	}
+}
+
+func TestF10ProductSummarySafetyMatchesUpstream(t *testing.T) {
+	fixture := loadF10Fixture(t)
+	if len(fixture.ProductSummaryCases) != 14 {
+		t.Fatalf("product summary cases = %d, want 14", len(fixture.ProductSummaryCases))
+	}
+	for _, item := range fixture.ProductSummaryCases {
+		t.Run(item.Mode+"-"+item.Stop+"-"+fmt.Sprint(item.ModelMaxTokens), func(t *testing.T) {
+			model := f10Model()
+			model.MaxTokens = item.ModelMaxTokens
+			routing := "11111111-1111-7111-8111-111111111111"
+			var captures []f10ActualCapture
+			complete := func(_ context.Context, _ *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
+				captures = append(captures, f10Capture(request, options))
+				response := f10Response("summary output")
+				response.StopReason = ai.StopReason(item.Stop)
+				if item.Stop == "error" {
+					text := "provider failed"
+					response.ErrorMessage = &text
+				}
+				if item.Stop == "tool" {
+					response.StopReason = ai.StopReasonToolUse
+					response.Content = ai.AssistantContent{&ai.ToolCall{ID: "call", Name: "read", Arguments: map[string]any{}}}
+				}
+				return response, nil
+			}
+			message := &ai.UserMessage{Content: ai.NewUserContent(&ai.TextContent{Text: "work"})}
+			var output string
+			var err error
+			if strings.HasPrefix(item.Mode, "branch") {
+				result, callErr := harness.GenerateProductBranchSummary(context.Background(), []harness.SessionEntry{{Type: "message", ID: "user", Message: message}}, harness.GenerateBranchSummaryOptions{Model: model, Complete: complete})
+				err = callErr
+				if result != nil {
+					output = result.Summary
+				}
+			} else {
+				previous := "previous summary"
+				prep := &harness.CompactionPreparation{FirstKeptEntryID: "keep", MessagesToSummarize: engine.AgentMessages{message}, PreviousSummary: &previous, Settings: harness.CompactionSettings{Enabled: true, ReserveTokens: 400, KeepRecentTokens: 100}}
+				if item.Mode == "prefix" {
+					prep.MessagesToSummarize = nil
+					prep.TurnPrefixMessages = engine.AgentMessages{message}
+					prep.IsSplitTurn = true
+				}
+				result, callErr := harness.CompactProduct(context.Background(), prep, model, complete, "", ai.ModelThinkingOff, &routing)
+				err = callErr
+				if result != nil {
+					output = result.Summary
+				}
+			}
+			if item.Mode == "branch-limit" {
+				if err != nil || len(captures) != 1 || captures[0].MaxTokens != item.Expected.MaxTokens {
+					t.Fatalf("branch limit = %#v, error %v", captures, err)
+				}
+				return
+			}
+			actualError := ""
+			if err != nil {
+				actualError = err.Error()
+			}
+			if actualError != item.Expected.Error || output != item.Expected.Output {
+				t.Fatalf("summary = %q, error %q; want %q, %q", output, actualError, item.Expected.Output, item.Expected.Error)
+			}
+			if len(captures) != len(item.Expected.Captures) {
+				t.Fatalf("captures = %d, want %d", len(captures), len(item.Expected.Captures))
+			}
+			for i, want := range item.Expected.Captures {
+				assertF10Capture(t, captures[i], want.f10CapturedRequest)
+				if (captures[i].SessionID == routing) != want.RoutingPreserved {
+					t.Fatalf("routing ID = %s", captures[i].SessionID)
+				}
+			}
+		})
 	}
 }

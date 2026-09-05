@@ -298,7 +298,7 @@ func parseAuthDocument(data []byte) (authDocument, error) {
 	if len(data) == 0 {
 		return emptyAuthDocument(), nil
 	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder := json.NewDecoder(bytes.NewReader(bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf})))
 	token, err := decoder.Token()
 	if err != nil {
 		return authDocument{}, err

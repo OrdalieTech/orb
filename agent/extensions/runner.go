@@ -73,6 +73,9 @@ type Runner struct {
 
 	mu                sync.RWMutex
 	ui                UI
+	uiPromptDepth     int
+	activeUIPrompt    UIPromptStartEvent
+	uiPromptTail      chan struct{}
 	mode              Mode
 	contextActions    ContextActions
 	commandActions    CommandActions
@@ -248,6 +251,8 @@ func (runner *Runner) SetUI(ui UI, mode Mode) {
 	}
 	if ui == nil || mode == ModePrint || mode == ModeJSON {
 		ui = NewNoopUI()
+	} else {
+		ui = &promptUI{UI: ui, runner: runner}
 	}
 	runner.mu.Lock()
 	runner.ui = ui

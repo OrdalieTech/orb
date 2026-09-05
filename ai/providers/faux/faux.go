@@ -499,7 +499,6 @@ func (provider *Provider) createAbortedMessage(partial *ai.AssistantMessage) *ai
 	message := "Request was aborted"
 	aborted.ErrorMessage = &message
 	aborted.Timestamp = provider.now()
-	ai.SetAssistantMessageErrorBeforeTimestamp(&aborted, true)
 	return &aborted
 }
 

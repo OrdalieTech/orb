@@ -87,8 +87,9 @@ type bedrockFixtureItem struct {
 				Input *string `json:"input,omitempty"`
 			} `json:"toolUse,omitempty"`
 			ReasoningContent *struct {
-				Text      *string `json:"text,omitempty"`
-				Signature *string `json:"signature,omitempty"`
+				Text            *string         `json:"text,omitempty"`
+				Signature       *string         `json:"signature,omitempty"`
+				RedactedContent map[string]byte `json:"redactedContent,omitempty"`
 			} `json:"reasoningContent,omitempty"`
 		} `json:"delta"`
 	} `json:"contentBlockDelta,omitempty"`
@@ -182,10 +183,18 @@ func TestF2AnthropicRequestShaping(t *testing.T) {
 				Body:        minimalF2SSE(fixtureCase.API, fixtureCase.Model.ID),
 				ContentType: "text/event-stream",
 			})
-			assertF2TerminalSuccess(t, events)
 			if fixtureCase.Expected == nil {
-				t.Fatal("request fixture has no expected request")
+				if captured.Method != "" || len(events) != len(fixtureCase.ExpectedEvents) || len(events) == 0 {
+					t.Fatal("setup-error fixture must emit exact events without making a request")
+				}
+				for index := range events {
+					if diff := runner.ByteDiff(compactF2Event(t, fixtureCase.ExpectedEvents[index]), events[index]); diff != "" {
+						t.Fatal(diff)
+					}
+				}
+				return
 			}
+			assertF2TerminalSuccess(t, events)
 			if captured.Method != fixtureCase.Expected.Method {
 				t.Fatalf("method = %q, want %q", captured.Method, fixtureCase.Expected.Method)
 			}
@@ -631,6 +640,13 @@ func streamF2Case(fixtureCase f2Case) (ai.AssistantMessageEventStream, error) {
 		setF2AnthropicPayloadHook(fixtureCase.PayloadHook, &options.StreamOptions)
 		return StreamAnthropicMessagesWithOptions(context.Background(), &fixtureCase.Model, fixtureCase.Context, &options)
 	case ai.APIGoogleGenerativeAI:
+		if fixtureCase.Simple {
+			var options ai.SimpleStreamOptions
+			if err := json.Unmarshal(fixtureCase.Options, &options); err != nil {
+				return nil, err
+			}
+			return StreamSimpleGoogleGenerativeAI(context.Background(), &fixtureCase.Model, fixtureCase.Context, &options)
+		}
 		var options GoogleOptions
 		if err := json.Unmarshal(fixtureCase.Options, &options); err != nil {
 			return nil, err
@@ -865,6 +881,9 @@ func fixtureBedrockItems(values []bedrockFixtureItem) ([]bedrockStreamItem, erro
 			}
 			if reasoning := value.ContentBlockDelta.Delta.ReasoningContent; reasoning != nil {
 				item.ReasoningText, item.ReasoningSignature = reasoning.Text, reasoning.Signature
+				for i := 0; i < len(reasoning.RedactedContent); i++ {
+					item.RedactedContent = append(item.RedactedContent, reasoning.RedactedContent[fmt.Sprint(i)])
+				}
 			}
 		case value.ContentBlockStop != nil:
 			item.Kind, item.ContentBlockIndex = bedrockItemContentStop, value.ContentBlockStop.ContentBlockIndex

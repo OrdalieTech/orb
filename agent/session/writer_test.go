@@ -113,7 +113,7 @@ func TestManagerWritesExactCurrentMemberOrder(t *testing.T) {
 		fmt.Sprintf(`{"type":"session_info","id":"00000008","parentId":"00000007","timestamp":"%s","name":"line one line two"}`, timestamp),
 		fmt.Sprintf(`{"type":"label","id":"00000009","parentId":"00000008","timestamp":"%s","targetId":"00000001","label":"checkpoint"}`, timestamp),
 		fmt.Sprintf(`{"type":"label","id":"0000000a","parentId":"00000009","timestamp":"%s","targetId":"00000001"}`, timestamp),
-		fmt.Sprintf(`{"type":"branch_summary","id":"0000000b","parentId":"00000001","timestamp":"%s","fromId":"00000001","summary":"alternate","details":null,"fromHook":true}`, timestamp),
+		fmt.Sprintf(`{"type":"branch_summary","id":"0000000b","parentId":"00000001","timestamp":"%s","fromId":"0000000a","summary":"alternate","details":null,"fromHook":true}`, timestamp),
 	}, "\n") + "\n"
 	if string(got) != want {
 		t.Fatalf("writer mismatch\ngot:\n%s\nwant:\n%s", got, want)

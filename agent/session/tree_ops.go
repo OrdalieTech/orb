@@ -34,14 +34,27 @@ func (manager *SessionManager) CreateBranchedSession(leafID string) (string, err
 	pathIDs := make(map[string]struct{}, len(path))
 	pathRecords := make([]*FileEntry, 0, len(path))
 	var parentID *string
+	replacementByLabelID := make(map[string]string)
+	var pendingLabelIDs []string
 	for index := range path {
 		entry := &path[index]
 		if entry.Type == "label" {
+			pendingLabelIDs = append(pendingLabelIDs, entry.ID)
 			continue
 		}
+		for _, labelID := range pendingLabelIDs {
+			replacementByLabelID[labelID] = entry.ID
+		}
+		pendingLabelIDs = pendingLabelIDs[:0]
 		record, err := cloneEntryRecordWithParent(entry, parentID)
 		if err != nil {
 			return "", err
+		}
+		if entry.Type == "compaction" {
+			if replacement, ok := replacementByLabelID[entry.FirstKeptEntryID]; ok {
+				record.object.set("firstKeptEntryId", mustRawString(replacement))
+				record = decodeFileEntry(record.object, nil)
+			}
 		}
 		pathRecords = append(pathRecords, record)
 		pathIDs[entry.ID] = struct{}{}

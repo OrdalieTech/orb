@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/ai"
@@ -299,6 +301,7 @@ func runF11NativeCases(t *testing.T) map[string]any {
 	runnerLifecycle := runF11RunnerLifecycle(t)
 
 	return map[string]any{
+		"uiPrompts":             runF11UIPrompts(t),
 		"orderedErrorIsolation": map[string]any{"calls": orderedCalls, "errors": orderedErrors},
 		"contextMiddleware":     map[string]any{"original": originalContext, "result": contextResult},
 		"toolResultMiddleware": map[string]any{
@@ -327,6 +330,7 @@ func runF11NativeCases(t *testing.T) map[string]any {
 		"projectTrustBoundary":     projectTrustBoundary,
 		"projectTrustStartupOrder": projectTrustStartupOrder,
 		"providerRegistration":     providerRegistration,
+		"failedLoad":               runF11FailedLoad(t),
 		"registrationConflicts":    registrationConflicts,
 		"runnerLifecycle":          runnerLifecycle,
 	}
@@ -719,5 +723,129 @@ func f11Errors(values []extensions.ExtensionError) []map[string]any {
 			"error":         value.Error,
 		})
 	}
+	return result
+}
+
+func runF11FailedLoad(t *testing.T) map[string]any {
+	t.Helper()
+	registry := extensions.NewRegistry("/fixture")
+	var failed extensions.API
+	listeners := 0
+	err := registry.Register("failed-load", func(api extensions.API) error {
+		failed = api
+		api.RegisterFlag("failed", extensions.Flag{Type: extensions.FlagString, Default: "leaked"})
+		api.Events().On("probe", func(context.Context, any) error { listeners++; return nil })
+		return errors.New("factory failed")
+	})
+	if err == nil {
+		t.Fatal("failed factory succeeded")
+	}
+	registry.Events().Emit(context.Background(), "probe", nil)
+	stale := ""
+	func() {
+		defer func() {
+			if value := recover(); value != nil {
+				stale = fmt.Sprint(value)
+			}
+		}()
+		_, _ = failed.GetFlag("failed")
+	}()
+	invalid := registry.Register("invalid-flag", func(api extensions.API) error {
+		api.RegisterFlag("bad", extensions.Flag{Type: extensions.FlagBoolean, Default: "invalid"})
+		return nil
+	})
+	if invalid == nil {
+		t.Fatal("invalid flag accepted")
+	}
+	var leaked bool
+	registerF11(t, registry, "probe", func(api extensions.API) {
+		api.RegisterFlag("failed", extensions.Flag{Type: extensions.FlagString})
+		_, leaked = api.GetFlag("failed")
+	})
+	return map[string]any{"error": strings.TrimPrefix(err.Error(), "extensions: load failed-load: "), "flagLeaked": leaked, "listeners": listeners, "staleAPIError": stale, "invalidFlagError": strings.TrimPrefix(invalid.Error(), "extensions: load invalid-flag: ")}
+}
+
+type f11PromptUI struct {
+	extensions.NoopUI
+	runner *extensions.Runner
+}
+
+func (ui *f11PromptUI) Select(context.Context, string, []string, *extensions.DialogOptions) (string, bool, error) {
+	return "choice", true, nil
+}
+func (ui *f11PromptUI) Confirm(context.Context, string, string, *extensions.DialogOptions) (bool, error) {
+	return true, nil
+}
+func (ui *f11PromptUI) Input(context.Context, string, *string, *extensions.DialogOptions) (string, bool, error) {
+	return "", false, errors.New("input failed")
+}
+func (ui *f11PromptUI) Editor(context.Context, string, *string) (string, bool, error) {
+	return "edited", true, nil
+}
+func (ui *f11PromptUI) Custom(ctx context.Context, _ extensions.CustomFactory, _ *extensions.CustomOptions) (any, bool, error) {
+	_, _, err := ui.runner.UI().Select(ctx, "nested", nil, nil)
+	return "custom", true, err
+}
+func runF11UIPrompts(t *testing.T) []map[string]any {
+	t.Helper()
+	registry := extensions.NewRegistry("/fixture")
+	events := make(chan map[string]any, 16)
+	registerF11(t, registry, "ui-observer", func(api extensions.API) {
+		for _, kind := range []extensions.EventType{extensions.EventUIPromptStart, extensions.EventUIPromptEnd, extensions.EventSessionCompactFailed} {
+			api.On(kind, func(_ context.Context, event extensions.Event, _ extensions.Context) (any, error) {
+				value := map[string]any{"type": string(event.Type())}
+				switch prompt := event.(type) {
+				case extensions.UIPromptStartEvent:
+					value["reason"] = prompt.Reason
+					value["kind"] = prompt.Kind
+					if prompt.Title != nil {
+						value["title"] = *prompt.Title
+					}
+				case extensions.UIPromptEndEvent:
+					value["reason"] = prompt.Reason
+					value["kind"] = prompt.Kind
+					if prompt.Title != nil {
+						value["title"] = *prompt.Title
+					}
+				case extensions.SessionCompactFailedEvent:
+					value["reason"] = prompt.Reason
+					value["aborted"] = prompt.Aborted
+					value["willRetry"] = prompt.WillRetry
+					value["fromExtension"] = prompt.FromExtension
+				}
+				events <- value
+				return nil, nil
+			})
+		}
+	})
+	ui := &f11PromptUI{}
+	r := extensions.NewRunner(registry, extensions.RunnerOptions{UI: ui, Mode: extensions.ModeTUI})
+	ui.runner = r
+	ctx := context.Background()
+	prompt := r.UI()
+	result := []map[string]any{}
+	collect := func() {
+		t.Helper()
+		for range 2 {
+			select {
+			case event := <-events:
+				result = append(result, event)
+			case <-time.After(time.Second):
+				t.Fatal("UI prompt lifecycle event missing")
+			}
+		}
+	}
+	_, _, _ = prompt.Select(ctx, "Select title", nil, nil)
+	collect()
+	_, _ = prompt.Confirm(ctx, "Confirm title", "", nil)
+	collect()
+	_, _, _ = prompt.Input(ctx, "Input title", nil, nil)
+	collect()
+	_, _, _ = prompt.Editor(ctx, "", nil)
+	collect()
+	_, _, _ = prompt.Custom(ctx, nil, nil)
+	collect()
+	r.Emit(ctx, extensions.SessionCompactFailedEvent{Reason: extensions.CompactionOverflow, Aborted: true, WillRetry: true, FromExtension: false})
+	result = append(result, <-events)
 	return result
 }

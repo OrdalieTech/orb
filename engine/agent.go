@@ -80,6 +80,21 @@ func WithPrepareNextTurnContext(hook PrepareNextTurnFunc) AgentOption {
 	return func(options *agentOptions) { options.prepareNextTurnWithContext = hook }
 }
 
+// SwapPrepareNextTurnContext replaces the next-turn hook and returns its predecessor.
+func (agent *Agent) SwapPrepareNextTurnContext(hook PrepareNextTurnFunc) PrepareNextTurnFunc {
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	previous := agent.prepareNextTurnWithContext
+	if previous == nil && agent.prepareNextTurn != nil {
+		withoutContext := agent.prepareNextTurn
+		previous = func(ctx context.Context, _ PrepareNextTurnContext) (*AgentLoopTurnUpdate, error) {
+			return withoutContext(ctx)
+		}
+	}
+	agent.prepareNextTurnWithContext = hook
+	return previous
+}
+
 func WithShouldStopAfterTurn(hook ShouldStopAfterTurnFunc) AgentOption {
 	return func(options *agentOptions) { options.shouldStopAfterTurn = hook }
 }

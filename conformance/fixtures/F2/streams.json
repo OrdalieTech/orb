@@ -1,6 +1,308 @@
 {
   "cases": [
     {
+      "name": "completions-reasoning-details-replay",
+      "api": "openai-completions",
+      "model": {
+        "id": "gpt-stream-completions",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-completions",
+        "provider": "openai",
+        "baseUrl": "https://api.openai.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1000000,
+          "output": 2000000,
+          "cacheRead": 3000000,
+          "cacheWrite": 4000000
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "hi",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key"
+      },
+      "sse": "data: {\"id\":\"reasoning_details\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_details\":[{\"type\":\"reasoning.text\",\"text\":\"one\",\"index\":0},{\"type\":\"reasoning.text\",\"text\":\"two\",\"signature\":\"sig\"},{\"type\":\"reasoning.encrypted\",\"data\":\"opaque\"}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"reasoning_details\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"answer\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":2,\"cached_tokens\":4}}\n\ndata: [DONE]\n\n",
+      "expectedEvents": [
+        {
+          "type": "start",
+          "partial": {
+            "role": "assistant",
+            "content": [],
+            "api": "openai-completions",
+            "provider": "openai",
+            "model": "gpt-stream-completions",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "pending",
+            "timestamp": 1700000000123
+          }
+        },
+        {
+          "type": "thinking_start",
+          "contentIndex": 0,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "",
+                "thinkingSignature": ""
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "openai",
+            "model": "gpt-stream-completions",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "pending",
+            "timestamp": 1700000000123,
+            "responseId": "reasoning_details"
+          }
+        },
+        {
+          "type": "text_start",
+          "contentIndex": 1,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "",
+                "thinkingSignature": ""
+              },
+              {
+                "type": "text",
+                "text": "answer"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "openai",
+            "model": "gpt-stream-completions",
+            "usage": {
+              "input": 8,
+              "output": 2,
+              "cacheRead": 4,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 14,
+              "cost": {
+                "input": 8,
+                "output": 4,
+                "cacheRead": 12,
+                "cacheWrite": 0,
+                "total": 24
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "reasoning_details",
+            "rawStopReason": "stop"
+          }
+        },
+        {
+          "type": "text_delta",
+          "contentIndex": 1,
+          "delta": "answer",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "",
+                "thinkingSignature": ""
+              },
+              {
+                "type": "text",
+                "text": "answer"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "openai",
+            "model": "gpt-stream-completions",
+            "usage": {
+              "input": 8,
+              "output": 2,
+              "cacheRead": 4,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 14,
+              "cost": {
+                "input": 8,
+                "output": 4,
+                "cacheRead": 12,
+                "cacheWrite": 0,
+                "total": 24
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "reasoning_details",
+            "rawStopReason": "stop"
+          }
+        },
+        {
+          "type": "thinking_end",
+          "contentIndex": 0,
+          "content": "",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "",
+                "thinkingSignature": "[{\"type\":\"reasoning.text\",\"text\":\"onetwo\",\"index\":0,\"signature\":\"sig\"},{\"type\":\"reasoning.encrypted\",\"data\":\"opaque\"}]"
+              },
+              {
+                "type": "text",
+                "text": "answer"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "openai",
+            "model": "gpt-stream-completions",
+            "usage": {
+              "input": 8,
+              "output": 2,
+              "cacheRead": 4,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 14,
+              "cost": {
+                "input": 8,
+                "output": 4,
+                "cacheRead": 12,
+                "cacheWrite": 0,
+                "total": 24
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "reasoning_details",
+            "rawStopReason": "stop"
+          }
+        },
+        {
+          "type": "text_end",
+          "contentIndex": 1,
+          "content": "answer",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "",
+                "thinkingSignature": "[{\"type\":\"reasoning.text\",\"text\":\"onetwo\",\"index\":0,\"signature\":\"sig\"},{\"type\":\"reasoning.encrypted\",\"data\":\"opaque\"}]"
+              },
+              {
+                "type": "text",
+                "text": "answer"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "openai",
+            "model": "gpt-stream-completions",
+            "usage": {
+              "input": 8,
+              "output": 2,
+              "cacheRead": 4,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 14,
+              "cost": {
+                "input": 8,
+                "output": 4,
+                "cacheRead": 12,
+                "cacheWrite": 0,
+                "total": 24
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "reasoning_details",
+            "rawStopReason": "stop"
+          }
+        },
+        {
+          "type": "done",
+          "reason": "stop",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "",
+                "thinkingSignature": "[{\"type\":\"reasoning.text\",\"text\":\"onetwo\",\"index\":0,\"signature\":\"sig\"},{\"type\":\"reasoning.encrypted\",\"data\":\"opaque\"}]"
+              },
+              {
+                "type": "text",
+                "text": "answer"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "openai",
+            "model": "gpt-stream-completions",
+            "usage": {
+              "input": 8,
+              "output": 2,
+              "cacheRead": 4,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 14,
+              "cost": {
+                "input": 8,
+                "output": 4,
+                "cacheRead": 12,
+                "cacheWrite": 0,
+                "total": 24
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000123,
+            "responseId": "reasoning_details",
+            "rawStopReason": "stop"
+          }
+        }
+      ]
+    },
+    {
       "name": "responses-text-stop",
       "api": "openai-responses",
       "model": {
@@ -1376,8 +1678,8 @@
             "content": [
               {
                 "type": "thinking",
-                "thinking": "plan ",
-                "thinkingSignature": "reasoning_content"
+                "thinking": "",
+                "thinkingSignature": ""
               }
             ],
             "api": "openai-completions",
@@ -1413,7 +1715,7 @@
               {
                 "type": "thinking",
                 "thinking": "plan ",
-                "thinkingSignature": "reasoning_content"
+                "thinkingSignature": ""
               }
             ],
             "api": "openai-completions",
@@ -1448,7 +1750,7 @@
               {
                 "type": "thinking",
                 "thinking": "plan ",
-                "thinkingSignature": "reasoning_content"
+                "thinkingSignature": ""
               },
               {
                 "type": "text",
@@ -1488,7 +1790,7 @@
               {
                 "type": "thinking",
                 "thinking": "plan ",
-                "thinkingSignature": "reasoning_content"
+                "thinkingSignature": ""
               },
               {
                 "type": "text",
@@ -1527,7 +1829,7 @@
               {
                 "type": "thinking",
                 "thinking": "plan ",
-                "thinkingSignature": "reasoning_content"
+                "thinkingSignature": ""
               },
               {
                 "type": "text",
@@ -1542,8 +1844,7 @@
                   "mode": "plain"
                 },
                 "partialArgs": "{\"text\":\"hello\",\"mode\":\"plain\",",
-                "streamIndex": 0,
-                "thoughtSignature": "{\"type\":\"reasoning.encrypted\",\"id\":\"call_f2\",\"data\":\"encrypted-tool-f2\"}"
+                "streamIndex": 0
               }
             ],
             "api": "openai-completions",
@@ -1579,7 +1880,7 @@
               {
                 "type": "thinking",
                 "thinking": "plan ",
-                "thinkingSignature": "reasoning_content"
+                "thinkingSignature": ""
               },
               {
                 "type": "text",
@@ -1594,8 +1895,7 @@
                   "mode": "plain"
                 },
                 "partialArgs": "{\"text\":\"hello\",\"mode\":\"plain\",",
-                "streamIndex": 0,
-                "thoughtSignature": "{\"type\":\"reasoning.encrypted\",\"id\":\"call_f2\",\"data\":\"encrypted-tool-f2\"}"
+                "streamIndex": 0
               }
             ],
             "api": "openai-completions",
@@ -1631,7 +1931,7 @@
               {
                 "type": "thinking",
                 "thinking": "plan ",
-                "thinkingSignature": "reasoning_content"
+                "thinkingSignature": ""
               },
               {
                 "type": "text",
@@ -1649,8 +1949,7 @@
                   }
                 },
                 "partialArgs": "{\"text\":\"hello\",\"mode\":\"plain\",\"metadata\":{\"count\":2}}",
-                "streamIndex": 0,
-                "thoughtSignature": "{\"type\":\"reasoning.encrypted\",\"id\":\"call_f2\",\"data\":\"encrypted-tool-f2\"}"
+                "streamIndex": 0
               }
             ],
             "api": "openai-completions",
@@ -1686,7 +1985,7 @@
               {
                 "type": "thinking",
                 "thinking": "plan ",
-                "thinkingSignature": "reasoning_content"
+                "thinkingSignature": ""
               },
               {
                 "type": "text",
@@ -1704,8 +2003,7 @@
                   }
                 },
                 "partialArgs": "{\"text\":\"hello\",\"mode\":\"plain\",\"metadata\":{\"count\":2}}",
-                "streamIndex": 0,
-                "thoughtSignature": "{\"type\":\"reasoning.encrypted\",\"id\":\"call_f2\",\"data\":\"encrypted-tool-f2\"}"
+                "streamIndex": 0
               }
             ],
             "api": "openai-completions",
@@ -1741,7 +2039,7 @@
               {
                 "type": "thinking",
                 "thinking": "plan ",
-                "thinkingSignature": "reasoning_content"
+                "thinkingSignature": "[{\"type\":\"reasoning.encrypted\",\"id\":\"call_f2\",\"data\":\"encrypted-tool-f2\"}]"
               },
               {
                 "type": "text",
@@ -1757,8 +2055,7 @@
                   "metadata": {
                     "count": 2
                   }
-                },
-                "thoughtSignature": "{\"type\":\"reasoning.encrypted\",\"id\":\"call_f2\",\"data\":\"encrypted-tool-f2\"}"
+                }
               }
             ],
             "api": "openai-completions",
@@ -1796,7 +2093,7 @@
               {
                 "type": "thinking",
                 "thinking": "plan ",
-                "thinkingSignature": "reasoning_content"
+                "thinkingSignature": "[{\"type\":\"reasoning.encrypted\",\"id\":\"call_f2\",\"data\":\"encrypted-tool-f2\"}]"
               },
               {
                 "type": "text",
@@ -1812,8 +2109,7 @@
                   "metadata": {
                     "count": 2
                   }
-                },
-                "thoughtSignature": "{\"type\":\"reasoning.encrypted\",\"id\":\"call_f2\",\"data\":\"encrypted-tool-f2\"}"
+                }
               }
             ],
             "api": "openai-completions",
@@ -1854,8 +2150,7 @@
               "metadata": {
                 "count": 2
               }
-            },
-            "thoughtSignature": "{\"type\":\"reasoning.encrypted\",\"id\":\"call_f2\",\"data\":\"encrypted-tool-f2\"}"
+            }
           },
           "partial": {
             "role": "assistant",
@@ -1863,7 +2158,7 @@
               {
                 "type": "thinking",
                 "thinking": "plan ",
-                "thinkingSignature": "reasoning_content"
+                "thinkingSignature": "[{\"type\":\"reasoning.encrypted\",\"id\":\"call_f2\",\"data\":\"encrypted-tool-f2\"}]"
               },
               {
                 "type": "text",
@@ -1879,8 +2174,7 @@
                   "metadata": {
                     "count": 2
                   }
-                },
-                "thoughtSignature": "{\"type\":\"reasoning.encrypted\",\"id\":\"call_f2\",\"data\":\"encrypted-tool-f2\"}"
+                }
               }
             ],
             "api": "openai-completions",
@@ -1917,7 +2211,7 @@
               {
                 "type": "thinking",
                 "thinking": "plan ",
-                "thinkingSignature": "reasoning_content"
+                "thinkingSignature": "[{\"type\":\"reasoning.encrypted\",\"id\":\"call_f2\",\"data\":\"encrypted-tool-f2\"}]"
               },
               {
                 "type": "text",
@@ -1933,8 +2227,7 @@
                   "metadata": {
                     "count": 2
                   }
-                },
-                "thoughtSignature": "{\"type\":\"reasoning.encrypted\",\"id\":\"call_f2\",\"data\":\"encrypted-tool-f2\"}"
+                }
               }
             ],
             "api": "openai-completions",

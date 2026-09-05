@@ -165,7 +165,21 @@ func TestSearchScansJSONLSessionsFromDisk(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		appendMessage(t, storage, id+"-entry", text)
+		payload, err := json.Marshal(map[string]any{
+			"kind": "entry", "entry": map[string]any{
+				"type": "message", "id": id + "-entry", "parentId": nil,
+				"message": message(text),
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := storage.Commit(ctx, []json.RawMessage{payload}); err != nil {
+			t.Fatal(err)
+		}
+		if err := storage.Close(ctx); err != nil {
+			t.Fatal(err)
+		}
 	}
 	create("jsonl", filepath.Join(root, "workspace"), "jsonl backed auth entry")
 	create("other", filepath.Join(root, "other"), "jsonl backed auth entry in another cwd")

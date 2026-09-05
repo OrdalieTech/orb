@@ -12,7 +12,7 @@ work, within these bounds.
 | | |
 |---|---|
 | Upstream project | **pi** — https://pi.dev, repo `earendil-works/pi` (formerly `badlogic/pi-mono`) |
-| Pinned reference | commit `914cf1472e715297caa30db4b9535d534a9eb718`, version **0.84.2** (2026-08-17) |
+| Pinned reference | commit `107d79f11072bbc8a3a757ed7fd69596bee7d68c`, version **0.85.0** (2026-09-05) |
 | Upstream license | MIT, © 2025 Mario Zechner |
 | This project | `github.com/OrdalieTech/orb`, MIT, © Ordalie — with attribution to upstream in LICENSE and README |
 

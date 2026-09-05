@@ -420,12 +420,12 @@ func TestAnthropicCopilotAdaptiveThinkingOmitsInterleavedBeta(t *testing.T) {
 		t.Fatal("github-copilot/claude-sonnet-4.6 missing from builtin catalog")
 	}
 	interleaved := true
-	headers := anthropicHeaders(&model, ai.Context{}, nil, &AnthropicMessagesOptions{InterleavedThinking: &interleaved})
+	headers := anthropicHeaders(&model, ai.Context{}, nil, &AnthropicMessagesOptions{InterleavedThinking: &interleaved, ThinkingEnabled: &interleaved})
 	if strings.Contains(headers.Get("anthropic-beta"), "interleaved-thinking") {
 		t.Fatalf("adaptive-thinking Copilot model sent interleaved-thinking beta: %q", headers.Get("anthropic-beta"))
 	}
 	// Non-adaptive Claude keeps the interleaved-thinking beta.
-	control := anthropicHeaders(anthropicTestModel(), ai.Context{}, nil, &AnthropicMessagesOptions{InterleavedThinking: &interleaved})
+	control := anthropicHeaders(anthropicTestModel(), ai.Context{}, nil, &AnthropicMessagesOptions{InterleavedThinking: &interleaved, ThinkingEnabled: &interleaved})
 	if !strings.Contains(control.Get("anthropic-beta"), anthropicInterleavedThinkingBeta) {
 		t.Fatalf("non-adaptive model lost interleaved-thinking beta: %q", control.Get("anthropic-beta"))
 	}

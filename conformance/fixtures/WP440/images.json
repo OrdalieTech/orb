@@ -315,6 +315,28 @@
         "sampleRows": 3,
         "pixelSignature": "BMGCRY"
       }
+    },
+    {
+      "orientation": 6,
+      "inputBase64": "/9j/4QAIWE1QAAAA/+EAIkV4aWYAAElJKgAIAAAAAQASAQMAAQAAAAYAAAAAAAAA/+AAEEpGSUYAAQIAAAEAAQAA/8AAEQgAFAAeAwERAAIRAQMRAf/bAEMAAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAf/bAEMBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/aAAwDAQACEQMRAD8A/F+v8nz/AL+D9tv2RP8Ak3j4ff8Ac2f+px4lr+CfGn/k5fEv/dH/APVBlR/5Qf8ApK//ACuw+ml/3rn/AOwmeBB+WP8AwWz/AObZ/wDus3/vKa/6/v8AQ/8A/nYb/wB6l/8AwzB+B/syP+b2/wDeNv8A3/j8H6/7UD/Vg/09v+HQP/BOz/o3n/zLPxy/+eXX/hX/APE6/wBJv/o5f/mm+H//ANCp/wBD3/FRL6Yv/R4P/Of+F3/0EnjPiv8AZo+CXwd1+/8Ahx8OPBX/AAjvgzw79l/sbRv+Ej8W6v8AY/7XsrfXdQ/4mGu69qeq3H2jVdTvrr/Sr6byvO8iHy7eOKKP/rE/Zo/Q/wDo6/Su+hL4K+Pvj74ef6++LXHv/ERv9bOLP9beOeF/7V/1X8WuPOC8i/4QuC+JuHeGsD9R4a4dybLf+E3JsH9Z+p/XMZ9Yx+IxWKrf8A37bLxs8TvEb9pz9JjjLjLib+2OJM4/4g1/aOY/2Nw/l/1j+z/o/eFOVYP/AGPKsqwOApeywGBwtD9xhaXP7L2lXnrTqVJfkV/wUz/Z5+D3jb/hSn/CT+EP7T/sz/hZH2L/AIn/AIos/J+2f8IF9p/5B+tWvmeZ9lg/1u/Zs+Tbufd/0d/s0PBLwx+hz/xGr/iXDhn/AIh1/wARF/4hx/rl/wALPEHF39sf6o/6+f6vf8l3mvE/9n/2f/rPnn/Ir+pfWvrv+2/Wfq2E9h/uD/omv0ePB76Vf/E/X/Ee+EP9fP8AUP8A4lY/1U/4X+KOF/7K/wBaP+Jjv7d/5IzO+Hfr317/AFdyf/kZfW/q31P/AGP6v9YxXtvys/4Y9/Zz/wCid/8Al2+Ov/mmr/U//iN3if8A9FN/5huH/wD50n/Yp/xS6+gr/wBGN/8AOmeMP/0wD/RYr/xCT/E0/OX48f8AJVvFX/cD/wDUb0ev/QC/Yk/8qw/oy/8AeZv/AGIPxXP+If8Aa9/8rEfpC/8AeJv/AFx3hofj7/wUI/5pF/3P3/ul1/v19Gv/AJrT/u3P/e6f9QH+hX/87Kf+9OP/AIag/Nuv6kP+6g//2Q==",
+      "inputSHA256": "a32d03bc2380ac3ca104582fdc2f50a4af9f179174935ac1e6de53288d0d72a0",
+      "options": {
+        "maxWidth": 15,
+        "maxHeight": 15,
+        "maxBytes": 1048576
+      },
+      "expected": {
+        "originalWidth": 20,
+        "originalHeight": 30,
+        "width": 10,
+        "height": 15,
+        "wasResized": true,
+        "mimeType": "image/png",
+        "note": "[Image: original 20x30, displayed at 10x15. Multiply coordinates by 2.00 to map to original image.]",
+        "sampleColumns": 2,
+        "sampleRows": 3,
+        "pixelSignature": "YRCGMB"
+      }
     }
   ],
   "pipelineCases": [

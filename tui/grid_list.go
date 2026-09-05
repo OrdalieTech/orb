@@ -416,7 +416,6 @@ type Frame struct {
 	Border     StyleFunc
 	Hint       StyleFunc
 	Child      Component
-	childTop   int // first interior line of the child, for mouse mapping
 }
 
 func NewFrame(title, footer string, border, hint StyleFunc, child Component) *Frame {
@@ -447,7 +446,6 @@ func (frame *Frame) Render(width int) []string {
 		}
 		lines = append(lines, wrap(frame.style(titleStyle, frame.Title)), wrap(""))
 	}
-	frame.childTop = len(lines)
 	if frame.Child != nil {
 		for _, line := range frame.Child.Render(interior) {
 			lines = append(lines, wrap(line))
@@ -488,7 +486,10 @@ func (frame *Frame) HandleMouse(event MouseEvent) bool {
 	if !ok {
 		return false
 	}
-	event.Row -= frame.childTop
+	event.Row-- // top border
+	if frame.Title != "" {
+		event.Row -= 2 // heading and spacer
+	}
 	event.Column -= 2
 	return handler.HandleMouse(event)
 }

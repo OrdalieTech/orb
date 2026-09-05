@@ -125,30 +125,41 @@ const (
 	ThinkingFormatAntLing          ThinkingFormat = "ant-ling"
 )
 
+type ThinkingTokenBudgetField string
+
+type AnthropicAllowedFallbackModel struct {
+	Provider ProviderID `json:"provider"`
+	Model    string     `json:"model"`
+	Cost     ModelCost  `json:"cost"`
+}
+
 type OpenAICompletionsCompat struct {
-	SupportsStore                               *bool                  `json:"supportsStore,omitempty"`
-	SupportsDeveloperRole                       *bool                  `json:"supportsDeveloperRole,omitempty"`
-	SupportsReasoningEffort                     *bool                  `json:"supportsReasoningEffort,omitempty"`
-	SupportsUsageInStreaming                    *bool                  `json:"supportsUsageInStreaming,omitempty"`
-	SupportsFinishReason                        *bool                  `json:"supportsFinishReason,omitempty"`
-	MaxTokensField                              *MaxTokensField        `json:"maxTokensField,omitempty"`
-	RequiresToolResultName                      *bool                  `json:"requiresToolResultName,omitempty"`
-	RequiresAssistantAfterToolResult            *bool                  `json:"requiresAssistantAfterToolResult,omitempty"`
-	RequiresThinkingAsText                      *bool                  `json:"requiresThinkingAsText,omitempty"`
-	RequiresReasoningContentOnAssistantMessages *bool                  `json:"requiresReasoningContentOnAssistantMessages,omitempty"`
-	ThinkingFormat                              *ThinkingFormat        `json:"thinkingFormat,omitempty"`
-	ChatTemplateKwargs                          *map[string]any        `json:"chatTemplateKwargs,omitempty"`
-	ChatTemplateArgs                            *map[string]any        `json:"chatTemplateArgs,omitempty"`
-	OpenRouterRouting                           *OpenRouterRouting     `json:"openRouterRouting,omitempty"`
-	VercelGatewayRouting                        *VercelGatewayRouting  `json:"vercelGatewayRouting,omitempty"`
-	ZAIToolStream                               *bool                  `json:"zaiToolStream,omitempty"`
-	SupportsOpenAIGrammarTools                  *bool                  `json:"supportsOpenAIGrammarTools,omitempty"`
-	SupportsStrictMode                          *bool                  `json:"supportsStrictMode,omitempty"`
-	CacheControlFormat                          *CacheControlFormat    `json:"cacheControlFormat,omitempty"`
-	SendSessionAffinityHeaders                  *bool                  `json:"sendSessionAffinityHeaders,omitempty"`
-	DeferredToolsMode                           *DeferredToolsMode     `json:"deferredToolsMode,omitempty"`
-	SessionAffinityFormat                       *SessionAffinityFormat `json:"sessionAffinityFormat,omitempty"`
-	SupportsLongCacheRetention                  *bool                  `json:"supportsLongCacheRetention,omitempty"`
+	SupportsStore                               *bool                     `json:"supportsStore,omitempty"`
+	SupportsDeveloperRole                       *bool                     `json:"supportsDeveloperRole,omitempty"`
+	SupportsReasoningEffort                     *bool                     `json:"supportsReasoningEffort,omitempty"`
+	SupportsUsageInStreaming                    *bool                     `json:"supportsUsageInStreaming,omitempty"`
+	SupportsFinishReason                        *bool                     `json:"supportsFinishReason,omitempty"`
+	MaxTokensField                              *MaxTokensField           `json:"maxTokensField,omitempty"`
+	RequiresToolResultName                      *bool                     `json:"requiresToolResultName,omitempty"`
+	RequiresAssistantAfterToolResult            *bool                     `json:"requiresAssistantAfterToolResult,omitempty"`
+	RequiresThinkingAsText                      *bool                     `json:"requiresThinkingAsText,omitempty"`
+	RequiresReasoningContentOnAssistantMessages *bool                     `json:"requiresReasoningContentOnAssistantMessages,omitempty"`
+	ThinkingFormat                              *ThinkingFormat           `json:"thinkingFormat,omitempty"`
+	ChatTemplateKwargs                          *map[string]any           `json:"chatTemplateKwargs,omitempty"`
+	ChatTemplateArgs                            *map[string]any           `json:"chatTemplateArgs,omitempty"`
+	OpenRouterRouting                           *OpenRouterRouting        `json:"openRouterRouting,omitempty"`
+	VercelGatewayRouting                        *VercelGatewayRouting     `json:"vercelGatewayRouting,omitempty"`
+	ZAIToolStream                               *bool                     `json:"zaiToolStream,omitempty"`
+	ThinkingTokenBudgetField                    *ThinkingTokenBudgetField `json:"thinkingTokenBudgetField,omitempty"`
+	SupportsThinkingTokenBudget                 *bool                     `json:"supportsThinkingTokenBudget,omitempty"`
+	SupportsOpenAIGrammarTools                  *bool                     `json:"supportsOpenAIGrammarTools,omitempty"`
+	SupportsStrictMode                          *bool                     `json:"supportsStrictMode,omitempty"`
+	CacheControlFormat                          *CacheControlFormat       `json:"cacheControlFormat,omitempty"`
+	SendSessionAffinityHeaders                  *bool                     `json:"sendSessionAffinityHeaders,omitempty"`
+	DeferredToolsMode                           *DeferredToolsMode        `json:"deferredToolsMode,omitempty"`
+	SessionAffinityFormat                       *SessionAffinityFormat    `json:"sessionAffinityFormat,omitempty"`
+	SupportsLongCacheRetention                  *bool                     `json:"supportsLongCacheRetention,omitempty"`
+	VLLMPriority                                *float64                  `json:"vllmPriority,omitempty"`
 }
 
 type OpenAIResponsesCompat struct {
@@ -160,18 +171,21 @@ type OpenAIResponsesCompat struct {
 	SupportsAdditionalTools         *bool                  `json:"supportsAdditionalTools,omitempty"`
 	SupportsToolSearch              *bool                  `json:"supportsToolSearch,omitempty"`
 	SupportsExplicitPromptCacheMode *bool                  `json:"supportsExplicitPromptCacheMode,omitempty"`
+	SupportsMaxOutputTokens         *bool                  `json:"supportsMaxOutputTokens,omitempty"`
 }
 
 type AnthropicMessagesCompat struct {
-	SupportsEagerToolInputStreaming *bool `json:"supportsEagerToolInputStreaming,omitempty"`
-	SupportsLongCacheRetention      *bool `json:"supportsLongCacheRetention,omitempty"`
-	SendSessionAffinityHeaders      *bool `json:"sendSessionAffinityHeaders,omitempty"`
-	SupportsCacheControlOnTools     *bool `json:"supportsCacheControlOnTools,omitempty"`
-	SupportsTemperature             *bool `json:"supportsTemperature,omitempty"`
-	ForceAdaptiveThinking           *bool `json:"forceAdaptiveThinking,omitempty"`
-	AllowEmptySignature             *bool `json:"allowEmptySignature,omitempty"`
-	SupportsStrictTools             *bool `json:"supportsStrictTools,omitempty"`
-	SupportsToolReferences          *bool `json:"supportsToolReferences,omitempty"`
+	SupportsEagerToolInputStreaming *bool                            `json:"supportsEagerToolInputStreaming,omitempty"`
+	SupportsLongCacheRetention      *bool                            `json:"supportsLongCacheRetention,omitempty"`
+	SendSessionAffinityHeaders      *bool                            `json:"sendSessionAffinityHeaders,omitempty"`
+	SupportsCacheControlOnTools     *bool                            `json:"supportsCacheControlOnTools,omitempty"`
+	SupportsTemperature             *bool                            `json:"supportsTemperature,omitempty"`
+	ForceAdaptiveThinking           *bool                            `json:"forceAdaptiveThinking,omitempty"`
+	AllowEmptySignature             *bool                            `json:"allowEmptySignature,omitempty"`
+	SupportsStrictTools             *bool                            `json:"supportsStrictTools,omitempty"`
+	SupportsMidConvoEffort          *bool                            `json:"supportsMidConvoEffort,omitempty"`
+	AllowedFallbackModels           *[]AnthropicAllowedFallbackModel `json:"allowedFallbackModels,omitempty"`
+	SupportsToolReferences          *bool                            `json:"supportsToolReferences,omitempty"`
 }
 
 type BedrockCompat struct {

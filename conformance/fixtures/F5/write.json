@@ -1,0 +1,44 @@
+[
+  {
+    "input": {
+      "path": "output.txt",
+      "content": "hello\n"
+    },
+    "expected": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Successfully wrote to output.txt"
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "path": "output.txt",
+      "content": "🙂!"
+    },
+    "expected": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Successfully wrote to output.txt"
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "path": "output.txt",
+      "content": "\ud800x"
+    },
+    "expected": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Successfully wrote to output.txt"
+        }
+      ]
+    }
+  }
+]

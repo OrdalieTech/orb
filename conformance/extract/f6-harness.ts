@@ -972,7 +972,25 @@ async function mappedResultRecord(
 
 async function generateEnvFixture(upstreamRoot: string, root: string): Promise<unknown> {
   const envModule = await import(pathToFileURL(path.join(upstreamRoot, "packages/agent/src/harness/env/nodejs.ts")).href);
-  const env = new envModule.NodeExecutionEnv({ cwd: root, shellEnv: { BASE_VALUE: "base" } });
+  let env = new envModule.NodeExecutionEnv({ cwd: root, shellEnv: { BASE_VALUE: "base" } });
+  const envSource = await readFile(path.join(upstreamRoot,"packages/agent/src/harness/env/nodejs.ts"),"utf8");
+  if(envSource.includes("context.abortSignal")) {
+    const original = env;
+    const optionMethods = new Set(["exec","readTextLines","createDir","remove"]);
+    const twoArgumentMethods = new Set(["writeFile","appendFile","renameFile"]);
+    env = new Proxy(original,{get(target,property) {
+      const method = Reflect.get(target,property);
+      if(typeof method !== "function") return method;
+      return (...args:any[]) => {
+        const name = String(property);
+        if(name === "cleanup") return method.call(target,{});
+        if(optionMethods.has(name)) return method.call(target,args[0],args[1],{abortSignal:args[1]?.abortSignal});
+        if(twoArgumentMethods.has(name)) return method.call(target,args[0],args[1],{abortSignal:args[2]});
+        return method.call(target,args[0],{abortSignal:name === "createTempFile" ? args[0]?.abortSignal : args[1]});
+      };
+    }});
+  }
+
   get(await env.writeFile("nested/lines.txt", "one\r\ntwo\nthree\n"));
   get(await env.writeFile("target.txt", new Uint8Array([0, 1, 2, 255])));
   get(await env.createDir("empty-remove"));
@@ -1078,6 +1096,28 @@ async function generateEnvFixture(upstreamRoot: string, root: string): Promise<u
 }
 
 export async function generateF6Harness(upstreamRoot: string, outputRoot: string, upstreamCommit: string): Promise<void> {
+  const transactionCodec = await readFile(path.join(upstreamRoot, "packages/agent/src/harness/session/jsonl/codec.ts"), "utf8").catch(() => "");
+  if (transactionCodec.includes("isJsonlStorageHeader")) {
+    const transactionRoot = path.join(outputRoot, "F6HarnessTransactions");
+    await generateF6HarnessTransactions(upstreamRoot, transactionRoot);
+    await generateF6HarnessTransactionState(upstreamRoot, transactionRoot);
+    await generateF6HarnessTransactionFiles(upstreamRoot, transactionRoot);
+    await generateF6HarnessTransactionMigration(upstreamRoot, transactionRoot);
+    await generateF6HarnessTransactionForks(upstreamRoot, transactionRoot);
+    await generateF6HarnessTransactionRepos(upstreamRoot, transactionRoot);
+    await generateF6HarnessV3Projection(upstreamRoot, transactionRoot);
+    const root = await mkdtemp(path.join(os.tmpdir(), "orb-f6-env-"));
+    try {
+      const familyDir = path.join(outputRoot, "F6Harness"); await mkdir(familyDir,{recursive:true});
+      const files = JSON.parse(await readFile(path.join(transactionRoot,"files.json"),"utf8"));
+      await writeFile(path.join(familyDir,"session.jsonl"),files.content);
+      await writeFile(path.join(familyDir,"observations.json"),JSON.stringify({schemaVersion:1,session:{format:"transactions"}},null,2)+"\n");
+      await writeFile(path.join(familyDir,"manifest.json"),JSON.stringify({family:"F6Harness",upstreamCommit,generator:"conformance/extract/f6-harness.ts",source:"packages/agent/src/harness/session/jsonl/storage.ts",files:["session.jsonl","observations.json"]},null,2)+"\n");
+      await writeFile(path.join(transactionRoot,"manifest.json"),JSON.stringify({family:"F6HarnessTransactions",upstreamCommit,generator:"conformance/extract/f6-harness.ts",source:"packages/agent/src/harness/session/{commit,in-memory-storage-state,fork,jsonl/storage,jsonl/legacy-v3}.ts",files:["transactions.json","state.json","files.json","migration.json","forks.json","repos.json","v3-projection.jsonl","v3-projection.json"]},null,2)+"\n");
+    } finally {await rm(root,{recursive:true,force:true});}
+    return;
+  }
+
   const root = await mkdtemp(path.join(os.tmpdir(), "orb-f6-harness-"));
   try {
     const hasV3 = await upstreamHasV3SessionStorage(upstreamRoot);
@@ -1108,4 +1148,207 @@ export async function generateF6Harness(upstreamRoot: string, outputRoot: string
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+}
+
+/** Transaction storage introduced by released pi v0.85.0; independent of its runtime facade. */
+export async function generateF6HarnessTransactions(upstreamRoot: string, outputRoot: string): Promise<void> {
+  const load = (rel: string) => import(pathToFileURL(path.join(upstreamRoot, rel)).href);
+  const commit = await load("packages/agent/src/harness/session/commit.ts");
+  const codec = await load("packages/agent/src/harness/session/jsonl/codec.ts");
+  const cases = [
+    { name: "empty", firstSeq: 1, writes: [] },
+    { name: "entries", firstSeq: 1, writes: [
+      { kind: "entry", entry: { id: "a", parentId: null, type: "message", message: v4User("<>&", 1) } },
+      { kind: "entry", entry: { id: "b", parentId: "a", type: "custom", customType: "test", data: null } },
+    ] },
+    { name: "values", firstSeq: 9, writes: [
+      { kind: "value", op: "set", namespace: "session", key: "name", value: "sample" },
+      { kind: "list", op: "append", namespace: "lane", key: "inbox", value: { entryId: "a", kind: "steer" } },
+      { kind: "value", op: "delete", namespace: "session", key: "name" },
+      { kind: "list", op: "delete", namespace: "lane", key: "inbox" },
+    ] },
+    { name: "usage", firstSeq: 20, writes: [
+      { kind: "usage", row: { id: "usage", usage: v4Usage, adjustment: true, details: { source: "v3-import" } } },
+    ] },
+    { name: "duplicate", firstSeq: 1, writes: [
+      { kind: "entry", entry: { id: "a", parentId: null, type: "custom", customType: "test" } },
+      { kind: "usage", row: { id: "a", usage: v4Usage } },
+    ] },
+    { name: "missing-parent", firstSeq: 1, writes: [
+      { kind: "entry", entry: { id: "a", parentId: "missing", type: "custom", customType: "test" } },
+    ] },
+  ];
+  const observations = cases.map((scenario) => {
+    const prepared = commit.prepareStorageCommit(scenario.writes, scenario.firstSeq, fixedNowMs);
+    let error: string | null = null;
+    try {
+      commit.validateCommittedWrites(prepared.writes, scenario.firstSeq, {
+        hasEntryOrUsageId: () => false, hasEntryId: () => false,
+      });
+    } catch (failure) { error = (failure as Error).message; }
+    return { ...scenario, timestamp: fixedNowMs, prepared, error };
+  });
+  const headers = [
+    { v: 4, kind: "header", id: "session", storageVersion: 1, createdAt: fixedNowMs, cwd: "/fixture" },
+    { v: 4, kind: "header", id: "session", storageVersion: 2, createdAt: 0, cwd: "", nextSeq: 4 },
+    { v: 4, kind: "header", id: "session", storageVersion: 1, createdAt: 0, cwd: "", parentSessionId: "a", legacyParentSessionPath: "b" },
+    { kind: "header", version: 4, id: "old", createdAt: 0, cwd: "" },
+    { v: 4, kind: "header", id: "bad", storageVersion: 0, createdAt: 0, cwd: "" },
+    { v: 4, kind: "header", id: "bad", storageVersion: 1, createdAt: 0, cwd: "", nextSeq: 0 },
+  ].map((header) => ({ header, valid: codec.isJsonlStorageHeader(header) }));
+  await mkdir(outputRoot, { recursive: true });
+  await writeFile(path.join(outputRoot, "transactions.json"), `${JSON.stringify({ observations, headers }, null, 2)}\n`);
+}
+
+export async function generateF6HarnessTransactionState(upstreamRoot: string, outputRoot: string): Promise<void> {
+  const { InMemoryStorageState } = await import(pathToFileURL(path.join(upstreamRoot,
+    "packages/agent/src/harness/session/in-memory-storage-state.ts")).href);
+  const cases = JSON.parse(await readFile(path.join(outputRoot, "transactions.json"), "utf8"));
+  const state = new InMemoryStorageState();
+  const batches = cases.observations.filter((c: any) => c.error === null).map((c: any) => c.writes);
+  batches.push([
+    { kind: "value", op: "set", namespace: "test", key: "z", value: 1 },
+    { kind: "value", op: "set", namespace: "test", key: "a", value: 2 },
+    { kind: "value", op: "set", namespace: "test", key: "😀", value: 3 },
+    { kind: "value", op: "set", namespace: "test", key: "\ue000", value: 4 },
+    { kind: "list", op: "append", namespace: "test", key: "list", value: 1 },
+    { kind: "list", op: "append", namespace: "test", key: "list", value: 2 },
+    { kind: "list", op: "append", namespace: "test", key: "list", value: 3 },
+  ]);
+  const commits = batches.map((writes: any) => {
+    const prepared = state.prepareCommit(writes, fixedNowMs);
+    const stats = state.applyValidated(prepared.writes);
+    return JSON.parse(JSON.stringify({ writes, prepared, stats }));
+  });
+  const observations = {
+    commits,
+    entries: state.scanEntries({}),
+    entriesDesc: state.scanEntries({ order: "desc", limit: 1 }),
+    usage: state.scanUsage({}),
+    branch: state.scanBranch({ start: "b", order: "oldestFirst" }),
+    values: state.scanValues({ namespace: "test", key: "", kind: "value" }),
+    list: state.readList({ namespace: "test", key: "list", kind: "list" }),
+    listDesc: state.readList({ namespace: "test", key: "list", kind: "list" }, { order: "desc", limit: 2 }),
+    stats: state.getStats(),
+  };
+  await writeFile(path.join(outputRoot, "state.json"), `${JSON.stringify(observations, null, 2)}\n`);
+}
+
+export async function generateF6HarnessTransactionFiles(upstreamRoot: string, outputRoot: string): Promise<void> {
+  const { JsonlStorage } = await import(pathToFileURL(path.join(upstreamRoot,
+    "packages/agent/src/harness/session/jsonl/storage.ts")).href);
+  const files = new Map<string, string>();
+  const fileSystem = {
+    readTextFile: async (p: string) => ({ ok: true, value: files.get(p) }),
+    writeFile: async (p: string, value: string) => { files.set(p, value); return { ok: true }; },
+    appendFile: async (p: string, value: string) => { files.set(p, (files.get(p) ?? "") + value); return { ok: true }; },
+    renameFile: async (a: string, b: string) => { files.set(b, files.get(a)!); files.delete(a); return { ok: true }; },
+    remove: async (p: string) => { files.delete(p); return { ok: true }; },
+  };
+  const input = JSON.parse(await readFile(path.join(outputRoot, "transactions.json"), "utf8"));
+  const header = input.headers[0].header;
+  const options = { fileSystem, path: "session.jsonl", now: () => fixedNowMs };
+  const context = {};
+  const storage = await JsonlStorage.create(options, header, input.observations[1].writes, context);
+  const result = await storage.commit(input.observations[2].writes, context);
+  const content = files.get(options.path)!;
+  await storage.close(context);
+  files.set(options.path, content + '{"kind":"entry"');
+  const reopened = await JsonlStorage.open(options, context);
+  const repaired = files.get(options.path);
+  const entries = await reopened.scanEntries({}, context);
+  await reopened.close(context);
+  const failures = [];
+  for (const broken of ["not json\n", JSON.stringify(header)+"\n"+'{"kind":"unknown","seq":1}\n']) {
+    files.set(options.path,broken);
+    try { await JsonlStorage.open(options,context); }
+    catch(error) { failures.push({content:broken,message:(error as Error).message,cause:((error as Error).cause as Error)?.message}); }
+  }
+  await writeFile(path.join(outputRoot, "files.json"), `${JSON.stringify({ header, initialWrites: input.observations[1].writes,
+    writes: input.observations[2].writes, timestamp: fixedNowMs, result, content, repaired, entries, failures }, null, 2)}\n`);
+}
+
+export async function generateF6HarnessTransactionMigration(upstreamRoot: string, outputRoot: string): Promise<void> {
+  const { normalizeLegacyV3Records } = await import(pathToFileURL(path.join(upstreamRoot,
+    "packages/agent/src/harness/session/jsonl/legacy-v3.ts")).href);
+  const records = fixedEntries.slice(0, 13).map((record) => JSON.stringify(record));
+  const normalized = normalizeLegacyV3Records(records);
+  const retained = fixedEntries.slice(0, 13).filter((entry) => ["message", "custom", "custom_message", "compaction", "branch_summary"].includes(entry.type));
+  const ids = new Map(normalized.writes.filter((write: any) => write.kind === "entry").map((write: any, index: number) => [write.id, retained[index].id]));
+  const canonical = (input: any): any => {
+    if (typeof input === "string") return ids.get(input) ?? input;
+    if (Array.isArray(input)) return input.map(canonical);
+    if (input && typeof input === "object") return Object.fromEntries(Object.entries(input).map(([key, value]) => [key, canonical(value)]));
+    return input;
+  };
+  await writeFile(path.join(outputRoot, "migration.json"), `${JSON.stringify({ records, normalized: canonical(normalized) }, null, 2)}\n`);
+}
+
+export async function generateF6HarnessTransactionForks(upstreamRoot: string, outputRoot: string): Promise<void> {
+  const { createForkSnapshot, forkSnapshotWrites } = await import(pathToFileURL(path.join(upstreamRoot,
+    "packages/agent/src/harness/session/fork.ts")).href);
+  const state = JSON.parse(await readFile(path.join(outputRoot, "state.json"), "utf8"));
+  const scalarValues = [
+    { address: { namespace: "pi.branch.tip", key: "main", kind: "value" }, value: "b", seq: 3 },
+    { address: { namespace: "pi.lane.config", key: "main", kind: "value" }, value: { model: { provider: "openai", modelId: "test" }, thinkingLevel: "off", activeToolNames: [] }, seq: 4 },
+    { address: { namespace: "pi.lane.state", key: "main", kind: "value" }, value: { currentOperationId: "running", lastOperationId: null, inbox: [] }, seq: 5 },
+    { address: { namespace: "pi.session.name", key: "", kind: "value" }, value: "name", seq: 6 },
+    { address: { namespace: "custom", key: "data", kind: "value" }, value: { x: 1 }, seq: 7 },
+    { address: { namespace: "pi.entry.label", key: "b", kind: "value" }, value: "tip", seq: 8 },
+    { address: { namespace: "pi.result", key: "operation", kind: "value" }, value: {}, seq: 9 },
+  ];
+  const source = { entries: state.entries, scalarValues };
+  const cases = [
+    { scope: "tree" }, { scope: "branch", branch: "main" },
+    { scope: "branch", branch: "main", entryId: "b", position: "before" },
+    { scope: "branch", branch: "main", entryId: "missing", position: "at" },
+    { scope: "branch", branch: "missing" },
+  ].map((options) => {
+    try { const snapshot = createForkSnapshot(source, options); return { options, writes: forkSnapshotWrites(snapshot), nextSeq: snapshot.nextSeq }; }
+    catch (error) { return { options, error: (error as Error).message }; }
+  });
+  await writeFile(path.join(outputRoot, "forks.json"), `${JSON.stringify({ source, cases }, null, 2)}\n`);
+}
+
+export async function generateF6HarnessTransactionRepos(upstreamRoot: string, outputRoot: string): Promise<void> {
+  const load = (rel: string) => import(pathToFileURL(path.join(upstreamRoot,rel)).href);
+  const { JsonlSessionRepo } = await load("packages/agent/src/harness/session/jsonl/repo.ts");
+  const { NodeExecutionEnv } = await load("packages/agent/src/harness/env/nodejs.ts");
+  const root = await mkdtemp(path.join(os.tmpdir(),"orb-f6-repo-"));
+  try {
+    const env = new NodeExecutionEnv({cwd:root});
+    const repo = new JsonlSessionRepo({fileSystem:env,sessionsRoot:path.join(root,"sessions"),now:()=>fixedNowMs});
+    const context = {};
+    const cwd = "/fixture/project";
+    const session = await repo.create({id:"id / +?",cwd},context);
+    const metadata = session.metadata;
+    const error = async (run:()=>Promise<unknown>) => {try{await run();return null;}catch(error){return (error as Error).message;}};
+    const duplicateOpen = await error(()=>repo.open(metadata,context));
+    const deleteOpen = await error(()=>repo.delete(metadata,context));
+    const duplicateCreate = await error(()=>repo.create({id:metadata.id,cwd},context));
+    const content = await readFile(metadata.path,"utf8");
+    await session.close(context);
+    const reopened = await repo.open(metadata,context);
+    await reopened.close(context);
+    const list = await repo.list({cwd},context);
+    await repo.delete(metadata,context);
+    const missingDelete = await error(()=>repo.delete(metadata,context));
+    await repo.close(context);
+    const closedList = await error(()=>repo.list(undefined,context));
+    await writeFile(path.join(outputRoot,"repos.json"),JSON.stringify(normalizeV4({metadata,content,list,duplicateOpen,deleteOpen,duplicateCreate,missingDelete,closedList},root),null,2)+"\n");
+  } finally {await rm(root,{recursive:true,force:true});}
+}
+
+export async function generateF6HarnessV3Projection(upstreamRoot: string, outputRoot: string): Promise<void> {
+  const { SessionManager } = await import(pathToFileURL(path.join(upstreamRoot,"packages/coding-agent/src/core/session-manager.ts")).href);
+  const entries = [
+    { type: "session", version: 3, id: "session-fixed", timestamp: fixedNow, cwd: "/fixture/project" },
+    ...fixedEntries.slice(0,8),
+    { ...fixedEntries[10], parentId:"custom", firstKeptEntryId:"custom" },
+    { ...fixedEntries[12], parentId:"compaction" },
+  ];
+  const manager = SessionManager.inMemory("/fixture/project",undefined,entries);
+  const records = [manager.getHeader(),...manager.getEntries()];
+  await writeFile(path.join(outputRoot,"v3-projection.jsonl"),records.map((record:any)=>JSON.stringify(record)).join("\n")+"\n");
+  await writeFile(path.join(outputRoot,"v3-projection.json"),JSON.stringify({leafId:manager.getLeafId(),messageCount:manager.buildSessionContext().messages.length},null,2)+"\n");
 }

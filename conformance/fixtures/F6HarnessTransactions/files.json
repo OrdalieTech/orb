@@ -1,0 +1,141 @@
+{
+  "header": {
+    "v": 4,
+    "kind": "header",
+    "id": "session",
+    "storageVersion": 1,
+    "createdAt": 1770091506789,
+    "cwd": "/fixture"
+  },
+  "initialWrites": [
+    {
+      "kind": "entry",
+      "entry": {
+        "id": "a",
+        "parentId": null,
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "<>&"
+            }
+          ],
+          "timestamp": 1
+        }
+      }
+    },
+    {
+      "kind": "entry",
+      "entry": {
+        "id": "b",
+        "parentId": "a",
+        "type": "custom",
+        "customType": "test",
+        "data": null
+      }
+    }
+  ],
+  "writes": [
+    {
+      "kind": "value",
+      "op": "set",
+      "namespace": "session",
+      "key": "name",
+      "value": "sample"
+    },
+    {
+      "kind": "list",
+      "op": "append",
+      "namespace": "lane",
+      "key": "inbox",
+      "value": {
+        "entryId": "a",
+        "kind": "steer"
+      }
+    },
+    {
+      "kind": "value",
+      "op": "delete",
+      "namespace": "session",
+      "key": "name"
+    },
+    {
+      "kind": "list",
+      "op": "delete",
+      "namespace": "lane",
+      "key": "inbox"
+    }
+  ],
+  "timestamp": 1770091506789,
+  "result": {
+    "firstSeq": 3,
+    "seqs": [
+      3,
+      4,
+      5,
+      6
+    ],
+    "timestamp": 1770091506789,
+    "stats": {
+      "messageCount": 1,
+      "usage": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 0,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      }
+    }
+  },
+  "content": "{\"v\":4,\"kind\":\"header\",\"id\":\"session\",\"storageVersion\":1,\"createdAt\":1770091506789,\"cwd\":\"/fixture\"}\n[{\"kind\":\"entry\",\"id\":\"a\",\"parentId\":null,\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"<>&\"}],\"timestamp\":1},\"seq\":1,\"timestamp\":1770091506789},{\"kind\":\"entry\",\"id\":\"b\",\"parentId\":\"a\",\"type\":\"custom\",\"customType\":\"test\",\"data\":null,\"seq\":2,\"timestamp\":1770091506789}]\n[{\"kind\":\"value\",\"op\":\"set\",\"seq\":3,\"namespace\":\"session\",\"key\":\"name\",\"value\":\"sample\"},{\"kind\":\"list\",\"op\":\"append\",\"seq\":4,\"namespace\":\"lane\",\"key\":\"inbox\",\"value\":{\"entryId\":\"a\",\"kind\":\"steer\"}},{\"kind\":\"value\",\"op\":\"delete\",\"seq\":5,\"namespace\":\"session\",\"key\":\"name\"},{\"kind\":\"list\",\"op\":\"delete\",\"seq\":6,\"namespace\":\"lane\",\"key\":\"inbox\"}]\n",
+  "repaired": "{\"v\":4,\"kind\":\"header\",\"id\":\"session\",\"storageVersion\":1,\"createdAt\":1770091506789,\"cwd\":\"/fixture\"}\n[{\"kind\":\"entry\",\"id\":\"a\",\"parentId\":null,\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"<>&\"}],\"timestamp\":1},\"seq\":1,\"timestamp\":1770091506789},{\"kind\":\"entry\",\"id\":\"b\",\"parentId\":\"a\",\"type\":\"custom\",\"customType\":\"test\",\"data\":null,\"seq\":2,\"timestamp\":1770091506789}]\n[{\"kind\":\"value\",\"op\":\"set\",\"seq\":3,\"namespace\":\"session\",\"key\":\"name\",\"value\":\"sample\"},{\"kind\":\"list\",\"op\":\"append\",\"seq\":4,\"namespace\":\"lane\",\"key\":\"inbox\",\"value\":{\"entryId\":\"a\",\"kind\":\"steer\"}},{\"kind\":\"value\",\"op\":\"delete\",\"seq\":5,\"namespace\":\"session\",\"key\":\"name\"},{\"kind\":\"list\",\"op\":\"delete\",\"seq\":6,\"namespace\":\"lane\",\"key\":\"inbox\"}]\n",
+  "entries": [
+    {
+      "id": "a",
+      "parentId": null,
+      "type": "message",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "<>&"
+          }
+        ],
+        "timestamp": 1
+      },
+      "seq": 1,
+      "timestamp": 1770091506789
+    },
+    {
+      "id": "b",
+      "parentId": "a",
+      "type": "custom",
+      "customType": "test",
+      "data": null,
+      "seq": 2,
+      "timestamp": 1770091506789
+    }
+  ],
+  "failures": [
+    {
+      "content": "not json\n",
+      "message": "Invalid JSONL storage session.jsonl: invalid header",
+      "cause": "Invalid JSONL session header: not valid JSON"
+    },
+    {
+      "content": "{\"v\":4,\"kind\":\"header\",\"id\":\"session\",\"storageVersion\":1,\"createdAt\":1770091506789,\"cwd\":\"/fixture\"}\n{\"kind\":\"unknown\",\"seq\":1}\n",
+      "message": "Invalid JSONL storage session.jsonl: line 2",
+      "cause": "Invalid JSONL write kind: unknown"
+    }
+  ]
+}

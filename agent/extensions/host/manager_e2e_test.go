@@ -2,7 +2,9 @@ package host
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -428,4 +430,55 @@ func toolText(result engine.AgentToolResult) string {
 		return ""
 	}
 	return text.Text
+}
+
+func TestFailedFactoryDiscardsRegistrationsAndRevokesAPI(t *testing.T) {
+	root := t.TempDir()
+	failed, invalid, probe := filepath.Join(root, "failed.mjs"), filepath.Join(root, "invalid.mjs"), filepath.Join(root, "probe.mjs")
+	writeFile(t, failed, `export default function(pi) {
+  globalThis.failedExtensionAPI=pi;
+  pi.registerFlag("failed-value",{type:"string",default:"leaked"});
+  pi.events.on("probe",()=>{globalThis.failedListenerCalled=true});
+  pi.registerTool({name:"leaked_tool",description:"leaked",parameters:{type:"object",properties:{}},execute(){}});
+  throw new Error("factory failed");
+ }`, 0o600)
+	writeFile(t, invalid, `export default function(pi){pi.registerFlag("bad",{type:"boolean",default:"invalid"})}`, 0o600)
+	writeFile(t, probe, `export default function(pi) {
+  pi.registerFlag("failed-value",{type:"string"});
+  pi.registerTool({name:"probe_transaction",description:"probe",parameters:{type:"object",properties:{}},execute(){
+   let stale="",bus="";
+   try{globalThis.failedExtensionAPI.getFlag("failed-value")}catch(error){stale=error.message}
+   try{globalThis.failedExtensionAPI.events.emit("probe",{})}catch(error){bus=error.message}
+   return {content:[{type:"text",text:JSON.stringify({flagLeaked:pi.getFlag("failed-value")!==undefined,listenerCalled:globalThis.failedListenerCalled===true,stale,bus})}]};
+  }});
+ }`, 0o600)
+	_, _, runner, result, _ := startFixtureManager(t, failed, invalid, probe)
+	if len(result.Errors) != 2 {
+		t.Fatalf("load result = %#v", result)
+	}
+	if runner.ToolDefinition("leaked_tool") != nil {
+		t.Fatal("failed extension tool leaked")
+	}
+	tool := runner.ToolDefinition("probe_transaction")
+	if tool == nil {
+		t.Fatal("probe tool missing")
+	}
+	final, err := tool.Execute(context.Background(), "probe", map[string]any{}, nil, runner.CreateContext())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		FlagLeaked, ListenerCalled bool
+		Stale, Bus                 string
+	}
+	if err := json.Unmarshal([]byte(toolText(final)), &got); err != nil {
+		t.Fatal(err)
+	}
+	want := `Extension "` + failed + `" failed to load and its API is no longer active.`
+	if got.FlagLeaked || got.ListenerCalled || got.Stale != want || got.Bus != want {
+		t.Fatalf("failed extension retained state: %#v", got)
+	}
+	if !strings.Contains(fmt.Sprint(result.Errors), `Invalid default for flag "bad": expected boolean, got string`) {
+		t.Fatalf("flag validation = %#v", result.Errors)
+	}
 }

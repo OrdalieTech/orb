@@ -1,6 +1,6 @@
 {
   "family": "F3-session",
-  "upstreamCommit": "914cf1472e715297caa30db4b9535d534a9eb718",
+  "upstreamCommit": "107d79f11072bbc8a3a757ed7fd69596bee7d68c",
   "generator": "conformance/extract/f3-session.ts",
   "source": "packages/coding-agent/src/modes/print-mode.ts + packages/coding-agent/src/core/agent-session.ts + packages/ai/src/providers/faux.ts",
   "format": "agent-session-event-jsonl-v1",
@@ -9,6 +9,8 @@
   ],
   "files": [
     "scenarios.json",
+    "model-controls.json",
+    "custom-during-tool.jsonl",
     "multiple-prompts.jsonl",
     "queue.jsonl",
     "retry.jsonl",

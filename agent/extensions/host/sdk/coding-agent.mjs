@@ -728,6 +728,7 @@ export const getShellConfig = stub("getShellConfig");
 export const hasTrustRequiringProjectResources = stub("hasTrustRequiringProjectResources");
 export const highlightCode = stub("highlightCode");
 export const initTheme = stub("initTheme");
+export const isPowerShellToolResult = (event) => event.toolName === "powershell";
 export const isBashToolResult = stub("isBashToolResult");
 export const isEditToolResult = stub("isEditToolResult");
 export const isFindToolResult = stub("isFindToolResult");
@@ -765,3 +766,9 @@ export const truncateToVisualLines = stub("truncateToVisualLines");
 export const withFileMutationQueue = stub("withFileMutationQueue");
 export const wrapRegisteredTool = stub("wrapRegisteredTool");
 export const wrapRegisteredTools = stub("wrapRegisteredTools");
+
+export const createLocalPowerShellOperations = stub("createLocalPowerShellOperations");
+export const createPowerShellTool = stub("createPowerShellTool");
+export const createPowerShellToolDefinition = stub("createPowerShellToolDefinition");
+export { detectSupportedImageMimeTypeFromFile } from "./internal/mime.mjs";
+export const getPowerShellConfig = stub("getPowerShellConfig");

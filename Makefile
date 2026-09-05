@@ -62,7 +62,7 @@ ensure-upstream-fixture-tools: upstream
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/partial-json/package.json").version' 2>/dev/null)" != "0.1.7" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/typebox/package.json").version' 2>/dev/null)" != "1.3.7" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/openai/package.json").version' 2>/dev/null)" != "6.26.0" ] || \
-		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@anthropic-ai/sdk/package.json").version' 2>/dev/null)" != "0.91.1" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@anthropic-ai/sdk/package.json").version' 2>/dev/null)" != "0.123.0" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@aws-sdk/client-bedrock-runtime/package.json").version' 2>/dev/null)" != "3.1048.0" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@smithy/node-http-handler/package.json").version' 2>/dev/null)" != "4.7.3" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/http-proxy-agent/package.json").version' 2>/dev/null)" != "7.0.2" ] || \
@@ -78,7 +78,7 @@ ensure-upstream-fixture-tools: upstream
 			echo "upstream fixture tools are missing from read-only $(UPSTREAM_DIR)" >&2; exit 1; \
 		fi; \
 		cd "$(UPSTREAM_DIR)" && npm install --ignore-scripts --no-save --workspaces=false \
-			tsx@4.22.1 vitest@4.1.9 @xterm/headless@5.5.0 partial-json@0.1.7 typebox@1.3.7 openai@6.26.0 @anthropic-ai/sdk@0.91.1 \
+			tsx@4.22.1 vitest@4.1.9 @xterm/headless@5.5.0 partial-json@0.1.7 typebox@1.3.7 openai@6.26.0 @anthropic-ai/sdk@0.123.0 \
 			@aws-sdk/client-bedrock-runtime@3.1048.0 @smithy/node-http-handler@4.7.3 http-proxy-agent@7.0.2 https-proxy-agent@7.0.6 \
 			@mistralai/mistralai@2.2.6 @google/genai@1.52.0 diff@8.0.4 cross-spawn@7.0.6 \
 			chalk@5.6.2 get-east-asian-width@1.6.0 glob@13.0.6 highlight.js@10.7.3 hosted-git-info@9.0.3 \

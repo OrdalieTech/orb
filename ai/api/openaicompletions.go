@@ -22,9 +22,12 @@ type OpenAICompletionsOptions struct {
 	ai.StreamOptions
 	ToolChoice      any
 	ReasoningEffort *ai.ThinkingLevel
+	ThinkingBudgets *ai.ThinkingBudgets
 }
 
 type resolvedOpenAICompletionsCompat struct {
+	thinkingTokenBudgetField                    string
+	vllmPriority                                *float64
 	supportsStore                               bool
 	supportsDeveloperRole                       bool
 	supportsReasoningEffort                     bool
@@ -72,7 +75,7 @@ type completionsStreamState struct {
 	toolsByIndex               map[int]*completionsToolState
 	toolsByID                  map[string]*completionsToolState
 	toolStates                 map[*ai.ToolCall]*completionsToolState
-	pendingReasoningDetails    map[string]string
+	reasoningDetails           []json.RawMessage
 	grammarToolInputProperties map[string]string
 	hasFinishReason            bool
 }
@@ -102,13 +105,16 @@ func StreamSimpleOpenAICompletions(
 		return StreamOpenAICompletionsWithOptions(ctx, model, requestContext, nil)
 	}
 	var requestedReasoning *ai.ThinkingLevel
+	var budgets *ai.ThinkingBudgets
 	if options != nil {
 		requestedReasoning = options.Reasoning
+		budgets = options.ThinkingBudgets
 	}
 	return StreamOpenAICompletionsWithOptions(ctx, model, requestContext, &OpenAICompletionsOptions{
 		StreamOptions:   buildBaseStreamOptions(model, requestContext, options),
 		ToolChoice:      simpleToolChoiceAny(options, "required"),
 		ReasoningEffort: clampSimpleReasoning(model, requestedReasoning),
+		ThinkingBudgets: budgets,
 	})
 }
 
@@ -360,8 +366,8 @@ func openAICompletionsObjectKeys(object map[string]any, root bool) []string {
 		return orderedOpenAICompletionsKeys(object, []string{
 			"model", "messages", "stream", "prompt_cache_key", "prompt_cache_retention",
 			"stream_options", "store", "max_tokens", "max_completion_tokens", "temperature",
-			"tools", "tool_stream", "tool_choice", "thinking", "enable_thinking",
-			"chat_template_kwargs", "chat_template_args", "reasoning", "reasoning_effort", "provider", "providerOptions",
+			"tools", "tool_stream", "tool_choice", "priority", "thinking", "enable_thinking",
+			"chat_template_kwargs", "chat_template_args", "reasoning", "reasoning_effort", "thinking_token_budget", "thinking_budget", "thinking_budget_tokens", "provider", "providerOptions",
 		})
 	}
 	if role, ok := object["role"].(string); ok {
@@ -498,6 +504,12 @@ func resolveOpenAICompletionsCompat(model *ai.Model) (resolvedOpenAICompletionsC
 	}
 	if overrides.ThinkingFormat != nil {
 		resolved.thinkingFormat = *overrides.ThinkingFormat
+	}
+	resolved.vllmPriority = overrides.VLLMPriority
+	if overrides.ThinkingTokenBudgetField != nil {
+		resolved.thinkingTokenBudgetField = string(*overrides.ThinkingTokenBudgetField)
+	} else if overrides.SupportsThinkingTokenBudget != nil && *overrides.SupportsThinkingTokenBudget {
+		resolved.thinkingTokenBudgetField = "thinking_token_budget"
 	}
 	if overrides.ChatTemplateKwargs != nil {
 		resolved.chatTemplateKwargs = *overrides.ChatTemplateKwargs
@@ -684,6 +696,9 @@ func buildOpenAICompletionsHeaders(
 	retention ai.CacheRetention,
 ) http.Header {
 	headers := copyModelHeaders(model)
+	if _, exists := headers["User-Agent"]; !exists {
+		headers.Set("User-Agent", piUserAgent())
+	}
 	addCopilotHeaders(headers, model, requestContext)
 	if options != nil && options.SessionID != nil && *options.SessionID != "" && retention != ai.CacheRetentionNone && compat.sendSessionAffinityHeaders {
 		sessionID := *options.SessionID
@@ -774,6 +789,9 @@ func buildOpenAICompletionsPayload(
 	}
 	if options.ToolChoice != nil {
 		payload["tool_choice"] = options.ToolChoice
+	}
+	if compat.vllmPriority != nil {
+		payload["priority"] = *compat.vllmPriority
 	}
 	applyOpenAICompletionsThinking(payload, model, options, compat)
 	if compat.openRouterRouting != nil {
@@ -989,6 +1007,7 @@ func convertOpenAICompletionsAssistantMessageWithGrammar(
 	textParts := make([]any, 0)
 	textValues := make([]string, 0)
 	thinkingBlocks := make([]*ai.ThinkingContent, 0)
+	var signedDetails []json.RawMessage
 	toolCalls := make([]*ai.ToolCall, 0)
 	for _, rawBlock := range message.Content {
 		switch block := rawBlock.(type) {
@@ -999,6 +1018,9 @@ func convertOpenAICompletionsAssistantMessageWithGrammar(
 				textValues = append(textValues, text)
 			}
 		case *ai.ThinkingContent:
+			if signedDetails == nil && block.ThinkingSignature != nil {
+				signedDetails = parseOpenAIReasoningDetails(*block.ThinkingSignature)
+			}
 			if strings.TrimSpace(block.Thinking) != "" {
 				thinkingBlocks = append(thinkingBlocks, block)
 			}
@@ -1025,7 +1047,7 @@ func convertOpenAICompletionsAssistantMessageWithGrammar(
 				value := "reasoning_content"
 				signature = &value
 			}
-			if signature != nil && *signature != "" {
+			if signature != nil && signedDetails == nil && (*signature == "reasoning" || *signature == "reasoning_content" || *signature == "reasoning_text") {
 				values := make([]string, 0, len(thinkingBlocks))
 				for _, block := range thinkingBlocks {
 					values = append(values, block.Thinking)
@@ -1062,9 +1084,16 @@ func convertOpenAICompletionsAssistantMessageWithGrammar(
 				})
 			}
 			if call.ThoughtSignature != nil {
-				var detail any
-				if json.Unmarshal([]byte(*call.ThoughtSignature), &detail) == nil && jsTruthy(detail) {
-					reasoningDetails = append(reasoningDetails, detail)
+				raw := json.RawMessage(*call.ThoughtSignature)
+				var detail map[string]json.RawMessage
+				if validOpenAIReasoningDetail(raw) && json.Unmarshal(raw, &detail) == nil {
+					kind, _ := rawJSONString(detail["type"])
+					id, _ := rawJSONString(detail["id"])
+					data, _ := rawJSONString(detail["data"])
+					if kind == "reasoning.encrypted" && id != "" && data != "" {
+						normalized, _ := ai.NormalizeJSONStringifyJSON(raw)
+						reasoningDetails = append(reasoningDetails, json.RawMessage(normalized))
+					}
 				}
 			}
 		}
@@ -1072,6 +1101,9 @@ func convertOpenAICompletionsAssistantMessageWithGrammar(
 		if len(reasoningDetails) > 0 {
 			converted["reasoning_details"] = reasoningDetails
 		}
+	}
+	if signedDetails != nil {
+		converted["reasoning_details"] = signedDetails
 	}
 	if compat.requiresReasoningContentOnAssistantMessages && model.Reasoning {
 		if _, exists := converted["reasoning_content"]; !exists {
@@ -1124,21 +1156,6 @@ func convertOpenAICompletionsToolResult(
 		converted["name"] = message.ToolName
 	}
 	return converted, images
-}
-
-func jsTruthy(value any) bool {
-	switch typed := value.(type) {
-	case nil:
-		return false
-	case bool:
-		return typed
-	case float64:
-		return typed != 0
-	case string:
-		return typed != ""
-	default:
-		return true
-	}
 }
 
 func deferredOpenAICompletionsToolNames(messages ai.MessageList, compat resolvedOpenAICompletionsCompat) map[string]bool {
@@ -1323,6 +1340,21 @@ func applyOpenAICompletionsThinking(
 	if options.ReasoningEffort != nil {
 		effort = string(*options.ReasoningEffort)
 	}
+	var budget *float64
+	if effort != "" {
+		ceiling := model.MaxTokens
+		if options.MaxTokens != nil && *options.MaxTokens != 0 {
+			ceiling = *options.MaxTokens
+		}
+		_, requested := adjustMaxTokensForThinking(0, 1e15, *options.ReasoningEffort, options.ThinkingBudgets)
+		value := min(requested, max(0, ceiling-1024))
+		if value > 0 {
+			budget = &value
+		}
+	}
+	if compat.thinkingTokenBudgetField != "" && budget != nil {
+		payload[compat.thinkingTokenBudgetField] = *budget
+	}
 	switch compat.thinkingFormat {
 	case ai.ThinkingFormatZAI:
 		if effort != "" {
@@ -1343,11 +1375,11 @@ func applyOpenAICompletionsThinking(
 	case ai.ThinkingFormatQwenChatTemplate:
 		payload["chat_template_kwargs"] = map[string]any{"enable_thinking": effort != "", "preserve_thinking": true}
 	case ai.ThinkingFormatChatTemplate:
-		if kwargs := buildOpenAICompletionsChatTemplateKwargs(model, effort, compat.chatTemplateKwargs); len(kwargs) > 0 {
+		if kwargs := buildOpenAICompletionsChatTemplateKwargs(model, effort, compat.chatTemplateKwargs, budget); len(kwargs) > 0 {
 			payload["chat_template_kwargs"] = kwargs
 		}
 	case ai.ThinkingFormatBaseten:
-		if args := buildOpenAICompletionsChatTemplateKwargs(model, effort, compat.chatTemplateArgs); len(args) > 0 {
+		if args := buildOpenAICompletionsChatTemplateKwargs(model, effort, compat.chatTemplateArgs, budget); len(args) > 0 {
 			payload["chat_template_args"] = args
 		}
 		if compat.supportsReasoningEffort {
@@ -1406,7 +1438,7 @@ func applyOpenAICompletionsThinking(
 	}
 }
 
-func buildOpenAICompletionsChatTemplateKwargs(model *ai.Model, effort string, values map[string]any) map[string]any {
+func buildOpenAICompletionsChatTemplateKwargs(model *ai.Model, effort string, values map[string]any, budget ...*float64) map[string]any {
 	result := map[string]any{}
 	for name, value := range values {
 		object, isObject := value.(map[string]any)
@@ -1418,6 +1450,12 @@ func buildOpenAICompletionsChatTemplateKwargs(model *ai.Model, effort string, va
 			if omit, _ := object["omitWhenOff"].(bool); omit {
 				continue
 			}
+		}
+		if object["$var"] == "thinking.budget" {
+			if len(budget) > 0 && budget[0] != nil {
+				result[name] = *budget[0]
+			}
+			continue
 		}
 		if variable, _ := object["$var"].(string); variable == "thinking.enabled" {
 			result[name] = effort != ""
@@ -1478,13 +1516,12 @@ func thinkingLevelIsExplicitNull(model *ai.Model, level ai.ModelThinkingLevel) b
 
 func newCompletionsStreamState(output *ai.AssistantMessage) *completionsStreamState {
 	return &completionsStreamState{
-		output:                  output,
-		textIndex:               -1,
-		thinkingIndex:           -1,
-		toolsByIndex:            map[int]*completionsToolState{},
-		toolsByID:               map[string]*completionsToolState{},
-		toolStates:              map[*ai.ToolCall]*completionsToolState{},
-		pendingReasoningDetails: map[string]string{},
+		output:        output,
+		textIndex:     -1,
+		thinkingIndex: -1,
+		toolsByIndex:  map[int]*completionsToolState{},
+		toolsByID:     map[string]*completionsToolState{},
+		toolStates:    map[*ai.ToolCall]*completionsToolState{},
 	}
 }
 
@@ -1603,7 +1640,9 @@ func (state *completionsStreamState) consumeDelta(
 		}
 	}
 	for _, rawDetail := range rawJSONArray(delta["reasoning_details"]) {
-		state.consumeReasoningDetail(rawDetail)
+		if err := state.consumeReasoningDetail(rawDetail, emit); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -1688,7 +1727,7 @@ func (state *completionsStreamState) consumeToolCall(raw json.RawMessage, emit f
 	if id != "" {
 		state.toolsByID[id] = stateForCall
 	}
-	state.applyPendingReasoningDetail(stateForCall)
+
 	if stateForCall.block.ID == "" && id != "" {
 		stateForCall.block.ID = id
 		state.toolsByID[id] = stateForCall
@@ -1732,38 +1771,135 @@ func (state *completionsStreamState) consumeToolCall(raw json.RawMessage, emit f
 	return emit(ai.ToolCallDeltaEvent{ContentIndex: stateForCall.contentIndex, Delta: arguments, Partial: state.output})
 }
 
-func (state *completionsStreamState) consumeReasoningDetail(raw json.RawMessage) {
-	var detail struct {
-		Type string `json:"type"`
-		ID   string `json:"id"`
-		Data string `json:"data"`
+func parseOpenAIReasoningDetails(signature string) []json.RawMessage {
+	var details []json.RawMessage
+	if json.Unmarshal([]byte(signature), &details) != nil || len(details) == 0 {
+		return nil
 	}
-	if json.Unmarshal(raw, &detail) != nil || detail.Type != "reasoning.encrypted" || detail.ID == "" || detail.Data == "" {
-		return
+	for i, detail := range details {
+		if !validOpenAIReasoningDetail(detail) {
+			return nil
+		}
+		details[i], _ = ai.NormalizeJSONStringifyJSON(detail)
 	}
-	normalized, err := ai.NormalizeJSONStringifyJSON(raw)
-	if err != nil {
-		return
-	}
-	serialized := string(normalized)
-	if tool := state.toolsByID[detail.ID]; tool != nil {
-		tool.block.ThoughtSignature = &serialized
-	} else {
-		state.pendingReasoningDetails[detail.ID] = serialized
-	}
+	return details
 }
 
-func (state *completionsStreamState) applyPendingReasoningDetail(tool *completionsToolState) {
-	if tool.block.ID == "" {
-		return
+func validOpenAIReasoningDetail(raw json.RawMessage) bool {
+	var d map[string]json.RawMessage
+	if json.Unmarshal(raw, &d) != nil || d == nil {
+		return false
 	}
-	if detail, ok := state.pendingReasoningDetails[tool.block.ID]; ok {
-		tool.block.ThoughtSignature = &detail
-		delete(state.pendingReasoningDetails, tool.block.ID)
+	kind, _ := rawJSONString(d["type"])
+	keys := []string{"id", "format"}
+	if kind == "reasoning.text" {
+		keys = append(keys, "signature")
+	}
+	for _, key := range keys {
+		if value, ok := d[key]; ok {
+			if string(value) == "null" && key != "format" {
+				continue
+			}
+			if _, ok := rawJSONString(value); !ok {
+				return false
+			}
+		}
+	}
+	if value, ok := d["index"]; ok {
+		var n float64
+		if json.Unmarshal(value, &n) != nil || string(value) == "null" {
+			return false
+		}
+	}
+	field := map[string]string{"reasoning.text": "text", "reasoning.summary": "summary", "reasoning.encrypted": "data"}[kind]
+	_, ok := rawJSONString(d[field])
+	return field != "" && ok
+}
+
+func (state *completionsStreamState) consumeReasoningDetail(raw json.RawMessage, emit func(ai.AssistantMessageEvent) error) error {
+	if !validOpenAIReasoningDetail(raw) {
+		return nil
+	}
+	if state.thinking == nil {
+		signature := ""
+		state.thinking = &ai.ThinkingContent{ThinkingSignature: &signature}
+		state.output.Content = append(state.output.Content, state.thinking)
+		state.thinkingIndex = len(state.output.Content) - 1
+		if err := emit(ai.ThinkingStartEvent{ContentIndex: state.thinkingIndex, Partial: state.output}); err != nil {
+			return err
+		}
+	}
+	normalized, _ := ai.NormalizeJSONStringifyJSON(raw)
+	var current map[string]json.RawMessage
+	_ = json.Unmarshal(normalized, &current)
+	kind, _ := rawJSONString(current["type"])
+	if len(state.reasoningDetails) > 0 && (kind == "reasoning.text" || kind == "reasoning.summary") {
+		index := len(state.reasoningDetails) - 1
+		var previous map[string]json.RawMessage
+		_ = json.Unmarshal(state.reasoningDetails[index], &previous)
+		priorKind, _ := rawJSONString(previous["type"])
+		if priorKind == kind {
+			field := "text"
+			if kind == "reasoning.summary" {
+				field = "summary"
+			}
+			a, _ := rawJSONString(previous[field])
+			b, _ := rawJSONString(current[field])
+			previous[field], _ = jsonwire.MarshalString(a + b)
+			for _, key := range []string{"signature", "id", "format", "index"} {
+				if key == "signature" && kind != "reasoning.text" {
+					continue
+				}
+				prior, exists := previous[key]
+				if !exists || string(prior) == "null" || ((key == "signature" || key == "format") && string(prior) == `""`) {
+					if next, ok := current[key]; ok {
+						previous[key] = next
+					}
+				}
+			}
+			// Existing JSON member order comes from the provider replay metadata.
+			var ordered []string
+			dec := json.NewDecoder(bytes.NewReader(state.reasoningDetails[index]))
+			_, _ = dec.Token()
+			for dec.More() {
+				k, _ := dec.Token()
+				var ignored json.RawMessage
+				_ = dec.Decode(&ignored)
+				ordered = append(ordered, k.(string))
+			}
+			values := map[string]any{}
+			for k, v := range previous {
+				values[k] = v
+			}
+			for _, k := range []string{"signature", "id", "format", "index"} {
+				if _, ok := previous[k]; ok {
+					found := false
+					for _, old := range ordered {
+						found = found || old == k
+					}
+					if !found {
+						ordered = append(ordered, k)
+					}
+				}
+			}
+			state.reasoningDetails[index], _ = marshalOpenAICompletionsObjectWithKeys(values, ordered)
+			return nil
+		}
+	}
+	state.reasoningDetails = append(state.reasoningDetails, normalized)
+	return nil
+}
+
+func (state *completionsStreamState) applyReasoningDetails() {
+	if state.thinking != nil && len(state.reasoningDetails) > 0 {
+		encoded, _ := ai.Marshal(state.reasoningDetails)
+		signature := string(encoded)
+		state.thinking.ThinkingSignature = &signature
 	}
 }
 
 func (state *completionsStreamState) finishBlocks(emit func(ai.AssistantMessageEvent) error) error {
+	state.applyReasoningDetails()
 	// Upstream queues the complete end-event batch before its async consumer
 	// resumes, so even earlier end events observe finalized tool-call blocks.
 	finalCustomDeltas := make(map[*ai.ToolCall]string)
@@ -1818,6 +1954,7 @@ func (state *completionsStreamState) finishBlocks(emit func(ai.AssistantMessageE
 }
 
 func (state *completionsStreamState) clearScratch() {
+	state.applyReasoningDetails()
 	for block, tool := range state.toolStates {
 		block.PartialArgs = nil
 		block.StreamIndex = nil
@@ -1838,7 +1975,10 @@ func parseOpenAICompletionsUsage(raw json.RawMessage, model *ai.Model) ai.Usage 
 	_ = json.Unmarshal(raw, &usage)
 	promptTokens, _ := rawJSONInt64(usage["prompt_tokens"])
 	completionTokens, _ := rawJSONInt64(usage["completion_tokens"])
-	promptCacheHit, _ := rawJSONInt64(usage["prompt_cache_hit_tokens"])
+	promptCacheHit, ok := rawJSONInt64(usage["prompt_cache_hit_tokens"])
+	if !ok {
+		promptCacheHit, _ = rawJSONInt64(usage["cached_tokens"])
+	}
 	var promptDetails map[string]json.RawMessage
 	_ = json.Unmarshal(usage["prompt_tokens_details"], &promptDetails)
 	cacheRead := promptCacheHit

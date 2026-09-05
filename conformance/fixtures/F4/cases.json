@@ -72,7 +72,7 @@
     {
       "name": "strip-bom-absent",
       "operation": "strip-bom",
-      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:stripBom",
+      "upstreamCase": "packages/coding-agent/src/utils/text.ts:splitBom",
       "content": "hello\n",
       "expected": {
         "bom": "",

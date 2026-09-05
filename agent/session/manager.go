@@ -75,9 +75,15 @@ type managerOptions struct {
 	initialID          *string
 	parentSession      *string
 	harnessRepo        harness.SessionRepo
+	entries            []*FileEntry
 }
 
 type Option func(*managerOptions)
+
+// WithEntries restores externally held entries into an in-memory session.
+func WithEntries(entries []*FileEntry) Option {
+	return func(options *managerOptions) { options.entries = entries }
+}
 
 func WithClock(clock Clock) Option {
 	return func(options *managerOptions) {
@@ -282,8 +288,31 @@ func InMemory(cwd string, options ...Option) (*SessionManager, error) {
 		return nil, err
 	}
 	manager := newManager(resolvedCWD, "", false, resolved)
+	entries := make([]*FileEntry, 0, len(resolved.entries))
+	for _, entry := range resolved.entries {
+		copied, err := cloneJSONStringifiedFileEntry(entry)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, copied)
+	}
+	if len(resolved.entries) > 0 {
+		if header := findHeader(resolved.entries); header != nil && header.Header != nil {
+			manager.fileEntries = entries
+			manager.sessionID = header.Header.ID
+			if _, err := MigrateSessionEntries(manager.fileEntries, manager.entryIDGenerator); err != nil {
+				return nil, err
+			}
+			manager.buildIndexLocked()
+			return manager, nil
+		}
+	}
 	if _, err := manager.newSessionLocked(&NewSessionOptions{ID: resolved.initialID, ParentSession: resolved.parentSession}); err != nil {
 		return nil, err
+	}
+	if len(resolved.entries) > 0 {
+		manager.fileEntries = append(manager.fileEntries, entries...)
+		manager.buildIndexLocked()
 	}
 	return manager, nil
 }
@@ -1220,6 +1249,10 @@ func (manager *SessionManager) BranchWithSummary(
 ) (string, error) {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
+	fromID := "root"
+	if manager.leafID != nil {
+		fromID = *manager.leafID
+	}
 	if manager.harnessStorage != nil {
 		if branchFromID != nil {
 			if _, ok := manager.harnessStorage.Entry(*branchFromID); !ok {
@@ -1243,10 +1276,7 @@ func (manager *SessionManager) BranchWithSummary(
 		return "", err
 	}
 	entry.ParentID = cloneString(branchFromID)
-	entry.FromID = "root"
-	if branchFromID != nil {
-		entry.FromID = *branchFromID
-	}
+	entry.FromID = fromID
 	entry.Summary = summary
 	if err := applyOptionalEntryFields(&entry, options); err != nil {
 		return "", err

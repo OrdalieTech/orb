@@ -151,7 +151,7 @@ var directRules = []rule{
 	{"xiaomi-token-plan-cn", "xiaomi-token-plan-cn", ai.APIOpenAICompletions, "https://token-plan-cn.xiaomimimo.com/v1"},
 	{"xiaomi-token-plan-sgp", "xiaomi-token-plan-sgp", ai.APIOpenAICompletions, "https://token-plan-sgp.xiaomimimo.com/v1"},
 	{"zai-coding-plan", "zai", ai.APIOpenAICompletions, "https://api.z.ai/api/coding/paas/v4"},
-	{"zai-coding-plan", "zai-coding-cn", ai.APIOpenAICompletions, "https://open.bigmodel.cn/api/coding/paas/v4"},
+	{"zhipuai-coding-plan", "zai-coding-cn", ai.APIOpenAICompletions, "https://open.bigmodel.cn/api/coding/paas/v4"},
 }
 
 // Generate converts the aggregated source listings. Radius is deliberately absent.
@@ -167,6 +167,22 @@ func Generate(sources Sources) (map[string]map[string]ai.Model, error) {
 	addBaseten(result, source["baseten"])
 	addQwenTokenPlanIndividual(result, source["alibaba-token-plan"])
 	addCloudflareGateway(result, source["cloudflare-ai-gateway"])
+	for id, raw := range source["cloudflare-workers-ai"].Models {
+		if raw.ToolCall {
+			model := normalizedModel("workers-ai/"+id, raw.Name, raw, ai.APIOpenAICompletions, "cloudflare-ai-gateway", "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/compat")
+			model.Compat = mustCompatJSON(ai.OpenAICompletionsCompat{SendSessionAffinityHeaders: ptr(true)})
+			upsert(result, model)
+		}
+	}
+	for _, provider := range []string{"zai", "zai-coding-cn"} {
+		for id, model := range result[provider] {
+			if ref, ok := source["zai"].Models[id]; ok {
+				model.Cost = modelCostWithTiers(ref)
+				model.Cost.Tiers = nil
+				result[provider][id] = model
+			}
+		}
+	}
 	addOpenCode(result, source["opencode"], "opencode", "https://opencode.ai/zen")
 	addOpenCode(result, source["opencode-go"], "opencode-go", "https://opencode.ai/zen/go")
 	addCopilot(result, source["github-copilot"])
@@ -183,6 +199,7 @@ func Generate(sources Sources) (map[string]map[string]ai.Model, error) {
 	addCodex(result)
 	addAntLing(result)
 	addMissingOpenAI(result)
+	upsert(result, ai.Model{ID: "deepseek-v4-flash-vision-exp", Name: "DeepSeek V4 Flash Vision Exp", API: ai.APIOpenAICompletions, Provider: "deepseek", BaseURL: "https://api.deepseek.com", Reasoning: true, Input: ai.InputModalities{ai.InputText, ai.InputImage}, Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: .14, Output: .28, CacheRead: .0028}}, ContextWindow: 1000000, MaxTokens: 384000})
 	addAzure(result)
 	addProviderAliases(result)
 	for _, models := range result {
@@ -191,6 +208,7 @@ func Generate(sources Sources) (map[string]map[string]ai.Model, error) {
 			models[id] = model
 		}
 	}
+	applyAnthropicFallbackMetadata(result["anthropic"])
 	return result, nil
 }
 
@@ -317,7 +335,7 @@ func addRule(result map[string]map[string]ai.Model, source sourceProvider, item 
 			id, name = "qwen3.8-max", "Qwen3.8 Max"
 		}
 		model := normalizedModel(id, name, raw, item.api, item.provider, item.baseURL)
-		if item.provider == "fireworks" && strings.Contains(id, "glm-5p2") {
+		if item.provider == "fireworks" && strings.Contains(id, "glm-") {
 			model.API = ai.APIOpenAICompletions
 			model.BaseURL = "https://api.fireworks.ai/inference/v1"
 			applyModelsDevReasoningOptionMetadata(&model, raw.ReasoningOptions)
@@ -342,7 +360,7 @@ func include(item rule, id string, model sourceModel) bool {
 	if !model.ToolCall {
 		return false
 	}
-	if item.provider == "together" && model.Status == "deprecated" {
+	if (item.provider == "together" || item.provider == "xiaomi" || strings.HasPrefix(item.provider, "xiaomi-token-plan-")) && model.Status == "deprecated" {
 		return false
 	}
 	if item.provider == "amazon-bedrock" && (strings.HasPrefix(id, "ai21.jamba") || strings.HasPrefix(id, "mistral.mistral-7b-instruct-v0")) {
@@ -382,7 +400,21 @@ func normalizedModel(id, name string, raw sourceModel, api ai.API, provider, bas
 	}
 	cost := ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: raw.Cost.Input, Output: raw.Cost.Output, CacheRead: raw.Cost.CacheRead, CacheWrite: raw.Cost.CacheWrite}}
 	model := ai.Model{ID: id, Name: name, API: api, Provider: ai.ProviderID(provider), BaseURL: baseURL, Reasoning: raw.Reasoning, Input: input, Cost: cost, ContextWindow: contextWindow, MaxTokens: maxTokens}
-	applyModelsDevReasoningOptionMetadata(&model, raw.ReasoningOptions)
+	if provider == "zai" || provider == "zai-coding-cn" || isQwenTokenPlanProvider(provider) {
+		model.ThinkingLevelMap = effortThinkingLevelMap(raw.ReasoningOptions)
+		if (provider == "zai" || provider == "zai-coding-cn") && model.ThinkingLevelMap != nil && (id == "glm-5.2" || id == "glm-5.2-highspeed") {
+			(*model.ThinkingLevelMap)[ai.ModelThinkingOff] = ptr("none")
+		}
+		if isQwenTokenPlanProvider(provider) && model.ThinkingLevelMap == nil && (id == "glm-5" || id == "glm-5.1") {
+			values := thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingHigh: "high", ai.ModelThinkingMax: "max"})
+			for _, level := range []ai.ModelThinkingLevel{ai.ModelThinkingMinimal, ai.ModelThinkingLow, ai.ModelThinkingMedium, ai.ModelThinkingXHigh} {
+				values[level] = nil
+			}
+			model.ThinkingLevelMap = &values
+		}
+	} else {
+		applyModelsDevReasoningOptionMetadata(&model, raw.ReasoningOptions)
+	}
 	return model
 }
 
@@ -417,6 +449,7 @@ func addBaseten(result map[string]map[string]ai.Model, source sourceProvider) {
 		model := normalizedModel(key, raw.Name, raw, ai.APIOpenAICompletions, "baseten", "https://inference.baseten.co/v1")
 		switch {
 		case isGLM52:
+			model.Input = ai.InputModalities{ai.InputText}
 			values := thinkingValues(map[ai.ModelThinkingLevel]string{
 				ai.ModelThinkingOff: "none", ai.ModelThinkingHigh: "high", ai.ModelThinkingMax: "max",
 			})
@@ -436,8 +469,8 @@ func addBaseten(result map[string]map[string]ai.Model, source sourceProvider) {
 // QWEN_TOKEN_PLAN_INDIVIDUAL_MODEL_IDS: the Individual plan reuses the
 // international source and endpoint with a narrower catalog.
 var qwenTokenPlanIndividualModelIDs = []string{
-	"deepseek-v4-flash-0731", "deepseek-v4-pro", "glm-5.2",
-	"qwen3.6-flash", "qwen3.7-max", "qwen3.7-plus", "qwen3.8-max",
+	"deepseek-v4-flash-0731", "deepseek-v4-pro", "deepseek-v4-pro-0813", "glm-5.2",
+	"qwen3.6-flash", "qwen3.7-max", "qwen3.7-plus", "qwen3.8-flash", "qwen3.8-max",
 }
 
 // addQwenTokenPlanIndividual filters the alibaba-token-plan source down to the
@@ -528,7 +561,7 @@ func addCopilot(result map[string]map[string]ai.Model, source sourceProvider) {
 		api := ai.APIOpenAICompletions
 		if isCopilotClaude(key) {
 			api = ai.APIAnthropicMessages
-		} else if strings.HasPrefix(key, "gpt-5") || strings.HasPrefix(key, "oswe") || strings.HasPrefix(key, "mai-") {
+		} else if strings.HasPrefix(key, "grok-") || strings.HasPrefix(key, "gpt-5") || strings.HasPrefix(key, "oswe") || strings.HasPrefix(key, "mai-") {
 			api = ai.APIOpenAIResponses
 		}
 		model := normalizedModel(key, raw.Name, raw, api, "github-copilot", "https://api.individual.githubcopilot.com")
@@ -540,7 +573,7 @@ func addCopilot(result map[string]map[string]ai.Model, source sourceProvider) {
 }
 
 func isCopilotClaude(id string) bool {
-	for _, family := range []string{"claude-haiku-", "claude-sonnet-", "claude-opus-"} {
+	for _, family := range []string{"claude-haiku-", "claude-sonnet-", "claude-opus-", "claude-fable-"} {
 		if tail, ok := strings.CutPrefix(id, family); ok {
 			return strings.HasPrefix(tail, "4") || strings.HasPrefix(tail, "5")
 		}
@@ -563,16 +596,13 @@ func modelCostWithTiers(raw sourceModel) ai.ModelCost {
 }
 
 func addXAI(result map[string]map[string]ai.Model, source sourceProvider) {
-	excluded := map[string]bool{"grok-3": true, "grok-3-fast": true, "grok-4.20-0309-non-reasoning": true, "grok-4.20-0309-reasoning": true, "grok-code-fast-1": true}
+	excluded := map[string]bool{"grok-3": true, "grok-3-fast": true, "grok-4.20-0309-non-reasoning": true, "grok-4.20-0309-reasoning": true, "grok-code-fast-1": true, "grok-build-0.1": true}
 	for _, key := range sortedKeys(source.Models) {
 		raw := source.Models[key]
 		if !raw.ToolCall || excluded[key] {
 			continue
 		}
-		api := ai.APIOpenAICompletions
-		if key == "grok-4.5" {
-			api = ai.APIOpenAIResponses
-		}
+		api := ai.APIOpenAIResponses
 		model := normalizedModel(key, raw.Name, raw, api, "xai", "https://api.x.ai/v1")
 		upsert(result, model)
 	}
@@ -664,8 +694,12 @@ func addOpenRouter(result map[string]map[string]ai.Model, listing []byte) error 
 			ID                  string   `json:"id"`
 			Name                string   `json:"name"`
 			SupportedParameters []string `json:"supported_parameters"`
-			ContextLength       float64  `json:"context_length"`
-			Architecture        struct {
+			Reasoning           *struct {
+				Mandatory        bool      `json:"mandatory"`
+				SupportedEfforts []*string `json:"supported_efforts"`
+			} `json:"reasoning"`
+			ContextLength float64 `json:"context_length"`
+			Architecture  struct {
 				Modality string `json:"modality"`
 			} `json:"architecture"`
 			Pricing struct {
@@ -702,9 +736,28 @@ func addOpenRouter(result map[string]map[string]ai.Model, listing []byte) error 
 		if maxTokens == 0 {
 			maxTokens = 4096
 		}
+		api, baseURL := ai.APIOpenAICompletions, "https://openrouter.ai/api/v1"
+		if strings.HasPrefix(model.ID, "anthropic/") && !strings.HasSuffix(model.ID, ":batch") {
+			api = ai.APIAnthropicMessages
+			baseURL = "https://openrouter.ai/api"
+		}
+		var thinking *map[ai.ModelThinkingLevel]*string
+		if model.Reasoning != nil {
+			thinking = effortThinkingLevelMap([]sourceReasoningOption{{Type: "effort", Values: model.Reasoning.SupportedEfforts}})
+			if thinking != nil {
+				if model.Reasoning.Mandatory {
+					(*thinking)[ai.ModelThinkingOff] = nil
+				} else {
+					(*thinking)[ai.ModelThinkingOff] = ptr("none")
+				}
+			} else if model.Reasoning.Mandatory {
+				values := map[ai.ModelThinkingLevel]*string{ai.ModelThinkingOff: nil}
+				thinking = &values
+			}
+		}
 		upsert(result, ai.Model{
-			ID: model.ID, Name: model.Name, API: ai.APIOpenAICompletions, Provider: "openrouter",
-			BaseURL:   "https://openrouter.ai/api/v1",
+			ID: model.ID, Name: model.Name, API: api, Provider: "openrouter", ThinkingLevelMap: thinking,
+			BaseURL:   baseURL,
 			Reasoning: slices.Contains(model.SupportedParameters, "reasoning"),
 			Input:     input,
 			Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{

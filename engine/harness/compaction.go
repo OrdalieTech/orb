@@ -461,21 +461,32 @@ func Compact(
 	customInstructions string,
 	thinkingLevel ai.ModelThinkingLevel,
 ) (*CompactionResult, error) {
+	return compact(ctx, preparation, model, complete, customInstructions, thinkingLevel, nil)
+}
+
+// CompactProduct follows the coding-agent summary policy; Compact retains the standalone harness contract.
+func CompactProduct(ctx context.Context, preparation *CompactionPreparation, model *ai.Model, complete CompleteFunc, customInstructions string, thinkingLevel ai.ModelThinkingLevel, sessionID *string) (*CompactionResult, error) {
+	return compact(ctx, preparation, model, complete, customInstructions, thinkingLevel, &productSummaryOptions{sessionID: sessionID})
+}
+
+type productSummaryOptions struct{ sessionID *string }
+
+func compact(ctx context.Context, preparation *CompactionPreparation, model *ai.Model, complete CompleteFunc, customInstructions string, thinkingLevel ai.ModelThinkingLevel, product *productSummaryOptions) (*CompactionResult, error) {
 	var summary string
 	var summaryUsage ai.Usage
 	if preparation.IsSplitTurn && len(preparation.TurnPrefixMessages) > 0 {
 		history := "No prior history."
 		var historyUsage *ai.Usage
 		if len(preparation.MessagesToSummarize) > 0 {
-			generated, err := GenerateSummaryWithUsage(ctx, preparation.MessagesToSummarize, model, complete,
-				preparation.Settings.ReserveTokens, customInstructions, preparation.PreviousSummary, thinkingLevel)
+			generated, err := generateSummaryWithUsage(ctx, preparation.MessagesToSummarize, model, complete,
+				preparation.Settings.ReserveTokens, customInstructions, preparation.PreviousSummary, thinkingLevel, product)
 			if err != nil {
 				return nil, err
 			}
 			history, historyUsage = generated.Text, &generated.Usage
 		}
 		prefix, err := generateTurnPrefixSummary(ctx, preparation.TurnPrefixMessages, model, complete,
-			preparation.Settings.ReserveTokens, thinkingLevel)
+			preparation.Settings.ReserveTokens, thinkingLevel, product)
 		if err != nil {
 			return nil, err
 		}
@@ -485,8 +496,8 @@ func Compact(
 			summaryUsage = combineUsage(*historyUsage, prefix.Usage)
 		}
 	} else {
-		generated, err := GenerateSummaryWithUsage(ctx, preparation.MessagesToSummarize, model, complete,
-			preparation.Settings.ReserveTokens, customInstructions, preparation.PreviousSummary, thinkingLevel)
+		generated, err := generateSummaryWithUsage(ctx, preparation.MessagesToSummarize, model, complete,
+			preparation.Settings.ReserveTokens, customInstructions, preparation.PreviousSummary, thinkingLevel, product)
 		if err != nil {
 			return nil, err
 		}
@@ -535,6 +546,10 @@ func GenerateSummaryWithUsage(
 	previousSummary *string,
 	thinkingLevel ai.ModelThinkingLevel,
 ) (*SummaryResult, error) {
+	return generateSummaryWithUsage(ctx, messages, model, complete, reserveTokens, customInstructions, previousSummary, thinkingLevel, nil)
+}
+
+func generateSummaryWithUsage(ctx context.Context, messages engine.AgentMessages, model *ai.Model, complete CompleteFunc, reserveTokens int64, customInstructions string, previousSummary *string, thinkingLevel ai.ModelThinkingLevel, product *productSummaryOptions) (*SummaryResult, error) {
 	base := SummarizationPrompt
 	if previousSummary != nil && *previousSummary != "" {
 		base = UpdateSummarizationPrompt
@@ -547,19 +562,22 @@ func GenerateSummaryWithUsage(
 		prompt += "<previous-summary>\n" + *previousSummary + "\n</previous-summary>\n\n"
 	}
 	prompt += base
-	return runSummary(ctx, prompt, model, complete, minTokenLimit(reserveTokens*8/10, model), thinkingLevel)
+	return runSummary(ctx, prompt, model, complete, minTokenLimit(reserveTokens*8/10, model), thinkingLevel, product)
 }
 
 //nolint:staticcheck // CompactionError messages match upstream capitalization.
-func generateTurnPrefixSummary(ctx context.Context, messages engine.AgentMessages, model *ai.Model, complete CompleteFunc, reserveTokens int64, thinkingLevel ai.ModelThinkingLevel) (*SummaryResult, error) {
+func generateTurnPrefixSummary(ctx context.Context, messages engine.AgentMessages, model *ai.Model, complete CompleteFunc, reserveTokens int64, thinkingLevel ai.ModelThinkingLevel, product *productSummaryOptions) (*SummaryResult, error) {
 	prompt := "<conversation>\n" + SerializeConversation(messages) + "\n</conversation>\n\n" + TurnPrefixSummarizationPrompt
-	result, err := runSummary(ctx, prompt, model, complete, minTokenLimit(reserveTokens/2, model), thinkingLevel)
+	result, err := runSummary(ctx, prompt, model, complete, minTokenLimit(reserveTokens/2, model), thinkingLevel, product)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil, err
 		}
 		if err.Error() == "Summarization aborted" {
 			return nil, errors.New("Turn prefix summarization aborted")
+		}
+		if product != nil && err.Error() == "Summarization attempted to call a tool" {
+			return nil, errors.New("Turn prefix summarization attempted to call a tool")
 		}
 		if strings.HasPrefix(err.Error(), "Summarization failed:") {
 			return nil, errors.New("Turn prefix summarization failed:" + strings.TrimPrefix(err.Error(), "Summarization failed:"))
@@ -570,7 +588,7 @@ func generateTurnPrefixSummary(ctx context.Context, messages engine.AgentMessage
 }
 
 //nolint:staticcheck // CompactionError messages match upstream capitalization.
-func runSummary(ctx context.Context, prompt string, model *ai.Model, complete CompleteFunc, maxTokens float64, thinkingLevel ai.ModelThinkingLevel) (*SummaryResult, error) {
+func runSummary(ctx context.Context, prompt string, model *ai.Model, complete CompleteFunc, maxTokens float64, thinkingLevel ai.ModelThinkingLevel, product *productSummaryOptions) (*SummaryResult, error) {
 	if model == nil || complete == nil {
 		return nil, errors.New("Summarization failed: no model or completion function")
 	}
@@ -584,11 +602,11 @@ func runSummary(ctx context.Context, prompt string, model *ai.Model, complete Co
 		level := ai.ThinkingLevel(thinkingLevel)
 		options.Reasoning = &level
 	}
-	response, err := CompleteSimpleWithRetries(ctx, complete, model, request, options, nil, nil)
+	response, err := completeSummary(ctx, complete, model, request, options, nil, nil, product)
 	if err != nil {
 		return nil, fmt.Errorf("Summarization failed: %w", err)
 	}
-	if response.StopReason == ai.StopReasonAborted {
+	if product == nil && response.StopReason == ai.StopReasonAborted {
 		if response.ErrorMessage != nil && *response.ErrorMessage != "" {
 			return nil, errors.New(*response.ErrorMessage)
 		}
@@ -600,6 +618,16 @@ func runSummary(ctx context.Context, prompt string, model *ai.Model, complete Co
 			message = *response.ErrorMessage
 		}
 		return nil, errors.New("Summarization failed: " + message)
+	}
+	if product != nil {
+		if response.StopReason == ai.StopReasonLength {
+			return nil, errors.New("Summarization failed: generation hit the token cap and the summary is incomplete")
+		}
+		for _, block := range response.Content {
+			if _, ok := block.(*ai.ToolCall); ok {
+				return nil, errors.New("Summarization attempted to call a tool")
+			}
+		}
 	}
 	var texts []string
 	for _, block := range response.Content {
@@ -1333,4 +1361,22 @@ func orderedToolCallArguments(call *ai.ToolCall) []string {
 		arguments = append(arguments, key+"="+string(value))
 	}
 	return arguments
+}
+
+func completeSummary(ctx context.Context, complete CompleteFunc, model *ai.Model, request ai.Context, options *ai.SimpleStreamOptions, retry *ai.RetryPolicy, callbacks *ai.RetryCallbacks, product *productSummaryOptions) (*ai.AssistantMessage, error) {
+	if product == nil {
+		return CompleteSimpleWithRetries(ctx, complete, model, request, options, retry, callbacks)
+	}
+	copied := *options
+	retention := ai.CacheRetentionNone
+	copied.CacheRetention = &retention
+	copied.SessionID = product.sessionID
+	if copied.SessionID == nil {
+		id, err := ai.UUIDv7()
+		if err != nil {
+			return nil, err
+		}
+		copied.SessionID = &id
+	}
+	return ai.RetryAssistantCall(ctx, func() (*ai.AssistantMessage, error) { return complete(ctx, model, request, &copied) }, retry, callbacks)
 }

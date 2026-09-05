@@ -311,7 +311,18 @@ func TestV0821CatalogDeltasMatchPublishedPackage(t *testing.T) {
 			t.Errorf("generated catalog is missing v0.82.1 model %s/%s", want.Provider, want.ID)
 			continue
 		}
-		// Preserve the historical fixture and overlay only metadata added by v0.83.
+		// Preserve historical samples; release-extracted metadata supersedes the old sample where present.
+		var release struct {
+			Cases []struct {
+				Model ai.Model `json:"model"`
+			} `json:"cases"`
+		}
+		runner.LoadJSON(t, "F2", "compat-models.json", &release)
+		for _, candidate := range release.Cases {
+			if candidate.Model.Provider == want.Provider && candidate.Model.ID == want.ID {
+				want = candidate.Model
+			}
+		}
 		switch string(want.Provider) + "/" + want.ID {
 		case "github-copilot/claude-opus-5":
 			(*want.ThinkingLevelMap)[ai.ModelThinkingMinimal] = ptr("low")
@@ -480,7 +491,7 @@ func TestCATM3OpenRouterCatalogFromLiveListing(t *testing.T) {
 	if !ok {
 		t.Fatal("missing openrouter/anthropic/claude-sonnet-4.5")
 	}
-	if model.API != ai.APIOpenAICompletions || model.BaseURL != "https://openrouter.ai/api/v1" || !model.Reasoning {
+	if model.API != ai.APIAnthropicMessages || model.BaseURL != "https://openrouter.ai/api" || !model.Reasoning {
 		t.Fatalf("openrouter model shape = %#v", model)
 	}
 	if model.Cost.Input != 3 || model.Cost.Output != 15 || model.Cost.CacheRead != 0.3 || model.Cost.CacheWrite != 3.75 {

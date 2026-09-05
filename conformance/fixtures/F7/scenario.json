@@ -67,6 +67,12 @@
       "expectedLineCount": 1
     },
     {
+      "name": "clear-empty-queue",
+      "input": "{\"id\":\"clear-1\",\"type\":\"clear_queue\"}",
+      "framing": "lf",
+      "expectedLineCount": 2
+    },
+    {
       "name": "empty-entries",
       "input": "{\"id\":\"entries-1\",\"type\":\"get_entries\"}",
       "framing": "lf",

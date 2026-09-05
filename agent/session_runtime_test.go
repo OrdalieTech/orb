@@ -1269,8 +1269,8 @@ func TestSessionRuntimeTargetedCompactionAndBranchSummaryCancellation(t *testing
 		select {
 		case summaryContext := <-started:
 			runtime.Abort()
-			if summaryContext.Err() != nil {
-				t.Fatalf("ordinary abort cancelled compaction: %v", summaryContext.Err())
+			if summaryContext.Err() == nil {
+				t.Fatal("ordinary abort did not cancel compaction")
 			}
 		case <-time.After(time.Second):
 			t.Fatal("compaction did not start")
@@ -1313,8 +1313,8 @@ func TestSessionRuntimeTargetedCompactionAndBranchSummaryCancellation(t *testing
 		select {
 		case summaryContext := <-started:
 			runtime.Abort()
-			if summaryContext.Err() != nil {
-				t.Fatalf("ordinary abort cancelled branch summary: %v", summaryContext.Err())
+			if summaryContext.Err() == nil {
+				t.Fatal("ordinary abort did not cancel branch summary")
 			}
 		case <-time.After(time.Second):
 			t.Fatal("branch summary did not start")
@@ -1410,7 +1410,7 @@ func TestNavigateTreeCreatesBranchSummary(t *testing.T) {
 	first, _ := manager.AppendMessage(userMessage("first"))
 	_, _ = manager.AppendMessage(runtimeAssistant(provider, "first answer", 10))
 	_, _ = manager.AppendMessage(userMessage("second"))
-	_, _ = manager.AppendMessage(runtimeAssistant(provider, "second answer", 20))
+	previousLeaf, _ := manager.AppendMessage(runtimeAssistant(provider, "second answer", 20))
 	runtime.syncAgentMessages()
 	result, err := runtime.NavigateTree(context.Background(), first, NavigateTreeOptions{Summarize: true, Label: "return"})
 	if err != nil {
@@ -1419,7 +1419,7 @@ func TestNavigateTreeCreatesBranchSummary(t *testing.T) {
 	if result.Cancelled || result.EditorText != "first" || result.SummaryEntry == nil || result.SummaryEntry.Type != "branch_summary" {
 		t.Fatalf("result = %#v", result)
 	}
-	if result.SummaryEntry.ParentID != nil || result.SummaryEntry.FromID != "root" {
+	if result.SummaryEntry.ParentID != nil || result.SummaryEntry.FromID != previousLeaf {
 		t.Fatalf("summary location = %#v", result.SummaryEntry)
 	}
 	if label := manager.GetLabel(result.SummaryEntry.ID); label == nil || *label != "return" {

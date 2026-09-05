@@ -14,12 +14,12 @@
     "durationMs": 0,
     "runId": "run-fixed-persist-agent-sessions",
     "tokenUsage": {
-      "input": 2280,
+      "input": 2281,
       "output": 13,
-      "total": 5024,
+      "total": 5026,
       "cost": 0,
       "cacheRead": 451,
-      "cacheWrite": 2280
+      "cacheWrite": 2281
     }
   },
   "error": null,
@@ -36,13 +36,13 @@
       "id": "run-fixed-persist-agent-sessions:0",
       "label": "keeper",
       "result": "Kept the marker safe.",
-      "tokens": 5024,
+      "tokens": 5026,
       "tokenUsage": {
-        "input": 2280,
+        "input": 2281,
         "output": 13,
         "cacheRead": 451,
-        "cacheWrite": 2280,
-        "total": 5024,
+        "cacheWrite": 2281,
+        "total": 5026,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -50,12 +50,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 2280,
+        "input": 2281,
         "output": 13,
-        "total": 5024,
+        "total": 5026,
         "cost": 0,
         "cacheRead": 451,
-        "cacheWrite": 2280
+        "cacheWrite": 2281
       }
     }
   ],
@@ -235,11 +235,11 @@
             "provider": "faux",
             "model": "faux-model",
             "usage": {
-              "input": 1356,
+              "input": 1357,
               "output": 7,
               "cacheRead": 0,
-              "cacheWrite": 1356,
-              "totalTokens": 2719,
+              "cacheWrite": 1357,
+              "totalTokens": 2721,
               "cost": {
                 "input": 0,
                 "output": 0,

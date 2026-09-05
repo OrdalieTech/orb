@@ -1,6 +1,469 @@
 {
   "cases": [
     {
+      "name": "completions-reasoning-replay-0",
+      "api": "openai-completions",
+      "model": {
+        "id": "gpt-fixture-completions",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-completions",
+        "provider": "openai",
+        "baseUrl": "https://api.openai.com/v1",
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "[{\"type\":\"reasoning.text\",\"text\":\"plan\",\"signature\":\"sig\",\"id\":null,\"format\":\"provider\",\"index\":0},{\"type\":\"reasoning.encrypted\",\"data\":\"\"}]"
+              },
+              {
+                "type": "text",
+                "text": "answer"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "openai",
+            "model": "gpt-fixture-completions",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "user",
+            "content": "continue",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "headers": {
+          "authorization": "Bearer fixture-key",
+          "content-type": "application/json"
+        },
+        "body": "{\"model\":\"gpt-fixture-completions\",\"messages\":[{\"role\":\"assistant\",\"content\":\"answer\",\"reasoning_details\":[{\"type\":\"reasoning.text\",\"text\":\"plan\",\"signature\":\"sig\",\"id\":null,\"format\":\"provider\",\"index\":0},{\"type\":\"reasoning.encrypted\",\"data\":\"\"}]},{\"role\":\"user\",\"content\":\"continue\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}"
+      }
+    },
+    {
+      "name": "completions-reasoning-replay-1",
+      "api": "openai-completions",
+      "model": {
+        "id": "gpt-fixture-completions",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-completions",
+        "provider": "openai",
+        "baseUrl": "https://api.openai.com/v1",
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "unrecognized_provider_key"
+              },
+              {
+                "type": "text",
+                "text": "answer"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "openai",
+            "model": "gpt-fixture-completions",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "user",
+            "content": "continue",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "headers": {
+          "authorization": "Bearer fixture-key",
+          "content-type": "application/json"
+        },
+        "body": "{\"model\":\"gpt-fixture-completions\",\"messages\":[{\"role\":\"assistant\",\"content\":\"answer\"},{\"role\":\"user\",\"content\":\"continue\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}"
+      }
+    },
+    {
+      "name": "completions-reasoning-replay-2",
+      "api": "openai-completions",
+      "model": {
+        "id": "gpt-fixture-completions",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-completions",
+        "provider": "openai",
+        "baseUrl": "https://api.openai.com/v1",
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "plan",
+                "thinkingSignature": "[{\"type\":\"reasoning.encrypted\",\"data\":1}]"
+              },
+              {
+                "type": "text",
+                "text": "answer"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "openai",
+            "model": "gpt-fixture-completions",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121
+          },
+          {
+            "role": "user",
+            "content": "continue",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "headers": {
+          "authorization": "Bearer fixture-key",
+          "content-type": "application/json"
+        },
+        "body": "{\"model\":\"gpt-fixture-completions\",\"messages\":[{\"role\":\"assistant\",\"content\":\"answer\"},{\"role\":\"user\",\"content\":\"continue\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}"
+      }
+    },
+    {
+      "name": "completions-budget-thinking_token_budget",
+      "api": "openai-completions",
+      "model": {
+        "id": "gpt-fixture-completions",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-completions",
+        "provider": "openai",
+        "baseUrl": "https://api.openai.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "compat": {
+          "thinkingTokenBudgetField": "thinking_token_budget",
+          "vllmPriority": -2,
+          "thinkingFormat": "chat-template",
+          "chatTemplateKwargs": {
+            "budget": {
+              "$var": "thinking.budget"
+            }
+          }
+        }
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "solve",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "reasoningEffort": "high",
+        "maxTokens": 4096,
+        "thinkingBudgets": {
+          "high": 8192
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "headers": {
+          "authorization": "Bearer fixture-key",
+          "content-type": "application/json"
+        },
+        "body": "{\"model\":\"gpt-fixture-completions\",\"messages\":[{\"role\":\"user\",\"content\":\"solve\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":4096,\"priority\":-2,\"chat_template_kwargs\":{\"budget\":3072},\"thinking_token_budget\":3072}"
+      }
+    },
+    {
+      "name": "completions-budget-thinking_budget",
+      "api": "openai-completions",
+      "model": {
+        "id": "gpt-fixture-completions",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-completions",
+        "provider": "openai",
+        "baseUrl": "https://api.openai.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "compat": {
+          "thinkingTokenBudgetField": "thinking_budget",
+          "vllmPriority": -2,
+          "thinkingFormat": "chat-template",
+          "chatTemplateKwargs": {
+            "budget": {
+              "$var": "thinking.budget"
+            }
+          }
+        }
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "solve",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "reasoningEffort": "high",
+        "maxTokens": 4096,
+        "thinkingBudgets": {
+          "high": 8192
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "headers": {
+          "authorization": "Bearer fixture-key",
+          "content-type": "application/json"
+        },
+        "body": "{\"model\":\"gpt-fixture-completions\",\"messages\":[{\"role\":\"user\",\"content\":\"solve\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":4096,\"priority\":-2,\"chat_template_kwargs\":{\"budget\":3072},\"thinking_budget\":3072}"
+      }
+    },
+    {
+      "name": "completions-budget-thinking_budget_tokens",
+      "api": "openai-completions",
+      "model": {
+        "id": "gpt-fixture-completions",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-completions",
+        "provider": "openai",
+        "baseUrl": "https://api.openai.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "compat": {
+          "thinkingTokenBudgetField": "thinking_budget_tokens",
+          "vllmPriority": -2,
+          "thinkingFormat": "chat-template",
+          "chatTemplateKwargs": {
+            "budget": {
+              "$var": "thinking.budget"
+            }
+          }
+        }
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "solve",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "reasoningEffort": "high",
+        "maxTokens": 4096,
+        "thinkingBudgets": {
+          "high": 8192
+        }
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "headers": {
+          "authorization": "Bearer fixture-key",
+          "content-type": "application/json"
+        },
+        "body": "{\"model\":\"gpt-fixture-completions\",\"messages\":[{\"role\":\"user\",\"content\":\"solve\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":4096,\"priority\":-2,\"chat_template_kwargs\":{\"budget\":3072},\"thinking_budget_tokens\":3072}"
+      }
+    },
+    {
+      "name": "responses-omit-max-output-tokens",
+      "api": "openai-responses",
+      "model": {
+        "id": "gpt-fixture-responses",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-responses",
+        "provider": "openai",
+        "baseUrl": "https://api.openai.com/v1",
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "compat": {
+          "supportsMaxOutputTokens": false
+        }
+      },
+      "context": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "hello",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "fixture-key",
+        "maxTokens": 4096
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/responses",
+        "headers": {
+          "authorization": "Bearer fixture-key",
+          "content-type": "application/json"
+        },
+        "body": "{\"model\":\"gpt-fixture-responses\",\"input\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hello\"}]}],\"stream\":true,\"store\":false}"
+      }
+    },
+    {
       "name": "completions-together-reasoning-compat",
       "api": "openai-completions",
       "model": {
@@ -115,18 +578,20 @@
           "text"
         ],
         "cost": {
-          "input": 0,
-          "output": 0,
-          "cacheRead": 0,
+          "input": 1.4,
+          "output": 4.4,
+          "cacheRead": 0.26,
           "cacheWrite": 0
         },
         "contextWindow": 1000000,
         "maxTokens": 131072,
         "thinkingLevelMap": {
+          "off": "none",
           "minimal": null,
-          "low": "high",
-          "medium": "high",
+          "low": null,
+          "medium": null,
           "high": "high",
+          "xhigh": null,
           "max": "max"
         },
         "compat": {

@@ -84,7 +84,7 @@ func LoadModelConfig(path string) (*ModelConfig, error) {
 	if err != nil {
 		return failedModelConfig(fmt.Sprintf("Failed to load models.json: %v\n\nFile: %s", err, normalized)), nil
 	}
-	data = stripJSONComments(data)
+	data = stripJSONComments(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")))
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	var raw json.RawMessage
 	if err := decoder.Decode(&raw); err != nil {

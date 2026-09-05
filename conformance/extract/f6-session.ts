@@ -699,6 +699,26 @@ async function buildExportFixture(upstreamRoot: string, exportModule: ExportModu
   }
 }
 
+export async function generateExportThemeFixture(upstreamRoot: string, outputRoot: string): Promise<void> {
+  const exportModule = await import(pathToFileURL(path.join(upstreamRoot, "packages/coding-agent/src/core/export-html/index.ts")).href) as ExportModule;
+  const input = await readFile(new URL("../../agent/session/exporthtml/testdata/session.jsonl", import.meta.url), "utf8");
+  const root = await mkdtemp(path.join(os.tmpdir(), "orb-export-themes-"));
+  try {
+    const inputPath = path.join(root, "session.jsonl");
+    await writeFile(inputPath, input);
+    const hashes: Record<string, string> = {};
+    for (const themeName of ["dark", "light"]) {
+      const outputPath = path.join(root, `${themeName}.html`);
+      await exportModule.exportFromFile(inputPath, { outputPath, themeName });
+      hashes[themeName] = sha256(await readFile(outputPath));
+    }
+    await mkdir(path.join(outputRoot, "F6"), { recursive: true });
+    await writeFile(path.join(outputRoot, "F6/export-themes.json"), `${JSON.stringify({inputSHA256: sha256(input), hashes}, null, 2)}\n`);
+  } finally {
+    await rm(root, {recursive: true, force: true});
+  }
+}
+
 export async function generateF6(upstreamRoot: string, outputRoot: string, upstreamCommit: string): Promise<void> {
   const sessionSource = "packages/coding-agent/src/core/session-manager.ts";
   const exportSource = "packages/coding-agent/src/core/export-html/index.ts";
@@ -726,6 +746,7 @@ export async function generateF6(upstreamRoot: string, outputRoot: string, upstr
     pathToFileURL(path.join(upstreamRoot, exportSource)).href
   )) as ExportModule;
   const exportFixture = await buildExportFixture(upstreamRoot, exportModule);
+  await generateExportThemeFixture(upstreamRoot, outputRoot);
   const familyDir = path.join(outputRoot, "F6");
   await mkdir(familyDir, { recursive: true });
   const manifest = {
@@ -733,7 +754,7 @@ export async function generateF6(upstreamRoot: string, outputRoot: string, upstr
     upstreamCommit,
     generator: "conformance/extract/f6-session.ts",
     source: `${sessionSource} + ${exportSource}`,
-    files: ["cases.json", "write.jsonl", "projection.json", "tree-export.json"],
+    files: ["cases.json", "write.jsonl", "projection.json", "tree-export.json", "export-themes.json", "release.json"],
   };
 
   await writeFile(path.join(familyDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);

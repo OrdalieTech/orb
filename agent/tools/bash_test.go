@@ -41,7 +41,7 @@ func (function bashOperationsFunc) Exec(
 }
 
 func TestBashToolSchemaBytesMatchUpstreamTypeBox(t *testing.T) {
-	want := `{"type":"object","required":["command"],"properties":{"command":{"type":"string","description":"Bash command to execute"},"timeout":{"type":"number","description":"Timeout in seconds (optional, no default timeout)"}}}`
+	want := `{"type":"object","required":["command"],"properties":{"command":{"type":"string","description":"Shell command to execute"},"timeout":{"type":"number","description":"Timeout in seconds (optional, no default timeout)"}}}`
 	if got := string(NewBashTool(t.TempDir(), nil).Spec().Parameters); got != want {
 		t.Fatalf("schema = %s, want %s", got, want)
 	}

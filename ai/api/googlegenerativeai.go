@@ -110,9 +110,9 @@ func StreamSimpleGoogleGenerativeAI(
 			Thinking:      &GoogleThinkingOptions{Enabled: false},
 		})
 	}
-	effort := clampGoogleReasoning(model, *options.Reasoning)
-	if effort == ai.ThinkingLevel(ai.ModelThinkingOff) {
-		effort = ai.ThinkingHigh
+	effort, err := resolveGoogleThinkingLevel(model, clampGoogleReasoning(model, *options.Reasoning))
+	if err != nil {
+		return nil, err
 	}
 	thinking := &GoogleThinkingOptions{Enabled: true}
 	if isGemini3Pro(model) || isGemini3Flash(model) || isGemma4(model) {
@@ -400,7 +400,8 @@ func googleHeaderPresent(headers http.Header, name string) bool {
 }
 
 func googleProviderHeaders(model *ai.Model, options *ai.StreamOptions) http.Header {
-	custom := make(ai.ProviderHeaders)
+	ua := piUserAgent()
+	custom := ai.ProviderHeaders{"User-Agent": &ua}
 	if model.Headers != nil {
 		for name, value := range *model.Headers {
 			copy := value
@@ -816,4 +817,26 @@ func googleThinkingBudget(model *ai.Model, effort ai.ThinkingLevel, custom *ai.T
 		return &budget
 	}
 	return nil
+}
+
+func resolveGoogleThinkingLevel(model *ai.Model, level ai.ThinkingLevel) (ai.ThinkingLevel, error) {
+	if level == ai.ThinkingLevel(ai.ModelThinkingOff) {
+		return ai.ThinkingHigh, nil
+	}
+	resolved := level
+	mapping := "undefined"
+	if model.ThinkingLevelMap != nil {
+		if value, ok := (*model.ThinkingLevelMap)[ai.ModelThinkingLevel(level)]; ok {
+			mapping = "null"
+			if value != nil {
+				mapping = *value
+				resolved = ai.ThinkingLevel(strings.ToLower(*value))
+			}
+		}
+	}
+	switch resolved {
+	case ai.ThinkingMinimal, ai.ThinkingLow, ai.ThinkingMedium, ai.ThinkingHigh:
+		return resolved, nil
+	}
+	return "", fmt.Errorf("Unsupported Google thinking level mapping for %s/%s: %s -> %s", model.Provider, model.ID, level, mapping) //nolint:staticcheck // Upstream diagnostic text is observable.
 }

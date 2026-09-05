@@ -17,8 +17,8 @@ func TestBuiltinCatalogAndCorrections(t *testing.T) {
 	for _, model := range models {
 		providers[model.Provider] = struct{}{}
 	}
-	if len(models) != 1129 || len(providers) != 39 {
-		t.Fatalf("snapshot catalog has %d providers/%d models, want 39/1129", len(providers), len(models))
+	if len(models) != 1135 || len(providers) != 39 {
+		t.Fatalf("snapshot catalog has %d providers/%d models, want 39/1135", len(providers), len(models))
 	}
 	for _, model := range models {
 		if model.Provider == "radius" {

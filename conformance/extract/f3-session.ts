@@ -17,6 +17,7 @@ interface Scenario {
   settings: Record<string, unknown>;
   queue?: { steering: string[]; followUp: string[] };
   compactAfterFirstPrompt?: boolean;
+  customDuringTool?: boolean;
   responses: unknown[];
   expectedExitCode: number;
   requiredEventTypes: string[];
@@ -85,6 +86,14 @@ export async function generateF3Session(
       const response = (content: unknown, options: Record<string, unknown> = {}) =>
         faux.fauxAssistantMessage(content, { timestamp: FIXED_NOW, ...options });
       const definitions: Omit<Scenario, "systemPrompt">[] = [
+        {
+          name: "custom-during-tool", trace: "custom-during-tool.jsonl", fixedNow: FIXED_NOW,
+          initialMessage: "run fixture", messages: [], tokenSize: 64,
+          settings: { compaction: { enabled: false }, retry: { enabled: false } },
+          customDuringTool: true,
+          responses: [response([{ type: "toolCall", id: "fixture-call", name: "fixture", arguments: {} }], { stopReason: "toolUse" }), response("done")],
+          expectedExitCode: 0, requiredEventTypes: ["turn_end", "agent_settled"],
+        },
         {
           name: "multiple-prompts",
           trace: "multiple-prompts.jsonl",
@@ -228,6 +237,11 @@ export async function generateF3Session(
           initialActiveToolNames: [],
         });
         const originalPrompt = session.prompt.bind(session);
+        if (definition.customDuringTool) {
+          agent.state.tools = [{ name: "fixture", label: "fixture", description: "fixture", parameters: { type: "object", properties: {} },
+            execute: async () => { await session.sendCustomMessage({ customType: "note", content: "queued", display: true }, { triggerTurn: false }); return { content: [{ type: "text", text: "result" }] }; },
+          }];
+        }
         let promptIndex = 0;
         session.prompt = async (text: string, options?: unknown) => {
           const index = promptIndex++;
@@ -289,6 +303,17 @@ export async function generateF3Session(
         const scenario: Scenario = { ...definition, systemPrompt: session.systemPrompt };
         scenarios.push(scenario);
         await writeFile(path.join(familyDir, definition.trace), output);
+        if (definition.name === "multiple-prompts") {
+          settings.setDefaultModelAndProvider("configured", "default");
+          settings.setDefaultThinkingLevel("high");
+          const snapshot = () => ({ provider: settings.getDefaultProvider(), model: settings.getDefaultModel(), thinking: settings.getDefaultThinkingLevel() });
+          await session.setModel(model);
+          session.setThinkingLevel("low");
+          const transient = snapshot();
+          await session.setModel(model, { persist: true });
+          session.setThinkingLevel("low", { persist: true });
+          await writeFile(path.join(familyDir, "model-controls.json"), JSON.stringify({ transient, persisted: snapshot() }, null, 2) + "\n");
+        }
       }
 
       const traceFiles = scenarios.map((scenario) => scenario.trace);
@@ -300,7 +325,7 @@ export async function generateF3Session(
           "packages/coding-agent/src/modes/print-mode.ts + packages/coding-agent/src/core/agent-session.ts + packages/ai/src/providers/faux.ts",
         format: "agent-session-event-jsonl-v1",
         canonicalized: ["session.timestamp"],
-        files: ["scenarios.json", ...traceFiles],
+        files: ["scenarios.json", "model-controls.json", ...traceFiles],
       };
       await writeFile(path.join(familyDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
       await writeFile(

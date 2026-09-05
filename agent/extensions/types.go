@@ -34,6 +34,7 @@ const (
 	EventSessionBeforeFork     EventType = "session_before_fork"
 	EventSessionBeforeCompact  EventType = "session_before_compact"
 	EventSessionCompact        EventType = "session_compact"
+	EventSessionCompactFailed  EventType = "session_compact_failed"
 	EventSessionShutdown       EventType = "session_shutdown"
 	EventSessionBeforeTree     EventType = "session_before_tree"
 	EventSessionTree           EventType = "session_tree"
@@ -45,6 +46,8 @@ const (
 	EventAgentStart            EventType = "agent_start"
 	EventAgentEnd              EventType = "agent_end"
 	EventAgentSettled          EventType = "agent_settled"
+	EventUIPromptStart         EventType = "ui_prompt_start"
+	EventUIPromptEnd           EventType = "ui_prompt_end"
 	EventTurnStart             EventType = "turn_start"
 	EventTurnEnd               EventType = "turn_end"
 	EventMessageStart          EventType = "message_start"
@@ -200,6 +203,38 @@ type SessionCompactEvent struct {
 }
 
 func (SessionCompactEvent) Type() EventType { return EventSessionCompact }
+
+type SessionCompactFailedEvent struct {
+	Reason        CompactionReason
+	ErrorMessage  *string `json:"errorMessage,omitempty"`
+	Aborted       bool
+	WillRetry     bool
+	FromExtension bool
+}
+
+func (SessionCompactFailedEvent) Type() EventType { return EventSessionCompactFailed }
+
+type UIPromptKind string
+
+const (
+	UIPromptSelect  UIPromptKind = "select"
+	UIPromptConfirm UIPromptKind = "confirm"
+	UIPromptInput   UIPromptKind = "input"
+	UIPromptEditor  UIPromptKind = "editor"
+	UIPromptCustom  UIPromptKind = "custom"
+)
+
+type UIPromptStartEvent struct {
+	Reason string
+	Kind   UIPromptKind
+	Title  *string `json:"title,omitempty"`
+}
+
+func (UIPromptStartEvent) Type() EventType { return EventUIPromptStart }
+
+type UIPromptEndEvent UIPromptStartEvent
+
+func (UIPromptEndEvent) Type() EventType { return EventUIPromptEnd }
 
 type SessionShutdownReason string
 

@@ -1596,7 +1596,7 @@ func (mode *InteractiveMode) dispatchSlashCommand(name, args string) bool {
 
 func slashCommandAllowsArguments(name string) bool {
 	switch name {
-	case "model", "export", "import", "name", "login", "compact":
+	case "model", "thinking", "export", "import", "name", "login", "compact":
 		return true
 	default:
 		return false
@@ -1624,7 +1624,7 @@ func isInteractiveCommandName(name string) bool {
 
 func slashCommandClearsEditorFirst(name string) bool {
 	switch name {
-	case "model", "scoped-models", "clone", "login", "new", "compact", "reload", "quit":
+	case "model", "thinking", "scoped-models", "clone", "login", "new", "compact", "reload", "quit":
 		return true
 	default:
 		return false
@@ -1660,6 +1660,8 @@ func (mode *InteractiveMode) resolveSlashCommand(name, args string) (slashComman
 		return slashCommandAction{name: "showSettingsSelector", arguments: noArguments, run: mode.showSettingsSelector}, true
 	case "model":
 		return slashCommandAction{name: "handleModelCommand", arguments: []string{args}, run: func() { mode.handleModelCommand(args) }}, true
+	case "thinking":
+		return slashCommandAction{name: "handleThinkingCommand", arguments: []string{args}, run: func() { mode.handleThinkingCommand(args) }}, true
 	case "scoped-models":
 		return slashCommandAction{name: "showModelsSelector", arguments: noArguments, run: mode.showModelsSelector}, true
 	case "export":
@@ -1875,6 +1877,76 @@ func (mode *InteractiveMode) handleNameCommand(text string) {
 		mode.chat.AddChild(tui.NewText(theme.FG("dim", "Session name set: "+resolved), 1, 0, nil))
 	}
 	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) handleThinkingCommand(args string) {
+	levels := mode.session.AvailableThinkingLevels()
+	args = strings.TrimSpace(args)
+	if args != "" {
+		for _, level := range levels {
+			if strings.EqualFold(args, string(level)) {
+				mode.selectThinkingLevel(level, false)
+				return
+			}
+		}
+		available := make([]string, len(levels))
+		for i, level := range levels {
+			available[i] = string(level)
+		}
+		mode.showError(fmt.Errorf("Unknown thinking level %q. Available levels: %s.", args, strings.Join(available, ", "))) //nolint:staticcheck // Upstream diagnostic text is observable.
+		return
+	}
+	current := mode.session.State().ThinkingLevel
+	go func() {
+		_, _, err := mode.interactiveUI.Custom(mode.authenticationContext(), func(_ extensions.UIHost, _ extensions.Theme, _ extensions.Keybindings, done extensions.CustomDone) (extensions.Component, error) {
+			items := make([]tui.SelectItem, len(levels))
+			selected := 0
+			for i, level := range levels {
+				items[i] = tui.SelectItem{Value: string(level), Label: string(level)}
+				if level == current {
+					selected = i
+				}
+			}
+			choose := func(level string, persist bool) {
+				mode.selectThinkingLevel(ai.ModelThinkingLevel(level), persist)
+				done(nil)
+			}
+			selector := &thinkingSelector{ExtensionSelectorComponent: NewExtensionSelectorItemsComponent("Thinking level · Ctrl+S to set as default", items, func(level string) { choose(level, false) }, func() { done(nil) }, nil), choose: choose}
+			selector.selected = selected
+			selector.updateList()
+			return selector, nil
+		}, &extensions.CustomOptions{Overlay: true})
+		if err != nil {
+			mode.showError(err)
+		}
+	}()
+}
+
+func (mode *InteractiveMode) selectThinkingLevel(level ai.ModelThinkingLevel, persist bool) {
+	if err := mode.session.SetThinkingLevelWithOptions(level, agent.ModelMutationOptions{Persist: persist}); err != nil {
+		mode.showError(err)
+		return
+	}
+	prefix := "Thinking level: "
+	if persist {
+		prefix = "Default thinking level: "
+	}
+	mode.showStatusMessage(prefix + string(level))
+}
+
+type thinkingSelector struct {
+	*ExtensionSelectorComponent
+	choose func(string, bool)
+}
+
+func (selector *thinkingSelector) HandleInput(event tui.KeyEvent) {
+	if tui.MatchesKey(event.Raw, "ctrl+s") {
+		if selector.selected >= 0 && selector.selected < len(selector.options) {
+			selector.choose(selector.options[selector.selected].Value, true)
+		}
+		return
+	}
+	selector.ExtensionSelectorComponent.HandleInput(event)
 }
 
 func (mode *InteractiveMode) handleModelCommand(args string) {

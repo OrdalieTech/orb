@@ -161,7 +161,8 @@ type BedrockToolResultContentBlock struct {
 }
 
 type BedrockReasoningContent struct {
-	ReasoningText BedrockReasoningText `json:"reasoningText"`
+	ReasoningText   *BedrockReasoningText `json:"reasoningText,omitempty"`
+	RedactedContent []byte                `json:"redactedContent,omitempty"`
 }
 
 type BedrockReasoningText struct {
@@ -249,10 +250,14 @@ func StreamBedrockConverseWithOptions(
 		// Captured after Send so fail can still correlate a mid-stream failure:
 		// exceptions delivered as stream events carry no HTTP metadata of their own.
 		responseRequestID := ""
+		var processor *bedrockStreamProcessor
 
 		// Upstream bedrock-converse-stream.ts never applies timeoutMs; only the
 		// caller's abort signal (the parent ctx) can end the stream early.
 		fail := func(err error) {
+			if processor != nil {
+				processor.flushRedactedBlocks()
+			}
 			clearBedrockStreamingFields(output)
 			reason := ai.StopReasonError
 			if ctx.Err() != nil {
@@ -307,6 +312,9 @@ func StreamBedrockConverseWithOptions(
 		responseRequestID = normalizeBedrockDiagnosticValue(response.RequestID())
 		if streamOptions.OnResponse != nil && response.Status() != 0 {
 			headers := map[string]string{}
+			if raw, ok := response.(interface{ Headers() map[string]string }); ok {
+				headers = raw.Headers()
+			}
 			if requestID := response.RequestID(); requestID != "" {
 				headers["x-amzn-requestid"] = requestID
 			}
@@ -316,7 +324,7 @@ func StreamBedrockConverseWithOptions(
 			}
 		}
 
-		processor := bedrockStreamProcessor{model: model, output: output, buffers: make(streamBuffers), sink: func(event ai.AssistantMessageEvent) bool {
+		processor = &bedrockStreamProcessor{model: model, output: output, buffers: make(streamBuffers), sink: func(event ai.AssistantMessageEvent) bool {
 			return yield(event, nil)
 		}}
 		for {
@@ -352,6 +360,8 @@ func StreamBedrockConverseWithOptions(
 			fail(errors.New(message))
 			return
 		}
+		processor.flushRedactedBlocks()
+		clearBedrockStreamingFields(output)
 		yield(ai.DoneEvent{Reason: output.StopReason, Message: output}, nil)
 	}, nil
 }
@@ -635,6 +645,15 @@ func convertBedrockAssistantContent(content ai.AssistantContent, model *ai.Model
 				ToolUseID: block.ID, Name: block.Name, Input: sanitizeBedrockDocument(block.Arguments),
 			}})
 		case *ai.ThinkingContent:
+			if block.Redacted != nil && *block.Redacted {
+				if block.ThinkingSignature != nil {
+					raw, err := base64.StdEncoding.DecodeString(*block.ThinkingSignature)
+					if err == nil && len(raw) > 0 {
+						result = append(result, BedrockContentBlock{ReasoningContent: &BedrockReasoningContent{RedactedContent: raw}})
+					}
+				}
+				continue
+			}
 			thinking, ok := bedrockNonBlankText(block.Thinking)
 			if !ok {
 				continue
@@ -648,7 +667,7 @@ func convertBedrockAssistantContent(content ai.AssistantContent, model *ai.Model
 				signature = block.ThinkingSignature
 			}
 			result = append(result, BedrockContentBlock{ReasoningContent: &BedrockReasoningContent{
-				ReasoningText: BedrockReasoningText{Text: thinking, Signature: signature},
+				ReasoningText: &BedrockReasoningText{Text: thinking, Signature: signature},
 			}})
 		}
 	}
@@ -959,6 +978,7 @@ type bedrockStreamItem struct {
 	ToolInput          *string
 	ReasoningText      *string
 	ReasoningSignature *string
+	RedactedContent    []byte
 	StopReason         string
 	InputTokens        int64
 	OutputTokens       int64
@@ -980,6 +1000,8 @@ type bedrockTransport interface {
 }
 
 type bedrockBlock struct {
+	redactedChunks []byte
+
 	content ai.AssistantContentBlock
 	index   int
 }
@@ -1079,7 +1101,7 @@ func (processor *bedrockStreamProcessor) handleDelta(item bedrockStreamItem) {
 		}
 		return
 	}
-	if item.ReasoningText != nil || item.ReasoningSignature != nil {
+	if item.ReasoningText != nil || item.ReasoningSignature != nil || len(item.RedactedContent) > 0 {
 		if content == nil {
 			index := item.ContentBlockIndex
 			empty := ""
@@ -1087,14 +1109,20 @@ func (processor *bedrockStreamProcessor) handleDelta(item bedrockStreamItem) {
 			if item.ReasoningText != nil {
 				block.Thinking = *item.ReasoningText
 			}
-			if item.ReasoningSignature != nil && *item.ReasoningSignature != "" {
+			if item.ReasoningSignature != nil && *item.ReasoningSignature != "" && (block.Redacted == nil || !*block.Redacted) {
 				value := *item.ReasoningSignature
 				block.ThinkingSignature = &value
 			}
 			processor.output.Content = append(processor.output.Content, block)
 			position = len(processor.output.Content) - 1
 			processor.blocks = append(processor.blocks, bedrockBlock{content: block, index: item.ContentBlockIndex})
+			if len(item.RedactedContent) > 0 {
+				processor.appendRedactedChunk(position, item.RedactedContent)
+			}
 			processor.stopped = !processor.sink(ai.ThinkingStartEvent{ContentIndex: position, Partial: processor.output})
+			if len(item.RedactedContent) > 0 && !processor.stopped {
+				processor.stopped = !processor.sink(ai.ThinkingDeltaEvent{ContentIndex: position, Delta: "[Reasoning redacted]", Partial: processor.output})
+			}
 			if item.ReasoningText != nil && *item.ReasoningText != "" && !processor.stopped {
 				processor.stopped = !processor.sink(ai.ThinkingDeltaEvent{ContentIndex: position, Delta: *item.ReasoningText, Partial: processor.output})
 			}
@@ -1103,7 +1131,7 @@ func (processor *bedrockStreamProcessor) handleDelta(item bedrockStreamItem) {
 				block.Thinking = processor.buffers.at(item.ContentBlockIndex).append(block.Thinking, *item.ReasoningText)
 				processor.stopped = !processor.sink(ai.ThinkingDeltaEvent{ContentIndex: position, Delta: *item.ReasoningText, Partial: processor.output})
 			}
-			if item.ReasoningSignature != nil && *item.ReasoningSignature != "" {
+			if item.ReasoningSignature != nil && *item.ReasoningSignature != "" && (block.Redacted == nil || !*block.Redacted) {
 				value := *item.ReasoningSignature
 				if block.ThinkingSignature != nil {
 					value = *block.ThinkingSignature + value
@@ -1112,6 +1140,16 @@ func (processor *bedrockStreamProcessor) handleDelta(item bedrockStreamItem) {
 			}
 		}
 	}
+	if len(item.RedactedContent) > 0 && content != nil {
+		if block, ok := content.(*ai.ThinkingContent); ok {
+			newlyRedacted := block.Redacted == nil || !*block.Redacted
+			processor.appendRedactedChunk(position, item.RedactedContent)
+			if newlyRedacted && !processor.stopped {
+				processor.stopped = !processor.sink(ai.ThinkingDeltaEvent{ContentIndex: position, Delta: "[Reasoning redacted]", Partial: processor.output})
+			}
+		}
+	}
+
 }
 
 func (processor *bedrockStreamProcessor) handleStop(streamIndex int) {
@@ -1124,6 +1162,7 @@ func (processor *bedrockStreamProcessor) handleStop(streamIndex int) {
 		block.Index = nil
 		processor.stopped = !processor.sink(ai.TextEndEvent{ContentIndex: position, Content: block.Text, Partial: processor.output})
 	case *ai.ThinkingContent:
+		processor.flushRedactedBlock(position)
 		block.Index = nil
 		processor.stopped = !processor.sink(ai.ThinkingEndEvent{ContentIndex: position, Content: block.Thinking, Partial: processor.output})
 	case *ai.ToolCall:
@@ -1596,11 +1635,15 @@ func (transport *awsBedrockTransport) Send(ctx context.Context, payload *Bedrock
 		return nil, errors.New("Bedrock ConverseStream returned no stream") //nolint:staticcheck // Provider error text.
 	}
 	status := http.StatusOK
+	headers := map[string]string{}
 	if raw, ok := awsmiddleware.GetRawResponse(output.ResultMetadata).(*smithyhttp.Response); ok && raw != nil && raw.Response != nil {
 		status = raw.StatusCode
+		for name, values := range raw.Header {
+			headers[strings.ToLower(name)] = strings.Join(values, ", ")
+		}
 	}
 	requestID, _ := awsmiddleware.GetRequestIDMetadata(output.ResultMetadata)
-	return &awsBedrockResponse{stream: stream, status: status, requestID: requestID}, nil
+	return &awsBedrockResponse{stream: stream, status: status, requestID: requestID, headers: headers}, nil
 }
 
 type bedrockErrorCapture struct {
@@ -1850,6 +1893,9 @@ func bedrockSDKContentBlock(block BedrockContentBlock) (bedrocktypes.ContentBloc
 		}
 		return &bedrocktypes.ContentBlockMemberToolResult{Value: result}, nil
 	case block.ReasoningContent != nil:
+		if len(block.ReasoningContent.RedactedContent) > 0 {
+			return &bedrocktypes.ContentBlockMemberReasoningContent{Value: &bedrocktypes.ReasoningContentBlockMemberRedactedContent{Value: block.ReasoningContent.RedactedContent}}, nil
+		}
 		text := block.ReasoningContent.ReasoningText.Text
 		return &bedrocktypes.ContentBlockMemberReasoningContent{Value: &bedrocktypes.ReasoningContentBlockMemberReasoningText{Value: bedrocktypes.ReasoningTextBlock{
 			Text: &text, Signature: block.ReasoningContent.ReasoningText.Signature,
@@ -1899,6 +1945,8 @@ func bedrockSDKToolChoice(value any) bedrocktypes.ToolChoice {
 }
 
 type awsBedrockResponse struct {
+	headers map[string]string
+
 	stream    *bedrockruntime.ConverseStreamEventStream
 	status    int
 	requestID string
@@ -1945,6 +1993,8 @@ func convertBedrockSDKEvent(event bedrocktypes.ConverseStreamOutput) bedrockStre
 				item.ReasoningText = &reasoning.Value
 			case *bedrocktypes.ReasoningContentBlockDeltaMemberSignature:
 				item.ReasoningSignature = &reasoning.Value
+			case *bedrocktypes.ReasoningContentBlockDeltaMemberRedactedContent:
+				item.RedactedContent = reasoning.Value
 			}
 		}
 		return item
@@ -1965,4 +2015,43 @@ func convertBedrockSDKEvent(event bedrocktypes.ConverseStreamOutput) bedrockStre
 	default:
 		return bedrockStreamItem{}
 	}
+}
+
+func (processor *bedrockStreamProcessor) flushRedactedBlock(position int) {
+	slot := &processor.blocks[position]
+	if len(slot.redactedChunks) == 0 {
+		return
+	}
+	if block, ok := slot.content.(*ai.ThinkingContent); ok {
+		signature := base64.StdEncoding.EncodeToString(slot.redactedChunks)
+		block.ThinkingSignature = &signature
+		block.RedactedChunks = nil
+	}
+	slot.redactedChunks = nil
+}
+func (processor *bedrockStreamProcessor) flushRedactedBlocks() {
+	for position := range processor.blocks {
+		processor.flushRedactedBlock(position)
+	}
+}
+
+func (response *awsBedrockResponse) Headers() map[string]string { return response.headers }
+
+func (processor *bedrockStreamProcessor) appendRedactedChunk(position int, data []byte) {
+	slot := &processor.blocks[position]
+	block := slot.content.(*ai.ThinkingContent)
+	if block.Redacted == nil || !*block.Redacted {
+		redacted := true
+		empty := ""
+		block.Redacted = &redacted
+		block.ThinkingSignature = &empty
+		block.Thinking += "[Reasoning redacted]"
+	}
+	slot.redactedChunks = append(slot.redactedChunks, data...)
+	object := make(map[string]int, len(data))
+	for index, value := range data {
+		object[strconv.Itoa(index)] = int(value)
+	}
+	encoded, _ := ai.Marshal(object)
+	block.RedactedChunks = append(block.RedactedChunks, encoded)
 }

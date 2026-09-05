@@ -3,6 +3,8 @@
 {"type":"response","command":"parse","success":false,"error":"Failed to parse command: Expected property name or '}' in JSON at position 1 (line 1 column 2)"}
 {"id":"state-1","type":"response","command":"get_state","success":true,"data":{"model":{"id":"faux-1","name":"Faux Model","api":"faux","provider":"faux","baseUrl":"http://localhost:0","reasoning":false,"input":["text","image"],"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"contextWindow":128000,"maxTokens":16384},"thinkingLevel":"off","isStreaming":false,"isCompacting":false,"steeringMode":"one-at-a-time","followUpMode":"one-at-a-time","sessionId":"fixture-rpc-session","autoCompactionEnabled":false,"messageCount":0,"pendingMessageCount":0}}
 {"id":"messages-1","type":"response","command":"get_messages","success":true,"data":{"messages":[]}}
+{"type":"queue_update","steering":[],"followUp":[]}
+{"id":"clear-1","type":"response","command":"clear_queue","success":true,"data":{"steering":[],"followUp":[]}}
 {"id":"entries-1","type":"response","command":"get_entries","success":true,"data":{"entries":[],"leafId":null}}
 {"id":"tree-1","type":"response","command":"get_tree","success":true,"data":{"tree":[],"leafId":null}}
 {"id":"fork-messages-1","type":"response","command":"get_fork_messages","success":true,"data":{"messages":[]}}

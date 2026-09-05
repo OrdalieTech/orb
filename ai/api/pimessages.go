@@ -90,21 +90,22 @@ type PiMessagesPayloadOptions struct {
 }
 
 type piMessagesWireEvent struct {
-	Type             string                   `json:"type"`
-	ContentIndex     int                      `json:"contentIndex,omitempty"`
-	Delta            string                   `json:"delta,omitempty"`
-	Content          string                   `json:"content,omitempty"`
-	ContentSignature *string                  `json:"contentSignature,omitempty"`
-	Redacted         *bool                    `json:"redacted,omitempty"`
-	ID               string                   `json:"id,omitempty"`
-	ToolName         string                   `json:"toolName,omitempty"`
-	ToolCall         *ai.ToolCall             `json:"toolCall,omitempty"`
-	Reason           ai.StopReason            `json:"reason,omitempty"`
-	Usage            *ai.Usage                `json:"usage,omitempty"`
-	ErrorMessage     *string                  `json:"errorMessage,omitempty"`
-	ResponseID       *string                  `json:"responseId,omitempty"`
-	Rewrite          *PiMessagesRewriteImpact `json:"rewrite,omitempty"`
-	Raw              json.RawMessage          `json:"-"`
+	Type                  string                   `json:"type"`
+	ContentIndex          int                      `json:"contentIndex,omitempty"`
+	Delta                 string                   `json:"delta,omitempty"`
+	Content               string                   `json:"content,omitempty"`
+	ContentSignature      *string                  `json:"contentSignature,omitempty"`
+	Redacted              *bool                    `json:"redacted,omitempty"`
+	ID                    string                   `json:"id,omitempty"`
+	ToolName              string                   `json:"toolName,omitempty"`
+	ToolCall              *ai.ToolCall             `json:"toolCall,omitempty"`
+	Reason                ai.StopReason            `json:"reason,omitempty"`
+	Usage                 *ai.Usage                `json:"usage,omitempty"`
+	ErrorMessage          *string                  `json:"errorMessage,omitempty"`
+	ProviderThinkingLevel *string                  `json:"providerThinkingLevel,omitempty"`
+	ResponseID            *string                  `json:"responseId,omitempty"`
+	Rewrite               *PiMessagesRewriteImpact `json:"rewrite,omitempty"`
+	Raw                   json.RawMessage          `json:"-"`
 }
 
 func (event *piMessagesWireEvent) UnmarshalJSON(data []byte) error {
@@ -330,6 +331,7 @@ func (converter *piMessagesEventConverter) convert(wire piMessagesWireEvent) (ai
 			partial.Usage = *wire.Usage
 		}
 		partial.ResponseID = wire.ResponseID
+		partial.ProviderThinkingLevel = wire.ProviderThinkingLevel
 		appendPiMessagesRewriteDiagnostic(partial, wire.Rewrite)
 		return ai.DoneEvent{Reason: wire.Reason, Message: partial}, true, nil
 	case "error":
@@ -339,6 +341,7 @@ func (converter *piMessagesEventConverter) convert(wire piMessagesWireEvent) (ai
 		}
 		partial.ErrorMessage = wire.ErrorMessage
 		partial.ResponseID = wire.ResponseID
+		partial.ProviderThinkingLevel = wire.ProviderThinkingLevel
 		ai.SetAssistantMessageErrorBeforeResponseID(partial, wire.ErrorMessage != nil)
 		appendPiMessagesRewriteDiagnostic(partial, wire.Rewrite)
 		return ai.ErrorEvent{Reason: wire.Reason, Error: partial}, true, nil

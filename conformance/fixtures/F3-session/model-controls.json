@@ -1,0 +1,12 @@
+{
+  "transient": {
+    "provider": "configured",
+    "model": "default",
+    "thinking": "high"
+  },
+  "persisted": {
+    "provider": "faux",
+    "model": "faux-1",
+    "thinking": "low"
+  }
+}

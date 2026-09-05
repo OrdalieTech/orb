@@ -124,7 +124,7 @@ func (tool *writeTool) Execute(
 			return engine.AgentToolResult{}, err
 		}
 		return engine.AgentToolResult{
-			Content: ai.ToolResultContent{&ai.TextContent{Text: fmt.Sprintf("Successfully wrote %d bytes to %s", javascriptUTF16Length(input.Content), input.Path)}},
+			Content: ai.ToolResultContent{&ai.TextContent{Text: fmt.Sprintf("Successfully wrote to %s", input.Path)}},
 		}, nil
 	})
 }

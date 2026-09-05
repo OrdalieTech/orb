@@ -46,14 +46,14 @@ func TestSelfRestrictReadOnly(t *testing.T) {
 		_ = os.Remove(scratch.Name())
 		os.Exit(0)
 	}
-	// The denied probe must sit outside os.TempDir() (writable by design), so
-	// use the package directory, which plain DAC would let us write.
+	// A private child TMPDIR keeps the DAC-writable package directory outside
+	// the temporary write grant, including when the checkout itself is in /tmp.
 	denied, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
 	command := exec.Command(os.Args[0], "-test.run=^TestSelfRestrictReadOnly$")
-	command.Env = append(os.Environ(), "ORB_LANDLOCK_TEST=1", "ORB_LANDLOCK_DENIED="+denied)
+	command.Env = append(os.Environ(), "ORB_LANDLOCK_TEST=1", "ORB_LANDLOCK_DENIED="+denied, "TMPDIR="+t.TempDir())
 	output, err := command.CombinedOutput()
 	if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 2 {
 		t.Skipf("landlock unavailable: %s", output)

@@ -51,7 +51,7 @@ func TestGenerateAppliesPinnedCatalogQuirksWithoutLosingFloatMetadata(t *testing
 		t.Fatal(err)
 	}
 
-	if len(catalog["deepseek"]) != 1 || catalog["deepseek"]["deepseek-v4-flash"].ID == "" {
+	if len(catalog["deepseek"]) != 2 || catalog["deepseek"]["deepseek-v4-flash"].ID == "" {
 		t.Fatalf("DeepSeek filtering = %#v", catalog["deepseek"])
 	}
 	fireworks := catalog["fireworks"]["accounts/fireworks/models/glm-5p2"]
@@ -248,7 +248,7 @@ func TestGitHubCopilotClaudeOpus5Metadata(t *testing.T) {
 	}
 }
 
-func TestQwenTokenPlanReasoningMetadata(t *testing.T) {
+func TestQwenTokenPlanPreservesSourceReasoningMetadata(t *testing.T) {
 	tests := []struct {
 		id     string
 		effort bool
@@ -295,6 +295,10 @@ func TestQwenTokenPlanReasoningMetadata(t *testing.T) {
 				ID: testCase.id, API: ai.APIOpenAICompletions, Provider: "qwen-token-plan",
 				BaseURL:   "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
 				Reasoning: true,
+			}
+			model.ThinkingLevelMap = &testCase.levels
+			if testCase.levels == nil {
+				model.ThinkingLevelMap = nil
 			}
 			applyCatalogMetadata(&model)
 
