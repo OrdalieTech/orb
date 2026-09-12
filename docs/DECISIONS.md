@@ -160,6 +160,7 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 
 | Divergence | Kind | Rationale |
 |---|---|---|
+| Gemini 3 cross-model tool replay | reliability adaptation | Owner-directed production fix (2026-09-12): foreign-model function calls carry Google's documented literal `skip_thought_signature_validator` on the outgoing request only. Same-model signatures and canonical history remain untouched; this deliberately differs from pinned pi's unsigned replay, which Vertex rejects with HTTP 400. |
 | Malformed and colliding provider tool-call recovery | reliability adaptation | owner-directed Hermes-inspired hardening: when a provider declares tool use without emitting a call, orb retries at most three times with non-persisted recovery context; duplicate call pairing IDs are deterministically suffixed before execution so every result remains unambiguous. Canonical pi session and event JSON shapes stay unchanged |
 | Bundled MCP extension | addition | owner requirement; kept out of core |
 | `packages/server` (formerly `packages/orchestrator`) | removed | experimental upstream side product; the v0.81.0 rename does not change the D2 product boundary |
