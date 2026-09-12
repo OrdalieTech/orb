@@ -640,9 +640,13 @@ func googleAssistantParts(model *ai.Model, message *ai.AssistantMessage) ([]Goog
 			if googleRequiresToolCallID(model.ID) {
 				call.ID = block.ID
 			}
-			parts = append(parts, GooglePart{
-				FunctionCall: call, ThoughtSignature: resolveGoogleThoughtSignature(sameProviderAndModel, block.ThoughtSignature),
-			})
+			signature := resolveGoogleThoughtSignature(sameProviderAndModel, block.ThoughtSignature)
+			if !sameProviderAndModel && (isGemini3Pro(model) || isGemini3Flash(model)) {
+				// ponytail: Google's documented cross-model replay sentinel belongs on the wire, never in stored history.
+				value := "skip_thought_signature_validator"
+				signature = &value
+			}
+			parts = append(parts, GooglePart{FunctionCall: call, ThoughtSignature: signature})
 		}
 	}
 	return parts, nil
