@@ -51,7 +51,8 @@ type OpenAIResponsesPayload struct {
 }
 
 type OpenAIPromptCacheOptions struct {
-	Mode string `json:"mode"`
+	Mode string `json:"mode,omitempty"`
+	TTL  string `json:"ttl,omitempty"`
 }
 
 type OpenAIReasoningParams struct {
@@ -242,7 +243,11 @@ func StreamOpenAIResponsesWithOptions(
 		sink := func(event ai.AssistantMessageEvent) bool { return yield(event, nil) }
 		fail := func(err error) {
 			clearResponsesStreamingFields(output)
-			sink(streamFailure(ctx, output, err, "OpenAI API error"))
+			provider := string(model.Provider)
+			if model.Provider == "openai" {
+				provider = "OpenAI"
+			}
+			sink(streamFailure(ctx, output, err, provider+" API error"))
 		}
 		if _, err := resolveOpenAIAPIKey(model, streamOptions); err != nil {
 			fail(err)
@@ -335,8 +340,15 @@ func buildOpenAIResponsesPayload(
 	if err != nil {
 		return nil, compat, err
 	}
-	deferredToolsMode := responsesDeferredToolsMode(compat.supportsAdditionalTools, compat.supportsToolSearch)
-	placement := splitResponsesTools(requestContext, deferredToolsMode != "")
+	transcript := ai.NormalizeContext(requestContext)
+	if !compat.supportsMidConvoSystemMessages {
+		transcript = ai.CollapseSystemMessages(transcript)
+	}
+	requestTools, deferredTools, anchorsAdditions := transcriptToolPlacement(
+		transcript.Messages, compat.supportsAdditionalTools || compat.supportsToolSearch,
+	)
+	requestContext = projectTranscriptContext(transcript, true)
+	placement := responsesToolPlacement{immediate: requestTools, deferred: deferredTools}
 	grammarToolInputProperties, err := createGrammarToolInputProperties(requestContext.Tools, compat.supportsOpenAIGrammarTools)
 	if err != nil {
 		return nil, compat, err
@@ -348,7 +360,8 @@ func buildOpenAIResponsesPayload(
 	input, err := convertResponsesMessagesWithOptions(model, requestContext, placement.deferred, responsesMessageOptions{
 		supportsDeveloperRole:      compat.supportsDeveloperRole,
 		grammarToolInputProperties: grammarToolInputProperties,
-		deferredToolsMode:          deferredToolsMode,
+		deferredToolsMode:          responsesDeferredToolsMode(compat.supportsAdditionalTools, compat.supportsToolSearch),
+		anchorsToolAdditions:       anchorsAdditions,
 		toolOptions:                toolOptions,
 	})
 	if err != nil {
@@ -368,12 +381,14 @@ func buildOpenAIResponsesPayload(
 			payload.PromptCacheKey = &key
 		}
 	}
-	if cacheRetention == ai.CacheRetentionLong && compat.supportsLongCacheRetention {
+	if cacheRetention == ai.CacheRetentionLong && compat.supportsLongCacheRetention && !compat.supportsExplicitPromptCacheMode {
 		retention := "24h"
 		payload.PromptCacheRetention = &retention
 	}
 	if cacheRetention == ai.CacheRetentionNone && compat.supportsExplicitPromptCacheMode {
 		payload.PromptCacheOptions = &OpenAIPromptCacheOptions{Mode: "explicit"}
+	} else if cacheRetention == ai.CacheRetentionLong && compat.supportsLongCacheRetention && compat.supportsExplicitPromptCacheMode {
+		payload.PromptCacheOptions = &OpenAIPromptCacheOptions{TTL: "30m"}
 	}
 	if streamOptions != nil {
 		if streamOptions.MaxTokens != nil && *streamOptions.MaxTokens != 0 && compat.supportsMaxOutputTokens {
@@ -442,6 +457,7 @@ func supportsOffReasoning(model *ai.Model) bool {
 
 type openAIResponsesCompat struct {
 	supportsDeveloperRole           bool
+	supportsMidConvoSystemMessages  bool
 	sessionAffinityFormat           ai.SessionAffinityFormat
 	supportsLongCacheRetention      bool
 	supportsStrictMode              bool
@@ -468,6 +484,9 @@ func getOpenAIResponsesCompat(model *ai.Model) (openAIResponsesCompat, error) {
 	}
 	if raw.SupportsDeveloperRole != nil {
 		compat.supportsDeveloperRole = *raw.SupportsDeveloperRole
+	}
+	if raw.SupportsMidConvoSystemMessages != nil {
+		compat.supportsMidConvoSystemMessages = *raw.SupportsMidConvoSystemMessages
 	}
 	if raw.SessionAffinityFormat != nil {
 		compat.sessionAffinityFormat = *raw.SessionAffinityFormat
@@ -531,64 +550,13 @@ func buildOpenAIResponsesHeaders(
 			}
 		}
 	}
+	addOpenCodeSessionHeader(headers, model, options)
 	return headers
 }
 
 type responsesToolPlacement struct {
 	immediate []ai.Tool
 	deferred  map[string]ai.Tool
-}
-
-func splitResponsesTools(requestContext ai.Context, enabled bool) responsesToolPlacement {
-	unique := make(map[string]ai.Tool)
-	order := make([]string, 0)
-	if requestContext.Tools != nil {
-		for _, tool := range *requestContext.Tools {
-			if _, ok := unique[tool.Name]; !ok {
-				order = append(order, tool.Name)
-			}
-			unique[tool.Name] = tool
-		}
-	}
-	if !enabled {
-		immediate := make([]ai.Tool, 0, len(order))
-		for _, name := range order {
-			immediate = append(immediate, unique[name])
-		}
-		return responsesToolPlacement{immediate: immediate, deferred: map[string]ai.Tool{}}
-	}
-
-	deferredNames := make(map[string]struct{})
-	usedNames := make(map[string]struct{})
-	for _, message := range requestContext.Messages {
-		switch value := message.(type) {
-		case *ai.AssistantMessage:
-			for _, content := range value.Content {
-				if call, ok := content.(*ai.ToolCall); ok {
-					usedNames[call.Name] = struct{}{}
-				}
-			}
-		case *ai.ToolResultMessage:
-			if value.AddedToolNames == nil {
-				continue
-			}
-			for _, name := range *value.AddedToolNames {
-				if _, used := usedNames[name]; !used {
-					deferredNames[name] = struct{}{}
-				}
-			}
-		}
-	}
-	placement := responsesToolPlacement{deferred: make(map[string]ai.Tool)}
-	for _, name := range order {
-		tool := unique[name]
-		if _, deferred := deferredNames[name]; deferred {
-			placement.deferred[name] = tool
-		} else {
-			placement.immediate = append(placement.immediate, tool)
-		}
-	}
-	return placement
 }
 
 type responsesToolOptions struct {
@@ -604,8 +572,9 @@ type responsesMessageOptions struct {
 	grammarToolInputProperties map[string]string
 	// deferredToolsMode is "additional-tools", "tool-search", or "" when the
 	// model cannot receive tools mid-conversation.
-	deferredToolsMode string
-	toolOptions       responsesToolOptions
+	deferredToolsMode    string
+	anchorsToolAdditions bool
+	toolOptions          responsesToolOptions
 }
 
 // responsesDeferredToolsMode picks the input item deferred tools ride on.
@@ -699,6 +668,46 @@ func convertResponsesMessagesWithOptions(
 	messageIndex := 0
 	for _, message := range messages {
 		switch value := message.(type) {
+		case *ai.SystemMessage:
+			if options.anchorsToolAdditions && len(value.ToolsAdded) > 0 {
+				newTools := make([]ai.Tool, 0, len(value.ToolsAdded))
+				for _, tool := range value.ToolsAdded {
+					if deferred, exists := deferredTools[tool.Name]; exists {
+						newTools = append(newTools, deferred)
+					}
+				}
+				if len(newTools) > 0 && options.deferredToolsMode == "additional-tools" {
+					converted, err := convertResponsesToolsWithOptions(newTools, options.toolOptions)
+					if err != nil {
+						return nil, err
+					}
+					result = append(result, responsesAdditionalTools{Type: "additional_tools", Role: "developer", Tools: converted})
+				} else if len(newTools) > 0 && options.deferredToolsMode == "tool-search" {
+					names := make([]string, len(newTools))
+					for index, tool := range newTools {
+						names[index] = tool.Name
+					}
+					callID := "pi_tool_load_" + shortHash(fmt.Sprintf("system:%d:%s", messageIndex, strings.Join(names, ",")))
+					toolOptions := options.toolOptions
+					toolOptions.deferLoading = true
+					converted, err := convertResponsesToolsWithOptions(newTools, toolOptions)
+					if err != nil {
+						return nil, err
+					}
+					result = append(result,
+						responsesToolSearchCall{Type: "tool_search_call", CallID: callID, Execution: "client", Status: "completed", Arguments: responsesToolSearchArguments{Query: strings.Join(names, " "), Limit: len(names)}},
+						responsesToolSearchOutput{Type: "tool_search_output", CallID: callID, Execution: "client", Status: "completed", Tools: converted},
+					)
+				}
+			}
+			text := ai.SystemMessageText(value)
+			if text != "" {
+				role := "system"
+				if model.Reasoning && options.supportsDeveloperRole {
+					role = "developer"
+				}
+				result = append(result, responsesInputMessage{Role: role, Content: sanitizeText(text)})
+			}
 		case *ai.UserMessage:
 			content := make([]any, 0, len(value.Content.Blocks))
 			if value.Content.Text != nil {

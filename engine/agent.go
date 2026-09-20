@@ -146,22 +146,23 @@ type Agent struct {
 
 	state AgentState
 
-	convertToLLM               ConvertToLLMFunc
-	transformContext           TransformContextFunc
-	streamFn                   StreamFn
-	getAPIKey                  GetAPIKeyFunc
-	getRequestAuth             GetRequestAuthFunc
-	getModelHeaders            GetModelHeadersFunc
-	beforeToolCall             BeforeToolCallFunc
-	afterToolCall              AfterToolCallFunc
-	prepareNextTurn            PrepareNextTurnWithoutContextFunc
-	prepareNextTurnWithContext PrepareNextTurnFunc
-	shouldStopAfterTurn        ShouldStopAfterTurnFunc
-	getSteeringMessages        GetQueuedMessagesFunc
-	getFollowUpMessages        GetQueuedMessagesFunc
-	streamOptions              ai.SimpleStreamOptions
-	toolExecution              ToolExecutionMode
-	now                        func() int64
+	convertToLLM                ConvertToLLMFunc
+	transformContext            TransformContextFunc
+	requestSystemPromptOverride *string
+	streamFn                    StreamFn
+	getAPIKey                   GetAPIKeyFunc
+	getRequestAuth              GetRequestAuthFunc
+	getModelHeaders             GetModelHeadersFunc
+	beforeToolCall              BeforeToolCallFunc
+	afterToolCall               AfterToolCallFunc
+	prepareNextTurn             PrepareNextTurnWithoutContextFunc
+	prepareNextTurnWithContext  PrepareNextTurnFunc
+	shouldStopAfterTurn         ShouldStopAfterTurnFunc
+	getSteeringMessages         GetQueuedMessagesFunc
+	getFollowUpMessages         GetQueuedMessagesFunc
+	streamOptions               ai.SimpleStreamOptions
+	toolExecution               ToolExecutionMode
+	now                         func() int64
 
 	steeringMode QueueMode
 	followUpMode QueueMode
@@ -216,6 +217,17 @@ func NewAgent(stream StreamFn, option ...AgentOption) *Agent {
 	if state.Messages == nil {
 		state.Messages = AgentMessages{}
 	}
+	if first := firstSystemMessage(state.Messages); first == nil {
+		tools := make([]ai.Tool, 0, len(state.Tools))
+		for _, tool := range state.Tools {
+			spec := tool.Spec()
+			tools = append(tools, ai.Tool{Name: spec.Name, Description: spec.Description, Parameters: spec.Parameters, ConstrainedSampling: spec.ConstrainedSampling})
+		}
+		prompt := state.SystemPrompt
+		if initial := ai.CreateInitialSystemMessage(&prompt, &tools); initial != nil {
+			state.Messages = append(AgentMessages{initial}, state.Messages...)
+		}
+	}
 	state.IsStreaming = false
 	state.StreamingMessage = nil
 	state.PendingToolCalls = map[string]struct{}{}
@@ -242,6 +254,14 @@ func NewAgent(stream StreamFn, option ...AgentOption) *Agent {
 		steeringMode:               normalizeQueueMode(options.steeringMode),
 		followUpMode:               normalizeQueueMode(options.followUpMode),
 	}
+}
+
+func firstSystemMessage(messages AgentMessages) *ai.SystemMessage {
+	if len(messages) == 0 {
+		return nil
+	}
+	message, _ := messages[0].(*ai.SystemMessage)
+	return message
 }
 
 // Prompt starts a run from a string, one AgentMessage, or AgentMessages. String
@@ -479,7 +499,33 @@ func (agent *Agent) DisplayState() AgentDisplayState {
 
 func (agent *Agent) SetSystemPrompt(prompt string) {
 	agent.mu.Lock()
+	current := ai.CurrentSystemPrompt(agentMessagesToAI(agent.state.Messages))
+	if agent.prepareNextTurn == nil && agent.prepareNextTurnWithContext == nil && current != prompt {
+		updated := false
+		for index, message := range agent.state.Messages {
+			system, ok := message.(*ai.SystemMessage)
+			if !ok {
+				continue
+			}
+			copy := *system
+			copy.Content = ""
+			copy.Sections = nil
+			if !updated {
+				copy.Content = prompt
+				updated = true
+			}
+			agent.state.Messages[index] = &copy
+		}
+	}
 	agent.state.SystemPrompt = prompt
+	agent.mu.Unlock()
+}
+
+// SetRequestSystemPromptOverride projects an exact provider-facing prompt for
+// the next run without changing transcript persistence.
+func (agent *Agent) SetRequestSystemPromptOverride(prompt *string) {
+	agent.mu.Lock()
+	agent.requestSystemPromptOverride = cloneStringPointer(prompt)
 	agent.mu.Unlock()
 }
 
@@ -604,6 +650,7 @@ func (agent *Agent) normalizePromptInput(input any, images []*ai.ImageContent) (
 func (agent *Agent) runPromptMessages(ctx context.Context, messages AgentMessages, skipInitialSteeringPoll bool) error {
 	return agent.runWithLifecycle(ctx, func(runContext context.Context) error {
 		loopContext := agent.contextSnapshot()
+		messages = agent.withInitialSystemPrompt(loopContext, messages)
 		config := agent.loopConfig(skipInitialSteeringPoll)
 		_, err := RunLoop(runContext, messages, loopContext, config, agent.processEvent, agent.StreamFn())
 		return err
@@ -613,10 +660,32 @@ func (agent *Agent) runPromptMessages(ctx context.Context, messages AgentMessage
 func (agent *Agent) runPromptMessagesReserved(active *activeRun, messages AgentMessages, skipInitialSteeringPoll bool) error {
 	return agent.runReserved(active, func(runContext context.Context) error {
 		loopContext := agent.contextSnapshot()
+		messages = agent.withInitialSystemPrompt(loopContext, messages)
 		config := agent.loopConfig(skipInitialSteeringPoll)
 		_, err := RunLoop(runContext, messages, loopContext, config, agent.processEvent, agent.StreamFn())
 		return err
 	})
+}
+
+func (agent *Agent) withInitialSystemPrompt(loopContext AgentContext, messages AgentMessages) AgentMessages {
+	combined := append(append(AgentMessages(nil), loopContext.Messages...), messages...)
+	current := ai.CurrentSystemMessage(agentMessagesToAI(combined))
+	if current != nil || loopContext.SystemPrompt == "" {
+		return messages
+	}
+	tools := make([]ai.Tool, 0, len(loopContext.Tools))
+	for _, tool := range loopContext.Tools {
+		spec := tool.Spec()
+		tools = append(tools, ai.Tool{Name: spec.Name, Description: spec.Description, Parameters: spec.Parameters, ConstrainedSampling: spec.ConstrainedSampling})
+	}
+	initial := ai.CreateInitialSystemMessage(&loopContext.SystemPrompt, &tools)
+	if initial == nil {
+		return messages
+	}
+	initial.Timestamp = agent.clockNow()
+	result := make(AgentMessages, 0, len(messages)+1)
+	result = append(result, initial)
+	return append(result, messages...)
 }
 
 func (agent *Agent) runContinuationReserved(active *activeRun) error {
@@ -794,7 +863,36 @@ func (agent *Agent) loopConfig(skipInitialSteeringPoll bool) AgentLoopConfig {
 	prepareWithContext := agent.prepareNextTurnWithContext
 	externalSteering := agent.getSteeringMessages
 	externalFollowUps := agent.getFollowUpMessages
+	forcedPrompt := cloneStringPointer(agent.requestSystemPromptOverride)
 	agent.mu.Unlock()
+	if forcedPrompt != nil {
+		previous := config.TransformContext
+		config.TransformContext = func(ctx context.Context, messages AgentMessages) (AgentMessages, error) {
+			transformed := messages
+			var err error
+			if previous != nil {
+				transformed, err = previous(ctx, messages)
+				if err != nil {
+					return nil, err
+				}
+			}
+			current := ai.CurrentSystemMessage(agentMessagesToAI(transformed))
+			timestamp := agent.clockNow()
+			var tools []ai.Tool
+			if current != nil {
+				timestamp = current.Timestamp
+				tools = current.ToolsAdded
+			}
+			head := &ai.SystemMessage{Content: *forcedPrompt, ToolsAdded: tools, Timestamp: timestamp}
+			projected := AgentMessages{head}
+			for _, message := range transformed {
+				if _, system := message.(*ai.SystemMessage); !system {
+					projected = append(projected, message)
+				}
+			}
+			return projected, nil
+		}
+	}
 
 	if thinking != ThinkingOff {
 		reasoning := ai.ThinkingLevel(thinking)
@@ -805,6 +903,19 @@ func (agent *Agent) loopConfig(skipInitialSteeringPoll bool) AgentLoopConfig {
 	} else if prepareWithoutContext != nil {
 		config.PrepareNextTurn = func(ctx context.Context, _ PrepareNextTurnContext) (*AgentLoopTurnUpdate, error) {
 			return prepareWithoutContext(ctx)
+		}
+	}
+	if config.PrepareNextTurn != nil {
+		prepare := config.PrepareNextTurn
+		config.PrepareNextTurn = func(ctx context.Context, turn PrepareNextTurnContext) (*AgentLoopTurnUpdate, error) {
+			update, err := prepare(ctx, turn)
+			if err != nil || update == nil || update.Context == nil || update.Context.SystemPrompt == "" || ai.CurrentSystemMessage(agentMessagesToAI(update.Context.Messages)) != nil {
+				return update, err
+			}
+			contextCopy := copyAgentContext(*update.Context)
+			contextCopy.Messages = append(AgentMessages{&ai.SystemMessage{Content: contextCopy.SystemPrompt, Timestamp: agent.clockNow()}}, contextCopy.Messages...)
+			update.Context = &contextCopy
+			return update, nil
 		}
 	}
 	initialPoll := true

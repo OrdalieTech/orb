@@ -89,7 +89,7 @@ func (tool *writeTool) Spec() engine.AgentToolSpec {
 		Label:               "write",
 		Description:         "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
 		Parameters:          writeSchema,
-		ConstrainedSampling: experimentalToolSampling(),
+		ConstrainedSampling: strictToolSampling(),
 	}
 }
 

@@ -21,6 +21,7 @@ import type {
   SimpleStreamOptions,
   Tool,
 } from "../../.upstream/packages/ai/src/types.ts";
+import { normalizeContext } from "../../.upstream/packages/ai/src/utils/transcript.ts";
 
 const FIXED_NOW = 1_700_000_000_123;
 
@@ -179,11 +180,14 @@ export const fireworksCompatModel = anthropicModel({
   cost: { input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0 },
   contextWindow: 512_000,
   maxTokens: 512_000,
+  thinkingLevelMap: { off: null, minimal: null, low: "low", medium: "medium", high: "high", xhigh: null, max: null },
   compat: {
+    allowEmptySignature: true,
     sendSessionAffinityHeaders: true,
     supportsEagerToolInputStreaming: false,
     supportsCacheControlOnTools: false,
     supportsLongCacheRetention: false,
+    forceAdaptiveThinking: true,
   },
 });
 
@@ -801,7 +805,7 @@ async function runAnthropic(
     }
     const stream = pickAnthropicStream(definition)(
       definition.model,
-      definition.context,
+      normalizeContext(definition.context),
       options,
     );
     for await (const event of stream) {

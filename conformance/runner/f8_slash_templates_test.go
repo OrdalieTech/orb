@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -373,6 +374,10 @@ func TestF8CommandSurfacesMatchUpstream(t *testing.T) {
 		}
 	})
 	t.Run("interactive-builtins", func(t *testing.T) {
+		// DECISIONS: /bug uploads to the excluded Radius service; local diagnostics are deferred.
+		fixture.Discovery.BuiltinCommands = slices.DeleteFunc(fixture.Discovery.BuiltinCommands, func(command f8BuiltinCommand) bool {
+			return command.Name == "bug"
+		})
 		for index := range fixture.Discovery.BuiltinCommands {
 			if fixture.Discovery.BuiltinCommands[index].Name == "quit" {
 				fixture.Discovery.BuiltinCommands[index].Description = "Quit orb" // D30.

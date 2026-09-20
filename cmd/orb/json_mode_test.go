@@ -153,39 +153,24 @@ func newF3SessionRuntime(t testing.TB, scenario f3SessionScenario, headerTime ti
 	}
 	now := func() int64 { return scenario.FixedNow }
 	provider := f3ScenarioProvider(t, scenario)
+	initialPrompt, _, _ := strings.Cut(scenario.SystemPrompt, "\n\n<cwd>")
 	// The upstream fixture constructs a raw Agent with its default message projection.
 	created := engine.NewAgent(
 		provider.StreamSimple, engine.WithInitialState(engine.AgentState{
-			Model: provider.GetModel(), SystemPrompt: scenario.SystemPrompt, Messages: engine.AgentMessages{}, Tools: []engine.AgentTool{},
+			Model: provider.GetModel(), SystemPrompt: initialPrompt, Messages: engine.AgentMessages{}, Tools: []engine.AgentTool{},
 		}),
 		engine.WithClock(now),
 	)
-	var registry *extensions.Registry
-	var extensionAPI extensions.API
-	if scenario.CustomDuringTool {
-		registry = extensions.NewRegistry("/fixture/project")
-		if err := registry.Register("<fixture-custom-message>", func(api extensions.API) error { extensionAPI = api; return nil }); err != nil {
-			t.Fatal(err)
-		}
-	}
 	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
-		Agent: created, SessionManager: manager, Settings: settings, StreamFn: provider.StreamSimple, ExtensionRegistry: registry,
+		Agent: created, SessionManager: manager, Settings: settings, StreamFn: provider.StreamSimple,
+		ExtensionRegistry: extensions.NewRegistry("/fixture/project"),
+		SystemPromptOptions: &agent.SystemPromptOptions{
+			CustomPrompt: &initialPrompt, SelectedTools: []string{}, CWD: "/fixture/project",
+		},
 		Sleep: func(context.Context, time.Duration) error { return nil }, Clock: now,
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if scenario.CustomDuringTool {
-		created.SetTools([]engine.AgentTool{engine.AgentToolFunc{
-			AgentToolSpec: engine.AgentToolSpec{Name: "fixture", Label: "fixture", Description: "fixture", Parameters: ai.JSONSchema(`{"type":"object","properties":{}}`)},
-			Run: func(ctx context.Context, _ string, _ any, _ engine.AgentToolUpdateCallback) (engine.AgentToolResult, error) {
-				trigger := false
-				if err := extensionAPI.SendMessage(ctx, extensions.CustomMessage{CustomType: "note", Content: "queued", Display: true}, &extensions.SendMessageOptions{TriggerTurn: &trigger}); err != nil {
-					return engine.AgentToolResult{}, err
-				}
-				return engine.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: "result"}}}, nil
-			},
-		}})
 	}
 	t.Cleanup(runtime.Dispose)
 	return runtime, manager
@@ -495,6 +480,7 @@ func f3ScenarioSettings(t testing.TB, cwd, agentDir string, raw json.RawMessage)
 func f3RuntimeFactory(scenario f3SessionScenario, provider *faux.Provider, settings *config.SettingsManager) func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error) {
 	return func(_ string, _ CLIArgs, prior engine.AgentMessages) (runtimeInputs, error) {
 		now := func() int64 { return scenario.FixedNow }
+		initialPrompt, _, _ := strings.Cut(scenario.SystemPrompt, "\n\n<cwd>")
 		// The F3 goldens were extracted from upstream's runPrintMode harness,
 		// whose raw Agent carries no session id; disable faux's session-keyed
 		// prompt-cache emulation so the CLI path (which sets the stream
@@ -502,13 +488,17 @@ func f3RuntimeFactory(scenario f3SessionScenario, provider *faux.Provider, setti
 		noCache := ai.CacheRetentionNone
 		created := engine.NewAgent(
 			provider.StreamSimple, engine.WithInitialState(engine.AgentState{
-				Model: provider.GetModel(), SystemPrompt: scenario.SystemPrompt, Messages: prior, Tools: []engine.AgentTool{},
+				Model: provider.GetModel(), SystemPrompt: initialPrompt, Messages: prior, Tools: []engine.AgentTool{},
 			}),
 			engine.WithConvertToLLM(agent.ConvertToLLM),
 			engine.WithClock(now),
 			engine.WithSimpleStreamOptions(ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{CacheRetention: &noCache}}),
 		)
-		return runtimeInputs{Agent: created, Settings: settings}, nil
+		return runtimeInputs{
+			Agent: created, Settings: settings, Extensions: extensions.NewRegistry("/fixture/project"),
+			PromptOptions: agent.SystemPromptOptions{CustomPrompt: &initialPrompt, SelectedTools: []string{}, CWD: "/fixture/project"},
+			Clock:         now,
+		}, nil
 	}
 }
 

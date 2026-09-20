@@ -34,11 +34,15 @@ func classifyPath(filename string) string {
 	// skills/prompt-template/pi-package formats, print output, HTML export.
 	wireFiles := []string{
 		"packages/ai/src/types.ts",
+		"packages/ai/src/utils/transcript.ts",
+		"packages/ai/src/utils/text.ts",
 		"packages/agent/src/types.ts",
+		"packages/agent/src/harness/messages.ts",
 		"packages/agent/src/harness/events.ts",
 		"packages/agent/src/harness/skills.ts",
 		"packages/agent/src/harness/prompt-templates.ts",
 		"packages/coding-agent/src/core/messages.ts",
+		"packages/coding-agent/src/core/system-prompt.ts",
 		"packages/coding-agent/src/core/session-manager.ts",
 		"packages/coding-agent/src/core/settings-manager.ts",
 		"packages/coding-agent/src/core/auth-storage.ts",

@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/OrdalieTech/orb/internal/localecompare"
 )
@@ -70,6 +71,25 @@ const pathDelimiters = " \t\"'="
 
 func isPathDelimiter(r rune) bool { return strings.ContainsRune(pathDelimiters, r) }
 
+func isCJKPunctuation(r rune) bool {
+	return (unicode.IsPunct(r) && isCJKBreakGrapheme(string(r))) || strings.ContainsRune("，．：；！？（）［］｛｝“”‘’…—", r)
+}
+
+func isECMAScriptWhitespace(r rune) bool {
+	switch r {
+	case '\t', '\n', '\v', '\f', '\r', ' ', '\u00A0', '\u1680', '\u2028', '\u2029', '\u202F', '\u205F', '\u3000', '\uFEFF':
+		return true
+	default:
+		return r >= '\u2000' && r <= '\u200A'
+	}
+}
+
+func isAutocompleteSeparator(r rune) bool { return isECMAScriptWhitespace(r) || isCJKPunctuation(r) }
+
+func isAutocompleteBoundary(runes []rune, index int) bool {
+	return index == 0 || (index > 0 && index <= len(runes) && isAutocompleteSeparator(runes[index-1]))
+}
+
 func toDisplayPath(value string) string { return strings.ReplaceAll(value, `\`, "/") }
 
 // escapeFdRegex escapes JS regex metacharacters; fd receives the same
@@ -115,7 +135,7 @@ func buildFdPathQuery(query string) string {
 func findLastDelimiter(text string) int {
 	runes := []rune(text)
 	for i := len(runes) - 1; i >= 0; i-- {
-		if isPathDelimiter(runes[i]) {
+		if isPathDelimiter(runes[i]) || isAutocompleteSeparator(runes[i]) {
 			return i
 		}
 	}
@@ -140,7 +160,7 @@ func findUnclosedQuoteStart(text string) int {
 }
 
 func isTokenStart(runes []rune, index int) bool {
-	return index == 0 || (index-1 < len(runes) && isPathDelimiter(runes[index-1]))
+	return isAutocompleteBoundary(runes, index) || (index > 0 && index <= len(runes) && isPathDelimiter(runes[index-1]))
 }
 
 func extractQuotedPrefix(text string) string {
@@ -181,7 +201,7 @@ func parsePathPrefix(prefix string) parsedPathPrefix {
 }
 
 func buildCompletionValue(path string, isAtPrefix, isQuotedPrefix bool) string {
-	needsQuotes := isQuotedPrefix || strings.Contains(path, " ")
+	needsQuotes := isQuotedPrefix || strings.ContainsFunc(path, isAutocompleteSeparator)
 	prefix := ""
 	if isAtPrefix {
 		prefix = "@"
@@ -284,7 +304,12 @@ func (provider *CombinedAutocompleteProvider) GetSuggestions(ctx context.Context
 				}
 				commandItems[index] = commandItem{name: command.Name, label: command.Name, description: fullDescription}
 			}
-			filtered := FuzzyFilter(commandItems, prefix, func(item commandItem) string { return item.name })
+			filtered := FuzzyFilter(commandItems, prefix, func(item commandItem) string {
+				if !strings.HasPrefix(prefix, "skill:") {
+					return strings.TrimPrefix(item.name, "skill:")
+				}
+				return item.name
+			})
 			if len(filtered) == 0 {
 				return nil
 			}
@@ -404,10 +429,12 @@ func (provider *CombinedAutocompleteProvider) extractPathPrefix(text string, for
 	if strings.Contains(pathPrefix, "/") || strings.HasPrefix(pathPrefix, ".") || strings.HasPrefix(pathPrefix, "~/") {
 		return pathPrefix, true
 	}
-	// An empty prefix only triggers after a space; empty text is reserved
-	// for forced Tab completion.
-	if pathPrefix == "" && strings.HasSuffix(text, " ") {
-		return pathPrefix, true
+	// Empty text is reserved for forced Tab completion.
+	if pathPrefix == "" && text != "" {
+		textRunes := []rune(text)
+		if len(textRunes) > 0 && isAutocompleteSeparator(textRunes[len(textRunes)-1]) {
+			return pathPrefix, true
+		}
 	}
 	return "", false
 }
@@ -580,8 +607,8 @@ func (provider *CombinedAutocompleteProvider) getFileSuggestions(prefix string) 
 func sortAutocompleteSuggestions(suggestions []AutocompleteItem) {
 	collator := localecompare.New()
 	sort.SliceStable(suggestions, func(a, b int) bool {
-		aIsDir := strings.HasSuffix(suggestions[a].Value, "/")
-		bIsDir := strings.HasSuffix(suggestions[b].Value, "/")
+		aIsDir := strings.HasSuffix(suggestions[a].Label, "/")
+		bIsDir := strings.HasSuffix(suggestions[b].Label, "/")
 		if aIsDir != bIsDir {
 			return aIsDir
 		}

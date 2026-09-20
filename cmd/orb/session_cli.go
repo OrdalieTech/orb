@@ -19,9 +19,15 @@ var errNoSessionSelected = errors.New("no session selected")
 
 type SessionListLoader func(session.SessionListProgress) []session.SessionInfo
 
+type ContextSessionListLoader func(context.Context, session.SessionListUpdateFunc) ([]session.SessionInfo, error)
+
 type SessionSelector func(current, all SessionListLoader) (path string, selected bool, err error)
 
+type ContextSessionSelector func(current, all ContextSessionListLoader) (path string, selected bool, err error)
+
 type tuiSessionSelectorRunner func(context.Context, SessionListLoader, SessionListLoader) (string, bool, error)
+
+type tuiContextSessionSelectorRunner func(context.Context, ContextSessionListLoader, ContextSessionListLoader) (string, bool, error)
 
 func newTUISessionSelector(ctx context.Context, runner tuiSessionSelectorRunner) SessionSelector {
 	return func(current, all SessionListLoader) (string, bool, error) {
@@ -32,6 +38,18 @@ func newTUISessionSelector(ctx context.Context, runner tuiSessionSelectorRunner)
 func startupTUISessionSelector(ctx context.Context) SessionSelector {
 	return newTUISessionSelector(ctx, func(ctx context.Context, current, all SessionListLoader) (string, bool, error) {
 		return modes.RunSessionSelector(ctx, modes.SessionSelectorLoader(current), modes.SessionSelectorLoader(all))
+	})
+}
+
+func newContextTUISessionSelector(ctx context.Context, runner tuiContextSessionSelectorRunner) ContextSessionSelector {
+	return func(current, all ContextSessionListLoader) (string, bool, error) {
+		return runner(ctx, current, all)
+	}
+}
+
+func startupContextTUISessionSelector(ctx context.Context) ContextSessionSelector {
+	return newContextTUISessionSelector(ctx, func(ctx context.Context, current, all ContextSessionListLoader) (string, bool, error) {
+		return modes.RunSessionSelectorContext(ctx, modes.SessionSelectorContextLoader(current), modes.SessionSelectorContextLoader(all))
 	})
 }
 
@@ -104,6 +122,16 @@ func createCLISession(
 	streams cliStreams,
 	selector SessionSelector,
 ) (*session.SessionManager, session.SessionContext, error) {
+	return createCLISessionWithSelectors(cwd, args, streams, selector, nil)
+}
+
+func createCLISessionWithSelectors(
+	cwd string,
+	args CLIArgs,
+	streams cliStreams,
+	selector SessionSelector,
+	contextSelector ContextSessionSelector,
+) (*session.SessionManager, session.SessionContext, error) {
 	agentDir, err := config.GetAgentDir()
 	if err != nil {
 		return nil, session.SessionContext{}, err
@@ -163,17 +191,31 @@ func createCLISession(
 			manager, err = session.Open(resolved.path, sessionDir, session.WithAgentDir(agentDir))
 		}
 	case args.Resume:
-		if selector == nil {
-			selector = startupTUISessionSelector(context.Background())
+		var selectedPath string
+		var selected bool
+		var selectErr error
+		if contextSelector != nil {
+			selectedPath, selected, selectErr = contextSelector(
+				func(ctx context.Context, update session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
+					return session.ListContext(ctx, cwd, sessionDir, update, session.WithAgentDir(agentDir))
+				},
+				func(ctx context.Context, update session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
+					return session.ListAllContext(ctx, sessionDir, update, session.WithAgentDir(agentDir))
+				},
+			)
+		} else {
+			if selector == nil {
+				selector = startupTUISessionSelector(context.Background())
+			}
+			selectedPath, selected, selectErr = selector(
+				func(progress session.SessionListProgress) []session.SessionInfo {
+					return session.List(cwd, sessionDir, progress, session.WithAgentDir(agentDir))
+				},
+				func(progress session.SessionListProgress) []session.SessionInfo {
+					return session.ListAll(sessionDir, progress, session.WithAgentDir(agentDir))
+				},
+			)
 		}
-		selectedPath, selected, selectErr := selector(
-			func(progress session.SessionListProgress) []session.SessionInfo {
-				return session.List(cwd, sessionDir, progress, session.WithAgentDir(agentDir))
-			},
-			func(progress session.SessionListProgress) []session.SessionInfo {
-				return session.ListAll(sessionDir, progress, session.WithAgentDir(agentDir))
-			},
-		)
 		if selectErr != nil {
 			return nil, session.SessionContext{}, selectErr
 		}
@@ -230,6 +272,9 @@ func resolveSessionArgument(argument, cwd, sessionDir, agentDir string) (resolve
 		}
 		return resolvedSession{kind: "path", path: path}, nil
 	}
+	if exact := findLocalSessionByExactID(argument, cwd, sessionDir, agentDir); exact != "" {
+		return resolvedSession{kind: "local", path: exact}, nil
+	}
 	local := session.List(cwd, sessionDir, nil, session.WithAgentDir(agentDir))
 	if match := matchSessionID(local, argument); match != nil {
 		return resolvedSession{kind: "local", path: match.Path}, nil
@@ -242,12 +287,7 @@ func resolveSessionArgument(argument, cwd, sessionDir, agentDir string) (resolve
 }
 
 func findLocalSessionByExactID(id, cwd, sessionDir, agentDir string) string {
-	for _, info := range session.List(cwd, sessionDir, nil, session.WithAgentDir(agentDir)) {
-		if info.ID == id {
-			return info.Path
-		}
-	}
-	return ""
+	return session.FindByID(cwd, id, sessionDir, session.WithAgentDir(agentDir))
 }
 
 func matchSessionID(sessions []session.SessionInfo, value string) *session.SessionInfo {

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/modes"
@@ -144,8 +145,9 @@ func TestCreateRuntimeInputsUsesResolvedResourcesAndToolSelection(t *testing.T) 
 	if len(runtime.BaseTools) != 1 || runtime.BaseTools[0].Spec().Name != "read" {
 		t.Fatalf("unused extension base tools = %#v", runtime.BaseTools)
 	}
-	if !strings.Contains(state.SystemPrompt, "project rules") || !strings.Contains(state.SystemPrompt, "- read: Read file contents") || !strings.Contains(state.SystemPrompt, "<name>inspect</name>") {
-		t.Fatalf("system prompt omitted resources/tools: %q", state.SystemPrompt)
+	prompt := agent.BuildSystemPrompt(runtime.PromptOptions)
+	if !strings.Contains(prompt, "project rules") || !strings.Contains(prompt, "- read: Read file contents") || !strings.Contains(prompt, "<name>inspect</name>") {
+		t.Fatalf("system prompt omitted resources/tools: %q", prompt)
 	}
 	if runtime.SlashResolver == nil {
 		t.Fatal("slash resolver is nil")

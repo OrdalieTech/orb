@@ -17,12 +17,12 @@
     "durationMs": 0,
     "runId": "run-fixed-store-tools",
     "tokenUsage": {
-      "input": 4595,
+      "input": 2876,
       "output": 35,
-      "total": 10139,
+      "total": 8606,
       "cost": 0,
-      "cacheRead": 914,
-      "cacheWrite": 4595
+      "cacheRead": 2818,
+      "cacheWrite": 2877
     }
   },
   "error": null,
@@ -39,13 +39,13 @@
       "id": "run-fixed-store-tools:0",
       "label": "writer",
       "result": "Stored the finding.",
-      "tokens": 5075,
+      "tokens": 4310,
       "tokenUsage": {
-        "input": 2299,
+        "input": 1440,
         "output": 20,
-        "cacheRead": 457,
-        "cacheWrite": 2299,
-        "total": 5075,
+        "cacheRead": 1409,
+        "cacheWrite": 1441,
+        "total": 4310,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -62,13 +62,13 @@
       "id": "run-fixed-store-tools:1",
       "label": "reader",
       "result": "The finding was n=1 kind=seed.",
-      "tokens": 5064,
+      "tokens": 4296,
       "tokenUsage": {
-        "input": 2296,
+        "input": 1436,
         "output": 15,
-        "cacheRead": 457,
-        "cacheWrite": 2296,
-        "total": 5064,
+        "cacheRead": 1409,
+        "cacheWrite": 1436,
+        "total": 4296,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -76,12 +76,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 4595,
+        "input": 2876,
         "output": 35,
-        "total": 10139,
+        "total": 8606,
         "cost": 0,
-        "cacheRead": 914,
-        "cacheWrite": 4595
+        "cacheRead": 2818,
+        "cacheWrite": 2877
       }
     }
   ],
@@ -169,15 +169,12 @@
   "providerCalls": [
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -191,15 +188,12 @@
     },
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -236,15 +230,12 @@
     },
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -258,15 +249,12 @@
     },
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [

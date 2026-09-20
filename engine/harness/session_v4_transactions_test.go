@@ -239,8 +239,13 @@ func TestReleasedV4TransactionForks(t *testing.T) {
 		t.Fatal(err)
 	}
 	var corpus struct {
-		Source SessionV4TransactionSnapshot
-		Cases  []struct {
+		Source struct {
+			Entries      []json.RawMessage
+			ScalarValues []SessionV4StoredValue
+			Lists        []sessionV4StoredList
+			NextSeq      int64
+		}
+		Cases []struct {
 			Options SessionV4TransactionForkOptions
 			Writes  []json.RawMessage
 			NextSeq int64
@@ -251,7 +256,11 @@ func TestReleasedV4TransactionForks(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, scenario := range corpus.Cases {
-		writes, nextSeq, err := createTransactionFork(corpus.Source, scenario.Options)
+		source := SessionV4TransactionSnapshot{
+			Entries: corpus.Source.Entries, ScalarValues: corpus.Source.ScalarValues,
+			lists: corpus.Source.Lists, nextSeq: corpus.Source.NextSeq,
+		}
+		writes, nextSeq, err := createTransactionFork(source, scenario.Options)
 		if scenario.Error != nil {
 			if err == nil || err.Error() != *scenario.Error {
 				t.Fatalf("error: %v != %s", err, *scenario.Error)

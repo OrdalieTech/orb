@@ -210,7 +210,7 @@
           "openai-beta": "responses=experimental",
           "originator": "pi"
         },
-        "body": "{\"model\":\"gpt-codex-fixture\",\"store\":false,\"stream\":true,\"instructions\":\"You are a helpful assistant.\",\"input\":[],\"text\":{\"verbosity\":\"low\"},\"include\":[\"reasoning.encrypted_content\"],\"tool_choice\":\"auto\",\"parallel_tool_calls\":true}"
+        "body": "{\"model\":\"gpt-codex-fixture\",\"store\":false,\"stream\":true,\"instructions\":\"You are a helpful assistant.\",\"input\":[],\"text\":{\"verbosity\":\"low\"},\"include\":[\"reasoning.encrypted_content\"],\"tool_choice\":\"auto\",\"parallel_tool_calls\":true,\"reasoning\":{\"effort\":\"none\"}}"
       }
     },
     {

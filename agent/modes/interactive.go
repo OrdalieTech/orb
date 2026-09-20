@@ -2743,7 +2743,7 @@ func (mode *InteractiveMode) showSessionSelector() {
 		}
 		mode.ui.RequestRender()
 	}
-	selector := NewSessionSelectorComponent(SessionSelectorOptions{
+	options := SessionSelectorOptions{
 		CurrentSessions: func(progress sessionstore.SessionListProgress) []sessionstore.SessionInfo {
 			return mode.options.Host.ListProjectSessions(progress)
 		},
@@ -2753,7 +2753,16 @@ func (mode *InteractiveMode) showSessionSelector() {
 		CurrentSessionPath: mode.session.Manager().GetSessionFile(),
 		Keybindings:        mode.keybindings,
 		RequestRender:      mode.ui.RequestRender,
-	}, func(path string) {
+	}
+	type contextSessionLister interface {
+		ListProjectSessionsContext(context.Context, sessionstore.SessionListUpdateFunc) ([]sessionstore.SessionInfo, error)
+		ListAllSessionsContext(context.Context, sessionstore.SessionListUpdateFunc) ([]sessionstore.SessionInfo, error)
+	}
+	if lister, ok := mode.options.Host.(contextSessionLister); ok {
+		options.CurrentSessionsContext = lister.ListProjectSessionsContext
+		options.AllSessionsContext = lister.ListAllSessionsContext
+	}
+	selector := NewSessionSelectorComponent(options, func(path string) {
 		closeSelector()
 		go mode.resumeSelectedSession(path)
 	}, closeSelector)

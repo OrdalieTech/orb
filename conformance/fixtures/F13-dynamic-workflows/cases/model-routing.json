@@ -30,12 +30,12 @@
     "durationMs": 0,
     "runId": "run-fixed-model-routing",
     "tokenUsage": {
-      "input": 4072,
+      "input": 4212,
       "output": 17,
-      "total": 8173,
+      "total": 8453,
       "cost": 0,
       "cacheRead": 0,
-      "cacheWrite": 4072
+      "cacheWrite": 4212
     }
   },
   "error": null,
@@ -52,13 +52,13 @@
       "id": "run-fixed-model-routing:0",
       "label": "small",
       "result": "Small tier answer.",
-      "tokens": 2717,
+      "tokens": 2811,
       "tokenUsage": {
-        "input": 1356,
+        "input": 1403,
         "output": 5,
         "cacheRead": 0,
-        "cacheWrite": 1356,
-        "total": 2717,
+        "cacheWrite": 1403,
+        "total": 2811,
         "cost": 0
       },
       "model": "faux/faux-mini"
@@ -79,13 +79,13 @@
       "id": "run-fixed-model-routing:1",
       "label": "untagged",
       "result": "Untagged answer.",
-      "tokens": 2718,
+      "tokens": 2810,
       "tokenUsage": {
-        "input": 1357,
+        "input": 1403,
         "output": 4,
         "cacheRead": 0,
-        "cacheWrite": 1357,
-        "total": 2718,
+        "cacheWrite": 1403,
+        "total": 2810,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -102,13 +102,13 @@
       "id": "run-fixed-model-routing:2",
       "label": "synthesized",
       "result": "Synthesized custom-id answer.",
-      "tokens": 2726,
+      "tokens": 2820,
       "tokenUsage": {
-        "input": 1359,
+        "input": 1406,
         "output": 8,
         "cacheRead": 0,
-        "cacheWrite": 1359,
-        "total": 2726,
+        "cacheWrite": 1406,
+        "total": 2820,
         "cost": 0
       },
       "model": "faux/synth-id"
@@ -160,12 +160,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 4072,
+        "input": 4212,
         "output": 17,
-        "total": 8173,
+        "total": 8453,
         "cost": 0,
         "cacheRead": 0,
-        "cacheWrite": 4072
+        "cacheWrite": 4212
       }
     }
   ],
@@ -239,15 +239,12 @@
   "providerCalls": [
     {
       "model": "faux/faux-mini",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -261,15 +258,12 @@
     },
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -283,15 +277,12 @@
     },
     {
       "model": "faux/synth-id",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [

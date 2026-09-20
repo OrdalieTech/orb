@@ -18,6 +18,13 @@ type SessionV4TransactionForkOptions struct {
 type SessionV4TransactionSnapshot struct {
 	Entries      []json.RawMessage      `json:"entries"`
 	ScalarValues []SessionV4StoredValue `json:"scalarValues"`
+	lists        []sessionV4StoredList
+	nextSeq      int64
+}
+
+type sessionV4StoredList struct {
+	Address  SessionV4Address       `json:"address"`
+	Elements []SessionV4ListElement `json:"elements"`
 }
 
 func (storage *TransactionSessionV4Storage) CaptureForkSource() (SessionV4TransactionSnapshot, error) {
@@ -35,6 +42,19 @@ func (storage *TransactionSessionV4Storage) CaptureForkSource() (SessionV4Transa
 		value.Value = bytes.Clone(value.Value)
 		snapshot.ScalarValues = append(snapshot.ScalarValues, value)
 	}
+	for key, elements := range storage.state.lists {
+		parts := strings.SplitN(key, "\x00", 2)
+		stored := sessionV4StoredList{Address: SessionV4Address{Namespace: parts[0], Key: parts[1], Kind: "list"}}
+		for _, element := range elements {
+			element.Value = bytes.Clone(element.Value)
+			stored.Elements = append(stored.Elements, element)
+		}
+		snapshot.lists = append(snapshot.lists, stored)
+	}
+	sort.Slice(snapshot.lists, func(i, j int) bool {
+		return transactionKey(snapshot.lists[i].Address) < transactionKey(snapshot.lists[j].Address)
+	})
+	snapshot.nextSeq = storage.state.nextSeq
 	return snapshot, nil
 }
 
@@ -43,7 +63,6 @@ func createTransactionFork(source SessionV4TransactionSnapshot, options SessionV
 	entries := map[string]json.RawMessage{}
 	values := map[string]SessionV4StoredValue{}
 	tips := []SessionV4StoredValue{}
-	tipKeys := map[string]bool{}
 	for _, entry := range source.Entries {
 		entries[transactionString(transactionFields(entry), "id")] = entry
 	}
@@ -51,28 +70,6 @@ func createTransactionFork(source SessionV4TransactionSnapshot, options SessionV
 		values[transactionKey(value.Address)] = value
 		if value.Address.Namespace == "pi.branch.tip" {
 			tips = append(tips, value)
-			tipKeys[value.Address.Key] = true
-		}
-	}
-	for _, value := range source.ScalarValues {
-		if (value.Address.Namespace == "pi.lane.config" || value.Address.Namespace == "pi.lane.state") && !tipKeys[value.Address.Key] {
-			return nil, 0, fmt.Errorf("Source session branch %q is missing branch.tip", value.Address.Key)
-		}
-	}
-	for _, tip := range tips {
-		_, config := values["pi.lane.config\x00"+tip.Address.Key]
-		_, state := values["pi.lane.state\x00"+tip.Address.Key]
-		if config != state {
-			return nil, 0, fmt.Errorf("Source session branch %q has incomplete lane state", tip.Address.Key)
-		}
-		if options.Scope == "branch" && tip.Address.Key == options.Branch && !config {
-			return nil, 0, fmt.Errorf("Source branch %q is not a configured AgentLane", tip.Address.Key)
-		}
-		if !bytes.Equal(tip.Value, []byte("null")) {
-			id, _ := v4String(tip.Value)
-			if entries[id] == nil {
-				return nil, 0, fmt.Errorf("Source session branch %q has an unknown tip", tip.Address.Key)
-			}
 		}
 	}
 	copied := map[string]bool{}
@@ -92,6 +89,11 @@ func createTransactionFork(source SessionV4TransactionSnapshot, options SessionV
 		}
 		if sourceTip == nil {
 			return nil, 0, fmt.Errorf("Unknown source branch: %s", options.Branch)
+		}
+		_, hasConfig := values["pi.lane.config\x00"+options.Branch]
+		_, hasState := values["pi.lane.state\x00"+options.Branch]
+		if !hasConfig || !hasState {
+			return nil, 0, fmt.Errorf("Source branch %q is not a configured AgentLane", options.Branch)
 		}
 		requested := sourceTip.Value
 		if options.EntryID != nil {
@@ -124,10 +126,30 @@ func createTransactionFork(source SessionV4TransactionSnapshot, options SessionV
 			id, _ := v4String(requested)
 			return nil, 0, fmt.Errorf("Fork entry %s is not on source branch %q", id, options.Branch)
 		}
-		destinationTips = append(destinationTips, SessionV4StoredValue{Address: SessionV4Address{Namespace: "pi.branch.tip", Key: options.Branch, Kind: "value"}, Value: tip})
+		destinationTips = append(destinationTips, SessionV4StoredValue{Address: SessionV4Address{Namespace: "pi.branch.tip", Key: options.Branch, Kind: "value"}, Value: tip, Seq: sourceTip.Seq})
 	}
 	writes := []json.RawMessage{}
-	nextSeq := int64(1)
+	nextSeq := source.nextSeq
+	if nextSeq < 1 {
+		nextSeq = 1
+	}
+	for _, entry := range source.Entries {
+		if seq := transactionSeq(transactionFields(entry)); seq >= nextSeq {
+			nextSeq = seq + 1
+		}
+	}
+	for _, value := range source.ScalarValues {
+		if value.Seq >= nextSeq {
+			nextSeq = value.Seq + 1
+		}
+	}
+	for _, list := range source.lists {
+		for _, element := range list.Elements {
+			if element.Seq >= nextSeq {
+				nextSeq = element.Seq + 1
+			}
+		}
+	}
 	for _, entry := range source.Entries {
 		id := transactionString(transactionFields(entry), "id")
 		if !copied[id] {
@@ -141,25 +163,28 @@ func createTransactionFork(source SessionV4TransactionSnapshot, options SessionV
 			nextSeq = seq + 1
 		}
 	}
-	store := func(namespace, key string, value any) {
-		writes = append(writes, transactionObject("kind", "value", "op", "set", "seq", nextSeq, "namespace", namespace, "key", key, "value", value))
-		nextSeq++
+	store := func(namespace, key string, value any, seq int64) {
+		writes = append(writes, transactionObject("kind", "value", "op", "set", "seq", seq, "namespace", namespace, "key", key, "value", value))
+		if seq >= nextSeq {
+			nextSeq = seq + 1
+		}
 	}
 	for _, tip := range destinationTips {
-		store("pi.branch.tip", tip.Address.Key, tip.Value)
+		store("pi.branch.tip", tip.Address.Key, tip.Value, tip.Seq)
 		if config, ok := values["pi.lane.config\x00"+tip.Address.Key]; ok {
-			store("pi.lane.config", tip.Address.Key, config.Value)
-			store("pi.lane.state", tip.Address.Key, transactionObject("currentOperationId", nil, "lastOperationId", nil, "inbox", []any{}))
+			store("pi.lane.config", tip.Address.Key, config.Value, config.Seq)
+			state := values["pi.lane.state\x00"+tip.Address.Key]
+			store("pi.lane.state", tip.Address.Key, transactionObject("currentOperationId", nil, "lastOperationId", nil, "inbox", []any{}), state.Seq)
 		}
 	}
 	for _, value := range source.ScalarValues {
 		namespace := value.Address.Namespace
 		switch namespace {
 		case "pi.session.name":
-			store(namespace, value.Address.Key, value.Value)
+			store(namespace, value.Address.Key, value.Value, value.Seq)
 		case "pi.entry.label":
 			if copied[value.Address.Key] {
-				store(namespace, value.Address.Key, value.Value)
+				store(namespace, value.Address.Key, value.Value, value.Seq)
 			}
 		case "pi.branch.tip", "pi.lane.config", "pi.lane.state", "pi.result":
 		default:
@@ -170,7 +195,20 @@ func createTransactionFork(source SessionV4TransactionSnapshot, options SessionV
 				return nil, 0, fmt.Errorf("Unknown reserved fork namespace: %s", namespace)
 			}
 			if options.Scope == "tree" {
-				store(namespace, value.Address.Key, value.Value)
+				store(namespace, value.Address.Key, value.Value, value.Seq)
+			}
+		}
+	}
+	if options.Scope == "tree" {
+		for _, list := range source.lists {
+			if list.Address.Namespace == "pi" || strings.HasPrefix(list.Address.Namespace, "pi.") {
+				return nil, 0, fmt.Errorf("Unknown reserved fork namespace: %s", list.Address.Namespace)
+			}
+			for _, element := range list.Elements {
+				writes = append(writes, transactionObject("kind", "list", "op", "append", "seq", element.Seq, "namespace", list.Address.Namespace, "key", list.Address.Key, "value", element.Value))
+				if element.Seq >= nextSeq {
+					nextSeq = element.Seq + 1
+				}
 			}
 		}
 	}

@@ -61,6 +61,26 @@ func toolResultToText(message *ai.ToolResultMessage) string {
 
 func messageToText(message ai.Message) (string, error) {
 	switch typed := message.(type) {
+	case *ai.SystemMessage:
+		parts := make([]string, 0, 1+len(typed.ToolsRemoved)+len(typed.ToolsAdded))
+		if text := ai.SystemMessageText(typed); text != "" {
+			parts = append(parts, text)
+		}
+		for _, tool := range typed.ToolsRemoved {
+			encoded, err := ai.Marshal(tool)
+			if err != nil {
+				return "", err
+			}
+			parts = append(parts, "tool-:"+string(encoded))
+		}
+		for _, tool := range typed.ToolsAdded {
+			encoded, err := ai.Marshal(tool)
+			if err != nil {
+				return "", err
+			}
+			parts = append(parts, "tool+:"+string(encoded))
+		}
+		return joinLines(parts), nil
 	case *ai.UserMessage:
 		return contentToText(typed.Content), nil
 	case *ai.AssistantMessage:
@@ -84,6 +104,8 @@ func serializeContext(requestContext ai.Context) (string, error) {
 		}
 		role := ""
 		switch message.(type) {
+		case *ai.SystemMessage:
+			role = "system"
 		case *ai.UserMessage:
 			role = "user"
 		case *ai.AssistantMessage:
@@ -92,13 +114,6 @@ func serializeContext(requestContext ai.Context) (string, error) {
 			role = "toolResult"
 		}
 		parts = append(parts, role+":"+text)
-	}
-	if requestContext.Tools != nil && len(*requestContext.Tools) > 0 {
-		tools, err := ai.Marshal(*requestContext.Tools)
-		if err != nil {
-			return "", err
-		}
-		parts = append(parts, "tools:"+string(tools))
 	}
 	return joinContextParts(parts), nil
 }

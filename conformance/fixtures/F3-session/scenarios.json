@@ -83,7 +83,7 @@
         "turn_end",
         "agent_settled"
       ],
-      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project\n"
+      "systemPrompt": "Exercise JSON event streaming.\n\n<cwd>\n/fixture/project\n</cwd>"
     },
     {
       "name": "multiple-prompts",
@@ -196,7 +196,7 @@
         "agent_end",
         "agent_settled"
       ],
-      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project\n"
+      "systemPrompt": "Exercise JSON event streaming.\n\n<cwd>\n/fixture/project\n</cwd>"
     },
     {
       "name": "queue",
@@ -286,7 +286,7 @@
         "agent_end",
         "agent_settled"
       ],
-      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project\n"
+      "systemPrompt": "Exercise JSON event streaming.\n\n<cwd>\n/fixture/project\n</cwd>"
     },
     {
       "name": "retry",
@@ -366,7 +366,7 @@
         "agent_end",
         "agent_settled"
       ],
-      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project\n"
+      "systemPrompt": "Exercise JSON event streaming.\n\n<cwd>\n/fixture/project\n</cwd>"
     },
     {
       "name": "compaction",
@@ -422,7 +422,7 @@
         "compaction_end",
         "agent_settled"
       ],
-      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project\n"
+      "systemPrompt": "Exercise JSON event streaming.\n\n<cwd>\n/fixture/project\n</cwd>"
     },
     {
       "name": "assistant-error",
@@ -470,7 +470,7 @@
         "agent_end",
         "agent_settled"
       ],
-      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project\n"
+      "systemPrompt": "Exercise JSON event streaming.\n\n<cwd>\n/fixture/project\n</cwd>"
     },
     {
       "name": "assistant-aborted",
@@ -518,7 +518,7 @@
         "agent_end",
         "agent_settled"
       ],
-      "systemPrompt": "Exercise JSON event streaming.\nCurrent working directory: /fixture/project\n"
+      "systemPrompt": "Exercise JSON event streaming.\n\n<cwd>\n/fixture/project\n</cwd>"
     }
   ]
 }

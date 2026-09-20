@@ -19,18 +19,21 @@ func TestBuildSystemPromptDefaultIsByteOrdered(t *testing.T) {
 
 	want := fmt.Sprintf(`You are an expert problem-solving assistant operating inside Orb, a general-purpose agent harness for work and software development. You help users investigate, plan, create, and complete tasks using the available tools, including working with files, executing commands, and editing code or documents.
 
-Available tools:
+<tools>
 - read: Read file contents
 - bash: Execute bash commands
 
 In addition to the tools above, you may have access to other custom tools depending on the project.
+</tools>
 
-Guidelines:
+<rules>
 - Use bash for file operations like ls, rg, find
 - Extra rule.
 - Be concise in your responses
 - Show file paths clearly when working with files
+</rules>
 
+<docs>
 Orb documentation (read only when the user asks about Orb itself, its SDK, extensions, themes, skills, or TUI):
 - Main documentation: %s
 - Additional docs: %s
@@ -39,7 +42,11 @@ Orb documentation (read only when the user asks about Orb itself, its SDK, exten
 - When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md)
 - When working on Orb topics, read the docs and examples, and follow .md cross-references before implementing
 - Always read Orb documentation files completely and follow links to related docs (e.g., tui.md for TUI API details)
-Current working directory: /work/tree`, filepath.Join(packageDir, "README.md"), filepath.Join(packageDir, "docs"), filepath.Join(packageDir, "examples"))
+</docs>
+
+<cwd>
+/work/tree
+</cwd>`, filepath.Join(packageDir, "README.md"), filepath.Join(packageDir, "docs"), filepath.Join(packageDir, "examples"))
 	if prompt != want {
 		t.Fatalf("prompt mismatch\n--- got ---\n%s\n--- want ---\n%s", prompt, want)
 	}
@@ -58,13 +65,13 @@ func TestBuildSystemPromptCustomAppendContextAndEmptyTools(t *testing.T) {
 			{Path: "/two/CLAUDE.md", Content: "second"},
 		},
 	})
-	want := "custom\n\nappend-a\n\nappend-b" +
-		"\n\n<project_context>\n\n" +
+	want := "custom\n\n<addendum>\nappend-a\n\nappend-b\n</addendum>" +
+		"\n\n<project_context>\n" +
 		"Project-specific instructions and guidelines:\n\n" +
 		"<project_instructions path=\"/one/AGENTS\"&.md\">\nfirst<&\n</project_instructions>\n\n" +
-		"<project_instructions path=\"/two/CLAUDE.md\">\nsecond\n</project_instructions>\n\n" +
-		"</project_context>\n" +
-		"\nCurrent working directory: C:/repo/work\n"
+		"<project_instructions path=\"/two/CLAUDE.md\">\nsecond\n</project_instructions>\n" +
+		"</project_context>\n\n" +
+		"<cwd>\nC:/repo/work\n</cwd>"
 	if prompt != want {
 		t.Fatalf("custom prompt mismatch\n--- got ---\n%s\n--- want ---\n%s", prompt, want)
 	}
@@ -80,7 +87,7 @@ func TestBuildSystemPromptCustomAppendContextAndEmptyTools(t *testing.T) {
 	if !strings.HasPrefix(defaultPrompt, "You are an expert problem-solving assistant operating inside Orb") {
 		t.Fatalf("empty custom prompt did not select default prompt: %q", defaultPrompt)
 	}
-	if !strings.Contains(defaultPrompt, "Available tools:\n(none)") {
+	if !strings.Contains(defaultPrompt, "<tools>\n(none)") {
 		t.Fatalf("explicit empty tools were not preserved: %q", defaultPrompt)
 	}
 }

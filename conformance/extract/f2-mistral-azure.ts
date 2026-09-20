@@ -13,6 +13,7 @@ import type {
   Model,
   Tool,
 } from "../../.upstream/packages/ai/src/types.ts";
+import { normalizeContext } from "../../.upstream/packages/ai/src/utils/transcript.ts";
 
 type FixtureAPI = "mistral-conversations" | "azure-openai-responses";
 type FixtureModel = Model<"mistral-conversations"> | Model<"azure-openai-responses">;
@@ -657,12 +658,12 @@ async function runUpstream(
   const stream = definition.api === "mistral-conversations"
     ? streamMistral(
         definition.model as Model<"mistral-conversations">,
-        definition.context,
+        normalizeContext(definition.context),
         definition.options as MistralOptions,
       )
     : streamAzure(
         definition.model as Model<"azure-openai-responses">,
-        definition.context,
+        normalizeContext(definition.context),
         definition.options as AzureOpenAIResponsesOptions,
       );
   const events: AssistantMessageEvent[] = [];

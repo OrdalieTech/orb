@@ -169,6 +169,7 @@ func newCLISessionRuntimeHost(
 			AllowedToolNames: inputs.AllowedTools, ExcludedToolNames: inputs.ExcludedTools,
 			RebuildBaseTools:    inputs.RebuildBaseTools,
 			SystemPromptOptions: &inputs.PromptOptions,
+			Clock:               inputs.Clock,
 			SessionStartEvent:   runtimeOptions.SessionStartEvent,
 			DeferExtensionStart: runtimeOptions.DeferExtensionStart,
 			DeferSessionStart:   options.DeferSessionStart,

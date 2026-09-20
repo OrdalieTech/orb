@@ -22,6 +22,10 @@ type recentSession struct {
 // upstream's best-effort continue behavior. When cwd is non-empty, old headers
 // without cwd are excluded.
 func FindMostRecentSession(sessionDir, cwd string) string {
+	return findMostRecentSessionWithHeaderReader(sessionDir, cwd, readSessionHeader)
+}
+
+func findMostRecentSessionWithHeaderReader(sessionDir, cwd string, readHeader func(string) *SessionHeader) string {
 	sessionDir = normalizePath(sessionDir)
 	var resolvedCWD string
 	if cwd != "" {
@@ -41,7 +45,17 @@ func FindMostRecentSession(sessionDir, cwd string) string {
 			continue
 		}
 		path := filepath.Join(sessionDir, directoryEntry.Name())
-		header := readSessionHeader(path)
+		info, err := directoryEntry.Info()
+		if err != nil {
+			continue
+		}
+		sessions = append(sessions, recentSession{path: path, modified: info.ModTime()})
+	}
+	sort.SliceStable(sessions, func(left, right int) bool {
+		return sessions[left].modified.After(sessions[right].modified)
+	})
+	for _, candidate := range sessions {
+		header := readHeader(candidate.path)
 		if header == nil {
 			continue
 		}
@@ -54,19 +68,9 @@ func FindMostRecentSession(sessionDir, cwd string) string {
 				continue
 			}
 		}
-		info, err := directoryEntry.Info()
-		if err != nil {
-			continue
-		}
-		sessions = append(sessions, recentSession{path: path, modified: info.ModTime()})
+		return candidate.path
 	}
-	sort.SliceStable(sessions, func(left, right int) bool {
-		return sessions[left].modified.After(sessions[right].modified)
-	})
-	if len(sessions) == 0 {
-		return ""
-	}
-	return sessions[0].path
+	return ""
 }
 
 func readSessionHeader(path string) *SessionHeader {

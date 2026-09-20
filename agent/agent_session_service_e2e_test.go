@@ -131,6 +131,6 @@ func TestExtensionAgentSessionServiceRealHostFlow(t *testing.T) {
 	}
 	// terminate:true ended the turn: the third faux response stayed queued.
 	if pending := provider.PendingResponseCount(); pending != 1 {
-		t.Fatalf("pending faux responses = %d, want 1 (terminate must end the turn)", pending)
+		t.Fatalf("pending faux responses = %d, calls = %d, roles = %v, want 1 (terminate must end the turn)", pending, provider.State().CallCount, result.Roles)
 	}
 }

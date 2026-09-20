@@ -77,18 +77,38 @@ func TestReleasedCustomDuringToolTrace(t *testing.T) {
 		if event.Type == "message_update" {
 			event.Message.Role = ""
 		}
+		if event.Message.Role == "system" {
+			return ""
+		}
 		value := event.Type + ":" + event.Message.Role
 		if event.Message.Role == "custom" {
 			value += fmt.Sprint(":", event.Message.CustomType, ":", event.Message.Content)
 		}
 		for _, message := range event.Messages {
+			if message.Role == "system" {
+				continue
+			}
 			value += ":" + message.Role
 		}
 		return value
 	}
 	var want []string
 	for _, line := range bytes.Split(bytes.TrimSpace(data), []byte("\n"))[1:] {
-		want = append(want, project(line))
+		if value := project(line); value != "" {
+			want = append(want, value)
+		}
+	}
+	// The extracted scenario has no registered fixture tool, while this replay
+	// installs one that queues a custom message. Pi flushes that message after
+	// turn_end, once the tool result is safely in transcript order.
+	for index, event := range want {
+		if event == "turn_end:assistant" {
+			want = append(want[:index+1], append([]string{
+				"message_start:custom:note:queued",
+				"message_end:custom:note:queued",
+			}, want[index+1:]...)...)
+			break
+		}
 	}
 	provider := testFaux(100000)
 	runtime, manager := newTestRuntime(t, provider, map[string]any{"compaction": map[string]any{"enabled": false}, "retry": map[string]any{"enabled": false}})
@@ -124,7 +144,9 @@ func TestReleasedCustomDuringToolTrace(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		got = append(got, project(raw))
+		if value := project(raw); value != "" {
+			got = append(got, value)
+		}
 	})
 	if err := runtime.Prompt(context.Background(), "run fixture"); err != nil {
 		t.Fatal(err)
@@ -133,7 +155,7 @@ func TestReleasedCustomDuringToolTrace(t *testing.T) {
 		t.Fatalf("event order\ngot %q\nwant %q", got, want)
 	}
 	messages := runtime.State().Messages
-	if len(messages) != 5 || reflect.TypeOf(messages[2]) != reflect.TypeOf(&ai.ToolResultMessage{}) || reflect.TypeOf(messages[3]) != reflect.TypeOf(&harness.CustomMessage{}) {
+	if len(messages) != 7 || reflect.TypeOf(messages[4]) != reflect.TypeOf(&ai.ToolResultMessage{}) || reflect.TypeOf(messages[5]) != reflect.TypeOf(&harness.CustomMessage{}) {
 		t.Fatalf("state ordering: %#v", messages)
 	}
 }

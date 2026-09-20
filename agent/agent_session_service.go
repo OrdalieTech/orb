@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -299,6 +300,16 @@ func (service *ExtensionAgentSessionService) CreateSession(
 			}
 		}
 	}
+	if stream := sessionOptions.StreamFn; stream != nil {
+		sessionOptions.StreamFn = func(ctx context.Context, model *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+			if transcript, ok := ai.TranscriptContextFrom(ctx); ok {
+				request.Messages = piCompatibilityMessages(transcript.Messages)
+				request.SystemPrompt = nil
+				request.Tools = nil
+			}
+			return stream(ctx, model, request, options)
+		}
+	}
 
 	// Session storage: the SessionManager thin handle. Persisted sessions use
 	// the directory the SDK already created and write-probed.
@@ -386,6 +397,7 @@ func (service *ExtensionAgentSessionService) CreateSession(
 		return nil, extensionhost.AgentSessionCreateResult{}, err
 	}
 	session := result.Session
+	applyPiCompatibilityPrompt(session)
 	sessionRef.Store(session)
 
 	// Pre-create appendSessionInfo names (contract point 6), best-effort like
@@ -419,6 +431,69 @@ func (service *ExtensionAgentSessionService) CreateSession(
 		createResult.Model = &model
 	}
 	return handle, createResult, nil
+}
+
+func piCompatibilityMessages(messages ai.MessageList) ai.MessageList {
+	result := append(ai.MessageList(nil), messages...)
+	for index, message := range result {
+		system, ok := message.(*ai.SystemMessage)
+		if !ok {
+			continue
+		}
+		copy := *system
+		if content, ok := copy.Content.(string); ok {
+			copy.Content = piCompatibilityText(content)
+		}
+		copy.Sections = append(ai.SystemPromptSections(nil), copy.Sections...)
+		for sectionIndex := range copy.Sections {
+			if copy.Sections[sectionIndex].Text != nil {
+				text := piCompatibilityText(*copy.Sections[sectionIndex].Text)
+				copy.Sections[sectionIndex].Text = &text
+			}
+		}
+		result[index] = &copy
+	}
+	return result
+}
+
+func applyPiCompatibilityPrompt(session *AgentSession) {
+	state := session.extensionState
+	if state == nil {
+		return
+	}
+	state.mu.Lock()
+	if state.promptOptions == nil {
+		state.mu.Unlock()
+		return
+	}
+	options := cloneSystemPromptOptions(*state.promptOptions)
+	for _, section := range BuildSystemPromptSections(options) {
+		if section.Text == nil || (section.Name != "preamble" && section.Name != "docs") {
+			continue
+		}
+		text := piCompatibilityText(*section.Text)
+		if section.Name == "docs" {
+			text = strings.TrimSuffix(strings.TrimPrefix(text, "<docs>\n"), "\n</docs>")
+		}
+		options.Sections = append(options.Sections, ai.SystemPromptSection{Name: section.Name, Text: &text})
+	}
+	state.promptOptions = &options
+	state.baseSystemPrompt = BuildSystemPrompt(options)
+	prompt := state.baseSystemPrompt
+	state.mu.Unlock()
+	session.agent.SetSystemPrompt(prompt)
+}
+
+func piCompatibilityText(text string) string {
+	return strings.NewReplacer(
+		"You are an expert problem-solving assistant operating inside Orb, a general-purpose agent harness for work and software development. You help users investigate, plan, create, and complete tasks using the available tools, including working with files, executing commands, and editing code or documents.",
+		"You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+		"Orb documentation files", "pi .md files",
+		"Orb documentation", "Pi documentation",
+		"Orb itself", "pi itself",
+		"Orb docs", "pi docs",
+		"Orb topics", "pi topics",
+	).Replace(text)
 }
 
 // callbackToolDefinition wires one host-JS tool into the child session. The

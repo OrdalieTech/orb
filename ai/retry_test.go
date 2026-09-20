@@ -7,7 +7,7 @@ func TestRetryAndOverflowClassification(t *testing.T) {
 		return &AssistantMessage{StopReason: StopReasonError, ErrorMessage: &text}
 	}
 	for _, text := range []string{
-		"overloaded_error", "Provider finish_reason: network_error", "stream ended before a terminal response event",
+		"overloaded_error", "currently experiencing high demand", "HTTP 520", "Provider finish_reason: network_error", "stream ended before a terminal response event",
 		// DNS transport failures (upstream 33e40c3e) — Node wording plus Go's.
 		"The pending stream has been canceled (caused by: getaddrinfo ENOTFOUND bedrock-runtime.us-east-1.amazonaws.com)",
 		"connect ENOTFOUND api.example.com",
@@ -35,6 +35,14 @@ func TestRetryAndOverflowClassification(t *testing.T) {
 	}
 	if !IsContextOverflow(failed(" Throttling error: too many tokens"), 200000) {
 		t.Fatal("error text was trimmed before anchored upstream patterns")
+	}
+	bodyless := failed("413 status code (no body)")
+	if IsContextOverflow(bodyless, 200000) {
+		t.Fatal("non-Cerebras bodyless 413 classified as overflow")
+	}
+	bodyless.Provider = "cerebras"
+	if !IsContextOverflow(bodyless, 200000) {
+		t.Fatal("Cerebras bodyless 413 was not classified as overflow")
 	}
 	silent := &AssistantMessage{StopReason: StopReasonStop, Usage: Usage{Input: 101}}
 	if !IsContextOverflow(silent, 100) {

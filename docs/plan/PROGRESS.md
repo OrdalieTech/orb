@@ -4,6 +4,50 @@ The active sequence is `SPRINTS.md`; the old work-package numbers are historical
 only. Progress is measured by conformance surfaces moving from red to green and by milestone
 criteria closing.
 
+## Pi v0.86.0 adoption — 2026-09-20
+
+Owner-approved implementation with production headless compatibility required: retain existing
+exported Go entry points and interface method sets, legacy session reads, and RPC command shapes.
+Target release: `ecac0a9c4edad3dac5d9f8b40e0c7db7a56471fc` (`v0.86.0`).
+
+The owner explicitly chose Pi's default system-message events after the real production consumer
+audit found that Ordalie's broad `message_end` SSE forwarding would expose system prompts. Before
+deployment, that consumer must filter system messages; no backend files are changed by this work.
+The owner also requires upgrading to the latest stable Go on every update: this adoption now uses
+Go 1.27.1, with matching CI/release version-file selection and golangci-lint 2.13.2.
+
+- [x] Extract released transcript/provider/session regression fixtures before implementation.
+- [x] Implement provider, retry, compaction, extension, and RPC fixes with additive Go APIs.
+- [x] Integrate transcript-backed prompt/tool replay and legacy session compatibility.
+- [x] Improve session discovery, progressive resume, autocomplete, and clipboard reliability;
+      focused race suites pass, including mutation/close cancellation lifetime regressions.
+- [x] Audit the former product name: no genuine references remain in tracked files.
+- [x] Compare exported Go APIs against the pre-change production revision: no incompatible APIs.
+- [x] Verify headless, host, upstream RPC, and canonical Linux fixture/race/pure-Go gates.
+- [x] Record sync evidence and advance the pin only after complete conformance is green.
+- [x] Run final post-pin `make check`: build, vet, lint, full race suite, and pure-Go wire suite pass.
+- [x] Commit the verified adoption on `main`.
+
+Prompt-cache warming and diagnostic-upload features remain deferred per the reviewed adoption plan.
+Tier-2 live provider smokes currently lack their required credential environment variables;
+deterministic provider fixtures and local fake-server tests remain the integration gate. No live
+provider verification is claimed.
+
+Production replay now passes all three selected Ordalie tests (multiple tool rounds, stable legacy
+system prompts, and session persistence/native SSE). Linux TS↔Go session/auth checks pass, and
+`make check` passes on Go 1.27.1. Released TS Pi and Orb now both pass the same 29/29 unmodified
+upstream RPC tests, including fresh-session counts. The legacy prompt setter is preserved without
+memory-specific transcript rewriting. All fixture dependencies now follow the released Pi versions,
+including OpenAI SDK 6.40.0.
+
+Trim: removed obsolete provider split/deferred helpers, extension schema wrappers, active-tool
+resolution, session-listing helpers, and clipboard spawning code. No Go dependency was added;
+`go mod tidy -diff` is clean. Source LOC (excluding Go tests and generated filenames): ai 32,220 /
+23,894 TS (1.35×), engine 13,658 / 33,353 (0.41×), agent 70,019 / 73,689 (0.95×), tui 13,866 /
+18,267 (0.76×). The ai count includes Orb's direct-source catalog generator under `ai/`, whereas
+upstream's generator lives outside `src/`; excluding those 2,025 dev-tool lines gives 1.26× for ai.
+Removed dead helpers rather than widening shared abstractions.
+
 ## Sprint 0 — Consolidate
 
 Status: **closed** at `68d7229`.

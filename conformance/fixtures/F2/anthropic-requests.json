@@ -21,11 +21,22 @@
         },
         "contextWindow": 512000,
         "maxTokens": 512000,
+        "thinkingLevelMap": {
+          "off": null,
+          "minimal": null,
+          "low": "low",
+          "medium": "medium",
+          "high": "high",
+          "xhigh": null,
+          "max": null
+        },
         "compat": {
+          "allowEmptySignature": true,
           "sendSessionAffinityHeaders": true,
           "supportsEagerToolInputStreaming": false,
           "supportsCacheControlOnTools": false,
-          "supportsLongCacheRetention": false
+          "supportsLongCacheRetention": false,
+          "forceAdaptiveThinking": true
         }
       },
       "context": {
@@ -347,7 +358,7 @@
           "content-type": "application/json",
           "x-api-key": "fixture-anthropic-key"
         },
-        "body": "{\"model\":\"claude-opus-4-6\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"inspect image\"},{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/png\",\"data\":\"aW1hZ2U=\"}}]},{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"signed reasoning\",\"signature\":\"sig_fixture\"},{\"type\":\"tool_use\",\"id\":\"toolu_fixture\",\"name\":\"echo\",\"input\":{\"text\":\"first\",\"mode\":\"plain\"}}]},{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_fixture\",\"content\":[{\"type\":\"tool_reference\",\"tool_name\":\"late_tool\"}],\"is_error\":false},{\"type\":\"text\",\"text\":\"work completed\"}]},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"continue\",\"cache_control\":{\"type\":\"ephemeral\",\"ttl\":\"1h\"}}]}],\"max_tokens\":4096,\"stream\":true,\"system\":[{\"type\":\"text\",\"text\":\"Use tools and preserve thinking.\",\"cache_control\":{\"type\":\"ephemeral\",\"ttl\":\"1h\"}}],\"tools\":[{\"name\":\"echo\",\"description\":\"Echo structured text\",\"eager_input_streaming\":true,\"input_schema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]}},\"required\":[\"text\"]},\"cache_control\":{\"type\":\"ephemeral\",\"ttl\":\"1h\"}},{\"name\":\"late_tool\",\"description\":\"A deferred tool\",\"eager_input_streaming\":true,\"input_schema\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"boolean\"}},\"required\":[\"value\"]},\"defer_loading\":true}],\"thinking\":{\"type\":\"enabled\",\"budget_tokens\":2048,\"display\":\"omitted\"},\"metadata\":{\"user_id\":\"fixture-user\"},\"tool_choice\":{\"type\":\"tool\",\"name\":\"echo\"}}"
+        "body": "{\"model\":\"claude-opus-4-6\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"inspect image\"},{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/png\",\"data\":\"aW1hZ2U=\"}}]},{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"signed reasoning\",\"signature\":\"sig_fixture\"},{\"type\":\"tool_use\",\"id\":\"toolu_fixture\",\"name\":\"echo\",\"input\":{\"text\":\"first\",\"mode\":\"plain\"}}]},{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_fixture\",\"content\":\"work completed\",\"is_error\":false}]},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"continue\",\"cache_control\":{\"type\":\"ephemeral\",\"ttl\":\"1h\"}}]}],\"max_tokens\":4096,\"stream\":true,\"system\":[{\"type\":\"text\",\"text\":\"Use tools and preserve thinking.\",\"cache_control\":{\"type\":\"ephemeral\",\"ttl\":\"1h\"}}],\"tools\":[{\"name\":\"echo\",\"description\":\"Echo structured text\",\"eager_input_streaming\":true,\"input_schema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]}},\"required\":[\"text\"]}},{\"name\":\"late_tool\",\"description\":\"A deferred tool\",\"eager_input_streaming\":true,\"input_schema\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"boolean\"}},\"required\":[\"value\"]},\"cache_control\":{\"type\":\"ephemeral\",\"ttl\":\"1h\"}}],\"thinking\":{\"type\":\"enabled\",\"budget_tokens\":2048,\"display\":\"omitted\"},\"metadata\":{\"user_id\":\"fixture-user\"},\"tool_choice\":{\"type\":\"tool\",\"name\":\"echo\"}}"
       }
     },
     {

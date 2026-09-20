@@ -1,6 +1,6 @@
 module github.com/OrdalieTech/orb
 
-go 1.26.6
+go 1.27.1
 
 require (
 	github.com/alecthomas/chroma/v2 v2.27.0

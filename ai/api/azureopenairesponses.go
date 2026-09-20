@@ -296,6 +296,14 @@ func buildAzureOpenAIResponsesPayload(
 	if err != nil {
 		return nil, err
 	}
+	transcript := ai.NormalizeContext(requestContext)
+	if !compat.supportsMidConvoSystemMessages {
+		transcript = ai.CollapseSystemMessages(transcript)
+	}
+	requestTools, deferredTools, anchorsAdditions := transcriptToolPlacement(
+		transcript.Messages, compat.supportsAdditionalTools || compat.supportsToolSearch,
+	)
+	requestContext = projectTranscriptContext(transcript, true)
 	rawCompat, err := decodeCompat[ai.OpenAIResponsesCompat](model)
 	if err != nil {
 		return nil, err
@@ -312,9 +320,11 @@ func buildAzureOpenAIResponsesPayload(
 	toolOptions := responsesToolOptions{
 		supportsStrictMode: supportsStrictMode, supportsOpenAIGrammarTools: supportsGrammar,
 	}
-	input, err := convertResponsesMessagesWithOptions(model, requestContext, map[string]ai.Tool{}, responsesMessageOptions{
+	input, err := convertResponsesMessagesWithOptions(model, requestContext, deferredTools, responsesMessageOptions{
 		supportsDeveloperRole:      compat.supportsDeveloperRole,
 		grammarToolInputProperties: grammarToolInputProperties,
+		deferredToolsMode:          responsesDeferredToolsMode(compat.supportsAdditionalTools, compat.supportsToolSearch),
+		anchorsToolAdditions:       anchorsAdditions,
 		toolOptions:                toolOptions,
 	})
 	if err != nil {
@@ -334,8 +344,8 @@ func buildAzureOpenAIResponsesPayload(
 		}
 		payload.Temperature = streamOptions.Temperature
 	}
-	if requestContext.Tools != nil && len(*requestContext.Tools) > 0 {
-		payload.Tools, err = convertResponsesToolsWithOptions(*requestContext.Tools, toolOptions)
+	if len(requestTools) > 0 {
+		payload.Tools, err = convertResponsesToolsWithOptions(requestTools, toolOptions)
 		if err != nil {
 			return nil, err
 		}
@@ -385,10 +395,13 @@ func postAzureOpenAIStream(
 	if err != nil {
 		return nil, err
 	}
-	// The pinned TypeScript SDK replaces the base URL's query when it applies
-	// api-version. If the configured proxy URL already has a query, /responses
-	// was parsed into that query and is discarded with it.
-	endpoint.RawQuery = url.Values{"api-version": []string{config.apiVersion}}.Encode()
+	apiVersion := "api-version=" + url.QueryEscape(config.apiVersion)
+	endpoint.RawQuery = strings.ReplaceAll(endpoint.RawQuery, "/", "%2F")
+	if endpoint.RawQuery == "" {
+		endpoint.RawQuery = apiVersion
+	} else {
+		endpoint.RawQuery += "&" + apiVersion
+	}
 	headers := copyModelHeaders(model)
 	headers.Set("Content-Type", "application/json")
 	headers.Set("Accept", "application/json")

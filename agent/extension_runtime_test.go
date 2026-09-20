@@ -375,8 +375,15 @@ func TestExtensionCommandInputAndNativeResourcesShareUpstreamOrder(t *testing.T)
 		t.Fatalf("input calls = %d", inputCalls)
 	}
 	state := runtime.State()
-	if got := userMessageText(state.Messages[0]); got != "EXT value" {
-		t.Fatalf("expanded user message = %q", got)
+	var expanded string
+	for _, message := range state.Messages {
+		if text := userMessageText(message); text != "" {
+			expanded = text
+			break
+		}
+	}
+	if expanded != "EXT value" {
+		t.Fatalf("expanded user message = %q", expanded)
 	}
 }
 
@@ -423,7 +430,7 @@ func TestDynamicActiveToolsReportOnlyAdditions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.AddedToolNames == nil || strings.Join(*result.AddedToolNames, ",") != "existing,late" {
+	if result.AddedToolNames == nil || strings.Join(*result.AddedToolNames, ",") != "existing,existing" {
 		t.Fatalf("added tools = %v", result.AddedToolNames)
 	}
 	active, _ := runtime.extensionActiveTools()

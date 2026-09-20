@@ -15,6 +15,7 @@ type transactionMigration struct {
 	Writes        []json.RawMessage `json:"writes"`
 	ImportedUsage ai.Usage          `json:"importedUsage"`
 	NextSeq       int64             `json:"nextSeq"`
+	reminted      map[string]string
 }
 
 func transactionObject(pairs ...any) json.RawMessage {
@@ -36,7 +37,7 @@ func transactionTimestamp(fields map[string]json.RawMessage) int64 {
 
 //nolint:staticcheck // Error capitalization matches the upstream storage protocol.
 func normalizeTransactionLegacyV3(lines [][]byte, idGenerator func(string, int64) (string, error)) (transactionMigration, error) {
-	result := transactionMigration{Writes: []json.RawMessage{}}
+	result := transactionMigration{Writes: []json.RawMessage{}, reminted: map[string]string{}}
 	entries := make([]map[string]json.RawMessage, 0, len(lines))
 	byID := map[string]map[string]json.RawMessage{}
 	reminted := map[string]string{}
@@ -56,6 +57,12 @@ func normalizeTransactionLegacyV3(lines [][]byte, idGenerator func(string, int64
 		if byID[id] != nil {
 			return result, fmt.Errorf("Duplicate legacy v3 entry id: %s", id)
 		}
+		if parent := entry["parentId"]; !bytes.Equal(parent, []byte("null")) {
+			parentID := transactionString(map[string]json.RawMessage{"id": parent}, "id")
+			if byID[parentID] == nil {
+				return result, fmt.Errorf("Legacy v3 entry %s has a missing or forward parent at line %d: %s", id, index+2, parentID)
+			}
+		}
 		byID[id] = entry
 		entries = append(entries, entry)
 		if retained(kind) {
@@ -64,6 +71,7 @@ func normalizeTransactionLegacyV3(lines [][]byte, idGenerator func(string, int64
 				return result, err
 			}
 			reminted[id] = minted
+			result.reminted[id] = minted
 		}
 	}
 	resolve := func(reference json.RawMessage) (*string, error) {
@@ -201,7 +209,7 @@ func normalizeTransactionLegacyV3(lines [][]byte, idGenerator func(string, int64
 		result.Writes = append(result.Writes, transactionObject(pairs...))
 	}
 	store := func(namespace, key string, value any) {
-		result.Writes = append(result.Writes, transactionObject("kind", "value", "op", "set", "seq", len(result.Writes)+1, "namespace", namespace, "key", key, "value", value))
+		result.Writes = append(result.Writes, transactionObject("kind", "value", "op", "set", "namespace", namespace, "key", key, "value", value, "seq", len(result.Writes)+1))
 	}
 	var latestName json.RawMessage
 	labels := map[string]string{}

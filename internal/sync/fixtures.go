@@ -20,8 +20,8 @@ func orbOwnedFixture(relative string) bool {
 	return strings.HasPrefix(top, "F12") || top == "WP450"
 }
 
-// carryOrbOwnedFixtures copies the committed Orb-owned families into a
-// generated fixture tree that lacks them.
+// carryOrbOwnedFixtures preserves Orb snapshots even when an extractor emits
+// files under the same family (for example upstream command metadata).
 func carryOrbOwnedFixtures(committed, destination string) error {
 	entries, err := os.ReadDir(committed)
 	if err != nil {
@@ -32,9 +32,7 @@ func carryOrbOwnedFixtures(committed, destination string) error {
 			continue
 		}
 		target := filepath.Join(destination, entry.Name())
-		if _, err := os.Stat(target); err == nil {
-			continue
-		} else if !os.IsNotExist(err) {
+		if err := os.RemoveAll(target); err != nil {
 			return err
 		}
 		if err := copyTree(filepath.Join(committed, entry.Name()), target); err != nil {

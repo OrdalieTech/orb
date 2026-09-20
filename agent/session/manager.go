@@ -767,6 +767,21 @@ func (manager *SessionManager) AppendCompaction(
 	tokensBefore int64,
 	options ...OptionalEntryFields,
 ) (string, error) {
+	contextState := manager.BuildSessionContext()
+	messages := make(ai.MessageList, 0, len(contextState.Messages))
+	for _, raw := range contextState.Messages {
+		if message, decodeErr := ai.UnmarshalMessage(raw); decodeErr == nil {
+			messages = append(messages, message)
+		}
+	}
+	var systemMessage json.RawMessage
+	if current := ai.CurrentSystemMessage(messages); current != nil {
+		encoded, encodeErr := ai.Marshal(current)
+		if encodeErr != nil {
+			return "", encodeErr
+		}
+		systemMessage = encoded
+	}
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	entry, err := manager.newEntryBaseLocked("compaction")
@@ -776,6 +791,21 @@ func (manager *SessionManager) AppendCompaction(
 	entry.Summary = summary
 	entry.FirstKeptEntryID = firstKeptEntryID
 	entry.TokensBefore = float64(tokensBefore)
+	if len(systemMessage) > 0 {
+		var current ai.SystemMessage
+		if decodeErr := json.Unmarshal(systemMessage, &current); decodeErr != nil {
+			return "", decodeErr
+		}
+		if timestamp, parseErr := time.Parse(time.RFC3339Nano, entry.Timestamp); parseErr == nil {
+			current.Timestamp = timestamp.UnixMilli()
+		}
+		encoded, encodeErr := ai.Marshal(current)
+		if encodeErr != nil {
+			return "", encodeErr
+		}
+		systemMessage = encoded
+	}
+	entry.SystemMessage = systemMessage
 	if err := applyOptionalEntryFields(&entry, options); err != nil {
 		return "", err
 	}

@@ -47,10 +47,11 @@ type resolvedOpenAICompletionsCompat struct {
 	vercelGatewayRouting                        *ai.VercelGatewayRouting
 	zaiToolStream                               bool
 	supportsOpenAIGrammarTools                  bool
+	supportsMidConvoSystemMessages              bool
+	supportsMidConvoToolAdditions               bool
 	supportsStrictMode                          bool
 	cacheControlFormat                          *ai.CacheControlFormat
 	sendSessionAffinityHeaders                  bool
-	deferredToolsMode                           *ai.DeferredToolsMode
 	sessionAffinityFormat                       ai.SessionAffinityFormat
 	supportsLongCacheRetention                  bool
 }
@@ -533,6 +534,12 @@ func resolveOpenAICompletionsCompat(model *ai.Model) (resolvedOpenAICompletionsC
 	if overrides.SupportsOpenAIGrammarTools != nil {
 		resolved.supportsOpenAIGrammarTools = *overrides.SupportsOpenAIGrammarTools
 	}
+	if overrides.SupportsMidConvoSystemMessages != nil {
+		resolved.supportsMidConvoSystemMessages = *overrides.SupportsMidConvoSystemMessages
+	}
+	if overrides.SupportsMidConvoToolAdditions != nil {
+		resolved.supportsMidConvoToolAdditions = *overrides.SupportsMidConvoToolAdditions
+	}
 	if overrides.SupportsStrictMode != nil {
 		resolved.supportsStrictMode = *overrides.SupportsStrictMode
 	}
@@ -541,9 +548,6 @@ func resolveOpenAICompletionsCompat(model *ai.Model) (resolvedOpenAICompletionsC
 	}
 	if overrides.SendSessionAffinityHeaders != nil {
 		resolved.sendSessionAffinityHeaders = *overrides.SendSessionAffinityHeaders
-	}
-	if overrides.DeferredToolsMode != nil {
-		resolved.deferredToolsMode = overrides.DeferredToolsMode
 	}
 	if overrides.SessionAffinityFormat != nil {
 		resolved.sessionAffinityFormat = *overrides.SessionAffinityFormat
@@ -682,6 +686,7 @@ func detectOpenAICompletionsCompat(model *ai.Model) resolvedOpenAICompletionsCom
 		supportsOpenAIGrammarTools:                  false,
 		supportsStrictMode:                          !isMoonshot && !isTogether && !isCloudflareGateway && !isNVIDIA,
 		cacheControlFormat:                          cacheControl,
+		sendSessionAffinityHeaders:                  isOpenRouter,
 		sessionAffinityFormat:                       sessionFormat,
 		supportsLongCacheRetention:                  !isTogether && !isCloudflareWorkers && !isCloudflareGateway && !isNVIDIA && !isAntLing,
 		requiresReasoningContentOnAssistantMessages: isDeepSeek,
@@ -721,6 +726,7 @@ func buildOpenAICompletionsHeaders(
 			}
 		}
 	}
+	addOpenCodeSessionHeader(headers, model, options)
 	return headers
 }
 
@@ -731,6 +737,20 @@ func buildOpenAICompletionsPayload(
 	compat resolvedOpenAICompletionsCompat,
 	retention ai.CacheRetention,
 ) (map[string]any, error) {
+	transcript := ai.NormalizeContext(requestContext)
+	if !compat.supportsMidConvoSystemMessages {
+		transcript = ai.CollapseSystemMessages(transcript)
+	}
+	requestTools, _, anchorsAdditions := transcriptToolPlacement(
+		transcript.Messages, compat.supportsMidConvoSystemMessages && compat.supportsMidConvoToolAdditions,
+	)
+	requestContext = projectTranscriptContext(transcript, true)
+	if len(requestTools) > 0 {
+		requestContext.Tools = &requestTools
+	} else {
+		requestContext.Tools = nil
+	}
+	compat.supportsMidConvoToolAdditions = anchorsAdditions
 	grammarToolInputProperties, err := createGrammarToolInputProperties(
 		requestContext.Tools, compat.supportsOpenAIGrammarTools,
 	)
@@ -768,8 +788,7 @@ func buildOpenAICompletionsPayload(
 		payload["temperature"] = *options.Temperature
 	}
 
-	deferredNames := deferredOpenAICompletionsToolNames(requestContext.Messages, compat)
-	activeTools := activeOpenAICompletionsTools(requestContext.Tools, deferredNames)
+	activeTools := activeOpenAICompletionsTools(requestContext.Tools, nil)
 	var tools []any
 	if len(activeTools) > 0 {
 		tools, err = convertOpenAICompletionsTools(activeTools, compat)
@@ -893,6 +912,22 @@ func convertOpenAICompletionsMessages(
 	lastRole := ""
 	for index := 0; index < len(transformed); index++ {
 		switch message := transformed[index].(type) {
+		case *ai.SystemMessage:
+			if compat.supportsMidConvoToolAdditions && len(message.ToolsAdded) > 0 {
+				convertedTools, err := convertOpenAICompletionsTools(message.ToolsAdded, compat)
+				if err != nil {
+					return nil, err
+				}
+				messages = append(messages, map[string]any{"role": "system", "tools": convertedTools})
+			}
+			if text := ai.SystemMessageText(message); text != "" {
+				role := "system"
+				if model.Reasoning && compat.supportsDeveloperRole {
+					role = "developer"
+				}
+				messages = append(messages, map[string]any{"role": role, "content": sanitizeText(text)})
+				lastRole = "system"
+			}
 		case *ai.UserMessage:
 			if compat.requiresAssistantAfterToolResult && lastRole == "toolResult" {
 				messages = append(messages, map[string]any{"role": "assistant", "content": "I have processed the tool results."})
@@ -918,8 +953,6 @@ func convertOpenAICompletionsMessages(
 		case *ai.ToolResultMessage:
 			end := index
 			imageParts := make([]any, 0)
-			deferredNames := make([]string, 0)
-			seenDeferred := map[string]bool{}
 			for end < len(transformed) {
 				toolResult, ok := transformed[end].(*ai.ToolResultMessage)
 				if !ok {
@@ -928,14 +961,6 @@ func convertOpenAICompletionsMessages(
 				converted, images := convertOpenAICompletionsToolResult(model, toolResult, compat)
 				messages = append(messages, converted)
 				imageParts = append(imageParts, images...)
-				if compat.deferredToolsMode != nil && *compat.deferredToolsMode == ai.DeferredToolsKimi && toolResult.AddedToolNames != nil {
-					for _, name := range *toolResult.AddedToolNames {
-						if !seenDeferred[name] {
-							seenDeferred[name] = true
-							deferredNames = append(deferredNames, name)
-						}
-					}
-				}
 				end++
 			}
 			index = end - 1
@@ -949,19 +974,6 @@ func convertOpenAICompletionsMessages(
 				lastRole = "user"
 			} else {
 				lastRole = "toolResult"
-			}
-			if len(deferredNames) > 0 {
-				deferredTools := toolsByName(requestContext.Tools, deferredNames)
-				if len(deferredTools) > 0 {
-					convertedTools, err := convertOpenAICompletionsTools(deferredTools, compat)
-					if err != nil {
-						return nil, err
-					}
-					messages = append(messages, map[string]any{
-						"role":  "system",
-						"tools": convertedTools,
-					})
-				}
 			}
 		}
 	}
@@ -1158,23 +1170,6 @@ func convertOpenAICompletionsToolResult(
 	return converted, images
 }
 
-func deferredOpenAICompletionsToolNames(messages ai.MessageList, compat resolvedOpenAICompletionsCompat) map[string]bool {
-	result := map[string]bool{}
-	if compat.deferredToolsMode == nil || *compat.deferredToolsMode != ai.DeferredToolsKimi {
-		return result
-	}
-	for _, message := range messages {
-		toolResult, ok := message.(*ai.ToolResultMessage)
-		if !ok || toolResult.AddedToolNames == nil {
-			continue
-		}
-		for _, name := range *toolResult.AddedToolNames {
-			result[name] = true
-		}
-	}
-	return result
-}
-
 func activeOpenAICompletionsTools(tools *[]ai.Tool, deferred map[string]bool) []ai.Tool {
 	if tools == nil {
 		return nil
@@ -1182,23 +1177,6 @@ func activeOpenAICompletionsTools(tools *[]ai.Tool, deferred map[string]bool) []
 	result := make([]ai.Tool, 0, len(*tools))
 	for _, tool := range *tools {
 		if !deferred[tool.Name] {
-			result = append(result, tool)
-		}
-	}
-	return result
-}
-
-func toolsByName(tools *[]ai.Tool, names []string) []ai.Tool {
-	if tools == nil {
-		return nil
-	}
-	byName := make(map[string]ai.Tool, len(*tools))
-	for _, tool := range *tools {
-		byName[tool.Name] = tool
-	}
-	result := make([]ai.Tool, 0, len(names))
-	for _, name := range names {
-		if tool, ok := byName[name]; ok {
 			result = append(result, tool)
 		}
 	}

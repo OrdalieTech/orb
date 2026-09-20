@@ -186,6 +186,31 @@ type Message interface {
 	isMessage()
 }
 
+// SystemPromptSection is one insertion-ordered system prompt section. A nil
+// Text removes a previously declared section.
+type SystemPromptSection struct {
+	Name string
+	Text *string
+}
+
+// SystemPromptSections preserves JavaScript object insertion order on the wire.
+type SystemPromptSections []SystemPromptSection
+
+type ToolReference struct {
+	Name string `json:"name"`
+}
+
+// SystemMessage records prompt and tool state in the transcript. Content is
+// either a string or a slice of text blocks, matching pi's public wire shape.
+type SystemMessage struct {
+	toolFieldsAfterTimestamp bool
+	Content                  any                  `json:"content"`
+	Sections                 SystemPromptSections `json:"sections,omitempty"`
+	ToolsAdded               []Tool               `json:"toolsAdded,omitempty"`
+	ToolsRemoved             []ToolReference      `json:"toolsRemoved,omitempty"`
+	Timestamp                int64                `json:"timestamp"`
+}
+
 type UserMessage struct {
 	Content   UserContent `json:"content"`
 	Timestamp int64       `json:"timestamp"`
@@ -226,6 +251,7 @@ type ToolResultMessage struct {
 	Timestamp      int64             `json:"timestamp"`
 }
 
+func (*SystemMessage) isMessage()     {}
 func (*UserMessage) isMessage()       {}
 func (*AssistantMessage) isMessage()  {}
 func (*ToolResultMessage) isMessage() {}

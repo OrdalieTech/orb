@@ -22,12 +22,12 @@
     "durationMs": 0,
     "runId": "run-fixed-nested-workflow",
     "tokenUsage": {
-      "input": 2736,
+      "input": 2828,
       "output": 16,
-      "total": 5488,
+      "total": 5672,
       "cost": 0,
       "cacheRead": 0,
-      "cacheWrite": 2736
+      "cacheWrite": 2828
     }
   },
   "error": null,
@@ -53,13 +53,13 @@
       "id": "run-fixed-nested-workflow-nested1:0",
       "label": "child-one",
       "result": "Child one reporting on seeds.",
-      "tokens": 2734,
+      "tokens": 2826,
       "tokenUsage": {
-        "input": 1363,
+        "input": 1409,
         "output": 8,
         "cacheRead": 0,
-        "cacheWrite": 1363,
-        "total": 2734,
+        "cacheWrite": 1409,
+        "total": 2826,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -67,12 +67,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 2736,
+        "input": 2828,
         "output": 16,
-        "total": 5488,
+        "total": 5672,
         "cost": 0,
         "cacheRead": 0,
-        "cacheWrite": 2736
+        "cacheWrite": 2828
       }
     },
     {
@@ -96,13 +96,13 @@
       "id": "run-fixed-nested-workflow:0",
       "label": "after",
       "result": "Parent used the child result.",
-      "tokens": 2754,
+      "tokens": 2846,
       "tokenUsage": {
-        "input": 1373,
+        "input": 1419,
         "output": 8,
         "cacheRead": 0,
-        "cacheWrite": 1373,
-        "total": 2754,
+        "cacheWrite": 1419,
+        "total": 2846,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -110,12 +110,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 2736,
+        "input": 2828,
         "output": 16,
-        "total": 5488,
+        "total": 5672,
         "cost": 0,
         "cacheRead": 0,
-        "cacheWrite": 2736
+        "cacheWrite": 2828
       }
     }
   ],
@@ -168,15 +168,12 @@
   "providerCalls": [
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -190,15 +187,12 @@
     },
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [

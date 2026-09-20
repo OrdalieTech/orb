@@ -196,18 +196,18 @@
       {
         "kind": "value",
         "op": "set",
-        "seq": 9,
         "namespace": "pi.session.name",
         "key": "",
-        "value": "  fixture name  "
+        "value": "  fixture name  ",
+        "seq": 9
       },
       {
         "kind": "value",
         "op": "set",
-        "seq": 10,
         "namespace": "pi.branch.tip",
         "key": "main",
-        "value": "branch-summary"
+        "value": "branch-summary",
+        "seq": 10
       }
     ],
     "importedUsage": {

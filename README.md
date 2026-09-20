@@ -14,7 +14,7 @@ curl -fsSL https://raw.githubusercontent.com/OrdalieTech/orb/main/scripts/instal
 ```
 
 This installs `orb` to `~/.local/bin` after verifying the release checksum. Override the directory
-with `ORB_INSTALL_DIR`; alternatively, with Go ≥ 1.26.5:
+with `ORB_INSTALL_DIR`; alternatively, with Go ≥ 1.27.1:
 
 ```sh
 go install github.com/OrdalieTech/orb/cmd/orb@latest

@@ -20,13 +20,13 @@
       "id": "run-fixed-cancellation:0",
       "label": "one",
       "result": "First result before the abort.",
-      "tokens": 2720,
+      "tokens": 2812,
       "tokenUsage": {
-        "input": 1356,
+        "input": 1402,
         "output": 8,
         "cacheRead": 0,
-        "cacheWrite": 1356,
-        "total": 2720,
+        "cacheWrite": 1402,
+        "total": 2812,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -82,15 +82,12 @@
   "providerCalls": [
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -104,15 +101,12 @@
     },
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [

@@ -83,7 +83,7 @@
           "content-type": "application/json",
           "x-goog-api-key": "fixture-vertex-key"
         },
-        "body": "{\"contents\":[{\"parts\":[{\"text\":\"hello vertex\"}],\"role\":\"user\"}],\"systemInstruction\":{\"parts\":[{\"text\":\"You are concise.\"}],\"role\":\"user\"},\"tools\":[{\"functionDeclarations\":[{\"description\":\"Calculate with a provider-compatible string enum\",\"name\":\"calculate\",\"parametersJsonSchema\":{\"type\":\"object\",\"properties\":{\"operation\":{\"type\":\"string\",\"enum\":[\"add\",\"subtract\",\"multiply\",\"divide\"]},\"operands\":{\"type\":\"array\",\"items\":{\"type\":\"number\"}}},\"required\":[\"operation\",\"operands\"],\"additionalProperties\":false}}]}],\"toolConfig\":{\"functionCallingConfig\":{\"mode\":\"AUTO\"}},\"generationConfig\":{\"temperature\":0,\"maxOutputTokens\":777,\"thinkingConfig\":{\"includeThoughts\":true,\"thinkingLevel\":\"MINIMAL\"}}}"
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"hello vertex\"}],\"role\":\"user\"}],\"systemInstruction\":{\"parts\":[{\"text\":\"You are concise.\"}],\"role\":\"user\"},\"tools\":[{\"functionDeclarations\":[{\"name\":\"calculate\",\"description\":\"Calculate with a provider-compatible string enum\",\"parametersJsonSchema\":{\"type\":\"object\",\"properties\":{\"operation\":{\"type\":\"string\",\"enum\":[\"add\",\"subtract\",\"multiply\",\"divide\"]},\"operands\":{\"type\":\"array\",\"items\":{\"type\":\"number\"}}},\"required\":[\"operation\",\"operands\"],\"additionalProperties\":false}}]}],\"toolConfig\":{\"functionCallingConfig\":{\"mode\":\"AUTO\"}},\"generationConfig\":{\"temperature\":0,\"maxOutputTokens\":777,\"thinkingConfig\":{\"includeThoughts\":true,\"thinkingLevel\":\"MINIMAL\"}}}"
       }
     },
     {
@@ -246,7 +246,7 @@
           "content-type": "application/json",
           "x-goog-api-key": "fixture-vertex-key"
         },
-        "body": "{\"contents\":[{\"parts\":[{\"text\":\"inspect image\"},{\"inlineData\":{\"mimeType\":\"image/png\",\"data\":\"aW1hZ2U=\"}}],\"role\":\"user\"},{\"parts\":[{\"text\":\"signed plan\",\"thought\":true,\"thoughtSignature\":\"cGxhbg==\"},{\"text\":\"using tool\",\"thoughtSignature\":\"dGV4dA==\"},{\"functionCall\":{\"name\":\"calculate\",\"args\":{\"operation\":\"add\",\"operands\":[2,3]}},\"thoughtSignature\":\"dG9vbA==\"}],\"role\":\"model\"},{\"parts\":[{\"functionResponse\":{\"name\":\"calculate\",\"response\":{\"output\":\"5\"}}}],\"role\":\"user\"},{\"parts\":[{\"text\":\"Tool result image:\"},{\"inlineData\":{\"mimeType\":\"image/webp\",\"data\":\"cGl4ZWw=\"}}],\"role\":\"user\"},{\"parts\":[{\"text\":\"continue\"}],\"role\":\"user\"}],\"systemInstruction\":{\"parts\":[{\"text\":\"Preserve signed thoughts and use tools.\"}],\"role\":\"user\"},\"tools\":[{\"functionDeclarations\":[{\"description\":\"Calculate with a provider-compatible string enum\",\"name\":\"calculate\",\"parametersJsonSchema\":{\"type\":\"object\",\"properties\":{\"operation\":{\"type\":\"string\",\"enum\":[\"add\",\"subtract\",\"multiply\",\"divide\"]},\"operands\":{\"type\":\"array\",\"items\":{\"type\":\"number\"}}},\"required\":[\"operation\",\"operands\"],\"additionalProperties\":false}}]}],\"toolConfig\":{\"functionCallingConfig\":{\"mode\":\"ANY\"}},\"generationConfig\":{\"maxOutputTokens\":4096,\"thinkingConfig\":{\"includeThoughts\":true,\"thinkingBudget\":2048}}}"
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"inspect image\"},{\"inlineData\":{\"mimeType\":\"image/png\",\"data\":\"aW1hZ2U=\"}}],\"role\":\"user\"},{\"parts\":[{\"text\":\"signed plan\",\"thought\":true,\"thoughtSignature\":\"cGxhbg==\"},{\"text\":\"using tool\",\"thoughtSignature\":\"dGV4dA==\"},{\"functionCall\":{\"name\":\"calculate\",\"args\":{\"operation\":\"add\",\"operands\":[2,3]}},\"thoughtSignature\":\"dG9vbA==\"}],\"role\":\"model\"},{\"parts\":[{\"functionResponse\":{\"name\":\"calculate\",\"response\":{\"output\":\"5\"}}}],\"role\":\"user\"},{\"parts\":[{\"text\":\"Tool result image:\"},{\"inlineData\":{\"mimeType\":\"image/webp\",\"data\":\"cGl4ZWw=\"}}],\"role\":\"user\"},{\"parts\":[{\"text\":\"continue\"}],\"role\":\"user\"}],\"systemInstruction\":{\"parts\":[{\"text\":\"Preserve signed thoughts and use tools.\"}],\"role\":\"user\"},\"tools\":[{\"functionDeclarations\":[{\"name\":\"calculate\",\"description\":\"Calculate with a provider-compatible string enum\",\"parametersJsonSchema\":{\"type\":\"object\",\"properties\":{\"operation\":{\"type\":\"string\",\"enum\":[\"add\",\"subtract\",\"multiply\",\"divide\"]},\"operands\":{\"type\":\"array\",\"items\":{\"type\":\"number\"}}},\"required\":[\"operation\",\"operands\"],\"additionalProperties\":false}}]}],\"toolConfig\":{\"functionCallingConfig\":{\"mode\":\"ANY\"}},\"generationConfig\":{\"maxOutputTokens\":4096,\"thinkingConfig\":{\"includeThoughts\":true,\"thinkingBudget\":2048}}}"
       }
     },
     {
@@ -294,7 +294,7 @@
           "content-type": "application/json",
           "x-goog-api-key": "fixture-vertex-key"
         },
-        "body": "{\"contents\":[{\"parts\":[{\"text\":\"hide thoughts\"}],\"role\":\"user\"}],\"generationConfig\":{\"thinkingConfig\":{\"thinkingLevel\":\"LOW\"}}}"
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"hide thoughts\"}],\"role\":\"user\"}],\"generationConfig\":{\"thinkingConfig\":{\"thinkingBudget\":0}}}"
       }
     },
     {
@@ -622,7 +622,7 @@
           "content-type": "application/json",
           "x-goog-api-key": "fixture-vertex-key"
         },
-        "body": "{\"contents\":[{\"parts\":[{\"text\":\"vertex config\"}],\"role\":\"user\"}],\"tools\":[{\"enterpriseWebSearch\":{}}],\"toolConfig\":{\"retrievalConfig\":{\"x\":1},\"functionCallingConfig\":{\"allowedFunctionNames\":[\"f\"],\"mode\":\"ANY\"}},\"labels\":{\"team\":\"pi\"},\"modelArmorConfig\":{\"promptTemplateName\":\"projects/p/locations/l/templates/t\"},\"serviceTier\":\"PRIORITY\",\"generationConfig\":{\"topP\":0.25,\"routingConfig\":{\"autoMode\":{}},\"modelConfig\":{\"featureSelectionPreference\":\"BALANCED\"},\"audioTimestamp\":true,\"imageConfig\":{\"aspectRatio\":\"1:1\",\"imageSize\":\"1K\",\"personGeneration\":\"ALLOW_ADULT\",\"imageOutputOptions\":{\"mimeType\":\"image/png\",\"compressionQuality\":80}}}}"
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"vertex config\"}],\"role\":\"user\"}],\"serviceTier\":\"PRIORITY\",\"tools\":[{\"enterpriseWebSearch\":{}}],\"toolConfig\":{\"functionCallingConfig\":{\"allowedFunctionNames\":[\"f\"],\"mode\":\"ANY\"},\"retrievalConfig\":{\"x\":1}},\"labels\":{\"team\":\"pi\"},\"modelArmorConfig\":{\"promptTemplateName\":\"projects/p/locations/l/templates/t\"},\"generationConfig\":{\"topP\":0.25,\"routingConfig\":{\"autoMode\":{}},\"modelConfig\":{\"featureSelectionPreference\":\"BALANCED\"},\"audioTimestamp\":true,\"imageConfig\":{\"aspectRatio\":\"1:1\",\"imageSize\":\"1K\",\"personGeneration\":\"ALLOW_ADULT\",\"imageOutputOptions\":{\"mimeType\":\"image/png\",\"compressionQuality\":80}}}}"
       }
     },
     {
@@ -710,7 +710,7 @@
           "content-type": "application/json",
           "x-goog-api-key": "fixture-vertex-key"
         },
-        "body": "{\"contents\":[{\"parts\":[{\"text\":\"run tools\"}],\"role\":\"user\"},{\"parts\":[{\"functionCall\":{\"name\":\"bash\",\"args\":{\"command\":\"echo hi\"},\"id\":\"call_1\"}},{\"functionCall\":{\"name\":\"bash\",\"args\":{\"command\":\"ls -la\"},\"id\":\"call_2\"}}],\"role\":\"model\"},{\"parts\":[{\"functionResponse\":{\"name\":\"bash\",\"response\":{\"error\":\"No result provided\"},\"id\":\"call_1\"}},{\"functionResponse\":{\"name\":\"bash\",\"response\":{\"error\":\"No result provided\"},\"id\":\"call_2\"}}],\"role\":\"user\"}],\"generationConfig\":{\"thinkingConfig\":{\"thinkingLevel\":\"LOW\"}}}"
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"run tools\"}],\"role\":\"user\"},{\"parts\":[{\"functionCall\":{\"name\":\"bash\",\"args\":{\"command\":\"echo hi\"},\"id\":\"call_1\"}},{\"functionCall\":{\"name\":\"bash\",\"args\":{\"command\":\"ls -la\"},\"id\":\"call_2\"}}],\"role\":\"model\"},{\"parts\":[{\"functionResponse\":{\"name\":\"bash\",\"response\":{\"error\":\"No result provided\"},\"id\":\"call_1\"}},{\"functionResponse\":{\"name\":\"bash\",\"response\":{\"error\":\"No result provided\"},\"id\":\"call_2\"}}],\"role\":\"user\"}],\"generationConfig\":{\"thinkingConfig\":{\"thinkingBudget\":0}}}"
       }
     }
   ]

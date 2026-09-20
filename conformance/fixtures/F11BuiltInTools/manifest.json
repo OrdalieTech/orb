@@ -1,0 +1,14 @@
+{
+  "family": "F11BuiltInTools",
+  "upstreamCommit": "ecac0a9c4edad3dac5d9f8b40e0c7db7a56471fc",
+  "generator": "conformance/extract/f11-built-in-tools.ts",
+  "sources": [
+    "packages/coding-agent/src/core/tools/bash.ts",
+    "packages/coding-agent/src/core/tools/read.ts",
+    "packages/coding-agent/src/core/tools/edit.ts",
+    "packages/coding-agent/src/core/tools/write.ts"
+  ],
+  "files": [
+    "tools.json"
+  ]
+}

@@ -1240,6 +1240,20 @@ export async function generateF6HarnessTransactionFiles(upstreamRoot: string, ou
   const files = new Map<string, string>();
   const fileSystem = {
     readTextFile: async (p: string) => ({ ok: true, value: files.get(p) }),
+    openTextLineReader: async (p: string) => {
+      const content = files.get(p) ?? "";
+      const lines = content.match(/.*(?:\n|$)/g)?.filter((line) => line.length > 0) ?? [];
+      let index = 0;
+      return { ok: true, value: {
+        readLine: async () => {
+          if (index >= lines.length) return { ok: true, value: undefined };
+          const line = lines[index++];
+          const terminated = line.endsWith("\n");
+          return { ok: true, value: { text: terminated ? line.slice(0, -1) : line, terminated } };
+        },
+        close: async () => {},
+      } };
+    },
     writeFile: async (p: string, value: string) => { files.set(p, value); return { ok: true }; },
     appendFile: async (p: string, value: string) => { files.set(p, (files.get(p) ?? "") + value); return { ok: true }; },
     renameFile: async (a: string, b: string) => { files.set(b, files.get(a)!); files.delete(a); return { ok: true }; },
@@ -1269,10 +1283,25 @@ export async function generateF6HarnessTransactionFiles(upstreamRoot: string, ou
 }
 
 export async function generateF6HarnessTransactionMigration(upstreamRoot: string, outputRoot: string): Promise<void> {
-  const { normalizeLegacyV3Records } = await import(pathToFileURL(path.join(upstreamRoot,
+  const { LegacyV3Source } = await import(pathToFileURL(path.join(upstreamRoot,
     "packages/agent/src/harness/session/jsonl/legacy-v3.ts")).href);
   const records = fixedEntries.slice(0, 13).map((record) => JSON.stringify(record));
-  const normalized = normalizeLegacyV3Records(records);
+  const header = JSON.stringify({ type: "session", version: 3, id: "fixture", timestamp: fixedNow, cwd: "/fixture/project" });
+  const openTextLineReader = async () => {
+    const lines = [header, ...records];
+    let index = 0;
+    return { ok: true, value: {
+      readLine: async () => {
+        if (index >= lines.length) return { ok: true, value: undefined };
+        return { ok: true, value: { text: lines[index++], terminated: true } };
+      },
+      close: async () => {},
+    } };
+  };
+  const source = await LegacyV3Source.read({ openTextLineReader }, "session.jsonl", {});
+  const writes = [];
+  for await (const write of source.writes({})) writes.push(write);
+  const normalized = { writes, importedUsage: source.importedUsage, nextSeq: source.nextSeq };
   const retained = fixedEntries.slice(0, 13).filter((entry) => ["message", "custom", "custom_message", "compaction", "branch_summary"].includes(entry.type));
   const ids = new Map(normalized.writes.filter((write: any) => write.kind === "entry").map((write: any, index: number) => [write.id, retained[index].id]));
   const canonical = (input: any): any => {
@@ -1285,8 +1314,8 @@ export async function generateF6HarnessTransactionMigration(upstreamRoot: string
 }
 
 export async function generateF6HarnessTransactionForks(upstreamRoot: string, outputRoot: string): Promise<void> {
-  const { createForkSnapshot, forkSnapshotWrites } = await import(pathToFileURL(path.join(upstreamRoot,
-    "packages/agent/src/harness/session/fork.ts")).href);
+  const { InMemoryStorageState } = await import(pathToFileURL(path.join(upstreamRoot,
+    "packages/agent/src/harness/session/in-memory-storage-state.ts")).href);
   const state = JSON.parse(await readFile(path.join(outputRoot, "state.json"), "utf8"));
   const scalarValues = [
     { address: { namespace: "pi.branch.tip", key: "main", kind: "value" }, value: "b", seq: 3 },
@@ -1297,14 +1326,47 @@ export async function generateF6HarnessTransactionForks(upstreamRoot: string, ou
     { address: { namespace: "pi.entry.label", key: "b", kind: "value" }, value: "tip", seq: 8 },
     { address: { namespace: "pi.result", key: "operation", kind: "value" }, value: {}, seq: 9 },
   ];
-  const source = { entries: state.entries, scalarValues };
+  const lists = [{
+    address: { namespace: "app.events", key: "", kind: "list" },
+    elements: [{ seq: 10, value: "first" }, { seq: 12, value: "second" }],
+  }];
+  const source = { entries: state.entries, scalarValues, lists, nextSeq: 14 };
+  const storageState = new InMemoryStorageState();
+  storageState.applyValidated([
+    ...source.entries.map((entry: any) => ({ kind: "entry", ...entry })),
+    ...source.scalarValues.map((stored: any) => ({
+      kind: "value", op: "set", seq: stored.seq, namespace: stored.address.namespace,
+      key: stored.address.key, value: stored.value,
+    })),
+    ...source.lists.flatMap((stored) => stored.elements.map((element) => ({
+      kind: "list", op: "append", seq: element.seq, namespace: stored.address.namespace,
+      key: stored.address.key, value: element.value,
+    }))),
+    { kind: "usage", id: "omitted-usage", usage: v4Usage, seq: 13 },
+  ]);
   const cases = [
     { scope: "tree" }, { scope: "branch", branch: "main" },
     { scope: "branch", branch: "main", entryId: "b", position: "before" },
     { scope: "branch", branch: "main", entryId: "missing", position: "at" },
     { scope: "branch", branch: "missing" },
   ].map((options) => {
-    try { const snapshot = createForkSnapshot(source, options); return { options, writes: forkSnapshotWrites(snapshot), nextSeq: snapshot.nextSeq }; }
+    try {
+      const fork = storageState.createFork(options);
+      const entries = fork.scanEntries({}).map((entry: any) => ({ kind: "entry", ...entry }));
+      const namespaces = [...new Set(scalarValues.map((stored: any) => stored.address.namespace))];
+      const values = namespaces.flatMap((namespace) => fork.scanValues({ namespace, key: "", kind: "value" }))
+        .map((stored: any) => ({
+          kind: "value", op: "set", seq: stored.seq, namespace: stored.address.namespace,
+          key: stored.address.key, value: stored.value,
+        }));
+      const listWrites = lists.flatMap((stored) => fork.readList(stored.address)
+        .map((element: any) => ({
+          kind: "list", op: "append", seq: element.seq, namespace: stored.address.namespace,
+          key: stored.address.key, value: element.value,
+        })));
+      const writes = [...entries, ...values, ...listWrites].sort((left, right) => left.seq - right.seq);
+      return { options, writes, nextSeq: fork.prepareCommit([], fixedNowMs).result.firstSeq };
+    }
     catch (error) { return { options, error: (error as Error).message }; }
   });
   await writeFile(path.join(outputRoot, "forks.json"), `${JSON.stringify({ source, cases }, null, 2)}\n`);

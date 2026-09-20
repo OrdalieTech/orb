@@ -30,12 +30,12 @@
     "durationMs": 0,
     "runId": "run-fixed-foreground-basic",
     "tokenUsage": {
-      "input": 2740,
+      "input": 2832,
       "output": 21,
-      "total": 5501,
+      "total": 5685,
       "cost": 0,
       "cacheRead": 0,
-      "cacheWrite": 2740
+      "cacheWrite": 2832
     }
   },
   "error": null,
@@ -58,13 +58,13 @@
       "label": "explorer",
       "phase": "Explore",
       "result": "The marker file says marker-from-repo.",
-      "tokens": 2746,
+      "tokens": 2838,
       "tokenUsage": {
-        "input": 1368,
+        "input": 1414,
         "output": 10,
         "cacheRead": 0,
-        "cacheWrite": 1368,
-        "total": 2746,
+        "cacheWrite": 1414,
+        "total": 2838,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -93,13 +93,13 @@
       "label": "reporter",
       "phase": "Report",
       "result": "Summary: the marker holds marker-from-repo.",
-      "tokens": 2755,
+      "tokens": 2847,
       "tokenUsage": {
-        "input": 1372,
+        "input": 1418,
         "output": 11,
         "cacheRead": 0,
-        "cacheWrite": 1372,
-        "total": 2755,
+        "cacheWrite": 1418,
+        "total": 2847,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -107,12 +107,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 2740,
+        "input": 2832,
         "output": 21,
-        "total": 5501,
+        "total": 5685,
         "cost": 0,
         "cacheRead": 0,
-        "cacheWrite": 2740
+        "cacheWrite": 2832
       }
     }
   ],
@@ -165,15 +165,12 @@
   "providerCalls": [
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -187,15 +184,12 @@
     },
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [

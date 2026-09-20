@@ -92,6 +92,24 @@ func TestProviderSlashCommands(t *testing.T) {
 	}
 }
 
+func TestProviderSlashSkillsRankByBareName(t *testing.T) {
+	provider := NewCombinedAutocompleteProvider([]SlashCommand{
+		{Name: "skill:deep-research"},
+		{Name: "skill:research-idea"},
+		{Name: "skill:to-sidecar"},
+		{Name: "model"},
+	}, t.TempDir(), "")
+
+	result := provider.GetSuggestions(context.Background(), []string{"/idea"}, 0, 5, false)
+	if result == nil || len(result.Items) == 0 || result.Items[0].Value != "skill:research-idea" {
+		t.Fatalf("idea suggestions = %+v", result)
+	}
+	result = provider.GetSuggestions(context.Background(), []string{"/skill:side"}, 0, 11, false)
+	if result == nil || !containsValue(suggestionValues(result), "skill:to-sidecar") {
+		t.Fatalf("explicit skill suggestions = %+v", result)
+	}
+}
+
 func TestProviderApplySlashCompletion(t *testing.T) {
 	provider := NewCombinedAutocompleteProvider(nil, "/tmp", "")
 	applied := provider.ApplyCompletion([]string{"/he"}, 0, 3, AutocompleteItem{Value: "help", Label: "help"}, "/he")
@@ -171,6 +189,48 @@ func TestProviderQuotedPaths(t *testing.T) {
 	}
 }
 
+func TestProviderCJKPunctuationBoundariesAndQuotedPaths(t *testing.T) {
+	baseDir := t.TempDir()
+	for _, path := range []string{"说明.md", "资料，归档/说明.md", "资料。归档/说明.md"} {
+		fullPath := filepath.Join(baseDir, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fullPath, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	provider := NewCombinedAutocompleteProvider(nil, baseDir, "")
+
+	for _, separator := range []string{"　", "，", "。"} {
+		line := "查看" + separator + "说"
+		result := provider.GetSuggestions(context.Background(), []string{line}, 0, runeLen(line), true)
+		if result == nil || result.Prefix != "说" || !containsValue(suggestionValues(result), "说明.md") {
+			t.Fatalf("separator %q suggestions = %+v", separator, result)
+		}
+	}
+
+	for _, directory := range []string{"资料，归档", "资料。归档"} {
+		line := "查看：\"" + directory + "/说\"后文"
+		cursor := runeLen("查看：\"" + directory + "/说")
+		result := provider.GetSuggestions(context.Background(), []string{line}, 0, cursor, true)
+		want := `"` + directory + `/说明.md"`
+		if result == nil || !containsValue(suggestionValues(result), want) {
+			t.Fatalf("quoted %q suggestions = %+v", directory, result)
+		}
+		var item AutocompleteItem
+		for _, candidate := range result.Items {
+			if candidate.Value == want {
+				item = candidate
+			}
+		}
+		applied := provider.ApplyCompletion([]string{line}, 0, cursor, item, result.Prefix)
+		if applied.Lines[0] != "查看："+want+"后文" {
+			t.Fatalf("quoted completion = %q", applied.Lines[0])
+		}
+	}
+}
+
 func TestProviderDirectoriesFirst(t *testing.T) {
 	baseDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(baseDir, "zdir"), 0o755); err != nil {
@@ -233,9 +293,9 @@ func TestProviderLocaleCompareOrder(t *testing.T) {
 
 	// Directory grouping remains primary even when collation would place a
 	// file first.
-	suggestions = append(suggestions, AutocompleteItem{Value: "zz-directory/", Label: "zz-directory/"})
+	suggestions = append(suggestions, AutocompleteItem{Value: `"zz directory/"`, Label: "zz directory/"})
 	sortAutocompleteSuggestions(suggestions)
-	if suggestions[0].Value != "zz-directory/" {
+	if suggestions[0].Label != "zz directory/" {
 		t.Fatalf("directories not first: %v", suggestions)
 	}
 }

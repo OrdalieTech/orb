@@ -101,7 +101,7 @@ func TestAzureOpenAIMaxRetries(t *testing.T) {
 	}
 }
 
-func TestAzureOpenAIRequestUsesAzureAuthAndSDKQueryReplacement(t *testing.T) {
+func TestAzureOpenAIRequestMatchesPinnedSDKQueryHandling(t *testing.T) {
 	previousClient := azureOpenAIHTTPClient
 	var captured *http.Request
 	var body []byte
@@ -139,7 +139,7 @@ func TestAzureOpenAIRequestUsesAzureAuthAndSDKQueryReplacement(t *testing.T) {
 	if captured == nil {
 		t.Fatal("request was not captured")
 	}
-	if got := captured.URL.String(); got != "https://proxy.example.com/custom/v1?api-version=v1" {
+	if got := captured.URL.String(); got != "https://proxy.example.com/custom/v1?custom=true%2Fresponses&api-version=v1" {
 		t.Fatalf("request URL = %q", got)
 	}
 	if got := captured.Header.Get("api-key"); got != key {

@@ -232,11 +232,11 @@ func TestSessionRuntimeDropsMalformedToolUseRecoveryScaffold(t *testing.T) {
 		t.Fatalf("provider calls = %d, want recovery retry", got)
 	}
 	state := runtime.State()
-	if got := len(state.Messages); got != 2 {
-		t.Fatalf("agent state messages = %d, want user + recovered assistant: %#v", got, state.Messages)
+	if got := len(state.Messages); got != 3 {
+		t.Fatalf("agent state messages = %d, want system + user + recovered assistant: %#v", got, state.Messages)
 	}
-	if assistant := asAssistant(state.Messages[1]); assistant == nil || assistantText(assistant) != "recovered" {
-		t.Fatalf("final agent message = %#v", state.Messages[1])
+	if assistant := asAssistant(state.Messages[2]); assistant == nil || assistantText(assistant) != "recovered" {
+		t.Fatalf("final agent message = %#v", state.Messages[2])
 	}
 
 	persisted := manager.BuildSessionContext().Messages
@@ -1628,7 +1628,14 @@ func TestSessionRuntimeExpandsSlashResourcesBeforeAgentPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := runtime.State()
-	if len(state.Messages) < 1 || userMessageText(state.Messages[0]) != "Review file.go" {
+	var expanded string
+	for _, message := range state.Messages {
+		if text := userMessageText(message); text != "" {
+			expanded = text
+			break
+		}
+	}
+	if expanded != "Review file.go" {
 		t.Fatalf("messages = %#v", state.Messages)
 	}
 

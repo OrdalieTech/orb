@@ -244,7 +244,8 @@ func Attach(ctx context.Context, target *engine.Agent, store memorysdk.Store) er
 			}
 		}
 	}
-	target.SetSystemPrompt(runtime.SystemPrompt(state.SystemPrompt))
+	prompt := runtime.SystemPrompt(state.SystemPrompt)
+	target.SetSystemPrompt(prompt)
 	target.SetTools(append(state.Tools, tools...))
 	return nil
 }

@@ -303,6 +303,7 @@ func TestBashToolFormatsAbortTimeoutAndExitErrors(t *testing.T) {
 		{name: "abort", executeErr: errors.New("aborted"), want: "before\n\nCommand aborted"},
 		{name: "timeout", executeErr: errors.New("timeout:1.5"), want: "before\n\nCommand timed out after 1.5 seconds"},
 		{name: "timeout extra fields", executeErr: errors.New("timeout:1:extra"), want: "before\n\nCommand timed out after 1 seconds"},
+		{name: "missing exit code", want: "before\n\nCommand terminated without an exit code"},
 		{name: "exit", exitCode: intPointer(7), want: "before\n\nCommand exited with code 7"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -325,7 +326,7 @@ func TestBashToolFormatsAbortTimeoutAndExitErrors(t *testing.T) {
 	}
 }
 
-func TestBashToolReturnsNoOutputAndTreatsNullExitAsSuccess(t *testing.T) {
+func TestBashToolTreatsMissingInjectedExitCodeAsFailure(t *testing.T) {
 	operations := bashOperationsFunc(func(
 		_ context.Context,
 		_ string,
@@ -334,17 +335,11 @@ func TestBashToolReturnsNoOutputAndTreatsNullExitAsSuccess(t *testing.T) {
 	) (BashExecResult, error) {
 		return BashExecResult{}, nil
 	})
-	result, err := NewBashTool(t.TempDir(), &BashToolOptions{Operations: operations}).Execute(
+	_, err := NewBashTool(t.TempDir(), &BashToolOptions{Operations: operations}).Execute(
 		context.Background(), "call", BashToolInput{Command: "empty"}, nil,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := bashResultText(t, result); got != "(no output)" {
-		t.Fatalf("output = %q", got)
-	}
-	if result.Details != nil {
-		t.Fatalf("details = %#v", result.Details)
+	if err == nil || err.Error() != "(no output)\n\nCommand terminated without an exit code" {
+		t.Fatalf("error = %v", err)
 	}
 }
 

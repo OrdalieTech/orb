@@ -124,6 +124,7 @@ type Manager struct {
 	providers    providerBridge
 	stateHost    *stateHost
 	services     *servicesHost
+	eventUnsubs  map[string]func()
 }
 
 type extensionEntry struct {
@@ -176,6 +177,10 @@ type wireShortcut struct {
 type wireSubscription struct {
 	ID    string
 	Event extensions.EventType
+}
+
+func eventSubscriptionKey(extensionID, subscriptionID string) string {
+	return extensionID + "\x00" + subscriptionID
 }
 
 type pendingResponse struct {
@@ -241,7 +246,7 @@ func NewManager(options Options) *Manager {
 	if options.Version == "" {
 		options.Version = "unknown"
 	}
-	return &Manager{options: options, states: make(map[string]*registrationState), stateHost: newStateHost(options), services: newServicesHost(options)}
+	return &Manager{options: options, states: make(map[string]*registrationState), stateHost: newStateHost(options), services: newServicesHost(options), eventUnsubs: make(map[string]func())}
 }
 
 func (manager *Manager) RegisterInto(ctx context.Context, registry *extensions.Registry, paths []string) LoadResult {
@@ -711,9 +716,12 @@ func (manager *Manager) factory(extensionID string) extensions.Factory {
 		}
 		for _, subscription := range state.Subscriptions {
 			subscription := subscription
-			api.On(subscription.Event, func(ctx context.Context, event extensions.Event, extensionContext extensions.Context) (any, error) {
+			unsubscribe := extensions.OnWithUnsubscribe(api, subscription.Event, func(ctx context.Context, event extensions.Event, extensionContext extensions.Context) (any, error) {
 				return manager.emitEvent(ctx, extensionID, subscription, event, extensionContext)
 			})
+			manager.mu.Lock()
+			manager.eventUnsubs[eventSubscriptionKey(extensionID, subscription.ID)] = unsubscribe
+			manager.mu.Unlock()
 		}
 		for _, renderer := range state.Renderers {
 			switch renderer.Kind {
@@ -1074,12 +1082,40 @@ func (manager *Manager) handleHostRequest(generation *generation, value frame) (
 		if api := manager.stateHost.api(params.ExtensionID); api != nil {
 			subscription := wireSubscription{ID: params.SubscriptionID, Event: params.Event}
 			if err := callStateAPI(func() {
-				api.On(subscription.Event, func(ctx context.Context, event extensions.Event, extensionContext extensions.Context) (any, error) {
+				unsubscribe := extensions.OnWithUnsubscribe(api, subscription.Event, func(ctx context.Context, event extensions.Event, extensionContext extensions.Context) (any, error) {
 					return manager.emitEvent(ctx, params.ExtensionID, subscription, event, extensionContext)
 				})
+				manager.mu.Lock()
+				manager.eventUnsubs[eventSubscriptionKey(params.ExtensionID, subscription.ID)] = unsubscribe
+				manager.mu.Unlock()
 			}); err != nil {
 				return nil, invalidRegistration(err)
 			}
+		}
+		return map[string]bool{"accepted": true}, nil
+	case "unsubscribe_event":
+		var params struct {
+			ExtensionID    string `json:"extensionId"`
+			SubscriptionID string `json:"subscriptionId"`
+		}
+		if err := json.Unmarshal(value.Params, &params); err != nil || params.ExtensionID == "" || params.SubscriptionID == "" {
+			return nil, invalidRegistration(errors.New("event unsubscription requires extension and subscription ids"))
+		}
+		manager.mu.Lock()
+		key := eventSubscriptionKey(params.ExtensionID, params.SubscriptionID)
+		unsubscribe := manager.eventUnsubs[key]
+		delete(manager.eventUnsubs, key)
+		if state := manager.states[params.ExtensionID]; state != nil {
+			for index, subscription := range state.Subscriptions {
+				if subscription.ID == params.SubscriptionID {
+					state.Subscriptions = append(state.Subscriptions[:index], state.Subscriptions[index+1:]...)
+					break
+				}
+			}
+		}
+		manager.mu.Unlock()
+		if unsubscribe != nil {
+			unsubscribe()
 		}
 		return map[string]bool{"accepted": true}, nil
 	case "register_renderer":

@@ -18,6 +18,7 @@ import type {
   SimpleStreamOptions,
   Tool,
 } from "../../.upstream/packages/ai/src/types.ts";
+import { normalizeContext } from "../../.upstream/packages/ai/src/utils/transcript.ts";
 
 const FIXED_NOW = 1_700_000_000_123;
 
@@ -461,8 +462,8 @@ async function runVertex(
       });
     }
     const vertexStream = definition.simple
-      ? streamSimpleGoogleVertex(definition.model, definition.context, options)
-      : streamGoogleVertex(definition.model, definition.context, options);
+      ? streamSimpleGoogleVertex(definition.model, normalizeContext(definition.context), options)
+      : streamGoogleVertex(definition.model, normalizeContext(definition.context), options);
     for await (const event of vertexStream) events.push(cloneEvent(event));
   } finally {
     globalThis.fetch = originalFetch;

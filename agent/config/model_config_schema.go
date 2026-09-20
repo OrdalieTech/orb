@@ -119,6 +119,11 @@ func validateModelDefinitionJSON(path string, model map[string]any) error {
 			return err
 		}
 	}
+	if value, exists := model["promptCache"]; exists {
+		if err := validatePromptCacheJSON(path+".promptCache", value); err != nil {
+			return err
+		}
+	}
 	for _, name := range []string{"contextWindow", "maxTokens"} {
 		if err := validateOptionalNumber(model, name, path); err != nil {
 			return err
@@ -145,6 +150,11 @@ func validateModelOverrideJSON(path string, override map[string]any) error {
 	}
 	if value, exists := override["cost"]; exists {
 		if err := validateCostJSON(path+".cost", value, false); err != nil {
+			return err
+		}
+	}
+	if value, exists := override["promptCache"]; exists {
+		if err := validatePromptCacheJSON(path+".promptCache", value); err != nil {
 			return err
 		}
 	}
@@ -195,6 +205,23 @@ func validateCostJSON(path string, value any, ratesRequired bool) error {
 					return fmt.Errorf("%s.tiers.%d.%s must be a number", path, index, name)
 				}
 			}
+		}
+	}
+	return nil
+}
+
+func validatePromptCacheJSON(path string, value any) error {
+	promptCache, ok := value.(map[string]any)
+	if !ok {
+		return fmt.Errorf("%s must be an object", path)
+	}
+	for _, name := range []string{"short", "long"} {
+		value, exists := promptCache[name]
+		if !exists {
+			continue
+		}
+		if _, ok := value.(json.Number); !ok {
+			return fmt.Errorf("%s.%s must be a number", path, name)
 		}
 	}
 	return nil
@@ -274,11 +301,11 @@ func validateOptionalCompat(object map[string]any, name, path string) error {
 
 func validCompatObject(compat map[string]any) bool {
 	return validOpenAICompletionsCompat(compat) || validOpenAIResponsesCompat(compat) ||
-		validAnthropicCompat(compat) || validBedrockCompat(compat)
+		validAnthropicCompat(compat) || validBedrockCompat(compat) || validMistralCompat(compat)
 }
 
 func validOpenAICompletionsCompat(compat map[string]any) bool {
-	if !optionalBools(compat, "supportsStore", "supportsDeveloperRole", "supportsReasoningEffort", "supportsUsageInStreaming", "supportsFinishReason", "requiresToolResultName", "requiresAssistantAfterToolResult", "requiresThinkingAsText", "requiresReasoningContentOnAssistantMessages", "supportsOpenAIGrammarTools", "supportsStrictMode", "sendSessionAffinityHeaders", "supportsLongCacheRetention") {
+	if !optionalBools(compat, "supportsStore", "supportsDeveloperRole", "supportsReasoningEffort", "supportsUsageInStreaming", "supportsFinishReason", "requiresToolResultName", "requiresAssistantAfterToolResult", "requiresThinkingAsText", "requiresReasoningContentOnAssistantMessages", "supportsOpenAIGrammarTools", "supportsMidConvoSystemMessages", "supportsMidConvoToolAdditions", "supportsStrictMode", "sendSessionAffinityHeaders", "supportsLongCacheRetention") {
 		return false
 	}
 	if !optionalEnum(compat, "maxTokensField", "max_completion_tokens", "max_tokens") ||
@@ -303,12 +330,22 @@ func validOpenAICompletionsCompat(compat map[string]any) bool {
 }
 
 func validOpenAIResponsesCompat(compat map[string]any) bool {
-	return optionalBools(compat, "supportsDeveloperRole", "supportsLongCacheRetention", "supportsStrictMode", "supportsOpenAIGrammarTools", "supportsAdditionalTools", "supportsToolSearch", "supportsExplicitPromptCacheMode", "supportsMaxOutputTokens") &&
+	return optionalBools(compat, "supportsDeveloperRole", "supportsMidConvoSystemMessages", "supportsLongCacheRetention", "supportsStrictMode", "supportsOpenAIGrammarTools", "supportsAdditionalTools", "supportsToolSearch", "supportsExplicitPromptCacheMode", "supportsMaxOutputTokens") &&
 		optionalEnum(compat, "sessionAffinityFormat", "openai", "openai-nosession", "openrouter")
 }
 
 func validAnthropicCompat(compat map[string]any) bool {
-	return optionalBools(compat, "supportsEagerToolInputStreaming", "supportsLongCacheRetention", "sendSessionAffinityHeaders", "supportsCacheControlOnTools", "supportsTemperature", "forceAdaptiveThinking", "allowEmptySignature", "supportsStrictTools", "supportsMidConvoEffort", "supportsToolReferences")
+	return optionalBools(compat, "supportsEagerToolInputStreaming", "supportsLongCacheRetention", "sendSessionAffinityHeaders", "supportsCacheControlOnTools", "supportsTemperature", "forceAdaptiveThinking", "allowEmptySignature", "supportsStrictTools", "supportsMidConvoEffort", "supportsMidConvoSystemMessages", "supportsMidConvoToolChanges", "supportsToolReferences") &&
+		optionalEnum(compat, "sessionAffinityFormat", "openrouter")
+}
+
+func validMistralCompat(compat map[string]any) bool {
+	for name := range compat {
+		if name != "supportsMidConvoSystemMessages" {
+			return false
+		}
+	}
+	return optionalBools(compat, "supportsMidConvoSystemMessages")
 }
 
 func validBedrockCompat(compat map[string]any) bool {

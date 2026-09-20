@@ -6,6 +6,13 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Upgrade the Go baseline to 1.27.1 and golangci-lint to 2.13.2; CI and release builds follow `go.mod`, and cached lint tooling rebuilds when its pin or the Go baseline changes.
+- Adopt Pi v0.86 transcript-backed system prompts and tool declarations, provider replay/cache/reasoning fixes, extension dispatch and unsubscribe updates, compaction controls, and v4 storage fork/migration corrections.
+- **Headless consumer migration:** system messages now appear in normal agent message events by default. Filter them before forwarding events to clients: they can contain system prompts and tool declarations. Existing exported Go signatures and legacy session reads are retained.
+- Improve CJK file completion, quoted-directory ordering, and skill-name matching; verify Wayland clipboard command completion and provide actionable clipboard errors.
+- Built-in read, bash, edit, and write tools prefer strict JSON-schema sampling without `PI_EXPERIMENTAL`; signal-terminated shell commands and custom shell operations without an exit code report failure instead of success.
+- Speed up recent-session and exact-ID discovery with header-only reads, and show progressively loaded resume results while preserving selection and cancelling abandoned scans. Existing session-listing and selector APIs remain available.
+
 ## [0.6.0] - 2026-09-12
 
 - Fix Gemini 3 fallback after another model's tool calls: send Google's documented cross-model thought-signature sentinel without modifying stored history or genuine Gemini signatures.

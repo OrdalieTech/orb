@@ -77,7 +77,7 @@
             "x-fixture": "websocket",
             "x-model-header": "websocket"
           },
-          "body": "{\"type\":\"response.create\",\"model\":\"gpt-codex-fixture\",\"store\":false,\"stream\":true,\"instructions\":\"You are a helpful assistant.\",\"input\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"over websocket\"}]}],\"text\":{\"verbosity\":\"low\"},\"include\":[\"reasoning.encrypted_content\"],\"prompt_cache_key\":\"codex-websocket-fixture\",\"tool_choice\":\"auto\",\"parallel_tool_calls\":true}"
+          "body": "{\"type\":\"response.create\",\"model\":\"gpt-codex-fixture\",\"store\":false,\"stream\":true,\"instructions\":\"You are a helpful assistant.\",\"input\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"over websocket\"}]}],\"text\":{\"verbosity\":\"low\"},\"include\":[\"reasoning.encrypted_content\"],\"prompt_cache_key\":\"codex-websocket-fixture\",\"tool_choice\":\"auto\",\"parallel_tool_calls\":true,\"reasoning\":{\"effort\":\"none\"}}"
         }
       ],
       "expectedEvents": [

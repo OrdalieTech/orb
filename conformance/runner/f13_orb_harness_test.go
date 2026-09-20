@@ -176,7 +176,7 @@ func (harness *f13Harness) pathReplacements() [][2]string {
 	replacements := [][2]string{}
 	roots := []string{harness.root}
 	if canonical, err := filepath.EvalSymlinks(harness.root); err == nil && canonical != harness.root {
-		roots = append(roots, canonical)
+		roots = append([]string{canonical}, roots...)
 	}
 	for _, root := range roots {
 		dashed := strings.NewReplacer("/", "-", ".", "-").Replace(root)

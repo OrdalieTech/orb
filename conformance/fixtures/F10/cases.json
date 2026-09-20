@@ -3460,8 +3460,11 @@
         "captures": [
           {
             "context": {
-              "systemPrompt": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.",
               "messages": [
+                {
+                  "role": "system",
+                  "content": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary."
+                },
                 {
                   "role": "user",
                   "content": [
@@ -3492,8 +3495,11 @@
         "captures": [
           {
             "context": {
-              "systemPrompt": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.",
               "messages": [
+                {
+                  "role": "system",
+                  "content": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary."
+                },
                 {
                   "role": "user",
                   "content": [
@@ -3524,8 +3530,11 @@
         "captures": [
           {
             "context": {
-              "systemPrompt": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.",
               "messages": [
+                {
+                  "role": "system",
+                  "content": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary."
+                },
                 {
                   "role": "user",
                   "content": [
@@ -3556,8 +3565,11 @@
         "captures": [
           {
             "context": {
-              "systemPrompt": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.",
               "messages": [
+                {
+                  "role": "system",
+                  "content": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary."
+                },
                 {
                   "role": "user",
                   "content": [
@@ -3588,8 +3600,11 @@
         "captures": [
           {
             "context": {
-              "systemPrompt": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.",
               "messages": [
+                {
+                  "role": "system",
+                  "content": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary."
+                },
                 {
                   "role": "user",
                   "content": [
@@ -3609,7 +3624,7 @@
             "routingPreserved": true
           }
         ],
-        "output": "No prior history.\n\n---\n\n**Turn Context (split turn):**\n\nsummary output"
+        "output": "previous summary\n\n---\n\n**Turn Context (split turn):**\n\nsummary output"
       }
     },
     {
@@ -3620,8 +3635,11 @@
         "captures": [
           {
             "context": {
-              "systemPrompt": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.",
               "messages": [
+                {
+                  "role": "system",
+                  "content": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary."
+                },
                 {
                   "role": "user",
                   "content": [
@@ -3652,8 +3670,11 @@
         "captures": [
           {
             "context": {
-              "systemPrompt": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.",
               "messages": [
+                {
+                  "role": "system",
+                  "content": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary."
+                },
                 {
                   "role": "user",
                   "content": [
@@ -3684,8 +3705,11 @@
         "captures": [
           {
             "context": {
-              "systemPrompt": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.",
               "messages": [
+                {
+                  "role": "system",
+                  "content": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary."
+                },
                 {
                   "role": "user",
                   "content": [
@@ -3716,8 +3740,11 @@
         "captures": [
           {
             "context": {
-              "systemPrompt": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.",
               "messages": [
+                {
+                  "role": "system",
+                  "content": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary."
+                },
                 {
                   "role": "user",
                   "content": [
@@ -3748,8 +3775,11 @@
         "captures": [
           {
             "context": {
-              "systemPrompt": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.",
               "messages": [
+                {
+                  "role": "system",
+                  "content": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary."
+                },
                 {
                   "role": "user",
                   "content": [
@@ -3780,8 +3810,11 @@
         "captures": [
           {
             "context": {
-              "systemPrompt": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.",
               "messages": [
+                {
+                  "role": "system",
+                  "content": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary."
+                },
                 {
                   "role": "user",
                   "content": [
@@ -3812,8 +3845,11 @@
         "captures": [
           {
             "context": {
-              "systemPrompt": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.",
               "messages": [
+                {
+                  "role": "system",
+                  "content": "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary."
+                },
                 {
                   "role": "user",
                   "content": [

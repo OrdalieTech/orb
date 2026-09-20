@@ -9,11 +9,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/modes"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
@@ -275,16 +277,19 @@ func newF7Runtime(t testing.TB, scenario f7Scenario) *agent.SessionRuntime {
 		t.Fatal(err)
 	}
 	model := provider.GetModel()
+	initialPrompt, _, _ := strings.Cut(scenario.SystemPrompt, "\nCurrent working directory:")
 	created := engine.NewAgent(
 		provider.StreamSimple, engine.WithInitialState(engine.AgentState{
-			Model: model, SystemPrompt: scenario.SystemPrompt, Messages: engine.AgentMessages{}, Tools: []engine.AgentTool{},
+			Model: model, SystemPrompt: initialPrompt, Messages: engine.AgentMessages{}, Tools: []engine.AgentTool{},
 		}),
 		engine.WithConvertToLLM(agent.ConvertToLLM),
 		engine.WithClock(func() int64 { return scenario.FixedNow }),
 	)
 	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings, StreamFn: provider.StreamSimple,
-		Clock: func() int64 { return scenario.FixedNow },
+		Clock:               func() int64 { return scenario.FixedNow },
+		ExtensionRegistry:   extensions.NewRegistry(scenario.CWD),
+		SystemPromptOptions: &agent.SystemPromptOptions{CustomPrompt: &initialPrompt, SelectedTools: []string{}, CWD: scenario.CWD},
 		GetAPIKey: func(context.Context, ai.ProviderID) (*string, error) {
 			key := "faux-key"
 			return &key, nil

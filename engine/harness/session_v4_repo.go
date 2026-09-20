@@ -357,6 +357,9 @@ func (repo *JSONLSessionV4Repo) Fork(ctx context.Context, source JSONLSessionV4M
 	repo.claimMu.Lock()
 	sourceStorage := repo.openSessions[source.CWD+"\x00"+source.ID]
 	repo.claimMu.Unlock()
+	if sourceStorage != nil && sourceStorage.legacy != nil {
+		return nil, fmt.Errorf("Cannot fork an open legacy v3 JSONL session; commit a non-empty transaction to upgrade it to format 4 first") //nolint:staticcheck // Exact upstream fork diagnostic.
+	}
 	var err error
 	if sourceStorage == nil {
 		sourceStorage, err = repo.loadStorage(ctx, source)
@@ -366,6 +369,13 @@ func (repo *JSONLSessionV4Repo) Fork(ctx context.Context, source JSONLSessionV4M
 	}
 	if err != nil {
 		return nil, err
+	}
+	if sourceStorage.legacy != nil && options.EntryID != nil {
+		mapped, ok := sourceStorage.legacy.reminted[*options.EntryID]
+		if !ok {
+			return nil, fmt.Errorf("Legacy v3 fork entry is not a retained entry: %s", *options.EntryID) //nolint:staticcheck // Exact upstream fork diagnostic.
+		}
+		options.EntryID = &mapped
 	}
 	options.ParentSessionID = &source.ID
 	options.CWD = source.CWD

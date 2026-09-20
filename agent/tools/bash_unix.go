@@ -290,7 +290,10 @@ func (operations *localBashOperations) Exec(
 	if errors.As(waitErr, &exitError) {
 		code := exitError.ExitCode()
 		if code < 0 {
-			return BashExecResult{}, nil
+			code = 1
+			if status, ok := exitError.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+				code = 128 + int(status.Signal())
+			}
 		}
 		return BashExecResult{ExitCode: &code}, nil
 	}

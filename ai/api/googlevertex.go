@@ -60,12 +60,20 @@ func StreamSimpleGoogleVertex(
 			Thinking:      &GoogleThinkingOptions{Enabled: false},
 		})
 	}
-	effort, err := resolveGoogleThinkingLevel(model, clampGoogleReasoning(model, *options.Reasoning))
+	clamped := clampGoogleReasoning(model, *options.Reasoning)
+	if clamped == ai.ThinkingLevel(ai.ModelThinkingOff) {
+		return StreamGoogleVertexWithOptions(ctx, model, requestContext, &GoogleVertexOptions{
+			StreamOptions: base,
+			ToolChoice:    GoogleToolChoice(simpleToolChoice(options, "any")),
+			Thinking:      &GoogleThinkingOptions{Enabled: false},
+		})
+	}
+	effort, err := resolveGoogleThinkingLevel(model, clamped)
 	if err != nil {
 		return nil, err
 	}
 	thinking := &GoogleThinkingOptions{Enabled: true}
-	if isGemini3Pro(model) || isGemini3Flash(model) {
+	if usesGoogleThinkingLevel(model) {
 		thinking.Level = googleThinkingLevel(effort, model)
 	} else {
 		thinking.BudgetTokens = googleVertexThinkingBudget(model, effort, options.ThinkingBudgets)
@@ -277,16 +285,7 @@ func googleVertexModelPath(model string) (string, error) {
 }
 
 func disabledGoogleVertexThinkingConfig(model *ai.Model) *GoogleThinkingConfig {
-	if isGemini3Pro(model) {
-		level := GoogleThinkingLow
-		return &GoogleThinkingConfig{ThinkingLevel: &level}
-	}
-	if isGemini3Flash(model) {
-		level := GoogleThinkingMinimal
-		return &GoogleThinkingConfig{ThinkingLevel: &level}
-	}
-	zero := int64(0)
-	return &GoogleThinkingConfig{ThinkingBudget: &zero}
+	return disabledGoogleThinkingConfig(model)
 }
 
 // googleVertexThinkingBudget mirrors google-vertex.ts getGoogleBudget; efforts

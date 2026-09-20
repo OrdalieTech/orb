@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "tools": [
+    {
+      "name": "bash",
+      "constrainedSampling": {
+        "type": "json_schema",
+        "strict": "prefer"
+      }
+    },
+    {
+      "name": "read",
+      "constrainedSampling": {
+        "type": "json_schema",
+        "strict": "prefer"
+      }
+    },
+    {
+      "name": "edit",
+      "constrainedSampling": {
+        "type": "json_schema",
+        "strict": "prefer"
+      }
+    },
+    {
+      "name": "write",
+      "constrainedSampling": {
+        "type": "json_schema",
+        "strict": "prefer"
+      }
+    }
+  ],
+  "bash": {
+    "nullExitError": "before\n\nCommand terminated without an exit code",
+    "signalExitError": "(no output)\n\nCommand exited with code 143"
+  }
+}

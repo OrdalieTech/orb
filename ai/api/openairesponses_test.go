@@ -141,6 +141,24 @@ func TestBuildOpenAIResponsesPayloadDisablesImplicitCacheWritesWhenSupported(t *
 	}
 }
 
+func TestBuildOpenAIResponsesPayloadUsesExplicitLongCacheTTL(t *testing.T) {
+	model := responsesTestModel()
+	model.Compat = json.RawMessage(`{"supportsExplicitPromptCacheMode":true}`)
+	retention := ai.CacheRetentionLong
+	payload, _, err := buildOpenAIResponsesPayload(model, ai.Context{Messages: ai.MessageList{}}, &OpenAIResponsesOptions{
+		StreamOptions: ai.StreamOptions{CacheRetention: &retention},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.PromptCacheRetention != nil {
+		t.Fatalf("explicit-cache model received legacy retention: %q", *payload.PromptCacheRetention)
+	}
+	if payload.PromptCacheOptions == nil || payload.PromptCacheOptions.TTL != "30m" || payload.PromptCacheOptions.Mode != "" {
+		t.Fatalf("prompt_cache_options = %#v, want ttl 30m", payload.PromptCacheOptions)
+	}
+}
+
 func TestBuildOpenAIResponsesPayloadDefaultOffAndZeroMaxTokens(t *testing.T) {
 	model := responsesTestModel()
 	zero := float64(0)

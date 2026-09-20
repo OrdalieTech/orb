@@ -25,12 +25,12 @@
     "durationMs": 0,
     "runId": "run-fixed-structured-output",
     "tokenUsage": {
-      "input": 5952,
+      "input": 5250,
       "output": 52,
-      "total": 12630,
+      "total": 15546,
       "cost": 0,
-      "cacheRead": 673,
-      "cacheWrite": 5953
+      "cacheRead": 4993,
+      "cacheWrite": 5251
     }
   },
   "error": null,
@@ -50,13 +50,13 @@
         "fruit": "apple",
         "count": 3
       },
-      "tokens": 3136,
+      "tokens": 3218,
       "tokenUsage": {
-        "input": 1562,
+        "input": 1603,
         "output": 12,
         "cacheRead": 0,
-        "cacheWrite": 1562,
-        "total": 3136,
+        "cacheWrite": 1603,
+        "total": 3218,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -75,13 +75,13 @@
       "result": {
         "veg": "leek"
       },
-      "tokens": 4342,
+      "tokens": 5207,
       "tokenUsage": {
-        "input": 2138,
+        "input": 1798,
         "output": 15,
-        "cacheRead": 50,
-        "cacheWrite": 2139,
-        "total": 4342,
+        "cacheRead": 1596,
+        "cacheWrite": 1798,
+        "total": 5207,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -100,13 +100,13 @@
       "result": {
         "mineral": "quartz"
       },
-      "tokens": 5152,
+      "tokens": 7121,
       "tokenUsage": {
-        "input": 2252,
+        "input": 1849,
         "output": 25,
-        "cacheRead": 623,
-        "cacheWrite": 2252,
-        "total": 5152,
+        "cacheRead": 3397,
+        "cacheWrite": 1850,
+        "total": 7121,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -114,12 +114,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 5952,
+        "input": 5250,
         "output": 52,
-        "total": 12630,
+        "total": 15546,
         "cost": 0,
-        "cacheRead": 673,
-        "cacheWrite": 5953
+        "cacheRead": 4993,
+        "cacheWrite": 5251
       }
     }
   ],
@@ -254,16 +254,12 @@
   "providerCalls": [
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get",
-        "structured_output"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -277,16 +273,12 @@
     },
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get",
-        "structured_output"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -300,10 +292,12 @@
     },
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "structured_output"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -324,6 +318,10 @@
           "stopReason": "stop"
         },
         {
+          "role": "system",
+          "text": ""
+        },
+        {
           "role": "user",
           "parts": [
             {
@@ -336,16 +334,12 @@
     },
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get",
-        "structured_output"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -359,10 +353,12 @@
     },
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "structured_output"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -383,6 +379,10 @@
           "stopReason": "stop"
         },
         {
+          "role": "system",
+          "text": ""
+        },
+        {
           "role": "user",
           "parts": [
             {
@@ -395,10 +395,12 @@
     },
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "structured_output"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -417,6 +419,10 @@
             }
           ],
           "stopReason": "stop"
+        },
+        {
+          "role": "system",
+          "text": ""
         },
         {
           "role": "user",

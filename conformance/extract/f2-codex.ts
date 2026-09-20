@@ -19,6 +19,7 @@ import type {
   SimpleStreamOptions,
   Tool,
 } from "../../.upstream/packages/ai/src/types.ts";
+import { normalizeContext } from "../../.upstream/packages/ai/src/utils/transcript.ts";
 import { providerApis } from "./f2-providers.ts";
 import { withUpstreamModelData } from "./upstream-model-data.ts";
 
@@ -353,7 +354,7 @@ async function extractCodexWebSocketTrace() {
     const events: AssistantMessageEvent[] = [];
     for await (const event of streamOpenAICodex(
       definition.model,
-      definition.context,
+      normalizeContext(definition.context),
       definition.options as OpenAICodexResponsesOptions,
     )) {
       events.push(JSON.parse(JSON.stringify(event)) as AssistantMessageEvent);
@@ -400,8 +401,8 @@ async function runUpstream(
   };
   const events: AssistantMessageEvent[] = [];
   const stream = definition.simple
-    ? streamSimpleOpenAICodex(definition.model, definition.context, definition.options as SimpleStreamOptions)
-    : streamOpenAICodex(definition.model, definition.context, definition.options as OpenAICodexResponsesOptions);
+    ? streamSimpleOpenAICodex(definition.model, normalizeContext(definition.context), definition.options as SimpleStreamOptions)
+    : streamOpenAICodex(definition.model, normalizeContext(definition.context), definition.options as OpenAICodexResponsesOptions);
   for await (const event of stream) {
     events.push(JSON.parse(JSON.stringify(event)) as AssistantMessageEvent);
   }

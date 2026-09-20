@@ -45,8 +45,8 @@ import (
 var version = "dev"
 
 const (
-	upstreamVersion        = "0.85.0"
-	upstreamCommit         = "107d79f11072bbc8a3a757ed7fd69596bee7d68c"
+	upstreamVersion        = "0.86.0"
+	upstreamCommit         = "ecac0a9c4edad3dac5d9f8b40e0c7db7a56471fc"
 	latestReleaseURL       = "https://api.github.com/repos/OrdalieTech/orb/releases/latest"
 	versionCheckTimeout    = 10 * time.Second
 	versionResponseMaxSize = 64 << 10
@@ -69,6 +69,7 @@ type cliDependencies struct {
 	refreshModels           func(context.Context, string) error
 	runInteractive          func(context.Context, *agent.SessionRuntime, modes.InteractiveModeOptions) int
 	selectSession           SessionSelector
+	selectSessionContext    ContextSessionSelector
 	selectMissingSessionCWD func(context.Context, *MissingSessionCWDError) (string, bool, error)
 	runRPCFixture           func(context.Context, CLIArgs, cliStreams, string) (handled bool, code int)
 	selfUpdate              func(context.Context, io.Writer, bool, bool) int
@@ -112,7 +113,7 @@ func runSandboxChild() int {
 	// Landlock and no_new_privs bind to the calling OS thread; without this
 	// pin the goroutine could migrate and exec from an unrestricted thread.
 	runtime.LockOSThread()
-	if err := sandbox.SelfRestrict(sandbox.Mode(os.Getenv(sandbox.EnvMode)), os.Getenv(sandbox.EnvRoot)); err != nil {
+	if err := sandbox.SelfRestrict(sandbox.Mode(os.Getenv(sandbox.EnvMode)), os.Getenv(sandbox.EnvRoot)); err != nil { //nolint:staticcheck // SelfRestrict can succeed on Linux; Darwin always refuses this entry point.
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		return 126
 	}
@@ -162,8 +163,8 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if dependencies.selfUpdate == nil {
 		dependencies.selfUpdate = runSelfUpdate
 	}
-	if dependencies.selectSession == nil {
-		dependencies.selectSession = startupTUISessionSelector(ctx)
+	if dependencies.selectSession == nil && dependencies.selectSessionContext == nil {
+		dependencies.selectSessionContext = startupContextTUISessionSelector(ctx)
 	}
 	if dependencies.selectMissingSessionCWD == nil {
 		dependencies.selectMissingSessionCWD = func(ctx context.Context, issue *MissingSessionCWDError) (string, bool, error) {
@@ -357,7 +358,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		args.useUnknownModel = true
 	}
 	baseArgs := args
-	manager, sessionContext, err := createCLISession(cwd, args, streams, dependencies.selectSession)
+	manager, sessionContext, err := createCLISessionWithSelectors(cwd, args, streams, dependencies.selectSession, dependencies.selectSessionContext)
 	if err != nil {
 		if errors.Is(err, errNoSessionSelected) {
 			return 0

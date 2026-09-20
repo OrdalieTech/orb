@@ -1210,7 +1210,10 @@ func (runtime *SessionRuntime) executeUserBash(
 	var operations tools.BashOperations
 	state := runtime.extensionState
 	if state != nil && state.runner != nil && state.runner.HasHandlers(extensions.EventUserBash) {
-		result := state.runner.EmitUserBash(ctx, extensions.UserBashEvent{Command: command, ExcludeFromContext: exclude, CWD: runtime.manager.GetCWD()})
+		result, hookErr := state.runner.EmitUserBashChecked(ctx, extensions.UserBashEvent{Command: command, ExcludeFromContext: exclude, CWD: runtime.manager.GetCWD()})
+		if hookErr != nil {
+			return extensions.BashResult{}, hookErr
+		}
 		if result != nil {
 			if result.Result != nil {
 				return *result.Result, runtime.recordBashResult(command, *result.Result, excludeFromContext)
@@ -1641,12 +1644,18 @@ func (runtime *SessionRuntime) promptExtensionInput(
 	}
 	state.systemPromptOverride = nil
 	options := runtime.extensionSystemPromptOptionsLocked(state)
+	var promptBuildOptions *SystemPromptOptions
+	if state.promptOptions != nil {
+		copy := cloneSystemPromptOptions(*state.promptOptions)
+		promptBuildOptions = &copy
+	}
 	pending := append(engine.AgentMessages(nil), state.pendingNextTurn...)
 	state.pendingNextTurn = nil
 	state.mu.Unlock()
 	runtime.agent.SetSystemPrompt(basePrompt)
 
 	var injected engine.AgentMessages
+	var forcedPrompt *string
 	if state.runner.HasHandlers(extensions.EventBeforeAgentStart) {
 		result := state.runner.EmitBeforeAgentStart(ctx, text, images, basePrompt, options)
 		if result != nil {
@@ -1658,6 +1667,7 @@ func (runtime *SessionRuntime) promptExtensionInput(
 				injected = append(injected, &harness.CustomMessage{Role: "custom", CustomType: message.CustomType, Content: content, Display: message.Display, Details: message.Details, Timestamp: time.Now().UnixMilli()})
 			}
 			if result.SystemPrompt != nil {
+				forcedPrompt = result.SystemPrompt
 				state.mu.Lock()
 				prompt := *result.SystemPrompt
 				state.systemPromptOverride = &prompt
@@ -1666,10 +1676,26 @@ func (runtime *SessionRuntime) promptExtensionInput(
 			}
 		}
 	}
-	messages := make(engine.AgentMessages, 0, 1+len(pending)+len(injected))
+	messages := make(engine.AgentMessages, 0, 2+len(pending)+len(injected))
+	transcript, _ := ConvertToLLM(ctx, runtime.agent.State().Messages)
+	current := ai.CurrentSystemMessage(transcript)
+	if promptBuildOptions != nil {
+		desired := BuildSystemPromptSections(*promptBuildOptions)
+		previous := ai.SystemPromptSections(nil)
+		if current != nil {
+			previous = current.Sections
+		}
+		if patch := DiffSystemPromptSections(previous, desired); patch != nil {
+			messages = append(messages, &ai.SystemMessage{Content: "", Sections: patch, Timestamp: runtime.clock()})
+		}
+	} else if current == nil && basePrompt != "" {
+		messages = append(messages, &ai.SystemMessage{Content: basePrompt, Timestamp: runtime.clock()})
+	}
 	messages = append(messages, userMessageWithImagesAt(text, images, runtime.clock()))
 	messages = append(messages, pending...)
 	messages = append(messages, injected...)
+	runtime.agent.SetRequestSystemPromptOverride(forcedPrompt)
+	defer runtime.agent.SetRequestSystemPromptOverride(nil)
 	return runtime.runPolicies(ctx, func() error { return runtime.agent.Prompt(ctx, messages) })
 }
 

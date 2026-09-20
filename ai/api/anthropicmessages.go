@@ -196,6 +196,9 @@ type resolvedAnthropicCompat struct {
 	allowEmptySignature             bool
 	supportsStrictTools             bool
 	supportsToolReferences          bool
+	sessionAffinityFormat           ai.SessionAffinityFormat
+	supportsMidConvoSystemMessages  bool
+	supportsMidConvoToolChanges     bool
 }
 
 func StreamAnthropicMessages(ctx context.Context, request ai.Request) (ai.AssistantMessageEventStream, error) {
@@ -446,10 +449,14 @@ func getAnthropicCompat(model *ai.Model) (resolvedAnthropicCompat, error) {
 	compat := resolvedAnthropicCompat{
 		supportsEagerToolInputStreaming: true,
 		supportsLongCacheRetention:      true,
+		sendSessionAffinityHeaders:      model.Provider == "openrouter" || strings.Contains(model.BaseURL, "openrouter.ai"),
 		supportsCacheControlOnTools:     true,
 		supportsTemperature:             true,
 		forceAdaptiveThinking:           raw.ForceAdaptiveThinking,
 		supportsToolReferences:          defaultAnthropicToolReferences(model),
+	}
+	if model.Provider == "openrouter" || strings.Contains(model.BaseURL, "openrouter.ai") {
+		compat.sessionAffinityFormat = ai.SessionAffinityOpenRouter
 	}
 	if raw.SupportsEagerToolInputStreaming != nil {
 		compat.supportsEagerToolInputStreaming = *raw.SupportsEagerToolInputStreaming
@@ -459,6 +466,9 @@ func getAnthropicCompat(model *ai.Model) (resolvedAnthropicCompat, error) {
 	}
 	if raw.SendSessionAffinityHeaders != nil {
 		compat.sendSessionAffinityHeaders = *raw.SendSessionAffinityHeaders
+	}
+	if raw.SessionAffinityFormat != nil {
+		compat.sessionAffinityFormat = *raw.SessionAffinityFormat
 	}
 	if raw.SupportsCacheControlOnTools != nil {
 		compat.supportsCacheControlOnTools = *raw.SupportsCacheControlOnTools
@@ -471,6 +481,12 @@ func getAnthropicCompat(model *ai.Model) (resolvedAnthropicCompat, error) {
 	}
 	if raw.SupportsStrictTools != nil {
 		compat.supportsStrictTools = *raw.SupportsStrictTools
+	}
+	if raw.SupportsMidConvoSystemMessages != nil {
+		compat.supportsMidConvoSystemMessages = *raw.SupportsMidConvoSystemMessages
+	}
+	if raw.SupportsMidConvoToolChanges != nil {
+		compat.supportsMidConvoToolChanges = *raw.SupportsMidConvoToolChanges
 	}
 	if raw.SupportsToolReferences != nil {
 		compat.supportsToolReferences = *raw.SupportsToolReferences
@@ -543,6 +559,18 @@ func buildAnthropicMessagesPayload(
 	if err != nil {
 		return nil, false, err
 	}
+	transcript := ai.NormalizeContext(requestContext)
+	if !compat.supportsMidConvoSystemMessages {
+		transcript = ai.CollapseSystemMessages(transcript)
+	}
+	initial := ai.InitialSystemMessage(transcript.Messages)
+	initialTools := []ai.Tool(nil)
+	if initial != nil {
+		initialTools = append(initialTools, initial.ToolsAdded...)
+	}
+	nativeToolChanges := compat.supportsMidConvoSystemMessages && compat.supportsMidConvoToolChanges &&
+		len(initialTools) > 0 && !ai.HasToolRedefinitions(transcript.Messages)
+	requestContext = projectTranscriptContext(transcript, true)
 	streamOptions := anthropicStreamOptions(options)
 	cacheControl := anthropicCacheControlFor(model, streamOptions, compat)
 	apiKey := anthropicAPIKey(streamOptions)
@@ -552,7 +580,21 @@ func buildAnthropicMessagesPayload(
 	if isOAuth {
 		normalizeName = toClaudeCodeToolName
 	}
-	placement := splitAnthropicTools(ai.Context{Messages: transformed, Tools: requestContext.Tools}, compat.supportsToolReferences, normalizeName)
+	placement := anthropicToolPlacement{}
+	if nativeToolChanges {
+		placement.immediate = initialTools
+		initialNames := make(map[string]struct{}, len(initialTools))
+		for _, tool := range initialTools {
+			initialNames[tool.Name] = struct{}{}
+		}
+		for _, tool := range ai.DeclaredTools(transcript.Messages) {
+			if _, exists := initialNames[tool.Name]; !exists {
+				placement.deferred = append(placement.deferred, tool)
+			}
+		}
+	} else if tools := ai.CurrentTools(transcript.Messages); len(tools) > 0 {
+		placement.immediate = tools
+	}
 	if len(placement.immediate) == 0 && len(placement.deferred) > 0 {
 		placement.immediate = append(placement.immediate, placement.deferred...)
 		placement.deferred = nil
@@ -571,7 +613,7 @@ func buildAnthropicMessagesPayload(
 	if managed {
 		managedProvider = string(model.Provider)
 	}
-	messages, err := convertAnthropicMessages(transformed, isOAuth, cacheControl, compat.allowEmptySignature, deferredNames, normalizeName, managedProvider)
+	messages, err := convertAnthropicMessages(transformed, isOAuth, cacheControl, compat.allowEmptySignature, deferredNames, normalizeName, nativeToolChanges, managedProvider)
 	if err != nil {
 		return nil, false, err
 	}
@@ -582,7 +624,7 @@ func buildAnthropicMessagesPayload(
 		Stream:    true,
 	}
 
-	payload.Betas = anthropicBetaFeatures(model, requestContext, options, isOAuth)
+	payload.Betas = anthropicBetaFeatures(model, requestContext, options, isOAuth, nativeToolChanges)
 	if managed {
 		effort := AnthropicEffortHigh
 		if options != nil && options.Effort != nil {
@@ -630,6 +672,12 @@ func buildAnthropicMessagesPayload(
 			return nil, false, err
 		}
 		payload.Tools = append(payload.Tools, immediate...)
+		if nativeToolChanges {
+			payload.Tools = append(payload.Tools, anthropicToolParam{
+				Name: "__pi_deferred_placeholder__", Description: "Reserved placeholder. Never available. Never call this.",
+				InputSchema: json.RawMessage(`{"type":"object","properties":{},"required":[]}`), DeferLoading: providerBoolPointer(true),
+			})
+		}
 		payload.Tools = append(payload.Tools, deferred...)
 	}
 	if managed {
@@ -714,59 +762,6 @@ func normalizeAnthropicToolCallID(id string, _ *ai.Model, _ *ai.AssistantMessage
 type anthropicToolPlacement struct {
 	immediate []ai.Tool
 	deferred  []ai.Tool
-}
-
-func splitAnthropicTools(requestContext ai.Context, enabled bool, normalizeName func(string) string) anthropicToolPlacement {
-	byName := make(map[string]ai.Tool)
-	order := make([]string, 0)
-	if requestContext.Tools != nil {
-		for _, tool := range *requestContext.Tools {
-			name := normalizeName(tool.Name)
-			if _, exists := byName[name]; !exists {
-				order = append(order, name)
-			}
-			byName[name] = tool
-		}
-	}
-	if !enabled {
-		placement := anthropicToolPlacement{immediate: make([]ai.Tool, 0, len(order))}
-		for _, name := range order {
-			placement.immediate = append(placement.immediate, byName[name])
-		}
-		return placement
-	}
-
-	deferred := make(map[string]struct{})
-	used := make(map[string]struct{})
-	for _, message := range requestContext.Messages {
-		switch message := message.(type) {
-		case *ai.AssistantMessage:
-			for _, block := range message.Content {
-				if call, ok := block.(*ai.ToolCall); ok {
-					used[normalizeName(call.Name)] = struct{}{}
-				}
-			}
-		case *ai.ToolResultMessage:
-			if message.AddedToolNames == nil {
-				continue
-			}
-			for _, name := range *message.AddedToolNames {
-				normalized := normalizeName(name)
-				if _, alreadyUsed := used[normalized]; !alreadyUsed {
-					deferred[normalized] = struct{}{}
-				}
-			}
-		}
-	}
-	placement := anthropicToolPlacement{}
-	for _, name := range order {
-		if _, isDeferred := deferred[name]; isDeferred {
-			placement.deferred = append(placement.deferred, byName[name])
-		} else {
-			placement.immediate = append(placement.immediate, byName[name])
-		}
-	}
-	return placement
 }
 
 func convertAnthropicTools(
@@ -903,12 +898,34 @@ func convertAnthropicMessages(
 	allowEmptySignature bool,
 	deferredToolNames map[string]struct{},
 	normalizeName func(string) string,
+	nativeToolChanges bool,
 	managedProvider ...string,
 ) ([]AnthropicMessageParam, error) {
 	result := make([]AnthropicMessageParam, 0, len(messages))
+	pendingSystem := make([]AnthropicMessageParam, 0)
+	flushSystem := func() {
+		result = append(result, pendingSystem...)
+		pendingSystem = pendingSystem[:0]
+	}
 	loadedToolNames := make(map[string]struct{})
 	for index := 0; index < len(messages); index++ {
 		switch message := messages[index].(type) {
+		case *ai.SystemMessage:
+			blocks := make([]any, 0, 1+len(message.ToolsAdded)+len(message.ToolsRemoved))
+			if text := ai.SystemMessageText(message); text != "" {
+				blocks = append(blocks, anthropicTextBlock{Type: "text", Text: sanitizeText(text)})
+			}
+			if nativeToolChanges {
+				for _, tool := range message.ToolsRemoved {
+					blocks = append(blocks, map[string]any{"type": "tool_removal", "tool": map[string]any{"type": "tool_reference", "name": normalizeName(tool.Name)}})
+				}
+				for _, tool := range message.ToolsAdded {
+					blocks = append(blocks, map[string]any{"type": "tool_addition", "tool": map[string]any{"type": "tool_reference", "name": normalizeName(tool.Name)}})
+				}
+			}
+			if len(blocks) > 0 {
+				pendingSystem = append(pendingSystem, AnthropicMessageParam{Role: "system", Content: blocks})
+			}
 		case *ai.UserMessage:
 			if message.Content.Text != nil {
 				if strings.TrimSpace(*message.Content.Text) != "" {
@@ -933,6 +950,7 @@ func convertAnthropicMessages(
 				result = append(result, AnthropicMessageParam{Role: "user", Content: blocks})
 			}
 		case *ai.AssistantMessage:
+			flushSystem()
 			blocks := make([]any, 0, len(message.Content))
 			for _, content := range message.Content {
 				switch block := content.(type) {
@@ -1000,6 +1018,7 @@ func convertAnthropicMessages(
 			result = append(result, AnthropicMessageParam{Role: "user", Content: append(toolResults, siblingContent...)})
 		}
 	}
+	flushSystem()
 	applyAnthropicLastUserCache(result, cacheControl)
 	return result, nil
 }
@@ -1077,7 +1096,8 @@ func convertAnthropicResultContent(content ai.ToolResultContent) any {
 }
 
 func applyAnthropicLastUserCache(messages []AnthropicMessageParam, cacheControl *anthropicCacheControl) {
-	if cacheControl == nil || len(messages) == 0 || messages[len(messages)-1].Role != "user" {
+	if cacheControl == nil || len(messages) == 0 ||
+		(messages[len(messages)-1].Role != "user" && messages[len(messages)-1].Role != "system") {
 		return
 	}
 	last := &messages[len(messages)-1]
@@ -1099,6 +1119,11 @@ func applyAnthropicLastUserCache(messages []AnthropicMessageParam, cacheControl 
 	case anthropicToolResultBlock:
 		block.CacheControl = cacheControl
 		blocks[len(blocks)-1] = block
+	case map[string]any:
+		kind, _ := block["type"].(string)
+		if kind == "tool_addition" || kind == "tool_removal" {
+			block["cache_control"] = cacheControl
+		}
 	}
 }
 
@@ -1332,13 +1357,17 @@ func anthropicHeaders(
 		headers.Set("user-agent", "claude-cli/"+claudeCodeVersion)
 		headers.Set("x-app", "cli")
 	}
-	if betas := anthropicBetaFeatures(model, requestContext, anthropicOptions, oauth); len(betas) > 0 {
+	if betas := anthropicBetaFeatures(model, requestContext, anthropicOptions, oauth, anthropicUsesNativeToolChanges(model, requestContext)); len(betas) > 0 {
 		headers.Set("anthropic-beta", strings.Join(betas, ","))
 	}
 	// Upstream's github-copilot client branch never adds session affinity
 	// headers, so copilot is excluded alongside OAuth (OA-m6).
 	if !oauth && model.Provider != "github-copilot" && options != nil && resolveCacheRetention(options) != ai.CacheRetentionNone && options.SessionID != nil && *options.SessionID != "" && compat.sendSessionAffinityHeaders {
-		headers.Set("x-session-affinity", *options.SessionID)
+		name := "x-session-affinity"
+		if compat.sessionAffinityFormat == ai.SessionAffinityOpenRouter {
+			name = "x-session-id"
+		}
+		headers.Set(name, *options.SessionID)
 	}
 	modelHeaders := copyModelHeaders(model)
 	for name, values := range modelHeaders {
@@ -1354,6 +1383,7 @@ func anthropicHeaders(
 			}
 		}
 	}
+	addOpenCodeSessionHeader(headers, model, options)
 	return headers
 }
 
@@ -1472,15 +1502,21 @@ func (processor *anthropicStreamProcessor) handleSSE(eventName string, data []by
 		if event.Message.InputTransformations != nil {
 			processor.inputTransformations = event.Message.InputTransformations
 		}
-		ai.SetAssistantMessageModelOmitted(processor.output, event.Message.Model == nil)
 		if event.Message.Model != nil {
-			processor.output.Model = *event.Message.Model
+			if *event.Message.Model != processor.model.ID {
+				responseModel := *event.Message.Model
+				processor.output.ResponseModel = &responseModel
+			}
 		}
 		rawCompat, _ := decodeCompat[ai.AnthropicMessagesCompat](processor.model)
+		responseModel := processor.model.ID
+		if processor.output.ResponseModel != nil {
+			responseModel = *processor.output.ResponseModel
+		}
 		for _, fallback := range anthropicFallbackModels(rawCompat) {
-			if fallback.Provider == processor.model.Provider && fallback.Model == processor.output.Model && processor.output.Model != processor.model.ID {
+			if fallback.Provider == processor.model.Provider && fallback.Model == responseModel && responseModel != processor.model.ID {
 				copy := *processor.model
-				copy.ID = processor.output.Model
+				copy.ID = responseModel
 				copy.Cost = fallback.Cost
 				processor.usageModel = &copy
 				break
@@ -1815,7 +1851,7 @@ func anthropicStreamFailure(ctx context.Context, output *ai.AssistantMessage, er
 	return ai.ErrorEvent{Reason: reason, Error: output}
 }
 
-func anthropicBetaFeatures(model *ai.Model, requestContext ai.Context, options *AnthropicMessagesOptions, oauth bool) []string {
+func anthropicBetaFeatures(model *ai.Model, requestContext ai.Context, options *AnthropicMessagesOptions, oauth, nativeToolChanges bool) []string {
 	var configured *string
 	found := false
 	if model.Headers != nil {
@@ -1868,7 +1904,20 @@ func anthropicBetaFeatures(model *ai.Model, requestContext ai.Context, options *
 	if raw.SupportsMidConvoEffort != nil && *raw.SupportsMidConvoEffort {
 		features = append(features, "mid-conversation-output-config-2026-07-01", "thinking-binding-controls-2026-08-01")
 	}
+	if nativeToolChanges {
+		features = append(features, "mid-conversation-tool-changes-2026-07-01")
+	}
 	return features
+}
+
+func anthropicUsesNativeToolChanges(model *ai.Model, requestContext ai.Context) bool {
+	compat, err := getAnthropicCompat(model)
+	if err != nil || !compat.supportsMidConvoSystemMessages || !compat.supportsMidConvoToolChanges {
+		return false
+	}
+	transcript := ai.NormalizeContext(requestContext)
+	initial := ai.InitialSystemMessage(transcript.Messages)
+	return initial != nil && len(initial.ToolsAdded) > 0 && !ai.HasToolRedefinitions(transcript.Messages)
 }
 
 func anthropicFallbackModels(compat ai.AnthropicMessagesCompat) []ai.AnthropicAllowedFallbackModel {

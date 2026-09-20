@@ -104,6 +104,8 @@ func UnmarshalMessage(data []byte) (Message, error) {
 	}
 	var message Message
 	switch header.Role {
+	case "system":
+		message = &SystemMessage{}
 	case "user":
 		message = &UserMessage{}
 	case "assistant":
@@ -117,6 +119,127 @@ func UnmarshalMessage(data []byte) (Message, error) {
 		return nil, fmt.Errorf("ai: decode %s message: %w", header.Role, err)
 	}
 	return message, nil
+}
+
+func (sections SystemPromptSections) MarshalJSON() ([]byte, error) {
+	var output bytes.Buffer
+	output.WriteByte('{')
+	for index, section := range sections {
+		if index > 0 {
+			output.WriteByte(',')
+		}
+		name, err := marshalJSON(section.Name)
+		if err != nil {
+			return nil, err
+		}
+		output.Write(name)
+		output.WriteByte(':')
+		if section.Text == nil {
+			output.WriteString("null")
+		} else {
+			text, err := marshalJSON(*section.Text)
+			if err != nil {
+				return nil, err
+			}
+			output.Write(text)
+		}
+	}
+	output.WriteByte('}')
+	return output.Bytes(), nil
+}
+
+func (sections *SystemPromptSections) UnmarshalJSON(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	if delimiter, ok := token.(json.Delim); !ok || delimiter != '{' {
+		return errors.New("ai: system prompt sections must be an object")
+	}
+	result := SystemPromptSections{}
+	for decoder.More() {
+		nameToken, tokenErr := decoder.Token()
+		if tokenErr != nil {
+			return tokenErr
+		}
+		name, ok := nameToken.(string)
+		if !ok {
+			return errors.New("ai: invalid system prompt section name")
+		}
+		var raw json.RawMessage
+		if decodeErr := decoder.Decode(&raw); decodeErr != nil {
+			return decodeErr
+		}
+		section := SystemPromptSection{Name: name}
+		if !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			var text string
+			if decodeErr := json.Unmarshal(raw, &text); decodeErr != nil {
+				return decodeErr
+			}
+			section.Text = &text
+		}
+		result = append(result, section)
+	}
+	if _, err := decoder.Token(); err != nil {
+		return err
+	}
+	*sections = result
+	return nil
+}
+
+func (message SystemMessage) MarshalJSON() ([]byte, error) {
+	content := message.Content
+	if content == nil {
+		content = ""
+	}
+	if message.toolFieldsAfterTimestamp {
+		return marshalJSON(struct {
+			Role         string               `json:"role"`
+			Content      any                  `json:"content"`
+			Sections     SystemPromptSections `json:"sections,omitempty"`
+			Timestamp    int64                `json:"timestamp"`
+			ToolsAdded   []Tool               `json:"toolsAdded,omitempty"`
+			ToolsRemoved []ToolReference      `json:"toolsRemoved,omitempty"`
+		}{"system", content, message.Sections, message.Timestamp, message.ToolsAdded, message.ToolsRemoved})
+	}
+	return marshalJSON(struct {
+		Role         string               `json:"role"`
+		Content      any                  `json:"content"`
+		Sections     SystemPromptSections `json:"sections,omitempty"`
+		ToolsAdded   []Tool               `json:"toolsAdded,omitempty"`
+		ToolsRemoved []ToolReference      `json:"toolsRemoved,omitempty"`
+		Timestamp    int64                `json:"timestamp"`
+	}{"system", content, message.Sections, message.ToolsAdded, message.ToolsRemoved, message.Timestamp})
+}
+
+func (message *SystemMessage) UnmarshalJSON(data []byte) error {
+	var payload struct {
+		Content      json.RawMessage      `json:"content"`
+		Sections     SystemPromptSections `json:"sections"`
+		ToolsAdded   []Tool               `json:"toolsAdded"`
+		ToolsRemoved []ToolReference      `json:"toolsRemoved"`
+		Timestamp    int64                `json:"timestamp"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+	var content any = ""
+	if len(payload.Content) > 0 && !bytes.Equal(bytes.TrimSpace(payload.Content), []byte("null")) {
+		var text string
+		if err := json.Unmarshal(payload.Content, &text); err == nil {
+			content = text
+		} else {
+			var blocks []TextContent
+			if blockErr := json.Unmarshal(payload.Content, &blocks); blockErr != nil {
+				return blockErr
+			}
+			content = blocks
+		}
+	}
+	*message = SystemMessage{Content: content, Sections: payload.Sections, ToolsAdded: payload.ToolsAdded, ToolsRemoved: payload.ToolsRemoved, Timestamp: payload.Timestamp}
+	message.toolFieldsAfterTimestamp = bytes.Index(data, []byte(`"timestamp"`)) < bytes.Index(data, []byte(`"toolsAdded"`)) && bytes.Contains(data, []byte(`"toolsAdded"`))
+	return nil
 }
 
 func (message UserMessage) MarshalJSON() ([]byte, error) {

@@ -105,7 +105,27 @@
         "value": {},
         "seq": 9
       }
-    ]
+    ],
+    "lists": [
+      {
+        "address": {
+          "namespace": "app.events",
+          "key": "",
+          "kind": "list"
+        },
+        "elements": [
+          {
+            "seq": 10,
+            "value": "first"
+          },
+          {
+            "seq": 12,
+            "value": "second"
+          }
+        ]
+      }
+    ],
+    "nextSeq": 14
   },
   "cases": [
     {
@@ -201,9 +221,25 @@
           "namespace": "pi.entry.label",
           "key": "b",
           "value": "tip"
+        },
+        {
+          "kind": "list",
+          "op": "append",
+          "seq": 10,
+          "namespace": "app.events",
+          "key": "",
+          "value": "first"
+        },
+        {
+          "kind": "list",
+          "op": "append",
+          "seq": 12,
+          "namespace": "app.events",
+          "key": "",
+          "value": "second"
         }
       ],
-      "nextSeq": 9
+      "nextSeq": 14
     },
     {
       "options": {
@@ -285,13 +321,13 @@
         {
           "kind": "value",
           "op": "set",
-          "seq": 7,
+          "seq": 8,
           "namespace": "pi.entry.label",
           "key": "b",
           "value": "tip"
         }
       ],
-      "nextSeq": 8
+      "nextSeq": 14
     },
     {
       "options": {
@@ -322,7 +358,7 @@
         {
           "kind": "value",
           "op": "set",
-          "seq": 2,
+          "seq": 3,
           "namespace": "pi.branch.tip",
           "key": "main",
           "value": "a"
@@ -330,7 +366,7 @@
         {
           "kind": "value",
           "op": "set",
-          "seq": 3,
+          "seq": 4,
           "namespace": "pi.lane.config",
           "key": "main",
           "value": {
@@ -345,7 +381,7 @@
         {
           "kind": "value",
           "op": "set",
-          "seq": 4,
+          "seq": 5,
           "namespace": "pi.lane.state",
           "key": "main",
           "value": {
@@ -357,13 +393,13 @@
         {
           "kind": "value",
           "op": "set",
-          "seq": 5,
+          "seq": 6,
           "namespace": "pi.session.name",
           "key": "",
           "value": "name"
         }
       ],
-      "nextSeq": 6
+      "nextSeq": 14
     },
     {
       "options": {

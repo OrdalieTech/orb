@@ -153,7 +153,7 @@ export async function generateF11ExtensionRunner(
     }),
   ]);
   const beforeAgent = await beforeAgentRunner.emitBeforeAgentStart(
-    "hello", undefined, "base", { cwd: "/fixture" },
+    "hello", undefined, { customPrompt: "base", cwd: "/fixture" },
   );
 
   const inputRunner = createRunner([
@@ -463,8 +463,8 @@ export async function generateF11ExtensionRunner(
   const registrationBus = {} as any;
   const registrationFirst = await loaderModule.loadExtensionFromFactory(
     (api: any) => {
-      api.registerTool({ name: "shared", description: "first-initial" });
-      api.registerTool({ name: "shared", description: "first-final" });
+      api.registerTool({ name: "shared", description: "first-initial", parameters: { type: "object", properties: {} } });
+      api.registerTool({ name: "shared", description: "first-final", parameters: { type: "object", properties: {} } });
       api.registerCommand("duplicate", { description: "first-initial", handler: async () => {} });
       api.registerCommand("duplicate", { description: "first-final", handler: async () => {} });
       api.registerFlag("shared", { type: "boolean", default: true, description: "first-initial" });
@@ -477,7 +477,7 @@ export async function generateF11ExtensionRunner(
   );
   const registrationSecond = await loaderModule.loadExtensionFromFactory(
     (api: any) => {
-      api.registerTool({ name: "shared", description: "second" });
+      api.registerTool({ name: "shared", description: "second", parameters: { type: "object", properties: {} } });
       api.registerCommand("duplicate", { description: "second", handler: async () => {} });
       api.registerFlag("shared", { type: "boolean", default: false, description: "second" });
     },
