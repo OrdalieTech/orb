@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-20
+
 - Upgrade the Go baseline to 1.27.1 and golangci-lint to 2.13.2; CI and release builds follow `go.mod`, and cached lint tooling rebuilds when its pin or the Go baseline changes.
 - Adopt Pi v0.86 transcript-backed system prompts and tool declarations, provider replay/cache/reasoning fixes, extension dispatch and unsubscribe updates, compaction controls, and v4 storage fork/migration corrections.
 - **Headless consumer migration:** system messages now appear in normal agent message events by default. Filter them before forwarding events to clients: they can contain system prompts and tool declarations. Existing exported Go signatures and legacy session reads are retained.
