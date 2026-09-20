@@ -2,6 +2,7 @@ package extensions
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -50,6 +51,7 @@ type Extension struct {
 
 	mu               sync.RWMutex
 	handlers         map[EventType][]Handler
+	handlerTokens    map[EventType][]*struct{}
 	tools            map[string]RegisteredTool
 	toolOrder        []string
 	messageRenderers map[string]MessageRenderer
@@ -137,6 +139,7 @@ func (registry *Registry) register(path string, factory Factory, configuration r
 		Hidden:           configuration.hidden,
 		SourceInfo:       sourceInfo,
 		handlers:         make(map[EventType][]Handler),
+		handlerTokens:    make(map[EventType][]*struct{}),
 		tools:            make(map[string]RegisteredTool),
 		messageRenderers: make(map[string]MessageRenderer),
 		entryRenderers:   make(map[string]EntryRenderer),
@@ -268,14 +271,49 @@ type extensionAPI struct {
 }
 
 func (api *extensionAPI) On(event EventType, handler Handler) {
+	_ = api.OnWithUnsubscribe(event, handler)
+}
+
+func (api *extensionAPI) OnWithUnsubscribe(event EventType, handler Handler) func() {
 	api.assertActive()
+	token := &struct{}{}
 	api.extension.mu.Lock()
 	api.extension.handlers[event] = append(api.extension.handlers[event], handler)
+	api.extension.handlerTokens[event] = append(api.extension.handlerTokens[event], token)
 	api.extension.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			api.extension.mu.Lock()
+			defer api.extension.mu.Unlock()
+			tokens := api.extension.handlerTokens[event]
+			for index, candidate := range tokens {
+				if candidate != token {
+					continue
+				}
+				api.extension.handlerTokens[event] = append(tokens[:index], tokens[index+1:]...)
+				handlers := api.extension.handlers[event]
+				api.extension.handlers[event] = append(handlers[:index], handlers[index+1:]...)
+				if len(api.extension.handlers[event]) == 0 {
+					delete(api.extension.handlers, event)
+					delete(api.extension.handlerTokens, event)
+				}
+				return
+			}
+		})
+	}
 }
 
 func (api *extensionAPI) RegisterTool(tool ToolDefinition) {
 	api.assertActive()
+	if len(tool.Parameters) == 0 {
+		// Preserve the established native-Go API while ensuring providers never
+		// receive an absent schema. The JS surface follows upstream and rejects it.
+		tool.Parameters = ai.JSONSchema(`{"type":"object","properties":{}}`)
+	}
+	if !json.Valid(tool.Parameters) || !isObjectSchema(tool.Parameters) {
+		panic(fmt.Sprintf("Tool %q registered by extension %q must define an object parameter schema.", tool.Name, api.extension.Path))
+	}
 	api.extension.mu.Lock()
 	if _, exists := api.extension.tools[tool.Name]; !exists {
 		api.extension.toolOrder = append(api.extension.toolOrder, tool.Name)
@@ -283,6 +321,11 @@ func (api *extensionAPI) RegisterTool(tool ToolDefinition) {
 	api.extension.tools[tool.Name] = RegisteredTool{Definition: tool, SourceInfo: api.extension.SourceInfo}
 	api.extension.mu.Unlock()
 	api.runtime.refreshTools()
+}
+
+func isObjectSchema(schema []byte) bool {
+	trimmed := strings.TrimSpace(string(schema))
+	return strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}")
 }
 
 func (api *extensionAPI) RegisterCommand(name string, command Command) {

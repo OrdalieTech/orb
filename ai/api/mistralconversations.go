@@ -259,6 +259,11 @@ func buildMistralPayload(
 	requestContext ai.Context,
 	options *MistralConversationsOptions,
 ) (*MistralConversationsPayload, error) {
+	compat, err := decodeCompat[ai.MistralConversationsCompat](model)
+	if err != nil {
+		return nil, err
+	}
+	requestContext = projectProviderContext(requestContext, compat.SupportsMidConvoSystemMessages != nil && *compat.SupportsMidConvoSystemMessages)
 	normalize := newMistralToolCallIDNormalizer()
 	messages := transformMessages(requestContext.Messages, model, func(id string, _ *ai.Model, _ *ai.AssistantMessage) string {
 		return normalize(id)
@@ -329,6 +334,10 @@ func toMistralMessages(messages ai.MessageList, supportsImages bool) ([]any, err
 	result := make([]any, 0, len(messages))
 	for _, message := range messages {
 		switch value := message.(type) {
+		case *ai.SystemMessage:
+			if text := ai.SystemMessageText(value); text != "" {
+				result = append(result, mistralInputMessage{Role: "system", Content: sanitizeText(text)})
+			}
 		case *ai.UserMessage:
 			if value.Content.Text != nil {
 				result = append(result, mistralInputMessage{Role: "user", Content: sanitizeText(*value.Content.Text)})
@@ -480,12 +489,8 @@ func mistralAlphanumeric(value string) string {
 }
 
 func usesMistralReasoningEffort(model *ai.Model) bool {
-	switch model.ID {
-	case "mistral-small-2603", "mistral-small-latest", "mistral-medium-3.5":
-		return true
-	default:
-		return false
-	}
+	return model.ID == "mistral-small-2603" || model.ID == "mistral-small-latest" ||
+		strings.HasPrefix(model.ID, "mistral-medium-") || model.ID == "zai-glm-5-2"
 }
 
 func postMistralStream(

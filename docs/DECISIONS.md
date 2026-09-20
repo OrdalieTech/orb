@@ -12,7 +12,7 @@ work, within these bounds.
 | | |
 |---|---|
 | Upstream project | **pi** — https://pi.dev, repo `earendil-works/pi` (formerly `badlogic/pi-mono`) |
-| Pinned reference | commit `107d79f11072bbc8a3a757ed7fd69596bee7d68c`, version **0.85.0** (2026-09-05) |
+| Pinned reference | commit `ecac0a9c4edad3dac5d9f8b40e0c7db7a56471fc`, version **0.86.0** (2026-09-20) |
 | Upstream license | MIT, © 2025 Mario Zechner |
 | This project | `github.com/OrdalieTech/orb`, MIT, © Ordalie — with attribution to upstream in LICENSE and README |
 
@@ -174,6 +174,7 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 | Default system-prompt identity | product positioning adaptation | Orb presents as a general-purpose problem-solving harness for work and software development rather than using pi's coding-agent identity; tool lists, guidelines, context/skill injection, custom prompts, and assembly order remain upstream-compatible, with F9 applying only the exact ledgered text substitutions to generated upstream goldens |
 | External Agent Skills discovery | compatibility addition | Orb automatically imports standard skill roots from Claude Code, Codex, OpenCode, Gemini CLI, Cursor, and GitHub Copilot. Pi-native and `.agents` roots keep precedence, project roots require trust, canonical files load once, existing first-name-wins collision diagnostics apply, and plugin/cache directories are never scanned. Interactive first-token `@` completion also offers visibly badged skills; accepting one inserts the canonical `/skill:name` path, so ordinary `@file` entries and wire/session semantics stay unchanged. |
 | `/share` | neutralized | local HTML export instead of pi.dev upload |
+| `/bug` (v0.86.0) | excluded | Radius-backed diagnostic uploads are outside the owner-approved adoption; local diagnostic export is deferred. The upstream command remains captured in F8, with this explicit command-surface exclusion applied by the runner. |
 | Model catalog runtime refresh | neutralized | models.dev directly, not pi.dev overlay endpoints |
 | Windows support | deferred | later parity wave (D8) |
 | darwin modifier-key native addon | gap | kitty keyboard protocol where possible; documented small parity gap |
@@ -334,6 +335,13 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 
 ## Standing assumptions (owner-confirmed)
 
+- **v0.86 transcript defaults (owner, 2026-09-20).** Adopt Pi's transcript-backed system messages
+  and their normal agent events by default, rather than placing them behind a legacy headless
+  opt-in. Preserve existing exported Go signatures and legacy session reading. This is an
+  intentional observable change: headless consumers must classify system messages explicitly;
+  Ordalie's production SSE forwarding must filter them before deployment to avoid publishing
+  system prompts. Source compatibility alone does not establish event-consumer compatibility.
+
 - Independent semver from `v0.1.0`; upstream snapshot recorded in `UPSTREAM.lock`.
 - OAuth flows land with their provider's wave (ChatGPT/Codex OAuth with OpenAI wave, Claude Pro/Max
   with Anthropic wave, Copilot device-code later).
@@ -341,7 +349,9 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 - `rg`/`fd` auto-download into `~/.pi/agent/bin` ported as-is (system binaries preferred). This is
   upstream behavior, not a single-binary violation.
 - Clipboard via OSC52 / shell-out (`pbcopy`/`xclip`/`wl-copy`), no native addon.
-- Go ≥ 1.25 baseline; releases and CI pin Go 1.26.5.
+- Use the latest stable Go release for every maintenance/upstream sync (owner, 2026-09-20).
+  Verify the release on go.dev and update `go.mod`; CI and releases follow its version. Current
+  baseline: Go 1.27.1. Rebuild/update the linter with the same supported toolchain.
 - Node.js ≥22.6 or Bun is an optional runtime dependency for JavaScript/TypeScript extensions and
   Node remains development tooling for fixture extraction against the upstream clone.
 

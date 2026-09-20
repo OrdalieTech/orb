@@ -254,7 +254,7 @@
       },
       "expected": {
         "method": "POST",
-        "url": "https://azure-proxy.fixture.invalid/custom/v1?api-version=v1",
+        "url": "https://azure-proxy.fixture.invalid/custom/v1?custom=true%2Fresponses&api-version=v1",
         "headers": {
           "accept": "application/json",
           "api-key": "fixture-key",

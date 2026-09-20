@@ -476,6 +476,9 @@ func compact(ctx context.Context, preparation *CompactionPreparation, model *ai.
 	var summaryUsage ai.Usage
 	if preparation.IsSplitTurn && len(preparation.TurnPrefixMessages) > 0 {
 		history := "No prior history."
+		if preparation.PreviousSummary != nil {
+			history = *preparation.PreviousSummary
+		}
 		var historyUsage *ai.Usage
 		if len(preparation.MessagesToSummarize) > 0 {
 			generated, err := generateSummaryWithUsage(ctx, preparation.MessagesToSummarize, model, complete,

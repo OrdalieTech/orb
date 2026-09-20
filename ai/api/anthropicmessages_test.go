@@ -459,6 +459,19 @@ func TestAnthropicCopilotExcludedFromSessionAffinityOAm6(t *testing.T) {
 	}
 }
 
+func TestAnthropicReturnedModelUsesResponseModel(t *testing.T) {
+	model := anthropicTestModel()
+	output := newAssistantMessage(model)
+	processor := newAnthropicStreamProcessor(model, ai.Context{}, output, false, func(ai.AssistantMessageEvent) bool { return true })
+	data := []byte(`{"type":"message_start","message":{"id":"msg_1","model":"relay-model","usage":{"input_tokens":1,"output_tokens":0}}}`)
+	if err := processor.handleSSE("message_start", data, []string{string(data)}); err != nil {
+		t.Fatal(err)
+	}
+	if output.Model != model.ID || output.ResponseModel == nil || *output.ResponseModel != "relay-model" {
+		t.Fatalf("model provenance = model %q responseModel %#v", output.Model, output.ResponseModel)
+	}
+}
+
 // BenchmarkAnthropicToolCallStreaming replays a 64 KB tool-call argument in
 // 256-byte input_json_delta chunks, the delta split that made accumulation and
 // re-parsing quadratic.

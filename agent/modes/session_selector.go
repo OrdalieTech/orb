@@ -23,6 +23,10 @@ import (
 
 type SessionSelectorLoader func(session.SessionListProgress) []session.SessionInfo
 
+// SessionSelectorContextLoader is the cancellable, progressive companion used
+// by selectors backed by session.ListContext or session.ListAllContext.
+type SessionSelectorContextLoader func(context.Context, session.SessionListUpdateFunc) ([]session.SessionInfo, error)
+
 type SessionDeleteMethod string
 
 const (
@@ -31,13 +35,15 @@ const (
 )
 
 type SessionSelectorOptions struct {
-	CurrentSessions    SessionSelectorLoader
-	AllSessions        SessionSelectorLoader
-	CurrentSessionPath string
-	Keybindings        *tui.KeybindingsManager
-	RequestRender      func()
-	Now                func() time.Time
-	DeleteSession      func(string) (SessionDeleteMethod, error)
+	CurrentSessions        SessionSelectorLoader
+	AllSessions            SessionSelectorLoader
+	CurrentSessionsContext SessionSelectorContextLoader
+	AllSessionsContext     SessionSelectorContextLoader
+	CurrentSessionPath     string
+	Keybindings            *tui.KeybindingsManager
+	RequestRender          func()
+	Now                    func() time.Time
+	DeleteSession          func(string) (SessionDeleteMethod, error)
 }
 
 type sessionSelectorScope string
@@ -86,12 +92,14 @@ type selectorStatus struct {
 type SessionSelectorComponent struct {
 	mu sync.Mutex
 
-	currentLoader SessionSelectorLoader
-	allLoader     SessionSelectorLoader
-	keybindings   *tui.KeybindingsManager
-	requestRender func()
-	now           func() time.Time
-	deleteSession func(string) (SessionDeleteMethod, error)
+	currentLoader        SessionSelectorLoader
+	allLoader            SessionSelectorLoader
+	currentContextLoader SessionSelectorContextLoader
+	allContextLoader     SessionSelectorContextLoader
+	keybindings          *tui.KeybindingsManager
+	requestRender        func()
+	now                  func() time.Time
+	deleteSession        func(string) (SessionDeleteMethod, error)
 
 	currentSessions []session.SessionInfo
 	allSessions     []session.SessionInfo
@@ -99,17 +107,22 @@ type SessionSelectorComponent struct {
 	currentLoading  bool
 	allLoading      bool
 	allLoadSeq      int
+	currentLoadSeq  int
+	currentCancel   context.CancelFunc
+	allCancel       context.CancelFunc
+	loadsCancelled  bool
 
-	scope      sessionSelectorScope
-	sortMode   sessionSelectorSort
-	nameFilter sessionSelectorNameFilter
-	showPath   bool
-	selected   int
-	window     tui.ListWindow
-	maxVisible int
-	filtered   []flatSessionNode
-	search     *tui.Input
-	focused    bool
+	scope            sessionSelectorScope
+	sortMode         sessionSelectorSort
+	nameFilter       sessionSelectorNameFilter
+	showPath         bool
+	selected         int
+	selectionTouched bool
+	window           tui.ListWindow
+	maxVisible       int
+	filtered         []flatSessionNode
+	search           *tui.Input
+	focused          bool
 
 	// Where the last render put the session rows, for mouse hit-testing.
 	rowTop, rowStart, rowCount int
@@ -144,20 +157,22 @@ func NewSessionSelectorComponent(options SessionSelectorOptions, onSelect func(s
 		options.DeleteSession = deleteSessionFile
 	}
 	selector := &SessionSelectorComponent{
-		currentLoader: options.CurrentSessions,
-		allLoader:     options.AllSessions,
-		keybindings:   options.Keybindings,
-		requestRender: options.RequestRender,
-		now:           options.Now,
-		deleteSession: options.DeleteSession,
-		scope:         sessionScopeCurrent,
-		sortMode:      sessionSortThreaded,
-		nameFilter:    sessionNamesAll,
-		maxVisible:    10,
-		search:        newSearchInput(),
-		currentPath:   canonicalSessionPath(options.CurrentSessionPath),
-		onSelect:      onSelect,
-		onCancel:      onCancel,
+		currentLoader:        options.CurrentSessions,
+		allLoader:            options.AllSessions,
+		currentContextLoader: options.CurrentSessionsContext,
+		allContextLoader:     options.AllSessionsContext,
+		keybindings:          options.Keybindings,
+		requestRender:        options.RequestRender,
+		now:                  options.Now,
+		deleteSession:        options.DeleteSession,
+		scope:                sessionScopeCurrent,
+		sortMode:             sessionSortThreaded,
+		nameFilter:           sessionNamesAll,
+		maxVisible:           10,
+		search:               newSearchInput(),
+		currentPath:          canonicalSessionPath(options.CurrentSessionPath),
+		onSelect:             onSelect,
+		onCancel:             onCancel,
 	}
 	selector.filterLocked("")
 	go selector.loadScope(sessionScopeCurrent)
@@ -175,46 +190,146 @@ func (selector *SessionSelectorComponent) Invalidate() {}
 
 func (selector *SessionSelectorComponent) loadScope(scope sessionSelectorScope) {
 	selector.mu.Lock()
+	if selector.loadsCancelled {
+		selector.mu.Unlock()
+		return
+	}
 	var loader SessionSelectorLoader
+	var contextLoader SessionSelectorContextLoader
 	seq := 0
 	if scope == sessionScopeCurrent {
+		selector.cancelScopeLoadLocked(scope)
 		selector.currentLoading = true
+		selector.currentLoadSeq++
+		seq = selector.currentLoadSeq
 		loader = selector.currentLoader
+		contextLoader = selector.currentContextLoader
 	} else {
+		selector.cancelScopeLoadLocked(scope)
 		selector.allLoading = true
 		selector.allLoadSeq++
 		seq = selector.allLoadSeq
 		loader = selector.allLoader
+		contextLoader = selector.allContextLoader
+	}
+	loadContext, cancel := context.WithCancel(context.Background())
+	if scope == sessionScopeCurrent {
+		selector.currentCancel = cancel
+	} else {
+		selector.allCancel = cancel
 	}
 	selector.loadProgress = ""
 	selector.mu.Unlock()
 	selector.requestRender()
 
-	progress := func(loaded, total int) {
+	isActiveLocked := func() bool {
+		if scope == sessionScopeCurrent {
+			return seq == selector.currentLoadSeq
+		}
+		return seq == selector.allLoadSeq
+	}
+	progressive := func(update session.SessionListUpdate) {
 		selector.mu.Lock()
-		if scope == selector.scope && (scope != sessionScopeAll || seq == selector.allLoadSeq) {
-			selector.loadProgress = fmt.Sprintf("%d/%d", loaded, total)
+		if !isActiveLocked() {
+			selector.mu.Unlock()
+			return
+		}
+		if update.Sessions != nil {
+			selector.setScopeSessionsLocked(scope, update.Sessions)
+		}
+		if scope == selector.scope {
+			selector.loadProgress = fmt.Sprintf("%d/%d", update.Loaded, update.Total)
 		}
 		selector.mu.Unlock()
 		selector.requestRender()
 	}
-	sessions := loader(progress)
+	var sessions []session.SessionInfo
+	var err error
+	if contextLoader != nil {
+		sessions, err = contextLoader(loadContext, progressive)
+	} else {
+		sessions = loader(func(loaded, total int) {
+			progressive(session.SessionListUpdate{Loaded: loaded, Total: total})
+		})
+	}
 
 	selector.mu.Lock()
-	if scope == sessionScopeCurrent {
-		selector.currentSessions = append([]session.SessionInfo(nil), sessions...)
-		selector.currentLoading = false
-	} else {
-		selector.allSessions = append([]session.SessionInfo(nil), sessions...)
-		selector.allLoaded = true
-		selector.allLoading = false
+	if !isActiveLocked() {
+		selector.mu.Unlock()
+		return
 	}
-	if scope == selector.scope && (scope != sessionScopeAll || seq == selector.allLoadSeq) {
+	if scope == sessionScopeCurrent {
+		selector.currentLoading = false
+		selector.currentCancel = nil
+	} else {
+		selector.allLoading = false
+		selector.allCancel = nil
+	}
+	if err == nil {
+		selector.setScopeSessionsLocked(scope, sessions)
+		if scope == sessionScopeAll {
+			selector.allLoaded = true
+		}
+	}
+	if scope == selector.scope {
 		selector.loadProgress = ""
-		selector.filterLocked(selector.search.GetValue())
+		if err != nil && !errors.Is(err, context.Canceled) {
+			selector.setStatusLocked("error", "Failed to load sessions: "+err.Error(), 4*time.Second)
+		}
 	}
 	selector.mu.Unlock()
 	selector.requestRender()
+}
+
+func (selector *SessionSelectorComponent) setScopeSessionsLocked(scope sessionSelectorScope, sessions []session.SessionInfo) {
+	selectedPath := ""
+	if selector.selectionTouched && selector.selected >= 0 && selector.selected < len(selector.filtered) {
+		selectedPath = selector.filtered[selector.selected].session.Path
+	}
+	values := append([]session.SessionInfo(nil), sessions...)
+	if scope == sessionScopeCurrent {
+		selector.currentSessions = values
+	} else {
+		selector.allSessions = values
+	}
+	if scope != selector.scope {
+		return
+	}
+	selector.filterLocked(selector.search.GetValue())
+	if !selector.selectionTouched {
+		selector.selected = 0
+	} else if selectedPath != "" {
+		for index := range selector.filtered {
+			if selector.filtered[index].session.Path == selectedPath {
+				selector.selected = index
+				break
+			}
+		}
+	}
+}
+
+func (selector *SessionSelectorComponent) cancelScopeLoadLocked(scope sessionSelectorScope) {
+	if scope == sessionScopeCurrent {
+		if selector.currentCancel != nil {
+			selector.currentCancel()
+			selector.currentCancel = nil
+		}
+		selector.currentLoadSeq++
+		selector.currentLoading = false
+		return
+	}
+	if selector.allCancel != nil {
+		selector.allCancel()
+		selector.allCancel = nil
+	}
+	selector.allLoadSeq++
+	selector.allLoading = false
+}
+
+func (selector *SessionSelectorComponent) cancelActiveLoadsLocked() {
+	selector.loadsCancelled = true
+	selector.cancelScopeLoadLocked(sessionScopeCurrent)
+	selector.cancelScopeLoadLocked(sessionScopeAll)
 }
 
 func (selector *SessionSelectorComponent) filterLocked(query string) {
@@ -584,6 +699,7 @@ func (selector *SessionSelectorComponent) ListSelectRow(index int) {
 	selector.mu.Lock()
 	selector.window.Freeze()
 	selector.selected = index
+	selector.selectionTouched = true
 	selector.mu.Unlock()
 }
 
@@ -593,6 +709,7 @@ func (selector *SessionSelectorComponent) ListScroll(direction int) {
 	selector.mu.Lock()
 	selector.window.Recenter()
 	selector.selected = max(0, min(selector.selected+direction*3, len(selector.filtered)-1))
+	selector.selectionTouched = true
 	selector.mu.Unlock()
 }
 
@@ -604,6 +721,7 @@ func (selector *SessionSelectorComponent) ListConfirm() {
 	if selector.selected >= 0 && selector.selected < len(selector.filtered) {
 		callback, path = selector.onSelect, selector.filtered[selector.selected].session.Path
 		selector.clearStatusLocked()
+		selector.cancelActiveLoadsLocked()
 	}
 	selector.mu.Unlock()
 	if callback != nil && path != "" {
@@ -812,11 +930,13 @@ func (selector *SessionSelectorComponent) HandleInput(event tui.KeyEvent) {
 		selector.requestRender()
 		return
 	case tui.GetKeybindings().Matches(data, "tui.select.up"):
+		selector.selectionTouched = true
 		selector.selected = max(0, selector.selected-1)
 		selector.mu.Unlock()
 		selector.requestRender()
 		return
 	case tui.GetKeybindings().Matches(data, "tui.select.down"):
+		selector.selectionTouched = true
 		if len(selector.filtered) > 0 {
 			selector.selected = min(len(selector.filtered)-1, selector.selected+1)
 		}
@@ -824,11 +944,13 @@ func (selector *SessionSelectorComponent) HandleInput(event tui.KeyEvent) {
 		selector.requestRender()
 		return
 	case tui.GetKeybindings().Matches(data, "tui.select.pageUp"):
+		selector.selectionTouched = true
 		selector.selected = max(0, selector.selected-selector.maxVisible)
 		selector.mu.Unlock()
 		selector.requestRender()
 		return
 	case tui.GetKeybindings().Matches(data, "tui.select.pageDown"):
+		selector.selectionTouched = true
 		if len(selector.filtered) > 0 {
 			selector.selected = min(len(selector.filtered)-1, selector.selected+selector.maxVisible)
 		}
@@ -843,6 +965,7 @@ func (selector *SessionSelectorComponent) HandleInput(event tui.KeyEvent) {
 		}
 		if path != "" {
 			selector.clearStatusLocked()
+			selector.cancelActiveLoadsLocked()
 		}
 		selector.mu.Unlock()
 		if callback != nil && path != "" {
@@ -852,12 +975,14 @@ func (selector *SessionSelectorComponent) HandleInput(event tui.KeyEvent) {
 	case tui.GetKeybindings().Matches(data, "tui.select.cancel"):
 		callback := selector.onCancel
 		selector.clearStatusLocked()
+		selector.cancelActiveLoadsLocked()
 		selector.mu.Unlock()
 		if callback != nil {
 			callback()
 		}
 		return
 	}
+	selector.selectionTouched = true
 	selector.mu.Unlock()
 	selector.search.HandleInput(event)
 	selector.mu.Lock()
@@ -924,6 +1049,10 @@ func (selector *SessionSelectorComponent) clearStatus() {
 func (selector *SessionSelectorComponent) removeSession(path string) {
 	method, err := selector.deleteSession(path)
 	selector.mu.Lock()
+	if selector.loadsCancelled {
+		selector.mu.Unlock()
+		return
+	}
 	if err != nil {
 		selector.setStatusLocked("error", "Failed to delete: "+err.Error(), 3*time.Second)
 		selector.mu.Unlock()
@@ -976,6 +1105,26 @@ func RunSessionSelector(ctx context.Context, current, all SessionSelectorLoader)
 }
 
 func RunSessionSelectorWithTerminal(ctx context.Context, current, all SessionSelectorLoader, terminal tui.Terminal) (string, bool, error) {
+	return runSessionSelectorWithTerminal(ctx, SessionSelectorOptions{
+		CurrentSessions: current,
+		AllSessions:     all,
+	}, terminal)
+}
+
+// RunSessionSelectorContext runs the startup picker with cancellable,
+// progressively publishing loaders.
+func RunSessionSelectorContext(ctx context.Context, current, all SessionSelectorContextLoader) (string, bool, error) {
+	return RunSessionSelectorContextWithTerminal(ctx, current, all, tui.NewProcessTerminal())
+}
+
+func RunSessionSelectorContextWithTerminal(ctx context.Context, current, all SessionSelectorContextLoader, terminal tui.Terminal) (string, bool, error) {
+	return runSessionSelectorWithTerminal(ctx, SessionSelectorOptions{
+		CurrentSessionsContext: current,
+		AllSessionsContext:     all,
+	}, terminal)
+}
+
+func runSessionSelectorWithTerminal(ctx context.Context, options SessionSelectorOptions, terminal tui.Terminal) (string, bool, error) {
 	if terminal == nil {
 		return "", false, errors.New("session selector requires a terminal")
 	}
@@ -998,15 +1147,15 @@ func RunSessionSelectorWithTerminal(ctx context.Context, current, all SessionSel
 	resolved := make(chan result, 1)
 	var once sync.Once
 	resolve := func(value result) { once.Do(func() { resolved <- value }) }
-	selector := NewSessionSelectorComponent(SessionSelectorOptions{
-		CurrentSessions: current,
-		AllSessions:     all,
-		Keybindings:     bindings,
-		RequestRender:   uiApp.RequestRender,
-	}, func(path string) { resolve(result{path: path}) }, func() { resolve(result{cancelled: true}) })
+	options.Keybindings = bindings
+	options.RequestRender = uiApp.RequestRender
+	selector := NewSessionSelectorComponent(options, func(path string) { resolve(result{path: path}) }, func() { resolve(result{cancelled: true}) })
 	uiApp.AddChild(selector)
 	uiApp.SetFocus(selector)
 	if err := uiApp.Start(); err != nil {
+		selector.mu.Lock()
+		selector.cancelActiveLoadsLocked()
+		selector.mu.Unlock()
 		selector.clearStatus()
 		return "", false, err
 	}
@@ -1017,6 +1166,9 @@ func RunSessionSelectorWithTerminal(ctx context.Context, current, all SessionSel
 	case <-ctx.Done():
 		waitErr = ctx.Err()
 	}
+	selector.mu.Lock()
+	selector.cancelActiveLoadsLocked()
+	selector.mu.Unlock()
 	selector.clearStatus()
 	stopErr := uiApp.Stop()
 	if err := errors.Join(waitErr, stopErr); err != nil {

@@ -562,7 +562,7 @@ func TestNewAgentSessionResolvesCWD(t *testing.T) {
 	if got := result.Session.Manager().GetCWD(); got != project {
 		t.Fatalf("session cwd = %q, want %q", got, project)
 	}
-	if got := result.Session.State().SystemPrompt; !strings.HasSuffix(got, "Current working directory: "+project) {
+	if got := result.Session.State().SystemPrompt; !strings.HasSuffix(got, "<cwd>\n"+project+"\n</cwd>") {
 		t.Fatalf("system prompt uses unresolved cwd: %q", got)
 	}
 }
@@ -752,8 +752,8 @@ func TestNewAgentSessionActivatesRehydratedHarnessStorage(t *testing.T) {
 	if err := result.Session.PromptSync(context.Background(), "runtime write"); err != nil {
 		t.Fatal(err)
 	}
-	if got := len(storage.EntriesByType("message")); got != before+2 {
-		t.Fatalf("storage message count after runtime prompt = %d, want %d", got, before+2)
+	if got := len(storage.EntriesByType("message")); got != before+3 {
+		t.Fatalf("storage message count after runtime prompt = %d, want %d", got, before+3)
 	}
 
 	leaf, err := storage.LeafID()

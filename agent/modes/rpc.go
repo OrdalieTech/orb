@@ -397,12 +397,16 @@ func (mode *rpcMode) handleCommand(session *agent.SessionRuntime, command RPCCom
 		}
 		return nil
 	case "steer":
-		if err := session.SteerImages(command.Message, command.Images); err != nil {
+		if err := session.PromptWithOptions(mode.ctx, command.Message, &agent.PromptOptions{
+			Images: command.Images, StreamingBehavior: extensions.DeliverSteer, Source: extensions.InputRPC,
+		}); err != nil {
 			return failure(err)
 		}
 		return success()
 	case "follow_up":
-		if err := session.FollowUpImages(command.Message, command.Images); err != nil {
+		if err := session.PromptWithOptions(mode.ctx, command.Message, &agent.PromptOptions{
+			Images: command.Images, StreamingBehavior: extensions.DeliverFollowUp, Source: extensions.InputRPC,
+		}); err != nil {
 			return failure(err)
 		}
 		return success()
@@ -438,7 +442,7 @@ func (mode *rpcMode) handleCommand(session *agent.SessionRuntime, command RPCCom
 			IsCompacting: session.IsCompacting(), SteeringMode: string(session.SteeringMode()),
 			FollowUpMode: string(session.FollowUpMode()), SessionFile: manager.GetSessionFile(),
 			SessionID: manager.GetSessionID(), AutoCompactionEnabled: session.AutoCompactionEnabled(),
-			MessageCount: len(state.Messages), PendingMessageCount: session.PendingMessageCount(),
+			MessageCount: rpcMessageCount(state.Messages), PendingMessageCount: session.PendingMessageCount(),
 		}
 		if name != nil {
 			value := *name
@@ -638,6 +642,16 @@ func (mode *rpcMode) handleCommand(session *agent.SessionRuntime, command RPCCom
 	default:
 		return failure(errors.New("Unknown command: " + command.Type))
 	}
+}
+
+func rpcMessageCount(messages engine.AgentMessages) int {
+	count := len(messages)
+	if count > 0 {
+		if system, ok := messages[0].(*ai.SystemMessage); ok && ai.SystemMessageText(system) == "" {
+			count--
+		}
+	}
+	return count
 }
 
 func rpcSuccess(id string, hasID bool, command string) RPCResponse {

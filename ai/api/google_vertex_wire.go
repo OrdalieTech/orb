@@ -14,12 +14,12 @@ type googleVertexWireRequest struct {
 	Contents          json.RawMessage             `json:"contents,omitempty"`
 	SystemInstruction json.RawMessage             `json:"systemInstruction,omitempty"`
 	SafetySettings    json.RawMessage             `json:"safetySettings,omitempty"`
+	ServiceTier       json.RawMessage             `json:"serviceTier,omitempty"`
 	Tools             json.RawMessage             `json:"tools,omitempty"`
 	ToolConfig        json.RawMessage             `json:"toolConfig,omitempty"`
 	Labels            json.RawMessage             `json:"labels,omitempty"`
 	CachedContent     json.RawMessage             `json:"cachedContent,omitempty"`
 	ModelArmorConfig  json.RawMessage             `json:"modelArmorConfig,omitempty"`
-	ServiceTier       json.RawMessage             `json:"serviceTier,omitempty"`
 	GenerationConfig  *googleVertexGenerationWire `json:"generationConfig,omitempty"`
 }
 
@@ -420,7 +420,7 @@ func googleVertexFunctionDeclarations(value json.RawMessage) (json.RawMessage, e
 			return nil, errors.New("behavior parameter is not supported in Gemini Enterprise Agent Platform (previously known as Vertex AI).") //nolint:staticcheck // Exact SDK text.
 		}
 		ordered := googleJSONObject{}
-		for _, name := range []string{"description", "name", "parameters", "parametersJsonSchema", "response", "responseJsonSchema"} {
+		for _, name := range []string{"name", "description", "parameters", "parametersJsonSchema", "response", "responseJsonSchema"} {
 			if field, exists := declaration.Value(name); exists && field != nil {
 				ordered.Set(name, field)
 			}
@@ -446,9 +446,9 @@ func googleVertexToolConfig(value json.RawMessage) (json.RawMessage, error) {
 		return nil, errors.New("includeServerSideToolInvocations parameter is not supported in Gemini Enterprise Agent Platform (previously known as Vertex AI).") //nolint:staticcheck // Exact SDK text.
 	}
 	return ai.Marshal(struct {
-		RetrievalConfig       json.RawMessage `json:"retrievalConfig,omitempty"`
 		FunctionCallingConfig json.RawMessage `json:"functionCallingConfig,omitempty"`
-	}{RetrievalConfig: googleNonNullRaw(input.RetrievalConfig), FunctionCallingConfig: googleNonNullRaw(input.FunctionCallingConfig)})
+		RetrievalConfig       json.RawMessage `json:"retrievalConfig,omitempty"`
+	}{FunctionCallingConfig: googleNonNullRaw(input.FunctionCallingConfig), RetrievalConfig: googleNonNullRaw(input.RetrievalConfig)})
 }
 
 func googleVertexCachedContent(value json.RawMessage, project, location string) (json.RawMessage, error) {

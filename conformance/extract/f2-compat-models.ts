@@ -40,6 +40,12 @@ globalThis.fetch = async (input) => {
   }
   if (url === "https://openrouter.ai/api/v1/models") return Response.json(JSON.parse(readFileSync(process.env.ORB_OPENROUTER_SNAPSHOT, "utf8")));
   if (url === "https://ai-gateway.vercel.sh/v1/models") return Response.json({ data: [] });
+  // Radius is excluded from Orb's catalog policy. Keep the released generator
+  // satisfied without allowing Radius output into any selected F2 case.
+  if (url === "https://radius.pi.dev/v1/config") return Response.json({
+    baseUrl: "https://radius.invalid",
+    models: [{ id: "excluded", name: "Excluded", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1, maxTokens: 1 }],
+  });
   throw new Error(\`unexpected F2 compat model fetch: \${url}\`);
 };
 `,
@@ -90,7 +96,7 @@ globalThis.fetch = async (input) => {
           ["zai-coding-cn", "glm-4.6v"], ["zai-coding-cn", "glm-5.2"],
           ["qwen-token-plan", "glm-5.2"], ["qwen-token-plan", "glm-5"],
           ["qwen-token-plan-individual", "qwen3.8-flash"],
-          ["deepseek", "deepseek-v4-flash-vision-exp"],
+          ["deepseek", "deepseek-flash"],
           ["github-copilot", "claude-fable-5"],
         ].map(async ([provider, id]) => ({ name: `${provider}-${id}`, model: await readModel(provider, id) }))),
       ],

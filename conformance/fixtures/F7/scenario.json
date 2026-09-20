@@ -214,7 +214,7 @@
       "name": "prompt-events",
       "input": "{\"id\":\"prompt-1\",\"type\":\"prompt\",\"message\":\"Say complete.\"}",
       "framing": "lf",
-      "expectedLineCount": 14
+      "expectedLineCount": 16
     },
     {
       "name": "last-text-after-prompt",

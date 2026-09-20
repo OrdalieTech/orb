@@ -23,6 +23,17 @@ func TestModelRequiredModalitiesMarshalAsArrays(t *testing.T) {
 	}
 }
 
+func TestModelPromptCacheAllowsPartialLifetimeMetadata(t *testing.T) {
+	long := 3600.0
+	encoded, err := json.Marshal(ai.ModelPromptCache{Long: &long})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"long":3600}`; string(encoded) != want {
+		t.Fatalf("prompt cache = %s, want %s", encoded, want)
+	}
+}
+
 func TestCompatPreservesExplicitFalseAndEmptyCollections(t *testing.T) {
 	falseValue := false
 	empty := []string{}

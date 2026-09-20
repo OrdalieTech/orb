@@ -84,10 +84,10 @@ func TestFormatSkillsForPromptExactAndHidden(t *testing.T) {
 func TestBuildSystemPromptIncludesSkillsOnlyWithRead(t *testing.T) {
 	skill := Skill{Name: "inspect", Description: "Inspect", FilePath: "/skills/inspect/SKILL.md"}
 	withRead := BuildSystemPrompt(SystemPromptOptions{SelectedTools: []string{"read"}, Skills: []Skill{skill}, CWD: "/cwd", PackageDir: t.TempDir()})
-	if !strings.Contains(withRead, "<available_skills>") || !strings.HasSuffix(withRead, "\nCurrent working directory: /cwd") {
+	if !strings.Contains(withRead, "<available_skills>") || !strings.HasSuffix(withRead, "<cwd>\n/cwd\n</cwd>") {
 		t.Fatalf("skill block placement mismatch: %q", withRead)
 	}
-	withoutRead := BuildSystemPrompt(SystemPromptOptions{SelectedTools: []string{"bash"}, Skills: []Skill{skill}, CWD: "/cwd", PackageDir: t.TempDir()})
+	withoutRead := BuildSystemPrompt(SystemPromptOptions{SelectedTools: []string{"write"}, Skills: []Skill{skill}, CWD: "/cwd", PackageDir: t.TempDir()})
 	if strings.Contains(withoutRead, "<available_skills>") {
 		t.Fatalf("skills visible without read: %q", withoutRead)
 	}

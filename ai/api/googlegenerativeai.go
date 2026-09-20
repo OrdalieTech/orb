@@ -110,12 +110,20 @@ func StreamSimpleGoogleGenerativeAI(
 			Thinking:      &GoogleThinkingOptions{Enabled: false},
 		})
 	}
-	effort, err := resolveGoogleThinkingLevel(model, clampGoogleReasoning(model, *options.Reasoning))
+	clamped := clampGoogleReasoning(model, *options.Reasoning)
+	if clamped == ai.ThinkingLevel(ai.ModelThinkingOff) {
+		return StreamGoogleGenerativeAIWithOptions(ctx, model, requestContext, &GoogleOptions{
+			StreamOptions: base,
+			ToolChoice:    GoogleToolChoice(simpleToolChoice(options, "any")),
+			Thinking:      &GoogleThinkingOptions{Enabled: false},
+		})
+	}
+	effort, err := resolveGoogleThinkingLevel(model, clamped)
 	if err != nil {
 		return nil, err
 	}
 	thinking := &GoogleThinkingOptions{Enabled: true}
-	if isGemini3Pro(model) || isGemini3Flash(model) || isGemma4(model) {
+	if usesGoogleThinkingLevel(model) {
 		thinking.Level = googleThinkingLevel(effort, model)
 	} else {
 		thinking.BudgetTokens = googleThinkingBudget(model, effort, options.ThinkingBudgets)
@@ -423,6 +431,7 @@ func googleProviderHeaders(model *ai.Model, options *ai.StreamOptions) http.Head
 			headers[name] = []string{*value}
 		}
 	}
+	addOpenCodeSessionHeader(headers, model, options)
 	return headers
 }
 
@@ -729,17 +738,25 @@ func isGemini3Flash(model *ai.Model) bool {
 	return gemini3FlashPattern.MatchString(id) || id == "gemini-flash-latest" || id == "gemini-flash-lite-latest"
 }
 
+func usesGoogleThinkingLevel(model *ai.Model) bool {
+	return isGemini3Pro(model) || isGemini3Flash(model) || isGemma4(model)
+}
+
 func disabledGoogleThinkingConfig(model *ai.Model) *GoogleThinkingConfig {
-	if isGemini3Pro(model) {
-		level := GoogleThinkingLow
-		return &GoogleThinkingConfig{ThinkingLevel: &level}
+	if !usesGoogleThinkingLevel(model) {
+		zero := int64(0)
+		return &GoogleThinkingConfig{ThinkingBudget: &zero}
 	}
-	if isGemini3Flash(model) || isGemma4(model) {
-		level := GoogleThinkingMinimal
-		return &GoogleThinkingConfig{ThinkingLevel: &level}
+	fallback := clampGoogleReasoning(model, ai.ThinkingLevel(ai.ModelThinkingOff))
+	if fallback == ai.ThinkingLevel(ai.ModelThinkingOff) {
+		zero := int64(0)
+		return &GoogleThinkingConfig{ThinkingBudget: &zero}
 	}
-	zero := int64(0)
-	return &GoogleThinkingConfig{ThinkingBudget: &zero}
+	resolved, err := resolveGoogleThinkingLevel(model, fallback)
+	if err != nil {
+		return nil
+	}
+	return &GoogleThinkingConfig{ThinkingLevel: googleThinkingLevel(resolved, model)}
 }
 
 // googleThinkingLevel mirrors upstream getThinkingLevel: efforts outside the
@@ -820,9 +837,6 @@ func googleThinkingBudget(model *ai.Model, effort ai.ThinkingLevel, custom *ai.T
 }
 
 func resolveGoogleThinkingLevel(model *ai.Model, level ai.ThinkingLevel) (ai.ThinkingLevel, error) {
-	if level == ai.ThinkingLevel(ai.ModelThinkingOff) {
-		return ai.ThinkingHigh, nil
-	}
 	resolved := level
 	mapping := "undefined"
 	if model.ThinkingLevelMap != nil {

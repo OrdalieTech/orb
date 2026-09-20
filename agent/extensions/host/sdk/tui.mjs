@@ -420,6 +420,7 @@ export const getGifDimensions = stub("getGifDimensions");
 export const getImageDimensions = stub("getImageDimensions");
 export const getJpegDimensions = stub("getJpegDimensions");
 export const getKeybindings = stub("getKeybindings");
+export const getNativeClipboard = stub("getNativeClipboard");
 export const getOsc8LinkAtColumn = stub("getOsc8LinkAtColumn");
 export const getPngDimensions = stub("getPngDimensions");
 export const getWebpDimensions = stub("getWebpDimensions");

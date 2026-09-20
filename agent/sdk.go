@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/OrdalieTech/orb/agent/config"
@@ -433,6 +434,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	}
 
 	systemPrompt := buildSystemPromptFromResources(resources)
+	systemPrompt = strings.TrimSuffix(systemPrompt, "\nCurrent working directory: "+strings.ReplaceAll(cwd, `\`, "/"))
 
 	// Construct built-in tools for the resolved CWD.
 	baseTools, err := buildBuiltInTools(cwd, settings, opts.ToolOptions)
@@ -460,14 +462,14 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 
 	// Build prompt options for system prompt assembly.
 	promptOptions := buildPromptOptions(cwd, resources, initialActiveToolNames, opts.BuiltinToolPrompts)
+	if promptOptions != nil && systemPrompt != "" {
+		prompt := systemPrompt
+		promptOptions.CustomPrompt = &prompt
+	}
 	assembledPrompt := systemPrompt
 	if promptOptions != nil {
 		assembledPrompt = BuildSystemPrompt(*promptOptions)
 	}
-
-	// Resolve active tools for the agent state. When extensions are present,
-	// refreshExtensionTools handles this; otherwise we set tools directly.
-	activeTools := resolveActiveTools(baseTools, initialActiveToolNames, allowedToolNames, opts.ExcludeTools)
 
 	// Resolve auth callbacks. When the caller provides a custom StreamFn
 	// they handle auth themselves (e.g. faux provider). When StreamFn is
@@ -503,10 +505,10 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 
 	agentOpts := []engine.AgentOption{
 		engine.WithInitialState(engine.AgentState{
-			SystemPrompt:  assembledPrompt,
+			SystemPrompt:  "",
 			Model:         model,
 			ThinkingLevel: thinking,
-			Tools:         activeTools,
+			Tools:         []engine.AgentTool{},
 		}),
 		engine.WithConvertToLLM(ConvertToLLMWithBlockImages(settings.GetBlockImages)),
 		engine.WithSteeringMode(engine.QueueMode(settings.GetSteeringMode())),
@@ -544,6 +546,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		agentOpts = append(agentOpts, engine.WithModelHeadersResolver(getModelHeaders))
 	}
 	a = engine.NewAgent(streamFn, agentOpts...)
+	a.SetSystemPrompt(assembledPrompt)
 
 	if hasExisting {
 		messages := make(engine.AgentMessages, 0, len(existing.Messages))
@@ -730,39 +733,6 @@ func resolveInitialTools(toolsList []string, noTools string, excludeTools []stri
 		return filterExcluded(configuredDefaults, excludeTools)
 	}
 	return filterExcluded(DefaultActiveToolNames, excludeTools)
-}
-
-func resolveActiveTools(baseTools []engine.AgentTool, activeNames []string, allowedNames *[]string, excluded []string) []engine.AgentTool {
-	byName := make(map[string]engine.AgentTool, len(baseTools))
-	for _, t := range baseTools {
-		byName[t.Spec().Name] = t
-	}
-	excludeSet := make(map[string]struct{}, len(excluded))
-	for _, n := range excluded {
-		excludeSet[n] = struct{}{}
-	}
-	result := make([]engine.AgentTool, 0, len(activeNames))
-	for _, name := range activeNames {
-		if _, skip := excludeSet[name]; skip {
-			continue
-		}
-		if allowedNames != nil {
-			found := false
-			for _, a := range *allowedNames {
-				if a == name {
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
-		}
-		if t := byName[name]; t != nil {
-			result = append(result, t)
-		}
-	}
-	return result
 }
 
 func filterExcluded(names []string, excluded []string) []string {

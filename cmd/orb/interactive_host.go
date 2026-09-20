@@ -64,6 +64,7 @@ func sessionRuntimeConfig(inputs runtimeInputs, manager *session.SessionManager,
 		BaseTools:             inputs.BaseTools, InitialActiveToolNames: inputs.ActiveToolNames,
 		AllowedToolNames: inputs.AllowedTools, ExcludedToolNames: inputs.ExcludedTools,
 		SystemPromptOptions: &inputs.PromptOptions,
+		Clock:               inputs.Clock,
 		ResourceLoader:      inputs.ResourceLoader,
 		SessionStart:        options.sessionStart,
 		DeferSessionStart:   options.deferSessionStart,
@@ -629,6 +630,28 @@ func (host *interactiveSessionHost) ListAllSessions(onProgress session.SessionLi
 		sessionDir = ""
 	}
 	return session.ListAll(sessionDir, onProgress, session.WithAgentDir(host.agentDir))
+}
+
+func (host *interactiveSessionHost) ListProjectSessionsContext(ctx context.Context, onUpdate session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
+	current, err := host.currentSession()
+	if err != nil {
+		return nil, err
+	}
+	manager := current.Manager()
+	return session.ListContext(ctx, manager.GetCWD(), manager.GetSessionDir(), onUpdate, session.WithAgentDir(host.agentDir))
+}
+
+func (host *interactiveSessionHost) ListAllSessionsContext(ctx context.Context, onUpdate session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
+	current, err := host.currentSession()
+	if err != nil {
+		return nil, err
+	}
+	manager := current.Manager()
+	sessionDir := manager.GetSessionDir()
+	if manager.UsesDefaultSessionDir() {
+		sessionDir = ""
+	}
+	return session.ListAllContext(ctx, sessionDir, onUpdate, session.WithAgentDir(host.agentDir))
 }
 
 func (host *interactiveSessionHost) TrustState() (modes.InteractiveTrustState, error) {

@@ -1,8 +1,12 @@
 package session
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -29,51 +33,173 @@ type SessionInfo struct {
 
 type SessionListProgress func(loaded, total int)
 
-// List returns sessions for cwd. A custom flat session directory is filtered
-// by the cwd stored in each header.
-func List(cwd, sessionDir string, onProgress SessionListProgress, options ...Option) []SessionInfo {
+// SessionListUpdate is a progressive, context-aware listing update. Sessions
+// is populated periodically and is always sorted by activity when present.
+type SessionListUpdate struct {
+	Loaded   int
+	Total    int
+	Sessions []SessionInfo
+}
+
+// SessionListUpdateFunc receives count updates and periodic partial results.
+type SessionListUpdateFunc func(SessionListUpdate)
+
+const (
+	currentSessionPublishInterval = 10
+	allSessionPublishInterval     = 100
+)
+
+// FindByID finds an exact project session ID by reading bounded headers only.
+// A custom flat session directory is filtered by the cwd stored in each header.
+func FindByID(cwd, id, sessionDir string, options ...Option) string {
 	resolved := applyOptions(options)
 	resolvedCWD, err := resolvePath(cwd)
 	if err != nil {
-		return nil
+		return ""
 	}
 	explicitDir := sessionDir != ""
 	if !explicitDir {
 		sessionDir, err = DefaultSessionDir(resolvedCWD, resolved.agentDir)
 		if err != nil {
-			return nil
+			return ""
 		}
 	} else {
 		sessionDir = normalizePath(sessionDir)
 	}
 	defaultDir, err := DefaultSessionDirPath(resolvedCWD, resolved.agentDir)
 	if err != nil {
-		return nil
+		return ""
 	}
 	filterCWD := explicitDir && sessionDir != defaultDir
-	sessions := listSessionsFromDir(sessionDir, onProgress)
+	entries, err := os.ReadDir(sessionDir)
+	if err != nil {
+		return ""
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
+			continue
+		}
+		path := filepath.Join(sessionDir, entry.Name())
+		header := readSessionHeader(path)
+		if header == nil || header.ID != id {
+			continue
+		}
+		if filterCWD {
+			headerCWD, resolveErr := resolvePath(header.CWD)
+			if header.CWD == "" || resolveErr != nil || headerCWD != resolvedCWD {
+				continue
+			}
+		}
+		return path
+	}
+	return ""
+}
+
+// List returns sessions for cwd. A custom flat session directory is filtered
+// by the cwd stored in each header.
+func List(cwd, sessionDir string, onProgress SessionListProgress, options ...Option) []SessionInfo {
+	sessions, _ := ListContext(context.Background(), cwd, sessionDir, func(update SessionListUpdate) {
+		if onProgress != nil {
+			onProgress(update.Loaded, update.Total)
+		}
+	}, options...)
+	return sessions
+}
+
+// ListContext is the cancellable, progressive companion to List. The legacy
+// List API remains a background-context adapter with count-only progress.
+func ListContext(ctx context.Context, cwd, sessionDir string, onUpdate SessionListUpdateFunc, options ...Option) ([]SessionInfo, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	resolved := applyOptions(options)
+	resolvedCWD, err := resolvePath(cwd)
+	if err != nil {
+		return nil, nil
+	}
+	explicitDir := sessionDir != ""
+	if !explicitDir {
+		sessionDir, err = DefaultSessionDir(resolvedCWD, resolved.agentDir)
+		if err != nil {
+			return nil, nil
+		}
+	} else {
+		sessionDir = normalizePath(sessionDir)
+	}
+	defaultDir, err := DefaultSessionDirPath(resolvedCWD, resolved.agentDir)
+	if err != nil {
+		return nil, nil
+	}
+	filterCWD := explicitDir && sessionDir != defaultDir
+	include := func(info SessionInfo) bool {
+		if !filterCWD {
+			return true
+		}
+		infoCWD, resolveErr := resolvePath(info.CWD)
+		return resolveErr == nil && info.CWD != "" && infoCWD == resolvedCWD
+	}
+	updates := onUpdate
+	if onUpdate != nil && filterCWD {
+		updates = func(update SessionListUpdate) {
+			if update.Sessions != nil {
+				filtered := make([]SessionInfo, 0, len(update.Sessions))
+				for _, info := range update.Sessions {
+					if include(info) {
+						filtered = append(filtered, info)
+					}
+				}
+				update.Sessions = filtered
+			}
+			onUpdate(update)
+		}
+	}
+	sessions, err := listSessionsFromDirContext(ctx, sessionDir, updates, currentSessionPublishInterval)
+	if err != nil {
+		return nil, err
+	}
 	if filterCWD {
 		filtered := sessions[:0]
 		for _, info := range sessions {
-			infoCWD, resolveErr := resolvePath(info.CWD)
-			if resolveErr == nil && info.CWD != "" && infoCWD == resolvedCWD {
+			if include(info) {
 				filtered = append(filtered, info)
 			}
 		}
 		sessions = filtered
 	}
 	sortSessionInfos(sessions)
-	return sessions
+	return sessions, nil
 }
 
 // ListAll returns every session in a custom flat directory, or all project
 // directories below the configured agent sessions directory.
 func ListAll(sessionDir string, onProgress SessionListProgress, options ...Option) []SessionInfo {
+	sessions, _ := ListAllContext(context.Background(), sessionDir, func(update SessionListUpdate) {
+		if onProgress != nil {
+			onProgress(update.Loaded, update.Total)
+		}
+	}, options...)
+	return sessions
+}
+
+// ListAllContext is the cancellable, progressive companion to ListAll.
+func ListAllContext(ctx context.Context, sessionDir string, onUpdate SessionListUpdateFunc, options ...Option) ([]SessionInfo, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	resolved := applyOptions(options)
 	if sessionDir != "" {
-		sessions := listSessionsFromDir(normalizePath(sessionDir), onProgress)
+		sessions, err := listSessionsFromDirContext(ctx, normalizePath(sessionDir), onUpdate, currentSessionPublishInterval)
+		if err != nil {
+			return nil, err
+		}
 		sortSessionInfos(sessions)
-		return sessions
+		return sessions, nil
 	}
 	agentDir := resolved.agentDir
 	var err error
@@ -83,16 +209,22 @@ func ListAll(sessionDir string, onProgress SessionListProgress, options ...Optio
 		agentDir, err = resolvePath(agentDir)
 	}
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	root := filepath.Join(agentDir, "sessions")
 	directories, err := os.ReadDir(root)
 	if err != nil {
-		return nil
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, nil
 	}
 	var files []string
 	for _, directory := range directories {
-		if !directory.IsDir() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if !directory.IsDir() && directory.Type()&os.ModeSymlink == 0 {
 			continue
 		}
 		dir := filepath.Join(root, directory.Name())
@@ -106,52 +238,137 @@ func ListAll(sessionDir string, onProgress SessionListProgress, options ...Optio
 			}
 		}
 	}
-	sessions := buildSessionInfos(files, onProgress)
+	candidates := make([]sessionFileCandidate, 0, len(files))
+	for _, path := range files {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		info, statErr := os.Stat(path)
+		candidates = append(candidates, sessionFileCandidate{path: path, info: info, statFailed: statErr != nil})
+	}
+	sort.SliceStable(candidates, func(left, right int) bool {
+		leftInfo := candidates[left].info
+		rightInfo := candidates[right].info
+		if leftInfo == nil && rightInfo == nil {
+			return filepath.Base(candidates[left].path) > filepath.Base(candidates[right].path)
+		}
+		if leftInfo == nil {
+			return false
+		}
+		if rightInfo == nil {
+			return true
+		}
+		leftModified := leftInfo.ModTime()
+		rightModified := rightInfo.ModTime()
+		if leftModified.Equal(rightModified) {
+			return filepath.Base(candidates[left].path) > filepath.Base(candidates[right].path)
+		}
+		return leftModified.After(rightModified)
+	})
+	sessions, err := buildSessionInfosContext(ctx, candidates, onUpdate, allSessionPublishInterval, true)
+	if err != nil {
+		return nil, err
+	}
 	sortSessionInfos(sessions)
-	return sessions
+	return sessions, nil
 }
 
-func listSessionsFromDir(dir string, onProgress SessionListProgress) []SessionInfo {
+type sessionFileCandidate struct {
+	path       string
+	info       os.FileInfo
+	statFailed bool
+}
+
+func listSessionsFromDirContext(ctx context.Context, dir string, onUpdate SessionListUpdateFunc, publishInterval int) ([]SessionInfo, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, nil
 	}
-	files := make([]string, 0, len(entries))
+	candidates := make([]sessionFileCandidate, 0, len(entries))
 	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if strings.HasSuffix(entry.Name(), ".jsonl") {
-			files = append(files, filepath.Join(dir, entry.Name()))
+			candidates = append(candidates, sessionFileCandidate{path: filepath.Join(dir, entry.Name())})
 		}
 	}
-	return buildSessionInfos(files, onProgress)
+	sort.SliceStable(candidates, func(left, right int) bool {
+		return filepath.Base(candidates[left].path) > filepath.Base(candidates[right].path)
+	})
+	return buildSessionInfosContext(ctx, candidates, onUpdate, publishInterval, false)
 }
 
-func buildSessionInfos(files []string, onProgress SessionListProgress) []SessionInfo {
+func buildSessionInfosContext(ctx context.Context, files []sessionFileCandidate, onUpdate SessionListUpdateFunc, publishInterval int, waitForFirstCandidate bool) ([]SessionInfo, error) {
+	if publishInterval < 1 {
+		publishInterval = 1
+	}
 	results := make([]*SessionInfo, len(files))
 	jobs := make(chan int)
 	workerCount := min(len(files), maxConcurrentSessionInfoLoads)
 	var workers sync.WaitGroup
 	var progress sync.Mutex
 	loaded := 0
+	firstCandidateLoaded := false
+	partial := make([]SessionInfo, 0, len(files))
 	for range workerCount {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
 			for index := range jobs {
-				results[index] = buildSessionInfo(files[index])
+				if ctx.Err() != nil {
+					continue
+				}
+				results[index] = buildSessionInfoContext(ctx, files[index])
+				if ctx.Err() != nil {
+					continue
+				}
 				progress.Lock()
 				loaded++
-				if onProgress != nil {
-					onProgress(loaded, len(files))
+				if index == 0 {
+					firstCandidateLoaded = true
+				}
+				if results[index] != nil {
+					partial = append(partial, *results[index])
+				}
+				if onUpdate != nil {
+					update := SessionListUpdate{Loaded: loaded, Total: len(files)}
+					publish := loaded == 1 || loaded%publishInterval == 0 || loaded == len(files)
+					if waitForFirstCandidate {
+						publish = firstCandidateLoaded && (index == 0 || loaded%publishInterval == 0 || loaded == len(files))
+					}
+					if publish {
+						update.Sessions = append([]SessionInfo(nil), partial...)
+						sortSessionInfos(update.Sessions)
+					}
+					onUpdate(update)
 				}
 				progress.Unlock()
 			}
 		}()
 	}
 	for index := range files {
-		jobs <- index
+		if err := ctx.Err(); err != nil {
+			close(jobs)
+			workers.Wait()
+			return nil, err
+		}
+		select {
+		case jobs <- index:
+		case <-ctx.Done():
+			close(jobs)
+			workers.Wait()
+			return nil, ctx.Err()
+		}
 	}
 	close(jobs)
 	workers.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	sessions := make([]SessionInfo, 0, len(files))
 	for _, info := range results {
@@ -159,21 +376,56 @@ func buildSessionInfos(files []string, onProgress SessionListProgress) []Session
 			sessions = append(sessions, *info)
 		}
 	}
-	return sessions
+	return sessions, nil
 }
 
 func buildSessionInfo(path string) *SessionInfo {
-	stat, err := os.Stat(path)
+	return buildSessionInfoContext(context.Background(), sessionFileCandidate{path: path})
+}
+
+func buildSessionInfoContext(ctx context.Context, candidate sessionFileCandidate) *SessionInfo {
+	stat := candidate.info
+	var err error
+	if stat == nil && !candidate.statFailed {
+		stat, err = os.Stat(candidate.path)
+	}
+	if err != nil || stat == nil {
+		return nil
+	}
+	file, err := os.Open(candidate.path)
 	if err != nil {
 		return nil
 	}
-	entries, err := LoadEntriesFromFile(path)
-	if err != nil || len(entries) == 0 || entries[0].Header == nil {
+	defer func() { _ = file.Close() }()
+	reader := bufio.NewReaderSize(file, 64*1024)
+	var entries []*FileEntry
+	var line []byte
+	for {
+		if ctx.Err() != nil {
+			return nil
+		}
+		fragment, readErr := reader.ReadSlice('\n')
+		line = append(line, fragment...)
+		if errors.Is(readErr, bufio.ErrBufferFull) {
+			continue
+		}
+		if entry := parseSessionEntryLine(string(line)); entry != nil {
+			entries = append(entries, entry)
+		}
+		line = line[:0]
+		if readErr != nil {
+			if !errors.Is(readErr, io.EOF) {
+				return nil
+			}
+			break
+		}
+	}
+	if len(entries) == 0 || entries[0].Header == nil {
 		return nil
 	}
 	header := entries[0].Header
 	result := &SessionInfo{
-		Path: path, ID: header.ID, CWD: header.CWD,
+		Path: candidate.path, ID: header.ID, CWD: header.CWD,
 		ParentSessionPath: cloneString(header.ParentSession),
 		FirstMessage:      "(no messages)",
 		Modified:          truncateToJSMilliseconds(stat.ModTime()),

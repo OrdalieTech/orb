@@ -299,7 +299,14 @@ func runConformance(ctx context.Context, root, fixtureDir string, lock Lock) (st
 	defer cleanup()
 	goFlags := strings.TrimSpace(os.Getenv("GOFLAGS") + " -buildvcs=false")
 	// The tool itself builds with CGO_ENABLED=0; -race needs cgo re-enabled.
-	return command(ctx, copyRoot, []string{"GOWORK=off", "GOFLAGS=" + goFlags, "CGO_ENABLED=1"}, "go", "test", "-race", "./...")
+	raceOutput, err := command(ctx, copyRoot, []string{"GOWORK=off", "GOFLAGS=" + goFlags, "CGO_ENABLED=1"}, "go", "test", "-race", "./...")
+	if err != nil {
+		return raceOutput, err
+	}
+	// arm64 race instrumentation disables FMA contraction; shipped wire bytes
+	// must also pass without it, matching the Makefile's test gate.
+	wireOutput, err := command(ctx, copyRoot, []string{"GOWORK=off", "GOFLAGS=" + goFlags, "CGO_ENABLED=0"}, "go", "test", "./ai/...", "./conformance/runner/...")
+	return raceOutput + wireOutput, err
 }
 
 func checkFrom(output string, err error) Check {

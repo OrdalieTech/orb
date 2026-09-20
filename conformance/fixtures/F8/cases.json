@@ -728,6 +728,11 @@
         "argumentHint": null
       },
       {
+        "name": "bug",
+        "description": "Report a bug to the Pi developers",
+        "argumentHint": "<description>"
+      },
+      {
         "name": "copy",
         "description": "Copy last agent message to clipboard",
         "argumentHint": null

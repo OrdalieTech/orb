@@ -22,6 +22,7 @@ import { generateWP250 } from "./wp250-models.ts";
 import { generateF10 } from "./f10-compaction.ts";
 import { generateF11ExtensionRunner } from "./f11-extension-runner.ts";
 import { generateF11ExtensionWiring } from "./f11-extension-wiring.ts";
+import { generateF11BuiltInTools } from "./f11-built-in-tools.ts";
 import { generateWP360 } from "./wp360-packages.ts";
 import { generateF13DynamicWorkflows } from "./f13-dynamic-workflows.ts";
 import { generateWP440 } from "./wp440-images.ts";
@@ -85,6 +86,7 @@ const generators = [
 	generateF10,
 	generateF11ExtensionRunner,
 	generateF11ExtensionWiring,
+	generateF11BuiltInTools,
 	generateWP360,
 	generateF13DynamicWorkflows,
 	generateWP440,

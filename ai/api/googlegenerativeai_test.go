@@ -139,7 +139,7 @@ func TestGoogleCanceledContextEmitsAborted(t *testing.T) {
 func TestGoogleThinkingConfiguration(t *testing.T) {
 	pro := googleTestModel("gemini-3.1-pro-preview")
 	disabled := disabledGoogleThinkingConfig(pro)
-	if disabled.ThinkingLevel == nil || *disabled.ThinkingLevel != GoogleThinkingLow || disabled.IncludeThoughts != nil {
+	if disabled.ThinkingBudget == nil || *disabled.ThinkingBudget != 0 || disabled.ThinkingLevel != nil || disabled.IncludeThoughts != nil {
 		t.Fatalf("disabled Pro config = %#v", disabled)
 	}
 	flashLite := googleTestModel("gemini-2.5-flash-lite")
@@ -151,7 +151,7 @@ func TestGoogleThinkingConfiguration(t *testing.T) {
 		t.Fatalf("custom high budget = %v", got)
 	}
 	uppercaseFlash := googleTestModel("GEMINI-FLASH-LATEST")
-	if disabled := disabledGoogleThinkingConfig(uppercaseFlash); disabled.ThinkingLevel == nil || *disabled.ThinkingLevel != GoogleThinkingMinimal {
+	if disabled := disabledGoogleThinkingConfig(uppercaseFlash); disabled.ThinkingBudget == nil || *disabled.ThinkingBudget != 0 || disabled.ThinkingLevel != nil {
 		t.Fatalf("uppercase Flash disabled config = %#v", disabled)
 	}
 	uppercase25 := googleTestModel("GEMINI-2.5-FLASH")

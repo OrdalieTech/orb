@@ -370,10 +370,10 @@ func googleWireFunctionCall(value json.RawMessage) (json.RawMessage, error) {
 		return nil, errors.New("willContinue parameter is not supported in Gemini API.") //nolint:staticcheck // Exact SDK text.
 	}
 	return ai.Marshal(struct {
-		ID   json.RawMessage `json:"id,omitempty"`
 		Args json.RawMessage `json:"args,omitempty"`
+		ID   json.RawMessage `json:"id,omitempty"`
 		Name json.RawMessage `json:"name,omitempty"`
-	}{ID: googleNonNullRaw(input.ID), Args: googleNonNullRaw(input.Args), Name: googleNonNullRaw(input.Name)})
+	}{Args: googleNonNullRaw(input.Args), ID: googleNonNullRaw(input.ID), Name: googleNonNullRaw(input.Name)})
 }
 
 func googleWireTools(value json.RawMessage) (json.RawMessage, error) {
@@ -618,11 +618,11 @@ func googleWireToolConfig(value json.RawMessage) (json.RawMessage, error) {
 		return nil, err
 	}
 	return ai.Marshal(struct {
-		RetrievalConfig                  json.RawMessage `json:"retrievalConfig,omitempty"`
 		FunctionCallingConfig            json.RawMessage `json:"functionCallingConfig,omitempty"`
+		RetrievalConfig                  json.RawMessage `json:"retrievalConfig,omitempty"`
 		IncludeServerSideToolInvocations json.RawMessage `json:"includeServerSideToolInvocations,omitempty"`
 	}{
-		RetrievalConfig: googleNonNullRaw(input.RetrievalConfig), FunctionCallingConfig: functionCalling,
+		FunctionCallingConfig: functionCalling, RetrievalConfig: googleNonNullRaw(input.RetrievalConfig),
 		IncludeServerSideToolInvocations: googleNonNullRaw(input.IncludeServerSideToolInvocations),
 	})
 }

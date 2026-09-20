@@ -36,6 +36,7 @@ func RunLoop(
 	streamFn StreamFn,
 ) (AgentMessages, error) {
 	current := copyAgentContext(loopContext)
+	prompts = declarePromptAndToolChanges(current, prompts, loopNow(config))
 	current.Messages = append(current.Messages, prompts...)
 	newMessages := append(AgentMessages(nil), prompts...)
 	emitter := newEventEmitter(sink)
@@ -133,6 +134,7 @@ func runLoop(
 				firstTurn = false
 			}
 
+			pendingMessages = declarePromptAndToolChanges(*currentContext, pendingMessages, loopNow(config))
 			for _, message := range pendingMessages {
 				if err := emitter.emit(ctx, MessageStartEvent{Message: message}); err != nil {
 					return err
@@ -288,8 +290,19 @@ func streamAssistantResponse(
 		return nil, err
 	}
 
-	llmContext := ai.Context{SystemPrompt: &loopContext.SystemPrompt, Messages: llmMessages}
-	if loopContext.Tools != nil {
+	llmContext := ai.Context{Messages: llmMessages}
+	if current := ai.CurrentSystemMessage(llmMessages); current != nil {
+		prompt := ai.SystemMessageText(current)
+		tools := ai.CurrentTools(llmMessages)
+		llmContext.SystemPrompt = &prompt
+		llmContext.Tools = &tools
+		llmContext.Messages = make(ai.MessageList, 0, len(llmMessages))
+		for _, message := range llmMessages {
+			if _, system := message.(*ai.SystemMessage); !system {
+				llmContext.Messages = append(llmContext.Messages, message)
+			}
+		}
+	} else if loopContext.Tools != nil {
 		tools := make([]ai.Tool, 0, len(loopContext.Tools))
 		for _, tool := range loopContext.Tools {
 			spec := tool.Spec()
@@ -333,6 +346,12 @@ func streamAssistantResponse(
 			return nil, headerErr
 		}
 		requestModel.Headers = mergeRequestHeaders(requestModel.Headers, headers)
+	}
+	for _, message := range llmMessages {
+		if system, ok := message.(*ai.SystemMessage); ok && ai.SystemMessageText(system) != "" {
+			ctx = ai.WithTranscriptContext(ctx, ai.TranscriptContext{Messages: llmMessages})
+			break
+		}
 	}
 	stream, err := streamFn(ctx, requestModel, llmContext, &options)
 	if err != nil {
@@ -1051,6 +1070,69 @@ func defaultConvertToLLM(messages AgentMessages) ai.MessageList {
 		}
 	}
 	return converted
+}
+
+func declarePromptAndToolChanges(context AgentContext, pending AgentMessages, timestamp int64) AgentMessages {
+	baseline := append(AgentMessages(nil), pending...)
+	lastSystem := -1
+	for index := len(baseline) - 1; index >= 0; index-- {
+		if _, ok := baseline[index].(*ai.SystemMessage); ok {
+			lastSystem = index
+			break
+		}
+	}
+	withoutPendingChanges := append(AgentMessages(nil), baseline...)
+	if lastSystem >= 0 {
+		if message, ok := withoutPendingChanges[lastSystem].(*ai.SystemMessage); ok {
+			copy := *message
+			copy.ToolsAdded = nil
+			copy.ToolsRemoved = nil
+			withoutPendingChanges[lastSystem] = &copy
+		}
+	}
+	all := append(append(AgentMessages(nil), context.Messages...), withoutPendingChanges...)
+	previous := ai.CurrentTools(agentMessagesToAI(all))
+	current := make([]ai.Tool, 0, len(context.Tools))
+	for _, tool := range context.Tools {
+		spec := tool.Spec()
+		current = append(current, ai.Tool{Name: spec.Name, Description: spec.Description, Parameters: spec.Parameters, ConstrainedSampling: spec.ConstrainedSampling})
+	}
+	added, removed := ai.ToolStateChanges(previous, current)
+	if lastSystem >= 0 {
+		message, _ := baseline[lastSystem].(*ai.SystemMessage)
+		if message != nil && (len(added) > 0 || len(removed) > 0 || len(message.ToolsAdded) > 0 || len(message.ToolsRemoved) > 0) {
+			baseline[lastSystem] = ai.WithToolStateChanges(message, added, removed)
+		}
+		return baseline
+	}
+	if len(added) == 0 && len(removed) == 0 {
+		return baseline
+	}
+	update := ai.NewToolStateSystemMessage(timestamp, added, removed)
+	insert := firstNonSystemIndex(baseline)
+	baseline = append(baseline, nil)
+	copy(baseline[insert+1:], baseline[insert:])
+	baseline[insert] = update
+	return baseline
+}
+
+func firstNonSystemIndex(messages AgentMessages) int {
+	for index, message := range messages {
+		if _, ok := message.(*ai.SystemMessage); !ok {
+			return index
+		}
+	}
+	return len(messages)
+}
+
+func agentMessagesToAI(messages AgentMessages) ai.MessageList {
+	result := make(ai.MessageList, 0, len(messages))
+	for _, message := range messages {
+		if typed, ok := message.(ai.Message); ok {
+			result = append(result, typed)
+		}
+	}
+	return result
 }
 
 func shallowAssistantCopy(message *ai.AssistantMessage) *ai.AssistantMessage {

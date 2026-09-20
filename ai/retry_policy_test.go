@@ -178,3 +178,13 @@ func retryPolicyMessage(reason StopReason, errorMessage, text string) *Assistant
 	}
 	return message
 }
+
+func TestRetryDelayMSCapsAndAvoidsOverflow(t *testing.T) {
+	if got := RetryDelayMS(RetryPolicy{BaseDelayMS: 40_000}, 2); got != DefaultMaxAgentRetryDelayMS {
+		t.Fatalf("default-capped delay = %d", got)
+	}
+	configuredCap := int64(15_000)
+	if got := RetryDelayMS(RetryPolicy{BaseDelayMS: 10_000, MaxAgentDelayMS: &configuredCap}, 30); got != 15_000 {
+		t.Fatalf("configured-capped delay = %d", got)
+	}
+}

@@ -118,6 +118,27 @@ func TestOpenAICodexCacheRetentionNoneOmitsCacheAffinity(t *testing.T) {
 	}
 }
 
+func TestOpenAICodexDefaultReasoningUsesModelOffMapping(t *testing.T) {
+	model := codexTestModel()
+	none := "none"
+	model.ThinkingLevelMap = &map[ai.ModelThinkingLevel]*string{ai.ModelThinkingOff: &none}
+	payload, err := buildOpenAICodexResponsesPayload(&model, ai.Context{Messages: ai.MessageList{}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.Reasoning == nil || payload.Reasoning.Effort != "none" || payload.Reasoning.Summary != nil {
+		t.Fatalf("default reasoning = %#v, want off mapping without summary", payload.Reasoning)
+	}
+	model.ThinkingLevelMap = &map[ai.ModelThinkingLevel]*string{ai.ModelThinkingOff: nil}
+	payload, err = buildOpenAICodexResponsesPayload(&model, ai.Context{Messages: ai.MessageList{}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.Reasoning != nil {
+		t.Fatalf("unsupported off reasoning was sent: %#v", payload.Reasoning)
+	}
+}
+
 func TestOpenAICodexConstrainedSamplingWire(t *testing.T) {
 	model := codexTestModel()
 	model.Compat = json.RawMessage(`{"supportsOpenAIGrammarTools":true}`)

@@ -78,7 +78,7 @@ func BuildContextEntries(entries []SessionEntry, leafID *string) []SessionEntry 
 		if entry.ID == compaction.FirstKeptEntryID {
 			foundFirstKept = true
 		}
-		if foundFirstKept {
+		if foundFirstKept && !isSystemMessageEntry(entry) {
 			contextEntries = append(contextEntries, entry)
 		}
 	}
@@ -110,6 +110,18 @@ func BuildSessionContext(entries []SessionEntry, leafID *string) SessionContext 
 	}
 	for _, entry := range BuildContextEntries(entries, leafID) {
 		context.Messages = append(context.Messages, entryContextMessages(entry)...)
+	}
+	transcript := make(ai.MessageList, 0, len(context.Messages))
+	for _, raw := range context.Messages {
+		if message, err := ai.UnmarshalMessage(raw); err == nil {
+			transcript = append(transcript, message)
+		}
+	}
+	if current := ai.CurrentSystemMessage(transcript); current != nil {
+		context.ActiveToolNames = context.ActiveToolNames[:0]
+		for _, tool := range current.ToolsAdded {
+			context.ActiveToolNames = append(context.ActiveToolNames, tool.Name)
+		}
 	}
 	return context
 }
@@ -153,10 +165,23 @@ func entryContextMessages(entry SessionEntry) []json.RawMessage {
 			Timestamp    int64           `json:"timestamp"`
 		}{mustRawString("compactionSummary"), mustRawString(entry.Summary), entry.TokensBefore, timestampMillis(entry.Timestamp)}
 		encoded, _ := ai.Marshal(message)
+		if len(entry.SystemMessage) > 0 {
+			return []json.RawMessage{cloneRaw(entry.SystemMessage), encoded}
+		}
 		return []json.RawMessage{encoded}
 	default:
 		return nil
 	}
+}
+
+func isSystemMessageEntry(entry SessionEntry) bool {
+	if entry.Type != "message" {
+		return false
+	}
+	var header struct {
+		Role string `json:"role"`
+	}
+	return json.Unmarshal(entry.Message, &header) == nil && header.Role == "system"
 }
 
 func normalizeMessageContent(message json.RawMessage) json.RawMessage {

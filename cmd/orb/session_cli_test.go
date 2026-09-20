@@ -56,6 +56,26 @@ func TestResolveSessionArgumentPrefersLocalExactThenPrefix(t *testing.T) {
 	}
 }
 
+func TestFindLocalSessionByExactIDDoesNotRequireValidTranscriptBody(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "project")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "exact.jsonl")
+	body := `{"type":"session","version":3,"id":"exact","timestamp":"2025-01-01T00:00:00.000Z","cwd":"` + project + `"}` + "\nnot-json\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := findLocalSessionByExactID("exact", project, root, filepath.Join(root, "agent")); got != path {
+		t.Fatalf("exact header lookup = %q, want %q", got, path)
+	}
+	resolved, err := resolveSessionArgument("exact", project, root, filepath.Join(root, "agent"))
+	if err != nil || resolved.kind != "local" || resolved.path != path {
+		t.Fatalf("exact argument resolution = %+v, err %v", resolved, err)
+	}
+}
+
 func TestCreateCLISessionForkResumeAndExactID(t *testing.T) {
 	root := t.TempDir()
 	project := filepath.Join(root, "project")
@@ -131,6 +151,30 @@ func TestTUISessionSelectorAdapterPreservesLoadersAndResult(t *testing.T) {
 	path, selected, err := selector(current, all)
 	if err != nil || !selected || path != "/selected.jsonl" || !runnerCalled || !currentProgress || !allProgress {
 		t.Fatalf("path=%q selected=%t err=%v called=%t progress=%t/%t", path, selected, err, runnerCalled, currentProgress, allProgress)
+	}
+}
+
+func TestContextTUISessionSelectorAdapterPreservesLoadersAndResult(t *testing.T) {
+	progressed := false
+	loader := func(_ context.Context, update session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
+		update(session.SessionListUpdate{Loaded: 1, Total: 1})
+		return []session.SessionInfo{{Path: "/current.jsonl"}}, nil
+	}
+	selector := newContextTUISessionSelector(context.Background(), func(_ context.Context, current, _ ContextSessionListLoader) (string, bool, error) {
+		listed, err := current(context.Background(), func(update session.SessionListUpdate) {
+			progressed = update.Loaded == 1 && update.Total == 1
+		})
+		if err != nil {
+			return "", false, err
+		}
+		if len(listed) != 1 {
+			return "", false, errors.New("context loader returned unexpected sessions")
+		}
+		return listed[0].Path, true, nil
+	})
+	path, selected, err := selector(loader, loader)
+	if err != nil || !selected || path != "/current.jsonl" || !progressed {
+		t.Fatalf("path=%q selected=%t progressed=%t err=%v", path, selected, progressed, err)
 	}
 }
 

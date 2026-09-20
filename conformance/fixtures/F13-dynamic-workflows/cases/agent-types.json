@@ -20,12 +20,12 @@
     "durationMs": 0,
     "runId": "run-fixed-agent-types",
     "tokenUsage": {
-      "input": 6325,
+      "input": 4654,
       "output": 38,
-      "total": 13989,
+      "total": 12550,
       "cost": 0,
-      "cacheRead": 1300,
-      "cacheWrite": 6326
+      "cacheRead": 3203,
+      "cacheWrite": 4655
     }
   },
   "error": null,
@@ -42,13 +42,13 @@
       "id": "run-fixed-agent-types:0",
       "label": "scout",
       "result": "The marker says marker-from-repo.",
-      "tokens": 5587,
+      "tokens": 4821,
       "tokenUsage": {
-        "input": 2466,
+        "input": 1608,
         "output": 16,
-        "cacheRead": 638,
-        "cacheWrite": 2467,
-        "total": 5587,
+        "cacheRead": 1589,
+        "cacheWrite": 1608,
+        "total": 4821,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -65,13 +65,13 @@
       "id": "run-fixed-agent-types:1",
       "label": "isolated",
       "result": "Isolated read complete.",
-      "tokens": 5657,
+      "tokens": 4892,
       "tokenUsage": {
-        "input": 2491,
+        "input": 1632,
         "output": 13,
-        "cacheRead": 662,
-        "cacheWrite": 2491,
-        "total": 5657,
+        "cacheRead": 1614,
+        "cacheWrite": 1633,
+        "total": 4892,
         "cost": 0
       },
       "worktree": "<fixture>/project/.pi/worktrees/run-fixed-agent-types-1-isolated",
@@ -93,13 +93,13 @@
       "id": "run-fixed-agent-types:2",
       "label": "ghost",
       "result": "Ghost type fell back to defaults.",
-      "tokens": 2745,
+      "tokens": 2837,
       "tokenUsage": {
-        "input": 1368,
+        "input": 1414,
         "output": 9,
         "cacheRead": 0,
-        "cacheWrite": 1368,
-        "total": 2745,
+        "cacheWrite": 1414,
+        "total": 2837,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -107,12 +107,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 6325,
+        "input": 4654,
         "output": 38,
-        "total": 13989,
+        "total": 12550,
         "cost": 0,
-        "cacheRead": 1300,
-        "cacheWrite": 6326
+        "cacheRead": 3203,
+        "cacheWrite": 4655
       }
     }
   ],
@@ -216,15 +216,12 @@
   "providerCalls": [
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -238,15 +235,12 @@
     },
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -279,15 +273,12 @@
     },
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -301,15 +292,12 @@
     },
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -342,15 +330,12 @@
     },
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [

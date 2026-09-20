@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -91,6 +92,33 @@ func TestReadSessionHeaderScansBoundedMalformedPrefixes(t *testing.T) {
 	}
 	if got := readSessionHeader(filepath.Join(dir, "oversized.jsonl")); got != nil {
 		t.Fatalf("oversized corrupt header = %#v", got)
+	}
+}
+
+func TestFindMostRecentSessionReadsHeadersInModificationOrderAndStopsAtMatch(t *testing.T) {
+	dir := t.TempDir()
+	old := filepath.Join(dir, "old.jsonl")
+	newest := filepath.Join(dir, "newest.jsonl")
+	for _, path := range []string{old, newest} {
+		if err := os.WriteFile(path, []byte(`{"type":"session","version":3,"id":"fixture","timestamp":"2025-01-01T00:00:00.000Z","cwd":"/tmp"}`+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base := time.Date(2025, time.January, 1, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(old, base, base); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(newest, base.Add(time.Minute), base.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	var reads []string
+	got := findMostRecentSessionWithHeaderReader(dir, "", func(path string) *SessionHeader {
+		reads = append(reads, filepath.Base(path))
+		return readSessionHeader(path)
+	})
+	if got != newest || !reflect.DeepEqual(reads, []string{"newest.jsonl"}) {
+		t.Fatalf("recent=%q reads=%v, want newest with one header read", got, reads)
 	}
 }
 

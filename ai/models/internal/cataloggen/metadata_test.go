@@ -51,7 +51,7 @@ func TestGenerateAppliesPinnedCatalogQuirksWithoutLosingFloatMetadata(t *testing
 		t.Fatal(err)
 	}
 
-	if len(catalog["deepseek"]) != 2 || catalog["deepseek"]["deepseek-v4-flash"].ID == "" {
+	if len(catalog["deepseek"]) != 1 || catalog["deepseek"]["deepseek-flash"].ID == "" {
 		t.Fatalf("DeepSeek filtering = %#v", catalog["deepseek"])
 	}
 	fireworks := catalog["fireworks"]["accounts/fireworks/models/glm-5p2"]
@@ -172,8 +172,7 @@ func TestApplyCatalogMetadataMatchesRepresentativePinnedCompat(t *testing.T) {
 	}
 }
 
-// SYNC-1: upstream v0.81.1 gives moonshot kimi-k3 the OpenAI thinking format and
-// reasoning-effort support (generate-models.ts:1761-1766).
+// Kimi K3 uses OpenAI thinking and native transcript tool additions.
 func TestSYNC1MoonshotKimiK3Compat(t *testing.T) {
 	for _, provider := range []string{"moonshotai", "moonshotai-cn"} {
 		model := ai.Model{ID: "kimi-k3", API: ai.APIOpenAICompletions, Provider: ai.ProviderID(provider), Reasoning: true}
@@ -189,7 +188,8 @@ func TestSYNC1MoonshotKimiK3Compat(t *testing.T) {
 			t.Fatalf("%s kimi-k3 supportsReasoningEffort = %s", provider, model.Compat)
 		}
 		if compat.RequiresReasoningContentOnAssistantMessages == nil || !*compat.RequiresReasoningContentOnAssistantMessages ||
-			compat.DeferredToolsMode == nil || *compat.DeferredToolsMode != ai.DeferredToolsKimi {
+			compat.SupportsMidConvoSystemMessages == nil || !*compat.SupportsMidConvoSystemMessages ||
+			compat.SupportsMidConvoToolAdditions == nil || !*compat.SupportsMidConvoToolAdditions {
 			t.Fatalf("%s kimi-k3 lost pinned compat = %s", provider, model.Compat)
 		}
 		other := ai.Model{ID: "kimi-k2.7-code", API: ai.APIOpenAICompletions, Provider: ai.ProviderID(provider)}

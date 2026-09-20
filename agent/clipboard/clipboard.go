@@ -18,7 +18,6 @@ type dependencies struct {
 	platform string
 	getenv   func(string) string
 	run      func(string, []string, string) error
-	spawn    func(string, []string, string) error
 	lookPath func(string) error
 	output   io.Writer
 }
@@ -28,7 +27,6 @@ func defaultDependencies() dependencies {
 		platform: runtime.GOOS,
 		getenv:   os.Getenv,
 		run:      runClipboardCommand,
-		spawn:    spawnClipboardCommand,
 		lookPath: func(name string) error { _, err := exec.LookPath(name); return err },
 		output:   os.Stdout,
 	}
@@ -41,17 +39,6 @@ func runClipboardCommand(name string, arguments []string, input string) error {
 	command.Stdin = strings.NewReader(input)
 	command.Stdout, command.Stderr = io.Discard, io.Discard
 	return command.Run()
-}
-
-func spawnClipboardCommand(name string, arguments []string, input string) error {
-	command := exec.Command(name, arguments...)
-	command.Stdin = strings.NewReader(input)
-	command.Stdout, command.Stderr = io.Discard, io.Discard
-	if err := command.Start(); err != nil {
-		return err
-	}
-	go func() { _ = command.Wait() }()
-	return nil
 }
 
 func isRemoteSession(getenv func(string) string) bool {
@@ -88,20 +75,29 @@ func copyToClipboard(text string, deps dependencies) error {
 		x11Display := deps.getenv("DISPLAY") != ""
 		wayland := waylandDisplay || deps.getenv("XDG_SESSION_TYPE") == "wayland"
 		if !copied && wayland && waylandDisplay && deps.lookPath("wl-copy") == nil {
-			copied = deps.spawn("wl-copy", nil, text) == nil
+			copied = deps.run("wl-copy", nil, text) == nil
 		}
 		if !copied && x11Display {
 			copied = copyX11(text, deps)
 		}
 	}
-	if copied && !remote {
-		return nil
-	}
-	if remote || !copied {
+	if remote {
 		copied = EmitOSC52(text, deps.output) || copied
 	}
 	if !copied {
-		return errors.New("Failed to copy to clipboard") //nolint:staticcheck // Upstream public error text is capitalized.
+		if deps.platform != "darwin" && deps.platform != "windows" {
+			switch {
+			case deps.getenv("TERMUX_VERSION") != "":
+				return errors.New("Clipboard unavailable: install the Termux:API app and `termux-api` package") //nolint:staticcheck // Exact upstream clipboard diagnostic.
+			case deps.getenv("WAYLAND_DISPLAY") != "":
+				return errors.New("Clipboard unavailable: install `wl-clipboard` (`wl-copy`) or check Wayland access") //nolint:staticcheck // Exact upstream clipboard diagnostic.
+			case deps.getenv("DISPLAY") != "":
+				return errors.New("Clipboard unavailable: install `xclip` or `xsel`, or check X11 access") //nolint:staticcheck // Exact upstream clipboard diagnostic.
+			default:
+				return errors.New("Clipboard unavailable: no Wayland or X11 display detected") //nolint:staticcheck // Exact upstream clipboard diagnostic.
+			}
+		}
+		return errors.New("Clipboard unavailable") //nolint:staticcheck // Exact upstream clipboard diagnostic.
 	}
 	return nil
 }

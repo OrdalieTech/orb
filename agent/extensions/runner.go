@@ -1016,20 +1016,30 @@ func (runner *Runner) EmitToolCall(ctx context.Context, event ToolCallEvent) *To
 }
 
 func (runner *Runner) EmitUserBash(ctx context.Context, event UserBashEvent) *UserBashResult {
+	result, _ := runner.EmitUserBashChecked(ctx, event)
+	return result
+}
+
+func (runner *Runner) EmitUserBashChecked(ctx context.Context, event UserBashEvent) (*UserBashResult, error) {
 	extensionContext := runner.CreateContext()
 	for _, extension := range runner.extensions {
 		for _, handler := range handlersFor(extension, EventUserBash) {
 			result, err := callHandler(ctx, handler, event, extensionContext)
 			if err != nil {
 				runner.emitError(makeExtensionError(extension.Path, EventUserBash, err))
-				continue
+				return nil, err
 			}
 			if parsed, ok := userBashResult(result); ok {
-				return parsed
+				return parsed, nil
+			}
+			if result != nil {
+				err := errors.New("Invalid user_bash handler result: return nil for local execution or exactly one valid operations or result value") //nolint:staticcheck // Upstream error capitalization is observable.
+				runner.emitError(makeExtensionError(extension.Path, EventUserBash, err))
+				return nil, err
 			}
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 func (runner *Runner) EmitContext(ctx context.Context, messages engine.AgentMessages) engine.AgentMessages {
@@ -1088,6 +1098,35 @@ func (runner *Runner) EmitBeforeAgentStart(
 	systemPrompt string,
 	options SystemPromptOptions,
 ) *BeforeAgentStartCombinedResult {
+	if options.CustomPrompt == nil && systemPrompt != "" {
+		value := systemPrompt
+		options.CustomPrompt = &value
+	}
+	if options.SelectedTools == nil {
+		options.SelectedTools = []string{"read", "bash", "edit", "write"}
+	}
+	if options.ToolSnippets == nil {
+		options.ToolSnippets = map[string]string{}
+	}
+	if options.ToolGuidelines == nil {
+		options.ToolGuidelines = map[string][]string{}
+	}
+	if options.PromptGuidelines == nil {
+		options.PromptGuidelines = []string{}
+	}
+	if options.AppendSystemPrompt == nil {
+		empty := ""
+		options.AppendSystemPrompt = &empty
+	}
+	if options.Sections == nil {
+		options.Sections = map[string]string{}
+	}
+	if options.ContextFiles == nil {
+		options.ContextFiles = []ContextFile{}
+	}
+	if options.Skills == nil {
+		options.Skills = []Skill{}
+	}
 	currentPrompt := systemPrompt
 	extensionContext := &extensionContext{runner: runner, systemPrompt: func() string { return currentPrompt }}
 	var messages []CustomMessage
@@ -1111,14 +1150,13 @@ func (runner *Runner) EmitBeforeAgentStart(
 			}
 			if parsed.SystemPrompt != nil {
 				currentPrompt = *parsed.SystemPrompt
+				value := currentPrompt
+				options.ForceSystemPrompt = &value
 				modified = true
 			}
 		}
 	}
-	if len(messages) == 0 && !modified {
-		return nil
-	}
-	result := &BeforeAgentStartCombinedResult{Messages: messages}
+	result := &BeforeAgentStartCombinedResult{Messages: messages, SystemPromptOptions: options}
 	if modified {
 		result.SystemPrompt = &currentPrompt
 	}

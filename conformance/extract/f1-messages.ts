@@ -141,6 +141,25 @@ const tool: Tool = {
 };
 
 const messages: Message[] = [
+  {
+    role: "system",
+    content: "",
+    sections: {
+      preamble: "You are Pi.",
+      tools: "<tools>\n- read\n</tools>",
+      removed: null,
+    },
+    toolsAdded: [tool],
+    timestamp: 1700000000000,
+  } as unknown as Message,
+  {
+    role: "system",
+    content: [{ type: "text", text: "Additional instructions." }],
+    sections: { tools: "<tools>\n- read\n- bash\n</tools>", removed: null },
+    toolsAdded: [{ name: "bash", description: "Run a command", parameters: { type: "object" } }],
+    toolsRemoved: [{ name: "echo" }],
+    timestamp: 1700000000001,
+  } as unknown as Message,
   { role: "user", content: "hello", timestamp: 1700000000000 },
   {
     role: "user",

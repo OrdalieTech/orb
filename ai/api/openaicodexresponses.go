@@ -443,6 +443,14 @@ func buildOpenAICodexResponsesPayload(
 	if err != nil {
 		return nil, err
 	}
+	transcript := ai.NormalizeContext(requestContext)
+	if !compat.supportsMidConvoSystemMessages {
+		transcript = ai.CollapseSystemMessages(transcript)
+	}
+	requestTools, deferredTools, anchorsAdditions := transcriptToolPlacement(
+		transcript.Messages, compat.supportsAdditionalTools || compat.supportsToolSearch,
+	)
+	requestContext = projectTranscriptContext(transcript, true)
 	rawCompat, err := decodeCompat[ai.OpenAIResponsesCompat](model)
 	if err != nil {
 		return nil, err
@@ -460,13 +468,14 @@ func buildOpenAICodexResponsesPayload(
 		supportsStrictMode: supportsStrictMode, supportsOpenAIGrammarTools: supportsGrammar, strictNull: true,
 	}
 	deferredToolsMode := responsesDeferredToolsMode(compat.supportsAdditionalTools, compat.supportsToolSearch)
-	placement := splitResponsesTools(requestContext, deferredToolsMode != "")
+	placement := responsesToolPlacement{immediate: requestTools, deferred: deferredTools}
 	withoutSystem := requestContext
 	withoutSystem.SystemPrompt = nil
 	input, err := convertResponsesMessagesWithOptions(model, withoutSystem, placement.deferred, responsesMessageOptions{
 		supportsDeveloperRole:      false,
 		grammarToolInputProperties: grammarToolInputProperties,
 		deferredToolsMode:          deferredToolsMode,
+		anchorsToolAdditions:       anchorsAdditions,
 		toolOptions:                toolOptions,
 	})
 	if err != nil {
@@ -516,6 +525,9 @@ func buildOpenAICodexResponsesPayload(
 			}
 			payload.Reasoning = &OpenAIReasoningParams{Effort: mappedThinkingLevel(model, level, fallback), Summary: &summary}
 		}
+	}
+	if payload.Reasoning == nil && model.Reasoning && supportsOffReasoning(model) {
+		payload.Reasoning = &OpenAIReasoningParams{Effort: mappedThinkingLevel(model, "off", "none")}
 	}
 	if len(placement.immediate) > 0 {
 		payload.Tools, err = convertOpenAICodexResponsesTools(placement.immediate, toolOptions)

@@ -281,7 +281,7 @@
       {
         "message": {
           "customType": "workflow-result",
-          "content": "✓ Background workflow \"ext-run\" finished (1 agents · 2.7K tok).\n\nExtension agent result.\n\n↳ Full result: <fixture>/home/.pi/workflows/projects/project-<cwdhash>/runs/ext-run-loyw85mp-.json",
+          "content": "✓ Background workflow \"ext-run\" finished (1 agents · 2.8K tok).\n\nExtension agent result.\n\n↳ Full result: <fixture>/home/.pi/workflows/projects/project-<cwdhash>/runs/ext-run-loyw85mp-.json",
           "display": true
         },
         "options": {
@@ -294,7 +294,7 @@
       "content": [
         {
           "type": "text",
-          "text": "action=list result=ok runs=1\nrunId=ext-run-loyw85mp- name=\"ext-run\" status=completed phase=\"-\" total=1 done=1 running=0 queued=0 error=0 skipped=0 active=\"-\" tokens=2724"
+          "text": "action=list result=ok runs=1\nrunId=ext-run-loyw85mp- name=\"ext-run\" status=completed phase=\"-\" total=1 done=1 running=0 queued=0 error=0 skipped=0 active=\"-\" tokens=2816"
         }
       ],
       "details": {
@@ -315,7 +315,7 @@
               "skipped": 0
             },
             "activeLabels": [],
-            "tokenTotal": 2724
+            "tokenTotal": 2816
           }
         ]
       }
@@ -324,7 +324,7 @@
       "content": [
         {
           "type": "text",
-          "text": "action=status result=ok runId=ext-run-loyw85mp- name=\"ext-run\" status=completed phase=\"-\" total=1 done=1 running=0 queued=0 error=0 skipped=0 active=\"-\" tokens=2724"
+          "text": "action=status result=ok runId=ext-run-loyw85mp- name=\"ext-run\" status=completed phase=\"-\" total=1 done=1 running=0 queued=0 error=0 skipped=0 active=\"-\" tokens=2816"
         }
       ],
       "details": {
@@ -344,7 +344,7 @@
             "skipped": 0
           },
           "activeLabels": [],
-          "tokenTotal": 2724
+          "tokenTotal": 2816
         }
       }
     }
@@ -492,15 +492,12 @@
   "providerCalls": [
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -514,15 +511,12 @@
     },
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [

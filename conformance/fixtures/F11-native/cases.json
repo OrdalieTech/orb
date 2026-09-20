@@ -143,16 +143,33 @@
     "messages": [
       {
         "customType": "first",
-        "content": "base",
+        "content": "base\n\n<cwd>\n/fixture\n</cwd>",
         "display": true
       },
       {
         "customType": "second",
-        "content": "base\nfirst",
+        "content": "base\n\n<cwd>\n/fixture\n</cwd>\nfirst",
         "display": true
       }
     ],
-    "systemPrompt": "base\nfirst\nsecond"
+    "systemPromptOptions": {
+      "customPrompt": "base",
+      "forceSystemPrompt": "base\n\n<cwd>\n/fixture\n</cwd>\nfirst\nsecond",
+      "selectedTools": [
+        "read",
+        "bash",
+        "edit",
+        "write"
+      ],
+      "toolSnippets": {},
+      "toolGuidelines": {},
+      "promptGuidelines": [],
+      "appendSystemPrompt": "",
+      "sections": {},
+      "cwd": "/fixture",
+      "contextFiles": [],
+      "skills": []
+    }
   },
   "input": {
     "action": "transform",

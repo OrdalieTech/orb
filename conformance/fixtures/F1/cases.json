@@ -3,92 +3,102 @@
     {
       "name": "message-1",
       "kind": "message",
-      "json": "{\"role\":\"user\",\"content\":\"hello\",\"timestamp\":1700000000000}"
+      "json": "{\"role\":\"system\",\"content\":\"\",\"sections\":{\"preamble\":\"You are Pi.\",\"tools\":\"<tools>\\n- read\\n</tools>\",\"removed\":null},\"toolsAdded\":[{\"name\":\"echo\",\"description\":\"Echo text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"],\"additionalProperties\":false}}],\"timestamp\":1700000000000}"
     },
     {
       "name": "message-2",
       "kind": "message",
-      "json": "{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"look\",\"textSignature\":\"\"},{\"type\":\"image\",\"data\":\"aGVsbG8=\",\"mimeType\":\"image/png\"}],\"timestamp\":1700000000001}"
+      "json": "{\"role\":\"system\",\"content\":[{\"type\":\"text\",\"text\":\"Additional instructions.\"}],\"sections\":{\"tools\":\"<tools>\\n- read\\n- bash\\n</tools>\",\"removed\":null},\"toolsAdded\":[{\"name\":\"bash\",\"description\":\"Run a command\",\"parameters\":{\"type\":\"object\"}}],\"toolsRemoved\":[{\"name\":\"echo\"}],\"timestamp\":1700000000001}"
     },
     {
       "name": "message-3",
       "kind": "message",
-      "json": "{\"role\":\"user\",\"content\":[],\"timestamp\":0}"
+      "json": "{\"role\":\"user\",\"content\":\"hello\",\"timestamp\":1700000000000}"
     },
     {
       "name": "message-4",
       "kind": "message",
-      "json": "{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"answer\",\"textSignature\":\"text-signature\"},{\"type\":\"thinking\",\"thinking\":\"reasoning\",\"thinkingSignature\":\"thinking-signature\",\"redacted\":false},{\"type\":\"toolCall\",\"id\":\"tool-1\",\"name\":\"edit\",\"arguments\":{\"path\":\"README.md\",\"count\":2,\"enabled\":true,\"nested\":{\"value\":null},\"items\":[1,\"two\"]},\"thoughtSignature\":\"thought-signature\"}],\"api\":\"openai-responses\",\"provider\":\"openai\",\"model\":\"gpt-test\",\"responseModel\":\"gpt-test-2026-07-17\",\"responseId\":\"resp-1\",\"diagnostics\":[{\"type\":\"retry\",\"timestamp\":12,\"error\":{\"name\":\"Error\",\"message\":\"timed out\",\"stack\":\"stack\",\"code\":\"ETIMEDOUT\"},\"details\":{\"attempt\":2}},{\"type\":\"rate_limit\",\"timestamp\":13,\"error\":{\"message\":\"slow down\",\"code\":429}}],\"usage\":{\"input\":10,\"output\":8,\"cacheRead\":4,\"cacheWrite\":3,\"cacheWrite1h\":2,\"reasoning\":5,\"totalTokens\":25,\"cost\":{\"input\":0.1,\"output\":0.2,\"cacheRead\":0.03,\"cacheWrite\":0.04,\"total\":0.37}},\"stopReason\":\"toolUse\",\"timestamp\":1700000000002}"
+      "json": "{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"look\",\"textSignature\":\"\"},{\"type\":\"image\",\"data\":\"aGVsbG8=\",\"mimeType\":\"image/png\"}],\"timestamp\":1700000000001}"
     },
     {
       "name": "message-5",
       "kind": "message",
-      "json": "{\"role\":\"assistant\",\"content\":[],\"api\":\"custom-api\",\"provider\":\"custom-provider\",\"model\":\"custom-model\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":1700000000003}"
+      "json": "{\"role\":\"user\",\"content\":[],\"timestamp\":0}"
     },
     {
       "name": "message-6",
       "kind": "message",
-      "json": "{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\",\"textSignature\":\"\"},{\"type\":\"thinking\",\"thinking\":\"\",\"thinkingSignature\":\"\",\"redacted\":false},{\"type\":\"toolCall\",\"id\":\"\",\"name\":\"\",\"arguments\":{},\"thoughtSignature\":\"\"}],\"api\":\"openai-responses\",\"provider\":\"openai\",\"model\":\"\",\"responseModel\":\"\",\"responseId\":\"\",\"diagnostics\":[],\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0},\"cacheWrite1h\":0,\"reasoning\":0},\"stopReason\":\"error\",\"errorMessage\":\"\",\"timestamp\":0}"
+      "json": "{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"answer\",\"textSignature\":\"text-signature\"},{\"type\":\"thinking\",\"thinking\":\"reasoning\",\"thinkingSignature\":\"thinking-signature\",\"redacted\":false},{\"type\":\"toolCall\",\"id\":\"tool-1\",\"name\":\"edit\",\"arguments\":{\"path\":\"README.md\",\"count\":2,\"enabled\":true,\"nested\":{\"value\":null},\"items\":[1,\"two\"]},\"thoughtSignature\":\"thought-signature\"}],\"api\":\"openai-responses\",\"provider\":\"openai\",\"model\":\"gpt-test\",\"responseModel\":\"gpt-test-2026-07-17\",\"responseId\":\"resp-1\",\"diagnostics\":[{\"type\":\"retry\",\"timestamp\":12,\"error\":{\"name\":\"Error\",\"message\":\"timed out\",\"stack\":\"stack\",\"code\":\"ETIMEDOUT\"},\"details\":{\"attempt\":2}},{\"type\":\"rate_limit\",\"timestamp\":13,\"error\":{\"message\":\"slow down\",\"code\":429}}],\"usage\":{\"input\":10,\"output\":8,\"cacheRead\":4,\"cacheWrite\":3,\"cacheWrite1h\":2,\"reasoning\":5,\"totalTokens\":25,\"cost\":{\"input\":0.1,\"output\":0.2,\"cacheRead\":0.03,\"cacheWrite\":0.04,\"total\":0.37}},\"stopReason\":\"toolUse\",\"timestamp\":1700000000002}"
     },
     {
       "name": "message-7",
       "kind": "message",
-      "json": "{\"role\":\"toolResult\",\"toolCallId\":\"tool-1\",\"toolName\":\"read\",\"content\":[{\"type\":\"text\",\"text\":\"contents\",\"textSignature\":\"result-signature\"},{\"type\":\"image\",\"data\":\"AAEC\",\"mimeType\":\"image/jpeg\"}],\"details\":{\"path\":\"/tmp/file\",\"lines\":[1,2]},\"addedToolNames\":[\"late_tool\"],\"isError\":false,\"timestamp\":1700000000004}"
+      "json": "{\"role\":\"assistant\",\"content\":[],\"api\":\"custom-api\",\"provider\":\"custom-provider\",\"model\":\"custom-model\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":1700000000003}"
     },
     {
       "name": "message-8",
       "kind": "message",
-      "json": "{\"role\":\"toolResult\",\"toolCallId\":\"tool-2\",\"toolName\":\"bash\",\"content\":[],\"isError\":true,\"timestamp\":1700000000005}"
+      "json": "{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\",\"textSignature\":\"\"},{\"type\":\"thinking\",\"thinking\":\"\",\"thinkingSignature\":\"\",\"redacted\":false},{\"type\":\"toolCall\",\"id\":\"\",\"name\":\"\",\"arguments\":{},\"thoughtSignature\":\"\"}],\"api\":\"openai-responses\",\"provider\":\"openai\",\"model\":\"\",\"responseModel\":\"\",\"responseId\":\"\",\"diagnostics\":[],\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0},\"cacheWrite1h\":0,\"reasoning\":0},\"stopReason\":\"error\",\"errorMessage\":\"\",\"timestamp\":0}"
     },
     {
       "name": "message-9",
       "kind": "message",
-      "json": "{\"role\":\"toolResult\",\"toolCallId\":\"tool-3\",\"toolName\":\"custom\",\"content\":[{\"type\":\"text\",\"text\":\"null details\"}],\"details\":null,\"addedToolNames\":[],\"isError\":false,\"timestamp\":1700000000006}"
+      "json": "{\"role\":\"toolResult\",\"toolCallId\":\"tool-1\",\"toolName\":\"read\",\"content\":[{\"type\":\"text\",\"text\":\"contents\",\"textSignature\":\"result-signature\"},{\"type\":\"image\",\"data\":\"AAEC\",\"mimeType\":\"image/jpeg\"}],\"details\":{\"path\":\"/tmp/file\",\"lines\":[1,2]},\"addedToolNames\":[\"late_tool\"],\"isError\":false,\"timestamp\":1700000000004}"
     },
     {
       "name": "message-10",
       "kind": "message",
-      "json": "{\"role\":\"user\",\"content\":\"\",\"timestamp\":0}"
+      "json": "{\"role\":\"toolResult\",\"toolCallId\":\"tool-2\",\"toolName\":\"bash\",\"content\":[],\"isError\":true,\"timestamp\":1700000000005}"
     },
     {
       "name": "message-11",
       "kind": "message",
-      "json": "{\"role\":\"user\",\"content\":\"astral 🧪, nul \\u0000, newline\\n, html <>&\",\"timestamp\":1700000000009}"
+      "json": "{\"role\":\"toolResult\",\"toolCallId\":\"tool-3\",\"toolName\":\"custom\",\"content\":[{\"type\":\"text\",\"text\":\"null details\"}],\"details\":null,\"addedToolNames\":[],\"isError\":false,\"timestamp\":1700000000006}"
     },
     {
       "name": "message-12",
       "kind": "message",
-      "json": "{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"astral 🧪, nul \\u0000, newline\\n, html <>&\",\"textSignature\":\"{\\\"v\\\":1,\\\"id\\\":\\\"msg_123\\\",\\\"phase\\\":\\\"commentary\\\"}\"}],\"api\":\"custom-api\",\"provider\":\"custom-provider\",\"model\":\"custom-model\",\"diagnostics\":[{\"type\":\"numeric-zero-code\",\"timestamp\":0,\"error\":{\"message\":\"zero\",\"code\":0},\"details\":{}}],\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"length\",\"timestamp\":1700000000007}"
+      "json": "{\"role\":\"user\",\"content\":\"\",\"timestamp\":0}"
     },
     {
       "name": "message-13",
       "kind": "message",
-      "json": "{\"role\":\"assistant\",\"content\":[],\"api\":\"custom-api\",\"provider\":\"custom-provider\",\"model\":\"custom-model\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"aborted\",\"errorMessage\":\"\",\"timestamp\":1700000000008}"
+      "json": "{\"role\":\"user\",\"content\":\"astral 🧪, nul \\u0000, newline\\n, html <>&\",\"timestamp\":1700000000009}"
     },
     {
       "name": "message-14",
       "kind": "message",
-      "json": "{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\\ud800\",\"textSignature\":\"\\udc00\"},{\"type\":\"thinking\",\"thinking\":\"\\ud800\",\"thinkingSignature\":\"\\udc00\",\"redacted\":false},{\"type\":\"toolCall\",\"id\":\"\\ud800\",\"name\":\"\\udc00\",\"arguments\":{\"errorMessage\":\"nested\",\"timestamp\":0,\"value\":\"\\ud800\"},\"thoughtSignature\":\"\\udc00\"}],\"api\":\"custom-api\",\"provider\":\"custom-provider\",\"model\":\"\\ud800\",\"responseModel\":\"\\udc00\",\"responseId\":\"\\ud800\",\"diagnostics\":[{\"type\":\"\\ud800\",\"timestamp\":1,\"error\":{\"name\":\"\\ud800\",\"message\":\"\\ud800\",\"stack\":\"\\ud800\",\"code\":\"\\ud800\"},\"details\":{\"value\":\"\\ud800\"}}],\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"error\",\"timestamp\":1700000000010,\"errorMessage\":\"\\ud800\"}"
+      "json": "{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"astral 🧪, nul \\u0000, newline\\n, html <>&\",\"textSignature\":\"{\\\"v\\\":1,\\\"id\\\":\\\"msg_123\\\",\\\"phase\\\":\\\"commentary\\\"}\"}],\"api\":\"custom-api\",\"provider\":\"custom-provider\",\"model\":\"custom-model\",\"diagnostics\":[{\"type\":\"numeric-zero-code\",\"timestamp\":0,\"error\":{\"message\":\"zero\",\"code\":0},\"details\":{}}],\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"length\",\"timestamp\":1700000000007}"
     },
     {
       "name": "message-15",
       "kind": "message",
-      "json": "{\"role\":\"toolResult\",\"toolCallId\":\"\\ud800\",\"toolName\":\"\\udc00\",\"content\":[{\"type\":\"text\",\"text\":\"\\ud800\",\"textSignature\":\"\\udc00\"},{\"type\":\"image\",\"data\":\"\\ud800\",\"mimeType\":\"\\udc00\"}],\"addedToolNames\":[\"\\ud800\"],\"isError\":false,\"timestamp\":1700000000011}"
+      "json": "{\"role\":\"assistant\",\"content\":[],\"api\":\"custom-api\",\"provider\":\"custom-provider\",\"model\":\"custom-model\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"aborted\",\"errorMessage\":\"\",\"timestamp\":1700000000008}"
     },
     {
       "name": "message-16",
+      "kind": "message",
+      "json": "{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\\ud800\",\"textSignature\":\"\\udc00\"},{\"type\":\"thinking\",\"thinking\":\"\\ud800\",\"thinkingSignature\":\"\\udc00\",\"redacted\":false},{\"type\":\"toolCall\",\"id\":\"\\ud800\",\"name\":\"\\udc00\",\"arguments\":{\"errorMessage\":\"nested\",\"timestamp\":0,\"value\":\"\\ud800\"},\"thoughtSignature\":\"\\udc00\"}],\"api\":\"custom-api\",\"provider\":\"custom-provider\",\"model\":\"\\ud800\",\"responseModel\":\"\\udc00\",\"responseId\":\"\\ud800\",\"diagnostics\":[{\"type\":\"\\ud800\",\"timestamp\":1,\"error\":{\"name\":\"\\ud800\",\"message\":\"\\ud800\",\"stack\":\"\\ud800\",\"code\":\"\\ud800\"},\"details\":{\"value\":\"\\ud800\"}}],\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"error\",\"timestamp\":1700000000010,\"errorMessage\":\"\\ud800\"}"
+    },
+    {
+      "name": "message-17",
+      "kind": "message",
+      "json": "{\"role\":\"toolResult\",\"toolCallId\":\"\\ud800\",\"toolName\":\"\\udc00\",\"content\":[{\"type\":\"text\",\"text\":\"\\ud800\",\"textSignature\":\"\\udc00\"},{\"type\":\"image\",\"data\":\"\\ud800\",\"mimeType\":\"\\udc00\"}],\"addedToolNames\":[\"\\ud800\"],\"isError\":false,\"timestamp\":1700000000011}"
+    },
+    {
+      "name": "message-18",
       "kind": "message",
       "json": "{\"role\":\"user\",\"content\":[{\"type\":\"future\",\"value\":100,\"nested\":{\"key\":\"kept\"}}],\"timestamp\":1700000000012}"
     },
     {
       "name": "context-1",
       "kind": "context",
-      "json": "{\"systemPrompt\":\"\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\",\"timestamp\":1700000000000},{\"role\":\"assistant\",\"content\":[],\"api\":\"custom-api\",\"provider\":\"custom-provider\",\"model\":\"custom-model\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":1700000000003}],\"tools\":[]}"
+      "json": "{\"systemPrompt\":\"\",\"messages\":[{\"role\":\"system\",\"content\":\"\",\"sections\":{\"preamble\":\"You are Pi.\",\"tools\":\"<tools>\\n- read\\n</tools>\",\"removed\":null},\"toolsAdded\":[{\"name\":\"echo\",\"description\":\"Echo text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"],\"additionalProperties\":false}}],\"timestamp\":1700000000000},{\"role\":\"assistant\",\"content\":[],\"api\":\"custom-api\",\"provider\":\"custom-provider\",\"model\":\"custom-model\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":1700000000003}],\"tools\":[]}"
     },
     {
       "name": "context-2",
       "kind": "context",
-      "json": "{\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"look\",\"textSignature\":\"\"},{\"type\":\"image\",\"data\":\"aGVsbG8=\",\"mimeType\":\"image/png\"}],\"timestamp\":1700000000001},{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"answer\",\"textSignature\":\"text-signature\"},{\"type\":\"thinking\",\"thinking\":\"reasoning\",\"thinkingSignature\":\"thinking-signature\",\"redacted\":false},{\"type\":\"toolCall\",\"id\":\"tool-1\",\"name\":\"edit\",\"arguments\":{\"path\":\"README.md\",\"count\":2,\"enabled\":true,\"nested\":{\"value\":null},\"items\":[1,\"two\"]},\"thoughtSignature\":\"thought-signature\"}],\"api\":\"openai-responses\",\"provider\":\"openai\",\"model\":\"gpt-test\",\"responseModel\":\"gpt-test-2026-07-17\",\"responseId\":\"resp-1\",\"diagnostics\":[{\"type\":\"retry\",\"timestamp\":12,\"error\":{\"name\":\"Error\",\"message\":\"timed out\",\"stack\":\"stack\",\"code\":\"ETIMEDOUT\"},\"details\":{\"attempt\":2}},{\"type\":\"rate_limit\",\"timestamp\":13,\"error\":{\"message\":\"slow down\",\"code\":429}}],\"usage\":{\"input\":10,\"output\":8,\"cacheRead\":4,\"cacheWrite\":3,\"cacheWrite1h\":2,\"reasoning\":5,\"totalTokens\":25,\"cost\":{\"input\":0.1,\"output\":0.2,\"cacheRead\":0.03,\"cacheWrite\":0.04,\"total\":0.37}},\"stopReason\":\"toolUse\",\"timestamp\":1700000000002},{\"role\":\"toolResult\",\"toolCallId\":\"tool-1\",\"toolName\":\"read\",\"content\":[{\"type\":\"text\",\"text\":\"contents\",\"textSignature\":\"result-signature\"},{\"type\":\"image\",\"data\":\"AAEC\",\"mimeType\":\"image/jpeg\"}],\"details\":{\"path\":\"/tmp/file\",\"lines\":[1,2]},\"addedToolNames\":[\"late_tool\"],\"isError\":false,\"timestamp\":1700000000004}],\"tools\":[{\"name\":\"echo\",\"description\":\"Echo text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"],\"additionalProperties\":false}}]}"
+      "json": "{\"messages\":[{\"role\":\"system\",\"content\":[{\"type\":\"text\",\"text\":\"Additional instructions.\"}],\"sections\":{\"tools\":\"<tools>\\n- read\\n- bash\\n</tools>\",\"removed\":null},\"toolsAdded\":[{\"name\":\"bash\",\"description\":\"Run a command\",\"parameters\":{\"type\":\"object\"}}],\"toolsRemoved\":[{\"name\":\"echo\"}],\"timestamp\":1700000000001},{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"answer\",\"textSignature\":\"text-signature\"},{\"type\":\"thinking\",\"thinking\":\"reasoning\",\"thinkingSignature\":\"thinking-signature\",\"redacted\":false},{\"type\":\"toolCall\",\"id\":\"tool-1\",\"name\":\"edit\",\"arguments\":{\"path\":\"README.md\",\"count\":2,\"enabled\":true,\"nested\":{\"value\":null},\"items\":[1,\"two\"]},\"thoughtSignature\":\"thought-signature\"}],\"api\":\"openai-responses\",\"provider\":\"openai\",\"model\":\"gpt-test\",\"responseModel\":\"gpt-test-2026-07-17\",\"responseId\":\"resp-1\",\"diagnostics\":[{\"type\":\"retry\",\"timestamp\":12,\"error\":{\"name\":\"Error\",\"message\":\"timed out\",\"stack\":\"stack\",\"code\":\"ETIMEDOUT\"},\"details\":{\"attempt\":2}},{\"type\":\"rate_limit\",\"timestamp\":13,\"error\":{\"message\":\"slow down\",\"code\":429}}],\"usage\":{\"input\":10,\"output\":8,\"cacheRead\":4,\"cacheWrite\":3,\"cacheWrite1h\":2,\"reasoning\":5,\"totalTokens\":25,\"cost\":{\"input\":0.1,\"output\":0.2,\"cacheRead\":0.03,\"cacheWrite\":0.04,\"total\":0.37}},\"stopReason\":\"toolUse\",\"timestamp\":1700000000002},{\"role\":\"assistant\",\"content\":[],\"api\":\"custom-api\",\"provider\":\"custom-provider\",\"model\":\"custom-model\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":1700000000003}],\"tools\":[{\"name\":\"echo\",\"description\":\"Echo text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"],\"additionalProperties\":false}}]}"
     },
     {
       "name": "context-3",

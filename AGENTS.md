@@ -20,8 +20,9 @@ agent (Claude Code, Codex, or other).
 
 ## Working mode (trunk-based, fixtures-first — replaces the old per-WP protocol)
 
-1. **One branch: `main`.** No GitButler lanes, no worktrees, no feature branches. Commit directly
-   to main in coherent green chunks — a chunk may span what used to be several WPs.
+1. **Plain Git only, one branch: `main`.** Do not use or set up GitButler. No worktrees or feature
+   branches. Commit directly to main in coherent green chunks — a chunk may span what used to be
+   several WPs.
 2. **Every commit on main builds and passes.** `make check` (build + vet/lint + race suite,
    fixtures included) is THE pre-commit gate — before every commit, no exceptions. Bigger steps
    are welcome; broken mainline commits are not. User-visible changes append a line to
@@ -52,6 +53,9 @@ agent (Claude Code, Codex, or other).
   P3: capability modules (seam + attachment + default-off assembly row), never ad-hoc core widening.
 - **Pure Go.** `CGO_ENABLED=0` must build. No cgo, no sidecar binaries except the upstream-sanctioned
   rg/fd auto-download.
+- **Latest stable Go.** At each maintenance/upstream sync, verify the latest stable release on
+  go.dev and update `go.mod`; CI/releases use that version. Keep the linter compatible and rerun
+  the complete gate on the upgraded toolchain.
 - **Slim.** Stdlib first; internal helper next; dependency last and only via the ARCHITECTURE §8
   table. No speculative abstraction, no "for later" scaffolding.
 - **Never weaken a criterion or a golden to pass it.** No softened fixtures, no skipped checks, no

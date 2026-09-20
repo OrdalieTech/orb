@@ -2,7 +2,7 @@ UPSTREAM_REPO := $(shell sed -n 's/.*"repo": "\([^"]*\)".*/\1/p' UPSTREAM.lock)
 UPSTREAM_COMMIT := $(shell sed -n 's/.*"commit": "\([^"]*\)".*/\1/p' UPSTREAM.lock)
 UPSTREAM_DIR ?= $(CURDIR)/.upstream
 UPSTREAM_READONLY ?= 0
-GOLANGCI_LINT_VERSION ?= v2.7.2
+GOLANGCI_LINT_VERSION ?= v2.13.2
 GOLANGCI_LINT := $(CURDIR)/.tools/bin/golangci-lint
 ifeq ($(CI),true)
 GO_ENV :=
@@ -36,7 +36,7 @@ lint: $(GOLANGCI_LINT)
 nightly-live:
 	$(GO_ENV) CGO_ENABLED=0 ORB_NIGHTLY_LIVE=1 go test -v -count=1 -timeout=20m ./agent -run '^TestNightlyLiveSuite$$'
 
-$(GOLANGCI_LINT):
+$(GOLANGCI_LINT): Makefile go.mod
 	mkdir -p $(dir $@)
 	$(GO_ENV) GOBIN=$(dir $@) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
@@ -56,34 +56,42 @@ product-assets-check: upstream
 	@cmp "$(UPSTREAM_DIR)/packages/coding-agent/CHANGELOG.md" agent/modes/assets/CHANGELOG.md
 
 ensure-upstream-fixture-tools: upstream
-	@if [ ! -x "$(UPSTREAM_DIR)/node_modules/.bin/tsx" ] || \
+	@if [ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/tsx/package.json").version' 2>/dev/null)" != "4.22.1" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/vitest/package.json").version' 2>/dev/null)" != "4.1.9" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@xterm/headless/package.json").version' 2>/dev/null)" != "5.5.0" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/partial-json/package.json").version' 2>/dev/null)" != "0.1.7" ] || \
-		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/typebox/package.json").version' 2>/dev/null)" != "1.3.7" ] || \
-		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/openai/package.json").version' 2>/dev/null)" != "6.26.0" ] || \
-		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@anthropic-ai/sdk/package.json").version' 2>/dev/null)" != "0.123.0" ] || \
-		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@aws-sdk/client-bedrock-runtime/package.json").version' 2>/dev/null)" != "3.1048.0" ] || \
-		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@smithy/node-http-handler/package.json").version' 2>/dev/null)" != "4.7.3" ] || \
-		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/http-proxy-agent/package.json").version' 2>/dev/null)" != "7.0.2" ] || \
-		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/https-proxy-agent/package.json").version' 2>/dev/null)" != "7.0.6" ] || \
-		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@google/genai/package.json").version' 2>/dev/null)" != "1.52.0" ] || \
-		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@mistralai/mistralai/package.json").version' 2>/dev/null)" != "2.2.6" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/typebox/package.json").version' 2>/dev/null)" != "1.3.27" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/openai/package.json").version' 2>/dev/null)" != "6.40.0" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@anthropic-ai/sdk/package.json").version' 2>/dev/null)" != "0.124.0" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@aws-sdk/client-bedrock-runtime/package.json").version' 2>/dev/null)" != "3.1127.0" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@smithy/node-http-handler/package.json").version' 2>/dev/null)" != "4.12.1" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/http-proxy-agent/package.json").version' 2>/dev/null)" != "9.1.0" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/https-proxy-agent/package.json").version' 2>/dev/null)" != "9.1.0" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@google/genai/package.json").version' 2>/dev/null)" != "2.21.0" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/diff/package.json").version' 2>/dev/null)" != "8.0.4" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/cross-spawn/package.json").version' 2>/dev/null)" != "7.0.6" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/chalk/package.json").version' 2>/dev/null)" != "6.0.0" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/get-east-asian-width/package.json").version' 2>/dev/null)" != "1.6.0" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/highlight.js/package.json").version' 2>/dev/null)" != "10.7.3" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/hosted-git-info/package.json").version' 2>/dev/null)" != "9.0.3" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/ignore/package.json").version' 2>/dev/null)" != "7.0.8" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/jiti/package.json").version' 2>/dev/null)" != "2.7.0" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/marked/package.json").version' 2>/dev/null)" != "18.0.11" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/minimatch/package.json").version' 2>/dev/null)" != "10.2.6" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/proper-lockfile/package.json").version' 2>/dev/null)" != "4.1.2" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/semver/package.json").version' 2>/dev/null)" != "7.8.5" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/yaml/package.json").version' 2>/dev/null)" != "2.9.0" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@silvia-odwyer/photon-node/package.json").version' 2>/dev/null)" != "0.3.4" ] || \
-		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/undici/package.json").version' 2>/dev/null)" != "8.5.0" ]; then \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/undici/package.json").version' 2>/dev/null)" != "8.10.2" ]; then \
 		if [ "$(UPSTREAM_READONLY)" = "1" ]; then \
 			echo "upstream fixture tools are missing from read-only $(UPSTREAM_DIR)" >&2; exit 1; \
 		fi; \
 		cd "$(UPSTREAM_DIR)" && npm install --ignore-scripts --no-save --workspaces=false \
-			tsx@4.22.1 vitest@4.1.9 @xterm/headless@5.5.0 partial-json@0.1.7 typebox@1.3.7 openai@6.26.0 @anthropic-ai/sdk@0.123.0 \
-			@aws-sdk/client-bedrock-runtime@3.1048.0 @smithy/node-http-handler@4.7.3 http-proxy-agent@7.0.2 https-proxy-agent@7.0.6 \
-			@mistralai/mistralai@2.2.6 @google/genai@1.52.0 diff@8.0.4 cross-spawn@7.0.6 \
-			chalk@5.6.2 get-east-asian-width@1.6.0 glob@13.0.6 highlight.js@10.7.3 hosted-git-info@9.0.3 \
-			ignore@7.0.5 jiti@2.7.0 marked@18.0.5 minimatch@10.2.5 proper-lockfile@4.1.2 semver@7.8.0 \
-			@silvia-odwyer/photon-node@0.3.4 undici@8.5.0 yaml@2.9.0; \
+			tsx@4.22.1 vitest@4.1.9 @xterm/headless@5.5.0 partial-json@0.1.7 typebox@1.3.27 openai@6.40.0 @anthropic-ai/sdk@0.124.0 \
+			@aws-sdk/client-bedrock-runtime@3.1127.0 @smithy/node-http-handler@4.12.1 http-proxy-agent@9.1.0 https-proxy-agent@9.1.0 \
+			@google/genai@2.21.0 diff@8.0.4 cross-spawn@7.0.6 chalk@6.0.0 get-east-asian-width@1.6.0 \
+			highlight.js@10.7.3 hosted-git-info@9.0.3 ignore@7.0.8 jiti@2.7.0 marked@18.0.11 minimatch@10.2.6 \
+			proper-lockfile@4.1.2 semver@7.8.5 @silvia-odwyer/photon-node@0.3.4 undici@8.10.2 yaml@2.9.0; \
 	fi
 
 fixtures: ensure-upstream-fixture-tools product-assets

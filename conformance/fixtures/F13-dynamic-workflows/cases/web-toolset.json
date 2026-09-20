@@ -14,12 +14,12 @@
     "durationMs": 0,
     "runId": "run-fixed-web-toolset",
     "tokenUsage": {
-      "input": 3734,
+      "input": 1653,
       "output": 34,
-      "total": 8489,
+      "total": 6526,
       "cost": 0,
-      "cacheRead": 987,
-      "cacheWrite": 3734
+      "cacheRead": 3185,
+      "cacheWrite": 1654
     }
   },
   "error": null,
@@ -36,13 +36,13 @@
       "id": "run-fixed-web-toolset:0",
       "label": "researcher",
       "result": "Research done: example.test documents the topic.",
-      "tokens": 8489,
+      "tokens": 6526,
       "tokenUsage": {
-        "input": 3734,
+        "input": 1653,
         "output": 34,
-        "cacheRead": 987,
-        "cacheWrite": 3734,
-        "total": 8489,
+        "cacheRead": 3185,
+        "cacheWrite": 1654,
+        "total": 6526,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -50,12 +50,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 3734,
+        "input": 1653,
         "output": 34,
-        "total": 8489,
+        "total": 6526,
         "cost": 0,
-        "cacheRead": 987,
-        "cacheWrite": 3734
+        "cacheRead": 3185,
+        "cacheWrite": 1654
       }
     }
   ],
@@ -117,17 +117,12 @@
   "providerCalls": [
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "web_search",
-        "web_fetch",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -141,17 +136,12 @@
     },
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "web_search",
-        "web_fetch",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [
@@ -184,17 +174,12 @@
     },
     {
       "model": "faux/faux-model",
-      "toolNames": [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "web_search",
-        "web_fetch",
-        "store_put",
-        "store_get"
-      ],
+      "toolNames": [],
       "messages": [
+        {
+          "role": "system",
+          "text": ""
+        },
         {
           "role": "user",
           "parts": [

@@ -38,6 +38,7 @@ type runtimeInputs struct {
 	ExcludedTools    []string
 	RebuildBaseTools func() ([]engine.AgentTool, error)
 	PromptOptions    agent.SystemPromptOptions
+	Clock            func() int64
 	Auth             *config.AuthStorage
 	RuntimeAuth      *runtimeCredentials
 	Diagnostics      []modes.StartupDiagnostic
@@ -201,7 +202,6 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 	var excludedTools []string
 	var promptOptions agent.SystemPromptOptions
 	toolSandboxMode := sandbox.ModeDangerFullAccess
-	systemPrompt := ""
 	// metadataOnly runs (--help, --list-models) need only extension flag and
 	// provider metadata: skill/prompt/theme discovery, tool construction and the
 	// system prompt are skipped, and ResourceDiagnostics stays empty.
@@ -282,7 +282,6 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 			ContextFiles:       resources.ContextFiles,
 			Skills:             resources.Skills,
 		}
-		systemPrompt = agent.BuildSystemPrompt(promptOptions)
 	}
 	if extensionRegistry == nil {
 		extensionRegistry = extensions.NewRegistry(cwd)
@@ -358,7 +357,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 		return registry.StreamSimple(ctx, model, request, &merged)
 	}
 	state := engine.AgentState{
-		SystemPrompt:  systemPrompt,
+		SystemPrompt:  "",
 		Model:         model,
 		ThinkingLevel: thinking,
 		Tools:         activeTools,

@@ -322,14 +322,17 @@ type Skill struct {
 }
 
 type SystemPromptOptions struct {
-	CustomPrompt       *string           `json:"customPrompt,omitempty"`
-	SelectedTools      []string          `json:"selectedTools,omitempty"`
-	ToolSnippets       map[string]string `json:"toolSnippets,omitempty"`
-	PromptGuidelines   []string          `json:"promptGuidelines,omitempty"`
-	AppendSystemPrompt *string           `json:"appendSystemPrompt,omitempty"`
-	CWD                string            `json:"cwd"`
-	ContextFiles       []ContextFile     `json:"contextFiles,omitempty"`
-	Skills             []Skill           `json:"skills,omitempty"`
+	CustomPrompt       *string             `json:"customPrompt,omitempty"`
+	ForceSystemPrompt  *string             `json:"forceSystemPrompt,omitempty"`
+	SelectedTools      []string            `json:"selectedTools"`
+	ToolSnippets       map[string]string   `json:"toolSnippets"`
+	ToolGuidelines     map[string][]string `json:"toolGuidelines"`
+	PromptGuidelines   []string            `json:"promptGuidelines"`
+	AppendSystemPrompt *string             `json:"appendSystemPrompt"`
+	Sections           map[string]string   `json:"sections"`
+	CWD                string              `json:"cwd"`
+	ContextFiles       []ContextFile       `json:"contextFiles"`
+	Skills             []Skill             `json:"skills"`
 }
 
 type BeforeAgentStartEvent struct {
@@ -354,8 +357,9 @@ type BeforeAgentStartResult struct {
 }
 
 type BeforeAgentStartCombinedResult struct {
-	Messages     []CustomMessage
-	SystemPrompt *string
+	Messages            []CustomMessage     `json:"messages"`
+	SystemPrompt        *string             `json:"-"`
+	SystemPromptOptions SystemPromptOptions `json:"systemPromptOptions"`
 }
 
 type AgentStartEvent struct{}
@@ -1081,4 +1085,22 @@ type API interface {
 	RegisterProviderConfig(string, ProviderConfig)
 	UnregisterProvider(string)
 	Events() EventBus
+}
+
+// UnsubscribableAPI is the additive event-registration capability exposed by
+// Orb's native extension API. API remains source-compatible for embedders that
+// provide their own implementation.
+type UnsubscribableAPI interface {
+	OnWithUnsubscribe(EventType, Handler) func()
+}
+
+// OnWithUnsubscribe registers a handler and returns an idempotent unsubscribe
+// function when the API supports it. Legacy API implementations still receive
+// the registration through On and return a no-op unsubscribe function.
+func OnWithUnsubscribe(api API, event EventType, handler Handler) func() {
+	if capability, ok := api.(UnsubscribableAPI); ok {
+		return capability.OnWithUnsubscribe(event, handler)
+	}
+	api.On(event, handler)
+	return func() {}
 }

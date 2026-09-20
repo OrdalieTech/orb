@@ -80,15 +80,12 @@ func (recorder *sessionCallbackRecorder) eventCount() int {
 }
 
 type decodedMirrorMessage struct {
-	Role         string `json:"role"`
-	StopReason   string `json:"stopReason"`
-	ErrorMessage string `json:"errorMessage"`
-	ToolName     string `json:"toolName"`
-	IsError      bool   `json:"isError"`
-	Content      []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content"`
+	Role         string          `json:"role"`
+	StopReason   string          `json:"stopReason"`
+	ErrorMessage string          `json:"errorMessage"`
+	ToolName     string          `json:"toolName"`
+	IsError      bool            `json:"isError"`
+	Content      json.RawMessage `json:"content"`
 }
 
 func (recorder *sessionCallbackRecorder) decodedMessages(t *testing.T) []decodedMirrorMessage {
@@ -107,8 +104,19 @@ func (recorder *sessionCallbackRecorder) decodedMessages(t *testing.T) []decoded
 }
 
 func mirrorText(message decodedMirrorMessage) string {
+	var direct string
+	if json.Unmarshal(message.Content, &direct) == nil {
+		return direct
+	}
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(message.Content, &blocks) != nil {
+		return ""
+	}
 	var builder strings.Builder
-	for _, block := range message.Content {
+	for _, block := range blocks {
 		builder.WriteString(block.Text)
 	}
 	return builder.String()
@@ -242,8 +250,14 @@ func TestExtensionAgentSessionServiceEndToEndFlow(t *testing.T) {
 	if len(messages) < 4 {
 		t.Fatalf("mirror has %d messages, want user+assistant+toolResult+assistant", len(messages))
 	}
-	if messages[0].Role != "user" || mirrorText(messages[0]) != "go" {
-		t.Fatalf("mirror[0] = %#v", messages[0])
+	var sawUser bool
+	for _, message := range messages {
+		if message.Role == "user" && mirrorText(message) == "go" {
+			sawUser = true
+		}
+	}
+	if !sawUser {
+		t.Fatalf("mirror omitted user message: %#v", messages)
 	}
 	var sawToolResult, sawFinal bool
 	for _, message := range messages {

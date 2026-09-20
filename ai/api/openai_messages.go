@@ -19,6 +19,8 @@ func transformMessages(messages ai.MessageList, model *ai.Model, normalizeToolCa
 
 	for _, message := range messages {
 		switch value := message.(type) {
+		case *ai.SystemMessage:
+			transformed = append(transformed, value)
 		case *ai.UserMessage:
 			transformed = append(transformed, transformUserMessage(value, model))
 		case *ai.ToolResultMessage:
@@ -108,6 +110,8 @@ func transformMessages(messages ai.MessageList, model *ai.Model, normalizeToolCa
 
 	for _, message := range transformed {
 		switch value := message.(type) {
+		case *ai.SystemMessage:
+			result = append(result, value)
 		case *ai.AssistantMessage:
 			insertSyntheticToolResults()
 			if value.StopReason == ai.StopReasonError || value.StopReason == ai.StopReasonAborted {

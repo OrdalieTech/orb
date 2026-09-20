@@ -320,7 +320,7 @@ func TestAgentSessionRuntimeSettlesActiveToolBeforeReplacementShutdown(t *testin
 		role, _ := jsonwire.MessageRoleAndText(message)
 		roles = append(roles, role)
 	}
-	if want := []string{"user", "assistant", "toolResult", "assistant"}; !reflect.DeepEqual(roles, want) {
+	if want := []string{"system", "user", "assistant", "toolResult", "assistant"}; !reflect.DeepEqual(roles, want) {
 		t.Fatalf("settled message roles = %#v, want %#v", roles, want)
 	}
 	if assistant := asAssistant(decodeSessionMessage(messages[len(messages)-1])); assistant == nil {
@@ -407,8 +407,8 @@ func TestAgentSessionRuntimeForkInMemory(t *testing.T) {
 	if got := log.snapshot(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("fork lifecycle = %#v, want %#v", got, want)
 	}
-	if got := host.Session().Manager().BuildSessionContext().Messages; len(got) != 0 {
-		t.Fatalf("fork-before-root retained %d messages", len(got))
+	if got := host.Session().Manager().BuildSessionContext().Messages; len(got) != 1 {
+		t.Fatalf("fork-before-root retained %d messages, want leading system state", len(got))
 	}
 }
 
@@ -451,8 +451,8 @@ func TestAgentSessionRuntimeImportFromJSONL(t *testing.T) {
 	if info, statErr := os.Stat(wantPath); statErr != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("imported mode = %v, %v", info, statErr)
 	}
-	if got := host.Session().Manager().BuildSessionContext().Messages; len(got) != 2 {
-		t.Fatalf("imported messages = %d, want 2", len(got))
+	if got := host.Session().Manager().BuildSessionContext().Messages; len(got) != 3 {
+		t.Fatalf("imported messages = %d, want 3", len(got))
 	}
 	_, err = host.ImportFromJSONL(context.Background(), filepath.Join(inputDir, "missing.jsonl"), "")
 	var missing *SessionImportFileNotFoundError
@@ -511,13 +511,13 @@ func TestAgentSessionRuntimeReplacedContextTargetsFreshSession(t *testing.T) {
 		t.Fatalf("extension instances = %d, want 2", instances)
 	}
 	messages := host.Session().Manager().BuildSessionContext().Messages
-	if len(messages) != 2 {
-		t.Fatalf("replacement messages = %d, want 2", len(messages))
+	if len(messages) != 3 {
+		t.Fatalf("replacement messages = %d, want 3", len(messages))
 	}
-	if role, text := jsonwire.MessageRoleAndText(messages[0]); role != "user" || text != "hello from replacement" {
+	if role, text := jsonwire.MessageRoleAndText(messages[1]); role != "user" || text != "hello from replacement" {
 		t.Fatalf("replacement user = %s:%q", role, text)
 	}
-	if role, text := jsonwire.MessageRoleAndText(messages[1]); role != "assistant" || text != "replacement reply" {
+	if role, text := jsonwire.MessageRoleAndText(messages[2]); role != "assistant" || text != "replacement reply" {
 		t.Fatalf("replacement assistant = %s:%q", role, text)
 	}
 }
@@ -788,8 +788,8 @@ func TestAgentSessionRuntimeForkPersistedBeforeRoot(t *testing.T) {
 	if header == nil || header.ParentSession == nil || *header.ParentSession != oldFile {
 		t.Fatalf("fork parent = %#v, want %q", header, oldFile)
 	}
-	if got := host.Session().Manager().BuildSessionContext().Messages; len(got) != 0 {
-		t.Fatalf("fork-before-root retained %d messages", len(got))
+	if got := host.Session().Manager().BuildSessionContext().Messages; len(got) != 1 {
+		t.Fatalf("fork-before-root retained %d messages, want leading system state", len(got))
 	}
 }
 

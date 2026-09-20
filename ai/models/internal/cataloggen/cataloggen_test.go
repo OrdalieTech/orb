@@ -263,7 +263,7 @@ func TestGenerateFreshUpstreamCatalogChanges(t *testing.T) {
 	}
 }
 
-func TestV0821CatalogDeltasMatchPublishedPackage(t *testing.T) {
+func TestReleasedCatalogDeltasMatchPublishedPackages(t *testing.T) {
 	catalog, err := Generate(pinnedSources(t))
 	if err != nil {
 		t.Fatal(err)
@@ -276,7 +276,7 @@ func TestV0821CatalogDeltasMatchPublishedPackage(t *testing.T) {
 		"opencode":               {58, "1230323f06f03cd57afe37daa33fa56d12c76f8a2d17f24e21edd7fa34aaf9b6"},
 		"openrouter":             {276, "1d6a4676a4dfb29ac6e953c33e80a887d2fc6903f1068d36a2e101e74ce62aea"},
 		"vercel-ai-gateway":      {192, "8a836f4c177943b72afaaae352b2c26a73118ee4ab5d973212fbe870c0f918ac"},
-		"azure-openai-responses": {38, "b49ac29bb376127532c4a7fe25a9c87564a24e86b588663fbda03436d6cdc0fb"},
+		"azure-openai-responses": {39, "4ac98db2f6a5145959fe2148d2a681e906d8d43bbacebd47d75a4e34425972d6"},
 		"amazon-bedrock":         {114, "0f4ad04526540dcaf4435de9d18c4f230613331bcb110c3bf3abb384fd1dfeca"},
 	} {
 		if got := len(catalog[provider]); got != want.count {
@@ -326,10 +326,21 @@ func TestV0821CatalogDeltasMatchPublishedPackage(t *testing.T) {
 		switch string(want.Provider) + "/" + want.ID {
 		case "github-copilot/claude-opus-5":
 			(*want.ThinkingLevelMap)[ai.ModelThinkingMinimal] = ptr("low")
+			want.Compat = overlayCompat(t, want.Compat, "supportsMidConvoSystemMessages", true)
+		case "google-vertex/gemini-3.6-flash":
+			want.ThinkingLevelMap = &map[ai.ModelThinkingLevel]*string{
+				ai.ModelThinkingOff: nil, ai.ModelThinkingMinimal: ptr("minimal"), ai.ModelThinkingLow: ptr("low"),
+				ai.ModelThinkingMedium: ptr("medium"), ai.ModelThinkingHigh: ptr("high"),
+				ai.ModelThinkingXHigh: nil, ai.ModelThinkingMax: nil,
+			}
 		case "qwen-token-plan/MiniMax-M2.5":
 			want.Compat = overlayCompat(t, want.Compat, "supportsReasoningEffort", false)
 		case "openai/gpt-5.4":
 			want.Compat = overlayCompat(t, want.Compat, "supportsAdditionalTools", true)
+			want.Compat = overlayCompat(t, want.Compat, "supportsMidConvoSystemMessages", true)
+		case "fireworks/accounts/fireworks/models/glm-5p2":
+			(*want.ThinkingLevelMap)[ai.ModelThinkingLow] = nil
+			(*want.ThinkingLevelMap)[ai.ModelThinkingMedium] = nil
 		}
 		gotJSON, err := json.Marshal(got)
 		if err != nil {

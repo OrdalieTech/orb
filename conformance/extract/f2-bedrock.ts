@@ -18,6 +18,7 @@ import type {
   Model,
   Tool,
 } from "../../.upstream/packages/ai/src/types.ts";
+import { normalizeContext } from "../../.upstream/packages/ai/src/utils/transcript.ts";
 
 const FIXED_NOW = 1_700_000_000_123;
 const zeroCost = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
@@ -413,7 +414,7 @@ async function captureBedrockRequest(
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("Bedrock fixture server has no TCP address");
     const model = { ...definition.model, baseUrl: `http://127.0.0.1:${address.port}` };
-    for await (const _event of streamBedrock(model, definition.context, definition.options)) {
+    for await (const _event of streamBedrock(model, normalizeContext(definition.context), definition.options)) {
       // The deterministic 400 response stops the request after serialization.
     }
   } finally {
@@ -464,7 +465,7 @@ async function runBedrockStream(
   });
   try {
     const events: AssistantMessageEvent[] = [];
-    for await (const event of streamBedrock(definition.model, definition.context, definition.options)) {
+    for await (const event of streamBedrock(definition.model, normalizeContext(definition.context), definition.options)) {
       events.push(cloneEvent(event));
     }
     return events;

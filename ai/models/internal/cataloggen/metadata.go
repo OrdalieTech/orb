@@ -12,9 +12,7 @@ import (
 )
 
 var (
-	gemini3ProPattern   = regexp.MustCompile(`gemini-3(?:\.[0-9]+)?-pro`)
-	gemini3FlashPattern = regexp.MustCompile(`gemini-3(?:\.[0-9]+)?-flash`)
-	gptMajorPattern     = regexp.MustCompile(`^gpt-([0-9]+)`)
+	gptMajorPattern = regexp.MustCompile(`^gpt-([0-9]+)`)
 )
 
 func applyCatalogMetadata(model *ai.Model) {
@@ -24,6 +22,9 @@ func applyCatalogMetadata(model *ai.Model) {
 	applyCorrections(model)
 	applyProviderHeaders(model)
 	applyThinkingLevelMetadata(model)
+	if model.Provider == "anthropic" && model.API == ai.APIAnthropicMessages {
+		model.PromptCache = &ai.ModelPromptCache{Short: ptr(300.0), Long: ptr(3600.0)}
+	}
 	switch model.API {
 	case ai.APIOpenAICompletions:
 		applyOpenAICompletionsCompat(model)
@@ -224,6 +225,14 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 	if (model.API == ai.APIOpenAIResponses || model.API == ai.APIAzureOpenAIResponses) && strings.HasPrefix(id, "gpt-5") {
 		mergeThinking(model, map[ai.ModelThinkingLevel]*string{ai.ModelThinkingOff: nil})
 	}
+	if id == "gpt-6-astra" && slices.Contains([]ai.API{ai.APIOpenAIResponses, ai.APIAzureOpenAIResponses, ai.APIOpenAICodexResponses}, model.API) {
+		values := thinkingValues(map[ai.ModelThinkingLevel]string{
+			ai.ModelThinkingLow: "low", ai.ModelThinkingMedium: "medium", ai.ModelThinkingHigh: "high",
+			ai.ModelThinkingXHigh: "xhigh", ai.ModelThinkingMax: "max",
+		})
+		values[ai.ModelThinkingOff], values[ai.ModelThinkingMinimal] = nil, nil
+		mergeThinking(model, values)
+	}
 	if provider == "github-copilot" && strings.HasPrefix(id, "gpt-5") {
 		mergeThinking(model, thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingMinimal: "low"}))
 	}
@@ -238,7 +247,7 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 	if supportsOpenAIXHigh(id) {
 		mergeThinking(model, thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingXHigh: "xhigh"}))
 	}
-	if strings.Contains(id, "gpt-5.6") && slices.Contains([]ai.API{ai.APIOpenAIResponses, ai.APIAzureOpenAIResponses, ai.APIOpenAICodexResponses, ai.APIOpenAICompletions}, model.API) {
+	if (strings.Contains(id, "gpt-5.6") || strings.Contains(id, "gpt-6-astra")) && slices.Contains([]ai.API{ai.APIOpenAIResponses, ai.APIAzureOpenAIResponses, ai.APIOpenAICodexResponses, ai.APIOpenAICompletions}, model.API) {
 		mergeThinking(model, thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingMax: "max"}))
 	}
 	if provider == "openai" && id == "gpt-5.5" {
@@ -258,7 +267,7 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 		values[ai.ModelThinkingOff] = nil
 		mergeThinking(model, values)
 	}
-	if model.API == ai.APIOpenAICompletions && strings.Contains(id, "deepseek-v4") && !isQwenTokenPlanProvider(provider) {
+	if model.API == ai.APIOpenAICompletions && strings.Contains(id, "deepseek-v4") && model.ThinkingLevelMap == nil && !isQwenTokenPlanProvider(provider) {
 		values := thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingHigh: "high", ai.ModelThinkingMax: "max"})
 		values[ai.ModelThinkingMinimal], values[ai.ModelThinkingLow], values[ai.ModelThinkingMedium] = nil, nil, nil
 		if provider == "openrouter" {
@@ -269,20 +278,19 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 		mergeThinking(model, values)
 	}
 
-	if model.API == ai.APIGoogleGenerativeAI || model.API == ai.APIGoogleVertex {
+	if (model.API == ai.APIGoogleGenerativeAI || model.API == ai.APIGoogleVertex) && model.ThinkingLevelMap == nil {
 		lower := strings.ToLower(id)
 		switch {
-		case gemini3ProPattern.MatchString(lower):
-			values := thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingLow: "LOW", ai.ModelThinkingHigh: "HIGH"})
-			values[ai.ModelThinkingOff], values[ai.ModelThinkingMinimal], values[ai.ModelThinkingMedium] = nil, nil, nil
-			mergeThinking(model, values)
-		case gemini3FlashPattern.MatchString(lower) || lower == "gemini-flash-latest" || lower == "gemini-flash-lite-latest":
-			mergeThinking(model, map[ai.ModelThinkingLevel]*string{ai.ModelThinkingOff: nil})
 		case strings.Contains(lower, "gemma-4") || strings.Contains(lower, "gemma4"):
 			values := thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingMinimal: "MINIMAL", ai.ModelThinkingHigh: "HIGH"})
 			values[ai.ModelThinkingOff], values[ai.ModelThinkingLow], values[ai.ModelThinkingMedium] = nil, nil, nil
 			mergeThinking(model, values)
 		}
+	}
+	if provider == "deepseek" && id == "deepseek-flash" && model.ThinkingLevelMap == nil {
+		values := thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingLow: "low", ai.ModelThinkingHigh: "high", ai.ModelThinkingMax: "max"})
+		values[ai.ModelThinkingMinimal], values[ai.ModelThinkingMedium] = nil, nil
+		mergeThinking(model, values)
 	}
 	if provider == "groq" && id == "qwen/qwen3-32b" {
 		values := thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingHigh: "default"})
@@ -302,9 +310,12 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 		mergeThinking(model, thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingXHigh: "xhigh"}))
 	}
 	if provider == "fireworks" && strings.Contains(id, "glm-5p2") {
-		values := thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingOff: "none", ai.ModelThinkingLow: "high", ai.ModelThinkingMedium: "high", ai.ModelThinkingMax: "max"})
-		values[ai.ModelThinkingMinimal] = nil
+		values := thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingOff: "none", ai.ModelThinkingHigh: "high", ai.ModelThinkingMax: "max"})
+		values[ai.ModelThinkingMinimal], values[ai.ModelThinkingLow], values[ai.ModelThinkingMedium] = nil, nil, nil
 		mergeThinking(model, values)
+	}
+	if provider == "fireworks" && strings.Contains(id, "kimi-k3") {
+		mergeThinking(model, map[ai.ModelThinkingLevel]*string{ai.ModelThinkingMedium: nil})
 	}
 	if provider == "opencode-go" && id == "glm-5.2" {
 		values := thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingHigh: "high", ai.ModelThinkingMax: "max"})
@@ -419,11 +430,15 @@ func applyExplicitCompletionsCompat(model *ai.Model, compat *ai.OpenAICompletion
 		compat.ThinkingFormat = ptr(ai.ThinkingFormatDeepSeek)
 		if id == "kimi-k3" {
 			compat.RequiresReasoningContentOnAssistantMessages = ptr(true)
-			compat.DeferredToolsMode = ptr(ai.DeferredToolsKimi)
 			// Upstream v0.81.1 switches kimi-k3 to the OpenAI thinking format and
 			// enables reasoning effort (generate-models.ts:1761-1766).
 			compat.ThinkingFormat = ptr(ai.ThinkingFormatOpenAI)
 			compat.SupportsReasoningEffort = ptr(true)
+			compat.SupportsMidConvoSystemMessages = ptr(true)
+			compat.SupportsMidConvoToolAdditions = ptr(true)
+		}
+		if id == "kimi-k2.6" || id == "kimi-k2.7-code" || id == "kimi-k2.7-code-highspeed" {
+			compat.SupportsMidConvoSystemMessages = ptr(true)
 		}
 	case "qwen-token-plan", "qwen-token-plan-cn", "qwen-token-plan-individual":
 		compat.SupportsStore, compat.SupportsDeveloperRole = ptr(false), ptr(false)
@@ -449,6 +464,10 @@ func applyExplicitCompletionsCompat(model *ai.Model, compat *ai.OpenAICompletion
 		if id == "kimi-k2.6" {
 			compat.ThinkingFormat, compat.SupportsReasoningEffort = ptr(ai.ThinkingFormatDeepSeek), ptr(false)
 		}
+		if id == "kimi-k3" {
+			compat.SupportsMidConvoSystemMessages = ptr(true)
+			compat.SupportsMidConvoToolAdditions = ptr(true)
+		}
 		if provider == "opencode-go" && (id == "qwen3.5-plus" || id == "qwen3.6-plus") {
 			compat.ThinkingFormat = ptr(ai.ThinkingFormatQwen)
 		}
@@ -468,11 +487,26 @@ func applyExplicitCompletionsCompat(model *ai.Model, compat *ai.OpenAICompletion
 		if strings.Contains(id, "glm-") {
 			compat.SupportsStore, compat.SupportsDeveloperRole = ptr(false), ptr(false)
 		}
+		if strings.Contains(id, "kimi-k3") {
+			compat.SupportsMidConvoSystemMessages = ptr(true)
+			compat.SupportsMidConvoToolAdditions = ptr(true)
+		}
 	case "openrouter":
 		if strings.HasPrefix(id, "moonshotai/kimi-k2.6") {
 			compat.SupportsDeveloperRole = ptr(false)
 			compat.RequiresReasoningContentOnAssistantMessages = ptr(true)
 		}
+		if strings.HasPrefix(id, "openai/") && slices.Contains([]string{
+			"gpt-5.4", "gpt-5.4-mini", "gpt-5.4-pro", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra",
+		}, strings.TrimPrefix(id, "openai/")) {
+			compat.SupportsMidConvoSystemMessages = ptr(true)
+		}
+	}
+	if provider == "deepseek" && id == "deepseek-v4-pro" {
+		compat.SupportsMidConvoSystemMessages = ptr(true)
+	}
+	if provider == "github-copilot" && id == "kimi-k3" {
+		compat.SupportsMidConvoSystemMessages = ptr(true)
 	}
 }
 
@@ -482,15 +516,34 @@ func applyAnthropicCompat(model *ai.Model) {
 		_ = json.Unmarshal(model.Compat, &compat)
 	}
 	provider, id := string(model.Provider), model.ID
-	if (provider == "anthropic" || provider == "openrouter") && supportsAnthropicMidConvoEffort(id) {
+	if (provider == "anthropic" || provider == "openrouter") && supportsAnthropicMidConvoEffort(id) &&
+		(provider != "openrouter" || strings.TrimPrefix(id, "~") != "anthropic/claude-opus-5") {
 		compat.SupportsMidConvoEffort = ptr(true)
 		mergeThinking(model, map[ai.ModelThinkingLevel]*string{ai.ModelThinkingOff: nil})
 	}
+	if provider == "anthropic" && supportsAnthropicMidConvoSystemMessages(id) {
+		compat.SupportsMidConvoSystemMessages = ptr(true)
+		compat.SupportsMidConvoToolChanges = ptr(true)
+	}
+	if (provider == "opencode" || provider == "github-copilot") && supportsAnthropicMidConvoSystemMessages(id) {
+		compat.SupportsMidConvoSystemMessages = ptr(true)
+	}
 	if provider == "fireworks" {
+		compat.AllowEmptySignature = ptr(true)
 		compat.SendSessionAffinityHeaders = ptr(true)
 		compat.SupportsEagerToolInputStreaming = ptr(false)
 		compat.SupportsCacheControlOnTools = ptr(false)
 		compat.SupportsLongCacheRetention = ptr(false)
+		if id == "accounts/fireworks/models/minimax-m3" {
+			compat.ForceAdaptiveThinking = ptr(true)
+			if model.ThinkingLevelMap == nil {
+				values := thinkingValues(map[ai.ModelThinkingLevel]string{
+					ai.ModelThinkingLow: "low", ai.ModelThinkingMedium: "medium", ai.ModelThinkingHigh: "high",
+				})
+				values[ai.ModelThinkingOff], values[ai.ModelThinkingMinimal], values[ai.ModelThinkingXHigh], values[ai.ModelThinkingMax] = nil, nil, nil, nil
+				model.ThinkingLevelMap = &values
+			}
+		}
 	}
 	if provider == "cloudflare-ai-gateway" {
 		compat.SendSessionAffinityHeaders = ptr(true)
@@ -512,6 +565,7 @@ func applyAnthropicCompat(model *ai.Model) {
 	}
 	if provider == "fireworks" {
 		ordered := struct {
+			AllowEmptySignature             *bool `json:"allowEmptySignature,omitempty"`
 			SendSessionAffinityHeaders      *bool `json:"sendSessionAffinityHeaders,omitempty"`
 			SupportsEagerToolInputStreaming *bool `json:"supportsEagerToolInputStreaming,omitempty"`
 			SupportsCacheControlOnTools     *bool `json:"supportsCacheControlOnTools,omitempty"`
@@ -519,6 +573,7 @@ func applyAnthropicCompat(model *ai.Model) {
 			ForceAdaptiveThinking           *bool `json:"forceAdaptiveThinking,omitempty"`
 			SupportsTemperature             *bool `json:"supportsTemperature,omitempty"`
 		}{
+			compat.AllowEmptySignature,
 			compat.SendSessionAffinityHeaders,
 			compat.SupportsEagerToolInputStreaming,
 			compat.SupportsCacheControlOnTools,
@@ -543,6 +598,7 @@ func applyAnthropicCompat(model *ai.Model) {
 func applyOpenAIResponsesCompat(model *ai.Model) {
 	var compat struct {
 		SupportsDeveloperRole           *bool                     `json:"supportsDeveloperRole,omitempty"`
+		SupportsMidConvoSystemMessages  *bool                     `json:"supportsMidConvoSystemMessages,omitempty"`
 		SessionAffinityFormat           *ai.SessionAffinityFormat `json:"sessionAffinityFormat,omitempty"`
 		SupportsLongCacheRetention      *bool                     `json:"supportsLongCacheRetention,omitempty"`
 		SupportsStrictMode              *bool                     `json:"supportsStrictMode,omitempty"`
@@ -576,15 +632,19 @@ func applyOpenAIResponsesCompat(model *ai.Model) {
 	}
 	isOpenAIResponses := provider == "openai" && model.API == ai.APIOpenAIResponses
 	isOpenAICodex := provider == "openai-codex" && model.API == ai.APIOpenAICodexResponses
-	if (isOpenAIResponses || isOpenAICodex) && slices.Contains([]string{
-		"gpt-5.4", "gpt-5.4-mini", "gpt-5.4-pro", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
+	isProxiedResponses := slices.Contains([]string{"opencode", "opencode-go", "github-copilot"}, provider) && model.API == ai.APIOpenAIResponses
+	if (isOpenAIResponses || isOpenAICodex || isProxiedResponses) && slices.Contains([]string{
+		"gpt-5.4", "gpt-5.4-mini", "gpt-5.4-pro", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra",
 	}, id) {
 		// Codex only reads additional_tools on its Responses Lite GPT-5.6 models.
-		codexAdditional := slices.Contains([]string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}, id)
-		if isOpenAIResponses || codexAdditional {
+		codexAdditional := slices.Contains([]string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra"}, id)
+		if isOpenAIResponses || codexAdditional || isProxiedResponses {
 			compat.SupportsAdditionalTools = ptr(true)
 		}
-		compat.SupportsToolSearch = ptr(true)
+		if !isProxiedResponses {
+			compat.SupportsToolSearch = ptr(true)
+		}
+		compat.SupportsMidConvoSystemMessages = ptr(true)
 	}
 	if provider == "openai" && model.API == ai.APIOpenAIResponses && model.Cost.CacheWrite > 0 {
 		compat.SupportsExplicitPromptCacheMode = ptr(true)
@@ -641,6 +701,15 @@ func mergeCompletionsCompat(dst *ai.OpenAICompletionsCompat, src ai.OpenAIComple
 	if src.ZAIToolStream != nil {
 		dst.ZAIToolStream = src.ZAIToolStream
 	}
+	if src.SupportsOpenAIGrammarTools != nil {
+		dst.SupportsOpenAIGrammarTools = src.SupportsOpenAIGrammarTools
+	}
+	if src.SupportsMidConvoSystemMessages != nil {
+		dst.SupportsMidConvoSystemMessages = src.SupportsMidConvoSystemMessages
+	}
+	if src.SupportsMidConvoToolAdditions != nil {
+		dst.SupportsMidConvoToolAdditions = src.SupportsMidConvoToolAdditions
+	}
 	if src.SupportsStrictMode != nil {
 		dst.SupportsStrictMode = src.SupportsStrictMode
 	}
@@ -683,7 +752,7 @@ func thinkingValues(values map[ai.ModelThinkingLevel]string) map[ai.ModelThinkin
 }
 
 func supportsOpenAIXHigh(id string) bool {
-	return containsAny(id, "gpt-5.2", "gpt-5.3", "gpt-5.4", "gpt-5.5", "gpt-5.6")
+	return containsAny(id, "gpt-5.2", "gpt-5.3", "gpt-5.4", "gpt-5.5", "gpt-5.6", "gpt-6-astra")
 }
 
 func isAnthropicAdaptiveThinkingModel(id string) bool {
@@ -718,10 +787,16 @@ func effortThinkingLevelMap(options []sourceReasoningOption) *map[ai.ModelThinki
 }
 
 var anthropicMidConvoPattern = regexp.MustCompile(`^(?:claude-opus-5|claude-(?:fable|mythos)-5[.-]1)(?:-\d{8})?$`)
+var anthropicMidConvoSystemPattern = regexp.MustCompile(`^(?:claude-opus-(?:4[.-]8|5)|claude-(?:fable|mythos)-5(?:[.-]1)?)(?:-\d{8})?$`)
 
 func supportsAnthropicMidConvoEffort(id string) bool {
 	id = strings.TrimPrefix(strings.TrimPrefix(strings.ToLower(id), "~"), "anthropic/")
 	return anthropicMidConvoPattern.MatchString(id)
+}
+
+func supportsAnthropicMidConvoSystemMessages(id string) bool {
+	id = strings.TrimPrefix(strings.TrimPrefix(strings.ToLower(id), "~"), "anthropic/")
+	return anthropicMidConvoSystemPattern.MatchString(id)
 }
 func applyAnthropicFallbackMetadata(models map[string]ai.Model) {
 	for id, targets := range map[string][]string{"claude-fable-5": {"claude-opus-4-8", "claude-opus-5"}, "claude-opus-5": {"claude-opus-4-8"}} {
@@ -751,12 +826,14 @@ func applyAnthropicFallbackMetadata(models map[string]ai.Model) {
 func anthropicCatalogCompat(compat ai.AnthropicMessagesCompat) json.RawMessage {
 	return mustCompatJSON(struct {
 		SupportsMidConvoEffort          *bool                               `json:"supportsMidConvoEffort,omitempty"`
+		SupportsMidConvoSystemMessages  *bool                               `json:"supportsMidConvoSystemMessages,omitempty"`
+		SupportsMidConvoToolChanges     *bool                               `json:"supportsMidConvoToolChanges,omitempty"`
 		SupportsEagerToolInputStreaming *bool                               `json:"supportsEagerToolInputStreaming,omitempty"`
 		ForceAdaptiveThinking           *bool                               `json:"forceAdaptiveThinking,omitempty"`
 		SupportsTemperature             *bool                               `json:"supportsTemperature,omitempty"`
 		SupportsStrictTools             *bool                               `json:"supportsStrictTools,omitempty"`
 		AllowedFallbackModels           *[]ai.AnthropicAllowedFallbackModel `json:"allowedFallbackModels,omitempty"`
-	}{compat.SupportsMidConvoEffort, compat.SupportsEagerToolInputStreaming, compat.ForceAdaptiveThinking, compat.SupportsTemperature, compat.SupportsStrictTools, compat.AllowedFallbackModels})
+	}{compat.SupportsMidConvoEffort, compat.SupportsMidConvoSystemMessages, compat.SupportsMidConvoToolChanges, compat.SupportsEagerToolInputStreaming, compat.ForceAdaptiveThinking, compat.SupportsTemperature, compat.SupportsStrictTools, compat.AllowedFallbackModels})
 }
 
 func orderCompat(raw json.RawMessage, keys []string) json.RawMessage {

@@ -320,6 +320,30 @@ func (provider *Provider) streamReserved(
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	usageContext := requestContext
+	if ai.CurrentSystemMessage(requestContext.Messages) != nil {
+		usageContext = ai.Context{Messages: requestContext.Messages}
+	} else if transcript, ok := ai.TranscriptContextFrom(ctx); ok {
+		messages := append(ai.MessageList(nil), transcript.Messages...)
+		if requestContext.SystemPrompt != nil && ai.CurrentSystemPrompt(messages) != *requestContext.SystemPrompt {
+			promptPending := true
+			for index, message := range messages {
+				system, ok := message.(*ai.SystemMessage)
+				if !ok {
+					continue
+				}
+				copy := *system
+				copy.Content = ""
+				copy.Sections = nil
+				if promptPending {
+					copy.Content = *requestContext.SystemPrompt
+					promptPending = false
+				}
+				messages[index] = &copy
+			}
+		}
+		usageContext = ai.Context{Messages: messages}
+	}
 	return func(yield func(ai.AssistantMessageEvent, error) bool) {
 		if options != nil && options.OnResponse != nil {
 			if err := options.OnResponse(ctx, ai.ProviderResponse{Status: 200, Headers: map[string]string{}}, model); err != nil {
@@ -330,7 +354,7 @@ func (provider *Provider) streamReserved(
 
 		if !hasStep {
 			message := provider.createErrorMessage(fauxCompatibilityError("No more faux responses queued"), model.ID)
-			if err := provider.withUsageEstimate(message, requestContext, options); err != nil {
+			if err := provider.withUsageEstimate(message, usageContext, options); err != nil {
 				message = provider.createErrorMessage(err, model.ID)
 			}
 			yield(ai.ErrorEvent{Reason: ai.StopReasonError, Error: message}, nil)
@@ -350,7 +374,7 @@ func (provider *Provider) streamReserved(
 		message.API = provider.api
 		message.Provider = provider.provider
 		message.Model = model.ID
-		if err := provider.withUsageEstimate(message, requestContext, options); err != nil {
+		if err := provider.withUsageEstimate(message, usageContext, options); err != nil {
 			yield(ai.ErrorEvent{Reason: ai.StopReasonError, Error: provider.createErrorMessage(err, model.ID)}, nil)
 			return
 		}

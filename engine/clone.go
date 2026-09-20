@@ -10,6 +10,21 @@ import (
 
 func cloneAgentMessage(message AgentMessage) AgentMessage {
 	switch value := message.(type) {
+	case *ai.SystemMessage:
+		if value == nil {
+			return (*ai.SystemMessage)(nil)
+		}
+		encoded, err := ai.Marshal(value)
+		if err != nil {
+			copy := *value
+			return &copy
+		}
+		decoded, err := ai.UnmarshalMessage(encoded)
+		if err != nil {
+			copy := *value
+			return &copy
+		}
+		return decoded
 	case *ai.UserMessage:
 		if value == nil {
 			return (*ai.UserMessage)(nil)

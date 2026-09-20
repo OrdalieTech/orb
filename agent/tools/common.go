@@ -18,13 +18,8 @@ import (
 
 var errOperationAborted = upstreamToolError("Operation aborted")
 
-// experimentalToolSampling asks providers for strict tool schemas under
-// PI_EXPERIMENTAL=1 (upstream getExperimentalToolSampling). Nil otherwise, so
-// the default request shape is unchanged.
-func experimentalToolSampling() *ai.ConstrainedSamplingConfig {
-	if os.Getenv("PI_EXPERIMENTAL") != "1" {
-		return nil
-	}
+// strictToolSampling matches the built-in tool contract from pi v0.86.
+func strictToolSampling() *ai.ConstrainedSamplingConfig {
 	return &ai.ConstrainedSamplingConfig{Type: ai.ConstrainedSamplingJSONSchema, Strict: ai.ConstrainedSamplingPrefer}
 }
 

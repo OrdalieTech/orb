@@ -88,8 +88,8 @@ func TestRunLoopRecoversProviderDeclaredToolUseWithoutCalls(t *testing.T) {
 	if got := len(postToolContext); got != 3 {
 		t.Fatalf("post-tool context messages = %d, want 3; recovery scaffold leaked: %#v", got, postToolContext)
 	}
-	if got := len(messages); got != 4 {
-		t.Fatalf("returned messages = %d, want prompt + recovered tool turn + result + final", got)
+	if got := len(messages); got != 5 {
+		t.Fatalf("returned messages = %d, want system + prompt + recovered tool turn + result + final", got)
 	}
 	for _, message := range messages {
 		if user, ok := message.(*ai.UserMessage); ok && user.Content.Text != nil && strings.Contains(*user.Content.Text, "previous turn indicated") {
@@ -255,6 +255,55 @@ func TestRunLoopParallelCompletionAndSourceOrder(t *testing.T) {
 		if !ok || result.ToolCallID != id {
 			t.Fatalf("second request result %d = %#v", index, secondContext.Messages[index+2])
 		}
+	}
+}
+
+func TestAgentProjectsUpdatedSystemPromptAfterContextReplacement(t *testing.T) {
+	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{
+		loopAssistant(ai.StopReasonToolUse, &ai.ToolCall{ID: "call-1", Name: "echo", Arguments: map[string]any{}}),
+		loopAssistant(ai.StopReasonStop, &ai.TextContent{Text: "done"}),
+	}}
+	tool := AgentToolFunc{AgentToolSpec: AgentToolSpec{Name: "echo", Parameters: jsonschema.Schema(`{"type":"object"}`)}, Run: func(context.Context, string, any, AgentToolUpdateCallback) (AgentToolResult, error) {
+		return textToolResult("ok"), nil
+	}}
+	var agent *Agent
+	agent = NewAgent(responses.stream,
+		WithInitialState(AgentState{SystemPrompt: "base", Model: loopModel(), Tools: []AgentTool{tool}}),
+		WithConvertToLLM(func(_ context.Context, messages AgentMessages) (ai.MessageList, error) {
+			return agentMessagesToAI(messages), nil
+		}),
+		WithPrepareNextTurnContext(func(_ context.Context, turn PrepareNextTurnContext) (*AgentLoopTurnUpdate, error) {
+			turn.Context.Messages = append(AgentMessages(nil), turn.Context.Messages[1:]...)
+			turn.Context.SystemPrompt = "updated"
+			agent.SetSystemPrompt("updated")
+			return &AgentLoopTurnUpdate{Context: turn.Context}, nil
+		}),
+	)
+	if err := agent.Prompt(context.Background(), "go"); err != nil {
+		t.Fatal(err)
+	}
+	if first, second := responses.contexts[0].SystemPrompt, responses.contexts[1].SystemPrompt; first == nil || *first != "base" || second == nil || *second != "updated" {
+		t.Fatalf("provider system prompts = %#v, %#v", first, second)
+	}
+}
+
+func TestAgentSetSystemPromptUpdatesProviderTranscript(t *testing.T) {
+	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{
+		loopAssistant(ai.StopReasonStop, &ai.TextContent{Text: "done"}),
+	}}
+	agent := NewAgent(responses.stream, WithInitialState(AgentState{
+		SystemPrompt: "base",
+		Model:        loopModel(),
+	}))
+	agent.SetSystemPrompt("updated")
+	if err := agent.Prompt(context.Background(), "go"); err != nil {
+		t.Fatal(err)
+	}
+	if got := responses.contexts[0].SystemPrompt; got == nil || *got != "updated" {
+		t.Fatalf("provider system prompt = %#v, want updated", got)
+	}
+	if got := ai.CurrentSystemPrompt(agentMessagesToAI(agent.State().Messages)); got != "updated" {
+		t.Fatalf("transcript system prompt = %q, want updated", got)
 	}
 }
 

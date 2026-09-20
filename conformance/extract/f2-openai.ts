@@ -20,6 +20,7 @@ import type {
   Model,
   Tool,
 } from "../../.upstream/packages/ai/src/types.ts";
+import { normalizeContext } from "../../.upstream/packages/ai/src/utils/transcript.ts";
 import { extractAuthStorageFixture } from "./f2-auth.ts";
 import { extractAnthropicF2, fireworksCompatModel } from "./f2-anthropic.ts";
 import { extractBedrockF2 } from "./f2-bedrock.ts";
@@ -92,6 +93,7 @@ const SELECTED_HEADERS = [
   "x-fixture",
   "x-initiator",
   "x-model-header",
+  "x-opencode-session",
   "x-session-affinity",
   "x-session-id",
 ] as const;
@@ -1337,12 +1339,12 @@ async function runUpstream(
     definition.api === "openai-responses"
       ? streamOpenAIResponses(
           definition.model as Model<"openai-responses">,
-          definition.context,
+          normalizeContext(definition.context),
           definition.options as OpenAIResponsesOptions,
         )
       : streamOpenAICompletions(
           definition.model as Model<"openai-completions">,
-          definition.context,
+          normalizeContext(definition.context),
           definition.options as OpenAICompletionsOptions,
         );
   const events: AssistantMessageEvent[] = [];
@@ -1477,7 +1479,7 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
       throw new Error("OpenAI-compatible F2 models drifted from the pinned upstream generator");
     }
     if (!isDeepStrictEqual(fireworksCompatModel, compatModels.cases[2].model)) {
-      throw new Error("Fireworks F2 model drifted from the pinned upstream generator");
+      throw new Error(`Fireworks F2 model drifted from the pinned upstream generator: expected ${JSON.stringify(compatModels.cases[2].model)}, got ${JSON.stringify(fireworksCompatModel)}`);
     }
     const requests = [];
     for (const definition of requestDefinitions) {

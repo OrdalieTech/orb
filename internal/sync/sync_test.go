@@ -18,6 +18,10 @@ func TestClassificationFlagsWireAndPublicSurfaces(t *testing.T) {
 		want     string
 	}{
 		{filename: "packages/ai/src/types.ts", want: ClassWire},
+		{filename: "packages/ai/src/utils/transcript.ts", want: ClassWire},
+		{filename: "packages/ai/src/utils/text.ts", want: ClassWire},
+		{filename: "packages/agent/src/harness/messages.ts", want: ClassWire},
+		{filename: "packages/coding-agent/src/core/system-prompt.ts", want: ClassWire},
 		{filename: "packages/ai/src/api/openai-responses.ts", want: ClassWire},
 		{filename: "packages/coding-agent/src/core/session-manager.ts", want: ClassWire},
 		{filename: "packages/agent/src/harness/session/session.ts", want: ClassWire},
@@ -124,6 +128,27 @@ func TestCandidateConformanceCopyUsesTargetLock(t *testing.T) {
 	}
 	if _, err := Run(context.Background(), config); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCandidateKeepsOrbSnapshotsWhenExtractorEmitsSameFamily(t *testing.T) {
+	root, generated := t.TempDir(), t.TempDir()
+	writeTestFile(t, filepath.Join(root, "conformance", "fixtures", "F12-commands", "commands.json"), "orb commands\n")
+	writeTestFile(t, filepath.Join(generated, "F12-commands", "commands.json"), "upstream commands\n")
+	writeTestFile(t, filepath.Join(generated, "F1", "cases.json"), "new wire fixture\n")
+	copyRoot, cleanup, err := prepareConformanceCopy(root, generated, Lock{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	for relative, want := range map[string]string{
+		"F12-commands/commands.json": "orb commands\n",
+		"F1/cases.json":              "new wire fixture\n",
+	} {
+		got, err := os.ReadFile(filepath.Join(copyRoot, "conformance", "fixtures", relative))
+		if err != nil || string(got) != want {
+			t.Fatalf("candidate %s = %q, %v; want %q", relative, got, err, want)
+		}
 	}
 }
 

@@ -111,7 +111,7 @@
           "basic-1"
         ]
       },
-      "eventCount": 25
+      "eventCount": 27
     },
     {
       "name": "parallel-completion-vs-source-order",
@@ -228,7 +228,7 @@
           "parallel-2"
         ]
       },
-      "eventCount": 29
+      "eventCount": 31
     },
     {
       "name": "steering-queued-during-tools",
@@ -345,7 +345,7 @@
           "steering-1"
         ]
       },
-      "eventCount": 24
+      "eventCount": 26
     },
     {
       "name": "abort-mid-text",
@@ -508,7 +508,7 @@
           "error-1"
         ]
       },
-      "eventCount": 22
+      "eventCount": 24
     },
     {
       "name": "all-results-terminate",
@@ -597,7 +597,7 @@
           "terminate-2"
         ]
       },
-      "eventCount": 22
+      "eventCount": 24
     },
     {
       "name": "anthropic-thinking-signature-round-trip",
@@ -715,7 +715,7 @@
           "anthropic-signature-1"
         ]
       },
-      "eventCount": 25
+      "eventCount": 27
     }
   ]
 }

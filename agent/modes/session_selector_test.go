@@ -369,6 +369,118 @@ func TestSessionSelectorSelectionCancellationAndKeybindings(t *testing.T) {
 	}
 }
 
+func TestSessionSelectorProgressiveUpdatesPreserveTouchedSelectionAndCancelLoads(t *testing.T) {
+	now := time.Now()
+	first := session.SessionInfo{Path: "/first.jsonl", ID: "first", Modified: now, FirstMessage: "first"}
+	second := session.SessionInfo{Path: "/second.jsonl", ID: "second", Modified: now.Add(-time.Minute), FirstMessage: "second"}
+	newest := session.SessionInfo{Path: "/newest.jsonl", ID: "newest", Modified: now.Add(time.Minute), FirstMessage: "newest"}
+	release := make(chan struct{})
+	cancelled := make(chan struct{})
+	loader := func(ctx context.Context, update session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
+		update(session.SessionListUpdate{Loaded: 2, Total: 3, Sessions: []session.SessionInfo{first, second}})
+		select {
+		case <-release:
+			update(session.SessionListUpdate{Loaded: 3, Total: 3, Sessions: []session.SessionInfo{newest, first, second}})
+			return []session.SessionInfo{newest, first, second}, nil
+		case <-ctx.Done():
+			close(cancelled)
+			return nil, ctx.Err()
+		}
+	}
+	selected := make(chan string, 1)
+	selector := NewSessionSelectorComponent(SessionSelectorOptions{
+		CurrentSessionsContext: loader,
+		AllSessionsContext:     loader,
+	}, func(path string) { selected <- path }, nil)
+	waitForSelector(t, selector, "first")
+	selector.HandleInput(selectorKey("\x1b[B"))
+	close(release)
+	waitForSelector(t, selector, "newest")
+	selector.HandleInput(selectorKey("\r"))
+	if got := <-selected; got != second.Path {
+		t.Fatalf("selected after progressive insertion = %q, want %q", got, second.Path)
+	}
+
+	started := make(chan struct{})
+	blocking := func(ctx context.Context, _ session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
+		close(started)
+		<-ctx.Done()
+		close(cancelled)
+		return nil, ctx.Err()
+	}
+	cancelled = make(chan struct{})
+	selector = NewSessionSelectorComponent(SessionSelectorOptions{CurrentSessionsContext: blocking}, nil, func() {})
+	<-started
+	selector.HandleInput(selectorKey("\x1b"))
+	select {
+	case <-cancelled:
+	case <-time.After(time.Second):
+		t.Fatal("selector cancellation did not cancel its active loader")
+	}
+}
+
+func TestSessionSelectorMutationRefreshCancelsReplacedAndActiveLoads(t *testing.T) {
+	info := session.SessionInfo{Path: "/delete.jsonl", ID: "delete", Modified: time.Now(), FirstMessage: "delete"}
+	started := make(chan int, 2)
+	cancelled := make(chan int, 2)
+	var calls atomic.Int32
+	loader := func(ctx context.Context, update session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
+		call := int(calls.Add(1))
+		started <- call
+		update(session.SessionListUpdate{Loaded: 1, Total: 2, Sessions: []session.SessionInfo{info}})
+		<-ctx.Done()
+		cancelled <- call
+		return nil, ctx.Err()
+	}
+	selector := NewSessionSelectorComponent(SessionSelectorOptions{
+		CurrentSessionsContext: loader,
+		DeleteSession: func(string) (SessionDeleteMethod, error) {
+			return SessionDeleteUnlink, nil
+		},
+	}, nil, func() {})
+	if got := <-started; got != 1 {
+		t.Fatalf("initial loader call = %d, want 1", got)
+	}
+	waitForSelector(t, selector, "delete")
+
+	selector.mu.Lock()
+	selector.startDeleteLocked()
+	selector.mu.Unlock()
+	selector.HandleInput(selectorKey("\r"))
+
+	select {
+	case got := <-started:
+		if got != 2 {
+			t.Fatalf("refresh loader call = %d, want 2", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("mutation did not start a replacement load")
+	}
+	selector.mu.Lock()
+	refreshCancelledAllLoads := selector.loadsCancelled
+	selector.mu.Unlock()
+	if refreshCancelledAllLoads {
+		t.Fatal("mutation refresh marked the selector permanently cancelled")
+	}
+	selector.HandleInput(selectorKey("\x1b"))
+
+	seen := map[int]bool{}
+	for len(seen) < 2 {
+		select {
+		case call := <-cancelled:
+			seen[call] = true
+		case <-time.After(time.Second):
+			t.Fatalf("cancelled loader calls = %v, want both initial and replacement", seen)
+		}
+	}
+	selector.mu.Lock()
+	loadsCancelled := selector.loadsCancelled
+	selector.mu.Unlock()
+	if !loadsCancelled {
+		t.Fatal("selector close did not mark loads cancelled")
+	}
+}
+
 func TestSessionSelectorClearsStatusLifetimeOnSelectionCancellationAndExit(t *testing.T) {
 	fixture := loadSessionSelectorFixture(t)
 	if fixture.SchemaVersion != 2 || len(fixture.Lifetime) != 3 {

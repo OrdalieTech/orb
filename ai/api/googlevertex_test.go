@@ -267,7 +267,7 @@ func TestGoogleVertexWireOrderingAndConfigTransforms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"contents":[{"parts":[{"fileData":{"displayName":"d","fileUri":"gs://x","mimeType":"text/plain"},"text":"x"}],"role":"user"}],"systemInstruction":{"parts":[{"text":"system"}],"role":"user"},"safetySettings":[{"category":"HARM_CATEGORY_HATE_SPEECH","threshold":"BLOCK_NONE","method":"SEVERITY"}],"tools":[{"retrieval":{"vertexAiSearch":{"datastore":"d"}},"computerUse":{"environment":"ENVIRONMENT_BROWSER"},"googleSearch":{},"googleMaps":{},"codeExecution":{},"enterpriseWebSearch":{},"functionDeclarations":[{"description":"d","name":"f","parametersJsonSchema":{"type":"object"},"responseJsonSchema":{"type":"string"}}],"googleSearchRetrieval":{"dynamicRetrievalConfig":{"mode":"MODE_DYNAMIC"}},"parallelAiSearch":{"searchType":"WEB"},"urlContext":{}}],"toolConfig":{"retrievalConfig":{"latLng":{"latitude":1}},"functionCallingConfig":{"mode":"ANY","allowedFunctionNames":["f"]}},"labels":{"team":"pi"},"cachedContent":"projects/project/locations/global/cachedContents/c","modelArmorConfig":{"promptTemplateName":"armor"},"serviceTier":"FLEX","generationConfig":{"temperature":0,"topP":0.9,"topK":40,"candidateCount":1,"maxOutputTokens":12,"stopSequences":["END"],"responseLogprobs":true,"logprobs":3,"presencePenalty":0.1,"frequencyPenalty":0.2,"seed":7,"responseMimeType":"application/json","responseSchema":{"type":"OBJECT","properties":{"x":{"type":"STRING"}}},"responseJsonSchema":{"type":"object","const":"x"},"routingConfig":{"autoMode":{}},"modelConfig":{"featureSelectionPreference":"PRIORITIZE_QUALITY"},"responseModalities":["TEXT"],"mediaResolution":"MEDIA_RESOLUTION_HIGH","speechConfig":{"voiceConfig":{"prebuiltVoiceConfig":{"voiceName":"Aoede"}}},"audioTimestamp":true,"thinkingConfig":{"includeThoughts":true,"thinkingBudget":128},"imageConfig":{"aspectRatio":"1:1","imageSize":"1K","personGeneration":"ALLOW_ADULT","prominentPeople":"ALLOW","imageOutputOptions":{"mimeType":"image/png","compressionQuality":90,"custom":"kept"}}}}`
+	want := `{"contents":[{"parts":[{"fileData":{"displayName":"d","fileUri":"gs://x","mimeType":"text/plain"},"text":"x"}],"role":"user"}],"systemInstruction":{"parts":[{"text":"system"}],"role":"user"},"safetySettings":[{"category":"HARM_CATEGORY_HATE_SPEECH","threshold":"BLOCK_NONE","method":"SEVERITY"}],"serviceTier":"FLEX","tools":[{"retrieval":{"vertexAiSearch":{"datastore":"d"}},"computerUse":{"environment":"ENVIRONMENT_BROWSER"},"googleSearch":{},"googleMaps":{},"codeExecution":{},"enterpriseWebSearch":{},"functionDeclarations":[{"name":"f","description":"d","parametersJsonSchema":{"type":"object"},"responseJsonSchema":{"type":"string"}}],"googleSearchRetrieval":{"dynamicRetrievalConfig":{"mode":"MODE_DYNAMIC"}},"parallelAiSearch":{"searchType":"WEB"},"urlContext":{}}],"toolConfig":{"functionCallingConfig":{"mode":"ANY","allowedFunctionNames":["f"]},"retrievalConfig":{"latLng":{"latitude":1}}},"labels":{"team":"pi"},"cachedContent":"projects/project/locations/global/cachedContents/c","modelArmorConfig":{"promptTemplateName":"armor"},"generationConfig":{"temperature":0,"topP":0.9,"topK":40,"candidateCount":1,"maxOutputTokens":12,"stopSequences":["END"],"responseLogprobs":true,"logprobs":3,"presencePenalty":0.1,"frequencyPenalty":0.2,"seed":7,"responseMimeType":"application/json","responseSchema":{"type":"OBJECT","properties":{"x":{"type":"STRING"}}},"responseJsonSchema":{"type":"object","const":"x"},"routingConfig":{"autoMode":{}},"modelConfig":{"featureSelectionPreference":"PRIORITIZE_QUALITY"},"responseModalities":["TEXT"],"mediaResolution":"MEDIA_RESOLUTION_HIGH","speechConfig":{"voiceConfig":{"prebuiltVoiceConfig":{"voiceName":"Aoede"}}},"audioTimestamp":true,"thinkingConfig":{"includeThoughts":true,"thinkingBudget":128},"imageConfig":{"aspectRatio":"1:1","imageSize":"1K","personGeneration":"ALLOW_ADULT","prominentPeople":"ALLOW","imageOutputOptions":{"mimeType":"image/png","compressionQuality":90,"custom":"kept"}}}}`
 	if string(got) != want {
 		t.Fatalf("Vertex wire mismatch\nwant: %s\n got: %s", want, got)
 	}
@@ -434,14 +434,14 @@ func TestGoogleVertexNullUnsupportedFieldsStillError(t *testing.T) {
 	}
 }
 
-func TestGoogleVertexThinkingDiffersFromMLDev(t *testing.T) {
+func TestGoogleVertexAndMLDevShareDisabledThinkingConfig(t *testing.T) {
 	gemma := vertexTestModel("gemma-4-it")
 	vertexDisabled := disabledGoogleVertexThinkingConfig(gemma)
 	if vertexDisabled.ThinkingBudget == nil || *vertexDisabled.ThinkingBudget != 0 || vertexDisabled.ThinkingLevel != nil {
 		t.Fatalf("Vertex disabled Gemma config = %#v", vertexDisabled)
 	}
 	mldevDisabled := disabledGoogleThinkingConfig(gemma)
-	if mldevDisabled.ThinkingLevel == nil || *mldevDisabled.ThinkingLevel != GoogleThinkingMinimal {
+	if mldevDisabled.ThinkingBudget == nil || *mldevDisabled.ThinkingBudget != 0 || mldevDisabled.ThinkingLevel != nil {
 		t.Fatalf("MLDev disabled Gemma config = %#v", mldevDisabled)
 	}
 

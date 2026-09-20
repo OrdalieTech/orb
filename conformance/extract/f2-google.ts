@@ -18,6 +18,7 @@ import type {
   Tool,
  SimpleStreamOptions,
 } from "../../.upstream/packages/ai/src/types.ts";
+import { normalizeContext } from "../../.upstream/packages/ai/src/utils/transcript.ts";
 
 const FIXED_NOW = 1_700_000_000_123;
 
@@ -671,7 +672,7 @@ async function runGoogle(
         ...(patch ? { config: { ...params.config, ...patch } } : {}),
       });
     }
-    for await (const event of (definition.simple ? streamSimpleGoogle : streamGoogle)(definition.model, definition.context, options)) {
+    for await (const event of (definition.simple ? streamSimpleGoogle : streamGoogle)(definition.model, normalizeContext(definition.context), options)) {
       events.push(cloneEvent(event));
     }
   } finally {

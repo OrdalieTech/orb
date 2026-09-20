@@ -13,7 +13,7 @@ e.g. `packages/agent/src/agent-loop.ts`. The sync tool materializes that checkou
 
 ```
 orb/
-├── go.mod                    module github.com/OrdalieTech/orb   (go ≥ 1.26.6)
+├── go.mod                    module github.com/OrdalieTech/orb   (go ≥ 1.27.1)
 ├── cmd/orb/                   CLI entry point (thin: arg parsing → agent)
 ├── ai/                       port of packages/ai        — importable alone
 │   ├── api/                  one file per API shape (openairesponses.go, anthropicmessages.go, …)
@@ -77,7 +77,7 @@ orb/
 Upstream spec: `packages/ai/src/types.ts` (message/streaming model), `packages/ai/src/api/*`
 (API shapes), `packages/ai/src/providers/*` (catalog), `packages/ai/docs/`.
 
-**Types.** `Message = UserMessage | AssistantMessage | ToolResultMessage` becomes a sealed interface
+**Types.** `Message = SystemMessage | UserMessage | AssistantMessage | ToolResultMessage` becomes a sealed interface
 (`Message` with unexported marker; concrete structs). AssistantMessage content blocks
 (`TextContent | ThinkingContent | ToolCall`) likewise. Preserve: `api/provider/model/usage/stopReason/
 errorMessage` fields, opaque replay signatures (`thinkingSignature`, `textSignature`,
@@ -85,6 +85,9 @@ errorMessage` fields, opaque replay signatures (`thinkingSignature`, `textSignat
 cacheRead/cacheWrite/cacheWrite1h/reasoning/cost, thinking levels `off|minimal|low|medium|high|xhigh|max`.
 Wire emission goes through `ai.Marshal`, which matches `JSON.stringify` escaping and non-finite
 tool-argument behavior; protocol code must not call `encoding/json.Marshal` directly.
+System messages carry prompt sections and tool-state changes in the transcript. Existing Go
+`Context.SystemPrompt`/`Context.Tools` fields remain available to legacy stream functions; provider
+adapters project the transcript into their native request format.
 
 **Streaming.** The `AssistantMessageEvent` protocol (`start`, `text_/thinking_/toolcall_` ×
 `start/delta/end`, `done`, `error`) is the universal stream contract. Go surface:

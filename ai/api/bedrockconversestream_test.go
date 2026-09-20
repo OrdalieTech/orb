@@ -122,6 +122,25 @@ func TestBedrockThinkingReplayAndCacheSupport(t *testing.T) {
 	}
 }
 
+func TestBedrockOneHourCacheWriteUsageAndCost(t *testing.T) {
+	model := bedrockTestModel("anthropic.claude-opus-4-8", "Claude Opus 4.8")
+	output := newAssistantMessage(model)
+	processor := bedrockStreamProcessor{model: model, output: output}
+	if err := processor.handle(bedrockStreamItem{
+		Kind: bedrockItemMetadata, InputTokens: 100, OutputTokens: 5,
+		CacheWriteTokens: 1_000_000, CacheWrite1hTokens: 400_000, TotalTokens: 1_000_105,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if output.Usage.CacheWrite1h == nil || *output.Usage.CacheWrite1h != 400_000 {
+		t.Fatalf("cacheWrite1h = %#v", output.Usage.CacheWrite1h)
+	}
+	want := (600_000*model.Cost.CacheWrite + 400_000*model.Cost.Input*2) / 1_000_000
+	if output.Usage.Cost.CacheWrite != want {
+		t.Fatalf("cache write cost = %v, want %v", output.Usage.Cost.CacheWrite, want)
+	}
+}
+
 func TestBedrockThinkingFieldsMatchModelFamilies(t *testing.T) {
 	reasoning := ai.ThinkingXHigh
 	display := BedrockThinkingOmitted

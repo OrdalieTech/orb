@@ -138,7 +138,7 @@ var directRules = []rule{
 	{"google-vertex", "google-vertex", ai.APIGoogleVertex, "https://{location}-aiplatform.googleapis.com"},
 	{"groq", "groq", ai.APIOpenAICompletions, "https://api.groq.com/openai/v1"},
 	{"huggingface", "huggingface", ai.APIOpenAICompletions, "https://router.huggingface.co/v1"},
-	{"kimi-for-coding", "kimi-coding", ai.APIAnthropicMessages, "https://api.kimi.com/coding"},
+	{"kimi-code-plan-global", "kimi-coding", ai.APIAnthropicMessages, "https://api.kimi.com/coding"},
 	{"minimax", "minimax", ai.APIAnthropicMessages, "https://api.minimax.io/anthropic"},
 	{"minimax-cn", "minimax-cn", ai.APIAnthropicMessages, "https://api.minimaxi.com/anthropic"},
 	{"mistral", "mistral", ai.APIMistralConversations, "https://api.mistral.ai"},
@@ -154,6 +154,21 @@ var directRules = []rule{
 	{"zhipuai-coding-plan", "zai-coding-cn", ai.APIOpenAICompletions, "https://open.bigmodel.cn/api/coding/paas/v4"},
 }
 
+var fireworksAdaptiveThinkingFallbackModels = map[string]struct{}{
+	"accounts/fireworks/models/deepseek-v4-flash-0731":       {},
+	"accounts/fireworks/models/deepseek-v4-flash-vision-exp": {},
+	"accounts/fireworks/models/deepseek-v4-pro-0813":         {},
+	"accounts/fireworks/models/qwen3p8-max":                  {},
+	"accounts/fireworks/models/qwen3p8-2p4t-a95b":            {},
+}
+
+func fireworksUsesAdaptiveThinking(id string, options []sourceReasoningOption) bool {
+	if _, verified := fireworksAdaptiveThinkingFallbackModels[id]; verified {
+		return true
+	}
+	return slices.ContainsFunc(options, func(option sourceReasoningOption) bool { return option.Type == "effort" })
+}
+
 // Generate converts the aggregated source listings. Radius is deliberately absent.
 func Generate(sources Sources) (map[string]map[string]ai.Model, error) {
 	var source map[string]sourceProvider
@@ -162,7 +177,11 @@ func Generate(sources Sources) (map[string]map[string]ai.Model, error) {
 	}
 	result := make(map[string]map[string]ai.Model)
 	for _, item := range directRules {
-		addRule(result, source[item.source], item)
+		providerSource := source[item.source]
+		if item.source == "kimi-code-plan-global" && len(providerSource.Models) == 0 {
+			providerSource = source["kimi-for-coding"]
+		}
+		addRule(result, providerSource, item)
 	}
 	addBaseten(result, source["baseten"])
 	addQwenTokenPlanIndividual(result, source["alibaba-token-plan"])
@@ -199,7 +218,12 @@ func Generate(sources Sources) (map[string]map[string]ai.Model, error) {
 	addCodex(result)
 	addAntLing(result)
 	addMissingOpenAI(result)
-	upsert(result, ai.Model{ID: "deepseek-v4-flash-vision-exp", Name: "DeepSeek V4 Flash Vision Exp", API: ai.APIOpenAICompletions, Provider: "deepseek", BaseURL: "https://api.deepseek.com", Reasoning: true, Input: ai.InputModalities{ai.InputText, ai.InputImage}, Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: .14, Output: .28, CacheRead: .0028}}, ContextWindow: 1000000, MaxTokens: 384000})
+	delete(result["deepseek"], "deepseek-v4-flash")
+	if model, ok := result["deepseek"]["deepseek-v4-pro"]; ok {
+		model.Cost = ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: 1.32, Output: 3.96, CacheRead: .044}}
+		result["deepseek"][model.ID] = model
+	}
+	upsert(result, ai.Model{ID: "deepseek-flash", Name: "DeepSeek V4.1 Flash", API: ai.APIOpenAICompletions, Provider: "deepseek", BaseURL: "https://api.deepseek.com", Reasoning: true, Input: ai.InputModalities{ai.InputText, ai.InputImage}, Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: .3, Output: 1.2, CacheRead: .006}}, ContextWindow: 1000000, MaxTokens: 384000})
 	addAzure(result)
 	addProviderAliases(result)
 	for _, models := range result {
@@ -334,7 +358,41 @@ func addRule(result map[string]map[string]ai.Model, source sourceProvider, item 
 			}
 			id, name = "qwen3.8-max", "Qwen3.8 Max"
 		}
-		model := normalizedModel(id, name, raw, item.api, item.provider, item.baseURL)
+		modelSource := raw
+		if item.provider == "google" || item.provider == "google-vertex" {
+			switch id {
+			case "gemini-flash-latest":
+				if current, exists := source.Models["gemini-3.5-flash"]; exists {
+					modelSource = current
+				}
+			case "gemini-flash-lite-latest":
+				if current, exists := source.Models["gemini-3.1-flash-lite"]; exists {
+					modelSource = current
+				}
+			}
+		}
+		model := normalizedModel(id, name, modelSource, item.api, item.provider, item.baseURL)
+		if item.provider == "google" || item.provider == "google-vertex" {
+			if thinking := effortThinkingLevelMap(modelSource.ReasoningOptions); thinking != nil {
+				model.ThinkingLevelMap = thinking
+			}
+		}
+		if item.provider == "fireworks" && model.API == ai.APIAnthropicMessages && fireworksUsesAdaptiveThinking(id, raw.ReasoningOptions) {
+			model.Compat = mustCompatJSON(ai.AnthropicMessagesCompat{ForceAdaptiveThinking: ptr(true)})
+			if thinking := effortThinkingLevelMap(raw.ReasoningOptions); thinking != nil {
+				model.ThinkingLevelMap = thinking
+			}
+			if id == "accounts/fireworks/models/qwen3p8-max" && model.ThinkingLevelMap == nil {
+				model.ThinkingLevelMap = effortThinkingLevelMap([]sourceReasoningOption{{Type: "effort", Values: []*string{ptr("low"), ptr("medium"), ptr("xhigh")}}})
+			}
+			if slices.ContainsFunc(raw.ReasoningOptions, func(option sourceReasoningOption) bool { return option.Type == "toggle" }) ||
+				id == "accounts/fireworks/models/qwen3p8-2p4t-a95b" {
+				mergeThinking(&model, thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingOff: "none"}))
+			}
+			if id == "accounts/fireworks/models/deepseek-v4-pro-0813" {
+				mergeThinking(&model, thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingLow: "low"}))
+			}
+		}
 		if item.provider == "fireworks" && strings.Contains(id, "glm-") {
 			model.API = ai.APIOpenAICompletions
 			model.BaseURL = "https://api.fireworks.ai/inference/v1"
@@ -343,9 +401,11 @@ func addRule(result map[string]map[string]ai.Model, source sourceProvider, item 
 		if item.provider == "mistral" && model.Cost.CacheRead == 0 && model.Cost.Input != 0 {
 			model.Cost.CacheRead = roundCost(model.Cost.Input * 0.1)
 		}
-		if item.provider == "google-vertex" && id == "gemini-2.5-flash" {
-			model.Cost.CacheRead = 0.03
+		if item.provider == "google-vertex" {
 			model.Cost.CacheWrite = 0
+			if id == "gemini-2.5-flash" {
+				model.Cost.CacheRead = 0.03
+			}
 		}
 		if item.provider == "amazon-bedrock" && raw.StructuredOutput {
 			model.Compat = mustCompatJSON(struct {
@@ -438,7 +498,7 @@ func addBaseten(result map[string]map[string]ai.Model, source sourceProvider) {
 			SupportsStore: ptr(false), SupportsDeveloperRole: ptr(false),
 			SupportsReasoningEffort: ptr(supportsEffort), SupportsUsageInStreaming: ptr(true),
 			MaxTokensField: ptr(ai.MaxTokensFieldLegacy), SupportsStrictMode: ptr(true),
-			SupportsLongCacheRetention: ptr(false),
+			SupportsLongCacheRetention: ptr(false), SendSessionAffinityHeaders: ptr(true),
 		}
 		if supportsToggle {
 			compat.ThinkingFormat = ptr(ai.ThinkingFormatBaseten)
@@ -545,6 +605,9 @@ func addOpenCode(result map[string]map[string]ai.Model, source sourceProvider, p
 			api = ai.APIOpenAIResponses
 		}
 		model := normalizedModel(key, raw.Name, raw, api, provider, baseURL)
+		if api == ai.APIGoogleGenerativeAI || provider == "opencode-go" && key == "deepseek-v4.1-flash" {
+			model.ThinkingLevelMap = effortThinkingLevelMap(raw.ReasoningOptions)
+		}
 		if raw.Provider.NPM == "@ai-sdk/alibaba" {
 			model.Compat = mustCompatJSON(ai.OpenAICompletionsCompat{CacheControlFormat: ptr(ai.CacheControlAnthropic)})
 		}
@@ -561,7 +624,7 @@ func addCopilot(result map[string]map[string]ai.Model, source sourceProvider) {
 		api := ai.APIOpenAICompletions
 		if isCopilotClaude(key) {
 			api = ai.APIAnthropicMessages
-		} else if strings.HasPrefix(key, "grok-") || strings.HasPrefix(key, "gpt-5") || strings.HasPrefix(key, "oswe") || strings.HasPrefix(key, "mai-") {
+		} else if strings.HasPrefix(key, "grok-") || strings.HasPrefix(key, "gpt-") || strings.HasPrefix(key, "oswe") || strings.HasPrefix(key, "mai-") {
 			api = ai.APIOpenAIResponses
 		}
 		model := normalizedModel(key, raw.Name, raw, api, "github-copilot", "https://api.individual.githubcopilot.com")
@@ -826,6 +889,7 @@ func addVercelGateway(result map[string]map[string]ai.Model, listing []byte) err
 				CacheRead: roundCost(float64(model.Pricing.InputCacheRead) * 1000000), CacheWrite: roundCost(float64(model.Pricing.InputCacheWrite) * 1000000),
 			}},
 			ContextWindow: contextWindow, MaxTokens: maxTokens,
+			Compat: mustCompatJSON(ai.AnthropicMessagesCompat{AllowEmptySignature: ptr(true)}),
 		})
 	}
 	return nil
@@ -882,9 +946,8 @@ func addCodex(result map[string]map[string]ai.Model) {
 		input    ai.InputModalities
 		cost     ai.ModelCostRates
 	}{
+		{"gpt-6-astra", "GPT-6 Astra", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: 10, Output: 50, CacheRead: 1, CacheWrite: 12.5}},
 		{"gpt-5.3-codex-spark", "GPT-5.3 Codex Spark", 128000, ai.InputModalities{ai.InputText}, ai.ModelCostRates{Input: 1.75, Output: 14, CacheRead: .175}},
-		{"gpt-5.4", "GPT-5.4", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: 2.5, Output: 15, CacheRead: .25}},
-		{"gpt-5.4-mini", "GPT-5.4 mini", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: .75, Output: 4.5, CacheRead: .075}},
 		{"gpt-5.5", "GPT-5.5", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: 5, Output: 30, CacheRead: .5}},
 		{"gpt-5.6-luna", "GPT-5.6 Luna", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: 1, Output: 6, CacheRead: .1, CacheWrite: 1.25}},
 		{"gpt-5.6-sol", "GPT-5.6 Sol", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: 5, Output: 30, CacheRead: .5, CacheWrite: 6.25}},
@@ -923,6 +986,14 @@ func addAzure(result map[string]map[string]ai.Model) {
 }
 
 func addMissingOpenAI(result map[string]map[string]ai.Model) {
+	upsert(result, ai.Model{
+		ID: "gpt-6-astra", Name: "GPT-6 Astra", API: ai.APIOpenAIResponses, Provider: "openai",
+		BaseURL: "https://api.openai.com/v1", Reasoning: true, Input: ai.InputModalities{ai.InputText, ai.InputImage},
+		Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: 10, Output: 50, CacheRead: 1, CacheWrite: 12.5}, Tiers: &[]ai.ModelCostTier{{
+			InputTokensAbove: 272000, ModelCostRates: ai.ModelCostRates{Input: 20, Output: 75, CacheRead: 2, CacheWrite: 25},
+		}}},
+		ContextWindow: 272000, MaxTokens: 128000,
+	})
 	upsert(result, ai.Model{
 		ID: "gpt-5-chat-latest", Name: "GPT-5 Chat Latest", API: ai.APIOpenAIResponses,
 		Provider: "openai", BaseURL: "https://api.openai.com/v1", Input: ai.InputModalities{ai.InputText, ai.InputImage},

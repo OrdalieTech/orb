@@ -454,6 +454,7 @@ func buildBedrockPayload(
 	requestContext ai.Context,
 	options *BedrockConverseStreamOptions,
 ) (*BedrockConverseStreamPayload, error) {
+	requestContext = collapseProviderContext(requestContext)
 	retention := resolveCacheRetention(bedrockStreamOptions(options))
 	messages, err := convertBedrockMessages(requestContext, model, retention, bedrockStreamOptions(options))
 	if err != nil {
@@ -969,22 +970,24 @@ const (
 )
 
 type bedrockStreamItem struct {
-	Kind               bedrockStreamItemKind
-	Role               string
-	ContentBlockIndex  int
-	ToolUseID          string
-	ToolName           string
-	Text               *string
-	ToolInput          *string
-	ReasoningText      *string
-	ReasoningSignature *string
-	RedactedContent    []byte
-	StopReason         string
-	InputTokens        int64
-	OutputTokens       int64
-	CacheReadTokens    int64
-	CacheWriteTokens   int64
-	TotalTokens        int64
+	Kind                bedrockStreamItemKind
+	Role                string
+	ContentBlockIndex   int
+	ToolUseID           string
+	ToolName            string
+	Text                *string
+	ToolInput           *string
+	ReasoningText       *string
+	ReasoningSignature  *string
+	RedactedContent     []byte
+	StopReason          string
+	InputTokens         int64
+	OutputTokens        int64
+	CacheReadTokens     int64
+	CacheWriteTokens    int64
+	CacheWrite1hTokens  int64
+	CacheDetailsPresent bool
+	TotalTokens         int64
 }
 
 type bedrockResponse interface {
@@ -1046,6 +1049,10 @@ func (processor *bedrockStreamProcessor) handle(item bedrockStreamItem) error {
 		processor.output.Usage.Output = item.OutputTokens
 		processor.output.Usage.CacheRead = item.CacheReadTokens
 		processor.output.Usage.CacheWrite = item.CacheWriteTokens
+		if item.CacheDetailsPresent || item.CacheWrite1hTokens != 0 {
+			cacheWrite1h := item.CacheWrite1hTokens
+			processor.output.Usage.CacheWrite1h = &cacheWrite1h
+		}
 		processor.output.Usage.TotalTokens = item.TotalTokens
 		if processor.output.Usage.TotalTokens == 0 {
 			processor.output.Usage.TotalTokens = item.InputTokens + item.OutputTokens
@@ -2009,6 +2016,12 @@ func convertBedrockSDKEvent(event bedrocktypes.ConverseStreamOutput) bedrockStre
 			item.OutputTokens = int64(aws.ToInt32(value.Value.Usage.OutputTokens))
 			item.CacheReadTokens = int64(aws.ToInt32(value.Value.Usage.CacheReadInputTokens))
 			item.CacheWriteTokens = int64(aws.ToInt32(value.Value.Usage.CacheWriteInputTokens))
+			item.CacheDetailsPresent = value.Value.Usage.CacheDetails != nil
+			for _, detail := range value.Value.Usage.CacheDetails {
+				if detail.Ttl == bedrocktypes.CacheTTLOneHour {
+					item.CacheWrite1hTokens += int64(aws.ToInt32(detail.InputTokens))
+				}
+			}
 			item.TotalTokens = int64(aws.ToInt32(value.Value.Usage.TotalTokens))
 		}
 		return item

@@ -261,46 +261,24 @@ var defaultAutocompleteTriggerCharacters = []string{"@", "#"}
 
 func matchesAutocompleteTrigger(text string, triggerCharacters []string) bool {
 	runes := []rune(text)
+	if quoted := strings.LastIndex(text, `@"`); quoted >= 0 {
+		start := runeLen(text[:quoted])
+		if isAutocompleteBoundary(runes, start) && !strings.ContainsRune(text[quoted+2:], '"') {
+			return containsString(triggerCharacters, "@")
+		}
+	}
 	start := 0
-	for index, r := range runes {
-		if isWhitespaceRune(r) {
+	for index := len(runes) - 1; index >= 0; index-- {
+		if isAutocompleteSeparator(runes[index]) {
 			start = index + 1
+			break
 		}
 	}
 	return start < len(runes) && containsString(triggerCharacters, string(runes[start]))
 }
 
 func matchesAutocompleteDebounce(text string, triggerCharacters []string) bool {
-	runes := []rune(text)
-	starts := []int{0}
-	for index, r := range runes {
-		if r == ' ' || r == '\t' {
-			starts = append(starts, index+1)
-		}
-	}
-	for index := len(starts) - 1; index >= 0; index-- {
-		token := runes[starts[index]:]
-		if len(token) == 0 {
-			continue
-		}
-		if token[0] == '@' {
-			remainder := token[1:]
-			if len(remainder) > 0 && remainder[0] == '"' {
-				if !strings.ContainsRune(string(remainder[1:]), '"') {
-					return true
-				}
-			}
-			if !strings.ContainsFunc(string(remainder), isWhitespaceRune) {
-				return true
-			}
-			continue
-		}
-		if containsString(triggerCharacters, string(token[0])) && token[0] != '@' &&
-			!strings.ContainsFunc(string(token[1:]), isWhitespaceRune) {
-			return true
-		}
-	}
-	return false
+	return matchesAutocompleteTrigger(text, triggerCharacters)
 }
 
 const (
@@ -1288,15 +1266,11 @@ func (editor *Editor) insertCharacter(char string, skipUndoCoalescing bool) {
 		editor.tryTriggerAutocomplete()
 	case containsString(editor.autocompleteTriggerCharacters, char):
 		currentLine := editor.currentLine()
-		textBeforeCursor := []rune(runeSlice(currentLine, 0, editor.state.cursorCol))
-		var charBeforeSymbol rune
-		if len(textBeforeCursor) >= 2 {
-			charBeforeSymbol = textBeforeCursor[len(textBeforeCursor)-2]
-		}
-		if len(textBeforeCursor) == 1 || charBeforeSymbol == ' ' || charBeforeSymbol == '\t' {
+		textBeforeCursor := runeSlice(currentLine, 0, editor.state.cursorCol)
+		if matchesAutocompleteTrigger(textBeforeCursor, editor.autocompleteTriggerCharacters) {
 			editor.tryTriggerAutocomplete()
 		}
-	case isSlashWordChar(char):
+	case isSlashWordChar(char) || isCJKBreakGrapheme(char):
 		currentLine := editor.currentLine()
 		textBeforeCursor := runeSlice(currentLine, 0, editor.state.cursorCol)
 		if editor.isInSlashCommandContext(textBeforeCursor) {

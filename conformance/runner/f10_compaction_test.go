@@ -193,12 +193,8 @@ type f10PromptExpected struct {
 
 type f10CapturedRequest struct {
 	Context struct {
-		SystemPrompt string `json:"systemPrompt"`
-		Messages     []struct {
-			Content []struct {
-				Text string `json:"text"`
-			} `json:"content"`
-		} `json:"messages"`
+		SystemPrompt string            `json:"systemPrompt"`
+		Messages     []json.RawMessage `json:"messages"`
 	} `json:"context"`
 	Options struct {
 		MaxTokens      float64 `json:"maxTokens"`
@@ -584,14 +580,31 @@ func f10Capture(request ai.Context, options *ai.SimpleStreamOptions) f10ActualCa
 
 func assertF10Capture(t testing.TB, got f10ActualCapture, expected f10CapturedRequest) {
 	t.Helper()
+	expectedMessages := make(ai.MessageList, 0, len(expected.Context.Messages))
+	for _, raw := range expected.Context.Messages {
+		message, err := ai.UnmarshalMessage(raw)
+		if err != nil {
+			t.Fatalf("decode expected capture message: %v", err)
+		}
+		expectedMessages = append(expectedMessages, message)
+	}
+	systemPrompt := expected.Context.SystemPrompt
+	if current := ai.CurrentSystemPrompt(expectedMessages); current != "" {
+		systemPrompt = current
+	}
 	want := f10ActualCapture{
-		SystemPrompt:   expected.Context.SystemPrompt,
+		SystemPrompt:   systemPrompt,
 		MaxTokens:      expected.Options.MaxTokens,
 		Reasoning:      expected.Options.Reasoning,
 		CacheRetention: expected.Options.CacheRetention,
 	}
-	if len(expected.Context.Messages) > 0 && len(expected.Context.Messages[0].Content) > 0 {
-		want.Prompt = expected.Context.Messages[0].Content[0].Text
+	for _, message := range expectedMessages {
+		if user, ok := message.(*ai.UserMessage); ok && len(user.Content.Blocks) > 0 {
+			if text, ok := user.Content.Blocks[0].(*ai.TextContent); ok {
+				want.Prompt = text.Text
+				break
+			}
+		}
 	}
 	if expected.Options.SessionID != "" {
 		if !f10UUIDv7(expected.Options.SessionID) {

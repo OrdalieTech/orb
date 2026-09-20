@@ -251,6 +251,9 @@ function createAPI(state) {
 			if (!tool || typeof tool !== "object" || typeof tool.name !== "string" || typeof tool.execute !== "function") {
 				throw new TypeError("registerTool requires a named tool with an execute function");
 			}
+			if (!tool.parameters || typeof tool.parameters !== "object" || Array.isArray(tool.parameters)) {
+				throw new TypeError(`Tool "${tool.name}" registered by extension "${state.path}" must define an object parameter schema.`);
+			}
 			state.tools.set(tool.name, tool);
 			registerWithOrb(state, "register_tool", { extensionId: state.id, definition: serializableTool(tool, state) });
 		},
@@ -282,7 +285,19 @@ function createAPI(state) {
 			}
 			const subscriptionId = `${state.id}-sub-${state.nextSubscriptionId++}`;
 			state.subscriptions.set(subscriptionId, handler);
-			registerWithOrb(state, "subscribe_event", { extensionId: state.id, subscriptionId, event });
+			const registration = registerWithOrb(state, "subscribe_event", { extensionId: state.id, subscriptionId, event });
+			let subscribed = true;
+			return () => {
+				if (!subscribed) return;
+				subscribed = false;
+				state.subscriptions.delete(subscriptionId);
+				if (!state.loaded) {
+					const index = state.registrations.indexOf(registration);
+					if (index >= 0) state.registrations.splice(index, 1);
+					return;
+				}
+				registerWithOrb(state, "unsubscribe_event", { extensionId: state.id, subscriptionId });
+			};
 		},
 	};
 	for (const section of hostSections) section.extendAPI?.(api, state);

@@ -215,6 +215,7 @@ type googleWireGenerationConfig struct {
 }
 
 func buildGoogleParameters(model *ai.Model, requestContext ai.Context, options *GoogleOptions) (GoogleGenerateContentParameters, error) {
+	requestContext = collapseProviderContext(requestContext)
 	contents, err := convertGoogleMessages(model, requestContext)
 	if err != nil {
 		return GoogleGenerateContentParameters{}, err
@@ -542,7 +543,7 @@ func mapGoogleStopReason(reason string) (ai.StopReason, error) {
 	case "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "SAFETY", "IMAGE_SAFETY",
 		"IMAGE_PROHIBITED_CONTENT", "IMAGE_RECITATION", "IMAGE_OTHER", "RECITATION",
 		"FINISH_REASON_UNSPECIFIED", "OTHER", "LANGUAGE", "MALFORMED_FUNCTION_CALL",
-		"UNEXPECTED_TOOL_CALL", "NO_IMAGE":
+		"UNEXPECTED_TOOL_CALL", "TOO_MANY_TOOL_CALLS", "NO_IMAGE":
 		return ai.StopReasonError, nil
 	default:
 		return ai.StopReasonError, fmt.Errorf("Unhandled stop reason: %s", reason) //nolint:staticcheck // Exact upstream text.

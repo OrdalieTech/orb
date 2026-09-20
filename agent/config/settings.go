@@ -692,6 +692,28 @@ func (manager *SettingsManager) GetCompactionSettings() CompactionSettings {
 	}
 }
 
+// GetCompactionSettingsForModel resolves an exact provider/modelId override
+// while retaining GetCompactionSettings for source compatibility.
+func (manager *SettingsManager) GetCompactionSettingsForModel(model *ai.Model) CompactionSettings {
+	settings := manager.GetCompactionSettings()
+	if model == nil {
+		return settings
+	}
+	compaction := manager.objectValue("compaction")
+	overrides := nestedObject(compaction, "modelOverrides")
+	entry, ok := overrides[string(model.Provider)+"/"+model.ID].(map[string]any)
+	if !ok {
+		return settings
+	}
+	if value, valid := nonNegativeInteger(entry["reserveTokens"]); valid {
+		settings.ReserveTokens = value
+	}
+	if value, valid := nonNegativeInteger(entry["keepRecentTokens"]); valid {
+		settings.KeepRecentTokens = value
+	}
+	return settings
+}
+
 func (manager *SettingsManager) GetBranchSummarySettings() BranchSummarySettings {
 	object := manager.objectValue("branchSummary")
 	return BranchSummarySettings{
@@ -706,6 +728,33 @@ func (manager *SettingsManager) GetRetrySettings() RetrySettings {
 		Enabled:     boolDefault(object, "enabled", true),
 		MaxRetries:  int(int64Default(object, "maxRetries", 3)),
 		BaseDelayMS: int64Default(object, "baseDelayMs", 2000),
+	}
+}
+
+func (manager *SettingsManager) GetMaxAgentRetryDelayMS() int64 {
+	object := manager.objectValue("retry")
+	if value, valid := nonNegativeInteger(object["maxAgentDelayMs"]); valid {
+		return value
+	}
+	return ai.DefaultMaxAgentRetryDelayMS
+}
+
+func nonNegativeInteger(value any) (int64, bool) {
+	switch number := value.(type) {
+	case json.Number:
+		parsed, err := number.Int64()
+		return parsed, err == nil && parsed >= 0
+	case float64:
+		if number < 0 || number > math.MaxInt64 || math.Trunc(number) != number {
+			return 0, false
+		}
+		return int64(number), true
+	case int64:
+		return number, number >= 0
+	case int:
+		return int64(number), number >= 0
+	default:
+		return 0, false
 	}
 }
 

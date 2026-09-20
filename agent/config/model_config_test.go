@@ -156,6 +156,7 @@ func TestLoadModelsJSONRejectsInvalidSchema(t *testing.T) {
 		"empty id":                 `{"providers":{"p":{"baseUrl":"x","api":"openai-completions","models":[{"id":""}]}}}`,
 		"invalid input":            `{"providers":{"p":{"models":[{"id":"m","input":["audio"]}]}}}`,
 		"incomplete model cost":    `{"providers":{"p":{"models":[{"id":"m","cost":{"input":1}}]}}}`,
+		"invalid prompt cache":     `{"providers":{"p":{"models":[{"id":"m","promptCache":{"short":"300"}}]}}}`,
 		"invalid thinking value":   `{"providers":{"p":{"models":[{"id":"m","thinkingLevelMap":{"off":3}}]}}}`,
 		"invalid common compat":    `{"providers":{"p":{"compat":{"supportsLongCacheRetention":"yes"}}}}`,
 		"invalid override headers": `{"providers":{"p":{"modelOverrides":{"m":{"headers":{"X-Test":1}}}}}}`,
@@ -174,6 +175,21 @@ func TestLoadModelsJSONRejectsInvalidSchema(t *testing.T) {
 				t.Fatalf("invalid models.json did not become an empty error snapshot: %#v", config)
 			}
 		})
+	}
+}
+
+func TestModelsJSONAcceptsPartialPromptCacheMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "models.json")
+	content := `{"providers":{"p":{"models":[{"id":"m","promptCache":{"long":3600}}]}}}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadModelConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Error() != "" {
+		t.Fatalf("prompt cache metadata rejected: %s", config.Error())
 	}
 }
 

@@ -190,7 +190,7 @@ func TestToolCallUnmarshalPreservesStreamingScratch(t *testing.T) {
 }
 
 func TestUnmarshalMessageRejectsUnknownRole(t *testing.T) {
-	if _, err := ai.UnmarshalMessage([]byte(`{"role":"system"}`)); err == nil {
+	if _, err := ai.UnmarshalMessage([]byte(`{"role":"future"}`)); err == nil {
 		t.Fatal("unknown role accepted")
 	}
 }

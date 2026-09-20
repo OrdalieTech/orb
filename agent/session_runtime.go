@@ -303,7 +303,7 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 			turn.Context = &next
 		}
 		model := snapshot.Model
-		settings := runtime.settings.GetCompactionSettings()
+		settings := runtime.settings.GetCompactionSettingsForModel(model)
 		if turn.Context != nil && model != nil && model.ContextWindow > 0 && harness.ShouldCompact(harness.EstimateContextTokens(turn.Context.Messages).Tokens, model.ContextWindow, harness.CompactionSettings{Enabled: runtime.autoCompactionEnabled(), ReserveTokens: settings.ReserveTokens, KeepRecentTokens: settings.KeepRecentTokens}) {
 			if _, err := runtime.runAutoCompaction(ctx, "threshold", false); err != nil {
 				return nil, err
@@ -969,7 +969,7 @@ func (runtime *SessionRuntime) persistMessage(message engine.AgentMessage) error
 		return err
 	}
 	switch role {
-	case "user", "assistant", "toolResult":
+	case "system", "user", "assistant", "toolResult":
 		_, err = runtime.manager.AppendMessage(message)
 		return err
 	case "custom":
@@ -1004,7 +1004,18 @@ func (runtime *SessionRuntime) prepareRetry(ctx context.Context, message *ai.Ass
 		runtime.mu.Unlock()
 		return false, nil
 	}
-	delay := settings.BaseDelayMS * int64(1<<(attempt-1))
+	delay := settings.BaseDelayMS
+	maximum := runtime.settings.GetMaxAgentRetryDelayMS()
+	for index := 1; index < attempt && delay < maximum; index++ {
+		if delay > maximum/2 {
+			delay = maximum
+			break
+		}
+		delay *= 2
+	}
+	if delay > maximum {
+		delay = maximum
+	}
 	retryContext, cancel := context.WithCancel(ctx)
 	runtime.retryCancel = cancel
 	runtime.refreshIdleWaitLocked()
@@ -1063,6 +1074,8 @@ func (runtime *SessionRuntime) summarizationComplete(source, reason string) harn
 		policy := &ai.RetryPolicy{
 			Enabled: settings.Enabled, MaxRetries: settings.MaxRetries, BaseDelayMS: settings.BaseDelayMS,
 		}
+		maximum := runtime.settings.GetMaxAgentRetryDelayMS()
+		policy.MaxAgentDelayMS = &maximum
 		callbacks := &ai.RetryCallbacks{
 			OnRetryScheduled: func(attempt, maxAttempts int, delayMS int64, errorMessage string) error {
 				runtime.emit(SummarizationRetryScheduledEvent{
@@ -1086,7 +1099,6 @@ func (runtime *SessionRuntime) summarizationComplete(source, reason string) harn
 }
 
 func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.AssistantMessage, skipAbortedCheck bool) (bool, error) {
-	settings := runtime.settings.GetCompactionSettings()
 	if !runtime.autoCompactionEnabled() || (skipAbortedCheck && message.StopReason == ai.StopReasonAborted) {
 		return false, nil
 	}
@@ -1094,6 +1106,7 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 	if state.Model == nil || IsUnknownModel(state.Model) {
 		return false, nil
 	}
+	settings := runtime.settings.GetCompactionSettingsForModel(state.Model)
 	latestTimestamp, hasLatest := runtime.manager.GetLatestCompactionTimestamp()
 	if hasLatest && message.Timestamp <= parseSessionTimestamp(latestTimestamp) {
 		return false, nil
@@ -1132,7 +1145,7 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 		}
 		contextTokens = estimate.Tokens
 	}
-	if harness.ShouldCompact(contextTokens, state.Model.ContextWindow, harness.CompactionSettings{
+	if state.Model.ContextWindow > 0 && harness.ShouldCompact(contextTokens, state.Model.ContextWindow, harness.CompactionSettings{
 		Enabled: runtime.autoCompactionEnabled(), ReserveTokens: settings.ReserveTokens, KeepRecentTokens: settings.KeepRecentTokens,
 	}) {
 		return runtime.runAutoCompaction(ctx, "threshold", false)
@@ -1142,15 +1155,18 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 
 func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason string, willRetry bool) (bool, error) {
 	var fromExtension bool
-	settings := runtime.settings.GetCompactionSettings()
+	model := runtime.agent.State().Model
+	settings := runtime.settings.GetCompactionSettingsForModel(model)
 	branch := runtime.manager.GetBranch()
 	preparation, err := harness.PrepareLegacyCompaction(projectSessionEntries(branch), harness.CompactionSettings{
 		Enabled: runtime.autoCompactionEnabled(), ReserveTokens: settings.ReserveTokens, KeepRecentTokens: settings.KeepRecentTokens,
 	})
+	if preparation != nil && !hasCompactionConversation(preparation) {
+		preparation = nil
+	}
 	if err != nil || preparation == nil {
 		return false, err
 	}
-	runtime.emit(CompactionStartEvent{Reason: reason})
 	compactionContext, cancel := context.WithCancel(ctx)
 	runtime.mu.Lock()
 	runtime.autoCompactionCancel = cancel
@@ -1163,6 +1179,11 @@ func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason str
 		runtime.refreshIdleWaitLocked()
 		runtime.mu.Unlock()
 	}()
+	runtime.emit(CompactionStartEvent{Reason: reason})
+	if compactionContext.Err() != nil {
+		runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: reason, Aborted: true}, false)
+		return false, nil
+	}
 	result, fromExtension, extensionCancelled := runtime.beforeExtensionCompaction(
 		compactionContext, preparation, branch, nil, extensions.CompactionReason(reason), willRetry,
 	)
@@ -1171,7 +1192,7 @@ func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason str
 		compactErr = context.Canceled
 	} else if result == nil {
 		var harnessResult *harness.CompactionResult
-		harnessResult, compactErr = harness.CompactProduct(compactionContext, preparation, runtime.agent.State().Model, runtime.summarizationComplete("compaction", reason), "", runtime.agent.State().ThinkingLevel, nil)
+		harnessResult, compactErr = harness.CompactProduct(compactionContext, preparation, model, runtime.summarizationComplete("compaction", reason), "", runtime.agent.State().ThinkingLevel, nil)
 		result = codingCompactionResult(harnessResult)
 	}
 	wasCancelled := compactionContext.Err() != nil
@@ -1253,11 +1274,15 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 		runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: "manual", ErrorMessage: &message}, fromExtension)
 		return nil, err
 	}
-	settings := runtime.settings.GetCompactionSettings()
+	model := runtime.agent.State().Model
+	settings := runtime.settings.GetCompactionSettingsForModel(model)
 	branch := runtime.manager.GetBranch()
 	preparation, err := harness.PrepareLegacyCompaction(projectSessionEntries(branch), harness.CompactionSettings{
 		Enabled: settings.Enabled, ReserveTokens: settings.ReserveTokens, KeepRecentTokens: settings.KeepRecentTokens,
 	})
+	if preparation != nil && !hasCompactionConversation(preparation) {
+		preparation = nil
+	}
 	if err != nil || preparation == nil {
 		if err == nil {
 			if len(branch) > 0 && branch[len(branch)-1].Type == "compaction" {
@@ -1281,7 +1306,7 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 		err = errors.New("Compaction cancelled")
 	} else if result == nil {
 		var harnessResult *harness.CompactionResult
-		harnessResult, err = harness.CompactProduct(compactionContext, preparation, runtime.agent.State().Model, runtime.summarizationComplete("compaction", "manual"), customInstructions, runtime.agent.State().ThinkingLevel, nil)
+		harnessResult, err = harness.CompactProduct(compactionContext, preparation, model, runtime.summarizationComplete("compaction", "manual"), customInstructions, runtime.agent.State().ThinkingLevel, nil)
 		result = codingCompactionResult(harnessResult)
 	}
 	if err == nil && compactionContext.Err() != nil {
@@ -1312,6 +1337,17 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 	result.EstimatedTokensAfter = estimateAllTokens(runtime.agent.State().Messages)
 	runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: "manual", Result: result}, fromExtension)
 	return result, nil
+}
+
+func hasCompactionConversation(preparation *harness.CompactionPreparation) bool {
+	for _, messages := range []engine.AgentMessages{preparation.MessagesToSummarize, preparation.TurnPrefixMessages} {
+		for _, message := range messages {
+			if _, system := message.(*ai.SystemMessage); !system {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (runtime *SessionRuntime) beforeExtensionCompaction(

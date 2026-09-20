@@ -175,10 +175,8 @@ func (loader *DefaultResourceLoader) Reload(ctx context.Context, reloadOptions *
 		}
 	}
 
-	projectTrusted := options.SettingsManager.IsProjectTrusted()
 	if reloadOptions != nil && reloadOptions.ResolveProjectTrust != nil {
-		var err error
-		projectTrusted, err = reloadOptions.ResolveProjectTrust(ctx, registry)
+		projectTrusted, err := reloadOptions.ResolveProjectTrust(ctx, registry)
 		if err != nil {
 			return err
 		}
@@ -188,7 +186,7 @@ func (loader *DefaultResourceLoader) Reload(ctx context.Context, reloadOptions *
 		return err
 	}
 	options.SettingsManager.Reload()
-	projectTrusted = options.SettingsManager.IsProjectTrusted()
+	projectTrusted := options.SettingsManager.IsProjectTrusted()
 	resolved, err := resolveResourceLoaderPaths(options)
 	if err != nil {
 		return err

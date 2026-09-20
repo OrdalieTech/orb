@@ -645,6 +645,48 @@ func TestEventBusOrderedIsolationAndUnsubscribe(t *testing.T) {
 	}
 }
 
+func TestAPIOnWithUnsubscribeUsesDispatchSnapshots(t *testing.T) {
+	registry := NewRegistry(t.TempDir())
+	var unsubscribe func()
+	var calls []string
+	if err := registry.Register("snapshot", func(api API) error {
+		unsubscribe = OnWithUnsubscribe(api, EventAgentStart, func(context.Context, Event, Context) (any, error) {
+			calls = append(calls, "first")
+			unsubscribe()
+			return nil, nil
+		})
+		api.On(EventAgentStart, func(context.Context, Event, Context) (any, error) {
+			calls = append(calls, "second")
+			return nil, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runner := NewRunner(registry, RunnerOptions{})
+	runner.Emit(context.Background(), AgentStartEvent{})
+	runner.Emit(context.Background(), AgentStartEvent{})
+	if got := strings.Join(calls, ","); got != "first,second,second" {
+		t.Fatalf("calls = %q", got)
+	}
+}
+
+func TestUserBashFailureStopsDispatch(t *testing.T) {
+	registry := NewRegistry(t.TempDir())
+	var later bool
+	if err := registry.Register("bash", func(api API) error {
+		api.On(EventUserBash, func(context.Context, Event, Context) (any, error) { return nil, errors.New("route failed") })
+		api.On(EventUserBash, func(context.Context, Event, Context) (any, error) { later = true; return nil, nil })
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := NewRunner(registry, RunnerOptions{}).EmitUserBashChecked(context.Background(), UserBashEvent{Command: "pwd"})
+	if err == nil || result != nil || later {
+		t.Fatalf("result=%#v err=%v later=%t", result, err, later)
+	}
+}
+
 func TestExecCapturesExitAndTimeout(t *testing.T) {
 	result, err := Exec(context.Background(), "sh", []string{"-c", "printf out; printf err >&2; exit 7"}, nil)
 	if err != nil || result.Stdout != "out" || result.Stderr != "err" || result.Code != 7 || result.Killed {
@@ -660,7 +702,7 @@ func TestExecCapturesExitAndTimeout(t *testing.T) {
 	}
 }
 
-func TestWrappedToolRecordsPurelyAdditiveActivations(t *testing.T) {
+func TestWrappedToolLeavesDynamicActivationsToTranscriptState(t *testing.T) {
 	registry := NewRegistry(t.TempDir())
 	active := []string{"loader"}
 	var activeMu sync.Mutex
@@ -690,7 +732,7 @@ func TestWrappedToolRecordsPurelyAdditiveActivations(t *testing.T) {
 		t.Fatalf("constrained sampling = %#v", sampling)
 	}
 	result, err := wrapped.Execute(context.Background(), "call", map[string]any{}, nil)
-	if err != nil || result.AddedToolNames == nil || !reflect.DeepEqual(*result.AddedToolNames, []string{"loaded"}) {
+	if err != nil || result.AddedToolNames != nil {
 		t.Fatalf("result = %#v, error = %v", result, err)
 	}
 }

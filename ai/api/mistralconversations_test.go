@@ -139,6 +139,8 @@ func TestMistralSimpleReasoningSelection(t *testing.T) {
 	}{
 		{name: "small uses reasoning effort", modelID: "mistral-small-2603", reasoning: thinkingLevel(ai.ThinkingMedium), wantEffort: "high"},
 		{name: "medium 3.5 uses reasoning effort", modelID: "mistral-medium-3.5", reasoning: thinkingLevel(ai.ThinkingMedium), wantEffort: "high"},
+		{name: "future medium uses reasoning effort", modelID: "mistral-medium-4", reasoning: thinkingLevel(ai.ThinkingMedium), wantEffort: "high"},
+		{name: "Mistral-hosted GLM uses reasoning effort", modelID: "zai-glm-5-2", reasoning: thinkingLevel(ai.ThinkingMedium), wantEffort: "high"},
 		{name: "magistral uses prompt mode", modelID: "magistral-medium-latest", reasoning: thinkingLevel(ai.ThinkingMedium), wantPromptMode: "reasoning"},
 		{name: "omits controls without reasoning", modelID: "mistral-small-2603"},
 		{name: "omits controls when reasoning is off", modelID: "mistral-small-2603", reasoning: thinkingLevel(ai.ThinkingLevel("off"))},

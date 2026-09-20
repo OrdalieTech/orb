@@ -9,10 +9,13 @@ import (
 // RetryPolicy applies bounded exponential backoff to assistant-producing calls.
 // MaxRetries counts retries after the initial call.
 type RetryPolicy struct {
-	Enabled     bool  `json:"enabled"`
-	MaxRetries  int   `json:"maxRetries"`
-	BaseDelayMS int64 `json:"baseDelayMs"`
+	Enabled         bool   `json:"enabled"`
+	MaxRetries      int    `json:"maxRetries"`
+	BaseDelayMS     int64  `json:"baseDelayMs"`
+	MaxAgentDelayMS *int64 `json:"maxAgentDelayMs,omitempty"`
 }
+
+const DefaultMaxAgentRetryDelayMS int64 = 60_000
 
 // RetryCallbacks reports the lifecycle of retries after the initial call.
 // Callback errors stop the retry operation, matching rejected async callbacks upstream.
@@ -32,7 +35,7 @@ var nonRetryableProviderLimitPatterns = compilePatterns([]string{
 })
 
 var retryableProviderPatterns = compilePatterns([]string{
-	`overloaded`, `rate.?limit`, `too many requests`, `429`, `500`, `502`, `503`, `504`, `524`,
+	`overloaded`, `currently experiencing high demand`, `rate.?limit`, `too many requests`, `429`, `500`, `502`, `503`, `504`, `520`, `524`,
 	`service.?unavailable`, `server.?error`, `internal.?error`, `provider.?returned.?error`,
 	`exceeded request buffer limit while retrying upstream`,
 	`network.?error`, `connection.?error`, `connection.?refused`, `connection.?lost`, `other side closed`,
@@ -60,8 +63,9 @@ var overflowPatterns = compilePatterns([]string{
 	`prompt has [0-9,]+ tokens?, but the configured context size is [0-9,]+ tokens?`,
 	`model_context_window_exceeded`, `prompt too long; exceeded (max )?context length`,
 	`context[_ ]length[_ ]exceeded`, `too many tokens`, `token limit exceeded`,
-	`^4(00|13)[[:space:]]*(status code)?[[:space:]]*\(no body\)`,
 })
+
+var cerebrasBodylessOverflowPattern = regexp.MustCompile(`(?i)^4(00|13)[[:space:]]*(status code)?[[:space:]]*\(no body\)`)
 
 var nonOverflowPatterns = compilePatterns([]string{
 	`^(Throttling error|Service unavailable):`, `rate limit`, `too many requests`,
@@ -129,7 +133,7 @@ func RetryAssistantCall(
 		if response.ErrorMessage != nil && *response.ErrorMessage != "" {
 			lastRetryError = *response.ErrorMessage
 		}
-		delayMS := retryDelayMS(policy.BaseDelayMS, attempt)
+		delayMS := RetryDelayMS(*policy, attempt)
 		if callbacks != nil && callbacks.OnRetryScheduled != nil {
 			if err := callbacks.OnRetryScheduled(attempt, maxAttempts, delayMS, lastRetryError); err != nil {
 				return nil, err
@@ -161,12 +165,19 @@ func retryFinished(callbacks *RetryCallbacks, success bool, attempt int, finalEr
 	return callbacks.OnRetryFinished(success, attempt, finalError)
 }
 
-func retryDelayMS(baseDelayMS int64, attempt int) int64 {
-	delayMS := baseDelayMS
-	for current := 1; current < attempt; current++ {
+func RetryDelayMS(policy RetryPolicy, attempt int) int64 {
+	capMS := DefaultMaxAgentRetryDelayMS
+	if policy.MaxAgentDelayMS != nil {
+		capMS = max(int64(0), *policy.MaxAgentDelayMS)
+	}
+	delayMS := max(int64(0), policy.BaseDelayMS)
+	for current := 1; current < attempt && delayMS < capMS; current++ {
+		if delayMS > capMS/2 {
+			return capMS
+		}
 		delayMS *= 2
 	}
-	return delayMS
+	return min(delayMS, capMS)
 }
 
 func waitRetryDelay(ctx context.Context, delayMS int64) bool {
@@ -193,8 +204,13 @@ func IsContextOverflow(message *AssistantMessage, contextWindow float64) bool {
 	}
 	if message.StopReason == StopReasonError && message.ErrorMessage != nil {
 		text := *message.ErrorMessage
-		if !matchesAny(nonOverflowPatterns, text) && matchesAny(overflowPatterns, text) {
-			return true
+		if !matchesAny(nonOverflowPatterns, text) {
+			if matchesAny(overflowPatterns, text) {
+				return true
+			}
+			if message.Provider == "cerebras" && cerebrasBodylessOverflowPattern.MatchString(text) {
+				return true
+			}
 		}
 	}
 	inputTokens := message.Usage.Input + message.Usage.CacheRead

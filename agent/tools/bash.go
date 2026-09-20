@@ -34,6 +34,7 @@ type BashExecOptions struct {
 }
 
 type BashExecResult struct {
+	// ExitCode must be set when Exec succeeds. A nil value is a failed command.
 	ExitCode *int
 }
 
@@ -147,7 +148,7 @@ func (tool *bashTool) Spec() engine.AgentToolSpec {
 		Label:               "bash",
 		Description:         fmt.Sprintf("Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last %d lines or %dKB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.", truncate.DefaultMaxLines, truncate.DefaultMaxBytes/1024),
 		Parameters:          bashSchema,
-		ConstrainedSampling: experimentalToolSampling(),
+		ConstrainedSampling: strictToolSampling(),
 	}
 }
 
@@ -227,7 +228,10 @@ func (tool *bashTool) Execute(
 			return engine.AgentToolResult{}, executeErr
 		}
 	}
-	if result.ExitCode != nil && *result.ExitCode != 0 {
+	if result.ExitCode == nil {
+		return engine.AgentToolResult{}, upstreamToolError(appendBashStatus(formatted, "Command terminated without an exit code"))
+	}
+	if *result.ExitCode != 0 {
 		return engine.AgentToolResult{}, upstreamToolError(appendBashStatus(formatted, fmt.Sprintf("Command exited with code %d", *result.ExitCode)))
 	}
 	return engine.AgentToolResult{

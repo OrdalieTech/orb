@@ -38,6 +38,7 @@ type SessionEntry struct {
 	Details          json.RawMessage
 	Usage            *ai.Usage
 	FromHook         *bool
+	SystemMessage    json.RawMessage
 	FromID           string
 	CustomType       string
 	Data             json.RawMessage
@@ -180,6 +181,7 @@ func decodeFileEntry(object *orderedObject, raw json.RawMessage) *FileEntry {
 		entry.FromHook, _ = decodeBool(value)
 	}
 	entry.FromID, _ = stringMember(object, "fromId")
+	entry.SystemMessage, _ = object.get("systemMessage")
 	entry.CustomType, _ = stringMember(object, "customType")
 	entry.Data, _ = object.get("data")
 	entry.Content, _ = object.get("content")
@@ -274,6 +276,9 @@ func newEntryRecord(entry SessionEntry) *FileEntry {
 		}
 		if entry.FromHook != nil {
 			members = append(members, member("fromHook", rawBool(*entry.FromHook)))
+		}
+		if entry.SystemMessage != nil {
+			members = append(members, member("systemMessage", entry.SystemMessage))
 		}
 	case "branch_summary":
 		members = append(base,

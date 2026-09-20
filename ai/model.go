@@ -73,6 +73,11 @@ type ModelCost struct {
 	Tiers *[]ModelCostTier `json:"tiers,omitempty"`
 }
 
+type ModelPromptCache struct {
+	Short *float64 `json:"short,omitempty"`
+	Long  *float64 `json:"long,omitempty"`
+}
+
 type Model struct {
 	ID               string                          `json:"id"`
 	Name             string                          `json:"name"`
@@ -83,6 +88,7 @@ type Model struct {
 	ThinkingLevelMap *map[ModelThinkingLevel]*string `json:"thinkingLevelMap,omitempty"`
 	Input            InputModalities                 `json:"input"`
 	Cost             ModelCost                       `json:"cost"`
+	PromptCache      *ModelPromptCache               `json:"promptCache,omitempty"`
 	ContextWindow    float64                         `json:"contextWindow"`
 	MaxTokens        float64                         `json:"maxTokens"`
 	Headers          *map[string]string              `json:"headers,omitempty"`
@@ -153,6 +159,8 @@ type OpenAICompletionsCompat struct {
 	ThinkingTokenBudgetField                    *ThinkingTokenBudgetField `json:"thinkingTokenBudgetField,omitempty"`
 	SupportsThinkingTokenBudget                 *bool                     `json:"supportsThinkingTokenBudget,omitempty"`
 	SupportsOpenAIGrammarTools                  *bool                     `json:"supportsOpenAIGrammarTools,omitempty"`
+	SupportsMidConvoSystemMessages              *bool                     `json:"supportsMidConvoSystemMessages,omitempty"`
+	SupportsMidConvoToolAdditions               *bool                     `json:"supportsMidConvoToolAdditions,omitempty"`
 	SupportsStrictMode                          *bool                     `json:"supportsStrictMode,omitempty"`
 	CacheControlFormat                          *CacheControlFormat       `json:"cacheControlFormat,omitempty"`
 	SendSessionAffinityHeaders                  *bool                     `json:"sendSessionAffinityHeaders,omitempty"`
@@ -164,6 +172,7 @@ type OpenAICompletionsCompat struct {
 
 type OpenAIResponsesCompat struct {
 	SupportsDeveloperRole           *bool                  `json:"supportsDeveloperRole,omitempty"`
+	SupportsMidConvoSystemMessages  *bool                  `json:"supportsMidConvoSystemMessages,omitempty"`
 	SessionAffinityFormat           *SessionAffinityFormat `json:"sessionAffinityFormat,omitempty"`
 	SupportsLongCacheRetention      *bool                  `json:"supportsLongCacheRetention,omitempty"`
 	SupportsStrictMode              *bool                  `json:"supportsStrictMode,omitempty"`
@@ -180,16 +189,23 @@ type AnthropicMessagesCompat struct {
 	SendSessionAffinityHeaders      *bool                            `json:"sendSessionAffinityHeaders,omitempty"`
 	SupportsCacheControlOnTools     *bool                            `json:"supportsCacheControlOnTools,omitempty"`
 	SupportsTemperature             *bool                            `json:"supportsTemperature,omitempty"`
-	ForceAdaptiveThinking           *bool                            `json:"forceAdaptiveThinking,omitempty"`
 	AllowEmptySignature             *bool                            `json:"allowEmptySignature,omitempty"`
 	SupportsStrictTools             *bool                            `json:"supportsStrictTools,omitempty"`
 	SupportsMidConvoEffort          *bool                            `json:"supportsMidConvoEffort,omitempty"`
+	SupportsMidConvoSystemMessages  *bool                            `json:"supportsMidConvoSystemMessages,omitempty"`
+	SupportsMidConvoToolChanges     *bool                            `json:"supportsMidConvoToolChanges,omitempty"`
+	ForceAdaptiveThinking           *bool                            `json:"forceAdaptiveThinking,omitempty"`
+	SessionAffinityFormat           *SessionAffinityFormat           `json:"sessionAffinityFormat,omitempty"`
 	AllowedFallbackModels           *[]AnthropicAllowedFallbackModel `json:"allowedFallbackModels,omitempty"`
 	SupportsToolReferences          *bool                            `json:"supportsToolReferences,omitempty"`
 }
 
 type BedrockCompat struct {
 	SupportsStrictMode *bool `json:"supportsStrictMode,omitempty"`
+}
+
+type MistralConversationsCompat struct {
+	SupportsMidConvoSystemMessages *bool `json:"supportsMidConvoSystemMessages,omitempty"`
 }
 
 type CacheControlFormat string
