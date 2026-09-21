@@ -153,3 +153,23 @@ func TestGridMouseLayoutTracksOnlyVisibleRows(t *testing.T) {
 		t.Fatal("resize lost the selected row or window bound")
 	}
 }
+
+func TestPlainFrameHasPaddedPanelAndEscapeHint(t *testing.T) {
+	frame := NewFrame("Commands", "", nil, nil, NewText("body", 0, 0, nil))
+	frame.Plain = true
+	frame.Background = func(s string) string { return "\x1b[48;5;236m" + s + "\x1b[49m" }
+	for _, width := range []int{12, 40, 80} {
+		lines := frame.Render(width)
+		if len(lines) != 5 {
+			t.Fatalf("unexpected geometry: %#v", lines)
+		}
+		for _, line := range lines {
+			if VisibleWidth(line) != width || strings.ContainsAny(StripANSI(line), "│─╭╮╰╯") || !strings.HasPrefix(line, "\x1b[48;5;236m") {
+				t.Fatalf("invalid panel row: %q", line)
+			}
+		}
+		if !strings.HasSuffix(StripANSI(lines[1]), "esc  ") {
+			t.Fatalf("missing escape hint: %q", lines[1])
+		}
+	}
+}

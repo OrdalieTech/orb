@@ -400,11 +400,11 @@ func (list *GridList) counter() string {
 	return strconv.Itoa(position) + "/" + strconv.Itoa(len(list.view)-len(list.headers))
 }
 
-// Frame wraps a component in the shared configuration-window chrome: an
-// unbroken rounded border containing a title heading, the content, and a
-// quiet hint line — everything inside the box. Interior lines are padded to
-// the full width so an overlay fully covers what is beneath it.
+// Frame pads every row to cover the overlay beneath it. Plain panels retain
+// the bordered layout offsets so focus and mouse routing stay identical.
 type Frame struct {
+	Plain      bool
+	Background StyleFunc
 	Title      string
 	TitleStyle StyleFunc // defaults to Border
 	Footer     string
@@ -430,16 +430,26 @@ func (frame *Frame) Render(width int) []string {
 	}
 	interior := width - 4 // border + one padding cell each side
 	side := frame.style(frame.Border, "│")
+	if frame.Plain {
+		side = " "
+	}
 	wrap := func(content string) string {
 		return side + " " + TruncateToWidth(content, interior, "…", true) + " " + side
 	}
 	lines := []string{frame.style(frame.Border, "╭"+strings.Repeat("─", width-2)+"╮")}
+	if frame.Plain {
+		lines[0] = strings.Repeat(" ", width)
+	}
 	if frame.Title != "" {
 		titleStyle := frame.TitleStyle
 		if titleStyle == nil {
 			titleStyle = frame.Border
 		}
-		lines = append(lines, wrap(frame.style(titleStyle, frame.Title)), wrap(""))
+		title := frame.style(titleStyle, frame.Title)
+		if frame.Plain && interior >= 8 {
+			title = TruncateToWidth(title, interior-4, "…", true) + " " + frame.style(frame.Hint, "esc")
+		}
+		lines = append(lines, wrap(title), wrap(""))
 	}
 	if frame.Child != nil {
 		for _, line := range frame.Child.Render(interior) {
@@ -450,6 +460,14 @@ func (frame *Frame) Render(width int) []string {
 		lines = append(lines, wrap(""), wrap(frame.style(frame.Hint, frame.Footer)))
 	}
 	lines = append(lines, frame.style(frame.Border, "╰"+strings.Repeat("─", width-2)+"╯"))
+	if frame.Plain {
+		lines[len(lines)-1] = strings.Repeat(" ", width)
+	}
+	if frame.Background != nil {
+		for index, line := range lines {
+			lines[index] = frame.Background(line)
+		}
+	}
 	return lines
 }
 

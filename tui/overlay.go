@@ -743,10 +743,10 @@ func (ui *TUI) compositeOverlays(lines []string, termWidth, termHeight int) []st
 		// hover-driven render loop cannot afford.
 		for index := viewportStart; index < len(result); index++ {
 			line := result[index]
-			if line == "" || IsImageLine(line) {
+			if IsImageLine(line) {
 				continue
 			}
-			result[index] = backdrop(StripANSI(line))
+			result[index] = backdrop(TruncateToWidth(StripANSI(line), termWidth, "", true))
 		}
 	}
 	ui.mouseOverlays = make([]mouseOverlayBox, len(rendered))

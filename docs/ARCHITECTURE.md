@@ -271,9 +271,9 @@ upstream's RPC tests run against our binary (F7).
 
 **Interactive discovery:** Ctrl+P opens a searchable palette of actions, skills, templates, and
 extension commands. Ctrl+M selects models when the terminal disambiguates it from Enter; Ctrl+L
-is the portable fallback. Ctrl+N starts a session and Ctrl+R resumes one. Existing explicit
-keybindings win over these new defaults. Native composer slash completion contains resource
-commands only; extension editors keep the complete pi completion surface. Selecting a resource
+is the portable fallback. Ctrl+N starts a session and Ctrl+R renames it. Existing explicit
+keybindings win over these new defaults. Native composer slash suggestions appear above the input with commands, skills, and templates;
+extension editors keep the complete pi completion surface. Selecting a resource
 inserts its canonical invocation into the draft for arguments and explicit submission. Floating
 modals dim the background; non-capturing extension overlays keep their opt-in backdrop.
 

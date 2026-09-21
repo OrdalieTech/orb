@@ -28,7 +28,7 @@ var AppKeybindingDefinitions = []tui.KeybindingDefinition{
 	{ID: "app.session.new", DefaultKeys: []tui.KeyID{"ctrl+n"}, Description: "Start a new session"},
 	{ID: "app.session.tree", DefaultKeys: nil, Description: "Open session tree"},
 	{ID: "app.session.fork", DefaultKeys: nil, Description: "Fork current session"},
-	{ID: "app.session.resume", DefaultKeys: []tui.KeyID{"ctrl+r"}, Description: "Resume a session"},
+	{ID: "app.session.resume", DefaultKeys: nil, Description: "Resume a session"},
 	{ID: "app.tree.foldOrUp", DefaultKeys: treeBranchKeys("left"), Description: "Fold tree branch or move up"},
 	{ID: "app.tree.unfoldOrDown", DefaultKeys: treeBranchKeys("right"), Description: "Unfold tree branch or move down"},
 	{ID: "app.tree.editLabel", DefaultKeys: []tui.KeyID{"shift+l"}, Description: "Edit tree label"},

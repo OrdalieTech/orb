@@ -1,6 +1,7 @@
 package modes
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/orb/agent"
@@ -73,5 +74,23 @@ func TestModelSelectorSearchAndKeyboardParity(t *testing.T) {
 	cancelSelector.HandleInput(tui.KeyEvent{Raw: "\x1b"})
 	if !cancelled {
 		t.Fatal("escape did not cancel")
+	}
+}
+
+func TestModelRowsRemainSingleLineAtNarrowWidths(t *testing.T) {
+	model := ai.Model{ID: "deep-research-max-preview-04-2026-with-a-long-name", Provider: "google"}
+	row := modelSelectorRow{model: model, current: true, selected: true}
+	for _, width := range []int{24, 40, 50, 64, 100} {
+		lines := row.Render(width)
+		if len(lines) != 1 || tui.VisibleWidth(lines[0]) != width {
+			t.Fatalf("width %d: %#v", width, lines)
+		}
+		plain := tui.StripANSI(lines[0])
+		if !strings.Contains(plain, "✓") {
+			t.Fatalf("lost current-model marker at %d: %q", width, plain)
+		}
+		if strings.Contains(plain, "google") != (width >= 64) {
+			t.Fatalf("provider visibility at %d: %q", width, plain)
+		}
 	}
 }

@@ -1922,22 +1922,20 @@ func TestPaletteNoMatchResizeAndConcurrentRender(t *testing.T) {
 	workers.Wait()
 }
 
-func TestComposerMovesBuiltinDiscoveryToPalette(t *testing.T) {
+func TestComposerSlashShowsCommandsAndSkills(t *testing.T) {
 	mode := newF12AutocompleteMode(t, true)
 	provider := &composerAutocompleteProvider{AutocompleteProvider: mode.autocompleteProvider}
 	result := provider.GetSuggestions(t.Context(), []string{"/"}, 0, 1, false)
 	if result == nil {
 		t.Fatal("lost resource commands")
 	}
-	skill := false
+	skill, model := false, false
 	for _, item := range result.Items {
-		if isInteractiveCommandName(strings.TrimPrefix(item.Value, "/")) {
-			t.Fatalf("builtin remains in composer: %s", item.Value)
-		}
+		model = model || strings.TrimPrefix(item.Value, "/") == "model"
 		skill = skill || item.Value == "skill:inspect-skill"
 	}
-	if !skill {
-		t.Fatal("lost canonical skill completion")
+	if !skill || !model {
+		t.Fatal("lost command or canonical skill completion")
 	}
 	// Extension editors still receive the complete compatibility surface.
 	canonical := mode.autocompleteProvider.GetSuggestions(t.Context(), []string{"/model"}, 0, 6, false)

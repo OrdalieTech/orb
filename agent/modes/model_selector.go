@@ -2,7 +2,6 @@ package modes
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"slices"
 	"strconv"
@@ -30,7 +29,6 @@ type modelSelectorItem struct{ model ai.Model }
 type ModelSelectorComponent struct {
 	container      *tui.Container
 	searchInput    *tui.Input
-	headerText     *tui.Text
 	listContainer  *tui.Container
 	scopeText      *tui.Text
 	allModels      []modelSelectorItem
@@ -79,9 +77,9 @@ func NewModelSelectorComponent(
 			0, 0, nil,
 		))
 	} else {
-		component.container.AddChild(tui.NewText(
-			theme.FG("muted", "Models from connected providers. "+KeyText("app.commandPalette")+" → Connect provider to add more."),
-			0, 0, nil,
+		component.container.AddChild(tui.NewTruncatedText(
+			theme.FG("muted", KeyText("app.commandPalette")+" → Connect provider"),
+			0, 0,
 		))
 	}
 	component.container.AddChild(tui.NewSpacer(1))
@@ -91,8 +89,6 @@ func NewModelSelectorComponent(
 	}
 	component.container.AddChild(component.searchInput)
 	component.container.AddChild(tui.NewSpacer(1))
-	component.headerText = tui.NewText("", 0, 0, nil)
-	component.container.AddChild(component.headerText)
 	component.container.AddChild(component.listContainer)
 	component.filterModels(component.searchInput.GetValue())
 	return component
@@ -237,52 +233,12 @@ func modelSelectorFlags(model ai.Model) string {
 
 func (component *ModelSelectorComponent) updateList() {
 	component.listContainer.Clear()
-	// Invisible grid: measure the metadata columns over the whole filtered
-	// set so rows stay aligned while scrolling.
-	idWidth, providerWidth, contextWidth, costWidth := 0, 0, len("ctx"), 0
-	for _, item := range component.filteredModels {
-		idWidth = max(idWidth, len(item.model.ID))
-		providerWidth = max(providerWidth, len(item.model.Provider)+2)
-		contextWidth = max(contextWidth, len(modelSelectorTokens(item.model.ContextWindow)))
-		costWidth = max(costWidth, len(modelSelectorCost(item.model.Cost)))
-	}
-	idWidth = min(idWidth, 44)
-	row := func(style func(string) string, prefix, id, provider, contextTokens, cost, flags, current string) string {
-		return style(prefix+fmt.Sprintf("%-*s", idWidth, id)) +
-			"  " + theme.FG("muted", fmt.Sprintf("%-*s", providerWidth, provider)) +
-			"  " + theme.FG("muted", fmt.Sprintf("%*s", contextWidth, contextTokens)) +
-			"  " + theme.FG("dim", fmt.Sprintf("%*s", costWidth, cost)) +
-			"  " + theme.FG("dim", flags) + current
-	}
 	start := component.window.Start(component.selectedIndex, len(component.filteredModels), modelSelectorMaxVisible)
 	end := min(start+modelSelectorMaxVisible, len(component.filteredModels))
 	component.rows.setWindow(start, end-start)
-	if component.headerText != nil {
-		header := ""
-		if len(component.filteredModels) > 0 {
-			header = row(func(text string) string { return theme.FG("dim", text) }, "  ", "model", "provider", "ctx", "$/Mtok", " ", "")
-		}
-		component.headerText.SetText(header)
-	}
 	for index := start; index < end; index++ {
-		item := component.filteredModels[index]
-		// The shared selection language: › cursor plus a full-row background.
-		prefix, selectedBg := "  ", tui.StyleFunc(nil)
-		if index == component.selectedIndex {
-			prefix = theme.FG("accent", "› ")
-			selectedBg = func(text string) string { return theme.BG("selectedBg", text) }
-		}
-		current := ""
-		if modelSelectorModelsEqual(component.currentModel, &item.model) {
-			current = theme.FG("success", " ✓")
-		}
-		component.listContainer.AddChild(tui.NewText(
-			row(func(text string) string { return theme.FG("text", text) },
-				prefix, item.model.ID, "["+string(item.model.Provider)+"]",
-				modelSelectorTokens(item.model.ContextWindow), modelSelectorCost(item.model.Cost),
-				modelSelectorFlags(item.model), current),
-			0, 0, selectedBg,
-		))
+		model := component.filteredModels[index].model
+		component.listContainer.AddChild(modelSelectorRow{model: model, selected: index == component.selectedIndex, current: modelSelectorModelsEqual(component.currentModel, &model)})
 	}
 	// Fixed geometry: the floating window must not grow, shrink, or
 	// re-center while filtering, so the row region, the counter slot, and the
@@ -301,11 +257,47 @@ func (component *ModelSelectorComponent) updateList() {
 	}
 	component.listContainer.AddChild(tui.NewText(counter, 0, 0, nil))
 	component.listContainer.AddChild(tui.NewSpacer(1))
-	name := " "
+	name, details := " ", " "
 	if len(component.filteredModels) > 0 {
-		name = theme.FG("muted", fmt.Sprintf("  Model Name: %s", component.filteredModels[component.selectedIndex].model.Name))
+		model := component.filteredModels[component.selectedIndex].model
+		label := model.Name
+		if label == "" {
+			label = model.ID
+		}
+		name = theme.FG("text", string(model.Provider)+" · "+label)
+		details = theme.FG("muted", modelSelectorTokens(model.ContextWindow)+" context · "+modelSelectorCost(model.Cost)+" /Mtok · "+modelSelectorFlags(model))
 	}
-	component.listContainer.AddChild(tui.NewText(name, 0, 0, nil))
+	component.listContainer.AddChild(tui.NewTruncatedText(name, 0, 0))
+	component.listContainer.AddChild(tui.NewTruncatedText(details, 0, 0))
+
+}
+
+// Each option occupies one row; metadata belongs to the selected-model detail.
+type modelSelectorRow struct {
+	model             ai.Model
+	selected, current bool
+}
+
+func (row modelSelectorRow) Render(width int) []string {
+	prefix := "  "
+	if row.selected {
+		prefix = theme.FG("accent", "› ")
+	}
+	mark := ""
+	if row.current {
+		mark = theme.FG("success", " ✓")
+	}
+	provider := ""
+	if width >= 64 {
+		provider = "  " + theme.FG("muted", tui.TruncateToWidth(string(row.model.Provider), 20, "…", false))
+	}
+	available := max(0, width-2-tui.VisibleWidth(mark)-tui.VisibleWidth(provider))
+	line := prefix + theme.FG("text", tui.TruncateToWidth(row.model.ID, available, "…", true)) + mark + provider
+	line = tui.TruncateToWidth(line, width, "…", true)
+	if row.selected {
+		line = tui.ApplyBackgroundToLine(line, width, func(text string) string { return theme.BG("selectedBg", text) })
+	}
+	return []string{line}
 }
 
 func (component *ModelSelectorComponent) confirmSelection() {

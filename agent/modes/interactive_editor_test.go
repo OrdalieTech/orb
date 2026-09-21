@@ -123,7 +123,7 @@ func waitForPopup(t *testing.T, editor *CustomEditor) {
 	}
 }
 
-func TestComposerFrameHangsAutocompleteBelowTheClosedBox(t *testing.T) {
+func TestComposerFrameShowsAutocompleteAboveTheClosedBox(t *testing.T) {
 	editor := newFrameEditor(t, 24, 24)
 	editor.SetAutocompleteProvider(frameCompletions{})
 	editor.HandleInput(tui.KeyEvent{Raw: "/"})
@@ -133,23 +133,23 @@ func TestComposerFrameHangsAutocompleteBelowTheClosedBox(t *testing.T) {
 	if len(lines) != 5 {
 		t.Fatalf("composer with popup = %#v", lines)
 	}
-	wantFrame(t, lines[:3],
+	wantFrame(t, lines[2:],
 		"╭──────────────────────╮",
 		"│/                     │",
 		"╰──────────────────────╯",
 	)
 	// The popup keeps the interior's column offset without being framed, so a
 	// click maps through the same one-column inset as the text rows.
-	for _, row := range lines[3:] {
+	for _, row := range lines[:2] {
 		if strings.ContainsAny(row, "│╭╮╰╯") || !strings.HasPrefix(row, " ") || !strings.HasSuffix(row, " ") {
 			t.Fatalf("popup row was framed: %q", row)
 		}
 	}
-	if !strings.Contains(lines[3], "model") || !strings.Contains(lines[4], "clear") {
-		t.Fatalf("popup rows = %#v", lines[3:])
+	if !strings.Contains(lines[0], "model") || !strings.Contains(lines[1], "clear") {
+		t.Fatalf("popup rows = %#v", lines[:2])
 	}
 
-	if !editor.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: 4, Column: 3}) {
+	if !editor.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: 1, Column: 3}) {
 		t.Fatal("click on the second suggestion was not consumed")
 	}
 	if got := editor.GetText(); got != "/clear" {
@@ -206,14 +206,20 @@ func TestComposerFrameNarrowWidths(t *testing.T) {
 
 func TestDirectShortcutsPreserveEnterAndDraft(t *testing.T) {
 	editor := newFrameEditor(t, 80, 24)
-	var palette, models, submits int
+	var palette, models, submits, rename, resume int
 	editor.OnAction("app.commandPalette", func() { palette++ })
 	editor.OnAction("app.model.select", func() { models++ })
+	editor.OnAction("app.session.resume", func() { resume++ })
+	editor.OnAction("app.session.rename", func() { rename++ })
 	editor.OnSubmit = func(string) { submits++ }
 	editor.SetText("keep this draft")
 	editor.HandleInput(tui.KeyEvent{Raw: "\x10"})
 	if palette != 1 || editor.GetText() != "keep this draft" {
 		t.Fatalf("palette=%d draft=%q", palette, editor.GetText())
+	}
+	editor.HandleInput(tui.KeyEvent{Raw: "\x12"})
+	if rename != 1 || resume != 0 || editor.GetText() != "keep this draft" {
+		t.Fatalf("rename=%d resume=%d draft=%q", rename, resume, editor.GetText())
 	}
 	for _, key := range []string{"\x1b[109;5u", "\x0c"} {
 		editor.HandleInput(tui.KeyEvent{Raw: key})

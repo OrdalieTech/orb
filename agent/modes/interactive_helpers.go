@@ -63,15 +63,17 @@ func newSearchInput() *tui.Input {
 	return input
 }
 
-// menuFrame is the one window chrome every floating menu shares: full border,
-// bold accent title, dim hints. Building it here keeps the menus consistent
-// by construction.
 func menuFrame(title string, child tui.Component) *tui.Frame {
 	frame := tui.NewFrame(title, "",
 		func(text string) string { return theme.FG("border", text) },
 		func(text string) string { return theme.FG("dim", text) },
 		child)
-	frame.TitleStyle = func(text string) string { return theme.Bold(theme.FG("accent", text)) }
+	frame.Plain = true
+	frame.TitleStyle = func(text string) string { return theme.Bold(theme.FG("text", text)) }
+	frame.Background = func(text string) string {
+		background := theme.BGANSI("toolPendingBg")
+		return background + strings.ReplaceAll(tui.ReopenAfterReset(background, text), "\x1b[49m", "\x1b[49m"+background) + "\x1b[49m"
+	}
 	return frame
 }
 
@@ -222,7 +224,7 @@ func newCommandPalette(rows []tui.GridRow, bindings *tui.KeybindingsManager, hei
 		Cursor:     theme.FG("accent", "› "),
 	})
 	palette.list.Searchable = true
-	palette.list.DetailHeight = 2
+	palette.list.DetailHeight = 1
 	palette.list.OnConfirm = func(value string) {
 		if value != "" {
 			palette.pending = func() { selectItem(value) }
