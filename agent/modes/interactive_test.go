@@ -2047,7 +2047,7 @@ func TestTerminalThemeDefaultAndBackdrop(t *testing.T) {
 	if got := menuSelectedBackground("choice"); got != "\x1b[4mchoice\x1b[24m" {
 		t.Fatalf("selection = %q", got)
 	}
-	if got := backdropStyle()("behind"); got != theme.BG("diffGutterBg", theme.FG("dim", "behind")) {
+	if got := backdropStyle()("behind"); got != theme.BG("modalBackdropBg", theme.FG("modalBackdropText", "behind")) {
 		t.Fatalf("backdrop = %q", got)
 	}
 }

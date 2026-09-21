@@ -1002,7 +1002,7 @@ func (ui *InteractiveUI) untrackCustomOverlay(handle tui.OverlayHandle) {
 
 func backdropStyle() tui.StyleFunc {
 	if current := theme.Current(); current != nil && current.Name == "terminal" {
-		return func(text string) string { return theme.BG("diffGutterBg", theme.FG("dim", text)) }
+		return func(text string) string { return theme.BG("modalBackdropBg", theme.FG("modalBackdropText", text)) }
 	}
 	background, foreground := 234, 244
 	if current := theme.Current(); current != nil {

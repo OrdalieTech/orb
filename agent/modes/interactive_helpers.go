@@ -80,13 +80,7 @@ func menuFrame(title string, child tui.Component) *tui.Frame {
 		child)
 	frame.Plain = true
 	frame.ActionSelected = func(text string) string { return menuSelectedBackground(theme.Bold(theme.FG("accent", text))) }
-	frame.TitleStyle = func(text string) string {
-		color := "text"
-		if current := theme.Current(); current != nil && current.Name == "terminal" {
-			color = "accent"
-		}
-		return theme.Bold(theme.FG(color, text))
-	}
+	frame.TitleStyle = func(text string) string { return theme.Bold(theme.FG("text", text)) }
 	frame.Background = func(text string) string {
 		background := theme.BGANSI("toolPendingBg")
 		return background + strings.ReplaceAll(tui.ReopenAfterReset(background, text), "\x1b[49m", "\x1b[49m"+background) + "\x1b[49m"

@@ -17,7 +17,7 @@ import (
 var backgroundTokens = map[string]bool{
 	"selectedBg": true, "scrollbarThumb": true, "searchMatchBg": true, "userMessageBg": true, "customMessageBg": true,
 	"toolPendingBg": true, "toolSuccessBg": true, "toolErrorBg": true,
-	"diffAddedBg": true, "diffRemovedBg": true, "diffGutterBg": true,
+	"diffAddedBg": true, "diffRemovedBg": true, "diffGutterBg": true, "modalBackdropBg": true,
 }
 
 var requiredColors = []string{
@@ -141,7 +141,7 @@ func terminalTheme(mode ColorMode) *Theme {
 		"warning": 3, "syntaxNumber": 3,
 		"customMessageLabel": 5, "syntaxKeyword": 5,
 	}
-	for _, name := range append(append([]string{}, requiredColors...), "thinkingMax", "searchMatchText", "scrollbarThumb", "searchMatchBg", "diffAddedBg", "diffRemovedBg", "diffGutterBg") {
+	for _, name := range append(append([]string{}, requiredColors...), "thinkingMax", "searchMatchText", "scrollbarThumb", "searchMatchBg", "diffAddedBg", "diffRemovedBg", "diffGutterBg", "modalBackdropBg", "modalBackdropText") {
 		value := ""
 		color := resolvedColor{text: &value}
 		if index, ok := colors[name]; ok {
@@ -178,7 +178,9 @@ func (theme *Theme) SetTerminalBackground(background tui.RgbColor) {
 		br, bg, bb, _ := parseHex(b)
 		return fmt.Sprintf("#%02x%02x%02x", int(float64(ar)*(1-amount)+float64(br)*amount), int(float64(ag)*(1-amount)+float64(bg)*amount), int(float64(ab)*(1-amount)+float64(bb)*amount))
 	}
-	panel, selected := blend(bg, ink, .045), blend(bg, accent, .16)
+	accent, purple = blend(accent, ink, .4), blend(purple, ink, .3)
+	panel, selected := blend(bg, ink, .045), blend(bg, ink, .10)
+	backdrop := blend(bg, "#000000", .14)
 	set := func(names, value string) {
 		for _, name := range strings.Fields(names) {
 			color := resolvedColor{text: &value}
@@ -208,16 +210,18 @@ func (theme *Theme) SetTerminalBackground(background tui.RgbColor) {
 		return value
 	}
 	set("accent borderAccent mdHeading mdLink mdCode syntaxFunction syntaxType thinkingLow thinkingMedium", readable(accent))
-	set("customMessageLabel syntaxKeyword thinkingHigh thinkingXhigh thinkingMax", readable(purple))
+	set("customMessageLabel syntaxKeyword", readable(purple))
 	set("success toolDiffAdded syntaxString", readable(green))
 	set("error toolDiffRemoved", readable(red))
 	set("warning syntaxNumber bashMode", readable(amber))
-	set("muted dim border borderMuted thinkingText syntaxComment mdLinkUrl mdCodeBlockBorder mdQuote mdQuoteBorder mdHr toolDiffContext thinkingOff thinkingMinimal", readable(blend(bg, ink, .65)))
+	set("muted dim border borderMuted thinkingText syntaxComment mdLinkUrl mdCodeBlockBorder mdQuote mdQuoteBorder mdHr toolDiffContext thinkingOff thinkingMinimal thinkingHigh thinkingXhigh thinkingMax", readable(blend(bg, ink, .65)))
 	set("toolPendingBg userMessageBg customMessageBg", panel)
 	set("selectedBg searchMatchBg scrollbarThumb", selected)
 	set("toolSuccessBg diffAddedBg", blend(bg, green, .09))
 	set("toolErrorBg diffRemovedBg", blend(bg, red, .09))
 	set("diffGutterBg", bg)
+	set("modalBackdropBg", backdrop)
+	set("modalBackdropText", blend(backdrop, ink, .38))
 	next.export = map[string]resolvedColor{"pageBg": {text: &bg}, "cardBg": {text: &panel}, "infoBg": {text: &panel}}
 	theme.terminalPalette.Store(next)
 }
