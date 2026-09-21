@@ -337,6 +337,10 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 
 ## Standing assumptions (owner-confirmed)
 
+- **Herdr environment adapter (owner, 2026-09-21).** A hidden compatibility extension may
+  auto-attach only with `HERDR_ENV=1`, `HERDR_PANE_ID`, and `HERDR_BIN_PATH`; otherwise it is
+  absent. This is host-environment adaptation, not default-on feature precedent under P4.
+
 - **Native SQLite direction (owner, 2026-09-21; implementation pending).** The owner approved
   SQLite as Orb's native storage with Pi JSONL import/export and existing SDK APIs retained,
   accepting that Pi will no longer directly read a native live Orb session file. The planned

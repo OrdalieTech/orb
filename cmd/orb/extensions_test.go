@@ -12,6 +12,20 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 )
 
+func TestHerdrExtensionIsAutomaticOnlyInsideHerdr(t *testing.T) {
+	values := map[string]string{"HERDR_ENV": "1", "HERDR_BIN_PATH": "/opt/herdr", "HERDR_PANE_ID": "w1:p1"}
+	getenv := func(name string) string { return values[name] }
+	got := compiledExtensionsForEnvironment(getenv)
+	entry := got[len(got)-1]
+	if len(got) != len(compiledExtensions)+1 || entry.Name != "herdr" || !entry.Hidden || !entry.DefaultEnabled || entry.Factory == nil {
+		t.Fatalf("compiled extensions = %#v", got)
+	}
+	delete(values, "HERDR_PANE_ID")
+	if got := compiledExtensionsForEnvironment(getenv); len(got) != len(compiledExtensions) {
+		t.Fatalf("incomplete Herdr environment added %d extensions", len(got)-len(compiledExtensions))
+	}
+}
+
 func TestLoadCompiledExtensionsUsesSettingsAndCatalogOrder(t *testing.T) {
 	cwd := t.TempDir()
 	agentDir := t.TempDir()
