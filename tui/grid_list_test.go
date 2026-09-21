@@ -155,9 +155,7 @@ func TestGridMouseLayoutTracksOnlyVisibleRows(t *testing.T) {
 }
 
 func TestPlainFrameHasPaddedPanelAndEscapeHint(t *testing.T) {
-	frame := NewFrame("Commands", "", nil, nil, NewText("body", 0, 0, nil))
-	frame.Plain = true
-	frame.Background = func(s string) string { return "\x1b[48;5;236m" + s + "\x1b[49m" }
+	frame := NewPanel("Commands", "", nil, nil, func() string { return "\x1b[48;5;236m" }, NewText("body", 0, 0, nil))
 	for _, width := range []int{12, 40, 80} {
 		lines := frame.Render(width)
 		if len(lines) != 5 {

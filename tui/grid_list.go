@@ -428,6 +428,21 @@ func NewFrame(title, footer string, border, hint StyleFunc, child Component) *Fr
 	return &Frame{Title: title, Footer: footer, Border: border, Hint: hint, Child: child}
 }
 
+// NewPanel shares borderless modal geometry while callers own theme colors.
+func NewPanel(title, footer string, titleStyle, hint StyleFunc, background func() string, child Component) *Frame {
+	frame := NewFrame(title, footer, nil, hint, child)
+	frame.Plain = true
+	frame.TitleStyle = titleStyle
+	frame.Background = func(text string) string {
+		if background == nil {
+			return text
+		}
+		color := background()
+		return color + strings.ReplaceAll(ReopenAfterReset(color, text), "\x1b[49m", "\x1b[49m"+color) + "\x1b[49m"
+	}
+	return frame
+}
+
 func (frame *Frame) style(fn StyleFunc, text string) string {
 	if fn == nil {
 		return text

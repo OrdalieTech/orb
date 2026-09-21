@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Unify Bridge, plugins, permissions, and MCP with the command palette’s borderless themed panels and dimmed backdrop.
+
 - Make Bridge a built-in Settings and Ctrl+P page with one service switch, paired devices, access controls, and an optional agent-call setting. Plugins opens its page directly from Ctrl+P without changing the draft.
 
 - Show reasoning as a single clickable height glyph in the footer, with a dot for off.
