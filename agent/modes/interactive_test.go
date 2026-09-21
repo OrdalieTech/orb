@@ -2027,3 +2027,27 @@ func TestCompactFooterQuotaAndContextAtNarrowWidths(t *testing.T) {
 		}
 	}
 }
+
+func TestTerminalThemeDefaultAndBackdrop(t *testing.T) {
+	mode := &InteractiveMode{}
+	if got := mode.themeSettingOr(""); got != "terminal" {
+		t.Fatalf("default = %q", got)
+	}
+	if got := mode.themeSettingOr("light/dark"); got != "light/dark" {
+		t.Fatalf("persisted = %q", got)
+	}
+	mode.themeSetting = "custom"
+	if got := mode.themeSettingOr("terminal"); got != "custom" {
+		t.Fatalf("override = %q", got)
+	}
+	previous := theme.Current()
+	t.Cleanup(func() { theme.SetCurrent(previous) })
+	native, _ := theme.Load(theme.LoadOptions{NoThemes: true}).Get("terminal")
+	theme.SetCurrent(native)
+	if got := menuSelectedBackground("choice"); got != "\x1b[7mchoice\x1b[27m" {
+		t.Fatalf("selection = %q", got)
+	}
+	if got := backdropStyle()("behind"); got != "\x1b[39;49;2mbehind\x1b[0m" {
+		t.Fatalf("backdrop = %q", got)
+	}
+}

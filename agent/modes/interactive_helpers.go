@@ -36,6 +36,9 @@ func (border *DynamicBorder) Render(width int) []string {
 }
 
 func menuSelectedBackground(text string) string {
+	if theme.BGANSI("selectedBg") == "\x1b[7m" {
+		return theme.BG("selectedBg", text)
+	}
 	prefix := strings.Replace(theme.FGANSI("borderMuted"), "[38;", "[48;", 1)
 	prefix = strings.Replace(prefix, "[39m", "[49m", 1)
 	return prefix + text + "\x1b[49m"

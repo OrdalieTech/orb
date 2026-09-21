@@ -130,6 +130,34 @@ func Parse(label string, data []byte, mode ColorMode) (*Theme, error) {
 	return theme, nil
 }
 
+func terminalTheme(mode ColorMode) *Theme {
+	theme := &Theme{Name: "terminal", mode: mode, foreground: map[string]string{}, background: map[string]string{}, resolved: map[string]resolvedColor{}}
+	colors := map[string]int{
+		"muted": 8, "dim": 8, "borderMuted": 8, "thinkingText": 8, "syntaxComment": 8,
+		"success": 2, "toolDiffAdded": 2, "syntaxString": 2,
+		"error": 1, "toolDiffRemoved": 1,
+		"warning": 3, "syntaxNumber": 3,
+		"customMessageLabel": 5, "syntaxKeyword": 5,
+	}
+	for _, name := range append(append([]string{}, requiredColors...), "thinkingMax", "searchMatchText", "scrollbarThumb", "searchMatchBg", "diffAddedBg", "diffRemovedBg", "diffGutterBg") {
+		value := ""
+		color := resolvedColor{text: &value}
+		if index, ok := colors[name]; ok {
+			color = resolvedColor{index: &index}
+		}
+		theme.resolved[name] = color
+		if backgroundTokens[name] {
+			theme.background[name], _ = color.background(mode)
+		} else {
+			theme.foreground[name], _ = color.foreground(mode)
+		}
+	}
+	for _, name := range []string{"selectedBg", "searchMatchBg", "scrollbarThumb"} {
+		theme.background[name] = "\x1b[7m"
+	}
+	return theme
+}
+
 func (theme *Theme) ColorMode() ColorMode { return theme.mode }
 
 func (theme *Theme) ForegroundANSI(name string) (string, error) {
@@ -160,6 +188,9 @@ func (theme *Theme) Background(name, value string) string {
 	prefix, err := theme.BackgroundANSI(name)
 	if err != nil {
 		panic(err)
+	}
+	if prefix == "\x1b[7m" {
+		return prefix + tui.ReopenAfterReset(prefix, value) + "\x1b[27m"
 	}
 	return prefix + value + "\x1b[49m"
 }

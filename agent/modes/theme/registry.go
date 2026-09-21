@@ -77,6 +77,7 @@ func Load(options LoadOptions) *Registry {
 		}
 		registry.builtins[name] = theme
 	}
+	registry.builtins["terminal"] = terminalTheme(mode)
 	if options.NoThemes {
 		registry.loadPaths(resolvePaths(options.AdditionalPaths, cwd))
 		registry.loadPaths(resolvePaths(options.ResourceDiscoverPath, cwd))
